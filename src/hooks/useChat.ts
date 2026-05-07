@@ -72,8 +72,26 @@ export function useChat() {
 
     setIsLoading(true);
 
-    // Simulate network delay
-    await new Promise((resolve) => setTimeout(resolve, 1500 + Math.random() * 1500));
+let responseText = '';
+
+try {
+  const res = await fetch('https://worker-production-2a49.up.railway.app.up.railway.app/chat', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      user_id: 'web_user_1',
+      message: content.trim(),
+      platform: 'web',
+    }),
+  });
+
+  const data = await res.json();
+  responseText = data.reply || data.response || data.message || 'Cevap alınamadı.';
+} catch (error) {
+  responseText = 'Bağlantı hatası oluştu. Lütfen tekrar dene.';
+}
 
     const responseText = genericResponses[Math.floor(Math.random() * genericResponses.length)];
 
