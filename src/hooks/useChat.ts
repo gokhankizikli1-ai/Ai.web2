@@ -73,10 +73,12 @@ try {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      user_id: 'web_user_1',
-      message: content.trim(),
-      platform: 'web',
-    }),
+  user_id: 'web_user_1',
+  message: content.trim(),
+  chat_id: activeSessionId,
+  platform: 'web',
+  session_id: activeSessionId,
+}),
   });
 
   const data = await res.json();
