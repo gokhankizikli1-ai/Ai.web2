@@ -15,6 +15,8 @@ import {
   PenTool,
   BarChart3,
   Lightbulb,
+  AlertTriangle,
+  RefreshCw,
 } from 'lucide-react';
 
 const suggestions = [
@@ -30,29 +32,32 @@ export default function ChatDashboard() {
     activeSession,
     activeSessionId,
     isLoading,
+    error,
     createNewChat,
     selectSession,
     deleteSession,
     sendMessage,
+    retry,
   } = useChat();
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [animatedMessageId, setAnimatedMessageId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom
+  // Smooth auto-scroll to bottom when messages or loading state changes
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [activeSession.messages, isLoading]);
+    const timer = setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [activeSession.messages, isLoading, error]);
 
   // Track the latest assistant message for animation
   const lastMessage = activeSession.messages[activeSession.messages.length - 1];
   useEffect(() => {
     if (lastMessage && lastMessage.role === 'assistant' && !isLoading) {
-      // Check if this is a new message we haven't animated
       if (animatedMessageId !== lastMessage.id) {
         setAnimatedMessageId(lastMessage.id);
       }
@@ -113,8 +118,8 @@ export default function ChatDashboard() {
         </header>
 
         {/* Messages Area */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto">
-          {activeSession.messages.length === 0 ? (
+        <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-thin">
+          {activeSession.messages.length === 0 && !error ? (
             <div className="flex flex-col items-center justify-center h-full px-6">
               <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400 to-blue-600 mb-6 shadow-lg shadow-cyan-500/20">
                 <Sparkles className="h-8 w-8 text-white" />
@@ -150,18 +155,44 @@ export default function ChatDashboard() {
                   role={message.role}
                   content={message.content}
                   shouldAnimate={message.id === animatedMessageId}
+                  onRegenerate={message.role === 'assistant' ? () => {} : undefined}
                 />
               ))}
+
+              {/* Loading State */}
               {isLoading && (
                 <div className="flex gap-3">
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 to-blue-600">
                     <Sparkles className="h-4 w-4 text-white" />
                   </div>
-                  <div className="rounded-2xl rounded-tl-none bg-white/5 px-4 py-2">
+                  <div className="rounded-2xl rounded-tl-none bg-white/5">
                     <TypingIndicator />
                   </div>
                 </div>
               )}
+
+              {/* Error State */}
+              {error && (
+                <div className="flex gap-3 animate-fade-in">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-red-500/20">
+                    <AlertTriangle className="h-4 w-4 text-red-400" />
+                  </div>
+                  <div className="rounded-2xl rounded-tl-none bg-red-500/10 border border-red-500/20 px-4 py-3 max-w-[85%] md:max-w-[75%]">
+                    <p className="text-sm text-red-300 mb-3">{error}</p>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={retry}
+                      className="h-8 gap-2 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      Try Again
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              <div ref={messagesEndRef} className="h-1" />
             </div>
           )}
         </div>
