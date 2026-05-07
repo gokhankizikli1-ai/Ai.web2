@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import type { ChatSession, Message } from '@/types';
 import { placeholderChats } from '@/data/placeholderChats';
 
@@ -8,9 +8,6 @@ export function useChat() {
   const [sessions, setSessions] = useState<ChatSession[]>(placeholderChats);
   const [activeSessionId, setActiveSessionId] = useState<string>(placeholderChats[0].id);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [lastUserMessage, setLastUserMessage] = useState<string | null>(null);
-  const userIdRef = useRef<string>(getUserId());
 
   const activeSession = sessions.find((s) => s.id === activeSessionId) || sessions[0];
 
@@ -23,12 +20,10 @@ export function useChat() {
     };
     setSessions((prev) => [newSession, ...prev]);
     setActiveSessionId(newSession.id);
-    setError(null);
   }, []);
 
   const selectSession = useCallback((id: string) => {
     setActiveSessionId(id);
-    setError(null);
   }, []);
 
   const deleteSession = useCallback((id: string) => {
@@ -49,14 +44,10 @@ export function useChat() {
       }
       return filtered;
     });
-    setError(null);
   }, [activeSessionId]);
 
-  const doSend = useCallback(async (content: string) => {
+  const sendMessage = useCallback(async (content: string) => {
     if (!content.trim()) return;
-
-    setError(null);
-    setLastUserMessage(content.trim());
 
     const userMessage: Message = {
       id: generateId(),
@@ -111,46 +102,8 @@ try {
       )
     );
 
-      const data = await response.json();
-      const responseText = data.reply ?? data.response ?? data.message ?? JSON.stringify(data);
-
-      const assistantMessage: Message = {
-        id: generateId(),
-        role: 'assistant',
-        content: responseText,
-        timestamp: new Date(),
-      };
-
-      setSessions((prev) =>
-        prev.map((s) =>
-          s.id === activeSessionId
-            ? { ...s, messages: [...s.messages, assistantMessage], updatedAt: new Date() }
-            : s
-        )
-      );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
+    setIsLoading(false);
   }, [activeSessionId]);
-
-  const sendMessage = useCallback(async (content: string) => {
-    await doSend(content);
-  }, [doSend]);
-
-  const retry = useCallback(() => {
-    if (lastUserMessage) {
-      setSessions((prev) =>
-        prev.map((s) =>
-          s.id === activeSessionId
-            ? { ...s, messages: s.messages.slice(0, -1), updatedAt: new Date() }
-            : s
-        )
-      );
-      doSend(lastUserMessage);
-    }
-  }, [lastUserMessage, doSend, activeSessionId]);
 
   const clearChat = useCallback(() => {
     setSessions((prev) =>
@@ -160,7 +113,6 @@ try {
           : s
       )
     );
-    setError(null);
   }, [activeSessionId]);
 
   return {
@@ -168,12 +120,10 @@ try {
     activeSession,
     activeSessionId,
     isLoading,
-    error,
     createNewChat,
     selectSession,
     deleteSession,
     sendMessage,
-    retry,
     clearChat,
   };
 }
