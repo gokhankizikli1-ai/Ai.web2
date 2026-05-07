@@ -23,5 +23,5 @@ DB_PATH = os.getenv("DB_PATH", "velora.db")
 # --- CORS ---
 ALLOWED_ORIGINS = os.getenv(
     "ALLOWED_ORIGINS",
-    "http://localhost:3000,http://localhost:5173,https://velora.ai"
+    "https://ai-web2-roan.vercel.app,http://localhost:3000,http://localhost:5173,https://velora.ai"
 ).split(",")

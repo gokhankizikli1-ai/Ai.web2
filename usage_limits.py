@@ -106,3 +106,27 @@ def get_remaining_messages(user_id):
     used = get_daily_usage(user_id)
     remaining = FREE_DAILY_LIMIT - used
     return max(0, remaining)
+
+
+def ensure_user(user_id):
+    """
+    Ensure the user has a usage row for today.
+    Resets count if it is a new day.
+    """
+    today = datetime.now().strftime("%Y-%m-%d")
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        "SELECT date FROM user_usage WHERE user_id=? ORDER BY date DESC LIMIT 1",
+        (user_id,),
+    )
+    row = c.fetchone()
+    if not row:
+        # First time user - insert today's row with 0 count
+        c.execute(
+            "INSERT OR IGNORE INTO user_usage (user_id, date, count) VALUES (?, ?, 0)",
+            (user_id, today),
+        )
+    # If last date differs, new day: row for today will be auto-created on first increment
+    conn.commit()
+    conn.close()
