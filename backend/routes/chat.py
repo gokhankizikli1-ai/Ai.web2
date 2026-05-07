@@ -4,7 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from backend.models.schemas import ChatRequest, ChatResponse, ErrorResponse
 from backend.core.security import verify_api_key
-from backend.core.logging import Timer, new_request_id, log_request, log_response, log_error
+import time
+from backend.core.logging import new_request_id, log_request, log_response, log_error
 from backend.services.ai_service import process_chat
 from backend.services.user_service import (
     check_and_count, record_usage, save_message,
@@ -37,13 +38,14 @@ async def chat(
     message    = req.message.strip()
     platform   = req.platform or "web"
 
-    with Timer() as t:
-        try:
+    _t_start = time.monotonic()
+    try:
             # --- Memory list shortcut ---
             if any(kw in message.lower() for kw in _MEM_LIST_KW):
                 summary = get_summary(user_id)
                 reply   = ("Hafizamda bunlar var:\n\n" + summary) if summary else "Henuz bir sey kaydetmedim."
-                return _build_response(request_id, user_id, reply, "memory", "gpt-4o-mini", "openai", "memory", t)
+                _ms = int((time.monotonic() - _t_start) * 1000)
+                return _build_response(request_id, user_id, reply, "memory", "gpt-4o-mini", "openai", "memory", _ms)
 
             # --- Memory save shortcut ---
             for trigger in _MEM_SAVE_TRIGGERS:
@@ -52,14 +54,17 @@ async def chat(
                     if fact and len(fact) >= 3:
                         from backend.services.memory_service import save_memory
                         save_memory(user_id, fact, "general")
-                        return _build_response(request_id, user_id, "Kaydettim.", "memory", "none", "none", "memory", t)
-                    return _build_response(request_id, user_id, "Ne kaydetmemi istedigini anlayamadim.", "memory", "none", "none", "memory", t)
+                        _ms = int((time.monotonic() - _t_start) * 1000)
+                        return _build_response(request_id, user_id, "Kaydettim.", "memory", "none", "none", "memory", _ms)
+                    _ms = int((time.monotonic() - _t_start) * 1000)
+                    return _build_response(request_id, user_id, "Ne kaydetmemi istedigini anlayamadim.", "memory", "none", "none", "memory", _ms)
 
             # --- Style detection shortcut ---
             style_match = detect_style(message)
             if style_match:
                 apply_style(user_id, message)
-                return _build_response(request_id, user_id, "Anlasıldı, stil guncellendi: " + style_match["label"], "style", "none", "none", "style", t)
+                _ms = int((time.monotonic() - _t_start) * 1000)
+                return _build_response(request_id, user_id, "Anlasıldı, stil guncellendi: " + style_match["label"], "style", "none", "none", "style", _ms)
 
             # --- Usage limit check ---
             can_send, remaining = check_and_count(user_id)
@@ -111,8 +116,9 @@ async def chat(
             save_message("user", message)
             save_message("assistant", reply)
 
+            _elapsed_ms = int((time.monotonic() - _t_start) * 1000)
             log_request(request_id, user_id, platform, intent, model, mode)
-            log_response(request_id, user_id, t.elapsed_ms, len(reply))
+            log_response(request_id, user_id, _elapsed_ms, len(reply))
 
             from backend.services.user_service import get_profile as gp
             prof = gp(user_id)
@@ -126,11 +132,11 @@ async def chat(
                 memory_used=bool(mem_summary),
                 remaining_messages=prof["remaining_messages"],
                 premium=prof["premium"],
-                response_time_ms=t.elapsed_ms,
+                response_time_ms=_elapsed_ms,
                 request_id=request_id,
             )
 
-        except Exception as e:
+    except Exception as e:
             log_error(request_id, user_id, e)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -142,7 +148,7 @@ async def chat(
             )
 
 
-def _build_response(request_id, user_id, reply, intent, model, provider, mode, timer):
+def _build_response(request_id, user_id, reply, intent, model, provider, mode, elapsed_ms=0):
     from backend.services.user_service import get_profile as gp
     try:
         prof = gp(user_id)
@@ -160,6 +166,6 @@ def _build_response(request_id, user_id, reply, intent, model, provider, mode, t
         memory_used=False,
         remaining_messages=remaining,
         premium=premium,
-        response_time_ms=timer.elapsed_ms,
+        response_time_ms=elapsed_ms,
         request_id=request_id,
     )
