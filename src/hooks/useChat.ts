@@ -73,7 +73,7 @@ export function useChat() {
     setIsLoading(true);
 
 try {
-  const res = await fetch('https://worker-production-2a49.up.railway.app.up.railway.app/chat', {
+  const res = await fetch('https://worker-production-2a49.up.railway.app/chat', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -90,8 +90,6 @@ try {
 } catch (error) {
   responseText = 'Bağlantı hatası oluştu. Lütfen tekrar dene.';
 }
-
-    const responseText = genericResponses[Math.floor(Math.random() * genericResponses.length)];
 
     const assistantMessage: Message = {
       id: generateId(),
