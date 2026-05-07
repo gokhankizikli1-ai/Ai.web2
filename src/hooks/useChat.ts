@@ -72,8 +72,6 @@ export function useChat() {
 
     setIsLoading(true);
 
-let responseText = '';
-
 try {
   const res = await fetch('https://worker-production-2a49.up.railway.app.up.railway.app/chat', {
     method: 'POST',
