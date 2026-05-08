@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import type { ChatSession, Message } from '@/types';
 import { placeholderChats } from '@/data/placeholderChats';
 
@@ -22,10 +22,12 @@ export function useChat() {
     };
     setSessions((prev) => [newSession, ...prev]);
     setActiveSessionId(newSession.id);
+    setError(null);
   }, []);
 
   const selectSession = useCallback((id: string) => {
     setActiveSessionId(id);
+    setError(null);
   }, []);
 
   const deleteSession = useCallback(
@@ -82,14 +84,11 @@ export function useChat() {
       );
 
       setIsLoading(true);
-      let responseText = '';
 
       try {
         const res = await fetch('https://worker-production-2a49.up.railway.app/chat', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             user_id: 'web_user_1',
             message: content.trim(),
@@ -104,7 +103,7 @@ export function useChat() {
         }
 
         const data = await res.json();
-        responseText =
+        const responseText =
           data.reply || data.response || data.message || 'Cevap alinamadi.';
 
         const assistantMessage: Message = {
@@ -135,22 +134,20 @@ export function useChat() {
   );
 
   const retry = useCallback(() => {
-    if (lastMessageRef.current) {
-      // Remove the last failed user message before retrying to avoid duplicates
-      setSessions((prev) =>
-        prev.map((s) => {
-          if (s.id !== activeSessionId) return s;
-          const messages = [...s.messages];
-          // Remove last user message so sendMessage can re-add it cleanly
-          if (messages.length > 0 && messages[messages.length - 1].role === 'user') {
-            messages.pop();
-          }
-          return { ...s, messages };
-        })
-      );
-      setError(null);
-      sendMessage(lastMessageRef.current);
-    }
+    const last = lastMessageRef.current;
+    if (!last) return;
+    setSessions((prev) =>
+      prev.map((s) => {
+        if (s.id !== activeSessionId) return s;
+        const msgs = [...s.messages];
+        if (msgs.length > 0 && msgs[msgs.length - 1].role === 'user') {
+          msgs.pop();
+        }
+        return { ...s, messages: msgs };
+      })
+    );
+    setError(null);
+    sendMessage(last);
   }, [activeSessionId, sendMessage]);
 
   const clearChat = useCallback(() => {
@@ -161,6 +158,7 @@ export function useChat() {
           : s
       )
     );
+    setError(null);
   }, [activeSessionId]);
 
   return {
@@ -168,10 +166,12 @@ export function useChat() {
     activeSession,
     activeSessionId,
     isLoading,
+    error,
     createNewChat,
     selectSession,
     deleteSession,
     sendMessage,
+    retry,
     clearChat,
   };
 }
