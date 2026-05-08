@@ -22,11 +22,11 @@ from finance import run_finance_analysis
 from ecommerce import run_ecommerce_analysis
 
 try:
-    from backend.tools.registry import select_tools_for_intent, run_tool
+    from tools.registry import select_tools_for_intent, run_tool
     _TOOLS_AVAILABLE = True
 except Exception:
     _TOOLS_AVAILABLE = False
-
+    
 logger = logging.getLogger(__name__)
 
 _ECOM_KW = [
