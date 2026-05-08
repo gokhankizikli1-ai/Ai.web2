@@ -3,21 +3,19 @@ import sys
 import os
 import logging
 
-# Make existing intelligence layer importable
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from backend.core.config import ALLOWED_ORIGINS, ENVIRONMENT
+from backend.core.config import ENVIRONMENT
 from backend.core.logging import setup_logger
 from backend.routes import health, chat, memory, profile, stats, auth
 from db import init_db
 from memory import init_memory_db
 from usage_limits import init_usage_db
 
-# ─── App ──────────────────────────────────────────────────────────────────────
 app = FastAPI(
     title="Velora AI API",
     description="Velora AI Platform - Intelligent assistant backend",
@@ -26,16 +24,29 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# ─── CORS ─────────────────────────────────────────────────────────────────────
+# Explicit origins + regex for wildcard subdomains
+EXPLICIT_ORIGINS = [
+    "https://ai-web2-roan.vercel.app",
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:8000",
+]
+
+# allow_origin_regex handles *.vercel.app and *.railway.app
+ORIGIN_REGEX = r"https://.*\.(vercel\.app|railway\.app)$"
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origins=EXPLICIT_ORIGINS,
+    allow_origin_regex=ORIGIN_REGEX,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=600,
 )
 
-# ─── Startup ──────────────────────────────────────────────────────────────────
+
 @app.on_event("startup")
 async def startup():
     setup_logger()
@@ -43,11 +54,10 @@ async def startup():
     init_memory_db()
     init_usage_db()
     logging.getLogger("velora").info(
-        "Velora AI API started | env=%s | origins=%s",
-        ENVIRONMENT, ALLOWED_ORIGINS,
+        "Velora AI API started | env=%s", ENVIRONMENT,
     )
 
-# ─── Global error handler ─────────────────────────────────────────────────────
+
 @app.exception_handler(Exception)
 async def global_error_handler(request: Request, exc: Exception):
     logging.getLogger("velora.error").error("Unhandled error: %s", str(exc), exc_info=True)
@@ -56,7 +66,7 @@ async def global_error_handler(request: Request, exc: Exception):
         content={"error": "internal_error", "message": "Beklenmedik bir hata olustu."},
     )
 
-# ─── Routes ───────────────────────────────────────────────────────────────────
+
 app.include_router(health.router)
 app.include_router(chat.router)
 app.include_router(memory.router)
