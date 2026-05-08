@@ -5,15 +5,15 @@ logger = logging.getLogger(__name__)
 
 MODEL_FAST   = "gpt-4o-mini"
 MODEL_STRONG = "gpt-4o"
-
 PROVIDER_OPENAI = "openai"
 
 STRONG_INTENTS = {"finance", "crypto", "stock"}
-MEDIUM_INTENTS = {"ecommerce", "ads", "product_research", "coding", "personal_advice"}
+MEDIUM_INTENTS = {"ecommerce", "ads", "product_research", "coding", "personal_advice", "startup"}
 FAST_INTENTS   = {
     "normal_chat", "task", "memory", "portfolio",
     "education", "news", "general_question",
     "consumer_advice", "emotional_support",
+    "execution", "productivity", "creative",
 }
 
 STRONG_KEYWORDS = [
@@ -25,10 +25,29 @@ FAST_KEYWORDS = [
     "kisa", "ozet", "hizli", "quick", "brief", "sadece sonuc",
 ]
 
+_EXECUTION_KW = [
+    "ne yapayim", "nereden baslayayim", "plan yap", "takildim",
+    "devam edemiyorum", "para kazanmak istiyorum", "nereye gitsem",
+    "yol haritasi", "nasil baslayabilirim",
+]
+_TRADING_KW = [
+    "girmeli miyim", "al sat", "long", "short", "pump", "rsi",
+    "destek direnc", "breakout", "volume", "hacim", "trade", "trading",
+    "coin", "kripto analiz", "hisse analiz",
+]
+_STARTUP_KW = [
+    "startup", "girisim", "fikir validate", "idea", "business model",
+    "mvp", "co-founder", "yatirimci", "pitch", "pazar arastirma",
+]
 _EMOTIONAL_KW = [
     "moralim bozuk", "cok kotu", "uzuldum", "agladim", "yalniz",
     "depresyon", "motivasyonum yok", "bunaldim", "kafam durdu",
     "stres", "sikildim", "ne yapacagimi bilmiyorum",
+]
+_PRODUCTIVITY_KW = [
+    "dagiliyorum", "odaklanamiyorum", "motivasyonum yok",
+    "zamanimi yonetemiyorum", "hedefim var ama yapamiyorum",
+    "procrastination", "erteliyorum", "konsantre olamiyorum",
 ]
 _PERSONAL_KW = [
     "ne yapmaliyim", "karar veremiyorum", "tavsiye ver",
@@ -37,6 +56,12 @@ _PERSONAL_KW = [
 _EDUCATION_KW = [
     "anlat", "ogret", "ogretmen gibi", "nasil calisir", "ne demek",
     "acikla", "anlayamadim", "ogrenemiyorum", "detayli anlat",
+    "neden", "nasil", "coz", "hesapla",
+]
+_CREATIVE_KW = [
+    "fikir ver", "isim bul", "hikaye yaz", "reklam metni",
+    "hook yaz", "yaratici olsun", "marka ismi", "icerik fikri",
+    "slogan", "kopya yaz", "tagline",
 ]
 
 
@@ -46,16 +71,37 @@ def _has(text, kw_list):
 
 
 def detect_mode(intent, user_text=""):
+    # Execution first - high priority
+    if intent == "execution" or _has(user_text, _EXECUTION_KW):
+        return "execution"
+    # Trading keywords override generic finance sometimes
+    if _has(user_text, _TRADING_KW) and intent in ("finance", "crypto", "stock", "normal_chat"):
+        return "finance"
+    # Startup
+    if intent == "startup" or _has(user_text, _STARTUP_KW):
+        return "startup"
+    # Productivity
+    if intent == "productivity" or _has(user_text, _PRODUCTIVITY_KW):
+        return "productivity"
+    # Creative
+    if intent == "creative" or _has(user_text, _CREATIVE_KW):
+        return "creative"
+    # Emotional
     if intent == "emotional_support" or _has(user_text, _EMOTIONAL_KW):
         return "emotional_support"
+    # Personal advice
     if intent == "personal_advice" or _has(user_text, _PERSONAL_KW):
         return "personal_advice"
+    # Education
     if intent == "education" or _has(user_text, _EDUCATION_KW):
         return "education"
+    # Consumer advice
     if intent == "consumer_advice":
         return "consumer_advice"
+    # Finance modes
     if intent in ("finance", "crypto", "stock"):
         return "finance"
+    # Ecommerce
     if intent in ("ecommerce", "ads", "product_research"):
         return "ecommerce"
     if intent == "coding":
@@ -91,8 +137,8 @@ def choose_ai_model(intent, depth=None, user_text=""):
 
 def get_model_config(intent, depth=None, user_text=""):
     try:
-        model  = choose_ai_model(intent, depth, user_text)
-        mode   = detect_mode(intent, user_text)
+        model = choose_ai_model(intent, depth, user_text)
+        mode  = detect_mode(intent, user_text)
         return {
             "model":    model,
             "provider": PROVIDER_OPENAI,
