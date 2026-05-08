@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback } from 'react';
 import type { ChatSession, Message } from '@/types';
 import { placeholderChats } from '@/data/placeholderChats';
 
@@ -22,12 +22,10 @@ export function useChat() {
     };
     setSessions((prev) => [newSession, ...prev]);
     setActiveSessionId(newSession.id);
-    setError(null);
   }, []);
 
   const selectSession = useCallback((id: string) => {
     setActiveSessionId(id);
-    setError(null);
   }, []);
 
   const deleteSession = useCallback(
@@ -163,7 +161,6 @@ export function useChat() {
           : s
       )
     );
-    setError(null);
   }, [activeSessionId]);
 
   return {
@@ -171,12 +168,10 @@ export function useChat() {
     activeSession,
     activeSessionId,
     isLoading,
-    error,
     createNewChat,
     selectSession,
     deleteSession,
     sendMessage,
-    retry,
     clearChat,
   };
 }
