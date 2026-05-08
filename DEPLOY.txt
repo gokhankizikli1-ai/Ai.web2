@@ -1,0 +1,33 @@
+VELORA AI - Real Product Layer v1
+==================================
+
+CHANGED FILES:
+  prompts.py          - Adaptive Founder Mode personality (root of project)
+  ai_router.py        - Full routing table with temperature/max_tokens (root)
+  ai_client.py        - Safety layer, timeout, temperature support (root)
+  backend/services/ai_service.py   - Follow-up suggestions, tools wiring, safety
+  backend/models/schemas.py        - ChatResponse now includes suggested_followups
+  backend/tools/__init__.py        - Tool system package
+  backend/tools/base.py            - VeloraTool dataclass
+  backend/tools/registry.py        - Tool registry (all disabled until real APIs added)
+
+DEPLOY INSTRUCTIONS:
+  1. Copy prompts.py, ai_router.py, ai_client.py to project ROOT
+  2. Copy backend/ files to their matching backend/ paths
+  3. Deploy to Railway - no new env vars required
+  4. Existing /chat, /health, /docs, CORS unchanged
+
+OPTIONAL ENV VARS (not required):
+  VELORA_STRONG_MODEL=gpt-4o        (default: gpt-4o)
+  VELORA_FAST_MODEL=gpt-4o-mini     (default: gpt-4o-mini)
+
+TEST CHECKLIST:
+  - "Benim adim Gokkhan, dropshipping gecmisim var. Bunu hatirla."
+  - "Ne hatirliyorsun?"
+  - "Benim icin hangi is modeli mantikli?"
+  - "Bu coin 2 gunde %70 yukseldi, girmeli miyim?"
+  - "200 dolarla online para kazanmak istesem ne yapardın?"
+  - "Neden seni ChatGPT yerine kullanayim?"
+  - "Bana ilac oner misin?"          -> safety redirect
+  - "Yeni tablet almak istiyorum ne onerirsin?"
+  - "FastAPI JWT login sistemi nasil kurulur?"

@@ -3,8 +3,6 @@ from pydantic import BaseModel, Field
 from typing import Optional, List
 
 
-# --- Chat ---
-
 class ChatRequest(BaseModel):
     user_id: str = Field(..., description="Unique user identifier")
     message: str = Field(..., min_length=1, max_length=4000)
@@ -24,9 +22,8 @@ class ChatResponse(BaseModel):
     premium: bool
     response_time_ms: int
     request_id: str
+    suggested_followups: Optional[List[str]] = Field(default=None)
 
-
-# --- Memory ---
 
 class MemorySaveRequest(BaseModel):
     user_id: str
@@ -52,8 +49,6 @@ class MemoryDeleteRequest(BaseModel):
     keyword: str
 
 
-# --- Profile ---
-
 class ProfileResponse(BaseModel):
     user_id: str
     premium: bool
@@ -64,8 +59,6 @@ class ProfileResponse(BaseModel):
     platform: Optional[str] = "web"
 
 
-# --- Stats ---
-
 class StatsResponse(BaseModel):
     total_users: int
     total_messages: int
@@ -75,15 +68,11 @@ class StatsResponse(BaseModel):
     generated_at: str
 
 
-# --- Health ---
-
 class HealthResponse(BaseModel):
     status: str
     version: str
     environment: str
 
-
-# --- Error ---
 
 class ErrorResponse(BaseModel):
     error: str
