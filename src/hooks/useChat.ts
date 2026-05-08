@@ -9,8 +9,7 @@ export function useChat() {
   const [activeSessionId, setActiveSessionId] = useState<string>(placeholderChats[0].id);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [lastUserMessage, setLastUserMessage] = useState<string | null>(null);
-  const userIdRef = useRef<string>(getUserId());
+  const lastMessageRef = useRef<string>('');
 
   const activeSession = sessions.find((s) => s.id === activeSessionId) || sessions[0];
 
@@ -31,126 +30,130 @@ export function useChat() {
     setError(null);
   }, []);
 
-  const deleteSession = useCallback((id: string) => {
-    setSessions((prev) => {
-      const filtered = prev.filter((s) => s.id !== id);
-      if (filtered.length === 0) {
-        const newSession: ChatSession = {
-          id: generateId(),
-          title: 'New Conversation',
-          messages: [],
-          updatedAt: new Date(),
-        };
-        setActiveSessionId(newSession.id);
-        return [newSession];
-      }
-      if (activeSessionId === id) {
-        setActiveSessionId(filtered[0].id);
-      }
-      return filtered;
-    });
-    setError(null);
-  }, [activeSessionId]);
-
-  const doSend = useCallback(async (content: string) => {
-    if (!content.trim()) return;
-
-    setError(null);
-    setLastUserMessage(content.trim());
-
-    const userMessage: Message = {
-      id: generateId(),
-      role: 'user',
-      content: content.trim(),
-      timestamp: new Date(),
-    };
-
-    setSessions((prev) =>
-      prev.map((s) =>
-        s.id === activeSessionId
-          ? { ...s, messages: [...s.messages, userMessage], updatedAt: new Date(), title: s.title === 'New Conversation' ? content.slice(0, 30) + '...' : s.title }
-          : s
-      )
-    );
-
-    setIsLoading(true);
-let responseText = '';
-try {
-  const res = await fetch('https://worker-production-2a49.up.railway.app/chat', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
+  const deleteSession = useCallback(
+    (id: string) => {
+      setSessions((prev) => {
+        const filtered = prev.filter((s) => s.id !== id);
+        if (filtered.length === 0) {
+          const newSession: ChatSession = {
+            id: generateId(),
+            title: 'New Conversation',
+            messages: [],
+            updatedAt: new Date(),
+          };
+          setActiveSessionId(newSession.id);
+          return [newSession];
+        }
+        if (activeSessionId === id) {
+          setActiveSessionId(filtered[0].id);
+        }
+        return filtered;
+      });
     },
-    body: JSON.stringify({
-  user_id: 'web_user_1',
-  message: content.trim(),
-  chat_id: activeSessionId,
-  platform: 'web',
-  session_id: activeSessionId,
-}),
-  });
+    [activeSessionId]
+  );
 
-  const data = await res.json();
-  responseText = data.reply || data.response || data.message || 'Cevap alınamadı.';
-} catch (error) {
-  responseText = 'Bağlantı hatası oluştu. Lütfen tekrar dene.';
-}
+  const sendMessage = useCallback(
+    async (content: string) => {
+      if (!content.trim()) return;
 
-    const assistantMessage: Message = {
-      id: generateId(),
-      role: 'assistant',
-      content: responseText,
-      timestamp: new Date(),
-    };
+      setError(null);
+      lastMessageRef.current = content.trim();
 
-    setSessions((prev) =>
-      prev.map((s) =>
-        s.id === activeSessionId
-          ? { ...s, messages: [...s.messages, assistantMessage], updatedAt: new Date() }
-          : s
-      )
-    );
-
-      const data = await response.json();
-      const responseText = data.reply ?? data.response ?? data.message ?? JSON.stringify(data);
-
-      const assistantMessage: Message = {
+      const userMessage: Message = {
         id: generateId(),
-        role: 'assistant',
-        content: responseText,
+        role: 'user',
+        content: content.trim(),
         timestamp: new Date(),
       };
 
       setSessions((prev) =>
         prev.map((s) =>
           s.id === activeSessionId
-            ? { ...s, messages: [...s.messages, assistantMessage], updatedAt: new Date() }
+            ? {
+                ...s,
+                messages: [...s.messages, userMessage],
+                updatedAt: new Date(),
+                title:
+                  s.title === 'New Conversation'
+                    ? content.slice(0, 30) + '...'
+                    : s.title,
+              }
             : s
         )
       );
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [activeSessionId]);
 
-  const sendMessage = useCallback(async (content: string) => {
-    await doSend(content);
-  }, [doSend]);
+      setIsLoading(true);
+      let responseText = '';
+
+      try {
+        const res = await fetch('https://worker-production-2a49.up.railway.app/chat', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            user_id: 'web_user_1',
+            message: content.trim(),
+            chat_id: activeSessionId,
+            platform: 'web',
+            session_id: activeSessionId,
+          }),
+        });
+
+        if (!res.ok) {
+          throw new Error('Sunucu hatasi: ' + res.status);
+        }
+
+        const data = await res.json();
+        responseText =
+          data.reply || data.response || data.message || 'Cevap alinamadi.';
+
+        const assistantMessage: Message = {
+          id: generateId(),
+          role: 'assistant',
+          content: responseText,
+          timestamp: new Date(),
+        };
+
+        setSessions((prev) =>
+          prev.map((s) =>
+            s.id === activeSessionId
+              ? { ...s, messages: [...s.messages, assistantMessage], updatedAt: new Date() }
+              : s
+          )
+        );
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : 'Baglanti hatasi olustu. Lutfen tekrar dene.'
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [activeSessionId]
+  );
 
   const retry = useCallback(() => {
-    if (lastUserMessage) {
+    if (lastMessageRef.current) {
+      // Remove the last failed user message before retrying to avoid duplicates
       setSessions((prev) =>
-        prev.map((s) =>
-          s.id === activeSessionId
-            ? { ...s, messages: s.messages.slice(0, -1), updatedAt: new Date() }
-            : s
-        )
+        prev.map((s) => {
+          if (s.id !== activeSessionId) return s;
+          const messages = [...s.messages];
+          // Remove last user message so sendMessage can re-add it cleanly
+          if (messages.length > 0 && messages[messages.length - 1].role === 'user') {
+            messages.pop();
+          }
+          return { ...s, messages };
+        })
       );
-      doSend(lastUserMessage);
+      setError(null);
+      sendMessage(lastMessageRef.current);
     }
-  }, [lastUserMessage, doSend, activeSessionId]);
+  }, [activeSessionId, sendMessage]);
 
   const clearChat = useCallback(() => {
     setSessions((prev) =>
