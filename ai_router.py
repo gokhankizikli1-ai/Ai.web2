@@ -7,34 +7,13 @@ MODEL_FAST   = "gpt-4o-mini"
 MODEL_STRONG = "gpt-4o"
 PROVIDER_OPENAI = "openai"
 
-# Intent -> (model, temperature, max_tokens, style)
-_ROUTE_TABLE = {
-    "casual_chat":        (MODEL_FAST,   0.85, 600,  "casual"),
-    "normal_chat":        (MODEL_FAST,   0.80, 800,  "casual"),
-    "emotional_support":  (MODEL_FAST,   0.90, 700,  "warm"),
-    "consumer_advice":    (MODEL_FAST,   0.75, 900,  "helpful"),
-    "education":          (MODEL_FAST,   0.70, 1200, "teacher"),
-    "teacher":            (MODEL_FAST,   0.70, 1200, "teacher"),
-    "productivity":       (MODEL_FAST,   0.75, 700,  "action"),
-    "execution":          (MODEL_FAST,   0.75, 800,  "action"),
-    "news":               (MODEL_FAST,   0.60, 600,  "factual"),
-    "general_question":   (MODEL_FAST,   0.70, 900,  "helpful"),
-    "creative":           (MODEL_FAST,   0.95, 1000, "creative"),
-    "branding":           (MODEL_FAST,   0.95, 800,  "creative"),
-    "coding":             (MODEL_STRONG, 0.30, 2000, "technical"),
-    "finance":            (MODEL_STRONG, 0.40, 1500, "analyst"),
-    "crypto":             (MODEL_STRONG, 0.40, 1500, "analyst"),
-    "stock":              (MODEL_STRONG, 0.40, 1500, "analyst"),
-    "trading":            (MODEL_STRONG, 0.40, 1500, "analyst"),
-    "entrepreneurship":   (MODEL_STRONG, 0.65, 1500, "strategic"),
-    "startup":            (MODEL_STRONG, 0.65, 1500, "strategic"),
-    "dropshipping":       (MODEL_STRONG, 0.60, 1200, "strategic"),
-    "ecommerce":          (MODEL_STRONG, 0.60, 1200, "strategic"),
-    "ads":                (MODEL_STRONG, 0.65, 1200, "strategic"),
-    "product_research":   (MODEL_STRONG, 0.60, 1200, "strategic"),
-    "personal_advice":    (MODEL_STRONG, 0.70, 1000, "mentor"),
-    "deep_analysis":      (MODEL_STRONG, 0.35, 2000, "analytical"),
-    "safety_sensitive":   (MODEL_FAST,   0.20, 500,  "safe"),
+STRONG_INTENTS = {"finance", "crypto", "stock"}
+MEDIUM_INTENTS = {"ecommerce", "ads", "product_research", "coding", "personal_advice", "startup"}
+FAST_INTENTS   = {
+    "normal_chat", "task", "memory", "portfolio",
+    "education", "news", "general_question",
+    "consumer_advice", "emotional_support",
+    "execution", "productivity", "creative",
 }
 
 _STRONG_KW = [
@@ -45,16 +24,17 @@ _FAST_KW = ["kisa", "ozet", "hizli", "quick", "brief", "sadece sonuc"]
 
 _EXECUTION_KW = [
     "ne yapayim", "nereden baslayayim", "plan yap", "takildim",
-    "devam edemiyorum", "para kazanmak", "nasil baslayabilirim",
+    "devam edemiyorum", "para kazanmak istiyorum", "nereye gitsem",
+    "yol haritasi", "nasil baslayabilirim",
 ]
 _TRADING_KW = [
     "girmeli miyim", "al sat", "long", "short", "pump", "rsi",
-    "destek direnc", "breakout", "volume", "hacim", "trade",
+    "destek direnc", "breakout", "volume", "hacim", "trade", "trading",
     "coin", "kripto analiz", "hisse analiz",
 ]
 _STARTUP_KW = [
-    "startup", "girisim", "fikir validate", "mvp", "co-founder",
-    "yatirimci", "pitch", "pazar arastirma",
+    "startup", "girisim", "fikir validate", "idea", "business model",
+    "mvp", "co-founder", "yatirimci", "pitch", "pazar arastirma",
 ]
 _EMOTIONAL_KW = [
     "moralim bozuk", "cok kotu", "uzuldum", "yalniz", "depresyon",
@@ -64,17 +44,24 @@ _PRODUCTIVITY_KW = [
     "dagiliyorum", "odaklanamiyorum", "zamanimi yonetemiyorum",
     "hedefim var ama yapamiyorum", "erteliyorum", "konsantre olamiyorum",
 ]
-_CREATIVE_KW = [
-    "fikir ver", "isim bul", "hook yaz", "reklam metni",
-    "yaratici olsun", "marka ismi", "icerik fikri", "slogan",
+_PRODUCTIVITY_KW = [
+    "dagiliyorum", "odaklanamiyorum", "motivasyonum yok",
+    "zamanimi yonetemiyorum", "hedefim var ama yapamiyorum",
+    "procrastination", "erteliyorum", "konsantre olamiyorum",
+]
+_PERSONAL_KW = [
+    "ne yapmaliyim", "karar veremiyorum", "tavsiye ver",
+    "ne dusunuyorsun", "senin yerinde", "dogru mu",
 ]
 _EDUCATION_KW = [
-    "anlat", "ogret", "nasil calisir", "ne demek", "acikla",
-    "anlayamadim", "neden", "nasil", "coz", "hesapla",
+    "anlat", "ogret", "ogretmen gibi", "nasil calisir", "ne demek",
+    "acikla", "anlayamadim", "ogrenemiyorum", "detayli anlat",
+    "neden", "nasil", "coz", "hesapla",
 ]
-_SAFETY_KW = [
-    "intihar", "kendine zarar", "ilac dozu", "overdose",
-    "silah", "patlayici", "hack", "saldiri",
+_CREATIVE_KW = [
+    "fikir ver", "isim bul", "hikaye yaz", "reklam metni",
+    "hook yaz", "yaratici olsun", "marka ismi", "icerik fikri",
+    "slogan", "kopya yaz", "tagline",
 ]
 
 
@@ -83,27 +70,38 @@ def _has(text: str, kw_list: list) -> bool:
     return any(k in t for k in kw_list)
 
 
-def detect_mode(intent: str, user_text: str = "") -> str:
-    if _has(user_text, _SAFETY_KW):
-        return "safety_sensitive"
-    if _has(user_text, _EMOTIONAL_KW) or intent == "emotional_support":
-        return "emotional_support"
-    if _has(user_text, _EXECUTION_KW) or intent == "execution":
+def detect_mode(intent, user_text=""):
+    # Execution first - high priority
+    if intent == "execution" or _has(user_text, _EXECUTION_KW):
         return "execution"
-    if _has(user_text, _PRODUCTIVITY_KW) or intent == "productivity":
-        return "productivity"
-    if _has(user_text, _CREATIVE_KW) or intent == "creative":
-        return "creative"
-    if _has(user_text, _STARTUP_KW) or intent == "startup":
-        return "startup"
+    # Trading keywords override generic finance sometimes
     if _has(user_text, _TRADING_KW) and intent in ("finance", "crypto", "stock", "normal_chat"):
         return "finance"
-    if _has(user_text, _EDUCATION_KW) or intent == "education":
+    # Startup
+    if intent == "startup" or _has(user_text, _STARTUP_KW):
+        return "startup"
+    # Productivity
+    if intent == "productivity" or _has(user_text, _PRODUCTIVITY_KW):
+        return "productivity"
+    # Creative
+    if intent == "creative" or _has(user_text, _CREATIVE_KW):
+        return "creative"
+    # Emotional
+    if intent == "emotional_support" or _has(user_text, _EMOTIONAL_KW):
+        return "emotional_support"
+    # Personal advice
+    if intent == "personal_advice" or _has(user_text, _PERSONAL_KW):
+        return "personal_advice"
+    # Education
+    if intent == "education" or _has(user_text, _EDUCATION_KW):
         return "education"
+    # Consumer advice
     if intent == "consumer_advice":
         return "consumer_advice"
+    # Finance modes
     if intent in ("finance", "crypto", "stock"):
         return "finance"
+    # Ecommerce
     if intent in ("ecommerce", "ads", "product_research"):
         return "ecommerce"
     if intent == "personal_advice":
@@ -134,6 +132,16 @@ def get_model_config(intent: str, depth: str = None, user_text: str = "") -> dic
         logger.info("ROUTE | intent=%s | mode=%s | model=%s | style=%s", intent, mode, model, style)
         return _make_config(model, PROVIDER_OPENAI, mode, temp, tokens, style)
 
+def get_model_config(intent, depth=None, user_text=""):
+    try:
+        model = choose_ai_model(intent, depth, user_text)
+        mode  = detect_mode(intent, user_text)
+        return {
+            "model":    model,
+            "provider": PROVIDER_OPENAI,
+            "use_gpt4": model == MODEL_STRONG,
+            "mode":     mode,
+        }
     except Exception as e:
         logger.warning("get_model_config error: " + str(e))
         return _make_config(MODEL_FAST, PROVIDER_OPENAI, "chat", 0.80, 800, "casual")

@@ -40,11 +40,13 @@ _BUYER_KW = [
 ]
 _EXECUTION_KW = [
     "ne yapayim", "nereden baslayayim", "plan yap", "takildim",
-    "devam edemiyorum", "para kazanmak", "nasil baslayabilirim",
+    "devam edemiyorum", "para kazanmak istiyorum", "nereye gitsem",
+    "nasil baslayabilirim",
 ]
 _PRODUCTIVITY_KW = [
     "dagiliyorum", "odaklanamiyorum", "zamanimi yonetemiyorum",
-    "hedefim var ama yapamiyorum", "erteliyorum", "konsantre olamiyorum",
+    "hedefim var ama yapamiyorum", "erteliyorum", "procrastination",
+    "konsantre olamiyorum",
 ]
 _CREATIVE_KW = [
     "fikir ver", "isim bul", "hikaye yaz", "reklam metni",
@@ -52,70 +54,21 @@ _CREATIVE_KW = [
     "slogan", "kopya yaz", "tagline",
 ]
 
-_SAFETY_RESPONSE = (
-    "Bu konuda kesin bir yonlendirme yapamam.\n\n"
-    "Bir uzmana danışmanı oneririm:\n"
-    "- Saglik: doktor veya psikolog\n"
-    "- Hukuk: avukat\n"
-    "- Kriz: 182 (Turkiye kriz hatti)\n\n"
-    "Baska bir konuda yardimci olabilir miyim?"
-)
 
-# Suggested follow-up questions per mode
-_FOLLOWUPS = {
-    "finance": [
-        "Risk seviyesini birlikte hesaplayalim mi?",
-        "Bunu scalp mi swing mi dusunuyorsun?",
-        "Portfoyun ne kadar bu pozisyona girecek?",
-    ],
-    "ecommerce": [
-        "Bunu 7 gunluk test planina cevireyim mi?",
-        "Bu fikrin reklam acisini cikarayim mi?",
-        "Rakip analizi yapalim mi?",
-    ],
-    "startup": [
-        "Bu fikri ilk haftada nasil test edersin konuşalim mi?",
-        "Hedef musterini birlikte tanimlayalim mi?",
-        "Rakiplerden farklilasma stratejisine bakalim mi?",
-    ],
-    "execution": [
-        "Bugun yapacagin tek seyi birlikte belirleyelim mi?",
-        "Seni en cok hangi adim bloklıyor?",
-    ],
-    "productivity": [
-        "Bugun icin 3 adimlik plan yapayim mi?",
-        "Asil sorun zaman mi, netlik mi?",
-    ],
-    "education": [
-        "Bunu pratik bir egzersizle pekistirelim mi?",
-        "Bir sonraki konuya gecmemi ister misin?",
-    ],
-    "consumer_advice": [
-        "Butceni soyersen daha net oneri yapabilirim.",
-        "En cok ne icin kullanacaksin?",
-    ],
-}
-
-
-def _has(text: str, kw_list: list) -> bool:
+def _has(text, kw_list):
     t = text.lower()
     return any(k in t for k in kw_list)
 
 
-def _build_system(base: str, mem_summary: str = "", style_prompt: str = "", profile: str = "") -> str:
+def _build_system(base, mem_summary="", style_prompt="", profile=""):
     sys_p = base
     if profile and "No user info" not in profile and profile.strip():
         sys_p += "\n\nKullanici profili:\n" + profile
     if mem_summary and mem_summary.strip():
-        sys_p += "\n\nKullanici hafizasi (dogal kullan, bahsetme):\n" + mem_summary
+        sys_p += "\n\nKullanici hafizasi:\n" + mem_summary
     if style_prompt and style_prompt.strip():
         sys_p += "\n\n" + style_prompt
     return sys_p
-
-
-def _get_followups(mode: str, n: int = 2) -> list[str]:
-    candidates = _FOLLOWUPS.get(mode, [])
-    return candidates[:n] if candidates else []
 
 
 async def process_chat(
@@ -128,18 +81,6 @@ async def process_chat(
     style_prompt: str,
 ) -> dict:
     text_lower = message.lower().strip()
-
-    # Safety check
-    safety_kw = ["intihar", "kendine zarar", "ilac dozu", "overdose", "nasil oldurebilirim"]
-    if any(k in text_lower for k in safety_kw):
-        return {
-            "reply":    _SAFETY_RESPONSE,
-            "intent":   "safety_sensitive",
-            "model":    "none",
-            "provider": "none",
-            "mode":     "safety",
-            "followups": [],
-        }
 
     depth       = detect_research_depth(message)
     depth_label = DEPTH_CONFIG[depth]["label"]
@@ -155,7 +96,7 @@ async def process_chat(
         if has_buyer and not has_ecom:
             category = "consumer_advice"
 
-    # Whitelist
+    # Whitelist guard
     _VALID = {
         "finance", "crypto", "stock", "ecommerce", "ads",
         "product_research", "news", "task", "memory", "portfolio",
@@ -166,13 +107,11 @@ async def process_chat(
     if category not in _VALID:
         category = "normal_chat"
 
-    model_cfg   = get_model_config(category, depth, message)
-    use_gpt4    = model_cfg["use_gpt4"]
-    ai_model    = model_cfg["model"]
-    ai_mode     = model_cfg.get("mode", "chat")
-    provider    = model_cfg.get("provider", "openai")
-    temperature = model_cfg.get("temperature", 0.80)
-    max_tokens  = model_cfg.get("max_tokens", 1000)
+    model_cfg = get_model_config(category, depth, message)
+    use_gpt4  = model_cfg["use_gpt4"]
+    ai_model  = model_cfg["model"]
+    ai_mode   = model_cfg.get("mode", "chat")
+    provider  = model_cfg.get("provider", "openai")
 
     # Follow-up detection
     _is_followup = (
@@ -184,27 +123,13 @@ async def process_chat(
         category = "education"
         ai_mode  = "education"
 
-    # Tool selection (foundation - currently all disabled)
-    tool_names = []
-    if _TOOLS_AVAILABLE:
-        try:
-            tool_names = select_tools_for_intent(category, ai_mode)
-        except Exception:
-            tool_names = []
-
-    # Tool execution (web search / price data)
+    # Tool execution
     if category in RESEARCH_INTENTS or category == "consumer_advice":
-        try:
-            tool_results = await run_tools(message, intent, depth)
-        except Exception:
-            tool_results = {"tools_used": [], "price": None, "news": None, "macro": None, "web": None, "errors": []}
+        tool_results = await run_tools(message, intent, depth)
     else:
         tool_results = {"tools_used": [], "price": None, "news": None, "macro": None, "web": None, "errors": []}
 
     tool_context = build_context_for_ai(message, tool_results, profile)
-
-    # AI kwargs
-    ai_kwargs = {"temperature": temperature, "max_tokens": max_tokens}
 
     result = await _route(
         category, ai_mode, ai_model, use_gpt4,
@@ -212,19 +137,16 @@ async def process_chat(
         tool_context, tool_results,
         history, mem_summary, style_prompt,
         profile, _is_followup, text_lower,
-        ai_kwargs,
     )
 
     followups = _get_followups(ai_mode)
 
     return {
-        "reply":     result,
-        "intent":    category,
-        "model":     ai_model,
-        "provider":  provider,
-        "mode":      ai_mode,
-        "followups": followups,
-        "tools_used": tool_names,
+        "reply":    result,
+        "intent":   category,
+        "model":    ai_model,
+        "provider": provider,
+        "mode":     ai_mode,
     }
 
 
@@ -234,52 +156,42 @@ async def _route(
     tool_context, tool_results,
     history, mem_summary, style_prompt,
     profile, is_followup, text_lower,
-    ai_kwargs,
 ):
-    kw = ai_kwargs
-
-    # Safety
-    if category == "safety_sensitive" or ai_mode == "safety_sensitive":
-        return _SAFETY_RESPONSE
-
-    # Execution
+    # --- Execution mode ---
     if ai_mode == "execution" or _has(text_lower, _EXECUTION_KW):
         sys_p = _build_system(EXECUTION_SYSTEM, mem_summary, style_prompt, profile)
-        return await ask_ai(message, sys_p, history, model=ai_model, **kw)
+        return await ask_ai(message, sys_p, history, model=ai_model)
 
-    # Productivity
+    # --- Productivity mode ---
     if ai_mode == "productivity" or _has(text_lower, _PRODUCTIVITY_KW):
         sys_p = _build_system(PRODUCTIVITY_SYSTEM, mem_summary, style_prompt, profile)
-        return await ask_ai(message, sys_p, history, model=ai_model, **kw)
+        return await ask_ai(message, sys_p, history, model=ai_model)
 
-    # Creative
+    # --- Creative mode ---
     if ai_mode == "creative" or _has(text_lower, _CREATIVE_KW):
         sys_p = _build_system(CREATIVE_SYSTEM, mem_summary, style_prompt)
-        return await ask_ai(message, sys_p, history, model=ai_model, **kw)
+        return await ask_ai(message, sys_p, history, model=ai_model)
 
-    # Finance / Trading
+    # --- Finance / Trading ---
     if category in ("finance", "crypto", "stock"):
+        # Fix: never write "null ANALIZI"
         effective_symbol = symbol if (symbol and symbol.lower() != "null") else None
         if not effective_symbol:
+            # Ask clarification or do general analysis
             sys_p = _build_system(FINANCE_SYSTEM, mem_summary, style_prompt)
             prompt = (
-                "Kullanici sorusu: \"" + message + "\"\n\n" +
-                tool_context + "\n\n"
-                "Sembol belirtilmemis. Genel trading/piyasa yorumu yap "
+                "Kullanici sorusu: \"" + message + "\"\n\n"
+                + tool_context + "\n\n"
+                "Sembol belirtilmemis. Genel bir piyasa/trading yorumu yap "
                 "ya da hangi varlik icin analiz yapilmasini istedigini sor."
             )
-            return await ask_ai(prompt, sys_p, history, model=ai_model, **kw)
-        try:
-            return await run_finance_analysis(
-                message, effective_symbol, depth_label, tool_context,
-                mem_summary, style_prompt, use_gpt4, model=ai_model,
-            )
-        except Exception as e:
-            logger.error("run_finance_analysis error: " + str(e))
-            sys_p = _build_system(FINANCE_SYSTEM, mem_summary, style_prompt)
-            return await ask_ai(message, sys_p, history, model=ai_model, **kw)
+            return await ask_ai(prompt, sys_p, history, model=ai_model)
+        return await run_finance_analysis(
+            message, effective_symbol, depth_label, tool_context,
+            mem_summary, style_prompt, use_gpt4, model=ai_model,
+        )
 
-    # Ecommerce
+    # --- Ecommerce / Dropshipping ---
     if category in ("ecommerce", "ads", "product_research"):
         try:
             return await run_ecommerce_analysis(
@@ -295,7 +207,12 @@ async def _route(
         sys_p = _build_system(STARTUP_SYSTEM, mem_summary, style_prompt, profile)
         return await ask_ai(message, sys_p, history, model=ai_model, **kw)
 
-    # News
+    # --- Startup mode ---
+    if ai_mode == "startup":
+        sys_p = _build_system(STARTUP_SYSTEM, mem_summary, style_prompt, profile)
+        return await ask_ai(message, sys_p, history, model=ai_model)
+
+    # --- News ---
     if category == "news":
         news_prompt = (
             "Kullanici sorusu: " + message + "\n\n" +
@@ -304,15 +221,15 @@ async def _route(
         )
         return await ask_ai(news_prompt, "Haber editorusun. Net, Turkce.", model=ai_model, **kw)
 
-    # Consumer advice
+    # --- Consumer advice ---
     if category == "consumer_advice":
         has_web = bool(tool_results.get("web"))
-        ctx = tool_context if has_web else "[Web verisi alinamadi.]"
+        ctx = tool_context if has_web else "[Web verisi alinamadi. Guncel fiyat icin kullaniciya Trendyol/Amazon kontrol etmesini oner.]"
         sys_p = _build_system(ADVICE_SYSTEM, mem_summary, style_prompt)
         prompt = ADVICE_TEMPLATE.format(question=message, context=ctx)
-        return await ask_ai(prompt, sys_p, history, model=ai_model, **kw)
+        return await ask_ai(prompt, sys_p, history, model=ai_model)
 
-    # Education / follow-up
+    # --- Education / follow-up ---
     if category == "education" or ai_mode == "education":
         sys_p = _build_system(EDUCATION_SYSTEM, mem_summary, style_prompt)
         if is_followup:
@@ -330,19 +247,19 @@ async def _route(
             )
         else:
             prompt = EDUCATION_TEMPLATE.format(question=message, context=tool_context)
-        return await ask_ai(prompt, sys_p, history, model=ai_model, **kw)
+        return await ask_ai(prompt, sys_p, history, model=ai_model)
 
-    # Emotional
+    # --- Emotional support ---
     if ai_mode == "emotional_support" or category == "emotional_support":
         sys_p = _build_system(EMOTIONAL_SYSTEM, mem_summary)
-        return await ask_ai(message, sys_p, history, model=ai_model, **kw)
+        return await ask_ai(message, sys_p, history, model=ai_model)
 
-    # Personal advice
+    # --- Personal advice ---
     if ai_mode == "personal_advice" or category == "personal_advice":
         sys_p = _build_system(PERSONAL_SYSTEM, mem_summary, style_prompt, profile)
-        return await ask_ai(message, sys_p, history, model=ai_model, **kw)
+        return await ask_ai(message, sys_p, history, model=ai_model)
 
-    # General / Coding
+    # --- General / Coding ---
     if category in ("general_question", "coding"):
         prompt = (
             "Kullanici sorusu: " + message + "\n\n" +
@@ -350,9 +267,9 @@ async def _route(
             "Net, anlasilir Turkce cevap ver."
         )
         sys_p = _build_system(CHAT_SYSTEM, mem_summary, style_prompt)
-        return await ask_ai(prompt, sys_p, history, model=ai_model, **kw)
+        return await ask_ai(prompt, sys_p, history, model=ai_model)
 
-    # Default
+    # --- Default chat ---
     sys_p = _build_system(CHAT_SYSTEM, mem_summary, style_prompt, profile)
     sys_p += CHAT_RULES
-    return await ask_ai(message, sys_p, history, model=ai_model, **kw)
+    return await ask_ai(message, sys_p, history, model=ai_model)
