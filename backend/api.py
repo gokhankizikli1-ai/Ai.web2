@@ -9,8 +9,8 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from core.config import ENVIRONMENT
-from core.logging import setup_logger
+from config import ENVIRONMENT
+from logging_config import setup_logger
 from routes import health, chat, memory, profile, stats, auth
 from db import init_db
 from memory import init_memory_db
