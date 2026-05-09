@@ -35,29 +35,29 @@ const features = [
 
 export default function FeaturesSection() {
   return (
-    <section id="features" className="py-24 relative">
-      <div className="max-w-6xl mx-auto px-6">
-        <div className="text-center mb-16">
-          <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+    <section id="features" className="py-20 md:py-28 relative">
+      <div className="max-w-6xl mx-auto px-4 sm:px-6">
+        <div className="text-center mb-14">
+          <h2 className="text-3xl md:text-4xl font-bold text-white mb-3">
             Built for Modern Teams
           </h2>
-          <p className="text-slate-400 max-w-xl mx-auto">
+          <p className="text-slate-500 max-w-md mx-auto text-base">
             Everything you need to work smarter, faster, and more creatively.
           </p>
         </div>
 
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
           {features.map((feature, i) => (
             <div
               key={feature.title}
-              className="group relative rounded-2xl border border-white/10 bg-white/[0.02] p-6 hover:bg-white/[0.04] transition-all duration-300 hover:border-white/20"
-              style={{ animationDelay: `${i * 0.1}s` }}
+              className="group relative rounded-2xl border border-white/[0.06] bg-white/[0.015] p-6 hover:bg-white/[0.03] transition-all duration-400 hover:border-white/[0.1] hover-glow"
+              style={{ animationDelay: `${i * 0.05}s` }}
             >
-              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 text-cyan-400 group-hover:scale-110 transition-transform duration-300">
+              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500/[0.12] to-blue-500/[0.12] text-cyan-400/80 group-hover:scale-110 transition-transform duration-300">
                 <feature.icon className="h-5 w-5" />
               </div>
-              <h3 className="text-lg font-semibold text-white mb-2">{feature.title}</h3>
-              <p className="text-sm text-slate-400 leading-relaxed">{feature.description}</p>
+              <h3 className="text-[15px] font-semibold text-white mb-1.5">{feature.title}</h3>
+              <p className="text-[13px] text-slate-500 leading-relaxed">{feature.description}</p>
             </div>
           ))}
         </div>

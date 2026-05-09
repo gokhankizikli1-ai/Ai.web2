@@ -2,19 +2,19 @@ import { Star } from 'lucide-react';
 
 const testimonials = [
   {
-    quote: "Velora AI has completely changed how I write code. It's like having a senior engineer pair-programming with me 24/7. The contextual awareness is unmatched.",
+    quote: "KorvixAI has completely changed how I write code. It's like having a senior engineer pair-programming with me 24/7. The contextual awareness is unmatched.",
     author: 'Sarah Chen',
     role: 'Staff Engineer at Vercel',
     avatar: 'SC',
   },
   {
-    quote: "I've tried every AI writing tool on the market. Velora is the only one that actually sounds like me. The custom instructions feature is a game changer for maintaining brand voice.",
+    quote: "I've tried every AI writing tool on the market. KorvixAI is the only one that actually sounds like me. The custom instructions feature is a game changer.",
     author: 'Marcus Johnson',
     role: 'Head of Content at Notion',
     avatar: 'MJ',
   },
   {
-    quote: "Our team replaced three separate tools with Velora. Data analysis, documentation, and brainstorming all in one interface. The ROI was immediate.",
+    quote: "Our team replaced three separate tools with KorvixAI. Data analysis, documentation, and brainstorming all in one interface. The ROI was immediate.",
     author: 'Elena Rodriguez',
     role: 'Product Lead at Linear',
     avatar: 'ER',

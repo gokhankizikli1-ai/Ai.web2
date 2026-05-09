@@ -1,15 +1,21 @@
 import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Send, Paperclip } from 'lucide-react';
+import { Send, Paperclip, Lock } from 'lucide-react';
 
 interface ChatInputProps {
   onSend: (message: string) => void;
   disabled?: boolean;
+  externalValue?: string;
+  onExternalValueChange?: (value: string) => void;
 }
 
-export default function ChatInput({ onSend, disabled }: ChatInputProps) {
-  const [value, setValue] = useState('');
+export default function ChatInput({ onSend, disabled, externalValue, onExternalValueChange }: ChatInputProps) {
+  const [internalValue, setInternalValue] = useState('');
+  const [isFocused, setIsFocused] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const value = externalValue !== undefined ? externalValue : internalValue;
+  const setValue = onExternalValueChange || setInternalValue;
 
   const handleSubmit = () => {
     if (!value.trim() || disabled) return;
@@ -35,41 +41,53 @@ export default function ChatInput({ onSend, disabled }: ChatInputProps) {
   }, [value]);
 
   return (
-    <div className="border-t border-white/10 bg-[#0a0a0f]/80 backdrop-blur-xl p-4">
-      <div className="max-w-3xl mx-auto">
-        <div className="relative flex items-end gap-2 rounded-2xl border border-white/10 bg-white/5 p-3 focus-within:border-cyan-500/30 focus-within:bg-white/[0.07] transition-all">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="shrink-0 h-8 w-8 text-slate-500 hover:text-white hover:bg-white/5"
-          >
-            <Paperclip className="h-4 w-4" />
-          </Button>
+    <div>
+      <div
+        className={`relative flex items-end gap-1.5 rounded-[20px] bg-white/[0.03] border p-2 md:p-2.5 transition-all duration-300 ${
+          isFocused
+            ? 'border-cyan-500/25 bg-white/[0.05] shadow-[0_0_0_1px_rgba(34,211,238,0.06),0_0_20px_-5px_rgba(34,211,238,0.08)]'
+            : 'border-white/[0.07] hover:border-white/[0.12]'
+        }`}
+      >
+        <Button
+          variant="ghost"
+          size="icon"
+          className="shrink-0 h-8 w-8 text-slate-500 hover:text-white hover:bg-white/[0.06] rounded-[10px] transition-all duration-200"
+        >
+          <Paperclip className="h-[15px] w-[15px]" />
+        </Button>
 
-          <textarea
-            ref={textareaRef}
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Message Velora AI..."
-            rows={1}
-            disabled={disabled}
-            className="flex-1 bg-transparent text-sm text-white placeholder:text-slate-500 resize-none outline-none min-h-[20px] max-h-[200px] py-1.5"
-          />
+        <textarea
+          ref={textareaRef}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onFocus={() => setIsFocused(true)}
+          onBlur={() => setIsFocused(false)}
+          placeholder="Message KorvixAI..."
+          rows={1}
+          disabled={disabled}
+          className="flex-1 bg-transparent text-[14px] text-white placeholder:text-slate-600 resize-none outline-none min-h-[20px] max-h-[200px] py-[7px] leading-[1.5] disabled:opacity-50 transition-opacity"
+        />
 
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleSubmit}
-            disabled={!value.trim() || disabled}
-            className="shrink-0 h-8 w-8 bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 hover:text-cyan-300 disabled:opacity-30 disabled:hover:bg-cyan-500/20"
-          >
-            <Send className="h-4 w-4" />
-          </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={handleSubmit}
+          disabled={!value.trim() || disabled}
+          className="shrink-0 h-8 w-8 bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 hover:text-cyan-300 disabled:opacity-25 disabled:hover:bg-cyan-500/15 rounded-[10px] transition-all duration-200"
+        >
+          <Send className="h-[15px] w-[15px]" />
+        </Button>
+      </div>
+
+      <div className="flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2.5 mt-2">
+        <p className="text-center text-[10px] text-slate-700">KorvixAI can make mistakes. Verify important information.</p>
+        <span className="hidden sm:inline text-slate-800">|</span>
+        <div className="flex items-center gap-1 text-[10px] text-slate-700">
+          <Lock className="h-2.5 w-2.5" />
+          <span>Your chats are private to your session</span>
         </div>
-        <p className="text-center text-[10px] text-slate-600 mt-2">
-          Velora AI can make mistakes. Consider checking important information.
-        </p>
       </div>
     </div>
   );

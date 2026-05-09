@@ -2,9 +2,10 @@ import type { ChatSession } from '@/types';
 
 export const placeholderChats: ChatSession[] = [
   {
-    id: '1',
+    id: 'demo-1',
     title: 'Quantum Computing Explained',
     updatedAt: new Date(Date.now() - 1000 * 60 * 5),
+    isDemo: true,
     messages: [
       {
         id: 'm1',
@@ -21,9 +22,10 @@ export const placeholderChats: ChatSession[] = [
     ],
   },
   {
-    id: '2',
+    id: 'demo-2',
     title: 'React Performance Tips',
     updatedAt: new Date(Date.now() - 1000 * 60 * 60 * 2),
+    isDemo: true,
     messages: [
       {
         id: 'm3',
@@ -40,9 +42,10 @@ export const placeholderChats: ChatSession[] = [
     ],
   },
   {
-    id: '3',
+    id: 'demo-3',
     title: 'Creative Writing Prompts',
     updatedAt: new Date(Date.now() - 1000 * 60 * 60 * 24),
+    isDemo: true,
     messages: [
       {
         id: 'm5',
@@ -59,9 +62,10 @@ export const placeholderChats: ChatSession[] = [
     ],
   },
   {
-    id: '4',
+    id: 'demo-4',
     title: 'Marketing Strategy Help',
     updatedAt: new Date(Date.now() - 1000 * 60 * 60 * 48),
+    isDemo: true,
     messages: [
       {
         id: 'm7',
@@ -78,9 +82,10 @@ export const placeholderChats: ChatSession[] = [
     ],
   },
   {
-    id: '5',
+    id: 'demo-5',
     title: 'Python Data Analysis',
     updatedAt: new Date(Date.now() - 1000 * 60 * 60 * 24 * 5),
+    isDemo: true,
     messages: [
       {
         id: 'm9',

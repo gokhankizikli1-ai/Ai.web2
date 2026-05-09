@@ -19,7 +19,7 @@ interface SettingsModalProps {
 export default function SettingsModal({ open, onOpenChange }: SettingsModalProps) {
   const [darkMode, setDarkMode] = useState(true);
   const [language, setLanguage] = useState('English');
-  const [model, setModel] = useState('Velora Pro');
+  const [model, setModel] = useState('KorvixAI Pro');
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -30,7 +30,7 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
             Settings
           </DialogTitle>
           <DialogDescription className="text-slate-400">
-            Customize your Velora AI experience.
+            Customize your KorvixAI experience.
           </DialogDescription>
         </DialogHeader>
 
@@ -73,7 +73,7 @@ export default function SettingsModal({ open, onOpenChange }: SettingsModalProps
                 <p className="text-xs text-slate-500">{model}</p>
               </div>
             </div>
-            <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white" onClick={() => setModel(model === 'Velora Pro' ? 'Velora Ultra' : 'Velora Pro')}>
+            <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white" onClick={() => setModel(model === 'KorvixAI Pro' ? 'KorvixAI Ultra' : 'KorvixAI Pro')}>
               Switch
             </Button>
           </div>
