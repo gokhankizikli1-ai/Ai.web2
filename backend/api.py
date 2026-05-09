@@ -38,10 +38,9 @@ except Exception:
         pass
 
 try:
-    from routes import health, chat, memory, profile, stats, auth
+    from backend.routes import health
 except Exception:
-    from backend.routes import health, chat, memory, profile, stats, auth
-
+    from backend.routes import health
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
