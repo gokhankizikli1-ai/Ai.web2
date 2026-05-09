@@ -3,24 +3,19 @@ import sys
 import os
 import logging
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, os.path.dirname(__file__))
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-import os
-import logging
-
 ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
 
-def setup_logger():
-    logging.basicConfig(level=logging.INFO)
-
-from backend.routes import health, chat, memory, profile, stats, auth
-from backend.db import init_db
-from backend.memory import init_memory_db
-from backend.usage_limits import init_usage_db
+from core.logging import setup_logger
+from routes import health, chat, memory, profile, stats, auth
+from db import init_db
+from memory import init_memory_db
+from usage_limits import init_usage_db
 
 app = FastAPI(
     title="Velora AI API",
