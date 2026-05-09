@@ -11,7 +11,8 @@ from fastapi.responses import JSONResponse
 
 import os
 ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
-from core.logging import setup_logger
+def setup_logger():
+    logging.basicConfig(level=logging.INFO)
 from routes import health, chat, memory, profile, stats, auth
 from db import init_db
 from memory import init_memory_db
