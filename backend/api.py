@@ -45,7 +45,6 @@ except Exception:
 from backend.routes import health, chat, memory, profile, stats, auth
 
 # Make project root importable (db.py, memory.py, usage_limits.py, etc.)
-ROOT_DIR = os.path.dirname(CURRENT_DIR)
 if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
