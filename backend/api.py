@@ -87,6 +87,12 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+app.include_router(health.router, prefix="/health", tags=["health"])
+app.include_router(chat.router, prefix="/chat", tags=["chat"])
+app.include_router(memory.router, prefix="/memory", tags=["memory"])
+app.include_router(profile.router, prefix="/profile", tags=["profile"])
+app.include_router(stats.router, prefix="/stats", tags=["stats"])
+app.include_router(auth.router, prefix="/auth", tags=["auth"])
 
 EXPLICIT_ORIGINS = [
        "https://korvixai.com",
