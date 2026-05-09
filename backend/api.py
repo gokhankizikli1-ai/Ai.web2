@@ -3,19 +3,55 @@ import sys
 import os
 import logging
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "."))
+# Make backend/ itself importable (routes/, core/, etc.)
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+if CURRENT_DIR not in sys.path:
+    sys.path.insert(0, CURRENT_DIR)
+
+# Make project root importable (db.py, memory.py, usage_limits.py, etc.)
+ROOT_DIR = os.path.dirname(CURRENT_DIR)
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+
+ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
+
+# --- Safe imports with fallbacks ---
+
+try:
+    from core.logging import setup_logger
+except Exception:
+    def setup_logger():
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+
+try:
+    from db import init_db
+except Exception:
+    def init_db():
+        pass
+
+try:
+    from memory import init_memory_db
+except Exception:
+    def init_memory_db():
+        pass
+
+try:
+    from usage_limits import init_usage_db
+except Exception:
+    def init_usage_db():
+        pass
+
+try:
+    from routes import health, chat, memory, profile, stats, auth
+except Exception as e:
+    raise RuntimeError("Route import failed: " + str(e))
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
+# --- App ---
 
-from core.logging import setup_logger
-from routes import health, chat, memory, profile, stats, auth
-from db import init_db
-from memory import init_memory_db
-from usage_limits import init_usage_db
 app = FastAPI(
     title="Velora AI API",
     description="Velora AI Platform - Intelligent assistant backend",
@@ -24,7 +60,8 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# Explicit origins + regex for wildcard subdomains
+# --- CORS ---
+
 EXPLICIT_ORIGINS = [
     "https://ai-web2-roan.vercel.app",
     "http://localhost:3000",
@@ -32,7 +69,6 @@ EXPLICIT_ORIGINS = [
     "http://localhost:8000",
 ]
 
-# allow_origin_regex handles *.vercel.app and *.railway.app
 ORIGIN_REGEX = r"https://.*\.(vercel\.app|railway\.app)$"
 
 app.add_middleware(
@@ -46,17 +82,29 @@ app.add_middleware(
     max_age=600,
 )
 
+# --- Startup ---
 
 @app.on_event("startup")
 async def startup():
-    setup_logger()
-    init_db()
-    init_memory_db()
-    init_usage_db()
-    logging.getLogger("velora").info(
-        "Velora AI API started | env=%s", ENVIRONMENT,
-    )
+    try:
+        setup_logger()
+    except Exception:
+        pass
+    try:
+        init_db()
+    except Exception:
+        pass
+    try:
+        init_memory_db()
+    except Exception:
+        pass
+    try:
+        init_usage_db()
+    except Exception:
+        pass
+    logging.getLogger("velora").info("Velora AI API started | env=%s", ENVIRONMENT)
 
+# --- Global error handler ---
 
 @app.exception_handler(Exception)
 async def global_error_handler(request: Request, exc: Exception):
@@ -66,6 +114,7 @@ async def global_error_handler(request: Request, exc: Exception):
         content={"error": "internal_error", "message": "Beklenmedik bir hata olustu."},
     )
 
+# --- Routes ---
 
 app.include_router(health.router)
 app.include_router(chat.router)
