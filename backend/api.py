@@ -17,12 +17,8 @@ ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
 
 # --- Safe imports with fallbacks ---
 
-try:
-    from core.logging import setup_logger
-except Exception:
-    def setup_logger():
-        logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-
+from backend.routes import health
+    
 try:
     from db import init_db
 except Exception:
@@ -111,14 +107,5 @@ async def global_error_handler(request: Request, exc: Exception):
     logging.getLogger("velora.error").error("Unhandled error: %s", str(exc), exc_info=True)
     return JSONResponse(
         status_code=500,
-        content={"error": "internal_error", "message": "Beklenmedik bir hata olustu."},
-    )
-
-# --- Routes ---
-
-app.include_router(health.router)
-app.include_router(chat.router)
-app.include_router(memory.router)
-app.include_router(profile.router)
-app.include_router(stats.router)
-app.include_router(auth.router)
+        content={"error": "internal_error", "message": "Beklenmedik bir hata 
+                 )
