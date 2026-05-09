@@ -107,5 +107,5 @@ async def global_error_handler(request: Request, exc: Exception):
     logging.getLogger("velora.error").error("Unhandled error: %s", str(exc), exc_info=True)
     return JSONResponse(
         status_code=500,
-        content={"error": "internal_error", "message": "Beklenmedik bir hata 
+        content={"error": "internal_error", "message": "Beklenmedik bir hata"
                  )
