@@ -43,8 +43,8 @@ except Exception:
 
 try:
     from routes import health, chat, memory, profile, stats, auth
-except Exception as e:
-    raise RuntimeError("Route import failed: " + str(e))
+except Exception:
+    from backend.routes import health, chat, memory, profile, stats, auth
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
