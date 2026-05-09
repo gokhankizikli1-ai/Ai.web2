@@ -108,4 +108,3 @@ async def global_error_handler(request: Request, exc: Exception):
     return JSONResponse(
         status_code=500,
         content={"error": "internal_error", "message": "Beklenmedik bir hata"
-                 )
