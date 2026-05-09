@@ -44,6 +44,39 @@ except Exception:
 # Routes - must succeed or raise clearly
 from backend.routes import health, chat, memory, profile, stats, auth
 
+# Make project root importable (db.py, memory.py, usage_limits.py, etc.)
+ROOT_DIR = os.path.dirname(CURRENT_DIR)
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+
+ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
+
+# --- Safe imports with fallbacks ---
+
+from backend.routes import health
+    
+try:
+    from db import init_db
+except Exception:
+    def init_db():
+        pass
+
+try:
+    from memory import init_memory_db
+except Exception:
+    def init_memory_db():
+        pass
+
+try:
+    from usage_limits import init_usage_db
+except Exception:
+    def init_usage_db():
+        pass
+
+try:
+    from backend.routes import health
+except Exception:
+    from backend.routes import health
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -76,6 +109,7 @@ app.add_middleware(
     max_age=600,
 )
 
+# --- Startup ---
 
 @app.on_event("startup")
 async def startup():
@@ -97,19 +131,15 @@ async def startup():
         pass
     logging.getLogger("velora").info("Velora AI API started | env=%s", ENVIRONMENT)
 
+# --- Global error handler ---
 
 @app.exception_handler(Exception)
 async def global_error_handler(request: Request, exc: Exception):
     logging.getLogger("velora.error").error("Unhandled: %s", str(exc), exc_info=True)
     return JSONResponse(
         status_code=500,
-        content={"error": "internal_error", "message": "Beklenmedik bir hata olustu."},
+        content={
+            "error": "internal_error",
+            "message": "Beklenmedik bir hata oluştu."
+        },
     )
-
-
-app.include_router(health.router)
-app.include_router(chat.router)
-app.include_router(memory.router)
-app.include_router(profile.router)
-app.include_router(stats.router)
-app.include_router(auth.router)
