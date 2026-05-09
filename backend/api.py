@@ -9,7 +9,8 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from config import ENVIRONMENT
+import os
+ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
 from logging_config import setup_logger
 from routes import health, chat, memory, profile, stats, auth
 from db import init_db
