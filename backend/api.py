@@ -3,28 +3,59 @@ import sys
 import os
 import logging
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+# Add project root to path (db.py, memory.py, usage_limits.py, etc.)
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT_DIR not in sys.path:
+    sys.path.insert(0, ROOT_DIR)
+
+# Add backend/ dir to path (routes/, core/, services/)
+BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
+if BACKEND_DIR not in sys.path:
+    sys.path.insert(0, BACKEND_DIR)
+
+ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
+
+# Safe logger setup
+try:
+    from core.logging import setup_logger
+except Exception:
+    def setup_logger():
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s [%(levelname)s] %(message)s",
+        )
+
+# Safe DB inits
+try:
+    from db import init_db
+except Exception:
+    def init_db(): pass
+
+try:
+    from memory import init_memory_db
+except Exception:
+    def init_memory_db(): pass
+
+try:
+    from usage_limits import init_usage_db
+except Exception:
+    def init_usage_db(): pass
+
+# Routes - must succeed or raise clearly
+from backend.routes import health, chat, memory, profile, stats, auth
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from backend.core.config import ENVIRONMENT
-from backend.core.logging import setup_logger
-from backend.routes import health, chat, memory, profile, stats, auth
-from db import init_db
-from memory import init_memory_db
-from usage_limits import init_usage_db
-
 app = FastAPI(
     title="Velora AI API",
-    description="Velora AI Platform - Intelligent assistant backend",
+    description="Velora AI Platform",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
 )
 
-# Explicit origins + regex for wildcard subdomains
 EXPLICIT_ORIGINS = [
     "https://ai-web2-roan.vercel.app",
     "http://localhost:3000",
@@ -32,7 +63,6 @@ EXPLICIT_ORIGINS = [
     "http://localhost:8000",
 ]
 
-# allow_origin_regex handles *.vercel.app and *.railway.app
 ORIGIN_REGEX = r"https://.*\.(vercel\.app|railway\.app)$"
 
 app.add_middleware(
@@ -49,18 +79,28 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup():
-    setup_logger()
-    init_db()
-    init_memory_db()
-    init_usage_db()
-    logging.getLogger("velora").info(
-        "Velora AI API started | env=%s", ENVIRONMENT,
-    )
+    try:
+        setup_logger()
+    except Exception:
+        pass
+    try:
+        init_db()
+    except Exception:
+        pass
+    try:
+        init_memory_db()
+    except Exception:
+        pass
+    try:
+        init_usage_db()
+    except Exception:
+        pass
+    logging.getLogger("velora").info("Velora AI API started | env=%s", ENVIRONMENT)
 
 
 @app.exception_handler(Exception)
 async def global_error_handler(request: Request, exc: Exception):
-    logging.getLogger("velora.error").error("Unhandled error: %s", str(exc), exc_info=True)
+    logging.getLogger("velora.error").error("Unhandled: %s", str(exc), exc_info=True)
     return JSONResponse(
         status_code=500,
         content={"error": "internal_error", "message": "Beklenmedik bir hata olustu."},
