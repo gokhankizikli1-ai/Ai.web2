@@ -89,7 +89,8 @@ app = FastAPI(
 )
 
 EXPLICIT_ORIGINS = [
-    "https://ai-web2-roan.vercel.app",
+       "https://korvixai.com",
+    "https://www.korvixai.com",
     "http://localhost:3000",
     "http://localhost:5173",
     "http://localhost:8000",
