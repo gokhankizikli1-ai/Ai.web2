@@ -99,6 +99,37 @@ async def process_chat(
             if canonical:
                 cfg   = mode_get_config(canonical, depth_label, message)
                 sys_p = build_system_prompt(canonical, mem_summary, style_prompt, profile)
+
+                # Run tools for this mode and inject live data into system prompt
+                try:
+                    from backend.services.tools.tool_orchestrator import (
+                        run_tools_for_mode, build_tool_context_block,
+                    )
+                    _tf_ctx = {}
+                    for _tf in ["4h","2h","1h","30m","15m","5m","1d","4H","2H","1H","30M","15M","1D"]:
+                        if _tf in message:
+                            _tf_ctx["timeframe"] = _tf.lower()
+                            break
+                    _mode_tool_res = await run_tools_for_mode(canonical, message, _tf_ctx)
+                    _tool_block    = build_tool_context_block(_mode_tool_res)
+                    if _tool_block:
+                        sys_p += "\n\n" + _tool_block
+                        _md = _mode_tool_res.get("market_data", {})
+                        logger.info(
+                            "MARKET_DATA_TOOL called | symbol=%s | timeframe=%s | provider=%s",
+                            (_md.get("data") or {}).get("symbol"),
+                            (_md.get("data") or {}).get("timeframe"),
+                            _md.get("provider"),
+                        )
+                    else:
+                        for _tn, _tr in _mode_tool_res.items():
+                            logger.info(
+                                "TOOL %s | status=%s | msg=%s",
+                                _tn, _tr.get("status"), _tr.get("message"),
+                            )
+                except Exception as _terr:
+                    logger.warning("process_chat | mode tool error: %s — continuing without tools", _terr)
+
                 reply = await ask_ai(
                     message, sys_p, history,
                     model=cfg["model"],
@@ -118,7 +149,7 @@ async def process_chat(
         except Exception as _mode_err:
             # Mode system failed — log and fall through to existing routing.
             logger.warning("process_chat | mode_system error (%s) — falling back", _mode_err)
-    # ── End new mode system ────────────────────────────────────────────────
+    # ── End new mode system ──────────────────────────────────────────
 
     intent   = await detect_intent(message)
     category = intent.get("intent", "normal_chat")
@@ -147,6 +178,70 @@ async def process_chat(
     ai_model  = model_cfg["model"]
     ai_mode   = model_cfg.get("mode", "chat")
     provider  = model_cfg.get("provider", "openai")
+
+    # ── Auto-route: finance/crypto/stock → trading_analyst + market_data_tool ──
+    # Intercepts before legacy run_finance_analysis / data_sources path fires.
+    if category in ("finance", "crypto", "stock"):
+        try:
+            from backend.services.ai.mode_manager   import resolve_mode_name
+            from backend.services.ai.prompt_manager import build_system_prompt
+            from backend.services.ai.model_manager  import get_config as mode_get_config
+            from backend.services.tools.tool_orchestrator import (
+                run_tools_for_mode, build_tool_context_block,
+            )
+
+            _ta_cfg   = mode_get_config("trading_analyst", depth_label, message)
+            _ta_sys_p = build_system_prompt("trading_analyst", mem_summary, style_prompt, profile)
+
+            # Symbol from intent, timeframe from message text
+            _ta_ctx = {}
+            if symbol and symbol.lower() not in ("null", "none", ""):
+                _ta_ctx["symbol"] = symbol
+            for _tf in ["4h","2h","1h","30m","15m","5m","1d","4H","2H","1H","30M","15M","1D"]:
+                if _tf in message:
+                    _ta_ctx["timeframe"] = _tf.lower()
+                    break
+
+            _ta_tool_res = await run_tools_for_mode("trading_analyst", message, _ta_ctx)
+            _ta_block    = build_tool_context_block(_ta_tool_res)
+            if _ta_block:
+                _ta_sys_p += "\n\n" + _ta_block
+                _md = _ta_tool_res.get("market_data", {})
+                logger.info(
+                    "MARKET_DATA_TOOL called | symbol=%s | timeframe=%s | provider=%s",
+                    (_md.get("data") or {}).get("symbol"),
+                    (_md.get("data") or {}).get("timeframe"),
+                    _md.get("provider"),
+                )
+            else:
+                for _tn, _tr in _ta_tool_res.items():
+                    logger.info(
+                        "TOOL %s | status=%s | msg=%s",
+                        _tn, _tr.get("status"), _tr.get("message"),
+                    )
+
+            _ta_reply = await ask_ai(
+                message, _ta_sys_p, history,
+                model=_ta_cfg["model"],
+                temperature=_ta_cfg["temperature"],
+                max_tokens=_ta_cfg["max_tokens"],
+            )
+            logger.info(
+                "process_chat | route=trading_analyst | symbol=%s | model=%s",
+                symbol, _ta_cfg["model"],
+            )
+            return {
+                "reply":    _ta_reply,
+                "intent":   "trading_analyst",
+                "model":    _ta_cfg["model"],
+                "provider": _ta_cfg["provider"],
+                "mode":     "trading_analyst",
+            }
+        except Exception as _ta_err:
+            logger.warning(
+                "process_chat | trading_analyst route failed (%s) — legacy fallback", _ta_err
+            )
+    # ── End auto-route ──────────────────────────────────────────────
 
     # Follow-up detection
     _is_followup = (
