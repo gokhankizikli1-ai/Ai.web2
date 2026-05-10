@@ -139,8 +139,7 @@ async def process_chat(
         profile, _is_followup, text_lower,
     )
 
-    followups = _get_followups(ai_mode)
-
+    followups = []
     return {
         "reply":    result,
         "intent":   category,
