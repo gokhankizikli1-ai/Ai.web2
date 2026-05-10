@@ -114,7 +114,7 @@ def detect_mode(intent, user_text=""):
 
 
 def get_model_config(intent: str, depth: str = None, user_text: str = "") -> dict:
-    try:
+    
         mode = detect_mode(intent, user_text)
 
         # Override: force fast model for simple messages
