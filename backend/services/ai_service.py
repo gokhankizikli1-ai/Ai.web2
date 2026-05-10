@@ -79,11 +79,46 @@ async def process_chat(
     history: list,
     mem_summary: str,
     style_prompt: str,
+    mode: str = None,           # optional: explicit mode from frontend (e.g. "trading_analyst")
 ) -> dict:
     text_lower = message.lower().strip()
 
     depth       = detect_research_depth(message)
     depth_label = DEPTH_CONFIG[depth]["label"]
+
+    # ── New mode system: if caller supplied an explicit mode, use it directly ──
+    # This bypasses intent-based routing so behaviour is fully predictable.
+    # Falls back to legacy routing below if mode is None or unrecognised.
+    if mode:
+        try:
+            from backend.services.ai.mode_manager  import resolve_mode_name
+            from backend.services.ai.prompt_manager import build_system_prompt
+            from backend.services.ai.model_manager  import get_config as mode_get_config
+
+            canonical = resolve_mode_name(mode)
+            if canonical:
+                cfg   = mode_get_config(canonical, depth_label, message)
+                sys_p = build_system_prompt(canonical, mem_summary, style_prompt, profile)
+                reply = await ask_ai(
+                    message, sys_p, history,
+                    model=cfg["model"],
+                    temperature=cfg["temperature"],
+                    max_tokens=cfg["max_tokens"],
+                )
+                logger.info(
+                    "process_chat | mode_system | mode=%s | model=%s", canonical, cfg["model"]
+                )
+                return {
+                    "reply":    reply,
+                    "intent":   canonical,
+                    "model":    cfg["model"],
+                    "provider": cfg["provider"],
+                    "mode":     canonical,
+                }
+        except Exception as _mode_err:
+            # Mode system failed — log and fall through to existing routing.
+            logger.warning("process_chat | mode_system error (%s) — falling back", _mode_err)
+    # ── End new mode system ────────────────────────────────────────────────
 
     intent   = await detect_intent(message)
     category = intent.get("intent", "normal_chat")

@@ -16,6 +16,11 @@ class ChatRequest(BaseModel):
     chat_id: Optional[str] = None
     platform: Optional[str] = "web"
     session_id: Optional[str] = None
+    # Optional AI mode — recognized values: fast, deep_think, startup_advisor,
+    # marketing_dropshipping, trading_analyst, coding, study, research.
+    # Legacy aliases (e.g. "chat", "finance", "ecommerce") are also accepted.
+    # Omit or send null to use automatic intent-based routing (default behaviour).
+    mode: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
@@ -172,6 +177,7 @@ async def chat(req: ChatRequest):
             history=history,
             mem_summary=mem_summary,
             style_prompt=style_prompt,
+            mode=req.mode,
         )
         reply = ai_result.get("reply", "")
         intent = ai_result.get("intent", "normal_chat")
