@@ -7,6 +7,12 @@ MODEL_FAST   = "gpt-4o-mini"
 MODEL_STRONG = "gpt-4o"
 PROVIDER_OPENAI = "openai"
 
+_ROUTE_TABLE = {
+    "normal_chat": (MODEL_FAST, 0.80, 800, "casual"),
+    "coding": (MODEL_STRONG, 0.40, 2000, "analytical"),
+    "study": (MODEL_STRONG, 0.50, 1500, "educational"),
+}
+
 STRONG_INTENTS = {"finance", "crypto", "stock"}
 MEDIUM_INTENTS = {"ecommerce", "ads", "product_research", "coding", "personal_advice", "startup"}
 FAST_INTENTS   = {
