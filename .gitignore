@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env
+
+# Environment / secrets
+.env.local
+.env.*.local
+
+# Database files (SQLite — persisted on Railway volume, not in repo)
+*.db
+*.sqlite
+*.sqlite3
+
+# Build / distribution
+dist/
+build/
+*.egg-info/
+
+# Node / frontend
+node_modules/
+.next/
+out/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
