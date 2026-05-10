@@ -47,10 +47,6 @@ _EMOTIONAL_KW = [
     "motivasyonum yok", "bunaldim", "stres", "sikildim",
 ]
 _PRODUCTIVITY_KW = [
-    "dagiliyorum", "odaklanamiyorum", "zamanimi yonetemiyorum",
-    "hedefim var ama yapamiyorum", "erteliyorum", "konsantre olamiyorum",
-]
-_PRODUCTIVITY_KW = [
     "dagiliyorum", "odaklanamiyorum", "motivasyonum yok",
     "zamanimi yonetemiyorum", "hedefim var ama yapamiyorum",
     "procrastination", "erteliyorum", "konsantre olamiyorum",

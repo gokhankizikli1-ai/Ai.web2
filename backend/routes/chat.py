@@ -1,3 +1,4 @@
+# coding: utf-8
 import time
 import logging
 import uuid
@@ -31,15 +32,22 @@ class ChatResponse(BaseModel):
     suggested_followups: Optional[List[str]] = None
 
 
+def _uid(raw: str) -> int:
+    """Normalize user_id string to a stable integer."""
+    return int(raw) if raw.isdigit() else hash(raw) % 2**31
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
     request_id = str(uuid.uuid4())[:8]
     t_start = time.monotonic()
-    user_id = int(req.user_id) if req.user_id.isdigit() else hash(req.user_id) % 2**31
+    user_id = _uid(req.user_id)
     message = req.message.strip()
     platform = req.platform or "web"
 
-    # Memory list shortcut
+    logger.info("CHAT | rid=%s | uid=%s | msg_len=%d", request_id, user_id, len(message))
+
+    # ── Memory list shortcut ──────────────────────────────────────────────
     _mem_list_kw = [
         "ne hatirliyorsun", "ne hatırlıyorsun", "ne kaydettin",
         "ne biliyorsun", "hafizanda ne var",
@@ -52,10 +60,13 @@ async def chat(req: ChatRequest):
         except Exception:
             pass
         reply = ("Hafizamda bunlar var:\n\n" + summary) if summary else "Henuz bir sey kaydetmedim."
-        return _make_response(request_id, user_id, reply, "memory", "none", "none", "memory", t_start)
+        return _quick_response(request_id, user_id, reply, "memory", t_start)
 
-    # Memory save shortcut
-    _mem_save = ["bunu hatirla:", "bunu hatırla:", "hatirla:", "hafizana kaydet:", "aklinda tut:", "not al:"]
+    # ── Memory save shortcut ──────────────────────────────────────────────
+    _mem_save = [
+        "bunu hatirla:", "bunu hatırla:", "hatirla:",
+        "hafizana kaydet:", "aklinda tut:", "not al:",
+    ]
     for trigger in _mem_save:
         if message.lower().startswith(trigger):
             fact = message[len(trigger):].strip()
@@ -65,10 +76,13 @@ async def chat(req: ChatRequest):
                     save_memory(user_id, fact, "general")
                 except Exception:
                     pass
-                return _make_response(request_id, user_id, "Kaydettim.", "memory", "none", "none", "memory", t_start)
-            return _make_response(request_id, user_id, "Ne kaydetmemi istedigini anlayamadim.", "memory", "none", "none", "memory", t_start)
+                return _quick_response(request_id, user_id, "Kaydettim.", "memory", t_start)
+            return _quick_response(
+                request_id, user_id,
+                "Ne kaydetmemi istedigini anlayamadim.", "memory", t_start,
+            )
 
-    # Memory delete shortcut
+    # ── Memory delete shortcut ────────────────────────────────────────────
     if message.lower().startswith("unut:"):
         keyword = message[5:].strip()
         if keyword:
@@ -77,50 +91,54 @@ async def chat(req: ChatRequest):
                 delete_memory(user_id, keyword)
             except Exception:
                 pass
-            return _make_response(request_id, user_id, "Silindi.", "memory", "none", "none", "memory", t_start)
+        return _quick_response(request_id, user_id, "Silindi.", "memory", t_start)
 
-    # Style shortcut
+    # ── Style shortcut ────────────────────────────────────────────────────
     try:
         from backend.services.memory_service import detect_style, apply_style
         style_match = detect_style(message)
         if style_match:
             apply_style(user_id, message)
-            return _make_response(request_id, user_id, "Stil guncellendi: " + style_match["label"], "style", "none", "none", "style", t_start)
+            return _quick_response(
+                request_id, user_id,
+                "Stil guncellendi: " + style_match["label"], "style", t_start,
+            )
     except Exception:
         pass
 
-    # Usage limit check
+    # ── Usage limit check ─────────────────────────────────────────────────
     can_send = True
     try:
-        from backend.services.user_service import check_and_count
+        from backend.services.user_service import check_and_count, get_limit_info
         can_send, _ = check_and_count(user_id)
     except Exception:
         pass
 
     if not can_send:
-        used = 0
-        limit = 20
+        info = {"used": 0, "limit": 20}
         try:
-            from usage_limits import get_daily_usage, FREE_DAILY_LIMIT
-            used = get_daily_usage(user_id)
-            limit = FREE_DAILY_LIMIT
+            from backend.services.user_service import get_limit_info
+            info = get_limit_info(user_id)
         except Exception:
             pass
         reply = (
             "Gunluk ucretsiz limitin doldu. Premium ile sinirsiz kullanabilirsin.\n\n"
-            "Bugun kullandin: " + str(used) + " / " + str(limit) + " mesaj\n"
+            "Bugun kullandin: " + str(info["used"]) + " / " + str(info["limit"]) + " mesaj\n"
             "/premium yazarak detay alabilirsin."
         )
-        return _make_response(request_id, user_id, reply, "limit_exceeded", "none", "none", "system", t_start, remaining=0, premium=False)
+        return _quick_response(
+            request_id, user_id, reply, "limit_exceeded", t_start,
+            remaining=0, premium=False,
+        )
 
-    # Auto learn
+    # ── Auto-learn ────────────────────────────────────────────────────────
     try:
         from backend.services.memory_service import maybe_auto_learn
         maybe_auto_learn(user_id, message)
     except Exception:
         pass
 
-    # Build context
+    # ── Build context ─────────────────────────────────────────────────────
     profile_text = ""
     history = []
     mem_summary = ""
@@ -129,20 +147,20 @@ async def chat(req: ChatRequest):
         from backend.services.user_service import get_text_profile, get_history
         from backend.services.memory_service import get_summary, get_style
         profile_text = get_text_profile()
-        history = get_history(10)
+        history = get_history(user_id, 10)
         mem_summary = get_summary(user_id) or ""
         style_data = get_style(user_id)
         style_prompt = "Cevap stili: " + style_data["label"] + ". Talimat: " + style_data["instruction"]
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("CHAT | rid=%s | context build error: %s", request_id, e)
 
-    # AI call
+    # ── AI call ───────────────────────────────────────────────────────────
     reply = ""
     intent = "normal_chat"
     model = "gpt-4o-mini"
     prov = "openai"
     mode = "chat"
-    followups = []
+    followups: List[str] = []
 
     try:
         from backend.services.ai_service import process_chat
@@ -162,13 +180,12 @@ async def chat(req: ChatRequest):
         mode = ai_result.get("mode", "chat")
         followups = ai_result.get("followups", [])
     except Exception as e:
-        logger.error("process_chat error: " + str(e), exc_info=True)
-        reply = "Bir hata olustu, lutfen tekrar dene."
+        logger.error("CHAT | rid=%s | process_chat error: %s", request_id, e, exc_info=True)
 
     if not reply:
         reply = "Bir hata olustu, lutfen tekrar dene."
 
-    # Record usage
+    # ── Record usage ──────────────────────────────────────────────────────
     try:
         from backend.services.user_service import record_usage, save_message
         record_usage(user_id)
@@ -177,7 +194,7 @@ async def chat(req: ChatRequest):
     except Exception:
         pass
 
-    # Get profile for remaining/premium
+    # ── Profile / remaining ───────────────────────────────────────────────
     remaining = -1
     premium = False
     try:
@@ -189,6 +206,11 @@ async def chat(req: ChatRequest):
         pass
 
     elapsed_ms = int((time.monotonic() - t_start) * 1000)
+    logger.info(
+        "CHAT | rid=%s | intent=%s | model=%s | mode=%s | ms=%d",
+        request_id, intent, model, mode, elapsed_ms,
+    )
+
     return ChatResponse(
         reply=reply,
         intent=intent,
@@ -204,7 +226,16 @@ async def chat(req: ChatRequest):
     )
 
 
-def _make_response(request_id, user_id, reply, intent, model, provider, mode, t_start, remaining=-1, premium=False):
+def _quick_response(
+    request_id: str,
+    user_id: int,
+    reply: str,
+    intent: str,
+    t_start: float,
+    remaining: int = -1,
+    premium: bool = False,
+) -> ChatResponse:
+    """Build a fast shortcut response without going through AI."""
     elapsed_ms = int((time.monotonic() - t_start) * 1000)
     try:
         from backend.services.user_service import get_profile
@@ -216,9 +247,9 @@ def _make_response(request_id, user_id, reply, intent, model, provider, mode, t_
     return ChatResponse(
         reply=reply,
         intent=intent,
-        model=model,
-        provider=provider,
-        mode=mode,
+        model="none",
+        provider="none",
+        mode=intent,
         memory_used=False,
         remaining_messages=remaining,
         premium=premium,
