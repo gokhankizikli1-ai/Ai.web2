@@ -115,6 +115,14 @@ def _build_full_app():
             logger.info("DB tables OK")
         except Exception as e:
             logger.warning("DB init (non-fatal): %s", e)
+        # Phase 4A — register tools (non-fatal if tools package unavailable)
+        try:
+            import backend.services.tools  # noqa: F401 — triggers __init__ registration
+            from backend.services.tools.tool_registry import health_status
+            hs = health_status()
+            logger.info("Tools | enabled=%s | registered=%s", hs["tools_enabled"], hs["registered_tools"])
+        except Exception as _tool_err:
+            logger.warning("Tools init (non-fatal): %s", _tool_err)
 
     @_app.get("/health", tags=["system"])
     async def health():
@@ -128,6 +136,7 @@ def _build_full_app():
         "backend.routes.auth",
         "backend.routes.profile",
         "backend.routes.stats",
+        "backend.routes.tools",        # Phase 4A — /tools/health
     ]:
         try:
             _app.include_router(importlib.import_module(_mod).router)
