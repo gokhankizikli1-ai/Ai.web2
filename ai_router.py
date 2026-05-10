@@ -132,21 +132,6 @@ def get_model_config(intent: str, depth: str = None, user_text: str = "") -> dic
         logger.info("ROUTE | intent=%s | mode=%s | model=%s | style=%s", intent, mode, model, style)
         return _make_config(model, PROVIDER_OPENAI, mode, temp, tokens, style)
 
-def get_model_config(intent, depth=None, user_text=""):
-    try:
-        model = choose_ai_model(intent, depth, user_text)
-        mode  = detect_mode(intent, user_text)
-        return {
-            "model":    model,
-            "provider": PROVIDER_OPENAI,
-            "use_gpt4": model == MODEL_STRONG,
-            "mode":     mode,
-        }
-    except Exception as e:
-        logger.warning("get_model_config error: " + str(e))
-        return _make_config(MODEL_FAST, PROVIDER_OPENAI, "chat", 0.80, 800, "casual")
-
-
 def _make_config(model, provider, mode, temperature, max_tokens, style) -> dict:
     return {
         "model":       model,
