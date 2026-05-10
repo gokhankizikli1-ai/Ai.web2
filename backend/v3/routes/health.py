@@ -1,7 +1,7 @@
 # coding: utf-8
 """
 v3 health route — thin, fast, Railway-safe.
-Phase 2: mount this instead of backend/routes/health.py
+Phase 2: mount this via backend.v3.routes.health instead of backend.routes.health
 """
 from fastapi import APIRouter
 from backend.core.config import settings
