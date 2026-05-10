@@ -197,14 +197,9 @@ async def _route(
                 message, tool_context, mem_summary, style_prompt, use_gpt4, model=ai_model,
             )
         except Exception as e:
-            logger.error("run_ecommerce_analysis error: " + str(e))
+            logger.error("run_ecommerce_analysis error: %s", e)
             sys_p = _build_system(DROP_SYSTEM, mem_summary, style_prompt)
-            return await ask_ai(message, sys_p, history, model=ai_model, **kw)
-
-    # Startup
-    if ai_mode == "startup":
-        sys_p = _build_system(STARTUP_SYSTEM, mem_summary, style_prompt, profile)
-        return await ask_ai(message, sys_p, history, model=ai_model, **kw)
+            return await ask_ai(message, sys_p, history, model=ai_model)
 
     # --- Startup mode ---
     if ai_mode == "startup":
@@ -218,7 +213,7 @@ async def _route(
             tool_context + "\n\n" +
             "En onemli haberleri ozetle, kisa yorum ekle."
         )
-        return await ask_ai(news_prompt, "Haber editorusun. Net, Turkce.", model=ai_model, **kw)
+        return await ask_ai(news_prompt, "Haber editorusun. Net, Turkce.", history, model=ai_model)
 
     # --- Consumer advice ---
     if category == "consumer_advice":
