@@ -3,111 +3,55 @@ import sys
 import os
 import logging
 
-# Add project root to path (db.py, memory.py, usage_limits.py, etc.)
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if ROOT_DIR not in sys.path:
-    sys.path.insert(0, ROOT_DIR)
-
-# Add backend/ dir to path (routes/, core/, services/)
+# Ensure project root and backend/ are on sys.path for Railway
 BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
-if BACKEND_DIR not in sys.path:
-    sys.path.insert(0, BACKEND_DIR)
+ROOT_DIR    = os.path.dirname(BACKEND_DIR)
+for _dir in [ROOT_DIR, BACKEND_DIR]:
+    if _dir not in sys.path:
+        sys.path.insert(0, _dir)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger("korvix")
 
 ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
 
-# Safe logger setup
-try:
-    from core.logging import setup_logger
-except Exception:
-    def setup_logger():
-        logging.basicConfig(
-            level=logging.INFO,
-            format="%(asctime)s [%(levelname)s] %(message)s",
-        )
-
-# Safe DB inits
-try:
-    from db import init_db
-except Exception:
-    def init_db(): pass
-
-try:
-    from memory import init_memory_db
-except Exception:
-    def init_memory_db(): pass
-
-try:
-    from usage_limits import init_usage_db
-except Exception:
-    def init_usage_db(): pass
-
-# Routes - must succeed or raise clearly
-from backend.routes import health, chat, memory, profile, stats, auth
-
-# Make project root importable (db.py, memory.py, usage_limits.py, etc.)
-if ROOT_DIR not in sys.path:
-    sys.path.insert(0, ROOT_DIR)
-
-ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
-
-# --- Safe imports with fallbacks ---
-
-from backend.routes import health
-    
-try:
-    from db import init_db
-except Exception:
-    def init_db():
-        pass
-
-try:
-    from memory import init_memory_db
-except Exception:
-    def init_memory_db():
-        pass
-
-try:
-    from usage_limits import init_usage_db
-except Exception:
-    def init_usage_db():
-        pass
-
-try:
-    from backend.routes import health
-except Exception:
-    from backend.routes import health
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from backend.routes.chat import router as chat_router
+
+FALLBACK_RESPONSE = {
+    "response":  "Su anda bir sorun olustu. Lutfen tekrar deneyin.",
+    "followups": [],
+    "mode":      "fallback",
+    "provider":  "system",
+}
+
 app = FastAPI(
-    title="Velora AI API",
-    description="Velora AI Platform",
+    title="KorvixAI API",
+    description="KorvixAI Backend",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
 )
-app.include_router(health.router, prefix="/health", tags=["health"])
-app.include_router(chat.router, prefix="/chat", tags=["chat"])
-app.include_router(memory.router, prefix="/memory", tags=["memory"])
-app.include_router(profile.router, prefix="/profile", tags=["profile"])
-app.include_router(stats.router, prefix="/stats", tags=["stats"])
-app.include_router(auth.router, prefix="/auth", tags=["auth"])
 
-EXPLICIT_ORIGINS = [
-       "https://korvixai.com",
+ALLOWED_ORIGINS = [
+    "https://korvixai.com",
     "https://www.korvixai.com",
+    "https://ai-web2-roan.vercel.app",
     "http://localhost:3000",
     "http://localhost:5173",
     "http://localhost:8000",
 ]
 
-ORIGIN_REGEX = r"https://.*\.(vercel\.app|railway\.app)$"
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=EXPLICIT_ORIGINS,
-    allow_origin_regex=ORIGIN_REGEX,
+    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=r"https://.*\.(vercel\.app|railway\.app)$",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
@@ -115,37 +59,21 @@ app.add_middleware(
     max_age=600,
 )
 
-# --- Startup ---
 
 @app.on_event("startup")
 async def startup():
-    try:
-        setup_logger()
-    except Exception:
-        pass
-    try:
-        init_db()
-    except Exception:
-        pass
-    try:
-        init_memory_db()
-    except Exception:
-        pass
-    try:
-        init_usage_db()
-    except Exception:
-        pass
-    logging.getLogger("velora").info("Velora AI API started | env=%s", ENVIRONMENT)
+    logger.info("KorvixAI API started | env=%s", ENVIRONMENT)
 
-# --- Global error handler ---
 
 @app.exception_handler(Exception)
-async def global_error_handler(request: Request, exc: Exception):
-    logging.getLogger("velora.error").error("Unhandled: %s", str(exc), exc_info=True)
-    return JSONResponse(
-        status_code=500,
-        content={
-            "error": "internal_error",
-            "message": "Beklenmedik bir hata oluştu."
-        },
-    )
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error("Unhandled exception: %s %s | error: %s", request.method, request.url, str(exc), exc_info=True)
+    return JSONResponse(status_code=500, content=FALLBACK_RESPONSE)
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
+
+
+app.include_router(chat_router)
