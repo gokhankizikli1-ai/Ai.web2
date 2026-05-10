@@ -31,6 +31,9 @@ _INTENT_TO_MODE: dict = {
     # Research / news
     "news":             "research",
     "research":         "research",
+    # Website / landing pages
+    "website":          "website_builder",
+    "landing":          "website_builder",
     # Everything else falls back to fast
 }
 
