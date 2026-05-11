@@ -41,4 +41,11 @@ def tools_health() -> dict:
     except Exception as exc:
         logger.debug("/tools/health: safety stats unavailable: %s", exc)
 
+    # Phase M1 — memory service stats (legacy vs new client).
+    try:
+        from backend.services.memory_service import stats as memory_stats
+        out["memory"] = memory_stats()
+    except Exception as exc:
+        logger.debug("/tools/health: memory stats unavailable: %s", exc)
+
     return out
