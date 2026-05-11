@@ -1,4 +1,4 @@
-# KorvixAI — Tools Architecture (Phase 5.2)
+# KorvixAI — Tools Architecture (Phase M1)
 
 ## Overview
 
@@ -17,7 +17,11 @@ or returns an error, the AI response continues normally without it.
 | **5**  | Advanced trading intelligence (MTF + futures + macro + plan + signal) | ✅ Done |
 | **5.1** | Operator-grade trading (smart money zones, trapped traders, plan v2, thesis memory) | ✅ Done |
 | **5.2** | Stabilization & polish (cache + backoff + safety guard + trading card UI + error UX) | ✅ Done |
-| **6A** | Position Manager AI (live trade monitoring, partial profit logic) | 🔜 Planned |
+| **M1** | Memory service (typed client, multi-workspace-ready, flag-gated) | ✅ Done |
+| **M2** | Server-side sessions (workspaces, threads, messages tables) | 🔜 Next OS phase |
+| **A1** | Agent runtime skeleton (planner / executor / reflector) | 🔜 Planned |
+| **R1** | Research provider (Tavily) wired into web_research_tool | 🔜 Planned |
+| **6A** | Position Manager AI (live trade monitoring, partial profit logic) | ⏸ Deprioritized (T-series) |
 | **6B** | Alert engine (watchlists, breakouts, liquidation spikes) | 🔜 Planned |
 | **6C** | Auto trade journal (psychology + performance analytics) | 🔜 Planned |
 | **6D** | Extended macro (ETF flows, CPI, FED, earnings, geo risk) | 🔜 Planned |
@@ -226,6 +230,83 @@ backend extracts it, strips it from the displayed reply, and returns it in
 `market_data` + `macro_data` results for frontend cards (with
 `directional_bias`, `setup_grade`, `fakeout_risk`, `liquidity_risk`,
 `trapped_traders`, `positioning_signal`).
+
+## Memory Service (Phase M1)
+
+The first foundation phase of the AI Operating System roadmap
+(see `KORVIX_OS_ROADMAP.md` for the full plan).
+
+### Why
+Three previously-fragmented memory paths (`memory.py` root SQLite, `db.py`
+legacy tables, in-process thesis cache) get one stable public surface to
+migrate behind. No data is moved in M1 — the legacy SQLite tables remain
+the source of truth. M2 will land the multi-workspace schema migration.
+
+### Package
+```
+backend/services/memory/
+├── __init__.py     # exports `client`, MemoryItem, StyleDef, WindowMessage
+├── types.py        # dataclasses + MEMORY_KINDS taxonomy
+├── store.py        # SQLite adapter (wraps legacy memory.py)
+├── short_term.py   # in-process conversation window (per-thread)
+└── client.py       # MemoryClient — stable public surface
+```
+
+### Public API
+```python
+from backend.services.memory import client
+
+client.remember(user_id, content, kind="fact", workspace_id=None)
+client.recall(user_id, kind=None, workspace_id=None, limit=15)
+client.forget(user_id, keyword, workspace_id=None)
+client.summarize(user_id, workspace_id=None)
+client.list_for_user(user_id, workspace_id=None, limit=20)
+client.maybe_auto_learn(user_id, message, workspace_id=None)
+
+client.detect_style(message)                # stateless
+client.apply_style(user_id, message)
+client.get_style(user_id)
+client.style_prompt(user_id)
+
+client.window_append(thread_id, role, content, metadata=None)
+client.window_recent(thread_id, max_messages=10)
+client.window_clear(thread_id)
+
+client.stats()
+```
+
+`workspace_id` is accepted by every method that touches per-user data so
+M2's multi-workspace migration does not change any call signature.
+
+### Feature flag
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `ENABLE_NEW_MEMORY` | `false` | When `true`, `backend/services/memory_service.py` delegates to `MemoryClient`. When unset/false, the legacy `memory.py` direct calls run unchanged. One-line rollback. |
+
+Both paths produce identical observable behaviour. Compatibility is verified
+by the M1 smoke tests.
+
+### Observability
+`GET /tools/health` now returns a `memory` sub-object:
+```json
+"memory": {
+  "backend": "new_client" | "legacy",
+  "flag_enable_new_memory": true,
+  "store": { "remembers": 0, "recalls": 0, "forgets": 0, "summarizes": 0,
+             "style_writes": 0, "style_reads": 0, "auto_learns": 0,
+             "errors": 0, "last_error": "" },
+  "short_term": { "appends": 0, "recalls": 0, "clears": 0, "evictions": 0,
+                  "threads": 0, "max_threads": 2000 },
+  "default_workspace": "personal"
+}
+```
+
+### Rollback playbook
+1. Set `ENABLE_NEW_MEMORY=false` (or delete the env var) on Railway and
+   restart. The legacy direct-call path resumes immediately.
+2. Optionally revert the M1 PR — but step 1 is sufficient and zero-downtime.
+
+---
 
 ## Stabilization Layer (Phase 5.2)
 
