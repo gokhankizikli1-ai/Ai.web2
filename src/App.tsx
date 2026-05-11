@@ -5,6 +5,7 @@ import UseCasesPage from './pages/UseCasesPage';
 import PricingPage from './pages/PricingPage';
 import AboutPage from './pages/AboutPage';
 import ChatDashboard from './pages/ChatDashboard';
+import SettingsPage from './pages/SettingsPage';
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
       <Route path="/pricing" element={<PricingPage />} />
       <Route path="/about" element={<AboutPage />} />
       <Route path="/chat" element={<ChatDashboard />} />
+      <Route path="/settings" element={<SettingsPage />} />
     </Routes>
   );
 }

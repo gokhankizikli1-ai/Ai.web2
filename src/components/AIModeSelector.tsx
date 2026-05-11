@@ -34,15 +34,15 @@ export default function AIModeSelector({ currentMode, onModeChange }: AIModeSele
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 rounded-lg bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.06] hover:border-white/[0.1] px-2.5 py-[5px] transition-all duration-200"
+        className="flex items-center gap-1.5 rounded-md bg-white/[0.015] hover:bg-white/[0.03] border border-white/[0.04] hover:border-white/[0.06] px-2.5 py-[5px] transition-all duration-150"
         title={`Mode: ${current.label}`}
       >
-        <span className="text-cyan-400/70">{current.icon}</span>
-        <span className="text-[11px] font-medium text-slate-400 hidden sm:inline">{current.label}</span>
+        <span className="text-slate-500">{current.icon}</span>
+        <span className="text-[11px] text-slate-400 hidden sm:inline">{current.label}</span>
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 mt-1.5 w-52 rounded-xl border border-white/[0.08] bg-[#0f0f16] backdrop-blur-xl shadow-2xl z-50 py-1.5 animate-fade-in">
+        <div className="absolute top-full left-0 mt-1.5 w-52 rounded-lg border border-white/[0.06] bg-[#0c0c10] shadow-2xl z-50 py-1">
           {MODES.map((mode) => (
             <button
               key={mode.id}
@@ -52,21 +52,21 @@ export default function AIModeSelector({ currentMode, onModeChange }: AIModeSele
               }}
               className={`w-full flex items-center gap-2.5 px-3 py-2 text-left transition-all duration-150 ${
                 currentMode === mode.id
-                  ? 'bg-white/[0.05] text-white'
-                  : 'text-slate-400 hover:bg-white/[0.03] hover:text-slate-200'
+                  ? 'bg-white/[0.03] text-white'
+                  : 'text-slate-500 hover:bg-white/[0.015] hover:text-slate-300'
               }`}
             >
-              <span className={currentMode === mode.id ? 'text-cyan-400' : 'text-slate-600'}>
+              <span className={currentMode === mode.id ? 'text-slate-400' : 'text-slate-700'}>
                 {mode.icon}
               </span>
               <div className="flex-1 min-w-0">
-                <div className="text-[12px] font-medium flex items-center gap-1.5">
+                <div className="text-[12px] flex items-center gap-1.5">
                   {mode.label}
                   {currentMode === mode.id && (
-                    <Check className="h-3 w-3 text-cyan-400" />
+                    <Check className="h-3 w-3 text-slate-500" />
                   )}
                 </div>
-                <div className="text-[10px] text-slate-600 leading-tight">{mode.description}</div>
+                <div className="text-[10px] text-slate-700 leading-tight">{mode.description}</div>
               </div>
             </button>
           ))}

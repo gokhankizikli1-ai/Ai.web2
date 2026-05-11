@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Check, Copy } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter';
 import vscDarkPlus from 'react-syntax-highlighter/dist/esm/styles/prism/vsc-dark-plus';
 
@@ -75,7 +74,7 @@ export default function CodeBlock({ language = 'text', children }: CodeBlockProp
     'pre[class*="language-"]': {
       background: 'transparent',
       margin: 0,
-      padding: '16px 0',
+      padding: '14px 0',
       fontSize: '13px',
       lineHeight: '1.7',
       borderRadius: 0,
@@ -89,43 +88,34 @@ export default function CodeBlock({ language = 'text', children }: CodeBlockProp
   };
 
   return (
-    <div className="my-3 rounded-xl overflow-hidden border border-white/[0.07] bg-[#0c0c14] message-shadow group/code">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 bg-white/[0.02] border-b border-white/[0.04]">
-        <div className="flex items-center gap-2">
-          <div className="flex gap-1">
-            <div className="w-2.5 h-2.5 rounded-full bg-red-500/60" />
-            <div className="w-2.5 h-2.5 rounded-full bg-amber-500/60" />
-            <div className="w-2.5 h-2.5 rounded-full bg-green-500/60" />
-          </div>
-          <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider ml-2">
-            {displayLang}
-          </span>
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
+    <div className="my-3 rounded-lg overflow-hidden border border-white/[0.04] bg-[#0a0a0e] group/code">
+      {/* Header - minimal, monochrome */}
+      <div className="flex items-center justify-between px-3.5 py-1.5 bg-white/[0.015] border-b border-white/[0.03]">
+        <span className="text-[11px] text-slate-700 uppercase tracking-wider">
+          {displayLang}
+        </span>
+        <button
           onClick={handleCopy}
-          className="h-7 gap-1.5 px-2 text-[11px] text-slate-500 hover:text-white hover:bg-white/[0.06] transition-all duration-200 rounded-md"
+          className="flex items-center gap-1 px-1.5 py-0.5 text-[11px] text-slate-700 hover:text-slate-400 hover:bg-white/[0.03] transition-all duration-150 rounded"
         >
           {copied ? (
             <>
-              <Check className="h-3.5 w-3.5 text-green-400" />
-              <span className="text-green-400">Copied</span>
+              <Check className="h-3 w-3" />
+              <span>Copied</span>
             </>
           ) : (
             <>
-              <Copy className="h-3.5 w-3.5" />
+              <Copy className="h-3 w-3" />
               <span>Copy</span>
             </>
           )}
-        </Button>
+        </button>
       </div>
 
       {/* Code */}
-      <div className="px-4 overflow-x-auto">
+      <div className="px-3.5 overflow-x-auto">
         {lang === 'text' ? (
-          <pre className="py-4">
+          <pre className="py-3.5">
             <code className="text-[13px] font-mono text-slate-300 leading-relaxed whitespace-pre">
               {children}
             </code>

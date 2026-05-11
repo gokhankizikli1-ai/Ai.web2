@@ -1,9 +1,10 @@
+import { useState } from 'react';
 import { User, Sparkles, Pin, PinOff } from 'lucide-react';
 import { useStreamingText } from '@/hooks/useStreamingText';
 import MarkdownMessage from './MarkdownMessage';
 import MessageActions from './MessageActions';
+import MessageHoverActions from './MessageHoverActions';
 import ResponseActions from './ResponseActions';
-import TradingSignalCard from './TradingSignalCard';
 import type { Message } from '@/types';
 
 interface MessageBubbleProps {
@@ -15,6 +16,7 @@ interface MessageBubbleProps {
   onPin?: (msg: Message) => void;
   onRegenerate?: () => void;
   onResponseAction?: (action: string) => void;
+  onHoverAction?: (action: string, prompt: string) => void;
 }
 
 export default function MessageBubble({
@@ -26,29 +28,31 @@ export default function MessageBubble({
   onPin,
   onRegenerate,
   onResponseAction,
+  onHoverAction,
 }: MessageBubbleProps) {
   const isUser = role === 'user';
-  const { displayedText, isComplete } = useStreamingText(content, 12, shouldAnimate);
+  const { displayedText, isComplete } = useStreamingText(content, 15, shouldAnimate);
   const displayContent = shouldAnimate ? displayedText : content;
+  const [showHoverActions, setShowHoverActions] = useState(false);
 
   return (
     <div
-      className={`group/message flex gap-3.5 ${
-        isUser ? 'flex-row-reverse animate-slide-in-right' : 'animate-slide-in-left'
-      }`}
+      className={`group/message flex gap-3 ${isUser ? 'flex-row-reverse' : ''}`}
+      onMouseEnter={() => setShowHoverActions(true)}
+      onMouseLeave={() => setShowHoverActions(false)}
     >
       {/* Avatar */}
       <div
-        className={`flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[10px] mt-0.5 transition-transform duration-300 group-hover/message:scale-105 ${
+        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg mt-0.5 transition-all duration-200 ${
           isUser
-            ? 'bg-slate-700/50 border border-white/[0.05]'
-            : 'bg-gradient-to-br from-cyan-400 to-blue-600 shadow-md shadow-cyan-500/12'
+            ? 'bg-white/[0.03] border border-white/[0.06]'
+            : 'bg-gradient-to-br from-cyan-400/20 to-blue-500/20 border border-cyan-500/15 shadow-[0_0_8px_-2px_rgba(34,211,238,0.08)]'
         }`}
       >
         {isUser ? (
-          <User className="h-[14px] w-[14px] text-slate-300" />
+          <User className="h-3.5 w-3.5 text-slate-500" />
         ) : (
-          <Sparkles className="h-[14px] w-[14px] text-white" />
+          <Sparkles className="h-3.5 w-3.5 text-cyan-400/80" />
         )}
       </div>
 
@@ -58,8 +62,8 @@ export default function MessageBubble({
         <div
           className={`${
             isUser
-              ? 'rounded-[18px] rounded-tr-[6px] bg-blue-600/[0.1] border border-blue-500/[0.1] text-slate-200 px-[18px] py-[14px] message-shadow'
-              : 'rounded-[18px] rounded-tl-[6px] bg-white/[0.025] border border-white/[0.05] text-slate-300 px-[18px] py-[14px] message-shadow hover:border-white/[0.07] transition-colors duration-300'
+              ? 'rounded-2xl rounded-tr-sm bg-white/[0.03] border border-white/[0.06] text-slate-200 px-5 py-3.5 hover:border-white/[0.08] transition-all duration-200'
+              : 'rounded-2xl rounded-tl-sm bg-white/[0.015] border border-white/[0.04] text-slate-300 px-5 py-3.5 hover:border-white/[0.07] transition-all duration-200 group-hover/message:bg-white/[0.02]'
           }`}
         >
           {isUser ? (
@@ -69,7 +73,7 @@ export default function MessageBubble({
               {shouldAnimate && !isComplete ? (
                 <div className="text-[14px] leading-[1.7] whitespace-pre-wrap">
                   {displayContent}
-                  <span className="inline-block w-[2px] h-[18px] ml-[3px] bg-cyan-400/70 animate-caret-blink align-middle rounded-full" />
+                  <span className="inline-block w-[2px] h-4 ml-1 bg-cyan-400/50 animate-caret-blink align-middle rounded-full" />
                 </div>
               ) : (
                 <MarkdownMessage content={displayContent} />
@@ -78,40 +82,38 @@ export default function MessageBubble({
           )}
         </div>
 
-        {/* Phase 5.2 — Structured trading signal card.
-            Renders only when the AI ran trading_analyst mode AND streaming has
-            finished. Safe to mount on every assistant bubble — returns null
-            when no signal is present. */}
-        {!isUser && isComplete && fullMessage.metadata?.trading_signal && (
-          <TradingSignalCard signal={fullMessage.metadata.trading_signal} />
-        )}
-
         {/* Actions row */}
         {!isUser && isComplete && (
-          <div className="flex items-center gap-2 mt-1 pl-1">
+          <div className="flex items-center gap-1 mt-1 pl-1">
             <MessageActions content={content} onRegenerate={onRegenerate} />
 
-            {/* Pin button */}
             {onPin && (
               <button
                 onClick={() => onPin(fullMessage)}
-                className={`flex items-center gap-1 rounded-md px-1.5 py-[2px] text-[10px] transition-all duration-200 ${
+                className={`flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] transition-all duration-200 ${
                   isPinned
-                    ? 'text-cyan-400 bg-cyan-500/10'
-                    : 'text-slate-700 hover:text-slate-400 hover:bg-white/[0.03] opacity-0 group-hover/message:opacity-100'
+                    ? 'text-cyan-400/60 bg-cyan-500/[0.06]'
+                    : 'text-slate-700 hover:text-cyan-400 hover:bg-cyan-500/[0.06] opacity-0 group-hover/message:opacity-100'
                 }`}
                 title={isPinned ? 'Unpin' : 'Pin'}
               >
                 {isPinned ? <PinOff className="h-3 w-3" /> : <Pin className="h-3 w-3" />}
-                {isPinned ? 'Pinned' : 'Pin'}
               </button>
             )}
           </div>
         )}
 
-        {/* Response quality actions */}
+        {/* Hover Actions */}
+        {!isUser && onHoverAction && (
+          <MessageHoverActions
+            content={content}
+            onAction={onHoverAction}
+            isVisible={showHoverActions && isComplete}
+          />
+        )}
+
         {!isUser && onResponseAction && (
-          <div className="pl-1">
+          <div className="pl-1 mt-0.5">
             <ResponseActions onAction={onResponseAction} />
           </div>
         )}
