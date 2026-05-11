@@ -1,4 +1,4 @@
-# KorvixAI — Tools Architecture (Phase R1)
+# KorvixAI — Tools Architecture (Phase W1)
 
 ## Overview
 
@@ -22,6 +22,7 @@ or returns an error, the AI response continues normally without it.
 | **M2** | Server-side sessions (workspaces, threads, messages tables) | ✅ Done |
 | **A1** | Agent runtime skeleton (research mode only, flag-gated) | ✅ Done |
 | **R1** | Research provider (Tavily) wired into web_research_tool | ✅ Done |
+| **W1** | Server-side sessions frontend (useChat syncs to /sessions/*) | ✅ Done |
 | **M3** | Unified schema migration (workspace_id activation across all stores) | 🔜 Next OS phase |
 | **6A** | Position Manager AI (live trade monitoring, partial profit logic) | ⏸ Deprioritized (T-series) |
 | **6B** | Alert engine (watchlists, breakouts, liquidation spikes) | 🔜 Planned |
@@ -288,6 +289,69 @@ landed without needing direct Railway access.
 ```
 
 Backward compatible: `status` and `version` keys preserved exactly.
+
+---
+
+## Server-Side Sessions Frontend (Phase W1)
+
+First user-visible win of the M-series: chat sessions and messages now
+persist on the server (when activated), making **cross-device continuity**
+possible. The frontend probes `/sessions/health` at mount; if the backend
+reports `enabled=true`, `useChat` mirrors all session activity into the M2
+tables. Otherwise behaviour is byte-for-byte pre-W1 (in-memory state only).
+
+### Why
+Phase M2 shipped server-side session storage but nothing wrote to it. W1
+wires the React side so opening the app on a second device shows your
+threads, and message history survives reloads.
+
+### What ships
+| File | Change |
+|---|---|
+| `src/lib/sessionsApi.ts` | **NEW** — typed client over `/sessions/*` with timeouts, AbortController, silent degrade on 503/network errors |
+| `src/hooks/useChat.ts` | Probes `/sessions/health` on mount; when enabled, ensures default workspace, lists remote threads, hydrates messages on selection, mirrors create / rename / delete / append to the server (all fire-and-forget) |
+| `src/types/index.ts` | `ChatSession` gains `serverThreadId`, `serverWorkspaceId`, `syncStatus`; `Message` gains `serverMessageId` |
+
+### Activation switch — single env var
+| Variable | Default | Effect |
+|---|---|---|
+| `ENABLE_SESSIONS` (Railway) | `false` | When `true`, frontend's `/sessions/health` probe returns `enabled=true` and useChat activates server-side mirroring. When unset/false, useChat behaves exactly like pre-W1. |
+
+**No frontend env var to flip.** The backend flag controls both layers.
+
+### Behaviour matrix
+| Mode | Sessions in localStorage | Sessions on server | Cross-device | Reload survives |
+|---|---|---|---|---|
+| Flag off (default) | in-memory only (lost on reload) | not written | ❌ | ❌ |
+| Flag on | in-memory + mirrored | written via M2 routes | ✅ | ✅ |
+
+### Sync model (best-effort, optimistic)
+- All UI updates are local-first; server mirroring runs fire-and-forget.
+- A server-side failure never breaks the chat — error is logged, the
+  session keeps `syncStatus: 'unsynced'` or `'error'`.
+- Demo chats (`isDemo: true`) are never mirrored.
+
+### Tested
+- TypeScript clean across all 3 touched files (`tsc --noEmit`).
+- 10 structural patterns verified: health probe in `useEffect`,
+  `serverEnabled` state setter, `ensureDefaultWorkspace` at mount,
+  `createThread` on `createNewChat`, `appendMessage` for user + assistant
+  turns, `archiveThread` on `deleteSession`, lazy `listMessages` on
+  `selectSession`, `updateThread` on title bump, `serverEnabled`
+  surfaced from the hook.
+- 4 `serverEnabled` guards present.
+
+### Rollback
+1. Set `ENABLE_SESSIONS=false` (or unset) on Railway, restart.
+2. `/sessions/health` returns `enabled=false`; useChat reverts to local-only.
+3. Existing server-side data sits idle in `sessions.db` (or delete the file).
+4. Zero frontend redeploy needed.
+
+### Out of scope (deliberate — follow-up PRs)
+- **Workspace selector UI** — W2: sidebar header that lists workspaces.
+- **Inspector pane** — W3: render `metadata.agent.trace` etc.
+- **Conflict resolution** — concurrent edit from another device. Today
+  the last-write-wins; W4+ will add basic OCC if needed.
 
 ---
 

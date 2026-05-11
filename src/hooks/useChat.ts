@@ -1,6 +1,10 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import type { ChatSession, Message, MessageMetadata, AIMode, ChatFolder } from '@/types';
 import { placeholderChats } from '@/data/placeholderChats';
+import {
+  getHealth, ensureDefaultWorkspace, listThreads, listMessages,
+  createThread, appendMessage, archiveThread, updateThread,
+} from '@/lib/sessionsApi';
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
@@ -64,11 +68,58 @@ export function useChat() {
   const [lastUserMessage, setLastUserMessage] = useState<string | null>(null);
   const userIdRef = useRef<string>(getUserId());
 
+  // Phase W1 — server-side session sync state.
+  // `serverEnabled` is determined ONCE on mount by probing /sessions/health.
+  // `serverWorkspaceId` is the user's "personal" workspace id (idempotent).
+  // Both stay null when the backend reports ENABLE_SESSIONS=false → all sync
+  // operations short-circuit and the UI behaves exactly like pre-W1.
+  const [serverEnabled, setServerEnabled] = useState(false);
+  const serverWorkspaceIdRef = useRef<string | null>(null);
+
   // New state
   const [aiMode, setAiMode] = useState<AIMode>('fast');
   const [pinnedMessages, setPinnedMessages] = useState<Message[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [inputText, setInputText] = useState('');
+
+  // ── Phase W1: hydrate from server on mount (fire-and-forget) ────────────
+  // Probes /sessions/health once. If enabled, ensures the personal workspace,
+  // pulls remote threads, and merges any non-demo local sessions into the
+  // server side. Errors are swallowed — the local-only path keeps working.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const health = await getHealth();
+      if (cancelled || !health?.enabled) return;
+      setServerEnabled(true);
+
+      const ws = await ensureDefaultWorkspace(userIdRef.current);
+      if (cancelled || !ws) return;
+      serverWorkspaceIdRef.current = ws.id;
+
+      const remote = await listThreads(ws.id, { limit: 50 });
+      if (cancelled || remote.length === 0) return;
+
+      // Merge: only ADD remote threads we don't already have. Demo chats stay.
+      // For each new server thread, hydrate its messages on selection (lazy).
+      setSessions((prev) => {
+        const known = new Set(prev.map((s) => s.serverThreadId).filter(Boolean) as string[]);
+        const additions: ChatSession[] = remote
+          .filter((t) => !known.has(t.id))
+          .map((t) => ({
+            id:                t.id,
+            title:             t.title || 'New Conversation',
+            messages:          [],
+            updatedAt:         t.updated_at ? new Date(t.updated_at) : new Date(),
+            serverThreadId:    t.id,
+            serverWorkspaceId: ws.id,
+            syncStatus:        'synced',
+          }));
+        return additions.length ? [...additions, ...prev] : prev;
+      });
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const activeSession = sessions.find((s) => s.id === activeSessionId) || sessions[0];
 
@@ -84,18 +135,65 @@ export function useChat() {
       title: 'New Conversation',
       messages: [],
       updatedAt: new Date(),
+      syncStatus: 'unsynced',
     };
     setSessions((prev) => [newSession, ...prev]);
     setActiveSessionId(newSession.id);
     setError(null);
-  }, []);
+
+    // Phase W1 — mirror to server (best effort).
+    if (serverEnabled && serverWorkspaceIdRef.current) {
+      (async () => {
+        const t = await createThread(serverWorkspaceIdRef.current!, {
+          title: newSession.title,
+          mode:  toBackendMode(aiMode),
+        });
+        if (!t) return;
+        setSessions((prev) =>
+          prev.map((s) =>
+            s.id === newSession.id
+              ? { ...s, serverThreadId: t.id, serverWorkspaceId: t.workspace_id, syncStatus: 'synced' }
+              : s,
+          ),
+        );
+      })();
+    }
+  }, [serverEnabled, aiMode]);
 
   const selectSession = useCallback((id: string) => {
     setActiveSessionId(id);
     setError(null);
-  }, []);
+
+    // Phase W1 — lazy-hydrate messages when we open a server-known thread
+    // that has no local messages yet (came from the listThreads merge).
+    const session = sessions.find((s) => s.id === id);
+    if (!session || !session.serverThreadId || session.messages.length > 0) return;
+    if (!serverEnabled) return;
+    const threadId = session.serverThreadId;
+    (async () => {
+      const remote = await listMessages(threadId, { limit: 200 });
+      if (remote.length === 0) return;
+      const hydrated: Message[] = remote.map((m) => ({
+        id:              m.id,
+        role:            (m.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant',
+        content:         m.content,
+        timestamp:       m.created_at ? new Date(m.created_at) : new Date(),
+        metadata:        (m.metadata && Object.keys(m.metadata).length ? (m.metadata as MessageMetadata) : undefined),
+        serverMessageId: m.id,
+      }));
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.serverThreadId === threadId && s.messages.length === 0
+            ? { ...s, messages: hydrated }
+            : s,
+        ),
+      );
+    })();
+  }, [sessions, serverEnabled]);
 
   const deleteSession = useCallback((id: string) => {
+    // Capture remote id BEFORE mutating local state.
+    const removed = sessions.find((s) => s.id === id);
     setSessions((prev) => {
       const filtered = prev.filter((s) => s.id !== id);
       if (filtered.length === 0) {
@@ -104,6 +202,7 @@ export function useChat() {
           title: 'New Conversation',
           messages: [],
           updatedAt: new Date(),
+          syncStatus: 'unsynced',
         };
         setActiveSessionId(newSession.id);
         return [newSession];
@@ -114,7 +213,12 @@ export function useChat() {
       return filtered;
     });
     setError(null);
-  }, [activeSessionId]);
+
+    // Phase W1 — archive remote thread if synced.
+    if (serverEnabled && removed?.serverThreadId) {
+      archiveThread(removed.serverThreadId);   // fire-and-forget
+    }
+  }, [activeSessionId, sessions, serverEnabled]);
 
   const doSend = useCallback(async (content: string) => {
     if (!content.trim()) return;
@@ -130,6 +234,13 @@ export function useChat() {
       timestamp: new Date(),
     };
 
+    // Compute the new title eagerly so we can mirror it to the server below.
+    const sessionBefore = sessions.find((s) => s.id === activeSessionId);
+    const computedTitle =
+      sessionBefore && sessionBefore.title === 'New Conversation'
+        ? content.slice(0, 30) + '...'
+        : sessionBefore?.title || 'New Conversation';
+
     setSessions((prev) =>
       prev.map((s) =>
         s.id === activeSessionId
@@ -137,6 +248,39 @@ export function useChat() {
           : s
       )
     );
+
+    // Phase W1 — mirror user message + (later) assistant message to server.
+    // All best-effort: failures here never block the chat reply.
+    let serverThreadIdForTurn: string | null = sessionBefore?.serverThreadId ?? null;
+    if (serverEnabled && serverWorkspaceIdRef.current) {
+      // Ensure the thread exists on the server before posting messages.
+      if (!serverThreadIdForTurn) {
+        const t = await createThread(serverWorkspaceIdRef.current, {
+          title: computedTitle,
+          mode:  toBackendMode(aiMode),
+        });
+        if (t) {
+          serverThreadIdForTurn = t.id;
+          setSessions((prev) =>
+            prev.map((s) =>
+              s.id === activeSessionId
+                ? { ...s, serverThreadId: t.id, serverWorkspaceId: t.workspace_id, syncStatus: 'synced' }
+                : s,
+            ),
+          );
+        }
+      }
+      // Title bump: keep server in sync when we auto-rename on first message.
+      if (serverThreadIdForTurn && sessionBefore && sessionBefore.title === 'New Conversation') {
+        updateThread(serverThreadIdForTurn, { title: computedTitle });   // fire-and-forget
+      }
+      if (serverThreadIdForTurn) {
+        appendMessage(serverThreadIdForTurn, {
+          role:    'user',
+          content: content.trim(),
+        });   // fire-and-forget
+      }
+    }
 
     setIsLoading(true);
 
@@ -200,13 +344,23 @@ export function useChat() {
             : s
         )
       );
+
+      // Phase W1 — mirror assistant message to the server.
+      if (serverEnabled && serverThreadIdForTurn) {
+        appendMessage(serverThreadIdForTurn, {
+          role:     'assistant',
+          content:  responseText,
+          model:    data.model || undefined,
+          metadata: metadata as Record<string, unknown> | undefined,
+        });   // fire-and-forget
+      }
     } catch (err) {
       setError(mapThrowableToError(err));
     } finally {
       clearTimeout(timeoutId);
       setIsLoading(false);
     }
-  }, [activeSessionId, aiMode]);
+  }, [activeSessionId, aiMode, sessions, serverEnabled]);
 
   const sendMessage = useCallback(async (content: string) => {
     await doSend(content);
@@ -274,5 +428,7 @@ export function useChat() {
     setSearchQuery,
     setInputText,
     moveToFolder,
+    // Phase W1 — surface server-sync state so UI may render a status indicator.
+    serverEnabled,
   };
 }
