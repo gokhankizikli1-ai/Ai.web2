@@ -73,14 +73,21 @@ async function _fetch<T>(
     });
     if (!resp.ok) {
       if (resp.status === 503 || resp.status === 404) return null;   // disabled / not-found are expected
+      // eslint-disable-next-line no-console
       console.warn(`[sessionsApi] ${init?.method ?? 'GET'} ${path} → HTTP ${resp.status}`);
       return null;
     }
     return (await resp.json()) as T;
   } catch (err) {
-    // Aborted / network — degrade silently.
-    if ((err as Error).name !== 'AbortError') {
-      console.warn(`[sessionsApi] ${init?.method ?? 'GET'} ${path} failed:`, err);
+    // Defensive: `err` can be any value (string, null, frozen object, …).
+    // Use safe access throughout so the catch handler itself can never throw.
+    let isAbort = false;
+    try {
+      isAbort = !!err && typeof err === 'object' && (err as { name?: unknown }).name === 'AbortError';
+    } catch { /* ignore */ }
+    if (!isAbort) {
+      // eslint-disable-next-line no-console
+      try { console.warn(`[sessionsApi] ${init?.method ?? 'GET'} ${path} failed:`, err); } catch { /* ignore */ }
     }
     return null;
   } finally {

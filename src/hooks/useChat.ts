@@ -39,25 +39,41 @@ function toBackendMode(mode: AIMode): string | undefined {
   }
 }
 
+// Network-style error messages emitted by various browsers when fetch fails
+// (Safari: "Load failed", Chrome: "Failed to fetch", Firefox: "NetworkError when…").
+// We match by string so even environments where `instanceof TypeError` fails
+// (cross-realm, instrumented runtimes) still get a clean, user-friendly chip.
+const _NETWORK_ERROR_PATTERNS = /load failed|failed to fetch|network ?error|connection (refused|reset)|err_(internet|connection|name_not_resolved)/i;
+
 function mapThrowableToError(err: unknown): ChatError {
-  if (err instanceof TypeError) {
-    // fetch network failure on web is a TypeError ("Failed to fetch")
-    return { code: 'network', message: 'Bağlantı sorunu. İnternetini kontrol et ve tekrar dene.' };
-  }
   if (err instanceof DOMException && err.name === 'AbortError') {
     return { code: 'timeout', message: 'İstek zaman aşımına uğradı.' };
   }
-  return { code: 'unknown', message: err instanceof Error ? err.message : 'Beklenmeyen bir hata oluştu. Tekrar dener misin?' };
+  if (err instanceof TypeError) {
+    return { code: 'network', message: 'Bağlantı sorunu. İnternetini kontrol et ve tekrar dene.' };
+  }
+  const msg = err instanceof Error ? err.message : '';
+  if (msg && _NETWORK_ERROR_PATTERNS.test(msg)) {
+    return { code: 'network', message: 'Bağlantı sorunu. İnternetini kontrol et ve tekrar dene.' };
+  }
+  return { code: 'unknown', message: msg || 'Beklenmeyen bir hata oluştu. Tekrar dener misin?' };
 }
 
 function getUserId(): string {
   const key = 'korvix_user_id';
-  let id = localStorage.getItem(key);
-  if (!id) {
-    id = crypto.randomUUID ? crypto.randomUUID() : generateId() + generateId();
-    localStorage.setItem(key, id);
+  try {
+    let id = localStorage.getItem(key);
+    if (!id) {
+      id = (typeof crypto !== 'undefined' && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : generateId() + generateId();
+      localStorage.setItem(key, id);
+    }
+    return id;
+  } catch {
+    // Private-mode Safari or storage quota — fall back to in-memory id.
+    return generateId() + generateId();
   }
-  return id;
 }
 
 export function useChat() {
@@ -74,7 +90,21 @@ export function useChat() {
   // Both stay null when the backend reports ENABLE_SESSIONS=false → all sync
   // operations short-circuit and the UI behaves exactly like pre-W1.
   const [serverEnabled, setServerEnabled] = useState(false);
-  const serverWorkspaceIdRef = useRef<string | null>(null);
+  const serverEnabledRef        = useRef<boolean>(false);
+  const serverWorkspaceIdRef    = useRef<string | null>(null);
+
+  // FIX W1.1 — `sessions` snapshot ref so callbacks don't need it in deps
+  // (otherwise every keystroke recreated half the callbacks and could race
+  // against the latest session state).
+  const sessionsRef = useRef<ChatSession[]>(sessions);
+  useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
+  useEffect(() => { serverEnabledRef.current = serverEnabled; }, [serverEnabled]);
+
+  // FIX W1.2 — in-flight createThread tracker. Without this, createNewChat
+  // fires a server create AND a fast typing user also fires another via
+  // doSend → duplicate threads on the server, and the second one stays
+  // un-mirrored locally.
+  const pendingCreateThreadRef = useRef<Map<string, Promise<string | null>>>(new Map());
 
   // New state
   const [aiMode, setAiMode] = useState<AIMode>('fast');
@@ -89,34 +119,41 @@ export function useChat() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const health = await getHealth();
-      if (cancelled || !health?.enabled) return;
-      setServerEnabled(true);
+      try {
+        const health = await getHealth();
+        if (cancelled || !health?.enabled) return;
+        setServerEnabled(true);
 
-      const ws = await ensureDefaultWorkspace(userIdRef.current);
-      if (cancelled || !ws) return;
-      serverWorkspaceIdRef.current = ws.id;
+        const ws = await ensureDefaultWorkspace(userIdRef.current);
+        if (cancelled || !ws) return;
+        serverWorkspaceIdRef.current = ws.id;
 
-      const remote = await listThreads(ws.id, { limit: 50 });
-      if (cancelled || remote.length === 0) return;
+        const remote = await listThreads(ws.id, { limit: 50 });
+        if (cancelled || !Array.isArray(remote) || remote.length === 0) return;
 
-      // Merge: only ADD remote threads we don't already have. Demo chats stay.
-      // For each new server thread, hydrate its messages on selection (lazy).
-      setSessions((prev) => {
-        const known = new Set(prev.map((s) => s.serverThreadId).filter(Boolean) as string[]);
-        const additions: ChatSession[] = remote
-          .filter((t) => !known.has(t.id))
-          .map((t) => ({
-            id:                t.id,
-            title:             t.title || 'New Conversation',
-            messages:          [],
-            updatedAt:         t.updated_at ? new Date(t.updated_at) : new Date(),
-            serverThreadId:    t.id,
-            serverWorkspaceId: ws.id,
-            syncStatus:        'synced',
-          }));
-        return additions.length ? [...additions, ...prev] : prev;
-      });
+        // Merge: only ADD remote threads we don't already have. Demo chats stay.
+        // For each new server thread, hydrate its messages on selection (lazy).
+        setSessions((prev) => {
+          const known = new Set(prev.map((s) => s.serverThreadId).filter(Boolean) as string[]);
+          const additions: ChatSession[] = remote
+            .filter((t) => t && t.id && !known.has(t.id))
+            .map((t) => ({
+              id:                t.id,
+              title:             t.title || 'New Conversation',
+              messages:          [],
+              updatedAt:         t.updated_at ? new Date(t.updated_at) : new Date(),
+              serverThreadId:    t.id,
+              serverWorkspaceId: ws.id,
+              syncStatus:        'synced' as const,
+            }));
+          return additions.length ? [...additions, ...prev] : prev;
+        });
+      } catch (err) {
+        // Defense in depth: sessionsApi swallows its own fetch errors, but if
+        // anything inside this IIFE throws (malformed data, map error, …) we
+        // log + degrade silently to local-only mode. Never break the UI.
+        console.warn('[useChat] server-session hydration failed:', err);
+      }
     })();
     return () => { cancelled = true; };
   }, []);
@@ -129,36 +166,66 @@ export function useChat() {
     return s.title.toLowerCase().includes(searchQuery.toLowerCase());
   });
 
+  // ── Internal: ensure a server thread exists for the given LOCAL session id.
+  // Returns the server thread id (string) or null if the server is disabled or
+  // the request failed. Coalesces concurrent callers via a per-session promise
+  // so we never create duplicate threads even if createNewChat + doSend race.
+  const ensureServerThread = useCallback(async (
+    localSessionId: string,
+    { title, mode }: { title: string; mode?: string },
+  ): Promise<string | null> => {
+    if (!serverEnabledRef.current || !serverWorkspaceIdRef.current) return null;
+
+    // Already have a serverThreadId? Use it.
+    const existing = sessionsRef.current.find((s) => s.id === localSessionId);
+    if (existing?.serverThreadId) return existing.serverThreadId;
+
+    // Already creating? Reuse the in-flight promise.
+    const inFlight = pendingCreateThreadRef.current.get(localSessionId);
+    if (inFlight) return inFlight;
+
+    const promise = (async () => {
+      try {
+        const t = await createThread(serverWorkspaceIdRef.current!, { title, mode });
+        if (!t) return null;
+        setSessions((prev) =>
+          prev.map((s) =>
+            s.id === localSessionId
+              ? { ...s, serverThreadId: t.id, serverWorkspaceId: t.workspace_id, syncStatus: 'synced' as const }
+              : s,
+          ),
+        );
+        return t.id;
+      } catch (err) {
+        console.warn('[useChat] createThread failed:', err);
+        return null;
+      } finally {
+        pendingCreateThreadRef.current.delete(localSessionId);
+      }
+    })();
+
+    pendingCreateThreadRef.current.set(localSessionId, promise);
+    return promise;
+  }, []);
+
   const createNewChat = useCallback(() => {
     const newSession: ChatSession = {
       id: generateId(),
       title: 'New Conversation',
       messages: [],
       updatedAt: new Date(),
-      syncStatus: 'unsynced',
+      syncStatus: 'unsynced' as const,
     };
     setSessions((prev) => [newSession, ...prev]);
     setActiveSessionId(newSession.id);
     setError(null);
 
-    // Phase W1 — mirror to server (best effort).
-    if (serverEnabled && serverWorkspaceIdRef.current) {
-      (async () => {
-        const t = await createThread(serverWorkspaceIdRef.current!, {
-          title: newSession.title,
-          mode:  toBackendMode(aiMode),
-        });
-        if (!t) return;
-        setSessions((prev) =>
-          prev.map((s) =>
-            s.id === newSession.id
-              ? { ...s, serverThreadId: t.id, serverWorkspaceId: t.workspace_id, syncStatus: 'synced' }
-              : s,
-          ),
-        );
-      })();
-    }
-  }, [serverEnabled, aiMode]);
+    // Phase W1 — mirror to server (best effort, coalesced).
+    void ensureServerThread(newSession.id, {
+      title: newSession.title,
+      mode:  toBackendMode(aiMode),
+    });
+  }, [aiMode, ensureServerThread]);
 
   const selectSession = useCallback((id: string) => {
     setActiveSessionId(id);
@@ -166,34 +233,43 @@ export function useChat() {
 
     // Phase W1 — lazy-hydrate messages when we open a server-known thread
     // that has no local messages yet (came from the listThreads merge).
-    const session = sessions.find((s) => s.id === id);
+    if (!serverEnabledRef.current) return;
+    const session = sessionsRef.current.find((s) => s.id === id);
     if (!session || !session.serverThreadId || session.messages.length > 0) return;
-    if (!serverEnabled) return;
     const threadId = session.serverThreadId;
+
     (async () => {
-      const remote = await listMessages(threadId, { limit: 200 });
-      if (remote.length === 0) return;
-      const hydrated: Message[] = remote.map((m) => ({
-        id:              m.id,
-        role:            (m.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant',
-        content:         m.content,
-        timestamp:       m.created_at ? new Date(m.created_at) : new Date(),
-        metadata:        (m.metadata && Object.keys(m.metadata).length ? (m.metadata as MessageMetadata) : undefined),
-        serverMessageId: m.id,
-      }));
-      setSessions((prev) =>
-        prev.map((s) =>
-          s.serverThreadId === threadId && s.messages.length === 0
-            ? { ...s, messages: hydrated }
-            : s,
-        ),
-      );
+      try {
+        const remote = await listMessages(threadId, { limit: 200 });
+        if (!Array.isArray(remote) || remote.length === 0) return;
+        const hydrated: Message[] = remote
+          .filter((m) => m && typeof m.content === 'string')
+          .map((m) => ({
+            id:              m.id || generateId(),
+            role:            (m.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant',
+            content:         m.content,
+            timestamp:       m.created_at ? new Date(m.created_at) : new Date(),
+            metadata:        (m.metadata && typeof m.metadata === 'object' && Object.keys(m.metadata).length)
+                                ? (m.metadata as MessageMetadata)
+                                : undefined,
+            serverMessageId: m.id,
+          }));
+        setSessions((prev) =>
+          prev.map((s) =>
+            s.serverThreadId === threadId && s.messages.length === 0
+              ? { ...s, messages: hydrated }
+              : s,
+          ),
+        );
+      } catch (err) {
+        console.warn('[useChat] message hydration failed:', err);
+      }
     })();
-  }, [sessions, serverEnabled]);
+  }, []);
 
   const deleteSession = useCallback((id: string) => {
     // Capture remote id BEFORE mutating local state.
-    const removed = sessions.find((s) => s.id === id);
+    const removed = sessionsRef.current.find((s) => s.id === id);
     setSessions((prev) => {
       const filtered = prev.filter((s) => s.id !== id);
       if (filtered.length === 0) {
@@ -202,7 +278,7 @@ export function useChat() {
           title: 'New Conversation',
           messages: [],
           updatedAt: new Date(),
-          syncStatus: 'unsynced',
+          syncStatus: 'unsynced' as const,
         };
         setActiveSessionId(newSession.id);
         return [newSession];
@@ -215,10 +291,13 @@ export function useChat() {
     setError(null);
 
     // Phase W1 — archive remote thread if synced.
-    if (serverEnabled && removed?.serverThreadId) {
-      archiveThread(removed.serverThreadId);   // fire-and-forget
+    if (serverEnabledRef.current && removed?.serverThreadId) {
+      // Fire-and-forget; the api wrapper swallows errors internally.
+      void archiveThread(removed.serverThreadId).catch((err) => {
+        console.warn('[useChat] archiveThread failed:', err);
+      });
     }
-  }, [activeSessionId, sessions, serverEnabled]);
+  }, [activeSessionId]);
 
   const doSend = useCallback(async (content: string) => {
     if (!content.trim()) return;
@@ -234,12 +313,10 @@ export function useChat() {
       timestamp: new Date(),
     };
 
-    // Compute the new title eagerly so we can mirror it to the server below.
-    const sessionBefore = sessions.find((s) => s.id === activeSessionId);
-    const computedTitle =
-      sessionBefore && sessionBefore.title === 'New Conversation'
-        ? content.slice(0, 30) + '...'
-        : sessionBefore?.title || 'New Conversation';
+    // FIX: read sessions fresh from ref instead of closure snapshot.
+    const sessionBefore = sessionsRef.current.find((s) => s.id === activeSessionId);
+    const wasNewConversation = sessionBefore?.title === 'New Conversation';
+    const computedTitle = wasNewConversation ? content.slice(0, 30) + '...' : (sessionBefore?.title || 'New Conversation');
 
     setSessions((prev) =>
       prev.map((s) =>
@@ -250,35 +327,28 @@ export function useChat() {
     );
 
     // Phase W1 — mirror user message + (later) assistant message to server.
-    // All best-effort: failures here never block the chat reply.
+    // Coalesced thread creation via ensureServerThread; never creates duplicates.
     let serverThreadIdForTurn: string | null = sessionBefore?.serverThreadId ?? null;
-    if (serverEnabled && serverWorkspaceIdRef.current) {
-      // Ensure the thread exists on the server before posting messages.
-      if (!serverThreadIdForTurn) {
-        const t = await createThread(serverWorkspaceIdRef.current, {
+    if (serverEnabledRef.current && serverWorkspaceIdRef.current) {
+      if (!serverThreadIdForTurn && sessionBefore) {
+        serverThreadIdForTurn = await ensureServerThread(sessionBefore.id, {
           title: computedTitle,
           mode:  toBackendMode(aiMode),
         });
-        if (t) {
-          serverThreadIdForTurn = t.id;
-          setSessions((prev) =>
-            prev.map((s) =>
-              s.id === activeSessionId
-                ? { ...s, serverThreadId: t.id, serverWorkspaceId: t.workspace_id, syncStatus: 'synced' }
-                : s,
-            ),
-          );
-        }
       }
-      // Title bump: keep server in sync when we auto-rename on first message.
-      if (serverThreadIdForTurn && sessionBefore && sessionBefore.title === 'New Conversation') {
-        updateThread(serverThreadIdForTurn, { title: computedTitle });   // fire-and-forget
+      if (serverThreadIdForTurn && wasNewConversation) {
+        // Title bump — keep server in sync when we auto-rename on first message.
+        void updateThread(serverThreadIdForTurn, { title: computedTitle }).catch((err) => {
+          console.warn('[useChat] updateThread failed:', err);
+        });
       }
       if (serverThreadIdForTurn) {
-        appendMessage(serverThreadIdForTurn, {
+        void appendMessage(serverThreadIdForTurn, {
           role:    'user',
           content: content.trim(),
-        });   // fire-and-forget
+        }).catch((err) => {
+          console.warn('[useChat] appendMessage(user) failed:', err);
+        });
       }
     }
 
@@ -346,13 +416,15 @@ export function useChat() {
       );
 
       // Phase W1 — mirror assistant message to the server.
-      if (serverEnabled && serverThreadIdForTurn) {
-        appendMessage(serverThreadIdForTurn, {
+      if (serverEnabledRef.current && serverThreadIdForTurn) {
+        void appendMessage(serverThreadIdForTurn, {
           role:     'assistant',
           content:  responseText,
           model:    data.model || undefined,
           metadata: metadata as Record<string, unknown> | undefined,
-        });   // fire-and-forget
+        }).catch((err) => {
+          console.warn('[useChat] appendMessage(assistant) failed:', err);
+        });
       }
     } catch (err) {
       setError(mapThrowableToError(err));
@@ -360,7 +432,7 @@ export function useChat() {
       clearTimeout(timeoutId);
       setIsLoading(false);
     }
-  }, [activeSessionId, aiMode, sessions, serverEnabled]);
+  }, [activeSessionId, aiMode, ensureServerThread]);
 
   const sendMessage = useCallback(async (content: string) => {
     await doSend(content);
