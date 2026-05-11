@@ -22,6 +22,17 @@ import urllib.request
 import urllib.error
 from backend.services.tools.base_tool import BaseTool
 
+try:
+    from backend.services.cache import (
+        cache_get, cache_set, record_fetch as _record_fetch,
+    )
+    _CACHE_OK = True
+except Exception:
+    _CACHE_OK = False
+    def cache_get(_):           return None        # noqa: E704
+    def cache_set(*_a, **_kw):  return None        # noqa: E704
+    def _record_fetch(*_a, **_kw): return None     # noqa: E704
+
 logger = logging.getLogger(__name__)
 
 _PROVIDER          = os.getenv("MARKET_DATA_PROVIDER", "").strip().lower()
@@ -34,6 +45,12 @@ _TIMEOUT           = 10  # seconds per request
 
 _ENABLE_MTF        = os.getenv("ENABLE_MTF", "true").strip().lower() != "false"
 _ENABLE_FUTURES    = os.getenv("ENABLE_FUTURES_MICROSTRUCTURE", "true").strip().lower() != "false"
+
+# Phase 5.2 — caching + backoff knobs (all overridable by env).
+_CACHE_TTL_PRIMARY  = float(os.getenv("MARKET_DATA_CACHE_TTL_SEC", "30"))     # 30s for klines
+_CACHE_TTL_FUTURES  = float(os.getenv("FUTURES_CACHE_TTL_SEC", "20"))         # 20s for funding/OI
+_BACKOFF_BASE_SEC   = float(os.getenv("FETCH_BACKOFF_BASE_SEC", "0.6"))       # exp backoff base
+_BACKOFF_MAX_RETRY  = int(os.getenv("FETCH_BACKOFF_MAX_RETRY", "2"))          # extra attempts on 429/5xx
 
 # Multi-timeframe set (parallel fetches when the primary provider is binance/yahoo).
 _MTF_TIMEFRAMES = ("1d", "4h", "1h")
@@ -176,7 +193,7 @@ class MarketDataTool(BaseTool):
 
         # Primary timeframe (full indicator pack) — always fetched.
         url = f"{_BINANCE_BASE}/klines?symbol={symbol}&interval={interval}&limit={limit}"
-        raw = await _fetch_json(url, timeout=_TIMEOUT)
+        raw = await _fetch_json(url, timeout=_TIMEOUT, cache_ttl=_CACHE_TTL_PRIMARY)
         if not raw or len(raw) < 20:
             raise ValueError(f"Insufficient Binance data for {symbol}: {len(raw or [])} candles")
         base = _ohlcv_from_klines(raw)
@@ -212,6 +229,7 @@ class MarketDataTool(BaseTool):
         primary["mtf_alignment"]   = _mtf_alignment(mtf) if mtf else None
         primary["futures"]         = futures or None
         primary["plan"]            = _build_plan(primary, mtf or {}, futures if isinstance(futures, dict) else None)
+        primary["data_quality"]    = _classify_data_quality(primary, "binance")
 
         return self._ok(primary, provider="binance")
 
@@ -265,6 +283,7 @@ class MarketDataTool(BaseTool):
         primary["mtf_alignment"]   = _mtf_alignment(mtf) if mtf else None
         primary["futures"]         = None
         primary["plan"]            = _build_plan(primary, mtf or {}, None)
+        primary["data_quality"]    = _classify_data_quality(primary, "yahoo_finance")
 
         return self._ok(primary, provider="yahoo_finance")
 
@@ -281,7 +300,7 @@ class MarketDataTool(BaseTool):
             f"&symbol={base}&market=USD"
             f"&apikey={_ALPHAVANTAGE_KEY}"
         )
-        raw = await _fetch_json(url, timeout=_TIMEOUT)
+        raw = await _fetch_json(url, timeout=_TIMEOUT, cache_ttl=_CACHE_TTL_PRIMARY)
 
         if "Note" in raw:
             raise ValueError("AlphaVantage rate limit — 5 req/min on free tier")
@@ -307,6 +326,7 @@ class MarketDataTool(BaseTool):
         primary["mtf_alignment"]   = None
         primary["futures"]         = None
         primary["plan"]            = _build_plan(primary, {}, None)
+        primary["data_quality"]    = _classify_data_quality(primary, "alphavantage")
         return self._ok(primary, provider="alphavantage")
 
     # ── Provider 4: CoinGecko (crypto-only last resort) ────────────────────────
@@ -324,8 +344,8 @@ class MarketDataTool(BaseTool):
         )
 
         ohlc_res, vol_res = await asyncio.gather(
-            _fetch_json(ohlc_url, timeout=_TIMEOUT),
-            _fetch_json(vol_url,  timeout=_TIMEOUT),
+            _fetch_json(ohlc_url, timeout=_TIMEOUT, cache_ttl=_CACHE_TTL_PRIMARY),
+            _fetch_json(vol_url,  timeout=_TIMEOUT, cache_ttl=_CACHE_TTL_PRIMARY),
             return_exceptions=True,
         )
 
@@ -357,6 +377,7 @@ class MarketDataTool(BaseTool):
         primary["mtf_alignment"]   = None
         primary["futures"]         = None
         primary["plan"]            = _build_plan(primary, {}, None)
+        primary["data_quality"]    = _classify_data_quality(primary, "coingecko")
         return self._ok(primary, provider="coingecko")
 
 
@@ -366,7 +387,7 @@ class MarketDataTool(BaseTool):
 async def _fetch_binance_tf(symbol: str, tf: str) -> dict:
     """Fetch one extra timeframe from Binance and return an MTF snapshot."""
     url = f"{_BINANCE_BASE}/klines?symbol={symbol}&interval={tf}&limit=200"
-    raw = await _fetch_json(url, timeout=_TIMEOUT)
+    raw = await _fetch_json(url, timeout=_TIMEOUT, cache_ttl=_CACHE_TTL_PRIMARY)
     if not raw or len(raw) < 20:
         raise ValueError(f"insufficient {tf} candles")
     opens, highs, lows, closes, volumes = _ohlcv_from_klines(raw)
@@ -421,12 +442,12 @@ async def _fetch_binance_futures(symbol: str) -> dict:
     taker_url   = f"{_BINANCE_FAPI}/futures/data/takerlongshortRatio?symbol={sym}&period=1h&limit=2"
 
     premium, oi_now, oi_hist, ls_acc, ls_pos, taker = await asyncio.gather(
-        _safe(_fetch_json(premium_url, timeout=_TIMEOUT)),
-        _safe(_fetch_json(oi_url,      timeout=_TIMEOUT)),
-        _safe(_fetch_json(oi_hist_url, timeout=_TIMEOUT)),
-        _safe(_fetch_json(ls_global,   timeout=_TIMEOUT)),
-        _safe(_fetch_json(ls_top_pos,  timeout=_TIMEOUT)),
-        _safe(_fetch_json(taker_url,   timeout=_TIMEOUT)),
+        _safe(_fetch_json(premium_url, timeout=_TIMEOUT, cache_ttl=_CACHE_TTL_FUTURES)),
+        _safe(_fetch_json(oi_url,      timeout=_TIMEOUT, cache_ttl=_CACHE_TTL_FUTURES)),
+        _safe(_fetch_json(oi_hist_url, timeout=_TIMEOUT, cache_ttl=_CACHE_TTL_FUTURES)),
+        _safe(_fetch_json(ls_global,   timeout=_TIMEOUT, cache_ttl=_CACHE_TTL_FUTURES)),
+        _safe(_fetch_json(ls_top_pos,  timeout=_TIMEOUT, cache_ttl=_CACHE_TTL_FUTURES)),
+        _safe(_fetch_json(taker_url,   timeout=_TIMEOUT, cache_ttl=_CACHE_TTL_FUTURES)),
     )
 
     out: dict = {"symbol": sym}
@@ -504,6 +525,43 @@ async def _fetch_binance_futures(symbol: str) -> dict:
         out["trapped_traders"] = None
 
     return out
+
+
+def _classify_data_quality(primary: dict, provider: str) -> dict:
+    """
+    Quality breakdown for the response. Frontend can warn 'degraded data' when
+    `level` != 'full'.
+       full     — primary + MTF + (futures if applicable)
+       degraded — primary only, optional blocks missing
+       fallback — coingecko/alphavantage path (no MTF, no futures)
+    """
+    has_mtf     = bool(primary.get("multi_timeframe"))
+    has_futures = bool(primary.get("futures"))
+    is_crypto   = (primary.get("symbol") or "").upper().endswith("USDT")
+
+    missing: list[str] = []
+    if not has_mtf:
+        missing.append("multi_timeframe")
+    if is_crypto and not has_futures:
+        missing.append("futures")
+    if provider in ("alphavantage", "coingecko"):
+        missing.append("provider_fallback")
+
+    if not missing:
+        level = "full"
+    elif provider in ("alphavantage", "coingecko"):
+        level = "fallback"
+    else:
+        level = "degraded"
+
+    return {
+        "level":           level,
+        "provider":        provider,
+        "has_mtf":         has_mtf,
+        "has_futures":     has_futures,
+        "missing":         missing,
+        "candles_analyzed": primary.get("candles_analyzed"),
+    }
 
 
 def _funding_regime(funding: float) -> str:
@@ -1435,11 +1493,59 @@ class _BinanceSymbolError(Exception):
     """Raised on Binance HTTP 400 (invalid symbol)."""
 
 
-async def _fetch_json(url: str, timeout: int = 10):
+def _provider_from_url(url: str) -> str:
+    """Tag provider for /tools/health counters."""
+    if "fapi.binance.com" in url:       return "binance_futures"
+    if "api.binance.com" in url:        return "binance"
+    if "coingecko.com" in url:          return "coingecko"
+    if "alphavantage.co" in url:        return "alphavantage"
+    return "external"
+
+
+async def _fetch_json(url: str, timeout: int = 10, cache_ttl: float = 0):
     """
     Fetch JSON via aiohttp (in requirements), falling back to urllib.
-    Raises RuntimeError for non-200 so the fallback chain catches it.
+    Phase 5.2: in-memory TTL cache + exponential backoff on 429/5xx.
+    Raises RuntimeError for non-200 (after retries) so callers can fall through.
     """
+    if cache_ttl > 0:
+        cached = cache_get(f"GET:{url}")
+        if cached is not None:
+            return cached
+
+    provider = _provider_from_url(url)
+    last_exc: Exception | None = None
+
+    for attempt in range(_BACKOFF_MAX_RETRY + 1):
+        try:
+            data = await _http_get_json(url, timeout)
+            if cache_ttl > 0:
+                cache_set(f"GET:{url}", data, cache_ttl)
+            _record_fetch(provider, ok=True)
+            return data
+        except _BinanceSymbolError as exc:
+            _record_fetch(provider, ok=False, reason=str(exc))
+            raise
+        except _RetryableHTTPError as exc:
+            last_exc = exc
+            if attempt >= _BACKOFF_MAX_RETRY:
+                break
+            sleep_for = _BACKOFF_BASE_SEC * (2 ** attempt)
+            logger.info("retryable %s on %s — sleeping %.2fs (attempt %d)", exc, provider, sleep_for, attempt + 1)
+            await asyncio.sleep(sleep_for)
+        except Exception as exc:
+            last_exc = exc
+            break
+
+    _record_fetch(provider, ok=False, reason=str(last_exc) if last_exc else "unknown")
+    raise last_exc if last_exc else RuntimeError(f"fetch failed: {url}")
+
+
+class _RetryableHTTPError(Exception):
+    """Retry-eligible (429 / 5xx)."""
+
+
+async def _http_get_json(url: str, timeout: int):
     try:
         import aiohttp  # noqa: PLC0415
         async with aiohttp.ClientSession() as session:
@@ -1448,6 +1554,8 @@ async def _fetch_json(url: str, timeout: int = 10):
                     body = await resp.json(content_type=None)
                     msg  = body.get("msg", "Invalid symbol") if isinstance(body, dict) else "Bad request"
                     raise _BinanceSymbolError(f"Binance: {msg}")
+                if resp.status == 429 or 500 <= resp.status < 600:
+                    raise _RetryableHTTPError(f"HTTP {resp.status} from {url}")
                 if resp.status != 200:
                     raise RuntimeError(f"HTTP {resp.status} from {url}")
                 return await resp.json(content_type=None)
@@ -1463,6 +1571,8 @@ async def _fetch_json(url: str, timeout: int = 10):
                 body = json.loads(exc.read())
                 msg  = body.get("msg", "Invalid symbol") if isinstance(body, dict) else "Bad request"
                 raise _BinanceSymbolError(f"Binance: {msg}") from exc
+            if exc.code == 429 or 500 <= exc.code < 600:
+                raise _RetryableHTTPError(f"HTTP {exc.code} from {url}") from exc
             raise RuntimeError(f"HTTP {exc.code} from {url}") from exc
 
     return await asyncio.get_event_loop().run_in_executor(None, _sync)

@@ -280,34 +280,65 @@ export default function ChatDashboard() {
                 />
               ))}
 
-              {/* Loading */}
+              {/* Loading — Phase 5.2: TypingIndicator + skeleton bars
+                  visually anchor the user that real content is on the way,
+                  not just an indeterminate spinner. */}
               {isLoading && (
                 <div className="flex gap-3 animate-fade-in">
                   <div className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[10px] bg-gradient-to-br from-cyan-400 to-blue-600 shadow-md shadow-cyan-500/15">
                     <Sparkles className="h-[14px] w-[14px] text-white" />
                   </div>
-                  <div className="rounded-[18px] rounded-tl-[6px] bg-white/[0.03] border border-white/[0.06] message-shadow">
-                    <TypingIndicator />
+                  <div className="max-w-[85%] md:max-w-[75%] flex-1">
+                    <div className="rounded-[18px] rounded-tl-[6px] bg-white/[0.03] border border-white/[0.06] message-shadow overflow-hidden">
+                      <TypingIndicator />
+                      <div className="px-4 pb-3 space-y-1.5">
+                        <div className="h-2 rounded-full bg-white/[0.04] animate-pulse w-[88%]" />
+                        <div className="h-2 rounded-full bg-white/[0.04] animate-pulse w-[72%]" style={{ animationDelay: '120ms' }} />
+                        <div className="h-2 rounded-full bg-white/[0.04] animate-pulse w-[80%]" style={{ animationDelay: '240ms' }} />
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
 
-              {/* Error */}
-              {error && (
-                <div className="flex gap-3 animate-fade-in">
-                  <div className="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[10px] bg-red-500/10">
-                    <AlertTriangle className="h-[14px] w-[14px] text-red-400" />
+              {/* Error — Phase 5.2: typed ChatError with per-code styling */}
+              {error && (() => {
+                const codeLabel: Record<string, string> = {
+                  rate_limit: 'Hız sınırı',
+                  timeout:    'Zaman aşımı',
+                  network:    'Bağlantı',
+                  server:     'Sunucu',
+                  safety:     'Güvenlik',
+                  unknown:    'Hata',
+                };
+                const accent =
+                  error.code === 'safety'     ? 'amber' :
+                  error.code === 'rate_limit' ? 'amber' :
+                  'red';
+                const palette = accent === 'amber'
+                  ? { icon: 'bg-amber-500/10 text-amber-400', card: 'bg-amber-500/[0.06] border-amber-500/[0.18]', text: 'text-amber-200/80', btn: 'text-amber-300/70 hover:text-amber-200 hover:bg-amber-500/[0.08]' }
+                  : { icon: 'bg-red-500/10 text-red-400',     card: 'bg-red-500/[0.06] border-red-500/[0.12]',    text: 'text-red-300/80',  btn: 'text-red-400/70 hover:text-red-300 hover:bg-red-500/[0.08]' };
+                return (
+                  <div className="flex gap-3 animate-fade-in">
+                    <div className={`flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[10px] ${palette.icon}`}>
+                      <AlertTriangle className="h-[14px] w-[14px]" />
+                    </div>
+                    <div className={`rounded-[18px] rounded-tl-[6px] border px-4 py-3 max-w-[85%] md:max-w-[75%] ${palette.card}`}>
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className={`text-[10px] uppercase tracking-wider font-medium ${palette.text}`}>
+                          {codeLabel[error.code] ?? 'Hata'}
+                        </span>
+                      </div>
+                      <p className={`text-[13px] ${palette.text} mb-3`}>{error.message}</p>
+                      <Button variant="ghost" size="sm" onClick={retry}
+                        className={`h-7 gap-2 text-[11px] rounded-lg ${palette.btn}`}>
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        Tekrar dene
+                      </Button>
+                    </div>
                   </div>
-                  <div className="rounded-[18px] rounded-tl-[6px] bg-red-500/[0.06] border border-red-500/[0.12] px-4 py-3 max-w-[85%] md:max-w-[75%]">
-                    <p className="text-[13px] text-red-300/80 mb-3">{error}</p>
-                    <Button variant="ghost" size="sm" onClick={retry}
-                      className="h-7 gap-2 text-[11px] text-red-400/70 hover:text-red-300 hover:bg-red-500/[0.08] rounded-lg">
-                      <RefreshCw className="h-3.5 w-3.5" />
-                      Try Again
-                    </Button>
-                  </div>
-                </div>
-              )}
+                );
+              })()}
 
               <div ref={messagesEndRef} className="h-2" />
             </div>

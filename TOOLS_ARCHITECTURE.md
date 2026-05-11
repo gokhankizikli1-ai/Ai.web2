@@ -1,4 +1,4 @@
-# KorvixAI — Tools Architecture (Phase 5.1)
+# KorvixAI — Tools Architecture (Phase 5.2)
 
 ## Overview
 
@@ -16,6 +16,7 @@ or returns an error, the AI response continues normally without it.
 | **4B** | Market data provider (Binance + multi-provider fallback) | ✅ Done |
 | **5**  | Advanced trading intelligence (MTF + futures + macro + plan + signal) | ✅ Done |
 | **5.1** | Operator-grade trading (smart money zones, trapped traders, plan v2, thesis memory) | ✅ Done |
+| **5.2** | Stabilization & polish (cache + backoff + safety guard + trading card UI + error UX) | ✅ Done |
 | **6A** | Position Manager AI (live trade monitoring, partial profit logic) | 🔜 Planned |
 | **6B** | Alert engine (watchlists, breakouts, liquidation spikes) | 🔜 Planned |
 | **6C** | Auto trade journal (psychology + performance analytics) | 🔜 Planned |
@@ -225,6 +226,68 @@ backend extracts it, strips it from the displayed reply, and returns it in
 `market_data` + `macro_data` results for frontend cards (with
 `directional_bias`, `setup_grade`, `fakeout_risk`, `liquidity_risk`,
 `trapped_traders`, `positioning_signal`).
+
+## Stabilization Layer (Phase 5.2)
+
+### Response cache + provider counters
+`backend/services/cache/__init__.py` — in-process TTL LRU (cap 1024 entries).
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `MARKET_DATA_CACHE_TTL_SEC` | `30` | Klines cache TTL for primary + MTF candles |
+| `FUTURES_CACHE_TTL_SEC` | `20` | Funding, OI, L/S cache TTL |
+| `MACRO_DATA_CACHE_TTL_SEC` | `300` | BTC.D / TOTAL / DXY cache TTL |
+| `FETCH_BACKOFF_BASE_SEC` | `0.6` | Exponential backoff base for 429/5xx |
+| `FETCH_BACKOFF_MAX_RETRY` | `2` | Extra retries after the initial attempt |
+
+Every external fetch is tagged by provider (`binance`, `binance_futures`,
+`coingecko`, `alphavantage`, `yahoo_dxy`). Success and failure counts plus the
+last failure reason surface at `GET /tools/health` under the `cache.providers`
+key — use this to spot rate-limited providers in production.
+
+### Data quality field
+`market_data.data_quality` and `macro_data.data_quality` report:
+- `level`: `full` | `degraded` | `fallback`
+- `missing`: list of absent sub-blocks (`multi_timeframe`, `futures`, `provider_fallback`)
+- `provider`: actual provider that returned the data
+
+The frontend trading card and the `metadata.tool_summary.market_data.data_quality`
+field let the UI badge a "degraded data" pill when applicable.
+
+### Safety guard
+`backend/services/safety/guard.py` — runtime enforcement before AI calls.
+
+| Layer | Trigger | Default |
+|-------|---------|---------|
+| Length cap | message > N chars | `SAFETY_MAX_INPUT_CHARS=4000` |
+| Prompt-injection patterns | jailbreak / instruction override regex | always on (conservative) |
+| Per-minute throttle | sliding-window per user | `SAFETY_PER_MIN_LIMIT=30` |
+
+On rejection the chat route returns a normal `ChatResponse` with `intent`
+prefixed `safety_*` (so old frontends don't crash) and a branded
+`message_for_user`. The new frontend renders these as an amber error chip
+with a retry button. Rejection counters surface at `/tools/health.safety`.
+
+### Frontend trading card
+`src/components/TradingSignalCard.tsx` renders the `metadata.trading_signal`
+payload as a structured terminal card: directional bias badge, trigger,
+entry/stop/TP1-2-3 grid, setup grade bar, R:R, fakeout risk meter, liquidity
+risk meter, invalidation row, `do_now` and `do_not_do` bullets. Renders
+nothing when the signal is empty/absent — safe to mount on every assistant
+bubble.
+
+### Error UX
+`useChat` now produces a typed `ChatError` ({ code, message }) mapped from
+HTTP status / network errors. Codes: `rate_limit`, `timeout`, `network`,
+`server`, `safety`, `unknown`. `ChatDashboard` styles amber for soft errors
+(safety / rate_limit) and red for hard errors.
+
+### Skeleton loader
+`ChatDashboard` now shows three pulsing skeleton bars beneath the typing
+indicator so the user sees visual structure during AI generation instead
+of a single dots-only state.
+
+---
 
 ## Thesis Memory (Phase 5.1)
 

@@ -579,7 +579,7 @@ _MODES: dict = {
             "Varsayimlari acikca belirt",
             "Belirsiz konularda kesinlik iddiasinda bulunma",
         ],
-        aliases=["deep", "thorough", "analytical"],
+        aliases=["deep", "deep-think", "thorough", "analytical"],
     ),
     "startup_advisor": AIMode(
         name="startup_advisor",

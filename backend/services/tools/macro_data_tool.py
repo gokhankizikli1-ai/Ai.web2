@@ -18,10 +18,20 @@ import urllib.request
 import urllib.error
 from backend.services.tools.base_tool import BaseTool
 
+try:
+    from backend.services.cache import cache_get, cache_set, record_fetch as _record_fetch
+except Exception:
+    def cache_get(_):           return None           # noqa: E704
+    def cache_set(*_a, **_kw):  return None           # noqa: E704
+    def _record_fetch(*_a, **_kw): return None        # noqa: E704
+
 logger = logging.getLogger(__name__)
 
 _COINGECKO_BASE = "https://api.coingecko.com/api/v3"
 _TIMEOUT        = 8
+
+# Phase 5.2 — macro is slower-moving, larger TTL.
+_CACHE_TTL_MACRO = float(os.getenv("MACRO_DATA_CACHE_TTL_SEC", "300"))   # 5 min
 
 
 class MacroDataTool(BaseTool):
@@ -50,6 +60,15 @@ class MacroDataTool(BaseTool):
             return self._unavailable("Macro providers unreachable")
 
         data["regime"] = _macro_regime(data)
+
+        # Quality breakdown — frontend can warn on degraded macro context.
+        missing = []
+        if "btc_dominance_pct" not in data:        missing.append("global_caps")
+        if "dxy" not in data:                       missing.append("dxy")
+        data["data_quality"] = {
+            "level":   "full" if not missing else "degraded",
+            "missing": missing,
+        }
         return self._ok(data, provider="coingecko+yahoo")
 
 
@@ -64,7 +83,7 @@ async def _safe(coro):
 
 async def _fetch_global() -> dict:
     """CoinGecko /global → BTC dominance, total market cap, 24h cap change."""
-    raw = await _fetch_json(f"{_COINGECKO_BASE}/global", timeout=_TIMEOUT)
+    raw = await _fetch_json(f"{_COINGECKO_BASE}/global", timeout=_TIMEOUT, cache_ttl=_CACHE_TTL_MACRO)
     data = raw.get("data") if isinstance(raw, dict) else None
     if not isinstance(data, dict):
         raise ValueError("CoinGecko /global returned no data")
@@ -90,7 +109,11 @@ async def _fetch_global() -> dict:
 
 
 async def _fetch_dxy() -> dict:
-    """Pull DXY (US Dollar Index) via yfinance — runs in thread."""
+    """Pull DXY (US Dollar Index) via yfinance — runs in thread, cached."""
+    cached = cache_get("MACRO_DXY")
+    if cached is not None:
+        return cached
+
     def _sync():
         try:
             import yfinance as yf  # noqa: PLC0415
@@ -120,7 +143,10 @@ async def _fetch_dxy() -> dict:
 
     res = await asyncio.get_event_loop().run_in_executor(None, _sync)
     if not res:
+        _record_fetch("yahoo_dxy", ok=False, reason="empty")
         raise ValueError("DXY unavailable from yfinance")
+    _record_fetch("yahoo_dxy", ok=True)
+    cache_set("MACRO_DXY", res, _CACHE_TTL_MACRO)
     return res
 
 

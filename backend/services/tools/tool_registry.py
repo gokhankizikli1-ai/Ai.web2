@@ -56,5 +56,5 @@ def health_status() -> dict:
         "ecommerce_research_enabled": ENABLE_ECOMMERCE_RESEARCH,
         "web_research_enabled":       ENABLE_WEB_RESEARCH,
         "registered_tools":           list(_registry.keys()),
-        "phase": "5 — advanced trading intelligence (MTF, futures, macro, plan)",
+        "phase": "5.2 — stabilization & polish (cache + backoff + safety + frontend cards)",
     }

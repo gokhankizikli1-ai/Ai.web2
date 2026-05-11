@@ -81,6 +81,7 @@ def _market_data_summary(tool_results: dict) -> dict | None:
     if md_data:
         plan_d = md_data.get("plan") or {}
         fut_d  = md_data.get("futures") or {}
+        dq     = md_data.get("data_quality") or {}
         out["market_data"] = {
             "symbol":            md_data.get("symbol"),
             "timeframe":         md_data.get("timeframe"),
@@ -99,6 +100,8 @@ def _market_data_summary(tool_results: dict) -> dict | None:
             "trapped_traders":   fut_d.get("trapped_traders"),
             "positioning_signal": fut_d.get("positioning_signal"),
             "provider":          md.get("provider"),
+            "data_quality":      dq.get("level") if isinstance(dq, dict) else None,
+            "data_quality_missing": dq.get("missing") if isinstance(dq, dict) else None,
         }
     if mc_data:
         out["macro_data"] = {
