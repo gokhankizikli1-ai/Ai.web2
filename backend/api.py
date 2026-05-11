@@ -137,6 +137,7 @@ def _build_full_app():
         "backend.routes.profile",
         "backend.routes.stats",
         "backend.routes.tools",        # Phase 4A — /tools/health
+        "backend.routes.sessions",     # Phase M2 — /sessions/* (gated by ENABLE_SESSIONS)
     ]:
         try:
             _app.include_router(importlib.import_module(_mod).router)
