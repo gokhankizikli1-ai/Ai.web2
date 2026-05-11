@@ -624,6 +624,7 @@ Polish concentrated in a phase but each item small and isolated.
 | P4 | **Voice/length adaptation.** Output filter that adjusts verbosity to user style (already partially captured in memory). | Personal feel without bespoke prompts |
 | P5 | **Empty-state intelligence.** "What you were working on" panel on new-thread page, populated from memory + recent threads. | Removes "blank cursor" friction |
 | P6 | **Design polish pass.** Typography scale, motion easing, focus rings, mobile parity, dark/light contrast audit. | Premium *look*; no functional change |
+| P7 | **Deploy-status watcher workflow.** Companion to the Phase 5.3 `post-deploy-healthcheck` workflow. If `railway/production-deploy` does not reach `success` within budget on a merge commit to `main`, the watcher opens (or updates) a single GitHub Issue with the failing run's logs and merge commit metadata. Tiny scope: one workflow file; no backend or frontend change. | Closes the verification-readability gap surfaced during M1/M2 deploys — future automated sessions can read deploy outcomes via the Issues MCP without depending on the unauthenticated commit-status API (per-IP rate-limited from shared sandboxes). |
 
 ---
 
