@@ -76,15 +76,27 @@ export interface Message {
   content: string;
   timestamp: Date;
   metadata?: MessageMetadata;
+  serverMessageId?: string;          // remote message id once persisted (W1)
 }
 
+/**
+ * Phase W1 — server-side session sync.
+ *
+ * Sessions and messages keep their existing local fields; new optional
+ * `serverThreadId` / `serverMessageId` fields record the remote ids once
+ * the W1 sync layer has confirmed them. Absent values mean "local only
+ * so far" (e.g. demo chats, unsynced new chats, or sessions while flag is off).
+ */
 export interface ChatSession {
-  id: string;
+  id: string;                        // stable local id
   title: string;
   messages: Message[];
   updatedAt: Date;
   isDemo?: boolean;
   folder?: ChatFolder;
+  serverThreadId?: string;           // remote thread id (W1)
+  serverWorkspaceId?: string;        // remote workspace id (W1)
+  syncStatus?: 'unsynced' | 'syncing' | 'synced' | 'error';
 }
 
 export interface PromptItem {
