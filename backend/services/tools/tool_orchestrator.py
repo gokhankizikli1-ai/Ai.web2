@@ -93,7 +93,7 @@ def build_tool_context_block(tool_results: Dict[str, dict]) -> str:
 
 
 def _format_market_data(d: dict) -> str:
-    """Render the rich market_data payload (price block, MTF, futures, plan)."""
+    """Render the rich market_data payload (price, MTF, smart money, futures, plan)."""
     lines: list[str] = []
 
     # — Price + indicators (primary timeframe) —
@@ -140,6 +140,15 @@ def _format_market_data(d: dict) -> str:
             for div in divs:
                 lines.append(f"    - {div}")
 
+    # — Smart money zones (Phase 5.1) —
+    zones = d.get("smart_money")
+    if isinstance(zones, dict) and zones:
+        zones_str = _format_smart_money(zones)
+        if zones_str:
+            lines.append("")
+            lines.append("SMART MONEY ZONES")
+            lines.append(zones_str)
+
     # — Futures microstructure —
     fut = d.get("futures")
     if isinstance(fut, dict) and fut and "_error" not in fut and "error" not in fut:
@@ -149,28 +158,105 @@ def _format_market_data(d: dict) -> str:
             "funding_rate_pct", "funding_annualized_pct", "funding_regime",
             "mark_price", "open_interest", "oi_change_24h_pct",
             "long_short_account_ratio", "top_trader_long_short_ratio",
-            "taker_buy_sell_ratio", "positioning_signal",
+            "taker_buy_sell_ratio", "positioning_signal", "trapped_traders",
         ):
             v = fut.get(key)
             if v is not None:
                 lines.append(f"  {key}: {v}")
 
-    # — Auto risk plan —
+    # — Auto risk plan (Phase 5.1: + directional_bias / TP3 / risks / actions) —
     plan = d.get("plan")
     if isinstance(plan, dict):
         lines.append("")
-        lines.append("AUTO RISK PLAN (ATR-anchored proposal — AI must justify or veto)")
+        lines.append("AUTO RISK PLAN (ATR-anchored proposal — AI must defend, refine, or veto)")
         for key in (
-            "side_bias", "entry", "stop", "take_profit_1", "take_profit_2",
+            "directional_bias", "side_bias", "entry", "stop",
+            "take_profit_1", "take_profit_2", "take_profit_3",
             "risk_reward", "stop_atr_multiple", "target_atr_multiple",
             "setup_grade", "bias_strength", "bull_points", "bear_points",
+            "fakeout_risk", "liquidity_risk", "trapped_traders",
             "invalidation",
         ):
             v = plan.get(key)
             if v is not None:
                 lines.append(f"  {key}: {v}")
+        do_now = plan.get("do_now") or []
+        if do_now:
+            lines.append("  do_now:")
+            for item in do_now:
+                lines.append(f"    - {item}")
+        do_not = plan.get("do_not_do") or []
+        if do_not:
+            lines.append("  do_not_do:")
+            for item in do_not:
+                lines.append(f"    - {item}")
 
     return "\n".join(lines)
+
+
+def _format_smart_money(z: dict) -> str:
+    """Compact renderer for FVG / OB / equal H/L / premium-discount / liquidity / absorption."""
+    out: list[str] = []
+
+    pd = z.get("premium_discount")
+    if isinstance(pd, dict):
+        out.append(
+            f"  premium_discount: zone={pd.get('zone')} | "
+            f"swing_low={pd.get('swing_low')} | "
+            f"eq={pd.get('equilibrium')} | "
+            f"swing_high={pd.get('swing_high')}"
+        )
+
+    for label, key in (("fvg_bullish", "fvg_bullish"), ("fvg_bearish", "fvg_bearish")):
+        fvg = z.get(key)
+        if isinstance(fvg, dict):
+            out.append(
+                f"  {label}: {fvg.get('low')}-{fvg.get('high')} | "
+                f"size_atr={fvg.get('size_atr')} | "
+                f"distance_pct={fvg.get('distance_pct')} | "
+                f"age={fvg.get('age_candles')} candles"
+            )
+
+    for label, key in (("order_block_bull", "order_block_bull"), ("order_block_bear", "order_block_bear")):
+        ob = z.get(key)
+        if isinstance(ob, dict):
+            out.append(
+                f"  {label}: {ob.get('low')}-{ob.get('high')} | "
+                f"distance_pct={ob.get('distance_pct')} | "
+                f"age={ob.get('age_candles')} candles"
+            )
+
+    eh = z.get("equal_highs") or []
+    if eh:
+        out.append("  equal_highs (likely buy-stop clusters):")
+        for c in eh:
+            out.append(f"    - {c['level']} | touches={c['touches']} | distance_pct={c['distance_pct']}")
+    el = z.get("equal_lows") or []
+    if el:
+        out.append("  equal_lows (likely sell-stop clusters):")
+        for c in el:
+            out.append(f"    - {c['level']} | touches={c['touches']} | distance_pct={c['distance_pct']}")
+
+    la = z.get("liquidity_above") or []
+    if la:
+        out.append("  liquidity_above (nearby stop pools):")
+        for p in la:
+            out.append(f"    - {p['level']} | distance_pct={p['distance_pct']}")
+    lb = z.get("liquidity_below") or []
+    if lb:
+        out.append("  liquidity_below (nearby stop pools):")
+        for p in lb:
+            out.append(f"    - {p['level']} | distance_pct={p['distance_pct']}")
+
+    ab = z.get("absorption_signal")
+    if isinstance(ab, dict):
+        out.append(
+            f"  absorption_signal: {ab.get('type')} | "
+            f"vol_ratio={ab.get('vol_ratio')} | "
+            f"range_vs_atr={ab.get('range_vs_atr')}"
+        )
+
+    return "\n".join(out)
 
 
 def _format_macro_data(d: dict) -> str:
