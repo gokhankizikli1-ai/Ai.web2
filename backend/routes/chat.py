@@ -4,7 +4,7 @@ import logging
 import uuid
 from fastapi import APIRouter
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 router = APIRouter(tags=["chat"])
 logger = logging.getLogger(__name__)
@@ -35,6 +35,11 @@ class ChatResponse(BaseModel):
     response_time_ms: int
     request_id: str
     suggested_followups: Optional[List[str]] = None
+    # Phase 5 — optional extras (additive, never required by older frontends).
+    # `metadata.trading_signal` carries the structured trading signal JSON
+    # extracted from the trading_analyst reply. `metadata.tool_summary`
+    # carries a compact snapshot of market_data + macro_data.
+    metadata: Optional[Dict[str, Any]] = None
 
 
 def _uid(raw: str) -> int:
@@ -166,6 +171,7 @@ async def chat(req: ChatRequest):
     prov = "openai"
     mode = "chat"
     followups: List[str] = []
+    response_metadata: Optional[Dict[str, Any]] = None
 
     try:
         from backend.services.ai_service import process_chat
@@ -185,6 +191,7 @@ async def chat(req: ChatRequest):
         prov = ai_result.get("provider", "openai")
         mode = ai_result.get("mode", "chat")
         followups = ai_result.get("followups", [])
+        response_metadata = ai_result.get("metadata")
     except Exception as e:
         logger.error("CHAT | rid=%s | process_chat error: %s", request_id, e, exc_info=True)
 
@@ -229,6 +236,7 @@ async def chat(req: ChatRequest):
         response_time_ms=elapsed_ms,
         request_id=request_id,
         suggested_followups=followups if followups else None,
+        metadata=response_metadata,
     )
 
 

@@ -1,6 +1,8 @@
 # coding: utf-8
 import sys
 import os
+import re
+import json
 import logging
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
@@ -26,8 +28,80 @@ try:
     _TOOLS_AVAILABLE = True
 except Exception:
     _TOOLS_AVAILABLE = False
-    
+
 logger = logging.getLogger(__name__)
+
+
+# ── Structured trading_signal extractor ────────────────────────────────────
+_TRADING_SIGNAL_RE = re.compile(
+    r"```json\s*(\{[\s\S]*?\})\s*```",
+    re.IGNORECASE,
+)
+
+
+def _extract_trading_signal(reply: str) -> tuple[dict | None, str]:
+    """
+    Pull the last ```json {...}``` block from `reply` if it parses and looks
+    like a trading_signal. Returns (signal_dict_or_None, reply_without_block).
+    """
+    if not reply:
+        return None, reply
+    matches = list(_TRADING_SIGNAL_RE.finditer(reply))
+    if not matches:
+        return None, reply
+
+    for m in reversed(matches):
+        try:
+            obj = json.loads(m.group(1))
+        except (json.JSONDecodeError, ValueError):
+            continue
+        if not isinstance(obj, dict):
+            continue
+        # Must look like a trading signal — require at least 2 of these fields.
+        markers = {"symbol", "side", "action", "setup_grade", "thesis", "invalidation"}
+        if len(markers & set(obj.keys())) < 2:
+            continue
+        cleaned = (reply[: m.start()] + reply[m.end():]).rstrip()
+        return obj, cleaned
+
+    return None, reply
+
+
+def _market_data_summary(tool_results: dict) -> dict | None:
+    """Compact summary of market_data + macro_data for response metadata."""
+    if not isinstance(tool_results, dict):
+        return None
+    md = tool_results.get("market_data") or {}
+    mc = tool_results.get("macro_data")  or {}
+    md_data = md.get("data") if md.get("status") == "available" else None
+    mc_data = mc.get("data") if mc.get("status") == "available" else None
+    if not md_data and not mc_data:
+        return None
+    out: dict = {}
+    if md_data:
+        out["market_data"] = {
+            "symbol":         md_data.get("symbol"),
+            "timeframe":      md_data.get("timeframe"),
+            "last_price":     md_data.get("last_price"),
+            "rsi_14":         md_data.get("rsi_14"),
+            "trend":          md_data.get("trend"),
+            "regime":         md_data.get("regime"),
+            "bb_squeeze":     md_data.get("bb_squeeze"),
+            "mtf_alignment":  (md_data.get("mtf_alignment") or {}).get("alignment"),
+            "setup_grade":    (md_data.get("plan") or {}).get("setup_grade"),
+            "side_bias":      (md_data.get("plan") or {}).get("side_bias"),
+            "funding_regime": (md_data.get("futures") or {}).get("funding_regime"),
+            "provider":       md.get("provider"),
+        }
+    if mc_data:
+        out["macro_data"] = {
+            "regime":            mc_data.get("regime"),
+            "btc_dominance_pct": mc_data.get("btc_dominance_pct"),
+            "dxy":               mc_data.get("dxy"),
+            "dxy_change_1d_pct": mc_data.get("dxy_change_1d_pct"),
+            "total_market_cap_change_24h_pct": mc_data.get("total_market_cap_change_24h_pct"),
+        }
+    return out or None
 
 _ECOM_KW = [
     "satmak", "dropshipping", "shopify", "ecommerce", "e-ticaret",
@@ -139,12 +213,22 @@ async def process_chat(
                 logger.info(
                     "process_chat | mode_system | mode=%s | model=%s", canonical, cfg["model"]
                 )
+
+                _metadata: dict = {}
+                if canonical == "trading_analyst":
+                    signal, reply = _extract_trading_signal(reply)
+                    if signal is not None:
+                        _metadata["trading_signal"] = signal
+                    _summary = _market_data_summary(_mode_tool_res)
+                    if _summary:
+                        _metadata["tool_summary"] = _summary
                 return {
                     "reply":    reply,
                     "intent":   canonical,
                     "model":    cfg["model"],
                     "provider": cfg["provider"],
                     "mode":     canonical,
+                    "metadata": _metadata or None,
                 }
         except Exception as _mode_err:
             # Mode system failed — log and fall through to existing routing.
@@ -230,12 +314,20 @@ async def process_chat(
                 "process_chat | route=trading_analyst | symbol=%s | model=%s",
                 symbol, _ta_cfg["model"],
             )
+            _signal, _ta_reply = _extract_trading_signal(_ta_reply)
+            _ta_meta: dict = {}
+            if _signal is not None:
+                _ta_meta["trading_signal"] = _signal
+            _ta_summary = _market_data_summary(_ta_tool_res)
+            if _ta_summary:
+                _ta_meta["tool_summary"] = _ta_summary
             return {
                 "reply":    _ta_reply,
                 "intent":   "trading_analyst",
                 "model":    _ta_cfg["model"],
                 "provider": _ta_cfg["provider"],
                 "mode":     "trading_analyst",
+                "metadata": _ta_meta or None,
             }
         except Exception as _ta_err:
             logger.warning(

@@ -1,31 +1,20 @@
 # coding: utf-8
-# Phase 4A — Tool Orchestrator
-# Routes AI mode requests to the relevant tools.
-# Always returns a dict — never raises, never blocks the AI response.
-#
-# Phase 4A: architecture only, all tools return "disabled" or "unavailable".
-# Phase 4B: market_data connects to real provider.
-# Phase 4C: ecommerce_research connects to real provider.
-# Phase 4D: web_research connects to real provider + agent workflows.
+# Phase 5 — Tool Orchestrator
+# Routes AI mode requests to the relevant tools, runs them in parallel, and
+# formats the merged context block for injection into the system prompt.
 import asyncio
 import logging
 from typing import Dict, List
 
 logger = logging.getLogger(__name__)
 
-# Maps canonical AI mode names → tool names they may call.
-# Add new modes here as tools become available.
+# Mode → tool list. Tools execute concurrently per request.
 _MODE_TOOL_MAP: Dict[str, List[str]] = {
-    "trading_analyst":        ["market_data"],
+    "trading_analyst":        ["market_data", "macro_data"],
     "marketing_dropshipping": ["ecommerce_research", "web_research"],
     "startup_advisor":        ["web_research"],
     "research":               ["web_research"],
     "deep_think":             ["web_research"],
-    # Modes below intentionally have no tools — fast local responses only.
-    # "fast": [],
-    # "study": [],
-    # "coding": [],
-    # "website_builder": [],
 }
 
 
@@ -34,12 +23,7 @@ async def run_tools_for_mode(
     query: str,
     context: dict = None,
 ) -> Dict[str, dict]:
-    """
-    Run all tools mapped to a given mode in parallel.
-    Returns a dict keyed by tool name — all values are normalized result dicts.
-    Safe to call even when ENABLE_TOOLS=false; every tool returns disabled status.
-    """
-    # Lazy imports to prevent startup crashes.
+    """Run all tools mapped to a mode in parallel. Returns dict keyed by tool name."""
     try:
         from backend.services.tools.tool_registry import is_enabled, get_tool
     except Exception as exc:
@@ -79,30 +63,133 @@ async def run_tools_for_mode(
     return dict(pairs)
 
 
-def build_tool_context_block(tool_results: Dict[str, dict]) -> str:
-    """
-    Convert available tool data into a plain-text block for injection into
-    the AI system prompt. Returns "" if nothing is available — the AI
-    response continues unmodified.
+# ══════════════════════════════════════════════════════════════════════════════
+# Context formatter — produces a human + AI readable block for prompt injection.
 
-    Phase 4B-D: format will expand as providers supply richer data.
-    """
+def build_tool_context_block(tool_results: Dict[str, dict]) -> str:
     if not tool_results:
         return ""
 
-    lines = []
+    sections: list[str] = []
     for tool_name, result in tool_results.items():
         if result.get("status") != "available":
             continue
         data = result.get("data")
         if not data:
             continue
-        provider = result.get("provider", "")
-        lines.append(f"\n[TOOL: {tool_name.upper()}" + (f" via {provider}" if provider else "") + "]")
-        if isinstance(data, dict):
-            for k, v in data.items():
-                lines.append(f"  {k}: {v}")
-        else:
-            lines.append(f"  {data}")
+        provider = result.get("provider") or ""
+        header   = f"[TOOL: {tool_name.upper()}" + (f" via {provider}" if provider else "") + "]"
 
-    return "\n".join(lines) if lines else ""
+        if tool_name == "market_data" and isinstance(data, dict):
+            sections.append(header + _format_market_data(data))
+        elif tool_name == "macro_data" and isinstance(data, dict):
+            sections.append(header + _format_macro_data(data))
+        elif isinstance(data, dict):
+            sections.append(header + _format_generic_dict(data))
+        else:
+            sections.append(f"{header}\n  {data}")
+
+    return ("\n\n".join(sections) + "\n") if sections else ""
+
+
+def _format_market_data(d: dict) -> str:
+    """Render the rich market_data payload (price block, MTF, futures, plan)."""
+    lines: list[str] = []
+
+    # — Price + indicators (primary timeframe) —
+    lines.append("")
+    lines.append("PRICE & STRUCTURE ({}, {} candles)".format(
+        d.get("timeframe", "?"), d.get("candles_analyzed", "?")
+    ))
+    for key in (
+        "symbol", "last_price", "change_24h_pct", "volume_24h",
+        "rsi_14", "ema20", "ema50", "trend", "volume_trend",
+        "support", "resistance", "atr_14", "volatility_pct",
+        "bos", "bb_upper", "bb_middle", "bb_lower", "bb_width_pct",
+        "bb_squeeze", "bb_position", "regime",
+    ):
+        v = d.get(key)
+        if v is not None:
+            lines.append(f"  {key}: {v}")
+
+    # — Multi-timeframe block —
+    mtf = d.get("multi_timeframe")
+    if isinstance(mtf, dict) and mtf:
+        lines.append("")
+        lines.append("MULTI-TIMEFRAME SNAPSHOTS")
+        for tf, snap in mtf.items():
+            if not isinstance(snap, dict):
+                continue
+            lines.append(f"  [{tf}]")
+            for k, v in snap.items():
+                if v is None:
+                    continue
+                lines.append(f"    {k}: {v}")
+
+    align = d.get("mtf_alignment")
+    if isinstance(align, dict):
+        lines.append("")
+        lines.append("MTF ALIGNMENT")
+        lines.append(f"  alignment: {align.get('alignment')}")
+        lines.append(
+            f"  up: {align.get('up_count')} | down: {align.get('down_count')} | side: {align.get('side_count')}"
+        )
+        divs = align.get("divergences") or []
+        if divs:
+            lines.append("  divergences:")
+            for div in divs:
+                lines.append(f"    - {div}")
+
+    # — Futures microstructure —
+    fut = d.get("futures")
+    if isinstance(fut, dict) and fut and "_error" not in fut and "error" not in fut:
+        lines.append("")
+        lines.append("FUTURES MICROSTRUCTURE (Binance USDT-M)")
+        for key in (
+            "funding_rate_pct", "funding_annualized_pct", "funding_regime",
+            "mark_price", "open_interest", "oi_change_24h_pct",
+            "long_short_account_ratio", "top_trader_long_short_ratio",
+            "taker_buy_sell_ratio", "positioning_signal",
+        ):
+            v = fut.get(key)
+            if v is not None:
+                lines.append(f"  {key}: {v}")
+
+    # — Auto risk plan —
+    plan = d.get("plan")
+    if isinstance(plan, dict):
+        lines.append("")
+        lines.append("AUTO RISK PLAN (ATR-anchored proposal — AI must justify or veto)")
+        for key in (
+            "side_bias", "entry", "stop", "take_profit_1", "take_profit_2",
+            "risk_reward", "stop_atr_multiple", "target_atr_multiple",
+            "setup_grade", "bias_strength", "bull_points", "bear_points",
+            "invalidation",
+        ):
+            v = plan.get(key)
+            if v is not None:
+                lines.append(f"  {key}: {v}")
+
+    return "\n".join(lines)
+
+
+def _format_macro_data(d: dict) -> str:
+    lines = [""]
+    for key in (
+        "regime",
+        "btc_dominance_pct", "eth_dominance_pct", "others_dominance_pct",
+        "total_market_cap_usd", "total_market_cap_change_24h_pct",
+        "total_excl_btc_eth_usd", "active_cryptocurrencies",
+        "dxy", "dxy_change_1d_pct", "dxy_source",
+    ):
+        v = d.get(key)
+        if v is not None:
+            lines.append(f"  {key}: {v}")
+    return "\n".join(lines)
+
+
+def _format_generic_dict(d: dict) -> str:
+    lines = [""]
+    for k, v in d.items():
+        lines.append(f"  {k}: {v}")
+    return "\n".join(lines)

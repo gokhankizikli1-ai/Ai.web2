@@ -1,18 +1,18 @@
 # coding: utf-8
-# Phase 4B — Market Data Tool
-# Automatic fallback chain: Binance → Yahoo Finance → AlphaVantage → CoinGecko
+# Phase 5 — Advanced Trading Intelligence
+# Market Data Tool with multi-timeframe analysis, Binance futures microstructure,
+# Bollinger Band regime detection, and an ATR-anchored auto risk plan.
 #
-# MARKET_DATA_PROVIDER sets the starting provider (default: binance).
-# If it fails for any reason (e.g. HTTP 451), the next provider is tried
-# automatically — this never returns "no live data access".
+# Provider chain (price/indicator data): Binance → Yahoo Finance → AlphaVantage → CoinGecko.
+# Crypto microstructure (funding, OI, L/S, liquidations) comes from Binance USDT-M futures
+# public REST endpoints (no key needed) — only attempted when the symbol is a USDT-M pair.
 #
-# Provider notes:
-#   binance       — public REST, no key, 1200 req/min; 451 on some hosting IPs
-#   yahoo_finance — yfinance lib (in requirements), no key, reliable
-#   alphavantage  — optional; set ALPHAVANTAGE_API_KEY; 5 req/min free tier
-#   coingecko     — free tier, crypto only, 30 req/min; last-resort fallback
-#
-# Activate: ENABLE_TOOLS=true  ENABLE_MARKET_DATA=true  MARKET_DATA_PROVIDER=binance
+# Activate:
+#   ENABLE_TOOLS=true
+#   ENABLE_MARKET_DATA=true
+#   MARKET_DATA_PROVIDER=binance        (optional — default chain starts at binance)
+#   ENABLE_MTF=true                     (optional — default true; turn off for legacy mode)
+#   ENABLE_FUTURES_MICROSTRUCTURE=true  (optional — default true; crypto only)
 import os
 import re
 import json
@@ -26,10 +26,17 @@ logger = logging.getLogger(__name__)
 
 _PROVIDER          = os.getenv("MARKET_DATA_PROVIDER", "").strip().lower()
 _BINANCE_BASE      = "https://api.binance.com/api/v3"
+_BINANCE_FAPI      = "https://fapi.binance.com"
 _COINGECKO_BASE    = "https://api.coingecko.com/api/v3"
 _ALPHAVANTAGE_BASE = "https://www.alphavantage.co"
 _ALPHAVANTAGE_KEY  = os.getenv("ALPHAVANTAGE_API_KEY", "").strip()
 _TIMEOUT           = 10  # seconds per request
+
+_ENABLE_MTF        = os.getenv("ENABLE_MTF", "true").strip().lower() != "false"
+_ENABLE_FUTURES    = os.getenv("ENABLE_FUTURES_MICROSTRUCTURE", "true").strip().lower() != "false"
+
+# Multi-timeframe set (parallel fetches when the primary provider is binance/yahoo).
+_MTF_TIMEFRAMES = ("1d", "4h", "1h")
 
 # ── Symbol sets ────────────────────────────────────────────────────────────────────────────
 
@@ -79,7 +86,7 @@ _YF_INTERVALS = {
     "1M":  ("1mo", "365d"),
 }
 
-# How many candles span approximately 24 hours for each timeframe
+# Approximate candles per 24 hours for change_24h / volume_24h windows
 _CANDLES_PER_24H = {
     "1m": 1440, "5m": 288, "15m": 96, "30m": 48,
     "1h": 24,   "2h": 12,  "4h":  6,  "6h":  4,
@@ -91,9 +98,11 @@ _CANDLES_PER_24H = {
 class MarketDataTool(BaseTool):
     name = "market_data"
     description = (
-        "Fetches live price, RSI-14, EMA-20/50, ATR-14, BOS, support/resistance, "
-        "volume trend, and volatility. Multi-provider fallback: "
-        "Binance → Yahoo Finance → AlphaVantage → CoinGecko."
+        "Multi-timeframe market data with institutional indicators: price, RSI-14, "
+        "EMA-20/50, ATR-14, Bollinger Bands + squeeze, BOS, support/resistance, "
+        "volume regime, volatility regime, MTF alignment, Binance futures "
+        "microstructure (funding/OI/L:S/liquidations), and an ATR-anchored risk plan. "
+        "Provider fallback: Binance → Yahoo → AlphaVantage → CoinGecko."
     )
 
     async def run(self, query: str, context: dict = None) -> dict:
@@ -102,7 +111,6 @@ class MarketDataTool(BaseTool):
     # ── Fallback coordinator ────────────────────────────────────────────────
 
     async def _run_with_fallback(self, query: str, ctx: dict) -> dict:
-        """Try providers in priority order; log which one succeeds."""
         providers = [
             ("binance",       self._try_binance),
             ("yahoo_finance", self._try_yahoo),
@@ -111,7 +119,6 @@ class MarketDataTool(BaseTool):
             providers.append(("alphavantage", self._try_alphavantage))
         providers.append(("coingecko", self._try_coingecko))
 
-        # Determine start index from MARKET_DATA_PROVIDER
         start = 0
         if _PROVIDER in ("yahoo_finance", "yahoo"):
             start = 1
@@ -119,7 +126,6 @@ class MarketDataTool(BaseTool):
             start = next((i for i, (n, _) in enumerate(providers) if n == "coingecko"), 0)
         elif _PROVIDER in ("alphavantage", "alpha_vantage") and _ALPHAVANTAGE_KEY:
             start = next((i for i, (n, _) in enumerate(providers) if n == "alphavantage"), 0)
-        # "binance", "", or unknown → start = 0 (full chain from Binance)
 
         errors: list[str] = []
         for name, fn in providers[start:]:
@@ -127,8 +133,9 @@ class MarketDataTool(BaseTool):
                 result = await fn(query, ctx)
                 data = result.get("data") or {}
                 logger.info(
-                    "MARKET_DATA_TOOL | provider=%s | symbol=%s | timeframe=%s | candles=%s",
-                    name, data.get("symbol"), data.get("timeframe"), data.get("candles_analyzed"),
+                    "MARKET_DATA_TOOL | provider=%s | symbol=%s | tf=%s | mtf=%s | setup_grade=%s",
+                    name, data.get("symbol"), data.get("timeframe"),
+                    bool(data.get("multi_timeframe")), (data.get("plan") or {}).get("setup_grade"),
                 )
                 return result
             except Exception as exc:
@@ -145,7 +152,6 @@ class MarketDataTool(BaseTool):
 
     @staticmethod
     def parse_symbol(message: str) -> str | None:
-        """Extract a trading symbol from free-form text."""
         text = message.upper()
         m = re.search(r'\b([A-Z]{2,6})(?:[/-])?(USDT|USD|BTC|ETH|EUR|BUSD)\b', text)
         if m:
@@ -159,31 +165,55 @@ class MarketDataTool(BaseTool):
             return m.group(1)
         return None
 
-    # ── Provider 1: Binance ───────────────────────────────────────────────────────
+    # ── Provider 1: Binance (with MTF + futures microstructure) ────────────────
 
     async def _try_binance(self, query: str, ctx: dict) -> dict:
         symbol   = _normalize_binance_symbol(ctx.get("symbol") or self.parse_symbol(query) or "BTCUSDT")
         interval = ctx.get("timeframe", ctx.get("interval", "1h"))
         if interval not in {"1m","3m","5m","15m","30m","1h","2h","4h","6h","8h","12h","1d","3d","1w","1M"}:
             interval = "1h"
-        limit = min(int(ctx.get("limit", 150)), 500)
+        limit = min(int(ctx.get("limit", 200)), 500)
 
+        # Primary timeframe (full indicator pack) — always fetched.
         url = f"{_BINANCE_BASE}/klines?symbol={symbol}&interval={interval}&limit={limit}"
-        raw = await _fetch_json(url, timeout=_TIMEOUT)  # raises on any HTTP error
-
+        raw = await _fetch_json(url, timeout=_TIMEOUT)
         if not raw or len(raw) < 20:
             raise ValueError(f"Insufficient Binance data for {symbol}: {len(raw or [])} candles")
+        base = _ohlcv_from_klines(raw)
+        primary = _build_result(symbol, interval, *base)
 
-        opens   = [float(c[1]) for c in raw]
-        highs   = [float(c[2]) for c in raw]
-        lows    = [float(c[3]) for c in raw]
-        closes  = [float(c[4]) for c in raw]
-        volumes = [float(c[5]) for c in raw]
+        # Multi-timeframe (lightweight — trend + momentum only) in parallel.
+        mtf = {}
+        if _ENABLE_MTF:
+            other_tfs = [tf for tf in _MTF_TIMEFRAMES if tf != interval]
+            try:
+                mtf_results = await asyncio.gather(
+                    *[_fetch_binance_tf(symbol, tf) for tf in other_tfs],
+                    return_exceptions=True,
+                )
+                mtf[interval] = _mtf_snapshot_from_full(primary)
+                for tf, res in zip(other_tfs, mtf_results):
+                    if isinstance(res, Exception):
+                        continue
+                    mtf[tf] = res
+            except Exception as exc:
+                logger.warning("MTF fetch failed for %s: %s", symbol, exc)
 
-        return self._ok(
-            _build_result(symbol, interval, opens, highs, lows, closes, volumes),
-            provider="binance",
-        )
+        # Futures microstructure (crypto only).
+        futures = {}
+        if _ENABLE_FUTURES and _is_binance_futures_pair(symbol):
+            try:
+                futures = await _fetch_binance_futures(symbol)
+            except Exception as exc:
+                logger.warning("Futures microstructure failed for %s: %s", symbol, exc)
+                futures = {"error": str(exc)}
+
+        primary["multi_timeframe"] = mtf or None
+        primary["mtf_alignment"]   = _mtf_alignment(mtf) if mtf else None
+        primary["futures"]         = futures or None
+        primary["plan"]            = _build_plan(primary, mtf or {})
+
+        return self._ok(primary, provider="binance")
 
     # ── Provider 2: Yahoo Finance ────────────────────────────────────────────────
 
@@ -193,30 +223,52 @@ class MarketDataTool(BaseTool):
         tf             = ctx.get("timeframe", "1h").lower()
         yf_int, period = _YF_INTERVALS.get(tf, ("1h", "7d"))
 
-        def _sync():
+        def _sync(symbol_, yf_interval_, period_):
             import yfinance as yf  # noqa: PLC0415
-            hist = yf.Ticker(yf_sym).history(period=period, interval=yf_int)
+            hist = yf.Ticker(symbol_).history(period=period_, interval=yf_interval_)
             if hist.empty:
-                raise ValueError(f"No Yahoo Finance data for {yf_sym}")
-            return hist.dropna(subset=["Close", "High", "Low", "Open"])
+                raise ValueError(f"No Yahoo Finance data for {symbol_}")
+            hist = hist.dropna(subset=["Close", "High", "Low", "Open"])
+            return (
+                list(hist["Open"]),
+                list(hist["High"]),
+                list(hist["Low"]),
+                list(hist["Close"]),
+                list(hist["Volume"].fillna(0)),
+            )
 
-        hist = await asyncio.get_event_loop().run_in_executor(None, _sync)
-
-        closes  = list(hist["Close"])
-        highs   = list(hist["High"])
-        lows    = list(hist["Low"])
-        opens   = list(hist["Open"])
-        volumes = list(hist["Volume"].fillna(0))
-
+        opens, highs, lows, closes, volumes = await asyncio.get_event_loop().run_in_executor(
+            None, _sync, yf_sym, yf_int, period,
+        )
         if len(closes) < 15:
             raise ValueError(f"Insufficient Yahoo Finance data for {yf_sym}: {len(closes)} candles")
 
-        return self._ok(
-            _build_result(yf_sym, yf_int, opens, highs, lows, closes, volumes),
-            provider="yahoo_finance",
-        )
+        primary = _build_result(yf_sym, yf_int, opens, highs, lows, closes, volumes)
 
-    # ── Provider 3: AlphaVantage (optional) ──────────────────────────────────────────
+        mtf = {}
+        if _ENABLE_MTF:
+            other_tfs = [t for t in _MTF_TIMEFRAMES if t != tf]
+            try:
+                mtf_results = await asyncio.gather(
+                    *[_fetch_yahoo_tf(yf_sym, t, _sync) for t in other_tfs],
+                    return_exceptions=True,
+                )
+                mtf[tf] = _mtf_snapshot_from_full(primary)
+                for t, res in zip(other_tfs, mtf_results):
+                    if isinstance(res, Exception):
+                        continue
+                    mtf[t] = res
+            except Exception as exc:
+                logger.warning("Yahoo MTF fetch failed for %s: %s", yf_sym, exc)
+
+        primary["multi_timeframe"] = mtf or None
+        primary["mtf_alignment"]   = _mtf_alignment(mtf) if mtf else None
+        primary["futures"]         = None
+        primary["plan"]            = _build_plan(primary, mtf or {})
+
+        return self._ok(primary, provider="yahoo_finance")
+
+    # ── Provider 3: AlphaVantage (optional, daily-only crypto) ─────────────────
 
     async def _try_alphavantage(self, query: str, ctx: dict) -> dict:
         if not _ALPHAVANTAGE_KEY:
@@ -240,7 +292,7 @@ class MarketDataTool(BaseTool):
         if not ts:
             raise ValueError(f"AlphaVantage: no daily series returned for {base}")
 
-        dates   = sorted(ts.keys())[-90:]           # oldest → newest, last 90 days
+        dates   = sorted(ts.keys())[-90:]
         opens   = [float(ts[d]["1a. open (USD)"])  for d in dates]
         highs   = [float(ts[d]["2a. high (USD)"])  for d in dates]
         lows    = [float(ts[d]["3a. low (USD)"])   for d in dates]
@@ -250,12 +302,14 @@ class MarketDataTool(BaseTool):
         if len(closes) < 15:
             raise ValueError(f"AlphaVantage: insufficient data for {base}: {len(closes)} candles")
 
-        return self._ok(
-            _build_result(f"{base}USD", "1d", opens, highs, lows, closes, volumes),
-            provider="alphavantage",
-        )
+        primary = _build_result(f"{base}USD", "1d", opens, highs, lows, closes, volumes)
+        primary["multi_timeframe"] = None
+        primary["mtf_alignment"]   = None
+        primary["futures"]         = None
+        primary["plan"]            = _build_plan(primary, {})
+        return self._ok(primary, provider="alphavantage")
 
-    # ── Provider 4: CoinGecko (crypto-only last resort) ───────────────────────────
+    # ── Provider 4: CoinGecko (crypto-only last resort) ────────────────────────
 
     async def _try_coingecko(self, query: str, ctx: dict) -> dict:
         base  = _extract_base_ticker(ctx.get("symbol") or self.parse_symbol(query) or "BTC")
@@ -263,7 +317,6 @@ class MarketDataTool(BaseTool):
         if not cg_id:
             raise ValueError(f"No CoinGecko mapping for {base!r} — crypto pairs only")
 
-        # 7 days → 4h candles from CoinGecko OHLC endpoint
         ohlc_url = f"{_COINGECKO_BASE}/coins/{cg_id}/ohlc?vs_currency=usd&days=7"
         vol_url  = (
             f"{_COINGECKO_BASE}/coins/{cg_id}/market_chart"
@@ -279,7 +332,6 @@ class MarketDataTool(BaseTool):
         if isinstance(ohlc_res, Exception) or not ohlc_res:
             raise ValueError(f"CoinGecko OHLC failed: {ohlc_res}")
 
-        # ohlc_res: [[timestamp_ms, open, high, low, close], ...]
         opens  = [float(c[1]) for c in ohlc_res]
         highs  = [float(c[2]) for c in ohlc_res]
         lows   = [float(c[3]) for c in ohlc_res]
@@ -288,7 +340,6 @@ class MarketDataTool(BaseTool):
         if len(closes) < 15:
             raise ValueError(f"CoinGecko: only {len(closes)} candles for {cg_id}")
 
-        # Hourly volume → resample to 4h bucket sums to match OHLC count
         if (
             not isinstance(vol_res, Exception)
             and isinstance(vol_res, dict)
@@ -301,14 +352,214 @@ class MarketDataTool(BaseTool):
         else:
             volumes = [0.0] * len(closes)
 
-        return self._ok(
-            _build_result(f"{base}USDT", "4h", opens, highs, lows, closes, volumes),
-            provider="coingecko",
-        )
+        primary = _build_result(f"{base}USDT", "4h", opens, highs, lows, closes, volumes)
+        primary["multi_timeframe"] = None
+        primary["mtf_alignment"]   = None
+        primary["futures"]         = None
+        primary["plan"]            = _build_plan(primary, {})
+        return self._ok(primary, provider="coingecko")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Shared result builder — called by every provider after obtaining OHLCV lists
+# Helpers — Binance MTF + Futures
+
+async def _fetch_binance_tf(symbol: str, tf: str) -> dict:
+    """Fetch one extra timeframe from Binance and return an MTF snapshot."""
+    url = f"{_BINANCE_BASE}/klines?symbol={symbol}&interval={tf}&limit=200"
+    raw = await _fetch_json(url, timeout=_TIMEOUT)
+    if not raw or len(raw) < 20:
+        raise ValueError(f"insufficient {tf} candles")
+    opens, highs, lows, closes, volumes = _ohlcv_from_klines(raw)
+    full = _build_result(symbol, tf, opens, highs, lows, closes, volumes)
+    return _mtf_snapshot_from_full(full)
+
+
+async def _fetch_yahoo_tf(symbol: str, tf: str, syncer) -> dict:
+    """Fetch one extra timeframe from yfinance and return an MTF snapshot."""
+    yf_int, period = _YF_INTERVALS.get(tf, ("1h", "7d"))
+    opens, highs, lows, closes, volumes = await asyncio.get_event_loop().run_in_executor(
+        None, syncer, symbol, yf_int, period,
+    )
+    if len(closes) < 15:
+        raise ValueError(f"insufficient {tf} candles")
+    full = _build_result(symbol, tf, opens, highs, lows, closes, volumes)
+    return _mtf_snapshot_from_full(full)
+
+
+def _ohlcv_from_klines(raw):
+    opens   = [float(c[1]) for c in raw]
+    highs   = [float(c[2]) for c in raw]
+    lows    = [float(c[3]) for c in raw]
+    closes  = [float(c[4]) for c in raw]
+    volumes = [float(c[5]) for c in raw]
+    return opens, highs, lows, closes, volumes
+
+
+def _is_binance_futures_pair(symbol: str) -> bool:
+    """Heuristic: USDT-M perp pairs end with USDT (most Binance futures)."""
+    return symbol.upper().endswith("USDT")
+
+
+async def _fetch_binance_futures(symbol: str) -> dict:
+    """
+    Pull funding, mark price, open interest, and long/short ratios from Binance USDT-M
+    futures public endpoints. Each sub-call is wrapped — partial data is fine.
+    """
+    sym = symbol.upper()
+
+    async def _safe(coro):
+        try:
+            return await coro
+        except Exception as exc:
+            return {"_error": str(exc)}
+
+    premium_url = f"{_BINANCE_FAPI}/fapi/v1/premiumIndex?symbol={sym}"
+    oi_url      = f"{_BINANCE_FAPI}/fapi/v1/openInterest?symbol={sym}"
+    oi_hist_url = f"{_BINANCE_FAPI}/futures/data/openInterestHist?symbol={sym}&period=1h&limit=24"
+    ls_global   = f"{_BINANCE_FAPI}/futures/data/globalLongShortAccountRatio?symbol={sym}&period=1h&limit=2"
+    ls_top_pos  = f"{_BINANCE_FAPI}/futures/data/topLongShortPositionRatio?symbol={sym}&period=1h&limit=2"
+    taker_url   = f"{_BINANCE_FAPI}/futures/data/takerlongshortRatio?symbol={sym}&period=1h&limit=2"
+
+    premium, oi_now, oi_hist, ls_acc, ls_pos, taker = await asyncio.gather(
+        _safe(_fetch_json(premium_url, timeout=_TIMEOUT)),
+        _safe(_fetch_json(oi_url,      timeout=_TIMEOUT)),
+        _safe(_fetch_json(oi_hist_url, timeout=_TIMEOUT)),
+        _safe(_fetch_json(ls_global,   timeout=_TIMEOUT)),
+        _safe(_fetch_json(ls_top_pos,  timeout=_TIMEOUT)),
+        _safe(_fetch_json(taker_url,   timeout=_TIMEOUT)),
+    )
+
+    out: dict = {"symbol": sym}
+
+    if isinstance(premium, dict) and "lastFundingRate" in premium:
+        funding = float(premium["lastFundingRate"])
+        out["funding_rate"]            = round(funding, 6)
+        out["funding_rate_pct"]        = round(funding * 100, 4)
+        out["funding_annualized_pct"]  = round(funding * 100 * 3 * 365, 2)  # 3 funding windows / day
+        if "nextFundingTime" in premium:
+            out["next_funding_time_ms"] = int(premium["nextFundingTime"])
+        if "markPrice" in premium:
+            out["mark_price"] = round(float(premium["markPrice"]), 6)
+        out["funding_regime"] = _funding_regime(funding)
+
+    if isinstance(oi_now, dict) and "openInterest" in oi_now:
+        try:
+            out["open_interest"] = round(float(oi_now["openInterest"]), 4)
+        except (TypeError, ValueError):
+            pass
+
+    if isinstance(oi_hist, list) and len(oi_hist) >= 2:
+        try:
+            first = float(oi_hist[0]["sumOpenInterest"])
+            last  = float(oi_hist[-1]["sumOpenInterest"])
+            out["oi_change_24h_pct"] = round((last - first) / first * 100, 2) if first else 0.0
+        except (KeyError, TypeError, ValueError):
+            pass
+
+    if isinstance(ls_acc, list) and ls_acc:
+        try:
+            out["long_short_account_ratio"] = round(float(ls_acc[-1]["longShortRatio"]), 4)
+        except (KeyError, TypeError, ValueError):
+            pass
+
+    if isinstance(ls_pos, list) and ls_pos:
+        try:
+            out["top_trader_long_short_ratio"] = round(float(ls_pos[-1]["longShortRatio"]), 4)
+        except (KeyError, TypeError, ValueError):
+            pass
+
+    if isinstance(taker, list) and taker:
+        try:
+            out["taker_buy_sell_ratio"] = round(float(taker[-1]["buySellRatio"]), 4)
+        except (KeyError, TypeError, ValueError):
+            pass
+
+    # Crowd vs smart money divergence flag
+    crowd = out.get("long_short_account_ratio")
+    smart = out.get("top_trader_long_short_ratio")
+    if crowd is not None and smart is not None:
+        if crowd > 1.5 and smart < 1.0:
+            out["positioning_signal"] = "crowd_long_smart_short"  # contrarian short bias
+        elif crowd < 0.7 and smart > 1.2:
+            out["positioning_signal"] = "crowd_short_smart_long"  # contrarian long bias
+        else:
+            out["positioning_signal"] = "aligned"
+
+    return out
+
+
+def _funding_regime(funding: float) -> str:
+    """Classify funding rate into a regime label."""
+    if funding >= 0.0005:  return "extreme_long"     # ≥0.05% per 8h → overheated longs
+    if funding >= 0.0002:  return "elevated_long"
+    if funding >  0.00005: return "long_biased"
+    if funding < -0.0005:  return "extreme_short"
+    if funding < -0.0002:  return "elevated_short"
+    if funding < -0.00005: return "short_biased"
+    return "neutral"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MTF aggregation
+
+def _mtf_snapshot_from_full(full: dict) -> dict:
+    """Compact view of one timeframe for the MTF block."""
+    return {
+        "trend":          full.get("trend"),
+        "rsi":            full.get("rsi_14"),
+        "ema20":          full.get("ema20"),
+        "ema50":          full.get("ema50"),
+        "atr_pct":        full.get("volatility_pct"),
+        "bos":            full.get("bos"),
+        "bb_squeeze":     full.get("bb_squeeze"),
+        "regime":         full.get("regime"),
+        "last_price":     full.get("last_price"),
+        "support":        full.get("support"),
+        "resistance":     full.get("resistance"),
+        "volume_trend":   full.get("volume_trend"),
+    }
+
+
+def _mtf_alignment(mtf: dict) -> dict:
+    """
+    Aggregate trend agreement across timeframes.
+    Returns: aligned ("bullish"/"bearish"/"mixed"), score (0-3), divergences list.
+    """
+    trends = [v.get("trend") for v in mtf.values() if v]
+    ups    = sum(1 for t in trends if t == "uptrend")
+    downs  = sum(1 for t in trends if t == "downtrend")
+    sides  = sum(1 for t in trends if t == "sideways")
+
+    if ups == len(trends) and ups > 0:
+        alignment = "bullish"
+    elif downs == len(trends) and downs > 0:
+        alignment = "bearish"
+    elif ups > downs and downs == 0:
+        alignment = "bullish_partial"
+    elif downs > ups and ups == 0:
+        alignment = "bearish_partial"
+    else:
+        alignment = "mixed"
+
+    divergences: list[str] = []
+    rsis = {tf: v.get("rsi") for tf, v in mtf.items() if v and v.get("rsi") is not None}
+    if "1d" in rsis and "1h" in rsis:
+        if rsis["1d"] > 60 and rsis["1h"] < 40:
+            divergences.append("1d strong / 1h weak — short-term pullback in higher uptrend")
+        if rsis["1d"] < 40 and rsis["1h"] > 60:
+            divergences.append("1d weak / 1h strong — possible relief in higher downtrend")
+
+    return {
+        "alignment":   alignment,
+        "up_count":    ups,
+        "down_count":  downs,
+        "side_count":  sides,
+        "divergences": divergences,
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Result builder
 
 def _build_result(
     symbol: str,
@@ -319,7 +570,6 @@ def _build_result(
     closes: list,
     volumes: list,
 ) -> dict:
-    """Compute all indicators from OHLCV and return the standardized data dict."""
     n          = len(closes)
     last_price = closes[-1]
 
@@ -332,6 +582,15 @@ def _build_result(
     ema50    = _calc_ema(closes, min(50, n - 1))
     atr      = _calc_atr(highs, lows, closes)
     sup, res = _support_resistance(highs, lows, closes)
+    rsi      = _calc_rsi(closes)
+
+    # Bollinger Bands (20, 2σ) + squeeze
+    bb       = _bollinger_bands(closes, period=20, k=2.0)
+    bb_width = bb["width_pct"]
+    squeeze  = _bb_squeeze(closes, lookback=120)
+
+    vol_pct  = round(atr / last_price * 100, 3) if last_price > 0 else 0.0
+    regime   = _classify_regime(rsi, ema20, ema50, vol_pct, bb_width, squeeze, len(closes))
 
     return {
         "symbol":           symbol,
@@ -339,7 +598,7 @@ def _build_result(
         "last_price":       round(last_price, 6),
         "change_24h_pct":   change_24h,
         "volume_24h":       volume_24h,
-        "rsi_14":           _calc_rsi(closes),
+        "rsi_14":           rsi,
         "ema20":            round(ema20, 6),
         "ema50":            round(ema50, 6),
         "trend":            _trend_direction(closes, ema20, ema50),
@@ -347,17 +606,213 @@ def _build_result(
         "support":          sup,
         "resistance":       res,
         "atr_14":           round(atr, 6),
-        "volatility_pct":   round(atr / last_price * 100, 3) if last_price > 0 else 0.0,
+        "volatility_pct":   vol_pct,
         "bos":              _detect_bos(highs, lows, closes),
+        "bb_upper":         round(bb["upper"], 6),
+        "bb_middle":        round(bb["middle"], 6),
+        "bb_lower":         round(bb["lower"], 6),
+        "bb_width_pct":     bb_width,
+        "bb_squeeze":       squeeze,
+        "bb_position":      _bb_position(last_price, bb),
+        "regime":           regime,
         "candles_analyzed": n,
     }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Auto risk plan + setup grade
+
+def _build_plan(primary: dict, mtf: dict) -> dict:
+    """
+    Compose an ATR-anchored risk plan (long + short variants) and a 0-10 setup grade.
+    Reads only fields from `primary` and `mtf` — pure function, no external state.
+    """
+    price = primary.get("last_price") or 0
+    atr   = primary.get("atr_14") or 0
+    sup   = primary.get("support") or 0
+    res   = primary.get("resistance") or 0
+
+    if not price or not atr:
+        return {
+            "side_bias":   "neutral",
+            "setup_grade": 0,
+            "notes":       "Insufficient data for plan",
+        }
+
+    # Stop = 1.5×ATR; TP1 = 3×ATR (R:R 2.0); TP2 = 5×ATR (R:R 3.33)
+    long_stop  = round(price - atr * 1.5, 6)
+    short_stop = round(price + atr * 1.5, 6)
+    long_tp1   = round(price + atr * 3.0, 6)
+    long_tp2   = round(price + atr * 5.0, 6)
+    short_tp1  = round(price - atr * 3.0, 6)
+    short_tp2  = round(price - atr * 5.0, 6)
+
+    # Bias from MTF alignment + trend + BOS + RSI
+    align    = (primary.get("mtf_alignment") or {}).get("alignment") if primary.get("mtf_alignment") else None
+    mtf_obj  = primary.get("mtf_alignment") or _mtf_alignment(mtf) if mtf else None
+    align    = (mtf_obj or {}).get("alignment", "mixed")
+
+    trend    = primary.get("trend")
+    bos      = primary.get("bos")
+    rsi      = primary.get("rsi_14") or 50.0
+    vt       = primary.get("volume_trend")
+    regime   = primary.get("regime")
+
+    bull_pts = 0
+    bear_pts = 0
+    if trend == "uptrend":            bull_pts += 2
+    elif trend == "downtrend":        bear_pts += 2
+    if bos == "bullish_bos":          bull_pts += 1
+    elif bos == "bearish_bos":        bear_pts += 1
+    if rsi >= 55:                     bull_pts += 1
+    elif rsi <= 45:                   bear_pts += 1
+    if vt == "increasing":            bull_pts += 1
+    elif vt == "decreasing":          bear_pts += 1
+    if align in ("bullish",):         bull_pts += 2
+    elif align in ("bullish_partial",): bull_pts += 1
+    elif align in ("bearish",):       bear_pts += 2
+    elif align in ("bearish_partial",): bear_pts += 1
+
+    if bull_pts - bear_pts >= 2:      side_bias = "long"
+    elif bear_pts - bull_pts >= 2:    side_bias = "short"
+    else:                             side_bias = "neutral"
+
+    # Pick R:R numbers for the proposed side
+    if side_bias == "long":
+        entry, stop, tp1, tp2 = price, long_stop,  long_tp1,  long_tp2
+        risk   = entry - stop
+        reward = tp1 - entry
+    elif side_bias == "short":
+        entry, stop, tp1, tp2 = price, short_stop, short_tp1, short_tp2
+        risk   = stop - entry
+        reward = entry - tp1
+    else:
+        entry = stop = tp1 = tp2 = None
+        risk = reward = 0
+
+    rr_ratio = round(reward / risk, 2) if risk > 0 else 0.0
+
+    # Setup quality (0-10): bias strength + RR + regime + squeeze bonus
+    bias_strength = abs(bull_pts - bear_pts)
+    grade = min(10, bias_strength * 2)
+    if rr_ratio >= 2.5:     grade = min(10, grade + 2)
+    elif rr_ratio >= 2.0:   grade = min(10, grade + 1)
+    elif rr_ratio < 1.5 and side_bias != "neutral":
+                            grade = max(0, grade - 1)
+    if regime in ("squeeze_pre_breakout",): grade = min(10, grade + 1)
+    if regime == "choppy":  grade = max(0, grade - 2)
+
+    invalidation = None
+    if side_bias == "long" and sup:
+        invalidation = f"Daily close below support {sup} kills the long thesis"
+    elif side_bias == "short" and res:
+        invalidation = f"Daily close above resistance {res} kills the short thesis"
+
+    return {
+        "side_bias":   side_bias,
+        "entry":       entry,
+        "stop":        stop,
+        "take_profit_1": tp1,
+        "take_profit_2": tp2,
+        "risk_reward": rr_ratio,
+        "stop_atr_multiple":   1.5,
+        "target_atr_multiple": 3.0,
+        "setup_grade":         int(grade),
+        "bias_strength":       int(bias_strength),
+        "bull_points":         int(bull_pts),
+        "bear_points":         int(bear_pts),
+        "invalidation":        invalidation,
+        "notes": (
+            "Plan is ATR-anchored (1.5×ATR stop, 3/5×ATR targets → baseline R:R 2.0 / 3.33). "
+            "AI must justify, refine, or veto based on structure, MTF alignment, and risk context."
+        ),
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Regime classification
+
+def _classify_regime(
+    rsi: float,
+    ema20: float,
+    ema50: float,
+    vol_pct: float,
+    bb_width: float,
+    squeeze: bool,
+    n: int,
+) -> str:
+    if n < 30:
+        return "insufficient_data"
+    if squeeze:
+        return "squeeze_pre_breakout"
+    if vol_pct >= 6.0:
+        return "high_volatility"
+    if vol_pct < 1.0:
+        return "low_volatility"
+    if rsi >= 70:
+        return "overbought"
+    if rsi <= 30:
+        return "oversold"
+    if ema50 and ema20 > ema50 * 1.01:
+        return "trending_up"
+    if ema50 and ema20 < ema50 * 0.99:
+        return "trending_down"
+    if abs(ema20 - ema50) / max(ema50, 1e-9) < 0.005:
+        return "choppy"
+    return "neutral"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Bollinger Bands & squeeze
+
+def _bollinger_bands(closes: list, period: int = 20, k: float = 2.0) -> dict:
+    if len(closes) < period:
+        last = closes[-1] if closes else 0.0
+        return {"upper": last, "middle": last, "lower": last, "width_pct": 0.0}
+    window = closes[-period:]
+    mid    = sum(window) / period
+    var    = sum((x - mid) ** 2 for x in window) / period
+    std    = var ** 0.5
+    upper  = mid + k * std
+    lower  = mid - k * std
+    width_pct = round((upper - lower) / mid * 100, 3) if mid else 0.0
+    return {"upper": upper, "middle": mid, "lower": lower, "width_pct": width_pct}
+
+
+def _bb_squeeze(closes: list, period: int = 20, lookback: int = 120) -> bool:
+    """True when current BB width is in the lowest quartile of the last `lookback` candles."""
+    if len(closes) < lookback + period:
+        return False
+    widths = []
+    for i in range(len(closes) - lookback, len(closes)):
+        window = closes[i - period + 1: i + 1]
+        if len(window) < period:
+            continue
+        mid = sum(window) / period
+        var = sum((x - mid) ** 2 for x in window) / period
+        std = var ** 0.5
+        if mid:
+            widths.append(2 * 2.0 * std / mid)
+    if not widths:
+        return False
+    current = widths[-1]
+    threshold = sorted(widths)[len(widths) // 4]  # 25th percentile
+    return current <= threshold
+
+
+def _bb_position(price: float, bb: dict) -> str:
+    upper, lower, mid = bb["upper"], bb["lower"], bb["middle"]
+    if price >= upper:           return "above_upper"
+    if price <= lower:           return "below_lower"
+    if price > mid:              return "upper_half"
+    if price < mid:              return "lower_half"
+    return "at_middle"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Symbol normalization
 
 def _extract_base_ticker(raw: str) -> str:
-    """BTCUSDT → BTC, ETH/USD → ETH, BTC → BTC."""
     s = raw.upper().replace("/", "").replace("-", "")
     for quote in ("USDT", "BUSD", "USD", "BTC", "ETH", "EUR", "USDC"):
         if s.endswith(quote) and len(s) > len(quote):
@@ -366,7 +821,6 @@ def _extract_base_ticker(raw: str) -> str:
 
 
 def _normalize_binance_symbol(raw: str) -> str:
-    """BTC → BTCUSDT, ETH/USDT → ETHUSDT, BTC-USD → BTCUSDT."""
     s = raw.upper().replace("/", "").replace("-", "").replace(" ", "")
     for quote in ("USDT", "BUSD", "BTC", "ETH", "EUR"):
         if s.endswith(quote) and s != quote:
@@ -375,7 +829,6 @@ def _normalize_binance_symbol(raw: str) -> str:
 
 
 def _normalize_yahoo_symbol(raw: str) -> str:
-    """BTCUSDT → BTC-USD, ETH/USD → ETH-USD."""
     s = raw.upper().replace("/", "").replace("-", "")
     for quote in ("USDT", "BUSD", "USD"):
         if s.endswith(quote) and len(s) > len(quote):
@@ -384,10 +837,9 @@ def _normalize_yahoo_symbol(raw: str) -> str:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Technical indicators (pure Python, zero extra dependencies)
+# Technical indicators (pure Python)
 
 def _calc_rsi(closes: list, period: int = 14) -> float:
-    """Wilder's RSI. Returns 50.0 when data is insufficient."""
     if len(closes) < period + 1:
         return 50.0
     deltas = [closes[i] - closes[i - 1] for i in range(1, len(closes))]
@@ -404,7 +856,6 @@ def _calc_rsi(closes: list, period: int = 14) -> float:
 
 
 def _calc_ema(closes: list, period: int) -> float:
-    """Exponential moving average."""
     if len(closes) < period or period < 1:
         return closes[-1] if closes else 0.0
     k   = 2.0 / (period + 1)
@@ -415,7 +866,6 @@ def _calc_ema(closes: list, period: int) -> float:
 
 
 def _calc_atr(highs: list, lows: list, closes: list, period: int = 14) -> float:
-    """Average True Range (Wilder's smoothing)."""
     if len(closes) < 2:
         return 0.0
     trs = [
@@ -431,7 +881,6 @@ def _calc_atr(highs: list, lows: list, closes: list, period: int = 14) -> float:
 
 
 def _trend_direction(closes: list, ema20: float, ema50: float) -> str:
-    """EMA20/50 crossover with 0.3% noise buffer."""
     if len(closes) < 50:
         return "insufficient_data"
     if ema20 > ema50 * 1.003:
@@ -442,7 +891,6 @@ def _trend_direction(closes: list, ema20: float, ema50: float) -> str:
 
 
 def _volume_trend(volumes: list, window: int = 7) -> str:
-    """Compares recent vs prior window average. Skips all-zero volume."""
     if len(volumes) < window * 2 or all(v == 0 for v in volumes):
         return "neutral"
     recent = sum(volumes[-window:]) / window
@@ -458,7 +906,6 @@ def _volume_trend(volumes: list, window: int = 7) -> str:
 
 
 def _support_resistance(highs: list, lows: list, closes: list, swing_window: int = 5) -> tuple:
-    """Nearest swing-pivot support below price and resistance above."""
     if len(closes) < swing_window * 2 + 1:
         return round(min(lows), 6), round(max(highs), 6)
     last = closes[-1]
@@ -479,7 +926,6 @@ def _support_resistance(highs: list, lows: list, closes: list, swing_window: int
 
 
 def _detect_bos(highs: list, lows: list, closes: list, lookback: int = 30) -> str:
-    """Break of Structure: last close vs prior swing structure."""
     if len(closes) < lookback + 5:
         return "unknown"
     prior_h = highs[-(lookback + 5): -5]
@@ -501,7 +947,7 @@ class _BinanceSymbolError(Exception):
 
 async def _fetch_json(url: str, timeout: int = 10):
     """
-    Fetch JSON via aiohttp (available in requirements), falling back to urllib.
+    Fetch JSON via aiohttp (in requirements), falling back to urllib.
     Raises RuntimeError for non-200 so the fallback chain catches it.
     """
     try:
@@ -516,7 +962,7 @@ async def _fetch_json(url: str, timeout: int = 10):
                     raise RuntimeError(f"HTTP {resp.status} from {url}")
                 return await resp.json(content_type=None)
     except ImportError:
-        pass  # fall through to urllib
+        pass
 
     def _sync():
         try:
