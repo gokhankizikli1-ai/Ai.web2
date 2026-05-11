@@ -3,6 +3,7 @@ import { useStreamingText } from '@/hooks/useStreamingText';
 import MarkdownMessage from './MarkdownMessage';
 import MessageActions from './MessageActions';
 import ResponseActions from './ResponseActions';
+import TradingSignalCard from './TradingSignalCard';
 import type { Message } from '@/types';
 
 interface MessageBubbleProps {
@@ -76,6 +77,14 @@ export default function MessageBubble({
             </>
           )}
         </div>
+
+        {/* Phase 5.2 — Structured trading signal card.
+            Renders only when the AI ran trading_analyst mode AND streaming has
+            finished. Safe to mount on every assistant bubble — returns null
+            when no signal is present. */}
+        {!isUser && isComplete && fullMessage.metadata?.trading_signal && (
+          <TradingSignalCard signal={fullMessage.metadata.trading_signal} />
+        )}
 
         {/* Actions row */}
         {!isUser && isComplete && (

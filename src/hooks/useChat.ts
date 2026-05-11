@@ -1,10 +1,50 @@
 import { useState, useCallback, useRef } from 'react';
-import type { ChatSession, Message, AIMode, ChatFolder } from '@/types';
+import type { ChatSession, Message, MessageMetadata, AIMode, ChatFolder } from '@/types';
 import { placeholderChats } from '@/data/placeholderChats';
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
 const API_URL = 'https://worker-production-1345.up.railway.app/chat';
+
+// Phase 5.2 — map fetch failures to user-facing copy + a code the UI can style on.
+export type ChatErrorCode = 'rate_limit' | 'timeout' | 'network' | 'server' | 'safety' | 'unknown';
+export interface ChatError {
+  code: ChatErrorCode;
+  message: string;
+}
+
+function mapStatusToError(status: number, fallback: string): ChatError {
+  if (status === 429) return { code: 'rate_limit', message: 'Çok hızlı mesaj gönderdin. Birkaç saniye bekleyip tekrar dene.' };
+  if (status >= 500 && status < 600) return { code: 'server',   message: 'Sunucuda geçici bir sorun var. Lütfen tekrar dene.' };
+  if (status === 408 || status === 504) return { code: 'timeout', message: 'İstek zaman aşımına uğradı. Tekrar dener misin?' };
+  if (status === 400) return { code: 'unknown', message: 'İsteğinde bir sorun var. Mesajını kontrol edip tekrar dene.' };
+  return { code: 'unknown', message: fallback };
+}
+
+// Translate the frontend's mode IDs into the backend's canonical mode names
+// (or its alias map). Returning undefined falls back to intent-based routing.
+function toBackendMode(mode: AIMode): string | undefined {
+  switch (mode) {
+    case 'fast':       return 'fast';
+    case 'deep-think': return 'deep_think';      // alias also accepted by backend
+    case 'research':   return 'research';
+    case 'coding':     return 'coding';
+    case 'study':      return 'study';
+    case 'creative':   return undefined;          // no backend mode; let intent routing pick
+    default:           return undefined;
+  }
+}
+
+function mapThrowableToError(err: unknown): ChatError {
+  if (err instanceof TypeError) {
+    // fetch network failure on web is a TypeError ("Failed to fetch")
+    return { code: 'network', message: 'Bağlantı sorunu. İnternetini kontrol et ve tekrar dene.' };
+  }
+  if (err instanceof DOMException && err.name === 'AbortError') {
+    return { code: 'timeout', message: 'İstek zaman aşımına uğradı.' };
+  }
+  return { code: 'unknown', message: err instanceof Error ? err.message : 'Beklenmeyen bir hata oluştu. Tekrar dener misin?' };
+}
 
 function getUserId(): string {
   const key = 'korvix_user_id';
@@ -20,7 +60,7 @@ export function useChat() {
   const [sessions, setSessions] = useState<ChatSession[]>(placeholderChats);
   const [activeSessionId, setActiveSessionId] = useState<string>(placeholderChats[0].id);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ChatError | null>(null);
   const [lastUserMessage, setLastUserMessage] = useState<string | null>(null);
   const userIdRef = useRef<string>(getUserId());
 
@@ -100,31 +140,57 @@ export function useChat() {
 
     setIsLoading(true);
 
+    // Phase 5.2 — request-level timeout (60s) so a hung backend doesn't
+    // leave the user staring at a forever spinner.
+    const controller = new AbortController();
+    const timeoutId  = setTimeout(() => controller.abort(), 60_000);
+
     try {
       const response = await fetch(API_URL, {
-        method: 'POST',
+        method:  'POST',
+        signal:  controller.signal,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          user_id: userIdRef.current,
-          message: content.trim(),
-          chat_id: activeSessionId,
+          user_id:    userIdRef.current,
+          message:    content.trim(),
+          chat_id:    activeSessionId,
           session_id: activeSessionId,
-          platform: 'web',
+          platform:   'web',
+          mode:       toBackendMode(aiMode), // mapped to backend canonical; undefined → intent routing
         }),
       });
 
       if (!response.ok) {
-        throw new Error(`Server responded with ${response.status}. Please try again.`);
+        setError(mapStatusToError(response.status, `Sunucu hatası (${response.status}).`));
+        return;
       }
 
       const data = await response.json();
       const responseText = data.reply ?? data.response ?? data.message ?? JSON.stringify(data);
 
+      // Pick up the Phase 5 structured metadata if present.
+      const metadata: MessageMetadata | undefined = data.metadata
+        ? {
+            trading_signal:    data.metadata.trading_signal,
+            tool_summary:      data.metadata.tool_summary,
+            prior_thesis_used: data.metadata.prior_thesis_used,
+          }
+        : undefined;
+
+      // Safety-rejected requests come back with intent prefix "safety_" — surface
+      // them as a soft error chip rather than as a normal AI reply, so the user
+      // gets the retry affordance.
+      if (typeof data.intent === 'string' && data.intent.startsWith('safety_')) {
+        setError({ code: 'safety', message: responseText });
+        return;
+      }
+
       const assistantMessage: Message = {
-        id: generateId(),
-        role: 'assistant',
-        content: responseText,
+        id:        generateId(),
+        role:      'assistant',
+        content:   responseText,
         timestamp: new Date(),
+        metadata,
       };
 
       setSessions((prev) =>
@@ -135,11 +201,12 @@ export function useChat() {
         )
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
+      setError(mapThrowableToError(err));
     } finally {
+      clearTimeout(timeoutId);
       setIsLoading(false);
     }
-  }, [activeSessionId]);
+  }, [activeSessionId, aiMode]);
 
   const sendMessage = useCallback(async (content: string) => {
     await doSend(content);

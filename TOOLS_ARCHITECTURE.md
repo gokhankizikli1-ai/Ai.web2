@@ -1,4 +1,4 @@
-# KorvixAI — Tools Architecture (Phase 5)
+# KorvixAI — Tools Architecture (Phase 5.2)
 
 ## Overview
 
@@ -15,6 +15,13 @@ or returns an error, the AI response continues normally without it.
 | **4A** | Tool architecture foundation | ✅ Done |
 | **4B** | Market data provider (Binance + multi-provider fallback) | ✅ Done |
 | **5**  | Advanced trading intelligence (MTF + futures + macro + plan + signal) | ✅ Done |
+| **5.1** | Operator-grade trading (smart money zones, trapped traders, plan v2, thesis memory) | ✅ Done |
+| **5.2** | Stabilization & polish (cache + backoff + safety guard + trading card UI + error UX) | ✅ Done |
+| **6A** | Position Manager AI (live trade monitoring, partial profit logic) | 🔜 Planned |
+| **6B** | Alert engine (watchlists, breakouts, liquidation spikes) | 🔜 Planned |
+| **6C** | Auto trade journal (psychology + performance analytics) | 🔜 Planned |
+| **6D** | Extended macro (ETF flows, CPI, FED, earnings, geo risk) | 🔜 Planned |
+| **7**  | Business Operator AI (Shopify, Meta/TikTok Ads, niche scanner) | 🔜 Planned |
 | **4C** | Ecommerce research provider (Minea / Meta Ad Library) | 🔜 Planned |
 | **4D** | Web research provider (Tavily / Serper) + agent workflows | 🔜 Planned |
 
@@ -116,7 +123,7 @@ Every tool returns a normalized dict with this structure:
 
 ---
 
-## Trading Intelligence Payload (Phase 5)
+## Trading Intelligence Payload (Phase 5.1)
 
 The `market_data` tool returns a rich payload that the trading_analyst prompt
 reads field-by-field. All fields are produced by every provider; missing fields
@@ -137,20 +144,34 @@ MTF ALIGNMENT
   alignment: bullish | bearish | mixed | bullish_partial | bearish_partial
   divergences: ["1d strong / 1h weak — short-term pullback in higher uptrend", …]
 
-FUTURES MICROSTRUCTURE (Binance USDT-M, when ENABLE_FUTURES_MICROSTRUCTURE=true)
+SMART MONEY ZONES (Phase 5.1)
+  fvg_bullish / fvg_bearish:   {low, high, size_atr, distance_pct, age_candles}
+  order_block_bull / bear:     {low, high, distance_pct, age_candles}
+  equal_highs / equal_lows:    [{level, touches, distance_pct}, …]   stop clusters
+  premium_discount:            {zone, swing_low, equilibrium, swing_high, fib_618, fib_382}
+                               zone ∈ deep_premium / premium / equilibrium / discount / deep_discount
+  liquidity_above / below:     [{level, distance_pct}, …]   nearest stop pools
+  absorption_signal:           {type=accumulation|distribution, vol_ratio, range_vs_atr}
+
+FUTURES MICROSTRUCTURE (Binance USDT-M)
   funding_rate, funding_rate_pct, funding_annualized_pct, funding_regime
   mark_price, open_interest, oi_change_24h_pct
   long_short_account_ratio (crowd)
   top_trader_long_short_ratio (smart money)
   taker_buy_sell_ratio
   positioning_signal: aligned | crowd_long_smart_short | crowd_short_smart_long
+  trapped_traders:   longs | shorts | null   (Phase 5.1)
 
-AUTO RISK PLAN (ATR-anchored proposal — AI defends or vetoes)
-  side_bias (long | short | neutral)
-  entry, stop, take_profit_1, take_profit_2
-  risk_reward, stop_atr_multiple, target_atr_multiple
+AUTO RISK PLAN (Phase 5.1 — ATR-anchored, AI defends/refines/vetoes)
+  directional_bias:  LONG | SHORT | WAIT | REVERSAL_WATCH | NO_TRADE
+  side_bias:         long | short | neutral
+  entry, stop, take_profit_1, take_profit_2, take_profit_3
+  risk_reward, stop_atr_multiple (1.5), target_atr_multiple (3.0)
   setup_grade (0-10), bias_strength, bull_points, bear_points
+  fakeout_risk (0-10), liquidity_risk (0-10), trapped_traders
   invalidation (text)
+  do_now:        [string, string, …]   operator commands
+  do_not_do:     [string, string, …]   mistakes to avoid in current conditions
 ```
 
 The `macro_data` tool returns:
@@ -164,7 +185,7 @@ dxy, dxy_change_1d_pct, dxy_source
 
 ---
 
-## Structured Trading Signal (Phase 5)
+## Structured Trading Signal (Phase 5.1)
 
 For every `trading_analyst` reply, the model emits a fenced JSON block. The
 backend extracts it, strips it from the displayed reply, and returns it in
@@ -172,27 +193,117 @@ backend extracts it, strips it from the displayed reply, and returns it in
 
 ```json
 {
-  "symbol":        "BTCUSDT",
-  "timeframe":     "4h",
-  "side":          "long",
-  "action":        "wait",
-  "entry":         67250.0,
-  "stop":          65800.0,
-  "take_profit_1": 69200.0,
-  "take_profit_2": 71500.0,
-  "risk_reward":   2.4,
-  "setup_grade":   7,
-  "confidence":    "medium",
-  "invalidation":  "Daily close below 65800 kills the long",
-  "thesis":        "1d/4h aligned bullish, smart money long while crowd flat",
-  "mtf_alignment": "bullish",
-  "regime":        "trending_up",
-  "macro_regime":  "risk_on"
+  "symbol":           "BTCUSDT",
+  "timeframe":        "4h",
+  "directional_bias": "LONG",
+  "side":             "long",
+  "action":           "wait",
+  "trigger":          "4H close above 67400 with volume confirmation",
+  "entry":            67250.0,
+  "stop":             65800.0,
+  "take_profit_1":    69200.0,
+  "take_profit_2":    71500.0,
+  "take_profit_3":    74800.0,
+  "risk_reward":      2.4,
+  "setup_grade":      7,
+  "probability_pct":  58,
+  "confidence":       "medium",
+  "fakeout_risk":     4,
+  "liquidity_risk":   3,
+  "volatility_regime":"trending_up",
+  "invalidation":     "Daily close below 65800 kills the long",
+  "thesis":           "1d/4h aligned bullish, smart money long while crowd flat",
+  "mtf_alignment":    "bullish",
+  "regime":           "trending_up",
+  "macro_regime":     "risk_on",
+  "trapped_traders":  null,
+  "do_now":           ["Wait for 4H close > 67400", "Risk ≤ 1% of portfolio"],
+  "do_not_do":        ["Do not chase before confirmation", "Do not anchor stop at equal highs"]
 }
 ```
 
 `ChatResponse.metadata.tool_summary` carries a compact snapshot of the
-`market_data` + `macro_data` results for frontend cards.
+`market_data` + `macro_data` results for frontend cards (with
+`directional_bias`, `setup_grade`, `fakeout_risk`, `liquidity_risk`,
+`trapped_traders`, `positioning_signal`).
+
+## Stabilization Layer (Phase 5.2)
+
+### Response cache + provider counters
+`backend/services/cache/__init__.py` — in-process TTL LRU (cap 1024 entries).
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `MARKET_DATA_CACHE_TTL_SEC` | `30` | Klines cache TTL for primary + MTF candles |
+| `FUTURES_CACHE_TTL_SEC` | `20` | Funding, OI, L/S cache TTL |
+| `MACRO_DATA_CACHE_TTL_SEC` | `300` | BTC.D / TOTAL / DXY cache TTL |
+| `FETCH_BACKOFF_BASE_SEC` | `0.6` | Exponential backoff base for 429/5xx |
+| `FETCH_BACKOFF_MAX_RETRY` | `2` | Extra retries after the initial attempt |
+
+Every external fetch is tagged by provider (`binance`, `binance_futures`,
+`coingecko`, `alphavantage`, `yahoo_dxy`). Success and failure counts plus the
+last failure reason surface at `GET /tools/health` under the `cache.providers`
+key — use this to spot rate-limited providers in production.
+
+### Data quality field
+`market_data.data_quality` and `macro_data.data_quality` report:
+- `level`: `full` | `degraded` | `fallback`
+- `missing`: list of absent sub-blocks (`multi_timeframe`, `futures`, `provider_fallback`)
+- `provider`: actual provider that returned the data
+
+The frontend trading card and the `metadata.tool_summary.market_data.data_quality`
+field let the UI badge a "degraded data" pill when applicable.
+
+### Safety guard
+`backend/services/safety/guard.py` — runtime enforcement before AI calls.
+
+| Layer | Trigger | Default |
+|-------|---------|---------|
+| Length cap | message > N chars | `SAFETY_MAX_INPUT_CHARS=4000` |
+| Prompt-injection patterns | jailbreak / instruction override regex | always on (conservative) |
+| Per-minute throttle | sliding-window per user | `SAFETY_PER_MIN_LIMIT=30` |
+
+On rejection the chat route returns a normal `ChatResponse` with `intent`
+prefixed `safety_*` (so old frontends don't crash) and a branded
+`message_for_user`. The new frontend renders these as an amber error chip
+with a retry button. Rejection counters surface at `/tools/health.safety`.
+
+### Frontend trading card
+`src/components/TradingSignalCard.tsx` renders the `metadata.trading_signal`
+payload as a structured terminal card: directional bias badge, trigger,
+entry/stop/TP1-2-3 grid, setup grade bar, R:R, fakeout risk meter, liquidity
+risk meter, invalidation row, `do_now` and `do_not_do` bullets. Renders
+nothing when the signal is empty/absent — safe to mount on every assistant
+bubble.
+
+### Error UX
+`useChat` now produces a typed `ChatError` ({ code, message }) mapped from
+HTTP status / network errors. Codes: `rate_limit`, `timeout`, `network`,
+`server`, `safety`, `unknown`. `ChatDashboard` styles amber for soft errors
+(safety / rate_limit) and red for hard errors.
+
+### Skeleton loader
+`ChatDashboard` now shows three pulsing skeleton bars beneath the typing
+indicator so the user sees visual structure during AI generation instead
+of a single dots-only state.
+
+---
+
+## Thesis Memory (Phase 5.1)
+
+When the user re-analyzes the same symbol, the backend automatically injects a
+`[PREVIOUS THESIS]` block before the live data block. The AI compares today's
+read against the prior call, reports whether the trigger fired or the
+invalidation hit, and updates the bias honestly.
+
+- Implementation: `backend/services/trading/thesis_memory.py`
+- Storage: in-process LRU (`OrderedDict`, cap 2000 entries).
+- Persistence: per-process only — when we scale to multiple Railway replicas
+  or want long-term journaling, swap the implementation for a SQLite/Postgres
+  backend behind the same public API (`save_thesis`, `get_thesis`,
+  `build_previous_thesis_block`).
+- `ChatResponse.metadata.prior_thesis_used: true` flags when a prior thesis
+  was found and injected.
 
 ---
 

@@ -22,6 +22,17 @@ import urllib.request
 import urllib.error
 from backend.services.tools.base_tool import BaseTool
 
+try:
+    from backend.services.cache import (
+        cache_get, cache_set, record_fetch as _record_fetch,
+    )
+    _CACHE_OK = True
+except Exception:
+    _CACHE_OK = False
+    def cache_get(_):           return None        # noqa: E704
+    def cache_set(*_a, **_kw):  return None        # noqa: E704
+    def _record_fetch(*_a, **_kw): return None     # noqa: E704
+
 logger = logging.getLogger(__name__)
 
 _PROVIDER          = os.getenv("MARKET_DATA_PROVIDER", "").strip().lower()
@@ -34,6 +45,12 @@ _TIMEOUT           = 10  # seconds per request
 
 _ENABLE_MTF        = os.getenv("ENABLE_MTF", "true").strip().lower() != "false"
 _ENABLE_FUTURES    = os.getenv("ENABLE_FUTURES_MICROSTRUCTURE", "true").strip().lower() != "false"
+
+# Phase 5.2 — caching + backoff knobs (all overridable by env).
+_CACHE_TTL_PRIMARY  = float(os.getenv("MARKET_DATA_CACHE_TTL_SEC", "30"))     # 30s for klines
+_CACHE_TTL_FUTURES  = float(os.getenv("FUTURES_CACHE_TTL_SEC", "20"))         # 20s for funding/OI
+_BACKOFF_BASE_SEC   = float(os.getenv("FETCH_BACKOFF_BASE_SEC", "0.6"))       # exp backoff base
+_BACKOFF_MAX_RETRY  = int(os.getenv("FETCH_BACKOFF_MAX_RETRY", "2"))          # extra attempts on 429/5xx
 
 # Multi-timeframe set (parallel fetches when the primary provider is binance/yahoo).
 _MTF_TIMEFRAMES = ("1d", "4h", "1h")
@@ -176,7 +193,7 @@ class MarketDataTool(BaseTool):
 
         # Primary timeframe (full indicator pack) — always fetched.
         url = f"{_BINANCE_BASE}/klines?symbol={symbol}&interval={interval}&limit={limit}"
-        raw = await _fetch_json(url, timeout=_TIMEOUT)
+        raw = await _fetch_json(url, timeout=_TIMEOUT, cache_ttl=_CACHE_TTL_PRIMARY)
         if not raw or len(raw) < 20:
             raise ValueError(f"Insufficient Binance data for {symbol}: {len(raw or [])} candles")
         base = _ohlcv_from_klines(raw)
@@ -211,7 +228,8 @@ class MarketDataTool(BaseTool):
         primary["multi_timeframe"] = mtf or None
         primary["mtf_alignment"]   = _mtf_alignment(mtf) if mtf else None
         primary["futures"]         = futures or None
-        primary["plan"]            = _build_plan(primary, mtf or {})
+        primary["plan"]            = _build_plan(primary, mtf or {}, futures if isinstance(futures, dict) else None)
+        primary["data_quality"]    = _classify_data_quality(primary, "binance")
 
         return self._ok(primary, provider="binance")
 
@@ -264,7 +282,8 @@ class MarketDataTool(BaseTool):
         primary["multi_timeframe"] = mtf or None
         primary["mtf_alignment"]   = _mtf_alignment(mtf) if mtf else None
         primary["futures"]         = None
-        primary["plan"]            = _build_plan(primary, mtf or {})
+        primary["plan"]            = _build_plan(primary, mtf or {}, None)
+        primary["data_quality"]    = _classify_data_quality(primary, "yahoo_finance")
 
         return self._ok(primary, provider="yahoo_finance")
 
@@ -281,7 +300,7 @@ class MarketDataTool(BaseTool):
             f"&symbol={base}&market=USD"
             f"&apikey={_ALPHAVANTAGE_KEY}"
         )
-        raw = await _fetch_json(url, timeout=_TIMEOUT)
+        raw = await _fetch_json(url, timeout=_TIMEOUT, cache_ttl=_CACHE_TTL_PRIMARY)
 
         if "Note" in raw:
             raise ValueError("AlphaVantage rate limit — 5 req/min on free tier")
@@ -306,7 +325,8 @@ class MarketDataTool(BaseTool):
         primary["multi_timeframe"] = None
         primary["mtf_alignment"]   = None
         primary["futures"]         = None
-        primary["plan"]            = _build_plan(primary, {})
+        primary["plan"]            = _build_plan(primary, {}, None)
+        primary["data_quality"]    = _classify_data_quality(primary, "alphavantage")
         return self._ok(primary, provider="alphavantage")
 
     # ── Provider 4: CoinGecko (crypto-only last resort) ────────────────────────
@@ -324,8 +344,8 @@ class MarketDataTool(BaseTool):
         )
 
         ohlc_res, vol_res = await asyncio.gather(
-            _fetch_json(ohlc_url, timeout=_TIMEOUT),
-            _fetch_json(vol_url,  timeout=_TIMEOUT),
+            _fetch_json(ohlc_url, timeout=_TIMEOUT, cache_ttl=_CACHE_TTL_PRIMARY),
+            _fetch_json(vol_url,  timeout=_TIMEOUT, cache_ttl=_CACHE_TTL_PRIMARY),
             return_exceptions=True,
         )
 
@@ -356,7 +376,8 @@ class MarketDataTool(BaseTool):
         primary["multi_timeframe"] = None
         primary["mtf_alignment"]   = None
         primary["futures"]         = None
-        primary["plan"]            = _build_plan(primary, {})
+        primary["plan"]            = _build_plan(primary, {}, None)
+        primary["data_quality"]    = _classify_data_quality(primary, "coingecko")
         return self._ok(primary, provider="coingecko")
 
 
@@ -366,7 +387,7 @@ class MarketDataTool(BaseTool):
 async def _fetch_binance_tf(symbol: str, tf: str) -> dict:
     """Fetch one extra timeframe from Binance and return an MTF snapshot."""
     url = f"{_BINANCE_BASE}/klines?symbol={symbol}&interval={tf}&limit=200"
-    raw = await _fetch_json(url, timeout=_TIMEOUT)
+    raw = await _fetch_json(url, timeout=_TIMEOUT, cache_ttl=_CACHE_TTL_PRIMARY)
     if not raw or len(raw) < 20:
         raise ValueError(f"insufficient {tf} candles")
     opens, highs, lows, closes, volumes = _ohlcv_from_klines(raw)
@@ -421,12 +442,12 @@ async def _fetch_binance_futures(symbol: str) -> dict:
     taker_url   = f"{_BINANCE_FAPI}/futures/data/takerlongshortRatio?symbol={sym}&period=1h&limit=2"
 
     premium, oi_now, oi_hist, ls_acc, ls_pos, taker = await asyncio.gather(
-        _safe(_fetch_json(premium_url, timeout=_TIMEOUT)),
-        _safe(_fetch_json(oi_url,      timeout=_TIMEOUT)),
-        _safe(_fetch_json(oi_hist_url, timeout=_TIMEOUT)),
-        _safe(_fetch_json(ls_global,   timeout=_TIMEOUT)),
-        _safe(_fetch_json(ls_top_pos,  timeout=_TIMEOUT)),
-        _safe(_fetch_json(taker_url,   timeout=_TIMEOUT)),
+        _safe(_fetch_json(premium_url, timeout=_TIMEOUT, cache_ttl=_CACHE_TTL_FUTURES)),
+        _safe(_fetch_json(oi_url,      timeout=_TIMEOUT, cache_ttl=_CACHE_TTL_FUTURES)),
+        _safe(_fetch_json(oi_hist_url, timeout=_TIMEOUT, cache_ttl=_CACHE_TTL_FUTURES)),
+        _safe(_fetch_json(ls_global,   timeout=_TIMEOUT, cache_ttl=_CACHE_TTL_FUTURES)),
+        _safe(_fetch_json(ls_top_pos,  timeout=_TIMEOUT, cache_ttl=_CACHE_TTL_FUTURES)),
+        _safe(_fetch_json(taker_url,   timeout=_TIMEOUT, cache_ttl=_CACHE_TTL_FUTURES)),
     )
 
     out: dict = {"symbol": sym}
@@ -485,7 +506,62 @@ async def _fetch_binance_futures(symbol: str) -> dict:
         else:
             out["positioning_signal"] = "aligned"
 
+    # Phase 5.1 — trapped trader detection.
+    # We can't compute 24h price Δ here (no candles), but the AI also has
+    # change_24h_pct from the primary timeframe. We approximate with OI Δ +
+    # funding regime + crowd positioning.
+    funding_pct = out.get("funding_rate_pct")
+    oi_delta    = out.get("oi_change_24h_pct")
+    if funding_pct is not None and oi_delta is not None and crowd is not None:
+        # Trapped longs: extreme long funding + OI rising + crowd long-heavy
+        if funding_pct > 0.015 and oi_delta > 5 and crowd > 1.3:
+            out["trapped_traders"] = "longs"
+        # Trapped shorts: deeply negative funding + OI rising + crowd short-heavy
+        elif funding_pct < -0.015 and oi_delta > 5 and crowd < 0.75:
+            out["trapped_traders"] = "shorts"
+        else:
+            out["trapped_traders"] = None
+    else:
+        out["trapped_traders"] = None
+
     return out
+
+
+def _classify_data_quality(primary: dict, provider: str) -> dict:
+    """
+    Quality breakdown for the response. Frontend can warn 'degraded data' when
+    `level` != 'full'.
+       full     — primary + MTF + (futures if applicable)
+       degraded — primary only, optional blocks missing
+       fallback — coingecko/alphavantage path (no MTF, no futures)
+    """
+    has_mtf     = bool(primary.get("multi_timeframe"))
+    has_futures = bool(primary.get("futures"))
+    is_crypto   = (primary.get("symbol") or "").upper().endswith("USDT")
+
+    missing: list[str] = []
+    if not has_mtf:
+        missing.append("multi_timeframe")
+    if is_crypto and not has_futures:
+        missing.append("futures")
+    if provider in ("alphavantage", "coingecko"):
+        missing.append("provider_fallback")
+
+    if not missing:
+        level = "full"
+    elif provider in ("alphavantage", "coingecko"):
+        level = "fallback"
+    else:
+        level = "degraded"
+
+    return {
+        "level":           level,
+        "provider":        provider,
+        "has_mtf":         has_mtf,
+        "has_futures":     has_futures,
+        "missing":         missing,
+        "candles_analyzed": primary.get("candles_analyzed"),
+    }
 
 
 def _funding_regime(funding: float) -> str:
@@ -592,6 +668,9 @@ def _build_result(
     vol_pct  = round(atr / last_price * 100, 3) if last_price > 0 else 0.0
     regime   = _classify_regime(rsi, ema20, ema50, vol_pct, bb_width, squeeze, len(closes))
 
+    # Phase 5.1 — smart money zones (FVG, order blocks, equal H/L, premium/discount, liquidity pools, absorption)
+    zones = _smart_money_zones(opens, highs, lows, closes, volumes, atr, last_price)
+
     return {
         "symbol":           symbol,
         "timeframe":        timeframe,
@@ -615,6 +694,7 @@ def _build_result(
         "bb_squeeze":       squeeze,
         "bb_position":      _bb_position(last_price, bb),
         "regime":           regime,
+        "smart_money":      zones,
         "candles_analyzed": n,
     }
 
@@ -622,34 +702,43 @@ def _build_result(
 # ══════════════════════════════════════════════════════════════════════════════
 # Auto risk plan + setup grade
 
-def _build_plan(primary: dict, mtf: dict) -> dict:
+def _build_plan(primary: dict, mtf: dict, futures: dict | None = None) -> dict:
     """
     Compose an ATR-anchored risk plan (long + short variants) and a 0-10 setup grade.
-    Reads only fields from `primary` and `mtf` — pure function, no external state.
+    Phase 5.1: adds TP3, fakeout_risk, liquidity_risk, directional_bias,
+    do_now / do_not_do action arrays.
+    Reads only fields from `primary`, `mtf`, `futures` — pure function.
     """
     price = primary.get("last_price") or 0
     atr   = primary.get("atr_14") or 0
     sup   = primary.get("support") or 0
     res   = primary.get("resistance") or 0
+    zones = primary.get("smart_money") or {}
 
     if not price or not atr:
         return {
-            "side_bias":   "neutral",
-            "setup_grade": 0,
-            "notes":       "Insufficient data for plan",
+            "side_bias":         "neutral",
+            "directional_bias":  "NO_TRADE",
+            "setup_grade":       0,
+            "fakeout_risk":      0,
+            "liquidity_risk":    0,
+            "notes":             "Insufficient data for plan",
+            "do_now":            ["Wait for more data before taking any action."],
+            "do_not_do":         [],
         }
 
-    # Stop = 1.5×ATR; TP1 = 3×ATR (R:R 2.0); TP2 = 5×ATR (R:R 3.33)
+    # Stop = 1.5×ATR; TP1 = 3×ATR (R:R 2.0); TP2 = 5×ATR (3.33); TP3 = 8×ATR (5.33)
     long_stop  = round(price - atr * 1.5, 6)
     short_stop = round(price + atr * 1.5, 6)
     long_tp1   = round(price + atr * 3.0, 6)
     long_tp2   = round(price + atr * 5.0, 6)
+    long_tp3   = round(price + atr * 8.0, 6)
     short_tp1  = round(price - atr * 3.0, 6)
     short_tp2  = round(price - atr * 5.0, 6)
+    short_tp3  = round(price - atr * 8.0, 6)
 
-    # Bias from MTF alignment + trend + BOS + RSI
-    align    = (primary.get("mtf_alignment") or {}).get("alignment") if primary.get("mtf_alignment") else None
-    mtf_obj  = primary.get("mtf_alignment") or _mtf_alignment(mtf) if mtf else None
+    # Bias from MTF alignment + trend + BOS + RSI + volume + premium/discount
+    mtf_obj  = primary.get("mtf_alignment") or (_mtf_alignment(mtf) if mtf else None)
     align    = (mtf_obj or {}).get("alignment", "mixed")
 
     trend    = primary.get("trend")
@@ -657,6 +746,7 @@ def _build_plan(primary: dict, mtf: dict) -> dict:
     rsi      = primary.get("rsi_14") or 50.0
     vt       = primary.get("volume_trend")
     regime   = primary.get("regime")
+    pd_zone  = (zones.get("premium_discount") or {}).get("zone")
 
     bull_pts = 0
     bear_pts = 0
@@ -668,39 +758,79 @@ def _build_plan(primary: dict, mtf: dict) -> dict:
     elif rsi <= 45:                   bear_pts += 1
     if vt == "increasing":            bull_pts += 1
     elif vt == "decreasing":          bear_pts += 1
-    if align in ("bullish",):         bull_pts += 2
-    elif align in ("bullish_partial",): bull_pts += 1
-    elif align in ("bearish",):       bear_pts += 2
-    elif align in ("bearish_partial",): bear_pts += 1
+    if align == "bullish":            bull_pts += 2
+    elif align == "bullish_partial":  bull_pts += 1
+    elif align == "bearish":          bear_pts += 2
+    elif align == "bearish_partial":  bear_pts += 1
+
+    # Premium/discount: longs at discount, shorts at premium = +1; counter = -1
+    if pd_zone in ("deep_discount", "discount"):
+        bull_pts += 1
+        bear_pts = max(0, bear_pts - 1)
+    elif pd_zone in ("deep_premium", "premium"):
+        bear_pts += 1
+        bull_pts = max(0, bull_pts - 1)
+
+    # Trapped traders (from futures block) — strong contrarian fuel
+    trapped = (futures or {}).get("trapped_traders")
+    if trapped == "longs":
+        bear_pts += 2
+    elif trapped == "shorts":
+        bull_pts += 2
 
     if bull_pts - bear_pts >= 2:      side_bias = "long"
     elif bear_pts - bull_pts >= 2:    side_bias = "short"
     else:                             side_bias = "neutral"
 
-    # Pick R:R numbers for the proposed side
     if side_bias == "long":
-        entry, stop, tp1, tp2 = price, long_stop,  long_tp1,  long_tp2
+        entry, stop, tp1, tp2, tp3 = price, long_stop, long_tp1, long_tp2, long_tp3
         risk   = entry - stop
         reward = tp1 - entry
     elif side_bias == "short":
-        entry, stop, tp1, tp2 = price, short_stop, short_tp1, short_tp2
+        entry, stop, tp1, tp2, tp3 = price, short_stop, short_tp1, short_tp2, short_tp3
         risk   = stop - entry
         reward = entry - tp1
     else:
-        entry = stop = tp1 = tp2 = None
+        entry = stop = tp1 = tp2 = tp3 = None
         risk = reward = 0
 
     rr_ratio = round(reward / risk, 2) if risk > 0 else 0.0
 
-    # Setup quality (0-10): bias strength + RR + regime + squeeze bonus
+    # Setup quality (0-10)
     bias_strength = abs(bull_pts - bear_pts)
     grade = min(10, bias_strength * 2)
     if rr_ratio >= 2.5:     grade = min(10, grade + 2)
     elif rr_ratio >= 2.0:   grade = min(10, grade + 1)
     elif rr_ratio < 1.5 and side_bias != "neutral":
                             grade = max(0, grade - 1)
-    if regime in ("squeeze_pre_breakout",): grade = min(10, grade + 1)
-    if regime == "choppy":  grade = max(0, grade - 2)
+    if regime == "squeeze_pre_breakout": grade = min(10, grade + 1)
+    if regime == "choppy":               grade = max(0, grade - 2)
+    if trapped in ("longs", "shorts"):   grade = min(10, grade + 1)
+
+    fakeout_risk   = _fakeout_risk_score(primary, zones, futures)
+    liquidity_risk = _liquidity_risk_score(primary, zones)
+
+    # Penalize grade if risks are high
+    if fakeout_risk >= 7:   grade = max(0, grade - 2)
+    elif fakeout_risk >= 5: grade = max(0, grade - 1)
+    if liquidity_risk >= 7: grade = max(0, grade - 2)
+    elif liquidity_risk >= 5: grade = max(0, grade - 1)
+
+    # Directional bias (operator label).
+    # Trapped traders is an explicit override — when present, the dominant side is
+    # about to be flushed/squeezed → REVERSAL_WATCH regardless of underlying bias.
+    if trapped in ("longs", "shorts"):
+        directional_bias = "REVERSAL_WATCH"
+    elif side_bias == "neutral" or grade < 4:
+        directional_bias = "WAIT" if grade < 4 else "NO_TRADE"
+    else:
+        directional_bias = "LONG" if side_bias == "long" else "SHORT"
+
+    # Hard floor — if everything aligns against trade, force NO_TRADE.
+    # Skip when REVERSAL_WATCH so trapped_traders doesn't get washed out.
+    if directional_bias != "REVERSAL_WATCH" and grade <= 2 and rr_ratio < 1.5:
+        directional_bias = "NO_TRADE"
+        side_bias = "neutral"
 
     invalidation = None
     if side_bias == "long" and sup:
@@ -708,25 +838,92 @@ def _build_plan(primary: dict, mtf: dict) -> dict:
     elif side_bias == "short" and res:
         invalidation = f"Daily close above resistance {res} kills the short thesis"
 
+    do_now, do_not_do = _action_lists(
+        directional_bias, side_bias, fakeout_risk, liquidity_risk,
+        grade, rr_ratio, trapped, regime, pd_zone, zones,
+    )
+
     return {
-        "side_bias":   side_bias,
-        "entry":       entry,
-        "stop":        stop,
-        "take_profit_1": tp1,
-        "take_profit_2": tp2,
-        "risk_reward": rr_ratio,
+        "side_bias":           side_bias,
+        "directional_bias":    directional_bias,
+        "entry":               entry,
+        "stop":                stop,
+        "take_profit_1":       tp1,
+        "take_profit_2":       tp2,
+        "take_profit_3":       tp3,
+        "risk_reward":         rr_ratio,
         "stop_atr_multiple":   1.5,
         "target_atr_multiple": 3.0,
         "setup_grade":         int(grade),
         "bias_strength":       int(bias_strength),
         "bull_points":         int(bull_pts),
         "bear_points":         int(bear_pts),
+        "fakeout_risk":        int(fakeout_risk),
+        "liquidity_risk":      int(liquidity_risk),
+        "trapped_traders":     trapped,
         "invalidation":        invalidation,
+        "do_now":              do_now,
+        "do_not_do":           do_not_do,
         "notes": (
-            "Plan is ATR-anchored (1.5×ATR stop, 3/5×ATR targets → baseline R:R 2.0 / 3.33). "
+            "Plan is ATR-anchored (1.5×ATR stop, 3/5/8×ATR targets → baseline R:R 2.0 / 3.33 / 5.33). "
             "AI must justify, refine, or veto based on structure, MTF alignment, and risk context."
         ),
     }
+
+
+def _action_lists(
+    directional_bias: str,
+    side_bias: str,
+    fakeout_risk: int,
+    liquidity_risk: int,
+    grade: int,
+    rr: float,
+    trapped: str | None,
+    regime: str | None,
+    pd_zone: str | None,
+    zones: dict,
+) -> tuple[list[str], list[str]]:
+    """Generate 'DO THIS NOW' and 'DO NOT DO THIS' bullets in operator tone."""
+    do_now: list[str]    = []
+    do_not_do: list[str] = []
+
+    if directional_bias == "NO_TRADE":
+        do_now.append("NO TRADE. Setup quality below threshold. Wait for cleaner edge.")
+        do_not_do.append("Do not force a position. Capital preservation > FOMO.")
+    elif directional_bias == "WAIT":
+        do_now.append("WAIT. Conditions mixed — no clean trigger yet.")
+        if regime == "squeeze_pre_breakout":
+            do_now.append("Watch for volatility expansion. Trade only on confirmed breakout with volume.")
+        if zones.get("equal_highs"):
+            do_now.append(f"Watch equal highs near {zones['equal_highs'][0]['level']} — potential liquidity sweep target.")
+        if zones.get("equal_lows"):
+            do_now.append(f"Watch equal lows near {zones['equal_lows'][0]['level']} — potential liquidity sweep target.")
+        do_not_do.append("Do not anticipate the breakout direction — wait for confirmation.")
+    elif directional_bias == "REVERSAL_WATCH":
+        do_now.append(f"REVERSAL WATCH. Trapped {trapped} likely → contrarian setup brewing.")
+        do_now.append("Wait for confirmation candle / structure flip before sizing in.")
+        do_not_do.append("Do not chase the move that is trapping the crowd — wait for the reversal trigger.")
+    else:  # LONG or SHORT
+        do_now.append(f"{directional_bias} bias. Plan is valid IF the trigger condition fires — not before.")
+        do_now.append(f"Risk = 1×stop distance. Size position so total risk ≤ 1% of portfolio (halve if leveraged).")
+        if rr >= 2.0:
+            do_now.append("Take partial at TP1 (≈33%), trail rest to TP2/TP3.")
+        if pd_zone == "deep_premium" and directional_bias == "LONG":
+            do_now.append("Long bias is in deep premium — wait for retrace into discount before entering full size.")
+        if pd_zone == "deep_discount" and directional_bias == "SHORT":
+            do_now.append("Short bias is in deep discount — wait for retrace into premium before entering full size.")
+        do_not_do.append("Do not enter without the trigger. Do not move stop wider to absorb pain.")
+
+    if fakeout_risk >= 6:
+        do_not_do.append(f"Do not chase a breakout — fakeout risk {fakeout_risk}/10. Demand retest confirmation.")
+    if liquidity_risk >= 6:
+        do_not_do.append(f"Do not place stops at obvious swing H/L — liquidity sweep risk {liquidity_risk}/10. Hide stops beyond pools.")
+    if regime == "choppy":
+        do_not_do.append("Do not assume directional follow-through in choppy regime — scalp tactics only.")
+    if grade < 6 and directional_bias in ("LONG", "SHORT"):
+        do_not_do.append(f"Setup grade {grade}/10 — consider half size or skip entirely.")
+
+    return do_now, do_not_do
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -760,6 +957,357 @@ def _classify_regime(
     if abs(ema20 - ema50) / max(ema50, 1e-9) < 0.005:
         return "choppy"
     return "neutral"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Phase 5.1 — Smart money zones: FVG, order blocks, equal H/L, premium/discount,
+# liquidity pools, absorption signal. All zone detection is heuristic and runs
+# on the primary timeframe only — the AI uses them as context, not commands.
+
+def _smart_money_zones(
+    opens: list,
+    highs: list,
+    lows: list,
+    closes: list,
+    volumes: list,
+    atr: float,
+    last_price: float,
+) -> dict:
+    n = len(closes)
+    if n < 30 or atr <= 0 or last_price <= 0:
+        return {
+            "fvg_bullish":         None,
+            "fvg_bearish":         None,
+            "order_block_bull":    None,
+            "order_block_bear":    None,
+            "equal_highs":         [],
+            "equal_lows":          [],
+            "premium_discount":    None,
+            "liquidity_above":     [],
+            "liquidity_below":     [],
+            "absorption_signal":   None,
+        }
+
+    return {
+        "fvg_bullish":      _last_unfilled_fvg(highs, lows, closes, atr, side="bull"),
+        "fvg_bearish":      _last_unfilled_fvg(highs, lows, closes, atr, side="bear"),
+        "order_block_bull": _last_order_block(opens, highs, lows, closes, atr, side="bull"),
+        "order_block_bear": _last_order_block(opens, highs, lows, closes, atr, side="bear"),
+        "equal_highs":      _equal_levels(highs, last_price, tolerance_pct=0.1, side="above"),
+        "equal_lows":       _equal_levels(lows,  last_price, tolerance_pct=0.1, side="below"),
+        "premium_discount": _premium_discount(highs, lows, last_price),
+        "liquidity_above":  _liquidity_pools(highs, last_price, side="above"),
+        "liquidity_below":  _liquidity_pools(lows,  last_price, side="below"),
+        "absorption_signal": _absorption_signal(highs, lows, closes, volumes, atr),
+    }
+
+
+def _last_unfilled_fvg(
+    highs: list,
+    lows: list,
+    closes: list,
+    atr: float,
+    side: str,
+    lookback: int = 80,
+    min_size_atr: float = 0.3,
+) -> dict | None:
+    """
+    Three-candle Fair Value Gap. Returns the most recent unfilled gap with size ≥ min_size_atr * ATR.
+    Bullish FVG: highs[i-1] < lows[i+1] → gap between them.
+    Bearish FVG: lows[i-1] > highs[i+1].
+    "Unfilled" = no later candle has traded back into the gap.
+    """
+    n = len(highs)
+    start = max(2, n - lookback)
+    last_close = closes[-1]
+    for i in range(n - 2, start, -1):
+        if i - 1 < 0 or i + 1 >= n:
+            continue
+        if side == "bull":
+            gap_low  = highs[i - 1]
+            gap_high = lows[i + 1]
+            if gap_high <= gap_low:
+                continue
+            if gap_high - gap_low < atr * min_size_atr:
+                continue
+            # filled if any later candle's low traded below gap_high
+            filled = any(lows[j] <= gap_low for j in range(i + 2, n))
+            if filled:
+                continue
+            return {
+                "low":   round(gap_low,  6),
+                "high":  round(gap_high, 6),
+                "size_atr": round((gap_high - gap_low) / atr, 2),
+                "distance_pct": round((min(abs(last_close - gap_low), abs(last_close - gap_high)) / last_close) * 100, 2),
+                "age_candles": n - 1 - i,
+            }
+        else:  # bear
+            gap_high = lows[i - 1]
+            gap_low  = highs[i + 1]
+            if gap_high <= gap_low:
+                continue
+            if gap_high - gap_low < atr * min_size_atr:
+                continue
+            filled = any(highs[j] >= gap_high for j in range(i + 2, n))
+            if filled:
+                continue
+            return {
+                "low":   round(gap_low,  6),
+                "high":  round(gap_high, 6),
+                "size_atr": round((gap_high - gap_low) / atr, 2),
+                "distance_pct": round((min(abs(last_close - gap_low), abs(last_close - gap_high)) / last_close) * 100, 2),
+                "age_candles": n - 1 - i,
+            }
+    return None
+
+
+def _last_order_block(
+    opens: list,
+    highs: list,
+    lows: list,
+    closes: list,
+    atr: float,
+    side: str,
+    lookback: int = 60,
+    impulse_atr: float = 1.5,
+) -> dict | None:
+    """
+    Bullish OB: last bearish candle (close < open) followed by a strong up impulse
+                (close moves > impulse_atr * ATR within 3 candles).
+    Bearish OB: mirror — last bullish candle followed by strong down impulse.
+    """
+    n = len(closes)
+    start = max(0, n - lookback)
+    last_close = closes[-1]
+    for i in range(n - 4, start, -1):
+        c_open, c_close = opens[i], closes[i]
+        if side == "bull":
+            if c_close >= c_open:
+                continue
+            impulse = max(closes[i + 1: i + 4]) - c_close
+            if impulse > atr * impulse_atr:
+                return {
+                    "low":  round(lows[i],  6),
+                    "high": round(highs[i], 6),
+                    "age_candles": n - 1 - i,
+                    "distance_pct": round((last_close - highs[i]) / last_close * 100, 2),
+                }
+        else:  # bear
+            if c_close <= c_open:
+                continue
+            impulse = c_close - min(closes[i + 1: i + 4])
+            if impulse > atr * impulse_atr:
+                return {
+                    "low":  round(lows[i],  6),
+                    "high": round(highs[i], 6),
+                    "age_candles": n - 1 - i,
+                    "distance_pct": round((lows[i] - last_close) / last_close * 100, 2),
+                }
+    return None
+
+
+def _equal_levels(
+    series: list,
+    last_price: float,
+    tolerance_pct: float,
+    side: str,
+    lookback: int = 60,
+    min_cluster: int = 2,
+) -> list:
+    """
+    Find clusters of swing pivots within ±tolerance_pct of each other on the
+    requested side of price. These are obvious stop-hunting targets.
+    """
+    if len(series) < lookback:
+        return []
+    window = series[-lookback:]
+    candidates: list[float] = []
+    if side == "above":
+        candidates = [v for v in window if v > last_price]
+    else:
+        candidates = [v for v in window if v < last_price]
+    if not candidates:
+        return []
+    tol = last_price * (tolerance_pct / 100.0)
+    clusters: list[dict] = []
+    for v in sorted(candidates, reverse=(side == "above")):
+        matched = False
+        for c in clusters:
+            if abs(c["level"] - v) <= tol:
+                c["touches"] += 1
+                c["level"] = (c["level"] * (c["touches"] - 1) + v) / c["touches"]
+                matched = True
+                break
+        if not matched:
+            clusters.append({"level": v, "touches": 1})
+    out = [
+        {
+            "level":         round(c["level"], 6),
+            "touches":       c["touches"],
+            "distance_pct":  round(abs(c["level"] - last_price) / last_price * 100, 2),
+        }
+        for c in clusters if c["touches"] >= min_cluster
+    ]
+    return out[:3]
+
+
+def _premium_discount(highs: list, lows: list, last_price: float, lookback: int = 100) -> dict | None:
+    """50% equilibrium of the dominant swing range over `lookback` candles."""
+    if len(highs) < lookback or last_price <= 0:
+        return None
+    window_h = max(highs[-lookback:])
+    window_l = min(lows[-lookback:])
+    if window_h <= window_l:
+        return None
+    eq        = (window_h + window_l) / 2.0
+    fib_618   = window_l + (window_h - window_l) * 0.618
+    fib_382   = window_l + (window_h - window_l) * 0.382
+    if last_price >= fib_618:
+        zone = "deep_premium"
+    elif last_price > eq:
+        zone = "premium"
+    elif last_price <= fib_382:
+        zone = "deep_discount"
+    elif last_price < eq:
+        zone = "discount"
+    else:
+        zone = "equilibrium"
+    return {
+        "zone":            zone,
+        "swing_high":      round(window_h, 6),
+        "swing_low":       round(window_l, 6),
+        "equilibrium":     round(eq, 6),
+        "fib_618":         round(fib_618, 6),
+        "fib_382":         round(fib_382, 6),
+        "lookback_candles": lookback,
+    }
+
+
+def _liquidity_pools(series: list, last_price: float, side: str, lookback: int = 100, swing_window: int = 5) -> list:
+    """
+    Identify swing pivots above (highs) or below (lows) price — likely stop clusters.
+    Returns up to 3 strongest pools sorted by proximity.
+    """
+    if len(series) < swing_window * 2 + 1 or last_price <= 0:
+        return []
+    series = series[-lookback:]
+    pivots: list[float] = []
+    for i in range(swing_window, len(series) - swing_window):
+        window = series[i - swing_window: i + swing_window + 1]
+        if side == "above" and series[i] == max(window):
+            pivots.append(series[i])
+        elif side == "below" and series[i] == min(window):
+            pivots.append(series[i])
+    pivots = [p for p in pivots if (p > last_price if side == "above" else p < last_price)]
+    pivots = sorted(set(round(p, 6) for p in pivots), reverse=(side == "above"))
+    pivots = sorted(pivots, key=lambda p: abs(p - last_price))[:3]
+    return [
+        {
+            "level":         round(p, 6),
+            "distance_pct":  round(abs(p - last_price) / last_price * 100, 2),
+        }
+        for p in pivots
+    ]
+
+
+def _absorption_signal(highs: list, lows: list, closes: list, volumes: list, atr: float) -> dict | None:
+    """
+    High volume with small price movement = absorption (smart money accumulating
+    or distributing). Last 5 candles vs prior 20-candle average.
+    """
+    if len(closes) < 30 or atr <= 0 or not volumes or all(v == 0 for v in volumes[-30:]):
+        return None
+    recent_vol = sum(volumes[-5:]) / 5.0
+    prior_vol  = sum(volumes[-25:-5]) / 20.0
+    if prior_vol == 0:
+        return None
+    vol_ratio  = recent_vol / prior_vol
+    recent_range_avg = sum(highs[i] - lows[i] for i in range(len(closes) - 5, len(closes))) / 5.0
+    if recent_range_avg >= atr * 0.6:
+        return None
+    if vol_ratio < 1.4:
+        return None
+    direction = "accumulation" if closes[-1] >= closes[-5] else "distribution"
+    return {
+        "type":          direction,
+        "vol_ratio":     round(vol_ratio, 2),
+        "range_vs_atr":  round(recent_range_avg / atr, 2),
+        "note":          "High volume + tight range → likely smart money positioning",
+    }
+
+
+def _fakeout_risk_score(primary: dict, zones: dict, futures: dict | None = None) -> int:
+    """0-10 score for breakout fakeout risk."""
+    score = 0
+    bos        = primary.get("bos")
+    vt         = primary.get("volume_trend")
+    squeeze    = primary.get("bb_squeeze")
+    bb_pos     = primary.get("bb_position")
+    rsi        = primary.get("rsi_14") or 50.0
+    regime     = primary.get("regime")
+    funding    = (futures or {}).get("funding_regime")
+    crowd      = (futures or {}).get("long_short_account_ratio")
+    smart      = (futures or {}).get("top_trader_long_short_ratio")
+
+    # 1) Recent BOS without confirming volume
+    if bos in ("bullish_bos", "bearish_bos") and vt != "increasing":
+        score += 3
+    # 2) Price beyond BB but RSI not extreme → mean reversion likely
+    if bb_pos in ("above_upper", "below_lower") and 40 < rsi < 60:
+        score += 2
+    # 3) Squeeze pre-breakout — direction unknown, fakeout common
+    if squeeze:
+        score += 1
+    # 4) Crowd long-heavy at top / short-heavy at bottom
+    if bos == "bullish_bos" and funding in ("elevated_long", "extreme_long") and crowd and crowd > 1.5:
+        score += 2
+    if bos == "bearish_bos" and funding in ("elevated_short", "extreme_short") and crowd and crowd < 0.7:
+        score += 2
+    # 5) Crowd long while smart short (or mirror) → tape vs positioning mismatch
+    if crowd and smart:
+        if crowd > 1.4 and smart < 1.0:
+            score += 1
+        if crowd < 0.7 and smart > 1.2:
+            score += 1
+    # 6) Choppy regime — directional bets often fail
+    if regime == "choppy":
+        score += 1
+    return min(10, score)
+
+
+def _liquidity_risk_score(primary: dict, zones: dict) -> int:
+    """
+    0-10 risk that price will sweep nearby liquidity before continuing.
+    High score when obvious stop clusters sit within 1×ATR of current price.
+    """
+    atr   = primary.get("atr_14") or 0
+    price = primary.get("last_price") or 0
+    if atr <= 0 or price <= 0:
+        return 0
+
+    score = 0
+    for pool in (zones.get("liquidity_above") or [])[:2]:
+        dist = pool.get("distance_pct", 100) / 100.0 * price
+        if dist <= atr * 0.6:
+            score += 3
+        elif dist <= atr * 1.2:
+            score += 1
+    for pool in (zones.get("liquidity_below") or [])[:2]:
+        dist = pool.get("distance_pct", 100) / 100.0 * price
+        if dist <= atr * 0.6:
+            score += 3
+        elif dist <= atr * 1.2:
+            score += 1
+    # Obvious equal H/L tops nearby
+    if zones.get("equal_highs"):
+        nearest = zones["equal_highs"][0].get("distance_pct", 100) / 100.0 * price
+        if nearest <= atr * 0.8:
+            score += 2
+    if zones.get("equal_lows"):
+        nearest = zones["equal_lows"][0].get("distance_pct", 100) / 100.0 * price
+        if nearest <= atr * 0.8:
+            score += 2
+    return min(10, score)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -945,11 +1493,59 @@ class _BinanceSymbolError(Exception):
     """Raised on Binance HTTP 400 (invalid symbol)."""
 
 
-async def _fetch_json(url: str, timeout: int = 10):
+def _provider_from_url(url: str) -> str:
+    """Tag provider for /tools/health counters."""
+    if "fapi.binance.com" in url:       return "binance_futures"
+    if "api.binance.com" in url:        return "binance"
+    if "coingecko.com" in url:          return "coingecko"
+    if "alphavantage.co" in url:        return "alphavantage"
+    return "external"
+
+
+async def _fetch_json(url: str, timeout: int = 10, cache_ttl: float = 0):
     """
     Fetch JSON via aiohttp (in requirements), falling back to urllib.
-    Raises RuntimeError for non-200 so the fallback chain catches it.
+    Phase 5.2: in-memory TTL cache + exponential backoff on 429/5xx.
+    Raises RuntimeError for non-200 (after retries) so callers can fall through.
     """
+    if cache_ttl > 0:
+        cached = cache_get(f"GET:{url}")
+        if cached is not None:
+            return cached
+
+    provider = _provider_from_url(url)
+    last_exc: Exception | None = None
+
+    for attempt in range(_BACKOFF_MAX_RETRY + 1):
+        try:
+            data = await _http_get_json(url, timeout)
+            if cache_ttl > 0:
+                cache_set(f"GET:{url}", data, cache_ttl)
+            _record_fetch(provider, ok=True)
+            return data
+        except _BinanceSymbolError as exc:
+            _record_fetch(provider, ok=False, reason=str(exc))
+            raise
+        except _RetryableHTTPError as exc:
+            last_exc = exc
+            if attempt >= _BACKOFF_MAX_RETRY:
+                break
+            sleep_for = _BACKOFF_BASE_SEC * (2 ** attempt)
+            logger.info("retryable %s on %s — sleeping %.2fs (attempt %d)", exc, provider, sleep_for, attempt + 1)
+            await asyncio.sleep(sleep_for)
+        except Exception as exc:
+            last_exc = exc
+            break
+
+    _record_fetch(provider, ok=False, reason=str(last_exc) if last_exc else "unknown")
+    raise last_exc if last_exc else RuntimeError(f"fetch failed: {url}")
+
+
+class _RetryableHTTPError(Exception):
+    """Retry-eligible (429 / 5xx)."""
+
+
+async def _http_get_json(url: str, timeout: int):
     try:
         import aiohttp  # noqa: PLC0415
         async with aiohttp.ClientSession() as session:
@@ -958,6 +1554,8 @@ async def _fetch_json(url: str, timeout: int = 10):
                     body = await resp.json(content_type=None)
                     msg  = body.get("msg", "Invalid symbol") if isinstance(body, dict) else "Bad request"
                     raise _BinanceSymbolError(f"Binance: {msg}")
+                if resp.status == 429 or 500 <= resp.status < 600:
+                    raise _RetryableHTTPError(f"HTTP {resp.status} from {url}")
                 if resp.status != 200:
                     raise RuntimeError(f"HTTP {resp.status} from {url}")
                 return await resp.json(content_type=None)
@@ -973,6 +1571,8 @@ async def _fetch_json(url: str, timeout: int = 10):
                 body = json.loads(exc.read())
                 msg  = body.get("msg", "Invalid symbol") if isinstance(body, dict) else "Bad request"
                 raise _BinanceSymbolError(f"Binance: {msg}") from exc
+            if exc.code == 429 or 500 <= exc.code < 600:
+                raise _RetryableHTTPError(f"HTTP {exc.code} from {url}") from exc
             raise RuntimeError(f"HTTP {exc.code} from {url}") from exc
 
     return await asyncio.get_event_loop().run_in_executor(None, _sync)

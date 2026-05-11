@@ -57,6 +57,26 @@ async def chat(req: ChatRequest):
 
     logger.info("CHAT | rid=%s | uid=%s | msg_len=%d", request_id, user_id, len(message))
 
+    # ── Phase 5.2 — safety guard (runs before any quota / AI call) ────────
+    # Returns a fast, branded rejection if length / injection / throttle hit.
+    # Never crashes the request — failures here log and fall through.
+    try:
+        from backend.services.safety.guard import check_message
+        _safety = check_message(str(user_id), message)
+        if not _safety.allowed:
+            logger.info(
+                "CHAT | rid=%s | uid=%s | safety_reject | code=%s | reason=%s",
+                request_id, user_id, _safety.code, _safety.reason,
+            )
+            return _quick_response(
+                request_id, user_id,
+                _safety.message_for_user or "İstek reddedildi.",
+                "safety_" + (_safety.code or "blocked"),
+                t_start,
+            )
+    except Exception as _serr:
+        logger.debug("CHAT | rid=%s | safety guard import/eval error: %s", request_id, _serr)
+
     # ── Memory list shortcut ──────────────────────────────────────────────
     _mem_list_kw = [
         "ne hatirliyorsun", "ne hatırlıyorsun", "ne kaydettin",

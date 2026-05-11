@@ -79,19 +79,29 @@ def _market_data_summary(tool_results: dict) -> dict | None:
         return None
     out: dict = {}
     if md_data:
+        plan_d = md_data.get("plan") or {}
+        fut_d  = md_data.get("futures") or {}
+        dq     = md_data.get("data_quality") or {}
         out["market_data"] = {
-            "symbol":         md_data.get("symbol"),
-            "timeframe":      md_data.get("timeframe"),
-            "last_price":     md_data.get("last_price"),
-            "rsi_14":         md_data.get("rsi_14"),
-            "trend":          md_data.get("trend"),
-            "regime":         md_data.get("regime"),
-            "bb_squeeze":     md_data.get("bb_squeeze"),
-            "mtf_alignment":  (md_data.get("mtf_alignment") or {}).get("alignment"),
-            "setup_grade":    (md_data.get("plan") or {}).get("setup_grade"),
-            "side_bias":      (md_data.get("plan") or {}).get("side_bias"),
-            "funding_regime": (md_data.get("futures") or {}).get("funding_regime"),
-            "provider":       md.get("provider"),
+            "symbol":            md_data.get("symbol"),
+            "timeframe":         md_data.get("timeframe"),
+            "last_price":        md_data.get("last_price"),
+            "rsi_14":            md_data.get("rsi_14"),
+            "trend":             md_data.get("trend"),
+            "regime":            md_data.get("regime"),
+            "bb_squeeze":        md_data.get("bb_squeeze"),
+            "mtf_alignment":     (md_data.get("mtf_alignment") or {}).get("alignment"),
+            "directional_bias":  plan_d.get("directional_bias"),
+            "setup_grade":       plan_d.get("setup_grade"),
+            "side_bias":         plan_d.get("side_bias"),
+            "fakeout_risk":      plan_d.get("fakeout_risk"),
+            "liquidity_risk":    plan_d.get("liquidity_risk"),
+            "funding_regime":    fut_d.get("funding_regime"),
+            "trapped_traders":   fut_d.get("trapped_traders"),
+            "positioning_signal": fut_d.get("positioning_signal"),
+            "provider":          md.get("provider"),
+            "data_quality":      dq.get("level") if isinstance(dq, dict) else None,
+            "data_quality_missing": dq.get("missing") if isinstance(dq, dict) else None,
         }
     if mc_data:
         out["macro_data"] = {
@@ -174,6 +184,22 @@ async def process_chat(
                 cfg   = mode_get_config(canonical, depth_label, message)
                 sys_p = build_system_prompt(canonical, mem_summary, style_prompt, profile)
 
+                # Phase 5.1 — Inject prior thesis block for trading_analyst
+                # (lets the AI compare today's read against yesterday's call).
+                _prior_symbol = None
+                _prior_block  = ""
+                if canonical == "trading_analyst":
+                    try:
+                        from backend.services.tools.market_data_tool import MarketDataTool
+                        _prior_symbol = MarketDataTool.parse_symbol(message)
+                        if _prior_symbol:
+                            from backend.services.trading.thesis_memory import build_previous_thesis_block
+                            _prior_block = build_previous_thesis_block(user_id, _prior_symbol)
+                            if _prior_block:
+                                sys_p += "\n\n" + _prior_block
+                    except Exception as _pterr:
+                        logger.debug("process_chat | prior-thesis lookup failed: %s", _pterr)
+
                 # Run tools for this mode and inject live data into system prompt
                 try:
                     from backend.services.tools.tool_orchestrator import (
@@ -219,9 +245,19 @@ async def process_chat(
                     signal, reply = _extract_trading_signal(reply)
                     if signal is not None:
                         _metadata["trading_signal"] = signal
+                        # Persist the signal for next-time comparison.
+                        try:
+                            from backend.services.trading.thesis_memory import save_thesis
+                            sym_for_save = signal.get("symbol") or _prior_symbol
+                            if sym_for_save:
+                                save_thesis(user_id, sym_for_save, signal)
+                        except Exception as _serr:
+                            logger.debug("process_chat | save_thesis failed: %s", _serr)
                     _summary = _market_data_summary(_mode_tool_res)
                     if _summary:
                         _metadata["tool_summary"] = _summary
+                    if _prior_block:
+                        _metadata["prior_thesis_used"] = True
                 return {
                     "reply":    reply,
                     "intent":   canonical,
@@ -286,6 +322,18 @@ async def process_chat(
                     _ta_ctx["timeframe"] = _tf.lower()
                     break
 
+            # Phase 5.1 — prior thesis block (compare to last analysis on same symbol)
+            _ta_prior_block = ""
+            _ta_prior_symbol = symbol if (symbol and symbol.lower() not in ("null", "none", "")) else None
+            if _ta_prior_symbol:
+                try:
+                    from backend.services.trading.thesis_memory import build_previous_thesis_block
+                    _ta_prior_block = build_previous_thesis_block(user_id, _ta_prior_symbol)
+                    if _ta_prior_block:
+                        _ta_sys_p += "\n\n" + _ta_prior_block
+                except Exception as _pterr:
+                    logger.debug("process_chat | TA prior-thesis lookup failed: %s", _pterr)
+
             _ta_tool_res = await run_tools_for_mode("trading_analyst", message, _ta_ctx)
             _ta_block    = build_tool_context_block(_ta_tool_res)
             if _ta_block:
@@ -318,9 +366,18 @@ async def process_chat(
             _ta_meta: dict = {}
             if _signal is not None:
                 _ta_meta["trading_signal"] = _signal
+                try:
+                    from backend.services.trading.thesis_memory import save_thesis
+                    _sym_for_save = _signal.get("symbol") or _ta_prior_symbol
+                    if _sym_for_save:
+                        save_thesis(user_id, _sym_for_save, _signal)
+                except Exception as _serr:
+                    logger.debug("process_chat | TA save_thesis failed: %s", _serr)
             _ta_summary = _market_data_summary(_ta_tool_res)
             if _ta_summary:
                 _ta_meta["tool_summary"] = _ta_summary
+            if _ta_prior_block:
+                _ta_meta["prior_thesis_used"] = True
             return {
                 "reply":    _ta_reply,
                 "intent":   "trading_analyst",
