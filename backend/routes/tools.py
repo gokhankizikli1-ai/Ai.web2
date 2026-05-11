@@ -60,4 +60,11 @@ def tools_health() -> dict:
     except Exception as exc:
         logger.debug("/tools/health: sessions stats unavailable: %s", exc)
 
+    # Phase A1 — agent runtime stats (research mode only when flag is on).
+    try:
+        from backend.services.agent import stats as agent_stats
+        out["agent"] = agent_stats()
+    except Exception as exc:
+        logger.debug("/tools/health: agent stats unavailable: %s", exc)
+
     return out
