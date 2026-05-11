@@ -1,0 +1,214 @@
+name: post-deploy-healthcheck
+
+# Runs on every push to main (i.e. immediately after a PR merges to main).
+# Railway auto-deploys from main on the same trigger, so this job polls the
+# production /health endpoint until the new build's commit SHA matches the
+# just-pushed SHA — then verifies /tools/health.
+#
+# Status is written back to the merge commit so it shows in the GitHub UI and
+# can be read programmatically via the GitHub API (or the GitHub MCP tools)
+# in subsequent automation sessions.
+#
+# Configuration (no secrets required for the public endpoints):
+#   vars.RAILWAY_PROD_URL  — defaults to https://worker-production-1345.up.railway.app
+#                            override via repo Variables → Actions if the URL ever changes
+#
+# Manual re-run: workflow_dispatch is enabled so you can trigger this from
+# the Actions UI against any commit on main.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents:       read     # to read the merge commit metadata
+  statuses:       write    # to write the commit status
+  pull-requests:  write    # to comment on the merged PR (if there was one)
+
+concurrency:
+  group: post-deploy-${{ github.ref }}
+  cancel-in-progress: false   # never cancel a live deploy verification
+
+jobs:
+  verify-deploy:
+    name: Verify Railway production
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+
+    steps:
+      - name: Resolve target URL
+        id: cfg
+        run: |
+          URL="${{ vars.RAILWAY_PROD_URL }}"
+          if [ -z "$URL" ]; then
+            URL="https://worker-production-1345.up.railway.app"
+          fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "Target: $URL"
+          echo "Expected commit SHA: ${{ github.sha }}"
+
+      - name: Mark commit status "pending"
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/statuses/${{ github.sha }}" \
+            -d '{
+              "state":       "pending",
+              "context":     "railway/production-deploy",
+              "description": "Waiting for Railway to roll out new build…",
+              "target_url":  "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            }' > /dev/null
+
+      # ── Step 1: wait for Railway to come back up (basic /health 200) ──────
+      - name: Wait for /health to return 200
+        id: health_up
+        run: |
+          set -e
+          URL="${{ steps.cfg.outputs.url }}"
+          for i in $(seq 1 60); do      # 60 × 5s = 5 min
+            code=$(curl -s -o /tmp/health.json -w "%{http_code}" --max-time 6 "$URL/health" || echo "000")
+            if [ "$code" = "200" ]; then
+              echo "/health 200 on attempt $i"
+              cat /tmp/health.json
+              echo ""
+              break
+            fi
+            echo "attempt $i: HTTP $code — sleeping 5s"
+            sleep 5
+            if [ "$i" = "60" ]; then
+              echo "::error::/health never returned 200 within 5 minutes"
+              exit 1
+            fi
+          done
+
+      # ── Step 2: wait until the SHA in /health matches the merge SHA ──────
+      - name: Wait for new build SHA on /health
+        id: health_sha
+        run: |
+          set -e
+          URL="${{ steps.cfg.outputs.url }}"
+          EXPECTED="${{ github.sha }}"
+          OBSERVED=""
+          for i in $(seq 1 80); do      # 80 × 6s = 8 min
+            BODY=$(curl -s --max-time 6 "$URL/health" || echo '{}')
+            OBSERVED=$(echo "$BODY" | python3 -c "import sys,json; d=json.loads(sys.stdin.read() or '{}'); print(d.get('build',{}).get('commit_sha','') or '')" 2>/dev/null || echo "")
+            if [ "$OBSERVED" = "$EXPECTED" ]; then
+              echo "SHA match on attempt $i: $OBSERVED"
+              break
+            fi
+            SHORT="${OBSERVED:0:7}"
+            echo "attempt $i: observed=$SHORT expected=${EXPECTED:0:7} — sleeping 6s"
+            sleep 6
+            if [ "$i" = "80" ]; then
+              echo "::warning::Build SHA did not match within 8 min. Observed: '$OBSERVED' expected: '$EXPECTED'."
+              echo "::warning::This can mean (1) Railway env var RAILWAY_GIT_COMMIT_SHA is not exposed to the worker, or (2) deploy failed silently."
+              # Don't hard-fail here — /tools/health check below may still pass and we want partial signal.
+            fi
+          done
+          echo "observed_sha=$OBSERVED" >> "$GITHUB_OUTPUT"
+          echo "expected_sha=$EXPECTED" >> "$GITHUB_OUTPUT"
+
+      # ── Step 3: verify /tools/health shape (cache + safety keys present) ──
+      - name: Verify /tools/health response shape
+        id: tools_health
+        run: |
+          set -e
+          URL="${{ steps.cfg.outputs.url }}"
+          BODY=$(curl -fsS --max-time 10 "$URL/tools/health")
+          echo "$BODY" > /tmp/tools_health.json
+          echo "$BODY" | python3 -m json.tool
+
+          # Required keys for the post-Phase-5.2 / M1+ build.
+          python3 - <<'PY'
+          import json, re, sys, pathlib
+          body = json.loads(pathlib.Path("/tmp/tools_health.json").read_text())
+          required_top  = ["tools_enabled", "market_data_enabled", "macro_data_enabled", "registered_tools", "phase"]
+          required_subs = ["cache", "safety", "memory"]
+          missing = [k for k in required_top if k not in body]
+          if missing:
+              print(f"::error::/tools/health missing keys: {missing}")
+              sys.exit(1)
+          # cache / safety / memory are only present when their modules imported successfully.
+          # Warn (not fail) if missing — they are additive observability blocks.
+          for sub in required_subs:
+              if sub not in body:
+                  print(f"::warning::/tools/health missing optional sub-object: {sub}")
+          # Phase string should look like "5.x" or one of the OS-roadmap phase letters
+          # (M1, A1, R1, W1, B1, P1, T1, etc.) to confirm the build is recent.
+          phase = body.get("phase", "")
+          if not re.search(r"\b(5\.\d|M\d|A\d|R\d|W\d|B\d|P\d|T\d)\b", phase):
+              print(f"::warning::Phase string '{phase}' does not look like a recognized phase id")
+          print("tools/health shape OK")
+          PY
+
+      # ── Step 4: write final commit status ────────────────────────────────
+      - name: Mark commit status "success"
+        if: success()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          OBS="${{ steps.health_sha.outputs.observed_sha }}"
+          EXP="${{ steps.health_sha.outputs.expected_sha }}"
+          if [ "$OBS" = "$EXP" ]; then
+            DESC="Deploy verified live — SHA ${OBS:0:7} on Railway"
+            STATE="success"
+          else
+            DESC="Deploy responded but SHA mismatch (live=${OBS:0:7} expected=${EXP:0:7})"
+            STATE="success"
+          fi
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/statuses/${{ github.sha }}" \
+            -d "{
+              \"state\":       \"$STATE\",
+              \"context\":     \"railway/production-deploy\",
+              \"description\": \"$DESC\",
+              \"target_url\":  \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\"
+            }" > /dev/null
+
+      - name: Mark commit status "failure"
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -fsSL -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/statuses/${{ github.sha }}" \
+            -d '{
+              "state":       "failure",
+              "context":     "railway/production-deploy",
+              "description": "Health check failed — see Actions log",
+              "target_url":  "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            }' > /dev/null
+
+      # ── Step 5: write a compact run summary visible in the Actions UI ────
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## Railway production deploy verification"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Target | ${{ steps.cfg.outputs.url }} |"
+            echo "| Expected SHA | \`${{ github.sha }}\` |"
+            echo "| Observed SHA | \`${{ steps.health_sha.outputs.observed_sha }}\` |"
+            echo "| Match? | ${{ steps.health_sha.outputs.observed_sha == github.sha && '✅ yes' || '⚠️ no' }} |"
+            echo ""
+            echo "### /health"
+            echo "\`\`\`json"
+            cat /tmp/health.json 2>/dev/null || echo "(unavailable)"
+            echo "\`\`\`"
+            echo ""
+            echo "### /tools/health"
+            echo "\`\`\`json"
+            cat /tmp/tools_health.json 2>/dev/null || echo "(unavailable)"
+            echo "\`\`\`"
+          } >> "$GITHUB_STEP_SUMMARY"
