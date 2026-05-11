@@ -1,4 +1,4 @@
-# KorvixAI — Tools Architecture (Phase M1)
+# KorvixAI — Tools Architecture (Phase M1 + 5.3)
 
 ## Overview
 
@@ -17,6 +17,7 @@ or returns an error, the AI response continues normally without it.
 | **5**  | Advanced trading intelligence (MTF + futures + macro + plan + signal) | ✅ Done |
 | **5.1** | Operator-grade trading (smart money zones, trapped traders, plan v2, thesis memory) | ✅ Done |
 | **5.2** | Stabilization & polish (cache + backoff + safety guard + trading card UI + error UX) | ✅ Done |
+| **5.3** | Automated post-deploy healthcheck workflow (Railway SHA verification + commit status) | ✅ Done |
 | **M1** | Memory service (typed client, multi-workspace-ready, flag-gated) | ✅ Done |
 | **M2** | Server-side sessions (workspaces, threads, messages tables) | 🔜 Next OS phase |
 | **A1** | Agent runtime skeleton (planner / executor / reflector) | 🔜 Planned |
@@ -230,6 +231,64 @@ backend extracts it, strips it from the displayed reply, and returns it in
 `market_data` + `macro_data` results for frontend cards (with
 `directional_bias`, `setup_grade`, `fakeout_risk`, `liquidity_risk`,
 `trapped_traders`, `positioning_signal`).
+
+## Post-Deploy Healthcheck (Phase 5.3)
+
+After every push to `main` (i.e. immediately after a PR merge), GitHub Actions
+runs `.github/workflows/post-deploy-healthcheck.yml`. This workflow:
+
+1. Sets a `railway/production-deploy` commit status to **pending** on the merge commit.
+2. Polls `GET /health` until it returns `200` (5-minute budget, 5s interval).
+3. Polls `GET /health` until `build.commit_sha` matches `github.sha` (8-min budget, 6s interval).
+4. Verifies `GET /tools/health` returns the expected shape (`cache`, `safety`, `memory`, `phase` containing `5.x`/`M1+`, etc.).
+5. Writes a final **success / failure** commit status back to GitHub, and a
+   compact Markdown summary visible in the Actions UI with the full `/health`
+   and `/tools/health` payloads as observed in production.
+
+### Configuration
+
+| Where | Variable | Default | Purpose |
+|---|---|---|---|
+| GitHub repo **Variables → Actions** | `RAILWAY_PROD_URL` | `https://worker-production-1345.up.railway.app` | Override if the Railway URL changes |
+| Railway env (auto-injected, no action needed) | `RAILWAY_GIT_COMMIT_SHA` | — | Used by `/health` to expose the deployed commit |
+| Railway env (auto-injected, no action needed) | `RAILWAY_GIT_BRANCH` | — | Exposed by `/health` for observability |
+| Railway env (auto-injected, no action needed) | `RAILWAY_DEPLOYMENT_ID` | — | Exposed by `/health` for observability |
+| Railway env (auto-injected, no action needed) | `RAILWAY_ENVIRONMENT` | — | Exposed by `/health` (falls back to `ENVIRONMENT`) |
+
+The workflow requires no secrets beyond the default `GITHUB_TOKEN`. It writes
+a commit status (not a check run) so it shows on the commit page and on any PR
+that introduced the merge.
+
+### Reading the deploy status programmatically
+
+```
+GET /repos/gokhankizikli1-ai/Ai.web2/commits/<sha>/statuses
+→ look for context: "railway/production-deploy"
+```
+
+This is what subsequent automated sessions will use to verify a deploy
+landed without needing direct Railway access.
+
+### `/health` payload shape (Phase 5.3)
+
+```json
+{
+  "status":  "ok",
+  "version": "3.0.0",
+  "build": {
+    "commit_sha":       "bf73e14...",
+    "commit_sha_short": "bf73e14",
+    "branch":           "main",
+    "deployment_id":    "...",
+    "environment":      "production"
+  },
+  "uptime_seconds": 47.3
+}
+```
+
+Backward compatible: `status` and `version` keys preserved exactly.
+
+---
 
 ## Memory Service (Phase M1)
 
