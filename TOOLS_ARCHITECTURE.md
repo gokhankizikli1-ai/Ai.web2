@@ -1,4 +1,4 @@
-# KorvixAI — Tools Architecture (Phase A1)
+# KorvixAI — Tools Architecture (Phase R1)
 
 ## Overview
 
@@ -21,8 +21,8 @@ or returns an error, the AI response continues normally without it.
 | **M1** | Memory service (typed client, multi-workspace-ready, flag-gated) | ✅ Done |
 | **M2** | Server-side sessions (workspaces, threads, messages tables) | ✅ Done |
 | **A1** | Agent runtime skeleton (research mode only, flag-gated) | ✅ Done |
+| **R1** | Research provider (Tavily) wired into web_research_tool | ✅ Done |
 | **M3** | Unified schema migration (workspace_id activation across all stores) | 🔜 Next OS phase |
-| **R1** | Research provider (Tavily) wired into web_research_tool | 🔜 Planned |
 | **6A** | Position Manager AI (live trade monitoring, partial profit logic) | ⏸ Deprioritized (T-series) |
 | **6B** | Alert engine (watchlists, breakouts, liquidation spikes) | 🔜 Planned |
 | **6C** | Auto trade journal (psychology + performance analytics) | 🔜 Planned |
@@ -288,6 +288,141 @@ landed without needing direct Railway access.
 ```
 
 Backward compatible: `status` and `version` keys preserved exactly.
+
+---
+
+## Research Provider (Phase R1)
+
+Lights up the real research capability for the A1 agent. `web_research_tool`
+(previously a stub) now delegates to a provider-agnostic `ResearchClient`
+which today routes `WEB_RESEARCH_PROVIDER=tavily` to a direct Tavily REST
+call (no SDK dependency added).
+
+### Why
+Without R1, A1's agent had only `web_research` to call — and that tool was
+a stub returning `unavailable`. The agent worked, but always answered from
+world-knowledge. R1 makes the agent actually do research with citations.
+
+### Package
+```
+backend/services/research/
+├── __init__.py      # exports client, Citation, SearchResult, normalize_citation, …
+├── types.py         # Citation + SearchResult dataclasses + SOURCE_TYPES taxonomy
+├── citations.py     # detect_source_type, trust_score, normalize_citation, dedupe_citations
+├── tavily.py        # Tavily REST provider (no SDK), aiohttp + urllib fallback
+└── client.py        # ResearchClient — provider-agnostic surface
+```
+
+### Source-type taxonomy
+`news / academic / government / corporate / forum / blog / video / social /
+wiki / unknown` — used for trust-score weighting and for the frontend
+research card (W3+).
+
+### Trust score (0.0 – 1.0)
+Heuristic combining:
+- **+0.30** for government / academic sources
+- **+0.20** for established news + wiki
+- **+0.10** for forums (QA-style)
+- **+0.05** for video / corporate
+- **+0.00** for blog / social / unknown
+- Provider's own relevance score weighted up to ±0.25
+- **+0.05** if dated within the last 30 days
+
+Clamped to [0, 1]. Refine after real usage.
+
+### Public API
+```python
+from backend.services.research import client
+
+result = await client.search(
+    "what happened with AI regulation this week",
+    max_results=5,            # 1–10
+    depth="basic",            # "basic" | "advanced"
+    include_answer=True,
+    include_domains=["reuters.com"],   # optional allow-list
+    exclude_domains=["example.com"],   # optional deny-list
+)
+# result.answer    : str | None  (Tavily's synthesized answer)
+# result.citations : list[Citation]  (normalized + deduped)
+# result.cached    : bool
+# result.elapsed_ms: int
+# result.error     : str | None
+```
+
+### Activation chain
+| Variable | Default | Effect |
+|---|---|---|
+| `ENABLE_TOOLS` | `false` | Phase 4A master switch (must be `true` for any tool) |
+| `ENABLE_WEB_RESEARCH` | `false` | Per-tool flag for `web_research_tool` |
+| `WEB_RESEARCH_PROVIDER` | (unset) | `tavily` today; `serper` / `brave` / `exa` reserved |
+| `TAVILY_API_KEY` | (unset) | Required when `WEB_RESEARCH_PROVIDER=tavily` |
+| `R1_TAVILY_CACHE_TTL_SEC` | `300` | Optional override for cache TTL (5 min default) |
+| `R1_TAVILY_TIMEOUT_SEC` | `8` | Optional override for HTTP timeout |
+
+Any link missing → `web_research_tool.run()` returns `status: unavailable`
+with a clear message; agent / orchestrator continues without it.
+
+### Observability
+`GET /tools/health` now returns a `research` sub-object:
+```json
+"research": {
+  "configured_provider": "tavily",
+  "available_providers": ["tavily"],
+  "searches_total": 0,
+  "searches_ok": 0,
+  "searches_error": 0,
+  "by_provider": {},
+  "last_error": "",
+  "cache_ttl_sec": 300
+}
+```
+
+Provider success/failure counts also surface in the existing `cache.providers`
+block via `record_fetch("tavily", ok=…)` so a Tavily outage is visible
+in the same place as Binance/Yahoo outages.
+
+### Tool payload (for the agent + future research card)
+```json
+{
+  "tool": "web_research",
+  "status": "available",
+  "provider": "tavily",
+  "data": {
+    "query":      "...",
+    "answer":     "...",
+    "citations":  [
+      {
+        "title":       "...",
+        "url":         "...",
+        "snippet":     "...",
+        "date":        "2026-05-10",
+        "source_type": "news",
+        "trust_score": 0.95,
+        "domain":      "www.reuters.com",
+        "raw_score":   0.9,
+        "provider":    "tavily"
+      }
+    ],
+    "count":      5,
+    "cached":     false,
+    "elapsed_ms": 720
+  }
+}
+```
+
+W3+ will render this as a research card (mirrors the trading_signal card).
+
+### Rollback playbook
+1. Unset `WEB_RESEARCH_PROVIDER` (or set to `false` value for `ENABLE_WEB_RESEARCH`)
+   on Railway and restart. `web_research_tool` immediately returns
+   `unavailable`; agent continues without it.
+2. Optionally revert the PR — but step 1 is sufficient and zero-downtime.
+
+### Out of scope (deferred)
+- **Serper / Brave / Exa providers** — add as new modules in `research/`.
+- **Source-content extraction** (fetch full article body) — separate tool.
+- **Research card UI** (W3+).
+- **Multi-turn citation memory** for the agent — A5.
 
 ---
 
