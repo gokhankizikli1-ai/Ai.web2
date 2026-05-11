@@ -1,4 +1,4 @@
-# KorvixAI — Tools Architecture (Phase M2)
+# KorvixAI — Tools Architecture (Phase A1)
 
 ## Overview
 
@@ -20,8 +20,8 @@ or returns an error, the AI response continues normally without it.
 | **5.3** | Automated post-deploy healthcheck workflow (Railway SHA verification + commit status) | ✅ Done |
 | **M1** | Memory service (typed client, multi-workspace-ready, flag-gated) | ✅ Done |
 | **M2** | Server-side sessions (workspaces, threads, messages tables) | ✅ Done |
+| **A1** | Agent runtime skeleton (research mode only, flag-gated) | ✅ Done |
 | **M3** | Unified schema migration (workspace_id activation across all stores) | 🔜 Next OS phase |
-| **A1** | Agent runtime skeleton (planner / executor / reflector) | 🔜 Planned |
 | **R1** | Research provider (Tavily) wired into web_research_tool | 🔜 Planned |
 | **6A** | Position Manager AI (live trade monitoring, partial profit logic) | ⏸ Deprioritized (T-series) |
 | **6B** | Alert engine (watchlists, breakouts, liquidation spikes) | 🔜 Planned |
@@ -288,6 +288,115 @@ landed without needing direct Railway access.
 ```
 
 Backward compatible: `status` and `version` keys preserved exactly.
+
+---
+
+## Agent Runtime (Phase A1)
+
+Third foundation phase of the AI Operating System roadmap. Introduces a
+**multi-step LLM loop with OpenAI function calling** as the planning
+substrate. Strictly bounded by step / wall-clock / parallelism budgets
+and gated to **`research` mode only** in this first PR.
+
+### Why
+Today's `/chat` path is single-shot: detect intent → run tools once →
+build prompt → call model → return. There's no way for the model to
+inspect a tool result and decide it needs more. A1 lays down the loop
+so the model can drive multi-step reasoning, with hard budgets and a
+clean fallback.
+
+### Package
+```
+backend/services/agent/
+├── __init__.py     # exports run_agent, AgentRequest, AgentResponse, stats, is_enabled
+├── types.py        # dataclasses + STEP_KINDS taxonomy
+├── budget.py       # Budget tracker (steps + wall-clock + parallelism)
+├── tool_bridge.py  # BaseTool registry ↔ OpenAI function-calling
+└── runtime.py      # run_agent — the LLM-pass + tool-call loop
+```
+
+### Loop (collapsed planner+executor+reflector)
+```
+[system + history + user]
+   ↓
+LLM completion (tools=[…], tool_choice=auto)
+   ↓
+no tool_calls? → reply, done
+tool_calls?    → dispatch_many(in parallel, capped)
+                 append tool messages → loop
+   ↓
+budget exhausted → one final "summarize" LLM pass with partial=true
+```
+
+OpenAI's tool-calling does the planning natively — there is **no bespoke
+planner/reflector**. The LLM emits the next tool call or the final reply
+as part of its normal completion.
+
+### Hard budgets (all env-overridable)
+| Variable | Default | Effect |
+|---|---|---|
+| `AGENT_MAX_STEPS` | `6` | Total LLM passes + tool calls allowed per run |
+| `AGENT_MAX_WALL_SECONDS` | `25` | Wall-clock budget per run |
+| `AGENT_MAX_PARALLEL_TOOLS` | `3` | Max concurrent tool calls per step |
+
+Budget exhaustion **never raises** — the runtime issues one final
+"summarize what you found" LLM pass and returns `partial=true`.
+
+### Feature flag
+| Variable | Default | Effect |
+|---|---|---|
+| `ENABLE_AGENT` | `false` | When `true`, `ai_service.process_chat` routes `mode=research` requests through `run_agent`. When unset/false, the legacy single-shot path runs unchanged. |
+
+If the agent runtime fails for any reason (import error, OpenAI error,
+budget exhaustion with no reply, etc.) the response is marked
+`fallback=true` and the caller (`ai_service`) automatically falls
+through to the legacy path. **Zero observable change to non-research
+modes ever.**
+
+### Scope discipline (A1 is intentionally small)
+- **Only `research` mode** routes through the agent. `trading_analyst`,
+  `marketing_dropshipping`, etc. continue on the legacy path. A3 will
+  migrate `trading_analyst` once A1 has run cleanly in production.
+- **No new tools** — the tool bridge surfaces existing registered
+  `BaseTool` instances filtered by `_MODE_TOOL_MAP`. `research`'s
+  only tool (`web_research`) remains a stub until R1 wires Tavily.
+  Until R1 lands, the agent will mostly answer from world-knowledge
+  with zero tool calls — that's fine and still validates the loop.
+- **No frontend, schema, memory, or `/chat` contract change.**
+- One-line rollback: `ENABLE_AGENT=false`.
+
+### Observability
+`GET /tools/health` now returns an `agent` sub-object:
+```json
+"agent": {
+  "enabled": false,
+  "runs_total": 0,
+  "runs_partial": 0,
+  "runs_fallback": 0,
+  "runs_errored": 0,
+  "tool_calls": 0,
+  "llm_passes": 0,
+  "max_steps": 6,
+  "max_wall_seconds": 25,
+  "max_parallel_tools": 3,
+  "last_error": "",
+  "last_run_mode": ""
+}
+```
+
+`ChatResponse.metadata.agent` (when the agent ran) carries:
+- `steps`: total steps used
+- `tool_calls`: how many tool calls fired
+- `elapsed_ms`: wall-clock for the run
+- `partial`: true if budget was exhausted
+- `trace`: list of `AgentStep` dicts (kind, name, duration_ms, output keys, ok, error)
+
+W3 (inspector pane) will render this trace in the frontend later.
+
+### Rollback playbook
+1. Set `ENABLE_AGENT=false` (or remove the var) on Railway and restart.
+   `ai_service` immediately stops routing anything through the agent.
+2. Optionally revert the PR — but step 1 is sufficient and zero-downtime.
 
 ---
 

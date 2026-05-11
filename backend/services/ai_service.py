@@ -184,6 +184,61 @@ async def process_chat(
                 cfg   = mode_get_config(canonical, depth_label, message)
                 sys_p = build_system_prompt(canonical, mem_summary, style_prompt, profile)
 
+                # ─────────────────────────────────────────────────────────
+                # Phase A1 — Agent runtime path (research mode only, flag-gated).
+                # If ENABLE_AGENT=true and canonical == "research", route the
+                # request through the agent loop instead of the single-shot
+                # ask_ai. On ANY failure (import, openai, runtime), fall
+                # through to the legacy path below — zero blast radius.
+                # ─────────────────────────────────────────────────────────
+                if canonical == "research":
+                    try:
+                        from backend.services.agent import (
+                            run_agent, is_enabled as _agent_enabled, AgentRequest,
+                        )
+                        if _agent_enabled():
+                            _agent_req = AgentRequest(
+                                user_message=message,
+                                mode=canonical,
+                                user_id=str(user_id),
+                                model=cfg["model"],
+                                temperature=cfg["temperature"],
+                                max_tokens=cfg["max_tokens"],
+                                history=list(history or []),
+                                system_prompt=sys_p,
+                            )
+                            _agent_resp = await run_agent(_agent_req)
+                            if not _agent_resp.fallback and _agent_resp.reply:
+                                logger.info(
+                                    "process_chat | agent_path | mode=%s | steps=%d | tools=%d | partial=%s | ms=%d",
+                                    canonical, _agent_resp.steps_used,
+                                    _agent_resp.tool_calls, _agent_resp.partial,
+                                    _agent_resp.elapsed_ms,
+                                )
+                                return {
+                                    "reply":    _agent_resp.reply,
+                                    "intent":   canonical,
+                                    "model":    _agent_resp.model,
+                                    "provider": _agent_resp.provider,
+                                    "mode":     canonical,
+                                    "metadata": {
+                                        "agent": {
+                                            "steps":      _agent_resp.steps_used,
+                                            "tool_calls": _agent_resp.tool_calls,
+                                            "elapsed_ms": _agent_resp.elapsed_ms,
+                                            "partial":    _agent_resp.partial,
+                                            "trace":      _agent_resp.to_dict()["trace"],
+                                        },
+                                    },
+                                }
+                            logger.warning(
+                                "process_chat | agent_path fell back | reason=%s",
+                                (_agent_resp.metadata or {}).get("fallback_reason"),
+                            )
+                            # fall through to the regular mode-system path below
+                    except Exception as _aerr:
+                        logger.warning("process_chat | agent runtime error: %s — using legacy path", _aerr)
+
                 # Phase 5.1 — Inject prior thesis block for trading_analyst
                 # (lets the AI compare today's read against yesterday's call).
                 _prior_symbol = None
