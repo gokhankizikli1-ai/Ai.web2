@@ -13,12 +13,14 @@ _flag = lambda key: os.getenv(key, "false").strip().lower() == "true"
 
 ENABLE_TOOLS              = _flag("ENABLE_TOOLS")
 ENABLE_MARKET_DATA        = _flag("ENABLE_MARKET_DATA")
+ENABLE_MACRO_DATA         = _flag("ENABLE_MACRO_DATA")
 ENABLE_ECOMMERCE_RESEARCH = _flag("ENABLE_ECOMMERCE_RESEARCH")
 ENABLE_WEB_RESEARCH       = _flag("ENABLE_WEB_RESEARCH")
 
 # Per-tool flag map — used by is_enabled()
 _TOOL_FLAGS: Dict[str, bool] = {
     "market_data":          ENABLE_MARKET_DATA,
+    "macro_data":           ENABLE_MACRO_DATA,
     "ecommerce_research":   ENABLE_ECOMMERCE_RESEARCH,
     "web_research":         ENABLE_WEB_RESEARCH,
 }
@@ -50,8 +52,9 @@ def health_status() -> dict:
     return {
         "tools_enabled":              ENABLE_TOOLS,
         "market_data_enabled":        ENABLE_MARKET_DATA,
+        "macro_data_enabled":         ENABLE_MACRO_DATA,
         "ecommerce_research_enabled": ENABLE_ECOMMERCE_RESEARCH,
         "web_research_enabled":       ENABLE_WEB_RESEARCH,
         "registered_tools":           list(_registry.keys()),
-        "phase": "4A — architecture foundation (providers not yet connected)",
+        "phase": "5 — advanced trading intelligence (MTF, futures, macro, plan)",
     }

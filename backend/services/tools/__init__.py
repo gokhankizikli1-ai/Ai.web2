@@ -9,12 +9,14 @@ logger = logging.getLogger(__name__)
 try:
     from backend.services.tools.tool_registry import register
     from backend.services.tools.market_data_tool import MarketDataTool
+    from backend.services.tools.macro_data_tool import MacroDataTool
     from backend.services.tools.ecommerce_research_tool import EcommerceResearchTool
     from backend.services.tools.web_research_tool import WebResearchTool
 
     register(MarketDataTool())
+    register(MacroDataTool())
     register(EcommerceResearchTool())
     register(WebResearchTool())
-    logger.debug("tool package: 3 tools registered")
+    logger.debug("tool package: 4 tools registered")
 except Exception as _exc:
     logger.warning("tool package: registration failed (%s) — tools unavailable", _exc)
