@@ -1,4 +1,4 @@
-# KorvixAI — Tools Architecture (Phase M1 + 5.3)
+# KorvixAI — Tools Architecture (Phase M2)
 
 ## Overview
 
@@ -19,7 +19,8 @@ or returns an error, the AI response continues normally without it.
 | **5.2** | Stabilization & polish (cache + backoff + safety guard + trading card UI + error UX) | ✅ Done |
 | **5.3** | Automated post-deploy healthcheck workflow (Railway SHA verification + commit status) | ✅ Done |
 | **M1** | Memory service (typed client, multi-workspace-ready, flag-gated) | ✅ Done |
-| **M2** | Server-side sessions (workspaces, threads, messages tables) | 🔜 Next OS phase |
+| **M2** | Server-side sessions (workspaces, threads, messages tables) | ✅ Done |
+| **M3** | Unified schema migration (workspace_id activation across all stores) | 🔜 Next OS phase |
 | **A1** | Agent runtime skeleton (planner / executor / reflector) | 🔜 Planned |
 | **R1** | Research provider (Tavily) wired into web_research_tool | 🔜 Planned |
 | **6A** | Position Manager AI (live trade monitoring, partial profit logic) | ⏸ Deprioritized (T-series) |
@@ -287,6 +288,133 @@ landed without needing direct Railway access.
 ```
 
 Backward compatible: `status` and `version` keys preserved exactly.
+
+---
+
+## Sessions Service (Phase M2)
+
+Second foundation phase of the AI Operating System roadmap. Introduces
+server-side conversation state (workspaces → threads → messages) so
+chats can persist across devices and the agent runtime (A1) has durable
+state to read from. **No `/chat` integration yet** — wiring is W1's
+responsibility once the data layer is stable.
+
+### Why
+Frontend sessions currently live in localStorage only. Cleared cache →
+lost conversations. Cross-device → impossible. M2 adds the durable
+storage; W1 will migrate `useChat` to it.
+
+### Package
+```
+backend/services/sessions/
+├── __init__.py     # exports `client`, Workspace, Thread, Message
+├── types.py        # dataclasses + allowed-value taxonomies
+├── store.py        # SQLite adapter (new `sessions.db` file)
+└── client.py       # SessionsClient — stable public surface
+```
+
+### Schema (new SQLite file `sessions.db`)
+```sql
+workspaces  (id, user_id, name, slug, kind, created_at, updated_at,
+             archived_at, metadata_json)
+            UNIQUE (user_id, slug) WHERE archived_at IS NULL
+
+threads     (id, workspace_id REFERENCES workspaces ON DELETE CASCADE,
+             title, mode, status, summary, created_at, updated_at,
+             archived_at, metadata_json)
+
+messages    (id, thread_id REFERENCES threads ON DELETE CASCADE,
+             role, content, created_at, tokens, model, metadata_json)
+```
+
+All ids are UUID4 hex strings, all timestamps ISO-8601 UTC — portable
+to Postgres in M3+ with no type re-mapping.
+
+Workspace kinds: `personal` (default), `trading`, `ecommerce`, `startup`,
+`research`, `writing`, `coding`, `custom`.
+
+### Public API
+```python
+from backend.services.sessions import client
+
+# Workspaces
+client.create_workspace(user_id, *, name, kind="personal", slug=None, metadata=None)
+client.get_workspace(workspace_id)
+client.list_workspaces(user_id, *, include_archived=False)
+client.update_workspace(workspace_id, *, name=None, kind=None)
+client.archive_workspace(workspace_id)
+client.ensure_default_workspace(user_id)        # idempotent "personal" workspace
+
+# Threads
+client.create_thread(*, workspace_id, title="New thread", mode=None, metadata=None)
+client.get_thread(thread_id)
+client.list_threads(workspace_id, *, include_archived=False, limit=50)
+client.update_thread(thread_id, *, title=None, mode=None, status=None, summary=None)
+client.archive_thread(thread_id)
+
+# Messages
+client.append_message(*, thread_id, role, content, model=None, tokens=None, metadata=None)
+client.get_message(message_id)
+client.list_messages(thread_id, *, limit=100, after_id=None)
+client.delete_message(message_id)
+
+# Observability
+client.stats()
+```
+
+### Routes (gated by `ENABLE_SESSIONS=true`; otherwise 503)
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET`    | `/sessions/health` | Status (always callable; reports `enabled` flag) |
+| `GET`    | `/sessions/workspaces?user_id=X` | List user's workspaces |
+| `POST`   | `/sessions/workspaces` | Create workspace |
+| `POST`   | `/sessions/workspaces/ensure_default?user_id=X` | Idempotent default workspace |
+| `GET`    | `/sessions/workspaces/{id}` | Get workspace |
+| `PATCH`  | `/sessions/workspaces/{id}` | Update name/kind |
+| `DELETE` | `/sessions/workspaces/{id}` | Archive |
+| `GET`    | `/sessions/workspaces/{id}/threads` | List threads in workspace |
+| `POST`   | `/sessions/workspaces/{id}/threads` | Create thread |
+| `GET`    | `/sessions/threads/{id}` | Get thread |
+| `PATCH`  | `/sessions/threads/{id}` | Update thread |
+| `DELETE` | `/sessions/threads/{id}` | Archive thread |
+| `GET`    | `/sessions/threads/{id}/messages?after_id=X&limit=N` | List messages |
+| `POST`   | `/sessions/threads/{id}/messages` | Append message |
+| `DELETE` | `/sessions/messages/{id}` | Delete one message |
+
+### Feature flag
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `ENABLE_SESSIONS` | `false` | When `true`, `/sessions/*` routes are live. When unset/false, every endpoint except `/sessions/health` returns **503** with `error: sessions_disabled`. Rollback = unset the var. |
+| `SESSIONS_DB_PATH` | `sessions.db` | Override the SQLite file location |
+
+### Observability
+`GET /tools/health` now returns a `sessions` sub-object:
+```json
+"sessions": {
+  "enabled": false,
+  "flag_enable_sessions": false,
+  "store":  { "workspaces_created": 0, "threads_created": 0,
+              "messages_appended": 0, "errors": 0, "last_error": "" },
+  "counts": { "workspaces": 0, "threads": 0, "messages": 0 },
+  "db_path": "sessions.db"
+}
+```
+
+### Rollback playbook
+1. Set `ENABLE_SESSIONS=false` (or remove the var) on Railway. All endpoints
+   except `/sessions/health` immediately return 503; nothing else in the
+   system reads from `sessions.db`.
+2. If desired, also delete `sessions.db` from the Railway volume.
+3. Optionally revert the M2 PR — but step 1 is sufficient and zero-downtime.
+
+### What's deliberately NOT in M2
+- `/chat` does not write to these tables (that's a follow-up W1 PR plus
+  a small backend wire-up).
+- Memory service still ignores `workspace_id` (that's M3's activation).
+- No frontend changes.
+- No migration of existing memory tables.
 
 ---
 

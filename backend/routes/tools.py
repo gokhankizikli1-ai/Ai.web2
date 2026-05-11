@@ -48,4 +48,16 @@ def tools_health() -> dict:
     except Exception as exc:
         logger.debug("/tools/health: memory stats unavailable: %s", exc)
 
+    # Phase M2 — sessions service stats (workspaces / threads / messages).
+    try:
+        import os as _os
+        from backend.services.sessions import client as _sessions_client
+        out["sessions"] = {
+            "enabled":           _os.getenv("ENABLE_SESSIONS", "false").strip().lower() == "true",
+            "flag_enable_sessions": _os.getenv("ENABLE_SESSIONS", "false").strip().lower() == "true",
+            **_sessions_client.stats(),
+        }
+    except Exception as exc:
+        logger.debug("/tools/health: sessions stats unavailable: %s", exc)
+
     return out
