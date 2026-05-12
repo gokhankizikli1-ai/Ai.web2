@@ -36,6 +36,10 @@ from backend.services.providers.registry import (
     register_provider, get_provider, list_provider_names, provider_capabilities,
     bootstrap_default_providers,
 )
+from backend.services.providers.router import (
+    DEFAULT_PROVIDER, ModeRoute, ProviderSelection,
+    select_provider, describe_routing,
+)
 
 # Bootstrap-on-import: registers OpenAI when OPENAI_API_KEY is set. Safe
 # to call multiple times; idempotent.
@@ -49,4 +53,7 @@ __all__ = [
     "KNOWN_PROVIDERS",
     "register_provider", "get_provider", "list_provider_names", "provider_capabilities",
     "bootstrap_default_providers",
+    # Phase 6b — router
+    "DEFAULT_PROVIDER", "ModeRoute", "ProviderSelection",
+    "select_provider", "describe_routing",
 ]

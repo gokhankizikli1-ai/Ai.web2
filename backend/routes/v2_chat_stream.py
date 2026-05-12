@@ -49,7 +49,11 @@ from typing import AsyncIterator, List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from backend.services.providers import get_provider, ProviderUnavailableError
+from backend.services.providers import (
+    get_provider,
+    ProviderUnavailableError,
+    select_provider,
+)
 from backend.services.providers.streaming import (
     ProviderStreamDone,
     ProviderStreamError,
@@ -74,7 +78,11 @@ class StreamMessage(BaseModel):
 class StreamChatRequest(BaseModel):
     messages:    List[StreamMessage] = Field(..., min_length=1, max_length=200)
     model:       Optional[str]   = Field(default=None,    max_length=128)
-    provider:    str             = Field(default="openai", max_length=64)
+    # Phase 6b: provider is now optional. When omitted and a `mode` is
+    # supplied, the router selects based on the flag table. When neither
+    # is supplied, defaults to "openai" — byte-identical to pre-routing.
+    provider:    Optional[str]   = Field(default=None, max_length=64)
+    mode:        Optional[str]   = Field(default=None, max_length=32)
     temperature: float           = Field(default=0.7, ge=0.0, le=2.0)
     max_tokens:  Optional[int]   = Field(default=None, ge=1, le=32_000)
 
@@ -85,18 +93,58 @@ class StreamChatRequest(BaseModel):
 async def stream_chat(body: StreamChatRequest):
     """Stream a chat-completion as Server-Sent Events.
 
+    Provider selection precedence:
+      1. Explicit `provider` field in the body (e.g. "anthropic"). The
+         legacy contract — used by tests and by frontends that want
+         deterministic routing.
+      2. Router-resolved provider when `mode` is supplied. The router
+         consults the routing-flag table; modes whose flags are off
+         fall back to the default provider (openai).
+      3. Default provider ("openai") when neither is supplied. This is
+         the byte-identical-to-pre-routing path.
+
     Validation errors return 400 with a regular JSON envelope.
     Once the SSE stream begins, every outcome (success or upstream
     failure) is communicated via a terminal `done` or `error` event.
     """
+    # Decide which provider name to resolve.
+    # `is not None` (not truthiness) so an explicitly-sent empty
+    # string still takes the "explicit provider" path and yields a
+    # clean PROVIDER_NOT_REGISTERED — matches pre-routing behaviour.
+    if body.provider is not None:
+        provider_name = body.provider
+        routing_reason = "explicit_provider"
+        routing_mode   = body.mode or "(none)"
+    else:
+        selection = select_provider(body.mode)
+        provider_name = selection.provider
+        routing_reason = selection.reason
+        routing_mode   = selection.mode
+
+    logger.info(
+        "stream_chat.routing | mode=%s | provider=%s | reason=%s",
+        routing_mode, provider_name, routing_reason,
+        extra={
+            "mode":            routing_mode,
+            "routed_to":       provider_name,
+            "routing_reason":  routing_reason,
+        },
+    )
+
     try:
-        provider = get_provider(body.provider)
+        provider = get_provider(provider_name)
     except ProviderUnavailableError:
-        # Surface as a regular 400 — the user picked an unknown provider
-        # before we committed to the SSE contract.
+        # Surface as a regular 400 — the user (or the router) picked a
+        # provider that isn't registered. Happens for placeholders
+        # (google / deepseek) until their SDK lands.
         raise HTTPException(
             status_code=400,
-            detail={"code": "PROVIDER_NOT_REGISTERED", "provider": body.provider},
+            detail={
+                "code":     "PROVIDER_NOT_REGISTERED",
+                "provider": provider_name,
+                "mode":     routing_mode,
+                "reason":   routing_reason,
+            },
         )
 
     if not provider.supports_streaming:

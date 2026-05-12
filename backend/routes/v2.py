@@ -60,6 +60,16 @@ def _safe_provider_capabilities() -> list:
         return []
 
 
+def _safe_routing_snapshot() -> dict:
+    """Best-effort routing-table snapshot — never fails the probe."""
+    try:
+        from backend.services.providers import describe_routing
+        return describe_routing()
+    except Exception as exc:
+        logger.warning("v2/health routing snapshot failed: %s", exc)
+        return {"modes": [], "default_provider": "openai", "error": str(exc)[:120]}
+
+
 def _safe_task_stats() -> dict:
     """Best-effort background-task queue snapshot — never fails the
     health probe. Returns a flat dict so the JSON payload stays small."""
@@ -140,6 +150,11 @@ async def v2_health() -> dict:
         python_implementation    = sys.implementation.name,
         # Phase 4b — background task queue snapshot.
         background_tasks         = _safe_task_stats(),
+        # Phase 6b — provider routing snapshot. Shows the current
+        # mode → provider mapping with each flag's current state, so
+        # operators can confirm a flag flip took effect without
+        # waiting for a real chat call.
+        routing                  = _safe_routing_snapshot(),
     )
 
 
