@@ -56,5 +56,5 @@ def health_status() -> dict:
         "ecommerce_research_enabled": ENABLE_ECOMMERCE_RESEARCH,
         "web_research_enabled":       ENABLE_WEB_RESEARCH,
         "registered_tools":           list(_registry.keys()),
-        "phase": "R1 — Tavily web_research provider (flag-gated, citation-ready)",
+        "phase": "T1 — live trading signals (market_data-backed, flag-gated)",
     }

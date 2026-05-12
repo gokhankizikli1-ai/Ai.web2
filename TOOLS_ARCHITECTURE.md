@@ -1,4 +1,4 @@
-# KorvixAI — Tools Architecture (Phase W1)
+# KorvixAI — Tools Architecture (Phase T1)
 
 ## Overview
 
@@ -23,6 +23,7 @@ or returns an error, the AI response continues normally without it.
 | **A1** | Agent runtime skeleton (research mode only, flag-gated) | ✅ Done |
 | **R1** | Research provider (Tavily) wired into web_research_tool | ✅ Done |
 | **W1** | Server-side sessions frontend (useChat syncs to /sessions/*) | ✅ Done |
+| **T1** | Live trading signals endpoint (GET /trading/signals) | ✅ Done |
 | **M3** | Unified schema migration (workspace_id activation across all stores) | 🔜 Next OS phase |
 | **6A** | Position Manager AI (live trade monitoring, partial profit logic) | ⏸ Deprioritized (T-series) |
 | **6B** | Alert engine (watchlists, breakouts, liquidation spikes) | 🔜 Planned |
@@ -289,6 +290,133 @@ landed without needing direct Railway access.
 ```
 
 Backward compatible: `status` and `version` keys preserved exactly.
+
+---
+
+## Trading Signals (Phase T1)
+
+Replaces frontend mock signals with **real, market_data-backed** trading
+intelligence. Thin HTTP layer over the existing Phase 5+ pipeline
+(multi-provider price fetch → MTF analysis → futures microstructure →
+smart-money zones → auto risk plan → setup grade).
+
+### Endpoint
+```
+GET /trading/signals?symbols=BTCUSDT,NVDA,TSLA,AAPL,MSFT,AMD&timeframe=4h
+```
+
+### Activation chain (rollback = one env var)
+
+| Variable | Default | Effect |
+|---|---|---|
+| `ENABLE_TRADING_SIGNALS` | `false` | `/trading/signals` lives or returns **503** with `error: trading_signals_disabled`. |
+| `ENABLE_TOOLS` | `false` | Phase 4A master switch (required for any tool) |
+| `ENABLE_MARKET_DATA` | `false` | Per-tool flag for `market_data_tool` |
+
+When `ENABLE_TRADING_SIGNALS=true` but the market_data tool is disabled,
+every signal comes back with `is_live=false` and a clear `error` field —
+**no fabricated prices, levels, or directions**. Honest by design.
+
+### Response shape
+```json
+{
+  "signals": [
+    {
+      "symbol":            "BTCUSDT",
+      "name":              "Bitcoin",
+      "asset_type":        "crypto",          // crypto | stock | forex | unknown
+      "price":             67250.5,           // null when is_live=false
+      "change_24h_pct":    2.34,
+      "timeframe":         "4h",
+      "source":            "binance",         // provider that resolved the data
+      "provider":          "binance",         // alias for `source` (legacy)
+      "timestamp":         "2026-05-12T00:00:00Z",
+      "direction":         "LONG",            // LONG | SHORT | WAIT | NO_TRADE
+      "raw_direction":     "LONG",            // includes REVERSAL_WATCH when applicable
+      "confidence":        "high",            // low | medium | high
+      "confidence_pct":    78,                // 0-100, for progress bars
+      "setup_grade":       8,                 // 0-10
+      "entry":             67250.0,
+      "stop_loss":         65800.0,
+      "take_profit_1":     69200.0,
+      "take_profit_2":     71500.0,
+      "risk_reward":       2.0,
+      "volatility_regime": "trending_up",     // squeeze_pre_breakout / high_vol / …
+      "invalidation":      "Daily close below support 65800 kills the long thesis",
+      "data_quality":      "full",            // full | degraded | fallback
+      "is_live":           true,
+      "error":             null
+    }
+  ],
+  "timeframe":    "4h",
+  "is_live":      true,                       // true iff at least one signal is live
+  "count":        6,
+  "live_count":   5,
+  "error":        null,
+  "generated_at": "2026-05-12T00:00:00Z"
+}
+```
+
+### Honest failure modes
+
+| Condition | `is_live` | `error` field |
+|---|---|---|
+| Market data tool succeeded | `true` | `null` |
+| Symbol unknown to all providers | `false` | provider's last error message |
+| Market data tool disabled (flag off) | `false` | `"market_data tool disabled — set …"` |
+| Network timeout (>15s) | `false` | `"market_data_timeout_15s"` |
+| Provider exception | `false` | `"market_data_exception: <reason>"` |
+
+The whole response also has a top-level `is_live` that is **`true` iff at
+least one signal in the array is live**, so the frontend can render a
+single "data is degraded" banner instead of inspecting each row.
+
+### How it composes with the existing trading layer
+- **Reuses** `backend/services/tools/market_data_tool.py` 1:1 — no
+  duplicate price-fetching logic.
+- **Inherits** the Phase 5.2 cache (klines 30s, futures 20s) + exponential
+  backoff on 429/5xx + the 4-provider fallback chain (Binance → Yahoo →
+  AlphaVantage → CoinGecko).
+- **Re-uses** the auto risk plan from Phase 5.1 (directional_bias, entry,
+  stop, TP1, TP2, setup_grade, fakeout/liquidity risk, invalidation).
+- **Confidence** is derived: `grade − 0.4·max(0, fakeout−4) − 0.4·max(0, liq−4)`,
+  clamped to 0-10, labelled high (≥7) / medium (≥4) / low.
+
+### Observability
+`GET /tools/health` now returns a `trading` sub-object:
+```json
+"trading": {
+  "enabled":          false,
+  "requests_total":   0,
+  "requests_ok":      0,
+  "requests_error":   0,
+  "symbols_resolved": 0,
+  "symbols_failed":   0,
+  "last_error":       "",
+  "last_run_at":      null
+}
+```
+
+Phase label in `/tools/health.phase` updated to
+`"T1 — live trading signals (market_data-backed, flag-gated)"`.
+
+### Operational guardrails
+- Hard timeout **15s per symbol** so a slow provider can't stall the response.
+- **Concurrency cap 6** (semaphore) — parallel symbol fetches but not unbounded.
+- **Symbol cap 20** per request (deduped + uppercased).
+- **Timeframe normalised** to the MarketDataTool whitelist; unknown values fall back to `4h`.
+
+### Rollback playbook
+1. Set `ENABLE_TRADING_SIGNALS=false` (or unset) on Railway, restart.
+   `/trading/signals` immediately 503s; the rest of the app is unaffected.
+2. Optionally revert the PR — step 1 is sufficient and zero-downtime.
+
+### What's deliberately NOT in T1
+- No frontend wiring (a follow-up PR will replace the mock data feeding
+  `TradingPanel.tsx` with a `fetch('/trading/signals?…')` call).
+- No new symbol providers — same 4 we already had.
+- No streaming / push updates (poll for now; SSE in P1).
+- No alerts / watchlists (Phase 6B).
 
 ---
 
