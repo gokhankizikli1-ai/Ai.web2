@@ -395,12 +395,24 @@ export function useChat() {
     setInputText('');
     setActiveTools([]);
     setError(null);
+    // Reset the retry context — the previous session's last-user-message
+    // id and sync state must NOT leak into a fresh conversation.
+    // Without this, retry() in the new session could read a stale id
+    // and skip the user-turn write-through, silently dropping a real
+    // message on the backend thread.
+    setLastUserMessage(null);
+    lastUserMessageIdRef.current = null;
     return newSession.id;
   }, []);
 
   const selectSession = useCallback((id: string) => {
     setActiveSessionId(id);
     setError(null);
+    // Same reasoning as createNewChat: a session switch invalidates the
+    // retry context, so we drop the previous session's last-user-message
+    // marker to keep retry()'s skipUserSync decision honest.
+    setLastUserMessage(null);
+    lastUserMessageIdRef.current = null;
   }, []);
 
   const deleteSession = useCallback((id: string) => {
