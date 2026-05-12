@@ -1,20 +1,29 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-import { Menu, Sparkles } from 'lucide-react';
+import { Menu, Sparkles, Rocket, ShoppingBag, TrendingUp, Code, Cpu } from 'lucide-react';
+import { motion } from 'framer-motion';
+
+const NAV_LINKS = [
+  { label: 'Workspace', href: '/workspace', icon: Code },
+  { label: 'Agents', href: '/agents', icon: Cpu },
+  { label: 'Startup OS', href: '/startup', icon: Rocket },
+  { label: 'Ecommerce', href: '/ecommerce', icon: ShoppingBag },
+  { label: 'Trading', href: '/chat?tab=trading', icon: TrendingUp },
+  { label: 'Pricing', href: '/pricing', icon: null },
+];
 
 export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
   const location = useLocation();
 
-  const navLinks = [
-    { label: 'Home', href: '/' },
-    { label: 'Features', href: '/features' },
-    { label: 'Use Cases', href: '/use-cases' },
-    { label: 'Pricing', href: '/pricing' },
-    { label: 'About', href: '/about' },
-  ];
+  useEffect(() => {
+    const handleScroll = () => setScrolled(window.scrollY > 20);
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   const isActive = (href: string) => {
     if (href === '/') return location.pathname === '/';
@@ -22,9 +31,26 @@ export default function Navbar() {
   };
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50">
-      <nav className="mx-3 md:mx-4 mt-3 md:mt-4 rounded-2xl glass border border-white/10 shadow-lg">
-        <div className="flex h-14 items-center justify-between px-4 md:px-6">
+    <motion.header
+      initial={{ y: -20, opacity: 0 }}
+      animate={{ y: 0, opacity: 1 }}
+      transition={{ duration: 0.5, ease: 'easeOut' as const }}
+      className="fixed top-0 left-0 right-0 z-50"
+    >
+      <nav
+        className={`mx-3 md:mx-6 mt-3 md:mt-4 rounded-2xl border border-white/[0.08] shadow-lg transition-all duration-300 ${
+          scrolled
+            ? 'bg-[#0a0a0f]/80 backdrop-blur-2xl shadow-black/20'
+            : 'bg-[#0a0a0f]/40 backdrop-blur-xl'
+        }`}
+        style={{
+          boxShadow: scrolled
+            ? '0 4px 30px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.04)'
+            : '0 4px 24px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.03)',
+        }}
+      >
+        <div className={`flex items-center justify-between px-4 md:px-6 transition-all duration-300 ${scrolled ? 'h-12' : 'h-14'}`}>
+          {/* Logo */}
           <Link to="/" className="flex items-center gap-2 font-bold text-lg tracking-tight shrink-0">
             <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-400 to-blue-600">
               <Sparkles className="h-4 w-4 text-white" />
@@ -32,38 +58,49 @@ export default function Navbar() {
             <span className="text-white">KorvixAI</span>
           </Link>
 
-          <div className="hidden md:flex items-center gap-6">
-            {navLinks.map((link) => (
+          {/* Desktop Nav */}
+          <div className="hidden lg:flex items-center gap-1">
+            {NAV_LINKS.map((link) => (
               <Link
                 key={link.label}
                 to={link.href}
-                className={`text-sm font-medium transition-colors duration-200 ${
+                className={`relative px-3 py-1.5 rounded-lg text-[13px] font-medium transition-all duration-200 ${
                   isActive(link.href)
                     ? 'text-white'
-                    : 'text-slate-400 hover:text-white'
+                    : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
                 }`}
               >
                 {link.label}
+                {isActive(link.href) && (
+                  <motion.div
+                    layoutId="navActive"
+                    className="absolute inset-0 rounded-lg bg-white/[0.06] border border-white/[0.08]"
+                    style={{ zIndex: -1 }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 30 }}
+                  />
+                )}
               </Link>
             ))}
           </div>
 
+          {/* Right Side */}
           <div className="hidden md:flex items-center gap-3">
             <Link to="/chat">
               <Button
                 variant="ghost"
-                className="text-slate-400 hover:text-white hover:bg-white/5"
+                className="text-slate-400 hover:text-white hover:bg-white/5 text-[13px]"
               >
-                Chat
+                Login
               </Button>
             </Link>
             <Link to="/chat">
-              <Button className="bg-white text-slate-900 hover:bg-slate-200 font-medium">
-                Get Started
+              <Button className="bg-white text-slate-900 hover:bg-slate-200 font-semibold text-[13px] h-9 px-4 rounded-xl transition-all duration-300 hover:shadow-[0_0_20px_-5px_rgba(255,255,255,0.15)]">
+                Launch Workspace
               </Button>
             </Link>
           </div>
 
+          {/* Mobile Menu */}
           <Sheet open={isOpen} onOpenChange={setIsOpen}>
             <SheetTrigger asChild className="md:hidden">
               <Button variant="ghost" size="icon" className="text-slate-300 hover:text-white hover:bg-white/5">
@@ -71,25 +108,25 @@ export default function Navbar() {
               </Button>
             </SheetTrigger>
             <SheetContent side="right" className="w-72 bg-[#0a0a0f] border-white/10">
-              <div className="flex flex-col gap-5 mt-8">
-                {navLinks.map((link) => (
+              <div className="flex flex-col gap-2 mt-8">
+                {NAV_LINKS.map((link) => (
                   <Link
                     key={link.label}
                     to={link.href}
                     onClick={() => setIsOpen(false)}
-                    className={`text-base font-medium transition-colors ${
+                    className={`px-3 py-2.5 rounded-xl text-base font-medium transition-colors ${
                       isActive(link.href)
-                        ? 'text-white'
-                        : 'text-slate-400 hover:text-white'
+                        ? 'text-white bg-white/[0.06]'
+                        : 'text-slate-400 hover:text-white hover:bg-white/[0.03]'
                     }`}
                   >
                     {link.label}
                   </Link>
                 ))}
-                <hr className="border-white/10" />
+                <hr className="border-white/10 my-2" />
                 <Link to="/chat" onClick={() => setIsOpen(false)}>
-                  <Button className="w-full bg-white text-slate-900 hover:bg-slate-200 font-medium">
-                    Get Started
+                  <Button className="w-full bg-white text-slate-900 hover:bg-slate-200 font-semibold rounded-xl">
+                    Launch Workspace
                   </Button>
                 </Link>
               </div>
@@ -97,6 +134,6 @@ export default function Navbar() {
           </Sheet>
         </div>
       </nav>
-    </header>
+    </motion.header>
   );
 }

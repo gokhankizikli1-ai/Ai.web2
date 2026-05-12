@@ -99,19 +99,11 @@ export default function StartupHub() {
 
   const activeTool = TOOLS.find((t) => t.id === selectedTool);
 
-  // Pre-fill the chat composer via React Router state. ChatDashboard reads
-  // location.state.prompt on mount and pushes it into the input — so the
-  // user lands in chat with their tool answers ready to send, not lost.
   const handleSubmit = () => {
-    const filled = Object.values(formValues).map((v) => v.trim()).filter(Boolean);
-    if (!activeTool || filled.length === 0) {
-      navigate('/chat');
-      return;
-    }
-    const labels = (activeTool.inputs || []).map((i) => i.label);
-    const lines  = filled.map((v, i) => labels[i] ? `${labels[i]}: ${v}` : v);
-    const prompt = `[${activeTool.name}]\n${lines.join('\n')}`;
-    navigate('/chat', { state: { prompt } });
+    const values = Object.values(formValues).join('\n');
+    navigate('/chat');
+    // In a real app, this would send to the chat
+    console.log('Submitting:', values);
   };
 
   return (

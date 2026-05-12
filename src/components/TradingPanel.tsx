@@ -65,12 +65,7 @@ function DirectionBadge({ direction }: { direction: TradingSignal['direction'] }
 }
 
 /* ─── Confidence Meter ─── */
-// `value === null` means the backend didn't compute confidence — render "—"
-// rather than fabricate a 0% bar.
-function ConfidenceMeter({ value }: { value: number | null }) {
-  if (value === null) {
-    return <span className="text-[10px] font-mono text-slate-700 w-[64px] text-right">—</span>;
-  }
+function ConfidenceMeter({ value }: { value: number }) {
   const color = value >= 85 ? 'from-emerald-500 to-emerald-400' : value >= 70 ? 'from-cyan-500 to-cyan-400' : value >= 50 ? 'from-amber-500 to-amber-400' : 'from-red-500 to-red-400';
   return (
     <div className="flex items-center gap-2">
@@ -83,12 +78,7 @@ function ConfidenceMeter({ value }: { value: number | null }) {
 }
 
 /* ─── Grade Badge ─── */
-// `grade === null` → muted "—" rather than misrepresenting a missing plan
-// as the worst grade ('D').
-function GradeBadge({ grade }: { grade: string | null }) {
-  if (grade === null) {
-    return <span className="text-[10px] font-bold px-1.5 py-[2px] rounded border border-white/[0.04] text-slate-700">—</span>;
-  }
+function GradeBadge({ grade }: { grade: string }) {
   const colors: Record<string, string> = {
     A: 'text-emerald-400 bg-emerald-500/[0.08] border-emerald-500/15',
     B: 'text-cyan-400 bg-cyan-500/[0.06] border-cyan-500/12',
@@ -111,14 +101,8 @@ function VolatilityBar({ level }: { level: string }) {
 }
 
 /* ─── Signal Card ─── */
-// `panelLive` is the panel-wide is_live flag; the row's own `signal.isLive`
-// may be false even when the panel is live (one symbol failed, others
-// succeeded). Row dimming uses the row's own state.
-function SignalCard({ signal, index, panelLive }: { signal: TradingSignal; index: number; panelLive: boolean }) {
+function SignalCard({ signal, index, isLive }: { signal: TradingSignal; index: number; isLive: boolean }) {
   const [expanded, setExpanded] = useState(false);
-  const rowLive = signal.isLive ?? panelLive;
-  const change  = signal.change24hPct;
-  const changeUp = typeof change === 'number' && change >= 0;
 
   return (
     <motion.div
@@ -128,27 +112,14 @@ function SignalCard({ signal, index, panelLive }: { signal: TradingSignal; index
       layout
       className={`rounded-xl border overflow-hidden transition-all duration-200 ${
         expanded ? 'border-white/[0.08] bg-white/[0.02]' : 'border-white/[0.03] bg-white/[0.005] hover:bg-white/[0.01] hover:border-white/[0.05]'
-      } ${!rowLive ? 'opacity-60' : ''}`}
+      } ${!isLive ? 'opacity-60' : ''}`}
     >
       <button onClick={() => setExpanded(!expanded)} className="w-full flex items-center gap-3 px-4 py-3.5">
         <DirectionBadge direction={signal.direction} />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="flex items-center gap-1.5">
             <span className="text-[14px] font-semibold text-white tracking-tight">{signal.symbol}</span>
-            <span className="text-[11px] text-slate-600 truncate">{signal.name}</span>
-          </div>
-          {/* Live price row — backend always returns this for live signals. */}
-          <div className="flex items-center gap-2 mt-0.5">
-            {signal.price ? (
-              <span className="text-[12px] font-mono text-white/85">${signal.price}</span>
-            ) : (
-              <span className="text-[11px] text-slate-700">no price</span>
-            )}
-            {typeof change === 'number' && (
-              <span className={`text-[10px] font-mono ${changeUp ? 'text-emerald-400/80' : 'text-red-400/80'}`}>
-                {changeUp ? '+' : ''}{change.toFixed(2)}%
-              </span>
-            )}
+            <span className="text-[11px] text-slate-600">{signal.name}</span>
           </div>
         </div>
         {signal.sparkline && <Sparkline data={signal.sparkline} />}
@@ -166,81 +137,43 @@ function SignalCard({ signal, index, panelLive }: { signal: TradingSignal; index
         {expanded && (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.25 }} className="overflow-hidden">
             <div className="border-t border-white/[0.03] px-4 py-4 space-y-3">
-              {/* Risk plan grid — only render cells the backend actually filled. */}
-              {(signal.entryPrice || signal.targetPrice || signal.stopLoss) ? (
-                <div className="grid grid-cols-3 gap-2.5">
-                  {signal.entryPrice && (
-                    <div className="rounded-lg bg-white/[0.02] border border-white/[0.04] p-3">
-                      <div className="text-[10px] text-slate-600 mb-1 uppercase tracking-wider font-medium">Entry</div>
-                      <div className="text-[14px] font-mono text-white font-medium">{signal.entryPrice}</div>
-                    </div>
-                  )}
-                  {signal.targetPrice && (
-                    <div className="rounded-lg bg-emerald-500/[0.04] border border-emerald-500/[0.08] p-3">
-                      <div className="text-[10px] text-emerald-500/60 mb-1 uppercase tracking-wider font-medium flex items-center gap-1"><Target className="h-2.5 w-2.5" /> Target</div>
-                      <div className="text-[14px] font-mono text-emerald-400 font-medium">{signal.targetPrice}</div>
-                    </div>
-                  )}
-                  {signal.stopLoss && (
-                    <div className="rounded-lg bg-red-500/[0.04] border border-red-500/[0.08] p-3">
-                      <div className="text-[10px] text-red-500/60 mb-1 uppercase tracking-wider font-medium flex items-center gap-1"><Shield className="h-2.5 w-2.5" /> Stop</div>
-                      <div className="text-[14px] font-mono text-red-400 font-medium">{signal.stopLoss}</div>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="flex items-center gap-2 rounded-lg bg-white/[0.015] border border-white/[0.04] px-3 py-2">
-                  <Minus className="h-3.5 w-3.5 text-slate-600" />
-                  <span className="text-[11px] text-slate-600">
-                    {rowLive ? 'No setup yet — only live price available.' : 'No risk plan available.'}
-                  </span>
-                </div>
-              )}
-
-              {typeof signal.riskReward === 'number' && (
-                <div className="text-[11px] text-slate-500">
-                  Risk / reward: <span className="font-mono text-slate-300">{signal.riskReward.toFixed(2)}</span>
-                </div>
-              )}
-
-              {!rowLive && (
-                <div className="flex items-center gap-2 rounded-lg bg-amber-500/[0.04] border border-amber-500/[0.08] px-3 py-2">
-                  <WifiOff className="h-3.5 w-3.5 text-amber-400/60" />
-                  <span className="text-[11px] text-amber-400/60">
-                    {signal.errorReason || 'Live data unavailable for this symbol.'}
-                  </span>
-                </div>
-              )}
-
-              {signal.reasoning && (
-                <p className="text-[12px] text-slate-500 leading-relaxed pl-0.5">{signal.reasoning}</p>
-              )}
-
-              <div className="flex items-center gap-3 text-[10px] text-slate-700 flex-wrap">
-                {signal.provider && signal.provider !== 'Unknown' && (
-                  <span>
-                    <span className="text-slate-600">Source: </span>
-                    <span className="text-cyan-400/60">{signal.provider}</span>
-                  </span>
+              {/* Price grid */}
+              <div className="grid grid-cols-3 gap-2.5">
+                {signal.entryPrice && (
+                  <div className="rounded-lg bg-white/[0.02] border border-white/[0.04] p-3">
+                    <div className="text-[10px] text-slate-600 mb-1 uppercase tracking-wider font-medium">Entry</div>
+                    <div className="text-[14px] font-mono text-white font-medium">{isLive ? signal.entryPrice : '--'}</div>
+                  </div>
                 )}
-                {signal.dataQuality && (
-                  <span>
-                    <span className="text-slate-600">Quality: </span>
-                    <span className={
-                      signal.dataQuality === 'full'        ? 'text-emerald-400/60' :
-                      signal.dataQuality === 'degraded'    ? 'text-amber-400/60'   :
-                      signal.dataQuality === 'fallback'    ? 'text-amber-400/60'   :
-                                                             'text-red-400/60'
-                    }>{signal.dataQuality}</span>
-                  </span>
+                {signal.targetPrice && (
+                  <div className="rounded-lg bg-emerald-500/[0.04] border border-emerald-500/[0.08] p-3">
+                    <div className="text-[10px] text-emerald-500/60 mb-1 uppercase tracking-wider font-medium flex items-center gap-1"><Target className="h-2.5 w-2.5" /> Target</div>
+                    <div className="text-[14px] font-mono text-emerald-400 font-medium">{isLive ? signal.targetPrice : '--'}</div>
+                  </div>
                 )}
-                {signal.assetType && (
-                  <span>
-                    <span className="text-slate-600">Type: </span>
-                    <span className="text-slate-400">{signal.assetType}</span>
-                  </span>
+                {signal.stopLoss && (
+                  <div className="rounded-lg bg-red-500/[0.04] border border-red-500/[0.08] p-3">
+                    <div className="text-[10px] text-red-500/60 mb-1 uppercase tracking-wider font-medium flex items-center gap-1"><Shield className="h-2.5 w-2.5" /> Stop</div>
+                    <div className="text-[14px] font-mono text-red-400 font-medium">{isLive ? signal.stopLoss : '--'}</div>
+                  </div>
                 )}
               </div>
+
+              {!isLive && (
+                <div className="flex items-center gap-2 rounded-lg bg-amber-500/[0.04] border border-amber-500/[0.08] px-3 py-2">
+                  <WifiOff className="h-3.5 w-3.5 text-amber-400/60" />
+                  <span className="text-[11px] text-amber-400/60">Historical signal — not suitable for live trading</span>
+                </div>
+              )}
+
+              <p className="text-[12px] text-slate-500 leading-relaxed pl-0.5">{signal.reasoning}</p>
+
+              {signal.provider && signal.provider !== 'Unknown' && (
+                <div className="flex items-center gap-1.5 text-[10px] text-slate-700">
+                  <span className="text-slate-600">Source:</span>
+                  <span className="text-cyan-400/50">{signal.provider}</span>
+                </div>
+              )}
             </div>
           </motion.div>
         )}
@@ -314,10 +247,7 @@ export default function TradingPanel() {
       total: signals.length,
       long: signals.filter((s) => s.direction === 'long').length,
       short: signals.filter((s) => s.direction === 'short').length,
-      avgConfidence: (() => {
-        const scored = signals.filter((s): s is TradingSignal & { confidence: number } => typeof s.confidence === 'number');
-        return scored.length > 0 ? Math.round(scored.reduce((a, s) => a + s.confidence, 0) / scored.length) : null;
-      })(),
+      avgConfidence: Math.round(signals.reduce((a, s) => a + s.confidence, 0) / signals.length),
     };
   }, [signals, isLive]);
 
@@ -488,7 +418,7 @@ export default function TradingPanel() {
           <div className="space-y-2">
             <AnimatePresence mode="popLayout">
               {filtered.map((signal, i) => (
-                <SignalCard key={signal.id} signal={signal} index={i} panelLive={isLive} />
+                <SignalCard key={signal.id} signal={signal} index={i} isLive={isLive} />
               ))}
             </AnimatePresence>
           </div>

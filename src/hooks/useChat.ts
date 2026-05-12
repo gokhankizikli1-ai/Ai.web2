@@ -3,35 +3,7 @@ import type { ChatSession, Message, AIMode, ChatFolder } from '@/types';
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
-// Canonical Railway backend (per STABLE_CHECKPOINT.md). The 2a49 host that
-// appears in earlier history is a typo and resolves to nothing — fetch from
-// it throws "TypeError: Load failed" (Safari) or "Failed to fetch" (others).
-const API_URL = 'https://worker-production-1345.up.railway.app/chat';
-
-// Hard ceiling so a slow / unreachable backend can never leave the UI
-// hanging forever — the AbortController fires after this and the catch
-// block surfaces a friendly "Request timed out." toast.
-const CHAT_REQUEST_TIMEOUT_MS = 60_000;
-
-// Map raw browser/network errors to user-facing copy. Without this, Safari's
-// `TypeError: Load failed` and Chrome's `TypeError: Failed to fetch` reach
-// the toast verbatim, which is what the user just reported.
-const NETWORK_ERROR_PATTERNS =
-  /load failed|failed to fetch|network ?error|connection (refused|reset)|err_(internet|connection|name_not_resolved)/i;
-
-function friendlyErrorMessage(err: unknown): string {
-  if (err instanceof DOMException && err.name === 'AbortError') {
-    return 'Request timed out. Please retry.';
-  }
-  if (err instanceof TypeError) {
-    return 'Connection problem. Please retry.';
-  }
-  const msg = err instanceof Error ? err.message : '';
-  if (msg && NETWORK_ERROR_PATTERNS.test(msg)) {
-    return 'Connection problem. Please retry.';
-  }
-  return msg || 'Something went wrong. Please try again.';
-}
+const API_URL = 'https://worker-production-2a49.up.railway.app/chat';
 
 function getUserId(): string {
   const key = 'korvix_user_id';
@@ -136,16 +108,10 @@ export function useChat() {
 
     setIsLoading(true);
 
-    const ctrl = new AbortController();
-    const timeoutId = setTimeout(() => {
-      try { ctrl.abort(); } catch { /* ignore */ }
-    }, CHAT_REQUEST_TIMEOUT_MS);
-
     try {
       const response = await fetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        signal: ctrl.signal,
         body: JSON.stringify({
           user_id: userIdRef.current,
           message: content.trim(),
@@ -156,20 +122,7 @@ export function useChat() {
       });
 
       if (!response.ok) {
-        // 4xx/5xx — map a couple of common codes to specific copy, otherwise
-        // fall through to a generic message. We deliberately don't echo
-        // server response bodies verbatim because they may contain stack
-        // traces / internal field names.
-        if (response.status === 429) {
-          setError('Too many requests. Wait a few seconds and retry.');
-        } else if (response.status === 503) {
-          setError('Chat service is temporarily unavailable.');
-        } else if (response.status >= 500) {
-          setError('Server error. Please retry in a moment.');
-        } else {
-          setError(`Server responded with ${response.status}.`);
-        }
-        return;
+        throw new Error(`Server responded with ${response.status}. Please try again.`);
       }
 
       const data = await response.json();
@@ -190,11 +143,8 @@ export function useChat() {
         )
       );
     } catch (err) {
-      // Translate raw fetch/abort errors so "Load failed" / "Failed to
-      // fetch" / abort-on-timeout never reach the toast verbatim.
-      setError(friendlyErrorMessage(err));
+      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
     } finally {
-      clearTimeout(timeoutId);
       setIsLoading(false);
     }
   }, [activeSessionId]);
