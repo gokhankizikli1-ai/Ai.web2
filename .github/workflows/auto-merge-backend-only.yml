@@ -170,24 +170,26 @@ jobs:
           FILES=$(gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER/files" \
             --paginate --jq '.[].filename')
           echo "Changed files:"; echo "$FILES"; echo ""
-
-          # Hard-deny: any of these paths means "not backend-only" → skip.
-          # (Frontend source, lockfiles, build configs, Vercel config, and
-          # crucially .github/workflows so this workflow can't merge itself.)
-          DENY_REGEX='^(src/|public/|package\.json$|package-lock\.json$|pnpm-lock\.yaml$|yarn\.lock$|vite\.config\.|tsconfig|tailwind\.config\.|postcss\.config\.|index\.html$|vercel\.json$|eslint\.config\.|components\.json$|\.github/workflows/)'
-          BAD=$(echo "$FILES" | grep -E "$DENY_REGEX" || true)
-          if [ -n "$BAD" ]; then
-            echo "::notice::PR touches non-backend or workflow paths — skipping auto-merge."
-            echo "Disqualifying paths:"; echo "$BAD"
+          if [ -z "$FILES" ]; then
+            echo "::notice::PR has no changed files — skipping"
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          # Require at least one backend-relevant change (else nothing to merge).
-          ALLOW_REGEX='^(backend/|requirements\.txt$|Procfile($|\.)|runtime\.txt$|pytest\.ini$)'
-          ANY=$(echo "$FILES" | grep -E "$ALLOW_REGEX" || true)
-          if [ -z "$ANY" ]; then
-            echo "::notice::PR has no backend-relevant changes — skipping"
+          # STRICT allow-list: every changed file MUST match this regex.
+          # Files outside the list (frontend, lockfiles, build configs,
+          # workflow YAML, root-level Python like api.py / config.py)
+          # automatically disqualify — we never auto-merge those, so a
+          # human reviews and merges them.
+          #
+          # Crucially, .github/ is NOT on the allow-list, so this
+          # workflow can never auto-merge itself or any workflow change.
+          ALLOW_REGEX='^(backend/|requirements\.txt$|Procfile(\.txt)?$|runtime\.txt$|pytest\.ini$)'
+
+          OUTSIDE=$(echo "$FILES" | grep -vE "$ALLOW_REGEX" || true)
+          if [ -n "$OUTSIDE" ]; then
+            echo "::notice::PR touches paths outside the backend-only allow-list — skipping auto-merge."
+            echo "Disallowed paths:"; echo "$OUTSIDE"
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -250,29 +252,46 @@ jobs:
           HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
         run: |
           set -e
+          # Commit statuses are formatted "context=state" where state is one of
+          #   error | failure | pending | success
           STATUSES=$(gh api "repos/${{ github.repository }}/commits/$HEAD_SHA/status" \
             --jq '.statuses[] | "\(.context)=\(.state)"')
+          # Check-runs are formatted "name=status:conclusion" where
+          #   status     is one of: queued | in_progress | completed
+          #   conclusion is one of: success | failure | cancelled | timed_out |
+          #                         action_required | startup_failure |
+          #                         neutral | skipped | stale | null
           CHECKS=$(gh api "repos/${{ github.repository }}/commits/$HEAD_SHA/check-runs" \
             --paginate --jq '.check_runs[] | "\(.name)=\(.status):\(.conclusion // "null")"')
           echo "── Statuses ──";  echo "${STATUSES:-(none)}"
           echo "── Check-runs ──"; echo "${CHECKS:-(none)}"
           echo
 
-          FAILED=$(printf "%s\n%s\n" "$STATUSES" "$CHECKS" \
-            | grep -Ei '=(failure|cancelled|timed_out|action_required)\b' || true)
-          if [ -n "$FAILED" ]; then
+          # Failures: commit status = error|failure   OR
+          #           check-run conclusion in (failure, cancelled, timed_out,
+          #           action_required, startup_failure)
+          FAILED_STATUSES=$(printf "%s\n" "$STATUSES" \
+            | grep -E '=(error|failure)$' || true)
+          FAILED_CHECKS=$(printf "%s\n" "$CHECKS" \
+            | grep -E ':(failure|cancelled|timed_out|action_required|startup_failure)$' || true)
+          if [ -n "$FAILED_STATUSES$FAILED_CHECKS" ]; then
             echo "::notice::A check failed — block auto-merge."
-            echo "$FAILED"
+            [ -n "$FAILED_STATUSES" ] && { echo "Failed statuses:";  echo "$FAILED_STATUSES"; }
+            [ -n "$FAILED_CHECKS" ]   && { echo "Failed check-runs:"; echo "$FAILED_CHECKS"; }
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
-          PENDING=$(printf "%s\n" "$CHECKS" | grep -E '=(in_progress|queued|requested)\b' || true)
-          PENDING_STATUS=$(printf "%s\n" "$STATUSES" | grep -E '=pending\b' || true)
-          if [ -n "$PENDING" ] || [ -n "$PENDING_STATUS" ]; then
+          # Pending: commit status = pending   OR
+          #          check-run status in (queued, in_progress, requested)
+          PENDING_STATUS=$(printf "%s\n" "$STATUSES" \
+            | grep -E '=pending$' || true)
+          PENDING_CHECKS=$(printf "%s\n" "$CHECKS" \
+            | grep -E '=(queued|in_progress|requested):' || true)
+          if [ -n "$PENDING_STATUS$PENDING_CHECKS" ]; then
             echo "Checks still pending — will re-evaluate on next webhook."
-            [ -n "$PENDING" ]        && { echo "Pending check-runs:"; echo "$PENDING"; }
             [ -n "$PENDING_STATUS" ] && { echo "Pending statuses:";   echo "$PENDING_STATUS"; }
+            [ -n "$PENDING_CHECKS" ] && { echo "Pending check-runs:"; echo "$PENDING_CHECKS"; }
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
