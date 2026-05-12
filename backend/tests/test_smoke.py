@@ -182,9 +182,12 @@ def test_provider_capabilities_lists_known_providers():
 def test_provider_capabilities_marks_unregistered_as_unavailable():
     from backend.services.providers import provider_capabilities
     caps = {c["name"]: c for c in provider_capabilities()}
-    # Anthropic / Google / DeepSeek have no implementations in Phase B,
-    # so they must surface as not-registered + not-available.
-    for placeholder in ("anthropic", "google", "deepseek"):
+    # Google / DeepSeek still have no implementations. Anthropic landed
+    # in Phase 6a — it registers when ANTHROPIC_API_KEY is set and
+    # appears as a placeholder otherwise. We don't assert its
+    # registered state here (depends on env state); we only verify the
+    # remaining placeholders.
+    for placeholder in ("google", "deepseek"):
         assert caps[placeholder]["registered"] is False
         assert caps[placeholder]["available"] is False
 

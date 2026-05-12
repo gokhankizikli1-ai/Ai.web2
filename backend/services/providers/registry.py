@@ -136,6 +136,20 @@ def bootstrap_default_providers() -> None:
     except Exception as exc:
         logger.warning("openai provider bootstrap failed (non-fatal): %s", exc)
 
+    # Phase 6a — Anthropic. Same pattern as OpenAI: register only when
+    # both the SDK is importable AND the key is set. Failure here is
+    # non-fatal — the registry simply doesn't list it and /v2/health
+    # reports registered=false from the KNOWN_PROVIDERS placeholder.
+    try:
+        from backend.services.providers.anthropic_provider import AnthropicProvider
+        p = AnthropicProvider()
+        if p.is_available():
+            register_provider(p)
+        else:
+            logger.info("anthropic provider skipped: ANTHROPIC_API_KEY not set")
+    except Exception as exc:
+        logger.warning("anthropic provider bootstrap failed (non-fatal): %s", exc)
+
 
 def _reset_for_tests() -> None:
     """Internal — clears the registry. Used by smoke tests; not exported."""
