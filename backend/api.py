@@ -139,12 +139,38 @@ def _build_full_app():
         "backend.routes.tools",        # Phase 4A — /tools/health
         "backend.routes.sessions",     # Phase M2 — /sessions/* (gated by ENABLE_SESSIONS)
         "backend.routes.trading",      # Phase T1 — /trading/signals (gated by ENABLE_TRADING_SIGNALS)
+        "backend.routes.v2",           # Phase 1 — /v2/* envelope reference impl
     ]:
         try:
             _app.include_router(importlib.import_module(_mod).router)
             logger.info("Route OK: %s", _mod)
         except Exception as _e:
             logger.error("Route SKIP %s: %s", _mod, _e)
+
+    # Phase-1 additions — each gated by env var, default off so the existing
+    # production behaviour is byte-for-byte unchanged until we explicitly
+    # flip a flag on Railway.
+    #
+    #   ENABLE_REQUEST_ID_MIDDLEWARE=true  → adds X-Request-Id correlation
+    #   ENABLE_V2_ERROR_HANDLERS=true      → installs ApiError → envelope handler
+    #
+    # The pre-existing CORS middleware and global_exception_handler stay
+    # in place either way.
+    if os.getenv("ENABLE_REQUEST_ID_MIDDLEWARE", "false").strip().lower() == "true":
+        try:
+            from backend.middleware.request_id import RequestIdMiddleware
+            _app.add_middleware(RequestIdMiddleware)
+            logger.info("Phase-1 middleware: RequestIdMiddleware installed")
+        except Exception as _e:
+            logger.warning("RequestIdMiddleware install failed (non-fatal): %s", _e)
+
+    if os.getenv("ENABLE_V2_ERROR_HANDLERS", "false").strip().lower() == "true":
+        try:
+            from backend.core.errors import install_api_error_handlers
+            install_api_error_handlers(_app)
+            logger.info("Phase-1 handlers: ApiError → envelope handler installed")
+        except Exception as _e:
+            logger.warning("install_api_error_handlers failed (non-fatal): %s", _e)
 
     return _app
 
