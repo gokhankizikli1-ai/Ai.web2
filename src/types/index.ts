@@ -27,6 +27,10 @@ export interface ChatSession {
   folder?: ChatFolder;
   isFavorite?: boolean;
   isArchived?: boolean;
+  // Phase 2 — backend Thread.id when the conversation has been
+  // synced to the /sessions service. Absent when the user is local-only
+  // (sessions disabled on backend, or service unreachable on first send).
+  threadId?: string;
 }
 
 export interface PromptItem {
