@@ -1,5 +1,6 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import type { ChatSession, Message, AIMode, ChatFolder } from '@/types';
+import { sessionsClient } from '@/services/sessions';
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
@@ -34,6 +35,100 @@ function createEmptySession(): ChatSession {
     updatedAt: new Date(),
     folder: 'none',
   };
+}
+
+
+// ── Phase 2 — local session persistence + backend write-through ──────────
+//
+// Two layers:
+//   1. ALWAYS-ON local cache (localStorage) — sessions survive refresh,
+//      tab close, browser restart. Hydrated synchronously on mount so the
+//      UI never flickers an empty state.
+//   2. OPT-IN backend sync — when the backend reports
+//      `metadata.sessions_enabled=true` via /v2/health, we lazily ensure
+//      a default workspace + thread, then fire-and-forget appendMessage
+//      calls so the conversation is also persisted server-side. Every
+//      backend call is best-effort; failure never affects the UI.
+//
+// The mapping of local session.id → backend thread.id is stored on the
+// session itself (`threadId?: string`) and round-trips through
+// localStorage like everything else.
+
+const SESSIONS_STORAGE_KEY      = 'korvix_chat_sessions_v1';
+const ACTIVE_SESSION_STORAGE_KEY = 'korvix_active_session_id_v1';
+const WORKSPACE_STORAGE_KEY     = 'korvix_workspace_id_v1';
+
+interface PersistedSession extends ChatSession {
+  threadId?: string;   // backend Thread.id once the lazy create succeeded
+}
+
+function reviveSession(raw: unknown): PersistedSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const s = raw as Record<string, unknown>;
+  if (typeof s.id !== 'string' || !Array.isArray(s.messages)) return null;
+  const messages = s.messages.map((m: unknown): Message | null => {
+    if (!m || typeof m !== 'object') return null;
+    const mm = m as Record<string, unknown>;
+    if (typeof mm.id !== 'string' || typeof mm.content !== 'string') return null;
+    if (mm.role !== 'user' && mm.role !== 'assistant') return null;
+    return {
+      id:        mm.id,
+      role:      mm.role,
+      content:   mm.content,
+      timestamp: new Date((mm.timestamp as string | number) ?? Date.now()),
+      isError:   mm.isError === true ? true : undefined,
+    };
+  }).filter((m): m is Message => m !== null);
+  return {
+    id:        s.id,
+    title:     typeof s.title === 'string' ? s.title : 'Conversation',
+    messages,
+    updatedAt: new Date((s.updatedAt as string | number) ?? Date.now()),
+    folder:    (s.folder as ChatFolder) ?? 'none',
+    threadId:  typeof s.threadId === 'string' ? s.threadId : undefined,
+  };
+}
+
+function loadSessionsFromStorage(): PersistedSession[] {
+  try {
+    const raw = localStorage.getItem(SESSIONS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map(reviveSession).filter((s): s is PersistedSession => s !== null);
+  } catch {
+    return [];
+  }
+}
+
+function saveSessionsToStorage(sessions: ChatSession[]): void {
+  try {
+    localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(sessions));
+  } catch {
+    // Quota exceeded, private-mode Safari, or a hostile storage shim —
+    // local-only mode degrades gracefully. The UI keeps working from
+    // in-memory state; we just don't survive refresh this turn.
+  }
+}
+
+function loadActiveSessionId(): string | null {
+  try {
+    return localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function saveActiveSessionId(id: string): void {
+  try { localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, id); } catch { /* ignore */ }
+}
+
+function loadWorkspaceId(): string | null {
+  try { return localStorage.getItem(WORKSPACE_STORAGE_KEY); } catch { return null; }
+}
+
+function saveWorkspaceId(id: string): void {
+  try { localStorage.setItem(WORKSPACE_STORAGE_KEY, id); } catch { /* ignore */ }
 }
 
 
@@ -144,13 +239,79 @@ function formatErrorBubble(d: ChatErrorDetails): string {
 
 
 export function useChat() {
-  const initialSession = createEmptySession();
-  const [sessions, setSessions] = useState<ChatSession[]>([initialSession]);
-  const [activeSessionId, setActiveSessionId] = useState<string>(initialSession.id);
+  // Hydrate from localStorage on mount — if the user refreshes mid-
+  // conversation, their thread is right there. If storage is empty
+  // (first visit) or corrupt (revive fails), fall back to one fresh
+  // empty session so the composer is always usable.
+  const [sessions, setSessions] = useState<ChatSession[]>(() => {
+    const restored = loadSessionsFromStorage();
+    return restored.length > 0 ? restored : [createEmptySession()];
+  });
+  const [activeSessionId, setActiveSessionId] = useState<string>(() => {
+    const stored = loadActiveSessionId();
+    // Restore prior active session if it still exists in the loaded set,
+    // else default to the most recent one.
+    const restored = loadSessionsFromStorage();
+    if (stored && restored.some(s => s.id === stored)) return stored;
+    return restored[0]?.id ?? createEmptySession().id;
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUserMessage, setLastUserMessage] = useState<string | null>(null);
   const userIdRef = useRef<string>(getUserId());
+  // Cached backend workspace id; set on first successful ensureDefault.
+  const workspaceIdRef = useRef<string | null>(loadWorkspaceId());
+  // Mirror of sessions for callbacks that need the current value without
+  // listing `sessions` in their dep array (which would re-bind doSend
+  // on every message append and break stable identity downstream).
+  const sessionsRef = useRef<ChatSession[]>(sessions);
+
+  // ── Phase-2 persistence side effects ──────────────────────────────────
+  // 1) Mirror sessions to localStorage on every change so a refresh
+  //    finds the same set of conversations the user just saw. Also
+  //    syncs the ref used by stable callbacks.
+  useEffect(() => {
+    sessionsRef.current = sessions;
+    saveSessionsToStorage(sessions);
+  }, [sessions]);
+
+  // 2) Mirror the active session id so the right thread re-selects.
+  useEffect(() => {
+    saveActiveSessionId(activeSessionId);
+  }, [activeSessionId]);
+
+  // 3) Lazy helper: ensure a backend Thread for the given local session.
+  //    Returns the thread id (creating workspace + thread on demand) or
+  //    null if the sessions backend is disabled / unreachable. The local
+  //    session is updated in-place with `threadId` so future sends reuse
+  //    the same thread.
+  const ensureThread = useCallback(async (
+    localSession: ChatSession & { threadId?: string },
+  ): Promise<string | null> => {
+    if (localSession.threadId) return localSession.threadId;
+    try {
+      if (!workspaceIdRef.current) {
+        const ws = await sessionsClient.ensureDefaultWorkspace(userIdRef.current);
+        if (!ws) return null;
+        workspaceIdRef.current = ws.id;
+        saveWorkspaceId(ws.id);
+      }
+      const thread = await sessionsClient.createThread(
+        workspaceIdRef.current,
+        localSession.title || 'New Conversation',
+        'chat',
+      );
+      if (!thread) return null;
+      // Patch the matching session with its backend thread id. We do
+      // this via setSessions so other consumers see the change too.
+      setSessions(prev =>
+        prev.map(s => s.id === localSession.id ? { ...s, threadId: thread.id } as ChatSession : s)
+      );
+      return thread.id;
+    } catch {
+      return null;
+    }
+  }, []);
 
   const [aiMode, setAiMode] = useState<AIMode>('fast');
   const [pinnedMessages, setPinnedMessages] = useState<Message[]>([]);
@@ -223,6 +384,21 @@ export function useChat() {
           : s
       )
     );
+
+    // Phase-2 write-through (best-effort, never awaited on the UI path).
+    // Ensures a backend thread exists for this local session, then
+    // appends the user message to /sessions/threads/{id}/messages. If
+    // the backend has ENABLE_SESSIONS=false or the call fails for any
+    // reason, the local state above is the source of truth — the user
+    // sees no difference.
+    const activeSnapshot = sessionsRef.current.find(s => s.id === activeSessionId);
+    if (activeSnapshot) {
+      void ensureThread(activeSnapshot).then(threadId => {
+        if (threadId) {
+          void sessionsClient.appendMessage(threadId, 'user', content.trim());
+        }
+      });
+    }
 
     setIsLoading(true);
 
@@ -328,13 +504,27 @@ export function useChat() {
       )
     );
 
+    // Phase-2 write-through for the assistant turn — only when it's a
+    // real reply (skip error bubbles; they're frontend-synthesised and
+    // re-appending them on every retry would clutter the persisted log).
+    if (!isErrorTurn) {
+      const sessionForThread = sessionsRef.current.find(s => s.id === activeSessionId);
+      if (sessionForThread) {
+        void ensureThread(sessionForThread).then(threadId => {
+          if (threadId) {
+            void sessionsClient.appendMessage(threadId, 'assistant', assistantText);
+          }
+        });
+      }
+    }
+
     if (isErrorTurn) {
       // Mirror to the global toast UX. Keep it short — the full diagnostic
       // detail already lives inside the assistant bubble.
       setError(errorToastShort || 'Something went wrong.');
     }
     setIsLoading(false);
-  }, [activeSessionId]);
+  }, [activeSessionId, ensureThread]);
 
   const sendMessage = useCallback(async (content: string) => {
     await doSend(content);

@@ -46,6 +46,11 @@ router = APIRouter(prefix="/v2", tags=["v2"])
 _VERSION = "phase1-foundation"
 
 
+def _flag(name: str) -> bool:
+    """Read a default-off boolean env flag once at call time."""
+    return os.getenv(name, "false").strip().lower() == "true"
+
+
 @router.get("/health")
 async def v2_health() -> dict:
     """Reference implementation of the v2 envelope.
@@ -54,10 +59,16 @@ async def v2_health() -> dict:
     {success, data, error, metadata, timestamp} envelope. Useful for:
       - Smoke-testing the envelope shape from the frontend or curl
       - Confirming on a fresh deploy that the v2 wiring is alive
+      - Capability discovery for the frontend (which feature-flagged
+        backend services are currently turned on)
 
     Always returns 200 OK; the inner `data.status` is the real probe
     signal. `metadata.commit_sha` ties the response to the build, so a
     stale CDN or browser cache shows up as "I got an old timestamp".
+
+    Phase-2 addition: `metadata.sessions_enabled` mirrors the
+    ENABLE_SESSIONS env flag so the frontend can decide whether to
+    write-through chat turns to /sessions/* (skip when disabled).
     """
     return envelope_ok(
         data={
@@ -69,6 +80,15 @@ async def v2_health() -> dict:
         commit_sha=os.getenv("RAILWAY_GIT_COMMIT_SHA", "unknown"),
         deployed_at=os.getenv("RAILWAY_DEPLOYMENT_CREATED_AT", "unknown"),
         boot_at=datetime.now(timezone.utc).isoformat(),
+        # Capability discovery — one field per feature-flagged subsystem.
+        # Default off until the env var is explicitly set on Railway.
+        sessions_enabled        = _flag("ENABLE_SESSIONS"),
+        trading_signals_enabled = _flag("ENABLE_TRADING_SIGNALS"),
+        tools_enabled           = _flag("ENABLE_TOOLS"),
+        market_data_enabled     = _flag("ENABLE_MARKET_DATA"),
+        new_memory_enabled      = _flag("ENABLE_NEW_MEMORY"),
+        agent_enabled           = _flag("ENABLE_AGENT"),
+        web_research_enabled    = _flag("ENABLE_WEB_RESEARCH"),
     )
 
 
