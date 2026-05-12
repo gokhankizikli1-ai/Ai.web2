@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router';
 
 import { useChat } from '@/hooks/useChat';
 import { useCommandPalette } from '@/hooks/useCommandPalette';
@@ -129,6 +130,24 @@ export default function ChatDashboard() {
   useEffect(() => {
     setActiveTab(settings.defaultWorkspace);
   }, [settings.defaultWorkspace]);
+
+  // Hand-off from Startup / Ecommerce tool pages: navigate('/chat', { state: { prompt } })
+  // pre-fills the composer with the tool's form content. We clear the state
+  // after consuming so a back-button round-trip doesn't re-inject the prompt.
+  const location = useLocation();
+  const navigate = useNavigate();
+  useEffect(() => {
+    const incoming = (location.state as { prompt?: string } | null)?.prompt;
+    if (typeof incoming === 'string' && incoming.trim()) {
+      setInputText(incoming);
+      setActiveTab('chat');
+      navigate(location.pathname, { replace: true, state: null });
+      setTimeout(() => {
+        const el = document.querySelector('textarea') as HTMLTextAreaElement | null;
+        if (el) { el.focus(); el.scrollTop = el.scrollHeight; }
+      }, 80);
+    }
+  }, [location.state, location.pathname, navigate, setInputText]);
 
   // Show agent timeline during loading
   useEffect(() => {
