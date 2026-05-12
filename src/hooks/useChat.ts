@@ -275,6 +275,14 @@ export function useChat() {
   // concurrent callers (user-turn + a fast follow-up) await the same
   // resolution instead of racing two parallel backend creates.
   const threadCreationPromisesRef = useRef<Record<string, Promise<string | null>>>({});
+  // Local message ids whose backend appendMessage POST has confirmed
+  // success. retry() consults this to decide whether to re-POST the
+  // same user message — preventing duplicates on the backend thread
+  // when the first attempt landed but /chat failed locally.
+  const syncedLocalMessageIdsRef = useRef<Set<string>>(new Set());
+  // The local message id of the most recent user-turn send, so retry()
+  // can look up the sync state above. Cleared by createNewChat.
+  const lastUserMessageIdRef = useRef<string | null>(null);
 
   // Seed the threadId map from whatever was restored from localStorage,
   // so a refresh mid-conversation keeps writing to the same backend thread.
@@ -411,7 +419,10 @@ export function useChat() {
     setError(null);
   }, [activeSessionId]);
 
-  const doSend = useCallback(async (content: string) => {
+  const doSend = useCallback(async (
+    content: string,
+    opts?: { skipUserSync?: boolean },
+  ) => {
     if (!content.trim()) return;
 
     setError(null);
@@ -424,6 +435,7 @@ export function useChat() {
       content: content.trim(),
       timestamp: new Date(),
     };
+    lastUserMessageIdRef.current = userMessage.id;
 
     setSessions((prev) =>
       prev.map((s) =>
@@ -444,12 +456,20 @@ export function useChat() {
     // the backend has ENABLE_SESSIONS=false or the call fails for any
     // reason, the local state above is the source of truth — the user
     // sees no difference.
+    // Skip when retry() already knows the user message was persisted on
+    // the previous attempt — otherwise we'd create a duplicate in the
+    // backend thread that Phase-3 cross-device sync would surface.
     const activeSnapshot = sessionsRef.current.find(s => s.id === activeSessionId);
-    if (activeSnapshot) {
+    if (activeSnapshot && !opts?.skipUserSync) {
+      const localMsgId = userMessage.id;
       void ensureThread(activeSnapshot).then(threadId => {
-        if (threadId) {
-          void sessionsClient.appendMessage(threadId, 'user', content.trim());
-        }
+        if (!threadId) return;
+        void sessionsClient.appendMessage(threadId, 'user', content.trim()).then(persisted => {
+          // Only mark as synced when the backend confirms — a network
+          // failure here keeps the id out of the set so the next retry
+          // will re-attempt the POST.
+          if (persisted) syncedLocalMessageIdsRef.current.add(localMsgId);
+        });
       });
     }
 
@@ -585,9 +605,18 @@ export function useChat() {
 
   const retry = useCallback(() => {
     if (!lastUserMessage) return;
+    // Was the previous attempt's user message already persisted to the
+    // backend thread? If yes, doSend must skip the user-turn write-through
+    // on this retry — otherwise we'd duplicate the same message in the
+    // backend log. If no (e.g. first attempt's POST also failed), let
+    // doSend re-attempt it.
+    const previousUserMessageWasSynced =
+      lastUserMessageIdRef.current !== null &&
+      syncedLocalMessageIdsRef.current.has(lastUserMessageIdRef.current);
+
     // The previous attempt left [userMessage, assistantErrorMessage]
     // in the thread. Strip both so doSend re-creates them cleanly —
-    // otherwise a retry leaves a duplicate user message.
+    // otherwise a retry leaves a duplicate user message locally.
     setSessions((prev) =>
       prev.map((s) => {
         if (s.id !== activeSessionId) return s;
@@ -602,7 +631,7 @@ export function useChat() {
         return { ...s, messages: msgs.slice(0, msgs.length - chop), updatedAt: new Date() };
       })
     );
-    doSend(lastUserMessage);
+    doSend(lastUserMessage, { skipUserSync: previousUserMessageWasSynced });
   }, [lastUserMessage, doSend, activeSessionId]);
 
   const clearChat = useCallback(() => {
