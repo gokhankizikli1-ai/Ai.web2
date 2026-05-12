@@ -140,7 +140,7 @@ function normalizeResponse(data: Record<string, unknown>): TradingSignalsRespons
 
   // Backend doesn't emit a top-level provider — derive from the first
   // *live* signal so the "data via X" label in the UI matches reality.
-  const firstLive = signals.find((s, i) => (rawSignals[i].is_live as boolean));
+  const firstLive = signals.find((_s, i) => (rawSignals[i].is_live as boolean));
   const provider  = firstLive?.provider ?? signals[0]?.provider ?? 'Unknown';
 
   return {
