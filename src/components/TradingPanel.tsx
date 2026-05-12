@@ -230,7 +230,7 @@ function SignalCard({ signal, index, panelLive }: { signal: TradingSignal; index
                     <span className="text-slate-600">Quality: </span>
                     <span className={
                       signal.dataQuality === 'full'        ? 'text-emerald-400/60' :
-                      signal.dataQuality === 'partial'     ? 'text-amber-400/60'   :
+                      signal.dataQuality === 'degraded'    ? 'text-amber-400/60'   :
                       signal.dataQuality === 'fallback'    ? 'text-amber-400/60'   :
                                                              'text-red-400/60'
                     }>{signal.dataQuality}</span>

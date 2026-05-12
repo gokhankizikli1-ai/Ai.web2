@@ -95,9 +95,11 @@ function mapAssetType(raw: unknown): AssetType | undefined {
   return undefined;
 }
 
+// Backend `_classify_data_quality` emits one of: full | degraded | fallback.
+// "unavailable" is reserved for the frontend to use when nothing came back.
 function mapDataQuality(raw: unknown): DataQuality | undefined {
   const v = String(raw ?? '').toLowerCase();
-  if (v === 'full' || v === 'partial' || v === 'fallback' || v === 'unavailable') return v;
+  if (v === 'full' || v === 'degraded' || v === 'fallback' || v === 'unavailable') return v;
   return undefined;
 }
 

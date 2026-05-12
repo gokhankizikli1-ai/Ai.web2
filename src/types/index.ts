@@ -43,7 +43,7 @@ export type SignalDirection = 'long' | 'short' | 'wait' | 'neutral';
 export type DataProvider = 'Binance' | 'Yahoo' | 'AlphaVantage' | 'CoinGecko' | 'Unknown';
 export type SetupGrade   = 'A' | 'B' | 'C' | 'D';
 export type AssetType    = 'crypto' | 'stock' | 'forex' | 'unknown';
-export type DataQuality  = 'full' | 'partial' | 'fallback' | 'unavailable';
+export type DataQuality  = 'full' | 'degraded' | 'fallback' | 'unavailable';
 
 export interface TradingSignal {
   id: string;
