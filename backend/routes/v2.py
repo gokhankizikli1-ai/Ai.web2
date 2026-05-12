@@ -29,6 +29,8 @@ from __future__ import annotations
 
 import logging
 import os
+import platform
+import sys
 from datetime import datetime, timezone
 
 from fastapi import APIRouter
@@ -36,19 +38,26 @@ from fastapi import APIRouter
 from backend.core.errors import NotFoundError
 from backend.core.responses import err as envelope_err
 from backend.core.responses import ok as envelope_ok
+from backend.core.version import BACKEND_VERSION, uptime_seconds
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v2", tags=["v2"])
 
 
-# Read once at import — see also: STABLE_CHECKPOINT.md and Phase 5.3 workflow.
-_VERSION = "phase1-foundation"
-
-
 def _flag(name: str) -> bool:
     """Read a default-off boolean env flag once at call time."""
     return os.getenv(name, "false").strip().lower() == "true"
+
+
+def _safe_provider_capabilities() -> list:
+    """Best-effort provider snapshot — never fails the health probe."""
+    try:
+        from backend.services.providers import provider_capabilities
+        return provider_capabilities()
+    except Exception as exc:
+        logger.warning("v2/health provider_capabilities failed: %s", exc)
+        return []
 
 
 @router.get("/health")
@@ -72,23 +81,34 @@ async def v2_health() -> dict:
     """
     return envelope_ok(
         data={
-            "status":      "ok",
-            "service":     "korvixai-backend",
-            "version":     _VERSION,
-            "environment": os.getenv("ENVIRONMENT", "production"),
+            "status":         "ok",
+            "service":        "korvixai-backend",
+            "version":        BACKEND_VERSION,
+            "environment":    os.getenv("ENVIRONMENT", "production"),
+            "python_version": platform.python_version(),
+            "uptime_seconds": uptime_seconds(),
         },
-        commit_sha=os.getenv("RAILWAY_GIT_COMMIT_SHA", "unknown"),
-        deployed_at=os.getenv("RAILWAY_DEPLOYMENT_CREATED_AT", "unknown"),
-        boot_at=datetime.now(timezone.utc).isoformat(),
+        commit_sha  = os.getenv("RAILWAY_GIT_COMMIT_SHA", "unknown"),
+        deployed_at = os.getenv("RAILWAY_DEPLOYMENT_CREATED_AT", "unknown"),
+        boot_at     = datetime.now(timezone.utc).isoformat(),
         # Capability discovery — one field per feature-flagged subsystem.
         # Default off until the env var is explicitly set on Railway.
-        sessions_enabled        = _flag("ENABLE_SESSIONS"),
-        trading_signals_enabled = _flag("ENABLE_TRADING_SIGNALS"),
-        tools_enabled           = _flag("ENABLE_TOOLS"),
-        market_data_enabled     = _flag("ENABLE_MARKET_DATA"),
-        new_memory_enabled      = _flag("ENABLE_NEW_MEMORY"),
-        agent_enabled           = _flag("ENABLE_AGENT"),
-        web_research_enabled    = _flag("ENABLE_WEB_RESEARCH"),
+        sessions_enabled         = _flag("ENABLE_SESSIONS"),
+        trading_signals_enabled  = _flag("ENABLE_TRADING_SIGNALS"),
+        tools_enabled            = _flag("ENABLE_TOOLS"),
+        market_data_enabled      = _flag("ENABLE_MARKET_DATA"),
+        new_memory_enabled       = _flag("ENABLE_NEW_MEMORY"),
+        agent_enabled            = _flag("ENABLE_AGENT"),
+        web_research_enabled     = _flag("ENABLE_WEB_RESEARCH"),
+        # Phase B — wired middleware (matches env flags read in api.py).
+        request_id_middleware    = _flag("ENABLE_REQUEST_ID_MIDDLEWARE"),
+        timing_middleware        = _flag("ENABLE_TIMING_MIDDLEWARE"),
+        auth_placeholder         = _flag("ENABLE_AUTH_MIDDLEWARE"),
+        v2_error_handlers        = _flag("ENABLE_V2_ERROR_HANDLERS"),
+        log_format               = (os.getenv("LOG_FORMAT", "") or "text").lower(),
+        # Phase B — AI provider registry snapshot.
+        providers                = _safe_provider_capabilities(),
+        python_implementation    = sys.implementation.name,
     )
 
 

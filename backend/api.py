@@ -147,15 +147,21 @@ def _build_full_app():
         except Exception as _e:
             logger.error("Route SKIP %s: %s", _mod, _e)
 
-    # Phase-1 additions — each gated by env var, default off so the existing
-    # production behaviour is byte-for-byte unchanged until we explicitly
-    # flip a flag on Railway.
+    # Phase-1 / Phase-B optional middleware — each gated by env var,
+    # default off so the existing production behaviour is byte-for-byte
+    # unchanged until a flag is flipped on Railway.
     #
-    #   ENABLE_REQUEST_ID_MIDDLEWARE=true  → adds X-Request-Id correlation
-    #   ENABLE_V2_ERROR_HANDLERS=true      → installs ApiError → envelope handler
+    #   ENABLE_REQUEST_ID_MIDDLEWARE=true → X-Request-Id correlation
+    #   ENABLE_TIMING_MIDDLEWARE=true     → X-Response-Time-ms + per-req log
+    #   ENABLE_AUTH_MIDDLEWARE=true       → reads Bearer / guest header (no verify)
+    #   ENABLE_V2_ERROR_HANDLERS=true     → ApiError → envelope handler
     #
-    # The pre-existing CORS middleware and global_exception_handler stay
-    # in place either way.
+    # Middleware order matters in Starlette: the FIRST added is the
+    # OUTERMOST wrapper (runs first on the way in, last on the way out).
+    # We want:
+    #   request_id   → outermost so every log line + response has the id
+    #   timing       → wraps the inner handler to measure full duration
+    #   auth         → innermost so request_id + timing already populated
     if os.getenv("ENABLE_REQUEST_ID_MIDDLEWARE", "false").strip().lower() == "true":
         try:
             from backend.middleware.request_id import RequestIdMiddleware
@@ -164,6 +170,22 @@ def _build_full_app():
         except Exception as _e:
             logger.warning("RequestIdMiddleware install failed (non-fatal): %s", _e)
 
+    if os.getenv("ENABLE_TIMING_MIDDLEWARE", "false").strip().lower() == "true":
+        try:
+            from backend.middleware.timing import TimingMiddleware
+            _app.add_middleware(TimingMiddleware)
+            logger.info("Phase-B middleware: TimingMiddleware installed")
+        except Exception as _e:
+            logger.warning("TimingMiddleware install failed (non-fatal): %s", _e)
+
+    if os.getenv("ENABLE_AUTH_MIDDLEWARE", "false").strip().lower() == "true":
+        try:
+            from backend.middleware.auth_placeholder import AuthPlaceholderMiddleware
+            _app.add_middleware(AuthPlaceholderMiddleware)
+            logger.info("Phase-B middleware: AuthPlaceholderMiddleware installed (no verify)")
+        except Exception as _e:
+            logger.warning("AuthPlaceholderMiddleware install failed (non-fatal): %s", _e)
+
     if os.getenv("ENABLE_V2_ERROR_HANDLERS", "false").strip().lower() == "true":
         try:
             from backend.core.errors import install_api_error_handlers
@@ -171,6 +193,16 @@ def _build_full_app():
             logger.info("Phase-1 handlers: ApiError → envelope handler installed")
         except Exception as _e:
             logger.warning("install_api_error_handlers failed (non-fatal): %s", _e)
+
+    # Phase-B: import the providers package so KNOWN_PROVIDERS is
+    # populated and bootstrap_default_providers() runs once. Safe even
+    # when OPENAI_API_KEY isn't set — the registry stays empty and
+    # /v2/health.metadata.providers reflects that.
+    try:
+        import backend.services.providers  # noqa: F401
+        logger.info("Phase-B providers package imported")
+    except Exception as _e:
+        logger.warning("providers package import failed (non-fatal): %s", _e)
 
     return _app
 
