@@ -70,12 +70,16 @@ function reviveSession(raw: unknown): ChatSession | null {
     const mm = m as Record<string, unknown>;
     if (typeof mm.id !== 'string' || typeof mm.content !== 'string') return null;
     if (mm.role !== 'user' && mm.role !== 'assistant') return null;
+    // Drop persisted error bubbles. They're session-scoped diagnostics —
+    // the matching `lastUserMessage` state isn't persisted, so a "Try
+    // Again" click after refresh would be a silent no-op. Filtering
+    // them out at revive time keeps the UI honest.
+    if (mm.isError === true) return null;
     return {
       id:        mm.id,
       role:      mm.role,
       content:   mm.content,
       timestamp: new Date((mm.timestamp as string | number) ?? Date.now()),
-      isError:   mm.isError === true ? true : undefined,
     };
   }).filter((m): m is Message => m !== null);
   return {

@@ -88,15 +88,6 @@ async function probeSessionsEnabled(): Promise<boolean> {
   }
 }
 
-// Exposed so callers can force a fresh probe (e.g. after a manual retry).
-export function invalidateSessionsCapabilityCache(): void {
-  _capabilityCache = null;
-}
-
-export async function isSessionsEnabled(): Promise<boolean> {
-  return probeSessionsEnabled();
-}
-
 // ── Low-level fetch helper ─────────────────────────────────────────────
 
 async function call<T>(
@@ -147,15 +138,6 @@ async function createThread(
   );
 }
 
-async function listMessages(threadId: string): Promise<ThreadMessage[]> {
-  if (!(await probeSessionsEnabled())) return [];
-  const result = await call<{ messages: ThreadMessage[] }>(
-    'GET',
-    `/sessions/threads/${encodeURIComponent(threadId)}/messages`,
-  );
-  return result?.messages ?? [];
-}
-
 async function appendMessage(
   threadId: string,
   role: ThreadMessage['role'],
@@ -173,9 +155,5 @@ async function appendMessage(
 export const sessionsClient = {
   ensureDefaultWorkspace,
   createThread,
-  listMessages,
   appendMessage,
-  isEnabled: isSessionsEnabled,
 };
-
-export type SessionsClient = typeof sessionsClient;
