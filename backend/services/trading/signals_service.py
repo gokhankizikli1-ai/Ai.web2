@@ -24,9 +24,27 @@ logger = logging.getLogger(__name__)
 
 
 # ── Observability counters (surfaced via /tools/health) ─────────────────────
+#
+# Public shape (per the T1 spec) at /tools/health.trading:
+#   {
+#     enabled,             # bool — ENABLE_TRADING_SIGNALS=true
+#     endpoint_available,  # bool — route registered + service importable
+#     providers,           # dict of provider name → success count
+#                          #   Binance / Yahoo / AlphaVantage / CoinGecko
+#     last_success,        # ISO timestamp of last request with at least
+#                          # one is_live signal (null if never)
+#     last_error,          # truncated last error string (string | "")
+#     # extra observability fields (not in spec but useful for debugging):
+#     requests_total, requests_ok, requests_error,
+#     symbols_resolved, symbols_failed, last_run_at,
+#   }
 
 import threading
 _LOCK   = threading.Lock()
+
+# Canonical provider list — matches the market_data_tool's fallback chain.
+_PROVIDER_NAMES = ("Binance", "Yahoo", "AlphaVantage", "CoinGecko")
+
 _COUNTS = {
     "requests_total":    0,
     "requests_ok":       0,
@@ -35,7 +53,26 @@ _COUNTS = {
     "symbols_failed":    0,
     "last_error":        "",
     "last_run_at":       None,
+    "last_success":      None,           # ISO timestamp of last is_live=true result
+    # Per-provider success counters (incremented when a signal resolves
+    # via that provider). Used to populate `providers` in stats().
+    "_provider_counts":  {n: 0 for n in _PROVIDER_NAMES},
 }
+
+
+def _normalize_provider_name(raw: str) -> str:
+    """Map market_data_tool's lowercase tag (binance, yahoo_finance, ...)
+    to the canonical CamelCase name the frontend expects."""
+    if not raw:
+        return ""
+    p = raw.strip().lower()
+    if "binance" in p:                       return "Binance"
+    if "yahoo" in p:                         return "Yahoo"
+    if "alpha" in p or p in ("av", "alpha_vantage", "alphavantage"):
+                                             return "AlphaVantage"
+    if "coingecko" in p or p == "coin" or "gecko" in p:
+                                             return "CoinGecko"
+    return ""    # unknown providers don't pollute the counters
 
 
 def _bump(field_: str, n: int = 1, error: str = "") -> None:
@@ -46,9 +83,44 @@ def _bump(field_: str, n: int = 1, error: str = "") -> None:
         _COUNTS["last_run_at"] = datetime.now(timezone.utc).isoformat()
 
 
+def _record_success(provider_raw: Optional[str]) -> None:
+    """Bump the per-provider counter + last_success timestamp."""
+    with _LOCK:
+        _COUNTS["last_success"] = datetime.now(timezone.utc).isoformat()
+        canonical = _normalize_provider_name(provider_raw or "")
+        if canonical and canonical in _COUNTS["_provider_counts"]:
+            _COUNTS["_provider_counts"][canonical] += 1
+
+
+def _endpoint_available() -> bool:
+    """True if the service module is importable AND the route module loads.
+    Surfaced as `endpoint_available` so /tools/health can show whether the
+    endpoint is wired even when the flag is off."""
+    try:
+        from backend.routes import trading  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
 def stats() -> dict:
     with _LOCK:
-        return {**_COUNTS, "enabled": is_enabled()}
+        provider_counts = dict(_COUNTS["_provider_counts"])
+        return {
+            # Required by spec (in this exact order for readability):
+            "enabled":            is_enabled(),
+            "endpoint_available": _endpoint_available(),
+            "providers":          provider_counts,
+            "last_success":       _COUNTS["last_success"],
+            "last_error":         _COUNTS["last_error"],
+            # Useful extras for debugging:
+            "requests_total":     _COUNTS["requests_total"],
+            "requests_ok":        _COUNTS["requests_ok"],
+            "requests_error":     _COUNTS["requests_error"],
+            "symbols_resolved":   _COUNTS["symbols_resolved"],
+            "symbols_failed":     _COUNTS["symbols_failed"],
+            "last_run_at":        _COUNTS["last_run_at"],
+        }
 
 
 def is_enabled() -> bool:
@@ -339,6 +411,7 @@ async def signal_for_symbol(symbol: str, timeframe: str = "4h") -> dict:
     signal = map_tool_result_to_signal(symbol, timeframe, result)
     if signal["is_live"]:
         _bump("symbols_resolved")
+        _record_success(signal.get("provider"))
     else:
         _bump("symbols_failed", error=signal.get("error") or "")
     return signal
