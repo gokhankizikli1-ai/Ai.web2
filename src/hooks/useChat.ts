@@ -3,52 +3,16 @@ import type { ChatSession, Message, AIMode, ChatFolder } from '@/types';
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
-// Canonical Railway backend (per STABLE_CHECKPOINT.md and verified by the
-// Phase 5.3 post-deploy workflow on every recent merge to main). Override
-// only if the Railway service is renamed AND STABLE_CHECKPOINT.md is updated.
-const API_URL = 'https://worker-production-1345.up.railway.app/chat';
-
-// Network-style error messages emitted by various browsers when fetch fails
-// (Safari: "Load failed", Chrome: "Failed to fetch", Firefox: "NetworkError when...").
-// We match by string so even environments where `instanceof TypeError` fails
-// (cross-realm, instrumented runtimes) still produce a user-friendly message
-// instead of leaking the raw browser string to the toast.
-const NETWORK_ERROR_PATTERNS = /load failed|failed to fetch|network ?error|connection (refused|reset)|err_(internet|connection|name_not_resolved)/i;
-
-function friendlyErrorMessage(err: unknown): string {
-  // Aborted requests
-  if (err instanceof DOMException && err.name === 'AbortError') {
-    return 'İstek zaman aşımına uğradı. Tekrar dener misin?';
-  }
-  // Browser-level network failure (Safari "Load failed", Chrome "Failed to fetch", ...)
-  if (err instanceof TypeError) {
-    return 'Bağlantı sorunu. Sunucuya ulaşılamadı. Tekrar dener misin?';
-  }
-  // Same as above but message-string-matched, for runtimes where `instanceof TypeError`
-  // fails (cross-realm errors, bundler edge cases). This is the path that was leaking
-  // Safari's verbatim "Load failed" to the UI.
-  const msg = err instanceof Error ? err.message : '';
-  if (msg && NETWORK_ERROR_PATTERNS.test(msg)) {
-    return 'Bağlantı sorunu. Sunucuya ulaşılamadı. Tekrar dener misin?';
-  }
-  return msg || 'Beklenmeyen bir hata oluştu. Tekrar dener misin?';
-}
+const API_URL = 'https://worker-production-2a49.up.railway.app/chat';
 
 function getUserId(): string {
   const key = 'korvix_user_id';
-  try {
-    let id = localStorage.getItem(key);
-    if (!id) {
-      id = (typeof crypto !== 'undefined' && crypto.randomUUID)
-        ? crypto.randomUUID()
-        : generateId() + generateId();
-      localStorage.setItem(key, id);
-    }
-    return id;
-  } catch {
-    // Private-mode Safari throws on localStorage access — fall back to memory id.
-    return generateId() + generateId();
+  let id = localStorage.getItem(key);
+  if (!id) {
+    id = crypto.randomUUID ? crypto.randomUUID() : generateId() + generateId();
+    localStorage.setItem(key, id);
   }
+  return id;
 }
 
 function createEmptySession(): ChatSession {
@@ -144,15 +108,9 @@ export function useChat() {
 
     setIsLoading(true);
 
-    // 60s client-side abort so a hung server never leaves the user
-    // staring at a forever spinner.
-    const controller = new AbortController();
-    const timeoutId  = setTimeout(() => controller.abort(), 60_000);
-
     try {
       const response = await fetch(API_URL, {
         method: 'POST',
-        signal: controller.signal,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           user_id: userIdRef.current,
@@ -164,18 +122,7 @@ export function useChat() {
       });
 
       if (!response.ok) {
-        // Surface non-2xx as a friendly message; don't throw a raw Error whose
-        // .message would leak HTTP status text directly into the toast.
-        if (response.status === 429) {
-          setError('Çok hızlı mesaj gönderdin. Birkaç saniye bekleyip tekrar dene.');
-        } else if (response.status >= 500) {
-          setError('Sunucuda geçici bir sorun var. Lütfen tekrar dene.');
-        } else if (response.status === 408 || response.status === 504) {
-          setError('İstek zaman aşımına uğradı. Tekrar dener misin?');
-        } else {
-          setError(`Sunucu hatası (${response.status}). Tekrar dener misin?`);
-        }
-        return;
+        throw new Error(`Server responded with ${response.status}. Please try again.`);
       }
 
       const data = await response.json();
@@ -196,12 +143,8 @@ export function useChat() {
         )
       );
     } catch (err) {
-      // Translate browser-level fetch failures (Safari "Load failed",
-      // Chrome "Failed to fetch", abort, …) into friendly Turkish copy.
-      // Never leak the raw err.message into the toast.
-      setError(friendlyErrorMessage(err));
+      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
     } finally {
-      clearTimeout(timeoutId);
       setIsLoading(false);
     }
   }, [activeSessionId]);

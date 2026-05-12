@@ -40,13 +40,14 @@ export interface AIModeOption {
 
 // Trading types
 export type SignalDirection = 'long' | 'short' | 'wait' | 'neutral';
+export type DataProvider = 'Binance' | 'Yahoo' | 'AlphaVantage' | 'CoinGecko' | 'Unknown';
 
 export interface TradingSignal {
   id: string;
   symbol: string;
   name: string;
   direction: SignalDirection;
-  confidence: number; // 0-100
+  confidence: number;
   setupGrade: 'A' | 'B' | 'C' | 'D';
   volatility: 'low' | 'medium' | 'high';
   entryPrice?: string;
@@ -54,6 +55,15 @@ export interface TradingSignal {
   stopLoss?: string;
   timestamp: Date;
   reasoning: string;
+  provider?: DataProvider;
+  sparkline?: number[];
+}
+
+export interface TradingSignalsResponse {
+  is_live: boolean;
+  provider: DataProvider;
+  timestamp: string;
+  signals: TradingSignal[];
 }
 
 // AI Activity types
