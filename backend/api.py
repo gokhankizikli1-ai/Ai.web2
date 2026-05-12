@@ -123,6 +123,26 @@ def _build_full_app():
             logger.info("Tools | enabled=%s | registered=%s", hs["tools_enabled"], hs["registered_tools"])
         except Exception as _tool_err:
             logger.warning("Tools init (non-fatal): %s", _tool_err)
+        # Phase 4B — start background task worker (no-op if ENABLE_BACKGROUND_TASKS
+        # is not "true"). The hook itself is safe to call always; the queue's
+        # own gates keep production behaviour byte-identical when off.
+        try:
+            from backend.services.tasks.lifecycle import on_app_startup as _bg_start
+            await _bg_start()
+        except Exception as _bg_err:
+            logger.warning("background-task startup (non-fatal): %s", _bg_err)
+
+    @_app.on_event("shutdown")
+    async def _shutdown():
+        # Drain the background queue (within a 5s budget) before the
+        # process exits so usage / save_message writes don't get lost
+        # on a normal redeploy. Force-kills (SIGKILL) still drop the
+        # pending work; that's acceptable.
+        try:
+            from backend.services.tasks.lifecycle import on_app_shutdown as _bg_stop
+            await _bg_stop()
+        except Exception as _bg_err:
+            logger.warning("background-task shutdown (non-fatal): %s", _bg_err)
 
     @_app.get("/health", tags=["system"])
     async def health():
