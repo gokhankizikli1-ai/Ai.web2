@@ -39,6 +39,20 @@ class Config:
 
     # ── Database ─────────────────────────────────────────────────────────
     DB_PATH: str = os.getenv("DB_PATH", "memory.db")
+    AUTH_DB_PATH: str = os.getenv("AUTH_DB_PATH", "auth.db")
+
+    # ── Phase 3 — JWT auth ───────────────────────────────────────────────
+    # JWT_SECRET_KEY: HS256 signing key. In production this MUST be set
+    # via Railway env vars (32+ random bytes, hex or base64). The
+    # development fallback is intentionally weak and noisy — the auth
+    # module refuses to issue tokens when DEBUG is False AND the key is
+    # missing.
+    JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "")
+    # Token TTLs — short access tokens, long refresh tokens.
+    ACCESS_TOKEN_TTL_MIN:   int = int(os.getenv("ACCESS_TOKEN_TTL_MIN",   "60"))
+    REFRESH_TOKEN_TTL_DAYS: int = int(os.getenv("REFRESH_TOKEN_TTL_DAYS", "30"))
+    # Token issuer claim — set to your domain in production.
+    JWT_ISSUER: str = os.getenv("JWT_ISSUER", "korvixai")
 
     # ── CORS ─────────────────────────────────────────────────────────────
     ALLOWED_ORIGINS: list = [
