@@ -108,7 +108,10 @@ async def stream_chat(body: StreamChatRequest):
     failure) is communicated via a terminal `done` or `error` event.
     """
     # Decide which provider name to resolve.
-    if body.provider:
+    # `is not None` (not truthiness) so an explicitly-sent empty
+    # string still takes the "explicit provider" path and yields a
+    # clean PROVIDER_NOT_REGISTERED — matches pre-routing behaviour.
+    if body.provider is not None:
         provider_name = body.provider
         routing_reason = "explicit_provider"
         routing_mode   = body.mode or "(none)"

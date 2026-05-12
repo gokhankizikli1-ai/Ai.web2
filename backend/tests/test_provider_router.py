@@ -218,6 +218,27 @@ def test_stream_mode_routes_through_router_when_no_explicit_provider(client, mon
     assert "flag_off" in detail_str
 
 
+def test_stream_empty_string_provider_is_explicit_not_routed(client, monkeypatch):
+    """An explicitly-sent empty string MUST take the explicit-provider
+    path (not fall through to the router). Pre-routing, provider was
+    `str` defaulting to "openai", so an empty string would have hit
+    get_provider("") → PROVIDER_NOT_REGISTERED. Preserve that path."""
+    monkeypatch.setenv("ENABLE_MODE_ROUTING_DEEP_THINK", "true")
+    r = client.post("/v2/chat/stream", json={
+        "messages": [{"role": "user", "content": "hi"}],
+        "provider": "",
+        "mode":     "deep_think",
+    })
+    assert r.status_code == 400
+    import json
+    detail = json.dumps(r.json().get("detail") or r.json())
+    assert "PROVIDER_NOT_REGISTERED" in detail
+    # The router was NOT consulted — reason must be explicit_provider.
+    assert "explicit_provider" in detail
+    # And the offending provider name carried through is the empty string.
+    assert '"provider": ""' in detail
+
+
 def test_stream_neither_mode_nor_provider_is_byte_identical(client, monkeypatch):
     """Sending neither `mode` nor `provider` must behave EXACTLY like the
     pre-routing path: default to "openai", reason="default_no_mode"."""
