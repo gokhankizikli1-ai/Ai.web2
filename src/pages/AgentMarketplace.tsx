@@ -7,6 +7,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import Navigation from '@/components/Navigation';
+import { AlertCircle } from 'lucide-react';
 
 interface MarketplaceAgent {
   id: string;
@@ -87,6 +88,15 @@ export default function AgentMarketplace() {
               <p className="text-[13px] text-slate-500">{installedCount} installed · {AGENTS.length} available · Browse, install, and create AI agents.</p>
             </div>
           </div>
+        </motion.div>
+
+        {/* Demo transparency */}
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.15 }}
+          className="mb-4 p-3 rounded-xl border border-amber-500/10 bg-amber-500/[0.02] flex items-center gap-2.5">
+          <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+          <p className="text-[11px] text-slate-500">
+            All agents shown are demonstration previews. Install actions are simulated. Connect your backend to enable real agent execution.
+          </p>
         </motion.div>
 
         {/* Search + categories */}

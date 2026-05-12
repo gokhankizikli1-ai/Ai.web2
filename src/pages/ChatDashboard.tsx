@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-
 import { useChat } from '@/hooks/useChat';
 import { useCommandPalette } from '@/hooks/useCommandPalette';
 import { useToast } from '@/hooks/useToast';
@@ -25,6 +24,7 @@ import AIModeSelector from '@/components/AIModeSelector';
 import PremiumBadge from '@/components/PremiumBadge';
 import SettingsModal from '@/components/SettingsModal';
 import UpgradeModal from '@/components/UpgradeModal';
+import GuestBadge from '@/components/GuestBadge';
 
 import {
   Settings, PanelLeftOpen, Command as CmdIcon,
@@ -108,9 +108,9 @@ export default function ChatDashboard() {
   const { settings, updateSettings, t } = useApp();
   const {
     activeSession, activeSessionId, error, isLoading,
-    aiMode, searchQuery, filteredSessions, pinnedMessages, inputText,
+    aiMode, searchQuery, filteredSessions, pinnedMessages, inputText, currentTab,
     createNewChat, selectSession, deleteSession, sendMessage, retry, togglePin,
-    setAiMode, setSearchQuery, setInputText, moveToFolder,
+    setAiMode, setSearchQuery, setInputText, moveToFolder, switchTab,
   } = useChat();
 
   const { open: cmdOpen, setOpen: setCmdOpen } = useCommandPalette();
@@ -156,29 +156,26 @@ export default function ChatDashboard() {
     if (error) addToast(error, 'error', 5000);
   }, [error, addToast]);
 
+  // ─── Tab change handler: uses isolated session switch ───
+  const handleTabChange = useCallback((tab: WorkspaceTab) => {
+    setActiveTab(tab);
+    switchTab(tab);
+  }, [switchTab]);
+
   // Global New Chat
   const handleNewChat = useCallback(() => {
     createNewChat();
-    setActiveTab('chat');
-    addToast(t('saved') === 'Kaydedildi' ? 'Yeni sohbet başlatıldı' : 'New conversation started', 'success');
-    setTimeout(() => {
-      const el = document.querySelector('textarea') as HTMLTextAreaElement | null;
-      if (el) el.focus();
-    }, 150);
-  }, [createNewChat, addToast, t]);
+    setActiveTab(currentTab);
+    addToast(t('saved') === 'Kaydedildi' ? 'Yeni sohbet baslatildi' : 'New conversation started', 'success');
+  }, [createNewChat, addToast, t, currentTab]);
 
   const handleSelectSession = useCallback((id: string) => {
     selectSession(id);
-    setActiveTab('chat');
   }, [selectSession]);
 
   const handleHoverAction = useCallback((action: string, prompt: string) => {
     setInputText(prompt);
     addToast(`${action} applied`, 'success');
-    setTimeout(() => {
-      const el = document.querySelector('textarea') as HTMLTextAreaElement | null;
-      if (el) { el.focus(); el.scrollTop = el.scrollHeight; }
-    }, 50);
   }, [setInputText, addToast]);
 
   // Settings change handler
@@ -190,51 +187,71 @@ export default function ChatDashboard() {
   // Command palette items
   const commandItems = useMemo(() => [
     { id: 'new-chat', label: t('newChat'), shortcut: '', icon: <Sparkles className="h-3.5 w-3.5" />, category: 'Actions', action: handleNewChat },
-    { id: 'deep-research', label: 'Deep Research', shortcut: '', icon: <Zap className="h-3.5 w-3.5" />, category: 'Actions', action: () => setActiveTab('research') },
-    { id: 'analyze-stock', label: t('trading'), shortcut: '', icon: <Zap className="h-3.5 w-3.5" />, category: 'Actions', action: () => setActiveTab('trading') },
-    { id: 'open-agents', label: t('agents'), shortcut: '', icon: <Bot className="h-3.5 w-3.5" />, category: 'Actions', action: () => setActiveTab('agents') },
+    { id: 'deep-research', label: 'Deep Research', shortcut: '', icon: <Zap className="h-3.5 w-3.5" />, category: 'Actions', action: () => handleTabChange('research') },
+    { id: 'analyze-stock', label: t('trading'), shortcut: '', icon: <Zap className="h-3.5 w-3.5" />, category: 'Actions', action: () => handleTabChange('trading') },
+    { id: 'open-agents', label: t('agents'), shortcut: '', icon: <Bot className="h-3.5 w-3.5" />, category: 'Actions', action: () => handleTabChange('agents') },
     { id: 'export', label: t('export'), shortcut: '', icon: <Download className="h-3.5 w-3.5" />, category: 'Actions', action: () => setExportOpen(true) },
     { id: 'upgrade', label: t('upgrade'), shortcut: '', icon: <Zap className="h-3.5 w-3.5" />, category: 'Actions', action: () => setUpgradeOpen(true) },
-    { id: 'chat-tab', label: t('chat'), shortcut: '', icon: <Sparkles className="h-3.5 w-3.5" />, category: 'Navigation', action: () => setActiveTab('chat') },
-    { id: 'coding-tab', label: t('coding'), shortcut: '', icon: <Sparkles className="h-3.5 w-3.5" />, category: 'Navigation', action: () => setActiveTab('coding') },
-    { id: 'research-tab', label: t('research'), shortcut: '', icon: <Zap className="h-3.5 w-3.5" />, category: 'Navigation', action: () => setActiveTab('research') },
-    { id: 'trading-tab', label: t('trading'), shortcut: '', icon: <Zap className="h-3.5 w-3.5" />, category: 'Navigation', action: () => setActiveTab('trading') },
-    { id: 'business-tab', label: t('business'), shortcut: '', icon: <Bot className="h-3.5 w-3.5" />, category: 'Navigation', action: () => setActiveTab('business') },
-    { id: 'startup-tab', label: t('startup'), shortcut: '', icon: <Sparkles className="h-3.5 w-3.5" />, category: 'Navigation', action: () => setActiveTab('startup') },
-    { id: 'agents-tab', label: t('agents'), shortcut: '', icon: <Bot className="h-3.5 w-3.5" />, category: 'Navigation', action: () => setActiveTab('agents') },
-    { id: 'study-tab', label: t('study'), shortcut: '', icon: <Sparkles className="h-3.5 w-3.5" />, category: 'Navigation', action: () => setActiveTab('study') },
-    { id: 'creative-tab', label: t('creative'), shortcut: '', icon: <Sparkles className="h-3.5 w-3.5" />, category: 'Navigation', action: () => setActiveTab('creative') },
+    { id: 'chat-tab', label: t('chat'), shortcut: '', icon: <Sparkles className="h-3.5 w-3.5" />, category: 'Navigation', action: () => handleTabChange('chat') },
+    { id: 'coding-tab', label: t('coding'), shortcut: '', icon: <Sparkles className="h-3.5 w-3.5" />, category: 'Navigation', action: () => handleTabChange('coding') },
+    { id: 'research-tab', label: t('research'), shortcut: '', icon: <Zap className="h-3.5 w-3.5" />, category: 'Navigation', action: () => handleTabChange('research') },
+    { id: 'trading-tab', label: t('trading'), shortcut: '', icon: <Zap className="h-3.5 w-3.5" />, category: 'Navigation', action: () => handleTabChange('trading') },
+    { id: 'business-tab', label: t('business'), shortcut: '', icon: <Bot className="h-3.5 w-3.5" />, category: 'Navigation', action: () => handleTabChange('business') },
+    { id: 'startup-tab', label: t('startup'), shortcut: '', icon: <Sparkles className="h-3.5 w-3.5" />, category: 'Navigation', action: () => handleTabChange('startup') },
+    { id: 'agents-tab', label: t('agents'), shortcut: '', icon: <Bot className="h-3.5 w-3.5" />, category: 'Navigation', action: () => handleTabChange('agents') },
+    { id: 'study-tab', label: t('study'), shortcut: '', icon: <Sparkles className="h-3.5 w-3.5" />, category: 'Navigation', action: () => handleTabChange('study') },
+    { id: 'creative-tab', label: t('creative'), shortcut: '', icon: <Sparkles className="h-3.5 w-3.5" />, category: 'Navigation', action: () => handleTabChange('creative') },
     { id: 'prompts', label: t('prompts'), shortcut: '', icon: <Bookmark className="h-3.5 w-3.5" />, category: 'Actions', action: () => setPromptLibOpen(true) },
     { id: 'settings', label: t('settings'), shortcut: '', icon: <Settings className="h-3.5 w-3.5" />, category: 'Actions', action: () => setSettingsOpen(true) },
-  ], [handleNewChat, t]);
+  ], [handleNewChat, handleTabChange, t]);
 
   const insertInput = (text: string) => {
     setInputText(text);
-    setTimeout(() => {
-      const el = document.querySelector('textarea') as HTMLTextAreaElement | null;
-      if (el) { el.focus(); el.scrollTop = el.scrollHeight; }
-    }, 50);
   };
 
+  // ─── Render workspace with per-mode isolation ───
   const renderWorkspace = () => {
-    const chatProps = {
-      messages: activeSession.messages,
-      isLoading, error, inputText,
-      onSend: sendMessage, onRetry: retry, onSetInput: setInputText,
-      onTogglePin: togglePin, pinnedMessages, onHoverAction: handleHoverAction,
-      title: activeSession.title, workspace: activeTab,
-    };
+    const isChatTab = ['chat', 'research', 'coding', 'startup', 'study', 'creative'].includes(activeTab);
+
+    if (isChatTab) {
+      return (
+        <ChatView
+          key={activeSessionId} // Forces remount ONLY when session actually changes
+          messages={activeSession.messages}
+          isLoading={isLoading}
+          error={error}
+          inputText={inputText}
+          onSend={sendMessage}
+          onRetry={retry}
+          onSetInput={setInputText}
+          onTogglePin={togglePin}
+          pinnedMessages={pinnedMessages}
+          onHoverAction={handleHoverAction}
+          workspace={activeTab}
+        />
+      );
+    }
+
     switch (activeTab) {
-      case 'chat':     return <ChatView {...chatProps} />;
-      case 'research': return <ChatView {...chatProps} />;
-      case 'coding':   return <ChatView {...chatProps} />;
-      case 'startup':  return <ChatView {...chatProps} />;
-      case 'study':    return <ChatView {...chatProps} />;
-      case 'creative': return <ChatView {...chatProps} />;
       case 'trading':  return <TradingPanel />;
       case 'business': return <BusinessPanel />;
       case 'agents':   return <AgentsPanel />;
-      default:         return <ChatView {...chatProps} />;
+      default:         return (
+        <ChatView
+          key={activeSessionId}
+          messages={activeSession.messages}
+          isLoading={isLoading}
+          error={error}
+          inputText={inputText}
+          onSend={sendMessage}
+          onRetry={retry}
+          onSetInput={setInputText}
+          onTogglePin={togglePin}
+          pinnedMessages={pinnedMessages}
+          onHoverAction={handleHoverAction}
+          workspace={activeTab}
+        />
+      );
     }
   };
 
@@ -256,9 +273,8 @@ export default function ChatDashboard() {
       />
 
       <div className={`relative flex-1 flex flex-col h-full transition-all duration-[300ms] ${sidebarOpen ? 'md:ml-[260px]' : 'ml-0'}`}>
-        {/* ─── Clean Top Bar ─── */}
+        {/* Top Bar */}
         <header className="relative flex items-center justify-between h-11 px-3 border-b border-white/[0.02] bg-[#0a0a0a]/60 backdrop-blur-xl shrink-0 z-10">
-          {/* Left: sidebar toggle + workspace tabs */}
           <div className="flex items-center gap-2 min-w-0">
             {!sidebarOpen && (
               <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
@@ -268,26 +284,24 @@ export default function ChatDashboard() {
                 <PanelLeftOpen className="h-3.5 w-3.5" />
               </motion.button>
             )}
-            <WorkspaceTabs activeTab={activeTab} onTabChange={setActiveTab} />
+            <WorkspaceTabs activeTab={activeTab} onTabChange={handleTabChange} />
           </div>
 
-          {/* Right: 3 visible + dropdown */}
           <div className="flex items-center gap-1.5 shrink-0">
             <AIModeSelector currentMode={aiMode} onModeChange={setAiMode} />
-
             <div className="w-px h-3.5 bg-white/[0.03] hidden sm:block" />
-
             <button onClick={() => setUpgradeOpen(true)} className="hidden sm:block">
               <PremiumBadge />
             </button>
-
+            <div className="hidden sm:block">
+              <GuestBadge />
+            </div>
             <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setSettingsOpen(true)}
               className="h-7 w-7 flex items-center justify-center text-slate-700 hover:text-amber-400 hover:bg-amber-500/[0.06] rounded-md transition-all border border-white/[0.04]"
               title={t('settings')}
             >
               <Settings className="h-3.5 w-3.5" />
             </motion.button>
-
             <ToolbarDropdown
               onCmd={() => setCmdOpen(true)}
               onPrompts={() => setPromptLibOpen(true)}
@@ -302,20 +316,10 @@ export default function ChatDashboard() {
         <AgentTimeline isVisible={showTimeline} />
         <AIThinkingPanel isVisible={isLoading} />
 
+        {/* Main content — NO AnimatePresence mode="wait" to prevent composer freeze */}
         <div className="relative flex-1 overflow-hidden flex z-0">
           <div className="flex-1 overflow-hidden">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={activeTab}
-                initial={{ opacity: 0, x: -12 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 12 }}
-                transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-                className="h-full"
-              >
-                {renderWorkspace()}
-              </motion.div>
-            </AnimatePresence>
+            {renderWorkspace()}
           </div>
 
           <RightSidebar

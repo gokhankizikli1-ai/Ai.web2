@@ -10,6 +10,7 @@ import {
   FolderOpen, GraduationCap, Code, Rocket, Landmark, User,
 } from 'lucide-react';
 import type { ChatSession, ChatFolder } from '@/types';
+import DeleteConfirmModal from './DeleteConfirmModal';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -56,6 +57,7 @@ export default function Sidebar({
 }: SidebarProps) {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [activeFolder, setActiveFolder] = useState<ChatFolder | 'all'>('all');
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   const displaySessions = activeFolder === 'all'
     ? filteredSessions
@@ -134,7 +136,7 @@ export default function Sidebar({
 
             {/* Delete */}
             <button
-              onClick={(e) => { e.stopPropagation(); onDelete(session.id); }}
+              onClick={(e) => { e.stopPropagation(); setDeleteTarget(session.id); }}
               className="p-1 rounded text-slate-700 hover:text-red-400 hover:bg-red-500/[0.06] transition-all"
             >
               <Trash2 className="h-3 w-3" />
@@ -287,6 +289,18 @@ export default function Sidebar({
           </>
         )}
       </aside>
+
+      {/* Delete confirmation modal */}
+      <DeleteConfirmModal
+        open={!!deleteTarget}
+        title="Delete Conversation"
+        description="This conversation and all its messages will be permanently deleted. This action cannot be undone."
+        onConfirm={() => {
+          if (deleteTarget) onDelete(deleteTarget);
+          setDeleteTarget(null);
+        }}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </>
   );
 }

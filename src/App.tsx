@@ -22,6 +22,7 @@ import ViralContent from './pages/ViralContent';
 import KnowledgeVault from './pages/KnowledgeVault';
 import Automations from './pages/Automations';
 import MultiAgentSwarm from './pages/MultiAgentSwarm';
+import ComingSoon from './pages/ComingSoon';
 import BottomNav from './components/BottomNav';
 import FloatingOrb from './components/FloatingOrb';
 
@@ -67,6 +68,10 @@ export default function App() {
         <Route path="/tools/automations" element={<Automations />} />
         <Route path="/tools/swarm" element={<MultiAgentSwarm />} />
         <Route path="/explore" element={<ExplorePage />} />
+        <Route path="/blog" element={<ComingSoon title="Blog" pageType="blog" />} />
+        <Route path="/careers" element={<ComingSoon title="Careers" pageType="careers" />} />
+        <Route path="/privacy" element={<ComingSoon title="Privacy Policy" pageType="legal" />} />
+        <Route path="/terms" element={<ComingSoon title="Terms of Service" pageType="legal" />} />
       </Routes>
     </AppLayout>
   );

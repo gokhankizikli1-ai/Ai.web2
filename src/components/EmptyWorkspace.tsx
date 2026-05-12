@@ -9,6 +9,7 @@ import type { WorkspaceTab } from '@/types';
 interface EmptyWorkspaceProps {
   onSend: (message: string) => void;
   workspace?: WorkspaceTab;
+  compact?: boolean;
 }
 
 // Generic quick actions for default Chat workspace
@@ -102,7 +103,7 @@ const WORKSPACE_CONFIG: Record<WorkspaceTab, { icon: typeof Code; title: string;
   },
 };
 
-export default function EmptyWorkspace({ onSend, workspace = 'chat' }: EmptyWorkspaceProps) {
+export default function EmptyWorkspace({ onSend, workspace = 'chat', compact = false }: EmptyWorkspaceProps) {
   const config = WORKSPACE_CONFIG[workspace];
   const isGeneric = workspace === 'chat';
   const colors = ACCENT_COLORS[config.accent] || ACCENT_COLORS.cyan;
@@ -174,8 +175,8 @@ export default function EmptyWorkspace({ onSend, workspace = 'chat' }: EmptyWork
           <ArrowRight className="h-4 w-4 text-slate-700 ml-auto" />
         </motion.div>
 
-        {/* Generic action cards — ONLY for default Chat workspace */}
-        {isGeneric && (
+        {/* Generic action cards — hidden in compact mode */}
+        {isGeneric && !compact && (
           <motion.div
             className="grid grid-cols-2 sm:grid-cols-4 gap-2 w-full max-w-2xl"
             initial={{ opacity: 0, y: 12 }}

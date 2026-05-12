@@ -8,7 +8,8 @@ import ToolShortcuts from '@/components/ToolShortcuts';
 import type { ToolShortcut } from '@/components/ToolShortcuts';
 import type { ComposerTool } from '@/components/ComposerTools';
 import type { Message, WorkspaceTab } from '@/types';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 interface ChatViewProps {
   messages: Message[];
@@ -21,19 +22,19 @@ interface ChatViewProps {
   onTogglePin: (msg: Message) => void;
   pinnedMessages: Message[];
   onHoverAction?: (action: string, prompt: string) => void;
-  title: string;
   workspace?: WorkspaceTab;
 }
 
 export default function ChatView({
   messages, isLoading, error, inputText,
   onSend, onRetry, onSetInput, onTogglePin, pinnedMessages,
-  onHoverAction, title, workspace = 'chat',
+  onHoverAction, workspace = 'chat',
 }: ChatViewProps) {
   const [animatedMessageId, setAnimatedMessageId] = useState<string | null>(null);
   const [activeTools, setActiveTools] = useState<ComposerTool[]>([]);
   const [activeShortcutIds, setActiveShortcutIds] = useState<string[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll
   useEffect(() => {
@@ -63,8 +64,9 @@ export default function ChatView({
 
   const insertInput = useCallback((text: string) => {
     onSetInput(text);
+    // Focus the composer textarea via ref instead of querySelector
     setTimeout(() => {
-      const el = document.querySelector('textarea') as HTMLTextAreaElement | null;
+      const el = composerRef.current?.querySelector('textarea') as HTMLTextAreaElement | null;
       if (el) { el.focus(); el.scrollTop = el.scrollHeight; }
     }, 50);
   }, [onSetInput]);
@@ -72,7 +74,6 @@ export default function ChatView({
   const isPinned = useCallback((msgId: string) => pinnedMessages.some((m) => m.id === msgId), [pinnedMessages]);
 
   const isEmptyState = messages.length === 0 && !error && !isLoading;
-  const isOnboarding = isEmptyState && title === 'New Conversation';
 
   // Tool management
   const addTool = useCallback((tool: ComposerTool) => {
@@ -96,12 +97,26 @@ export default function ChatView({
     insertInput(shortcut.prompt);
   }, [insertInput]);
 
+  // When empty state and user clicks a suggestion, it sends directly
+  const handleEmptySend = useCallback((msg: string) => {
+    onSend(msg);
+  }, [onSend]);
+
   return (
     <div className="flex flex-col h-full">
-      {/* Messages */}
+      {/* Messages area */}
       <div className="flex-1 overflow-y-auto scrollbar-thin">
-        {isOnboarding ? (
-          <EmptyWorkspace onSend={handleSend} workspace={workspace} />
+        {isEmptyState ? (
+          /* Empty state: suggestions + always-visible composer */
+          <div className="flex flex-col h-full">
+            <div className="flex-1 flex items-center justify-center px-4">
+              <EmptyWorkspace
+                onSend={handleEmptySend}
+                workspace={workspace}
+                compact
+              />
+            </div>
+          </div>
         ) : (
           <div className="max-w-3xl mx-auto px-4 py-6 space-y-5">
             <AnimatePresence mode="popLayout">
@@ -124,7 +139,6 @@ export default function ChatView({
                     onRegenerate={message.role === 'assistant' ? () => {} : undefined}
                     onResponseAction={message.role === 'assistant' ? insertInput : undefined}
                     onHoverAction={message.role === 'assistant' ? onHoverAction : undefined}
-                    onRetry={message.role === 'assistant' && message.isError ? onRetry : undefined}
                   />
                 </motion.div>
               ))}
@@ -146,33 +160,47 @@ export default function ChatView({
               </motion.div>
             )}
 
-            {/* Error state is now rendered inline as an assistant-role
-                MessageBubble with isError=true (see useChat — every
-                failure path appends one with diagnostic content). This
-                view no longer needs a separate error block; the global
-                toast still fires for visibility. */}
+            {/* Error state */}
+            {error && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex gap-3"
+              >
+                <div className="flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-lg bg-red-500/10 border border-red-500/10">
+                  <AlertTriangle className="h-3 w-3 text-red-400" />
+                </div>
+                <div className="rounded-2xl rounded-tl-sm bg-red-500/[0.04] border border-red-500/[0.08] px-5 py-3.5 max-w-[85%] md:max-w-[75%]">
+                  <p className="text-[13px] text-red-300/80 mb-3">{error}</p>
+                  <Button variant="ghost" size="sm" onClick={onRetry}
+                    className="h-7 gap-2 text-[11px] text-red-400/70 hover:text-red-300 hover:bg-red-500/[0.08] rounded-lg">
+                    <RefreshCw className="h-3.5 w-3.5" />Try Again
+                  </Button>
+                </div>
+              </motion.div>
+            )}
             <div ref={messagesEndRef} className="h-2" />
           </div>
         )}
       </div>
 
-      {/* Input area */}
-      {!isOnboarding && (
-        <div className="shrink-0 px-3 md:px-4 pb-3 md:pb-4 pt-1 bg-[#0a0a0a]/60 backdrop-blur-xl">
+      {/* Input area — ALWAYS VISIBLE, no gating */}
+      <div ref={composerRef} className="shrink-0 px-3 md:px-4 pb-3 md:pb-4 pt-1 bg-[#0a0a0a]/60 backdrop-blur-xl">
+        {isEmptyState && (
           <div className="max-w-3xl mx-auto mb-1.5">
             <ToolShortcuts activeTools={activeShortcutIds} onSelect={handleShortcut} />
           </div>
-          <PremiumComposer
-            onSend={handleSend}
-            disabled={isLoading}
-            activeTools={activeTools}
-            onAddTool={addTool}
-            onRemoveTool={removeTool}
-            externalValue={inputText}
-            onExternalValueChange={onSetInput}
-          />
-        </div>
-      )}
+        )}
+        <PremiumComposer
+          onSend={handleSend}
+          disabled={isLoading}
+          activeTools={activeTools}
+          onAddTool={addTool}
+          onRemoveTool={removeTool}
+          externalValue={inputText}
+          onExternalValueChange={onSetInput}
+        />
+      </div>
     </div>
   );
 }

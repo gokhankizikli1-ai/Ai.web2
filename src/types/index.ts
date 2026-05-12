@@ -11,11 +11,6 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
-  // True when this assistant turn is a rendered error message (the
-  // backend was unreachable, returned non-OK, returned an unparseable
-  // body, etc.). The UI uses it to style the bubble red and show a
-  // "Try Again" affordance instead of regenerate / copy actions.
-  isError?: boolean;
 }
 
 export interface ChatSession {
@@ -27,10 +22,6 @@ export interface ChatSession {
   folder?: ChatFolder;
   isFavorite?: boolean;
   isArchived?: boolean;
-  // Phase 2 — backend Thread.id when the conversation has been
-  // synced to the /sessions service. Absent when the user is local-only
-  // (sessions disabled on backend, or service unreachable on first send).
-  threadId?: string;
 }
 
 export interface PromptItem {

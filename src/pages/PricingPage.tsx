@@ -209,7 +209,13 @@ export default function PricingPage() {
                     ? 'bg-white/[0.08] hover:bg-white/[0.12] text-white border border-white/[0.08]'
                     : 'border-white/[0.06] text-slate-400 hover:text-white hover:bg-white/[0.03]'
                 }`}
-                onClick={() => { if (plan.id === 'free') navigate('/chat'); }}
+                onClick={() => {
+                  if (plan.id === 'free') {
+                    navigate('/chat');
+                  } else {
+                    navigate('/chat');
+                  }
+                }}
               >
                 {plan.cta}
               </Button>
@@ -250,6 +256,18 @@ export default function PricingPage() {
               </tbody>
             </table>
           </div>
+        </motion.div>
+
+        {/* Payments note */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.5 }}
+          className="mt-8 p-4 rounded-xl border border-amber-500/10 bg-amber-500/[0.02] text-center"
+        >
+          <p className="text-[12px] text-slate-500">
+            Payments processing coming soon. All features currently available in Free tier during early access.
+          </p>
         </motion.div>
 
         {/* Trust */}
