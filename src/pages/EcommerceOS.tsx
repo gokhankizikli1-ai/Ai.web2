@@ -46,6 +46,20 @@ export default function EcommerceOS() {
 
   const activeTool = TOOLS.find((t) => t.id === selectedTool);
 
+  // Pre-fill the chat composer with the tool's form content so the user
+  // lands in chat with a ready-to-send prompt, not a blank input.
+  const handleGenerate = () => {
+    const filled = Object.values(formValues).map((v) => v.trim()).filter(Boolean);
+    if (!activeTool || filled.length === 0) {
+      navigate('/chat');
+      return;
+    }
+    const labels = (activeTool.inputs || []).map((i) => i.label);
+    const lines  = filled.map((v, i) => labels[i] ? `${labels[i]}: ${v}` : v);
+    const prompt = `[${activeTool.name}]\n${lines.join('\n')}`;
+    navigate('/chat', { state: { prompt } });
+  };
+
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
       <Navigation />
@@ -114,7 +128,7 @@ export default function EcommerceOS() {
                       )}
                     </div>
                   ))}
-                  <motion.button whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }} onClick={() => navigate('/chat')}
+                  <motion.button whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }} onClick={handleGenerate}
                     className="w-full h-10 rounded-lg bg-emerald-500/[0.08] hover:bg-emerald-500/[0.12] border border-emerald-500/15 text-emerald-400 text-[13px] font-medium transition-all flex items-center justify-center gap-2 mt-2">
                     <Sparkles className="h-4 w-4" /> Generate with AI
                   </motion.button>
