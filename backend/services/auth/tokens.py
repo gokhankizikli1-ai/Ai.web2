@@ -37,6 +37,7 @@ import hashlib
 import hmac
 import json
 import logging
+import os
 import secrets
 import time
 from typing import Any, Dict
@@ -91,15 +92,23 @@ def _b64url_decode(data: str) -> bytes:
 def _secret() -> bytes:
     """Return the HMAC key bytes. Raises if missing in production.
 
+    Reads `os.environ["JWT_SECRET_KEY"]` DYNAMICALLY at each call (not
+    cached on `settings`) so tests can monkeypatch the env var and have
+    it take effect immediately, AND so Railway env-var rotations don't
+    require a process restart to pick up.
+
     In development (DEBUG=True) a noisy fallback key is used so local
     iteration works without setting an env var — but every issue/verify
     call also logs a WARNING so the missing-secret state is impossible
     to ignore.
     """
-    key = settings.JWT_SECRET_KEY
+    key = os.environ.get("JWT_SECRET_KEY", "") or settings.JWT_SECRET_KEY
     if key:
         return key.encode("utf-8")
-    if settings.DEBUG:
+    # DEBUG is also read dynamically; the env var may have flipped since
+    # the Config class was imported.
+    env = os.environ.get("ENVIRONMENT", "production")
+    if env == "development" or settings.DEBUG:
         logger.warning(
             "JWT_SECRET_KEY is empty — using INSECURE development fallback. "
             "Set JWT_SECRET_KEY before any production deploy."
