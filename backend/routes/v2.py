@@ -130,6 +130,10 @@ async def v2_health() -> dict:
         auth_placeholder         = _flag("ENABLE_AUTH_MIDDLEWARE"),
         auth_v2                  = _flag("ENABLE_AUTH_V2"),
         v2_error_handlers        = _flag("ENABLE_V2_ERROR_HANDLERS"),
+        # Phase 5 — auth-bound /v2/sessions/* is available when both
+        # ENABLE_SESSIONS and ENABLE_AUTH_V2 are on. The frontend can
+        # branch on this single field instead of probing two.
+        auth_bound_sessions      = _flag("ENABLE_SESSIONS") and _flag("ENABLE_AUTH_V2"),
         log_format               = (os.getenv("LOG_FORMAT", "") or "text").lower(),
         # Phase B — AI provider registry snapshot.
         providers                = _safe_provider_capabilities(),

@@ -51,3 +51,25 @@ def tmp_auth_db(tmp_path, monkeypatch):
     from backend.services.auth import storage as auth_storage
     monkeypatch.setattr(auth_storage, "_INITIALIZED", False, raising=False)
     yield db_file
+
+
+@pytest.fixture()
+def tmp_sessions_db(tmp_path, monkeypatch):
+    """Phase 5 — isolate sessions.db per test.
+
+    Points SESSIONS_DB_PATH at a tmp file, enables ENABLE_SESSIONS,
+    rewrites the store module's cached DB_PATH, and re-runs init() so
+    the workspaces/threads/messages schema exists in the test file
+    (client.init() at import time built the schema against the
+    production file, not this one).
+    """
+    db_file = tmp_path / "sessions-test.db"
+    monkeypatch.setenv("SESSIONS_DB_PATH", str(db_file))
+    monkeypatch.setenv("ENABLE_SESSIONS", "true")
+    from backend.services.sessions import store as sessions_store
+    # The store reads DB_PATH at import; force-rewrite so subsequent
+    # _conn() calls hit the test file.
+    monkeypatch.setattr(sessions_store, "DB_PATH", str(db_file), raising=False)
+    # Build schema in the test file.
+    sessions_store.init()
+    yield db_file
