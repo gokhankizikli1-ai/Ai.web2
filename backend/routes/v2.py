@@ -60,6 +60,30 @@ def _safe_provider_capabilities() -> list:
         return []
 
 
+def _safe_task_stats() -> dict:
+    """Best-effort background-task queue snapshot — never fails the
+    health probe. Returns a flat dict so the JSON payload stays small."""
+    try:
+        from backend.services.tasks import queue_stats
+        s = queue_stats()
+        return {
+            "enabled":          s.enabled,
+            "worker_alive":     s.worker_alive,
+            "queue_size":       s.queue_size,
+            "max_queue_size":   s.max_queue_size,
+            "submitted_total":  s.submitted_total,
+            "processed_total":  s.processed_total,
+            "failed_total":     s.failed_total,
+            "overflow_dropped": s.overflow_dropped,
+            "last_task_name":   s.last_task_name,
+            "last_task_ms":     s.last_task_ms,
+            "last_error":       s.last_error,
+        }
+    except Exception as exc:
+        logger.warning("v2/health task stats failed: %s", exc)
+        return {"enabled": False, "worker_alive": False, "error": str(exc)[:120]}
+
+
 @router.get("/health")
 async def v2_health() -> dict:
     """Reference implementation of the v2 envelope.
@@ -110,6 +134,8 @@ async def v2_health() -> dict:
         # Phase B — AI provider registry snapshot.
         providers                = _safe_provider_capabilities(),
         python_implementation    = sys.implementation.name,
+        # Phase 4b — background task queue snapshot.
+        background_tasks         = _safe_task_stats(),
     )
 
 
