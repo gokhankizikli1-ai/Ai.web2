@@ -383,17 +383,28 @@ single "data is degraded" banner instead of inspecting each row.
   clamped to 0-10, labelled high (≥7) / medium (≥4) / low.
 
 ### Observability
-`GET /tools/health` now returns a `trading` sub-object:
+`GET /tools/health` returns a `trading` sub-object with the spec-required
+keys first, plus extras for debugging:
 ```json
 "trading": {
-  "enabled":          false,
-  "requests_total":   0,
-  "requests_ok":      0,
-  "requests_error":   0,
-  "symbols_resolved": 0,
-  "symbols_failed":   0,
-  "last_error":       "",
-  "last_run_at":      null
+  "enabled":            false,    // ENABLE_TRADING_SIGNALS=true
+  "endpoint_available": true,     // route module + service module both importable
+  "providers": {                  // per-provider success counters since boot
+    "Binance":      0,
+    "Yahoo":        0,
+    "AlphaVantage": 0,
+    "CoinGecko":    0
+  },
+  "last_success":       null,     // ISO timestamp of last is_live request (null until first hit)
+  "last_error":         "",       // truncated last error reason
+
+  // extra observability:
+  "requests_total":     0,
+  "requests_ok":        0,
+  "requests_error":     0,
+  "symbols_resolved":   0,
+  "symbols_failed":     0,
+  "last_run_at":        null
 }
 ```
 
@@ -410,6 +421,29 @@ Phase label in `/tools/health.phase` updated to
 1. Set `ENABLE_TRADING_SIGNALS=false` (or unset) on Railway, restart.
    `/trading/signals` immediately 503s; the rest of the app is unaffected.
 2. Optionally revert the PR — step 1 is sufficient and zero-downtime.
+
+### Frontend integration (T1.1)
+`src/hooks/useTradingSignals.ts` — the React hook the Trading panel calls.
+
+Defaults match this brief:
+```ts
+const DEFAULT_SYMBOLS   = ['BTCUSDT', 'ETHUSDT', 'NVDA', 'TSLA', 'AAPL', 'MSFT', 'AMD'];
+const DEFAULT_TIMEFRAME = '4h';
+```
+- Hits `${API_ORIGIN}/trading/signals?symbols=…&timeframe=…` with a
+  12-second per-request `AbortController` budget and 60-second auto-refresh.
+- **Maps the backend's snake_case payload into the frontend `TradingSignal`
+  shape**: direction `LONG/SHORT/NO_TRADE/WAIT` → `'long'/'short'/'neutral'/'wait'`;
+  `setup_grade 0-10` → letter grade `A/B/C/D` (A:8-10, B:6-7, C:4-5, D:0-3);
+  `volatility_regime` collapsed to `low / medium / high`; numeric `entry`
+  / `stop_loss` / `take_profit_1` formatted to display strings.
+- Surfaces backend `error` directly on `is_live=false` so the UI can show
+  "market_data tool disabled — set ENABLE_TOOLS=true + ENABLE_MARKET_DATA=true"
+  instead of a generic "Live data unavailable" when that's the actual reason.
+- HTTP-status-specific error mapping (503 = service flag off, 429 = rate
+  limit, 5xx = backend issue). Browser network errors (`Load failed`,
+  `Failed to fetch`, etc.) collapsed to friendly copy via the same pattern
+  used in `useChat`.
 
 ### What's deliberately NOT in T1
 - No frontend wiring (a follow-up PR will replace the mock data feeding

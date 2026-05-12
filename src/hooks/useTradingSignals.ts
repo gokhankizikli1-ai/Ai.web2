@@ -1,105 +1,273 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { TradingSignal, TradingSignalsResponse, DataProvider } from '@/types';
 
-const API_URL = 'https://worker-production-2a49.up.railway.app/trading/signals';
+// Canonical Railway backend (per STABLE_CHECKPOINT.md and verified by the
+// Phase 5.3 post-deploy workflow on every recent merge to main). Override
+// only if the Railway service is renamed AND STABLE_CHECKPOINT.md is updated.
+const API_ORIGIN = 'https://worker-production-1345.up.railway.app';
 
-interface UseTradingSignalsResult {
-  signals: TradingSignal[];
-  isLive: boolean;
-  provider: DataProvider;
-  lastUpdated: string | null;
-  isLoading: boolean;
-  error: string | null;
-  refresh: () => void;
+// Default symbol set + timeframe match the brief in PR #14:
+// crypto on 4h, stocks/ETFs blended in (yfinance handles 1h/1d under the hood).
+const DEFAULT_SYMBOLS   = ['BTCUSDT', 'ETHUSDT', 'NVDA', 'TSLA', 'AAPL', 'MSFT', 'AMD'] as const;
+const DEFAULT_TIMEFRAME = '4h' as const;
+
+// Auto-refresh cadence — 60s is well above the backend's market-data cache
+// TTL (30s for klines), so successive polls hit the cache cheaply.
+const REFRESH_INTERVAL_MS = 60_000;
+// Per-request abort budget so a slow backend never leaves the panel spinning.
+const REQUEST_TIMEOUT_MS  = 12_000;
+
+
+interface UseTradingSignalsOptions {
+  symbols?:   readonly string[];
+  timeframe?: string;
+  autoRefresh?: boolean;            // default true
 }
 
-function normalizeProvider(raw: string | undefined): DataProvider {
+interface UseTradingSignalsResult {
+  signals:     TradingSignal[];
+  isLive:      boolean;
+  provider:    DataProvider;
+  lastUpdated: string | null;
+  isLoading:   boolean;
+  error:       string | null;
+  refresh:     () => void;
+}
+
+
+// ── Provider name canonicalisation (matches backend's _normalize_provider_name) ──
+function normalizeProvider(raw: string | undefined | null): DataProvider {
   if (!raw) return 'Unknown';
-  const p = raw.toLowerCase().trim();
-  if (p.includes('binance')) return 'Binance';
-  if (p.includes('yahoo')) return 'Yahoo';
-  if (p.includes('alpha') || p.includes('av')) return 'AlphaVantage';
-  if (p.includes('coingecko') || p.includes('coin') || p.includes('gecko')) return 'CoinGecko';
+  const p = String(raw).toLowerCase().trim();
+  if (p.includes('binance'))                                 return 'Binance';
+  if (p.includes('yahoo'))                                   return 'Yahoo';
+  if (p.includes('alpha') || p === 'av')                     return 'AlphaVantage';
+  if (p.includes('coingecko') || p.includes('gecko'))        return 'CoinGecko';
   return 'Unknown';
+}
+
+
+// ── Mapping the BACKEND signal shape → frontend TradingSignal ──────────────
+//
+// Backend (snake_case, /trading/signals):
+//   { symbol, name, asset_type, price, change_24h_pct, timeframe,
+//     source, provider, timestamp,
+//     direction: "LONG"|"SHORT"|"WAIT"|"NO_TRADE",
+//     raw_direction, confidence: "low"|"medium"|"high", confidence_pct: 0-100,
+//     setup_grade: 0-10,
+//     entry, stop_loss, take_profit_1, take_profit_2, risk_reward,
+//     volatility_regime, invalidation, data_quality, is_live, error }
+//
+// Frontend TradingSignal expects:
+//   { id, symbol, name, direction: 'long'|'short'|'wait'|'neutral',
+//     confidence (0-100 number), setupGrade: 'A'|'B'|'C'|'D',
+//     volatility: 'low'|'medium'|'high',
+//     entryPrice?, targetPrice?, stopLoss?,
+//     timestamp: Date, reasoning, provider?, sparkline? }
+
+function mapDirection(dir: unknown): TradingSignal['direction'] {
+  const d = String(dir ?? '').toUpperCase();
+  if (d === 'LONG')     return 'long';
+  if (d === 'SHORT')    return 'short';
+  if (d === 'NO_TRADE') return 'neutral';
+  return 'wait';
+}
+
+function mapSetupGrade(score: unknown): TradingSignal['setupGrade'] {
+  const n = typeof score === 'number' ? score : Number(score);
+  if (!Number.isFinite(n)) return 'C';
+  if (n >= 8) return 'A';
+  if (n >= 6) return 'B';
+  if (n >= 4) return 'C';
+  return 'D';
+}
+
+// Collapse the rich backend regime taxonomy (squeeze_pre_breakout / high_volatility
+// / overbought / trending_up / choppy / low_volatility / …) into the frontend's
+// 3-bucket scale.
+function mapVolatility(regime: unknown): TradingSignal['volatility'] {
+  const r = String(regime ?? '').toLowerCase();
+  if (!r) return 'medium';
+  if (r.includes('high') || r === 'overbought' || r === 'oversold') return 'high';
+  if (r.includes('low')  || r === 'choppy')                          return 'low';
+  return 'medium';
+}
+
+function fmtPrice(n: unknown): string | undefined {
+  if (n === null || n === undefined) return undefined;
+  const v = typeof n === 'number' ? n : Number(n);
+  if (!Number.isFinite(v)) return undefined;
+  const abs = Math.abs(v);
+  if (abs >= 1000)  return v.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  if (abs >= 1)     return v.toFixed(2);
+  if (abs >= 0.01)  return v.toFixed(4);
+  return v.toFixed(6);
+}
+
+function mapBackendSignal(raw: Record<string, unknown>, idx: number): TradingSignal {
+  const provider     = normalizeProvider((raw.provider as string) ?? (raw.source as string));
+  const confidencePct = typeof raw.confidence_pct === 'number' ? raw.confidence_pct : 50;
+  const tsRaw        = (raw.timestamp as string) || new Date().toISOString();
+  // Reasoning prefers `invalidation` (the AI's veto condition) and falls back
+  // to "Live data unavailable" so an empty reasoning never reaches the UI.
+  const reasoning    = (raw.invalidation as string) ||
+                       (raw.error as string) ||
+                       (raw.is_live ? '' : 'Live data unavailable');
+
+  return {
+    id:          (raw.symbol as string) ? `${raw.symbol}-${idx}` : `sig-${idx}`,
+    symbol:      (raw.symbol as string) || '???',
+    name:        (raw.name as string) || (raw.symbol as string) || 'Unknown',
+    direction:   mapDirection(raw.direction),
+    confidence:  Math.max(0, Math.min(100, Math.round(confidencePct))),
+    setupGrade:  mapSetupGrade(raw.setup_grade),
+    volatility:  mapVolatility(raw.volatility_regime),
+    entryPrice:  fmtPrice(raw.entry),
+    targetPrice: fmtPrice(raw.take_profit_1),
+    stopLoss:    fmtPrice(raw.stop_loss),
+    timestamp:   new Date(tsRaw),
+    reasoning,
+    provider,
+    // sparkline not provided by the backend — leave undefined so the
+    // SignalCard skips rendering it.
+    sparkline:   undefined,
+  };
 }
 
 function normalizeResponse(data: Record<string, unknown>): TradingSignalsResponse {
   const rawSignals = (data.signals as Record<string, unknown>[]) || [];
-  const provider = normalizeProvider(data.provider as string);
+  const signals    = rawSignals.map(mapBackendSignal);
 
-  const signals: TradingSignal[] = rawSignals.map((s, i) => ({
-    id: (s.id as string) || `sig-${i}`,
-    symbol: (s.symbol as string) || '???',
-    name: (s.name as string) || (s.symbol as string) || 'Unknown',
-    direction: (s.direction as TradingSignal['direction']) || 'wait',
-    confidence: typeof s.confidence === 'number' ? Math.round(s.confidence) : 50,
-    setupGrade: (s.setupGrade as TradingSignal['setupGrade']) || 'C',
-    volatility: (s.volatility as TradingSignal['volatility']) || 'medium',
-    entryPrice: s.entryPrice as string | undefined,
-    targetPrice: s.targetPrice as string | undefined,
-    stopLoss: s.stopLoss as string | undefined,
-    timestamp: new Date((s.timestamp as string) || Date.now()),
-    reasoning: (s.reasoning as string) || '',
-    provider,
-    sparkline: s.sparkline as number[] | undefined,
-  }));
+  // Backend doesn't emit a top-level provider — derive from the first
+  // *live* signal so the "data via X" label in the UI matches reality.
+  const firstLive = signals.find((s, i) => (rawSignals[i].is_live as boolean));
+  const provider  = firstLive?.provider ?? signals[0]?.provider ?? 'Unknown';
 
   return {
-    is_live: !!data.is_live,
+    is_live:   !!data.is_live,
     provider,
-    timestamp: (data.timestamp as string) || new Date().toISOString(),
+    timestamp: (data.generated_at as string) || (data.timestamp as string) || new Date().toISOString(),
     signals,
   };
 }
 
-export function useTradingSignals(): UseTradingSignalsResult {
-  const [signals, setSignals] = useState<TradingSignal[]>([]);
-  const [isLive, setIsLive] = useState(false);
-  const [provider, setProvider] = useState<DataProvider>('Unknown');
+
+// ── Friendly error mapping (mirrors the pattern from useChat.ts) ──────────
+const NETWORK_ERROR_PATTERNS =
+  /load failed|failed to fetch|network ?error|connection (refused|reset)|err_(internet|connection|name_not_resolved)/i;
+
+function friendlyError(err: unknown): string {
+  if (err instanceof DOMException && err.name === 'AbortError') return 'Request timed out.';
+  if (err instanceof TypeError)                                  return 'Connection problem. Please retry.';
+  const msg = err instanceof Error ? err.message : '';
+  if (msg && NETWORK_ERROR_PATTERNS.test(msg)) return 'Connection problem. Please retry.';
+  return msg || 'Failed to load trading signals.';
+}
+
+
+export function useTradingSignals(opts: UseTradingSignalsOptions = {}): UseTradingSignalsResult {
+  const symbols    = opts.symbols    ?? DEFAULT_SYMBOLS;
+  const timeframe  = opts.timeframe  ?? DEFAULT_TIMEFRAME;
+  const autoRefresh = opts.autoRefresh ?? true;
+
+  const [signals, setSignals]         = useState<TradingSignal[]>([]);
+  const [isLive,  setIsLive]          = useState(false);
+  const [provider, setProvider]       = useState<DataProvider>('Unknown');
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading]     = useState(true);
+  const [error,   setError]           = useState<string | null>(null);
+
+  // Stabilise the symbols string for cache-key + dep-array purposes.
+  const symbolsKey = (symbols as readonly string[]).join(',');
+  const inFlightCtrlRef = useRef<AbortController | null>(null);
 
   const fetchSignals = useCallback(async () => {
+    // Cancel any in-flight request before starting a new one.
+    if (inFlightCtrlRef.current) {
+      try { inFlightCtrlRef.current.abort(); } catch { /* ignore */ }
+    }
+    const ctrl = new AbortController();
+    inFlightCtrlRef.current = ctrl;
+    const timeoutId = setTimeout(() => {
+      try { ctrl.abort(); } catch { /* ignore */ }
+    }, REQUEST_TIMEOUT_MS);
+
     setIsLoading(true);
     setError(null);
 
     try {
-      const response = await fetch(API_URL, {
-        method: 'GET',
+      const params = new URLSearchParams({ symbols: symbolsKey, timeframe });
+      const response = await fetch(`${API_ORIGIN}/trading/signals?${params}`, {
+        method:  'GET',
+        signal:  ctrl.signal,
         headers: { 'Content-Type': 'application/json' },
       });
 
       if (!response.ok) {
-        throw new Error(`Server responded with ${response.status}`);
+        // 503 = service flag off; 400 = validation; 5xx = backend issue.
+        if (response.status === 503) {
+          setError('Trading signals service is disabled on the server.');
+        } else if (response.status === 429) {
+          setError('Too many requests. Wait a few seconds and retry.');
+        } else if (response.status >= 500) {
+          setError('Server error. The team has been notified.');
+        } else {
+          setError(`Server responded with ${response.status}.`);
+        }
+        setIsLive(false);
+        return;
       }
 
       const rawData = await response.json();
-      const data = normalizeResponse(rawData);
+      const data    = normalizeResponse(rawData);
 
+      setSignals(data.signals);
       setIsLive(data.is_live);
       setProvider(data.provider);
-      setSignals(data.signals);
       setLastUpdated(data.timestamp);
 
       if (!data.is_live) {
-        setError('Live data unavailable');
+        // Surface the backend's reason if it gave us one (e.g. "market_data
+        // tool disabled — set ENABLE_TOOLS=true + ENABLE_MARKET_DATA=true").
+        const firstErr = (rawData.signals as Array<Record<string, unknown>> | undefined)?.[0]?.error;
+        const reason = (typeof firstErr === 'string' && firstErr) || 'Live data unavailable.';
+        setError(reason);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load trading signals');
+      // Translate browser / abort errors to friendly copy.
+      // AbortError from our own ctrl.abort() (e.g. unmount) shouldn't surface.
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        // Caller cancelled or timed out — let the timeout path handle the message.
+        if (!ctrl.signal.aborted) return;
+        setError('Request timed out.');
+        setIsLive(false);
+        return;
+      }
+      setError(friendlyError(err));
       setIsLive(false);
     } finally {
+      clearTimeout(timeoutId);
+      if (inFlightCtrlRef.current === ctrl) {
+        inFlightCtrlRef.current = null;
+      }
       setIsLoading(false);
     }
-  }, []);
+  }, [symbolsKey, timeframe]);
 
   useEffect(() => {
     fetchSignals();
-  }, [fetchSignals]);
+    if (!autoRefresh) return;
+    const id = setInterval(fetchSignals, REFRESH_INTERVAL_MS);
+    return () => {
+      clearInterval(id);
+      // Abort any in-flight request when unmounting / params change.
+      if (inFlightCtrlRef.current) {
+        try { inFlightCtrlRef.current.abort(); } catch { /* ignore */ }
+      }
+    };
+  }, [fetchSignals, autoRefresh]);
 
-  const refresh = useCallback(() => {
-    fetchSignals();
-  }, [fetchSignals]);
+  const refresh = useCallback(() => { fetchSignals(); }, [fetchSignals]);
 
   return { signals, isLive, provider, lastUpdated, isLoading, error, refresh };
 }
