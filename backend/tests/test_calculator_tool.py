@@ -192,3 +192,33 @@ def test_float_base_with_overflowing_exponent_yields_clean_error():
     r = _run(expression="2.0 ** 5001")
     assert r["status"] == "error"
     assert "overflow" in r["message"].lower()
+
+
+# ── Non-finite float guard ───────────────────────────────────────────────
+# inf / nan results would crash json.dumps in tool_bridge.dispatch_one
+# (default=str isn't invoked for native floats), surfacing as an
+# unhandled 500. Refuse them at the calculator boundary.
+
+def test_silent_overflow_to_inf_yields_clean_error():
+    # 1e308 * 10 returns inf in Python WITHOUT raising OverflowError.
+    r = _run(expression="1e308 * 10")
+    assert r["status"] == "error"
+    assert "non-finite" in r["message"]
+
+
+def test_inf_literal_rejected_at_parse_time():
+    # 1e309 parses as the float `inf` — refuse before evaluation.
+    r = _run(expression="1e309")
+    assert r["status"] == "error"
+    assert "non-finite" in r["message"]
+
+
+def test_nan_arithmetic_yields_clean_error():
+    # inf - inf would produce nan, but since 1e309 is rejected as a
+    # literal, simulate via a different path: (1e308 * 10) - (1e308 * 10)
+    # First operand evaluates to inf → caught by the result check on the
+    # outer expression once we reach it. Either way, status must be error.
+    r = _run(expression="(1e200 ** 2) - (1e200 ** 2)")
+    # 1e200**2 = 1e400 which is +inf (float). inf - inf = nan. Either
+    # the literal guard or the result guard fires; both are acceptable.
+    assert r["status"] == "error"

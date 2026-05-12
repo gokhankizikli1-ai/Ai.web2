@@ -133,6 +133,10 @@ def _safe_eval(node: ast.AST) -> Any:
             raise _UnsafeExpression(
                 f"only numeric literals allowed, got {type(node.value).__name__}"
             )
+        # Refuse inf / nan literals (1e309 parses as `inf`) — they'd
+        # crash json.dumps downstream in tool_bridge.dispatch_one.
+        if isinstance(node.value, float) and not math.isfinite(node.value):
+            raise _UnsafeExpression("non-finite numeric literal")
         return node.value
 
     if isinstance(node, ast.BinOp):
@@ -213,6 +217,13 @@ class CalculatorTool(BaseTool):
             return self._error("result overflow")
         except (ValueError, TypeError) as exc:
             return self._error(f"math error: {exc}")
+
+        # Refuse inf / nan results — they crash json.dumps downstream
+        # in tool_bridge.dispatch_one (default=str isn't invoked for
+        # native floats). Catches e.g. 1e308 * 10 (= inf without
+        # OverflowError) and 1.0/1e-300 (= inf).
+        if isinstance(value, float) and not math.isfinite(value):
+            return self._error("result is non-finite (inf or nan)")
 
         return self._ok(
             {
