@@ -3,7 +3,42 @@ import type { ChatSession, Message, AIMode, WorkspaceTab, ChatFolder } from '@/t
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
-const API_URL = 'https://worker-production-2a49.up.railway.app/chat';
+// Canonical Railway backend (per STABLE_CHECKPOINT.md). The 2a49 host that
+// appears in some historical commits is a typo whose DNS does not resolve —
+// every fetch from it throws TypeError: Load failed (Safari) / Failed to
+// fetch (Chromium), which is the exact "Load failed" toast we keep getting
+// reports about. If you change this URL, also update STABLE_CHECKPOINT.md.
+const API_URL = 'https://worker-production-1345.up.railway.app/chat';
+
+// Hard ceiling so a slow / unreachable backend never leaves the composer
+// hanging forever. AbortController fires; the catch block translates the
+// abort into a friendly "Request timed out" toast.
+const CHAT_REQUEST_TIMEOUT_MS = 60_000;
+
+// Map raw browser/network errors to user-facing copy. Without this, Safari's
+// `TypeError: Load failed` and Chrome's `TypeError: Failed to fetch` reach
+// the toast verbatim — exactly the symptom reported in production.
+const NETWORK_ERROR_PATTERNS =
+  /load failed|failed to fetch|network ?error|connection (refused|reset)|err_(internet|connection|name_not_resolved)/i;
+
+function friendlyErrorMessage(err: unknown): string {
+  if (err instanceof DOMException && err.name === 'AbortError') {
+    return 'Request timed out. Please try again.';
+  }
+  if (err instanceof TypeError) {
+    return 'Connection problem. Please try again.';
+  }
+  const msg = (err instanceof Error ? err.message : String(err ?? '')).trim();
+  if (msg && NETWORK_ERROR_PATTERNS.test(msg)) {
+    return 'Connection problem. Please try again.';
+  }
+  // Final safety net: anything that smells like a network / fetch / timeout
+  // failure becomes friendly copy. The literal "Load failed" cannot escape.
+  if (msg && /failed|fetch|network|aborted|timeout/i.test(msg)) {
+    return 'Connection problem. Please try again.';
+  }
+  return msg || 'Something went wrong. Please try again.';
+}
 
 function getUserId(): string {
   const key = 'korvix_user_id';
@@ -45,11 +80,91 @@ function saveTabSessions(map: Record<string, string>) {
   localStorage.setItem('korvix_tab_sessions', JSON.stringify(map));
 }
 
+/* ─── Session-content persistence (Phase 2 — survives refresh) ──────────
+   localStorage stores the entire sessions[] array so that after a refresh
+   the user sees the same conversations they left. Without this, the tab
+   session map points at session ids that no longer exist in memory and
+   chat appears wiped. */
+
+const SESSIONS_STORAGE_KEY       = 'korvix_chat_sessions_v1';
+const ACTIVE_SESSION_STORAGE_KEY = 'korvix_active_session_id_v1';
+
+function reviveSession(raw: unknown): ChatSession | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const s = raw as Record<string, unknown>;
+  if (typeof s.id !== 'string' || !Array.isArray(s.messages)) return null;
+  const messages = s.messages.map((m: unknown): Message | null => {
+    if (!m || typeof m !== 'object') return null;
+    const mm = m as Record<string, unknown>;
+    if (typeof mm.id !== 'string' || typeof mm.content !== 'string') return null;
+    if (mm.role !== 'user' && mm.role !== 'assistant') return null;
+    return {
+      id:        mm.id,
+      role:      mm.role,
+      content:   mm.content,
+      timestamp: new Date((mm.timestamp as string | number) ?? Date.now()),
+    };
+  }).filter((m): m is Message => m !== null);
+  return {
+    id:        s.id,
+    title:     typeof s.title === 'string' ? s.title : 'Conversation',
+    messages,
+    updatedAt: new Date((s.updatedAt as string | number) ?? Date.now()),
+    folder:    (s.folder as ChatFolder) ?? 'none',
+  };
+}
+
+function loadSessionsFromStorage(): ChatSession[] {
+  try {
+    const raw = localStorage.getItem(SESSIONS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map(reviveSession).filter((s): s is ChatSession => s !== null);
+  } catch {
+    return [];
+  }
+}
+
+function saveSessionsToStorage(sessions: ChatSession[]): void {
+  try {
+    localStorage.setItem(SESSIONS_STORAGE_KEY, JSON.stringify(sessions));
+  } catch {
+    // Quota exceeded / private-mode Safari — local-only mode degrades
+    // gracefully. Chat keeps working from in-memory state.
+  }
+}
+
 export function useChat() {
-  // Initialize one session per tab for isolation
-  const initialSessions = TAB_KEYS.map((tab) => createEmptySession(`New ${tab.charAt(0).toUpperCase() + tab.slice(1)}`));
-  const [sessions, setSessions] = useState<ChatSession[]>(initialSessions);
-  const [activeSessionId, setActiveSessionId] = useState<string>(initialSessions[0].id);
+  // Compute initial state ONCE so both useState initialisers see the same
+  // {sessions, activeId} snapshot. Without this, restored sessions and the
+  // restored active id could disagree (independent reads of localStorage
+  // each calling createEmptySession() generate fresh ids) and doSend's
+  // `s.id === activeSessionId` predicate would never match → every
+  // message would silently drop on first visit.
+  const initialStateRef = useRef<{ sessions: ChatSession[]; activeId: string } | null>(null);
+  if (initialStateRef.current === null) {
+    const restored = loadSessionsFromStorage();
+    let seeded: ChatSession[];
+    if (restored.length > 0) {
+      seeded = restored;
+    } else {
+      // First visit — one empty session per tab so each workspace is
+      // isolated from the moment the user lands.
+      seeded = TAB_KEYS.map((tab) =>
+        createEmptySession(`New ${tab.charAt(0).toUpperCase() + tab.slice(1)}`)
+      );
+    }
+    let activeId = seeded[0].id;
+    try {
+      const stored = localStorage.getItem(ACTIVE_SESSION_STORAGE_KEY);
+      if (stored && seeded.some((s) => s.id === stored)) activeId = stored;
+    } catch { /* ignore */ }
+    initialStateRef.current = { sessions: seeded, activeId };
+  }
+
+  const [sessions, setSessions] = useState<ChatSession[]>(initialStateRef.current.sessions);
+  const [activeSessionId, setActiveSessionId] = useState<string>(initialStateRef.current.activeId);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUserMessage, setLastUserMessage] = useState<string | null>(null);
@@ -65,6 +180,18 @@ export function useChat() {
   // Per-tab session isolation
   const [tabSessionMap, setTabSessionMap] = useState<Record<string, string>>(loadTabSessions);
   const [currentTab, setCurrentTab] = useState<WorkspaceTab>('chat');
+
+  // Mirror sessions + active id to localStorage on every change so the
+  // user's chat history survives refresh / tab close. Without these two
+  // effects the in-memory state is lost on every page load even though
+  // tabSessionMap still points at the (now missing) session ids.
+  useEffect(() => {
+    saveSessionsToStorage(sessions);
+  }, [sessions]);
+
+  useEffect(() => {
+    try { localStorage.setItem(ACTIVE_SESSION_STORAGE_KEY, activeSessionId); } catch { /* ignore */ }
+  }, [activeSessionId]);
 
   // Persist tab session map
   useEffect(() => {
@@ -165,9 +292,18 @@ export function useChat() {
 
     setIsLoading(true);
 
+    // 60s ceiling so a slow / unreachable backend never leaves the
+    // composer hanging forever. The abort error becomes "Request timed
+    // out." in the friendly mapper below.
+    const ctrl = new AbortController();
+    const timeoutId = setTimeout(() => {
+      try { ctrl.abort(); } catch { /* ignore */ }
+    }, CHAT_REQUEST_TIMEOUT_MS);
+
     try {
       const response = await fetch(API_URL, {
         method: 'POST',
+        signal: ctrl.signal,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           user_id: userIdRef.current,
@@ -179,7 +315,20 @@ export function useChat() {
       });
 
       if (!response.ok) {
-        throw new Error(`Server responded with ${response.status}. Please try again.`);
+        // Map common HTTP codes to friendly copy so the toast never echoes
+        // a raw server message verbatim.
+        if (response.status === 429) {
+          setError('Too many requests. Please wait a few seconds and try again.');
+        } else if (response.status === 503) {
+          setError('The chat service is temporarily unavailable. Please try again in a moment.');
+        } else if (response.status >= 500) {
+          setError('The server hit an error. Please try again in a moment.');
+        } else if (response.status === 401 || response.status === 403) {
+          setError('Authentication failed. Please refresh the page and try again.');
+        } else {
+          setError(`The server responded with ${response.status}. Please try again.`);
+        }
+        return;
       }
 
       const data = await response.json();
@@ -200,8 +349,11 @@ export function useChat() {
         )
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
+      // Translate raw fetch/abort errors so "Load failed" / "Failed to
+      // fetch" / abort-on-timeout never reach the toast verbatim.
+      setError(friendlyErrorMessage(err));
     } finally {
+      clearTimeout(timeoutId);
       setIsLoading(false);
     }
   }, [activeSessionId]);
