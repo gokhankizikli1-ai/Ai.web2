@@ -62,11 +62,10 @@ async function probeSessionsEnabled(): Promise<boolean> {
   if (_capabilityCache && now - _capabilityCache.checkedAt < CAPABILITY_TTL_MS) {
     return _capabilityCache.enabled;
   }
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
   try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
     const res = await fetch(`${API_ORIGIN}/v2/health`, { signal: ctrl.signal });
-    clearTimeout(t);
     if (!res.ok) {
       _capabilityCache = { enabled: false, checkedAt: now };
       return false;
@@ -81,6 +80,11 @@ async function probeSessionsEnabled(): Promise<boolean> {
     // keeps us from hammering a down endpoint on every send.
     _capabilityCache = { enabled: false, checkedAt: now };
     return false;
+  } finally {
+    // Always free the timer — Bugbot caught a leak where the happy path
+    // cleared it but the catch path didn't, letting the 8-second abort
+    // timer fire harmlessly long after the fetch settled.
+    clearTimeout(t);
   }
 }
 

@@ -436,6 +436,14 @@ export function useChat() {
       timestamp: new Date(),
     };
     lastUserMessageIdRef.current = userMessage.id;
+    // When retry() asks us to skip the user-turn write-through, it does
+    // so because the PREVIOUS attempt's POST already landed on the
+    // backend. The new local message id is logically the same row, so
+    // propagate the "synced" state forward — otherwise a second retry
+    // would see an unsynced id, re-POST, and create a duplicate.
+    if (opts?.skipUserSync) {
+      syncedLocalMessageIdsRef.current.add(userMessage.id);
+    }
 
     setSessions((prev) =>
       prev.map((s) =>
