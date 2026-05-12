@@ -6,6 +6,8 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 
+from backend.utils.timing import StageTimer
+
 router = APIRouter(tags=["chat"])
 logger = logging.getLogger(__name__)
 
@@ -55,6 +57,11 @@ async def chat(req: ChatRequest):
     message = req.message.strip()
     platform = req.platform or "web"
 
+    # Per-stage timer — emits one structured log line at flush() with the
+    # full per-stage timeline. Read these in production logs to find the
+    # actual bottleneck (safety/context/AI/usage). Negligible overhead.
+    timer = StageTimer("CHAT_TIMING", rid=request_id, uid=user_id, msg_len=len(message))
+
     logger.info("CHAT | rid=%s | uid=%s | msg_len=%d", request_id, user_id, len(message))
 
     # ── Phase 5.2 — safety guard (runs before any quota / AI call) ────────
@@ -68,14 +75,18 @@ async def chat(req: ChatRequest):
                 "CHAT | rid=%s | uid=%s | safety_reject | code=%s | reason=%s",
                 request_id, user_id, _safety.code, _safety.reason,
             )
+            timer.mark("safety_reject")
+            timer.flush()
             return _quick_response(
                 request_id, user_id,
                 _safety.message_for_user or "İstek reddedildi.",
                 "safety_" + (_safety.code or "blocked"),
                 t_start,
+                with_profile=False,    # rejections don't need a fresh profile lookup
             )
     except Exception as _serr:
         logger.debug("CHAT | rid=%s | safety guard import/eval error: %s", request_id, _serr)
+    timer.mark("safety_done")
 
     # ── Memory list shortcut ──────────────────────────────────────────────
     _mem_list_kw = [
@@ -90,6 +101,8 @@ async def chat(req: ChatRequest):
         except Exception:
             pass
         reply = ("Hafizamda bunlar var:\n\n" + summary) if summary else "Henuz bir sey kaydetmedim."
+        timer.mark("memory_list_shortcut")
+        timer.flush()
         return _quick_response(request_id, user_id, reply, "memory", t_start)
 
     # ── Memory save shortcut ──────────────────────────────────────────────
@@ -106,7 +119,11 @@ async def chat(req: ChatRequest):
                     save_memory(user_id, fact, "general")
                 except Exception:
                     pass
+                timer.mark("memory_save_shortcut")
+                timer.flush()
                 return _quick_response(request_id, user_id, "Kaydettim.", "memory", t_start)
+            timer.mark("memory_save_shortcut_empty")
+            timer.flush()
             return _quick_response(
                 request_id, user_id,
                 "Ne kaydetmemi istedigini anlayamadim.", "memory", t_start,
@@ -121,6 +138,8 @@ async def chat(req: ChatRequest):
                 delete_memory(user_id, keyword)
             except Exception:
                 pass
+        timer.mark("memory_delete_shortcut")
+        timer.flush()
         return _quick_response(request_id, user_id, "Silindi.", "memory", t_start)
 
     # ── Style shortcut ────────────────────────────────────────────────────
@@ -129,12 +148,15 @@ async def chat(req: ChatRequest):
         style_match = detect_style(message)
         if style_match:
             apply_style(user_id, message)
+            timer.mark("style_shortcut")
+            timer.flush()
             return _quick_response(
                 request_id, user_id,
                 "Stil guncellendi: " + style_match["label"], "style", t_start,
             )
     except Exception:
         pass
+    timer.mark("shortcuts_done")
 
     # ── Usage limit check ─────────────────────────────────────────────────
     can_send = True
@@ -156,10 +178,13 @@ async def chat(req: ChatRequest):
             "Bugun kullandin: " + str(info["used"]) + " / " + str(info["limit"]) + " mesaj\n"
             "/premium yazarak detay alabilirsin."
         )
+        timer.mark("limit_exceeded")
+        timer.flush()
         return _quick_response(
             request_id, user_id, reply, "limit_exceeded", t_start,
-            remaining=0, premium=False,
+            remaining=0, premium=False, with_profile=False,
         )
+    timer.mark("limit_check")
 
     # ── Auto-learn ────────────────────────────────────────────────────────
     try:
@@ -167,6 +192,7 @@ async def chat(req: ChatRequest):
         maybe_auto_learn(user_id, message)
     except Exception:
         pass
+    timer.mark("auto_learn")
 
     # ── Build context ─────────────────────────────────────────────────────
     profile_text = ""
@@ -183,6 +209,7 @@ async def chat(req: ChatRequest):
         style_prompt = "Cevap stili: " + style_data["label"] + ". Talimat: " + style_data["instruction"]
     except Exception as e:
         logger.warning("CHAT | rid=%s | context build error: %s", request_id, e)
+    timer.mark("context_built")
 
     # ── AI call ───────────────────────────────────────────────────────────
     reply = ""
@@ -193,6 +220,7 @@ async def chat(req: ChatRequest):
     followups: List[str] = []
     response_metadata: Optional[Dict[str, Any]] = None
 
+    timer.mark("ai_start")
     try:
         from backend.services.ai_service import process_chat
         ai_result = await process_chat(
@@ -214,6 +242,7 @@ async def chat(req: ChatRequest):
         response_metadata = ai_result.get("metadata")
     except Exception as e:
         logger.error("CHAT | rid=%s | process_chat error: %s", request_id, e, exc_info=True)
+    timer.mark("ai_end")
 
     if not reply:
         reply = "Bir hata olustu, lutfen tekrar dene."
@@ -226,6 +255,7 @@ async def chat(req: ChatRequest):
         save_message("assistant", reply)
     except Exception:
         pass
+    timer.mark("usage_recorded")
 
     # ── Profile / remaining ───────────────────────────────────────────────
     remaining = -1
@@ -237,12 +267,17 @@ async def chat(req: ChatRequest):
         premium = prof.get("premium", False)
     except Exception:
         pass
+    timer.mark("profile_lookup")
 
     elapsed_ms = int((time.monotonic() - t_start) * 1000)
     logger.info(
         "CHAT | rid=%s | intent=%s | model=%s | mode=%s | ms=%d",
         request_id, intent, model, mode, elapsed_ms,
     )
+    # Emit the structured stage timeline as a single log line. Operators
+    # grep `CHAT_TIMING` in Railway logs to find the actual bottleneck
+    # without parsing the per-line prose summary above.
+    timer.flush()
 
     return ChatResponse(
         reply=reply,
@@ -268,16 +303,27 @@ def _quick_response(
     t_start: float,
     remaining: int = -1,
     premium: bool = False,
+    *,
+    with_profile: bool = True,
 ) -> ChatResponse:
-    """Build a fast shortcut response without going through AI."""
+    """Build a fast shortcut response without going through AI.
+
+    Args:
+      with_profile: when False, skip the get_profile() DB lookup. Set
+                    this for paths where remaining/premium are already
+                    known (safety rejections, limit-exceeded) — saves
+                    one DB read per request (5-15ms locally, more under
+                    contention).
+    """
     elapsed_ms = int((time.monotonic() - t_start) * 1000)
-    try:
-        from backend.services.user_service import get_profile
-        prof = get_profile(user_id)
-        remaining = prof.get("remaining_messages", remaining)
-        premium = prof.get("premium", premium)
-    except Exception:
-        pass
+    if with_profile:
+        try:
+            from backend.services.user_service import get_profile
+            prof = get_profile(user_id)
+            remaining = prof.get("remaining_messages", remaining)
+            premium = prof.get("premium", premium)
+        except Exception:
+            pass
     return ChatResponse(
         reply=reply,
         intent=intent,
