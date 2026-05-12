@@ -1,0 +1,391 @@
+name: auto-merge-backend-only
+
+# Auto-merges low-risk backend-only PRs once every required check is green.
+#
+# Why this exists:
+#   The vast majority of backend phases (provider work, route additions,
+#   feature-flag wiring) are additive, default-off, and rollback-safe.
+#   Requiring a human to click "merge" after every green run is friction
+#   without a safety benefit. This workflow encodes the same gate that a
+#   human reviewer applies: backend-only path filter + all checks green.
+#
+# What it WILL NOT auto-merge:
+#   - PRs that touch any frontend file (src/, package*.json, vite/tsconfig,
+#     tailwind/postcss/eslint configs, index.html, vercel.json, components.json)
+#   - PRs that change anything under .github/workflows/ (meta-changes always
+#     need human review — this means THIS workflow can never auto-merge
+#     itself, which is the desired self-bootstrap property)
+#   - PRs that flip an ENABLE_* feature-flag default from "false" to "true"
+#   - PRs labeled do-not-auto-merge / wip / hold
+#   - PRs against a base branch other than main
+#   - Draft PRs
+#   - PRs whose mergeable_state is dirty / blocked / behind / unknown
+#   - Any PR while the most recent commit on main has a Railway production
+#     deploy status of "failure" (production-broken freeze)
+#
+# What it requires green:
+#   - Vercel deployment status (state=success)
+#   - Cursor Bugbot check-run (conclusion=success)
+#   - Every other check-run on the head SHA: completed without failure
+#
+# Post-merge:
+#   The post-deploy-healthcheck workflow watches Railway and writes a
+#   commit status. Merges performed by GITHUB_TOKEN do NOT trigger
+#   push: workflows by default, so this workflow explicitly dispatches
+#   the healthcheck via workflow_dispatch after the merge succeeds.
+#
+# Manual override:
+#   - Add label "do-not-auto-merge" to a PR you want to merge by hand.
+#   - workflow_dispatch lets you re-evaluate a specific PR number.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review, labeled, unlabeled]
+  check_suite:
+    types: [completed]
+  status:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to evaluate'
+        required: true
+        type: string
+
+permissions:
+  contents:      write
+  pull-requests: write
+  actions:       write
+  statuses:      read
+  checks:        read
+
+concurrency:
+  group: auto-merge-${{ github.event.pull_request.number || github.event.check_suite.head_sha || github.event.sha || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  evaluate-and-merge:
+    name: Evaluate PR and auto-merge if eligible
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+
+    steps:
+      # ── 1. Resolve the PR number for this event ─────────────────────────
+      - name: Resolve PR number
+        id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          EVENT_NAME: ${{ github.event_name }}
+          MANUAL_PR: ${{ inputs.pr_number }}
+        run: |
+          set -e
+          case "$EVENT_NAME" in
+            pull_request)
+              PR="${{ github.event.pull_request.number }}"
+              ;;
+            workflow_dispatch)
+              PR="$MANUAL_PR"
+              ;;
+            check_suite|status)
+              SHA="${{ github.event.check_suite.head_sha || github.event.sha }}"
+              if [ -z "$SHA" ]; then
+                echo "No SHA on event — skipping"
+                echo "skip=true" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              PR=$(gh api "repos/${{ github.repository }}/commits/$SHA/pulls" \
+                --jq '.[] | select(.state=="open") | .number' | head -1 || true)
+              ;;
+            *)
+              echo "Unhandled event $EVENT_NAME — skipping"
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+          esac
+          if [ -z "$PR" ]; then
+            echo "No open PR resolved — skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "pr=$PR" >> "$GITHUB_OUTPUT"
+          echo "Resolved PR #$PR (event=$EVENT_NAME)"
+
+      # ── 2. Load PR metadata ─────────────────────────────────────────────
+      - name: Load PR metadata
+        if: steps.resolve.outputs.skip != 'true'
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.resolve.outputs.pr }}
+        run: |
+          set -e
+          DATA=$(gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER")
+          {
+            echo "state=$(echo "$DATA" | jq -r .state)"
+            echo "draft=$(echo "$DATA" | jq -r .draft)"
+            echo "author=$(echo "$DATA" | jq -r .user.login)"
+            echo "mergeable=$(echo "$DATA" | jq -r .mergeable)"
+            echo "mergeable_state=$(echo "$DATA" | jq -r .mergeable_state)"
+            echo "head_sha=$(echo "$DATA" | jq -r .head.sha)"
+            echo "base=$(echo "$DATA" | jq -r .base.ref)"
+            echo "labels=$(echo "$DATA" | jq -r '[.labels[].name] | join(",")')"
+            # Title may contain quotes; pass through a heredoc.
+            echo "title<<EOF"
+            echo "$DATA" | jq -r .title
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "PR #$PR_NUMBER metadata loaded."
+
+      # ── 3. Gate: basic PR shape ─────────────────────────────────────────
+      - name: Gate — basic PR shape
+        if: steps.resolve.outputs.skip != 'true'
+        id: shape
+        env:
+          STATE:  ${{ steps.pr.outputs.state }}
+          DRAFT:  ${{ steps.pr.outputs.draft }}
+          BASE:   ${{ steps.pr.outputs.base }}
+          LABELS: ${{ steps.pr.outputs.labels }}
+        run: |
+          set -e
+          fail() { echo "::notice::Gate failed — $1"; echo "skip=true" >> "$GITHUB_OUTPUT"; exit 0; }
+          [ "$STATE" = "open" ]    || fail "PR state is '$STATE' (need open)"
+          [ "$DRAFT" = "false" ]   || fail "PR is draft"
+          [ "$BASE"  = "main" ]    || fail "PR base is '$BASE' (need main)"
+          # Opt-out labels.
+          for L in do-not-auto-merge wip hold; do
+            if echo ",$LABELS," | grep -q ",$L,"; then
+              fail "opt-out label '$L' present"
+            fi
+          done
+          echo "Basic shape OK"
+
+      # ── 4. Gate: backend-only path filter ───────────────────────────────
+      - name: Gate — backend-only paths
+        if: steps.resolve.outputs.skip != 'true' && steps.shape.outputs.skip != 'true'
+        id: paths
+        env:
+          GH_TOKEN:  ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.resolve.outputs.pr }}
+        run: |
+          set -e
+          FILES=$(gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER/files" \
+            --paginate --jq '.[].filename')
+          echo "Changed files:"; echo "$FILES"; echo ""
+
+          # Hard-deny: any of these paths means "not backend-only" → skip.
+          # (Frontend source, lockfiles, build configs, Vercel config, and
+          # crucially .github/workflows so this workflow can't merge itself.)
+          DENY_REGEX='^(src/|public/|package\.json$|package-lock\.json$|pnpm-lock\.yaml$|yarn\.lock$|vite\.config\.|tsconfig|tailwind\.config\.|postcss\.config\.|index\.html$|vercel\.json$|eslint\.config\.|components\.json$|\.github/workflows/)'
+          BAD=$(echo "$FILES" | grep -E "$DENY_REGEX" || true)
+          if [ -n "$BAD" ]; then
+            echo "::notice::PR touches non-backend or workflow paths — skipping auto-merge."
+            echo "Disqualifying paths:"; echo "$BAD"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Require at least one backend-relevant change (else nothing to merge).
+          ALLOW_REGEX='^(backend/|requirements\.txt$|Procfile($|\.)|runtime\.txt$|pytest\.ini$)'
+          ANY=$(echo "$FILES" | grep -E "$ALLOW_REGEX" || true)
+          if [ -z "$ANY" ]; then
+            echo "::notice::PR has no backend-relevant changes — skipping"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Backend-only path filter OK"
+
+      # ── 5. Gate: no risky-flag default flips ────────────────────────────
+      - name: Gate — no ENABLE_* flag flipped to true
+        if: steps.resolve.outputs.skip != 'true' && steps.shape.outputs.skip != 'true' && steps.paths.outputs.skip != 'true'
+        id: flags
+        env:
+          GH_TOKEN:  ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.resolve.outputs.pr }}
+        run: |
+          set -e
+          DIFF=$(gh api -H "Accept: application/vnd.github.v3.diff" \
+            "repos/${{ github.repository }}/pulls/$PR_NUMBER")
+          # Look at + lines only. Block if any added line contains both an
+          # ENABLE_ identifier AND a "true" / =true / : true literal.
+          RISKY=$(echo "$DIFF" \
+            | grep -E '^\+[^+]' \
+            | grep -E 'ENABLE_[A-Z0-9_]+' \
+            | grep -Ei '"true"|=\s*true\b|:\s*true\b|,\s*"true"' \
+            || true)
+          if [ -n "$RISKY" ]; then
+            echo "::notice::PR appears to flip an ENABLE_* flag default to true — needs human review."
+            echo "Suspect lines:"; echo "$RISKY"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Risky-flag guard OK"
+
+      # ── 6. Gate: production not currently broken ────────────────────────
+      - name: Gate — Railway production not in failure
+        if: steps.resolve.outputs.skip != 'true' && steps.shape.outputs.skip != 'true' && steps.paths.outputs.skip != 'true' && steps.flags.outputs.skip != 'true'
+        id: prod
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          # Latest commit on main.
+          MAIN_SHA=$(gh api "repos/${{ github.repository }}/commits/main" --jq .sha)
+          # Most recent railway/production-deploy status on that commit.
+          PROD=$(gh api "repos/${{ github.repository }}/commits/$MAIN_SHA/status" \
+            --jq '.statuses[] | select(.context=="railway/production-deploy") | .state' \
+            | head -1 || true)
+          echo "main=$MAIN_SHA  railway/production-deploy=$PROD"
+          if [ "$PROD" = "failure" ]; then
+            echo "::error::Production is currently failing (railway/production-deploy=failure on $MAIN_SHA). Freezing auto-merge."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Production-status gate OK (state=${PROD:-none})"
+
+      # ── 7. Gate: every required check is green on the head SHA ──────────
+      - name: Gate — all required checks green
+        if: steps.resolve.outputs.skip != 'true' && steps.shape.outputs.skip != 'true' && steps.paths.outputs.skip != 'true' && steps.flags.outputs.skip != 'true' && steps.prod.outputs.skip != 'true'
+        id: checks
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+        run: |
+          set -e
+          STATUSES=$(gh api "repos/${{ github.repository }}/commits/$HEAD_SHA/status" \
+            --jq '.statuses[] | "\(.context)=\(.state)"')
+          CHECKS=$(gh api "repos/${{ github.repository }}/commits/$HEAD_SHA/check-runs" \
+            --paginate --jq '.check_runs[] | "\(.name)=\(.status):\(.conclusion // "null")"')
+          echo "── Statuses ──";  echo "${STATUSES:-(none)}"
+          echo "── Check-runs ──"; echo "${CHECKS:-(none)}"
+          echo
+
+          FAILED=$(printf "%s\n%s\n" "$STATUSES" "$CHECKS" \
+            | grep -Ei '=(failure|cancelled|timed_out|action_required)\b' || true)
+          if [ -n "$FAILED" ]; then
+            echo "::notice::A check failed — block auto-merge."
+            echo "$FAILED"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          PENDING=$(printf "%s\n" "$CHECKS" | grep -E '=(in_progress|queued|requested)\b' || true)
+          PENDING_STATUS=$(printf "%s\n" "$STATUSES" | grep -E '=pending\b' || true)
+          if [ -n "$PENDING" ] || [ -n "$PENDING_STATUS" ]; then
+            echo "Checks still pending — will re-evaluate on next webhook."
+            [ -n "$PENDING" ]        && { echo "Pending check-runs:"; echo "$PENDING"; }
+            [ -n "$PENDING_STATUS" ] && { echo "Pending statuses:";   echo "$PENDING_STATUS"; }
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Require Vercel status = success.
+          if ! echo "$STATUSES" | grep -q '^Vercel=success$'; then
+            echo "Vercel status not yet success — wait."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Require Cursor Bugbot check-run = completed:success.
+          if ! echo "$CHECKS" | grep -q '^Cursor Bugbot=completed:success$'; then
+            echo "Cursor Bugbot not yet completed:success — wait."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "All required checks green"
+
+      # ── 8. Gate: GitHub says the PR is actually mergeable ───────────────
+      - name: Gate — mergeable_state acceptable
+        if: steps.resolve.outputs.skip != 'true' && steps.shape.outputs.skip != 'true' && steps.paths.outputs.skip != 'true' && steps.flags.outputs.skip != 'true' && steps.prod.outputs.skip != 'true' && steps.checks.outputs.skip != 'true'
+        id: mergeable
+        env:
+          GH_TOKEN:  ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.resolve.outputs.pr }}
+        run: |
+          set -e
+          # Re-fetch — the freshly-computed mergeable_state may not be in
+          # the earlier snapshot if checks just turned green this second.
+          for i in 1 2 3 4 5; do
+            DATA=$(gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER")
+            MS=$(echo "$DATA" | jq -r .mergeable_state)
+            echo "attempt $i: mergeable_state=$MS"
+            case "$MS" in
+              clean|unstable) echo "OK — proceeding"; exit 0 ;;
+              unknown)        sleep 3 ; continue ;;
+              *)
+                echo "::notice::mergeable_state=$MS — block auto-merge"
+                echo "skip=true" >> "$GITHUB_OUTPUT"
+                exit 0 ;;
+            esac
+          done
+          echo "::notice::mergeable_state stayed 'unknown' — try again next webhook"
+          echo "skip=true" >> "$GITHUB_OUTPUT"
+
+      # ── 9. Squash-merge ─────────────────────────────────────────────────
+      - name: Squash-merge
+        if: steps.resolve.outputs.skip != 'true' && steps.shape.outputs.skip != 'true' && steps.paths.outputs.skip != 'true' && steps.flags.outputs.skip != 'true' && steps.prod.outputs.skip != 'true' && steps.checks.outputs.skip != 'true' && steps.mergeable.outputs.skip != 'true'
+        id: merge
+        env:
+          GH_TOKEN:  ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.resolve.outputs.pr }}
+          PR_TITLE:  ${{ steps.pr.outputs.title }}
+          HEAD_SHA:  ${{ steps.pr.outputs.head_sha }}
+        run: |
+          set -e
+          # Use the PR title as commit title (matches the manual squash-merge
+          # convention used in this repo). Pin to head_sha so the merge
+          # races safely against any concurrent push.
+          MSG=$(cat <<EOF
+          Auto-merged by .github/workflows/auto-merge-backend-only.yml
+
+          Gates that passed:
+            - Backend-only path filter (no frontend / no workflow files)
+            - No ENABLE_* feature-flag default flipped to true
+            - Railway production not currently in failure
+            - Vercel: success
+            - Cursor Bugbot: completed:success
+            - All other check-runs: completed without failure
+            - GitHub mergeable_state: clean | unstable
+          EOF
+          )
+          RESPONSE=$(gh api -X PUT \
+            "repos/${{ github.repository }}/pulls/$PR_NUMBER/merge" \
+            -f merge_method=squash \
+            -f commit_title="${PR_TITLE} (#${PR_NUMBER})" \
+            -f commit_message="$MSG" \
+            -f sha="$HEAD_SHA" )
+          MERGED=$(echo "$RESPONSE" | jq -r .merged)
+          SHA=$(echo "$RESPONSE"   | jq -r .sha)
+          echo "merge response: merged=$MERGED sha=$SHA"
+          [ "$MERGED" = "true" ] || { echo "::error::Merge call returned merged=false"; exit 1; }
+          echo "merge_sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      # ── 10. Trigger the post-deploy health check on the new main SHA ────
+      # Merges done by GITHUB_TOKEN don't fire `push:` workflows, so we
+      # dispatch the existing healthcheck workflow explicitly.
+      - name: Dispatch post-deploy-healthcheck
+        if: steps.merge.outputs.merge_sha != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          gh api -X POST \
+            "repos/${{ github.repository }}/actions/workflows/post-deploy-healthcheck.yml/dispatches" \
+            -f ref=main || echo "::warning::workflow_dispatch failed — health-check may still run on a later push"
+
+      # ── 11. Comment on the merged PR so it shows in the timeline ────────
+      - name: Comment on the merged PR
+        if: steps.merge.outputs.merge_sha != ''
+        env:
+          GH_TOKEN:  ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ steps.resolve.outputs.pr }}
+          MERGE_SHA: ${{ steps.merge.outputs.merge_sha }}
+        run: |
+          BODY=$(cat <<EOF
+          Auto-merged by \`auto-merge-backend-only\` (squash → main @ \`${MERGE_SHA}\`).
+
+          \`post-deploy-healthcheck\` is now polling Railway. It will write a \`railway/production-deploy\` commit status on the merge SHA — \`success\` once Railway serves the new build's commit SHA on \`/health\`, \`failure\` if the rollout doesn't land within 8 minutes.
+
+          If the health check fails, this workflow will refuse to auto-merge any further PR until production is healthy again (production-broken freeze).
+          EOF
+          )
+          gh api -X POST \
+            "repos/${{ github.repository }}/issues/$PR_NUMBER/comments" \
+            -f body="$BODY" > /dev/null
