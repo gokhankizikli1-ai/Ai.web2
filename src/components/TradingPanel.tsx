@@ -215,7 +215,9 @@ function SignalCard({ signal, index, panelLive }: { signal: TradingSignal; index
                 </div>
               )}
 
-              <p className="text-[12px] text-slate-500 leading-relaxed pl-0.5">{signal.reasoning}</p>
+              {signal.reasoning && (
+                <p className="text-[12px] text-slate-500 leading-relaxed pl-0.5">{signal.reasoning}</p>
+              )}
 
               {/* Per-row provenance — provider + data quality. */}
               <div className="flex items-center gap-3 text-[10px] text-slate-700 flex-wrap">

@@ -76,13 +76,12 @@ function mapDirection(dir: unknown): TradingSignal['direction'] {
 }
 
 // Backend `setup_grade` is 0..10 when a plan was generated, else `null`.
-// Returning `null` for missing scores lets the UI render "—" instead of
-// silently degrading to "D / 0%" for live-but-no-plan rows (e.g. when the
-// CoinGecko fallback returned a price but no full Phase 5 plan).
+// 0 is a legitimate "worst-case but still graded" plan (renders as 'D'),
+// so we only nullify on missing values — not on the literal 0.
 function mapSetupGrade(score: unknown): SetupGrade | null {
   if (score === null || score === undefined || score === '') return null;
   const n = typeof score === 'number' ? score : Number(score);
-  if (!Number.isFinite(n) || n <= 0) return null;
+  if (!Number.isFinite(n) || n < 0) return null;
   if (n >= 8) return 'A';
   if (n >= 6) return 'B';
   if (n >= 4) return 'C';
@@ -147,17 +146,18 @@ function mapBackendSignal(raw: Record<string, unknown>, idx: number): TradingSig
   const tsRaw      = (raw.timestamp as string) || new Date().toISOString();
   const errorReason = typeof raw.error === 'string' ? raw.error : undefined;
 
-  // Reasoning is short copy shown inline. Prefer the AI's invalidation
-  // (veto condition) when a plan exists; otherwise the backend's error or
-  // a status-aware default. Distinguish "no plan yet" (live, no setup)
-  // from "lookup failed" so users don't see a single confusing label.
+  // Reasoning is the short copy shown inline. Prefer the AI's invalidation
+  // (veto condition) when a plan exists; otherwise a status-aware default.
+  // When `errorReason` is set, the SignalCard already renders it in the
+  // amber warning row — leaving reasoning empty here avoids showing the
+  // same error string twice in the expanded view.
   let reasoning: string;
-  if (errorReason) {
-    reasoning = errorReason;
-  } else if (raw.invalidation) {
+  if (raw.invalidation) {
     reasoning = String(raw.invalidation);
   } else if (isLive) {
     reasoning = 'Live price — no setup yet on this timeframe.';
+  } else if (errorReason) {
+    reasoning = '';
   } else {
     reasoning = 'Live data unavailable.';
   }
