@@ -3,7 +3,10 @@ import type { ChatSession, Message, AIMode, ChatFolder } from '@/types';
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
-const API_URL = 'https://worker-production-2a49.up.railway.app/chat';
+// Canonical Railway backend (per STABLE_CHECKPOINT.md and verified by the
+// Phase 5.3 post-deploy workflow on every recent merge to main). Override
+// only if the Railway service is renamed AND STABLE_CHECKPOINT.md is updated.
+const API_URL = 'https://worker-production-1345.up.railway.app/chat';
 
 // Network-style error messages emitted by various browsers when fetch fails
 // (Safari: "Load failed", Chrome: "Failed to fetch", Firefox: "NetworkError when...").
