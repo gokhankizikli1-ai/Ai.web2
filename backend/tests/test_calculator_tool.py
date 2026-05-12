@@ -138,3 +138,35 @@ def test_context_overrides_query():
     # Context.expression wins over query if both supplied.
     r = asyncio.run(CalculatorTool().run("999", {"expression": "1 + 1"}))
     assert r["data"]["result"] == 2
+
+
+# ── DoS guard on exponentiation ──────────────────────────────────────────
+# Python int is arbitrary-precision so `9**9**9` doesn't raise
+# OverflowError — without a pre-check it allocates a ~370M-digit number,
+# blocks the event loop, and the asyncio timeout in dispatch_one can't
+# fire. The magnitude guard must refuse these expressions in O(1).
+
+@pytest.mark.parametrize("expr", [
+    "9 ** 9 ** 9",            # the canonical Bugbot example
+    "2 ** 100000",
+    "100 ** 100000",
+    "pow(2, 100000)",
+    "(2 ** 50) ** 1000",      # nested: outer pow's exp = 1000, base ~50 bits
+])
+def test_oversized_exponentiation_rejected_in_constant_time(expr):
+    r = _run(expression=expr)
+    assert r["status"] == "error"
+    assert "magnitude" in r["message"] or "exponent" in r["message"]
+    # The result key must not exist — proves no huge int was computed.
+    assert "result" not in (r.get("data") or {})
+
+
+def test_reasonable_exponentiation_still_works():
+    # 2^64 is a regular 64-bit integer.
+    assert _run(expression="2 ** 64")["data"]["result"] == 2 ** 64
+    # 1.05**360 (monthly compounding 30y) is everyday finance math.
+    r = _run(expression="1.05 ** 360")
+    assert r["status"] == "available"
+    assert abs(r["data"]["result"] - 1.05 ** 360) < 1e-3
+    # pow() function: same guard applies but should accept reasonable args.
+    assert _run(expression="pow(2, 32)")["data"]["result"] == 2 ** 32

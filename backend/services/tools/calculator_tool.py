@@ -24,6 +24,15 @@ from backend.services.tools.base_tool import BaseTool
 
 _MAX_EXPRESSION_CHARS = 256
 
+# Result-magnitude guard for exponentiation. Python int is arbitrary-
+# precision so `OverflowError` never fires for huge integer powers;
+# without a pre-check, expressions like `9**9**9` block the event loop
+# computing a 370M-digit number, defeating any asyncio timeout above.
+# Bound the estimated result bit-length to a few thousand bits — more
+# than enough for any honest financial / scientific math.
+_MAX_POW_RESULT_BITS = 10_000      # ~3000 decimal digits
+_MAX_POW_EXPONENT    = 10_000
+
 
 _ALLOWED_BINOPS: Dict[Type[ast.AST], Callable[[Any, Any], Any]] = {
     ast.Add:      operator.add,
@@ -40,6 +49,54 @@ _ALLOWED_UNARYOPS: Dict[Type[ast.AST], Callable[[Any], Any]] = {
     ast.USub: operator.neg,
 }
 
+
+def _check_pow_magnitude(base: Any, exp: Any) -> None:
+    """Refuse exponentiation whose result would blow up memory / CPU.
+
+    Heuristic: estimate the result's bit length as base_bits * |exp|.
+    Reject when that exceeds _MAX_POW_RESULT_BITS, or when |exp|
+    exceeds _MAX_POW_EXPONENT regardless of base. Complex numbers
+    aren't reachable here (the parser only emits ints/floats) but
+    we guard anyway."""
+    if isinstance(base, complex) or isinstance(exp, complex):
+        raise _UnsafeExpression("complex numbers not allowed")
+    try:
+        abs_exp = abs(exp)
+    except TypeError:
+        raise _UnsafeExpression("exponent must be numeric")
+
+    if abs_exp > _MAX_POW_EXPONENT:
+        raise _UnsafeExpression(
+            f"exponent magnitude too large (|exp|>{_MAX_POW_EXPONENT})"
+        )
+
+    if isinstance(base, int):
+        base_bits = base.bit_length() or 1
+    else:
+        try:
+            base_bits = max(1, int(math.log2(max(1.0, abs(float(base)))))) + 1
+        except (ValueError, OverflowError):
+            # Float base too large to log — let the multiplication path
+            # raise OverflowError naturally; the existing handler maps
+            # that to a clean _error.
+            return
+
+    if base_bits * abs_exp > _MAX_POW_RESULT_BITS:
+        raise _UnsafeExpression(
+            f"result magnitude too large (~{int(base_bits * abs_exp)} bits, "
+            f"cap {_MAX_POW_RESULT_BITS})"
+        )
+
+
+def _safe_pow(base: Any, exp: Any, mod: Any = None) -> Any:
+    """Whitelist-callable pow() with the same magnitude guard as `**`."""
+    if mod is not None:
+        # Three-arg pow is bounded: result fits in mod's magnitude.
+        return pow(base, exp, mod)
+    _check_pow_magnitude(base, exp)
+    return pow(base, exp)
+
+
 # Function whitelist — every function here must be pure, total, and have
 # no side effects. Adding entries is the only way the surface grows.
 _ALLOWED_FUNCS: Dict[str, Callable[..., Any]] = {
@@ -47,7 +104,7 @@ _ALLOWED_FUNCS: Dict[str, Callable[..., Any]] = {
     "round": round,
     "min":   min,
     "max":   max,
-    "pow":   pow,
+    "pow":   _safe_pow,
     "sqrt":  math.sqrt,
     "log":   math.log,
     "log10": math.log10,
@@ -84,10 +141,15 @@ def _safe_eval(node: ast.AST) -> Any:
         return node.value
 
     if isinstance(node, ast.BinOp):
-        op = _ALLOWED_BINOPS.get(type(node.op))
+        op_type = type(node.op)
+        op = _ALLOWED_BINOPS.get(op_type)
         if op is None:
-            raise _UnsafeExpression(f"binary operator {type(node.op).__name__} not allowed")
-        return op(_safe_eval(node.left), _safe_eval(node.right))
+            raise _UnsafeExpression(f"binary operator {op_type.__name__} not allowed")
+        left  = _safe_eval(node.left)
+        right = _safe_eval(node.right)
+        if op_type is ast.Pow:
+            _check_pow_magnitude(left, right)
+        return op(left, right)
 
     if isinstance(node, ast.UnaryOp):
         op = _ALLOWED_UNARYOPS.get(type(node.op))
