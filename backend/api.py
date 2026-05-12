@@ -140,6 +140,7 @@ def _build_full_app():
         "backend.routes.sessions",     # Phase M2 — /sessions/* (gated by ENABLE_SESSIONS)
         "backend.routes.trading",      # Phase T1 — /trading/signals (gated by ENABLE_TRADING_SIGNALS)
         "backend.routes.v2",           # Phase 1 — /v2/* envelope reference impl
+        "backend.routes.v2_auth",      # Phase 3a — /v2/auth/* (guest, refresh, me, logout)
     ]:
         try:
             _app.include_router(importlib.import_module(_mod).router)
@@ -185,6 +186,18 @@ def _build_full_app():
             logger.info("Phase-B middleware: AuthPlaceholderMiddleware installed (no verify)")
         except Exception as _e:
             logger.warning("AuthPlaceholderMiddleware install failed (non-fatal): %s", _e)
+
+    # Phase 3a — real JWT-verifying AuthMiddleware. Supersedes the
+    # placeholder above. Opt-in via ENABLE_AUTH_V2=true. Do NOT enable
+    # both flags simultaneously — the inner placeholder would overwrite
+    # request.state fields the real one just set.
+    if os.getenv("ENABLE_AUTH_V2", "false").strip().lower() == "true":
+        try:
+            from backend.middleware.auth import AuthMiddleware
+            _app.add_middleware(AuthMiddleware)
+            logger.info("Phase-3a middleware: AuthMiddleware installed (real JWT verify)")
+        except Exception as _e:
+            logger.warning("AuthMiddleware install failed (non-fatal): %s", _e)
 
     if os.getenv("ENABLE_V2_ERROR_HANDLERS", "false").strip().lower() == "true":
         try:

@@ -109,6 +109,8 @@ def test_v2_health_lists_capability_flags(client):
         # Phase-B middleware flags
         "request_id_middleware", "timing_middleware", "auth_placeholder",
         "v2_error_handlers",
+        # Phase 3a auth
+        "auth_v2",
     ]:
         assert flag in meta, f"missing capability flag: {flag}"
         assert isinstance(meta[flag], bool)

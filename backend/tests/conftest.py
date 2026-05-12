@@ -35,3 +35,19 @@ def client(app):
     production behaviour — uvicorn catches unhandled exceptions and the
     global_exception_handler returns a 500 envelope rather than crashing."""
     return TestClient(app, raise_server_exceptions=False)
+
+
+@pytest.fixture()
+def tmp_auth_db(tmp_path, monkeypatch):
+    """Phase 3a — isolate auth.db per test.
+
+    Resets the storage module's lazy-init flag so each test gets a
+    fresh schema in its own temp file. Without this, tests would share
+    the production auth.db (and leave guest rows behind on every run).
+    """
+    db_file = tmp_path / "auth-test.db"
+    monkeypatch.setenv("AUTH_DB_PATH", str(db_file))
+    monkeypatch.setenv("JWT_SECRET_KEY", "test-secret-key-32-chars-minimum-aaaa")
+    from backend.services.auth import storage as auth_storage
+    monkeypatch.setattr(auth_storage, "_INITIALIZED", False, raising=False)
+    yield db_file

@@ -100,10 +100,11 @@ async def v2_health() -> dict:
         new_memory_enabled       = _flag("ENABLE_NEW_MEMORY"),
         agent_enabled            = _flag("ENABLE_AGENT"),
         web_research_enabled     = _flag("ENABLE_WEB_RESEARCH"),
-        # Phase B — wired middleware (matches env flags read in api.py).
+        # Phase B / Phase 3a — wired middleware (matches env flags in api.py).
         request_id_middleware    = _flag("ENABLE_REQUEST_ID_MIDDLEWARE"),
         timing_middleware        = _flag("ENABLE_TIMING_MIDDLEWARE"),
         auth_placeholder         = _flag("ENABLE_AUTH_MIDDLEWARE"),
+        auth_v2                  = _flag("ENABLE_AUTH_V2"),
         v2_error_handlers        = _flag("ENABLE_V2_ERROR_HANDLERS"),
         log_format               = (os.getenv("LOG_FORMAT", "") or "text").lower(),
         # Phase B — AI provider registry snapshot.
