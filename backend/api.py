@@ -141,6 +141,7 @@ def _build_full_app():
         "backend.routes.trading",      # Phase T1 — /trading/signals (gated by ENABLE_TRADING_SIGNALS)
         "backend.routes.v2",           # Phase 1 — /v2/* envelope reference impl
         "backend.routes.v2_auth",      # Phase 3a — /v2/auth/* (guest, refresh, me, logout)
+        "backend.routes.v2_chat_stream",  # Phase 4a — /v2/chat/stream (SSE)
     ]:
         try:
             _app.include_router(importlib.import_module(_mod).router)

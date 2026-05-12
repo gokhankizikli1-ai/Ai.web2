@@ -21,8 +21,9 @@ layer never sees provider-specific exception types leak out.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any
+from typing import AsyncIterator, Dict, Any
 
+from backend.services.providers.streaming import ProviderStreamEvent
 from backend.services.providers.types import ProviderRequest, ProviderResult
 
 
@@ -33,6 +34,12 @@ class BaseAIProvider(ABC):
 
     # Model id used when ProviderRequest.model is missing or empty.
     default_model: str = ""
+
+    # Whether this provider implements stream_chat_completion(). The
+    # default `stream_chat_completion` below raises NotImplementedError;
+    # subclasses that support streaming override both methods AND set
+    # this flag to True so the registry / /v2/health can advertise it.
+    supports_streaming: bool = False
 
     @abstractmethod
     def is_available(self) -> bool:
@@ -54,6 +61,29 @@ class BaseAIProvider(ABC):
         """
         ...
 
+    async def stream_chat_completion(
+        self, request: ProviderRequest,
+    ) -> AsyncIterator[ProviderStreamEvent]:
+        """Stream a chat-completion as a sequence of ProviderStreamEvents.
+
+        Default implementation raises NotImplementedError — subclasses
+        that support streaming override this AND set
+        `supports_streaming = True`. /v2/chat/stream checks the flag
+        before calling.
+
+        On failure, the generator must yield a `ProviderStreamError`
+        event and then stop. It must NOT raise across the yield
+        boundary; the SSE route is built on the assumption that
+        exceptions become explicit error frames.
+        """
+        raise NotImplementedError(
+            f"Provider {self.name!r} does not support streaming"
+        )
+        # Unreachable, but keeps the type checker happy that this is an
+        # async generator.
+        if False:  # pragma: no cover
+            yield  # type: ignore[unreachable]
+
     def describe(self) -> Dict[str, Any]:
         """Public-safe capability descriptor for /v2/health.
 
@@ -61,9 +91,10 @@ class BaseAIProvider(ABC):
         organisation id) but MUST NOT include secrets.
         """
         return {
-            "name":          self.name,
-            "default_model": self.default_model,
-            "available":     self.is_available(),
+            "name":               self.name,
+            "default_model":      self.default_model,
+            "available":          self.is_available(),
+            "supports_streaming": self.supports_streaming,
         }
 
 
