@@ -261,10 +261,19 @@ jobs:
           #   conclusion is one of: success | failure | cancelled | timed_out |
           #                         action_required | startup_failure |
           #                         neutral | skipped | stale | null
+          #
+          # Exclude THIS workflow's own check-run by name — on `pull_request`
+          # triggers github.sha equals the PR head SHA, so the job that runs
+          # this very script lands on the same commit we're querying.
+          # Without exclusion the pending filter would always match our own
+          # `in_progress:null` entry and the workflow would always skip
+          # itself on PR-event triggers (Bugbot, Medium).
+          SELF_NAME='Evaluate PR and auto-merge if eligible'
           CHECKS=$(gh api "repos/${{ github.repository }}/commits/$HEAD_SHA/check-runs" \
-            --paginate --jq '.check_runs[] | "\(.name)=\(.status):\(.conclusion // "null")"')
+            --paginate --jq '.check_runs[] | "\(.name)=\(.status):\(.conclusion // "null")"' \
+            | grep -vF "${SELF_NAME}=" || true)
           echo "── Statuses ──";  echo "${STATUSES:-(none)}"
-          echo "── Check-runs ──"; echo "${CHECKS:-(none)}"
+          echo "── Check-runs (self excluded) ──"; echo "${CHECKS:-(none)}"
           echo
 
           # Failures: commit status = error|failure   OR
