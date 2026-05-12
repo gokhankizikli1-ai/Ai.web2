@@ -8,8 +8,7 @@ import ToolShortcuts from '@/components/ToolShortcuts';
 import type { ToolShortcut } from '@/components/ToolShortcuts';
 import type { ComposerTool } from '@/components/ComposerTools';
 import type { Message, WorkspaceTab } from '@/types';
-import { Sparkles, AlertTriangle, RefreshCw } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Sparkles } from 'lucide-react';
 
 interface ChatViewProps {
   messages: Message[];
@@ -125,6 +124,7 @@ export default function ChatView({
                     onRegenerate={message.role === 'assistant' ? () => {} : undefined}
                     onResponseAction={message.role === 'assistant' ? insertInput : undefined}
                     onHoverAction={message.role === 'assistant' ? onHoverAction : undefined}
+                    onRetry={message.role === 'assistant' && message.isError ? onRetry : undefined}
                   />
                 </motion.div>
               ))}
@@ -146,25 +146,11 @@ export default function ChatView({
               </motion.div>
             )}
 
-            {/* Error state */}
-            {error && (
-              <motion.div
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="flex gap-3"
-              >
-                <div className="flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-lg bg-red-500/10 border border-red-500/10">
-                  <AlertTriangle className="h-3 w-3 text-red-400" />
-                </div>
-                <div className="rounded-2xl rounded-tl-sm bg-red-500/[0.04] border border-red-500/[0.08] px-5 py-3.5 max-w-[85%] md:max-w-[75%]">
-                  <p className="text-[13px] text-red-300/80 mb-3">{error}</p>
-                  <Button variant="ghost" size="sm" onClick={onRetry}
-                    className="h-7 gap-2 text-[11px] text-red-400/70 hover:text-red-300 hover:bg-red-500/[0.08] rounded-lg">
-                    <RefreshCw className="h-3.5 w-3.5" />Try Again
-                  </Button>
-                </div>
-              </motion.div>
-            )}
+            {/* Error state is now rendered inline as an assistant-role
+                MessageBubble (see useChat — every failure appends a
+                bubble with isError=true), so this view no longer needs a
+                separate error block. The global toast still fires for
+                visibility, but the inline bubble is the source of truth. */}
             <div ref={messagesEndRef} className="h-2" />
           </div>
         )}

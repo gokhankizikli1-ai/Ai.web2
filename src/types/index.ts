@@ -11,6 +11,11 @@ export interface Message {
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+  // True when this assistant turn is a rendered error message (e.g. the
+  // backend was unreachable or returned a non-OK status). The UI uses it
+  // to style the bubble red and show a "Try Again" affordance instead of
+  // the regular Copy / Regenerate actions.
+  isError?: boolean;
 }
 
 export interface ChatSession {

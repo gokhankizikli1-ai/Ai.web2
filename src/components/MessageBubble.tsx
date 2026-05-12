@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { User, Sparkles, Pin, PinOff } from 'lucide-react';
+import { User, Sparkles, Pin, PinOff, AlertTriangle, RefreshCw } from 'lucide-react';
 import { useStreamingText } from '@/hooks/useStreamingText';
 import MarkdownMessage from './MarkdownMessage';
 import MessageActions from './MessageActions';
@@ -17,6 +17,8 @@ interface MessageBubbleProps {
   onRegenerate?: () => void;
   onResponseAction?: (action: string) => void;
   onHoverAction?: (action: string, prompt: string) => void;
+  // Retry handler — only invoked when fullMessage.isError is true.
+  onRetry?: () => void;
 }
 
 export default function MessageBubble({
@@ -29,11 +31,40 @@ export default function MessageBubble({
   onRegenerate,
   onResponseAction,
   onHoverAction,
+  onRetry,
 }: MessageBubbleProps) {
   const isUser = role === 'user';
+  const isError = !isUser && !!fullMessage.isError;
   const { displayedText, isComplete } = useStreamingText(content, 15, shouldAnimate);
   const displayContent = shouldAnimate ? displayedText : content;
   const [showHoverActions, setShowHoverActions] = useState(false);
+
+  // Error bubble — distinct red styling, inline Try Again, no copy /
+  // regenerate / hover actions. The user always sees a clear failure
+  // state right under their message, never a silent dead-end.
+  if (isError) {
+    return (
+      <div className="group/message flex gap-3">
+        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg mt-0.5 bg-red-500/10 border border-red-500/15">
+          <AlertTriangle className="h-3.5 w-3.5 text-red-400/80" />
+        </div>
+        <div className="max-w-[85%] md:max-w-[75%] min-w-0 flex flex-col">
+          <div className="rounded-2xl rounded-tl-sm bg-red-500/[0.04] border border-red-500/[0.10] px-5 py-3.5">
+            <p className="text-[14px] leading-[1.6] text-red-200/85 whitespace-pre-wrap">{content}</p>
+            {onRetry && (
+              <button
+                onClick={onRetry}
+                className="mt-3 inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[11px] font-medium text-red-300/85 bg-red-500/[0.08] hover:bg-red-500/[0.12] hover:text-red-200 border border-red-500/15 transition-all"
+              >
+                <RefreshCw className="h-3 w-3" />
+                Try Again
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

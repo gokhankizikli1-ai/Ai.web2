@@ -13,22 +13,35 @@ const API_URL = 'https://worker-production-1345.up.railway.app/chat';
 // block surfaces a friendly "Request timed out." toast.
 const CHAT_REQUEST_TIMEOUT_MS = 60_000;
 
-// Map raw browser/network errors to user-facing copy. Without this, Safari's
-// `TypeError: Load failed` and Chrome's `TypeError: Failed to fetch` reach
-// the toast verbatim, which is what the user just reported.
+// Map any raw browser/network/parse error to user-facing copy. The literal
+// strings "Load failed" (Safari) / "Failed to fetch" (Chromium) / network
+// patterns must NEVER reach the UI verbatim. Also catches JSON-parse
+// SyntaxErrors and any other surprise.
 const NETWORK_ERROR_PATTERNS =
   /load failed|failed to fetch|network ?error|connection (refused|reset)|err_(internet|connection|name_not_resolved)/i;
+const JSON_PARSE_PATTERNS =
+  /unexpected (?:token|end of json)|json\.parse|invalid json/i;
 
 function friendlyErrorMessage(err: unknown): string {
   if (err instanceof DOMException && err.name === 'AbortError') {
-    return 'Request timed out. Please retry.';
+    return 'Request timed out. Please try again.';
   }
   if (err instanceof TypeError) {
-    return 'Connection problem. Please retry.';
+    return 'Connection problem. Please try again.';
   }
-  const msg = err instanceof Error ? err.message : '';
+  const msg = (err instanceof Error ? err.message : String(err ?? '')).trim();
   if (msg && NETWORK_ERROR_PATTERNS.test(msg)) {
-    return 'Connection problem. Please retry.';
+    return 'Connection problem. Please try again.';
+  }
+  if (msg && JSON_PARSE_PATTERNS.test(msg)) {
+    return 'The server returned an unexpected response. Please try again.';
+  }
+  // Final safety net: if the message looks like a raw browser fetch
+  // failure ("Load failed", "NetworkError when attempting to fetch
+  // resource", etc.) but somehow slipped past the regex, still return
+  // friendly copy rather than echoing the raw string.
+  if (msg && /failed|fetch|network|aborted|timeout/i.test(msg)) {
+    return 'Connection problem. Please try again.';
   }
   return msg || 'Something went wrong. Please try again.';
 }
@@ -141,6 +154,14 @@ export function useChat() {
       try { ctrl.abort(); } catch { /* ignore */ }
     }, CHAT_REQUEST_TIMEOUT_MS);
 
+    // Two outcomes flow through the same tail: a successful assistant
+    // reply OR a friendly error string. Either way we render an assistant
+    // bubble in the thread so failure is NEVER silent — the user always
+    // sees a response right after their message, with a "Try Again"
+    // affordance when it failed.
+    let assistantText: string = '';
+    let isErrorTurn = false;
+
     try {
       const response = await fetch(API_URL, {
         method: 'POST',
@@ -156,47 +177,79 @@ export function useChat() {
       });
 
       if (!response.ok) {
-        // 4xx/5xx — map a couple of common codes to specific copy, otherwise
-        // fall through to a generic message. We deliberately don't echo
-        // server response bodies verbatim because they may contain stack
-        // traces / internal field names.
+        // Non-OK: map common codes to friendly copy. Never echo response
+        // bodies — they may contain stack traces or internal field names.
         if (response.status === 429) {
-          setError('Too many requests. Wait a few seconds and retry.');
+          assistantText = 'Too many requests. Please wait a few seconds and try again.';
         } else if (response.status === 503) {
-          setError('Chat service is temporarily unavailable.');
+          assistantText = 'The chat service is temporarily unavailable. Please try again in a moment.';
         } else if (response.status >= 500) {
-          setError('Server error. Please retry in a moment.');
+          assistantText = 'The server hit an error. Please try again in a moment.';
+        } else if (response.status === 401 || response.status === 403) {
+          assistantText = 'Authentication failed. Please refresh the page and try again.';
         } else {
-          setError(`Server responded with ${response.status}.`);
+          assistantText = `The server responded with ${response.status}. Please try again.`;
         }
-        return;
+        isErrorTurn = true;
+      } else {
+        // JSON parse is its own failure mode (empty body, HTML error
+        // page, half-streamed response, etc.). Catch it locally so the
+        // outer catch doesn't fire and we keep a single error path.
+        let data: Record<string, unknown> | null = null;
+        try {
+          data = await response.json();
+        } catch {
+          assistantText = 'The server returned an unexpected response. Please try again.';
+          isErrorTurn = true;
+        }
+        if (!isErrorTurn && data) {
+          const reply = data.reply ?? data.response ?? data.message;
+          if (typeof reply === 'string' && reply.trim()) {
+            assistantText = reply;
+          } else {
+            assistantText = 'The server returned an empty response. Please try again.';
+            isErrorTurn = true;
+          }
+        }
       }
-
-      const data = await response.json();
-      const responseText = data.reply ?? data.response ?? data.message ?? JSON.stringify(data);
-
-      const assistantMessage: Message = {
-        id: generateId(),
-        role: 'assistant',
-        content: responseText,
-        timestamp: new Date(),
-      };
-
-      setSessions((prev) =>
-        prev.map((s) =>
-          s.id === activeSessionId
-            ? { ...s, messages: [...s.messages, assistantMessage], updatedAt: new Date() }
-            : s
-        )
-      );
     } catch (err) {
-      // Translate raw fetch/abort errors so "Load failed" / "Failed to
-      // fetch" / abort-on-timeout never reach the toast verbatim.
-      setError(friendlyErrorMessage(err));
+      // Network / abort / DNS / Safari "Load failed" / Chromium "Failed
+      // to fetch" all land here. friendlyErrorMessage() must NEVER let
+      // a raw error string reach the UI.
+      assistantText = friendlyErrorMessage(err);
+      isErrorTurn = true;
     } finally {
       clearTimeout(timeoutId);
-      setIsLoading(false);
     }
+
+    // Defensive: the mapper should always return a non-empty string, but
+    // belt-and-suspenders so the assistant bubble cannot ever be empty.
+    if (!assistantText.trim()) {
+      assistantText = 'Something went wrong. Please try again.';
+      isErrorTurn = true;
+    }
+
+    const assistantMessage: Message = {
+      id: generateId(),
+      role: 'assistant',
+      content: assistantText,
+      timestamp: new Date(),
+      isError: isErrorTurn || undefined,
+    };
+
+    setSessions((prev) =>
+      prev.map((s) =>
+        s.id === activeSessionId
+          ? { ...s, messages: [...s.messages, assistantMessage], updatedAt: new Date() }
+          : s
+      )
+    );
+    // Mirror the failure to the existing error/toast UX so the global
+    // toast still fires for users who liked that signal.
+    if (isErrorTurn) {
+      setError(assistantText);
+    }
+    setIsLoading(false);
   }, [activeSessionId]);
 
   const sendMessage = useCallback(async (content: string) => {
@@ -204,16 +257,26 @@ export function useChat() {
   }, [doSend]);
 
   const retry = useCallback(() => {
-    if (lastUserMessage) {
-      setSessions((prev) =>
-        prev.map((s) =>
-          s.id === activeSessionId
-            ? { ...s, messages: s.messages.slice(0, -1), updatedAt: new Date() }
-            : s
-        )
-      );
-      doSend(lastUserMessage);
-    }
+    if (!lastUserMessage) return;
+    // The previous attempt left a [userMessage, assistantErrorMessage]
+    // pair (or just [userMessage] if doSend never appended an assistant
+    // turn). Strip whichever trailing pair exists so doSend re-creates
+    // them cleanly — no duplicate user message in the thread.
+    setSessions((prev) =>
+      prev.map((s) => {
+        if (s.id !== activeSessionId) return s;
+        const msgs = s.messages;
+        let chop = 0;
+        if (msgs.length > 0 && msgs[msgs.length - 1].role === 'assistant') chop = 1;
+        if (
+          msgs.length - chop > 0 &&
+          msgs[msgs.length - 1 - chop].role === 'user' &&
+          msgs[msgs.length - 1 - chop].content === lastUserMessage
+        ) chop += 1;
+        return { ...s, messages: msgs.slice(0, msgs.length - chop), updatedAt: new Date() };
+      })
+    );
+    doSend(lastUserMessage);
   }, [lastUserMessage, doSend, activeSessionId]);
 
   const clearChat = useCallback(() => {
