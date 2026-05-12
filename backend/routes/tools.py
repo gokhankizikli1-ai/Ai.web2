@@ -67,6 +67,13 @@ def tools_health() -> dict:
     except Exception as exc:
         logger.debug("/tools/health: agent stats unavailable: %s", exc)
 
+    # Phase T1 — trading signals service stats.
+    try:
+        from backend.services.trading.signals_service import stats as trading_stats
+        out["trading"] = trading_stats()
+    except Exception as exc:
+        logger.debug("/tools/health: trading stats unavailable: %s", exc)
+
     # Phase R1 — research provider stats (Tavily today).
     try:
         from backend.services.research import stats as research_stats

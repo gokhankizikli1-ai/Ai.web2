@@ -138,6 +138,7 @@ def _build_full_app():
         "backend.routes.stats",
         "backend.routes.tools",        # Phase 4A — /tools/health
         "backend.routes.sessions",     # Phase M2 — /sessions/* (gated by ENABLE_SESSIONS)
+        "backend.routes.trading",      # Phase T1 — /trading/signals (gated by ENABLE_TRADING_SIGNALS)
     ]:
         try:
             _app.include_router(importlib.import_module(_mod).router)
