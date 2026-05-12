@@ -147,15 +147,20 @@ function mapBackendSignal(raw: Record<string, unknown>, idx: number): TradingSig
   const errorReason = typeof raw.error === 'string' ? raw.error : undefined;
 
   // Reasoning is the short copy shown inline. Prefer the AI's invalidation
-  // (veto condition) when a plan exists; otherwise a status-aware default.
-  // When `errorReason` is set, the SignalCard already renders it in the
-  // amber warning row — leaving reasoning empty here avoids showing the
-  // same error string twice in the expanded view.
+  // (veto condition) when a plan exists; otherwise tell the user *why*
+  // there is no extra copy:
+  //   - live, graded but no veto string → empty (the grade/levels speak)
+  //   - live, no setup_grade           → "no setup yet on this timeframe"
+  //   - failed lookup                  → empty (errorReason is already in
+  //                                     the amber warning row below)
+  //   - everything else                → generic offline message
   let reasoning: string;
   if (raw.invalidation) {
     reasoning = String(raw.invalidation);
-  } else if (isLive) {
+  } else if (isLive && setupGrade === null) {
     reasoning = 'Live price — no setup yet on this timeframe.';
+  } else if (isLive) {
+    reasoning = '';
   } else if (errorReason) {
     reasoning = '';
   } else {
