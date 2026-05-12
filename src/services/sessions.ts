@@ -103,12 +103,16 @@ async function call<T>(
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
   try {
-    const res = await fetch(`${API_ORIGIN}${path}`, {
-      method,
-      signal:  ctrl.signal,
-      headers: { 'Content-Type': 'application/json' },
-      body:    body !== undefined ? JSON.stringify(body) : undefined,
-    });
+    // Only attach Content-Type when there is actually a body — sending
+    // it on GET / DELETE forces a CORS preflight (Content-Type isn't a
+    // CORS-safelisted header) and is semantically wrong on a bodyless
+    // request. probeSessionsEnabled already follows this pattern.
+    const init: RequestInit = { method, signal: ctrl.signal };
+    if (body !== undefined) {
+      init.headers = { 'Content-Type': 'application/json' };
+      init.body    = JSON.stringify(body);
+    }
+    const res = await fetch(`${API_ORIGIN}${path}`, init);
     if (!res.ok) return null;
     return (await res.json()) as T;
   } catch {

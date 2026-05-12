@@ -58,11 +58,10 @@ const SESSIONS_STORAGE_KEY      = 'korvix_chat_sessions_v1';
 const ACTIVE_SESSION_STORAGE_KEY = 'korvix_active_session_id_v1';
 const WORKSPACE_STORAGE_KEY     = 'korvix_workspace_id_v1';
 
-interface PersistedSession extends ChatSession {
-  threadId?: string;   // backend Thread.id once the lazy create succeeded
-}
-
-function reviveSession(raw: unknown): PersistedSession | null {
+// ChatSession already declares `threadId?: string` (see src/types/index.ts),
+// so no separate persisted-session type is needed. The revive function
+// returns a ChatSession directly.
+function reviveSession(raw: unknown): ChatSession | null {
   if (!raw || typeof raw !== 'object') return null;
   const s = raw as Record<string, unknown>;
   if (typeof s.id !== 'string' || !Array.isArray(s.messages)) return null;
@@ -89,13 +88,13 @@ function reviveSession(raw: unknown): PersistedSession | null {
   };
 }
 
-function loadSessionsFromStorage(): PersistedSession[] {
+function loadSessionsFromStorage(): ChatSession[] {
   try {
     const raw = localStorage.getItem(SESSIONS_STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.map(reviveSession).filter((s): s is PersistedSession => s !== null);
+    return parsed.map(reviveSession).filter((s): s is ChatSession => s !== null);
   } catch {
     return [];
   }
@@ -313,7 +312,7 @@ export function useChat() {
   //        ensureThread() invocations for the same local session share
   //        one backend createThread instead of racing two.
   const ensureThread = useCallback(async (
-    localSession: ChatSession & { threadId?: string },
+    localSession: ChatSession,
   ): Promise<string | null> => {
     // Fast path: cache hit.
     const cached = threadIdMapRef.current[localSession.id];
@@ -353,7 +352,7 @@ export function useChat() {
         // the new thread id without waiting for the React commit.
         threadIdMapRef.current[localSession.id] = thread.id;
         setSessions(prev =>
-          prev.map(s => s.id === localSession.id ? { ...s, threadId: thread.id } as ChatSession : s)
+          prev.map(s => s.id === localSession.id ? { ...s, threadId: thread.id } : s)
         );
         return thread.id;
       } catch {
