@@ -170,3 +170,25 @@ def test_reasonable_exponentiation_still_works():
     assert abs(r["data"]["result"] - 1.05 ** 360) < 1e-3
     # pow() function: same guard applies but should accept reasonable args.
     assert _run(expression="pow(2, 32)")["data"]["result"] == 2 ** 32
+
+
+@pytest.mark.parametrize("expr,expected", [
+    ("0.5 ** 10000",  0.0),       # underflows to zero — safe
+    ("0.999 ** 5001", 0.999 ** 5001),  # valid probability
+])
+def test_float_base_exponentiation_passes_through(expr, expected):
+    """The magnitude guard only protects against int**int blow-ups.
+    float**X always returns a bounded IEEE 754 double in O(1) — even
+    when X is huge — so legitimate probability/finance math must
+    pass through the guard, not be falsely rejected."""
+    r = _run(expression=expr)
+    assert r["status"] == "available", f"{expr!r} unexpectedly errored: {r}"
+    assert r["data"]["result"] == pytest.approx(expected, abs=1e-12)
+
+
+def test_float_base_with_overflowing_exponent_yields_clean_error():
+    # 2.0 ** 5001 overflows IEEE double — Python raises OverflowError,
+    # which the existing handler maps to a clean _error("result overflow").
+    r = _run(expression="2.0 ** 5001")
+    assert r["status"] == "error"
+    assert "overflow" in r["message"].lower()

@@ -53,34 +53,29 @@ _ALLOWED_UNARYOPS: Dict[Type[ast.AST], Callable[[Any], Any]] = {
 def _check_pow_magnitude(base: Any, exp: Any) -> None:
     """Refuse exponentiation whose result would blow up memory / CPU.
 
-    Heuristic: estimate the result's bit length as base_bits * |exp|.
-    Reject when that exceeds _MAX_POW_RESULT_BITS, or when |exp|
-    exceeds _MAX_POW_EXPONENT regardless of base. Complex numbers
-    aren't reachable here (the parser only emits ints/floats) but
-    we guard anyway."""
-    if isinstance(base, complex) or isinstance(exp, complex):
-        raise _UnsafeExpression("complex numbers not allowed")
-    try:
-        abs_exp = abs(exp)
-    except TypeError:
-        raise _UnsafeExpression("exponent must be numeric")
+    Only `int ** int` is risky: Python ints are arbitrary precision so
+    `9 ** 9 ** 9` blocks the event loop computing a 370M-digit number.
+    Float-based exponentiation (`float ** X` or `X ** float`) always
+    returns a bounded IEEE 754 double in O(1) — either a normal value,
+    `+/-inf`, `0.0`, or raises `OverflowError` — so no DoS risk and
+    legit math like `0.5 ** 10000`, `0.999 ** 5001`, `2.0 ** 5001`
+    must pass through.
 
+    For the int-int case: estimate the result's bit length as
+    base_bits * |exp|. Reject when that exceeds _MAX_POW_RESULT_BITS
+    or when |exp| exceeds _MAX_POW_EXPONENT regardless of base."""
+    # bool is a subclass of int but always tiny — treat conservatively
+    # as the int branch so a hypothetical True**huge_int still trips.
+    if not (isinstance(base, int) and isinstance(exp, int)):
+        return
+
+    abs_exp = abs(exp)
     if abs_exp > _MAX_POW_EXPONENT:
         raise _UnsafeExpression(
             f"exponent magnitude too large (|exp|>{_MAX_POW_EXPONENT})"
         )
 
-    if isinstance(base, int):
-        base_bits = base.bit_length() or 1
-    else:
-        try:
-            base_bits = max(1, int(math.log2(max(1.0, abs(float(base)))))) + 1
-        except (ValueError, OverflowError):
-            # Float base too large to log — let the multiplication path
-            # raise OverflowError naturally; the existing handler maps
-            # that to a clean _error.
-            return
-
+    base_bits = base.bit_length() or 1
     if base_bits * abs_exp > _MAX_POW_RESULT_BITS:
         raise _UnsafeExpression(
             f"result magnitude too large (~{int(base_bits * abs_exp)} bits, "
