@@ -239,22 +239,24 @@ function formatErrorBubble(d: ChatErrorDetails): string {
 
 
 export function useChat() {
-  // Hydrate from localStorage on mount — if the user refreshes mid-
-  // conversation, their thread is right there. If storage is empty
-  // (first visit) or corrupt (revive fails), fall back to one fresh
-  // empty session so the composer is always usable.
-  const [sessions, setSessions] = useState<ChatSession[]>(() => {
+  // Compute initial state ONCE — both useState initializers need to
+  // agree on which session is active. If we computed them independently
+  // (each calling loadSessionsFromStorage + createEmptySession), an empty
+  // first-visit localStorage would produce two different random session
+  // IDs and `doSend`'s `s.id === activeSessionId` predicate would never
+  // match → every message would silently drop. The useRef gate runs
+  // exactly once per mount so both useStates read from the same snapshot.
+  const initialStateRef = useRef<{ sessions: ChatSession[]; activeId: string } | null>(null);
+  if (initialStateRef.current === null) {
     const restored = loadSessionsFromStorage();
-    return restored.length > 0 ? restored : [createEmptySession()];
-  });
-  const [activeSessionId, setActiveSessionId] = useState<string>(() => {
-    const stored = loadActiveSessionId();
-    // Restore prior active session if it still exists in the loaded set,
-    // else default to the most recent one.
-    const restored = loadSessionsFromStorage();
-    if (stored && restored.some(s => s.id === stored)) return stored;
-    return restored[0]?.id ?? createEmptySession().id;
-  });
+    const seeded   = restored.length > 0 ? restored : [createEmptySession()];
+    const stored   = loadActiveSessionId();
+    const activeId = (stored && seeded.some(s => s.id === stored)) ? stored : seeded[0].id;
+    initialStateRef.current = { sessions: seeded, activeId };
+  }
+
+  const [sessions, setSessions] = useState<ChatSession[]>(initialStateRef.current.sessions);
+  const [activeSessionId, setActiveSessionId] = useState<string>(initialStateRef.current.activeId);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUserMessage, setLastUserMessage] = useState<string | null>(null);
@@ -265,6 +267,23 @@ export function useChat() {
   // listing `sessions` in their dep array (which would re-bind doSend
   // on every message append and break stable identity downstream).
   const sessionsRef = useRef<ChatSession[]>(sessions);
+  // Synchronous local-session-id → backend-thread-id cache. Populated by
+  // ensureThread as soon as a Thread is created, so the assistant turn's
+  // write-through never reads a stale `sessions` snapshot and triggers
+  // a second createThread call. Restored from sessions on mount below.
+  const threadIdMapRef = useRef<Record<string, string>>({});
+  // In-flight createThread promises keyed by local session id. Lets
+  // concurrent callers (user-turn + a fast follow-up) await the same
+  // resolution instead of racing two parallel backend creates.
+  const threadCreationPromisesRef = useRef<Record<string, Promise<string | null>>>({});
+
+  // Seed the threadId map from whatever was restored from localStorage,
+  // so a refresh mid-conversation keeps writing to the same backend thread.
+  if (Object.keys(threadIdMapRef.current).length === 0) {
+    for (const s of sessions) {
+      if (s.threadId) threadIdMapRef.current[s.id] = s.threadId;
+    }
+  }
 
   // ── Phase-2 persistence side effects ──────────────────────────────────
   // 1) Mirror sessions to localStorage on every change so a refresh
@@ -285,32 +304,67 @@ export function useChat() {
   //    null if the sessions backend is disabled / unreachable. The local
   //    session is updated in-place with `threadId` so future sends reuse
   //    the same thread.
+  //
+  //    Concurrency safety:
+  //      - threadIdMapRef is a SYNCHRONOUS cache. As soon as a thread is
+  //        created, the id lands there — the very next call sees it
+  //        without waiting for React's render commit.
+  //      - threadCreationPromisesRef dedupes parallel calls so two
+  //        ensureThread() invocations for the same local session share
+  //        one backend createThread instead of racing two.
   const ensureThread = useCallback(async (
     localSession: ChatSession & { threadId?: string },
   ): Promise<string | null> => {
-    if (localSession.threadId) return localSession.threadId;
-    try {
-      if (!workspaceIdRef.current) {
-        const ws = await sessionsClient.ensureDefaultWorkspace(userIdRef.current);
-        if (!ws) return null;
-        workspaceIdRef.current = ws.id;
-        saveWorkspaceId(ws.id);
-      }
-      const thread = await sessionsClient.createThread(
-        workspaceIdRef.current,
-        localSession.title || 'New Conversation',
-        'chat',
-      );
-      if (!thread) return null;
-      // Patch the matching session with its backend thread id. We do
-      // this via setSessions so other consumers see the change too.
-      setSessions(prev =>
-        prev.map(s => s.id === localSession.id ? { ...s, threadId: thread.id } as ChatSession : s)
-      );
-      return thread.id;
-    } catch {
-      return null;
+    // Fast path: cache hit.
+    const cached = threadIdMapRef.current[localSession.id];
+    if (cached) return cached;
+    // The local snapshot might carry an id from localStorage hydration.
+    if (localSession.threadId) {
+      threadIdMapRef.current[localSession.id] = localSession.threadId;
+      return localSession.threadId;
     }
+    // In-flight dedup — another caller already started; await the same
+    // promise so the second send writes to the same thread.
+    const inflight = threadCreationPromisesRef.current[localSession.id];
+    if (inflight) return inflight;
+
+    const promise = (async (): Promise<string | null> => {
+      try {
+        if (!workspaceIdRef.current) {
+          const ws = await sessionsClient.ensureDefaultWorkspace(userIdRef.current);
+          if (!ws) return null;
+          workspaceIdRef.current = ws.id;
+          saveWorkspaceId(ws.id);
+        }
+        // Re-check the cache after the workspace round-trip — a
+        // concurrent caller may have populated it while we were waiting.
+        const justCached = threadIdMapRef.current[localSession.id];
+        if (justCached) return justCached;
+
+        const thread = await sessionsClient.createThread(
+          workspaceIdRef.current,
+          localSession.title || 'New Conversation',
+          'chat',
+        );
+        if (!thread) return null;
+
+        // Synchronously update the ref BEFORE setSessions so any later
+        // caller hitting the fast path on the next event-loop turn sees
+        // the new thread id without waiting for the React commit.
+        threadIdMapRef.current[localSession.id] = thread.id;
+        setSessions(prev =>
+          prev.map(s => s.id === localSession.id ? { ...s, threadId: thread.id } as ChatSession : s)
+        );
+        return thread.id;
+      } catch {
+        return null;
+      } finally {
+        delete threadCreationPromisesRef.current[localSession.id];
+      }
+    })();
+
+    threadCreationPromisesRef.current[localSession.id] = promise;
+    return promise;
   }, []);
 
   const [aiMode, setAiMode] = useState<AIMode>('fast');
