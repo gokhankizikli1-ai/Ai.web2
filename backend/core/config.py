@@ -23,11 +23,19 @@ class Config:
     # ── AI providers — validated lazily at call time, not import time ─────
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    # Phase 6a — Anthropic provider. Registered into the provider
+    # registry only when this key is set; absence means the provider
+    # appears in /v2/health as registered=false (Phase B placeholder
+    # shape) and never receives traffic.
+    ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
 
     # ── Models ───────────────────────────────────────────────────────────
     MODEL_FAST: str = os.getenv("MODEL_FAST", "gpt-4o-mini")
     MODEL_STRONG: str = os.getenv("MODEL_STRONG", "gpt-4o")
     MODEL_GEMINI: str = os.getenv("MODEL_GEMINI", "gemini-2.0-flash-exp")
+    # Phase 6a — Anthropic default. Operator can override via env var
+    # without code changes (e.g. swap to claude-haiku-4-5 for cost).
+    MODEL_ANTHROPIC: str = os.getenv("MODEL_ANTHROPIC", "claude-sonnet-4-6")
 
     # ── AI timeouts (seconds) ─────────────────────────────────────────────
     AI_TIMEOUT: int = int(os.getenv("AI_TIMEOUT", "30"))
