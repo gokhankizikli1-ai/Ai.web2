@@ -41,21 +41,37 @@ export interface AIModeOption {
 // Trading types
 export type SignalDirection = 'long' | 'short' | 'wait' | 'neutral';
 export type DataProvider = 'Binance' | 'Yahoo' | 'AlphaVantage' | 'CoinGecko' | 'Unknown';
+export type SetupGrade   = 'A' | 'B' | 'C' | 'D';
+export type AssetType    = 'crypto' | 'stock' | 'forex' | 'unknown';
+export type DataQuality  = 'full' | 'degraded' | 'fallback' | 'unavailable';
 
 export interface TradingSignal {
   id: string;
   symbol: string;
   name: string;
   direction: SignalDirection;
-  confidence: number;
-  setupGrade: 'A' | 'B' | 'C' | 'D';
+  // Nullable: backend returns no setup_grade/confidence for live-but-no-plan
+  // results (e.g. CoinGecko fallback) and for failed lookups. The UI must
+  // render "—" rather than fabricate "0% / D".
+  confidence: number | null;
+  setupGrade: SetupGrade | null;
   volatility: 'low' | 'medium' | 'high';
+  // Live last price (formatted). Optional because failed lookups have none.
+  price?: string;
+  change24hPct?: number;
   entryPrice?: string;
   targetPrice?: string;
   stopLoss?: string;
+  riskReward?: number;
   timestamp: Date;
   reasoning: string;
   provider?: DataProvider;
+  // Per-row liveness — distinct from the panel-wide `is_live` so we can
+  // render "no plan yet" differently from "lookup failed".
+  isLive?: boolean;
+  assetType?: AssetType;
+  dataQuality?: DataQuality;
+  errorReason?: string;
   sparkline?: number[];
 }
 

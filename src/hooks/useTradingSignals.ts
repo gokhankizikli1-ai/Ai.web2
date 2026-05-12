@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { TradingSignal, TradingSignalsResponse, DataProvider } from '@/types';
+import type {
+  TradingSignal, TradingSignalsResponse, DataProvider,
+  SetupGrade, AssetType, DataQuality,
+} from '@/types';
 
 // Canonical Railway backend (per STABLE_CHECKPOINT.md and verified by the
 // Phase 5.3 post-deploy workflow on every recent merge to main). Override
@@ -54,16 +57,15 @@ function normalizeProvider(raw: string | undefined | null): DataProvider {
 //     source, provider, timestamp,
 //     direction: "LONG"|"SHORT"|"WAIT"|"NO_TRADE",
 //     raw_direction, confidence: "low"|"medium"|"high", confidence_pct: 0-100,
-//     setup_grade: 0-10,
+//     setup_grade: 0-10 | null,
 //     entry, stop_loss, take_profit_1, take_profit_2, risk_reward,
 //     volatility_regime, invalidation, data_quality, is_live, error }
 //
-// Frontend TradingSignal expects:
-//   { id, symbol, name, direction: 'long'|'short'|'wait'|'neutral',
-//     confidence (0-100 number), setupGrade: 'A'|'B'|'C'|'D',
-//     volatility: 'low'|'medium'|'high',
-//     entryPrice?, targetPrice?, stopLoss?,
-//     timestamp: Date, reasoning, provider?, sparkline? }
+// `setup_grade`, `confidence_pct`, `entry`, `stop_loss`, `take_profit_*`,
+// `risk_reward` and `invalidation` are all `null` when no plan was generated
+// (e.g. CoinGecko-fallback rows that only carry a live price). The mapper
+// must preserve that distinction so the UI can render "—" for missing
+// numbers instead of fabricating "0% / D".
 
 function mapDirection(dir: unknown): TradingSignal['direction'] {
   const d = String(dir ?? '').toUpperCase();
@@ -73,13 +75,37 @@ function mapDirection(dir: unknown): TradingSignal['direction'] {
   return 'wait';
 }
 
-function mapSetupGrade(score: unknown): TradingSignal['setupGrade'] {
+// Backend `setup_grade` is 0..10 when a plan was generated, else `null`.
+// 0 is a legitimate "worst-case but still graded" plan (renders as 'D'),
+// so we only nullify on missing values — not on the literal 0.
+function mapSetupGrade(score: unknown): SetupGrade | null {
+  if (score === null || score === undefined || score === '') return null;
   const n = typeof score === 'number' ? score : Number(score);
-  if (!Number.isFinite(n)) return 'C';
+  if (!Number.isFinite(n) || n < 0) return null;
   if (n >= 8) return 'A';
   if (n >= 6) return 'B';
   if (n >= 4) return 'C';
   return 'D';
+}
+
+function mapAssetType(raw: unknown): AssetType | undefined {
+  const v = String(raw ?? '').toLowerCase();
+  if (v === 'crypto' || v === 'stock' || v === 'forex' || v === 'unknown') return v;
+  return undefined;
+}
+
+// Backend `_classify_data_quality` emits one of: full | degraded | fallback.
+// "unavailable" is reserved for the frontend to use when nothing came back.
+function mapDataQuality(raw: unknown): DataQuality | undefined {
+  const v = String(raw ?? '').toLowerCase();
+  if (v === 'full' || v === 'degraded' || v === 'fallback' || v === 'unavailable') return v;
+  return undefined;
+}
+
+function toFiniteNumber(n: unknown): number | undefined {
+  if (n === null || n === undefined || n === '') return undefined;
+  const v = typeof n === 'number' ? n : Number(n);
+  return Number.isFinite(v) ? v : undefined;
 }
 
 // Collapse the rich backend regime taxonomy (squeeze_pre_breakout / high_volatility
@@ -105,32 +131,66 @@ function fmtPrice(n: unknown): string | undefined {
 }
 
 function mapBackendSignal(raw: Record<string, unknown>, idx: number): TradingSignal {
-  const provider     = normalizeProvider((raw.provider as string) ?? (raw.source as string));
-  const confidencePct = typeof raw.confidence_pct === 'number' ? raw.confidence_pct : 50;
-  const tsRaw        = (raw.timestamp as string) || new Date().toISOString();
-  // Reasoning prefers `invalidation` (the AI's veto condition) and falls back
-  // to "Live data unavailable" so an empty reasoning never reaches the UI.
-  const reasoning    = (raw.invalidation as string) ||
-                       (raw.error as string) ||
-                       (raw.is_live ? '' : 'Live data unavailable');
+  const provider   = normalizeProvider((raw.provider as string) ?? (raw.source as string));
+  const isLive     = !!raw.is_live;
+  const setupGrade = mapSetupGrade(raw.setup_grade);
+  // Confidence is null when no plan was generated. Only render a number
+  // when the backend gave us one AND the row is live AND a setup grade
+  // exists — otherwise "0%" misleadingly looks like a real reading.
+  const confRaw    = toFiniteNumber(raw.confidence_pct);
+  const confidence =
+    isLive && setupGrade !== null && confRaw !== undefined
+      ? Math.max(0, Math.min(100, Math.round(confRaw)))
+      : null;
+
+  const tsRaw      = (raw.timestamp as string) || new Date().toISOString();
+  const errorReason = typeof raw.error === 'string' ? raw.error : undefined;
+
+  // Reasoning is the short copy shown inline. Prefer the AI's invalidation
+  // (veto condition) when a plan exists; otherwise tell the user *why*
+  // there is no extra copy:
+  //   - live, graded but no veto string → empty (the grade/levels speak)
+  //   - live, no setup_grade           → "no setup yet on this timeframe"
+  //   - failed lookup                  → empty (errorReason is already in
+  //                                     the amber warning row below)
+  //   - everything else                → generic offline message
+  let reasoning: string;
+  if (raw.invalidation) {
+    reasoning = String(raw.invalidation);
+  } else if (isLive && setupGrade === null) {
+    reasoning = 'Live price — no setup yet on this timeframe.';
+  } else if (isLive) {
+    reasoning = '';
+  } else if (errorReason) {
+    reasoning = '';
+  } else {
+    reasoning = 'Live data unavailable.';
+  }
 
   return {
-    id:          (raw.symbol as string) ? `${raw.symbol}-${idx}` : `sig-${idx}`,
-    symbol:      (raw.symbol as string) || '???',
-    name:        (raw.name as string) || (raw.symbol as string) || 'Unknown',
-    direction:   mapDirection(raw.direction),
-    confidence:  Math.max(0, Math.min(100, Math.round(confidencePct))),
-    setupGrade:  mapSetupGrade(raw.setup_grade),
-    volatility:  mapVolatility(raw.volatility_regime),
-    entryPrice:  fmtPrice(raw.entry),
-    targetPrice: fmtPrice(raw.take_profit_1),
-    stopLoss:    fmtPrice(raw.stop_loss),
-    timestamp:   new Date(tsRaw),
+    id:           (raw.symbol as string) ? `${raw.symbol}-${idx}` : `sig-${idx}`,
+    symbol:       (raw.symbol as string) || '???',
+    name:         (raw.name as string) || (raw.symbol as string) || 'Unknown',
+    direction:    mapDirection(raw.direction),
+    confidence,
+    setupGrade,
+    volatility:   mapVolatility(raw.volatility_regime),
+    price:        fmtPrice(raw.price),
+    change24hPct: toFiniteNumber(raw.change_24h_pct),
+    entryPrice:   fmtPrice(raw.entry),
+    targetPrice:  fmtPrice(raw.take_profit_1),
+    stopLoss:     fmtPrice(raw.stop_loss),
+    riskReward:   toFiniteNumber(raw.risk_reward),
+    timestamp:    new Date(tsRaw),
     reasoning,
     provider,
+    isLive,
+    assetType:    mapAssetType(raw.asset_type),
+    dataQuality:  mapDataQuality(raw.data_quality),
+    errorReason,
     // sparkline not provided by the backend — leave undefined so the
     // SignalCard skips rendering it.
-    sparkline:   undefined,
+    sparkline:    undefined,
   };
 }
 
