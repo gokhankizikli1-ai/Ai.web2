@@ -163,6 +163,7 @@ def _build_full_app():
         "backend.routes.v2_auth",      # Phase 3a — /v2/auth/* (guest, refresh, me, logout)
         "backend.routes.v2_chat_stream",  # Phase 4a — /v2/chat/stream (SSE)
         "backend.routes.v2_sessions",  # Phase 5 — /v2/sessions/* (auth-bound, parallel to legacy)
+        "backend.routes.v2_agent",     # Phase 6d — /v2/agent/execute (gated by ENABLE_AGENT)
     ]:
         try:
             _app.include_router(importlib.import_module(_mod).router)
