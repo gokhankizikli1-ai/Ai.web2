@@ -37,15 +37,26 @@ class BaseTool(ABC):
             return self._error(str(exc))
 
     # ── Normalized response helpers ────────────────────────────────────────
+    #
+    # Phase 8d — every result envelope carries `is_live` so any consumer
+    # (trading service, frontend, agent trace renderer) can refuse to
+    # display prices/signals when the source wasn't real. Defaults:
+    #   _ok           → is_live=True   (the tool got real data)
+    #   _unavailable  → is_live=False  (provider down / not configured)
+    #   _error        → is_live=False  (validation or crash; never real data)
+    # Tools that intentionally return cached / simulated data must
+    # override to is_live=False explicitly.
 
-    def _ok(self, data: dict, provider: str = None) -> dict:
+    def _ok(self, data: dict, provider: str = None, *, is_live: bool = True) -> dict:
         return {
             "tool":      self.name,
             "status":    "available",
             "data":      data,
             "message":   None,
             "provider":  provider,
+            "source":    provider,        # alias — every consumer expects ONE of these
             "timestamp": _now(),
+            "is_live":   bool(is_live),
         }
 
     def _unavailable(self, reason: str = "") -> dict:
@@ -55,7 +66,9 @@ class BaseTool(ABC):
             "data":      None,
             "message":   reason or f"{self.name} not configured",
             "provider":  None,
+            "source":    None,
             "timestamp": _now(),
+            "is_live":   False,
         }
 
     def _error(self, reason: str = "") -> dict:
@@ -65,7 +78,9 @@ class BaseTool(ABC):
             "data":      None,
             "message":   reason,
             "provider":  None,
+            "source":    None,
             "timestamp": _now(),
+            "is_live":   False,
         }
 
 
