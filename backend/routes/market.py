@@ -85,7 +85,7 @@ def _detect_asset_type(symbol: str, explicit_type: Optional[str]) -> str:
 
 
 @router.get("/quote/{symbol}")
-async def market_quote(
+def market_quote(
     symbol: str = Path(..., min_length=1, max_length=24, pattern=r"^[A-Za-z0-9._\-]+$"),
     type: Optional[str] = Query(default=None, pattern=r"^(stock|crypto)$"),
 ) -> dict:
