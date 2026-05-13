@@ -98,7 +98,33 @@ def test_block_with_recent_messages_includes_vibe():
     assert "[KISA BAGLAM]" in block
     assert "vibe" in block.lower()
     assert "casual" in block
-    assert "short" in block
+    # Length label must be Turkish (kisa, not short) so the output
+    # matches the language of the rules taught in the prompt.
+    # Regression for Bugbot Medium 3a6e34ca.
+    assert "kisa" in block
+    assert "short" not in block
+
+
+def test_length_labels_translated_to_turkish():
+    """Each detect_vibe length bucket must map to a Turkish label
+    when surfaced in the block. The prompt teaches 'kisa ise kisa'
+    so the code must say 'kisa', not 'short'."""
+    short_block = build_short_context_block(
+        recent_user_messages=["Selam ya"],
+    )
+    medium_block = build_short_context_block(
+        recent_user_messages=[
+            "Bu hafta market durumuyla ilgili kisa bir gozlem yazmamiz lazim galiba",
+        ],
+    )
+    long_block = build_short_context_block(
+        recent_user_messages=[
+            "Selam ya, " + ("uzun uzun anlatayim " * 20),
+        ],
+    )
+    assert "kisa cumleler" in short_block
+    assert "orta cumleler" in medium_block
+    assert "uzun cumleler" in long_block
 
 
 def test_block_with_memory_snippets_formatted():

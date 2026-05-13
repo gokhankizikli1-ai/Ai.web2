@@ -34,6 +34,19 @@ _MAX_SNIPPETS         = 3
 _MAX_SNIPPET_CHARS    = 120
 _BLOCK_HEADER         = "[KISA BAGLAM]"
 
+# detect_vibe() returns English labels; the prompt teaches the model
+# Turkish (kisa / orta / uzun). Translate the length dimension so the
+# output the model sees matches the language of the rules it was
+# taught. Tone (casual/formal/neutral) and emoji_use (frequent/rare/
+# none) are left as-is because the prompt already references them in
+# their English forms (Bugbot Medium 3a6e34ca).
+_LENGTH_TR = {
+    "short":   "kisa",
+    "medium":  "orta",
+    "long":    "uzun",
+    "unknown": "bilinmeyen",
+}
+
 
 def build_short_context_block(
     *,
@@ -62,8 +75,9 @@ def build_short_context_block(
     msgs = list(recent_user_messages) if recent_user_messages else []
     vibe = detect_vibe(msgs)
     if msgs and (vibe["tone"] != "neutral" or vibe["length"] != "unknown" or vibe["emoji_use"] != "none"):
+        length_tr = _LENGTH_TR.get(vibe["length"], vibe["length"])
         parts.append(
-            f"- Kullanici vibe: {vibe['tone']}, {vibe['length']} cumleler, "
+            f"- Kullanici vibe: {vibe['tone']}, {length_tr} cumleler, "
             f"emoji {vibe['emoji_use']}, dil {vibe['lang']}"
         )
 
