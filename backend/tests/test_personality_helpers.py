@@ -1,0 +1,301 @@
+# coding: utf-8
+"""
+Phase 8 — vibe detector + context builder unit tests.
+
+Pure-logic helpers; no LLM, no I/O. These tests pin down the dict
+shape returned by `detect_vibe` and the string format produced by
+`build_short_context_block` so a future personality-tuning edit
+can't silently change either contract.
+"""
+from __future__ import annotations
+
+import pytest
+
+from backend.services.personality import detect_vibe, build_short_context_block
+
+
+# ── detect_vibe ──────────────────────────────────────────────────────────
+
+def test_empty_input_returns_neutral_unknowns():
+    v = detect_vibe([])
+    assert v == {
+        "tone":      "neutral",
+        "length":    "unknown",
+        "emoji_use": "none",
+        "lang":      "unknown",
+    }
+
+
+def test_short_casual_turkish_with_emoji():
+    v = detect_vibe([
+        "Selam ya 😄",
+        "naber abi",
+        "valla iyiyim",
+    ])
+    assert v["tone"]      == "casual"
+    assert v["length"]    == "short"
+    assert v["emoji_use"] in ("rare", "frequent")
+    assert v["lang"]      == "tr"
+
+
+def test_long_formal_english_no_emoji():
+    long_text = (
+        "I would like to request a detailed technical analysis covering the "
+        "specifics of the proposed architectural changes including their "
+        "trade-offs and any second-order effects across the system."
+    )
+    v = detect_vibe([long_text])
+    assert v["length"]    == "long"
+    assert v["emoji_use"] == "none"
+    assert v["tone"]      == "neutral"   # no formal/casual Turkish tokens
+    assert v["lang"]      == "en"
+
+
+def test_formal_turkish_signals():
+    v = detect_vibe([
+        "Iyi gunler dilerim, rica ederim bir konuda yardiminizi rica edebilir miyim?",
+        "Tesekkur ederim, saygilarimla.",
+    ])
+    assert v["tone"] == "formal"
+    assert v["lang"] == "tr"
+
+
+def test_medium_length_bucket():
+    v = detect_vibe([
+        "Bu hafta market durumuyla ilgili kisa bir gozlem yazmamiz lazim galiba",
+    ])
+    assert v["length"] == "medium"
+
+
+def test_emoji_frequency_buckets():
+    rare   = detect_vibe(["Selam 😄 sade bir mesaj"])
+    none   = detect_vibe(["Selam, sade bir mesaj"])
+    many   = detect_vibe(["😄😎🚀 cok hava attim", "🔥 yine 🔥"])
+    assert rare["emoji_use"]  == "rare"
+    assert none["emoji_use"]  == "none"
+    assert many["emoji_use"]  == "frequent"
+
+
+def test_whitespace_and_non_string_filtered():
+    v = detect_vibe(["", "   ", None, 123, "Selam ya 😄"])    # type: ignore[list-item]
+    # Only the last entry survives — short, casual, tr, 1 emoji.
+    assert v["length"]    == "short"
+    assert v["tone"]      == "casual"
+    assert v["emoji_use"] == "rare"
+
+
+# ── build_short_context_block ────────────────────────────────────────────
+
+def test_empty_inputs_return_empty_string():
+    assert build_short_context_block() == ""
+    assert build_short_context_block(recent_user_messages=[], memory_snippets=[]) == ""
+
+
+def test_block_with_recent_messages_includes_vibe():
+    block = build_short_context_block(
+        recent_user_messages=["Selam ya 😄", "naber abi"],
+    )
+    assert "[KISA BAGLAM]" in block
+    assert "vibe" in block.lower()
+    assert "casual" in block
+    # Length label must be Turkish (kisa, not short) so the output
+    # matches the language of the rules taught in the prompt.
+    # Regression for Bugbot Medium 3a6e34ca.
+    assert "kisa" in block
+    assert "short" not in block
+
+
+def test_length_labels_translated_to_turkish():
+    """Each detect_vibe length bucket must map to a Turkish label
+    when surfaced in the block. The prompt teaches 'kisa ise kisa'
+    so the code must say 'kisa', not 'short'."""
+    short_block = build_short_context_block(
+        recent_user_messages=["Selam ya"],
+    )
+    medium_block = build_short_context_block(
+        recent_user_messages=[
+            "Bu hafta market durumuyla ilgili kisa bir gozlem yazmamiz lazim galiba",
+        ],
+    )
+    long_block = build_short_context_block(
+        recent_user_messages=[
+            "Selam ya, " + ("uzun uzun anlatayim " * 20),
+        ],
+    )
+    assert "kisa cumleler" in short_block
+    assert "orta cumleler" in medium_block
+    assert "uzun cumleler" in long_block
+
+
+def test_block_with_memory_snippets_formatted():
+    block = build_short_context_block(
+        memory_snippets=[
+            "Kullanici KorvixAI projesini gelistiriyor",
+            "Daha once trading sinyallerinden bahsetti",
+        ],
+    )
+    assert "Onceki konularda gectikleri" in block
+    assert "KorvixAI" in block
+    assert "trading sinyallerinden" in block
+
+
+def test_block_caps_memory_snippets_at_three():
+    snippets = [f"Fact number {i}" for i in range(10)]
+    block = build_short_context_block(memory_snippets=snippets)
+    # 3 cap → bullet count = 3.
+    assert block.count("\n  • ") == 3
+
+
+def test_block_truncates_long_snippets():
+    long = "Cok cok cok uzun bir bilgi " * 20    # ~480 chars
+    block = build_short_context_block(memory_snippets=[long])
+    # Truncation marker present, total snippet length bounded.
+    assert "…" in block
+    # 120-char cap + bullet prefix ≈ 124 chars on that line.
+    for line in block.splitlines():
+        assert len(line) <= 150
+
+
+def test_block_already_greeted_signal():
+    block = build_short_context_block(already_greeted=True)
+    assert "Selami zaten verdin" in block
+    assert "Merhaba" in block
+
+
+def test_block_handles_garbage_snippet_types_gracefully():
+    block = build_short_context_block(
+        memory_snippets=[None, 42, "", "   ", "Gercek bilgi"],   # type: ignore[list-item]
+    )
+    # Only the real string survives.
+    assert "Gercek bilgi" in block
+    assert "None" not in block
+    assert "42" not in block
+
+
+def test_block_returns_terminated_string():
+    block = build_short_context_block(
+        recent_user_messages=["Selam ya 😄"],
+    )
+    assert block.endswith("\n")
+
+
+# ── snapshot tests on the prompts that teach the model the format ───────
+
+def test_base_prompt_documents_kisa_baglam_format():
+    """The system prompt must describe the [KISA BAGLAM] header so the
+    model knows what to do when the chat orchestrator prepends one."""
+    from backend.services.ai.mode_manager import _BASE
+    assert "[KISA BAGLAM]" in _BASE
+    assert "HAFIZA" in _BASE
+    # The hallucination guard must be present too.
+    low = _BASE.lower()
+    assert "blokta olmayan" in low, "_BASE lost the hallucination guard"
+
+
+def test_base_prompt_includes_korvixai_example():
+    """Concrete example pin: the 'kendi ai mi gelistiriyorum' →
+    'KorvixAI icin mi calisiyorsun yine?' pattern from the user spec."""
+    from backend.services.ai.mode_manager import _BASE
+    assert "kendi ai mi gelistiriyorum" in _BASE.lower()
+    assert "korvixai" in _BASE.lower()
+
+
+def test_legacy_core_identity_documents_format():
+    """The legacy chat path uses prompts.py — its persona must teach
+    the same [KISA BAGLAM] format so both code paths agree."""
+    from prompts import _CORE_IDENTITY
+    assert "[KISA BAGLAM]" in _CORE_IDENTITY
+    assert "HAFIZA" in _CORE_IDENTITY
+
+
+# ── Token-tuple hygiene (Bugbot Medium regression guard) ────────────────
+# `joined.count(tok) for tok in _TOKENS` double-counts when:
+#   1. The tuple contains the same token twice ("iyi gunler" + "iyi gunler")
+#   2. One token is a substring of another ("iyi gunler" inside
+#      "iyi gunler dilerim").
+# Both inflate the tone score and bias detection.
+
+@pytest.mark.parametrize("attr", ["_CASUAL_TOKENS", "_FORMAL_TOKENS", "_TURKISH_WORD_HINTS"])
+def test_token_tuples_are_clean(attr):
+    from backend.services.personality import vibe_detector as vd
+    tokens = getattr(vd, attr)
+
+    # No duplicates.
+    assert len(tokens) == len(set(tokens)), \
+        f"{attr} contains duplicate tokens: {sorted(set(t for t in tokens if tokens.count(t) > 1))}"
+
+    # No token is a substring of another in the same tuple.
+    sorted_tokens = sorted(tokens, key=len)
+    for i, small in enumerate(sorted_tokens):
+        for big in sorted_tokens[i + 1:]:
+            assert small not in big, (
+                f"{attr}: {small!r} is a substring of {big!r}. "
+                f"Both would match the same user text, double-counting."
+            )
+
+
+def test_formal_score_not_inflated_by_duplicates():
+    """A single 'iyi gunler dilerim' must contribute at most 1 to the
+    formal score, not 3. Regression for Bugbot Medium
+    3674cd42-5f77-4a37-a49c-a089f33fea8b."""
+    v = detect_vibe([
+        "Iyi gunler dilerim, bir soru var.",
+        "Selam ya kanka",       # one strong casual signal
+    ])
+    # With the deduped tokens, casual should win or at least not lose
+    # to a single formal salutation.
+    assert v["tone"] in ("casual", "neutral"), \
+        f"Single 'iyi gunler dilerim' is now over-counted as formal: {v}"
+
+
+def test_uppercase_turkish_chars_detected():
+    """Capitalised messages with Ş/Ç/Ğ/Ö/Ü/İ must still register as
+    Turkish via the char-score path. Regression for Bugbot Low
+    ref1_a9a558a4 (uppercase Ş absent from _TURKISH_CHARS)."""
+    v = detect_vibe(["Şimdi ne yapmam gerekiyor?"])
+    assert v["lang"] == "tr", \
+        f"Capital-Ş message should classify as tr, got: {v}"
+
+
+def test_english_with_be_not_classified_as_turkish():
+    """The English word 'be' must NOT trigger Turkish classification.
+    Regression for Bugbot Medium 5fd59862-bdae: ' be ' used to live in
+    _CASUAL_TOKENS, and casual_hits flipped lang→tr, so any English
+    sentence with 'to be' / 'should be' / 'will be' classified as Turkish."""
+    v = detect_vibe([
+        "I'll be there in a minute, should be fine.",
+        "It would be better to wait.",
+    ])
+    assert v["lang"] == "en", f"English 'be' shouldn't trigger tr: {v}"
+
+
+def test_naber_abi_still_classifies_as_turkish():
+    """After decoupling language from casual_hits, diacritic-less
+    Turkish chat must still classify correctly via the word-hint
+    path (which now includes unambiguous-TR casual tokens like
+    'kanka', 'abi', 'valla')."""
+    v = detect_vibe(["naber abi", "valla iyiyim"])
+    assert v["lang"] == "tr"
+    assert v["tone"] == "casual"
+
+
+def test_nasil_yapilir_classifies_as_turkish():
+    """Bugbot Medium f96febf8: 'nasil' is one of the most common Turkish
+    words ('how'). It must be detected. The earlier code kept the
+    longer ' nasilsin', which doesn't catch ' nasil' via str.count
+    (substring matching only goes shorter-into-longer)."""
+    v = detect_vibe(["nasil yapilir bu islem"])
+    assert v["lang"] == "tr", f"'nasil yapilir' should be tr: {v}"
+
+
+def test_turkish_word_hints_all_leading_space_or_anchored():
+    """Every entry in _TURKISH_WORD_HINTS must start with a space — the
+    detector relies on `joined.count(tok)` and the leading space
+    prevents mid-word matches. Regression for Bugbot Low a8f5542e
+    (bare 'sagol' would match inside any longer word)."""
+    from backend.services.personality import vibe_detector as vd
+    bad = [t for t in vd._TURKISH_WORD_HINTS if not t.startswith(" ")]
+    assert not bad, (
+        f"_TURKISH_WORD_HINTS entries must start with a space to avoid "
+        f"mid-word matches; offenders: {bad}"
+    )
