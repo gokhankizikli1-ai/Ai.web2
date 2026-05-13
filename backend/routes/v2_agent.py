@@ -122,6 +122,11 @@ async def execute(body: AgentExecuteRequest, request: Request) -> dict:
             },
         )
 
+    # Snapshot the auth-required flag ONCE per request so the gate
+    # decision, the log line, and the metadata.auth block all agree
+    # even if Railway env vars are flipped mid-request.
+    require_auth = _require_auth()
+
     # Always returns a User — the synthetic guest fallback fires when
     # AuthMiddleware isn't installed (ENABLE_AUTH_V2=false).
     user = current_user(request)
@@ -130,7 +135,7 @@ async def execute(body: AgentExecuteRequest, request: Request) -> dict:
     # synthetic fallback) are rejected → "fail closed". This catches
     # the operator mistake of flipping ENABLE_AGENT_REQUIRE_AUTH=true
     # while leaving ENABLE_AUTH_V2 off.
-    if _require_auth() and user.is_guest:
+    if require_auth and user.is_guest:
         raise HTTPException(
             status_code=401,
             detail={
@@ -172,7 +177,7 @@ async def execute(body: AgentExecuteRequest, request: Request) -> dict:
 
     logger.info(
         "agent_execute | mode=%s | model=%s | history_len=%d | user_kind=%s | require_auth=%s",
-        req.mode, req.model, len(req.history), user.kind, _require_auth(),
+        req.mode, req.model, len(req.history), user.kind, require_auth,
     )
 
     response = await run_agent(req)
@@ -192,9 +197,11 @@ async def execute(body: AgentExecuteRequest, request: Request) -> dict:
         agent_metadata = response.metadata,
         elapsed_ms     = response.elapsed_ms,
         # Phase 7a — surface the gating outcome so operators can confirm
-        # auth status from the response envelope alone.
+        # auth status from the response envelope alone. Uses the
+        # snapshot taken at the start of the request so the reported
+        # value always matches the gate decision.
         auth = {
-            "required":  _require_auth(),
+            "required":  require_auth,
             "user_id":   resolved_user_id,
             "user_kind": user.kind,
         },
