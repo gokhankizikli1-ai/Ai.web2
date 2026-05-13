@@ -18,6 +18,15 @@ _MODE_TOOL_MAP: Dict[str, List[str]] = {
     # Phase 6d — safe utility tools, bound to a dedicated mode so the
     # agent can use them without pulling in heavier mode-specific tools.
     "general":                ["calculator", "current_time"],
+    # Phase 7b — full market analyst toolkit. Crypto (market_data,
+    # macro_data), equities (stock_market), headlines (news), plus the
+    # utility tools. Every entry is flag-gated, so an operator can turn
+    # on just the subset they want (e.g. stock_market+news only).
+    "market":                 [
+        "stock_market", "news",
+        "market_data", "macro_data",
+        "calculator",   "current_time",
+    ],
 }
 
 

@@ -32,6 +32,8 @@ _TOOL_FLAG_NAMES: Dict[str, str] = {
     "web_research":       "ENABLE_WEB_RESEARCH",
     "calculator":         "ENABLE_CALCULATOR",
     "current_time":       "ENABLE_CURRENT_TIME",
+    "stock_market":       "ENABLE_STOCK_MARKET",
+    "news":               "ENABLE_NEWS",
 }
 
 
@@ -44,6 +46,8 @@ ENABLE_ECOMMERCE_RESEARCH = _flag("ENABLE_ECOMMERCE_RESEARCH")
 ENABLE_WEB_RESEARCH       = _flag("ENABLE_WEB_RESEARCH")
 ENABLE_CALCULATOR         = _flag("ENABLE_CALCULATOR")
 ENABLE_CURRENT_TIME       = _flag("ENABLE_CURRENT_TIME")
+ENABLE_STOCK_MARKET       = _flag("ENABLE_STOCK_MARKET")
+ENABLE_NEWS               = _flag("ENABLE_NEWS")
 
 
 # ── Registry store ─────────────────────────────────────────────────────────
@@ -84,6 +88,8 @@ def health_status() -> dict:
         "web_research_enabled":       _flag("ENABLE_WEB_RESEARCH"),
         "calculator_enabled":         _flag("ENABLE_CALCULATOR"),
         "current_time_enabled":       _flag("ENABLE_CURRENT_TIME"),
+        "stock_market_enabled":       _flag("ENABLE_STOCK_MARKET"),
+        "news_enabled":               _flag("ENABLE_NEWS"),
         "registered_tools":           list(_registry.keys()),
-        "phase": "6d — calculator + current_time + /v2/agent/execute (flag-gated)",
+        "phase": "7b — stock_market + news + per-tool timeouts + 'market' mode",
     }

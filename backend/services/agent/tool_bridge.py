@@ -120,11 +120,18 @@ async def dispatch_one(name: str, args: dict, *, timeout: float = 12.0) -> dict:
     query   = (args or {}).get("query") or ""
     context = {k: v for k, v in (args or {}).items() if k != "query"}
 
+    # Phase 7b — per-tool timeout. The tool can declare a tighter
+    # ceiling via the `timeout_seconds` class attribute on BaseTool;
+    # take the smaller of caller-supplied and tool-supplied so the
+    # agent's overall budget is still honoured.
+    tool_timeout = getattr(tool, "timeout_seconds", None)
+    effective_timeout = min(timeout, tool_timeout) if tool_timeout else timeout
+
     try:
-        result = await asyncio.wait_for(tool.safe_run(query, context), timeout=timeout)
+        result = await asyncio.wait_for(tool.safe_run(query, context), timeout=effective_timeout)
     except asyncio.TimeoutError:
         return {"ok": False, "name": canonical, "output": None,
-                "error": f"tool_timeout_{int(timeout)}s",
+                "error": f"tool_timeout_{effective_timeout:.1f}s",
                 "truncated": False, "raw_chars": 0}
     except Exception as exc:
         return {"ok": False, "name": canonical, "output": None,
