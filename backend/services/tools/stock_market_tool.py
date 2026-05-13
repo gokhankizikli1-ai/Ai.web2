@@ -122,6 +122,17 @@ class _Unavailable(Exception):
     """Provider couldn't serve this symbol — agent should try another tool."""
 
 
+def _first_present(*candidates):
+    """Return the first non-None value. Unlike `a or b`, this preserves
+    `0` / `0.0` — which matters for halted-stock volumes, freshly-IPO'd
+    prices that haven't moved, and any market field that can legitimately
+    be zero."""
+    for v in candidates:
+        if v is not None:
+            return v
+    return None
+
+
 def _fetch_quote_sync(symbol: str) -> Optional[dict]:
     """Synchronous yfinance call. Wrapped by run() in asyncio.to_thread."""
     try:
@@ -135,31 +146,31 @@ def _fetch_quote_sync(symbol: str) -> Optional[dict]:
         # `fast_info` is dict-like in newer yfinance versions; older
         # versions expose `info` (slower, hits a different endpoint).
         # Fall back if we don't get a price quickly.
-        last = _safe_get(info, "last_price") or _safe_get(info, "lastPrice")
+        last = _first_present(_safe_get(info, "last_price"), _safe_get(info, "lastPrice"))
         if last is None:
             slow_info = getattr(ticker, "info", None) or {}
-            last = slow_info.get("regularMarketPrice") or slow_info.get("currentPrice")
+            last = _first_present(slow_info.get("regularMarketPrice"), slow_info.get("currentPrice"))
             if last is None:
                 raise _Unavailable("yfinance returned no price")
             return _pack_from_slow_info(symbol, slow_info)
 
-        prev_close = _safe_get(info, "previous_close") or _safe_get(info, "previousClose")
-        day_high   = _safe_get(info, "day_high")        or _safe_get(info, "dayHigh")
-        day_low    = _safe_get(info, "day_low")         or _safe_get(info, "dayLow")
+        prev_close = _first_present(_safe_get(info, "previous_close"), _safe_get(info, "previousClose"))
+        day_high   = _first_present(_safe_get(info, "day_high"),        _safe_get(info, "dayHigh"))
+        day_low    = _first_present(_safe_get(info, "day_low"),         _safe_get(info, "dayLow"))
         open_      = _safe_get(info, "open")
-        volume     = _safe_get(info, "last_volume")     or _safe_get(info, "lastVolume")
-        currency   = _safe_get(info, "currency") or "USD"
-        exchange   = _safe_get(info, "exchange") or ""
-        market_st  = _safe_get(info, "market_state") or _safe_get(info, "marketState") or "UNKNOWN"
-        yr_high    = _safe_get(info, "year_high") or _safe_get(info, "fiftyTwoWeekHigh")
-        yr_low     = _safe_get(info, "year_low")  or _safe_get(info, "fiftyTwoWeekLow")
+        volume     = _first_present(_safe_get(info, "last_volume"),     _safe_get(info, "lastVolume"))
+        currency   = _first_present(_safe_get(info, "currency"), "USD")
+        exchange   = _first_present(_safe_get(info, "exchange"), "")
+        market_st  = _first_present(_safe_get(info, "market_state"), _safe_get(info, "marketState"), "UNKNOWN")
+        yr_high    = _first_present(_safe_get(info, "year_high"), _safe_get(info, "fiftyTwoWeekHigh"))
+        yr_low     = _first_present(_safe_get(info, "year_low"),  _safe_get(info, "fiftyTwoWeekLow"))
 
         change      = _delta(last, prev_close)
         change_pct  = _delta_pct(last, prev_close)
 
         return {
             "symbol":               symbol,
-            "name":                 _safe_get(info, "shortName") or symbol,
+            "name":                 _first_present(_safe_get(info, "shortName"), symbol),
             "currency":             currency,
             "exchange":             exchange,
             "market_state":         market_st,
@@ -182,20 +193,20 @@ def _fetch_quote_sync(symbol: str) -> Optional[dict]:
 
 
 def _pack_from_slow_info(symbol: str, info: dict) -> dict:
-    last  = info.get("regularMarketPrice") or info.get("currentPrice")
-    prev  = info.get("regularMarketPreviousClose") or info.get("previousClose")
+    last  = _first_present(info.get("regularMarketPrice"), info.get("currentPrice"))
+    prev  = _first_present(info.get("regularMarketPreviousClose"), info.get("previousClose"))
     return {
         "symbol":               symbol,
-        "name":                 info.get("shortName") or info.get("longName") or symbol,
-        "currency":             info.get("currency") or "USD",
-        "exchange":             info.get("exchange") or "",
-        "market_state":         info.get("marketState") or "UNKNOWN",
+        "name":                 _first_present(info.get("shortName"), info.get("longName"), symbol),
+        "currency":             _first_present(info.get("currency"), "USD"),
+        "exchange":             _first_present(info.get("exchange"), ""),
+        "market_state":         _first_present(info.get("marketState"), "UNKNOWN"),
         "last_price":           _round(last, 6),
         "previous_close":       _round(prev, 6),
-        "open":                 _round(info.get("regularMarketOpen") or info.get("open"), 6),
-        "day_high":             _round(info.get("regularMarketDayHigh") or info.get("dayHigh"), 6),
-        "day_low":              _round(info.get("regularMarketDayLow")  or info.get("dayLow"),  6),
-        "volume":               _to_int(info.get("regularMarketVolume") or info.get("volume")),
+        "open":                 _round(_first_present(info.get("regularMarketOpen"),    info.get("open")),   6),
+        "day_high":             _round(_first_present(info.get("regularMarketDayHigh"), info.get("dayHigh")), 6),
+        "day_low":              _round(_first_present(info.get("regularMarketDayLow"),  info.get("dayLow")),  6),
+        "volume":               _to_int(_first_present(info.get("regularMarketVolume"), info.get("volume"))),
         "change":               _round(_delta(last, prev), 6),
         "change_pct":           _round(_delta_pct(last, prev), 4),
         "fifty_two_week_high":  _round(info.get("fiftyTwoWeekHigh"), 6),

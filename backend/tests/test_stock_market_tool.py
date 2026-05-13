@@ -144,3 +144,31 @@ def test_tool_declares_a_timeout():
     on the class so a hot import-time check can confirm the contract."""
     assert isinstance(StockMarketTool.timeout_seconds, (int, float))
     assert 0 < StockMarketTool.timeout_seconds <= 12.0
+
+
+# ── Falsy-zero preservation (Bugbot Medium) ─────────────────────────────
+# Halted / pre-market / freshly-IPO'd symbols can legitimately report
+# volume=0 or unchanged prices. The previous `a or b` chain dropped
+# these as "missing". The _first_present helper preserves zero.
+
+def test_zero_volume_preserved(monkeypatch):
+    """A halted-stock quote with volume=0 must surface 0, not None."""
+    def _zero_vol(symbol):
+        q = _fake_quote(symbol)
+        q["volume"] = 0
+        return q
+    monkeypatch.setattr(stock_market_tool, "_fetch_quote_sync", _zero_vol)
+    r = _run(symbol="NVDA")
+    assert r["status"] == "available"
+    assert r["data"]["volume"] == 0
+
+
+def test_first_present_helper_preserves_zero():
+    """Unit-test the helper directly so future refactors can't regress."""
+    assert stock_market_tool._first_present(None, 0)    == 0
+    assert stock_market_tool._first_present(None, 0.0)  == 0.0
+    assert stock_market_tool._first_present(0, 1)       == 0
+    assert stock_market_tool._first_present(None, None) is None
+    assert stock_market_tool._first_present(None, "a", "b") == "a"
+    # Crucially: empty string is NOT skipped (we want it for "exchange").
+    assert stock_market_tool._first_present("", "USD") == ""
