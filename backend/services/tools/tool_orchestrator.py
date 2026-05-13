@@ -15,6 +15,9 @@ _MODE_TOOL_MAP: Dict[str, List[str]] = {
     "startup_advisor":        ["web_research"],
     "research":               ["web_research"],
     "deep_think":             ["web_research"],
+    # Phase 6d — safe utility tools, bound to a dedicated mode so the
+    # agent can use them without pulling in heavier mode-specific tools.
+    "general":                ["calculator", "current_time"],
 }
 
 

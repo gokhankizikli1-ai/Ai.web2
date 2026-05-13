@@ -12,11 +12,15 @@ try:
     from backend.services.tools.macro_data_tool import MacroDataTool
     from backend.services.tools.ecommerce_research_tool import EcommerceResearchTool
     from backend.services.tools.web_research_tool import WebResearchTool
+    from backend.services.tools.calculator_tool import CalculatorTool
+    from backend.services.tools.current_time_tool import CurrentTimeTool
 
     register(MarketDataTool())
     register(MacroDataTool())
     register(EcommerceResearchTool())
     register(WebResearchTool())
-    logger.debug("tool package: 4 tools registered")
+    register(CalculatorTool())
+    register(CurrentTimeTool())
+    logger.debug("tool package: 6 tools registered")
 except Exception as _exc:
     logger.warning("tool package: registration failed (%s) — tools unavailable", _exc)

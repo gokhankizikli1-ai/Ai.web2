@@ -2,28 +2,49 @@
 # Phase 4A — Tool Registry
 # Central store for tool instances + feature-flag checks.
 # All env vars default to "false" so production is unaffected until explicitly enabled.
+#
+# Phase 6d note: flags are now read DYNAMICALLY on every call (Phase 6b's
+# pattern). Flipping ENABLE_TOOLS / ENABLE_CALCULATOR / etc. on Railway
+# takes effect on the very next request — no restart needed. The
+# module-level ENABLE_* constants below are kept ONLY for backward
+# compatibility with callers that already imported them; they reflect
+# the value at import time and are no longer authoritative.
 import os
 import logging
 from typing import Dict
 
 logger = logging.getLogger(__name__)
 
-# ── Feature flags (read once at import time) ───────────────────────────────
-_flag = lambda key: os.getenv(key, "false").strip().lower() == "true"
 
+def _flag(key: str) -> bool:
+    """Read an env-var boolean flag dynamically. Returns False unless the
+    value is the literal string 'true' (case-insensitive, whitespace-stripped)."""
+    return os.getenv(key, "false").strip().lower() == "true"
+
+
+# Per-tool flag name table — single source of truth for which env var
+# gates which tool. Adding a tool here is the one place callers need to
+# touch when registering a new BaseTool.
+_TOOL_FLAG_NAMES: Dict[str, str] = {
+    "market_data":        "ENABLE_MARKET_DATA",
+    "macro_data":         "ENABLE_MACRO_DATA",
+    "ecommerce_research": "ENABLE_ECOMMERCE_RESEARCH",
+    "web_research":       "ENABLE_WEB_RESEARCH",
+    "calculator":         "ENABLE_CALCULATOR",
+    "current_time":       "ENABLE_CURRENT_TIME",
+}
+
+
+# ── Back-compat constants (import-time snapshot — do not rely on these
+#    for runtime decisions; call is_enabled() instead) ────────────────────
 ENABLE_TOOLS              = _flag("ENABLE_TOOLS")
 ENABLE_MARKET_DATA        = _flag("ENABLE_MARKET_DATA")
 ENABLE_MACRO_DATA         = _flag("ENABLE_MACRO_DATA")
 ENABLE_ECOMMERCE_RESEARCH = _flag("ENABLE_ECOMMERCE_RESEARCH")
 ENABLE_WEB_RESEARCH       = _flag("ENABLE_WEB_RESEARCH")
+ENABLE_CALCULATOR         = _flag("ENABLE_CALCULATOR")
+ENABLE_CURRENT_TIME       = _flag("ENABLE_CURRENT_TIME")
 
-# Per-tool flag map — used by is_enabled()
-_TOOL_FLAGS: Dict[str, bool] = {
-    "market_data":          ENABLE_MARKET_DATA,
-    "macro_data":           ENABLE_MACRO_DATA,
-    "ecommerce_research":   ENABLE_ECOMMERCE_RESEARCH,
-    "web_research":         ENABLE_WEB_RESEARCH,
-}
 
 # ── Registry store ─────────────────────────────────────────────────────────
 _registry: Dict[str, object] = {}   # tool_name → BaseTool instance
@@ -41,20 +62,28 @@ def get_tool(name: str):
 
 
 def is_enabled(tool_name: str) -> bool:
-    """Return True only when ENABLE_TOOLS=true AND the specific flag is true."""
-    if not ENABLE_TOOLS:
+    """Return True only when ENABLE_TOOLS=true AND the tool's per-tool flag
+    is true. Both are read from the environment dynamically on every call."""
+    if not _flag("ENABLE_TOOLS"):
         return False
-    return _TOOL_FLAGS.get(tool_name, False)
+    flag_name = _TOOL_FLAG_NAMES.get(tool_name)
+    if not flag_name:
+        return False
+    return _flag(flag_name)
 
 
 def health_status() -> dict:
-    """Return a public-safe status dict (no secrets exposed)."""
+    """Return a public-safe status dict (no secrets exposed). Reads every
+    flag dynamically so /tools/health reflects the live config without
+    a restart."""
     return {
-        "tools_enabled":              ENABLE_TOOLS,
-        "market_data_enabled":        ENABLE_MARKET_DATA,
-        "macro_data_enabled":         ENABLE_MACRO_DATA,
-        "ecommerce_research_enabled": ENABLE_ECOMMERCE_RESEARCH,
-        "web_research_enabled":       ENABLE_WEB_RESEARCH,
+        "tools_enabled":              _flag("ENABLE_TOOLS"),
+        "market_data_enabled":        _flag("ENABLE_MARKET_DATA"),
+        "macro_data_enabled":         _flag("ENABLE_MACRO_DATA"),
+        "ecommerce_research_enabled": _flag("ENABLE_ECOMMERCE_RESEARCH"),
+        "web_research_enabled":       _flag("ENABLE_WEB_RESEARCH"),
+        "calculator_enabled":         _flag("ENABLE_CALCULATOR"),
+        "current_time_enabled":       _flag("ENABLE_CURRENT_TIME"),
         "registered_tools":           list(_registry.keys()),
-        "phase": "T1 — live trading signals (market_data-backed, flag-gated)",
+        "phase": "6d — calculator + current_time + /v2/agent/execute (flag-gated)",
     }
