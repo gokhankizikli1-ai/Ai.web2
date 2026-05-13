@@ -220,3 +220,25 @@ def test_formal_score_not_inflated_by_duplicates():
     # to a single formal salutation.
     assert v["tone"] in ("casual", "neutral"), \
         f"Single 'iyi gunler dilerim' is now over-counted as formal: {v}"
+
+
+def test_uppercase_turkish_chars_detected():
+    """Capitalised messages with Ş/Ç/Ğ/Ö/Ü/İ must still register as
+    Turkish via the char-score path. Regression for Bugbot Low
+    ref1_a9a558a4 (uppercase Ş absent from _TURKISH_CHARS)."""
+    v = detect_vibe(["Şimdi ne yapmam gerekiyor?"])
+    assert v["lang"] == "tr", \
+        f"Capital-Ş message should classify as tr, got: {v}"
+
+
+def test_turkish_word_hints_all_leading_space_or_anchored():
+    """Every entry in _TURKISH_WORD_HINTS must start with a space — the
+    detector relies on `joined.count(tok)` and the leading space
+    prevents mid-word matches. Regression for Bugbot Low a8f5542e
+    (bare 'sagol' would match inside any longer word)."""
+    from backend.services.personality import vibe_detector as vd
+    bad = [t for t in vd._TURKISH_WORD_HINTS if not t.startswith(" ")]
+    assert not bad, (
+        f"_TURKISH_WORD_HINTS entries must start with a space to avoid "
+        f"mid-word matches; offenders: {bad}"
+    )

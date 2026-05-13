@@ -35,8 +35,11 @@ _EMOJI_RANGES = (
 )
 _EMOJI_PATTERN = re.compile(f"[{_EMOJI_RANGES}]")
 
-# Turkish-specific characters used for a quick language sniff.
-_TURKISH_CHARS = set("şğüöçışĞÜÖÇİ")
+# Turkish-specific characters used for a quick language sniff. Includes
+# both lowercase AND uppercase forms — the score is computed against the
+# original-case text (not the lowercased copy used for tone tokens) so
+# messages like "Şimdi", "Çünkü", "Görüyorum" still register.
+_TURKISH_CHARS = set("şŞğĞüÜöÖçÇıİ")
 
 # Plain-ASCII Turkish chat words — many users write without diacritics
 # (e.g. "selam ya iyiyim"). Each hit adds to the Turkish-language
@@ -48,7 +51,7 @@ _TURKISH_CHARS = set("şğüöçışĞÜÖÇİ")
 _TURKISH_WORD_HINTS = (
     " selam", " merhaba", " naber",
     " iyiyim", " kotuyum", " idare ediyor",
-    " tesekkur", " rica", " saol", "sagol",
+    " tesekkur", " rica", " saol", " sagol",
     " evet", " hayir", " olur", " olmaz",
     " nasilsin", " neden", " cunku", " ama ", " ancak",
     " bence", " sence",
@@ -122,16 +125,16 @@ def detect_vibe(recent_user_messages: Iterable[str]) -> dict:
     else:
         tone = "neutral"
 
-    # Language sniff: combine Turkish-specific characters AND common
-    # ASCII Turkish chat words. Either signal (≥2 special chars OR ≥1
-    # word hint OR formal/casual Turkish token from the tone signals)
-    # is enough to classify as Turkish — many users write Turkish
-    # without diacritics ("selam ya iyiyim").
+    # Language sniff. Turkish-specific characters (ş/ğ/ç/ö/ü/ı, upper
+    # and lower) almost never appear in English text — a single one is
+    # enough to flip the bit. For diacritic-less Turkish chat
+    # ("selam ya iyiyim") we still need the word-hint / tone-token paths
+    # since the char-score alone is 0 there.
     text = "".join(msgs)
     turkish_char_score = sum(1 for c in text if c in _TURKISH_CHARS)
     turkish_word_score = sum(joined.count(w) for w in _TURKISH_WORD_HINTS)
     is_turkish = (
-        turkish_char_score >= 2
+        turkish_char_score >= 1
         or turkish_word_score >= 1
         or casual_hits >= 1
         or formal_hits >= 1
