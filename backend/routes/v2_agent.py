@@ -50,11 +50,13 @@ not affected.
 from __future__ import annotations
 
 import logging
+import os
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from backend.core.deps import current_user
 from backend.core.responses import ok as envelope_ok
 from backend.services.agent import (
     AgentRequest,
@@ -65,6 +67,15 @@ from backend.services.agent import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v2/agent", tags=["agent"])
+
+
+def _require_auth() -> bool:
+    """Phase 7a — second gate on top of ENABLE_AGENT. When true the
+    route rejects any caller whose request.state.user is a guest
+    (including the synthetic fallback when AuthMiddleware isn't
+    installed). Read dynamically so a Railway env-var flip takes
+    effect on the next request."""
+    return os.getenv("ENABLE_AGENT_REQUIRE_AUTH", "false").strip().lower() == "true"
 
 
 # ── Request schema ────────────────────────────────────────────────────────
@@ -86,11 +97,21 @@ class AgentExecuteRequest(BaseModel):
 # ── Route ─────────────────────────────────────────────────────────────────
 
 @router.post("/execute")
-async def execute(body: AgentExecuteRequest) -> dict:
+async def execute(body: AgentExecuteRequest, request: Request) -> dict:
     """Run one end-to-end agent invocation.
 
-    Gated by `ENABLE_AGENT=true`. When disabled, returns 400 instead of
-    silently falling back — callers always know whether the agent ran.
+    Gating, in order:
+      1. ENABLE_AGENT=true                 → otherwise 400 AGENT_DISABLED
+      2. ENABLE_AGENT_REQUIRE_AUTH=true    → caller must be authenticated
+                                              (Authorization: Bearer ...),
+                                              else 401 AGENT_AUTH_REQUIRED
+      3. Last message must be role=user    → otherwise 400 BAD_REQUEST
+
+    When authenticated, the JWT-derived user.id overrides any user_id
+    sent in the request body so a caller can never run the agent under
+    another user's identity. When auth isn't required, body.user_id is
+    used (or "anonymous"). The chosen identity is echoed back in
+    metadata.auth so operators can confirm gating.
     """
     if not agent_enabled():
         raise HTTPException(
@@ -98,6 +119,27 @@ async def execute(body: AgentExecuteRequest) -> dict:
             detail={
                 "code":    "AGENT_DISABLED",
                 "message": "Agent runtime is disabled. Set ENABLE_AGENT=true on the server to enable.",
+            },
+        )
+
+    # Always returns a User — the synthetic guest fallback fires when
+    # AuthMiddleware isn't installed (ENABLE_AUTH_V2=false).
+    user = current_user(request)
+
+    # Optional auth gate. With this on, guests (including the
+    # synthetic fallback) are rejected → "fail closed". This catches
+    # the operator mistake of flipping ENABLE_AGENT_REQUIRE_AUTH=true
+    # while leaving ENABLE_AUTH_V2 off.
+    if _require_auth() and user.is_guest:
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code":    "AGENT_AUTH_REQUIRED",
+                "message": (
+                    "/v2/agent/execute requires authentication when "
+                    "ENABLE_AGENT_REQUIRE_AUTH=true. Set ENABLE_AUTH_V2=true on "
+                    "the server and include 'Authorization: Bearer <token>'."
+                ),
             },
         )
 
@@ -113,10 +155,15 @@ async def execute(body: AgentExecuteRequest) -> dict:
 
     history = [(m.role, m.content) for m in body.messages[:-1]]
 
+    # JWT-derived id wins when authenticated, so a caller can't run
+    # the agent under someone else's id. When unauthenticated and
+    # auth isn't required, preserve the legacy body-driven path.
+    resolved_user_id = user.id if not user.is_guest else (body.user_id or "anonymous")
+
     req = AgentRequest(
         user_message=last.content,
         mode=body.mode,
-        user_id=body.user_id or "anonymous",
+        user_id=resolved_user_id,
         model=body.model or "gpt-4o-mini",
         temperature=body.temperature,
         max_tokens=body.max_tokens or 1500,
@@ -124,8 +171,8 @@ async def execute(body: AgentExecuteRequest) -> dict:
     )
 
     logger.info(
-        "agent_execute | mode=%s | model=%s | history_len=%d",
-        req.mode, req.model, len(req.history),
+        "agent_execute | mode=%s | model=%s | history_len=%d | user_kind=%s | require_auth=%s",
+        req.mode, req.model, len(req.history), user.kind, _require_auth(),
     )
 
     response = await run_agent(req)
@@ -144,6 +191,13 @@ async def execute(body: AgentExecuteRequest) -> dict:
         agent_trace    = [step.to_dict() if hasattr(step, "to_dict") else step for step in response.trace],
         agent_metadata = response.metadata,
         elapsed_ms     = response.elapsed_ms,
+        # Phase 7a — surface the gating outcome so operators can confirm
+        # auth status from the response envelope alone.
+        auth = {
+            "required":  _require_auth(),
+            "user_id":   resolved_user_id,
+            "user_kind": user.kind,
+        },
     )
 
 
