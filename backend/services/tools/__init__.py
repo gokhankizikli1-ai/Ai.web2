@@ -14,6 +14,8 @@ try:
     from backend.services.tools.web_research_tool import WebResearchTool
     from backend.services.tools.calculator_tool import CalculatorTool
     from backend.services.tools.current_time_tool import CurrentTimeTool
+    from backend.services.tools.stock_market_tool import StockMarketTool
+    from backend.services.tools.news_tool import NewsTool
 
     register(MarketDataTool())
     register(MacroDataTool())
@@ -21,6 +23,8 @@ try:
     register(WebResearchTool())
     register(CalculatorTool())
     register(CurrentTimeTool())
-    logger.debug("tool package: 6 tools registered")
+    register(StockMarketTool())
+    register(NewsTool())
+    logger.debug("tool package: 8 tools registered")
 except Exception as _exc:
     logger.warning("tool package: registration failed (%s) — tools unavailable", _exc)

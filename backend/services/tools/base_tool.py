@@ -13,6 +13,12 @@ class BaseTool(ABC):
     # Subclasses must set these as class attributes.
     name: str = "base_tool"
     description: str = ""
+    # Phase 7b — per-tool wall-clock ceiling honoured by
+    # backend.services.agent.tool_bridge.dispatch_one. When unset
+    # the bridge falls back to its caller-supplied default (12s).
+    # Tools that hit fast read-only APIs should set this lower so
+    # the agent fails over to another tool quickly.
+    timeout_seconds: float = 12.0
 
     @abstractmethod
     async def run(self, query: str, context: dict = None) -> dict:
