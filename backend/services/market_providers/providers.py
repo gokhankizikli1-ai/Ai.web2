@@ -134,10 +134,11 @@ class FinnhubProvider(BaseMarketProvider):
             timestamp=_now_iso(),
             source=self.name,
             is_live=True,
+            high=_safe_float(data.get("h")),
+            low=_safe_float(data.get("l")),
+            volume=None,            # Finnhub /quote doesn't include volume
             extra={
-                "high":         _safe_float(data.get("h")),
-                "low":          _safe_float(data.get("l")),
-                "open":         _safe_float(data.get("o")),
+                "open":           _safe_float(data.get("o")),
                 "previous_close": _safe_float(data.get("pc")),
             },
         )
@@ -174,6 +175,9 @@ class TwelveDataProvider(BaseMarketProvider):
             timestamp=_now_iso(),
             source=self.name,
             is_live=True,
+            high=_safe_float(data.get("high")),
+            low=_safe_float(data.get("low")),
+            volume=_safe_float(data.get("volume")),
             extra={
                 "exchange":       data.get("exchange") or "",
                 "previous_close": _safe_float(data.get("previous_close")),
@@ -218,6 +222,11 @@ class YFinanceProvider(BaseMarketProvider):
         change_pct = None
         if prev_f and prev_f > 0:
             change_pct = round((price - prev_f) / prev_f * 100.0, 4)
+        # yfinance fast_info may carry day_high / day_low / last_volume.
+        day_high   = _safe_float(_safe_get(info, "day_high")   or _safe_get(info, "dayHigh"))
+        day_low    = _safe_float(_safe_get(info, "day_low")    or _safe_get(info, "dayLow"))
+        day_volume = _safe_float(_safe_get(info, "last_volume") or _safe_get(info, "lastVolume"))
+
         return MarketQuote(
             symbol=symbol.upper(),
             asset_type=self.asset_type,
@@ -227,6 +236,9 @@ class YFinanceProvider(BaseMarketProvider):
             timestamp=_now_iso(),
             source=self.name,
             is_live=True,
+            high=day_high,
+            low=day_low,
+            volume=day_volume,
             extra={"previous_close": prev_f},
         )
 
@@ -305,6 +317,12 @@ class CoinGeckoProvider(BaseMarketProvider):
             timestamp=_now_iso(),
             source=self.name,
             is_live=True,
+            # CoinGecko /simple/price intentionally minimal — no
+            # high/low/volume. Caller gets None which is correct
+            # ("data not provided") rather than fabricated.
+            high=None,
+            low=None,
+            volume=_safe_float(entry.get("usd_24h_vol")),  # populated only when ?include_24hr_vol=true
             extra={"coingecko_id": coin_id},
         )
 
@@ -338,6 +356,9 @@ class BinanceProvider(BaseMarketProvider):
             timestamp=_now_iso(),
             source=self.name,
             is_live=True,
+            high=_safe_float(data.get("highPrice")),
+            low=_safe_float(data.get("lowPrice")),
+            volume=_safe_float(data.get("volume")),
             extra={"binance_symbol": s},
         )
 

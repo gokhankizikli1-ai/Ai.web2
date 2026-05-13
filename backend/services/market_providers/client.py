@@ -77,6 +77,23 @@ def get_crypto_price(symbol: str) -> MarketQuote:
     )
 
 
+# ── Spec-canonical aliases (Phase 8f) ────────────────────────────────────
+# Per the Phase 8f brief, the canonical names are `_quote` not `_price`.
+# Old names stay as back-compat shims so existing callers keep working —
+# they're literal one-liners pointing at the same implementations.
+
+def get_stock_quote(symbol: str) -> MarketQuote:
+    """Spec-canonical alias for `get_stock_price`. Same behaviour, same
+    return type. Prefer this name in new code."""
+    return get_stock_price(symbol)
+
+
+def get_crypto_quote(symbol: str) -> MarketQuote:
+    """Spec-canonical alias for `get_crypto_price`. Same behaviour, same
+    return type. Prefer this name in new code."""
+    return get_crypto_price(symbol)
+
+
 # ── Core chain runner ───────────────────────────────────────────────────
 
 def _get_price(
@@ -157,4 +174,6 @@ def _get_price(
 __all__ = [
     "get_stock_price",
     "get_crypto_price",
+    "get_stock_quote",
+    "get_crypto_quote",
 ]

@@ -36,6 +36,8 @@ Setting any TTL to 0 disables caching for that asset type.
 from backend.services.market_providers.client import (
     get_stock_price,
     get_crypto_price,
+    get_stock_quote,
+    get_crypto_quote,
 )
 from backend.services.market_providers.types import (
     MarketQuote,
@@ -46,6 +48,9 @@ from backend.services.market_providers.types import (
 __all__ = [
     "get_stock_price",
     "get_crypto_price",
+    # Phase 8f spec-canonical aliases — prefer these in new code.
+    "get_stock_quote",
+    "get_crypto_quote",
     "MarketQuote",
     "ERR_UNAVAILABLE",
     "make_unavailable",

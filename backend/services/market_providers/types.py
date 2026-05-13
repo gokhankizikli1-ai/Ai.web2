@@ -26,7 +26,14 @@ ERR_UNAVAILABLE = "market_data_unavailable"
 class MarketQuote:
     """One quote — the only success/failure shape the public client
     returns. Frozen so consumers can't mutate after the chain has
-    decided 'is_live=True'."""
+    decided 'is_live=True'.
+
+    Top-level fields (every consumer can rely on these):
+      symbol, asset_type, price, change_percent, currency, timestamp,
+      source, is_live, error, high, low, volume.
+
+    Provider-specific extras live in the `extra` dict and aren't part
+    of the public contract."""
     symbol:         str
     asset_type:     str                       # "stock" | "crypto"
     price:          Optional[float]           # None when is_live=False
@@ -36,6 +43,12 @@ class MarketQuote:
     source:         str = ""                  # provider name, e.g. "finnhub"
     is_live:        bool = False
     error:          Optional[str] = None      # set on failure, e.g. ERR_UNAVAILABLE
+    # Phase 8f — promoted from extra{} so consumers don't have to
+    # destructure. All Optional because some providers (e.g. CoinGecko
+    # /simple/price) don't return them.
+    high:           Optional[float] = None
+    low:            Optional[float] = None
+    volume:         Optional[float] = None
     extra:          dict = field(default_factory=dict)  # provider-specific fields
 
     def to_dict(self) -> dict:
