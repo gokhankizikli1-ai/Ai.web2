@@ -26,7 +26,9 @@ returns a `MarketQuote` with `is_live=False` and
 
 Env vars
   FINNHUB_API_KEY              optional — enables Finnhub.
-  TWELVEDATA_API_KEY           optional — enables TwelveData.
+  TWELVE_DATA_API_KEY          optional — enables TwelveData (canonical
+                                  per the Phase 8h brief / Railway env).
+  TWELVEDATA_API_KEY           legacy alias accepted for back-compat.
   COINGECKO_API_KEY            optional — lifts CoinGecko rate limits.
   MARKET_QUOTE_STOCK_CACHE_TTL  default 15 s (clamp 0-120).
   MARKET_QUOTE_CRYPTO_CACHE_TTL default 8  s (clamp 0-60).
