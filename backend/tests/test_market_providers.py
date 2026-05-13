@@ -644,3 +644,41 @@ def test_yfinance_slow_path_populates_high_low_volume():
     assert q.high   == 910.0
     assert q.low    == 893.0
     assert q.volume == 12345678
+
+
+def test_yfinance_preserves_zero_volume_from_fast_and_slow_paths():
+    """A zero volume is valid market data and must not be treated as missing."""
+
+    class _FakeTicker:
+        def __init__(self, symbol):
+            if symbol == "FAST0":
+                self.fast_info = {
+                    "last_price":     100.0,
+                    "previous_close": 99.0,
+                    "last_volume":    0,
+                }
+                return
+            self.fast_info = {}
+            self.info = {
+                "regularMarketPrice":         100.0,
+                "regularMarketPreviousClose": 99.0,
+                "regularMarketVolume":        0,
+            }
+
+    class _FakeYf:
+        Ticker = _FakeTicker
+
+    import sys
+    monkey = sys.modules.get("yfinance")
+    sys.modules["yfinance"] = _FakeYf()
+    try:
+        fast = YFinanceProvider().fetch("FAST0")
+        slow = YFinanceProvider().fetch("SLOW0")
+    finally:
+        if monkey is None:
+            sys.modules.pop("yfinance", None)
+        else:
+            sys.modules["yfinance"] = monkey
+
+    assert fast.volume == 0
+    assert slow.volume == 0

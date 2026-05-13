@@ -232,16 +232,20 @@ class YFinanceProvider(BaseMarketProvider):
         # Medium 83046447).
         day_high   = _safe_float(_safe_get(info, "day_high")   or _safe_get(info, "dayHigh"))
         day_low    = _safe_float(_safe_get(info, "day_low")    or _safe_get(info, "dayLow"))
-        day_volume = _safe_float(_safe_get(info, "last_volume") or _safe_get(info, "lastVolume"))
+        day_volume = _safe_float(_first_not_none(
+            _safe_get(info, "last_volume"),
+            _safe_get(info, "lastVolume"),
+        ))
         if slow is not None:
             if day_high is None:
                 day_high = _safe_float(slow.get("dayHigh") or slow.get("regularMarketDayHigh"))
             if day_low is None:
                 day_low = _safe_float(slow.get("dayLow") or slow.get("regularMarketDayLow"))
             if day_volume is None:
-                day_volume = _safe_float(
-                    slow.get("regularMarketVolume") or slow.get("volume")
-                )
+                day_volume = _safe_float(_first_not_none(
+                    slow.get("regularMarketVolume"),
+                    slow.get("volume"),
+                ))
 
         return MarketQuote(
             symbol=symbol.upper(),
@@ -266,6 +270,13 @@ def _safe_get(obj, key):
         return obj[key] if hasattr(obj, "__getitem__") else getattr(obj, key, None)
     except (KeyError, TypeError, AttributeError):
         return getattr(obj, key, None)
+
+
+def _first_not_none(*values):
+    for value in values:
+        if value is not None:
+            return value
+    return None
 
 
 # ── Crypto providers ────────────────────────────────────────────────────
