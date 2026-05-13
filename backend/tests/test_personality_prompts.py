@@ -197,6 +197,47 @@ def test_mixed_language_example_present(source):
 
 
 @pytest.mark.parametrize("source", ["_BASE", "_CORE_IDENTITY"])
+def test_no_blanket_language_mixing_ban(source):
+    """The old persona had a blanket 'Ingilizce-Turkce karistirmak' (don't
+    mix English-Turkish) rule in YASAK. Phase 8b's DIL block explicitly
+    instructs the model to mirror the user's mix when they mix — those
+    two rules directly contradict each other. The blanket ban must be
+    replaced by a conditional one ('don't mix UNLESS the user does').
+
+    Regression for Bugbot High eda11479."""
+    if source == "_BASE":
+        from backend.services.ai.mode_manager import _BASE as prompt
+    else:
+        from prompts import _CORE_IDENTITY as prompt
+    low = prompt.lower()
+    # The exact old phrasings — neither in Turkish-dash nor space form
+    # may appear as a bare bullet anywhere in the prompt.
+    blanket_bans = [
+        "ingilizce-turkce karistirmak",
+        "ingilizce turkce karistirmak",
+    ]
+    for ban in blanket_bans:
+        # The phrase may appear inside a longer explanatory sentence
+        # (e.g. "Kullanici tek dilde yazdiysa rastgele baska dili
+        # karistirmak.") — that's fine. The bug is when it appears
+        # as a bullet/declaration with no "tek dilde" / "unless"
+        # qualifier nearby. Heuristic: find the phrase, then check
+        # the preceding 80 chars on the same line for a qualifier.
+        idx = low.find(ban)
+        if idx == -1:
+            continue
+        line_start = low.rfind("\n", 0, idx) + 1
+        before = low[line_start:idx]
+        if "tek dilde" in before or "unless" in before or "kullanici" in before:
+            continue   # qualified — OK
+        pytest.fail(
+            f"{source} contains a blanket language-mixing ban: {ban!r}. "
+            f"Phase 8b requires mirroring the user's mix, so the ban "
+            f"must be conditional ('don't mix UNLESS the user does')."
+        )
+
+
+@pytest.mark.parametrize("source", ["_BASE", "_CORE_IDENTITY"])
 def test_korvixai_returning_user_example_present(source):
     """The 'kendi ai gelistiriyorum' → 'KorvixAI tarafinda mi …' pattern
     is the canonical returning-user example. Phase 8b refreshed the
