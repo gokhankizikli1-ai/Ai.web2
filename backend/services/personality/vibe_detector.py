@@ -41,25 +41,38 @@ _TURKISH_CHARS = set("şğüöçışĞÜÖÇİ")
 # Plain-ASCII Turkish chat words — many users write without diacritics
 # (e.g. "selam ya iyiyim"). Each hit adds to the Turkish-language
 # score so we don't classify those messages as English.
+# NOTE: keep tokens unique and non-overlapping — see
+# `test_token_tuples_are_clean`. " selam " is dropped in favour of
+# " selam" (the longer form is a superstring); " tesekkur" covers
+# " tesekkurler" the same way; " nasilsin" catches " nasil"; etc.
 _TURKISH_WORD_HINTS = (
-    " selam", " selamlar", " merhaba", " naber",
+    " selam", " merhaba", " naber",
     " iyiyim", " kotuyum", " idare ediyor",
-    " tesekkur", " tesekkurler", " rica", " saol", "sagol",
+    " tesekkur", " rica", " saol", "sagol",
     " evet", " hayir", " olur", " olmaz",
-    " nasilsin", " nasil", " neden", " cunku", " ama ", " ancak",
-    " bence", " sence", " bir ", " bu ", " su ", " o ",
+    " nasilsin", " neden", " cunku", " ama ", " ancak",
+    " bence", " sence",
     " icin", " gibi", " kadar", " yine", " yok", " var",
-    " iyi gunler", " iyi aksamlar",
 )
 
-# Lightweight tone signals — Turkish casual vs. formal.
+# Lightweight tone signals — Turkish casual vs. formal. Tokens are
+# intentionally short common substrings (each prefixed/suffixed with a
+# space when needed to avoid mid-word matches like "rica" inside
+# "tarica"). MUST be deduplicated and non-overlapping: no token may be
+# a substring of another in the same tuple, otherwise `joined.count(tok)`
+# double-counts the same phrase. The regression test
+# `test_token_tuples_are_clean` enforces both.
 _CASUAL_TOKENS = (
     " ya ", " yaa", " yha", " hee", " abi ", " kanka", " kanks",
     " lan ", " valla", " be ", " moruq", " keke", " bi ", " bi'",
 )
 _FORMAL_TOKENS = (
-    "efendim", "iyi gunler", "iyi gunler", "iyi gunler dilerim",
-    "rica ederim", "tesekkur ederim", "saygilarimla",
+    "efendim",
+    "iyi gunler",          # also catches "iyi gunler dilerim" (superstring intentionally removed)
+    "iyi aksamlar",
+    "rica ederim",
+    "tesekkur ederim",
+    "saygilarimla",
 )
 
 

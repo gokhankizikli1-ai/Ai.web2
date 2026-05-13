@@ -180,3 +180,43 @@ def test_legacy_core_identity_documents_format():
     from prompts import _CORE_IDENTITY
     assert "[KISA BAGLAM]" in _CORE_IDENTITY
     assert "HAFIZA" in _CORE_IDENTITY
+
+
+# ── Token-tuple hygiene (Bugbot Medium regression guard) ────────────────
+# `joined.count(tok) for tok in _TOKENS` double-counts when:
+#   1. The tuple contains the same token twice ("iyi gunler" + "iyi gunler")
+#   2. One token is a substring of another ("iyi gunler" inside
+#      "iyi gunler dilerim").
+# Both inflate the tone score and bias detection.
+
+@pytest.mark.parametrize("attr", ["_CASUAL_TOKENS", "_FORMAL_TOKENS", "_TURKISH_WORD_HINTS"])
+def test_token_tuples_are_clean(attr):
+    from backend.services.personality import vibe_detector as vd
+    tokens = getattr(vd, attr)
+
+    # No duplicates.
+    assert len(tokens) == len(set(tokens)), \
+        f"{attr} contains duplicate tokens: {sorted(set(t for t in tokens if tokens.count(t) > 1))}"
+
+    # No token is a substring of another in the same tuple.
+    sorted_tokens = sorted(tokens, key=len)
+    for i, small in enumerate(sorted_tokens):
+        for big in sorted_tokens[i + 1:]:
+            assert small not in big, (
+                f"{attr}: {small!r} is a substring of {big!r}. "
+                f"Both would match the same user text, double-counting."
+            )
+
+
+def test_formal_score_not_inflated_by_duplicates():
+    """A single 'iyi gunler dilerim' must contribute at most 1 to the
+    formal score, not 3. Regression for Bugbot Medium
+    3674cd42-5f77-4a37-a49c-a089f33fea8b."""
+    v = detect_vibe([
+        "Iyi gunler dilerim, bir soru var.",
+        "Selam ya kanka",       # one strong casual signal
+    ])
+    # With the deduped tokens, casual should win or at least not lose
+    # to a single formal salutation.
+    assert v["tone"] in ("casual", "neutral"), \
+        f"Single 'iyi gunler dilerim' is now over-counted as formal: {v}"
