@@ -696,6 +696,47 @@ def test_coingecko_query_includes_volume_param():
     assert q.volume == pytest.approx(50e9)
 
 
+def test_yfinance_zero_volume_preserved():
+    """Regression for Bugbot Low 90e35c78. A halted stock can
+    legitimately have volume=0 ("no trades today"). The previous
+    `or` chain treated 0 as falsy and silently dropped it. Now
+    _first_present preserves 0 so the consumer can distinguish
+    "zero trades" from "data not available"."""
+
+    class _FastInfo(dict):
+        pass
+
+    class _FakeTicker:
+        def __init__(self, symbol):
+            self.fast_info = _FastInfo({
+                "last_price":     900.0,
+                "previous_close": 889.5,
+                "day_high":       905.0,
+                "day_low":        895.0,
+                "last_volume":    0,           # halted
+            })
+            self.info = {}
+
+    class _FakeYf:
+        Ticker = _FakeTicker
+
+    import sys
+    monkey = sys.modules.get("yfinance")
+    sys.modules["yfinance"] = _FakeYf()
+    try:
+        q = YFinanceProvider().fetch("HALT")
+    finally:
+        if monkey is None:
+            sys.modules.pop("yfinance", None)
+        else:
+            sys.modules["yfinance"] = monkey
+
+    assert q.is_live is True
+    assert q.price == 900.0
+    # The whole point: volume=0 must surface as 0, not None.
+    assert q.volume == 0.0
+
+
 def test_yfinance_slow_path_populates_high_low_volume():
     """Regression for Bugbot Medium 83046447 — when fast_info has no
     price, the provider falls through to ticker.info (slow path). The

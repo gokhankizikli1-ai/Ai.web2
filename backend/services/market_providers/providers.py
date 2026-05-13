@@ -144,6 +144,16 @@ def _twelvedata_api_key() -> str:
     )
 
 
+def _first_present(*candidates):
+    """Return the first non-None candidate. Unlike `a or b`, preserves
+    0 / 0.0 — needed because a halted stock can legitimately have
+    volume=0 and we don't want to silently drop that as "missing"."""
+    for v in candidates:
+        if v is not None:
+            return v
+    return None
+
+
 # ── Base ────────────────────────────────────────────────────────────────
 
 class BaseMarketProvider:
@@ -315,18 +325,27 @@ class YFinanceProvider(BaseMarketProvider):
         # use it for these fields — otherwise day_high/low/volume would
         # silently be None even though slow info has them (Bugbot
         # Medium 83046447).
-        day_high   = _safe_float(_safe_get(info, "day_high")   or _safe_get(info, "dayHigh"))
-        day_low    = _safe_float(_safe_get(info, "day_low")    or _safe_get(info, "dayLow"))
-        day_volume = _safe_float(_safe_get(info, "last_volume") or _safe_get(info, "lastVolume"))
+        #
+        # `_first_present` (not `or`) so a halted stock with volume=0
+        # surfaces 0 instead of None. The same falsy-zero risk applies
+        # to high/low if a future yfinance build ever reports them as
+        # exactly 0.0 (Bugbot Low 90e35c78).
+        day_high   = _safe_float(_first_present(_safe_get(info, "day_high"),    _safe_get(info, "dayHigh")))
+        day_low    = _safe_float(_first_present(_safe_get(info, "day_low"),     _safe_get(info, "dayLow")))
+        day_volume = _safe_float(_first_present(_safe_get(info, "last_volume"), _safe_get(info, "lastVolume")))
         if slow is not None:
             if day_high is None:
-                day_high = _safe_float(slow.get("dayHigh") or slow.get("regularMarketDayHigh"))
+                day_high = _safe_float(_first_present(
+                    slow.get("dayHigh"), slow.get("regularMarketDayHigh"),
+                ))
             if day_low is None:
-                day_low = _safe_float(slow.get("dayLow") or slow.get("regularMarketDayLow"))
+                day_low = _safe_float(_first_present(
+                    slow.get("dayLow"), slow.get("regularMarketDayLow"),
+                ))
             if day_volume is None:
-                day_volume = _safe_float(
-                    slow.get("regularMarketVolume") or slow.get("volume")
-                )
+                day_volume = _safe_float(_first_present(
+                    slow.get("regularMarketVolume"), slow.get("volume"),
+                ))
 
         return MarketQuote(
             symbol=symbol.upper(),
