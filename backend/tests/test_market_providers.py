@@ -598,3 +598,49 @@ def test_coingecko_query_includes_volume_param():
     )
     assert q.is_live is True
     assert q.volume == pytest.approx(50e9)
+
+
+def test_yfinance_slow_path_populates_high_low_volume():
+    """Regression for Bugbot Medium 83046447 — when fast_info has no
+    price, the provider falls through to ticker.info (slow path). The
+    new high/low/volume extraction must consult slow info in that
+    branch, otherwise these fields are silently None even though slow
+    info carries them under dayHigh / dayLow / regularMarketVolume."""
+
+    class _EmptyFastInfo(dict):
+        """Mimics fast_info: behaves like an empty dict so the price
+        lookup returns None and the slow path kicks in."""
+
+    class _FakeTicker:
+        def __init__(self, symbol):
+            self.symbol = symbol
+            self.fast_info = _EmptyFastInfo()
+            # Slow info has the data the fast path didn't.
+            self.info = {
+                "regularMarketPrice":         900.0,
+                "regularMarketPreviousClose": 889.5,
+                "dayHigh":                    910.0,
+                "dayLow":                     893.0,
+                "regularMarketVolume":        12345678,
+            }
+
+    class _FakeYf:
+        Ticker = _FakeTicker
+
+    import sys
+    monkey = sys.modules.get("yfinance")
+    sys.modules["yfinance"] = _FakeYf()
+    try:
+        q = YFinanceProvider().fetch("NVDA")
+    finally:
+        if monkey is None:
+            sys.modules.pop("yfinance", None)
+        else:
+            sys.modules["yfinance"] = monkey
+
+    assert q.is_live is True
+    assert q.price == 900.0
+    # The whole point: high/low/volume must come through via slow info.
+    assert q.high   == 910.0
+    assert q.low    == 893.0
+    assert q.volume == 12345678

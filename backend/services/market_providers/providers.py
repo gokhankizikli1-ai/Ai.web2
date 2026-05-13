@@ -204,6 +204,7 @@ class YFinanceProvider(BaseMarketProvider):
             import yfinance as yf   # noqa: PLC0415
         except ImportError as exc:
             raise ProviderError(f"yfinance not installed: {exc}") from exc
+        slow = None        # only fetched when fast_info is empty
         try:
             ticker = yf.Ticker(symbol)
             info = getattr(ticker, "fast_info", None) or {}
@@ -222,10 +223,25 @@ class YFinanceProvider(BaseMarketProvider):
         change_pct = None
         if prev_f and prev_f > 0:
             change_pct = round((price - prev_f) / prev_f * 100.0, 4)
-        # yfinance fast_info may carry day_high / day_low / last_volume.
+
+        # Read high/low/volume from whichever source supplied the price.
+        # fast_info uses snake_case (day_high), slow info uses camelCase
+        # (dayHigh / regularMarketVolume). When slow was consulted, also
+        # use it for these fields — otherwise day_high/low/volume would
+        # silently be None even though slow info has them (Bugbot
+        # Medium 83046447).
         day_high   = _safe_float(_safe_get(info, "day_high")   or _safe_get(info, "dayHigh"))
         day_low    = _safe_float(_safe_get(info, "day_low")    or _safe_get(info, "dayLow"))
         day_volume = _safe_float(_safe_get(info, "last_volume") or _safe_get(info, "lastVolume"))
+        if slow is not None:
+            if day_high is None:
+                day_high = _safe_float(slow.get("dayHigh") or slow.get("regularMarketDayHigh"))
+            if day_low is None:
+                day_low = _safe_float(slow.get("dayLow") or slow.get("regularMarketDayLow"))
+            if day_volume is None:
+                day_volume = _safe_float(
+                    slow.get("regularMarketVolume") or slow.get("volume")
+                )
 
         return MarketQuote(
             symbol=symbol.upper(),
