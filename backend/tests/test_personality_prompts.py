@@ -19,6 +19,7 @@ import pytest
 
 
 FORBIDDEN_PHRASES = [
+    # Turkish robot-AI declarations
     "bir yapay zeka asistani",
     "bir yapay zekayim",
     "yapay zeka olarak duygu",
@@ -26,12 +27,19 @@ FORBIDDEN_PHRASES = [
     "duygu hissetmiyorum",
     "bir ai olarak",
     "bir ai asistani",
-    # English assistant-cringe (in case any prompt drifts to English)
+    "ben bir yapay zeka olarak",
+    # English equivalents (the assistant must avoid these in any path)
     "as an ai",
     "i am an ai",
     "i do not have emotions",
     "i don't have emotions",
     "i am an artificial intelligence",
+    "i am an artificial intelligence assistant",
+    # Hard "always Turkish" rule — Phase 8b multilingual requires the
+    # opposite, so a prompt edit re-introducing this would break the
+    # spec.
+    "her zaman turkce. modern",
+    "always reply in turkish",
 ]
 
 
@@ -128,3 +136,118 @@ def test_build_system_prompt_returns_non_empty_for_known_modes():
         assert isinstance(p, str), f"{mode_name}: not a string"
         assert len(p) > 100, f"{mode_name}: prompt suspiciously short ({len(p)} chars)"
         assert "velora" in p.lower(), f"{mode_name}: persona signal missing"
+
+
+# ── Phase 8b — multilingual personality ─────────────────────────────────
+# These assertions encode the spec from the Phase 8b brief:
+#   - reply in the user's language
+#   - English casual + identity examples present
+#   - mixed-language example present
+#   - no "Always Turkish" rule
+
+@pytest.mark.parametrize("source", ["_BASE", "_CORE_IDENTITY"])
+def test_multilingual_rule_explicit(source):
+    """The persona must instruct the model to match the user's language,
+    not enforce a single language."""
+    if source == "_BASE":
+        from backend.services.ai.mode_manager import _BASE as prompt
+    else:
+        from prompts import _CORE_IDENTITY as prompt
+    low = prompt.lower()
+    # Multilingual signal must be present in one of several forms.
+    signals = [
+        "match the user's language",
+        "kullanici turkce yazdiysa",
+        "user writes english",
+        "mirror the mix",
+        "do not switch languages",
+    ]
+    assert any(s in low for s in signals), \
+        f"{source} is missing the multilingual instruction (looking for any of {signals})"
+
+
+@pytest.mark.parametrize("source", ["_BASE", "_CORE_IDENTITY"])
+def test_english_casual_examples_present(source):
+    """English casual examples ('how are you' → 'doing good',
+    'what are you' → 'I'm KorvixAI…') must be on the prompt so the
+    model has concrete patterns to follow when the user writes English."""
+    if source == "_BASE":
+        from backend.services.ai.mode_manager import _BASE as prompt
+    else:
+        from prompts import _CORE_IDENTITY as prompt
+    low = prompt.lower()
+    assert "how are you" in low, f"{source}: missing 'how are you' example"
+    assert "doing good" in low,   f"{source}: missing 'doing good' reply example"
+    assert "what are you" in low, f"{source}: missing 'what are you' identity example"
+    assert "i'm korvixai" in low, f"{source}: missing 'I'm KorvixAI' self-id example"
+
+
+@pytest.mark.parametrize("source", ["_BASE", "_CORE_IDENTITY"])
+def test_mixed_language_example_present(source):
+    """At least one mixed Turkish/English example so the model knows to
+    mirror the user's mix rather than normalize to one language."""
+    if source == "_BASE":
+        from backend.services.ai.mode_manager import _BASE as prompt
+    else:
+        from prompts import _CORE_IDENTITY as prompt
+    low = prompt.lower()
+    # The canonical mixed example from the spec.
+    assert "hey, sen nasil yapiyorsun" in low or "mixed" in low, \
+        f"{source}: lost the mixed-language example / signal"
+
+
+@pytest.mark.parametrize("source", ["_BASE", "_CORE_IDENTITY"])
+def test_no_blanket_language_mixing_ban(source):
+    """The old persona had a blanket 'Ingilizce-Turkce karistirmak' (don't
+    mix English-Turkish) rule in YASAK. Phase 8b's DIL block explicitly
+    instructs the model to mirror the user's mix when they mix — those
+    two rules directly contradict each other. The blanket ban must be
+    replaced by a conditional one ('don't mix UNLESS the user does').
+
+    Regression for Bugbot High eda11479."""
+    if source == "_BASE":
+        from backend.services.ai.mode_manager import _BASE as prompt
+    else:
+        from prompts import _CORE_IDENTITY as prompt
+    low = prompt.lower()
+    # The exact old phrasings — neither in Turkish-dash nor space form
+    # may appear as a bare bullet anywhere in the prompt.
+    blanket_bans = [
+        "ingilizce-turkce karistirmak",
+        "ingilizce turkce karistirmak",
+    ]
+    for ban in blanket_bans:
+        # The phrase may appear inside a longer explanatory sentence
+        # (e.g. "Kullanici tek dilde yazdiysa rastgele baska dili
+        # karistirmak.") — that's fine. The bug is when it appears
+        # as a bullet/declaration with no "tek dilde" / "unless"
+        # qualifier nearby. Heuristic: find the phrase, then check
+        # the preceding 80 chars on the same line for a qualifier.
+        idx = low.find(ban)
+        if idx == -1:
+            continue
+        line_start = low.rfind("\n", 0, idx) + 1
+        before = low[line_start:idx]
+        if "tek dilde" in before or "unless" in before or "kullanici" in before:
+            continue   # qualified — OK
+        pytest.fail(
+            f"{source} contains a blanket language-mixing ban: {ban!r}. "
+            f"Phase 8b requires mirroring the user's mix, so the ban "
+            f"must be conditional ('don't mix UNLESS the user does')."
+        )
+
+
+@pytest.mark.parametrize("source", ["_BASE", "_CORE_IDENTITY"])
+def test_korvixai_returning_user_example_present(source):
+    """The 'kendi ai gelistiriyorum' → 'KorvixAI tarafinda mi …' pattern
+    is the canonical returning-user example. Phase 8b refreshed the
+    phrasing — pin both pieces (input + the KorvixAI recognition)."""
+    if source == "_BASE":
+        from backend.services.ai.mode_manager import _BASE as prompt
+    else:
+        from prompts import _CORE_IDENTITY as prompt
+    low = prompt.lower()
+    assert "kendi ai" in low or "kendi yapay zeka" in low, \
+        f"{source}: missing 'kendi (yapay zeka|ai)' input example"
+    assert "korvixai" in low, \
+        f"{source}: missing 'KorvixAI' recognition in the example"
