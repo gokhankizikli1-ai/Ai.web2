@@ -244,7 +244,10 @@ class TestStockChain:
         """No keys set AND we monkeypatch the yfinance fallback to fail.
         The chain must return make_unavailable, not fabricate a price."""
         monkeypatch.delenv("FINNHUB_API_KEY", raising=False)
+        # Phase 8h: must unset BOTH TwelveData env-var names so a CI
+        # env that has either one set doesn't make is_available() True.
         monkeypatch.delenv("TWELVEDATA_API_KEY", raising=False)
+        monkeypatch.delenv("TWELVE_DATA_API_KEY", raising=False)
 
         def _fail(self, symbol):
             raise ProviderError("yfinance disabled in test")
@@ -468,6 +471,7 @@ class TestMarketQuoteRoute:
         monkeypatch.setenv("ENABLE_MARKET_QUOTE", "true")
         monkeypatch.delenv("FINNHUB_API_KEY",    raising=False)
         monkeypatch.delenv("TWELVEDATA_API_KEY", raising=False)
+        monkeypatch.delenv("TWELVE_DATA_API_KEY", raising=False)
         def _yf_fail(self, symbol):
             raise ProviderError("yfinance disabled in test")
         monkeypatch.setattr(YFinanceProvider, "fetch", _yf_fail)

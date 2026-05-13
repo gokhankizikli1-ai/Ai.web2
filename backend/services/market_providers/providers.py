@@ -239,7 +239,11 @@ class TwelveDataProvider(BaseMarketProvider):
         # the chain falls over cleanly to the next provider — never fabricate.
         if data.get("status") == "error":
             msg = data.get("message") or "unknown"
-            logger.info(
+            # warning, not info — matches every other error path in
+            # _http_get_json so operators filtering by WARNING level
+            # still see TwelveData rate-limit / bad-symbol errors
+            # (Bugbot Low 6757d546).
+            logger.warning(
                 "market_provider.twelvedata.error | symbol=%s | code=%s | msg=%s",
                 symbol, data.get("code"), msg[:120],
             )
