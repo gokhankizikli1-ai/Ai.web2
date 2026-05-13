@@ -127,6 +127,98 @@ class TestCoinGeckoProvider:
         assert q.asset_type == "crypto"
 
 
+class TestTwelveDataProvider:
+    """Phase 8h — env-var name regression. The canonical name (per the
+    Phase 8h brief and the Railway env) is TWELVE_DATA_API_KEY with an
+    underscore between 'Twelve' and 'Data'. The original Phase 8e code
+    looked at TWELVEDATA_API_KEY (no underscore), which silently never
+    matched Railway and caused the provider to be skipped in production.
+    Both names are now accepted."""
+
+    def test_unavailable_without_any_key(self, monkeypatch):
+        monkeypatch.delenv("TWELVE_DATA_API_KEY", raising=False)
+        monkeypatch.delenv("TWELVEDATA_API_KEY",  raising=False)
+        assert TwelveDataProvider().is_available() is False
+
+    def test_available_with_canonical_name(self, monkeypatch):
+        """The Phase 8h canonical name with the underscore must work."""
+        monkeypatch.delenv("TWELVEDATA_API_KEY", raising=False)
+        monkeypatch.setenv("TWELVE_DATA_API_KEY", "k-canonical")
+        assert TwelveDataProvider().is_available() is True
+
+    def test_available_with_legacy_name(self, monkeypatch):
+        """The Phase 8e legacy name without underscore must still work."""
+        monkeypatch.delenv("TWELVE_DATA_API_KEY", raising=False)
+        monkeypatch.setenv("TWELVEDATA_API_KEY", "k-legacy")
+        assert TwelveDataProvider().is_available() is True
+
+    def test_canonical_takes_precedence(self, monkeypatch):
+        """When both env vars are set, the canonical (underscore) name
+        wins — matches the spec direction."""
+        monkeypatch.setenv("TWELVE_DATA_API_KEY", "k-canonical")
+        monkeypatch.setenv("TWELVEDATA_API_KEY",  "k-legacy")
+        # Capture which key was sent by patching the urlopen.
+        captured = {}
+        def _fake(req, timeout=None):
+            captured["url"] = req.full_url if hasattr(req, "full_url") else str(req)
+            return _FakeResp({"price": "900.0", "status": "ok"})
+        with patch.object(mp_providers.urllib.request, "urlopen", _fake):
+            q = TwelveDataProvider().fetch("NVDA")
+        assert q.is_live is True
+        # The actual key value never appears in the redacted URL; verify the
+        # canonical name was the source by reading the function's read order.
+        # (Behaviour is unit-tested directly via _twelvedata_api_key.)
+        from backend.services.market_providers.providers import _twelvedata_api_key
+        assert _twelvedata_api_key() == "k-canonical"
+
+    def test_happy_path(self, monkeypatch):
+        monkeypatch.setenv("TWELVE_DATA_API_KEY", "k")
+        payload = {
+            "symbol":         "NVDA", "name":           "NVIDIA Corp",
+            "price":          "900.5", "close":         "900.5",
+            "percent_change": "1.20",
+            "high":           "910.0", "low":           "895.0",
+            "volume":         "12345678", "currency":   "USD",
+            "exchange":       "NMS",
+        }
+        with _patch_urlopen(payload):
+            q = TwelveDataProvider().fetch("NVDA")
+        assert q.is_live is True
+        assert q.source == "twelvedata"
+        assert q.price == 900.5
+        assert q.change_percent == 1.20
+        assert q.high   == 910.0
+        assert q.low    == 895.0
+        assert q.volume == 12345678.0
+        assert q.currency == "USD"
+
+    def test_error_response_raises(self, monkeypatch):
+        """TwelveData returns {'status':'error','code':429,'message':'...'}
+        for rate-limits / bad symbols. Must raise ProviderError so the
+        chain falls over — never fabricate."""
+        monkeypatch.setenv("TWELVE_DATA_API_KEY", "k")
+        payload = {"status": "error", "code": 429, "message": "rate limit"}
+        with _patch_urlopen(payload):
+            with pytest.raises(ProviderError):
+                TwelveDataProvider().fetch("NVDA")
+
+
+class TestUrlRedaction:
+    """Logging must never leak API keys. The redactor strips apikey /
+    token / api_key / key query params before the URL is logged."""
+
+    def test_redacts_apikey_param(self):
+        from backend.services.market_providers.providers import _redact_url
+        u = "https://api.twelvedata.com/quote?symbol=NVDA&apikey=SECRET"
+        assert "SECRET" not in _redact_url(u)
+        assert "apikey=%2A%2A%2A" in _redact_url(u) or "apikey=***" in _redact_url(u)
+
+    def test_redacts_token_param(self):
+        from backend.services.market_providers.providers import _redact_url
+        u = "https://finnhub.io/api/v1/quote?symbol=NVDA&token=SECRET"
+        assert "SECRET" not in _redact_url(u)
+
+
 class TestBinanceProvider:
 
     def test_happy_path(self):
@@ -152,7 +244,10 @@ class TestStockChain:
         """No keys set AND we monkeypatch the yfinance fallback to fail.
         The chain must return make_unavailable, not fabricate a price."""
         monkeypatch.delenv("FINNHUB_API_KEY", raising=False)
+        # Phase 8h: must unset BOTH TwelveData env-var names so a CI
+        # env that has either one set doesn't make is_available() True.
         monkeypatch.delenv("TWELVEDATA_API_KEY", raising=False)
+        monkeypatch.delenv("TWELVE_DATA_API_KEY", raising=False)
 
         def _fail(self, symbol):
             raise ProviderError("yfinance disabled in test")
@@ -376,6 +471,7 @@ class TestMarketQuoteRoute:
         monkeypatch.setenv("ENABLE_MARKET_QUOTE", "true")
         monkeypatch.delenv("FINNHUB_API_KEY",    raising=False)
         monkeypatch.delenv("TWELVEDATA_API_KEY", raising=False)
+        monkeypatch.delenv("TWELVE_DATA_API_KEY", raising=False)
         def _yf_fail(self, symbol):
             raise ProviderError("yfinance disabled in test")
         monkeypatch.setattr(YFinanceProvider, "fetch", _yf_fail)

@@ -54,27 +54,72 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _http_get_json(url: str, *, headers: Optional[dict] = None) -> dict:
+def _redact_url(url: str) -> str:
+    """Strip API-key-bearing query parameters before logging the URL.
+    Operators see WHICH endpoint was called without leaking the secret."""
+    try:
+        parsed = urllib.parse.urlparse(url)
+        params = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+        redacted = [
+            (k, "***" if k.lower() in {"apikey", "token", "api_key", "key"} else v)
+            for k, v in params
+        ]
+        new_q = urllib.parse.urlencode(redacted)
+        return urllib.parse.urlunparse(parsed._replace(query=new_q))
+    except Exception:
+        return url
+
+
+def _http_get_json(url: str, *, headers: Optional[dict] = None, _label: str = "") -> dict:
     """Synchronous HTTP GET → JSON. Raises ProviderError on any
-    non-200 or network error."""
+    non-200 or network error.
+
+    Logs the request (with API keys redacted), the HTTP status, latency,
+    and on failure the error class. Operators get full visibility into
+    provider behaviour from production logs."""
     req = urllib.request.Request(url, headers=headers or {"User-Agent": _USER_AGENT})
     started = time.monotonic()
+    redacted = _redact_url(url)
+    logger.info("market_provider.http_request | label=%s | url=%s", _label, redacted)
     try:
         with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT_S) as r:
+            status = getattr(r, "status", 200)
             body = r.read()
     except urllib.error.HTTPError as exc:
         elapsed_ms = int((time.monotonic() - started) * 1000)
+        logger.warning(
+            "market_provider.http_response | label=%s | status=%d | ms=%d | url=%s",
+            _label, exc.code, elapsed_ms, redacted,
+        )
         raise ProviderError(f"HTTP {exc.code} (after {elapsed_ms}ms)") from exc
     except urllib.error.URLError as exc:
         elapsed_ms = int((time.monotonic() - started) * 1000)
+        logger.warning(
+            "market_provider.http_network | label=%s | err=%s | ms=%d | url=%s",
+            _label, exc.reason, elapsed_ms, redacted,
+        )
         raise ProviderError(f"network: {exc.reason} (after {elapsed_ms}ms)") from exc
     except Exception as exc:
         elapsed_ms = int((time.monotonic() - started) * 1000)
+        logger.warning(
+            "market_provider.http_unexpected | label=%s | err=%s: %s | ms=%d",
+            _label, type(exc).__name__, exc, elapsed_ms,
+        )
         raise ProviderError(f"unexpected: {exc} (after {elapsed_ms}ms)") from exc
+
+    elapsed_ms = int((time.monotonic() - started) * 1000)
+    logger.info(
+        "market_provider.http_response | label=%s | status=%d | ms=%d | bytes=%d",
+        _label, status, elapsed_ms, len(body) if body else 0,
+    )
 
     try:
         return json.loads(body)
     except (ValueError, TypeError) as exc:
+        logger.warning(
+            "market_provider.http_parse_error | label=%s | err=%s",
+            _label, exc,
+        )
         raise ProviderError(f"invalid JSON: {exc}") from exc
 
 
@@ -85,6 +130,18 @@ def _safe_float(v) -> Optional[float]:
         return float(v)
     except (ValueError, TypeError):
         return None
+
+
+def _twelvedata_api_key() -> str:
+    """Phase 8h — Railway env uses TWELVE_DATA_API_KEY (underscore between
+    'Twelve' and 'Data'); the Phase 8e canonical name was TWELVEDATA_API_KEY
+    (no underscore). Both names are now accepted, with the spec-canonical
+    (underscore) name taking precedence. Stripping whitespace because
+    Railway env values occasionally arrive with stray newlines."""
+    return (
+        os.getenv("TWELVE_DATA_API_KEY", "").strip()
+        or os.getenv("TWELVEDATA_API_KEY", "").strip()
+    )
 
 
 # ── Base ────────────────────────────────────────────────────────────────
@@ -145,24 +202,52 @@ class FinnhubProvider(BaseMarketProvider):
 
 
 class TwelveDataProvider(BaseMarketProvider):
-    """https://twelvedata.com free tier: 8 req/min."""
+    """https://twelvedata.com free tier: 8 req/min.
+
+    Reads the API key from EITHER `TWELVE_DATA_API_KEY` (Railway-canonical,
+    matches the Phase 8h brief) OR `TWELVEDATA_API_KEY` (Phase 8e
+    back-compat). Logs the active env-var name so operators can verify
+    which one Railway is actually setting."""
     name = "twelvedata"
     asset_type = "stock"
 
     def is_available(self) -> bool:
-        return bool(os.getenv("TWELVEDATA_API_KEY", "").strip())
+        return bool(_twelvedata_api_key())
 
     def fetch(self, symbol: str) -> MarketQuote:
-        key = os.getenv("TWELVEDATA_API_KEY", "").strip()
+        key = _twelvedata_api_key()
         if not key:
-            raise ProviderError("TWELVEDATA_API_KEY not set")
+            raise ProviderError(
+                "TwelveData key not set "
+                "(expected TWELVE_DATA_API_KEY or TWELVEDATA_API_KEY)"
+            )
+        # Log WHICH env var is supplying the key so operators can
+        # debug Railway env-var typos without dumping the secret.
+        env_name = "TWELVE_DATA_API_KEY" if os.getenv("TWELVE_DATA_API_KEY", "").strip() \
+            else "TWELVEDATA_API_KEY"
+        logger.info(
+            "market_provider.twelvedata.request | symbol=%s | env=%s | key_len=%d",
+            symbol, env_name, len(key),
+        )
         url = (
             "https://api.twelvedata.com/quote?"
             + urllib.parse.urlencode({"symbol": symbol, "apikey": key})
         )
-        data = _http_get_json(url)
+        data = _http_get_json(url, _label=f"twelvedata/{symbol}")
+        # TwelveData returns {"code": 429, "status": "error", "message":"..."}
+        # for rate limits and unknown symbols. Map either to ProviderError so
+        # the chain falls over cleanly to the next provider — never fabricate.
         if data.get("status") == "error":
-            raise ProviderError(f"twelvedata error: {data.get('message') or 'unknown'}")
+            msg = data.get("message") or "unknown"
+            # warning, not info — matches every other error path in
+            # _http_get_json so operators filtering by WARNING level
+            # still see TwelveData rate-limit / bad-symbol errors
+            # (Bugbot Low 6757d546).
+            logger.warning(
+                "market_provider.twelvedata.error | symbol=%s | code=%s | msg=%s",
+                symbol, data.get("code"), msg[:120],
+            )
+            raise ProviderError(f"twelvedata error: {msg}")
         price = _safe_float(data.get("price") or data.get("close"))
         if price is None or price <= 0:
             raise ProviderError(f"twelvedata returned no price for {symbol!r}")
