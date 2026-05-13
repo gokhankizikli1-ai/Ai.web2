@@ -278,7 +278,7 @@ export default function ChatDashboard() {
         onOpenUpgrade={() => setUpgradeOpen(true)}
       />
 
-      <div className={`relative flex-1 flex flex-col h-full transition-all duration-[300ms] ${sidebarOpen ? 'md:ml-[260px]' : 'ml-0'}`}>
+      <div className={`relative flex-1 flex flex-col h-full transition-all duration-[300ms] ${sidebarOpen ? 'md:ml-[240px]' : 'ml-0'}`}>
         {/* Top Bar */}
         <header className="relative flex items-center justify-between h-11 px-3 border-b border-white/[0.02] bg-[#0a0a0a]/60 backdrop-blur-xl shrink-0 z-10">
           <div className="flex items-center gap-2 min-w-0">
