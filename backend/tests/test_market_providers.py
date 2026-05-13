@@ -27,7 +27,9 @@ from backend.services.market_providers import (
     ERR_UNAVAILABLE,
     MarketQuote,
     get_crypto_price,
+    get_crypto_quote,
     get_stock_price,
+    get_stock_quote,
 )
 from backend.services.market_providers import cache as mp_cache
 from backend.services.market_providers import providers as mp_providers
@@ -413,3 +415,232 @@ class TestMarketQuoteRoute:
         monkeypatch.setenv("ENABLE_MARKET_QUOTE", "true")
         r = client.get("/market/quote/<script>")
         assert r.status_code in (404, 422)   # FastAPI returns 422 on Path validation
+
+
+# ── Phase 8f additions ──────────────────────────────────────────────────
+
+class TestSpecCanonicalAliases:
+    """Per the Phase 8f brief the canonical names are `_quote`. Old
+    `_price` names remain as back-compat shims pointing at the same
+    impl."""
+
+    def test_aliases_share_implementation(self, monkeypatch):
+        # Wedge providers to a deterministic answer.
+        def _cg(self, symbol):
+            return MarketQuote(
+                symbol="BTC", asset_type="crypto", price=70000.0,
+                change_percent=1.0, source="coingecko", is_live=True,
+                timestamp="t",
+            )
+        monkeypatch.setattr(CoinGeckoProvider, "fetch", _cg)
+        # Each public name must return an equivalent quote.
+        q1 = get_crypto_price("BTC")
+        mp_cache._reset_for_tests()
+        q2 = get_crypto_quote("BTC")
+        assert q1.is_live is True and q2.is_live is True
+        assert q1.price == q2.price == 70000.0
+
+    def test_stock_aliases_match(self, monkeypatch):
+        monkeypatch.setenv("FINNHUB_API_KEY", "k")
+        payload = {"c": 900.0, "d": 1, "dp": 1.0, "h": 905, "l": 895}
+        with _patch_urlopen(payload):
+            q1 = get_stock_price("NVDA")
+        mp_cache._reset_for_tests()
+        with _patch_urlopen(payload):
+            q2 = get_stock_quote("NVDA")
+        assert q1.is_live is True and q2.is_live is True
+        assert q1.price == q2.price == 900.0
+        assert q1.source == q2.source == "finnhub"
+
+
+class TestTopLevelHighLowVolume:
+    """Phase 8f — high / low / volume promoted from extra{} to top-level
+    MarketQuote fields per the brief's required response schema."""
+
+    def test_finnhub_populates_high_low(self, monkeypatch):
+        monkeypatch.setenv("FINNHUB_API_KEY", "k")
+        payload = {"c": 900.0, "d": 1, "dp": 1.0, "h": 910.5, "l": 893.2,
+                   "o": 895, "pc": 889}
+        with _patch_urlopen(payload):
+            q = FinnhubProvider().fetch("NVDA")
+        assert q.high == 910.5
+        assert q.low  == 893.2
+        # Finnhub /quote doesn't supply volume — must be None, not 0.
+        assert q.volume is None
+
+    def test_binance_populates_high_low_volume(self):
+        payload = {
+            "symbol": "BTCUSDT", "lastPrice": "70000.0",
+            "priceChangePercent": "1.5", "highPrice": "70500.0",
+            "lowPrice":  "69500.0", "volume": "12345.6",
+        }
+        with _patch_urlopen(payload):
+            q = BinanceProvider().fetch("BTC")
+        assert q.high   == 70500.0
+        assert q.low    == 69500.0
+        assert q.volume == pytest.approx(12345.6)
+
+    def test_unavailable_keeps_high_low_volume_none(self):
+        """When the chain fails, every numeric field must be None — never
+        a stale value, never a zero, never a fabrication."""
+        from backend.services.market_providers.types import make_unavailable
+        u = make_unavailable("NVDA", "stock")
+        assert u.high   is None
+        assert u.low    is None
+        assert u.volume is None
+        assert u.price  is None
+        assert u.is_live is False
+        assert u.error  == ERR_UNAVAILABLE
+
+
+class TestMarketCryptoRoute:
+    """Phase 8f — explicit /market/crypto/{symbol} endpoint. Same
+    provider chain as the auto-detecting /market/quote route would
+    pick for a crypto symbol, but the path saves callers from having
+    to know the heuristic rules."""
+
+    def test_disabled_returns_503(self, client, monkeypatch):
+        monkeypatch.delenv("ENABLE_MARKET_QUOTE", raising=False)
+        r = client.get("/market/crypto/BTC")
+        assert r.status_code == 503
+        assert (r.json().get("detail") or {}).get("code") == "MARKET_QUOTE_DISABLED"
+
+    def test_enabled_dispatches_to_crypto_chain(self, client, monkeypatch):
+        monkeypatch.setenv("ENABLE_MARKET_QUOTE", "true")
+        payload = {"bitcoin": {"usd": 70000, "usd_24h_change": 1.5, "usd_24h_vol": 50e9}}
+        with _patch_urlopen(payload):
+            r = client.get("/market/crypto/BTC")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["asset_type"] == "crypto"
+        assert body["is_live"]    is True
+        assert body["source"]     == "coingecko"
+
+    def test_unavailable_returns_200_with_is_live_false(self, client, monkeypatch):
+        monkeypatch.setenv("ENABLE_MARKET_QUOTE", "true")
+        def _down(self, symbol):
+            raise ProviderError("test down")
+        monkeypatch.setattr(CoinGeckoProvider, "fetch", _down)
+        monkeypatch.setattr(BinanceProvider,   "fetch", _down)
+        r = client.get("/market/crypto/BTC")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["is_live"] is False
+        assert body["price"]   is None
+        assert body["error"]   == ERR_UNAVAILABLE
+
+    def test_response_carries_all_required_fields(self, client, monkeypatch):
+        """The required Phase 8f response schema lists symbol, price,
+        change_percent, high, low, volume, timestamp, source, is_live.
+        Pin them all here."""
+        monkeypatch.setenv("ENABLE_MARKET_QUOTE", "true")
+        payload = {
+            "symbol": "BTCUSDT", "lastPrice": "70000.0",
+            "priceChangePercent": "1.5", "highPrice": "70500.0",
+            "lowPrice":  "69500.0", "volume": "12345.6",
+        }
+        # Force the chain to use Binance by failing CoinGecko first.
+        def _cg_fail(self, symbol):
+            raise ProviderError("test")
+        monkeypatch.setattr(CoinGeckoProvider, "fetch", _cg_fail)
+        with _patch_urlopen(payload):
+            r = client.get("/market/crypto/BTC")
+        body = r.json()
+        for required in (
+            "symbol", "asset_type", "price", "change_percent",
+            "high", "low", "volume", "timestamp", "source", "is_live",
+        ):
+            assert required in body, f"missing required field: {required}"
+        assert body["source"] == "binance"
+        assert body["high"]   == 70500.0
+        assert body["low"]    == 69500.0
+        assert body["volume"] == pytest.approx(12345.6)
+
+
+def test_no_simulated_prices_anywhere():
+    """Audit: confirm no module in the providers package ships with a
+    hardcoded NVDA/AAPL/TSLA price or similar simulated value. The only
+    string occurrences of these symbols anywhere in the package should
+    be in routing logic and test fixtures — not in price defaults."""
+    import inspect
+    from backend.services import market_providers as pkg
+    from backend.services.market_providers import (
+        cache, client, providers as prov_mod, types,
+    )
+    # Read the source of each runtime module and scan for suspicious
+    # patterns: a known ticker assigned to a numeric literal.
+    suspicious_patterns = [
+        "NVDA = 9", "NVDA=9", "AAPL = 1", "AAPL=1",
+        "TSLA = 2", "TSLA=2", "BTC = 7", "BTC=7",
+    ]
+    for module in (cache, client, prov_mod, types):
+        src = inspect.getsource(module)
+        for pat in suspicious_patterns:
+            assert pat not in src, (
+                f"Suspicious hardcoded price assignment found in "
+                f"{module.__name__}: {pat!r}"
+            )
+
+
+def test_coingecko_query_includes_volume_param():
+    """Regression for Bugbot Medium 71ded634 — CoinGecko's
+    /simple/price endpoint defaults include_24hr_vol to false, so the
+    URL the provider builds MUST opt in. Otherwise the top-level
+    volume field is always None in production."""
+    captured = {}
+    def _fake_urlopen(req, timeout=None):
+        captured["url"] = req.full_url if hasattr(req, "full_url") else str(req)
+        return _FakeResp({"bitcoin": {"usd": 70000, "usd_24h_change": 1.5, "usd_24h_vol": 50e9}})
+    with patch.object(mp_providers.urllib.request, "urlopen", _fake_urlopen):
+        q = CoinGeckoProvider().fetch("BTC")
+    assert "include_24hr_vol=true" in captured["url"], (
+        f"CoinGecko URL missing include_24hr_vol=true: {captured['url']}"
+    )
+    assert q.is_live is True
+    assert q.volume == pytest.approx(50e9)
+
+
+def test_yfinance_slow_path_populates_high_low_volume():
+    """Regression for Bugbot Medium 83046447 — when fast_info has no
+    price, the provider falls through to ticker.info (slow path). The
+    new high/low/volume extraction must consult slow info in that
+    branch, otherwise these fields are silently None even though slow
+    info carries them under dayHigh / dayLow / regularMarketVolume."""
+
+    class _EmptyFastInfo(dict):
+        """Mimics fast_info: behaves like an empty dict so the price
+        lookup returns None and the slow path kicks in."""
+
+    class _FakeTicker:
+        def __init__(self, symbol):
+            self.symbol = symbol
+            self.fast_info = _EmptyFastInfo()
+            # Slow info has the data the fast path didn't.
+            self.info = {
+                "regularMarketPrice":         900.0,
+                "regularMarketPreviousClose": 889.5,
+                "dayHigh":                    910.0,
+                "dayLow":                     893.0,
+                "regularMarketVolume":        12345678,
+            }
+
+    class _FakeYf:
+        Ticker = _FakeTicker
+
+    import sys
+    monkey = sys.modules.get("yfinance")
+    sys.modules["yfinance"] = _FakeYf()
+    try:
+        q = YFinanceProvider().fetch("NVDA")
+    finally:
+        if monkey is None:
+            sys.modules.pop("yfinance", None)
+        else:
+            sys.modules["yfinance"] = monkey
+
+    assert q.is_live is True
+    assert q.price == 900.0
+    # The whole point: high/low/volume must come through via slow info.
+    assert q.high   == 910.0
+    assert q.low    == 893.0
+    assert q.volume == 12345678

@@ -51,8 +51,8 @@ from fastapi import APIRouter, HTTPException, Path, Query
 
 from backend.services.market_providers import (
     MarketQuote,
-    get_crypto_price,
-    get_stock_price,
+    get_crypto_quote,
+    get_stock_quote,
 )
 
 logger = logging.getLogger(__name__)
@@ -106,13 +106,43 @@ async def market_quote(
 
     asset_type = _detect_asset_type(symbol, type)
     if asset_type == "crypto":
-        quote: MarketQuote = get_crypto_price(symbol)
+        quote: MarketQuote = get_crypto_quote(symbol)
     else:
-        quote = get_stock_price(symbol)
+        quote = get_stock_quote(symbol)
 
     logger.info(
         "market_quote.route | symbol=%s | type=%s | is_live=%s | source=%s",
         quote.symbol, quote.asset_type, quote.is_live, quote.source or "-",
+    )
+    return quote.to_dict()
+
+
+# Phase 8f — explicit crypto endpoint per the spec. Same provider chain
+# as /market/quote/{symbol} when the heuristic picks crypto, but the
+# explicit path saves callers from having to know the heuristic rules.
+# Both routes are gated by the same ENABLE_MARKET_QUOTE flag.
+@router.get("/crypto/{symbol}")
+async def crypto_quote(
+    symbol: str = Path(..., min_length=1, max_length=24, pattern=r"^[A-Za-z0-9._\-]+$"),
+) -> dict:
+    """Return a verified-live crypto quote for the given symbol.
+
+    Always dispatches to the crypto provider chain (CoinGecko →
+    Binance) regardless of the symbol. Useful for ambiguous tickers
+    that the auto-detection on /market/quote might guess wrong, and
+    for frontend code that wants an explicit semantic path."""
+    if not _flag("ENABLE_MARKET_QUOTE"):
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code":    "MARKET_QUOTE_DISABLED",
+                "message": "Set ENABLE_MARKET_QUOTE=true on the server to enable.",
+            },
+        )
+    quote = get_crypto_quote(symbol)
+    logger.info(
+        "market_quote.crypto_route | symbol=%s | is_live=%s | source=%s",
+        quote.symbol, quote.is_live, quote.source or "-",
     )
     return quote.to_dict()
 
