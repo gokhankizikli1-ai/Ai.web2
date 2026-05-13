@@ -53,6 +53,10 @@ class AgentRequest:
     system_prompt: str = ""
     workspace_id: Optional[str] = None                # accepted; honoured by M3+
     metadata_in:  dict = field(default_factory=dict)
+    # Phase 7c — per-request step cap. None → fall back to
+    # AGENT_MAX_STEPS env (default 6). Used by /v2/agent/test to hard-pin
+    # a tighter budget for canary calls without changing global env.
+    max_steps:    Optional[int] = None
 
 
 @dataclass

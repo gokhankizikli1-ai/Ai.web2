@@ -124,8 +124,16 @@ async def dispatch_one(name: str, args: dict, *, timeout: float = 12.0) -> dict:
     # ceiling via the `timeout_seconds` class attribute on BaseTool;
     # take the smaller of caller-supplied and tool-supplied so the
     # agent's overall budget is still honoured.
+    #
+    # `is not None` (not truthiness) so a future tool declaring
+    # `timeout_seconds = 0` doesn't silently fall through to the
+    # caller default. Currently latent — all tools set positive
+    # values — but the check should reflect "was a value provided?"
+    # not "is the value truthy?" (Bugbot Low).
     tool_timeout = getattr(tool, "timeout_seconds", None)
-    effective_timeout = min(timeout, tool_timeout) if tool_timeout else timeout
+    effective_timeout = (
+        min(timeout, tool_timeout) if tool_timeout is not None else timeout
+    )
 
     try:
         result = await asyncio.wait_for(tool.safe_run(query, context), timeout=effective_timeout)

@@ -80,7 +80,10 @@ async def run_agent(request: AgentRequest) -> AgentResponse:
         _COUNTS["runs_total"]    += 1
         _COUNTS["last_run_mode"]  = request.mode
 
-    budget = Budget()
+    # Phase 7c — honour per-request max_steps when provided. Passing 0
+    # / None falls back to AGENT_MAX_STEPS env (Budget's existing
+    # behaviour). Used by /v2/agent/test for a tighter canary budget.
+    budget = Budget(max_steps=request.max_steps or 0)
     trace:  list[AgentStep] = []
 
     # Build OpenAI tool list (may be empty when no tool is enabled for this mode)
