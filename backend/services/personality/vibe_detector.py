@@ -56,6 +56,12 @@ _TURKISH_WORD_HINTS = (
     " nasilsin", " neden", " cunku", " ama ", " ancak",
     " bence", " sence",
     " icin", " gibi", " kadar", " yine", " yok", " var",
+    # Unambiguous-Turkish casual tokens (also live in _CASUAL_TOKENS
+    # for tone detection). Including them here preserves Turkish
+    # language classification for casual messages like "naber abi"
+    # or "valla iyiyim" now that language detection no longer
+    # consults casual_hits (Bugbot Medium 5fd59862 fix).
+    " kanka", " lan ", " valla", " abi ", " moruq",
 )
 
 # Lightweight tone signals — Turkish casual vs. formal. Tokens are
@@ -67,7 +73,12 @@ _TURKISH_WORD_HINTS = (
 # `test_token_tuples_are_clean` enforces both.
 _CASUAL_TOKENS = (
     " ya ", " yaa", " yha", " hee", " abi ", " kanka", " kanks",
-    " lan ", " valla", " be ", " moruq", " keke", " bi ", " bi'",
+    " lan ", " valla", " moruq", " keke", " bi ", " bi'",
+    # NOTE: " be " removed — Bugbot Medium 5fd59862-bdae. The English
+    # word "be" is too common to safely use as a tone signal ("I'll
+    # be there", "should be fine"). Turkish "be" usage as a
+    # particle ("Selam be kanka") is rare enough that the loss is
+    # negligible compared to the false-positive risk.
 )
 _FORMAL_TOKENS = (
     "efendim",
@@ -126,18 +137,23 @@ def detect_vibe(recent_user_messages: Iterable[str]) -> dict:
         tone = "neutral"
 
     # Language sniff. Turkish-specific characters (ş/ğ/ç/ö/ü/ı, upper
-    # and lower) almost never appear in English text — a single one is
-    # enough to flip the bit. For diacritic-less Turkish chat
-    # ("selam ya iyiyim") we still need the word-hint / tone-token paths
-    # since the char-score alone is 0 there.
+    # and lower) almost never appear in English text — a single one
+    # flips the bit. For diacritic-less Turkish chat ("selam ya iyiyim")
+    # we rely on the word-hint path, which now includes the
+    # unambiguously-Turkish casual tokens (kanka / lan / valla / abi /
+    # moruq) so "naber abi" still classifies correctly.
+    #
+    # casual_hits / formal_hits are NO LONGER used as language signals:
+    # tokens like " ya ", " be " collide with English vocabulary and
+    # caused false-positive Turkish classification (Bugbot Medium
+    # 5fd59862). Tone scoring still uses them; language sticks to
+    # Turkish-specific evidence.
     text = "".join(msgs)
     turkish_char_score = sum(1 for c in text if c in _TURKISH_CHARS)
     turkish_word_score = sum(joined.count(w) for w in _TURKISH_WORD_HINTS)
     is_turkish = (
         turkish_char_score >= 1
         or turkish_word_score >= 1
-        or casual_hits >= 1
-        or formal_hits >= 1
     )
     if is_turkish:
         lang = "tr"

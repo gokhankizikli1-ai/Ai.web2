@@ -231,6 +231,28 @@ def test_uppercase_turkish_chars_detected():
         f"Capital-Ş message should classify as tr, got: {v}"
 
 
+def test_english_with_be_not_classified_as_turkish():
+    """The English word 'be' must NOT trigger Turkish classification.
+    Regression for Bugbot Medium 5fd59862-bdae: ' be ' used to live in
+    _CASUAL_TOKENS, and casual_hits flipped lang→tr, so any English
+    sentence with 'to be' / 'should be' / 'will be' classified as Turkish."""
+    v = detect_vibe([
+        "I'll be there in a minute, should be fine.",
+        "It would be better to wait.",
+    ])
+    assert v["lang"] == "en", f"English 'be' shouldn't trigger tr: {v}"
+
+
+def test_naber_abi_still_classifies_as_turkish():
+    """After decoupling language from casual_hits, diacritic-less
+    Turkish chat must still classify correctly via the word-hint
+    path (which now includes unambiguous-TR casual tokens like
+    'kanka', 'abi', 'valla')."""
+    v = detect_vibe(["naber abi", "valla iyiyim"])
+    assert v["lang"] == "tr"
+    assert v["tone"] == "casual"
+
+
 def test_turkish_word_hints_all_leading_space_or_anchored():
     """Every entry in _TURKISH_WORD_HINTS must start with a space — the
     detector relies on `joined.count(tok)` and the leading space
