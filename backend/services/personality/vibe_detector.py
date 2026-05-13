@@ -45,15 +45,19 @@ _TURKISH_CHARS = set("şŞğĞüÜöÖçÇıİ")
 # (e.g. "selam ya iyiyim"). Each hit adds to the Turkish-language
 # score so we don't classify those messages as English.
 # NOTE: keep tokens unique and non-overlapping — see
-# `test_token_tuples_are_clean`. " selam " is dropped in favour of
-# " selam" (the longer form is a superstring); " tesekkur" covers
-# " tesekkurler" the same way; " nasilsin" catches " nasil"; etc.
+# `test_token_tuples_are_clean`. When two tokens overlap by substring,
+# keep the SHORTER one: `joined.count(short)` matches inside any text
+# that contains the longer form, so the shorter token covers both.
+# Examples: " selam" catches both " selam" and " selamlar";
+#           " tesekkur" catches " tesekkurler";
+#           " nasil" catches both " nasil" and " nasilsin".
 _TURKISH_WORD_HINTS = (
     " selam", " merhaba", " naber",
     " iyiyim", " kotuyum", " idare ediyor",
     " tesekkur", " rica", " saol", " sagol",
     " evet", " hayir", " olur", " olmaz",
-    " nasilsin", " neden", " cunku", " ama ", " ancak",
+    " nasil",   # was " nasilsin" — keep the shorter form (Bugbot Medium f96febf8)
+    " neden", " cunku", " ama ", " ancak",
     " bence", " sence",
     " icin", " gibi", " kadar", " yine", " yok", " var",
     # Unambiguous-Turkish casual tokens (also live in _CASUAL_TOKENS

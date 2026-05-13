@@ -253,6 +253,15 @@ def test_naber_abi_still_classifies_as_turkish():
     assert v["tone"] == "casual"
 
 
+def test_nasil_yapilir_classifies_as_turkish():
+    """Bugbot Medium f96febf8: 'nasil' is one of the most common Turkish
+    words ('how'). It must be detected. The earlier code kept the
+    longer ' nasilsin', which doesn't catch ' nasil' via str.count
+    (substring matching only goes shorter-into-longer)."""
+    v = detect_vibe(["nasil yapilir bu islem"])
+    assert v["lang"] == "tr", f"'nasil yapilir' should be tr: {v}"
+
+
 def test_turkish_word_hints_all_leading_space_or_anchored():
     """Every entry in _TURKISH_WORD_HINTS must start with a space — the
     detector relies on `joined.count(tok)` and the leading space
