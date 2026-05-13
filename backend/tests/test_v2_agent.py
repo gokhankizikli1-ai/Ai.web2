@@ -109,3 +109,79 @@ def test_bad_role_rejected_by_pydantic(client, monkeypatch):
         "messages": [{"role": "system_user", "content": "hi"}],
     })
     assert r.status_code == 422
+
+
+# ── Phase 7a — protected route gating ───────────────────────────────────
+
+def test_require_auth_default_off_anonymous_ok(client, monkeypatch):
+    """Default: ENABLE_AGENT_REQUIRE_AUTH off → anonymous calls keep
+    working as today (back-compat with Phase 6d clients)."""
+    monkeypatch.setenv("ENABLE_AGENT", "true")
+    monkeypatch.delenv("ENABLE_AGENT_REQUIRE_AUTH", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    r = client.post("/v2/agent/execute", json={
+        "messages": [{"role": "user", "content": "hi"}],
+    })
+    assert r.status_code == 200
+    # auth block in metadata signals gating state.
+    auth = r.json()["metadata"]["auth"]
+    assert auth["required"] is False
+    assert auth["user_kind"] == "guest"
+
+
+def test_require_auth_on_without_middleware_returns_401(client, monkeypatch):
+    """ENABLE_AGENT_REQUIRE_AUTH=true but no AuthMiddleware installed
+    (ENABLE_AUTH_V2 off) → fail closed with 401. Catches the operator
+    mistake of enabling agent auth while leaving global auth off."""
+    monkeypatch.setenv("ENABLE_AGENT", "true")
+    monkeypatch.setenv("ENABLE_AGENT_REQUIRE_AUTH", "true")
+    r = client.post("/v2/agent/execute", json={
+        "messages": [{"role": "user", "content": "hi"}],
+    })
+    assert r.status_code == 401
+    detail = r.json().get("detail") or {}
+    assert detail.get("code") == "AGENT_AUTH_REQUIRED"
+    assert "ENABLE_AGENT_REQUIRE_AUTH" in detail.get("message", "")
+
+
+def test_require_auth_on_blocks_before_agent_runs(client, monkeypatch):
+    """When auth is required and absent, the agent must NOT run — no
+    OpenAI client should be constructed, no fallback envelope returned.
+    Validates ordering: auth gate fires before agent execution."""
+    monkeypatch.setenv("ENABLE_AGENT", "true")
+    monkeypatch.setenv("ENABLE_AGENT_REQUIRE_AUTH", "true")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    r = client.post("/v2/agent/execute", json={
+        "messages": [{"role": "user", "content": "expensive query"}],
+    })
+    assert r.status_code == 401
+    # If the agent had run, body would be a 200 envelope with
+    # metadata.agent_trace. A 401 has neither.
+    assert "metadata" not in r.json()
+
+
+def test_agent_disabled_takes_precedence_over_auth_gate(client, monkeypatch):
+    """When BOTH gates would reject, ENABLE_AGENT=false wins (400 not
+    401). This keeps the disabled-by-default signal loudest for
+    callers probing capability."""
+    monkeypatch.delenv("ENABLE_AGENT", raising=False)
+    monkeypatch.setenv("ENABLE_AGENT_REQUIRE_AUTH", "true")
+    r = client.post("/v2/agent/execute", json={
+        "messages": [{"role": "user", "content": "hi"}],
+    })
+    assert r.status_code == 400
+    assert (r.json().get("detail") or {}).get("code") == "AGENT_DISABLED"
+
+
+def test_body_user_id_used_when_unauthenticated(client, monkeypatch):
+    """Without auth required and no JWT, the body's user_id flows
+    through to the agent (legacy behaviour)."""
+    monkeypatch.setenv("ENABLE_AGENT", "true")
+    monkeypatch.delenv("ENABLE_AGENT_REQUIRE_AUTH", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    r = client.post("/v2/agent/execute", json={
+        "messages": [{"role": "user", "content": "hi"}],
+        "user_id":  "ext-user-42",
+    })
+    assert r.status_code == 200
+    assert r.json()["metadata"]["auth"]["user_id"] == "ext-user-42"
