@@ -8,9 +8,12 @@ import {
   PanelLeftClose, PanelLeftOpen,
   Crown, Clock, ArrowLeft, Search, X,
   FolderOpen, GraduationCap, Code, Rocket, Landmark, User,
+  Sparkles, Zap, Brain, Bot,
+  Palette, TrendingUp, Briefcase,
 } from 'lucide-react';
 import type { ChatSession, ChatFolder } from '@/types';
 import DeleteConfirmModal from './DeleteConfirmModal';
+import UserAccountDropdown from './UserAccountDropdown';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -24,6 +27,9 @@ interface SidebarProps {
   onMoveToFolder: (sessionId: string, folder: ChatFolder) => void;
   filteredSessions: ChatSession[];
   pinnedSessions?: string[];
+  // Account dropdown callbacks
+  onOpenSettings: () => void;
+  onOpenUpgrade: () => void;
 }
 
 const FOLDER_CONFIG: { id: ChatFolder; label: string; icon: typeof GraduationCap; color: string; accent: string }[] = [
@@ -32,6 +38,19 @@ const FOLDER_CONFIG: { id: ChatFolder; label: string; icon: typeof GraduationCap
   { id: 'startup', label: 'Startup', icon: Rocket, color: 'text-amber-400', accent: 'bg-amber-500/[0.06] border-amber-500/10' },
   { id: 'finance', label: 'Finance', icon: Landmark, color: 'text-emerald-400', accent: 'bg-emerald-500/[0.06] border-emerald-500/10' },
   { id: 'personal', label: 'Personal', icon: User, color: 'text-rose-400', accent: 'bg-rose-500/[0.06] border-rose-500/10' },
+];
+
+/* ═── Mode Shortcuts — quick workspace switches ─══ */
+const MODE_SHORTCUTS = [
+  { id: 'chat', label: 'Chat', icon: Sparkles, color: 'text-slate-400', bg: 'bg-white/[0.02]', border: 'border-white/[0.03]' },
+  { id: 'research', label: 'Research', icon: Brain, color: 'text-violet-400', bg: 'bg-violet-500/[0.04]', border: 'border-violet-500/8' },
+  { id: 'trading', label: 'Trading', icon: TrendingUp, color: 'text-emerald-400', bg: 'bg-emerald-500/[0.04]', border: 'border-emerald-500/8' },
+  { id: 'business', label: 'Business', icon: Briefcase, color: 'text-cyan-400', bg: 'bg-cyan-500/[0.04]', border: 'border-cyan-500/8' },
+  { id: 'agents', label: 'Agents', icon: Bot, color: 'text-amber-400', bg: 'bg-amber-500/[0.04]', border: 'border-amber-500/8' },
+  { id: 'coding', label: 'Coding', icon: Code, color: 'text-blue-400', bg: 'bg-blue-500/[0.04]', border: 'border-blue-500/8' },
+  { id: 'startup', label: 'Startup', icon: Rocket, color: 'text-rose-400', bg: 'bg-rose-500/[0.04]', border: 'border-rose-500/8' },
+  { id: 'study', label: 'Study', icon: GraduationCap, color: 'text-purple-400', bg: 'bg-purple-500/[0.04]', border: 'border-purple-500/8' },
+  { id: 'creative', label: 'Creative', icon: Palette, color: 'text-pink-400', bg: 'bg-pink-500/[0.04]', border: 'border-pink-500/8' },
 ];
 
 function timeAgo(date: Date): string {
@@ -54,14 +73,23 @@ function getFolderConfig(folder?: ChatFolder) {
 export default function Sidebar({
   isOpen, onToggle, filteredSessions, activeSessionId,
   searchQuery, onSearchChange, onSelect, onDelete, onNewChat, onMoveToFolder,
+  onOpenSettings, onOpenUpgrade,
 }: SidebarProps) {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [activeFolder, setActiveFolder] = useState<ChatFolder | 'all'>('all');
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  // Active workspace tab for mode shortcuts highlight
+  const [activeWorkspace, setActiveWorkspace] = useState('chat');
 
   const displaySessions = activeFolder === 'all'
     ? filteredSessions
     : filteredSessions.filter((s) => s.folder === activeFolder);
+
+  const handleModeSwitch = (modeId: string) => {
+    setActiveWorkspace(modeId);
+    // Dispatch a custom event that ChatDashboard listens to
+    window.dispatchEvent(new CustomEvent('korvix-switch-workspace', { detail: modeId }));
+  };
 
   const renderSessionItem = (session: ChatSession) => {
     const isActive = activeSessionId === session.id;
@@ -212,40 +240,71 @@ export default function Sidebar({
               </div>
             </div>
 
-            {/* Folder filter tabs with colors */}
-            {!searchQuery && (
-              <div className="flex items-center gap-0.5 px-3 pb-2 overflow-x-auto scrollbar-thin">
-                <button
-                  onClick={() => setActiveFolder('all')}
-                  className={`shrink-0 rounded-md px-2 py-[2px] text-[11px] transition-all ${
-                    activeFolder === 'all' ? 'bg-white/[0.06] text-white' : 'text-slate-700 hover:text-slate-500 hover:bg-white/[0.015]'
-                  }`}
-                >
-                  All
-                </button>
-                {FOLDER_CONFIG.map((f) => {
-                  const count = filteredSessions.filter((s) => s.folder === f.id).length;
-                  return (
-                    <button
-                      key={f.id}
-                      onClick={() => setActiveFolder(f.id)}
-                      className={`shrink-0 rounded-md px-2 py-[2px] text-[11px] transition-all flex items-center gap-1 ${
-                        activeFolder === f.id
-                          ? `${f.accent} ${f.color}`
-                          : 'text-slate-700 hover:text-slate-500 hover:bg-white/[0.015]'
-                      }`}
-                    >
-                      <f.icon className="h-2.5 w-2.5" />
-                      {f.label}
-                      {count > 0 && <span className="text-slate-800 ml-0.5">{count}</span>}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Sessions List */}
+            {/* Scrollable Content */}
             <ScrollArea className="flex-1 px-3 py-1">
+              {/* ═── Mode Shortcuts ─══ */}
+              {!searchQuery && (
+                <div className="mb-3">
+                  <div className="flex items-center gap-1.5 px-3 mb-2">
+                    <Zap className="h-3 w-3 text-slate-800" />
+                    <span className="text-[10px] font-semibold text-slate-800 uppercase tracking-wider">Workspaces</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1 px-0.5">
+                    {MODE_SHORTCUTS.map((mode) => (
+                      <motion.button
+                        key={mode.id}
+                        whileHover={{ scale: 1.03 }}
+                        whileTap={{ scale: 0.97 }}
+                        onClick={() => handleModeSwitch(mode.id)}
+                        className={`flex flex-col items-center gap-1 rounded-lg py-1.5 px-1 text-center transition-all border ${
+                          activeWorkspace === mode.id
+                            ? `${mode.border} ${mode.bg}`
+                            : 'border-white/[0.02] bg-white/[0.01] hover:border-white/[0.04] hover:bg-white/[0.02]'
+                        }`}
+                      >
+                        <mode.icon className={`h-3 w-3 ${activeWorkspace === mode.id ? mode.color : 'text-slate-700'}`} />
+                        <span className={`text-[9px] truncate w-full ${activeWorkspace === mode.id ? 'text-slate-300' : 'text-slate-700'}`}>
+                          {mode.label}
+                        </span>
+                      </motion.button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ═── Folder filter tabs ─══ */}
+              {!searchQuery && (
+                <div className="flex items-center gap-0.5 pb-2 overflow-x-auto scrollbar-thin">
+                  <button
+                    onClick={() => setActiveFolder('all')}
+                    className={`shrink-0 rounded-md px-2 py-[2px] text-[11px] transition-all ${
+                      activeFolder === 'all' ? 'bg-white/[0.06] text-white' : 'text-slate-700 hover:text-slate-500 hover:bg-white/[0.015]'
+                    }`}
+                  >
+                    All
+                  </button>
+                  {FOLDER_CONFIG.map((f) => {
+                    const count = filteredSessions.filter((s) => s.folder === f.id).length;
+                    return (
+                      <button
+                        key={f.id}
+                        onClick={() => setActiveFolder(f.id)}
+                        className={`shrink-0 rounded-md px-2 py-[2px] text-[11px] transition-all flex items-center gap-1 ${
+                          activeFolder === f.id
+                            ? `${f.accent} ${f.color}`
+                            : 'text-slate-700 hover:text-slate-500 hover:bg-white/[0.015]'
+                        }`}
+                      >
+                        <f.icon className="h-2.5 w-2.5" />
+                        {f.label}
+                        {count > 0 && <span className="text-slate-800 ml-0.5">{count}</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* ═── Recent Conversations ─══ */}
               {displaySessions.length > 0 && (
                 <div className="mb-3">
                   <div className="flex items-center gap-1.5 px-3 mb-1.5">
@@ -253,6 +312,9 @@ export default function Sidebar({
                     <span className="text-[10px] font-semibold text-slate-800 uppercase tracking-wider">
                       {searchQuery ? 'Results' : activeFolder === 'all' ? 'Recent' : getFolderConfig(activeFolder)?.label || 'Chats'}
                     </span>
+                    {!searchQuery && filteredSessions.length >= 7 && (
+                      <span className="text-[9px] text-slate-800 ml-auto">{filteredSessions.length} chats</span>
+                    )}
                   </div>
                   <div className="space-y-0.5">{displaySessions.map(renderSessionItem)}</div>
                 </div>
@@ -264,23 +326,25 @@ export default function Sidebar({
                   <p className="text-[11px] text-slate-800">
                     {searchQuery ? 'No results found' : 'No conversations yet'}
                   </p>
+                  <p className="text-[10px] text-slate-800 mt-1">
+                    Start a new chat to begin
+                  </p>
                 </div>
               )}
             </ScrollArea>
 
-            {/* Footer */}
+            {/* ═── Footer: User Account Dropdown ─══ */}
             <div className="p-3 border-t border-white/[0.03]">
-              <div className="flex items-center gap-2.5 rounded-lg bg-white/[0.015] px-3 py-2 mb-2 border border-white/[0.03]">
-                <div className="flex h-7 w-7 items-center justify-center rounded-md bg-gradient-to-br from-cyan-400/20 to-blue-500/20 border border-cyan-500/10">
-                  <span className="text-[10px] font-medium text-cyan-400/80">Y</span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-[12px] text-white truncate">You</div>
-                  <div className="text-[10px] text-slate-700">Free Plan</div>
-                </div>
-              </div>
-              <Button variant="ghost"
-                className="w-full h-8 gap-2 text-slate-500 hover:text-slate-300 hover:bg-white/[0.03] text-[11px] rounded-lg transition-all border border-transparent hover:border-white/[0.04]"
+              <UserAccountDropdown
+                onOpenSettings={onOpenSettings}
+                onOpenUpgrade={onOpenUpgrade}
+              />
+
+              {/* Upgrade button */}
+              <Button
+                variant="ghost"
+                onClick={onOpenUpgrade}
+                className="w-full h-8 gap-2 mt-2 text-[11px] text-slate-500 hover:text-amber-300 hover:bg-amber-500/[0.04] rounded-xl transition-all border border-transparent hover:border-amber-500/10"
               >
                 <Crown className="h-3.5 w-3.5" />
                 Upgrade to Pro

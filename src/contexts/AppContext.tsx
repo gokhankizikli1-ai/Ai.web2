@@ -25,6 +25,15 @@ export interface AppSettings {
   notifStartups: boolean;
   notifUpdates: boolean;
   experimental: Record<string, boolean>;
+  // AI Behavior (new)
+  tone: 'Natural' | 'Professional' | 'Friendly' | 'Concise';
+  responseLength: 'Short' | 'Balanced' | 'Detailed';
+  emojiUsage: 'Off' | 'Low' | 'Normal';
+  aiLanguageBehavior: 'Auto-detect' | 'Turkish' | 'English';
+  // Credits (new)
+  creditsRemaining: number;
+  creditsTotal: number;
+  plan: 'free' | 'basic' | 'pro' | 'ultra' | 'enterprise';
 }
 
 export interface AppContextValue {
@@ -60,6 +69,15 @@ const DEFAULTS: AppSettings = {
   notifStartups: false,
   notifUpdates: true,
   experimental: {},
+  // AI Behavior defaults
+  tone: 'Natural',
+  responseLength: 'Balanced',
+  emojiUsage: 'Low',
+  aiLanguageBehavior: 'Auto-detect',
+  // Credits defaults (match Pro plan: 300/mo)
+  creditsRemaining: 153,
+  creditsTotal: 300,
+  plan: 'pro',
 };
 
 function load(): AppSettings {

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useChat } from '@/hooks/useChat';
+import { useChat, TAB_KEYS } from '@/hooks/useChat';
 import { useCommandPalette } from '@/hooks/useCommandPalette';
 import { useToast } from '@/hooks/useToast';
 import { useApp } from '@/contexts/AppContext';
@@ -13,7 +13,6 @@ import BusinessPanel from '@/components/BusinessPanel';
 import AgentsPanel from '@/components/AgentsPanel';
 import WorkspaceTabs from '@/components/WorkspaceTabs';
 import AIActivityFeed from '@/components/AIActivityFeed';
-import AIThinkingPanel from '@/components/AIThinkingPanel';
 import AgentTimeline from '@/components/AgentTimeline';
 import AdaptiveBackground from '@/components/AdaptiveBackground';
 import CommandPalette from '@/components/CommandPalette';
@@ -123,22 +122,15 @@ export default function ChatDashboard() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<WorkspaceTab>(settings.defaultWorkspace);
-  const [showTimeline, setShowTimeline] = useState(false);
+  // Timeline only shows for research/agent deep operations
 
   // Sync active tab when defaultWorkspace changes
   useEffect(() => {
     setActiveTab(settings.defaultWorkspace);
   }, [settings.defaultWorkspace]);
 
-  // Show agent timeline during loading
-  useEffect(() => {
-    if (isLoading && (activeTab === 'research' || activeTab === 'agents')) {
-      setShowTimeline(true);
-    } else if (!isLoading) {
-      const timer = setTimeout(() => setShowTimeline(false), 2000);
-      return () => clearTimeout(timer);
-    }
-  }, [isLoading, activeTab]);
+  // Agent timeline visibility: only for research/agents deep mode
+  const showTimeline = isLoading && (activeTab === 'research' || activeTab === 'agents');
 
   // Mobile sidebar
   useEffect(() => {
@@ -161,6 +153,18 @@ export default function ChatDashboard() {
     setActiveTab(tab);
     switchTab(tab);
   }, [switchTab]);
+
+  // Listen for workspace switch events from sidebar mode shortcuts
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const workspace = (e as CustomEvent).detail as WorkspaceTab;
+      if (workspace && TAB_KEYS.includes(workspace)) {
+        handleTabChange(workspace);
+      }
+    };
+    window.addEventListener('korvix-switch-workspace', handler);
+    return () => window.removeEventListener('korvix-switch-workspace', handler);
+  }, [handleTabChange]);
 
   // Global New Chat
   const handleNewChat = useCallback(() => {
@@ -270,6 +274,8 @@ export default function ChatDashboard() {
         onDelete={deleteSession}
         onNewChat={handleNewChat}
         onMoveToFolder={moveToFolder}
+        onOpenSettings={() => setSettingsOpen(true)}
+        onOpenUpgrade={() => setUpgradeOpen(true)}
       />
 
       <div className={`relative flex-1 flex flex-col h-full transition-all duration-[300ms] ${sidebarOpen ? 'md:ml-[260px]' : 'ml-0'}`}>
@@ -314,7 +320,6 @@ export default function ChatDashboard() {
 
         <AIActivityFeed activities={DEMO_ACTIVITIES} />
         <AgentTimeline isVisible={showTimeline} />
-        <AIThinkingPanel isVisible={isLoading} />
 
         {/* Main content — NO AnimatePresence mode="wait" to prevent composer freeze */}
         <div className="relative flex-1 overflow-hidden flex z-0">

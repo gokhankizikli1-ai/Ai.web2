@@ -23,6 +23,8 @@ import KnowledgeVault from './pages/KnowledgeVault';
 import Automations from './pages/Automations';
 import MultiAgentSwarm from './pages/MultiAgentSwarm';
 import ComingSoon from './pages/ComingSoon';
+import AuthPage from './pages/AuthPage';
+import CreditsPage from './pages/CreditsPage';
 import BottomNav from './components/BottomNav';
 import FloatingOrb from './components/FloatingOrb';
 
@@ -72,6 +74,8 @@ export default function App() {
         <Route path="/careers" element={<ComingSoon title="Careers" pageType="careers" />} />
         <Route path="/privacy" element={<ComingSoon title="Privacy Policy" pageType="legal" />} />
         <Route path="/terms" element={<ComingSoon title="Terms of Service" pageType="legal" />} />
+        <Route path="/login" element={<AuthPage />} />
+        <Route path="/credits" element={<CreditsPage />} />
       </Routes>
     </AppLayout>
   );

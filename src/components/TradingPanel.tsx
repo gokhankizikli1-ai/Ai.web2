@@ -7,7 +7,13 @@ import {
   RefreshCw, Search, Clock, Star, ChevronRight,
   ArrowUpRight, ArrowDownRight,
   Globe, Bitcoin, Layers, Radar,
+  AlertTriangle,
 } from 'lucide-react';
+
+// ─── Configuration ───
+// Set to true ONLY for UI development/demo purposes.
+// All demo data is gated behind this flag.
+const DEMO_MODE = false;
 
 // ─── Types ───
 interface MarketSentiment {
@@ -28,6 +34,8 @@ interface WatchlistItem {
   sparkline: number[];
   isFavorite: boolean;
   type: 'stock' | 'crypto';
+  is_live?: boolean;
+  source?: string;
 }
 
 interface TrendingAsset {
@@ -37,9 +45,10 @@ interface TrendingAsset {
   mentions: number;
   sentiment: 'bullish' | 'bearish' | 'neutral';
   priceChange: number;
+  is_live?: boolean;
 }
 
-// ─── Mock Data ───
+// ─── Demo Data (only used when DEMO_MODE = true) ───
 const DEMO_SENTIMENT: MarketSentiment = {
   overall: 'bullish',
   score: 68,
@@ -50,23 +59,23 @@ const DEMO_SENTIMENT: MarketSentiment = {
 };
 
 const DEMO_WATCHLIST: WatchlistItem[] = [
-  { symbol: 'AAPL', name: 'Apple Inc.', price: 187.42, change: 4.27, changePercent: 2.34, sparkline: [182,183,184,183,185,186,185,187,186,187.42], isFavorite: true, type: 'stock' },
-  { symbol: 'NVDA', name: 'NVIDIA Corp.', price: 875.15, change: 22.30, changePercent: 2.61, sparkline: [850,855,860,858,865,870,868,872,870,875.15], isFavorite: true, type: 'stock' },
-  { symbol: 'TSLA', name: 'Tesla Inc.', price: 248.50, change: -3.20, changePercent: -1.27, sparkline: [252,251,250,253,251,249,250,248,249,248.50], isFavorite: false, type: 'stock' },
-  { symbol: 'BTC', name: 'Bitcoin', price: 67240, change: 1240, changePercent: 1.88, sparkline: [66000,65500,66200,66500,66800,67000,66600,66900,67100,67240], isFavorite: true, type: 'crypto' },
-  { symbol: 'ETH', name: 'Ethereum', price: 3540, change: 87, changePercent: 2.52, sparkline: [3450,3430,3480,3490,3510,3500,3520,3510,3530,3540], isFavorite: false, type: 'crypto' },
-  { symbol: 'MSFT', name: 'Microsoft', price: 421.85, change: 5.12, changePercent: 1.23, sparkline: [415,417,416,418,419,420,419,421,420,421.85], isFavorite: false, type: 'stock' },
-  { symbol: 'AMD', name: 'AMD Inc.', price: 164.20, change: -2.15, changePercent: -1.29, sparkline: [167,166,165,166,164,165,163,164,165,164.20], isFavorite: false, type: 'stock' },
-  { symbol: 'SOL', name: 'Solana', price: 142.60, change: 4.80, changePercent: 3.48, sparkline: [136,135,138,139,140,141,139,141,140,142.60], isFavorite: true, type: 'crypto' },
+  { symbol: 'AAPL', name: 'Apple Inc.', price: 187.42, change: 4.27, changePercent: 2.34, sparkline: [182,183,184,183,185,186,185,187,186,187.42], isFavorite: true, type: 'stock', is_live: false },
+  { symbol: 'NVDA', name: 'NVIDIA Corp.', price: 875.15, change: 22.30, changePercent: 2.61, sparkline: [850,855,860,858,865,870,868,872,870,875.15], isFavorite: true, type: 'stock', is_live: false },
+  { symbol: 'TSLA', name: 'Tesla Inc.', price: 248.50, change: -3.20, changePercent: -1.27, sparkline: [252,251,250,253,251,249,250,248,249,248.50], isFavorite: false, type: 'stock', is_live: false },
+  { symbol: 'BTC', name: 'Bitcoin', price: 67240, change: 1240, changePercent: 1.88, sparkline: [66000,65500,66200,66500,66800,67000,66600,66900,67100,67240], isFavorite: true, type: 'crypto', is_live: false },
+  { symbol: 'ETH', name: 'Ethereum', price: 3540, change: 87, changePercent: 2.52, sparkline: [3450,3430,3480,3490,3510,3500,3520,3510,3530,3540], isFavorite: false, type: 'crypto', is_live: false },
+  { symbol: 'MSFT', name: 'Microsoft', price: 421.85, change: 5.12, changePercent: 1.23, sparkline: [415,417,416,418,419,420,419,421,420,421.85], isFavorite: false, type: 'stock', is_live: false },
+  { symbol: 'AMD', name: 'AMD Inc.', price: 164.20, change: -2.15, changePercent: -1.29, sparkline: [167,166,165,166,164,165,163,164,165,164.20], isFavorite: false, type: 'stock', is_live: false },
+  { symbol: 'SOL', name: 'Solana', price: 142.60, change: 4.80, changePercent: 3.48, sparkline: [136,135,138,139,140,141,139,141,140,142.60], isFavorite: true, type: 'crypto', is_live: false },
 ];
 
 const DEMO_TRENDING: TrendingAsset[] = [
-  { symbol: 'NVDA', name: 'NVIDIA', volume: '42.3M', mentions: 2847, sentiment: 'bullish', priceChange: 2.61 },
-  { symbol: 'TSLA', name: 'Tesla', volume: '38.1M', mentions: 1923, sentiment: 'bearish', priceChange: -1.27 },
-  { symbol: 'AAPL', name: 'Apple', volume: '35.7M', mentions: 1562, sentiment: 'bullish', priceChange: 2.34 },
-  { symbol: 'BTC', name: 'Bitcoin', volume: '28.4B', mentions: 3421, sentiment: 'bullish', priceChange: 1.88 },
-  { symbol: 'AMD', name: 'AMD', volume: '31.2M', mentions: 1245, sentiment: 'bearish', priceChange: -1.29 },
-  { symbol: 'COIN', name: 'Coinbase', volume: '18.9M', mentions: 987, sentiment: 'bullish', priceChange: 3.12 },
+  { symbol: 'NVDA', name: 'NVIDIA', volume: '42.3M', mentions: 2847, sentiment: 'bullish', priceChange: 2.61, is_live: false },
+  { symbol: 'TSLA', name: 'Tesla', volume: '38.1M', mentions: 1923, sentiment: 'bearish', priceChange: -1.27, is_live: false },
+  { symbol: 'AAPL', name: 'Apple', volume: '35.7M', mentions: 1562, sentiment: 'bullish', priceChange: 2.34, is_live: false },
+  { symbol: 'BTC', name: 'Bitcoin', volume: '28.4B', mentions: 3421, sentiment: 'bullish', priceChange: 1.88, is_live: false },
+  { symbol: 'AMD', name: 'AMD', volume: '31.2M', mentions: 1245, sentiment: 'bearish', priceChange: -1.29, is_live: false },
+  { symbol: 'COIN', name: 'Coinbase', volume: '18.9M', mentions: 987, sentiment: 'bullish', priceChange: 3.12, is_live: false },
 ];
 
 const SIGNALS: TradingSignal[] = [
@@ -75,6 +84,38 @@ const SIGNALS: TradingSignal[] = [
   { id: 's3', symbol: 'TSLA', name: 'Tesla Inc.', direction: 'short', confidence: 64, setupGrade: 'B', volatility: 'high', entryPrice: '252.00', targetPrice: '235.00', stopLoss: '258.00', timestamp: new Date(), reasoning: 'Failed breakout above 255. Bearish divergence on MACD hourly. Increased put flow detected.', sparkline: [252,251,250,253,251,249,250,248,249,248.50] },
   { id: 's4', symbol: 'AMD', name: 'AMD Inc.', direction: 'wait', confidence: 45, setupGrade: 'C', volatility: 'medium', entryPrice: undefined, targetPrice: undefined, stopLoss: undefined, timestamp: new Date(), reasoning: 'Mixed signals. Support at 160 holding but resistance at 168 strong. Wait for decisive break.', sparkline: [167,166,165,166,164,165,163,164,165,164.20] },
 ];
+
+// ─── Demo Data Banner ───
+function DemoBanner() {
+  if (!DEMO_MODE) return null;
+  return (
+    <div className="flex items-center gap-2 px-3 py-2 mb-3 rounded-lg bg-amber-500/[0.06] border border-amber-500/10">
+      <AlertTriangle className="w-3.5 h-3.5 text-amber-400/60 shrink-0" />
+      <span className="text-[11px] text-amber-400/70 font-medium">DEMO DATA — not live market data</span>
+    </div>
+  );
+}
+
+// ─── Live Data Unavailable Fallback ───
+function LiveDataUnavailable({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
+      <div className="h-12 w-12 rounded-2xl bg-slate-500/[0.04] border border-white/[0.03] flex items-center justify-center mb-4">
+        <Activity className="h-5 w-5 text-slate-600" />
+      </div>
+      <p className="text-[13px] font-medium text-slate-400 mb-1">Live market data unavailable right now.</p>
+      <p className="text-[11px] text-slate-600 mb-4 max-w-xs">
+        Trading signals require a live market data connection. Data will appear here once connected.
+      </p>
+      <button
+        onClick={onRetry}
+        className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-white/[0.03] border border-white/[0.06] text-[11px] text-slate-400 hover:text-white hover:bg-white/[0.05] transition-all"
+      >
+        <RefreshCw className="h-3 w-3" /> Retry Connection
+      </button>
+    </div>
+  );
+}
 
 // ─── Signal Card Component ───
 function SignalCard({ signal }: { signal: TradingSignal }) {
@@ -93,6 +134,14 @@ function SignalCard({ signal }: { signal: TradingSignal }) {
       layout
       className={`rounded-xl border ${colors.border} ${colors.bg} overflow-hidden`}
     >
+      {/* DEMO label on card if demo mode */}
+      {DEMO_MODE && (
+        <div className="px-3 pt-2">
+          <span className="text-[9px] font-medium text-amber-400/50 bg-amber-500/[0.06] border border-amber-500/10 px-1.5 py-0.5 rounded">
+            DEMO DATA
+          </span>
+        </div>
+      )}
       <button onClick={() => setExpanded(!expanded)} className="w-full flex items-center gap-3 p-4 text-left">
         {/* Sparkline */}
         {signal.sparkline && (
@@ -176,6 +225,13 @@ function SentimentGauge({ sentiment }: { sentiment: MarketSentiment }) {
 
   return (
     <div className={`p-4 rounded-xl border border-white/[0.04] ${sentimentBg}`}>
+      {DEMO_MODE && (
+        <div className="mb-2">
+          <span className="text-[9px] font-medium text-amber-400/50 bg-amber-500/[0.06] border border-amber-500/10 px-1.5 py-0.5 rounded">
+            DEMO DATA
+          </span>
+        </div>
+      )}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <Radar className={`w-4 h-4 ${sentimentColor}`} />
@@ -250,6 +306,7 @@ function WatchlistRow({ item, onToggleFav }: { item: WatchlistItem; onToggleFav:
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
           <span className="text-[12px] font-medium text-white">{item.symbol}</span>
+          {DEMO_MODE && <span className="text-[9px] text-amber-400/40 bg-amber-500/[0.05] px-1 rounded">DEMO</span>}
           <span className="text-[10px] text-slate-600">{item.name}</span>
         </div>
       </div>
@@ -275,6 +332,7 @@ function TrendingCard({ asset }: { asset: TrendingAsset }) {
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="text-[12px] font-medium text-white">{asset.symbol}</span>
+          {DEMO_MODE && <span className="text-[9px] text-amber-400/40 bg-amber-500/[0.05] px-1 rounded">DEMO</span>}
           <span className="text-[10px] text-slate-600">{asset.name}</span>
         </div>
         <div className="flex items-center gap-3 mt-1">
@@ -296,14 +354,23 @@ function TrendingCard({ asset }: { asset: TrendingAsset }) {
 export default function TradingPanel() {
   const [activeTab, setActiveTab] = useState<'signals' | 'watchlist' | 'sentiment' | 'trending'>('signals');
   const [watchlistFilter, setWatchlistFilter] = useState<'all' | 'stocks' | 'crypto'>('all');
-  const [watchlist, setWatchlist] = useState<WatchlistItem[]>(DEMO_WATCHLIST);
+  const [watchlist, setWatchlist] = useState<WatchlistItem[]>(DEMO_MODE ? DEMO_WATCHLIST : []);
   const [search, setSearch] = useState('');
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const { addToast } = useToast();
 
+  // Live signals: only show if is_live === true
+  const liveSignals = SIGNALS.filter((s) => (s as unknown as Record<string, unknown>).is_live === true);
+  // If DEMO_MODE, use all signals (they're all marked is_live: false anyway)
+  const signalsToShow = DEMO_MODE ? SIGNALS : liveSignals;
+
   const handleRefresh = () => {
     setLastRefresh(new Date());
-    addToast('Trading data refreshed', 'success');
+    if (DEMO_MODE) {
+      addToast('Demo data refreshed', 'success');
+    } else {
+      addToast('Trading data refreshed', 'success');
+    }
   };
 
   const toggleFav = (symbol: string) => {
@@ -332,7 +399,9 @@ export default function TradingPanel() {
             </div>
             <div>
               <h2 className="text-[14px] font-semibold text-white">Trading Intelligence</h2>
-              <p className="text-[10px] text-slate-600">Simulated data — not financial advice</p>
+              <p className="text-[10px] text-slate-600">
+                {DEMO_MODE ? 'Simulated data — not financial advice' : 'Live market signals'}
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -368,122 +437,150 @@ export default function TradingPanel() {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {/* Signals Tab */}
+        {/* ═══ SIGNALS TAB ═══ */}
         {activeTab === 'signals' && (
           <>
-            {/* Summary stats */}
-            <div className="grid grid-cols-4 gap-2 mb-2">
-              <div className="p-3 rounded-xl border border-emerald-500/10 bg-emerald-500/[0.04] text-center">
-                <p className="text-lg font-semibold text-emerald-400">{SIGNALS.filter((s) => s.direction === 'long').length}</p>
-                <p className="text-[9px] text-slate-500">Long</p>
-              </div>
-              <div className="p-3 rounded-xl border border-red-500/10 bg-red-500/[0.04] text-center">
-                <p className="text-lg font-semibold text-red-400">{SIGNALS.filter((s) => s.direction === 'short').length}</p>
-                <p className="text-[9px] text-slate-500">Short</p>
-              </div>
-              <div className="p-3 rounded-xl border border-amber-500/10 bg-amber-500/[0.04] text-center">
-                <p className="text-lg font-semibold text-amber-400">{SIGNALS.filter((s) => s.direction === 'wait').length}</p>
-                <p className="text-[9px] text-slate-500">Wait</p>
-              </div>
-              <div className="p-3 rounded-xl border border-white/[0.04] bg-white/[0.01] text-center">
-                <p className="text-lg font-semibold text-white">{Math.round(SIGNALS.reduce((a, s) => a + s.confidence, 0) / SIGNALS.length)}%</p>
-                <p className="text-[9px] text-slate-500">Avg Conf</p>
-              </div>
-            </div>
+            <DemoBanner />
+            {!DEMO_MODE && signalsToShow.length === 0 ? (
+              <LiveDataUnavailable onRetry={handleRefresh} />
+            ) : (
+              <>
+                {/* Summary stats */}
+                <div className="grid grid-cols-4 gap-2 mb-2">
+                  <div className="p-3 rounded-xl border border-emerald-500/10 bg-emerald-500/[0.04] text-center">
+                    <p className="text-lg font-semibold text-emerald-400">{signalsToShow.filter((s) => s.direction === 'long').length}</p>
+                    <p className="text-[9px] text-slate-500">Long</p>
+                  </div>
+                  <div className="p-3 rounded-xl border border-red-500/10 bg-red-500/[0.04] text-center">
+                    <p className="text-lg font-semibold text-red-400">{signalsToShow.filter((s) => s.direction === 'short').length}</p>
+                    <p className="text-[9px] text-slate-500">Short</p>
+                  </div>
+                  <div className="p-3 rounded-xl border border-amber-500/10 bg-amber-500/[0.04] text-center">
+                    <p className="text-lg font-semibold text-amber-400">{signalsToShow.filter((s) => s.direction === 'wait').length}</p>
+                    <p className="text-[9px] text-slate-500">Wait</p>
+                  </div>
+                  <div className="p-3 rounded-xl border border-white/[0.04] bg-white/[0.01] text-center">
+                    <p className="text-lg font-semibold text-white">{signalsToShow.length > 0 ? Math.round(signalsToShow.reduce((a, s) => a + s.confidence, 0) / signalsToShow.length) : 0}%</p>
+                    <p className="text-[9px] text-slate-500">Avg Conf</p>
+                  </div>
+                </div>
 
-            {/* Signal Cards */}
-            <div className="space-y-2">
-              {SIGNALS.map((signal) => (
-                <SignalCard key={signal.id} signal={signal} />
-              ))}
-            </div>
+                {/* Signal Cards */}
+                <div className="space-y-2">
+                  {signalsToShow.map((signal) => (
+                    <SignalCard key={signal.id} signal={signal} />
+                  ))}
+                </div>
+              </>
+            )}
           </>
         )}
 
-        {/* Watchlist Tab */}
+        {/* ═══ WATCHLIST TAB ═══ */}
         {activeTab === 'watchlist' && (
           <>
-            {/* Filter + Search */}
-            <div className="flex gap-2 mb-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-600" />
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search symbols..."
-                  className="w-full h-8 pl-8 pr-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[11px] text-slate-300 placeholder:text-slate-700 focus:outline-none focus:border-emerald-500/20 transition-all"
-                />
-              </div>
-              <div className="flex gap-1 p-0.5 rounded-lg bg-white/[0.02] border border-white/[0.03]">
-                {(['all', 'stocks', 'crypto'] as const).map((f) => (
-                  <button
-                    key={f}
-                    onClick={() => setWatchlistFilter(f)}
-                    className={`px-2.5 py-1 rounded-md text-[10px] font-medium transition-all capitalize ${
-                      watchlistFilter === f ? 'bg-white/[0.06] text-white' : 'text-slate-600 hover:text-slate-400'
-                    }`}
-                  >
-                    {f === 'all' ? 'All' : f === 'stocks' ? <span className="flex items-center gap-1"><Globe className="w-2.5 h-2.5" /> Stocks</span> : <span className="flex items-center gap-1"><Bitcoin className="w-2.5 h-2.5" /> Crypto</span>}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <DemoBanner />
+            {!DEMO_MODE && watchlist.length === 0 ? (
+              <LiveDataUnavailable onRetry={handleRefresh} />
+            ) : (
+              <>
+                {/* Filter + Search */}
+                <div className="flex gap-2 mb-2">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-600" />
+                    <input
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder="Search symbols..."
+                      className="w-full h-8 pl-8 pr-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[11px] text-slate-300 placeholder:text-slate-700 focus:outline-none focus:border-emerald-500/20 transition-all"
+                    />
+                  </div>
+                  <div className="flex gap-1 p-0.5 rounded-lg bg-white/[0.02] border border-white/[0.03]">
+                    {(['all', 'stocks', 'crypto'] as const).map((f) => (
+                      <button
+                        key={f}
+                        onClick={() => setWatchlistFilter(f)}
+                        className={`px-2.5 py-1 rounded-md text-[10px] font-medium transition-all capitalize ${
+                          watchlistFilter === f ? 'bg-white/[0.06] text-white' : 'text-slate-600 hover:text-slate-400'
+                        }`}
+                      >
+                        {f === 'all' ? 'All' : f === 'stocks' ? <span className="flex items-center gap-1"><Globe className="w-2.5 h-2.5" /> Stocks</span> : <span className="flex items-center gap-1"><Bitcoin className="w-2.5 h-2.5" /> Crypto</span>}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-            <div className="space-y-1.5">
-              {filteredWatchlist.map((item) => (
-                <WatchlistRow key={item.symbol} item={item} onToggleFav={() => toggleFav(item.symbol)} />
-              ))}
-            </div>
+                <div className="space-y-1.5">
+                  {filteredWatchlist.map((item) => (
+                    <WatchlistRow key={item.symbol} item={item} onToggleFav={() => toggleFav(item.symbol)} />
+                  ))}
+                </div>
+              </>
+            )}
           </>
         )}
 
-        {/* Sentiment Tab */}
+        {/* ═══ SENTIMENT TAB ═══ */}
         {activeTab === 'sentiment' && (
-          <div className="space-y-3">
-            <SentimentGauge sentiment={DEMO_SENTIMENT} />
+          <>
+            {!DEMO_MODE ? (
+              <LiveDataUnavailable onRetry={handleRefresh} />
+            ) : (
+              <div className="space-y-3">
+                <DemoBanner />
+                <SentimentGauge sentiment={DEMO_SENTIMENT} />
 
-            {/* Sector Sentiment */}
-            <div className="p-4 rounded-xl border border-white/[0.04] bg-white/[0.01]">
-              <h3 className="text-[12px] font-medium text-white mb-3 flex items-center gap-2">
-                <Layers className="w-3.5 h-3.5 text-slate-500" /> Sector Sentiment
-              </h3>
-              {[
-                { sector: 'Technology', score: 78, trend: 'up' },
-                { sector: 'Healthcare', score: 62, trend: 'up' },
-                { sector: 'Energy', score: 45, trend: 'down' },
-                { sector: 'Finance', score: 55, trend: 'neutral' },
-                { sector: 'Crypto', score: 71, trend: 'up' },
-              ].map((s) => (
-                <div key={s.sector} className="flex items-center gap-3 py-2 border-b border-white/[0.02] last:border-0">
-                  <span className="text-[11px] text-slate-400 w-20">{s.sector}</span>
-                  <div className="flex-1 h-1.5 bg-white/[0.04] rounded-full overflow-hidden">
-                    <motion.div
-                      className={`h-full rounded-full ${s.score > 60 ? 'bg-emerald-400' : s.score < 40 ? 'bg-red-400' : 'bg-amber-400'}`}
-                      initial={{ width: 0 }}
-                      animate={{ width: `${s.score}%` }}
-                      transition={{ duration: 0.8, delay: 0.1 }}
-                    />
-                  </div>
-                  <span className="text-[10px] text-slate-500 w-8 text-right">{s.score}</span>
+                {/* Sector Sentiment */}
+                <div className="p-4 rounded-xl border border-white/[0.04] bg-white/[0.01]">
+                  <h3 className="text-[12px] font-medium text-white mb-3 flex items-center gap-2">
+                    <Layers className="w-3.5 h-3.5 text-slate-500" /> Sector Sentiment
+                  </h3>
+                  {[
+                    { sector: 'Technology', score: 78, trend: 'up' },
+                    { sector: 'Healthcare', score: 62, trend: 'up' },
+                    { sector: 'Energy', score: 45, trend: 'down' },
+                    { sector: 'Finance', score: 55, trend: 'neutral' },
+                    { sector: 'Crypto', score: 71, trend: 'up' },
+                  ].map((s) => (
+                    <div key={s.sector} className="flex items-center gap-3 py-2 border-b border-white/[0.02] last:border-0">
+                      <span className="text-[11px] text-slate-400 w-20">{s.sector}</span>
+                      <div className="flex-1 h-1.5 bg-white/[0.04] rounded-full overflow-hidden">
+                        <motion.div
+                          className={`h-full rounded-full ${s.score > 60 ? 'bg-emerald-400' : s.score < 40 ? 'bg-red-400' : 'bg-amber-400'}`}
+                          initial={{ width: 0 }}
+                          animate={{ width: `${s.score}%` }}
+                          transition={{ duration: 0.8, delay: 0.1 }}
+                        />
+                      </div>
+                      <span className="text-[10px] text-slate-500 w-8 text-right">{s.score}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          </div>
+              </div>
+            )}
+          </>
         )}
 
-        {/* Trending Tab */}
+        {/* ═══ TRENDING TAB ═══ */}
         {activeTab === 'trending' && (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between mb-1">
-              <h3 className="text-[12px] font-medium text-white flex items-center gap-2">
-                <TrendingUp className="w-3.5 h-3.5 text-slate-500" /> Trending Assets
-              </h3>
-              <span className="text-[10px] text-slate-600">Last 24h</span>
-            </div>
-            {DEMO_TRENDING.map((asset) => (
-              <TrendingCard key={asset.symbol} asset={asset} />
-            ))}
-          </div>
+          <>
+            <DemoBanner />
+            {!DEMO_MODE && DEMO_TRENDING.filter((t) => t.is_live).length === 0 ? (
+              <LiveDataUnavailable onRetry={handleRefresh} />
+            ) : (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between mb-1">
+                  <h3 className="text-[12px] font-medium text-white flex items-center gap-2">
+                    <TrendingUp className="w-3.5 h-3.5 text-slate-500" /> Trending Assets
+                  </h3>
+                  <span className="text-[10px] text-slate-600">Last 24h</span>
+                </div>
+                {(DEMO_MODE ? DEMO_TRENDING : DEMO_TRENDING.filter((t) => t.is_live)).map((asset) => (
+                  <TrendingCard key={asset.symbol} asset={asset} />
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

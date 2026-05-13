@@ -1,30 +1,94 @@
-import { ArrowDown, ArrowUp, FileText, List, Languages } from 'lucide-react';
+import { useState } from 'react';
+import { motion } from 'framer-motion';
+import {
+  Lightbulb, TrendingUp, FileText, Zap,
+  Bookmark, BookmarkCheck,
+} from 'lucide-react';
+
+export interface ResponseAction {
+  id: string;
+  label: string;
+  icon: typeof Lightbulb;
+  prompt: string;
+  description: string;
+}
+
+export const RESPONSE_ACTIONS: ResponseAction[] = [
+  { id: 'explain', label: 'Explain more', icon: Lightbulb, prompt: 'Can you explain that in more detail?', description: 'Deeper explanation' },
+  { id: 'examples', label: 'Show examples', icon: FileText, prompt: 'Can you provide some concrete examples?', description: 'Practical examples' },
+  { id: 'simplify', label: 'Simplify', icon: Zap, prompt: 'Can you simplify that for a beginner?', description: 'Simpler version' },
+  { id: 'action', label: 'Action items', icon: TrendingUp, prompt: 'What are the specific action items from this?', description: 'Actionable steps' },
+];
+
+export function useSavedPrompts() {
+  const [saved, setSaved] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem('korvix_saved_prompts') || '[]'); } catch { return []; }
+  });
+  const toggle = (id: string) => {
+    setSaved((prev) => {
+      const next = prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id];
+      localStorage.setItem('korvix_saved_prompts', JSON.stringify(next));
+      return next;
+    });
+  };
+  return { saved, toggle };
+}
 
 interface ResponseActionsProps {
   onAction: (action: string) => void;
+  onHoverAction?: (action: string, prompt: string) => void;
+  compact?: boolean;
 }
 
-const actions = [
-  { id: 'shorter', label: 'Shorter', icon: ArrowDown, prompt: 'Make this response shorter and more concise.' },
-  { id: 'detailed', label: 'More detail', icon: ArrowUp, prompt: 'Provide a more detailed and comprehensive response.' },
-  { id: 'example', label: 'Example', icon: FileText, prompt: 'Give me a concrete example to illustrate this.' },
-  { id: 'step', label: 'Step-by-step', icon: List, prompt: 'Break this down into clear step-by-step instructions.' },
-  { id: 'translate', label: 'Translate', icon: Languages, prompt: 'Translate this to ' },
-];
+export default function ResponseActions({ onAction, onHoverAction, compact = false }: ResponseActionsProps) {
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const { saved, toggle: toggleSave } = useSavedPrompts();
 
-export default function ResponseActions({ onAction }: ResponseActionsProps) {
   return (
-    <div className="flex flex-wrap items-center gap-1 mt-2.5">
-      {actions.map((action) => (
-        <button
-          key={action.id}
-          onClick={() => onAction(action.prompt)}
-          className="flex items-center gap-1 rounded-md bg-white/[0.02] hover:bg-white/[0.06] border border-white/[0.04] hover:border-white/[0.08] px-2 py-[3px] text-[10px] text-slate-500 hover:text-slate-300 transition-all duration-200"
-        >
-          <action.icon className="h-2.5 w-2.5" />
-          {action.label}
-        </button>
-      ))}
+    <div className={`flex flex-wrap gap-1.5 ${compact ? '' : ''}`}>
+      {RESPONSE_ACTIONS.map((action, i) => {
+        const isSaved = saved.includes(action.id);
+        const isHovered = hoveredId === action.id;
+        return (
+          <motion.button
+            key={action.id}
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2, delay: i * 0.04 }}
+            onClick={() => onAction(action.prompt)}
+            onMouseEnter={() => {
+              setHoveredId(action.id);
+              onHoverAction?.(action.label, action.prompt);
+            }}
+            onMouseLeave={() => setHoveredId(null)}
+            className={`
+              group flex items-center gap-1.5
+              rounded-lg border border-white/[0.04] bg-white/[0.015]
+              px-2.5 py-1
+              transition-all duration-150
+              hover:border-white/[0.08] hover:bg-white/[0.03]
+              ${isHovered ? 'border-cyan-500/10 bg-cyan-500/[0.02]' : ''}
+            `}
+          >
+            <action.icon className="h-3 w-3 text-slate-600 group-hover:text-cyan-400/70 transition-colors" />
+            <span className="text-[11px] text-slate-500 group-hover:text-slate-300 transition-colors">
+              {action.label}
+            </span>
+
+            {/* Save star */}
+            <button
+              onClick={(e) => { e.stopPropagation(); toggleSave(action.id); }}
+              className="ml-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+            >
+              {isSaved ? (
+                <BookmarkCheck className="h-2.5 w-2.5 text-amber-400/70" />
+              ) : (
+                <Bookmark className="h-2.5 w-2.5 text-slate-700 hover:text-slate-500" />
+              )}
+            </button>
+          </motion.button>
+        );
+      })}
     </div>
   );
 }
