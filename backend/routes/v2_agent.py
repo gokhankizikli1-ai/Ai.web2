@@ -208,4 +208,110 @@ async def execute(body: AgentExecuteRequest, request: Request) -> dict:
     )
 
 
+# ── /v2/agent/test — production-safe canary route (Phase 7c) ─────────────
+
+# Hard-pinned canary parameters. The test route exists so operators can
+# verify tool wiring from production WITHOUT exposing the full agent
+# surface area: it always uses mode="market" (calculator, current_time,
+# stock_market, market_data, news, macro_data), caps the budget at 4
+# steps total (≈ 2 LLM rounds with tool calls between), and never
+# requires auth even when ENABLE_AGENT_REQUIRE_AUTH is on for /execute.
+_TEST_MODE         = "market"
+_TEST_MAX_STEPS    = 4
+_TEST_MAX_TOKENS   = 1200
+_TEST_TEMPERATURE  = 0.3
+_TEST_MAX_HISTORY  = 4           # accept short histories only
+
+
+class AgentTestRequest(BaseModel):
+    """Minimal request body for /v2/agent/test. mode / model / budgets
+    are NOT settable from outside — that's the whole point of a canary."""
+    messages: List[AgentMessage] = Field(..., min_length=1, max_length=_TEST_MAX_HISTORY)
+
+
+@router.post("/test")
+async def agent_test(body: AgentTestRequest, request: Request) -> dict:
+    """Safe canary endpoint for verifying the agent's tool wiring.
+
+    Differences from /v2/agent/execute:
+      - Hard-pinned mode="market" (the four canary tools live here).
+      - Hard-capped at 4 steps regardless of AGENT_MAX_STEPS.
+      - Hard-capped at 4-message history.
+      - No auth requirement (ENABLE_AGENT_REQUIRE_AUTH is ignored).
+      - test_mode=true in metadata so operators see the canary path
+        clearly in logs and response envelopes.
+
+    Gating, in order:
+      1. ENABLE_AGENT=true → otherwise 400 AGENT_DISABLED
+      2. Last message must be role=user → otherwise 400 BAD_REQUEST
+
+    All standing constraints apply: no real-world action, no trading,
+    no payments, read-only tools only.
+    """
+    if not agent_enabled():
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code":    "AGENT_DISABLED",
+                "message": "Agent runtime is disabled. Set ENABLE_AGENT=true on the server to enable.",
+            },
+        )
+
+    last = body.messages[-1]
+    if last.role != "user":
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code":    "BAD_REQUEST",
+                "message": "The last message must be from role='user'.",
+            },
+        )
+
+    history = [(m.role, m.content) for m in body.messages[:-1]]
+
+    # Identity is best-effort here — the test route doesn't gate on auth.
+    user = current_user(request)
+
+    req = AgentRequest(
+        user_message=last.content,
+        mode=_TEST_MODE,
+        user_id=user.id,
+        temperature=_TEST_TEMPERATURE,
+        max_tokens=_TEST_MAX_TOKENS,
+        history=history,
+        max_steps=_TEST_MAX_STEPS,
+    )
+
+    logger.info(
+        "agent_test.invoke | user_kind=%s | history_len=%d | mode=%s | max_steps=%d",
+        user.kind, len(history), _TEST_MODE, _TEST_MAX_STEPS,
+    )
+
+    response = await run_agent(req)
+
+    return envelope_ok(
+        data={
+            "reply":      response.reply,
+            "mode":       response.mode,
+            "model":      response.model,
+            "provider":   response.provider,
+            "partial":    response.partial,
+            "fallback":   response.fallback,
+            "tool_calls": response.tool_calls,
+            "steps_used": response.steps_used,
+        },
+        agent_trace    = [step.to_dict() if hasattr(step, "to_dict") else step for step in response.trace],
+        agent_metadata = response.metadata,
+        elapsed_ms     = response.elapsed_ms,
+        # Phase 7c — canary marker. Lets operators distinguish /test
+        # calls from /execute calls in logs and trace dumps.
+        test_mode = {
+            "enabled":   True,
+            "mode":      _TEST_MODE,
+            "max_steps": _TEST_MAX_STEPS,
+            "user_kind": user.kind,
+        },
+    )
+
+
 __all__ = ["router"]

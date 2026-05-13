@@ -80,7 +80,15 @@ async def run_agent(request: AgentRequest) -> AgentResponse:
         _COUNTS["runs_total"]    += 1
         _COUNTS["last_run_mode"]  = request.mode
 
-    budget = Budget()
+    # Phase 7c — honour per-request max_steps when provided. Uses
+    # `is not None` (matching tool_bridge's per-tool timeout fix in
+    # the same PR) so a future explicit max_steps=0 is passed through
+    # rather than silently falling back. Budget's own API treats 0
+    # as "use AGENT_MAX_STEPS env"; we forward the caller's intent
+    # at this layer to keep the semantics consistent.
+    budget = Budget(
+        max_steps=request.max_steps if request.max_steps is not None else 0,
+    )
     trace:  list[AgentStep] = []
 
     # Build OpenAI tool list (may be empty when no tool is enabled for this mode)
