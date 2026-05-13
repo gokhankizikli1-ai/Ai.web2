@@ -580,3 +580,21 @@ def test_no_simulated_prices_anywhere():
                 f"Suspicious hardcoded price assignment found in "
                 f"{module.__name__}: {pat!r}"
             )
+
+
+def test_coingecko_query_includes_volume_param():
+    """Regression for Bugbot Medium 71ded634 — CoinGecko's
+    /simple/price endpoint defaults include_24hr_vol to false, so the
+    URL the provider builds MUST opt in. Otherwise the top-level
+    volume field is always None in production."""
+    captured = {}
+    def _fake_urlopen(req, timeout=None):
+        captured["url"] = req.full_url if hasattr(req, "full_url") else str(req)
+        return _FakeResp({"bitcoin": {"usd": 70000, "usd_24h_change": 1.5, "usd_24h_vol": 50e9}})
+    with patch.object(mp_providers.urllib.request, "urlopen", _fake_urlopen):
+        q = CoinGeckoProvider().fetch("BTC")
+    assert "include_24hr_vol=true" in captured["url"], (
+        f"CoinGecko URL missing include_24hr_vol=true: {captured['url']}"
+    )
+    assert q.is_live is True
+    assert q.volume == pytest.approx(50e9)

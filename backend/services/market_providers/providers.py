@@ -299,6 +299,7 @@ class CoinGeckoProvider(BaseMarketProvider):
                 "ids": coin_id,
                 "vs_currencies": "usd",
                 "include_24hr_change": "true",
+                "include_24hr_vol":    "true",
             })
         )
         data = _http_get_json(url, headers=headers)
