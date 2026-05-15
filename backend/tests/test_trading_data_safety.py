@@ -221,14 +221,17 @@ def test_safe_empty_response_shape(monkeypatch):
     monkeypatch.setenv("ENVIRONMENT", "production")
     monkeypatch.delenv("ENABLE_TRADING_DEMO_MODE", raising=False)
     r = trading_safety.safe_empty_response(symbols=["AAPL", "NVDA", "TSLA"])
-    assert r["signals"]    == []
-    assert r["is_live"]    is False
-    assert r["demo_mode"]  is False
-    assert r["live_count"] == 0
-    assert r["requested"]  == ["AAPL", "NVDA", "TSLA"]
-    # The exact frontend trigger string for the "Market data unavailable"
-    # UX. Keep this stable so a future copy change is intentional.
-    assert "Market data unavailable" in r["message"]
+    assert r["signals"]       == []
+    assert r["is_live"]       is False
+    assert r["fallback_mode"] is True       # Phase 8j explicit flag
+    assert r["demo_mode"]     is False
+    assert r["live_count"]    == 0
+    assert r["requested"]     == ["AAPL", "NVDA", "TSLA"]
+    # The exact frontend trigger string for the "Live market data
+    # temporarily unavailable" UX. Keep stable so a future copy change
+    # is intentional.
+    assert "Live market data temporarily unavailable" == r["message"]
+    assert r["data_quality"] == "unavailable"
 
 
 def test_safe_empty_response_never_invents_signals():

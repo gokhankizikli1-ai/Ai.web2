@@ -89,10 +89,16 @@ def safe_empty_response(symbols: Iterable[str] | None = None) -> Dict[str, Any]:
         "signals":        [],
         "live_count":     0,
         "is_live":        False,
+        # Phase 8j — explicit fallback_mode flag the frontend can branch
+        # on. is_live=false ALSO implies fallback_mode; this extra field
+        # lets callers distinguish "providers failed" (fallback_mode=true)
+        # from "feature disabled" (would set fallback_mode=false). Today
+        # this function only handles the providers-failed case.
+        "fallback_mode":  True,
         "demo_mode":      is_demo_mode(),
         "requested":      sym_list,
         "timestamp":      datetime.now(timezone.utc).isoformat(),
-        "message":        "Market data unavailable right now.",
+        "message":        "Live market data temporarily unavailable",
         "data_quality":   "unavailable",
     }
 
