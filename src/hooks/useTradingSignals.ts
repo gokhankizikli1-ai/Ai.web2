@@ -142,19 +142,20 @@ export function useTradingSignals(): UseTradingSignalsResult {
       setSignals([]);
       setProvider('Unknown');
 
-      // Match the Phase 8i friendly-toast policy: no raw "Load failed"
-      // / "Failed to fetch" should ever reach the user.
+      // Match the Phase 8i friendly-toast policy EXACTLY (same matrix
+      // as useChat.ts) — no raw "Load failed" / "Failed to fetch" and
+      // the catch-all default stays Turkish for consistency.
+      let friendly = 'Bir şeyler ters gitti. Lütfen tekrar deneyin.';
       if (err instanceof DOMException && err.name === 'AbortError') {
-        setError('İstek zaman aşımına uğradı. Tekrar dene.');
+        friendly = 'İstek zaman aşımına uğradı. Tekrar dene.';
       } else if (err instanceof TypeError) {
-        setError('Sunucuya ulaşılamadı. Bağlantını kontrol edip tekrar dene.');
+        friendly = 'Sunucuya ulaşılamadı. Bağlantını kontrol edip tekrar dene.';
       } else if (err instanceof SyntaxError) {
-        setError('Yanıt anlaşılamadı. Tekrar dene.');
+        friendly = 'Yanıt anlaşılamadı. Tekrar dene.';
       } else if (err instanceof Error && err.message) {
-        setError(err.message);
-      } else {
-        setError('Live market data temporarily unavailable');
+        friendly = err.message;
       }
+      setError(friendly);
     } finally {
       window.clearTimeout(timeoutId);
       setIsLoading(false);
