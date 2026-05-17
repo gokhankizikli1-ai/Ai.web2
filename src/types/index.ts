@@ -40,7 +40,10 @@ export interface AIModeOption {
 
 // Trading types
 export type SignalDirection = 'long' | 'short' | 'wait' | 'neutral';
-export type DataProvider = 'Binance' | 'Yahoo' | 'AlphaVantage' | 'CoinGecko' | 'Unknown';
+export type DataProvider =
+  | 'Binance' | 'Yahoo' | 'AlphaVantage' | 'CoinGecko'
+  | 'Finnhub' | 'TwelveData' | 'Unknown';
+export type AssetType = 'stock' | 'crypto' | 'forex' | 'unknown';
 
 export interface TradingSignal {
   id: string;
@@ -57,10 +60,16 @@ export interface TradingSignal {
   reasoning: string;
   provider?: DataProvider;
   sparkline?: number[];
+  // Phase 8n — raw quote fields (also power the Watchlist tab).
+  price?: number;
+  changePercent?: number;
+  assetType?: AssetType;
+  isLive?: boolean;
 }
 
 export interface TradingSignalsResponse {
   is_live: boolean;
+  fallbackMode: boolean;
   provider: DataProvider;
   timestamp: string;
   signals: TradingSignal[];

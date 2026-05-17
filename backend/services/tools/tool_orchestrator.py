@@ -115,10 +115,12 @@ def _format_market_data(d: dict) -> str:
     ))
     for key in (
         "symbol", "last_price", "change_24h_pct", "volume_24h",
-        "rsi_14", "ema20", "ema50", "trend", "volume_trend",
+        "rsi_14", "ema20", "ema50", "sma20", "sma50",
+        "trend", "volume_trend",
         "support", "resistance", "atr_14", "volatility_pct",
         "bos", "bb_upper", "bb_middle", "bb_lower", "bb_width_pct",
         "bb_squeeze", "bb_position", "regime",
+        "bias", "bias_reason",
     ):
         v = d.get(key)
         if v is not None:

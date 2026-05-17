@@ -126,6 +126,104 @@ def test_crypto_query_not_hijacked(monkeypatch):
     assert r["provider"] == "binance"
 
 
+# ── Phase 8n — equity daily indicators ───────────────────────────────────
+
+def test_sma_helper():
+    assert market_data_tool._sma([1, 2, 3, 4], 2) == 3.5
+    assert market_data_tool._sma([1, 2], 5) is None
+    assert market_data_tool._sma([], 3) is None
+
+
+@pytest.mark.parametrize("price,s20,s50,rsi,expected", [
+    (110, 100, 90, 60, "bullish"),     # price>SMA20, SMA20>SMA50
+    (80, 100, 110, 40, "bearish"),     # price<SMA20, SMA20<SMA50
+    (100, 100, 100, 50, "neutral"),
+    (110, 100, 90, 75, "neutral"),     # uptrend but overbought cancels
+])
+def test_equity_bias(price, s20, s50, rsi, expected):
+    bias, reason = market_data_tool._equity_bias(price, s20, s50, rsi)
+    assert bias == expected
+    assert reason  # non-empty explanation
+
+
+def _closes(n=60, start=100.0, step=1.0):
+    """Generally rising series with small zig-zag so RSI isn't a
+    degenerate 100 (all-gains)."""
+    return [round(start + i * step + (0.4 if i % 2 else -0.4), 4) for i in range(n)]
+
+
+def _candles(closes):
+    """Synthetic daily candles with UNIQUE ascending datetimes (date
+    collisions would scramble the post-sort order)."""
+    vals = []
+    for i, c in enumerate(closes):
+        vals.append({
+            "datetime": f"2026-{(i // 28) + 1:02d}-{(i % 28) + 1:02d}",
+            "open": str(c - 0.5), "high": str(c + 1.0),
+            "low": str(c - 1.0), "close": str(c), "volume": "1000000",
+        })
+    return {"status": "ok", "values": vals}
+
+
+def test_equity_daily_indicators_computed(monkeypatch):
+    monkeypatch.setenv("TWELVE_DATA_API_KEY", "k")
+    closes = _closes(60)
+
+    async def _fake_fetch(url, timeout=10, cache_ttl=0):
+        assert "time_series" in url
+        return _candles(closes)
+    monkeypatch.setattr(market_data_tool, "_fetch_json", _fake_fetch)
+
+    out = asyncio.run(market_data_tool._equity_daily_indicators("NVDA", closes[-1]))
+    assert out is not None
+    assert out["candles_analyzed"] == 60
+    assert out["sma20"] == pytest.approx(sum(closes[-20:]) / 20, abs=0.01)
+    assert out["sma50"] == pytest.approx(sum(closes[-50:]) / 50, abs=0.01)
+    assert out["sma20"] > out["sma50"]            # rising series
+    assert 0 <= out["rsi_14"] <= 100
+    assert out["support"] is not None and out["resistance"] is not None
+    assert out["bias"] in ("bullish", "neutral")  # uptrend, RSI may be hot
+
+
+def test_equity_daily_indicators_no_key(monkeypatch):
+    monkeypatch.delenv("TWELVE_DATA_API_KEY", raising=False)
+    monkeypatch.delenv("TWELVEDATA_API_KEY", raising=False)
+    out = asyncio.run(market_data_tool._equity_daily_indicators("NVDA", 100.0))
+    assert out is None
+
+
+def test_equity_payload_includes_indicators_when_keys(monkeypatch):
+    monkeypatch.setenv("FINNHUB_API_KEY", "fk")
+    monkeypatch.setenv("TWELVE_DATA_API_KEY", "tk")
+    monkeypatch.setattr(_mp, "get_stock_quote", _live)
+
+    async def _fake_fetch(url, timeout=10, cache_ttl=0):
+        return _candles(_closes(60))
+    monkeypatch.setattr(market_data_tool, "_fetch_json", _fake_fetch)
+
+    r = _run("NVDA price")
+    assert r["status"] == "available"
+    d = r["data"]
+    assert d["data_quality"]["level"] == "ohlc_daily"
+    assert d["timeframe"] == "1d"
+    assert d["sma20"] is not None and d["sma50"] is not None
+    assert 0 <= d["rsi_14"] <= 100
+    assert d["last_price"] == 901.5            # quote price, NOT a candle close
+
+
+def test_equity_payload_quote_only_without_twelvedata(monkeypatch):
+    monkeypatch.setenv("FINNHUB_API_KEY", "fk")
+    monkeypatch.delenv("TWELVE_DATA_API_KEY", raising=False)
+    monkeypatch.delenv("TWELVEDATA_API_KEY", raising=False)
+    monkeypatch.setattr(_mp, "get_stock_quote", _live)
+    r = _run("NVDA price")
+    assert r["status"] == "available"
+    d = r["data"]
+    assert d["data_quality"]["level"] == "quote_only"
+    assert "sma20" not in d
+    assert d["last_price"] == 901.5
+
+
 def test_no_key_skips_equity_branch(monkeypatch):
     monkeypatch.delenv("FINNHUB_API_KEY", raising=False)
     monkeypatch.delenv("TWELVE_DATA_API_KEY", raising=False)

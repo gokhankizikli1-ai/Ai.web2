@@ -113,6 +113,15 @@ def _market_data_summary(tool_results: dict) -> dict | None:
         }
     return out or None
 
+
+# Phase 8n — quick-quote snapshot detector lives in its own import-light
+# module so it stays unit-testable without the OpenAI SDK.
+from backend.services.ai.snapshot import (   # noqa: E402
+    is_quick_quote_ask as _is_quick_quote_ask,
+    SNAPSHOT_DIRECTIVE as _SNAPSHOT_DIRECTIVE,
+)
+
+
 _ECOM_KW = [
     "satmak", "dropshipping", "shopify", "ecommerce", "e-ticaret",
     "magaza", "urun sat", "kar marji", "supplier", "tedarik",
@@ -183,6 +192,11 @@ async def process_chat(
             if canonical:
                 cfg   = mode_get_config(canonical, depth_label, message)
                 sys_p = build_system_prompt(canonical, mem_summary, style_prompt, profile)
+
+                # Phase 8n — concise snapshot for a bare price ask.
+                if canonical == "trading_analyst" and _is_quick_quote_ask(message):
+                    sys_p += _SNAPSHOT_DIRECTIVE
+                    logger.info("process_chat | trading_analyst quick-quote snapshot mode")
 
                 # ─────────────────────────────────────────────────────────
                 # Phase A1 — Agent runtime path (research mode only, flag-gated).
