@@ -20,6 +20,8 @@ from backend.services.ai.snapshot import is_quick_quote_ask as _is_quick_quote_a
     "BTC ne kadar",
     "TSLA quote",
     "AAPL değeri nedir",
+    "NVDA fiyatı ne?",          # Turkish suffix alone (Bugbot 426cd270)
+    "AAPL fiyatını söyle",      # 'fiyatını' — suffixed, no companion kw
 ])
 def test_quick_quote_true(msg):
     assert _is_quick_quote_ask(msg) is True
@@ -33,6 +35,8 @@ def test_quick_quote_true(msg):
     "NVDA entry and stop please",                    # entry/stop
     "detaylı analiz ve risk planı istiyorum NVDA",   # analiz/risk/plan
     "tell me about NVDA outlook and forecast",       # outlook/forecast
+    "Is NVDA worth buying?",                         # worth + buy → analysis (084f59c6)
+    "Is AAPL worth investing in?",                   # worth + invest → analysis
     "x" * 200 + " price",                            # too long to be a quick ask
 ])
 def test_quick_quote_false(msg):

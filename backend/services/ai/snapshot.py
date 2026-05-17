@@ -26,6 +26,9 @@ _ANALYSIS_KW = (
     "al mı", "al mi", "sat mı", "sat mi", "yorum", "derin", "detay",
     "detail", "incele", "review", "outlook", "forecast", "tahmin",
     "should i", "trade", "position", "pozisyon", "scenario", "senaryo",
+    # Decision/opinion intent — "Is NVDA worth buying?" is analysis, not a
+    # bare quote, even though it contains "worth" (Bugbot Medium 084f59c6).
+    "buy", "buying", "sell", "selling", "invest", "investing",
 )
 
 SNAPSHOT_DIRECTIVE = (
@@ -50,12 +53,16 @@ SNAPSHOT_DIRECTIVE = (
 
 
 def _has_kw(text: str, keywords) -> bool:
-    """Whole-word/phrase match. Substring matching is wrong here: bare
-    'sl' would hit 'tsla', 'tp' would hit countless tokens. \\b around
-    each escaped keyword (works across spaces for phrases like
-    'ne kadar')."""
+    """Word-START anchored match. A trailing \\b would block Turkish
+    suffixes — `\\bfiyat\\b` never matches "fiyatı"/"fiyatını" (ı is a
+    Unicode word char, so there's no boundary after 't'), silently
+    killing quick-quote for the MOST common TR form (Bugbot 426cd270).
+    Anchoring only the START still blocks the substring trap (bare 'sl'
+    won't match 'tsla' because 'sl' isn't at a word start there) while
+    allowing any suffix, and works across spaces for phrases like
+    'ne kadar'."""
     for kw in keywords:
-        if re.search(r"\b" + re.escape(kw) + r"\b", text):
+        if re.search(r"\b" + re.escape(kw), text):
             return True
     return False
 
