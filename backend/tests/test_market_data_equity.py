@@ -220,6 +220,7 @@ def test_equity_payload_quote_only_without_twelvedata(monkeypatch):
     assert r["status"] == "available"
     d = r["data"]
     assert d["data_quality"]["level"] == "quote_only"
+    assert d["timeframe"] == "quote"   # NOT "1d" — no candles fetched
     assert "sma20" not in d
     assert d["last_price"] == 901.5
 

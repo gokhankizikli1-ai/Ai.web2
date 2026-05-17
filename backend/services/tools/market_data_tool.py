@@ -307,7 +307,12 @@ class MarketDataTool(BaseTool):
         extra = q.extra or {}
         payload = {
             "symbol":          q.symbol or sym,
-            "timeframe":       "1d",
+            # "quote" until daily candles are actually fetched — promoted
+            # to "1d" only in the indicators branch. A quote-only payload
+            # labelled "1d" would make the renderer print
+            # "PRICE & STRUCTURE (1d, ? candles)" and mislead the model
+            # into thinking it has daily structure (Bugbot Medium f1a647d7).
+            "timeframe":       "quote",
             "asset_class":     "equity",
             "last_price":      q.price,
             # Provider's daily move (last vs previous close). Mapped onto the
@@ -333,6 +338,7 @@ class MarketDataTool(BaseTool):
 
         if indicators:
             payload.update(indicators)
+            payload["timeframe"] = "1d"   # real daily candles backed it
             payload["data_quality"] = {"level": "ohlc_daily", "missing": [
                 # Still no intraday MTF / futures microstructure / risk plan
                 # for equities — say so rather than fake it.
