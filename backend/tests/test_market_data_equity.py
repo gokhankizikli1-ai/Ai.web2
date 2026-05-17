@@ -34,6 +34,13 @@ def _run(query: str, ctx=None) -> dict:
     ("the price of stock now", None),     # all stopwords
     ("BTC fiyatı kaç", None),             # crypto — owned by parse_symbol
     ("ETH/USDT analiz", None),            # crypto pair
+    # Bugbot Medium 67253298 — first-person English must not extract "I"
+    # (nor the following verb). Uppercase-as-typed wins.
+    ("I want NVDA price", "NVDA"),
+    ("can I buy AAPL", "AAPL"),
+    ("i want nvda price", "NVDA"),        # all-lowercase fallback
+    ("I WANT NVDA", "NVDA"),              # all-caps prose
+    ("I", None),                          # bare pronoun only
 ])
 def test_parse_equity_symbol(msg, expected):
     assert market_data_tool._parse_equity_symbol(msg) == expected

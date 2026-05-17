@@ -69,19 +69,25 @@ _MTF_TIMEFRAMES = ("1d", "4h", "1h")
 # (ENABLE_MARKET_DATA is already on), so no ENABLE_STOCK_MARKET dependency and
 # no behaviour change when unconfigured.
 
-# Tokens that look like 1–5-letter tickers but never are. Message is upper()'d
-# before matching; non-ASCII Turkish words (FİYAT, KAÇ) can't match [A-Z] so
-# they need no entry here. Keep tight — over-listing risks dropping a real
-# ticker (e.g. don't add "T", a valid NYSE symbol).
+# Tokens that look like 1–5-letter tickers but never are. Non-ASCII Turkish
+# words (FİYAT, KAÇ) can't match [A-Z] so they need no entry here. Keep tight —
+# over-listing risks dropping a real ticker (e.g. don't add "T", a valid NYSE
+# symbol; don't add "SEE"/"GE"/"SO", real tickers). The uppercase-as-typed
+# preference in _parse_equity_symbol is the primary defence; this set only
+# has to catch the residual all-lowercase / all-caps prose case.
 _EQUITY_STOPWORDS = {
-    "THE", "A", "AN", "IS", "ARE", "WAS", "FOR", "AND", "OR", "OF", "TO",
-    "IN", "ON", "AT", "BY", "WHAT", "HOW", "WHY", "WHEN", "WHO", "PRICE",
-    "STOCK", "SHARE", "SHARES", "BUY", "SELL", "HOLD", "NOW", "TODAY",
-    "USD", "EUR", "TRY", "GBP", "JPY", "USDT", "USDC", "BUSD", "DAI",
-    "TUSD", "USDD", "FDUSD", "NE", "NEDIR", "KAC", "FIYAT",
+    "THE", "A", "AN", "I", "IS", "ARE", "WAS", "FOR", "AND", "OR", "OF",
+    "TO", "IN", "ON", "AT", "BY", "WHAT", "HOW", "WHY", "WHEN", "WHO",
+    "PRICE", "STOCK", "SHARE", "SHARES", "BUY", "SELL", "HOLD", "NOW",
+    "TODAY", "USD", "EUR", "TRY", "GBP", "JPY", "USDT", "USDC", "BUSD",
+    "DAI", "TUSD", "USDD", "FDUSD", "NE", "NEDIR", "KAC", "FIYAT",
     "ANALIZ", "HISSE", "BORSA", "CAN", "DO", "DOES", "ME", "MY", "WE",
     "YOU", "IT", "GET", "TELL", "ABOUT", "VS", "PER", "EPS", "PE",
     "ETF", "ETFS", "CHART", "QUOTE", "VALUE", "WORTH", "MUCH",
+    # First-person / filler verbs — common in "I want NVDA price"-style
+    # prose, never notable tickers.
+    "WANT", "NEED", "LIKE", "SHOW", "THINK", "PLEASE", "PLS", "HEY",
+    "OKAY", "WANNA", "GONNA", "GIMME",
 }
 
 # Ticker: 1–5 A–Z, optional single-letter class suffix (BRK.B / BRK-B).
@@ -113,15 +119,8 @@ def _looks_equity(sym: str) -> bool:
     return True
 
 
-def _parse_equity_symbol(message: str) -> str | None:
-    """Best-effort equity ticker from a natural-language message. Returns the
-    first plausible ticker that is NOT a crypto ticker and NOT a stopword,
-    else None. Crypto is intentionally excluded so the existing crypto chain
-    still owns BTC/ETH/etc."""
-    if not message:
-        return None
-    text = message.upper()
-    for tok in _EQUITY_TOKEN_RE.findall(text):
+def _pick_equity(tokens) -> str | None:
+    for tok in tokens:
         base = re.split(r"[.\-]", tok)[0]
         if tok in _EQUITY_STOPWORDS or base in _EQUITY_STOPWORDS:
             continue
@@ -129,6 +128,26 @@ def _parse_equity_symbol(message: str) -> str | None:
             continue
         return tok
     return None
+
+
+def _parse_equity_symbol(message: str) -> str | None:
+    """Best-effort equity ticker from a natural-language message.
+
+    A ticker is almost always typed UPPERCASE ("NVDA", "AAPL", "BRK.B"),
+    so prefer an uppercase-as-typed token first — that way lowercase
+    prose ("I want the price") can't be mistaken for a ticker (Bugbot
+    Medium 67253298). Only fall back to the upper()'d scan when the user
+    typed no uppercase ticker at all (e.g. "nvda fiyatı kaç"), where the
+    stopword set carries the load. Crypto is excluded so the existing
+    crypto chain still owns BTC/ETH/etc."""
+    if not message:
+        return None
+    # _EQUITY_TOKEN_RE is [A-Z]{1,5}; run against the ORIGINAL message it
+    # only matches uppercase-as-typed tokens — the strong ticker signal.
+    hit = _pick_equity(_EQUITY_TOKEN_RE.findall(message))
+    if hit:
+        return hit
+    return _pick_equity(_EQUITY_TOKEN_RE.findall(message.upper()))
 
 # ── Symbol sets ────────────────────────────────────────────────────────────────────────────
 
