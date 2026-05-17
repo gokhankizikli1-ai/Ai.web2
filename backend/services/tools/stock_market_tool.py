@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -44,6 +45,11 @@ from backend.services.tools.base_tool import BaseTool
 logger = logging.getLogger(__name__)
 
 _DEFAULT_TIMEOUT_S = 6.0
+# Phase 8l — tight ceiling for the key-backed provider chain. Finnhub
+# answers in ~200ms; this only bites if Finnhub is configured but slow
+# and the chain has to fall through. Kept under the 8s tool-bridge
+# ceiling so a slow chain still leaves room for the yfinance fallback.
+_PROVIDERS_TIMEOUT_S = 5.0
 _MAX_SYMBOL_LEN    = 12      # yfinance accepts e.g. "BRK-B" (5), longest sane
 
 
@@ -82,6 +88,50 @@ class StockMarketTool(BaseTool):
         if not _looks_like_symbol(symbol):
             return self._error(f"invalid symbol: {symbol!r}")
 
+        # Phase 8l — prefer the reliable key-backed provider chain
+        # (Finnhub → TwelveData → yfinance) that already powers
+        # /market/quote. Scraping Yahoo from a datacenter IP is brittle:
+        # Railway gets rate-limited, the call hangs until the timeout,
+        # and the agent falls back to a generic answer. Finnhub answers
+        # in <1s from a real REST API. This block is skipped entirely
+        # when no key is configured, so the legacy behaviour — and the
+        # unit tests that monkeypatch _fetch_quote_sync — are unchanged.
+        if _stock_providers_configured():
+            try:
+                pq = await asyncio.wait_for(
+                    asyncio.to_thread(_fetch_via_market_providers, symbol),
+                    timeout=_PROVIDERS_TIMEOUT_S,
+                )
+            except asyncio.TimeoutError:
+                logger.info("stock_market.providers_timeout | symbol=%s", symbol)
+                pq = None
+            except Exception as exc:
+                logger.warning(
+                    "stock_market.providers_exception | symbol=%s | %s", symbol, exc
+                )
+                pq = None
+            if pq:
+                quote_dict, src = pq
+                logger.info(
+                    "stock_market.ok | symbol=%s | price=%s | via=%s",
+                    symbol, quote_dict.get("last_price"), src,
+                )
+                return self._ok(quote_dict, provider=src)
+            # The chain (Finnhub → TwelveData → yfinance) already ran and
+            # ITS last leg is yfinance — so do NOT fall through to the
+            # legacy _fetch_quote_sync, which would hit the same
+            # rate-limited Yahoo IP a SECOND time and double the
+            # worst-case hang (Bugbot Medium b4c7aa7c). Return unavailable
+            # now; never fabricate. Bounded ≤ _PROVIDERS_TIMEOUT_S, which
+            # is < the pre-PR 6s single-attempt worst case.
+            logger.info("stock_market.providers_exhausted | symbol=%s", symbol)
+            return self._unavailable(
+                f"No live quote for {symbol} (Finnhub/TwelveData/yfinance all failed)"
+            )
+
+        # No key-backed provider configured — the chain was skipped
+        # entirely above. Legacy yfinance path runs exactly as pre-PR
+        # (single attempt, unchanged behaviour + unit-test contract).
         try:
             quote = await asyncio.wait_for(
                 asyncio.to_thread(_fetch_quote_sync, symbol),
@@ -131,6 +181,61 @@ def _first_present(*candidates):
         if v is not None:
             return v
     return None
+
+
+def _stock_providers_configured() -> bool:
+    """True when a key-backed stock provider (Finnhub / TwelveData) is
+    configured. yfinance alone does NOT count — that's the legacy path
+    the direct _fetch_quote_sync call already covers. Env-only check so
+    unit tests (no keys) take the unchanged legacy path deterministically
+    and never touch the network."""
+    return bool(
+        os.getenv("FINNHUB_API_KEY", "").strip()
+        or os.getenv("TWELVE_DATA_API_KEY", "").strip()
+        or os.getenv("TWELVEDATA_API_KEY", "").strip()
+    )
+
+
+def _fetch_via_market_providers(symbol: str):
+    """Try the reliable key-backed chain (Finnhub → TwelveData →
+    yfinance) that already powers /market/quote. Returns
+    (quote_dict, source) on a verified-live quote, else None so the
+    caller falls back to the legacy yfinance path. A non-live
+    MarketQuote → None: NEVER fabricate a price."""
+    from backend.services.market_providers import get_stock_quote  # noqa: PLC0415
+
+    q = get_stock_quote(symbol)
+    if not getattr(q, "is_live", False) or q.price is None:
+        return None
+
+    extra = q.extra or {}
+    prev = _safe_get(extra, "previous_close")
+    change = _delta(q.price, prev)
+    change_pct = q.change_percent
+    if change_pct is None:
+        change_pct = _delta_pct(q.price, prev)
+
+    quote_dict = {
+        "symbol":               q.symbol or symbol,
+        "name":                 _first_present(_safe_get(extra, "name"), q.symbol, symbol),
+        "currency":             q.currency or "USD",
+        "exchange":             _first_present(_safe_get(extra, "exchange"), ""),
+        # Honest unknowns — Finnhub/TwelveData /quote don't report these.
+        # None ("not provided"), never a fabricated value.
+        "market_state":         "UNKNOWN",
+        "last_price":           _round(q.price, 6),
+        "previous_close":       _round(prev, 6),
+        "open":                 _round(_safe_get(extra, "open"), 6),
+        "day_high":             _round(q.high, 6),
+        "day_low":              _round(q.low, 6),
+        "volume":               _to_int(q.volume),
+        "change":               _round(change, 6),
+        "change_pct":           _round(change_pct, 4),
+        "fifty_two_week_high":  None,
+        "fifty_two_week_low":   None,
+        "as_of":                q.timestamp or datetime.now(timezone.utc).isoformat(),
+    }
+    return quote_dict, (q.source or "market_providers")
 
 
 def _fetch_quote_sync(symbol: str) -> Optional[dict]:
