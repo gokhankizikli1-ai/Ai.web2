@@ -68,8 +68,6 @@ export interface TradingSignal {
 }
 
 export interface TradingSignalsResponse {
-  is_live: boolean;
-  fallbackMode: boolean;
   provider: DataProvider;
   timestamp: string;
   signals: TradingSignal[];

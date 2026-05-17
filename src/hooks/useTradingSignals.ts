@@ -29,8 +29,6 @@ const REQUEST_TIMEOUT_MS = 15_000;
 
 interface UseTradingSignalsResult {
   signals: TradingSignal[];
-  isLive: boolean;
-  fallbackMode: boolean;
   provider: DataProvider;
   lastUpdated: string | null;
   isLoading: boolean;
@@ -146,8 +144,6 @@ function normalizeResponse(data: Record<string, unknown>): TradingSignalsRespons
   });
 
   return {
-    is_live: !!data.is_live,
-    fallbackMode: !!data.fallback_mode || data.is_live === false,
     provider: normalizeProvider(data.provider as string),
     timestamp: (data.timestamp as string) || (data.generated_at as string) ||
       new Date().toISOString(),
@@ -160,8 +156,6 @@ export function useTradingSignals(
   timeframe: string = '4h',
 ): UseTradingSignalsResult {
   const [signals, setSignals] = useState<TradingSignal[]>([]);
-  const [isLive, setIsLive] = useState(false);
-  const [fallbackMode, setFallbackMode] = useState(false);
   const [provider, setProvider] = useState<DataProvider>('Unknown');
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -175,8 +169,7 @@ export function useTradingSignals(
   const fetchSignals = useCallback(async () => {
     const key = keyRef.current;
     if (!key) {
-      setSignals([]); setIsLive(false); setFallbackMode(false);
-      setIsLoading(false); setError(null);
+      setSignals([]); setIsLoading(false); setError(null);
       return;
     }
     setIsLoading(true);
@@ -204,27 +197,33 @@ export function useTradingSignals(
       }
 
       if (!response.ok) {
-        // 503 (service disabled) / 4xx / 5xx → graceful "unavailable",
-        // NOT a thrown error. The panel renders a calm empty state.
-        setIsLive(false);
-        setFallbackMode(true);
+        // Graceful (no throw), but a real server failure must be
+        // DISTINGUISHABLE from "healthy but no signals" — previously
+        // setError(null) made a 503/500 look identical to an empty
+        // result, hiding outages and the disabled-flag case from the
+        // user (Bugbot Medium e59fa085).
         setSignals([]);
         setProvider('Unknown');
         setLastUpdated(new Date().toISOString());
-        setError(null);
+        let msg = `Sunucu hatası (HTTP ${response.status}). Tekrar dene.`;
+        if (response.status === 503) {
+          msg = 'Trading signals are disabled on the server '
+              + '(set ENABLE_TRADING_SIGNALS=true).';
+        } else if (response.status === 400 || response.status === 422) {
+          msg = 'Geçersiz istek (symbols/timeframe). Tekrar dene.';
+        } else if (response.status >= 500) {
+          msg = `Sunucu hatası (HTTP ${response.status}). Lütfen sonra tekrar dene.`;
+        }
+        setError(msg);
         return;
       }
 
       const norm = normalizeResponse(rawData || {});
-      setIsLive(norm.is_live);
-      setFallbackMode(norm.fallbackMode);
       setProvider(norm.provider);
       setSignals(norm.signals);
       setLastUpdated(norm.timestamp);
       setError(null);
     } catch (err) {
-      setIsLive(false);
-      setFallbackMode(true);
       setSignals([]);
       setProvider('Unknown');
 
@@ -255,8 +254,5 @@ export function useTradingSignals(
     fetchSignals();
   }, [fetchSignals]);
 
-  return {
-    signals, isLive, fallbackMode, provider,
-    lastUpdated, isLoading, error, refresh,
-  };
+  return { signals, provider, lastUpdated, isLoading, error, refresh };
 }
