@@ -23,6 +23,12 @@ from backend.services.tools import stock_market_tool
 from backend.services.tools.stock_market_tool import StockMarketTool, _Unavailable
 
 
+@pytest.fixture(autouse=True)
+def _clear_stock_provider_env(monkeypatch):
+    for key in ("FINNHUB_API_KEY", "TWELVE_DATA_API_KEY", "TWELVEDATA_API_KEY"):
+        monkeypatch.delenv(key, raising=False)
+
+
 def _run(query: str = "", **context) -> dict:
     return asyncio.run(StockMarketTool().run(query, context))
 
