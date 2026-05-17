@@ -55,6 +55,100 @@ _BACKOFF_MAX_RETRY  = int(os.getenv("FETCH_BACKOFF_MAX_RETRY", "2"))          # 
 # Multi-timeframe set (parallel fetches when the primary provider is binance/yahoo).
 _MTF_TIMEFRAMES = ("1d", "4h", "1h")
 
+# Phase 8m — equity routing through the reliable market_providers chain.
+#
+# Why: trading_analyst mode runs only market_data (+ macro_data). market_data's
+# crypto-only parse_symbol returns None for "NVDA fiyatı kaç", so _try_binance
+# silently defaulted to BTCUSDT — the model got Bitcoin data for a stock
+# question and answered generically. The Finnhub→TwelveData chain that already
+# works from a datacenter IP lived only in stock_market / the /market/quote
+# route, never reachable from the trading chat path.
+#
+# When an equity ticker is detected AND a key-backed provider is configured,
+# market_data short-circuits to that chain. Gated by env-key presence only
+# (ENABLE_MARKET_DATA is already on), so no ENABLE_STOCK_MARKET dependency and
+# no behaviour change when unconfigured.
+
+# Tokens that look like 1–5-letter tickers but never are. Non-ASCII Turkish
+# words (FİYAT, KAÇ) can't match [A-Z] so they need no entry here. Keep tight —
+# over-listing risks dropping a real ticker (e.g. don't add "T", a valid NYSE
+# symbol; don't add "SEE"/"GE"/"SO", real tickers). The uppercase-as-typed
+# preference in _parse_equity_symbol is the primary defence; this set only
+# has to catch the residual all-lowercase / all-caps prose case.
+_EQUITY_STOPWORDS = {
+    "THE", "A", "AN", "I", "IS", "ARE", "WAS", "FOR", "AND", "OR", "OF",
+    "TO", "IN", "ON", "AT", "BY", "WHAT", "HOW", "WHY", "WHEN", "WHO",
+    "PRICE", "STOCK", "SHARE", "SHARES", "BUY", "SELL", "HOLD", "NOW",
+    "TODAY", "USD", "EUR", "TRY", "GBP", "JPY", "USDT", "USDC", "BUSD",
+    "DAI", "TUSD", "USDD", "FDUSD", "NE", "NEDIR", "KAC", "FIYAT",
+    "ANALIZ", "HISSE", "BORSA", "CAN", "DO", "DOES", "ME", "MY", "WE",
+    "YOU", "IT", "GET", "TELL", "ABOUT", "VS", "PER", "EPS", "PE",
+    "ETF", "ETFS", "CHART", "QUOTE", "VALUE", "WORTH", "MUCH",
+    # First-person / filler verbs — common in "I want NVDA price"-style
+    # prose, never notable tickers.
+    "WANT", "NEED", "LIKE", "SHOW", "THINK", "PLEASE", "PLS", "HEY",
+    "OKAY", "WANNA", "GONNA", "GIMME",
+}
+
+# Ticker: 1–5 A–Z, optional single-letter class suffix (BRK.B / BRK-B).
+_EQUITY_TOKEN_RE = re.compile(r"\b([A-Z]{1,5}(?:[.\-][A-Z])?)\b")
+
+
+def _mp_stock_key_configured() -> bool:
+    """True when a key-backed stock provider (Finnhub / TwelveData) is set.
+    Mirrors FinnhubProvider/TwelveDataProvider.is_available()."""
+    return bool(
+        os.getenv("FINNHUB_API_KEY", "").strip()
+        or os.getenv("TWELVE_DATA_API_KEY", "").strip()
+        or os.getenv("TWELVEDATA_API_KEY", "").strip()
+    )
+
+
+def _looks_equity(sym: str) -> bool:
+    """A bare equity ticker: 1–5 A–Z (optional .X/-X class suffix), not a
+    crypto ticker, no exchange/quote suffix. Rejects BTCUSDT / BTC / BTC-USD
+    so an explicitly-crypto caller is never hijacked into the stock chain."""
+    if not sym or not isinstance(sym, str):
+        return False
+    s = sym.strip().upper()
+    if not re.fullmatch(r"[A-Z]{1,5}(?:[.\-][A-Z])?", s):
+        return False
+    base = re.split(r"[.\-]", s)[0]
+    if base in _CRYPTO_TICKERS or base in _EQUITY_STOPWORDS:
+        return False
+    return True
+
+
+def _pick_equity(tokens) -> str | None:
+    for tok in tokens:
+        base = re.split(r"[.\-]", tok)[0]
+        if tok in _EQUITY_STOPWORDS or base in _EQUITY_STOPWORDS:
+            continue
+        if base in _CRYPTO_TICKERS:
+            continue
+        return tok
+    return None
+
+
+def _parse_equity_symbol(message: str) -> str | None:
+    """Best-effort equity ticker from a natural-language message.
+
+    A ticker is almost always typed UPPERCASE ("NVDA", "AAPL", "BRK.B"),
+    so prefer an uppercase-as-typed token first — that way lowercase
+    prose ("I want the price") can't be mistaken for a ticker (Bugbot
+    Medium 67253298). Only fall back to the upper()'d scan when the user
+    typed no uppercase ticker at all (e.g. "nvda fiyatı kaç"), where the
+    stopword set carries the load. Crypto is excluded so the existing
+    crypto chain still owns BTC/ETH/etc."""
+    if not message:
+        return None
+    # _EQUITY_TOKEN_RE is [A-Z]{1,5}; run against the ORIGINAL message it
+    # only matches uppercase-as-typed tokens — the strong ticker signal.
+    hit = _pick_equity(_EQUITY_TOKEN_RE.findall(message))
+    if hit:
+        return hit
+    return _pick_equity(_EQUITY_TOKEN_RE.findall(message.upper()))
+
 # ── Symbol sets ────────────────────────────────────────────────────────────────────────────
 
 _CRYPTO_TICKERS = {
@@ -128,6 +222,28 @@ class MarketDataTool(BaseTool):
     # ── Fallback coordinator ────────────────────────────────────────────────
 
     async def _run_with_fallback(self, query: str, ctx: dict) -> dict:
+        # Phase 8m — equity short-circuit. crypto parse_symbol owns
+        # BTC/ETH/etc.; this only fires when the message has NO crypto
+        # ticker but DOES name a stock, and a key-backed provider is
+        # configured. Keeps the crypto chain completely untouched.
+        cand = ctx.get("symbol") if isinstance(ctx.get("symbol"), str) else None
+        if not self.parse_symbol(query) and (cand is None or _looks_equity(cand)):
+            eq_sym = cand or _parse_equity_symbol(query)
+            if eq_sym and _looks_equity(eq_sym) and _mp_stock_key_configured():
+                try:
+                    return await self._try_market_providers_stock(eq_sym)
+                except Exception as exc:
+                    logger.warning(
+                        "market_data | equity fetch failed for %s: %s", eq_sym, exc
+                    )
+                    # NEVER fall through to the crypto chain for a stock —
+                    # defaulting to BTCUSDT and returning Bitcoin data for an
+                    # NVDA question is actively misleading. Clean error only.
+                    return self._error(
+                        f"No live quote for {eq_sym} "
+                        f"(Finnhub/TwelveData/yfinance all failed)"
+                    )
+
         providers = [
             ("binance",       self._try_binance),
             ("yahoo_finance", self._try_yahoo),
@@ -164,6 +280,56 @@ class MarketDataTool(BaseTool):
         msg = "All market data providers failed: " + "; ".join(errors)
         logger.error("market_data | %s", msg)
         return self._error(msg)
+
+    # ── Equity provider: reliable market_providers chain (Phase 8m) ─────────
+
+    async def _try_market_providers_stock(self, symbol: str) -> dict:
+        """Fetch an equity quote via Finnhub→TwelveData→yfinance (the chain
+        that already works from a datacenter IP). Returns the market_data
+        payload shape so the existing context/summary renderers work
+        unchanged. Raises on no live quote so the caller emits a clean
+        error — NEVER fabricates, NEVER returns crypto data for a stock."""
+        from backend.services.market_providers import get_stock_quote  # noqa: PLC0415
+
+        sym = symbol.strip().upper()
+        q = await asyncio.wait_for(
+            asyncio.to_thread(get_stock_quote, sym), timeout=_TIMEOUT
+        )
+        if not getattr(q, "is_live", False) or q.price is None:
+            raise ValueError(f"no live quote for {sym}")
+
+        extra = q.extra or {}
+        payload = {
+            "symbol":          q.symbol or sym,
+            "timeframe":       "quote",
+            "asset_class":     "equity",
+            "last_price":      q.price,
+            # Provider's daily move (last vs previous close). Mapped onto the
+            # field every consumer already reads; for equities it's the
+            # session change, not a rolling 24h crypto window.
+            "change_24h_pct":  q.change_percent,
+            "previous_close":  extra.get("previous_close"),
+            "open":            extra.get("open"),
+            "day_high":        q.high,
+            "day_low":         q.low,
+            "volume_24h":      q.volume,
+            "currency":        q.currency or "USD",
+            "as_of":           q.timestamp,
+            # Honest absence — Finnhub/TwelveData /quote give no OHLC history,
+            # so no RSI/EMA/ATR/MTF/plan. Renderer skips None keys; the model
+            # gets the real price instead of fabricated indicators.
+            "data_quality":    {"level": "quote_only", "missing": [
+                "rsi_14", "ema20", "ema50", "atr_14",
+                "multi_timeframe", "plan",
+            ]},
+        }
+        logger.info(
+            "market_data | equity via market_providers | symbol=%s | "
+            "price=%s | source=%s",
+            sym, q.price, q.source or "-",
+        )
+        return self._ok(payload, provider=q.source or "market_providers",
+                        is_live=True)
 
     # ── Symbol parsing ─────────────────────────────────────────────────────
 
