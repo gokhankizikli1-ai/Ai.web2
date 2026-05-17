@@ -358,7 +358,9 @@ export default function TradingPanel() {
                     <p className="text-[9px] text-slate-500">Short</p>
                   </div>
                   <div className="p-3 rounded-xl border border-amber-500/10 bg-amber-500/[0.04] text-center">
-                    <p className="text-lg font-semibold text-amber-400">{liveSignals.filter((s) => s.direction === 'wait').length}</p>
+                    {/* wait + neutral (NO_TRADE) — both non-actionable; counting
+                        only 'wait' left neutral cards uncounted (Bugbot Low 4deb8777). */}
+                    <p className="text-lg font-semibold text-amber-400">{liveSignals.filter((s) => s.direction === 'wait' || s.direction === 'neutral').length}</p>
                     <p className="text-[9px] text-slate-500">Wait</p>
                   </div>
                   <div className="p-3 rounded-xl border border-white/[0.04] bg-white/[0.01] text-center">

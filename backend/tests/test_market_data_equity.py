@@ -192,6 +192,29 @@ def test_equity_daily_indicators_no_key(monkeypatch):
     assert out is None
 
 
+def test_equity_daily_indicators_skips_misaligned_rows(monkeypatch):
+    """A row whose 'low' fails to parse must be skipped WHOLE — not leave
+    highs one longer than lows/closes (Bugbot Medium 82a66e1b)."""
+    monkeypatch.setenv("TWELVE_DATA_API_KEY", "k")
+    closes = _closes(60)
+    payload = _candles(closes)
+    # Corrupt two interior rows: one bad 'low', one missing 'close'.
+    payload["values"][10]["low"] = "not-a-number"
+    del payload["values"][20]["close"]
+
+    async def _fake_fetch(url, timeout=10, cache_ttl=0):
+        return payload
+    monkeypatch.setattr(market_data_tool, "_fetch_json", _fake_fetch)
+
+    out = asyncio.run(market_data_tool._equity_daily_indicators("NVDA", closes[-1]))
+    assert out is not None
+    # 60 rows, 2 dropped wholesale → 58 aligned candles, indicators sane.
+    assert out["candles_analyzed"] == 58
+    assert out["sma20"] is not None and out["sma50"] is not None
+    assert 0 <= out["rsi_14"] <= 100
+    assert out["support"] is not None and out["resistance"] is not None
+
+
 def test_equity_payload_includes_indicators_when_keys(monkeypatch):
     monkeypatch.setenv("FINNHUB_API_KEY", "fk")
     monkeypatch.setenv("TWELVE_DATA_API_KEY", "tk")

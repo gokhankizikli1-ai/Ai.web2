@@ -1768,13 +1768,21 @@ async def _equity_daily_indicators(symbol: str, last_price):
 
     highs, lows, closes, vols = [], [], [], []
     for v in values:
+        # Parse ALL four before appending — appending high-then-low in one
+        # try meant a mid-row parse failure left `highs` one longer than
+        # the rest, permanently misaligning OHLCV so every downstream
+        # indicator paired wrong values (Bugbot Medium 82a66e1b).
         try:
-            highs.append(float(v["high"]))
-            lows.append(float(v["low"]))
-            closes.append(float(v["close"]))
-            vols.append(float(v.get("volume") or 0))
+            h = float(v["high"])
+            lo = float(v["low"])
+            c = float(v["close"])
+            vol = float(v.get("volume") or 0)
         except (KeyError, TypeError, ValueError):
             continue
+        highs.append(h)
+        lows.append(lo)
+        closes.append(c)
+        vols.append(vol)
     if len(closes) < 30:
         return None
 
