@@ -209,6 +209,13 @@ export function useChat() {
     const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
     try {
+      // Log the EXACT method + URL before the request so the operator can
+      // see in devtools that this is a POST (not a GET) and which host it
+      // targets. Kills any "frontend uses wrong HTTP method" ambiguity:
+      // if Railway logs ever show GET /chat, it is NOT coming from here.
+      // eslint-disable-next-line no-console
+      console.log('CHAT_API_REQUEST', { method: 'POST', url: API_URL });
+
       const response = await fetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -236,17 +243,46 @@ export function useChat() {
       // Debug log requested by the operator — visible in browser devtools
       // so they can see the exact backend payload when a chat misbehaves.
       // eslint-disable-next-line no-console
-      console.log('CHAT_API_RESPONSE', { status: response.status, data });
+      console.log('CHAT_API_RESPONSE', { status: response.status, url: API_URL, data });
 
       if (!response.ok) {
-        // Surface the backend's own message when present; otherwise a
-        // generic line. We DON'T re-throw the raw HTTP status as a free-
-        // form Error message because it bubbles up as ugly text in the
-        // toast and on iOS Safari sometimes truncates to just "Load failed".
-        const detail =
-          (data && (data.detail?.message || data.error || data.message)) ||
-          `Sunucu hatası (HTTP ${response.status}). Lütfen tekrar deneyin.`;
-        setError(typeof detail === 'string' ? detail : `HTTP ${response.status}`);
+        // Prefer the backend's own message so the user sees the real
+        // reason instead of a generic network toast.
+        const backendMsg =
+          data && (data.detail?.message || data.error || data.message);
+
+        // Explicit, actionable copy per status. These are the ones the
+        // operator called out (405 / 404 / 503) plus 401/429.
+        let statusMsg: string;
+        switch (response.status) {
+          case 404:
+            statusMsg =
+              'Sohbet servisi bulunamadı (404). Backend adresi yanlış olabilir.';
+            break;
+          case 405:
+            // We send POST. A 405 means the server rejected the METHOD —
+            // i.e. a backend route/contract mismatch, NOT a frontend bug.
+            statusMsg =
+              'Sohbet servisi bu isteği kabul etmedi (405). Sunucu uç noktası beklenenden farklı.';
+            break;
+          case 401:
+          case 403:
+            statusMsg = 'Yetki hatası. Lütfen tekrar giriş yapmayı dene.';
+            break;
+          case 429:
+            statusMsg = 'Çok fazla istek gönderildi. Birazdan tekrar dene.';
+            break;
+          case 503:
+            statusMsg =
+              'Sohbet servisi şu anda devre dışı (503). Birazdan tekrar dene.';
+            break;
+          default:
+            statusMsg = `Sunucu hatası (HTTP ${response.status}). Lütfen tekrar deneyin.`;
+        }
+
+        setError(
+          typeof backendMsg === 'string' && backendMsg ? backendMsg : statusMsg
+        );
         return;
       }
 
