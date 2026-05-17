@@ -226,9 +226,12 @@ def test_uses_market_providers_when_key_set(monkeypatch):
     assert d["market_state"] == "UNKNOWN"
 
 
-def test_falls_back_to_yfinance_when_chain_not_live(monkeypatch):
-    """Key is set but the chain returns a non-live quote → fall back to
-    the legacy yfinance path. NEVER fabricate from the dead chain."""
+def test_chain_not_live_returns_unavailable_no_double_yfinance(monkeypatch):
+    """Key is set but the chain (which ALREADY ends in yfinance) returns
+    a non-live quote → return unavailable directly. The legacy
+    _fetch_quote_sync must NOT run — calling yfinance a second time from
+    the same rate-limited IP would double the worst-case hang
+    (Bugbot Medium b4c7aa7c). NEVER fabricate from the dead chain."""
     monkeypatch.setenv("FINNHUB_API_KEY", "test-key")
     monkeypatch.setattr(
         _mp, "get_stock_quote",
@@ -237,12 +240,15 @@ def test_falls_back_to_yfinance_when_chain_not_live(monkeypatch):
                               error="market_data_unavailable"),
     )
     monkeypatch.setattr(
-        stock_market_tool, "_fetch_quote_sync", lambda s: _fake_quote(s)
+        stock_market_tool, "_fetch_quote_sync",
+        lambda s: (_ for _ in ()).throw(
+            AssertionError("legacy yfinance must not run after keyed chain")
+        ),
     )
     r = _run(symbol="NVDA")
-    assert r["status"] == "available"
-    assert r["provider"] == "yahoo_finance"   # legacy fallback was used
-    assert r["data"]["last_price"] == 900.12
+    assert r["status"] == "unavailable"
+    assert r["is_live"] is False
+    assert r["data"] is None
 
 
 def test_no_key_skips_chain_uses_legacy(monkeypatch):
