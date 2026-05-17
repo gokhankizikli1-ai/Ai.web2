@@ -363,6 +363,17 @@ class YFinanceProvider(BaseMarketProvider):
         )
 
 
+_KEY_BACKED_STOCK_PROVIDER_TYPES = (FinnhubProvider, TwelveDataProvider)
+
+
+def stock_provider_keys_configured() -> bool:
+    """True when any key-backed stock provider is configured."""
+    return any(
+        provider_type().is_available()
+        for provider_type in _KEY_BACKED_STOCK_PROVIDER_TYPES
+    )
+
+
 def _safe_get(obj, key):
     if obj is None:
         return None

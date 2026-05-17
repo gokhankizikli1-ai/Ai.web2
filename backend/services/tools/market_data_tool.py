@@ -20,6 +20,7 @@ import asyncio
 import logging
 import urllib.request
 import urllib.error
+from backend.services.market_providers.providers import stock_provider_keys_configured
 from backend.services.tools.base_tool import BaseTool
 
 try:
@@ -92,16 +93,6 @@ _EQUITY_STOPWORDS = {
 
 # Ticker: 1–5 A–Z, optional single-letter class suffix (BRK.B / BRK-B).
 _EQUITY_TOKEN_RE = re.compile(r"\b([A-Z]{1,5}(?:[.\-][A-Z])?)\b")
-
-
-def _mp_stock_key_configured() -> bool:
-    """True when a key-backed stock provider (Finnhub / TwelveData) is set.
-    Mirrors FinnhubProvider/TwelveDataProvider.is_available()."""
-    return bool(
-        os.getenv("FINNHUB_API_KEY", "").strip()
-        or os.getenv("TWELVE_DATA_API_KEY", "").strip()
-        or os.getenv("TWELVEDATA_API_KEY", "").strip()
-    )
 
 
 def _looks_equity(sym: str) -> bool:
@@ -229,7 +220,7 @@ class MarketDataTool(BaseTool):
         cand = ctx.get("symbol") if isinstance(ctx.get("symbol"), str) else None
         if not self.parse_symbol(query) and (cand is None or _looks_equity(cand)):
             eq_sym = cand or _parse_equity_symbol(query)
-            if eq_sym and _looks_equity(eq_sym) and _mp_stock_key_configured():
+            if eq_sym and _looks_equity(eq_sym) and stock_provider_keys_configured():
                 try:
                     return await self._try_market_providers_stock(eq_sym)
                 except Exception as exc:

@@ -36,10 +36,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 from datetime import datetime, timezone
 from typing import Optional
 
+from backend.services.market_providers.providers import stock_provider_keys_configured
 from backend.services.tools.base_tool import BaseTool
 
 logger = logging.getLogger(__name__)
@@ -189,11 +189,7 @@ def _stock_providers_configured() -> bool:
     the direct _fetch_quote_sync call already covers. Env-only check so
     unit tests (no keys) take the unchanged legacy path deterministically
     and never touch the network."""
-    return bool(
-        os.getenv("FINNHUB_API_KEY", "").strip()
-        or os.getenv("TWELVE_DATA_API_KEY", "").strip()
-        or os.getenv("TWELVEDATA_API_KEY", "").strip()
-    )
+    return stock_provider_keys_configured()
 
 
 def _fetch_via_market_providers(symbol: str):
