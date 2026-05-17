@@ -87,6 +87,12 @@ function mapVolatility(regime: unknown): TradingSignal['volatility'] {
 }
 
 function num(v: unknown): number | undefined {
+  // Absent → undefined, NEVER 0. The backend sends JSON null for an
+  // unavailable price/entry/stop/tp; `Number(null)` is 0 and
+  // `Number("")`/`Number(" ")` are 0 too, which would render a
+  // fabricated "$0.00" in a trading panel (Bugbot Medium eff5d8d2).
+  if (v === null || v === undefined) return undefined;
+  if (typeof v === 'string' && v.trim() === '') return undefined;
   const n = typeof v === 'number' ? v : Number(v);
   return Number.isFinite(n) ? n : undefined;
 }
