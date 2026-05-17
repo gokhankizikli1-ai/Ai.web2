@@ -22,6 +22,7 @@ from backend.services.ai.snapshot import is_quick_quote_ask as _is_quick_quote_a
     "AAPL değeri nedir",
     "NVDA fiyatı ne?",          # Turkish suffix alone (Bugbot 426cd270)
     "AAPL fiyatını söyle",      # 'fiyatını' — suffixed, no companion kw
+    "What is NVDA trading at?", # 'trading at' not blocked by 'trade' (d3e57c72)
 ])
 def test_quick_quote_true(msg):
     assert _is_quick_quote_ask(msg) is True

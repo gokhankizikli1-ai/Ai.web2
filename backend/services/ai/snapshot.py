@@ -25,9 +25,12 @@ _ANALYSIS_KW = (
     "entry", "stop", "target", "tp", "sl", "risk", "long mu", "short mu",
     "al mı", "al mi", "sat mı", "sat mi", "yorum", "derin", "detay",
     "detail", "incele", "review", "outlook", "forecast", "tahmin",
-    "should i", "trade", "position", "pozisyon", "scenario", "senaryo",
-    # Decision/opinion intent — "Is NVDA worth buying?" is analysis, not a
-    # bare quote, even though it contains "worth" (Bugbot Medium 084f59c6).
+    # NOTE: bare "trade" is intentionally NOT here — start-anchored
+    # matching makes it hit "trading", which would block the legit
+    # quote phrase "trading at" ("What is NVDA trading at?")
+    # (Bugbot Medium d3e57c72). "should i"/"setup"/"plan"/"position"/
+    # buy/sell/invest already cover decision-intent.
+    "should i", "position", "pozisyon", "scenario", "senaryo",
     "buy", "buying", "sell", "selling", "invest", "investing",
 )
 

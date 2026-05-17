@@ -405,7 +405,9 @@ export default function TradingPanel() {
                 ))}
               </div>
             </div>
-            {!DEMO_MODE && watchApi.isLoading && watchlist.every((w) => w.price == null) ? (
+            {!DEMO_MODE && watchApi.error ? (
+              <LiveDataUnavailable onRetry={watchApi.refresh} message={watchApi.error} />
+            ) : !DEMO_MODE && watchApi.isLoading && watchlist.every((w) => w.price == null) ? (
               <LoadingState label="Loading quotes…" />
             ) : watchSymbols.length === 0 ? (
               <NotAvailableYet title="Your watchlist is empty" detail="Add a ticker above (e.g. AAPL, NVDA, BTCUSDT) to track live quotes." />
