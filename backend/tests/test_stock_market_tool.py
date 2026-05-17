@@ -172,3 +172,92 @@ def test_first_present_helper_preserves_zero():
     assert stock_market_tool._first_present(None, "a", "b") == "a"
     # Crucially: empty string is NOT skipped (we want it for "exchange").
     assert stock_market_tool._first_present("", "USD") == ""
+
+
+# ── Phase 8l — key-backed provider chain (Finnhub → TwelveData) ─────────
+# The chat tool used to call yfinance directly, which hangs from a
+# datacenter IP (Yahoo rate-limits Railway) → timeout → generic answer.
+# When a key is configured the reliable market_providers chain is used
+# first; with no key the legacy yfinance path is unchanged.
+
+import backend.services.market_providers as _mp
+from backend.services.market_providers.types import MarketQuote
+
+
+def test_providers_configured_reflects_env(monkeypatch):
+    monkeypatch.delenv("FINNHUB_API_KEY", raising=False)
+    monkeypatch.delenv("TWELVE_DATA_API_KEY", raising=False)
+    monkeypatch.delenv("TWELVEDATA_API_KEY", raising=False)
+    assert stock_market_tool._stock_providers_configured() is False
+    monkeypatch.setenv("FINNHUB_API_KEY", "k")
+    assert stock_market_tool._stock_providers_configured() is True
+
+
+def test_uses_market_providers_when_key_set(monkeypatch):
+    """With FINNHUB_API_KEY set and a live MarketQuote, the tool returns
+    the real provider's quote — NOT the brittle yfinance path."""
+    monkeypatch.setenv("FINNHUB_API_KEY", "test-key")
+
+    def _fake_quote(sym: str) -> MarketQuote:
+        return MarketQuote(
+            symbol=sym, asset_type="stock", price=901.5,
+            change_percent=1.25, currency="USD",
+            timestamp="2026-05-17T10:00:00+00:00", source="finnhub",
+            is_live=True, high=905.0, low=890.0, volume=1234567,
+            extra={"previous_close": 890.4, "open": 893.0},
+        )
+    monkeypatch.setattr(_mp, "get_stock_quote", _fake_quote)
+    # If the legacy path were hit, this would blow up the test loudly.
+    monkeypatch.setattr(
+        stock_market_tool, "_fetch_quote_sync",
+        lambda s: (_ for _ in ()).throw(AssertionError("legacy path used")),
+    )
+
+    r = _run(symbol="NVDA")
+    assert r["status"] == "available"
+    assert r["provider"] == "finnhub"
+    assert r["is_live"] is True
+    d = r["data"]
+    assert d["last_price"] == 901.5
+    assert d["previous_close"] == 890.4
+    assert d["change_pct"] == pytest.approx(1.25, abs=1e-4)
+    # Honest unknowns — never fabricated.
+    assert d["fifty_two_week_high"] is None
+    assert d["market_state"] == "UNKNOWN"
+
+
+def test_falls_back_to_yfinance_when_chain_not_live(monkeypatch):
+    """Key is set but the chain returns a non-live quote → fall back to
+    the legacy yfinance path. NEVER fabricate from the dead chain."""
+    monkeypatch.setenv("FINNHUB_API_KEY", "test-key")
+    monkeypatch.setattr(
+        _mp, "get_stock_quote",
+        lambda s: MarketQuote(symbol=s, asset_type="stock", price=None,
+                              change_percent=None, is_live=False,
+                              error="market_data_unavailable"),
+    )
+    monkeypatch.setattr(
+        stock_market_tool, "_fetch_quote_sync", lambda s: _fake_quote(s)
+    )
+    r = _run(symbol="NVDA")
+    assert r["status"] == "available"
+    assert r["provider"] == "yahoo_finance"   # legacy fallback was used
+    assert r["data"]["last_price"] == 900.12
+
+
+def test_no_key_skips_chain_uses_legacy(monkeypatch):
+    """No key configured → chain is never consulted; legacy path runs
+    exactly as before (deterministic, no network)."""
+    monkeypatch.delenv("FINNHUB_API_KEY", raising=False)
+    monkeypatch.delenv("TWELVE_DATA_API_KEY", raising=False)
+    monkeypatch.delenv("TWELVEDATA_API_KEY", raising=False)
+
+    def _boom(_s):
+        raise AssertionError("chain must not be consulted without a key")
+    monkeypatch.setattr(_mp, "get_stock_quote", _boom)
+    monkeypatch.setattr(
+        stock_market_tool, "_fetch_quote_sync", lambda s: _fake_quote(s)
+    )
+    r = _run(symbol="NVDA")
+    assert r["status"] == "available"
+    assert r["provider"] == "yahoo_finance"
