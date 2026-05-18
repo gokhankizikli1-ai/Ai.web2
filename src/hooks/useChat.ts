@@ -20,6 +20,32 @@ const API_BASE = `${
 }`;
 const API_URL = `${API_BASE}/chat`;
 
+/* ── Prompt-to-agent auto-routing (Phase 3 #5) ──────────────────────────────
+   Conservative client-side intent → backend `mode`. The /chat endpoint
+   already accepts an optional `mode`; when we return undefined we send
+   NOTHING extra, so normal chat and trading auto-routing are unchanged.
+   Only clear business / e-commerce / startup intent is routed. */
+const _ECOM_KW = [
+  'dropship', 'dropshipping', 'shopify', 'aliexpress', 'e-commerce', 'ecommerce',
+  'winning product', 'product research', 'ad angle', 'ad creative', 'abandoned cart',
+  'profit margin', 'roas', 'store conversion', 'product idea',
+];
+const _STARTUP_KW = [
+  'startup', 'mvp', 'go-to-market', 'go to market', 'product-market fit',
+  'product market fit', 'pitch deck', 'seed round', 'co-founder', 'cofounder',
+  'validate my idea', 'business plan', 'business model', 'monetization',
+  'unit economics', 'customer acquisition', 'positioning strategy',
+  'pricing strategy', 'competitor analysis', 'startup strategist',
+];
+
+export function detectBusinessMode(text: string): 'marketing_dropshipping' | 'startup_advisor' | undefined {
+  const t = ` ${(text || '').toLowerCase()} `;
+  const has = (arr: string[]) => arr.some((k) => t.includes(k));
+  if (has(_ECOM_KW)) return 'marketing_dropshipping';
+  if (has(_STARTUP_KW)) return 'startup_advisor';
+  return undefined;
+}
+
 function getUserId(): string {
   const key = 'korvix_user_id';
   let id = localStorage.getItem(key);
@@ -198,12 +224,16 @@ export function useChat() {
 
     setIsLoading(true);
 
+    const _mode = detectBusinessMode(content);
     const requestBody = {
       user_id: userIdRef.current,
       message: content.trim(),
       chat_id: activeSessionId,
       session_id: activeSessionId,
       platform: 'web',
+      // Only present on clear business/e-commerce/startup intent; omitted
+      // otherwise so normal chat + trading routing are byte-for-byte unchanged.
+      ...(_mode ? { mode: _mode } : {}),
     };
 
     try {
