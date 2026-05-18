@@ -207,7 +207,9 @@ export function useChat() {
     };
 
     try {
-      console.info('[useChat] POST', API_URL, requestBody);
+      if (import.meta.env.DEV) {
+        console.info('[useChat] POST', API_URL, requestBody);
+      }
 
       const response = await fetch(API_URL, {
         method: 'POST',
@@ -215,15 +217,17 @@ export function useChat() {
         body: JSON.stringify(requestBody),
       });
 
-      // Read the body ONCE as text so the raw payload can be logged
-      // verbatim and we can still recover from non-JSON / empty responses.
+      // Read the body ONCE as text so dev logging and non-JSON / empty
+      // response recovery can share the same payload.
       const rawBody = await response.text();
-      console.info(
-        '[useChat] response',
-        response.status,
-        response.statusText,
-        rawBody,
-      );
+      if (import.meta.env.DEV) {
+        console.info(
+          '[useChat] response',
+          response.status,
+          response.statusText,
+          rawBody,
+        );
+      }
 
       let data: any = null;
       if (rawBody) {
