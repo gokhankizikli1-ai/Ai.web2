@@ -116,8 +116,8 @@ const AGENTS: BusinessAgent[] = [
     icon: LineChart, accent: { bg: 'bg-indigo-500/[0.06]', border: 'border-indigo-500/15', text: 'text-indigo-400' },
     bestUse: ['Analyze a stock/crypto', 'Build a trade thesis', 'Risk & sizing'],
     actions: [
-      { label: 'Analyze a stock or crypto', prompt: 'Give me an honest market analysis for a symbol I specify (trend, momentum, key levels, risks). Use live data where available and say so when it is not.' },
-      { label: 'Build a trade thesis', prompt: 'Help me build a structured trade thesis for a symbol: bias, invalidation, risk/reward — analysis only, not financial advice.' },
+      { label: 'Analyze a stock or crypto', prompt: A('Give me an honest market analysis for a symbol I specify (trend, momentum, key levels, risks). Use live data where available and say so when it is not.') },
+      { label: 'Build a trade thesis', prompt: A('Help me build a structured trade thesis for a symbol: bias, invalidation, risk/reward — analysis only, not financial advice.') },
       { label: 'Risk & position sizing', prompt: A('Act as a risk analyst. Walk me through position sizing and risk management for a trade I describe — analysis only, not financial advice.') },
     ],
   },
