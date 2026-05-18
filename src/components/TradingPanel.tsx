@@ -363,7 +363,7 @@ const REGIME_NOTE: Record<string, string> = {
 function fmtN(n: number | null | undefined, dp = 2): string {
   if (n === null || n === undefined || !Number.isFinite(n)) return '—';
   return n.toLocaleString('en-US', {
-    maximumFractionDigits: Math.abs(n) < 10 ? Math.max(dp, 4) : dp,
+    maximumFractionDigits: Math.abs(n) < 10 ? Math.max(dp, 6) : dp,
   });
 }
 
@@ -430,8 +430,9 @@ function SignalDetailDrawer({
 
   const bullW = intel?.bullWeight ?? 0;
   const bearW = intel?.bearWeight ?? 0;
-  const total = Math.max(1, bullW + bearW);
-  const bullPct = Math.round((bullW / total) * 100);
+  const total = bullW + bearW;
+  const bullPct = total > 0 ? Math.round((bullW / total) * 100) : 0;
+  const bearPct = total > 0 ? 100 - bullPct : 0;
 
   const invalidation = bd?.invalidation || intel?.invalidation || signal.invalidation || null;
 
@@ -485,7 +486,7 @@ function SignalDetailDrawer({
               <div className="mt-2.5">
                 <div className="flex h-2 rounded-full overflow-hidden bg-white/[0.05]">
                   <div className="bg-emerald-500/60" style={{ width: `${bullPct}%` }} />
-                  <div className="bg-red-500/60" style={{ width: `${100 - bullPct}%` }} />
+                  <div className="bg-red-500/60" style={{ width: `${bearPct}%` }} />
                 </div>
                 <div className="flex justify-between mt-1 text-[10px]">
                   <span className="text-emerald-400">Bull weight {bullW}</span>
