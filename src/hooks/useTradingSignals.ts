@@ -4,6 +4,7 @@ import type {
   SignalBreakdown, SignalScenarios, SignalFactor,
   SignalIntel, SignalIntelFactor, SignalAnalytics,
   MtfEngine, MtfBias, MtfTfRow, SignalVolume,
+  SignalConfidence, ConfidenceFactor,
 } from '@/types';
 
 /**
@@ -308,6 +309,31 @@ function mapVolume(raw: unknown): SignalVolume | undefined {
   };
 }
 
+function mapConfidence(raw: unknown): SignalConfidence | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const c = raw as Record<string, unknown>;
+  const g = String(c.grade ?? 'D');
+  const factors: ConfidenceFactor[] = Array.isArray(c.factors)
+    ? c.factors
+        .filter((f): f is Record<string, unknown> => !!f && typeof f === 'object')
+        .map((f) => ({
+          name: String(f.name ?? ''),
+          impact: Number(f.impact) || 0,
+          state: String(f.state ?? ''),
+          note: String(f.note ?? ''),
+        }))
+    : [];
+  return {
+    available: !!c.available,
+    unavailableReason: (c.unavailable_reason as string | null) ?? null,
+    confidence: Number(c.confidence) || 0,
+    conviction: String(c.conviction ?? 'very_low'),
+    grade: (g === 'A' || g === 'B' || g === 'C' ? g : 'D'),
+    factors,
+    explanation: String(c.explanation ?? ''),
+  };
+}
+
 function normalizeResponse(data: Record<string, unknown>): TradingSignalsResponse {
   const rawSignals = Array.isArray(data?.signals)
     ? (data.signals as Record<string, unknown>[])
@@ -347,6 +373,7 @@ function normalizeResponse(data: Record<string, unknown>): TradingSignalsRespons
       analytics: mapAnalytics(s.analytics),
       mtf: mapMtf(s.mtf),
       volume: mapVolume(s.volume),
+      confidenceEngine: mapConfidence(s.confidence_engine),
     };
   });
 

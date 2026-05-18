@@ -985,3 +985,199 @@ def build_volume(data: Optional[dict], *, data_quality: Optional[str] = None) ->
 
     return out
 
+
+# ── Advanced confidence engine (Phase 2 #3) ────────────────────────────────
+# A transparent, weighted confidence model with a per-factor explanation.
+# ADDITIVE: surfaced as `confidence`; the existing `intel`/legacy
+# confidence fields are left UNCHANGED so nothing downstream regresses.
+# Pure; honest available:false on quote-only / no usable factors.
+
+def build_confidence(
+    data: Optional[dict],
+    plan: Optional[dict],
+    *,
+    direction: str,
+    data_quality: Optional[str] = None,
+) -> dict:
+    data = data or {}
+    plan = plan or {}
+    d = (direction or "").upper()
+
+    def _unavailable(reason: str) -> dict:
+        return {
+            "available": False,
+            "unavailable_reason": reason,
+            "confidence": 0,
+            "conviction": "very_low",
+            "grade": "D",
+            "factors": [],
+            "explanation": reason,
+        }
+
+    if data_quality == "quote_only":
+        return _unavailable(
+            "Quote-only data — confidence scoring requires OHLC indicators."
+        )
+
+    factors: list[dict] = []
+
+    def add(name: str, impact: int, state: str, note: str) -> None:
+        factors.append({"name": name, "impact": impact, "state": state, "note": note})
+
+    want_long = d == "LONG"
+    want_short = d == "SHORT"
+
+    def aligned(bullish: bool) -> int:
+        # +1 if the factor agrees with the trade direction, -1 if against,
+        # 0 if direction is WAIT/unknown (factor still recorded, no push).
+        if want_long:
+            return 1 if bullish else -1
+        if want_short:
+            return -1 if bullish else 1
+        return 0
+
+    trend = str(data.get("trend") or "").lower()
+    if trend in ("uptrend", "downtrend"):
+        s = aligned(trend == "uptrend")
+        add("Trend alignment", 12 * s, trend,
+            "Primary trend agrees." if s > 0 else "Primary trend opposes." if s < 0 else "Primary trend noted.")
+
+    mtf = data.get("mtf_alignment")
+    if isinstance(mtf, dict):
+        al = str(mtf.get("alignment") or "").lower()
+        if al.startswith("bullish") or al.startswith("bearish"):
+            s = aligned(al.startswith("bullish"))
+            w = 10 if al in ("bullish", "bearish") else 6
+            add("Multi-timeframe", w * s, al,
+                "Timeframes agree." if s > 0 else "Timeframes conflict." if s < 0 else "Timeframes noted.")
+        elif al == "mixed":
+            add("Multi-timeframe", -5, "mixed", "Mixed timeframe structure.")
+
+    rsi = _f(data.get("rsi_14"))
+    if rsi is not None:
+        if rsi >= 70:
+            add("RSI state", -4, f"overbought {rsi:.0f}", "Overbought — pullback risk.")
+        elif rsi <= 30:
+            add("RSI state", -4, f"oversold {rsi:.0f}", "Oversold — bounce risk.")
+        elif rsi >= 55:
+            add("RSI state", 6 * (aligned(True) or 1) if d in ("LONG", "SHORT") else 3,
+                f"{rsi:.0f}", "Momentum tilts bullish.")
+        elif rsi <= 45:
+            add("RSI state", 6 * (aligned(False) or 1) if d in ("LONG", "SHORT") else 3,
+                f"{rsi:.0f}", "Momentum tilts bearish.")
+
+    macd = data.get("macd")
+    if isinstance(macd, dict):
+        st = str(macd.get("state") or "").lower()
+        if st in ("bullish", "bullish_cross"):
+            s = aligned(True)
+            add("MACD agreement", 10 * s, st, "MACD supports." if s >= 0 else "MACD opposes.")
+        elif st in ("bearish", "bearish_cross"):
+            s = aligned(False)
+            add("MACD agreement", 10 * s, st, "MACD supports." if s >= 0 else "MACD opposes.")
+
+    regime = str(data.get("regime") or "").lower()
+    if regime:
+        rmap = {
+            "trending_up": 6, "trending_down": 6, "squeeze_pre_breakout": -3,
+            "high_volatility": -6, "low_volatility": -2, "choppy": -10,
+        }
+        if regime in rmap:
+            add("Market regime", rmap[regime], regime, f"Regime: {regime.replace('_', ' ')}.")
+
+    vol_pct = _f(data.get("volatility_pct"))
+    if vol_pct is not None:
+        if vol_pct >= 6.0:
+            add("ATR / volatility", -4, f"{vol_pct:.1f}% expanding", "Volatility expansion — wider risk.")
+        elif vol_pct < 1.0:
+            add("ATR / volatility", -2, f"{vol_pct:.1f}% compressed", "Volatility compressed — muted moves.")
+
+    vt = str(data.get("volume_trend") or "").lower()
+    if vt == "increasing":
+        add("Volume confirmation", 8, "increasing", "Participation expanding.")
+    elif vt == "decreasing":
+        add("Volume confirmation", -8, "decreasing", "Participation contracting.")
+
+    bos = str(data.get("bos") or "").lower()
+    if bos in ("bullish_bos", "bearish_bos"):
+        s = aligned(bos == "bullish_bos")
+        add("Structure quality", 8 * s, bos, "Structure break agrees." if s > 0 else "Structure break opposes." if s < 0 else "Structure break noted.")
+        if vt == "increasing":
+            add("Breakout quality", 8 * (s or 1), "confirmed", "Break confirmed by volume.")
+        elif vt == "decreasing":
+            add("Breakout quality", -8, "weak", "Break unsupported by volume.")
+    elif bos == "range":
+        add("Structure quality", -2, "range", "Ranging — no structure break.")
+
+    last = _f(data.get("last_price"))
+    sup = _f(data.get("support"))
+    res = _f(data.get("resistance"))
+    if last and last > 0:
+        if res is not None and abs(res - last) / last <= 0.005:
+            add("S/R proximity", -6 if want_long else 4 if want_short else -2,
+                "at resistance", "Price into resistance.")
+        elif sup is not None and abs(last - sup) / last <= 0.005:
+            add("S/R proximity", 4 if want_long else -6 if want_short else -2,
+                "at support", "Price at support.")
+
+    raw_bias = str(plan.get("directional_bias") or "").upper()
+    if raw_bias in ("LONG", "SHORT") and d in ("LONG", "SHORT"):
+        add("Directional agreement", 6 if raw_bias == d else -6, raw_bias,
+            "Risk plan agrees." if raw_bias == d else "Risk plan disagrees.")
+
+    mom = data.get("momentum")
+    if isinstance(mom, dict):
+        st = str(mom.get("state") or "").lower()
+        if st in ("accelerating_up", "up"):
+            s = aligned(True)
+            add("Momentum acceleration", (8 if st == "accelerating_up" else 4) * (s or 1), st,
+                "Momentum accelerating." if "accel" in st else "Momentum positive.")
+        elif st in ("accelerating_down", "down"):
+            s = aligned(False)
+            add("Momentum acceleration", (8 if st == "accelerating_down" else 4) * (s or 1), st,
+                "Momentum accelerating down." if "accel" in st else "Momentum negative.")
+
+    if not factors:
+        return _unavailable("Insufficient indicators to score confidence.")
+
+    confidence = max(0, min(100, 50 + sum(f["impact"] for f in factors)))
+    conviction = (
+        "institutional" if confidence >= 85 else
+        "high" if confidence >= 70 else
+        "moderate" if confidence >= 55 else
+        "low" if confidence >= 40 else
+        "very_low"
+    )
+    grade = (
+        "A" if confidence >= 80 else
+        "B" if confidence >= 65 else
+        "C" if confidence >= 50 else
+        "D"
+    )
+
+    pos = sorted([f for f in factors if f["impact"] > 0], key=lambda f: -f["impact"])[:3]
+    neg = sorted([f for f in factors if f["impact"] < 0], key=lambda f: f["impact"])[:2]
+    headline = {
+        "institutional": "Institutional-quality setup",
+        "high": "High-conviction setup",
+        "moderate": "Moderate-conviction setup",
+        "low": "Low-conviction environment",
+        "very_low": "Very low conviction",
+    }[conviction]
+    drivers = ", ".join(f["name"].lower() for f in pos) or "no strong supporting factors"
+    risks = ", ".join(f["name"].lower() for f in neg)
+    explanation = (
+        f"{confidence}% — {headline}. Driven by {drivers}"
+        + (f"; main risk: {risks}." if risks else ".")
+    )
+
+    return {
+        "available": True,
+        "unavailable_reason": None,
+        "confidence": confidence,
+        "conviction": conviction,
+        "grade": grade,
+        "factors": factors,
+        "explanation": explanation,
+    }
+

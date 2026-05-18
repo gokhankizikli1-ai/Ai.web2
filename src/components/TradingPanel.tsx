@@ -443,6 +443,7 @@ function SignalDetailDrawer({
   const scn = signal.scenarios;
   const mtfE = signal.mtf;
   const vol = signal.volume;
+  const cf = signal.confidenceEngine;
 
   // Decision = the multi-factor engine when available, else the legacy
   // heuristic (clearly labelled). Never fabricated.
@@ -553,6 +554,49 @@ function SignalDetailDrawer({
             <Stat label="Target 1" value={signal.targetPrice ? `$${signal.targetPrice}` : '—'} />
             <Stat label="Target 2" value={signal.takeProfit2 ? `$${signal.takeProfit2}` : '—'} />
           </div>
+        </DrawerSection>
+
+        {/* Advanced confidence engine */}
+        <DrawerSection icon={<Gauge className="w-3.5 h-3.5" />} title="Confidence engine">
+          {cf?.available ? (
+            <div className="space-y-2.5">
+              <div className="flex items-baseline gap-2 flex-wrap">
+                <span className={`text-[20px] font-semibold ${cf.confidence >= 70 ? 'text-emerald-400' : cf.confidence >= 55 ? 'text-amber-400' : 'text-red-400'}`}>
+                  {cf.confidence}%
+                </span>
+                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full capitalize ${cf.conviction === 'institutional' || cf.conviction === 'high' ? 'bg-emerald-500/[0.1] text-emerald-400' : cf.conviction === 'moderate' ? 'bg-amber-500/[0.1] text-amber-400' : 'bg-red-500/[0.1] text-red-400'}`}>
+                  {cf.conviction.replace(/_/g, ' ')}
+                </span>
+                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${GRADE_BADGE[cf.grade]}`}>
+                  Grade {cf.grade}
+                </span>
+              </div>
+              <div className="h-1.5 rounded-full bg-white/[0.05] overflow-hidden">
+                <motion.div
+                  className={`h-full rounded-full ${cf.confidence >= 70 ? 'bg-emerald-500/60' : cf.confidence >= 55 ? 'bg-amber-500/50' : 'bg-red-500/60'}`}
+                  initial={{ width: 0 }}
+                  animate={{ width: `${cf.confidence}%` }}
+                  transition={{ duration: 0.6 }}
+                />
+              </div>
+              <p className="text-[12px] text-slate-400 leading-relaxed">{cf.explanation}</p>
+              {cf.factors.length > 0 && (
+                <ul className="space-y-1">
+                  {cf.factors.map((f, i) => (
+                    <li key={i} className="flex items-center gap-2 text-[11px]">
+                      <span className={`w-9 shrink-0 text-right font-medium ${f.impact > 0 ? 'text-emerald-400' : f.impact < 0 ? 'text-red-400' : 'text-slate-500'}`}>
+                        {f.impact > 0 ? '+' : ''}{f.impact}
+                      </span>
+                      <span className="text-slate-300">{f.name}</span>
+                      <span className="text-slate-600 truncate">· {f.note}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ) : (
+            <Unavailable reason={cf?.unavailableReason} />
+          )}
         </DrawerSection>
 
         {/* Weighted factor breakdown */}
