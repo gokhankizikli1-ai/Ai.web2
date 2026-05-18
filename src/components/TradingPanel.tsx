@@ -442,6 +442,7 @@ function SignalDetailDrawer({
   const an: SignalAnalytics | undefined = signal.analytics;
   const scn = signal.scenarios;
   const mtfE = signal.mtf;
+  const vol = signal.volume;
 
   // Decision = the multi-factor engine when available, else the legacy
   // heuristic (clearly labelled). Never fabricated.
@@ -686,6 +687,64 @@ function SignalDetailDrawer({
             </div>
           ) : (
             <Unavailable reason={an?.unavailableReason} />
+          )}
+        </DrawerSection>
+
+        {/* Volume & liquidity */}
+        <DrawerSection icon={<BarChart3 className="w-3.5 h-3.5" />} title="Volume & liquidity">
+          {vol?.available ? (
+            <div className="space-y-2.5">
+              <div className="grid grid-cols-2 gap-2">
+                <Stat label="Volume trend" value={vol.volumeTrend ?? '—'} />
+                <Stat
+                  label="Participation"
+                  value={vol.participation}
+                  tone={vol.participation === 'expanding' ? 'text-emerald-400' : vol.participation === 'contracting' ? 'text-red-400' : vol.participation === 'flat' ? 'text-amber-400' : 'text-slate-400'}
+                />
+                <Stat
+                  label="Breakout quality"
+                  value={vol.breakoutQuality ?? '—'}
+                  tone={vol.breakoutQuality === 'confirmed' ? 'text-emerald-400' : vol.breakoutQuality === 'weak' ? 'text-red-400' : vol.breakoutQuality === 'pending' ? 'text-amber-400' : 'text-slate-400'}
+                />
+                <Stat
+                  label="Liquidity sweep risk"
+                  value={vol.liquiditySweepRisk}
+                  tone={vol.liquiditySweepRisk === 'elevated' ? 'text-red-400' : vol.liquiditySweepRisk === 'moderate' ? 'text-amber-400' : vol.liquiditySweepRisk === 'low' ? 'text-emerald-400' : 'text-slate-400'}
+                />
+              </div>
+              <div>
+                <div className="flex items-center justify-between text-[11px] mb-1">
+                  <span className="text-slate-500">Volume confidence</span>
+                  <span className="text-slate-300">{vol.volumeConfidence}%</span>
+                </div>
+                <div className="h-1.5 rounded-full bg-white/[0.05] overflow-hidden">
+                  <motion.div
+                    className={`h-full rounded-full ${vol.volumeConfidence >= 65 ? 'bg-emerald-500/60' : vol.volumeConfidence >= 45 ? 'bg-amber-500/50' : 'bg-red-500/60'}`}
+                    initial={{ width: 0 }}
+                    animate={{ width: `${vol.volumeConfidence}%` }}
+                    transition={{ duration: 0.6 }}
+                  />
+                </div>
+              </div>
+              <div>
+                <p className="text-[10px] text-slate-600 mb-1">Anomaly detection</p>
+                {vol.anomalies.length > 0 ? (
+                  <ul className="space-y-1">
+                    {vol.anomalies.map((a, i) => (
+                      <li key={i} className="flex items-start gap-1.5 text-[11px] text-amber-400/90 leading-relaxed">
+                        <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />{a}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-[11px] text-slate-500">No volume anomalies detected.</p>
+                )}
+              </div>
+              {vol.summary && <p className="text-[11px] text-slate-400 leading-relaxed">{vol.summary}</p>}
+              {vol.liquidityNote && <p className="text-[11px] text-slate-500 leading-relaxed">{vol.liquidityNote}</p>}
+            </div>
+          ) : (
+            <Unavailable reason={vol?.unavailableReason} />
           )}
         </DrawerSection>
 

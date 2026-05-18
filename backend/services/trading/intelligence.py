@@ -831,3 +831,157 @@ def build_mtf(data: Optional[dict], *, data_quality: Optional[str] = None) -> di
         "summary": summary,
     }
 
+
+# ── Volume & liquidity intelligence (Phase 2 #2) ───────────────────────────
+# Pure derivation from values market_data_tool ALREADY computed
+# (volume_trend, bos, regime, bb_squeeze, volatility, smart_money
+# absorption + liquidity pools). No raw OHLC needed; nothing fabricated —
+# absent inputs → honest unavailable / "unknown".
+
+def build_volume(data: Optional[dict], *, data_quality: Optional[str] = None) -> dict:
+    data = data or {}
+
+    base = {
+        "available": False,
+        "unavailable_reason": None,
+        "volume_trend": None,
+        "participation": "unknown",
+        "participation_note": "",
+        "anomalies": [],
+        "breakout_quality": None,
+        "breakout_note": "",
+        "liquidity_sweep_risk": "unknown",
+        "liquidity_note": "",
+        "volume_confidence": 0,
+        "summary": None,
+    }
+
+    if data_quality == "quote_only":
+        base["unavailable_reason"] = (
+            "Quote-only data — volume/liquidity analysis requires OHLC + volume history."
+        )
+        return base
+
+    vt = data.get("volume_trend")
+    sm = data.get("smart_money") if isinstance(data.get("smart_money"), dict) else {}
+    absorption = sm.get("absorption_signal") if isinstance(sm, dict) else None
+    regime = str(data.get("regime") or "").lower()
+    bos = str(data.get("bos") or "").lower()
+
+    if not vt and not isinstance(absorption, dict) and not regime:
+        base["unavailable_reason"] = "Volume feed unavailable for this symbol."
+        return base
+
+    out = dict(base)
+    out["available"] = True
+    out["volume_trend"] = str(vt) if vt else None
+
+    # Participation quality
+    if vt == "increasing":
+        out["participation"] = "expanding"
+        out["participation_note"] = "Participation expanding — moves are being supported."
+    elif vt == "decreasing":
+        out["participation"] = "contracting"
+        out["participation_note"] = "Participation contracting — moves poorly supported."
+    elif vt == "neutral":
+        out["participation"] = "flat"
+        out["participation_note"] = "Flat participation — no conviction either way."
+    else:
+        out["participation"] = "unknown"
+        out["participation_note"] = "Volume trend unavailable."
+
+    # Breakout quality (structure break × participation)
+    if bos in ("bullish_bos", "bearish_bos"):
+        if vt == "increasing":
+            out["breakout_quality"] = "confirmed"
+            out["breakout_note"] = "Momentum confirmed by expanding participation."
+        elif vt in ("decreasing", "neutral"):
+            out["breakout_quality"] = "weak"
+            out["breakout_note"] = "Breakout unsupported by volume — fakeout risk."
+        else:
+            out["breakout_quality"] = "unconfirmed"
+            out["breakout_note"] = "Structure break with no volume read — unconfirmed."
+    elif regime == "squeeze_pre_breakout" or data.get("bb_squeeze") is True:
+        out["breakout_quality"] = "pending"
+        out["breakout_note"] = "Coiled / squeeze — breakout pending, needs volume to confirm."
+    elif bos == "range":
+        out["breakout_quality"] = "none"
+        out["breakout_note"] = "No structure break — ranging."
+    else:
+        out["breakout_quality"] = "unknown"
+        out["breakout_note"] = "Breakout context unavailable."
+
+    # Anomalies (only when the underlying signal is actually present)
+    anomalies: list[str] = []
+    vol_ratio = _f(absorption.get("vol_ratio")) if isinstance(absorption, dict) else None
+    range_vs_atr = _f(absorption.get("range_vs_atr")) if isinstance(absorption, dict) else None
+    if vol_ratio is not None and vol_ratio >= 2.0:
+        anomalies.append(f"Abnormal volume spike (×{vol_ratio:.1f}).")
+    if (vt == "decreasing" and regime in ("low_volatility", "choppy", "neutral")
+            and data.get("bb_squeeze") is not True):
+        anomalies.append("Dead volume environment.")
+    if regime == "high_volatility":
+        anomalies.append("Volatility expansion underway.")
+    if (isinstance(absorption, dict) and absorption.get("type")
+            and range_vs_atr is not None and range_vs_atr <= 0.6
+            and vol_ratio is not None and vol_ratio >= 1.5):
+        anomalies.append(f"Exhaustion/absorption volume ({absorption.get('type')}).")
+
+    # Liquidity sweep risk from nearest pre-computed liquidity pool
+    def _nearest(pools) -> Optional[float]:
+        if not isinstance(pools, list):
+            return None
+        ds = [_f(p.get("distance_pct")) for p in pools if isinstance(p, dict)]
+        ds = [abs(d) for d in ds if d is not None]
+        return min(ds) if ds else None
+
+    near_above = _nearest(sm.get("liquidity_above")) if isinstance(sm, dict) else None
+    near_below = _nearest(sm.get("liquidity_below")) if isinstance(sm, dict) else None
+    nearest = min([d for d in (near_above, near_below) if d is not None], default=None)
+    if nearest is None:
+        out["liquidity_sweep_risk"] = "unknown"
+        out["liquidity_note"] = "No mapped liquidity pools for this symbol."
+    elif nearest <= 0.5:
+        out["liquidity_sweep_risk"] = "elevated"
+        out["liquidity_note"] = f"Liquidity pool ~{nearest:.2f}% away — sweep/stop-hunt risk elevated."
+        anomalies.append("Liquidity sweep risk elevated.")
+    elif nearest <= 1.5:
+        out["liquidity_sweep_risk"] = "moderate"
+        out["liquidity_note"] = f"Liquidity pool ~{nearest:.2f}% away — moderate sweep risk."
+    else:
+        out["liquidity_sweep_risk"] = "low"
+        out["liquidity_note"] = f"Nearest liquidity pool ~{nearest:.2f}% away — low sweep risk."
+
+    out["anomalies"] = anomalies
+
+    # Volume confidence (0-100), bounded
+    score = 50
+    if out["participation"] == "expanding":
+        score += 20
+    elif out["participation"] == "contracting":
+        score -= 15
+    if out["breakout_quality"] == "confirmed":
+        score += 20
+    elif out["breakout_quality"] == "weak":
+        score -= 20
+    elif out["breakout_quality"] == "pending":
+        score -= 5
+    if vol_ratio is not None and vol_ratio >= 2.0:
+        score += 8 if out["breakout_quality"] == "confirmed" else -8
+    if "Dead volume environment." in anomalies:
+        score -= 20
+    if any(a.startswith("Exhaustion") for a in anomalies):
+        score -= 10
+    if out["liquidity_sweep_risk"] == "elevated":
+        score -= 8
+    out["volume_confidence"] = max(0, min(100, score))
+
+    primary = (
+        out["breakout_note"] if out["breakout_quality"] in ("confirmed", "weak")
+        else out["participation_note"]
+    )
+    extra = f" {anomalies[0]}" if anomalies else ""
+    out["summary"] = f"{primary}{extra}".strip()
+
+    return out
+

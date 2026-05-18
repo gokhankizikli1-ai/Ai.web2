@@ -82,6 +82,24 @@ export interface TradingSignal {
   intel?: SignalIntel;
   analytics?: SignalAnalytics;
   mtf?: MtfEngine;
+  volume?: SignalVolume;
+}
+
+// Volume & liquidity intelligence (Phase 2). Pure derivation from
+// already-computed fields; honest unavailable when no volume feed.
+export interface SignalVolume {
+  available: boolean;
+  unavailableReason?: string | null;
+  volumeTrend?: string | null;
+  participation: string;
+  participationNote: string;
+  anomalies: string[];
+  breakoutQuality?: string | null;
+  breakoutNote: string;
+  liquiditySweepRisk: string;
+  liquidityNote: string;
+  volumeConfidence: number;
+  summary?: string | null;
 }
 
 export type MtfBias = 'bullish' | 'bearish' | 'neutral' | 'unavailable';

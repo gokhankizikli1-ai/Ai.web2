@@ -18,7 +18,7 @@ Pure unit tests — no network, no external providers.
 from __future__ import annotations
 
 from backend.services.trading.intelligence import (
-    build_breakdown, build_scenarios, build_analytics, build_mtf,
+    build_breakdown, build_scenarios, build_analytics, build_mtf, build_volume,
 )
 from backend.services.trading import signals_service
 
@@ -253,12 +253,59 @@ def test_build_mtf_unavailable_is_honest():
     assert "quote-only" in q["unavailable_reason"].lower()
 
 
+def test_build_volume_confirmed_breakout():
+    data = {"volume_trend": "increasing", "bos": "bullish_bos",
+            "regime": "trending_up"}
+    v = build_volume(data, data_quality="full")
+    assert v["available"] is True
+    assert v["participation"] == "expanding"
+    assert v["breakout_quality"] == "confirmed"
+    assert "confirmed by expanding participation" in v["breakout_note"].lower()
+    assert v["volume_confidence"] >= 70
+
+
+def test_build_volume_weak_breakout_unsupported():
+    data = {"volume_trend": "decreasing", "bos": "bullish_bos"}
+    v = build_volume(data, data_quality="full")
+    assert v["breakout_quality"] == "weak"
+    assert "unsupported by volume" in v["breakout_note"].lower()
+    assert v["volume_confidence"] < 50
+
+
+def test_build_volume_dead_volume_and_spike_and_sweep():
+    data = {
+        "volume_trend": "decreasing", "bos": "range", "regime": "choppy",
+        "smart_money": {
+            "absorption_signal": {"type": "distribution", "vol_ratio": 2.4,
+                                  "range_vs_atr": 0.4},
+            "liquidity_above": [{"level": 101.0, "distance_pct": 0.3}],
+            "liquidity_below": [{"level": 95.0, "distance_pct": 4.0}],
+        },
+    }
+    v = build_volume(data, data_quality="full")
+    assert "Dead volume environment." in v["anomalies"]
+    assert any(a.startswith("Abnormal volume spike") for a in v["anomalies"])
+    assert any(a.startswith("Exhaustion") for a in v["anomalies"])
+    assert v["liquidity_sweep_risk"] == "elevated"
+    assert "Liquidity sweep risk elevated." in v["anomalies"]
+
+
+def test_build_volume_quote_only_and_unavailable_are_honest():
+    q = build_volume({"volume_trend": "increasing"},
+                     data_quality="quote_only")
+    assert q["available"] is False and "quote-only" in q["unavailable_reason"].lower()
+    assert q["anomalies"] == [] and q["volume_confidence"] == 0
+    e = build_volume({"last_price": 5.0}, data_quality="ohlc_daily")
+    assert e["available"] is False and e["unavailable_reason"]
+
+
 def test_empty_signal_carries_none_breakdown_scenarios():
     sig = signals_service._empty_signal("NVDA", "4h", error="no_data")
     assert sig["breakdown"] is None
     assert sig["scenarios"] is None
     assert sig["analytics"] is None
     assert sig["mtf"] is None
+    assert sig["volume"] is None
     # existing contract keys still present (no regression)
     for k in ("symbol", "direction", "is_live", "entry", "data_quality"):
         assert k in sig
