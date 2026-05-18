@@ -3,7 +3,22 @@ import type { ChatSession, Message, AIMode, WorkspaceTab, ChatFolder } from '@/t
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
-const API_URL = 'https://worker-production-2a49.up.railway.app/chat';
+/**
+ * Chat backend base URL.
+ *
+ * Same resolution as src/hooks/useTradingSignals.ts: read VITE_API_URL at
+ * build time, fall back to the live Railway host.
+ *
+ * IMPORTANT: never hardcode the dead "worker-production-2a49.up.railway.app".
+ * fetch() against that host raises a TypeError which WebKit surfaces to the
+ * user as the opaque "Load failed" — the chat root-cause this replaces.
+ */
+const DEFAULT_API_HOST = 'https://korvixai-backend-production.up.railway.app';
+const API_BASE = `${
+  (import.meta.env?.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ||
+  DEFAULT_API_HOST
+}`;
+const API_URL = `${API_BASE}/chat`;
 
 function getUserId(): string {
   const key = 'korvix_user_id';
@@ -183,25 +198,78 @@ export function useChat() {
 
     setIsLoading(true);
 
+    const requestBody = {
+      user_id: userIdRef.current,
+      message: content.trim(),
+      chat_id: activeSessionId,
+      session_id: activeSessionId,
+      platform: 'web',
+    };
+
     try {
+      console.info('[useChat] POST', API_URL, requestBody);
+
       const response = await fetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: userIdRef.current,
-          message: content.trim(),
-          chat_id: activeSessionId,
-          session_id: activeSessionId,
-          platform: 'web',
-        }),
+        body: JSON.stringify(requestBody),
       });
 
-      if (!response.ok) {
-        throw new Error(`Server responded with ${response.status}. Please try again.`);
+      // Read the body ONCE as text so the raw payload can be logged
+      // verbatim and we can still recover from non-JSON / empty responses.
+      const rawBody = await response.text();
+      console.info(
+        '[useChat] response',
+        response.status,
+        response.statusText,
+        rawBody,
+      );
+
+      let data: any = null;
+      if (rawBody) {
+        try {
+          data = JSON.parse(rawBody);
+        } catch (parseErr) {
+          console.error('[useChat] response is not valid JSON', parseErr, rawBody);
+        }
       }
 
-      const data = await response.json();
-      const responseText = data.reply ?? data.response ?? data.message ?? JSON.stringify(data);
+      if (!response.ok) {
+        // Surface the ACTUAL backend error, not a generic string. The
+        // backend 500 fallback returns { reply, error, code }; FastAPI
+        // validation (422) returns { detail: [...] }.
+        const detailMsg = Array.isArray(data?.detail)
+          ? data.detail.map((d: any) => d?.msg).filter(Boolean).join('; ')
+          : typeof data?.detail === 'string'
+            ? data.detail
+            : null;
+        const backendMsg =
+          (data && (data.error || data.reply || data.message || detailMsg)) ||
+          rawBody ||
+          `Server responded with ${response.status}.`;
+        console.error('[useChat] request failed', response.status, backendMsg);
+        throw new Error(String(backendMsg));
+      }
+
+      // Backend contract (backend/routes/chat.py ChatResponse) is a
+      // top-level `reply` string. Stay resilient to legacy aliases, a
+      // nested envelope, and a non-JSON body.
+      const responseText: unknown =
+        (data &&
+          (data.reply ??
+            data.response ??
+            data.message ??
+            data.text ??
+            data?.data?.reply ??
+            data?.data?.message)) ??
+        (rawBody && !data ? rawBody : null);
+
+      if (!responseText || typeof responseText !== 'string') {
+        console.error('[useChat] no usable reply field in response', data);
+        throw new Error(
+          'The server returned an unexpected response. Please try again.',
+        );
+      }
 
       const assistantMessage: Message = {
         id: generateId(),
@@ -218,7 +286,15 @@ export function useChat() {
         )
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
+      // TypeError here = network/CORS/DNS failure (WebKit: "Load failed").
+      console.error('[useChat] send failed', API_URL, err);
+      const msg =
+        err instanceof Error
+          ? err.message === 'Load failed' || err.message === 'Failed to fetch'
+            ? `Cannot reach the server (${API_BASE}). Check connection / backend.`
+            : err.message
+          : 'Something went wrong. Please try again.';
+      setError(msg);
     } finally {
       setIsLoading(false);
     }
