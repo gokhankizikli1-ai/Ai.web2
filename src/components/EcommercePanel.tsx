@@ -34,8 +34,8 @@ function load(): EcomState {
 const num = (s: string) => { const v = Number(s); return Number.isFinite(v) && v >= 0 ? v : 0; };
 
 // Hoisted (stable identity) so inputs never lose focus on re-render.
-function NumField({ label, value, ph, onChange }: {
-  label: string; value: string; ph?: string; onChange: (v: string) => void;
+function NumField({ label, value, ph, inputMode = 'decimal', onChange }: {
+  label: string; value: string; ph?: string; inputMode?: 'decimal' | 'text'; onChange: (v: string) => void;
 }) {
   return (
     <div>
@@ -44,7 +44,7 @@ function NumField({ label, value, ph, onChange }: {
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={ph}
-        inputMode="decimal"
+        inputMode={inputMode}
         className="w-full h-8 px-2.5 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[11px] text-slate-300 placeholder:text-slate-700 focus:outline-none focus:border-emerald-500/20 transition-all"
       />
     </div>
@@ -131,8 +131,8 @@ export default function EcommercePanel({ onRunPrompt }: { onRunPrompt?: (p: stri
       </div>
 
       <div className="rounded-xl border border-white/[0.04] bg-white/[0.015] p-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
-        <NumField label="Product idea" value={s.product} ph="e.g. posture-correction brace" onChange={(v) => set({ product: v })} />
-        <NumField label="Niche / audience" value={s.niche} ph="e.g. desk workers, back pain" onChange={(v) => set({ niche: v })} />
+        <NumField label="Product idea" value={s.product} ph="e.g. posture-correction brace" inputMode="text" onChange={(v) => set({ product: v })} />
+        <NumField label="Niche / audience" value={s.niche} ph="e.g. desk workers, back pain" inputMode="text" onChange={(v) => set({ niche: v })} />
       </div>
 
       <div className="rounded-xl border border-white/[0.04] bg-white/[0.015] p-4 space-y-3">
