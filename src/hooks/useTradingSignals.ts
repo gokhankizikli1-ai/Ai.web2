@@ -3,6 +3,7 @@ import type {
   TradingSignal, TradingSignalsResponse, DataProvider, SignalDirection, AssetType,
   SignalBreakdown, SignalScenarios, SignalFactor,
   SignalIntel, SignalIntelFactor, SignalAnalytics,
+  MtfEngine, MtfBias, MtfTfRow,
 } from '@/types';
 
 /**
@@ -260,6 +261,34 @@ function mapAnalytics(raw: unknown): SignalAnalytics | undefined {
   };
 }
 
+function mapMtf(raw: unknown): MtfEngine | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const m = raw as Record<string, unknown>;
+  const validBias: MtfBias[] = ['bullish', 'bearish', 'neutral', 'unavailable'];
+  const tfs: MtfTfRow[] = Array.isArray(m.timeframes)
+    ? m.timeframes
+        .filter((r): r is Record<string, unknown> => !!r && typeof r === 'object')
+        .map((r) => {
+          const b = String(r.bias ?? 'unavailable');
+          return {
+            tf: String(r.tf ?? ''),
+            bias: (validBias.includes(b as MtfBias) ? b : 'unavailable') as MtfBias,
+            rsi: _numOrNull(r.rsi),
+          };
+        })
+    : [];
+  return {
+    available: !!m.available,
+    unavailableReason: (m.unavailable_reason as string | null) ?? null,
+    timeframes: tfs,
+    alignment: (m.alignment as string | null) ?? null,
+    agreementPct: _numOrNull(m.agreement_pct),
+    score: Number(m.score) || 0,
+    conflict: !!m.conflict,
+    summary: (m.summary as string | null) ?? null,
+  };
+}
+
 function normalizeResponse(data: Record<string, unknown>): TradingSignalsResponse {
   const rawSignals = Array.isArray(data?.signals)
     ? (data.signals as Record<string, unknown>[])
@@ -297,6 +326,7 @@ function normalizeResponse(data: Record<string, unknown>): TradingSignalsRespons
       scenarios: mapScenarios(s.scenarios),
       intel: mapIntel(s.intel),
       analytics: mapAnalytics(s.analytics),
+      mtf: mapMtf(s.mtf),
     };
   });
 

@@ -18,7 +18,7 @@ Pure unit tests — no network, no external providers.
 from __future__ import annotations
 
 from backend.services.trading.intelligence import (
-    build_breakdown, build_scenarios, build_analytics,
+    build_breakdown, build_scenarios, build_analytics, build_mtf,
 )
 from backend.services.trading import signals_service
 
@@ -198,11 +198,67 @@ def test_build_analytics_quote_only_and_empty_are_honest():
     assert e["unavailable_reason"]
 
 
+def test_build_mtf_aligned_bullish():
+    data = {"multi_timeframe": {
+        "1h": {"trend": "uptrend", "rsi": 58},
+        "4h": {"trend": "uptrend", "rsi": 61},
+        "1d": {"trend": "uptrend", "rsi": 64},
+    }}
+    m = build_mtf(data, data_quality="full")
+    assert m["available"] is True
+    assert m["alignment"] == "bullish"
+    assert m["agreement_pct"] == 100
+    assert m["conflict"] is False
+    # canonical set always present; 15m honestly unavailable (not faked)
+    tfs = {r["tf"]: r["bias"] for r in m["timeframes"]}
+    assert tfs["15m"] == "unavailable"
+    assert tfs["1h"] == "bullish" and tfs["1d"] == "bullish"
+
+
+def test_build_mtf_conflict_counter_trend():
+    data = {"multi_timeframe": {
+        "1h": {"trend": "uptrend", "rsi": 57},
+        "4h": {"trend": "downtrend", "rsi": 43},
+        "1d": {"trend": "downtrend", "rsi": 40},
+    }}
+    m = build_mtf(data, data_quality="full")
+    assert m["available"] is True
+    assert m["conflict"] is True
+    assert "counter-trend long risk elevated" in m["summary"].lower()
+
+
+def test_build_mtf_mixed_is_chop():
+    # lower TF neutral (no lower directional read) so the hi/lo conflict
+    # branch can't fire; higher TFs split -> honest mixed/chop summary.
+    data = {"multi_timeframe": {
+        "1h": {"trend": "sideways", "rsi": 50},
+        "4h": {"trend": "uptrend", "rsi": 56},
+        "1d": {"trend": "downtrend", "rsi": 44},
+    }}
+    m = build_mtf(data, data_quality="full")
+    assert m["conflict"] is False
+    assert m["alignment"] == "mixed"
+    assert "chop" in m["summary"].lower() or "mixed" in m["summary"].lower()
+
+
+def test_build_mtf_unavailable_is_honest():
+    none = build_mtf({"last_price": 10.0}, data_quality="full")
+    assert none["available"] is False
+    assert none["unavailable_reason"]
+    # still lists canonical pills as unavailable — never a guessed bias
+    assert [r["bias"] for r in none["timeframes"]] == ["unavailable"] * 4
+    q = build_mtf({"multi_timeframe": {"1h": {"trend": "uptrend"}}},
+                  data_quality="quote_only")
+    assert q["available"] is False
+    assert "quote-only" in q["unavailable_reason"].lower()
+
+
 def test_empty_signal_carries_none_breakdown_scenarios():
     sig = signals_service._empty_signal("NVDA", "4h", error="no_data")
     assert sig["breakdown"] is None
     assert sig["scenarios"] is None
     assert sig["analytics"] is None
+    assert sig["mtf"] is None
     # existing contract keys still present (no regression)
     for k in ("symbol", "direction", "is_live", "entry", "data_quality"):
         assert k in sig
