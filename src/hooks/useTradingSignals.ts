@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import type {
   TradingSignal, TradingSignalsResponse, DataProvider, SignalDirection, AssetType,
   SignalBreakdown, SignalScenarios, SignalFactor,
+  SignalIntel, SignalIntelFactor,
 } from '@/types';
 
 /**
@@ -165,6 +166,37 @@ function mapScenarios(raw: unknown): SignalScenarios | undefined {
   };
 }
 
+function mapIntel(raw: unknown): SignalIntel | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const x = raw as Record<string, unknown>;
+  const grade = String(x.grade ?? 'D');
+  const factors: SignalIntelFactor[] = Array.isArray(x.factors)
+    ? x.factors
+        .filter((f): f is Record<string, unknown> => !!f && typeof f === 'object')
+        .map((f) => {
+          const side = String(f.side ?? 'neutral');
+          return {
+            factor: String(f.factor ?? ''),
+            side: side === 'bull' || side === 'bear' ? side : 'neutral',
+            weight: Number(f.weight) || 0,
+          };
+        })
+    : [];
+  return {
+    available: !!x.available,
+    unavailableReason: (x.unavailable_reason as string | null) ?? null,
+    direction: mapDirection(x.direction),
+    confidence: Number(x.confidence_pct) || 0,
+    grade: (grade === 'A' || grade === 'B' || grade === 'C' ? grade : 'D'),
+    score: Number(x.score) || 0,
+    bullWeight: Number(x.bull_weight) || 0,
+    bearWeight: Number(x.bear_weight) || 0,
+    factors,
+    invalidation: (x.invalidation as string | null) ?? null,
+    rationale: String(x.rationale ?? ''),
+  };
+}
+
 function normalizeResponse(data: Record<string, unknown>): TradingSignalsResponse {
   const rawSignals = Array.isArray(data?.signals)
     ? (data.signals as Record<string, unknown>[])
@@ -200,6 +232,7 @@ function normalizeResponse(data: Record<string, unknown>): TradingSignalsRespons
       rawDirection: s.raw_direction ? String(s.raw_direction) : undefined,
       breakdown: mapBreakdown(s.breakdown),
       scenarios: mapScenarios(s.scenarios),
+      intel: mapIntel(s.intel),
     };
   });
 

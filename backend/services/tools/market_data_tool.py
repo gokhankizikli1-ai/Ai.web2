@@ -888,6 +888,9 @@ def _build_result(
         "bb_position":      _bb_position(last_price, bb),
         "regime":           regime,
         "smart_money":      zones,
+        "macd":             _calc_macd(closes),
+        "momentum":         _calc_momentum(closes),
+        "trend_strength":   _trend_strength(closes, highs, lows),
         "candles_analyzed": n,
     }
 
@@ -1619,6 +1622,138 @@ def _calc_atr(highs: list, lows: list, closes: list, period: int = 14) -> float:
     for tr in trs[period:]:
         atr = (atr * (period - 1) + tr) / period
     return atr
+
+
+# ── Signal-intelligence indicators (Phase 9; additive, pure, no deps) ───────
+# These feed the additive intelligence layer ONLY. _build_plan (the chat
+# trading path) is intentionally NOT changed — chat behaviour is preserved.
+
+def _ema_series(values: list, period: int) -> list:
+    """Full EMA series (SMA-seeded). Length = len(values) - period + 1."""
+    if not values or period < 1 or len(values) < period:
+        return []
+    k = 2.0 / (period + 1)
+    ema = sum(values[:period]) / period
+    out = [ema]
+    for p in values[period:]:
+        ema = p * k + ema * (1.0 - k)
+        out.append(ema)
+    return out
+
+
+def _calc_macd(closes: list, fast: int = 12, slow: int = 26, signal: int = 9) -> dict:
+    """MACD(12,26,9). Honest insufficient_data when history is too short."""
+    out = {"macd": None, "signal": None, "hist": None, "state": "insufficient_data"}
+    if len(closes) < slow + signal:
+        return out
+    ef = _ema_series(closes, fast)
+    es = _ema_series(closes, slow)
+    if not ef or not es:
+        return out
+    m = len(es)                       # slow series is the shorter one
+    ef_tail = ef[-m:]
+    macd_line = [ef_tail[i] - es[i] for i in range(m)]
+    sig = _ema_series(macd_line, signal)
+    if len(sig) < 1 or len(macd_line) < 2 or len(sig) < 2:
+        return out
+    macd_v, sig_v = macd_line[-1], sig[-1]
+    hist = macd_v - sig_v
+    prev_hist = macd_line[-2] - sig[-2]
+    if prev_hist <= 0 < hist:
+        state = "bullish_cross"
+    elif prev_hist >= 0 > hist:
+        state = "bearish_cross"
+    elif hist > 0:
+        state = "bullish"
+    elif hist < 0:
+        state = "bearish"
+    else:
+        state = "neutral"
+    return {
+        "macd": round(macd_v, 6),
+        "signal": round(sig_v, 6),
+        "hist": round(hist, 6),
+        "state": state,
+    }
+
+
+def _calc_momentum(closes: list, lookback: int = 10) -> dict:
+    """Rate-of-change momentum + acceleration vs the prior window."""
+    if len(closes) < lookback * 2 + 1:
+        return {"roc_pct": None, "state": "insufficient_data"}
+
+    def _roc(a: float, b: float) -> float:
+        return (a / b - 1.0) * 100.0 if b else 0.0
+
+    cur = _roc(closes[-1], closes[-1 - lookback])
+    prev = _roc(closes[-1 - lookback], closes[-1 - 2 * lookback])
+    if cur > 0 and cur > prev:
+        state = "accelerating_up"
+    elif cur > 0:
+        state = "up"
+    elif cur < 0 and cur < prev:
+        state = "accelerating_down"
+    elif cur < 0:
+        state = "down"
+    else:
+        state = "flat"
+    return {"roc_pct": round(cur, 3), "state": state}
+
+
+def _trend_strength(closes: list, highs: list, lows: list, period: int = 14) -> dict:
+    """Wilder ADX. label: no_trend / weak / strong / very_strong."""
+    n = len(closes)
+    if n < period * 2 + 1 or len(highs) != n or len(lows) != n:
+        return {"adx": None, "label": "insufficient_data"}
+    plus_dm: list = []
+    minus_dm: list = []
+    trs: list = []
+    for i in range(1, n):
+        up = highs[i] - highs[i - 1]
+        dn = lows[i - 1] - lows[i]
+        plus_dm.append(up if (up > dn and up > 0) else 0.0)
+        minus_dm.append(dn if (dn > up and dn > 0) else 0.0)
+        trs.append(max(
+            highs[i] - lows[i],
+            abs(highs[i] - closes[i - 1]),
+            abs(lows[i] - closes[i - 1]),
+        ))
+    if len(trs) < period:
+        return {"adx": None, "label": "insufficient_data"}
+
+    def _wilder(x: list) -> list:
+        s = sum(x[:period])
+        acc = [s]
+        for v in x[period:]:
+            s = s - s / period + v
+            acc.append(s)
+        return acc
+
+    atr_s, pdm_s, mdm_s = _wilder(trs), _wilder(plus_dm), _wilder(minus_dm)
+    dxs: list = []
+    for i in range(len(atr_s)):
+        a = atr_s[i]
+        if a == 0:
+            dxs.append(0.0)
+            continue
+        pdi = 100.0 * pdm_s[i] / a
+        mdi = 100.0 * mdm_s[i] / a
+        denom = pdi + mdi
+        dxs.append(100.0 * abs(pdi - mdi) / denom if denom else 0.0)
+    if len(dxs) < period:
+        adx = sum(dxs) / len(dxs) if dxs else 0.0
+    else:
+        adx = sum(dxs[:period]) / period
+        for d in dxs[period:]:
+            adx = (adx * (period - 1) + d) / period
+    adx = round(adx, 2)
+    label = (
+        "very_strong" if adx >= 50 else
+        "strong" if adx >= 25 else
+        "weak" if adx >= 20 else
+        "no_trend"
+    )
+    return {"adx": adx, "label": label}
 
 
 def _trend_direction(closes: list, ema20: float, ema50: float) -> str:

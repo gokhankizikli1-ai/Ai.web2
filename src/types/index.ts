@@ -79,6 +79,7 @@ export interface TradingSignal {
   // absent when the backend had no OHLC/indicator data).
   breakdown?: SignalBreakdown;
   scenarios?: SignalScenarios;
+  intel?: SignalIntel;
 }
 
 // ── Trading Intelligence Engine data model (Phase 9) ───────────────────────
@@ -109,6 +110,28 @@ export interface SignalScenarios {
   sideways: string;
   keyLevels: Record<string, number>;
   doNotTradeIf: string;
+}
+
+export interface SignalIntelFactor {
+  factor: string;
+  side: 'bull' | 'bear' | 'neutral';
+  weight: number;
+}
+
+// Multi-factor decision engine output (additive — never overwrites the
+// legacy direction/confidence; absent when OHLC/indicators unavailable).
+export interface SignalIntel {
+  available: boolean;
+  unavailableReason?: string | null;
+  direction: SignalDirection;
+  confidence: number;
+  grade: 'A' | 'B' | 'C' | 'D';
+  score: number;
+  bullWeight: number;
+  bearWeight: number;
+  factors: SignalIntelFactor[];
+  invalidation?: string | null;
+  rationale: string;
 }
 
 // Trade Journal foundation — frontend/backend-ready structure ONLY.

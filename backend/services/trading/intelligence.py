@@ -176,6 +176,42 @@ def build_breakdown(
     elif regime == "high_volatility":
         neutral.append(_factor("Regime", "High volatility — wider stops required.", 1))
 
+    macd = data.get("macd")
+    if isinstance(macd, dict):
+        st = str(macd.get("state") or "").lower()
+        if st == "bullish_cross":
+            bull.append(_factor("MACD", "Bullish MACD crossover.", 3))
+        elif st == "bullish":
+            bull.append(_factor("MACD", "MACD above signal — bullish.", 2))
+        elif st == "bearish_cross":
+            bear.append(_factor("MACD", "Bearish MACD crossover.", 3))
+        elif st == "bearish":
+            bear.append(_factor("MACD", "MACD below signal — bearish.", 2))
+
+    mom = data.get("momentum")
+    if isinstance(mom, dict):
+        st = str(mom.get("state") or "").lower()
+        roc = _f(mom.get("roc_pct"))
+        tag = f" ({roc:+.2f}%)" if roc is not None else ""
+        if st == "accelerating_up":
+            bull.append(_factor("Momentum", f"Momentum accelerating up{tag}.", 2))
+        elif st == "up":
+            bull.append(_factor("Momentum", f"Positive momentum{tag}.", 1))
+        elif st == "accelerating_down":
+            bear.append(_factor("Momentum", f"Momentum accelerating down{tag}.", 2))
+        elif st == "down":
+            bear.append(_factor("Momentum", f"Negative momentum{tag}.", 1))
+
+    ts = data.get("trend_strength")
+    if isinstance(ts, dict):
+        lbl = str(ts.get("label") or "").lower()
+        adx = _f(ts.get("adx"))
+        adx_tag = f" (ADX {adx:.0f})" if adx is not None else ""
+        if lbl in ("strong", "very_strong"):
+            neutral.append(_factor("Trend strength", f"Strong directional trend{adx_tag} — moves are reliable.", 1))
+        elif lbl in ("weak", "no_trend"):
+            neutral.append(_factor("Trend strength", f"Weak/no trend{adx_tag} — chop & fakeout risk.", 1))
+
     # Equity daily-bias headline (equity path exposes bias/bias_reason).
     bias = str(data.get("bias") or "").lower()
     if bias in ("bullish", "bearish"):
@@ -340,4 +376,239 @@ def build_scenarios(
         "sideways_scenario": sideways,
         "key_levels": key_levels,
         "do_not_trade_if": do_not_trade_if,
+    }
+
+
+# ── Multi-factor decision engine (#1 — smarter LONG/SHORT/WAIT) ─────────────
+# Transparent weighted scoring across trend, MACD, momentum, RSI, structure,
+# volume, MAs, multi-timeframe, positioning and equity bias. A trend-strength
+# (ADX) gate raises the bar in weak/no-trend regimes so the engine prefers
+# WAIT over forcing a low-quality trade. ADDITIVE: surfaced as `intel`; the
+# legacy direction/confidence/setup_grade fields are left untouched.
+
+def build_decision(
+    data: Optional[dict],
+    plan: Optional[dict],
+    *,
+    data_quality: Optional[str] = None,
+) -> dict:
+    data = data or {}
+    plan = plan or {}
+
+    def _unavailable(reason: str) -> dict:
+        return {
+            "available": False,
+            "unavailable_reason": reason,
+            "direction": "WAIT",
+            "confidence_pct": 0,
+            "grade": "D",
+            "score": 0,
+            "bull_weight": 0,
+            "bear_weight": 0,
+            "factors": [],
+            "invalidation": None,
+            "rationale": reason,
+        }
+
+    if data_quality == "quote_only":
+        return _unavailable(
+            "Quote-only data — multi-factor scoring requires OHLC history."
+        )
+
+    factors: list[dict] = []
+
+    def add(name: str, side: str, weight: int) -> None:
+        factors.append({"factor": name, "side": side, "weight": weight})
+
+    trend = str(data.get("trend") or "").lower()
+    if trend == "uptrend":
+        add("Trend", "bull", 3)
+    elif trend == "downtrend":
+        add("Trend", "bear", 3)
+
+    macd = data.get("macd")
+    if isinstance(macd, dict):
+        st = str(macd.get("state") or "").lower()
+        if st == "bullish_cross":
+            add("MACD", "bull", 3)
+        elif st == "bullish":
+            add("MACD", "bull", 2)
+        elif st == "bearish_cross":
+            add("MACD", "bear", 3)
+        elif st == "bearish":
+            add("MACD", "bear", 2)
+
+    mom = data.get("momentum")
+    if isinstance(mom, dict):
+        st = str(mom.get("state") or "").lower()
+        if st == "accelerating_up":
+            add("Momentum", "bull", 2)
+        elif st == "up":
+            add("Momentum", "bull", 1)
+        elif st == "accelerating_down":
+            add("Momentum", "bear", 2)
+        elif st == "down":
+            add("Momentum", "bear", 1)
+
+    rsi = _f(data.get("rsi_14"))
+    if rsi is not None:
+        if rsi >= 70:
+            add("RSI", "bear", 1)        # overbought — pullback risk
+        elif rsi <= 30:
+            add("RSI", "bull", 1)        # oversold — bounce potential
+        elif rsi >= 55:
+            add("RSI", "bull", 1)
+        elif rsi <= 45:
+            add("RSI", "bear", 1)
+
+    bos = str(data.get("bos") or "").lower()
+    if bos == "bullish_bos":
+        add("Market structure", "bull", 2)
+    elif bos == "bearish_bos":
+        add("Market structure", "bear", 2)
+
+    vol = str(data.get("volume_trend") or "").lower()
+    if vol == "increasing":
+        add("Volume", "bull", 1)
+    elif vol == "decreasing":
+        add("Volume", "bear", 1)
+
+    ema20 = _f(data.get("ema20")) if data.get("ema20") is not None else _f(data.get("sma20"))
+    ema50 = _f(data.get("ema50")) if data.get("ema50") is not None else _f(data.get("sma50"))
+    if ema20 is not None and ema50 is not None and ema50 != 0:
+        if ema20 > ema50 * 1.001:
+            add("Moving averages", "bull", 1)
+        elif ema20 < ema50 * 0.999:
+            add("Moving averages", "bear", 1)
+
+    mtf = data.get("mtf_alignment")
+    if isinstance(mtf, dict):
+        align = str(mtf.get("alignment") or "").lower()
+        if align == "bullish":
+            add("Multi-timeframe", "bull", 2)
+        elif align == "bullish_partial":
+            add("Multi-timeframe", "bull", 1)
+        elif align == "bearish":
+            add("Multi-timeframe", "bear", 2)
+        elif align == "bearish_partial":
+            add("Multi-timeframe", "bear", 1)
+
+    sm = data.get("smart_money")
+    if isinstance(sm, dict) and isinstance(sm.get("premium_discount"), dict):
+        zone = str(sm["premium_discount"].get("zone") or "").lower()
+        if zone in ("discount", "deep_discount"):
+            add("Premium/Discount", "bull", 1)
+        elif zone in ("premium", "deep_premium"):
+            add("Premium/Discount", "bear", 1)
+
+    fut = data.get("futures")
+    if isinstance(fut, dict):
+        trapped = str(fut.get("trapped_traders") or "").lower()
+        if trapped == "longs":
+            add("Positioning", "bear", 3)
+        elif trapped == "shorts":
+            add("Positioning", "bull", 3)
+
+    bias = str(data.get("bias") or "").lower()
+    if bias == "bullish":
+        add("Daily bias", "bull", 2)
+    elif bias == "bearish":
+        add("Daily bias", "bear", 2)
+
+    bull_w = sum(f["weight"] for f in factors if f["side"] == "bull")
+    bear_w = sum(f["weight"] for f in factors if f["side"] == "bear")
+    total = bull_w + bear_w
+    net = bull_w - bear_w
+
+    if total == 0:
+        return {
+            "available": True,
+            "unavailable_reason": None,
+            "direction": "WAIT",
+            "confidence_pct": 20,
+            "grade": "D",
+            "score": 0,
+            "bull_weight": 0,
+            "bear_weight": 0,
+            "factors": [],
+            "invalidation": plan.get("invalidation"),
+            "rationale": "WAIT — no directional factors available from current data.",
+        }
+
+    ts = data.get("trend_strength")
+    ts_label = str(ts.get("label")).lower() if isinstance(ts, dict) else ""
+    weak_trend = ts_label in ("weak", "no_trend")
+    threshold = 6 if weak_trend else 4
+    agreement = max(bull_w, bear_w) / total
+
+    if net >= threshold:
+        direction = "LONG"
+    elif net <= -threshold:
+        direction = "SHORT"
+    else:
+        direction = "WAIT"
+
+    if direction == "WAIT":
+        confidence = min(45, 25 + total)
+    else:
+        confidence = round(45 + abs(net) * 4 + (agreement - 0.5) * 70)
+        if ts_label in ("strong", "very_strong"):
+            confidence += 6
+        elif weak_trend:
+            confidence -= 8
+        confidence = max(5, min(95, confidence))
+
+    grade = (
+        "A" if confidence >= 80 else
+        "B" if confidence >= 65 else
+        "C" if confidence >= 50 else
+        "D"
+    )
+
+    support = _f(data.get("support"))
+    resistance = _f(data.get("resistance"))
+    invalidation = plan.get("invalidation")
+    if not invalidation:
+        if direction == "LONG" and support is not None:
+            invalidation = f"Close below support {_fmt(support)}."
+        elif direction == "SHORT" and resistance is not None:
+            invalidation = f"Close above resistance {_fmt(resistance)}."
+
+    dominant = "bull" if bull_w >= bear_w else "bear"
+    own_side = (
+        "bull" if direction == "LONG"
+        else "bear" if direction == "SHORT"
+        else dominant
+    )
+    top = sorted(
+        [f for f in factors if f["side"] == own_side],
+        key=lambda f: f["weight"], reverse=True,
+    )[:3]
+    if direction == "WAIT":
+        gate = (
+            "weak/no-trend gate blocked a marginal edge"
+            if weak_trend and abs(net) >= 4
+            else "no decisive directional edge"
+        )
+        rationale = f"WAIT — {gate} (bull {bull_w} vs bear {bear_w})."
+    else:
+        names = ", ".join(t["factor"] for t in top) or "mixed factors"
+        rationale = (
+            f"{direction} — net {net:+d} from {names}; "
+            f"{int(agreement * 100)}% factor agreement, "
+            f"trend strength '{ts_label or 'n/a'}'."
+        )
+
+    return {
+        "available": True,
+        "unavailable_reason": None,
+        "direction": direction,
+        "confidence_pct": int(confidence),
+        "grade": grade,
+        "score": net,
+        "bull_weight": bull_w,
+        "bear_weight": bear_w,
+        "factors": factors,
+        "invalidation": invalidation,
+        "rationale": rationale,
     }
