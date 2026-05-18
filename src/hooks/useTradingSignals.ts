@@ -29,8 +29,10 @@ const REQUEST_TIMEOUT_MS = 15_000;
 
 interface UseTradingSignalsResult {
   signals: TradingSignal[];
+  lastLiveSignals: TradingSignal[];
   provider: DataProvider;
   lastUpdated: string | null;
+  lastLiveUpdated: string | null;
   isLoading: boolean;
   error: string | null;
   refresh: () => void;
@@ -168,8 +170,10 @@ export function useTradingSignals(
   pollMs: number = 0,
 ): UseTradingSignalsResult {
   const [signals, setSignals] = useState<TradingSignal[]>([]);
+  const [lastLiveSignals, setLastLiveSignals] = useState<TradingSignal[]>([]);
   const [provider, setProvider] = useState<DataProvider>('Unknown');
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [lastLiveUpdated, setLastLiveUpdated] = useState<string | null>(null);
   // Start in loading when there ARE symbols to fetch (the production
   // path) so the panel never flashes the "unavailable" empty state for
   // one paint before the effect fires (Bugbot Medium 0db614d5). Stays
@@ -231,7 +235,6 @@ export function useTradingSignals(
         // disabled-flag case from the user (Bugbot Medium e59fa085).
         setSignals([]);
         setProvider('Unknown');
-        setLastUpdated(new Date().toISOString());
         let msg = `Sunucu hatası (HTTP ${response.status}). Tekrar dene.`;
         if (response.status === 503) {
           msg = 'Trading signals are disabled on the server '
@@ -246,9 +249,14 @@ export function useTradingSignals(
       }
 
       const norm = normalizeResponse(rawData || {});
+      const liveSignals = norm.signals.filter((s) => s.isLive);
       setProvider(norm.provider);
       setSignals(norm.signals);
       setLastUpdated(norm.timestamp);
+      if (liveSignals.length) {
+        setLastLiveSignals(liveSignals);
+        setLastLiveUpdated(norm.timestamp);
+      }
       setError(null);
     } catch (err) {
       if (err instanceof DOMException && err.name === 'AbortError') {
@@ -301,5 +309,14 @@ export function useTradingSignals(
     fetchSignals();
   }, [fetchSignals]);
 
-  return { signals, provider, lastUpdated, isLoading, error, refresh };
+  return {
+    signals,
+    lastLiveSignals,
+    provider,
+    lastUpdated,
+    lastLiveUpdated,
+    isLoading,
+    error,
+    refresh,
+  };
 }

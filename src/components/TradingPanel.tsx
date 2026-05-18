@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { useState, useEffect, useMemo, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { TradingSignal } from '@/types';
 import { useToast } from '@/hooks/useToast';
@@ -30,6 +30,24 @@ interface WatchlistItem {
   changePercent: number;
   isFavorite: boolean;
   type: 'stock' | 'crypto';
+}
+
+function buildWatchlistItems(signals: TradingSignal[], favorites: string[]): WatchlistItem[] {
+  const out: WatchlistItem[] = [];
+  for (const s of signals) {
+    if (typeof s.price !== 'number') continue;
+    const pct = typeof s.changePercent === 'number' ? s.changePercent : 0;
+    out.push({
+      symbol: s.symbol,
+      name: s.name || s.symbol,
+      price: s.price,
+      change: s.price * (pct / 100),
+      changePercent: pct,
+      isFavorite: favorites.includes(s.symbol.toUpperCase()),
+      type: s.assetType === 'crypto' ? 'crypto' : 'stock',
+    });
+  }
+  return out;
 }
 
 /* ═══════════════════════════════════════════
@@ -602,35 +620,27 @@ export default function TradingPanel({ onExplainSignal }: { onExplainSignal?: (p
   );
 
   // Keep the last good signals visible if a later refresh fails (so a
-  // transient backend hiccup doesn't blank the panel). Caching into a ref
-  // during render is deterministic and avoids an effect feedback loop.
-  const signalsCache = useRef<TradingSignal[]>([]);
-  if (freshSignals.length) signalsCache.current = freshSignals;
-  const signalsToShow = freshSignals.length ? freshSignals : signalsCache.current;
-  const showStaleSignals = !!signalsApi.error && freshSignals.length === 0 && signalsCache.current.length > 0;
+  // transient backend hiccup doesn't blank the panel).
+  const signalsToShow = freshSignals.length ? freshSignals : signalsApi.lastLiveSignals;
+  const showStaleSignals = freshSignals.length === 0 && signalsApi.lastLiveSignals.length > 0;
+  const signalsStaleAt = signalsApi.lastLiveUpdated ? new Date(signalsApi.lastLiveUpdated) : null;
 
-  const watchlistAll: WatchlistItem[] = useMemo(() => {
-    const out: WatchlistItem[] = [];
-    for (const s of watchApi.signals) {
-      if (typeof s.price !== 'number') continue;
-      const pct = typeof s.changePercent === 'number' ? s.changePercent : 0;
-      out.push({
-        symbol: s.symbol,
-        name: s.name || s.symbol,
-        price: s.price,
-        change: s.price * (pct / 100),
-        changePercent: pct,
-        isFavorite: favorites.includes(s.symbol.toUpperCase()),
-        type: s.assetType === 'crypto' ? 'crypto' : 'stock',
-      });
-    }
-    return out;
-  }, [watchApi.signals, favorites]);
+  const liveWatchSignals = useMemo(
+    () => watchApi.signals.filter((s) => s.isLive),
+    [watchApi.signals],
+  );
+  const watchlistAll = useMemo(
+    () => buildWatchlistItems(liveWatchSignals, favorites),
+    [liveWatchSignals, favorites],
+  );
+  const watchlistCache = useMemo(
+    () => buildWatchlistItems(watchApi.lastLiveSignals, favorites),
+    [watchApi.lastLiveSignals, favorites],
+  );
 
-  const watchlistCache = useRef<WatchlistItem[]>([]);
-  if (watchlistAll.length) watchlistCache.current = watchlistAll;
-  const watchlist = watchlistAll.length ? watchlistAll : watchlistCache.current;
-  const showStaleWatch = !!watchApi.error && watchlistAll.length === 0 && watchlistCache.current.length > 0;
+  const watchlist = watchlistAll.length ? watchlistAll : watchlistCache;
+  const showStaleWatch = watchlistAll.length === 0 && watchlistCache.length > 0;
+  const watchlistStaleAt = watchApi.lastLiveUpdated ? new Date(watchApi.lastLiveUpdated) : null;
 
   const activeApi = activeTab === 'watchlist' ? watchApi : signalsApi;
   const lastUpdated = activeApi.lastUpdated ? new Date(activeApi.lastUpdated) : null;
@@ -649,7 +659,7 @@ export default function TradingPanel({ onExplainSignal }: { onExplainSignal?: (p
 
   const addSymbol = () => {
     const sym = search.trim().toUpperCase();
-    if (!sym || !/^[A-Z0-9.\-]{1,15}$/.test(sym)) {
+    if (!sym || !/^[A-Z0-9.-]{1,15}$/.test(sym)) {
       addToast('Enter a valid ticker (e.g. AAPL, BTCUSDT)', 'error');
       return;
     }
@@ -766,7 +776,7 @@ export default function TradingPanel({ onExplainSignal }: { onExplainSignal?: (p
               <LiveDataUnavailable onRetry={handleRefresh} message="No live trading signals right now." />
             ) : (
               <>
-                {showStaleSignals && <StaleBanner at={fmtTime(lastUpdated || undefined)} onRetry={handleRefresh} />}
+                {showStaleSignals && <StaleBanner at={fmtTime(signalsStaleAt || undefined)} onRetry={handleRefresh} />}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-1">
                   <div className="p-3 rounded-xl border border-emerald-500/10 bg-emerald-500/[0.04] text-center">
                     <p className="text-lg font-semibold text-emerald-400">{signalsToShow.filter((s) => s.direction === 'long').length}</p>
@@ -847,7 +857,7 @@ export default function TradingPanel({ onExplainSignal }: { onExplainSignal?: (p
               </p>
             ) : (
               <>
-                {showStaleWatch && <StaleBanner at={fmtTime(lastUpdated || undefined)} onRetry={handleRefresh} />}
+                {showStaleWatch && <StaleBanner at={fmtTime(watchlistStaleAt || undefined)} onRetry={handleRefresh} />}
                 <div className="space-y-1.5">
                   {filteredWatchlist.map((item) => (
                     <WatchlistRow
