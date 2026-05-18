@@ -5,6 +5,8 @@ import type {
 } from '@/types';
 import { useToast } from '@/hooks/useToast';
 import { useTradingSignals } from '@/hooks/useTradingSignals';
+import { useTradeJournal } from '@/hooks/useTradeJournal';
+import JournalPanel from './JournalPanel';
 import KorvixOrb from './KorvixOrb';
 import {
   TrendingUp, TrendingDown, Activity, Zap,
@@ -12,7 +14,7 @@ import {
   ArrowUpRight, ArrowDownRight,
   AlertTriangle, Plus, X, Sparkles,
   ShieldAlert, Info, MessageSquare, Gauge,
-  Layers, BarChart3, Scale, Crosshair, Radar, Bell,
+  Layers, BarChart3, Scale, Crosshair, Radar, Bell, BookOpen,
 } from 'lucide-react';
 
 // Default symbol sets the panel requests from /trading/signals (backend
@@ -451,11 +453,12 @@ function FactorList({ title, items, textCls, pipCls }: {
 }
 
 function SignalDetailDrawer({
-  signal, onClose, onExplain,
+  signal, onClose, onExplain, onLogJournal,
 }: {
   signal: TradingSignal;
   onClose: () => void;
   onExplain?: (prompt: string) => void;
+  onLogJournal?: (s: TradingSignal) => void;
 }) {
   const intel = signal.intel;
   const bd = signal.breakdown;
@@ -556,6 +559,15 @@ function SignalDetailDrawer({
             >
               <MessageSquare className="w-3.5 h-3.5" />
               Explain this signal with KorvixAI
+            </button>
+          )}
+          {onLogJournal && (
+            <button
+              onClick={() => onLogJournal(signal)}
+              className="mt-2 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-white/[0.03] border border-white/[0.06] text-[12px] font-medium text-slate-300 hover:bg-white/[0.05] hover:border-white/[0.1] transition-all"
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              Log to journal
             </button>
           )}
         </DrawerSection>
@@ -1034,12 +1046,13 @@ function MarketRegimeBanner({ r }: { r: MarketRegime }) {
    ═══════════════════════════════════════════ */
 
 export default function TradingPanel({ onExplainSignal }: { onExplainSignal?: (prompt: string) => void }) {
-  const [activeTab, setActiveTab] = useState<'signals' | 'watchlist' | 'alerts' | 'sentiment' | 'trending'>('signals');
+  const [activeTab, setActiveTab] = useState<'signals' | 'watchlist' | 'alerts' | 'journal' | 'sentiment' | 'trending'>('signals');
   const [watchlistFilter, setWatchlistFilter] = useState<'all' | 'stocks' | 'crypto'>('all');
   const [search, setSearch] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selected, setSelected] = useState<TradingSignal | null>(null);
   const { addToast } = useToast();
+  const journal = useTradeJournal();
 
   const [watchSymbols, setWatchSymbols] = useState<string[]>(() => {
     try {
@@ -1191,6 +1204,32 @@ export default function TradingPanel({ onExplainSignal }: { onExplainSignal?: (p
     }
   };
 
+  const num = (s?: string) => {
+    if (!s) return undefined;
+    const n = Number(s.replace(/,/g, ''));
+    return Number.isFinite(n) ? n : undefined;
+  };
+  const logSignalToJournal = (s: TradingSignal) => {
+    const dir = s.intel?.available ? s.intel.direction : s.direction;
+    journal.addEntry({
+      symbol: s.symbol,
+      assetType: s.assetType,
+      direction: dir === 'long' || dir === 'short' ? dir : undefined,
+      entry: num(s.entryPrice),
+      stop: num(s.stopLoss),
+      target: num(s.targetPrice),
+      timeframe: s.timeframe,
+      setupType: s.intel?.available ? `engine ${s.intel.direction}` : 'signal',
+      confidenceAtEntry: s.intel?.available ? s.intel.confidence : s.confidence,
+      thesis: s.intel?.available && s.intel.rationale ? s.intel.rationale : s.reasoning,
+      signalId: s.id,
+      result: 'open',
+    });
+    setSelected(null);
+    setActiveTab('journal');
+    addToast(`${s.symbol} logged to journal`, 'success');
+  };
+
   const filteredWatchlist = watchlist
     .filter((w) => watchlistFilter === 'all' || (watchlistFilter === 'crypto' ? w.type === 'crypto' : w.type === 'stock'))
     .filter((w) => !search || w.symbol.toLowerCase().includes(search.toLowerCase()) || w.name.toLowerCase().includes(search.toLowerCase()));
@@ -1199,6 +1238,7 @@ export default function TradingPanel({ onExplainSignal }: { onExplainSignal?: (p
     { id: 'signals' as const, label: 'Signals', icon: Zap },
     { id: 'watchlist' as const, label: 'Watchlist', icon: Star },
     { id: 'alerts' as const, label: 'Alerts', icon: Bell },
+    { id: 'journal' as const, label: 'Journal', icon: BookOpen },
     { id: 'sentiment' as const, label: 'Sentiment', icon: Activity },
     { id: 'trending' as const, label: 'Trending', icon: TrendingUp },
   ];
@@ -1446,6 +1486,9 @@ export default function TradingPanel({ onExplainSignal }: { onExplainSignal?: (p
           </>
         )}
 
+        {/* ═══ JOURNAL ═══ */}
+        {activeTab === 'journal' && <JournalPanel journal={journal} />}
+
         {/* ═══ SENTIMENT ═══ */}
         {activeTab === 'sentiment' && (
           <ComingSoon
@@ -1484,6 +1527,7 @@ export default function TradingPanel({ onExplainSignal }: { onExplainSignal?: (p
             signal={selected}
             onClose={() => setSelected(null)}
             onExplain={explain}
+            onLogJournal={logSignalToJournal}
           />
         )}
       </AnimatePresence>
