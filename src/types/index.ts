@@ -65,6 +65,16 @@ export interface TradingSignal {
   changePercent?: number;
   assetType?: AssetType;
   isLive?: boolean;
+  // Phase 8o — structured fields for the Signal Detail Drawer. All
+  // optional; only present when the backend actually returned them
+  // (never fabricated).
+  takeProfit2?: string;
+  riskReward?: number;
+  invalidation?: string;
+  volatilityRegime?: string;
+  timeframe?: string;
+  dataQuality?: string;
+  rawDirection?: string;
 }
 
 export interface TradingSignalsResponse {

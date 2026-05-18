@@ -140,6 +140,14 @@ function normalizeResponse(data: Record<string, unknown>): TradingSignalsRespons
       changePercent: num(s.change_24h_pct),
       assetType: (String(s.asset_type || 'unknown').toLowerCase() as AssetType),
       isLive: live,
+      // Structured extras for the detail drawer — only when present.
+      takeProfit2: priceStr(s.take_profit_2),
+      riskReward: num(s.risk_reward),
+      invalidation: s.invalidation ? String(s.invalidation) : undefined,
+      volatilityRegime: s.volatility_regime ? String(s.volatility_regime) : undefined,
+      timeframe: s.timeframe ? String(s.timeframe) : undefined,
+      dataQuality: s.data_quality ? String(s.data_quality) : undefined,
+      rawDirection: s.raw_direction ? String(s.raw_direction) : undefined,
     };
   });
 
@@ -154,6 +162,10 @@ function normalizeResponse(data: Record<string, unknown>): TradingSignalsRespons
 export function useTradingSignals(
   symbols: string[],
   timeframe: string = '4h',
+  // Opt-in auto-refresh. 0 = disabled (default, unchanged behaviour).
+  // Recommended 30_000–60_000ms. Ticks are skipped while the tab is
+  // hidden so a backgrounded panel never spams the backend.
+  pollMs: number = 0,
 ): UseTradingSignalsResult {
   const [signals, setSignals] = useState<TradingSignal[]>([]);
   const [provider, setProvider] = useState<DataProvider>('Unknown');
@@ -272,6 +284,18 @@ export function useTradingSignals(
     fetchSignals();
     return () => abortRef.current?.abort();   // cancel on unmount / change
   }, [fetchSignals]);
+
+  // Auto-refresh. fetchSignals already aborts any in-flight request and
+  // ignores stale responses, so an overlapping tick is safe; we still
+  // skip ticks while the tab is hidden to avoid background spamming.
+  useEffect(() => {
+    if (!pollMs || pollMs <= 0 || !symbolsKey) return;
+    const id = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      fetchSignals();
+    }, pollMs);
+    return () => window.clearInterval(id);
+  }, [pollMs, symbolsKey, fetchSignals]);
 
   const refresh = useCallback(() => {
     fetchSignals();
