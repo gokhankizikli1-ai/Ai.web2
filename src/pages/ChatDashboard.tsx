@@ -256,8 +256,8 @@ export default function ChatDashboard() {
 
     switch (activeTab) {
       case 'trading':  return <TradingPanel onExplainSignal={handleExplainSignal} />;
-      case 'business': return <BusinessPanel />;
-      case 'agents':   return <AgentsPanel />;
+      case 'business': return <BusinessPanel onRunPrompt={handleExplainSignal} />;
+      case 'agents':   return <AgentsPanel onRunPrompt={handleExplainSignal} />;
       default:         return (
         <ChatView
           key={activeSessionId}
