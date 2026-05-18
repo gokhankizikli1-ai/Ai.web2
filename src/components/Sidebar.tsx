@@ -8,17 +8,12 @@ import {
   PanelLeftClose, PanelLeftOpen,
   Crown, Clock, ArrowLeft, Search, X,
   FolderOpen, GraduationCap, Code, Rocket, Landmark, User,
-  Sparkles, Zap, Bot,
-  Palette, TrendingUp, Briefcase,
-  Brain, ChevronDown, ChevronUp,
+  Sparkles, Zap, Bot, ChevronDown,
+  Palette, TrendingUp, Briefcase, Brain,
 } from 'lucide-react';
 import type { ChatSession, ChatFolder } from '@/types';
 import DeleteConfirmModal from './DeleteConfirmModal';
 import UserAccountDropdown from './UserAccountDropdown';
-
-/* ═══════════════════════════════════════════
-   PROPS
-   ═══════════════════════════════════════════ */
 
 interface SidebarProps {
   isOpen: boolean;
@@ -47,15 +42,77 @@ const FOLDER_CONFIG = [
   { id: 'personal' as ChatFolder, label: 'Personal', icon: User, color: 'text-rose-400', accent: 'bg-rose-500/[0.06] border-rose-500/10' },
 ];
 
-/* Compact workspace shortcuts — single row, icon-only */
+/* ═══════════════════════════════════════════
+   COLLAPSIBLE SECTION
+   ═══════════════════════════════════════════ */
+
+function CollapsibleSection({
+  title,
+  icon: Icon,
+  children,
+  defaultOpen = true,
+  badge,
+}: {
+  title: string;
+  icon: typeof Sparkles;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+  badge?: string | number;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+
+  return (
+    <div className="mb-1">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between py-2 px-0.5 group transition-all"
+      >
+        <span className="flex items-center gap-1.5">
+          <Icon className="h-3 w-3 text-slate-700" />
+          <span className="text-[10px] font-semibold text-slate-700 uppercase tracking-wider">
+            {title}
+          </span>
+          {badge !== undefined && (
+            <span className="text-[9px] text-slate-800 ml-0.5">{badge}</span>
+          )}
+        </span>
+        <motion.div
+          animate={{ rotate: open ? 0 : -90 }}
+          transition={{ duration: 0.2 }}
+        >
+          <ChevronDown className="h-3 w-3 text-slate-700 group-hover:text-slate-500 transition-colors" />
+        </motion.div>
+      </button>
+
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+            className="overflow-hidden"
+          >
+            {children}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════
+   WORKSPACE SHORTCUTS
+   ═══════════════════════════════════════════ */
+
 const WORKSPACE_SHORTCUTS = [
-  { id: 'chat',     label: 'Chat',     icon: Sparkles },
+  { id: 'chat', label: 'Chat', icon: Sparkles },
   { id: 'research', label: 'Research', icon: Brain },
-  { id: 'coding',   label: 'Coding',   icon: Code },
-  { id: 'trading',  label: 'Trading',  icon: TrendingUp },
+  { id: 'coding', label: 'Coding', icon: Code },
+  { id: 'trading', label: 'Trading', icon: TrendingUp },
   { id: 'business', label: 'Business', icon: Briefcase },
-  { id: 'agents',   label: 'Agents',   icon: Bot },
-  { id: 'startup',  label: 'Startup',  icon: Rocket },
+  { id: 'agents', label: 'Agents', icon: Bot },
+  { id: 'startup', label: 'Startup', icon: Rocket },
   { id: 'creative', label: 'Creative', icon: Palette },
 ];
 
@@ -92,7 +149,6 @@ export default function Sidebar({
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [activeFolder, setActiveFolder] = useState<ChatFolder | 'all'>('all');
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
-  const [workspacesOpen, setWorkspacesOpen] = useState(false);
 
   const displaySessions = activeFolder === 'all'
     ? filteredSessions
@@ -102,7 +158,7 @@ export default function Sidebar({
     window.dispatchEvent(new CustomEvent('korvix-switch-workspace', { detail: id }));
   };
 
-  /* ─── Session list item ─── */
+  /* ─── Session row ─── */
   const SessionRow = ({ session }: { session: ChatSession }) => {
     const active = activeSessionId === session.id;
     const hovered = hoveredId === session.id;
@@ -110,27 +166,29 @@ export default function Sidebar({
 
     return (
       <div
-        className="group relative"
+        className="group/row relative"
         onMouseEnter={() => setHoveredId(session.id)}
         onMouseLeave={() => setHoveredId(null)}
       >
         <button
           onClick={() => onSelect(session.id)}
-          className={`w-full flex items-center gap-2 rounded-lg px-2.5 py-[7px] text-left transition-all ${
+          className={`w-full flex items-center gap-2 rounded-lg px-2.5 py-[7px] text-left transition-all duration-200 ${
             active
-              ? 'bg-white/[0.04] text-white'
-              : 'text-slate-500 hover:bg-white/[0.025] hover:text-slate-300'
+              ? 'bg-white/[0.04] text-white border border-white/[0.06] shadow-[0_0_12px_-4px_rgba(34,211,238,0.04)]'
+              : 'text-slate-600 hover:bg-white/[0.025] hover:text-slate-300 border border-transparent'
           }`}
         >
-          {/* Active indicator dot */}
-          <div className={`w-[3px] h-[3px] rounded-full shrink-0 transition-colors ${
-            active ? 'bg-cyan-400/60' : 'bg-transparent'
+          {/* Active indicator */}
+          <div className={`w-[3px] h-[3px] rounded-full shrink-0 transition-all duration-300 ${
+            active ? 'bg-cyan-400/50 scale-100' : 'bg-transparent scale-0'
           }`} />
 
-          <MessageSquare className={`h-3 w-3 shrink-0 ${active ? 'text-slate-400' : 'text-slate-700'}`} />
+          <MessageSquare className={`h-3 w-3 shrink-0 transition-colors ${active ? 'text-slate-400' : 'text-slate-700'}`} />
 
           <div className="flex-1 min-w-0">
-            <p className="text-[12px] truncate leading-tight">{session.title}</p>
+            <p className={`text-[12px] truncate leading-tight ${active ? 'text-white' : ''}`}>
+              {session.title}
+            </p>
             <div className="flex items-center gap-1.5 mt-[2px]">
               <span className="text-[10px] text-slate-700">{timeAgo(session.updatedAt)}</span>
               {fc && (
@@ -144,7 +202,12 @@ export default function Sidebar({
 
         {/* Hover actions */}
         {(active || hovered) && (
-          <div className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 bg-[#0b0b0e]/95 backdrop-blur-sm rounded-md p-0.5 z-10">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.15 }}
+            className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 bg-[#0b0b0e]/95 backdrop-blur-sm rounded-md p-0.5 z-10"
+          >
             <div className="relative group/folder">
               <button className="p-1 rounded text-slate-700 hover:text-cyan-400 hover:bg-cyan-500/[0.06] transition-all">
                 <FolderOpen className="h-3 w-3" />
@@ -154,7 +217,7 @@ export default function Sidebar({
                   <button
                     key={f.id}
                     onClick={(e) => { e.stopPropagation(); onMoveToFolder(session.id, f.id); }}
-                    className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] transition-all whitespace-nowrap ${f.color} hover:bg-white/[0.03]`}
+                    className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] ${f.color} hover:bg-white/[0.03]`}
                   >
                     <f.icon className="h-2.5 w-2.5" /> {f.label}
                   </button>
@@ -167,7 +230,7 @@ export default function Sidebar({
             >
               <Trash2 className="h-3 w-3" />
             </button>
-          </div>
+          </motion.div>
         )}
       </div>
     );
@@ -175,7 +238,7 @@ export default function Sidebar({
 
   return (
     <>
-      {/* ═── Mobile toggle ─══ */}
+      {/* Mobile toggle */}
       {!isOpen && (
         <div className="lg:hidden fixed top-[14px] left-3 z-40">
           <button
@@ -187,12 +250,9 @@ export default function Sidebar({
         </div>
       )}
 
-      {/* ═── Mobile overlay ─══ */}
+      {/* Mobile overlay */}
       {isOpen && (
-        <div
-          className="lg:hidden fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
-          onClick={onToggle}
-        />
+        <div className="lg:hidden fixed inset-0 z-40 bg-black/40 backdrop-blur-sm" onClick={onToggle} />
       )}
 
       {/* ═══ SIDEBAR ═══ */}
@@ -202,7 +262,7 @@ export default function Sidebar({
         }`}
         style={{ width: 240 }}
       >
-        {/* ─── Header ─── */}
+        {/* Header */}
         <div className="shrink-0 flex items-center justify-between px-3 h-10 border-b border-white/[0.03]">
           <Link to="/" className="flex items-center gap-2 text-white hover:text-slate-300 transition-colors">
             <ArrowLeft className="h-3 w-3 text-slate-600" />
@@ -216,19 +276,18 @@ export default function Sidebar({
           </button>
         </div>
 
-        {/* ─── New Chat ─── */}
+        {/* New Chat */}
         <div className="shrink-0 px-3 pt-3 pb-2">
           <motion.button
             whileTap={{ scale: 0.98 }}
             onClick={onNewChat}
             className="w-full h-8 gap-1.5 flex items-center justify-center text-slate-300 hover:text-white bg-white/[0.02] hover:bg-white/[0.04] border border-white/[0.04] hover:border-cyan-500/15 rounded-lg transition-all text-[12px]"
           >
-            <Plus className="h-3.5 w-3.5" />
-            New Chat
+            <Plus className="h-3.5 w-3.5" /> New Chat
           </motion.button>
         </div>
 
-        {/* ─── Search ─── */}
+        {/* Search */}
         <div className="shrink-0 px-3 pb-2">
           <div className="flex items-center gap-2 rounded-lg bg-white/[0.015] border border-white/[0.04] px-2.5 py-1.5 focus-within:border-cyan-500/15 focus-within:bg-white/[0.02] transition-all">
             <Search className="h-3 w-3 text-slate-700 shrink-0" />
@@ -251,80 +310,28 @@ export default function Sidebar({
         <ScrollArea className="flex-1 min-h-0">
           <div className="px-3 pb-3">
 
-            {/* ─── Workspaces: compact collapsible row ─── */}
+            {/* ─── Workspaces: collapsible ─── */}
             {!searchQuery && (
-              <div className="mb-1">
-                {/* Header with toggle */}
-                <button
-                  onClick={() => setWorkspacesOpen(!workspacesOpen)}
-                  className="w-full flex items-center justify-between py-1.5 group"
-                >
-                  <span className="flex items-center gap-1.5">
-                    <Zap className="h-2.5 w-2.5 text-slate-700" />
-                    <span className="text-[10px] font-semibold text-slate-700 uppercase tracking-wider">Workspaces</span>
-                  </span>
-                  {workspacesOpen ? (
-                    <ChevronUp className="h-3 w-3 text-slate-700 group-hover:text-slate-500 transition-colors" />
-                  ) : (
-                    <ChevronDown className="h-3 w-3 text-slate-700 group-hover:text-slate-500 transition-colors" />
-                  )}
-                </button>
-
-                {/* Collapsed: single horizontal scroll row of icon pills */}
-                <AnimatePresence initial={false}>
-                  {!workspacesOpen && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: 0.15 }}
-                      className="flex gap-1 overflow-x-auto scrollbar-thin pb-1"
+              <CollapsibleSection title="Workspaces" icon={Zap} defaultOpen={false}>
+                <div className="grid grid-cols-4 gap-1 pb-1">
+                  {WORKSPACE_SHORTCUTS.map((ws) => (
+                    <button
+                      key={ws.id}
+                      onClick={() => switchWorkspace(ws.id)}
+                      title={ws.label}
+                      className="flex flex-col items-center gap-[3px] rounded-lg py-1.5 px-1 bg-white/[0.015] hover:bg-white/[0.03] border border-white/[0.02] hover:border-white/[0.05] transition-all"
                     >
-                      {WORKSPACE_SHORTCUTS.map((ws) => (
-                        <button
-                          key={ws.id}
-                          onClick={() => switchWorkspace(ws.id)}
-                          title={ws.label}
-                          className="shrink-0 flex items-center gap-1 rounded-md px-2 py-[3px] text-[10px] text-slate-600 hover:text-slate-300 bg-white/[0.015] hover:bg-white/[0.04] border border-white/[0.02] hover:border-white/[0.06] transition-all"
-                        >
-                          <ws.icon className="h-2.5 w-2.5" />
-                          <span className="whitespace-nowrap">{ws.label}</span>
-                        </button>
-                      ))}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                {/* Expanded: 2-column mini grid */}
-                <AnimatePresence initial={false}>
-                  {workspacesOpen && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: 0.15 }}
-                      className="grid grid-cols-4 gap-1"
-                    >
-                      {WORKSPACE_SHORTCUTS.map((ws) => (
-                        <button
-                          key={ws.id}
-                          onClick={() => switchWorkspace(ws.id)}
-                          title={ws.label}
-                          className="flex flex-col items-center gap-[3px] rounded-lg py-1.5 px-1 bg-white/[0.015] hover:bg-white/[0.03] border border-white/[0.02] hover:border-white/[0.05] transition-all"
-                        >
-                          <ws.icon className="h-3 w-3 text-slate-600" />
-                          <span className="text-[8px] text-slate-700">{ws.label}</span>
-                        </button>
-                      ))}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
+                      <ws.icon className="h-3 w-3 text-slate-600" />
+                      <span className="text-[8px] text-slate-700">{ws.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </CollapsibleSection>
             )}
 
             {/* ─── Folder tabs ─── */}
             {!searchQuery && (
-              <div className="flex items-center gap-0.5 py-1.5 overflow-x-auto scrollbar-thin">
+              <div className="flex items-center gap-0.5 py-1 overflow-x-auto scrollbar-thin">
                 <button
                   onClick={() => setActiveFolder('all')}
                   className={`shrink-0 rounded-md px-1.5 py-[2px] text-[10px] transition-all ${
@@ -338,9 +345,7 @@ export default function Sidebar({
                     key={f.id}
                     onClick={() => setActiveFolder(f.id)}
                     className={`shrink-0 rounded-md px-1.5 py-[2px] text-[10px] transition-all flex items-center gap-1 ${
-                      activeFolder === f.id
-                        ? `${f.accent} ${f.color}`
-                        : 'text-slate-700 hover:text-slate-500 hover:bg-white/[0.015]'
+                      activeFolder === f.id ? `${f.accent} ${f.color}` : 'text-slate-700 hover:text-slate-500 hover:bg-white/[0.015]'
                     }`}
                   >
                     <f.icon className="h-2.5 w-2.5" />
@@ -350,47 +355,34 @@ export default function Sidebar({
               </div>
             )}
 
-            {/* ─── Recent Chats ─── */}
-            {displaySessions.length > 0 && (
-              <div>
-                {/* Section header */}
-                <div className="flex items-center justify-between py-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <Clock className="h-2.5 w-2.5 text-slate-700" />
-                    <span className="text-[10px] font-semibold text-slate-700 uppercase tracking-wider">
-                      {searchQuery ? 'Results' : activeFolder === 'all' ? 'Recent' : getFolderCfg(activeFolder as ChatFolder)?.label || 'Chats'}
-                    </span>
-                  </div>
-                  {filteredSessions.length > 0 && (
-                    <span className="text-[9px] text-slate-800">{filteredSessions.length}</span>
-                  )}
-                </div>
-
-                {/* Chat list */}
+            {/* ─── Recent Chats: collapsible ─── */}
+            <CollapsibleSection
+              title="Recent"
+              icon={Clock}
+              defaultOpen={true}
+              badge={filteredSessions.length}
+            >
+              {displaySessions.length > 0 ? (
                 <div className="space-y-[1px]">
                   {displaySessions.map((s) => (
                     <SessionRow key={s.id} session={s} />
                   ))}
                 </div>
-              </div>
-            )}
+              ) : (
+                <div className="py-4 text-center">
+                  <MessageSquare className="h-4 w-4 text-slate-800 mx-auto mb-1.5" />
+                  <p className="text-[11px] text-slate-800">No conversations yet</p>
+                  <p className="text-[10px] text-slate-800 mt-0.5">Start a new chat</p>
+                </div>
+              )}
+            </CollapsibleSection>
 
-            {displaySessions.length === 0 && !searchQuery && (
-              <div className="py-8 text-center">
-                <MessageSquare className="h-4 w-4 text-slate-800 mx-auto mb-2" />
-                <p className="text-[11px] text-slate-800">No conversations yet</p>
-                <p className="text-[10px] text-slate-800 mt-0.5">Start a new chat</p>
-              </div>
-            )}
           </div>
         </ScrollArea>
 
         {/* ═── Footer ─══ */}
         <div className="shrink-0 p-3 border-t border-white/[0.03]">
-          <UserAccountDropdown
-            onOpenSettings={onOpenSettings}
-            onOpenUpgrade={onOpenUpgrade}
-          />
+          <UserAccountDropdown onOpenSettings={onOpenSettings} onOpenUpgrade={onOpenUpgrade} />
 
           <Button
             variant="ghost"
@@ -403,15 +395,12 @@ export default function Sidebar({
         </div>
       </aside>
 
-      {/* ═── Delete confirmation ─══ */}
+      {/* Delete confirmation */}
       <DeleteConfirmModal
         open={!!deleteTarget}
         title="Delete Conversation"
         description="This conversation and all its messages will be permanently deleted."
-        onConfirm={() => {
-          if (deleteTarget) onDelete(deleteTarget);
-          setDeleteTarget(null);
-        }}
+        onConfirm={() => { if (deleteTarget) onDelete(deleteTarget); setDeleteTarget(null); }}
         onCancel={() => setDeleteTarget(null)}
       />
     </>
