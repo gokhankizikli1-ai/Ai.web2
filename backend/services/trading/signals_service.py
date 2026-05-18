@@ -368,13 +368,13 @@ def map_tool_result_to_signal(
         analytics = build_analytics(data, data_quality=dq_level)
         mtf = build_mtf(data, data_quality=dq_level)
         volume = build_volume(data, data_quality=dq_level)
-        confidence = build_confidence(
+        confidence_engine = build_confidence(
             data, plan, direction=pub_dir, data_quality=dq_level,
         )
         alerts = build_alerts(data, data_quality=dq_level)
     except Exception as _bex:  # pragma: no cover - safety net
         logger.debug("intelligence build failed for %s: %s", symbol, _bex)
-        breakdown, scenarios, intel, analytics, mtf, volume, confidence, alerts = (
+        breakdown, scenarios, intel, analytics, mtf, volume, confidence_engine, alerts = (
             None, None, None, None, None, None, None, None
         )
 
@@ -412,7 +412,7 @@ def map_tool_result_to_signal(
         "analytics":         analytics,
         "mtf":               mtf,
         "volume":            volume,
-        "confidence_engine": confidence,
+        "confidence_engine": confidence_engine,
         "alerts":            alerts,
 
         "is_live":           True,

@@ -310,7 +310,7 @@ function mapVolume(raw: unknown): SignalVolume | undefined {
   };
 }
 
-function mapConfidence(raw: unknown): SignalConfidence | undefined {
+function mapConfidenceEngine(raw: unknown): SignalConfidence | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
   const c = raw as Record<string, unknown>;
   const g = String(c.grade ?? 'D');
@@ -397,7 +397,7 @@ function normalizeResponse(data: Record<string, unknown>): TradingSignalsRespons
       analytics: mapAnalytics(s.analytics),
       mtf: mapMtf(s.mtf),
       volume: mapVolume(s.volume),
-      confidenceEngine: mapConfidence(s.confidence_engine),
+      confidenceEngine: mapConfidenceEngine(s.confidence_engine),
       alerts: mapAlerts(s.alerts),
     };
   });
