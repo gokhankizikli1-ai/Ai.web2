@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from backend.services.trading.intelligence import (
     build_breakdown, build_scenarios, build_analytics, build_mtf, build_volume,
+    build_confidence,
 )
 from backend.services.trading import signals_service
 
@@ -299,6 +300,50 @@ def test_build_volume_quote_only_and_unavailable_are_honest():
     assert e["available"] is False and e["unavailable_reason"]
 
 
+def test_build_confidence_high_conviction_long():
+    data = {
+        "trend": "uptrend", "rsi_14": 60, "bos": "bullish_bos",
+        "volume_trend": "increasing", "regime": "trending_up",
+        "macd": {"state": "bullish_cross"},
+        "momentum": {"state": "accelerating_up"},
+        "mtf_alignment": {"alignment": "bullish"},
+        "last_price": 100.0, "support": 92.0, "resistance": 130.0,
+    }
+    c = build_confidence(data, {"directional_bias": "LONG"},
+                         direction="LONG", data_quality="full")
+    assert c["available"] is True
+    assert c["confidence"] >= 75
+    assert c["conviction"] in ("high", "institutional")
+    assert c["grade"] in ("A", "B")
+    assert any(f["impact"] > 0 for f in c["factors"])
+    assert "%" in c["explanation"]
+
+
+def test_build_confidence_low_when_conflicting():
+    data = {
+        "trend": "downtrend", "rsi_14": 72, "bos": "bearish_bos",
+        "volume_trend": "decreasing", "regime": "choppy",
+        "macd": {"state": "bearish"},
+        "mtf_alignment": {"alignment": "bearish"},
+    }
+    c = build_confidence(data, {"directional_bias": "SHORT"},
+                         direction="LONG", data_quality="full")
+    assert c["available"] is True
+    assert c["confidence"] < 45
+    assert c["conviction"] in ("low", "very_low")
+    assert any(f["impact"] < 0 for f in c["factors"])
+
+
+def test_build_confidence_quote_only_and_empty_honest():
+    q = build_confidence({"trend": "uptrend"}, {}, direction="LONG",
+                         data_quality="quote_only")
+    assert q["available"] is False and q["confidence"] == 0
+    assert "quote-only" in q["unavailable_reason"].lower()
+    e = build_confidence({"last_price": 5.0}, {}, direction="WAIT",
+                         data_quality="ohlc_daily")
+    assert e["available"] is False and e["factors"] == []
+
+
 def test_empty_signal_carries_none_breakdown_scenarios():
     sig = signals_service._empty_signal("NVDA", "4h", error="no_data")
     assert sig["breakdown"] is None
@@ -306,6 +351,7 @@ def test_empty_signal_carries_none_breakdown_scenarios():
     assert sig["analytics"] is None
     assert sig["mtf"] is None
     assert sig["volume"] is None
+    assert sig["confidence_engine"] is None
     # existing contract keys still present (no regression)
     for k in ("symbol", "direction", "is_live", "entry", "data_quality"):
         assert k in sig

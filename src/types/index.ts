@@ -83,6 +83,26 @@ export interface TradingSignal {
   analytics?: SignalAnalytics;
   mtf?: MtfEngine;
   volume?: SignalVolume;
+  confidenceEngine?: SignalConfidence;
+}
+
+export interface ConfidenceFactor {
+  name: string;
+  impact: number;
+  state: string;
+  note: string;
+}
+
+// Advanced confidence engine (Phase 2). Additive — never overwrites the
+// legacy confidence / intel fields. Honest unavailable when no data.
+export interface SignalConfidence {
+  available: boolean;
+  unavailableReason?: string | null;
+  confidence: number;
+  conviction: string;
+  grade: 'A' | 'B' | 'C' | 'D';
+  factors: ConfidenceFactor[];
+  explanation: string;
 }
 
 // Volume & liquidity intelligence (Phase 2). Pure derivation from
