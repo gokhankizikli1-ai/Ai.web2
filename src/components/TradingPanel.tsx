@@ -112,6 +112,8 @@ function buildExplainPrompt(s: TradingSignal): string {
   const m = s.mtf;
   const topBull = s.breakdown?.bullishFactors?.[0];
   const topBear = s.breakdown?.bearishFactors?.[0];
+  const fallbackBull = s.direction === 'short' ? s.breakdown?.weakestPoint : s.breakdown?.strongestReason;
+  const fallbackBear = s.direction === 'short' ? s.breakdown?.strongestReason : s.breakdown?.weakestPoint;
 
   const data = [
     L('Symbol', s.symbol),
@@ -121,8 +123,8 @@ function buildExplainPrompt(s: TradingSignal): string {
     L('Last price', typeof s.price === 'number' ? s.price : undefined),
     L('Entry / Stop / Target', `${s.entryPrice ?? '—'} / ${s.stopLoss ?? '—'} / ${s.targetPrice ?? '—'}`),
     L('Risk:Reward', s.riskReward),
-    L('Strongest bullish factor', topBull ? `${topBull.factor} — ${topBull.detail}` : (s.breakdown?.strongestReason ?? undefined)),
-    L('Strongest bearish factor', topBear ? `${topBear.factor} — ${topBear.detail}` : (s.breakdown?.weakestPoint ?? undefined)),
+    L('Strongest bullish factor', topBull ? `${topBull.factor} — ${topBull.detail}` : (fallbackBull ?? undefined)),
+    L('Strongest bearish factor', topBear ? `${topBear.factor} — ${topBear.detail}` : (fallbackBear ?? undefined)),
     L('Trend strength', a?.trendStrength ? `ADX ${a.trendStrength.adx ?? '—'} (${a.trendStrength.label})` : undefined),
     L('MACD', a?.macd && a.macd.state !== 'insufficient_data' ? a.macd.state : undefined),
     L('Momentum', a?.momentum && a.momentum.state !== 'insufficient_data' ? `${a.momentum.state} (${a.momentum.rocPct ?? '—'}%)` : undefined),
