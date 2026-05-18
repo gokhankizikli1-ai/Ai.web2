@@ -39,6 +39,7 @@ export default function JournalPanel({ journal }: { journal: Journal }) {
   });
 
   const a = useMemo(() => computeJournalAnalytics(entries), [entries]);
+  const hasExpectancy = entries.some((e) => e.result && e.result !== 'open' && typeof e.pnl === 'number');
 
   const submit = () => {
     const symbol = f.symbol.trim().toUpperCase();
@@ -126,12 +127,12 @@ export default function JournalPanel({ journal }: { journal: Journal }) {
 
       {/* Analytics dashboard */}
       <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-        <Tile label="Win rate" value={`${a.winrate}%`} tone={a.winrate >= 50 ? 'text-emerald-400' : 'text-red-400'} />
+        <Tile label="Win rate" value={`${a.winrate}%`} tone={a.closed ? (a.winrate >= 50 ? 'text-emerald-400' : 'text-red-400') : undefined} />
         <Tile label="Closed" value={`${a.closed}`} />
         <Tile label="Open" value={`${a.open}`} />
         <Tile label="Avg R:R" value={a.avgRR ? `${a.avgRR}` : '—'} />
-        <Tile label="Expectancy" value={a.expectancy ? `${a.expectancy >= 0 ? '+' : ''}${a.expectancy}` : '—'}
-          tone={a.expectancy >= 0 ? 'text-emerald-400' : 'text-red-400'} />
+        <Tile label="Expectancy" value={hasExpectancy ? `${a.expectancy >= 0 ? '+' : ''}${a.expectancy}` : '—'}
+          tone={hasExpectancy ? (a.expectancy >= 0 ? 'text-emerald-400' : 'text-red-400') : undefined} />
       </div>
 
       {/* Win/loss + RR distribution */}
