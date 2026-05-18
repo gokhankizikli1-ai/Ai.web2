@@ -18,7 +18,7 @@ Pure unit tests — no network, no external providers.
 from __future__ import annotations
 
 from backend.services.trading.intelligence import (
-    build_breakdown, build_scenarios,
+    build_breakdown, build_scenarios, build_analytics,
 )
 from backend.services.trading import signals_service
 
@@ -164,10 +164,45 @@ def test_scenarios_no_levels_is_unavailable():
 
 # ── additive wiring into signals_service ───────────────────────────────────
 
+def test_build_analytics_passthrough_real_values():
+    data = {
+        "last_price": 100.0, "trend": "uptrend", "regime": "trending_up",
+        "rsi_14": 61.0, "ema20": 99.0, "ema50": 95.0, "bos": "bullish_bos",
+        "volume_trend": "increasing", "atr_14": 2.3, "volatility_pct": 2.1,
+        "macd": {"macd": 1.2, "signal": 0.9, "hist": 0.3, "state": "bullish"},
+        "momentum": {"roc_pct": 4.0, "state": "accelerating_up"},
+        "trend_strength": {"adx": 31.0, "label": "strong"},
+        "mtf_alignment": {"alignment": "bullish", "up_count": 3,
+                          "down_count": 0, "side_count": 0, "divergences": []},
+        "multi_timeframe": {"1d": {"trend": "uptrend", "rsi": 60},
+                            "4h": {"trend": "uptrend", "rsi": 58}},
+    }
+    a = build_analytics(data, data_quality="full")
+    assert a["available"] is True
+    assert a["rsi_14"] == 61.0 and a["regime"] == "trending_up"
+    assert a["macd"]["state"] == "bullish" and a["macd"]["hist"] == 0.3
+    assert a["momentum"]["state"] == "accelerating_up"
+    assert a["trend_strength"]["adx"] == 31.0
+    assert a["mtf"]["alignment"] == "bullish" and a["mtf"]["up"] == 3
+    assert a["timeframes"] and len(a["timeframes"]) == 2
+    assert a["timeframes"][0]["tf"] in ("1d", "4h")
+
+
+def test_build_analytics_quote_only_and_empty_are_honest():
+    q = build_analytics({"last_price": 187.4}, data_quality="quote_only")
+    assert q["available"] is False
+    assert "quote-only" in q["unavailable_reason"].lower()
+    assert q["macd"] is None and q["mtf"] is None and q["rsi_14"] is None
+    e = build_analytics({"last_price": 5.0}, data_quality="ohlc_daily")
+    assert e["available"] is False
+    assert e["unavailable_reason"]
+
+
 def test_empty_signal_carries_none_breakdown_scenarios():
     sig = signals_service._empty_signal("NVDA", "4h", error="no_data")
     assert sig["breakdown"] is None
     assert sig["scenarios"] is None
+    assert sig["analytics"] is None
     # existing contract keys still present (no regression)
     for k in ("symbol", "direction", "is_live", "entry", "data_quality"):
         assert k in sig
@@ -201,3 +236,5 @@ def test_map_tool_result_adds_breakdown_and_scenarios():
     assert sig["scenarios"] and sig["scenarios"]["available"] is True
     assert sig["breakdown"]["bullish_factors"]
     assert sig["scenarios"]["key_levels"]["resistance"] == 108.0
+    assert sig["analytics"] and sig["analytics"]["available"] is True
+    assert sig["analytics"]["rsi_14"] == 60.0

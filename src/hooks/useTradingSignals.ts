@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import type {
   TradingSignal, TradingSignalsResponse, DataProvider, SignalDirection, AssetType,
   SignalBreakdown, SignalScenarios, SignalFactor,
-  SignalIntel, SignalIntelFactor,
+  SignalIntel, SignalIntelFactor, SignalAnalytics,
 } from '@/types';
 
 /**
@@ -197,6 +197,69 @@ function mapIntel(raw: unknown): SignalIntel | undefined {
   };
 }
 
+function _numOrNull(v: unknown): number | null {
+  const n = Number(v);
+  return v !== null && v !== undefined && v !== '' && Number.isFinite(n) ? n : null;
+}
+
+function mapAnalytics(raw: unknown): SignalAnalytics | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const a = raw as Record<string, unknown>;
+  const sub = (k: string) =>
+    (a[k] && typeof a[k] === 'object' ? (a[k] as Record<string, unknown>) : null);
+
+  const macdR = sub('macd');
+  const momR = sub('momentum');
+  const tsR = sub('trend_strength');
+  const mtfR = sub('mtf');
+  const tfRaw = a.timeframes;
+
+  return {
+    available: !!a.available,
+    unavailableReason: (a.unavailable_reason as string | null) ?? null,
+    regime: (a.regime as string | null) ?? null,
+    trend: (a.trend as string | null) ?? null,
+    rsi14: _numOrNull(a.rsi_14),
+    ema20: _numOrNull(a.ema20),
+    ema50: _numOrNull(a.ema50),
+    bos: (a.bos as string | null) ?? null,
+    volumeTrend: (a.volume_trend as string | null) ?? null,
+    atr14: _numOrNull(a.atr_14),
+    volatilityPct: _numOrNull(a.volatility_pct),
+    macd: macdR ? {
+      macd: _numOrNull(macdR.macd),
+      signal: _numOrNull(macdR.signal),
+      hist: _numOrNull(macdR.hist),
+      state: String(macdR.state ?? 'insufficient_data'),
+    } : null,
+    momentum: momR ? {
+      rocPct: _numOrNull(momR.roc_pct),
+      state: String(momR.state ?? 'insufficient_data'),
+    } : null,
+    trendStrength: tsR ? {
+      adx: _numOrNull(tsR.adx),
+      label: String(tsR.label ?? 'insufficient_data'),
+    } : null,
+    mtf: mtfR ? {
+      alignment: String(mtfR.alignment ?? 'unknown'),
+      up: Number(mtfR.up) || 0,
+      down: Number(mtfR.down) || 0,
+      side: Number(mtfR.side) || 0,
+      divergences: Array.isArray(mtfR.divergences)
+        ? mtfR.divergences.map((d) => String(d)) : [],
+    } : null,
+    timeframes: Array.isArray(tfRaw)
+      ? tfRaw
+          .filter((r): r is Record<string, unknown> => !!r && typeof r === 'object')
+          .map((r) => ({
+            tf: String(r.tf ?? ''),
+            trend: String(r.trend ?? '—'),
+            rsi: _numOrNull(r.rsi),
+          }))
+      : null,
+  };
+}
+
 function normalizeResponse(data: Record<string, unknown>): TradingSignalsResponse {
   const rawSignals = Array.isArray(data?.signals)
     ? (data.signals as Record<string, unknown>[])
@@ -233,6 +296,7 @@ function normalizeResponse(data: Record<string, unknown>): TradingSignalsRespons
       breakdown: mapBreakdown(s.breakdown),
       scenarios: mapScenarios(s.scenarios),
       intel: mapIntel(s.intel),
+      analytics: mapAnalytics(s.analytics),
     };
   });
 

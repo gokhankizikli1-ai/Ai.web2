@@ -80,6 +80,7 @@ export interface TradingSignal {
   breakdown?: SignalBreakdown;
   scenarios?: SignalScenarios;
   intel?: SignalIntel;
+  analytics?: SignalAnalytics;
 }
 
 // ── Trading Intelligence Engine data model (Phase 9) ───────────────────────
@@ -132,6 +133,57 @@ export interface SignalIntel {
   factors: SignalIntelFactor[];
   invalidation?: string | null;
   rationale: string;
+}
+
+export interface MacdReading {
+  macd: number | null;
+  signal: number | null;
+  hist: number | null;
+  state: string;
+}
+
+export interface MomentumReading {
+  rocPct: number | null;
+  state: string;
+}
+
+export interface TrendStrengthReading {
+  adx: number | null;
+  label: string;
+}
+
+export interface MtfAlignment {
+  alignment: string;
+  up: number;
+  down: number;
+  side: number;
+  divergences: string[];
+}
+
+export interface TimeframeRow {
+  tf: string;
+  trend: string;
+  rsi: number | null;
+}
+
+// Raw computed analytics (pass-through; absent when no OHLC data).
+export interface SignalAnalytics {
+  available: boolean;
+  unavailableReason?: string | null;
+  regime?: string | null;
+  trend?: string | null;
+  rsi14?: number | null;
+  ema20?: number | null;
+  ema50?: number | null;
+  bos?: string | null;
+  volumeTrend?: string | null;
+  atr14?: number | null;
+  volatilityPct?: number | null;
+  macd?: MacdReading | null;
+  momentum?: MomentumReading | null;
+  trendStrength?: TrendStrengthReading | null;
+  mtf?: MtfAlignment | null;
+  timeframes?: TimeframeRow[] | null;
 }
 
 // Trade Journal foundation — frontend/backend-ready structure ONLY.

@@ -612,3 +612,110 @@ def build_decision(
         "invalidation": invalidation,
         "rationale": rationale,
     }
+
+
+# ── Raw analytics pass-through (institutional drawer) ──────────────────────
+# Surfaces the numbers market_data_tool ALREADY computed so the UI can show
+# real values (MTF, momentum, volatility, MACD, ADX, regime) instead of
+# prose. Pure pass-through — nothing is computed or fabricated here; absent
+# inputs stay absent.
+
+def build_analytics(
+    data: Optional[dict],
+    *,
+    data_quality: Optional[str] = None,
+) -> dict:
+    data = data or {}
+
+    base = {
+        "available": False,
+        "unavailable_reason": None,
+        "regime": None,
+        "trend": None,
+        "rsi_14": None,
+        "ema20": None,
+        "ema50": None,
+        "bos": None,
+        "volume_trend": None,
+        "atr_14": None,
+        "volatility_pct": None,
+        "macd": None,
+        "momentum": None,
+        "trend_strength": None,
+        "mtf": None,
+        "timeframes": None,
+    }
+
+    if data_quality == "quote_only":
+        base["unavailable_reason"] = (
+            "Quote-only data — technical analytics require OHLC history."
+        )
+        return base
+
+    rsi = _f(data.get("rsi_14"))
+    trend = data.get("trend")
+    regime = data.get("regime")
+    if rsi is None and not trend and not regime:
+        base["unavailable_reason"] = "No OHLC-derived analytics available."
+        return base
+
+    out = dict(base)
+    out["available"] = True
+    out["regime"] = str(regime) if regime else None
+    out["trend"] = str(trend) if trend else None
+    out["rsi_14"] = rsi
+    out["ema20"] = _f(data.get("ema20")) if data.get("ema20") is not None else _f(data.get("sma20"))
+    out["ema50"] = _f(data.get("ema50")) if data.get("ema50") is not None else _f(data.get("sma50"))
+    out["bos"] = str(data.get("bos")) if data.get("bos") else None
+    out["volume_trend"] = str(data.get("volume_trend")) if data.get("volume_trend") else None
+    out["atr_14"] = _f(data.get("atr_14"))
+    out["volatility_pct"] = _f(data.get("volatility_pct"))
+
+    macd = data.get("macd")
+    if isinstance(macd, dict):
+        out["macd"] = {
+            "macd": _f(macd.get("macd")),
+            "signal": _f(macd.get("signal")),
+            "hist": _f(macd.get("hist")),
+            "state": str(macd.get("state") or "insufficient_data"),
+        }
+
+    mom = data.get("momentum")
+    if isinstance(mom, dict):
+        out["momentum"] = {
+            "roc_pct": _f(mom.get("roc_pct")),
+            "state": str(mom.get("state") or "insufficient_data"),
+        }
+
+    ts = data.get("trend_strength")
+    if isinstance(ts, dict):
+        out["trend_strength"] = {
+            "adx": _f(ts.get("adx")),
+            "label": str(ts.get("label") or "insufficient_data"),
+        }
+
+    mtf = data.get("mtf_alignment")
+    if isinstance(mtf, dict):
+        divs = mtf.get("divergences")
+        out["mtf"] = {
+            "alignment": str(mtf.get("alignment") or "unknown"),
+            "up": int(mtf.get("up_count") or 0),
+            "down": int(mtf.get("down_count") or 0),
+            "side": int(mtf.get("side_count") or 0),
+            "divergences": [str(d) for d in divs] if isinstance(divs, list) else [],
+        }
+
+    mt = data.get("multi_timeframe")
+    if isinstance(mt, dict):
+        rows = []
+        for tf, blk in mt.items():
+            if isinstance(blk, dict):
+                rows.append({
+                    "tf": str(tf),
+                    "trend": str(blk.get("trend") or "—"),
+                    "rsi": _f(blk.get("rsi")),
+                })
+        out["timeframes"] = rows or None
+
+    return out
+
