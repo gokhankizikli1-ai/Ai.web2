@@ -298,6 +298,9 @@ def _empty_signal(
         "volatility_regime": None,
         "invalidation":      None,
         "data_quality":      "fallback",
+        "breakdown":         None,
+        "scenarios":         None,
+        "intel":             None,
         "is_live":           False,
         "error":             error,
     }
@@ -337,6 +340,28 @@ def map_tool_result_to_signal(
     confidence, confidence_pct = _confidence_from_plan(plan)
     dq           = data.get("data_quality") or {}
     dq_level     = dq.get("level") if isinstance(dq, dict) else None
+    pub_dir      = _public_direction(raw_dir)
+
+    # Trading Intelligence Engine — additive explainability + scenarios.
+    # Pure, defensive, never fabricates; failures here must never break a
+    # signal, so degrade to None rather than raise.
+    try:
+        from backend.services.trading.intelligence import (
+            build_breakdown, build_scenarios, build_decision,
+        )
+        breakdown = build_breakdown(
+            data, plan,
+            direction=pub_dir,
+            setup_grade=plan.get("setup_grade"),
+            data_quality=dq_level,
+        )
+        scenarios = build_scenarios(
+            data, plan, direction=pub_dir, data_quality=dq_level,
+        )
+        intel = build_decision(data, plan, data_quality=dq_level)
+    except Exception as _bex:  # pragma: no cover - safety net
+        logger.debug("intelligence build failed for %s: %s", symbol, _bex)
+        breakdown, scenarios, intel = None, None, None
 
     return {
         "symbol":            (data.get("symbol") or symbol).upper(),
@@ -349,7 +374,7 @@ def map_tool_result_to_signal(
         "provider":          provider,
         "timestamp":         tool_result.get("timestamp") or datetime.now(timezone.utc).isoformat(),
 
-        "direction":         _public_direction(raw_dir),
+        "direction":         pub_dir,
         "raw_direction":     raw_dir,            # exposes REVERSAL_WATCH for clients that care
         "confidence":        confidence,
         "confidence_pct":    confidence_pct,
@@ -364,6 +389,12 @@ def map_tool_result_to_signal(
         "volatility_regime": data.get("regime"),
         "invalidation":      plan.get("invalidation"),
         "data_quality":      dq_level or "full",
+
+        # Trading Intelligence Engine (additive; clients ignore if unknown).
+        "breakdown":         breakdown,
+        "scenarios":         scenarios,
+        "intel":             intel,
+
         "is_live":           True,
         "error":             None,
     }
