@@ -12,7 +12,7 @@ import {
   ArrowUpRight, ArrowDownRight,
   AlertTriangle, Plus, X, Sparkles,
   ShieldAlert, Info, MessageSquare, Gauge,
-  Layers, BarChart3, Scale, Crosshair, Radar,
+  Layers, BarChart3, Scale, Crosshair, Radar, Bell,
 } from 'lucide-react';
 
 // Default symbol sets the panel requests from /trading/signals (backend
@@ -21,6 +21,26 @@ const SIGNAL_SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'NVDA', 'AAPL', 'TSLA', 'MSFT'];
 const DEFAULT_WATCH = ['AAPL', 'NVDA', 'TSLA', 'BTCUSDT', 'ETHUSDT', 'MSFT'];
 const WATCH_LS_KEY = 'korvix.watchlist.v1';
 const FAV_LS_KEY = 'korvix.favorites.v1';
+const ALERT_PREFS_LS_KEY = 'korvix.alertprefs.v1';
+
+// Alert types the backend can emit (real conditions only). Used for the
+// per-type enable/disable preferences in the Smart Alerts tab.
+const ALERT_TYPES: { id: string; label: string }[] = [
+  { id: 'breakout', label: 'Breakout' },
+  { id: 'fake_breakout', label: 'Fake breakout' },
+  { id: 'sr_break', label: 'S/R break' },
+  { id: 'volume_anomaly', label: 'Volume anomaly' },
+  { id: 'volatility_expansion', label: 'Volatility expansion' },
+  { id: 'rsi_divergence', label: 'RSI divergence' },
+  { id: 'trend_alignment', label: 'Trend alignment' },
+  { id: 'momentum_acceleration', label: 'Momentum acceleration' },
+];
+
+const ALERT_SEV_CLS: Record<string, string> = {
+  info: 'border-cyan-500/15 bg-cyan-500/[0.04] text-cyan-300',
+  warning: 'border-amber-500/15 bg-amber-500/[0.04] text-amber-300',
+  critical: 'border-red-500/15 bg-red-500/[0.05] text-red-300',
+};
 // Auto-refresh cadence. The hook skips ticks while the tab is hidden and
 // aborts overlapping requests, so this never spams the backend.
 const POLL_MS = 45_000;
@@ -1014,7 +1034,7 @@ function MarketRegimeBanner({ r }: { r: MarketRegime }) {
    ═══════════════════════════════════════════ */
 
 export default function TradingPanel({ onExplainSignal }: { onExplainSignal?: (prompt: string) => void }) {
-  const [activeTab, setActiveTab] = useState<'signals' | 'watchlist' | 'sentiment' | 'trending'>('signals');
+  const [activeTab, setActiveTab] = useState<'signals' | 'watchlist' | 'alerts' | 'sentiment' | 'trending'>('signals');
   const [watchlistFilter, setWatchlistFilter] = useState<'all' | 'stocks' | 'crypto'>('all');
   const [search, setSearch] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -1043,6 +1063,29 @@ export default function TradingPanel({ onExplainSignal }: { onExplainSignal?: (p
     try { localStorage.setItem(FAV_LS_KEY, JSON.stringify(favorites)); } catch { /* ignore */ }
   }, [favorites]);
 
+  // Smart-alert preferences (persisted): per-type enable + favourites-only.
+  const [alertDisabled, setAlertDisabled] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(ALERT_PREFS_LS_KEY);
+      if (raw) { const o = JSON.parse(raw); if (Array.isArray(o?.disabled)) return o.disabled; }
+    } catch { /* ignore */ }
+    return [];
+  });
+  const [alertFavOnly, setAlertFavOnly] = useState<boolean>(() => {
+    try {
+      const raw = localStorage.getItem(ALERT_PREFS_LS_KEY);
+      if (raw) return !!JSON.parse(raw)?.favOnly;
+    } catch { /* ignore */ }
+    return false;
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(ALERT_PREFS_LS_KEY, JSON.stringify({ disabled: alertDisabled, favOnly: alertFavOnly }));
+    } catch { /* ignore */ }
+  }, [alertDisabled, alertFavOnly]);
+  const toggleAlertType = (id: string) =>
+    setAlertDisabled((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
+
   const signalsApi = useTradingSignals(SIGNAL_SYMBOLS, '4h', POLL_MS);
   const watchApi = useTradingSignals(watchSymbols, '1d', POLL_MS);
 
@@ -1059,6 +1102,22 @@ export default function TradingPanel({ onExplainSignal }: { onExplainSignal?: (p
   const signalsToShow = freshSignals.length ? freshSignals : signalsCache.current;
   const showStaleSignals = !!signalsApi.error && freshSignals.length === 0 && signalsCache.current.length > 0;
   const marketRegime = useMemo(() => deriveMarketRegime(signalsToShow), [signalsToShow]);
+
+  // Aggregate REAL triggered alerts across the live signal set, filtered
+  // by user prefs. No synthetic alerts — only what the backend flagged.
+  const liveAlerts = useMemo(() => {
+    const favUp = new Set(favorites.map((f) => f.toUpperCase()));
+    const out: { symbol: string; type: string; severity: string; message: string }[] = [];
+    for (const s of signalsToShow) {
+      if (!s.isLive || !s.alerts?.available) continue;
+      if (alertFavOnly && !favUp.has(s.symbol.toUpperCase())) continue;
+      for (const a of s.alerts.alerts) {
+        if (alertDisabled.includes(a.type)) continue;
+        out.push({ symbol: s.symbol, type: a.type, severity: a.severity, message: a.message });
+      }
+    }
+    return out;
+  }, [signalsToShow, favorites, alertFavOnly, alertDisabled]);
 
   const watchlistAll: WatchlistItem[] = useMemo(() => {
     const out: WatchlistItem[] = [];
@@ -1139,6 +1198,7 @@ export default function TradingPanel({ onExplainSignal }: { onExplainSignal?: (p
   const tabs = [
     { id: 'signals' as const, label: 'Signals', icon: Zap },
     { id: 'watchlist' as const, label: 'Watchlist', icon: Star },
+    { id: 'alerts' as const, label: 'Alerts', icon: Bell },
     { id: 'sentiment' as const, label: 'Sentiment', icon: Activity },
     { id: 'trending' as const, label: 'Trending', icon: TrendingUp },
   ];
@@ -1313,6 +1373,75 @@ export default function TradingPanel({ onExplainSignal }: { onExplainSignal?: (p
                   ))}
                 </div>
               </>
+            )}
+          </>
+        )}
+
+        {/* ═══ ALERTS ═══ */}
+        {activeTab === 'alerts' && (
+          <>
+            <div className="flex flex-wrap items-center gap-1.5 mb-1">
+              {ALERT_TYPES.map((t) => {
+                const on = !alertDisabled.includes(t.id);
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => toggleAlertType(t.id)}
+                    className={`px-2 py-1 rounded-md text-[10px] font-medium border transition-all ${
+                      on ? 'bg-white/[0.06] border-white/[0.08] text-slate-300' : 'bg-transparent border-white/[0.04] text-slate-600 line-through'
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                );
+              })}
+              <button
+                onClick={() => setAlertFavOnly((v) => !v)}
+                className={`ml-auto px-2 py-1 rounded-md text-[10px] font-medium border transition-all flex items-center gap-1 ${
+                  alertFavOnly ? 'bg-amber-500/[0.08] border-amber-500/15 text-amber-400' : 'bg-transparent border-white/[0.04] text-slate-500'
+                }`}
+              >
+                <Star className={`w-3 h-3 ${alertFavOnly ? 'fill-amber-400' : ''}`} /> Favorites only
+              </button>
+            </div>
+            {isRefreshing || (signalsApi.isLoading && signalsToShow.length === 0) ? (
+              <WatchlistSkeleton />
+            ) : signalsApi.error && signalsToShow.length === 0 ? (
+              <LiveDataUnavailable onRetry={handleRefresh} message={signalsApi.error} />
+            ) : signalsToShow.length === 0 ? (
+              <LiveDataUnavailable onRetry={handleRefresh} message="Alerts need live signal data." />
+            ) : liveAlerts.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-14 px-6 text-center">
+                <div className="h-11 w-11 rounded-2xl bg-white/[0.03] border border-white/[0.05] flex items-center justify-center mb-3">
+                  <Bell className="h-5 w-5 text-slate-600" />
+                </div>
+                <p className="text-[13px] font-medium text-slate-300 mb-1">No live alerts right now</p>
+                <p className="text-[11px] text-slate-600 max-w-xs">
+                  Current market conditions don&apos;t meet any enabled alert across the live symbols.
+                  This is a normal state — alerts only fire on real conditions, never synthetically.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                {liveAlerts.map((a, i) => (
+                  <div
+                    key={`${a.symbol}-${a.type}-${i}`}
+                    className={`flex items-start gap-2.5 p-3 rounded-xl border ${ALERT_SEV_CLS[a.severity] || ALERT_SEV_CLS.info}`}
+                  >
+                    <Bell className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[12px] font-semibold text-white">{a.symbol}</span>
+                        <span className="text-[9px] uppercase tracking-wide opacity-70">{a.type.replace(/_/g, ' ')}</span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 leading-relaxed mt-0.5">{a.message}</p>
+                    </div>
+                  </div>
+                ))}
+                <p className="text-[10px] text-slate-600 text-center pt-1">
+                  Derived from live signals · refreshes every {Math.round(POLL_MS / 1000)}s · real conditions only
+                </p>
+              </div>
             )}
           </>
         )}

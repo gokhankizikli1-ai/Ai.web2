@@ -1181,3 +1181,87 @@ def build_confidence(
         "explanation": explanation,
     }
 
+
+# ── Smart alerts (Phase 2 #6 — scaffolding) ────────────────────────────────
+# Derives alerts from REAL, already-computed conditions only. If the
+# underlying field is absent the alert is simply NOT emitted — there are
+# no fabricated or speculative alerts. Empty list is a valid honest state.
+
+def build_alerts(data: Optional[dict], *, data_quality: Optional[str] = None) -> dict:
+    data = data or {}
+
+    if data_quality == "quote_only":
+        return {
+            "available": False,
+            "unavailable_reason": "Quote-only data — alert conditions require OHLC indicators.",
+            "alerts": [],
+        }
+
+    bos = str(data.get("bos") or "").lower()
+    vt = str(data.get("volume_trend") or "").lower()
+    regime = str(data.get("regime") or "").lower()
+    rsi = data.get("rsi_14")
+
+    if not bos and not vt and not regime and rsi is None:
+        return {
+            "available": False,
+            "unavailable_reason": "No live indicator conditions available for this symbol.",
+            "alerts": [],
+        }
+
+    alerts: list[dict] = []
+
+    def add(atype: str, severity: str, message: str) -> None:
+        alerts.append({"type": atype, "severity": severity, "message": message})
+
+    # Breakout / fake-breakout (structure break × participation)
+    if bos in ("bullish_bos", "bearish_bos"):
+        side = "bullish" if bos == "bullish_bos" else "bearish"
+        if vt == "increasing":
+            add("breakout", "info", f"{side.capitalize()} breakout confirmed by expanding volume.")
+        elif vt in ("decreasing", "neutral"):
+            add("fake_breakout", "warning", f"{side.capitalize()} structure break unsupported by volume — fake-breakout risk.")
+        else:
+            add("breakout", "info", f"{side.capitalize()} structure break detected (volume unconfirmed).")
+
+    # Support / resistance break (from real numeric levels)
+    last = _f(data.get("last_price"))
+    sup = _f(data.get("support"))
+    res = _f(data.get("resistance"))
+    if last is not None and res is not None and last > res:
+        add("sr_break", "info", "Price trading above mapped resistance.")
+    elif last is not None and sup is not None and last < sup:
+        add("sr_break", "info", "Price trading below mapped support.")
+
+    # Volume anomaly (from pre-computed absorption signal)
+    sm = data.get("smart_money") if isinstance(data.get("smart_money"), dict) else {}
+    absorption = sm.get("absorption_signal") if isinstance(sm, dict) else None
+    if isinstance(absorption, dict):
+        vr = _f(absorption.get("vol_ratio"))
+        if vr is not None and vr >= 2.0:
+            add("volume_anomaly", "warning", f"Abnormal volume spike (×{vr:.1f}).")
+
+    # Volatility expansion
+    if regime == "high_volatility":
+        add("volatility_expansion", "warning", "Volatility expansion underway — wider risk.")
+
+    # RSI / multi-timeframe divergence
+    mtf = data.get("mtf_alignment")
+    if isinstance(mtf, dict):
+        divs = mtf.get("divergences")
+        if isinstance(divs, list) and divs:
+            add("rsi_divergence", "warning", f"Momentum divergence across timeframes: {divs[0]}.")
+        if str(mtf.get("alignment") or "").lower() == "mixed":
+            add("trend_alignment", "info", "Timeframes fractured (mixed) — trend alignment weak.")
+
+    # Momentum acceleration
+    mom = data.get("momentum")
+    if isinstance(mom, dict):
+        st = str(mom.get("state") or "").lower()
+        if st == "accelerating_up":
+            add("momentum_acceleration", "info", "Momentum accelerating to the upside.")
+        elif st == "accelerating_down":
+            add("momentum_acceleration", "info", "Momentum accelerating to the downside.")
+
+    return {"available": True, "unavailable_reason": None, "alerts": alerts}
+
