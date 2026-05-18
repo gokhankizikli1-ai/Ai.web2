@@ -188,7 +188,7 @@ function DemoBanner() {
 }
 
 // ─── Live Data Unavailable Fallback ───
-function LiveDataUnavailable({ onRetry, message }: { onRetry: () => void; message?: string }) {
+function LiveDataUnavailable({ onRetry, message, title = 'Live market data unavailable' }: { onRetry: () => void; message?: string; title?: string }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -202,9 +202,7 @@ function LiveDataUnavailable({ onRetry, message }: { onRetry: () => void; messag
 
         <div className="relative flex flex-col items-center">
           <KorvixOrb size="md" variant="idle" className="mb-5" />
-          <p className="text-[14px] font-medium text-slate-300 mb-2">
-            {message ? 'Live market data unavailable' : 'Live market data unavailable'}
-          </p>
+          <p className="text-[14px] font-medium text-slate-300 mb-2">{title}</p>
           <p className="text-[12px] text-slate-600 mb-6 leading-relaxed">
             {message || 'Trading signals require a live market data connection. It will populate as soon as data is available.'}
           </p>
@@ -649,7 +647,7 @@ export default function TradingPanel() {
             ) : !DEMO_MODE && signalsApi.error ? (
               <LiveDataUnavailable onRetry={handleRefresh} message={signalsApi.error} />
             ) : !DEMO_MODE && signalsToShow.length === 0 ? (
-              <LiveDataUnavailable onRetry={handleRefresh} message="No live trading signals right now." />
+              <LiveDataUnavailable onRetry={handleRefresh} message="No live trading signals right now." title="No live trading signals" />
             ) : (
               <>
                 {/* Summary stats */}
