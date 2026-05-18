@@ -107,26 +107,6 @@ export function planRun(goalRaw: string): AgentStep[] {
   }));
 }
 
-/**
- * Pure critic: an honest confidence estimate, never a guarantee. Steps that
- * depend on data we don't have are flagged so the UI can stay truthful.
- */
-export function critiqueStep(step: AgentStep): { confidence: number; needsRealData: boolean } {
-  if (step.kind === 'research' || step.kind === 'act') {
-    return { confidence: 0, needsRealData: true };
-  }
-  const text = `${step.title} ${step.detail}`.toLowerCase();
-  const dataSensitive = /(market|competitor|price|pricing|demand|traffic|audience|trend)/.test(text);
-  if (step.kind === 'compute') {
-    return { confidence: step.output?.trim() ? 90 : 35, needsRealData: false };
-  }
-  const hasOutput = !!step.output?.trim();
-  return {
-    confidence: hasOutput ? 80 : 55,
-    needsRealData: dataSensitive && !hasOutput,
-  };
-}
-
 export function useAgentRuns() {
   const [runs, setRuns] = useState<AgentRun[]>(loadRuns);
 

@@ -430,6 +430,8 @@ export interface AgentStep {
   confidence?: number;
   /** Critic flag: this step's quality depends on live data we don't have. */
   needsRealData?: boolean;
+  /** Assisted-ceiling decision for gated (research/act) steps. */
+  approval?: ApprovalDecision;
 }
 
 export interface AgentRun {
@@ -439,4 +441,59 @@ export interface AgentRun {
   updatedAt: string;
   status: AgentRunStatus;
   steps: AgentStep[];
+}
+
+// Agent tool registry — Phase 4 #4C. Declarative, typed contracts. AI/compute
+// tools are runnable (structure a prompt / use the user's own input);
+// research & act tools are registered but GATED — their gate is not open, so
+// they are never executed (no fabricated data, no real side effects).
+export type AgentToolGate = 'none' | 'external-data' | 'execution';
+
+export interface AgentTool {
+  id: string;
+  kind: AgentStepKind;
+  label: string;
+  description: string;
+  /** Human-readable input contract. */
+  inputs: string;
+  /** Gate that must be open to run this tool; 'none' = dry-runnable. */
+  gate: AgentToolGate;
+}
+
+// Verifier — Phase 4 #4C. Pure, honest critique of a step + its output.
+// Never fabricates a pass; flags when output depends on data we don't have.
+export interface VerifierCheck {
+  label: string;
+  passed: boolean;
+}
+
+export interface VerifierVerdict {
+  confidence: number;        // 0–100 honest estimate, never a guarantee
+  needsRealData: boolean;
+  checks: VerifierCheck[];
+  summary: string;
+}
+
+// Approval & audit — Phase 4 #4E. Assisted ceiling: every gated action needs
+// an explicit decision. Decisions are LOGGED but never executed here because
+// no execution/external-data gate is open.
+export type ApprovalDecision = 'pending' | 'approved' | 'denied';
+
+export type AuditEventType =
+  | 'run.planned'
+  | 'step.run'
+  | 'step.completed'
+  | 'step.skipped'
+  | 'approval.requested'
+  | 'approval.approved'
+  | 'approval.denied'
+  | 'killswitch.on'
+  | 'killswitch.off';
+
+export interface AuditEvent {
+  id: string;
+  at: string;
+  type: AuditEventType;
+  detail: string;
+  runId?: string;
 }
