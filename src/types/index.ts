@@ -84,6 +84,23 @@ export interface TradingSignal {
   mtf?: MtfEngine;
   volume?: SignalVolume;
   confidenceEngine?: SignalConfidence;
+  alerts?: SignalAlerts;
+}
+
+export type AlertSeverity = 'info' | 'warning' | 'critical';
+
+export interface SignalAlert {
+  type: string;
+  severity: AlertSeverity;
+  message: string;
+}
+
+// Smart alerts (Phase 2). Only real triggered conditions — empty list
+// is a valid honest state; never fabricated.
+export interface SignalAlerts {
+  available: boolean;
+  unavailableReason?: string | null;
+  alerts: SignalAlert[];
 }
 
 export interface ConfidenceFactor {

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from backend.services.trading.intelligence import (
     build_breakdown, build_scenarios, build_analytics, build_mtf, build_volume,
-    build_confidence,
+    build_confidence, build_alerts,
 )
 from backend.services.trading import signals_service
 
@@ -344,6 +344,46 @@ def test_build_confidence_quote_only_and_empty_honest():
     assert e["available"] is False and e["factors"] == []
 
 
+def test_build_alerts_real_conditions_only():
+    data = {
+        "bos": "bullish_bos", "volume_trend": "increasing",
+        "regime": "high_volatility",
+        "momentum": {"state": "accelerating_up"},
+        "smart_money": {"absorption_signal": {"vol_ratio": 2.5}},
+        "mtf_alignment": {"alignment": "mixed", "divergences": ["1h vs 4h RSI"]},
+        "rsi_14": 60, "last_price": 100.0,
+    }
+    a = build_alerts(data, data_quality="full")
+    assert a["available"] is True
+    types = {x["type"] for x in a["alerts"]}
+    assert "breakout" in types
+    assert "volume_anomaly" in types
+    assert "volatility_expansion" in types
+    assert "rsi_divergence" in types
+    assert "momentum_acceleration" in types
+    for x in a["alerts"]:
+        assert x["severity"] in ("info", "warning", "critical")
+        assert x["message"]
+
+
+def test_build_alerts_fake_breakout_flagged():
+    a = build_alerts({"bos": "bullish_bos", "volume_trend": "decreasing"},
+                      data_quality="full")
+    assert any(x["type"] == "fake_breakout" for x in a["alerts"])
+
+
+def test_build_alerts_none_and_unavailable_are_honest():
+    calm = build_alerts({"bos": "range", "volume_trend": "neutral",
+                          "regime": "neutral", "rsi_14": 50}, data_quality="full")
+    assert calm["available"] is True
+    assert calm["alerts"] == []  # no fabricated alerts in a calm tape
+    q = build_alerts({"bos": "bullish_bos"}, data_quality="quote_only")
+    assert q["available"] is False and "quote-only" in q["unavailable_reason"].lower()
+    assert q["alerts"] == []
+    none = build_alerts({"last_price": 5.0}, data_quality="ohlc_daily")
+    assert none["available"] is False and none["alerts"] == []
+
+
 def test_empty_signal_carries_none_breakdown_scenarios():
     sig = signals_service._empty_signal("NVDA", "4h", error="no_data")
     assert sig["breakdown"] is None
@@ -352,6 +392,7 @@ def test_empty_signal_carries_none_breakdown_scenarios():
     assert sig["mtf"] is None
     assert sig["volume"] is None
     assert sig["confidence_engine"] is None
+    assert sig["alerts"] is None
     # existing contract keys still present (no regression)
     for k in ("symbol", "direction", "is_live", "entry", "data_quality"):
         assert k in sig

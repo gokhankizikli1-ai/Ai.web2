@@ -5,6 +5,7 @@ import type {
   SignalIntel, SignalIntelFactor, SignalAnalytics,
   MtfEngine, MtfBias, MtfTfRow, SignalVolume,
   SignalConfidence, ConfidenceFactor,
+  SignalAlerts, SignalAlert, AlertSeverity,
 } from '@/types';
 
 /**
@@ -334,6 +335,29 @@ function mapConfidence(raw: unknown): SignalConfidence | undefined {
   };
 }
 
+function mapAlerts(raw: unknown): SignalAlerts | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const a = raw as Record<string, unknown>;
+  const sevs: AlertSeverity[] = ['info', 'warning', 'critical'];
+  const list: SignalAlert[] = Array.isArray(a.alerts)
+    ? a.alerts
+        .filter((x): x is Record<string, unknown> => !!x && typeof x === 'object')
+        .map((x) => {
+          const sv = String(x.severity ?? 'info');
+          return {
+            type: String(x.type ?? ''),
+            severity: (sevs.includes(sv as AlertSeverity) ? sv : 'info') as AlertSeverity,
+            message: String(x.message ?? ''),
+          };
+        })
+    : [];
+  return {
+    available: !!a.available,
+    unavailableReason: (a.unavailable_reason as string | null) ?? null,
+    alerts: list,
+  };
+}
+
 function normalizeResponse(data: Record<string, unknown>): TradingSignalsResponse {
   const rawSignals = Array.isArray(data?.signals)
     ? (data.signals as Record<string, unknown>[])
@@ -374,6 +398,7 @@ function normalizeResponse(data: Record<string, unknown>): TradingSignalsRespons
       mtf: mapMtf(s.mtf),
       volume: mapVolume(s.volume),
       confidenceEngine: mapConfidence(s.confidence_engine),
+      alerts: mapAlerts(s.alerts),
     };
   });
 
