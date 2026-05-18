@@ -71,7 +71,7 @@ function mapGrade(g: unknown): TradingSignal['setupGrade'] {
   return 'D';
 }
 
-function mapConfidence(s: Record<string, unknown>): number {
+function mapConfidencePct(s: Record<string, unknown>): number {
   const pct = Number(s.confidence_pct);
   if (Number.isFinite(pct) && pct > 0) return Math.round(pct);
   switch (String(s.confidence || '').toLowerCase()) {
@@ -370,7 +370,7 @@ function normalizeResponse(data: Record<string, unknown>): TradingSignalsRespons
       symbol: (s.symbol as string) || '???',
       name: (s.name as string) || (s.symbol as string) || 'Unknown',
       direction: mapDirection(s.direction),
-      confidence: mapConfidence(s),
+      confidence: mapConfidencePct(s),
       setupGrade: mapGrade(s.setup_grade),
       volatility: mapVolatility(s.volatility_regime),
       entryPrice: priceStr(s.entry),
