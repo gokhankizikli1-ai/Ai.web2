@@ -20,6 +20,7 @@ import asyncio
 import logging
 import urllib.request
 import urllib.error
+import urllib.parse
 from backend.services.tools.base_tool import BaseTool
 
 try:
@@ -54,6 +55,100 @@ _BACKOFF_MAX_RETRY  = int(os.getenv("FETCH_BACKOFF_MAX_RETRY", "2"))          # 
 
 # Multi-timeframe set (parallel fetches when the primary provider is binance/yahoo).
 _MTF_TIMEFRAMES = ("1d", "4h", "1h")
+
+# Phase 8m — equity routing through the reliable market_providers chain.
+#
+# Why: trading_analyst mode runs only market_data (+ macro_data). market_data's
+# crypto-only parse_symbol returns None for "NVDA fiyatı kaç", so _try_binance
+# silently defaulted to BTCUSDT — the model got Bitcoin data for a stock
+# question and answered generically. The Finnhub→TwelveData chain that already
+# works from a datacenter IP lived only in stock_market / the /market/quote
+# route, never reachable from the trading chat path.
+#
+# When an equity ticker is detected AND a key-backed provider is configured,
+# market_data short-circuits to that chain. Gated by env-key presence only
+# (ENABLE_MARKET_DATA is already on), so no ENABLE_STOCK_MARKET dependency and
+# no behaviour change when unconfigured.
+
+# Tokens that look like 1–5-letter tickers but never are. Non-ASCII Turkish
+# words (FİYAT, KAÇ) can't match [A-Z] so they need no entry here. Keep tight —
+# over-listing risks dropping a real ticker (e.g. don't add "T", a valid NYSE
+# symbol; don't add "SEE"/"GE"/"SO", real tickers). The uppercase-as-typed
+# preference in _parse_equity_symbol is the primary defence; this set only
+# has to catch the residual all-lowercase / all-caps prose case.
+_EQUITY_STOPWORDS = {
+    "THE", "A", "AN", "I", "IS", "ARE", "WAS", "FOR", "AND", "OR", "OF",
+    "TO", "IN", "ON", "AT", "BY", "WHAT", "HOW", "WHY", "WHEN", "WHO",
+    "PRICE", "STOCK", "SHARE", "SHARES", "BUY", "SELL", "HOLD", "NOW",
+    "TODAY", "USD", "EUR", "TRY", "GBP", "JPY", "USDT", "USDC", "BUSD",
+    "DAI", "TUSD", "USDD", "FDUSD", "NE", "NEDIR", "KAC", "FIYAT",
+    "ANALIZ", "HISSE", "BORSA", "CAN", "DO", "DOES", "ME", "MY", "WE",
+    "YOU", "IT", "GET", "TELL", "ABOUT", "VS", "PER", "EPS", "PE",
+    "ETF", "ETFS", "CHART", "QUOTE", "VALUE", "WORTH", "MUCH",
+    # First-person / filler verbs — common in "I want NVDA price"-style
+    # prose, never notable tickers.
+    "WANT", "NEED", "LIKE", "SHOW", "THINK", "PLEASE", "PLS", "HEY",
+    "OKAY", "WANNA", "GONNA", "GIMME",
+}
+
+# Ticker: 1–5 A–Z, optional single-letter class suffix (BRK.B / BRK-B).
+_EQUITY_TOKEN_RE = re.compile(r"\b([A-Z]{1,5}(?:[.\-][A-Z])?)\b")
+
+
+def _mp_stock_key_configured() -> bool:
+    """True when a key-backed stock provider (Finnhub / TwelveData) is set.
+    Mirrors FinnhubProvider/TwelveDataProvider.is_available()."""
+    return bool(
+        os.getenv("FINNHUB_API_KEY", "").strip()
+        or os.getenv("TWELVE_DATA_API_KEY", "").strip()
+        or os.getenv("TWELVEDATA_API_KEY", "").strip()
+    )
+
+
+def _looks_equity(sym: str) -> bool:
+    """A bare equity ticker: 1–5 A–Z (optional .X/-X class suffix), not a
+    crypto ticker, no exchange/quote suffix. Rejects BTCUSDT / BTC / BTC-USD
+    so an explicitly-crypto caller is never hijacked into the stock chain."""
+    if not sym or not isinstance(sym, str):
+        return False
+    s = sym.strip().upper()
+    if not re.fullmatch(r"[A-Z]{1,5}(?:[.\-][A-Z])?", s):
+        return False
+    base = re.split(r"[.\-]", s)[0]
+    if base in _CRYPTO_TICKERS or base in _EQUITY_STOPWORDS:
+        return False
+    return True
+
+
+def _pick_equity(tokens) -> str | None:
+    for tok in tokens:
+        base = re.split(r"[.\-]", tok)[0]
+        if tok in _EQUITY_STOPWORDS or base in _EQUITY_STOPWORDS:
+            continue
+        if base in _CRYPTO_TICKERS:
+            continue
+        return tok
+    return None
+
+
+def _parse_equity_symbol(message: str) -> str | None:
+    """Best-effort equity ticker from a natural-language message.
+
+    A ticker is almost always typed UPPERCASE ("NVDA", "AAPL", "BRK.B"),
+    so prefer an uppercase-as-typed token first — that way lowercase
+    prose ("I want the price") can't be mistaken for a ticker (Bugbot
+    Medium 67253298). Only fall back to the upper()'d scan when the user
+    typed no uppercase ticker at all (e.g. "nvda fiyatı kaç"), where the
+    stopword set carries the load. Crypto is excluded so the existing
+    crypto chain still owns BTC/ETH/etc."""
+    if not message:
+        return None
+    # _EQUITY_TOKEN_RE is [A-Z]{1,5}; run against the ORIGINAL message it
+    # only matches uppercase-as-typed tokens — the strong ticker signal.
+    hit = _pick_equity(_EQUITY_TOKEN_RE.findall(message))
+    if hit:
+        return hit
+    return _pick_equity(_EQUITY_TOKEN_RE.findall(message.upper()))
 
 # ── Symbol sets ────────────────────────────────────────────────────────────────────────────
 
@@ -128,6 +223,28 @@ class MarketDataTool(BaseTool):
     # ── Fallback coordinator ────────────────────────────────────────────────
 
     async def _run_with_fallback(self, query: str, ctx: dict) -> dict:
+        # Phase 8m — equity short-circuit. crypto parse_symbol owns
+        # BTC/ETH/etc.; this only fires when the message has NO crypto
+        # ticker but DOES name a stock, and a key-backed provider is
+        # configured. Keeps the crypto chain completely untouched.
+        cand = ctx.get("symbol") if isinstance(ctx.get("symbol"), str) else None
+        if not self.parse_symbol(query) and (cand is None or _looks_equity(cand)):
+            eq_sym = cand or _parse_equity_symbol(query)
+            if eq_sym and _looks_equity(eq_sym) and _mp_stock_key_configured():
+                try:
+                    return await self._try_market_providers_stock(eq_sym)
+                except Exception as exc:
+                    logger.warning(
+                        "market_data | equity fetch failed for %s: %s", eq_sym, exc
+                    )
+                    # NEVER fall through to the crypto chain for a stock —
+                    # defaulting to BTCUSDT and returning Bitcoin data for an
+                    # NVDA question is actively misleading. Clean error only.
+                    return self._error(
+                        f"No live quote for {eq_sym} "
+                        f"(Finnhub/TwelveData/yfinance all failed)"
+                    )
+
         providers = [
             ("binance",       self._try_binance),
             ("yahoo_finance", self._try_yahoo),
@@ -164,6 +281,82 @@ class MarketDataTool(BaseTool):
         msg = "All market data providers failed: " + "; ".join(errors)
         logger.error("market_data | %s", msg)
         return self._error(msg)
+
+    # ── Equity provider: reliable market_providers chain (Phase 8m) ─────────
+
+    async def _try_market_providers_stock(self, symbol: str) -> dict:
+        """Fetch an equity quote via Finnhub→TwelveData→yfinance (the chain
+        that already works from a datacenter IP), then BEST-EFFORT enrich
+        with daily-OHLC indicators (RSI14, SMA20/50, ATR14, support/
+        resistance, trend, bias) from TwelveData /time_series.
+
+        Returns the market_data payload shape so the existing context/
+        summary renderers work unchanged. Raises on no live quote so the
+        caller emits a clean error — NEVER fabricates. Indicators are
+        included ONLY when real daily candles were fetched; otherwise the
+        payload stays quote-only and the missing keys are listed honestly."""
+        from backend.services.market_providers import get_stock_quote  # noqa: PLC0415
+
+        sym = symbol.strip().upper()
+        q = await asyncio.wait_for(
+            asyncio.to_thread(get_stock_quote, sym), timeout=_TIMEOUT
+        )
+        if not getattr(q, "is_live", False) or q.price is None:
+            raise ValueError(f"no live quote for {sym}")
+
+        extra = q.extra or {}
+        payload = {
+            "symbol":          q.symbol or sym,
+            # "quote" until daily candles are actually fetched — promoted
+            # to "1d" only in the indicators branch. A quote-only payload
+            # labelled "1d" would make the renderer print
+            # "PRICE & STRUCTURE (1d, ? candles)" and mislead the model
+            # into thinking it has daily structure (Bugbot Medium f1a647d7).
+            "timeframe":       "quote",
+            "asset_class":     "equity",
+            "last_price":      q.price,
+            # Provider's daily move (last vs previous close). Mapped onto the
+            # field every consumer already reads; for equities it's the
+            # session change, not a rolling 24h crypto window.
+            "change_24h_pct":  q.change_percent,
+            "previous_close":  extra.get("previous_close"),
+            "open":            extra.get("open"),
+            "day_high":        q.high,
+            "day_low":         q.low,
+            "volume_24h":      q.volume,
+            "currency":        q.currency or "USD",
+            "as_of":           q.timestamp,
+        }
+
+        # Best-effort daily indicators. A failure here NEVER fails the
+        # quote — the price is the must-have; indicators are a bonus.
+        indicators = None
+        try:
+            indicators = await _equity_daily_indicators(sym, q.price)
+        except Exception as exc:   # noqa: BLE001 — never let enrichment break the quote
+            logger.info("market_data | equity indicators skipped %s: %s", sym, exc)
+
+        if indicators:
+            payload.update(indicators)
+            payload["timeframe"] = "1d"   # real daily candles backed it
+            payload["data_quality"] = {"level": "ohlc_daily", "missing": [
+                # Still no intraday MTF / futures microstructure / risk plan
+                # for equities — say so rather than fake it.
+                "multi_timeframe", "futures", "plan",
+            ]}
+        else:
+            payload["data_quality"] = {"level": "quote_only", "missing": [
+                "rsi_14", "sma20", "sma50", "atr_14",
+                "support", "resistance", "multi_timeframe", "plan",
+            ]}
+
+        logger.info(
+            "market_data | equity via market_providers | symbol=%s | "
+            "price=%s | source=%s | quality=%s",
+            sym, q.price, q.source or "-", payload["data_quality"]["level"],
+        )
+        return self._ok(payload, provider=q.source or "market_providers",
+                        is_live=True)
 
     # ── Symbol parsing ─────────────────────────────────────────────────────
 
@@ -1484,6 +1677,148 @@ def _detect_bos(highs: list, lows: list, closes: list, lookback: int = 30) -> st
     if last < min(prior_l):
         return "bearish_bos"
     return "range"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Equity daily-OHLC indicators (Phase 8n)
+#
+# Finnhub/TwelveData /quote give a price but no history, so a stock answer
+# had no RSI/SMA/support-resistance. TwelveData /time_series (free tier:
+# 8 req/min) supplies daily candles; we compute the indicators honestly or
+# return None — NEVER fabricated. last_price stays the live quote (more
+# current than the latest daily close).
+
+_TWELVEDATA_TS = "https://api.twelvedata.com/time_series"
+
+
+def _twelvedata_key() -> str:
+    """Same precedence as market_providers.TwelveDataProvider."""
+    return (
+        os.getenv("TWELVE_DATA_API_KEY", "").strip()
+        or os.getenv("TWELVEDATA_API_KEY", "").strip()
+    )
+
+
+def _sma(closes: list, period: int):
+    if not closes or len(closes) < period or period < 1:
+        return None
+    return round(sum(closes[-period:]) / period, 6)
+
+
+def _equity_bias(price, sma20, sma50, rsi):
+    """Compact, honest bull/bear read from whatever indicators exist.
+    Returns (bias, reason). Only references components that are present."""
+    parts, score = [], 0
+    if sma20 is not None and price is not None:
+        if price > sma20 * 1.001:
+            score += 1; parts.append("price>SMA20")
+        elif price < sma20 * 0.999:
+            score -= 1; parts.append("price<SMA20")
+        else:
+            parts.append("price≈SMA20")
+    if sma20 is not None and sma50 is not None:
+        if sma20 > sma50 * 1.001:
+            score += 1; parts.append("SMA20>SMA50")
+        elif sma20 < sma50 * 0.999:
+            score -= 1; parts.append("SMA20<SMA50")
+        else:
+            parts.append("SMA20≈SMA50")
+    if rsi is not None:
+        parts.append(f"RSI {rsi:g}")
+        if rsi >= 70:
+            score -= 1; parts.append("overbought")
+        elif rsi <= 30:
+            score += 1; parts.append("oversold")
+    if not parts:
+        return None, None
+    bias = "bullish" if score >= 2 else "bearish" if score <= -2 else "neutral"
+    return bias, ", ".join(parts)
+
+
+async def _equity_daily_indicators(symbol: str, last_price):
+    """Best-effort daily indicators for an equity. Returns a dict of
+    indicator fields, or None when no TwelveData key / no usable candles.
+    Raising is fine — the caller treats any failure as 'no indicators'."""
+    key = _twelvedata_key()
+    if not key:
+        return None
+    url = (
+        f"{_TWELVEDATA_TS}?"
+        + urllib.parse.urlencode({
+            "symbol": symbol, "interval": "1day",
+            "outputsize": 80, "apikey": key, "order": "ASC",
+        })
+    )
+    data = await _fetch_json(url, timeout=_TIMEOUT, cache_ttl=_CACHE_TTL_PRIMARY)
+    if not isinstance(data, dict) or data.get("status") == "error":
+        logger.info(
+            "market_data | twelvedata time_series no data %s: %s",
+            symbol, (data or {}).get("message") if isinstance(data, dict) else data,
+        )
+        return None
+    values = data.get("values")
+    if not isinstance(values, list) or len(values) < 30:
+        return None
+
+    # order=ASC → oldest first already; be defensive and sort by datetime.
+    try:
+        values = sorted(values, key=lambda v: v.get("datetime", ""))
+    except Exception:        # noqa: BLE001
+        pass
+
+    highs, lows, closes, vols = [], [], [], []
+    for v in values:
+        # Parse ALL four before appending — appending high-then-low in one
+        # try meant a mid-row parse failure left `highs` one longer than
+        # the rest, permanently misaligning OHLCV so every downstream
+        # indicator paired wrong values (Bugbot Medium 82a66e1b).
+        try:
+            h = float(v["high"])
+            lo = float(v["low"])
+            c = float(v["close"])
+            vol = float(v.get("volume") or 0)
+        except (KeyError, TypeError, ValueError):
+            continue
+        highs.append(h)
+        lows.append(lo)
+        closes.append(c)
+        vols.append(vol)
+    if len(closes) < 30:
+        return None
+
+    rsi   = _calc_rsi(closes) if len(closes) >= 15 else None
+    sma20 = _sma(closes, 20)
+    sma50 = _sma(closes, 50)
+    atr   = _calc_atr(highs, lows, closes)
+    atr14 = round(atr, 6) if atr and atr > 0 else None
+    support, resistance = _support_resistance(highs, lows, closes)
+    vol_trend = _volume_trend(vols)
+    bos       = _detect_bos(highs, lows, closes)
+    if sma20 is not None and sma50 is not None:
+        trend = ("uptrend" if sma20 > sma50 * 1.003
+                 else "downtrend" if sma20 < sma50 * 0.997
+                 else "sideways")
+    else:
+        trend = None
+    bias, bias_reason = _equity_bias(last_price, sma20, sma50, rsi)
+
+    out = {
+        "rsi_14":       rsi,
+        "sma20":        sma20,
+        "sma50":        sma50,
+        "atr_14":       atr14,
+        "support":      support,
+        "resistance":   resistance,
+        "trend":        trend,
+        "volume_trend": vol_trend,
+        "bos":          bos,
+        "bias":         bias,
+        "bias_reason":  bias_reason,
+        "candles_analyzed": len(closes),
+    }
+    # Drop None so the renderer (which skips None) and the honest
+    # "missing" list stay consistent.
+    return {k: v for k, v in out.items() if v is not None}
 
 
 # ══════════════════════════════════════════════════════════════════════════════

@@ -113,7 +113,7 @@ export default function ChatView({
           /* Empty state with suggestions */
           <div className="flex flex-col h-full">
             <div className="flex-1 flex items-center justify-center px-4">
-              <EmptyWorkspace onSend={handleEmptySend} workspace={workspace} compact />
+              <EmptyWorkspace onQuickAction={handleEmptySend} activeMode={workspace} compact />
             </div>
           </div>
         ) : (

@@ -29,7 +29,7 @@ const markdownComponents = {
     const lang = match ? match[1] : '';
     if (!inline && lang) {
       return (
-        <div className="my-3 rounded-xl overflow-hidden border border-white/[0.06]">
+        <div className="my-3 rounded-xl overflow-hidden border border-white/[0.06] shadow-[0_2px_8px_-2px_rgba(0,0,0,0.3)]">
           <div className="flex items-center justify-between px-3 py-1.5 bg-white/[0.02] border-b border-white/[0.04]">
             <span className="text-[10px] text-slate-600 font-mono">{lang}</span>
             <button
@@ -157,17 +157,17 @@ export default function MessageBubble({
   // ─── User message ───
   if (role === 'user') {
     return (
-      <div className="flex justify-end mb-1">
+      <div className="flex justify-end py-1">
         <motion.div
-          initial={{ opacity: 0, y: 4, scale: 0.98 }}
+          initial={{ opacity: 0, y: 6, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ duration: 0.25, ease: 'easeOut' }}
+          transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
           className="group max-w-[85%] md:max-w-[75%] lg:max-w-[65%]"
         >
-          <div className={`rounded-2xl rounded-tr-sm ${isShort ? 'px-4 py-2' : 'px-4 py-2.5'} bg-white/[0.06] border border-white/[0.06] hover:bg-white/[0.08] transition-colors`}>
+          <div className={`rounded-2xl rounded-tr-sm ${isShort ? 'px-4 py-2' : 'px-4 py-2.5'} bg-white/[0.06] border border-white/[0.06] hover:bg-white/[0.08] transition-all duration-200 shadow-[0_1px_4px_-1px_rgba(0,0,0,0.2)]`}>
             <p className="text-[13px] text-slate-200 leading-relaxed whitespace-pre-wrap">{content}</p>
           </div>
-          <div className="flex items-center justify-end gap-1.5 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="flex items-center justify-end gap-1.5 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
             <span className="text-[10px] text-slate-700">{formatTime(fullMessage.timestamp)}</span>
             <button onClick={handleCopy} className="p-0.5 rounded text-slate-700 hover:text-slate-400 transition-colors">
               {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
@@ -183,20 +183,24 @@ export default function MessageBubble({
     <motion.div
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, ease: 'easeOut' }}
-      className="flex gap-2.5 mb-1 group"
+      transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+      className="flex gap-2.5 py-1 group"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
       {/* Avatar */}
-      <div className="flex h-[28px] w-[28px] shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400/20 to-blue-600/20 border border-cyan-500/10 mt-0.5">
-        <Sparkles className="h-3.5 w-3.5 text-cyan-400/70" />
+      <div className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400/20 to-blue-600/20 border border-cyan-500/10 mt-0.5 shadow-[0_0_8px_-2px_rgba(34,211,238,0.08)]">
+        <Sparkles className="h-3 w-3 text-cyan-400/70" />
       </div>
 
       <div className="flex-1 min-w-0 max-w-[90%] md:max-w-[85%] lg:max-w-[80%]">
         {/* Bubble */}
         <div
-          className={`rounded-2xl rounded-tl-sm border border-transparent hover:border-white/[0.04] transition-colors ${isShort ? 'px-4 py-2.5 bg-transparent' : 'px-4 py-3 bg-white/[0.01]'}`}
+          className={`rounded-2xl rounded-tl-sm border transition-all duration-200 ${
+            isShort
+              ? 'px-4 py-2.5 bg-transparent border-transparent hover:border-white/[0.04] hover:bg-white/[0.01]'
+              : 'px-4 py-3 bg-white/[0.01] border-transparent hover:border-white/[0.05] hover:bg-white/[0.02] shadow-[0_1px_6px_-2px_rgba(0,0,0,0.15)]'
+          }`}
         >
           <div ref={contentRef} className="prose prose-invert prose-sm max-w-none">
             <ReactMarkdown
@@ -219,7 +223,7 @@ export default function MessageBubble({
 
         {/* Action row — shows on hover, hidden during generation */}
         {!isGenerating && (
-          <div className={`flex items-center gap-0.5 mt-1 transition-opacity duration-150 ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
+          <div className={`flex items-center gap-0.5 mt-1.5 transition-opacity duration-200 ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
             <button
               onClick={handleCopy}
               className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-slate-700 hover:text-slate-400 hover:bg-white/[0.03] transition-all"
@@ -262,7 +266,7 @@ export default function MessageBubble({
 
         {/* Response action chips — only on latest completed assistant message */}
         {isLatestAssistant && !isGenerating && onResponseAction && (
-          <div className="mt-2">
+          <div className="mt-2.5">
             <ResponseActions onAction={onResponseAction} onHoverAction={onHoverAction} />
           </div>
         )}

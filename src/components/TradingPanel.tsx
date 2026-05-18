@@ -1,25 +1,32 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { TradingSignal } from '@/types';
 import { useToast } from '@/hooks/useToast';
+import { useTradingSignals } from '@/hooks/useTradingSignals';
+import KorvixOrb from './KorvixOrb';
 import {
   TrendingUp, Activity, Zap,
   RefreshCw, Search, Clock, Star, ChevronRight,
   ArrowUpRight, ArrowDownRight,
-  Globe, Bitcoin, Layers, Radar,
-  AlertTriangle,
+  Layers, Radar,
+  AlertTriangle, Plus, X, Sparkles,
 } from 'lucide-react';
 
+// Default symbol sets the panel requests from /trading/signals (backend
+// caps at 20). Watchlist + favorites persist in localStorage.
+const SIGNAL_SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'NVDA', 'AAPL', 'TSLA', 'MSFT'];
+const DEFAULT_WATCH = ['AAPL', 'NVDA', 'TSLA', 'BTCUSDT', 'ETHUSDT', 'MSFT'];
+const WATCH_LS_KEY = 'korvix.watchlist.v1';
+const FAV_LS_KEY = 'korvix.favorites.v1';
+
 // ─── Configuration ───
-// Set to true ONLY for UI development/demo purposes.
-// All demo data is gated behind this flag.
 const DEMO_MODE = false;
 
 // ─── Types ───
 interface MarketSentiment {
   overall: 'bullish' | 'bearish' | 'neutral';
-  score: number; // 0-100
-  fearGreedIndex: number; // 0-100
+  score: number;
+  fearGreedIndex: number;
   vix: number;
   putCallRatio: number;
   advanceDecline: number;
@@ -48,7 +55,7 @@ interface TrendingAsset {
   is_live?: boolean;
 }
 
-// ─── Demo Data (only used when DEMO_MODE = true) ───
+// ─── Demo Data ───
 const DEMO_SENTIMENT: MarketSentiment = {
   overall: 'bullish',
   score: 68,
@@ -85,6 +92,90 @@ const SIGNALS: TradingSignal[] = [
   { id: 's4', symbol: 'AMD', name: 'AMD Inc.', direction: 'wait', confidence: 45, setupGrade: 'C', volatility: 'medium', entryPrice: undefined, targetPrice: undefined, stopLoss: undefined, timestamp: new Date(), reasoning: 'Mixed signals. Support at 160 holding but resistance at 168 strong. Wait for decisive break.', sparkline: [167,166,165,166,164,165,163,164,165,164.20] },
 ];
 
+/* ═══════════════════════════════════════════
+   SKELETON COMPONENTS
+   ═══════════════════════════════════════════ */
+
+function SkeletonPulse({ className = '' }: { className?: string }) {
+  return (
+    <div className={`relative overflow-hidden rounded-lg bg-white/[0.02] ${className}`}>
+      <motion.div
+        className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.04] to-transparent"
+        animate={{ x: ['-100%', '100%'] }}
+        transition={{ duration: 1.5, repeat: Infinity, ease: 'easeInOut' }}
+      />
+    </div>
+  );
+}
+
+function SignalCardSkeleton() {
+  return (
+    <div className="p-4 rounded-xl border border-white/[0.02] bg-white/[0.01] space-y-3">
+      <div className="flex items-center gap-3">
+        <SkeletonPulse className="h-4 w-16" />
+        <SkeletonPulse className="h-4 w-10" />
+        <SkeletonPulse className="h-4 w-14 ml-auto" />
+      </div>
+      <SkeletonPulse className="h-3 w-3/4" />
+      <div className="grid grid-cols-3 gap-2">
+        <SkeletonPulse className="h-10" />
+        <SkeletonPulse className="h-10" />
+        <SkeletonPulse className="h-10" />
+      </div>
+    </div>
+  );
+}
+
+function WatchlistSkeleton() {
+  return (
+    <div className="space-y-1.5">
+      {Array.from({ length: 5 }).map((_, i) => (
+        <div key={i} className="flex items-center gap-3 p-3 rounded-xl border border-white/[0.02] bg-white/[0.01]">
+          <SkeletonPulse className="h-4 w-4 rounded-full" />
+          <SkeletonPulse className="h-4 w-12" />
+          <div className="flex-1" />
+          <SkeletonPulse className="h-4 w-16" />
+          <SkeletonPulse className="h-4 w-10" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SentimentSkeleton() {
+  return (
+    <div className="p-4 rounded-xl border border-white/[0.02] bg-white/[0.01] space-y-3">
+      <div className="flex items-center justify-between">
+        <SkeletonPulse className="h-4 w-32" />
+        <SkeletonPulse className="h-4 w-16" />
+      </div>
+      <SkeletonPulse className="h-2 w-full rounded-full" />
+      <div className="grid grid-cols-2 gap-2">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <SkeletonPulse key={i} className="h-12" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TrendingSkeleton() {
+  return (
+    <div className="space-y-2">
+      {Array.from({ length: 4 }).map((_, i) => (
+        <div key={i} className="flex items-center gap-3 p-3 rounded-xl border border-white/[0.02] bg-white/[0.01]">
+          <div className="flex-1">
+            <SkeletonPulse className="h-3 w-20 mb-1" />
+            <SkeletonPulse className="h-3 w-32" />
+          </div>
+          <SkeletonPulse className="h-3 w-10" />
+          <SkeletonPulse className="h-3 w-12" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── Demo Data Banner ───
 function DemoBanner() {
   if (!DEMO_MODE) return null;
@@ -97,22 +188,47 @@ function DemoBanner() {
 }
 
 // ─── Live Data Unavailable Fallback ───
-function LiveDataUnavailable({ onRetry }: { onRetry: () => void }) {
+function LiveDataUnavailable({ onRetry, message }: { onRetry: () => void; message?: string }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+      className="flex flex-col items-center justify-center py-16 px-6 text-center"
+    >
+      <div className="relative p-8 rounded-2xl border border-white/[0.04] bg-white/[0.015] backdrop-blur-sm max-w-sm w-full">
+        {/* Subtle glow */}
+        <div className="absolute -top-8 left-1/2 -translate-x-1/2 w-24 h-24 bg-cyan-500/[0.03] rounded-full blur-2xl pointer-events-none" />
+
+        <div className="relative flex flex-col items-center">
+          <KorvixOrb size="md" variant="idle" className="mb-5" />
+          <p className="text-[14px] font-medium text-slate-300 mb-2">
+            {message ? 'Live market data unavailable' : 'Live market data unavailable'}
+          </p>
+          <p className="text-[12px] text-slate-600 mb-6 leading-relaxed">
+            {message || 'Trading signals require a live market data connection. It will populate as soon as data is available.'}
+          </p>
+          <button
+            onClick={onRetry}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white/[0.03] border border-white/[0.06] text-[12px] text-slate-400 hover:text-white hover:bg-white/[0.05] hover:border-white/[0.1] transition-all shadow-[0_1px_4px_-1px_rgba(0,0,0,0.2)]"
+          >
+            <RefreshCw className="h-3.5 w-3.5" /> Retry Connection
+          </button>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+// ─── Not Available Yet (feature has no backend — NOT an error) ───
+function NotAvailableYet({ title, detail }: { title: string; detail: string }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
-      <div className="h-12 w-12 rounded-2xl bg-slate-500/[0.04] border border-white/[0.03] flex items-center justify-center mb-4">
-        <Activity className="h-5 w-5 text-slate-600" />
+      <div className="h-12 w-12 rounded-2xl bg-indigo-500/[0.05] border border-indigo-500/10 flex items-center justify-center mb-4">
+        <Sparkles className="h-5 w-5 text-indigo-400/70" />
       </div>
-      <p className="text-[13px] font-medium text-slate-400 mb-1">Live market data unavailable right now.</p>
-      <p className="text-[11px] text-slate-600 mb-4 max-w-xs">
-        Trading signals require a live market data connection. Data will appear here once connected.
-      </p>
-      <button
-        onClick={onRetry}
-        className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-white/[0.03] border border-white/[0.06] text-[11px] text-slate-400 hover:text-white hover:bg-white/[0.05] transition-all"
-      >
-        <RefreshCw className="h-3 w-3" /> Retry Connection
-      </button>
+      <p className="text-[13px] font-medium text-slate-300 mb-1">{title}</p>
+      <p className="text-[11px] text-slate-600 max-w-xs">{detail}</p>
     </div>
   );
 }
@@ -132,9 +248,8 @@ function SignalCard({ signal }: { signal: TradingSignal }) {
   return (
     <motion.div
       layout
-      className={`rounded-xl border ${colors.border} ${colors.bg} overflow-hidden`}
+      className={`rounded-xl border ${colors.border} ${colors.bg} overflow-hidden transition-all duration-200 hover:border-opacity-20`}
     >
-      {/* DEMO label on card if demo mode */}
       {DEMO_MODE && (
         <div className="px-3 pt-2">
           <span className="text-[9px] font-medium text-amber-400/50 bg-amber-500/[0.06] border border-amber-500/10 px-1.5 py-0.5 rounded">
@@ -143,7 +258,6 @@ function SignalCard({ signal }: { signal: TradingSignal }) {
         </div>
       )}
       <button onClick={() => setExpanded(!expanded)} className="w-full flex items-center gap-3 p-4 text-left">
-        {/* Sparkline */}
         {signal.sparkline && (
           <div className="flex items-end gap-px h-8 w-12 shrink-0">
             {signal.sparkline.map((v, i) => {
@@ -224,7 +338,7 @@ function SentimentGauge({ sentiment }: { sentiment: MarketSentiment }) {
   const sentimentBg = sentiment.overall === 'bullish' ? 'bg-emerald-500/[0.06]' : sentiment.overall === 'bearish' ? 'bg-red-500/[0.06]' : 'bg-amber-500/[0.06]';
 
   return (
-    <div className={`p-4 rounded-xl border border-white/[0.04] ${sentimentBg}`}>
+    <div className={`p-4 rounded-xl border border-white/[0.04] ${sentimentBg} transition-all duration-200 hover:border-white/[0.06]`}>
       {DEMO_MODE && (
         <div className="mb-2">
           <span className="text-[9px] font-medium text-amber-400/50 bg-amber-500/[0.06] border border-amber-500/10 px-1.5 py-0.5 rounded">
@@ -240,7 +354,6 @@ function SentimentGauge({ sentiment }: { sentiment: MarketSentiment }) {
         <span className={`text-[11px] font-semibold ${sentimentColor} capitalize`}>{sentiment.overall}</span>
       </div>
 
-      {/* Overall score bar */}
       <div className="mb-3">
         <div className="flex justify-between mb-1">
           <span className="text-[10px] text-slate-500">Bullish Score</span>
@@ -256,7 +369,6 @@ function SentimentGauge({ sentiment }: { sentiment: MarketSentiment }) {
         </div>
       </div>
 
-      {/* Sub-metrics grid */}
       <div className="grid grid-cols-2 gap-2">
         <div className="p-2 rounded-lg bg-white/[0.02]">
           <p className="text-[9px] text-slate-600">Fear &amp; Greed</p>
@@ -286,12 +398,11 @@ function WatchlistRow({ item, onToggleFav }: { item: WatchlistItem; onToggleFav:
   const isPositive = item.change >= 0;
 
   return (
-    <div className="flex items-center gap-3 p-3 rounded-xl border border-white/[0.03] bg-white/[0.01] hover:border-white/[0.06] hover:bg-white/[0.02] transition-all group">
+    <div className="flex items-center gap-3 p-3 rounded-xl border border-white/[0.02] bg-white/[0.01] hover:border-white/[0.05] hover:bg-white/[0.02] transition-all duration-200 group">
       <button onClick={onToggleFav} className="shrink-0">
         <Star className={`w-3.5 h-3.5 ${item.isFavorite ? 'text-amber-400 fill-amber-400' : 'text-slate-700 hover:text-slate-500'} transition-colors`} />
       </button>
 
-      {/* Sparkline */}
       <div className="flex items-end gap-px h-6 w-10 shrink-0">
         {item.sparkline.map((v, i) => {
           const min = Math.min(...item.sparkline);
@@ -328,7 +439,7 @@ function TrendingCard({ asset }: { asset: TrendingAsset }) {
   const sentBg = asset.sentiment === 'bullish' ? 'bg-emerald-500/[0.06]' : asset.sentiment === 'bearish' ? 'bg-red-500/[0.06]' : 'bg-amber-500/[0.06]';
 
   return (
-    <div className="flex items-center gap-3 p-3 rounded-xl border border-white/[0.03] bg-white/[0.01]">
+    <div className="flex items-center gap-3 p-3 rounded-xl border border-white/[0.02] bg-white/[0.01] hover:border-white/[0.04] transition-all duration-200">
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="text-[12px] font-medium text-white">{asset.symbol}</span>
@@ -354,31 +465,108 @@ function TrendingCard({ asset }: { asset: TrendingAsset }) {
 export default function TradingPanel() {
   const [activeTab, setActiveTab] = useState<'signals' | 'watchlist' | 'sentiment' | 'trending'>('signals');
   const [watchlistFilter, setWatchlistFilter] = useState<'all' | 'stocks' | 'crypto'>('all');
-  const [watchlist, setWatchlist] = useState<WatchlistItem[]>(DEMO_MODE ? DEMO_WATCHLIST : []);
   const [search, setSearch] = useState('');
   const [lastRefresh, setLastRefresh] = useState(new Date());
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const { addToast } = useToast();
 
-  // Live signals: only show if is_live === true
-  const liveSignals = SIGNALS.filter((s) => (s as unknown as Record<string, unknown>).is_live === true);
-  // If DEMO_MODE, use all signals (they're all marked is_live: false anyway)
-  const signalsToShow = DEMO_MODE ? SIGNALS : liveSignals;
+  // Persisted watchlist symbols + favorites (survive reload).
+  const [watchSymbols, setWatchSymbols] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(WATCH_LS_KEY);
+      if (raw) { const a = JSON.parse(raw); if (Array.isArray(a) && a.length) return a; }
+    } catch { /* ignore */ }
+    return DEFAULT_WATCH;
+  });
+  useEffect(() => {
+    try { localStorage.setItem(WATCH_LS_KEY, JSON.stringify(watchSymbols)); } catch { /* ignore */ }
+  }, [watchSymbols]);
+  const [favorites, setFavorites] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(FAV_LS_KEY);
+      if (raw) { const a = JSON.parse(raw); if (Array.isArray(a)) return a; }
+    } catch { /* ignore */ }
+    return [];
+  });
+  useEffect(() => {
+    try { localStorage.setItem(FAV_LS_KEY, JSON.stringify(favorites)); } catch { /* ignore */ }
+  }, [favorites]);
 
+  const signalsApi = useTradingSignals(DEMO_MODE ? [] : SIGNAL_SYMBOLS, '4h');
+  const watchApi = useTradingSignals(DEMO_MODE ? [] : watchSymbols, '1d');
+
+  const liveSignals = DEMO_MODE
+    ? SIGNALS
+    : signalsApi.signals.filter((s) => s.isLive);
+  const signalsToShow = liveSignals;
+
+  // Live → main's WatchlistItem shape. Only symbols WITH a real numeric
+  // price are shown — never fabricate $0.00 (Bugbot honesty eff5d8d2).
+  const watchlist: WatchlistItem[] = useMemo(() => {
+    if (DEMO_MODE) return DEMO_WATCHLIST;
+    const out: WatchlistItem[] = [];
+    for (const s of watchApi.signals) {
+      if (typeof s.price !== 'number') continue;
+      const pct = typeof s.changePercent === 'number' ? s.changePercent : 0;
+      out.push({
+        symbol: s.symbol,
+        name: s.name || s.symbol,
+        price: s.price,
+        change: s.price * (pct / 100),
+        changePercent: pct,
+        sparkline: [],
+        isFavorite: favorites.includes(s.symbol.toUpperCase()),
+        type: s.assetType === 'crypto' ? 'crypto' : 'stock',
+        is_live: true,
+      });
+    }
+    return out;
+  }, [watchApi.signals, favorites]);
+
+  const activeApi = activeTab === 'watchlist' ? watchApi : signalsApi;
   const handleRefresh = () => {
+    setIsRefreshing(true);
     setLastRefresh(new Date());
     if (DEMO_MODE) {
       addToast('Demo data refreshed', 'success');
     } else {
-      addToast('Trading data refreshed', 'success');
+      activeApi.refresh();
+      addToast('Refreshing market data…', 'info');
     }
+    setTimeout(() => setIsRefreshing(false), 800);
   };
 
   const toggleFav = (symbol: string) => {
-    setWatchlist((prev) => prev.map((w) => w.symbol === symbol ? { ...w, isFavorite: !w.isFavorite } : w));
+    const up = symbol.toUpperCase();
+    setFavorites((prev) => prev.includes(up) ? prev.filter((s) => s !== up) : [...prev, up]);
+  };
+
+  const addSymbol = () => {
+    const sym = search.trim().toUpperCase();
+    if (!sym || !/^[A-Z0-9.\-]{1,15}$/.test(sym)) {
+      addToast('Enter a valid ticker (e.g. AAPL, BTCUSDT)', 'error');
+      return;
+    }
+    if (watchSymbols.some((s) => s.toUpperCase() === sym)) {
+      addToast(`${sym} is already in your watchlist`, 'info');
+      return;
+    }
+    if (watchSymbols.length >= 20) {
+      addToast('Watchlist is full (max 20)', 'error');
+      return;
+    }
+    setWatchSymbols((prev) => [...prev, sym]);
+    setSearch('');
+    addToast(`${sym} added`, 'success');
+  };
+
+  const removeSymbol = (symbol: string) => {
+    const up = symbol.toUpperCase();
+    setWatchSymbols((prev) => prev.filter((s) => s.toUpperCase() !== up));
   };
 
   const filteredWatchlist = watchlist
-    .filter((w) => watchlistFilter === 'all' || w.type === watchlistFilter)
+    .filter((w) => watchlistFilter === 'all' || (watchlistFilter === 'crypto' ? w.type === 'crypto' : w.type === 'stock'))
     .filter((w) => !search || w.symbol.toLowerCase().includes(search.toLowerCase()) || w.name.toLowerCase().includes(search.toLowerCase()));
 
   const tabs = [
@@ -394,8 +582,17 @@ export default function TradingPanel() {
       <div className="shrink-0 p-4 border-b border-white/[0.04] bg-[#0a0a0a]/60">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/[0.06] border border-emerald-500/10">
+            <div className="relative flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/[0.06] border border-emerald-500/10 shadow-[0_0_8px_-2px_rgba(52,211,153,0.06)]">
               <TrendingUp className="h-4 w-4 text-emerald-400" />
+              {/* Live pulse dot */}
+              {!DEMO_MODE && (
+                <motion.div
+                  className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400"
+                  animate={{ scale: [1, 1.5, 1], opacity: [0.7, 1, 0.7] }}
+                  transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                  style={{ boxShadow: '0 0 4px rgba(52,211,153,0.5)' }}
+                />
+              )}
             </div>
             <div>
               <h2 className="text-[14px] font-semibold text-white">Trading Intelligence</h2>
@@ -409,12 +606,14 @@ export default function TradingPanel() {
               <Clock className="w-3 h-3 inline mr-1" />
               {lastRefresh.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </span>
-            <button
+            <motion.button
               onClick={handleRefresh}
+              animate={{ rotate: isRefreshing ? 360 : 0 }}
+              transition={{ duration: 0.8, ease: 'linear' }}
               className="h-7 w-7 flex items-center justify-center rounded-lg border border-white/[0.04] text-slate-600 hover:text-emerald-400 hover:bg-emerald-500/[0.04] transition-all"
             >
               <RefreshCw className="h-3.5 w-3.5" />
-            </button>
+            </motion.button>
           </div>
         </div>
 
@@ -424,8 +623,8 @@ export default function TradingPanel() {
             <button
               key={t.id}
               onClick={() => setActiveTab(t.id)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium transition-all ${
-                activeTab === t.id ? 'bg-white/[0.06] text-white' : 'text-slate-600 hover:text-slate-400'
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium transition-all duration-200 ${
+                activeTab === t.id ? 'bg-white/[0.06] text-white shadow-[0_1px_4px_-1px_rgba(0,0,0,0.2)]' : 'text-slate-600 hover:text-slate-400'
               }`}
             >
               <t.icon className="w-3 h-3" />
@@ -441,8 +640,16 @@ export default function TradingPanel() {
         {activeTab === 'signals' && (
           <>
             <DemoBanner />
-            {!DEMO_MODE && signalsToShow.length === 0 ? (
-              <LiveDataUnavailable onRetry={handleRefresh} />
+            {isRefreshing || (!DEMO_MODE && signalsApi.isLoading && signalsToShow.length === 0) ? (
+              <div className="space-y-3">
+                <SignalCardSkeleton />
+                <SignalCardSkeleton />
+                <SignalCardSkeleton />
+              </div>
+            ) : !DEMO_MODE && signalsApi.error ? (
+              <LiveDataUnavailable onRetry={handleRefresh} message={signalsApi.error} />
+            ) : !DEMO_MODE && signalsToShow.length === 0 ? (
+              <LiveDataUnavailable onRetry={handleRefresh} message="No live trading signals right now." />
             ) : (
               <>
                 {/* Summary stats */}
@@ -456,7 +663,7 @@ export default function TradingPanel() {
                     <p className="text-[9px] text-slate-500">Short</p>
                   </div>
                   <div className="p-3 rounded-xl border border-amber-500/10 bg-amber-500/[0.04] text-center">
-                    <p className="text-lg font-semibold text-amber-400">{signalsToShow.filter((s) => s.direction === 'wait').length}</p>
+                    <p className="text-lg font-semibold text-amber-400">{signalsToShow.filter((s) => s.direction === 'wait' || s.direction === 'neutral').length}</p>
                     <p className="text-[9px] text-slate-500">Wait</p>
                   </div>
                   <div className="p-3 rounded-xl border border-white/[0.04] bg-white/[0.01] text-center">
@@ -465,7 +672,6 @@ export default function TradingPanel() {
                   </div>
                 </div>
 
-                {/* Signal Cards */}
                 <div className="space-y-2">
                   {signalsToShow.map((signal) => (
                     <SignalCard key={signal.id} signal={signal} />
@@ -480,42 +686,57 @@ export default function TradingPanel() {
         {activeTab === 'watchlist' && (
           <>
             <DemoBanner />
-            {!DEMO_MODE && watchlist.length === 0 ? (
-              <LiveDataUnavailable onRetry={handleRefresh} />
+            <div className="flex gap-2 mb-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-600" />
+                <input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') addSymbol(); }}
+                  placeholder="Search or add ticker (Enter)…"
+                  className="w-full h-8 pl-8 pr-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[11px] text-slate-300 placeholder:text-slate-700 focus:outline-none focus:border-emerald-500/20 transition-all"
+                />
+              </div>
+              <button onClick={addSymbol} title="Add to watchlist"
+                className="h-8 px-2.5 flex items-center gap-1 rounded-lg bg-emerald-500/[0.06] border border-emerald-500/10 text-[11px] text-emerald-400 hover:bg-emerald-500/[0.1] transition-all">
+                <Plus className="w-3 h-3" /> Add
+              </button>
+              <div className="flex gap-1 p-0.5 rounded-lg bg-white/[0.02] border border-white/[0.03]">
+                {(['all', 'stocks', 'crypto'] as const).map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => setWatchlistFilter(f)}
+                    className={`px-2.5 py-1 rounded-md text-[10px] font-medium transition-all capitalize ${
+                      watchlistFilter === f ? 'bg-white/[0.06] text-white' : 'text-slate-600 hover:text-slate-400'
+                    }`}
+                  >
+                    {f}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {isRefreshing || (!DEMO_MODE && watchApi.isLoading && watchlist.length === 0) ? (
+              <WatchlistSkeleton />
+            ) : !DEMO_MODE && watchApi.error ? (
+              <LiveDataUnavailable onRetry={handleRefresh} message={watchApi.error} />
+            ) : watchSymbols.length === 0 ? (
+              <NotAvailableYet title="Your watchlist is empty" detail="Add a ticker above (e.g. AAPL, NVDA, BTCUSDT) to track live quotes." />
+            ) : filteredWatchlist.length === 0 ? (
+              <p className="text-[11px] text-slate-600 text-center py-8">
+                {watchlist.length === 0 ? 'Waiting for live quotes…' : 'No symbols match this filter.'}
+              </p>
             ) : (
-              <>
-                {/* Filter + Search */}
-                <div className="flex gap-2 mb-2">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-600" />
-                    <input
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      placeholder="Search symbols..."
-                      className="w-full h-8 pl-8 pr-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[11px] text-slate-300 placeholder:text-slate-700 focus:outline-none focus:border-emerald-500/20 transition-all"
-                    />
+              <div className="space-y-1.5">
+                {filteredWatchlist.map((item) => (
+                  <div key={item.symbol} className="relative group">
+                    <WatchlistRow item={item} onToggleFav={() => toggleFav(item.symbol)} />
+                    <button onClick={() => removeSymbol(item.symbol)} title="Remove"
+                      className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity text-slate-700 hover:text-red-400 bg-[#0a0a0a]/70 rounded p-0.5">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
                   </div>
-                  <div className="flex gap-1 p-0.5 rounded-lg bg-white/[0.02] border border-white/[0.03]">
-                    {(['all', 'stocks', 'crypto'] as const).map((f) => (
-                      <button
-                        key={f}
-                        onClick={() => setWatchlistFilter(f)}
-                        className={`px-2.5 py-1 rounded-md text-[10px] font-medium transition-all capitalize ${
-                          watchlistFilter === f ? 'bg-white/[0.06] text-white' : 'text-slate-600 hover:text-slate-400'
-                        }`}
-                      >
-                        {f === 'all' ? 'All' : f === 'stocks' ? <span className="flex items-center gap-1"><Globe className="w-2.5 h-2.5" /> Stocks</span> : <span className="flex items-center gap-1"><Bitcoin className="w-2.5 h-2.5" /> Crypto</span>}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-1.5">
-                  {filteredWatchlist.map((item) => (
-                    <WatchlistRow key={item.symbol} item={item} onToggleFav={() => toggleFav(item.symbol)} />
-                  ))}
-                </div>
-              </>
+                ))}
+              </div>
             )}
           </>
         )}
@@ -523,14 +744,18 @@ export default function TradingPanel() {
         {/* ═══ SENTIMENT TAB ═══ */}
         {activeTab === 'sentiment' && (
           <>
-            {!DEMO_MODE ? (
-              <LiveDataUnavailable onRetry={handleRefresh} />
+            {isRefreshing ? (
+              <SentimentSkeleton />
+            ) : !DEMO_MODE ? (
+              <NotAvailableYet
+                title="Market sentiment — coming soon"
+                detail="Fear & Greed, put/call and sector sentiment need a dedicated data feed that isn't wired to the backend yet. We won't show simulated numbers here."
+              />
             ) : (
               <div className="space-y-3">
                 <DemoBanner />
                 <SentimentGauge sentiment={DEMO_SENTIMENT} />
 
-                {/* Sector Sentiment */}
                 <div className="p-4 rounded-xl border border-white/[0.04] bg-white/[0.01]">
                   <h3 className="text-[12px] font-medium text-white mb-3 flex items-center gap-2">
                     <Layers className="w-3.5 h-3.5 text-slate-500" /> Sector Sentiment
@@ -565,8 +790,13 @@ export default function TradingPanel() {
         {activeTab === 'trending' && (
           <>
             <DemoBanner />
-            {!DEMO_MODE && DEMO_TRENDING.filter((t) => t.is_live).length === 0 ? (
-              <LiveDataUnavailable onRetry={handleRefresh} />
+            {isRefreshing ? (
+              <TrendingSkeleton />
+            ) : !DEMO_MODE ? (
+              <NotAvailableYet
+                title="Trending assets — coming soon"
+                detail="Trending requires a social/volume aggregation service that isn't connected yet. Real data will appear here once it's available."
+              />
             ) : (
               <div className="space-y-2">
                 <div className="flex items-center justify-between mb-1">

@@ -117,9 +117,21 @@ class StockMarketTool(BaseTool):
                     symbol, quote_dict.get("last_price"), src,
                 )
                 return self._ok(quote_dict, provider=src)
-            # Chain returned no live quote — fall through to the legacy
-            # yfinance path below. NEVER fabricate.
+            # The chain (Finnhub → TwelveData → yfinance) already ran and
+            # ITS last leg is yfinance — so do NOT fall through to the
+            # legacy _fetch_quote_sync, which would hit the same
+            # rate-limited Yahoo IP a SECOND time and double the
+            # worst-case hang (Bugbot Medium b4c7aa7c). Return unavailable
+            # now; never fabricate. Bounded ≤ _PROVIDERS_TIMEOUT_S, which
+            # is < the pre-PR 6s single-attempt worst case.
+            logger.info("stock_market.providers_exhausted | symbol=%s", symbol)
+            return self._unavailable(
+                f"No live quote for {symbol} (Finnhub/TwelveData/yfinance all failed)"
+            )
 
+        # No key-backed provider configured — the chain was skipped
+        # entirely above. Legacy yfinance path runs exactly as pre-PR
+        # (single attempt, unchanged behaviour + unit-test contract).
         try:
             quote = await asyncio.wait_for(
                 asyncio.to_thread(_fetch_quote_sync, symbol),

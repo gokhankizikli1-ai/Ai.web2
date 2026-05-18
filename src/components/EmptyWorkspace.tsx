@@ -1,223 +1,108 @@
-import { useEffect } from 'react';
 import { motion } from 'framer-motion';
-import {
-  Code, TrendingUp, Search, Building2, Bot,
-  ArrowRight, Sparkles, Rocket, GraduationCap, Palette,
-} from 'lucide-react';
-import type { WorkspaceTab } from '@/types';
+import { TrendingUp, Globe, Code, Brain } from 'lucide-react';
+import KorvixOrb from './KorvixOrb';
+import SmartSuggestions from './SmartSuggestions';
 
 interface EmptyWorkspaceProps {
-  onSend: (message: string) => void;
-  workspace?: WorkspaceTab;
+  onQuickAction: (action: string) => void;
+  activeMode: string;
   compact?: boolean;
 }
 
-// Generic quick actions for default Chat workspace
-const QUICK_ACTIONS = [
-  { icon: Code, label: 'Write Code', description: 'Generate, debug, or refactor', prompt: 'Write a clean Python function that parses a CSV file and returns a summary of numeric columns', accent: 'cyan' },
-  { icon: Search, label: 'Draft Content', description: 'Emails, docs, copy', prompt: 'Draft a professional email to a client explaining a 2-week project delay with a revised timeline', accent: 'blue' },
-  { icon: TrendingUp, label: 'Analyze Data', description: 'Trends, forecasts, insights', prompt: 'Analyze the current market trends for AI-powered developer tools and provide a summary', accent: 'emerald' },
-  { icon: Sparkles, label: 'Brainstorm', description: 'Ideas, strategies, plans', prompt: 'Brainstorm 10 innovative features for a modern AI-powered productivity app', accent: 'amber' },
-  { icon: Search, label: 'Deep Research', description: 'Comprehensive topic analysis', prompt: 'Research the latest advances in transformer architectures and their practical implications', accent: 'violet' },
-  { icon: TrendingUp, label: 'Financial Model', description: 'Projections, valuations', prompt: 'Build a 5-year revenue projection model for a SaaS startup growing from $0 to $10M ARR', accent: 'emerald' },
-  { icon: Search, label: 'Translate', description: 'Multi-language support', prompt: 'Translate the following business email into Spanish, French, and Japanese', accent: 'blue' },
-  { icon: Code, label: 'System Design', description: 'Architecture, infrastructure', prompt: 'Design a scalable system architecture for a real-time chat application handling 1M concurrent users', accent: 'cyan' },
+const fadeUp = (delay: number) => ({
+  initial: { opacity: 0, y: 16 },
+  animate: { opacity: 1, y: 0 },
+  transition: { delay, duration: 0.5, ease: [0.22, 1, 0.36, 1] as const },
+});
+
+const FEATURE_CARDS = [
+  { icon: Brain, label: 'Deep Think', desc: 'Multi-step reasoning', color: 'text-violet-400', bg: 'bg-violet-500/[0.03]', border: 'border-violet-500/8' },
+  { icon: Globe, label: 'Research', desc: 'Live data search', color: 'text-cyan-400', bg: 'bg-cyan-500/[0.03]', border: 'border-cyan-500/8' },
+  { icon: Code, label: 'Code Assistant', desc: 'Write & review code', color: 'text-blue-400', bg: 'bg-blue-500/[0.03]', border: 'border-blue-500/8' },
+  { icon: TrendingUp, label: 'Trading Intel', desc: 'Market signals', color: 'text-emerald-400', bg: 'bg-emerald-500/[0.03]', border: 'border-emerald-500/8' },
 ];
 
-const ACCENT_COLORS: Record<string, { bg: string; border: string; icon: string; glow: string }> = {
-  cyan:    { bg: 'bg-cyan-500/[0.04]',    border: 'border-cyan-500/10',    icon: 'text-cyan-400/60',    glow: 'hover:shadow-[0_0_16px_-4px_rgba(34,211,238,0.1)]' },
-  blue:    { bg: 'bg-blue-500/[0.04]',     border: 'border-blue-500/10',     icon: 'text-blue-400/60',     glow: 'hover:shadow-[0_0_16px_-4px_rgba(96,165,250,0.1)]' },
-  emerald: { bg: 'bg-emerald-500/[0.04]',  border: 'border-emerald-500/10',  icon: 'text-emerald-400/60',  glow: 'hover:shadow-[0_0_16px_-4px_rgba(52,211,153,0.1)]' },
-  amber:   { bg: 'bg-amber-500/[0.04]',    border: 'border-amber-500/10',    icon: 'text-amber-400/60',    glow: 'hover:shadow-[0_0_16px_-4px_rgba(251,191,36,0.1)]' },
-  violet:  { bg: 'bg-violet-500/[0.04]',   border: 'border-violet-500/10',   icon: 'text-violet-400/60',   glow: 'hover:shadow-[0_0_16px_-4px_rgba(167,139,250,0.1)]' },
-  indigo:  { bg: 'bg-indigo-500/[0.04]',   border: 'border-indigo-500/10',   icon: 'text-indigo-400/60',   glow: 'hover:shadow-[0_0_16px_-4px_rgba(129,140,248,0.1)]' },
-  orange:  { bg: 'bg-orange-500/[0.04]',   border: 'border-orange-500/10',   icon: 'text-orange-400/60',   glow: 'hover:shadow-[0_0_16px_-4px_rgba(251,146,60,0.1)]' },
-  rose:    { bg: 'bg-rose-500/[0.04]',     border: 'border-rose-500/10',     icon: 'text-rose-400/60',     glow: 'hover:shadow-[0_0_16px_-4px_rgba(251,113,133,0.1)]' },
-  pink:    { bg: 'bg-pink-500/[0.04]',     border: 'border-pink-500/10',     icon: 'text-pink-400/60',     glow: 'hover:shadow-[0_0_16px_-4px_rgba(244,114,182,0.1)]' },
+const MODE_TITLES: Record<string, { title: string; subtitle: string }> = {
+  chat:     { title: 'What can I help you with?', subtitle: 'Start a conversation or choose a suggestion' },
+  research: { title: 'Ready to research?', subtitle: 'Ask me to analyze any topic with real-time data' },
+  coding:   { title: 'Let\'s build something', subtitle: 'Write, review, or debug code together' },
+  trading:  { title: 'Market Intelligence', subtitle: 'Connect live data to see real-time signals' },
+  startup:  { title: 'Build your startup', subtitle: 'Strategy, planning, and execution support' },
+  study:    { title: 'Study mode activated', subtitle: 'Learn any topic with guided explanations' },
+  creative: { title: 'Create something new', subtitle: 'Brainstorm, design, and iterate together' },
+  business: { title: 'Business Intelligence', subtitle: 'Analyze data, strategy, and operations' },
+  agents:   { title: 'AI Agent Workspace', subtitle: 'Deploy custom AI agents for your workflow' },
 };
 
-// Workspace-specific config
-const WORKSPACE_CONFIG: Record<WorkspaceTab, { icon: typeof Code; title: string; subtitle: string; placeholder: string; accent: string }> = {
-  chat: {
-    icon: Sparkles,
-    title: 'What do you want to build today?',
-    subtitle: 'KorvixAI is your operating system for thought. Write, code, analyze, and create with context-aware intelligence.',
-    placeholder: 'Type a message or select an action below...',
-    accent: 'cyan',
-  },
-  coding: {
-    icon: Code,
-    title: 'Coding',
-    subtitle: 'AI-powered coding assistant. Write, debug, refactor, and explain code in any language.',
-    placeholder: 'Ask KorvixAI to write, debug, refactor, or explain code...',
-    accent: 'blue',
-  },
-  research: {
-    icon: Search,
-    title: 'Research',
-    subtitle: 'Deep research with multi-source synthesis. Ask KorvixAI to research, compare, verify, or summarize any topic.',
-    placeholder: 'Ask KorvixAI to research, compare, verify, or summarize...',
-    accent: 'violet',
-  },
-  trading: {
-    icon: TrendingUp,
-    title: 'Trading',
-    subtitle: 'AI-powered market analysis and trading signals. Ask for market structure, signals, risk plans, or chart analysis.',
-    placeholder: 'Ask for market structure, signals, risk plan, or chart analysis...',
-    accent: 'emerald',
-  },
-  business: {
-    icon: Building2,
-    title: 'Business Intelligence',
-    subtitle: 'Startup scanner, competitor analysis, and strategic insights. Ask for startup ideas, product research, competitors, or strategy.',
-    placeholder: 'Ask for startup ideas, product research, competitors, ads, or strategy...',
-    accent: 'amber',
-  },
-  startup: {
-    icon: Rocket,
-    title: 'Startup',
-    subtitle: 'Validate ideas, research markets, build pitch decks, and plan growth strategies.',
-    placeholder: 'Ask for startup ideas, validation, pitch review, or growth strategy...',
-    accent: 'orange',
-  },
-  agents: {
-    icon: Bot,
-    title: 'AI Agents',
-    subtitle: 'Deploy specialized AI agents for automated tasks. Tell an agent what to work on.',
-    placeholder: 'Tell an agent what to work on...',
-    accent: 'indigo',
-  },
-  study: {
-    icon: GraduationCap,
-    title: 'Study',
-    subtitle: 'Learn anything with AI-powered explanations, quizzes, summaries, and study plans.',
-    placeholder: 'Ask KorvixAI to explain, quiz, summarize, or create a study plan...',
-    accent: 'rose',
-  },
-  creative: {
-    icon: Palette,
-    title: 'Creative',
-    subtitle: 'Brainstorm, write stories, generate content, and explore creative ideas.',
-    placeholder: 'Ask for creative writing, brainstorming, story ideas, or content...',
-    accent: 'pink',
-  },
-};
-
-export default function EmptyWorkspace({ onSend, workspace = 'chat', compact = false }: EmptyWorkspaceProps) {
-  const config = WORKSPACE_CONFIG[workspace];
-  const isGeneric = workspace === 'chat';
-  const colors = ACCENT_COLORS[config.accent] || ACCENT_COLORS.cyan;
-
-  // Auto-focus the textarea for non-chat workspaces
-  useEffect(() => {
-    if (!isGeneric) {
-      const timer = setTimeout(() => {
-        const el = document.querySelector('textarea') as HTMLTextAreaElement | null;
-        if (el) el.focus();
-      }, 200);
-      return () => clearTimeout(timer);
-    }
-  }, [isGeneric]);
+export default function EmptyWorkspace({ onQuickAction, activeMode }: EmptyWorkspaceProps) {
+  const modeInfo = MODE_TITLES[activeMode] || MODE_TITLES.chat;
 
   return (
-    <div className="flex flex-col items-center justify-center h-full px-4">
-      <motion.div
-        className="flex flex-col items-center max-w-xl w-full"
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-      >
-        {/* Icon */}
-        <motion.div
-          className={`relative flex h-12 w-12 items-center justify-center rounded-xl ${colors.bg} border ${colors.border} mb-8`}
-          initial={{ scale: 0.9, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={{ delay: 0.1, duration: 0.4 }}
-        >
-          <config.icon className={`h-5 w-5 ${colors.icon}`} />
-          <div className="absolute inset-0 rounded-xl bg-cyan-400/5 blur-xl -z-10" />
+    <div className="h-full flex flex-col items-center justify-center px-6 py-10 overflow-y-auto">
+      <div className="w-full max-w-lg mx-auto flex flex-col items-center">
+
+        {/* ═── Animated Orb ─══ */}
+        <motion.div {...fadeUp(0)} className="mb-6">
+          <KorvixOrb size="lg" variant="idle" />
         </motion.div>
 
-        {/* Heading */}
+        {/* ═── Title ─══ */}
         <motion.h1
-          className="text-[22px] sm:text-[26px] font-semibold text-white mb-2 text-center tracking-tight leading-tight"
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.15, duration: 0.4 }}
+          {...fadeUp(0.1)}
+          className="text-[20px] font-semibold text-white text-center tracking-tight mb-1.5"
         >
-          {config.title}
+          {modeInfo.title}
         </motion.h1>
 
+        {/* ═── Subtitle ─══ */}
         <motion.p
-          className="text-[13px] text-slate-500 mb-10 text-center max-w-sm leading-relaxed"
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2, duration: 0.4 }}
+          {...fadeUp(0.15)}
+          className="text-[13px] text-slate-500 text-center mb-8"
         >
-          {config.subtitle}
+          {modeInfo.subtitle}
         </motion.p>
 
-        {/* Central input hint — always shown, workspace-specific placeholder */}
-        <motion.div
-          className={`w-full max-w-md mb-10 rounded-xl border border-white/[0.05] bg-white/[0.015] px-5 py-3.5 flex items-center gap-3 cursor-text transition-all duration-200 hover:${colors.glow} hover:bg-white/[0.02]`}
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.25, duration: 0.4 }}
-          onClick={() => {
-            const el = document.querySelector('textarea') as HTMLTextAreaElement | null;
-            if (el) el.focus();
-          }}
-        >
-          <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${colors.bg} border ${colors.border}`}>
-            <config.icon className={`h-3.5 w-3.5 ${colors.icon}`} />
+        {/* ═── Smart Suggestions ─══ */}
+        <motion.div {...fadeUp(0.2)} className="w-full mb-8">
+          <SmartSuggestions
+            variant={activeMode === 'research' ? 'research' : 'chat'}
+            onSelect={onQuickAction}
+          />
+        </motion.div>
+
+        {/* ═── Feature Cards ─══ */}
+        <motion.div {...fadeUp(0.25)} className="w-full">
+          <p className="text-[10px] font-semibold text-slate-700 uppercase tracking-wider text-center mb-3">
+            Capabilities
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            {FEATURE_CARDS.map((card, i) => (
+              <motion.div
+                key={card.label}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3 + i * 0.05, duration: 0.35 }}
+                whileHover={{ scale: 1.02, y: -1 }}
+                className={`flex items-center gap-2.5 rounded-xl ${card.bg} ${card.border} border px-3 py-2.5 transition-all duration-200 cursor-default`}
+              >
+                <card.icon className={`h-3.5 w-3.5 ${card.color} shrink-0`} />
+                <div className="min-w-0">
+                  <p className="text-[11px] text-slate-300 font-medium">{card.label}</p>
+                  <p className="text-[10px] text-slate-600">{card.desc}</p>
+                </div>
+              </motion.div>
+            ))}
           </div>
-          <span className="text-[13px] text-slate-600">{config.placeholder}</span>
-          <ArrowRight className="h-4 w-4 text-slate-700 ml-auto" />
         </motion.div>
 
-        {/* Generic action cards — hidden in compact mode */}
-        {isGeneric && !compact && (
-          <motion.div
-            className="grid grid-cols-2 sm:grid-cols-4 gap-2 w-full max-w-2xl"
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.35, duration: 0.4 }}
-          >
-            {QUICK_ACTIONS.map((action, i) => {
-              const aColors = ACCENT_COLORS[action.accent] || ACCENT_COLORS.cyan;
-              return (
-                <motion.button
-                  key={action.label}
-                  onClick={() => onSend(action.prompt)}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.4 + i * 0.03, duration: 0.3 }}
-                  className={`flex flex-col items-start gap-2.5 rounded-xl border border-white/[0.04] bg-white/[0.01] p-4 text-left transition-all duration-200 hover:bg-white/[0.025] hover:border-white/[0.07] ${aColors.glow} group`}
-                >
-                  <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${aColors.bg} border ${aColors.border} transition-colors`}>
-                    <action.icon className={`h-4 w-4 ${aColors.icon}`} />
-                  </div>
-                  <div>
-                    <div className="text-[12px] font-medium text-slate-300 group-hover:text-white transition-colors">{action.label}</div>
-                    <div className="text-[11px] text-slate-600 mt-0.5">{action.description}</div>
-                  </div>
-                </motion.button>
-              );
-            })}
-          </motion.div>
-        )}
-
-        {/* Trust footer */}
-        <motion.div
-          className="flex items-center gap-2 mt-10"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.8 }}
+        {/* ═── Keyboard hint ─══ */}
+        <motion.p
+          {...fadeUp(0.4)}
+          className="text-[11px] text-slate-700 mt-6 text-center"
         >
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500/50" />
-          <span className="text-[11px] text-slate-600">Your data is encrypted and never used for training</span>
-        </motion.div>
-      </motion.div>
+          Press <kbd className="px-1.5 py-0.5 rounded-md bg-white/[0.03] border border-white/[0.05] text-[10px] text-slate-600 font-mono">/</kbd> to focus input
+        </motion.p>
+      </div>
     </div>
   );
 }
