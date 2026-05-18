@@ -3,7 +3,7 @@ import type {
   TradingSignal, TradingSignalsResponse, DataProvider, SignalDirection, AssetType,
   SignalBreakdown, SignalScenarios, SignalFactor,
   SignalIntel, SignalIntelFactor, SignalAnalytics,
-  MtfEngine, MtfBias, MtfTfRow,
+  MtfEngine, MtfBias, MtfTfRow, SignalVolume,
 } from '@/types';
 
 /**
@@ -289,6 +289,25 @@ function mapMtf(raw: unknown): MtfEngine | undefined {
   };
 }
 
+function mapVolume(raw: unknown): SignalVolume | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const v = raw as Record<string, unknown>;
+  return {
+    available: !!v.available,
+    unavailableReason: (v.unavailable_reason as string | null) ?? null,
+    volumeTrend: (v.volume_trend as string | null) ?? null,
+    participation: String(v.participation ?? 'unknown'),
+    participationNote: String(v.participation_note ?? ''),
+    anomalies: Array.isArray(v.anomalies) ? v.anomalies.map((a) => String(a)) : [],
+    breakoutQuality: (v.breakout_quality as string | null) ?? null,
+    breakoutNote: String(v.breakout_note ?? ''),
+    liquiditySweepRisk: String(v.liquidity_sweep_risk ?? 'unknown'),
+    liquidityNote: String(v.liquidity_note ?? ''),
+    volumeConfidence: Number(v.volume_confidence) || 0,
+    summary: (v.summary as string | null) ?? null,
+  };
+}
+
 function normalizeResponse(data: Record<string, unknown>): TradingSignalsResponse {
   const rawSignals = Array.isArray(data?.signals)
     ? (data.signals as Record<string, unknown>[])
@@ -327,6 +346,7 @@ function normalizeResponse(data: Record<string, unknown>): TradingSignalsRespons
       intel: mapIntel(s.intel),
       analytics: mapAnalytics(s.analytics),
       mtf: mapMtf(s.mtf),
+      volume: mapVolume(s.volume),
     };
   });
 

@@ -303,6 +303,7 @@ def _empty_signal(
         "intel":             None,
         "analytics":         None,
         "mtf":               None,
+        "volume":            None,
         "is_live":           False,
         "error":             error,
     }
@@ -350,7 +351,7 @@ def map_tool_result_to_signal(
     try:
         from backend.services.trading.intelligence import (
             build_breakdown, build_scenarios, build_decision, build_analytics,
-            build_mtf,
+            build_mtf, build_volume,
         )
         breakdown = build_breakdown(
             data, plan,
@@ -364,9 +365,12 @@ def map_tool_result_to_signal(
         intel = build_decision(data, plan, data_quality=dq_level)
         analytics = build_analytics(data, data_quality=dq_level)
         mtf = build_mtf(data, data_quality=dq_level)
+        volume = build_volume(data, data_quality=dq_level)
     except Exception as _bex:  # pragma: no cover - safety net
         logger.debug("intelligence build failed for %s: %s", symbol, _bex)
-        breakdown, scenarios, intel, analytics, mtf = None, None, None, None, None
+        breakdown, scenarios, intel, analytics, mtf, volume = (
+            None, None, None, None, None, None
+        )
 
     return {
         "symbol":            (data.get("symbol") or symbol).upper(),
@@ -401,6 +405,7 @@ def map_tool_result_to_signal(
         "intel":             intel,
         "analytics":         analytics,
         "mtf":               mtf,
+        "volume":            volume,
 
         "is_live":           True,
         "error":             None,
