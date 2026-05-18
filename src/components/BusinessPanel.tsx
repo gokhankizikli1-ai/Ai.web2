@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   Building2, Target, Rocket, Package, Users, PenLine, LayoutTemplate,
-  Save, ChevronRight, Info, ListChecks,
+  Save, ChevronRight, Info, ListChecks, ShoppingCart,
 } from 'lucide-react';
+import EcommercePanel from './EcommercePanel';
 
 /**
  * Business Workspace — Phase 3 increment 1.
@@ -59,6 +60,7 @@ const LAUNCHES: { id: string; label: string; desc: string; icon: typeof Rocket; 
 export default function BusinessPanel({ onRunPrompt }: { onRunPrompt?: (prompt: string) => void }) {
   const [state, setState] = useState<BizState>(load);
   const [draft, setDraft] = useState<BizState>(state);
+  const [view, setView] = useState<'workspace' | 'ecommerce'>('workspace');
 
   useEffect(() => {
     try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch { /* ignore */ }
@@ -90,9 +92,26 @@ export default function BusinessPanel({ onRunPrompt }: { onRunPrompt?: (prompt: 
             <p className="text-[10px] text-slate-600">Goal-driven launchpad · routes to AI chat · saved locally</p>
           </div>
         </div>
+        <div className="flex gap-1 mt-3 p-0.5 rounded-lg bg-white/[0.02] border border-white/[0.03] w-fit">
+          {([['workspace', 'Workspace', Target], ['ecommerce', 'E-commerce', ShoppingCart]] as const).map(([id, label, Icon]) => (
+            <button
+              key={id}
+              onClick={() => setView(id)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium transition-all ${
+                view === id ? 'bg-white/[0.06] text-white' : 'text-slate-600 hover:text-slate-400'
+              }`}
+            >
+              <Icon className="w-3 h-3" />{label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+      <div className="flex-1 overflow-y-auto">
+        {view === 'ecommerce' ? (
+          <EcommercePanel onRunPrompt={onRunPrompt} />
+        ) : (
+        <div className="p-4 space-y-3">
         {/* Goal / project */}
         <div className="rounded-xl border border-white/[0.04] bg-white/[0.015] p-4 space-y-2.5">
           <div className="flex items-center gap-2">
@@ -192,6 +211,8 @@ export default function BusinessPanel({ onRunPrompt }: { onRunPrompt?: (prompt: 
             data sources are not connected yet — outputs are AI-generated guidance, not live data.
           </p>
         </div>
+        </div>
+        )}
       </div>
     </div>
   );
