@@ -75,6 +75,62 @@ export interface TradingSignal {
   timeframe?: string;
   dataQuality?: string;
   rawDirection?: string;
+  // Phase 9 — Trading Intelligence Engine (analysis only, never fabricated;
+  // absent when the backend had no OHLC/indicator data).
+  breakdown?: SignalBreakdown;
+  scenarios?: SignalScenarios;
+}
+
+// ── Trading Intelligence Engine data model (Phase 9) ───────────────────────
+
+export interface SignalFactor {
+  factor: string;
+  detail: string;
+  weight: number;
+}
+
+export interface SignalBreakdown {
+  available: boolean;
+  unavailableReason?: string | null;
+  bullishFactors: SignalFactor[];
+  bearishFactors: SignalFactor[];
+  neutralFactors: SignalFactor[];
+  strongestReason?: string | null;
+  weakestPoint?: string | null;
+  invalidation?: string | null;
+  confirmationNeeded?: string | null;
+}
+
+export interface SignalScenarios {
+  available: boolean;
+  unavailableReason?: string | null;
+  bullish: string;
+  bearish: string;
+  sideways: string;
+  keyLevels: Record<string, number>;
+  doNotTradeIf: string;
+}
+
+// Trade Journal foundation — frontend/backend-ready structure ONLY.
+// No persistence/execution yet; future phase wires this to storage.
+export type TradeResult = 'win' | 'loss' | 'breakeven' | 'open';
+
+export interface TradeJournalEntry {
+  id: string;
+  symbol: string;
+  assetType?: AssetType;
+  direction?: SignalDirection;
+  entry?: number;
+  stop?: number;
+  target?: number;
+  thesis: string;
+  openedAt: string;
+  closedAt?: string | null;
+  result?: TradeResult;
+  pnl?: number | null;
+  mistakeNotes?: string | null;
+  aiReview?: string | null;
+  signalId?: string | null;
 }
 
 export interface TradingSignalsResponse {

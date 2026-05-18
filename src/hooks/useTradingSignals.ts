@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type {
   TradingSignal, TradingSignalsResponse, DataProvider, SignalDirection, AssetType,
+  SignalBreakdown, SignalScenarios, SignalFactor,
 } from '@/types';
 
 /**
@@ -115,6 +116,55 @@ function buildReasoning(s: Record<string, unknown>, isLive: boolean): string {
   return bits.join(' · ') || 'Live signal.';
 }
 
+function mapFactors(raw: unknown): SignalFactor[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((f): f is Record<string, unknown> => !!f && typeof f === 'object')
+    .map((f) => ({
+      factor: String(f.factor ?? ''),
+      detail: String(f.detail ?? ''),
+      weight: Number(f.weight) || 0,
+    }));
+}
+
+function mapBreakdown(raw: unknown): SignalBreakdown | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const b = raw as Record<string, unknown>;
+  return {
+    available: !!b.available,
+    unavailableReason: (b.unavailable_reason as string | null) ?? null,
+    bullishFactors: mapFactors(b.bullish_factors),
+    bearishFactors: mapFactors(b.bearish_factors),
+    neutralFactors: mapFactors(b.neutral_factors),
+    strongestReason: (b.strongest_reason as string | null) ?? null,
+    weakestPoint: (b.weakest_point as string | null) ?? null,
+    invalidation: (b.invalidation as string | null) ?? null,
+    confirmationNeeded: (b.confirmation_needed as string | null) ?? null,
+  };
+}
+
+function mapScenarios(raw: unknown): SignalScenarios | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const s = raw as Record<string, unknown>;
+  const kl = s.key_levels;
+  const keyLevels: Record<string, number> = {};
+  if (kl && typeof kl === 'object') {
+    for (const [k, v] of Object.entries(kl as Record<string, unknown>)) {
+      const n = Number(v);
+      if (Number.isFinite(n)) keyLevels[k] = n;
+    }
+  }
+  return {
+    available: !!s.available,
+    unavailableReason: (s.unavailable_reason as string | null) ?? null,
+    bullish: String(s.bullish_scenario ?? ''),
+    bearish: String(s.bearish_scenario ?? ''),
+    sideways: String(s.sideways_scenario ?? ''),
+    keyLevels,
+    doNotTradeIf: String(s.do_not_trade_if ?? ''),
+  };
+}
+
 function normalizeResponse(data: Record<string, unknown>): TradingSignalsResponse {
   const rawSignals = Array.isArray(data?.signals)
     ? (data.signals as Record<string, unknown>[])
@@ -148,6 +198,8 @@ function normalizeResponse(data: Record<string, unknown>): TradingSignalsRespons
       timeframe: s.timeframe ? String(s.timeframe) : undefined,
       dataQuality: s.data_quality ? String(s.data_quality) : undefined,
       rawDirection: s.raw_direction ? String(s.raw_direction) : undefined,
+      breakdown: mapBreakdown(s.breakdown),
+      scenarios: mapScenarios(s.scenarios),
     };
   });
 
