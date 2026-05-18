@@ -283,6 +283,40 @@ export interface TradeJournalEntry {
   mistakeNotes?: string | null;
   aiReview?: string | null;
   signalId?: string | null;
+  // Phase 2 #5 — additive optional context.
+  timeframe?: string;
+  setupType?: string;
+  confidenceAtEntry?: number | null;
+  tags?: string[];
+}
+
+export interface JournalSetupStat {
+  setup: string;
+  trades: number;
+  wins: number;
+  winrate: number;
+  avgRR: number;
+}
+
+// Trade-journal analytics — computed ONLY from the user's own real
+// entries. Never fabricated; honest "insufficient data" when sparse.
+export interface JournalAnalytics {
+  total: number;
+  open: number;
+  closed: number;
+  wins: number;
+  losses: number;
+  breakeven: number;
+  winrate: number;          // % of closed
+  avgRR: number;            // planned RR across entries with levels
+  expectancy: number;       // avg pnl per closed trade (when pnl present)
+  bestSetup: string | null;
+  worstSetup: string | null;
+  bySetup: JournalSetupStat[];
+  rrBuckets: { label: string; count: number }[];
+  overtradingDays: number;  // days with > 5 opened trades
+  insights: string[];
+  reliable: boolean;        // false when too few closed trades
 }
 
 export interface TradingSignalsResponse {
