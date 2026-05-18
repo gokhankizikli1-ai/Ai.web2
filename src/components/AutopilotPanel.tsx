@@ -82,7 +82,7 @@ export default function AutopilotPanel({ onRunPrompt }: { onRunPrompt?: (p: stri
   };
 
   const skipStep = (step: AgentStep) => {
-    if (!active) return;
+    if (!active || killed) return;
     updateStep(active.id, step.id, { status: 'skipped' });
     log('step.skipped', `Skipped "${step.title}"`, active.id);
   };
@@ -302,7 +302,12 @@ export default function AutopilotPanel({ onRunPrompt }: { onRunPrompt?: (p: stri
                             {!terminal && (
                               <button
                                 onClick={() => skipStep(step)}
-                                className="h-6 px-2 flex items-center gap-1 rounded-md bg-white/[0.02] border border-white/[0.05] text-[10px] text-slate-400 hover:text-slate-200 transition-colors"
+                                disabled={killed}
+                                className={`h-6 px-2 flex items-center gap-1 rounded-md border text-[10px] transition-colors ${
+                                  killed
+                                    ? 'bg-white/[0.02] border-white/[0.05] text-slate-700 cursor-not-allowed'
+                                    : 'bg-white/[0.02] border-white/[0.05] text-slate-400 hover:text-slate-200'
+                                }`}
                               >
                                 <SkipForward className="w-2.5 h-2.5" /> Skip & continue
                               </button>

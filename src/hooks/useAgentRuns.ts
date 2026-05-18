@@ -160,6 +160,7 @@ export function useAgentRuns() {
               output: undefined,
               confidence: undefined,
               needsRealData: undefined,
+              approval: undefined,
             })),
           }
         : r
