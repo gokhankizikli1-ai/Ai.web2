@@ -35,6 +35,7 @@ export function AnimatedNumber({
       const t = Math.min(1, (now - start) / dur);
       const eased = 1 - Math.pow(1 - t, 3);
       const cur = from + (to - from) * eased;
+      fromRef.current = cur;
       setDisplay(cur);
       if (t < 1) {
         rafRef.current = requestAnimationFrame(tick);
@@ -91,17 +92,3 @@ export function HeatBar({ pct, tier }: { pct?: number | null; tier?: 'low' | 'me
   );
 }
 
-// Lightweight accessible tooltip (no deps). Hover/focus reveals content.
-export function Tooltip({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <span className="relative inline-flex group/tt" tabIndex={0}>
-      {children}
-      <span
-        role="tooltip"
-        className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-1.5 z-[60] whitespace-nowrap rounded-md border border-white/[0.08] bg-[#0b0b0c]/95 px-2 py-1 text-[10px] text-slate-300 opacity-0 shadow-[0_4px_16px_-4px_rgba(0,0,0,0.6)] backdrop-blur-sm transition-opacity duration-150 group-hover/tt:opacity-100 group-focus/tt:opacity-100"
-      >
-        {label}
-      </span>
-    </span>
-  );
-}

@@ -7,7 +7,8 @@ import { useToast } from '@/hooks/useToast';
 import { useTradingSignals } from '@/hooks/useTradingSignals';
 import { useTradeJournal } from '@/hooks/useTradeJournal';
 import JournalPanel from './JournalPanel';
-import { AnimatedNumber, Pulse, HeatBar, Tooltip } from './TradingFx';
+import { AnimatedNumber, Pulse, HeatBar } from './TradingFx';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import KorvixOrb from './KorvixOrb';
 import {
   TrendingUp, TrendingDown, Activity, Zap,
@@ -304,6 +305,8 @@ function SignalCard({ signal, onOpen }: { signal: TradingSignal; onOpen: () => v
   const risk = riskLevel(signal);
   const change = signal.changePercent;
   const changePos = typeof change === 'number' && change >= 0;
+  const price = signal.price;
+  const priceFractionDigits = typeof price === 'number' && price < 10 ? 6 : 2;
 
   return (
     <motion.button
@@ -323,10 +326,19 @@ function SignalCard({ signal, onOpen }: { signal: TradingSignal; onOpen: () => v
           <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${c.badge}`}>
             {signal.direction.toUpperCase()}
           </span>
-          <Tooltip label={`Setup grade ${signal.setupGrade} — A strongest … D weakest`}>
-            <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${GRADE_BADGE[signal.setupGrade]}`}>
-              Grade {signal.setupGrade}
-            </span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${GRADE_BADGE[signal.setupGrade]}`}>
+                Grade {signal.setupGrade}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent
+              side="top"
+              sideOffset={6}
+              className="border border-white/[0.08] bg-[#0b0b0c]/95 px-2 py-1 text-[10px] text-slate-300 shadow-[0_4px_16px_-4px_rgba(0,0,0,0.6)]"
+            >
+              Setup grade {signal.setupGrade} — A strongest … D weakest
+            </TooltipContent>
           </Tooltip>
           <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${risk.cls}`}>
             {risk.label} risk
@@ -336,11 +348,11 @@ function SignalCard({ signal, onOpen }: { signal: TradingSignal; onOpen: () => v
 
         {/* Row 2: live price + confidence/vol */}
         <div className="flex items-center gap-3 mt-2">
-          {typeof signal.price === 'number' && (
-            <Pulse trigger={signal.price}>
+          {typeof price === 'number' && (
+            <Pulse trigger={price}>
               <AnimatedNumber
-                value={signal.price}
-                format={(n) => `$${n.toLocaleString('en-US', { maximumFractionDigits: n < 10 ? 6 : 2 })}`}
+                value={price}
+                format={(n) => `$${n.toLocaleString('en-US', { maximumFractionDigits: priceFractionDigits })}`}
                 className="text-[13px] font-medium text-white"
               />
             </Pulse>
