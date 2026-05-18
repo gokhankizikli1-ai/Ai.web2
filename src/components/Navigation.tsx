@@ -29,8 +29,8 @@ const NAV_ITEMS: NavItem[] = [
   {
     id: 'workspace', label: 'Workspace', icon: LayoutGrid, path: '/workspace',
     children: [
-      { id: 'startup', label: 'Startup Hub', path: '/startup' },
-      { id: 'ecommerce', label: 'Ecommerce OS', path: '/ecommerce' },
+      { id: 'startup', label: 'Startup Hub', path: '/chat?tab=startup' },
+      { id: 'ecommerce', label: 'Ecommerce OS', path: '/chat?tab=business' },
       { id: 'trading', label: 'Trading', path: '/chat?tab=trading' },
       { id: 'business', label: 'Business', path: '/chat?tab=business' },
     ],

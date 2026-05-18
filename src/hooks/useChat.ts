@@ -3,48 +3,7 @@ import type { ChatSession, Message, AIMode, WorkspaceTab, ChatFolder } from '@/t
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
-/**
- * Chat backend base URL.
- *
- * Same resolution as src/hooks/useTradingSignals.ts: read VITE_API_URL at
- * build time, fall back to the live Railway host.
- *
- * IMPORTANT: never hardcode the dead "worker-production-2a49.up.railway.app".
- * fetch() against that host raises a TypeError which WebKit surfaces to the
- * user as the opaque "Load failed" — the chat root-cause this replaces.
- */
-const DEFAULT_API_HOST = 'https://korvixai-backend-production.up.railway.app';
-const API_BASE = `${
-  (import.meta.env?.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ||
-  DEFAULT_API_HOST
-}`;
-const API_URL = `${API_BASE}/chat`;
-
-/* ── Prompt-to-agent auto-routing (Phase 3 #5) ──────────────────────────────
-   Conservative client-side intent → backend `mode`. The /chat endpoint
-   already accepts an optional `mode`; when we return undefined we send
-   NOTHING extra, so normal chat and trading auto-routing are unchanged.
-   Only clear business / e-commerce / startup intent is routed. */
-const _ECOM_KW = [
-  'dropship', 'dropshipping', 'shopify', 'aliexpress', 'e-commerce', 'ecommerce',
-  'winning product', 'product research', 'ad angle', 'ad creative', 'abandoned cart',
-  'profit margin', 'roas', 'store conversion', 'product idea',
-];
-const _STARTUP_KW = [
-  'startup', 'mvp', 'go-to-market', 'go to market', 'product-market fit',
-  'product market fit', 'pitch deck', 'seed round', 'co-founder', 'cofounder',
-  'validate my idea', 'business plan', 'business model', 'monetization',
-  'unit economics', 'customer acquisition', 'positioning strategy',
-  'pricing strategy', 'competitor analysis', 'startup strategist',
-];
-
-export function detectBusinessMode(text: string): 'marketing_dropshipping' | 'startup_advisor' | undefined {
-  const t = ` ${(text || '').toLowerCase()} `;
-  const has = (arr: string[]) => arr.some((k) => t.includes(k));
-  if (has(_ECOM_KW)) return 'marketing_dropshipping';
-  if (has(_STARTUP_KW)) return 'startup_advisor';
-  return undefined;
-}
+const API_URL = 'https://worker-production-2a49.up.railway.app/chat';
 
 function getUserId(): string {
   const key = 'korvix_user_id';
@@ -224,82 +183,25 @@ export function useChat() {
 
     setIsLoading(true);
 
-    const _mode = detectBusinessMode(content);
-    const requestBody = {
-      user_id: userIdRef.current,
-      message: content.trim(),
-      chat_id: activeSessionId,
-      session_id: activeSessionId,
-      platform: 'web',
-      // Only present on clear business/e-commerce/startup intent; omitted
-      // otherwise so normal chat + trading routing are byte-for-byte unchanged.
-      ...(_mode ? { mode: _mode } : {}),
-    };
-
     try {
-      console.info('[useChat] POST', API_URL, requestBody);
-
       const response = await fetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify({
+          user_id: userIdRef.current,
+          message: content.trim(),
+          chat_id: activeSessionId,
+          session_id: activeSessionId,
+          platform: 'web',
+        }),
       });
 
-      // Read the body ONCE as text so the raw payload can be logged
-      // verbatim and we can still recover from non-JSON / empty responses.
-      const rawBody = await response.text();
-      console.info(
-        '[useChat] response',
-        response.status,
-        response.statusText,
-        rawBody,
-      );
-
-      let data: any = null;
-      if (rawBody) {
-        try {
-          data = JSON.parse(rawBody);
-        } catch (parseErr) {
-          console.error('[useChat] response is not valid JSON', parseErr, rawBody);
-        }
-      }
-
       if (!response.ok) {
-        // Surface the ACTUAL backend error, not a generic string. The
-        // backend 500 fallback returns { reply, error, code }; FastAPI
-        // validation (422) returns { detail: [...] }.
-        const detailMsg = Array.isArray(data?.detail)
-          ? data.detail.map((d: any) => d?.msg).filter(Boolean).join('; ')
-          : typeof data?.detail === 'string'
-            ? data.detail
-            : null;
-        const backendMsg =
-          (data && (data.error || data.reply || data.message || detailMsg)) ||
-          rawBody ||
-          `Server responded with ${response.status}.`;
-        console.error('[useChat] request failed', response.status, backendMsg);
-        throw new Error(String(backendMsg));
+        throw new Error(`Server responded with ${response.status}. Please try again.`);
       }
 
-      // Backend contract (backend/routes/chat.py ChatResponse) is a
-      // top-level `reply` string. Stay resilient to legacy aliases, a
-      // nested envelope, and a non-JSON body.
-      const responseText: unknown =
-        (data &&
-          (data.reply ??
-            data.response ??
-            data.message ??
-            data.text ??
-            data?.data?.reply ??
-            data?.data?.message)) ??
-        (rawBody && !data ? rawBody : null);
-
-      if (!responseText || typeof responseText !== 'string') {
-        console.error('[useChat] no usable reply field in response', data);
-        throw new Error(
-          'The server returned an unexpected response. Please try again.',
-        );
-      }
+      const data = await response.json();
+      const responseText = data.reply ?? data.response ?? data.message ?? JSON.stringify(data);
 
       const assistantMessage: Message = {
         id: generateId(),
@@ -316,15 +218,7 @@ export function useChat() {
         )
       );
     } catch (err) {
-      // TypeError here = network/CORS/DNS failure (WebKit: "Load failed").
-      console.error('[useChat] send failed', API_URL, err);
-      const msg =
-        err instanceof Error
-          ? err.message === 'Load failed' || err.message === 'Failed to fetch'
-            ? `Cannot reach the server (${API_BASE}). Check connection / backend.`
-            : err.message
-          : 'Something went wrong. Please try again.';
-      setError(msg);
+      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
     } finally {
       setIsLoading(false);
     }

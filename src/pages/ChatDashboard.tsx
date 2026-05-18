@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router';
 import { useChat, TAB_KEYS } from '@/hooks/useChat';
 import { useCommandPalette } from '@/hooks/useCommandPalette';
 import { useToast } from '@/hooks/useToast';
@@ -121,16 +122,19 @@ export default function ChatDashboard() {
   const [exportOpen, setExportOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>(settings.defaultWorkspace);
-  // "Explain Signal" from the Trading panel: queued here, then sent into
-  // the chat session once the tab switch has actually settled.
-  const [pendingExplain, setPendingExplain] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>(
+    (searchParams.get('tab') as WorkspaceTab) || settings.defaultWorkspace
+  );
   // Timeline only shows for research/agent deep operations
 
   // Sync active tab when defaultWorkspace changes
   useEffect(() => {
-    setActiveTab(settings.defaultWorkspace);
-  }, [settings.defaultWorkspace]);
+    // Only sync if no URL tab param is present
+    if (!searchParams.get('tab')) {
+      setActiveTab(settings.defaultWorkspace);
+    }
+  }, [settings.defaultWorkspace, searchParams]);
 
   // Agent timeline visibility: only for research/agents deep mode
   const showTimeline = isLoading && (activeTab === 'research' || activeTab === 'agents');
@@ -155,22 +159,9 @@ export default function ChatDashboard() {
   const handleTabChange = useCallback((tab: WorkspaceTab) => {
     setActiveTab(tab);
     switchTab(tab);
-  }, [switchTab]);
-
-  // Trading panel → chat: queue the prompt, switch to the chat tab, and
-  // send only once switchTab has rebound the active chat session (so the
-  // message lands in the chat session, not the trading one).
-  const handleExplainSignal = useCallback((prompt: string) => {
-    setPendingExplain(prompt);
-    handleTabChange('chat');
-  }, [handleTabChange]);
-
-  useEffect(() => {
-    if (!pendingExplain) return;
-    if (activeTab !== 'chat' || currentTab !== 'chat') return;
-    sendMessage(pendingExplain);
-    setPendingExplain(null);
-  }, [pendingExplain, activeTab, currentTab, sendMessage]);
+    // Sync URL param for deep-linking
+    setSearchParams({ tab }, { replace: true });
+  }, [switchTab, setSearchParams]);
 
   // Listen for workspace switch events from sidebar mode shortcuts
   useEffect(() => {
@@ -183,6 +174,21 @@ export default function ChatDashboard() {
     window.addEventListener('korvix-switch-workspace', handler);
     return () => window.removeEventListener('korvix-switch-workspace', handler);
   }, [handleTabChange]);
+
+  // Listen for route-to-chat events from business panel AI actions
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { prompt: string; workspace?: WorkspaceTab };
+      if (detail?.prompt) {
+        // Switch to chat tab and populate input
+        handleTabChange('chat');
+        setInputText(detail.prompt);
+        addToast('Prompt ready — press Enter to send', 'success');
+      }
+    };
+    window.addEventListener('korvix-route-to-chat', handler);
+    return () => window.removeEventListener('korvix-route-to-chat', handler);
+  }, [handleTabChange, setInputText, addToast]);
 
   // Global New Chat
   const handleNewChat = useCallback(() => {
@@ -255,9 +261,9 @@ export default function ChatDashboard() {
     }
 
     switch (activeTab) {
-      case 'trading':  return <TradingPanel onExplainSignal={handleExplainSignal} />;
-      case 'business': return <BusinessPanel onRunPrompt={handleExplainSignal} />;
-      case 'agents':   return <AgentsPanel onRunPrompt={handleExplainSignal} />;
+      case 'trading':  return <TradingPanel />;
+      case 'business': return <BusinessPanel />;
+      case 'agents':   return <AgentsPanel />;
       default:         return (
         <ChatView
           key={activeSessionId}

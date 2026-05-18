@@ -1,29 +1,46 @@
 import Navbar from '@/sections/Navbar';
 import HeroSection from '@/sections/HeroSection';
-import WhyKorvixStrip from '@/sections/WhyKorvixStrip';
-import LiveActivityBar from '@/sections/LiveActivityBar';
-import AiMockupSection from '@/sections/AiMockupSection';
-import FeaturesSection from '@/sections/FeaturesSection';
-import UseCasesSection from '@/sections/UseCasesSection';
-import PricingSection from '@/sections/PricingSection';
-import TestimonialsSection from '@/sections/TestimonialsSection';
-import CTASection from '@/sections/CTASection';
+import WhyKorvixSection from '@/sections/WhyKorvixSection';
+import FeatureShowcaseSection from '@/sections/FeatureShowcaseSection';
+import StartupOSSection from '@/sections/StartupOSSection';
+import EcommerceOSSection from '@/sections/EcommerceOSSection';
+import AgentHubSection from '@/sections/AgentHubSection';
+import TradingIntelligenceSection from '@/sections/TradingIntelligenceSection';
+import HowItWorksSection from '@/sections/HowItWorksSection';
+import FinalCTASection from '@/sections/FinalCTASection';
 import Footer from '@/sections/Footer';
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-foreground">
+    <div className="min-h-screen bg-[#0a0a0f] text-foreground overflow-x-hidden">
       <Navbar />
       <main>
+        {/* Hero — existing */}
         <HeroSection />
-        <WhyKorvixStrip />
-        <LiveActivityBar />
-        <AiMockupSection />
-        <FeaturesSection />
-        <UseCasesSection />
-        <PricingSection />
-        <TestimonialsSection />
-        <CTASection />
+
+        {/* Why KorvixAI — NEW */}
+        <WhyKorvixSection />
+
+        {/* Feature Showcase — NEW */}
+        <FeatureShowcaseSection />
+
+        {/* Startup OS — NEW */}
+        <StartupOSSection />
+
+        {/* Ecommerce OS — NEW */}
+        <EcommerceOSSection />
+
+        {/* Agent Hub — NEW */}
+        <AgentHubSection />
+
+        {/* Trading Intelligence — NEW */}
+        <TradingIntelligenceSection />
+
+        {/* How It Works — NEW */}
+        <HowItWorksSection />
+
+        {/* Premium CTA — NEW */}
+        <FinalCTASection />
       </main>
       <Footer />
     </div>

@@ -44,24 +44,15 @@
     scroll-behavior: smooth;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    overflow: hidden;
-    height: 100dvh;
+    overscroll-behavior: none;
+    -webkit-tap-highlight-color: transparent;
   }
 
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
-    overflow: hidden;
-    height: 100dvh;
-    height: -webkit-fill-available;
-    overscroll-behavior: none;
-    -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation;
-  }
-
-  #root {
-    height: 100dvh;
-    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   ::selection {
