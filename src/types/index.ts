@@ -81,6 +81,28 @@ export interface TradingSignal {
   scenarios?: SignalScenarios;
   intel?: SignalIntel;
   analytics?: SignalAnalytics;
+  mtf?: MtfEngine;
+}
+
+export type MtfBias = 'bullish' | 'bearish' | 'neutral' | 'unavailable';
+
+export interface MtfTfRow {
+  tf: string;
+  bias: MtfBias;
+  rsi: number | null;
+}
+
+// Multi-timeframe alignment engine (Phase 2). Timeframes the feed did
+// not return are 'unavailable' — never a guessed bias.
+export interface MtfEngine {
+  available: boolean;
+  unavailableReason?: string | null;
+  timeframes: MtfTfRow[];
+  alignment?: string | null;
+  agreementPct?: number | null;
+  score: number;
+  conflict: boolean;
+  summary?: string | null;
 }
 
 // ── Trading Intelligence Engine data model (Phase 9) ───────────────────────

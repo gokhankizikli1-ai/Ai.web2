@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type {
-  TradingSignal, SignalFactor, SignalAnalytics,
+  TradingSignal, SignalFactor, SignalAnalytics, MtfBias,
 } from '@/types';
 import { useToast } from '@/hooks/useToast';
 import { useTradingSignals } from '@/hooks/useTradingSignals';
@@ -12,7 +12,7 @@ import {
   ArrowUpRight, ArrowDownRight,
   AlertTriangle, Plus, X, Sparkles,
   ShieldAlert, Info, MessageSquare, Gauge,
-  Layers, BarChart3, Scale, Crosshair,
+  Layers, BarChart3, Scale, Crosshair, Radar,
 } from 'lucide-react';
 
 // Default symbol sets the panel requests from /trading/signals (backend
@@ -55,6 +55,13 @@ const GRADE_BADGE: Record<string, string> = {
   B: 'bg-amber-500/[0.1] text-amber-400',
   C: 'bg-slate-500/[0.1] text-slate-400',
   D: 'bg-slate-500/[0.08] text-slate-500',
+};
+
+const MTF_PILL: Record<MtfBias, { arrow: string; text: string; bg: string; border: string }> = {
+  bullish:     { arrow: '↑', text: 'text-emerald-400', bg: 'bg-emerald-500/[0.05]', border: 'border-emerald-500/15' },
+  bearish:     { arrow: '↓', text: 'text-red-400',     bg: 'bg-red-500/[0.05]',     border: 'border-red-500/15' },
+  neutral:     { arrow: '→', text: 'text-amber-400',   bg: 'bg-amber-500/[0.04]',   border: 'border-amber-500/12' },
+  unavailable: { arrow: '✕', text: 'text-slate-600',   bg: 'bg-white/[0.015]',      border: 'border-white/[0.05]' },
 };
 
 type RiskLabel = 'Low' | 'Medium' | 'High';
@@ -100,26 +107,42 @@ function fmtTime(d?: Date): string {
 function buildExplainPrompt(s: TradingSignal): string {
   const L = (k: string, v: unknown) =>
     v === undefined || v === null || v === '' ? null : `${k}: ${v}`;
-  const lines = [
+  const i = s.intel;
+  const a = s.analytics;
+  const m = s.mtf;
+  const topBull = s.breakdown?.bullishFactors?.[0];
+  const topBear = s.breakdown?.bearishFactors?.[0];
+
+  const data = [
     L('Symbol', s.symbol),
-    L('Asset type', s.assetType),
+    L('Asset', s.assetType),
     L('Timeframe', s.timeframe),
-    L('Direction', s.direction.toUpperCase()),
-    L('Confidence', `${s.confidence}%`),
-    L('Setup grade', s.setupGrade),
+    L('Engine bias', i?.available ? `${i.direction.toUpperCase()} @ ${i.confidence}% (grade ${i.grade}, score ${i.score})` : `${s.direction.toUpperCase()} @ ${s.confidence}% (legacy heuristic)`),
     L('Last price', typeof s.price === 'number' ? s.price : undefined),
-    L('Entry', s.entryPrice),
-    L('Target', s.targetPrice),
-    L('Stop', s.stopLoss),
+    L('Entry / Stop / Target', `${s.entryPrice ?? '—'} / ${s.stopLoss ?? '—'} / ${s.targetPrice ?? '—'}`),
     L('Risk:Reward', s.riskReward),
-    L('Volatility', s.volatilityRegime || s.volatility),
-    L('Invalidation', s.invalidation),
+    L('Strongest bullish factor', topBull ? `${topBull.factor} — ${topBull.detail}` : (s.breakdown?.strongestReason ?? undefined)),
+    L('Strongest bearish factor', topBear ? `${topBear.factor} — ${topBear.detail}` : (s.breakdown?.weakestPoint ?? undefined)),
+    L('Trend strength', a?.trendStrength ? `ADX ${a.trendStrength.adx ?? '—'} (${a.trendStrength.label})` : undefined),
+    L('MACD', a?.macd && a.macd.state !== 'insufficient_data' ? a.macd.state : undefined),
+    L('Momentum', a?.momentum && a.momentum.state !== 'insufficient_data' ? `${a.momentum.state} (${a.momentum.rocPct ?? '—'}%)` : undefined),
+    L('Volatility regime', a?.regime || s.volatilityRegime || s.volatility),
+    L('Multi-timeframe', m?.available ? `${m.alignment} ${m.agreementPct ?? 0}% agreement${m.conflict ? ' — CONFLICT' : ''}; ${m.summary ?? ''}` : undefined),
+    L('Invalidation', s.breakdown?.invalidation || i?.invalidation || s.invalidation),
+    L('Confirmation needed', s.breakdown?.confirmationNeeded),
   ].filter(Boolean).join('\n');
+
   return (
-    `Explain this trading signal in plain language — analysis only, NOT financial advice, and do NOT execute any trade:\n\n` +
-    `${lines}\n\n` +
-    `Why is the bias ${s.direction.toUpperCase()}? What is the bullish case, the bearish case, ` +
-    `the key risks, and what would invalidate this setup?`
+    `You are a senior trading-desk strategist. Brief me on this signal in a concise, professional desk style — short labelled sections, no filler, no generic disclaimers padding. Analysis only: this is NOT financial advice and you must NOT place or execute any trade.\n\n` +
+    `SIGNAL DATA (only what was actually measured — do not invent numbers; if a field is missing say "not in feed"):\n${data}\n\n` +
+    `Cover, as tight bullet sections:\n` +
+    `1) Thesis — why the bias is ${(i?.available ? i.direction : s.direction).toUpperCase()} in one or two lines.\n` +
+    `2) Strongest bullish factor and strongest bearish factor.\n` +
+    `3) Invalidation — the specific condition/level that breaks this setup.\n` +
+    `4) Volatility & risk read (use the trend-strength/regime/R:R above).\n` +
+    `5) Confidence reasoning — what is driving the ${i?.available ? i.confidence + '%' : 'stated'} conviction, and what would raise or lower it.\n` +
+    `6) What confirmation you'd want before acting.\n` +
+    `Keep it grounded strictly in the data above.`
   );
 }
 
@@ -418,6 +441,7 @@ function SignalDetailDrawer({
   const bd = signal.breakdown;
   const an: SignalAnalytics | undefined = signal.analytics;
   const scn = signal.scenarios;
+  const mtfE = signal.mtf;
 
   // Decision = the multi-factor engine when available, else the legacy
   // heuristic (clearly labelled). Never fabricated.
@@ -572,33 +596,47 @@ function SignalDetailDrawer({
 
         {/* Multi-timeframe alignment */}
         <DrawerSection icon={<Layers className="w-3.5 h-3.5" />} title="Multi-timeframe alignment">
-          {an?.available && an.mtf ? (
-            <div className="space-y-2.5">
-              <div className="flex items-center gap-2 flex-wrap text-[11px]">
-                <span className="text-slate-300 capitalize">{an.mtf.alignment.replace(/_/g, ' ')}</span>
-                <span className="text-emerald-400">↑{an.mtf.up}</span>
-                <span className="text-red-400">↓{an.mtf.down}</span>
-                <span className="text-slate-500">→{an.mtf.side}</span>
-              </div>
-              {an.timeframes && an.timeframes.length > 0 && (
-                <div className="space-y-1">
-                  {an.timeframes.map((r) => (
-                    <div key={r.tf} className="flex items-center justify-between text-[11px] py-1 border-b border-white/[0.03] last:border-0">
-                      <span className="text-slate-400 w-10">{r.tf}</span>
-                      <span className="text-slate-300 capitalize flex-1">{r.trend.replace(/_/g, ' ')}</span>
-                      <span className="text-slate-500">RSI {r.rsi === null ? '—' : r.rsi.toFixed(0)}</span>
+          {mtfE && mtfE.timeframes.length > 0 ? (
+            <div className="space-y-3">
+              <div className="grid grid-cols-4 gap-2">
+                {mtfE.timeframes.map((r) => {
+                  const m = MTF_PILL[r.bias];
+                  return (
+                    <div key={r.tf} className={`rounded-lg border ${m.border} ${m.bg} px-2 py-2 text-center`}>
+                      <p className="text-[10px] text-slate-500 uppercase">{r.tf}</p>
+                      <p className={`text-[14px] font-semibold leading-tight ${m.text}`}>{m.arrow}</p>
+                      <p className={`text-[9px] ${m.text}`}>{r.bias === 'unavailable' ? 'n/a' : r.bias}</p>
                     </div>
-                  ))}
-                </div>
-              )}
-              {an.mtf.divergences.length > 0 && (
-                <p className="text-[11px] text-amber-400/80 leading-relaxed">
-                  Divergence: {an.mtf.divergences.join('; ')}
-                </p>
+                  );
+                })}
+              </div>
+              {mtfE.available ? (
+                <>
+                  <div>
+                    <div className="flex items-center justify-between text-[11px] mb-1">
+                      <span className="text-slate-400 capitalize">{mtfE.alignment} alignment</span>
+                      <span className="text-slate-300">{mtfE.agreementPct ?? 0}% agreement</span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-white/[0.05] overflow-hidden">
+                      <motion.div
+                        className={`h-full rounded-full ${mtfE.alignment === 'bullish' ? 'bg-emerald-500/60' : mtfE.alignment === 'bearish' ? 'bg-red-500/60' : 'bg-amber-500/50'}`}
+                        initial={{ width: 0 }}
+                        animate={{ width: `${mtfE.agreementPct ?? 0}%` }}
+                        transition={{ duration: 0.6 }}
+                      />
+                    </div>
+                  </div>
+                  <p className={`text-[11px] leading-relaxed ${mtfE.conflict ? 'text-amber-400/90' : 'text-slate-400'}`}>
+                    {mtfE.conflict && <AlertTriangle className="inline w-3 h-3 mr-1 -mt-0.5" />}
+                    {mtfE.summary}
+                  </p>
+                </>
+              ) : (
+                <Unavailable reason={mtfE.unavailableReason || 'Multi-timeframe data unavailable.'} />
               )}
             </div>
           ) : (
-            <Unavailable reason={an?.unavailableReason || 'Multi-timeframe data not provided for this symbol/feed.'} />
+            <Unavailable reason={mtfE?.unavailableReason || 'Multi-timeframe data unavailable.'} />
           )}
         </DrawerSection>
 
@@ -754,6 +792,121 @@ function WatchlistRow({ item, onToggleFav, onRemove }: {
 }
 
 /* ═══════════════════════════════════════════
+   MARKET REGIME (derived from REAL live signals
+   — an aggregate, never fabricated)
+   ═══════════════════════════════════════════ */
+
+interface MarketRegime {
+  available: boolean;
+  label: string;
+  note: string;
+  longs: number;
+  shorts: number;
+  waits: number;
+  avgConf: number;
+  n: number;
+}
+
+const REGIME_GLOW: Record<string, string> = {
+  'Risk ON': 'border-emerald-500/15 bg-emerald-500/[0.04] text-emerald-400',
+  'Trend Expansion': 'border-emerald-500/15 bg-emerald-500/[0.04] text-emerald-400',
+  'Risk OFF': 'border-red-500/15 bg-red-500/[0.04] text-red-400',
+  'High Volatility': 'border-amber-500/15 bg-amber-500/[0.04] text-amber-400',
+  'Compression': 'border-indigo-500/15 bg-indigo-500/[0.04] text-indigo-300',
+  'Chop / Range': 'border-slate-500/15 bg-slate-500/[0.05] text-slate-400',
+  'Mean Reversion': 'border-slate-500/15 bg-slate-500/[0.05] text-slate-400',
+  'Neutral': 'border-white/[0.06] bg-white/[0.02] text-slate-400',
+};
+
+function deriveMarketRegime(signals: TradingSignal[]): MarketRegime {
+  const live = signals.filter((s) => s.isLive);
+  const n = live.length;
+  if (n < 3) {
+    return {
+      available: false, label: '', n,
+      note: 'Market regime unavailable — insufficient live data (need ≥3 live symbols).',
+      longs: 0, shorts: 0, waits: 0, avgConf: 0,
+    };
+  }
+  let longs = 0, shorts = 0, waits = 0, confSum = 0, confCount = 0;
+  let hiVol = 0, squeeze = 0, strong = 0, weak = 0;
+  for (const s of live) {
+    const dir = s.intel?.available ? s.intel.direction : s.direction;
+    if (dir === 'long') longs++;
+    else if (dir === 'short') shorts++;
+    else waits++;
+    const c = s.intel?.available ? s.intel.confidence : s.confidence;
+    if (typeof c === 'number') { confSum += c; confCount++; }
+    const reg = (s.analytics?.regime || s.volatilityRegime || '').toLowerCase();
+    if (reg.includes('high_vol')) hiVol++;
+    if (reg.includes('squeeze') || reg.includes('low_vol')) squeeze++;
+    const lbl = s.analytics?.trendStrength?.label || '';
+    if (lbl === 'strong' || lbl === 'very_strong') strong++;
+    else if (lbl === 'weak' || lbl === 'no_trend') weak++;
+  }
+  const avgConf = confCount ? Math.round(confSum / confCount) : 0;
+  const breadth = longs - shorts;
+  const half = Math.ceil(n / 2);
+  let label = 'Neutral';
+  let note = 'No dominant trend — mean-reversion / range environment.';
+  if (hiVol >= half) {
+    label = breadth < 0 ? 'Risk OFF' : 'High Volatility';
+    note = breadth < 0
+      ? 'Elevated volatility with bearish breadth — risk-off conditions.'
+      : 'High-volatility regime — wider stops, expansion plays favoured.';
+  } else if (strong >= half && Math.abs(breadth) >= Math.ceil(n / 3) && avgConf >= 60) {
+    label = 'Trend Expansion';
+    note = `${breadth > 0 ? 'Bullish' : 'Bearish'} trend expansion — ${strong}/${n} symbols in strong trends, ${avgConf}% avg confidence.`;
+  } else if (squeeze >= half) {
+    label = 'Compression';
+    note = 'Volatility compression across symbols — breakout pending, stand by.';
+  } else if (weak >= half && Math.abs(breadth) <= 1) {
+    label = 'Chop / Range';
+    note = 'Weak trends and split breadth — choppy; range tactics only.';
+  } else if (breadth > 0 && avgConf >= 55) {
+    label = 'Risk ON';
+    note = `Bullish breadth (${longs}↑ / ${shorts}↓) with ${avgConf}% avg confidence — momentum favoured.`;
+  } else if (breadth < 0) {
+    label = 'Risk OFF';
+    note = `Bearish breadth (${shorts}↓ / ${longs}↑) — defensive posture.`;
+  } else {
+    label = 'Mean Reversion';
+    note = 'No dominant trend — mean-reversion / range environment.';
+  }
+  return { available: true, label, note, longs, shorts, waits, avgConf, n };
+}
+
+function MarketRegimeBanner({ r }: { r: MarketRegime }) {
+  if (!r.available) {
+    return (
+      <div className="rounded-xl border border-white/[0.05] bg-white/[0.015] px-4 py-2.5 flex items-center gap-2">
+        <Radar className="w-3.5 h-3.5 text-slate-600 shrink-0" />
+        <p className="text-[11px] text-slate-500 leading-relaxed">{r.note}</p>
+      </div>
+    );
+  }
+  const g = REGIME_GLOW[r.label] || REGIME_GLOW.Neutral;
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+      className={`rounded-xl border ${g} px-4 py-2.5`}
+    >
+      <div className="flex items-center gap-2 flex-wrap">
+        <Radar className="w-3.5 h-3.5 shrink-0" />
+        <span className="text-[9px] uppercase tracking-wide text-slate-500">Market regime</span>
+        <span className="text-[13px] font-semibold">{r.label}</span>
+        <span className="ml-auto text-[10px] text-slate-500">
+          {r.longs}↑ {r.shorts}↓ {r.waits}→ · {r.avgConf}% avg · {r.n} live
+        </span>
+      </div>
+      <p className="text-[11px] text-slate-400 mt-1 leading-relaxed">{r.note}</p>
+    </motion.div>
+  );
+}
+
+/* ═══════════════════════════════════════════
    MAIN PANEL
    ═══════════════════════════════════════════ */
 
@@ -802,6 +955,7 @@ export default function TradingPanel({ onExplainSignal }: { onExplainSignal?: (p
   if (freshSignals.length) signalsCache.current = freshSignals;
   const signalsToShow = freshSignals.length ? freshSignals : signalsCache.current;
   const showStaleSignals = !!signalsApi.error && freshSignals.length === 0 && signalsCache.current.length > 0;
+  const marketRegime = useMemo(() => deriveMarketRegime(signalsToShow), [signalsToShow]);
 
   const watchlistAll: WatchlistItem[] = useMemo(() => {
     const out: WatchlistItem[] = [];
@@ -945,6 +1099,9 @@ export default function TradingPanel({ onExplainSignal }: { onExplainSignal?: (p
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {/* Market regime — derived from real live signals (honest aggregate) */}
+        <MarketRegimeBanner r={marketRegime} />
+
         {/* ═══ SIGNALS ═══ */}
         {activeTab === 'signals' && (
           <>

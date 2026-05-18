@@ -719,3 +719,115 @@ def build_analytics(
 
     return out
 
+
+# ── Multi-timeframe alignment engine (Phase 2 #1) ──────────────────────────
+# Consumes the multi_timeframe block market_data_tool ALREADY computed.
+# Never fabricates a timeframe bias: a TF the feed didn't return is marked
+# "unavailable" (not guessed). The canonical desk set is 15m/1h/4h/1d; the
+# crypto feed currently provides 1h/4h/1d, so 15m honestly shows
+# "unavailable" rather than an invented value.
+
+_CANON_TF = ["15m", "1h", "4h", "1d"]
+_LOWER_TF = {"15m", "1h"}
+_HIGHER_TF = {"4h", "1d"}
+
+
+def build_mtf(data: Optional[dict], *, data_quality: Optional[str] = None) -> dict:
+    data = data or {}
+
+    base = {
+        "available": False,
+        "unavailable_reason": None,
+        "timeframes": [{"tf": tf, "bias": "unavailable", "rsi": None} for tf in _CANON_TF],
+        "alignment": None,
+        "agreement_pct": None,
+        "score": 0,
+        "conflict": False,
+        "summary": None,
+    }
+
+    if data_quality == "quote_only":
+        base["unavailable_reason"] = (
+            "Quote-only data — multi-timeframe analysis requires OHLC history."
+        )
+        return base
+
+    mt = data.get("multi_timeframe")
+    if not isinstance(mt, dict) or not mt:
+        base["unavailable_reason"] = (
+            "Multi-timeframe data unavailable for this symbol/feed."
+        )
+        return base
+
+    rows: list[dict] = []
+    present: list[tuple] = []   # (tf, bias) for TFs the feed actually returned
+    for tf in _CANON_TF:
+        blk = mt.get(tf)
+        if isinstance(blk, dict) and blk.get("trend"):
+            tr = str(blk.get("trend")).lower()
+            bias = (
+                "bullish" if tr == "uptrend"
+                else "bearish" if tr == "downtrend"
+                else "neutral"
+            )
+            rows.append({"tf": tf, "bias": bias, "rsi": _f(blk.get("rsi"))})
+            present.append((tf, bias))
+        else:
+            rows.append({"tf": tf, "bias": "unavailable", "rsi": None})
+
+    if not present:
+        base["timeframes"] = rows
+        base["unavailable_reason"] = (
+            "Multi-timeframe data unavailable for this symbol/feed."
+        )
+        return base
+
+    n = len(present)
+    bulls = sum(1 for _, b in present if b == "bullish")
+    bears = sum(1 for _, b in present if b == "bearish")
+    neu = n - bulls - bears
+    if bulls > bears and bulls >= neu:
+        alignment = "bullish"
+    elif bears > bulls and bears >= neu:
+        alignment = "bearish"
+    else:
+        alignment = "mixed"
+    agreement_pct = round(max(bulls, bears) / n * 100)
+    score = round((bulls - bears) / n, 3)
+
+    hi = [b for tf, b in present if tf in _HIGHER_TF and b in ("bullish", "bearish")]
+    lo = [b for tf, b in present if tf in _LOWER_TF and b in ("bullish", "bearish")]
+    conflict = False
+    summary = None
+    if hi and lo:
+        hi_bias = "bullish" if hi.count("bullish") >= hi.count("bearish") else "bearish"
+        lo_bias = "bullish" if lo.count("bullish") >= lo.count("bearish") else "bearish"
+        if hi_bias != lo_bias:
+            conflict = True
+            summary = (
+                "Counter-trend long risk elevated — lower timeframes bullish "
+                "while higher timeframes bearish."
+                if lo_bias == "bullish"
+                else
+                "Counter-trend short risk elevated — lower timeframes bearish "
+                "while higher timeframes bullish."
+            )
+    if summary is None:
+        if alignment == "bullish":
+            summary = f"Timeframes aligned bullish ({agreement_pct}% agreement) — trend continuation favoured."
+        elif alignment == "bearish":
+            summary = f"Timeframes aligned bearish ({agreement_pct}% agreement) — trend continuation favoured."
+        else:
+            summary = "Mixed timeframe structure — chop/range, no aligned trend."
+
+    return {
+        "available": True,
+        "unavailable_reason": None,
+        "timeframes": rows,
+        "alignment": alignment,
+        "agreement_pct": agreement_pct,
+        "score": score,
+        "conflict": conflict,
+        "summary": summary,
+    }
+
