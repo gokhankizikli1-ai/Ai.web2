@@ -5,6 +5,7 @@ import {
   Save, ChevronRight, Info, ListChecks, ShoppingCart,
 } from 'lucide-react';
 import EcommercePanel from './EcommercePanel';
+import StartupBuilderPanel from './StartupBuilderPanel';
 
 /**
  * Business Workspace — Phase 3 increment 1.
@@ -60,7 +61,7 @@ const LAUNCHES: { id: string; label: string; desc: string; icon: typeof Rocket; 
 export default function BusinessPanel({ onRunPrompt }: { onRunPrompt?: (prompt: string) => void }) {
   const [state, setState] = useState<BizState>(load);
   const [draft, setDraft] = useState<BizState>(state);
-  const [view, setView] = useState<'workspace' | 'ecommerce'>('workspace');
+  const [view, setView] = useState<'workspace' | 'ecommerce' | 'startup'>('workspace');
 
   useEffect(() => {
     try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch { /* ignore */ }
@@ -93,7 +94,7 @@ export default function BusinessPanel({ onRunPrompt }: { onRunPrompt?: (prompt: 
           </div>
         </div>
         <div className="flex gap-1 mt-3 p-0.5 rounded-lg bg-white/[0.02] border border-white/[0.03] w-fit">
-          {([['workspace', 'Workspace', Target], ['ecommerce', 'E-commerce', ShoppingCart]] as const).map(([id, label, Icon]) => (
+          {([['workspace', 'Workspace', Target], ['ecommerce', 'E-commerce', ShoppingCart], ['startup', 'Startup', Rocket]] as const).map(([id, label, Icon]) => (
             <button
               key={id}
               onClick={() => setView(id)}
@@ -110,6 +111,8 @@ export default function BusinessPanel({ onRunPrompt }: { onRunPrompt?: (prompt: 
       <div className="flex-1 overflow-y-auto">
         {view === 'ecommerce' ? (
           <EcommercePanel onRunPrompt={onRunPrompt} />
+        ) : view === 'startup' ? (
+          <StartupBuilderPanel onRunPrompt={onRunPrompt} />
         ) : (
         <div className="p-4 space-y-3">
         {/* Goal / project */}
