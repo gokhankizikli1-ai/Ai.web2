@@ -1,15 +1,15 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { TradingSignal } from '@/types';
 import { useToast } from '@/hooks/useToast';
 import { useTradingSignals } from '@/hooks/useTradingSignals';
 import KorvixOrb from './KorvixOrb';
 import {
-  TrendingUp, Activity, Zap,
+  TrendingUp, TrendingDown, Activity, Zap,
   RefreshCw, Search, Clock, Star, ChevronRight,
   ArrowUpRight, ArrowDownRight,
-  Layers, Radar,
   AlertTriangle, Plus, X, Sparkles,
+  ShieldAlert, Info, MessageSquare, Gauge,
 } from 'lucide-react';
 
 // Default symbol sets the panel requests from /trading/signals (backend
@@ -18,19 +18,9 @@ const SIGNAL_SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'NVDA', 'AAPL', 'TSLA', 'MSFT'];
 const DEFAULT_WATCH = ['AAPL', 'NVDA', 'TSLA', 'BTCUSDT', 'ETHUSDT', 'MSFT'];
 const WATCH_LS_KEY = 'korvix.watchlist.v1';
 const FAV_LS_KEY = 'korvix.favorites.v1';
-
-// ─── Configuration ───
-const DEMO_MODE = false;
-
-// ─── Types ───
-interface MarketSentiment {
-  overall: 'bullish' | 'bearish' | 'neutral';
-  score: number;
-  fearGreedIndex: number;
-  vix: number;
-  putCallRatio: number;
-  advanceDecline: number;
-}
+// Auto-refresh cadence. The hook skips ticks while the tab is hidden and
+// aborts overlapping requests, so this never spams the backend.
+const POLL_MS = 45_000;
 
 interface WatchlistItem {
   symbol: string;
@@ -38,62 +28,113 @@ interface WatchlistItem {
   price: number;
   change: number;
   changePercent: number;
-  sparkline: number[];
   isFavorite: boolean;
   type: 'stock' | 'crypto';
-  is_live?: boolean;
-  source?: string;
 }
-
-interface TrendingAsset {
-  symbol: string;
-  name: string;
-  volume: string;
-  mentions: number;
-  sentiment: 'bullish' | 'bearish' | 'neutral';
-  priceChange: number;
-  is_live?: boolean;
-}
-
-// ─── Demo Data ───
-const DEMO_SENTIMENT: MarketSentiment = {
-  overall: 'bullish',
-  score: 68,
-  fearGreedIndex: 72,
-  vix: 14.2,
-  putCallRatio: 0.82,
-  advanceDecline: 1.45,
-};
-
-const DEMO_WATCHLIST: WatchlistItem[] = [
-  { symbol: 'AAPL', name: 'Apple Inc.', price: 187.42, change: 4.27, changePercent: 2.34, sparkline: [182,183,184,183,185,186,185,187,186,187.42], isFavorite: true, type: 'stock', is_live: false },
-  { symbol: 'NVDA', name: 'NVIDIA Corp.', price: 875.15, change: 22.30, changePercent: 2.61, sparkline: [850,855,860,858,865,870,868,872,870,875.15], isFavorite: true, type: 'stock', is_live: false },
-  { symbol: 'TSLA', name: 'Tesla Inc.', price: 248.50, change: -3.20, changePercent: -1.27, sparkline: [252,251,250,253,251,249,250,248,249,248.50], isFavorite: false, type: 'stock', is_live: false },
-  { symbol: 'BTC', name: 'Bitcoin', price: 67240, change: 1240, changePercent: 1.88, sparkline: [66000,65500,66200,66500,66800,67000,66600,66900,67100,67240], isFavorite: true, type: 'crypto', is_live: false },
-  { symbol: 'ETH', name: 'Ethereum', price: 3540, change: 87, changePercent: 2.52, sparkline: [3450,3430,3480,3490,3510,3500,3520,3510,3530,3540], isFavorite: false, type: 'crypto', is_live: false },
-  { symbol: 'MSFT', name: 'Microsoft', price: 421.85, change: 5.12, changePercent: 1.23, sparkline: [415,417,416,418,419,420,419,421,420,421.85], isFavorite: false, type: 'stock', is_live: false },
-  { symbol: 'AMD', name: 'AMD Inc.', price: 164.20, change: -2.15, changePercent: -1.29, sparkline: [167,166,165,166,164,165,163,164,165,164.20], isFavorite: false, type: 'stock', is_live: false },
-  { symbol: 'SOL', name: 'Solana', price: 142.60, change: 4.80, changePercent: 3.48, sparkline: [136,135,138,139,140,141,139,141,140,142.60], isFavorite: true, type: 'crypto', is_live: false },
-];
-
-const DEMO_TRENDING: TrendingAsset[] = [
-  { symbol: 'NVDA', name: 'NVIDIA', volume: '42.3M', mentions: 2847, sentiment: 'bullish', priceChange: 2.61, is_live: false },
-  { symbol: 'TSLA', name: 'Tesla', volume: '38.1M', mentions: 1923, sentiment: 'bearish', priceChange: -1.27, is_live: false },
-  { symbol: 'AAPL', name: 'Apple', volume: '35.7M', mentions: 1562, sentiment: 'bullish', priceChange: 2.34, is_live: false },
-  { symbol: 'BTC', name: 'Bitcoin', volume: '28.4B', mentions: 3421, sentiment: 'bullish', priceChange: 1.88, is_live: false },
-  { symbol: 'AMD', name: 'AMD', volume: '31.2M', mentions: 1245, sentiment: 'bearish', priceChange: -1.29, is_live: false },
-  { symbol: 'COIN', name: 'Coinbase', volume: '18.9M', mentions: 987, sentiment: 'bullish', priceChange: 3.12, is_live: false },
-];
-
-const SIGNALS: TradingSignal[] = [
-  { id: 's1', symbol: 'AAPL', name: 'Apple Inc.', direction: 'long', confidence: 87, setupGrade: 'A', volatility: 'medium', entryPrice: '185.15', targetPrice: '195.00', stopLoss: '180.00', timestamp: new Date(), reasoning: 'Bull flag breakout on daily with volume confirmation. RSI 58, room to run. Institutional buying detected.', sparkline: [182,183,184,183,185,186,185,187,186,187.42] },
-  { id: 's2', symbol: 'NVDA', name: 'NVIDIA Corp.', direction: 'long', confidence: 92, setupGrade: 'A', volatility: 'high', entryPrice: '860.00', targetPrice: '920.00', stopLoss: '835.00', timestamp: new Date(), reasoning: 'Earnings momentum continuation. AI demand thesis intact. Break above resistance with 3x average volume.', sparkline: [850,855,860,858,865,870,868,872,870,875.15] },
-  { id: 's3', symbol: 'TSLA', name: 'Tesla Inc.', direction: 'short', confidence: 64, setupGrade: 'B', volatility: 'high', entryPrice: '252.00', targetPrice: '235.00', stopLoss: '258.00', timestamp: new Date(), reasoning: 'Failed breakout above 255. Bearish divergence on MACD hourly. Increased put flow detected.', sparkline: [252,251,250,253,251,249,250,248,249,248.50] },
-  { id: 's4', symbol: 'AMD', name: 'AMD Inc.', direction: 'wait', confidence: 45, setupGrade: 'C', volatility: 'medium', entryPrice: undefined, targetPrice: undefined, stopLoss: undefined, timestamp: new Date(), reasoning: 'Mixed signals. Support at 160 holding but resistance at 168 strong. Wait for decisive break.', sparkline: [167,166,165,166,164,165,163,164,165,164.20] },
-];
 
 /* ═══════════════════════════════════════════
-   SKELETON COMPONENTS
+   DERIVED PRESENTATION (computed from REAL signal
+   fields only — never fabricated data)
+   ═══════════════════════════════════════════ */
+
+type Tone = { text: string; bg: string; border: string; badge: string; glow: string };
+
+const DIR_TONE: Record<string, Tone> = {
+  long:    { text: 'text-emerald-400', bg: 'bg-emerald-500/[0.04]', border: 'border-emerald-500/15', badge: 'bg-emerald-500/[0.1] text-emerald-400', glow: 'shadow-[0_0_24px_-10px_rgba(52,211,153,0.45)]' },
+  short:   { text: 'text-red-400',     bg: 'bg-red-500/[0.04]',     border: 'border-red-500/15',     badge: 'bg-red-500/[0.1] text-red-400',         glow: 'shadow-[0_0_24px_-10px_rgba(248,113,113,0.45)]' },
+  wait:    { text: 'text-amber-400',   bg: 'bg-amber-500/[0.04]',   border: 'border-amber-500/15',   badge: 'bg-amber-500/[0.1] text-amber-400',     glow: 'shadow-[0_0_24px_-12px_rgba(251,191,36,0.4)]' },
+  neutral: { text: 'text-slate-400',   bg: 'bg-slate-500/[0.04]',   border: 'border-slate-500/12',   badge: 'bg-slate-500/[0.1] text-slate-400',     glow: 'shadow-[0_0_20px_-12px_rgba(148,163,184,0.35)]' },
+};
+const tone = (d: string): Tone => DIR_TONE[d] || DIR_TONE.neutral;
+
+const GRADE_BADGE: Record<string, string> = {
+  A: 'bg-emerald-500/[0.1] text-emerald-400',
+  B: 'bg-amber-500/[0.1] text-amber-400',
+  C: 'bg-slate-500/[0.1] text-slate-400',
+  D: 'bg-slate-500/[0.08] text-slate-500',
+};
+
+type RiskLabel = 'Low' | 'Medium' | 'High';
+function riskLevel(s: TradingSignal): { label: RiskLabel; cls: string } {
+  let score = 0;
+  if (s.volatility === 'high') score += 2;
+  else if (s.volatility === 'medium') score += 1;
+  if (s.confidence < 50) score += 2;
+  else if (s.confidence < 70) score += 1;
+  if (s.setupGrade === 'D') score += 2;
+  else if (s.setupGrade === 'C') score += 1;
+  if (typeof s.riskReward === 'number' && s.riskReward < 1.5) score += 1;
+  if (score >= 4) return { label: 'High', cls: 'text-red-400 bg-red-500/[0.08]' };
+  if (score >= 2) return { label: 'Medium', cls: 'text-amber-400 bg-amber-500/[0.08]' };
+  return { label: 'Low', cls: 'text-emerald-400 bg-emerald-500/[0.08]' };
+}
+
+function trendSummary(s: TradingSignal): string {
+  const base =
+    s.direction === 'long' ? 'Bullish bias'
+    : s.direction === 'short' ? 'Bearish bias'
+    : s.direction === 'wait' ? 'No defined edge — stand aside'
+    : 'Range / no-trade';
+  const bits: string[] = [base];
+  if (s.volatilityRegime) bits.push(`${s.volatilityRegime} regime`);
+  bits.push(`${s.confidence}% confidence`);
+  if (typeof s.riskReward === 'number') bits.push(`R:R ${s.riskReward}`);
+  return bits.join(' · ');
+}
+
+function scenarios(s: TradingSignal): { bull: string; bear: string } {
+  const e = s.entryPrice, t = s.targetPrice, sl = s.stopLoss;
+  if ((s.direction === 'long' || s.direction === 'short') && e && t && sl) {
+    if (s.direction === 'long') {
+      return {
+        bull: `Holding above the $${e} entry keeps the long valid — measured move targets $${t}.`,
+        bear: `A decisive break below the $${sl} stop invalidates the long; expect downside continuation.`,
+      };
+    }
+    return {
+      bull: `Reclaiming and holding above the $${sl} stop invalidates the short; squeeze risk increases.`,
+      bear: `Rejection from the $${e} entry keeps the short valid — measured move targets $${t}.`,
+    };
+  }
+  return {
+    bull: 'Defined entry/target/stop not provided for this setup — treat as watch-only.',
+    bear: 'Defined entry/target/stop not provided for this setup — treat as watch-only.',
+  };
+}
+
+function fmtTime(d?: Date): string {
+  if (!d || isNaN(d.getTime())) return '—';
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function buildExplainPrompt(s: TradingSignal): string {
+  const L = (k: string, v: unknown) =>
+    v === undefined || v === null || v === '' ? null : `${k}: ${v}`;
+  const lines = [
+    L('Symbol', s.symbol),
+    L('Asset type', s.assetType),
+    L('Timeframe', s.timeframe),
+    L('Direction', s.direction.toUpperCase()),
+    L('Confidence', `${s.confidence}%`),
+    L('Setup grade', s.setupGrade),
+    L('Last price', typeof s.price === 'number' ? s.price : undefined),
+    L('Entry', s.entryPrice),
+    L('Target', s.targetPrice),
+    L('Stop', s.stopLoss),
+    L('Risk:Reward', s.riskReward),
+    L('Volatility', s.volatilityRegime || s.volatility),
+    L('Invalidation', s.invalidation),
+  ].filter(Boolean).join('\n');
+  return (
+    `Explain this trading signal in plain language — analysis only, NOT financial advice, and do NOT execute any trade:\n\n` +
+    `${lines}\n\n` +
+    `Why is the bias ${s.direction.toUpperCase()}? What is the bullish case, the bearish case, ` +
+    `the key risks, and what would invalidate this setup?`
+  );
+}
+
+/* ═══════════════════════════════════════════
+   SKELETONS
    ═══════════════════════════════════════════ */
 
 function SkeletonPulse({ className = '' }: { className?: string }) {
@@ -110,7 +151,7 @@ function SkeletonPulse({ className = '' }: { className?: string }) {
 
 function SignalCardSkeleton() {
   return (
-    <div className="p-4 rounded-xl border border-white/[0.02] bg-white/[0.01] space-y-3">
+    <div className="p-4 rounded-2xl border border-white/[0.03] bg-white/[0.01] space-y-3">
       <div className="flex items-center gap-3">
         <SkeletonPulse className="h-4 w-16" />
         <SkeletonPulse className="h-4 w-10" />
@@ -142,52 +183,10 @@ function WatchlistSkeleton() {
   );
 }
 
-function SentimentSkeleton() {
-  return (
-    <div className="p-4 rounded-xl border border-white/[0.02] bg-white/[0.01] space-y-3">
-      <div className="flex items-center justify-between">
-        <SkeletonPulse className="h-4 w-32" />
-        <SkeletonPulse className="h-4 w-16" />
-      </div>
-      <SkeletonPulse className="h-2 w-full rounded-full" />
-      <div className="grid grid-cols-2 gap-2">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <SkeletonPulse key={i} className="h-12" />
-        ))}
-      </div>
-    </div>
-  );
-}
+/* ═══════════════════════════════════════════
+   EMPTY / UNAVAILABLE STATES
+   ═══════════════════════════════════════════ */
 
-function TrendingSkeleton() {
-  return (
-    <div className="space-y-2">
-      {Array.from({ length: 4 }).map((_, i) => (
-        <div key={i} className="flex items-center gap-3 p-3 rounded-xl border border-white/[0.02] bg-white/[0.01]">
-          <div className="flex-1">
-            <SkeletonPulse className="h-3 w-20 mb-1" />
-            <SkeletonPulse className="h-3 w-32" />
-          </div>
-          <SkeletonPulse className="h-3 w-10" />
-          <SkeletonPulse className="h-3 w-12" />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// ─── Demo Data Banner ───
-function DemoBanner() {
-  if (!DEMO_MODE) return null;
-  return (
-    <div className="flex items-center gap-2 px-3 py-2 mb-3 rounded-lg bg-amber-500/[0.06] border border-amber-500/10">
-      <AlertTriangle className="w-3.5 h-3.5 text-amber-400/60 shrink-0" />
-      <span className="text-[11px] text-amber-400/70 font-medium">DEMO DATA — not live market data</span>
-    </div>
-  );
-}
-
-// ─── Live Data Unavailable Fallback ───
 function LiveDataUnavailable({ onRetry, message }: { onRetry: () => void; message?: string }) {
   return (
     <motion.div
@@ -197,14 +196,10 @@ function LiveDataUnavailable({ onRetry, message }: { onRetry: () => void; messag
       className="flex flex-col items-center justify-center py-16 px-6 text-center"
     >
       <div className="relative p-8 rounded-2xl border border-white/[0.04] bg-white/[0.015] backdrop-blur-sm max-w-sm w-full">
-        {/* Subtle glow */}
         <div className="absolute -top-8 left-1/2 -translate-x-1/2 w-24 h-24 bg-cyan-500/[0.03] rounded-full blur-2xl pointer-events-none" />
-
         <div className="relative flex flex-col items-center">
           <KorvixOrb size="md" variant="idle" className="mb-5" />
-          <p className="text-[14px] font-medium text-slate-300 mb-2">
-            {message ? 'Live market data unavailable' : 'Live market data unavailable'}
-          </p>
+          <p className="text-[14px] font-medium text-slate-300 mb-2">Live market data unavailable</p>
           <p className="text-[12px] text-slate-600 mb-6 leading-relaxed">
             {message || 'Trading signals require a live market data connection. It will populate as soon as data is available.'}
           </p>
@@ -220,257 +215,362 @@ function LiveDataUnavailable({ onRetry, message }: { onRetry: () => void; messag
   );
 }
 
-// ─── Not Available Yet (feature has no backend — NOT an error) ───
-function NotAvailableYet({ title, detail }: { title: string; detail: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
-      <div className="h-12 w-12 rounded-2xl bg-indigo-500/[0.05] border border-indigo-500/10 flex items-center justify-center mb-4">
-        <Sparkles className="h-5 w-5 text-indigo-400/70" />
-      </div>
-      <p className="text-[13px] font-medium text-slate-300 mb-1">{title}</p>
-      <p className="text-[11px] text-slate-600 max-w-xs">{detail}</p>
-    </div>
-  );
-}
-
-// ─── Signal Card Component ───
-function SignalCard({ signal }: { signal: TradingSignal }) {
-  const [expanded, setExpanded] = useState(false);
-
-  const dirColors: Record<string, { bg: string; border: string; text: string; badge: string }> = {
-    long:   { bg: 'bg-emerald-500/[0.04]',  border: 'border-emerald-500/10',  text: 'text-emerald-400',  badge: 'bg-emerald-500/[0.08] text-emerald-400' },
-    short:  { bg: 'bg-red-500/[0.04]',      border: 'border-red-500/10',      text: 'text-red-400',      badge: 'bg-red-500/[0.08] text-red-400' },
-    wait:   { bg: 'bg-amber-500/[0.04]',    border: 'border-amber-500/10',    text: 'text-amber-400',    badge: 'bg-amber-500/[0.08] text-amber-400' },
-    neutral:{ bg: 'bg-slate-500/[0.04]',    border: 'border-slate-500/10',    text: 'text-slate-400',    badge: 'bg-slate-500/[0.08] text-slate-400' },
-  };
-  const colors = dirColors[signal.direction] || dirColors.neutral;
-
+// Honest "coming soon" — explains the missing data source, no fake values.
+function ComingSoon({ title, what, source }: { title: string; what: string; source: string }) {
   return (
     <motion.div
-      layout
-      className={`rounded-xl border ${colors.border} ${colors.bg} overflow-hidden transition-all duration-200 hover:border-opacity-20`}
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+      className="flex flex-col items-center justify-center py-14 px-6 text-center"
     >
-      {DEMO_MODE && (
-        <div className="px-3 pt-2">
-          <span className="text-[9px] font-medium text-amber-400/50 bg-amber-500/[0.06] border border-amber-500/10 px-1.5 py-0.5 rounded">
-            DEMO DATA
-          </span>
-        </div>
-      )}
-      <button onClick={() => setExpanded(!expanded)} className="w-full flex items-center gap-3 p-4 text-left">
-        {signal.sparkline && (
-          <div className="flex items-end gap-px h-8 w-12 shrink-0">
-            {signal.sparkline.map((v, i) => {
-              const min = Math.min(...signal.sparkline!);
-              const max = Math.max(...signal.sparkline!);
-              const h = max === min ? 50 : ((v - min) / (max - min)) * 100;
-              return (
-                <div key={i} className="flex-1 rounded-sm bg-current opacity-20" style={{ height: `${Math.max(10, h)}%` }} />
-              );
-            })}
+      <div className="relative p-8 rounded-2xl border border-indigo-500/10 bg-indigo-500/[0.02] backdrop-blur-sm max-w-md w-full">
+        <div className="absolute -top-8 left-1/2 -translate-x-1/2 w-24 h-24 bg-indigo-500/[0.04] rounded-full blur-2xl pointer-events-none" />
+        <div className="relative flex flex-col items-center">
+          <div className="h-12 w-12 rounded-2xl bg-indigo-500/[0.06] border border-indigo-500/15 flex items-center justify-center mb-4">
+            <Sparkles className="h-5 w-5 text-indigo-400/80" />
           </div>
-        )}
-
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="text-[13px] font-medium text-white">{signal.symbol}</span>
-            <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${colors.badge}`}>{signal.direction.toUpperCase()}</span>
-            <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${signal.setupGrade === 'A' ? 'bg-emerald-500/[0.08] text-emerald-400' : signal.setupGrade === 'B' ? 'bg-amber-500/[0.08] text-amber-400' : 'bg-slate-500/[0.08] text-slate-400'}`}>
-              Grade {signal.setupGrade}
-            </span>
-          </div>
-          <div className="flex items-center gap-3 mt-1">
-            <span className="text-[11px] text-slate-500">{signal.confidence}% confidence</span>
-            <span className="text-[11px] text-slate-600 capitalize">{signal.volatility} vol</span>
+          <p className="text-[14px] font-medium text-slate-200 mb-1.5">{title}</p>
+          <p className="text-[12px] text-slate-500 leading-relaxed mb-4">{what}</p>
+          <div className="w-full flex items-start gap-2 px-3 py-2.5 rounded-xl bg-white/[0.02] border border-white/[0.04] text-left">
+            <Info className="w-3.5 h-3.5 text-slate-600 shrink-0 mt-0.5" />
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              <span className="text-slate-400">Needs:</span> {source}. We won&apos;t show simulated numbers here.
+            </p>
           </div>
         </div>
-
-        {signal.entryPrice && (
-          <div className="text-right shrink-0">
-            <p className="text-[11px] text-slate-400">Entry</p>
-            <p className="text-[12px] font-medium text-white">${signal.entryPrice}</p>
-          </div>
-        )}
-
-        <motion.div animate={{ rotate: expanded ? 90 : 0 }} className="shrink-0">
-          <ChevronRight className="w-4 h-4 text-slate-600" />
-        </motion.div>
-      </button>
-
-      <AnimatePresence>
-        {expanded && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="overflow-hidden"
-          >
-            <div className="px-4 pb-4 space-y-3 border-t border-white/[0.03] pt-3">
-              {signal.targetPrice && signal.stopLoss && (
-                <div className="grid grid-cols-3 gap-2">
-                  <div className="p-2 rounded-lg bg-white/[0.02]">
-                    <p className="text-[10px] text-slate-600">Entry</p>
-                    <p className="text-[12px] font-medium text-white">${signal.entryPrice}</p>
-                  </div>
-                  <div className="p-2 rounded-lg bg-emerald-500/[0.04]">
-                    <p className="text-[10px] text-emerald-400/60">Target</p>
-                    <p className="text-[12px] font-medium text-emerald-400">${signal.targetPrice}</p>
-                  </div>
-                  <div className="p-2 rounded-lg bg-red-500/[0.04]">
-                    <p className="text-[10px] text-red-400/60">Stop</p>
-                    <p className="text-[12px] font-medium text-red-400">${signal.stopLoss}</p>
-                  </div>
-                </div>
-              )}
-              <p className="text-[12px] text-slate-400 leading-relaxed">{signal.reasoning}</p>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      </div>
     </motion.div>
   );
 }
 
-// ─── Sentiment Gauge ───
-function SentimentGauge({ sentiment }: { sentiment: MarketSentiment }) {
-  const sentimentColor = sentiment.overall === 'bullish' ? 'text-emerald-400' : sentiment.overall === 'bearish' ? 'text-red-400' : 'text-amber-400';
-  const sentimentBg = sentiment.overall === 'bullish' ? 'bg-emerald-500/[0.06]' : sentiment.overall === 'bearish' ? 'bg-red-500/[0.06]' : 'bg-amber-500/[0.06]';
-
+// Non-blocking "couldn't refresh — showing last update" banner.
+function StaleBanner({ at, onRetry }: { at: string; onRetry: () => void }) {
   return (
-    <div className={`p-4 rounded-xl border border-white/[0.04] ${sentimentBg} transition-all duration-200 hover:border-white/[0.06]`}>
-      {DEMO_MODE && (
-        <div className="mb-2">
-          <span className="text-[9px] font-medium text-amber-400/50 bg-amber-500/[0.06] border border-amber-500/10 px-1.5 py-0.5 rounded">
-            DEMO DATA
-          </span>
-        </div>
-      )}
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <Radar className={`w-4 h-4 ${sentimentColor}`} />
-          <span className="text-[12px] font-medium text-white">Market Sentiment</span>
-        </div>
-        <span className={`text-[11px] font-semibold ${sentimentColor} capitalize`}>{sentiment.overall}</span>
-      </div>
-
-      <div className="mb-3">
-        <div className="flex justify-between mb-1">
-          <span className="text-[10px] text-slate-500">Bullish Score</span>
-          <span className="text-[10px] text-white font-medium">{sentiment.score}/100</span>
-        </div>
-        <div className="w-full h-1.5 bg-white/[0.04] rounded-full overflow-hidden">
-          <motion.div
-            className={`h-full rounded-full ${sentiment.overall === 'bullish' ? 'bg-emerald-400' : sentiment.overall === 'bearish' ? 'bg-red-400' : 'bg-amber-400'}`}
-            initial={{ width: 0 }}
-            animate={{ width: `${sentiment.score}%` }}
-            transition={{ duration: 1, delay: 0.2 }}
-          />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-2">
-        <div className="p-2 rounded-lg bg-white/[0.02]">
-          <p className="text-[9px] text-slate-600">Fear &amp; Greed</p>
-          <p className={`text-[11px] font-medium ${sentiment.fearGreedIndex > 60 ? 'text-emerald-400' : sentiment.fearGreedIndex < 40 ? 'text-red-400' : 'text-amber-400'}`}>
-            {sentiment.fearGreedIndex} <span className="text-slate-600">({sentiment.fearGreedIndex > 60 ? 'Greed' : sentiment.fearGreedIndex < 40 ? 'Fear' : 'Neutral'})</span>
-          </p>
-        </div>
-        <div className="p-2 rounded-lg bg-white/[0.02]">
-          <p className="text-[9px] text-slate-600">VIX</p>
-          <p className="text-[11px] font-medium text-white">{sentiment.vix}</p>
-        </div>
-        <div className="p-2 rounded-lg bg-white/[0.02]">
-          <p className="text-[9px] text-slate-600">Put/Call</p>
-          <p className={`text-[11px] font-medium ${sentiment.putCallRatio < 1 ? 'text-emerald-400' : 'text-red-400'}`}>{sentiment.putCallRatio}</p>
-        </div>
-        <div className="p-2 rounded-lg bg-white/[0.02]">
-          <p className="text-[9px] text-slate-600">A/D Ratio</p>
-          <p className={`text-[11px] font-medium ${sentiment.advanceDecline > 1 ? 'text-emerald-400' : 'text-red-400'}`}>{sentiment.advanceDecline}</p>
-        </div>
-      </div>
+    <div className="flex items-center gap-2 px-3 py-2 mb-3 rounded-xl bg-amber-500/[0.05] border border-amber-500/10">
+      <AlertTriangle className="w-3.5 h-3.5 text-amber-400/70 shrink-0" />
+      <span className="text-[11px] text-amber-400/80 flex-1">
+        Couldn&apos;t refresh — showing last known data ({at}).
+      </span>
+      <button onClick={onRetry} className="text-[11px] text-amber-400 hover:text-amber-300 underline underline-offset-2">
+        Retry
+      </button>
     </div>
   );
 }
 
-// ─── Watchlist Row ───
-function WatchlistRow({ item, onToggleFav }: { item: WatchlistItem; onToggleFav: () => void }) {
-  const isPositive = item.change >= 0;
+/* ═══════════════════════════════════════════
+   SIGNAL CARD
+   ═══════════════════════════════════════════ */
+
+function SignalCard({ signal, onOpen }: { signal: TradingSignal; onOpen: () => void }) {
+  const c = tone(signal.direction);
+  const risk = riskLevel(signal);
+  const change = signal.changePercent;
+  const changePos = typeof change === 'number' && change >= 0;
 
   return (
-    <div className="flex items-center gap-3 p-3 rounded-xl border border-white/[0.02] bg-white/[0.01] hover:border-white/[0.05] hover:bg-white/[0.02] transition-all duration-200 group">
-      <button onClick={onToggleFav} className="shrink-0">
-        <Star className={`w-3.5 h-3.5 ${item.isFavorite ? 'text-amber-400 fill-amber-400' : 'text-slate-700 hover:text-slate-500'} transition-colors`} />
-      </button>
+    <motion.button
+      layout
+      onClick={onOpen}
+      whileHover={{ y: -2 }}
+      transition={{ duration: 0.18 }}
+      className={`w-full text-left rounded-2xl border ${c.border} ${c.bg} ${c.glow} overflow-hidden hover:border-opacity-30 transition-all duration-200`}
+    >
+      <div className="p-4">
+        {/* Row 1: identity */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-[14px] font-semibold text-white">{signal.symbol}</span>
+          <span className="text-[9px] uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-white/[0.05] text-slate-400">
+            {signal.assetType === 'crypto' ? 'Crypto' : signal.assetType === 'stock' ? 'Stock' : signal.assetType || '—'}
+          </span>
+          <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${c.badge}`}>
+            {signal.direction.toUpperCase()}
+          </span>
+          <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${GRADE_BADGE[signal.setupGrade]}`}>
+            Grade {signal.setupGrade}
+          </span>
+          <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full ${risk.cls}`}>
+            {risk.label} risk
+          </span>
+          <ChevronRight className="w-4 h-4 text-slate-600 ml-auto shrink-0" />
+        </div>
 
-      <div className="flex items-end gap-px h-6 w-10 shrink-0">
-        {item.sparkline.map((v, i) => {
-          const min = Math.min(...item.sparkline);
-          const max = Math.max(...item.sparkline);
-          const h = max === min ? 50 : ((v - min) / (max - min)) * 100;
-          return (
-            <div key={i} className={`flex-1 rounded-sm ${isPositive ? 'bg-emerald-500/30' : 'bg-red-500/30'}`} style={{ height: `${Math.max(15, h)}%` }} />
-          );
-        })}
+        {/* Row 2: live price + confidence/vol */}
+        <div className="flex items-center gap-3 mt-2">
+          {typeof signal.price === 'number' && (
+            <span className="text-[13px] font-medium text-white">
+              ${signal.price.toLocaleString('en-US', { maximumFractionDigits: signal.price < 10 ? 6 : 2 })}
+            </span>
+          )}
+          {typeof change === 'number' && (
+            <span className={`flex items-center gap-0.5 text-[11px] font-medium ${changePos ? 'text-emerald-400' : 'text-red-400'}`}>
+              {changePos ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+              {changePos ? '+' : ''}{change.toFixed(2)}%
+            </span>
+          )}
+          <span className="text-[11px] text-slate-500">{signal.confidence}% conf</span>
+          <span className="text-[11px] text-slate-600 capitalize">{signal.volatility} vol</span>
+        </div>
+
+        {/* Row 3: entry / target / stop */}
+        {(signal.entryPrice || signal.targetPrice || signal.stopLoss) && (
+          <div className="grid grid-cols-3 gap-2 mt-3">
+            <div className="p-2 rounded-lg bg-white/[0.02]">
+              <p className="text-[9px] text-slate-600">Entry</p>
+              <p className="text-[12px] font-medium text-white">{signal.entryPrice ? `$${signal.entryPrice}` : '—'}</p>
+            </div>
+            <div className="p-2 rounded-lg bg-emerald-500/[0.04]">
+              <p className="text-[9px] text-emerald-400/60">Target</p>
+              <p className="text-[12px] font-medium text-emerald-400">{signal.targetPrice ? `$${signal.targetPrice}` : '—'}</p>
+            </div>
+            <div className="p-2 rounded-lg bg-red-500/[0.04]">
+              <p className="text-[9px] text-red-400/60">Stop</p>
+              <p className="text-[12px] font-medium text-red-400">{signal.stopLoss ? `$${signal.stopLoss}` : '—'}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Row 4: reason + updated */}
+        <p className="text-[12px] text-slate-400 leading-relaxed mt-3 line-clamp-2">{signal.reasoning}</p>
+        <div className="flex items-center gap-1 mt-2 text-[10px] text-slate-600">
+          <Clock className="w-3 h-3" /> Updated {fmtTime(signal.timestamp)}
+        </div>
       </div>
+    </motion.button>
+  );
+}
 
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5">
-          <span className="text-[12px] font-medium text-white">{item.symbol}</span>
-          {DEMO_MODE && <span className="text-[9px] text-amber-400/40 bg-amber-500/[0.05] px-1 rounded">DEMO</span>}
-          <span className="text-[10px] text-slate-600">{item.name}</span>
+/* ═══════════════════════════════════════════
+   SIGNAL DETAIL DRAWER
+   ═══════════════════════════════════════════ */
+
+function DrawerSection({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
+  return (
+    <div className="rounded-xl border border-white/[0.04] bg-white/[0.015] p-4">
+      <div className="flex items-center gap-2 mb-2.5">
+        <span className="text-slate-500">{icon}</span>
+        <h4 className="text-[12px] font-medium text-slate-300">{title}</h4>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function SignalDetailDrawer({
+  signal, onClose, onExplain,
+}: {
+  signal: TradingSignal;
+  onClose: () => void;
+  onExplain?: (prompt: string) => void;
+}) {
+  const c = tone(signal.direction);
+  const risk = riskLevel(signal);
+  const sc = scenarios(signal);
+
+  return (
+    <motion.aside
+      key="drawer"
+      initial={{ x: '100%' }}
+      animate={{ x: 0 }}
+      exit={{ x: '100%' }}
+      transition={{ type: 'spring', stiffness: 320, damping: 34 }}
+      className="fixed inset-y-0 right-0 z-50 w-full sm:w-[440px] max-w-[100vw] bg-[#0b0b0c]/95 backdrop-blur-xl border-l border-white/[0.06] shadow-[0_0_60px_-15px_rgba(0,0,0,0.8)] flex flex-col"
+    >
+      {/* Header */}
+      <div className={`shrink-0 p-4 border-b border-white/[0.05] ${c.bg}`}>
+        <div className="flex items-start justify-between">
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[16px] font-semibold text-white">{signal.symbol}</span>
+              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${c.badge}`}>
+                {signal.direction.toUpperCase()}
+              </span>
+              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${GRADE_BADGE[signal.setupGrade]}`}>
+                Grade {signal.setupGrade}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500 mt-1">
+              {signal.name}{signal.timeframe ? ` · ${signal.timeframe}` : ''} · updated {fmtTime(signal.timestamp)}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="h-8 w-8 flex items-center justify-center rounded-lg border border-white/[0.06] text-slate-500 hover:text-white hover:bg-white/[0.05] transition-all"
+            aria-label="Close"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       </div>
 
+      {/* Body */}
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {/* Price snapshot */}
+        <DrawerSection icon={<Gauge className="w-3.5 h-3.5" />} title="Price snapshot">
+          <div className="grid grid-cols-2 gap-2">
+            <div className="p-2.5 rounded-lg bg-white/[0.02]">
+              <p className="text-[9px] text-slate-600">Last price</p>
+              <p className="text-[13px] font-medium text-white">
+                {typeof signal.price === 'number'
+                  ? `$${signal.price.toLocaleString('en-US', { maximumFractionDigits: signal.price < 10 ? 6 : 2 })}`
+                  : '—'}
+              </p>
+            </div>
+            <div className="p-2.5 rounded-lg bg-white/[0.02]">
+              <p className="text-[9px] text-slate-600">Change</p>
+              <p className={`text-[13px] font-medium ${typeof signal.changePercent === 'number' && signal.changePercent >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                {typeof signal.changePercent === 'number'
+                  ? `${signal.changePercent >= 0 ? '+' : ''}${signal.changePercent.toFixed(2)}%`
+                  : '—'}
+              </p>
+            </div>
+            <div className="p-2.5 rounded-lg bg-emerald-500/[0.04]">
+              <p className="text-[9px] text-emerald-400/60">Entry</p>
+              <p className="text-[13px] font-medium text-emerald-400">{signal.entryPrice ? `$${signal.entryPrice}` : '—'}</p>
+            </div>
+            <div className="p-2.5 rounded-lg bg-red-500/[0.04]">
+              <p className="text-[9px] text-red-400/60">Stop</p>
+              <p className="text-[13px] font-medium text-red-400">{signal.stopLoss ? `$${signal.stopLoss}` : '—'}</p>
+            </div>
+            <div className="p-2.5 rounded-lg bg-white/[0.02]">
+              <p className="text-[9px] text-slate-600">Target 1</p>
+              <p className="text-[13px] font-medium text-white">{signal.targetPrice ? `$${signal.targetPrice}` : '—'}</p>
+            </div>
+            <div className="p-2.5 rounded-lg bg-white/[0.02]">
+              <p className="text-[9px] text-slate-600">Target 2</p>
+              <p className="text-[13px] font-medium text-white">{signal.takeProfit2 ? `$${signal.takeProfit2}` : '—'}</p>
+            </div>
+          </div>
+        </DrawerSection>
+
+        {/* Trend summary */}
+        <DrawerSection icon={signal.direction === 'short' ? <TrendingDown className="w-3.5 h-3.5" /> : <TrendingUp className="w-3.5 h-3.5" />} title="Trend summary">
+          <p className="text-[12px] text-slate-400 leading-relaxed">{trendSummary(signal)}</p>
+          <p className="text-[12px] text-slate-500 leading-relaxed mt-1.5">{signal.reasoning}</p>
+        </DrawerSection>
+
+        {/* Support / Resistance — honest: this feed doesn't provide them */}
+        <DrawerSection icon={<Activity className="w-3.5 h-3.5" />} title="Support / Resistance">
+          <p className="text-[11px] text-slate-500 leading-relaxed">
+            Structured support/resistance levels are not provided by the current
+            signals feed. The defined trade levels above (entry / stop / targets)
+            are the only price levels returned for this setup — no estimated
+            levels are shown.
+          </p>
+        </DrawerSection>
+
+        {/* AI explanation (rule-based from real fields) + ask-AI action */}
+        <DrawerSection icon={<Sparkles className="w-3.5 h-3.5" />} title="Signal rationale">
+          <p className="text-[12px] text-slate-400 leading-relaxed">
+            Bias is <span className={c.text}>{signal.direction.toUpperCase()}</span> at{' '}
+            {signal.confidence}% confidence (grade {signal.setupGrade}, {risk.label.toLowerCase()} risk
+            {typeof signal.riskReward === 'number' ? `, R:R ${signal.riskReward}` : ''}).
+            {signal.invalidation ? ` Invalidation: ${signal.invalidation}.` : ''}
+          </p>
+          {onExplain && (
+            <button
+              onClick={() => onExplain(buildExplainPrompt(signal))}
+              className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-indigo-500/[0.08] border border-indigo-500/20 text-[12px] font-medium text-indigo-300 hover:bg-indigo-500/[0.14] hover:border-indigo-500/30 transition-all"
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              Explain this signal with KorvixAI
+            </button>
+          )}
+        </DrawerSection>
+
+        {/* Scenarios */}
+        <div className="grid grid-cols-1 gap-2">
+          <div className="rounded-xl border border-emerald-500/10 bg-emerald-500/[0.03] p-4">
+            <div className="flex items-center gap-2 mb-1.5">
+              <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
+              <h4 className="text-[12px] font-medium text-emerald-400">Bullish scenario</h4>
+            </div>
+            <p className="text-[12px] text-slate-400 leading-relaxed">{sc.bull}</p>
+          </div>
+          <div className="rounded-xl border border-red-500/10 bg-red-500/[0.03] p-4">
+            <div className="flex items-center gap-2 mb-1.5">
+              <TrendingDown className="w-3.5 h-3.5 text-red-400" />
+              <h4 className="text-[12px] font-medium text-red-400">Bearish scenario</h4>
+            </div>
+            <p className="text-[12px] text-slate-400 leading-relaxed">{sc.bear}</p>
+          </div>
+        </div>
+
+        {/* Risk notes */}
+        <DrawerSection icon={<ShieldAlert className="w-3.5 h-3.5" />} title="Risk notes">
+          <ul className="space-y-1.5 text-[11px] text-slate-500 leading-relaxed list-disc list-inside">
+            <li>Overall risk rated <span className={risk.cls.split(' ')[0]}>{risk.label}</span> from volatility, confidence, grade{typeof signal.riskReward === 'number' ? ' and R:R' : ''}.</li>
+            <li>{signal.volatility === 'high' ? 'Elevated volatility — position size accordingly.' : signal.volatility === 'low' ? 'Lower volatility — moves may be slower than expected.' : 'Moderate volatility regime.'}</li>
+            {signal.invalidation && <li>Setup invalidated if: {signal.invalidation}.</li>}
+            <li>Live data can change quickly; signal reflects the last update only.</li>
+          </ul>
+        </DrawerSection>
+
+        {/* Not financial advice */}
+        <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-white/[0.02] border border-white/[0.04]">
+          <Info className="w-3.5 h-3.5 text-slate-600 shrink-0 mt-0.5" />
+          <p className="text-[10px] text-slate-600 leading-relaxed">
+            Analysis only — not financial advice. KorvixAI does not execute trades
+            or place orders. Always do your own research.
+          </p>
+        </div>
+      </div>
+    </motion.aside>
+  );
+}
+
+/* ═══════════════════════════════════════════
+   WATCHLIST ROW
+   ═══════════════════════════════════════════ */
+
+function WatchlistRow({ item, onToggleFav, onRemove }: {
+  item: WatchlistItem; onToggleFav: () => void; onRemove: () => void;
+}) {
+  const isPositive = item.change >= 0;
+  return (
+    <div className="flex items-center gap-3 p-3 rounded-xl border border-white/[0.02] bg-white/[0.01] hover:border-white/[0.05] hover:bg-white/[0.02] transition-all duration-200 group">
+      <button onClick={onToggleFav} className="shrink-0" aria-label="Toggle favorite">
+        <Star className={`w-3.5 h-3.5 ${item.isFavorite ? 'text-amber-400 fill-amber-400' : 'text-slate-700 hover:text-slate-500'} transition-colors`} />
+      </button>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5">
+          <span className="text-[12px] font-medium text-white">{item.symbol}</span>
+          <span className="text-[9px] uppercase px-1 py-0.5 rounded bg-white/[0.04] text-slate-600">{item.type}</span>
+          <span className="text-[10px] text-slate-600 truncate">{item.name}</span>
+        </div>
+      </div>
       <div className="text-right shrink-0">
-        <p className="text-[12px] font-medium text-white">${item.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-        <div className={`flex items-center gap-0.5 ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}>
+        <p className="text-[12px] font-medium text-white">${item.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: item.price < 10 ? 6 : 2 })}</p>
+        <div className={`flex items-center justify-end gap-0.5 ${isPositive ? 'text-emerald-400' : 'text-red-400'}`}>
           {isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
           <span className="text-[10px] font-medium">{isPositive ? '+' : ''}{item.changePercent.toFixed(2)}%</span>
         </div>
       </div>
+      <button
+        onClick={onRemove}
+        title="Remove"
+        className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-slate-700 hover:text-red-400"
+        aria-label="Remove from watchlist"
+      >
+        <X className="w-3.5 h-3.5" />
+      </button>
     </div>
   );
 }
 
-// ─── Trending Card ───
-function TrendingCard({ asset }: { asset: TrendingAsset }) {
-  const sentColor = asset.sentiment === 'bullish' ? 'text-emerald-400' : asset.sentiment === 'bearish' ? 'text-red-400' : 'text-amber-400';
-  const sentBg = asset.sentiment === 'bullish' ? 'bg-emerald-500/[0.06]' : asset.sentiment === 'bearish' ? 'bg-red-500/[0.06]' : 'bg-amber-500/[0.06]';
+/* ═══════════════════════════════════════════
+   MAIN PANEL
+   ═══════════════════════════════════════════ */
 
-  return (
-    <div className="flex items-center gap-3 p-3 rounded-xl border border-white/[0.02] bg-white/[0.01] hover:border-white/[0.04] transition-all duration-200">
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <span className="text-[12px] font-medium text-white">{asset.symbol}</span>
-          {DEMO_MODE && <span className="text-[9px] text-amber-400/40 bg-amber-500/[0.05] px-1 rounded">DEMO</span>}
-          <span className="text-[10px] text-slate-600">{asset.name}</span>
-        </div>
-        <div className="flex items-center gap-3 mt-1">
-          <span className="text-[10px] text-slate-500">Vol: {asset.volume}</span>
-          <span className="text-[10px] text-slate-500">{asset.mentions.toLocaleString()} mentions</span>
-        </div>
-      </div>
-      <div className="text-right shrink-0">
-        <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${sentBg} ${sentColor} capitalize`}>{asset.sentiment}</span>
-        <p className={`text-[11px] font-medium mt-1 ${asset.priceChange >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-          {asset.priceChange >= 0 ? '+' : ''}{asset.priceChange.toFixed(2)}%
-        </p>
-      </div>
-    </div>
-  );
-}
-
-// ─── Main Trading Panel ───
-export default function TradingPanel() {
+export default function TradingPanel({ onExplainSignal }: { onExplainSignal?: (prompt: string) => void }) {
   const [activeTab, setActiveTab] = useState<'signals' | 'watchlist' | 'sentiment' | 'trending'>('signals');
   const [watchlistFilter, setWatchlistFilter] = useState<'all' | 'stocks' | 'crypto'>('all');
   const [search, setSearch] = useState('');
-  const [lastRefresh, setLastRefresh] = useState(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [selected, setSelected] = useState<TradingSignal | null>(null);
   const { addToast } = useToast();
 
-  // Persisted watchlist symbols + favorites (survive reload).
   const [watchSymbols, setWatchSymbols] = useState<string[]>(() => {
     try {
       const raw = localStorage.getItem(WATCH_LS_KEY);
@@ -481,6 +581,7 @@ export default function TradingPanel() {
   useEffect(() => {
     try { localStorage.setItem(WATCH_LS_KEY, JSON.stringify(watchSymbols)); } catch { /* ignore */ }
   }, [watchSymbols]);
+
   const [favorites, setFavorites] = useState<string[]>(() => {
     try {
       const raw = localStorage.getItem(FAV_LS_KEY);
@@ -492,18 +593,23 @@ export default function TradingPanel() {
     try { localStorage.setItem(FAV_LS_KEY, JSON.stringify(favorites)); } catch { /* ignore */ }
   }, [favorites]);
 
-  const signalsApi = useTradingSignals(DEMO_MODE ? [] : SIGNAL_SYMBOLS, '4h');
-  const watchApi = useTradingSignals(DEMO_MODE ? [] : watchSymbols, '1d');
+  const signalsApi = useTradingSignals(SIGNAL_SYMBOLS, '4h', POLL_MS);
+  const watchApi = useTradingSignals(watchSymbols, '1d', POLL_MS);
 
-  const liveSignals = DEMO_MODE
-    ? SIGNALS
-    : signalsApi.signals.filter((s) => s.isLive);
-  const signalsToShow = liveSignals;
+  const freshSignals = useMemo(
+    () => signalsApi.signals.filter((s) => s.isLive),
+    [signalsApi.signals],
+  );
 
-  // Live → main's WatchlistItem shape. Only symbols WITH a real numeric
-  // price are shown — never fabricate $0.00 (Bugbot honesty eff5d8d2).
-  const watchlist: WatchlistItem[] = useMemo(() => {
-    if (DEMO_MODE) return DEMO_WATCHLIST;
+  // Keep the last good signals visible if a later refresh fails (so a
+  // transient backend hiccup doesn't blank the panel). Caching into a ref
+  // during render is deterministic and avoids an effect feedback loop.
+  const signalsCache = useRef<TradingSignal[]>([]);
+  if (freshSignals.length) signalsCache.current = freshSignals;
+  const signalsToShow = freshSignals.length ? freshSignals : signalsCache.current;
+  const showStaleSignals = !!signalsApi.error && freshSignals.length === 0 && signalsCache.current.length > 0;
+
+  const watchlistAll: WatchlistItem[] = useMemo(() => {
     const out: WatchlistItem[] = [];
     for (const s of watchApi.signals) {
       if (typeof s.price !== 'number') continue;
@@ -514,25 +620,25 @@ export default function TradingPanel() {
         price: s.price,
         change: s.price * (pct / 100),
         changePercent: pct,
-        sparkline: [],
         isFavorite: favorites.includes(s.symbol.toUpperCase()),
         type: s.assetType === 'crypto' ? 'crypto' : 'stock',
-        is_live: true,
       });
     }
     return out;
   }, [watchApi.signals, favorites]);
 
+  const watchlistCache = useRef<WatchlistItem[]>([]);
+  if (watchlistAll.length) watchlistCache.current = watchlistAll;
+  const watchlist = watchlistAll.length ? watchlistAll : watchlistCache.current;
+  const showStaleWatch = !!watchApi.error && watchlistAll.length === 0 && watchlistCache.current.length > 0;
+
   const activeApi = activeTab === 'watchlist' ? watchApi : signalsApi;
+  const lastUpdated = activeApi.lastUpdated ? new Date(activeApi.lastUpdated) : null;
+
   const handleRefresh = () => {
     setIsRefreshing(true);
-    setLastRefresh(new Date());
-    if (DEMO_MODE) {
-      addToast('Demo data refreshed', 'success');
-    } else {
-      activeApi.refresh();
-      addToast('Refreshing market data…', 'info');
-    }
+    activeApi.refresh();
+    addToast('Refreshing market data…', 'info');
     setTimeout(() => setIsRefreshing(false), 800);
   };
 
@@ -565,6 +671,16 @@ export default function TradingPanel() {
     setWatchSymbols((prev) => prev.filter((s) => s.toUpperCase() !== up));
   };
 
+  const explain = (prompt: string) => {
+    setSelected(null);
+    if (onExplainSignal) {
+      onExplainSignal(prompt);
+      addToast('Asked KorvixAI to explain the signal', 'success');
+    } else {
+      addToast('Open the Chat tab to ask KorvixAI', 'info');
+    }
+  };
+
   const filteredWatchlist = watchlist
     .filter((w) => watchlistFilter === 'all' || (watchlistFilter === 'crypto' ? w.type === 'crypto' : w.type === 'stock'))
     .filter((w) => !search || w.symbol.toLowerCase().includes(search.toLowerCase()) || w.name.toLowerCase().includes(search.toLowerCase()));
@@ -580,37 +696,36 @@ export default function TradingPanel() {
     <div className="flex flex-col h-full overflow-hidden">
       {/* Header */}
       <div className="shrink-0 p-4 border-b border-white/[0.04] bg-[#0a0a0a]/60">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <div className="flex items-center gap-2 min-w-0">
             <div className="relative flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/[0.06] border border-emerald-500/10 shadow-[0_0_8px_-2px_rgba(52,211,153,0.06)]">
               <TrendingUp className="h-4 w-4 text-emerald-400" />
-              {/* Live pulse dot */}
-              {!DEMO_MODE && (
-                <motion.div
-                  className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400"
-                  animate={{ scale: [1, 1.5, 1], opacity: [0.7, 1, 0.7] }}
-                  transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-                  style={{ boxShadow: '0 0 4px rgba(52,211,153,0.5)' }}
-                />
-              )}
+              <motion.div
+                className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400"
+                animate={{ scale: [1, 1.5, 1], opacity: [0.7, 1, 0.7] }}
+                transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+                style={{ boxShadow: '0 0 4px rgba(52,211,153,0.5)' }}
+              />
             </div>
-            <div>
-              <h2 className="text-[14px] font-semibold text-white">Trading Intelligence</h2>
-              <p className="text-[10px] text-slate-600">
-                {DEMO_MODE ? 'Simulated data — not financial advice' : 'Live market signals'}
-              </p>
+            <div className="min-w-0">
+              <h2 className="text-[14px] font-semibold text-white truncate">Trading Intelligence</h2>
+              <p className="text-[10px] text-slate-600">Live market signals · not financial advice</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] text-slate-600">
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="hidden sm:flex items-center text-[10px] text-slate-600">
               <Clock className="w-3 h-3 inline mr-1" />
-              {lastRefresh.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              {lastUpdated ? fmtTime(lastUpdated) : '—'}
+            </span>
+            <span className="hidden sm:inline text-[9px] text-emerald-400/60 px-1.5 py-0.5 rounded-full bg-emerald-500/[0.05] border border-emerald-500/10">
+              Auto {Math.round(POLL_MS / 1000)}s
             </span>
             <motion.button
               onClick={handleRefresh}
               animate={{ rotate: isRefreshing ? 360 : 0 }}
               transition={{ duration: 0.8, ease: 'linear' }}
               className="h-7 w-7 flex items-center justify-center rounded-lg border border-white/[0.04] text-slate-600 hover:text-emerald-400 hover:bg-emerald-500/[0.04] transition-all"
+              aria-label="Refresh"
             >
               <RefreshCw className="h-3.5 w-3.5" />
             </motion.button>
@@ -618,12 +733,12 @@ export default function TradingPanel() {
         </div>
 
         {/* Tabs */}
-        <div className="flex gap-1 p-0.5 rounded-lg bg-white/[0.02] border border-white/[0.03] w-fit">
+        <div className="flex gap-1 p-0.5 rounded-lg bg-white/[0.02] border border-white/[0.03] w-full sm:w-fit overflow-x-auto">
           {tabs.map((t) => (
             <button
               key={t.id}
               onClick={() => setActiveTab(t.id)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium transition-all duration-200 ${
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium transition-all duration-200 whitespace-nowrap ${
                 activeTab === t.id ? 'bg-white/[0.06] text-white shadow-[0_1px_4px_-1px_rgba(0,0,0,0.2)]' : 'text-slate-600 hover:text-slate-400'
               }`}
             >
@@ -636,24 +751,23 @@ export default function TradingPanel() {
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {/* ═══ SIGNALS TAB ═══ */}
+        {/* ═══ SIGNALS ═══ */}
         {activeTab === 'signals' && (
           <>
-            <DemoBanner />
-            {isRefreshing || (!DEMO_MODE && signalsApi.isLoading && signalsToShow.length === 0) ? (
+            {isRefreshing || (signalsApi.isLoading && signalsToShow.length === 0) ? (
               <div className="space-y-3">
                 <SignalCardSkeleton />
                 <SignalCardSkeleton />
                 <SignalCardSkeleton />
               </div>
-            ) : !DEMO_MODE && signalsApi.error ? (
+            ) : signalsApi.error && signalsToShow.length === 0 ? (
               <LiveDataUnavailable onRetry={handleRefresh} message={signalsApi.error} />
-            ) : !DEMO_MODE && signalsToShow.length === 0 ? (
+            ) : signalsToShow.length === 0 ? (
               <LiveDataUnavailable onRetry={handleRefresh} message="No live trading signals right now." />
             ) : (
               <>
-                {/* Summary stats */}
-                <div className="grid grid-cols-4 gap-2 mb-2">
+                {showStaleSignals && <StaleBanner at={fmtTime(lastUpdated || undefined)} onRetry={handleRefresh} />}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-1">
                   <div className="p-3 rounded-xl border border-emerald-500/10 bg-emerald-500/[0.04] text-center">
                     <p className="text-lg font-semibold text-emerald-400">{signalsToShow.filter((s) => s.direction === 'long').length}</p>
                     <p className="text-[9px] text-slate-500">Long</p>
@@ -671,10 +785,9 @@ export default function TradingPanel() {
                     <p className="text-[9px] text-slate-500">Avg Conf</p>
                   </div>
                 </div>
-
                 <div className="space-y-2">
                   {signalsToShow.map((signal) => (
-                    <SignalCard key={signal.id} signal={signal} />
+                    <SignalCard key={signal.id} signal={signal} onOpen={() => setSelected(signal)} />
                   ))}
                 </div>
               </>
@@ -682,12 +795,11 @@ export default function TradingPanel() {
           </>
         )}
 
-        {/* ═══ WATCHLIST TAB ═══ */}
+        {/* ═══ WATCHLIST ═══ */}
         {activeTab === 'watchlist' && (
           <>
-            <DemoBanner />
-            <div className="flex gap-2 mb-2">
-              <div className="relative flex-1">
+            <div className="flex flex-wrap gap-2 mb-2">
+              <div className="relative flex-1 min-w-[160px]">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-600" />
                 <input
                   value={search}
@@ -700,6 +812,10 @@ export default function TradingPanel() {
               <button onClick={addSymbol} title="Add to watchlist"
                 className="h-8 px-2.5 flex items-center gap-1 rounded-lg bg-emerald-500/[0.06] border border-emerald-500/10 text-[11px] text-emerald-400 hover:bg-emerald-500/[0.1] transition-all">
                 <Plus className="w-3 h-3" /> Add
+              </button>
+              <button onClick={handleRefresh} title="Refresh watchlist"
+                className="h-8 w-8 flex items-center justify-center rounded-lg bg-white/[0.02] border border-white/[0.04] text-slate-500 hover:text-emerald-400 hover:bg-emerald-500/[0.04] transition-all">
+                <RefreshCw className="w-3.5 h-3.5" />
               </button>
               <div className="flex gap-1 p-0.5 rounded-lg bg-white/[0.02] border border-white/[0.03]">
                 {(['all', 'stocks', 'crypto'] as const).map((f) => (
@@ -715,104 +831,79 @@ export default function TradingPanel() {
                 ))}
               </div>
             </div>
-            {isRefreshing || (!DEMO_MODE && watchApi.isLoading && watchlist.length === 0) ? (
+            {isRefreshing || (watchApi.isLoading && watchlist.length === 0) ? (
               <WatchlistSkeleton />
-            ) : !DEMO_MODE && watchApi.error ? (
+            ) : watchApi.error && watchlist.length === 0 ? (
               <LiveDataUnavailable onRetry={handleRefresh} message={watchApi.error} />
             ) : watchSymbols.length === 0 ? (
-              <NotAvailableYet title="Your watchlist is empty" detail="Add a ticker above (e.g. AAPL, NVDA, BTCUSDT) to track live quotes." />
+              <ComingSoon
+                title="Your watchlist is empty"
+                what="Add a ticker above (e.g. AAPL, NVDA, BTCUSDT) to track live quotes."
+                source="any valid stock or crypto symbol"
+              />
             ) : filteredWatchlist.length === 0 ? (
               <p className="text-[11px] text-slate-600 text-center py-8">
                 {watchlist.length === 0 ? 'Waiting for live quotes…' : 'No symbols match this filter.'}
               </p>
             ) : (
-              <div className="space-y-1.5">
-                {filteredWatchlist.map((item) => (
-                  <div key={item.symbol} className="relative group">
-                    <WatchlistRow item={item} onToggleFav={() => toggleFav(item.symbol)} />
-                    <button onClick={() => removeSymbol(item.symbol)} title="Remove"
-                      className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity text-slate-700 hover:text-red-400 bg-[#0a0a0a]/70 rounded p-0.5">
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
-        )}
-
-        {/* ═══ SENTIMENT TAB ═══ */}
-        {activeTab === 'sentiment' && (
-          <>
-            {isRefreshing ? (
-              <SentimentSkeleton />
-            ) : !DEMO_MODE ? (
-              <NotAvailableYet
-                title="Market sentiment — coming soon"
-                detail="Fear & Greed, put/call and sector sentiment need a dedicated data feed that isn't wired to the backend yet. We won't show simulated numbers here."
-              />
-            ) : (
-              <div className="space-y-3">
-                <DemoBanner />
-                <SentimentGauge sentiment={DEMO_SENTIMENT} />
-
-                <div className="p-4 rounded-xl border border-white/[0.04] bg-white/[0.01]">
-                  <h3 className="text-[12px] font-medium text-white mb-3 flex items-center gap-2">
-                    <Layers className="w-3.5 h-3.5 text-slate-500" /> Sector Sentiment
-                  </h3>
-                  {[
-                    { sector: 'Technology', score: 78, trend: 'up' },
-                    { sector: 'Healthcare', score: 62, trend: 'up' },
-                    { sector: 'Energy', score: 45, trend: 'down' },
-                    { sector: 'Finance', score: 55, trend: 'neutral' },
-                    { sector: 'Crypto', score: 71, trend: 'up' },
-                  ].map((s) => (
-                    <div key={s.sector} className="flex items-center gap-3 py-2 border-b border-white/[0.02] last:border-0">
-                      <span className="text-[11px] text-slate-400 w-20">{s.sector}</span>
-                      <div className="flex-1 h-1.5 bg-white/[0.04] rounded-full overflow-hidden">
-                        <motion.div
-                          className={`h-full rounded-full ${s.score > 60 ? 'bg-emerald-400' : s.score < 40 ? 'bg-red-400' : 'bg-amber-400'}`}
-                          initial={{ width: 0 }}
-                          animate={{ width: `${s.score}%` }}
-                          transition={{ duration: 0.8, delay: 0.1 }}
-                        />
-                      </div>
-                      <span className="text-[10px] text-slate-500 w-8 text-right">{s.score}</span>
-                    </div>
+              <>
+                {showStaleWatch && <StaleBanner at={fmtTime(lastUpdated || undefined)} onRetry={handleRefresh} />}
+                <div className="space-y-1.5">
+                  {filteredWatchlist.map((item) => (
+                    <WatchlistRow
+                      key={item.symbol}
+                      item={item}
+                      onToggleFav={() => toggleFav(item.symbol)}
+                      onRemove={() => removeSymbol(item.symbol)}
+                    />
                   ))}
                 </div>
-              </div>
+              </>
             )}
           </>
         )}
 
-        {/* ═══ TRENDING TAB ═══ */}
+        {/* ═══ SENTIMENT ═══ */}
+        {activeTab === 'sentiment' && (
+          <ComingSoon
+            title="Market sentiment — coming soon"
+            what="Fear & Greed, put/call ratio, VIX and sector sentiment will appear here once a real feed is wired."
+            source="a market-sentiment data provider (e.g. options flow + Fear & Greed index)"
+          />
+        )}
+
+        {/* ═══ TRENDING ═══ */}
         {activeTab === 'trending' && (
-          <>
-            <DemoBanner />
-            {isRefreshing ? (
-              <TrendingSkeleton />
-            ) : !DEMO_MODE ? (
-              <NotAvailableYet
-                title="Trending assets — coming soon"
-                detail="Trending requires a social/volume aggregation service that isn't connected yet. Real data will appear here once it's available."
-              />
-            ) : (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between mb-1">
-                  <h3 className="text-[12px] font-medium text-white flex items-center gap-2">
-                    <TrendingUp className="w-3.5 h-3.5 text-slate-500" /> Trending Assets
-                  </h3>
-                  <span className="text-[10px] text-slate-600">Last 24h</span>
-                </div>
-                {(DEMO_MODE ? DEMO_TRENDING : DEMO_TRENDING.filter((t) => t.is_live)).map((asset) => (
-                  <TrendingCard key={asset.symbol} asset={asset} />
-                ))}
-              </div>
-            )}
-          </>
+          <ComingSoon
+            title="Trending assets — coming soon"
+            what="Most-discussed and unusual-volume tickers will appear here once a real feed is wired."
+            source="a social/volume aggregation service (mentions + unusual volume)"
+          />
         )}
       </div>
+
+      {/* Detail drawer */}
+      <AnimatePresence>
+        {selected && (
+          <motion.div
+            key="backdrop"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            onClick={() => setSelected(null)}
+            className="fixed inset-0 z-40 bg-black/50 backdrop-blur-[2px]"
+          />
+        )}
+        {selected && (
+          <SignalDetailDrawer
+            key="drawer"
+            signal={selected}
+            onClose={() => setSelected(null)}
+            onExplain={explain}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -122,6 +122,9 @@ export default function ChatDashboard() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<WorkspaceTab>(settings.defaultWorkspace);
+  // "Explain Signal" from the Trading panel: queued here, then sent into
+  // the chat session once the tab switch has actually settled.
+  const [pendingExplain, setPendingExplain] = useState<string | null>(null);
   // Timeline only shows for research/agent deep operations
 
   // Sync active tab when defaultWorkspace changes
@@ -153,6 +156,21 @@ export default function ChatDashboard() {
     setActiveTab(tab);
     switchTab(tab);
   }, [switchTab]);
+
+  // Trading panel → chat: queue the prompt, switch to the chat tab, and
+  // send only once switchTab has rebound the active chat session (so the
+  // message lands in the chat session, not the trading one).
+  const handleExplainSignal = useCallback((prompt: string) => {
+    setPendingExplain(prompt);
+    handleTabChange('chat');
+  }, [handleTabChange]);
+
+  useEffect(() => {
+    if (!pendingExplain) return;
+    if (activeTab !== 'chat' || currentTab !== 'chat') return;
+    sendMessage(pendingExplain);
+    setPendingExplain(null);
+  }, [pendingExplain, activeTab, currentTab, sendMessage]);
 
   // Listen for workspace switch events from sidebar mode shortcuts
   useEffect(() => {
@@ -237,7 +255,7 @@ export default function ChatDashboard() {
     }
 
     switch (activeTab) {
-      case 'trading':  return <TradingPanel />;
+      case 'trading':  return <TradingPanel onExplainSignal={handleExplainSignal} />;
       case 'business': return <BusinessPanel />;
       case 'agents':   return <AgentsPanel />;
       default:         return (
