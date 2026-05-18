@@ -2,10 +2,11 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
   Building2, Target, Rocket, Package, Users, PenLine, LayoutTemplate,
-  Save, ChevronRight, Info, ListChecks, ShoppingCart,
+  Save, ChevronRight, Info, ListChecks, ShoppingCart, Bot,
 } from 'lucide-react';
 import EcommercePanel from './EcommercePanel';
 import StartupBuilderPanel from './StartupBuilderPanel';
+import AutopilotPanel from './AutopilotPanel';
 
 /**
  * Business Workspace — Phase 3 increment 1.
@@ -61,7 +62,7 @@ const LAUNCHES: { id: string; label: string; desc: string; icon: typeof Rocket; 
 export default function BusinessPanel({ onRunPrompt }: { onRunPrompt?: (prompt: string) => void }) {
   const [state, setState] = useState<BizState>(load);
   const [draft, setDraft] = useState<BizState>(state);
-  const [view, setView] = useState<'workspace' | 'ecommerce' | 'startup'>('workspace');
+  const [view, setView] = useState<'workspace' | 'ecommerce' | 'startup' | 'autopilot'>('workspace');
 
   useEffect(() => {
     try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch { /* ignore */ }
@@ -94,7 +95,7 @@ export default function BusinessPanel({ onRunPrompt }: { onRunPrompt?: (prompt: 
           </div>
         </div>
         <div className="flex gap-1 mt-3 p-0.5 rounded-lg bg-white/[0.02] border border-white/[0.03] w-fit">
-          {([['workspace', 'Workspace', Target], ['ecommerce', 'E-commerce', ShoppingCart], ['startup', 'Startup', Rocket]] as const).map(([id, label, Icon]) => (
+          {([['workspace', 'Workspace', Target], ['ecommerce', 'E-commerce', ShoppingCart], ['startup', 'Startup', Rocket], ['autopilot', 'Autopilot', Bot]] as const).map(([id, label, Icon]) => (
             <button
               key={id}
               onClick={() => setView(id)}
@@ -113,6 +114,8 @@ export default function BusinessPanel({ onRunPrompt }: { onRunPrompt?: (prompt: 
           <EcommercePanel onRunPrompt={onRunPrompt} />
         ) : view === 'startup' ? (
           <StartupBuilderPanel onRunPrompt={onRunPrompt} />
+        ) : view === 'autopilot' ? (
+          <AutopilotPanel onRunPrompt={onRunPrompt} />
         ) : (
         <div className="p-4 space-y-3">
         {/* Goal / project */}

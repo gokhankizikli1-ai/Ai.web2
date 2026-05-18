@@ -405,3 +405,38 @@ export interface UsageMetrics {
   researchUsed: number;
   researchLimit: number;
 }
+
+// Agent Run Engine (Autopilot) — Phase 4 #4A/4B.
+// Dry-run only: analyze/draft route to the normal chat, compute is the
+// user's own input; research/act are honest "requires approval" placeholders
+// because no external-data or execution gate is open (Assisted ceiling).
+export type AgentStepKind = 'analyze' | 'draft' | 'compute' | 'research' | 'act';
+export type AgentStepStatus = 'pending' | 'running' | 'done' | 'blocked' | 'skipped';
+export type AgentRunStatus = 'planned' | 'running' | 'completed';
+
+export interface AgentStep {
+  id: string;
+  kind: AgentStepKind;
+  title: string;
+  detail: string;
+  /** Structured prompt routed to the normal chat (analyze/draft only). */
+  prompt?: string;
+  status: AgentStepStatus;
+  /** User-captured result / note for this step. */
+  output?: string;
+  /** Why a side-effect/research step cannot execute yet (honest). */
+  blockedReason?: string;
+  /** Critic confidence 0–100. */
+  confidence?: number;
+  /** Critic flag: this step's quality depends on live data we don't have. */
+  needsRealData?: boolean;
+}
+
+export interface AgentRun {
+  id: string;
+  goal: string;
+  createdAt: string;
+  updatedAt: string;
+  status: AgentRunStatus;
+  steps: AgentStep[];
+}
