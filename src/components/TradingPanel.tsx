@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import type { TradingSignal } from '@/types';
+import type {
+  TradingSignal, SignalFactor, SignalAnalytics,
+} from '@/types';
 import { useToast } from '@/hooks/useToast';
 import { useTradingSignals } from '@/hooks/useTradingSignals';
 import KorvixOrb from './KorvixOrb';
@@ -10,6 +12,7 @@ import {
   ArrowUpRight, ArrowDownRight,
   AlertTriangle, Plus, X, Sparkles,
   ShieldAlert, Info, MessageSquare, Gauge,
+  Layers, BarChart3, Scale, Crosshair,
 } from 'lucide-react';
 
 // Default symbol sets the panel requests from /trading/signals (backend
@@ -67,19 +70,6 @@ function riskLevel(s: TradingSignal): { label: RiskLabel; cls: string } {
   if (score >= 4) return { label: 'High', cls: 'text-red-400 bg-red-500/[0.08]' };
   if (score >= 2) return { label: 'Medium', cls: 'text-amber-400 bg-amber-500/[0.08]' };
   return { label: 'Low', cls: 'text-emerald-400 bg-emerald-500/[0.08]' };
-}
-
-function trendSummary(s: TradingSignal): string {
-  const base =
-    s.direction === 'long' ? 'Bullish bias'
-    : s.direction === 'short' ? 'Bearish bias'
-    : s.direction === 'wait' ? 'No defined edge — stand aside'
-    : 'Range / no-trade';
-  const bits: string[] = [base];
-  if (s.volatilityRegime) bits.push(`${s.volatilityRegime} regime`);
-  bits.push(`${s.confidence}% confidence`);
-  if (typeof s.riskReward === 'number') bits.push(`R:R ${s.riskReward}`);
-  return bits.join(' · ');
 }
 
 function scenarios(s: TradingSignal): { bull: string; bear: string } {
@@ -357,6 +347,66 @@ function DrawerSection({ icon, title, children }: { icon: ReactNode; title: stri
   );
 }
 
+const REGIME_NOTE: Record<string, string> = {
+  trending_up: 'Trending up — momentum/continuation favoured.',
+  trending_down: 'Trending down — momentum/continuation favoured.',
+  squeeze_pre_breakout: 'Volatility squeeze — breakout pending, direction unconfirmed.',
+  high_volatility: 'High volatility — size down, wider stops.',
+  low_volatility: 'Low volatility — moves may be muted.',
+  choppy: 'Choppy / range — trend strategies unreliable, fade extremes.',
+  overbought: 'Overbought — pullback risk.',
+  oversold: 'Oversold — bounce risk.',
+  neutral: 'Neutral regime — no strong edge.',
+  insufficient_data: 'Insufficient data to classify the regime.',
+};
+
+function fmtN(n: number | null | undefined, dp = 2): string {
+  if (n === null || n === undefined || !Number.isFinite(n)) return '—';
+  return n.toLocaleString('en-US', {
+    maximumFractionDigits: Math.abs(n) < 10 ? Math.max(dp, 4) : dp,
+  });
+}
+
+function Unavailable({ reason }: { reason?: string | null }) {
+  return (
+    <p className="text-[11px] text-slate-500 leading-relaxed">
+      {reason || 'Not available from the current data feed for this symbol.'}
+    </p>
+  );
+}
+
+function Stat({ label, value, tone: t = 'text-white' }: { label: string; value: string; tone?: string }) {
+  return (
+    <div className="p-2.5 rounded-lg bg-white/[0.02]">
+      <p className="text-[9px] text-slate-600">{label}</p>
+      <p className={`text-[12px] font-medium ${t}`}>{value}</p>
+    </div>
+  );
+}
+
+function FactorList({ title, items, textCls, pipCls }: {
+  title: string; items: SignalFactor[]; textCls: string; pipCls: string;
+}) {
+  if (!items.length) return null;
+  return (
+    <div>
+      <p className={`text-[10px] font-semibold mb-1.5 ${textCls}`}>{title} ({items.length})</p>
+      <ul className="space-y-1.5">
+        {items.map((f, i) => (
+          <li key={i} className="flex items-start gap-2 text-[11px] text-slate-400 leading-relaxed">
+            <span className="mt-1 shrink-0 inline-flex gap-px">
+              {Array.from({ length: Math.max(1, Math.min(3, f.weight || 1)) }).map((_, j) => (
+                <span key={j} className={`w-1 h-3 rounded-sm ${pipCls}`} />
+              ))}
+            </span>
+            <span><span className="text-slate-300">{f.factor}:</span> {f.detail}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function SignalDetailDrawer({
   signal, onClose, onExplain,
 }: {
@@ -364,9 +414,26 @@ function SignalDetailDrawer({
   onClose: () => void;
   onExplain?: (prompt: string) => void;
 }) {
-  const c = tone(signal.direction);
+  const intel = signal.intel;
+  const bd = signal.breakdown;
+  const an: SignalAnalytics | undefined = signal.analytics;
+  const scn = signal.scenarios;
+
+  // Decision = the multi-factor engine when available, else the legacy
+  // heuristic (clearly labelled). Never fabricated.
+  const decisionDir = intel?.available ? intel.direction : signal.direction;
+  const c = tone(decisionDir);
+  const conf = intel?.available ? intel.confidence : signal.confidence;
+  const grade = intel?.available ? intel.grade : signal.setupGrade;
   const risk = riskLevel(signal);
-  const sc = scenarios(signal);
+  const legacySc = scenarios(signal);
+
+  const bullW = intel?.bullWeight ?? 0;
+  const bearW = intel?.bearWeight ?? 0;
+  const total = Math.max(1, bullW + bearW);
+  const bullPct = Math.round((bullW / total) * 100);
+
+  const invalidation = bd?.invalidation || intel?.invalidation || signal.invalidation || null;
 
   return (
     <motion.aside
@@ -375,7 +442,7 @@ function SignalDetailDrawer({
       animate={{ x: 0 }}
       exit={{ x: '100%' }}
       transition={{ type: 'spring', stiffness: 320, damping: 34 }}
-      className="fixed inset-y-0 right-0 z-50 w-full sm:w-[440px] max-w-[100vw] bg-[#0b0b0c]/95 backdrop-blur-xl border-l border-white/[0.06] shadow-[0_0_60px_-15px_rgba(0,0,0,0.8)] flex flex-col"
+      className="fixed inset-y-0 right-0 z-50 w-full sm:w-[460px] max-w-[100vw] bg-[#0b0b0c]/95 backdrop-blur-xl border-l border-white/[0.06] shadow-[0_0_60px_-15px_rgba(0,0,0,0.8)] flex flex-col"
     >
       {/* Header */}
       <div className={`shrink-0 p-4 border-b border-white/[0.05] ${c.bg}`}>
@@ -384,11 +451,12 @@ function SignalDetailDrawer({
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-[16px] font-semibold text-white">{signal.symbol}</span>
               <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${c.badge}`}>
-                {signal.direction.toUpperCase()}
+                {decisionDir.toUpperCase()}
               </span>
-              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${GRADE_BADGE[signal.setupGrade]}`}>
-                Grade {signal.setupGrade}
+              <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${GRADE_BADGE[grade]}`}>
+                Grade {grade}
               </span>
+              <span className="text-[10px] text-slate-500">{conf}% confidence</span>
             </div>
             <p className="text-[11px] text-slate-500 mt-1">
               {signal.name}{signal.timeframe ? ` · ${signal.timeframe}` : ''} · updated {fmtTime(signal.timestamp)}
@@ -406,68 +474,35 @@ function SignalDetailDrawer({
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
-        {/* Price snapshot */}
-        <DrawerSection icon={<Gauge className="w-3.5 h-3.5" />} title="Price snapshot">
-          <div className="grid grid-cols-2 gap-2">
-            <div className="p-2.5 rounded-lg bg-white/[0.02]">
-              <p className="text-[9px] text-slate-600">Last price</p>
-              <p className="text-[13px] font-medium text-white">
-                {typeof signal.price === 'number'
-                  ? `$${signal.price.toLocaleString('en-US', { maximumFractionDigits: signal.price < 10 ? 6 : 2 })}`
-                  : '—'}
+        {/* AI decision */}
+        <DrawerSection icon={<Crosshair className="w-3.5 h-3.5" />} title="AI decision">
+          {intel?.available ? (
+            <>
+              <div className="flex items-baseline gap-2">
+                <span className={`text-[20px] font-semibold ${c.text}`}>{intel.direction.toUpperCase()}</span>
+                <span className="text-[12px] text-slate-400">{intel.confidence}% · grade {intel.grade} · score {intel.score >= 0 ? '+' : ''}{intel.score}</span>
+              </div>
+              <div className="mt-2.5">
+                <div className="flex h-2 rounded-full overflow-hidden bg-white/[0.05]">
+                  <div className="bg-emerald-500/60" style={{ width: `${bullPct}%` }} />
+                  <div className="bg-red-500/60" style={{ width: `${100 - bullPct}%` }} />
+                </div>
+                <div className="flex justify-between mt-1 text-[10px]">
+                  <span className="text-emerald-400">Bull weight {bullW}</span>
+                  <span className="text-red-400">Bear weight {bearW}</span>
+                </div>
+              </div>
+              <p className="text-[12px] text-slate-400 leading-relaxed mt-2.5">{intel.rationale}</p>
+            </>
+          ) : (
+            <>
+              <Unavailable reason={intel?.unavailableReason} />
+              <p className="text-[12px] text-slate-400 leading-relaxed mt-2">
+                Legacy heuristic bias: <span className={c.text}>{signal.direction.toUpperCase()}</span>{' '}
+                at {signal.confidence}% (grade {signal.setupGrade}).
               </p>
-            </div>
-            <div className="p-2.5 rounded-lg bg-white/[0.02]">
-              <p className="text-[9px] text-slate-600">Change</p>
-              <p className={`text-[13px] font-medium ${typeof signal.changePercent === 'number' && signal.changePercent >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                {typeof signal.changePercent === 'number'
-                  ? `${signal.changePercent >= 0 ? '+' : ''}${signal.changePercent.toFixed(2)}%`
-                  : '—'}
-              </p>
-            </div>
-            <div className="p-2.5 rounded-lg bg-emerald-500/[0.04]">
-              <p className="text-[9px] text-emerald-400/60">Entry</p>
-              <p className="text-[13px] font-medium text-emerald-400">{signal.entryPrice ? `$${signal.entryPrice}` : '—'}</p>
-            </div>
-            <div className="p-2.5 rounded-lg bg-red-500/[0.04]">
-              <p className="text-[9px] text-red-400/60">Stop</p>
-              <p className="text-[13px] font-medium text-red-400">{signal.stopLoss ? `$${signal.stopLoss}` : '—'}</p>
-            </div>
-            <div className="p-2.5 rounded-lg bg-white/[0.02]">
-              <p className="text-[9px] text-slate-600">Target 1</p>
-              <p className="text-[13px] font-medium text-white">{signal.targetPrice ? `$${signal.targetPrice}` : '—'}</p>
-            </div>
-            <div className="p-2.5 rounded-lg bg-white/[0.02]">
-              <p className="text-[9px] text-slate-600">Target 2</p>
-              <p className="text-[13px] font-medium text-white">{signal.takeProfit2 ? `$${signal.takeProfit2}` : '—'}</p>
-            </div>
-          </div>
-        </DrawerSection>
-
-        {/* Trend summary */}
-        <DrawerSection icon={signal.direction === 'short' ? <TrendingDown className="w-3.5 h-3.5" /> : <TrendingUp className="w-3.5 h-3.5" />} title="Trend summary">
-          <p className="text-[12px] text-slate-400 leading-relaxed">{trendSummary(signal)}</p>
-          <p className="text-[12px] text-slate-500 leading-relaxed mt-1.5">{signal.reasoning}</p>
-        </DrawerSection>
-
-        {/* Support / Resistance — honest: this feed doesn't provide them */}
-        <DrawerSection icon={<Activity className="w-3.5 h-3.5" />} title="Support / Resistance">
-          <p className="text-[11px] text-slate-500 leading-relaxed">
-            Structured support/resistance levels are not provided by the current
-            signals feed. The defined trade levels above (entry / stop / targets)
-            are the only price levels returned for this setup — no estimated
-            levels are shown.
-          </p>
-        </DrawerSection>
-
-        {/* AI explanation (rule-based from real fields) + ask-AI action */}
-        <DrawerSection icon={<Sparkles className="w-3.5 h-3.5" />} title="Signal rationale">
-          <p className="text-[12px] text-slate-400 leading-relaxed">
-            Bias is <span className={c.text}>{signal.direction.toUpperCase()}</span> at{' '}
-            {signal.confidence}% confidence (grade {signal.setupGrade}, {risk.label.toLowerCase()} risk
-            {typeof signal.riskReward === 'number' ? `, R:R ${signal.riskReward}` : ''}).
-            {signal.invalidation ? ` Invalidation: ${signal.invalidation}.` : ''}
-          </p>
+            </>
+          )}
           {onExplain && (
             <button
               onClick={() => onExplain(buildExplainPrompt(signal))}
@@ -479,40 +514,199 @@ function SignalDetailDrawer({
           )}
         </DrawerSection>
 
-        {/* Scenarios */}
-        <div className="grid grid-cols-1 gap-2">
-          <div className="rounded-xl border border-emerald-500/10 bg-emerald-500/[0.03] p-4">
-            <div className="flex items-center gap-2 mb-1.5">
-              <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
-              <h4 className="text-[12px] font-medium text-emerald-400">Bullish scenario</h4>
-            </div>
-            <p className="text-[12px] text-slate-400 leading-relaxed">{sc.bull}</p>
+        {/* Price snapshot */}
+        <DrawerSection icon={<Gauge className="w-3.5 h-3.5" />} title="Price snapshot">
+          <div className="grid grid-cols-2 gap-2">
+            <Stat label="Last price" value={typeof signal.price === 'number' ? `$${fmtN(signal.price)}` : '—'} />
+            <Stat
+              label="Change"
+              value={typeof signal.changePercent === 'number' ? `${signal.changePercent >= 0 ? '+' : ''}${signal.changePercent.toFixed(2)}%` : '—'}
+              tone={typeof signal.changePercent === 'number' && signal.changePercent >= 0 ? 'text-emerald-400' : 'text-red-400'}
+            />
+            <Stat label="Entry" value={signal.entryPrice ? `$${signal.entryPrice}` : '—'} tone="text-emerald-400" />
+            <Stat label="Stop" value={signal.stopLoss ? `$${signal.stopLoss}` : '—'} tone="text-red-400" />
+            <Stat label="Target 1" value={signal.targetPrice ? `$${signal.targetPrice}` : '—'} />
+            <Stat label="Target 2" value={signal.takeProfit2 ? `$${signal.takeProfit2}` : '—'} />
           </div>
-          <div className="rounded-xl border border-red-500/10 bg-red-500/[0.03] p-4">
-            <div className="flex items-center gap-2 mb-1.5">
-              <TrendingDown className="w-3.5 h-3.5 text-red-400" />
-              <h4 className="text-[12px] font-medium text-red-400">Bearish scenario</h4>
-            </div>
-            <p className="text-[12px] text-slate-400 leading-relaxed">{sc.bear}</p>
-          </div>
-        </div>
-
-        {/* Risk notes */}
-        <DrawerSection icon={<ShieldAlert className="w-3.5 h-3.5" />} title="Risk notes">
-          <ul className="space-y-1.5 text-[11px] text-slate-500 leading-relaxed list-disc list-inside">
-            <li>Overall risk rated <span className={risk.cls.split(' ')[0]}>{risk.label}</span> from volatility, confidence, grade{typeof signal.riskReward === 'number' ? ' and R:R' : ''}.</li>
-            <li>{signal.volatility === 'high' ? 'Elevated volatility — position size accordingly.' : signal.volatility === 'low' ? 'Lower volatility — moves may be slower than expected.' : 'Moderate volatility regime.'}</li>
-            {signal.invalidation && <li>Setup invalidated if: {signal.invalidation}.</li>}
-            <li>Live data can change quickly; signal reflects the last update only.</li>
-          </ul>
         </DrawerSection>
 
-        {/* Not financial advice */}
+        {/* Weighted factor breakdown */}
+        <DrawerSection icon={<BarChart3 className="w-3.5 h-3.5" />} title="Weighted factor breakdown">
+          {bd?.available ? (
+            <div className="space-y-3">
+              <FactorList title="Bullish" items={bd.bullishFactors} textCls="text-emerald-400" pipCls="bg-emerald-400/50" />
+              <FactorList title="Bearish" items={bd.bearishFactors} textCls="text-red-400" pipCls="bg-red-400/50" />
+              <FactorList title="Neutral / caution" items={bd.neutralFactors} textCls="text-slate-400" pipCls="bg-slate-400/50" />
+              {bd.bullishFactors.length === 0 && bd.bearishFactors.length === 0 && bd.neutralFactors.length === 0 && (
+                <Unavailable reason="No directional factors detected." />
+              )}
+            </div>
+          ) : (
+            <Unavailable reason={bd?.unavailableReason} />
+          )}
+        </DrawerSection>
+
+        {/* Strongest / weakest */}
+        {bd?.available && (bd.strongestReason || bd.weakestPoint) && (
+          <div className="grid grid-cols-1 gap-2">
+            {bd.strongestReason && (
+              <div className="rounded-xl border border-emerald-500/10 bg-emerald-500/[0.03] p-3.5">
+                <div className="flex items-center gap-2 mb-1">
+                  <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
+                  <h4 className="text-[11px] font-semibold text-emerald-400">Strongest reason</h4>
+                </div>
+                <p className="text-[12px] text-slate-400 leading-relaxed">{bd.strongestReason}</p>
+              </div>
+            )}
+            {bd.weakestPoint && (
+              <div className="rounded-xl border border-amber-500/10 bg-amber-500/[0.03] p-3.5">
+                <div className="flex items-center gap-2 mb-1">
+                  <TrendingDown className="w-3.5 h-3.5 text-amber-400" />
+                  <h4 className="text-[11px] font-semibold text-amber-400">Weakest point</h4>
+                </div>
+                <p className="text-[12px] text-slate-400 leading-relaxed">{bd.weakestPoint}</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Multi-timeframe alignment */}
+        <DrawerSection icon={<Layers className="w-3.5 h-3.5" />} title="Multi-timeframe alignment">
+          {an?.available && an.mtf ? (
+            <div className="space-y-2.5">
+              <div className="flex items-center gap-2 flex-wrap text-[11px]">
+                <span className="text-slate-300 capitalize">{an.mtf.alignment.replace(/_/g, ' ')}</span>
+                <span className="text-emerald-400">↑{an.mtf.up}</span>
+                <span className="text-red-400">↓{an.mtf.down}</span>
+                <span className="text-slate-500">→{an.mtf.side}</span>
+              </div>
+              {an.timeframes && an.timeframes.length > 0 && (
+                <div className="space-y-1">
+                  {an.timeframes.map((r) => (
+                    <div key={r.tf} className="flex items-center justify-between text-[11px] py-1 border-b border-white/[0.03] last:border-0">
+                      <span className="text-slate-400 w-10">{r.tf}</span>
+                      <span className="text-slate-300 capitalize flex-1">{r.trend.replace(/_/g, ' ')}</span>
+                      <span className="text-slate-500">RSI {r.rsi === null ? '—' : r.rsi.toFixed(0)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {an.mtf.divergences.length > 0 && (
+                <p className="text-[11px] text-amber-400/80 leading-relaxed">
+                  Divergence: {an.mtf.divergences.join('; ')}
+                </p>
+              )}
+            </div>
+          ) : (
+            <Unavailable reason={an?.unavailableReason || 'Multi-timeframe data not provided for this symbol/feed.'} />
+          )}
+        </DrawerSection>
+
+        {/* Momentum & volatility */}
+        <DrawerSection icon={<Activity className="w-3.5 h-3.5" />} title="Momentum & volatility">
+          {an?.available ? (
+            <div className="grid grid-cols-2 gap-2">
+              <Stat label="RSI (14)" value={an.rsi14 === null || an.rsi14 === undefined ? '—' : an.rsi14.toFixed(1)} />
+              <Stat
+                label="MACD"
+                value={an.macd && an.macd.state !== 'insufficient_data' ? `${an.macd.state.replace(/_/g, ' ')} (${fmtN(an.macd.hist)})` : '—'}
+              />
+              <Stat
+                label="Momentum"
+                value={an.momentum && an.momentum.state !== 'insufficient_data' ? `${an.momentum.state.replace(/_/g, ' ')} (${an.momentum.rocPct === null ? '—' : an.momentum.rocPct + '%'})` : '—'}
+              />
+              <Stat label="Volume trend" value={an.volumeTrend ? an.volumeTrend : '—'} />
+              <Stat label="ATR (14)" value={an.atr14 === null || an.atr14 === undefined ? '—' : fmtN(an.atr14)} />
+              <Stat label="Volatility" value={an.volatilityPct === null || an.volatilityPct === undefined ? '—' : `${an.volatilityPct}%`} />
+            </div>
+          ) : (
+            <Unavailable reason={an?.unavailableReason} />
+          )}
+        </DrawerSection>
+
+        {/* Trend strength & regime */}
+        <DrawerSection icon={<Gauge className="w-3.5 h-3.5" />} title="Trend strength & market regime">
+          {an?.available ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-3 text-[12px]">
+                <span className="text-slate-300">
+                  ADX {an.trendStrength && an.trendStrength.adx !== null ? an.trendStrength.adx.toFixed(0) : '—'}
+                </span>
+                <span className="text-slate-500 capitalize">
+                  {an.trendStrength ? an.trendStrength.label.replace(/_/g, ' ') : '—'}
+                </span>
+                {an.trend && <span className="text-slate-500 capitalize">· {an.trend.replace(/_/g, ' ')}</span>}
+              </div>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                {an.regime ? (REGIME_NOTE[an.regime] || `Regime: ${an.regime.replace(/_/g, ' ')}.`) : 'Regime not classified.'}
+                {an.trendStrength && (an.trendStrength.label === 'no_trend' || an.trendStrength.label === 'weak')
+                  ? ' Weak/no trend — prefer range tactics or stand aside.'
+                  : an.trendStrength && (an.trendStrength.label === 'strong' || an.trendStrength.label === 'very_strong')
+                    ? ' Strong directional trend — pullbacks favoured over reversals.'
+                    : ''}
+              </p>
+            </div>
+          ) : (
+            <Unavailable reason={an?.unavailableReason} />
+          )}
+        </DrawerSection>
+
+        {/* Risk / reward & invalidation */}
+        <DrawerSection icon={<Scale className="w-3.5 h-3.5" />} title="Risk / reward & invalidation">
+          <div className="grid grid-cols-3 gap-2 mb-2">
+            <Stat label="R:R" value={typeof signal.riskReward === 'number' ? `${signal.riskReward}` : '—'} />
+            <Stat label="Risk" value={risk.label} tone={risk.cls.split(' ')[0]} />
+            <Stat label="Vol regime" value={signal.volatilityRegime ? signal.volatilityRegime.replace(/_/g, ' ') : signal.volatility} />
+          </div>
+          <p className="text-[11px] text-slate-400 leading-relaxed">
+            <span className="text-slate-300">Invalidation:</span> {invalidation || 'No explicit invalidation level for this setup.'}
+          </p>
+          {bd?.confirmationNeeded && (
+            <p className="text-[11px] text-slate-400 leading-relaxed mt-1.5">
+              <span className="text-slate-300">Confirmation needed:</span> {bd.confirmationNeeded}
+            </p>
+          )}
+        </DrawerSection>
+
+        {/* Scenarios */}
+        <DrawerSection icon={<Sparkles className="w-3.5 h-3.5" />} title="Scenarios">
+          {scn?.available ? (
+            <div className="space-y-2">
+              <div className="rounded-lg border border-emerald-500/10 bg-emerald-500/[0.03] p-3">
+                <p className="text-[11px] font-semibold text-emerald-400 mb-1">Bullish</p>
+                <p className="text-[12px] text-slate-400 leading-relaxed">{scn.bullish}</p>
+              </div>
+              <div className="rounded-lg border border-red-500/10 bg-red-500/[0.03] p-3">
+                <p className="text-[11px] font-semibold text-red-400 mb-1">Bearish</p>
+                <p className="text-[12px] text-slate-400 leading-relaxed">{scn.bearish}</p>
+              </div>
+              <div className="rounded-lg border border-white/[0.05] bg-white/[0.02] p-3">
+                <p className="text-[11px] font-semibold text-slate-400 mb-1">Sideways</p>
+                <p className="text-[12px] text-slate-400 leading-relaxed">{scn.sideways}</p>
+              </div>
+              {Object.keys(scn.keyLevels).length > 0 && (
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  Key levels: {Object.entries(scn.keyLevels).map(([k, v]) => `${k.replace(/_/g, ' ')} ${fmtN(v)}`).join(' · ')}
+                </p>
+              )}
+              <p className="text-[11px] text-amber-400/80 leading-relaxed">{scn.doNotTradeIf}</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-[11px] text-slate-500">{scn?.unavailableReason || 'Backend scenarios unavailable — derived from available levels:'}</p>
+              <p className="text-[12px] text-slate-400 leading-relaxed"><span className="text-emerald-400">Bull:</span> {legacySc.bull}</p>
+              <p className="text-[12px] text-slate-400 leading-relaxed"><span className="text-red-400">Bear:</span> {legacySc.bear}</p>
+            </div>
+          )}
+        </DrawerSection>
+
+        {/* Risk note + not financial advice */}
         <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl bg-white/[0.02] border border-white/[0.04]">
-          <Info className="w-3.5 h-3.5 text-slate-600 shrink-0 mt-0.5" />
+          <ShieldAlert className="w-3.5 h-3.5 text-slate-600 shrink-0 mt-0.5" />
           <p className="text-[10px] text-slate-600 leading-relaxed">
-            Analysis only — not financial advice. KorvixAI does not execute trades
-            or place orders. Always do your own research.
+            Live data changes quickly — this reflects the last update only.
+            Analysis only, <span className="text-slate-500">not financial advice</span>;
+            KorvixAI does not execute trades or place orders. Always do your own research.
           </p>
         </div>
       </div>

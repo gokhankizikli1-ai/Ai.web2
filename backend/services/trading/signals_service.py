@@ -301,6 +301,7 @@ def _empty_signal(
         "breakdown":         None,
         "scenarios":         None,
         "intel":             None,
+        "analytics":         None,
         "is_live":           False,
         "error":             error,
     }
@@ -347,7 +348,7 @@ def map_tool_result_to_signal(
     # signal, so degrade to None rather than raise.
     try:
         from backend.services.trading.intelligence import (
-            build_breakdown, build_scenarios, build_decision,
+            build_breakdown, build_scenarios, build_decision, build_analytics,
         )
         breakdown = build_breakdown(
             data, plan,
@@ -359,9 +360,10 @@ def map_tool_result_to_signal(
             data, plan, direction=pub_dir, data_quality=dq_level,
         )
         intel = build_decision(data, plan, data_quality=dq_level)
+        analytics = build_analytics(data, data_quality=dq_level)
     except Exception as _bex:  # pragma: no cover - safety net
         logger.debug("intelligence build failed for %s: %s", symbol, _bex)
-        breakdown, scenarios, intel = None, None, None
+        breakdown, scenarios, intel, analytics = None, None, None, None
 
     return {
         "symbol":            (data.get("symbol") or symbol).upper(),
@@ -394,6 +396,7 @@ def map_tool_result_to_signal(
         "breakdown":         breakdown,
         "scenarios":         scenarios,
         "intel":             intel,
+        "analytics":         analytics,
 
         "is_live":           True,
         "error":             None,
