@@ -38,9 +38,11 @@ const _STARTUP_KW = [
   'pricing strategy', 'competitor analysis', 'startup strategist',
 ];
 
+const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 export function detectBusinessMode(text: string): 'marketing_dropshipping' | 'startup_advisor' | undefined {
-  const t = ` ${(text || '').toLowerCase()} `;
-  const has = (arr: string[]) => arr.some((k) => t.includes(k));
+  const t = (text || '').toLowerCase();
+  const has = (arr: string[]) => arr.some((k) => new RegExp(`\\b${escapeRegex(k)}\\b`).test(t));
   if (has(_ECOM_KW)) return 'marketing_dropshipping';
   if (has(_STARTUP_KW)) return 'startup_advisor';
   return undefined;
