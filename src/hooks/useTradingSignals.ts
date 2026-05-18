@@ -158,7 +158,11 @@ export function useTradingSignals(
   const [signals, setSignals] = useState<TradingSignal[]>([]);
   const [provider, setProvider] = useState<DataProvider>('Unknown');
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  // Start in loading when there ARE symbols to fetch (the production
+  // path) so the panel never flashes the "unavailable" empty state for
+  // one paint before the effect fires (Bugbot Medium 0db614d5). Stays
+  // false for the idle/empty-symbols case (no request happens).
+  const [isLoading, setIsLoading] = useState(symbols.length > 0);
   const [error, setError] = useState<string | null>(null);
 
   const symbolsKey = symbols.join(',').toUpperCase();
