@@ -536,7 +536,7 @@ def build_decision(
         }
 
     ts = data.get("trend_strength")
-    ts_label = str(ts.get("label")).lower() if isinstance(ts, dict) else ""
+    ts_label = str(ts.get("label") or "no_trend").lower() if isinstance(ts, dict) else ""
     weak_trend = ts_label in ("weak", "no_trend")
     threshold = 6 if weak_trend else 4
     agreement = max(bull_w, bear_w) / total

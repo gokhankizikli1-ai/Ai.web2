@@ -134,28 +134,6 @@ export interface SignalIntel {
   rationale: string;
 }
 
-// Trade Journal foundation — frontend/backend-ready structure ONLY.
-// No persistence/execution yet; future phase wires this to storage.
-export type TradeResult = 'win' | 'loss' | 'breakeven' | 'open';
-
-export interface TradeJournalEntry {
-  id: string;
-  symbol: string;
-  assetType?: AssetType;
-  direction?: SignalDirection;
-  entry?: number;
-  stop?: number;
-  target?: number;
-  thesis: string;
-  openedAt: string;
-  closedAt?: string | null;
-  result?: TradeResult;
-  pnl?: number | null;
-  mistakeNotes?: string | null;
-  aiReview?: string | null;
-  signalId?: string | null;
-}
-
 export interface TradingSignalsResponse {
   provider: DataProvider;
   timestamp: string;
