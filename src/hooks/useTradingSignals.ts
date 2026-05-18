@@ -166,25 +166,36 @@ export function useTradingSignals(
   const [error, setError] = useState<string | null>(null);
 
   const symbolsKey = symbols.join(',').toUpperCase();
-  // Keep the latest key in a ref so refresh() always uses current symbols.
-  const keyRef = useRef(symbolsKey);
-  keyRef.current = symbolsKey;
+
+  // Abort the previous in-flight request and ignore stale responses, so a
+  // slow earlier fetch can't overwrite newer data when the symbol set or
+  // timeframe changes (Bugbot Medium 4ab072bd).
+  const abortRef = useRef<AbortController | null>(null);
+  const reqIdRef = useRef(0);
 
   const fetchSignals = useCallback(async () => {
-    const key = keyRef.current;
-    if (!key) {
+    abortRef.current?.abort();              // supersede any in-flight call
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const myId = ++reqIdRef.current;
+    const isStale = () => myId !== reqIdRef.current;
+
+    if (!symbolsKey) {
       setSignals([]); setIsLoading(false); setError(null);
       return;
     }
     setIsLoading(true);
     setError(null);
 
-    const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    let timedOut = false;
+    const timeoutId = window.setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, REQUEST_TIMEOUT_MS);
 
     try {
       const url = `${API_BASE}/trading/signals?symbols=${
-        encodeURIComponent(key)
+        encodeURIComponent(symbolsKey)
       }&timeframe=${encodeURIComponent(timeframe)}`;
       const response = await fetch(url, {
         method: 'GET',
@@ -193,6 +204,7 @@ export function useTradingSignals(
       });
 
       const rawText = await response.text();
+      if (isStale()) return;                // a newer request took over
       let rawData: Record<string, unknown> | null = null;
       try {
         rawData = rawText ? JSON.parse(rawText) : null;
@@ -202,10 +214,9 @@ export function useTradingSignals(
 
       if (!response.ok) {
         // Graceful (no throw), but a real server failure must be
-        // DISTINGUISHABLE from "healthy but no signals" — previously
-        // setError(null) made a 503/500 look identical to an empty
-        // result, hiding outages and the disabled-flag case from the
-        // user (Bugbot Medium e59fa085).
+        // DISTINGUISHABLE from "healthy but no signals" — a 503/500
+        // looking identical to an empty result hid outages and the
+        // disabled-flag case from the user (Bugbot Medium e59fa085).
         setSignals([]);
         setProvider('Unknown');
         setLastUpdated(new Date().toISOString());
@@ -228,13 +239,22 @@ export function useTradingSignals(
       setLastUpdated(norm.timestamp);
       setError(null);
     } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        // Genuine 15s timeout → inform the user. Abort caused by a
+        // superseding request / unmount → drop SILENTLY so it never
+        // clobbers the newer request's state.
+        if (timedOut && !isStale()) {
+          setSignals([]);
+          setProvider('Unknown');
+          setError('İstek zaman aşımına uğradı. Tekrar dene.');
+        }
+        return;
+      }
+      if (isStale()) return;
       setSignals([]);
       setProvider('Unknown');
-
       let friendly = 'Bir şeyler ters gitti. Lütfen tekrar deneyin.';
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        friendly = 'İstek zaman aşımına uğradı. Tekrar dene.';
-      } else if (err instanceof TypeError) {
+      if (err instanceof TypeError) {
         friendly = 'Sunucuya ulaşılamadı. Bağlantını kontrol edip tekrar dene.';
       } else if (err instanceof SyntaxError) {
         friendly = 'Yanıt anlaşılamadı. Tekrar dene.';
@@ -244,15 +264,14 @@ export function useTradingSignals(
       setError(friendly);
     } finally {
       window.clearTimeout(timeoutId);
-      setIsLoading(false);
+      if (!isStale()) setIsLoading(false);
     }
-  }, [timeframe]);
+  }, [symbolsKey, timeframe]);
 
   useEffect(() => {
     fetchSignals();
-    // Re-fetch whenever the symbol set or timeframe changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [symbolsKey, timeframe]);
+    return () => abortRef.current?.abort();   // cancel on unmount / change
+  }, [fetchSignals]);
 
   const refresh = useCallback(() => {
     fetchSignals();

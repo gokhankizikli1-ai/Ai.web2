@@ -18,6 +18,7 @@ const DEMO_MODE = false;
 const SIGNAL_SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'NVDA', 'AAPL', 'TSLA', 'MSFT'];
 const DEFAULT_WATCH = ['AAPL', 'NVDA', 'TSLA', 'BTCUSDT', 'ETHUSDT', 'MSFT'];
 const WATCH_LS_KEY = 'korvix.watchlist.v1';
+const FAV_LS_KEY = 'korvix.favorites.v1';
 
 // ─── Types ───
 interface WatchlistItem {
@@ -203,7 +204,17 @@ export default function TradingPanel() {
   const [activeTab, setActiveTab] = useState<'signals' | 'watchlist' | 'sentiment' | 'trending'>('signals');
   const [watchlistFilter, setWatchlistFilter] = useState<'all' | 'stocks' | 'crypto'>('all');
   const [search, setSearch] = useState('');
-  const [favorites, setFavorites] = useState<string[]>([]);
+  // Persisted like watchSymbols — starred items must survive a reload.
+  const [favorites, setFavorites] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem(FAV_LS_KEY);
+      if (raw) { const a = JSON.parse(raw); if (Array.isArray(a)) return a; }
+    } catch { /* ignore */ }
+    return [];
+  });
+  useEffect(() => {
+    try { localStorage.setItem(FAV_LS_KEY, JSON.stringify(favorites)); } catch { /* ignore */ }
+  }, [favorites]);
   const { addToast } = useToast();
 
   // Persisted watchlist symbols.
