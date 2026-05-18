@@ -59,20 +59,28 @@ export default function PremiumComposer({
     }, 50);
   }, [onAddTool]);
 
+  const canSend = value.trim().length > 0 && !disabled;
+
   return (
     <div className="max-w-3xl mx-auto">
       {/* Tool Chips */}
       <ToolChips tools={activeTools} onRemove={onRemoveTool} />
 
-      {/* Flat composer - no glow */}
-      <div
-        className={`relative rounded-2xl bg-white/[0.015] border transition-all duration-200 ${
+      {/* Premium composer with focus glow */}
+      <motion.div
+        animate={{
+          boxShadow: isFocused
+            ? '0 0 0 1px rgba(255,255,255,0.08), 0 0 20px -4px rgba(34,211,238,0.06)'
+            : '0 0 0 1px transparent, 0 1px 3px rgba(0,0,0,0.1)',
+        }}
+        transition={{ duration: 0.2 }}
+        className={`relative rounded-2xl bg-white/[0.015] border transition-all duration-300 ${
           isFocused
-            ? 'border-white/[0.1] bg-white/[0.025]'
-            : 'border-white/[0.05] hover:border-white/[0.07]'
+            ? 'border-cyan-500/10 bg-white/[0.025]'
+            : 'border-white/[0.05] hover:border-white/[0.07] hover:bg-white/[0.02]'
         }`}
       >
-        {/* Top bar */}
+        {/* Top bar — tools */}
         <div className="flex items-center gap-1 px-3 pt-2 pb-1">
           <ComposerTools onSelectTool={handleToolSelect} />
           {activeTools.length === 0 && (
@@ -106,20 +114,29 @@ export default function PremiumComposer({
             <span>K to focus</span>
           </div>
 
+          {/* Premium send button */}
           <motion.button
             onClick={handleSubmit}
-            disabled={!value.trim() || disabled}
-            whileTap={{ scale: 0.94 }}
-            className={`flex items-center justify-center h-7 w-7 rounded-lg transition-all duration-200 ${
-              value.trim() && !disabled
-                ? 'bg-white/[0.08] text-white hover:bg-white/[0.12]'
-                : 'bg-white/[0.02] text-slate-700'
+            disabled={!canSend}
+            whileHover={canSend ? { scale: 1.06 } : {}}
+            whileTap={canSend ? { scale: 0.92 } : {}}
+            animate={{
+              backgroundColor: canSend ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.02)',
+              boxShadow: canSend
+                ? '0 0 12px -2px rgba(34,211,238,0.15)'
+                : 'none',
+            }}
+            transition={{ duration: 0.2 }}
+            className={`flex items-center justify-center h-8 w-8 rounded-xl transition-all duration-200 ${
+              canSend
+                ? 'text-white hover:text-cyan-300'
+                : 'text-slate-700'
             } disabled:opacity-30`}
           >
-            <Send className="h-[14px] w-[14px]" />
+            <Send className="h-[15px] w-[15px]" />
           </motion.button>
         </div>
-      </div>
+      </motion.div>
 
       {/* Trust footer */}
       <div className="flex items-center justify-center mt-2">

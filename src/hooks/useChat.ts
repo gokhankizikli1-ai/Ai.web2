@@ -3,28 +3,7 @@ import type { ChatSession, Message, AIMode, WorkspaceTab, ChatFolder } from '@/t
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
-/**
- * Backend API URL.
- *
- * Resolution order:
- *   1. VITE_API_URL env at build time (Vercel project env var) — preferred
- *      because a redeploy can switch endpoints without a code change.
- *   2. The current Railway production hostname as a safe default.
- *
- * IMPORTANT: do NOT hardcode an older "worker-production-*.up.railway.app"
- * here. Previous redesigns regressed this to a dead hostname which made
- * every fetch fail with TypeError("Failed to fetch") — iOS Safari surfaces
- * that exact text as "Load failed" in the chat UI.
- */
-const DEFAULT_API_HOST = 'https://korvixai-backend-production.up.railway.app';
-const API_URL = `${
-  (import.meta.env?.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ||
-  DEFAULT_API_HOST
-}/chat`;
-
-// Per-request timeout. Long enough for cold starts, short enough that an
-// unreachable host doesn't leave the UI spinning forever.
-const REQUEST_TIMEOUT_MS = 20_000;
+const API_URL = 'https://worker-production-2a49.up.railway.app/chat';
 
 function getUserId(): string {
   const key = 'korvix_user_id';
@@ -204,18 +183,7 @@ export function useChat() {
 
     setIsLoading(true);
 
-    // AbortController so a hung request can't pin the UI on "loading" forever.
-    const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
     try {
-      // Log the EXACT method + URL before the request so the operator can
-      // see in devtools that this is a POST (not a GET) and which host it
-      // targets. Kills any "frontend uses wrong HTTP method" ambiguity:
-      // if Railway logs ever show GET /chat, it is NOT coming from here.
-      // eslint-disable-next-line no-console
-      console.log('CHAT_API_REQUEST', { method: 'POST', url: API_URL });
-
       const response = await fetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -226,89 +194,19 @@ export function useChat() {
           session_id: activeSessionId,
           platform: 'web',
         }),
-        signal: controller.signal,
       });
 
-      // Read the body once; we'll try to parse it as JSON and fall back to
-      // text if the server sent something unexpected (e.g. an HTML error
-      // page from a CDN). That way we never crash on `.json()` mid-render.
-      const rawText = await response.text();
-      let data: any = null;
-      try {
-        data = rawText ? JSON.parse(rawText) : null;
-      } catch {
-        data = { _raw: rawText };
-      }
-
-      // Debug log requested by the operator — visible in browser devtools
-      // so they can see the exact backend payload when a chat misbehaves.
-      // eslint-disable-next-line no-console
-      console.log('CHAT_API_RESPONSE', { status: response.status, url: API_URL, data });
-
       if (!response.ok) {
-        // Prefer the backend's own message so the user sees the real
-        // reason instead of a generic network toast.
-        const backendMsg =
-          data && (data.detail?.message || data.error || data.message);
-
-        // Explicit, actionable copy per status. These are the ones the
-        // operator called out (405 / 404 / 503) plus 401/429.
-        let statusMsg: string;
-        switch (response.status) {
-          case 404:
-            statusMsg =
-              'Sohbet servisi bulunamadı (404). Backend adresi yanlış olabilir.';
-            break;
-          case 405:
-            // We send POST. A 405 means the server rejected the METHOD —
-            // i.e. a backend route/contract mismatch, NOT a frontend bug.
-            statusMsg =
-              'Sohbet servisi bu isteği kabul etmedi (405). Sunucu uç noktası beklenenden farklı.';
-            break;
-          case 401:
-          case 403:
-            statusMsg = 'Yetki hatası. Lütfen tekrar giriş yapmayı dene.';
-            break;
-          case 429:
-            statusMsg = 'Çok fazla istek gönderildi. Birazdan tekrar dene.';
-            break;
-          case 503:
-            statusMsg =
-              'Sohbet servisi şu anda devre dışı (503). Birazdan tekrar dene.';
-            break;
-          default:
-            statusMsg = `Sunucu hatası (HTTP ${response.status}). Lütfen tekrar deneyin.`;
-        }
-
-        setError(
-          typeof backendMsg === 'string' && backendMsg ? backendMsg : statusMsg
-        );
-        return;
+        throw new Error(`Server responded with ${response.status}. Please try again.`);
       }
 
-      // Broader response normalization. Backend has gone through several
-      // shapes over phases — accept any of these, in priority order:
-      //   data.reply         legacy /chat
-      //   data.response      old chat shape
-      //   data.message       some tool responses
-      //   data.data?.reply   v2 envelope
-      //   data.content       generic fallback
-      //   data.text          generic fallback
-      // If NONE match, render the raw JSON so the user can at least see
-      // what came back — better than a blank message + a vague toast.
-      const responseText =
-        (typeof data?.reply === 'string' && data.reply) ||
-        (typeof data?.response === 'string' && data.response) ||
-        (typeof data?.message === 'string' && data.message) ||
-        (typeof data?.data?.reply === 'string' && data.data.reply) ||
-        (typeof data?.content === 'string' && data.content) ||
-        (typeof data?.text === 'string' && data.text) ||
-        (data && typeof data === 'object' ? JSON.stringify(data, null, 2) : String(data ?? ''));
+      const data = await response.json();
+      const responseText = data.reply ?? data.response ?? data.message ?? JSON.stringify(data);
 
       const assistantMessage: Message = {
         id: generateId(),
         role: 'assistant',
-        content: responseText || '(empty reply)',
+        content: responseText,
         timestamp: new Date(),
       };
 
@@ -320,28 +218,8 @@ export function useChat() {
         )
       );
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('CHAT_API_ERROR', err);
-
-      // Distinguish failure modes so the user sees something actionable
-      // instead of the raw iOS "Load failed" string. Order matters —
-      // AbortError must be checked BEFORE TypeError because aborted
-      // fetches are reported as a DOMException in some browsers.
-      let friendly = 'Bir şeyler ters gitti. Lütfen tekrar deneyin.';
-      if (err instanceof DOMException && err.name === 'AbortError') {
-        friendly = 'İstek zaman aşımına uğradı. Tekrar dene.';
-      } else if (err instanceof TypeError) {
-        // Failed to fetch / NetworkError — DNS, CORS, server unreachable.
-        friendly = 'Sunucuya ulaşılamadı. Bağlantını kontrol edip tekrar dene.';
-      } else if (err instanceof SyntaxError) {
-        friendly = 'Yanıt anlaşılamadı. Tekrar dene.';
-      } else if (err instanceof Error && err.message) {
-        // Keep a backend-supplied message if it's already friendly.
-        friendly = err.message;
-      }
-      setError(friendly);
+      setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
     } finally {
-      window.clearTimeout(timeoutId);
       setIsLoading(false);
     }
   }, [activeSessionId]);
