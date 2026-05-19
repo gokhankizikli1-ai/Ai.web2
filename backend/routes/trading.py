@@ -45,13 +45,24 @@ def trading_health() -> dict:
     except Exception as exc:
         logger.debug("/trading/health: stats unavailable: %s", exc)
         s = {"error": str(exc)}
+    # Additive provider-configuration snapshot (booleans only, no secrets).
+    # Single curl to see exactly which provider keys the running process
+    # picked up — the most common cause of "no live data" is env-not-applied
+    # despite a redeploy, and this makes it visible.
+    try:
+        from backend.services.market_providers.client import provider_chain_status
+        providers_configured = provider_chain_status()
+    except Exception as exc:
+        logger.debug("/trading/health: provider_chain_status unavailable: %s", exc)
+        providers_configured = {"error": str(exc)}
     return {
         "enabled":  _enabled(),
         "phase":    "T1 — live trading signals (market_data-backed, flag-gated)",
         "stats":    s,
         # Additive capability advertisement (new keys; nothing removed).
-        "supported_timeframes": list(SUPPORTED_TIMEFRAMES),
-        "supported_assets":     supported_assets(),
+        "supported_timeframes":  list(SUPPORTED_TIMEFRAMES),
+        "supported_assets":      supported_assets(),
+        "providers_configured":  providers_configured,
     }
 
 
