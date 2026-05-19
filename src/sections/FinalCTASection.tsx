@@ -41,16 +41,16 @@ export default function FinalCTASection() {
           {/* CTA Buttons */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-12">
             <Link
-              to="/chat"
+              to="/signup"
               className="group inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-white/[0.08] text-white border border-white/[0.1] text-[14px] hover:bg-white/[0.12] transition-all shadow-[0_0_20px_-4px_rgba(34,211,238,0.1)] hover:shadow-[0_0_30px_-4px_rgba(34,211,238,0.15)]"
             >
-              <Rocket className="h-4 w-4" /> Launch Workspace
+              <Rocket className="h-4 w-4" /> Create Account
             </Link>
             <Link
-              to="/home"
+              to="/login"
               className="group inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-white/[0.02] text-slate-400 border border-white/[0.04] text-[14px] hover:bg-white/[0.04] hover:text-slate-200 transition-all"
             >
-              <Globe className="h-4 w-4" /> Explore Ecosystem
+              Sign In
               <ArrowUpRight className="h-3.5 w-3.5 text-slate-600 group-hover:text-slate-400 transition-colors" />
             </Link>
           </div>

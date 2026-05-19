@@ -4,11 +4,12 @@ import { motion } from 'framer-motion';
 import {
   ArrowLeft, User, Bell, Shield, Cpu,
   Palette, Trash2,
-  Save, AlertTriangle, Check,
+  Save, AlertTriangle, Check, Globe, ChevronDown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import Navbar from '@/sections/Navbar';
+import { useLanguageStore, LANGUAGES } from '@/stores/languageStore';
 
 const sections = [
   {
@@ -18,7 +19,7 @@ const sections = [
     settings: [
       { id: 'display-name', label: 'Display Name', type: 'text', value: 'You' },
       { id: 'email', label: 'Email', type: 'text', value: 'user@korvixai.com' },
-      { id: 'language', label: 'Language', type: 'select', value: 'English', options: ['English', 'Spanish', 'French', 'German', 'Chinese'] },
+      { id: 'language', label: 'Language', type: 'language-select' },
       { id: 'timezone', label: 'Timezone', type: 'select', value: 'UTC-5', options: ['UTC-8', 'UTC-5', 'UTC+0', 'UTC+1', 'UTC+8'] },
     ],
   },
@@ -64,6 +65,42 @@ const sections = [
     ],
   },
 ];
+
+function LanguageSelect() {
+  const { lang, setLang } = useLanguageStore();
+  const [open, setOpen] = useState(false);
+  const selected = LANGUAGES.find((l) => l.code === lang);
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center gap-2 bg-white/[0.03] border border-white/[0.06] rounded-lg px-3 py-1.5 text-[12px] text-white hover:bg-white/[0.05] transition-colors min-w-[140px]"
+      >
+        <Globe className="h-3 w-3 text-slate-500" />
+        <span className="flex-1 text-left">{selected?.label || 'English'}</span>
+        <ChevronDown className={`h-3 w-3 text-slate-600 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-1 w-48 max-h-64 overflow-y-auto rounded-xl border border-white/[0.06] bg-[#0e0e14] shadow-2xl z-50 py-1 scrollbar-thin">
+          {LANGUAGES.map((l) => (
+            <button
+              key={l.code}
+              onClick={() => { setLang(l.code); setOpen(false); }}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-[12px] transition-all ${
+                lang === l.code ? 'bg-white/[0.06] text-white' : 'text-slate-500 hover:text-slate-300 hover:bg-white/[0.02]'
+              }`}
+            >
+              <span className="text-[10px] font-medium text-slate-600 w-5">{l.flag}</span>
+              {l.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function SettingsPage() {
   const [activeSection, setActiveSection] = useState('account');
@@ -153,6 +190,10 @@ export default function SettingsPage() {
                           defaultValue={String(setting.value)}
                           className="bg-white/[0.03] border border-white/[0.06] rounded-lg px-3 py-1.5 text-[12px] text-white w-48 outline-none focus:border-cyan-500/30 transition-colors"
                         />
+                      )}
+
+                      {setting.type === 'language-select' && (
+                        <LanguageSelect />
                       )}
 
                       {setting.type === 'select' && (

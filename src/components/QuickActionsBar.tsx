@@ -1,16 +1,14 @@
-import { Lightbulb, FileText, Code, Compass, ListTodo, BarChart3 } from 'lucide-react';
+import { Lightbulb, FileText, Code, ListTodo } from 'lucide-react';
 
 interface QuickActionsBarProps {
   onSelect: (text: string) => void;
 }
 
 const chips = [
-  { label: 'Explain', icon: Lightbulb, prompt: 'Explain this clearly: ' },
-  { label: 'Summarize', icon: FileText, prompt: 'Summarize the key points: ' },
-  { label: 'Code', icon: Code, prompt: 'Write code for: ' },
-  { label: 'Brainstorm', icon: Compass, prompt: 'Brainstorm ideas about: ' },
-  { label: 'Plan', icon: ListTodo, prompt: 'Create a plan for: ' },
-  { label: 'Analyze', icon: BarChart3, prompt: 'Analyze this in detail: ' },
+  { label: 'Explain',   icon: Lightbulb, prompt: 'Explain this clearly: ' },
+  { label: 'Summarize', icon: FileText,  prompt: 'Summarize the key points: ' },
+  { label: 'Code',      icon: Code,      prompt: 'Write code for: ' },
+  { label: 'Plan',      icon: ListTodo,  prompt: 'Create a plan for: ' },
 ];
 
 export default function QuickActionsBar({ onSelect }: QuickActionsBarProps) {

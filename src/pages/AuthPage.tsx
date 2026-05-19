@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Link, useNavigate } from 'react-router';
+import { Link, useNavigate, useLocation } from 'react-router';
 import {
   Sparkles, Mail, Lock, Eye, EyeOff,
-  ArrowRight, User, ShieldAlert,
+  ArrowRight, User, ShieldAlert, UserPlus,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useAuthStore } from '@/stores/authStore';
 
 /* ─── Google Icon SVG ─── */
 function GoogleIcon({ className }: { className?: string }) {
@@ -28,36 +29,89 @@ function AppleIcon({ className }: { className?: string }) {
   );
 }
 
-export default function AuthPage() {
+interface AuthPageProps {
+  mode?: 'login' | 'signup';
+}
+
+export default function AuthPage({ mode: propMode }: AuthPageProps) {
   const navigate = useNavigate();
-  const [mode, setMode] = useState<'login' | 'signup'>('login');
+  const location = useLocation();
+  const { login, signup, isAuthenticated, isLoading, error, clearError } = useAuthStore();
+
+  // Support both /login and /signup routes, plus toggle within the page
+  const urlMode = location.pathname === '/signup' ? 'signup' : 'login';
+  const [mode, setMode] = useState<'login' | 'signup'>(propMode || urlMode);
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  // Sync mode when URL changes
+  useEffect(() => {
+    setMode(propMode || urlMode);
+  }, [propMode, urlMode]);
+
+  // Clear errors when mode changes
+  useEffect(() => {
+    clearError();
+    setLocalError(null);
+  }, [mode, clearError]);
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      const from = (location.state as any)?.from || '/chat';
+      navigate(from, { replace: true });
+    }
+  }, [isAuthenticated, navigate, location.state]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
+    setLocalError(null);
+    clearError();
+
     if (!email.trim() || !password.trim()) {
-      setError('Please fill in all fields');
+      setLocalError('Please fill in all fields');
       return;
     }
-    setLoading(true);
-    // UI-only: simulate delay then show message
-    setTimeout(() => {
-      setLoading(false);
-      setError('Authentication backend not connected yet. Please continue as guest.');
-    }, 800);
+    if (mode === 'signup' && !name.trim()) {
+      setLocalError('Please enter your name');
+      return;
+    }
+    if (password.length < 6) {
+      setLocalError('Password must be at least 6 characters');
+      return;
+    }
+
+    let success: boolean;
+    if (mode === 'login') {
+      success = await login(email, password);
+    } else {
+      success = await signup(email, password, name);
+    }
+
+    if (success) {
+      const from = (location.state as any)?.from || '/chat';
+      navigate(from, { replace: true });
+    }
   };
 
   const handleGuest = () => {
-    navigate('/chat');
+    const from = (location.state as any)?.from || '/chat';
+    navigate(from);
   };
 
   const handleSocial = (provider: string) => {
-    setError(`${provider} login is UI-ready. Backend auth coming soon. Please continue as guest.`);
+    setLocalError(`${provider} login is UI-ready. Backend auth coming soon. Please continue as guest or use email.`);
+  };
+
+  const displayError = localError || error;
+
+  const switchMode = (m: 'login' | 'signup') => {
+    setMode(m);
+    navigate(m === 'login' ? '/login' : '/signup', { replace: true });
   };
 
   return (
@@ -93,7 +147,7 @@ export default function AuthPage() {
             {(['login', 'signup'] as const).map((m) => (
               <button
                 key={m}
-                onClick={() => { setMode(m); setError(null); }}
+                onClick={() => switchMode(m)}
                 className={`flex-1 py-2 rounded-lg text-[12px] font-medium transition-all capitalize ${
                   mode === m ? 'bg-white/[0.06] text-white' : 'text-slate-600 hover:text-slate-400'
                 }`}
@@ -130,6 +184,29 @@ export default function AuthPage() {
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-3">
+            {/* Name field (signup only) */}
+            <AnimatePresence>
+              {mode === 'signup' && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <div className="relative">
+                    <UserPlus className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
+                    <input
+                      type="text"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="Full name"
+                      className="w-full h-10 pl-10 pr-4 rounded-xl bg-white/[0.02] border border-white/[0.05] text-[13px] text-slate-300 placeholder:text-slate-700 focus:outline-none focus:border-cyan-500/20 focus:bg-white/[0.03] transition-all"
+                    />
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
               <input
@@ -160,7 +237,7 @@ export default function AuthPage() {
 
             {/* Error */}
             <AnimatePresence>
-              {error && (
+              {displayError && (
                 <motion.div
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
@@ -168,17 +245,17 @@ export default function AuthPage() {
                   className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-500/[0.04] border border-amber-500/10"
                 >
                   <ShieldAlert className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
-                  <p className="text-[11px] text-amber-300/70">{error}</p>
+                  <p className="text-[11px] text-amber-300/70">{displayError}</p>
                 </motion.div>
               )}
             </AnimatePresence>
 
             <Button
               type="submit"
-              disabled={loading}
+              disabled={isLoading}
               className="w-full h-10 bg-white/[0.08] hover:bg-white/[0.12] text-white border border-white/[0.08] rounded-xl text-[13px] font-medium transition-all disabled:opacity-40"
             >
-              {loading ? (
+              {isLoading ? (
                 <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }} className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full" />
               ) : (
                 <>
@@ -203,7 +280,10 @@ export default function AuthPage() {
 
         {/* Footer */}
         <p className="text-center text-[11px] text-slate-700 mt-5">
-          By continuing, you agree to our Terms and Privacy Policy.
+          By continuing, you agree to our{' '}
+          <Link to="/terms" className="text-slate-500 hover:text-slate-400 transition-colors">Terms</Link>
+          {' '}and{' '}
+          <Link to="/privacy" className="text-slate-500 hover:text-slate-400 transition-colors">Privacy Policy</Link>.
         </p>
       </motion.div>
     </div>

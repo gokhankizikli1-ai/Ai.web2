@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router';
 import { Button } from '@/components/ui/button';
-import { ArrowRight, Sparkles, Play, Bot, TrendingUp, Zap, Activity } from 'lucide-react';
+import { ArrowRight, Sparkles, Bot, TrendingUp, Zap, Activity } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 const fadeUp = (delay = 0) => ({
@@ -266,19 +266,18 @@ export default function HeroSection() {
               <Button
                 size="lg"
                 className="bg-white text-slate-950 hover:bg-slate-200 font-semibold px-7 h-12 text-[14px] group w-full sm:w-auto rounded-xl transition-all duration-300 hover:shadow-[0_0_30px_-8px_rgba(255,255,255,0.2)]"
-                onClick={() => navigate('/chat')}
+                onClick={() => navigate('/signup')}
               >
-                Launch Workspace
+                Create Account
                 <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
               </Button>
               <Button
                 variant="outline"
                 size="lg"
                 className="border-white/10 text-white hover:bg-white/[0.04] hover:border-white/15 font-semibold px-7 h-12 text-[14px] w-full sm:w-auto rounded-xl backdrop-blur-sm transition-all duration-300"
-                onClick={() => navigate('/features')}
+                onClick={() => navigate('/login')}
               >
-                <Play className="mr-2 h-3.5 w-3.5" />
-                Explore Ecosystem
+                Sign In
               </Button>
             </motion.div>
 

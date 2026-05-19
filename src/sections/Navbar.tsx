@@ -83,19 +83,19 @@ export default function Navbar() {
             ))}
           </div>
 
-          {/* Right Side */}
-          <div className="hidden md:flex items-center gap-3">
-            <Link to="/chat">
+          {/* Right Side — Auth CTAs */}
+          <div className="hidden md:flex items-center gap-2.5">
+            <Link to="/login">
               <Button
                 variant="ghost"
                 className="text-slate-400 hover:text-white hover:bg-white/5 text-[13px]"
               >
-                Login
+                Sign In
               </Button>
             </Link>
-            <Link to="/chat">
+            <Link to="/signup">
               <Button className="bg-white text-slate-900 hover:bg-slate-200 font-semibold text-[13px] h-9 px-4 rounded-xl transition-all duration-300 hover:shadow-[0_0_20px_-5px_rgba(255,255,255,0.15)]">
-                Launch Workspace
+                Create Account
               </Button>
             </Link>
           </div>
@@ -124,9 +124,14 @@ export default function Navbar() {
                   </Link>
                 ))}
                 <hr className="border-white/10 my-2" />
-                <Link to="/chat" onClick={() => setIsOpen(false)}>
-                  <Button className="w-full bg-white text-slate-900 hover:bg-slate-200 font-semibold rounded-xl">
-                    Launch Workspace
+                <Link to="/login" onClick={() => setIsOpen(false)}>
+                  <Button className="w-full bg-white text-slate-900 hover:bg-slate-200 font-semibold rounded-xl mb-2">
+                    Sign In
+                  </Button>
+                </Link>
+                <Link to="/signup" onClick={() => setIsOpen(false)}>
+                  <Button variant="outline" className="w-full border-white/15 text-white hover:bg-white/[0.04] font-semibold rounded-xl">
+                    Create Account
                   </Button>
                 </Link>
               </div>

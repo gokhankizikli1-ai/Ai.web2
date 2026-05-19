@@ -4,8 +4,6 @@ import MessageBubble from '@/components/MessageBubble';
 import TypingIndicator from '@/components/TypingIndicator';
 import EmptyWorkspace from '@/components/EmptyWorkspace';
 import PremiumComposer from '@/components/PremiumComposer';
-import ToolShortcuts from '@/components/ToolShortcuts';
-import type { ToolShortcut } from '@/components/ToolShortcuts';
 import type { ComposerTool } from '@/components/ComposerTools';
 import type { Message, WorkspaceTab } from '@/types';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
@@ -32,7 +30,6 @@ export default function ChatView({
 }: ChatViewProps) {
   const [animatedMessageId, setAnimatedMessageId] = useState<string | null>(null);
   const [activeTools, setActiveTools] = useState<ComposerTool[]>([]);
-  const [activeShortcutIds, setActiveShortcutIds] = useState<string[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
   const prevMessagesLen = useRef(messages.length);
@@ -95,11 +92,6 @@ export default function ChatView({
   const removeTool = useCallback((tool: ComposerTool) => {
     setActiveTools((prev) => prev.filter((t) => t.id !== tool.id));
   }, []);
-
-  const handleShortcut = useCallback((shortcut: ToolShortcut) => {
-    setActiveShortcutIds((prev) => prev.includes(shortcut.id) ? prev.filter((id) => id !== shortcut.id) : [...prev, shortcut.id]);
-    insertInput(shortcut.prompt);
-  }, [insertInput]);
 
   const handleEmptySend = useCallback((msg: string) => onSend(msg), [onSend]);
 
@@ -192,11 +184,6 @@ export default function ChatView({
 
       {/* Input area — always visible */}
       <div ref={composerRef} className="shrink-0 px-3 md:px-4 pb-3 md:pb-4 pt-1 bg-[#0a0a0a]/60 backdrop-blur-xl">
-        {isEmptyState && (
-          <div className="max-w-3xl mx-auto mb-1.5">
-            <ToolShortcuts activeTools={activeShortcutIds} onSelect={handleShortcut} />
-          </div>
-        )}
         <PremiumComposer
           onSend={handleSend}
           disabled={isLoading}

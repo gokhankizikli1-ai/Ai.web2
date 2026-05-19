@@ -1,0 +1,268 @@
+export interface TradingAsset {
+  symbol: string;
+  name: string;
+  type: 'stock' | 'crypto' | 'etf';
+  price: number;
+  change: number;
+  changePercent: number;
+}
+
+export const STOCKS: TradingAsset[] = [
+  // Mega Cap Tech
+  { symbol: 'AAPL', name: 'Apple Inc.', type: 'stock', price: 213.07, change: 1.25, changePercent: 0.59 },
+  { symbol: 'MSFT', name: 'Microsoft Corp', type: 'stock', price: 427.02, change: 2.81, changePercent: 0.66 },
+  { symbol: 'GOOGL', name: 'Alphabet Inc.', type: 'stock', price: 175.40, change: 0.80, changePercent: 0.46 },
+  { symbol: 'AMZN', name: 'Amazon.com', type: 'stock', price: 197.59, change: 1.12, changePercent: 0.57 },
+  { symbol: 'META', name: 'Meta Platforms', type: 'stock', price: 485.20, change: -0.30, changePercent: -0.06 },
+  { symbol: 'NVDA', name: 'NVIDIA Corp', type: 'stock', price: 131.82, change: 3.45, changePercent: 2.69 },
+  { symbol: 'TSLA', name: 'Tesla Inc.', type: 'stock', price: 248.50, change: -2.10, changePercent: -0.84 },
+  // Semiconductors
+  { symbol: 'AMD', name: 'Advanced Micro Devices', type: 'stock', price: 162.80, change: 2.10, changePercent: 1.31 },
+  { symbol: 'INTC', name: 'Intel Corp', type: 'stock', price: 31.25, change: -1.20, changePercent: -3.70 },
+  { symbol: 'AVGO', name: 'Broadcom Inc.', type: 'stock', price: 1680.50, change: 12.30, changePercent: 0.74 },
+  { symbol: 'QCOM', name: 'Qualcomm Inc.', type: 'stock', price: 198.40, change: 1.50, changePercent: 0.76 },
+  { symbol: 'MU', name: 'Micron Technology', type: 'stock', price: 137.80, change: 0.90, changePercent: 0.66 },
+  { symbol: 'MRVL', name: 'Marvell Technology', type: 'stock', price: 72.40, change: 0.45, changePercent: 0.63 },
+  { symbol: 'ARM', name: 'ARM Holdings', type: 'stock', price: 148.20, change: 2.80, changePercent: 1.93 },
+  { symbol: 'TSM', name: 'Taiwan Semiconductor', type: 'stock', price: 168.90, change: 1.20, changePercent: 0.72 },
+  // Software
+  { symbol: 'ADBE', name: 'Adobe Inc.', type: 'stock', price: 558.90, change: 0.60, changePercent: 0.11 },
+  { symbol: 'CRM', name: 'Salesforce Inc.', type: 'stock', price: 268.40, change: 1.80, changePercent: 0.68 },
+  { symbol: 'ORCL', name: 'Oracle Corp', type: 'stock', price: 162.30, change: 0.90, changePercent: 0.56 },
+  { symbol: 'NOW', name: 'ServiceNow Inc.', type: 'stock', price: 852.10, change: 6.20, changePercent: 0.73 },
+  { symbol: 'SNOW', name: 'Snowflake Inc.', type: 'stock', price: 162.80, change: -1.50, changePercent: -0.91 },
+  { symbol: 'PLTR', name: 'Palantir Technologies', type: 'stock', price: 62.40, change: 1.80, changePercent: 2.97 },
+  { symbol: 'NET', name: 'Cloudflare Inc.', type: 'stock', price: 95.20, change: 0.70, changePercent: 0.74 },
+  { symbol: 'DDOG', name: 'Datadog Inc.', type: 'stock', price: 142.60, change: 1.10, changePercent: 0.78 },
+  { symbol: 'OKTA', name: 'Okta Inc.', type: 'stock', price: 98.30, change: 0.50, changePercent: 0.51 },
+  // Streaming & Entertainment
+  { symbol: 'NFLX', name: 'Netflix Inc.', type: 'stock', price: 625.10, change: 1.40, changePercent: 0.22 },
+  { symbol: 'DIS', name: 'Walt Disney', type: 'stock', price: 112.40, change: 0.80, changePercent: 0.72 },
+  { symbol: 'SPOT', name: 'Spotify Technology', type: 'stock', price: 538.20, change: 3.10, changePercent: 0.58 },
+  { symbol: 'ROKU', name: 'Roku Inc.', type: 'stock', price: 72.80, change: -0.60, changePercent: -0.82 },
+  // E-commerce
+  { symbol: 'SHOP', name: 'Shopify Inc.', type: 'stock', price: 78.40, change: 0.90, changePercent: 1.16 },
+  { symbol: 'EBAY', name: 'eBay Inc.', type: 'stock', price: 62.30, change: 0.30, changePercent: 0.48 },
+  { symbol: 'ETSY', name: 'Etsy Inc.', type: 'stock', price: 68.50, change: -0.40, changePercent: -0.58 },
+  // Fintech
+  { symbol: 'V', name: 'Visa Inc.', type: 'stock', price: 278.90, change: 1.20, changePercent: 0.43 },
+  { symbol: 'MA', name: 'Mastercard Inc.', type: 'stock', price: 462.80, change: 2.10, changePercent: 0.46 },
+  { symbol: 'PYPL', name: 'PayPal Holdings', type: 'stock', price: 68.20, change: -0.30, changePercent: -0.44 },
+  { symbol: 'SQ', name: 'Block Inc.', type: 'stock', price: 82.40, change: 1.50, changePercent: 1.85 },
+  { symbol: 'COIN', name: 'Coinbase Global', type: 'stock', price: 218.60, change: 5.20, changePercent: 2.44 },
+  { symbol: 'SOFI', name: 'SoFi Technologies', type: 'stock', price: 7.12, change: 0.08, changePercent: 1.14 },
+  // Automotive & EV
+  { symbol: 'F', name: 'Ford Motor', type: 'stock', price: 12.08, change: -0.05, changePercent: -0.41 },
+  { symbol: 'GM', name: 'General Motors', type: 'stock', price: 48.30, change: 0.20, changePercent: 0.42 },
+  { symbol: 'RIVN', name: 'Rivian Automotive', type: 'stock', price: 13.80, change: 0.30, changePercent: 2.22 },
+  { symbol: 'LCID', name: 'Lucid Group', type: 'stock', price: 3.42, change: -0.02, changePercent: -0.58 },
+  { symbol: 'NIO', name: 'NIO Inc.', type: 'stock', price: 5.28, change: 0.08, changePercent: 1.54 },
+  // Healthcare
+  { symbol: 'JNJ', name: 'Johnson & Johnson', type: 'stock', price: 152.40, change: 0.60, changePercent: 0.40 },
+  { symbol: 'PFE', name: 'Pfizer Inc.', type: 'stock', price: 28.90, change: -0.10, changePercent: -0.35 },
+  { symbol: 'UNH', name: 'UnitedHealth Group', type: 'stock', price: 562.80, change: 3.40, changePercent: 0.61 },
+  { symbol: 'MRK', name: 'Merck & Co.', type: 'stock', price: 116.20, change: 0.40, changePercent: 0.35 },
+  { symbol: 'ABBV', name: 'AbbVie Inc.', type: 'stock', price: 178.50, change: 0.80, changePercent: 0.45 },
+  { symbol: 'LLY', name: 'Eli Lilly & Co.', type: 'stock', price: 782.40, change: 8.20, changePercent: 1.06 },
+  // Airlines & Travel
+  { symbol: 'AAL', name: 'American Airlines', type: 'stock', price: 11.24, change: -0.08, changePercent: -0.71 },
+  { symbol: 'DAL', name: 'Delta Air Lines', type: 'stock', price: 48.60, change: 0.20, changePercent: 0.41 },
+  { symbol: 'UAL', name: 'United Airlines', type: 'stock', price: 62.30, change: 0.30, changePercent: 0.48 },
+  { symbol: 'UBER', name: 'Uber Technologies', type: 'stock', price: 72.80, change: 0.90, changePercent: 1.25 },
+  { symbol: 'ABNB', name: 'Airbnb Inc.', type: 'stock', price: 148.20, change: 1.20, changePercent: 0.82 },
+  // Gaming
+  { symbol: 'TTWO', name: 'Take-Two Interactive', type: 'stock', price: 168.40, change: 0.80, changePercent: 0.48 },
+  { symbol: 'EA', name: 'Electronic Arts', type: 'stock', price: 142.80, change: 0.40, changePercent: 0.28 },
+  { symbol: 'RBLX', name: 'Roblox Corp', type: 'stock', price: 42.60, change: 0.60, changePercent: 1.43 },
+  // Telecom
+  { symbol: 'TMUS', name: 'T-Mobile US', type: 'stock', price: 198.40, change: 0.90, changePercent: 0.46 },
+  { symbol: 'VZ', name: 'Verizon Communications', type: 'stock', price: 40.20, change: 0.10, changePercent: 0.25 },
+  { symbol: 'T', name: 'AT&T Inc.', type: 'stock', price: 18.60, change: -0.02, changePercent: -0.11 },
+  // Energy & Oil
+  { symbol: 'XOM', name: 'Exxon Mobil', type: 'stock', price: 112.40, change: 0.50, changePercent: 0.45 },
+  { symbol: 'CVX', name: 'Chevron Corp', type: 'stock', price: 152.80, change: 0.60, changePercent: 0.39 },
+  { symbol: 'OXY', name: 'Occidental Petroleum', type: 'stock', price: 52.30, change: 0.20, changePercent: 0.38 },
+  // Banks
+  { symbol: 'JPM', name: 'JPMorgan Chase', type: 'stock', price: 198.60, change: 1.20, changePercent: 0.61 },
+  { symbol: 'BAC', name: 'Bank of America', type: 'stock', price: 38.20, change: 0.15, changePercent: 0.39 },
+  { symbol: 'WFC', name: 'Wells Fargo', type: 'stock', price: 52.80, change: 0.20, changePercent: 0.38 },
+  { symbol: 'GS', name: 'Goldman Sachs', type: 'stock', price: 462.80, change: 3.40, changePercent: 0.74 },
+  { symbol: 'MS', name: 'Morgan Stanley', type: 'stock', price: 98.40, change: 0.60, changePercent: 0.61 },
+  // Consumer
+  { symbol: 'KO', name: 'Coca-Cola Co.', type: 'stock', price: 62.40, change: 0.10, changePercent: 0.16 },
+  { symbol: 'PEP', name: 'PepsiCo Inc.', type: 'stock', price: 172.80, change: 0.40, changePercent: 0.23 },
+  { symbol: 'MCD', name: "McDonald's Corp", type: 'stock', price: 288.40, change: 0.80, changePercent: 0.28 },
+  { symbol: 'SBUX', name: 'Starbucks Corp', type: 'stock', price: 82.60, change: 0.30, changePercent: 0.36 },
+  { symbol: 'NKE', name: 'Nike Inc.', type: 'stock', price: 82.40, change: -0.20, changePercent: -0.24 },
+  { symbol: 'COST', name: 'Costco Wholesale', type: 'stock', price: 852.40, change: 3.20, changePercent: 0.38 },
+  { symbol: 'WMT', name: 'Walmart Inc.', type: 'stock', price: 68.20, change: 0.20, changePercent: 0.29 },
+  { symbol: 'HD', name: 'Home Depot', type: 'stock', price: 358.20, change: 1.40, changePercent: 0.39 },
+  { symbol: 'TGT', name: 'Target Corp', type: 'stock', price: 142.60, change: -0.40, changePercent: -0.28 },
+  // Defense & Industrial
+  { symbol: 'RTX', name: 'RTX Corp', type: 'stock', price: 118.40, change: 0.40, changePercent: 0.34 },
+  { symbol: 'LMT', name: 'Lockheed Martin', type: 'stock', price: 548.20, change: 1.20, changePercent: 0.22 },
+  { symbol: 'BA', name: 'Boeing Co.', type: 'stock', price: 178.60, change: -0.80, changePercent: -0.45 },
+  { symbol: 'GE', name: 'GE Aerospace', type: 'stock', price: 168.20, change: 0.60, changePercent: 0.36 },
+  { symbol: 'CAT', name: 'Caterpillar Inc.', type: 'stock', price: 358.40, change: 1.80, changePercent: 0.51 },
+  { symbol: 'DE', name: 'Deere & Co.', type: 'stock', price: 412.80, change: 2.10, changePercent: 0.51 },
+  // Others
+  { symbol: 'IBM', name: 'IBM Corp', type: 'stock', price: 218.40, change: 0.80, changePercent: 0.37 },
+  { symbol: 'HPQ', name: 'HP Inc.', type: 'stock', price: 32.80, change: 0.10, changePercent: 0.31 },
+  { symbol: 'DELL', name: 'Dell Technologies', type: 'stock', price: 118.60, change: 0.60, changePercent: 0.51 },
+  { symbol: 'LYFT', name: 'Lyft Inc.', type: 'stock', price: 16.80, change: 0.20, changePercent: 1.20 },
+  { symbol: 'ZM', name: 'Zoom Video', type: 'stock', price: 62.40, change: 0.30, changePercent: 0.48 },
+  { symbol: 'DOCU', name: 'DocuSign Inc.', type: 'stock', price: 82.60, change: 0.40, changePercent: 0.49 },
+  { symbol: 'PANW', name: 'Palo Alto Networks', type: 'stock', price: 368.40, change: 2.40, changePercent: 0.66 },
+  { symbol: 'FTNT', name: 'Fortinet Inc.', type: 'stock', price: 72.80, change: 0.40, changePercent: 0.55 },
+  { symbol: 'CRWD', name: 'CrowdStrike', type: 'stock', price: 382.60, change: 3.20, changePercent: 0.84 },
+  { symbol: 'S', name: 'SentinelOne', type: 'stock', price: 22.40, change: 0.20, changePercent: 0.90 },
+  { symbol: ' pathway', name: 'Pathward Inc.', type: 'stock', price: 18.60, change: 0.10, changePercent: 0.54 },
+  { symbol: 'CELH', name: 'Celsius Holdings', type: 'stock', price: 52.80, change: 0.80, changePercent: 1.54 },
+  { symbol: 'ELF', name: 'e.l.f. Beauty', type: 'stock', price: 98.40, change: 1.20, changePercent: 1.23 },
+  { symbol: 'LEN', name: 'Lennar Corp', type: 'stock', price: 152.80, change: 0.60, changePercent: 0.39 },
+  { symbol: 'DHI', name: 'D.R. Horton', type: 'stock', price: 142.60, change: 0.50, changePercent: 0.35 },
+  { symbol: 'PHM', name: 'PulteGroup', type: 'stock', price: 112.40, change: 0.40, changePercent: 0.36 },
+  { symbol: 'CSX', name: 'CSX Corp', type: 'stock', price: 32.80, change: 0.10, changePercent: 0.31 },
+  { symbol: 'UPS', name: 'United Parcel', type: 'stock', price: 142.60, change: 0.60, changePercent: 0.42 },
+  { symbol: 'FDX', name: 'FedEx Corp', type: 'stock', price: 252.80, change: 1.20, changePercent: 0.48 },
+  { symbol: 'BLK', name: 'BlackRock Inc.', type: 'stock', price: 862.40, change: 4.20, changePercent: 0.49 },
+  { symbol: 'BX', name: 'Blackstone Inc.', type: 'stock', price: 128.60, change: 0.80, changePercent: 0.63 },
+  { symbol: 'KKR', name: 'KKR & Co.', type: 'stock', price: 98.40, change: 0.60, changePercent: 0.61 },
+  { symbol: 'BXMT', name: 'Blackstone Mortgage', type: 'stock', price: 22.60, change: 0.10, changePercent: 0.44 },
+  { symbol: 'APO', name: 'Apollo Global', type: 'stock', price: 112.80, change: 0.60, changePercent: 0.53 },
+  { symbol: 'CG', name: 'Carlyle Group', type: 'stock', price: 52.40, change: 0.30, changePercent: 0.58 },
+];
+
+export const CRYPTO: TradingAsset[] = [
+  // Top Tier
+  { symbol: 'BTC', name: 'Bitcoin', type: 'crypto', price: 67890.42, change: 1240.80, changePercent: 1.86 },
+  { symbol: 'ETH', name: 'Ethereum', type: 'crypto', price: 3520.18, change: 68.40, changePercent: 1.98 },
+  { symbol: 'SOL', name: 'Solana', type: 'crypto', price: 142.30, change: 3.80, changePercent: 2.74 },
+  { symbol: 'BNB', name: 'BNB', type: 'crypto', price: 598.40, change: 4.20, changePercent: 0.71 },
+  { symbol: 'XRP', name: 'XRP', type: 'crypto', price: 0.62, change: 0.01, changePercent: 1.64 },
+  { symbol: 'ADA', name: 'Cardano', type: 'crypto', price: 0.45, change: 0.01, changePercent: 2.27 },
+  { symbol: 'AVAX', name: 'Avalanche', type: 'crypto', price: 35.80, change: 0.80, changePercent: 2.29 },
+  { symbol: 'DOT', name: 'Polkadot', type: 'crypto', price: 7.20, change: 0.12, changePercent: 1.69 },
+  { symbol: 'LINK', name: 'Chainlink', type: 'crypto', price: 14.20, change: 0.15, changePercent: 1.07 },
+  { symbol: 'MATIC', name: 'Polygon', type: 'crypto', price: 0.52, change: 0.01, changePercent: 1.96 },
+  // Mid Cap
+  { symbol: 'UNI', name: 'Uniswap', type: 'crypto', price: 8.40, change: 0.12, changePercent: 1.45 },
+  { symbol: 'LTC', name: 'Litecoin', type: 'crypto', price: 72.80, change: 1.20, changePercent: 1.68 },
+  { symbol: 'BCH', name: 'Bitcoin Cash', type: 'crypto', price: 382.60, change: 4.20, changePercent: 1.11 },
+  { symbol: 'ETC', name: 'Ethereum Classic', type: 'crypto', price: 28.40, change: 0.40, changePercent: 1.43 },
+  { symbol: 'ATOM', name: 'Cosmos', type: 'crypto', price: 6.80, change: 0.10, changePercent: 1.49 },
+  { symbol: 'FIL', name: 'Filecoin', type: 'crypto', price: 4.20, change: 0.06, changePercent: 1.45 },
+  { symbol: 'ALGO', name: 'Algorand', type: 'crypto', price: 0.18, change: 0.003, changePercent: 1.69 },
+  { symbol: 'XTZ', name: 'Tezos', type: 'crypto', price: 0.82, change: 0.01, changePercent: 1.23 },
+  { symbol: 'THETA', name: 'Theta Network', type: 'crypto', price: 1.68, change: 0.02, changePercent: 1.20 },
+  { symbol: 'XLM', name: 'Stellar', type: 'crypto', price: 0.098, change: 0.001, changePercent: 1.03 },
+  // DeFi & Layer 2
+  { symbol: 'AAVE', name: 'Aave', type: 'crypto', price: 102.40, change: 1.80, changePercent: 1.79 },
+  { symbol: 'MKR', name: 'Maker', type: 'crypto', price: 1680.20, change: 22.40, changePercent: 1.35 },
+  { symbol: 'SUSHI', name: 'SushiSwap', type: 'crypto', price: 0.92, change: 0.01, changePercent: 1.10 },
+  { symbol: 'COMP', name: 'Compound', type: 'crypto', price: 52.80, change: 0.60, changePercent: 1.15 },
+  { symbol: 'CRV', name: 'Curve DAO', type: 'crypto', price: 0.32, change: 0.004, changePercent: 1.27 },
+  { symbol: '1INCH', name: '1inch', type: 'crypto', price: 0.38, change: 0.005, changePercent: 1.33 },
+  { symbol: 'OP', name: 'Optimism', type: 'crypto', price: 1.82, change: 0.03, changePercent: 1.68 },
+  { symbol: 'ARB', name: 'Arbitrum', type: 'crypto', price: 0.72, change: 0.01, changePercent: 1.41 },
+  { symbol: 'STX', name: 'Stacks', type: 'crypto', price: 1.92, change: 0.03, changePercent: 1.59 },
+  { symbol: 'IMX', name: 'Immutable X', type: 'crypto', price: 1.42, change: 0.02, changePercent: 1.43 },
+  // Meme & Others
+  { symbol: 'DOGE', name: 'Dogecoin', type: 'crypto', price: 0.16, change: -0.01, changePercent: -5.88 },
+  { symbol: 'SHIB', name: 'Shiba Inu', type: 'crypto', price: 0.000018, change: -0.000001, changePercent: -5.26 },
+  { symbol: 'PEPE', name: 'Pepe', type: 'crypto', price: 0.0000098, change: 0.0000002, changePercent: 2.08 },
+  { symbol: 'FLOKI', name: 'Floki', type: 'crypto', price: 0.000152, change: 0.000003, changePercent: 2.01 },
+  { symbol: 'BONK', name: 'Bonk', type: 'crypto', price: 0.000022, change: 0.0000004, changePercent: 1.85 },
+  // Gaming & Metaverse
+  { symbol: 'SAND', name: 'The Sandbox', type: 'crypto', price: 0.28, change: 0.004, changePercent: 1.45 },
+  { symbol: 'MANA', name: 'Decentraland', type: 'crypto', price: 0.32, change: 0.004, changePercent: 1.27 },
+  { symbol: 'AXS', name: 'Axie Infinity', type: 'crypto', price: 6.80, change: 0.10, changePercent: 1.49 },
+  { symbol: 'GALA', name: 'Gala', type: 'crypto', price: 0.028, change: 0.0004, changePercent: 1.45 },
+  { symbol: 'ENJ', name: 'Enjin Coin', type: 'crypto', price: 0.18, change: 0.002, changePercent: 1.12 },
+  // Infrastructure
+  { symbol: 'ICP', name: 'Internet Computer', type: 'crypto', price: 10.80, change: 0.18, changePercent: 1.69 },
+  { symbol: 'NEAR', name: 'NEAR Protocol', type: 'crypto', price: 5.92, change: 0.10, changePercent: 1.72 },
+  { symbol: 'VET', name: 'VeChain', type: 'crypto', price: 0.028, change: 0.0004, changePercent: 1.45 },
+  { symbol: 'EGLD', name: 'MultiversX', type: 'crypto', price: 32.80, change: 0.40, changePercent: 1.23 },
+  { symbol: 'EOS', name: 'EOS', type: 'crypto', price: 0.62, change: 0.01, changePercent: 1.64 },
+  // Privacy
+  { symbol: 'ZEC', name: 'Zcash', type: 'crypto', price: 42.80, change: 0.60, changePercent: 1.42 },
+  { symbol: 'XMR', name: 'Monero', type: 'crypto', price: 162.80, change: 2.10, changePercent: 1.31 },
+  { symbol: 'DASH', name: 'Dash', type: 'crypto', price: 28.20, change: 0.30, changePercent: 1.08 },
+  { symbol: 'SC', name: 'Siacoin', type: 'crypto', price: 0.0052, change: 0.00008, changePercent: 1.56 },
+  { symbol: 'HNT', name: 'Helium', type: 'crypto', price: 4.20, change: 0.06, changePercent: 1.45 },
+  // Others
+  { symbol: 'TRX', name: 'TRON', type: 'crypto', price: 0.12, change: 0.001, changePercent: 0.84 },
+  { symbol: 'HBAR', name: 'Hedera', type: 'crypto', price: 0.058, change: 0.001, changePercent: 1.75 },
+  { symbol: 'CHZ', name: 'Chiliz', type: 'crypto', price: 0.072, change: 0.001, changePercent: 1.41 },
+  { symbol: 'FLOW', name: 'Flow', type: 'crypto', price: 0.62, change: 0.01, changePercent: 1.64 },
+  { symbol: 'KAVA', name: 'Kava', type: 'crypto', price: 0.42, change: 0.006, changePercent: 1.45 },
+  { symbol: 'RUNE', name: 'THORChain', type: 'crypto', price: 4.82, change: 0.08, changePercent: 1.69 },
+  { symbol: 'CAKE', name: 'PancakeSwap', type: 'crypto', price: 1.92, change: 0.03, changePercent: 1.59 },
+  { symbol: 'DYDX', name: 'dYdX', type: 'crypto', price: 1.22, change: 0.02, changePercent: 1.67 },
+  { symbol: 'SNX', name: 'Synthetix', type: 'crypto', price: 1.82, change: 0.03, changePercent: 1.68 },
+  { symbol: 'GRT', name: 'The Graph', type: 'crypto', price: 0.22, change: 0.003, changePercent: 1.39 },
+  { symbol: 'LDO', name: 'Lido DAO', type: 'crypto', price: 1.62, change: 0.02, changePercent: 1.25 },
+  { symbol: 'ROSE', name: 'Oasis Network', type: 'crypto', price: 0.072, change: 0.001, changePercent: 1.41 },
+  { symbol: 'CELO', name: 'Celo', type: 'crypto', price: 0.62, change: 0.01, changePercent: 1.64 },
+  { symbol: 'ZIL', name: 'Zilliqa', type: 'crypto', price: 0.018, change: 0.0003, changePercent: 1.69 },
+  { symbol: 'ONE', name: 'Harmony', type: 'crypto', price: 0.012, change: 0.0002, changePercent: 1.69 },
+  { symbol: 'FTM', name: 'Fantom', type: 'crypto', price: 0.62, change: 0.01, changePercent: 1.64 },
+  { symbol: 'KLAY', name: 'Klaytn', type: 'crypto', price: 0.18, change: 0.002, changePercent: 1.12 },
+  { symbol: 'WAVES', name: 'Waves', type: 'crypto', price: 1.22, change: 0.02, changePercent: 1.67 },
+  { symbol: 'MINA', name: 'Mina Protocol', type: 'crypto', price: 0.52, change: 0.008, changePercent: 1.56 },
+  { symbol: 'BAT', name: 'Basic Attention', type: 'crypto', price: 0.22, change: 0.003, changePercent: 1.39 },
+  { symbol: 'SRM', name: 'Serum', type: 'crypto', price: 0.042, change: 0.0006, changePercent: 1.45 },
+  { symbol: 'REN', name: 'Ren', type: 'crypto', price: 0.038, change: 0.0005, changePercent: 1.33 },
+  { symbol: 'COTI', name: 'COTI', type: 'crypto', price: 0.082, change: 0.001, changePercent: 1.23 },
+  { symbol: 'OCEAN', name: 'Ocean Protocol', type: 'crypto', price: 0.38, change: 0.005, changePercent: 1.33 },
+  { symbol: 'ANKR', name: 'Ankr', type: 'crypto', price: 0.032, change: 0.0005, changePercent: 1.59 },
+  { symbol: 'BAND', name: 'Band Protocol', type: 'crypto', price: 1.22, change: 0.02, changePercent: 1.67 },
+  { symbol: 'API3', name: 'API3', type: 'crypto', price: 1.82, change: 0.03, changePercent: 1.68 },
+  { symbol: 'POND', name: 'Marlin', type: 'crypto', price: 0.012, change: 0.0002, changePercent: 1.69 },
+  { symbol: 'PERP', name: 'Perpetual Protocol', type: 'crypto', price: 0.62, change: 0.01, changePercent: 1.64 },
+  { symbol: 'MIR', name: 'Mirror Protocol', type: 'crypto', price: 0.022, change: 0.0003, changePercent: 1.39 },
+  { symbol: 'ALPHA', name: 'Alpha Finance', type: 'crypto', price: 0.082, change: 0.001, changePercent: 1.23 },
+];
+
+export const ETFS: TradingAsset[] = [
+  { symbol: 'SPY', name: 'SPDR S&P 500', type: 'etf', price: 548.20, change: 2.20, changePercent: 0.40 },
+  { symbol: 'QQQ', name: 'Invesco QQQ Trust', type: 'etf', price: 468.50, change: 2.80, changePercent: 0.60 },
+  { symbol: 'IWM', name: 'iShares Russell 2000', type: 'etf', price: 202.80, change: 1.60, changePercent: 0.79 },
+  { symbol: 'VTI', name: 'Vanguard Total Stock', type: 'etf', price: 262.40, change: 1.20, changePercent: 0.46 },
+  { symbol: 'VEA', name: 'Vanguard Developed', type: 'etf', price: 48.20, change: 0.20, changePercent: 0.42 },
+  { symbol: 'VWO', name: 'Vanguard Emerging', type: 'etf', price: 42.80, change: 0.30, changePercent: 0.71 },
+  { symbol: 'BND', name: 'Vanguard Total Bond', type: 'etf', price: 72.80, change: -0.10, changePercent: -0.14 },
+  { symbol: 'ARKK', name: 'ARK Innovation ETF', type: 'etf', price: 48.90, change: 1.20, changePercent: 2.52 },
+  { symbol: 'ARKW', name: 'ARK Next Gen Internet', type: 'etf', price: 92.40, change: 2.10, changePercent: 2.33 },
+  { symbol: 'XLF', name: 'Financial Select Sector', type: 'etf', price: 42.80, change: 0.20, changePercent: 0.47 },
+  { symbol: 'XLK', name: 'Technology Select Sector', type: 'etf', price: 218.40, change: 1.80, changePercent: 0.83 },
+  { symbol: 'XLE', name: 'Energy Select Sector', type: 'etf', price: 92.80, change: 0.40, changePercent: 0.43 },
+  { symbol: 'XLV', name: 'Health Care Select', type: 'etf', price: 142.60, change: 0.60, changePercent: 0.42 },
+  { symbol: 'XLI', name: 'Industrial Select', type: 'etf', price: 122.80, change: 0.40, changePercent: 0.33 },
+  { symbol: 'XLP', name: 'Consumer Staples', type: 'etf', price: 78.40, change: 0.10, changePercent: 0.13 },
+  { symbol: 'XLU', name: 'Utilities Select', type: 'etf', price: 68.20, change: -0.10, changePercent: -0.15 },
+  { symbol: 'XLB', name: 'Materials Select', type: 'etf', price: 88.60, change: 0.30, changePercent: 0.34 },
+  { symbol: 'XLRE', name: 'Real Estate Select', type: 'etf', price: 38.40, change: 0.10, changePercent: 0.26 },
+  { symbol: 'SOXX', name: 'iShares Semiconductor', type: 'etf', price: 218.80, change: 3.20, changePercent: 1.49 },
+  { symbol: 'SMH', name: 'VanEck Semiconductor', type: 'etf', price: 248.20, change: 3.80, changePercent: 1.56 },
+  { symbol: 'IBB', name: 'iShares Biotechnology', type: 'etf', price: 132.40, change: 0.80, changePercent: 0.61 },
+  { symbol: 'XBI', name: 'SPDR Biotech', type: 'etf', price: 88.20, change: 1.20, changePercent: 1.38 },
+  { symbol: 'ITA', name: 'iShares U.S. Aerospace', type: 'etf', price: 122.80, change: 0.60, changePercent: 0.49 },
+  { symbol: 'KRE', name: 'SPDR S&P Regional Banking', type: 'etf', price: 58.20, change: 0.30, changePercent: 0.52 },
+  { symbol: 'TLT', name: 'iShares 20+ Year Treasury', type: 'etf', price: 92.80, change: -0.40, changePercent: -0.43 },
+  { symbol: 'GLD', name: 'SPDR Gold Shares', type: 'etf', price: 218.40, change: 1.20, changePercent: 0.55 },
+  { symbol: 'SLV', name: 'iShares Silver Trust', type: 'etf', price: 28.60, change: 0.20, changePercent: 0.70 },
+  { symbol: 'USO', name: 'United States Oil Fund', type: 'etf', price: 78.20, change: 0.80, changePercent: 1.03 },
+];
+
+export const ALL_ASSETS: TradingAsset[] = [...STOCKS, ...CRYPTO, ...ETFS];
+
+export function searchAssets(query: string, type?: 'stock' | 'crypto' | 'etf'): TradingAsset[] {
+  const q = query.toLowerCase().trim();
+  return ALL_ASSETS.filter((a) => {
+    if (type && a.type !== type) return false;
+    if (!q) return true;
+    return a.symbol.toLowerCase().includes(q) || a.name.toLowerCase().includes(q);
+  });
+}

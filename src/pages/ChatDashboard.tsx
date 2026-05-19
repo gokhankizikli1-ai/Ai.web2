@@ -15,7 +15,7 @@ import AgentsPanel from '@/components/AgentsPanel';
 import WorkspaceTabs from '@/components/WorkspaceTabs';
 import AIActivityFeed from '@/components/AIActivityFeed';
 import AgentTimeline from '@/components/AgentTimeline';
-import AdaptiveBackground from '@/components/AdaptiveBackground';
+
 import CommandPalette from '@/components/CommandPalette';
 import PromptLibrary from '@/components/PromptLibrary';
 import ExportChat from '@/components/ExportChat';
@@ -110,7 +110,7 @@ export default function ChatDashboard() {
     activeSession, activeSessionId, error, isLoading,
     aiMode, searchQuery, filteredSessions, pinnedMessages, inputText, currentTab,
     createNewChat, selectSession, deleteSession, sendMessage, retry, togglePin,
-    setAiMode, setSearchQuery, setInputText, moveToFolder, switchTab,
+    setAiMode, setSearchQuery, setInputText, switchTab,
   } = useChat();
 
   const { open: cmdOpen, setOpen: setCmdOpen } = useCommandPalette();
@@ -285,7 +285,7 @@ export default function ChatDashboard() {
 
   return (
     <div className="relative flex h-[100dvh] w-full bg-[#0a0a0a] text-foreground overflow-hidden">
-      <AdaptiveBackground activeTab={activeTab} />
+      {/* Global overlay removed — main content stays fully readable */}
 
       <Sidebar
         isOpen={sidebarOpen}
@@ -297,7 +297,7 @@ export default function ChatDashboard() {
         onSelect={handleSelectSession}
         onDelete={deleteSession}
         onNewChat={handleNewChat}
-        onMoveToFolder={moveToFolder}
+
         onOpenSettings={() => setSettingsOpen(true)}
         onOpenUpgrade={() => setUpgradeOpen(true)}
       />
@@ -307,7 +307,7 @@ export default function ChatDashboard() {
         style={{ paddingBottom: 'var(--safe-area-inset-bottom, 0px)' }}
       >
         {/* Top Bar */}
-        <header className="relative flex items-center justify-between h-11 px-3 border-b border-white/[0.02] bg-[#0a0a0a]/60 backdrop-blur-xl shrink-0 z-10">
+        <header className="relative flex items-center justify-between h-11 px-3 border-b border-white/[0.02] bg-[#0a0a0a]/80 backdrop-blur-sm shrink-0 z-10">
           <div className="flex items-center gap-2 min-w-0">
             {!sidebarOpen && (
               <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}

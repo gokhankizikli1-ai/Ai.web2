@@ -29,6 +29,7 @@ import BottomNav from './components/BottomNav';
 import FloatingOrb from './components/FloatingOrb';
 import FloatingParticles from './components/FloatingParticles';
 import PageTransition from './components/PageTransition';
+import ProtectedRoute from './components/ProtectedRoute';
 
 function AnimatedRoute({ children }: { children: React.ReactNode }) {
   return (
@@ -62,41 +63,42 @@ export default function App() {
         {/* ═══ Landing ═══ */}
         <Route path="/" element={<LandingPage />} />
 
-        {/* ═══ Marketing pages ═══ */}
-        <Route path="/features" element={<AnimatedRoute><FeaturesPage /></AnimatedRoute>} />
-        <Route path="/use-cases" element={<AnimatedRoute><UseCasesPage /></AnimatedRoute>} />
-        <Route path="/pricing" element={<AnimatedRoute><PricingPage /></AnimatedRoute>} />
-        <Route path="/about" element={<AnimatedRoute><AboutPage /></AnimatedRoute>} />
+        {/* ═══ Marketing pages — guest allowed ═══ */}
+        <Route path="/features" element={<ProtectedRoute guestAllowed><AnimatedRoute><FeaturesPage /></AnimatedRoute></ProtectedRoute>} />
+        <Route path="/use-cases" element={<ProtectedRoute guestAllowed><AnimatedRoute><UseCasesPage /></AnimatedRoute></ProtectedRoute>} />
+        <Route path="/pricing" element={<ProtectedRoute guestAllowed><AnimatedRoute><PricingPage /></AnimatedRoute></ProtectedRoute>} />
+        <Route path="/about" element={<ProtectedRoute guestAllowed><AnimatedRoute><AboutPage /></AnimatedRoute></ProtectedRoute>} />
 
-        {/* ═══ Core workspace (CURRENT PRODUCTION) ═══ */}
-        <Route path="/chat" element={<ChatDashboard />} />
-        <Route path="/workspace" element={<AnimatedRoute><WorkspacePage /></AnimatedRoute>} />
-        <Route path="/home" element={<AnimatedRoute><HomeDashboard /></AnimatedRoute>} />
+        {/* ═══ Core workspace (CURRENT PRODUCTION) — guest allowed ═══ */}
+        <Route path="/chat" element={<ProtectedRoute guestAllowed><ChatDashboard /></ProtectedRoute>} />
+        <Route path="/workspace" element={<ProtectedRoute guestAllowed><AnimatedRoute><WorkspacePage /></AnimatedRoute></ProtectedRoute>} />
+        <Route path="/home" element={<ProtectedRoute guestAllowed><AnimatedRoute><HomeDashboard /></AnimatedRoute></ProtectedRoute>} />
 
-        {/* ═══ Agents (CURRENT PRODUCTION) ═══ */}
-        <Route path="/agents" element={<AnimatedRoute><AgentMarketplace /></AnimatedRoute>} />
-        <Route path="/agents/builder" element={<AnimatedRoute><AgentBuilder /></AnimatedRoute>} />
+        {/* ═══ Agents (CURRENT PRODUCTION) — guest allowed ═══ */}
+        <Route path="/agents" element={<ProtectedRoute guestAllowed><AnimatedRoute><AgentMarketplace /></AnimatedRoute></ProtectedRoute>} />
+        <Route path="/agents/builder" element={<ProtectedRoute guestAllowed><AnimatedRoute><AgentBuilder /></AnimatedRoute></ProtectedRoute>} />
 
-        {/* ═══ Tools (optional standalone pages, NOT main routes) ═══ */}
-        <Route path="/tools" element={<AnimatedRoute><ToolsPage /></AnimatedRoute>} />
-        <Route path="/tools/startup" element={<AnimatedRoute><StartupHub /></AnimatedRoute>} />
-        <Route path="/tools/ecommerce" element={<AnimatedRoute><EcommerceOS /></AnimatedRoute>} />
-        <Route path="/tools/website-analyzer" element={<AnimatedRoute><WebsiteAnalyzer /></AnimatedRoute>} />
-        <Route path="/tools/website-builder" element={<AnimatedRoute><WebsiteBuilder /></AnimatedRoute>} />
-        <Route path="/tools/app-builder" element={<AnimatedRoute><AppBuilder /></AnimatedRoute>} />
-        <Route path="/tools/brand-builder" element={<AnimatedRoute><BrandBuilder /></AnimatedRoute>} />
-        <Route path="/tools/viral-content" element={<AnimatedRoute><ViralContent /></AnimatedRoute>} />
-        <Route path="/tools/knowledge-vault" element={<AnimatedRoute><KnowledgeVault /></AnimatedRoute>} />
-        <Route path="/tools/automations" element={<AnimatedRoute><Automations /></AnimatedRoute>} />
-        <Route path="/tools/swarm" element={<AnimatedRoute><MultiAgentSwarm /></AnimatedRoute>} />
+        {/* ═══ Tools (optional standalone pages, NOT main routes) — guest allowed ═══ */}
+        <Route path="/tools" element={<ProtectedRoute guestAllowed><AnimatedRoute><ToolsPage /></AnimatedRoute></ProtectedRoute>} />
+        <Route path="/tools/startup" element={<ProtectedRoute guestAllowed><AnimatedRoute><StartupHub /></AnimatedRoute></ProtectedRoute>} />
+        <Route path="/tools/ecommerce" element={<ProtectedRoute guestAllowed><AnimatedRoute><EcommerceOS /></AnimatedRoute></ProtectedRoute>} />
+        <Route path="/tools/website-analyzer" element={<ProtectedRoute guestAllowed><AnimatedRoute><WebsiteAnalyzer /></AnimatedRoute></ProtectedRoute>} />
+        <Route path="/tools/website-builder" element={<ProtectedRoute guestAllowed><AnimatedRoute><WebsiteBuilder /></AnimatedRoute></ProtectedRoute>} />
+        <Route path="/tools/app-builder" element={<ProtectedRoute guestAllowed><AnimatedRoute><AppBuilder /></AnimatedRoute></ProtectedRoute>} />
+        <Route path="/tools/brand-builder" element={<ProtectedRoute guestAllowed><AnimatedRoute><BrandBuilder /></AnimatedRoute></ProtectedRoute>} />
+        <Route path="/tools/viral-content" element={<ProtectedRoute guestAllowed><AnimatedRoute><ViralContent /></AnimatedRoute></ProtectedRoute>} />
+        <Route path="/tools/knowledge-vault" element={<ProtectedRoute guestAllowed><AnimatedRoute><KnowledgeVault /></AnimatedRoute></ProtectedRoute>} />
+        <Route path="/tools/automations" element={<ProtectedRoute guestAllowed><AnimatedRoute><Automations /></AnimatedRoute></ProtectedRoute>} />
+        <Route path="/tools/swarm" element={<ProtectedRoute guestAllowed><AnimatedRoute><MultiAgentSwarm /></AnimatedRoute></ProtectedRoute>} />
 
         {/* ═══ Settings / Credits / Auth ═══ */}
-        <Route path="/settings" element={<AnimatedRoute><SettingsPage /></AnimatedRoute>} />
+        <Route path="/settings" element={<ProtectedRoute guestAllowed={false}><AnimatedRoute><SettingsPage /></AnimatedRoute></ProtectedRoute>} />
         <Route path="/login" element={<AnimatedRoute><AuthPage /></AnimatedRoute>} />
-        <Route path="/credits" element={<AnimatedRoute><CreditsPage /></AnimatedRoute>} />
+        <Route path="/signup" element={<AnimatedRoute><AuthPage mode="signup" /></AnimatedRoute>} />
+        <Route path="/credits" element={<ProtectedRoute guestAllowed><AnimatedRoute><CreditsPage /></AnimatedRoute></ProtectedRoute>} />
 
-        {/* ═══ Explore ═══ */}
-        <Route path="/explore" element={<AnimatedRoute><ExplorePage /></AnimatedRoute>} />
+        {/* ═══ Explore — guest allowed ═══ */}
+        <Route path="/explore" element={<ProtectedRoute guestAllowed><AnimatedRoute><ExplorePage /></AnimatedRoute></ProtectedRoute>} />
 
         {/* ═══ Redirect old workspace routes to /chat ═══ */}
         <Route path="/tools/startup" element={<Navigate to="/chat?tab=startup" replace />} />

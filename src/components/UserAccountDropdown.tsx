@@ -3,13 +3,16 @@ import { useNavigate } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useApp } from '@/contexts/AppContext';
 import { useToast } from '@/hooks/useToast';
+import { useAuthStore } from '@/stores/authStore';
+import { useLanguageStore, LANGUAGES } from '@/stores/languageStore';
+import type { Language } from '@/stores/languageStore';
 import {
   User, Crown, Zap, Shield, Coins,
   CreditCard, Settings, Globe, BookOpen,
   Users, LogOut, Sparkles, ChevronRight,
-  Landmark,
+  Landmark, LogIn,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+// import { Button } from '@/components/ui/button';
 
 interface UserAccountDropdownProps {
   onOpenSettings: () => void;
@@ -28,6 +31,8 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
   const { settings } = useApp();
   const { addToast } = useToast();
   const navigate = useNavigate();
+  const { user, isAuthenticated, logout } = useAuthStore();
+  const { lang, setLang } = useLanguageStore();
   const [open, setOpen] = useState(false);
   const [showLangMenu, setShowLangMenu] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -35,10 +40,7 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
   const plan = PLAN_CONFIG[settings.plan] || PLAN_CONFIG.free;
   const PlanIcon = plan.icon;
 
-  // Credit breakdown (demo values)
-  const subscriptionCredits = settings.plan === 'free' ? 0 : settings.plan === 'basic' ? 100 : settings.plan === 'pro' ? 300 : settings.plan === 'ultra' ? 1000 : 0;
-  const purchasedCredits = 0; // no purchased credits yet
-  const dailyBonusCredits = 5; // daily free bonus
+  // Credit info
   const totalCredits = settings.creditsTotal;
   const remainingCredits = settings.creditsRemaining;
   const usagePercent = Math.round((totalCredits - remainingCredits) / totalCredits * 100);
@@ -92,9 +94,9 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
     setShowLangMenu(true);
   };
 
-  const selectLanguage = (lang: 'English' | 'Turkish') => {
-    // Would update settings — for now just toast
-    addToast(`Language: ${lang}`, 'success');
+  const selectLanguage = (language: Language) => {
+    setLang(language);
+    addToast(`${LANGUAGES.find((l) => l.code === language)?.label || language} selected`, 'success');
     setShowLangMenu(false);
     setOpen(false);
   };
@@ -104,9 +106,11 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
     setOpen(false);
   };
 
-  const handleLogout = () => {
-    addToast('Authentication coming soon', 'info');
+  const handleLogout = async () => {
+    await logout();
+    addToast('Logged out successfully', 'success');
     setOpen(false);
+    window.location.href = '/';
   };
 
   return (
@@ -121,10 +125,18 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
         }`}
       >
         <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-400/20 to-blue-500/20 border border-cyan-500/10 shrink-0">
-          <User className="w-3.5 h-3.5 text-cyan-400/70" />
+          {isAuthenticated ? (
+            <span className="text-[10px] font-medium text-cyan-400/80">
+              {(user?.name || user?.email || 'U').slice(0, 2).toUpperCase()}
+            </span>
+          ) : (
+            <User className="w-3.5 h-3.5 text-cyan-400/70" />
+          )}
         </div>
         <div className="flex-1 min-w-0 text-left">
-          <div className="text-[12px] text-white truncate font-medium">You</div>
+          <div className="text-[12px] text-white truncate font-medium">
+            {isAuthenticated ? (user?.name || 'You') : 'You'}
+          </div>
           <div className="flex items-center gap-1.5 mt-0.5">
             <div className="w-1 h-1 rounded-full bg-emerald-400/60" />
             <span className="text-[10px] text-slate-600">{plan.label}</span>
@@ -155,7 +167,7 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
                   transition={{ duration: 0.15 }}
                 >
                   {/* Language header */}
-                  <div className="flex items-center gap-2 px-4 py-3 border-b border-white/[0.04]">
+                  <div className="flex items-center gap-2 px-4 py-3 border-b border-white/[0.04] shrink-0">
                     <button
                       onClick={() => setShowLangMenu(false)}
                       className="h-6 w-6 flex items-center justify-center rounded-md text-slate-600 hover:text-white hover:bg-white/[0.04] transition-all"
@@ -165,27 +177,40 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
                     <span className="text-[12px] font-medium text-white">Language</span>
                   </div>
 
-                  <div className="p-2">
-                    {[
-                      { id: 'English' as const, label: 'English', icon: Globe },
-                      { id: 'Turkish' as const, label: 'Turkish', icon: Globe },
-                    ].map((lang) => (
-                      <button
-                        key={lang.id}
-                        onClick={() => selectLanguage(lang.id)}
-                        className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[12px] transition-all ${
-                          settings.language === lang.id
-                            ? 'bg-white/[0.05] text-white'
-                            : 'text-slate-500 hover:text-slate-300 hover:bg-white/[0.03]'
-                        }`}
-                      >
-                        <lang.icon className="w-3.5 h-3.5 text-slate-600" />
-                        <span className="flex-1">{lang.label}</span>
-                        {settings.language === lang.id && (
-                          <div className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
-                        )}
-                      </button>
-                    ))}
+                  {/* Scrollable language list with fade gradients */}
+                  <div className="relative">
+                    {/* Top fade gradient */}
+                    <div className="absolute top-0 left-0 right-0 h-3 bg-gradient-to-b from-[#0e0e14] to-transparent z-10 pointer-events-none rounded-t-lg" />
+
+                    <div
+                      className="p-2 overflow-y-auto scrollbar-thin"
+                      style={{
+                        maxHeight: '240px',
+                        scrollbarWidth: 'thin',
+                        scrollbarColor: 'rgba(255,255,255,0.08) transparent',
+                      }}
+                    >
+                      {LANGUAGES.map((l) => (
+                        <button
+                          key={l.code}
+                          onClick={() => selectLanguage(l.code)}
+                          className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[12px] transition-all ${
+                            lang === l.code
+                              ? 'bg-white/[0.05] text-white'
+                              : 'text-slate-500 hover:text-slate-300 hover:bg-white/[0.03]'
+                          }`}
+                        >
+                          <Globe className="w-3.5 h-3.5 text-slate-600 shrink-0" />
+                          <span className="flex-1">{l.label}</span>
+                          {lang === l.code && (
+                            <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 shrink-0" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Bottom fade gradient */}
+                    <div className="absolute bottom-0 left-0 right-0 h-4 bg-gradient-to-t from-[#0e0e14] to-transparent z-10 pointer-events-none rounded-b-lg" />
                   </div>
                 </motion.div>
               ) : (
@@ -202,11 +227,21 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
                   <div className="px-4 py-3.5 border-b border-white/[0.04]">
                     <div className="flex items-center gap-3 mb-3">
                       <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400/20 to-blue-500/20 border border-cyan-500/10 shrink-0">
-                        <User className="w-4 h-4 text-cyan-400/70" />
+                        {isAuthenticated ? (
+                          <span className="text-[11px] font-medium text-cyan-400/80">
+                            {(user?.name || user?.email || 'U').slice(0, 2).toUpperCase()}
+                          </span>
+                        ) : (
+                          <User className="w-4 h-4 text-cyan-400/70" />
+                        )}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-[13px] font-medium text-white truncate">Guest User</p>
-                        <p className="text-[11px] text-slate-600 truncate">user@korvix.ai</p>
+                        <p className="text-[13px] font-medium text-white truncate">
+                          {isAuthenticated ? (user?.name || 'User') : 'Guest User'}
+                        </p>
+                        <p className="text-[11px] text-slate-600 truncate">
+                          {isAuthenticated ? user?.email : 'user@korvix.ai'}
+                        </p>
                       </div>
                     </div>
 
@@ -217,20 +252,41 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
                     </div>
                   </div>
 
-                  {/* Credits Section */}
+                  {/* ─── Guest: Prominent auth actions (stacked for narrow sidebar) ─── */}
+                  {!isAuthenticated && (
+                    <div className="px-4 py-3 border-b border-white/[0.04]">
+                      <div className="flex flex-col gap-1.5">
+                        <button
+                          onClick={() => { setOpen(false); navigate('/signup'); }}
+                          className="w-full h-8 flex items-center justify-center gap-1.5 rounded-xl bg-cyan-500/[0.08] text-cyan-400 border border-cyan-500/15 text-[11px] font-medium hover:bg-cyan-500/[0.12] transition-all"
+                        >
+                          <Sparkles className="w-3 h-3" /> Create Account
+                        </button>
+                        <button
+                          onClick={() => { setOpen(false); navigate('/login'); }}
+                          className="w-full h-8 flex items-center justify-center gap-1.5 rounded-xl bg-white/[0.02] text-slate-400 border border-white/[0.04] text-[11px] hover:bg-white/[0.04] hover:text-slate-300 transition-all"
+                        >
+                          <LogIn className="w-3 h-3" /> Sign In
+                        </button>
+                      </div>
+                      <p className="text-[9px] text-slate-700 mt-1.5 text-center">Sync across devices</p>
+                    </div>
+                  )}
+
+                  {/* Credits Section — compact */}
                   <div className="px-4 py-3 border-b border-white/[0.04]">
-                    <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center justify-between mb-1.5">
                       <div className="flex items-center gap-1.5">
                         <Coins className="w-3.5 h-3.5 text-amber-400/60" />
                         <span className="text-[11px] text-slate-400">Credits</span>
                       </div>
-                      <span className="text-[12px] font-mono font-medium text-white tabular-nums">
-                        {remainingCredits} / {totalCredits}
+                      <span className="text-[11px] font-medium text-white tabular-nums">
+                        {remainingCredits} <span className="text-slate-700">/ {totalCredits}</span>
                       </span>
                     </div>
 
                     {/* Progress bar */}
-                    <div className="w-full h-1.5 bg-white/[0.03] rounded-full overflow-hidden mb-3">
+                    <div className="w-full h-1 bg-white/[0.03] rounded-full overflow-hidden mb-2">
                       <motion.div
                         className="h-full rounded-full bg-cyan-400/40"
                         initial={{ width: 0 }}
@@ -239,49 +295,26 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
                       />
                     </div>
 
-                    {/* Credit breakdown */}
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-slate-600 flex items-center gap-1.5">
-                          <div className="w-1 h-1 rounded-full bg-cyan-400/40" />
-                          Subscription
-                        </span>
-                        <span className="text-[10px] text-slate-400 tabular-nums">+{subscriptionCredits}/mo</span>
-                      </div>
-                      {purchasedCredits > 0 && (
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] text-slate-600 flex items-center gap-1.5">
-                            <div className="w-1 h-1 rounded-full bg-purple-400/40" />
-                            Purchased
-                          </span>
-                          <span className="text-[10px] text-slate-400 tabular-nums">+{purchasedCredits}</span>
-                        </div>
-                      )}
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-slate-600 flex items-center gap-1.5">
-                          <div className="w-1 h-1 rounded-full bg-emerald-400/40" />
-                          Daily Bonus
-                        </span>
-                        <span className="text-[10px] text-emerald-400/60 tabular-nums">+{dailyBonusCredits}/day</span>
-                      </div>
+                    {/* Free chat badge */}
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <div className="w-1 h-1 rounded-full bg-emerald-400/40" />
+                      <span className="text-[9px] text-emerald-400/50">Casual chat is free</span>
                     </div>
-                  </div>
 
-                  {/* Action Buttons */}
-                  <div className="px-3 py-2 border-b border-white/[0.04]">
-                    <div className="grid grid-cols-2 gap-2">
-                      <Button
-                        onClick={handleUpgrade}
-                        className="h-8 rounded-xl bg-amber-500/[0.06] text-amber-400 border border-amber-500/10 text-[11px] hover:bg-amber-500/[0.1] transition-all"
-                      >
-                        <Crown className="w-3 h-3 mr-1.5" /> Upgrade
-                      </Button>
-                      <Button
+                    {/* Action Buttons — stacked for narrow sidebar */}
+                    <div className="flex flex-col gap-1.5">
+                      <button
                         onClick={handleBuyCredits}
-                        className="h-8 rounded-xl bg-cyan-500/[0.06] text-cyan-400 border border-cyan-500/10 text-[11px] hover:bg-cyan-500/[0.1] transition-all"
+                        className="w-full h-7 flex items-center justify-center gap-1.5 rounded-lg bg-cyan-500/[0.05] text-cyan-400 border border-cyan-500/8 text-[11px] font-medium hover:bg-cyan-500/[0.08] transition-all"
                       >
-                        <CreditCard className="w-3 h-3 mr-1.5" /> Buy Credits
-                      </Button>
+                        <CreditCard className="w-3 h-3" /> Buy Credits
+                      </button>
+                      <button
+                        onClick={handleUpgrade}
+                        className="w-full h-7 flex items-center justify-center gap-1.5 rounded-lg bg-amber-500/[0.05] text-amber-400 border border-amber-500/8 text-[11px] hover:bg-amber-500/[0.08] transition-all"
+                      >
+                        <Crown className="w-3 h-3" /> Upgrade Plan
+                      </button>
                     </div>
                   </div>
 
@@ -294,7 +327,9 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
                     <MenuItem icon={Users} label="Community" onClick={() => handleComingSoon('Community')} />
 
                     <div className="border-t border-white/[0.03] mt-1 pt-1">
-                      <MenuItem icon={LogOut} label="Log Out" onClick={handleLogout} danger />
+                      {isAuthenticated && (
+                        <MenuItem icon={LogOut} label="Log Out" onClick={handleLogout} danger />
+                      )}
                     </div>
                   </div>
                 </motion.div>

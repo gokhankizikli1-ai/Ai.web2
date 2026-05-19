@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { TradingSignal } from '@/types';
 import { useToast } from '@/hooks/useToast';
+import { useLanguageStore } from '@/stores/languageStore';
 import KorvixOrb from './KorvixOrb';
 import {
   TrendingUp, Activity, Zap,
@@ -10,9 +11,10 @@ import {
   Layers, Radar,
   AlertTriangle,
 } from 'lucide-react';
+import { ALL_ASSETS } from '@/data/tradingAssets';
 
 // ─── Configuration ───
-const DEMO_MODE = false;
+const DEMO_MODE = true;
 
 // ─── Types ───
 interface MarketSentiment {
@@ -30,9 +32,9 @@ interface WatchlistItem {
   price: number;
   change: number;
   changePercent: number;
-  sparkline: number[];
+  sparkline?: number[];
   isFavorite: boolean;
-  type: 'stock' | 'crypto';
+  type: 'stock' | 'crypto' | 'etf';
   is_live?: boolean;
   source?: string;
 }
@@ -56,17 +58,6 @@ const DEMO_SENTIMENT: MarketSentiment = {
   putCallRatio: 0.82,
   advanceDecline: 1.45,
 };
-
-const DEMO_WATCHLIST: WatchlistItem[] = [
-  { symbol: 'AAPL', name: 'Apple Inc.', price: 187.42, change: 4.27, changePercent: 2.34, sparkline: [182,183,184,183,185,186,185,187,186,187.42], isFavorite: true, type: 'stock', is_live: false },
-  { symbol: 'NVDA', name: 'NVIDIA Corp.', price: 875.15, change: 22.30, changePercent: 2.61, sparkline: [850,855,860,858,865,870,868,872,870,875.15], isFavorite: true, type: 'stock', is_live: false },
-  { symbol: 'TSLA', name: 'Tesla Inc.', price: 248.50, change: -3.20, changePercent: -1.27, sparkline: [252,251,250,253,251,249,250,248,249,248.50], isFavorite: false, type: 'stock', is_live: false },
-  { symbol: 'BTC', name: 'Bitcoin', price: 67240, change: 1240, changePercent: 1.88, sparkline: [66000,65500,66200,66500,66800,67000,66600,66900,67100,67240], isFavorite: true, type: 'crypto', is_live: false },
-  { symbol: 'ETH', name: 'Ethereum', price: 3540, change: 87, changePercent: 2.52, sparkline: [3450,3430,3480,3490,3510,3500,3520,3510,3530,3540], isFavorite: false, type: 'crypto', is_live: false },
-  { symbol: 'MSFT', name: 'Microsoft', price: 421.85, change: 5.12, changePercent: 1.23, sparkline: [415,417,416,418,419,420,419,421,420,421.85], isFavorite: false, type: 'stock', is_live: false },
-  { symbol: 'AMD', name: 'AMD Inc.', price: 164.20, change: -2.15, changePercent: -1.29, sparkline: [167,166,165,166,164,165,163,164,165,164.20], isFavorite: false, type: 'stock', is_live: false },
-  { symbol: 'SOL', name: 'Solana', price: 142.60, change: 4.80, changePercent: 3.48, sparkline: [136,135,138,139,140,141,139,141,140,142.60], isFavorite: true, type: 'crypto', is_live: false },
-];
 
 const DEMO_TRENDING: TrendingAsset[] = [
   { symbol: 'NVDA', name: 'NVIDIA', volume: '42.3M', mentions: 2847, sentiment: 'bullish', priceChange: 2.61, is_live: false },
@@ -381,9 +372,9 @@ function WatchlistRow({ item, onToggleFav }: { item: WatchlistItem; onToggleFav:
       </button>
 
       <div className="flex items-end gap-px h-6 w-10 shrink-0">
-        {item.sparkline.map((v, i) => {
-          const min = Math.min(...item.sparkline);
-          const max = Math.max(...item.sparkline);
+        {item.sparkline && item.sparkline.map((v, i) => {
+          const min = Math.min(...item.sparkline!);
+          const max = Math.max(...item.sparkline!);
           const h = max === min ? 50 : ((v - min) / (max - min)) * 100;
           return (
             <div key={i} className={`flex-1 rounded-sm ${isPositive ? 'bg-emerald-500/30' : 'bg-red-500/30'}`} style={{ height: `${Math.max(15, h)}%` }} />
@@ -439,14 +430,35 @@ function TrendingCard({ asset }: { asset: TrendingAsset }) {
 }
 
 // ─── Main Trading Panel ───
+const TIMEFRAMES = [
+  { label: '15m', value: '15m' },
+  { label: '1H', value: '1h' },
+  { label: '4H', value: '4h' },
+  { label: '1D', value: '1d' },
+  { label: '1W', value: '1w' },
+];
+
 export default function TradingPanel() {
   const [activeTab, setActiveTab] = useState<'signals' | 'watchlist' | 'sentiment' | 'trending'>('signals');
-  const [watchlistFilter, setWatchlistFilter] = useState<'all' | 'stocks' | 'crypto'>('all');
-  const [watchlist, setWatchlist] = useState<WatchlistItem[]>(DEMO_MODE ? DEMO_WATCHLIST : []);
+  const [watchlistFilter, setWatchlistFilter] = useState<'all' | 'stocks' | 'crypto' | 'etfs' | 'favorites'>('all');
+  const [watchlist, setWatchlist] = useState<WatchlistItem[]>(DEMO_MODE
+    ? ALL_ASSETS.map((a) => ({ ...a, isFavorite: ['AAPL', 'NVDA', 'BTC', 'ETH', 'SOL', 'SPY'].includes(a.symbol) }))
+    : []);
   const [search, setSearch] = useState('');
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const { t } = useLanguageStore();
+  const [timeframe, setTimeframe] = useState(() => {
+    try { return localStorage.getItem('korvix-trading-timeframe') || '1d'; }
+    catch { return '1d'; }
+  });
   const { addToast } = useToast();
+
+  // Persist timeframe
+  const handleTimeframeChange = (tf: string) => {
+    setTimeframe(tf);
+    try { localStorage.setItem('korvix-trading-timeframe', tf); } catch { /* ignore */ }
+  };
 
   const liveSignals = SIGNALS.filter((s) => (s as unknown as Record<string, unknown>).is_live === true);
   const signalsToShow = DEMO_MODE ? SIGNALS : liveSignals;
@@ -465,14 +477,19 @@ export default function TradingPanel() {
   };
 
   const filteredWatchlist = watchlist
-    .filter((w) => watchlistFilter === 'all' || w.type === watchlistFilter)
+    .filter((w) => {
+      if (watchlistFilter === 'all') return true;
+      if (watchlistFilter === 'favorites') return w.isFavorite;
+      if (watchlistFilter === 'etfs') return ['SPY','QQQ','ARKK'].includes(w.symbol);
+      return w.type === watchlistFilter;
+    })
     .filter((w) => !search || w.symbol.toLowerCase().includes(search.toLowerCase()) || w.name.toLowerCase().includes(search.toLowerCase()));
 
   const tabs = [
-    { id: 'signals' as const, label: 'Signals', icon: Zap },
-    { id: 'watchlist' as const, label: 'Watchlist', icon: Star },
-    { id: 'sentiment' as const, label: 'Sentiment', icon: Activity },
-    { id: 'trending' as const, label: 'Trending', icon: TrendingUp },
+    { id: 'signals' as const, label: t('signals'), icon: Zap },
+    { id: 'watchlist' as const, label: t('watchlist'), icon: Star },
+    { id: 'sentiment' as const, label: t('sentiment'), icon: Activity },
+    { id: 'trending' as const, label: t('trending'), icon: TrendingUp },
   ];
 
   return (
@@ -514,6 +531,25 @@ export default function TradingPanel() {
               <RefreshCw className="h-3.5 w-3.5" />
             </motion.button>
           </div>
+        </div>
+
+        {/* Timeframe selector */}
+        <div className="flex items-center gap-1 mb-2">
+          <span className="text-[9px] text-slate-700 uppercase tracking-wider mr-1">{t('timeframe')}</span>
+          {TIMEFRAMES.map((tf) => (
+            <button
+              key={tf.value}
+              onClick={() => handleTimeframeChange(tf.value)}
+              className={`px-2 py-[2px] rounded text-[10px] font-medium transition-all ${
+                timeframe === tf.value
+                  ? 'bg-emerald-500/[0.08] text-emerald-400 border border-emerald-500/15'
+                  : 'text-slate-600 hover:text-slate-400 border border-transparent'
+              }`}
+            >
+              {tf.label}
+            </button>
+          ))}
+          <span className="ml-auto text-[9px] text-slate-700 tabular-nums">{timeframe}</span>
         </div>
 
         {/* Tabs */}
@@ -600,15 +636,15 @@ export default function TradingPanel() {
                     />
                   </div>
                   <div className="flex gap-1 p-0.5 rounded-lg bg-white/[0.02] border border-white/[0.03]">
-                    {(['all', 'stocks', 'crypto'] as const).map((f) => (
+                    {(['all', 'stocks', 'crypto', 'etfs', 'favorites'] as const).map((f) => (
                       <button
                         key={f}
                         onClick={() => setWatchlistFilter(f)}
-                        className={`px-2.5 py-1 rounded-md text-[10px] font-medium transition-all capitalize ${
+                        className={`px-2 py-[3px] rounded text-[10px] font-medium transition-all ${
                           watchlistFilter === f ? 'bg-white/[0.06] text-white' : 'text-slate-600 hover:text-slate-400'
                         }`}
                       >
-                        {f}
+                        {f === 'etfs' ? t('etf') : f === 'favorites' ? t('favorite') : f === 'all' ? t('all') : f === 'stocks' ? t('stocks') : f === 'crypto' ? t('crypto') : f}
                       </button>
                     ))}
                   </div>
