@@ -134,6 +134,14 @@ async def trading_signals(
 
     tf = _normalize_timeframe(timeframe)
 
+    # WARN-level entry log so operators can SEE the endpoint is being hit
+    # at all (most-asked diagnostic — "are requests even reaching the
+    # service?"). WARN bypasses any INFO log-level filter on Railway.
+    logger.warning(
+        "trading.signals.request | symbols=%s | tf=%s | n=%d",
+        ",".join(parsed)[:200], tf, len(parsed),
+    )
+
     try:
         from backend.services.trading.signals_service import signals_for_symbols
     except Exception as exc:
@@ -160,4 +168,17 @@ async def trading_signals(
                 if isinstance(sig, dict):
                     # setdefault → never overwrite an existing key.
                     sig.setdefault("asset_category", asset_category(sig.get("symbol", "")))
+
+    # WARN-level response summary so operators see exactly what the
+    # request produced — top-level is_live + per-symbol error sample
+    # (first 5 distinct error strings). Single line per request.
+    if isinstance(result, dict):
+        sigs_out = result.get("signals") or []
+        errs = [s.get("error") for s in sigs_out if isinstance(s, dict) and s.get("error")]
+        sample = list(dict.fromkeys(errs))[:5]  # dedupe, first 5
+        logger.warning(
+            "trading.signals.response | is_live=%s | count=%d | live=%d | errors=%s",
+            result.get("is_live"), result.get("count", len(sigs_out)),
+            result.get("live_count", 0), sample,
+        )
     return result

@@ -87,11 +87,21 @@ def _http_get_json(url: str, *, headers: Optional[dict] = None, _label: str = ""
             body = r.read()
     except urllib.error.HTTPError as exc:
         elapsed_ms = int((time.monotonic() - started) * 1000)
+        # Sample the response body — provider error payloads (e.g.
+        # AlphaVantage "Note: rate limit", Finnhub "Invalid API key",
+        # TwelveData {"code":401,"message":"..."}) carry the actual
+        # cause and are NOT sensitive. URL is already redacted.
+        body_sample = ""
+        try:
+            raw = exc.read() or b""
+            body_sample = raw[:300].decode("utf-8", "replace").replace("\n", " ")
+        except Exception:
+            pass
         logger.warning(
-            "market_provider.http_response | label=%s | status=%d | ms=%d | url=%s",
-            _label, exc.code, elapsed_ms, redacted,
+            "market_provider.http_response | label=%s | status=%d | ms=%d | url=%s | body=%s",
+            _label, exc.code, elapsed_ms, redacted, body_sample,
         )
-        raise ProviderError(f"HTTP {exc.code} (after {elapsed_ms}ms)") from exc
+        raise ProviderError(f"HTTP {exc.code} (after {elapsed_ms}ms): {body_sample[:200]}") from exc
     except urllib.error.URLError as exc:
         elapsed_ms = int((time.monotonic() - started) * 1000)
         logger.warning(
