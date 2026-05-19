@@ -289,8 +289,6 @@ const TR: Partial<Record<string, string>> = {
    coverage. All others get clean EN.
    ═══════════════════════════════════════ */
 
-const COMPLETE_LANGUAGES: Language[] = ['en', 'tr'];
-
 function buildTranslation(lang: Language): Record<string, string> {
   // Only use translated content for complete languages
   // All others get clean English — no half-translated UI
