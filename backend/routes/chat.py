@@ -23,6 +23,10 @@ class ChatRequest(BaseModel):
     # Legacy aliases (e.g. "chat", "finance", "ecommerce") are also accepted.
     # Omit or send null to use automatic intent-based routing (default behaviour).
     mode: Optional[str] = None
+    # Optional UI language preference (e.g. "en", "tr", "de"). Additive &
+    # backward-compatible: omit/null → existing behaviour, byte-identical.
+    # Never hard-translates; injected as a soft system-prompt hint only.
+    language: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
@@ -47,6 +51,44 @@ class ChatResponse(BaseModel):
 def _uid(raw: str) -> int:
     """Normalize user_id string to a stable integer."""
     return int(raw) if raw.isdigit() else hash(raw) % 2**31
+
+
+# Small, safe language map. Unknown / missing → "" (no hint → existing
+# behaviour, which already defaults to the user's language / TR-EN).
+_LANG_NAMES = {
+    "en": "English", "tr": "Turkish", "de": "German", "fr": "French",
+    "es": "Spanish", "it": "Italian", "pt": "Portuguese", "ru": "Russian",
+    "ar": "Arabic", "zh": "Chinese", "ja": "Japanese", "ko": "Korean",
+    "nl": "Dutch", "hi": "Hindi",
+    "english": "English", "turkish": "Turkish", "türkçe": "Turkish",
+    "deutsch": "German", "français": "French", "español": "Spanish",
+}
+
+
+def _language_directive(language: Optional[str]) -> str:
+    """Return a soft system-prompt suffix for the preferred language, or
+    "" when unset/unknown (safe fallback — never raises, never forces a
+    hard translation)."""
+    if not language or not isinstance(language, str):
+        return ""
+    name = _LANG_NAMES.get(language.strip().lower())
+    if not name:
+        return ""
+    return (
+        f"Language preference: reply in {name} unless the user clearly "
+        f"writes in another language. If unsure, use the user's language; "
+        f"otherwise English or Turkish."
+    )
+
+
+def _with_language(style_prompt: str, language: Optional[str]) -> str:
+    """Additively fold the language hint into the existing style_prompt
+    (already injected into the system prompt for every mode). No hint →
+    style_prompt returned unchanged."""
+    directive = _language_directive(language)
+    if not directive:
+        return style_prompt
+    return (f"{style_prompt}\n{directive}" if style_prompt else directive).strip()
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -209,6 +251,9 @@ async def chat(req: ChatRequest):
         style_prompt = "Cevap stili: " + style_data["label"] + ". Talimat: " + style_data["instruction"]
     except Exception as e:
         logger.warning("CHAT | rid=%s | context build error: %s", request_id, e)
+    # Additive: fold an optional language preference into the existing
+    # style_prompt seam (no ai_service change; default None → unchanged).
+    style_prompt = _with_language(style_prompt, req.language)
     timer.mark("context_built")
 
     # ── AI call ───────────────────────────────────────────────────────────

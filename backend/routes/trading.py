@@ -11,6 +11,10 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
+from backend.services.trading.assets import (
+    SUPPORTED_TIMEFRAMES, supported_assets, asset_category,
+)
+
 router = APIRouter(prefix="/trading", tags=["trading"])
 logger = logging.getLogger(__name__)
 
@@ -45,6 +49,9 @@ def trading_health() -> dict:
         "enabled":  _enabled(),
         "phase":    "T1 — live trading signals (market_data-backed, flag-gated)",
         "stats":    s,
+        # Additive capability advertisement (new keys; nothing removed).
+        "supported_timeframes": list(SUPPORTED_TIMEFRAMES),
+        "supported_assets":     supported_assets(),
     }
 
 
@@ -125,4 +132,21 @@ async def trading_signals(
             detail={"error": "service_unavailable", "message": str(exc)},
         )
 
-    return await signals_for_symbols(parsed, tf)
+    result = await signals_for_symbols(parsed, tf)
+
+    # ── Additive enrichment — never removes/renames existing keys ─────────
+    # Existing shape (signals/timeframe/is_live/count/live_count/
+    # generated_at/error) is returned verbatim by signals_service; we only
+    # ADD optional fields the new frontend can use. Defensive: if the
+    # service ever returns an unexpected type, pass it straight through.
+    if isinstance(result, dict):
+        result.setdefault("timeframe", tf)
+        result["supported_timeframes"] = list(SUPPORTED_TIMEFRAMES)
+        result["supported_assets"] = supported_assets()
+        sigs = result.get("signals")
+        if isinstance(sigs, list):
+            for sig in sigs:
+                if isinstance(sig, dict):
+                    # setdefault → never overwrite an existing key.
+                    sig.setdefault("asset_category", asset_category(sig.get("symbol", "")))
+    return result
