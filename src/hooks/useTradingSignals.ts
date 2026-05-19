@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { TradingSignal, TradingSignalsResponse, DataProvider } from '@/types';
 
-const API_URL = 'https://worker-production-2a49.up.railway.app/trading/signals';
+const API_URL = 'https://worker-production-1345.up.railway.app/trading/signals';
 
 interface UseTradingSignalsResult {
   signals: TradingSignal[];
