@@ -208,8 +208,14 @@ def verify_credentials(email: str, password: str) -> Optional[dict]:
         cur = c.execute("SELECT * FROM auth_password_users WHERE email = ?", (e,))
         row = cur.fetchone()
     if row is None:
-        # Spend ~equivalent time so a missing email isn't obviously faster.
-        verify_password(password or "", "pbkdf2_sha256$1$00$00")
+        # Equalize timing vs the found path: run a PBKDF2 of the SAME
+        # cost (_PBKDF2_ITERATIONS) so a missing email is not detectably
+        # faster than a wrong password (defeats user-enumeration via
+        # timing). A weak/low-iteration dummy would not equalize.
+        hashlib.pbkdf2_hmac(
+            "sha256", (password or "").encode("utf-8"),
+            b"korvix-timing-equalizer", _PBKDF2_ITERATIONS,
+        )
         return None
     if not verify_password(password or "", row["password_hash"]):
         return None
