@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { TradingSignal } from '@/types';
 import { useToast } from '@/hooks/useToast';
+import { useTradingSignals } from '@/hooks/useTradingSignals';
 import { useLanguageStore } from '@/stores/languageStore';
 import KorvixOrb from './KorvixOrb';
 import {
@@ -14,7 +15,17 @@ import {
 import { ALL_ASSETS } from '@/data/tradingAssets';
 
 // ─── Configuration ───
+// Cosmetic demo banner/badges for the static non-signal tabs
+// (watchlist/trending/sentiment have no live endpoint). The SIGNALS list
+// itself now uses the live backend when online (see signalsToShow) and
+// only falls back to the demo SIGNALS array when the API fails.
 const DEMO_MODE = true;
+
+// Liquid default universe requested from the live /trading/signals API.
+const SIGNAL_SYMBOLS = [
+  'AAPL', 'NVDA', 'TSLA', 'AMD', 'MSFT', 'AMZN', 'META', 'GOOGL',
+  'BTCUSD', 'ETHUSD', 'SOLUSD', 'SPY', 'QQQ',
+];
 
 // ─── Types ───
 interface MarketSentiment {
@@ -460,15 +471,26 @@ export default function TradingPanel() {
     try { localStorage.setItem('korvix-trading-timeframe', tf); } catch { /* ignore */ }
   };
 
-  const liveSignals = SIGNALS.filter((s) => (s as unknown as Record<string, unknown>).is_live === true);
-  const signalsToShow = DEMO_MODE ? SIGNALS : liveSignals;
+  // Live backend signals — demo SIGNALS used ONLY as a fallback when the
+  // API errors / is not live / returns nothing (preserves prior UX).
+  const {
+    signals: apiSignals,
+    isLive: apiIsLive,
+    error: apiError,
+    refresh: refreshLive,
+  } = useTradingSignals(SIGNAL_SYMBOLS, timeframe);
+  const signalsAreLive = !apiError && apiIsLive && apiSignals.length > 0;
+  const signalsToShow = signalsAreLive ? apiSignals : SIGNALS;
 
   const handleRefresh = () => {
     setIsRefreshing(true);
     setLastRefresh(new Date());
+    refreshLive();
     setTimeout(() => {
       setIsRefreshing(false);
-      addToast(DEMO_MODE ? 'Demo data refreshed' : 'Trading data refreshed', 'success');
+      // Generic message — avoids reading a stale `signalsAreLive` from the
+      // click-time render before refreshLive() resolves.
+      addToast('Trading data refreshed', 'success');
     }, 800);
   };
 
