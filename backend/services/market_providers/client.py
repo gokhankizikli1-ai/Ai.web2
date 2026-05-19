@@ -176,4 +176,50 @@ __all__ = [
     "get_crypto_price",
     "get_stock_quote",
     "get_crypto_quote",
+    "provider_chain_status",
 ]
+
+
+def provider_chain_status() -> dict:
+    """Per-provider configuration snapshot — booleans only, NO secrets.
+
+    Surfaced via /trading/health so operators can confirm which provider
+    keys the running process actually picked up (Railway env propagation
+    is the most common cause of "Finnhub/TwelveData/yfinance all failed"
+    even after setting variables).
+
+    Shape (additive, never throws):
+      {
+        "stock":  {"finnhub": bool, "twelvedata": bool, "yfinance": bool},
+        "crypto": {"coingecko": bool, "binance": bool},
+        "any_stock_provider":  bool,   # at least one stock key/provider ready
+        "any_crypto_provider": bool,
+      }
+    """
+    def _ok(p) -> bool:
+        # Subclasses define is_configured(); BaseMarketProvider has
+        # is_available(); fall back to True for keyless providers.
+        try:
+            check = getattr(p, "is_configured", None) or getattr(p, "is_available", None)
+            return bool(check()) if callable(check) else True
+        except Exception:
+            return False
+
+    stock, crypto = {}, {}
+    try:
+        for p in _stock_chain():
+            stock[p.name] = _ok(p)
+    except Exception as exc:
+        logger.warning("provider_chain_status: stock chain unavailable: %s", exc)
+    try:
+        for p in _crypto_chain():
+            crypto[p.name] = _ok(p)
+    except Exception as exc:
+        logger.warning("provider_chain_status: crypto chain unavailable: %s", exc)
+
+    return {
+        "stock":               stock,
+        "crypto":              crypto,
+        "any_stock_provider":  any(stock.values()),
+        "any_crypto_provider": any(crypto.values()),
+    }
