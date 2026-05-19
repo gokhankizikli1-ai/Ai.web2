@@ -3,7 +3,7 @@ import type { ChatSession, Message, AIMode, WorkspaceTab, ChatFolder } from '@/t
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
-const API_URL = 'https://worker-production-2a49.up.railway.app/chat';
+const API_URL = 'https://worker-production-1345.up.railway.app/chat';
 
 function getUserId(): string {
   const key = 'korvix_user_id';
