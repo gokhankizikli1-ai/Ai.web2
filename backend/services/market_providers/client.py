@@ -134,7 +134,7 @@ def _get_price(
         except ProviderError as exc:
             elapsed = int((time.monotonic() - started) * 1000)
             last_err = f"{provider.name}: {exc}"
-            logger.info(
+            logger.warning(
                 "market_quote.provider_err | source=%s | symbol=%s | ms=%d | err=%s",
                 provider.name, sym, elapsed, exc,
             )
@@ -149,7 +149,7 @@ def _get_price(
             continue
 
         if not isinstance(quote, MarketQuote) or not quote.is_live or quote.price is None:
-            logger.info(
+            logger.warning(
                 "market_quote.provider_invalid | source=%s | symbol=%s",
                 provider.name, sym,
             )
@@ -164,7 +164,7 @@ def _get_price(
         _cache.set(cache_key, quote, ttl_seconds=ttl_seconds)
         return quote
 
-    logger.info(
+    logger.warning(
         "market_quote.unavailable | symbol=%s | type=%s | tried=%d | last=%s",
         sym, asset_type, tried, last_err or "no provider configured",
     )
