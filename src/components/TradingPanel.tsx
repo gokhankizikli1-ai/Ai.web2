@@ -488,7 +488,9 @@ export default function TradingPanel() {
     refreshLive();
     setTimeout(() => {
       setIsRefreshing(false);
-      addToast(signalsAreLive ? 'Trading data refreshed' : 'Demo data refreshed', 'success');
+      // Generic message — avoids reading a stale `signalsAreLive` from the
+      // click-time render before refreshLive() resolves.
+      addToast('Trading data refreshed', 'success');
     }, 800);
   };
 

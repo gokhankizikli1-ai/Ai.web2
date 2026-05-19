@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { TradingSignal, TradingSignalsResponse, DataProvider } from '@/types';
 
 // Live backend (Railway). GET /trading/signals REQUIRES ?symbols= — calling
@@ -126,10 +126,15 @@ export function useTradingSignals(
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Monotonic request id — only the latest in-flight request may commit
+  // state. Fixes out-of-order responses and stale data on rapid
+  // timeframe/symbol changes.
+  const reqIdRef = useRef(0);
 
   const symbolsKey = symbols.join(',');
 
   const fetchSignals = useCallback(async () => {
+    const myId = ++reqIdRef.current;
     setIsLoading(true);
     setError(null);
     try {
@@ -144,6 +149,7 @@ export function useTradingSignals(
       const rawData = await response.json();
       const data = normalizeResponse(rawData);
 
+      if (myId !== reqIdRef.current) return; // superseded by a newer fetch
       setProvider(data.provider);
       setSignals(data.signals);
       setLastUpdated(data.timestamp);
@@ -152,10 +158,11 @@ export function useTradingSignals(
         setError('Live data unavailable');
       }
     } catch (err) {
+      if (myId !== reqIdRef.current) return; // superseded by a newer fetch
       setError(err instanceof Error ? err.message : 'Failed to load trading signals');
       setIsLive(false);
     } finally {
-      setIsLoading(false);
+      if (myId === reqIdRef.current) setIsLoading(false);
     }
   }, [symbolsKey, timeframe]);
 
