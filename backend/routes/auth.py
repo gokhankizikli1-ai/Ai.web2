@@ -151,6 +151,12 @@ async def login(body: LoginRequest):
         raise _err(401, "invalid_credentials", "Invalid email or password.")
     try:
         passwords.touch_login(user["id"])
+        # Re-read so the login response's `last_login_at` matches what a
+        # subsequent GET /auth/me returns (same source). Best-effort:
+        # never fail the login on this.
+        fresh = passwords.get_by_id(user["id"])
+        if fresh is not None:
+            user = fresh
     except Exception as exc:  # best-effort; never fail login on this
         logger.warning("auth.login touch failed (non-fatal): %s", exc)
     logger.info("auth.login ok | user=%s", user["id"])

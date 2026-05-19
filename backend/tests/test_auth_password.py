@@ -59,7 +59,14 @@ def test_login_ok_and_wrong_password(client, pw_db):
     _signup(client)
     ok = client.post("/auth/login", json={"email": "user@example.com", "password": "supersecret1"})
     assert ok.status_code == 200
-    assert ok.json()["access_token"]
+    ok_body = ok.json()
+    assert ok_body["access_token"]
+    # login response must reflect the just-written last_login_at and be
+    # consistent with GET /auth/me (same source).
+    assert ok_body["user"]["last_login_at"] is not None
+    me = client.get("/auth/me", headers={"Authorization": f"Bearer {ok_body['access_token']}"})
+    assert me.status_code == 200
+    assert me.json()["user"]["last_login_at"] == ok_body["user"]["last_login_at"]
 
     bad = client.post("/auth/login", json={"email": "user@example.com", "password": "wrongpass1"})
     assert bad.status_code == 401
