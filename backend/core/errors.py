@@ -35,6 +35,10 @@ class ErrorCode:
     UNAUTHORIZED     = "UNAUTHORIZED"
     UPSTREAM_ERROR   = "UPSTREAM_ERROR"
     VALIDATION_ERROR = "VALIDATION_ERROR"
+    # Additive (S1): stable code for deliberately flag-gated services
+    # (e.g. /trading when ENABLE_TRADING_SIGNALS is off). New constant
+    # only — no existing value changed.
+    SERVICE_DISABLED = "SERVICE_DISABLED"
 
 
 def error_response(message: str, code: str = ErrorCode.INTERNAL_ERROR, status: int = 500) -> JSONResponse:

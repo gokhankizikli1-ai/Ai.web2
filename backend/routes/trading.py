@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException, Query
 from backend.services.trading.assets import (
     SUPPORTED_TIMEFRAMES, supported_assets, asset_category,
 )
+from backend.core.errors import ErrorCode
 
 router = APIRouter(prefix="/trading", tags=["trading"])
 logger = logging.getLogger(__name__)
@@ -29,6 +30,7 @@ def _ensure_enabled() -> None:
             status_code=503,
             detail={
                 "error":    "trading_signals_disabled",
+                "code":     ErrorCode.SERVICE_DISABLED,
                 "message":  "Trading signals service is disabled. Set ENABLE_TRADING_SIGNALS=true to activate.",
                 "rollback": "Unset ENABLE_TRADING_SIGNALS (or set to 'false') to disable again.",
             },
@@ -44,7 +46,7 @@ def trading_health() -> dict:
         s = stats()
     except Exception as exc:
         logger.debug("/trading/health: stats unavailable: %s", exc)
-        s = {"error": str(exc)}
+        s = {"error": str(exc), "code": ErrorCode.INTERNAL_ERROR}
     return {
         "enabled":  _enabled(),
         "phase":    "T1 — live trading signals (market_data-backed, flag-gated)",
@@ -117,6 +119,7 @@ async def trading_signals(
             status_code=400,
             detail={
                 "error":   "empty_symbols",
+                "code":    ErrorCode.VALIDATION_ERROR,
                 "message": "Provide a non-empty `symbols` query parameter (comma-separated).",
             },
         )
@@ -129,7 +132,11 @@ async def trading_signals(
         logger.error("/trading/signals: service import failed: %s", exc)
         raise HTTPException(
             status_code=500,
-            detail={"error": "service_unavailable", "message": str(exc)},
+            detail={
+                "error":   "service_unavailable",
+                "code":    ErrorCode.INTERNAL_ERROR,
+                "message": str(exc),
+            },
         )
 
     result = await signals_for_symbols(parsed, tf)
