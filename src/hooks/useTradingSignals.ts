@@ -130,17 +130,27 @@ function normalizeResponse(raw: unknown): TradingSignalsResponse {
   const provider = normalizeProvider((data.provider as string) || (data.source as string));
 
   // Live detection — response-level, count, OR per-signal. Per user spec:
-  // "If signals.length > 0, render them" — so a non-empty list is enough
-  // to flip isLive=true and prevent the panel from getting stuck on
-  // 'reconnecting' when the backend returned valid data.
+  // "hasLiveSignals true when: response.is_live === true OR
+  //  response.live_count > 0 OR response.count > 0 OR
+  //  response.signals.length > 0" — any of these = render, no reconnecting.
   const responseIsLive = data.is_live === true;
   const hasLiveCount = typeof data.live_count === 'number' && (data.live_count as number) > 0;
+  const hasCount = typeof data.count === 'number' && (data.count as number) > 0;
   const anySignalLive = rawSignals.some((s) => s.is_live === true);
   const hasAnySignals = rawSignals.length > 0;
-  const isLive = responseIsLive || hasLiveCount || anySignalLive || hasAnySignals;
+  const isLive = responseIsLive || hasLiveCount || hasCount || anySignalLive || hasAnySignals;
+
+  // Temporary explicit shape log — per user request — for one-glance
+  // verification that the frontend reads the response shape correctly.
+  console.log('TRADING_RESPONSE_SHAPE', raw, {
+    isLive: (raw as Record<string, unknown> | null)?.is_live,
+    liveCount: (raw as Record<string, unknown> | null)?.live_count,
+    count: (raw as Record<string, unknown> | null)?.count,
+    signalsLength: rawSignals.length,
+  });
 
   console.log('[useTradingSignals] live check:', {
-    responseIsLive, hasLiveCount, anySignalLive, hasAnySignals, isLive,
+    responseIsLive, hasLiveCount, hasCount, anySignalLive, hasAnySignals, isLive,
   });
 
   const signals: TradingSignal[] = rawSignals.map((s, i) => {
