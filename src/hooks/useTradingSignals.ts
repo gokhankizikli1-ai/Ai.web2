@@ -25,8 +25,11 @@ interface UseTradingSignalsResult {
 function normalizeProvider(raw: unknown): DataProvider {
   const p = String(raw ?? '').toLowerCase().trim();
   if (!p) return 'Unknown';
-  if (p.includes('binance')) return 'Binance';
+  if (p.includes('finnhub')) return 'Finnhub';
+  if (p.includes('twelve')) return 'TwelveData';
+  if (p.includes('yfinance')) return 'YFinance';
   if (p.includes('yahoo')) return 'Yahoo';
+  if (p.includes('binance')) return 'Binance';
   if (p.includes('alpha') || p === 'av') return 'AlphaVantage';
   if (p.includes('coingecko') || p.includes('coin') || p.includes('gecko')) return 'CoinGecko';
   return 'Unknown';
@@ -104,6 +107,10 @@ function normalizeResponse(data: Record<string, unknown>): TradingSignalsRespons
       ),
       reasoning: String(s.reasoning ?? s.thesis ?? s.rationale ?? ''),
       provider: normalizeProvider(s.provider ?? data.provider),
+      // Per-signal liveness — only true when the backend marked this row
+      // as live. Lets the UI label individual cards correctly without
+      // changing the demo-fallback behavior at the response level.
+      is_live: !!(s.is_live ?? (s as Record<string, unknown>).isLive),
       sparkline: Array.isArray(s.sparkline) ? (s.sparkline as number[]) : undefined,
     };
   });

@@ -229,7 +229,13 @@ function SignalCard({ signal }: { signal: TradingSignal }) {
       layout
       className={`rounded-xl border ${colors.border} ${colors.bg} overflow-hidden transition-all duration-200 hover:border-opacity-20`}
     >
-      {DEMO_MODE && (
+      {signal.is_live ? (
+        <div className="px-3 pt-2">
+          <span className="text-[9px] font-medium text-emerald-400/80 bg-emerald-500/[0.06] border border-emerald-500/15 px-1.5 py-0.5 rounded">
+            {(signal.provider && signal.provider !== 'Unknown') ? signal.provider.toUpperCase() : 'LIVE'}
+          </span>
+        </div>
+      ) : (
         <div className="px-3 pt-2">
           <span className="text-[9px] font-medium text-amber-400/50 bg-amber-500/[0.06] border border-amber-500/10 px-1.5 py-0.5 rounded">
             DEMO DATA
@@ -522,8 +528,8 @@ export default function TradingPanel() {
           <div className="flex items-center gap-2">
             <div className="relative flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/[0.06] border border-emerald-500/10 shadow-[0_0_8px_-2px_rgba(52,211,153,0.06)]">
               <TrendingUp className="h-4 w-4 text-emerald-400" />
-              {/* Live pulse dot */}
-              {!DEMO_MODE && (
+              {/* Live pulse dot — only when real signals are flowing */}
+              {signalsAreLive && (
                 <motion.div
                   className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400"
                   animate={{ scale: [1, 1.5, 1], opacity: [0.7, 1, 0.7] }}
@@ -535,7 +541,7 @@ export default function TradingPanel() {
             <div>
               <h2 className="text-[14px] font-semibold text-white">Trading Intelligence</h2>
               <p className="text-[10px] text-slate-600">
-                {DEMO_MODE ? 'Simulated data — not financial advice' : 'Live market signals'}
+                {signalsAreLive ? 'Live market signals' : 'Simulated data — not financial advice'}
               </p>
             </div>
           </div>
@@ -596,7 +602,7 @@ export default function TradingPanel() {
         {/* ═══ SIGNALS TAB ═══ */}
         {activeTab === 'signals' && (
           <>
-            <DemoBanner />
+            {!signalsAreLive && <DemoBanner />}
             {isRefreshing ? (
               <div className="space-y-3">
                 <SignalCardSkeleton />

@@ -40,7 +40,10 @@ export interface AIModeOption {
 
 // Trading types
 export type SignalDirection = 'long' | 'short' | 'wait' | 'neutral';
-export type DataProvider = 'Binance' | 'Yahoo' | 'AlphaVantage' | 'CoinGecko' | 'Unknown';
+export type DataProvider =
+  | 'Binance' | 'Yahoo' | 'AlphaVantage' | 'CoinGecko'
+  | 'Finnhub' | 'TwelveData' | 'YFinance'
+  | 'Unknown';
 
 export interface TradingSignal {
   id: string;
@@ -56,6 +59,9 @@ export interface TradingSignal {
   timestamp: Date;
   reasoning: string;
   provider?: DataProvider;
+  // Per-signal liveness — true when the backend produced this signal
+  // from a live provider, false when it's a demo/fallback row.
+  is_live?: boolean;
   sparkline?: number[];
 }
 
