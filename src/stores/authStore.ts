@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { API_BASE_URL } from '@/lib/apiBase';
 
 /* ═══════════════════════════════════════════
    AUTH TYPES
@@ -28,9 +29,11 @@ interface AuthState {
 }
 
 /* ═══════════════════════════════════════════
-   API CONFIG — Backend endpoints
+   API CONFIG — single source of truth via @/lib/apiBase.
+   No empty-string fallback (used to silently route auth calls to the
+   site's own origin and 404).
    ═══════════════════════════════════════════ */
-const API_BASE = import.meta.env.VITE_API_URL || '';
+const API_BASE = API_BASE_URL;
 
 async function apiLogin(email: string, password: string): Promise<AuthUser | null> {
   try {
