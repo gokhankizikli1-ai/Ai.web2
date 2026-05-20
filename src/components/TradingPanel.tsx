@@ -434,8 +434,29 @@ export default function TradingPanel() {
   const { addToast } = useToast();
 
   // Live trading signals from backend
-  const { signals: apiSignals, isLive: apiIsLive, provider, isLoading: apiLoading, refresh: refreshApi } = useTradingSignals({ timeframe });
-  const hasLiveSignals = apiIsLive && apiSignals.length > 0;
+  const {
+    signals: apiSignals,
+    isLive: apiIsLive,
+    provider,
+    isLoading: apiLoading,
+    error: apiError,
+    refresh: refreshApi,
+  } = useTradingSignals({ timeframe });
+
+  // Render gate: ANY signals → render. Backend may flip is_live=false
+  // transiently while still emitting valid rows; we must not lock the
+  // panel into "Market feed reconnecting…" in that case.
+  const hasLiveSignals = apiSignals.length > 0 || apiIsLive;
+
+  // Temporary diagnostic — verify state-decision in DevTools at a glance.
+  console.log('FINAL_TRADING_STATE', {
+    loading: apiLoading,
+    error: apiError,
+    signalsLength: apiSignals.length,
+    hasLiveSignals,
+    isLive: apiIsLive,
+    provider,
+  });
 
   // Persist timeframe
   const handleTimeframeChange = (tf: string) => {

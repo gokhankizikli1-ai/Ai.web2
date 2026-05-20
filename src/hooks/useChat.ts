@@ -185,24 +185,64 @@ export function useChat() {
     setIsLoading(true);
 
     try {
+      const requestBody = {
+        user_id: userIdRef.current,
+        message: content.trim(),
+        chat_id: activeSessionId,
+        session_id: activeSessionId,
+        platform: 'web',
+      };
+      const bodyJson = JSON.stringify(requestBody);
+      console.log('[useChat] POST', API_URL, requestBody);
+
       const response = await fetch(API_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: userIdRef.current,
-          message: content.trim(),
-          chat_id: activeSessionId,
-          session_id: activeSessionId,
-          platform: 'web',
-        }),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: bodyJson,
       });
 
-      if (!response.ok) {
-        throw new Error(`Server responded with ${response.status}. Please try again.`);
+      console.log('[useChat] response status:', response.status, response.statusText);
+
+      // Safe-parse: read body as TEXT first, then JSON.parse only if
+      // non-empty. Some Railway / Cloudflare error pages and the
+      // backend's 5xx fallback can return plain text or an empty body —
+      // calling response.json() directly would throw "Unexpected end of
+      // JSON input" and we'd lose the actual error context.
+      const rawText = await response.text();
+      console.log('[useChat] raw response (truncated):', rawText.slice(0, 500));
+
+      let data: Record<string, unknown> | null = null;
+      if (rawText) {
+        try {
+          data = JSON.parse(rawText) as Record<string, unknown>;
+          console.log('[useChat] parsed JSON keys:', Object.keys(data));
+        } catch (parseErr) {
+          console.error('[useChat] JSON.parse failed; treating body as plain text:', parseErr);
+        }
+      } else {
+        console.warn('[useChat] empty response body');
       }
 
-      const data = await response.json();
-      const responseText = data.reply ?? data.response ?? data.message ?? JSON.stringify(data);
+      if (!response.ok) {
+        // Surface the ACTUAL backend error rather than a generic string.
+        const detailMsg = Array.isArray((data as { detail?: unknown })?.detail)
+          ? ((data as { detail: Array<{ msg?: string }> }).detail.map((d) => d?.msg).filter(Boolean).join('; '))
+          : typeof (data as { detail?: unknown })?.detail === 'string'
+            ? ((data as { detail: string }).detail)
+            : null;
+        const backendMsg =
+          (data && (data.error || data.reply || data.message || detailMsg)) ||
+          rawText ||
+          `Server responded with ${response.status}.`;
+        throw new Error(String(backendMsg));
+      }
+
+      const responseText: string = data
+        ? (String(data.reply ?? data.response ?? data.message ?? '') || rawText)
+        : (rawText || 'The server returned an empty response. Please try again.');
 
       const assistantMessage: Message = {
         id: generateId(),
@@ -219,6 +259,7 @@ export function useChat() {
         )
       );
     } catch (err) {
+      console.error('[useChat] send failed:', err);
       setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
     } finally {
       setIsLoading(false);
