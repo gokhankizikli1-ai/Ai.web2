@@ -434,8 +434,30 @@ export default function TradingPanel() {
   const { addToast } = useToast();
 
   // Live trading signals from backend
-  const { signals: apiSignals, isLive: apiIsLive, provider, isLoading: apiLoading, refresh: refreshApi } = useTradingSignals({ timeframe });
-  const hasLiveSignals = apiIsLive && apiSignals.length > 0;
+  const {
+    signals: apiSignals,
+    isLive: apiIsLive,
+    provider,
+    isLoading: apiLoading,
+    error: apiError,
+    refresh: refreshApi,
+  } = useTradingSignals({ timeframe });
+
+  // Per spec #5: "Never show reconnect screen when valid signals array
+  // exists." Gate on the signals array, not on apiIsLive — backend may
+  // return is_live=false transiently while still emitting valid signals,
+  // and we must not get stuck reconnecting in that case.
+  const hasLiveSignals = apiSignals.length > 0 || apiIsLive;
+
+  // Temporary debug — per user spec #6.
+  console.log('FINAL_TRADING_STATE', {
+    loading: apiLoading,
+    error: apiError,
+    signalsLength: apiSignals.length,
+    hasLiveSignals,
+    isLive: apiIsLive,
+    provider,
+  });
 
   // Persist timeframe
   const handleTimeframeChange = (tf: string) => {
