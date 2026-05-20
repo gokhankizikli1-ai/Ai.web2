@@ -33,8 +33,27 @@ def init_db():
         "id INTEGER PRIMARY KEY AUTOINCREMENT,"
         "role TEXT,"
         "content TEXT,"
-        "created_at TEXT"
+        "created_at TEXT,"
+        "user_id INTEGER DEFAULT 0,"
+        "chat_id TEXT DEFAULT '',"
+        "title TEXT DEFAULT ''"
         ")"
+    )
+    # Additive migration: older deployments started with a (role, content,
+    # created_at) schema. Add the new persistence columns in place so
+    # legacy rows keep working (user_id=0, chat_id='') and new rows can
+    # be filtered per user + per conversation.
+    c.execute("PRAGMA table_info(chat_history)")
+    _cols = {row[1] for row in c.fetchall()}
+    if "user_id" not in _cols:
+        c.execute("ALTER TABLE chat_history ADD COLUMN user_id INTEGER DEFAULT 0")
+    if "chat_id" not in _cols:
+        c.execute("ALTER TABLE chat_history ADD COLUMN chat_id TEXT DEFAULT ''")
+    if "title" not in _cols:
+        c.execute("ALTER TABLE chat_history ADD COLUMN title TEXT DEFAULT ''")
+    c.execute(
+        "CREATE INDEX IF NOT EXISTS idx_chat_history_user_chat "
+        "ON chat_history(user_id, chat_id, id)"
     )
     c.execute(
         "CREATE TABLE IF NOT EXISTS portfolio ("
@@ -103,31 +122,119 @@ def get_user_profile():
 
 # --- chat history ---
 
-def save_chat(role, content):
+def save_chat(role, content, user_id=0, chat_id="", title=""):
+    """Persist a chat turn.
+
+    user_id=0 / chat_id="" preserves the legacy anonymous bucket and its
+    rolling 30-row cap. For an authenticated user we keep a per-user
+    rolling window (500 rows) so chat history can be restored across
+    devices without unbounded growth.
+    """
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
+    uid = int(user_id or 0)
+    cid = str(chat_id or "")
+    ttl = str(title or "")
     c.execute(
-        "INSERT INTO chat_history (role, content, created_at) VALUES (?, ?, ?)",
-        (role, content, datetime.now().isoformat()),
+        "INSERT INTO chat_history (role, content, created_at, user_id, chat_id, title)"
+        " VALUES (?, ?, ?, ?, ?, ?)",
+        (role, content, datetime.now().isoformat(), uid, cid, ttl),
     )
-    c.execute(
-        "DELETE FROM chat_history WHERE id NOT IN "
-        "(SELECT id FROM chat_history ORDER BY id DESC LIMIT 30)"
-    )
+    if uid == 0:
+        c.execute(
+            "DELETE FROM chat_history WHERE user_id=0 AND id NOT IN "
+            "(SELECT id FROM chat_history WHERE user_id=0 ORDER BY id DESC LIMIT 30)"
+        )
+    else:
+        c.execute(
+            "DELETE FROM chat_history WHERE user_id=? AND id NOT IN "
+            "(SELECT id FROM chat_history WHERE user_id=? ORDER BY id DESC LIMIT 500)",
+            (uid, uid),
+        )
     conn.commit()
     conn.close()
 
 
-def get_chat_history(limit=8):
+def get_chat_history(limit=8, user_id=None):
+    """Return (role, content) tuples in chronological order.
+
+    When user_id is provided (> 0), restricts to that user's rows so
+    cross-user context never leaks into prompt construction. When unset
+    / 0, returns the legacy global tail used by anonymous flows.
+    """
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute(
-        "SELECT role, content FROM chat_history ORDER BY id DESC LIMIT ?",
-        (limit,),
-    )
+    uid = int(user_id or 0) if user_id is not None else 0
+    if uid > 0:
+        c.execute(
+            "SELECT role, content FROM chat_history WHERE user_id=? "
+            "ORDER BY id DESC LIMIT ?",
+            (uid, int(limit)),
+        )
+    else:
+        c.execute(
+            "SELECT role, content FROM chat_history "
+            "WHERE user_id=0 OR user_id IS NULL "
+            "ORDER BY id DESC LIMIT ?",
+            (int(limit),),
+        )
     rows = c.fetchall()
     conn.close()
     return list(reversed(rows))
+
+
+def get_user_chats(user_id, limit=30):
+    """Summary list of a user's chat sessions, newest first.
+
+    Returns rows of (chat_id, title, last_user_msg, last_at, msg_count)
+    where title falls back to the most recent stored title and
+    last_user_msg is the most recent user-authored content (used by
+    the sidebar when no explicit title was ever stored).
+    """
+    uid = int(user_id or 0)
+    if uid <= 0:
+        return []
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        "SELECT chat_id, "
+        "       COALESCE(MAX(NULLIF(title, '')), '') AS title, "
+        "       (SELECT content FROM chat_history h2 "
+        "          WHERE h2.user_id=h.user_id AND h2.chat_id=h.chat_id "
+        "            AND h2.role='user' "
+        "          ORDER BY h2.id ASC LIMIT 1) AS first_user_msg, "
+        "       MAX(created_at) AS last_at, "
+        "       COUNT(*) AS msg_count, "
+        "       MAX(id) AS last_id "
+        "FROM chat_history h "
+        "WHERE user_id=? AND chat_id IS NOT NULL AND chat_id != '' "
+        "GROUP BY chat_id "
+        "ORDER BY last_id DESC "
+        "LIMIT ?",
+        (uid, int(limit)),
+    )
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+
+def get_chat_messages(user_id, chat_id, limit=200):
+    """Full message log for one chat, oldest first."""
+    uid = int(user_id or 0)
+    cid = str(chat_id or "")
+    if uid <= 0 or not cid:
+        return []
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute(
+        "SELECT role, content, created_at FROM chat_history "
+        "WHERE user_id=? AND chat_id=? "
+        "ORDER BY id ASC LIMIT ?",
+        (uid, cid, int(limit)),
+    )
+    rows = c.fetchall()
+    conn.close()
+    return rows
 
 
 # --- tasks ---
