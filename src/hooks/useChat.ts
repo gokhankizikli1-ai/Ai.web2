@@ -125,8 +125,8 @@ function buildInitialState(userId: string): PersistedShape {
 }
 
 export function useChat() {
-  // Resolve the user id ONCE per mount so the storage key is stable
-  // for the lifetime of the hook even if the auth state mutates.
+  // Keep the active identity in a ref so async send/persist paths use
+  // the same user id without forcing callback churn.
   const userIdRef = useRef<string>(getUserId());
   const initial = buildInitialState(userIdRef.current);
 
@@ -151,6 +151,11 @@ export function useChat() {
   // without forcing a full page reload.
   const authUserId = useAuthStore((s) => s.user?.id ?? '');
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const authToken = useAuthStore((s) => s.token);
+
+  useEffect(() => {
+    userIdRef.current = getUserId();
+  }, [authUserId, isAuthenticated]);
 
   // Persist every state change so navigation away (Home, refresh,
   // tab switch) never drops the in-flight conversation.
@@ -168,14 +173,17 @@ export function useChat() {
   // server provides cross-device restore + recovery after cache wipe.
   const hydratedForUserRef = useRef<string>('');
   useEffect(() => {
-    if (!isAuthenticated || !authUserId) return;
+    if (!isAuthenticated || !authUserId || !authToken) return;
     if (hydratedForUserRef.current === authUserId) return;
     hydratedForUserRef.current = authUserId;
+    const authHeaders = { Authorization: `Bearer ${authToken}` };
 
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${API_BASE_URL}/chat/history?user_id=${encodeURIComponent(authUserId)}&limit=30`);
+        const res = await fetch(`${API_BASE_URL}/chat/history?user_id=${encodeURIComponent(authUserId)}&limit=30`, {
+          headers: authHeaders,
+        });
         if (!res.ok) return;
         const data = await res.json() as { chats?: Array<{ chat_id: string; title: string; last_at: string; message_count: number }> };
         const remote = Array.isArray(data?.chats) ? data.chats : [];
@@ -188,7 +196,9 @@ export function useChat() {
         const detail = await Promise.all(
           remote.slice(0, 10).map(async (c) => {
             try {
-              const r = await fetch(`${API_BASE_URL}/chat/messages?user_id=${encodeURIComponent(authUserId)}&chat_id=${encodeURIComponent(c.chat_id)}&limit=200`);
+              const r = await fetch(`${API_BASE_URL}/chat/messages?user_id=${encodeURIComponent(authUserId)}&chat_id=${encodeURIComponent(c.chat_id)}&limit=200`, {
+                headers: authHeaders,
+              });
               if (!r.ok) return null;
               const body = await r.json() as { messages?: Array<{ role: 'user' | 'assistant'; content: string; timestamp: string }> };
               return { chat: c, messages: Array.isArray(body?.messages) ? body.messages : [] };
@@ -228,7 +238,7 @@ export function useChat() {
     })();
 
     return () => { cancelled = true; };
-  }, [isAuthenticated, authUserId]);
+  }, [isAuthenticated, authUserId, authToken]);
 
   const activeSession = sessions.find((s) => s.id === activeSessionId) || sessions[0];
 

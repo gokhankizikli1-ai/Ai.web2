@@ -198,7 +198,10 @@ def get_user_chats(user_id, limit=30):
     c = conn.cursor()
     c.execute(
         "SELECT chat_id, "
-        "       COALESCE(MAX(NULLIF(title, '')), '') AS title, "
+        "       COALESCE((SELECT title FROM chat_history h2 "
+        "                   WHERE h2.user_id=h.user_id AND h2.chat_id=h.chat_id "
+        "                     AND NULLIF(h2.title, '') IS NOT NULL "
+        "                   ORDER BY h2.id ASC LIMIT 1), '') AS title, "
         "       (SELECT content FROM chat_history h2 "
         "          WHERE h2.user_id=h.user_id AND h2.chat_id=h.chat_id "
         "            AND h2.role='user' "

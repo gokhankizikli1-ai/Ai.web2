@@ -2,11 +2,13 @@
 import time
 import logging
 import uuid
-from fastapi import APIRouter
+import hashlib
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 
 from backend.utils.timing import StageTimer
+from backend.routes.auth import get_current_user
 
 router = APIRouter(tags=["chat"])
 logger = logging.getLogger(__name__)
@@ -50,7 +52,13 @@ class ChatResponse(BaseModel):
 
 def _uid(raw: str) -> int:
     """Normalize user_id string to a stable integer."""
-    return int(raw) if raw.isdigit() else hash(raw) % 2**31
+    value = str(raw or "").strip()
+    if not value:
+        return 0
+    if value.isdigit():
+        return int(value)
+    digest = hashlib.sha256(value.encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], "big") % 2**31
 
 
 # Small, safe language map. Unknown / missing → "" (no hint → existing
@@ -369,7 +377,11 @@ async def chat(req: ChatRequest):
 
 
 @router.get("/chat/history")
-def chat_history(user_id: str, limit: int = 30) -> Dict[str, Any]:
+def chat_history(
+    user_id: str = "",
+    limit: int = 30,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
     """Return the user's recent chat sessions for sidebar restore.
 
     Each entry carries the stable chat_id the frontend originally
@@ -378,9 +390,10 @@ def chat_history(user_id: str, limit: int = 30) -> Dict[str, Any]:
     timestamp and the message count. Empty chats and other users'
     chats are never returned.
     """
-    if not user_id:
+    auth_user_id = str(current_user.get("id") or "")
+    if not auth_user_id:
         return {"chats": []}
-    uid = _uid(user_id)
+    uid = _uid(auth_user_id)
     try:
         from backend.services.user_service import list_user_chats
         rows = list_user_chats(uid, int(limit) if limit else 30)
@@ -401,14 +414,16 @@ def chat_history(user_id: str, limit: int = 30) -> Dict[str, Any]:
 
 @router.get("/chat/messages")
 def chat_messages(
-    user_id: str,
     chat_id: str,
+    user_id: str = "",
     limit: int = 200,
+    current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """Full ordered message log for one chat (oldest → newest)."""
-    if not user_id or not chat_id:
+    auth_user_id = str(current_user.get("id") or "")
+    if not auth_user_id or not chat_id:
         return {"chat_id": chat_id or "", "messages": []}
-    uid = _uid(user_id)
+    uid = _uid(auth_user_id)
     try:
         from backend.services.user_service import load_user_chat
         rows = load_user_chat(uid, chat_id, int(limit) if limit else 200)
