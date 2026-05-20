@@ -99,19 +99,49 @@ function extractString(s: Record<string, unknown>, ...keys: string[]): string | 
 /* ═══════════════════════════════════════════
    RESPONSE NORMALIZER
    ═══════════════════════════════════════════ */
-function normalizeResponse(data: Record<string, unknown>): TradingSignalsResponse {
-  console.log('[useTradingSignals] raw API response:', data);
+function normalizeResponse(raw: unknown): TradingSignalsResponse {
+  console.log('[useTradingSignals] raw API response:', raw);
 
-  const rawSignals = (data.signals as Record<string, unknown>[]) || [];
+  // Tolerate ALL shapes the backend (or a future variant) might return:
+  //   - direct array:                   [ {…}, {…} ]
+  //   - object with signals key:        { signals: [ {…} ], … }
+  //   - nested wrapper:                 { data: { signals: [ {…} ] }, … }
+  // Anything else degrades to an empty list — never throws.
+  let rawSignals: Record<string, unknown>[] = [];
+  let data: Record<string, unknown> = {};
+  if (Array.isArray(raw)) {
+    rawSignals = raw as Record<string, unknown>[];
+    console.log('[useTradingSignals] response shape: direct array', { length: rawSignals.length });
+  } else if (raw && typeof raw === 'object') {
+    data = raw as Record<string, unknown>;
+    if (Array.isArray(data.signals)) {
+      rawSignals = data.signals as Record<string, unknown>[];
+      console.log('[useTradingSignals] response shape: object.signals[]', { length: rawSignals.length });
+    } else if (data.data && typeof data.data === 'object' && Array.isArray((data.data as Record<string, unknown>).signals)) {
+      rawSignals = (data.data as Record<string, unknown>).signals as Record<string, unknown>[];
+      console.log('[useTradingSignals] response shape: object.data.signals[]', { length: rawSignals.length });
+    } else {
+      console.log('[useTradingSignals] response shape: object without signals[] — degrading to []');
+    }
+  } else {
+    console.log('[useTradingSignals] response shape: unrecognised — degrading to []');
+  }
+
   const provider = normalizeProvider((data.provider as string) || (data.source as string));
 
-  // Live detection: response-level OR signal-level
+  // Live detection — response-level, count, OR per-signal. Per user spec:
+  // "If signals.length > 0, render them" — so a non-empty list is enough
+  // to flip isLive=true and prevent the panel from getting stuck on
+  // 'reconnecting' when the backend returned valid data.
   const responseIsLive = data.is_live === true;
   const hasLiveCount = typeof data.live_count === 'number' && (data.live_count as number) > 0;
   const anySignalLive = rawSignals.some((s) => s.is_live === true);
-  const isLive = responseIsLive || hasLiveCount || anySignalLive;
+  const hasAnySignals = rawSignals.length > 0;
+  const isLive = responseIsLive || hasLiveCount || anySignalLive || hasAnySignals;
 
-  console.log('[useTradingSignals] live check:', { responseIsLive, hasLiveCount, anySignalLive, isLive });
+  console.log('[useTradingSignals] live check:', {
+    responseIsLive, hasLiveCount, anySignalLive, hasAnySignals, isLive,
+  });
 
   const signals: TradingSignal[] = rawSignals.map((s, i) => {
     const sig: TradingSignal = {
@@ -187,8 +217,13 @@ export function useTradingSignals(options?: UseTradingSignalsOptions): UseTradin
       setSignals(data.signals);
       setLastUpdated(data.timestamp);
 
-      if (!data.is_live && data.signals.length === 0) {
+      // Only flag "Live data unavailable" when we genuinely have nothing
+      // to show. If signals.length > 0 the panel must render them and
+      // must NOT stay stuck on the reconnecting state.
+      if (data.signals.length === 0) {
         setError('Live data unavailable');
+      } else {
+        setError(null);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to load trading signals';
