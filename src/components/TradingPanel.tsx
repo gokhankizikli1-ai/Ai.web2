@@ -45,14 +45,6 @@ interface TrendingAsset {
   is_live?: boolean;
 }
 
-// ─── Internal fallback data (safety net — never rendered as visible fake data) ───
-const FALLBACK_SIGNALS: TradingSignal[] = [
-  { id: 's1', symbol: 'AAPL', name: 'Apple Inc.', direction: 'long', confidence: 87, setupGrade: 'A', volatility: 'medium', entryPrice: '185.15', targetPrice: '195.00', stopLoss: '180.00', timestamp: new Date(), reasoning: 'Bull flag breakout on daily with volume confirmation. RSI 58, room to run. Institutional buying detected.', sparkline: [182,183,184,183,185,186,185,187,186,187.42] },
-  { id: 's2', symbol: 'NVDA', name: 'NVIDIA Corp.', direction: 'long', confidence: 92, setupGrade: 'A', volatility: 'high', entryPrice: '860.00', targetPrice: '920.00', stopLoss: '835.00', timestamp: new Date(), reasoning: 'Earnings momentum continuation. AI demand thesis intact. Break above resistance with 3x average volume.', sparkline: [850,855,860,858,865,870,868,872,870,875.15] },
-  { id: 's3', symbol: 'TSLA', name: 'Tesla Inc.', direction: 'short', confidence: 64, setupGrade: 'B', volatility: 'high', entryPrice: '252.00', targetPrice: '235.00', stopLoss: '258.00', timestamp: new Date(), reasoning: 'Failed breakout above 255. Bearish divergence on MACD hourly. Increased put flow detected.', sparkline: [252,251,250,253,251,249,250,248,249,248.50] },
-  { id: 's4', symbol: 'AMD', name: 'AMD Inc.', direction: 'wait', confidence: 45, setupGrade: 'C', volatility: 'medium', entryPrice: undefined, targetPrice: undefined, stopLoss: undefined, timestamp: new Date(), reasoning: 'Mixed signals. Support at 160 holding but resistance at 168 strong. Wait for decisive break.', sparkline: [167,166,165,166,164,165,163,164,165,164.20] },
-];
-
 const DEMO_SENTIMENT: MarketSentiment = {
   overall: 'bullish',
   score: 68,
@@ -193,36 +185,6 @@ function MarketReconnecting({ onRetry }: { onRetry: () => void }) {
       >
         <RefreshCw className="w-3.5 h-3.5" /> Refresh Connection
       </button>
-    </div>
-  );
-}
-
-function MarketInitializing() {
-  return (
-    <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
-      <div className="relative mb-5">
-        {[0, 1, 2].map((i) => (
-          <motion.div
-            key={i}
-            className="absolute rounded-full border border-cyan-400/[0.06]"
-            style={{
-              width: 24 + i * 16,
-              height: 24 + i * 16,
-              top: '50%',
-              left: '50%',
-              marginTop: -(12 + i * 8),
-              marginLeft: -(12 + i * 8),
-            }}
-            animate={{ scale: [1, 1.3, 1], opacity: [0.3, 0.1, 0.3] }}
-            transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut', delay: i * 0.3 }}
-          />
-        ))}
-        <div className="w-12 h-12 rounded-full bg-cyan-500/[0.04] border border-cyan-500/[0.08] flex items-center justify-center relative">
-          <Activity className="w-5 h-5 text-cyan-400/40" />
-        </div>
-      </div>
-      <p className="text-[13px] font-medium text-slate-400 mb-1">Live market engine initializing...</p>
-      <p className="text-[11px] text-slate-600">Connecting to market data providers</p>
     </div>
   );
 }
