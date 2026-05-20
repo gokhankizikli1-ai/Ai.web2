@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { TradingSignal } from '@/types';
 import { useToast } from '@/hooks/useToast';
-import { useTradingSignals } from '@/hooks/useTradingSignals';
 import { useLanguageStore } from '@/stores/languageStore';
+import { useTradingSignals } from '@/hooks/useTradingSignals';
 import KorvixOrb from './KorvixOrb';
 import {
   TrendingUp, Activity, Zap,
@@ -13,19 +13,6 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { ALL_ASSETS } from '@/data/tradingAssets';
-
-// ─── Configuration ───
-// Cosmetic demo banner/badges for the static non-signal tabs
-// (watchlist/trending/sentiment have no live endpoint). The SIGNALS list
-// itself now uses the live backend when online (see signalsToShow) and
-// only falls back to the demo SIGNALS array when the API fails.
-const DEMO_MODE = true;
-
-// Liquid default universe requested from the live /trading/signals API.
-const SIGNAL_SYMBOLS = [
-  'AAPL', 'NVDA', 'TSLA', 'AMD', 'MSFT', 'AMZN', 'META', 'GOOGL',
-  'BTCUSD', 'ETHUSD', 'SOLUSD', 'SPY', 'QQQ',
-];
 
 // ─── Types ───
 interface MarketSentiment {
@@ -79,7 +66,8 @@ const DEMO_TRENDING: TrendingAsset[] = [
   { symbol: 'COIN', name: 'Coinbase', volume: '18.9M', mentions: 987, sentiment: 'bullish', priceChange: 3.12, is_live: false },
 ];
 
-const SIGNALS: TradingSignal[] = [
+// ─── Fallback demo signals (shown when live API is unavailable) ───
+const FALLBACK_SIGNALS: TradingSignal[] = [
   { id: 's1', symbol: 'AAPL', name: 'Apple Inc.', direction: 'long', confidence: 87, setupGrade: 'A', volatility: 'medium', entryPrice: '185.15', targetPrice: '195.00', stopLoss: '180.00', timestamp: new Date(), reasoning: 'Bull flag breakout on daily with volume confirmation. RSI 58, room to run. Institutional buying detected.', sparkline: [182,183,184,183,185,186,185,187,186,187.42] },
   { id: 's2', symbol: 'NVDA', name: 'NVIDIA Corp.', direction: 'long', confidence: 92, setupGrade: 'A', volatility: 'high', entryPrice: '860.00', targetPrice: '920.00', stopLoss: '835.00', timestamp: new Date(), reasoning: 'Earnings momentum continuation. AI demand thesis intact. Break above resistance with 3x average volume.', sparkline: [850,855,860,858,865,870,868,872,870,875.15] },
   { id: 's3', symbol: 'TSLA', name: 'Tesla Inc.', direction: 'short', confidence: 64, setupGrade: 'B', volatility: 'high', entryPrice: '252.00', targetPrice: '235.00', stopLoss: '258.00', timestamp: new Date(), reasoning: 'Failed breakout above 255. Bearish divergence on MACD hourly. Increased put flow detected.', sparkline: [252,251,250,253,251,249,250,248,249,248.50] },
@@ -171,8 +159,8 @@ function TrendingSkeleton() {
 }
 
 // ─── Demo Data Banner ───
-function DemoBanner() {
-  if (!DEMO_MODE) return null;
+function DemoBanner({ show = true }: { show?: boolean }) {
+  if (!show) return null;
   return (
     <div className="flex items-center gap-2 px-3 py-2 mb-3 rounded-lg bg-amber-500/[0.06] border border-amber-500/10">
       <AlertTriangle className="w-3.5 h-3.5 text-amber-400/60 shrink-0" />
@@ -213,7 +201,7 @@ function LiveDataUnavailable({ onRetry }: { onRetry: () => void }) {
 }
 
 // ─── Signal Card Component ───
-function SignalCard({ signal }: { signal: TradingSignal }) {
+function SignalCard({ signal, isLive = false }: { signal: TradingSignal; isLive?: boolean }) {
   const [expanded, setExpanded] = useState(false);
 
   const dirColors: Record<string, { bg: string; border: string; text: string; badge: string }> = {
@@ -223,19 +211,15 @@ function SignalCard({ signal }: { signal: TradingSignal }) {
     neutral:{ bg: 'bg-slate-500/[0.04]',    border: 'border-slate-500/10',    text: 'text-slate-400',    badge: 'bg-slate-500/[0.08] text-slate-400' },
   };
   const colors = dirColors[signal.direction] || dirColors.neutral;
+  // Map provider to display label
+  const providerLabel = signal.provider && signal.provider !== 'Unknown' ? signal.provider : undefined;
 
   return (
     <motion.div
       layout
       className={`rounded-xl border ${colors.border} ${colors.bg} overflow-hidden transition-all duration-200 hover:border-opacity-20`}
     >
-      {signal.is_live ? (
-        <div className="px-3 pt-2">
-          <span className="text-[9px] font-medium text-emerald-400/80 bg-emerald-500/[0.06] border border-emerald-500/15 px-1.5 py-0.5 rounded">
-            {(signal.provider && signal.provider !== 'Unknown') ? signal.provider.toUpperCase() : 'LIVE'}
-          </span>
-        </div>
-      ) : (
+      {!isLive && (
         <div className="px-3 pt-2">
           <span className="text-[9px] font-medium text-amber-400/50 bg-amber-500/[0.06] border border-amber-500/10 px-1.5 py-0.5 rounded">
             DEMO DATA
@@ -259,6 +243,11 @@ function SignalCard({ signal }: { signal: TradingSignal }) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <span className="text-[13px] font-medium text-white">{signal.symbol}</span>
+            {providerLabel && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-cyan-500/[0.08] text-cyan-400 border border-cyan-500/10">
+                {providerLabel}
+              </span>
+            )}
             <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${colors.badge}`}>{signal.direction.toUpperCase()}</span>
             <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${signal.setupGrade === 'A' ? 'bg-emerald-500/[0.08] text-emerald-400' : signal.setupGrade === 'B' ? 'bg-amber-500/[0.08] text-amber-400' : 'bg-slate-500/[0.08] text-slate-400'}`}>
               Grade {signal.setupGrade}
@@ -324,13 +313,11 @@ function SentimentGauge({ sentiment }: { sentiment: MarketSentiment }) {
 
   return (
     <div className={`p-4 rounded-xl border border-white/[0.04] ${sentimentBg} transition-all duration-200 hover:border-white/[0.06]`}>
-      {DEMO_MODE && (
-        <div className="mb-2">
-          <span className="text-[9px] font-medium text-amber-400/50 bg-amber-500/[0.06] border border-amber-500/10 px-1.5 py-0.5 rounded">
-            DEMO DATA
-          </span>
-        </div>
-      )}
+      <div className="mb-2">
+        <span className="text-[9px] font-medium text-amber-400/50 bg-amber-500/[0.06] border border-amber-500/10 px-1.5 py-0.5 rounded">
+          DEMO DATA
+        </span>
+      </div>
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <Radar className={`w-4 h-4 ${sentimentColor}`} />
@@ -402,7 +389,7 @@ function WatchlistRow({ item, onToggleFav }: { item: WatchlistItem; onToggleFav:
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
           <span className="text-[12px] font-medium text-white">{item.symbol}</span>
-          {DEMO_MODE && <span className="text-[9px] text-amber-400/40 bg-amber-500/[0.05] px-1 rounded">DEMO</span>}
+          <span className="text-[9px] text-amber-400/40 bg-amber-500/[0.05] px-1 rounded">DEMO</span>
           <span className="text-[10px] text-slate-600">{item.name}</span>
         </div>
       </div>
@@ -428,7 +415,7 @@ function TrendingCard({ asset }: { asset: TrendingAsset }) {
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="text-[12px] font-medium text-white">{asset.symbol}</span>
-          {DEMO_MODE && <span className="text-[9px] text-amber-400/40 bg-amber-500/[0.05] px-1 rounded">DEMO</span>}
+          <span className="text-[9px] text-amber-400/40 bg-amber-500/[0.05] px-1 rounded">DEMO</span>
           <span className="text-[10px] text-slate-600">{asset.name}</span>
         </div>
         <div className="flex items-center gap-3 mt-1">
@@ -458,9 +445,9 @@ const TIMEFRAMES = [
 export default function TradingPanel() {
   const [activeTab, setActiveTab] = useState<'signals' | 'watchlist' | 'sentiment' | 'trending'>('signals');
   const [watchlistFilter, setWatchlistFilter] = useState<'all' | 'stocks' | 'crypto' | 'etfs' | 'favorites'>('all');
-  const [watchlist, setWatchlist] = useState<WatchlistItem[]>(DEMO_MODE
-    ? ALL_ASSETS.map((a) => ({ ...a, isFavorite: ['AAPL', 'NVDA', 'BTC', 'ETH', 'SOL', 'SPY'].includes(a.symbol) }))
-    : []);
+  const [watchlist, setWatchlist] = useState<WatchlistItem[]>(
+    ALL_ASSETS.map((a) => ({ ...a, isFavorite: ['AAPL', 'NVDA', 'BTC', 'ETH', 'SOL', 'SPY'].includes(a.symbol) }))
+  );
   const [search, setSearch] = useState('');
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -471,32 +458,26 @@ export default function TradingPanel() {
   });
   const { addToast } = useToast();
 
+  // Live trading signals from backend
+  const { signals: apiSignals, isLive: apiIsLive, provider, refresh: refreshApi } = useTradingSignals();
+  const hasLiveSignals = apiIsLive && apiSignals.length > 0;
+
   // Persist timeframe
   const handleTimeframeChange = (tf: string) => {
     setTimeframe(tf);
     try { localStorage.setItem('korvix-trading-timeframe', tf); } catch { /* ignore */ }
   };
 
-  // Live backend signals — demo SIGNALS used ONLY as a fallback when the
-  // API errors / is not live / returns nothing (preserves prior UX).
-  const {
-    signals: apiSignals,
-    isLive: apiIsLive,
-    error: apiError,
-    refresh: refreshLive,
-  } = useTradingSignals(SIGNAL_SYMBOLS, timeframe);
-  const signalsAreLive = !apiError && apiIsLive && apiSignals.length > 0;
-  const signalsToShow = signalsAreLive ? apiSignals : SIGNALS;
+  // Signals: live API data when available, fallback demo otherwise
+  const signalsToShow = hasLiveSignals ? apiSignals : FALLBACK_SIGNALS;
 
   const handleRefresh = () => {
     setIsRefreshing(true);
     setLastRefresh(new Date());
-    refreshLive();
+    refreshApi();
     setTimeout(() => {
       setIsRefreshing(false);
-      // Generic message — avoids reading a stale `signalsAreLive` from the
-      // click-time render before refreshLive() resolves.
-      addToast('Trading data refreshed', 'success');
+      addToast(hasLiveSignals ? 'Trading data refreshed' : 'Demo data refreshed', 'success');
     }, 800);
   };
 
@@ -528,8 +509,8 @@ export default function TradingPanel() {
           <div className="flex items-center gap-2">
             <div className="relative flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/[0.06] border border-emerald-500/10 shadow-[0_0_8px_-2px_rgba(52,211,153,0.06)]">
               <TrendingUp className="h-4 w-4 text-emerald-400" />
-              {/* Live pulse dot — only when real signals are flowing */}
-              {signalsAreLive && (
+              {/* Live pulse dot */}
+              {hasLiveSignals && (
                 <motion.div
                   className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-400"
                   animate={{ scale: [1, 1.5, 1], opacity: [0.7, 1, 0.7] }}
@@ -541,7 +522,9 @@ export default function TradingPanel() {
             <div>
               <h2 className="text-[14px] font-semibold text-white">Trading Intelligence</h2>
               <p className="text-[10px] text-slate-600">
-                {signalsAreLive ? 'Live market signals' : 'Simulated data — not financial advice'}
+                {hasLiveSignals
+                  ? `Live market signals${provider && provider !== 'Unknown' ? ` · ${provider}` : ''}`
+                  : 'Simulated data — not financial advice'}
               </p>
             </div>
           </div>
@@ -602,14 +585,14 @@ export default function TradingPanel() {
         {/* ═══ SIGNALS TAB ═══ */}
         {activeTab === 'signals' && (
           <>
-            {!signalsAreLive && <DemoBanner />}
+            <DemoBanner show={!hasLiveSignals} />
             {isRefreshing ? (
               <div className="space-y-3">
                 <SignalCardSkeleton />
                 <SignalCardSkeleton />
                 <SignalCardSkeleton />
               </div>
-            ) : !DEMO_MODE && signalsToShow.length === 0 ? (
+            ) : hasLiveSignals && signalsToShow.length === 0 ? (
               <LiveDataUnavailable onRetry={handleRefresh} />
             ) : (
               <>
@@ -624,8 +607,8 @@ export default function TradingPanel() {
                     <p className="text-[9px] text-slate-500">Short</p>
                   </div>
                   <div className="p-3 rounded-xl border border-amber-500/10 bg-amber-500/[0.04] text-center">
-                    <p className="text-lg font-semibold text-amber-400">{signalsToShow.filter((s) => s.direction === 'wait').length}</p>
-                    <p className="text-[9px] text-slate-500">Wait</p>
+                    <p className="text-lg font-semibold text-amber-400">{signalsToShow.filter((s) => s.direction === 'wait' || s.direction === 'neutral').length}</p>
+                    <p className="text-[9px] text-slate-500">Hold</p>
                   </div>
                   <div className="p-3 rounded-xl border border-white/[0.04] bg-white/[0.01] text-center">
                     <p className="text-lg font-semibold text-white">{signalsToShow.length > 0 ? Math.round(signalsToShow.reduce((a, s) => a + s.confidence, 0) / signalsToShow.length) : 0}%</p>
@@ -635,7 +618,7 @@ export default function TradingPanel() {
 
                 <div className="space-y-2">
                   {signalsToShow.map((signal) => (
-                    <SignalCard key={signal.id} signal={signal} />
+                    <SignalCard key={signal.id} signal={signal} isLive={hasLiveSignals} />
                   ))}
                 </div>
               </>
@@ -649,7 +632,7 @@ export default function TradingPanel() {
             <DemoBanner />
             {isRefreshing ? (
               <WatchlistSkeleton />
-            ) : !DEMO_MODE && watchlist.length === 0 ? (
+            ) : false ? (
               <LiveDataUnavailable onRetry={handleRefresh} />
             ) : (
               <>
@@ -693,11 +676,11 @@ export default function TradingPanel() {
           <>
             {isRefreshing ? (
               <SentimentSkeleton />
-            ) : !DEMO_MODE ? (
+            ) : false ? (
               <LiveDataUnavailable onRetry={handleRefresh} />
             ) : (
               <div className="space-y-3">
-                <DemoBanner />
+                <DemoBanner show />
                 <SentimentGauge sentiment={DEMO_SENTIMENT} />
 
                 <div className="p-4 rounded-xl border border-white/[0.04] bg-white/[0.01]">
@@ -733,10 +716,10 @@ export default function TradingPanel() {
         {/* ═══ TRENDING TAB ═══ */}
         {activeTab === 'trending' && (
           <>
-            <DemoBanner />
+            <DemoBanner show />
             {isRefreshing ? (
               <TrendingSkeleton />
-            ) : !DEMO_MODE && DEMO_TRENDING.filter((t) => t.is_live).length === 0 ? (
+            ) : false ? (
               <LiveDataUnavailable onRetry={handleRefresh} />
             ) : (
               <div className="space-y-2">
@@ -746,7 +729,7 @@ export default function TradingPanel() {
                   </h3>
                   <span className="text-[10px] text-slate-600">Last 24h</span>
                 </div>
-                {(DEMO_MODE ? DEMO_TRENDING : DEMO_TRENDING.filter((t) => t.is_live)).map((asset) => (
+                {DEMO_TRENDING.map((asset) => (
                   <TrendingCard key={asset.symbol} asset={asset} />
                 ))}
               </div>
