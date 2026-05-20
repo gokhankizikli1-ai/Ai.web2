@@ -1,7 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { TradingSignal, TradingSignalsResponse, DataProvider } from '@/types';
 
-const API_URL = 'https://worker-production-2a49.up.railway.app/trading/signals';
+const API_BASE = 'https://worker-production-1345.up.railway.app/trading/signals';
+
+interface UseTradingSignalsOptions {
+  symbols?: string;
+  timeframe?: string;
+}
 
 interface UseTradingSignalsResult {
   signals: TradingSignal[];
@@ -15,7 +20,6 @@ interface UseTradingSignalsResult {
 
 /* ═══════════════════════════════════════════
    PROVIDER NORMALIZATION
-   Handles FINNHUB, COINGECKO, Binance, etc.
    ═══════════════════════════════════════════ */
 function normalizeProvider(raw: string | undefined): DataProvider {
   if (!raw) return 'Unknown';
@@ -42,7 +46,6 @@ function extractConfidence(s: Record<string, unknown>): number {
 
 /* ═══════════════════════════════════════════
    DIRECTION — normalize backend values
-   LONG | SHORT | WAIT | NO_TRADE | NEUTRAL
    ═══════════════════════════════════════════ */
 function extractDirection(s: Record<string, unknown>): TradingSignal['direction'] {
   const raw = ((s.direction as string) || (s.raw_direction as string) || '').toUpperCase().trim();
@@ -50,7 +53,6 @@ function extractDirection(s: Record<string, unknown>): TradingSignal['direction'
   if (raw === 'SHORT') return 'short';
   if (raw === 'WAIT') return 'wait';
   if (raw === 'NO_TRADE' || raw === 'NO TRADE' || raw === 'NEUTRAL' || raw === 'HOLD') return 'neutral';
-  // Fallback to intel object
   const intelDir = ((s.intel as Record<string, unknown>)?.direction as string)?.toUpperCase().trim();
   if (intelDir === 'LONG') return 'long';
   if (intelDir === 'SHORT') return 'short';
@@ -68,7 +70,6 @@ function extractGrade(s: Record<string, unknown>): TradingSignal['setupGrade'] {
   if (grade === 'B' || grade === 'B+' || grade === 'B-') return 'B';
   if (grade === 'C' || grade === 'C+' || grade === 'C-') return 'C';
   if (grade === 'D' || grade === 'D+' || grade === 'D-') return 'D';
-  // Numeric grade 1-4 mapping
   const numeric = typeof s.setup_grade === 'number' ? s.setup_grade : typeof s.grade === 'number' ? s.grade : undefined;
   if (numeric === 1) return 'A';
   if (numeric === 2) return 'B';
@@ -99,36 +100,53 @@ function extractString(s: Record<string, unknown>, ...keys: string[]): string | 
    RESPONSE NORMALIZER
    ═══════════════════════════════════════════ */
 function normalizeResponse(data: Record<string, unknown>): TradingSignalsResponse {
+  console.log('[useTradingSignals] raw API response:', data);
+
   const rawSignals = (data.signals as Record<string, unknown>[]) || [];
-  const provider = normalizeProvider(data.provider as string);
-  const isLive = !!(data.is_live === true || data.live_count && (data.live_count as number) > 0);
+  const provider = normalizeProvider((data.provider as string) || (data.source as string));
 
-  const signals: TradingSignal[] = rawSignals.map((s, i) => ({
-    id: extractString(s, 'id') || `sig-${i}`,
-    symbol: extractString(s, 'symbol', 'ticker') || '???',
-    name: extractString(s, 'name') || extractString(s, 'symbol', 'ticker') || 'Unknown',
-    direction: extractDirection(s),
-    confidence: extractConfidence(s),
-    setupGrade: extractGrade(s),
-    volatility: ((s.volatility as string) || 'medium').toLowerCase() as TradingSignal['volatility'],
-    entryPrice: extractString(s, 'entry', 'entryPrice', 'price'),
-    targetPrice: extractString(s, 'take_profit_1', 'target', 'targetPrice', 'tp1'),
-    stopLoss: extractString(s, 'stop_loss', 'stopLoss', 'sl'),
-    timestamp: new Date((s.timestamp as string) || Date.now()),
-    reasoning: extractString(s, 'reasoning', 'rationale', 'note') || '',
-    provider,
-    sparkline: s.sparkline as number[] | undefined,
-  }));
+  // Live detection: response-level OR signal-level
+  const responseIsLive = data.is_live === true;
+  const hasLiveCount = typeof data.live_count === 'number' && (data.live_count as number) > 0;
+  const anySignalLive = rawSignals.some((s) => s.is_live === true);
+  const isLive = responseIsLive || hasLiveCount || anySignalLive;
 
-  return {
+  console.log('[useTradingSignals] live check:', { responseIsLive, hasLiveCount, anySignalLive, isLive });
+
+  const signals: TradingSignal[] = rawSignals.map((s, i) => {
+    const sig: TradingSignal = {
+      id: extractString(s, 'id') || `sig-${i}`,
+      symbol: extractString(s, 'symbol', 'ticker') || '???',
+      name: extractString(s, 'name') || extractString(s, 'symbol', 'ticker') || 'Unknown',
+      direction: extractDirection(s),
+      confidence: extractConfidence(s),
+      setupGrade: extractGrade(s),
+      volatility: ((s.volatility as string) || 'medium').toLowerCase() as TradingSignal['volatility'],
+      entryPrice: extractString(s, 'entry', 'entryPrice', 'price'),
+      targetPrice: extractString(s, 'take_profit_1', 'target', 'targetPrice', 'tp1'),
+      stopLoss: extractString(s, 'stop_loss', 'stopLoss', 'sl'),
+      timestamp: new Date((s.timestamp as string) || Date.now()),
+      reasoning: extractString(s, 'reasoning', 'rationale', 'note') || '',
+      provider: normalizeProvider((s.provider as string) || (s.source as string)),
+      sparkline: s.sparkline as number[] | undefined,
+    };
+    return sig;
+  });
+
+  const result: TradingSignalsResponse = {
     is_live: isLive,
     provider,
     timestamp: (data.timestamp as string) || (data.last_updated as string) || new Date().toISOString(),
     signals,
   };
+
+  console.log('[useTradingSignals] normalized:', { isLive, provider, signalCount: signals.length });
+  return result;
 }
 
-export function useTradingSignals(): UseTradingSignalsResult {
+export function useTradingSignals(options?: UseTradingSignalsOptions): UseTradingSignalsResult {
+  const { symbols = 'AAPL,NVDA,BTCUSDT', timeframe = '1d' } = options || {};
+
   const [signals, setSignals] = useState<TradingSignal[]>([]);
   const [isLive, setIsLive] = useState(false);
   const [provider, setProvider] = useState<DataProvider>('Unknown');
@@ -140,11 +158,19 @@ export function useTradingSignals(): UseTradingSignalsResult {
     setIsLoading(true);
     setError(null);
 
+    const url = new URL(API_BASE);
+    url.searchParams.set('symbols', symbols);
+    url.searchParams.set('timeframe', timeframe);
+
+    console.log('[useTradingSignals] fetching:', url.toString());
+
     try {
-      const response = await fetch(API_URL, {
+      const response = await fetch(url.toString(), {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
       });
+
+      console.log('[useTradingSignals] response status:', response.status);
 
       if (!response.ok) {
         throw new Error(`Server responded with ${response.status}`);
@@ -152,6 +178,9 @@ export function useTradingSignals(): UseTradingSignalsResult {
 
       const rawData = await response.json();
       const data = normalizeResponse(rawData);
+
+      console.log('[useTradingSignals] hasLiveSignals:', data.is_live);
+      console.log('[useTradingSignals] signals count:', data.signals.length);
 
       setIsLive(data.is_live);
       setProvider(data.provider);
@@ -162,12 +191,15 @@ export function useTradingSignals(): UseTradingSignalsResult {
         setError('Live data unavailable');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load trading signals');
+      const msg = err instanceof Error ? err.message : 'Failed to load trading signals';
+      const isCors = msg.includes('CORS') || msg.includes('Failed to fetch') || msg.includes('NetworkError');
+      console.error('[useTradingSignals] fetch error:', msg, isCors ? '(likely CORS)' : '');
+      setError(isCors ? 'CORS_BLOCKED' : msg);
       setIsLive(false);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [symbols, timeframe]);
 
   useEffect(() => {
     fetchSignals();
