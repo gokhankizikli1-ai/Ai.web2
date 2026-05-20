@@ -244,7 +244,7 @@ export function useChat() {
             ? ((data as { detail: string }).detail)
             : null;
         const backendMsg =
-          (data && (data.error || data.reply || data.message || detailMsg)) ||
+          (data && (data.error || detailMsg || data.message)) ||
           rawText ||
           `Server responded with ${response.status}.`;
         throw new Error(String(backendMsg));
