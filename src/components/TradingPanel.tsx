@@ -436,10 +436,8 @@ export default function TradingPanel() {
   // Live trading signals from backend
   const {
     signals: apiSignals,
-    isLive: apiIsLive,
     provider,
     isLoading: apiLoading,
-    error: apiError,
     refresh: refreshApi,
   } = useTradingSignals({ timeframe });
 
@@ -447,17 +445,7 @@ export default function TradingPanel() {
   // exists." Gate on the signals array, not on apiIsLive — backend may
   // return is_live=false transiently while still emitting valid signals,
   // and we must not get stuck reconnecting in that case.
-  const hasLiveSignals = apiSignals.length > 0 || apiIsLive;
-
-  // Temporary debug — per user spec #6.
-  console.log('FINAL_TRADING_STATE', {
-    loading: apiLoading,
-    error: apiError,
-    signalsLength: apiSignals.length,
-    hasLiveSignals,
-    isLive: apiIsLive,
-    provider,
-  });
+  const hasLiveSignals = apiSignals.length > 0;
 
   // Persist timeframe
   const handleTimeframeChange = (tf: string) => {

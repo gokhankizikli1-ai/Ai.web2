@@ -140,15 +140,6 @@ function normalizeResponse(raw: unknown): TradingSignalsResponse {
   const hasAnySignals = rawSignals.length > 0;
   const isLive = responseIsLive || hasLiveCount || hasCount || anySignalLive || hasAnySignals;
 
-  // Temporary explicit shape log — per user request — for one-glance
-  // verification that the frontend reads the response shape correctly.
-  console.log('TRADING_RESPONSE_SHAPE', raw, {
-    isLive: (raw as Record<string, unknown> | null)?.is_live,
-    liveCount: (raw as Record<string, unknown> | null)?.live_count,
-    count: (raw as Record<string, unknown> | null)?.count,
-    signalsLength: rawSignals.length,
-  });
-
   console.log('[useTradingSignals] live check:', {
     responseIsLive, hasLiveCount, hasCount, anySignalLive, hasAnySignals, isLive,
   });
