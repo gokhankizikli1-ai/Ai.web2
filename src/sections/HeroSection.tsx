@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router';
 import { Button } from '@/components/ui/button';
 import { ArrowRight, Sparkles, Bot, TrendingUp, Zap, Activity } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useAuthStore } from '@/stores/authStore';
 
 const fadeUp = (delay = 0) => ({
   initial: { opacity: 0, y: 20 },
@@ -181,6 +182,8 @@ function SocialProof() {
 /* ─── Main Hero Section ─── */
 export default function HeroSection() {
   const navigate = useNavigate();
+  // Real signed-in users only — guests stay on the marketing CTAs.
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
   return (
     <section className="relative pt-28 pb-16 md:pt-36 md:pb-24 lg:pt-40 lg:pb-32 overflow-hidden">
@@ -263,22 +266,35 @@ export default function HeroSection() {
               {...fadeUp(0.24)}
               className="flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-3 mb-8"
             >
-              <Button
-                size="lg"
-                className="bg-white text-slate-950 hover:bg-slate-200 font-semibold px-7 h-12 text-[14px] group w-full sm:w-auto rounded-xl transition-all duration-300 hover:shadow-[0_0_30px_-8px_rgba(255,255,255,0.2)]"
-                onClick={() => navigate('/signup')}
-              >
-                Create Account
-                <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-              </Button>
-              <Button
-                variant="outline"
-                size="lg"
-                className="border-white/10 text-white hover:bg-white/[0.04] hover:border-white/15 font-semibold px-7 h-12 text-[14px] w-full sm:w-auto rounded-xl backdrop-blur-sm transition-all duration-300"
-                onClick={() => navigate('/login')}
-              >
-                Sign In
-              </Button>
+              {isAuthenticated ? (
+                <Button
+                  size="lg"
+                  className="bg-white text-slate-950 hover:bg-slate-200 font-semibold px-7 h-12 text-[14px] group w-full sm:w-auto rounded-xl transition-all duration-300 hover:shadow-[0_0_30px_-8px_rgba(255,255,255,0.2)]"
+                  onClick={() => navigate('/chat')}
+                >
+                  Open Workspace
+                  <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    size="lg"
+                    className="bg-white text-slate-950 hover:bg-slate-200 font-semibold px-7 h-12 text-[14px] group w-full sm:w-auto rounded-xl transition-all duration-300 hover:shadow-[0_0_30px_-8px_rgba(255,255,255,0.2)]"
+                    onClick={() => navigate('/signup')}
+                  >
+                    Create Account
+                    <ArrowRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="lg"
+                    className="border-white/10 text-white hover:bg-white/[0.04] hover:border-white/15 font-semibold px-7 h-12 text-[14px] w-full sm:w-auto rounded-xl backdrop-blur-sm transition-all duration-300"
+                    onClick={() => navigate('/login')}
+                  >
+                    Sign In
+                  </Button>
+                </>
+              )}
             </motion.div>
 
             {/* Social Proof */}

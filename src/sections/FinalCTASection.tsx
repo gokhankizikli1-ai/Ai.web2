@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { Zap, Globe, Rocket, ArrowUpRight } from 'lucide-react';
 import { Link } from 'react-router';
+import { useAuthStore } from '@/stores/authStore';
 
 const fadeUp = (delay = 0) => ({
   initial: { opacity: 0, y: 20 },
@@ -10,6 +11,8 @@ const fadeUp = (delay = 0) => ({
 });
 
 export default function FinalCTASection() {
+  // Real signed-in users only — guests stay on the marketing CTAs.
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   return (
     <section className="relative py-24 md:py-32 overflow-hidden">
       {/* Large background glow */}
@@ -40,19 +43,31 @@ export default function FinalCTASection() {
 
           {/* CTA Buttons */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-12">
-            <Link
-              to="/signup"
-              className="group inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-white/[0.08] text-white border border-white/[0.1] text-[14px] hover:bg-white/[0.12] transition-all shadow-[0_0_20px_-4px_rgba(34,211,238,0.1)] hover:shadow-[0_0_30px_-4px_rgba(34,211,238,0.15)]"
-            >
-              <Rocket className="h-4 w-4" /> Create Account
-            </Link>
-            <Link
-              to="/login"
-              className="group inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-white/[0.02] text-slate-400 border border-white/[0.04] text-[14px] hover:bg-white/[0.04] hover:text-slate-200 transition-all"
-            >
-              Sign In
-              <ArrowUpRight className="h-3.5 w-3.5 text-slate-600 group-hover:text-slate-400 transition-colors" />
-            </Link>
+            {isAuthenticated ? (
+              <Link
+                to="/chat"
+                className="group inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-white/[0.08] text-white border border-white/[0.1] text-[14px] hover:bg-white/[0.12] transition-all shadow-[0_0_20px_-4px_rgba(34,211,238,0.1)] hover:shadow-[0_0_30px_-4px_rgba(34,211,238,0.15)]"
+              >
+                <Rocket className="h-4 w-4" /> Open Workspace
+                <ArrowUpRight className="h-3.5 w-3.5 text-slate-300 group-hover:text-white transition-colors" />
+              </Link>
+            ) : (
+              <>
+                <Link
+                  to="/signup"
+                  className="group inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-white/[0.08] text-white border border-white/[0.1] text-[14px] hover:bg-white/[0.12] transition-all shadow-[0_0_20px_-4px_rgba(34,211,238,0.1)] hover:shadow-[0_0_30px_-4px_rgba(34,211,238,0.15)]"
+                >
+                  <Rocket className="h-4 w-4" /> Create Account
+                </Link>
+                <Link
+                  to="/login"
+                  className="group inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-white/[0.02] text-slate-400 border border-white/[0.04] text-[14px] hover:bg-white/[0.04] hover:text-slate-200 transition-all"
+                >
+                  Sign In
+                  <ArrowUpRight className="h-3.5 w-3.5 text-slate-600 group-hover:text-slate-400 transition-colors" />
+                </Link>
+              </>
+            )}
           </div>
 
           {/* Trust indicators */}
