@@ -193,7 +193,7 @@ export function useChat() {
         platform: 'web',
       };
       const bodyJson = JSON.stringify(requestBody);
-      console.log('[useChat] POST', API_URL, requestBody);
+      console.log('[useChat] ▶ sending request', { url: API_URL, body: requestBody });
 
       const response = await fetch(API_URL, {
         method: 'POST',
@@ -204,21 +204,32 @@ export function useChat() {
         body: bodyJson,
       });
 
-      console.log('[useChat] response status:', response.status, response.statusText);
+      console.log('[useChat] ◀ response received', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        contentType: response.headers.get('content-type'),
+      });
 
       // Safe-parse: read body as TEXT first, then JSON.parse only if
       // non-empty. Some Railway / Cloudflare error pages and the
       // backend's 5xx fallback can return plain text or an empty body —
       // calling response.json() directly would throw "Unexpected end of
-      // JSON input" and we'd lose the actual error context.
-      const rawText = await response.text();
-      console.log('[useChat] raw response (truncated):', rawText.slice(0, 500));
+      // JSON input" and we'd lose the actual error context. Every parse
+      // step is wrapped so we never "Load failed" after an HTTP 200.
+      let rawText = '';
+      try {
+        rawText = await response.text();
+      } catch (readErr) {
+        console.error('[useChat] response.text() failed:', readErr);
+      }
+      console.log('[useChat] raw response text (truncated 500):', rawText.slice(0, 500));
 
       let data: Record<string, unknown> | null = null;
       if (rawText) {
         try {
           data = JSON.parse(rawText) as Record<string, unknown>;
-          console.log('[useChat] parsed JSON keys:', Object.keys(data));
+          console.log('[useChat] parsed JSON:', data);
         } catch (parseErr) {
           console.error('[useChat] JSON.parse failed; treating body as plain text:', parseErr);
         }
@@ -227,7 +238,6 @@ export function useChat() {
       }
 
       if (!response.ok) {
-        // Surface the ACTUAL backend error rather than a generic string.
         const detailMsg = Array.isArray((data as { detail?: unknown })?.detail)
           ? ((data as { detail: Array<{ msg?: string }> }).detail.map((d) => d?.msg).filter(Boolean).join('; '))
           : typeof (data as { detail?: unknown })?.detail === 'string'
@@ -240,9 +250,28 @@ export function useChat() {
         throw new Error(String(backendMsg));
       }
 
-      const responseText: string = data
-        ? (String(data.reply ?? data.response ?? data.message ?? '') || rawText)
-        : (rawText || 'The server returned an empty response. Please try again.');
+      // After HTTP 200: ALWAYS create the assistant message from the
+      // canonical `reply` field when present; fall through to other
+      // common fields only if absent. Never throw here — even if the
+      // shape is unexpected we surface the raw text or a friendly note,
+      // because "Load failed" after a 200 is the bug we're closing.
+      let responseText = '';
+      try {
+        if (data && typeof data.reply === 'string' && data.reply.trim()) {
+          responseText = data.reply;
+        } else if (data && typeof data.response === 'string' && data.response.trim()) {
+          responseText = data.response;
+        } else if (data && typeof data.message === 'string' && data.message.trim()) {
+          responseText = data.message;
+        } else if (rawText.trim()) {
+          responseText = rawText;
+        } else {
+          responseText = 'The server returned an empty response. Please try again.';
+        }
+      } catch (extractErr) {
+        console.error('[useChat] reply-field extraction failed (non-fatal):', extractErr);
+        responseText = rawText || 'The server returned an unexpected response.';
+      }
 
       const assistantMessage: Message = {
         id: generateId(),
@@ -250,14 +279,32 @@ export function useChat() {
         content: responseText,
         timestamp: new Date(),
       };
+      console.log('[useChat] assistant message object:', assistantMessage);
 
-      setSessions((prev) =>
-        prev.map((s) =>
-          s.id === activeSessionId
-            ? { ...s, messages: [...s.messages, assistantMessage], updatedAt: new Date() }
-            : s
-        )
-      );
+      // Append + log post-state. Wrapped so a render-state error never
+      // surfaces as "Load failed" to the user.
+      try {
+        setSessions((prev) => {
+          const next = prev.map((s) =>
+            s.id === activeSessionId
+              ? { ...s, messages: [...s.messages, assistantMessage], updatedAt: new Date() }
+              : s
+          );
+          const active = next.find((s) => s.id === activeSessionId);
+          console.log('[useChat] message state after append:', {
+            sessionId: activeSessionId,
+            messageCount: active?.messages.length,
+            lastMessage: active?.messages[active.messages.length - 1],
+          });
+          return next;
+        });
+        console.log('[useChat] ✓ final render state: assistant message appended');
+      } catch (renderErr) {
+        // Should be unreachable (setState never throws), but guard anyway
+        // so a future regression here can't trigger the user-facing
+        // "Load failed" path after a successful 200.
+        console.error('[useChat] append/render failed AFTER 200 (suppressed):', renderErr);
+      }
     } catch (err) {
       console.error('[useChat] send failed:', err);
       setError(err instanceof Error ? err.message : 'Something went wrong. Please try again.');
