@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { TradingSignal, TradingSignalsResponse, DataProvider } from '@/types';
+import { API_BASE_URL } from '@/lib/apiBase';
 
-const API_BASE = 'https://worker-production-1345.up.railway.app/trading/signals';
+const API_BASE = `${API_BASE_URL}/trading/signals`;
 
 interface UseTradingSignalsOptions {
   symbols?: string;

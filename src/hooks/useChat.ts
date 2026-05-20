@@ -1,9 +1,10 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { ChatSession, Message, AIMode, WorkspaceTab, ChatFolder } from '@/types';
+import { API_BASE_URL } from '@/lib/apiBase';
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
-const API_URL = 'https://worker-production-2a49.up.railway.app/chat';
+const API_URL = `${API_BASE_URL}/chat`;
 
 function getUserId(): string {
   const key = 'korvix_user_id';
