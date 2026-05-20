@@ -306,7 +306,7 @@ def auth_google(body: OAuthRequest):
     except Exception as exc:
         logger.error("auth.google: identity store error: %s", exc)
         raise _err(500, "auth_storage_error", "Could not persist Google user.")
-    user = _annotate_owner(_identity_user_dict(iuser))
+    user = _identity_user_dict(iuser)
     logger.info("auth.google ok | user=%s | email=%s", iuser.id, claims["email"])
     return _issue_access(user)
 

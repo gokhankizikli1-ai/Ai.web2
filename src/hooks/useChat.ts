@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import type { ChatSession, Message, AIMode, WorkspaceTab, ChatFolder } from '@/types';
 import { API_BASE_URL } from '@/lib/apiBase';
 import { getActiveUserId } from '@/stores/authStore';
@@ -6,12 +6,6 @@ import { getActiveUserId } from '@/stores/authStore';
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
 const API_URL = `${API_BASE_URL}/chat`;
-
-function getUserId(): string {
-  // Logged-in users bind chat to their stable auth id; guests fall
-  // back to the local browser id (preserves anonymous flow).
-  return getActiveUserId();
-}
 
 function createEmptySession(title?: string): ChatSession {
   return {
@@ -51,7 +45,6 @@ export function useChat() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUserMessage, setLastUserMessage] = useState<string | null>(null);
-  const userIdRef = useRef<string>(getUserId());
 
   const [aiMode, setAiMode] = useState<AIMode>('fast');
   const [pinnedMessages, setPinnedMessages] = useState<Message[]>([]);
@@ -186,7 +179,7 @@ export function useChat() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          user_id: userIdRef.current,
+          user_id: getActiveUserId(),
           message: content.trim(),
           chat_id: activeSessionId,
           session_id: activeSessionId,

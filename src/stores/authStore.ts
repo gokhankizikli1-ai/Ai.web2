@@ -127,15 +127,27 @@ async function apiOAuthExchange(provider: 'google' | 'apple', idToken: string): 
    "Configure …" message — no fake UI, no broken popup.
    ═══════════════════════════════════════════ */
 
+const scriptLoadPromises = new Map<string, Promise<void>>();
+
 function _loadScript(src: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (document.querySelector(`script[src="${src}"]`)) return resolve();
+  const pending = scriptLoadPromises.get(src);
+  if (pending) return pending;
+
+  document.querySelector(`script[src="${src}"]`)?.remove();
+
+  const promise = new Promise<void>((resolve, reject) => {
     const s = document.createElement('script');
     s.src = src; s.async = true; s.defer = true;
     s.onload = () => resolve();
-    s.onerror = () => reject(new Error(`Failed to load ${src}`));
+    s.onerror = () => {
+      s.remove();
+      scriptLoadPromises.delete(src);
+      reject(new Error(`Failed to load ${src}`));
+    };
     document.head.appendChild(s);
   });
+  scriptLoadPromises.set(src, promise);
+  return promise;
 }
 
 async function googleIdToken(clientId: string): Promise<string> {
