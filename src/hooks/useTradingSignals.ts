@@ -118,7 +118,8 @@ function normalizeResponse(raw: unknown): TradingSignalsResponse {
       rawSignals = data.signals as Record<string, unknown>[];
       console.log('[useTradingSignals] response shape: object.signals[]', { length: rawSignals.length });
     } else if (data.data && typeof data.data === 'object' && Array.isArray((data.data as Record<string, unknown>).signals)) {
-      rawSignals = (data.data as Record<string, unknown>).signals as Record<string, unknown>[];
+      data = data.data as Record<string, unknown>;
+      rawSignals = data.signals as Record<string, unknown>[];
       console.log('[useTradingSignals] response shape: object.data.signals[]', { length: rawSignals.length });
     } else {
       console.log('[useTradingSignals] response shape: object without signals[] — degrading to []');
