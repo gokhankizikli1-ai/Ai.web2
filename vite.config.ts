@@ -4,9 +4,18 @@ import { defineConfig } from "vite"
 import { inspectAttr } from 'kimi-plugin-inspect-react'
 
 // https://vite.dev/config/
-export default defineConfig({
+//
+// Production cleanup: `inspectAttr()` injects the Kimi editor/inspect
+// overlays (blue resize dots, drag handles, visual editor anchors) on
+// every component. Useful during `vite` dev — never wanted in shipped
+// builds. Gating it to `command === 'serve'` keeps the dev workflow
+// unchanged while `vite build` produces a clean static UI for prod.
+export default defineConfig(({ command }) => ({
   base: './',
-  plugins: [inspectAttr(), react()],
+  plugins: [
+    ...(command === 'serve' ? [inspectAttr()] : []),
+    react(),
+  ],
   server: {
     port: 3000,
   },
@@ -15,4 +24,4 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
-});
+}));
