@@ -36,7 +36,7 @@ interface AuthPageProps {
 export default function AuthPage({ mode: propMode }: AuthPageProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, signup, isAuthenticated, isLoading, error, clearError } = useAuthStore();
+  const { login, signup, continueAsGuest, loginWithGoogle, loginWithApple, isAuthenticated, isLoading, error, clearError } = useAuthStore();
 
   // Support both /login and /signup routes, plus toggle within the page
   const urlMode = location.pathname === '/signup' ? 'signup' : 'login';
@@ -99,12 +99,26 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
   };
 
   const handleGuest = () => {
+    continueAsGuest();
     const from = (location.state as any)?.from || '/chat';
     navigate(from);
   };
 
-  const handleSocial = (provider: string) => {
-    setLocalError(`${provider} login is UI-ready. Backend auth coming soon. Please continue as guest or use email.`);
+  const handleSocial = async (provider: string) => {
+    setLocalError(null);
+    clearError();
+    const ok = provider === 'Google'
+      ? await loginWithGoogle()
+      : provider === 'Apple'
+        ? await loginWithApple()
+        : false;
+    if (ok) {
+      const from = (location.state as any)?.from || '/chat';
+      navigate(from, { replace: true });
+    }
+    // Failure path: authStore has already set a clear error message
+    // (missing client id / cancelled popup / backend rejection); the
+    // existing displayError UI surfaces it without any layout change.
   };
 
   const displayError = localError || error;

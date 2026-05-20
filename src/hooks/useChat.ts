@@ -1,18 +1,16 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { ChatSession, Message, AIMode, WorkspaceTab, ChatFolder } from '@/types';
+import { API_BASE_URL } from '@/lib/apiBase';
+import { getActiveUserId } from '@/stores/authStore';
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
-const API_URL = 'https://worker-production-2a49.up.railway.app/chat';
+const API_URL = `${API_BASE_URL}/chat`;
 
 function getUserId(): string {
-  const key = 'korvix_user_id';
-  let id = localStorage.getItem(key);
-  if (!id) {
-    id = crypto.randomUUID ? crypto.randomUUID() : generateId() + generateId();
-    localStorage.setItem(key, id);
-  }
-  return id;
+  // Logged-in users bind chat to their stable auth id; guests fall
+  // back to the local browser id (preserves anonymous flow).
+  return getActiveUserId();
 }
 
 function createEmptySession(title?: string): ChatSession {
