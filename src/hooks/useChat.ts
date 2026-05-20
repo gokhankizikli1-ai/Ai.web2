@@ -193,7 +193,6 @@ export function useChat() {
         platform: 'web',
       };
       const bodyJson = JSON.stringify(requestBody);
-      console.log('[useChat] POST', API_URL, requestBody);
 
       const response = await fetch(API_URL, {
         method: 'POST',
@@ -204,21 +203,17 @@ export function useChat() {
         body: bodyJson,
       });
 
-      console.log('[useChat] response status:', response.status, response.statusText);
-
       // Safe-parse: read body as TEXT first, then JSON.parse only if
       // non-empty. Some Railway / Cloudflare error pages and the
       // backend's 5xx fallback can return plain text or an empty body —
       // calling response.json() directly would throw "Unexpected end of
       // JSON input" and we'd lose the actual error context.
       const rawText = await response.text();
-      console.log('[useChat] raw response (truncated):', rawText.slice(0, 500));
 
       let data: Record<string, unknown> | null = null;
       if (rawText) {
         try {
           data = JSON.parse(rawText) as Record<string, unknown>;
-          console.log('[useChat] parsed JSON keys:', Object.keys(data));
         } catch (parseErr) {
           console.error('[useChat] JSON.parse failed; treating body as plain text:', parseErr);
         }

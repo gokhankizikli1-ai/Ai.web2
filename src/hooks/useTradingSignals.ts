@@ -101,8 +101,6 @@ function extractString(s: Record<string, unknown>, ...keys: string[]): string | 
    RESPONSE NORMALIZER — tolerant of multiple shapes
    ═══════════════════════════════════════════ */
 function normalizeResponse(raw: unknown): TradingSignalsResponse {
-  console.log('[useTradingSignals] raw API response:', raw);
-
   // Tolerate every shape the backend might emit:
   //   - direct array:                   [ {…}, {…} ]
   //   - object with signals key:        { signals: [ {…} ], … }   (canonical)
@@ -111,43 +109,22 @@ function normalizeResponse(raw: unknown): TradingSignalsResponse {
   let data: Record<string, unknown> = {};
   if (Array.isArray(raw)) {
     rawSignals = raw as Record<string, unknown>[];
-    console.log('[useTradingSignals] response shape: direct array', { length: rawSignals.length });
   } else if (raw && typeof raw === 'object') {
     data = raw as Record<string, unknown>;
     if (Array.isArray(data.signals)) {
       rawSignals = data.signals as Record<string, unknown>[];
-      console.log('[useTradingSignals] response shape: object.signals[]', { length: rawSignals.length });
     } else if (data.data && typeof data.data === 'object' && Array.isArray((data.data as Record<string, unknown>).signals)) {
       rawSignals = (data.data as Record<string, unknown>).signals as Record<string, unknown>[];
-      console.log('[useTradingSignals] response shape: object.data.signals[]', { length: rawSignals.length });
-    } else {
-      console.log('[useTradingSignals] response shape: object without signals[] — degrading to []');
     }
-  } else {
-    console.log('[useTradingSignals] response shape: unrecognised — degrading to []');
   }
 
   const provider = normalizeProvider((data.provider as string) || (data.source as string));
 
-  // Permissive live detection — ANY of these flips isLive=true so the
-  // panel never gets stuck on "reconnecting" when valid signals exist:
+  // Keep liveness tied to explicit backend live markers, not signal presence.
   const responseIsLive = data.is_live === true;
   const hasLiveCount = typeof data.live_count === 'number' && (data.live_count as number) > 0;
-  const hasCount = typeof data.count === 'number' && (data.count as number) > 0;
   const anySignalLive = rawSignals.some((s) => s.is_live === true);
-  const hasAnySignals = rawSignals.length > 0;
-  const isLive = responseIsLive || hasLiveCount || hasCount || anySignalLive || hasAnySignals;
-
-  // Explicit one-glance verification log — exact spec format.
-  console.log('TRADING_RESPONSE_SHAPE', raw, {
-    isLive: (raw as Record<string, unknown> | null)?.is_live,
-    liveCount: (raw as Record<string, unknown> | null)?.live_count,
-    count: (raw as Record<string, unknown> | null)?.count,
-    signalsLength: rawSignals.length,
-  });
-  console.log('[useTradingSignals] live check:', {
-    responseIsLive, hasLiveCount, hasCount, anySignalLive, hasAnySignals, isLive,
-  });
+  const isLive = responseIsLive || hasLiveCount || anySignalLive;
 
   const signals: TradingSignal[] = rawSignals.map((s, i) => {
     const sig: TradingSignal = {
@@ -176,7 +153,6 @@ function normalizeResponse(raw: unknown): TradingSignalsResponse {
     signals,
   };
 
-  console.log('[useTradingSignals] normalized:', { isLive, provider, signalCount: signals.length });
   return result;
 }
 
@@ -198,22 +174,17 @@ export function useTradingSignals(options?: UseTradingSignalsOptions): UseTradin
     url.searchParams.set('symbols', symbols);
     url.searchParams.set('timeframe', timeframe);
 
-    console.log('[useTradingSignals] fetching:', url.toString());
-
     try {
       const response = await fetch(url.toString(), {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
       });
 
-      console.log('[useTradingSignals] response status:', response.status);
-
       if (!response.ok) {
         throw new Error(`Server responded with ${response.status}`);
       }
 
       const rawText = await response.text();
-      console.log('[useTradingSignals] raw response (truncated):', rawText.slice(0, 500));
       let rawData: unknown = null;
       if (rawText) {
         try {
@@ -223,9 +194,6 @@ export function useTradingSignals(options?: UseTradingSignalsOptions): UseTradin
         }
       }
       const data = normalizeResponse(rawData);
-
-      console.log('[useTradingSignals] hasLiveSignals:', data.is_live);
-      console.log('[useTradingSignals] signals count:', data.signals.length);
 
       setIsLive(data.is_live);
       setProvider(data.provider);

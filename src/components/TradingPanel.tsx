@@ -439,24 +439,14 @@ export default function TradingPanel() {
     isLive: apiIsLive,
     provider,
     isLoading: apiLoading,
-    error: apiError,
     refresh: refreshApi,
   } = useTradingSignals({ timeframe });
 
-  // Render gate: ANY signals → render. Backend may flip is_live=false
+  // Render gate: ANY signals render. Backend may flip is_live=false
   // transiently while still emitting valid rows; we must not lock the
   // panel into "Market feed reconnecting…" in that case.
-  const hasLiveSignals = apiSignals.length > 0 || apiIsLive;
-
-  // Temporary diagnostic — verify state-decision in DevTools at a glance.
-  console.log('FINAL_TRADING_STATE', {
-    loading: apiLoading,
-    error: apiError,
-    signalsLength: apiSignals.length,
-    hasLiveSignals,
-    isLive: apiIsLive,
-    provider,
-  });
+  const shouldShowSignals = apiSignals.length > 0 || apiIsLive;
+  const hasLiveSignals = apiIsLive;
 
   // Persist timeframe
   const handleTimeframeChange = (tf: string) => {
@@ -606,8 +596,8 @@ export default function TradingPanel() {
                 <SignalCardSkeleton />
                 <SignalCardSkeleton />
               </div>
-            ) : hasLiveSignals ? (
-              /* Live: real backend data */
+            ) : shouldShowSignals ? (
+              /* Backend data: live or cached signals */
               <>
                 <div className="grid grid-cols-4 gap-2 mb-2">
                   <div className="p-3 rounded-xl border border-emerald-500/10 bg-emerald-500/[0.04] text-center">
