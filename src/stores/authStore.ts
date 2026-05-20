@@ -248,8 +248,14 @@ export const useAuthStore = create<AuthState>()(
 
       continueAsGuest: () => {
         // Stable per-browser guest id so chat history can be associated
-        // locally without a backend round-trip. Guest chats stay local;
-        // per product spec they don't sync.
+        // locally without a backend round-trip. Guest chats stay local
+        // (per product spec) and do not sync.
+        //
+        // isAuthenticated is INTENTIONALLY false — guests have no
+        // backend session, so any ProtectedRoute marked `guestAllowed:
+        // false` (e.g. /settings) must correctly redirect them to
+        // login. Routes that allow guests check `user?.provider ===
+        // 'guest'` rather than this flag.
         let id = localStorage.getItem('korvix_guest_id') || '';
         if (!id) {
           id = (crypto.randomUUID?.() || `guest-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
@@ -258,7 +264,7 @@ export const useAuthStore = create<AuthState>()(
         const user: AuthUser = {
           id, email: '', name: 'Guest', plan: 'free', provider: 'guest', isOwner: false,
         };
-        set({ user, token: null, isAuthenticated: true, isOwner: false, isLoading: false, error: null });
+        set({ user, token: null, isAuthenticated: false, isOwner: false, isLoading: false, error: null });
       },
 
       loginWithGoogle: async () => {

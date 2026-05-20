@@ -61,14 +61,19 @@ def _err(status_code: int, code: str, message: str) -> HTTPException:
 
 def _issue_access(user: Dict[str, Any]) -> Dict[str, Any]:
     """Issue an access token for a user dict. Maps a missing
-    JWT_SECRET_KEY to a clean 503 instead of a 500/crash."""
+    JWT_SECRET_KEY to a clean 503 instead of a 500/crash. Annotates
+    is_owner on the user before returning so every path (login/signup/
+    google) carries the gate consistently. JWT `kind` claim mirrors the
+    user's actual provider rather than being hardcoded to 'email'."""
+    user = _annotate_owner(user)
+    kind = str(user.get("kind") or "email")
     from backend.services.auth import tokens
     try:
         token, _claims = tokens.issue(
             sub=user["id"],
             token_type="access",
             ttl_seconds=ACCESS_TTL_SECONDS,
-            extra_claims={"kind": "email", "email": user["email"]},
+            extra_claims={"kind": kind, "email": user.get("email", "")},
         )
     except tokens.TokenSecretMissingError:
         raise _err(503, "auth_not_configured",
@@ -279,11 +284,17 @@ def _verify_google_id_token(id_token: str) -> Dict[str, Any]:
 
 
 @router.post("/google")
-async def auth_google(body: OAuthRequest):
+def auth_google(body: OAuthRequest):
     """Verify a Google ID token server-side and issue our own access
     token. Creates/looks up the user in the identity store by email.
     NEVER trusts frontend-only email claims — the email comes from the
-    Google-verified payload."""
+    Google-verified payload.
+
+    Plain `def` (not `async def`) because Google's tokeninfo verifier
+    uses blocking `urllib.request.urlopen`; FastAPI runs sync handlers
+    in a thread pool so a 10s tokeninfo call can't freeze the event
+    loop for all other concurrent requests.
+    """
     claims = _verify_google_id_token(body.id_token)
     try:
         from backend.services.auth.storage import get_or_create_user, touch_user
