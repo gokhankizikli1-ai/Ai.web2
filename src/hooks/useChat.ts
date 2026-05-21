@@ -128,7 +128,7 @@ export function useChat() {
   // Resolve the user id ONCE per mount so the storage key is stable
   // for the lifetime of the hook even if the auth state mutates.
   const userIdRef = useRef<string>(getUserId());
-  const initial = buildInitialState(userIdRef.current);
+  const [initial] = useState<PersistedShape>(() => buildInitialState(userIdRef.current));
 
   const [sessions, setSessions] = useState<ChatSession[]>(initial.sessions);
   const [activeSessionId, setActiveSessionId] = useState<string>(initial.activeSessionId);
