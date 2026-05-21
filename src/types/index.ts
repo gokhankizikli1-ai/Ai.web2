@@ -146,3 +146,38 @@ export interface UsageMetrics {
   researchUsed: number;
   researchLimit: number;
 }
+
+// ═══════════════════════════════════════════
+// Multi-Agent Project Types (Future Architecture)
+// ═══════════════════════════════════════════
+
+export type AgentRole = 'frontend' | 'backend' | 'designer' | 'marketing' | 'researcher' | 'trader' | 'general';
+
+export interface ProjectAgent {
+  id: string;
+  role: AgentRole;
+  name: string;
+  status: AgentStatus;
+  avatar?: string;
+  description: string;
+  color: string;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  description: string;
+  status: 'active' | 'archived' | 'draft';
+  agents: ProjectAgent[];
+  chatIds: string[]; // References to chat sessions under this project
+  createdAt: Date;
+  updatedAt: Date;
+  ownerId: string;
+  collaborators?: string[];
+  tags?: string[];
+}
+
+export interface ProjectWorkspace {
+  projects: Project[];
+  activeProjectId: string | null;
+}

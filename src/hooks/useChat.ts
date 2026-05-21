@@ -1,16 +1,19 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { ChatSession, Message, AIMode, WorkspaceTab, ChatFolder } from '@/types';
-import { API_BASE_URL } from '@/lib/apiBase';
-import { getActiveUserId } from '@/stores/authStore';
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
-const API_URL = `${API_BASE_URL}/chat`;
+const API_URL = 'https://worker-production-2a49.up.railway.app/chat';
+const SESSIONS_KEY = 'korvix_sessions';
 
 function getUserId(): string {
-  // Logged-in users bind chat to their stable auth id; guests fall
-  // back to the local browser id (preserves anonymous flow).
-  return getActiveUserId();
+  const key = 'korvix_user_id';
+  let id = localStorage.getItem(key);
+  if (!id) {
+    id = crypto.randomUUID ? crypto.randomUUID() : generateId() + generateId();
+    localStorage.setItem(key, id);
+  }
+  return id;
 }
 
 function createEmptySession(title?: string): ChatSession {
@@ -21,6 +24,33 @@ function createEmptySession(title?: string): ChatSession {
     updatedAt: new Date(),
     folder: 'none',
   };
+}
+
+/* ─── Session persistence ─── */
+function loadSessions(): ChatSession[] | null {
+  try {
+    const raw = localStorage.getItem(SESSIONS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((s: Record<string, unknown>) => ({
+          ...s,
+          updatedAt: new Date(s.updatedAt as string),
+          messages: (s.messages as Record<string, unknown>[]).map((m) => ({
+            ...m,
+            timestamp: new Date(m.timestamp as string),
+          })),
+        }));
+      }
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
+function saveSessions(sessions: ChatSession[]) {
+  try {
+    localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
+  } catch { /* ignore */ }
 }
 
 /* ═══════════════════════════════════════════
@@ -44,10 +74,13 @@ function saveTabSessions(map: Record<string, string>) {
 }
 
 export function useChat() {
-  // Initialize one session per tab for isolation
-  const initialSessions = TAB_KEYS.map((tab) => createEmptySession(`New ${tab.charAt(0).toUpperCase() + tab.slice(1)}`));
+  // Load persisted sessions or create fresh ones
+  const persisted = loadSessions();
+  const initialSessions = persisted && persisted.length > 0
+    ? persisted
+    : TAB_KEYS.map((tab) => createEmptySession(`New ${tab.charAt(0).toUpperCase() + tab.slice(1)}`));
   const [sessions, setSessions] = useState<ChatSession[]>(initialSessions);
-  const [activeSessionId, setActiveSessionId] = useState<string>(initialSessions[0].id);
+  const [activeSessionId, setActiveSessionId] = useState<string>(initialSessions[0]?.id || generateId());
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUserMessage, setLastUserMessage] = useState<string | null>(null);
@@ -68,6 +101,11 @@ export function useChat() {
   useEffect(() => {
     saveTabSessions(tabSessionMap);
   }, [tabSessionMap]);
+
+  // Persist all sessions to localStorage for workspace persistence across refresh
+  useEffect(() => {
+    saveSessions(sessions);
+  }, [sessions]);
 
   const activeSession = sessions.find((s) => s.id === activeSessionId) || sessions[0];
 

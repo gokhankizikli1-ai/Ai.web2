@@ -198,6 +198,11 @@
     animation: float 6s ease-in-out infinite;
   }
 
+  /* Safe area padding for iOS bottom nav */
+  .safe-area-pb {
+    padding-bottom: var(--safe-area-inset-bottom, 0px);
+  }
+
   /* Premium smooth transitions */
   .transition-premium {
     transition: all 0.2s cubic-bezier(0.22, 1, 0.36, 1);

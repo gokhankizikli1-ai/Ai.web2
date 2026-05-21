@@ -139,11 +139,13 @@ export default function ChatDashboard() {
   // Agent timeline visibility: only for research/agents deep mode
   const showTimeline = isLoading && (activeTab === 'research' || activeTab === 'agents');
 
-  // Mobile sidebar
+  // Responsive sidebar — close on tablet/mobile, open on desktop
   useEffect(() => {
     const check = () => {
-      if (window.innerWidth < 768) setSidebarOpen(false);
-      if (window.innerWidth < 1024) setRightSidebarOpen(false);
+      const w = window.innerWidth;
+      if (w < 1024) setSidebarOpen(false);
+      else setSidebarOpen(true);
+      if (w < 1280) setRightSidebarOpen(false);
     };
     check();
     window.addEventListener('resize', check);
@@ -303,7 +305,7 @@ export default function ChatDashboard() {
       />
 
       <div
-        className={`relative flex-1 flex flex-col h-[100dvh] transition-all duration-[300ms] ${sidebarOpen ? 'md:ml-[240px]' : 'ml-0'}`}
+        className={`relative flex-1 flex flex-col h-[100dvh] transition-all duration-300 ease-out ${sidebarOpen ? 'lg:ml-[220px]' : 'ml-0'}`}
         style={{ paddingBottom: 'var(--safe-area-inset-bottom, 0px)' }}
       >
         {/* Top Bar */}
