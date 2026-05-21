@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-import { Menu, Sparkles, Rocket, ShoppingBag, TrendingUp, Code, Cpu } from 'lucide-react';
+import { Menu, Sparkles, Rocket, ShoppingBag, TrendingUp, Code, Cpu, ArrowRight } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { useAuthStore } from '@/stores/authStore';
 
 const NAV_LINKS = [
   { label: 'Workspace', href: '/workspace', icon: Code },
@@ -18,6 +19,12 @@ export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const location = useLocation();
+  // Real signed-in users only — guests have provider === 'guest' and
+  // isAuthenticated === false, so they keep the marketing CTAs.
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const user = useAuthStore((s) => s.user);
+  const userInitials = (user?.name || user?.email || 'U').slice(0, 2).toUpperCase();
+  const userLabel = user?.name || user?.email?.split('@')[0] || 'Account';
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 20);
@@ -83,21 +90,44 @@ export default function Navbar() {
             ))}
           </div>
 
-          {/* Right Side — Auth CTAs */}
+          {/* Right Side — Auth CTAs (signed-out) OR Workspace shortcut (signed-in) */}
           <div className="hidden md:flex items-center gap-2.5">
-            <Link to="/login">
-              <Button
-                variant="ghost"
-                className="text-slate-400 hover:text-white hover:bg-white/5 text-[13px]"
-              >
-                Sign In
-              </Button>
-            </Link>
-            <Link to="/signup">
-              <Button className="bg-white text-slate-900 hover:bg-slate-200 font-semibold text-[13px] h-9 px-4 rounded-xl transition-all duration-300 hover:shadow-[0_0_20px_-5px_rgba(255,255,255,0.15)]">
-                Create Account
-              </Button>
-            </Link>
+            {isAuthenticated ? (
+              <>
+                <Link
+                  to="/chat"
+                  title={userLabel}
+                  className="flex items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06] hover:border-white/[0.12] px-2.5 py-1.5 transition-all duration-200"
+                >
+                  <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-400/20 to-blue-500/20 border border-cyan-500/15 shrink-0">
+                    <span className="text-[10px] font-semibold text-cyan-300">{userInitials}</span>
+                  </div>
+                  <span className="text-[12px] font-medium text-slate-200 max-w-[140px] truncate">{userLabel}</span>
+                </Link>
+                <Link to="/chat">
+                  <Button className="bg-white text-slate-900 hover:bg-slate-200 font-semibold text-[13px] h-9 px-4 rounded-xl transition-all duration-300 hover:shadow-[0_0_20px_-5px_rgba(255,255,255,0.15)]">
+                    Open Workspace
+                    <ArrowRight className="ml-1.5 h-3.5 w-3.5" />
+                  </Button>
+                </Link>
+              </>
+            ) : (
+              <>
+                <Link to="/login">
+                  <Button
+                    variant="ghost"
+                    className="text-slate-400 hover:text-white hover:bg-white/5 text-[13px]"
+                  >
+                    Sign In
+                  </Button>
+                </Link>
+                <Link to="/signup">
+                  <Button className="bg-white text-slate-900 hover:bg-slate-200 font-semibold text-[13px] h-9 px-4 rounded-xl transition-all duration-300 hover:shadow-[0_0_20px_-5px_rgba(255,255,255,0.15)]">
+                    Create Account
+                  </Button>
+                </Link>
+              </>
+            )}
           </div>
 
           {/* Mobile Menu */}
@@ -124,16 +154,34 @@ export default function Navbar() {
                   </Link>
                 ))}
                 <hr className="border-white/10 my-2" />
-                <Link to="/login" onClick={() => setIsOpen(false)}>
-                  <Button className="w-full bg-white text-slate-900 hover:bg-slate-200 font-semibold rounded-xl mb-2">
-                    Sign In
-                  </Button>
-                </Link>
-                <Link to="/signup" onClick={() => setIsOpen(false)}>
-                  <Button variant="outline" className="w-full border-white/15 text-white hover:bg-white/[0.04] font-semibold rounded-xl">
-                    Create Account
-                  </Button>
-                </Link>
+                {isAuthenticated ? (
+                  <>
+                    <div className="flex items-center gap-2.5 px-3 py-2 mb-2 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-400/20 to-blue-500/20 border border-cyan-500/15 shrink-0">
+                        <span className="text-[11px] font-semibold text-cyan-300">{userInitials}</span>
+                      </div>
+                      <span className="text-[13px] font-medium text-slate-200 truncate">{userLabel}</span>
+                    </div>
+                    <Link to="/chat" onClick={() => setIsOpen(false)}>
+                      <Button className="w-full bg-white text-slate-900 hover:bg-slate-200 font-semibold rounded-xl">
+                        Open Workspace
+                      </Button>
+                    </Link>
+                  </>
+                ) : (
+                  <>
+                    <Link to="/login" onClick={() => setIsOpen(false)}>
+                      <Button className="w-full bg-white text-slate-900 hover:bg-slate-200 font-semibold rounded-xl mb-2">
+                        Sign In
+                      </Button>
+                    </Link>
+                    <Link to="/signup" onClick={() => setIsOpen(false)}>
+                      <Button variant="outline" className="w-full border-white/15 text-white hover:bg-white/[0.04] font-semibold rounded-xl">
+                        Create Account
+                      </Button>
+                    </Link>
+                  </>
+                )}
               </div>
             </SheetContent>
           </Sheet>

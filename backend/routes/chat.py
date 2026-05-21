@@ -299,6 +299,15 @@ async def chat(req: ChatRequest):
     # CHAT_TIMING logs as `usage_recorded` dropping from 10-30ms to <1ms).
     # When the flag is off, they run inline as before — byte-identical to
     # the pre-Phase-4b behaviour.
+    # Bind every persisted turn to the authenticated user + their chat id
+    # so /chat/history can rebuild the sidebar and /chat/messages can
+    # restore a thread on refresh / re-login. chat_id falls back to
+    # session_id (older clients sent only one of the two); empty string
+    # stays compatible with the legacy anonymous bucket.
+    persist_chat_id = (req.chat_id or req.session_id or "").strip()
+    # Derive a short, stable title from the first user message so the
+    # sidebar has a meaningful label even before the AI replies.
+    persist_title = (message[:60] or "").strip()
     try:
         from backend.services.user_service import record_usage, save_message
         from backend.services.tasks import enqueue
@@ -307,10 +316,16 @@ async def chat(req: ChatRequest):
         # independently best-effort; one failure doesn't skip the others.
         if not enqueue(record_usage, user_id, name="record_usage"):
             record_usage(user_id)
-        if not enqueue(save_message, "user", message, name="save_message_user"):
-            save_message("user", message)
-        if not enqueue(save_message, "assistant", reply, name="save_message_assistant"):
-            save_message("assistant", reply)
+        if not enqueue(
+            save_message, "user", message, user_id, persist_chat_id, persist_title,
+            name="save_message_user",
+        ):
+            save_message("user", message, user_id, persist_chat_id, persist_title)
+        if not enqueue(
+            save_message, "assistant", reply, user_id, persist_chat_id, "",
+            name="save_message_assistant",
+        ):
+            save_message("assistant", reply, user_id, persist_chat_id, "")
     except Exception:
         pass
     timer.mark("usage_recorded")
@@ -351,6 +366,60 @@ async def chat(req: ChatRequest):
         suggested_followups=followups if followups else None,
         metadata=response_metadata,
     )
+
+
+@router.get("/chat/history")
+def chat_history(user_id: str, limit: int = 30) -> Dict[str, Any]:
+    """Return the user's recent chat sessions for sidebar restore.
+
+    Each entry carries the stable chat_id the frontend originally
+    issued, a usable title (explicit → falls back to the first user
+    message → falls back to "New Conversation"), the last activity
+    timestamp and the message count. Empty chats and other users'
+    chats are never returned.
+    """
+    if not user_id:
+        return {"chats": []}
+    uid = _uid(user_id)
+    try:
+        from backend.services.user_service import list_user_chats
+        rows = list_user_chats(uid, int(limit) if limit else 30)
+    except Exception as e:
+        logger.warning("chat_history uid=%s error: %s", uid, e)
+        return {"chats": []}
+    chats: List[Dict[str, Any]] = []
+    for chat_id, title, first_user_msg, last_at, msg_count, _last_id in rows:
+        label = (title or "").strip() or (first_user_msg or "").strip()[:60] or "New Conversation"
+        chats.append({
+            "chat_id":        chat_id,
+            "title":          label,
+            "last_at":        last_at,
+            "message_count":  int(msg_count or 0),
+        })
+    return {"chats": chats}
+
+
+@router.get("/chat/messages")
+def chat_messages(
+    user_id: str,
+    chat_id: str,
+    limit: int = 200,
+) -> Dict[str, Any]:
+    """Full ordered message log for one chat (oldest → newest)."""
+    if not user_id or not chat_id:
+        return {"chat_id": chat_id or "", "messages": []}
+    uid = _uid(user_id)
+    try:
+        from backend.services.user_service import load_user_chat
+        rows = load_user_chat(uid, chat_id, int(limit) if limit else 200)
+    except Exception as e:
+        logger.warning("chat_messages uid=%s chat=%s error: %s", uid, chat_id, e)
+        return {"chat_id": chat_id, "messages": []}
+    messages = [
+        {"role": role, "content": content, "timestamp": created_at}
+        for role, content, created_at in rows
+    ]
+    return {"chat_id": chat_id, "messages": messages}
 
 
 def _quick_response(

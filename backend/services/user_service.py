@@ -23,6 +23,8 @@ from db import (
     get_user_profile,
     get_chat_history,
     save_chat,
+    get_user_chats,
+    get_chat_messages,
 )
 
 try:
@@ -55,9 +57,13 @@ def get_text_profile() -> str:
 
 
 def get_history(user_id: int, limit: int = 10) -> list:
-    """Returns list of (role, content) tuples, most recent last."""
+    """Returns list of (role, content) tuples, most recent last.
+
+    Filters to the requesting user's rows when user_id is positive so
+    cross-user context never leaks into prompt construction.
+    """
     try:
-        return get_chat_history(limit)
+        return get_chat_history(limit, user_id=user_id)
     except Exception as e:
         logger.warning("get_history uid=%s error: %s", user_id, e)
         return []
@@ -70,11 +76,35 @@ def record_usage(user_id: int) -> None:
         logger.warning("record_usage uid=%s error: %s", user_id, e)
 
 
-def save_message(role: str, content: str) -> None:
+def save_message(
+    role: str,
+    content: str,
+    user_id: int = 0,
+    chat_id: str = "",
+    title: str = "",
+) -> None:
     try:
-        save_chat(role, content)
+        save_chat(role, content, user_id=user_id, chat_id=chat_id, title=title)
     except Exception as e:
-        logger.warning("save_message error: %s", e)
+        logger.warning("save_message uid=%s chat=%s error: %s", user_id, chat_id, e)
+
+
+def list_user_chats(user_id: int, limit: int = 30) -> list:
+    """Per-user chat summaries for the sidebar history."""
+    try:
+        return get_user_chats(user_id, limit)
+    except Exception as e:
+        logger.warning("list_user_chats uid=%s error: %s", user_id, e)
+        return []
+
+
+def load_user_chat(user_id: int, chat_id: str, limit: int = 200) -> list:
+    """Full ordered message log for a single chat."""
+    try:
+        return get_chat_messages(user_id, chat_id, limit)
+    except Exception as e:
+        logger.warning("load_user_chat uid=%s chat=%s error: %s", user_id, chat_id, e)
+        return []
 
 
 def get_profile(user_id: int) -> dict:

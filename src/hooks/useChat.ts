@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { ChatSession, Message, AIMode, WorkspaceTab, ChatFolder } from '@/types';
 import { API_BASE_URL } from '@/lib/apiBase';
-import { getActiveUserId } from '@/stores/authStore';
+import { getActiveUserId, useAuthStore } from '@/stores/authStore';
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
@@ -31,27 +31,110 @@ function createEmptySession(title?: string): ChatSession {
 
 export const TAB_KEYS: WorkspaceTab[] = ['chat', 'research', 'coding', 'startup', 'study', 'creative', 'trading', 'business', 'agents'];
 
-function loadTabSessions(): Record<string, string> {
-  try {
-    const raw = localStorage.getItem('korvix_tab_sessions');
-    if (raw) return JSON.parse(raw);
-  } catch { /* ignore */ }
-  return {};
+/* ═══════════════════════════════════════════
+   PERSISTENCE
+   Sessions are persisted per user so signing in / out / switching
+   accounts never silently merges histories. The active session id
+   and the per-tab session map are persisted under the same prefix
+   so refresh + route navigation rebuilds the exact same view.
+   ═══════════════════════════════════════════ */
+
+const STORAGE_VERSION = 'v2';
+
+function storagePrefix(userId: string): string {
+  return `korvix_chat_${STORAGE_VERSION}_${userId || 'anon'}`;
 }
 
-function saveTabSessions(map: Record<string, string>) {
-  localStorage.setItem('korvix_tab_sessions', JSON.stringify(map));
+interface PersistedShape {
+  sessions: ChatSession[];
+  activeSessionId: string;
+  tabSessionMap: Record<string, string>;
+  currentTab: WorkspaceTab;
+}
+
+function reviveSessions(raw: unknown): ChatSession[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ChatSession[] = [];
+  for (const s of raw as Array<Record<string, unknown>>) {
+    if (!s || typeof s !== 'object') continue;
+    const id = typeof s.id === 'string' ? s.id : '';
+    if (!id) continue;
+    const updatedAt = s.updatedAt ? new Date(s.updatedAt as string) : new Date();
+    const messagesRaw = Array.isArray(s.messages) ? (s.messages as Array<Record<string, unknown>>) : [];
+    const messages: Message[] = messagesRaw
+      .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+      .map((m) => ({
+        id: typeof m.id === 'string' ? m.id : generateId(),
+        role: m.role as Message['role'],
+        content: m.content as string,
+        timestamp: m.timestamp ? new Date(m.timestamp as string) : new Date(),
+      }));
+    out.push({
+      id,
+      title: typeof s.title === 'string' ? s.title : 'New Conversation',
+      messages,
+      updatedAt: Number.isNaN(updatedAt.getTime()) ? new Date() : updatedAt,
+      folder: (s.folder as ChatFolder) || 'none',
+      isFavorite: !!s.isFavorite,
+      isArchived: !!s.isArchived,
+      isDemo: !!s.isDemo,
+    });
+  }
+  return out;
+}
+
+function loadPersisted(userId: string): PersistedShape | null {
+  try {
+    const raw = localStorage.getItem(storagePrefix(userId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<PersistedShape>;
+    const sessions = reviveSessions(parsed.sessions);
+    if (!sessions.length) return null;
+    return {
+      sessions,
+      activeSessionId: typeof parsed.activeSessionId === 'string' ? parsed.activeSessionId : sessions[0].id,
+      tabSessionMap: (parsed.tabSessionMap && typeof parsed.tabSessionMap === 'object')
+        ? (parsed.tabSessionMap as Record<string, string>) : {},
+      currentTab: ((parsed.currentTab as WorkspaceTab) || 'chat'),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function savePersisted(userId: string, payload: PersistedShape) {
+  try {
+    localStorage.setItem(storagePrefix(userId), JSON.stringify(payload));
+  } catch {
+    /* localStorage may be full or disabled — non-fatal */
+  }
+}
+
+function buildInitialState(userId: string): PersistedShape {
+  const restored = loadPersisted(userId);
+  if (restored) return restored;
+  const initialSessions = TAB_KEYS.map((tab) =>
+    createEmptySession(`New ${tab.charAt(0).toUpperCase() + tab.slice(1)}`),
+  );
+  return {
+    sessions: initialSessions,
+    activeSessionId: initialSessions[0].id,
+    tabSessionMap: {},
+    currentTab: 'chat',
+  };
 }
 
 export function useChat() {
-  // Initialize one session per tab for isolation
-  const initialSessions = TAB_KEYS.map((tab) => createEmptySession(`New ${tab.charAt(0).toUpperCase() + tab.slice(1)}`));
-  const [sessions, setSessions] = useState<ChatSession[]>(initialSessions);
-  const [activeSessionId, setActiveSessionId] = useState<string>(initialSessions[0].id);
+  // Resolve the user id ONCE per mount so the storage key is stable
+  // for the lifetime of the hook even if the auth state mutates.
+  const userIdRef = useRef<string>(getUserId());
+  const initial = buildInitialState(userIdRef.current);
+
+  const [sessions, setSessions] = useState<ChatSession[]>(initial.sessions);
+  const [activeSessionId, setActiveSessionId] = useState<string>(initial.activeSessionId);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUserMessage, setLastUserMessage] = useState<string | null>(null);
-  const userIdRef = useRef<string>(getUserId());
 
   const [aiMode, setAiMode] = useState<AIMode>('fast');
   const [pinnedMessages, setPinnedMessages] = useState<Message[]>([]);
@@ -60,14 +143,92 @@ export function useChat() {
   const [activeTools, setActiveTools] = useState<string[]>([]);
   const [memoryRefs, setMemoryRefs] = useState<string[]>([]);
 
-  // Per-tab session isolation
-  const [tabSessionMap, setTabSessionMap] = useState<Record<string, string>>(loadTabSessions);
-  const [currentTab, setCurrentTab] = useState<WorkspaceTab>('chat');
+  const [tabSessionMap, setTabSessionMap] = useState<Record<string, string>>(initial.tabSessionMap);
+  const [currentTab, setCurrentTab] = useState<WorkspaceTab>(initial.currentTab);
 
-  // Persist tab session map
+  // Auth identity for server-side restore. Subscribing to the store
+  // means a sign-in mid-session will re-hydrate from the backend
+  // without forcing a full page reload.
+  const authUserId = useAuthStore((s) => s.user?.id ?? '');
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+
+  // Persist every state change so navigation away (Home, refresh,
+  // tab switch) never drops the in-flight conversation.
   useEffect(() => {
-    saveTabSessions(tabSessionMap);
-  }, [tabSessionMap]);
+    savePersisted(userIdRef.current, {
+      sessions,
+      activeSessionId,
+      tabSessionMap,
+      currentTab,
+    });
+  }, [sessions, activeSessionId, tabSessionMap, currentTab]);
+
+  // One-shot hydration from the backend when the user is authenticated.
+  // The local cache is the source of truth for in-flight edits; the
+  // server provides cross-device restore + recovery after cache wipe.
+  const hydratedForUserRef = useRef<string>('');
+  useEffect(() => {
+    if (!isAuthenticated || !authUserId) return;
+    if (hydratedForUserRef.current === authUserId) return;
+    hydratedForUserRef.current = authUserId;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE_URL}/chat/history?user_id=${encodeURIComponent(authUserId)}&limit=30`);
+        if (!res.ok) return;
+        const data = await res.json() as { chats?: Array<{ chat_id: string; title: string; last_at: string; message_count: number }> };
+        const remote = Array.isArray(data?.chats) ? data.chats : [];
+        if (!remote.length || cancelled) return;
+
+        // Fetch full messages for the most recent N chats so the user
+        // sees real history, not just titles, on first paint. Skip any
+        // chat we already have locally with the same id — local state
+        // is fresher (may contain an in-flight message).
+        const detail = await Promise.all(
+          remote.slice(0, 10).map(async (c) => {
+            try {
+              const r = await fetch(`${API_BASE_URL}/chat/messages?user_id=${encodeURIComponent(authUserId)}&chat_id=${encodeURIComponent(c.chat_id)}&limit=200`);
+              if (!r.ok) return null;
+              const body = await r.json() as { messages?: Array<{ role: 'user' | 'assistant'; content: string; timestamp: string }> };
+              return { chat: c, messages: Array.isArray(body?.messages) ? body.messages : [] };
+            } catch {
+              return null;
+            }
+          }),
+        );
+
+        if (cancelled) return;
+
+        setSessions((prev) => {
+          const byId = new Map(prev.map((s) => [s.id, s]));
+          for (const entry of detail) {
+            if (!entry) continue;
+            const { chat, messages } = entry;
+            if (byId.has(chat.chat_id)) continue; // local copy wins
+            const revived: ChatSession = {
+              id: chat.chat_id,
+              title: chat.title || 'Conversation',
+              folder: 'none',
+              updatedAt: chat.last_at ? new Date(chat.last_at) : new Date(),
+              messages: messages.map((m) => ({
+                id: generateId(),
+                role: m.role,
+                content: m.content,
+                timestamp: m.timestamp ? new Date(m.timestamp) : new Date(),
+              })),
+            };
+            byId.set(revived.id, revived);
+          }
+          return Array.from(byId.values()).sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+        });
+      } catch {
+        /* network or parse error — local cache continues to drive UI */
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [isAuthenticated, authUserId]);
 
   const activeSession = sessions.find((s) => s.id === activeSessionId) || sessions[0];
 
