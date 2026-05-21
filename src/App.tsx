@@ -1,4 +1,6 @@
 import { Routes, Route, useLocation, Navigate } from 'react-router';
+import { useEffect } from 'react';
+import { useAuthStore } from '@/stores/authStore';
 import LandingPage from './pages/LandingPage';
 import FeaturesPage from './pages/FeaturesPage';
 import UseCasesPage from './pages/UseCasesPage';
@@ -56,7 +58,22 @@ function AppLayout({ children }: { children: React.ReactNode }) {
   );
 }
 
+// One-shot guard so a Strict-Mode double-mount doesn't issue /auth/me twice.
+let _authBootChecked = false;
+
 export default function App() {
+  // Validate the persisted token against the backend on every app boot.
+  // Zustand-persist already restores user/isAuthenticated synchronously
+  // from localStorage so the landing-page CTA swap works immediately;
+  // this just refreshes the user (incl. backend-driven is_owner) and
+  // clears auth state if the token has expired or been revoked. The
+  // call is a no-op when no token is stored, so guests are unaffected.
+  useEffect(() => {
+    if (_authBootChecked) return;
+    _authBootChecked = true;
+    useAuthStore.getState().checkAuth();
+  }, []);
+
   return (
     <AppLayout>
       <Routes>
