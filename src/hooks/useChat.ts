@@ -49,10 +49,9 @@ function generateDemoReply(userMessage: string): string {
     /^(what|how|why|when|where|who|which|nedir|nasıl|neden|ne zaman|kim)\b/.test(text);
 
   const banner =
-    '\n\n— Demo mode: this deployment is not connected to a live AI ' +
-    'backend yet, so the reply above is a local placeholder. Set ' +
-    'VITE_API_URL in the Vercel environment (or start the backend) to ' +
-    'get real AI answers.';
+    '\n\n— KorvixAI backend is not connected yet, but the frontend demo ' +
+    'is working. The reply above is a local placeholder. Set VITE_API_URL ' +
+    'in the Vercel environment (or start the backend) to get real AI answers.';
 
   if (isGreeting) {
     return 'Merhaba! 👋 KorvixAI is here — currently running in demo mode. '
