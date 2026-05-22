@@ -35,7 +35,7 @@ export default function DeleteConfirmModal({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-[#0a0f1a]/70 backdrop-blur-sm"
           onClick={onCancel}
         >
           <motion.div
@@ -43,7 +43,7 @@ export default function DeleteConfirmModal({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 10 }}
             transition={{ duration: 0.2 }}
-            className="w-full max-w-sm mx-4 rounded-2xl border border-white/[0.06] bg-[#0c0c14] shadow-2xl p-5"
+            className="w-full max-w-sm mx-4 rounded-2xl border border-white/[0.06] bg-[#171C24] shadow-2xl p-5"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start gap-3 mb-4">

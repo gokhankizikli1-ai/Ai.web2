@@ -1,67 +1,45 @@
 import { motion } from 'framer-motion';
 import { useLanguageStore } from '@/stores/languageStore';
 import KorvixOrb from './KorvixOrb';
-import type { WorkspaceTab } from '@/types';
 
-interface EmptyWorkspaceProps {
-  activeMode: WorkspaceTab;
-  compact?: boolean;
-  onQuickAction?: (msg: string) => void;
-}
-
-export default function EmptyWorkspace({ activeMode }: EmptyWorkspaceProps) {
+export default function EmptyWorkspace() {
   const { t } = useLanguageStore();
 
-  const titles: Record<string, string> = {
-    chat: t('howCanIHelp'),
-    coding: t('codeAssistant'),
-    research: t('deepResearch'),
-    trading: t('tradingIntel'),
-    business: t('business'),
-    startup: t('startup'),
-    agents: t('openAgents'),
-    study: t('study'),
-    creative: t('creative'),
-  };
-
-  const subtitles: Record<string, string> = {
-    chat: t('sendAMessage'),
-    coding: 'Write, review, and ship code with AI assistance.',
-    research: 'Deep research across academic and web sources.',
-    trading: 'Real-time signals, sentiment & market analysis.',
-    business: 'Goal-driven workspace for your business.',
-    startup: 'Validate ideas, build MVPs, find product-market fit.',
-    agents: 'Deploy specialized AI agents for complex tasks.',
-    study: 'Learning-focused research and summaries.',
-    creative: 'Generate content, designs, and creative ideas.',
-  };
-
-  const title = titles[activeMode] || titles.chat;
-  const subtitle = subtitles[activeMode] || subtitles.chat;
-
   return (
-    <div className="flex-1 flex flex-col items-center justify-center overflow-hidden px-4">
+    <div className="flex-1 flex flex-col items-center justify-center relative overflow-hidden">
+      {/* Ambient glow behind the orb */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[300px] rounded-full pointer-events-none" style={{ background: 'radial-gradient(circle, rgba(34,211,238,0.04) 0%, transparent 60%)' }} />
+
+      {/* AI Core Orb */}
       <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-        className="flex flex-col items-center text-center max-w-md"
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+        className="mb-6 relative z-10"
       >
-        {/* Korvix AI Core */}
-        <div className="mb-7">
-          <KorvixOrb size="lg" />
-        </div>
-
-        {/* Welcome Title */}
-        <h1 className="text-[22px] sm:text-[26px] font-semibold text-white tracking-tight mb-2">
-          {title}
-        </h1>
-
-        {/* Subtitle */}
-        <p className="text-[13px] text-slate-500 max-w-sm leading-relaxed">
-          {subtitle}
-        </p>
+        <KorvixOrb size="lg" />
       </motion.div>
+
+      {/* Welcome Text */}
+      <motion.h1
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.2, duration: 0.5 }}
+        className="text-lg font-semibold tracking-tight mb-1.5 relative z-10"
+        style={{ color: '#E2E8F0' }}
+      >
+        {t('howCanIHelp')}
+      </motion.h1>
+
+      <motion.p
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.3, duration: 0.5 }}
+        className="text-[13px] relative z-10"
+        style={{ color: 'rgba(148,163,184,0.35)' }}
+      >
+        {t('sendAMessage')}
+      </motion.p>
     </div>
   );
 }

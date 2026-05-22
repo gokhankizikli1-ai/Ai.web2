@@ -120,7 +120,7 @@ export default function IntelligenceLayer({ variant = 'compact' }: IntelligenceL
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
               exit={{ opacity: 0, height: 0 }}
-              className="absolute top-full left-0 right-0 z-40 bg-[#0f0f0f]/95 backdrop-blur-xl border-b border-white/[0.04] overflow-hidden"
+              className="absolute top-full left-0 right-0 z-40 bg-[#11151C]/95 backdrop-blur-xl border-b border-white/[0.04] overflow-hidden"
             >
               <div className="px-4 py-3 space-y-2">
                 {activities.map((a) => (
@@ -154,7 +154,7 @@ export default function IntelligenceLayer({ variant = 'compact' }: IntelligenceL
   // Full variant for ChatDashboard overlay
   return (
     <div className="absolute top-0 left-0 right-0 z-30">
-      <div className="flex items-center gap-3 px-4 py-2 border-b border-white/[0.02] bg-[#0a0a0a]/60 backdrop-blur-xl">
+      <div className="flex items-center gap-3 px-4 py-2 border-b border-white/[0.02] bg-[#11151C]/60 backdrop-blur-xl">
         {hasActive && <ThinkingPulse />}
         {hasActive && <SyncIndicator />}
         <div className="flex items-center gap-2 overflow-x-auto">

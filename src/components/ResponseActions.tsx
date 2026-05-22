@@ -83,7 +83,7 @@ export default function ResponseActions({ onAction, onHoverAction, compact = fal
               {isSaved ? (
                 <BookmarkCheck className="h-2.5 w-2.5 text-amber-400/70" />
               ) : (
-                <Bookmark className="h-2.5 w-2.5 text-slate-700 hover:text-slate-500" />
+                <Bookmark className="h-2.5 w-2.5 text-[#64748B] hover:text-slate-500" />
               )}
             </button>
           </motion.button>

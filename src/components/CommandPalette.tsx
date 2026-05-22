@@ -122,7 +122,7 @@ export default function CommandPalette({ open, onClose, commands }: CommandPalet
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.15 }}
-      className="fixed inset-0 z-[80] flex items-start justify-center pt-[15vh] bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-[80] flex items-start justify-center pt-[15vh] bg-[#0a0f1a]/70 backdrop-blur-sm"
       onClick={onClose}
     >
       <motion.div
@@ -130,7 +130,7 @@ export default function CommandPalette({ open, onClose, commands }: CommandPalet
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={{ opacity: 0, y: -8, scale: 0.98 }}
         transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-        className="w-full max-w-lg mx-4 rounded-2xl border border-white/[0.08] bg-[#0e0e14] shadow-2xl shadow-black/50 overflow-hidden"
+        className="w-full max-w-lg mx-4 rounded-2xl border border-white/[0.08] bg-[#171C24] shadow-2xl shadow-[#0a0f1a]/50 overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Search */}
@@ -142,7 +142,7 @@ export default function CommandPalette({ open, onClose, commands }: CommandPalet
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Type a command or search..."
-            className="flex-1 bg-transparent text-[15px] text-white placeholder:text-slate-700 outline-none"
+            className="flex-1 bg-transparent text-[15px] text-white placeholder:text-[#64748B] outline-none"
             autoFocus
           />
           <kbd className="hidden sm:inline-flex items-center rounded-md bg-white/[0.04] border border-white/[0.06] px-2 py-0.5 text-[10px] text-slate-600 font-mono">
@@ -154,9 +154,9 @@ export default function CommandPalette({ open, onClose, commands }: CommandPalet
         <div className="max-h-[380px] overflow-y-auto scrollbar-thin py-2">
           {flatItems.length === 0 && (
             <div className="flex flex-col items-center py-10 text-center">
-              <Search className="h-8 w-8 text-slate-800 mb-3" />
+              <Search className="h-8 w-8 text-[#94A3B8] mb-3" />
               <p className="text-[13px] text-slate-600 mb-1">No commands found</p>
-              <p className="text-[11px] text-slate-800">Try a different search term</p>
+              <p className="text-[11px] text-[#94A3B8]">Try a different search term</p>
             </div>
           )}
 
@@ -165,7 +165,7 @@ export default function CommandPalette({ open, onClose, commands }: CommandPalet
             return (
               <div key={category} className="mb-1">
                 <div className="px-5 py-1.5 flex items-center gap-2">
-                  <span className="text-[10px] font-semibold text-slate-700 uppercase tracking-wider">{category}</span>
+                  <span className="text-[10px] font-semibold text-[#64748B] uppercase tracking-wider">{category}</span>
                   <div className="flex-1 h-px bg-white/[0.03]" />
                 </div>
                 {groupItems.map((item) => {
@@ -222,7 +222,7 @@ export default function CommandPalette({ open, onClose, commands }: CommandPalet
 
         {/* Footer */}
         <div className="flex items-center justify-between px-5 py-2.5 border-t border-white/[0.04] bg-white/[0.01]">
-          <div className="flex items-center gap-2 text-[10px] text-slate-700">
+          <div className="flex items-center gap-2 text-[10px] text-[#64748B]">
             <span className="flex items-center gap-1">
               <kbd className="font-mono bg-white/[0.04] px-1 rounded">↑↓</kbd> to navigate
             </span>
@@ -230,7 +230,7 @@ export default function CommandPalette({ open, onClose, commands }: CommandPalet
               <kbd className="font-mono bg-white/[0.04] px-1 rounded">↵</kbd> to select
             </span>
           </div>
-          <div className="flex items-center gap-2 text-[10px] text-slate-700">
+          <div className="flex items-center gap-2 text-[10px] text-[#64748B]">
             <span className="flex items-center gap-1">
               <kbd className="font-mono bg-white/[0.04] px-1 rounded">ESC</kbd> close
             </span>

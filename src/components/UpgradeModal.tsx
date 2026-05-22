@@ -83,7 +83,7 @@ export default function UpgradeModal({ open, onClose }: UpgradeModalProps) {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[90] flex items-start justify-center pt-[5vh] bg-black/70 backdrop-blur-md"
+          className="fixed inset-0 z-[90] flex items-start justify-center pt-[5vh] bg-[#0a0f1a]/80 backdrop-blur-md"
           onClick={onClose}
         >
           <motion.div
@@ -91,7 +91,7 @@ export default function UpgradeModal({ open, onClose }: UpgradeModalProps) {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.97 }}
             transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-            className="w-full max-w-4xl mx-4 max-h-[90vh] overflow-y-auto scrollbar-thin rounded-2xl border border-white/[0.08] bg-[#0c0c14] shadow-2xl shadow-black/50"
+            className="w-full max-w-4xl mx-4 max-h-[90vh] overflow-y-auto scrollbar-thin rounded-2xl border border-white/[0.08] bg-[#171C24] shadow-2xl shadow-[#0a0f1a]/50"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
@@ -212,11 +212,11 @@ export default function UpgradeModal({ open, onClose }: UpgradeModalProps) {
 
             {/* Footer */}
             <div className="px-8 py-4 border-t border-white/[0.03] flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-[11px] text-slate-700">
+              <div className="flex items-center gap-1.5 text-[11px] text-[#64748B]">
                 <Shield className="h-3 w-3" />
                 Secure payment. Cancel anytime.
               </div>
-              <span className="text-[10px] text-slate-800">30-day money-back guarantee</span>
+              <span className="text-[10px] text-[#94A3B8]">30-day money-back guarantee</span>
             </div>
           </motion.div>
         </motion.div>

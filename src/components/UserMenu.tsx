@@ -56,7 +56,7 @@ export default function UserMenu() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 6, scale: 0.97 }}
             transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-            className="absolute top-full right-0 mt-1.5 w-56 rounded-xl border border-white/[0.06] bg-[#0e0e14] shadow-2xl overflow-hidden z-50 py-1"
+            className="absolute top-full right-0 mt-1.5 w-56 rounded-xl border border-white/[0.06] bg-[#171C24] shadow-2xl overflow-hidden z-50 py-1"
           >
             {/* User info header */}
             <div className="px-3 py-2.5 border-b border-white/[0.03]">

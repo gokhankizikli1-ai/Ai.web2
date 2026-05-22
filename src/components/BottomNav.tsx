@@ -1,14 +1,13 @@
 import { useNavigate, useLocation } from 'react-router';
 import { motion } from 'framer-motion';
 import {
-  MessageSquare, LayoutGrid, Bot, Wrench, Compass,
+  MessageSquare, Compass, FolderOpen, Bot,
 } from 'lucide-react';
 
 const ITEMS = [
   { id: 'chat', label: 'Chat', icon: MessageSquare, path: '/chat' },
-  { id: 'workspace', label: 'Work', icon: LayoutGrid, path: '/workspace' },
+  { id: 'projects', label: 'Projects', icon: FolderOpen, path: '/projects' },
   { id: 'agents', label: 'Agents', icon: Bot, path: '/agents' },
-  { id: 'tools', label: 'Tools', icon: Wrench, path: '/tools' },
   { id: 'explore', label: 'Explore', icon: Compass, path: '/explore' },
 ];
 
@@ -20,9 +19,8 @@ export default function BottomNav() {
   // Determine active item based on current route
   const getActiveId = () => {
     if (pathname === '/chat' || pathname.startsWith('/chat')) return 'chat';
-    if (pathname === '/workspace') return 'workspace';
+    if (pathname === '/projects' || pathname.startsWith('/projects')) return 'projects';
     if (pathname === '/agents' || pathname.startsWith('/agents')) return 'agents';
-    if (pathname === '/tools' || pathname.startsWith('/tools')) return 'tools';
     if (pathname === '/explore') return 'explore';
     return 'chat';
   };

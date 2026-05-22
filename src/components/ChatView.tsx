@@ -26,7 +26,7 @@ interface ChatViewProps {
 export default function ChatView({
   messages, isLoading, error, inputText,
   onSend, onRetry, onSetInput, onTogglePin, pinnedMessages,
-  onHoverAction, workspace = 'chat',
+  onHoverAction,
 }: ChatViewProps) {
   const [animatedMessageId, setAnimatedMessageId] = useState<string | null>(null);
   const [activeTools, setActiveTools] = useState<ComposerTool[]>([]);
@@ -93,8 +93,6 @@ export default function ChatView({
     setActiveTools((prev) => prev.filter((t) => t.id !== tool.id));
   }, []);
 
-  const handleEmptySend = useCallback((msg: string) => onSend(msg), [onSend]);
-
   const handleRetry = useCallback(() => onRetry(), [onRetry]);
 
   return (
@@ -105,7 +103,7 @@ export default function ChatView({
           /* Empty state with suggestions */
           <div className="flex flex-col h-full">
             <div className="flex-1 flex items-center justify-center px-4">
-              <EmptyWorkspace onQuickAction={handleEmptySend} activeMode={workspace} compact />
+              <EmptyWorkspace />
             </div>
           </div>
         ) : (
@@ -182,8 +180,8 @@ export default function ChatView({
         )}
       </div>
 
-      {/* Input area — always visible */}
-      <div ref={composerRef} className="shrink-0 px-3 md:px-4 pb-3 md:pb-4 pt-1 bg-[#0a0a0a]/60 backdrop-blur-xl">
+      {/* Input area — floating glass, integrated with workspace */}
+      <div ref={composerRef} className="shrink-0 px-3 md:px-4 pb-3 md:pb-4 pt-1" style={{ background: 'transparent' }}>
         <PremiumComposer
           onSend={handleSend}
           disabled={isLoading}

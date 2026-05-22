@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useSearchParams } from 'react-router';
+import { useSearchParams, useNavigate } from 'react-router';
 import { useChat, TAB_KEYS } from '@/hooks/useChat';
 import { useCommandPalette } from '@/hooks/useCommandPalette';
 import { useToast } from '@/hooks/useToast';
@@ -11,7 +11,6 @@ import RightSidebar from '@/components/RightSidebar';
 import ChatView from '@/components/ChatView';
 import TradingPanel from '@/components/TradingPanel';
 import BusinessPanel from '@/components/BusinessPanel';
-import AgentsPanel from '@/components/AgentsPanel';
 import WorkspaceTabs from '@/components/WorkspaceTabs';
 import AIActivityFeed from '@/components/AIActivityFeed';
 import AgentTimeline from '@/components/AgentTimeline';
@@ -29,6 +28,7 @@ import GuestBadge from '@/components/GuestBadge';
 import {
   Settings, PanelLeftOpen, Command as CmdIcon,
   Bookmark, Download, Sparkles, Zap, Bot, MoreHorizontal,
+  FolderOpen,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -72,7 +72,8 @@ function ToolbarDropdown({
         whileHover={{ scale: 1.05 }}
         whileTap={{ scale: 0.95 }}
         onClick={() => setOpen(!open)}
-        className="h-7 w-7 flex items-center justify-center text-slate-700 hover:text-slate-400 hover:bg-white/[0.03] rounded-md transition-all border border-white/[0.04]"
+        className="h-7 w-7 flex items-center justify-center rounded-md transition-all border hover:text-slate-300 hover:bg-white/[0.04]"
+        style={{ color: 'rgba(148,163,184,0.4)', borderColor: 'rgba(255,255,255,0.05)' }}
       >
         <MoreHorizontal className="h-3.5 w-3.5" />
       </motion.button>
@@ -84,17 +85,19 @@ function ToolbarDropdown({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4, scale: 0.98 }}
             transition={{ duration: 0.15 }}
-            className="absolute top-full right-0 mt-1.5 w-48 rounded-xl border border-white/[0.06] bg-[#0e0e14] shadow-2xl overflow-hidden z-50 py-1"
+            className="absolute top-full right-0 mt-1.5 w-48 rounded-xl border shadow-2xl overflow-hidden z-50 py-1"
+            style={{ borderColor: 'rgba(255,255,255,0.06)', background: 'rgba(23,28,36,0.96)', backdropFilter: 'blur(24px)' }}
           >
             {items.map((item) => (
               <button
                 key={item.label}
                 onClick={item.action}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-[12px] text-slate-500 hover:text-slate-300 hover:bg-white/[0.03] transition-all"
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-[12px] transition-all hover:bg-white/[0.04]"
+                style={{ color: 'rgba(148,163,184,0.6)' }}
               >
-                <item.icon className="h-3.5 w-3.5 text-slate-600" />
-                <span className="flex-1">{item.label}</span>
-                {item.shortcut && <span className="text-[10px] text-slate-800 font-mono">{item.shortcut}</span>}
+                <item.icon className="h-3.5 w-3.5" style={{ color: 'rgba(148,163,184,0.35)' }} />
+                <span className="flex-1 hover:text-slate-200 transition-colors">{item.label}</span>
+                {item.shortcut && <span className="text-[10px] font-mono" style={{ color: 'rgba(148,163,184,0.2)' }}>{item.shortcut}</span>}
               </button>
             ))}
           </motion.div>
@@ -123,6 +126,7 @@ export default function ChatDashboard() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<WorkspaceTab>(
     (searchParams.get('tab') as WorkspaceTab) || settings.defaultWorkspace
   );
@@ -137,7 +141,7 @@ export default function ChatDashboard() {
   }, [settings.defaultWorkspace, searchParams]);
 
   // Agent timeline visibility: only for research/agents deep mode
-  const showTimeline = isLoading && (activeTab === 'research' || activeTab === 'agents');
+  const showTimeline = isLoading && activeTab === 'research';
 
   // Responsive sidebar — close on tablet/mobile, open on desktop
   useEffect(() => {
@@ -159,11 +163,15 @@ export default function ChatDashboard() {
 
   // ─── Tab change handler: uses isolated session switch ───
   const handleTabChange = useCallback((tab: WorkspaceTab) => {
+    if (tab === 'agents') {
+      navigate('/projects');
+      return;
+    }
     setActiveTab(tab);
     switchTab(tab);
     // Sync URL param for deep-linking
     setSearchParams({ tab }, { replace: true });
-  }, [switchTab, setSearchParams]);
+  }, [switchTab, setSearchParams, navigate]);
 
   // Listen for workspace switch events from sidebar mode shortcuts
   useEffect(() => {
@@ -219,7 +227,7 @@ export default function ChatDashboard() {
     { id: 'new-chat', label: t('newChat'), shortcut: '', icon: <Sparkles className="h-3.5 w-3.5" />, category: 'Actions', action: handleNewChat },
     { id: 'deep-research', label: 'Deep Research', shortcut: '', icon: <Zap className="h-3.5 w-3.5" />, category: 'Actions', action: () => handleTabChange('research') },
     { id: 'analyze-stock', label: t('trading'), shortcut: '', icon: <Zap className="h-3.5 w-3.5" />, category: 'Actions', action: () => handleTabChange('trading') },
-    { id: 'open-agents', label: t('agents'), shortcut: '', icon: <Bot className="h-3.5 w-3.5" />, category: 'Actions', action: () => handleTabChange('agents') },
+    { id: 'open-projects', label: t('projects') || 'Projects', shortcut: '', icon: <FolderOpen className="h-3.5 w-3.5" />, category: 'Actions', action: () => navigate('/projects') },
     { id: 'export', label: t('export'), shortcut: '', icon: <Download className="h-3.5 w-3.5" />, category: 'Actions', action: () => setExportOpen(true) },
     { id: 'upgrade', label: t('upgrade'), shortcut: '', icon: <Zap className="h-3.5 w-3.5" />, category: 'Actions', action: () => setUpgradeOpen(true) },
     { id: 'chat-tab', label: t('chat'), shortcut: '', icon: <Sparkles className="h-3.5 w-3.5" />, category: 'Navigation', action: () => handleTabChange('chat') },
@@ -228,7 +236,7 @@ export default function ChatDashboard() {
     { id: 'trading-tab', label: t('trading'), shortcut: '', icon: <Zap className="h-3.5 w-3.5" />, category: 'Navigation', action: () => handleTabChange('trading') },
     { id: 'business-tab', label: t('business'), shortcut: '', icon: <Bot className="h-3.5 w-3.5" />, category: 'Navigation', action: () => handleTabChange('business') },
     { id: 'startup-tab', label: t('startup'), shortcut: '', icon: <Sparkles className="h-3.5 w-3.5" />, category: 'Navigation', action: () => handleTabChange('startup') },
-    { id: 'agents-tab', label: t('agents'), shortcut: '', icon: <Bot className="h-3.5 w-3.5" />, category: 'Navigation', action: () => handleTabChange('agents') },
+    { id: 'projects-tab', label: t('projects') || 'Projects', shortcut: '', icon: <FolderOpen className="h-3.5 w-3.5" />, category: 'Navigation', action: () => navigate('/projects') },
     { id: 'study-tab', label: t('study'), shortcut: '', icon: <Sparkles className="h-3.5 w-3.5" />, category: 'Navigation', action: () => handleTabChange('study') },
     { id: 'creative-tab', label: t('creative'), shortcut: '', icon: <Sparkles className="h-3.5 w-3.5" />, category: 'Navigation', action: () => handleTabChange('creative') },
     { id: 'prompts', label: t('prompts'), shortcut: '', icon: <Bookmark className="h-3.5 w-3.5" />, category: 'Actions', action: () => setPromptLibOpen(true) },
@@ -265,7 +273,7 @@ export default function ChatDashboard() {
     switch (activeTab) {
       case 'trading':  return <TradingPanel />;
       case 'business': return <BusinessPanel />;
-      case 'agents':   return <AgentsPanel />;
+      case 'agents': return null;
       default:         return (
         <ChatView
           key={activeSessionId}
@@ -286,8 +294,20 @@ export default function ChatDashboard() {
   };
 
   return (
-    <div className="relative flex h-[100dvh] w-full bg-[#0a0a0a] text-foreground overflow-hidden">
-      {/* Global overlay removed — main content stays fully readable */}
+    <div className="relative flex h-[100dvh] w-full overflow-hidden" style={{ background: '#11151C', color: '#E2E8F0' }}>
+      {/* Ambient background layers */}
+      <div className="absolute inset-0 pointer-events-none">
+        {/* Base gradient */}
+        <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, #11151C 0%, #171C24 40%, #141821 100%)' }} />
+        {/* Top-right cyan ambient glow */}
+        <div className="absolute -top-[200px] -right-[200px] w-[600px] h-[600px] rounded-full opacity-[0.04]" style={{ background: 'radial-gradient(circle, #22D3EE 0%, transparent 70%)' }} />
+        {/* Bottom-left blue ambient glow */}
+        <div className="absolute -bottom-[200px] -left-[200px] w-[500px] h-[500px] rounded-full opacity-[0.03]" style={{ background: 'radial-gradient(circle, #3B82F6 0%, transparent 70%)' }} />
+        {/* Center subtle depth */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] rounded-full opacity-[0.015]" style={{ background: 'radial-gradient(circle, #22D3EE 0%, transparent 60%)' }} />
+        {/* Subtle grid overlay */}
+        <div className="absolute inset-0 opacity-[0.008]" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '80px 80px' }} />
+      </div>
 
       <Sidebar
         isOpen={sidebarOpen}
@@ -305,16 +325,17 @@ export default function ChatDashboard() {
       />
 
       <div
-        className={`relative flex-1 flex flex-col h-[100dvh] transition-all duration-300 ease-out ${sidebarOpen ? 'lg:ml-[220px]' : 'ml-0'}`}
+        className={`relative flex-1 flex flex-col h-[100dvh] transition-all duration-300 ease-out ${sidebarOpen ? 'lg:ml-[260px]' : 'ml-0'}`}
         style={{ paddingBottom: 'var(--safe-area-inset-bottom, 0px)' }}
       >
         {/* Top Bar */}
-        <header className="relative flex items-center justify-between h-11 px-3 border-b border-white/[0.02] bg-[#0a0a0a]/80 backdrop-blur-sm shrink-0 z-10">
+        <header className="relative flex items-center justify-between h-11 px-3 border-b shrink-0 z-10" style={{ borderColor: 'rgba(255,255,255,0.04)', background: 'rgba(17,21,28,0.7)', backdropFilter: 'blur(20px)' }}>
           <div className="flex items-center gap-2 min-w-0">
             {!sidebarOpen && (
               <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
                 onClick={() => setSidebarOpen(true)}
-                className="h-7 w-7 flex items-center justify-center text-slate-700 hover:text-cyan-400 hover:bg-cyan-500/[0.06] rounded-md transition-all border border-white/[0.04]"
+                className="h-7 w-7 flex items-center justify-center rounded-md transition-all border hover:text-cyan-400 hover:bg-white/[0.04] hover:border-cyan-500/15"
+                style={{ color: 'rgba(148,163,184,0.5)', borderColor: 'rgba(255,255,255,0.05)' }}
               >
                 <PanelLeftOpen className="h-3.5 w-3.5" />
               </motion.button>
@@ -324,19 +345,13 @@ export default function ChatDashboard() {
 
           <div className="flex items-center gap-1.5 shrink-0">
             <AIModeSelector currentMode={aiMode} onModeChange={setAiMode} />
-            <div className="w-px h-3.5 bg-white/[0.03] hidden sm:block" />
+            <div className="w-px h-3.5 bg-border hidden sm:block" />
             <button onClick={() => setUpgradeOpen(true)} className="hidden sm:block">
               <PremiumBadge />
             </button>
             <div className="hidden sm:block">
               <GuestBadge />
             </div>
-            <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setSettingsOpen(true)}
-              className="h-7 w-7 flex items-center justify-center text-slate-700 hover:text-amber-400 hover:bg-amber-500/[0.06] rounded-md transition-all border border-white/[0.04]"
-              title={t('settings')}
-            >
-              <Settings className="h-3.5 w-3.5" />
-            </motion.button>
             <ToolbarDropdown
               onCmd={() => setCmdOpen(true)}
               onPrompts={() => setPromptLibOpen(true)}

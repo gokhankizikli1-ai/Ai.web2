@@ -118,7 +118,7 @@ export default function EcommerceOS() {
                         </div>
                         <h3 className="text-[13px] font-medium text-white mb-1 group-hover:text-slate-200 transition-colors">{tool.name}</h3>
                         <p className="text-[11px] text-slate-600 leading-relaxed">{tool.desc}</p>
-                        <div className="flex items-center gap-1 mt-2 text-slate-700 group-hover:text-slate-500 transition-colors">
+                        <div className="flex items-center gap-1 mt-2 text-[#64748B] group-hover:text-slate-500 transition-colors">
                           <span className="text-[10px]">Launch</span>
                           <ArrowUpRight className="h-2.5 w-2.5" />
                         </div>
@@ -153,10 +153,10 @@ export default function EcommerceOS() {
                           <label className="block text-[12px] text-slate-400 mb-1.5">{input.label}</label>
                           {(input as any).type === 'textarea' ? (
                             <textarea value={formValues[i] || ''} onChange={(e) => setFormValues((p) => ({ ...p, [i]: e.target.value }))} placeholder={input.placeholder} rows={4}
-                              className="w-full rounded-xl bg-white/[0.015] border border-white/[0.04] p-3 text-[13px] text-white placeholder:text-slate-700 focus:border-cyan-500/20 focus:bg-white/[0.02] outline-none transition-all resize-none" />
+                              className="w-full rounded-xl bg-white/[0.015] border border-white/[0.04] p-3 text-[13px] text-white placeholder:text-[#64748B] focus:border-cyan-500/20 focus:bg-white/[0.02] outline-none transition-all resize-none" />
                           ) : (
                             <input type="text" value={formValues[i] || ''} onChange={(e) => setFormValues((p) => ({ ...p, [i]: e.target.value }))} placeholder={input.placeholder}
-                              className="w-full h-10 rounded-xl bg-white/[0.015] border border-white/[0.04] px-3 text-[13px] text-white placeholder:text-slate-700 focus:border-cyan-500/20 focus:bg-white/[0.02] outline-none transition-all" />
+                              className="w-full h-10 rounded-xl bg-white/[0.015] border border-white/[0.04] px-3 text-[13px] text-white placeholder:text-[#64748B] focus:border-cyan-500/20 focus:bg-white/[0.02] outline-none transition-all" />
                           )}
                         </motion.div>
                       ))}

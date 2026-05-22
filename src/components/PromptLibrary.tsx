@@ -23,9 +23,9 @@ export default function PromptLibrary({ open, onClose, onSelect }: PromptLibrary
   });
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[#0a0f1a]/50 backdrop-blur-sm animate-fade-in" onClick={onClose}>
       <div
-        className="w-full max-w-lg mx-4 rounded-2xl border border-white/[0.08] bg-[#0f0f16] shadow-2xl overflow-hidden animate-scale-in"
+        className="w-full max-w-lg mx-4 rounded-2xl border border-white/[0.08] bg-[#171C24] shadow-2xl overflow-hidden animate-scale-in"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

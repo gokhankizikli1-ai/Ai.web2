@@ -124,7 +124,7 @@ function WorkspaceCard({ ws }: { ws: typeof WORKSPACES[0] }) {
       </div>
 
       {/* Hover action */}
-      <div className="flex items-center gap-1 text-[11px] text-slate-700 group-hover:text-cyan-400/70 transition-colors">
+      <div className="flex items-center gap-1 text-[11px] text-[#64748B] group-hover:text-cyan-400/70 transition-colors">
         Open workspace <ArrowRight className="w-3 h-3 transition-transform group-hover:translate-x-0.5" />
       </div>
     </motion.div>
@@ -225,7 +225,7 @@ export default function WorkspacePage() {
                 <Clock className="w-3.5 h-3.5 text-slate-500" />
                 <h2 className="text-[13px] font-semibold text-white">Recent Activity</h2>
               </div>
-              <span className="text-[10px] text-slate-700">{RECENT_ITEMS.length} items</span>
+              <span className="text-[10px] text-[#64748B]">{RECENT_ITEMS.length} items</span>
             </div>
             <div className="space-y-1.5">
               {RECENT_ITEMS.map((item, i) => (
@@ -244,8 +244,8 @@ export default function WorkspacePage() {
                     <p className="text-[11px] text-slate-600">{item.workspace}</p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-[11px] text-slate-700">{item.time}</span>
-                    <ChevronRight className="w-3.5 h-3.5 text-slate-800 group-hover:text-cyan-400/60 transition-colors" />
+                    <span className="text-[11px] text-[#64748B]">{item.time}</span>
+                    <ChevronRight className="w-3.5 h-3.5 text-[#94A3B8] group-hover:text-cyan-400/60 transition-colors" />
                   </div>
                 </motion.div>
               ))}

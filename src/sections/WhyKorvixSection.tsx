@@ -1,106 +1,105 @@
 import { motion } from 'framer-motion';
-import { Layers, Rocket, ShoppingCart, TrendingUp, Bot, Sparkles } from 'lucide-react';
+import {
+  Layers, Zap, Shield, Globe, Cpu, BarChart3,
+} from 'lucide-react';
 
 const fadeUp = (delay = 0) => ({
-  initial: { opacity: 0, y: 20 },
+  initial: { opacity: 0, y: 12 },
   whileInView: { opacity: 1, y: 0 },
-  viewport: { once: true, margin: '-50px' },
-  transition: { delay, duration: 0.5, ease: [0.22, 1, 0.36, 1] as const },
+  viewport: { once: true },
+  transition: { delay, duration: 0.45, ease: [0.22, 1, 0.36, 1] as const },
 });
 
-const PILLARS = [
+const FEATURES = [
   {
     icon: Layers,
-    title: 'Multi-Workspace AI',
-    desc: 'Chat, research, code, trade, launch startups, and run ecommerce — all from one intelligent workspace with context-aware switching.',
-    color: 'text-cyan-400',
-    bg: 'bg-cyan-500/[0.04]',
-    border: 'border-cyan-500/10',
-    glow: 'group-hover:shadow-[0_0_20px_-4px_rgba(34,211,238,0.08)]',
+    title: 'Unified Workspace',
+    desc: 'Switch between AI modes without losing context. Code, research, trade, and launch — all connected.',
+    span: 'col-span-1 md:col-span-2',
+    bg: 'bg-slate-50',
+    iconBg: 'bg-cyan-50',
+    iconColor: 'text-cyan-600',
   },
   {
-    icon: Rocket,
-    title: 'Startup Operating System',
-    desc: 'Validate ideas, build pitch decks, research markets, plan MVPs, and design monetization strategies with YC-grade tooling.',
-    color: 'text-amber-400',
-    bg: 'bg-amber-500/[0.04]',
-    border: 'border-amber-500/10',
-    glow: 'group-hover:shadow-[0_0_20px_-4px_rgba(251,191,36,0.08)]',
+    icon: Cpu,
+    title: 'Multi-Agent System',
+    desc: 'Deploy specialized AI agents for frontend, backend, design, marketing, and trading.',
+    span: 'col-span-1',
+    bg: 'bg-white',
+    iconBg: 'bg-violet-50',
+    iconColor: 'text-violet-600',
   },
   {
-    icon: ShoppingCart,
-    title: 'Ecommerce Intelligence',
-    desc: 'Research winning products, optimize listings, generate ad copy, calculate margins, and build pricing strategies that convert.',
-    color: 'text-emerald-400',
-    bg: 'bg-emerald-500/[0.04]',
-    border: 'border-emerald-500/10',
-    glow: 'group-hover:shadow-[0_0_20px_-4px_rgba(52,211,153,0.08)]',
+    icon: BarChart3,
+    title: 'Live Trading Intelligence',
+    desc: 'Real-time market signals from Finnhub and CoinGecko with AI-powered analysis.',
+    span: 'col-span-1',
+    bg: 'bg-white',
+    iconBg: 'bg-emerald-50',
+    iconColor: 'text-emerald-600',
   },
   {
-    icon: TrendingUp,
-    title: 'Trading Signals',
-    desc: 'Get real-time market signals with confidence scoring, risk/reward analysis, and AI-generated trade setups for stocks and crypto.',
-    color: 'text-rose-400',
-    bg: 'bg-rose-500/[0.04]',
-    border: 'border-rose-500/10',
-    glow: 'group-hover:shadow-[0_0_20px_-4px_rgba(251,113,133,0.08)]',
+    icon: Zap,
+    title: 'Startup & Ecommerce OS',
+    desc: 'Validate ideas, build MVPs, run online stores, and scale with AI guidance at every step.',
+    span: 'col-span-1 md:col-span-2',
+    bg: 'bg-slate-50',
+    iconBg: 'bg-amber-50',
+    iconColor: 'text-amber-600',
   },
   {
-    icon: Bot,
-    title: 'AI Agent Hub',
-    desc: 'Deploy specialized AI agents — from startup strategists to product researchers — each trained for specific business functions.',
-    color: 'text-violet-400',
-    bg: 'bg-violet-500/[0.04]',
-    border: 'border-violet-500/10',
-    glow: 'group-hover:shadow-[0_0_20px_-4px_rgba(167,139,250,0.08)]',
+    icon: Shield,
+    title: 'Enterprise Security',
+    desc: 'End-to-end encryption, local data processing, and privacy-first architecture.',
+    span: 'col-span-1',
+    bg: 'bg-white',
+    iconBg: 'bg-slate-100',
+    iconColor: 'text-slate-600',
   },
   {
-    icon: Sparkles,
-    title: 'Premium AI Compute',
-    desc: '$0.10 per credit for advanced operations. Casual chat is always free. Deep research, code execution, and agent runs consume credits.',
-    color: 'text-blue-400',
-    bg: 'bg-blue-500/[0.04]',
-    border: 'border-blue-500/10',
-    glow: 'group-hover:shadow-[0_0_20px_-4px_rgba(96,165,250,0.08)]',
+    icon: Globe,
+    title: '13 Languages',
+    desc: 'Full internationalization with Turkish, English, German, French, and more.',
+    span: 'col-span-1',
+    bg: 'bg-white',
+    iconBg: 'bg-blue-50',
+    iconColor: 'text-blue-600',
   },
 ];
 
 export default function WhyKorvixSection() {
   return (
-    <section className="relative py-24 md:py-32 overflow-hidden">
-      {/* Background glow */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[500px] bg-cyan-500/[0.02] rounded-full blur-[150px] pointer-events-none" />
+    <section id="features" className="relative py-20 md:py-28 overflow-hidden">
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] bg-cyan-400/[0.02] rounded-full blur-[150px] pointer-events-none" />
 
-      <div className="relative max-w-6xl mx-auto px-4 sm:px-6">
-        {/* Section header */}
-        <motion.div {...fadeUp(0)} className="text-center mb-16">
-          <span className="text-[11px] font-semibold text-cyan-400/50 uppercase tracking-widest">Why KorvixAI</span>
-          <h2 className="text-3xl sm:text-4xl md:text-[42px] font-bold text-white mt-3 mb-4 tracking-tight leading-tight">
+      <div className="relative max-w-5xl mx-auto px-4 sm:px-6">
+        {/* Section Header */}
+        <motion.div {...fadeUp(0)} className="text-center mb-12 md:mb-16">
+          <span className="text-[11px] font-semibold text-cyan-600 uppercase tracking-widest">Why KorvixAI</span>
+          <h2 className="text-3xl sm:text-4xl md:text-[42px] font-bold text-slate-900 mt-3 mb-4 tracking-tight leading-tight">
             One Platform.{' '}
-            <span className="bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 to-blue-400">
+            <span className="bg-clip-text text-transparent bg-gradient-to-r from-cyan-500 to-blue-600">
               Infinite Workflows.
             </span>
           </h2>
-          <p className="text-[15px] text-slate-500 max-w-xl mx-auto leading-relaxed">
+          <p className="text-[14px] sm:text-[15px] text-slate-600 max-w-xl mx-auto leading-relaxed">
             Switch between AI workspaces without losing context. From brainstorming a startup to analyzing a trade — everything connects.
           </p>
         </motion.div>
 
-        {/* Cards grid */}
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {PILLARS.map((p, i) => (
+        {/* Bento Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          {FEATURES.map((feature, i) => (
             <motion.div
-              key={p.title}
-              {...fadeUp(0.05 + i * 0.05)}
-              className={`group relative rounded-2xl border border-white/[0.03] bg-white/[0.01] p-5 transition-all duration-300 hover:bg-white/[0.02] hover:border-white/[0.06] ${p.glow}`}
+              key={feature.title}
+              {...fadeUp(0.05 + i * 0.04)}
+              className={`${feature.span} group relative rounded-2xl border border-slate-200/80 ${feature.bg} p-6 transition-all duration-300 hover:shadow-lg hover:shadow-slate-900/5 hover:border-slate-300`}
             >
-              {/* Icon */}
-              <div className={`inline-flex items-center justify-center h-10 w-10 rounded-xl ${p.bg} ${p.border} border mb-4`}>
-                <p.icon className={`h-4 w-4 ${p.color}`} />
+              <div className={`inline-flex items-center justify-center h-10 w-10 rounded-xl ${feature.iconBg} border border-slate-200/60 mb-4`}>
+                <feature.icon className={`h-4.5 w-4.5 ${feature.iconColor}`} />
               </div>
-
-              <h3 className="text-[15px] font-semibold text-white mb-2">{p.title}</h3>
-              <p className="text-[13px] text-slate-600 leading-relaxed">{p.desc}</p>
+              <h3 className="text-[15px] font-semibold text-slate-800 mb-2">{feature.title}</h3>
+              <p className="text-[13px] text-slate-600 leading-relaxed">{feature.desc}</p>
             </motion.div>
           ))}
         </div>

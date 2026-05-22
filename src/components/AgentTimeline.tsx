@@ -161,7 +161,7 @@ export default function AgentTimeline({ isVisible, steps = DEFAULT_STEPS }: Agen
                         {step.label}
                       </span>
                       {step.duration && (
-                        <span className="text-[9px] text-slate-700 font-mono flex items-center gap-0.5">
+                        <span className="text-[9px] text-[#64748B] font-mono flex items-center gap-0.5">
                           <Timer className="h-2.5 w-2.5" />
                           {step.duration}
                         </span>
@@ -170,7 +170,7 @@ export default function AgentTimeline({ isVisible, steps = DEFAULT_STEPS }: Agen
                     <span className={`text-[10px] ${
                       step.status === 'completed' ? 'text-emerald-500/40' :
                       step.status === 'active' ? 'text-cyan-400/50' :
-                      'text-slate-700'
+                      'text-[#64748B]'
                     }`}>
                       {step.description}
                     </span>

@@ -140,10 +140,10 @@ export default function AgentEcosystem() {
 
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <span className="text-[10px] text-slate-700 flex items-center gap-0.5">
+                  <span className="text-[10px] text-[#64748B] flex items-center gap-0.5">
                     <Star className="h-2.5 w-2.5 text-amber-400/50" /> {agent.rating}
                   </span>
-                  <span className="text-[10px] text-slate-700 flex items-center gap-0.5">
+                  <span className="text-[10px] text-[#64748B] flex items-center gap-0.5">
                     <Users className="h-2.5 w-2.5" /> {agent.users}
                   </span>
                 </div>
@@ -163,7 +163,7 @@ export default function AgentEcosystem() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-md p-4"
+            className="fixed inset-0 z-[70] flex items-center justify-center bg-[#0a0f1a]/70 backdrop-blur-md p-4"
             onClick={() => setSelectedAgent(null)}
           >
             <motion.div
@@ -171,7 +171,7 @@ export default function AgentEcosystem() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 20, scale: 0.97 }}
               transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] as const }}
-              className="w-full max-w-lg max-h-[85vh] flex flex-col rounded-2xl border border-white/[0.06] bg-[#0e0e14] shadow-2xl overflow-hidden"
+              className="w-full max-w-lg max-h-[85vh] flex flex-col rounded-2xl border border-white/[0.06] bg-[#171C24] shadow-2xl overflow-hidden"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Header */}
@@ -232,7 +232,7 @@ export default function AgentEcosystem() {
                         onClick={() => navigate('/chat', { state: { initialPrompt: `${selectedAgent.name}: ${ex}` } })}
                         className="w-full text-left flex items-center gap-2 rounded-lg px-3 py-2 text-[11px] text-slate-500 hover:text-slate-300 hover:bg-white/[0.03] transition-all"
                       >
-                        <Zap className="h-3 w-3 text-slate-700 shrink-0" />
+                        <Zap className="h-3 w-3 text-[#64748B] shrink-0" />
                         {ex}
                       </button>
                     ))}
@@ -250,7 +250,7 @@ export default function AgentEcosystem() {
                           onChange={(e) => setFormValues((p) => ({ ...p, [i]: e.target.value }))}
                           placeholder={input.placeholder}
                           rows={3}
-                          className="w-full rounded-xl bg-white/[0.02] border border-white/[0.04] p-3 text-[12px] text-white placeholder:text-slate-700 focus:border-cyan-500/20 outline-none transition-all resize-none"
+                          className="w-full rounded-xl bg-white/[0.02] border border-white/[0.04] p-3 text-[12px] text-white placeholder:text-[#64748B] focus:border-cyan-500/20 outline-none transition-all resize-none"
                         />
                       ) : (
                         <input
@@ -258,7 +258,7 @@ export default function AgentEcosystem() {
                           value={formValues[i] || ''}
                           onChange={(e) => setFormValues((p) => ({ ...p, [i]: e.target.value }))}
                           placeholder={input.placeholder}
-                          className="w-full h-9 rounded-xl bg-white/[0.02] border border-white/[0.04] px-3 text-[12px] text-white placeholder:text-slate-700 focus:border-cyan-500/20 outline-none transition-all"
+                          className="w-full h-9 rounded-xl bg-white/[0.02] border border-white/[0.04] px-3 text-[12px] text-white placeholder:text-[#64748B] focus:border-cyan-500/20 outline-none transition-all"
                         />
                       )}
                     </div>

@@ -195,7 +195,7 @@ export default function PricingPage() {
                   </li>
                 ))}
                 {plan.unavailable.map((f) => (
-                  <li key={f} className="flex items-start gap-2 text-[12px] text-slate-700">
+                  <li key={f} className="flex items-start gap-2 text-[12px] text-[#64748B]">
                     <X className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                     {f}
                   </li>
@@ -247,10 +247,10 @@ export default function PricingPage() {
                 {FEATURES_COMPARE.map((row) => (
                   <tr key={row.name} className="border-b border-white/[0.02] hover:bg-white/[0.01] transition-colors">
                     <td className="px-6 py-3 text-slate-400">{row.name}</td>
-                    <td className="text-center px-4 py-3 text-slate-600">{typeof row.free === 'boolean' ? (row.free ? <Check className="h-3.5 w-3.5 text-emerald-400/60 mx-auto" /> : <X className="h-3.5 w-3.5 text-slate-800 mx-auto" />) : row.free}</td>
-                    <td className="text-center px-4 py-3 text-slate-400">{typeof row.pro === 'boolean' ? (row.pro ? <Check className="h-3.5 w-3.5 text-emerald-400/60 mx-auto" /> : <X className="h-3.5 w-3.5 text-slate-800 mx-auto" />) : row.pro}</td>
-                    <td className="text-center px-4 py-3 text-slate-400">{typeof row.ultra === 'boolean' ? (row.ultra ? <Check className="h-3.5 w-3.5 text-emerald-400/60 mx-auto" /> : <X className="h-3.5 w-3.5 text-slate-800 mx-auto" />) : row.ultra}</td>
-                    <td className="text-center px-4 py-3 text-slate-400">{typeof row.enterprise === 'boolean' ? (row.enterprise ? <Check className="h-3.5 w-3.5 text-emerald-400/60 mx-auto" /> : <X className="h-3.5 w-3.5 text-slate-800 mx-auto" />) : row.enterprise}</td>
+                    <td className="text-center px-4 py-3 text-slate-600">{typeof row.free === 'boolean' ? (row.free ? <Check className="h-3.5 w-3.5 text-emerald-400/60 mx-auto" /> : <X className="h-3.5 w-3.5 text-[#94A3B8] mx-auto" />) : row.free}</td>
+                    <td className="text-center px-4 py-3 text-slate-400">{typeof row.pro === 'boolean' ? (row.pro ? <Check className="h-3.5 w-3.5 text-emerald-400/60 mx-auto" /> : <X className="h-3.5 w-3.5 text-[#94A3B8] mx-auto" />) : row.pro}</td>
+                    <td className="text-center px-4 py-3 text-slate-400">{typeof row.ultra === 'boolean' ? (row.ultra ? <Check className="h-3.5 w-3.5 text-emerald-400/60 mx-auto" /> : <X className="h-3.5 w-3.5 text-[#94A3B8] mx-auto" />) : row.ultra}</td>
+                    <td className="text-center px-4 py-3 text-slate-400">{typeof row.enterprise === 'boolean' ? (row.enterprise ? <Check className="h-3.5 w-3.5 text-emerald-400/60 mx-auto" /> : <X className="h-3.5 w-3.5 text-[#94A3B8] mx-auto" />) : row.enterprise}</td>
                   </tr>
                 ))}
               </tbody>
@@ -271,7 +271,7 @@ export default function PricingPage() {
         </motion.div>
 
         {/* Trust */}
-        <div className="mt-10 flex flex-wrap items-center justify-center gap-6 text-[11px] text-slate-700">
+        <div className="mt-10 flex flex-wrap items-center justify-center gap-6 text-[11px] text-[#64748B]">
           <span className="flex items-center gap-1.5"><Shield className="h-3.5 w-3.5" /> 30-day money-back</span>
           <span className="flex items-center gap-1.5"><Lock className="h-3.5 w-3.5" /> Cancel anytime</span>
           <span className="flex items-center gap-1.5"><Sparkles className="h-3.5 w-3.5" /> No credit card required for free</span>

@@ -1,17 +1,18 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  X, User, Palette, Cpu, Brain, TrendingUp,
-  Bell, Shield, FlaskConical,
+  X, User, Palette, Brain, Sparkles,
+  Bell, Shield, FlaskConical, Zap, Plus,
   Check, Save, RotateCcw, Download, Trash2,
+  Globe, ChevronDown,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import MemoryGraph from './MemoryGraph';
-import PremiumSlider from './PremiumSlider';
 import { useApp } from '@/contexts/AppContext';
 import type { AppSettings } from '@/contexts/AppContext';
-import type { AIMode, WorkspaceTab } from '@/types';
+import { useLanguageStore, LANGUAGES } from '@/stores/languageStore';
+import type { Language } from '@/stores/languageStore';
 
 interface SettingsModalProps {
   open: boolean;
@@ -22,9 +23,8 @@ interface SettingsModalProps {
 const SECTIONS = [
   { id: 'general', label: 'General', icon: User },
   { id: 'appearance', label: 'Appearance', icon: Palette },
-  { id: 'ai', label: 'AI Behavior', icon: Cpu },
+  { id: 'about', label: 'About You', icon: Sparkles },
   { id: 'memory', label: 'Memory', icon: Brain },
-  { id: 'trading', label: 'Trading', icon: TrendingUp },
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'privacy', label: 'Privacy', icon: Shield },
   { id: 'experimental', label: 'Experimental', icon: FlaskConical },
@@ -36,27 +36,6 @@ const ACCENT_COLORS = [
   { id: 'violet', label: 'Violet', class: 'from-violet-400 to-purple-600', dot: 'bg-violet-400' },
   { id: 'amber', label: 'Amber', class: 'from-amber-400 to-orange-600', dot: 'bg-amber-400' },
   { id: 'rose', label: 'Rose', class: 'from-rose-400 to-pink-600', dot: 'bg-rose-400' },
-];
-
-const AI_MODES: { id: AIMode; label: string }[] = [
-  { id: 'fast', label: 'Fast' },
-  { id: 'deep-think', label: 'Deep Think' },
-  { id: 'research', label: 'Research' },
-  { id: 'creative', label: 'Creative' },
-  { id: 'coding', label: 'Coding' },
-  { id: 'study', label: 'Study' },
-];
-
-const WORKSPACES: { id: WorkspaceTab; label: string }[] = [
-  { id: 'chat', label: 'Chat' },
-  { id: 'research', label: 'Research' },
-  { id: 'trading', label: 'Trading' },
-  { id: 'business', label: 'Business' },
-  { id: 'agents', label: 'Agents' },
-  { id: 'coding', label: 'Coding' },
-  { id: 'startup', label: 'Startup' },
-  { id: 'study', label: 'Study' },
-  { id: 'creative', label: 'Creative' },
 ];
 
 const TIMEZONES = [
@@ -75,10 +54,12 @@ const TIMEZONES = [
 ];
 
 export default function SettingsModal({ open, onOpenChange, onSettingsChange }: SettingsModalProps) {
-  const { settings: appSettings, updateSettings, t } = useApp();
+  const { settings: appSettings, updateSettings } = useApp();
+  const { lang: currentLang, setLang } = useLanguageStore();
   const [activeSection, setActiveSection] = useState('general');
   const [saved, setSaved] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
+  const [langOpen, setLangOpen] = useState(false);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ═══════════════════════════════════════════════════════
@@ -118,7 +99,6 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
 
   // ─── Save Changes: single persist call, single toast ───
   const handleSave = useCallback(() => {
-    // Persist entire draft at once
     const draftPartial: Partial<AppSettings> = {};
     (Object.keys(draft) as Array<keyof AppSettings>).forEach((key) => {
       if (draft[key] !== appSettings[key]) {
@@ -131,7 +111,6 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
     setSaved(true);
     setHasChanges(false);
 
-    // Single toast — clear any existing timer
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     toastTimerRef.current = setTimeout(() => setSaved(false), 2000);
   }, [draft, appSettings, updateSettings, onSettingsChange]);
@@ -143,9 +122,6 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
   }, [appSettings, onSettingsChange]);
 
   // ─── Sidebar / other local settings ───
-  const [sidebarDefault, setSidebarDefault] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('korvix_sidebar_default') || 'true'); } catch { return true; }
-  });
   const [timezone, setTimezone] = useState(() => localStorage.getItem('korvix_timezone') || Intl.DateTimeFormat().resolvedOptions().timeZone);
   const [experimental, setExperimental] = useState<Record<string, boolean>>(() => {
     try { return JSON.parse(localStorage.getItem('korvix_experimental') || '{}'); } catch { return {}; }
@@ -160,11 +136,16 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
     });
   }, []);
 
+  // ═══════════════════════════════════════════
+  //  PREMIUM UI COMPONENTS
+  // ═══════════════════════════════════════════
+
   const Segmented = ({ options, value, onChange }: { options: { value: string; label: string }[]; value: string; onChange: (v: string) => void }) => (
-    <div className="flex gap-1 rounded-lg bg-white/[0.03] border border-white/[0.04] p-0.5">
+    <div className="inline-flex rounded-lg p-0.5" style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.04)' }}>
       {options.map((o) => (
         <button key={o.value} onClick={() => onChange(o.value)}
-          className={`flex-1 rounded-md py-1 text-[11px] font-medium transition-all ${value === o.value ? 'bg-white/[0.08] text-white shadow-sm' : 'text-slate-600 hover:text-slate-400'}`}>
+          className={`px-3 py-[5px] rounded-md text-[11px] font-medium transition-all duration-200 whitespace-nowrap ${value === o.value ? 'text-white' : 'text-slate-500 hover:text-slate-300'}`}
+          style={value === o.value ? { background: 'rgba(255,255,255,0.07)' } : { background: 'transparent' }}>
           {o.label}
         </button>
       ))}
@@ -172,195 +153,386 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
   );
 
   const SettingRow = ({ label, description, children }: { label: string; description?: string; children: React.ReactNode }) => (
-    <div className="flex items-center justify-between py-2.5">
-      <div className="pr-4">
-        <div className="text-[12px] text-slate-300">{label}</div>
-        {description && <div className="text-[11px] text-slate-600 mt-0.5">{description}</div>}
+    <div className="flex items-center justify-between py-3.5 gap-6">
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] font-medium text-white/80">{label}</p>
+        {description && <p className="text-[12px] text-slate-500 mt-0.5">{description}</p>}
       </div>
       <div className="shrink-0">{children}</div>
     </div>
   );
 
-  // ─── Tab Content — reads from DRAFT, not appSettings ───
+  const SectionCard = ({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) => (
+    <div className="mb-6">
+      <div className="mb-4">
+        <h3 className="text-[15px] font-semibold text-white/90 tracking-tight">{title}</h3>
+        {subtitle && <p className="text-[12px] text-slate-500 mt-0.5">{subtitle}</p>}
+      </div>
+      <div
+        className="rounded-xl p-4"
+        style={{
+          background: 'rgba(255,255,255,0.015)',
+          border: '1px solid rgba(255,255,255,0.04)',
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+
+  const Divider = () => <div style={{ borderTop: '1px solid rgba(255,255,255,0.03)' }} className="my-1" />;
+
+  // ═══════════════════════════════════════════
+  //  TAB CONTENT
+  // ═══════════════════════════════════════════
+
   const renderGeneral = () => (
-    <div className="space-y-1">
-      <h3 className="text-[13px] font-medium text-white mb-3">General</h3>
+    <SectionCard title="Language & Region" subtitle="Configure your interface language and timezone">
       <SettingRow label="Language" description="Interface language">
-        <Segmented options={[{ value: 'English', label: 'English' }, { value: 'Turkish', label: 'Turkish' }]} value={draft.language} onChange={(v) => updateDraft('language', v as 'English' | 'Turkish')} />
+        <div className="relative">
+          <button
+            onClick={() => setLangOpen(!langOpen)}
+            className="flex items-center gap-2 rounded-lg px-3 py-2 text-[12px] text-white/80 hover:text-white transition-all min-w-[150px]"
+            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
+          >
+            <Globe className="w-3.5 h-3.5 text-slate-500" />
+            <span className="flex-1 text-left">{LANGUAGES.find((l) => l.code === currentLang)?.label || 'English'}</span>
+            <ChevronDown className={`w-3 h-3 text-slate-600 transition-transform ${langOpen ? 'rotate-180' : ''}`} />
+          </button>
+          <AnimatePresence>
+            {langOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.15 }}
+                className="absolute right-0 top-full mt-1.5 w-48 rounded-xl overflow-hidden z-50"
+                style={{ background: 'linear-gradient(180deg, #1B2230, #171C24)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 16px 40px rgba(0,0,0,0.4)' }}
+              >
+                <div className="p-1.5 max-h-[240px] overflow-y-auto scrollbar-thin">
+                  {LANGUAGES.map((l) => (
+                    <button key={l.code} onClick={() => { setLang(l.code as Language); setLangOpen(false); setHasChanges(true); updateDraft('language', l.label as 'English' | 'Turkish'); }}
+                      className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[12px] transition-all ${currentLang === l.code ? 'bg-white/[0.05] text-white' : 'text-slate-500 hover:text-slate-300 hover:bg-white/[0.03]'}`}>
+                      <Globe className="w-3.5 h-3.5 text-slate-600 shrink-0" />
+                      <span className="flex-1">{l.label}</span>
+                      {currentLang === l.code && <Check className="h-3 w-3 text-cyan-400 shrink-0" />}
+                    </button>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </SettingRow>
+      <Divider />
       <SettingRow label="Timezone" description="Local time display">
         <select value={timezone} onChange={(e) => { setHasChanges(true); setTimezone(e.target.value); localStorage.setItem('korvix_timezone', e.target.value); }}
-          className="w-40 md:w-44 rounded-lg bg-white/[0.05] border border-white/[0.08] px-3 py-1.5 text-[12px] text-slate-300 outline-none focus:border-cyan-500/30 cursor-pointer appearance-none"
-          style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2352525b' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center' }}>
-          {TIMEZONES.map((tz) => <option key={tz.value} value={tz.value} className="bg-[#0c0c14]">{tz.label}</option>)}
+          className="w-44 rounded-lg px-3 py-2 text-[12px] text-white/80 outline-none cursor-pointer appearance-none transition-all"
+          style={{
+            background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)',
+            backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`,
+            backgroundRepeat: 'no-repeat', backgroundPosition: 'right 8px center',
+          }}>
+          {TIMEZONES.map((tz) => <option key={tz.value} value={tz.value} className="bg-[#171C24]">{tz.label}</option>)}
         </select>
       </SettingRow>
-      <SettingRow label="Default Workspace" description="On launch">
-        <select value={draft.defaultWorkspace} onChange={(e) => updateDraft('defaultWorkspace', e.target.value as WorkspaceTab)}
-          className="rounded-lg bg-white/[0.05] border border-white/[0.08] px-3 py-1.5 text-[12px] text-slate-300 outline-none focus:border-cyan-500/30 cursor-pointer">
-          {WORKSPACES.map((w) => <option key={w.id} value={w.id} className="bg-[#0c0c14]">{w.label}</option>)}
-        </select>
-      </SettingRow>
-      <SettingRow label="Default AI Mode" description="Starting mode">
-        <select value={draft.defaultMode} onChange={(e) => updateDraft('defaultMode', e.target.value as AIMode)}
-          className="rounded-lg bg-white/[0.05] border border-white/[0.08] px-3 py-1.5 text-[12px] text-slate-300 outline-none focus:border-cyan-500/30 cursor-pointer">
-          {AI_MODES.map((m) => <option key={m.id} value={m.id} className="bg-[#0c0c14]">{m.label}</option>)}
-        </select>
-      </SettingRow>
-      <SettingRow label="Sidebar" description="Show by default">
-        <Switch checked={sidebarDefault} onCheckedChange={(c) => { setHasChanges(true); setSidebarDefault(c); localStorage.setItem('korvix_sidebar_default', JSON.stringify(c)); }} />
-      </SettingRow>
-    </div>
+    </SectionCard>
   );
 
   const renderAppearance = () => (
-    <div className="space-y-1">
-      <h3 className="text-[13px] font-medium text-white mb-3">Appearance</h3>
-      <SettingRow label="Theme" description="Dark, light, or system">
-        <Segmented options={[{ value: 'dark', label: 'Dark' }, { value: 'light', label: 'Light' }, { value: 'system', label: 'System' }]} value={draft.theme} onChange={(v) => updateDraft('theme', v as 'dark' | 'light' | 'system')} />
-      </SettingRow>
-      <SettingRow label="Accent Color" description="Primary UI color">
-        <div className="flex gap-1.5">
-          {ACCENT_COLORS.map((c) => (
-            <button key={c.id} onClick={() => updateDraft('accentColor', c.id)} title={c.label}
-              className={`flex h-6 w-6 items-center justify-center rounded-full bg-gradient-to-br ${c.class} border transition-all ${draft.accentColor === c.id ? 'border-white/30 scale-110' : 'border-transparent opacity-60 hover:opacity-100'}`}>
-              {draft.accentColor === c.id && <Check className="h-3 w-3 text-white" />}
-            </button>
-          ))}
-        </div>
-      </SettingRow>
-      <SettingRow label="Density" description="UI spacing">
-        <Segmented options={[{ value: 'Compact', label: 'Compact' }, { value: 'Comfortable', label: 'Comfortable' }, { value: 'Spacious', label: 'Spacious' }]} value={draft.density} onChange={(v) => updateDraft('density', v)} />
-      </SettingRow>
-      <SettingRow label="Animations" description="Motion level">
-        <Segmented options={[{ value: 'Minimal', label: 'Minimal' }, { value: 'Normal', label: 'Normal' }, { value: 'Full', label: 'Full' }]} value={draft.animationLevel} onChange={(v) => updateDraft('animationLevel', v)} />
-      </SettingRow>
-    </div>
+    <>
+      <SectionCard title="Theme" subtitle="Choose your interface look">
+        <SettingRow label="Theme" description="Dark, light, or follow system">
+          <Segmented options={[{ value: 'dark', label: 'Dark' }, { value: 'light', label: 'Light' }, { value: 'system', label: 'System' }]} value={draft.theme} onChange={(v) => updateDraft('theme', v as 'dark' | 'light' | 'system')} />
+        </SettingRow>
+        <Divider />
+        <SettingRow label="Accent Color" description="Primary UI accent">
+          <div className="flex gap-2">
+            {ACCENT_COLORS.map((c) => (
+              <button key={c.id} onClick={() => updateDraft('accentColor', c.id)} title={c.label}
+                className={`flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br ${c.class} transition-all duration-200 ${draft.accentColor === c.id ? 'ring-2 ring-white/20 scale-110 shadow-lg' : 'opacity-40 hover:opacity-100'}`}>
+                {draft.accentColor === c.id && <Check className="h-3.5 w-3.5 text-white drop-shadow-sm" />}
+              </button>
+            ))}
+          </div>
+        </SettingRow>
+      </SectionCard>
+
+      <SectionCard title="Interface" subtitle="Density and motion preferences">
+        <SettingRow label="Density" description="UI element spacing">
+          <Segmented options={[{ value: 'Compact', label: 'Compact' }, { value: 'Comfortable', label: 'Comfortable' }, { value: 'Spacious', label: 'Spacious' }]} value={draft.density} onChange={(v) => updateDraft('density', v)} />
+        </SettingRow>
+        <Divider />
+        <SettingRow label="Animations" description="Motion level">
+          <Segmented options={[{ value: 'Minimal', label: 'Minimal' }, { value: 'Normal', label: 'Normal' }, { value: 'Full', label: 'Full' }]} value={draft.animationLevel} onChange={(v) => updateDraft('animationLevel', v)} />
+        </SettingRow>
+      </SectionCard>
+    </>
   );
 
-  const renderAI = () => (
-    <div className="space-y-1">
-      <h3 className="text-[13px] font-medium text-white mb-3">AI Behavior</h3>
+  /* ─── Memory profile state (local) ─── */
+  const [memoryProfile, setMemoryProfile] = useState('');
+  const [memoryTags, setMemoryTags] = useState<string[]>(['Startup Founder', 'Short Responses', 'Coding']);
+  const [newTag, setNewTag] = useState('');
+  const SUGGESTED_TAGS = ['Ecommerce', 'Trading', 'Student', 'AI Research', 'Turkish', 'Long-form Analysis', 'Design', 'Finance', 'Marketing', 'Engineering'];
 
-      <SettingRow label="Tone" description="How the AI communicates">
-        <Segmented options={[
-          { value: 'Natural', label: 'Natural' },
-          { value: 'Professional', label: 'Pro' },
-          { value: 'Friendly', label: 'Friendly' },
-          { value: 'Concise', label: 'Concise' },
-        ]} value={draft.tone} onChange={(v) => updateDraft('tone', v as 'Natural' | 'Professional' | 'Friendly' | 'Concise')} />
-      </SettingRow>
+  const addTag = (tag: string) => {
+    if (tag && !memoryTags.includes(tag)) { setMemoryTags(p => [...p, tag]); setHasChanges(true); }
+  };
+  const removeTag = (tag: string) => { setMemoryTags(p => p.filter(t => t !== tag)); setHasChanges(true); };
 
-      <SettingRow label="Response Length" description="Output verbosity">
-        <Segmented options={[
-          { value: 'Short', label: 'Short' },
-          { value: 'Balanced', label: 'Balanced' },
-          { value: 'Detailed', label: 'Detailed' },
-        ]} value={draft.responseLength} onChange={(v) => updateDraft('responseLength', v as 'Short' | 'Balanced' | 'Detailed')} />
-      </SettingRow>
-
-      <SettingRow label="Reasoning Depth" description="How deep the AI thinks">
-        <Segmented options={[{ value: 'Fast', label: 'Fast' }, { value: 'Balanced', label: 'Balanced' }, { value: 'Deep', label: 'Deep' }]} value={draft.reasoningDepth} onChange={(v) => updateDraft('reasoningDepth', v)} />
-      </SettingRow>
-
-      <SettingRow label="AI Language" description="Response language">
-        <Segmented options={[
-          { value: 'Auto-detect', label: 'Auto' },
-          { value: 'Turkish', label: 'Turkish' },
-          { value: 'English', label: 'English' },
-        ]} value={draft.aiLanguageBehavior} onChange={(v) => updateDraft('aiLanguageBehavior', v as 'Auto-detect' | 'Turkish' | 'English')} />
-      </SettingRow>
-
-      <SettingRow label="Emoji Usage" description="In AI responses">
-        <Segmented options={[{ value: 'Off', label: 'Off' }, { value: 'Low', label: 'Low' }, { value: 'Normal', label: 'Normal' }]} value={draft.emojiUsage} onChange={(v) => updateDraft('emojiUsage', v as 'Off' | 'Low' | 'Normal')} />
-      </SettingRow>
-
-      <div className="pt-3 border-t border-white/[0.03]">
-        <p className="text-[11px] text-slate-600 mb-2">Creativity</p>
-        <PremiumSlider value={draft.creativity} onChange={(v) => updateDraft('creativity', v)} showValue valueFormatter={(v) => `${v}%`} />
+  const renderAboutYou = () => (
+    <>
+      {/* Intro card */}
+      <div className="mb-6">
+        <h3 className="text-[15px] font-semibold text-white/90 tracking-tight">About You</h3>
+        <p className="text-[12px] text-slate-500 mt-0.5">Help KorvixAI understand who you are</p>
       </div>
-    </div>
+
+      {/* Memory textarea */}
+      <div className="mb-6">
+        <div
+          className="rounded-xl p-4 transition-all"
+          style={{
+            background: 'rgba(255,255,255,0.015)',
+            border: '1px solid rgba(255,255,255,0.04)',
+          }}
+        >
+          <label className="text-[12px] font-medium text-white/60 mb-2 block">
+            Tell KorvixAI about yourself
+          </label>
+          <textarea
+            value={memoryProfile}
+            onChange={(e) => { setMemoryProfile(e.target.value); setHasChanges(true); }}
+            placeholder="Your goals, work, interests, preferred communication style, projects, or anything KorvixAI should remember about you..."
+            rows={4}
+            className="w-full bg-transparent text-[13px] text-white/80 placeholder:text-white/15 outline-none resize-none leading-relaxed"
+          />
+        </div>
+        <p className="text-[10px] text-slate-600 mt-1.5 ml-1">
+          This information helps KorvixAI personalize its responses to you.
+        </p>
+      </div>
+
+      {/* Your tags */}
+      {memoryTags.length > 0 && (
+        <div className="mb-5">
+          <label className="text-[12px] font-medium text-white/50 mb-2.5 block">What describes you</label>
+          <div className="flex flex-wrap gap-1.5">
+            {memoryTags.map((tag) => (
+              <motion.button
+                key={tag}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => removeTag(tag)}
+                className="group flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] text-white/60 transition-all duration-200 hover:text-white/90"
+                style={{
+                  background: 'rgba(255,255,255,0.04)',
+                  border: '1px solid rgba(255,255,255,0.06)',
+                }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(239,68,68,0.2)'; }}
+                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.06)'; }}
+              >
+                <span>{tag}</span>
+                <X className="h-2.5 w-2.5 text-white/20 group-hover:text-red-400/60 transition-colors" />
+              </motion.button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Suggested tags */}
+      <div className="mb-6">
+        <label className="text-[12px] font-medium text-white/40 mb-2.5 block">Suggestions</label>
+        <div className="flex flex-wrap gap-1.5">
+          {SUGGESTED_TAGS.filter(t => !memoryTags.includes(t)).map((tag) => (
+            <motion.button
+              key={tag}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => addTag(tag)}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] text-slate-500 hover:text-slate-300 transition-all duration-200"
+              style={{
+                background: 'rgba(255,255,255,0.02)',
+                border: '1px solid rgba(255,255,255,0.04)',
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.04)';
+                (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.08)';
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.02)';
+                (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.04)';
+              }}
+            >
+              <Plus className="h-2.5 w-2.5" />
+              <span>{tag}</span>
+            </motion.button>
+          ))}
+        </div>
+      </div>
+
+      {/* Custom tag input */}
+      <div className="flex items-center gap-2">
+        <div
+          className="flex-1 flex items-center gap-2 px-3 py-2 rounded-xl"
+          style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.04)' }}
+        >
+          <Plus className="h-3 w-3 text-white/15 shrink-0" />
+          <input
+            type="text"
+            value={newTag}
+            onChange={(e) => setNewTag(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { addTag(newTag); setNewTag(''); } }}
+            placeholder="Add your own..."
+            className="flex-1 bg-transparent text-[12px] text-white/60 placeholder:text-white/15 outline-none"
+          />
+        </div>
+        {newTag && (
+          <motion.button
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => { addTag(newTag); setNewTag(''); }}
+            className="px-3 py-2 rounded-lg text-[11px] font-medium text-cyan-400/70 hover:text-cyan-300 transition-all"
+            style={{ background: 'rgba(34,211,238,0.06)', border: '1px solid rgba(34,211,238,0.1)' }}
+          >
+            Add
+          </motion.button>
+        )}
+      </div>
+    </>
   );
 
   const renderMemory = () => (
-    <div className="space-y-4">
-      <h3 className="text-[13px] font-medium text-white mb-1">Memory</h3>
-      <div className="flex items-center justify-between py-2.5">
-        <div>
-          <div className="text-[12px] text-slate-300">Enable Memory</div>
-          <div className="text-[11px] text-slate-600 mt-0.5">Store and reuse conversation context</div>
+    <>
+      <div className="mb-5">
+        <h3 className="text-[15px] font-semibold text-white/90 tracking-tight">Memory</h3>
+        <p className="text-[12px] text-slate-500 mt-0.5">Your AI's contextual memory system</p>
+      </div>
+
+      {/* Enable Memory toggle */}
+      <div
+        className="flex items-center justify-between px-4 py-3.5 rounded-xl mb-5"
+        style={{
+          background: draft.memoryEnabled ? 'rgba(34,211,238,0.02)' : 'rgba(255,255,255,0.015)',
+          border: `1px solid ${draft.memoryEnabled ? 'rgba(34,211,238,0.08)' : 'rgba(255,255,255,0.04)'}`,
+        }}
+      >
+        <div className="flex items-center gap-3">
+          <div
+            className="flex h-8 w-8 items-center justify-center rounded-lg"
+            style={{
+              background: draft.memoryEnabled ? 'rgba(34,211,238,0.08)' : 'rgba(255,255,255,0.03)',
+              border: `1px solid ${draft.memoryEnabled ? 'rgba(34,211,238,0.12)' : 'rgba(255,255,255,0.05)'}`,
+              boxShadow: draft.memoryEnabled ? '0 0 8px rgba(34,211,238,0.06)' : 'none',
+            }}
+          >
+            <Brain className="h-4 w-4" style={{ color: draft.memoryEnabled ? 'rgba(34,211,238,0.7)' : 'rgba(148,163,184,0.3)' }} />
+          </div>
+          <div>
+            <p className="text-[13px] text-white/80 font-medium">Enable Memory</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">Store and reuse conversation context across sessions</p>
+          </div>
         </div>
         <Switch checked={draft.memoryEnabled} onCheckedChange={(c) => updateDraft('memoryEnabled', c)} />
       </div>
-      {draft.memoryEnabled && <MemoryGraph />}
-    </div>
-  );
 
-  const renderTrading = () => (
-    <div className="space-y-1">
-      <h3 className="text-[13px] font-medium text-white mb-3">Trading</h3>
-      <SettingRow label="Risk Profile" description="Risk tolerance">
-        <Segmented options={[{ value: 'Conservative', label: 'Conservative' }, { value: 'Balanced', label: 'Balanced' }, { value: 'Aggressive', label: 'Aggressive' }]} value={draft.riskProfile} onChange={(v) => updateDraft('riskProfile', v)} />
-      </SettingRow>
-      <SettingRow label="Default Timeframe" description="Chart timeframe">
-        <Segmented options={[{ value: '15m', label: '15m' }, { value: '1h', label: '1h' }, { value: '4h', label: '4h' }, { value: '1d', label: '1D' }]} value={draft.defaultTimeframe} onChange={(v) => updateDraft('defaultTimeframe', v)} />
-      </SettingRow>
-      <SettingRow label="Paper Trading" description="Simulate without real money">
-        <Switch checked={draft.paperTrading} onCheckedChange={(c) => updateDraft('paperTrading', c)} />
-      </SettingRow>
-    </div>
+      {draft.memoryEnabled && (
+        <div className="space-y-2">
+          <p className="text-[10px] text-slate-500 flex items-center gap-1.5">
+            <Zap className="h-2.5 w-2.5 text-cyan-400/40" />
+            Interactive memory map — hover nodes to explore connections
+          </p>
+          <MemoryGraph />
+        </div>
+      )}
+
+      {!draft.memoryEnabled && (
+        <div className="flex items-center justify-center py-16">
+          <div className="text-center">
+            <Brain className="h-8 w-8 text-white/[0.06] mx-auto mb-2" />
+            <p className="text-[12px] text-slate-600">Enable memory to see your AI context graph</p>
+          </div>
+        </div>
+      )}
+    </>
   );
 
   const renderNotifications = () => (
-    <div className="space-y-1">
-      <h3 className="text-[13px] font-medium text-white mb-3">Notifications</h3>
-      <SettingRow label="Sound Effects" description="Action sounds"><Switch checked={draft.soundEnabled} onCheckedChange={(c) => updateDraft('soundEnabled', c)} /></SettingRow>
-      <SettingRow label="Push Notifications" description="Browser push"><Switch checked={draft.pushNotifications} onCheckedChange={(c) => updateDraft('pushNotifications', c)} /></SettingRow>
-      <div className="border-t border-white/[0.03] pt-2 mt-2 space-y-1">
-        <SettingRow label="AI Task Updates" description=""><Switch checked={draft.notifAITasks} onCheckedChange={(c) => updateDraft('notifAITasks', c)} /></SettingRow>
-        <SettingRow label="Trading Signals" description=""><Switch checked={draft.notifTrading} onCheckedChange={(c) => updateDraft('notifTrading', c)} /></SettingRow>
-        <SettingRow label="Research Complete" description=""><Switch checked={draft.notifResearch} onCheckedChange={(c) => updateDraft('notifResearch', c)} /></SettingRow>
-        <SettingRow label="Startup Alerts" description=""><Switch checked={draft.notifStartups} onCheckedChange={(c) => updateDraft('notifStartups', c)} /></SettingRow>
-        <SettingRow label="App Updates" description=""><Switch checked={draft.notifUpdates} onCheckedChange={(c) => updateDraft('notifUpdates', c)} /></SettingRow>
-      </div>
-    </div>
+    <>
+      <SectionCard title="General" subtitle="Main notification preferences">
+        <SettingRow label="Sound Effects" description="Audio feedback for actions"><Switch checked={draft.soundEnabled} onCheckedChange={(c) => updateDraft('soundEnabled', c)} /></SettingRow>
+        <Divider />
+        <SettingRow label="Push Notifications" description="Browser push alerts"><Switch checked={draft.pushNotifications} onCheckedChange={(c) => updateDraft('pushNotifications', c)} /></SettingRow>
+      </SectionCard>
+
+      <SectionCard title="Workspace" subtitle="Module-specific notifications">
+        <SettingRow label="AI Task Updates" description="Task status changes"><Switch checked={draft.notifAITasks} onCheckedChange={(c) => updateDraft('notifAITasks', c)} /></SettingRow>
+        <Divider />
+        <SettingRow label="Trading Signals" description="New signal alerts"><Switch checked={draft.notifTrading} onCheckedChange={(c) => updateDraft('notifTrading', c)} /></SettingRow>
+        <Divider />
+        <SettingRow label="Research Complete" description="Reports finished"><Switch checked={draft.notifResearch} onCheckedChange={(c) => updateDraft('notifResearch', c)} /></SettingRow>
+        <Divider />
+        <SettingRow label="Startup Alerts" description="New startup analysis"><Switch checked={draft.notifStartups} onCheckedChange={(c) => updateDraft('notifStartups', c)} /></SettingRow>
+        <Divider />
+        <SettingRow label="App Updates" description="New features available"><Switch checked={draft.notifUpdates} onCheckedChange={(c) => updateDraft('notifUpdates', c)} /></SettingRow>
+      </SectionCard>
+    </>
   );
 
   const renderPrivacy = () => (
-    <div className="space-y-1">
-      <h3 className="text-[13px] font-medium text-white mb-3">Privacy &amp; Security</h3>
-      <SettingRow label="Data Encryption" description="End-to-end"><span className="text-[11px] text-emerald-400/60 flex items-center gap-1"><Check className="h-3 w-3" /> On</span></SettingRow>
-      <SettingRow label="Export Data" description="Download all data"><Button variant="ghost" size="sm" className="h-7 text-[11px] text-slate-400 hover:text-white gap-1.5"><Download className="h-3 w-3" /> Export</Button></SettingRow>
-      <SettingRow label="Delete Account" description=""><Button variant="ghost" size="sm" className="h-7 text-[11px] text-red-400/60 hover:text-red-400 hover:bg-red-500/10 gap-1.5"><Trash2 className="h-3 w-3" /> Delete</Button></SettingRow>
-    </div>
+    <>
+      <SectionCard title="Security" subtitle="Your data and account security">
+        <SettingRow label="Data Encryption" description="End-to-end protection">
+          <span className="text-[12px] text-emerald-400/70 flex items-center gap-1.5">
+            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" style={{ boxShadow: '0 0 4px rgba(52,211,153,0.4)' }} />
+            Active
+          </span>
+        </SettingRow>
+      </SectionCard>
+
+      <SectionCard title="Data" subtitle="Export or remove your data">
+        <SettingRow label="Export Data" description="Download all your data">
+          <Button variant="ghost" size="sm" className="h-8 text-[12px] text-slate-400 hover:text-white gap-2" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+            <Download className="h-3.5 w-3.5" /> Export
+          </Button>
+        </SettingRow>
+        <Divider />
+        <SettingRow label="Delete Account" description="Permanently remove all data">
+          <Button variant="ghost" size="sm" className="h-8 text-[12px] text-red-400/60 hover:text-red-400 hover:bg-red-500/[0.06] gap-2" style={{ border: '1px solid rgba(239,68,68,0.08)' }}>
+            <Trash2 className="h-3.5 w-3.5" /> Delete
+          </Button>
+        </SettingRow>
+      </SectionCard>
+    </>
   );
 
   const renderExperimental = () => (
-    <div className="space-y-1">
-      <h3 className="text-[13px] font-medium text-white mb-3">Experimental</h3>
-      {[
-        { id: 'chain-of-thought', name: 'Chain of Thought', desc: 'Visible reasoning' },
-        { id: 'multi-agent', name: 'Multi-Agent', desc: 'Multiple agents together' },
-        { id: 'memory-graph', name: 'Memory Graph', desc: 'Interactive memory' },
-        { id: 'real-time-data', name: 'Real-time Data', desc: 'Live data feeds' },
-        { id: 'voice-mode', name: 'Voice Mode', desc: 'Speak with AI' },
-        { id: 'vision-analysis', name: 'Vision Analysis', desc: 'Image understanding' },
-        { id: 'code-execution', name: 'Code Execution', desc: 'Sandbox execution' },
-        { id: 'plugin-system', name: 'Plugin System', desc: 'Custom extensions' },
-      ].map((f) => (
-        <SettingRow key={f.id} label={f.name} description={f.desc}>
-          <Switch checked={experimental[f.id] ?? false} onCheckedChange={() => toggleExperimental(f.id)} />
-        </SettingRow>
-      ))}
-    </div>
+    <>
+      <SectionCard title="Features" subtitle="Early access and beta features">
+        {[
+          { id: 'chain-of-thought', name: 'Chain of Thought', desc: 'Visible reasoning steps' },
+          { id: 'multi-agent', name: 'Multi-Agent', desc: 'Multiple agents working together' },
+          { id: 'memory-graph', name: 'Memory Graph', desc: 'Interactive memory visualization' },
+          { id: 'real-time-data', name: 'Real-time Data', desc: 'Live data feeds' },
+          { id: 'voice-mode', name: 'Voice Mode', desc: 'Speak with AI' },
+          { id: 'vision-analysis', name: 'Vision Analysis', desc: 'Image understanding' },
+          { id: 'code-execution', name: 'Code Execution', desc: 'Sandbox execution' },
+          { id: 'plugin-system', name: 'Plugin System', desc: 'Custom extensions' },
+        ].map((f, i, arr) => (
+          <div key={f.id}>
+            <SettingRow label={f.name} description={f.desc}>
+              <Switch checked={experimental[f.id] ?? false} onCheckedChange={() => toggleExperimental(f.id)} />
+            </SettingRow>
+            {i < arr.length - 1 && <Divider />}
+          </div>
+        ))}
+      </SectionCard>
+    </>
   );
 
   const TAB_CONTENT: Record<string, React.ReactNode> = {
     general: renderGeneral(),
     appearance: renderAppearance(),
-    ai: renderAI(),
+    about: renderAboutYou(),
     memory: renderMemory(),
-    trading: renderTrading(),
     notifications: renderNotifications(),
     privacy: renderPrivacy(),
     experimental: renderExperimental(),
@@ -368,64 +540,107 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
 
   if (!open) return null;
 
+  // ═══════════════════════════════════════════
+  //  MAIN LAYOUT
+  // ═══════════════════════════════════════════
+
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[90] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" onClick={() => onOpenChange(false)}>
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[90] flex items-center justify-center p-4 sm:p-6" style={{ background: 'rgba(8,12,22,0.7)', backdropFilter: 'blur(20px)' }} onClick={() => onOpenChange(false)}>
       <motion.div
-        initial={{ opacity: 0, scale: 0.96 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.96 }}
-        transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] as const }}
-        className="w-full max-w-2xl h-[520px] sm:h-[560px] md:h-[600px] flex flex-col rounded-2xl border border-white/[0.08] bg-[#0c0c14] shadow-2xl shadow-black/50 overflow-hidden"
+        initial={{ opacity: 0, scale: 0.97, y: 8 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.97, y: 8 }}
+        transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] as const }}
+        className="w-full max-w-3xl h-[560px] sm:h-[600px] md:h-[640px] flex flex-col rounded-2xl overflow-hidden"
+        style={{
+          background: 'linear-gradient(180deg, rgba(30,38,52,0.98) 0%, rgba(20,25,36,0.98) 100%)',
+          border: '1px solid rgba(255,255,255,0.06)',
+          boxShadow: '0 32px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.03)',
+        }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.04] shrink-0 h-[52px]">
-          <h2 className="text-[15px] font-semibold text-white">{t('settings')}</h2>
-          <button onClick={() => onOpenChange(false)} className="h-7 w-7 flex items-center justify-center rounded-lg text-slate-600 hover:text-white hover:bg-white/[0.05] transition-all">
+        {/* ═── Header ─══ */}
+        <div className="flex items-center justify-between px-6 py-4 shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+          <div>
+            <h2 className="text-[16px] font-semibold text-white tracking-tight">Settings</h2>
+            <p className="text-[11px] text-slate-500 mt-0.5">Manage your KorvixAI preferences</p>
+          </div>
+          <button onClick={() => onOpenChange(false)} className="h-8 w-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-white hover:bg-white/[0.05] transition-all">
             <X className="h-4 w-4" />
           </button>
         </div>
 
-        {/* Body */}
+        {/* ═── Body ─══ */}
         <div className="flex flex-1 min-h-0 overflow-hidden">
-          {/* Sidebar */}
-          <div className="w-36 sm:w-40 border-r border-white/[0.03] overflow-y-auto scrollbar-thin shrink-0">
+          {/* ── Sidebar ── */}
+          <div className="w-48 sm:w-52 shrink-0 overflow-y-auto scrollbar-thin py-3 px-2" style={{ borderRight: '1px solid rgba(255,255,255,0.04)' }}>
             {SECTIONS.map((s) => {
               const isActive = activeSection === s.id;
               return (
-                <button key={s.id} onClick={() => setActiveSection(s.id)}
-                  className={`w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-[11px] sm:text-[12px] transition-all duration-150 border-l-2 ${isActive ? 'bg-white/[0.04] border-l-cyan-400/50 text-white' : 'border-l-transparent text-slate-500 hover:text-slate-300 hover:bg-white/[0.02]'}`}>
-                  <s.icon className={`h-3.5 w-3.5 ${isActive ? 'text-cyan-400/60' : 'text-slate-700'}`} />
-                  {s.label}
+                <button
+                  key={s.id}
+                  onClick={() => setActiveSection(s.id)}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-all duration-200 mb-0.5 ${
+                    isActive ? 'text-white' : 'text-slate-500 hover:text-slate-300'
+                  }`}
+                  style={{
+                    background: isActive ? 'rgba(255,255,255,0.05)' : 'transparent',
+                    border: isActive ? '1px solid rgba(255,255,255,0.06)' : '1px solid transparent',
+                  }}
+                >
+                  <div
+                    className="flex h-7 w-7 items-center justify-center rounded-md shrink-0"
+                    style={{
+                      background: isActive ? 'rgba(34,211,238,0.08)' : 'rgba(255,255,255,0.02)',
+                      border: `1px solid ${isActive ? 'rgba(34,211,238,0.12)' : 'rgba(255,255,255,0.04)'}`,
+                    }}
+                  >
+                    <s.icon className="h-3.5 w-3.5" style={{ color: isActive ? 'rgba(34,211,238,0.7)' : 'rgba(148,163,184,0.35)' }} />
+                  </div>
+                  <span className={`text-[13px] ${isActive ? 'font-medium' : ''}`}>{s.label}</span>
+                  {isActive && <div className="ml-auto w-1 h-1 rounded-full bg-cyan-400/50 shrink-0" style={{ boxShadow: '0 0 4px rgba(34,211,238,0.3)' }} />}
                 </button>
               );
             })}
           </div>
 
-          {/* Content — opacity-only transition */}
+          {/* ── Content ── */}
           <div className="flex-1 min-w-0 overflow-y-auto scrollbar-thin">
-            <AnimatePresence initial={false}>
-              <motion.div key={activeSection} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.12 }} className="p-5">
+            <AnimatePresence initial={false} mode="wait">
+              <motion.div
+                key={activeSection}
+                initial={{ opacity: 0, x: 6 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -6 }}
+                transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                className="p-6"
+              >
                 {TAB_CONTENT[activeSection]}
               </motion.div>
             </AnimatePresence>
           </div>
         </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-between px-5 py-3 border-t border-white/[0.04] bg-white/[0.01] shrink-0 h-[48px]">
-          <button onClick={handleReset} className="flex items-center gap-1.5 text-[11px] text-slate-600 hover:text-slate-400 transition-colors">
+        {/* ═── Footer ─══ */}
+        <div className="flex items-center justify-between px-6 py-3.5 shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.04)', background: 'rgba(255,255,255,0.01)' }}>
+          <button onClick={handleReset} className="flex items-center gap-2 text-[12px] text-slate-500 hover:text-slate-300 transition-colors">
             <RotateCcw className="h-3 w-3" /> Reset
           </button>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             {saved && (
-              <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-[11px] text-emerald-400/60 flex items-center gap-1">
-                <Check className="h-3 w-3" /> Saved
+              <motion.span initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 8 }} className="text-[12px] text-emerald-400/70 flex items-center gap-1.5">
+                <Check className="h-3.5 w-3.5" /> Saved
               </motion.span>
             )}
             <Button onClick={handleSave} disabled={!hasChanges}
-              className="h-7 px-4 text-[12px] bg-white/[0.06] hover:bg-white/[0.1] text-white border border-white/[0.08] rounded-lg transition-all disabled:opacity-30">
-              <Save className="h-3.5 w-3.5 mr-1.5" /> {t('saveChanges')}
+              className="h-8 px-5 text-[12px] font-medium transition-all disabled:opacity-30"
+              style={{
+                background: hasChanges ? 'linear-gradient(135deg, rgba(34,211,238,0.8), rgba(59,130,246,0.8))' : 'rgba(255,255,255,0.05)',
+                color: 'white',
+                border: 'none',
+                boxShadow: hasChanges ? '0 4px 16px rgba(34,211,238,0.15)' : 'none',
+              }}>
+              <Save className="h-3.5 w-3.5 mr-1.5" /> Save Changes
             </Button>
           </div>
         </div>

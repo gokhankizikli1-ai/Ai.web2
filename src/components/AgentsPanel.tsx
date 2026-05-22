@@ -186,7 +186,7 @@ export default function AgentsPanel() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
                       <span className="text-[13px] font-medium text-white">{agent.name}</span>
-                      <ChevronRight className={`h-4 w-4 text-slate-700 transition-transform duration-300 ${isExpanded ? 'rotate-90' : ''}`} />
+                      <ChevronRight className={`h-4 w-4 text-[#64748B] transition-transform duration-300 ${isExpanded ? 'rotate-90' : ''}`} />
                     </div>
                     <p className="text-[11px] text-slate-600 leading-relaxed mt-0.5">{agent.description}</p>
                   </div>
@@ -206,7 +206,7 @@ export default function AgentsPanel() {
                           <Zap className="h-3 w-3 text-slate-500 group-hover/action:text-slate-400 transition-colors" />
                         </div>
                         <span className="text-[12px] text-slate-400 group-hover/action:text-slate-300 transition-colors">{p.label}</span>
-                        <ChevronRight className="h-3.5 w-3.5 text-slate-700 ml-auto group-hover/action:text-slate-500 transition-colors" />
+                        <ChevronRight className="h-3.5 w-3.5 text-[#64748B] ml-auto group-hover/action:text-slate-500 transition-colors" />
                       </button>
                     ))}
                   </div>

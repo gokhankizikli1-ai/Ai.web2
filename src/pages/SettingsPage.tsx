@@ -83,7 +83,7 @@ function LanguageSelect() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-48 max-h-64 overflow-y-auto rounded-xl border border-white/[0.06] bg-[#0e0e14] shadow-2xl z-50 py-1 scrollbar-thin">
+        <div className="absolute right-0 top-full mt-1 w-48 max-h-64 overflow-y-auto rounded-xl border border-white/[0.06] bg-[#171C24] shadow-2xl z-50 py-1 scrollbar-thin">
           {LANGUAGES.map((l) => (
             <button
               key={l.code}
@@ -202,7 +202,7 @@ export default function SettingsPage() {
                           className="bg-white/[0.03] border border-white/[0.06] rounded-lg px-3 py-1.5 text-[12px] text-white outline-none focus:border-cyan-500/30 transition-colors appearance-none cursor-pointer"
                         >
                           {setting.options?.map((opt) => (
-                            <option key={opt} value={opt} className="bg-[#0f0f16]">{opt}</option>
+                            <option key={opt} value={opt} className="bg-[#171C24]">{opt}</option>
                           ))}
                         </select>
                       )}

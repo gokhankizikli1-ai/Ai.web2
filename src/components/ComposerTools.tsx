@@ -75,12 +75,12 @@ export default function ComposerTools({ onSelectTool }: ComposerToolsProps) {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 6, scale: 0.98 }}
             transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-            className="absolute bottom-full left-0 mb-2 w-64 rounded-xl border border-white/[0.06] bg-[#0c0c10] shadow-2xl overflow-hidden z-50"
+            className="absolute bottom-full left-0 mb-2 w-64 rounded-xl border border-white/[0.06] bg-[#171C24] shadow-2xl overflow-hidden z-50"
           >
             {/* Header */}
             <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-white/[0.03]">
               <span className="text-[10px] font-semibold text-slate-600 uppercase tracking-wider">Tools</span>
-              <button onClick={() => setOpen(false)} className="text-slate-700 hover:text-slate-400 transition-colors p-0.5 rounded">
+              <button onClick={() => setOpen(false)} className="text-[#64748B] hover:text-slate-400 transition-colors p-0.5 rounded">
                 <X className="h-3 w-3" />
               </button>
             </div>
@@ -91,7 +91,7 @@ export default function ComposerTools({ onSelectTool }: ComposerToolsProps) {
                 const tools = COMPOSER_TOOLS.filter((t) => t.category === category);
                 return (
                   <div key={category}>
-                    <div className="text-[9px] font-semibold text-slate-700 uppercase tracking-wider px-2 mb-1">
+                    <div className="text-[9px] font-semibold text-[#64748B] uppercase tracking-wider px-2 mb-1">
                       {category}
                     </div>
                     <div className="space-y-0.5">
@@ -116,7 +116,7 @@ export default function ComposerTools({ onSelectTool }: ComposerToolsProps) {
                             <div className="text-[11px] font-medium text-slate-300 flex items-center gap-1.5">
                               {tool.label}
                               {tool.soon && (
-                                <span className="text-[8px] px-1 py-[1px] rounded bg-white/[0.03] text-slate-700 border border-white/[0.03]">Soon</span>
+                                <span className="text-[8px] px-1 py-[1px] rounded bg-white/[0.03] text-[#64748B] border border-white/[0.03]">Soon</span>
                               )}
                             </div>
                             <div className="text-[10px] text-slate-600 leading-tight">{tool.description}</div>

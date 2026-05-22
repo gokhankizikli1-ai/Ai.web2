@@ -17,7 +17,7 @@ function StatusIcon({ status }: { status: AIActivity['status'] }) {
     );
   }
   if (status === 'completed') return <CheckCircle2 className="h-3 w-3 text-emerald-400/60" />;
-  return <Clock className="h-3 w-3 text-slate-700" />;
+  return <Clock className="h-3 w-3 text-[#64748B]" />;
 }
 
 function CategoryIcon({ message }: { message: string }) {
@@ -78,7 +78,7 @@ export default function AIActivityFeed({ activities }: AIActivityFeedProps) {
           )}
         </div>
         <motion.div animate={{ rotate: expanded ? 180 : 0 }} transition={{ duration: 0.2 }}>
-          <ChevronDown className="h-3 w-3 text-slate-700" />
+          <ChevronDown className="h-3 w-3 text-[#64748B]" />
         </motion.div>
       </button>
 
@@ -104,7 +104,7 @@ export default function AIActivityFeed({ activities }: AIActivityFeedProps) {
                       )}
                     </div>
                     {activity.detail && (
-                      <span className="text-[9px] text-slate-700 block truncate">{activity.detail}</span>
+                      <span className="text-[9px] text-[#64748B] block truncate">{activity.detail}</span>
                     )}
                   </div>
                   {activity.progress !== undefined && (

@@ -74,17 +74,24 @@ export default function PremiumComposer({
             : '0 0 0 1px transparent, 0 1px 3px rgba(0,0,0,0.1)',
         }}
         transition={{ duration: 0.2 }}
-        className={`relative rounded-2xl bg-white/[0.015] border transition-all duration-300 ${
+        className={`relative rounded-2xl border transition-all duration-300 ${
           isFocused
-            ? 'border-cyan-500/10 bg-white/[0.025]'
-            : 'border-white/[0.05] hover:border-white/[0.07] hover:bg-white/[0.02]'
+            ? 'border-cyan-500/15'
+            : 'border-white/[0.05] hover:border-white/[0.07]'
         }`}
+        style={{
+          background: isFocused ? 'rgba(27,34,48,0.6)' : 'rgba(27,34,48,0.4)',
+          backdropFilter: 'blur(20px)',
+          boxShadow: isFocused
+            ? '0 0 24px -6px rgba(34,211,238,0.08), inset 0 1px 0 rgba(255,255,255,0.04)'
+            : '0 4px 16px -8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.02)',
+        }}
       >
         {/* Top bar — tools */}
         <div className="flex items-center gap-1 px-3 pt-2 pb-1">
           <ComposerTools onSelectTool={handleToolSelect} />
           {activeTools.length === 0 && (
-            <span className="text-[11px] text-slate-700 ml-1.5">Add tool</span>
+            <span className="text-[11px] text-[#64748B] ml-1.5">Add tool</span>
           )}
         </div>
 
@@ -103,13 +110,13 @@ export default function PremiumComposer({
             }
             rows={1}
             disabled={disabled}
-            className="w-full bg-transparent text-[14px] text-white placeholder:text-slate-700 resize-none outline-none min-h-[28px] max-h-[200px] py-1 leading-[1.6] disabled:opacity-40 transition-opacity"
+            className="w-full bg-transparent text-[14px] text-slate-200 placeholder:text-slate-600/40 resize-none outline-none min-h-[28px] max-h-[200px] py-1 leading-[1.6] disabled:opacity-40 transition-opacity"
           />
         </div>
 
         {/* Bottom bar */}
         <div className="flex items-center justify-between px-2 pb-2 pt-0.5">
-          <div className="flex items-center gap-1 text-[11px] text-slate-700">
+          <div className="flex items-center gap-1 text-[11px]" style={{ color: 'rgba(148,163,184,0.2)' }}>
             <Command className="h-2.5 w-2.5" />
             <span>K to focus</span>
           </div>
@@ -130,7 +137,7 @@ export default function PremiumComposer({
             className={`flex items-center justify-center h-8 w-8 rounded-xl transition-all duration-200 ${
               canSend
                 ? 'text-white hover:text-cyan-300'
-                : 'text-slate-700'
+                : 'text-[#64748B]'
             } disabled:opacity-30`}
           >
             <Send className="h-[15px] w-[15px]" />
@@ -140,7 +147,7 @@ export default function PremiumComposer({
 
       {/* Trust footer */}
       <div className="flex items-center justify-center mt-2">
-        <span className="text-[11px] text-slate-700">KorvixAI can make mistakes. Verify important information.</span>
+        <span className="text-[11px]" style={{ color: 'rgba(148,163,184,0.2)' }}>KorvixAI can make mistakes. Verify important information.</span>
       </div>
     </div>
   );

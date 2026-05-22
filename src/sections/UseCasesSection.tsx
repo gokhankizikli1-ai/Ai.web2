@@ -28,10 +28,10 @@ export default function UseCasesSection() {
     <section id="use-cases" className="py-24 relative">
       <div className="max-w-6xl mx-auto px-6">
         <div className="text-center mb-16">
-          <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+          <h2 className="text-3xl md:text-4xl font-bold text-[#111827] mb-4">
             Who Uses KorvixAI?
           </h2>
-          <p className="text-slate-400 max-w-xl mx-auto">
+          <p className="text-slate-500 max-w-xl mx-auto">
             Trusted by professionals across every industry to accelerate their best work.
           </p>
         </div>
@@ -40,14 +40,14 @@ export default function UseCasesSection() {
           {useCases.map((useCase) => (
             <div
               key={useCase.title}
-              className="flex items-start gap-5 rounded-2xl border border-white/10 bg-white/[0.02] p-8 hover:bg-white/[0.04] transition-all duration-300"
+              className="flex items-start gap-5 rounded-2xl border border-slate-200 bg-white p-8 hover:bg-slate-50 transition-all duration-300 shadow-sm"
             >
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 text-purple-400">
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-purple-100 to-pink-100 text-purple-600">
                 <useCase.icon className="h-6 w-6" />
               </div>
               <div>
-                <h3 className="text-xl font-semibold text-white mb-2">{useCase.title}</h3>
-                <p className="text-slate-400 leading-relaxed">{useCase.description}</p>
+                <h3 className="text-xl font-semibold text-[#111827] mb-2">{useCase.title}</h3>
+                <p className="text-slate-600 leading-relaxed">{useCase.description}</p>
               </div>
             </div>
           ))}

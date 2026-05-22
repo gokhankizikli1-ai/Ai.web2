@@ -7,10 +7,8 @@ import AboutPage from './pages/AboutPage';
 import ChatDashboard from './pages/ChatDashboard';
 import SettingsPage from './pages/SettingsPage';
 import HomeDashboard from './pages/HomeDashboard';
-import WorkspacePage from './pages/WorkspacePage';
 import StartupHub from './pages/StartupHub';
 import EcommerceOS from './pages/EcommerceOS';
-import AgentMarketplace from './pages/AgentMarketplace';
 import AgentBuilder from './pages/AgentBuilder';
 import ToolsPage from './pages/ToolsPage';
 import ExplorePage from './pages/ExplorePage';
@@ -24,9 +22,12 @@ import Automations from './pages/Automations';
 import MultiAgentSwarm from './pages/MultiAgentSwarm';
 import ComingSoon from './pages/ComingSoon';
 import AuthPage from './pages/AuthPage';
+import ProjectsDashboard from './pages/ProjectsDashboard';
+import ProjectWorkspace from './pages/ProjectWorkspace';
+import AgentsPage from './pages/AgentsPage';
+import AgentChatPage from './pages/AgentChatPage';
 import CreditsPage from './pages/CreditsPage';
 import BottomNav from './components/BottomNav';
-import FloatingOrb from './components/FloatingOrb';
 import FloatingParticles from './components/FloatingParticles';
 import PageTransition from './components/PageTransition';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -43,14 +44,12 @@ function AppLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const isLanding = location.pathname === '/';
   const showBottomNav = !isLanding;
-  const showOrb = !isLanding;
   const showParticles = !isLanding;
 
   return (
-    <div className={`min-h-[100dvh] bg-[#0a0a0a] ${showBottomNav ? 'pb-16 sm:pb-0' : ''}`}>
+    <div className={`min-h-[100dvh] bg-background ${showBottomNav ? 'pb-16 sm:pb-0' : ''}`}>
       {children}
       {showBottomNav && <BottomNav />}
-      {showOrb && <FloatingOrb />}
       {showParticles && <FloatingParticles />}
     </div>
   );
@@ -69,14 +68,19 @@ export default function App() {
         <Route path="/pricing" element={<ProtectedRoute guestAllowed><AnimatedRoute><PricingPage /></AnimatedRoute></ProtectedRoute>} />
         <Route path="/about" element={<ProtectedRoute guestAllowed><AnimatedRoute><AboutPage /></AnimatedRoute></ProtectedRoute>} />
 
-        {/* ═══ Core workspace (CURRENT PRODUCTION) — guest allowed ═══ */}
+        {/* ═══ Core workspace — guest allowed ═══ */}
         <Route path="/chat" element={<ProtectedRoute guestAllowed><ChatDashboard /></ProtectedRoute>} />
-        <Route path="/workspace" element={<ProtectedRoute guestAllowed><AnimatedRoute><WorkspacePage /></AnimatedRoute></ProtectedRoute>} />
+        <Route path="/workspace" element={<Navigate to="/chat" replace />} />
         <Route path="/home" element={<ProtectedRoute guestAllowed><AnimatedRoute><HomeDashboard /></AnimatedRoute></ProtectedRoute>} />
 
-        {/* ═══ Agents (CURRENT PRODUCTION) — guest allowed ═══ */}
-        <Route path="/agents" element={<ProtectedRoute guestAllowed><AnimatedRoute><AgentMarketplace /></AnimatedRoute></ProtectedRoute>} />
-        <Route path="/agents/builder" element={<ProtectedRoute guestAllowed><AnimatedRoute><AgentBuilder /></AnimatedRoute></ProtectedRoute>} />
+        {/* ═══ Project-based Multi-Agent Workspace — guest allowed ═══ */}
+        <Route path="/projects" element={<ProtectedRoute guestAllowed><ProjectsDashboard /></ProtectedRoute>} />
+        <Route path="/projects/:projectId" element={<ProtectedRoute guestAllowed><ProjectWorkspace /></ProtectedRoute>} />
+
+        {/* ═══ Agents — guest allowed ═══ */}
+        <Route path="/agents" element={<ProtectedRoute guestAllowed><AgentsPage /></ProtectedRoute>} />
+        <Route path="/agents/:agentId" element={<ProtectedRoute guestAllowed><AgentChatPage /></ProtectedRoute>} />
+        <Route path="/agents/builder" element={<ProtectedRoute guestAllowed><AgentBuilder /></ProtectedRoute>} />
 
         {/* ═══ Tools (optional standalone pages, NOT main routes) — guest allowed ═══ */}
         <Route path="/tools" element={<ProtectedRoute guestAllowed><AnimatedRoute><ToolsPage /></AnimatedRoute></ProtectedRoute>} />

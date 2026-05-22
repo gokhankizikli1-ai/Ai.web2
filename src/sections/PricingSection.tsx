@@ -58,10 +58,10 @@ export default function PricingSection() {
     <section id="pricing" className="py-24 relative">
       <div className="max-w-6xl mx-auto px-6">
         <div className="text-center mb-16">
-          <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+          <h2 className="text-3xl md:text-4xl font-bold text-[#111827] mb-4">
             Simple, Transparent Pricing
           </h2>
-          <p className="text-slate-400 max-w-xl mx-auto">
+          <p className="text-slate-500 max-w-xl mx-auto">
             Choose the plan that fits your workflow. Upgrade or downgrade anytime.
           </p>
         </div>
@@ -73,12 +73,12 @@ export default function PricingSection() {
               className={`relative rounded-2xl border p-8 flex flex-col ${
                 plan.popular
                   ? 'border-cyan-500/30 bg-gradient-to-b from-cyan-500/10 to-transparent'
-                  : 'border-white/10 bg-white/[0.02]'
+                  : 'border-slate-200 bg-white'
               }`}
             >
               {plan.popular && (
                 <div className="absolute -top-4 left-1/2 -translate-x-1/2">
-                  <div className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-cyan-500 to-blue-600 px-3 py-1 text-xs font-semibold text-white">
+                  <div className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-cyan-500 to-blue-600 px-3 py-1 text-xs font-semibold text-[#111827]">
                     <Sparkles className="h-3 w-3" />
                     Most Popular
                   </div>
@@ -86,18 +86,18 @@ export default function PricingSection() {
               )}
 
               <div className="mb-6">
-                <h3 className="text-lg font-semibold text-white mb-2">{plan.name}</h3>
+                <h3 className="text-lg font-semibold text-[#111827] mb-2">{plan.name}</h3>
                 <div className="flex items-baseline gap-1">
-                  <span className="text-4xl font-bold text-white">{plan.price}</span>
+                  <span className="text-4xl font-bold text-[#111827]">{plan.price}</span>
                   <span className="text-slate-500">{plan.period}</span>
                 </div>
-                <p className="text-sm text-slate-400 mt-2">{plan.description}</p>
+                <p className="text-sm text-slate-500 mt-2">{plan.description}</p>
               </div>
 
               <ul className="space-y-3 mb-8 flex-1">
                 {plan.features.map((feature) => (
-                  <li key={feature} className="flex items-start gap-3 text-sm text-slate-300">
-                    <Check className={`h-4 w-4 shrink-0 mt-0.5 ${plan.popular ? 'text-cyan-400' : 'text-slate-500'}`} />
+                  <li key={feature} className="flex items-start gap-3 text-sm text-foreground">
+                    <Check className={`h-4 w-4 shrink-0 mt-0.5 ${plan.popular ? 'text-cyan-600' : 'text-slate-400'}`} />
                     {feature}
                   </li>
                 ))}
@@ -106,8 +106,8 @@ export default function PricingSection() {
               <Button
                 className={`w-full h-11 font-semibold ${
                   plan.popular
-                    ? 'bg-white text-slate-900 hover:bg-slate-200'
-                    : 'bg-white/5 text-white hover:bg-white/10 border border-white/10'
+                    ? 'bg-white text-[#111827] hover:bg-slate-200'
+                    : 'bg-slate-100 text-[#111827] hover:bg-slate-200 border border-slate-200'
                 }`}
               >
                 {plan.cta}

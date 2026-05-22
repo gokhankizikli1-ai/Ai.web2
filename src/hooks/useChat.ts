@@ -40,7 +40,7 @@ function loadSessions(): ChatSession[] | null {
             ...m,
             timestamp: new Date(m.timestamp as string),
           })),
-        }));
+        })) as ChatSession[];
       }
     }
   } catch { /* ignore */ }

@@ -18,6 +18,8 @@ export const STOCKS: TradingAsset[] = [
   { symbol: 'TSLA', name: 'Tesla Inc.', type: 'stock', price: 248.50, change: -2.10, changePercent: -0.84 },
   // Semiconductors
   { symbol: 'AMD', name: 'Advanced Micro Devices', type: 'stock', price: 162.80, change: 2.10, changePercent: 1.31 },
+  { symbol: 'SOUN', name: 'SoundHound AI', type: 'stock', price: 8.42, change: 0.35, changePercent: 4.34 },
+  { symbol: 'OPND', name: 'Opendoor Technologies', type: 'stock', price: 2.18, change: -0.05, changePercent: -2.24 },
   { symbol: 'INTC', name: 'Intel Corp', type: 'stock', price: 31.25, change: -1.20, changePercent: -3.70 },
   { symbol: 'AVGO', name: 'Broadcom Inc.', type: 'stock', price: 1680.50, change: 12.30, changePercent: 0.74 },
   { symbol: 'QCOM', name: 'Qualcomm Inc.', type: 'stock', price: 198.40, change: 1.50, changePercent: 0.76 },

@@ -176,7 +176,7 @@ export default function MultiAgentSwarm() {
 
           {!generated && !generating && (
             <motion.div {...fadeUp(0.15)} className="text-center py-16">
-              <Users className="w-12 h-12 text-slate-700 mx-auto mb-4" />
+              <Users className="w-12 h-12 text-[#64748B] mx-auto mb-4" />
               <h3 className="text-sm font-medium text-white mb-1">Describe a complex task</h3>
               <p className="text-[12px] text-slate-500">Multiple AI agents will collaborate to research, plan, execute, and validate</p>
             </motion.div>

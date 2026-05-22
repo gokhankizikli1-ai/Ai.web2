@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
-  Building2, ShoppingCart, Bot,
-  Target, Lightbulb, Users, TrendingUp, Shield,
-  CheckSquare, BarChart3, Sparkles, AlertTriangle,
+  Building2, Bot,
+  Target, Lightbulb, TrendingUp,
+  CheckSquare, Sparkles, AlertTriangle,
   ChevronRight, Search, FileText, Megaphone,
   Layout, Flag, Lock, ClipboardList,
 } from 'lucide-react';
+import EcommerceCommandCenter from './EcommerceCommandCenter';
 
 /* ═══════════════════════════════════════════
    TYPES
@@ -16,14 +17,6 @@ interface BusinessState {
   subTab: BusinessSubTab;
   goalName: string;
   goalText: string;
-  productIdea: string;
-  nicheAudience: string;
-  sellPrice: string;
-  cogs: string;
-  shipping: string;
-  adCost: string;
-  feesPercent: string;
-  riskSliders: Record<string, number>;
   startupCanvas: Record<string, string>;
   mvpChecks: boolean[];
   autoGoal: string;
@@ -52,14 +45,6 @@ interface AuditEntry {
    CONSTANTS
    ═══════════════════════════════════════════ */
 const STORAGE_KEY = 'korvix_business_workspace';
-
-const RISK_SLIDERS = [
-  { key: 'marketSaturation', label: 'Market saturation', defaultValue: 3 },
-  { key: 'adPolicySensitivity', label: 'Ad-policy sensitivity', defaultValue: 3 },
-  { key: 'shippingComplexity', label: 'Shipping complexity', defaultValue: 3 },
-  { key: 'returnRate', label: 'Expected return rate', defaultValue: 3 },
-  { key: 'differentiation', label: 'Your differentiation (higher = better)', defaultValue: 3 },
-];
 
 const MVP_ITEMS = [
   'Core value flow works end-to-end',
@@ -102,13 +87,7 @@ const STARTUP_ACTIONS = [
   { icon: TrendingUp, title: 'Stress-test monetization', prompt: 'Stress-test my monetization model. What pricing strategies should I consider and what are the potential revenue risks?' },
 ];
 
-const ECOMMERCE_ACTIONS = [
-  { icon: TrendingUp, title: 'Demand analysis framework', prompt: 'Walk me through a demand analysis framework for my ecommerce product. How do I validate there is real market demand before investing?' },
-  { icon: Shield, title: 'Competition analysis structure', prompt: 'Provide a structured competition analysis framework. How do I research competitors, find gaps, and position my product?' },
-  { icon: Users, title: 'Audience analysis structure', prompt: 'Help me build an audience analysis. Who are my ideal customers, what are their pain points, and where do they hang out online?' },
-  { icon: Megaphone, title: 'Generate ad angles', prompt: 'Generate high-converting ad angles and hooks for my ecommerce product. Include Facebook and TikTok ad variations.' },
-  { icon: ShoppingCart, title: 'Full e-commerce analysis', prompt: 'Run a complete ecommerce analysis for my product including pricing strategy, margin optimization, and growth recommendations.' },
-];
+
 
 /* ═══════════════════════════════════════════
    LOCAL STORAGE
@@ -125,44 +104,6 @@ function saveState(state: BusinessState) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch { /* ignore */ }
-}
-
-/* ═══════════════════════════════════════════
-   E-COMMERCE CALCULATIONS
-   ═══════════════════════════════════════════ */
-function calcMargin(sp: number, cogs: number, ship: number, ad: number, fees: number) {
-  const totalCost = cogs + ship + ad + (sp * fees / 100);
-  const contribution = sp - totalCost;
-  const margin = sp > 0 ? (contribution / sp) * 100 : 0;
-  const maxAd = sp - cogs - ship - (sp * fees / 100);
-  return {
-    contribution: contribution.toFixed(2),
-    margin: margin.toFixed(1),
-    maxAd: maxAd > 0 ? maxAd.toFixed(2) : '0.00',
-    totalCost: totalCost.toFixed(2),
-  };
-}
-
-function calcRisk(sliders: Record<string, number>) {
-  // Base 50, each slider deviates ±5 per point from center (3)
-  // Differentiation is inverted (higher = better = lower risk)
-  let score = 50;
-  for (const s of RISK_SLIDERS) {
-    const v = sliders[s.key] ?? s.defaultValue;
-    if (s.key === 'differentiation') {
-      score += (3 - v) * 5; // inverted
-    } else {
-      score += (v - 3) * 5;
-    }
-  }
-  return Math.max(0, Math.min(100, score));
-}
-
-function riskLabel(score: number) {
-  if (score >= 70) return { label: 'Low', color: 'text-emerald-400' };
-  if (score >= 50) return { label: 'Medium', color: 'text-amber-400' };
-  if (score >= 30) return { label: 'High', color: 'text-orange-400' };
-  return { label: 'Very High', color: 'text-red-400' };
 }
 
 /* ═══════════════════════════════════════════
@@ -193,7 +134,7 @@ function Inp({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
-      className="w-full px-3 py-2 rounded-xl bg-white/[0.02] border border-white/[0.04] text-[12px] text-white placeholder:text-slate-700 outline-none focus:border-white/[0.08] transition-colors"
+      className="w-full px-3 py-2 rounded-xl bg-white/[0.02] border border-white/[0.04] text-[12px] text-white placeholder:text-[#64748B] outline-none focus:border-white/[0.08] transition-colors"
     />
   );
 }
@@ -209,7 +150,7 @@ function Txt({
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
       rows={rows}
-      className="w-full px-3 py-2 rounded-xl bg-white/[0.02] border border-white/[0.04] text-[12px] text-white placeholder:text-slate-700 outline-none focus:border-white/[0.08] transition-colors resize-none"
+      className="w-full px-3 py-2 rounded-xl bg-white/[0.02] border border-white/[0.04] text-[12px] text-white placeholder:text-[#64748B] outline-none focus:border-white/[0.08] transition-colors resize-none"
     />
   );
 }
@@ -222,7 +163,7 @@ function ActionBtn({ icon: Icon, title, onClick }: { icon: typeof FileText; titl
     >
       <Icon className="h-3.5 w-3.5 text-slate-500 group-hover:text-slate-400 transition-colors shrink-0" />
       <span className="text-[12px] text-slate-400 group-hover:text-slate-300 transition-colors">{title}</span>
-      <ChevronRight className="h-3.5 w-3.5 text-slate-700 group-hover:text-slate-500 ml-auto transition-colors shrink-0" />
+      <ChevronRight className="h-3.5 w-3.5 text-[#64748B] group-hover:text-slate-500 ml-auto transition-colors shrink-0" />
     </button>
   );
 }
@@ -243,16 +184,6 @@ export default function BusinessPanel() {
   const [subTab, setSubTab] = useState<BusinessSubTab>(saved.subTab || 'workspace');
   const [goalName, setGoalName] = useState(saved.goalName || '');
   const [goalText, setGoalText] = useState(saved.goalText || '');
-  const [productIdea, setProductIdea] = useState(saved.productIdea || '');
-  const [nicheAudience, setNicheAudience] = useState(saved.nicheAudience || '');
-  const [sellPrice, setSellPrice] = useState(saved.sellPrice || '40');
-  const [cogs, setCogs] = useState(saved.cogs || '10');
-  const [shipping, setShipping] = useState(saved.shipping || '5');
-  const [adCost, setAdCost] = useState(saved.adCost || '10');
-  const [feesPercent, setFeesPercent] = useState(saved.feesPercent || '3');
-  const [riskSliders, setRiskSliders] = useState<Record<string, number>>(
-    saved.riskSliders || Object.fromEntries(RISK_SLIDERS.map(s => [s.key, s.defaultValue]))
-  );
   const [startupCanvas, setStartupCanvas] = useState<Record<string, string>>(saved.startupCanvas || {});
   const [mvpChecks, setMvpChecks] = useState<boolean[]>(saved.mvpChecks || new Array(MVP_ITEMS.length).fill(false));
   const [autoGoal, setAutoGoal] = useState(saved.autoGoal || '');
@@ -263,15 +194,8 @@ export default function BusinessPanel() {
 
   // Persist
   useEffect(() => {
-    saveState({ subTab, goalName, goalText, productIdea, nicheAudience, sellPrice, cogs, shipping, adCost, feesPercent, riskSliders, startupCanvas, mvpChecks, autoGoal, killSwitch, runs, auditLog, auditOpen });
+    saveState({ subTab, goalName, goalText, startupCanvas, mvpChecks, autoGoal, killSwitch, runs, auditLog, auditOpen });
   });
-
-  const margin = calcMargin(
-    parseFloat(sellPrice) || 0, parseFloat(cogs) || 0, parseFloat(shipping) || 0,
-    parseFloat(adCost) || 0, parseFloat(feesPercent) || 0,
-  );
-  const riskScore = calcRisk(riskSliders);
-  const rLabel = riskLabel(riskScore);
 
   const handlePlanRun = useCallback(() => {
     if (!autoGoal.trim() || killSwitch) return;
@@ -384,7 +308,7 @@ export default function BusinessPanel() {
 
             {/* Disclaimer */}
             <div className="flex items-start gap-2 p-2 rounded-xl border border-white/[0.02] bg-white/[0.005]">
-              <AlertTriangle className="h-3 w-3 text-slate-700 shrink-0 mt-0.5" />
+              <AlertTriangle className="h-3 w-3 text-[#64748B] shrink-0 mt-0.5" />
               <p className="text-[10px] text-slate-600 leading-relaxed">
                 Launches send a structured prompt to the AI chat. Live product/market/competitor data sources are not connected yet — outputs are AI-generated guidance, not live data.
               </p>
@@ -393,118 +317,8 @@ export default function BusinessPanel() {
         )}
 
         {subTab === 'ecommerce' && (
-          <div className="space-y-2.5">
-            {/* Product inputs */}
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <p className="text-[11px] text-slate-500 mb-1">Product idea</p>
-                <Inp value={productIdea} onChange={setProductIdea} placeholder="e.g. posture-correction brace" />
-              </div>
-              <div>
-                <p className="text-[11px] text-slate-500 mb-1">Niche / audience</p>
-                <Inp value={nicheAudience} onChange={setNicheAudience} placeholder="e.g. desk workers, back pain" />
-              </div>
-            </div>
-
-            {/* Pricing & margin */}
-            <Card>
-              <div className="flex items-center gap-2 mb-2">
-                <BarChart3 className="h-3.5 w-3.5 text-slate-400" />
-                <span className="text-[13px] font-medium text-white">Pricing &amp; margin</span>
-              </div>
-              <p className="text-[10px] text-slate-600 mb-2.5">Enter price &amp; costs — figures are computed from your inputs only.</p>
-              <div className="grid grid-cols-3 gap-2 mb-1.5">
-                <div>
-                  <p className="text-[10px] text-slate-500 mb-1">Sell price</p>
-                  <Inp value={sellPrice} onChange={setSellPrice} type="number" />
-                </div>
-                <div>
-                  <p className="text-[10px] text-slate-500 mb-1">COGS</p>
-                  <Inp value={cogs} onChange={setCogs} type="number" />
-                </div>
-                <div>
-                  <p className="text-[10px] text-slate-500 mb-1">Shipping</p>
-                  <Inp value={shipping} onChange={setShipping} type="number" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2 mb-3">
-                <div>
-                  <p className="text-[10px] text-slate-500 mb-1">Ad cost / order</p>
-                  <Inp value={adCost} onChange={setAdCost} type="number" />
-                </div>
-                <div>
-                  <p className="text-[10px] text-slate-500 mb-1">Fees %</p>
-                  <Inp value={feesPercent} onChange={setFeesPercent} type="number" />
-                </div>
-              </div>
-              <div className="grid grid-cols-4 gap-2">
-                {[
-                  { label: 'Contribution', value: `$${margin.contribution}`, color: 'text-emerald-400' },
-                  { label: 'Margin %', value: `${margin.margin}%`, color: 'text-emerald-400' },
-                  { label: 'Max ad / order', value: `$${margin.maxAd}`, color: 'text-white' },
-                  { label: 'Total cost', value: `$${margin.totalCost}`, color: 'text-white' },
-                ].map((r) => (
-                  <div key={r.label} className="text-center p-2 rounded-lg bg-white/[0.01]">
-                    <p className="text-[9px] text-slate-600 mb-0.5">{r.label}</p>
-                    <p className={`text-[13px] font-semibold ${r.color}`}>{r.value}</p>
-                  </div>
-                ))}
-              </div>
-            </Card>
-
-            {/* Risk score */}
-            <Card>
-              <div className="flex items-center justify-between mb-2.5">
-                <div className="flex items-center gap-2">
-                  <Shield className="h-3.5 w-3.5 text-slate-400" />
-                  <span className="text-[13px] font-medium text-white">Risk score</span>
-                </div>
-                <span className={`text-[13px] font-semibold ${rLabel.color}`}>{riskScore}/100 · {rLabel.label}</span>
-              </div>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                {RISK_SLIDERS.map((s) => (
-                  <div key={s.key}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[10px] text-slate-500">{s.label}</span>
-                      <span className="text-[10px] text-slate-600">{(riskSliders[s.key] ?? s.defaultValue)}/5</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={1} max={5} step={1}
-                      value={riskSliders[s.key] ?? s.defaultValue}
-                      onChange={(e) => setRiskSliders(p => ({ ...p, [s.key]: parseInt(e.target.value) }))}
-                      className="w-full h-1 rounded-full appearance-none cursor-pointer accent-emerald-400"
-                      style={{ background: `linear-gradient(to right, rgb(52,211,153) 0%, rgb(52,211,153) ${((riskSliders[s.key] ?? s.defaultValue) - 1) / 4 * 100}%, rgba(255,255,255,0.04) ${((riskSliders[s.key] ?? s.defaultValue) - 1) / 4 * 100}%)` }}
-                    />
-                  </div>
-                ))}
-              </div>
-              <p className="text-[10px] text-slate-700 mt-1.5">Derived from your own assessment — not market data.</p>
-            </Card>
-
-            {/* Launch read */}
-            <Card>
-              <SectionLabel>Launch read</SectionLabel>
-              <p className="text-[12px] text-slate-400">
-                {productIdea ? 'Workable on your inputs — validate real demand with a small test budget before scaling.' : 'Enter your price and costs to get a margin-based read.'}
-              </p>
-            </Card>
-
-            {/* AI actions */}
-            <SectionLabel>Analyze with AI (routes to chat)</SectionLabel>
-            <div className="space-y-1.5">
-              {ECOMMERCE_ACTIONS.map((a) => (
-                <ActionBtn key={a.title} icon={a.icon} title={a.title} onClick={() => routeToChat(a.prompt)} />
-              ))}
-            </div>
-
-            {/* Disclaimer */}
-            <div className="flex items-start gap-2 p-2 rounded-xl border border-white/[0.02] bg-white/[0.005]">
-              <AlertTriangle className="h-3 w-3 text-slate-700 shrink-0 mt-0.5" />
-              <p className="text-[10px] text-slate-600 leading-relaxed">
-                Live product research source not connected yet — no trends, sales, supplier or competition data is fetched. Margin/risk use only your inputs; AI analyses are guidance, not live data.
-              </p>
-            </div>
+          <div className="h-full -mx-4 -mb-4">
+            <EcommerceCommandCenter />
           </div>
         )}
 
@@ -582,7 +396,7 @@ export default function BusinessPanel() {
                   'Define one success metric and instrument it.',
                 ].map((t, i) => (
                   <li key={i} className="flex items-start gap-2 text-[11px] text-slate-400">
-                    <span className="text-slate-700 mt-0.5">•</span>{t}
+                    <span className="text-[#64748B] mt-0.5">•</span>{t}
                   </li>
                 ))}
               </ul>
@@ -598,7 +412,7 @@ export default function BusinessPanel() {
 
             {/* Disclaimer */}
             <div className="flex items-start gap-2 p-2 rounded-xl border border-white/[0.02] bg-white/[0.005]">
-              <AlertTriangle className="h-3 w-3 text-slate-700 shrink-0 mt-0.5" />
+              <AlertTriangle className="h-3 w-3 text-[#64748B] shrink-0 mt-0.5" />
               <p className="text-[10px] text-slate-600 leading-relaxed">
                 Planning canvas saved locally. No live market/competition data is connected — AI outputs are guidance, not validated research.
               </p>
@@ -670,7 +484,7 @@ export default function BusinessPanel() {
               <ClipboardList className="h-3.5 w-3.5 text-slate-400" />
               <span className="text-[13px] font-medium text-white">Audit log</span>
               <span className="text-[11px] text-slate-600">({auditLog.length})</span>
-              <ChevronRight className={`h-3.5 w-3.5 text-slate-700 ml-auto transition-transform ${auditOpen ? 'rotate-90' : ''}`} />
+              <ChevronRight className={`h-3.5 w-3.5 text-[#64748B] ml-auto transition-transform ${auditOpen ? 'rotate-90' : ''}`} />
             </button>
             {auditOpen && (
               <div className="space-y-1 max-h-40 overflow-y-auto scrollbar-thin">
@@ -679,10 +493,10 @@ export default function BusinessPanel() {
                 ) : (
                   auditLog.map((entry) => (
                     <div key={entry.id} className="flex items-start gap-2 text-[10px]">
-                      <span className="text-slate-700 shrink-0">{new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      <span className="text-[#64748B] shrink-0">{new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                       <div>
                         <span className="text-slate-400">{entry.action}</span>
-                        <span className="text-slate-700"> — {entry.detail}</span>
+                        <span className="text-[#64748B]"> — {entry.detail}</span>
                       </div>
                     </div>
                   ))
@@ -692,7 +506,7 @@ export default function BusinessPanel() {
 
             {/* Disclaimer */}
             <div className="flex items-start gap-2 p-2 rounded-xl border border-white/[0.02] bg-white/[0.005]">
-              <AlertTriangle className="h-3 w-3 text-slate-700 shrink-0 mt-0.5" />
+              <AlertTriangle className="h-3 w-3 text-[#64748B] shrink-0 mt-0.5" />
               <p className="text-[10px] text-slate-600 leading-relaxed">
                 Dry-run only. Analyze/draft route a structured prompt into the normal chat; compute records your own numbers. Research &amp; act steps are gated — approvals are recorded in the audit log but never executed (no external-data/execution gate is open). Runs, audit log and the kill-switch are stored locally in this browser only.
               </p>

@@ -114,14 +114,14 @@ export default function AIThinkingPanel({ isVisible }: AIThinkingPanelProps) {
                 <step.icon className={`h-3 w-3 ${
                   step.status === 'completed' ? 'text-emerald-400/60' :
                   step.status === 'active' ? 'text-cyan-400' :
-                  'text-slate-700'
+                  'text-[#64748B]'
                 }`} />
 
                 {/* Label */}
                 <span className={`text-[11px] ${
                   step.status === 'completed' ? 'text-emerald-400/60' :
                   step.status === 'active' ? 'text-cyan-400/80' :
-                  'text-slate-700'
+                  'text-[#64748B]'
                 }`}>
                   {step.label}
                 </span>

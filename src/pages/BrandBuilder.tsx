@@ -181,7 +181,7 @@ export default function BrandBuilder() {
 
           {!generated && !generating && (
             <motion.div {...fadeUp(0.1)} className="text-center py-16">
-              <Palette className="w-12 h-12 text-slate-700 mx-auto mb-4" />
+              <Palette className="w-12 h-12 text-[#64748B] mx-auto mb-4" />
               <h3 className="text-sm font-medium text-white mb-1">Describe your brand</h3>
               <p className="text-[12px] text-slate-500">AI will generate name ideas, slogan, color palette, tone, audience, and positioning</p>
             </motion.div>

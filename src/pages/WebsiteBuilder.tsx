@@ -125,7 +125,7 @@ export default function WebsiteBuilder() {
                   >
                     <s.icon className={`w-4 h-4 ${activeSection === s.id ? 'text-violet-400' : 'text-slate-600'}`} />
                     <span className={`text-[12px] ${activeSection === s.id ? 'text-white font-medium' : 'text-slate-500'}`}>{s.label}</span>
-                    <ChevronRight className={`w-3 h-3 ml-auto ${activeSection === s.id ? 'text-violet-400' : 'text-slate-700'}`} />
+                    <ChevronRight className={`w-3 h-3 ml-auto ${activeSection === s.id ? 'text-violet-400' : 'text-[#64748B]'}`} />
                   </motion.button>
                 ))}
               </div>
@@ -149,7 +149,7 @@ export default function WebsiteBuilder() {
 
           {!generated && !generating && (
             <motion.div {...fadeUp(0.1)} className="text-center py-16">
-              <Layout className="w-12 h-12 text-slate-700 mx-auto mb-4" />
+              <Layout className="w-12 h-12 text-[#64748B] mx-auto mb-4" />
               <h3 className="text-sm font-medium text-white mb-1">Describe your website</h3>
               <p className="text-[12px] text-slate-500">AI will generate hero, features, pricing, testimonials, FAQ, and brand guidelines</p>
             </motion.div>

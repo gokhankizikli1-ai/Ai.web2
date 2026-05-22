@@ -168,8 +168,8 @@ export default function MessageBubble({
             <p className="text-[13px] text-slate-200 leading-relaxed whitespace-pre-wrap">{content}</p>
           </div>
           <div className="flex items-center justify-end gap-1.5 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-            <span className="text-[10px] text-slate-700">{formatTime(fullMessage.timestamp)}</span>
-            <button onClick={handleCopy} className="p-0.5 rounded text-slate-700 hover:text-slate-400 transition-colors">
+            <span className="text-[10px] text-[#64748B]">{formatTime(fullMessage.timestamp)}</span>
+            <button onClick={handleCopy} className="p-0.5 rounded text-[#64748B] hover:text-slate-400 transition-colors">
               {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
             </button>
           </div>
@@ -226,7 +226,7 @@ export default function MessageBubble({
           <div className={`flex items-center gap-0.5 mt-1.5 transition-opacity duration-200 ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
             <button
               onClick={handleCopy}
-              className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-slate-700 hover:text-slate-400 hover:bg-white/[0.03] transition-all"
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[#64748B] hover:text-slate-400 hover:bg-white/[0.03] transition-all"
               title="Copy"
             >
               {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
@@ -235,7 +235,7 @@ export default function MessageBubble({
             {onPin && (
               <button
                 onClick={() => onPin(fullMessage)}
-                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-slate-700 hover:text-amber-400 hover:bg-amber-500/[0.03] transition-all"
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[#64748B] hover:text-amber-400 hover:bg-amber-500/[0.03] transition-all"
                 title={isPinned ? 'Unpin' : 'Pin'}
               >
                 {isPinned ? <PinOff className="h-3 w-3 text-amber-400" /> : <Pin className="h-3 w-3" />}
@@ -245,22 +245,22 @@ export default function MessageBubble({
             {onRegenerate && (
               <button
                 onClick={onRegenerate}
-                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-slate-700 hover:text-slate-400 hover:bg-white/[0.03] transition-all"
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[#64748B] hover:text-slate-400 hover:bg-white/[0.03] transition-all"
                 title="Regenerate"
               >
                 <RotateCcw className="h-3 w-3" />
               </button>
             )}
 
-            <button className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-slate-700 hover:text-emerald-400 hover:bg-emerald-500/[0.03] transition-all">
+            <button className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[#64748B] hover:text-emerald-400 hover:bg-emerald-500/[0.03] transition-all">
               <ThumbsUp className="h-3 w-3" />
             </button>
 
-            <button className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-slate-700 hover:text-red-400 hover:bg-red-500/[0.03] transition-all">
+            <button className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[#64748B] hover:text-red-400 hover:bg-red-500/[0.03] transition-all">
               <ThumbsDown className="h-3 w-3" />
             </button>
 
-            <span className="text-[10px] text-slate-800 ml-1">{formatTime(fullMessage.timestamp)}</span>
+            <span className="text-[10px] text-[#94A3B8] ml-1">{formatTime(fullMessage.timestamp)}</span>
           </div>
         )}
 

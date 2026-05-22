@@ -62,7 +62,7 @@ export default function SmartSuggestions({ variant = 'chat', onSelect }: SmartSu
           >
             <Lightbulb className={`h-3 w-3 ${suggestions[activeIndex].color} shrink-0`} />
             <span className="text-[11px] text-slate-400 truncate flex-1">{suggestions[activeIndex].prompt}</span>
-            <Zap className="h-3 w-3 text-slate-700 shrink-0" />
+            <Zap className="h-3 w-3 text-[#64748B] shrink-0" />
           </motion.button>
         </AnimatePresence>
       </div>

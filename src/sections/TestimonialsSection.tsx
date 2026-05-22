@@ -26,10 +26,10 @@ export default function TestimonialsSection() {
     <section id="testimonials" className="py-24 relative">
       <div className="max-w-6xl mx-auto px-6">
         <div className="text-center mb-16">
-          <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+          <h2 className="text-3xl md:text-4xl font-bold text-[#111827] mb-4">
             Loved by Thinkers & Makers
           </h2>
-          <p className="text-slate-400 max-w-xl mx-auto">
+          <p className="text-slate-500 max-w-xl mx-auto">
             See what industry leaders say about their experience.
           </p>
         </div>
@@ -38,20 +38,20 @@ export default function TestimonialsSection() {
           {testimonials.map((t) => (
             <div
               key={t.author}
-              className="rounded-2xl border border-white/10 bg-white/[0.02] p-8 hover:bg-white/[0.04] transition-all duration-300"
+              className="rounded-2xl border border-slate-200 bg-white p-8 hover:bg-slate-50 transition-all duration-300 shadow-sm"
             >
               <div className="flex gap-1 mb-4">
                 {[...Array(5)].map((_, i) => (
-                  <Star key={i} className="h-4 w-4 fill-cyan-400 text-cyan-400" />
+                  <Star key={i} className="h-4 w-4 fill-cyan-400 text-cyan-600" />
                 ))}
               </div>
-              <p className="text-slate-300 mb-6 leading-relaxed text-sm">"{t.quote}"</p>
+              <p className="text-foreground mb-6 leading-relaxed text-sm">"{t.quote}"</p>
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-cyan-400 to-blue-600 text-white text-sm font-bold">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-cyan-600 to-blue-600 text-[#111827] text-sm font-bold">
                   {t.avatar}
                 </div>
                 <div>
-                  <div className="text-sm font-semibold text-white">{t.author}</div>
+                  <div className="text-sm font-semibold text-[#111827]">{t.author}</div>
                   <div className="text-xs text-slate-500">{t.role}</div>
                 </div>
               </div>

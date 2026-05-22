@@ -7,7 +7,8 @@ import {
   Plus, MessageSquare, Trash2,
   PanelLeftClose, PanelLeftOpen,
   Crown, ArrowLeft, Search, X,
-  LogIn, Sparkles, Settings,
+  LogIn, Sparkles, FolderOpen,
+  Bot,
 } from 'lucide-react';
 import type { ChatSession, ChatFolder } from '@/types';
 import { useAuthStore } from '@/stores/authStore';
@@ -76,23 +77,28 @@ export default function Sidebar({
       >
         <button
           onClick={() => onSelect(session.id)}
-          className={`w-full flex items-center gap-2 rounded-lg px-2.5 py-[7px] text-left transition-all duration-200 ${
+          className={`w-full flex items-center gap-2 rounded-lg px-2.5 py-[6px] text-left transition-all duration-200 border ${
             active
-              ? 'bg-white/[0.04] text-white border border-white/[0.06] shadow-[0_0_12px_-4px_rgba(34,211,238,0.04)]'
-              : 'text-slate-600 hover:bg-white/[0.025] hover:text-slate-300 border border-transparent'
+              ? 'border-white/[0.06] shadow-[0_0_12px_-4px_rgba(34,211,238,0.04)]'
+              : 'border-transparent hover:border-white/[0.03]'
           }`}
+          style={active
+            ? { background: 'rgba(255,255,255,0.04)', color: '#E2E8F0' }
+            : { color: 'rgba(148,163,184,0.4)' }
+          }
         >
+          {/* Active indicator dot */}
           <div className={`w-[3px] h-[3px] rounded-full shrink-0 transition-all duration-300 ${
             active ? 'bg-cyan-400/50 scale-100' : 'bg-transparent scale-0'
           }`} />
 
-          <MessageSquare className={`h-3 w-3 shrink-0 transition-colors ${active ? 'text-slate-400' : 'text-slate-700'}`} />
+          <MessageSquare className={`h-2.5 w-2.5 shrink-0 transition-colors ${active ? 'text-white/40' : 'text-white/20'}`} />
 
           <div className="flex-1 min-w-0">
-            <p className={`text-[12px] truncate leading-tight ${active ? 'text-white' : ''}`}>
+            <p className={`text-[11px] truncate leading-tight ${active ? 'text-white/80 font-medium' : 'text-white/50'}`}>
               {session.title}
             </p>
-            <span className="text-[10px] text-slate-700">{timeAgo(session.updatedAt)}</span>
+            <span className="text-[9px] text-white/20">{timeAgo(session.updatedAt)}</span>
           </div>
         </button>
 
@@ -102,13 +108,14 @@ export default function Sidebar({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.15 }}
-            className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 bg-[#0b0b0e]/95 backdrop-blur-sm rounded-md p-0.5 z-10"
+            className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5 rounded-md p-0.5 z-10"
+            style={{ background: 'rgba(23,28,36,0.95)', backdropFilter: 'blur(8px)' }}
           >
             <button
               onClick={(e) => { e.stopPropagation(); setDeleteTarget(session.id); }}
-              className="p-1 rounded text-slate-700 hover:text-red-400 hover:bg-red-500/[0.06] transition-all"
+              className="p-1 rounded text-white/30 hover:text-red-400 hover:bg-red-500/[0.06] transition-all"
             >
-              <Trash2 className="h-3 w-3" />
+              <Trash2 className="h-2.5 w-2.5" />
             </button>
           </motion.div>
         )}
@@ -123,7 +130,7 @@ export default function Sidebar({
         <div className="lg:hidden fixed top-[14px] left-3 z-40">
           <button
             onClick={onToggle}
-            className="h-8 w-8 flex items-center justify-center rounded-lg border border-white/[0.05] bg-[#0e0e14]/80 text-slate-600 hover:text-white hover:bg-white/[0.03] backdrop-blur-md transition-all"
+            className="h-8 w-8 flex items-center justify-center rounded-lg border border-white/[0.06] text-white/40 hover:text-white/70 hover:bg-white/[0.04] backdrop-blur-md transition-all"
           >
             <PanelLeftOpen className="h-3.5 w-3.5" />
           </button>
@@ -132,106 +139,184 @@ export default function Sidebar({
 
       {/* Mobile overlay */}
       {isOpen && (
-        <div className="lg:hidden fixed inset-0 z-40 bg-black/40 backdrop-blur-sm" onClick={onToggle} />
+        <div className="lg:hidden fixed inset-0 z-40 bg-black/30 backdrop-blur-sm" onClick={onToggle} />
       )}
 
       {/* ═══ SIDEBAR ═══ */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex flex-col bg-[#0b0b0e] border-r border-white/[0.03] transition-transform duration-300 ease-out ${
+        className={`fixed inset-y-0 left-0 z-50 flex flex-col transition-transform duration-300 ease-out ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
-        style={{ width: 220 }}
+        style={{
+          width: 260,
+          background: 'rgba(17,21,28,0.96)',
+          backdropFilter: 'blur(12px) saturate(1.1)',
+          borderRight: '1px solid rgba(255,255,255,0.035)',
+        }}
       >
-        {/* Header */}
-        <div className="shrink-0 flex items-center justify-between px-3 h-10 border-b border-white/[0.03]">
-          <Link to="/" className="flex items-center gap-2 text-white hover:text-slate-300 transition-colors">
-            <ArrowLeft className="h-3 w-3 text-slate-600" />
-            <span className="text-[11px] font-medium text-slate-600 uppercase tracking-wider">Home</span>
+        {/* ═── Header ─══ */}
+        <div className="shrink-0 flex items-center justify-between px-3 h-9" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+          <Link to="/" className="flex items-center gap-1.5 transition-colors text-white/30 hover:text-white/60">
+            <ArrowLeft className="h-3 w-3" />
+            <span className="text-[10px] font-medium uppercase tracking-wider">Home</span>
           </Link>
           <button
             onClick={onToggle}
-            className="h-6 w-6 flex items-center justify-center text-slate-600 hover:text-white hover:bg-white/[0.03] rounded transition-all"
+            className="h-6 w-6 flex items-center justify-center text-white/30 hover:text-white/60 hover:bg-white/[0.04] rounded transition-all"
           >
             <PanelLeftClose className="h-3 w-3" />
           </button>
         </div>
 
-        {/* New Chat */}
-        <div className="shrink-0 px-3 pt-3 pb-2">
-          <motion.button
-            whileTap={{ scale: 0.98 }}
-            onClick={onNewChat}
-            className="w-full h-8 gap-1.5 flex items-center justify-center text-slate-300 hover:text-white bg-white/[0.02] hover:bg-white/[0.04] border border-white/[0.04] hover:border-cyan-500/15 rounded-lg transition-all text-[12px]"
-          >
-            <Plus className="h-3.5 w-3.5" /> {t('newChat')}
-          </motion.button>
-        </div>
+        <ScrollArea className="flex-1 min-h-0">
+          <div className="px-3 py-3 space-y-3">
 
-        {/* Search */}
-        <div className="shrink-0 px-3 pb-2">
-          <div className="flex items-center gap-2 rounded-lg bg-white/[0.015] border border-white/[0.04] px-2.5 py-1.5 focus-within:border-cyan-500/15 focus-within:bg-white/[0.02] transition-all">
-            <Search className="h-3 w-3 text-slate-700 shrink-0" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => onSearchChange(e.target.value)}
-              placeholder={t('searchChats')}
-              className="flex-1 bg-transparent text-[12px] text-white placeholder:text-slate-700 outline-none min-w-0"
-            />
-            {searchQuery && (
-              <button onClick={() => onSearchChange('')} className="text-slate-700 hover:text-slate-500 shrink-0">
-                <X className="h-3 w-3" />
-              </button>
-            )}
-          </div>
-        </div>
+            {/* ═══ 1. PROJECTS NAVIGATION ═══ */}
+            <motion.button
+              whileTap={{ scale: 0.98 }}
+              onClick={() => navigate('/projects')}
+              className="w-full flex items-center gap-2.5 px-3 h-9 rounded-lg transition-all duration-200 group"
+              style={{
+                background: 'rgba(255,255,255,0.03)',
+                border: '1px solid rgba(255,255,255,0.06)',
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)';
+                (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.1)';
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.03)';
+                (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.06)';
+              }}
+            >
+              <div
+                className="flex h-6 w-6 items-center justify-center rounded-md shrink-0"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(34,211,238,0.15) 0%, rgba(59,130,246,0.15) 100%)',
+                  boxShadow: '0 0 8px rgba(34,211,238,0.08), inset 0 1px 0 rgba(255,255,255,0.06)',
+                }}
+              >
+                <FolderOpen className="h-3 w-3 text-cyan-400/70" />
+              </div>
+              <span className="text-[12px] font-medium text-white/60 group-hover:text-white/90 transition-colors">Projects</span>
+              <div className="ml-auto flex items-center gap-0.5 text-white/15 group-hover:text-white/30 transition-colors">
+                <span className="text-[9px]">Workspaces</span>
+              </div>
+            </motion.button>
 
-        {/* ═── Recent Chats ─══ */}
-        <ScrollArea className="flex-1 min-h-0 px-3">
-          {/* Section label */}
-          <div className="flex items-center justify-between py-1.5">
-            <span className="text-[10px] font-semibold text-slate-700 uppercase tracking-wider">
-              {t('recent')}
-            </span>
-            <span className="text-[10px] text-slate-800">{displaySessions.length}</span>
-          </div>
+            {/* ═══ 1.5. AGENTS ═══ */}
+            <motion.button
+              whileTap={{ scale: 0.98 }}
+              onClick={() => navigate('/agents')}
+              className="w-full flex items-center gap-2.5 px-3 h-9 rounded-lg transition-all duration-200 group"
+              style={{
+                background: 'rgba(255,255,255,0.03)',
+                border: '1px solid rgba(255,255,255,0.06)',
+              }}
+              onMouseEnter={(e) => {
+                (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)';
+                (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.1)';
+              }}
+              onMouseLeave={(e) => {
+                (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.03)';
+                (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.06)';
+              }}
+            >
+              <div
+                className="flex h-6 w-6 items-center justify-center rounded-md shrink-0"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(99,102,241,0.15) 0%, rgba(139,92,246,0.15) 100%)',
+                  boxShadow: '0 0 8px rgba(99,102,241,0.08), inset 0 1px 0 rgba(255,255,255,0.06)',
+                }}
+              >
+                <Bot className="h-3 w-3 text-indigo-400/70" />
+              </div>
+              <span className="text-[12px] font-medium text-white/60 group-hover:text-white/90 transition-colors">Agents</span>
+            </motion.button>
 
-          {displaySessions.length > 0 ? (
-            <div className="space-y-[1px] pb-3">
-              {displaySessions.map((s) => (
-                <SessionRow key={s.id} session={s} />
-              ))}
+            {/* ═══ 2. NEW CHAT ═══ */}
+            <motion.button
+              whileTap={{ scale: 0.98 }}
+              onClick={onNewChat}
+              className="w-full h-8 gap-1.5 flex items-center justify-center text-white/50 hover:text-white/80 rounded-lg transition-all text-[12px]"
+              style={{
+                background: 'rgba(255,255,255,0.03)',
+                border: '1px dashed rgba(255,255,255,0.08)',
+              }}
+            >
+              <Plus className="h-3.5 w-3.5" /> {t('newChat')}
+            </motion.button>
+
+            {/* ═══ 3. SEARCH ═══ */}
+            <div className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-all" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
+              <Search className="h-3 w-3 text-white/20 shrink-0" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => onSearchChange(e.target.value)}
+                placeholder={t('searchChats')}
+                className="flex-1 bg-transparent text-[11px] outline-none min-w-0 placeholder:text-white/20"
+                style={{ color: '#CBD5E1' }}
+              />
+              {searchQuery && (
+                <button onClick={() => onSearchChange('')} className="shrink-0 text-white/20 hover:text-white/40">
+                  <X className="h-3 w-3" />
+                </button>
+              )}
             </div>
-          ) : (
-            <div className="py-6 text-center">
-              <MessageSquare className="h-5 w-5 text-slate-800 mx-auto mb-2" />
-              <p className="text-[12px] text-slate-700 mb-0.5">{t('noChats')}</p>
-              <p className="text-[10px] text-slate-800">{t('startConversation')}</p>
+
+            {/* ═══ 4. RECENT CHATS ═══ */}
+            <div>
+              <div className="flex items-center justify-between py-1.5 px-1">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-3 h-px bg-white/10" />
+                  <span className="text-[9px] font-semibold uppercase tracking-wider text-white/25">{t('recent')}</span>
+                </div>
+                <span className="text-[9px] text-white/15">{displaySessions.length}</span>
+              </div>
+
+              {displaySessions.length > 0 ? (
+                <div className="space-y-[1px] ml-3" style={{ borderLeft: '1px solid rgba(255,255,255,0.04)' }}>
+                  {displaySessions.map((s) => (
+                    <div key={s.id} className="pl-2">
+                      <SessionRow session={s} />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="py-4 text-center ml-3" style={{ borderLeft: '1px solid rgba(255,255,255,0.04)' }}>
+                  <MessageSquare className="h-4 w-4 text-white/10 mx-auto mb-1.5" />
+                  <p className="text-[11px] text-white/30 mb-0.5">{t('noChats')}</p>
+                  <p className="text-[9px] text-white/15">{t('startConversation')}</p>
+                </div>
+              )}
             </div>
-          )}
+
+          </div>
         </ScrollArea>
 
         {/* ═── Footer ─══ */}
-        <div className="shrink-0 border-t border-white/[0.03]">
+        <div className="shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
 
-          {/* Guest: Prominent auth CTA — stacked for narrow sidebar */}
+          {/* Guest: Prominent auth CTA */}
           {!isAuthenticated && (
-            <div className="px-3 py-2 border-b border-white/[0.03]">
+            <div className="px-3 py-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
               <div className="flex flex-col gap-1.5">
                 <button
                   onClick={() => navigate('/signup')}
-                  className="w-full h-7 flex items-center justify-center gap-1.5 rounded-lg bg-cyan-500/[0.08] text-cyan-400 border border-cyan-500/12 text-[11px] font-medium hover:bg-cyan-500/[0.12] transition-all"
+                  className="w-full h-7 flex items-center justify-center gap-1.5 rounded-lg bg-cyan-50 text-cyan-600 border border-cyan-100 text-[11px] font-medium hover:bg-cyan-100 transition-all"
                 >
                   <Sparkles className="w-3 h-3" /> {t('createAccount')}
                 </button>
                 <button
                   onClick={() => navigate('/login')}
-                  className="w-full h-7 flex items-center justify-center gap-1.5 rounded-lg bg-white/[0.02] text-slate-400 border border-white/[0.04] text-[11px] hover:bg-white/[0.04] hover:text-slate-300 transition-all"
+                  className="w-full h-7 flex items-center justify-center gap-1.5 rounded-lg text-[11px] text-white/40 hover:text-white/70 hover:bg-white/[0.04] transition-all"
+                  style={{ border: '1px solid rgba(255,255,255,0.06)' }}
                 >
                   <LogIn className="w-3 h-3" /> {t('signIn')}
                 </button>
               </div>
-              <p className="text-[9px] text-slate-700 mt-1.5 text-center">
+              <p className="text-[9px] text-white/15 mt-1.5 text-center">
                 {t('syncDevices')}
               </p>
             </div>
@@ -242,23 +327,12 @@ export default function Sidebar({
             <UserAccountDropdown onOpenSettings={onOpenSettings} onOpenUpgrade={onOpenUpgrade} />
           </div>
 
-          {/* Settings & Language */}
-          <div className="px-3 pb-2">
-            <button
-              onClick={onOpenSettings}
-              className="w-full h-7 flex items-center gap-1.5 text-[11px] text-slate-600 hover:text-slate-300 hover:bg-white/[0.03] rounded-lg transition-all px-2"
-            >
-              <Settings className="h-3 w-3" />
-              {t('settings')}
-            </button>
-          </div>
-
           {/* Upgrade */}
           <div className="px-3 pb-3">
             <Button
               variant="ghost"
               onClick={onOpenUpgrade}
-              className="w-full h-7 gap-1.5 text-[11px] text-slate-600 hover:text-amber-300 hover:bg-amber-500/[0.04] rounded-lg transition-all border border-transparent hover:border-amber-500/10"
+              className="w-full h-7 gap-1.5 text-[11px] text-white/30 hover:text-amber-500 hover:bg-amber-500/[0.06] rounded-lg transition-all border border-transparent hover:border-amber-500/20"
             >
               <Crown className="h-3 w-3" />
               {t('upgradePro')}

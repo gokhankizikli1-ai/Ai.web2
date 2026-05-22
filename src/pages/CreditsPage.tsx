@@ -290,7 +290,7 @@ function PlanCard({
           </li>
         ))}
         {plan.limits.map((l) => (
-          <li key={l} className="flex items-start gap-1.5 text-[11px] text-slate-700">
+          <li key={l} className="flex items-start gap-1.5 text-[11px] text-[#64748B]">
             <span className="w-3 h-3 rounded-full border border-slate-800 shrink-0 mt-0.5" />
             {l}
           </li>
@@ -427,8 +427,8 @@ function CustomPlanBuilder({ isYearly }: { isYearly: boolean }) {
             </div>
             <PremiumSlider value={monthlyCredits} min={100} max={5000} step={100} onChange={setMonthlyCredits} showValue={false} />
             <div className="flex justify-between mt-1">
-              <span className="text-[10px] text-slate-700">100</span>
-              <span className="text-[10px] text-slate-700">5,000</span>
+              <span className="text-[10px] text-[#64748B]">100</span>
+              <span className="text-[10px] text-[#64748B]">5,000</span>
             </div>
           </div>
 
@@ -856,9 +856,9 @@ export default function CreditsPage() {
                     color="#22d3ee"
                   />
                   <div className="flex justify-between mt-1">
-                    <span className="text-[10px] text-slate-700">10</span>
-                    <span className="text-[10px] text-slate-700">2,500</span>
-                    <span className="text-[10px] text-slate-700">5,000</span>
+                    <span className="text-[10px] text-[#64748B]">10</span>
+                    <span className="text-[10px] text-[#64748B]">2,500</span>
+                    <span className="text-[10px] text-[#64748B]">5,000</span>
                   </div>
                 </div>
 

@@ -41,7 +41,7 @@ export default function CreditDisplay() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4, scale: 0.98 }}
             transition={{ duration: 0.15 }}
-            className="absolute right-0 top-full mt-2 w-64 rounded-xl border border-white/[0.06] bg-[#0e0e14]/98 backdrop-blur-xl shadow-2xl overflow-hidden z-50"
+            className="absolute right-0 top-full mt-2 w-64 rounded-xl border border-white/[0.06] bg-[#171C24]/98 backdrop-blur-xl shadow-2xl overflow-hidden z-50"
           >
             {/* Header */}
             <div className="p-3.5 border-b border-white/[0.03]">
@@ -62,7 +62,7 @@ export default function CreditDisplay() {
               <div className="w-full h-1 bg-white/[0.03] rounded-full mt-2 overflow-hidden">
                 <div className="h-full rounded-full bg-cyan-400/40" style={{ width: `${usagePercent}%` }} />
               </div>
-              <p className="text-[9px] text-slate-700 mt-1">{usagePercent}% used · Resets in 12d</p>
+              <p className="text-[9px] text-[#64748B] mt-1">{usagePercent}% used · Resets in 12d</p>
             </div>
 
             {/* Free chat badge */}

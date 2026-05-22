@@ -42,7 +42,7 @@ export default function AIModeSelector({ currentMode, onModeChange }: AIModeSele
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 mt-1.5 w-52 rounded-lg border border-white/[0.06] bg-[#0c0c10] shadow-2xl z-50 py-1">
+        <div className="absolute top-full left-0 mt-1.5 w-52 rounded-lg border border-white/[0.06] bg-[#171C24] shadow-2xl z-50 py-1">
           {MODES.map((mode) => (
             <button
               key={mode.id}
@@ -56,7 +56,7 @@ export default function AIModeSelector({ currentMode, onModeChange }: AIModeSele
                   : 'text-slate-500 hover:bg-white/[0.015] hover:text-slate-300'
               }`}
             >
-              <span className={currentMode === mode.id ? 'text-slate-400' : 'text-slate-700'}>
+              <span className={currentMode === mode.id ? 'text-slate-400' : 'text-[#64748B]'}>
                 {mode.icon}
               </span>
               <div className="flex-1 min-w-0">
@@ -66,7 +66,7 @@ export default function AIModeSelector({ currentMode, onModeChange }: AIModeSele
                     <Check className="h-3 w-3 text-slate-500" />
                   )}
                 </div>
-                <div className="text-[10px] text-slate-700 leading-tight">{mode.description}</div>
+                <div className="text-[10px] text-[#64748B] leading-tight">{mode.description}</div>
               </div>
             </button>
           ))}

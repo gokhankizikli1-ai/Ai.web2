@@ -163,7 +163,7 @@ export default function SmartInput({ onSend, disabled, externalValue, onExternal
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 4 }}
             transition={{ duration: 0.15 }}
-            className="absolute bottom-full left-0 right-0 mb-2 rounded-xl border border-white/[0.06] bg-[#0e0e16] backdrop-blur-xl shadow-2xl overflow-hidden z-30"
+            className="absolute bottom-full left-0 right-0 mb-2 rounded-xl border border-white/[0.06] bg-[#171C24] backdrop-blur-xl shadow-2xl overflow-hidden z-30"
           >
             <div className="flex items-center gap-1.5 px-3 py-2 border-b border-white/[0.03]">
               <Command className="h-3 w-3 text-slate-600" />
@@ -199,7 +199,7 @@ export default function SmartInput({ onSend, disabled, externalValue, onExternal
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 4 }}
             transition={{ duration: 0.15 }}
-            className="absolute bottom-full left-0 right-0 mb-2 rounded-xl border border-white/[0.06] bg-[#0e0e16] backdrop-blur-xl shadow-2xl overflow-hidden z-30"
+            className="absolute bottom-full left-0 right-0 mb-2 rounded-xl border border-white/[0.06] bg-[#171C24] backdrop-blur-xl shadow-2xl overflow-hidden z-30"
           >
             <div className="flex items-center gap-1.5 px-3 py-2 border-b border-white/[0.03]">
               <AtSign className="h-3 w-3 text-slate-600" />
@@ -251,7 +251,7 @@ export default function SmartInput({ onSend, disabled, externalValue, onExternal
           placeholder="Message KorvixAI...  Type / for commands, @ for agents"
           rows={1}
           disabled={disabled}
-          className="flex-1 bg-transparent text-[14px] text-white placeholder:text-slate-700 resize-none outline-none min-h-[20px] max-h-[200px] py-[7px] leading-[1.5] disabled:opacity-50 transition-opacity"
+          className="flex-1 bg-transparent text-[14px] text-white placeholder:text-[#64748B] resize-none outline-none min-h-[20px] max-h-[200px] py-[7px] leading-[1.5] disabled:opacity-50 transition-opacity"
         />
 
         <button

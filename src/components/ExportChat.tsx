@@ -82,9 +82,9 @@ export default function ExportChat({ open, onClose, session }: ExportChatProps) 
   };
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[#0a0f1a]/50 backdrop-blur-sm animate-fade-in" onClick={onClose}>
       <div
-        className="w-full max-w-sm mx-4 rounded-2xl border border-white/[0.08] bg-[#0f0f16] shadow-2xl overflow-hidden animate-scale-in"
+        className="w-full max-w-sm mx-4 rounded-2xl border border-white/[0.08] bg-[#171C24] shadow-2xl overflow-hidden animate-scale-in"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 pt-5 pb-3">

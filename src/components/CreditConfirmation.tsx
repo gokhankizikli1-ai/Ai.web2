@@ -75,7 +75,7 @@ export default function CreditConfirmation({ open, costKey, onConfirm, onCancel 
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-[#0a0f1a]/60 backdrop-blur-sm"
           onClick={onCancel}
         >
           <motion.div
@@ -84,7 +84,7 @@ export default function CreditConfirmation({ open, costKey, onConfirm, onCancel 
             exit={{ opacity: 0, scale: 0.95, y: 10 }}
             transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
             onClick={(e) => e.stopPropagation()}
-            className="w-[340px] max-w-[90vw] rounded-2xl border border-white/[0.06] bg-[#0e0e14] p-5 shadow-2xl"
+            className="w-[340px] max-w-[90vw] rounded-2xl border border-white/[0.06] bg-[#171C24] p-5 shadow-2xl"
           >
             {/* Icon */}
             <div className="flex items-center justify-center mb-3">

@@ -185,7 +185,7 @@ export default function ToolsPage() {
                         <p className="text-[11px] text-slate-500 mt-0.5">{tool.desc}</p>
                       </div>
                       {tool.path && (
-                        <ArrowRight className="w-4 h-4 text-slate-700 group-hover:text-cyan-400 transition-colors shrink-0" />
+                        <ArrowRight className="w-4 h-4 text-[#64748B] group-hover:text-cyan-400 transition-colors shrink-0" />
                       )}
                     </motion.button>
                   ))}

@@ -26,7 +26,7 @@ export default function ToolChips({ tools, onRemove }: ToolChipsProps) {
             <span className="text-[11px] text-slate-400">{tool.chip}</span>
             <button
               onClick={() => onRemove(tool)}
-              className="text-slate-700 hover:text-slate-400 transition-colors p-0.5 rounded"
+              className="text-[#64748B] hover:text-slate-400 transition-colors p-0.5 rounded"
             >
               <X className="h-2.5 w-2.5" />
             </button>

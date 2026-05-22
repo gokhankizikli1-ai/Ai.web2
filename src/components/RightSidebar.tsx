@@ -137,7 +137,7 @@ export default function RightSidebar({
       content: (
         <div className="space-y-1.5">
           {activeTools.length === 0 ? (
-            <p className="text-[11px] text-slate-700">No tools active</p>
+            <p className="text-[11px] text-[#64748B]">No tools active</p>
           ) : (
             activeTools.map((tool) => (
               <div key={tool} className="flex items-center gap-2 text-[11px] text-slate-400">
@@ -147,8 +147,8 @@ export default function RightSidebar({
             ))
           )}
           <div className="flex items-center gap-1.5 pt-1">
-            <Sparkles className="h-3 w-3 text-slate-700" />
-            <span className="text-[10px] text-slate-700">Auto-detection enabled</span>
+            <Sparkles className="h-3 w-3 text-[#64748B]" />
+            <span className="text-[10px] text-[#64748B]">Auto-detection enabled</span>
           </div>
         </div>
       ),
@@ -160,11 +160,11 @@ export default function RightSidebar({
       content: (
         <div className="space-y-1.5">
           {memoryRefs.length === 0 ? (
-            <p className="text-[11px] text-slate-700">No memory references yet</p>
+            <p className="text-[11px] text-[#64748B]">No memory references yet</p>
           ) : (
             memoryRefs.map((ref, i) => (
               <div key={i} className="flex items-start gap-2 text-[11px] text-slate-400">
-                <Hash className="h-3 w-3 text-slate-700 mt-0.5 shrink-0" />
+                <Hash className="h-3 w-3 text-[#64748B] mt-0.5 shrink-0" />
                 <span className="truncate">{ref}</span>
               </div>
             ))
@@ -179,7 +179,7 @@ export default function RightSidebar({
       content: (
         <div className="space-y-1.5">
           {pinnedMessages.length === 0 ? (
-            <p className="text-[11px] text-slate-700">No pinned messages</p>
+            <p className="text-[11px] text-[#64748B]">No pinned messages</p>
           ) : (
             pinnedMessages.slice(0, 3).map((msg) => (
               <div key={msg.id} className="text-[11px] text-slate-400 truncate border-l-2 border-cyan-500/20 pl-2">
@@ -203,7 +203,7 @@ export default function RightSidebar({
           ].map((item, i) => (
             <div key={i} className="flex items-center justify-between text-[11px]">
               <span className="text-slate-500">{item.action}</span>
-              <span className="text-slate-700">{item.time}</span>
+              <span className="text-[#64748B]">{item.time}</span>
             </div>
           ))}
         </div>
@@ -218,7 +218,7 @@ export default function RightSidebar({
         <div className="fixed top-14 right-4 z-40 hidden lg:block">
           <button
             onClick={onToggle}
-            className="h-7 w-7 flex items-center justify-center text-slate-700 hover:text-slate-400 hover:bg-white/[0.03] rounded-md transition-all border border-white/[0.04]"
+            className="h-7 w-7 flex items-center justify-center text-[#64748B] hover:text-slate-400 hover:bg-white/[0.03] rounded-md transition-all border border-white/[0.04]"
             title="Open sidebar"
           >
             <PanelRightOpen className="h-3.5 w-3.5" />
@@ -231,7 +231,7 @@ export default function RightSidebar({
         initial={false}
         animate={{ width: isOpen ? 220 : 0, opacity: isOpen ? 1 : 0 }}
         transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-        className="shrink-0 border-l border-white/[0.03] bg-[#0a0a0a]/60 backdrop-blur-md overflow-hidden hidden lg:block"
+        className="shrink-0 border-l border-white/[0.03] bg-[#11151C]/60 backdrop-blur-md overflow-hidden hidden lg:block"
       >
         {isOpen && (
           <div className="w-[220px] h-full flex flex-col">
@@ -243,7 +243,7 @@ export default function RightSidebar({
               </div>
               <button
                 onClick={onToggle}
-                className="h-6 w-6 flex items-center justify-center text-slate-700 hover:text-slate-400 hover:bg-white/[0.03] rounded transition-all"
+                className="h-6 w-6 flex items-center justify-center text-[#64748B] hover:text-slate-400 hover:bg-white/[0.03] rounded transition-all"
               >
                 <PanelRightClose className="h-3 w-3" />
               </button>
@@ -295,14 +295,14 @@ export default function RightSidebar({
             {/* Footer stats */}
             <div className="shrink-0 p-3 border-t border-white/[0.02] space-y-2">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-[10px] text-slate-700">
+                <div className="flex items-center gap-1.5 text-[10px] text-[#64748B]">
                   <Target className="h-2.5 w-2.5" />
                   Token usage
                 </div>
                 <span className="text-[10px] text-slate-600 font-mono">-- / --</span>
               </div>
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-[10px] text-slate-700">
+                <div className="flex items-center gap-1.5 text-[10px] text-[#64748B]">
                   <BarChart3 className="h-2.5 w-2.5" />
                   Efficiency
                 </div>

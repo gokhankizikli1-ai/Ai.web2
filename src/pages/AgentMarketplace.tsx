@@ -194,13 +194,13 @@ export default function AgentMarketplace() {
         >
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2 rounded-xl bg-white/[0.015] border border-white/[0.04] px-3.5 py-2.5 max-w-sm focus-within:border-violet-500/15 focus-within:bg-white/[0.02] transition-all w-full sm:w-auto">
-              <Search className="h-3.5 w-3.5 text-slate-700 shrink-0" />
+              <Search className="h-3.5 w-3.5 text-[#64748B] shrink-0" />
               <input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search agents, tags..."
-                className="flex-1 bg-transparent text-[12px] text-white placeholder:text-slate-700 outline-none min-w-0"
+                className="flex-1 bg-transparent text-[12px] text-white placeholder:text-[#64748B] outline-none min-w-0"
               />
             </div>
             <div className="flex items-center gap-1.5 text-[10px] text-slate-600">
@@ -263,7 +263,7 @@ export default function AgentMarketplace() {
                           {[1, 2, 3, 4, 5].map((s) => (
                             <Star
                               key={s}
-                              className={`h-3 w-3 ${s <= Math.floor(featured.rating) ? 'text-amber-400 fill-amber-400' : 'text-slate-700'}`}
+                              className={`h-3 w-3 ${s <= Math.floor(featured.rating) ? 'text-amber-400 fill-amber-400' : 'text-[#64748B]'}`}
                             />
                           ))}
                           <span className="text-[11px] text-slate-400 ml-1">{featured.rating}</span>
@@ -315,14 +315,14 @@ export default function AgentMarketplace() {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between text-[10px] text-slate-700 mb-3">
+                <div className="flex items-center justify-between text-[10px] text-[#64748B] mb-3">
                   <span>by <span className="text-slate-500">{agent.creator}</span></span>
                   <div className="flex items-center gap-2.5">
                     <span className="flex items-center gap-1">
                       {[1, 2, 3, 4, 5].map((s) => (
                         <Star
                           key={s}
-                          className={`h-2.5 w-2.5 ${s <= Math.floor(agent.rating) ? 'text-amber-400/50 fill-amber-400/50' : 'text-slate-700'}`}
+                          className={`h-2.5 w-2.5 ${s <= Math.floor(agent.rating) ? 'text-amber-400/50 fill-amber-400/50' : 'text-[#64748B]'}`}
                         />
                       ))}
                       <span className="text-slate-500 ml-0.5">{agent.rating}</span>
@@ -376,7 +376,7 @@ export default function AgentMarketplace() {
           >
             <div className="relative p-8 rounded-2xl border border-white/[0.04] bg-white/[0.015] max-w-sm w-full">
               <div className="absolute -top-6 left-1/2 -translate-x-1/2 w-16 h-16 bg-violet-500/[0.03] rounded-full blur-xl pointer-events-none" />
-              <Search className="h-8 w-8 text-slate-700 mx-auto mb-3" />
+              <Search className="h-8 w-8 text-[#64748B] mx-auto mb-3" />
               <p className="text-[14px] font-medium text-slate-400 mb-1">No agents found</p>
               <p className="text-[12px] text-slate-600">Try adjusting your search or category filter.</p>
             </div>

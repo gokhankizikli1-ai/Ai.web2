@@ -82,9 +82,9 @@ export default function ChatInput({ onSend, disabled, externalValue, onExternalV
       </div>
 
       <div className="flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-2.5 mt-2">
-        <p className="text-center text-[10px] text-slate-700">KorvixAI can make mistakes. Verify important information.</p>
-        <span className="hidden sm:inline text-slate-800">|</span>
-        <div className="flex items-center gap-1 text-[10px] text-slate-700">
+        <p className="text-center text-[10px] text-[#64748B]">KorvixAI can make mistakes. Verify important information.</p>
+        <span className="hidden sm:inline text-[#94A3B8]">|</span>
+        <div className="flex items-center gap-1 text-[10px] text-[#64748B]">
           <Lock className="h-2.5 w-2.5" />
           <span>Your chats are private to your session</span>
         </div>

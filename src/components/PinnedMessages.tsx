@@ -12,14 +12,14 @@ export default function PinnedMessages({ messages, onRemove, open, onToggle }: P
   if (messages.length === 0) return null;
 
   return (
-    <div className="border-b border-white/[0.04] bg-[#0a0a0f]/50 backdrop-blur-sm">
+    <div className="border-b border-white/[0.04] bg-[#11151C]/50 backdrop-blur-sm">
       <button
         onClick={onToggle}
         className="flex items-center gap-2 w-full px-4 py-2 text-[11px] text-slate-500 hover:text-slate-300 transition-colors"
       >
         <Pin className="h-3 w-3" />
         <span className="font-medium">{messages.length} pinned</span>
-        <span className="text-slate-700 ml-auto">{open ? 'Hide' : 'Show'}</span>
+        <span className="text-[#64748B] ml-auto">{open ? 'Hide' : 'Show'}</span>
       </button>
 
       {open && (

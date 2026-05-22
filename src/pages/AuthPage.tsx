@@ -115,41 +115,41 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-slate-300 flex items-center justify-center px-4 relative overflow-hidden">
-      {/* Background glow */}
-      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] bg-cyan-500/[0.03] rounded-full blur-[150px] pointer-events-none" />
-      <div className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] bg-purple-500/[0.03] rounded-full blur-[120px] pointer-events-none" />
+    <div className="min-h-screen bg-gradient-premium text-foreground flex items-center justify-center px-4 relative overflow-hidden">
+      {/* Soft ambient orbs */}
+      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] sm:w-[500px] sm:h-[500px] bg-cyan-500/[0.04] rounded-full blur-[100px] sm:blur-[150px] pointer-events-none" />
+      <div className="absolute bottom-1/4 right-1/4 w-[300px] h-[300px] sm:w-[400px] sm:h-[400px] bg-violet-500/[0.03] rounded-full blur-[80px] sm:blur-[120px] pointer-events-none" />
 
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
-        className="w-full max-w-[380px]"
+        className="w-full max-w-[360px] sm:max-w-[380px]"
       >
         {/* Logo */}
-        <div className="text-center mb-8">
-          <Link to="/" className="inline-flex items-center gap-2.5 mb-4">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-blue-600 shadow-lg shadow-cyan-500/10">
-              <Sparkles className="h-5 w-5 text-white" />
+        <div className="text-center mb-7">
+          <Link to="/" className="inline-flex items-center gap-2.5 mb-3">
+            <div className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-blue-500 shadow-lg shadow-cyan-500/10">
+              <Sparkles className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
             </div>
-            <span className="text-xl font-bold text-white tracking-tight">KorvixAI</span>
+            <span className="text-lg sm:text-xl font-bold text-foreground tracking-tight">KorvixAI</span>
           </Link>
-          <p className="text-[13px] text-slate-500">
+          <p className="text-[12px] sm:text-[13px] text-muted-foreground">
             {mode === 'login' ? 'Welcome back to your AI workspace' : 'Create your AI workspace account'}
           </p>
         </div>
 
         {/* Card */}
-        <div className="rounded-2xl border border-white/[0.06] bg-white/[0.01] backdrop-blur-xl p-6 shadow-2xl">
+        <div className="rounded-2xl border border-border bg-card/80 backdrop-blur-xl p-5 sm:p-6 shadow-premium-lg">
 
           {/* Tab switcher */}
-          <div className="flex gap-1 p-0.5 rounded-xl bg-white/[0.02] border border-white/[0.03] mb-6">
+          <div className="flex gap-1 p-0.5 rounded-xl bg-muted border border-border mb-6">
             {(['login', 'signup'] as const).map((m) => (
               <button
                 key={m}
                 onClick={() => switchMode(m)}
                 className={`flex-1 py-2 rounded-lg text-[12px] font-medium transition-all capitalize ${
-                  mode === m ? 'bg-white/[0.06] text-white' : 'text-slate-600 hover:text-slate-400'
+                  mode === m ? 'bg-background text-foreground shadow-premium' : 'text-muted-foreground hover:text-foreground'
                 }`}
               >
                 {m === 'login' ? 'Sign In' : 'Sign Up'}
@@ -161,14 +161,14 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
           <div className="space-y-2 mb-5">
             <button
               onClick={() => handleSocial('Google')}
-              className="w-full flex items-center justify-center gap-2.5 h-10 rounded-xl border border-white/[0.05] bg-white/[0.02] hover:bg-white/[0.04] hover:border-white/[0.08] transition-all text-[12px] text-slate-300"
+              className="w-full flex items-center justify-center gap-2.5 h-10 rounded-xl border border-border bg-muted/30 hover:bg-muted hover:border-border/80 transition-all text-[12px] text-foreground"
             >
               <GoogleIcon className="h-4 w-4" />
               Continue with Google
             </button>
             <button
               onClick={() => handleSocial('Apple')}
-              className="w-full flex items-center justify-center gap-2.5 h-10 rounded-xl border border-white/[0.05] bg-white/[0.02] hover:bg-white/[0.04] hover:border-white/[0.08] transition-all text-[12px] text-slate-300"
+              className="w-full flex items-center justify-center gap-2.5 h-10 rounded-xl border border-border bg-muted/30 hover:bg-muted hover:border-border/80 transition-all text-[12px] text-foreground"
             >
               <AppleIcon className="h-4 w-4" />
               Continue with Apple
@@ -177,9 +177,9 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
 
           {/* Divider */}
           <div className="flex items-center gap-3 mb-5">
-            <div className="flex-1 h-px bg-white/[0.04]" />
-            <span className="text-[10px] text-slate-700 uppercase tracking-wider">or</span>
-            <div className="flex-1 h-px bg-white/[0.04]" />
+            <div className="flex-1 h-px bg-border" />
+            <span className="text-[10px] text-muted-foreground/50 uppercase tracking-wider">or</span>
+            <div className="flex-1 h-px bg-border" />
           </div>
 
           {/* Form */}
@@ -194,13 +194,13 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
                   transition={{ duration: 0.2 }}
                 >
                   <div className="relative">
-                    <UserPlus className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
+                    <UserPlus className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/50" />
                     <input
                       type="text"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       placeholder="Full name"
-                      className="w-full h-10 pl-10 pr-4 rounded-xl bg-white/[0.02] border border-white/[0.05] text-[13px] text-slate-300 placeholder:text-slate-700 focus:outline-none focus:border-cyan-500/20 focus:bg-white/[0.03] transition-all"
+                      className="w-full h-10 pl-10 pr-4 rounded-xl bg-muted/40 border border-border text-[13px] text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-cyan-500/20 focus:bg-muted/60 transition-all"
                     />
                   </div>
                 </motion.div>
@@ -208,28 +208,28 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
             </AnimatePresence>
 
             <div className="relative">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/50" />
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Email address"
-                className="w-full h-10 pl-10 pr-4 rounded-xl bg-white/[0.02] border border-white/[0.05] text-[13px] text-slate-300 placeholder:text-slate-700 focus:outline-none focus:border-cyan-500/20 focus:bg-white/[0.03] transition-all"
+                className="w-full h-10 pl-10 pr-4 rounded-xl bg-muted/40 border border-border text-[13px] text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-cyan-500/20 focus:bg-muted/60 transition-all"
               />
             </div>
             <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600" />
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/50" />
               <input
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Password"
-                className="w-full h-10 pl-10 pr-10 rounded-xl bg-white/[0.02] border border-white/[0.05] text-[13px] text-slate-300 placeholder:text-slate-700 focus:outline-none focus:border-cyan-500/20 focus:bg-white/[0.03] transition-all"
+                className="w-full h-10 pl-10 pr-10 rounded-xl bg-muted/40 border border-border text-[13px] text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-cyan-500/20 focus:bg-muted/60 transition-all"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-600 hover:text-slate-400 transition-colors"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground transition-colors"
               >
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
@@ -242,10 +242,10 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
                   exit={{ opacity: 0, height: 0 }}
-                  className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-500/[0.04] border border-amber-500/10"
+                  className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-50 border border-amber-100"
                 >
-                  <ShieldAlert className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
-                  <p className="text-[11px] text-amber-300/70">{displayError}</p>
+                  <ShieldAlert className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
+                  <p className="text-[11px] text-amber-700/70">{displayError}</p>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -253,10 +253,10 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
             <Button
               type="submit"
               disabled={isLoading}
-              className="w-full h-10 bg-white/[0.08] hover:bg-white/[0.12] text-white border border-white/[0.08] rounded-xl text-[13px] font-medium transition-all disabled:opacity-40"
+              className="w-full h-10 bg-foreground hover:bg-foreground/90 text-background rounded-xl text-[13px] font-medium transition-all disabled:opacity-40 shadow-premium"
             >
               {isLoading ? (
-                <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }} className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full" />
+                <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }} className="w-4 h-4 border-2 border-foreground/30 border-t-foreground rounded-full" />
               ) : (
                 <>
                   {mode === 'login' ? 'Sign In' : 'Create Account'}
@@ -267,10 +267,10 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
           </form>
 
           {/* Guest */}
-          <div className="mt-4 pt-4 border-t border-white/[0.03] text-center">
+          <div className="mt-4 pt-4 border-t border-border text-center">
             <button
               onClick={handleGuest}
-              className="inline-flex items-center gap-1.5 text-[12px] text-slate-500 hover:text-cyan-400 transition-colors"
+              className="inline-flex items-center gap-1.5 text-[12px] text-muted-foreground hover:text-cyan-600 transition-colors"
             >
               <User className="w-3.5 h-3.5" />
               Continue as Guest
@@ -279,11 +279,11 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
         </div>
 
         {/* Footer */}
-        <p className="text-center text-[11px] text-slate-700 mt-5">
+        <p className="text-center text-[11px] text-muted-foreground/50 mt-5">
           By continuing, you agree to our{' '}
-          <Link to="/terms" className="text-slate-500 hover:text-slate-400 transition-colors">Terms</Link>
+          <Link to="/terms" className="text-muted-foreground hover:text-foreground transition-colors">Terms</Link>
           {' '}and{' '}
-          <Link to="/privacy" className="text-slate-500 hover:text-slate-400 transition-colors">Privacy Policy</Link>.
+          <Link to="/privacy" className="text-muted-foreground hover:text-foreground transition-colors">Privacy Policy</Link>.
         </p>
       </motion.div>
     </div>

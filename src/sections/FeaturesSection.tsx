@@ -38,7 +38,7 @@ export default function FeaturesSection() {
     <section id="features" className="py-20 md:py-28 relative">
       <div className="max-w-6xl mx-auto px-4 sm:px-6">
         <div className="text-center mb-14">
-          <h2 className="text-3xl md:text-4xl font-bold text-white mb-3">
+          <h2 className="text-3xl md:text-4xl font-bold text-[#111827] mb-3">
             Built for Modern Teams
           </h2>
           <p className="text-slate-500 max-w-md mx-auto text-base">
@@ -50,13 +50,13 @@ export default function FeaturesSection() {
           {features.map((feature, i) => (
             <div
               key={feature.title}
-              className="group relative rounded-2xl border border-white/[0.06] bg-white/[0.015] p-6 hover:bg-white/[0.03] transition-all duration-400 hover:border-white/[0.1] hover-glow"
+              className="group relative rounded-2xl border border-slate-200 bg-slate-50 p-6 hover:bg-white transition-all duration-300 hover:border-slate-300 hover:shadow-md"
               style={{ animationDelay: `${i * 0.05}s` }}
             >
-              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500/[0.12] to-blue-500/[0.12] text-cyan-400/80 group-hover:scale-110 transition-transform duration-300">
+              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-100 to-blue-100 text-cyan-600 group-hover:scale-110 transition-transform duration-300">
                 <feature.icon className="h-5 w-5" />
               </div>
-              <h3 className="text-[15px] font-semibold text-white mb-1.5">{feature.title}</h3>
+              <h3 className="text-[15px] font-semibold text-[#111827] mb-1.5">{feature.title}</h3>
               <p className="text-[13px] text-slate-500 leading-relaxed">{feature.description}</p>
             </div>
           ))}
