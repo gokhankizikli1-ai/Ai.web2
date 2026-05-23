@@ -379,9 +379,15 @@ def list_memory(
     return [_row_to_memory(r) for r in rows]
 
 
-def delete_memory(memory_id: str) -> bool:
+def delete_memory(memory_id: str, project_id: Optional[str] = None) -> bool:
     with _conn() as c:
-        cur = c.execute("DELETE FROM project_memory WHERE id = ?", (memory_id,))
+        if project_id is not None:
+            cur = c.execute(
+                "DELETE FROM project_memory WHERE id = ? AND project_id = ?",
+                (memory_id, project_id),
+            )
+        else:
+            cur = c.execute("DELETE FROM project_memory WHERE id = ?", (memory_id,))
         return cur.rowcount > 0
 
 
@@ -467,8 +473,15 @@ def create_agent(
     aid = (agent_id or "").strip() or _new_id()
     now = _now()
     with _conn() as c:
+        row = c.execute(
+            "SELECT * FROM project_agents WHERE id = ?",
+            (aid,),
+        ).fetchone()
+        if row:
+            existing = _row_to_agent(row)
+            return existing if existing.project_id == project_id else None
         c.execute(
-            """INSERT OR REPLACE INTO project_agents
+            """INSERT INTO project_agents
                (id, project_id, name, role, system_prompt, model_hint,
                 color, icon, created_at, updated_at, metadata_json)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -511,6 +524,7 @@ def list_agents(project_id: str) -> List[ProjectAgent]:
 def update_agent(
     agent_id: str,
     *,
+    project_id: Optional[str] = None,
     name: Optional[str] = None,
     role: Optional[str] = None,
     system_prompt: Optional[str] = None,
@@ -520,9 +534,15 @@ def update_agent(
     metadata: Optional[dict] = None,
 ) -> Optional[ProjectAgent]:
     with _conn() as c:
-        row = c.execute(
-            "SELECT * FROM project_agents WHERE id = ?", (agent_id,),
-        ).fetchone()
+        if project_id is not None:
+            row = c.execute(
+                "SELECT * FROM project_agents WHERE id = ? AND project_id = ?",
+                (agent_id, project_id),
+            ).fetchone()
+        else:
+            row = c.execute(
+                "SELECT * FROM project_agents WHERE id = ?", (agent_id,),
+            ).fetchone()
         if not row:
             return None
         existing = _row_to_agent(row)
@@ -552,9 +572,15 @@ def update_agent(
     )
 
 
-def delete_agent(agent_id: str) -> bool:
+def delete_agent(agent_id: str, project_id: Optional[str] = None) -> bool:
     with _conn() as c:
-        cur = c.execute("DELETE FROM project_agents WHERE id = ?", (agent_id,))
+        if project_id is not None:
+            cur = c.execute(
+                "DELETE FROM project_agents WHERE id = ? AND project_id = ?",
+                (agent_id, project_id),
+            )
+        else:
+            cur = c.execute("DELETE FROM project_agents WHERE id = ?", (agent_id,))
         return cur.rowcount > 0
 
 

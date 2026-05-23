@@ -288,7 +288,7 @@ async def chat(req: ChatRequest):
                     build_project_context_block,
                     set_current_project_context,
                 )
-                _block = build_project_context_block(req.project_id)
+                _block = build_project_context_block(req.project_id, owner_user_id=req.user_id)
                 if _block:
                     _project_ctx_token = set_current_project_context(_block)
                     _project_id_for_meta = req.project_id

@@ -38,6 +38,7 @@ def _projects_enabled() -> bool:
 def build_project_context_block(
     project_id: str,
     *,
+    owner_user_id: Optional[str] = None,
     memory_limit: int = _DEFAULT_MEMORY_LIMIT,
 ) -> Optional[str]:
     """Return a system-prompt-ready string for `project_id`, or None.
@@ -57,6 +58,8 @@ def build_project_context_block(
     except Exception:
         return None
     if not project:
+        return None
+    if owner_user_id is not None and project.owner_user_id != str(owner_user_id):
         return None
 
     try:

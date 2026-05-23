@@ -48,6 +48,11 @@ function getProjectUserId(): string {
   }
 }
 
+function withProjectUser(url: string): string {
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}user_id=${encodeURIComponent(getProjectUserId())}`;
+}
+
 async function apiSafe<T>(fn: () => Promise<T>): Promise<T | null> {
   try {
     return await fn();
@@ -108,7 +113,7 @@ export function updateProject(id: string, updates: Partial<Project>) {
   projects[idx] = { ...projects[idx], ...updates };
   saveProjects(projects);
   apiSafe(async () => {
-    await fetch(`${getApiBase()}/projects/${id}`, {
+    await fetch(withProjectUser(`${getApiBase()}/projects/${id}`), {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -125,7 +130,7 @@ export function deleteProject(id: string) {
   try { localStorage.removeItem(`${AGENTS_KEY}_${id}`); } catch { /* ignore */ }
   try { localStorage.removeItem(`${TASKS_KEY}_${id}`); } catch { /* ignore */ }
   apiSafe(async () => {
-    await fetch(`${getApiBase()}/projects/${id}`, { method: 'DELETE' });
+    await fetch(withProjectUser(`${getApiBase()}/projects/${id}`), { method: 'DELETE' });
   });
 }
 
@@ -145,6 +150,7 @@ export async function listProjectMemory(projectId: string, opts?: { kind?: strin
   const q = new URLSearchParams();
   if (opts?.kind) q.set('kind', opts.kind);
   if (opts?.limit) q.set('limit', String(opts.limit));
+  q.set('user_id', getProjectUserId());
   const res = await apiSafe(async () => {
     const r = await fetch(`${getApiBase()}/projects/${projectId}/memory?${q.toString()}`);
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -159,7 +165,7 @@ export async function addProjectMemory(
   opts?: { kind?: string; source?: string },
 ): Promise<ProjectMemoryEntry | null> {
   return await apiSafe(async () => {
-    const r = await fetch(`${getApiBase()}/projects/${projectId}/memory`, {
+    const r = await fetch(withProjectUser(`${getApiBase()}/projects/${projectId}/memory`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -195,7 +201,7 @@ export function addProjectAgent(projectId: string, agent: ProjectAgent) {
   agents.push(agent);
   saveAgents(projectId, agents);
   apiSafe(async () => {
-    await fetch(`${getApiBase()}/projects/${projectId}/agents`, {
+    await fetch(withProjectUser(`${getApiBase()}/projects/${projectId}/agents`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -217,7 +223,7 @@ export function updateProjectAgent(projectId: string, agentId: string, updates: 
     agents[idx] = { ...agents[idx], ...updates };
     saveAgents(projectId, agents);
     apiSafe(async () => {
-      await fetch(`${getApiBase()}/projects/${projectId}/agents/${agentId}`, {
+      await fetch(withProjectUser(`${getApiBase()}/projects/${projectId}/agents/${agentId}`), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -233,7 +239,7 @@ export function removeProjectAgent(projectId: string, agentId: string) {
   const agents = loadAgents(projectId).filter(a => a.id !== agentId);
   saveAgents(projectId, agents);
   apiSafe(async () => {
-    await fetch(`${getApiBase()}/projects/${projectId}/agents/${agentId}`, {
+    await fetch(withProjectUser(`${getApiBase()}/projects/${projectId}/agents/${agentId}`), {
       method: 'DELETE',
     });
   });
@@ -385,10 +391,11 @@ async function hydrateAndBackfill(): Promise<void> {
   const remoteIds = new Set(
     (remote.projects || []).map((p: { id: string }) => p.id),
   );
+  let backfillSucceeded = true;
   for (const lp of loadProjects()) {
     if (remoteIds.has(lp.id)) continue;
-    await apiSafe(async () => {
-      await fetch(`${base}/projects`, {
+    const projectBackfilled = await apiSafe(async () => {
+      const r = await fetch(`${base}/projects`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -399,12 +406,18 @@ async function hydrateAndBackfill(): Promise<void> {
           metadata:    { backfilled_from: 'localStorage_v1' },
         }),
       });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return true;
     });
+    if (!projectBackfilled) {
+      backfillSucceeded = false;
+      continue;
+    }
     // Also backfill agents for that project.
     const agents = loadAgents(lp.id);
     for (const a of agents) {
-      await apiSafe(async () => {
-        await fetch(`${base}/projects/${lp.id}/agents`, {
+      const agentBackfilled = await apiSafe(async () => {
+        const r = await fetch(withProjectUser(`${base}/projects/${lp.id}/agents`), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -416,10 +429,15 @@ async function hydrateAndBackfill(): Promise<void> {
             metadata: { specialty: a.specialty, gradient: a.gradient, backfilled: true },
           }),
         });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return true;
       });
+      if (!agentBackfilled) backfillSucceeded = false;
     }
   }
-  try { localStorage.setItem(MIGRATION_FLAG, 'true'); } catch { /* ignore */ }
+  if (backfillSucceeded) {
+    try { localStorage.setItem(MIGRATION_FLAG, 'true'); } catch { /* ignore */ }
+  }
 }
 
 // Browser-only side-effect. Wrapped in a typeof check so SSR/Vitest

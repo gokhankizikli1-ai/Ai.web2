@@ -114,6 +114,14 @@ def _project_dict(p) -> dict:
     }
 
 
+def _require_owned_project(project_id: str, user_id: str):
+    from backend.services.projects import get_project
+    p = get_project(project_id)
+    if not p or p.owner_user_id != str(user_id):
+        raise HTTPException(status_code=404, detail={"error": "project_not_found"})
+    return p
+
+
 def _memory_dict(m) -> dict:
     return {
         "id":         m.id,
@@ -183,22 +191,21 @@ def create_project_route(body: CreateProjectBody) -> dict:
         metadata=body.metadata,
         project_id=body.project_id,
     )
+    if p.owner_user_id != str(body.user_id):
+        raise HTTPException(status_code=409, detail={"error": "project_id_conflict"})
     return _project_dict(p)
 
 
 @router.get("/{project_id}")
-def get_project_route(project_id: str) -> dict:
+def get_project_route(project_id: str, user_id: str) -> dict:
     _ensure_enabled()
-    from backend.services.projects import get_project
-    p = get_project(project_id)
-    if not p:
-        raise HTTPException(status_code=404, detail={"error": "project_not_found"})
-    return _project_dict(p)
+    return _project_dict(_require_owned_project(project_id, user_id))
 
 
 @router.patch("/{project_id}")
-def update_project_route(project_id: str, body: UpdateProjectBody) -> dict:
+def update_project_route(project_id: str, user_id: str, body: UpdateProjectBody) -> dict:
     _ensure_enabled()
+    _require_owned_project(project_id, user_id)
     from backend.services.projects import update_project
     p = update_project(
         project_id,
@@ -213,8 +220,9 @@ def update_project_route(project_id: str, body: UpdateProjectBody) -> dict:
 
 
 @router.delete("/{project_id}", status_code=200)
-def delete_project_route(project_id: str) -> dict:
+def delete_project_route(project_id: str, user_id: str) -> dict:
     _ensure_enabled()
+    _require_owned_project(project_id, user_id)
     from backend.services.projects import delete_project
     ok = delete_project(project_id)
     if not ok:
@@ -227,21 +235,22 @@ def delete_project_route(project_id: str) -> dict:
 @router.get("/{project_id}/memory")
 def list_memory_route(
     project_id: str,
+    user_id: str,
     kind: Optional[str] = None,
     limit: int = 50,
     newest_first: bool = True,
 ) -> dict:
     _ensure_enabled()
-    from backend.services.projects import get_project, list_memory
-    if not get_project(project_id):
-        raise HTTPException(status_code=404, detail={"error": "project_not_found"})
+    _require_owned_project(project_id, user_id)
+    from backend.services.projects import list_memory
     rows = list_memory(project_id, kind=kind, limit=limit, newest_first=newest_first)
     return {"memory": [_memory_dict(m) for m in rows]}
 
 
 @router.post("/{project_id}/memory", status_code=201)
-def add_memory_route(project_id: str, body: AddMemoryBody) -> dict:
+def add_memory_route(project_id: str, user_id: str, body: AddMemoryBody) -> dict:
     _ensure_enabled()
+    _require_owned_project(project_id, user_id)
     from backend.services.projects import add_memory
     m = add_memory(
         project_id,
@@ -256,28 +265,29 @@ def add_memory_route(project_id: str, body: AddMemoryBody) -> dict:
 
 
 @router.delete("/{project_id}/memory/{memory_id}", status_code=200)
-def delete_memory_route(project_id: str, memory_id: str) -> dict:
+def delete_memory_route(project_id: str, memory_id: str, user_id: str) -> dict:
     _ensure_enabled()
+    _require_owned_project(project_id, user_id)
     from backend.services.projects import delete_memory
-    ok = delete_memory(memory_id)
+    ok = delete_memory(memory_id, project_id=project_id)
     return {"deleted": ok, "memory_id": memory_id}
 
 
 # ── Project agents ─────────────────────────────────────────────────────────
 
 @router.get("/{project_id}/agents")
-def list_agents_route(project_id: str) -> dict:
+def list_agents_route(project_id: str, user_id: str) -> dict:
     _ensure_enabled()
-    from backend.services.projects import get_project, list_agents
-    if not get_project(project_id):
-        raise HTTPException(status_code=404, detail={"error": "project_not_found"})
+    _require_owned_project(project_id, user_id)
+    from backend.services.projects import list_agents
     rows = list_agents(project_id)
     return {"agents": [_agent_dict(a) for a in rows]}
 
 
 @router.post("/{project_id}/agents", status_code=201)
-def create_agent_route(project_id: str, body: CreateAgentBody) -> dict:
+def create_agent_route(project_id: str, user_id: str, body: CreateAgentBody) -> dict:
     _ensure_enabled()
+    _require_owned_project(project_id, user_id)
     from backend.services.projects import create_agent
     a = create_agent(
         project_id,
@@ -291,38 +301,42 @@ def create_agent_route(project_id: str, body: CreateAgentBody) -> dict:
         agent_id=body.agent_id,
     )
     if not a:
-        raise HTTPException(status_code=404, detail={"error": "project_not_found"})
+        raise HTTPException(status_code=409, detail={"error": "agent_id_conflict"})
     return _agent_dict(a)
 
 
 @router.patch("/{project_id}/agents/{agent_id}")
-def update_agent_route(project_id: str, agent_id: str, body: UpdateAgentBody) -> dict:
+def update_agent_route(project_id: str, agent_id: str, user_id: str, body: UpdateAgentBody) -> dict:
     _ensure_enabled()
+    _require_owned_project(project_id, user_id)
     from backend.services.projects import update_agent
     a = update_agent(
         agent_id,
+        project_id=project_id,
         name=body.name, role=body.role, system_prompt=body.system_prompt,
         model_hint=body.model_hint, color=body.color, icon=body.icon,
         metadata=body.metadata,
     )
-    if not a or a.project_id != project_id:
+    if not a:
         raise HTTPException(status_code=404, detail={"error": "agent_not_found"})
     return _agent_dict(a)
 
 
 @router.delete("/{project_id}/agents/{agent_id}", status_code=200)
-def delete_agent_route(project_id: str, agent_id: str) -> dict:
+def delete_agent_route(project_id: str, agent_id: str, user_id: str) -> dict:
     _ensure_enabled()
+    _require_owned_project(project_id, user_id)
     from backend.services.projects import delete_agent
-    ok = delete_agent(agent_id)
+    ok = delete_agent(agent_id, project_id=project_id)
     return {"deleted": ok, "agent_id": agent_id}
 
 
 # ── Thread bindings ────────────────────────────────────────────────────────
 
 @router.post("/{project_id}/threads", status_code=201)
-def attach_thread_route(project_id: str, body: AttachThreadBody) -> dict:
+def attach_thread_route(project_id: str, user_id: str, body: AttachThreadBody) -> dict:
     _ensure_enabled()
+    _require_owned_project(project_id, user_id)
     from backend.services.projects import attach_thread
     ok = attach_thread(project_id, body.thread_id)
     if not ok:
@@ -331,19 +345,19 @@ def attach_thread_route(project_id: str, body: AttachThreadBody) -> dict:
 
 
 @router.delete("/{project_id}/threads/{thread_id}", status_code=200)
-def detach_thread_route(project_id: str, thread_id: str) -> dict:
+def detach_thread_route(project_id: str, thread_id: str, user_id: str) -> dict:
     _ensure_enabled()
+    _require_owned_project(project_id, user_id)
     from backend.services.projects import detach_thread
     ok = detach_thread(project_id, thread_id)
     return {"detached": ok, "project_id": project_id, "thread_id": thread_id}
 
 
 @router.get("/{project_id}/threads")
-def list_project_threads_route(project_id: str) -> dict:
+def list_project_threads_route(project_id: str, user_id: str) -> dict:
     _ensure_enabled()
-    from backend.services.projects import get_project, list_project_threads
-    if not get_project(project_id):
-        raise HTTPException(status_code=404, detail={"error": "project_not_found"})
+    _require_owned_project(project_id, user_id)
+    from backend.services.projects import list_project_threads
     rows = list_project_threads(project_id)
     return {
         "threads": [
