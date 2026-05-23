@@ -45,6 +45,18 @@ EVENT_KINDS = (
     "task.started",     # task transitioned to status=running
     "task.completed",   # task transitioned to status=completed
     "task.failed",      # task transitioned to status=failed
+    # Phase 5.2 — per-specialist token streaming. One event per
+    # delta chunk received from the provider (OpenAI / Anthropic /
+    # Gemini). Payload carries:
+    #   - task_id     correlates with the task.* lifecycle events
+    #   - agent_id    spec id of the streaming specialist
+    #   - delta       new content chunk (NOT cumulative)
+    #   - seq         monotonic counter (0-based) for ordering
+    #   - provider    provider name that produced the chunk
+    # When ENABLE_REALTIME_EVENTS=false or the orchestration was not
+    # launched via /v2/orchestrate/stream, this event is never emitted —
+    # the non-streaming path is unaffected.
+    "agent.token",
 )
 
 

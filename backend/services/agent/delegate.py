@@ -76,6 +76,14 @@ _SCRATCH_IN_FLIGHT       = "_delegate_in_flight"
 _SCRATCH_TOKENS_USED     = "_delegate_tokens_used"
 _SCRATCH_DELEGATION_LOG  = "_delegate_history"
 
+# Phase 5.2 — streaming opt-in flag. Set on the RunContext.scratch by
+# the /v2/orchestrate/stream route before invoking the orchestrator.
+# Inherited by every child delegation in the run (scratch is shared by
+# reference). When True, the multi-provider specialist path uses
+# stream_chat_completion + emits one `agent.token` event per delta.
+# Defaults False — the non-streaming /v2/orchestrate flow is unaffected.
+_SCRATCH_STREAMING_ENABLED = "_streaming_enabled"
+
 
 # ── Error envelopes ─────────────────────────────────────────────────────
 #
@@ -140,6 +148,7 @@ async def _try_multi_provider_or_run_agent(
     selected_model: str,
     *,
     _run_agent_fn: Any = None,
+    task_id: str = "",
 ) -> Any:
     """Phase 4.3 — fast-path the no-tool specialist case through the
     multi-provider router (Claude / Gemini / OpenAI) so non-OpenAI
@@ -151,6 +160,13 @@ async def _try_multi_provider_or_run_agent(
     When a stub is provided, ALWAYS use it (tests need to inspect what
     AgentRequest the runtime saw, regardless of which provider the
     real router would have picked).
+
+    Phase 5.2 — when the parent RunContext.scratch carries
+    `_streaming_enabled=True` AND the spec has no tools, the call
+    routes through stream_chat_completion + emits agent.token events
+    per delta. The full accumulated text is returned in an AgentResponse
+    just like the non-streaming path, so callers downstream don't
+    need to differentiate.
 
     Returns an AgentResponse — same shape run_agent produces — so the
     rest of _execute_delegation doesn't care which path produced it.
@@ -170,6 +186,26 @@ async def _try_multi_provider_or_run_agent(
 
     if has_tools or is_openai_model:
         # Existing path — OpenAI SDK tool-calling loop.
+        # TODO Phase 5.2.B: OpenAI streaming for tool-less specialists
+        # routed here. For now they fall through to the non-streaming
+        # OpenAI runtime — still correct, just doesn't surface deltas.
+        if (parent_ctx is not None
+                and parent_ctx.scratch.get(_SCRATCH_STREAMING_ENABLED)
+                and not has_tools
+                and is_openai_model
+                and provider_name == "openai"):
+            try:
+                return await _stream_via_multi_provider(
+                    target_spec, sub_request, parent_ctx,
+                    selected_model, task_id=task_id,
+                )
+            except Exception as _se:
+                logger.warning(
+                    "delegate.stream_openai_failed | spec=%s | error=%s "
+                    "| falling back to non-streaming",
+                    target_spec.id, _se,
+                )
+                # Fall through to non-streaming runtime below
         return await _rt(sub_request)
 
     # ── Multi-provider specialist path ────────────────────────────
@@ -204,6 +240,28 @@ async def _try_multi_provider_or_run_agent(
     # the same model id), make sure the chain starts with selected_model.
     if chain[0] != selected_model:
         chain = [selected_model] + [m for m in chain if m != selected_model]
+
+    # Phase 5.2 — streaming opt-in path. Routes through the streaming
+    # variant of the fallback chain + emits agent.token deltas. The
+    # function returns an AgentResponse with the accumulated content
+    # so the rest of _execute_delegation behaves identically.
+    if (parent_ctx is not None
+            and parent_ctx.scratch.get(_SCRATCH_STREAMING_ENABLED)):
+        try:
+            return await _stream_via_multi_provider(
+                target_spec, sub_request, parent_ctx,
+                selected_model, task_id=task_id, chain=chain, messages=messages,
+            )
+        except Exception as _se:
+            # Streaming dispatch crashed (NOT a content failure — those
+            # land as ProviderStreamError frames inside _stream_via_*).
+            # Fall through to the non-streaming call so the orchestration
+            # never hangs on a streaming bug.
+            logger.warning(
+                "delegate.stream_dispatch_failed | spec=%s | error=%s "
+                "| falling back to non-streaming",
+                target_spec.id, _se,
+            )
 
     try:
         import time as _time
@@ -271,6 +329,178 @@ async def _try_multi_provider_or_run_agent(
                 "attempts":     exc.attempts,
             },
         )
+
+
+# ── Phase 5.2 — streaming dispatch ─────────────────────────────────────
+
+async def _stream_via_multi_provider(
+    target_spec: Any,
+    sub_request: Any,
+    parent_ctx: Any,
+    selected_model: str,
+    *,
+    task_id: str = "",
+    chain: Optional[list] = None,
+    messages: Optional[list] = None,
+) -> Any:
+    """Stream the specialist's completion through the multi-provider
+    router. For each provider delta, publish an `agent.token` event
+    so the SSE consumer can render the text incrementally. Returns
+    an AgentResponse with the full accumulated reply when the stream
+    completes successfully.
+
+    On terminal stream error: returns an AgentResponse marked partial
+    with a short error reply — same shape the non-streaming router's
+    ProviderRouterError branch produces — so downstream code (quality
+    guard, task completion, etc.) doesn't crash.
+
+    Cancellation: if the consumer of agent.token events disappears
+    (e.g. SSE client disconnect), the outer SSE generator is cancelled
+    and the running task is cancelled too — provider iterators get
+    asyncio.CancelledError on the next await, propagating cleanly.
+    """
+    from backend.services.agent.model_routing import model_chain_for_spec
+    from backend.services.agent.provider_router import (
+        call_with_fallback_chain_streaming,
+    )
+    from backend.services.providers.streaming import (
+        ProviderStreamDone, ProviderStreamError, ProviderStreamStart,
+        ProviderStreamToken,
+    )
+    from backend.services.providers.types import ProviderMessage
+    from backend.services.agent.types import AgentResponse
+    import time as _time
+
+    if messages is None:
+        messages = []
+        if (getattr(sub_request, "system_prompt", "") or "").strip():
+            messages.append(ProviderMessage(
+                role="system",
+                content=sub_request.system_prompt,
+            ))
+        messages.append(ProviderMessage(
+            role="user",
+            content=sub_request.user_message or "",
+        ))
+
+    if chain is None:
+        chain = model_chain_for_spec(target_spec)
+        if chain and chain[0] != selected_model:
+            chain = [selected_model] + [m for m in chain if m != selected_model]
+
+    t0 = _time.monotonic()
+    accumulated: list = []
+    seq = 0
+    provider_used = ""
+    model_used = selected_model
+    finish_reason: Optional[str] = None
+    prompt_tokens = 0
+    completion_tokens = 0
+    total_tokens = 0
+    stream_error: Optional[str] = None
+
+    agen = call_with_fallback_chain_streaming(
+        messages=messages,
+        model_chain=chain,
+        temperature=float(getattr(sub_request, "temperature", 0.4) or 0.4),
+        max_tokens=int(getattr(sub_request, "max_tokens", 1200) or 1200),
+        timeout_s=60.0,
+    )
+    try:
+        async for event in agen:
+            if isinstance(event, ProviderStreamStart):
+                provider_used = event.provider or provider_used
+                model_used = event.model or model_used
+                continue
+            if isinstance(event, ProviderStreamToken):
+                delta = event.delta or ""
+                if not delta:
+                    continue
+                accumulated.append(delta)
+                _emit("agent.token", ctx=parent_ctx, payload={
+                    "task_id":   task_id,
+                    "agent_id":  target_spec.id,
+                    "delta":     delta,
+                    "seq":       seq,
+                    "provider":  provider_used or "",
+                    "model":     model_used or "",
+                })
+                seq += 1
+                continue
+            if isinstance(event, ProviderStreamDone):
+                finish_reason = event.finish_reason
+                prompt_tokens = event.usage.prompt_tokens
+                completion_tokens = event.usage.completion_tokens
+                total_tokens = event.usage.total_tokens or (
+                    prompt_tokens + completion_tokens
+                )
+                if event.model:
+                    model_used = event.model
+                continue
+            if isinstance(event, ProviderStreamError):
+                stream_error = f"{event.code}: {event.message}"
+                logger.warning(
+                    "delegate.stream_error | spec=%s | code=%s | message=%s",
+                    target_spec.id, event.code, event.message,
+                )
+                continue
+    finally:
+        try:
+            await agen.aclose()
+        except Exception:
+            pass
+
+    elapsed_ms = int((_time.monotonic() - t0) * 1000)
+    reply_text = "".join(accumulated)
+
+    if stream_error and not reply_text:
+        return AgentResponse(
+            reply=(
+                f"[{target_spec.name or target_spec.id} stream unavailable — "
+                f"{stream_error}. Supervisor: continue with the remaining specialists.]"
+            ),
+            mode=getattr(sub_request, "mode", "") or target_spec.id,
+            model=model_used or (chain[-1] if chain else ""),
+            provider=provider_used or "-",
+            steps_used=0,
+            tool_calls=0,
+            elapsed_ms=elapsed_ms,
+            trace=[],
+            partial=True,
+            fallback=True,
+            metadata={
+                "tier":         _tier_label_for(target_spec),
+                "routed_via":   "multi_provider_stream",
+                "stream_error": stream_error[:240],
+            },
+        )
+
+    return AgentResponse(
+        reply=reply_text,
+        mode=getattr(sub_request, "mode", "") or target_spec.id,
+        model=model_used,
+        provider=provider_used or "openai",
+        steps_used=1,
+        tool_calls=0,
+        elapsed_ms=elapsed_ms,
+        trace=[],
+        partial=bool(stream_error),
+        fallback=False,
+        metadata={
+            "tier":          _tier_label_for(target_spec),
+            "provider":      provider_used,
+            "model":         model_used,
+            "tokens":        {
+                "prompt":     prompt_tokens,
+                "completion": completion_tokens,
+                "total":      total_tokens,
+            },
+            "finish_reason": finish_reason,
+            "routed_via":    "multi_provider_stream",
+            "stream_chunks": seq,
+            **({"stream_error": stream_error[:240]} if stream_error else {}),
+        },
+    )
 
 
 # ── Event emission ──────────────────────────────────────────────────────
@@ -707,6 +937,7 @@ async def _execute_delegation(
             response = await _try_multi_provider_or_run_agent(
                 target_spec, sub_request, parent_ctx, selected_model,
                 _run_agent_fn=_run_agent_fn,
+                task_id=task_id,
             )
 
             # ── Phase 4.2 — quality guard + one-shot retry ────────────
@@ -750,6 +981,7 @@ async def _execute_delegation(
                         retry_response = await _try_multi_provider_or_run_agent(
                             target_spec, retry_request, parent_ctx, selected_model,
                             _run_agent_fn=_run_agent_fn,
+                            task_id=task_id,
                         )
                         # Use the retry if it's at least as long as the
                         # original — shorter usually = the LLM gave up.

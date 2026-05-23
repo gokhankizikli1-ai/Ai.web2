@@ -1,16 +1,17 @@
 # coding: utf-8
-"""Google Gemini provider (Phase 4.3).
+"""Google Gemini provider (Phase 4.3 + 5.2 streaming).
 
 Implements the BaseAIProvider interface using the
 google-generativeai SDK (already in requirements.txt). Registered
 in `registry.py` when GEMINI_API_KEY is set. The Research Agent's
 default tier (Phase 4.3) routes here for long-context synthesis.
 
-Streaming is intentionally NOT implemented in this iteration —
-Gemini's stream API differs from OpenAI/Anthropic enough that
-correctness across providers needs its own validation. The
-chat_completion (non-streaming) path is what the agent runtime
-calls for specialists, so streaming-less is sufficient for Phase 4.3.
+Phase 5.2 — added stream_chat_completion. The Gemini SDK exposes a
+sync streaming iterator via generate_content(stream=True). We pump
+chunks off the iterator in a worker thread + push deltas onto an
+asyncio.Queue so the async generator can yield them out cleanly.
+Falls back to a terminal ProviderStreamError if streaming isn't
+available (older SDK or upstream rejection).
 
 Tool use is NOT implemented either — Gemini's function-call format
 differs from OpenAI's tools= shape, and the Supervisor's tool-using
@@ -21,14 +22,22 @@ so this limitation is invisible at the runtime level.
 import asyncio
 import logging
 import os
-from typing import Any, Dict, List, Tuple
+from typing import Any, AsyncIterator, Dict, List, Tuple
 
 from backend.services.providers.base import BaseAIProvider
 from backend.services.providers.errors import (
     ProviderAuthError,
+    ProviderError,
     ProviderInvalidRequestError,
     ProviderTimeoutError,
     ProviderUnavailableError,
+)
+from backend.services.providers.streaming import (
+    ProviderStreamDone,
+    ProviderStreamError,
+    ProviderStreamEvent,
+    ProviderStreamStart,
+    ProviderStreamToken,
 )
 from backend.services.providers.types import (
     ProviderMessage,
@@ -78,7 +87,7 @@ def _split_messages(
 class GeminiProvider(BaseAIProvider):
     name = "google"
     default_model = DEFAULT_GEMINI_MODEL
-    supports_streaming = False        # Phase 4.3 — non-streaming only
+    supports_streaming = True         # Phase 5.2 — streaming added
 
     def is_available(self) -> bool:
         return bool((os.getenv("GEMINI_API_KEY") or "").strip())
@@ -225,6 +234,190 @@ class GeminiProvider(BaseAIProvider):
             usage=usage,
             finish_reason=finish_reason,
             raw=None,
+        )
+
+    # ── Streaming (Phase 5.2) ─────────────────────────────────────────
+
+    async def stream_chat_completion(
+        self, request: ProviderRequest,
+    ) -> AsyncIterator[ProviderStreamEvent]:
+        """Stream tokens from Gemini's generate_content(stream=True).
+
+        Gemini's SDK is sync — the streaming response is a sync iterator
+        that yields chunked GenerateContentResponse objects. We pump it
+        in a worker thread + push deltas onto an asyncio.Queue so this
+        async generator can yield them out without blocking the event
+        loop. Terminal: ProviderStreamDone with cumulative usage when
+        the upstream stream completes naturally; ProviderStreamError on
+        any auth / invalid-request / timeout / sdk failure.
+        """
+        if not self.is_available():
+            yield ProviderStreamError(
+                code="PROVIDER_UNAVAILABLE",
+                message="Gemini is not configured (missing GEMINI_API_KEY).",
+                provider=self.name,
+            )
+            return
+
+        try:
+            genai = self._configure()
+        except ProviderError as exc:
+            yield ProviderStreamError(
+                code=getattr(exc, "code", "PROVIDER_UNAVAILABLE"),
+                message=str(exc)[:300],
+                provider=self.name,
+            )
+            return
+
+        model_id = request.model or self.default_model
+        system_text, contents = _split_messages(request)
+        generation_config: Dict[str, Any] = {
+            "temperature": float(request.temperature or 0.7),
+        }
+        if request.max_tokens:
+            generation_config["max_output_tokens"] = int(request.max_tokens)
+
+        try:
+            model = genai.GenerativeModel(
+                model_name=model_id,
+                system_instruction=system_text,
+                generation_config=generation_config,
+            )
+        except Exception as exc:
+            yield ProviderStreamError(
+                code="PROVIDER_INVALID_REQUEST",
+                message=f"Gemini rejected model {model_id!r}: {exc}",
+                provider=self.name,
+            )
+            return
+
+        yield ProviderStreamStart(provider=self.name, model=model_id)
+
+        # Pump the sync iterator in a worker thread, push onto a queue.
+        # Sentinel objects mark stream end / errors so the async loop
+        # below can distinguish them from real chunks.
+        loop = asyncio.get_event_loop()
+        queue: asyncio.Queue = asyncio.Queue(maxsize=64)
+        _DONE = object()
+        _ERR = object()
+
+        usage_state: Dict[str, int] = {
+            "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0,
+        }
+        finish_state: Dict[str, Any] = {"reason": None, "error": None}
+
+        def _pump():
+            try:
+                response = model.generate_content(contents, stream=True)
+                for chunk in response:
+                    # Best-effort delta extraction. Some chunks carry
+                    # ONLY usage_metadata (final chunk on newer SDKs).
+                    delta = ""
+                    try:
+                        # Chunk-level .text may raise if no text part —
+                        # iterate parts manually as a fallback.
+                        try:
+                            delta = chunk.text or ""
+                        except Exception:
+                            parts = []
+                            for cand in getattr(chunk, "candidates", []) or []:
+                                content = getattr(cand, "content", None)
+                                if content is None:
+                                    continue
+                                for part in getattr(content, "parts", []) or []:
+                                    t = getattr(part, "text", "")
+                                    if t:
+                                        parts.append(t)
+                            delta = "".join(parts)
+                    except Exception:
+                        delta = ""
+
+                    if delta:
+                        # Schedule onto the loop. put_nowait would race
+                        # with the consumer; use call_soon_threadsafe.
+                        asyncio.run_coroutine_threadsafe(
+                            queue.put(("delta", delta)), loop,
+                        )
+
+                    # Snapshot usage if this chunk carries it.
+                    try:
+                        um = getattr(chunk, "usage_metadata", None)
+                        if um is not None:
+                            usage_state["prompt_tokens"]     = int(getattr(um, "prompt_token_count",     0) or 0)
+                            usage_state["completion_tokens"] = int(getattr(um, "candidates_token_count", 0) or 0)
+                            usage_state["total_tokens"]      = int(getattr(um, "total_token_count",      0) or 0)
+                    except Exception:
+                        pass
+
+                    # Snapshot finish reason if this chunk carries it.
+                    try:
+                        cands = getattr(chunk, "candidates", []) or []
+                        if cands:
+                            fr = getattr(cands[0], "finish_reason", None)
+                            if fr is not None:
+                                finish_state["reason"] = str(fr)
+                    except Exception:
+                        pass
+
+                asyncio.run_coroutine_threadsafe(queue.put(_DONE), loop)
+            except Exception as exc:
+                finish_state["error"] = exc
+                asyncio.run_coroutine_threadsafe(queue.put(_ERR), loop)
+
+        worker = loop.run_in_executor(None, _pump)
+
+        try:
+            while True:
+                try:
+                    item = await asyncio.wait_for(
+                        queue.get(),
+                        timeout=float(request.timeout_s or 30.0),
+                    )
+                except asyncio.TimeoutError:
+                    yield ProviderStreamError(
+                        code="PROVIDER_TIMEOUT",
+                        message=f"Gemini stream stalled (no chunk in {request.timeout_s}s).",
+                        provider=self.name,
+                    )
+                    return
+                if item is _DONE:
+                    break
+                if item is _ERR:
+                    exc = finish_state["error"]
+                    msg = str(exc) if exc else "Gemini stream errored"
+                    code = "PROVIDER_INVALID_REQUEST"
+                    if exc is not None:
+                        m = msg.lower()
+                        if any(k in m for k in ("api_key", "permission", "unauthenticated", "403")):
+                            code = "PROVIDER_AUTH"
+                        elif "timeout" in m:
+                            code = "PROVIDER_TIMEOUT"
+                    yield ProviderStreamError(
+                        code=code, message=msg[:300], provider=self.name,
+                    )
+                    return
+                # Real delta tuple
+                kind, payload = item
+                if kind == "delta" and payload:
+                    yield ProviderStreamToken(delta=payload)
+        finally:
+            # Ensure the worker thread fully finishes so we don't leak.
+            try:
+                await worker
+            except Exception:
+                pass
+
+        usage = ProviderUsage(
+            prompt_tokens=     usage_state["prompt_tokens"],
+            completion_tokens= usage_state["completion_tokens"],
+            total_tokens=      usage_state["total_tokens"] or (
+                usage_state["prompt_tokens"] + usage_state["completion_tokens"]
+            ),
+        )
+        yield ProviderStreamDone(
+            finish_reason=finish_state["reason"],
+            usage=usage,
+            model=model_id,
         )
 
 

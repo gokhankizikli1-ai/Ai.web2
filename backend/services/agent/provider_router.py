@@ -17,7 +17,7 @@ DESIGN BOUNDARIES (Phase 4.3 — NOT 4.3.B):
     existing provider-aware path.
 """
 import logging
-from typing import Any, List, Optional, Tuple
+from typing import Any, AsyncIterator, List, Optional, Tuple
 
 from backend.services.providers.errors import (
     ProviderAuthError,
@@ -26,6 +26,13 @@ from backend.services.providers.errors import (
     ProviderUnavailableError,
 )
 from backend.services.providers.registry import get_provider, list_provider_names
+from backend.services.providers.streaming import (
+    ProviderStreamDone,
+    ProviderStreamError,
+    ProviderStreamEvent,
+    ProviderStreamStart,
+    ProviderStreamToken,
+)
 from backend.services.providers.types import (
     ProviderMessage,
     ProviderRequest,
@@ -200,6 +207,170 @@ async def call_with_fallback_chain(
     )
 
 
+async def call_with_fallback_chain_streaming(
+    messages: List[ProviderMessage],
+    *,
+    model_chain: List[str],
+    temperature: float = 0.4,
+    max_tokens: Optional[int] = None,
+    timeout_s: float = 60.0,
+    extra: Optional[dict] = None,
+) -> AsyncIterator[ProviderStreamEvent]:
+    """Phase 5.2 — streaming variant of call_with_fallback_chain.
+
+    Tries each model in `model_chain` in order. The FIRST model that
+    successfully reaches ProviderStreamStart "wins" — its tokens are
+    yielded out and we never retry mid-stream (any mid-stream failure
+    surfaces as a terminal ProviderStreamError to the caller).
+
+    Pre-start failures (auth / unavailable / invalid_request / immediate
+    timeout) trip a fallback attempt at the next model in the chain.
+
+    This generator NEVER raises across a yield — every error becomes
+    a terminal ProviderStreamError event so the SSE route can frame it.
+    Callers MUST consume until the generator is exhausted; cancelling
+    mid-stream is supported (asyncio.CancelledError propagates through
+    the inner provider generator cleanly).
+    """
+    if not model_chain:
+        yield ProviderStreamError(
+            code="ROUTER_NO_CHAIN",
+            message="call_with_fallback_chain_streaming requires a non-empty model_chain",
+            provider="-",
+        )
+        return
+
+    extra = extra or {}
+    attempts: List[dict] = []
+    last_error: Optional[str] = None
+
+    for i, model_id in enumerate(model_chain, start=1):
+        provider_name = resolve_provider_for_model(model_id)
+        if not provider_name:
+            attempts.append({
+                "model": model_id, "provider": None,
+                "result": "unknown_provider",
+            })
+            logger.warning(
+                "provider_router.stream | attempt=%d/%d | model=%s | result=unknown_provider",
+                i, len(model_chain), model_id,
+            )
+            last_error = f"unknown provider for model {model_id!r}"
+            continue
+
+        try:
+            provider = get_provider(provider_name)
+        except ProviderUnavailableError as exc:
+            attempts.append({
+                "model": model_id, "provider": provider_name,
+                "result": "provider_not_registered", "error": str(exc),
+            })
+            logger.warning(
+                "provider_router.stream | attempt=%d/%d | model=%s | provider=%s "
+                "| result=provider_not_registered | error=%s",
+                i, len(model_chain), model_id, provider_name, exc,
+            )
+            last_error = str(exc)
+            continue
+
+        # Providers that DON'T advertise streaming get skipped at this
+        # tier — they'll be unreachable here. The /v2/orchestrate/stream
+        # route falls back to the non-streaming call_with_fallback_chain
+        # when streaming is unavailable across the whole chain.
+        if not getattr(provider, "supports_streaming", False):
+            attempts.append({
+                "model": model_id, "provider": provider_name,
+                "result": "streaming_unsupported",
+            })
+            logger.info(
+                "provider_router.stream | attempt=%d/%d | model=%s | provider=%s "
+                "| result=streaming_unsupported (skipping)",
+                i, len(model_chain), model_id, provider_name,
+            )
+            last_error = f"provider {provider_name} does not support streaming"
+            continue
+
+        request = ProviderRequest(
+            messages=messages,
+            model=model_id,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout_s=timeout_s,
+            extra=extra,
+        )
+        logger.info(
+            "provider_router.stream | attempt=%d/%d | model=%s | provider=%s",
+            i, len(model_chain), model_id, provider_name,
+        )
+
+        # Inspect the first event: if it's an error, fall back; if it's
+        # a start, lock in this provider and yield everything from here.
+        gen = provider.stream_chat_completion(request)
+        first: Optional[ProviderStreamEvent] = None
+        try:
+            first = await gen.__anext__()
+        except StopAsyncIteration:
+            first = ProviderStreamError(
+                code="UPSTREAM_ERROR",
+                message="provider generator ended before any event",
+                provider=provider_name,
+            )
+        except Exception as exc:
+            # Non-streaming error path raises into the consumer — catch
+            # and translate to a terminal error so we can fall back.
+            first = ProviderStreamError(
+                code="UPSTREAM_ERROR",
+                message=str(exc)[:300],
+                provider=provider_name,
+            )
+
+        if isinstance(first, ProviderStreamError):
+            attempts.append({
+                "model": model_id, "provider": provider_name,
+                "result": first.code, "error": first.message,
+            })
+            logger.warning(
+                "provider_router.stream | attempt=%d/%d | model=%s | provider=%s "
+                "| result=%s | error=%s",
+                i, len(model_chain), model_id, provider_name,
+                first.code, first.message,
+            )
+            last_error = first.message
+            # Try to close the inner generator cleanly before we move on.
+            try:
+                await gen.aclose()
+            except Exception:
+                pass
+            continue
+
+        # Success — yield the start frame, then everything that follows.
+        attempts.append({
+            "model": model_id, "provider": provider_name,
+            "result": "streaming",
+        })
+        yield first
+
+        try:
+            async for event in gen:
+                yield event
+        finally:
+            try:
+                await gen.aclose()
+            except Exception:
+                pass
+        return
+
+    # All attempts exhausted — emit a terminal error.
+    yield ProviderStreamError(
+        code="ROUTER_EXHAUSTED",
+        message=(
+            f"All {len(model_chain)} streaming attempts failed. "
+            f"last_error={last_error}"
+        )[:300],
+        provider="-",
+    )
+
+
 def known_providers() -> List[str]:
     """Snapshot of the registered providers (for /health)."""
     try:
@@ -212,6 +383,7 @@ __all__ = [
     "PROVIDER_PREFIXES",
     "resolve_provider_for_model",
     "call_with_fallback_chain",
+    "call_with_fallback_chain_streaming",
     "ProviderRouterError",
     "known_providers",
 ]

@@ -58,6 +58,11 @@ const KNOWN_KINDS = [
   'task.started',
   'task.completed',
   'task.failed',
+  // Phase 5.2 — per-specialist token streaming. Delivered through the
+  // wildcard /v2/events/stream subscription only when the orchestration
+  // was launched via /v2/orchestrate/stream. Payload carries
+  // {task_id, agent_id, delta, seq, provider, model}.
+  'agent.token',
   // Future-proofing: any new bus emission must add its kind here too.
 ] as const;
 

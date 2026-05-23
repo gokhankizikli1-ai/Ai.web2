@@ -21,6 +21,7 @@ import {
 } from '@/stores/projectStore';
 import type { ProjectAgent, AgentMessage } from '@/types/projects';
 import { useProjectActivity } from '@/hooks/useProjectActivity';
+import { runOrchestrationStream } from '@/hooks/useOrchestrateStream';
 import AgentMessageRenderer from '@/components/AgentMessageRenderer';
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -478,6 +479,123 @@ export default function ProjectWorkspace() {
           role:    m.sender === 'user' ? 'user' as const : 'assistant' as const,
           content: m.content,
         }));
+
+      const streamingEnabled =
+        (import.meta.env.VITE_ORCHESTRATE_STREAMING as string | undefined)
+          ?.trim().toLowerCase() === 'true';
+
+      // Phase 5.2 — try /v2/orchestrate/stream first when streaming
+      // is enabled. We render incrementally as token_delta events arrive,
+      // so the user sees ChatGPT-style token-by-token output. If the
+      // stream errors out before any content arrives, fall through to
+      // the non-streaming /v2/orchestrate below.
+      if (streamingEnabled) {
+        let streamInsertedBubble = false;
+        let streamAccumulated = '';
+        // task_id → accumulated chars (used for the "still going" pulse;
+        // not surfaced in the chat bubble — that just gets the
+        // synthesised supervisor reply at the end).
+        const taskChars: Record<string, number> = {};
+        const ac = new AbortController();
+        try {
+          const result = await runOrchestrationStream(
+            {
+              user_id:    userId,
+              message:    messageText,
+              project_id: projectId,
+              agent_id:   selectedAgent.id.startsWith('agent-')
+                            ? 'supervisor'
+                            : (selectedAgent.id || 'supervisor'),
+              metadata:   {
+                from_project_workspace: true,
+                selected_agent: selectedAgent.id,
+                stream: true,
+              },
+              recent_messages: recentMessages.length > 0 ? recentMessages : undefined,
+            },
+            {
+              onTokenDelta: (data) => {
+                const delta = String((data as { delta?: string }).delta || '');
+                const taskId = String((data as { task_id?: string }).task_id || '');
+                if (!delta || !projectId) return;
+                streamAccumulated += delta;
+                if (taskId) taskChars[taskId] = (taskChars[taskId] || 0) + delta.length;
+                if (!streamInsertedBubble) {
+                  addAgentMessage(projectId, selectedAgent.id, {
+                    id: assistantMsgId, content: streamAccumulated, sender: 'agent',
+                    timestamp: new Date().toISOString(), type: 'text',
+                    agentId: selectedAgent.id,
+                  });
+                  streamInsertedBubble = true;
+                } else {
+                  updateAgentMessage(projectId, selectedAgent.id, assistantMsgId, {
+                    content: streamAccumulated,
+                  });
+                }
+                refreshAgents();
+              },
+              onOrchestrationCompleted: (data) => {
+                // The supervisor's synthesis is the canonical reply.
+                // It may already match streamAccumulated (when the
+                // supervisor itself was streamed via OpenAI) or it may
+                // differ when only specialists streamed and the
+                // supervisor produced a separate synthesis. Either way,
+                // the final reply wins.
+                const finalReply = String((data as { reply?: string }).reply || '').trim();
+                if (finalReply && finalReply !== streamAccumulated) {
+                  if (projectId && streamInsertedBubble) {
+                    updateAgentMessage(projectId, selectedAgent.id, assistantMsgId, {
+                      content: finalReply,
+                    });
+                    refreshAgents();
+                  } else if (projectId) {
+                    addAgentMessage(projectId, selectedAgent.id, {
+                      id: assistantMsgId, content: finalReply, sender: 'agent',
+                      timestamp: new Date().toISOString(), type: 'text',
+                      agentId: selectedAgent.id,
+                    });
+                    streamInsertedBubble = true;
+                    refreshAgents();
+                  }
+                  streamAccumulated = finalReply;
+                }
+                replyText = streamAccumulated || finalReply;
+                usedOrchestrator = true;
+                // eslint-disable-next-line no-console
+                console.info('[projectChat] orchestrator_streamed', {
+                  run_id: (data as { run_id?: string }).run_id,
+                  agents_used: (data as { agents_used?: string[] }).agents_used,
+                  chars: replyText.length,
+                });
+              },
+              onOrchestrationFailed: (data) => {
+                // eslint-disable-next-line no-console
+                console.warn('[projectChat] orchestrate_stream_failed',
+                  (data as { error?: string }).error);
+              },
+              onError: (err) => {
+                // eslint-disable-next-line no-console
+                console.warn('[projectChat] orchestrate_stream_error', err);
+              },
+            },
+            ac.signal,
+          );
+          if (result.ok && replyText) {
+            // Stream succeeded — skip the non-streaming fallback.
+            setStreamingMsgId(null);
+            setIsTyping(false);
+            // eslint-disable-next-line no-console
+            console.info('[projectChat] reply_complete', {
+              used_orchestrator: true,
+              used_streaming:    true,
+              reply_chars:       replyText.length,
+            });
+            return;
+          }
+        } catch {
+          // Network / unknown error — fall through to non-streaming /v2/orchestrate
+        }
+      }
 
       // 1. Try the orchestrator (Phase 3.4 + 4.2)
       try {
