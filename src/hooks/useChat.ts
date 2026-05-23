@@ -22,15 +22,23 @@ const generateId = () => Math.random().toString(36).substring(2, 9);
  * If the resolved endpoint still can't be reached, doSend() degrades
  * to a local demo reply instead of failing the chat (see its catch).
  */
+// Bundled default — the same Railway host that useTradingSignals.ts hits
+// (confirmed live, returns 200 on /health). When VITE_API_URL isn't set
+// on Vercel we fall back to this so chat hits the SAME backend trading
+// is already using, instead of a dead host that forces demo mode.
+const BUNDLED_BACKEND = 'https://worker-production-1345.up.railway.app';
+
 function resolveApiUrl(): string {
   const envBase = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
   if (envBase) return `${envBase.replace(/\/+$/, '')}/chat`;
   console.warn(
-    '[useChat] VITE_API_URL is not set — using the bundled default ' +
-    'chat endpoint. If chat falls back to demo mode, set VITE_API_URL ' +
-    'in the Vercel environment to the live backend URL.',
+    `[useChat] VITE_API_URL is not set — using the bundled backend ` +
+    `${BUNDLED_BACKEND}. If chat still falls back to demo mode the live ` +
+    `backend either rejected the request or didn't send a CORS header ` +
+    `for this origin. Set VITE_API_URL in the Vercel environment to ` +
+    `override.`,
   );
-  return 'https://worker-production-2a49.up.railway.app/chat';
+  return `${BUNDLED_BACKEND}/chat`;
 }
 
 const API_URL = resolveApiUrl();
@@ -397,6 +405,18 @@ export function useChat() {
     setIsLoading(true);
 
     try {
+      // Backend accepts an optional `mode` ("fast" | "deep_think" |
+      // "research" | "coding" | "study" | …) for AI routing. The
+      // frontend stores aiMode with a hyphen ("deep-think"); the
+      // backend uses underscores. Omit when unknown so the backend
+      // falls back to automatic intent-based routing.
+      const KNOWN_BACKEND_MODES = new Set([
+        'fast', 'deep_think', 'research', 'coding', 'study',
+        'startup_advisor', 'marketing_dropshipping', 'trading_analyst',
+      ]);
+      const normalizedMode = aiMode ? aiMode.replace('-', '_') : '';
+      const requestMode = KNOWN_BACKEND_MODES.has(normalizedMode) ? normalizedMode : undefined;
+
       const response = await fetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -406,6 +426,7 @@ export function useChat() {
           chat_id: activeSessionId,
           session_id: activeSessionId,
           platform: 'web',
+          ...(requestMode ? { mode: requestMode } : {}),
         }),
       });
 
@@ -474,7 +495,7 @@ export function useChat() {
     } finally {
       setIsLoading(false);
     }
-  }, [activeSessionId]);
+  }, [activeSessionId, aiMode]);
 
   const sendMessage = useCallback(async (content: string) => {
     await doSend(content);
