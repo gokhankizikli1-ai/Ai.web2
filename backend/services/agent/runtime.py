@@ -26,7 +26,10 @@ from typing import Any, Optional
 
 from backend.services.agent.types import AgentRequest, AgentResponse, AgentStep
 from backend.services.agent.budget import Budget
-from backend.services.agent.tool_bridge import tools_for_mode, dispatch_many
+from backend.services.agent.tool_bridge import (
+    tools_for_mode, dispatch_many,
+    tools_for_spec, dispatch_with_orchestration,
+)
 from backend.services.agent.run_context import start_run, get_current_run
 
 logger = logging.getLogger(__name__)
@@ -247,8 +250,16 @@ async def _run_agent_inner(request: AgentRequest) -> AgentResponse:
     )
     trace:  list[AgentStep] = []
 
-    # Build OpenAI tool list (may be empty when no tool is enabled for this mode)
-    tools = tools_for_mode(request.mode)
+    # Build OpenAI tool list. Phase 3.4 — when the caller attached an
+    # AgentSpec to the request (orchestrator path), the spec's
+    # allowed_tools whitelist drives the tool list. Otherwise we fall
+    # back to the legacy mode→tools mapping so /chat behaviour is
+    # byte-identical.
+    _spec = getattr(request, "spec", None)
+    if _spec is not None:
+        tools = tools_for_spec(_spec)
+    else:
+        tools = tools_for_mode(request.mode)
 
     # Compose messages list
     messages: list[dict] = []
@@ -365,7 +376,19 @@ async def _run_agent_inner(request: AgentRequest) -> AgentResponse:
         for _pc in pending:
             _emit_tool_called(_pc)
 
-        results = await dispatch_many(pending, timeout=12.0)
+        # Phase 3.4 — when running with a spec (orchestrator path), use
+        # dispatch_with_orchestration so any `delegate` tool_calls route
+        # through the Phase 3.3 delegate primitive. Without a spec
+        # (legacy /chat agent path), the regular dispatch_many runs —
+        # behaviour is byte-identical to pre-3.4.
+        if _spec is not None:
+            results = await dispatch_with_orchestration(
+                pending,
+                caller_spec_id=getattr(_spec, "id", ""),
+                timeout=12.0,
+            )
+        else:
+            results = await dispatch_many(pending, timeout=12.0)
         budget.bump_tool_calls(len(results))
         _bump("tool_calls", len(results))
 

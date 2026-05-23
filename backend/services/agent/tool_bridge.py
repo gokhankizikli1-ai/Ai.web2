@@ -89,6 +89,189 @@ def tools_for_mode(mode: str) -> list[dict]:
     return out
 
 
+# ── Phase 3.4 — spec-aware tool list + delegate tool descriptor ─────────────
+#
+# When the runtime is called with an AgentSpec attached (orchestrator
+# path), the tool list comes from spec.allowed_tools — NOT the
+# mode→tools table. This is what lets specialist agents have a
+# different toolset from the legacy /chat modes without forcing one
+# global mapping. The supervisor additionally gets the special
+# `delegate` tool when spec.can_delegate=True.
+
+def _delegate_tool_descriptor() -> dict:
+    """OpenAI function-call schema for `delegate`. Enum of target ids
+    is generated from BUILTIN_AGENT_IDS so adding a new built-in spec
+    automatically appears in the supervisor's choices."""
+    try:
+        from backend.services.agent.specs import BUILTIN_AGENT_IDS
+        # supervisor is excluded — it never delegates to itself or to
+        # other delegators (Phase 3.3 guard).
+        candidates = [aid for aid in BUILTIN_AGENT_IDS if aid != "supervisor"]
+    except Exception:
+        candidates = ["researcher", "coder", "trader", "marketer", "strategist"]
+    return {
+        "type": "function",
+        "function": {
+            "name": "delegate",
+            "description": (
+                "Hand a scoped task to a specialist sub-agent and return its reply. "
+                "Use this when the request needs a specialist's persona or tools. "
+                "Make the task self-contained — the sub-agent does NOT see the user's "
+                "original message, only what you pass in `task`."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "agent_id": {
+                        "type": "string",
+                        "enum": candidates,
+                        "description": "Which specialist to invoke.",
+                    },
+                    "task": {
+                        "type": "string",
+                        "description": (
+                            "Scoped task description for the sub-agent. "
+                            "Be specific — include any constraints or output format you want."
+                        ),
+                    },
+                    "context_hint": {
+                        "type": "string",
+                        "description": (
+                            "Optional — extra context from prior sub-agents' findings "
+                            "or your reasoning so far. Keep under 500 characters."
+                        ),
+                    },
+                },
+                "required": ["agent_id", "task"],
+                "additionalProperties": False,
+            },
+        },
+    }
+
+
+def tools_for_spec(spec) -> list[dict]:
+    """Build the OpenAI `tools` parameter from an AgentSpec.allowed_tools
+    whitelist. Mirrors tools_for_mode's filtering (env-disabled tools
+    are dropped) but uses the spec as the source of truth — not the
+    legacy mode→tools table.
+
+    Special handling: 'delegate' isn't in the BaseTool registry; it's
+    an orchestrator primitive. Included only when spec.can_delegate=True.
+    """
+    try:
+        from backend.services.tools.tool_registry import get_tool, is_enabled
+    except Exception as exc:
+        logger.warning("agent.tool_bridge: registry import failed: %s", exc)
+        return []
+
+    out: list[dict] = []
+    for name in (getattr(spec, "allowed_tools", ()) or ()):
+        if name == "delegate":
+            if getattr(spec, "can_delegate", False):
+                out.append(_delegate_tool_descriptor())
+            continue
+        if not is_enabled(name):
+            continue
+        tool = get_tool(name)
+        if tool is None:
+            continue
+        out.append({
+            "type": "function",
+            "function": {
+                "name":        _normalize_tool_name(name),
+                "description": getattr(tool, "description", "") or _FALLBACK_DESC,
+                "parameters":  getattr(tool, "openai_parameters", None) or _DEFAULT_PARAMS_SCHEMA,
+            },
+        })
+    return out
+
+
+async def dispatch_with_orchestration(
+    pending: list[dict],
+    *,
+    caller_spec_id: str,
+    timeout: float = 12.0,
+) -> list[dict]:
+    """Dispatch a step's pending tool calls, routing `delegate` calls
+    through the Phase 3.3 delegate primitive and everything else
+    through dispatch_many.
+
+    Preserves the input order: returns results aligned with `pending`.
+    `delegate` calls run concurrently with each other AND with the
+    regular tool dispatch — same fan-out semantics as dispatch_many.
+    """
+    if not pending:
+        return []
+
+    delegate_indices = [i for i, c in enumerate(pending) if c.get("name") == "delegate"]
+    if not delegate_indices:
+        # Fast path — no delegation in this step, just use existing dispatcher
+        return await dispatch_many(pending, timeout=timeout)
+
+    other_indices = [i for i, c in enumerate(pending) if c.get("name") != "delegate"]
+    results: list = [None] * len(pending)
+
+    # Build the delegate tasks
+    from backend.services.agent.delegate import delegate as _delegate_fn
+
+    async def _run_delegate(idx: int) -> tuple[int, dict]:
+        call = pending[idx]
+        args = call.get("args") or {}
+        agent_id     = (args.get("agent_id") or "").strip()
+        task         = (args.get("task") or "").strip()
+        context_hint = (args.get("context_hint") or "").strip()
+        if not agent_id or not task:
+            return idx, {
+                "ok":           False,
+                "name":         "delegate",
+                "tool_call_id": call.get("tool_call_id"),
+                "output":       None,
+                "error":        "delegate requires agent_id and task",
+                "truncated":    False,
+                "raw_chars":    0,
+            }
+        try:
+            envelope = await _delegate_fn(
+                agent_id=agent_id,
+                task=task,
+                context_hint=context_hint,
+                caller_spec_id=caller_spec_id,
+            )
+        except Exception as exc:  # pragma: no cover — delegate is supposed to swallow
+            envelope = {"ok": False, "code": "DELEGATE_RAISED",
+                         "error": f"{type(exc).__name__}: {exc}"}
+        # Translate the delegate envelope into the tool-result shape the
+        # runtime loop expects (matches dispatch_many's shape).
+        return idx, {
+            "ok":           bool(envelope.get("ok")),
+            "name":         "delegate",
+            "tool_call_id": call.get("tool_call_id"),
+            "output":       envelope,
+            "error":        envelope.get("error") if not envelope.get("ok") else None,
+            "truncated":    False,
+            "raw_chars":    len(str(envelope)),
+        }
+
+    # Fan out delegate calls + other tool calls in parallel
+    import asyncio as _asyncio
+    delegate_task = _asyncio.gather(*(_run_delegate(i) for i in delegate_indices)) \
+        if delegate_indices else None
+    others_task = None
+    if other_indices:
+        other_pending = [pending[i] for i in other_indices]
+        others_task = dispatch_many(other_pending, timeout=timeout)
+
+    if delegate_task is not None:
+        for idx, res in await delegate_task:
+            results[idx] = res
+    if others_task is not None:
+        other_results = await others_task
+        for i, r in zip(other_indices, other_results):
+            results[i] = r
+
+    return results
+
+
 # ── Dispatch ────────────────────────────────────────────────────────────────
 
 async def dispatch_one(name: str, args: dict, *, timeout: float = 12.0) -> dict:

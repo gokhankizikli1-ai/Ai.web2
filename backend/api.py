@@ -165,6 +165,7 @@ def _build_full_app():
         "backend.routes.v2_chat_stream",  # Phase 4a — /v2/chat/stream (SSE)
         "backend.routes.v2_sessions",  # Phase 5 — /v2/sessions/* (auth-bound, parallel to legacy)
         "backend.routes.v2_agent",     # Phase 6d — /v2/agent/execute (gated by ENABLE_AGENT)
+        "backend.routes.v2_orchestrate",  # Phase 3.4 — /v2/orchestrate (gated by ENABLE_ORCHESTRATOR)
         "backend.routes.market",       # Phase 8e — /market/quote/{symbol} (gated by ENABLE_MARKET_QUOTE)
     ]:
         try:

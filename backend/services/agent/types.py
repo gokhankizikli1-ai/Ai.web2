@@ -57,6 +57,13 @@ class AgentRequest:
     # AGENT_MAX_STEPS env (default 6). Used by /v2/agent/test to hard-pin
     # a tighter budget for canary calls without changing global env.
     max_steps:    Optional[int] = None
+    # Phase 3.4 — optional AgentSpec. When set:
+    #   - tool list is built from spec.allowed_tools (not tools_for_mode)
+    #   - if spec.can_delegate=True, the `delegate` tool is exposed and
+    #     dispatched specially through backend.services.agent.delegate
+    # Typed as Any to avoid a circular import (spec→tools→runtime→spec).
+    # Duck-typed at the use site for .allowed_tools / .can_delegate.
+    spec:         Optional[Any] = None
 
 
 @dataclass
