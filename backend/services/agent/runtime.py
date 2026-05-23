@@ -104,7 +104,134 @@ async def run_agent(request: AgentRequest) -> AgentResponse:
 async def _run_agent_body(request: AgentRequest) -> AgentResponse:
     """The pre-Phase-3.1 run_agent body. Kept unchanged — every code
     path inside still works because RunContext threading is opt-in and
-    read-only from this function's perspective."""
+    read-only from this function's perspective.
+
+    Phase 3.2 — emits `agent.started` at entry and `agent.finished` at
+    exit (via a final-emit shim around the inner body). Emissions are
+    no-ops when ENABLE_REALTIME_EVENTS=false."""
+    _emit_agent_started(request)
+    try:
+        result = await _run_agent_inner(request)
+    except Exception:
+        # The pre-existing body catches everything internally — this
+        # branch is a defensive last resort. We still want agent.finished
+        # to fire so subscribers see the lifecycle terminate.
+        _emit_agent_finished(request, None)
+        raise
+    _emit_agent_finished(request, result)
+    return result
+
+
+def _emit_agent_started(request: AgentRequest) -> None:
+    """Phase 3.2 — emit agent.started. Reads run_id / project_id from
+    the active RunContext when present so events carry full context."""
+    try:
+        from backend.services.events import emit
+        ctx = get_current_run()
+        emit(
+            "agent.started",
+            run_id=(ctx.run_id if ctx else None),
+            project_id=(ctx.project_id if ctx else None),
+            user_id=(ctx.user_id if ctx else request.user_id),
+            agent_id=request.mode,  # mode is the closest stable id today
+            payload={
+                "mode":   request.mode,
+                "model":  request.model,
+                "msg_chars": len(request.user_message or ""),
+            },
+        )
+    except Exception:
+        pass
+
+
+def _emit_agent_finished(request: AgentRequest, response: Optional[AgentResponse]) -> None:
+    try:
+        from backend.services.events import emit
+        ctx = get_current_run()
+        emit(
+            "agent.finished",
+            run_id=(ctx.run_id if ctx else None),
+            project_id=(ctx.project_id if ctx else None),
+            user_id=(ctx.user_id if ctx else request.user_id),
+            agent_id=request.mode,
+            payload={
+                "mode":         request.mode,
+                "model":        request.model,
+                "reply_chars":  len(response.reply) if response and response.reply else 0,
+                "steps_used":   response.steps_used if response else 0,
+                "tool_calls":   response.tool_calls if response else 0,
+                "elapsed_ms":   response.elapsed_ms if response else 0,
+                "partial":      bool(response.partial) if response else False,
+                "fallback":     bool(response.fallback) if response else True,
+            },
+        )
+    except Exception:
+        pass
+
+
+def _emit_tool_called(call: dict) -> None:
+    """Phase 3.2 — emit tool.called for a single tool invocation."""
+    try:
+        from backend.services.events import emit
+        ctx = get_current_run()
+        emit(
+            "tool.called",
+            run_id=(ctx.run_id if ctx else None),
+            project_id=(ctx.project_id if ctx else None),
+            user_id=(ctx.user_id if ctx else None),
+            payload={
+                "tool":          call.get("name"),
+                "tool_call_id":  call.get("tool_call_id"),
+                "args_summary":  _summarize_args(call.get("args") or {}),
+            },
+        )
+    except Exception:
+        pass
+
+
+def _emit_tool_result(call: dict, result: dict) -> None:
+    """Phase 3.2 — emit tool.completed or tool.errored based on result.ok."""
+    try:
+        from backend.services.events import emit
+        ctx = get_current_run()
+        ok = bool(result.get("ok"))
+        emit(
+            "tool.completed" if ok else "tool.errored",
+            run_id=(ctx.run_id if ctx else None),
+            project_id=(ctx.project_id if ctx else None),
+            user_id=(ctx.user_id if ctx else None),
+            payload={
+                "tool":         result.get("name") or call.get("name"),
+                "tool_call_id": result.get("tool_call_id") or call.get("tool_call_id"),
+                "ok":           ok,
+                "error":        (result.get("error") or "")[:200] if not ok else None,
+            },
+        )
+    except Exception:
+        pass
+
+
+def _summarize_args(args: dict) -> dict:
+    """Truncate noisy arg values so event payloads stay small."""
+    out = {}
+    for k, v in list(args.items())[:8]:
+        if isinstance(v, str):
+            out[k] = v[:80] + ("…" if len(v) > 80 else "")
+        elif isinstance(v, (int, float, bool)) or v is None:
+            out[k] = v
+        elif isinstance(v, (list, tuple)):
+            out[k] = f"<list[{len(v)}]>"
+        elif isinstance(v, dict):
+            out[k] = f"<dict[{len(v)}]>"
+        else:
+            out[k] = f"<{type(v).__name__}>"
+    return out
+
+
+async def _run_agent_inner(request: AgentRequest) -> AgentResponse:
+    """The original run_agent body. Pulled out so _run_agent_body can
+    bracket it with Phase 3.2 agent.started/finished emissions without
+    re-indenting every return path."""
     with _LOCK:
         _COUNTS["runs_total"]    += 1
         _COUNTS["last_run_mode"]  = request.mode
@@ -232,9 +359,21 @@ async def _run_agent_body(request: AgentRequest) -> AgentResponse:
                 # final-summary pass handle it.
                 break
 
+        # Phase 3.2 — emit tool.called for each pending tool invocation
+        # BEFORE dispatch so subscribers see "I started X" without
+        # waiting for the result. Emit is a no-op when the flag is off.
+        for _pc in pending:
+            _emit_tool_called(_pc)
+
         results = await dispatch_many(pending, timeout=12.0)
         budget.bump_tool_calls(len(results))
         _bump("tool_calls", len(results))
+
+        # Phase 3.2 — emit tool.completed (ok=true) or tool.errored
+        # (ok=false) for each result. Mirrors the pending iteration so
+        # subscribers can pair started → completed by tool_call_id.
+        for _pc, _r in zip(pending, results):
+            _emit_tool_result(_pc, _r)
 
         for tc, r in zip(pending, results):
             trace.append(AgentStep(

@@ -137,6 +137,23 @@ def start_run(
         ctx.parent_agent or "-",
         len(ctx.project_context_block),
     )
+    # Phase 3.2 — emit `run.started`. Wrapped because emission failure
+    # must never break the runtime. No-op when ENABLE_REALTIME_EVENTS=false.
+    try:
+        from backend.services.events import emit
+        emit(
+            "run.started",
+            run_id=ctx.run_id,
+            project_id=ctx.project_id,
+            user_id=ctx.user_id,
+            payload={
+                "parent_agent": ctx.parent_agent,
+                "started_at":   ctx.started_at,
+                "metadata":     dict(ctx.metadata or {}),
+            },
+        )
+    except Exception:
+        pass
     return RunHandle(ctx, token)
 
 
@@ -145,7 +162,8 @@ class RunHandle:
 
     The handle exposes `.ctx` for explicit access, but using `with`
     is the recommended pattern — guarantees the ContextVar is reset
-    even if the body raises.
+    even if the body raises AND that a `run.errored` event is emitted
+    (rather than `run.finished`) when an exception propagates out.
     """
     __slots__ = ("ctx", "_token", "_closed")
 
@@ -158,14 +176,37 @@ class RunHandle:
         return self.ctx
 
     def __exit__(self, exc_type, exc, tb) -> None:
-        self.close()
+        # Pass the exception through so close() emits run.errored
+        # with the cause. The exception itself still propagates —
+        # we don't suppress.
+        self.close(error=exc)
 
-    def close(self) -> None:
+    def close(self, error: Optional[BaseException] = None) -> None:
         if self._closed:
             return
         self._closed = True
         try:
             _CURRENT_RUN.reset(self._token)
+        except Exception:
+            pass
+        # Phase 3.2 — emit run.finished or run.errored. Same try/except
+        # wrap as start_run; emission failures cannot break the runtime.
+        try:
+            from backend.services.events import emit
+            kind = "run.errored" if error is not None else "run.finished"
+            emit(
+                kind,
+                run_id=self.ctx.run_id,
+                project_id=self.ctx.project_id,
+                user_id=self.ctx.user_id,
+                payload={
+                    "error": (
+                        f"{type(error).__name__}: {str(error)[:300]}"
+                        if error is not None else None
+                    ),
+                    "metadata": dict(self.ctx.metadata or {}),
+                },
+            )
         except Exception:
             pass
 
