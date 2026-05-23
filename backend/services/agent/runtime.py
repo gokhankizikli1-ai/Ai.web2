@@ -27,6 +27,7 @@ from typing import Any, Optional
 from backend.services.agent.types import AgentRequest, AgentResponse, AgentStep
 from backend.services.agent.budget import Budget
 from backend.services.agent.tool_bridge import tools_for_mode, dispatch_many
+from backend.services.agent.run_context import start_run, get_current_run
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +76,35 @@ async def run_agent(request: AgentRequest) -> AgentResponse:
 
     When ENABLE_AGENT=false this still runs (so unit tests work); callers gate
     on the flag themselves (ai_service does this).
+
+    Phase 3.1 — wrapped so a RunContext is pushed onto the ContextVar for
+    the duration of this run UNLESS one is already active (the
+    orchestrator, when wired in Phase 3.3, owns the outer context and
+    delegates spawn nested run_agent calls that should INHERIT, not
+    overwrite, the parent's run_id / project_id / scratchpad). The
+    wrap is a thin shim — the existing body lives in _run_agent_body
+    unchanged so the behavior is byte-identical when no orchestrator
+    is active.
     """
+    if get_current_run() is not None:
+        # Already inside an orchestration run — sub-agent path.
+        # Inherit; don't push a new context.
+        return await _run_agent_body(request)
+    with start_run(
+        user_id=request.user_id,
+        metadata={
+            "mode":  request.mode,
+            "model": request.model,
+            "entry": "run_agent",
+        },
+    ):
+        return await _run_agent_body(request)
+
+
+async def _run_agent_body(request: AgentRequest) -> AgentResponse:
+    """The pre-Phase-3.1 run_agent body. Kept unchanged — every code
+    path inside still works because RunContext threading is opt-in and
+    read-only from this function's perspective."""
     with _LOCK:
         _COUNTS["runs_total"]    += 1
         _COUNTS["last_run_mode"]  = request.mode
