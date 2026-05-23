@@ -80,25 +80,75 @@ export default function ProjectWorkspace() {
 
   const handleSendMessage = () => {
     if (!inputMessage.trim() || !projectId || !selectedAgent) return;
-    const userMsg: AgentMessage = { id: `msg-${uid()}`, content: inputMessage.trim(), sender: 'user', timestamp: new Date().toISOString(), type: 'text' };
+    const messageText = inputMessage.trim();
+    const userMsg: AgentMessage = { id: `msg-${uid()}`, content: messageText, sender: 'user', timestamp: new Date().toISOString(), type: 'text' };
     addAgentMessage(projectId, selectedAgent.id, userMsg);
     setInputMessage('');
     setIsTyping(true);
-    // Simulate agent response
-    setTimeout(() => {
+    refreshAgents();
+
+    // Phase 2 — send to the real chat backend with project_id. The backend
+    // injects a "Project Context" block (project description + recent
+    // memory) into the system prompt so the agent's reply is grounded in
+    // this project's shared memory. Falls back to a local placeholder on
+    // any error so the chat never dead-ends (network down, backend cold,
+    // ENABLE_PROJECTS off → 503 on /projects routes — chat itself still
+    // works because project_id is silently ignored when the flag is off).
+    const apiBase = ((import.meta.env.VITE_API_URL as string | undefined)?.trim()
+      || 'https://worker-production-1345.up.railway.app').replace(/\/+$/, '');
+    const userId = (() => {
+      try {
+        const key = 'korvix_user_id';
+        let id = localStorage.getItem(key);
+        if (!id) {
+          id = (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
+            ? crypto.randomUUID() : `u-${Date.now()}`;
+          localStorage.setItem(key, id);
+        }
+        return id;
+      } catch { return 'guest'; }
+    })();
+
+    const fallbackReply = () => {
       const responses = [
         "Great question! Let me think through this step by step.",
         "I've analyzed this for you. Here's what I found...",
         "Interesting approach. Let me provide some insights.",
         "Based on your project context, here's my recommendation.",
       ];
-      const response = responses[Math.floor(Math.random() * responses.length)];
-      const agentMsg: AgentMessage = { id: `msg-${uid()}`, content: response, sender: 'agent', timestamp: new Date().toISOString(), type: 'text', agentId: selectedAgent.id };
+      return responses[Math.floor(Math.random() * responses.length)];
+    };
+
+    (async () => {
+      let replyText = '';
+      try {
+        const res = await fetch(`${apiBase}/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id:    userId,
+            message:    messageText,
+            chat_id:    `project-${projectId}-${selectedAgent.id}`,
+            session_id: `project-${projectId}-${selectedAgent.id}`,
+            platform:   'web',
+            project_id: projectId,
+          }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        replyText = String(data.reply ?? data.response ?? data.message ?? '').trim();
+      } catch {
+        // Swallow — fallback reply below keeps the conversation alive.
+      }
+      if (!replyText) replyText = fallbackReply();
+      const agentMsg: AgentMessage = {
+        id: `msg-${uid()}`, content: replyText, sender: 'agent',
+        timestamp: new Date().toISOString(), type: 'text', agentId: selectedAgent.id,
+      };
       if (projectId) addAgentMessage(projectId, selectedAgent.id, agentMsg);
       refreshAgents();
       setIsTyping(false);
-    }, 1500 + Math.random() * 1000);
-    refreshAgents();
+    })();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

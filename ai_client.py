@@ -111,6 +111,24 @@ async def ask_ai(
     if _is_safety_sensitive(prompt):
         return _SAFETY_RESPONSE
 
+    # Phase 2 — project context injection. When /chat received a
+    # project_id, the request handler pushed a Project Context block
+    # into a ContextVar (no signature change anywhere in the chain).
+    # We prepend it here so the LLM sees project memory before any
+    # mode-specific system text. Silently no-op when ENABLE_PROJECTS
+    # is off or no block was set — chat must never break because of
+    # a missing/broken projects table.
+    try:
+        from backend.services.projects.context import get_current_project_context
+        _project_block = get_current_project_context()
+    except Exception:
+        _project_block = ""
+    if _project_block:
+        system = (
+            _project_block + "\n\n" + system if (system or "").strip()
+            else _project_block
+        )
+
     if model is None:
         model = "gpt-4o" if use_gpt4 else "gpt-4o-mini"
     t0 = time.monotonic()

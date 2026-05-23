@@ -27,6 +27,12 @@ class ChatRequest(BaseModel):
     # backward-compatible: omit/null → existing behaviour, byte-identical.
     # Never hard-translates; injected as a soft system-prompt hint only.
     language: Optional[str] = None
+    # Optional project namespace (Phase 2). When set AND ENABLE_PROJECTS
+    # is on, a "Project Context" block (project description + recent
+    # project memory) is injected into the LLM system prompt for shared
+    # cross-chat context. Silently ignored when the flag is off or the
+    # project_id is unknown — chat behaviour is unchanged.
+    project_id: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
@@ -266,6 +272,38 @@ async def chat(req: ChatRequest):
     response_metadata: Optional[Dict[str, Any]] = None
 
     timer.mark("ai_start")
+
+    # ── Phase 2 — Project Context injection ──────────────────────────────
+    # If the request carries a project_id AND ENABLE_PROJECTS is on,
+    # push a "Project Context" block into a ContextVar so ask_ai()
+    # downstream can prepend it to the system prompt. Wrapped in
+    # try/finally so the ContextVar is always reset even if process_chat
+    # raises — prevents cross-request leakage.
+    _project_ctx_token = None
+    _project_id_for_meta: Optional[str] = None
+    try:
+        if req.project_id:
+            try:
+                from backend.services.projects.context import (
+                    build_project_context_block,
+                    set_current_project_context,
+                )
+                _block = build_project_context_block(req.project_id)
+                if _block:
+                    _project_ctx_token = set_current_project_context(_block)
+                    _project_id_for_meta = req.project_id
+                    logger.info(
+                        "CHAT | rid=%s | project_context_injected | project_id=%s | block_chars=%d",
+                        request_id, req.project_id, len(_block),
+                    )
+            except Exception as _pe:
+                logger.debug(
+                    "CHAT | rid=%s | project_context skipped (%s)",
+                    request_id, _pe,
+                )
+    except Exception:
+        pass
+
     try:
         from backend.services.ai_service import process_chat
         ai_result = await process_chat(
@@ -287,7 +325,21 @@ async def chat(req: ChatRequest):
         response_metadata = ai_result.get("metadata")
     except Exception as e:
         logger.error("CHAT | rid=%s | process_chat error: %s", request_id, e, exc_info=True)
+    finally:
+        if _project_ctx_token is not None:
+            try:
+                from backend.services.projects.context import reset_current_project_context
+                reset_current_project_context(_project_ctx_token)
+            except Exception:
+                pass
     timer.mark("ai_end")
+
+    # Surface the project_id in the response metadata so the frontend
+    # can confirm context injection happened (useful for debugging and
+    # for a future "context used" indicator in the UI).
+    if _project_id_for_meta:
+        response_metadata = dict(response_metadata or {})
+        response_metadata["project_id"] = _project_id_for_meta
 
     if not reply:
         reply = "Bir hata olustu, lutfen tekrar dene."

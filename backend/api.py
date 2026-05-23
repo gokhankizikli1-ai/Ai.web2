@@ -158,6 +158,7 @@ def _build_full_app():
         "backend.routes.stats",
         "backend.routes.tools",        # Phase 4A — /tools/health
         "backend.routes.sessions",     # Phase M2 — /sessions/* (gated by ENABLE_SESSIONS)
+        "backend.routes.projects",     # Phase 2  — /projects/* (gated by ENABLE_PROJECTS)
         "backend.routes.trading",      # Phase T1 — /trading/signals (gated by ENABLE_TRADING_SIGNALS)
         "backend.routes.v2",           # Phase 1 — /v2/* envelope reference impl
         "backend.routes.v2_auth",      # Phase 3a — /v2/auth/* (guest, refresh, me, logout)
