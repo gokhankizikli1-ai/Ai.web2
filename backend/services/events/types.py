@@ -29,6 +29,14 @@ EVENT_KINDS = (
     "tool.called",
     "tool.completed",
     "tool.errored",
+    # Phase 4.2 — deeper specialist execution telemetry. Emitted per
+    # delegated sub-agent so the UI activity timeline can show
+    # "context lookup → draft generated → quality check → completed"
+    # rather than just "started/finished".
+    "agent.context_lookup",   # supervisor handed inherited project context to the sub-agent
+    "agent.draft_generated",  # specialist produced its initial reply (pre-guard)
+    "agent.quality_check",    # quality guard verdict (ok or with reasons)
+    "agent.regenerated",      # guard rejected the draft and the specialist re-ran
 )
 
 

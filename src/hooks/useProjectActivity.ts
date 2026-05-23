@@ -46,6 +46,11 @@ const KNOWN_KINDS = [
   // so no new event kinds need wiring here. The labels just need to
   // recognise the ephemeral agent_ids — handled in
   // orchestrationStatusFor in ProjectWorkspace.tsx.
+  // Phase 4.2 — deeper specialist execution telemetry.
+  'agent.context_lookup',
+  'agent.draft_generated',
+  'agent.quality_check',
+  'agent.regenerated',
   // Future-proofing: any new bus emission must add its kind here too.
 ] as const;
 

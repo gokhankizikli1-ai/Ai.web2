@@ -76,13 +76,23 @@ if _enabled():
 
 # ── Request / response models ──────────────────────────────────────────
 
+class OrchestrateRecentMessage(BaseModel):
+    role:    str = Field(..., pattern="^(user|assistant|system)$")
+    content: str = Field(..., min_length=1, max_length=8_000)
+
+
 class OrchestrateBody(BaseModel):
-    user_id:    str
-    message:    str = Field(..., min_length=1, max_length=20_000)
-    project_id: Optional[str] = None
-    agent_id:   Optional[str] = "supervisor"
-    mode:       Optional[str] = None
-    metadata:   Optional[Dict[str, Any]] = None
+    user_id:         str
+    message:         str = Field(..., min_length=1, max_length=20_000)
+    project_id:      Optional[str] = None
+    agent_id:        Optional[str] = "supervisor"
+    mode:            Optional[str] = None
+    metadata:        Optional[Dict[str, Any]] = None
+    # Phase 4.2 — frontend can pass the last N messages from the
+    # project chat so the supervisor + downstream specialists have
+    # conversation continuity. Cap is enforced server-side (last 12
+    # messages used regardless of how many are sent).
+    recent_messages: Optional[List[OrchestrateRecentMessage]] = None
 
 
 # ── Health ─────────────────────────────────────────────────────────────
@@ -110,8 +120,21 @@ def orchestrate_health() -> dict:
             "max_parallel":       os.getenv("ORCHESTRATOR_MAX_PARALLEL", "5"),
             "total_token_budget": os.getenv("ORCHESTRATOR_TOTAL_TOKEN_BUDGET", "80000"),
         },
+        # Phase 4.2 — model routing config so operators can see which
+        # tier env vars are configured + which models are effective.
+        "model_routing": _routing_summary_safe(),
         "stats":    stats,
     }
+
+
+def _routing_summary_safe() -> dict:
+    """Lazy + defensive — model_routing module is small + side-effect
+    free, but isolate the import so /health never errors."""
+    try:
+        from backend.services.agent.model_routing import routing_summary
+        return routing_summary()
+    except Exception as exc:
+        return {"error": str(exc)}
 
 
 # ── Main route ─────────────────────────────────────────────────────────
@@ -175,6 +198,15 @@ async def orchestrate(body: OrchestrateBody) -> dict:
     # supervisor's system prompt with a list of project-specific
     # agents so the supervisor knows it can delegate to them
     # (their agent_ids resolve via Phase 3.3's get_spec fallback).
+    # Phase 4.2 — model routing for the supervisor. Same resolution as
+    # specialists go through inside delegate(), so a Railway operator
+    # setting MODEL_ORCHESTRATOR=gpt-4o gets it applied here too.
+    from backend.services.agent.model_routing import (
+        resolve_model_for_spec, log_model_selection,
+    )
+    selected_supervisor_model = resolve_model_for_spec(spec)
+    log_model_selection(spec, selected_supervisor_model, run_id=run_id)
+
     effective_system_prompt = spec.system_prompt
     if spec.id == "supervisor" and body.project_id:
         try:
@@ -192,11 +224,34 @@ async def orchestrate(body: OrchestrateBody) -> dict:
                 "exact id listed above to invoke a project agent."
             )
 
+    # Phase 4.2 — recent messages context. When the frontend sends
+    # the last N project messages, append them to the supervisor's
+    # prompt so it has conversation continuity (mirrors how /chat
+    # auto-includes per-user history). Capped at 12 messages /
+    # 6k chars total to keep prompt size bounded.
+    if body.recent_messages:
+        history_lines = ["", "RECENT CONVERSATION (most recent last):"]
+        total_chars = 0
+        for m in body.recent_messages[-12:]:
+            speaker = m.role.upper()
+            text = m.content.strip()
+            if not text:
+                continue
+            line = f"  [{speaker}] {text[:600]}"
+            if total_chars + len(line) > 6000:
+                history_lines.append("  …[truncated]")
+                break
+            history_lines.append(line)
+            total_chars += len(line)
+        if len(history_lines) > 2:  # something was actually appended
+            effective_system_prompt += "\n" + "\n".join(history_lines)
+
     request = AgentRequest(
         user_message=body.message.strip(),
         mode=(body.mode or spec.id),
         user_id=str(body.user_id),
-        model=spec.default_model,
+        # Phase 4.2 — env-tiered model routing (was spec.default_model).
+        model=selected_supervisor_model,
         temperature=spec.temperature,
         max_tokens=2000,
         system_prompt=effective_system_prompt,

@@ -106,6 +106,18 @@ def _estimate_tokens(text: str) -> int:
     return max(1, len(text or "") // 4)
 
 
+def _tier_label_for(spec: Any) -> str:
+    """Phase 4.2 — small label used in observability metadata so the
+    orchestrator vs reasoning vs specialist tier is queryable in run
+    rows without re-deriving it elsewhere."""
+    if spec is None:
+        return "fast"
+    if getattr(spec, "can_delegate", False):
+        return "orchestrator"
+    from backend.services.agent.model_routing import SPEC_ID_TIERS
+    return SPEC_ID_TIERS.get(getattr(spec, "id", "") or "", "specialist")
+
+
 # ── Event emission ──────────────────────────────────────────────────────
 
 def _emit(kind: str, *, ctx: Optional[RunContext], payload: Dict[str, Any]) -> None:
@@ -374,6 +386,18 @@ async def _execute_delegation(
         run_agent = _run_agent_fn
 
     from backend.services.agent.types import AgentRequest
+    from backend.services.agent.model_routing import (
+        resolve_model_for_spec, log_model_selection,
+    )
+
+    # Phase 4.2 — model routing. Specialists now default to gpt-4o
+    # (was gpt-4o-mini in Phase 3.x); orchestrator + reasoning roles
+    # also use gpt-4o. All four tiers are env-overridable.
+    selected_model = resolve_model_for_spec(target_spec)
+    log_model_selection(
+        target_spec, selected_model,
+        run_id=(parent_ctx.run_id if parent_ctx else None),
+    )
 
     sub_request = AgentRequest(
         user_message=composed_message,
@@ -385,7 +409,7 @@ async def _execute_delegation(
         # plugs into the tool registry path.
         mode=target_spec.id,
         user_id=(parent_ctx.user_id if parent_ctx else ""),
-        model=target_spec.default_model,
+        model=selected_model,
         temperature=target_spec.temperature,
         max_tokens=1200,
         system_prompt=target_spec.system_prompt,
@@ -393,6 +417,7 @@ async def _execute_delegation(
         metadata_in={
             "delegated_from":  caller_spec_id,
             "spec_kind":       target_spec.kind,
+            "model_tier":      _tier_label_for(target_spec),
         },
     )
 
@@ -411,7 +436,18 @@ async def _execute_delegation(
         "agent_id": target_spec.id,
         "depth":    child_depth,
         "task":     composed_message[:200],
+        "model":    selected_model,
     })
+
+    # Phase 4.2 — context-lookup telemetry. The sub-agent inherits the
+    # parent's project_context_block (cached) — emit before we cross
+    # the LLM boundary so the UI can show "context lookup → draft" as
+    # distinct steps.
+    if parent_ctx is not None and parent_ctx.project_context_block:
+        _emit("agent.context_lookup", ctx=parent_ctx, payload={
+            "agent_id":    target_spec.id,
+            "block_chars": len(parent_ctx.project_context_block),
+        })
 
     try:
         # Push a child RunContext that INHERITS parent's run_id, project_id,
@@ -443,6 +479,57 @@ async def _execute_delegation(
 
         try:
             response = await run_agent(sub_request)
+
+            # ── Phase 4.2 — quality guard + one-shot retry ────────────
+            # Run the draft through the anti-generic guard. If it
+            # rejects, regenerate ONCE with a stricter prompt. Cap
+            # retries at 1 to bound cost (~2x tokens on failing calls).
+            _emit("agent.draft_generated", ctx=parent_ctx, payload={
+                "agent_id":    target_spec.id,
+                "reply_chars": len(response.reply or ""),
+            })
+            try:
+                from backend.services.agent.quality_guard import check_specialist_output
+                verdict = check_specialist_output(target_spec, response.reply or "")
+            except Exception:
+                verdict = None    # guard import/run failure → keep draft
+
+            if verdict is not None:
+                _emit("agent.quality_check", ctx=parent_ctx, payload={
+                    "agent_id": target_spec.id,
+                    "ok":       verdict.ok,
+                    "reasons":  list(verdict.reasons[:3]),
+                })
+                if not verdict.ok:
+                    logger.info(
+                        "agent.quality_guard_rejected | agent=%s | reasons=%s",
+                        target_spec.id, verdict.reasons[:3],
+                    )
+                    _emit("agent.regenerated", ctx=parent_ctx, payload={
+                        "agent_id": target_spec.id,
+                        "reasons":  list(verdict.reasons[:3]),
+                    })
+                    # Build retry request with the suggested_fix appended.
+                    from dataclasses import replace as _dc_replace
+                    retry_request = _dc_replace(
+                        sub_request,
+                        user_message=(
+                            composed_message + "\n\n" + verdict.suggested_fix
+                        ),
+                    )
+                    try:
+                        retry_response = await run_agent(retry_request)
+                        # Use the retry if it's at least as long as the
+                        # original — shorter usually = the LLM gave up.
+                        if (retry_response.reply
+                                and len(retry_response.reply) >= len(response.reply or "") * 0.7):
+                            response = retry_response
+                    except Exception as _re:
+                        # Retry crashed — keep the original draft
+                        logger.debug(
+                            "agent.quality_retry_failed | agent=%s | error=%s",
+                            target_spec.id, _re,
+                        )
         finally:
             handle.close()
 

@@ -181,6 +181,34 @@ function orchestrationStatusFor(evt: {
       return { label: `${p.tool ?? 'Tool'} done`, color: '#94a3b8', pulse: false };
     case 'tool.errored':
       return { label: `${p.tool ?? 'Tool'} failed`, color: '#fbbf24', pulse: false };
+
+    // Phase 4.2 — deeper specialist telemetry. Each step becomes its own
+    // line in the activity timeline so "context lookup → draft → quality
+    // check → completed" reads as visible execution rather than opaque
+    // "thinking…".
+    case 'agent.context_lookup':
+      return {
+        label: `${targetName} reading project context`,
+        color: targetColor, pulse: true,
+      };
+    case 'agent.draft_generated':
+      return {
+        label: `${targetName} draft ready`,
+        color: targetColor, pulse: true,
+      };
+    case 'agent.quality_check': {
+      const ok = (evt.payload as { ok?: boolean })?.ok;
+      return ok
+        ? { label: `${targetName} passed quality check`,
+            color: '#34d399', pulse: false }
+        : { label: `${targetName} quality check flagged issues`,
+            color: '#fbbf24', pulse: true };
+    }
+    case 'agent.regenerated':
+      return {
+        label: `${targetName} regenerating with stricter contract`,
+        color: '#fbbf24', pulse: true,
+      };
     default:
       return { label: evt.kind, color: '#94a3b8', pulse: false };
   }
@@ -396,7 +424,19 @@ export default function ProjectWorkspace() {
       let replyText = '';
       let usedOrchestrator = false;
 
-      // 1. Try the orchestrator (Phase 3.4)
+      // Phase 4.2 — send the last 12 messages of THIS agent's chat so
+      // the orchestrator has conversation continuity (the new
+      // recent_messages field on OrchestrateBody). Skip the placeholder
+      // we just inserted; map to the backend's {role, content} shape.
+      const recentMessages = selectedAgent.messages
+        .filter((m) => m.id !== assistantMsgId && (m.content || '').trim().length > 0)
+        .slice(-12)
+        .map((m) => ({
+          role:    m.sender === 'user' ? 'user' as const : 'assistant' as const,
+          content: m.content,
+        }));
+
+      // 1. Try the orchestrator (Phase 3.4 + 4.2)
       try {
         const res = await fetch(`${apiBase}/v2/orchestrate`, {
           method: 'POST',
@@ -412,6 +452,7 @@ export default function ProjectWorkspace() {
                           ? 'supervisor'
                           : (selectedAgent.id || 'supervisor'),
             metadata:   { from_project_workspace: true, selected_agent: selectedAgent.id },
+            recent_messages: recentMessages.length > 0 ? recentMessages : undefined,
           }),
         });
         if (res.ok) {
