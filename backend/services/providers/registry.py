@@ -150,6 +150,19 @@ def bootstrap_default_providers() -> None:
     except Exception as exc:
         logger.warning("anthropic provider bootstrap failed (non-fatal): %s", exc)
 
+    # Phase 4.3 — Google Gemini. google-generativeai SDK is in
+    # requirements.txt; register only when GEMINI_API_KEY is set so
+    # operators who don't use Gemini don't pay any cost.
+    try:
+        from backend.services.providers.gemini_provider import GeminiProvider
+        p = GeminiProvider()
+        if p.is_available():
+            register_provider(p)
+        else:
+            logger.info("gemini provider skipped: GEMINI_API_KEY not set")
+    except Exception as exc:
+        logger.warning("gemini provider bootstrap failed (non-fatal): %s", exc)
+
 
 def _reset_for_tests() -> None:
     """Internal — clears the registry. Used by smoke tests; not exported."""

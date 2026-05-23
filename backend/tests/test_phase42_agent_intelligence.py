@@ -53,14 +53,20 @@ def test_routing_supervisor_uses_orchestrator_tier(monkeypatch):
     assert resolve_model_for_spec(get_spec("coder")) == "gpt-4o-mini"
 
 
-def test_routing_research_strategist_use_reasoning_tier(monkeypatch):
+def test_routing_strategist_product_strategist_use_reasoning_tier(monkeypatch):
+    """Phase 4.3 split: researcher moved to its own `research` tier
+    (Gemini), while strategist + product_strategist stay on the
+    generic `reasoning` tier (operator's pick)."""
     monkeypatch.setenv("MODEL_REASONING",  "o1-preview")
     monkeypatch.setenv("MODEL_SPECIALIST", "gpt-4o-mini")
     from backend.services.agent.model_routing import resolve_model_for_spec
     from backend.services.agent.specs import get_spec
-    for sid in ("researcher", "strategist", "product_strategist"):
+    for sid in ("strategist", "product_strategist"):
         assert resolve_model_for_spec(get_spec(sid)) == "o1-preview", \
             f"{sid} should resolve to MODEL_REASONING"
+    # Researcher (Phase 4.3) now resolves via MODEL_RESEARCH tier instead
+    monkeypatch.setenv("MODEL_RESEARCH", "gemini-2.5-pro")
+    assert resolve_model_for_spec(get_spec("researcher")) == "gemini-2.5-pro"
     # Other specialists still on specialist tier
     assert resolve_model_for_spec(get_spec("coder")) == "gpt-4o-mini"
 

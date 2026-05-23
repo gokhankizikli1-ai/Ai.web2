@@ -109,13 +109,168 @@ def _estimate_tokens(text: str) -> int:
 def _tier_label_for(spec: Any) -> str:
     """Phase 4.2 — small label used in observability metadata so the
     orchestrator vs reasoning vs specialist tier is queryable in run
-    rows without re-deriving it elsewhere."""
+    rows without re-deriving it elsewhere.
+
+    Phase 4.3 — also reads the role-keyword map so project agents
+    labelled "Frontend Engineer" / "Backend Engineer" / "Research
+    Analyst" route to their per-role tier.
+    """
     if spec is None:
         return "fast"
     if getattr(spec, "can_delegate", False):
         return "orchestrator"
-    from backend.services.agent.model_routing import SPEC_ID_TIERS
-    return SPEC_ID_TIERS.get(getattr(spec, "id", "") or "", "specialist")
+    from backend.services.agent.model_routing import (
+        SPEC_ID_TIERS, ROLE_KEYWORD_TIERS,
+    )
+    spec_id = getattr(spec, "id", "") or ""
+    if spec_id in SPEC_ID_TIERS:
+        return SPEC_ID_TIERS[spec_id]
+    role = (getattr(spec, "role", "") or "").lower()
+    if role:
+        for keyword, tier in ROLE_KEYWORD_TIERS.items():
+            if keyword in role:
+                return tier
+    return "specialist"
+
+
+async def _try_multi_provider_or_run_agent(
+    target_spec: Any,
+    sub_request: Any,
+    parent_ctx: Any,
+    selected_model: str,
+    *,
+    _run_agent_fn: Any = None,
+) -> Any:
+    """Phase 4.3 — fast-path the no-tool specialist case through the
+    multi-provider router (Claude / Gemini / OpenAI) so non-OpenAI
+    models actually get used. Falls back to the OpenAI-bound run_agent
+    when the model IS OpenAI OR the spec has tools (the supervisor's
+    tool-calling path stays on run_agent until Phase 4.3.B).
+
+    `_run_agent_fn` is the test-only override that delegate() accepts.
+    When a stub is provided, ALWAYS use it (tests need to inspect what
+    AgentRequest the runtime saw, regardless of which provider the
+    real router would have picked).
+
+    Returns an AgentResponse — same shape run_agent produces — so the
+    rest of _execute_delegation doesn't care which path produced it.
+    """
+    # Test-override short-circuit. Production never sets _run_agent_fn.
+    if _run_agent_fn is not None:
+        return await _run_agent_fn(sub_request)
+
+    has_tools = bool(getattr(target_spec, "allowed_tools", ()) or ())
+    from backend.services.agent.provider_router import resolve_provider_for_model
+    provider_name = resolve_provider_for_model(selected_model)
+    is_openai_model = (provider_name == "openai") or (provider_name is None)
+
+    # Lazy import to avoid a circular dep (runtime imports delegate
+    # indirectly via tool_bridge.dispatch_with_orchestration).
+    from backend.services.agent.runtime import run_agent as _rt
+
+    if has_tools or is_openai_model:
+        # Existing path — OpenAI SDK tool-calling loop.
+        return await _rt(sub_request)
+
+    # ── Multi-provider specialist path ────────────────────────────
+    # Build a ProviderMessage list from the AgentRequest's system
+    # prompt + user message. The Phase 4.2 history-injection layer
+    # already lives in the system prompt (recent_messages), so we
+    # don't reconstruct a chat transcript here — system + user is
+    # sufficient.
+    from backend.services.agent.model_routing import model_chain_for_spec
+    from backend.services.agent.provider_router import (
+        call_with_fallback_chain, ProviderRouterError,
+    )
+    from backend.services.providers.types import ProviderMessage
+    from backend.services.agent.types import AgentResponse
+
+    messages = []
+    if (getattr(sub_request, "system_prompt", "") or "").strip():
+        messages.append(ProviderMessage(
+            role="system",
+            content=sub_request.system_prompt,
+        ))
+    messages.append(ProviderMessage(
+        role="user",
+        content=sub_request.user_message or "",
+    ))
+
+    # Build the fallback chain: [primary, fallback?]. resolve_model_for_spec
+    # already gave us `selected_model` so model_chain_for_spec returns
+    # the same primary plus its fallback.
+    chain = model_chain_for_spec(target_spec)
+    # If the caller passed a model override (e.g. retry request keeps
+    # the same model id), make sure the chain starts with selected_model.
+    if chain[0] != selected_model:
+        chain = [selected_model] + [m for m in chain if m != selected_model]
+
+    try:
+        import time as _time
+        t0 = _time.monotonic()
+        result = await call_with_fallback_chain(
+            messages=messages,
+            model_chain=chain,
+            temperature=float(getattr(sub_request, "temperature", 0.4) or 0.4),
+            max_tokens=int(getattr(sub_request, "max_tokens", 1200) or 1200),
+            timeout_s=30.0,
+        )
+        elapsed_ms = int((_time.monotonic() - t0) * 1000)
+        return AgentResponse(
+            reply=result.content,
+            mode=getattr(sub_request, "mode", "") or target_spec.id,
+            model=result.model,
+            provider=result.provider,
+            steps_used=1,
+            tool_calls=0,
+            elapsed_ms=elapsed_ms,
+            trace=[],
+            partial=False,
+            fallback=False,
+            metadata={
+                "tier":           _tier_label_for(target_spec),
+                "provider":       result.provider,
+                "model":          result.model,
+                "tokens":         {
+                    "prompt":     result.usage.prompt_tokens,
+                    "completion": result.usage.completion_tokens,
+                    "total":      result.usage.total_tokens,
+                },
+                "finish_reason":  result.finish_reason,
+                "routed_via":     "multi_provider",
+            },
+        )
+    except ProviderRouterError as exc:
+        # All providers in the chain failed. Don't crash — surface a
+        # short error reply so the supervisor can synthesise around it.
+        # The Phase 4.2 quality guard will catch the empty/short reply
+        # and may also flag it for the user.
+        logger.warning(
+            "delegate.multi_provider_failed | spec=%s | chain=%s | last_error=%s",
+            target_spec.id, chain, exc.last_error,
+        )
+        return AgentResponse(
+            reply=(
+                f"[{target_spec.name or target_spec.id} unavailable — "
+                f"every model in the fallback chain failed. "
+                f"Supervisor: continue with the remaining specialists.]"
+            ),
+            mode=getattr(sub_request, "mode", "") or target_spec.id,
+            model=chain[-1] if chain else "",
+            provider="-",
+            steps_used=0,
+            tool_calls=0,
+            elapsed_ms=0,
+            trace=[],
+            partial=True,
+            fallback=True,
+            metadata={
+                "tier":         _tier_label_for(target_spec),
+                "routed_via":   "multi_provider",
+                "router_error": str(exc)[:240],
+                "attempts":     exc.attempts,
+            },
+        )
 
 
 # ── Event emission ──────────────────────────────────────────────────────
@@ -478,7 +633,19 @@ async def _execute_delegation(
             )
 
         try:
-            response = await run_agent(sub_request)
+            # ── Phase 4.3 — multi-provider fast path ─────────────────
+            # When the specialist has no tools AND the resolved model is
+            # NOT OpenAI (claude-* / gemini-*), bypass run_agent (which
+            # is hard-wired to OpenAI's tool-calling SDK) and call the
+            # provider directly via the fallback chain. Specialists are
+            # LLM-only today (allowed_tools=()) so this is the common case.
+            #
+            # When the model IS OpenAI OR tools are required, fall through
+            # to the existing run_agent path (Phase 3.x runtime — unchanged).
+            response = await _try_multi_provider_or_run_agent(
+                target_spec, sub_request, parent_ctx, selected_model,
+                _run_agent_fn=_run_agent_fn,
+            )
 
             # ── Phase 4.2 — quality guard + one-shot retry ────────────
             # Run the draft through the anti-generic guard. If it
@@ -518,7 +685,10 @@ async def _execute_delegation(
                         ),
                     )
                     try:
-                        retry_response = await run_agent(retry_request)
+                        retry_response = await _try_multi_provider_or_run_agent(
+                            target_spec, retry_request, parent_ctx, selected_model,
+                            _run_agent_fn=_run_agent_fn,
+                        )
                         # Use the retry if it's at least as long as the
                         # original — shorter usually = the LLM gave up.
                         if (retry_response.reply
