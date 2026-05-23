@@ -185,18 +185,29 @@ function saveActiveSessionId(id: string) {
 
 /**
  * Choose which session to activate when the hook mounts. Priority:
- *   1. The persisted activeSessionId, if it still resolves to a session
- *      that exists (covers refresh + Home→back round-trips).
- *   2. The most-recently-updated session that HAS messages — so a user
+ *   1. The initial tab's mapped session, if it still exists.
+ *   2. The persisted activeSessionId, if it still resolves to a session
+ *      and does not belong to another tab.
+ *   3. The most-recently-updated session that HAS messages — so a user
  *      returning to /chat after sending a message lands on it, not on
  *      an empty placeholder that happens to be at index 0.
- *   3. The most-recently-updated session overall.
- *   4. The first session in the array, or a fresh id as a last resort.
+ *   4. The most-recently-updated session overall.
+ *   5. The first session in the array, or a fresh id as a last resort.
  */
-function pickInitialActiveId(sessions: ChatSession[]): string {
+function pickInitialActiveId(
+  sessions: ChatSession[],
+  tabSessionMap: Record<string, string>,
+  initialTab: WorkspaceTab,
+): string {
   if (!sessions.length) return generateId();
+  const tabSessionId = tabSessionMap[initialTab];
+  if (tabSessionId && sessions.some((s) => s.id === tabSessionId)) return tabSessionId;
+
   const stored = loadActiveSessionId();
-  if (stored && sessions.some((s) => s.id === stored)) return stored;
+  const mappedSessionIds = new Set(Object.values(tabSessionMap));
+  if (stored && sessions.some((s) => s.id === stored) && !mappedSessionIds.has(stored)) {
+    return stored;
+  }
   const withMessages = sessions
     .filter((s) => s.messages.length > 0)
     .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
@@ -225,7 +236,7 @@ function saveTabSessions(map: Record<string, string>) {
   localStorage.setItem('korvix_tab_sessions', JSON.stringify(map));
 }
 
-export function useChat() {
+export function useChat(initialTab: WorkspaceTab = 'chat') {
   // Load persisted sessions or create fresh ones. `hadPersistedSessions`
   // lets the save-effect below skip its first run when we just hydrated
   // from disk — saving the same bytes back is a no-op, and skipping it
@@ -237,11 +248,13 @@ export function useChat() {
     ? (persisted as ChatSession[])
     : TAB_KEYS.map((tab) => createEmptySession(`New ${tab.charAt(0).toUpperCase() + tab.slice(1)}`));
   const [sessions, setSessions] = useState<ChatSession[]>(initialSessions);
+  // Per-tab session isolation
+  const [tabSessionMap, setTabSessionMap] = useState<Record<string, string>>(loadTabSessions);
+  const [currentTab, setCurrentTab] = useState<WorkspaceTab>(initialTab);
   // Restore the last-active session id so Home→back / refresh lands the
-  // user on the SAME conversation they were viewing, not on the empty
-  // placeholder that happens to be at index 0.
+  // user on the same conversation for the currently selected workspace.
   const [activeSessionId, setActiveSessionId] = useState<string>(
-    () => pickInitialActiveId(initialSessions),
+    () => pickInitialActiveId(initialSessions, tabSessionMap, initialTab),
   );
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -254,10 +267,6 @@ export function useChat() {
   const [inputText, setInputText] = useState('');
   const [activeTools, setActiveTools] = useState<string[]>([]);
   const [memoryRefs, setMemoryRefs] = useState<string[]>([]);
-
-  // Per-tab session isolation
-  const [tabSessionMap, setTabSessionMap] = useState<Record<string, string>>(loadTabSessions);
-  const [currentTab, setCurrentTab] = useState<WorkspaceTab>('chat');
 
   // Persist tab session map
   useEffect(() => {
@@ -410,7 +419,8 @@ export function useChat() {
       });
 
       if (!response.ok) {
-        throw new Error(`Server responded with ${response.status}. Please try again.`);
+        setError(`Server responded with ${response.status}. Please try again.`);
+        return;
       }
 
       const data = await response.json();
@@ -441,7 +451,7 @@ export function useChat() {
              Access-Control-Allow-Origin header for this Vercel origin
              (a blocked request surfaces as "TypeError: Load failed" /
              "Failed to fetch").
-           • A non-2xx response, or a 2xx with an empty/non-JSON body.
+           • A 2xx response with an empty/non-JSON body.
          Instead of dead-ending the user with a raw "Load failed"
          banner, append a local placeholder reply so the conversation
          stays usable until the real backend is connected. */

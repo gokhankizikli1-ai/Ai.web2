@@ -109,12 +109,16 @@ function ToolbarDropdown({
 
 export default function ChatDashboard() {
   const { settings, updateSettings, t } = useApp();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const initialWorkspace = (searchParams.get('tab') as WorkspaceTab) || settings.defaultWorkspace;
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>(initialWorkspace);
   const {
     activeSession, activeSessionId, error, isLoading,
     aiMode, searchQuery, filteredSessions, pinnedMessages, inputText, currentTab,
     createNewChat, selectSession, deleteSession, sendMessage, retry, togglePin,
     setAiMode, setSearchQuery, setInputText, switchTab,
-  } = useChat();
+  } = useChat(initialWorkspace);
 
   const { open: cmdOpen, setOpen: setCmdOpen } = useCommandPalette();
   const { toasts, addToast, removeToast } = useToast();
@@ -125,11 +129,6 @@ export default function ChatDashboard() {
   const [exportOpen, setExportOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
-  const [searchParams, setSearchParams] = useSearchParams();
-  const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>(
-    (searchParams.get('tab') as WorkspaceTab) || settings.defaultWorkspace
-  );
   // Timeline only shows for research/agent deep operations
 
   // Sync active tab when defaultWorkspace changes
