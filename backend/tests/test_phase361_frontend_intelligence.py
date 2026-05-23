@@ -233,10 +233,14 @@ def test_supervisor_explicitly_forbids_summarising_specialist_output():
 
 
 def test_supervisor_routes_backend_intent_to_backend_engineer():
+    """Phase 4.1 reworded the routing rules into terser intent lists.
+    Verify the intent vocabulary (API + backend + database + auth) is
+    still present, regardless of the exact glue words."""
     from backend.services.agent.specs import get_spec
     sv = get_spec("supervisor")
     p = sv.system_prompt
-    assert "API for X" in p or "API for" in p or "database schema" in p
+    # The Phase 4.1 line: "API / backend / database / auth → Backend Engineer..."
+    assert "API" in p and "backend" in p.lower() and "database" in p.lower()
     assert "Backend Engineer" in p or "coder" in p.lower()
 
 

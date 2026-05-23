@@ -101,29 +101,80 @@ interface OrchestrationStatus {
   pulse: boolean;
 }
 
+/**
+ * Phase 4.1 — humanise an agent_id into a display name. The new
+ * built-ins use snake_case ids (ux_designer, brand_designer, ...);
+ * ephemeral specialists use `ephemeral-<role>-<hash>`. Both should
+ * read as natural English in the activity timeline.
+ */
+function humanAgentName(id: string | null | undefined): string {
+  if (!id) return 'agent';
+  if (id.startsWith('ephemeral-')) {
+    // 'ephemeral-security_auditor-c1eaa46e' → 'Security Auditor (new)'
+    const rolePart = id.replace(/^ephemeral-/, '').replace(/-[0-9a-f]{6,}$/i, '');
+    return `${rolePart.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())} (new)`;
+  }
+  // 'ux_designer' → 'UX Designer'; 'brand_designer' → 'Brand Designer'
+  const upcase = new Set(['ux', 'ui', 'api', 'cto', 'pm', 'qa', 'seo']);
+  return id.split('_')
+    .map((part) => upcase.has(part.toLowerCase())
+      ? part.toUpperCase()
+      : part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+/** Phase 4.1 — workflow-stage colour for an agent_id, so multi-agent
+ *  panels read as a colourful timeline rather than a uniform blob. */
+function agentTone(id: string | null | undefined): string {
+  if (!id) return '#34d399';
+  const map: Record<string, string> = {
+    researcher:         '#a78bfa',  // violet — analysis
+    product_strategist: '#fb923c',  // orange — strategy
+    ux_designer:        '#38bdf8',  // sky — design flow
+    brand_designer:     '#f472b6',  // pink — visual
+    copywriter:         '#fbbf24',  // amber — voice
+    coder:              '#34d399',  // emerald — build
+    marketer:           '#facc15',  // yellow — growth
+    strategist:         '#fb923c',  // orange — advice
+    trader:             '#22d3ee',  // cyan — markets
+  };
+  if (map[id]) return map[id];
+  if (id.startsWith('ephemeral-')) return '#c084fc';  // purple — ephemeral
+  return '#34d399';
+}
+
 function orchestrationStatusFor(evt: {
   kind: string;
   agent_id?: string | null;
   payload?: Record<string, unknown>;
 }): OrchestrationStatus {
   const p = (evt.payload ?? {}) as { agent_id?: string; tool?: string; error?: string; code?: string };
+  const targetId = p.agent_id ?? evt.agent_id ?? undefined;
+  const targetName = humanAgentName(targetId);
+  const targetColor = agentTone(targetId);
+
   switch (evt.kind) {
     case 'run.started':
-      return { label: 'Planning…', color: '#22d3ee', pulse: true };
+      return { label: 'Supervisor planning…', color: '#22d3ee', pulse: true };
     case 'run.finished':
-      return { label: 'Completed', color: '#94a3b8', pulse: false };
+      return { label: 'Orchestration complete', color: '#94a3b8', pulse: false };
     case 'run.errored':
       return { label: `Orchestration errored — ${p.error ?? 'unknown'}`, color: '#fbbf24', pulse: false };
     case 'delegate.started':
-      return { label: `Delegating → ${p.agent_id ?? 'specialist'}`, color: '#a78bfa', pulse: true };
+      // Spawned ephemeral agents read as "Spawning → X (new)"; known
+      // agents read as "Delegating → X".
+      return {
+        label: `${targetId?.startsWith('ephemeral-') ? 'Spawning' : 'Delegating'} → ${targetName}`,
+        color: targetColor, pulse: true,
+      };
     case 'delegate.returned':
-      return { label: `${p.agent_id ?? 'Specialist'} returned`, color: '#94a3b8', pulse: false };
+      return { label: `${targetName} ready`, color: '#94a3b8', pulse: false };
     case 'delegate.errored':
       return { label: `Delegation failed — ${p.code ?? p.error ?? 'unknown'}`, color: '#fbbf24', pulse: false };
     case 'agent.started':
-      return { label: `Generating with ${evt.agent_id ?? 'agent'}`, color: '#34d399', pulse: true };
+      return { label: `${targetName} thinking…`, color: targetColor, pulse: true };
     case 'agent.finished':
-      return { label: `${evt.agent_id ?? 'Agent'} finished`, color: '#94a3b8', pulse: false };
+      return { label: `${targetName} delivered`, color: '#94a3b8', pulse: false };
     case 'tool.called':
       return { label: `Calling tool: ${p.tool ?? 'unknown'}`, color: '#34d399', pulse: true };
     case 'tool.completed':

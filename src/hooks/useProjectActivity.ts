@@ -41,6 +41,11 @@ const KNOWN_KINDS = [
   'agent.started', 'agent.finished',
   'tool.called', 'tool.completed', 'tool.errored',
   'delegate.started', 'delegate.returned', 'delegate.errored',
+  // Phase 4.1 — spawn_specialist tool emits the same delegate.* events
+  // (it goes through the same _execute_delegation pipeline as delegate),
+  // so no new event kinds need wiring here. The labels just need to
+  // recognise the ephemeral agent_ids — handled in
+  // orchestrationStatusFor in ProjectWorkspace.tsx.
   // Future-proofing: any new bus emission must add its kind here too.
 ] as const;
 

@@ -305,7 +305,12 @@ def test_supervisor_prompt_not_augmented_when_project_has_no_agents(orchestrate_
         "user_id": "u-1", "message": "hi", "project_id": p.id,
     })
     assert r.status_code == 200
-    assert "PROJECT AGENTS AVAILABLE" not in captured["system_prompt"]
+    # Phase 4.1: the static Supervisor prompt now mentions the literal
+    # phrase "PROJECT AGENTS AVAILABLE" as documentation (telling the
+    # LLM what that section means when injected). We check for the
+    # v2_orchestrate-injected wrapper specifically, matching the same
+    # specificity used in test_supervisor_prompt_not_augmented_without_project_id.
+    assert "PROJECT AGENTS AVAILABLE (prefer over built-ins" not in captured["system_prompt"]
 
 
 # ══════════════════════════════════════════════════════════════════════

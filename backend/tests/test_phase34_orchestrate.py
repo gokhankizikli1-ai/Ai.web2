@@ -141,7 +141,10 @@ def test_orchestrate_basic_happy_path(client, monkeypatch):
     assert "run_id" in body and len(body["run_id"]) >= 8
     assert body["trace"]["delegations"] == 0
     assert body["metadata"]["max_depth"]    == 2
-    assert body["metadata"]["max_parallel"] == 3
+    # Phase 4.1 raised the default panel parallelism from 3 to 5 so a
+    # full autonomous panel (researcher + product + ux + brand + copy +
+    # coder) can fan out concurrently.
+    assert body["metadata"]["max_parallel"] == 5
 
 
 # ── Project context injection ─────────────────────────────────────────

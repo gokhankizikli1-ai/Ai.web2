@@ -27,13 +27,22 @@ import pytest
 # ══════════════════════════════════════════════════════════════════════
 # Built-in specs
 
-def test_all_six_builtins_load():
+def test_all_builtins_load():
+    """The 6 original Phase 3.1 built-ins + any Phase 4+ panel
+    specialists must all load in BUILTIN_AGENT_IDS order. Phase 4.1
+    added 4 panel agents (ux_designer / brand_designer / copywriter /
+    product_strategist); the count assertion tracks BUILTIN_AGENT_IDS
+    so future additions don't break the test."""
     from backend.services.agent.specs import list_specs, BUILTIN_AGENT_IDS
     specs = list_specs()
     ids = [s.id for s in specs]
     # Order matches BUILTIN_AGENT_IDS — important for stable UI rendering
     assert ids == list(BUILTIN_AGENT_IDS)
-    assert len(specs) == 6
+    assert len(specs) == len(BUILTIN_AGENT_IDS)
+    # The original 6 Phase 3.1 specs MUST stay (backwards compat).
+    for original in ("supervisor", "researcher", "coder",
+                     "trader", "marketer", "strategist"):
+        assert original in ids, f"original built-in {original} disappeared"
 
 
 def test_each_builtin_has_required_fields():

@@ -106,8 +106,9 @@ def orchestrate_health() -> dict:
         },
         "limits": {
             "max_depth":          os.getenv("ORCHESTRATOR_MAX_DEPTH", "2"),
-            "max_parallel":       os.getenv("ORCHESTRATOR_MAX_PARALLEL", "3"),
-            "total_token_budget": os.getenv("ORCHESTRATOR_TOTAL_TOKEN_BUDGET", "40000"),
+            # Phase 4.1 raised defaults to accommodate 5-agent panels
+            "max_parallel":       os.getenv("ORCHESTRATOR_MAX_PARALLEL", "5"),
+            "total_token_budget": os.getenv("ORCHESTRATOR_TOTAL_TOKEN_BUDGET", "80000"),
         },
         "stats":    stats,
     }
@@ -309,8 +310,8 @@ async def orchestrate(body: OrchestrateBody) -> dict:
             "elapsed_ms":         getattr(response, "elapsed_ms", 0) if response else 0,
             "model":              spec.default_model,
             "max_depth":          int(os.getenv("ORCHESTRATOR_MAX_DEPTH", "2")),
-            "max_parallel":       int(os.getenv("ORCHESTRATOR_MAX_PARALLEL", "3")),
-            "total_token_budget": int(os.getenv("ORCHESTRATOR_TOTAL_TOKEN_BUDGET", "40000")),
+            "max_parallel":       int(os.getenv("ORCHESTRATOR_MAX_PARALLEL", "5")),
+            "total_token_budget": int(os.getenv("ORCHESTRATOR_TOTAL_TOKEN_BUDGET", "80000")),
         },
     }
 

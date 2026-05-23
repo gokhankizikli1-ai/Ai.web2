@@ -48,17 +48,26 @@ def _max_depth() -> int:
 
 
 def _max_parallel() -> int:
+    """Phase 4.1 — bumped from 3 → 5 to support the new autonomous panel
+    (researcher + product_strategist + ux + brand + copywriter +
+    coder/frontend = up to 6 specialists fanning out concurrently).
+    Override via ORCHESTRATOR_MAX_PARALLEL if you need to throttle."""
     try:
-        return max(1, int(os.getenv("ORCHESTRATOR_MAX_PARALLEL", "3")))
+        return max(1, int(os.getenv("ORCHESTRATOR_MAX_PARALLEL", "5")))
     except ValueError:
-        return 3
+        return 5
 
 
 def _total_token_budget() -> int:
+    """Phase 4.1 — bumped from 40k → 80k. A 5-agent panel + supervisor
+    planning + supervisor synthesis is ~7 LLM calls; 80k headroom keeps
+    a complex 'build my SaaS landing page' run from hitting the cap
+    mid-execution. Architecture quality > token optimization, per the
+    Phase 4.1 brief."""
     try:
-        return max(1000, int(os.getenv("ORCHESTRATOR_TOTAL_TOKEN_BUDGET", "40000")))
+        return max(1000, int(os.getenv("ORCHESTRATOR_TOTAL_TOKEN_BUDGET", "80000")))
     except ValueError:
-        return 40000
+        return 80000
 
 
 # Shared-scratch keys used by delegate to track per-run aggregates.
@@ -115,6 +124,87 @@ def _emit(kind: str, *, ctx: Optional[RunContext], payload: Dict[str, Any]) -> N
 
 
 # ── Public API ──────────────────────────────────────────────────────────
+
+def _build_ephemeral_spec(role: str, persona_summary: str) -> "AgentSpec":
+    """Phase 4.1 — build a temporary AgentSpec for a role that isn't in
+    the built-in registry and wasn't pre-created as a project agent.
+
+    The spec inherits the closest matching role template (via
+    default_system_prompt_for_role) and prepends the supervisor's
+    persona summary on top. Lives only for the current orchestration
+    run — never persisted to disk or to the spec registry.
+    """
+    from backend.services.agent.specs.types import AgentSpec
+    from backend.services.agent.specs.role_templates import default_system_prompt_for_role
+    import uuid as _uuid
+
+    base_prompt = default_system_prompt_for_role(role)
+    persona_summary = (persona_summary or "").strip()
+    if persona_summary:
+        composed_prompt = (
+            f"PERSONA HINT (from Supervisor): {persona_summary}\n\n"
+            f"You take that persona AND follow the role contract below verbatim:\n\n"
+            f"{base_prompt}"
+        )
+    else:
+        composed_prompt = base_prompt
+
+    return AgentSpec(
+        id=f"ephemeral-{role}-{_uuid.uuid4().hex[:8]}",
+        name=(persona_summary[:50] or role.replace("_", " ").title() or "Specialist"),
+        role=role,
+        system_prompt=composed_prompt,
+        allowed_tools=(),                # no tools for ephemeral by default
+        default_model="gpt-4o-mini",
+        max_steps=3,
+        can_delegate=False,
+        temperature=0.4,
+        kind="ephemeral",
+    )
+
+
+async def spawn_and_delegate(
+    *,
+    role: str,
+    persona_summary: str,
+    task: str,
+    context_hint: str = "",
+    caller_spec_id: str = "supervisor",
+    _run_agent_fn=None,
+) -> Dict[str, Any]:
+    """Phase 4.1 — autonomously spawn a temporary specialist for a role
+    that isn't in the built-in roster, then delegate `task` to it.
+
+    Uses the SAME execution pipeline as delegate() — caller authz,
+    depth check, parallel check, token budget, event emissions, the
+    works — so all the safety invariants apply identically.
+
+    Returns the same envelope shape as delegate() so the calling LLM
+    can treat both tools symmetrically.
+    """
+    parent_ctx = get_current_run()
+    # Caller authorisation (must be can_delegate=True, same rule as delegate)
+    caller_spec = get_spec(caller_spec_id) if caller_spec_id else None
+    if caller_spec is None or not caller_spec.can_delegate:
+        result = _err(
+            "DELEGATE_FORBIDDEN",
+            f"Caller {caller_spec_id!r} is not allowed to spawn specialists.",
+        )
+        _emit("delegate.errored", ctx=parent_ctx, payload={
+            "caller": caller_spec_id, "agent_id": f"ephemeral:{role}",
+            "code": result["code"], "error": result["error"],
+        })
+        return result
+
+    target_spec = _build_ephemeral_spec(role, persona_summary)
+    return await _execute_delegation(
+        target_spec=target_spec,
+        task=task,
+        context_hint=context_hint,
+        caller_spec_id=caller_spec_id,
+        _run_agent_fn=_run_agent_fn,
+    )
+
 
 async def delegate(
     *,
@@ -174,6 +264,33 @@ async def delegate(
             "code": result["code"], "error": result["error"],
         })
         return result
+
+    # ── 3-8. Shared execution pipeline ────────────────────────────────
+    return await _execute_delegation(
+        target_spec=target_spec,
+        task=task,
+        context_hint=context_hint,
+        caller_spec_id=caller_spec_id,
+        _run_agent_fn=_run_agent_fn,
+    )
+
+
+async def _execute_delegation(
+    *,
+    target_spec,
+    task: str,
+    context_hint: str,
+    caller_spec_id: str,
+    _run_agent_fn,
+) -> Dict[str, Any]:
+    """Phase 4.1 — shared execution body for delegate() and
+    spawn_and_delegate(). Takes a fully-resolved AgentSpec and runs
+    the recursion / depth / parallel / budget checks before spawning
+    the child run. Extracted so ephemeral and registered specs share
+    the same safety invariants.
+    """
+    parent_ctx = get_current_run()
+    agent_id = target_spec.id
 
     # ── 3. Recursion guard ─────────────────────────────────────────────
     # Sub-agent specs MUST NOT can_delegate. Today only Supervisor

@@ -149,14 +149,93 @@ def _delegate_tool_descriptor() -> dict:
     }
 
 
+def _spawn_specialist_tool_descriptor() -> dict:
+    """Phase 4.1 — OpenAI function-call schema for `spawn_specialist`.
+    Lets the Supervisor autonomously create an ephemeral specialist
+    when no built-in or project agent fits the role it needs (e.g.
+    'security_auditor', 'ml_engineer', 'devops', 'illustrator').
+
+    The role enum lists every role template we have. If the supervisor
+    picks a non-listed role the backend still resolves it via
+    default_system_prompt_for_role's alias map, falling back to the
+    `custom` template — so the enum is guidance, not a hard constraint."""
+    try:
+        from backend.services.agent.specs.role_templates import ROLE_SYSTEM_PROMPTS
+        role_options = sorted(ROLE_SYSTEM_PROMPTS.keys())
+    except Exception:
+        role_options = ["frontend", "backend", "research", "ux", "brand",
+                        "copywriter", "product_strategist", "design",
+                        "trading", "marketer", "ecommerce", "custom"]
+    return {
+        "type": "function",
+        "function": {
+            "name": "spawn_specialist",
+            "description": (
+                "Spawn a NEW ephemeral specialist agent for the current run "
+                "and delegate a task to it. Use this when none of the built-in "
+                "agents fits the role you need — examples: security_auditor, "
+                "ml_engineer, devops, illustrator, technical_writer. The "
+                "ephemeral agent inherits the closest matching role template "
+                "and the persona summary you provide; it lives only for this "
+                "run (not persisted). For known agents, use `delegate` instead."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "role": {
+                        "type": "string",
+                        "enum": role_options,
+                        "description": (
+                            "Closest matching role template. The ephemeral "
+                            "agent inherits this template's output contract "
+                            "(format, prohibitions, structure). Pick the "
+                            "nearest fit; the persona_summary refines it."
+                        ),
+                    },
+                    "persona_summary": {
+                        "type": "string",
+                        "description": (
+                            "One-sentence persona description prepended to "
+                            "the role template, e.g. 'Senior security auditor "
+                            "focused on auth flows and OAuth2 misuse'."
+                        ),
+                    },
+                    "task": {
+                        "type": "string",
+                        "description": (
+                            "Scoped task for this specialist. Self-contained "
+                            "— the agent does NOT see the user's original "
+                            "message, only what you pass here."
+                        ),
+                    },
+                    "context_hint": {
+                        "type": "string",
+                        "description": (
+                            "Optional context from prior agents' findings."
+                        ),
+                    },
+                },
+                "required": ["role", "persona_summary", "task"],
+                "additionalProperties": False,
+            },
+        },
+    }
+
+
 def tools_for_spec(spec) -> list[dict]:
     """Build the OpenAI `tools` parameter from an AgentSpec.allowed_tools
     whitelist. Mirrors tools_for_mode's filtering (env-disabled tools
     are dropped) but uses the spec as the source of truth — not the
     legacy mode→tools table.
 
-    Special handling: 'delegate' isn't in the BaseTool registry; it's
-    an orchestrator primitive. Included only when spec.can_delegate=True.
+    Special handling:
+      - 'delegate' isn't in the BaseTool registry; it's an orchestrator
+        primitive. Included only when spec.can_delegate=True.
+      - 'spawn_specialist' (Phase 4.1) is also orchestrator-only and
+        AUTOMATICALLY exposed whenever a spec has 'delegate' in its
+        allowed_tools — the two tools are a matched pair (delegate to
+        known agents, spawn for ephemeral ones). The spec doesn't have
+        to declare 'spawn_specialist' explicitly.
     """
     try:
         from backend.services.tools.tool_registry import get_tool, is_enabled
@@ -165,10 +244,16 @@ def tools_for_spec(spec) -> list[dict]:
         return []
 
     out: list[dict] = []
+    has_delegate = False
     for name in (getattr(spec, "allowed_tools", ()) or ()):
         if name == "delegate":
             if getattr(spec, "can_delegate", False):
                 out.append(_delegate_tool_descriptor())
+                has_delegate = True
+            continue
+        if name == "spawn_specialist":
+            # Handled together with delegate below; ignore here so
+            # explicit + implicit listing don't duplicate.
             continue
         if not is_enabled(name):
             continue
@@ -183,6 +268,10 @@ def tools_for_spec(spec) -> list[dict]:
                 "parameters":  getattr(tool, "openai_parameters", None) or _DEFAULT_PARAMS_SCHEMA,
             },
         })
+    # Phase 4.1 — if the spec can delegate, also expose spawn_specialist
+    # so the LLM has both options available simultaneously.
+    if has_delegate:
+        out.append(_spawn_specialist_tool_descriptor())
     return out
 
 
@@ -203,48 +292,67 @@ async def dispatch_with_orchestration(
     if not pending:
         return []
 
-    delegate_indices = [i for i, c in enumerate(pending) if c.get("name") == "delegate"]
-    if not delegate_indices:
-        # Fast path — no delegation in this step, just use existing dispatcher
+    # Phase 4.1 — partition into three buckets: delegate / spawn_specialist
+    # / other. Both orchestrator tools route through the agent.delegate
+    # module; everything else uses dispatch_many.
+    ORCH_TOOLS = {"delegate", "spawn_specialist"}
+    orch_indices  = [i for i, c in enumerate(pending) if c.get("name") in ORCH_TOOLS]
+    if not orch_indices:
+        # Fast path — no orchestration calls; pure tool dispatch.
         return await dispatch_many(pending, timeout=timeout)
 
-    other_indices = [i for i, c in enumerate(pending) if c.get("name") != "delegate"]
+    other_indices = [i for i, c in enumerate(pending) if c.get("name") not in ORCH_TOOLS]
     results: list = [None] * len(pending)
 
-    # Build the delegate tasks
-    from backend.services.agent.delegate import delegate as _delegate_fn
+    # Lazy import to avoid circular dependency.
+    from backend.services.agent.delegate import (
+        delegate as _delegate_fn,
+        spawn_and_delegate as _spawn_fn,
+    )
 
-    async def _run_delegate(idx: int) -> tuple[int, dict]:
+    async def _run_orchestration_call(idx: int) -> tuple[int, dict]:
         call = pending[idx]
+        name = call.get("name")
         args = call.get("args") or {}
-        agent_id     = (args.get("agent_id") or "").strip()
-        task         = (args.get("task") or "").strip()
-        context_hint = (args.get("context_hint") or "").strip()
-        if not agent_id or not task:
-            return idx, {
-                "ok":           False,
-                "name":         "delegate",
-                "tool_call_id": call.get("tool_call_id"),
-                "output":       None,
-                "error":        "delegate requires agent_id and task",
-                "truncated":    False,
-                "raw_chars":    0,
-            }
         try:
-            envelope = await _delegate_fn(
-                agent_id=agent_id,
-                task=task,
-                context_hint=context_hint,
-                caller_spec_id=caller_spec_id,
-            )
-        except Exception as exc:  # pragma: no cover — delegate is supposed to swallow
-            envelope = {"ok": False, "code": "DELEGATE_RAISED",
+            if name == "delegate":
+                agent_id     = (args.get("agent_id") or "").strip()
+                task         = (args.get("task") or "").strip()
+                context_hint = (args.get("context_hint") or "").strip()
+                if not agent_id or not task:
+                    return idx, _bad_orch_args(call, "delegate requires agent_id and task")
+                envelope = await _delegate_fn(
+                    agent_id=agent_id,
+                    task=task,
+                    context_hint=context_hint,
+                    caller_spec_id=caller_spec_id,
+                )
+            elif name == "spawn_specialist":
+                role            = (args.get("role") or "").strip()
+                persona_summary = (args.get("persona_summary") or "").strip()
+                task            = (args.get("task") or "").strip()
+                context_hint    = (args.get("context_hint") or "").strip()
+                if not role or not task or not persona_summary:
+                    return idx, _bad_orch_args(
+                        call,
+                        "spawn_specialist requires role + persona_summary + task",
+                    )
+                envelope = await _spawn_fn(
+                    role=role,
+                    persona_summary=persona_summary,
+                    task=task,
+                    context_hint=context_hint,
+                    caller_spec_id=caller_spec_id,
+                )
+            else:  # pragma: no cover — defensive (orch_indices filter guarantees)
+                envelope = {"ok": False, "code": "UNKNOWN_ORCH_TOOL",
+                             "error": f"unknown orchestration tool {name!r}"}
+        except Exception as exc:  # pragma: no cover — delegate/spawn swallow internally
+            envelope = {"ok": False, "code": "ORCH_RAISED",
                          "error": f"{type(exc).__name__}: {exc}"}
-        # Translate the delegate envelope into the tool-result shape the
-        # runtime loop expects (matches dispatch_many's shape).
         return idx, {
             "ok":           bool(envelope.get("ok")),
-            "name":         "delegate",
+            "name":         name,
             "tool_call_id": call.get("tool_call_id"),
             "output":       envelope,
             "error":        envelope.get("error") if not envelope.get("ok") else None,
@@ -252,17 +360,17 @@ async def dispatch_with_orchestration(
             "raw_chars":    len(str(envelope)),
         }
 
-    # Fan out delegate calls + other tool calls in parallel
+    # Fan out orchestration calls + other tool calls in parallel
     import asyncio as _asyncio
-    delegate_task = _asyncio.gather(*(_run_delegate(i) for i in delegate_indices)) \
-        if delegate_indices else None
+    orch_task = _asyncio.gather(*(_run_orchestration_call(i) for i in orch_indices)) \
+        if orch_indices else None
     others_task = None
     if other_indices:
         other_pending = [pending[i] for i in other_indices]
         others_task = dispatch_many(other_pending, timeout=timeout)
 
-    if delegate_task is not None:
-        for idx, res in await delegate_task:
+    if orch_task is not None:
+        for idx, res in await orch_task:
             results[idx] = res
     if others_task is not None:
         other_results = await others_task
@@ -270,6 +378,21 @@ async def dispatch_with_orchestration(
             results[i] = r
 
     return results
+
+
+def _bad_orch_args(call: dict, message: str) -> dict:
+    """Build a clean error result for an orchestration tool called with
+    missing required args. Surfaced to the LLM as a tool reply so it
+    can self-correct on the next round."""
+    return {
+        "ok":           False,
+        "name":         call.get("name"),
+        "tool_call_id": call.get("tool_call_id"),
+        "output":       None,
+        "error":        message,
+        "truncated":    False,
+        "raw_chars":    0,
+    }
 
 
 # ── Dispatch ────────────────────────────────────────────────────────────────

@@ -24,6 +24,10 @@ _REGISTRY: Dict[str, AgentSpec] = {}
 
 # Order-preserving id list — used by /v2/orchestrate/agents (when wired
 # in Phase 3.4) to render a consistent agent catalogue in the UI.
+#
+# Phase 4.1 adds 4 panel specialists (ux/brand/copywriter/product) so the
+# Supervisor has real coverage for multi-domain build requests like
+# "create my SaaS landing page" without manual agent creation.
 BUILTIN_AGENT_IDS: Tuple[str, ...] = (
     "supervisor",
     "researcher",
@@ -31,6 +35,11 @@ BUILTIN_AGENT_IDS: Tuple[str, ...] = (
     "trader",
     "marketer",
     "strategist",
+    # Phase 4.1 — autonomous panel specialists
+    "ux_designer",
+    "brand_designer",
+    "copywriter",
+    "product_strategist",
 )
 
 _LOADED = False
@@ -52,6 +61,11 @@ def load_specs() -> None:
         _b.TRADER_SPEC,
         _b.MARKETER_SPEC,
         _b.STRATEGIST_SPEC,
+        # Phase 4.1 — autonomous panel specialists
+        _b.UX_DESIGNER_SPEC,
+        _b.BRAND_DESIGNER_SPEC,
+        _b.COPYWRITER_SPEC,
+        _b.PRODUCT_STRATEGIST_SPEC,
     ):
         _REGISTRY[spec.id] = spec
         logger.info(
