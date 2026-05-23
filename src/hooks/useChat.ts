@@ -45,6 +45,88 @@ const API_URL = resolveApiUrl();
 const SESSIONS_KEY = 'korvix_sessions';
 const ACTIVE_SESSION_KEY = 'korvix_active_session_id';
 
+/* ═══════════════════════════════════════════
+   STREAMING (Phase 1.1) — opt-in via VITE_CHAT_STREAMING=true
+   ═══════════════════════════════════════════
+   When enabled, doSend() POSTs to /v2/chat/stream and renders
+   token-by-token (ChatGPT/Claude-style). Any failure — bad status,
+   error frame, network drop, empty stream — falls back to the
+   legacy /chat path so the user always sees a reply. The same
+   placeholder assistant bubble is reused across all paths so the
+   user never sees a duplicate message. */
+const STREAMING_ENABLED: boolean = (() => {
+  const raw = (import.meta.env.VITE_CHAT_STREAMING as string | undefined)
+    ?.trim().toLowerCase();
+  return raw === 'true' || raw === '1' || raw === 'yes';
+})();
+
+const STREAM_URL: string = (() => {
+  const envBase = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
+  const base = envBase ? envBase.replace(/\/+$/, '') : BUNDLED_BACKEND;
+  return `${base}/v2/chat/stream`;
+})();
+
+/**
+ * Parse a fetch() response body as a stream of SSE frames.
+ *
+ * Robust to:
+ *   - UTF-8 characters split across chunk boundaries (TextDecoder streaming)
+ *   - Partial frames arriving in pieces (buffer until \n\n or \r\n\r\n)
+ *   - CRLF or LF line endings
+ *   - Multi-line `data:` (joined with \n per the SSE spec)
+ *   - Comment lines starting with `:`
+ *
+ * Yields one {event, data} object per terminated SSE frame. Generator
+ * completes when the upstream stream closes; the caller decides what to
+ * do if a terminal `done` or `error` frame wasn't observed.
+ */
+async function* readSSEFrames(
+  body: ReadableStream<Uint8Array>,
+): AsyncGenerator<{ event: string; data: string }> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+
+  const parseFrame = (raw: string): { event: string; data: string } | null => {
+    let event = 'message';
+    let data = '';
+    for (const line of raw.split(/\r?\n/)) {
+      if (!line || line.startsWith(':')) continue;
+      if (line.startsWith('event:')) {
+        event = line.slice(6).trim();
+      } else if (line.startsWith('data:')) {
+        const part = line.slice(5).replace(/^ /, '');
+        data = data ? `${data}\n${part}` : part;
+      }
+    }
+    if (!data && event === 'message') return null;
+    return { event, data };
+  };
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let sep: RegExpMatchArray | null;
+      while ((sep = buffer.match(/\r?\n\r?\n/))) {
+        const idx = sep.index!;
+        const frame = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + sep[0].length);
+        const parsed = parseFrame(frame);
+        if (parsed) yield parsed;
+      }
+    }
+    buffer += decoder.decode();
+    if (buffer.trim()) {
+      const parsed = parseFrame(buffer);
+      if (parsed) yield parsed;
+    }
+  } finally {
+    try { reader.releaseLock(); } catch { /* ignore */ }
+  }
+}
+
 /**
  * Local placeholder reply used when the chat backend is unreachable or
  * not connected yet. Keeps the chat usable in a demo state instead of
@@ -256,6 +338,12 @@ export function useChat() {
   const [lastUserMessage, setLastUserMessage] = useState<string | null>(null);
   const userIdRef = useRef<string>(getUserId());
 
+  // Mirror of `sessions` for synchronous reads inside async callbacks
+  // (the streaming path builds the conversation payload from prior
+  // messages and can't depend on the async-batched `sessions` state).
+  const sessionsRef = useRef<ChatSession[]>(sessions);
+  useEffect(() => { sessionsRef.current = sessions; }, [sessions]);
+
   const [aiMode, setAiMode] = useState<AIMode>('fast');
   const [pinnedMessages, setPinnedMessages] = useState<Message[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -378,14 +466,15 @@ export function useChat() {
   const doSend = useCallback(async (content: string) => {
     if (!content.trim()) return;
 
+    const trimmed = content.trim();
     setError(null);
-    setLastUserMessage(content.trim());
+    setLastUserMessage(trimmed);
     setInputText('');
 
     const userMessage: Message = {
       id: generateId(),
       role: 'user',
-      content: content.trim(),
+      content: trimmed,
       timestamp: new Date(),
     };
 
@@ -396,7 +485,7 @@ export function useChat() {
               ...s,
               messages: [...s.messages, userMessage],
               updatedAt: new Date(),
-              title: s.title.startsWith('New ') ? content.slice(0, 40) : s.title,
+              title: s.title.startsWith('New ') ? trimmed.slice(0, 40) : s.title,
             }
           : s
       )
@@ -404,25 +493,141 @@ export function useChat() {
 
     setIsLoading(true);
 
-    try {
-      // Backend accepts an optional `mode` ("fast" | "deep_think" |
-      // "research" | "coding" | "study" | …) for AI routing. The
-      // frontend stores aiMode with a hyphen ("deep-think"); the
-      // backend uses underscores. Omit when unknown so the backend
-      // falls back to automatic intent-based routing.
-      const KNOWN_BACKEND_MODES = new Set([
-        'fast', 'deep_think', 'research', 'coding', 'study',
-        'startup_advisor', 'marketing_dropshipping', 'trading_analyst',
-      ]);
-      const normalizedMode = aiMode ? aiMode.replace('-', '_') : '';
-      const requestMode = KNOWN_BACKEND_MODES.has(normalizedMode) ? normalizedMode : undefined;
+    // Backend accepts an optional `mode` ("fast" | "deep_think" |
+    // "research" | "coding" | "study" | …) for AI routing. The frontend
+    // stores aiMode with a hyphen ("deep-think"); the backend uses
+    // underscores. Omit when unknown so the backend falls back to
+    // automatic intent-based routing.
+    const KNOWN_BACKEND_MODES = new Set([
+      'fast', 'deep_think', 'research', 'coding', 'study',
+      'startup_advisor', 'marketing_dropshipping', 'trading_analyst',
+    ]);
+    const normalizedMode = aiMode ? aiMode.replace('-', '_') : '';
+    const requestMode = KNOWN_BACKEND_MODES.has(normalizedMode) ? normalizedMode : undefined;
 
+    // When streaming creates a placeholder assistant message, both the
+    // legacy /chat fallback and the demo fallback REPLACE that
+    // placeholder in-place. This is the only thing that guarantees no
+    // duplicate assistant bubble appears if streaming fails partway.
+    let assistantId: string | null = null;
+
+    /* ── Streaming path (Phase 1.1, opt-in via VITE_CHAT_STREAMING) ── */
+    if (STREAMING_ENABLED) {
+      try {
+        // Build OpenAI-shaped messages from the conversation BEFORE the
+        // new user message (which hasn't been committed to the ref yet
+        // — state is async — so we append it manually).
+        const priorMessages =
+          sessionsRef.current.find((s) => s.id === activeSessionId)?.messages ?? [];
+        const streamMessages = [
+          ...priorMessages.map((m) => ({
+            role: m.role as 'user' | 'assistant',
+            content: m.content,
+          })),
+          { role: 'user' as const, content: trimmed },
+        ];
+
+        const response = await fetch(STREAM_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            messages: streamMessages,
+            ...(requestMode ? { mode: requestMode } : {}),
+          }),
+        });
+
+        if (!response.ok || !response.body) {
+          throw new Error(`Stream request failed: HTTP ${response.status}`);
+        }
+
+        let accumulated = '';
+        let sawDone = false;
+        let streamError: { code?: string; message?: string } | null = null;
+
+        for await (const frame of readSSEFrames(response.body)) {
+          if (frame.event === 'token') {
+            let delta = '';
+            try { delta = String(JSON.parse(frame.data)?.delta ?? ''); } catch { /* skip malformed */ }
+            if (!delta) continue;
+            accumulated += delta;
+            if (!assistantId) {
+              // Create the assistant bubble on the FIRST token so the
+              // typing indicator stays visible until real content arrives.
+              const newId = generateId();
+              assistantId = newId;
+              setSessions((prev) =>
+                prev.map((s) =>
+                  s.id === activeSessionId
+                    ? {
+                        ...s,
+                        messages: [
+                          ...s.messages,
+                          { id: newId, role: 'assistant', content: accumulated, timestamp: new Date() },
+                        ],
+                        updatedAt: new Date(),
+                      }
+                    : s
+                )
+              );
+            } else {
+              const targetId = assistantId;
+              const live = accumulated;
+              setSessions((prev) =>
+                prev.map((s) =>
+                  s.id === activeSessionId
+                    ? {
+                        ...s,
+                        messages: s.messages.map((m) =>
+                          m.id === targetId ? { ...m, content: live } : m
+                        ),
+                      }
+                    : s
+                )
+              );
+            }
+          } else if (frame.event === 'done') {
+            sawDone = true;
+            break;
+          } else if (frame.event === 'error') {
+            try { streamError = JSON.parse(frame.data); }
+            catch { streamError = { message: frame.data }; }
+            break;
+          }
+          // `ready` / `message` / unknown → ignore by spec
+        }
+
+        if (streamError) {
+          throw new Error(
+            `Backend error frame: ${[streamError.code, streamError.message].filter(Boolean).join(' ')}`,
+          );
+        }
+        if (!sawDone && accumulated.length === 0) {
+          throw new Error('Stream ended without any content.');
+        }
+
+        // Success — assistant message is fully populated by token frames.
+        setIsLoading(false);
+        return;
+      } catch (streamErr) {
+        console.warn(
+          '[useChat] Streaming failed — falling back to non-streaming /chat.\n' +
+          `  endpoint : ${STREAM_URL}\n` +
+          `  cause    : ${streamErr instanceof Error ? streamErr.message : String(streamErr)}`,
+        );
+        // Fall through to the legacy /chat path. If assistantId is set we
+        // already created a placeholder bubble; the fallback paths below
+        // REPLACE its content rather than appending a duplicate.
+      }
+    }
+
+    /* ── Legacy /chat path (default + streaming fallback) ── */
+    try {
       const response = await fetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           user_id: userIdRef.current,
-          message: content.trim(),
+          message: trimmed,
           chat_id: activeSessionId,
           session_id: activeSessionId,
           platform: 'web',
@@ -437,20 +642,36 @@ export function useChat() {
       const data = await response.json();
       const responseText = data.reply ?? data.response ?? data.message ?? JSON.stringify(data);
 
-      const assistantMessage: Message = {
-        id: generateId(),
-        role: 'assistant',
-        content: responseText,
-        timestamp: new Date(),
-      };
-
-      setSessions((prev) =>
-        prev.map((s) =>
-          s.id === activeSessionId
-            ? { ...s, messages: [...s.messages, assistantMessage], updatedAt: new Date() }
-            : s
-        )
-      );
+      if (assistantId) {
+        const targetId = assistantId;
+        setSessions((prev) =>
+          prev.map((s) =>
+            s.id === activeSessionId
+              ? {
+                  ...s,
+                  messages: s.messages.map((m) =>
+                    m.id === targetId ? { ...m, content: responseText, timestamp: new Date() } : m
+                  ),
+                  updatedAt: new Date(),
+                }
+              : s
+          )
+        );
+      } else {
+        const assistantMessage: Message = {
+          id: generateId(),
+          role: 'assistant',
+          content: responseText,
+          timestamp: new Date(),
+        };
+        setSessions((prev) =>
+          prev.map((s) =>
+            s.id === activeSessionId
+              ? { ...s, messages: [...s.messages, assistantMessage], updatedAt: new Date() }
+              : s
+          )
+        );
+      }
     } catch (err) {
       /* ─── Graceful demo-mode fallback ──────────────────────────────
          The chat backend could not produce a usable reply. Common
@@ -475,20 +696,37 @@ export function useChat() {
         'this origin.',
       );
 
-      const demoMessage: Message = {
-        id: generateId(),
-        role: 'assistant',
-        content: generateDemoReply(content.trim()),
-        timestamp: new Date(),
-      };
-
-      setSessions((prev) =>
-        prev.map((s) =>
-          s.id === activeSessionId
-            ? { ...s, messages: [...s.messages, demoMessage], updatedAt: new Date() }
-            : s
-        )
-      );
+      const demoContent = generateDemoReply(trimmed);
+      if (assistantId) {
+        const targetId = assistantId;
+        setSessions((prev) =>
+          prev.map((s) =>
+            s.id === activeSessionId
+              ? {
+                  ...s,
+                  messages: s.messages.map((m) =>
+                    m.id === targetId ? { ...m, content: demoContent, timestamp: new Date() } : m
+                  ),
+                  updatedAt: new Date(),
+                }
+              : s
+          )
+        );
+      } else {
+        const demoMessage: Message = {
+          id: generateId(),
+          role: 'assistant',
+          content: demoContent,
+          timestamp: new Date(),
+        };
+        setSessions((prev) =>
+          prev.map((s) =>
+            s.id === activeSessionId
+              ? { ...s, messages: [...s.messages, demoMessage], updatedAt: new Date() }
+              : s
+          )
+        );
+      }
       // Intentionally NOT calling setError() — the friendly demo reply
       // replaces the old "Load failed" / Retry error state so the chat
       // never visually dead-ends.
