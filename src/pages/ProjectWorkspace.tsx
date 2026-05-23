@@ -21,6 +21,119 @@ import {
 } from '@/stores/projectStore';
 import type { ProjectAgent, AgentMessage } from '@/types/projects';
 import { useProjectActivity } from '@/hooks/useProjectActivity';
+import AgentMessageRenderer from '@/components/AgentMessageRenderer';
+
+/* ═══════════════════════════════════════════════════════════════════
+   Phase 3.7 — typewriter helpers.
+   ═══════════════════════════════════════════════════════════════════
+   Splits the full reply into a sequence of progressively-larger
+   prefixes that respect word + code-fence boundaries. The first
+   prefix is the first ~3 words; subsequent prefixes add 2-4 words
+   each; fenced code blocks land in ONE tick (not split mid-token)
+   so syntax highlighting / structure stays readable as it appears.
+
+   Output is fed to the in-component typewriter loop one prefix per
+   tick; the renderer re-parses markdown each tick, so the loop has
+   to be cheap (linear-time chunking, no per-tick string concat). */
+const TYPEWRITER_TICK_MS = 28;
+
+function chunkForTypewriter(reply: string): string[] {
+  if (!reply) return [];
+  const out: string[] = [];
+  const tokens: string[] = [];
+  // Greedy tokenization that keeps fenced code blocks atomic.
+  // Walks the string; when it sees ```, captures up to the closing
+  // ```, then continues word-by-word elsewhere.
+  let i = 0;
+  while (i < reply.length) {
+    if (reply.startsWith('```', i)) {
+      const end = reply.indexOf('```', i + 3);
+      if (end === -1) {
+        tokens.push(reply.slice(i));
+        break;
+      }
+      tokens.push(reply.slice(i, end + 3));
+      i = end + 3;
+      continue;
+    }
+    // Capture next word + trailing whitespace as one token
+    let j = i;
+    while (j < reply.length && /\S/.test(reply[j])) j++;
+    while (j < reply.length && /\s/.test(reply[j]) && !reply.startsWith('```', j)) j++;
+    tokens.push(reply.slice(i, j));
+    i = j;
+  }
+  // Build progressive prefixes: emit a new prefix every WORDS_PER_TICK
+  // word-tokens, BUT code-fence tokens get their own tick (atomic).
+  const WORDS_PER_TICK = 3;
+  let acc = '';
+  let wordCount = 0;
+  for (const t of tokens) {
+    const isCode = t.startsWith('```');
+    acc += t;
+    if (isCode) {
+      out.push(acc);
+      wordCount = 0;
+      continue;
+    }
+    wordCount++;
+    if (wordCount >= WORDS_PER_TICK) {
+      out.push(acc);
+      wordCount = 0;
+    }
+  }
+  // Ensure the final prefix == the full reply (capture any trailing
+  // remainder that didn't cross WORDS_PER_TICK).
+  if (out.length === 0 || out[out.length - 1] !== acc) {
+    out.push(acc);
+  }
+  return out;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Phase 3.7 — humanise SSE event kinds into operator-friendly status
+   labels. The user sees "Planning" / "Delegating → researcher" /
+   "Generating with coder" / "Completed", not "agent.started" /
+   "run.finished". Colour follows status state, with pulse on active. */
+interface OrchestrationStatus {
+  label: string;
+  color: string;
+  pulse: boolean;
+}
+
+function orchestrationStatusFor(evt: {
+  kind: string;
+  agent_id?: string | null;
+  payload?: Record<string, unknown>;
+}): OrchestrationStatus {
+  const p = (evt.payload ?? {}) as { agent_id?: string; tool?: string; error?: string; code?: string };
+  switch (evt.kind) {
+    case 'run.started':
+      return { label: 'Planning…', color: '#22d3ee', pulse: true };
+    case 'run.finished':
+      return { label: 'Completed', color: '#94a3b8', pulse: false };
+    case 'run.errored':
+      return { label: `Orchestration errored — ${p.error ?? 'unknown'}`, color: '#fbbf24', pulse: false };
+    case 'delegate.started':
+      return { label: `Delegating → ${p.agent_id ?? 'specialist'}`, color: '#a78bfa', pulse: true };
+    case 'delegate.returned':
+      return { label: `${p.agent_id ?? 'Specialist'} returned`, color: '#94a3b8', pulse: false };
+    case 'delegate.errored':
+      return { label: `Delegation failed — ${p.code ?? p.error ?? 'unknown'}`, color: '#fbbf24', pulse: false };
+    case 'agent.started':
+      return { label: `Generating with ${evt.agent_id ?? 'agent'}`, color: '#34d399', pulse: true };
+    case 'agent.finished':
+      return { label: `${evt.agent_id ?? 'Agent'} finished`, color: '#94a3b8', pulse: false };
+    case 'tool.called':
+      return { label: `Calling tool: ${p.tool ?? 'unknown'}`, color: '#34d399', pulse: true };
+    case 'tool.completed':
+      return { label: `${p.tool ?? 'Tool'} done`, color: '#94a3b8', pulse: false };
+    case 'tool.errored':
+      return { label: `${p.tool ?? 'Tool'} failed`, color: '#fbbf24', pulse: false };
+    default:
+      return { label: evt.kind, color: '#94a3b8', pulse: false };
+  }
+}
 
 /* ═══════════════════════════════════════════ */
 
@@ -38,6 +151,10 @@ export default function ProjectWorkspace() {
   const [editingAgent, setEditingAgent] = useState<string | null>(null);
   const [agentMenuOpen, setAgentMenuOpen] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  /* Phase 3.7 — id of the message currently being streamed in by the
+     typewriter. The renderer reads this to show its in-bubble
+     three-dot pulse while content is still empty / mid-stream. */
+  const [streamingMsgId, setStreamingMsgId] = useState<string | null>(null);
 
   /* ── Phase 2.5: project memory state ─────────────────────────────────
      `memorySyncState` tracks whether we're hitting the backend or
@@ -215,15 +332,14 @@ export default function ProjectWorkspace() {
       'I had trouble reaching the orchestrator. The connection will retry — '
       + 'in the meantime, please rephrase or try again.';
 
-    // Pre-insert an empty assistant message so the typewriter can stream
-    // into it. The id stays stable across reveals.
+    /* Phase 3.7 — DEFER the assistant message insert until we have
+       the first chunk of content. This eliminates the "empty bubble"
+       window that Phase 3.6 produced (where an empty agent message
+       sat next to the typing indicator while the fetch was pending).
+       The id is generated up-front so the renderer can correlate it
+       with the streaming flag. */
     const assistantMsgId = `msg-${uid()}`;
-    const assistantMsg: AgentMessage = {
-      id: assistantMsgId, content: '', sender: 'agent',
-      timestamp: new Date().toISOString(), type: 'text', agentId: selectedAgent.id,
-    };
-    if (projectId) addAgentMessage(projectId, selectedAgent.id, assistantMsg);
-    refreshAgents();
+    setStreamingMsgId(assistantMsgId);
 
     (async () => {
       let replyText = '';
@@ -291,31 +407,43 @@ export default function ProjectWorkspace() {
 
       if (!replyText) replyText = fallbackReply();
 
-      // 3. Client-side typewriter reveal — gives the ChatGPT feel even
-      // though we received the full reply at once. Step size + delay
-      // tuned to feel natural (~250 chars/sec). Large replies finish
-      // in 5-8 seconds; small ones (a few sentences) in under a second.
-      const STEP = 3;       // chars per tick
-      const DELAY_MS = 12;  // ms per tick
-      let revealed = 0;
-      // Track final reveal length so an early "stop generation" could
-      // future-cancel without breaking state.
-      while (revealed < replyText.length) {
-        revealed = Math.min(replyText.length, revealed + STEP);
-        const partial = replyText.slice(0, revealed);
-        if (projectId) {
-          updateAgentMessage(projectId, selectedAgent.id, assistantMsgId, {
-            content: partial,
+      /* Phase 3.7 — word-boundary typewriter.
+         Replaces the Phase 3.6 character-stride reveal with chunks
+         that respect word + code-fence boundaries. Code blocks and
+         long structural sections appear in one tick each so they
+         don't fragment visually as the reader's eye scans them.
+         The first reveal also INSERTS the bubble (deferred from
+         the pre-insert in Phase 3.6) so an empty bubble never appears.
+
+         Pacing: ~30-40 ticks/sec on long replies (matches reading
+         speed for fluent users), ~2 ticks for tiny replies. */
+      const chunks = chunkForTypewriter(replyText);
+      let insertedBubble = false;
+      let revealed = '';
+      for (const next of chunks) {
+        revealed = next;
+        if (!projectId) break;
+        if (!insertedBubble) {
+          // First non-empty content — NOW we add the message to the
+          // session. The render swap from "typing dots" to "bubble"
+          // is instant from the user's perspective.
+          addAgentMessage(projectId, selectedAgent.id, {
+            id: assistantMsgId, content: revealed, sender: 'agent',
+            timestamp: new Date().toISOString(), type: 'text', agentId: selectedAgent.id,
           });
-          refreshAgents();
+          insertedBubble = true;
+        } else {
+          updateAgentMessage(projectId, selectedAgent.id, assistantMsgId, {
+            content: revealed,
+          });
         }
+        refreshAgents();
         // eslint-disable-next-line no-await-in-loop
-        await new Promise((r) => setTimeout(r, DELAY_MS));
+        await new Promise((r) => setTimeout(r, TYPEWRITER_TICK_MS));
       }
 
-      // Final commit — ensure the full text is persisted even if a
-      // tick was missed (defensive).
-      if (projectId) {
+      // Defensive final commit (no-op if the loop already wrote the full text)
+      if (projectId && insertedBubble) {
         updateAgentMessage(projectId, selectedAgent.id, assistantMsgId, {
           content: replyText,
         });
@@ -326,7 +454,9 @@ export default function ProjectWorkspace() {
       console.info('[projectChat] reply_complete', {
         used_orchestrator: usedOrchestrator,
         reply_chars: replyText.length,
+        chunk_count: chunks.length,
       });
+      setStreamingMsgId(null);
       setIsTyping(false);
     })();
   };
@@ -489,7 +619,20 @@ export default function ProjectWorkspace() {
                         background: msg.sender === 'user' ? 'linear-gradient(135deg, rgba(34,211,238,0.1), rgba(59,130,246,0.06))' : 'rgba(255,255,255,0.025)',
                         border: `1px solid ${msg.sender === 'user' ? 'rgba(34,211,238,0.08)' : 'rgba(255,255,255,0.04)'}`,
                       }}>
-                        <p className="text-[12px] text-white/75 leading-relaxed">{msg.content}</p>
+                        {msg.sender === 'user' ? (
+                          <p className="text-[12px] text-white/75 leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                        ) : (
+                          /* Phase 3.7 — structured agent renderer.
+                             Splits supervisor output on ## headers into
+                             cards, renders markdown (code blocks, lists,
+                             tables) inside each. The renderer hides
+                             empty content so we don't get empty bubbles
+                             during the fetch window. */
+                          <AgentMessageRenderer
+                            content={msg.content}
+                            isStreaming={isTyping && msg.id === streamingMsgId}
+                          />
+                        )}
                       </div>
                     </div>
                   </motion.div>
@@ -658,29 +801,23 @@ export default function ProjectWorkspace() {
               />
             </div>
             {liveEvents.length > 0 ? (
-              // SSE events available — render newest-first, capped to 6 lines
+              // SSE events available — render newest-first, capped to 6 lines.
+              // Phase 3.7: maps raw event kinds into operator-friendly
+              // status labels ("Planning" / "Delegating" / "Generating" /
+              // "Completed") so the user can SEE the orchestration
+              // executing instead of staring at engineer-speak event names.
               <div className="space-y-2">
                 {liveEvents.slice(-6).reverse().map((evt, i) => {
-                  const isActive  = evt.kind.endsWith('.started') || evt.kind === 'tool.called';
-                  const isError   = evt.kind.endsWith('.errored');
-                  const dotColour = isError ? '#fbbf24' : isActive ? '#34d399' : '#94a3b8';
-                  const label = evt.kind === 'delegate.started'
-                    ? `Delegating → ${(evt.payload as { agent_id?: string }).agent_id ?? 'specialist'}`
-                    : evt.kind === 'delegate.returned'
-                      ? `${(evt.payload as { agent_id?: string }).agent_id ?? 'Specialist'} returned`
-                      : evt.kind === 'tool.called'
-                        ? `Calling ${(evt.payload as { tool?: string }).tool ?? 'tool'}`
-                        : evt.kind === 'agent.started'
-                          ? `${evt.agent_id ?? 'Agent'} started`
-                          : evt.kind === 'agent.finished'
-                            ? `${evt.agent_id ?? 'Agent'} finished`
-                            : evt.kind;
+                  const status = orchestrationStatusFor(evt);
                   return (
                     <div key={`${evt.kind}-${evt.emitted_at}-${i}`} className="flex items-start gap-2">
                       <div className="w-2 h-2 rounded-full mt-0.5 shrink-0"
-                        style={{ background: dotColour, boxShadow: isActive ? '0 0 4px rgba(52,211,153,0.3)' : 'none' }} />
+                        style={{
+                          background: status.color,
+                          boxShadow: status.pulse ? `0 0 4px ${status.color}55` : 'none',
+                        }} />
                       <div className="min-w-0">
-                        <p className="text-[10px] text-white/55 truncate">{label}</p>
+                        <p className="text-[10px] text-white/55 truncate">{status.label}</p>
                         <p className="text-[8px] text-white/15">
                           {new Date(evt.emitted_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                         </p>
