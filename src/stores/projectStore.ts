@@ -352,6 +352,14 @@ async function hydrateAndBackfill(): Promise<void> {
   });
 
   if (remote && Array.isArray(remote.projects)) {
+    // Phase 2.5 lifecycle log — makes the backend hydration visible in
+    // production DevTools without affecting behavior. Filterable in the
+    // console by [projectStore].
+    // eslint-disable-next-line no-console
+    console.info('[projectStore] project_loaded_from_backend', {
+      remote_count: remote.projects.length,
+      user_id: userId,
+    });
     const local = loadProjects();
     const localById = new Map(local.map((p: Project) => [p.id, p]));
     // Merge: backend rows authoritative for name/description; local

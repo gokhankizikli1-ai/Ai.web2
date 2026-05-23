@@ -16,6 +16,7 @@ const ROLE_ICONS: Record<string, React.ElementType> = {
 import {
   getProject, getProjectAgents, addProjectAgent, updateProjectAgent,
   removeProjectAgent, addAgentMessage, AGENT_ROLES, createAgent, uid,
+  listProjectMemory, addProjectMemory, type ProjectMemoryEntry,
 } from '@/stores/projectStore';
 import type { ProjectAgent, AgentMessage } from '@/types/projects';
 
@@ -35,6 +36,50 @@ export default function ProjectWorkspace() {
   const [editingAgent, setEditingAgent] = useState<string | null>(null);
   const [agentMenuOpen, setAgentMenuOpen] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  /* ── Phase 2.5: project memory state ─────────────────────────────────
+     `memorySyncState` tracks whether we're hitting the backend or
+     falling back to "offline" (backend disabled / unreachable). The UI
+     shows a tiny indicator so the user can see whether project context
+     is being shared across devices or only kept locally in this session. */
+  const [memory, setMemory] = useState<ProjectMemoryEntry[]>([]);
+  const [memorySyncState, setMemorySyncState] = useState<'unknown' | 'connected' | 'offline'>('unknown');
+  const [memorySyncedAt, setMemorySyncedAt] = useState<string | null>(null);
+  const [showAddMemory, setShowAddMemory] = useState(false);
+  const [newMemoryContent, setNewMemoryContent] = useState('');
+  const [newMemoryKind, setNewMemoryKind] = useState<'note' | 'fact' | 'decision'>('note');
+  const [memoryBusy, setMemoryBusy] = useState(false);
+
+  const refreshMemory = useCallback(async () => {
+    if (!projectId) return;
+    const items = await listProjectMemory(projectId, { limit: 20 });
+    setMemory(items);
+    // listProjectMemory returns [] on failure too, so we can't use length
+    // alone to detect offline. Re-probe by attempting a tiny GET against
+    // /projects/health which is cheap and always callable when the route
+    // is registered. 404 / network error → offline.
+    try {
+      const apiBase = ((import.meta.env.VITE_API_URL as string | undefined)?.trim()
+        || 'https://worker-production-1345.up.railway.app').replace(/\/+$/, '');
+      const r = await fetch(`${apiBase}/projects/health`);
+      if (r.ok) {
+        const body = await r.json();
+        setMemorySyncState(body.enabled ? 'connected' : 'offline');
+      } else {
+        setMemorySyncState('offline');
+      }
+      setMemorySyncedAt(new Date().toISOString());
+      // eslint-disable-next-line no-console
+      console.info('[projectStore] project_loaded_from_backend', {
+        projectId, memory_count: items.length, route_status: r.status,
+      });
+    } catch {
+      setMemorySyncState('offline');
+      setMemorySyncedAt(new Date().toISOString());
+    }
+  }, [projectId]);
+
+  useEffect(() => { refreshMemory(); }, [refreshMemory]);
 
   const selectedAgent = agents.find(a => a.id === selectedAgentId);
   const activeAgentCount = agents.filter(a => a.status === 'active').length;
@@ -58,6 +103,13 @@ export default function ProjectWorkspace() {
     if (!projectId) return;
     const agent = createAgent(roleId, name, customRole);
     addProjectAgent(projectId, agent);
+    // Phase 2.5 marker — addProjectAgent already fires-and-forgets a
+    // POST to /projects/{id}/agents; this log just makes the lifecycle
+    // visible in production DevTools without changing the persist path.
+    // eslint-disable-next-line no-console
+    console.info('[projectStore] project_agent_bound', {
+      projectId, agentId: agent.id, name: agent.name, role: agent.role,
+    });
     refreshAgents();
     setSelectedAgentId(agent.id);
     setShowCreateAgent(false);
@@ -69,6 +121,36 @@ export default function ProjectWorkspace() {
     updateProjectAgent(projectId, agentId, { name: newName });
     refreshAgents();
     setEditingAgent(null);
+  };
+
+  /* Phase 2.5 — submit a new project memory entry from the modal. */
+  const handleAddMemory = async () => {
+    if (!projectId) return;
+    const content = newMemoryContent.trim();
+    if (!content || memoryBusy) return;
+    setMemoryBusy(true);
+    try {
+      const entry = await addProjectMemory(projectId, content, { kind: newMemoryKind });
+      if (entry) {
+        // eslint-disable-next-line no-console
+        console.info('[projectStore] project_memory_created', {
+          projectId, memoryId: entry.id, kind: entry.kind, length: content.length,
+        });
+        addToast('Memory saved to project', 'success');
+        setShowAddMemory(false);
+        setNewMemoryContent('');
+        setNewMemoryKind('note');
+        refreshMemory();
+      } else {
+        // Backend rejected or unreachable. Don't lose the user's text —
+        // keep the modal open so they can retry. The /projects/* routes
+        // return 503 when ENABLE_PROJECTS=false; this is the most likely
+        // cause and the toast tells the user clearly.
+        addToast('Could not save memory — backend offline or projects disabled', 'error');
+      }
+    } finally {
+      setMemoryBusy(false);
+    }
   };
 
   const handleDeleteAgent = (agentId: string) => {
@@ -331,7 +413,13 @@ export default function ProjectWorkspace() {
               {/* Input */}
               <div className="shrink-0 px-4 pb-3 pt-1">
                 <div className="flex items-end gap-2 rounded-xl px-3 py-2" style={{ background: 'rgba(27,34,48,0.5)', backdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.06)', boxShadow: '0 4px 16px -8px rgba(0,0,0,0.3)' }}>
-                  <button className="shrink-0 p-1.5 rounded-lg text-white/15 hover:text-white/40 transition-colors"><Paperclip className="h-4 w-4" /></button>
+                  <button
+                    className="shrink-0 p-1.5 rounded-lg text-white/15 hover:text-white/40 transition-colors cursor-not-allowed"
+                    title="File uploads — coming soon (Phase 2.6)"
+                    aria-label="Attach file (coming soon)"
+                    onClick={(e) => { e.preventDefault(); addToast('File uploads coming soon', 'info'); }}>
+                    <Paperclip className="h-4 w-4" />
+                  </button>
                   <textarea value={inputMessage} onChange={(e) => setInputMessage(e.target.value)} onKeyDown={handleKeyDown} placeholder={`Message ${selectedAgent.name}...`} rows={1} className="flex-1 bg-transparent text-[13px] text-white/80 placeholder:text-white/15 outline-none resize-none py-1.5 max-h-[80px] scrollbar-thin" />
                   <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={handleSendMessage} disabled={!inputMessage.trim()} className={`shrink-0 p-2 rounded-lg transition-all ${inputMessage.trim() ? 'bg-cyan-500/15 text-cyan-400' : 'text-white/10'}`}>
                     <Send className="h-3.5 w-3.5" />
@@ -363,19 +451,53 @@ export default function ProjectWorkspace() {
 
         {/* RIGHT: Context & Tasks */}
         <div className="hidden xl:flex flex-col w-[260px] shrink-0 overflow-y-auto scrollbar-thin p-3 gap-3" style={{ background: 'rgba(17,21,28,0.3)', borderLeft: '1px solid rgba(255,255,255,0.04)' }}>
-          {/* Shared Context */}
+          {/* Shared Context — Phase 2.5: project memory + sync indicator */}
           <div className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.04)' }}>
-            <div className="flex items-center gap-2 mb-3">
-              <Zap className="h-3.5 w-3.5 text-cyan-400/50" />
-              <span className="text-[11px] font-semibold text-white/60">Project Context</span>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Zap className="h-3.5 w-3.5 text-cyan-400/50" />
+                <span className="text-[11px] font-semibold text-white/60">Project Context</span>
+              </div>
+              <button
+                onClick={() => { setShowAddMemory(true); setNewMemoryContent(''); }}
+                className="p-1 rounded-md text-white/30 hover:text-cyan-300 transition-colors"
+                title="Add memory note for this project"
+                aria-label="Add memory note">
+                <Plus className="h-3 w-3" />
+              </button>
             </div>
             <div className="flex items-center gap-2 mb-2">
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" style={{ boxShadow: '0 0 4px rgba(52,211,153,0.3)' }} />
-              <span className="text-[10px] text-emerald-400/60">{agents.length > 0 ? 'All agents synced' : 'No agents yet'}</span>
+              <div
+                className="w-1.5 h-1.5 rounded-full"
+                style={{
+                  background: memorySyncState === 'connected'
+                    ? 'rgb(52,211,153)'
+                    : memorySyncState === 'offline'
+                      ? 'rgb(251,191,36)'
+                      : 'rgb(148,163,184)',
+                  boxShadow: memorySyncState === 'connected'
+                    ? '0 0 4px rgba(52,211,153,0.3)'
+                    : 'none',
+                }}
+              />
+              <span
+                className="text-[10px]"
+                style={{
+                  color: memorySyncState === 'connected'
+                    ? 'rgba(52,211,153,0.7)'
+                    : memorySyncState === 'offline'
+                      ? 'rgba(251,191,36,0.7)'
+                      : 'rgba(148,163,184,0.5)',
+                }}>
+                {memorySyncState === 'connected' && 'Project context active'}
+                {memorySyncState === 'offline'   && 'Offline — local only'}
+                {memorySyncState === 'unknown'   && 'Checking…'}
+              </span>
             </div>
-            <div className="grid grid-cols-2 gap-1.5">
+            <div className="grid grid-cols-3 gap-1.5">
               {[
-                { label: 'Agents', value: `${agents.length}` },
+                { label: 'Agents',  value: `${agents.length}` },
+                { label: 'Memory',  value: `${memory.length}` },
                 { label: 'Messages', value: `${agents.reduce((acc, a) => acc + a.messages.length, 0)}` },
               ].map(s => (
                 <div key={s.label} className="rounded-lg p-2 text-center" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.03)' }}>
@@ -383,6 +505,34 @@ export default function ProjectWorkspace() {
                   <p className="text-[8px] text-white/20">{s.label}</p>
                 </div>
               ))}
+            </div>
+            {/* Recent memory entries (latest 3, terse) */}
+            {memory.length > 0 && (
+              <div className="mt-3 pt-3 space-y-1.5" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
+                <p className="text-[9px] uppercase tracking-wider text-white/25">Recent memory</p>
+                {memory.slice(0, 3).map((m) => (
+                  <div key={m.id} className="text-[10px] text-white/55 leading-snug">
+                    <span className="text-white/30 mr-1">
+                      {m.kind === 'fact' ? '◆' : m.kind === 'decision' ? '★' : '·'}
+                    </span>
+                    {m.content.length > 70 ? m.content.slice(0, 70) + '…' : m.content}
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* Last synced timestamp — only shown after a successful sync */}
+            {memorySyncedAt && memorySyncState === 'connected' && (
+              <p className="text-[9px] text-white/15 mt-2">
+                Last synced {new Date(memorySyncedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </p>
+            )}
+            {/* File upload placeholder — Phase 2.5: schema exists, UI hint only */}
+            <div
+              className="mt-3 pt-3 flex items-center gap-1.5 cursor-not-allowed"
+              style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}
+              title="Project file uploads — coming soon. Backend schema is ready; upload pipeline lands in Phase 2.6.">
+              <Paperclip className="h-3 w-3 text-white/15" />
+              <span className="text-[9px] text-white/25">Files · coming soon</span>
             </div>
           </div>
 
@@ -415,6 +565,94 @@ export default function ProjectWorkspace() {
       <AnimatePresence>
         {showCreateAgent && (
           <CreateAgentModal onClose={() => setShowCreateAgent(false)} onCreate={handleCreateAgent} />
+        )}
+      </AnimatePresence>
+
+      {/* ═══ Phase 2.5: Add Memory Modal ═══ */}
+      <AnimatePresence>
+        {showAddMemory && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            style={{ background: 'rgba(8,10,14,0.7)', backdropFilter: 'blur(8px)' }}
+            onClick={() => !memoryBusy && setShowAddMemory(false)}>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.96, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 10 }}
+              transition={{ duration: 0.15 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md rounded-2xl p-5"
+              style={{ background: 'rgba(20,24,32,0.95)', border: '1px solid rgba(255,255,255,0.06)', boxShadow: '0 24px 64px -16px rgba(0,0,0,0.5)' }}>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Zap className="h-4 w-4 text-cyan-400/70" />
+                  <h3 className="text-[14px] font-semibold text-white/85">Add project memory</h3>
+                </div>
+                <button
+                  onClick={() => !memoryBusy && setShowAddMemory(false)}
+                  className="p-1 rounded-md text-white/30 hover:text-white/60 transition-colors"
+                  aria-label="Close">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+              <p className="text-[11px] text-white/40 mb-3 leading-snug">
+                Shared across every chat and agent in this project. Used by the AI as context — keep entries short and specific.
+              </p>
+              <div className="flex gap-1.5 mb-3">
+                {(['note', 'fact', 'decision'] as const).map((k) => (
+                  <button
+                    key={k}
+                    onClick={() => setNewMemoryKind(k)}
+                    className={`px-2.5 py-1 rounded-md text-[10px] font-medium transition-all ${newMemoryKind === k ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-400/20' : 'bg-white/[0.03] text-white/40 border border-white/[0.04] hover:text-white/60'}`}>
+                    {k === 'note' ? '· Note' : k === 'fact' ? '◆ Fact' : '★ Decision'}
+                  </button>
+                ))}
+              </div>
+              <textarea
+                value={newMemoryContent}
+                onChange={(e) => setNewMemoryContent(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); handleAddMemory(); }
+                }}
+                rows={4}
+                placeholder={
+                  newMemoryKind === 'fact'
+                    ? 'e.g. Tech stack: Next.js + FastAPI + Postgres'
+                    : newMemoryKind === 'decision'
+                      ? 'e.g. Pricing tiers — Free, Pro $29, Team $99'
+                      : 'e.g. Targeting EU mid-market in Q1'
+                }
+                className="w-full rounded-lg text-[12px] text-white/85 placeholder:text-white/20 outline-none resize-none p-2.5 mb-3 scrollbar-thin"
+                style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.05)' }}
+                autoFocus
+                disabled={memoryBusy}
+              />
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] text-white/20">
+                  ⌘+Enter to save · {newMemoryContent.trim().length}/8000
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => !memoryBusy && setShowAddMemory(false)}
+                    disabled={memoryBusy}
+                    className="px-3 py-1.5 rounded-md text-[11px] text-white/50 hover:text-white/70 transition-colors">
+                    Cancel
+                  </button>
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleAddMemory}
+                    disabled={!newMemoryContent.trim() || memoryBusy}
+                    className={`px-3 py-1.5 rounded-md text-[11px] font-medium transition-all ${(!newMemoryContent.trim() || memoryBusy) ? 'bg-white/[0.04] text-white/20 cursor-not-allowed' : 'bg-cyan-500/15 text-cyan-300 hover:bg-cyan-500/25'}`}>
+                    {memoryBusy ? 'Saving…' : 'Save memory'}
+                  </motion.button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>
