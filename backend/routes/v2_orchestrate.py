@@ -64,12 +64,16 @@ def _ensure_enabled() -> None:
         )
 
 
-# Bring up runs table once at import time when the flag is on.
+# Bring up runs + tasks tables once at import time when the flag is on.
 if _enabled():
     try:
-        from backend.services.orchestrator import init_runs_table as _init_runs
+        from backend.services.orchestrator import (
+            init_runs_table as _init_runs,
+            init_tasks_table as _init_tasks,
+        )
         _init_runs()
-        logger.info("orchestrator.runs_table initialized (ENABLE_ORCHESTRATOR=true)")
+        _init_tasks()     # Phase 5.1 — task graph storage
+        logger.info("orchestrator tables initialized (runs + tasks)")
     except Exception as exc:  # pragma: no cover — defensive
         logger.warning("orchestrator.runs_table init failed: %s", exc)
 
@@ -353,12 +357,29 @@ async def orchestrate(body: OrchestrateBody) -> dict:
         "fallback":    bool(getattr(response, "fallback", False)) if response else True,
     }
 
+    # Phase 5.1 — task graph envelope. Loaded from the persistent
+    # tasks_store so the response carries the full per-task lifecycle
+    # the frontend can render as a timeline. When no tasks were
+    # created (older runs, /chat fallback, or first deploy before
+    # tasks_table init), this returns an empty graph — the response
+    # shape stays stable so the frontend always gets the field.
+    task_graph_envelope: dict = {
+        "run_id": run_id, "tasks": [],
+        "counts": {}, "total_count": 0, "total_duration_ms": 0,
+    }
+    try:
+        from backend.services.orchestrator import ExecutionGraph
+        task_graph_envelope = ExecutionGraph.for_run(run_id).to_envelope()
+    except Exception as exc:
+        logger.debug("orchestrate | task_graph envelope soft-failed: %s", exc)
+
     return {
         "run_id":      run_id,
         "reply":       reply,
         "agent_id":    spec.id,
         "agents_used": agents_used,
         "trace":       trace_summary,
+        "task_graph":  task_graph_envelope,   # Phase 5.1
         "metadata": {
             "project_id":         body.project_id,
             "project_context":    bool(project_block),
@@ -395,3 +416,26 @@ def get_run_route(run_id: str) -> dict:
     if not row:
         raise HTTPException(status_code=404, detail={"error": "run_not_found"})
     return row
+
+
+# ── Phase 5.1 — task graph endpoints ──────────────────────────────────
+
+@router.get("/runs/{run_id}/tasks")
+def get_run_tasks_route(run_id: str) -> dict:
+    """Return the execution graph for a run. Used by the frontend to
+    backfill after a tab refresh — the SSE stream only delivers events
+    going forward, so on mount the UI fetches the historical task
+    list from here."""
+    _ensure_enabled()
+    from backend.services.orchestrator import ExecutionGraph
+    return ExecutionGraph.for_run(run_id).to_envelope()
+
+
+@router.get("/projects/{project_id}/tasks")
+def get_project_tasks_route(project_id: str, limit: int = 100) -> dict:
+    """List recent tasks for a project (across all runs). Cap at 500
+    to bound payload size; default 100. Sorted newest-first."""
+    _ensure_enabled()
+    from backend.services.orchestrator import list_tasks_for_project
+    rows = list_tasks_for_project(project_id, limit=limit)
+    return {"tasks": rows}

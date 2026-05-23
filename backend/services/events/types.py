@@ -37,6 +37,14 @@ EVENT_KINDS = (
     "agent.draft_generated",  # specialist produced its initial reply (pre-guard)
     "agent.quality_check",    # quality guard verdict (ok or with reasons)
     "agent.regenerated",      # guard rejected the draft and the specialist re-ran
+    # Phase 5.1 — task graph lifecycle. Tied 1:1 to rows in the
+    # `tasks` table; emitted by delegate around its existing
+    # delegate.* events so the UI can render a per-task list with
+    # status badges + per-task durations.
+    "task.created",     # task row inserted, status=queued
+    "task.started",     # task transitioned to status=running
+    "task.completed",   # task transitioned to status=completed
+    "task.failed",      # task transitioned to status=failed
 )
 
 

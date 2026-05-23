@@ -405,7 +405,11 @@ def test_delegate_emits_started_and_returned():
                     _run_agent_fn=_make_stub_runner({}),
                 )
             kinds = []
-            for _ in range(8):
+            # Phase 5.1 pushed event-per-delegate from ~5 → ~9 (added
+            # task.created / task.started / task.completed). Drain a
+            # large window so future event additions don't regress
+            # the read loop.
+            for _ in range(20):
                 try:
                     e = await asyncio.wait_for(sub.get(), 0.2)
                     kinds.append(e.kind)
@@ -435,7 +439,7 @@ def test_delegate_emits_errored_on_policy_reject():
                     _run_agent_fn=_make_stub_runner({}),
                 )
             kinds = []
-            for _ in range(6):
+            for _ in range(20):
                 try:
                     e = await asyncio.wait_for(sub.get(), 0.2)
                     kinds.append((e.kind, e.payload.get("code")))

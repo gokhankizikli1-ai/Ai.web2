@@ -586,13 +586,75 @@ async def _execute_delegation(
     }
     shared_scratch.setdefault(_SCRATCH_DELEGATION_LOG, []).append(history_entry)
 
+    # ── Phase 5.1 — task graph integration ─────────────────────────────
+    # Create a task row BEFORE delegate.started so the task_id can be
+    # surfaced in event payloads (frontend correlates per-task events
+    # by task_id). Dependencies pull from the supervisor's prior
+    # delegation history in this run — any prior task is a soft
+    # dependency. The schema captures the structure even though the
+    # 5.1 executor doesn't enforce it yet.
+    task_id = ""
+    try:
+        from backend.services.orchestrator.tasks_store import (
+            create_task, mark_started, mark_completed, mark_failed,
+            init_tasks_table,
+        )
+        # Defensive: tasks_table may not have been initialized if the
+        # orchestrator route was first invoked WITHOUT ENABLE_ORCHESTRATOR=true.
+        # Idempotent + cheap.
+        init_tasks_table()
+        prior_task_ids = list(shared_scratch.get("_task_ids_in_run", []))
+        task_id = create_task(
+            run_id=(parent_ctx.run_id if parent_ctx else "-"),
+            project_id=(parent_ctx.project_id if parent_ctx else None),
+            title=composed_message[:200] or f"{target_spec.name} task",
+            assigned_agent=target_spec.id,
+            dependencies=prior_task_ids[-3:],   # soft: last 3 tasks in this run
+            metadata={
+                "caller":      caller_spec_id,
+                "depth":       child_depth,
+                "spec_kind":   target_spec.kind,
+                "spec_name":   target_spec.name,
+                "tier":        _tier_label_for(target_spec),
+                "model":       selected_model,
+            },
+        )
+        if task_id:
+            shared_scratch.setdefault("_task_ids_in_run", []).append(task_id)
+            _emit("task.created", ctx=parent_ctx, payload={
+                "task_id":        task_id,
+                "title":          composed_message[:200],
+                "assigned_agent": target_spec.id,
+                "spec_name":      target_spec.name,
+                "depth":          child_depth,
+                "dependencies":   prior_task_ids[-3:],
+            })
+    except Exception as _te:
+        logger.debug("tasks_store create_task soft-failed: %s", _te)
+        task_id = ""
+
     _emit("delegate.started", ctx=parent_ctx, payload={
         "caller":   caller_spec_id,
         "agent_id": target_spec.id,
         "depth":    child_depth,
         "task":     composed_message[:200],
         "model":    selected_model,
+        "task_id":  task_id,   # Phase 5.1
     })
+
+    # Phase 5.1 — mark the task as running just before we cross into
+    # the LLM call. Status transition is emitted as a separate event
+    # so the UI can render "queued → running → completed" without
+    # waiting for the specialist to finish.
+    if task_id:
+        try:
+            if mark_started(task_id):
+                _emit("task.started", ctx=parent_ctx, payload={
+                    "task_id":        task_id,
+                    "assigned_agent": target_spec.id,
+                })
+        except Exception:
+            pass
 
     # Phase 4.2 — context-lookup telemetry. The sub-agent inherits the
     # parent's project_context_block (cached) — emit before we cross
@@ -713,7 +775,20 @@ async def _execute_delegation(
         _emit("delegate.errored", ctx=parent_ctx, payload={
             "caller": caller_spec_id, "agent_id": target_spec.id,
             "code": result["code"], "error": result["error"],
+            "task_id": task_id,
         })
+        # Phase 5.1 — mark task as failed in the persistent graph.
+        if task_id:
+            try:
+                from backend.services.orchestrator.tasks_store import mark_failed
+                if mark_failed(task_id, error=f"{type(exc).__name__}: {exc}"):
+                    _emit("task.failed", ctx=parent_ctx, payload={
+                        "task_id": task_id,
+                        "assigned_agent": target_spec.id,
+                        "error":  f"{type(exc).__name__}: {str(exc)[:200]}",
+                    })
+            except Exception:
+                pass
         return result
     finally:
         # Release the parallel slot — even if budget bookkeeping fails.
@@ -722,6 +797,48 @@ async def _execute_delegation(
     # ── 8. Update token estimate + emit success ────────────────────────
     delta = _estimate_tokens(composed_message) + _estimate_tokens(response.reply or "")
     shared_scratch[_SCRATCH_TOKENS_USED] = tokens_used + delta
+
+    # Phase 5.1 — mark task as completed + record result_summary.
+    # Done BEFORE delegate.returned emission so subscribers see the
+    # task land in 'completed' status when they correlate by task_id.
+    # The result_summary feeds the per-task expand-to-show drawer in
+    # the future UI; today it surfaces in the response envelope.
+    if task_id:
+        try:
+            from backend.services.orchestrator.tasks_store import mark_completed
+            from backend.services.orchestrator.execution_graph import truncate_for_summary
+            summary = truncate_for_summary(response.reply or "")
+            if mark_completed(
+                task_id,
+                result_summary=summary,
+                metadata={
+                    "elapsed_ms":      getattr(response, "elapsed_ms", 0),
+                    "steps_used":      getattr(response, "steps_used", 0),
+                    "tool_calls":      getattr(response, "tool_calls", 0),
+                    "tokens_estimate": delta,
+                    "partial":         bool(getattr(response, "partial", False)),
+                    "fallback":        bool(getattr(response, "fallback", False)),
+                    "provider":        getattr(response, "provider", "") or "",
+                    "actual_model":    getattr(response, "model", "") or selected_model,
+                },
+            ):
+                _emit("task.completed", ctx=parent_ctx, payload={
+                    "task_id":        task_id,
+                    "assigned_agent": target_spec.id,
+                    "reply_chars":    len(response.reply or ""),
+                    "elapsed_ms":     getattr(response, "elapsed_ms", 0),
+                })
+            # Also make the task's result readable to sibling agents via
+            # the shared scratch — implements the "Phase 5 shared memory
+            # bus" requirement so a later specialist can reference
+            # earlier outputs without going through the supervisor.
+            shared_scratch.setdefault("_task_results", {})[task_id] = {
+                "agent_id": target_spec.id,
+                "agent_name": target_spec.name,
+                "summary":  summary,
+            }
+        except Exception as _te:
+            logger.debug("tasks_store mark_completed soft-failed: %s", _te)
 
     payload_meta = {
         "caller":      caller_spec_id,
@@ -732,6 +849,7 @@ async def _execute_delegation(
         "tool_calls":  getattr(response, "tool_calls", 0),
         "elapsed_ms":  getattr(response, "elapsed_ms", 0),
         "tokens_estimate": delta,
+        "task_id":     task_id,   # Phase 5.1 — correlates delegate.returned with task
     }
     _emit("delegate.returned", ctx=parent_ctx, payload=payload_meta)
 

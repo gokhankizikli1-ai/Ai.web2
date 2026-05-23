@@ -345,7 +345,9 @@ def test_spawn_and_delegate_emits_delegate_started_event():
                     _run_agent_fn=stub,
                 )
             kinds = []
-            for _ in range(8):
+            # Phase 5.1 added 3 task.* events per delegation — drain
+            # a larger window so we capture delegate.returned reliably.
+            for _ in range(20):
                 try:
                     e = await asyncio.wait_for(sub.get(), 0.2)
                     kinds.append(e.kind)

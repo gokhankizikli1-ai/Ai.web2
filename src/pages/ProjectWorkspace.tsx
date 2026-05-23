@@ -209,6 +209,49 @@ function orchestrationStatusFor(evt: {
         label: `${targetName} regenerating with stricter contract`,
         color: '#fbbf24', pulse: true,
       };
+
+    // Phase 5.1 — task graph lifecycle. Pairs with delegate.* events
+    // and surfaces the persisted task in the timeline. Reads
+    // payload.assigned_agent (set by delegate) for the agent label.
+    case 'task.created': {
+      const aid = (evt.payload as { assigned_agent?: string }).assigned_agent ?? null;
+      const name = humanAgentName(aid);
+      const title = (evt.payload as { title?: string }).title;
+      return {
+        label: title ? `Task queued: ${title.slice(0, 60)}` : `Task queued for ${name}`,
+        color: agentTone(aid),
+        pulse: false,
+      };
+    }
+    case 'task.started': {
+      const aid = (evt.payload as { assigned_agent?: string }).assigned_agent ?? null;
+      return {
+        label: `Task started — ${humanAgentName(aid)}`,
+        color: agentTone(aid),
+        pulse: true,
+      };
+    }
+    case 'task.completed': {
+      const aid = (evt.payload as { assigned_agent?: string }).assigned_agent ?? null;
+      const elapsed = (evt.payload as { elapsed_ms?: number }).elapsed_ms;
+      const elapsedStr = elapsed && elapsed > 0
+        ? ` (${elapsed >= 1000 ? `${(elapsed / 1000).toFixed(1)}s` : `${elapsed}ms`})`
+        : '';
+      return {
+        label: `Task completed — ${humanAgentName(aid)}${elapsedStr}`,
+        color: '#94a3b8',
+        pulse: false,
+      };
+    }
+    case 'task.failed': {
+      const aid = (evt.payload as { assigned_agent?: string }).assigned_agent ?? null;
+      const err = (evt.payload as { error?: string }).error ?? 'unknown';
+      return {
+        label: `Task failed — ${humanAgentName(aid)} — ${err.slice(0, 80)}`,
+        color: '#fbbf24',
+        pulse: false,
+      };
+    }
     default:
       return { label: evt.kind, color: '#94a3b8', pulse: false };
   }

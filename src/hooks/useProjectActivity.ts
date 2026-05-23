@@ -51,6 +51,13 @@ const KNOWN_KINDS = [
   'agent.draft_generated',
   'agent.quality_check',
   'agent.regenerated',
+  // Phase 5.1 — task graph lifecycle. One row per delegate() call;
+  // fires alongside the existing delegate.* events and lets the UI
+  // render a per-task status timeline.
+  'task.created',
+  'task.started',
+  'task.completed',
+  'task.failed',
   // Future-proofing: any new bus emission must add its kind here too.
 ] as const;
 
