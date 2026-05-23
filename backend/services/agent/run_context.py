@@ -50,14 +50,21 @@ class RunContext:
         parent_agent:  the spec.id of the agent that spawned this run.
                        None at the orchestrator root; set when a
                        sub-agent is delegated to (Phase 3.3).
+        depth:         orchestration depth — 0 at the root, +1 for each
+                       level of delegation. Used by the delegate tool
+                       (Phase 3.3) to enforce ORCHESTRATOR_MAX_DEPTH.
         project_context_block:  pre-built Project Context string (the
                        same one Phase 2's chat injection produces).
                        Cached here so each sub-agent in a run pays
                        the build cost once, not N times.
         scratch:       free-form per-run k/v store. Agents can write
                        intermediate results here for sibling agents to
-                       read without going through the LLM. Cleared
-                       when the run ends.
+                       read without going through the LLM. SHARED BY
+                       REFERENCE across all RunContexts spawned by the
+                       same orchestration (parent and children all see
+                       the same dict) — this is intentional so the
+                       delegate tool can track _in_flight / _tokens_used
+                       aggregates across sibling sub-agents.
         started_at:    ISO-8601 UTC timestamp.
         metadata:      additive metadata for future use (model overrides,
                        routing decisions, etc.).
@@ -66,6 +73,7 @@ class RunContext:
     user_id:               str
     project_id:            Optional[str] = None
     parent_agent:          Optional[str] = None
+    depth:                 int = 0
     project_context_block: str = ""
     scratch:               Dict[str, Any] = field(default_factory=dict)
     started_at:            str = field(default_factory=_now)
@@ -99,6 +107,8 @@ def start_run(
     run_id: Optional[str] = None,
     project_context_block: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None,
+    depth: int = 0,
+    scratch: Optional[Dict[str, Any]] = None,
 ) -> "RunHandle":
     """Push a fresh RunContext for the current task.
 
@@ -106,6 +116,12 @@ def start_run(
     we opportunistically read whatever block Phase 2 already injected
     via the project ContextVar — that way `/chat` callers get RunContext
     for free without changing chat.py.
+
+    Phase 3.3 — `depth` and `scratch` enable child-run inheritance:
+      - depth: increment per delegation level
+      - scratch: pass the PARENT's scratch dict by reference so the
+        delegate tool can share _in_flight / _tokens_used counters
+        between sibling sub-agents.
 
     Returns a RunHandle whose `.close()` MUST be called (use the
     handle as a context manager: `with start_run(...) as run: ...`).
@@ -126,7 +142,9 @@ def start_run(
         user_id=str(user_id),
         project_id=(project_id or None),
         parent_agent=parent_agent,
+        depth=int(depth),
         project_context_block=block,
+        scratch=(scratch if scratch is not None else {}),
         metadata=dict(metadata or {}),
     )
     token = _CURRENT_RUN.set(ctx)
