@@ -190,6 +190,36 @@ export function getProjectAgents(projectId: string): ProjectAgent[] {
   return loadAgents(projectId);
 }
 
+/**
+ * Phase 3.6 — best-effort client-side default for the agent's persona
+ * prompt. The authoritative source of the role→prompt mapping lives
+ * in the backend (backend/services/agent/specs/role_templates.py).
+ * We send this client-side hint so the agent has a strong persona on
+ * day one; the backend also has a fallback (spec_from_project_agent)
+ * that fills in a role-based template if the stored system_prompt is
+ * empty, so legacy localStorage-only agents created before 3.6 still
+ * get the right behaviour.
+ */
+function systemPromptForRole(role: string): string {
+  const key = (role || '').trim().toLowerCase();
+  // Map common label variants to the canonical role id (matches the
+  // alias table in role_templates.py). Returning an empty string lets
+  // the backend's stronger template take over.
+  const alias: Record<string, string> = {
+    'frontend engineer': 'frontend',
+    'backend engineer':  'backend',
+    'research analyst':  'research',
+    'startup strategist':'startup',
+    'ecommerce expert':  'ecommerce',
+    'trading analyst':   'trading',
+    'ui/ux designer':    'design',
+  };
+  // Just send a tiny hint; backend has the full template.
+  // Storing the full template client-side would bloat localStorage
+  // and force frontend redeploys when the prompt changes.
+  return `__role_hint__:${alias[key] || key || 'custom'}`;
+}
+
 export function addProjectAgent(projectId: string, agent: ProjectAgent) {
   const agents = loadAgents(projectId);
   agents.push(agent);
@@ -199,12 +229,22 @@ export function addProjectAgent(projectId: string, agent: ProjectAgent) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        agent_id: agent.id,
-        name:     agent.name,
-        role:     agent.role,
-        color:    agent.color,
-        icon:     agent.icon,
-        metadata: { specialty: agent.specialty, gradient: agent.gradient },
+        agent_id:      agent.id,
+        name:          agent.name,
+        role:          agent.role,
+        color:         agent.color,
+        icon:          agent.icon,
+        // Phase 3.6: send a role hint so the backend can resolve the
+        // canonical role template even when the displayed label has
+        // been customized. The backend's spec_from_project_agent
+        // falls back to its own template when this is empty/unknown,
+        // so older clients that don't send this still behave correctly.
+        system_prompt: '',  // intentionally empty — backend fills from role
+        metadata: {
+          specialty: agent.specialty,
+          gradient:  agent.gradient,
+          role_hint: systemPromptForRole(agent.role),
+        },
       }),
     });
   });
@@ -246,6 +286,31 @@ export function addAgentMessage(projectId: string, agentId: string, message: Pro
     agents[idx].messages.push(message);
     saveAgents(projectId, agents);
   }
+}
+
+/**
+ * Phase 3.6 — update an existing agent message's content in place
+ * (used by the client-side typewriter to progressively reveal the
+ * orchestrator's final reply without inserting a new message per
+ * frame). Returns true when the message was found and updated.
+ */
+export function updateAgentMessage(
+  projectId: string,
+  agentId: string,
+  messageId: string,
+  updates: Partial<ProjectAgent['messages'][0]>,
+): boolean {
+  const agents = loadAgents(projectId);
+  const agentIdx = agents.findIndex(a => a.id === agentId);
+  if (agentIdx < 0) return false;
+  const msgIdx = agents[agentIdx].messages.findIndex(m => m.id === messageId);
+  if (msgIdx < 0) return false;
+  agents[agentIdx].messages[msgIdx] = {
+    ...agents[agentIdx].messages[msgIdx],
+    ...updates,
+  };
+  saveAgents(projectId, agents);
+  return true;
 }
 
 /* ─── Project Tasks ─── */

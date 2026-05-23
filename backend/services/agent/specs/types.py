@@ -60,14 +60,30 @@ def spec_from_project_agent(row: dict) -> AgentSpec:
     for trace UX. Tool allowlist defaults to a safe subset until we
     add a UI for the user to pick tools (Phase 4 follow-up).
 
+    Phase 3.6: when the stored system_prompt is empty (the historical
+    default before the frontend started populating it), we fall back
+    to a role-based template. This is the root cause fix for
+    "Frontend Agent suggests Wix" — without a strong persona prompt
+    a project agent acts like a generic LLM.
+
     Required keys: id, name, project_id.
     Optional:      role, system_prompt, model_hint, metadata.
     """
+    stored_prompt = str(row.get("system_prompt") or "").strip()
+    role_label = str(row.get("role") or "specialist")
+    if not stored_prompt:
+        # Lazy import to avoid a circular dep — role_templates may
+        # in future read from the registry, which imports types.
+        from backend.services.agent.specs.role_templates import (
+            default_system_prompt_for_role,
+        )
+        stored_prompt = default_system_prompt_for_role(role_label)
+
     return AgentSpec(
         id=str(row["id"]),
         name=str(row.get("name") or "Project Agent"),
-        role=str(row.get("role") or "specialist"),
-        system_prompt=str(row.get("system_prompt") or "").strip(),
+        role=role_label,
+        system_prompt=stored_prompt,
         allowed_tools=tuple(
             (row.get("metadata") or {}).get("allowed_tools") or ()
         ),

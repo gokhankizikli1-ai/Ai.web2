@@ -169,7 +169,28 @@ async def orchestrate(body: OrchestrateBody) -> dict:
         },
     )
 
-    # ── 4. Build AgentRequest with the spec attached ──────────────────
+    # ── 4. Build the AgentRequest. Phase 3.6: if the caller's
+    # target is the Supervisor AND a project_id is set, augment the
+    # supervisor's system prompt with a list of project-specific
+    # agents so the supervisor knows it can delegate to them
+    # (their agent_ids resolve via Phase 3.3's get_spec fallback).
+    effective_system_prompt = spec.system_prompt
+    if spec.id == "supervisor" and body.project_id:
+        try:
+            from backend.services.projects import list_agents as _list_project_agents
+            proj_agents = _list_project_agents(body.project_id)
+        except Exception:
+            proj_agents = []
+        if proj_agents:
+            lines = ["", "PROJECT AGENTS AVAILABLE (prefer over built-ins when role matches):"]
+            for pa in proj_agents:
+                lines.append(f"  - {pa.id}  ({pa.role or pa.name})")
+            effective_system_prompt = (
+                spec.system_prompt + "\n" + "\n".join(lines) +
+                "\n\nCall delegate(agent_id=<id-above>, task=...) using the "
+                "exact id listed above to invoke a project agent."
+            )
+
     request = AgentRequest(
         user_message=body.message.strip(),
         mode=(body.mode or spec.id),
@@ -177,7 +198,7 @@ async def orchestrate(body: OrchestrateBody) -> dict:
         model=spec.default_model,
         temperature=spec.temperature,
         max_tokens=2000,
-        system_prompt=spec.system_prompt,
+        system_prompt=effective_system_prompt,
         max_steps=spec.max_steps,
         spec=spec,                                     # Phase 3.4 — enables spec-aware path
         metadata_in={

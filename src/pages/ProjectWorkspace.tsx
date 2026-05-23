@@ -15,7 +15,8 @@ const ROLE_ICONS: Record<string, React.ElementType> = {
 
 import {
   getProject, getProjectAgents, addProjectAgent, updateProjectAgent,
-  removeProjectAgent, addAgentMessage, AGENT_ROLES, createAgent, uid,
+  removeProjectAgent, addAgentMessage, updateAgentMessage,
+  AGENT_ROLES, createAgent, uid,
   listProjectMemory, addProjectMemory, type ProjectMemoryEntry,
 } from '@/stores/projectStore';
 import type { ProjectAgent, AgentMessage } from '@/types/projects';
@@ -179,13 +180,22 @@ export default function ProjectWorkspace() {
     setIsTyping(true);
     refreshAgents();
 
-    // Phase 2 — send to the real chat backend with project_id. The backend
-    // injects a "Project Context" block (project description + recent
-    // memory) into the system prompt so the agent's reply is grounded in
-    // this project's shared memory. Falls back to a local placeholder on
-    // any error so the chat never dead-ends (network down, backend cold,
-    // ENABLE_PROJECTS off → 503 on /projects routes — chat itself still
-    // works because project_id is silently ignored when the flag is off).
+    /* Phase 3.6 — project chat now routes to the orchestrator.
+       Strategy:
+         1. Try POST /v2/orchestrate (real multi-agent: Supervisor plans,
+            delegates to specialists, synthesises a structured reply).
+         2. On 503 (ENABLE_ORCHESTRATOR=false), fall back to POST /chat
+            with project_id (Phase 2 behaviour — single-LLM with
+            project context injection).
+         3. On both failing, render a local placeholder so the chat
+            never visually dead-ends.
+
+       The final reply is rendered progressively via a client-side
+       typewriter into a pre-inserted empty assistant message — gives
+       the ChatGPT-style streaming feel even when the underlying API
+       returned the full string at once. Activity events from the
+       Phase 3.5 SSE stream surface separately in the Recent Activity
+       sidebar panel while generation is happening. */
     const apiBase = ((import.meta.env.VITE_API_URL as string | undefined)?.trim()
       || 'https://worker-production-1345.up.railway.app').replace(/\/+$/, '');
     const userId = (() => {
@@ -201,44 +211,122 @@ export default function ProjectWorkspace() {
       } catch { return 'guest'; }
     })();
 
-    const fallbackReply = () => {
-      const responses = [
-        "Great question! Let me think through this step by step.",
-        "I've analyzed this for you. Here's what I found...",
-        "Interesting approach. Let me provide some insights.",
-        "Based on your project context, here's my recommendation.",
-      ];
-      return responses[Math.floor(Math.random() * responses.length)];
+    const fallbackReply = () =>
+      'I had trouble reaching the orchestrator. The connection will retry — '
+      + 'in the meantime, please rephrase or try again.';
+
+    // Pre-insert an empty assistant message so the typewriter can stream
+    // into it. The id stays stable across reveals.
+    const assistantMsgId = `msg-${uid()}`;
+    const assistantMsg: AgentMessage = {
+      id: assistantMsgId, content: '', sender: 'agent',
+      timestamp: new Date().toISOString(), type: 'text', agentId: selectedAgent.id,
     };
+    if (projectId) addAgentMessage(projectId, selectedAgent.id, assistantMsg);
+    refreshAgents();
 
     (async () => {
       let replyText = '';
+      let usedOrchestrator = false;
+
+      // 1. Try the orchestrator (Phase 3.4)
       try {
-        const res = await fetch(`${apiBase}/chat`, {
+        const res = await fetch(`${apiBase}/v2/orchestrate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             user_id:    userId,
             message:    messageText,
-            chat_id:    `project-${projectId}-${selectedAgent.id}`,
-            session_id: `project-${projectId}-${selectedAgent.id}`,
-            platform:   'web',
             project_id: projectId,
+            // Use the user-selected project agent's id as the root when
+            // the user explicitly picked a non-supervisor specialist;
+            // otherwise default to 'supervisor' so the LLM plans + delegates.
+            agent_id:   selectedAgent.id.startsWith('agent-')
+                          ? 'supervisor'
+                          : (selectedAgent.id || 'supervisor'),
+            metadata:   { from_project_workspace: true, selected_agent: selectedAgent.id },
           }),
         });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        replyText = String(data.reply ?? data.response ?? data.message ?? '').trim();
+        if (res.ok) {
+          const data = await res.json();
+          replyText = String(data.reply ?? '').trim();
+          usedOrchestrator = true;
+          // eslint-disable-next-line no-console
+          console.info('[projectChat] orchestrator_used', {
+            run_id: data.run_id, agents_used: data.agents_used,
+            trace: data.trace,
+          });
+        } else if (res.status !== 503) {
+          // Non-503 error — log and fall through to /chat fallback
+          // eslint-disable-next-line no-console
+          console.warn('[projectChat] orchestrator returned', res.status);
+        }
       } catch {
-        // Swallow — fallback reply below keeps the conversation alive.
+        // Network error — fall through to legacy /chat below
       }
+
+      // 2. Fall back to /chat if orchestrator was disabled or unreachable
+      if (!replyText) {
+        try {
+          const res = await fetch(`${apiBase}/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              user_id:    userId,
+              message:    messageText,
+              chat_id:    `project-${projectId}-${selectedAgent.id}`,
+              session_id: `project-${projectId}-${selectedAgent.id}`,
+              platform:   'web',
+              project_id: projectId,
+            }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            replyText = String(data.reply ?? data.response ?? data.message ?? '').trim();
+          }
+        } catch {
+          // Swallow
+        }
+      }
+
       if (!replyText) replyText = fallbackReply();
-      const agentMsg: AgentMessage = {
-        id: `msg-${uid()}`, content: replyText, sender: 'agent',
-        timestamp: new Date().toISOString(), type: 'text', agentId: selectedAgent.id,
-      };
-      if (projectId) addAgentMessage(projectId, selectedAgent.id, agentMsg);
-      refreshAgents();
+
+      // 3. Client-side typewriter reveal — gives the ChatGPT feel even
+      // though we received the full reply at once. Step size + delay
+      // tuned to feel natural (~250 chars/sec). Large replies finish
+      // in 5-8 seconds; small ones (a few sentences) in under a second.
+      const STEP = 3;       // chars per tick
+      const DELAY_MS = 12;  // ms per tick
+      let revealed = 0;
+      // Track final reveal length so an early "stop generation" could
+      // future-cancel without breaking state.
+      while (revealed < replyText.length) {
+        revealed = Math.min(replyText.length, revealed + STEP);
+        const partial = replyText.slice(0, revealed);
+        if (projectId) {
+          updateAgentMessage(projectId, selectedAgent.id, assistantMsgId, {
+            content: partial,
+          });
+          refreshAgents();
+        }
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((r) => setTimeout(r, DELAY_MS));
+      }
+
+      // Final commit — ensure the full text is persisted even if a
+      // tick was missed (defensive).
+      if (projectId) {
+        updateAgentMessage(projectId, selectedAgent.id, assistantMsgId, {
+          content: replyText,
+        });
+        refreshAgents();
+      }
+
+      // eslint-disable-next-line no-console
+      console.info('[projectChat] reply_complete', {
+        used_orchestrator: usedOrchestrator,
+        reply_chars: replyText.length,
+      });
       setIsTyping(false);
     })();
   };
