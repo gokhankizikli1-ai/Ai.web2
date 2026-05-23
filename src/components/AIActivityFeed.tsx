@@ -1,10 +1,19 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Activity, CheckCircle2, Clock, ChevronDown, Brain, Search, FileText, Code2, TrendingUp } from 'lucide-react';
 import type { AIActivity } from '@/types';
+import { eventsToActivities, type ProjectActivityEvent } from '@/hooks/useProjectActivity';
 
 interface AIActivityFeedProps {
   activities: AIActivity[];
+  /**
+   * Phase 3.5 — optional realtime event stream. When provided AND
+   * non-empty, replaces `activities` as the feed's data source.
+   * When omitted or empty, the existing `activities` prop is used
+   * (preserves the demo fallback). Components that don't pass it
+   * are unaffected.
+   */
+  events?: ProjectActivityEvent[];
 }
 
 function StatusIcon({ status }: { status: AIActivity['status'] }) {
@@ -42,12 +51,31 @@ function ProgressBar({ value }: { value: number }) {
   );
 }
 
-export default function AIActivityFeed({ activities }: AIActivityFeedProps) {
+export default function AIActivityFeed({ activities, events }: AIActivityFeedProps) {
   const [expanded, setExpanded] = useState(false);
-  if (activities.length === 0) return null;
 
-  const activeCount = activities.filter((a) => a.status === 'active').length;
-  const displayActivities = expanded ? activities : activities.slice(0, 3);
+  // Phase 3.5 — when a non-empty realtime event stream is supplied,
+  // derive the activity list from it; otherwise fall back to the
+  // demo / static activities prop. Memoised so we don't re-map the
+  // event buffer on every render.
+  const effectiveActivities: AIActivity[] = useMemo(() => {
+    if (events && events.length > 0) {
+      return eventsToActivities(events).map((d) => ({
+        id:        d.id,
+        status:    d.status,
+        message:   d.message,
+        detail:    d.detail,
+        progress:  d.progress,
+        timestamp: d.timestamp,
+      }));
+    }
+    return activities;
+  }, [events, activities]);
+
+  if (effectiveActivities.length === 0) return null;
+
+  const activeCount = effectiveActivities.filter((a) => a.status === 'active').length;
+  const displayActivities = expanded ? effectiveActivities : effectiveActivities.slice(0, 3);
 
   return (
     <div className="border-b border-white/[0.02] bg-[#0a0a0a]/30">

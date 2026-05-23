@@ -19,6 +19,7 @@ import {
   listProjectMemory, addProjectMemory, type ProjectMemoryEntry,
 } from '@/stores/projectStore';
 import type { ProjectAgent, AgentMessage } from '@/types/projects';
+import { useProjectActivity } from '@/hooks/useProjectActivity';
 
 /* ═══════════════════════════════════════════ */
 
@@ -80,6 +81,15 @@ export default function ProjectWorkspace() {
   }, [projectId]);
 
   useEffect(() => { refreshMemory(); }, [refreshMemory]);
+
+  /* ── Phase 3.5: realtime project activity via SSE ────────────────────
+     Subscribes the workspace to /v2/events/stream?scope=project:<id>
+     when an orchestration is running. The hook is inert when no
+     projectId is set or when the backend has ENABLE_REALTIME_EVENTS
+     off — falls back to the existing per-agent "Recent Activity"
+     list in those cases. */
+  const { events: liveEvents, status: liveStatus } =
+    useProjectActivity(projectId || null);
 
   const selectedAgent = agents.find(a => a.id === selectedAgentId);
   const activeAgentCount = agents.filter(a => a.status === 'active').length;
@@ -536,13 +546,62 @@ export default function ProjectWorkspace() {
             </div>
           </div>
 
-          {/* Active Tasks */}
+          {/* Active Tasks — Phase 3.5: shows realtime SSE events when an
+              orchestration is in flight; falls back to the per-agent
+              static list otherwise so the demo design is preserved. */}
           <div className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.04)' }}>
-            <div className="flex items-center gap-2 mb-3">
-              <Activity className="h-3.5 w-3.5 text-white/30" />
-              <span className="text-[11px] font-semibold text-white/60">Recent Activity</span>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Activity className="h-3.5 w-3.5 text-white/30" />
+                <span className="text-[11px] font-semibold text-white/60">Recent Activity</span>
+              </div>
+              {/* Tiny SSE status indicator — matches Phase 2.5 sync dot pattern */}
+              <div
+                className="w-1.5 h-1.5 rounded-full"
+                title={`Realtime: ${liveStatus}`}
+                style={{
+                  background:
+                    liveStatus === 'connected' ? 'rgb(52,211,153)' :
+                    liveStatus === 'connecting' ? 'rgb(148,163,184)' :
+                    liveStatus === 'offline' ? 'rgb(251,191,36)' :
+                    'rgb(100,116,139)',
+                  boxShadow: liveStatus === 'connected' ? '0 0 4px rgba(52,211,153,0.3)' : 'none',
+                }}
+              />
             </div>
-            {agents.length === 0 ? (
+            {liveEvents.length > 0 ? (
+              // SSE events available — render newest-first, capped to 6 lines
+              <div className="space-y-2">
+                {liveEvents.slice(-6).reverse().map((evt, i) => {
+                  const isActive  = evt.kind.endsWith('.started') || evt.kind === 'tool.called';
+                  const isError   = evt.kind.endsWith('.errored');
+                  const dotColour = isError ? '#fbbf24' : isActive ? '#34d399' : '#94a3b8';
+                  const label = evt.kind === 'delegate.started'
+                    ? `Delegating → ${(evt.payload as { agent_id?: string }).agent_id ?? 'specialist'}`
+                    : evt.kind === 'delegate.returned'
+                      ? `${(evt.payload as { agent_id?: string }).agent_id ?? 'Specialist'} returned`
+                      : evt.kind === 'tool.called'
+                        ? `Calling ${(evt.payload as { tool?: string }).tool ?? 'tool'}`
+                        : evt.kind === 'agent.started'
+                          ? `${evt.agent_id ?? 'Agent'} started`
+                          : evt.kind === 'agent.finished'
+                            ? `${evt.agent_id ?? 'Agent'} finished`
+                            : evt.kind;
+                  return (
+                    <div key={`${evt.kind}-${evt.emitted_at}-${i}`} className="flex items-start gap-2">
+                      <div className="w-2 h-2 rounded-full mt-0.5 shrink-0"
+                        style={{ background: dotColour, boxShadow: isActive ? '0 0 4px rgba(52,211,153,0.3)' : 'none' }} />
+                      <div className="min-w-0">
+                        <p className="text-[10px] text-white/55 truncate">{label}</p>
+                        <p className="text-[8px] text-white/15">
+                          {new Date(evt.emitted_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : agents.length === 0 ? (
               <p className="text-[10px] text-white/15 text-center py-2">No activity yet</p>
             ) : (
               <div className="space-y-2">
