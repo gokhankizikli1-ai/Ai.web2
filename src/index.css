@@ -74,11 +74,21 @@
     -moz-osx-font-smoothing: grayscale;
     overscroll-behavior: none;
     -webkit-tap-highlight-color: transparent;
+    /* Prevent horizontal page scroll on iPad/mobile: a rogue child
+       deep in the tree (sidebar bleed, scrollable header, etc.)
+       cannot push the viewport wider than 100vw. */
+    overflow-x: hidden;
   }
 
   body {
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
+    /* Same guard at the body level so iOS Safari (which sometimes
+       ignores html.overflow-x) also clips horizontal overflow. */
+    overflow-x: hidden;
+    width: 100%;
+    /* Account for iOS notch / dynamic island. */
+    max-width: 100vw;
   }
 
   ::selection {
@@ -99,11 +109,13 @@
     scrollbar-width: thin;
     scrollbar-color: rgba(148, 163, 184, 0.15) transparent;
   }
-  .scrollbar-hide {
+  .scrollbar-hide,
+  .scrollbar-none {
     -ms-overflow-style: none;
     scrollbar-width: none;
   }
-  .scrollbar-hide::-webkit-scrollbar { display: none; }
+  .scrollbar-hide::-webkit-scrollbar,
+  .scrollbar-none::-webkit-scrollbar { display: none; }
 
   /* ── Animations ── */
   @keyframes caret-blink {

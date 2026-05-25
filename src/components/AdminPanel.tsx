@@ -52,6 +52,8 @@ function authHeaders(): Record<string, string> {
   try {
     const t = localStorage.getItem('korvix_access_token');
     if (t) headers['Authorization'] = `Bearer ${t}`;
+    const ot = localStorage.getItem('korvix_owner_token');
+    if (ot) headers['X-Korvix-Owner-Token'] = ot;
     const g = localStorage.getItem('korvix_user_id');
     if (g) headers['X-Korvix-Guest-Id'] = g;
   } catch { /* ignore */ }
