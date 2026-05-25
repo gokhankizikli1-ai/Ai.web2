@@ -29,7 +29,6 @@ import AdminPanel from './AdminPanel';
 
 export default function OwnerModeChip() {
   const ownerMode = useOwnerMode();
-  const [unlockOpen, setUnlockOpen] = useState(false);
   const [panelOpen, setPanelOpen]   = useState(false);
 
   // useOwnerMode listens for this event to re-fetch /v2/admin/status
@@ -76,7 +75,14 @@ export default function OwnerModeChip() {
     );
   }
 
-  // Locked state — visible to everyone, harmless click target.
+  return <LockedOwnerChip />;
+}
+
+function LockedOwnerChip() {
+  const [unlockOpen, setUnlockOpen] = useState(false);
+
+  // Locked state — visible to everyone, harmless click target. Keeping
+  // this state in a branch component resets it when owner mode unlocks.
   return (
     <>
       <motion.button

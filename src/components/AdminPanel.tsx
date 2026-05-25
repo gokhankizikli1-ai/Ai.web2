@@ -19,7 +19,7 @@ import { motion } from 'framer-motion';
 import {
   X, ShieldCheck, Activity, Bot, Database, Wrench,
   FileCode, ClipboardList, MessageSquare, Loader2, AlertTriangle,
-  Zap,
+  Zap, Trash2,
 } from 'lucide-react';
 import type { OwnerModeState, OrchestrationCapability } from '@/hooks/useOwnerMode';
 import { ORCHESTRATION_CAPABILITY_IDS } from '@/hooks/useOwnerMode';
@@ -77,6 +77,13 @@ async function fetchAdmin<T = unknown>(path: string): Promise<T | null> {
 export default function AdminPanel({ ownerMode, onClose }: AdminPanelProps) {
   const [activeTab, setActiveTab] = useState<TabId>('overview');
 
+  const forgetOwnerToken = (): void => {
+    try { localStorage.removeItem('korvix_owner_token'); }
+    catch { /* ignore */ }
+    try { window.dispatchEvent(new CustomEvent('korvix:owner-refresh')); } catch { /* ignore */ }
+    onClose();
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -106,13 +113,23 @@ export default function AdminPanel({ ownerMode, onClose }: AdminPanelProps) {
               </div>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="h-7 w-7 flex items-center justify-center rounded-md text-slate-500 hover:text-white hover:bg-white/[0.05] transition-all"
-            aria-label="Close admin panel"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={forgetOwnerToken}
+              className="h-7 px-2 flex items-center gap-1 rounded-md text-[10px] text-slate-500 hover:text-rose-300 hover:bg-white/[0.05] transition-all"
+              title="Remove the stored owner token from this browser"
+            >
+              <Trash2 className="h-3 w-3" />
+              Forget token
+            </button>
+            <button
+              onClick={onClose}
+              className="h-7 w-7 flex items-center justify-center rounded-md text-slate-500 hover:text-white hover:bg-white/[0.05] transition-all"
+              aria-label="Close admin panel"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
         </div>
 
         {/* Body — tabs left, content right */}
