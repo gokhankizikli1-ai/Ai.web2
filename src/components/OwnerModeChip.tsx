@@ -71,6 +71,7 @@ function readUrlBootstrap(): boolean {
 
 export default function OwnerModeChip() {
   const ownerMode = useOwnerMode();
+  const refreshOwnerMode = ownerMode.refresh;
   const [unlockOpen, setUnlockOpen] = useState(false);
   const [panelOpen, setPanelOpen]   = useState(false);
 
@@ -81,17 +82,20 @@ export default function OwnerModeChip() {
   const bump = useCallback(() => setStorageTick((n) => n + 1), []);
 
   useEffect(() => {
-    const handler = () => {
+    const ownerRefreshHandler = () => {
       bump();
-      ownerMode.refresh();
     };
-    window.addEventListener('korvix:owner-refresh', handler);
-    window.addEventListener('storage', handler);
+    const storageHandler = () => {
+      bump();
+      refreshOwnerMode();
+    };
+    window.addEventListener('korvix:owner-refresh', ownerRefreshHandler);
+    window.addEventListener('storage', storageHandler);
     return () => {
-      window.removeEventListener('korvix:owner-refresh', handler);
-      window.removeEventListener('storage', handler);
+      window.removeEventListener('korvix:owner-refresh', ownerRefreshHandler);
+      window.removeEventListener('storage', storageHandler);
     };
-  }, [bump, ownerMode]);
+  }, [bump, refreshOwnerMode]);
 
   // Global keyboard shortcut: Ctrl/Cmd+Shift+O opens the unlock modal
   // even when the chip is hidden. This is the canonical bootstrap for
@@ -157,8 +161,12 @@ export default function OwnerModeChip() {
 
   // ── Stored-but-not-confirmed: warn chip, click to re-validate ────────
   if (visible) {
-    const verifying = ownerMode.loading;
-    const reason = ownerMode.debug?.first_failure || ownerMode.error || 'not verified';
+    const bootstrapOnly = !hasStoredToken;
+    const verifying = hasStoredToken && ownerMode.loading;
+    const reason = ownerMode.reason || ownerMode.debug?.first_failure || ownerMode.error || 'not verified';
+    const title = bootstrapOnly
+      ? 'Owner mode bootstrap: click to paste your owner token.'
+      : `Owner token saved but not validated: ${reason}. Click to fix.`;
     return (
       <>
         <motion.button
@@ -168,12 +176,12 @@ export default function OwnerModeChip() {
           whileTap={{ scale: 0.96 }}
           onClick={() => setUnlockOpen(true)}
           className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-rose-500/[0.05] border border-rose-500/20 hover:bg-rose-500/[0.08] hover:border-rose-500/35 transition-all shrink-0"
-          title={`Owner token saved but not validated: ${reason}. Click to fix.`}
+          title={title}
           data-testid="owner-mode-chip-pending"
         >
           <ShieldAlert className="h-3 w-3 text-rose-300" />
           <span className="text-[10px] font-medium text-rose-200 whitespace-nowrap hidden sm:inline">
-            {verifying ? 'Verifying…' : 'Owner: invalid'}
+            {verifying ? 'Verifying…' : (bootstrapOnly ? 'Owner: unlock' : 'Owner: invalid')}
           </span>
         </motion.button>
         <AnimatePresence>

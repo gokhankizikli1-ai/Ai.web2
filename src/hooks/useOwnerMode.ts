@@ -67,6 +67,7 @@ export interface OwnerCapabilities {
   is_owner: boolean;
   admin_mode: boolean;
   capabilities: string[];
+  reason?: string;
   debug?: OwnerDebug;
 }
 
@@ -94,6 +95,8 @@ export interface OwnerModeState {
   loading: boolean;
   /** null when admin mode is disabled (404) or status was never fetched. */
   error: string | null;
+  /** Stable backend status reason, present even when debug is gated. */
+  reason: string | null;
   /** Populated for confirmed owners; undefined for non-owners. */
   debug?: OwnerDebug;
   refresh: () => void;
@@ -104,6 +107,18 @@ const DEFAULT_STATE: OwnerCapabilities = {
   admin_mode: false,
   capabilities: [],
 };
+
+const listeners = new Set<() => void>();
+let sharedData: OwnerCapabilities = DEFAULT_STATE;
+let sharedLoading = false;
+let sharedError: string | null = null;
+let inFlight: Promise<void> | null = null;
+let queuedRefresh = false;
+let ownerRefreshListenerAttached = false;
+
+function notifyListeners(): void {
+  listeners.forEach((listener) => listener());
+}
 
 /* ─── localStorage readers (defensive) ──────────────────────────────────── */
 
@@ -141,15 +156,28 @@ function readDebugFlag(): boolean {
 
 /* ─── Hook ──────────────────────────────────────────────────────────────── */
 
-export function useOwnerMode(): OwnerModeState {
-  const [data, setData] = useState<OwnerCapabilities>(DEFAULT_STATE);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+function setSharedData(next: OwnerCapabilities): void {
+  sharedData = next;
+  notifyListeners();
+}
 
-  const fetchStatus = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    const debugMode = readDebugFlag();
+function setSharedError(next: string | null): void {
+  sharedError = next;
+  notifyListeners();
+}
+
+function fetchStatus(options: { queueIfInFlight?: boolean } = {}): Promise<void> {
+  if (inFlight) {
+    if (options.queueIfInFlight) queuedRefresh = true;
+    return inFlight;
+  }
+
+  sharedLoading = true;
+  sharedError = null;
+  notifyListeners();
+
+  const debugMode = readDebugFlag();
+  inFlight = (async () => {
     try {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -172,7 +200,7 @@ export function useOwnerMode(): OwnerModeState {
           // eslint-disable-next-line no-console
           console.debug('[useOwnerMode] /v2/admin/status returned 404 — admin mode disabled on backend');
         }
-        setData(DEFAULT_STATE);
+        setSharedData(DEFAULT_STATE);
         return;
       }
       if (!r.ok) {
@@ -180,8 +208,8 @@ export function useOwnerMode(): OwnerModeState {
           // eslint-disable-next-line no-console
           console.debug('[useOwnerMode] /v2/admin/status non-ok', r.status);
         }
-        setData(DEFAULT_STATE);
-        setError(`status ${r.status}`);
+        setSharedData(DEFAULT_STATE);
+        setSharedError(`status ${r.status}`);
         return;
       }
       const body = await r.json();
@@ -190,6 +218,7 @@ export function useOwnerMode(): OwnerModeState {
           is_owner:    !!body.data.is_owner,
           admin_mode:  !!body.data.admin_mode,
           capabilities: Array.isArray(body.data.capabilities) ? body.data.capabilities : [],
+          reason:      typeof body.data.reason === 'string' ? body.data.reason : undefined,
           debug:       (body.data.debug && typeof body.data.debug === 'object')
                        ? body.data.debug as OwnerDebug
                        : undefined,
@@ -198,48 +227,77 @@ export function useOwnerMode(): OwnerModeState {
           // eslint-disable-next-line no-console
           console.debug('[useOwnerMode] decision', next);
         }
-        setData(next);
+        setSharedData(next);
       } else {
-        setData(DEFAULT_STATE);
+        setSharedData(DEFAULT_STATE);
       }
     } catch (e: unknown) {
       if (debugMode) {
         // eslint-disable-next-line no-console
         console.debug('[useOwnerMode] fetch threw', e);
       }
-      setData(DEFAULT_STATE);
-      setError(e instanceof Error ? e.message : 'fetch failed');
+      setSharedData(DEFAULT_STATE);
+      setSharedError(e instanceof Error ? e.message : 'fetch failed');
     } finally {
-      setLoading(false);
+      sharedLoading = false;
+      inFlight = null;
+      notifyListeners();
+      if (queuedRefresh) {
+        queuedRefresh = false;
+        void fetchStatus();
+      }
     }
+  })();
+
+  return inFlight;
+}
+
+function ensureOwnerRefreshListener(): void {
+  if (ownerRefreshListenerAttached) return;
+  ownerRefreshListenerAttached = true;
+  window.addEventListener('korvix:owner-refresh', () => {
+    void fetchStatus({ queueIfInFlight: true });
+  });
+}
+
+export function useOwnerMode(): OwnerModeState {
+  const [, setSnapshotVersion] = useState(0);
+
+  const refresh = useCallback(() => {
+    void fetchStatus({ queueIfInFlight: true });
   }, []);
 
   useEffect(() => {
-    fetchStatus();
-  }, [fetchStatus]);
+    const listener = () => setSnapshotVersion((n) => n + 1);
+    listeners.add(listener);
+    return () => { listeners.delete(listener); };
+  }, []);
+
+  useEffect(() => {
+    void fetchStatus();
+  }, []);
 
   // Listen for global refresh events emitted by OwnerUnlockModal after
   // the user submits a token — without this, multiple useOwnerMode()
   // instances (chip + panel) would stay stale until a page reload.
   useEffect(() => {
-    const handler = () => { fetchStatus(); };
-    window.addEventListener('korvix:owner-refresh', handler);
-    return () => window.removeEventListener('korvix:owner-refresh', handler);
-  }, [fetchStatus]);
+    ensureOwnerRefreshListener();
+  }, []);
 
-  const orchestrationCapabilities = data.capabilities.filter(
+  const orchestrationCapabilities = sharedData.capabilities.filter(
     (c): c is OrchestrationCapability =>
       (ORCHESTRATION_CAPABILITY_IDS as readonly string[]).includes(c),
   );
 
   return {
-    isOwner: data.is_owner,
-    capabilities: data.capabilities,
+    isOwner: sharedData.is_owner,
+    capabilities: sharedData.capabilities,
     orchestrationCapabilities,
-    loading,
-    error,
-    debug: data.debug,
-    refresh: fetchStatus,
+    loading: sharedLoading,
+    error: sharedError,
+    reason: sharedData.reason ?? null,
+    debug: sharedData.debug,
+    refresh,
   };
 }
 
