@@ -554,6 +554,25 @@ async def _execute_delegation(
         run_id=(parent_ctx.run_id if parent_ctx else None),
     )
 
+    # Owner-session inheritance — if the parent RunContext was started
+    # as an owner session, the delegated specialist gets the same
+    # authorisation block layered onto its system prompt so it doesn't
+    # fall back to safe-assistant refusals mid-orchestration. No-op
+    # when parent is non-owner.
+    _is_owner_session = bool(getattr(parent_ctx, "is_owner", False))
+    _owner_source     = str(getattr(parent_ctx, "owner_source", "") or "")
+    _child_system_prompt = target_spec.system_prompt
+    if _is_owner_session:
+        try:
+            from backend.services.admin.orchestration import compose_system_prompt
+            _child_system_prompt = compose_system_prompt(
+                target_spec.system_prompt,
+                is_owner=True,
+                user_message=composed_message,
+            )
+        except Exception as _pol_err:  # pragma: no cover — never break delegate
+            logger.debug("delegate | owner policy composer failed: %s", _pol_err)
+
     sub_request = AgentRequest(
         user_message=composed_message,
         # mode=spec.id is intentional: when tools_for_mode() (tool_bridge.py)
@@ -567,12 +586,14 @@ async def _execute_delegation(
         model=selected_model,
         temperature=target_spec.temperature,
         max_tokens=1200,
-        system_prompt=target_spec.system_prompt,
+        system_prompt=_child_system_prompt,
         max_steps=target_spec.max_steps,
         metadata_in={
             "delegated_from":  caller_spec_id,
             "spec_kind":       target_spec.kind,
             "model_tier":      _tier_label_for(target_spec),
+            "is_owner":        _is_owner_session,
+            "owner_source":    _owner_source,
         },
     )
 
@@ -681,6 +702,8 @@ async def _execute_delegation(
                 depth=child_depth,
                 scratch=shared_scratch,
                 metadata={"entry": "delegate", "target": target_spec.id},
+                is_owner=_is_owner_session,
+                owner_source=_owner_source,
             )
         else:
             handle = start_run(
@@ -692,6 +715,9 @@ async def _execute_delegation(
                 depth=child_depth,
                 scratch=shared_scratch,
                 metadata={"entry": "delegate", "target": target_spec.id},
+                # Inherit explicitly so child sees the same flag.
+                is_owner=_is_owner_session,
+                owner_source=_owner_source,
             )
 
         try:

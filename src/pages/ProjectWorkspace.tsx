@@ -481,9 +481,26 @@ export default function ProjectWorkspace() {
 
       // 1. Try the orchestrator (Phase 3.4 + 4.2)
       try {
+        // Forward the owner-mode unlock headers so the orchestrator
+        // can detect an owner session and inject the authorisation
+        // policy into the supervisor's system prompt. Headers are
+        // best-effort — when localStorage is empty / unavailable the
+        // request proceeds as a regular user session.
+        const orchestrateHeaders: Record<string, string> = {
+          'Content-Type': 'application/json',
+        };
+        try {
+          const ot = localStorage.getItem('korvix_owner_token');
+          if (ot) orchestrateHeaders['X-Korvix-Owner-Token'] = ot;
+          const at = localStorage.getItem('korvix_access_token');
+          if (at) orchestrateHeaders['Authorization'] = `Bearer ${at}`;
+          const gid = localStorage.getItem('korvix_user_id');
+          if (gid) orchestrateHeaders['X-Korvix-Guest-Id'] = gid;
+        } catch { /* localStorage unavailable — proceed without */ }
+
         const res = await fetch(`${apiBase}/v2/orchestrate`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: orchestrateHeaders,
           body: JSON.stringify({
             user_id:    userId,
             message:    messageText,

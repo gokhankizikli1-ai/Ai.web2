@@ -163,7 +163,7 @@ def is_owner_request(
 # ── Capability surface ────────────────────────────────────────────────────
 
 def _full_capabilities() -> list:
-    return [
+    base = [
         "debug_logs",
         "model_routing",
         "provider_selection",
@@ -177,6 +177,16 @@ def _full_capabilities() -> list:
         "owner_agent",
         "safe_cyber_review",
     ]
+    # Owner orchestration policy capabilities (frontend modification,
+    # refactor, autonomous architectural edits, etc.) are surfaced
+    # here so the FE Admin Panel can render a single complete list.
+    # Import is lazy to keep this module free of orchestration deps.
+    try:
+        from backend.services.admin.orchestration import orchestration_capabilities
+        base.extend(orchestration_capabilities())
+    except Exception:
+        pass
+    return base
 
 
 def owner_capabilities(

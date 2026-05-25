@@ -35,7 +35,7 @@ import logging
 import os
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
 # Module-level imports so tests can monkeypatch `run_agent` on this
@@ -144,8 +144,32 @@ def _routing_summary_safe() -> dict:
 # ── Main route ─────────────────────────────────────────────────────────
 
 @router.post("")
-async def orchestrate(body: OrchestrateBody) -> dict:
+async def orchestrate(body: OrchestrateBody, request: Request) -> dict:
     _ensure_enabled()
+
+    # ── 0. Owner-session detection ─────────────────────────────────────
+    # Run BEFORE spec lookup so the policy decision is visible across
+    # the rest of this function (system prompt, start_run, audit).
+    # Two paths checked, in order:
+    #   - identity: request.state.user (set by AuthMiddleware when on)
+    #     matches OWNER_EMAIL / OWNER_ID via admin.owner.is_owner()
+    #   - token:    X-Korvix-Owner-Token header matches OWNER_TOKEN
+    # Either match yields is_owner=True; the source string distinguishes
+    # them for audit + the FE activity feed.
+    is_owner_session = False
+    owner_source = ""
+    try:
+        from backend.core.deps import current_user, _extract_owner_token
+        from backend.services.admin.owner import is_owner as _ident_is_owner
+        from backend.services.admin.owner import match_owner_token as _match_tok
+        _u = current_user(request)
+        _ot = _extract_owner_token(request)
+        if not _u.is_guest and _ident_is_owner(_u):
+            is_owner_session, owner_source = True, "identity"
+        elif _ot and _match_tok(_ot):
+            is_owner_session, owner_source = True, "token"
+    except Exception as _owner_err:  # pragma: no cover — never break orchestrate
+        logger.debug("orchestrate | owner detection failed: %s", _owner_err)
 
     # ── 1. Resolve the root agent spec ─────────────────────────────────
     target_id = (body.agent_id or "supervisor").strip()
@@ -250,7 +274,21 @@ async def orchestrate(body: OrchestrateBody) -> dict:
         if len(history_lines) > 2:  # something was actually appended
             effective_system_prompt += "\n" + "\n".join(history_lines)
 
-    request = AgentRequest(
+    # Owner orchestration policy — applied LAST so it sits closest to
+    # the user message in the assembled prompt (strongest signal). The
+    # composer is a no-op when is_owner_session is false, so this line
+    # is safe to leave unconditional.
+    try:
+        from backend.services.admin.orchestration import compose_system_prompt
+        effective_system_prompt = compose_system_prompt(
+            effective_system_prompt,
+            is_owner=is_owner_session,
+            user_message=body.message,
+        )
+    except Exception as _pol_err:  # pragma: no cover — never break orchestrate
+        logger.warning("orchestrate | owner policy composer failed: %s", _pol_err)
+
+    agent_request = AgentRequest(
         user_message=body.message.strip(),
         mode=(body.mode or spec.id),
         user_id=str(body.user_id),
@@ -279,11 +317,15 @@ async def orchestrate(body: OrchestrateBody) -> dict:
             project_context_block=project_block,
             run_id=run_id,
             metadata={
-                "entry":   "v2_orchestrate",
-                "spec_id": spec.id,
+                "entry":        "v2_orchestrate",
+                "spec_id":      spec.id,
+                "is_owner":     is_owner_session,
+                "owner_source": owner_source,
             },
+            is_owner=is_owner_session,
+            owner_source=owner_source,
         ):
-            response = await run_agent(request)
+            response = await run_agent(agent_request)
             reply = response.reply or ""
     except Exception as exc:  # pragma: no cover — runtime swallows internally
         err_msg = f"{type(exc).__name__}: {exc}"
@@ -373,6 +415,25 @@ async def orchestrate(body: OrchestrateBody) -> dict:
     except Exception as exc:
         logger.debug("orchestrate | task_graph envelope soft-failed: %s", exc)
 
+    # Owner-session payload — the FE reads metadata.owner_session to
+    # render the "Owner Session Active" chip in the activity feed
+    # without a separate /v2/admin/status round-trip. is_owner=false
+    # for everyone else; the field always exists so the FE can use a
+    # stable type.
+    owner_session_payload: Dict[str, Any] = {
+        "is_owner":     is_owner_session,
+        "source":       owner_source,
+        "capabilities": [],
+    }
+    if is_owner_session:
+        try:
+            from backend.services.admin.orchestration import owner_context_for_run
+            owner_session_payload = owner_context_for_run(
+                is_owner=True, source=owner_source,
+            ).to_dict()
+        except Exception:
+            pass
+
     return {
         "run_id":      run_id,
         "reply":       reply,
@@ -388,6 +449,10 @@ async def orchestrate(body: OrchestrateBody) -> dict:
             "max_depth":          int(os.getenv("ORCHESTRATOR_MAX_DEPTH", "2")),
             "max_parallel":       int(os.getenv("ORCHESTRATOR_MAX_PARALLEL", "5")),
             "total_token_budget": int(os.getenv("ORCHESTRATOR_TOTAL_TOKEN_BUDGET", "80000")),
+            # Owner-session signal for the FE — always present, false
+            # for ordinary users. The capability list lets the FE
+            # render exactly what the owner has unlocked this turn.
+            "owner_session":      owner_session_payload,
         },
     }
 

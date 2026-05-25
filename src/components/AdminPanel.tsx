@@ -19,8 +19,10 @@ import { motion } from 'framer-motion';
 import {
   X, ShieldCheck, Activity, Bot, Database, Wrench,
   FileCode, ClipboardList, MessageSquare, Loader2, AlertTriangle,
+  Zap,
 } from 'lucide-react';
-import type { OwnerModeState } from '@/hooks/useOwnerMode';
+import type { OwnerModeState, OrchestrationCapability } from '@/hooks/useOwnerMode';
+import { ORCHESTRATION_CAPABILITY_IDS } from '@/hooks/useOwnerMode';
 
 const DEFAULT_API_HOST = 'https://korvixai-backend-production.up.railway.app';
 const API_BASE = `${
@@ -29,11 +31,12 @@ const API_BASE = `${
 }`;
 
 type TabId =
-  | 'overview' | 'agents' | 'memory' | 'tools'
+  | 'overview' | 'session' | 'agents' | 'memory' | 'tools'
   | 'prompts' | 'audit' | 'owner-agent';
 
 const TABS: { id: TabId; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'overview',     label: 'Overview',     icon: Activity },
+  { id: 'session',      label: 'Owner Session', icon: Zap },
   { id: 'agents',       label: 'Agents',       icon: Bot },
   { id: 'memory',       label: 'Memory',       icon: Database },
   { id: 'tools',        label: 'Tools',        icon: Wrench },
@@ -139,6 +142,7 @@ export default function AdminPanel({ ownerMode, onClose }: AdminPanelProps) {
           {/* Tab content */}
           <div className="flex-1 min-w-0 overflow-y-auto p-5 text-[12px] text-slate-300">
             {activeTab === 'overview'    && <OverviewTab />}
+            {activeTab === 'session'     && <SessionTab ownerMode={ownerMode} />}
             {activeTab === 'agents'      && <AgentsTab />}
             {activeTab === 'memory'      && <MemoryTab />}
             {activeTab === 'tools'       && <ToolsTab />}
@@ -268,6 +272,154 @@ interface AgentsData {
   agent_runtime_enabled: boolean;
   owner_agent: { capabilities: string[] };
   internal_agents: Array<{ name: string; description?: string }>;
+}
+
+/* ─── Owner Session tab ────────────────────────────────────────────────── */
+
+const ORCHESTRATION_LABELS: Record<OrchestrationCapability, { label: string; detail: string }> = {
+  frontend_modification: {
+    label: 'Frontend modifications',
+    detail: 'Direct edits to React/TSX components.',
+  },
+  ui_layout_styles: {
+    label: 'UI / layout / styles',
+    detail: 'Tailwind classes, inline styles, design tokens.',
+  },
+  frontend_refactor: {
+    label: 'Frontend refactors',
+    detail: 'Component boundaries, hooks, routing, state shape.',
+  },
+  page_component_crud: {
+    label: 'Page / component CRUD',
+    detail: 'Create, rename, or remove pages and components.',
+  },
+  project_structure_changes: {
+    label: 'Project structure changes',
+    detail: 'File moves, directory renames, import path updates.',
+  },
+  internal_orchestration_tools: {
+    label: 'Internal orchestration tools',
+    detail: 'delegate, spawn_specialist, memory inspector, tool history.',
+  },
+  autonomous_architectural_edits: {
+    label: 'Autonomous architectural edits',
+    detail: 'Multi-step edits without per-step confirmation gates.',
+  },
+  reduced_confirmation_friction: {
+    label: 'Reduced confirmation friction',
+    detail: 'Skip safe-assistant disclaimers and review prompts.',
+  },
+};
+
+const ORCHESTRATION_IDS = ORCHESTRATION_CAPABILITY_IDS;
+
+const SAFETY_RETAINED = [
+  'Malware authoring (ransomware, spyware, rootkits, keyloggers)',
+  'Credential theft, phishing kits, MFA bypass against third parties',
+  'Weaponised exploit development against systems you do not control',
+  'DDoS / mass / supply-chain compromise tooling',
+  'Detection evasion for offensive deployment',
+  'Illegal intrusion guidance',
+];
+
+function SessionTab({ ownerMode }: { ownerMode: OwnerModeState }) {
+  const orchCaps = new Set<string>(ownerMode.orchestrationCapabilities);
+  const allOrch = ORCHESTRATION_IDS;
+
+  return (
+    <div>
+      <Section title="Session State">
+        <div className="rounded-lg border border-amber-500/20 bg-gradient-to-br from-amber-500/[0.06] to-fuchsia-500/[0.04] p-3 mb-4">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-60 animate-ping" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-300" />
+            </span>
+            <div className="text-[12px] font-semibold text-amber-200">
+              {ownerMode.isOwner ? 'Owner Session Active' : 'Owner session not active'}
+            </div>
+          </div>
+          <div className="text-[10px] text-amber-300/70">
+            {ownerMode.isOwner
+              ? `${orchCaps.size} of ${allOrch.length} orchestration permissions granted. The supervisor and every delegated specialist see the OWNER MODE authorisation block in their system prompt.`
+              : 'Confirm OWNER_TOKEN is set on Railway and stored in localStorage on this device.'}
+          </div>
+        </div>
+      </Section>
+
+      <Section title="Active orchestration permissions">
+        <div className="grid grid-cols-1 gap-1.5">
+          {allOrch.map((cap) => {
+            const active = orchCaps.has(cap);
+            const meta = ORCHESTRATION_LABELS[cap];
+            return (
+              <div
+                key={cap}
+                className={`flex items-start gap-2.5 rounded-md border px-2.5 py-1.5 ${
+                  active
+                    ? 'border-amber-500/20 bg-amber-500/[0.04]'
+                    : 'border-white/[0.04] bg-white/[0.015] opacity-50'
+                }`}
+              >
+                <div
+                  className={`mt-0.5 h-1.5 w-1.5 rounded-full shrink-0 ${
+                    active ? 'bg-amber-300' : 'bg-slate-700'
+                  }`}
+                />
+                <div className="min-w-0 flex-1">
+                  <div className={`text-[11px] ${active ? 'text-slate-100' : 'text-slate-500'}`}>
+                    {meta.label}
+                  </div>
+                  <div className="text-[10px] text-slate-600 mt-0.5">{meta.detail}</div>
+                  <div className="text-[9px] text-slate-700 font-mono mt-0.5">{cap}</div>
+                </div>
+                <span
+                  className={`text-[9px] uppercase tracking-wider shrink-0 ${
+                    active ? 'text-amber-300/80' : 'text-slate-600'
+                  }`}
+                >
+                  {active ? 'granted' : 'inactive'}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </Section>
+
+      <Section title="Still blocked (non-negotiable)">
+        <div className="rounded-md border border-rose-500/15 bg-rose-500/[0.03] p-2.5">
+          <div className="text-[10px] text-rose-300/80 mb-1.5">
+            Owner mode does NOT relax safety policy. Requests in any of
+            the following categories are refused regardless of who's asking:
+          </div>
+          <ul className="space-y-0.5">
+            {SAFETY_RETAINED.map((s) => (
+              <li key={s} className="text-[10px] text-slate-400 flex items-start gap-1.5">
+                <span className="text-rose-400/60 mt-0.5">×</span>
+                <span>{s}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </Section>
+
+      {ownerMode.debug && (
+        <Section title="Detection diagnostic">
+          <div className="space-y-1">
+            <KV k="enable_admin_mode"   v={String(ownerMode.debug.enable_admin_mode)} />
+            <KV k="owner_email_set"     v={String(ownerMode.debug.owner_email_set)} />
+            <KV k="owner_id_set"        v={String(ownerMode.debug.owner_id_set)} />
+            <KV k="owner_token_set"     v={String(ownerMode.debug.owner_token_set)} />
+            <KV k="owner_token_matches" v={String(ownerMode.debug.owner_token_matches)} />
+            <KV k="user_kind"           v={ownerMode.debug.user_kind ?? '—'} />
+            <KV k="user_email_observed" v={ownerMode.debug.user_email_observed || '—'} />
+            <KV k="user_email_match"    v={String(ownerMode.debug.user_email_match)} />
+            <KV k="first_failure"       v={ownerMode.debug.first_failure ?? 'none — owner confirmed'} />
+          </div>
+        </Section>
+      )}
+    </div>
+  );
 }
 
 function AgentsTab() {

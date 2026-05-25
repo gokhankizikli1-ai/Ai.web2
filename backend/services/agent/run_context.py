@@ -78,6 +78,16 @@ class RunContext:
     scratch:               Dict[str, Any] = field(default_factory=dict)
     started_at:            str = field(default_factory=_now)
     metadata:              Dict[str, Any] = field(default_factory=dict)
+    # ── Owner-session signals (Phase: admin-orchestration) ───────────
+    # Populated by the orchestrator entrypoint when the caller's
+    # identity (or OWNER_TOKEN) matches the project owner. Inherited
+    # by child runs so a delegated specialist sees the same flag.
+    # Specialists read these via get_current_run() to make their
+    # output / refusal posture owner-aware.
+    is_owner:              bool = False
+    # "identity" | "token" | "" — used by audit + the FE activity feed
+    # to show *how* the session was authenticated.
+    owner_source:          str = ""
 
 
 # ── ContextVar transport ────────────────────────────────────────────────
@@ -109,6 +119,8 @@ def start_run(
     metadata: Optional[Dict[str, Any]] = None,
     depth: int = 0,
     scratch: Optional[Dict[str, Any]] = None,
+    is_owner: bool = False,
+    owner_source: str = "",
 ) -> "RunHandle":
     """Push a fresh RunContext for the current task.
 
@@ -146,14 +158,18 @@ def start_run(
         project_context_block=block,
         scratch=(scratch if scratch is not None else {}),
         metadata=dict(metadata or {}),
+        is_owner=bool(is_owner),
+        owner_source=str(owner_source or ""),
     )
     token = _CURRENT_RUN.set(ctx)
     logger.info(
-        "run_context_created | run_id=%s | user=%s | project=%s | parent=%s | block_chars=%d",
+        "run_context_created | run_id=%s | user=%s | project=%s | parent=%s "
+        "| block_chars=%d | owner=%s/%s",
         ctx.run_id, ctx.user_id,
         ctx.project_id or "-",
         ctx.parent_agent or "-",
         len(ctx.project_context_block),
+        ctx.is_owner, ctx.owner_source or "-",
     )
     # Phase 3.2 — emit `run.started`. Wrapped because emission failure
     # must never break the runtime. No-op when ENABLE_REALTIME_EVENTS=false.
@@ -168,6 +184,10 @@ def start_run(
                 "parent_agent": ctx.parent_agent,
                 "started_at":   ctx.started_at,
                 "metadata":     dict(ctx.metadata or {}),
+                # Owner-session signal — FE shows "Owner Session Active"
+                # in the activity feed when is_owner=true.
+                "is_owner":     ctx.is_owner,
+                "owner_source": ctx.owner_source,
             },
         )
     except Exception:
