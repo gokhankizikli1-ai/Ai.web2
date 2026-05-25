@@ -1,48 +1,127 @@
 /**
- * OwnerModeChip — the visible entry point for Owner Mode.
+ * OwnerModeChip — owner-mode UI controller.
  *
- * ALWAYS rendered in the top bar. Two visual states:
+ * VISIBILITY MODEL (changed from "always visible" → "hidden by default"):
  *
- *   LOCKED  (default for everyone, including the owner on a fresh
- *            browser) — small outline shield icon labelled "Owner".
- *            Click opens OwnerUnlockModal where the owner pastes
- *            their OWNER_TOKEN.
+ *   The chip is HIDDEN by default. Normal users never see it.
  *
- *   UNLOCKED  (after useOwnerMode confirms isOwner=true) — amber
- *             gradient pill with a pulsing dot and the label
- *             "Owner Session Active". Click opens AdminPanel.
+ *   It becomes visible only when ANY of these are true:
+ *     1. /v2/admin/status confirms isOwner=true  → "Owner Session Active"
+ *        (full unlocked chip)
+ *     2. localStorage has a stored owner token (`korvix_owner_token`)
+ *        → the user has at least tried to unlock; show a small status
+ *        chip so they can see / retry / forget the token
+ *     3. URL query `?owner=1`  → discoverable bootstrap from a link
+ *        the project owner sends to themselves
+ *     4. localStorage `korvix_dev_unlock=1`  → persistent dev-only flag
  *
- * Replaces the previous AdminBadge + invisible-when-locked behaviour
- * that left the owner with no way to bootstrap from the UI.
+ *   Owner unlock is also reachable via a KEYBOARD SHORTCUT:
+ *     Ctrl/Cmd + Shift + O  → opens OwnerUnlockModal regardless of
+ *                              chip visibility. This is the canonical
+ *                              entry point for the project owner on a
+ *                              fresh browser — they don't need any
+ *                              visible UI to bootstrap.
  *
- * Non-owners see only the locked icon. They can click it, they can
- * type into the modal — but every wrong token is rejected by the
- * backend's constant-time compare. Worst case: they learn admin
- * mode exists; they still cannot use it without the secret.
+ * STATE → UI mapping:
+ *   isOwner = true           → amber "Owner Session Active" chip,
+ *                              click opens AdminPanel
+ *   hasStoredToken = true    → grey "Owner (verifying)" chip with a
+ *                              warning dot if the most recent status
+ *                              call reported a mismatch, click opens
+ *                              modal to fix / forget the token
+ *   neither + shortcut hit   → modal opens, chip stays hidden
+ *
+ * RATIONALE for hiding:
+ *   The previous "Owner" button was visible to everyone, which leaked
+ *   admin existence + invited probing. The keyboard-shortcut path is
+ *   discoverable to the owner without being discoverable to a casual
+ *   visitor. The chip only ever appears after the owner has acted
+ *   (stored a token, hit the shortcut, or actually unlocked).
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ShieldCheck, ShieldQuestion } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, KeyRound } from 'lucide-react';
 import { useOwnerMode } from '@/hooks/useOwnerMode';
 import OwnerUnlockModal from './OwnerUnlockModal';
 import AdminPanel from './AdminPanel';
+
+const TOKEN_KEY = 'korvix_owner_token';
+const DEV_FLAG_KEY = 'korvix_dev_unlock';
+
+function readToken(): string {
+  try { return localStorage.getItem(TOKEN_KEY) || ''; }
+  catch { return ''; }
+}
+function readDevFlag(): boolean {
+  try { return localStorage.getItem(DEV_FLAG_KEY) === '1'; }
+  catch { return false; }
+}
+function readUrlBootstrap(): boolean {
+  try {
+    // Hash router → check the hash query string in addition to search.
+    const fromSearch = new URLSearchParams(window.location.search).get('owner') === '1';
+    const hash = window.location.hash || '';
+    const hashQuery = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : '';
+    const fromHash = new URLSearchParams(hashQuery).get('owner') === '1';
+    return fromSearch || fromHash;
+  } catch {
+    return false;
+  }
+}
 
 export default function OwnerModeChip() {
   const ownerMode = useOwnerMode();
   const [unlockOpen, setUnlockOpen] = useState(false);
   const [panelOpen, setPanelOpen]   = useState(false);
 
-  // useOwnerMode listens for this event to re-fetch /v2/admin/status
-  // after the user submits a token through OwnerUnlockModal.
-  useEffect(() => {
-    const handler = () => { ownerMode.refresh(); };
-    window.addEventListener('korvix:owner-refresh', handler);
-    return () => window.removeEventListener('korvix:owner-refresh', handler);
-  }, [ownerMode]);
+  // Re-evaluate visibility-driving localStorage / URL state on the
+  // same global event the modal dispatches so the chip can appear
+  // immediately after a paste without a page reload.
+  const [storageTick, setStorageTick] = useState(0);
+  const bump = useCallback(() => setStorageTick((n) => n + 1), []);
 
-  // Decide which state to render. The locked chip is the entry point;
-  // the unlocked chip opens the panel.
-  if (ownerMode.isOwner) {
+  useEffect(() => {
+    const handler = () => {
+      bump();
+      ownerMode.refresh();
+    };
+    window.addEventListener('korvix:owner-refresh', handler);
+    window.addEventListener('storage', handler);
+    return () => {
+      window.removeEventListener('korvix:owner-refresh', handler);
+      window.removeEventListener('storage', handler);
+    };
+  }, [bump, ownerMode]);
+
+  // Global keyboard shortcut: Ctrl/Cmd+Shift+O opens the unlock modal
+  // even when the chip is hidden. This is the canonical bootstrap for
+  // the project owner on a fresh browser.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const isMod = e.ctrlKey || e.metaKey;
+      if (isMod && e.shiftKey && (e.key === 'O' || e.key === 'o')) {
+        e.preventDefault();
+        setUnlockOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
+  // Visibility decision. The hook (useOwnerMode) supplies the
+  // confirmed-owner signal; localStorage / URL supply the
+  // "user is attempting" signal.
+  const hasStoredToken = readToken().length > 0;
+  const devUnlock      = readDevFlag();
+  const urlBootstrap   = readUrlBootstrap();
+  // storageTick is read so the variable references it on every render
+  // — see comment on the bump() declaration.
+  void storageTick;
+
+  const visible = ownerMode.isOwner || hasStoredToken || devUnlock || urlBootstrap;
+
+  // ── Unlocked: full "Owner Session Active" chip ────────────────────────
+  if (visible && ownerMode.isOwner) {
     return (
       <>
         <motion.button
@@ -60,7 +139,7 @@ export default function OwnerModeChip() {
             <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-amber-300" />
           </span>
           <ShieldCheck className="h-3 w-3 text-amber-300" />
-          <span className="text-[10px] font-semibold tracking-wide text-amber-200 whitespace-nowrap">
+          <span className="text-[10px] font-semibold tracking-wide text-amber-200 whitespace-nowrap hidden sm:inline">
             Owner Session Active
           </span>
         </motion.button>
@@ -76,29 +155,49 @@ export default function OwnerModeChip() {
     );
   }
 
-  // Locked state — visible to everyone, harmless click target.
+  // ── Stored-but-not-confirmed: warn chip, click to re-validate ────────
+  if (visible) {
+    const verifying = ownerMode.loading;
+    const reason = ownerMode.debug?.first_failure || ownerMode.error || 'not verified';
+    return (
+      <>
+        <motion.button
+          initial={{ opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          whileHover={{ scale: 1.04 }}
+          whileTap={{ scale: 0.96 }}
+          onClick={() => setUnlockOpen(true)}
+          className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-rose-500/[0.05] border border-rose-500/20 hover:bg-rose-500/[0.08] hover:border-rose-500/35 transition-all shrink-0"
+          title={`Owner token saved but not validated: ${reason}. Click to fix.`}
+          data-testid="owner-mode-chip-pending"
+        >
+          <ShieldAlert className="h-3 w-3 text-rose-300" />
+          <span className="text-[10px] font-medium text-rose-200 whitespace-nowrap hidden sm:inline">
+            {verifying ? 'Verifying…' : 'Owner: invalid'}
+          </span>
+        </motion.button>
+        <AnimatePresence>
+          {unlockOpen && (
+            <OwnerUnlockModal onClose={() => setUnlockOpen(false)} />
+          )}
+        </AnimatePresence>
+      </>
+    );
+  }
+
+  // ── Hidden: render only the modal mount so the keyboard shortcut
+  //     can still open it. No visible UI for normal users. ─────────────
   return (
-    <>
-      <motion.button
-        initial={{ opacity: 0, y: -4 }}
-        animate={{ opacity: 1, y: 0 }}
-        whileHover={{ scale: 1.04 }}
-        whileTap={{ scale: 0.96 }}
-        onClick={() => setUnlockOpen(true)}
-        className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-white/[0.02] border border-white/[0.06] hover:bg-white/[0.04] hover:border-white/[0.10] transition-all shrink-0"
-        title="Owner Mode — paste your OWNER_TOKEN to unlock"
-        data-testid="owner-mode-chip-locked"
-      >
-        <ShieldQuestion className="h-3 w-3 text-slate-500" />
-        <span className="text-[10px] font-medium text-slate-500 whitespace-nowrap">
-          Owner
-        </span>
-      </motion.button>
-      <AnimatePresence>
-        {unlockOpen && (
-          <OwnerUnlockModal onClose={() => setUnlockOpen(false)} />
-        )}
-      </AnimatePresence>
-    </>
+    <AnimatePresence>
+      {unlockOpen && (
+        <OwnerUnlockModal onClose={() => setUnlockOpen(false)} />
+      )}
+    </AnimatePresence>
   );
 }
+
+/** Subtle reminder of the shortcut for the owner. Exported separately
+ * so the Admin Panel can show it in the help section.
+ * (Not rendered by default — see SettingsPage if we want a help row.) */
+export const OWNER_UNLOCK_SHORTCUT = 'Ctrl/Cmd + Shift + O';
+export { KeyRound as OwnerUnlockShortcutIcon };

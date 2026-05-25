@@ -79,7 +79,20 @@ def _build_full_app():
         allow_origin_regex=_CORS_REGEX,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-        allow_headers=["*"],
+        # "*" should cover everything, but we list the custom headers
+        # explicitly as belt-and-suspenders for browsers / CDNs that
+        # treat allow_headers=* + allow_credentials=true conservatively.
+        # X-Korvix-Owner-Token MUST be on this list or the OwnerUnlock
+        # modal's preflight is rejected and the chip can never flip.
+        allow_headers=[
+            "*",
+            "Content-Type",
+            "Authorization",
+            "X-Korvix-Owner-Token",
+            "X-Korvix-Owner-Email",
+            "X-Korvix-Guest-Id",
+            "X-Request-Id",
+        ],
         expose_headers=["*"],
         max_age=600,
     )

@@ -737,3 +737,107 @@ def test_require_owner_unlocks_via_owner_token_header(admin_env_with_token):
     assert r.status_code == 200, r.text
     data = r.json()["data"]
     assert "models" in data
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Failed-unlock audit + always-present `reason` field
+# ══════════════════════════════════════════════════════════════════════════
+
+def test_status_reason_field_always_present_for_owner(admin_env_with_token):
+    """Owner responses include data.reason='owner_confirmed' so the FE
+    can branch on a single stable string instead of inferring from
+    is_owner + nested debug fields."""
+    client, app = _fresh_app()
+    r = client.get(
+        "/v2/admin/status",
+        headers={"X-Korvix-Owner-Token": _GOOD_TOKEN},
+    )
+    data = r.json()["data"]
+    assert data["is_owner"] is True
+    assert data["reason"] == "owner_confirmed"
+
+
+def test_status_reason_field_explains_failure_for_non_owner(admin_env):
+    """Non-owner responses also carry a top-level data.reason explaining
+    the specific failure — without needing ENABLE_ADMIN_DEBUG. The
+    detail-rich `debug` payload stays gated, but the one-line reason
+    is enough for the FE to show 'Invalid owner token' or 'sign in
+    required'."""
+    client, app = _fresh_app()
+    r = client.get("/v2/admin/status")
+    data = r.json()["data"]
+    assert data["is_owner"] is False
+    # Some flavour of "guest" / "auth middleware off" should appear —
+    # the precise phrase depends on whether AuthMiddleware is wired.
+    assert isinstance(data.get("reason"), str)
+    assert data["reason"]  # non-empty
+    # debug stays hidden for non-owners by default.
+    assert "debug" not in data
+
+
+def test_failed_unlock_attempts_are_audited(admin_env_with_token):
+    """Sending a wrong token must add an 'admin.unlock.denied' row to
+    the audit log (status=denied). This is the high-signal forensic
+    event the user asked for."""
+    client, app = _fresh_app()
+    # Hit /status with a 32-char wrong token.
+    r = client.get(
+        "/v2/admin/status",
+        headers={"X-Korvix-Owner-Token": "x" * 32},
+    )
+    assert r.status_code == 200
+    assert r.json()["data"]["is_owner"] is False
+
+    # Read the ledger directly. The denied row's metadata must record
+    # the token length but NEVER the token value itself.
+    from backend.services.admin import audit
+    rows = audit.tail(limit=10)
+    denied = [r for r in rows if r["action"] == "admin.unlock.denied"]
+    assert denied, "admin.unlock.denied row was not written"
+    row = denied[0]
+    assert row["status"] == "denied"
+    meta = row["metadata"]
+    assert meta.get("token_length") == 32
+    # Critically — must NOT leak the token value.
+    for v in meta.values():
+        if isinstance(v, str):
+            assert "x" * 32 not in v
+
+
+def test_no_audit_row_when_no_token_sent(admin_env):
+    """A bare /v2/admin/status call with no token must NOT create a
+    denied row — otherwise every page load would spam the audit
+    table. Only sent-but-rejected tokens count."""
+    client, app = _fresh_app()
+    # Fresh DB
+    from backend.services.admin import audit
+    before = audit.count()
+    r = client.get("/v2/admin/status")
+    assert r.status_code == 200
+    after = audit.count()
+    assert after == before
+
+
+def test_cors_allow_headers_includes_owner_token(admin_env):
+    """Preflight OPTIONS /v2/admin/status with Access-Control-Request-Headers
+    must echo back X-Korvix-Owner-Token in Access-Control-Allow-Headers
+    so the browser permits the actual request. This was the suspected
+    root cause of 'token entered but nothing changes'."""
+    client, app = _fresh_app()
+    r = client.options(
+        "/v2/admin/status",
+        headers={
+            "Origin":                          "https://korvixai.com",
+            "Access-Control-Request-Method":   "GET",
+            "Access-Control-Request-Headers":  "x-korvix-owner-token,content-type",
+        },
+    )
+    # CORSMiddleware returns 200 (or 204) on a valid preflight.
+    assert r.status_code in (200, 204), f"preflight blocked: {r.status_code}"
+    allow_headers = (
+        r.headers.get("access-control-allow-headers", "")
+        + r.headers.get("Access-Control-Allow-Headers", "")
+    ).lower()
+    assert "x-korvix-owner-token" in allow_headers, (
+        f"X-Korvix-Owner-Token not echoed by preflight; got: {allow_headers!r}"
+    )
