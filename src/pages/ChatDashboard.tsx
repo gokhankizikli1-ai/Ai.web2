@@ -24,6 +24,7 @@ import PremiumBadge from '@/components/PremiumBadge';
 import SettingsModal from '@/components/SettingsModal';
 import UpgradeModal from '@/components/UpgradeModal';
 import GuestBadge from '@/components/GuestBadge';
+import AdminBadge from '@/components/AdminBadge';
 
 import {
   Settings, PanelLeftOpen, Command as CmdIcon,
@@ -352,6 +353,10 @@ export default function ChatDashboard() {
             <div className="hidden sm:block">
               <GuestBadge />
             </div>
+            {/* Renders only when /v2/admin/status confirms the
+                current user is the project owner. Non-owners see
+                nothing — admin mode is invisible to them. */}
+            <AdminBadge />
             <ToolbarDropdown
               onCmd={() => setCmdOpen(true)}
               onPrompts={() => setPromptLibOpen(true)}
