@@ -53,4 +53,29 @@ def require_auth(request: Request) -> User:
     return user
 
 
-__all__ = ["current_user", "require_auth"]
+def require_owner(request: Request) -> User:
+    """Returns the request's authenticated owner. Raises if the user is
+    a guest, an unauthenticated user, or an authenticated non-owner.
+
+    Routes that should be entirely invisible to non-owners (404 vs 403)
+    should NOT use this dependency — they should check
+    `settings.ENABLE_ADMIN_MODE` at the router-include layer instead.
+    This dependency is for routes that are *known to exist* but
+    require ownership (403 is acceptable signal there).
+    """
+    # Local import keeps the admin package optional: a deployment that
+    # never enables ENABLE_ADMIN_MODE can omit the admin/* tree
+    # entirely and `deps.py` still imports cleanly.
+    from backend.core.errors import UnauthorizedError
+    from backend.services.admin.owner import is_owner
+
+    user = require_auth(request)
+    if not is_owner(user):
+        raise UnauthorizedError(
+            "This route requires owner privileges.",
+            code="owner_required",
+        )
+    return user
+
+
+__all__ = ["current_user", "require_auth", "require_owner"]

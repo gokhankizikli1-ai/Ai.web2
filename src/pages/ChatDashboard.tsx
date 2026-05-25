@@ -24,6 +24,7 @@ import PremiumBadge from '@/components/PremiumBadge';
 import SettingsModal from '@/components/SettingsModal';
 import UpgradeModal from '@/components/UpgradeModal';
 import GuestBadge from '@/components/GuestBadge';
+import AdminBadge from '@/components/AdminBadge';
 
 import {
   Settings, PanelLeftOpen, Command as CmdIcon,
@@ -323,6 +324,10 @@ export default function ChatDashboard() {
             <div className="hidden sm:block">
               <GuestBadge />
             </div>
+            {/* Renders only when /v2/admin/status confirms the
+                current user is the project owner. Non-owners see
+                nothing — admin mode is invisible to them. */}
+            <AdminBadge />
             <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setSettingsOpen(true)}
               className="h-7 w-7 flex items-center justify-center text-slate-700 hover:text-amber-400 hover:bg-amber-500/[0.06] rounded-md transition-all border border-white/[0.04]"
               title={t('settings')}
