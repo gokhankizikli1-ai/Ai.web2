@@ -38,7 +38,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from backend.core.config import settings
 from backend.services.admin import safety
@@ -53,7 +53,7 @@ logger = logging.getLogger(__name__)
 class OwnerAgentRequest:
     message: str
     capability: str = "general"                  # "architecture" | "debug" | ...
-    history: List[Dict[str, str]] = field(default_factory=list)
+    history: List[Any] = field(default_factory=list)
     model: Optional[str] = None                  # override; defaults to MODEL_STRONG
 
 
@@ -125,6 +125,41 @@ _CAPABILITY_PROMPTS: Dict[str, str] = {
 _VALID_CAPABILITIES = set(_CAPABILITY_PROMPTS.keys())
 
 
+def _normalise_history(history: List[Any]) -> List[Tuple[str, str]]:
+    """Accept route-style dict history and return ask_ai-compatible tuples."""
+    normalised: List[Tuple[str, str]] = []
+    for item in history or []:
+        role = ""
+        content = ""
+        if isinstance(item, dict):
+            role = str(item.get("role", ""))
+            content = str(item.get("content", ""))
+        elif isinstance(item, (list, tuple)) and len(item) == 2:
+            role = str(item[0])
+            content = str(item[1])
+        if role and content:
+            normalised.append((role, content))
+    return normalised
+
+
+def _classify_turn(message: str, history: List[Tuple[str, str]]) -> safety.SafetyVerdict:
+    verdict = safety.classify(message)
+    if verdict.decision == "block":
+        return verdict
+
+    safe_cyber = verdict.decision == "safe-cyber"
+    for _, content in history:
+        history_verdict = safety.classify(content)
+        if history_verdict.decision == "block":
+            return history_verdict
+        if history_verdict.decision == "safe-cyber":
+            safe_cyber = True
+
+    if safe_cyber and verdict.decision != "safe-cyber":
+        return safety.SafetyVerdict(decision="safe-cyber")
+    return verdict
+
+
 def valid_capabilities() -> List[str]:
     """Stable ordered list of capability ids — surfaced by /v2/admin/status."""
     return sorted(_VALID_CAPABILITIES)
@@ -149,14 +184,15 @@ async def run(req: OwnerAgentRequest) -> OwnerAgentResponse:
 
     The flow is:
       1. Validate capability (unknown → 'general').
-      2. classify(message). If "block" → return refusal; no model call.
+      2. classify(message + history). If "block" → return refusal; no model call.
       3. Build the layered system prompt.
       4. Call ask_ai. On any failure return a soft error reply (the
          route layer will wrap it in an envelope).
     """
     capability = req.capability if req.capability in _VALID_CAPABILITIES else "general"
+    history = _normalise_history(req.history)
 
-    verdict = safety.classify(req.message)
+    verdict = _classify_turn(req.message, history)
     if verdict.decision == "block":
         logger.warning(
             "owner_agent.block | category=%s | capability=%s",
@@ -181,7 +217,7 @@ async def run(req: OwnerAgentRequest) -> OwnerAgentResponse:
         # OPENAI_API_KEY at boot).
         from ai_client import ask_ai
         reply = await ask_ai(
-            req.message, system_prompt, list(req.history or []),
+            req.message, system_prompt, history,
             model=model,
         )
     except Exception as exc:

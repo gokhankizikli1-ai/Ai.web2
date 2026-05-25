@@ -47,7 +47,7 @@ import os
 import platform
 import sys
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
@@ -249,10 +249,13 @@ async def admin_memory(
     rows: List[Dict[str, Any]] = []
     available = False
     try:
-        # Legacy memory module exposes get_recent (best-effort import).
-        from memory import get_user_history  # type: ignore
-        raw = get_user_history(user.id) or []
-        rows = [{"role": r, "content": c} for r, c in raw[-max(1, min(limit, 200)):]]
+        # Legacy memory module exposes load_user_memory (best-effort import).
+        from memory import load_user_memory  # type: ignore
+        raw = load_user_memory(user.id, max(1, min(limit, 200))) or []
+        rows = [
+            {"category": category, "content": content, "created_at": created_at}
+            for category, content, created_at in raw
+        ]
         available = True
     except Exception as exc:
         logger.debug("admin memory inspector unavailable: %s", exc)
@@ -372,14 +375,14 @@ async def admin_owner_agent(
 
     # Truncate history at the route layer so a hostile body can't
     # exhaust memory before we hit the classifier.
-    safe_history: List[Dict[str, str]] = []
+    safe_history: List[Tuple[str, str]] = []
     for item in (body.history or [])[-50:]:
         if not isinstance(item, dict):
             continue
         role = str(item.get("role", ""))[:32]
         content = str(item.get("content", ""))[:8000]
         if role and content:
-            safe_history.append({"role": role, "content": content})
+            safe_history.append((role, content))
 
     req = owner_agent.OwnerAgentRequest(
         message=body.message,
