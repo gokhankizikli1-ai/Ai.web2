@@ -1,0 +1,616 @@
+/**
+ * AdminPanel — owner-only overlay with developer tooling tabs.
+ *
+ * Tabs:
+ *   - Overview     model routing, providers, deployment, flags
+ *   - Agents       hidden / internal agents catalogue
+ *   - Memory       project memory inspector
+ *   - Tools        tool-call history
+ *   - Prompts      system-prompt versions
+ *   - Audit        admin action log
+ *   - Owner Agent  chat with the private Shadow Agent
+ *
+ * Every tab fetches from /v2/admin/* with the same Authorization header
+ * pattern as useOwnerMode. Errors degrade to "data unavailable" — the
+ * panel never throws.
+ */
+import { useEffect, useState, useCallback } from 'react';
+import { motion } from 'framer-motion';
+import {
+  X, ShieldCheck, Activity, Bot, Database, Wrench,
+  FileCode, ClipboardList, MessageSquare, Loader2, AlertTriangle,
+} from 'lucide-react';
+import type { OwnerModeState } from '@/hooks/useOwnerMode';
+
+const DEFAULT_API_HOST = 'https://korvixai-backend-production.up.railway.app';
+const API_BASE = `${
+  (import.meta.env?.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ||
+  DEFAULT_API_HOST
+}`;
+
+type TabId =
+  | 'overview' | 'agents' | 'memory' | 'tools'
+  | 'prompts' | 'audit' | 'owner-agent';
+
+const TABS: { id: TabId; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { id: 'overview',     label: 'Overview',     icon: Activity },
+  { id: 'agents',       label: 'Agents',       icon: Bot },
+  { id: 'memory',       label: 'Memory',       icon: Database },
+  { id: 'tools',        label: 'Tools',        icon: Wrench },
+  { id: 'prompts',      label: 'Prompts',      icon: FileCode },
+  { id: 'audit',        label: 'Audit',        icon: ClipboardList },
+  { id: 'owner-agent',  label: 'Owner Agent',  icon: MessageSquare },
+];
+
+interface AdminPanelProps {
+  ownerMode: OwnerModeState;
+  onClose: () => void;
+}
+
+function authHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  try {
+    const t = localStorage.getItem('korvix_access_token');
+    if (t) headers['Authorization'] = `Bearer ${t}`;
+    const g = localStorage.getItem('korvix_user_id');
+    if (g) headers['X-Korvix-Guest-Id'] = g;
+  } catch { /* ignore */ }
+  return headers;
+}
+
+async function fetchAdmin<T = unknown>(path: string): Promise<T | null> {
+  try {
+    const r = await fetch(`${API_BASE}${path}`, { headers: authHeaders() });
+    if (!r.ok) return null;
+    const body = await r.json();
+    return (body?.data ?? null) as T | null;
+  } catch {
+    return null;
+  }
+}
+
+export default function AdminPanel({ ownerMode, onClose }: AdminPanelProps) {
+  const [activeTab, setActiveTab] = useState<TabId>('overview');
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-md flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.96, y: 8 }}
+        animate={{ opacity: 1, scale: 1,    y: 0 }}
+        exit={{ opacity: 0, scale: 0.96, y: 8 }}
+        transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-5xl h-[80vh] rounded-2xl border border-amber-500/20 bg-[#0b0b12]/95 shadow-2xl shadow-amber-500/5 overflow-hidden flex flex-col"
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.05] bg-gradient-to-r from-amber-500/[0.04] to-transparent">
+          <div className="flex items-center gap-2.5">
+            <div className="h-7 w-7 flex items-center justify-center rounded-lg bg-amber-500/[0.1] border border-amber-500/20">
+              <ShieldCheck className="h-3.5 w-3.5 text-amber-300" />
+            </div>
+            <div>
+              <div className="text-[13px] font-semibold text-white tracking-tight">Owner Panel</div>
+              <div className="text-[10px] text-amber-300/60">
+                {ownerMode.capabilities.length} capabilities unlocked
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="h-7 w-7 flex items-center justify-center rounded-md text-slate-500 hover:text-white hover:bg-white/[0.05] transition-all"
+            aria-label="Close admin panel"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+
+        {/* Body — tabs left, content right */}
+        <div className="flex flex-1 min-h-0">
+          {/* Tabs */}
+          <nav className="w-44 shrink-0 border-r border-white/[0.04] p-2 space-y-0.5 overflow-y-auto">
+            {TABS.map((t) => {
+              const Icon = t.icon;
+              const active = activeTab === t.id;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => setActiveTab(t.id)}
+                  className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[11px] transition-all ${
+                    active
+                      ? 'bg-amber-500/[0.08] text-amber-200 border border-amber-500/15'
+                      : 'text-slate-500 hover:text-slate-300 hover:bg-white/[0.03] border border-transparent'
+                  }`}
+                >
+                  <Icon className="h-3 w-3" />
+                  <span className="flex-1 text-left">{t.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+
+          {/* Tab content */}
+          <div className="flex-1 min-w-0 overflow-y-auto p-5 text-[12px] text-slate-300">
+            {activeTab === 'overview'    && <OverviewTab />}
+            {activeTab === 'agents'      && <AgentsTab />}
+            {activeTab === 'memory'      && <MemoryTab />}
+            {activeTab === 'tools'       && <ToolsTab />}
+            {activeTab === 'prompts'     && <PromptsTab />}
+            {activeTab === 'audit'       && <AuditTab />}
+            {activeTab === 'owner-agent' && <OwnerAgentTab />}
+          </div>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+/* ─── Helpers ─────────────────────────────────────────────────────────── */
+
+function Empty({ message }: { message: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-8 text-slate-600">
+      <AlertTriangle className="h-4 w-4 mb-2 text-amber-500/40" />
+      <span className="text-[11px]">{message}</span>
+    </div>
+  );
+}
+
+function Loading() {
+  return (
+    <div className="flex items-center gap-2 text-slate-600 text-[11px] py-4">
+      <Loader2 className="h-3 w-3 animate-spin" />
+      Loading…
+    </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="mb-5">
+      <h3 className="text-[10px] uppercase tracking-wider text-slate-500 mb-2">{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+function KV({ k, v }: { k: string; v: React.ReactNode }) {
+  return (
+    <div className="flex items-start gap-3 py-1 border-b border-white/[0.03]">
+      <span className="text-slate-500 text-[11px] w-40 shrink-0">{k}</span>
+      <span className="text-slate-200 text-[11px] font-mono break-all">{v}</span>
+    </div>
+  );
+}
+
+/* ─── Tabs ─────────────────────────────────────────────────────────────── */
+
+interface Diagnostics {
+  service: string;
+  environment: string;
+  python_version: string;
+  platform: string;
+  models: Record<string, string>;
+  providers: Array<{ name: string; registered: boolean; default_model?: string }>;
+  routing: { modes?: Array<{ mode: string; provider: string }>; default_provider?: string };
+  background_tasks: Record<string, unknown>;
+  flags: Record<string, boolean>;
+  deployment: Record<string, string>;
+}
+
+function OverviewTab() {
+  const [d, setD] = useState<Diagnostics | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    fetchAdmin<Diagnostics>('/v2/admin/diagnostics').then((res) => {
+      setD(res);
+      setLoading(false);
+    });
+  }, []);
+  if (loading) return <Loading />;
+  if (!d) return <Empty message="Diagnostics unavailable." />;
+  return (
+    <div>
+      <Section title="Service">
+        <KV k="service"     v={d.service} />
+        <KV k="environment" v={d.environment} />
+        <KV k="python"      v={d.python_version} />
+        <KV k="platform"    v={d.platform} />
+      </Section>
+      <Section title="Models">
+        {Object.entries(d.models || {}).map(([k, v]) => (
+          <KV key={k} k={k} v={v} />
+        ))}
+      </Section>
+      <Section title="Providers">
+        {(d.providers || []).length === 0 ? (
+          <div className="text-slate-600 text-[11px]">no providers registered</div>
+        ) : (
+          d.providers.map((p) => (
+            <KV
+              key={p.name}
+              k={p.name}
+              v={`${p.registered ? 'registered' : 'absent'}${p.default_model ? ` · ${p.default_model}` : ''}`}
+            />
+          ))
+        )}
+      </Section>
+      <Section title="Routing">
+        {(d.routing?.modes || []).map((m) => (
+          <KV key={m.mode} k={m.mode} v={m.provider} />
+        ))}
+        {d.routing?.default_provider && (
+          <KV k="default" v={d.routing.default_provider} />
+        )}
+      </Section>
+      <Section title="Flags">
+        {Object.entries(d.flags || {}).map(([k, v]) => (
+          <KV key={k} k={k} v={v ? 'on' : 'off'} />
+        ))}
+      </Section>
+      <Section title="Deployment">
+        {Object.entries(d.deployment || {}).map(([k, v]) => (
+          <KV key={k} k={k} v={v} />
+        ))}
+      </Section>
+    </div>
+  );
+}
+
+interface AgentsData {
+  agent_runtime_enabled: boolean;
+  owner_agent: { capabilities: string[] };
+  internal_agents: Array<{ name: string; description?: string }>;
+}
+
+function AgentsTab() {
+  const [d, setD] = useState<AgentsData | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    fetchAdmin<AgentsData>('/v2/admin/agents').then((res) => {
+      setD(res);
+      setLoading(false);
+    });
+  }, []);
+  if (loading) return <Loading />;
+  if (!d) return <Empty message="Agents view unavailable." />;
+  return (
+    <div>
+      <Section title="Runtime">
+        <KV k="agent_runtime" v={d.agent_runtime_enabled ? 'enabled' : 'disabled'} />
+      </Section>
+      <Section title="Owner Agent — Capabilities">
+        <div className="flex flex-wrap gap-1.5">
+          {(d.owner_agent?.capabilities || []).map((c) => (
+            <span
+              key={c}
+              className="px-2 py-0.5 rounded-full text-[10px] bg-amber-500/[0.06] border border-amber-500/15 text-amber-200"
+            >
+              {c}
+            </span>
+          ))}
+        </div>
+      </Section>
+      <Section title="Internal Agents">
+        {(d.internal_agents || []).length === 0 ? (
+          <div className="text-slate-600 text-[11px]">
+            No internal-agent registry yet. Reserved slot.
+          </div>
+        ) : (
+          d.internal_agents.map((a) => (
+            <KV key={a.name} k={a.name} v={a.description || '—'} />
+          ))
+        )}
+      </Section>
+    </div>
+  );
+}
+
+interface MemoryData {
+  available: boolean;
+  rows: Array<{ role: string; content: string }>;
+  limit: number;
+}
+
+function MemoryTab() {
+  const [d, setD] = useState<MemoryData | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    fetchAdmin<MemoryData>('/v2/admin/memory?limit=25').then((res) => {
+      setD(res);
+      setLoading(false);
+    });
+  }, []);
+  if (loading) return <Loading />;
+  if (!d || !d.available) return <Empty message="Memory subsystem not available in this deployment." />;
+  if (d.rows.length === 0) return <Empty message="No memory rows for the current user." />;
+  return (
+    <div className="space-y-2">
+      {d.rows.map((row, i) => (
+        <div
+          key={i}
+          className="rounded-md border border-white/[0.04] p-2 bg-white/[0.015]"
+        >
+          <div className="text-[9px] uppercase text-slate-600 mb-1">{row.role}</div>
+          <div className="text-[11px] text-slate-300 whitespace-pre-wrap break-words">
+            {row.content.slice(0, 600)}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+interface ToolsData {
+  calls: Array<{ name?: string; ts?: string; status?: string; elapsed_ms?: number }>;
+  limit: number;
+}
+
+function ToolsTab() {
+  const [d, setD] = useState<ToolsData | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    fetchAdmin<ToolsData>('/v2/admin/tools/history').then((res) => {
+      setD(res);
+      setLoading(false);
+    });
+  }, []);
+  if (loading) return <Loading />;
+  if (!d || d.calls.length === 0) return <Empty message="No recorded tool calls." />;
+  return (
+    <div>
+      {d.calls.map((c, i) => (
+        <KV
+          key={i}
+          k={c.name || `call_${i}`}
+          v={`${c.status || '?'}${c.elapsed_ms != null ? ` · ${c.elapsed_ms}ms` : ''}${c.ts ? ` · ${c.ts}` : ''}`}
+        />
+      ))}
+    </div>
+  );
+}
+
+interface PromptsData {
+  prompts: Record<string, string>;
+  owner_agent_capabilities: string[];
+}
+
+function PromptsTab() {
+  const [d, setD] = useState<PromptsData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  useEffect(() => {
+    fetchAdmin<PromptsData>('/v2/admin/prompts').then((res) => {
+      setD(res);
+      setLoading(false);
+    });
+  }, []);
+  if (loading) return <Loading />;
+  if (!d) return <Empty message="Prompts view unavailable." />;
+  const entries = Object.entries(d.prompts || {});
+  return (
+    <div>
+      <Section title="System Prompts">
+        {entries.length === 0 ? (
+          <div className="text-slate-600 text-[11px]">No prompts loaded.</div>
+        ) : (
+          entries.map(([name, body]) => (
+            <div key={name} className="mb-2 border border-white/[0.04] rounded-md">
+              <button
+                onClick={() => setExpanded(expanded === name ? null : name)}
+                className="w-full text-left px-3 py-1.5 flex items-center justify-between hover:bg-white/[0.02] transition-colors"
+              >
+                <span className="text-[11px] font-mono text-amber-300/80">{name}</span>
+                <span className="text-[10px] text-slate-600">{body.length} chars</span>
+              </button>
+              {expanded === name && (
+                <pre className="px-3 py-2 text-[10px] text-slate-400 whitespace-pre-wrap break-words border-t border-white/[0.04] max-h-64 overflow-y-auto font-mono">
+                  {body}
+                </pre>
+              )}
+            </div>
+          ))
+        )}
+      </Section>
+    </div>
+  );
+}
+
+interface AuditEntry {
+  id: number;
+  ts: string;
+  user_id: string;
+  user_email: string | null;
+  action: string;
+  path: string | null;
+  ip: string | null;
+  status: string;
+  metadata: Record<string, unknown>;
+}
+
+interface AuditData {
+  entries: AuditEntry[];
+  limit: number;
+  scope: string;
+  total: number;
+}
+
+function AuditTab() {
+  const [d, setD] = useState<AuditData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const load = useCallback(() => {
+    setLoading(true);
+    fetchAdmin<AuditData>('/v2/admin/audit?limit=100&scope=self').then((res) => {
+      setD(res);
+      setLoading(false);
+    });
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return <Loading />;
+  if (!d || d.entries.length === 0) return <Empty message="No audit entries yet." />;
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[10px] text-slate-500">
+          {d.entries.length} of {d.total} entries
+        </span>
+        <button
+          onClick={load}
+          className="text-[10px] text-amber-300/80 hover:text-amber-200"
+        >
+          refresh
+        </button>
+      </div>
+      <div className="space-y-1">
+        {d.entries.map((e) => (
+          <div
+            key={e.id}
+            className={`text-[11px] font-mono rounded border px-2 py-1 ${
+              e.status === 'blocked'
+                ? 'border-rose-500/20 bg-rose-500/[0.04] text-rose-200'
+                : 'border-white/[0.04] bg-white/[0.015] text-slate-300'
+            }`}
+          >
+            <span className="text-slate-500">{e.ts.slice(11, 19)}</span>
+            <span className="mx-2 text-amber-300/80">{e.action}</span>
+            <span className="text-slate-500">{e.status}</span>
+            {e.path && <span className="text-slate-600 ml-2">{e.path}</span>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+interface OwnerAgentResponse {
+  reply: string;
+  blocked: boolean;
+  block_category: string | null;
+  safe_cyber: boolean;
+  capability: string;
+  model: string;
+  provider: string;
+}
+
+const CAPABILITIES = [
+  'general', 'architecture', 'code_generation', 'debugging',
+  'refactoring', 'deployment', 'product_strategy', 'automation',
+  'security_review', 'internal_ops',
+];
+
+function OwnerAgentTab() {
+  const [capability, setCapability] = useState('general');
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [history, setHistory] = useState<Array<{ role: string; content: string; blocked?: boolean }>>([]);
+
+  const send = useCallback(async () => {
+    const text = message.trim();
+    if (!text || busy) return;
+    setBusy(true);
+    setHistory((h) => [...h, { role: 'user', content: text }]);
+    setMessage('');
+    try {
+      const r = await fetch(`${API_BASE}/v2/admin/owner-agent`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          message: text,
+          capability,
+          history: history.slice(-20),
+        }),
+      });
+      const body = await r.json();
+      const data = (body?.data || {}) as OwnerAgentResponse;
+      setHistory((h) => [...h, {
+        role: 'assistant',
+        content: data.reply || '(no reply)',
+        blocked: !!data.blocked,
+      }]);
+    } catch (e) {
+      setHistory((h) => [...h, {
+        role: 'assistant',
+        content: `Network error: ${e instanceof Error ? e.message : 'unknown'}`,
+      }]);
+    } finally {
+      setBusy(false);
+    }
+  }, [message, busy, capability, history]);
+
+  return (
+    <div className="flex flex-col h-full min-h-0">
+      <div className="flex items-center gap-2 mb-3">
+        <label className="text-[10px] text-slate-500">capability</label>
+        <select
+          value={capability}
+          onChange={(e) => setCapability(e.target.value)}
+          className="bg-white/[0.03] border border-white/[0.06] rounded-md text-[11px] text-slate-200 px-2 py-1 focus:outline-none focus:border-amber-500/30"
+        >
+          {CAPABILITIES.map((c) => (
+            <option key={c} value={c} className="bg-[#0b0b12]">{c}</option>
+          ))}
+        </select>
+        {history.length > 0 && (
+          <button
+            onClick={() => setHistory([])}
+            className="ml-auto text-[10px] text-slate-500 hover:text-slate-300"
+          >
+            clear
+          </button>
+        )}
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-1 mb-2">
+        {history.length === 0 ? (
+          <Empty message="Owner Agent — architecture, debug, refactor, deployment, security review. Safety guardrails apply." />
+        ) : (
+          history.map((m, i) => (
+            <div
+              key={i}
+              className={`rounded-md p-2 text-[11px] whitespace-pre-wrap break-words ${
+                m.role === 'user'
+                  ? 'bg-amber-500/[0.04] border border-amber-500/15 text-amber-100'
+                  : m.blocked
+                    ? 'bg-rose-500/[0.04] border border-rose-500/20 text-rose-200'
+                    : 'bg-white/[0.02] border border-white/[0.05] text-slate-200'
+              }`}
+            >
+              <div className="text-[9px] uppercase text-slate-500 mb-1">
+                {m.role}{m.blocked ? ' · blocked' : ''}
+              </div>
+              {m.content}
+            </div>
+          ))
+        )}
+      </div>
+
+      <div className="flex items-end gap-2 border-t border-white/[0.05] pt-2">
+        <textarea
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+              e.preventDefault();
+              send();
+            }
+          }}
+          placeholder="Ask the Owner Agent…  (Cmd/Ctrl-Enter to send)"
+          className="flex-1 min-h-[44px] max-h-32 resize-none rounded-md bg-white/[0.02] border border-white/[0.05] focus:border-amber-500/30 focus:outline-none px-3 py-2 text-[11px] text-slate-200"
+        />
+        <button
+          onClick={send}
+          disabled={busy || !message.trim()}
+          className="px-3 py-2 rounded-md bg-amber-500/[0.1] border border-amber-500/30 text-amber-200 text-[11px] disabled:opacity-40 hover:bg-amber-500/[0.15] transition-all"
+        >
+          {busy ? 'Sending…' : 'Send'}
+        </button>
+      </div>
+    </div>
+  );
+}

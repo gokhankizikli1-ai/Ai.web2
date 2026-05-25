@@ -234,6 +234,17 @@ def _build_full_app():
         except Exception as _e:
             logger.warning("install_api_error_handlers failed (non-fatal): %s", _e)
 
+    # Owner / Admin Mode — /v2/admin/* routes. Hidden from the route
+    # table entirely when ENABLE_ADMIN_MODE is off so a scanner gets
+    # 404 instead of 401 (admin mode shouldn't be discoverable).
+    if os.getenv("ENABLE_ADMIN_MODE", "false").strip().lower() == "true":
+        try:
+            from backend.routes.v2_admin import router as _admin_router
+            _app.include_router(_admin_router)
+            logger.info("Admin mode: /v2/admin/* routes installed")
+        except Exception as _e:
+            logger.warning("v2_admin route install failed (non-fatal): %s", _e)
+
     # Phase-B: import the providers package so KNOWN_PROVIDERS is
     # populated and bootstrap_default_providers() runs once. Safe even
     # when OPENAI_API_KEY isn't set — the registry stays empty and

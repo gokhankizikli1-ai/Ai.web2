@@ -43,7 +43,24 @@ class Config:
 
     # ── Usage limits ─────────────────────────────────────────────────────
     FREE_DAILY_LIMIT: int = int(os.getenv("FREE_DAILY_LIMIT", "20"))
-    OWNER_ID: int = int(os.getenv("OWNER_ID", "0"))
+
+    # ── Owner / Admin Mode ───────────────────────────────────────────────
+    # OWNER_EMAIL: canonical (lowercased) email of the project owner. When
+    # a user's email-kind external_id matches, `is_owner(user)` returns
+    # True and the /v2/admin/* routes unlock. Multiple emails can be
+    # provided comma-separated (rare — supports a temporary co-owner
+    # during handoff). Empty string ⇒ no email-based owner detection.
+    OWNER_EMAIL: str = os.getenv("OWNER_EMAIL", "").strip().lower()
+    # OWNER_ID: legacy / numeric or string user id allow-list. Matches
+    # against User.id (uuid hex) OR User.external_id. Comma-separated to
+    # support emergency rotation. "0" or "" ⇒ disabled. Kept alongside
+    # OWNER_EMAIL so an ops team can rotate without redeploying.
+    OWNER_ID: str = os.getenv("OWNER_ID", "0")
+    # ENABLE_ADMIN_MODE: master kill-switch. When false, /v2/admin/*
+    # returns 404 from the route layer (the import still succeeds so the
+    # rest of the app boots normally). Default false so production
+    # behaviour is byte-identical until flipped.
+    ENABLE_ADMIN_MODE: bool = os.getenv("ENABLE_ADMIN_MODE", "false").strip().lower() == "true"
 
     # ── Database ─────────────────────────────────────────────────────────
     DB_PATH: str = os.getenv("DB_PATH", "memory.db")
