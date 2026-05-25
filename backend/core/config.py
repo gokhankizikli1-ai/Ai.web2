@@ -61,6 +61,19 @@ class Config:
     # rest of the app boots normally). Default false so production
     # behaviour is byte-identical until flipped.
     ENABLE_ADMIN_MODE: bool = os.getenv("ENABLE_ADMIN_MODE", "false").strip().lower() == "true"
+    # OWNER_TOKEN: optional shared secret unlock for the owner. Lets a
+    # browser that doesn't run the /v2/auth/* flow still surface as the
+    # project owner. The frontend stores the token in localStorage and
+    # sends it as X-Korvix-Owner-Token; the backend constant-time
+    # compares it against this env var. Minimum 16 chars; shorter ⇒
+    # token unlock disabled (defence vs. brute-force loops on /status).
+    # Generate with: python -c "import secrets; print(secrets.token_urlsafe(32))"
+    OWNER_TOKEN: str = os.getenv("OWNER_TOKEN", "").strip()
+    # ENABLE_ADMIN_DEBUG: when true, /v2/admin/status surfaces the
+    # detection_debug() payload even to non-owners. Useful for
+    # troubleshooting an Owner-not-recognised report on production
+    # without granting actual admin access. Default off.
+    ENABLE_ADMIN_DEBUG: bool = os.getenv("ENABLE_ADMIN_DEBUG", "false").strip().lower() == "true"
 
     # ── Database ─────────────────────────────────────────────────────────
     DB_PATH: str = os.getenv("DB_PATH", "memory.db")

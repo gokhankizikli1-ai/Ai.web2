@@ -53,11 +53,14 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
 from backend.core.config import settings
-from backend.core.deps import current_user, require_owner
+from backend.core.deps import current_user, require_owner, _extract_owner_token
 from backend.core.errors import ApiError, UnauthorizedError, ValidationError
 from backend.core.responses import ok as envelope_ok
 from backend.services.admin import audit, owner_agent
-from backend.services.admin.owner import is_owner, owner_capabilities
+from backend.services.admin.owner import (
+    detection_debug, is_owner, log_detection, match_owner_token,
+    owner_capabilities,
+)
 from backend.services.auth.identity import User
 
 
@@ -122,16 +125,52 @@ async def admin_status(
     """Frontend probe. Always 200. The payload tells the caller whether
     they're the owner (so the UI can decide to render the badge).
 
+    Two unlock paths are checked:
+      - identity-based (user from request.state.user)
+      - token-based  (X-Korvix-Owner-Token header matches OWNER_TOKEN)
+
     Auth gating note: this endpoint deliberately does NOT use
     require_owner. A non-owner asking "am I the owner?" must be able
     to receive a clean `is_owner: false`, not a 401 — otherwise every
     page that wants the badge would have to handle the 401 path.
+
+    Debug field:
+      - Owners always get `data.debug` populated so a misconfigured
+        env is immediately visible in the panel.
+      - Non-owners get `data.debug` ONLY when ENABLE_ADMIN_DEBUG is
+        set on the backend; otherwise the field is omitted (no leak).
+        This lets an operator temporarily debug production without
+        leaving the diagnostic surface permanently exposed.
     """
-    caps = owner_capabilities(user)
+    owner_token = _extract_owner_token(request)
+    token_matches = bool(owner_token) and match_owner_token(owner_token)
+
+    caps = owner_capabilities(user, owner_token=owner_token)
+
+    log_detection(
+        user, caps["is_owner"],
+        token_present=bool(owner_token),
+        token_match=token_matches,
+    )
+
     if caps["is_owner"]:
-        _audit(user, "admin.status.granted", request)
+        _audit(
+            user, "admin.status.granted", request,
+            metadata={"path": "token" if token_matches and not is_owner(user) else "identity"},
+        )
+
+    # Debug payload — only exposed to confirmed owners, or to anyone
+    # when ENABLE_ADMIN_DEBUG is set (defaults off).
+    data: Dict[str, Any] = dict(caps)
+    if caps["is_owner"] or _flag("ENABLE_ADMIN_DEBUG"):
+        data["debug"] = detection_debug(
+            user,
+            owner_token_present=bool(owner_token),
+            owner_token_matches=token_matches,
+        )
+
     return envelope_ok(
-        data=caps,
+        data=data,
         endpoint="/v2/admin/status",
         admin_mode_flag=_flag("ENABLE_ADMIN_MODE"),
     )

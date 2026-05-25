@@ -326,16 +326,21 @@ export default function ChatDashboard() {
       />
 
       <div
-        className={`relative flex-1 flex flex-col h-[100dvh] transition-all duration-300 ease-out ${sidebarOpen ? 'lg:ml-[260px]' : 'ml-0'}`}
+        // min-w-0 + overflow-hidden so flex children can shrink below
+        // their intrinsic content width on iPad/mobile when the sidebar
+        // is open (`lg:ml-[260px]` shrinks the available width to
+        // ~764px on a 1024px viewport; without min-w-0 a wide child
+        // would force horizontal overflow).
+        className={`relative flex-1 min-w-0 flex flex-col h-[100dvh] overflow-hidden transition-all duration-300 ease-out ${sidebarOpen ? 'lg:ml-[260px]' : 'ml-0'}`}
         style={{ paddingBottom: 'var(--safe-area-inset-bottom, 0px)' }}
       >
         {/* Top Bar */}
-        <header className="relative flex items-center justify-between h-11 px-3 border-b shrink-0 z-10" style={{ borderColor: 'rgba(255,255,255,0.04)', background: 'rgba(17,21,28,0.7)', backdropFilter: 'blur(20px)' }}>
-          <div className="flex items-center gap-2 min-w-0">
+        <header className="relative flex items-center justify-between gap-2 h-11 px-3 border-b shrink-0 z-10 overflow-hidden" style={{ borderColor: 'rgba(255,255,255,0.04)', background: 'rgba(17,21,28,0.7)', backdropFilter: 'blur(20px)' }}>
+          <div className="flex items-center gap-2 min-w-0 flex-1 overflow-x-auto scrollbar-none">
             {!sidebarOpen && (
               <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
                 onClick={() => setSidebarOpen(true)}
-                className="h-7 w-7 flex items-center justify-center rounded-md transition-all border hover:text-cyan-400 hover:bg-white/[0.04] hover:border-cyan-500/15"
+                className="h-7 w-7 shrink-0 flex items-center justify-center rounded-md transition-all border hover:text-cyan-400 hover:bg-white/[0.04] hover:border-cyan-500/15"
                 style={{ color: 'rgba(148,163,184,0.5)', borderColor: 'rgba(255,255,255,0.05)' }}
               >
                 <PanelLeftOpen className="h-3.5 w-3.5" />

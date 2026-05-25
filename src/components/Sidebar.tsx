@@ -148,7 +148,10 @@ export default function Sidebar({
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
         style={{
-          width: 260,
+          // 260px on tablet+, but capped to 85vw on ultra-narrow viewports
+          // so the sidebar never overflows the viewport when open.
+          width: 'min(260px, 85vw)',
+          maxWidth: '85vw',
           background: 'rgba(17,21,28,0.96)',
           backdropFilter: 'blur(12px) saturate(1.1)',
           borderRight: '1px solid rgba(255,255,255,0.035)',

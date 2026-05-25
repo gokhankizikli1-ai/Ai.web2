@@ -545,3 +545,195 @@ def test_admin_owner_agent_audited_on_block(admin_env):
         assert meta.get("block_category") == "malware_authoring"
     finally:
         app.dependency_overrides.clear()
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Owner-token unlock path (added for production visibility fix)
+# ══════════════════════════════════════════════════════════════════════════
+
+_GOOD_TOKEN = "a" * 32   # 32 chars — exceeds the 16-char minimum
+
+
+@pytest.fixture()
+def admin_env_with_token(tmp_path, monkeypatch):
+    """admin_env + a real OWNER_TOKEN so the token path can match."""
+    monkeypatch.setenv("ENABLE_ADMIN_MODE", "true")
+    monkeypatch.setenv("OWNER_EMAIL", "owner@example.com")
+    monkeypatch.setenv("OWNER_ID", "0")
+    monkeypatch.setenv("OWNER_TOKEN", _GOOD_TOKEN)
+    monkeypatch.setenv("ADMIN_AUDIT_DB_PATH", str(tmp_path / "admin-audit-tok.db"))
+    from backend.core import config as _cfg
+    importlib.reload(_cfg)
+    from backend.services.admin import audit as _aud
+    _aud._reset_for_tests()
+    yield
+    importlib.reload(_cfg)
+    _aud._reset_for_tests()
+
+
+def test_match_owner_token_matches_correct_secret(admin_env_with_token):
+    from backend.services.admin.owner import match_owner_token
+    assert match_owner_token(_GOOD_TOKEN) is True
+
+
+def test_match_owner_token_rejects_wrong_secret(admin_env_with_token):
+    from backend.services.admin.owner import match_owner_token
+    assert match_owner_token("b" * 32) is False
+    assert match_owner_token("") is False
+    assert match_owner_token(None) is False
+
+
+def test_match_owner_token_rejects_short_secret(admin_env, monkeypatch):
+    # Even with the same value on both sides, anything < 16 chars is
+    # refused — defence vs brute-force loops.
+    monkeypatch.setenv("OWNER_TOKEN", "short")
+    from backend.services.admin.owner import match_owner_token
+    assert match_owner_token("short") is False
+
+
+def test_match_owner_token_disabled_when_kill_switch_off(admin_disabled, monkeypatch):
+    monkeypatch.setenv("OWNER_TOKEN", _GOOD_TOKEN)
+    from backend.services.admin.owner import match_owner_token
+    assert match_owner_token(_GOOD_TOKEN) is False
+
+
+def test_is_owner_request_unlocks_via_token(admin_env_with_token):
+    """Owner-token works even for a guest user — that's the whole
+    point of the token path (browsers without /v2/auth/* session)."""
+    from backend.services.admin.owner import is_owner_request
+    from backend.services.auth.identity import User
+    guest = User(id="guest:abc", kind="guest", external_id="guest:abc")
+    assert is_owner_request(guest, owner_token=_GOOD_TOKEN) is True
+    assert is_owner_request(guest, owner_token=None) is False
+    assert is_owner_request(guest, owner_token="wrong-too-short") is False
+
+
+def test_owner_capabilities_unlocks_via_token(admin_env_with_token):
+    from backend.services.admin.owner import owner_capabilities
+    from backend.services.auth.identity import User
+    guest = User(id="guest:abc", kind="guest", external_id="guest:abc")
+    caps = owner_capabilities(guest, owner_token=_GOOD_TOKEN)
+    assert caps["is_owner"] is True
+    assert "owner_agent" in caps["capabilities"]
+
+
+def test_detection_debug_explains_kill_switch(admin_disabled):
+    from backend.services.admin.owner import detection_debug
+    out = detection_debug(None)
+    assert out["enable_admin_mode"] is False
+    assert out["first_failure"] == "ENABLE_ADMIN_MODE=false on backend"
+
+
+def test_detection_debug_explains_email_mismatch(admin_env):
+    from backend.services.admin.owner import detection_debug
+    u = _make_user(external_id="email:random@example.com")
+    out = detection_debug(u)
+    assert out["user_email_observed"] == "random@example.com"
+    assert out["user_email_match"] is False
+    assert "does not match OWNER_EMAIL" in (out["first_failure"] or "")
+
+
+def test_detection_debug_explains_token_mismatch(admin_env_with_token):
+    from backend.services.admin.owner import detection_debug
+    out = detection_debug(
+        None,
+        owner_token_present=True,
+        owner_token_matches=False,
+    )
+    assert "token sent by client does NOT match" in (out["first_failure"] or "")
+
+
+def test_detection_debug_no_failure_when_owner(admin_env):
+    from backend.services.admin.owner import detection_debug
+    u = _make_user(external_id="email:owner@example.com")
+    out = detection_debug(u)
+    assert out["user_email_match"] is True
+    assert out["first_failure"] is None
+
+
+def test_detection_debug_never_leaks_token_or_email(admin_env_with_token):
+    """The debug payload must NEVER include OWNER_TOKEN / OWNER_EMAIL
+    raw values — only flags and the user's own observed email."""
+    from backend.services.admin.owner import detection_debug
+    out = detection_debug(_make_user())
+    for v in out.values():
+        if isinstance(v, str):
+            assert _GOOD_TOKEN not in v, "OWNER_TOKEN leaked into debug payload"
+            # OWNER_EMAIL ('owner@example.com') is fine to mirror back
+            # because the user's email IS owner@example.com (same value).
+            # We only check the secret here.
+
+
+# ── Route tests with token path ────────────────────────────────────────────
+
+def test_status_route_unlocks_via_owner_token_header(admin_env_with_token):
+    """End-to-end: a guest hitting /v2/admin/status with the correct
+    X-Korvix-Owner-Token header must come back as is_owner=true."""
+    client, app = _fresh_app()
+    # No dependency override — real path. AuthMiddleware is off in
+    # tests, so current_user returns _FALLBACK_GUEST.
+    r = client.get(
+        "/v2/admin/status",
+        headers={"X-Korvix-Owner-Token": _GOOD_TOKEN},
+    )
+    assert r.status_code == 200
+    data = r.json()["data"]
+    assert data["is_owner"] is True
+    assert "owner_agent" in data["capabilities"]
+
+
+def test_status_route_keeps_guest_when_token_wrong(admin_env_with_token):
+    client, app = _fresh_app()
+    r = client.get(
+        "/v2/admin/status",
+        headers={"X-Korvix-Owner-Token": "definitely-wrong-value-here-too"},
+    )
+    assert r.status_code == 200
+    assert r.json()["data"]["is_owner"] is False
+
+
+def test_status_route_exposes_debug_to_owner(admin_env_with_token):
+    client, app = _fresh_app()
+    r = client.get(
+        "/v2/admin/status",
+        headers={"X-Korvix-Owner-Token": _GOOD_TOKEN},
+    )
+    body = r.json()["data"]
+    assert "debug" in body
+    assert body["debug"]["owner_token_matches"] is True
+    assert body["debug"]["first_failure"] is None
+
+
+def test_status_route_hides_debug_from_non_owner(admin_env):
+    """When ENABLE_ADMIN_DEBUG is OFF, non-owners get no debug field."""
+    client, app = _fresh_app()
+    r = client.get("/v2/admin/status")
+    assert r.status_code == 200
+    body = r.json()["data"]
+    assert body["is_owner"] is False
+    assert "debug" not in body
+
+
+def test_status_route_exposes_debug_when_admin_debug_flag(admin_env, monkeypatch):
+    """ENABLE_ADMIN_DEBUG=true → debug payload surfaces for non-owners
+    too, so an operator can troubleshoot production."""
+    monkeypatch.setenv("ENABLE_ADMIN_DEBUG", "true")
+    client, app = _fresh_app()
+    r = client.get("/v2/admin/status")
+    body = r.json()["data"]
+    assert body["is_owner"] is False
+    assert "debug" in body
+    assert body["debug"]["first_failure"]  # populated
+
+
+def test_require_owner_unlocks_via_owner_token_header(admin_env_with_token):
+    """A protected route (here, /v2/admin/diagnostics) must accept
+    the X-Korvix-Owner-Token header alone — no bearer required."""
+    client, app = _fresh_app()
+    r = client.get(
+        "/v2/admin/diagnostics",
+        headers={"X-Korvix-Owner-Token": _GOOD_TOKEN},
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()["data"]
+    assert "models" in data
