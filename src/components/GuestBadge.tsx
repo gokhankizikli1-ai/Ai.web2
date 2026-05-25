@@ -1,9 +1,16 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { User, X } from 'lucide-react';
+import { useOwnerMode } from '@/hooks/useOwnerMode';
 
 export default function GuestBadge() {
   const [visible, setVisible] = useState(true);
+  // Owner-mode session takes visual precedence over the Guest badge
+  // (the owner does NOT need to sign in via /v2/auth/* — OWNER_TOKEN
+  // IS their credential). Without this, an unlocked owner would see
+  // both "Owner Session Active" AND "Guest mode" simultaneously,
+  // which is confusing and contradicts the design.
+  const { isOwner } = useOwnerMode();
 
   useEffect(() => {
     const dismissed = localStorage.getItem('korvix_guest_dismissed');
@@ -17,7 +24,7 @@ export default function GuestBadge() {
 
   return (
     <AnimatePresence>
-      {visible && (
+      {visible && !isOwner && (
         <motion.div
           initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}

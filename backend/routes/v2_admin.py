@@ -143,31 +143,57 @@ async def admin_status(
         leaving the diagnostic surface permanently exposed.
     """
     owner_token = _extract_owner_token(request)
-    token_matches = bool(owner_token) and match_owner_token(owner_token)
+    token_present = bool(owner_token)
+    token_matches = token_present and match_owner_token(owner_token)
 
     caps = owner_capabilities(user, owner_token=owner_token)
 
     log_detection(
         user, caps["is_owner"],
-        token_present=bool(owner_token),
+        token_present=token_present,
         token_match=token_matches,
     )
 
+    # Audit BOTH success and failed unlock attempts. A failed token
+    # attempt is a high-signal forensic event — someone is probing.
+    # Successful attempts already had an audit row before this change;
+    # the new "denied" row is the additive piece.
     if caps["is_owner"]:
         _audit(
             user, "admin.status.granted", request,
             metadata={"path": "token" if token_matches and not is_owner(user) else "identity"},
         )
+    elif token_present:
+        # Don't log the token value — only the fact that one was sent
+        # and rejected. user.id reveals whether it came from a known
+        # guest (browser-stable nonce) or anonymous.
+        _audit(
+            user, "admin.unlock.denied", request,
+            status="denied",
+            metadata={
+                "token_length": len(owner_token),
+                "reason": "token_mismatch_or_unset",
+            },
+        )
 
     # Debug payload — only exposed to confirmed owners, or to anyone
     # when ENABLE_ADMIN_DEBUG is set (defaults off).
     data: Dict[str, Any] = dict(caps)
+    # A stable human-readable reason on EVERY response — owners and
+    # non-owners both need this. For non-owners it's "ok" or the
+    # specific failure ("ENABLE_ADMIN_MODE=false on backend", etc.)
+    # so the modal can show a clear error. The detail-rich debug
+    # object remains gated by the flag above.
+    debug_full = detection_debug(
+        user,
+        owner_token_present=token_present,
+        owner_token_matches=token_matches,
+    )
+    data["reason"] = (
+        "owner_confirmed" if caps["is_owner"] else (debug_full.get("first_failure") or "not_owner")
+    )
     if caps["is_owner"] or _flag("ENABLE_ADMIN_DEBUG"):
-        data["debug"] = detection_debug(
-            user,
-            owner_token_present=bool(owner_token),
-            owner_token_matches=token_matches,
-        )
+        data["debug"] = debug_full
 
     return envelope_ok(
         data=data,
