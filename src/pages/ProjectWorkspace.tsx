@@ -22,6 +22,8 @@ import {
 import type { ProjectAgent, AgentMessage } from '@/types/projects';
 import { useProjectActivity } from '@/hooks/useProjectActivity';
 import AgentMessageRenderer from '@/components/AgentMessageRenderer';
+import OwnerModeChip from '@/components/OwnerModeChip';
+import OwnerSessionIndicator from '@/components/OwnerSessionIndicator';
 
 /* ═══════════════════════════════════════════════════════════════════
    Phase 3.7 — typewriter helpers.
@@ -631,7 +633,7 @@ export default function ProjectWorkspace() {
   }
 
   return (
-    <div className="h-[100dvh] flex flex-col overflow-hidden" style={{ background: '#11151C', color: '#E2E8F0' }}>
+    <div className="h-[100dvh] w-full max-w-full flex flex-col overflow-hidden" style={{ background: '#11151C', color: '#E2E8F0' }}>
       {/* Ambient */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
         <div className="absolute -top-[200px] -right-[200px] w-[600px] h-[600px] rounded-full opacity-[0.03]" style={{ background: 'radial-gradient(circle, #22D3EE 0%, transparent 70%)' }} />
@@ -653,7 +655,7 @@ export default function ProjectWorkspace() {
             <span className="text-[9px] text-emerald-400/80 font-medium">{activeAgentCount} active</span>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <div className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-lg" style={{ background: 'rgba(255,255,255,0.02)' }}>
             <Bot className="h-3 w-3 text-white/25" />
             <span className="text-[10px] text-white/35">{agents.length} agents</span>
@@ -661,11 +663,20 @@ export default function ProjectWorkspace() {
           <button onClick={() => setShowCreateAgent(true)} className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium text-cyan-400/70 hover:text-cyan-300 transition-all" style={{ background: 'rgba(34,211,238,0.04)', border: '1px solid rgba(34,211,238,0.08)' }}>
             <Plus className="h-3 w-3" /> Agent
           </button>
+          {/* Owner-mode entry point — locked variant for non-owners,
+              unlocked chip with AdminPanel access for the project owner.
+              Same component as ChatDashboard so the entry is consistent
+              across the app. */}
+          <OwnerModeChip />
+          <OwnerSessionIndicator />
         </div>
       </div>
 
-      {/* 3-Panel Layout */}
-      <div className="relative flex-1 flex min-h-0">
+      {/* 3-Panel Layout — overflow-hidden + min-w-0 on each pane so a
+          long agent name / wide message block can never push siblings
+          off-screen on iPad. The center pane uses flex-1 min-w-0 which
+          is the canonical "shrink below intrinsic content width" combo. */}
+      <div className="relative flex-1 flex min-h-0 min-w-0 overflow-hidden">
         {/* LEFT: Agent List */}
         <div className="hidden lg:flex flex-col w-[230px] shrink-0 overflow-hidden" style={{ background: 'rgba(17,21,28,0.5)', borderRight: '1px solid rgba(255,255,255,0.04)' }}>
           <div className="flex-1 overflow-y-auto px-2.5 py-3 scrollbar-thin">
