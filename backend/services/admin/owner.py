@@ -262,6 +262,10 @@ def _first_failure(d: dict) -> Optional[str]:
     # must be None in that case.
     if d["owner_token_matches"]:
         return None
+    if d["user_present"] and not d["user_is_guest"] and (
+        d["user_email_match"] or d["user_id_match"]
+    ):
+        return None
     if d["owner_token_present_in_request"] and not d["owner_token_matches"]:
         if not d["owner_token_set"]:
             return "OWNER_TOKEN not set on backend (or shorter than 16 chars)"

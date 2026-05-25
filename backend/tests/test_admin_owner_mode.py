@@ -651,6 +651,29 @@ def test_detection_debug_no_failure_when_owner(admin_env):
     assert out["first_failure"] is None
 
 
+def test_detection_debug_no_failure_when_identity_field_matches(admin_env, monkeypatch):
+    monkeypatch.setenv("OWNER_ID", "user-special-id")
+    from backend.services.admin.owner import detection_debug
+
+    id_owner = _make_user(
+        external_id="email:other@example.com",
+        user_id="user-special-id",
+    )
+    out = detection_debug(id_owner)
+    assert out["user_email_match"] is False
+    assert out["user_id_match"] is True
+    assert out["first_failure"] is None
+
+    email_owner = _make_user(
+        external_id="email:owner@example.com",
+        user_id="some-other-id",
+    )
+    out = detection_debug(email_owner)
+    assert out["user_email_match"] is True
+    assert out["user_id_match"] is False
+    assert out["first_failure"] is None
+
+
 def test_detection_debug_never_leaks_token_or_email(admin_env_with_token):
     """The debug payload must NEVER include OWNER_TOKEN / OWNER_EMAIL
     raw values — only flags and the user's own observed email."""
