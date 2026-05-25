@@ -130,16 +130,40 @@ def valid_capabilities() -> List[str]:
     return sorted(_VALID_CAPABILITIES)
 
 
-def _build_system_prompt(capability: str, verdict: safety.SafetyVerdict) -> str:
+def _build_system_prompt(
+    capability: str,
+    verdict: safety.SafetyVerdict,
+    *,
+    user_message: Optional[str] = None,
+) -> str:
+    """Compose the owner-agent system prompt.
+
+    Layering (top → bottom = furthest from user → closest):
+      1. Capability-specific role line ("you are debugging" / "you
+         are refactoring" / ...).
+      2. Safe-cyber addendum when classify() said so, OR when the
+         caller picked the security_review capability explicitly.
+      3. Owner orchestration AUTHORISATION (frontend mods, refactors,
+         architectural edits, reduced confirmation friction). Shared
+         with the orchestrator path so an owner request gets the
+         same posture whether it lands on /v2/orchestrate or on
+         /v2/admin/owner-agent.
+      4. Owner safety guardrail footer — same non-negotiable
+         cybersecurity hard-block list as the orchestration path.
+    """
+    from backend.services.admin.orchestration import compose_system_prompt
+
     base = _CAPABILITY_PROMPTS.get(capability, _CAPABILITY_PROMPTS["general"])
-    parts = [base]
     if verdict.decision == "safe-cyber" or capability == "security_review":
-        parts.append(safety.safe_cyber_addendum())
-    # Guardrail LAST — closest to the user message; carries the most
-    # weight in most chat models. If the caller's capability prompt ever
-    # contradicts the guardrail, the guardrail wins.
-    parts.append(safety.owner_guardrail_prompt())
-    return "\n\n".join(parts)
+        base = base + "\n\n" + safety.safe_cyber_addendum()
+    # Single source of truth for the owner posture + cyber guardrails:
+    # owner_agent always operates with is_owner=True (every call here
+    # has already passed require_owner upstream).
+    return compose_system_prompt(
+        base,
+        is_owner=True,
+        user_message=user_message,
+    )
 
 
 # ── Entry point ─────────────────────────────────────────────────────────
@@ -170,7 +194,7 @@ async def run(req: OwnerAgentRequest) -> OwnerAgentResponse:
             metadata={"safety": {"decision": "block", "category": verdict.category}},
         )
 
-    system_prompt = _build_system_prompt(capability, verdict)
+    system_prompt = _build_system_prompt(capability, verdict, user_message=req.message)
     model = req.model or settings.MODEL_STRONG
     provider = "openai"   # ask_ai today routes via the OpenAI client; the
                           # provider router rewrites this when available.

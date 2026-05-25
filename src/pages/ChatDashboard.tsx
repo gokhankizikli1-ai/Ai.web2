@@ -25,6 +25,7 @@ import SettingsModal from '@/components/SettingsModal';
 import UpgradeModal from '@/components/UpgradeModal';
 import GuestBadge from '@/components/GuestBadge';
 import AdminBadge from '@/components/AdminBadge';
+import OwnerSessionIndicator from '@/components/OwnerSessionIndicator';
 
 import {
   Settings, PanelLeftOpen, Command as CmdIcon,
@@ -358,9 +359,12 @@ export default function ChatDashboard() {
             <div className="hidden sm:block">
               <GuestBadge />
             </div>
-            {/* Renders only when /v2/admin/status confirms the
-                current user is the project owner. Non-owners see
-                nothing — admin mode is invisible to them. */}
+            {/* Owner-only chips. Both render NOTHING for normal users —
+                admin mode is invisible to non-owners. The OwnerSession
+                indicator surfaces the live orchestration policy state
+                (what the supervisor is currently authorised to do). The
+                AdminBadge opens the full Admin Panel on click. */}
+            <OwnerSessionIndicator />
             <AdminBadge />
             <ToolbarDropdown
               onCmd={() => setCmdOpen(true)}

@@ -70,9 +70,27 @@ export interface OwnerCapabilities {
   debug?: OwnerDebug;
 }
 
+/** Capability ids that correspond to orchestration-policy unlocks
+ *  (frontend modifications, refactors, autonomous edits, ...). These
+ *  are surfaced separately so the FE can render an "Owner Session
+ *  Active" chip that lists exactly which dev-time powers are live. */
+export const ORCHESTRATION_CAPABILITY_IDS = [
+  'frontend_modification',
+  'ui_layout_styles',
+  'frontend_refactor',
+  'page_component_crud',
+  'project_structure_changes',
+  'internal_orchestration_tools',
+  'autonomous_architectural_edits',
+  'reduced_confirmation_friction',
+] as const;
+export type OrchestrationCapability = typeof ORCHESTRATION_CAPABILITY_IDS[number];
+
 export interface OwnerModeState {
   isOwner: boolean;
   capabilities: string[];
+  /** Subset of `capabilities` covering orchestration-policy unlocks. */
+  orchestrationCapabilities: OrchestrationCapability[];
   loading: boolean;
   /** null when admin mode is disabled (404) or status was never fetched. */
   error: string | null;
@@ -200,9 +218,15 @@ export function useOwnerMode(): OwnerModeState {
     fetchStatus();
   }, [fetchStatus]);
 
+  const orchestrationCapabilities = data.capabilities.filter(
+    (c): c is OrchestrationCapability =>
+      (ORCHESTRATION_CAPABILITY_IDS as readonly string[]).includes(c),
+  );
+
   return {
     isOwner: data.is_owner,
     capabilities: data.capabilities,
+    orchestrationCapabilities,
     loading,
     error,
     debug: data.debug,
