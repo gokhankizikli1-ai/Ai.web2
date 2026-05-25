@@ -154,7 +154,7 @@ def _build_system_prompt(
     from backend.services.admin.orchestration import compose_system_prompt
 
     base = _CAPABILITY_PROMPTS.get(capability, _CAPABILITY_PROMPTS["general"])
-    if verdict.decision == "safe-cyber" or capability == "security_review":
+    if capability == "security_review" and verdict.decision != "safe-cyber":
         base = base + "\n\n" + safety.safe_cyber_addendum()
     # Single source of truth for the owner posture + cyber guardrails:
     # owner_agent always operates with is_owner=True (every call here
@@ -163,6 +163,7 @@ def _build_system_prompt(
         base,
         is_owner=True,
         user_message=user_message,
+        safety_verdict=verdict,
     )
 
 

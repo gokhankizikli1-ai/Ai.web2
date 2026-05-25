@@ -275,18 +275,58 @@ async def orchestrate(body: OrchestrateBody, request: Request) -> dict:
             effective_system_prompt += "\n" + "\n".join(history_lines)
 
     # Owner orchestration policy — applied LAST so it sits closest to
-    # the user message in the assembled prompt (strongest signal). The
-    # composer is a no-op when is_owner_session is false, so this line
-    # is safe to leave unconditional.
-    try:
-        from backend.services.admin.orchestration import compose_system_prompt
-        effective_system_prompt = compose_system_prompt(
-            effective_system_prompt,
-            is_owner=is_owner_session,
-            user_message=body.message,
-        )
-    except Exception as _pol_err:  # pragma: no cover — never break orchestrate
-        logger.warning("orchestrate | owner policy composer failed: %s", _pol_err)
+    # the user message in the assembled prompt (strongest signal). If
+    # owner prompt assembly fails, fail closed instead of advertising
+    # owner mode while sending a non-owner prompt to the model.
+    if is_owner_session:
+        try:
+            from backend.services.admin.orchestration import (
+                OwnerSafetyBlocked, compose_system_prompt,
+            )
+        except Exception as _pol_err:  # pragma: no cover — import edge case
+            logger.warning("orchestrate | owner policy import failed: %s", _pol_err)
+            error_run(run_id, error=f"owner_policy_unavailable: {_pol_err}")
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error":   "owner_policy_unavailable",
+                    "run_id":  run_id,
+                    "message": "Owner session policy could not be applied.",
+                },
+            )
+        try:
+            effective_system_prompt = compose_system_prompt(
+                effective_system_prompt,
+                is_owner=True,
+                user_message=body.message,
+            )
+        except OwnerSafetyBlocked as _blocked:
+            verdict = _blocked.verdict
+            logger.warning(
+                "orchestrate | owner safety blocked | category=%s",
+                verdict.category,
+            )
+            error_run(run_id, error=f"owner_safety_blocked: {verdict.category}")
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "error":    "owner_safety_blocked",
+                    "run_id":   run_id,
+                    "category": verdict.category,
+                    "message":  verdict.reason,
+                },
+            )
+        except Exception as _pol_err:  # pragma: no cover — fail closed for owner mode
+            logger.warning("orchestrate | owner policy composer failed: %s", _pol_err)
+            error_run(run_id, error=f"owner_policy_unavailable: {_pol_err}")
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error":   "owner_policy_unavailable",
+                    "run_id":  run_id,
+                    "message": "Owner session policy could not be applied.",
+                },
+            )
 
     agent_request = AgentRequest(
         user_message=body.message.strip(),
@@ -421,8 +461,8 @@ async def orchestrate(body: OrchestrateBody, request: Request) -> dict:
     # for everyone else; the field always exists so the FE can use a
     # stable type.
     owner_session_payload: Dict[str, Any] = {
-        "is_owner":     is_owner_session,
-        "source":       owner_source,
+        "is_owner":     False,
+        "source":       "",
         "capabilities": [],
     }
     if is_owner_session:
@@ -431,8 +471,8 @@ async def orchestrate(body: OrchestrateBody, request: Request) -> dict:
             owner_session_payload = owner_context_for_run(
                 is_owner=True, source=owner_source,
             ).to_dict()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("orchestrate | owner session payload failed: %s", exc)
 
     return {
         "run_id":      run_id,

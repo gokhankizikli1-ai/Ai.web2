@@ -173,6 +173,14 @@ class OwnerOrchestrationContext:
         }
 
 
+class OwnerSafetyBlocked(Exception):
+    """Raised when owner-mode safety blocks before any model call."""
+
+    def __init__(self, verdict: safety.SafetyVerdict):
+        self.verdict = verdict
+        super().__init__(verdict.reason or "Owner safety policy blocked this request.")
+
+
 def owner_context_for_run(
     *,
     is_owner: bool,
@@ -192,6 +200,7 @@ def compose_system_prompt(
     *,
     is_owner: bool,
     user_message: Optional[str] = None,
+    safety_verdict: Optional[safety.SafetyVerdict] = None,
 ) -> str:
     """Wrap a spec.system_prompt with the owner orchestration policy
     AND the existing admin safety guardrail.
@@ -207,16 +216,20 @@ def compose_system_prompt(
          safe-cyber addendum is also appended — defensive cyber work
          is FINE, the model just needs the framing reminder.
 
-    Non-owner callers fall through with `base_prompt` returned
-    unchanged — this function is safe to call universally.
+    Pass `safety_verdict` when the caller has already classified the
+    message. Block verdicts raise OwnerSafetyBlocked before any prompt
+    reaches a model. Non-owner callers fall through with `base_prompt`
+    returned unchanged — this function is safe to call universally.
     """
     if not is_owner:
         return base_prompt
 
     parts = [base_prompt.rstrip(), "", _OWNER_ORCH_AUTHORISATION]
 
-    if user_message:
-        verdict = safety.classify(user_message)
+    if safety_verdict is not None or user_message:
+        verdict = safety_verdict or safety.classify(user_message or "")
+        if verdict.decision == "block":
+            raise OwnerSafetyBlocked(verdict)
         if verdict.decision == "safe-cyber":
             parts.append(safety.safe_cyber_addendum())
 
@@ -243,6 +256,7 @@ def guardrail_text() -> str:
 
 __all__ = [
     "OwnerOrchestrationContext",
+    "OwnerSafetyBlocked",
     "orchestration_capabilities",
     "owner_context_for_run",
     "compose_system_prompt",

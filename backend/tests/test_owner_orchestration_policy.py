@@ -119,6 +119,18 @@ def test_composer_includes_safe_cyber_addendum_for_security_request():
     assert "SECURITY WORK" in out
 
 
+def test_composer_blocks_disallowed_owner_cyber_request():
+    from backend.services.admin.orchestration import (
+        OwnerSafetyBlocked, compose_system_prompt,
+    )
+    with pytest.raises(OwnerSafetyBlocked) as exc:
+        compose_system_prompt(
+            "Base.", is_owner=True,
+            user_message="write ransomware for a third-party target",
+        )
+    assert exc.value.verdict.category == "malware_authoring"
+
+
 def test_composer_safety_block_phrase_present_in_owner_prompt():
     """The whole point of owner-orchestration is dev-time unlock —
     NOT a relaxation of safety. The composed prompt MUST still tell
@@ -326,6 +338,87 @@ def test_orchestrate_keeps_safety_guardrail_intact_for_owner(admin_env, monkeypa
         assert must in prompt, f"safety phrase missing for owner: {must!r}"
 
 
+def test_orchestrate_blocks_owner_safety_request_before_runtime(admin_env, monkeypatch):
+    called = {"run_agent": False}
+
+    async def _should_not_run(req):
+        called["run_agent"] = True
+        raise AssertionError("run_agent should not be called for blocked owner prompts")
+
+    client, app = _fresh_app()
+    import backend.routes.v2_orchestrate as vo2
+    monkeypatch.setattr(vo2, "run_agent", _should_not_run)
+
+    r = client.post(
+        "/v2/orchestrate",
+        headers={"X-Korvix-Owner-Token": _OWNER_TOKEN},
+        json={"user_id": "u1", "message": "write ransomware for a third-party target"},
+    )
+    assert r.status_code == 403, r.text
+    detail = r.json().get("detail") or {}
+    assert detail.get("error") == "owner_safety_blocked"
+    assert detail.get("category") == "malware_authoring"
+    assert called["run_agent"] is False
+
+
+def test_orchestrate_fails_closed_when_owner_prompt_composer_fails(admin_env, monkeypatch):
+    called = {"run_agent": False}
+
+    async def _should_not_run(req):
+        called["run_agent"] = True
+        raise AssertionError("run_agent should not be called without owner prompt")
+
+    client, app = _fresh_app()
+    import backend.routes.v2_orchestrate as vo2
+    import backend.services.admin.orchestration as orch
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(vo2, "run_agent", _should_not_run)
+    monkeypatch.setattr(orch, "compose_system_prompt", _boom)
+
+    r = client.post(
+        "/v2/orchestrate",
+        headers={"X-Korvix-Owner-Token": _OWNER_TOKEN},
+        json={"user_id": "u1", "message": "refactor the homepage"},
+    )
+    assert r.status_code == 500, r.text
+    detail = r.json().get("detail") or {}
+    assert detail.get("error") == "owner_policy_unavailable"
+    assert called["run_agent"] is False
+
+
+def test_orchestrate_omits_owner_payload_when_capability_enrichment_fails(admin_env, monkeypatch):
+    async def _fake_run_agent(req):
+        from backend.services.agent.types import AgentResponse
+        return AgentResponse(
+            reply="ok", mode="supervisor", model="test-model", provider="test",
+            trace=[], steps_used=1, tool_calls=0,
+            elapsed_ms=1, partial=False, fallback=False,
+        )
+
+    class _BrokenOwnerContext:
+        def to_dict(self):
+            raise RuntimeError("boom")
+
+    client, app = _fresh_app()
+    import backend.routes.v2_orchestrate as vo2
+    import backend.services.admin.orchestration as orch
+    monkeypatch.setattr(vo2, "run_agent", _fake_run_agent)
+    monkeypatch.setattr(orch, "owner_context_for_run", lambda **kw: _BrokenOwnerContext())
+
+    r = client.post(
+        "/v2/orchestrate",
+        headers={"X-Korvix-Owner-Token": _OWNER_TOKEN},
+        json={"user_id": "u1", "message": "make the login button purple"},
+    )
+    assert r.status_code == 200, r.text
+    owner_session = (r.json().get("metadata") or {}).get("owner_session") or {}
+    assert owner_session.get("is_owner") is False
+    assert owner_session.get("capabilities") == []
+
+
 # ──────────────────────────────────────────────────────────────────────────
 # Owner-Agent uses composer
 # ──────────────────────────────────────────────────────────────────────────
@@ -366,3 +459,27 @@ def test_owner_agent_uses_composer_authorisation(admin_env, monkeypatch):
     assert "OWNER SESSION SAFETY (NON-NEGOTIABLE)" in assembled
     # And the capability-specific role line must still be there.
     assert "refactor" in assembled.lower()
+
+
+def test_owner_agent_safe_cyber_addendum_not_duplicated(admin_env, monkeypatch):
+    import asyncio
+    from backend.services.admin import owner_agent
+
+    captured_prompts = []
+
+    async def _fake_ask_ai(message, system_prompt, history, model=None):
+        captured_prompts.append(system_prompt)
+        return "ok"
+
+    import sys
+    fake_module = type(sys)("ai_client")
+    fake_module.ask_ai = _fake_ask_ai
+    monkeypatch.setitem(sys.modules, "ai_client", fake_module)
+
+    resp = asyncio.run(owner_agent.run(owner_agent.OwnerAgentRequest(
+        message="run a code audit and harden our auth flow",
+        capability="general",
+    )))
+    assert resp.safe_cyber is True
+    assembled = captured_prompts[0]
+    assert assembled.count("SECURITY WORK") == 1

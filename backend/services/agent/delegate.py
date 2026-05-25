@@ -564,14 +564,47 @@ async def _execute_delegation(
     _child_system_prompt = target_spec.system_prompt
     if _is_owner_session:
         try:
-            from backend.services.admin.orchestration import compose_system_prompt
+            from backend.services.admin.orchestration import (
+                OwnerSafetyBlocked, compose_system_prompt,
+            )
+        except Exception as _pol_err:  # pragma: no cover — import edge case
+            result = _err(
+                "OWNER_POLICY_UNAVAILABLE",
+                f"Owner session policy could not be applied: {_pol_err}",
+            )
+            _emit("delegate.errored", ctx=parent_ctx, payload={
+                "caller": caller_spec_id, "agent_id": agent_id,
+                "code": result["code"], "error": result["error"],
+            })
+            return result
+        try:
             _child_system_prompt = compose_system_prompt(
                 target_spec.system_prompt,
                 is_owner=True,
                 user_message=composed_message,
             )
-        except Exception as _pol_err:  # pragma: no cover — never break delegate
-            logger.debug("delegate | owner policy composer failed: %s", _pol_err)
+        except OwnerSafetyBlocked as _blocked:
+            verdict = _blocked.verdict
+            result = _err(
+                "OWNER_SAFETY_BLOCKED",
+                verdict.reason,
+                block_category=verdict.category,
+            )
+            _emit("delegate.errored", ctx=parent_ctx, payload={
+                "caller": caller_spec_id, "agent_id": agent_id,
+                "code": result["code"], "error": result["error"],
+            })
+            return result
+        except Exception as _pol_err:  # pragma: no cover — fail closed for owner mode
+            result = _err(
+                "OWNER_POLICY_UNAVAILABLE",
+                f"Owner session policy could not be applied: {_pol_err}",
+            )
+            _emit("delegate.errored", ctx=parent_ctx, payload={
+                "caller": caller_spec_id, "agent_id": agent_id,
+                "code": result["code"], "error": result["error"],
+            })
+            return result
 
     sub_request = AgentRequest(
         user_message=composed_message,
