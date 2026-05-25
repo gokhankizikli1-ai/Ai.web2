@@ -46,8 +46,15 @@ function AppLayout({ children }: { children: React.ReactNode }) {
   const showBottomNav = !isLanding;
   const showParticles = !isLanding;
 
+  // overflow-x-hidden + max-w-full at the layout root so any rogue
+  // wide child (a code block, a long URL, a fixed-width child) can
+  // never push the viewport into horizontal scroll on iPad / mobile.
+  // The CSS-level guard in src/index.css covers iOS Safari edge cases
+  // where layout-level guards alone aren't enough.
   return (
-    <div className={`min-h-[100dvh] bg-background ${showBottomNav ? 'pb-16 sm:pb-0' : ''}`}>
+    <div
+      className={`min-h-[100dvh] w-full max-w-full overflow-x-hidden bg-background ${showBottomNav ? 'pb-16 sm:pb-0' : ''}`}
+    >
       {children}
       {showBottomNav && <BottomNav />}
       {showParticles && <FloatingParticles />}

@@ -218,6 +218,15 @@ export function useOwnerMode(): OwnerModeState {
     fetchStatus();
   }, [fetchStatus]);
 
+  // Listen for global refresh events emitted by OwnerUnlockModal after
+  // the user submits a token — without this, multiple useOwnerMode()
+  // instances (chip + panel) would stay stale until a page reload.
+  useEffect(() => {
+    const handler = () => { fetchStatus(); };
+    window.addEventListener('korvix:owner-refresh', handler);
+    return () => window.removeEventListener('korvix:owner-refresh', handler);
+  }, [fetchStatus]);
+
   const orchestrationCapabilities = data.capabilities.filter(
     (c): c is OrchestrationCapability =>
       (ORCHESTRATION_CAPABILITY_IDS as readonly string[]).includes(c),

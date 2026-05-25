@@ -24,7 +24,12 @@ import PremiumBadge from '@/components/PremiumBadge';
 import SettingsModal from '@/components/SettingsModal';
 import UpgradeModal from '@/components/UpgradeModal';
 import GuestBadge from '@/components/GuestBadge';
-import AdminBadge from '@/components/AdminBadge';
+// OwnerModeChip is the always-visible entry point for owner mode.
+// It self-renders both the locked (paste-token) and unlocked (open
+// AdminPanel) states, so we don't need a separate AdminBadge slot.
+// OwnerSessionIndicator stays as the click-to-expand permission
+// surface for confirmed owners (no-op render for non-owners).
+import OwnerModeChip from '@/components/OwnerModeChip';
 import OwnerSessionIndicator from '@/components/OwnerSessionIndicator';
 
 import {
@@ -296,7 +301,7 @@ export default function ChatDashboard() {
   };
 
   return (
-    <div className="relative flex h-[100dvh] w-full overflow-hidden" style={{ background: '#11151C', color: '#E2E8F0' }}>
+    <div className="relative flex h-[100dvh] w-full max-w-full overflow-hidden" style={{ background: '#11151C', color: '#E2E8F0' }}>
       {/* Ambient background layers */}
       <div className="absolute inset-0 pointer-events-none">
         {/* Base gradient */}
@@ -359,13 +364,16 @@ export default function ChatDashboard() {
             <div className="hidden sm:block">
               <GuestBadge />
             </div>
-            {/* Owner-only chips. Both render NOTHING for normal users —
-                admin mode is invisible to non-owners. The OwnerSession
-                indicator surfaces the live orchestration policy state
-                (what the supervisor is currently authorised to do). The
-                AdminBadge opens the full Admin Panel on click. */}
+            {/* Owner-mode entry point. ALWAYS rendered:
+                  - locked  → shield-with-question icon, click opens
+                              OwnerUnlockModal to paste OWNER_TOKEN
+                  - unlocked → amber pulsing chip, click opens AdminPanel
+                The locked variant is the project owner's bootstrap
+                from a fresh browser — without it they'd have to type
+                localStorage.setItem(...) in the dev console. */}
+            <OwnerModeChip />
+            {/* Permission popover, visible only when confirmed owner. */}
             <OwnerSessionIndicator />
-            <AdminBadge />
             <ToolbarDropdown
               onCmd={() => setCmdOpen(true)}
               onPrompts={() => setPromptLibOpen(true)}
