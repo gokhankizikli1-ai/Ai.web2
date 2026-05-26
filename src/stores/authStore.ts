@@ -283,7 +283,8 @@ export const useAuthStore = create<AuthState>()(
 
       checkAuth: async () => {
         set({ isLoading: true });
-        // Fast path: persisted user state surfaces immediately.
+        // Fast path: persisted user state surfaces immediately, but
+        // keep loading until the bearer token has been validated.
         const persisted = (() => {
           try { return localStorage.getItem('korvix-auth'); }
           catch { return null; }
@@ -292,21 +293,20 @@ export const useAuthStore = create<AuthState>()(
           try {
             const parsed = JSON.parse(persisted);
             if (parsed?.state?.user) {
-              set({ user: parsed.state.user, isAuthenticated: true, isLoading: false });
-              // Validate with backend in background. If the bearer is
-              // valid the response may carry fresher data (e.g. updated
-              // is_owner after Railway env change); merge it in.
-              apiMe().then((fresh) => {
-                if (fresh) {
-                  set({ user: fresh, isAuthenticated: true });
-                  notifyAuthChanged();
-                } else if (!readToken()) {
-                  // Token was cleared by apiMe() (401) — sign out.
-                  set({ user: null, isAuthenticated: false });
-                  try { localStorage.removeItem('korvix-auth'); } catch { /* ignore */ }
-                  notifyAuthChanged();
-                }
-              });
+              set({ user: parsed.state.user, isAuthenticated: true });
+              const fresh = await apiMe();
+              if (fresh) {
+                set({ user: fresh, isAuthenticated: true, isLoading: false });
+                notifyAuthChanged();
+              } else if (!readToken()) {
+                // Token was cleared by apiMe() (401) — sign out before
+                // guarded routes render with the persisted user.
+                set({ user: null, isAuthenticated: false, isLoading: false });
+                try { localStorage.removeItem('korvix-auth'); } catch { /* ignore */ }
+                notifyAuthChanged();
+              } else {
+                set({ isLoading: false });
+              }
               return;
             }
           } catch { /* ignore */ }

@@ -24,13 +24,19 @@ interface GoogleIdConfig {
   ux_mode?: 'popup' | 'redirect';
   auto_select?: boolean;
 }
+interface GooglePromptMomentNotification {
+  isNotDisplayed: () => boolean;
+  isSkippedMoment: () => boolean;
+  isDismissedMoment: () => boolean;
+  getDismissedReason?: () => string;
+}
 declare global {
   interface Window {
     google?: {
       accounts: {
         id: {
           initialize: (cfg: GoogleIdConfig) => void;
-          prompt: (notification?: (n: unknown) => void) => void;
+          prompt: (notification?: (n: GooglePromptMomentNotification) => void) => void;
           renderButton: (el: HTMLElement, opts: Record<string, unknown>) => void;
           disableAutoSelect: () => void;
           cancel: () => void;
@@ -195,7 +201,21 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
         ux_mode: 'popup',
         auto_select: false,
       });
-      gis.prompt();
+      gis.prompt((notification) => {
+        const dismissed = notification.isDismissedMoment();
+        const dismissedWithoutCredential =
+          dismissed && notification.getDismissedReason?.() !== 'credential_returned';
+        if (
+          notification.isNotDisplayed() ||
+          notification.isSkippedMoment() ||
+          dismissedWithoutCredential
+        ) {
+          setGoogleBusy(false);
+          if (dismissedWithoutCredential) {
+            setLocalError('Google sign-in was cancelled.');
+          }
+        }
+      });
     } catch (e) {
       setGoogleBusy(false);
       setLocalError(
