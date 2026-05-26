@@ -450,8 +450,37 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
   // get cleaned from history immediately so a reload doesn't replay
   // the result.
   useEffect(() => {
-    const hash = window.location.hash.replace(/^#/, '');
+    /* Two-source read of the OAuth response:
+     *   1. sessionStorage["korvix_oauth_response"] — populated by the
+     *      pre-React bootstrap in src/main.tsx before HashRouter
+     *      rewrote the URL to `#/login`. This is the path that
+     *      actually fires in production.
+     *   2. window.location.hash — fallback for environments where
+     *      the bootstrap didn't run (private-mode sessionStorage
+     *      blocked, dev with BrowserRouter, manual paste). */
+    let hash = '';
+    try {
+      const stashed = sessionStorage.getItem('korvix_oauth_response') || '';
+      if (stashed) {
+        hash = stashed;
+        // Single-shot: clear before processing so a remount can't replay.
+        try { sessionStorage.removeItem('korvix_oauth_response'); }
+        catch { /* ignore */ }
+      }
+    } catch { /* private mode — read live fragment instead */ }
+    if (!hash) {
+      hash = window.location.hash.replace(/^#/, '');
+    }
     if (!hash) return;
+
+    /* eslint-disable no-console */
+    console.log(
+      '%c[korvixai-auth] AuthPage mount — OAuth response detected',
+      'color:#22d3ee;font-weight:bold;',
+      `${hash.length} chars`,
+    );
+    /* eslint-enable no-console */
+
     const params = new URLSearchParams(hash);
 
     // ── Error path: Google rejected the request server-side
@@ -519,6 +548,13 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
     catch { /* ignore */ }
 
     if (expectedState && incomingState !== expectedState) {
+      /* eslint-disable no-console */
+      console.error(
+        '%c[korvixai-auth] OAuth state mismatch — possible CSRF or stale tab',
+        'color:#f87171;font-weight:bold;',
+        { expected: expectedState.slice(0, 8) + '…', got: incomingState.slice(0, 8) + '…' },
+      );
+      /* eslint-enable no-console */
       setGoogleErr('redirect_state_mismatch', `got ${incomingState.slice(0, 8)}…`);
       return;
     }
@@ -527,15 +563,50 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
       sessionStorage.removeItem(OAUTH_NONCE_KEY);
     } catch { /* ignore */ }
 
+    /* eslint-disable no-console */
+    console.log(
+      '%c[korvixai-auth] id_token received from Google — POSTing to /auth/google',
+      'color:#22d3ee;font-weight:bold;',
+      { id_token_length: idToken.length, state_ok: !expectedState || incomingState === expectedState },
+    );
+    /* eslint-enable no-console */
     setGoogleBusy(true);
     loginWithGoogle(idToken).then((ok) => {
       setGoogleBusy(false);
       if (ok) {
         const from = (location.state as { from?: string } | null)?.from || '/chat';
+        /* eslint-disable no-console */
+        console.log(
+          '%c[korvixai-auth] Backend /auth/google accepted token → navigating to',
+          'color:#34d399;font-weight:bold;',
+          from,
+        );
+        /* eslint-enable no-console */
         navigate(from, { replace: true });
       } else {
+        /* eslint-disable no-console */
+        console.error(
+          '%c[korvixai-auth] Backend /auth/google REJECTED the id_token',
+          'color:#f87171;font-weight:bold;',
+          'See authStore.error for the message',
+        );
+        /* eslint-enable no-console */
         setGoogleErr('redirect_no_token', 'backend rejected the id_token');
       }
+    }).catch((e) => {
+      // Defensive: apiGoogle's try/catch should always resolve, but if
+      // anything in loginWithGoogle throws synchronously past the
+      // promise (e.g. seedOwnerFromLogin's lazy import fails) the
+      // button must still reset and the user must see why.
+      /* eslint-disable no-console */
+      console.error(
+        '%c[korvixai-auth] loginWithGoogle threw unexpectedly',
+        'color:#f87171;font-weight:bold;',
+        e,
+      );
+      /* eslint-enable no-console */
+      setGoogleBusy(false);
+      setGoogleErr('gis_error', e instanceof Error ? e.message : String(e));
     });
     // Effect intentionally only runs once on mount — id_token consumption
     // is one-shot and the URL hash is wiped above.

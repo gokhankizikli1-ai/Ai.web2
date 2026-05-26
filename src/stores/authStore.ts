@@ -175,23 +175,40 @@ async function apiSignup(email: string, password: string, name: string): Promise
 }
 
 async function apiGoogle(idToken: string): Promise<ApiResult> {
+  // 15s timeout — /auth/google does a synchronous urllib call to
+  // Google's tokeninfo endpoint server-side. That's typically 200ms
+  // but can spike if Railway's egress is slow. 15s is long enough
+  // for the worst case, short enough that a wedged backend doesn't
+  // strand the user on "Opening Google…" forever.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15_000);
   try {
     const res = await fetch(apiUrl('/auth/google'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id_token: idToken }),
+      signal: controller.signal,
     });
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
       const detail = (body?.detail || body) as Record<string, unknown>;
-      const msg = (typeof detail?.message === 'string' && detail.message) || 'Google sign-in was rejected.';
+      const code = typeof detail?.code === 'string' ? detail.code : '';
+      const msg = (typeof detail?.message === 'string' && detail.message)
+        || `Google sign-in was rejected (HTTP ${res.status}${code ? `, ${code}` : ''}).`;
       return { user: null, error: msg };
     }
     const body = await res.json();
     if (typeof body.access_token === 'string') saveToken(body.access_token);
     return { user: mapBackendUser(body.user) };
   } catch (e) {
+    // AbortError lands here on timeout — surface a precise message
+    // instead of the browser's generic "The operation was aborted".
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      return { user: null, error: 'Backend did not respond within 15 seconds. Check Railway logs for /auth/google.' };
+    }
     return { user: null, error: e instanceof Error ? e.message : 'Network error.' };
+  } finally {
+    clearTimeout(timer);
   }
 }
 
