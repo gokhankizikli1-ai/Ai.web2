@@ -202,6 +202,52 @@ async def admin_status(
     )
 
 
+# ── /v2/admin/build-info ─────────────────────────────────────────────────
+#
+# Companion to the frontend BuildInfoOverlay. Always 200, never
+# requires owner — the FE shows it ONLY to owners but the endpoint
+# itself must be open so the overlay can render before the owner has
+# unlocked anything (otherwise we can't show a commit-mismatch alert
+# on the unlock screen). The values surfaced here are all already in
+# /v2/health.metadata; this endpoint is just a shorter, FE-friendly
+# projection scoped to "which build is live".
+
+@router.get("/build-info")
+async def admin_build_info(request: Request) -> dict:
+    """Compact, always-200 snapshot of which backend build is live.
+
+    Returned shape:
+      data.commit_sha   short git SHA Railway baked into the image
+      data.environment  ENVIRONMENT env (production / staging / ...)
+      data.version      semver from BACKEND_VERSION
+      data.admin_mode   ENABLE_ADMIN_MODE on the running deploy
+      data.deployed_at  Railway deploy timestamp when available
+      data.boot_at      this process's start ISO time
+
+    The FE BuildInfoOverlay reads these and compares commit_sha
+    against its own VITE_BUILD_COMMIT — mismatch ⇒ one of the two
+    deploys is stale (cured by clearing Vercel cache / forcing
+    Railway redeploy).
+    """
+    from backend.core.version import BACKEND_VERSION, uptime_seconds, started_at_iso
+    sha_full = os.getenv("RAILWAY_GIT_COMMIT_SHA", "") or ""
+    sha = sha_full[:12] if sha_full else "unknown"
+    return envelope_ok(
+        data={
+            "commit_sha":     sha,
+            "commit_sha_full": sha_full or "unknown",
+            "version":        BACKEND_VERSION,
+            "environment":    settings.ENVIRONMENT,
+            "admin_mode":     _flag("ENABLE_ADMIN_MODE"),
+            "deployed_at":    os.getenv("RAILWAY_DEPLOYMENT_CREATED_AT", "unknown"),
+            "boot_at":        started_at_iso(),
+            "uptime_seconds": uptime_seconds(),
+            "branch":         os.getenv("RAILWAY_GIT_BRANCH", "") or "",
+        },
+        endpoint="/v2/admin/build-info",
+    )
+
+
 # ── /v2/admin/diagnostics ─────────────────────────────────────────────────
 
 @router.get("/diagnostics")

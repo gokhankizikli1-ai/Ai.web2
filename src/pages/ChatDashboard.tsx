@@ -340,8 +340,16 @@ export default function ChatDashboard() {
         className={`relative flex-1 min-w-0 flex flex-col h-[100dvh] overflow-hidden transition-all duration-300 ease-out ${sidebarOpen ? 'lg:ml-[260px]' : 'ml-0'}`}
         style={{ paddingBottom: 'var(--safe-area-inset-bottom, 0px)' }}
       >
-        {/* Top Bar */}
-        <header className="relative flex items-center justify-between gap-2 h-11 px-3 border-b shrink-0 z-10 overflow-hidden" style={{ borderColor: 'rgba(255,255,255,0.04)', background: 'rgba(17,21,28,0.7)', backdropFilter: 'blur(20px)' }}>
+        {/* Top Bar — NOTE: NO `overflow-hidden` here. The header used
+            to carry overflow-hidden as a belt-and-suspenders against
+            horizontal bleed, but it ALSO clipped the ToolbarDropdown
+            (which opens DOWNWARD via `absolute top-full`), making the
+            three-dot menu invisible. Horizontal bleed protection now
+            lives at the parent (`flex-1 min-w-0 overflow-hidden` on
+            the content pane) and at the tabs wrapper (`overflow-x-auto
+            scrollbar-none`), so we get bleed protection AND popovers
+            that escape the header bounds. */}
+        <header className="relative flex items-center justify-between gap-2 h-11 px-3 border-b shrink-0 z-20" style={{ borderColor: 'rgba(255,255,255,0.04)', background: 'rgba(17,21,28,0.7)', backdropFilter: 'blur(20px)' }}>
           <div className="flex items-center gap-2 min-w-0 flex-1 overflow-x-auto scrollbar-none">
             {!sidebarOpen && (
               <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}

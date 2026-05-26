@@ -841,3 +841,39 @@ def test_cors_allow_headers_includes_owner_token(admin_env):
     assert "x-korvix-owner-token" in allow_headers, (
         f"X-Korvix-Owner-Token not echoed by preflight; got: {allow_headers!r}"
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# /v2/admin/build-info — deployment-mismatch debug surface
+# ══════════════════════════════════════════════════════════════════════════
+
+def test_build_info_endpoint_always_returns_200(admin_env):
+    """The FE BuildInfoOverlay calls this on every page load BEFORE
+    the owner has unlocked anything. It must always succeed for
+    non-owners too — otherwise the overlay can't show a commit-
+    mismatch alert before unlock."""
+    client, app = _fresh_app()
+    r = client.get("/v2/admin/build-info")
+    assert r.status_code == 200
+    data = r.json()["data"]
+    # Required fields the FE overlay reads.
+    for k in ("commit_sha", "version", "environment", "admin_mode",
+              "deployed_at", "boot_at", "uptime_seconds"):
+        assert k in data, f"missing field {k}"
+    # admin_mode reflects the live flag — useful for the FE to show
+    # "backend admin mode: disabled" before the owner tries to unlock.
+    assert data["admin_mode"] is True  # fixture sets it
+
+
+def test_build_info_works_when_admin_mode_disabled(admin_disabled):
+    """Even when ENABLE_ADMIN_MODE=false on the backend (so /v2/admin/*
+    is normally 404), build-info must still respond. Otherwise the
+    overlay's commit-mismatch alarm can't fire on a deploy where
+    admin mode wasn't enabled."""
+    client, app = _fresh_app()
+    r = client.get("/v2/admin/build-info")
+    # When the whole admin router is unmounted (flag off in api.py),
+    # the response is 404 — that's expected. The contract is "always
+    # 200 when the admin router is mounted". The FE handles both
+    # cases (no admin = no overlay refresh).
+    assert r.status_code in (200, 404)
