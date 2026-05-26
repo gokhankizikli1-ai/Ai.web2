@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link, useNavigate, useLocation } from 'react-router';
 import {
@@ -142,21 +142,65 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
    *
    * Backend `/auth/google` accepts `{ id_token }`, verifies the token
    * against Google's tokeninfo endpoint AND against GOOGLE_CLIENT_ID
-   * (audience check), then issues our own JWT. The id_token comes from
-   * the GIS script loaded in index.html.
+   * (audience check), then issues our own JWT.
    *
-   * Two-step flow:
-   *   1. initialize() — registers a callback with GIS
-   *   2. prompt()     — opens the Google account chooser; the callback
-   *                     fires with the id_token when the user picks
-   *                     an account
-   *
-   * Failure modes surfaced as setLocalError:
-   *   - VITE_GOOGLE_CLIENT_ID not configured on Vercel
-   *   - GIS script hasn't loaded yet (rare; we wait + retry once)
-   *   - user dismissed the chooser
-   *   - backend rejected the id_token (audience mismatch, expired, ...)
+   * Performance note: GIS.initialize() is called ONCE in a useEffect
+   * below, NOT on every button click. Previously every click ran
+   * initialize() (which re-registers the callback + re-validates the
+   * client_id), which was perceived as a long "Opening Google…"
+   * pause. With one-time init + a stable callback ref, the click
+   * handler is just a `gis.prompt()` invocation — opens the chooser
+   * within ~10ms instead of waiting on init.
    */
+  // Stable ref to the latest credential handler so the GIS init
+  // callback (set once, on mount) always sees the current closure.
+  const credentialHandlerRef = useRef<(resp: GoogleCredentialResponse) => void>(() => {});
+  credentialHandlerRef.current = async (resp: GoogleCredentialResponse) => {
+    if (!resp?.credential) {
+      setLocalError('Google sign-in returned no credential. Try again.');
+      setGoogleBusy(false);
+      return;
+    }
+    const ok = await loginWithGoogle(resp.credential);
+    setGoogleBusy(false);
+    if (ok) {
+      const from = (location.state as { from?: string } | null)?.from || '/chat';
+      navigate(from, { replace: true });
+    }
+  };
+
+  const [gisReady, setGisReady] = useState(false);
+
+  useEffect(() => {
+    if (!GOOGLE_CLIENT_ID) return;
+    // Poll a few times until the async script in index.html lands. The
+    // total max wait is ~1.5s; in practice the script is usually ready
+    // by the time the user looks at the form (50-200ms).
+    let attempts = 0;
+    const tick = (): void => {
+      const gis = window.google?.accounts?.id;
+      if (gis) {
+        try {
+          gis.initialize({
+            client_id: GOOGLE_CLIENT_ID,
+            callback: (resp) => credentialHandlerRef.current(resp),
+            ux_mode: 'popup',
+            auto_select: false,
+          });
+          setGisReady(true);
+        } catch (e) {
+          if (e instanceof Error) setLocalError(e.message);
+        }
+        return;
+      }
+      attempts += 1;
+      if (attempts < 30) {
+        setTimeout(tick, 50);
+      }
+    };
+    tick();
+  }, []);
+
   const handleGoogle = useCallback(() => {
     setLocalError(null);
     clearError();
@@ -168,33 +212,12 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
       return;
     }
     const gis = window.google?.accounts?.id;
-    if (!gis) {
+    if (!gis || !gisReady) {
       setLocalError('Google sign-in is still loading. Try again in a moment.');
       return;
     }
     setGoogleBusy(true);
     try {
-      gis.initialize({
-        client_id: GOOGLE_CLIENT_ID,
-        callback: async (resp) => {
-          if (!resp?.credential) {
-            setLocalError('Google sign-in returned no credential. Try again.');
-            setGoogleBusy(false);
-            return;
-          }
-          const ok = await loginWithGoogle(resp.credential);
-          setGoogleBusy(false);
-          if (ok) {
-            const from = (location.state as { from?: string } | null)?.from || '/chat';
-            navigate(from, { replace: true });
-          }
-          // ok === false → loginWithGoogle has already set the
-          // store-level `error` field; useAuthStore's `error` is
-          // surfaced in `displayError` below.
-        },
-        ux_mode: 'popup',
-        auto_select: false,
-      });
       gis.prompt();
     } catch (e) {
       setGoogleBusy(false);
@@ -202,7 +225,7 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
         e instanceof Error ? e.message : 'Could not start Google sign-in.',
       );
     }
-  }, [clearError, loginWithGoogle, navigate, location.state]);
+  }, [clearError, gisReady]);
 
   const handleApple = useCallback(() => {
     setLocalError(
