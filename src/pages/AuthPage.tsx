@@ -175,6 +175,34 @@ function startGoogleRedirect(clientId: string): void {
   } catch { /* private mode — proceed anyway; we'll degrade state check */ }
 
   const redirectUri = googleRedirectUri();
+
+  // UNCONDITIONAL console output. This is debug-grade info that the
+  // operator needs visible WITHOUT having to opt into ?debug=1 first
+  // — when Google returns 400 redirect_uri_mismatch the only thing
+  // that resolves it is seeing the exact byte-for-byte value sent.
+  // The lines are prefixed with [korvixai-auth] so they're trivial
+  // to grep in DevTools.
+  //
+  // No PII is logged: client_id is non-secret (it's in every OAuth
+  // URL Google ever serves), state/nonce are random per-request.
+  /* eslint-disable no-console */
+  console.log(
+    '%c[korvixai-auth] Google OAuth → redirect_uri =',
+    'color:#22d3ee;font-weight:bold;',
+    redirectUri,
+  );
+  console.log(
+    '%c[korvixai-auth] Add this VERBATIM to Google Cloud Console → ' +
+    'APIs & Services → Credentials → OAuth 2.0 Client → ' +
+    'Authorized redirect URIs',
+    'color:#22d3ee;',
+  );
+  console.log('[korvixai-auth] window.location.origin   =', window.location.origin);
+  console.log('[korvixai-auth] window.location.host     =', window.location.host);
+  console.log('[korvixai-auth] window.location.protocol =', window.location.protocol);
+  console.log('[korvixai-auth] client_id (non-secret)   =', clientId);
+  /* eslint-enable no-console */
+
   const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
   url.searchParams.set('client_id', clientId);
   url.searchParams.set('redirect_uri', redirectUri);
@@ -357,6 +385,20 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
     setGoogleReasonExtra('');
   }
 
+  // ── Print the exact redirect_uri at AuthPage mount. Always logged
+  // (no debug flag) so when Google returns 400 redirect_uri_mismatch
+  // the operator can grep DevTools console for `[korvixai-auth]`
+  // before clicking anything. Single line so it's easy to copy.
+  useEffect(() => {
+    /* eslint-disable no-console */
+    console.log(
+      '%c[korvixai-auth] Google redirect_uri (add to Google Console) =',
+      'color:#22d3ee;font-weight:bold;',
+      `${window.location.origin}/login`,
+    );
+    /* eslint-enable no-console */
+  }, []);
+
   // ── GIS one-time init. Non-blocking: the rest of the page renders
   // immediately; the Google button is enabled only once gisReady flips.
   // On Safari/iOS the popup path is unreliable anyway, so we don't even
@@ -420,14 +462,38 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
     const errCode = params.get('error');
     if (errCode) {
       const errDesc = params.get('error_description') || '';
+      const sentRedirectUri = googleRedirectUri();
       try { window.history.replaceState(null, '', window.location.pathname + window.location.search); }
       catch { /* ignore */ }
+      // UNCONDITIONAL console output for the error path — the operator
+      // is staring at "400 redirect_uri_mismatch" and needs the exact
+      // value visible without opting into ?debug=1 first.
+      /* eslint-disable no-console */
+      console.error(
+        '%c[korvixai-auth] Google returned an OAuth error',
+        'color:#f87171;font-weight:bold;',
+        { error: errCode, error_description: errDesc.replace(/\+/g, ' ') },
+      );
+      console.error(
+        '%c[korvixai-auth] The exact redirect_uri this build sent =',
+        'color:#f87171;font-weight:bold;',
+        sentRedirectUri,
+      );
+      if (errCode === 'redirect_uri_mismatch') {
+        console.error(
+          '%c[korvixai-auth] Fix: add the line above VERBATIM to ' +
+          'Google Cloud Console → APIs & Services → Credentials → ' +
+          'OAuth 2.0 Client → Authorized redirect URIs',
+          'color:#f87171;',
+        );
+      }
+      /* eslint-enable no-console */
       // redirect_uri_mismatch deserves a dedicated reason — the fix is
       // ops (add the URL to Google Console), not a retry.
       if (errCode === 'redirect_uri_mismatch') {
         setGoogleErr(
           'redirect_uri_mismatch',
-          `Sent redirect_uri="${googleRedirectUri()}". Add this exact value to Google Cloud Console → OAuth 2.0 Client → Authorized redirect URIs.`,
+          `Sent redirect_uri="${sentRedirectUri}". Add this exact value to Google Cloud Console → OAuth 2.0 Client → Authorized redirect URIs.`,
         );
       } else {
         setGoogleErr('gis_error', `${errCode}${errDesc ? `: ${errDesc.replace(/\+/g, ' ')}` : ''}`);
