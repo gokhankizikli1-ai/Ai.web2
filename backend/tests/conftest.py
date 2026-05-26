@@ -73,3 +73,21 @@ def tmp_sessions_db(tmp_path, monkeypatch):
     # Build schema in the test file.
     sessions_store.init()
     yield db_file
+
+
+@pytest.fixture()
+def tmp_memory_plane_db(tmp_path, monkeypatch):
+    """Phase 6 — isolate memory_plane.db per test.
+
+    Points MEMORY_PLANE_DB_PATH at a tmp file, enables
+    ENABLE_MEMORY_PLANE, resets the store's lazy-init flag so the
+    schema is created in the tmp file (not the production file), and
+    re-runs init().
+    """
+    db_file = tmp_path / "memory-plane-test.db"
+    monkeypatch.setenv("MEMORY_PLANE_DB_PATH", str(db_file))
+    monkeypatch.setenv("ENABLE_MEMORY_PLANE", "true")
+    from backend.services.memory_plane import store as mp_store
+    monkeypatch.setattr(mp_store, "_INITIALIZED", False, raising=False)
+    mp_store.init()
+    yield db_file

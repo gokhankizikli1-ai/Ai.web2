@@ -165,6 +165,7 @@ def _build_full_app():
         "backend.routes.v2_sessions",  # Phase 5 — /v2/sessions/* (auth-bound, parallel to legacy)
         "backend.routes.v2_agent",     # Phase 6d — /v2/agent/execute (gated by ENABLE_AGENT)
         "backend.routes.market",       # Phase 8e — /market/quote/{symbol} (gated by ENABLE_MARKET_QUOTE)
+        "backend.routes.v2_memory",    # Phase 6 — /v2/memory/* Memory Plane (gated by ENABLE_MEMORY_PLANE)
     ]:
         try:
             _app.include_router(importlib.import_module(_mod).router)
