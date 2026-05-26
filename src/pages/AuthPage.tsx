@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link, useNavigate, useLocation } from 'react-router';
 import {
@@ -7,6 +7,40 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuthStore } from '@/stores/authStore';
+
+/* ─── Google Identity Services (GIS) type stubs ─────────────────────────
+ *
+ * The /gsi/client script in index.html populates window.google.accounts.id.
+ * We only need three calls + the credential callback shape — typing them
+ * here is cheaper than pulling in @types/gapi.client.identity. */
+interface GoogleCredentialResponse {
+  credential: string;       // ID token (JWT) we POST to /auth/google
+  select_by?: string;
+  clientId?: string;
+}
+interface GoogleIdConfig {
+  client_id: string;
+  callback: (resp: GoogleCredentialResponse) => void;
+  ux_mode?: 'popup' | 'redirect';
+  auto_select?: boolean;
+}
+declare global {
+  interface Window {
+    google?: {
+      accounts: {
+        id: {
+          initialize: (cfg: GoogleIdConfig) => void;
+          prompt: (notification?: (n: unknown) => void) => void;
+          renderButton: (el: HTMLElement, opts: Record<string, unknown>) => void;
+          disableAutoSelect: () => void;
+          cancel: () => void;
+        };
+      };
+    };
+  }
+}
+
+const GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim();
 
 /* ─── Google Icon SVG ─── */
 function GoogleIcon({ className }: { className?: string }) {
@@ -36,7 +70,8 @@ interface AuthPageProps {
 export default function AuthPage({ mode: propMode }: AuthPageProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, signup, isAuthenticated, isLoading, error, clearError } = useAuthStore();
+  const { login, signup, loginWithGoogle, isAuthenticated, isLoading, error, clearError } = useAuthStore();
+  const [googleBusy, setGoogleBusy] = useState(false);
 
   // Support both /login and /signup routes, plus toggle within the page
   const urlMode = location.pathname === '/signup' ? 'signup' : 'login';
@@ -103,9 +138,79 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
     navigate(from);
   };
 
-  const handleSocial = (provider: string) => {
-    setLocalError(`${provider} login is UI-ready. Backend auth coming soon. Please continue as guest or use email.`);
-  };
+  /* ─── Real Google OAuth via Google Identity Services ──────────────────
+   *
+   * Backend `/auth/google` accepts `{ id_token }`, verifies the token
+   * against Google's tokeninfo endpoint AND against GOOGLE_CLIENT_ID
+   * (audience check), then issues our own JWT. The id_token comes from
+   * the GIS script loaded in index.html.
+   *
+   * Two-step flow:
+   *   1. initialize() — registers a callback with GIS
+   *   2. prompt()     — opens the Google account chooser; the callback
+   *                     fires with the id_token when the user picks
+   *                     an account
+   *
+   * Failure modes surfaced as setLocalError:
+   *   - VITE_GOOGLE_CLIENT_ID not configured on Vercel
+   *   - GIS script hasn't loaded yet (rare; we wait + retry once)
+   *   - user dismissed the chooser
+   *   - backend rejected the id_token (audience mismatch, expired, ...)
+   */
+  const handleGoogle = useCallback(() => {
+    setLocalError(null);
+    clearError();
+    if (!GOOGLE_CLIENT_ID) {
+      setLocalError(
+        'Google sign-in is not configured. Set VITE_GOOGLE_CLIENT_ID on Vercel ' +
+        '(Production scope) and redeploy. The backend /auth/google route is ready.',
+      );
+      return;
+    }
+    const gis = window.google?.accounts?.id;
+    if (!gis) {
+      setLocalError('Google sign-in is still loading. Try again in a moment.');
+      return;
+    }
+    setGoogleBusy(true);
+    try {
+      gis.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: async (resp) => {
+          if (!resp?.credential) {
+            setLocalError('Google sign-in returned no credential. Try again.');
+            setGoogleBusy(false);
+            return;
+          }
+          const ok = await loginWithGoogle(resp.credential);
+          setGoogleBusy(false);
+          if (ok) {
+            const from = (location.state as { from?: string } | null)?.from || '/chat';
+            navigate(from, { replace: true });
+          }
+          // ok === false → loginWithGoogle has already set the
+          // store-level `error` field; useAuthStore's `error` is
+          // surfaced in `displayError` below.
+        },
+        ux_mode: 'popup',
+        auto_select: false,
+      });
+      gis.prompt();
+    } catch (e) {
+      setGoogleBusy(false);
+      setLocalError(
+        e instanceof Error ? e.message : 'Could not start Google sign-in.',
+      );
+    }
+  }, [clearError, loginWithGoogle, navigate, location.state]);
+
+  const handleApple = useCallback(() => {
+    setLocalError(
+      'Apple sign-in is not yet available — the backend route returns ' +
+      '503 until the `cryptography` dep + JWKS verifier are added. ' +
+      'Use Google or email for now.',
+    );
+  }, []);
 
   const displayError = localError || error;
 
@@ -160,14 +265,16 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
           {/* Social buttons */}
           <div className="space-y-2 mb-5">
             <button
-              onClick={() => handleSocial('Google')}
-              className="w-full flex items-center justify-center gap-2.5 h-10 rounded-xl border border-border bg-muted/30 hover:bg-muted hover:border-border/80 transition-all text-[12px] text-foreground"
+              onClick={handleGoogle}
+              disabled={googleBusy}
+              className="w-full flex items-center justify-center gap-2.5 h-10 rounded-xl border border-border bg-muted/30 hover:bg-muted hover:border-border/80 transition-all text-[12px] text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+              data-testid="auth-google-button"
             >
               <GoogleIcon className="h-4 w-4" />
-              Continue with Google
+              {googleBusy ? 'Opening Google…' : 'Continue with Google'}
             </button>
             <button
-              onClick={() => handleSocial('Apple')}
+              onClick={handleApple}
               className="w-full flex items-center justify-center gap-2.5 h-10 rounded-xl border border-border bg-muted/30 hover:bg-muted hover:border-border/80 transition-all text-[12px] text-foreground"
             >
               <AppleIcon className="h-4 w-4" />

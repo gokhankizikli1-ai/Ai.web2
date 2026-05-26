@@ -6,6 +6,12 @@
     <meta name="description" content="KorvixAI - Your AI Operating System. Code, research, launch startups, run ecommerce, deploy AI agents, trade, and automate." />
     <meta name="theme-color" content="#f7f7f8" />
     <title>KorvixAI</title>
+    <!-- Google Identity Services (GSI). Loaded ahead of the app so
+         AuthPage can call `window.google.accounts.id.initialize(...)`
+         without a network wait when the user clicks "Continue with
+         Google". Safe to include unconditionally — the script is a
+         no-op until the app explicitly initialises it with a CLIENT_ID. -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
   </head>
   <body>
     <div id="root"></div>
