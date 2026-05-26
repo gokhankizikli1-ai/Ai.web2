@@ -151,35 +151,28 @@ export default function AdminPanel({ ownerMode, onClose }: AdminPanelProps) {
         onClick={(e) => e.stopPropagation()}
         className="z-[80] rounded-2xl border border-amber-500/20 bg-[#0b0b12]/95 shadow-2xl shadow-amber-500/5 overflow-hidden flex flex-col"
         style={{
-          // ── Why this specific positioning math (not the spec's
-          // `inset:16px; margin:auto;`)
+          // EXACT user spec — anchored via inset+margin:auto for true
+          // centring, with a HARD min-height so the inner flex-1 body
+          // can never collapse to a thin line.
           //
-          // The spec recipe `position:fixed; inset:16px; margin:auto`
-          // makes the panel's HEIGHT compute as `auto` because
-          // `margin:auto` consumes the would-be stretched space.
-          // With height:auto, the inner `flex flex-1` body has no
-          // definite parent to grow into → collapses to 0 → panel
-          // shows ONLY the header → "thin horizontal line" bug the
-          // user reported.
+          // The previous "definite top/bottom" approach worked in the
+          // CSS spec sense, but in practice when the inner flex chain
+          // contains `flex-1 min-h-0`, browsers can still resolve the
+          // flex item to 0 when the parent's effective height isn't
+          // observable until layout. Adding min-height makes the
+          // parent's height definite from the first paint, so flex-1
+          // always has something to grow into.
           //
-          // Fix: anchor the panel between DEFINITE top/bottom insets
-          // and synthesize horizontal centring inside the left/right
-          // insets via `max(16px, (100vw - 720px) / 2)`. The panel
-          // now actually stretches to fill `calc(100dvh - 32px)`
-          // vertically, and the inner flex-1 body has a real height
-          // to expand into. Content scrolls inside.
-          //
-          // When viewport ≥ 752px (= 720 + 2×16): left/right = the
-          // computed gap; panel is 720px wide, centred.
-          // When viewport < 752px: max(16, negative) = 16; panel is
-          // (viewport - 32) wide.
-          // Never uses transforms — spec-compliant on that point.
-          position: 'fixed',
-          top:      '16px',
-          bottom:   '16px',
-          left:     'max(16px, calc((100vw - 720px) / 2))',
-          right:    'max(16px, calc((100vw - 720px) / 2))',
-          maxHeight: 'calc(100dvh - 32px)',
+          // Inner content (the tab body) gets its own min-height
+          // below so it visibly fills the panel even when the active
+          // tab's content is short.
+          position:  'fixed',
+          inset:     '24px',
+          margin:    'auto',
+          width:     'min(720px, calc(100vw - 48px))',
+          height:    'auto',
+          maxHeight: 'calc(100dvh - 48px)',
+          minHeight: '360px',
         }}
         role="dialog"
         aria-modal="true"
@@ -260,7 +253,16 @@ export default function AdminPanel({ ownerMode, onClose }: AdminPanelProps) {
               console…" placeholder instead of letting individual tabs
               render their own empty / spinner states. Once owner data
               resolves, the chosen tab renders normally. */}
-          <div className="flex-1 min-w-0 overflow-y-auto p-4 sm:p-5 text-[12px] text-slate-300 [-webkit-overflow-scrolling:touch]">
+          <div
+            className="flex-1 min-w-0 overflow-y-auto p-4 sm:p-5 text-[12px] text-slate-300 [-webkit-overflow-scrolling:touch]"
+            // Floor on the content area: even when the chosen tab's
+            // payload is short (e.g. an Empty state from one of the
+            // best-effort fetches), the body remains visually
+            // substantial. Combined with the panel's 360px min-height
+            // this kills the "thin horizontal line" appearance on
+            // every viewport.
+            style={{ minHeight: '280px' }}
+          >
             {ownerMode.loading && ownerMode.capabilities.length === 0 ? (
               <div
                 className="flex flex-col items-center justify-center py-12 text-slate-500"
