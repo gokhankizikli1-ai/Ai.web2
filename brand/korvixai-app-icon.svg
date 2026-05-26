@@ -4,32 +4,35 @@
       <stop offset="0%" stop-color="#0E0E12"/>
       <stop offset="100%" stop-color="#06060A"/>
     </linearGradient>
-    <radialGradient id="kx-glow" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#6B7CFF" stop-opacity="0.22"/>
-      <stop offset="60%" stop-color="#6B7CFF" stop-opacity="0.06"/>
+    <radialGradient id="kx-glow" cx="40%" cy="48%" r="48%">
+      <stop offset="0%" stop-color="#6B7CFF" stop-opacity="0.26"/>
+      <stop offset="55%" stop-color="#6B7CFF" stop-opacity="0.07"/>
       <stop offset="100%" stop-color="#6B7CFF" stop-opacity="0"/>
     </radialGradient>
-    <radialGradient id="kx-core-a" cx="50%" cy="50%" r="50%">
+    <radialGradient id="kx-core-a" cx="50%" cy="50%" r="60%">
       <stop offset="0%" stop-color="#FFFFFF"/>
       <stop offset="55%" stop-color="#FFFFFF"/>
       <stop offset="100%" stop-color="#C9CFFF"/>
     </radialGradient>
   </defs>
 
-  <!-- Rounded square background (iOS-style squircle approximation) -->
+  <!-- Rounded squircle background -->
   <rect x="0" y="0" width="1024" height="1024" rx="224" ry="224" fill="url(#kx-bg)"/>
 
-  <!-- Subtle ambient glow behind mark -->
-  <circle cx="512" cy="512" r="380" fill="url(#kx-glow)"/>
+  <!-- Subtle ambient glow biased toward the core -->
+  <circle cx="424" cy="500" r="420" fill="url(#kx-glow)"/>
 
-  <!-- Mark, centered and scaled (mark is 80 units; scale to ~640 with padding) -->
-  <g transform="translate(192 192) scale(8)">
-    <rect x="14" y="14" width="8" height="52" fill="#FFFFFF"/>
-    <path d="M34 40 L66 14" stroke="#FFFFFF" stroke-width="7" stroke-linecap="square"/>
-    <path d="M34 40 L66 66" stroke="#FFFFFF" stroke-width="7" stroke-linecap="square"/>
-    <polygon points="28,34 34,40 28,46 22,40" fill="url(#kx-core-a)"/>
+  <!-- Mark, scaled to ~552px and optically centered (mark spans x:18-81, y:14-83 in 96 viewBox) -->
+  <g transform="translate(116 124) scale(8)">
+    <rect x="18" y="14" width="7" height="28" fill="#FFFFFF"/>
+    <rect x="18" y="54" width="7" height="28" fill="#FFFFFF"/>
+    <path d="M35 48 L75 48" stroke="#FFFFFF" stroke-width="4" stroke-linecap="square"/>
+    <path d="M28 55 L50 60 L59 80" stroke="#FFFFFF" stroke-width="4" stroke-linecap="square" stroke-linejoin="miter"/>
+    <polygon points="28,41 35,48 28,55 21,48" fill="url(#kx-core-a)"/>
+    <polygon points="78,45 81,48 78,51 75,48" fill="#FFFFFF"/>
+    <polygon points="62,77 65,80 62,83 59,80" fill="#FFFFFF"/>
   </g>
 
-  <!-- Soft top highlight for premium feel -->
+  <!-- Whisper-thin inner border -->
   <rect x="0" y="0" width="1024" height="1024" rx="224" ry="224" fill="none" stroke="#FFFFFF" stroke-opacity="0.04" stroke-width="2"/>
 </svg>

@@ -1,25 +1,27 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" fill="none" role="img" aria-label="KorvixAI mark">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" fill="none" role="img" aria-label="KorvixAI mark">
   <defs>
-    <radialGradient id="kx-core" cx="50%" cy="50%" r="50%">
+    <radialGradient id="kx-core" cx="50%" cy="50%" r="60%">
       <stop offset="0%" stop-color="#FFFFFF"/>
-      <stop offset="65%" stop-color="#FFFFFF"/>
-      <stop offset="100%" stop-color="#D8DCFF"/>
+      <stop offset="55%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#C9CFFF"/>
     </radialGradient>
-    <linearGradient id="kx-stem" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.96"/>
-      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="1"/>
-    </linearGradient>
   </defs>
 
-  <!-- Stem -->
-  <rect x="14" y="14" width="8" height="52" fill="url(#kx-stem)"/>
+  <!-- Anchor — upper segment of a modular spine -->
+  <rect x="18" y="14" width="7" height="28" fill="#FFFFFF"/>
+  <!-- Anchor — lower segment; the core occupies the joint -->
+  <rect x="18" y="54" width="7" height="28" fill="#FFFFFF"/>
 
-  <!-- Upper arm -->
-  <path d="M34 40 L66 14" stroke="#FFFFFF" stroke-width="7" stroke-linecap="square"/>
+  <!-- Primary edge — perfectly horizontal (alien to a K) -->
+  <path d="M35 48 L75 48" stroke="#FFFFFF" stroke-width="4" stroke-linecap="square"/>
+  <!-- Secondary edge — kinked descent (asymmetric flow) -->
+  <path d="M28 55 L50 60 L59 80" stroke="#FFFFFF" stroke-width="4" stroke-linecap="square" stroke-linejoin="miter"/>
 
-  <!-- Lower arm -->
-  <path d="M34 40 L66 66" stroke="#FFFFFF" stroke-width="7" stroke-linecap="square"/>
+  <!-- Core diamond — orchestrator, embedded in the spine -->
+  <polygon points="28,41 35,48 28,55 21,48" fill="url(#kx-core)"/>
 
-  <!-- Core node (intelligence diamond, flush to stem, anchors the arms) -->
-  <polygon points="28,34 34,40 28,46 22,40" fill="url(#kx-core)"/>
+  <!-- Agent — primary -->
+  <polygon points="78,45 81,48 78,51 75,48" fill="#FFFFFF"/>
+  <!-- Agent — kinked-path terminator -->
+  <polygon points="62,77 65,80 62,83 59,80" fill="#FFFFFF"/>
 </svg>
