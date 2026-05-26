@@ -139,12 +139,21 @@ let _state: InternalState = {
   lastFetchAt: 0,
 };
 let _inFlight: Promise<void> | null = null;
+let _inFlightForced = false;
+let _fetchSeq = 0;
 
 // 30s positive-cache so a render-burst (chip + indicator + overlay +
 // guest-badge mounting in the same tick) shares ONE fetch result.
 // Forced calls (after login / token paste) bypass the TTL.
 const TTL_MS = 30_000;
 const FETCH_TIMEOUT_MS = 6_000;
+const OWNER_MODE_STORAGE_KEYS = new Set([
+  'korvix_access_token',
+  'korvix_owner_token',
+  'korvix_user_id',
+  'korvix-auth',
+  'korvix_debug',
+]);
 
 type Listener = () => void;
 const _listeners = new Set<Listener>();
@@ -160,17 +169,24 @@ function _setState(patch: Partial<InternalState>): void {
   _notify();
 }
 
+function isOwnerModeStorageKey(key: string | null): boolean {
+  return key === null || OWNER_MODE_STORAGE_KEYS.has(key);
+}
+
 async function _doFetch(force: boolean): Promise<void> {
-  if (_inFlight) return _inFlight;
+  if (_inFlight && (!force || _inFlightForced)) return _inFlight;
   if (!force && Date.now() - _state.lastFetchAt < TTL_MS && _state.lastFetchAt > 0) {
     return;
   }
   const debugMode = readDebugFlag();
   _setState({ loading: true, error: null });
+  const requestSeq = ++_fetchSeq;
+  _inFlightForced = force;
 
   _inFlight = (async () => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    const isCurrent = () => requestSeq === _fetchSeq;
     try {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       const bearer = readAccessToken();
@@ -190,11 +206,15 @@ async function _doFetch(force: boolean): Promise<void> {
 
       if (r.status === 404) {
         if (debugMode) console.debug('[useOwnerMode] 404 — admin mode off on backend');
-        _setState({ data: DEFAULT_STATE, loading: false, error: null, lastFetchAt: Date.now() });
+        if (isCurrent()) {
+          _setState({ data: DEFAULT_STATE, loading: false, error: null, lastFetchAt: Date.now() });
+        }
         return;
       }
       if (!r.ok) {
-        _setState({ data: DEFAULT_STATE, loading: false, error: `status ${r.status}`, lastFetchAt: Date.now() });
+        if (isCurrent()) {
+          _setState({ data: DEFAULT_STATE, loading: false, error: `status ${r.status}`, lastFetchAt: Date.now() });
+        }
         return;
       }
       const body = await r.json();
@@ -208,9 +228,13 @@ async function _doFetch(force: boolean): Promise<void> {
                        : undefined,
         };
         if (debugMode) console.debug('[useOwnerMode] decision', next);
-        _setState({ data: next, loading: false, error: null, lastFetchAt: Date.now() });
+        if (isCurrent()) {
+          _setState({ data: next, loading: false, error: null, lastFetchAt: Date.now() });
+        }
       } else {
-        _setState({ data: DEFAULT_STATE, loading: false, error: null, lastFetchAt: Date.now() });
+        if (isCurrent()) {
+          _setState({ data: DEFAULT_STATE, loading: false, error: null, lastFetchAt: Date.now() });
+        }
       }
     } catch (e: unknown) {
       // AbortError lands here for the timeout case — treat as soft
@@ -218,10 +242,15 @@ async function _doFetch(force: boolean): Promise<void> {
       // request doesn't flip the chip Off after a confirmed Owner.
       const message = e instanceof Error ? e.message : 'fetch failed';
       if (debugMode) console.debug('[useOwnerMode] fetch error', message);
-      _setState({ loading: false, error: message, lastFetchAt: Date.now() });
+      if (isCurrent()) {
+        _setState({ loading: false, error: message, lastFetchAt: Date.now() });
+      }
     } finally {
       clearTimeout(timer);
-      _inFlight = null;
+      if (isCurrent()) {
+        _inFlight = null;
+        _inFlightForced = false;
+      }
     }
   })();
   return _inFlight;
@@ -277,11 +306,14 @@ export function useOwnerMode(): OwnerModeState {
     // Bypasses the TTL because the user just did something that
     // could have changed their owner status.
     const handler = () => { _doFetch(true); };
+    const storageHandler = (event: StorageEvent) => {
+      if (isOwnerModeStorageKey(event.key)) _doFetch(true);
+    };
     window.addEventListener('korvix:owner-refresh', handler);
-    window.addEventListener('storage', handler);
+    window.addEventListener('storage', storageHandler);
     return () => {
       window.removeEventListener('korvix:owner-refresh', handler);
-      window.removeEventListener('storage', handler);
+      window.removeEventListener('storage', storageHandler);
     };
   }, []);
 

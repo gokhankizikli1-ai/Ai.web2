@@ -135,11 +135,15 @@ export default function BuildInfoOverlay() {
         });
         return;
       }
-    } catch { /* fall through */ }
-    // Fallback — /v2/health (always available). Reuse the same abort
-    // controller so a stalled backend can't hang the overlay forever.
+    } catch { /* fall through */ } finally {
+      clearTimeout(timer);
+    }
+    // Fallback — /v2/health (always available). Use a fresh abort
+    // controller so a timed-out build-info request doesn't pre-abort it.
+    const fallbackController = new AbortController();
+    const fallbackTimer = setTimeout(() => fallbackController.abort(), 6_000);
     try {
-      const r = await fetch(`${API_BASE}/v2/health`, { signal: controller.signal });
+      const r = await fetch(`${API_BASE}/v2/health`, { signal: fallbackController.signal });
       if (r.ok) {
         const body = await r.json();
         const data = body?.data ?? {};
@@ -156,7 +160,7 @@ export default function BuildInfoOverlay() {
     } catch (e) {
       setBackend({ error: e instanceof Error ? e.message : 'fetch failed' });
     } finally {
-      clearTimeout(timer);
+      clearTimeout(fallbackTimer);
     }
   }, []);
 

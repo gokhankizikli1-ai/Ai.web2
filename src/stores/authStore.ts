@@ -362,16 +362,22 @@ export const useAuthStore = create<AuthState>()(
  *     shared by all subscribers; previously it was 4-N parallel
  *     fetches.
  */
+function dispatchOwnerRefresh(): void {
+  try { window.dispatchEvent(new CustomEvent('korvix:owner-refresh')); }
+  catch { /* ignore */ }
+}
+
 function notifyAuthChanged(user?: AuthUser | null): void {
   try {
     // Lazy import keeps this module a pure store at import time —
     // helps Vite tree-shake when an entry doesn't need the owner UI.
     import('@/hooks/useOwnerMode').then((mod) => {
       mod.seedOwnerFromLogin(user ?? null);
-    }).catch(() => { /* ignore */ });
+      dispatchOwnerRefresh();
+    }).catch(() => {
+      dispatchOwnerRefresh();
+    });
   } catch { /* ignore */ }
-  try { window.dispatchEvent(new CustomEvent('korvix:owner-refresh')); }
-  catch { /* ignore */ }
 }
 
 /* ─── Exposed token reader for non-store callers ─────────────────────────
