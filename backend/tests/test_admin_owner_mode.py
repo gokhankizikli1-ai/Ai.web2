@@ -877,3 +877,129 @@ def test_build_info_works_when_admin_mode_disabled(admin_disabled):
     # 200 when the admin router is mounted". The FE handles both
     # cases (no admin = no overlay refresh).
     assert r.status_code in (200, 404)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Bearer-token fallback in current_user (the "owner mode after login" fix)
+# ══════════════════════════════════════════════════════════════════════════
+
+def test_current_user_decodes_bearer_when_middleware_off(admin_env, tmp_path, monkeypatch):
+    """Critical regression: when AuthMiddleware is NOT enabled (default
+    on prod today), current_user must still resolve a Bearer JWT —
+    otherwise every authenticated request to /v2/admin/* falls back to
+    a guest and owner-mode never activates after Google login."""
+    monkeypatch.setenv("JWT_SECRET_KEY", "test-secret-key-32-chars-minimum-zzz")
+    monkeypatch.setenv("AUTH_DB_PATH", str(tmp_path / "auth-curuser.db"))
+    from backend.services.auth import storage as auth_storage
+    monkeypatch.setattr(auth_storage, "_INITIALIZED", False, raising=False)
+    from backend.services.auth import tokens
+    from backend.core.deps import current_user
+
+    # Seed an identity-store user that matches OWNER_EMAIL.
+    iuser = auth_storage.get_or_create_user(
+        "google", "owner@example.com", display_name="Owner",
+    )
+    # Issue an access token the way /auth/google does.
+    token, _ = tokens.issue(
+        iuser.id, token_type="access", ttl_seconds=3600,
+        extra_claims={"kind": "google", "email": "owner@example.com"},
+    )
+
+    # Build a fake request with the bearer header — no middleware ran,
+    # so request.state.user is unset.
+    from starlette.requests import Request as _Req
+    scope = {
+        "type": "http",
+        "headers": [(b"authorization", f"Bearer {token}".encode())],
+        "state": {},
+    }
+    req = _Req(scope)
+
+    resolved = current_user(req)
+    assert resolved.id == iuser.id
+    assert resolved.is_guest is False
+    assert resolved.kind == "google"
+
+
+def test_current_user_falls_back_to_guest_when_no_bearer(admin_env):
+    from backend.core.deps import current_user
+    from starlette.requests import Request as _Req
+    req = _Req({"type": "http", "headers": [], "state": {}})
+    u = current_user(req)
+    assert u.is_guest is True
+
+
+def test_status_route_recognises_owner_via_bearer_jwt(admin_env, monkeypatch):
+    """End-to-end: log in via /auth/google (with mocked tokeninfo),
+    then hit /v2/admin/status with the resulting bearer — server must
+    return is_owner=true without AuthMiddleware being installed."""
+    import json
+    import urllib.request as _urlreq
+
+    # Need a JWT secret + the identity store wired to the same DB as
+    # the rest of this test class (admin_env handles that).
+    monkeypatch.setenv("JWT_SECRET_KEY", "test-secret-key-32-chars-minimum-zzz")
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "test-client.googleusercontent.com")
+    from backend.services.auth import passwords as auth_passwords
+    monkeypatch.setattr(auth_passwords, "_INITIALIZED", False, raising=False)
+
+    # Mock Google tokeninfo to return the OWNER_EMAIL.
+    fake_body = json.dumps({
+        "iss": "https://accounts.google.com",
+        "aud": "test-client.googleusercontent.com",
+        "sub": "google:1234",
+        "email": "owner@example.com",
+        "email_verified": "true",
+        "name": "Owner",
+    }).encode()
+
+    class _Resp:
+        def __init__(self, data): self._data = data
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def read(self): return self._data
+    monkeypatch.setattr(_urlreq, "urlopen", lambda req, timeout=10: _Resp(fake_body))
+
+    client, app = _fresh_app()
+    # Log in via Google to get a real JWT
+    issued = client.post("/auth/google", json={"id_token": "fake"}).json()
+    assert issued.get("access_token"), issued
+    bearer = issued["access_token"]
+    # The login response itself flags is_owner=true via _annotate_owner
+    assert issued["user"]["is_owner"] is True
+
+    # Now hit /v2/admin/status with the bearer — must come back as owner
+    r = client.get("/v2/admin/status", headers={"Authorization": f"Bearer {bearer}"})
+    assert r.status_code == 200
+    data = r.json()["data"]
+    assert data["is_owner"] is True, data
+    assert data["reason"] == "owner_confirmed"
+
+
+def test_user_email_extraction_handles_google_external_id():
+    """The Google user's external_id is the raw email (not 'email:<addr>').
+    Previously _user_email returned None for google users, blocking
+    OWNER_EMAIL matching entirely. Regression-tested here."""
+    from backend.services.admin.owner import _user_email
+    from backend.services.auth.identity import User
+    u = User(
+        id="abc",
+        kind="google",
+        external_id="Owner@Example.COM",  # case+whitespace tested below
+        display_name="Owner",
+    )
+    assert _user_email(u) == "owner@example.com"
+
+
+def test_user_email_extraction_handles_apple_external_id():
+    from backend.services.admin.owner import _user_email
+    from backend.services.auth.identity import User
+    u = User(id="x", kind="apple", external_id="user@icloud.com", display_name="")
+    assert _user_email(u) == "user@icloud.com"
+
+
+def test_user_email_extraction_is_case_insensitive_for_email_kind():
+    from backend.services.admin.owner import _user_email
+    from backend.services.auth.identity import User
+    u = User(id="x", kind="email", external_id="email:USER@Example.COM", display_name="")
+    assert _user_email(u) == "user@example.com"

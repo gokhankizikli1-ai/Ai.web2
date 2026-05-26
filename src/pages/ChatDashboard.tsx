@@ -35,7 +35,7 @@ import OwnerSessionIndicator from '@/components/OwnerSessionIndicator';
 import {
   Settings, PanelLeftOpen, Command as CmdIcon,
   Bookmark, Download, Sparkles, Zap, Bot, MoreHorizontal,
-  FolderOpen,
+  FolderOpen, ShieldQuestion,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -48,13 +48,19 @@ const DEMO_ACTIVITIES = [
 
 // Secondary actions in toolbar dropdown
 function ToolbarDropdown({
-  onCmd, onPrompts, onExport, onToggleRight, onUpgrade,
+  onCmd, onPrompts, onExport, onToggleRight, onUpgrade, onOwnerUnlock,
 }: {
   onCmd: () => void;
   onPrompts: () => void;
   onExport: () => void;
   onToggleRight: () => void;
   onUpgrade: () => void;
+  // Opens the OwnerUnlockModal. Always present in the menu so the
+  // project owner has a visible entry even when the OwnerModeChip
+  // is hidden (its default state for non-owners). The modal itself
+  // validates the token server-side; non-owners pasting random
+  // strings get a clean rejection.
+  onOwnerUnlock: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null!);
@@ -71,6 +77,11 @@ function ToolbarDropdown({
     { label: 'Export Chat', shortcut: '', icon: Download, action: () => { onExport(); setOpen(false); } },
     { label: 'Context Panel', shortcut: '', icon: Sparkles, action: () => { onToggleRight(); setOpen(false); } },
     { label: 'Upgrade Plan', shortcut: '', icon: Zap, action: () => { onUpgrade(); setOpen(false); } },
+    // Owner Mode entry — small, safe. Opens the unlock modal where
+    // server validates the OWNER_TOKEN. Visible to all menu users:
+    // wrong tokens are rejected by constant-time compare upstream.
+    { label: 'Owner Mode', shortcut: '⇧⌘O', icon: ShieldQuestion,
+      action: () => { onOwnerUnlock(); setOpen(false); } },
   ];
 
   return (
@@ -388,6 +399,15 @@ export default function ChatDashboard() {
               onExport={() => setExportOpen(true)}
               onToggleRight={() => setRightSidebarOpen(!rightSidebarOpen)}
               onUpgrade={() => setUpgradeOpen(true)}
+              onOwnerUnlock={() => {
+                // OwnerModeChip listens for this event and opens the
+                // OwnerUnlockModal. Uses the same channel as the
+                // Ctrl/Cmd+Shift+O keyboard shortcut so there's one
+                // source of truth for "show the unlock modal".
+                try {
+                  window.dispatchEvent(new CustomEvent('korvix:owner-unlock-open'));
+                } catch { /* ignore */ }
+              }}
             />
           </div>
         </header>

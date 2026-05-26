@@ -77,17 +77,38 @@ def _owner_token() -> str:
 def _user_email(user: User) -> Optional[str]:
     """Best-effort extraction of an email from a User. Returns None when
     no email is available (e.g. raw guest, or OAuth provider that
-    didn't publish an email)."""
+    didn't publish an email).
+
+    Handles every shape the identity store can produce:
+      - kind=="email"  external_id="email:<addr>"  (deps.py fallback path
+        for password users)
+      - kind=="google" external_id="<addr>"        (auth.py /auth/google
+        stores the raw email in external_id — discovered via Phase 3c)
+      - kind=="apple"  external_id="<addr>"        (same convention)
+      - any kind       metadata.email="<addr>"     (defensive fallback)
+
+    All branches normalise via .strip().lower() so OWNER_EMAIL matching
+    is reliably case-insensitive regardless of source.
+    """
     if not user:
         return None
-    # email-kind: external_id is "email:<address>"
-    if user.kind == "email" and user.external_id.startswith("email:"):
-        return user.external_id[len("email:"):].strip().lower() or None
-    # OAuth providers populate metadata.email when available.
+    ext = (user.external_id or "").strip()
+    # email-kind: deps.py fallback synthesizes "email:<addr>" external_id
+    if user.kind == "email" and ext.lower().startswith("email:"):
+        return ext[len("email:"):].strip().lower() or None
+    # google/apple: storage layer (storage.get_or_create_user) writes
+    # the raw email as external_id. If it looks like an email, trust it.
+    if user.kind in ("google", "apple") and "@" in ext:
+        return ext.strip().lower() or None
+    # Defensive: any provider that populates metadata.email.
     meta = getattr(user, "metadata", None) or {}
     email = meta.get("email") if isinstance(meta, dict) else None
     if isinstance(email, str) and email.strip():
         return email.strip().lower()
+    # Last-resort: bare email anywhere in external_id (handles
+    # password-store paths whose external_id is just the raw email).
+    if "@" in ext:
+        return ext.strip().lower() or None
     return None
 
 
