@@ -324,6 +324,7 @@ export const useAuthStore = create<AuthState>()(
           'korvix_access_token',           // JWT (cleared by apiLogout too — belt + suspenders)
           'korvix_owner_token',            // shared-secret unlock
           'korvix_owner_welcome_shown',    // welcome-toast guard
+          'korvix_owner_greeting_shown',   // owner chat-greeting guard
           'korvix_oauth_response',         // any in-flight redirect callback
         ];
         for (const k of keysToWipe) {
@@ -430,7 +431,11 @@ function _clearStaleOwnerArtifactsOnAccountChange(newEmail: string | null): void
     // Email changed (incl. owner → other-account or other-account →
     // null on logout). The new identity does NOT inherit the previous
     // identity's owner-token unlock.
-    for (const k of ['korvix_owner_token', 'korvix_owner_welcome_shown']) {
+    for (const k of [
+      'korvix_owner_token',
+      'korvix_owner_welcome_shown',
+      'korvix_owner_greeting_shown',
+    ]) {
       try { localStorage.removeItem(k); }
       catch { /* ignore */ }
       try { sessionStorage.removeItem(k); }

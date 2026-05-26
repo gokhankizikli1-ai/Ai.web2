@@ -445,6 +445,41 @@ export function useChat() {
     setIsLoading(false);
   }, [currentTab]);
 
+  /**
+   * Append an assistant-role message to the active session. Used by
+   * the owner-greeting effect (and any future system-level insertion)
+   * to drop a message into the chat without going through the
+   * user→backend→assistant pipeline.
+   *
+   * Caller owns dedup — this method always inserts. It also won't
+   * insert into a session that already contains a message with the
+   * same `content` as the most recent assistant message, so calling
+   * it twice in a row (e.g. StrictMode double-render) is a no-op.
+   */
+  const insertSystemMessage = useCallback((content: string) => {
+    if (!content?.trim()) return;
+    setSessions((prev) => prev.map((s) => {
+      if (s.id !== activeSessionId) return s;
+      const last = s.messages[s.messages.length - 1];
+      if (last && last.role === 'assistant' && last.content === content) {
+        return s; // dedup
+      }
+      return {
+        ...s,
+        messages: [
+          ...s.messages,
+          {
+            id: generateId(),
+            role: 'assistant' as const,
+            content,
+            timestamp: new Date(),
+          },
+        ],
+        updatedAt: new Date(),
+      };
+    }));
+  }, [activeSessionId]);
+
   const deleteSession = useCallback((id: string) => {
     setSessions((prev) => {
       const filtered = prev.filter((s) => s.id !== id);
@@ -803,6 +838,7 @@ export function useChat() {
     createNewChat,
     selectSession,
     deleteSession,
+    insertSystemMessage,
     sendMessage,
     retry,
     clearChat,

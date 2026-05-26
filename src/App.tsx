@@ -49,6 +49,29 @@ function AppLayout({ children }: { children: React.ReactNode }) {
   const isLanding = location.pathname === '/';
   const showBottomNav = !isLanding;
   const showParticles = !isLanding;
+  // Public / unauthenticated marketing + auth surfaces. The owner
+  // welcome toast must never render here — it would either leak the
+  // existence of an owner session to other visitors on a shared
+  // screen, or simply look out of place on a marketing page.
+  // Everything NOT in this set is treated as authenticated app shell
+  // (chat, projects, settings, etc.) where the toast is allowed.
+  const PUBLIC_ROUTE_PREFIXES = [
+    '/',          // landing
+    '/features',
+    '/use-cases',
+    '/pricing',
+    '/about',
+    '/login',
+    '/signup',
+    '/blog',
+    '/careers',
+    '/privacy',
+    '/terms',
+  ];
+  const isPublicRoute = (
+    location.pathname === '/' ||
+    PUBLIC_ROUTE_PREFIXES.some((p) => p !== '/' && location.pathname.startsWith(p))
+  );
 
   // Kick auth hydration exactly once on app boot. authStore's checkAuth
   // reads the persisted session synchronously when present (no network),
@@ -80,8 +103,11 @@ function AppLayout({ children }: { children: React.ReactNode }) {
       <BuildInfoOverlay />
       {/* OwnerWelcomeToast — one-shot premium greeting that fires
           when an owner session activates. Renders NOTHING for
-          non-owners or after the per-session show flag is set. */}
-      <OwnerWelcomeToast />
+          non-owners, after the per-session show flag is set, OR on
+          any public/marketing route (landing, features, pricing,
+          auth pages — places where the toast would feel jarring or
+          leak owner existence to non-owners on a shared screen). */}
+      {!isPublicRoute && <OwnerWelcomeToast />}
     </div>
   );
 }
