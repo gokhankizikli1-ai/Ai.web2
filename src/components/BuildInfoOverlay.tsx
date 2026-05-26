@@ -38,6 +38,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, GitCommit, ChevronUp, ChevronDown, ExternalLink, Copy } from 'lucide-react';
 import { useOwnerMode } from '@/hooks/useOwnerMode';
+import { useAuthStore } from '@/stores/authStore';
 
 const DEFAULT_API_HOST = 'https://korvixai-backend-production.up.railway.app';
 const API_BASE = `${
@@ -74,13 +75,32 @@ function isSessionDismissed(): boolean {
   catch { return false; }
 }
 
+/* Owner-mode diagnostic helpers. Both return only booleans —
+ * never the actual token values. */
+function hasBearer(): boolean {
+  try { return !!localStorage.getItem('korvix_access_token'); }
+  catch { return false; }
+}
+function hasOwnerToken(): boolean {
+  try { return !!localStorage.getItem('korvix_owner_token'); }
+  catch { return false; }
+}
+
 function dismissForSession(): void {
   try { sessionStorage.setItem('korvix_build_info_dismissed', '1'); }
   catch { /* ignore */ }
 }
 
 export default function BuildInfoOverlay() {
-  const { isOwner } = useOwnerMode();
+  const ownerMode = useOwnerMode();
+  const isOwner = ownerMode.isOwner;
+  // Auth-store snapshot for owner-match diagnostic (logged-in email,
+  // is_owner flag from backend's _annotate_owner). Surfaced inside the
+  // expanded panel so the operator can immediately see why owner-mode
+  // did or didn't activate after Google login.
+  const authUser = useAuthStore((s) => s.user);
+  const authIsAuthenticated = useAuthStore((s) => s.isAuthenticated);
+
   const [expanded, setExpanded]   = useState(false);
   const [dismissed, setDismissed] = useState<boolean>(isSessionDismissed());
   const [backend, setBackend]     = useState<BackendInfo>({});
@@ -239,6 +259,38 @@ export default function BuildInfoOverlay() {
               )}
               <Row label="api"        value={API_BASE} onCopy={() => copy(API_BASE)} />
               <Row label="origin"     value={window.location.origin} onCopy={() => copy(window.location.origin)} />
+
+              {/* ── Owner-detection diagnostic ──────────────────────────
+                  Surfaces the exact answer to "why didn't owner mode
+                  activate after my Google login?" The fields cover:
+                    - logged-in identity (email, kind, signed-in state)
+                    - bearer JWT presence (so we know the FE is sending
+                      credentials to /v2/admin/status)
+                    - OWNER_TOKEN presence (the fallback unlock path)
+                    - backend's first_failure (the precise reason from
+                      detection_debug() when admin-debug flag is on)
+                  All values are user-observed — no secret leaks. */}
+              <div className="pt-2 mt-1 border-t border-white/[0.05]">
+                <div className="text-[9px] uppercase tracking-wider text-amber-300/60 mb-1">
+                  Owner-mode diagnostic
+                </div>
+                <Row label="signed in"   value={authIsAuthenticated ? 'yes' : 'no'} />
+                <Row label="user email"  value={authUser?.email || '—'} />
+                <Row label="user kind"   value={authUser?.kind || '—'} />
+                <Row label="auth.is_owner" value={String(!!authUser?.is_owner)} />
+                <Row label="bearer sent" value={hasBearer() ? 'yes' : 'no'} />
+                <Row label="owner-tok"   value={hasOwnerToken() ? 'present' : 'absent'} />
+                <Row label="be is_owner" value={String(isOwner)} />
+                {ownerMode.debug?.first_failure && (
+                  <Row label="reason"    value={ownerMode.debug.first_failure} />
+                )}
+                {ownerMode.debug && (
+                  <Row
+                    label="email match"
+                    value={ownerMode.debug.user_email_match ? 'yes' : 'no'}
+                  />
+                )}
+              </div>
               <div className="pt-1 flex items-center justify-between gap-2">
                 <button
                   onClick={fetchBackend}

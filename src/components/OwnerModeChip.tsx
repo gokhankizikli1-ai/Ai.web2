@@ -42,6 +42,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ShieldCheck, ShieldAlert, KeyRound } from 'lucide-react';
 import { useOwnerMode } from '@/hooks/useOwnerMode';
+import { useAuthStore } from '@/stores/authStore';
 import OwnerUnlockModal from './OwnerUnlockModal';
 import AdminPanel from './AdminPanel';
 
@@ -71,6 +72,14 @@ function readUrlBootstrap(): boolean {
 
 export default function OwnerModeChip() {
   const ownerMode = useOwnerMode();
+  // Read the authStore so we can flip the chip to "Owner Session Active"
+  // IMMEDIATELY on Google/email login when the backend's _annotate_owner
+  // already stamped is_owner=true on the user dict, without waiting for
+  // the second /v2/admin/status round trip.
+  const authUser = useAuthStore((s) => s.user);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const authSaysOwner = !!(isAuthenticated && authUser?.is_owner);
+
   const [unlockOpen, setUnlockOpen] = useState(false);
   const [panelOpen, setPanelOpen]   = useState(false);
 
@@ -108,6 +117,16 @@ export default function OwnerModeChip() {
     return () => window.removeEventListener('keydown', handler);
   }, []);
 
+  // Event-driven open — the three-dot menu's "Owner Mode" entry
+  // dispatches korvix:owner-unlock-open. Single source of truth for
+  // opening the modal regardless of entry point (chip click, keyboard
+  // shortcut, menu entry).
+  useEffect(() => {
+    const handler = () => setUnlockOpen(true);
+    window.addEventListener('korvix:owner-unlock-open', handler);
+    return () => window.removeEventListener('korvix:owner-unlock-open', handler);
+  }, []);
+
   // Visibility decision. The hook (useOwnerMode) supplies the
   // confirmed-owner signal; localStorage / URL supply the
   // "user is attempting" signal.
@@ -118,10 +137,16 @@ export default function OwnerModeChip() {
   // — see comment on the bump() declaration.
   void storageTick;
 
-  const visible = ownerMode.isOwner || hasStoredToken || devUnlock || urlBootstrap;
+  // Confirmed owner via either signal:
+  //   - useOwnerMode (the canonical, backend-verified flag)
+  //   - authStore.user.is_owner (set by the login response — flips the
+  //     chip the instant Google/email login succeeds, before the
+  //     /v2/admin/status re-fetch finishes)
+  const confirmedOwner = ownerMode.isOwner || authSaysOwner;
+  const visible = confirmedOwner || hasStoredToken || devUnlock || urlBootstrap;
 
   // ── Unlocked: full "Owner Session Active" chip ────────────────────────
-  if (visible && ownerMode.isOwner) {
+  if (visible && confirmedOwner) {
     return (
       <>
         <motion.button
