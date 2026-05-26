@@ -106,7 +106,11 @@ export default function AdminPanel({ ownerMode, onClose }: AdminPanelProps) {
       exit={{ opacity: 0 }}
       // Tap-anywhere-outside closes. The inner card's
       // stopPropagation keeps clicks inside from triggering it.
-      className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-md flex items-center justify-center p-2 sm:p-4"
+      // p-4 = 16px gutter each side = the spec's `width: calc(100vw - 32px)`.
+      // The inner card uses w-full max-w-[720px], so on a 393px iPhone the
+      // card is 361px wide; on a 1024px iPad it caps at 720px. Backdrop area
+      // outside the card remains tappable for click-outside-to-close.
+      className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-md flex items-center justify-center p-4"
       onClick={onClose}
       role="presentation"
       data-testid="admin-panel-overlay"
@@ -160,6 +164,20 @@ export default function AdminPanel({ ownerMode, onClose }: AdminPanelProps) {
             <X className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
           </button>
         </div>
+
+        {/* Belt-and-suspenders floating close button. Lives ABSOLUTELY
+            anchored to the card's top-right corner with z-index above
+            both header + body, so even if the header is somehow
+            obscured (long content, animation glitch, weird viewport)
+            there is always a visible 36×36 tap target to close. */}
+        <button
+          onClick={(e) => { e.stopPropagation(); onClose(); }}
+          aria-label="Close owner panel (floating)"
+          data-testid="admin-panel-close-floating"
+          className="absolute top-2 right-2 h-9 w-9 flex items-center justify-center rounded-full bg-black/60 backdrop-blur-md text-amber-200 hover:text-white hover:bg-black/80 active:scale-95 transition-all z-50 border border-amber-500/30 shadow-lg shadow-black/40 sm:hidden"
+        >
+          <X className="h-4 w-4" />
+        </button>
 
         {/* Body — tabs+content. Stacks vertically on small viewports
             (tabs become a horizontal scroll strip across the top). */}

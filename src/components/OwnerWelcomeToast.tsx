@@ -55,6 +55,12 @@ function buildGreeting(displayName?: string): string {
 export default function OwnerWelcomeToast() {
   const { isOwner } = useOwnerMode();
   const authUser = useAuthStore((s) => s.user);
+  // Gate on hydration so a fresh page load with persisted owner state
+  // doesn't replay the welcome toast every time the user reloads.
+  // Combined with the sessionStorage "shown" guard below: even if
+  // isOwner transitions during hydration, we only fire AFTER hydration
+  // settles. Hard reload behaviour stays "shown once per session".
+  const isHydrating = useAuthStore((s) => s.isHydrating);
 
   // Visible state — only true during the 4.5s animation window.
   const [visible, setVisible] = useState(false);
@@ -65,6 +71,7 @@ export default function OwnerWelcomeToast() {
   const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    if (isHydrating) return;     // wait for definitive auth resolution
     if (!isOwner) return;
     if (firedRef.current) return;
     firedRef.current = true;
@@ -77,7 +84,7 @@ export default function OwnerWelcomeToast() {
         dismissTimerRef.current = null;
       }
     };
-  }, [isOwner]);
+  }, [isOwner, isHydrating]);
 
   const greeting = buildGreeting(authUser?.name || authUser?.email?.split('@')[0]);
 
