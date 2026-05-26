@@ -154,6 +154,67 @@ async def chat(req: ChatRequest):
         return _quick_response(request_id, user_id, reply, "memory", t_start)
 
     # ── Memory save shortcut ──────────────────────────────────────────────
+    # Two layers, in priority order:
+    #   1) Phase 6 Memory Plane explicit-save commands (EN + TR, with or
+    #      without colon). Persists to memory_plane with HIGH importance
+    #      so future chats surface it via the context block. Also
+    #      dual-writes to the legacy memory_service so the existing
+    #      /memory listing UI keeps showing the same row.
+    #   2) Legacy Turkish-only colon-prefixed triggers (kept as a
+    #      fallback for any path the new matcher misses — same behaviour
+    #      as before).
+    try:
+        from backend.services.memory_plane import chat_integration as _mp_chat
+        _save_cmd = _mp_chat.is_explicit_save_command(message)
+    except Exception:
+        _save_cmd = None
+    if _save_cmd:
+        fact = (_save_cmd.get("fact") or "").strip()
+        if not fact:
+            # Trigger matched but no content — ask the user what to save.
+            ack_empty = "Ne kaydetmemi istedigini anlayamadim."
+            try:
+                ack_empty = _mp_chat.ack_reply_empty(message)
+            except Exception:
+                pass
+            timer.mark("memory_save_shortcut_empty")
+            timer.flush()
+            return _quick_response(request_id, user_id, ack_empty, "memory", t_start)
+        # Persist to Memory Plane (best-effort; no-op when flag is off).
+        saved_meta = None
+        try:
+            saved_meta = _mp_chat.save_explicit(
+                user_id=    str(req.user_id),
+                content=    fact,
+                kind=       _save_cmd.get("kind", "fact"),
+                project_id= req.project_id,
+            )
+        except Exception:
+            pass
+        # Dual-write to legacy memory_service so existing UIs that read
+        # the legacy store still see the save. Best-effort; non-blocking.
+        try:
+            from backend.services.memory_service import save_memory
+            save_memory(user_id, fact, "preference" if _save_cmd.get("kind") == "preference" else "general")
+        except Exception:
+            pass
+        ack = "Kaydettim."
+        try:
+            ack = _mp_chat.ack_reply(message, fact=fact)
+        except Exception:
+            pass
+        logger.info(
+            "CHAT | rid=%s | uid=%s | memory_save_explicit | mp_id=%s | kind=%s",
+            request_id, user_id,
+            (saved_meta or {}).get("id"),
+            (saved_meta or {}).get("kind", _save_cmd.get("kind", "fact")),
+        )
+        timer.mark("memory_save_shortcut")
+        timer.flush()
+        return _quick_response(request_id, user_id, ack, "memory", t_start)
+
+    # Legacy Turkish-only triggers — kept as a back-stop for any phrasing
+    # the new matcher might miss. Same behaviour as the original chat.py.
     _mem_save = [
         "bunu hatirla:", "bunu hatırla:", "hatirla:",
         "hafizana kaydet:", "aklinda tut:", "not al:",
@@ -165,6 +226,15 @@ async def chat(req: ChatRequest):
                 try:
                     from backend.services.memory_service import save_memory
                     save_memory(user_id, fact, "general")
+                except Exception:
+                    pass
+                # Also dual-write to memory_plane.
+                try:
+                    from backend.services.memory_plane import chat_integration as _mp_chat
+                    _mp_chat.save_explicit(
+                        user_id=str(req.user_id), content=fact,
+                        kind="fact", project_id=req.project_id,
+                    )
                 except Exception:
                     pass
                 timer.mark("memory_save_shortcut")
@@ -240,6 +310,23 @@ async def chat(req: ChatRequest):
         maybe_auto_learn(user_id, message)
     except Exception:
         pass
+    # Phase 6 — Memory Plane auto-extraction. Runs the heuristic
+    # extractor on the user message and persists any candidates with
+    # importance-scored, project-scoped, dedup-folded semantics.
+    # No-op when ENABLE_MEMORY_PLANE is off. Never raises.
+    try:
+        from backend.services.memory_plane import chat_integration as _mp_chat
+        _mp_extracted = _mp_chat.auto_extract(
+            user_id=str(req.user_id), message=message, project_id=req.project_id,
+        )
+        if _mp_extracted:
+            logger.info(
+                "CHAT | rid=%s | uid=%s | mp_auto_extract | n=%d | kinds=%s",
+                request_id, user_id, len(_mp_extracted),
+                ",".join(sorted({m["kind"] for m in _mp_extracted})),
+            )
+    except Exception:
+        pass
     timer.mark("auto_learn")
 
     # ── Build context ─────────────────────────────────────────────────────
@@ -260,6 +347,25 @@ async def chat(req: ChatRequest):
     # Additive: fold an optional language preference into the existing
     # style_prompt seam (no ai_service change; default None → unchanged).
     style_prompt = _with_language(style_prompt, req.language)
+    # Phase 6 — fold the Memory Plane context block (top-N relevant
+    # memories, importance + recency ranked) into `mem_summary` so it
+    # reaches every system-prompt assembly path (`_build_system` AND
+    # `build_system_prompt`) without touching any other module.
+    # No-op when ENABLE_MEMORY_PLANE is off (empty block prepended →
+    # mem_summary returned unchanged). The current user message is
+    # used as the query so retrieval prefers memories relevant to
+    # what the user just said.
+    try:
+        from backend.services.memory_plane import chat_integration as _mp_chat
+        mem_summary = _mp_chat.fold_into_mem_summary(
+            mem_summary,
+            user_id=    str(req.user_id),
+            project_id= req.project_id,
+            query=      message,
+            limit=      5,
+        )
+    except Exception as e:
+        logger.warning("CHAT | rid=%s | memory_plane context fold error: %s", request_id, e)
     timer.mark("context_built")
 
     # ── AI call ───────────────────────────────────────────────────────────
