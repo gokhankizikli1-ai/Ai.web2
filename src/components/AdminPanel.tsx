@@ -151,12 +151,35 @@ export default function AdminPanel({ ownerMode, onClose }: AdminPanelProps) {
         onClick={(e) => e.stopPropagation()}
         className="z-[80] rounded-2xl border border-amber-500/20 bg-[#0b0b12]/95 shadow-2xl shadow-amber-500/5 overflow-hidden flex flex-col"
         style={{
-          position:  'fixed',
-          inset:     '16px',
-          width:     'min(720px, calc(100% - 0px))',  // already constrained by inset
-          maxWidth:  '720px',
+          // ── Why this specific positioning math (not the spec's
+          // `inset:16px; margin:auto;`)
+          //
+          // The spec recipe `position:fixed; inset:16px; margin:auto`
+          // makes the panel's HEIGHT compute as `auto` because
+          // `margin:auto` consumes the would-be stretched space.
+          // With height:auto, the inner `flex flex-1` body has no
+          // definite parent to grow into → collapses to 0 → panel
+          // shows ONLY the header → "thin horizontal line" bug the
+          // user reported.
+          //
+          // Fix: anchor the panel between DEFINITE top/bottom insets
+          // and synthesize horizontal centring inside the left/right
+          // insets via `max(16px, (100vw - 720px) / 2)`. The panel
+          // now actually stretches to fill `calc(100dvh - 32px)`
+          // vertically, and the inner flex-1 body has a real height
+          // to expand into. Content scrolls inside.
+          //
+          // When viewport ≥ 752px (= 720 + 2×16): left/right = the
+          // computed gap; panel is 720px wide, centred.
+          // When viewport < 752px: max(16, negative) = 16; panel is
+          // (viewport - 32) wide.
+          // Never uses transforms — spec-compliant on that point.
+          position: 'fixed',
+          top:      '16px',
+          bottom:   '16px',
+          left:     'max(16px, calc((100vw - 720px) / 2))',
+          right:    'max(16px, calc((100vw - 720px) / 2))',
           maxHeight: 'calc(100dvh - 32px)',
-          margin:    'auto',
         }}
         role="dialog"
         aria-modal="true"
@@ -231,16 +254,42 @@ export default function AdminPanel({ ownerMode, onClose }: AdminPanelProps) {
             </div>
           </nav>
 
-          {/* Tab content */}
+          {/* Tab content. While useOwnerMode is loading its first
+              backend confirmation (ownerMode.loading) AND no capability
+              list has arrived yet, show a one-line "Loading owner
+              console…" placeholder instead of letting individual tabs
+              render their own empty / spinner states. Once owner data
+              resolves, the chosen tab renders normally. */}
           <div className="flex-1 min-w-0 overflow-y-auto p-4 sm:p-5 text-[12px] text-slate-300 [-webkit-overflow-scrolling:touch]">
-            {activeTab === 'overview'    && <OverviewTab />}
-            {activeTab === 'session'     && <SessionTab ownerMode={ownerMode} />}
-            {activeTab === 'agents'      && <AgentsTab />}
-            {activeTab === 'memory'      && <MemoryTab />}
-            {activeTab === 'tools'       && <ToolsTab />}
-            {activeTab === 'prompts'     && <PromptsTab />}
-            {activeTab === 'audit'       && <AuditTab />}
-            {activeTab === 'owner-agent' && <OwnerAgentTab />}
+            {ownerMode.loading && ownerMode.capabilities.length === 0 ? (
+              <div
+                className="flex flex-col items-center justify-center py-12 text-slate-500"
+                data-testid="admin-panel-loading"
+              >
+                <div className="relative h-8 w-8 mb-3">
+                  <span className="absolute inset-0 rounded-full border-2 border-amber-500/15" />
+                  <span
+                    className="absolute inset-0 rounded-full border-2 border-transparent animate-spin"
+                    style={{ borderTopColor: 'rgba(245,158,11,0.8)' }}
+                  />
+                </div>
+                <div className="text-[12px] text-amber-200/80">Loading owner console…</div>
+                <div className="text-[10px] text-slate-600 mt-1">
+                  Verifying capabilities with the backend.
+                </div>
+              </div>
+            ) : (
+              <>
+                {activeTab === 'overview'    && <OverviewTab />}
+                {activeTab === 'session'     && <SessionTab ownerMode={ownerMode} />}
+                {activeTab === 'agents'      && <AgentsTab />}
+                {activeTab === 'memory'      && <MemoryTab />}
+                {activeTab === 'tools'       && <ToolsTab />}
+                {activeTab === 'prompts'     && <PromptsTab />}
+                {activeTab === 'audit'       && <AuditTab />}
+                {activeTab === 'owner-agent' && <OwnerAgentTab />}
+              </>
+            )}
           </div>
         </div>
       </motion.div>
