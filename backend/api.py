@@ -156,6 +156,15 @@ def _build_full_app():
             await _bg_stop()
         except Exception as _bg_err:
             logger.warning("background-task shutdown (non-fatal): %s", _bg_err)
+        # Phase 7 — drain the Job Queue inline runner (up to 5s) so
+        # in-flight jobs land in a clean terminal state before the
+        # process dies. No-op when the queue was never enabled.
+        try:
+            from backend.services.jobs import client as _jobs_client
+            if _jobs_client.is_enabled():
+                await _jobs_client.shutdown(drain_timeout_s=5.0)
+        except Exception as _jobs_err:
+            logger.warning("jobs shutdown (non-fatal): %s", _jobs_err)
 
     @_app.get("/health", tags=["system"])
     async def health():
@@ -182,6 +191,7 @@ def _build_full_app():
         "backend.routes.v2_events",    # Phase 3.5 — /v2/events/stream (gated by ENABLE_REALTIME_EVENTS)
         "backend.routes.market",       # Phase 8e — /market/quote/{symbol} (gated by ENABLE_MARKET_QUOTE)
         "backend.routes.v2_memory",    # Phase 6 — /v2/memory/* Memory Plane (gated by ENABLE_MEMORY_PLANE)
+        "backend.routes.v2_jobs",      # Phase 7 — /v2/jobs/* Job Queue (gated by ENABLE_JOB_QUEUE)
     ]:
         try:
             _app.include_router(importlib.import_module(_mod).router)
