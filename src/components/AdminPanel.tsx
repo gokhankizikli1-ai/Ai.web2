@@ -124,7 +124,12 @@ export default function AdminPanel({ ownerMode, onClose }: AdminPanelProps) {
         //   - On <md viewports the tabs nav collapses to a top scroll
         //     bar instead of a left column, so the content area is
         //     usable on narrow widths
-        className="relative w-full max-w-5xl h-[92dvh] sm:h-[88dvh] md:h-[85dvh] rounded-2xl border border-amber-500/20 bg-[#0b0b12]/95 shadow-2xl shadow-amber-500/5 overflow-hidden flex flex-col"
+        // Smaller responsive ceiling: 720px / 880px / 1080px max-w
+        // depending on viewport size, and 80vh / 78vh / 75vh height
+        // ceiling (with min so it stays usable on tiny screens). The
+        // previous 92dvh × 5xl was visually overwhelming on tablets —
+        // dropped to keep the modal feeling like a panel, not a page.
+        className="relative w-full max-w-[720px] md:max-w-[880px] lg:max-w-[1080px] h-[80dvh] sm:h-[78dvh] md:h-[75dvh] max-h-[640px] sm:max-h-[720px] md:max-h-[820px] min-h-[420px] rounded-2xl border border-amber-500/20 bg-[#0b0b12]/95 shadow-2xl shadow-amber-500/5 overflow-hidden flex flex-col"
         role="dialog"
         aria-modal="true"
         aria-label="Owner panel"
