@@ -129,19 +129,34 @@ function randomString(): string {
 
 const OAUTH_STATE_KEY = 'korvix_oauth_state';
 const OAUTH_NONCE_KEY = 'korvix_oauth_nonce';
+const OAUTH_RETURN_PATH_KEY = 'korvix_oauth_return_path';
+
+function safeReturnPath(from: unknown): string {
+  return typeof from === 'string' && from.startsWith('/') && !from.startsWith('//') ? from : '';
+}
+
+function readStoredReturnPath(): string {
+  try { return safeReturnPath(sessionStorage.getItem(OAUTH_RETURN_PATH_KEY)); }
+  catch { return ''; }
+}
 
 /** Kick the user off to Google's OAuth endpoint with implicit
  *  response_type=id_token. Google redirects back to
  *  `redirect_uri#id_token=<jwt>&state=<state>` which we read on mount.
  *  This bypasses GIS entirely — works on every browser including
  *  iPad Safari with ITP fully on. */
-function startGoogleRedirect(clientId: string): void {
+function startGoogleRedirect(clientId: string, returnPath = ''): void {
   const state = randomString();
   const nonce = randomString();
   try {
     sessionStorage.setItem(OAUTH_STATE_KEY, state);
     sessionStorage.setItem(OAUTH_NONCE_KEY, nonce);
-  } catch { /* private mode — proceed anyway; we'll degrade state check */ }
+    if (returnPath) {
+      sessionStorage.setItem(OAUTH_RETURN_PATH_KEY, returnPath);
+    } else {
+      sessionStorage.removeItem(OAUTH_RETURN_PATH_KEY);
+    }
+  } catch { /* private mode — redirect will fail closed on state validation */ }
 
   const redirectUri = window.location.origin + window.location.pathname;
   const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
@@ -200,6 +215,7 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
   // Support both /login and /signup routes, plus toggle within the page
   const urlMode = location.pathname === '/signup' ? 'signup' : 'login';
   const [mode, setMode] = useState<'login' | 'signup'>(propMode || urlMode);
+  const returnPathFromState = safeReturnPath((location.state as { from?: unknown } | null)?.from);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -221,10 +237,10 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
   // Redirect if already authenticated
   useEffect(() => {
     if (isAuthenticated) {
-      const from = (location.state as any)?.from || '/chat';
+      const from = returnPathFromState || readStoredReturnPath() || '/chat';
       navigate(from, { replace: true });
     }
-  }, [isAuthenticated, navigate, location.state]);
+  }, [isAuthenticated, navigate, returnPathFromState]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -252,13 +268,13 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
     }
 
     if (success) {
-      const from = (location.state as any)?.from || '/chat';
+      const from = returnPathFromState || '/chat';
       navigate(from, { replace: true });
     }
   };
 
   const handleGuest = () => {
-    const from = (location.state as any)?.from || '/chat';
+    const from = returnPathFromState || '/chat';
     navigate(from);
   };
 
@@ -292,8 +308,22 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
    *   redirect_state_mismatch   CSRF guard caught a bad state param
    *   redirect_no_token         Google redirected back with no token
    *   gis_error                 initialize() threw */
+  const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const popupAttemptSeqRef = useRef(0);
+  const activePopupAttemptRef = useRef<number | null>(null);
+
+  function clearWatchdog(): void {
+    if (watchdogRef.current) {
+      clearTimeout(watchdogRef.current);
+      watchdogRef.current = null;
+    }
+  }
+
   const credentialHandlerRef = useRef<(resp: GoogleCredentialResponse) => void>(() => {});
   credentialHandlerRef.current = async (resp: GoogleCredentialResponse) => {
+    if (activePopupAttemptRef.current === null) return;
+    activePopupAttemptRef.current = null;
+    clearWatchdog();
     if (!resp?.credential) {
       setGoogleReason('popup_skipped');
       setGoogleBusy(false);
@@ -302,7 +332,7 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
     const ok = await loginWithGoogle(resp.credential);
     setGoogleBusy(false);
     if (ok) {
-      const from = (location.state as { from?: string } | null)?.from || '/chat';
+      const from = returnPathFromState || '/chat';
       navigate(from, { replace: true });
     }
   };
@@ -313,8 +343,6 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
   const [gisFailed, setGisFailed] = useState(false);
   const [googleReason, setGoogleReason] = useState<GoogleAuthReason | null>(null);
   const [googleReasonExtra, setGoogleReasonExtra] = useState<string>('');
-  // Watchdog timer ref so we can cancel from the credential callback.
-  const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function setGoogleErr(reason: GoogleAuthReason, extra?: string): void {
     setGoogleReason(reason);
@@ -376,23 +404,34 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
   // flow). The fragment is cleaned from history immediately so a reload
   // doesn't replay the token.
   useEffect(() => {
-    const hash = window.location.hash.replace(/^#/, '');
-    if (!hash) return;
-    const params = new URLSearchParams(hash);
+    const routeParams = new URLSearchParams(location.search);
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const params = routeParams.get('id_token') ? routeParams : hashParams;
     const idToken = params.get('id_token');
     if (!idToken) return;
     const incomingState = params.get('state') || '';
 
     // CSRF guard — the state we wrote before redirect must match.
     let expectedState = '';
-    try { expectedState = sessionStorage.getItem(OAUTH_STATE_KEY) || ''; }
-    catch { /* private mode — degraded check */ }
+    let returnPath = '';
+    try {
+      expectedState = sessionStorage.getItem(OAUTH_STATE_KEY) || '';
+      returnPath = safeReturnPath(sessionStorage.getItem(OAUTH_RETURN_PATH_KEY));
+    } catch { /* private mode — fail closed below */ }
 
     // Strip the fragment so a reload doesn't re-process the token.
-    try { window.history.replaceState(null, '', window.location.pathname + window.location.search); }
+    try {
+      const cleanRoute = location.pathname === '/signup' ? '#/signup' : '#/login';
+      window.history.replaceState(null, '', window.location.pathname + window.location.search + cleanRoute);
+    }
     catch { /* ignore */ }
 
-    if (expectedState && incomingState !== expectedState) {
+    if (!expectedState || incomingState !== expectedState) {
+      try {
+        sessionStorage.removeItem(OAUTH_STATE_KEY);
+        sessionStorage.removeItem(OAUTH_NONCE_KEY);
+        sessionStorage.removeItem(OAUTH_RETURN_PATH_KEY);
+      } catch { /* ignore */ }
       setGoogleErr('redirect_state_mismatch', `got ${incomingState.slice(0, 8)}…`);
       return;
     }
@@ -404,8 +443,10 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
     setGoogleBusy(true);
     loginWithGoogle(idToken).then((ok) => {
       setGoogleBusy(false);
+      try { sessionStorage.removeItem(OAUTH_RETURN_PATH_KEY); }
+      catch { /* ignore */ }
       if (ok) {
-        const from = (location.state as { from?: string } | null)?.from || '/chat';
+        const from = returnPath || returnPathFromState || '/chat';
         navigate(from, { replace: true });
       } else {
         setGoogleErr('redirect_no_token', 'backend rejected the id_token');
@@ -429,7 +470,7 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
     // Safari + iPad: skip GIS, go directly to redirect.
     if (isSafariOrIOS()) {
       setGoogleBusy(true);
-      startGoogleRedirect(GOOGLE_CLIENT_ID);
+      startGoogleRedirect(GOOGLE_CLIENT_ID, returnPathFromState);
       return; // page unloads
     }
     const gis = window.google?.accounts?.id;
@@ -437,6 +478,10 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
       setGoogleErr('gis_not_loaded');
       return;
     }
+    clearWatchdog();
+    const attemptId = popupAttemptSeqRef.current + 1;
+    popupAttemptSeqRef.current = attemptId;
+    activePopupAttemptRef.current = attemptId;
     setGoogleBusy(true);
     // 2s watchdog: if neither the credential callback nor the
     // notification callback resolves in time, we assume popup was
@@ -444,26 +489,16 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
     let resolved = false;
     const finish = (reason?: GoogleAuthReason, extra?: string): void => {
       if (resolved) return;
+      if (popupAttemptSeqRef.current !== attemptId) return;
       resolved = true;
-      if (watchdogRef.current) {
-        clearTimeout(watchdogRef.current);
-        watchdogRef.current = null;
-      }
+      activePopupAttemptRef.current = null;
+      clearWatchdog();
       if (reason) {
         setGoogleErr(reason, extra);
         setGoogleBusy(false);
       }
     };
     watchdogRef.current = setTimeout(() => finish('callback_timeout'), 2000);
-
-    // The credential callback path (success) resolves us via the
-    // credentialHandlerRef. The notification callback path (popup
-    // failure) resolves us here. Either way the watchdog gets cleared.
-    const originalHandler = credentialHandlerRef.current;
-    credentialHandlerRef.current = (resp) => {
-      finish();
-      return originalHandler(resp);
-    };
 
     try {
       gis.prompt((notification: GoogleNotification) => {
@@ -479,7 +514,7 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
     } catch (e) {
       finish('gis_error', e instanceof Error ? e.message : String(e));
     }
-  }, [clearError, gisReady]);
+  }, [clearError, gisReady, returnPathFromState]);
 
   // ── Manual redirect fallback (button shown after any popup failure)
   const handleGoogleRedirect = useCallback(() => {
@@ -490,8 +525,8 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
       return;
     }
     setGoogleBusy(true);
-    startGoogleRedirect(GOOGLE_CLIENT_ID);
-  }, [clearError]);
+    startGoogleRedirect(GOOGLE_CLIENT_ID, returnPathFromState);
+  }, [clearError, returnPathFromState]);
 
   // Stable derived label so the button text reflects the actual state.
   let googleLabel = 'Continue with Google';
