@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>KorvixAI — Brand</title>
+  <link rel="icon" type="image/svg+xml" href="./korvixai-favicon.svg" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #06060A;
+      --bg-2: #0E0E14;
+      --line: rgba(255,255,255,0.06);
+      --text: #FFFFFF;
+      --muted: rgba(255,255,255,0.55);
+      --accent: #6B7CFF;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      background: radial-gradient(1200px 600px at 50% -10%, #14141C 0%, var(--bg) 60%) fixed;
+      color: var(--text);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: geometricPrecision;
+    }
+    .wrap { max-width: 1180px; margin: 0 auto; padding: 96px 32px 120px; }
+    .eyebrow {
+      font-size: 12px;
+      letter-spacing: 0.28em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 14px;
+    }
+    h1 {
+      font-family: 'Space Grotesk', 'Inter', sans-serif;
+      font-weight: 500;
+      font-size: 44px;
+      letter-spacing: -0.02em;
+      margin: 0 0 12px;
+    }
+    .lede { color: var(--muted); max-width: 620px; margin: 0; font-size: 16px; line-height: 1.55; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 20px;
+      margin-top: 64px;
+    }
+    .card {
+      background: linear-gradient(180deg, #0C0C12 0%, #08080C 100%);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 28px;
+      position: relative;
+      overflow: hidden;
+    }
+    .card .label {
+      font-size: 11px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .card .meta {
+      margin-top: 6px;
+      font-size: 13px;
+      color: rgba(255,255,255,0.45);
+    }
+    .card .stage {
+      display: flex; align-items: center; justify-content: center;
+      min-height: 260px;
+      margin: 18px 0 6px;
+    }
+    .span-12 { grid-column: span 12; }
+    .span-8  { grid-column: span 8; }
+    .span-6  { grid-column: span 6; }
+    .span-4  { grid-column: span 4; }
+    @media (max-width: 900px) {
+      .span-8, .span-6, .span-4 { grid-column: span 12; }
+    }
+
+    /* Hero card */
+    .hero { padding: 56px 40px; }
+    .hero .stage { min-height: 320px; }
+    .hero svg { width: 360px; height: auto; }
+
+    /* Navbar mock */
+    .navbar {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 22px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(255,255,255,0.02);
+      backdrop-filter: blur(8px);
+    }
+    .navbar svg { height: 28px; width: auto; display: block; }
+    .nav-links { display: flex; gap: 28px; color: var(--muted); font-size: 14px; }
+    .nav-links span { cursor: default; }
+    .nav-cta {
+      font-size: 13px;
+      padding: 8px 14px;
+      border-radius: 10px;
+      background: #FFFFFF;
+      color: #0A0A0E;
+      font-weight: 500;
+    }
+
+    /* App icon stage */
+    .icon-row { display: flex; align-items: center; gap: 28px; flex-wrap: wrap; justify-content: center; }
+    .icon-row .ic { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+    .icon-row .ic img { display: block; border-radius: 22%; box-shadow: 0 24px 60px rgba(0,0,0,0.55); }
+    .icon-row .ic small { color: var(--muted); font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase; }
+
+    .ic-1024 img { width: 184px; height: 184px; }
+    .ic-128  img { width: 96px;  height: 96px;  border-radius: 20%; }
+    .ic-64   img { width: 56px;  height: 56px;  border-radius: 18%; }
+    .ic-32   img { width: 32px;  height: 32px;  border-radius: 28%; }
+
+    /* Dashboard mock */
+    .dash {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      overflow: hidden;
+      background: #07070B;
+    }
+    .dash-head {
+      display: flex; align-items: center; gap: 14px;
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255,255,255,0.02);
+    }
+    .dash-head svg { height: 22px; width: auto; }
+    .dots { display: flex; gap: 6px; margin-left: auto; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,255,255,0.18); }
+    .dash-body { display: grid; grid-template-columns: 200px 1fr; min-height: 280px; }
+    .dash-side {
+      border-right: 1px solid var(--line);
+      padding: 18px 14px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .dash-side .item { padding: 8px 10px; border-radius: 8px; }
+    .dash-side .item.active { background: rgba(255,255,255,0.05); color: #FFF; }
+    .dash-main { padding: 22px; }
+    .pill {
+      display: inline-block;
+      font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase;
+      color: var(--muted);
+      border: 1px solid var(--line);
+      padding: 5px 10px; border-radius: 999px;
+    }
+    .h2 {
+      font-family: 'Space Grotesk', 'Inter', sans-serif;
+      font-weight: 500; font-size: 26px; letter-spacing: -0.01em; margin: 14px 0 8px;
+    }
+    .sub { color: var(--muted); font-size: 14px; line-height: 1.55; max-width: 520px; }
+
+    /* Construction / spec card */
+    .spec { display: grid; grid-template-columns: 1.1fr 1fr; gap: 24px; }
+    @media (max-width: 900px) { .spec { grid-template-columns: 1fr; } }
+    .swatches { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+    .sw { border-radius: 10px; padding: 14px; border: 1px solid var(--line); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; }
+    .sw small { display: block; color: var(--muted); margin-top: 6px; letter-spacing: 0.06em; text-transform: none; }
+    .sw-black { background: #06060A; }
+    .sw-graphite { background: #0E0E14; }
+    .sw-silver { background: #D8DCFF; color: #0A0A0E; }
+    .sw-accent { background: #6B7CFF; color: #0A0A0E; }
+
+    .footer {
+      margin-top: 64px;
+      padding-top: 22px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      display: flex; justify-content: space-between;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="eyebrow">Brand System · v1</div>
+    <h1>KorvixAI</h1>
+    <p class="lede">A precision mark for an AI operating system — a stem, a core, and two emergent paths. One intelligence orchestrating many.</p>
+
+    <div class="grid">
+
+      <!-- HERO -->
+      <div class="card hero span-12">
+        <div class="label">Primary Lockup</div>
+        <div class="meta">korvixai-logo.svg</div>
+        <div class="stage">
+          <object data="./korvixai-logo.svg" type="image/svg+xml" aria-label="KorvixAI primary logo"></object>
+        </div>
+      </div>
+
+      <!-- NAVBAR -->
+      <div class="card span-8">
+        <div class="label">Navbar Lockup</div>
+        <div class="meta">korvixai-horizontal.svg · in context</div>
+        <div class="stage" style="min-height: 140px; align-items: stretch; flex-direction: column; justify-content: center;">
+          <div class="navbar">
+            <object data="./korvixai-horizontal.svg" type="image/svg+xml" aria-label="KorvixAI"></object>
+            <div class="nav-links">
+              <span>Platform</span><span>Agents</span><span>Pricing</span><span>Docs</span>
+            </div>
+            <div class="nav-cta">Launch app</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- MARK -->
+      <div class="card span-4">
+        <div class="label">Symbol</div>
+        <div class="meta">korvixai-mark.svg</div>
+        <div class="stage">
+          <object data="./korvixai-mark.svg" type="image/svg+xml" aria-label="KorvixAI mark" style="width:200px;height:200px;"></object>
+        </div>
+      </div>
+
+      <!-- APP ICONS -->
+      <div class="card span-8">
+        <div class="label">App Icon · Multi-scale</div>
+        <div class="meta">korvixai-app-icon.svg</div>
+        <div class="stage">
+          <div class="icon-row">
+            <div class="ic ic-1024"><img src="./korvixai-app-icon.svg" alt="App icon 1024"/><small>1024</small></div>
+            <div class="ic ic-128"><img src="./korvixai-app-icon.svg" alt="App icon 128"/><small>128</small></div>
+            <div class="ic ic-64"><img src="./korvixai-app-icon.svg" alt="App icon 64"/><small>64</small></div>
+            <div class="ic ic-32"><img src="./korvixai-favicon.svg" alt="Favicon 32"/><small>Favicon</small></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SYSTEM -->
+      <div class="card span-4">
+        <div class="label">System</div>
+        <div class="meta">Palette · type</div>
+        <div class="swatches" style="margin-top: 18px;">
+          <div class="sw sw-black">Obsidian<small>#06060A</small></div>
+          <div class="sw sw-graphite">Graphite<small>#0E0E14</small></div>
+          <div class="sw sw-silver">Silver<small>#D8DCFF</small></div>
+          <div class="sw sw-accent">Pulse<small>#6B7CFF</small></div>
+        </div>
+        <div style="margin-top: 18px; font-size: 13px; color: var(--muted); line-height: 1.6;">
+          Type · <strong style="color:#fff;">Inter / Space Grotesk</strong><br/>
+          Weight 500, tracking 0.18–0.30em uppercase
+        </div>
+      </div>
+
+      <!-- DASHBOARD MOCK -->
+      <div class="card span-12">
+        <div class="label">In Product</div>
+        <div class="meta">Dark dashboard · navbar + workspace</div>
+        <div class="dash" style="margin-top: 16px;">
+          <div class="dash-head">
+            <object data="./korvixai-horizontal.svg" type="image/svg+xml" aria-label="KorvixAI"></object>
+            <div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+          </div>
+          <div class="dash-body">
+            <div class="dash-side">
+              <div class="item active">Orchestrator</div>
+              <div class="item">Agents</div>
+              <div class="item">Workflows</div>
+              <div class="item">Memory</div>
+              <div class="item">Settings</div>
+            </div>
+            <div class="dash-main">
+              <span class="pill">Live · 12 agents</span>
+              <div class="h2">One intelligence, many hands.</div>
+              <div class="sub">KorvixAI coordinates a constellation of specialist agents across reasoning, retrieval, and action — so a single prompt resolves into a precise outcome.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="footer">
+      <span>KorvixAI · Brand v1</span>
+      <span>© Korvix</span>
+    </div>
+  </div>
+</body>
+</html>

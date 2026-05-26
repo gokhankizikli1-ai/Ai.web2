@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 80 80" fill="none" role="img" aria-label="KorvixAI mark">
+  <defs>
+    <radialGradient id="kx-core" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="65%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#D8DCFF"/>
+    </radialGradient>
+    <linearGradient id="kx-stem" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.96"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="1"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Stem -->
+  <rect x="14" y="14" width="8" height="52" fill="url(#kx-stem)"/>
+
+  <!-- Upper arm -->
+  <path d="M34 40 L66 14" stroke="#FFFFFF" stroke-width="7" stroke-linecap="square"/>
+
+  <!-- Lower arm -->
+  <path d="M34 40 L66 66" stroke="#FFFFFF" stroke-width="7" stroke-linecap="square"/>
+
+  <!-- Core node (intelligence diamond, flush to stem, anchors the arms) -->
+  <polygon points="28,34 34,40 28,46 22,40" fill="url(#kx-core)"/>
+</svg>
