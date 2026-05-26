@@ -78,6 +78,7 @@ export default function OwnerModeChip() {
   // the second /v2/admin/status round trip.
   const authUser = useAuthStore((s) => s.user);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const isHydrating = useAuthStore((s) => s.isHydrating);
   const authSaysOwner = !!(isAuthenticated && authUser?.is_owner);
 
   const [unlockOpen, setUnlockOpen] = useState(false);
@@ -143,6 +144,12 @@ export default function OwnerModeChip() {
   //     chip the instant Google/email login succeeds, before the
   //     /v2/admin/status re-fetch finishes)
   const confirmedOwner = ownerMode.isOwner || authSaysOwner;
+  // During auth hydration we render NOTHING. Otherwise a fresh page
+  // load would briefly flash the chip in its locked-but-token-stored
+  // variant before the persisted user's is_owner is read in.
+  if (isHydrating) {
+    return null;
+  }
   const visible = confirmedOwner || hasStoredToken || devUnlock || urlBootstrap;
 
   // ── Unlocked: full "Owner Session Active" chip ────────────────────────

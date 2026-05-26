@@ -59,7 +59,14 @@ export default function Sidebar({
 }: SidebarProps) {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
-  const { isAuthenticated } = useAuthStore();
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  // While isHydrating is true, the footer renders neither the guest CTA
+  // nor the user card — just a thin skeleton. This kills the
+  // "flash of Guest User" the user reported on first paint when a
+  // valid session is already in localStorage. authStore.checkAuth (in
+  // App.tsx mount) flips isHydrating to false at the earliest
+  // definitive resolution.
+  const isHydrating = useAuthStore((s) => s.isHydrating);
   // Owner-token unlock also counts as "signed in" for footer UI
   // purposes — the project owner shouldn't see "Create Account /
   // Sign In" prompts when they've already unlocked owner mode via
@@ -309,11 +316,23 @@ export default function Sidebar({
         {/* ═── Footer ─══ */}
         <div className="shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
 
+          {/* While auth is still hydrating, render a thin skeleton in
+              place of the CTA / user card so we don't briefly flash
+              "Create Account" to a user who's actually signed in. */}
+          {isHydrating && (
+            <div className="px-3 py-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+              <div className="flex flex-col gap-1.5">
+                <div className="h-7 rounded-lg bg-white/[0.03] animate-pulse" />
+                <div className="h-7 rounded-lg bg-white/[0.02] animate-pulse" />
+              </div>
+            </div>
+          )}
+
           {/* Guest: Prominent auth CTA — also hidden when owner mode is
               active via OWNER_TOKEN (isOwner from useOwnerMode), since
               that's a legitimately-authenticated session even though
               isAuthenticated stays false. */}
-          {!sessionActive && (
+          {!isHydrating && !sessionActive && (
             <div className="px-3 py-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
               <div className="flex flex-col gap-1.5">
                 <button
@@ -336,9 +355,22 @@ export default function Sidebar({
             </div>
           )}
 
-          {/* User card */}
+          {/* User card — gated on !isHydrating so the dropdown doesn't
+              briefly render "Guest User / user@korvix.ai" while the
+              persisted session is being verified. Replaced by a
+              compact skeleton during hydration. */}
           <div className="px-3 py-2">
-            <UserAccountDropdown onOpenSettings={onOpenSettings} onOpenUpgrade={onOpenUpgrade} />
+            {isHydrating ? (
+              <div className="w-full flex items-center gap-2.5 rounded-xl px-3 py-2.5 border border-white/[0.03] bg-white/[0.015]">
+                <div className="h-7 w-7 rounded-lg bg-white/[0.04] animate-pulse shrink-0" />
+                <div className="flex-1 space-y-1">
+                  <div className="h-2.5 rounded bg-white/[0.04] animate-pulse w-2/3" />
+                  <div className="h-2 rounded bg-white/[0.025] animate-pulse w-1/3" />
+                </div>
+              </div>
+            ) : (
+              <UserAccountDropdown onOpenSettings={onOpenSettings} onOpenUpgrade={onOpenUpgrade} />
+            )}
           </div>
 
           {/* Upgrade */}

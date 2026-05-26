@@ -22,6 +22,19 @@ interface AuthState {
   user: AuthUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  /**
+   * True until the first auth resolution completes (either a successful
+   * `/auth/me` round-trip OR a definitive "no bearer token" fallback).
+   * Consumers gate their "guest vs signed-in" UI on this so the user
+   * doesn't briefly see "Sign In" / "Guest User" while the persisted
+   * session is being verified.
+   *
+   * Starts true on every fresh app load. Flips to false exactly once
+   * per app session at the end of checkAuth(). Subsequent login /
+   * logout transitions don't touch it — they're explicit user actions,
+   * not background hydration.
+   */
+  isHydrating: boolean;
   error: string | null;
 
   login: (email: string, password: string) => Promise<boolean>;
@@ -259,6 +272,7 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       isAuthenticated: false,
       isLoading: false,
+      isHydrating: true,
       error: null,
 
       login: async (email: string, password: string) => {
@@ -324,6 +338,11 @@ export const useAuthStore = create<AuthState>()(
         // The backend /auth/me validation runs in the background and only
         // fires if a bearer token actually exists. Without a token, this
         // function is a no-op — guest mode renders instantly.
+        //
+        // isHydrating contract: flipped to false EXACTLY ONCE, at the
+        // earliest definitive resolution. Consumers gate "Sign In" /
+        // "Guest User" UI on !isHydrating to avoid flashing the wrong
+        // state on first paint when a valid session exists in storage.
         const persisted = (() => {
           try { return localStorage.getItem('korvix-auth'); }
           catch { return null; }
@@ -332,9 +351,14 @@ export const useAuthStore = create<AuthState>()(
           try {
             const parsed = JSON.parse(persisted);
             if (parsed?.state?.user) {
-              set({ user: parsed.state.user, isAuthenticated: true, isLoading: false });
-              // Seed owner UI from cached user immediately so the chip
-              // can flip before /auth/me confirms.
+              // Cached user → flip isHydrating off IMMEDIATELY so the
+              // signed-in UI surfaces without waiting for /auth/me.
+              set({
+                user: parsed.state.user,
+                isAuthenticated: true,
+                isLoading: false,
+                isHydrating: false,
+              });
               notifyAuthChanged(parsed.state.user);
               // Background validation — only when a bearer is present.
               if (readToken()) {
@@ -356,16 +380,16 @@ export const useAuthStore = create<AuthState>()(
         // No persisted user AND no bearer ⇒ guest. apiMe() short-circuits
         // to null without a network call (see `if (!readToken()) return null`).
         if (!readToken()) {
-          set({ isLoading: false });
+          set({ isLoading: false, isHydrating: false });
           return;
         }
         set({ isLoading: true });
         const user = await apiMe();
         if (user) {
-          set({ user, isAuthenticated: true, isLoading: false });
+          set({ user, isAuthenticated: true, isLoading: false, isHydrating: false });
           notifyAuthChanged(user);
         } else {
-          set({ isLoading: false });
+          set({ isLoading: false, isHydrating: false });
         }
       },
 

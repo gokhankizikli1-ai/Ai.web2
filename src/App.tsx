@@ -1,4 +1,6 @@
+import { useEffect } from 'react';
 import { Routes, Route, useLocation, Navigate } from 'react-router';
+import { useAuthStore } from '@/stores/authStore';
 import LandingPage from './pages/LandingPage';
 import FeaturesPage from './pages/FeaturesPage';
 import UseCasesPage from './pages/UseCasesPage';
@@ -47,6 +49,17 @@ function AppLayout({ children }: { children: React.ReactNode }) {
   const isLanding = location.pathname === '/';
   const showBottomNav = !isLanding;
   const showParticles = !isLanding;
+
+  // Kick auth hydration exactly once on app boot. authStore's checkAuth
+  // reads the persisted session synchronously when present (no network),
+  // then validates the JWT against /auth/me in the background. Without
+  // this call, isHydrating stays true forever and consumers that gate
+  // on it (Sidebar guest CTA, OwnerModeChip, OwnerWelcomeToast) hide
+  // their state-dependent UI permanently. Single-fire — checkAuth
+  // dedupes via the persisted state path.
+  useEffect(() => {
+    useAuthStore.getState().checkAuth();
+  }, []);
 
   // overflow-x-hidden + max-w-full at the layout root so any rogue
   // wide child (a code block, a long URL, a fixed-width child) can
