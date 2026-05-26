@@ -305,6 +305,27 @@ export default function BuildInfoOverlay() {
                   />
                 )}
               </div>
+
+              {/* ── OAuth diagnostic ────────────────────────────────────
+                  The exact redirect_uri this build sends to Google. If
+                  Google returns `redirect_uri_mismatch`, this is the
+                  string that must be added VERBATIM to the OAuth 2.0
+                  Client's Authorized redirect URIs list. Copy button
+                  next to the value so you can paste it into the Google
+                  Console with one tap. */}
+              <div className="pt-2 mt-1 border-t border-white/[0.05]">
+                <div className="text-[9px] uppercase tracking-wider text-amber-300/60 mb-1">
+                  OAuth redirect_uri (this build)
+                </div>
+                <Row
+                  label="redirect_uri"
+                  value={`${window.location.origin}/login`}
+                  onCopy={() => copy(`${window.location.origin}/login`)}
+                />
+                <Row label="client_id" value={
+                  (import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim() || '—'
+                } />
+              </div>
               <div className="pt-1 flex items-center justify-between gap-2">
                 <button
                   onClick={fetchBackend}
