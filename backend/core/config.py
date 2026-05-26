@@ -92,6 +92,30 @@ class Config:
     # import time so flipping the flag is instant.
     ENABLE_MEMORY_PLANE: bool = os.getenv("ENABLE_MEMORY_PLANE", "false").strip().lower() == "true"
 
+    # ── Phase 7 — Job Queue & Async Execution ────────────────────────────
+    # Master kill-switch for the Job Queue (PROJECT_ROADMAP.md Phase 7).
+    # When false: /v2/jobs/* returns 503 envelopes; the client either
+    # no-ops (reads) or raises JobQueueDisabled (writes). Schema is
+    # still created at import time so flag flips are instant.
+    ENABLE_JOB_QUEUE: bool = os.getenv("ENABLE_JOB_QUEUE", "false").strip().lower() == "true"
+    # Execution backend:
+    #   inline    (default)  — in-process asyncio task pool (single-instance
+    #                          Railway-friendly; no Redis required)
+    #   celery               — reserved for Phase 14+; requires REDIS_URL +
+    #                          a separate `korvixai-workers` Railway service
+    #   disabled             — defensive double-gate; never executes
+    JOB_QUEUE_MODE: str = os.getenv("JOB_QUEUE_MODE", "inline").strip().lower()
+    # Concurrency cap for the inline runner — max number of jobs
+    # running in parallel on one API process.
+    JOB_QUEUE_INLINE_CONCURRENCY: int = int(os.getenv("JOB_QUEUE_INLINE_CONCURRENCY", "4"))
+    # Dedicated SQLite file for the jobs table — same isolation pattern
+    # as memory_plane.db / sessions.db. Override only for tests.
+    JOBS_DB_PATH: str = os.getenv("JOBS_DB_PATH", "jobs.db")
+    # Redis broker URL — Phase 14 dependency. Unused when
+    # JOB_QUEUE_MODE=inline; documented here for parity with the
+    # Railway deploy template.
+    REDIS_URL: str = os.getenv("REDIS_URL", "")
+
     # ── Phase 3 — JWT auth ───────────────────────────────────────────────
     # JWT_SECRET_KEY: HS256 signing key. In production this MUST be set
     # via Railway env vars (32+ random bytes, hex or base64). The

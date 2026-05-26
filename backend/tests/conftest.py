@@ -76,6 +76,43 @@ def tmp_sessions_db(tmp_path, monkeypatch):
 
 
 @pytest.fixture()
+def tmp_jobs_db(tmp_path, monkeypatch):
+    """Phase 7 — isolate jobs.db per test.
+
+    Points JOBS_DB_PATH at a tmp file, enables ENABLE_JOB_QUEUE,
+    resets the store's lazy-init flag so the schema is created in
+    the tmp file, and re-runs init(). Also resets the manager
+    singleton so each test gets a fresh InlineJobRunner with no
+    leftover in-flight tasks.
+    """
+    db_file = tmp_path / "jobs-test.db"
+    monkeypatch.setenv("JOBS_DB_PATH", str(db_file))
+    monkeypatch.setenv("ENABLE_JOB_QUEUE", "true")
+    monkeypatch.setenv("JOB_QUEUE_MODE", "inline")
+    # IMPORTANT: import the MODULE objects via importlib so we get
+    # `_reset_for_tests` (module-level), not the same-named singleton
+    # instance exported via `from .manager import manager`.
+    import importlib
+    jobs_store = importlib.import_module("backend.services.jobs.store")
+    jobs_manager = importlib.import_module("backend.services.jobs.manager")
+    jobs_events = importlib.import_module("backend.services.jobs.events")
+    jobs_registry = importlib.import_module("backend.services.jobs.registry")
+    jobs_kinds = importlib.import_module("backend.services.jobs.kinds")
+    monkeypatch.setattr(jobs_store, "_INITIALIZED", False, raising=False)
+    jobs_store.init()
+    jobs_manager._reset_for_tests()
+    jobs_events._reset_for_tests()
+    # Defensive registry restore: prior tests may have called
+    # `_registry_reset()` (e.g. test_sync_handler_rejected). Ensure
+    # built-in kinds are present so every tmp_jobs_db test starts
+    # from a known-good state. Reloading re-runs the @korvix_task
+    # decorators in kinds.py.
+    if not jobs_registry.is_registered("echo"):
+        importlib.reload(jobs_kinds)
+    yield db_file
+
+
+@pytest.fixture()
 def tmp_memory_plane_db(tmp_path, monkeypatch):
     """Phase 6 — isolate memory_plane.db per test.
 
