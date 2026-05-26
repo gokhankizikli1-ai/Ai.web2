@@ -172,9 +172,22 @@ export function useJobs(enabled: boolean = true): UseJobsResult {
  * Convert /v2/jobs rows into the AIActivity shape AIActivityFeed
  * already knows how to render. Memoise externally — this is a pure
  * pluggable formatter.
+ *
+ * Status mapping is constrained by the shared AIActivity type
+ * (src/types/index.ts): only 'active' | 'completed' | 'queued' are
+ * allowed. Backend job statuses map as follows:
+ *   queued / running / retrying  → 'active'   (live progress)
+ *   succeeded                    → 'completed' (terminal good)
+ *   failed / cancelled           → 'queued'   (terminal but not
+ *                                              successful — neutral
+ *                                              clock icon; the row's
+ *                                              `detail` carries
+ *                                              "Cancelled" or the
+ *                                              error message so the
+ *                                              user sees what happened)
  */
 export function jobsToActivities(jobs: JobSummary[]): Array<{
-  id: string; status: 'active' | 'completed' | 'idle';
+  id: string; status: 'active' | 'completed' | 'queued';
   message: string; detail?: string; progress?: number; timestamp: Date;
 }> {
   return jobs.map((j) => {
@@ -182,7 +195,7 @@ export function jobsToActivities(jobs: JobSummary[]): Array<{
     const isCompleted = j.status === 'succeeded';
     return {
       id:        j.id,
-      status:    isActive ? 'active' as const : isCompleted ? 'completed' as const : 'idle' as const,
+      status:    isActive ? 'active' as const : isCompleted ? 'completed' as const : 'queued' as const,
       message:   prettyKind(j.kind),
       detail:    j.progress_label || statusDetail(j),
       progress:  isActive ? Math.max(0, Math.min(100, j.progress)) : undefined,
@@ -213,7 +226,7 @@ function statusDetail(j: JobSummary): string | undefined {
  */
 export function useJobActivities(enabled: boolean = true): {
   activities: Array<{
-    id: string; status: 'active' | 'completed' | 'idle';
+    id: string; status: 'active' | 'completed' | 'queued';
     message: string; detail?: string; progress?: number; timestamp: Date;
   }>;
   activeCount: number;
