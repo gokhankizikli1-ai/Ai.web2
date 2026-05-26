@@ -31,6 +31,7 @@ import BottomNav from './components/BottomNav';
 import FloatingParticles from './components/FloatingParticles';
 import PageTransition from './components/PageTransition';
 import ProtectedRoute from './components/ProtectedRoute';
+import BuildInfoOverlay from './components/BuildInfoOverlay';
 
 function AnimatedRoute({ children }: { children: React.ReactNode }) {
   return (
@@ -58,6 +59,11 @@ function AppLayout({ children }: { children: React.ReactNode }) {
       {children}
       {showBottomNav && <BottomNav />}
       {showParticles && <FloatingParticles />}
+      {/* BuildInfoOverlay renders NOTHING for normal users. Visible
+          only to owners or with ?debug=1 / localStorage korvix_debug=1.
+          Shows FE+BE commit SHAs side by side so you can immediately
+          see which deploy is actually live and whether they match. */}
+      <BuildInfoOverlay />
     </div>
   );
 }
