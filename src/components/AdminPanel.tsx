@@ -151,27 +151,32 @@ export default function AdminPanel({ ownerMode, onClose }: AdminPanelProps) {
         onClick={(e) => e.stopPropagation()}
         className="z-[80] rounded-2xl border border-amber-500/20 bg-[#0b0b12]/95 shadow-2xl shadow-amber-500/5 overflow-hidden flex flex-col"
         style={{
-          // EXACT user spec — anchored via inset+margin:auto for true
-          // centring, with a HARD min-height so the inner flex-1 body
-          // can never collapse to a thin line.
+          // ── Anchored BELOW the top navbar (96px down from viewport top).
+          // Per user spec — opening upward from the Owner Session button
+          // was clipping the modal under the iPad Safari URL bar /
+          // bottom-of-navbar. Top-anchored positioning guarantees the
+          // panel header (and close X) is always visible inside the
+          // viewport, regardless of viewport height.
           //
-          // The previous "definite top/bottom" approach worked in the
-          // CSS spec sense, but in practice when the inner flex chain
-          // contains `flex-1 min-h-0`, browsers can still resolve the
-          // flex item to 0 when the parent's effective height isn't
-          // observable until layout. Adding min-height makes the
-          // parent's height definite from the first paint, so flex-1
-          // always has something to grow into.
+          // translateX(-50%) is horizontal centring ONLY — does NOT
+          // move the modal vertically off-screen (the earlier rule
+          // about "no transforms that push modal above viewport"
+          // referred specifically to translateY).
           //
-          // Inner content (the tab body) gets its own min-height
-          // below so it visibly fills the panel even when the active
-          // tab's content is short.
+          // min-height kept from PR #110 so the inner flex flex-1
+          // body never collapses to a thin horizontal line.
+          //
+          // max-height = 100dvh - 120px → leaves 96px above (the
+          // navbar offset) and 24px below as breathing room. On
+          // iPad portrait (1024 height): max ≈ 904px. The panel
+          // sizes to its content up to that cap; content scrolls
+          // inside via overflow-y on the body.
           position:  'fixed',
-          inset:     '24px',
-          margin:    'auto',
-          width:     'min(720px, calc(100vw - 48px))',
-          height:    'auto',
-          maxHeight: 'calc(100dvh - 48px)',
+          top:       '96px',
+          left:      '50%',
+          transform: 'translateX(-50%)',
+          width:     'min(720px, calc(100vw - 32px))',
+          maxHeight: 'calc(100dvh - 120px)',
           minHeight: '360px',
         }}
         role="dialog"
