@@ -78,6 +78,19 @@ class Config:
     # ── Database ─────────────────────────────────────────────────────────
     DB_PATH: str = os.getenv("DB_PATH", "memory.db")
     AUTH_DB_PATH: str = os.getenv("AUTH_DB_PATH", "auth.db")
+    # Phase 6 — Memory Plane SQLite file. Kept separate from memory.db /
+    # sessions.db / auth.db so each phase has a clean rollback path
+    # (rm memory_plane.db forgets the whole subsystem; nothing else
+    # moves).
+    MEMORY_PLANE_DB_PATH: str = os.getenv("MEMORY_PLANE_DB_PATH", "memory_plane.db")
+
+    # ── Phase 6 — Memory Plane ───────────────────────────────────────────
+    # Master kill-switch for the Memory Plane (PROJECT_ROADMAP.md Phase 6).
+    # When false: every public client method is a no-op and /v2/memory/*
+    # returns a 503 envelope. Default false so production behaviour stays
+    # byte-identical until flipped. Storage schema is still created at
+    # import time so flipping the flag is instant.
+    ENABLE_MEMORY_PLANE: bool = os.getenv("ENABLE_MEMORY_PLANE", "false").strip().lower() == "true"
 
     # ── Phase 3 — JWT auth ───────────────────────────────────────────────
     # JWT_SECRET_KEY: HS256 signing key. In production this MUST be set

@@ -181,6 +181,7 @@ def _build_full_app():
         "backend.routes.v2_orchestrate",  # Phase 3.4 — /v2/orchestrate (gated by ENABLE_ORCHESTRATOR)
         "backend.routes.v2_events",    # Phase 3.5 — /v2/events/stream (gated by ENABLE_REALTIME_EVENTS)
         "backend.routes.market",       # Phase 8e — /market/quote/{symbol} (gated by ENABLE_MARKET_QUOTE)
+        "backend.routes.v2_memory",    # Phase 6 — /v2/memory/* Memory Plane (gated by ENABLE_MEMORY_PLANE)
     ]:
         try:
             _app.include_router(importlib.import_module(_mod).router)
