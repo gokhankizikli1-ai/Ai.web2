@@ -1,11 +1,12 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { Sparkles, Pin, PinOff, Copy, Check, ThumbsUp, ThumbsDown, RotateCcw } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import ResponseActions from './ResponseActions';
+import TypingIndicator from './TypingIndicator';
 import { useToast } from '@/hooks/useToast';
 import type { Message } from '@/types';
 
@@ -219,6 +220,30 @@ export default function MessageBubble({
               transition={{ duration: 0.5, repeat: Infinity }}
             />
           )}
+
+          {/* Phase 7 polish — rich "Thinking… / Analyzing… / Building…"
+              indicator while the response is still streaming. Placed
+              INSIDE the bubble so it visually attaches to the active
+              assistant message (no floating row below). Wrapped in
+              AnimatePresence so the exit is smooth when isGenerating
+              flips false — pairs with the settle-scroll effect in
+              ChatView so the user doesn't drift when the row unmounts. */}
+          <AnimatePresence>
+            {isGenerating && (
+              <motion.div
+                key="inline-thinking"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                className="overflow-hidden"
+              >
+                <div className="pt-2 -mb-1">
+                  <TypingIndicator compact />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* Action row — shows on hover, hidden during generation */}
