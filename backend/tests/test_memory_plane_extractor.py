@@ -49,6 +49,36 @@ def test_extract_preference():
     prefs = [c for c in out if c.kind == "preference"]
     assert len(prefs) >= 1
     assert "short and direct" in prefs[0].content.lower()
+    # Preferences must be HIGH importance so they reliably reach the
+    # top of the retrieval context block.
+    assert prefs[0].importance >= IMPORTANCE_HIGH
+
+
+def test_extract_turkish_preference_tercih_ediyorum():
+    """The exact production-report scenario: bare Turkish preference
+    statement must auto-extract."""
+    out = extract("Ben kısa ve teknik cevapları tercih ediyorum.")
+    prefs = [c for c in out if c.kind == "preference"]
+    assert len(prefs) >= 1
+    # Saved content must contain the user's actual words.
+    assert "teknik" in prefs[0].content.lower()
+    assert "kısa" in prefs[0].content.lower()
+    # Marked as high-importance so retrieval prioritizes it.
+    assert prefs[0].importance >= IMPORTANCE_HIGH
+
+
+def test_extract_turkish_preference_tercih_ederim():
+    out = extract("Kısa ve net yanıtlar tercih ederim")
+    prefs = [c for c in out if c.kind == "preference"]
+    assert len(prefs) >= 1
+    assert "net yanıtlar" in prefs[0].content.lower() or "kısa" in prefs[0].content.lower()
+
+
+def test_extract_turkish_want_istiyorum():
+    out = extract("Kısa cevaplar istiyorum")
+    prefs = [c for c in out if c.kind == "preference"]
+    assert len(prefs) >= 1
+    assert "kısa cevap" in prefs[0].content.lower()
 
 
 def test_extract_decision_high_importance():

@@ -564,9 +564,23 @@ export function useChat() {
 
         const response = await fetch(STREAM_URL, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: (() => {
+            // Phase 6 — include the JWT (when present) so the backend
+            // can resolve the user's Memory Plane namespace. Without
+            // this header the streaming route falls back to body
+            // user_id, which is also sent below.
+            const h: Record<string, string> = { 'Content-Type': 'application/json' };
+            try {
+              const tok = localStorage.getItem('korvix_access_token');
+              if (tok) h['Authorization'] = `Bearer ${tok}`;
+            } catch { /* ignore — localStorage may be disabled */ }
+            return h;
+          })(),
           body: JSON.stringify({
             messages: streamMessages,
+            // Phase 6 — same `user_id` namespace as /chat so memories
+            // saved via either path are visible to the other.
+            user_id: userIdRef.current,
             ...(requestMode ? { mode: requestMode } : {}),
           }),
         });
