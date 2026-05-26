@@ -101,7 +101,30 @@ export default function BuildInfoOverlay() {
   const authUser = useAuthStore((s) => s.user);
   const authIsAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
-  const [expanded, setExpanded]   = useState(false);
+  // Three visibility states (more nuanced than the previous boolean
+  // collapsed/expanded). Stored in sessionStorage so re-renders /
+  // route changes don't reset.
+  //   minimized → tiny round chip with just a status dot. Default in
+  //               production; never blocks chat input.
+  //   collapsed → small bar with fe/be commit + env. The previous
+  //               "default" state — still one tap to expand.
+  //   expanded  → full panel with the diagnostic table.
+  type OverlayView = 'minimized' | 'collapsed' | 'expanded';
+  const [view, setView] = useState<OverlayView>(() => {
+    try {
+      const saved = sessionStorage.getItem('korvix_build_info_view');
+      if (saved === 'minimized' || saved === 'collapsed' || saved === 'expanded') return saved;
+    } catch { /* ignore */ }
+    // Default by environment: production = minimized so the overlay
+    // doesn't clutter the UI; preview/dev = collapsed so the SHA is
+    // visible at a glance during deploy testing.
+    const env = typeof __BUILD_ENV__ !== 'undefined' ? __BUILD_ENV__ : 'development';
+    return env === 'production' || env === 'vercel-prod' ? 'minimized' : 'collapsed';
+  });
+  useEffect(() => {
+    try { sessionStorage.setItem('korvix_build_info_view', view); }
+    catch { /* ignore */ }
+  }, [view]);
   const [dismissed, setDismissed] = useState<boolean>(isSessionDismissed());
   const [backend, setBackend]     = useState<BackendInfo>({});
 
@@ -197,13 +220,45 @@ export default function BuildInfoOverlay() {
     setDismissed(true);
   };
 
+  // ── Minimized state: just a tiny status dot that never overlaps
+  //    chat input or sidebar content. Clicking expands to the
+  //    commit-info bar.
+  if (view === 'minimized') {
+    return (
+      <motion.button
+        initial={{ opacity: 0, scale: 0.7 }}
+        animate={{ opacity: 0.7, scale: 1 }}
+        whileHover={{ opacity: 1, scale: 1.05 }}
+        transition={{ duration: 0.18 }}
+        onClick={() => setView('collapsed')}
+        // Pinned to the LEFT of the right edge so the chat input's
+        // right-side icons (send, attach, etc.) stay free. Above the
+        // bottom-nav safe area on mobile.
+        className={`fixed right-3 z-[55] h-7 w-7 rounded-full backdrop-blur-md shadow-lg flex items-center justify-center pointer-events-auto ${
+          commitMismatch
+            ? 'bg-rose-500/30 border border-rose-500/50'
+            : 'bg-[#0b0b12]/85 border border-white/[0.08]'
+        }`}
+        style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 5rem)' }}
+        title={commitMismatch ? 'Build mismatch — click for details' : 'Build info'}
+        aria-label="Build info"
+        data-testid="build-info-minimized"
+      >
+        <GitCommit className={`h-3 w-3 ${commitMismatch ? 'text-rose-200' : 'text-cyan-300/70'}`} />
+      </motion.button>
+    );
+  }
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 10 }}
-      className="fixed bottom-3 sm:bottom-3 right-3 z-[55] max-w-[calc(100vw-1.5rem)] pointer-events-auto"
-      style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 4.5rem)' }}
+      // Right-aligned, lifted above the mobile bottom-nav + chat input.
+      // 5rem (80px) bottom buys clearance over the iOS dynamic island
+      // / safe-area-inset + the ~64px bottom-nav.
+      className="fixed right-3 z-[55] max-w-[calc(100vw-1.5rem)] pointer-events-auto"
+      style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 5rem)' }}
       data-testid="build-info-overlay"
     >
       <div
@@ -213,7 +268,7 @@ export default function BuildInfoOverlay() {
             : 'border-white/[0.08] bg-[#0b0b12]/85'
         }`}
       >
-        {/* Collapsed bar — always visible when overlay is shown */}
+        {/* Collapsed bar — fe/be commit + env + controls. */}
         <div className="flex items-center gap-2 px-2 py-1">
           <GitCommit className={`h-3 w-3 ${commitMismatch ? 'text-rose-300' : 'text-cyan-300/60'}`} />
           <span className={`${commitMismatch ? 'text-rose-200' : 'text-slate-300'}`}>
@@ -230,11 +285,19 @@ export default function BuildInfoOverlay() {
           <span className="text-slate-700">·</span>
           <span className="text-slate-500 hidden sm:inline">{fe.env}</span>
           <button
-            onClick={() => setExpanded((v) => !v)}
+            onClick={() => setView(view === 'expanded' ? 'collapsed' : 'expanded')}
             className="ml-1 h-4 w-4 flex items-center justify-center text-slate-500 hover:text-white"
-            title={expanded ? 'Collapse' : 'Expand'}
+            title={view === 'expanded' ? 'Collapse' : 'Expand'}
           >
-            {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />}
+            {view === 'expanded' ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />}
+          </button>
+          <button
+            onClick={() => setView('minimized')}
+            className="h-4 w-4 flex items-center justify-center text-slate-500 hover:text-cyan-300"
+            title="Minimize"
+            aria-label="Minimize"
+          >
+            <span className="block h-0.5 w-2.5 bg-current rounded" />
           </button>
           <button
             onClick={handleDismiss}
@@ -247,7 +310,7 @@ export default function BuildInfoOverlay() {
 
         {/* Expanded panel */}
         <AnimatePresence>
-          {expanded && (
+          {view === 'expanded' && (
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}

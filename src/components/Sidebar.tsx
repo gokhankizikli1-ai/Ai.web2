@@ -13,6 +13,7 @@ import {
 import type { ChatSession, ChatFolder } from '@/types';
 import { useAuthStore } from '@/stores/authStore';
 import { useLanguageStore } from '@/stores/languageStore';
+import { useOwnerMode } from '@/hooks/useOwnerMode';
 import DeleteConfirmModal from './DeleteConfirmModal';
 import UserAccountDropdown from './UserAccountDropdown';
 
@@ -59,6 +60,13 @@ export default function Sidebar({
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const { isAuthenticated } = useAuthStore();
+  // Owner-token unlock also counts as "signed in" for footer UI
+  // purposes — the project owner shouldn't see "Create Account /
+  // Sign In" prompts when they've already unlocked owner mode via
+  // the shared secret. isAuthenticated alone misses that path
+  // (OWNER_TOKEN doesn't go through /v2/auth/*).
+  const { isOwner } = useOwnerMode();
+  const sessionActive = isAuthenticated || isOwner;
   const { t } = useLanguageStore();
   const navigate = useNavigate();
 
@@ -301,8 +309,11 @@ export default function Sidebar({
         {/* ═── Footer ─══ */}
         <div className="shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
 
-          {/* Guest: Prominent auth CTA */}
-          {!isAuthenticated && (
+          {/* Guest: Prominent auth CTA — also hidden when owner mode is
+              active via OWNER_TOKEN (isOwner from useOwnerMode), since
+              that's a legitimately-authenticated session even though
+              isAuthenticated stays false. */}
+          {!sessionActive && (
             <div className="px-3 py-2" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
               <div className="flex flex-col gap-1.5">
                 <button

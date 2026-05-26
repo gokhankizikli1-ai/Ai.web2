@@ -32,6 +32,7 @@ import FloatingParticles from './components/FloatingParticles';
 import PageTransition from './components/PageTransition';
 import ProtectedRoute from './components/ProtectedRoute';
 import BuildInfoOverlay from './components/BuildInfoOverlay';
+import OwnerWelcomeToast from './components/OwnerWelcomeToast';
 
 function AnimatedRoute({ children }: { children: React.ReactNode }) {
   return (
@@ -64,6 +65,10 @@ function AppLayout({ children }: { children: React.ReactNode }) {
           Shows FE+BE commit SHAs side by side so you can immediately
           see which deploy is actually live and whether they match. */}
       <BuildInfoOverlay />
+      {/* OwnerWelcomeToast — one-shot premium greeting that fires
+          when an owner session activates. Renders NOTHING for
+          non-owners or after the per-session show flag is set. */}
+      <OwnerWelcomeToast />
     </div>
   );
 }
