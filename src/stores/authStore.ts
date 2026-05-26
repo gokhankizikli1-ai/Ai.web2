@@ -301,7 +301,21 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true });
         await apiLogout();
         set({ user: null, isAuthenticated: false, isLoading: false, error: null });
-        try { localStorage.removeItem('korvix-auth'); } catch { /* ignore */ }
+        // Wipe EVERY auth- / owner-adjacent piece of local state.
+        // Critical for the "shared device" + "account swap" cases:
+        // the previous owner's OWNER_TOKEN must not silently grant
+        // admin to whoever signs in next.
+        const keysToWipe = [
+          'korvix-auth',                   // zustand persist
+          'korvix_access_token',           // JWT (cleared by apiLogout too — belt + suspenders)
+          'korvix_owner_token',            // shared-secret unlock
+          'korvix_owner_welcome_shown',    // welcome-toast guard
+          'korvix_oauth_response',         // any in-flight redirect callback
+        ];
+        for (const k of keysToWipe) {
+          try { localStorage.removeItem(k); } catch { /* ignore */ }
+          try { sessionStorage.removeItem(k); } catch { /* ignore */ }
+        }
         notifyAuthChanged(null);
       },
 
@@ -379,7 +393,36 @@ export const useAuthStore = create<AuthState>()(
  *     shared by all subscribers; previously it was 4-N parallel
  *     fetches.
  */
+// Track the last email we notified about. If the next login arrives
+// with a DIFFERENT email, scrub owner-related local state — that
+// covers the "previous owner left OWNER_TOKEN in localStorage; new
+// account is now signing in on the same browser" case.
+let _lastNotifiedEmail: string | null = null;
+
+function _clearStaleOwnerArtifactsOnAccountChange(newEmail: string | null): void {
+  const prev = _lastNotifiedEmail;
+  _lastNotifiedEmail = newEmail;
+  if (prev !== null && prev !== newEmail) {
+    // Email changed (incl. owner → other-account or other-account →
+    // null on logout). The new identity does NOT inherit the previous
+    // identity's owner-token unlock.
+    for (const k of ['korvix_owner_token', 'korvix_owner_welcome_shown']) {
+      try { localStorage.removeItem(k); }
+      catch { /* ignore */ }
+      try { sessionStorage.removeItem(k); }
+      catch { /* ignore */ }
+    }
+    // eslint-disable-next-line no-console
+    console.log(
+      '%c[korvixai-auth] Account change detected — owner artifacts cleared',
+      'color:#fb923c;font-weight:bold;',
+      { prev: prev || '(none)', next: newEmail || '(logged out)' },
+    );
+  }
+}
+
 function notifyAuthChanged(user?: AuthUser | null): void {
+  _clearStaleOwnerArtifactsOnAccountChange(user?.email || null);
   try {
     // Lazy import keeps this module a pure store at import time —
     // helps Vite tree-shake when an entry doesn't need the owner UI.
