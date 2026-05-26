@@ -11,8 +11,10 @@ import { useAuthStore } from '@/stores/authStore';
 /* ─── Google Identity Services (GIS) type stubs ─────────────────────────
  *
  * The /gsi/client script in index.html populates window.google.accounts.id.
- * We only need three calls + the credential callback shape — typing them
- * here is cheaper than pulling in @types/gapi.client.identity. */
+ * We only need three calls + the credential callback shape + the
+ * One-Tap notification surface so we can detect why a prompt didn't
+ * display (popup blocked, ITP, third-party-cookie suppression, …)
+ * and surface a precise error to the user. */
 interface GoogleCredentialResponse {
   credential: string;       // ID token (JWT) we POST to /auth/google
   select_by?: string;
@@ -24,13 +26,23 @@ interface GoogleIdConfig {
   ux_mode?: 'popup' | 'redirect';
   auto_select?: boolean;
 }
+/** Subset of the PromptMomentNotification API.
+ *  Docs: https://developers.google.com/identity/gsi/web/reference/js-reference#PromptMomentNotification */
+interface GoogleNotification {
+  isNotDisplayed: () => boolean;
+  getNotDisplayedReason: () => string;        // browser_not_supported | invalid_client | missing_client_id | opt_out_or_no_session | secure_http_required | suppressed_by_user | unregistered_origin | unknown_reason
+  isSkippedMoment: () => boolean;
+  getSkippedReason: () => string;             // auto_cancel | user_cancel | tap_outside | issuing_failed
+  isDismissedMoment: () => boolean;
+  getDismissedReason: () => string;           // credential_returned | cancel_called | flow_restarted
+}
 declare global {
   interface Window {
     google?: {
       accounts: {
         id: {
           initialize: (cfg: GoogleIdConfig) => void;
-          prompt: (notification?: (n: unknown) => void) => void;
+          prompt: (notification?: (n: GoogleNotification) => void) => void;
           renderButton: (el: HTMLElement, opts: Record<string, unknown>) => void;
           disableAutoSelect: () => void;
           cancel: () => void;
@@ -41,6 +53,118 @@ declare global {
 }
 
 const GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim();
+
+/* ─── Reason codes surfaced to the user / debug log ─────────────────────
+ *
+ * Stable strings so we can grep production logs (when the operator
+ * opens /?debug=1) and know exactly which layer failed. The names
+ * match what the user asked for in the spec. */
+type GoogleAuthReason =
+  | 'gis_not_loaded'
+  | 'popup_blocked'
+  | 'popup_skipped'
+  | 'backend_auth_url_missing'
+  | 'callback_timeout'
+  | 'redirect_state_mismatch'
+  | 'redirect_no_token'
+  | 'gis_error';
+
+function googleAuthMessage(reason: GoogleAuthReason, extra?: string): string {
+  const detail = extra ? `: ${extra}` : '';
+  switch (reason) {
+    case 'gis_not_loaded':
+      return `Google sign-in script is not available${detail}. Click "Use redirect instead" below.`;
+    case 'popup_blocked':
+      return `Google popup was blocked by the browser${detail}. Click "Use redirect instead" below.`;
+    case 'popup_skipped':
+      return `Google popup closed before sign-in completed${detail}.`;
+    case 'backend_auth_url_missing':
+      return 'Google sign-in is not configured. Set VITE_GOOGLE_CLIENT_ID on Vercel (Production scope) and redeploy.';
+    case 'callback_timeout':
+      return `Google did not respond within 2 seconds${detail}. Click "Use redirect instead" below.`;
+    case 'redirect_state_mismatch':
+      return 'OAuth state mismatch — possible CSRF or stale tab. Try again.';
+    case 'redirect_no_token':
+      return `Google redirect returned no id_token${detail}. Try again.`;
+    case 'gis_error':
+      return `Google Identity Services error${detail}.`;
+  }
+}
+
+/** Returns true on Safari (desktop or mobile) and on every iOS device.
+ *  Safari's Intelligent Tracking Prevention silently blocks the third-
+ *  party-cookie iframe that One Tap relies on, which is why
+ *  gis.prompt() can never call its callback on iPad — the iframe
+ *  loads, ITP kills its session, and the GIS internal state hangs.
+ *  We side-step the whole problem by using the standard OAuth 2.0
+ *  redirect implicit flow on these platforms. */
+function isSafariOrIOS(): boolean {
+  try {
+    const ua = navigator.userAgent || '';
+    const isSafari = /^((?!chrome|android|crios|fxios|edgios).)*safari/i.test(ua);
+    const isIOS = /iPad|iPhone|iPod/.test(ua) ||
+      // iPadOS 13+ reports as MacIntel but with touch support.
+      (navigator.platform === 'MacIntel' && (navigator.maxTouchPoints || 0) > 1);
+    return isSafari || isIOS;
+  } catch { return false; }
+}
+
+/** Generate a 32-char URL-safe random string for OAuth state + nonce.
+ *  Falls back to Math.random when crypto is unavailable (very old
+ *  browsers) — still better than empty, even if not cryptographically
+ *  strong. */
+function randomString(): string {
+  try {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      return crypto.randomUUID().replace(/-/g, '');
+    }
+    if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+      const buf = new Uint8Array(16);
+      crypto.getRandomValues(buf);
+      return Array.from(buf, (b) => b.toString(16).padStart(2, '0')).join('');
+    }
+  } catch { /* ignore */ }
+  return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+}
+
+const OAUTH_STATE_KEY = 'korvix_oauth_state';
+const OAUTH_NONCE_KEY = 'korvix_oauth_nonce';
+
+/** Kick the user off to Google's OAuth endpoint with implicit
+ *  response_type=id_token. Google redirects back to
+ *  `redirect_uri#id_token=<jwt>&state=<state>` which we read on mount.
+ *  This bypasses GIS entirely — works on every browser including
+ *  iPad Safari with ITP fully on. */
+function startGoogleRedirect(clientId: string): void {
+  const state = randomString();
+  const nonce = randomString();
+  try {
+    sessionStorage.setItem(OAUTH_STATE_KEY, state);
+    sessionStorage.setItem(OAUTH_NONCE_KEY, nonce);
+  } catch { /* private mode — proceed anyway; we'll degrade state check */ }
+
+  const redirectUri = window.location.origin + window.location.pathname;
+  const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+  url.searchParams.set('client_id', clientId);
+  url.searchParams.set('redirect_uri', redirectUri);
+  url.searchParams.set('response_type', 'id_token');
+  url.searchParams.set('scope', 'openid email profile');
+  url.searchParams.set('nonce', nonce);
+  url.searchParams.set('state', state);
+  // Force the account chooser so a stale auto-login session can't
+  // strand the user on the wrong Google account.
+  url.searchParams.set('prompt', 'select_account');
+  window.location.href = url.toString();
+}
+
+function debugLog(reason: GoogleAuthReason, extra?: string): void {
+  try {
+    if (localStorage.getItem('korvix_debug') === '1') {
+      // eslint-disable-next-line no-console
+      console.warn('[GoogleAuth]', reason, extra || '');
+    }
+  } catch { /* ignore */ }
+}
 
 /* ─── Google Icon SVG ─── */
 function GoogleIcon({ className }: { className?: string }) {
@@ -138,26 +262,40 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
     navigate(from);
   };
 
-  /* ─── Real Google OAuth via Google Identity Services ──────────────────
+  /* ─── Google OAuth — Safari/iPad-safe with timeout + redirect fallback
    *
-   * Backend `/auth/google` accepts `{ id_token }`, verifies the token
-   * against Google's tokeninfo endpoint AND against GOOGLE_CLIENT_ID
-   * (audience check), then issues our own JWT.
+   * Two execution paths:
    *
-   * Performance note: GIS.initialize() is called ONCE in a useEffect
-   * below, NOT on every button click. Previously every click ran
-   * initialize() (which re-registers the callback + re-validates the
-   * client_id), which was perceived as a long "Opening Google…"
-   * pause. With one-time init + a stable callback ref, the click
-   * handler is just a `gis.prompt()` invocation — opens the chooser
-   * within ~10ms instead of waiting on init.
-   */
-  // Stable ref to the latest credential handler so the GIS init
-  // callback (set once, on mount) always sees the current closure.
+   *   POPUP  (Chrome/Firefox/Edge on desktop)
+   *     gis.initialize() once on mount → click runs gis.prompt() with a
+   *     2-second watchdog. If neither the credential callback nor the
+   *     PromptMomentNotification fires in time, the watchdog resets the
+   *     button and surfaces a precise reason code.
+   *
+   *   REDIRECT  (Safari + iPad + every browser when popup is blocked)
+   *     Skip GIS entirely. Build the standard OAuth 2.0 implicit-flow
+   *     URL (response_type=id_token) and navigate the tab to it. Google
+   *     bounces back with `#id_token=…&state=…`; we read the fragment
+   *     on mount and POST to /auth/google like the popup callback.
+   *
+   * The redirect path works on every browser including iPad Safari
+   * with ITP fully on, where the GIS One-Tap iframe is silently
+   * killed and gis.prompt() never calls its callback.
+   *
+   * Failure modes — surfaced as `googleReason`, mapped to user text
+   * by googleAuthMessage():
+   *   gis_not_loaded            GIS script never reached the page
+   *   popup_blocked             Browser blocked the One-Tap iframe
+   *   popup_skipped             User dismissed the popup
+   *   backend_auth_url_missing  VITE_GOOGLE_CLIENT_ID empty
+   *   callback_timeout          2s watchdog fired
+   *   redirect_state_mismatch   CSRF guard caught a bad state param
+   *   redirect_no_token         Google redirected back with no token
+   *   gis_error                 initialize() threw */
   const credentialHandlerRef = useRef<(resp: GoogleCredentialResponse) => void>(() => {});
   credentialHandlerRef.current = async (resp: GoogleCredentialResponse) => {
     if (!resp?.credential) {
-      setLocalError('Google sign-in returned no credential. Try again.');
+      setGoogleReason('popup_skipped');
       setGoogleBusy(false);
       return;
     }
@@ -170,14 +308,40 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
   };
 
   const [gisReady, setGisReady] = useState(false);
+  // gisFailed only true when the polling exhausted without finding the
+  // script — used to flip the button label to "Google unavailable, retry".
+  const [gisFailed, setGisFailed] = useState(false);
+  const [googleReason, setGoogleReason] = useState<GoogleAuthReason | null>(null);
+  const [googleReasonExtra, setGoogleReasonExtra] = useState<string>('');
+  // Watchdog timer ref so we can cancel from the credential callback.
+  const watchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  function setGoogleErr(reason: GoogleAuthReason, extra?: string): void {
+    setGoogleReason(reason);
+    setGoogleReasonExtra(extra || '');
+    debugLog(reason, extra);
+  }
+  function clearGoogleErr(): void {
+    setGoogleReason(null);
+    setGoogleReasonExtra('');
+  }
+
+  // ── GIS one-time init. Non-blocking: the rest of the page renders
+  // immediately; the Google button is enabled only once gisReady flips.
+  // On Safari/iOS the popup path is unreliable anyway, so we don't even
+  // wait for gisReady before allowing redirect.
   useEffect(() => {
     if (!GOOGLE_CLIENT_ID) return;
-    // Poll a few times until the async script in index.html lands. The
-    // total max wait is ~1.5s; in practice the script is usually ready
-    // by the time the user looks at the form (50-200ms).
+    if (isSafariOrIOS()) {
+      // Skip GIS init entirely on Safari/iOS — the script's One Tap
+      // iframe is killed by ITP, polling for it wastes 1.5s on every
+      // mount. Redirect flow doesn't need GIS at all.
+      return;
+    }
     let attempts = 0;
+    let cancelled = false;
     const tick = (): void => {
+      if (cancelled) return;
       const gis = window.google?.accounts?.id;
       if (gis) {
         try {
@@ -189,43 +353,150 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
           });
           setGisReady(true);
         } catch (e) {
-          if (e instanceof Error) setLocalError(e.message);
+          setGoogleErr('gis_error', e instanceof Error ? e.message : String(e));
+          setGisFailed(true);
         }
         return;
       }
       attempts += 1;
+      // 30 × 50ms = 1.5s maximum wait
       if (attempts < 30) {
         setTimeout(tick, 50);
+      } else {
+        setGisFailed(true);
+        debugLog('gis_not_loaded', `polled ${attempts} times`);
       }
     };
     tick();
+    return () => { cancelled = true; };
   }, []);
 
+  // ── Redirect-callback handler. Runs on every mount and reads the URL
+  // fragment for #id_token=… (Google's response when we use the redirect
+  // flow). The fragment is cleaned from history immediately so a reload
+  // doesn't replay the token.
+  useEffect(() => {
+    const hash = window.location.hash.replace(/^#/, '');
+    if (!hash) return;
+    const params = new URLSearchParams(hash);
+    const idToken = params.get('id_token');
+    if (!idToken) return;
+    const incomingState = params.get('state') || '';
+
+    // CSRF guard — the state we wrote before redirect must match.
+    let expectedState = '';
+    try { expectedState = sessionStorage.getItem(OAUTH_STATE_KEY) || ''; }
+    catch { /* private mode — degraded check */ }
+
+    // Strip the fragment so a reload doesn't re-process the token.
+    try { window.history.replaceState(null, '', window.location.pathname + window.location.search); }
+    catch { /* ignore */ }
+
+    if (expectedState && incomingState !== expectedState) {
+      setGoogleErr('redirect_state_mismatch', `got ${incomingState.slice(0, 8)}…`);
+      return;
+    }
+    try {
+      sessionStorage.removeItem(OAUTH_STATE_KEY);
+      sessionStorage.removeItem(OAUTH_NONCE_KEY);
+    } catch { /* ignore */ }
+
+    setGoogleBusy(true);
+    loginWithGoogle(idToken).then((ok) => {
+      setGoogleBusy(false);
+      if (ok) {
+        const from = (location.state as { from?: string } | null)?.from || '/chat';
+        navigate(from, { replace: true });
+      } else {
+        setGoogleErr('redirect_no_token', 'backend rejected the id_token');
+      }
+    });
+    // Effect intentionally only runs once on mount — id_token consumption
+    // is one-shot and the URL hash is wiped above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Click handler. Popup-first on supported browsers; redirect-first
+  // on Safari/iPad; manual "Use redirect instead" button covers the
+  // popup-blocked fallback case.
   const handleGoogle = useCallback(() => {
-    setLocalError(null);
+    clearGoogleErr();
     clearError();
     if (!GOOGLE_CLIENT_ID) {
-      setLocalError(
-        'Google sign-in is not configured. Set VITE_GOOGLE_CLIENT_ID on Vercel ' +
-        '(Production scope) and redeploy. The backend /auth/google route is ready.',
-      );
+      setGoogleErr('backend_auth_url_missing');
       return;
+    }
+    // Safari + iPad: skip GIS, go directly to redirect.
+    if (isSafariOrIOS()) {
+      setGoogleBusy(true);
+      startGoogleRedirect(GOOGLE_CLIENT_ID);
+      return; // page unloads
     }
     const gis = window.google?.accounts?.id;
     if (!gis || !gisReady) {
-      setLocalError('Google sign-in is still loading. Try again in a moment.');
+      setGoogleErr('gis_not_loaded');
       return;
     }
     setGoogleBusy(true);
+    // 2s watchdog: if neither the credential callback nor the
+    // notification callback resolves in time, we assume popup was
+    // blocked and reset the button.
+    let resolved = false;
+    const finish = (reason?: GoogleAuthReason, extra?: string): void => {
+      if (resolved) return;
+      resolved = true;
+      if (watchdogRef.current) {
+        clearTimeout(watchdogRef.current);
+        watchdogRef.current = null;
+      }
+      if (reason) {
+        setGoogleErr(reason, extra);
+        setGoogleBusy(false);
+      }
+    };
+    watchdogRef.current = setTimeout(() => finish('callback_timeout'), 2000);
+
+    // The credential callback path (success) resolves us via the
+    // credentialHandlerRef. The notification callback path (popup
+    // failure) resolves us here. Either way the watchdog gets cleared.
+    const originalHandler = credentialHandlerRef.current;
+    credentialHandlerRef.current = (resp) => {
+      finish();
+      return originalHandler(resp);
+    };
+
     try {
-      gis.prompt();
+      gis.prompt((notification: GoogleNotification) => {
+        if (notification.isNotDisplayed?.()) {
+          finish('popup_blocked', notification.getNotDisplayedReason?.() || 'unknown');
+        } else if (notification.isSkippedMoment?.()) {
+          const r = notification.getSkippedReason?.() || 'unknown';
+          // user_cancel is benign — they closed the prompt themselves
+          finish(r === 'user_cancel' ? undefined : 'popup_skipped', r);
+          if (r === 'user_cancel') setGoogleBusy(false);
+        }
+      });
     } catch (e) {
-      setGoogleBusy(false);
-      setLocalError(
-        e instanceof Error ? e.message : 'Could not start Google sign-in.',
-      );
+      finish('gis_error', e instanceof Error ? e.message : String(e));
     }
   }, [clearError, gisReady]);
+
+  // ── Manual redirect fallback (button shown after any popup failure)
+  const handleGoogleRedirect = useCallback(() => {
+    clearGoogleErr();
+    clearError();
+    if (!GOOGLE_CLIENT_ID) {
+      setGoogleErr('backend_auth_url_missing');
+      return;
+    }
+    setGoogleBusy(true);
+    startGoogleRedirect(GOOGLE_CLIENT_ID);
+  }, [clearError]);
+
+  // Stable derived label so the button text reflects the actual state.
+  let googleLabel = 'Continue with Google';
+  if (googleBusy) googleLabel = 'Opening Google…';
+  else if (gisFailed && !isSafariOrIOS()) googleLabel = 'Google unavailable — retry';
 
   const handleApple = useCallback(() => {
     setLocalError(
@@ -294,8 +565,35 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
               data-testid="auth-google-button"
             >
               <GoogleIcon className="h-4 w-4" />
-              {googleBusy ? 'Opening Google…' : 'Continue with Google'}
+              {googleLabel}
             </button>
+            {/* Manual redirect fallback. Appears only after the popup
+                flow failed (popup_blocked / callback_timeout / gis_not_loaded)
+                so we don't clutter the form on the happy path. On
+                Safari/iPad the main button already does the redirect
+                flow, so showing this would be redundant. */}
+            {googleReason && !isSafariOrIOS() && (
+              <button
+                onClick={handleGoogleRedirect}
+                disabled={googleBusy}
+                className="w-full flex items-center justify-center gap-2.5 h-9 rounded-xl border border-amber-500/25 bg-amber-500/[0.05] hover:bg-amber-500/[0.10] transition-all text-[11px] text-amber-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                data-testid="auth-google-redirect-button"
+              >
+                <GoogleIcon className="h-3.5 w-3.5" />
+                Use redirect instead
+              </button>
+            )}
+            {/* Reason-specific helper text shown directly below the
+                Google buttons so the user doesn't have to scan the
+                global error region for an explanation. */}
+            {googleReason && (
+              <p
+                className="text-[10px] text-rose-400/80 leading-snug"
+                data-testid="auth-google-reason"
+              >
+                {googleAuthMessage(googleReason, googleReasonExtra)}
+              </p>
+            )}
             <button
               onClick={handleApple}
               className="w-full flex items-center justify-center gap-2.5 h-10 rounded-xl border border-border bg-muted/30 hover:bg-muted hover:border-border/80 transition-all text-[12px] text-foreground"
