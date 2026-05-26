@@ -31,6 +31,9 @@ import GuestBadge from '@/components/GuestBadge';
 // surface for confirmed owners (no-op render for non-owners).
 import OwnerModeChip from '@/components/OwnerModeChip';
 import OwnerSessionIndicator from '@/components/OwnerSessionIndicator';
+// Owner-greeting effect inside ChatDashboard reads these on mount.
+import { useOwnerMode } from '@/hooks/useOwnerMode';
+import { useAuthStore } from '@/stores/authStore';
 
 import {
   Settings, PanelLeftOpen, Command as CmdIcon,
@@ -130,12 +133,53 @@ export default function ChatDashboard() {
   const {
     activeSession, activeSessionId, error, isLoading,
     aiMode, searchQuery, filteredSessions, pinnedMessages, inputText, currentTab,
-    createNewChat, selectSession, deleteSession, sendMessage, retry, togglePin,
+    createNewChat, selectSession, deleteSession, insertSystemMessage,
+    sendMessage, retry, togglePin,
     setAiMode, setSearchQuery, setInputText, switchTab,
   } = useChat();
 
   const { open: cmdOpen, setOpen: setCmdOpen } = useCommandPalette();
   const { toasts, addToast, removeToast } = useToast();
+
+  // ── Owner chat greeting ─────────────────────────────────────────────
+  // When an owner session activates AND the user is on a chat surface,
+  // drop a one-time assistant greeting into the active session. Gated
+  // on:
+  //   - !isHydrating  (don't fire before auth resolves)
+  //   - isOwner       (confirmed by backend /v2/admin/status)
+  //   - sessionStorage flag (once-per-session, not once-per-render)
+  // The greeting is fixed Turkish text per spec; falls back to a
+  // neutral English variant when no display name is known.
+  const ownerGreetingFiredRef = useRef<boolean>(false);
+  const ownerModeForGreeting = useOwnerMode();
+  const ownerAuthUser = useAuthStore((s) => s.user);
+  const ownerIsHydrating = useAuthStore((s) => s.isHydrating);
+  useEffect(() => {
+    if (ownerIsHydrating) return;
+    if (!ownerModeForGreeting.isOwner) return;
+    if (ownerGreetingFiredRef.current) return;
+    // sessionStorage guard — prevents replay on every internal route
+    // change or component remount during the same browser session.
+    try {
+      if (sessionStorage.getItem('korvix_owner_greeting_shown') === '1') {
+        ownerGreetingFiredRef.current = true; // catch up
+        return;
+      }
+    } catch { /* ignore */ }
+    // Need an active session to insert into. Skip silently if there
+    // isn't one yet (will retry when activeSession populates).
+    if (!activeSession?.id) return;
+
+    const first = (ownerAuthUser?.name || ownerAuthUser?.email?.split('@')[0] || '').trim().split(/\s+/)[0];
+    const greeting = first
+      ? `Hoş geldiniz ${first} Bey. KorvixAI Owner Session aktif. Bugün hangi stratejik konuda ilerleyelim?`
+      : 'Welcome back. KorvixAI Owner Session is active. Where would you like to focus today?';
+
+    insertSystemMessage(greeting);
+    ownerGreetingFiredRef.current = true;
+    try { sessionStorage.setItem('korvix_owner_greeting_shown', '1'); }
+    catch { /* ignore */ }
+  }, [ownerIsHydrating, ownerModeForGreeting.isOwner, activeSession?.id, ownerAuthUser, insertSystemMessage]);
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false);

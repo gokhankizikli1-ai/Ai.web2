@@ -52,6 +52,28 @@ function buildGreeting(displayName?: string): string {
   return `Hoş geldiniz ${first} Bey. Owner Session aktif edildi.`;
 }
 
+/** Routes the toast is FORBIDDEN to render on, no matter what the
+ *  parent decides. Defence-in-depth alongside the App.tsx
+ *  `!isPublicRoute && <OwnerWelcomeToast />` gate. */
+const FORBIDDEN_PATH_PREFIXES = [
+  '/',          // landing — exact match handled separately below
+  '/features',
+  '/use-cases',
+  '/pricing',
+  '/about',
+  '/login',
+  '/signup',
+  '/blog',
+  '/careers',
+  '/privacy',
+  '/terms',
+];
+
+function isPathPublic(pathname: string): boolean {
+  if (pathname === '/') return true;
+  return FORBIDDEN_PATH_PREFIXES.some((p) => p !== '/' && pathname.startsWith(p));
+}
+
 export default function OwnerWelcomeToast() {
   const { isOwner } = useOwnerMode();
   const authUser = useAuthStore((s) => s.user);
@@ -73,6 +95,18 @@ export default function OwnerWelcomeToast() {
   useEffect(() => {
     if (isHydrating) return;     // wait for definitive auth resolution
     if (!isOwner) return;
+    // Defence-in-depth route guard. Spec: "Owner toast must only
+    // render inside authenticated app shell". App.tsx already gates
+    // this component on !isPublicRoute, but a regression there could
+    // silently flash the toast on the landing page where a casual
+    // visitor would see it.
+    try {
+      if (isPathPublic(window.location.pathname)) return;
+    } catch { /* ignore — let the App.tsx gate win */ }
+    // Also require an authenticated user OR a known display name so
+    // we never show "Hoş geldiniz Bey" with no name on a half-broken
+    // session state.
+    if (!authUser?.email && !authUser?.name) return;
     if (firedRef.current) return;
     firedRef.current = true;
     markShown();

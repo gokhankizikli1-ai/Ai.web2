@@ -128,12 +128,25 @@ export default function AdminPanel({ ownerMode, onClose }: AdminPanelProps) {
         //   - On <md viewports the tabs nav collapses to a top scroll
         //     bar instead of a left column, so the content area is
         //     usable on narrow widths
-        // Per security/UX spec: max-w 720px and max-h 70vh on every
-        // viewport. Keeps the panel feeling like an overlay, never
-        // takes over the whole screen, and the inner tab content
-        // owns its own overflow-y scroll (see below). min-h keeps it
-        // usable on short viewports (e.g. landscape phone).
-        className="relative w-full max-w-[720px] h-[70dvh] max-h-[70vh] min-h-[420px] rounded-2xl border border-amber-500/20 bg-[#0b0b12]/95 shadow-2xl shadow-amber-500/5 overflow-hidden flex flex-col"
+        // Sizing per spec (literally):
+        //   width:      min(720px, calc(100vw - 32px))
+        //   max-height: min(70vh, 620px)
+        //
+        // Implemented via inline style because Tailwind doesn't
+        // natively express `min()` of mixed units. NOTE: NO fixed
+        // height — the panel sizes to its content up to the ceiling,
+        // so on iPad portrait it's typically ~520px tall, not the
+        // 70dvh that overflowed in the previous build.
+        //
+        // The 420px min-height kept earlier was the actual cause of
+        // overflow on iPad landscape (812px wide × 600px tall — 70vh
+        // = 420px = the min, so the panel forced itself to 420px AND
+        // ALSO wanted more). Removed. Inner body has overflow-y:auto.
+        className="relative rounded-2xl border border-amber-500/20 bg-[#0b0b12]/95 shadow-2xl shadow-amber-500/5 overflow-hidden flex flex-col"
+        style={{
+          width:     'min(720px, calc(100vw - 32px))',
+          maxHeight: 'min(70vh, 620px)',
+        }}
         role="dialog"
         aria-modal="true"
         aria-label="Owner panel"
