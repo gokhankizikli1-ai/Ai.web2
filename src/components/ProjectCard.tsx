@@ -2,7 +2,7 @@ import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router';
 import {
   Bot, Clock, TrendingUp, ShoppingBag, Rocket,
-  ChevronRight, Activity, FolderOpen,
+  ChevronRight, Activity, FolderOpen, Trash2,
 } from 'lucide-react';
 import type { Project } from '@/types/projects';
 
@@ -27,9 +27,17 @@ const categoryColor: Record<string, string> = {
 interface ProjectCardProps {
   project: Project;
   index: number;
+  /**
+   * Optional delete handler. When provided, a trash icon appears on
+   * hover/focus that calls this callback (stopping propagation so the
+   * card's own onClick → navigate doesn't fire). The parent owns the
+   * confirmation modal + the actual delete (deleteProject from
+   * projectStore).
+   */
+  onDelete?: (project: Project) => void;
 }
 
-export default function ProjectCard({ project, index }: ProjectCardProps) {
+export default function ProjectCard({ project, index, onDelete }: ProjectCardProps) {
   const navigate = useNavigate();
   const status = statusConfig[project.status];
   const IconComp = iconMap[project.icon] || FolderOpen;
@@ -134,6 +142,26 @@ export default function ProjectCard({ project, index }: ProjectCardProps) {
             background: `radial-gradient(circle at 50% 0%, rgba(255,255,255,0.02) 0%, transparent 70%)`,
           }}
         />
+
+        {/* Delete button — always visible at 40% opacity so touch
+            users (iPad/mobile) can find it without hover. Bumps to
+            full opacity on hover/focus. stopPropagation keeps the
+            card's navigate-on-click from firing when the trash is
+            tapped. */}
+        {onDelete && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete(project);
+            }}
+            aria-label={`Delete project ${project.name}`}
+            data-testid={`project-delete-${project.id}`}
+            className="absolute top-2 right-2 h-8 w-8 flex items-center justify-center rounded-md text-white/30 opacity-40 group-hover:opacity-100 focus:opacity-100 hover:text-rose-400 hover:bg-rose-500/[0.08] transition-all"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
     </motion.div>
   );

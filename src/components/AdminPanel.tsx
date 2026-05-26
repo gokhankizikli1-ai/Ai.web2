@@ -77,13 +77,39 @@ async function fetchAdmin<T = unknown>(path: string): Promise<T | null> {
 export default function AdminPanel({ ownerMode, onClose }: AdminPanelProps) {
   const [activeTab, setActiveTab] = useState<TabId>('overview');
 
+  // ESC key + body-scroll-lock + back-button safety. Three small behaviours
+  // grouped here because each addresses a way users got stuck on
+  // mobile/iPad:
+  //   - ESC: keyboard / external keyboard users
+  //   - touchmove on backdrop is not consumed by stopPropagation in
+  //     the inner div, so the page underneath could scroll OR the
+  //     modal could feel "trapped". Locking body scroll while open
+  //     fixes both directions.
+  //   - On iOS, an active modal that doesn't preserve scroll
+  //     position causes the URL bar to collapse, hiding the close
+  //     button. Restoring overflow on unmount fixes that on close.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-md flex items-center justify-center p-4"
+      // Tap-anywhere-outside closes. The inner card's
+      // stopPropagation keeps clicks inside from triggering it.
+      className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-md flex items-center justify-center p-2 sm:p-4"
       onClick={onClose}
+      role="presentation"
+      data-testid="admin-panel-overlay"
     >
       <motion.div
         initial={{ opacity: 0, scale: 0.96, y: 8 }}
@@ -91,56 +117,77 @@ export default function AdminPanel({ ownerMode, onClose }: AdminPanelProps) {
         exit={{ opacity: 0, scale: 0.96, y: 8 }}
         transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-5xl h-[80vh] rounded-2xl border border-amber-500/20 bg-[#0b0b12]/95 shadow-2xl shadow-amber-500/5 overflow-hidden flex flex-col"
+        // Responsive sizing:
+        //   - dvh (dynamic viewport height) accounts for iOS Safari's
+        //     collapsing URL bar — h-[80vh] left the bottom of the
+        //     panel under the URL bar at certain scroll positions
+        //   - On <md viewports the tabs nav collapses to a top scroll
+        //     bar instead of a left column, so the content area is
+        //     usable on narrow widths
+        className="relative w-full max-w-5xl h-[92dvh] sm:h-[88dvh] md:h-[85dvh] rounded-2xl border border-amber-500/20 bg-[#0b0b12]/95 shadow-2xl shadow-amber-500/5 overflow-hidden flex flex-col"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Owner panel"
+        data-testid="admin-panel-card"
       >
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.05] bg-gradient-to-r from-amber-500/[0.04] to-transparent">
-          <div className="flex items-center gap-2.5">
-            <div className="h-7 w-7 flex items-center justify-center rounded-lg bg-amber-500/[0.1] border border-amber-500/20">
+        {/* Header — close button always reachable (sticky to top, larger
+            tap target on touch devices). */}
+        <div className="shrink-0 flex items-center justify-between px-4 sm:px-5 py-3 sm:py-3.5 border-b border-white/[0.05] bg-gradient-to-r from-amber-500/[0.04] to-transparent">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="h-7 w-7 flex items-center justify-center rounded-lg bg-amber-500/[0.1] border border-amber-500/20 shrink-0">
               <ShieldCheck className="h-3.5 w-3.5 text-amber-300" />
             </div>
-            <div>
-              <div className="text-[13px] font-semibold text-white tracking-tight">Owner Panel</div>
-              <div className="text-[10px] text-amber-300/60">
+            <div className="min-w-0">
+              <div className="text-[13px] font-semibold text-white tracking-tight truncate">Owner Panel</div>
+              <div className="text-[10px] text-amber-300/60 truncate">
                 {ownerMode.capabilities.length} capabilities unlocked
               </div>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="h-7 w-7 flex items-center justify-center rounded-md text-slate-500 hover:text-white hover:bg-white/[0.05] transition-all"
-            aria-label="Close admin panel"
+            // 44×44px touch target on mobile, smaller on desktop —
+            // matches Apple HIG / WCAG 2.5.5 minimum touch target.
+            className="h-11 w-11 sm:h-8 sm:w-8 flex items-center justify-center rounded-md text-slate-400 hover:text-white hover:bg-white/[0.05] active:bg-white/[0.08] transition-all shrink-0"
+            aria-label="Close owner panel"
+            data-testid="admin-panel-close"
           >
-            <X className="h-3.5 w-3.5" />
+            <X className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
           </button>
         </div>
 
-        {/* Body — tabs left, content right */}
-        <div className="flex flex-1 min-h-0">
+        {/* Body — tabs+content. Stacks vertically on small viewports
+            (tabs become a horizontal scroll strip across the top). */}
+        <div className="flex flex-1 min-h-0 flex-col md:flex-row">
           {/* Tabs */}
-          <nav className="w-44 shrink-0 border-r border-white/[0.04] p-2 space-y-0.5 overflow-y-auto">
-            {TABS.map((t) => {
-              const Icon = t.icon;
-              const active = activeTab === t.id;
-              return (
-                <button
-                  key={t.id}
-                  onClick={() => setActiveTab(t.id)}
-                  className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[11px] transition-all ${
-                    active
-                      ? 'bg-amber-500/[0.08] text-amber-200 border border-amber-500/15'
-                      : 'text-slate-500 hover:text-slate-300 hover:bg-white/[0.03] border border-transparent'
-                  }`}
-                >
-                  <Icon className="h-3 w-3" />
-                  <span className="flex-1 text-left">{t.label}</span>
-                </button>
-              );
-            })}
+          <nav
+            className="shrink-0 border-b md:border-b-0 md:border-r border-white/[0.04] p-2 md:w-44 overflow-x-auto md:overflow-x-visible md:overflow-y-auto scrollbar-none"
+            data-testid="admin-panel-tabs"
+          >
+            <div className="flex md:flex-col gap-0.5">
+              {TABS.map((t) => {
+                const Icon = t.icon;
+                const active = activeTab === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => setActiveTab(t.id)}
+                    className={`shrink-0 md:w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[11px] transition-all whitespace-nowrap ${
+                      active
+                        ? 'bg-amber-500/[0.08] text-amber-200 border border-amber-500/15'
+                        : 'text-slate-500 hover:text-slate-300 hover:bg-white/[0.03] border border-transparent'
+                    }`}
+                  >
+                    <Icon className="h-3 w-3" />
+                    <span className="md:flex-1 md:text-left">{t.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </nav>
 
           {/* Tab content */}
-          <div className="flex-1 min-w-0 overflow-y-auto p-5 text-[12px] text-slate-300">
+          <div className="flex-1 min-w-0 overflow-y-auto p-4 sm:p-5 text-[12px] text-slate-300 [-webkit-overflow-scrolling:touch]">
             {activeTab === 'overview'    && <OverviewTab />}
             {activeTab === 'session'     && <SessionTab ownerMode={ownerMode} />}
             {activeTab === 'agents'      && <AgentsTab />}
