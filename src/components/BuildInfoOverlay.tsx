@@ -109,8 +109,11 @@ export default function BuildInfoOverlay() {
     // Try /v2/admin/build-info first (the new endpoint, returns
     // commit + env + admin-mode flag in one shot). Fall back to
     // /v2/health which always exists.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6_000);
     try {
       const r = await fetch(`${API_BASE}/v2/admin/build-info`, {
+        signal: controller.signal,
         headers: (() => {
           const h: Record<string, string> = { 'Content-Type': 'application/json' };
           try {
@@ -133,9 +136,10 @@ export default function BuildInfoOverlay() {
         return;
       }
     } catch { /* fall through */ }
-    // Fallback — /v2/health (always available)
+    // Fallback — /v2/health (always available). Reuse the same abort
+    // controller so a stalled backend can't hang the overlay forever.
     try {
-      const r = await fetch(`${API_BASE}/v2/health`);
+      const r = await fetch(`${API_BASE}/v2/health`, { signal: controller.signal });
       if (r.ok) {
         const body = await r.json();
         const data = body?.data ?? {};
@@ -144,7 +148,6 @@ export default function BuildInfoOverlay() {
           commit_sha:  meta.commit_sha || 'unknown',
           environment: data.environment || 'unknown',
           version:     data.version || '',
-          // /v2/health doesn't return admin_mode flag for security; leave undefined.
           fetched_at:  new Date().toISOString(),
         });
         return;
@@ -152,13 +155,24 @@ export default function BuildInfoOverlay() {
       setBackend({ error: `status ${r.status}` });
     } catch (e) {
       setBackend({ error: e instanceof Error ? e.message : 'fetch failed' });
+    } finally {
+      clearTimeout(timer);
     }
   }, []);
 
-  useEffect(() => { fetchBackend(); }, [fetchBackend]);
-
-  // Visibility gate — owner OR explicit debug flag.
+  // Visibility gate — owner OR explicit debug flag. Computed BEFORE
+  // the network effect so non-owners skip the /v2/admin/build-info
+  // round-trip entirely. This was the biggest single startup-cost
+  // regression in the perf report: every page load was firing the
+  // build-info request for the 100% of users who would never see
+  // the overlay.
   const shouldShow = !dismissed && (isOwner || isUrlDebug() || isLocalDebug());
+
+  useEffect(() => {
+    if (!shouldShow) return;
+    fetchBackend();
+  }, [shouldShow, fetchBackend]);
+
   if (!shouldShow) return null;
 
   const fe = {

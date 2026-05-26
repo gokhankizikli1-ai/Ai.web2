@@ -209,8 +209,13 @@ async function apiMe(): Promise<AuthUser | null> {
   // with the previous "guest by default" behaviour without burning a
   // request that's guaranteed to 401.
   if (!readToken()) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 6_000);
   try {
-    const res = await fetch(apiUrl('/auth/me'), { headers: authHeaders() });
+    const res = await fetch(apiUrl('/auth/me'), {
+      headers: authHeaders(),
+      signal: controller.signal,
+    });
     if (res.status === 401) {
       // Token expired or invalidated — clear it so we don't keep
       // sending a dead credential.
@@ -222,6 +227,8 @@ async function apiMe(): Promise<AuthUser | null> {
     return mapBackendUser(body.user);
   } catch {
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -242,7 +249,7 @@ export const useAuthStore = create<AuthState>()(
         const { user, error } = await apiLogin(email, password);
         if (user) {
           set({ user, isAuthenticated: true, isLoading: false, error: null });
-          notifyAuthChanged();
+          notifyAuthChanged(user);
           return true;
         }
         set({ isLoading: false, error: error || 'Invalid email or password' });
@@ -254,7 +261,7 @@ export const useAuthStore = create<AuthState>()(
         const { user, error } = await apiSignup(email, password, name);
         if (user) {
           set({ user, isAuthenticated: true, isLoading: false, error: null });
-          notifyAuthChanged();
+          notifyAuthChanged(user);
           return true;
         }
         set({ isLoading: false, error: error || 'Could not create account. Try a different email.' });
@@ -266,7 +273,7 @@ export const useAuthStore = create<AuthState>()(
         const { user, error } = await apiGoogle(idToken);
         if (user) {
           set({ user, isAuthenticated: true, isLoading: false, error: null });
-          notifyAuthChanged();
+          notifyAuthChanged(user);
           return true;
         }
         set({ isLoading: false, error: error || 'Google sign-in failed.' });
@@ -278,12 +285,14 @@ export const useAuthStore = create<AuthState>()(
         await apiLogout();
         set({ user: null, isAuthenticated: false, isLoading: false, error: null });
         try { localStorage.removeItem('korvix-auth'); } catch { /* ignore */ }
-        notifyAuthChanged();
+        notifyAuthChanged(null);
       },
 
       checkAuth: async () => {
-        set({ isLoading: true });
-        // Fast path: persisted user state surfaces immediately.
+        // FAST PATH: render-blocking work is just the localStorage read.
+        // The backend /auth/me validation runs in the background and only
+        // fires if a bearer token actually exists. Without a token, this
+        // function is a no-op — guest mode renders instantly.
         const persisted = (() => {
           try { return localStorage.getItem('korvix-auth'); }
           catch { return null; }
@@ -293,28 +302,37 @@ export const useAuthStore = create<AuthState>()(
             const parsed = JSON.parse(persisted);
             if (parsed?.state?.user) {
               set({ user: parsed.state.user, isAuthenticated: true, isLoading: false });
-              // Validate with backend in background. If the bearer is
-              // valid the response may carry fresher data (e.g. updated
-              // is_owner after Railway env change); merge it in.
-              apiMe().then((fresh) => {
-                if (fresh) {
-                  set({ user: fresh, isAuthenticated: true });
-                  notifyAuthChanged();
-                } else if (!readToken()) {
-                  // Token was cleared by apiMe() (401) — sign out.
-                  set({ user: null, isAuthenticated: false });
-                  try { localStorage.removeItem('korvix-auth'); } catch { /* ignore */ }
-                  notifyAuthChanged();
-                }
-              });
+              // Seed owner UI from cached user immediately so the chip
+              // can flip before /auth/me confirms.
+              notifyAuthChanged(parsed.state.user);
+              // Background validation — only when a bearer is present.
+              if (readToken()) {
+                apiMe().then((fresh) => {
+                  if (fresh) {
+                    set({ user: fresh, isAuthenticated: true });
+                    notifyAuthChanged(fresh);
+                  } else if (!readToken()) {
+                    set({ user: null, isAuthenticated: false });
+                    try { localStorage.removeItem('korvix-auth'); } catch { /* ignore */ }
+                    notifyAuthChanged(null);
+                  }
+                });
+              }
               return;
             }
           } catch { /* ignore */ }
         }
+        // No persisted user AND no bearer ⇒ guest. apiMe() short-circuits
+        // to null without a network call (see `if (!readToken()) return null`).
+        if (!readToken()) {
+          set({ isLoading: false });
+          return;
+        }
+        set({ isLoading: true });
         const user = await apiMe();
         if (user) {
           set({ user, isAuthenticated: true, isLoading: false });
-          notifyAuthChanged();
+          notifyAuthChanged(user);
         } else {
           set({ isLoading: false });
         }
@@ -331,11 +349,27 @@ export const useAuthStore = create<AuthState>()(
 
 /* ─── Cross-component refresh signal ──────────────────────────────────────
  *
- * useOwnerMode listens for `korvix:owner-refresh` to re-fetch the admin
- * status (so owner UI flips immediately after a Google login where the
- * new account matches OWNER_EMAIL). Auth changes dispatch the same
- * event so every subscriber re-evaluates without a page reload. */
-function notifyAuthChanged(): void {
+ * Login / logout / signup all call notifyAuthChanged() to keep the
+ * owner UI in lockstep with the auth state. Two effects:
+ *
+ *  1. seedOwnerFromLogin() — pushes the login response's is_owner
+ *     flag straight into the useOwnerMode module cache so every
+ *     subscriber re-renders with the correct chip state in ~1ms,
+ *     without waiting for the /v2/admin/status round-trip.
+ *  2. korvix:owner-refresh window event — fired AFTER the seed so
+ *     useOwnerMode also kicks a real backend confirmation (resets
+ *     the cache TTL). With the singleton, this is now ONE fetch
+ *     shared by all subscribers; previously it was 4-N parallel
+ *     fetches.
+ */
+function notifyAuthChanged(user?: AuthUser | null): void {
+  try {
+    // Lazy import keeps this module a pure store at import time —
+    // helps Vite tree-shake when an entry doesn't need the owner UI.
+    import('@/hooks/useOwnerMode').then((mod) => {
+      mod.seedOwnerFromLogin(user ?? null);
+    }).catch(() => { /* ignore */ });
+  } catch { /* ignore */ }
   try { window.dispatchEvent(new CustomEvent('korvix:owner-refresh')); }
   catch { /* ignore */ }
 }
