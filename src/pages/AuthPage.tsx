@@ -67,6 +67,7 @@ type GoogleAuthReason =
   | 'callback_timeout'
   | 'redirect_state_mismatch'
   | 'redirect_no_token'
+  | 'redirect_uri_mismatch'
   | 'gis_error';
 
 function googleAuthMessage(reason: GoogleAuthReason, extra?: string): string {
@@ -84,6 +85,11 @@ function googleAuthMessage(reason: GoogleAuthReason, extra?: string): string {
       return `Google did not respond within 2 seconds${detail}. Click "Use redirect instead" below.`;
     case 'redirect_state_mismatch':
       return 'OAuth state mismatch — possible CSRF or stale tab. Try again.';
+    case 'redirect_uri_mismatch':
+      // The `extra` already contains the exact value Google saw, with
+      // the literal "add this to Google Console" call to action. No
+      // need to re-state the prefix — keep the message itself short.
+      return extra || 'Google rejected the redirect_uri. Authorize it in Google Cloud Console.';
     case 'redirect_no_token':
       return `Google redirect returned no id_token${detail}. Try again.`;
     case 'gis_error':
@@ -130,6 +136,31 @@ function randomString(): string {
 const OAUTH_STATE_KEY = 'korvix_oauth_state';
 const OAUTH_NONCE_KEY = 'korvix_oauth_nonce';
 
+/**
+ * Build the EXACT redirect_uri string we send to Google.
+ *
+ * Pinned to `${origin}/login` regardless of which auth page the click
+ * came from. Reasons:
+ *
+ *   - Google compares redirect_uri byte-for-byte against the
+ *     "Authorized redirect URIs" list. Different paths (/login vs
+ *     /signup) would each need to be added separately.
+ *   - The on-mount redirect-callback handler runs on /login (the
+ *     route AuthPage owns), so anchoring there ensures Google's
+ *     callback lands on the page that consumes the id_token.
+ *   - origin (scheme + host + port) is taken verbatim from
+ *     window.location so localhost/preview/prod all work without
+ *     env-var configuration. The list of REAL hosts must be
+ *     enumerated in Google Console — this function does NOT
+ *     guess; it returns whatever the browser says.
+ *
+ * No trailing slash, no query string, no fragment — Google's match
+ * is strict.
+ */
+export function googleRedirectUri(): string {
+  return `${window.location.origin}/login`;
+}
+
 /** Kick the user off to Google's OAuth endpoint with implicit
  *  response_type=id_token. Google redirects back to
  *  `redirect_uri#id_token=<jwt>&state=<state>` which we read on mount.
@@ -143,7 +174,7 @@ function startGoogleRedirect(clientId: string): void {
     sessionStorage.setItem(OAUTH_NONCE_KEY, nonce);
   } catch { /* private mode — proceed anyway; we'll degrade state check */ }
 
-  const redirectUri = window.location.origin + window.location.pathname;
+  const redirectUri = googleRedirectUri();
   const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
   url.searchParams.set('client_id', clientId);
   url.searchParams.set('redirect_uri', redirectUri);
@@ -372,13 +403,42 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
   }, []);
 
   // ── Redirect-callback handler. Runs on every mount and reads the URL
-  // fragment for #id_token=… (Google's response when we use the redirect
-  // flow). The fragment is cleaned from history immediately so a reload
-  // doesn't replay the token.
+  // fragment for either Google's success response (`#id_token=…`) OR
+  // Google's error response (`#error=redirect_uri_mismatch&...`). Both
+  // get cleaned from history immediately so a reload doesn't replay
+  // the result.
   useEffect(() => {
     const hash = window.location.hash.replace(/^#/, '');
     if (!hash) return;
     const params = new URLSearchParams(hash);
+
+    // ── Error path: Google rejected the request server-side
+    //    (redirect_uri_mismatch, invalid_client, access_denied, …)
+    //    These come back in the fragment as `#error=...&error_description=...`.
+    //    Surface them through the existing reason-code system so the
+    //    user sees a precise message instead of a blank /login page.
+    const errCode = params.get('error');
+    if (errCode) {
+      const errDesc = params.get('error_description') || '';
+      try { window.history.replaceState(null, '', window.location.pathname + window.location.search); }
+      catch { /* ignore */ }
+      // redirect_uri_mismatch deserves a dedicated reason — the fix is
+      // ops (add the URL to Google Console), not a retry.
+      if (errCode === 'redirect_uri_mismatch') {
+        setGoogleErr(
+          'redirect_uri_mismatch',
+          `Sent redirect_uri="${googleRedirectUri()}". Add this exact value to Google Cloud Console → OAuth 2.0 Client → Authorized redirect URIs.`,
+        );
+      } else {
+        setGoogleErr('gis_error', `${errCode}${errDesc ? `: ${errDesc.replace(/\+/g, ' ')}` : ''}`);
+      }
+      try {
+        sessionStorage.removeItem(OAUTH_STATE_KEY);
+        sessionStorage.removeItem(OAUTH_NONCE_KEY);
+      } catch { /* ignore */ }
+      return;
+    }
+
     const idToken = params.get('id_token');
     if (!idToken) return;
     const incomingState = params.get('state') || '';
