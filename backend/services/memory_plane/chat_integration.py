@@ -307,12 +307,116 @@ def ack_reply_empty(message: str) -> str:
     return "I didn't catch what to remember — please include the fact after 'remember this'."
 
 
+# ── Streaming-path system-prompt assembler ──────────────────────────────────
+#
+# The /v2/chat/stream route was originally a pure passthrough to the
+# provider — it does NOT go through ai_service.process_chat, so the
+# legacy `_build_system` / `build_system_prompt` machinery never runs.
+# This helper produces the system prompt for the stream path, with the
+# Memory Plane context block embedded.
+#
+# Design notes:
+#   * STRONG instruction language: the model is told to TREAT SAVED
+#     MEMORIES AS GROUND TRUTH and recite them verbatim rather than
+#     speculate. Without this, GPT-4o sometimes "interprets" a saved
+#     preference into a generic answer.
+#   * Returns None when there's nothing to inject so the caller can
+#     skip the system message altogether and stay byte-identical to
+#     the pre-PR streaming behaviour.
+#   * Mode-aware: when a chat mode is supplied (e.g. "trading_analyst"),
+#     we append a short mode hint so the streaming path roughly
+#     matches the persona the /chat path would have set.
+
+_SYSTEM_PROMPT_HEADER = (
+    "You are KorvixAI, the user's persistent AI assistant. "
+    "You have access to memories the user has explicitly saved across "
+    "previous conversations.\n\n"
+    "RULES FOR USING SAVED MEMORIES:\n"
+    "1. Saved memories below are GROUND TRUTH — never contradict, "
+    "paraphrase, or speculate around them.\n"
+    "2. When the user asks about a topic that matches a saved memory, "
+    "answer using the EXACT saved content first, then add detail only "
+    "if asked.\n"
+    "3. If the user asks 'what did I prefer' / 'ne tercih ediyordum' / "
+    "similar recall questions, recite the saved memory verbatim — "
+    "do NOT generate a generic answer.\n"
+    "4. Reply in the same language the user wrote in."
+)
+
+
+def build_stream_system_prompt(
+    *,
+    user_id: str,
+    project_id: Optional[str] = None,
+    query: Optional[str] = None,
+    mode: Optional[str] = None,
+    limit: int = 8,
+) -> Optional[str]:
+    """Compose the system prompt for the /v2/chat/stream path.
+
+    Returns None when:
+      * Memory Plane is disabled, AND
+      * No mode-specific hint applies.
+    The caller treats None as "don't inject any system message" so the
+    streaming path stays byte-identical to pre-PR when there's nothing
+    to add.
+
+    When memories exist, the returned string starts with the strong
+    "ground truth" header above, followed by the bulleted memory list
+    and (optionally) a soft mode hint.
+    """
+    block = context_block(
+        user_id=    user_id,
+        project_id= project_id,
+        query=      query,
+        limit=      limit,
+    )
+    if not block and not mode:
+        return None
+    parts: list[str] = [_SYSTEM_PROMPT_HEADER]
+    if block:
+        parts.append(block)
+    if mode:
+        # Soft mode hint — full mode persona lives in ai_service and
+        # isn't worth duplicating here. The streaming path is best-
+        # effort persona; the priority is memory injection.
+        parts.append(f"Active mode: {mode}. Adapt your tone accordingly.")
+    return "\n\n".join(parts)
+
+
+def memory_hit_count(
+    *,
+    user_id: str,
+    project_id: Optional[str] = None,
+    query: Optional[str] = None,
+    limit: int = 8,
+) -> int:
+    """Return the number of memories the retriever found for this
+    (user, project, query). Used by the debug log so production logs
+    show exactly how many memories were injected."""
+    if not user_id:
+        return 0
+    try:
+        from backend.services.memory_plane.retriever import retriever
+        from backend.services.memory_plane.types import MemoryQuery
+        return len(retriever.search(MemoryQuery(
+            user_id=  str(user_id),
+            project_id=project_id,
+            query=    query,
+            limit=    int(max(1, min(50, limit))),
+        )))
+    except Exception:
+        return 0
+
+
 __all__ = [
     "is_explicit_save_command",
     "save_explicit",
     "auto_extract",
     "context_block",
     "fold_into_mem_summary",
+    "build_stream_system_prompt",
+    "memory_hit_count",
     "ack_reply",
     "ack_reply_empty",
 ]

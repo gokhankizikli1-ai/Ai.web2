@@ -118,6 +118,27 @@ _RE_PREFERENCE = re.compile(
     re.IGNORECASE,
 )
 
+# Turkish preference: "Ben X tercih ediyorum / tercih ederim"
+# Common shapes:
+#   - "Ben kısa cevaplar tercih ediyorum"     → kısa cevaplar
+#   - "Kısa ve net yanıtlar tercih ederim"    → Kısa ve net yanıtlar
+#   - "Resmî dil tercih ediyorum"             → Resmî dil
+# We allow the optional "Ben " prefix and capture everything up to
+# "tercih". The lookbehind keeps the matched object usable as the
+# stored preference verbatim.
+_RE_TR_PREFERENCE = re.compile(
+    r"(?:\bben\s+)?([^.!?\n]{3,100}?)\s+tercih\s+ed(?:iyorum|erim|iyoruz|eriz)\b",
+    re.IGNORECASE,
+)
+
+# Turkish "I want / I need" — broader preference signal.
+#   - "Kısa cevaplar istiyorum"
+#   - "Net yanıtlar istiyorum"
+_RE_TR_WANT = re.compile(
+    r"\b([^.!?\n]{3,100}?)\s+isti(?:yorum|yoruz)\b",
+    re.IGNORECASE,
+)
+
 # Decision: "we (decided|picked|chose|going with) X"
 _RE_DECISION = re.compile(
     r"\b(?:we|i)\s+(?:decided\s+(?:to|on)|picked|chose|went\s+with|"
@@ -247,7 +268,7 @@ def extract(
                 metadata={**role_meta, "pattern": "en_building", "target": target},
             ), seen)
 
-    # 4) Preferences.
+    # 4) Preferences (English).
     m = _RE_PREFERENCE.search(text)
     if m:
         pref = _clean(m.group(1))
@@ -255,8 +276,38 @@ def extract(
             _add(out, ExtractionCandidate(
                 kind="preference",
                 content=f"User preference: {pref}",
-                importance=IMPORTANCE_DEFAULT,
+                # Preferences are HIGH importance — they shape every
+                # subsequent reply, so the retriever should surface
+                # them at the top of the context block reliably.
+                importance=IMPORTANCE_HIGH,
                 metadata={**role_meta, "pattern": "preference"},
+            ), seen)
+
+    # 4b) Turkish preference — "X tercih ediyorum / ederim".
+    m = _RE_TR_PREFERENCE.search(text)
+    if m:
+        pref = _clean(m.group(1))
+        if pref and len(pref) >= 5:
+            _add(out, ExtractionCandidate(
+                kind="preference",
+                content=f"Kullanıcı tercihi: {pref}",
+                importance=IMPORTANCE_HIGH,
+                metadata={**role_meta, "pattern": "tr_preference"},
+            ), seen)
+
+    # 4c) Turkish "I want" — broader preference signal.
+    m = _RE_TR_WANT.search(text)
+    if m:
+        pref = _clean(m.group(1))
+        if pref and len(pref) >= 5:
+            _add(out, ExtractionCandidate(
+                kind="preference",
+                content=f"Kullanıcı isteği: {pref}",
+                # Lower than explicit "tercih ederim" since "istiyorum"
+                # is also used for one-shot requests, not just persistent
+                # preferences.
+                importance=IMPORTANCE_DEFAULT,
+                metadata={**role_meta, "pattern": "tr_want"},
             ), seen)
 
     # 5) Decisions — only when the user explicitly framed it as a decision.
