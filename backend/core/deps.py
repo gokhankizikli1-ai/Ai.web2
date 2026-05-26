@@ -174,23 +174,44 @@ def require_owner(request: Request) -> User:
     """Returns the authenticated owner identity. Raises when neither
     unlock path matches.
 
-    Two paths, evaluated in order:
-      1. Identity match — user from request.state.user OR Bearer token
-         satisfies `is_owner()` (i.e. email matches OWNER_EMAIL etc.).
-      2. Token match — request header `X-Korvix-Owner-Token` matches
-         the OWNER_TOKEN env var (constant-time).
+    SECURITY PRECEDENCE — identity-first. See backend.services.admin
+    .owner.is_owner_request() for the full rationale. Short version:
+
+      1. AUTHENTICATED user with extractable email:
+           - email matches OWNER_EMAIL → return that user.
+           - email does NOT match      → raise. OWNER_TOKEN is NOT
+                                          consulted in this branch.
+      2. GUEST / no email:
+           - OWNER_TOKEN matches → return the (guest) user.
+           - no token / wrong   → raise MissingTokenError.
+
+    This was changed from a union check (identity OR token) after a
+    bug where a non-owner Google sign-in could still appear as owner
+    because OWNER_TOKEN was left in localStorage by a previous unlock.
     """
     from backend.core.errors import UnauthorizedError
     from backend.services.admin.owner import (
         is_owner, match_owner_token,
     )
+    from backend.services.admin.owner import _user_email as _email_of
 
     user = current_user(request)
     token = _extract_owner_token(request)
 
-    if not user.is_guest and is_owner(user):
-        return user
+    # Identity path — authoritative for any signed-in user with an email.
+    if not user.is_guest:
+        email = _email_of(user)
+        if email is not None:
+            if is_owner(user):
+                return user
+            # Signed in but not the owner. Don't fall back to token.
+            raise UnauthorizedError(
+                "This route requires owner privileges.",
+                code="owner_required",
+            )
+        # Authenticated but no email — fall through to token check.
 
+    # Token path — only for guests or no-email identities.
     if token and match_owner_token(token):
         return user
 

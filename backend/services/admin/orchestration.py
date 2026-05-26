@@ -187,33 +187,72 @@ def owner_context_for_run(
     )
 
 
+def _owner_identity_block(owner_name: Optional[str], owner_email: Optional[str]) -> str:
+    """Build the owner-identity preamble for the orchestration prompt.
+
+    Used when the orchestrator confirms an owner session AND has a
+    display name to address the owner by. Produces an executive-
+    assistant framing the user requested:
+
+        "You are addressing Gökhan Bey, Founder / Owner of KorvixAI.
+         Adopt a premium, respectful, executive-assistant tone..."
+
+    Falls back to a neutral "the project owner" framing when no name
+    is known (e.g. token-only unlock without an associated user)."""
+    first = ""
+    if owner_name:
+        first = owner_name.strip().split()[0] if owner_name.strip() else ""
+    if first:
+        return (
+            f"OWNER IDENTITY (active session):\n"
+            f"  Name:  {first} Bey\n"
+            f"  Role:  Founder / Owner of KorvixAI\n"
+            f"  Email: {owner_email or '(redacted)'}\n\n"
+            f"Tone: premium, respectful, executive-assistant style. Address "
+            f"the owner by their first name + 'Bey' (e.g. '{first} Bey'). "
+            f"Default to Turkish when the request is in Turkish, English "
+            f"otherwise. Skip filler phrases; answer like a chief of staff."
+        )
+    return (
+        "OWNER IDENTITY (active session):\n"
+        "  Role: project owner of KorvixAI\n\n"
+        "Tone: premium, respectful, executive-assistant style. Skip filler "
+        "phrases; answer like a chief of staff."
+    )
+
+
 def compose_system_prompt(
     base_prompt: str,
     *,
     is_owner: bool,
     user_message: Optional[str] = None,
+    owner_name: Optional[str] = None,
+    owner_email: Optional[str] = None,
 ) -> str:
     """Wrap a spec.system_prompt with the owner orchestration policy
     AND the existing admin safety guardrail.
 
     Layering rules:
-      1. The base prompt comes first — the spec's role/output contract.
-      2. If owner: authorisation block (what's unlocked).
-      3. Safety footer LAST (closest to the user message, strongest
-         signal in most chat models). This includes both the existing
-         owner_guardrail_prompt() from safety.py AND the orchestration-
-         specific non-negotiables.
-      4. If safety.classify(user_message) returned 'safe-cyber', the
-         safe-cyber addendum is also appended — defensive cyber work
-         is FINE, the model just needs the framing reminder.
+      1. Owner identity preamble (if owner_name supplied) — tells the
+         model exactly who's on the other end so the tone matches the
+         executive-assistant style the user expects.
+      2. The base prompt — the spec's role/output contract.
+      3. Authorisation block — what's unlocked for owner sessions.
+      4. Safe-cyber addendum (when safety.classify says so).
+      5. Safety footer LAST — non-negotiable hard-block list.
 
-    Non-owner callers fall through with `base_prompt` returned
-    unchanged — this function is safe to call universally.
+    Non-owner callers fall through with `base_prompt` unchanged — this
+    function is safe to call universally.
     """
     if not is_owner:
         return base_prompt
 
-    parts = [base_prompt.rstrip(), "", _OWNER_ORCH_AUTHORISATION]
+    parts = [
+        _owner_identity_block(owner_name, owner_email),
+        base_prompt.rstrip(),
+        "",
+        _OWNER_ORCH_AUTHORISATION,
+    ]
 
     if user_message:
         verdict = safety.classify(user_message)

@@ -238,20 +238,24 @@ async function _doFetch(force: boolean): Promise<void> {
  *
  * Pass `null` on logout to reset to DEFAULT_STATE. */
 export function seedOwnerFromLogin(user: { is_owner?: boolean } | null): void {
-  if (!user) {
-    _setState({ data: DEFAULT_STATE, loading: false, error: null, lastFetchAt: 0 });
-    return;
-  }
-  // Only seed the boolean — the capability list still comes from the
-  // backend (it's the source of truth for what's actually unlocked).
-  // Reset lastFetchAt so the next mount fetches a fresh definitive answer.
+  // ALWAYS reset to DEFAULT_STATE first. Previously this preserved
+  // `_state.data.capabilities` when the new user's is_owner=false —
+  // that meant a brief window where the chip showed "non-owner"
+  // (correctly) but the AdminPanel could still render capability
+  // chips from the previous owner. Belt + suspenders: full wipe.
   _setState({
-    data: {
-      ..._state.data,
-      is_owner: !!user.is_owner,
-    },
+    data: { ...DEFAULT_STATE, is_owner: !!user?.is_owner },
+    loading: false,
+    error: null,
+    // Reset lastFetchAt to 0 so the next mount fetches a fresh
+    // definitive answer from /v2/admin/status — the seed is a
+    // best-effort hint, not the source of truth.
     lastFetchAt: 0,
   });
+  // Force a refetch immediately so backend's identity check
+  // confirms / rejects within ~100ms. Without this an offline
+  // backend could leave a stale seed in place forever.
+  setTimeout(() => { _doFetch(true); }, 0);
 }
 
 /* ─── Hook ──────────────────────────────────────────────────────────────

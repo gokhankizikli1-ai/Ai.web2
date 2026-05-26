@@ -156,18 +156,41 @@ async def orchestrate(body: OrchestrateBody, request: Request) -> dict:
     #   - token:    X-Korvix-Owner-Token header matches OWNER_TOKEN
     # Either match yields is_owner=True; the source string distinguishes
     # them for audit + the FE activity feed.
+    # Identity-first precedence (matches admin.owner.is_owner_request):
+    # an AUTHENTICATED non-owner can NEVER be promoted via OWNER_TOKEN.
+    # Otherwise a leftover token in localStorage would override a real
+    # sign-in. Token unlock is reserved for guests / no-email identities.
     is_owner_session = False
     owner_source = ""
+    owner_name = ""
+    owner_email = ""
     try:
         from backend.core.deps import current_user, _extract_owner_token
-        from backend.services.admin.owner import is_owner as _ident_is_owner
-        from backend.services.admin.owner import match_owner_token as _match_tok
+        from backend.services.admin.owner import (
+            is_owner as _ident_is_owner,
+            match_owner_token as _match_tok,
+            _user_email as _email_of,
+        )
         _u = current_user(request)
         _ot = _extract_owner_token(request)
-        if not _u.is_guest and _ident_is_owner(_u):
-            is_owner_session, owner_source = True, "identity"
-        elif _ot and _match_tok(_ot):
-            is_owner_session, owner_source = True, "token"
+        if not _u.is_guest:
+            # Authenticated path — identity is authoritative.
+            email = _email_of(_u)
+            if email:
+                if _ident_is_owner(_u):
+                    is_owner_session, owner_source = True, "identity"
+                    owner_email = email
+                    owner_name = getattr(_u, "display_name", "") or ""
+                # else: signed in but NOT the owner. Do NOT consult token.
+            else:
+                # Authenticated but no email extractable (degraded
+                # JWT). Fall through to token check.
+                if _ot and _match_tok(_ot):
+                    is_owner_session, owner_source = True, "token"
+        else:
+            # Guest — token-only unlock allowed.
+            if _ot and _match_tok(_ot):
+                is_owner_session, owner_source = True, "token"
     except Exception as _owner_err:  # pragma: no cover — never break orchestrate
         logger.debug("orchestrate | owner detection failed: %s", _owner_err)
 
@@ -284,6 +307,8 @@ async def orchestrate(body: OrchestrateBody, request: Request) -> dict:
             effective_system_prompt,
             is_owner=is_owner_session,
             user_message=body.message,
+            owner_name=owner_name or None,
+            owner_email=owner_email or None,
         )
     except Exception as _pol_err:  # pragma: no cover — never break orchestrate
         logger.warning("orchestrate | owner policy composer failed: %s", _pol_err)

@@ -1003,3 +1003,108 @@ def test_user_email_extraction_is_case_insensitive_for_email_kind():
     from backend.services.auth.identity import User
     u = User(id="x", kind="email", external_id="email:USER@Example.COM", display_name="")
     assert _user_email(u) == "user@example.com"
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Security precedence — token unlock MUST NOT override an authenticated
+# non-owner. Regression for the "previous owner's token in localStorage
+# silently grants admin to whoever signs in next" bug.
+# ══════════════════════════════════════════════════════════════════════════
+
+def test_token_does_not_override_authenticated_non_owner(admin_env_with_token):
+    """An authenticated user whose email does NOT match OWNER_EMAIL
+    MUST receive is_owner=false even when a valid OWNER_TOKEN is also
+    present in the request. Otherwise a stale token in a shared
+    browser would grant admin to anyone signing in next."""
+    from backend.services.admin.owner import is_owner_request
+    from backend.services.auth.identity import User
+    non_owner = User(
+        id="abc",
+        kind="google",
+        external_id="alice@gmail.com",  # NOT the OWNER_EMAIL
+        display_name="Alice",
+    )
+    # Token alone would normally unlock (verified by the existing
+    # test_is_owner_request_unlocks_via_token); here it must NOT.
+    assert is_owner_request(non_owner, owner_token=_GOOD_TOKEN) is False
+
+
+def test_authenticated_owner_still_recognised(admin_env_with_token):
+    """Sanity: the security fix doesn't accidentally lock out the real
+    owner. Identity match wins regardless of token presence."""
+    from backend.services.admin.owner import is_owner_request
+    from backend.services.auth.identity import User
+    owner = User(
+        id="ok",
+        kind="google",
+        external_id="owner@example.com",
+        display_name="Owner",
+    )
+    assert is_owner_request(owner, owner_token=_GOOD_TOKEN) is True
+    assert is_owner_request(owner, owner_token=None) is True
+
+
+def test_guest_with_token_still_unlocks(admin_env_with_token):
+    """Token-only fallback is preserved for guests / no-email
+    identities — that's the canonical 'no auth flow on this deploy'
+    path. The security fix only restricts the AUTHENTICATED branch."""
+    from backend.services.admin.owner import is_owner_request
+    from backend.services.auth.identity import User
+    guest = User(id="g", kind="guest", external_id="guest:abc")
+    assert is_owner_request(guest, owner_token=_GOOD_TOKEN) is True
+
+
+def test_status_route_denies_non_owner_with_token(admin_env_with_token):
+    """End-to-end: /v2/admin/status with a Bearer JWT for a NON-owner
+    user AND a valid OWNER_TOKEN header must come back is_owner=false."""
+    import json
+    import urllib.request as _urlreq
+
+    # Mock Google tokeninfo to return a non-owner email.
+    fake_body = json.dumps({
+        "iss": "https://accounts.google.com",
+        "aud": "test-client.googleusercontent.com",
+        "sub": "google:bad",
+        "email": "intruder@gmail.com",
+        "email_verified": "true",
+        "name": "Intruder",
+    }).encode()
+
+    class _Resp:
+        def __init__(self, data): self._data = data
+        def __enter__(self): return self
+        def __exit__(self, *a): pass
+        def read(self): return self._data
+
+    import os
+    os.environ["JWT_SECRET_KEY"] = "test-secret-key-32-chars-minimum-zzz"
+    os.environ["GOOGLE_CLIENT_ID"] = "test-client.googleusercontent.com"
+    from backend.services.auth import passwords as auth_passwords
+    auth_passwords._INITIALIZED = False
+
+    client, app = _fresh_app()
+
+    # Patch urlopen AFTER fresh app build.
+    import backend.routes.auth as auth_route_mod
+    orig_urlopen = _urlreq.urlopen
+    _urlreq.urlopen = lambda req, timeout=10: _Resp(fake_body)
+    try:
+        # Login as non-owner to get a valid JWT bound to that identity.
+        issued = client.post("/auth/google", json={"id_token": "fake"}).json()
+        bearer = issued["access_token"]
+        assert issued["user"]["is_owner"] is False  # confirm not owner
+
+        # Now send BOTH the bearer (non-owner) and a valid OWNER_TOKEN.
+        r = client.get("/v2/admin/status", headers={
+            "Authorization": f"Bearer {bearer}",
+            "X-Korvix-Owner-Token": _GOOD_TOKEN,
+        })
+        assert r.status_code == 200
+        data = r.json()["data"]
+        # The CRITICAL assertion. Token must NOT promote a non-owner.
+        assert data["is_owner"] is False, (
+            f"SECURITY BUG: token-with-non-owner-bearer granted admin. "
+            f"reason={data.get('reason')!r}"
+        )
+    finally:
+        _urlreq.urlopen = orig_urlopen

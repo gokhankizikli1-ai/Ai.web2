@@ -45,9 +45,11 @@ function markShown(): void {
  *  display name is known. */
 function buildGreeting(displayName?: string): string {
   const name = (displayName || '').trim();
-  if (!name) return 'Welcome back · Owner Session Activated';
+  if (!name) return 'Welcome back. Owner Session aktif edildi.';
   const first = name.split(/\s+/)[0];
-  return `Hoş geldiniz ${first} Bey · Owner Session Activated`;
+  // Exact wording from the spec — Turkish, executive register.
+  // "aktif edildi" reads more formal/respectful than "activated".
+  return `Hoş geldiniz ${first} Bey. Owner Session aktif edildi.`;
 }
 
 export default function OwnerWelcomeToast() {

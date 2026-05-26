@@ -173,12 +173,48 @@ def is_owner_request(
     *,
     owner_token: Optional[str] = None,
 ) -> bool:
-    """Request-aware owner check. True if EITHER unlock path matches."""
-    if is_owner(user):
-        return True
+    """Request-aware owner check.
+
+    SECURITY PRECEDENCE (changed — was union, now identity-first):
+
+      1. If the user is AUTHENTICATED (non-guest) AND has an email,
+         the identity decision is AUTHORITATIVE:
+           - email matches OWNER_EMAIL → owner
+           - email does NOT match       → NOT owner.
+             OWNER_TOKEN is IGNORED in this branch. Otherwise a
+             stale token left in someone else's browser would
+             override their explicit non-owner sign-in.
+      2. If the user is a guest OR has no extractable email
+         (e.g. JWT decode failed, no AuthMiddleware), fall back to
+         OWNER_TOKEN. This is the "token-only" path for an owner
+         who hasn't gone through /auth/google.
+
+    The old `if is_owner: return True; if token: return True` union
+    was the source of the "anyone signing in still appears as
+    owner because the previous owner's token is in localStorage"
+    bug — token could override a real identity. This function is
+    the single source of truth; require_owner() calls it too.
+    """
+    # Identity path — strictly authoritative when the user is signed in.
+    if user is not None and not user.is_guest:
+        email = _user_email(user)
+        if email is not None:
+            # We have an identified email. The decision is purely
+            # based on OWNER_EMAIL match. NO token fallback here.
+            return is_owner(user)
+        # Authenticated but no email extractable — fall through to
+        # the token path. Rare; mostly defensive against
+        # storage/identity corruption.
+
+    # Token path — only when the user is unauthenticated OR their
+    # identity carries no email at all.
     if match_owner_token(owner_token):
         return True
-    return False
+
+    # Identity catch (for the edge case where user is non-guest with
+    # an email but is_owner returned False above — already covered
+    # but explicit for readers).
+    return is_owner(user) if user is not None else False
 
 
 # ── Capability surface ────────────────────────────────────────────────────
