@@ -38,7 +38,7 @@ import { useAuthStore } from '@/stores/authStore';
 import {
   Settings, PanelLeftOpen, Command as CmdIcon,
   Bookmark, Download, Sparkles, Zap, Bot, MoreHorizontal,
-  FolderOpen, ShieldQuestion,
+  FolderOpen,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -49,21 +49,26 @@ const DEMO_ACTIVITIES = [
   { id: 'act4', status: 'queued' as const, message: 'Weekly Trend Forecast', detail: 'Scheduled for 2:00 PM', timestamp: new Date() },
 ];
 
-// Secondary actions in toolbar dropdown
+// Secondary actions in toolbar dropdown.
+//
+// NOTE: there is intentionally NO "Owner Mode" entry here. Owner mode
+// activates automatically when an authenticated user's verified email
+// matches the OWNER_EMAIL env var on the backend (see
+// backend/services/admin/owner.py). Exposing a manual unlock to
+// every visitor leaked the existence of admin mode and let curious
+// users hammer the token endpoint. The token-only unlock path still
+// exists for the maintainer (via the keyboard shortcut Ctrl/Cmd+Shift+O
+// inside OwnerModeChip, which only fires when the chip is mounted —
+// the chip itself is gated on isOwner OR a stored token, so casual
+// users never see it).
 function ToolbarDropdown({
-  onCmd, onPrompts, onExport, onToggleRight, onUpgrade, onOwnerUnlock,
+  onCmd, onPrompts, onExport, onToggleRight, onUpgrade,
 }: {
   onCmd: () => void;
   onPrompts: () => void;
   onExport: () => void;
   onToggleRight: () => void;
   onUpgrade: () => void;
-  // Opens the OwnerUnlockModal. Always present in the menu so the
-  // project owner has a visible entry even when the OwnerModeChip
-  // is hidden (its default state for non-owners). The modal itself
-  // validates the token server-side; non-owners pasting random
-  // strings get a clean rejection.
-  onOwnerUnlock: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null!);
@@ -80,11 +85,6 @@ function ToolbarDropdown({
     { label: 'Export Chat', shortcut: '', icon: Download, action: () => { onExport(); setOpen(false); } },
     { label: 'Context Panel', shortcut: '', icon: Sparkles, action: () => { onToggleRight(); setOpen(false); } },
     { label: 'Upgrade Plan', shortcut: '', icon: Zap, action: () => { onUpgrade(); setOpen(false); } },
-    // Owner Mode entry — small, safe. Opens the unlock modal where
-    // server validates the OWNER_TOKEN. Visible to all menu users:
-    // wrong tokens are rejected by constant-time compare upstream.
-    { label: 'Owner Mode', shortcut: '⇧⌘O', icon: ShieldQuestion,
-      action: () => { onOwnerUnlock(); setOpen(false); } },
   ];
 
   return (
@@ -443,15 +443,6 @@ export default function ChatDashboard() {
               onExport={() => setExportOpen(true)}
               onToggleRight={() => setRightSidebarOpen(!rightSidebarOpen)}
               onUpgrade={() => setUpgradeOpen(true)}
-              onOwnerUnlock={() => {
-                // OwnerModeChip listens for this event and opens the
-                // OwnerUnlockModal. Uses the same channel as the
-                // Ctrl/Cmd+Shift+O keyboard shortcut so there's one
-                // source of truth for "show the unlock modal".
-                try {
-                  window.dispatchEvent(new CustomEvent('korvix:owner-unlock-open'));
-                } catch { /* ignore */ }
-              }}
             />
           </div>
         </header>
