@@ -6,7 +6,8 @@ import {
 } from 'lucide-react';
 import type { Project } from '@/types/projects';
 import ProjectCard from '@/components/ProjectCard';
-import { getProjects, addProject } from '@/stores/projectStore';
+import DeleteConfirmModal from '@/components/DeleteConfirmModal';
+import { getProjects, addProject, deleteProject as deleteProjectFromStore } from '@/stores/projectStore';
 
 /* ─── Category config ─── */
 const CATEGORIES = [
@@ -64,6 +65,27 @@ export default function ProjectsDashboard() {
   const [customCategory, setCustomCategory] = useState('');
   const [description, setDescription] = useState('');
   const [errors, setErrors] = useState<{ name?: string; category?: string }>({});
+
+  // Project being deleted (null when no modal open). Local state is
+  // updated optimistically on confirm; the projectStore.deleteProject
+  // fires the backend DELETE in the background (best-effort —
+  // localStorage is the source of truth on this app).
+  const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
+
+  const confirmDelete = () => {
+    if (!deleteTarget) return;
+    const id = deleteTarget.id;
+    setProjects((prev) => prev.filter((p) => p.id !== id));
+    setDeleteTarget(null);
+    // Best-effort: also clear from the store + backend. If the backend
+    // DELETE fails (network, unauth, route missing) the local state
+    // already reflects the removal — the user isn't blocked.
+    try { deleteProjectFromStore(id); }
+    catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn('[ProjectsDashboard] deleteProject backend call failed:', e);
+    }
+  };
 
   const isCustom = selectedCategory === 'custom';
 
@@ -154,7 +176,12 @@ export default function ProjectsDashboard() {
               className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3"
             >
               {projects.map((project, i) => (
-                <ProjectCard key={project.id} project={project} index={i} />
+                <ProjectCard
+                  key={project.id}
+                  project={project}
+                  index={i}
+                  onDelete={(p) => setDeleteTarget(p)}
+                />
               ))}
             </motion.div>
           ) : (
@@ -320,6 +347,20 @@ export default function ProjectsDashboard() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Delete-project confirmation. Mounted at the page root so it
+          renders above ProjectCard hover states. */}
+      <DeleteConfirmModal
+        open={!!deleteTarget}
+        title="Delete Project"
+        description={
+          deleteTarget
+            ? `"${deleteTarget.name}" and all its agents, tasks, and local memory will be permanently removed from this browser. This cannot be undone.`
+            : ''
+        }
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   );
 }

@@ -256,6 +256,31 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
   const { login, signup, loginWithGoogle, isAuthenticated, isLoading, error, clearError } = useAuthStore();
   const [googleBusy, setGoogleBusy] = useState(false);
 
+  // SYNCHRONOUS detection of an OAuth callback. Set as the initial
+  // useState value (not in an effect) so the first render already
+  // shows the "Signing you in…" skeleton instead of briefly flashing
+  // the login form while the redirect-callback effect fires. The
+  // main.tsx bootstrap has already stashed the fragment by the time
+  // React renders, so reading sessionStorage here is safe.
+  const [processingRedirect, setProcessingRedirect] = useState<boolean>(() => {
+    try {
+      const stashed = sessionStorage.getItem('korvix_oauth_response') || '';
+      if (stashed && /(?:^|&)(?:id_token|error|access_token)=/.test(stashed)) {
+        return true;
+      }
+    } catch { /* ignore */ }
+    // Also catch the no-bootstrap fallback: a raw OAuth fragment
+    // sitting in window.location.hash. AuthPage's effect would
+    // process it; we want the skeleton up front.
+    try {
+      const raw = window.location.hash.replace(/^#/, '');
+      if (raw && /(?:^|&)(?:id_token|error|access_token)=/.test(raw)) {
+        return true;
+      }
+    } catch { /* ignore */ }
+    return false;
+  });
+
   // Support both /login and /signup routes, plus toggle within the page
   const urlMode = location.pathname === '/signup' ? 'signup' : 'login';
   const [mode, setMode] = useState<'login' | 'signup'>(propMode || urlMode);
@@ -531,6 +556,10 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
         sessionStorage.removeItem(OAUTH_STATE_KEY);
         sessionStorage.removeItem(OAUTH_NONCE_KEY);
       } catch { /* ignore */ }
+      // Show the form again so the user can see the error message and
+      // try email/password or retry Google. Success path leaves
+      // processingRedirect=true because the page navigates away.
+      setProcessingRedirect(false);
       return;
     }
 
@@ -556,6 +585,7 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
       );
       /* eslint-enable no-console */
       setGoogleErr('redirect_state_mismatch', `got ${incomingState.slice(0, 8)}…`);
+      setProcessingRedirect(false);
       return;
     }
     try {
@@ -592,6 +622,7 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
         );
         /* eslint-enable no-console */
         setGoogleErr('redirect_no_token', 'backend rejected the id_token');
+        setProcessingRedirect(false);
       }
     }).catch((e) => {
       // Defensive: apiGoogle's try/catch should always resolve, but if
@@ -607,6 +638,7 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
       /* eslint-enable no-console */
       setGoogleBusy(false);
       setGoogleErr('gis_error', e instanceof Error ? e.message : String(e));
+      setProcessingRedirect(false);
     });
     // Effect intentionally only runs once on mount — id_token consumption
     // is one-shot and the URL hash is wiped above.
@@ -738,6 +770,42 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
         {/* Card */}
         <div className="rounded-2xl border border-border bg-card/80 backdrop-blur-xl p-5 sm:p-6 shadow-premium-lg">
 
+          {/* Post-Google-redirect skeleton — replaces the form while the
+              OAuth callback is being processed so the user sees clear
+              progress instead of a blank page or a flickering form.
+              The redirect-callback effect clears processingRedirect on
+              any failure path so the form returns; on success the page
+              navigates away before this is needed. */}
+          {processingRedirect ? (
+            <div
+              className="flex flex-col items-center justify-center py-8 text-center"
+              data-testid="auth-processing-redirect"
+              role="status"
+              aria-live="polite"
+            >
+              <div className="relative h-10 w-10 mb-3">
+                <span className="absolute inset-0 rounded-full border-2 border-cyan-400/20" />
+                <span
+                  className="absolute inset-0 rounded-full border-2 border-transparent animate-spin"
+                  style={{ borderTopColor: 'rgba(34,211,238,0.9)' }}
+                />
+              </div>
+              <div className="text-[13px] font-medium text-foreground mb-1">
+                Signing you in…
+              </div>
+              <div className="text-[11px] text-muted-foreground max-w-[260px] leading-relaxed">
+                Verifying your Google credentials with the backend.
+              </div>
+              {/* Skeleton row group so the card doesn't visibly shrink
+                  while the redirect resolves — keeps the layout stable. */}
+              <div className="w-full mt-5 space-y-2">
+                <div className="h-2.5 rounded bg-muted/60 animate-pulse" />
+                <div className="h-2.5 rounded bg-muted/60 animate-pulse w-3/4 mx-auto" />
+                <div className="h-2.5 rounded bg-muted/60 animate-pulse w-1/2 mx-auto" />
+              </div>
+            </div>
+          ) : (
+          <>
           {/* Tab switcher */}
           <div className="flex gap-1 p-0.5 rounded-xl bg-muted border border-border mb-6">
             {(['login', 'signup'] as const).map((m) => (
@@ -901,6 +969,8 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
               Continue as Guest
             </button>
           </div>
+          </>
+          )}
         </div>
 
         {/* Footer */}
