@@ -100,61 +100,81 @@ export default function AdminPanel({ ownerMode, onClose }: AdminPanelProps) {
   }, [onClose]);
 
   return (
-    <motion.div
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      // Tap-anywhere-outside closes. The inner card's
-      // stopPropagation keeps clicks inside from triggering it.
-      // p-4 = 16px gutter each side = the spec's `width: calc(100vw - 32px)`.
-      // The inner card uses w-full max-w-[720px], so on a 393px iPhone the
-      // card is 361px wide; on a 1024px iPad it caps at 720px. Backdrop area
-      // outside the card remains tappable for click-outside-to-close.
-      className="fixed inset-0 z-[80] bg-black/70 backdrop-blur-md flex items-center justify-center p-4"
-      onClick={onClose}
-      role="presentation"
-      data-testid="admin-panel-overlay"
-    >
+    <>
+      {/* ── Backdrop ────────────────────────────────────────────────────
+          Pure click-target layer. Separate from the panel so a
+          touch-start anywhere outside the panel reliably resolves the
+          close. opacity-only animation so no transform that could
+          interact with the panel's positioning. */}
       <motion.div
-        initial={{ opacity: 0, scale: 0.96, y: 8 }}
-        animate={{ opacity: 1, scale: 1,    y: 0 }}
-        exit={{ opacity: 0, scale: 0.96, y: 8 }}
-        transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 z-[79] bg-black/70 backdrop-blur-md"
+        onClick={onClose}
+        role="presentation"
+        data-testid="admin-panel-overlay"
+        aria-hidden="true"
+      />
+
+      {/* ── Viewport-safe panel ─────────────────────────────────────────
+          The previous build centred the panel via `flex items-center`
+          on the overlay. When the panel's content was taller than the
+          viewport, centering pushed the TOP (and the close button) ABOVE
+          the viewport on iPad Safari — the close X was unreachable.
+
+          Spec-strict fix:
+            position: fixed
+            inset: 16px           — pinned to the visible viewport with
+                                    a 16px gutter on every side
+            max-width: 720px      — cap so the panel doesn't stretch wide
+            max-height:
+              calc(100dvh - 32px) — full visible height minus the inset.
+                                    100dvh tracks iOS Safari's URL bar
+                                    collapse correctly.
+            margin: auto          — centers the panel within the fixed
+                                    box when content is shorter than the
+                                    available space. The combination
+                                    `position:fixed + all 4 insets +
+                                    auto-margin` is the canonical CSS
+                                    centring recipe that NEVER pushes
+                                    the element outside the viewport.
+
+          NO scale/translate animation on the panel itself — the spec
+          explicitly forbids transforms that could push the modal above
+          the viewport. Opacity-only entrance. */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
         onClick={(e) => e.stopPropagation()}
-        // Responsive sizing:
-        //   - dvh (dynamic viewport height) accounts for iOS Safari's
-        //     collapsing URL bar — h-[80vh] left the bottom of the
-        //     panel under the URL bar at certain scroll positions
-        //   - On <md viewports the tabs nav collapses to a top scroll
-        //     bar instead of a left column, so the content area is
-        //     usable on narrow widths
-        // Sizing per spec (literally):
-        //   width:      min(720px, calc(100vw - 32px))
-        //   max-height: min(70vh, 620px)
-        //
-        // Implemented via inline style because Tailwind doesn't
-        // natively express `min()` of mixed units. NOTE: NO fixed
-        // height — the panel sizes to its content up to the ceiling,
-        // so on iPad portrait it's typically ~520px tall, not the
-        // 70dvh that overflowed in the previous build.
-        //
-        // The 420px min-height kept earlier was the actual cause of
-        // overflow on iPad landscape (812px wide × 600px tall — 70vh
-        // = 420px = the min, so the panel forced itself to 420px AND
-        // ALSO wanted more). Removed. Inner body has overflow-y:auto.
-        className="relative rounded-2xl border border-amber-500/20 bg-[#0b0b12]/95 shadow-2xl shadow-amber-500/5 overflow-hidden flex flex-col"
+        className="z-[80] rounded-2xl border border-amber-500/20 bg-[#0b0b12]/95 shadow-2xl shadow-amber-500/5 overflow-hidden flex flex-col"
         style={{
-          width:     'min(720px, calc(100vw - 32px))',
-          maxHeight: 'min(70vh, 620px)',
+          position:  'fixed',
+          inset:     '16px',
+          width:     'min(720px, calc(100% - 0px))',  // already constrained by inset
+          maxWidth:  '720px',
+          maxHeight: 'calc(100dvh - 32px)',
+          margin:    'auto',
         }}
         role="dialog"
         aria-modal="true"
         aria-label="Owner panel"
         data-testid="admin-panel-card"
       >
-        {/* Header — close button always reachable (sticky to top, larger
-            tap target on touch devices). */}
-        <div className="shrink-0 flex items-center justify-between px-4 sm:px-5 py-3 sm:py-3.5 border-b border-white/[0.05] bg-gradient-to-r from-amber-500/[0.04] to-transparent">
+        {/* ── Sticky header — close X always visible ──────────────────
+            sticky+top-0 inside the scrollable inner column. Even if the
+            tab content scrolls long, the close button stays pinned at
+            the top of the visible panel. background uses an opaque
+            color so the underlying content doesn't bleed through. */}
+        <div
+          className="shrink-0 sticky top-0 z-10 flex items-center justify-between px-4 sm:px-5 py-3 sm:py-3.5 border-b border-white/[0.05]"
+          style={{
+            background: 'linear-gradient(180deg, rgba(11,11,18,0.98) 0%, rgba(11,11,18,0.92) 100%)',
+            backdropFilter: 'blur(12px)',
+          }}
+        >
           <div className="flex items-center gap-2.5 min-w-0">
             <div className="h-7 w-7 flex items-center justify-center rounded-lg bg-amber-500/[0.1] border border-amber-500/20 shrink-0">
               <ShieldCheck className="h-3.5 w-3.5 text-amber-300" />
@@ -168,32 +188,21 @@ export default function AdminPanel({ ownerMode, onClose }: AdminPanelProps) {
           </div>
           <button
             onClick={onClose}
-            // 44×44px touch target on mobile, smaller on desktop —
-            // matches Apple HIG / WCAG 2.5.5 minimum touch target.
-            className="h-11 w-11 sm:h-8 sm:w-8 flex items-center justify-center rounded-md text-slate-400 hover:text-white hover:bg-white/[0.05] active:bg-white/[0.08] transition-all shrink-0"
+            // 44×44px on every viewport — meets WCAG 2.5.5 and gives
+            // iPad fat fingers a generous target. Previously this was
+            // 32×32 on desktop; bumping mobile-style everywhere is
+            // cheaper than dealing with another "can't close" report.
+            className="h-11 w-11 flex items-center justify-center rounded-md text-slate-400 hover:text-white hover:bg-white/[0.05] active:bg-white/[0.08] transition-all shrink-0"
             aria-label="Close owner panel"
             data-testid="admin-panel-close"
           >
-            <X className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+            <X className="h-4 w-4" />
           </button>
         </div>
 
-        {/* Belt-and-suspenders floating close button. Lives ABSOLUTELY
-            anchored to the card's top-right corner with z-index above
-            both header + body, so even if the header is somehow
-            obscured (long content, animation glitch, weird viewport)
-            there is always a visible 36×36 tap target to close. */}
-        <button
-          onClick={(e) => { e.stopPropagation(); onClose(); }}
-          aria-label="Close owner panel (floating)"
-          data-testid="admin-panel-close-floating"
-          className="absolute top-2 right-2 h-9 w-9 flex items-center justify-center rounded-full bg-black/60 backdrop-blur-md text-amber-200 hover:text-white hover:bg-black/80 active:scale-95 transition-all z-50 border border-amber-500/30 shadow-lg shadow-black/40 sm:hidden"
-        >
-          <X className="h-4 w-4" />
-        </button>
-
-        {/* Body — tabs+content. Stacks vertically on small viewports
-            (tabs become a horizontal scroll strip across the top). */}
+        {/* ── Body — tabs + content. overflow-hidden on the panel
+            (above) + overflow-y on the content area keeps the sticky
+            header where it belongs. */}
         <div className="flex flex-1 min-h-0 flex-col md:flex-row">
           {/* Tabs */}
           <nav
@@ -235,7 +244,27 @@ export default function AdminPanel({ ownerMode, onClose }: AdminPanelProps) {
           </div>
         </div>
       </motion.div>
-    </motion.div>
+
+      {/* ── Viewport-pinned floating close ──────────────────────────────
+          Final safety net. position:fixed against the VIEWPORT (not the
+          panel) so even if the panel itself is somehow off-screen or
+          mis-rendered, this button is always tappable at the top-right
+          of the visible area. Higher z-index than the panel + safe-area
+          inset for the iOS Dynamic Island / notch. */}
+      <button
+        onClick={onClose}
+        aria-label="Close owner panel (viewport)"
+        data-testid="admin-panel-close-viewport"
+        className="z-[81] h-10 w-10 flex items-center justify-center rounded-full bg-black/70 backdrop-blur-md text-amber-200 hover:text-white hover:bg-black/85 active:scale-95 transition-all border border-amber-500/40 shadow-lg shadow-black/40"
+        style={{
+          position: 'fixed',
+          top:      'max(20px, calc(env(safe-area-inset-top, 0px) + 12px))',
+          right:    'max(20px, calc(env(safe-area-inset-right, 0px) + 12px))',
+        }}
+      >
+        <X className="h-4 w-4" />
+      </button>
+    </>
   );
 }
 
