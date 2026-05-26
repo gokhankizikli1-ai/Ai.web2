@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router';
 import { useChat, TAB_KEYS } from '@/hooks/useChat';
 import { useCommandPalette } from '@/hooks/useCommandPalette';
+import { useJobActivities } from '@/hooks/useJobs';
 import { useToast } from '@/hooks/useToast';
 import { useApp } from '@/contexts/AppContext';
 import type { WorkspaceTab } from '@/types';
@@ -187,6 +188,14 @@ export default function ChatDashboard() {
   const [exportOpen, setExportOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
+
+  // Phase 7 — real job state feeds the AI Activity badge. When /v2/jobs
+  // is reachable for the authed user we use those rows; otherwise (guest
+  // / queue disabled) we fall back to the marketing-demo entries so the
+  // feed isn't empty on first impression. `isAvailable` flips true only
+  // after a successful response, so the demo never bleeds into a real
+  // session.
+  const { activities: realJobActivities, isAvailable: jobsAvailable } = useJobActivities();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<WorkspaceTab>(
@@ -447,7 +456,7 @@ export default function ChatDashboard() {
           </div>
         </header>
 
-        <AIActivityFeed activities={DEMO_ACTIVITIES} />
+        <AIActivityFeed activities={jobsAvailable ? realJobActivities : DEMO_ACTIVITIES} />
         <AgentTimeline isVisible={showTimeline} />
 
         {/* Main content — NO AnimatePresence mode="wait" to prevent composer freeze */}

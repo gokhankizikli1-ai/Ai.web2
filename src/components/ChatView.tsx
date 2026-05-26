@@ -32,6 +32,7 @@ export default function ChatView({
   const [activeTools, setActiveTools] = useState<ComposerTool[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const prevMessagesLen = useRef(messages.length);
 
   // Track which message is the latest assistant (for response chips)
@@ -41,6 +42,25 @@ export default function ChatView({
     }
     return -1;
   }, [messages]);
+
+  // Phase 7 polish — true while a streaming assistant placeholder
+  // already exists. Used to suppress the standalone TypingIndicator
+  // so we don't double-render "generating" UI (the in-bubble cursor
+  // already shows the live stream).
+  const hasStreamingPlaceholder = useMemo(() => {
+    if (!isLoading) return false;
+    const last = messages[messages.length - 1];
+    return !!(last && last.role === 'assistant');
+  }, [isLoading, messages]);
+
+  // Latest assistant content length — drives the "follow scroll while
+  // tokens stream" effect below. Changing the length triggers the
+  // scroll check; the content STRING itself isn't a useful dep
+  // because it changes by 1 char per token.
+  const latestAssistantContentLen = useMemo(() => {
+    if (lastAssistantIndex < 0) return 0;
+    return messages[lastAssistantIndex]?.content?.length ?? 0;
+  }, [messages, lastAssistantIndex]);
 
   // Auto-scroll: only gentle scroll, never aggressive push
   useEffect(() => {
@@ -53,6 +73,30 @@ export default function ChatView({
       return () => clearTimeout(timer);
     }
   }, [messages.length]);
+
+  // Phase 7 polish — content-aware scroll follow during streaming.
+  // The message COUNT doesn't change while a placeholder fills with
+  // tokens, so the auto-scroll above never fires mid-stream. Without
+  // this, the user slowly drifts off-screen as content grows below
+  // the viewport.
+  //
+  // Sticky-bottom heuristic: only follow when the user is within
+  // STICK_THRESHOLD_PX of the bottom. If they scrolled up to re-read
+  // earlier content, we leave them where they are — never yank.
+  useEffect(() => {
+    if (!isLoading) return;
+    if (latestAssistantContentLen === 0) return;
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const STICK_THRESHOLD_PX = 120;
+    const distanceFromBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight;
+    if (distanceFromBottom <= STICK_THRESHOLD_PX) {
+      // Use `auto` (not smooth) for streaming follow so the scroll
+      // matches token cadence — `smooth` would queue up and jitter.
+      messagesEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
+    }
+  }, [latestAssistantContentLen, isLoading]);
 
   // Track latest assistant message for stream animation
   useEffect(() => {
@@ -98,7 +142,7 @@ export default function ChatView({
   return (
     <div className="flex flex-col h-full">
       {/* Messages area */}
-      <div className="flex-1 overflow-y-auto scrollbar-thin">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto scrollbar-thin">
         {isEmptyState ? (
           /* Empty state with suggestions */
           <div className="flex flex-col h-full">
@@ -137,17 +181,27 @@ export default function ChatView({
                 ))}
               </AnimatePresence>
 
-              {/* Inline typing indicator — part of the flow, NOT an overlay */}
-              {isLoading && (
-                <motion.div
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.15 }}
-                >
-                  <TypingIndicator />
-                </motion.div>
-              )}
+              {/* Inline typing indicator — part of the flow, NOT an overlay.
+                  Phase 7 polish: only render during the initial latency
+                  window (between user sending the message and the first
+                  streaming token arriving). Once an assistant placeholder
+                  exists, the in-bubble cursor in MessageBubble carries
+                  the streaming UI — rendering a second indicator below
+                  it produces the "duplicated" feel the polish brief
+                  called out. The exit animation handles the settle. */}
+              <AnimatePresence>
+                {isLoading && !hasStreamingPlaceholder && (
+                  <motion.div
+                    key="typing-indicator"
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -2 }}
+                    transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                  >
+                    <TypingIndicator />
+                  </motion.div>
+                )}
+              </AnimatePresence>
 
               {/* Inline error — part of the flow */}
               {error && (
