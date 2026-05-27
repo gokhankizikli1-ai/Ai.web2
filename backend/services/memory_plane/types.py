@@ -38,6 +38,13 @@ MEMORY_KINDS: tuple[str, ...] = (
     "decision",        # a recorded decision ("we picked Vercel for FE")
     "task_outcome",    # outcome of an agent task ("scraped 42 SKUs")
     "relationship",    # social / collaboration fact ("Ali is the CFO")
+    # Phase-6-spec additions — produced/consumed by user-facing
+    # Settings + Owner panel surfaces and by agent-scoped retrieval.
+    "goal",            # user goal ("ship MVP by Q3")
+    "project_context", # facts scoped to one project/workspace
+    "agent_context",   # facts scoped to one agent
+    "style",           # tone/format style ("bullet points always")
+    "workflow",        # remembered workflow ("run trade signal before market open")
     # Reserved for future phases. Stored fine today; just not produced
     # by the heuristic extractor yet.
     "summary",         # rolling thread summary (Phase 9 panel scratchpad)
