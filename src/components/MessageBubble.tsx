@@ -6,6 +6,7 @@ import { Sparkles, Pin, PinOff, Copy, Check, ThumbsUp, ThumbsDown, RotateCcw } f
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import ResponseActions from './ResponseActions';
+import AssetChip from './AssetChip';
 import { useToast } from '@/hooks/useToast';
 import type { Message } from '@/types';
 
@@ -228,6 +229,30 @@ export default function MessageBubble({
             />
           )}
         </div>
+
+        {/* Phase 9 — attached assets (read-only chips). Rendered below
+            the bubble so the file context is anchored to the user's
+            turn but doesn't crowd the message content. */}
+        {fullMessage.attachments && fullMessage.attachments.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mt-1.5">
+            {fullMessage.attachments.map((att) => (
+              <AssetChip
+                key={att.asset_id}
+                compact
+                asset={{
+                  localId:    att.asset_id,
+                  assetId:    att.asset_id,
+                  filename:   att.filename,
+                  mimeType:   att.mime_type,
+                  sizeBytes:  att.size_bytes,
+                  publicUrl:  att.public_url,
+                  status:     'ready',
+                  progress:   100,
+                }}
+              />
+            ))}
+          </div>
+        )}
 
         {/* Action row — shows on hover, hidden during generation */}
         {!isGenerating && (

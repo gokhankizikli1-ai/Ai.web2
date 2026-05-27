@@ -6,11 +6,26 @@ export type WorkspaceTab = 'chat' | 'research' | 'trading' | 'business' | 'agent
 
 export type PlanTier = 'free' | 'pro' | 'ultra' | 'enterprise';
 
+export interface AttachedAsset {
+  asset_id:   string;
+  filename:   string;
+  mime_type:  string;
+  size_bytes: number;
+  // Optional thumbnail / public URL the message bubble can render.
+  // For local-storage backend this is `/v2/assets/blob/<key>`.
+  public_url?: string;
+  asset_type?: string;
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: Date;
+  /** Phase 9 — assets attached to a USER turn. The chat hook
+   *  populates this from the composer's pending list when sending;
+   *  MessageBubble renders read-only AssetChips below the bubble. */
+  attachments?: AttachedAsset[];
 }
 
 export interface ChatSession {

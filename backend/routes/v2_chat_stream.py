@@ -121,6 +121,13 @@ class StreamChatRequest(BaseModel):
     mode:        Optional[str]   = Field(default=None, max_length=32)
     temperature: float           = Field(default=0.7, ge=0.0, le=2.0)
     max_tokens:  Optional[int]   = Field(default=None, ge=1, le=32_000)
+    # Phase 9 — assets attached to this turn. The route fetches each
+    # asset (ownership-checked via the user_id namespace), reads the
+    # cached vision analysis when present, and folds a compact
+    # asset-context block into the system prompt BEFORE the LLM call.
+    # When ENABLE_ASSET_SYSTEM is off or the list is empty, this is
+    # a zero-cost no-op.
+    asset_ids:   Optional[List[str]] = Field(default=None, max_length=20)
 
 
 # ── Identity resolution ──────────────────────────────────────────────────────
@@ -343,6 +350,21 @@ async def stream_chat(body: StreamChatRequest, request: Request):
                 query=      last_user_msg,
                 limit=      8,
             )
+            # Phase 9 — fold attached assets into the system prompt.
+            # The block is bounded (~1600 chars) and ownership-checked
+            # by assets_client.list_by_ids. No-op when ENABLE_ASSET_SYSTEM
+            # is off OR none of the ids belong to this user.
+            asset_block: Optional[str] = None
+            if body.asset_ids:
+                asset_block = mp_chat.build_asset_context_block(
+                    user_id=   user_id,
+                    asset_ids= body.asset_ids,
+                )
+                if asset_block:
+                    if mp_system_prompt:
+                        mp_system_prompt = f"{mp_system_prompt}\n\n{asset_block}"
+                    else:
+                        mp_system_prompt = asset_block
             mp_path = "context_injected" if mp_system_prompt else "no_memory"
     except Exception as e:
         logger.warning("stream_chat.memory_plane integration error: %s", e)
