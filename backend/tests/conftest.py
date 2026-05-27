@@ -169,6 +169,19 @@ def tmp_agent_tasks_db(tmp_path, monkeypatch):
 
 
 @pytest.fixture()
+def tmp_scratchpad_db(tmp_path, monkeypatch):
+    """Phase 9 — isolate scratchpad.db per test."""
+    db_file = tmp_path / "scratchpad-test.db"
+    monkeypatch.setenv("SCRATCHPAD_DB_PATH", str(db_file))
+    monkeypatch.setenv("ENABLE_SCRATCHPAD", "true")
+    import importlib
+    sp = importlib.import_module("backend.services.scratchpad.store")
+    monkeypatch.setattr(sp, "_INITIALIZED", False, raising=False)
+    sp.init()
+    yield db_file
+
+
+@pytest.fixture()
 def tmp_memory_plane_db(tmp_path, monkeypatch):
     """Phase 6 — isolate memory_plane.db per test.
 
