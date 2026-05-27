@@ -690,6 +690,19 @@ export function useChat() {
             try { streamError = JSON.parse(frame.data); }
             catch { streamError = { message: frame.data }; }
             break;
+          } else if (frame.event === 'warning') {
+            // Phase 9 vision — backend can emit a non-fatal warning
+            // before tokens start. Currently used for
+            // VISION_UNAVAILABLE ("This model doesn't support image
+            // analysis"). Surface as an error banner so the user
+            // notices — the existing one is non-fatal text, no
+            // styling tweak needed.
+            try {
+              const w = JSON.parse(frame.data);
+              if (w?.message && typeof w.message === 'string') {
+                setError(w.message);
+              }
+            } catch { /* ignore malformed warning */ }
           }
           // `ready` / `message` / unknown → ignore by spec
         }

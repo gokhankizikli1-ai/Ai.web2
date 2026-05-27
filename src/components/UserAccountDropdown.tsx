@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useApp } from '@/contexts/AppContext';
 import { useToast } from '@/hooks/useToast';
 import { useAuthStore } from '@/stores/authStore';
+import { useOwnerMode } from '@/hooks/useOwnerMode';
 import { useLanguageStore, LANGUAGES } from '@/stores/languageStore';
 import type { Language } from '@/stores/languageStore';
 import {
@@ -32,7 +33,41 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
   const { addToast } = useToast();
   const navigate = useNavigate();
   const { user, isAuthenticated, logout } = useAuthStore();
+  // Phase 9 — owner-token unlock counts as "session active" too, so
+  // someone who unlocked owner mode via OWNER_TOKEN (no JWT) still
+  // sees their owner identity instead of "You / Guest User".
+  const { isOwner } = useOwnerMode();
+  // Same safety net as Sidebar — when a JWT is in localStorage but
+  // the auth store hasn't yet flipped isAuthenticated to true (flaky
+  // /auth/me, CORS hiccup), assume session is active rather than
+  // immediately falling back to guest UI.
+  const hasStoredToken = (() => {
+    try { return !!localStorage.getItem('korvix_access_token'); }
+    catch { return false; }
+  })();
+  const sessionActive = isAuthenticated || isOwner || hasStoredToken;
   const { lang, setLang } = useLanguageStore();
+
+  // Display name — honest cascade so we never render "You" when we
+  // actually know the user's identity:
+  //   1. user.name        (set by /auth/me, Google login, signup)
+  //   2. email prefix     (anything before the @ — last resort fallback
+  //                        that's still personalized)
+  //   3. "Owner"          (when isOwner but no email, e.g. token unlock)
+  //   4. "You"            (truly anonymous / guest)
+  const emailPrefix = (user?.email || '').split('@')[0].trim();
+  const displayName = (
+    (user?.name && user.name.trim()) ||
+    (emailPrefix && emailPrefix) ||
+    (isOwner ? 'Owner' : 'You')
+  );
+  const displaySubtitle = user?.email || (isOwner ? 'Owner session' : '');
+  const avatarInitials = (() => {
+    const src = (user?.name?.trim() || emailPrefix || 'U');
+    // Strip non-letters, take first two characters of the result.
+    const clean = src.replace(/[^\p{L}\p{N}]+/gu, '');
+    return (clean || 'U').slice(0, 2).toUpperCase();
+  })();
   const [open, setOpen] = useState(false);
   const [showLangMenu, setShowLangMenu] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -125,9 +160,9 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
         }`}
       >
         <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-400/20 to-blue-500/20 border border-cyan-500/10 shrink-0">
-          {isAuthenticated ? (
+          {sessionActive ? (
             <span className="text-[10px] font-medium text-cyan-400/80">
-              {(user?.name || user?.email || 'U').slice(0, 2).toUpperCase()}
+              {avatarInitials}
             </span>
           ) : (
             <User className="w-3.5 h-3.5 text-cyan-400/70" />
@@ -135,11 +170,13 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
         </div>
         <div className="flex-1 min-w-0 text-left">
           <div className="text-[12px] text-white truncate font-medium">
-            {isAuthenticated ? (user?.name || 'You') : 'You'}
+            {displayName}
           </div>
           <div className="flex items-center gap-1.5 mt-0.5">
             <div className="w-1 h-1 rounded-full bg-emerald-400/60" />
-            <span className="text-[10px] text-slate-600">{plan.label}</span>
+            <span className="text-[10px] text-slate-600">
+              {isOwner ? 'Owner' : plan.label}
+            </span>
           </div>
         </div>
         <span className="text-[10px] text-amber-400/60 tabular-nums shrink-0">{remainingCredits}</span>
@@ -227,9 +264,9 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
                   <div className="px-4 py-3.5 border-b border-white/[0.04]">
                     <div className="flex items-center gap-3 mb-3">
                       <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400/20 to-blue-500/20 border border-cyan-500/10 shrink-0">
-                        {isAuthenticated ? (
+                        {sessionActive ? (
                           <span className="text-[11px] font-medium text-cyan-400/80">
-                            {(user?.name || user?.email || 'U').slice(0, 2).toUpperCase()}
+                            {avatarInitials}
                           </span>
                         ) : (
                           <User className="w-4 h-4 text-cyan-400/70" />
@@ -237,10 +274,10 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-[13px] font-medium text-white truncate">
-                          {isAuthenticated ? (user?.name || 'User') : 'Guest User'}
+                          {sessionActive ? displayName : 'Guest User'}
                         </p>
                         <p className="text-[11px] text-slate-600 truncate">
-                          {isAuthenticated ? user?.email : 'user@korvix.ai'}
+                          {sessionActive ? (displaySubtitle || ' ') : 'user@korvix.ai'}
                         </p>
                       </div>
                     </div>
@@ -253,7 +290,7 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
                   </div>
 
                   {/* ─── Guest: Prominent auth actions (stacked for narrow sidebar) ─── */}
-                  {!isAuthenticated && (
+                  {!sessionActive && (
                     <div className="px-4 py-3 border-b border-white/[0.04]">
                       <div className="flex flex-col gap-1.5">
                         <button

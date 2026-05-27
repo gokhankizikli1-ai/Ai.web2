@@ -14,16 +14,28 @@ Used in three places:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Union
 
 
 Role = Literal["system", "user", "assistant"]
+
+# Phase 9 vision wiring — message content can be either a plain string
+# (the historical case, byte-identical to pre-vision behaviour) or a
+# list of provider-shaped content blocks for multimodal turns. For
+# OpenAI the list shape is `[{"type":"text","text":...},
+# {"type":"image_url","image_url":{"url":"data:..."}}]`; for Anthropic
+# it's `[{"type":"text","text":...},
+# {"type":"image","source":{"type":"base64","media_type":...,
+# "data":...}}]`. v2_chat_stream builds the list per-provider before
+# constructing the ProviderRequest; the provider adapters then pass
+# the list through unchanged.
+ProviderContent = Union[str, List[Dict[str, Any]]]
 
 
 @dataclass
 class ProviderMessage:
     role: Role
-    content: str
+    content: ProviderContent
 
 
 @dataclass
@@ -84,4 +96,7 @@ class ProviderResult:
         }
 
 
-__all__ = ["ProviderMessage", "ProviderRequest", "ProviderResult", "ProviderUsage", "Role"]
+__all__ = [
+    "ProviderMessage", "ProviderRequest", "ProviderResult",
+    "ProviderUsage", "Role", "ProviderContent",
+]

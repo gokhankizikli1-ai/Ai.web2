@@ -47,6 +47,12 @@ class OpenAIProvider(BaseAIProvider):
     name = "openai"
     default_model = settings.MODEL_FAST   # "gpt-4o-mini" unless overridden by env
     supports_streaming = True
+    supports_vision = True
+    # Model id prefixes that accept image content blocks. Matched via
+    # str.startswith on the configured model so "gpt-4o-mini-2024-07-18"
+    # still hits "gpt-4o". gpt-4-turbo is here for completeness; new
+    # GPT-4.1+ generations should be added as they ship.
+    vision_models = ("gpt-4o", "gpt-4.1", "gpt-4-turbo", "gpt-4-vision")
 
     def is_available(self) -> bool:
         # No network call. We trust settings; runtime auth errors get

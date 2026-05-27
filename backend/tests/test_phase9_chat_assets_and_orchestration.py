@@ -51,6 +51,14 @@ def fake_provider(monkeypatch):
         name = "fake-stream"
         default_model = "fake-model-1"
         supports_streaming = True
+        # Phase 9 vision — the default fake provider is text-only so
+        # the route's "model doesn't support vision" path is the one
+        # exercised by tests that don't override the fixture.
+        supports_vision = False
+        vision_models = ()
+
+        def model_supports_vision(self, _model):
+            return False
 
         async def stream_chat_completion(self, req) -> AsyncIterator:
             captured.requests.append(req)
@@ -178,6 +186,117 @@ class TestChatAssetInjection:
         sp = fake_provider.last_system
         assert "clip.mp4" in sp
         assert "not supported" in sp.lower() or "frame" in sp.lower()
+
+
+    # ── Phase 9 vision pipeline ────────────────────────────────────────
+
+    def test_vision_capable_provider_gets_multimodal_user_content(
+        self, client, tmp_assets_db, tmp_memory_plane_db, monkeypatch,
+    ):
+        """Vision-capable model + image asset ⇒ the user message's
+        content arrives at the provider as a LIST of content blocks
+        ([text, image_url]) — the actual image bytes are inlined as a
+        base64 data URL, not just described in the system prompt."""
+        captured = _CapturedRequests()
+
+        class _VisionProvider:
+            name = "openai"
+            default_model = "gpt-4o-mini"
+            supports_streaming = True
+            supports_vision = True
+            vision_models = ("gpt-4o",)
+
+            def model_supports_vision(self, model):
+                m = (model or self.default_model).lower()
+                return any(m.startswith(p) for p in self.vision_models)
+
+            async def stream_chat_completion(self, req):
+                captured.requests.append(req)
+                yield ProviderStreamStart(provider=self.name, model=req.model)
+                yield ProviderStreamToken(delta="ok")
+                yield ProviderStreamDone(
+                    finish_reason="stop", model=req.model,
+                    usage=type("U", (), {"prompt_tokens": 1,
+                                         "completion_tokens": 1,
+                                         "total_tokens": 2})(),
+                )
+
+        from backend.routes import v2_chat_stream as stream_route
+        monkeypatch.setattr(stream_route, "get_provider", lambda _n: _VisionProvider())
+
+        from backend.services.assets import client as ac
+        rec = ac.upload(user_id="u-vision", filename="design.png",
+                        mime_type="image/png", data=_PNG)
+        r = client.post("/v2/chat/stream", json={
+            "user_id": "u-vision",
+            "messages": [{"role": "user", "content": "describe this"}],
+            "asset_ids": [rec.id],
+        })
+        assert r.status_code == 200
+
+        # User message content is now a LIST of blocks, not a string.
+        last_user = next(
+            (m for m in reversed(captured.last_messages) if m.role == "user"),
+            None,
+        )
+        assert last_user is not None, "no user message reached the provider"
+        assert isinstance(last_user.content, list), (
+            f"expected multimodal list, got {type(last_user.content)}: "
+            f"{last_user.content!r}"
+        )
+        # First block carries the caption text.
+        assert last_user.content[0]["type"] == "text"
+        assert last_user.content[0]["text"] == "describe this"
+        # Subsequent blocks are image_url (OpenAI shape) with a base64
+        # data URL referencing the uploaded PNG.
+        image_blocks = [b for b in last_user.content if b.get("type") == "image_url"]
+        assert len(image_blocks) == 1
+        url = image_blocks[0]["image_url"]["url"]
+        assert url.startswith("data:image/png;base64,")
+
+    def test_vision_incapable_model_emits_warning(
+        self, client, tmp_assets_db, tmp_memory_plane_db, fake_provider,
+    ):
+        """If the configured model isn't in the provider's vision list
+        AND the user attached an image, the route emits an SSE
+        `warning` frame so the UI can render
+        'This model does not support image analysis.' The token stream
+        still completes — warnings are non-fatal."""
+        from backend.services.assets import client as ac
+        rec = ac.upload(user_id="u-no-vision", filename="design.png",
+                        mime_type="image/png", data=_PNG)
+        r = client.post("/v2/chat/stream", json={
+            "user_id": "u-no-vision",
+            "messages": [{"role": "user", "content": "describe"}],
+            "asset_ids": [rec.id],
+        })
+        assert r.status_code == 200
+        body = r.text
+        assert "event: warning" in body
+        assert "VISION_UNAVAILABLE" in body
+        # And the stream still produced tokens + done — warning is
+        # non-fatal.
+        assert "event: token" in body
+        assert "event: done" in body
+
+    def test_vision_warning_skipped_when_only_non_image_assets(
+        self, client, tmp_assets_db, tmp_memory_plane_db, fake_provider,
+    ):
+        """A PDF attachment on a non-vision model should NOT trigger
+        the 'image analysis' warning — only images need vision."""
+        from backend.services.assets import client as ac
+        # 4-byte stub PDF — uploader doesn't validate the magic bytes,
+        # only the MIME type.
+        rec = ac.upload(user_id="u-pdf", filename="notes.pdf",
+                        mime_type="application/pdf", data=b"%PDF")
+        r = client.post("/v2/chat/stream", json={
+            "user_id": "u-pdf",
+            "messages": [{"role": "user", "content": "summarise"}],
+            "asset_ids": [rec.id],
+        })
+        assert r.status_code == 200
+        assert "event: warning" not in r.text
+        assert "VISION_UNAVAILABLE" not in r.text
 
 
 # ════════════════════════════════════════════════════════════════════════════
