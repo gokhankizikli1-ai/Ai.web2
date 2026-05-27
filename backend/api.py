@@ -192,6 +192,12 @@ def _build_full_app():
         "backend.routes.market",       # Phase 8e — /market/quote/{symbol} (gated by ENABLE_MARKET_QUOTE)
         "backend.routes.v2_memory",    # Phase 6 — /v2/memory/* Memory Plane (gated by ENABLE_MEMORY_PLANE)
         "backend.routes.v2_jobs",      # Phase 7 — /v2/jobs/* Job Queue (gated by ENABLE_JOB_QUEUE)
+        "backend.routes.v2_assets",    # Phase 8 — /v2/assets/* Asset System (gated by ENABLE_ASSET_SYSTEM)
+        "backend.routes.v2_vision",    # Phase 8 — /v2/assets/{id}/analyze + /analysis (gated by ENABLE_VISION_PIPELINE)
+        "backend.routes.v2_brain",     # Phase 8 — /v2/projects/{id}/brain/* (gated by ENABLE_PROJECT_BRAIN)
+        "backend.routes.v2_workflows", # Phase 8 — /v2/workflows/* (gated by ENABLE_WORKFLOWS)
+        "backend.routes.v2_agent_tasks", # Phase 8 — /v2/agents/{id}/tasks/* (gated by ENABLE_AGENT_ORCHESTRATION)
+        "backend.routes.v2_recreate",  # Phase 8 — /v2/recreate/* (gated by ENABLE_WEBSITE_RECREATION)
     ]:
         try:
             _app.include_router(importlib.import_module(_mod).router)
