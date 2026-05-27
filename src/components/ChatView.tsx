@@ -98,6 +98,30 @@ export default function ChatView({
     }
   }, [latestAssistantContentLen, isLoading]);
 
+  // Phase 7 polish — settle scroll when streaming finishes. The
+  // in-bubble TypingIndicator unmounts via AnimatePresence (~180ms
+  // exit), causing the bubble to shrink by ~30px. Without this,
+  // a user who was anchored at the bottom drifts up by that amount.
+  // Mirrors the sticky-bottom heuristic of the streaming-follow
+  // effect — only settle if the user is still near the bottom.
+  useEffect(() => {
+    if (isLoading) return;
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const STICK_THRESHOLD_PX = 200;
+    const distanceFromBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight;
+    if (distanceFromBottom <= STICK_THRESHOLD_PX) {
+      // Slight delay so the indicator's exit animation completes
+      // BEFORE we re-anchor, otherwise scrollTo runs against the
+      // pre-exit height and lands 30px short.
+      const timer = setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+      }, 220);
+      return () => clearTimeout(timer);
+    }
+  }, [isLoading]);
+
   // Track latest assistant message for stream animation
   useEffect(() => {
     const lastMsg = messages[messages.length - 1];
