@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import type { ChatSession, Message, AIMode, WorkspaceTab, ChatFolder } from '@/types';
+import type { ChatSession, Message, AIMode, WorkspaceTab, ChatFolder, AttachedAsset } from '@/types';
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
@@ -197,7 +197,28 @@ function normalizeMessage(raw: unknown): Message | null {
   } else {
     timestamp = new Date();
   }
-  return { id, role, content, timestamp };
+  // Phase 9 — preserve attachments across reloads. Defensive
+  // normalisation: drop anything that doesn't look like a real
+  // AttachedAsset shape so stale localStorage can't crash render.
+  let attachments: AttachedAsset[] | undefined;
+  const rawAtt = m.attachments;
+  if (Array.isArray(rawAtt) && rawAtt.length > 0) {
+    attachments = rawAtt
+      .filter((a): a is Record<string, unknown> =>
+        !!a && typeof a === 'object')
+      .map((a) => ({
+        asset_id:   typeof a.asset_id   === 'string' ? a.asset_id   : '',
+        filename:   typeof a.filename   === 'string' ? a.filename   : 'asset',
+        mime_type:  typeof a.mime_type  === 'string' ? a.mime_type  : 'application/octet-stream',
+        size_bytes: typeof a.size_bytes === 'number' ? a.size_bytes : 0,
+        public_url: typeof a.public_url === 'string' ? a.public_url : undefined,
+        asset_type: typeof a.asset_type === 'string' ? a.asset_type : undefined,
+      }))
+      .filter((a) => !!a.asset_id);
+    if (attachments.length === 0) attachments = undefined;
+  }
+  return { id, role, content, timestamp,
+           ...(attachments ? { attachments } : {}) };
 }
 
 function normalizeSession(raw: unknown): ChatSession | null {
@@ -498,8 +519,9 @@ export function useChat() {
     setError(null);
   }, [activeSessionId, currentTab]);
 
-  const doSend = useCallback(async (content: string) => {
-    if (!content.trim()) return;
+  const doSend = useCallback(async (content: string, attachments: AttachedAsset[] = []) => {
+    if (!content.trim() && attachments.length === 0) return;
+    const attachedAssetIds = attachments.map((a) => a.asset_id);
 
     const trimmed = content.trim();
     setError(null);
@@ -511,6 +533,10 @@ export function useChat() {
       role: 'user',
       content: trimmed,
       timestamp: new Date(),
+      // Phase 9 — Persist attachments on the user message so the
+      // bubble can render asset chips even after a full page reload
+      // (sessions are localStorage-persisted; attachments survive).
+      ...(attachments.length > 0 ? { attachments } : {}),
     };
 
     setSessions((prev) =>
@@ -582,6 +608,12 @@ export function useChat() {
             // saved via either path are visible to the other.
             user_id: userIdRef.current,
             ...(requestMode ? { mode: requestMode } : {}),
+            // Phase 9 — attached assets. The backend
+            // (v2_chat_stream.py) ownership-checks each id under
+            // user_id and folds asset summaries into the system
+            // prompt before the LLM call.
+            ...(attachedAssetIds && attachedAssetIds.length > 0
+              ? { asset_ids: attachedAssetIds } : {}),
           }),
         });
 
@@ -784,9 +816,12 @@ export function useChat() {
     }
   }, [activeSessionId, aiMode]);
 
-  const sendMessage = useCallback(async (content: string) => {
-    await doSend(content);
-  }, [doSend]);
+  const sendMessage = useCallback(
+    async (content: string, attachments: AttachedAsset[] = []) => {
+      await doSend(content, attachments);
+    },
+    [doSend],
+  );
 
   const retry = useCallback(() => {
     if (lastUserMessage) {

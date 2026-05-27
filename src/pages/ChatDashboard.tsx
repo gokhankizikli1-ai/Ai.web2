@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router';
 import { useChat, TAB_KEYS } from '@/hooks/useChat';
 import { useCommandPalette } from '@/hooks/useCommandPalette';
 import { useJobActivities } from '@/hooks/useJobs';
+import { useOrchestrationFeed } from '@/hooks/useOrchestrationFeed';
 import { useToast } from '@/hooks/useToast';
 import { useApp } from '@/contexts/AppContext';
 import type { WorkspaceTab } from '@/types';
@@ -196,6 +197,18 @@ export default function ChatDashboard() {
   // after a successful response, so the demo never bleeds into a real
   // session.
   const { activities: realJobActivities, isAvailable: jobsAvailable } = useJobActivities();
+
+  // Phase 9 — unified orchestration feed (jobs + workflows + agent_tasks).
+  // Polls the aggregator at /v2/orchestration/activity every 4s
+  // (foreground) / 20s (background). When the aggregator has data
+  // it takes precedence over the jobs-only feed; both gracefully
+  // fall back to demo when no JWT or all subsystems are off.
+  const orchestration = useOrchestrationFeed();
+  const liveActivities = orchestration.isAvailable && orchestration.activities.length > 0
+    ? orchestration.activities
+    : jobsAvailable
+      ? realJobActivities
+      : DEMO_ACTIVITIES;
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<WorkspaceTab>(
@@ -460,7 +473,7 @@ export default function ChatDashboard() {
           </div>
         </header>
 
-        <AIActivityFeed activities={jobsAvailable ? realJobActivities : DEMO_ACTIVITIES} />
+        <AIActivityFeed activities={liveActivities} />
         <AgentTimeline isVisible={showTimeline} />
 
         {/* Main content — NO AnimatePresence mode="wait" to prevent composer freeze */}

@@ -198,6 +198,7 @@ def _build_full_app():
         "backend.routes.v2_workflows", # Phase 8 — /v2/workflows/* (gated by ENABLE_WORKFLOWS)
         "backend.routes.v2_agent_tasks", # Phase 8 — /v2/agents/{id}/tasks/* (gated by ENABLE_AGENT_ORCHESTRATION)
         "backend.routes.v2_recreate",  # Phase 8 — /v2/recreate/* (gated by ENABLE_WEBSITE_RECREATION)
+        "backend.routes.v2_orchestration",  # Phase 9 — /v2/orchestration/activity (always 200)
     ]:
         try:
             _app.include_router(importlib.import_module(_mod).router)

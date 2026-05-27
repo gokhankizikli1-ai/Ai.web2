@@ -398,6 +398,91 @@ def ack_reply_empty(message: str) -> str:
     return "I didn't catch what to remember — please include the fact after 'remember this'."
 
 
+# ── Phase 9 — asset-aware context ───────────────────────────────────────────
+
+def build_asset_context_block(
+    *,
+    user_id: str,
+    asset_ids: Optional[list[str]] = None,
+) -> Optional[str]:
+    """Compose a system-prompt block describing the assets attached
+    to this chat turn. Resolves each id via assets_client (ownership
+    enforced), pulls the cached vision analysis when present, and
+    returns a bounded compact string.
+
+    Returns None when:
+      * asset_ids is empty
+      * ENABLE_ASSET_SYSTEM is off (client returns []; we surface no block)
+      * none of the ids resolve to an owned asset (all-or-nothing)
+
+    Output shape (capped at ~1600 chars):
+        [Attached assets]
+        - design.png (image, 240 KB) — Image asset 'design.png' (image/png, 245,768 bytes, 1200×800px).
+        - notes.pdf  (pdf,   12 KB) — PDF document 'notes.pdf' (12,288 bytes). Text extracted (1,243 chars).
+    """
+    if not user_id or not asset_ids:
+        return None
+    try:
+        from backend.services.assets import client as _assets_client
+        from backend.services.vision import client as _vision_client
+    except Exception as e:
+        logger.warning("memory_plane.chat.build_asset_context_block import error: %s", e)
+        return None
+
+    # Ownership-checked batch fetch.
+    items = _assets_client.list_by_ids(str(user_id), list(asset_ids)) or []
+    if not items:
+        return None
+
+    char_budget = 1600
+    lines: list[str] = ["[Attached assets — describe and reason about them naturally]"]
+    char_budget -= len(lines[0]) + 1
+
+    for a in items:
+        # Pull the cached analysis if vision ran; falls back to
+        # metadata-only summary otherwise. Honest by default — we
+        # never invent details.
+        summary: str = ""
+        analysis = _vision_client.get_cached(a.id or "")
+        if analysis and analysis.get("summary"):
+            summary = str(analysis["summary"])
+        else:
+            summary = (
+                f"{a.asset_type.title()} {a.filename!r} "
+                f"({a.mime_type}, {a.size_bytes:,} bytes)."
+            )
+            # Append video processing note when applicable so the LLM
+            # doesn't pretend to understand the content.
+            if (a.metadata or {}).get("processing_not_supported"):
+                summary += (
+                    " Frame extraction not supported; "
+                    "only filename and size are visible."
+                )
+
+        # Inline extracted text for PDFs/documents when present and short.
+        extracted = (analysis or {}).get("extracted_text") if analysis else None
+        line = f"- {a.filename} ({a.asset_type}, {_human_size(a.size_bytes)}) — {summary[:280]}"
+        if extracted and len(extracted) < 500:
+            line += f"\n  Excerpt: {extracted[:400]}"
+
+        if char_budget - len(line) - 1 < 0:
+            break
+        lines.append(line)
+        char_budget -= len(line) + 1
+
+    if len(lines) == 1:
+        return None
+    return "\n".join(lines)
+
+
+def _human_size(n: int) -> str:
+    for unit in ("B", "KB", "MB"):
+        if n < 1024 or unit == "MB":
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1024  # type: ignore[assignment]
+    return f"{n} B"
+
+
 # ── Streaming-path system-prompt assembler ──────────────────────────────────
 #
 # The /v2/chat/stream route was originally a pure passthrough to the
@@ -507,6 +592,7 @@ __all__ = [
     "context_block",
     "fold_into_mem_summary",
     "build_stream_system_prompt",
+    "build_asset_context_block",
     "memory_hit_count",
     "ack_reply",
     "ack_reply_empty",

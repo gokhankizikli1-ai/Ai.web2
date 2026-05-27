@@ -5,7 +5,7 @@ import TypingIndicator from '@/components/TypingIndicator';
 import EmptyWorkspace from '@/components/EmptyWorkspace';
 import PremiumComposer from '@/components/PremiumComposer';
 import type { ComposerTool } from '@/components/ComposerTools';
-import type { Message, WorkspaceTab } from '@/types';
+import type { AttachedAsset, Message, WorkspaceTab } from '@/types';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -14,7 +14,10 @@ interface ChatViewProps {
   isLoading: boolean;
   error: string | null;
   inputText: string;
-  onSend: (message: string) => void;
+  // Phase 9 — onSend carries the attached assets so the chat hook can
+  // persist them on the user Message AND forward the ids to
+  // /v2/chat/stream. Empty array = text-only turn.
+  onSend: (message: string, attachments?: AttachedAsset[]) => void;
   onRetry: () => void;
   onSetInput: (text: string) => void;
   onTogglePin: (msg: Message) => void;
@@ -106,13 +109,13 @@ export default function ChatView({
     }
   }, [messages, isLoading]);
 
-  const handleSend = useCallback((msg: string) => {
+  const handleSend = useCallback((msg: string, attachments: AttachedAsset[] = []) => {
     let finalMsg = msg;
     if (activeTools.length > 0) {
       const toolNames = activeTools.map((t) => t.chip).join(', ');
       finalMsg = `[Using: ${toolNames}]\n${msg}`;
     }
-    onSend(finalMsg);
+    onSend(finalMsg, attachments);
     onSetInput('');
     setActiveTools([]);
   }, [onSend, onSetInput, activeTools]);
