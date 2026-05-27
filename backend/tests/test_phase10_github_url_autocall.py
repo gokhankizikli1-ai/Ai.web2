@@ -215,13 +215,27 @@ class TestChatStreamAutoInvokesGithub:
 
         # ── System-prompt augmentation ─────────────────────────────────
         # The augmented system prompt the LLM actually sees must
-        # contain the repo metadata block.
+        # contain the new assertive header AND the repo data block.
         sys_prompt = fake_provider_with_vision.last_system
-        assert "Repository inspection" in sys_prompt
+        assert "KORVIX GITHUB TOOL OUTPUT" in sys_prompt
+        assert "DO NOT REFUSE" in sys_prompt
         assert "Ai.web2" in sys_prompt
         assert "Multi-agent OS." in sys_prompt
-        # And the canonical KorvixAI "ground truth" framing.
-        assert "ground truth" in sys_prompt.lower()
+
+        # ── User-message dual injection (Phase 10 fix #2) ─────────────
+        # The same block ALSO appears as a suffix on the LAST user
+        # message so GPT-4o doesn't pattern-match "I cannot inspect
+        # GitHub" off the URL in the user's text.
+        captured_req = fake_provider_with_vision.requests[-1]
+        last_user = None
+        for m in reversed(captured_req.messages):
+            if m.role == "user":
+                last_user = m
+                break
+        assert last_user is not None
+        user_text = last_user.content if isinstance(last_user.content, str) else ""
+        assert "Tool output the user is asking you to use" in user_text
+        assert "Ai.web2" in user_text
 
     def test_no_url_in_message_no_tool_events(
         self, client, monkeypatch, fake_provider_with_vision,
@@ -301,3 +315,61 @@ class TestChatStreamAutoInvokesGithub:
         sys_prompt = fake_provider_with_vision.last_system
         assert "could not be inspected" in sys_prompt
         assert "rate limit" in sys_prompt.lower()
+
+
+class TestStrongerFraming:
+    """Phase 10 fix #2 — the LLM was ignoring the injected block.
+    These tests pin down the precise framing so a future regression
+    can't accidentally weaken it back to the original "please use as
+    ground truth" wording that GPT-4o was bypassing."""
+
+    def test_block_header_is_assertive(self):
+        """Header must contain the "DO NOT REFUSE" + "REAL DATA"
+        framing so the model can't pattern-match into a generic refusal."""
+        # Build a minimal block via the helper — we mock the tool to
+        # return real data and assert on the resulting string.
+        import asyncio
+        from unittest.mock import patch
+        from backend.services.tool_extraction import build_github_context_block
+
+        async def _run():
+            import os
+            os.environ["ENABLE_TOOLS"] = "true"
+            os.environ["ENABLE_GITHUB_TOOL"] = "true"
+            os.environ["ENABLE_TOOLS_RUNTIME"] = "true"
+            # Patch the tool's safe_run to return canned data.
+            from backend.services.tools import tool_registry as reg
+            gh_tool = reg.get_tool("github_repo")
+            assert gh_tool is not None
+            async def fake_safe_run(query, context=None):
+                return {
+                    "tool": "github_repo", "status": "available",
+                    "data": {**_FAKE_GH_DATA, "full_name": "x/y"},
+                    "message": None, "provider": "github", "source": "github",
+                    "timestamp": "x", "is_live": True,
+                }
+            real = gh_tool.safe_run
+            gh_tool.safe_run = fake_safe_run
+
+            async def empty_files(owner, repo):
+                return []
+            try:
+                with patch(
+                    "backend.services.tool_extraction.github_urls._fetch_key_files",
+                    empty_files,
+                ):
+                    block, _ = await build_github_context_block(
+                        user_id="u", text="check https://github.com/owner/repo",
+                    )
+            finally:
+                gh_tool.safe_run = real
+            return block
+
+        block = asyncio.run(_run())
+        assert block is not None
+        # The exact strings the LLM has to encounter for the refusal
+        # pattern to break. Don't weaken these without re-running the
+        # GPT-4o smoke test.
+        assert "DO NOT REFUSE" in block
+        assert "REAL DATA" in block
+        assert "I (KorvixAI) just ran my GitHub tool" in block

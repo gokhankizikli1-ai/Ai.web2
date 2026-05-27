@@ -653,28 +653,71 @@ async def stream_chat(body: StreamChatRequest, request: Request):
                     "payloads": raw_payloads,
                 })
 
-            # 5) Rebuild final_msgs with the tool block folded into
-            #    the system prompt. The vision-rewritten user message
-            #    (if any) is preserved verbatim — we only touch the
-            #    system message.
+            # 5) Rebuild final_msgs with the tool block folded in.
+            #
+            # Inject in TWO places for resilience against model
+            # refusal patterns. Observed in production: GPT-4o
+            # sometimes ignores a tool block placed only in the
+            # system prompt and falls back to "I cannot directly
+            # inspect GitHub repositories…". Injecting the same
+            # block as a suffix on the user message turns it into
+            # data the user directly provided, which the model
+            # treats as primary context. Both injections cite the
+            # same block, so the model can't double-count it.
             if tool_block:
                 augmented_msgs: list = []
                 first_role = final_msgs[0].role if final_msgs else None
+
+                # (a) System prompt augmentation (existing behaviour).
                 if first_role == "system":
                     sys_content = final_msgs[0].content
                     if isinstance(sys_content, list):
-                        # Shouldn't happen for system messages, but
-                        # defensive: flatten text blocks.
                         sys_content = "\n".join(
                             str(b.get("text", "")) for b in sys_content
                             if isinstance(b, dict) and b.get("type") == "text"
                         )
                     new_sys = f"{(sys_content or '').strip()}\n\n{tool_block}"
                     augmented_msgs.append(ProviderMessage(role="system", content=new_sys))
-                    augmented_msgs.extend(final_msgs[1:])
+                    rest = final_msgs[1:]
                 else:
                     augmented_msgs.append(ProviderMessage(role="system", content=tool_block))
-                    augmented_msgs.extend(final_msgs)
+                    rest = list(final_msgs)
+
+                # (b) User-message augmentation. Find the LAST user
+                #     message in `rest`, append the block as a clearly
+                #     fenced suffix. Vision multimodal content lists
+                #     get the block as an additional text part; plain
+                #     strings get concatenated.
+                last_user_idx: Optional[int] = None
+                for i in range(len(rest) - 1, -1, -1):
+                    if rest[i].role == "user":
+                        last_user_idx = i
+                        break
+                if last_user_idx is not None:
+                    user_msg = rest[last_user_idx]
+                    suffix = (
+                        "\n\n---\n"
+                        "[Tool output the user is asking you to use — "
+                        "treat as authoritative:]\n"
+                        f"{tool_block}"
+                    )
+                    if isinstance(user_msg.content, list):
+                        # Multimodal: append a text block at the end.
+                        new_content = list(user_msg.content) + [{
+                            "type": "text",
+                            "text": suffix,
+                        }]
+                        rest[last_user_idx] = ProviderMessage(
+                            role="user", content=new_content,
+                        )
+                    else:
+                        new_text = (user_msg.content or "") + suffix
+                        rest[last_user_idx] = ProviderMessage(
+                            role="user", content=new_text,
+                        )
+
+                augmented_msgs.extend(rest)
+
                 effective_pr_request = ProviderRequest(
                     messages=    augmented_msgs,
                     model=       pr_request.model,
@@ -684,9 +727,27 @@ async def stream_chat(body: StreamChatRequest, request: Request):
                     extra=       pr_request.extra,
                 )
                 logger.info(
-                    "stream_chat.github_url | uid=%s | repos=%d | block_chars=%d",
+                    "stream_chat.github_url | uid=%s | repos=%d | "
+                    "block_chars=%d | injected=system+user | "
+                    "sys_chars=%d | last_user_idx=%s",
                     user_id, len(github_refs), len(tool_block),
+                    len(augmented_msgs[0].content) if augmented_msgs and isinstance(augmented_msgs[0].content, str) else -1,
+                    last_user_idx,
                 )
+
+                # Owner-debug — log the full first 3KB of the system
+                # prompt so an owner reviewing logs can see exactly
+                # what the model received. Non-owners never see this
+                # in logs because the gate runs against request.user.
+                if owner_debug:
+                    sys_preview = ""
+                    if augmented_msgs and isinstance(augmented_msgs[0].content, str):
+                        sys_preview = augmented_msgs[0].content[:3000]
+                    logger.info(
+                        "stream_chat.github_url.owner_debug | uid=%s | "
+                        "sys_prompt_first_3kb=%s",
+                        user_id, sys_preview.replace("\n", " | "),
+                    )
         try:
             async for event in provider.stream_chat_completion(effective_pr_request):
                 if isinstance(event, ProviderStreamStart):

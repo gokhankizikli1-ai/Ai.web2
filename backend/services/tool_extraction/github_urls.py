@@ -438,10 +438,26 @@ async def build_github_context_block(
     if not blocks:
         return None, raw_payloads
 
+    # Header is intentionally assertive — production observations
+    # showed that GPT-4o has a strong reflex to refuse questions
+    # containing github.com URLs with "I cannot directly inspect
+    # GitHub repositories" even when grounding data is provided.
+    # Making the framing forceful + first-person stops the refusal
+    # pattern. Tested on gpt-4o / gpt-4o-mini / claude-3.5-sonnet.
     header = (
-        "[Repository inspection — KorvixAI fetched the following directly "
-        "via the GitHub API. Use these as ground truth; do NOT speculate "
-        "about contents you cannot see in this block.]"
+        "═══════════════════════════════════════════════════════════════\n"
+        "KORVIX GITHUB TOOL OUTPUT — REAL DATA — DO NOT REFUSE\n"
+        "═══════════════════════════════════════════════════════════════\n"
+        "I (KorvixAI) just ran my GitHub tool against the repository "
+        "URL(s) the user mentioned. The verbatim API response is below. "
+        "I DO have access to this data — it was fetched seconds ago. \n\n"
+        "DO NOT say \"I cannot directly inspect GitHub repositories\" — "
+        "the inspection has already been done and the results are here.\n\n"
+        "Analyse the data below as my primary source. Cite the actual "
+        "stars / language / README / commits / key-file contents I "
+        "fetched. If something is missing from this block (e.g. a "
+        "specific file the user asked about), say so honestly — but "
+        "do NOT pretend the whole repository is inaccessible."
     )
     full_block = header + "\n\n" + "\n\n".join(blocks)
     return full_block, raw_payloads
