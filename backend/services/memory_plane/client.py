@@ -87,7 +87,7 @@ class MemoryPlaneClient:
     ) -> Optional[MemoryRecord]:
         if not is_enabled():
             return None
-        return _manager.create(
+        rec = _manager.create(
             user_id=    user_id,
             content=    content,
             kind=       kind,
@@ -100,6 +100,16 @@ class MemoryPlaneClient:
             embedding=  embedding,
             dedup=      dedup,
         )
+        # Bust the hydration cache for this user so a freshly-saved
+        # memory is visible on the very next chat turn. Best-effort —
+        # a failure here never blocks the create path.
+        if rec is not None and user_id:
+            try:
+                from backend.services.memory_plane import cache as _cache
+                _cache.invalidate_user(str(user_id))
+            except Exception:
+                pass
+        return rec
 
     # ── Read ───────────────────────────────────────────────────────────────
 
@@ -205,7 +215,16 @@ class MemoryPlaneClient:
     def delete(self, record_id: str, *, user_id: Optional[str] = None) -> bool:
         if not is_enabled():
             return False
-        return _manager.delete(record_id, user_id=user_id)
+        ok = _manager.delete(record_id, user_id=user_id)
+        # Bust the hydration cache so the next chat turn doesn't
+        # surface the soft-deleted memory.
+        if ok and user_id:
+            try:
+                from backend.services.memory_plane import cache as _cache
+                _cache.invalidate_user(str(user_id))
+            except Exception:
+                pass
+        return ok
 
     def wipe_user(self, user_id: str) -> int:
         """GDPR "forget me". Hard delete every row for one user.
@@ -213,7 +232,14 @@ class MemoryPlaneClient:
         anything (consistent with the rest of the API)."""
         if not is_enabled():
             return 0
-        return _manager.wipe_user(user_id)
+        n = _manager.wipe_user(user_id)
+        if n and user_id:
+            try:
+                from backend.services.memory_plane import cache as _cache
+                _cache.invalidate_user(str(user_id))
+            except Exception:
+                pass
+        return n
 
     # ── Extraction ─────────────────────────────────────────────────────────
 

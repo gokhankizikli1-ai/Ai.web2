@@ -45,6 +45,15 @@ from backend.services.memory_plane.client import (
     is_enabled,
     score_importance,
 )
+# Phase 6.x stabilization layer — cache + hydration pipeline + preferences.
+from backend.services.memory_plane import cache as _cache  # noqa: F401
+from backend.services.memory_plane.hydration import (
+    HydratedSnapshot, hydrate_for_chat,
+)
+from backend.services.memory_plane.preferences import (
+    top_preferences, top_style, top_project_context,
+    format_preferences_block,
+)
 from backend.services.memory_plane.types import (
     MemoryRecord, MemoryQuery,
     MEMORY_KINDS, DEFAULT_KIND, normalize_kind,
@@ -60,6 +69,10 @@ from backend.services.memory_plane.extractor import (
 __all__ = [
     # Public client
     "MemoryPlaneClient", "client", "is_enabled", "score_importance",
+    # Hydration pipeline + preferences (Phase 6.x stabilization)
+    "HydratedSnapshot", "hydrate_for_chat",
+    "top_preferences", "top_style", "top_project_context",
+    "format_preferences_block",
     # Types
     "MemoryRecord", "MemoryQuery",
     "MEMORY_KINDS", "DEFAULT_KIND", "normalize_kind",
