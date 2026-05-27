@@ -32,8 +32,15 @@ from backend.services.tool_extraction.web_urls import (
     build_web_context_block,
     WebUrl,
 )
+from backend.services.tool_extraction.web_search_intent import (
+    WebSearchIntent,
+    detect_web_search_intent,
+    build_web_search_context_block,
+)
 
 __all__ = [
     "extract_github_refs", "build_github_context_block", "GitHubRef",
     "extract_web_urls", "build_web_context_block", "WebUrl",
+    "WebSearchIntent", "detect_web_search_intent",
+    "build_web_search_context_block",
 ]

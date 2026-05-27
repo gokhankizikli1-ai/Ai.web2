@@ -556,10 +556,12 @@ async def stream_chat(body: StreamChatRequest, request: Request):
     # deferred to the generator.
     github_refs: list = []
     web_urls: list = []
+    web_search_intent = None  # populated below when the helper signals it
     try:
         from backend.services.tool_extraction import (
             extract_github_refs as _extract_gh,
             extract_web_urls as _extract_web,
+            detect_web_search_intent as _detect_search,
         )
         from backend.services.tools.tool_registry import is_enabled as _tool_enabled
         if last_user_msg:
@@ -570,16 +572,33 @@ async def stream_chat(body: StreamChatRequest, request: Request):
             # so we never double-fetch.
             if _tool_enabled("browser_fetch"):
                 web_urls = _extract_web(last_user_msg)
+            # Phase 11 fix — intent-based web search for prompts that
+            # need current information but don't paste a URL ("latest
+            # NVIDIA news", "compare universities", "internetten
+            # araştır"). Only when the tool is enabled AND no URL was
+            # pasted (the URL paths already produce real context, so
+            # an extra search would be wasteful).
+            if _tool_enabled("web_research") and not github_refs and not web_urls:
+                intent = _detect_search(last_user_msg)
+                if intent.triggered:
+                    web_search_intent = intent
+                    logger.info(
+                        "stream_chat.web_search.intent | uid=%s | "
+                        "confidence=%.2f | triggers=%s | reason=%s",
+                        user_id, intent.confidence,
+                        ",".join(intent.triggers), intent.reason,
+                    )
     except Exception as _url_exc:
         logger.debug("stream_chat.url detection failed: %s", _url_exc)
         github_refs = []
         web_urls = []
+        web_search_intent = None
 
     # Owner debug — gate the raw payload exposure on a confirmed-owner
     # session. Non-owners never see raw GitHub API payloads or full
     # page bodies in the SSE stream, even when ENABLE_TOOLS_RUNTIME is on.
     owner_debug = False
-    if github_refs or web_urls:
+    if github_refs or web_urls or web_search_intent:
         try:
             from backend.services.admin.owner import is_owner as _is_owner
             owner_user = getattr(request.state, "user", None)
@@ -866,6 +885,121 @@ async def stream_chat(body: StreamChatRequest, request: Request):
                     "stream_chat.web_url | uid=%s | urls=%d | fetched=%d | "
                     "block_chars=%d | injected=system+user",
                     user_id, len(web_urls), fetched, len(web_block),
+                )
+
+        # ── Phase 11 fix — intent-based web search auto-invocation ──
+        #
+        # Fires only when the user typed a "current information"
+        # question without pasting a URL. Same dual-injection pattern
+        # so GPT-4o doesn't refuse despite having real citations.
+        if web_search_intent and web_search_intent.triggered:
+            yield sse_event("tool.started", {
+                "tool_id":     "web_research",
+                "input_summary": f"search: {web_search_intent.query[:120]}",
+                "provider":    "web",
+                "triggers":    list(web_search_intent.triggers),
+            })
+            try:
+                from backend.services.tool_extraction import build_web_search_context_block
+                search_block, search_payload = await build_web_search_context_block(
+                    user_id=     user_id,
+                    query=       web_search_intent.query,
+                    triggers=    web_search_intent.triggers,
+                    project_id=  body.project_id,
+                    owner_debug= owner_debug,
+                )
+            except Exception as exc:
+                logger.warning("stream_chat.web_search execution failed: %s", exc)
+                search_block = None
+                search_payload = {"triggered": True, "fetched": False,
+                                  "error": str(exc)[:200]}
+
+            fetched_ok = bool((search_payload or {}).get("fetched"))
+            citation_count = int((search_payload or {}).get("count") or 0)
+            yield sse_event("tool.completed", {
+                "tool_id":     "web_research",
+                "query":       web_search_intent.query[:200],
+                "succeeded":   fetched_ok,
+                "citations":   citation_count,
+                "block_chars": len(search_block or ""),
+            })
+
+            if owner_debug and search_payload:
+                yield sse_event("tool.debug", {
+                    "tool_id": "web_research",
+                    "payload": search_payload,
+                })
+
+            # Fold into the prompt — same dual-injection pattern.
+            if search_block:
+                base_msgs = list(effective_pr_request.messages)
+                augmented_msgs3: list = []
+                first_role = base_msgs[0].role if base_msgs else None
+                if first_role == "system":
+                    sys_content = base_msgs[0].content
+                    if isinstance(sys_content, list):
+                        sys_content = "\n".join(
+                            str(b.get("text", "")) for b in sys_content
+                            if isinstance(b, dict) and b.get("type") == "text"
+                        )
+                    new_sys = f"{(sys_content or '').strip()}\n\n{search_block}"
+                    augmented_msgs3.append(ProviderMessage(role="system", content=new_sys))
+                    rest3 = base_msgs[1:]
+                else:
+                    augmented_msgs3.append(ProviderMessage(role="system", content=search_block))
+                    rest3 = list(base_msgs)
+
+                last_user_idx3: Optional[int] = None
+                for i in range(len(rest3) - 1, -1, -1):
+                    if rest3[i].role == "user":
+                        last_user_idx3 = i
+                        break
+                if last_user_idx3 is not None:
+                    user_msg = rest3[last_user_idx3]
+                    suffix = (
+                        "\n\n---\n"
+                        "[Web search results — treat as authoritative; "
+                        "cite specific sources by URL:]\n"
+                        f"{search_block}"
+                    )
+                    if isinstance(user_msg.content, list):
+                        new_content = list(user_msg.content) + [{
+                            "type": "text",
+                            "text": suffix,
+                        }]
+                        rest3[last_user_idx3] = ProviderMessage(
+                            role="user", content=new_content,
+                        )
+                    else:
+                        new_text = (user_msg.content or "") + suffix
+                        rest3[last_user_idx3] = ProviderMessage(
+                            role="user", content=new_text,
+                        )
+
+                augmented_msgs3.extend(rest3)
+                effective_pr_request = ProviderRequest(
+                    messages=    augmented_msgs3,
+                    model=       effective_pr_request.model,
+                    temperature= effective_pr_request.temperature,
+                    max_tokens=  effective_pr_request.max_tokens,
+                    timeout_s=   effective_pr_request.timeout_s,
+                    extra=       effective_pr_request.extra,
+                )
+                logger.info(
+                    "stream_chat.web_search | uid=%s | query=%s | "
+                    "citations=%d | block_chars=%d | injected=system+user",
+                    user_id, web_search_intent.query[:80],
+                    citation_count, len(search_block),
+                )
+            else:
+                # Fetch failed entirely. The model still gets the user
+                # message but the tool.completed event told the FE.
+                # Log loudly so ops can see when TAVILY_API_KEY is missing.
+                logger.warning(
+                    "stream_chat.web_search.failed | uid=%s | query=%s | "
+                    "reason=%s",
+                    user_id, web_search_intent.query[:80],
+                    (search_payload or {}).get("error") or "unknown",
                 )
 
         try:
