@@ -45,12 +45,17 @@ class Config:
     FREE_DAILY_LIMIT: int = int(os.getenv("FREE_DAILY_LIMIT", "20"))
 
     # ── Owner / Admin Mode ───────────────────────────────────────────────
-    # OWNER_EMAIL: canonical (lowercased) email of the project owner. When
-    # a user's email-kind external_id matches, `is_owner(user)` returns
-    # True and the /v2/admin/* routes unlock. Multiple emails can be
-    # provided comma-separated (rare — supports a temporary co-owner
-    # during handoff). Empty string ⇒ no email-based owner detection.
+    # OWNER_EMAIL: historical single-owner var. Comma-separated values are
+    # also accepted (kept so existing deployments keep working without
+    # touching env config). Empty string ⇒ no email-based owner detection
+    # via this var.
     OWNER_EMAIL: str = os.getenv("OWNER_EMAIL", "").strip().lower()
+    # OWNER_EMAILS: preferred multi-owner whitelist. CSV, trimmed and
+    # lower-cased per entry. Unioned with OWNER_EMAIL at check time
+    # (services/admin/owner.py::_owner_emails) so an account that
+    # matches EITHER var is treated as owner. Set this in production
+    # for multi-owner setups; OWNER_EMAIL becomes optional.
+    OWNER_EMAILS: str = os.getenv("OWNER_EMAILS", "").strip().lower()
     # OWNER_ID: legacy / numeric or string user id allow-list. Matches
     # against User.id (uuid hex) OR User.external_id. Comma-separated to
     # support emergency rotation. "0" or "" ⇒ disabled. Kept alongside

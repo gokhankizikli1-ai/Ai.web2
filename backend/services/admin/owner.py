@@ -51,11 +51,31 @@ def _admin_mode_enabled() -> bool:
 
 
 def _owner_emails() -> Set[str]:
-    """Parse OWNER_EMAIL into a normalised set. Empty string → empty set."""
-    raw = (os.getenv("OWNER_EMAIL", "") or "").strip().lower()
-    if not raw:
-        return set()
-    return {e.strip() for e in raw.split(",") if e.strip()}
+    """Return the merged normalised set of allowed owner emails.
+
+    Reads two env vars, unioned:
+
+      OWNER_EMAIL   — historical, single email or CSV (kept for
+                      backward compatibility with deployments that
+                      already set it).
+      OWNER_EMAILS  — explicit CSV whitelist for multi-owner setups
+                      (added Phase 9; preferred for new deployments).
+
+    Both are split on commas, stripped, and lower-cased so matching
+    is reliably case-insensitive. Empty / unset env vars contribute
+    nothing. The two sets are unioned — you can use either one or
+    both, and the union wins.
+    """
+    out: Set[str] = set()
+    for var in ("OWNER_EMAIL", "OWNER_EMAILS"):
+        raw = (os.getenv(var, "") or "").strip().lower()
+        if not raw:
+            continue
+        for piece in raw.split(","):
+            piece = piece.strip()
+            if piece:
+                out.add(piece)
+    return out
 
 
 def _owner_ids() -> Set[str]:
