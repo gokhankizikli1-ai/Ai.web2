@@ -136,6 +136,7 @@ export default function ChatDashboard() {
     activeSession, activeSessionId, error, isLoading,
     aiMode, searchQuery, filteredSessions, pinnedMessages, inputText, currentTab,
     createNewChat, selectSession, deleteSession, insertSystemMessage,
+    toolActivity,
     sendMessage, retry, togglePin,
     setAiMode, setSearchQuery, setInputText, switchTab,
   } = useChat();
@@ -343,6 +344,7 @@ export default function ChatDashboard() {
           isLoading={isLoading}
           error={error}
           inputText={inputText}
+          toolActivity={toolActivity}
           onSend={sendMessage}
           onRetry={retry}
           onSetInput={setInputText}
@@ -365,6 +367,7 @@ export default function ChatDashboard() {
           isLoading={isLoading}
           error={error}
           inputText={inputText}
+          toolActivity={toolActivity}
           onSend={sendMessage}
           onRetry={retry}
           onSetInput={setInputText}

@@ -5,7 +5,7 @@ import TypingIndicator from '@/components/TypingIndicator';
 import EmptyWorkspace from '@/components/EmptyWorkspace';
 import PremiumComposer from '@/components/PremiumComposer';
 import type { ComposerTool } from '@/components/ComposerTools';
-import type { AttachedAsset, Message, WorkspaceTab } from '@/types';
+import type { AttachedAsset, Message, ToolActivity, WorkspaceTab } from '@/types';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -14,6 +14,10 @@ interface ChatViewProps {
   isLoading: boolean;
   error: string | null;
   inputText: string;
+  /** Phase 10 fix — currently-running backend tool (e.g. github_repo)
+   *  surfaced as a chip while the LLM stream is still waiting for the
+   *  tool's output. Null when no tool is in flight. */
+  toolActivity?: ToolActivity | null;
   // Phase 9 — onSend carries the attached assets so the chat hook can
   // persist them on the user Message AND forward the ids to
   // /v2/chat/stream. Empty array = text-only turn. Returns a boolean
@@ -30,7 +34,7 @@ interface ChatViewProps {
 }
 
 export default function ChatView({
-  messages, isLoading, error, inputText,
+  messages, isLoading, error, inputText, toolActivity,
   onSend, onRetry, onSetInput, onTogglePin, pinnedMessages,
   onHoverAction,
 }: ChatViewProps) {
@@ -196,6 +200,49 @@ export default function ChatView({
                 ))}
               </AnimatePresence>
 
+              {/* Phase 10 fix — tool activity chip. Shows BEFORE the
+                  typing indicator while a backend tool (github_repo,
+                  browser_fetch, etc.) is fetching data. Replaces the
+                  typing indicator while present so the user sees one
+                  coherent "what the AI is doing" surface. */}
+              <AnimatePresence>
+                {toolActivity && isLoading && (
+                  <motion.div
+                    key={`tool-${toolActivity.toolId}-${toolActivity.status}`}
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -2 }}
+                    transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                    className="flex items-center gap-2 pl-[36px] py-1"
+                  >
+                    <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl border bg-white/[0.02]"
+                         style={{
+                           borderColor: toolActivity.status === 'failed'
+                             ? 'rgba(248,113,113,0.20)'
+                             : toolActivity.status === 'completed'
+                               ? 'rgba(52,211,153,0.20)'
+                               : 'rgba(34,211,238,0.20)',
+                         }}>
+                      {toolActivity.status === 'running' && (
+                        <motion.div
+                          animate={{ rotate: 360 }}
+                          transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
+                          className="h-2.5 w-2.5 rounded-full border-2 border-cyan-400/40 border-t-cyan-400"
+                          aria-label="working"
+                        />
+                      )}
+                      {toolActivity.status === 'completed' && (
+                        <div className="h-2 w-2 rounded-full bg-emerald-400" aria-label="completed" />
+                      )}
+                      {toolActivity.status === 'failed' && (
+                        <div className="h-2 w-2 rounded-full bg-red-400" aria-label="failed" />
+                      )}
+                      <span className="text-[11px] text-slate-300">{toolActivity.label}</span>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               {/* Inline typing indicator — part of the flow, NOT an overlay.
                   Phase 7 polish: only render during the initial latency
                   window (between user sending the message and the first
@@ -203,9 +250,11 @@ export default function ChatView({
                   exists, the in-bubble cursor in MessageBubble carries
                   the streaming UI — rendering a second indicator below
                   it produces the "duplicated" feel the polish brief
-                  called out. The exit animation handles the settle. */}
+                  called out. The exit animation handles the settle.
+                  Phase 10 fix — suppress while a tool chip is showing so
+                  the user sees one coherent activity indicator. */}
               <AnimatePresence>
-                {isLoading && !hasStreamingPlaceholder && (
+                {isLoading && !hasStreamingPlaceholder && !toolActivity && (
                   <motion.div
                     key="typing-indicator"
                     initial={{ opacity: 0, y: 4 }}

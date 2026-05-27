@@ -28,6 +28,25 @@ export interface Message {
   attachments?: AttachedAsset[];
 }
 
+/** Phase 10 fix — surfaced to the UI while a backend tool (browser /
+ *  github / future) is running before the LLM token stream opens.
+ *  The chat hook drives this off SSE tool.started / tool.completed
+ *  events. Null when no tool is active. */
+export interface ToolActivity {
+  toolId:        string;        // "github_repo" | "browser_fetch" | future
+  /** Short human-readable label rendered next to the spinner.
+   *  Example: "Analyzing repository openai/openai-python". */
+  label:         string;
+  /** "running" while the tool is in flight; "completed" briefly
+   *  before the next assistant message starts; "failed" if the tool
+   *  didn't yield real data (e.g. rate limit). */
+  status:        'running' | 'completed' | 'failed';
+  /** Optional inputs the chip can render — e.g. ["openai/openai-python"]
+   *  for github_repo. */
+  inputs?:       string[];
+  startedAtMs:   number;
+}
+
 export interface ChatSession {
   id: string;
   title: string;

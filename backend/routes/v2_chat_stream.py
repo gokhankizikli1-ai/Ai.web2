@@ -543,6 +543,39 @@ async def stream_chat(body: StreamChatRequest, request: Request):
                 user_id, mp_system_prompt[:1200],
             )
 
+    # ── Phase 10 fix — detect GitHub URLs in the last user message ─────────
+    #
+    # When a github.com URL is present AND ENABLE_GITHUB_TOOL is on, we
+    # run the github_repo tool BEFORE the LLM stream opens and fold the
+    # result into the system prompt as a "Repository inspection" block.
+    # The actual fetch happens INSIDE event_stream() so the FE gets
+    # tool.started / tool.completed SSE events while we wait — without
+    # those, the user would see a 6-8s blank screen.
+    #
+    # Detection is synchronous (regex, microseconds); execution is
+    # deferred to the generator.
+    github_refs: list = []
+    try:
+        from backend.services.tool_extraction import extract_github_refs as _extract_gh
+        from backend.services.tools.tool_registry import is_enabled as _tool_enabled
+        if last_user_msg and _tool_enabled("github_repo"):
+            github_refs = _extract_gh(last_user_msg)
+    except Exception as _gh_exc:
+        logger.debug("stream_chat.github_url detection failed: %s", _gh_exc)
+        github_refs = []
+
+    # Owner debug — gate the raw payload exposure on a confirmed-owner
+    # session. Non-owners never see raw GitHub API payloads in the SSE
+    # stream, even when ENABLE_TOOLS_RUNTIME is on.
+    owner_debug = False
+    if github_refs:
+        try:
+            from backend.services.admin.owner import is_owner as _is_owner
+            owner_user = getattr(request.state, "user", None)
+            owner_debug = bool(owner_user is not None and _is_owner(owner_user))
+        except Exception:
+            owner_debug = False
+
     pr_request = ProviderRequest(
         messages=    final_msgs,
         model=       body.model or provider.default_model,
@@ -563,8 +596,99 @@ async def stream_chat(body: StreamChatRequest, request: Request):
                 "code":    "VISION_UNAVAILABLE",
                 "message": vision_warning,
             })
+
+        # ── Phase 10 fix — auto-invoke GitHub tool when URLs detected ─
+        #
+        # The user pasted github.com/owner/repo. Run the tool now,
+        # streaming progress events to the FE so they see "Analyzing
+        # repository …" instead of a blank wait. Rebuild final_msgs +
+        # pr_request in-place so the provider gets the augmented
+        # system prompt.
+        effective_pr_request = pr_request
+        if github_refs:
+            # 1) Emit tool.started — one event per ref so the FE can
+            #    render a chip per repo.
+            for ref in github_refs:
+                yield sse_event("tool.started", {
+                    "tool_id":     "github_repo",
+                    "input_summary": f"repo: {ref.full_name}",
+                    "provider":    "github",
+                })
+            # 2) Run the tool with full execution-log instrumentation.
+            try:
+                from backend.services.tool_extraction import build_github_context_block
+                tool_block, raw_payloads = await build_github_context_block(
+                    user_id=        user_id,
+                    text=           last_user_msg or "",
+                    project_id=     body.project_id,
+                    owner_debug=    owner_debug,
+                )
+            except Exception as exc:
+                logger.warning("stream_chat.github_url execution failed: %s", exc)
+                tool_block = None
+                raw_payloads = []
+
+            # 3) Emit tool.completed with a small summary.
+            #
+            # `succeeded` reflects whether ANY repo was actually
+            # inspected (data returned). A block built from "could
+            # not inspect" stubs is still emitted to keep the LLM
+            # honest, but `succeeded` stays False so the FE chip
+            # can render the rate-limit / failure state.
+            inspected_count = sum(1 for p in (raw_payloads or [])
+                                  if p.get("inspected") is True)
+            yield sse_event("tool.completed", {
+                "tool_id":   "github_repo",
+                "repos":     [r.full_name for r in github_refs],
+                "succeeded": inspected_count > 0,
+                "inspected": inspected_count,
+                "block_chars": len(tool_block or ""),
+            })
+
+            # 4) Owner debug — expose raw payloads only when the
+            #    caller is a confirmed project owner.
+            if owner_debug and raw_payloads:
+                yield sse_event("tool.debug", {
+                    "tool_id":  "github_repo",
+                    "payloads": raw_payloads,
+                })
+
+            # 5) Rebuild final_msgs with the tool block folded into
+            #    the system prompt. The vision-rewritten user message
+            #    (if any) is preserved verbatim — we only touch the
+            #    system message.
+            if tool_block:
+                augmented_msgs: list = []
+                first_role = final_msgs[0].role if final_msgs else None
+                if first_role == "system":
+                    sys_content = final_msgs[0].content
+                    if isinstance(sys_content, list):
+                        # Shouldn't happen for system messages, but
+                        # defensive: flatten text blocks.
+                        sys_content = "\n".join(
+                            str(b.get("text", "")) for b in sys_content
+                            if isinstance(b, dict) and b.get("type") == "text"
+                        )
+                    new_sys = f"{(sys_content or '').strip()}\n\n{tool_block}"
+                    augmented_msgs.append(ProviderMessage(role="system", content=new_sys))
+                    augmented_msgs.extend(final_msgs[1:])
+                else:
+                    augmented_msgs.append(ProviderMessage(role="system", content=tool_block))
+                    augmented_msgs.extend(final_msgs)
+                effective_pr_request = ProviderRequest(
+                    messages=    augmented_msgs,
+                    model=       pr_request.model,
+                    temperature= pr_request.temperature,
+                    max_tokens=  pr_request.max_tokens,
+                    timeout_s=   pr_request.timeout_s,
+                    extra=       pr_request.extra,
+                )
+                logger.info(
+                    "stream_chat.github_url | uid=%s | repos=%d | block_chars=%d",
+                    user_id, len(github_refs), len(tool_block),
+                )
         try:
-            async for event in provider.stream_chat_completion(pr_request):
+            async for event in provider.stream_chat_completion(effective_pr_request):
                 if isinstance(event, ProviderStreamStart):
                     yield sse_event("ready", {"provider": event.provider, "model": event.model})
                 elif isinstance(event, ProviderStreamToken):

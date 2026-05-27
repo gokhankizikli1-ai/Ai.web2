@@ -357,6 +357,11 @@ export function useChat() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUserMessage, setLastUserMessage] = useState<string | null>(null);
+  // Phase 10 fix — current tool activity (e.g. "Analyzing repository
+  // openai/openai-python") surfaced while the backend runs the
+  // github_repo tool before the LLM stream opens. Null when no tool
+  // is in flight.
+  const [toolActivity, setToolActivity] = useState<import('@/types').ToolActivity | null>(null);
   const userIdRef = useRef<string>(getUserId());
   // Phase 9 fix — `retry` and the composer need to know the LAST attached
   // assets so a retry after a stream failure replays the same attachment
@@ -703,6 +708,67 @@ export function useChat() {
                 setError(w.message);
               }
             } catch { /* ignore malformed warning */ }
+          } else if (frame.event === 'tool.started') {
+            // Phase 10 fix — surface "Analyzing repository …" while
+            // the github_repo tool fetches metadata + README + key
+            // files. Brief: typically 3-8 s before tokens start.
+            try {
+              const t = JSON.parse(frame.data);
+              const id = String(t?.tool_id || '');
+              const label = (() => {
+                if (id === 'github_repo') {
+                  const subj = String(t?.input_summary || '').replace(/^repo:\s*/i, '');
+                  return subj
+                    ? `Analyzing repository ${subj}…`
+                    : 'Analyzing repository…';
+                }
+                if (id === 'browser_fetch') {
+                  const subj = String(t?.input_summary || '').replace(/^url:\s*/i, '');
+                  return subj ? `Fetching ${subj}…` : 'Fetching page…';
+                }
+                return id ? `Running ${id}…` : 'Running tool…';
+              })();
+              setToolActivity({
+                toolId: id || 'tool',
+                label,
+                status: 'running',
+                inputs: t?.input_summary ? [String(t.input_summary)] : undefined,
+                startedAtMs: Date.now(),
+              });
+            } catch { /* ignore malformed tool.started */ }
+          } else if (frame.event === 'tool.completed') {
+            try {
+              const t = JSON.parse(frame.data);
+              const id = String(t?.tool_id || '');
+              const succeeded = t?.succeeded === true;
+              const repos = Array.isArray(t?.repos) ? t.repos as string[] : [];
+              setToolActivity({
+                toolId: id || 'tool',
+                label: succeeded
+                  ? (repos.length
+                      ? `Inspected ${repos.join(', ')}`
+                      : 'Tool finished')
+                  : (repos.length
+                      ? `Could not inspect ${repos.join(', ')}`
+                      : 'Tool returned no data'),
+                status: succeeded ? 'completed' : 'failed',
+                inputs: repos.length ? repos : undefined,
+                startedAtMs: Date.now(),
+              });
+              // Auto-clear after a short beat so the chip doesn't
+              // linger past the next user turn.
+              window.setTimeout(() => setToolActivity(null), 3000);
+            } catch { /* ignore malformed tool.completed */ }
+          } else if (frame.event === 'tool.debug') {
+            // Owner-only diagnostic payload — surface via window
+            // event so an owner-mode workspace panel can render it.
+            // We deliberately DON'T put raw tool payloads into the
+            // chat history (they can be large and contain README
+            // text already in the system prompt).
+            try {
+              const t = JSON.parse(frame.data);
+              window.dispatchEvent(new CustomEvent('korvix:tool-debug', { detail: t }));
+            } catch { /* ignore */ }
           }
           // `ready` / `message` / unknown → ignore by spec
         }
@@ -960,6 +1026,7 @@ export function useChat() {
     memoryRefs,
     currentTab,
     filteredSessions,
+    toolActivity,            // Phase 10 fix — current tool run, null when idle
     createNewChat,
     selectSession,
     deleteSession,
