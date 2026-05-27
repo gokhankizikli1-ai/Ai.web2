@@ -139,6 +139,16 @@ _RE_TR_WANT = re.compile(
     re.IGNORECASE,
 )
 
+# Phase 6.x — Turkish "I love/like" patterns. The user reported
+# "Ben kısa cevaplar seviyorum" in production; that wasn't caught
+# by any previous regex, so the LLM hallucinated a save ack and
+# nothing was persisted. Captures the noun phrase before
+# "seviyorum / severim / seviyoruz / severiz".
+_RE_TR_LIKE = re.compile(
+    r"(?:\bben\s+)?([^.!?\n]{3,100}?)\s+sev(?:iyorum|erim|iyoruz|eriz)\b",
+    re.IGNORECASE,
+)
+
 # Decision: "we (decided|picked|chose|going with) X"
 _RE_DECISION = re.compile(
     r"\b(?:we|i)\s+(?:decided\s+(?:to|on)|picked|chose|went\s+with|"
@@ -308,6 +318,22 @@ def extract(
                 # preferences.
                 importance=IMPORTANCE_DEFAULT,
                 metadata={**role_meta, "pattern": "tr_want"},
+            ), seen)
+
+    # 4d) Phase 6.x — Turkish "I love/like" pattern. Catches
+    # "Ben kısa cevaplar seviyorum" / "Türkçe severim" / etc.
+    m = _RE_TR_LIKE.search(text)
+    if m:
+        pref = _clean(m.group(1))
+        if pref and len(pref) >= 5:
+            _add(out, ExtractionCandidate(
+                kind="preference",
+                content=f"Kullanıcı tercihi: {pref}",
+                # HIGH because "X seviyorum" is a durable preference
+                # (the user expressed a recurring affinity), not a
+                # one-shot request.
+                importance=IMPORTANCE_HIGH,
+                metadata={**role_meta, "pattern": "tr_like"},
             ), seen)
 
     # 5) Decisions — only when the user explicitly framed it as a decision.

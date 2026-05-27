@@ -84,7 +84,58 @@ _SAVE_TRIGGERS_TR: tuple[str, ...] = (
     "hatırla:",
     "hatirla:",
     "kaydet:",
+    # Added Phase 6.x — the user's natural phrasings reported in
+    # production. None of these were caught before; the LLM was
+    # hallucinating save acknowledgments without persistence.
+    "bunu kaydet",
+    "bunu kayit et",
+    "bunu kayıt et",
+    "bunu da kaydet",
+    "lütfen kaydet",
+    "lutfen kaydet",
+    "lütfen hatırla",
+    "lutfen hatirla",
+    "kaydedin",
+    "kaydeder misin",
 )
+
+
+# ── Suffix triggers (Phase 6.x) ──────────────────────────────────────────────
+#
+# Some users put the save command at the END of a declarative
+# statement: "Ben kısa cevaplar seviyorum bunu kaydet."
+# A pure prefix matcher misses these. We add a small allowlist of
+# suffix triggers and accept them when they appear in the LAST 40
+# characters of a message <= 300 chars. The fact is everything BEFORE
+# the trigger.
+#
+# We keep this list tight — broader patterns would false-positive on
+# innocent mentions of "kaydet" / "save" in normal conversation.
+
+_SAVE_TRIGGERS_SUFFIX: tuple[str, ...] = (
+    "bunu kaydet",
+    "bunu kayit et",
+    "bunu kayıt et",
+    "bunu da kaydet",
+    "bunu hatırla",
+    "bunu hatirla",
+    "bunu hatırlat",
+    "bunu hatirlat",
+    "şunu kaydet",
+    "sunu kaydet",
+    "lütfen kaydet",
+    "lutfen kaydet",
+    "save this",
+    "save that",
+    "save it",
+    "remember this",
+    "remember that",
+    "remember it",
+    "please save",
+    "please remember",
+)
+_SUFFIX_WINDOW_CHARS = 40
+_SUFFIX_MAX_MESSAGE  = 300
 
 # Longest first so "remember this preference" beats "remember this".
 _SAVE_TRIGGERS_ALL: tuple[str, ...] = tuple(sorted(
@@ -143,18 +194,43 @@ def is_explicit_save_command(message: str) -> Optional[dict]:
         return None
     low = text.lower()
 
+    # 1) PREFIX match — the original behaviour. Triggers at the start
+    #    of the message; fact = everything after the trigger.
     for trig in _SAVE_TRIGGERS_ALL:
         if not low.startswith(trig):
             continue
-        # Strip the trigger, then any leading punctuation/whitespace.
         remainder = text[len(trig):].lstrip(" \t:-.,;")
         if not remainder or len(remainder) < 3:
-            # Trigger matched but no content — caller should reply
-            # asking what to save. We still return a hit so caller can
-            # distinguish "trigger fired but empty" from "no trigger".
             return {"trigger": trig, "fact": "", "kind": "fact"}
         kind = "preference" if (_PREF_HINT_RE.search(trig) or _PREF_HINT_RE.search(remainder)) else "fact"
         return {"trigger": trig, "fact": remainder, "kind": kind}
+
+    # 2) SUFFIX match (Phase 6.x) — for natural phrasings like
+    #    "Ben kısa cevaplar seviyorum bunu kaydet." Only considered
+    #    when the message is short enough (avoids false positives in
+    #    long conversational replies) AND the trigger sits in the
+    #    last 40 chars (so it's CLEARLY a directive, not a passing
+    #    mention).
+    if len(text) <= _SUFFIX_MAX_MESSAGE:
+        tail = low[-_SUFFIX_WINDOW_CHARS:]
+        for trig in _SAVE_TRIGGERS_SUFFIX:
+            idx = tail.rfind(trig)
+            if idx < 0:
+                continue
+            # Convert tail-relative index to message-absolute.
+            abs_idx = len(low) - len(tail) + idx
+            # Fact = everything BEFORE the trigger, stripped of
+            # trailing punctuation/connectors ("X, Y bunu kaydet" → "X, Y").
+            fact = text[:abs_idx].rstrip(" \t:-.,;").strip()
+            if not fact or len(fact) < 3:
+                # Trigger appeared but no content before it. Treat
+                # as an empty-content trigger so the caller can ask
+                # the user what to save.
+                return {"trigger": trig, "fact": "", "kind": "fact"}
+            kind = "preference" if (_PREF_HINT_RE.search(trig) or _PREF_HINT_RE.search(fact)) else "fact"
+            return {"trigger": trig, "fact": fact, "kind": kind,
+                    "position": "suffix"}
+
     return None
 
 
@@ -241,18 +317,33 @@ def context_block(
     """Return a compact memory-context block ready to fold into the
     system prompt. None when there is nothing to inject.
 
-    This is what makes memories visible to the assistant in future
-    chats — without this hook, saved memories sit silently in SQLite
-    and the model can't see them.
+    Phase 6.x — routes through the hydration pipeline so the result
+    is CACHED for ~30 s (TTL) and falls back to durable preferences
+    when text-overlap retrieval finds nothing. This is the seam that
+    fixes the "save works but recall is inconsistent" production
+    failure — preferences now always make it into the prompt even
+    when the user's query doesn't textually match them.
     """
     if not user_id:
         return None
     try:
-        return _hook_build_context_block(
+        # Lazy import — hydration imports cache + preferences which
+        # import client; keep this here to avoid an import cycle.
+        from backend.services.memory_plane.hydration import hydrate_for_chat
+        snap = hydrate_for_chat(
             user_id=    str(user_id),
             project_id= project_id,
             query=      query,
             limit=      int(max(1, min(20, limit))),
+        )
+        if snap.is_empty():
+            return None
+        # Wrap the formatted block with the same header the legacy
+        # hooks.build_context_block uses, so the LLM sees the same
+        # framing it always did.
+        return (
+            "[Known about the user — use naturally, never as a list]\n"
+            + snap.context_text
         )
     except Exception as e:
         logger.warning("memory_plane.chat.context_block user=%s error: %s", user_id, e)
