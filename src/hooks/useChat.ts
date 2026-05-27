@@ -741,27 +741,49 @@ export function useChat() {
               const t = JSON.parse(frame.data);
               const id = String(t?.tool_id || '');
               const succeeded = t?.succeeded === true;
+              // GitHub flow uses `repos`; browser flow uses `urls`.
+              // Phase 11 — the chip handles both shapes so users see
+              // a coherent indicator regardless of which tool ran.
               const repos = Array.isArray(t?.repos) ? t.repos as string[] : [];
-              // Phase 10 fix #2 — explicit "Repository analyzed
-              // successfully" label so the user knows the analysis
-              // actually happened and the assistant response below
-              // is grounded in real data.
-              const successLabel = id === 'github_repo'
-                ? (repos.length
-                    ? `Repository analyzed successfully — ${repos.join(', ')}`
-                    : 'Repository analyzed successfully')
-                : (repos.length
-                    ? `Inspected ${repos.join(', ')}`
-                    : 'Tool finished');
+              const urls  = Array.isArray(t?.urls)  ? t.urls  as string[] : [];
+              const subjects = repos.length ? repos : urls;
+              const successLabel = (() => {
+                if (id === 'github_repo') {
+                  return subjects.length
+                    ? `Repository analyzed successfully — ${subjects.join(', ')}`
+                    : 'Repository analyzed successfully';
+                }
+                if (id === 'browser_fetch') {
+                  if (subjects.length === 1) {
+                    // Pretty-print: drop scheme so chip stays compact.
+                    const u = subjects[0].replace(/^https?:\/\//, '');
+                    return `Page fetched — ${u}`;
+                  }
+                  return subjects.length
+                    ? `${subjects.length} pages fetched`
+                    : 'Page fetched';
+                }
+                return subjects.length
+                  ? `Inspected ${subjects.join(', ')}`
+                  : 'Tool finished';
+              })();
+              const failLabel = (() => {
+                if (id === 'browser_fetch') {
+                  return subjects.length
+                    ? `Could not fetch ${subjects.length === 1
+                        ? subjects[0].replace(/^https?:\/\//, '')
+                        : `${subjects.length} pages`}`
+                    : 'Page fetch failed';
+                }
+                return subjects.length
+                  ? `Could not inspect ${subjects.join(', ')}`
+                  : 'Tool returned no data';
+              })();
               setToolActivity({
                 toolId: id || 'tool',
-                label: succeeded
-                  ? successLabel
-                  : (repos.length
-                      ? `Could not inspect ${repos.join(', ')}`
-                      : 'Tool returned no data'),
+                label: succeeded ? successLabel : failLabel,
                 status: succeeded ? 'completed' : 'failed',
-                inputs: repos.length ? repos : undefined,
+                inputs: subjects.length ? subjects : undefined,
                 startedAtMs: Date.now(),
               });
               // Auto-clear after a short beat so the chip doesn't
