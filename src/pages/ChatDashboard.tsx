@@ -396,12 +396,16 @@ export default function ChatDashboard() {
       />
 
       <div
-        // min-w-0 + overflow-hidden so flex children can shrink below
-        // their intrinsic content width on iPad/mobile when the sidebar
-        // is open (`lg:ml-[260px]` shrinks the available width to
-        // ~764px on a 1024px viewport; without min-w-0 a wide child
-        // would force horizontal overflow).
-        className={`relative flex-1 min-w-0 flex flex-col h-[100dvh] overflow-hidden transition-all duration-300 ease-out ${sidebarOpen ? 'lg:ml-[260px]' : 'ml-0'}`}
+        // `flex-1 min-w-0 overflow-hidden` is what lets this column
+        // shrink to fit the space the sidebar leaves — required so a
+        // wide child (chat content, long URL, code block) cannot push
+        // the viewport into horizontal scroll.
+        //
+        // No left-margin needed: on lg+ the sidebar is a relative
+        // flex sibling that occupies its own 320px; on sub-lg the
+        // sidebar is a fixed overlay (out of flow) so main is full
+        // width either way.
+        className="relative flex-1 min-w-0 flex flex-col h-[100dvh] overflow-hidden transition-all duration-300 ease-out"
         style={{ paddingBottom: 'var(--safe-area-inset-bottom, 0px)' }}
       >
         {/* Top Bar — NOTE: NO `overflow-hidden` here. The header used

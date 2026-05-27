@@ -113,11 +113,20 @@ export default function Sidebar({
 
           <MessageSquare className={`h-2.5 w-2.5 shrink-0 transition-colors ${active ? 'text-white/40' : 'text-white/20'}`} />
 
-          <div className="flex-1 min-w-0">
-            <p className={`text-[11px] truncate leading-tight ${active ? 'text-white/80 font-medium' : 'text-white/50'}`}>
+          {/* Chat title wrapper — min-w-0 lets the flex child shrink
+              below intrinsic content width; overflow-hidden clips any
+              child that breaks the constraint anyway. */}
+          <div className="flex-1 min-w-0 overflow-hidden">
+            {/* Title text — `truncate` is Tailwind shorthand for
+                (overflow-hidden + text-overflow-ellipsis + whitespace-nowrap)
+                but we spell each one out explicitly so future Tailwind
+                config changes / purge tweaks can't silently drop one of
+                the three. block + w-full ensures the <p> actually
+                stretches across the wrapper so the ellipsis kicks in. */}
+            <p className={`block w-full text-[11px] truncate whitespace-nowrap overflow-hidden text-ellipsis leading-tight ${active ? 'text-white/80 font-medium' : 'text-white/50'}`}>
               {session.title}
             </p>
-            <span className="text-[9px] text-white/20">{timeAgo(session.updatedAt)}</span>
+            <span className="block w-full text-[9px] text-white/20 truncate">{timeAgo(session.updatedAt)}</span>
           </div>
         </button>
 
@@ -161,22 +170,43 @@ export default function Sidebar({
         <div className="lg:hidden fixed inset-0 z-40 bg-black/30 backdrop-blur-sm" onClick={onToggle} />
       )}
 
-      {/* ═══ SIDEBAR ═══ */}
+      {/* ═══ SIDEBAR ═══
+       *
+       * Responsive layout — TWO modes:
+       *
+       *   Sub-lg (< 1024px : phones, iPad portrait):
+       *     `fixed` overlay with translate-x slide. Sidebar floats over
+       *     content; main content uses full width regardless of state.
+       *
+       *   lg+ (>= 1024px : iPad landscape, desktops):
+       *     `relative flex-none w-[320px]` flex SIBLING of main content.
+       *     The width is locked top-to-bottom (`w-[320px]` +
+       *     `min-w-[320px]` + `max-w-[320px]`) so no child can push it
+       *     wider. When closed, collapses to width 0 via the same
+       *     classes (lg:w-0 etc.) so main expands naturally.
+       *
+       * Width is set ENTIRELY via Tailwind utility classes (no inline
+       * `style` width), so the lg: overrides take effect — an inline
+       * `style.width` has higher CSS specificity than any utility and
+       * would lock the sidebar at the mobile width on iPad landscape
+       * (this was the original iPad-landscape overflow bug).
+       *
+       * `overflow-hidden` is still the boundary defence: a long
+       * unbreakable chat title can never push past the locked width.
+       */}
       <aside
-        // `overflow-hidden` is the boundary defence — a long unbreakable
-        // chat title can never push the sidebar wider than its declared
-        // 260px / 85vw. min-w-0 lets the flex column shrink properly
-        // inside the fixed-width aside. Without these, the iPad landscape
-        // view (and any narrow viewport) sees the sidebar visually
-        // overflow when a recent-chat title is long.
-        className={`fixed inset-y-0 left-0 z-50 flex flex-col overflow-hidden min-w-0 transition-transform duration-300 ease-out ${
-          isOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
+        className={[
+          'z-50 flex flex-col overflow-hidden min-w-0 transition-all duration-300 ease-out',
+          // Sub-lg: fixed overlay with slide-in/out
+          'fixed inset-y-0 left-0 w-[min(260px,85vw)] max-w-[85vw]',
+          isOpen ? 'translate-x-0' : '-translate-x-full',
+          // lg+: flex sibling with hard-locked 320px width
+          'lg:relative lg:inset-y-auto lg:left-auto lg:translate-x-0 lg:flex-none',
+          isOpen
+            ? 'lg:w-[320px] lg:min-w-[320px] lg:max-w-[320px]'
+            : 'lg:w-0    lg:min-w-0    lg:max-w-0',
+        ].join(' ')}
         style={{
-          // 260px on tablet+, but capped to 85vw on ultra-narrow viewports
-          // so the sidebar never overflows the viewport when open.
-          width: 'min(260px, 85vw)',
-          maxWidth: '85vw',
           background: 'rgba(17,21,28,0.96)',
           backdropFilter: 'blur(12px) saturate(1.1)',
           borderRight: '1px solid rgba(255,255,255,0.035)',
