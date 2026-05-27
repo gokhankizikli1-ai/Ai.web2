@@ -742,12 +742,21 @@ export function useChat() {
               const id = String(t?.tool_id || '');
               const succeeded = t?.succeeded === true;
               const repos = Array.isArray(t?.repos) ? t.repos as string[] : [];
+              // Phase 10 fix #2 — explicit "Repository analyzed
+              // successfully" label so the user knows the analysis
+              // actually happened and the assistant response below
+              // is grounded in real data.
+              const successLabel = id === 'github_repo'
+                ? (repos.length
+                    ? `Repository analyzed successfully — ${repos.join(', ')}`
+                    : 'Repository analyzed successfully')
+                : (repos.length
+                    ? `Inspected ${repos.join(', ')}`
+                    : 'Tool finished');
               setToolActivity({
                 toolId: id || 'tool',
                 label: succeeded
-                  ? (repos.length
-                      ? `Inspected ${repos.join(', ')}`
-                      : 'Tool finished')
+                  ? successLabel
                   : (repos.length
                       ? `Could not inspect ${repos.join(', ')}`
                       : 'Tool returned no data'),
@@ -757,7 +766,7 @@ export function useChat() {
               });
               // Auto-clear after a short beat so the chip doesn't
               // linger past the next user turn.
-              window.setTimeout(() => setToolActivity(null), 3000);
+              window.setTimeout(() => setToolActivity(null), 3500);
             } catch { /* ignore malformed tool.completed */ }
           } else if (frame.event === 'tool.debug') {
             // Owner-only diagnostic payload — surface via window
