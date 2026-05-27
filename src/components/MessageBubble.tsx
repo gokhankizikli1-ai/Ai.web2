@@ -163,11 +163,40 @@ export default function MessageBubble({
           initial={{ opacity: 0, y: 6, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
-          className="group max-w-[85%] md:max-w-[75%] lg:max-w-[65%]"
+          className="group max-w-[85%] md:max-w-[75%] lg:max-w-[65%] flex flex-col items-end"
         >
-          <div className={`rounded-2xl rounded-tr-sm ${isShort ? 'px-4 py-2' : 'px-4 py-2.5'} bg-white/[0.06] border border-white/[0.06] hover:bg-white/[0.08] transition-all duration-200 shadow-[0_1px_4px_-1px_rgba(0,0,0,0.2)]`}>
-            <p className="text-[13px] text-slate-200 leading-relaxed whitespace-pre-wrap">{content}</p>
-          </div>
+          {/* Phase 9 fix — attachments belong with the USER turn, not
+              the assistant turn. Show them ABOVE the bubble so the
+              composition (image + caption) reads top-down naturally
+              and matches ChatGPT / Claude conventions. The previous
+              implementation only rendered attachments on assistant
+              messages — which never carry them — so user-attached
+              images were invisible after send. */}
+          {fullMessage.attachments && fullMessage.attachments.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-1.5 justify-end">
+              {fullMessage.attachments.map((att) => (
+                <AssetChip
+                  key={att.asset_id}
+                  compact
+                  asset={{
+                    localId:   att.asset_id,
+                    assetId:   att.asset_id,
+                    filename:  att.filename,
+                    mimeType:  att.mime_type,
+                    sizeBytes: att.size_bytes,
+                    publicUrl: att.public_url,
+                    status:    'ready',
+                    progress:  100,
+                  }}
+                />
+              ))}
+            </div>
+          )}
+          {content && (
+            <div className={`rounded-2xl rounded-tr-sm ${isShort ? 'px-4 py-2' : 'px-4 py-2.5'} bg-white/[0.06] border border-white/[0.06] hover:bg-white/[0.08] transition-all duration-200 shadow-[0_1px_4px_-1px_rgba(0,0,0,0.2)]`}>
+              <p className="text-[13px] text-slate-200 leading-relaxed whitespace-pre-wrap">{content}</p>
+            </div>
+          )}
           <div className="flex items-center justify-end gap-1.5 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
             <span className="text-[10px] text-[#64748B]">{formatTime(fullMessage.timestamp)}</span>
             <button onClick={handleCopy} className="p-0.5 rounded text-[#64748B] hover:text-slate-400 transition-colors">
@@ -229,30 +258,6 @@ export default function MessageBubble({
             />
           )}
         </div>
-
-        {/* Phase 9 — attached assets (read-only chips). Rendered below
-            the bubble so the file context is anchored to the user's
-            turn but doesn't crowd the message content. */}
-        {fullMessage.attachments && fullMessage.attachments.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mt-1.5">
-            {fullMessage.attachments.map((att) => (
-              <AssetChip
-                key={att.asset_id}
-                compact
-                asset={{
-                  localId:    att.asset_id,
-                  assetId:    att.asset_id,
-                  filename:   att.filename,
-                  mimeType:   att.mime_type,
-                  sizeBytes:  att.size_bytes,
-                  publicUrl:  att.public_url,
-                  status:     'ready',
-                  progress:   100,
-                }}
-              />
-            ))}
-          </div>
-        )}
 
         {/* Action row — shows on hover, hidden during generation */}
         {!isGenerating && (

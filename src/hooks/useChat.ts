@@ -358,6 +358,10 @@ export function useChat() {
   const [error, setError] = useState<string | null>(null);
   const [lastUserMessage, setLastUserMessage] = useState<string | null>(null);
   const userIdRef = useRef<string>(getUserId());
+  // Phase 9 fix — `retry` and the composer need to know the LAST attached
+  // assets so a retry after a stream failure replays the same attachment
+  // set instead of degrading to text-only.
+  const lastAttachmentsRef = useRef<AttachedAsset[]>([]);
 
   // Mirror of `sessions` for synchronous reads inside async callbacks
   // (the streaming path builds the conversation payload from prior
@@ -519,13 +523,18 @@ export function useChat() {
     setError(null);
   }, [activeSessionId, currentTab]);
 
-  const doSend = useCallback(async (content: string, attachments: AttachedAsset[] = []) => {
-    if (!content.trim() && attachments.length === 0) return;
+  const doSend = useCallback(async (
+    content: string,
+    attachments: AttachedAsset[] = [],
+  ): Promise<boolean> => {
+    if (!content.trim() && attachments.length === 0) return false;
     const attachedAssetIds = attachments.map((a) => a.asset_id);
+    const hasAssets = attachedAssetIds.length > 0;
 
     const trimmed = content.trim();
     setError(null);
     setLastUserMessage(trimmed);
+    lastAttachmentsRef.current = attachments;
     setInputText('');
 
     const userMessage: Message = {
@@ -572,8 +581,16 @@ export function useChat() {
     // duplicate assistant bubble appears if streaming fails partway.
     let assistantId: string | null = null;
 
-    /* ── Streaming path (Phase 1.1, opt-in via VITE_CHAT_STREAMING) ── */
-    if (STREAMING_ENABLED) {
+    /* ── Streaming path (Phase 1.1, opt-in via VITE_CHAT_STREAMING) ──
+       Phase 9 fix: when the turn carries attachments, FORCE streaming
+       regardless of the VITE_CHAT_STREAMING flag. The legacy /chat
+       endpoint (used below) does not accept `asset_ids` and would
+       silently drop the user's attached image. /v2/chat/stream is the
+       only endpoint that folds asset summaries into the system prompt
+       (see backend/services/memory_plane/chat_integration.py
+       build_asset_context_block). */
+    const useStreaming = STREAMING_ENABLED || hasAssets;
+    if (useStreaming) {
       try {
         // Build OpenAI-shaped messages from the conversation BEFORE the
         // new user message (which hasn't been committed to the ref yet
@@ -688,12 +705,53 @@ export function useChat() {
 
         // Success — assistant message is fully populated by token frames.
         setIsLoading(false);
-        return;
+        return true;
       } catch (streamErr) {
+        const cause = streamErr instanceof Error ? streamErr.message : String(streamErr);
+        // Phase 9 fix — when the turn carried attachments, REFUSE to
+        // fall back to legacy /chat. That endpoint has no asset_ids
+        // field, so falling through would silently drop the user's
+        // image and the assistant would reply as if no image was sent
+        // (the original bug this fix addresses). Instead, surface an
+        // honest error and roll back the optimistic user message so
+        // the composer can keep its chips and the user can retry.
+        if (hasAssets) {
+          console.error(
+            '[useChat] Streaming failed and attachments were present — ' +
+            'not falling back to legacy /chat (would silently drop ' +
+            'the attached file(s)).\n' +
+            `  endpoint : ${STREAM_URL}\n` +
+            `  cause    : ${cause}`,
+          );
+          // Roll back the optimistic user message + any placeholder
+          // assistant bubble so the chat doesn't show a "sent" turn
+          // that the backend never actually received.
+          const userMsgId = userMessage.id;
+          const placeholderId = assistantId;
+          setSessions((prev) =>
+            prev.map((s) =>
+              s.id === activeSessionId
+                ? {
+                    ...s,
+                    messages: s.messages.filter((m) =>
+                      m.id !== userMsgId && m.id !== placeholderId),
+                  }
+                : s
+            )
+          );
+          // Restore the typed text so the user doesn't have to retype.
+          setInputText(trimmed);
+          setError(
+            'Could not attach file(s) to the conversation. Please check ' +
+            'your connection and retry.',
+          );
+          setIsLoading(false);
+          return false;
+        }
         console.warn(
           '[useChat] Streaming failed — falling back to non-streaming /chat.\n' +
           `  endpoint : ${STREAM_URL}\n` +
-          `  cause    : ${streamErr instanceof Error ? streamErr.message : String(streamErr)}`,
+          `  cause    : ${cause}`,
         );
         // Fall through to the legacy /chat path. If assistantId is set we
         // already created a placeholder bubble; the fallback paths below
@@ -814,11 +872,18 @@ export function useChat() {
     } finally {
       setIsLoading(false);
     }
+    // Either the legacy /chat path succeeded, or it fell into the
+    // demo-mode reply — in both cases the conversation got a usable
+    // assistant turn, so report success to the composer.
+    return true;
   }, [activeSessionId, aiMode]);
 
   const sendMessage = useCallback(
-    async (content: string, attachments: AttachedAsset[] = []) => {
-      await doSend(content, attachments);
+    async (
+      content: string,
+      attachments: AttachedAsset[] = [],
+    ): Promise<boolean> => {
+      return doSend(content, attachments);
     },
     [doSend],
   );
@@ -832,7 +897,11 @@ export function useChat() {
             : s
         )
       );
-      doSend(lastUserMessage);
+      // Phase 9 fix — replay attachments that were on the failed turn.
+      // Without this, retry-ing a failed image-attached send would
+      // re-submit only the text and the assistant would have no asset
+      // context, defeating the purpose of the retry.
+      doSend(lastUserMessage, lastAttachmentsRef.current);
     }
   }, [lastUserMessage, doSend, activeSessionId]);
 
