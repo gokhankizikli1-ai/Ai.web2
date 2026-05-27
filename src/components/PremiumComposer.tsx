@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Command, Plus, FileUp, Image as ImageIcon, Camera, FolderOpen } from 'lucide-react';
+import { Send, Command, FileUp } from 'lucide-react';
 import ComposerTools, { type ComposerTool } from './ComposerTools';
 import ToolChips from './ToolChips';
 import AssetChip from './AssetChip';
@@ -45,13 +45,11 @@ export default function PremiumComposer({
   const [isFocused, setIsFocused]   = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [isSending, setIsSending]   = useState(false);
-  const [attachMenuOpen, setAttachMenuOpen] = useState(false);
-  const dragDepthRef = useRef(0);
-  const textareaRef  = useRef<HTMLTextAreaElement>(null);
+  const dragDepthRef    = useRef(0);
+  const textareaRef     = useRef<HTMLTextAreaElement>(null);
   const fileInputRef    = useRef<HTMLInputElement>(null);
   const photoInputRef   = useRef<HTMLInputElement>(null);
   const cameraInputRef  = useRef<HTMLInputElement>(null);
-  const attachMenuRef   = useRef<HTMLDivElement>(null);
 
   const value = externalValue !== undefined ? externalValue : internalValue;
   const setValue = onExternalValueChange || setInternalValue;
@@ -121,23 +119,21 @@ export default function PremiumComposer({
 
   // ── Upload triggers ───────────────────────────────────────────────────
   //
-  // ChatGPT-style attach menu: a single "+" button opens a popover with
-  // three discoverable actions. Each routes through a dedicated <input>
-  // so we can set the right `accept` / `capture` attrs per action without
-  // toggling them on a single shared input (which has races on iOS).
+  // ChatGPT-style unified "+" menu: ComposerTools owns the single +
+  // button and renders both attachment actions and tools in one
+  // popover. PremiumComposer just hands ComposerTools three callbacks
+  // that each open a dedicated hidden <input>, so accept/capture stay
+  // stable per intent (iOS Safari races a shared input).
 
   const openPhotoLibrary = useCallback(() => {
-    setAttachMenuOpen(false);
     photoInputRef.current?.click();
   }, []);
 
   const openCamera = useCallback(() => {
-    setAttachMenuOpen(false);
     cameraInputRef.current?.click();
   }, []);
 
   const openFilePicker = useCallback(() => {
-    setAttachMenuOpen(false);
     fileInputRef.current?.click();
   }, []);
 
@@ -146,26 +142,6 @@ export default function PremiumComposer({
     if (files && files.length > 0) assets.upload(files);
     if (e.target) e.target.value = '';
   }, [assets]);
-
-  // Close the attach menu on outside click / Escape so it behaves like
-  // the rest of the popovers in the app.
-  useEffect(() => {
-    if (!attachMenuOpen) return;
-    const onDown = (e: MouseEvent) => {
-      if (attachMenuRef.current && !attachMenuRef.current.contains(e.target as Node)) {
-        setAttachMenuOpen(false);
-      }
-    };
-    const onEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setAttachMenuOpen(false);
-    };
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onEsc);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onEsc);
-    };
-  }, [attachMenuOpen]);
 
   // Drag/drop wiring — uses nested dragenter counting so leaving a
   // child element doesn't flicker the overlay off.
@@ -302,77 +278,17 @@ export default function PremiumComposer({
         </AnimatePresence>
 
         <div className="flex items-center gap-1 px-3 pt-2 pb-1">
-          {/* ChatGPT-style "+" attach menu. The menu lives anchored to
-              the + button so it opens upward over the composer without
-              being clipped by the parent's overflow. */}
-          <div ref={attachMenuRef} className="relative">
-            <motion.button
-              type="button"
-              onClick={() => setAttachMenuOpen((v) => !v)}
-              disabled={disabled}
-              whileHover={!disabled ? { scale: 1.06 } : undefined}
-              whileTap={!disabled ? { scale: 0.94 } : undefined}
-              className={`flex items-center justify-center h-7 w-7 rounded-lg border transition-all disabled:opacity-30 ${
-                attachMenuOpen
-                  ? 'text-cyan-300 bg-white/[0.06] border-cyan-500/20'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04] border-white/[0.05]'
-              }`}
-              title="Attach"
-              aria-label="Attach"
-              aria-expanded={attachMenuOpen}
-              aria-haspopup="menu"
-            >
-              <Plus className="h-3.5 w-3.5" />
-            </motion.button>
-
-            <AnimatePresence>
-              {attachMenuOpen && (
-                <motion.div
-                  initial={{ opacity: 0, y: 6, scale: 0.96 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: 4, scale: 0.96 }}
-                  transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
-                  role="menu"
-                  className="absolute bottom-full left-0 mb-2 w-52 rounded-xl border shadow-2xl overflow-hidden z-50 py-1"
-                  style={{
-                    borderColor:     'rgba(255,255,255,0.06)',
-                    background:      'rgba(23,28,36,0.96)',
-                    backdropFilter:  'blur(24px)',
-                  }}
-                >
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={openPhotoLibrary}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-[12px] text-slate-300 hover:bg-white/[0.04] hover:text-white transition-colors"
-                  >
-                    <ImageIcon className="h-3.5 w-3.5 text-cyan-400/70" />
-                    <span className="flex-1">Photo Library</span>
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={openCamera}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-[12px] text-slate-300 hover:bg-white/[0.04] hover:text-white transition-colors"
-                  >
-                    <Camera className="h-3.5 w-3.5 text-violet-400/70" />
-                    <span className="flex-1">Take Photo or Video</span>
-                  </button>
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={openFilePicker}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-[12px] text-slate-300 hover:bg-white/[0.04] hover:text-white transition-colors"
-                  >
-                    <FolderOpen className="h-3.5 w-3.5 text-amber-400/70" />
-                    <span className="flex-1">Choose Files</span>
-                  </button>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          <ComposerTools onSelectTool={handleToolSelect} />
+          {/* SINGLE unified "+" menu. ComposerTools renders the only +
+              button in the composer and surfaces both attachment actions
+              and tools in one popover. The attach* callbacks open the
+              dedicated hidden inputs below. */}
+          <ComposerTools
+            onSelectTool={handleToolSelect}
+            onAttachPhoto={openPhotoLibrary}
+            onAttachCamera={openCamera}
+            onAttachFile={openFilePicker}
+            disabled={disabled}
+          />
 
           {/* Hidden file inputs — one per attach action so we can set
               `accept` / `capture` per intent without races (iOS Safari
