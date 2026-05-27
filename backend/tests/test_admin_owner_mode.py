@@ -185,6 +185,48 @@ def test_is_owner_handles_owner_email_csv(admin_env, monkeypatch):
     assert is_owner(_make_user(external_id="email:not-owner@example.com")) is False
 
 
+def test_is_owner_matches_owner_emails_whitelist(admin_env, monkeypatch):
+    """OWNER_EMAILS is the new multi-owner var. Whitespace and casing
+    differences must be normalised so a sloppy Railway value still
+    works ("  Foo@Example.com , bar@example.com")."""
+    from backend.core import config as _cfg
+    # Drop the single-owner var to prove OWNER_EMAILS works on its own.
+    monkeypatch.setenv("OWNER_EMAIL", "")
+    monkeypatch.setenv(
+        "OWNER_EMAILS",
+        "  Gokhankizikli1@gmail.com , tavukludurum@GMAIL.com ,co@example.com",
+    )
+    importlib.reload(_cfg)
+    from backend.services.admin.owner import is_owner
+    for addr in ("gokhankizikli1@gmail.com", "tavukludurum@gmail.com", "co@example.com"):
+        assert is_owner(_make_user(external_id=f"email:{addr}")) is True, addr
+    assert is_owner(_make_user(external_id="email:stranger@example.com")) is False
+
+
+def test_is_owner_unions_owner_email_and_owner_emails(admin_env, monkeypatch):
+    """Both vars contribute; an email present in EITHER is an owner."""
+    from backend.core import config as _cfg
+    monkeypatch.setenv("OWNER_EMAIL", "legacy@example.com")
+    monkeypatch.setenv("OWNER_EMAILS", "new1@example.com,new2@example.com")
+    importlib.reload(_cfg)
+    from backend.services.admin.owner import is_owner
+    for addr in ("legacy@example.com", "new1@example.com", "new2@example.com"):
+        assert is_owner(_make_user(external_id=f"email:{addr}")) is True, addr
+    assert is_owner(_make_user(external_id="email:third@example.com")) is False
+
+
+def test_owner_emails_unset_falls_back_to_owner_email(admin_env, monkeypatch):
+    """Backward compatibility — deployments still on OWNER_EMAIL only
+    must continue to work without setting OWNER_EMAILS."""
+    from backend.core import config as _cfg
+    monkeypatch.setenv("OWNER_EMAIL", "solo@example.com")
+    monkeypatch.delenv("OWNER_EMAILS", raising=False)
+    importlib.reload(_cfg)
+    from backend.services.admin.owner import is_owner
+    assert is_owner(_make_user(external_id="email:solo@example.com")) is True
+    assert is_owner(_make_user(external_id="email:other@example.com")) is False
+
+
 def test_is_owner_returns_false_on_unknown(admin_env):
     from backend.services.admin.owner import is_owner
     u = _make_user(external_id="email:random@example.com")
