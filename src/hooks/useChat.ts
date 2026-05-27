@@ -708,48 +708,19 @@ export function useChat() {
         return true;
       } catch (streamErr) {
         const cause = streamErr instanceof Error ? streamErr.message : String(streamErr);
-        // Phase 9 fix — when the turn carried attachments, REFUSE to
-        // fall back to legacy /chat. That endpoint has no asset_ids
-        // field, so falling through would silently drop the user's
-        // image and the assistant would reply as if no image was sent
-        // (the original bug this fix addresses). Instead, surface an
-        // honest error and roll back the optimistic user message so
-        // the composer can keep its chips and the user can retry.
-        if (hasAssets) {
-          console.error(
-            '[useChat] Streaming failed and attachments were present — ' +
-            'not falling back to legacy /chat (would silently drop ' +
-            'the attached file(s)).\n' +
-            `  endpoint : ${STREAM_URL}\n` +
-            `  cause    : ${cause}`,
-          );
-          // Roll back the optimistic user message + any placeholder
-          // assistant bubble so the chat doesn't show a "sent" turn
-          // that the backend never actually received.
-          const userMsgId = userMessage.id;
-          const placeholderId = assistantId;
-          setSessions((prev) =>
-            prev.map((s) =>
-              s.id === activeSessionId
-                ? {
-                    ...s,
-                    messages: s.messages.filter((m) =>
-                      m.id !== userMsgId && m.id !== placeholderId),
-                  }
-                : s
-            )
-          );
-          // Restore the typed text so the user doesn't have to retype.
-          setInputText(trimmed);
-          setError(
-            'Could not attach file(s) to the conversation. Please check ' +
-            'your connection and retry.',
-          );
-          setIsLoading(false);
-          return false;
-        }
+        // Phase 9 regression fix — when the streaming endpoint is
+        // unreachable (404 because /v2/chat/stream isn't deployed on
+        // the bundled worker URL, 5xx, CORS, network drop), do NOT
+        // dead-end the user with a hard "could not attach files"
+        // error. Fall through to legacy /chat with the asset
+        // metadata folded into the user message text so the assistant
+        // still sees what was attached. This is an HONEST degradation:
+        // the AI can name the file and acknowledge its presence, even
+        // though it can't run vision over it on the legacy endpoint.
+        // No fake success — just a transparent context block.
         console.warn(
-          '[useChat] Streaming failed — falling back to non-streaming /chat.\n' +
+          `[useChat] Streaming failed (assets=${hasAssets}); falling ` +
+          'back to non-streaming /chat with asset context inlined.\n' +
           `  endpoint : ${STREAM_URL}\n` +
           `  cause    : ${cause}`,
         );
@@ -759,14 +730,37 @@ export function useChat() {
       }
     }
 
-    /* ── Legacy /chat path (default + streaming fallback) ── */
+    /* ── Legacy /chat path (default + streaming fallback) ──
+       Phase 9 regression fix — the legacy endpoint has no `asset_ids`
+       field, so when we reach this path with attachments we INLINE
+       the asset metadata into the user message text. The model sees
+       e.g. "describe this image\n\n[Attached files: photo.png
+       (245 KB, image/png)]" and can acknowledge what was attached
+       even though it can't run vision over it on this endpoint.
+       Honest degradation, not fake success. */
+    const legacyMessage = hasAssets
+      ? `${trimmed}\n\n[Attached files: ${attachments
+          .map((a) => {
+            const kb = a.size_bytes ? Math.max(1, Math.round(a.size_bytes / 1024)) : 0;
+            const size = kb > 0 ? `, ${kb} KB` : '';
+            return `${a.filename}${size}, ${a.mime_type || 'unknown'}`;
+          })
+          .join('; ')}]`
+      : trimmed;
     try {
+      const legacyHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+      // Forward the JWT so legacy /chat resolves the user under the
+      // SAME identity namespace the asset upload landed in.
+      try {
+        const tok = localStorage.getItem('korvix_access_token');
+        if (tok) legacyHeaders['Authorization'] = `Bearer ${tok}`;
+      } catch { /* ignore */ }
       const response = await fetch(API_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: legacyHeaders,
         body: JSON.stringify({
           user_id: userIdRef.current,
-          message: trimmed,
+          message: legacyMessage,
           chat_id: activeSessionId,
           session_id: activeSessionId,
           platform: 'web',
