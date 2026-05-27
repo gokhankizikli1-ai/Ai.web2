@@ -4,7 +4,9 @@ import { Send, Command, FileUp } from 'lucide-react';
 import ComposerTools, { type ComposerTool } from './ComposerTools';
 import ToolChips from './ToolChips';
 import AssetChip from './AssetChip';
+import CoordinatorPlanChip from './CoordinatorPlanChip';
 import useAssets from '@/hooks/useAssets';
+import useCoordinatorPlan from '@/hooks/useCoordinatorPlan';
 
 
 import type { AttachedAsset } from '@/types';
@@ -56,6 +58,38 @@ export default function PremiumComposer({
 
   // Phase 9 — owns the upload queue + progress state.
   const assets = useAssets({ projectId });
+
+  // Phase 9 — coordinator plan preview. Hook is a no-op when the FE
+  // flag VITE_ENABLE_COORDINATOR_PREVIEW is off, so this adds zero
+  // network cost for users who haven't opted in.
+  const coordinator = useCoordinatorPlan();
+  const [planDismissed, setPlanDismissed] = useState(false);
+
+  // Re-fetch the plan when the message or attachment set changes.
+  // The hook is internally debounced + cancels in-flight requests on
+  // every refresh() so this is safe to call on every keystroke.
+  useEffect(() => {
+    if (planDismissed) return;
+    const mimes = assets.pendingAssets
+      .filter((a) => a.status === 'ready')
+      .map((a) => a.mimeType);
+    coordinator.refresh(value, mimes, projectId);
+    // We intentionally exclude `coordinator` from deps — refresh() is
+    // stable (useCallback) and including the whole object would
+    // re-fire on every state change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value, assets.pendingAssets.length, planDismissed, projectId]);
+
+  // Reset the dismiss state when the message materially changes
+  // (length swing of 4+ chars). Avoids the chip never reappearing
+  // after a single dismiss in the same composer instance.
+  const prevValueLenRef = useRef(value.length);
+  useEffect(() => {
+    if (Math.abs(value.length - prevValueLenRef.current) >= 4) {
+      setPlanDismissed(false);
+    }
+    prevValueLenRef.current = value.length;
+  }, [value]);
 
   const handleSubmit = useCallback(async () => {
     // Block when nothing to send, when explicitly disabled, while a
@@ -204,6 +238,15 @@ export default function PremiumComposer({
   return (
     <div className="max-w-3xl mx-auto">
       <ToolChips tools={activeTools} onRemove={onRemoveTool} />
+
+      {/* Coordinator plan preview — only renders when
+          VITE_ENABLE_COORDINATOR_PREVIEW=true AND the rule classifier
+          surfaced a high-confidence plan AND the user hasn't dismissed
+          it for this draft. Off by default — zero cost when disabled. */}
+      <CoordinatorPlanChip
+        plan={planDismissed ? null : coordinator.plan}
+        onDismiss={() => setPlanDismissed(true)}
+      />
 
       {/* Asset chips — in-flight + ready uploads. */}
       <AnimatePresence>
