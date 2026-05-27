@@ -20,6 +20,44 @@ class BaseTool(ABC):
     # the agent fails over to another tool quickly.
     timeout_seconds: float = 12.0
 
+    # ── Phase 10 — public tool metadata ────────────────────────────────────
+    #
+    # All additive — existing tools inherit defaults and keep working
+    # byte-identically. The new public /v2/tools API surfaces these so
+    # the FE can render rich tool cards (icon, category, capability
+    # badges) without us per-tool hardcoding the UI.
+    category: str = "general"        # "research" | "code" | "data" | "ecommerce" | "general"
+    icon: str = ""                   # lucide-react icon name (FE maps string → component)
+    requires_auth: bool = False      # tool needs a JWT / signed-in user
+    cost_estimate: float = 0.0       # credits per call (0 = free; tracking only in this PR)
+    execution_mode: str = "sync"     # "sync" | "async" | "streaming" | "background"
+    supported_agents: tuple[str, ...] = ()   # empty = any agent; non-empty = allow-list
+    # Open-ended JSON-schema-ish dicts. The FE renders the input schema
+    # as a form when the user invokes the tool from the public /v2/tools
+    # surface. None ⇒ "free-form query string", which matches the
+    # existing run(query, context) contract.
+    input_schema:  "dict | None" = None
+    output_schema: "dict | None" = None
+
+    def describe(self) -> dict:
+        """Public-safe metadata for /v2/tools listings. Subclasses
+        rarely override — the defaults plus the class attributes are
+        enough."""
+        return {
+            "id":               self.name,
+            "name":             self.name,
+            "description":      self.description,
+            "category":         self.category,
+            "icon":             self.icon,
+            "requires_auth":    bool(self.requires_auth),
+            "cost_estimate":    float(self.cost_estimate),
+            "execution_mode":   self.execution_mode,
+            "supported_agents": list(self.supported_agents),
+            "input_schema":     self.input_schema,
+            "output_schema":    self.output_schema,
+            "timeout_seconds":  float(self.timeout_seconds),
+        }
+
     @abstractmethod
     async def run(self, query: str, context: dict = None) -> dict:
         """
