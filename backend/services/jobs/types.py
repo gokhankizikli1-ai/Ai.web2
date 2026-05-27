@@ -48,9 +48,20 @@ TERMINAL_STATUSES: frozenset[str] = frozenset({
 
 
 def normalize_status(status: Optional[str]) -> str:
+    """Coerce a status value to the canonical taxonomy.
+
+    Phase 7 PROJECT_ROADMAP spec uses "completed" where the internal
+    code uses "succeeded". We accept BOTH as input (so API filters
+    like ?status=completed work) and always normalize to the internal
+    name "succeeded" — that single internal source of truth keeps
+    the runner / event bus / SSE shape unchanged.
+    """
     if not status:
         return STATUS_QUEUED
     s = str(status).lower().strip()
+    # Spec-friendly alias on input only.
+    if s == "completed":
+        s = STATUS_SUCCEEDED
     return s if s in JOB_STATUSES else STATUS_FAILED
 
 
@@ -94,8 +105,28 @@ class JobRecord:
     updated_at:      Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
-        """API-safe projection."""
-        return asdict(self)
+        """API-safe projection.
+
+        Surfaces BOTH the canonical internal field names and the
+        PROJECT_ROADMAP Phase 7 spec aliases so existing FE consumers
+        (`useJobs`, `AIActivityFeed`) keep working unchanged AND new
+        consumers using the spec names also work:
+
+          internal name        spec alias
+          -----------------    ---------------
+          kind                 type
+          finished_at          completed_at
+          progress_label       message
+          metadata.detail      detail
+        """
+        d = asdict(self)
+        # Additive aliases — never overwrite the canonical fields.
+        d["type"]         = d.get("kind")
+        d["completed_at"] = d.get("finished_at")
+        d["message"]      = d.get("progress_label")
+        meta = d.get("metadata") if isinstance(d.get("metadata"), dict) else {}
+        d["detail"]       = meta.get("detail") if isinstance(meta, dict) else None
+        return d
 
     @property
     def is_terminal(self) -> bool:
