@@ -564,13 +564,23 @@ async def stream_chat(body: StreamChatRequest, request: Request):
             detect_web_search_intent as _detect_search,
         )
         from backend.services.tools.tool_registry import is_enabled as _tool_enabled
+        # [ROUTER] visibility — log which auto-call paths are eligible
+        # so an ops review can see the live flag state per request
+        # without poking around in os.environ on Railway.
+        _gh_on  = _tool_enabled("github_repo")
+        _br_on  = _tool_enabled("browser_fetch")
+        _wr_on  = _tool_enabled("web_research")
+        logger.info(
+            "[ROUTER] uid=%s | github_repo=%s | browser_fetch=%s | web_research=%s",
+            user_id, _gh_on, _br_on, _wr_on,
+        )
         if last_user_msg:
-            if _tool_enabled("github_repo"):
+            if _gh_on:
                 github_refs = _extract_gh(last_user_msg)
             # Phase 11 — non-GitHub URLs go through browser_fetch.
             # The extractor explicitly skips github.com / raw.gh hosts
             # so we never double-fetch.
-            if _tool_enabled("browser_fetch"):
+            if _br_on:
                 web_urls = _extract_web(last_user_msg)
             # Phase 11 fix — intent-based web search for prompts that
             # need current information but don't paste a URL ("latest
@@ -578,7 +588,7 @@ async def stream_chat(body: StreamChatRequest, request: Request):
             # araştır"). Only when the tool is enabled AND no URL was
             # pasted (the URL paths already produce real context, so
             # an extra search would be wasteful).
-            if _tool_enabled("web_research") and not github_refs and not web_urls:
+            if _wr_on and not github_refs and not web_urls:
                 intent = _detect_search(last_user_msg)
                 if intent.triggered:
                     web_search_intent = intent
@@ -587,6 +597,12 @@ async def stream_chat(body: StreamChatRequest, request: Request):
                         "confidence=%.2f | triggers=%s | reason=%s",
                         user_id, intent.confidence,
                         ",".join(intent.triggers), intent.reason,
+                    )
+                else:
+                    logger.debug(
+                        "[INTENT] no fire | uid=%s | confidence=%.2f | "
+                        "reason=%s",
+                        user_id, intent.confidence, intent.reason,
                     )
     except Exception as _url_exc:
         logger.debug("stream_chat.url detection failed: %s", _url_exc)
@@ -892,13 +908,35 @@ async def stream_chat(body: StreamChatRequest, request: Request):
         # Fires only when the user typed a "current information"
         # question without pasting a URL. Same dual-injection pattern
         # so GPT-4o doesn't refuse despite having real citations.
+        #
+        # Production-debugging instrumentation: emits tagged log lines
+        # at every decision point so a Railway log filter
+        # (`grep '\[WEB_SEARCH\]'`) gives the full orchestration
+        # trace per request:
+        #
+        #   [INTENT]          intent classifier verdict
+        #   [ROUTER]          flag gate result
+        #   [TOOL_EXECUTION]  start / end of the actual tool call
+        #   [WEB_SEARCH]      injection state (block in prompt?)
+        #   [FALLBACK]        why we reached the no-block branch
         if web_search_intent and web_search_intent.triggered:
+            logger.info(
+                "[INTENT] web_search triggered | uid=%s | confidence=%.2f | "
+                "triggers=%s | reason=%s",
+                user_id, web_search_intent.confidence,
+                ",".join(web_search_intent.triggers),
+                web_search_intent.reason,
+            )
             yield sse_event("tool.started", {
                 "tool_id":     "web_research",
                 "input_summary": f"search: {web_search_intent.query[:120]}",
                 "provider":    "web",
                 "triggers":    list(web_search_intent.triggers),
             })
+            logger.info(
+                "[TOOL_EXECUTION] web_research starting | uid=%s | query=%s",
+                user_id, web_search_intent.query[:80],
+            )
             try:
                 from backend.services.tool_extraction import build_web_search_context_block
                 search_block, search_payload = await build_web_search_context_block(
@@ -909,7 +947,10 @@ async def stream_chat(body: StreamChatRequest, request: Request):
                     owner_debug= owner_debug,
                 )
             except Exception as exc:
-                logger.warning("stream_chat.web_search execution failed: %s", exc)
+                logger.warning(
+                    "[TOOL_EXECUTION] web_research raised | uid=%s | err=%s",
+                    user_id, exc,
+                )
                 search_block = None
                 search_payload = {"triggered": True, "fetched": False,
                                   "error": str(exc)[:200]}
@@ -923,15 +964,48 @@ async def stream_chat(body: StreamChatRequest, request: Request):
                 "citations":   citation_count,
                 "block_chars": len(search_block or ""),
             })
+            logger.info(
+                "[TOOL_EXECUTION] web_research finished | uid=%s | "
+                "fetched=%s | citations=%d | block_chars=%d",
+                user_id, fetched_ok, citation_count, len(search_block or ""),
+            )
 
             if owner_debug and search_payload:
                 yield sse_event("tool.debug", {
                     "tool_id": "web_research",
                     "payload": search_payload,
                 })
+                # Owner-only orchestration trace SSE event — full
+                # decision chain in one frame so the owner workspace
+                # can render a diagnostic panel without scraping logs.
+                yield sse_event("tool.diagnostic", {
+                    "stage":      "web_search",
+                    "intent": {
+                        "triggered":  web_search_intent.triggered,
+                        "confidence": web_search_intent.confidence,
+                        "triggers":   list(web_search_intent.triggers),
+                        "reason":     web_search_intent.reason,
+                    },
+                    "router": {
+                        "tool":            "web_research",
+                        "tool_enabled":    True,    # we got here, so it was on
+                        "no_urls":         True,    # gate fires only without URLs
+                    },
+                    "execution": {
+                        "fetched":      fetched_ok,
+                        "citations":    citation_count,
+                        "block_chars":  len(search_block or ""),
+                        "error":        (search_payload or {}).get("error"),
+                    },
+                })
 
             # Fold into the prompt — same dual-injection pattern.
             if search_block:
+                logger.info(
+                    "[WEB_SEARCH] real-data block injected | uid=%s | "
+                    "citations=%d | chars=%d",
+                    user_id, citation_count, len(search_block),
+                )
                 base_msgs = list(effective_pr_request.messages)
                 augmented_msgs3: list = []
                 first_role = base_msgs[0].role if base_msgs else None
@@ -992,15 +1066,110 @@ async def stream_chat(body: StreamChatRequest, request: Request):
                     citation_count, len(search_block),
                 )
             else:
-                # Fetch failed entirely. The model still gets the user
-                # message but the tool.completed event told the FE.
-                # Log loudly so ops can see when TAVILY_API_KEY is missing.
+                # Phase 11 fix #2 — production observation: even when
+                # the intent fires and the tool is called, an
+                # `unavailable` envelope (missing TAVILY_API_KEY,
+                # provider 429, network drop) used to leave the LLM
+                # with NO signal that a search was attempted. It
+                # would then default to "internetten araştırma
+                # yeteneğim yok" which is plain wrong — the user
+                # explicitly asked for a search and we tried.
+                #
+                # We now inject an HONEST "attempted-but-failed"
+                # block telling the LLM the precise reason and how
+                # to respond. The model still doesn't get any
+                # citations (we don't have any) but it stops
+                # claiming it can't access the internet at all.
+                err = (search_payload or {}).get("error") or "unknown reason"
                 logger.warning(
-                    "stream_chat.web_search.failed | uid=%s | query=%s | "
-                    "reason=%s",
-                    user_id, web_search_intent.query[:80],
-                    (search_payload or {}).get("error") or "unknown",
+                    "[FALLBACK] web_search no-block | uid=%s | reason=%s",
+                    user_id, err,
                 )
+                fail_block = (
+                    "═══════════════════════════════════════════════════════════════\n"
+                    "KORVIX WEB SEARCH — TOOL ATTEMPTED, NO RESULTS\n"
+                    "═══════════════════════════════════════════════════════════════\n"
+                    "I (KorvixAI) tried to run my web search tool for the user's "
+                    "question but it returned no usable results. Specific reason: "
+                    f"{err}\n\n"
+                    "INSTRUCTIONS for your response:\n"
+                    "1. Be HONEST. Acknowledge that you attempted a live web "
+                    "search but it failed.\n"
+                    "2. State the specific failure reason from above (e.g. "
+                    "\"search provider not configured\" / \"rate limit\" / "
+                    "\"network error\").\n"
+                    "3. DO NOT say \"I cannot access the internet\" or "
+                    "\"İnternetten gerçek zamanlı bilgi arayamıyorum\" — "
+                    "this is FALSE; the tool exists and was invoked.\n"
+                    "4. If you have relevant pre-training knowledge, offer "
+                    "it with a clear cutoff caveat.\n"
+                    "5. Suggest the user can retry shortly or ask a different "
+                    "phrasing.\n"
+                    "Reply in the user's language."
+                )
+                # Inject the fail_block too — same system+user pattern
+                # so it can't be ignored by the model.
+                base_msgs = list(effective_pr_request.messages)
+                augmented_fail: list = []
+                first_role = base_msgs[0].role if base_msgs else None
+                if first_role == "system":
+                    sys_content = base_msgs[0].content
+                    if isinstance(sys_content, list):
+                        sys_content = "\n".join(
+                            str(b.get("text", "")) for b in sys_content
+                            if isinstance(b, dict) and b.get("type") == "text"
+                        )
+                    new_sys = f"{(sys_content or '').strip()}\n\n{fail_block}"
+                    augmented_fail.append(ProviderMessage(role="system", content=new_sys))
+                    fail_rest = base_msgs[1:]
+                else:
+                    augmented_fail.append(ProviderMessage(role="system", content=fail_block))
+                    fail_rest = list(base_msgs)
+                last_user_idx_f: Optional[int] = None
+                for i in range(len(fail_rest) - 1, -1, -1):
+                    if fail_rest[i].role == "user":
+                        last_user_idx_f = i
+                        break
+                if last_user_idx_f is not None:
+                    um = fail_rest[last_user_idx_f]
+                    suffix = (
+                        "\n\n---\n"
+                        "[Note for the assistant: a web search was attempted "
+                        "for this turn but returned no results. See the "
+                        "system-prompt block above for handling instructions.]"
+                    )
+                    if isinstance(um.content, list):
+                        new_content = list(um.content) + [{"type": "text", "text": suffix}]
+                        fail_rest[last_user_idx_f] = ProviderMessage(
+                            role="user", content=new_content,
+                        )
+                    else:
+                        fail_rest[last_user_idx_f] = ProviderMessage(
+                            role="user", content=(um.content or "") + suffix,
+                        )
+                augmented_fail.extend(fail_rest)
+                effective_pr_request = ProviderRequest(
+                    messages=    augmented_fail,
+                    model=       effective_pr_request.model,
+                    temperature= effective_pr_request.temperature,
+                    max_tokens=  effective_pr_request.max_tokens,
+                    timeout_s=   effective_pr_request.timeout_s,
+                    extra=       effective_pr_request.extra,
+                )
+                logger.info(
+                    "[WEB_SEARCH] honest-failure block injected | uid=%s | "
+                    "err=%s",
+                    user_id, err[:200],
+                )
+        elif web_search_intent is not None:
+            # Detection ran but didn't trigger. Log so an ops review
+            # can confirm the classifier's decision.
+            logger.debug(
+                "[INTENT] web_search not triggered | uid=%s | "
+                "confidence=%.2f | reason=%s",
+                user_id, web_search_intent.confidence,
+                web_search_intent.reason,
+            )
 
         try:
             async for event in provider.stream_chat_completion(effective_pr_request):
