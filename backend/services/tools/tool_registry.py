@@ -34,6 +34,9 @@ _TOOL_FLAG_NAMES: Dict[str, str] = {
     "current_time":       "ENABLE_CURRENT_TIME",
     "stock_market":       "ENABLE_STOCK_MARKET",
     "news":               "ENABLE_NEWS",
+    # Phase 10 — read-only foundation tools.
+    "browser_fetch":      "ENABLE_BROWSER_TOOL",
+    "github_repo":        "ENABLE_GITHUB_TOOL",
 }
 
 
@@ -74,6 +77,50 @@ def is_enabled(tool_name: str) -> bool:
     if not flag_name:
         return False
     return _flag(flag_name)
+
+
+def list_enabled_tool_ids() -> list[str]:
+    """Phase 10 — every tool whose per-tool flag is currently on AND
+    that's registered. Used by /v2/tools to power the public catalogue
+    without leaking the names of disabled tools."""
+    if not _flag("ENABLE_TOOLS"):
+        return []
+    out: list[str] = []
+    for tool_id, flag_name in _TOOL_FLAG_NAMES.items():
+        if not _flag(flag_name):
+            continue
+        if tool_id in _registry:
+            out.append(tool_id)
+    return out
+
+
+def describe_enabled_tools() -> list[dict]:
+    """Phase 10 — public-safe metadata for every enabled tool. Each
+    entry is the result of BaseTool.describe() so the FE renders rich
+    cards (icon, category, capability badges) without per-tool
+    hardcoding. Disabled tools are omitted entirely."""
+    out: list[dict] = []
+    for tool_id in list_enabled_tool_ids():
+        tool = _registry.get(tool_id)
+        if tool is None:
+            continue
+        try:
+            descriptor = tool.describe()
+        except Exception as exc:
+            logger.warning(
+                "tool '%s' describe() raised: %s — falling back to minimal record",
+                tool_id, exc,
+            )
+            descriptor = {
+                "id":           tool_id,
+                "name":         tool_id,
+                "description":  getattr(tool, "description", ""),
+                "category":     "general",
+                "icon":         "",
+                "requires_auth": False,
+            }
+        out.append(descriptor)
+    return out
 
 
 def health_status() -> dict:

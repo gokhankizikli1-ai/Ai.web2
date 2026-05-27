@@ -208,6 +208,19 @@ def tmp_agent_messages_db(tmp_path, monkeypatch):
 
 
 @pytest.fixture()
+def tmp_tool_executions_db(tmp_path, monkeypatch):
+    """Phase 10 — isolate tool_executions.db per test."""
+    db_file = tmp_path / "tool-executions-test.db"
+    monkeypatch.setenv("TOOL_EXECUTIONS_DB_PATH", str(db_file))
+    monkeypatch.setenv("ENABLE_TOOLS_RUNTIME", "true")
+    import importlib
+    te = importlib.import_module("backend.services.tool_executions.store")
+    monkeypatch.setattr(te, "_INITIALIZED", False, raising=False)
+    te.init()
+    yield db_file
+
+
+@pytest.fixture()
 def agent_presence_enabled(monkeypatch):
     """Phase 9 part 2 — turn on presence + reset the singleton snapshot
     so cross-test bleed-over can't happen."""

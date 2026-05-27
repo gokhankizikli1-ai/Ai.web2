@@ -16,6 +16,9 @@ try:
     from backend.services.tools.current_time_tool import CurrentTimeTool
     from backend.services.tools.stock_market_tool import StockMarketTool
     from backend.services.tools.news_tool import NewsTool
+    # Phase 10 — read-only foundation tools.
+    from backend.services.tools.browser_tool import BrowserFetchTool
+    from backend.services.tools.github_tool import GithubRepoTool
 
     register(MarketDataTool())
     register(MacroDataTool())
@@ -25,6 +28,8 @@ try:
     register(CurrentTimeTool())
     register(StockMarketTool())
     register(NewsTool())
-    logger.debug("tool package: 8 tools registered")
+    register(BrowserFetchTool())
+    register(GithubRepoTool())
+    logger.debug("tool package: 10 tools registered")
 except Exception as _exc:
     logger.warning("tool package: registration failed (%s) — tools unavailable", _exc)
