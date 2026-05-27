@@ -726,6 +726,10 @@ export function useChat() {
                   const subj = String(t?.input_summary || '').replace(/^url:\s*/i, '');
                   return subj ? `Fetching ${subj}…` : 'Fetching page…';
                 }
+                if (id === 'web_research') {
+                  const subj = String(t?.input_summary || '').replace(/^search:\s*/i, '');
+                  return subj ? `Searching the web for "${subj}"…` : 'Searching the web…';
+                }
                 return id ? `Running ${id}…` : 'Running tool…';
               })();
               setToolActivity({
@@ -763,6 +767,14 @@ export function useChat() {
                     ? `${subjects.length} pages fetched`
                     : 'Page fetched';
                 }
+                if (id === 'web_research') {
+                  // Phase 11 fix — chip surfaces the citation count
+                  // so the user sees "Web search complete — 5 sources".
+                  const count = typeof t?.citations === 'number' ? t.citations : 0;
+                  return count > 0
+                    ? `Web search complete — ${count} source${count === 1 ? '' : 's'}`
+                    : 'Web search complete';
+                }
                 return subjects.length
                   ? `Inspected ${subjects.join(', ')}`
                   : 'Tool finished';
@@ -774,6 +786,9 @@ export function useChat() {
                         ? subjects[0].replace(/^https?:\/\//, '')
                         : `${subjects.length} pages`}`
                     : 'Page fetch failed';
+                }
+                if (id === 'web_research') {
+                  return 'Web search unavailable — answering from model knowledge';
                 }
                 return subjects.length
                   ? `Could not inspect ${subjects.join(', ')}`
