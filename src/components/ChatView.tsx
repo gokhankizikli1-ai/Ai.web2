@@ -16,8 +16,11 @@ interface ChatViewProps {
   inputText: string;
   // Phase 9 — onSend carries the attached assets so the chat hook can
   // persist them on the user Message AND forward the ids to
-  // /v2/chat/stream. Empty array = text-only turn.
-  onSend: (message: string, attachments?: AttachedAsset[]) => void;
+  // /v2/chat/stream. Empty array = text-only turn. Returns a boolean
+  // resolving to whether the send actually persisted on the backend
+  // (false = composer keeps its chips so the user can retry without
+  // re-attaching the file).
+  onSend: (message: string, attachments?: AttachedAsset[]) => Promise<boolean>;
   onRetry: () => void;
   onSetInput: (text: string) => void;
   onTogglePin: (msg: Message) => void;
@@ -109,15 +112,24 @@ export default function ChatView({
     }
   }, [messages, isLoading]);
 
-  const handleSend = useCallback((msg: string, attachments: AttachedAsset[] = []) => {
+  const handleSend = useCallback(async (
+    msg: string,
+    attachments: AttachedAsset[] = [],
+  ): Promise<boolean> => {
     let finalMsg = msg;
     if (activeTools.length > 0) {
       const toolNames = activeTools.map((t) => t.chip).join(', ');
       finalMsg = `[Using: ${toolNames}]\n${msg}`;
     }
-    onSend(finalMsg, attachments);
-    onSetInput('');
-    setActiveTools([]);
+    // Phase 9 fix — await the send so the composer can keep its chips
+    // when the backend refuses or the network drops. The composer
+    // clears chips only when ok === true.
+    const ok = await onSend(finalMsg, attachments);
+    if (ok) {
+      onSetInput('');
+      setActiveTools([]);
+    }
+    return ok;
   }, [onSend, onSetInput, activeTools]);
 
   const insertInput = useCallback((text: string) => {

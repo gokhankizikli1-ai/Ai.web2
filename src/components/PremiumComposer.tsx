@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Command, Paperclip, FileUp } from 'lucide-react';
+import { Send, Command, Plus, FileUp, Image as ImageIcon, Camera, FolderOpen } from 'lucide-react';
 import ComposerTools, { type ComposerTool } from './ComposerTools';
 import ToolChips from './ToolChips';
 import AssetChip from './AssetChip';
@@ -15,7 +15,11 @@ interface PremiumComposerProps {
   // the user Message AND forwards the ids to /v2/chat/stream so the
   // backend can fold asset summaries into the system prompt. Empty
   // array = text-only turn (byte-identical to pre-Phase-9 behaviour).
-  onSend: (message: string, attachments: AttachedAsset[]) => void;
+  //
+  // Returns true when the send was actually accepted by the backend.
+  // The composer uses this to decide whether to clear the input/chips —
+  // on false the chips stay so the user can retry without re-attaching.
+  onSend: (message: string, attachments: AttachedAsset[]) => Promise<boolean>;
   disabled?: boolean;
   activeTools: ComposerTool[];
   onAddTool: (tool: ComposerTool) => void;
@@ -40,9 +44,14 @@ export default function PremiumComposer({
   const [internalValue, setInternalValue] = useState('');
   const [isFocused, setIsFocused]   = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [isSending, setIsSending]   = useState(false);
+  const [attachMenuOpen, setAttachMenuOpen] = useState(false);
   const dragDepthRef = useRef(0);
   const textareaRef  = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef    = useRef<HTMLInputElement>(null);
+  const photoInputRef   = useRef<HTMLInputElement>(null);
+  const cameraInputRef  = useRef<HTMLInputElement>(null);
+  const attachMenuRef   = useRef<HTMLDivElement>(null);
 
   const value = externalValue !== undefined ? externalValue : internalValue;
   const setValue = onExternalValueChange || setInternalValue;
@@ -50,8 +59,16 @@ export default function PremiumComposer({
   // Phase 9 — owns the upload queue + progress state.
   const assets = useAssets({ projectId });
 
-  const handleSubmit = () => {
-    if ((!value.trim() && assets.attachedAssetIds.length === 0) || disabled) return;
+  const handleSubmit = useCallback(async () => {
+    // Block when nothing to send, when explicitly disabled, while a
+    // prior send is still in flight, or while ANY upload is still
+    // uploading — sending mid-upload would silently drop the asset
+    // (only `ready` chips have an asset_id to forward to the backend).
+    if (
+      (!value.trim() && assets.attachedAssetIds.length === 0) ||
+      disabled || isSending || assets.isUploading
+    ) return;
+
     // Build AttachedAsset[] from the chip queue — only `ready` rows
     // (with a server-issued asset_id) make it into the message.
     const attachments: AttachedAsset[] = assets.pendingAssets
@@ -63,18 +80,27 @@ export default function PremiumComposer({
         size_bytes: a.sizeBytes,
         public_url: a.publicUrl,
       }));
-    onSend(value.trim(), attachments);
-    setValue('');
-    if (textareaRef.current) textareaRef.current.style.height = 'auto';
-    // Clear chip state — historical attachments are surfaced by the
-    // parent via the message record's `attachments`.
-    assets.clearAll();
-  };
+
+    setIsSending(true);
+    try {
+      const ok = await onSend(value.trim(), attachments);
+      if (ok) {
+        // Only clear on success — on failure the user keeps both their
+        // typed text (restored by the chat hook via externalValue) AND
+        // the chips, so they can retry without re-attaching the file.
+        setValue('');
+        if (textareaRef.current) textareaRef.current.style.height = 'auto';
+        assets.clearAll();
+      }
+    } finally {
+      setIsSending(false);
+    }
+  }, [value, disabled, isSending, assets, onSend, setValue]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSubmit();
+      void handleSubmit();
     }
   };
 
@@ -94,8 +120,24 @@ export default function PremiumComposer({
   }, [onAddTool]);
 
   // ── Upload triggers ───────────────────────────────────────────────────
+  //
+  // ChatGPT-style attach menu: a single "+" button opens a popover with
+  // three discoverable actions. Each routes through a dedicated <input>
+  // so we can set the right `accept` / `capture` attrs per action without
+  // toggling them on a single shared input (which has races on iOS).
+
+  const openPhotoLibrary = useCallback(() => {
+    setAttachMenuOpen(false);
+    photoInputRef.current?.click();
+  }, []);
+
+  const openCamera = useCallback(() => {
+    setAttachMenuOpen(false);
+    cameraInputRef.current?.click();
+  }, []);
 
   const openFilePicker = useCallback(() => {
+    setAttachMenuOpen(false);
     fileInputRef.current?.click();
   }, []);
 
@@ -104,6 +146,26 @@ export default function PremiumComposer({
     if (files && files.length > 0) assets.upload(files);
     if (e.target) e.target.value = '';
   }, [assets]);
+
+  // Close the attach menu on outside click / Escape so it behaves like
+  // the rest of the popovers in the app.
+  useEffect(() => {
+    if (!attachMenuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (attachMenuRef.current && !attachMenuRef.current.contains(e.target as Node)) {
+        setAttachMenuOpen(false);
+      }
+    };
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setAttachMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onEsc);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onEsc);
+    };
+  }, [attachMenuOpen]);
 
   // Drag/drop wiring — uses nested dragenter counting so leaving a
   // child element doesn't flicker the overlay off.
@@ -155,8 +217,13 @@ export default function PremiumComposer({
 
   // ── Render ────────────────────────────────────────────────────────────
 
+  // Phase 9 fix — the send button is gated until uploads complete so
+  // a fast typist can't fire off the message while their image is mid-
+  // upload (which would silently drop the asset because only `ready`
+  // chips have an asset_id).
   const canSend =
-    (value.trim().length > 0 || assets.attachedAssetIds.length > 0) && !disabled;
+    (value.trim().length > 0 || assets.attachedAssetIds.length > 0) &&
+    !disabled && !isSending && !assets.isUploading;
 
   return (
     <div className="max-w-3xl mx-auto">
@@ -235,17 +302,100 @@ export default function PremiumComposer({
         </AnimatePresence>
 
         <div className="flex items-center gap-1 px-3 pt-2 pb-1">
+          {/* ChatGPT-style "+" attach menu. The menu lives anchored to
+              the + button so it opens upward over the composer without
+              being clipped by the parent's overflow. */}
+          <div ref={attachMenuRef} className="relative">
+            <motion.button
+              type="button"
+              onClick={() => setAttachMenuOpen((v) => !v)}
+              disabled={disabled}
+              whileHover={!disabled ? { scale: 1.06 } : undefined}
+              whileTap={!disabled ? { scale: 0.94 } : undefined}
+              className={`flex items-center justify-center h-7 w-7 rounded-lg border transition-all disabled:opacity-30 ${
+                attachMenuOpen
+                  ? 'text-cyan-300 bg-white/[0.06] border-cyan-500/20'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04] border-white/[0.05]'
+              }`}
+              title="Attach"
+              aria-label="Attach"
+              aria-expanded={attachMenuOpen}
+              aria-haspopup="menu"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </motion.button>
+
+            <AnimatePresence>
+              {attachMenuOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: 6, scale: 0.96 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: 4, scale: 0.96 }}
+                  transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
+                  role="menu"
+                  className="absolute bottom-full left-0 mb-2 w-52 rounded-xl border shadow-2xl overflow-hidden z-50 py-1"
+                  style={{
+                    borderColor:     'rgba(255,255,255,0.06)',
+                    background:      'rgba(23,28,36,0.96)',
+                    backdropFilter:  'blur(24px)',
+                  }}
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={openPhotoLibrary}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-[12px] text-slate-300 hover:bg-white/[0.04] hover:text-white transition-colors"
+                  >
+                    <ImageIcon className="h-3.5 w-3.5 text-cyan-400/70" />
+                    <span className="flex-1">Photo Library</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={openCamera}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-[12px] text-slate-300 hover:bg-white/[0.04] hover:text-white transition-colors"
+                  >
+                    <Camera className="h-3.5 w-3.5 text-violet-400/70" />
+                    <span className="flex-1">Take Photo or Video</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={openFilePicker}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-[12px] text-slate-300 hover:bg-white/[0.04] hover:text-white transition-colors"
+                  >
+                    <FolderOpen className="h-3.5 w-3.5 text-amber-400/70" />
+                    <span className="flex-1">Choose Files</span>
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
           <ComposerTools onSelectTool={handleToolSelect} />
-          <button
-            type="button"
-            onClick={openFilePicker}
-            disabled={disabled}
-            className="flex items-center justify-center h-6 w-6 rounded-md text-slate-500 hover:text-slate-300 hover:bg-white/[0.04] transition-colors disabled:opacity-30"
-            title="Attach file"
-            aria-label="Attach file"
-          >
-            <Paperclip className="h-3 w-3" />
-          </button>
+
+          {/* Hidden file inputs — one per attach action so we can set
+              `accept` / `capture` per intent without races (iOS Safari
+              resets `accept` between rapid toggles on a shared input). */}
+          <input
+            ref={photoInputRef}
+            type="file"
+            multiple
+            accept="image/*"
+            className="hidden"
+            onChange={onFileInputChange}
+          />
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*,video/*"
+            // `capture` triggers the device camera on iOS / Android.
+            // Desktop browsers ignore it and fall back to a regular
+            // file picker scoped to images & videos — no harm.
+            capture="environment"
+            className="hidden"
+            onChange={onFileInputChange}
+          />
           <input
             ref={fileInputRef}
             type="file"
@@ -291,7 +441,7 @@ export default function PremiumComposer({
           </div>
 
           <motion.button
-            onClick={handleSubmit}
+            onClick={() => { void handleSubmit(); }}
             disabled={!canSend}
             whileHover={canSend ? { scale: 1.06 } : {}}
             whileTap={canSend ? { scale: 0.92 } : {}}
