@@ -86,13 +86,17 @@ export default function Sidebar({
 
     return (
       <div
-        className="group/row relative"
+        // min-w-0 + overflow-hidden so a long unbreakable chat title
+        // never pushes the row wider than the sidebar. Combined with
+        // the `truncate` on the <p> below, this is what makes the
+        // ellipsis actually appear on iPad landscape.
+        className="group/row relative min-w-0 overflow-hidden"
         onMouseEnter={() => setHoveredId(session.id)}
         onMouseLeave={() => setHoveredId(null)}
       >
         <button
           onClick={() => onSelect(session.id)}
-          className={`w-full flex items-center gap-2 rounded-lg px-2.5 py-[6px] text-left transition-all duration-200 border ${
+          className={`w-full min-w-0 flex items-center gap-2 rounded-lg px-2.5 py-[6px] text-left transition-all duration-200 border ${
             active
               ? 'border-white/[0.06] shadow-[0_0_12px_-4px_rgba(34,211,238,0.04)]'
               : 'border-transparent hover:border-white/[0.03]'
@@ -159,7 +163,13 @@ export default function Sidebar({
 
       {/* ═══ SIDEBAR ═══ */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex flex-col transition-transform duration-300 ease-out ${
+        // `overflow-hidden` is the boundary defence — a long unbreakable
+        // chat title can never push the sidebar wider than its declared
+        // 260px / 85vw. min-w-0 lets the flex column shrink properly
+        // inside the fixed-width aside. Without these, the iPad landscape
+        // view (and any narrow viewport) sees the sidebar visually
+        // overflow when a recent-chat title is long.
+        className={`fixed inset-y-0 left-0 z-50 flex flex-col overflow-hidden min-w-0 transition-transform duration-300 ease-out ${
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
         style={{
@@ -186,8 +196,8 @@ export default function Sidebar({
           </button>
         </div>
 
-        <ScrollArea className="flex-1 min-h-0">
-          <div className="px-3 py-3 space-y-3">
+        <ScrollArea className="flex-1 min-h-0 min-w-0">
+          <div className="px-3 py-3 space-y-3 min-w-0">
 
             {/* ═══ 1. PROJECTS NAVIGATION ═══ */}
             <motion.button
@@ -294,9 +304,9 @@ export default function Sidebar({
               </div>
 
               {displaySessions.length > 0 ? (
-                <div className="space-y-[1px] ml-3" style={{ borderLeft: '1px solid rgba(255,255,255,0.04)' }}>
+                <div className="space-y-[1px] ml-3 min-w-0 overflow-hidden" style={{ borderLeft: '1px solid rgba(255,255,255,0.04)' }}>
                   {displaySessions.map((s) => (
-                    <div key={s.id} className="pl-2">
+                    <div key={s.id} className="pl-2 min-w-0">
                       <SessionRow session={s} />
                     </div>
                   ))}
