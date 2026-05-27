@@ -182,6 +182,45 @@ def tmp_scratchpad_db(tmp_path, monkeypatch):
 
 
 @pytest.fixture()
+def tmp_panels_db(tmp_path, monkeypatch):
+    """Phase 9 part 2 — isolate panels.db per test."""
+    db_file = tmp_path / "panels-test.db"
+    monkeypatch.setenv("PANELS_DB_PATH", str(db_file))
+    monkeypatch.setenv("ENABLE_REAL_COORDINATION", "true")
+    import importlib
+    pn = importlib.import_module("backend.services.panels.store")
+    monkeypatch.setattr(pn, "_INITIALIZED", False, raising=False)
+    pn.init()
+    yield db_file
+
+
+@pytest.fixture()
+def tmp_agent_messages_db(tmp_path, monkeypatch):
+    """Phase 9 part 2 — isolate agent_messages.db per test."""
+    db_file = tmp_path / "agent-messages-test.db"
+    monkeypatch.setenv("AGENT_MESSAGES_DB_PATH", str(db_file))
+    monkeypatch.setenv("ENABLE_REAL_COORDINATION", "true")
+    import importlib
+    am = importlib.import_module("backend.services.agent_messenger.store")
+    monkeypatch.setattr(am, "_INITIALIZED", False, raising=False)
+    am.init()
+    yield db_file
+
+
+@pytest.fixture()
+def agent_presence_enabled(monkeypatch):
+    """Phase 9 part 2 — turn on presence + reset the singleton snapshot
+    so cross-test bleed-over can't happen."""
+    monkeypatch.setenv("ENABLE_AGENT_PRESENCE", "true")
+    import importlib
+    pc = importlib.import_module("backend.services.agent_presence.client")
+    # Reset the singleton's in-memory snapshot per test.
+    pc.client._snapshot.clear()
+    yield
+    pc.client._snapshot.clear()
+
+
+@pytest.fixture()
 def tmp_memory_plane_db(tmp_path, monkeypatch):
     """Phase 6 — isolate memory_plane.db per test.
 

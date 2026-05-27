@@ -39,6 +39,12 @@ SCRATCHPAD_KINDS: tuple[str, ...] = (
     "answer",      # response to a question another agent posted
     "reference",   # URL / asset_id / external pointer worth keeping
     "output",      # generated artefact the agent is publishing for peers
+    # Phase 9 part 2 — coordinator-level kinds.
+    "analysis",    # an agent's interpretation / synthesis of inputs
+    "task",        # a subtask emitted by the coordinator
+    "result",      # a completed subtask outcome
+    "proposal",    # a non-binding suggestion (matches messenger MSG_PROPOSE)
+    "error",       # a failure the agent wants peers to see
 )
 
 KIND_NOTE      = "note"
@@ -49,6 +55,35 @@ KIND_QUESTION  = "question"
 KIND_ANSWER    = "answer"
 KIND_REFERENCE = "reference"
 KIND_OUTPUT    = "output"
+KIND_ANALYSIS  = "analysis"
+KIND_TASK      = "task"
+KIND_RESULT    = "result"
+KIND_PROPOSAL  = "proposal"
+KIND_ERROR     = "error"
+
+
+# ── Entry statuses ────────────────────────────────────────────────────────
+#
+# Coordinator can mark entries to weed out noise or flag contradictions.
+# Default is "active"; the FE filters or grays out the rest.
+SCRATCHPAD_STATUSES: tuple[str, ...] = (
+    "active",       # default — entry is live and consulted
+    "accepted",     # coordinator endorsed this finding / decision
+    "rejected",     # coordinator dismissed this entry (kept for audit)
+    "superseded",   # a newer entry replaces this one — see supersedes_id
+)
+
+STATUS_ACTIVE     = "active"
+STATUS_ACCEPTED   = "accepted"
+STATUS_REJECTED   = "rejected"
+STATUS_SUPERSEDED = "superseded"
+
+
+def normalize_status(s: Optional[str]) -> str:
+    if not s:
+        return STATUS_ACTIVE
+    n = str(s).strip().lower()
+    return n if n in SCRATCHPAD_STATUSES else STATUS_ACTIVE
 
 
 def normalize_kind(k: Optional[str]) -> str:
@@ -69,6 +104,14 @@ class ScratchpadEntry:
     posted the entry. `correlation_id` (optional) lets the FE / a peer
     agent thread a question + answer pair, or link a chain of findings
     from one workflow run.
+
+    Phase 9 part 2 — `panel_id` groups entries written during one
+    coordinated task; `references` is an open-set list of related ids
+    (asset_id, scratchpad_entry_id, message_id) the FE can resolve into
+    cross-links; `supersedes_id` lets a later entry replace an earlier
+    one (coordinator marks the earlier as "superseded"); `status`
+    tracks coordinator review (active / accepted / rejected /
+    superseded).
     """
     project_id:     str
     user_id:        str                       # owner of the project, for ownership checks
@@ -80,6 +123,11 @@ class ScratchpadEntry:
     parent_id:      Optional[str] = None      # threading — e.g. an answer's parent is the question's id
     correlation_id: Optional[str] = None      # free-form group tag (run_id / task_id / etc.)
     metadata:       dict = field(default_factory=dict)
+    # Phase 9 part 2 additions.
+    panel_id:       Optional[str] = None
+    references:     list = field(default_factory=list)
+    supersedes_id:  Optional[str] = None
+    status:         str = STATUS_ACTIVE
     id:             Optional[str] = None
     created_at:     Optional[str] = None      # ISO-8601, set by store
 
@@ -93,4 +141,7 @@ __all__ = [
     "normalize_kind",
     "KIND_NOTE", "KIND_FINDING", "KIND_DECISION", "KIND_PLAN",
     "KIND_QUESTION", "KIND_ANSWER", "KIND_REFERENCE", "KIND_OUTPUT",
+    "KIND_ANALYSIS", "KIND_TASK", "KIND_RESULT", "KIND_PROPOSAL", "KIND_ERROR",
+    "SCRATCHPAD_STATUSES", "normalize_status",
+    "STATUS_ACTIVE", "STATUS_ACCEPTED", "STATUS_REJECTED", "STATUS_SUPERSEDED",
 ]

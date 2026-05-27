@@ -6,6 +6,12 @@ a Plan over the existing AgentSpec registry. No LLM call here — keeps
 the plan preview O(1ms) and free, so the FE can show it before the
 user even hits Send.
 
+Phase 9 part 2 — Coordinator also exposes `classify()`, a cheap
+complexity probe used to decide whether a panel should auto-activate.
+"chat" turns stay on the existing single-LLM path; "complex" turns
+spawn a panel, presence updates, and (in the next PR) sub-agent
+delegation through the existing delegate.py policy layer.
+
 Design notes:
   * Multilingual signals — KorvixAI's userbase types in EN + TR. The
     rule sets include the most common Turkish trigger words alongside
@@ -24,7 +30,7 @@ from __future__ import annotations
 import logging
 import os
 import re
-from typing import Iterable, Optional
+from typing import Any, Iterable, Optional
 
 from backend.services.coordinator.types import AgentInvocation, Plan
 
@@ -277,6 +283,112 @@ class Coordinator:
             ],
             notes=[],
         )
+
+    # ── Complexity classification ──────────────────────────────────────────
+    #
+    # A separate, even faster probe than analyze(). Used by the FE
+    # (and by the future auto-invoker in the chat route) to decide
+    # whether the request is "simple chat — let the LLM handle it
+    # directly" vs "complex multi-step — spawn a panel."
+    #
+    # The classifier deliberately ignores the AgentSpec table. It's
+    # purely about INSTRUCTION SHAPE, not about which specialist
+    # would handle it. That keeps it stable when new specialists
+    # ship.
+
+    # Trigger keywords that strongly suggest a multi-step task.
+    _COMPLEX_TRIGGERS: tuple[str, ...] = (
+        # English
+        "build", "design", "create a", "compare", "analyze",
+        "automation", "workflow", "research deeply", "competitor",
+        "implement", "refactor", "generate a", "draft a", "produce a",
+        "step by step", "step-by-step", "end to end", "end-to-end",
+        # Turkish
+        "kur", "tasarla", "kıyasla", "karşılaştır", "araştır",
+        "implementasyon", "iş akışı", "otomasyon", "uçtan uca",
+    )
+
+    # Phrases that disqualify the request from being "complex" even if
+    # a trigger keyword fires — usually casual or short.
+    _SIMPLE_OVERRIDES: tuple[str, ...] = (
+        "hi", "hello", "hey", "thanks", "thank you", "merhaba", "selam",
+        "ok", "okay", "tamam",
+    )
+
+    def classify(
+        self,
+        *,
+        user_message:     str,
+        asset_mime_types: Optional[Iterable[str]] = None,
+    ) -> dict[str, Any]:
+        """Return a small dict describing how complex the request is.
+
+        Keys:
+          complexity   "low" | "medium" | "high"
+          triggers     list of matched trigger keywords (for the FE
+                       to render "Detected: build, compare")
+          should_spawn_panel  bool — true when complexity >= medium
+                              AND no simple-override fires
+          reason       short human-readable summary
+
+        Deliberately conservative — false negatives (rating something
+        simpler than it is) are cheaper than false positives (spawning
+        a panel for "hi"). When in doubt, returns "low" / False.
+        """
+        text = (user_message or "").strip()
+        if not text:
+            return {
+                "complexity":        "low",
+                "triggers":          [],
+                "should_spawn_panel": False,
+                "reason":            "empty message",
+            }
+        lower = text.lower()
+
+        # Simple overrides win — short greetings never spawn panels.
+        if any(o in lower for o in self._SIMPLE_OVERRIDES) and len(text) < 40:
+            return {
+                "complexity":        "low",
+                "triggers":          [],
+                "should_spawn_panel": False,
+                "reason":            "short greeting / acknowledgement",
+            }
+
+        triggers = [t for t in self._COMPLEX_TRIGGERS if t in lower]
+        # Length is a secondary signal — a 30-word prompt is almost
+        # always doing more than chitchat.
+        word_count = len(re.findall(r"\S+", text))
+        has_assets = bool(list(asset_mime_types or ()))
+
+        score = 0
+        if triggers:        score += 2
+        if word_count >= 25: score += 1
+        if has_assets:      score += 1
+        if word_count >= 60: score += 1
+
+        if score >= 3:
+            return {
+                "complexity":        "high",
+                "triggers":          triggers,
+                "should_spawn_panel": True,
+                "reason":            (
+                    f"score={score} (triggers={len(triggers)}, words={word_count}, "
+                    f"assets={int(has_assets)})"
+                ),
+            }
+        if score >= 2:
+            return {
+                "complexity":        "medium",
+                "triggers":          triggers,
+                "should_spawn_panel": True,
+                "reason":            f"score={score} — multi-signal request",
+            }
+        return {
+            "complexity":        "low",
+            "triggers":          triggers,
+            "should_spawn_panel": False,
+            "reason":            f"score={score} — single-signal request",
+        }
 
     def _notes_for(self, asset_mime_types: Iterable[str]) -> list[str]:
         out: list[str] = []

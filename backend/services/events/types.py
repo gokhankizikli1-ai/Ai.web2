@@ -45,6 +45,11 @@ EVENT_KINDS = (
     "task.started",     # task transitioned to status=running
     "task.completed",   # task transitioned to status=completed
     "task.failed",      # task transitioned to status=failed
+    # Phase 9 — panel + presence + messenger lifecycle.
+    "panel.created",        # PanelsClient.create() succeeded
+    "panel.status_changed", # PanelsClient.mark_status() transitioned a panel
+    "presence.changed",     # AgentPresence.update() flipped an agent's state
+    "agent_message.posted", # AgentMessenger.send() recorded a new envelope
 )
 
 
