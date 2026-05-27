@@ -27,5 +27,13 @@ from backend.services.tool_extraction.github_urls import (
     build_github_context_block,
     GitHubRef,
 )
+from backend.services.tool_extraction.web_urls import (
+    extract_web_urls,
+    build_web_context_block,
+    WebUrl,
+)
 
-__all__ = ["extract_github_refs", "build_github_context_block", "GitHubRef"]
+__all__ = [
+    "extract_github_refs", "build_github_context_block", "GitHubRef",
+    "extract_web_urls", "build_web_context_block", "WebUrl",
+]

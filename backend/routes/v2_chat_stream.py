@@ -555,20 +555,31 @@ async def stream_chat(body: StreamChatRequest, request: Request):
     # Detection is synchronous (regex, microseconds); execution is
     # deferred to the generator.
     github_refs: list = []
+    web_urls: list = []
     try:
-        from backend.services.tool_extraction import extract_github_refs as _extract_gh
+        from backend.services.tool_extraction import (
+            extract_github_refs as _extract_gh,
+            extract_web_urls as _extract_web,
+        )
         from backend.services.tools.tool_registry import is_enabled as _tool_enabled
-        if last_user_msg and _tool_enabled("github_repo"):
-            github_refs = _extract_gh(last_user_msg)
-    except Exception as _gh_exc:
-        logger.debug("stream_chat.github_url detection failed: %s", _gh_exc)
+        if last_user_msg:
+            if _tool_enabled("github_repo"):
+                github_refs = _extract_gh(last_user_msg)
+            # Phase 11 — non-GitHub URLs go through browser_fetch.
+            # The extractor explicitly skips github.com / raw.gh hosts
+            # so we never double-fetch.
+            if _tool_enabled("browser_fetch"):
+                web_urls = _extract_web(last_user_msg)
+    except Exception as _url_exc:
+        logger.debug("stream_chat.url detection failed: %s", _url_exc)
         github_refs = []
+        web_urls = []
 
     # Owner debug — gate the raw payload exposure on a confirmed-owner
-    # session. Non-owners never see raw GitHub API payloads in the SSE
-    # stream, even when ENABLE_TOOLS_RUNTIME is on.
+    # session. Non-owners never see raw GitHub API payloads or full
+    # page bodies in the SSE stream, even when ENABLE_TOOLS_RUNTIME is on.
     owner_debug = False
-    if github_refs:
+    if github_refs or web_urls:
         try:
             from backend.services.admin.owner import is_owner as _is_owner
             owner_user = getattr(request.state, "user", None)
@@ -748,6 +759,115 @@ async def stream_chat(body: StreamChatRequest, request: Request):
                         "sys_prompt_first_3kb=%s",
                         user_id, sys_preview.replace("\n", " | "),
                     )
+
+        # ── Phase 11 — browser fetch for non-GitHub URLs ──────────────
+        #
+        # Runs AFTER the github flow so a mixed message can produce
+        # both kinds of context. Multi-URL concurrent fetch — up to
+        # 4 URLs in parallel via build_web_context_block's
+        # asyncio.gather. Each fetch lands in the tool_executions
+        # log so /v2/tools/usage shows the calls.
+        if web_urls:
+            for wu in web_urls:
+                yield sse_event("tool.started", {
+                    "tool_id":     "browser_fetch",
+                    "input_summary": f"url: {wu.url}",
+                    "provider":    "urllib",
+                })
+            try:
+                from backend.services.tool_extraction import build_web_context_block
+                web_block, web_payloads = await build_web_context_block(
+                    user_id=     user_id,
+                    text=        last_user_msg or "",
+                    project_id=  body.project_id,
+                    owner_debug= owner_debug,
+                )
+            except Exception as exc:
+                logger.warning("stream_chat.web_url execution failed: %s", exc)
+                web_block = None
+                web_payloads = []
+
+            fetched = sum(1 for p in (web_payloads or [])
+                          if p.get("fetched") is True)
+            yield sse_event("tool.completed", {
+                "tool_id":   "browser_fetch",
+                "urls":      [u.url for u in web_urls],
+                "succeeded": fetched > 0,
+                "fetched":   fetched,
+                "block_chars": len(web_block or ""),
+            })
+
+            if owner_debug and web_payloads:
+                yield sse_event("tool.debug", {
+                    "tool_id":  "browser_fetch",
+                    "payloads": web_payloads,
+                })
+
+            if web_block:
+                # Rebuild final_msgs again — fold the web block into
+                # the system prompt + last user message, same dual-
+                # injection pattern as the github path. We work off
+                # `effective_pr_request` so a turn with BOTH github
+                # AND web URLs gets BOTH blocks injected.
+                base_msgs = list(effective_pr_request.messages)
+                augmented_msgs2: list = []
+                first_role = base_msgs[0].role if base_msgs else None
+                if first_role == "system":
+                    sys_content = base_msgs[0].content
+                    if isinstance(sys_content, list):
+                        sys_content = "\n".join(
+                            str(b.get("text", "")) for b in sys_content
+                            if isinstance(b, dict) and b.get("type") == "text"
+                        )
+                    new_sys = f"{(sys_content or '').strip()}\n\n{web_block}"
+                    augmented_msgs2.append(ProviderMessage(role="system", content=new_sys))
+                    rest2 = base_msgs[1:]
+                else:
+                    augmented_msgs2.append(ProviderMessage(role="system", content=web_block))
+                    rest2 = list(base_msgs)
+
+                last_user_idx2: Optional[int] = None
+                for i in range(len(rest2) - 1, -1, -1):
+                    if rest2[i].role == "user":
+                        last_user_idx2 = i
+                        break
+                if last_user_idx2 is not None:
+                    user_msg = rest2[last_user_idx2]
+                    suffix = (
+                        "\n\n---\n"
+                        "[Web pages the user wants you to use — "
+                        "treat as authoritative:]\n"
+                        f"{web_block}"
+                    )
+                    if isinstance(user_msg.content, list):
+                        new_content = list(user_msg.content) + [{
+                            "type": "text",
+                            "text": suffix,
+                        }]
+                        rest2[last_user_idx2] = ProviderMessage(
+                            role="user", content=new_content,
+                        )
+                    else:
+                        new_text = (user_msg.content or "") + suffix
+                        rest2[last_user_idx2] = ProviderMessage(
+                            role="user", content=new_text,
+                        )
+
+                augmented_msgs2.extend(rest2)
+                effective_pr_request = ProviderRequest(
+                    messages=    augmented_msgs2,
+                    model=       effective_pr_request.model,
+                    temperature= effective_pr_request.temperature,
+                    max_tokens=  effective_pr_request.max_tokens,
+                    timeout_s=   effective_pr_request.timeout_s,
+                    extra=       effective_pr_request.extra,
+                )
+                logger.info(
+                    "stream_chat.web_url | uid=%s | urls=%d | fetched=%d | "
+                    "block_chars=%d | injected=system+user",
+                    user_id, len(web_urls), fetched, len(web_block),
+                )
+
         try:
             async for event in provider.stream_chat_completion(effective_pr_request):
                 if isinstance(event, ProviderStreamStart):
