@@ -130,7 +130,9 @@ def _resolve_user_id(request: Request, body_user_id: Optional[str]) -> tuple[str
 
     Identity-first precedence — JWT-derived `User.id` always wins over
     body-supplied user_id so an authenticated user can't be impersonated
-    via a forged body field.
+    via a forged body field. This is the SAME contract Phase 6 / 7
+    relied on; do NOT widen it to dual-namespace reads (that's a
+    cross-user leak vector — see test_jwt_overrides_body_user_id).
     """
     # 1) Try the AuthMiddleware-populated state (Phase 3 — only when
     #    ENABLE_AUTH_V2 is on). request.state.user is a `User` dataclass
@@ -152,8 +154,6 @@ def _resolve_user_id(request: Request, body_user_id: Optional[str]) -> tuple[str
         auth = request.headers.get("authorization") or request.headers.get("Authorization")
         if auth and auth.lower().startswith("bearer "):
             token = auth.split(None, 1)[1].strip()
-            # Best-effort sub extraction without JWT verification —
-            # avoids dragging in the auth dep when we just need the id.
             import base64
             parts = token.split(".")
             if len(parts) >= 2:
@@ -257,26 +257,42 @@ async def stream_chat(body: StreamChatRequest, request: Request):
         elif user_id == "anonymous" or not last_user_msg:
             mp_path = "no_memory"
         else:
-            # 1) Explicit save command — short-circuit BEFORE streaming.
+            # 1) Explicit save command — short-circuit ONLY if the save
+            #    actually persisted. If save_explicit returns None (memory
+            #    plane errored mid-call, validation failed, etc.) we DO
+            #    NOT emit a fake "Kaydettim." ack — instead we fall through
+            #    to the regular LLM stream so the user sees an honest
+            #    response. Matches the spec: "no fake 'saved' responses
+            #    if persistence failed".
             save_cmd = mp_chat.is_explicit_save_command(last_user_msg)
             if save_cmd is not None:
                 fact = (save_cmd.get("fact") or "").strip()
                 if not fact:
+                    # Trigger matched but no content — clarification ack
+                    # is honest (we're not claiming to save anything).
                     ack = mp_chat.ack_reply_empty(last_user_msg)
                     mp_path = "shortcut_empty"
-                else:
-                    saved = mp_chat.save_explicit(
-                        user_id=    user_id,
-                        content=    fact,
-                        kind=       save_cmd.get("kind", "fact"),
-                        project_id= body.project_id,
+                    logger.info(
+                        "stream_chat.memory | path=%s | uid=%s | id_src=%s | "
+                        "elapsed_ms=%d",
+                        mp_path, user_id, id_source,
+                        int((time.monotonic() - t_start) * 1000),
                     )
-                    mp_saved_id = (saved or {}).get("id")
-                    # Dual-write to legacy memory_service so existing
-                    # /memory UI keeps showing the row.
+                    return sse_response(_shortcut_save_stream(ack, provider_name))
+                # Persistence attempt.
+                saved = mp_chat.save_explicit(
+                    user_id=    user_id,
+                    content=    fact,
+                    kind=       save_cmd.get("kind", "fact"),
+                    project_id= body.project_id,
+                )
+                mp_saved_id = (saved or {}).get("id") if saved else None
+                if mp_saved_id:
+                    # SUCCESS — dual-write to legacy memory_service so
+                    # existing /memory UI keeps showing the row, then
+                    # short-circuit with a HONEST ack (we did save it).
                     try:
                         from backend.services.memory_service import save_memory
-                        # /chat uses an int-cast uid; keep parity.
                         uid_int = int(user_id) if user_id.isdigit() else hash(user_id) % 2**31
                         save_memory(uid_int, fact,
                                     "preference" if save_cmd.get("kind") == "preference" else "general")
@@ -284,13 +300,24 @@ async def stream_chat(body: StreamChatRequest, request: Request):
                         pass
                     ack = mp_chat.ack_reply(last_user_msg, fact=fact)
                     mp_path = "shortcut_saved"
-                logger.info(
-                    "stream_chat.memory | path=%s | uid=%s | id_src=%s | mp_id=%s | "
-                    "fact_len=%d | elapsed_ms=%d",
-                    mp_path, user_id, id_source, mp_saved_id, len(fact),
-                    int((time.monotonic() - t_start) * 1000),
+                    logger.info(
+                        "stream_chat.memory | path=%s | uid=%s | id_src=%s | "
+                        "mp_id=%s | fact_len=%d | elapsed_ms=%d",
+                        mp_path, user_id, id_source, mp_saved_id, len(fact),
+                        int((time.monotonic() - t_start) * 1000),
+                    )
+                    return sse_response(_shortcut_save_stream(ack, provider_name))
+                # FAILURE path — save returned None. Log loudly and FALL
+                # THROUGH to the regular LLM stream. The user will see
+                # the LLM's natural response; we do NOT lie about saving.
+                mp_path = "shortcut_save_failed"
+                logger.warning(
+                    "stream_chat.memory | path=shortcut_save_failed | uid=%s | "
+                    "id_src=%s | fact_len=%d | reason=memory_plane_returned_none",
+                    user_id, id_source, len(fact),
                 )
-                return sse_response(_shortcut_save_stream(ack, provider_name))
+                # Continue to the auto-extract + retrieval phases below
+                # (don't return). The user gets a real LLM response.
 
             # 2) Auto-extract on the last user message (non-blocking).
             try:

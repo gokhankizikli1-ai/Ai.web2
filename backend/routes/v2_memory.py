@@ -295,6 +295,41 @@ def list_project_memories(
     )
 
 
+@router.get("/whoami", include_in_schema=False)
+def memory_whoami_first(user: User = Depends(current_user)) -> Dict[str, Any]:
+    """Diagnostic — reveals exactly which user_id the current JWT
+    resolves to + how many memories exist for it. Declared BEFORE
+    the parameterized `/{record_id}` route so FastAPI doesn't match
+    "whoami" as a memory id."""
+    _ensure_enabled()
+    items = memory_client.list_user(user.id, limit=200)
+    by_kind: Dict[str, int] = {}
+    for it in items:
+        by_kind[it.kind] = by_kind.get(it.kind, 0) + 1
+    return envelope_ok(
+        data={
+            "user_id":              user.id,
+            "kind":                 user.kind,
+            "external_id":          user.external_id,
+            "memory_count_total":   len(items),
+            "memory_count_by_kind": by_kind,
+        },
+        endpoint="/v2/memory/whoami",
+    )
+
+
+@router.get("/health/diagnostic", include_in_schema=False)
+def memory_health_diagnostic_first() -> Dict[str, Any]:
+    """Health snapshot. Declared BEFORE `/{record_id}` so FastAPI
+    doesn't match the literal path as a memory id."""
+    snap = memory_client.stats()
+    return envelope_ok(
+        data=snap,
+        endpoint="/v2/memory/health/diagnostic",
+        kinds_supported=list(MEMORY_KINDS),
+    )
+
+
 @router.get("/{record_id}")
 def get_memory(
     record_id: str,
@@ -330,18 +365,9 @@ def delete_memory(
     )
 
 
-@router.get("/health/diagnostic", include_in_schema=False)
-def memory_health_diagnostic() -> Dict[str, Any]:
-    """Internal /v2/memory/health/diagnostic — exposed for /tools/health
-    aggregation. Returns flag state + store counters + table counts.
-    Never auth-gated because the body contains zero user content.
-    Hidden from the OpenAPI schema."""
-    snap = memory_client.stats()
-    return envelope_ok(
-        data=snap,
-        endpoint="/v2/memory/health/diagnostic",
-        kinds_supported=list(MEMORY_KINDS),
-    )
+# NOTE: /whoami and /health/diagnostic are declared ABOVE the
+# parameterized `/{record_id}` route so FastAPI doesn't match
+# their path literals as memory ids. Don't redeclare them here.
 
 
 __all__ = ["router"]
