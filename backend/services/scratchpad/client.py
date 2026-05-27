@@ -21,6 +21,7 @@ from typing import Optional
 from backend.services.scratchpad import store
 from backend.services.scratchpad.types import (
     ScratchpadEntry, normalize_kind, KIND_NOTE,
+    normalize_status, STATUS_ACTIVE,
 )
 
 
@@ -57,6 +58,10 @@ class ScratchpadClient:
         parent_id:      Optional[str] = None,
         correlation_id: Optional[str] = None,
         metadata:       Optional[dict] = None,
+        panel_id:       Optional[str] = None,
+        references:     Optional[list] = None,
+        supersedes_id:  Optional[str] = None,
+        status:         str = STATUS_ACTIVE,
     ) -> Optional[ScratchpadEntry]:
         """Append one entry. Returns the persisted record (with id and
         created_at populated) on success, or None when the scratchpad
@@ -88,10 +93,28 @@ class ScratchpadClient:
                 parent_id=      parent_id,
                 correlation_id= correlation_id,
                 metadata=       dict(metadata or {}),
+                panel_id=       panel_id,
+                references=     list(references or []),
+                supersedes_id=  supersedes_id,
+                status=         normalize_status(status),
             )
             return store.insert(entry)
         except Exception as e:
             logger.warning("scratchpad.append error: %s", e)
+            return None
+
+    def mark_status(
+        self, entry_id: str, *, user_id: str, status: str,
+    ) -> Optional[ScratchpadEntry]:
+        """Coordinator-level endorsement / dismissal of an entry."""
+        if not is_enabled():
+            return None
+        if not (entry_id and user_id):
+            return None
+        try:
+            return store.mark_status(entry_id, user_id=user_id, status=status)
+        except Exception as e:
+            logger.warning("scratchpad.mark_status error: %s", e)
             return None
 
     # ── Reads ──────────────────────────────────────────────────────────────
@@ -106,6 +129,8 @@ class ScratchpadClient:
         kind:           Optional[str] = None,
         workflow_id:    Optional[str] = None,
         correlation_id: Optional[str] = None,
+        panel_id:       Optional[str] = None,
+        status:         Optional[str] = None,
         newest_first:   bool = True,
     ) -> list[ScratchpadEntry]:
         """List entries for the caller's project. Returns [] when the
@@ -124,6 +149,8 @@ class ScratchpadClient:
                 kind=           kind,
                 workflow_id=    workflow_id,
                 correlation_id= correlation_id,
+                panel_id=       panel_id,
+                status=         status,
                 newest_first=   newest_first,
             )
         except Exception as e:

@@ -200,7 +200,9 @@ def _build_full_app():
         "backend.routes.v2_recreate",  # Phase 8 — /v2/recreate/* (gated by ENABLE_WEBSITE_RECREATION)
         "backend.routes.v2_orchestration",  # Phase 9 — /v2/orchestration/activity (always 200)
         "backend.routes.v2_scratchpad",     # Phase 9 — /v2/scratchpad/* (gated by ENABLE_SCRATCHPAD)
-        "backend.routes.v2_coordinator",    # Phase 9 — /v2/coordinator/plan (gated by ENABLE_COORDINATOR)
+        "backend.routes.v2_coordinator",    # Phase 9 — /v2/coordinator/plan + /classify (gated by ENABLE_COORDINATOR)
+        "backend.routes.v2_panels",         # Phase 9 — /v2/panels/* (gated by ENABLE_REAL_COORDINATION)
+        "backend.routes.v2_agent_presence", # Phase 9 — /v2/agents/presence (gated by ENABLE_AGENT_PRESENCE)
     ]:
         try:
             _app.include_router(importlib.import_module(_mod).router)

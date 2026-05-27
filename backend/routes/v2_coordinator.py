@@ -48,6 +48,14 @@ class PlanBody(BaseModel):
     asset_mime_types: Optional[List[str]] = Field(None, max_length=20)
 
 
+class ClassifyBody(BaseModel):
+    """Phase 9 part 2 — fast complexity probe. Returns a tiny dict the
+    FE uses to decide whether to render the panel-spawn affordance.
+    Cheaper than /plan; no agent ids are returned."""
+    message:          str = Field(..., min_length=0, max_length=16_000)
+    asset_mime_types: Optional[List[str]] = Field(None, max_length=20)
+
+
 @router.post("/coordinator/plan")
 def build_plan(
     body: PlanBody,
@@ -73,6 +81,32 @@ def build_plan(
     return envelope_ok(
         data={"plan": plan.to_dict()},
         endpoint="/v2/coordinator/plan",
+        user_id=user.id,
+    )
+
+
+@router.post("/coordinator/classify")
+def classify(
+    body: ClassifyBody,
+    user: User = Depends(current_user),
+) -> Dict[str, Any]:
+    """Cheap complexity probe used by the FE to decide whether to
+    offer the "spawn panel" affordance. Pure rule-based, no LLM call,
+    no DB read."""
+    _ensure_enabled()
+    result = coordinator.classify(
+        user_message=     body.message,
+        asset_mime_types= body.asset_mime_types,
+    )
+    logger.info(
+        "coordinator.classify | uid=%s | complexity=%s | should_spawn=%s | "
+        "triggers=%d",
+        user.id, result["complexity"], result["should_spawn_panel"],
+        len(result.get("triggers", [])),
+    )
+    return envelope_ok(
+        data={"classification": result},
+        endpoint="/v2/coordinator/classify",
         user_id=user.id,
     )
 
