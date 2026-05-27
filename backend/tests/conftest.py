@@ -113,6 +113,62 @@ def tmp_jobs_db(tmp_path, monkeypatch):
 
 
 @pytest.fixture()
+def tmp_assets_db(tmp_path, monkeypatch):
+    """Phase 8 — isolate assets.db + the local storage root per test."""
+    db_file = tmp_path / "assets-test.db"
+    storage_root = tmp_path / "uploads"
+    monkeypatch.setenv("ASSETS_DB_PATH", str(db_file))
+    monkeypatch.setenv("ASSETS_STORAGE_LOCAL_ROOT", str(storage_root))
+    monkeypatch.setenv("ENABLE_ASSET_SYSTEM", "true")
+    import importlib
+    assets_store = importlib.import_module("backend.services.assets.store")
+    assets_manager = importlib.import_module("backend.services.assets.manager")
+    monkeypatch.setattr(assets_store, "_INITIALIZED", False, raising=False)
+    assets_store.init()
+    assets_manager._reset_for_tests()
+    yield db_file
+
+
+@pytest.fixture()
+def tmp_vision_db(tmp_path, monkeypatch):
+    """Phase 8 — isolate vision.db per test."""
+    db_file = tmp_path / "vision-test.db"
+    monkeypatch.setenv("VISION_DB_PATH", str(db_file))
+    monkeypatch.setenv("ENABLE_VISION_PIPELINE", "true")
+    import importlib
+    vs = importlib.import_module("backend.services.vision.store")
+    monkeypatch.setattr(vs, "_INITIALIZED", False, raising=False)
+    vs.init()
+    yield db_file
+
+
+@pytest.fixture()
+def tmp_workflows_db(tmp_path, monkeypatch):
+    """Phase 8 — isolate workflows.db per test."""
+    db_file = tmp_path / "workflows-test.db"
+    monkeypatch.setenv("WORKFLOWS_DB_PATH", str(db_file))
+    monkeypatch.setenv("ENABLE_WORKFLOWS", "true")
+    import importlib
+    ws = importlib.import_module("backend.services.workflows.store")
+    monkeypatch.setattr(ws, "_INITIALIZED", False, raising=False)
+    ws.init()
+    yield db_file
+
+
+@pytest.fixture()
+def tmp_agent_tasks_db(tmp_path, monkeypatch):
+    """Phase 8 — isolate agent_tasks.db per test."""
+    db_file = tmp_path / "agent-tasks-test.db"
+    monkeypatch.setenv("AGENT_TASKS_DB_PATH", str(db_file))
+    monkeypatch.setenv("ENABLE_AGENT_ORCHESTRATION", "true")
+    import importlib
+    ats = importlib.import_module("backend.services.agent_tasks.store")
+    monkeypatch.setattr(ats, "_INITIALIZED", False, raising=False)
+    ats.init()
+    yield db_file
+
+
+@pytest.fixture()
 def tmp_memory_plane_db(tmp_path, monkeypatch):
     """Phase 6 — isolate memory_plane.db per test.
 

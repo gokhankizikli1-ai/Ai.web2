@@ -116,6 +116,34 @@ class Config:
     # Railway deploy template.
     REDIS_URL: str = os.getenv("REDIS_URL", "")
 
+    # ── Phase 8 — Unified AI OS Foundation ──────────────────────────────
+    # Six independent flags so each subsystem can be enabled/disabled
+    # separately on Railway. All default OFF so production behaviour
+    # is byte-identical until each one is explicitly flipped.
+    ENABLE_ASSET_SYSTEM:        bool = os.getenv("ENABLE_ASSET_SYSTEM",        "false").strip().lower() == "true"
+    ENABLE_VISION_PIPELINE:     bool = os.getenv("ENABLE_VISION_PIPELINE",     "false").strip().lower() == "true"
+    ENABLE_PROJECT_BRAIN:       bool = os.getenv("ENABLE_PROJECT_BRAIN",       "false").strip().lower() == "true"
+    ENABLE_AGENT_ORCHESTRATION: bool = os.getenv("ENABLE_AGENT_ORCHESTRATION", "false").strip().lower() == "true"
+    ENABLE_WORKFLOWS:           bool = os.getenv("ENABLE_WORKFLOWS",           "false").strip().lower() == "true"
+    ENABLE_WEBSITE_RECREATION:  bool = os.getenv("ENABLE_WEBSITE_RECREATION",  "false").strip().lower() == "true"
+    # Per-subsystem SQLite paths. Same isolation pattern as Phase 6/7:
+    # one file per subsystem so each rollback is `rm <file>` and
+    # nothing else moves.
+    ASSETS_DB_PATH:        str = os.getenv("ASSETS_DB_PATH",        "assets.db")
+    VISION_DB_PATH:        str = os.getenv("VISION_DB_PATH",        "vision.db")
+    WORKFLOWS_DB_PATH:     str = os.getenv("WORKFLOWS_DB_PATH",     "workflows.db")
+    AGENT_TASKS_DB_PATH:   str = os.getenv("AGENT_TASKS_DB_PATH",   "agent_tasks.db")
+    # Asset file storage. Local filesystem by default (Railway-compatible
+    # at the working dir; mount a persistent volume in production).
+    # When ASSETS_STORAGE_BACKEND=r2 / s3 / supabase is set with the
+    # matching credentials, AssetStorage swaps in the appropriate
+    # adapter — interface is single-class so the swap is one file.
+    ASSETS_STORAGE_BACKEND:    str = os.getenv("ASSETS_STORAGE_BACKEND", "local").strip().lower()
+    ASSETS_STORAGE_LOCAL_ROOT: str = os.getenv("ASSETS_STORAGE_LOCAL_ROOT", "uploads")
+    # Per-asset upload cap. 10 MB matches reasonable image/PDF sizes;
+    # video uploads are accepted but flagged processing_not_supported.
+    ASSETS_MAX_BYTES:          int = int(os.getenv("ASSETS_MAX_BYTES", str(10 * 1024 * 1024)))
+
     # ── Phase 3 — JWT auth ───────────────────────────────────────────────
     # JWT_SECRET_KEY: HS256 signing key. In production this MUST be set
     # via Railway env vars (32+ random bytes, hex or base64). The
