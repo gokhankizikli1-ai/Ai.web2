@@ -59,17 +59,35 @@ def _split_messages(
       - ProviderMessage role='user'      → contents role='user'
       - ProviderMessage role='assistant' → contents role='model'
     """
+    # Phase 9 vision wiring — Gemini's vision blocks have a different
+    # shape and we haven't yet wired raw bytes into the parts list, so
+    # the route never sends multimodal content to this provider. If a
+    # caller still pushes list content here, we flatten the text blocks
+    # and drop the rest with a single info log so the provider doesn't
+    # crash. The user-visible "this model doesn't support image
+    # analysis" warning is emitted by the route based on
+    # `model_supports_vision`, not here.
+    def _flatten(c) -> str:
+        if isinstance(c, list):
+            parts: List[str] = []
+            for block in c:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    parts.append(str(block.get("text") or ""))
+            return "\n".join(p for p in parts if p)
+        return str(c or "")
+
     system_parts: List[str] = []
     contents: List[Dict[str, Any]] = []
     for m in request.messages or []:
+        flat = _flatten(m.content)
         if m.role == "system":
-            if (m.content or "").strip():
-                system_parts.append(m.content)
+            if flat.strip():
+                system_parts.append(flat)
             continue
         gemini_role = "model" if m.role == "assistant" else "user"
         contents.append({
             "role":  gemini_role,
-            "parts": [{"text": m.content or ""}],
+            "parts": [{"text": flat}],
         })
     system_text = "\n\n".join(system_parts) if system_parts else None
     return system_text, contents

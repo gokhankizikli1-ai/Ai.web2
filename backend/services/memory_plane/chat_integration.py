@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Optional
+from typing import Any, Optional
 
 from backend.services.memory_plane import client as _mp_client
 from backend.services.memory_plane.hooks import (
@@ -473,6 +473,125 @@ def build_asset_context_block(
     if len(lines) == 1:
         return None
     return "\n".join(lines)
+
+
+# ── Phase 9 vision — multimodal user-message content blocks ────────────────
+
+# Provider-shape constants kept here so route code can stay generic. The
+# v2_chat_stream route picks the right shape based on the resolved
+# provider name. Keeping the shapes in one file means the route layer
+# never needs to import provider SDKs.
+_PROVIDER_OPENAI    = "openai"
+_PROVIDER_ANTHROPIC = "anthropic"
+
+# Cap image bytes encoded into the prompt to avoid blowing past provider
+# upload limits. 10 MB raw → ~13.4 MB base64. OpenAI accepts up to 20 MB
+# per image; Anthropic 5 MB. We use the smaller bound to be safe.
+_MAX_IMAGE_BYTES_INLINE = 4 * 1024 * 1024  # 4 MB raw
+_VISION_IMAGE_MIMES = ("image/png", "image/jpeg", "image/jpg", "image/webp", "image/gif")
+
+
+def build_multimodal_user_content(
+    *,
+    user_id:        str,
+    asset_ids:      Optional[list[str]],
+    base_text:      str,
+    provider_name:  str,
+) -> tuple[Any, dict]:
+    """Build a provider-shaped multimodal `content` value for the user
+    turn, INLINING uploaded image assets as base64 data URLs (OpenAI)
+    or base64 source blocks (Anthropic).
+
+    Returns ``(content, debug)`` where:
+      * ``content`` is either a plain ``str`` (no images / provider
+        not supported / ENABLE_ASSET_SYSTEM off) OR a list of provider
+        content blocks beginning with a text block carrying ``base_text``.
+      * ``debug`` is a small dict with counts the route can log without
+        leaking user data:
+          { "image_blocks": int, "skipped_unsupported_mime": int,
+            "skipped_too_large": int, "skipped_no_bytes": int }
+
+    Honest by default — assets that fail validation are SKIPPED, never
+    silently faked. The caller decides whether to surface a warning.
+    """
+    debug = {
+        "image_blocks":             0,
+        "skipped_unsupported_mime": 0,
+        "skipped_too_large":        0,
+        "skipped_no_bytes":         0,
+    }
+    if not user_id or not asset_ids:
+        return base_text, debug
+    provider = (provider_name or "").strip().lower()
+    if provider not in (_PROVIDER_OPENAI, _PROVIDER_ANTHROPIC):
+        # Other providers — leave as text; the asset descriptor block
+        # already injected into the system prompt is the only signal.
+        return base_text, debug
+
+    try:
+        from backend.services.assets import client as _assets_client
+    except Exception as e:
+        logger.warning("memory_plane.chat.build_multimodal_user_content import error: %s", e)
+        return base_text, debug
+
+    items = _assets_client.list_by_ids(str(user_id), list(asset_ids)) or []
+    if not items:
+        return base_text, debug
+
+    # The OpenAI / Anthropic content shapes diverge enough that branching
+    # at construction time is simpler than a normalize-then-translate step.
+    import base64
+
+    blocks: list[dict[str, Any]] = []
+    # Lead with the text block — provider SDKs accept it either first
+    # or last, but first matches the user-visible composer order
+    # (caption above thumbnail) and keeps prompt-engineering predictable.
+    if provider == _PROVIDER_OPENAI:
+        blocks.append({"type": "text", "text": base_text or ""})
+    else:  # anthropic
+        blocks.append({"type": "text", "text": base_text or ""})
+
+    for a in items:
+        mime = (a.mime_type or "").strip().lower()
+        if mime not in _VISION_IMAGE_MIMES:
+            debug["skipped_unsupported_mime"] += 1
+            continue
+        if (a.size_bytes or 0) > _MAX_IMAGE_BYTES_INLINE:
+            debug["skipped_too_large"] += 1
+            continue
+        raw = _assets_client.read_bytes(a.id or "", user_id=str(user_id))
+        if not raw:
+            debug["skipped_no_bytes"] += 1
+            continue
+        b64 = base64.b64encode(raw).decode("ascii")
+        if provider == _PROVIDER_OPENAI:
+            blocks.append({
+                "type": "image_url",
+                "image_url": {
+                    # Data URL — keeps the upstream call self-contained;
+                    # provider never reaches back to our server.
+                    "url": f"data:{mime};base64,{b64}",
+                    # "detail" is OpenAI-specific; "auto" lets the model
+                    # decide between low/high based on the image.
+                    "detail": "auto",
+                },
+            })
+        else:  # anthropic
+            blocks.append({
+                "type": "image",
+                "source": {
+                    "type":       "base64",
+                    "media_type": mime,
+                    "data":       b64,
+                },
+            })
+        debug["image_blocks"] += 1
+
+    if debug["image_blocks"] == 0:
+        # Nothing got attached as vision; return plain text so we don't
+        # send a singleton text-block list (provider-legal but wasteful).
+        return base_text, debug
+    return blocks, debug
 
 
 def _human_size(n: int) -> str:

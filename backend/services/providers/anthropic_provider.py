@@ -69,17 +69,33 @@ logger = logging.getLogger(__name__)
 
 def _split_messages(
     request: ProviderRequest,
-) -> Tuple[Optional[str], List[Dict[str, str]]]:
+) -> Tuple[Optional[str], List[Dict[str, Any]]]:
     """Anthropic-style split: extract system prompts, return them
     concatenated (or None) AND the remaining user/assistant messages.
     A trailing assistant message is allowed (Anthropic supports
-    "prefill") but we don't generate one here."""
+    "prefill") but we don't generate one here.
+
+    Phase 9 vision wiring — message content can now be either a plain
+    string OR a list of content blocks. System messages always coerce
+    to text (Anthropic's `system` parameter is a string field; images
+    do not belong there). User/assistant messages pass through
+    untouched so a multimodal turn ([text, image, text]) reaches the
+    SDK in the shape it expects.
+    """
     system_parts: List[str] = []
-    convo: List[Dict[str, str]] = []
+    convo: List[Dict[str, Any]] = []
     for m in request.messages:
         if m.role == "system":
-            if m.content:
-                system_parts.append(m.content)
+            # System is always text on Anthropic. If the orchestrator
+            # ever pushes a list here, flatten by extracting text parts.
+            if isinstance(m.content, list):
+                for block in m.content:
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        txt = block.get("text") or ""
+                        if txt:
+                            system_parts.append(str(txt))
+            elif m.content:
+                system_parts.append(str(m.content))
         else:
             convo.append({"role": m.role, "content": m.content})
     system_text = "\n\n".join(system_parts) if system_parts else None
@@ -90,6 +106,9 @@ class AnthropicProvider(BaseAIProvider):
     name = "anthropic"
     default_model = settings.MODEL_ANTHROPIC
     supports_streaming = True
+    supports_vision = True
+    # All current Claude 3+ models accept image content blocks.
+    vision_models = ("claude-3", "claude-sonnet", "claude-opus", "claude-haiku")
 
     def is_available(self) -> bool:
         # No network call. Runtime auth errors translate to

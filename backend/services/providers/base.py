@@ -21,7 +21,7 @@ layer never sees provider-specific exception types leak out.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import AsyncIterator, Dict, Any
+from typing import AsyncIterator, Dict, Any, Optional
 
 from backend.services.providers.streaming import ProviderStreamEvent
 from backend.services.providers.types import ProviderRequest, ProviderResult
@@ -40,6 +40,31 @@ class BaseAIProvider(ABC):
     # subclasses that support streaming override both methods AND set
     # this flag to True so the registry / /v2/health can advertise it.
     supports_streaming: bool = False
+
+    # Phase 9 vision — whether the provider has at least one vision-
+    # capable model. Used by /v2/chat/stream to decide whether to fold
+    # uploaded images into the user message as real multimodal content
+    # blocks. Set to True in subclasses that have at least one entry
+    # in `vision_models`.
+    supports_vision: bool = False
+
+    # Phase 9 vision — model ids (or model prefixes) that accept image
+    # content blocks. Matched case-insensitively with str.startswith()
+    # so a configured model like "gpt-4o-mini-2024-07-18" still matches
+    # the "gpt-4o" prefix. Empty for text-only providers.
+    vision_models: tuple[str, ...] = ()
+
+    def model_supports_vision(self, model: Optional[str]) -> bool:
+        """Return True iff the given model id maps to a vision-capable
+        endpoint on this provider. Defaults to False so a provider that
+        forgets to set `vision_models` cannot accidentally claim
+        capability."""
+        if not self.supports_vision:
+            return False
+        m = (model or self.default_model or "").strip().lower()
+        if not m:
+            return False
+        return any(m.startswith(prefix) for prefix in self.vision_models)
 
     @abstractmethod
     def is_available(self) -> bool:

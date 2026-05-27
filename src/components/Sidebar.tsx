@@ -73,7 +73,29 @@ export default function Sidebar({
   // the shared secret. isAuthenticated alone misses that path
   // (OWNER_TOKEN doesn't go through /v2/auth/*).
   const { isOwner } = useOwnerMode();
-  const sessionActive = isAuthenticated || isOwner;
+  // Phase 9 safety net — if a JWT exists in localStorage but the auth
+  // store hasn't flipped isAuthenticated to true yet, treat as
+  // session-active rather than guest. This catches the failure mode
+  // where /auth/me silently returns null (CORS / 5xx / wrong base URL)
+  // but the user's stored credentials are actually valid. Without this
+  // gate, a flaky backend would flash the "Create Account / Sign In"
+  // buttons to a real logged-in user.
+  const hasStoredToken = (() => {
+    try { return !!localStorage.getItem('korvix_access_token'); }
+    catch { return false; }
+  })();
+  const sessionActive = isAuthenticated || isOwner || hasStoredToken;
+  // Dev-only debug log — never logs the token or email itself.
+  if (import.meta.env.DEV) {
+    // eslint-disable-next-line no-console
+    console.debug(
+      '[Sidebar] auth state',
+      {
+        isHydrating, isAuthenticated, isOwner,
+        hasStoredToken, sessionActive,
+      },
+    );
+  }
   const { t } = useLanguageStore();
   const navigate = useNavigate();
 

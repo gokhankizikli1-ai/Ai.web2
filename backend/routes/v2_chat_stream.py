@@ -432,6 +432,108 @@ async def stream_chat(body: StreamChatRequest, request: Request):
             for m in body.messages
         ]
 
+    # ── Phase 9 vision — fold uploaded images into the LAST user turn ─────
+    # When the model supports vision and the request carries image-typed
+    # assets, transform the most-recent user message's content into a
+    # provider-shaped multimodal list (text block + image blocks). If
+    # the model does NOT support vision, the system prompt's "Attached
+    # assets" descriptor (built above) is the only signal, and we
+    # surface a one-shot WARNING via an SSE comment so the UI can show
+    # "This model does not support image analysis." without breaking
+    # the stream contract.
+    vision_warning: Optional[str] = None
+    if body.asset_ids:
+        try:
+            from backend.services.memory_plane import chat_integration as _mp_chat
+            if provider.model_supports_vision(body.model or provider.default_model):
+                # Find the index of the most-recent user message in
+                # final_msgs and rewrite its content into a multimodal list.
+                target_idx: Optional[int] = None
+                for i in range(len(final_msgs) - 1, -1, -1):
+                    if final_msgs[i].role == "user":
+                        target_idx = i
+                        break
+                if target_idx is not None:
+                    base_text = final_msgs[target_idx].content
+                    if isinstance(base_text, list):
+                        # Shouldn't happen — body only ever supplies str —
+                        # but guard defensively. Coerce by joining text
+                        # blocks so the vision builder has a clean string.
+                        base_text = " ".join(
+                            str(b.get("text", "")) for b in base_text
+                            if isinstance(b, dict) and b.get("type") == "text"
+                        )
+                    new_content, vision_debug = _mp_chat.build_multimodal_user_content(
+                        user_id=       user_id,
+                        asset_ids=     body.asset_ids,
+                        base_text=     str(base_text or ""),
+                        provider_name= provider.name,
+                    )
+                    final_msgs[target_idx] = ProviderMessage(
+                        role="user", content=new_content,
+                    )
+                    logger.info(
+                        "stream_chat.vision | uid=%s | provider=%s | model=%s | "
+                        "image_blocks=%d | skipped_mime=%d | skipped_size=%d | "
+                        "skipped_bytes=%d",
+                        user_id, provider.name,
+                        body.model or provider.default_model,
+                        vision_debug["image_blocks"],
+                        vision_debug["skipped_unsupported_mime"],
+                        vision_debug["skipped_too_large"],
+                        vision_debug["skipped_no_bytes"],
+                    )
+                    if vision_debug["image_blocks"] == 0 and any(
+                        # User attached images but every single one was
+                        # filtered out. Warn instead of pretending.
+                        True for _ in body.asset_ids
+                    ):
+                        # Only warn if filter rejected actual images
+                        # (skipped_unsupported_mime counts non-image
+                        # assets like PDFs, which are not vision blocks
+                        # by design — not an error).
+                        if (vision_debug["skipped_too_large"]
+                                or vision_debug["skipped_no_bytes"]):
+                            vision_warning = (
+                                "One or more attached images could not be "
+                                "processed (too large or unreadable). The "
+                                "assistant will reply based on text only."
+                            )
+            else:
+                # Model has no vision capability. Only surface the warning
+                # if at least one attached asset is ACTUALLY an image —
+                # PDFs / docs / videos don't need vision and the system
+                # prompt descriptor is sufficient for them.
+                has_image_asset = False
+                try:
+                    from backend.services.assets import client as _ac
+                    owned = _ac.list_by_ids(user_id, list(body.asset_ids)) or []
+                    has_image_asset = any(
+                        (a.mime_type or "").lower().startswith("image/")
+                        for a in owned
+                    )
+                except Exception:
+                    has_image_asset = False
+                if has_image_asset:
+                    vision_warning = (
+                        "This model does not support image analysis. The "
+                        "assistant can see the file name and size, but not "
+                        "the image contents."
+                    )
+                    logger.info(
+                        "stream_chat.vision | uid=%s | provider=%s | model=%s | "
+                        "image_blocks=0 | reason=model_not_vision_capable",
+                        user_id, provider.name,
+                        body.model or provider.default_model,
+                    )
+        except Exception as exc:
+            # A vision-pipeline failure must NEVER block the stream.
+            # Drop back to the text-only descriptor path and log loudly.
+            logger.warning(
+                "stream_chat.vision integration error: %s", exc,
+                exc_info=True,
+            )
+
     # Debug log of the actual system prompt when explicitly requested
     # via env var (production opt-in — DON'T leak by default).
     if os.getenv("ENABLE_MEMORY_DEBUG_LOGS", "false").strip().lower() == "true":
@@ -451,6 +553,16 @@ async def stream_chat(body: StreamChatRequest, request: Request):
 
     async def event_stream() -> AsyncIterator[str]:
         """Translate ProviderStreamEvent → SSE frames."""
+        # Phase 9 vision — surface a one-shot warning BEFORE the
+        # provider stream opens so the UI can render a banner without
+        # waiting for tokens. The `warning` event is additive (not part
+        # of the existing ready/token/done/error contract) — old
+        # clients ignore it; the new useChat handler can match on it.
+        if vision_warning:
+            yield sse_event("warning", {
+                "code":    "VISION_UNAVAILABLE",
+                "message": vision_warning,
+            })
         try:
             async for event in provider.stream_chat_completion(pr_request):
                 if isinstance(event, ProviderStreamStart):
