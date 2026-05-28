@@ -123,12 +123,14 @@ async def get_pool():
         timeout  = float(os.getenv("DB_POOL_TIMEOUT_SEC", "10") or 10.0)
         stmt_timeout_ms = int(os.getenv("DB_STATEMENT_TIMEOUT_MS", "15000") or 15000)
 
-        async def _init_conn(conn):
-            # Server-side per-statement cap so a runaway query can't
-            # tie up a worker — set as session GUC after connect.
-            await conn.execute(
-                f"SET statement_timeout = {stmt_timeout_ms}"
-            )
+        # statement_timeout is set via server_settings (libpq connection
+        # parameter), NOT via a `SET` command in an init callback. The
+        # init-callback approach leaks an open transaction because
+        # asyncpg / psycopg connections start an implicit txn on the
+        # first command and the callback exits without committing —
+        # the pool then sees INTRANS and discards the connection. See
+        # the Phase 6 production fix PR for the failure log.
+        server_settings = {"statement_timeout": str(stmt_timeout_ms)}
 
         try:
             pool = await asyncio.wait_for(
@@ -136,7 +138,7 @@ async def get_pool():
                     dsn=dsn,
                     min_size=min_size,
                     max_size=max_size,
-                    init=_init_conn,
+                    server_settings=server_settings,
                 ),
                 timeout=timeout,
             )
@@ -223,28 +225,44 @@ def get_sync_pool():
         timeout  = float(os.getenv("DB_POOL_TIMEOUT_SEC", "10") or 10.0)
         stmt_timeout_ms = int(os.getenv("DB_STATEMENT_TIMEOUT_MS", "15000") or 15000)
 
-        # psycopg3's session-level options go on each new connection
-        # through `configure`. We set statement_timeout the same way
-        # the async pool does so behavior matches between paths.
-        def _configure(conn):
-            with conn.cursor() as cur:
-                cur.execute(f"SET statement_timeout = {stmt_timeout_ms}")
+        # statement_timeout is set via libpq's `options` connection
+        # parameter, NOT via a `configure` callback that runs `SET …`
+        # on a new connection. The callback approach leaks an open
+        # transaction (psycopg3 defaults to autocommit=False; `SET`
+        # starts an implicit txn that the callback exits without
+        # committing) → the pool sees INTRANS and discards the
+        # connection. Failure log: "connection left in status INTRANS
+        # discarded". libpq options applies the GUC at connect time,
+        # no transaction is opened, no per-connection round-trip.
+        connect_kwargs = {
+            "options": f"-c statement_timeout={stmt_timeout_ms}",
+        }
 
+        # open=False ⇒ pool constructor returns immediately. First
+        # acquire opens connections lazily. This keeps app boot fast
+        # even when Postgres warmup is slow (Railway can mark the
+        # service healthy via /health before any PG traffic flows).
         try:
             pool = ConnectionPool(
                 conninfo=dsn,
                 min_size=min_size,
                 max_size=max_size,
                 timeout=timeout,
-                configure=_configure,
-                open=True,
+                kwargs=connect_kwargs,
+                open=False,
             )
+            # Best-effort open. wait=False so the constructor doesn't
+            # block on min_size connections — the pool fills lazily
+            # as requests arrive. If PG is down, get_sync_pool() still
+            # succeeds (the failure surfaces on the first acquire,
+            # which we catch in the dispatcher's fallback path).
+            pool.open(wait=False)
         except Exception as exc:
             logger.warning("postgres sync pool init failed: %s", exc)
             raise DBUnavailable(f"sync pool init: {exc}") from exc
 
         logger.info(
-            "[DB] postgres sync pool ready min=%d max=%d timeout=%.1fs stmt_timeout=%dms",
+            "[DB] postgres sync pool ready min=%d max=%d timeout=%.1fs stmt_timeout=%dms (lazy open)",
             min_size, max_size, timeout, stmt_timeout_ms,
         )
         _SYNC_POOL = pool

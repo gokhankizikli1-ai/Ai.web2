@@ -16,14 +16,23 @@ without a restart):
   ENABLE_POSTGRES_BACKEND=true + DATABASE_URL set  → store_pg
   anything else                                    → store_sqlite
 
-Failure handling:
-  When Postgres is enabled but actually unreachable (DBUnavailable),
-  the operator should see the failure surface — we do NOT silently
-  fall back to SQLite. Falling back would lose write durability
-  invisibly the moment the network blipped. The store re-raises, the
-  caller's existing error handling sees the same exception it always
-  saw, and the operator notices via the same logs. This is the
-  honest-failure rule we used everywhere else in the codebase.
+Postgres failure handling (Phase 6 production fix):
+  Env: MEMORY_PLANE_POSTGRES_REQUIRED (default "false")
+    "false" (default) → if Postgres is enabled but a call raises
+                        DBConfigError/DBUnavailable, the dispatcher
+                        falls back to SQLite for that call. Keeps the
+                        app serving traffic during PG outages /
+                        misconfiguration. Logs a WARNING on each
+                        fallback so the operator notices.
+    "true"            → strict mode. Postgres failures propagate.
+                        Use this when SQLite has been retired and PG
+                        is the sole source of truth.
+
+  The default is deliberately permissive because production gets
+  hurt more by a downed app than by a brief dual-write inconsistency
+  (and PG hasn't been a source-of-truth long enough to justify
+  strictness on day 1). Once the migration has been stable for a
+  cycle, flip MEMORY_PLANE_POSTGRES_REQUIRED=true on Railway.
 
 Why this shape (module-level dispatch functions instead of class):
   - Every existing caller already does `from … import store` then
@@ -36,13 +45,22 @@ Why this shape (module-level dispatch functions instead of class):
 from __future__ import annotations
 
 import logging
-from typing import Optional
+import os
+from typing import Any, Callable, Optional
 
 from backend.services.db import engine
+from backend.services.db.errors import DBConfigError, DBUnavailable
 from backend.services.memory_plane.types import MemoryQuery, MemoryRecord
 
 
 logger = logging.getLogger(__name__)
+
+
+def _strict_pg() -> bool:
+    """When True, postgres failures propagate. When False (default),
+    the dispatcher falls back to SQLite on DBConfigError/DBUnavailable.
+    Read dynamically so a Railway env flip is live without a restart."""
+    return os.getenv("MEMORY_PLANE_POSTGRES_REQUIRED", "false").strip().lower() == "true"
 
 
 def _impl():
@@ -60,10 +78,37 @@ def current_backend() -> str:
     return "postgres" if engine.is_enabled() else "sqlite"
 
 
+def _dispatch(fn_name: str, *args, **kwargs) -> Any:
+    """Route one call to the active backend. On a Postgres
+    config/unavailable error, fall back to SQLite (unless strict mode
+    is on).
+
+    The fallback path catches ONLY DB-foundation errors — programmer
+    errors (ValueError on missing user_id, etc.) still propagate.
+    """
+    if not engine.is_enabled():
+        from backend.services.memory_plane import store_sqlite
+        return getattr(store_sqlite, fn_name)(*args, **kwargs)
+
+    try:
+        from backend.services.memory_plane import store_pg
+        return getattr(store_pg, fn_name)(*args, **kwargs)
+    except (DBConfigError, DBUnavailable) as exc:
+        if _strict_pg():
+            raise
+        logger.warning(
+            "[memory_plane] Postgres unavailable, falling back to SQLite "
+            "for %s: %s",
+            fn_name, exc,
+        )
+        from backend.services.memory_plane import store_sqlite
+        return getattr(store_sqlite, fn_name)(*args, **kwargs)
+
+
 # ── Lifecycle ──────────────────────────────────────────────────────────────
 
 def init() -> None:
-    _impl().init()
+    _dispatch("init")
 
 
 def _reset_for_tests() -> None:
@@ -88,21 +133,21 @@ def _reset_for_tests() -> None:
 # ── Writes ─────────────────────────────────────────────────────────────────
 
 def insert(record: MemoryRecord) -> MemoryRecord:
-    return _impl().insert(record)
+    return _dispatch("insert", record)
 
 
 def update_embedding(record_id: str, embedding: list[float]) -> bool:
-    return _impl().update_embedding(record_id, embedding)
+    return _dispatch("update_embedding", record_id, embedding)
 
 
 def update_importance(record_id: str, importance: float) -> bool:
-    return _impl().update_importance(record_id, importance)
+    return _dispatch("update_importance", record_id, importance)
 
 
 # ── Reads ──────────────────────────────────────────────────────────────────
 
 def get(record_id: str) -> Optional[MemoryRecord]:
-    return _impl().get(record_id)
+    return _dispatch("get", record_id)
 
 
 def list_for_user(
@@ -115,7 +160,8 @@ def list_for_user(
     limit: int = 50,
     offset: int = 0,
 ) -> list[MemoryRecord]:
-    return _impl().list_for_user(
+    return _dispatch(
+        "list_for_user",
         user_id,
         project_id=project_id, agent_id=agent_id, kind=kind,
         include_expired=include_expired, limit=limit, offset=offset,
@@ -123,37 +169,37 @@ def list_for_user(
 
 
 def search_text(query: MemoryQuery) -> list[MemoryRecord]:
-    return _impl().search_text(query)
+    return _dispatch("search_text", query)
 
 
 # ── Deletes ────────────────────────────────────────────────────────────────
 
 def soft_delete(record_id: str, *, user_id: Optional[str] = None) -> bool:
-    return _impl().soft_delete(record_id, user_id=user_id)
+    return _dispatch("soft_delete", record_id, user_id=user_id)
 
 
 def hard_delete(record_id: str) -> bool:
-    return _impl().hard_delete(record_id)
+    return _dispatch("hard_delete", record_id)
 
 
 def expire_due(*, now: Optional[str] = None) -> int:
-    return _impl().expire_due(now=now)
+    return _dispatch("expire_due", now=now)
 
 
 def wipe_user(user_id: str) -> int:
-    return _impl().wipe_user(user_id)
+    return _dispatch("wipe_user", user_id)
 
 
 # ── Observability ──────────────────────────────────────────────────────────
 
 def store_stats() -> dict:
-    out = _impl().store_stats()
+    out = _dispatch("store_stats")
     out["backend"] = current_backend()
     return out
 
 
 def table_counts() -> dict:
-    return _impl().table_counts()
+    return _dispatch("table_counts")
 
 
 __all__ = [
