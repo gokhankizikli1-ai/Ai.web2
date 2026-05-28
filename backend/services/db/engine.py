@@ -281,9 +281,11 @@ def acquire_sync():
             with conn.cursor() as cur:
                 cur.execute("SELECT 1")
     """
+    from backend.services.db import metrics
     pool = get_sync_pool()
-    with pool.connection() as conn:
-        yield conn
+    with metrics.time_acquire():
+        with pool.connection() as conn:
+            yield conn
 
 
 def close_sync_pool() -> None:

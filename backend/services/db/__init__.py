@@ -35,7 +35,7 @@ from backend.services.db.health import health_check
 from backend.services.db.pgvector import (
     is_pgvector_available, ensure_pgvector, encode_vector, decode_vector,
 )
-from backend.services.db import dialect
+from backend.services.db import dialect, metrics
 from backend.services.db.errors import DBUnavailable, DBConfigError
 
 __all__ = [
@@ -44,6 +44,6 @@ __all__ = [
     "is_enabled", "current_backend",
     "health_check",
     "is_pgvector_available", "ensure_pgvector", "encode_vector", "decode_vector",
-    "dialect",
+    "dialect", "metrics",
     "DBUnavailable", "DBConfigError",
 ]
