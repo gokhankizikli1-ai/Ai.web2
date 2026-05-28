@@ -648,6 +648,22 @@ async def stream_chat(body: StreamChatRequest, request: Request):
         # capability note) all augment in-place.
         effective_pr_request = pr_request
 
+        # Phase 11 hang-fix — overall pre-LLM orchestration budget.
+        # If the combined cost of every tool call exceeds this ceiling
+        # we SKIP any remaining flows and stream the LLM response with
+        # whatever context we already injected. Prevents the "Bir
+        # dakikanızı alacak…" infinite hang the user reported on
+        # production: even if every individual tool hits its own
+        # timeout, the cumulative pre-stream pause must not exceed
+        # this wall clock.
+        import time as _time
+        _budget_t0 = _time.monotonic()
+        _ORCHESTRATION_BUDGET_SECONDS = 25.0
+        def _budget_remaining() -> float:
+            return _ORCHESTRATION_BUDGET_SECONDS - (_time.monotonic() - _budget_t0)
+        def _budget_exhausted() -> bool:
+            return _budget_remaining() <= 0.5  # 500 ms safety floor
+
         # ── Phase 11 final — defense-in-depth tool-capability note ─────
         #
         # Production observation: even with intent-based auto-invocation
@@ -740,7 +756,7 @@ async def stream_chat(body: StreamChatRequest, request: Request):
         # (`effective_pr_request` was already initialised at the
         # top of event_stream — the capability-note block may have
         # augmented it.)
-        if github_refs:
+        if github_refs and not _budget_exhausted():
             # 1) Emit tool.started — one event per ref so the FE can
             #    render a chip per repo.
             for ref in github_refs:
@@ -891,7 +907,7 @@ async def stream_chat(body: StreamChatRequest, request: Request):
         # 4 URLs in parallel via build_web_context_block's
         # asyncio.gather. Each fetch lands in the tool_executions
         # log so /v2/tools/usage shows the calls.
-        if web_urls:
+        if web_urls and not _budget_exhausted():
             for wu in web_urls:
                 yield sse_event("tool.started", {
                     "tool_id":     "browser_fetch",
@@ -1008,13 +1024,13 @@ async def stream_chat(body: StreamChatRequest, request: Request):
         #   [TOOL_EXECUTION]  start / end of the actual tool call
         #   [WEB_SEARCH]      injection state (block in prompt?)
         #   [FALLBACK]        why we reached the no-block branch
-        if web_search_intent and web_search_intent.triggered:
+        if web_search_intent and web_search_intent.triggered and not _budget_exhausted():
             logger.info(
                 "[INTENT] web_search triggered | uid=%s | confidence=%.2f | "
-                "triggers=%s | reason=%s",
+                "triggers=%s | reason=%s | budget_remaining=%.1fs",
                 user_id, web_search_intent.confidence,
                 ",".join(web_search_intent.triggers),
-                web_search_intent.reason,
+                web_search_intent.reason, _budget_remaining(),
             )
             yield sse_event("tool.started", {
                 "tool_id":     "web_research",
@@ -1259,6 +1275,18 @@ async def stream_chat(body: StreamChatRequest, request: Request):
                 user_id, web_search_intent.confidence,
                 web_search_intent.reason,
             )
+
+        # Phase 11 hang-fix — log the orchestration budget consumed
+        # before opening the provider stream. Total time from
+        # `event_stream` entry to here = sum of tool latencies. If
+        # close to the ceiling the FE will already have seen the
+        # tool.* events; the LLM stream still gets to run.
+        _orch_elapsed = _time.monotonic() - _budget_t0
+        logger.info(
+            "[ORCHESTRATION] pre-stream done | uid=%s | elapsed=%.2fs | "
+            "budget_remaining=%.2fs",
+            user_id, _orch_elapsed, _budget_remaining(),
+        )
 
         try:
             async for event in provider.stream_chat_completion(effective_pr_request):

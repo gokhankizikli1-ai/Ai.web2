@@ -199,7 +199,10 @@ async def build_web_context_block(
             correlation_id= correlation_id,
         ) as run:
             try:
-                envelope = await tool.safe_run(wu.url, {"url": wu.url})
+                from backend.services.tool_extraction._safe_run import safe_run_with_timeout
+                envelope = await safe_run_with_timeout(
+                    tool, wu.url, {"url": wu.url},
+                )
             except Exception as exc:
                 run.failure("TOOL_RAISED", str(exc) or "browser raised")
                 return wu, None
@@ -217,10 +220,25 @@ async def build_web_context_block(
                             provider="urllib")
             return wu, envelope
 
-    results = await asyncio.gather(
-        *[_fetch_one(u) for u in urls],
-        return_exceptions=False,
-    )
+    # Phase 11 hang-fix — total ceiling for the concurrent fetch group.
+    # Each _fetch_one already wraps safe_run_with_timeout; this is the
+    # belt-and-suspenders cap that guarantees the SSE stream never
+    # waits longer than this for the browser-fetch batch.
+    try:
+        results = await asyncio.wait_for(
+            asyncio.gather(
+                *[_fetch_one(u) for u in urls],
+                return_exceptions=False,
+            ),
+            timeout=14.0,  # 4 URLs × ~3.5s each, with headroom
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "[TOOL_TIMEOUT] browser batch | urls=%d | ceiling=14s — "
+            "returning partial / empty results",
+            len(urls),
+        )
+        results = [(wu, None) for wu in urls]
 
     blocks: list[str] = []
     raw_payloads: list[dict] = []
