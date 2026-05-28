@@ -38,6 +38,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from backend.services.db import engine
+from backend.services.db.errors import DBConfigError, DBUnavailable
 from backend.services.memory_plane.types import (
     MemoryQuery, MemoryRecord,
     DEFAULT_KIND, normalize_kind, clamp_importance,
@@ -223,6 +224,8 @@ def init() -> None:
                 conn.commit()
             _INITIALIZED = True
             logger.info("memory_plane.store_pg initialized")
+        except (DBConfigError, DBUnavailable):
+            raise
         except Exception as e:
             logger.warning("memory_plane.store_pg.init failed: %s", e)
             _bump("init_failed", str(e))
@@ -292,6 +295,8 @@ def insert(record: MemoryRecord) -> MemoryRecord:
             metadata=record.metadata or {},
             created_at=now, updated_at=now, deleted_at=None,
         )
+    except (DBConfigError, DBUnavailable):
+        raise
     except Exception as e:
         logger.warning("memory_plane.store_pg.insert user=%s error: %s", record.user_id, e)
         _bump("writes", str(e))
@@ -316,6 +321,8 @@ def update_embedding(record_id: str, embedding: list[float]) -> bool:
                 ok = cur.rowcount > 0
             conn.commit()
         return ok
+    except (DBConfigError, DBUnavailable):
+        raise
     except Exception as e:
         logger.warning("memory_plane.store_pg.update_embedding id=%s error: %s", record_id, e)
         _bump("writes", str(e))
@@ -336,6 +343,8 @@ def update_importance(record_id: str, importance: float) -> bool:
                 ok = cur.rowcount > 0
             conn.commit()
         return ok
+    except (DBConfigError, DBUnavailable):
+        raise
     except Exception as e:
         logger.warning("memory_plane.store_pg.update_importance id=%s error: %s", record_id, e)
         _bump("writes", str(e))
@@ -362,6 +371,8 @@ def get(record_id: str) -> Optional[MemoryRecord]:
             return None
         _bump("reads")
         return _row_to_record(row)
+    except (DBConfigError, DBUnavailable):
+        raise
     except Exception as e:
         logger.warning("memory_plane.store_pg.get id=%s error: %s", record_id, e)
         _bump("reads", str(e))
@@ -404,6 +415,8 @@ def list_for_user(
                 rows = cur.fetchall()
         _bump("reads")
         return [_row_to_record(r) for r in rows]
+    except (DBConfigError, DBUnavailable):
+        raise
     except Exception as e:
         logger.warning("memory_plane.store_pg.list_for_user user=%s error: %s", user_id, e)
         _bump("reads", str(e))
@@ -445,6 +458,8 @@ def search_text(query: MemoryQuery) -> list[MemoryRecord]:
                 rows = cur.fetchall()
         _bump("searches")
         return [_row_to_record(r) for r in rows]
+    except (DBConfigError, DBUnavailable):
+        raise
     except Exception as e:
         logger.warning("memory_plane.store_pg.search_text user=%s error: %s", query.user_id, e)
         _bump("searches", str(e))
@@ -475,6 +490,8 @@ def soft_delete(record_id: str, *, user_id: Optional[str] = None) -> bool:
         if ok:
             _bump("soft_deletes")
         return ok
+    except (DBConfigError, DBUnavailable):
+        raise
     except Exception as e:
         logger.warning("memory_plane.store_pg.soft_delete id=%s error: %s", record_id, e)
         _bump("soft_deletes", str(e))
@@ -494,6 +511,8 @@ def hard_delete(record_id: str) -> bool:
         if ok:
             _bump("hard_deletes")
         return ok
+    except (DBConfigError, DBUnavailable):
+        raise
     except Exception as e:
         logger.warning("memory_plane.store_pg.hard_delete id=%s error: %s", record_id, e)
         _bump("hard_deletes", str(e))
@@ -524,6 +543,8 @@ def expire_due(*, now: Optional[str] = None) -> int:
                     cur_count if isinstance(cur_count, int) else 0
                 ) + n
         return int(n)
+    except (DBConfigError, DBUnavailable):
+        raise
     except Exception as e:
         logger.warning("memory_plane.store_pg.expire_due error: %s", e)
         _bump("ttl_evictions", str(e))
@@ -541,6 +562,8 @@ def wipe_user(user_id: str) -> int:
                 n = cur.rowcount
             conn.commit()
         return int(n)
+    except (DBConfigError, DBUnavailable):
+        raise
     except Exception as e:
         logger.warning("memory_plane.store_pg.wipe_user user=%s error: %s", user_id, e)
         _bump("hard_deletes", str(e))
@@ -622,6 +645,8 @@ def insert_bulk(records: list[MemoryRecord]) -> int:
                 n = cur.rowcount
             conn.commit()
         return int(n)
+    except (DBConfigError, DBUnavailable):
+        raise
     except Exception as e:
         logger.warning("memory_plane.store_pg.insert_bulk error: %s", e)
         _bump("writes", str(e))
