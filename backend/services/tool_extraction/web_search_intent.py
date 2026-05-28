@@ -81,15 +81,25 @@ _RESEARCH_SIGNALS: tuple[str, ...] = (
     "trends in", "trend report", "market analysis", "market trends",
     "competitor analysis", "competitor research", "competitors of",
     "industry overview", "industry analysis",
-    "best ", "top 10 ", "top 5 ",
+    "best ", "top 10 ", "top 5 ", "top 3 ",
     "review of", "reviews of",
+    # Phase 11 final — production-observed phrasings the user listed.
+    "startup research", "company research", "company analysis",
+    "website analysis", "site analysis", "site audit",
+    "ecommerce trends", "saas trends", "ai tools",
+    "ai startup", "ai startups", "university comparison",
+    "pricing research", "pricing analysis", "stock analysis",
+    "find the best", "what are the best", "which is the best",
+    "summarise", "summarize", "summary of", "tldr of",
     # Turkish
     "karşılaştır", "kıyasla", "karşılaştırma",
     "araştır", "araştırma", "analiz et", "analiz",
     "rapor", "raporu",
     "rakip", "rakipler", "rakip analiz",
     "trend", "trendler", "pazar analiz", "pazar trend",
-    "en iyi ", "ilk 10", "ilk 5",
+    "en iyi ", "ilk 10", "ilk 5", "ilk 3",
+    "şirket araştırması", "üniversite karşılaştırması",
+    "fiyat analizi", "pazar araştırması",
 )
 
 # Domain words that almost always imply external sources.
@@ -102,6 +112,10 @@ _DOMAIN_SIGNALS: tuple[str, ...] = (
     "startup", "saas tools", "ai tools", "best tools",
     "documentation", "docs for",
     "weather", "forecast",
+    # Phase 11 final — common domain words the user listed.
+    "company", "industry", "market", "sector",
+    "saas", "platform", "service", "vendor",
+    "website", "landing page",
     # Turkish
     "haber", "haberler", "manşet",
     "hisse", "borsa", "piyasa değeri", "kâr açıklaması",
@@ -110,6 +124,8 @@ _DOMAIN_SIGNALS: tuple[str, ...] = (
     "girişim", "yapay zeka aracı", "ai aracı",
     "dokümantasyon", "doküman",
     "hava durumu",
+    "şirket", "sektör", "pazar",
+    "web sitesi", "site",
 )
 
 
@@ -121,6 +137,11 @@ _NEGATIVE_PATTERNS: tuple[str, ...] = (
     r"\bwrite (?:a |me )?(?:poem|story|haiku|essay)\b",
     r"\bunit test\b",          # likely a coding question, not research
     r"\bbir şaka\b",           # TR "a joke"
+    # Phase 11 final — after threshold dropped to 0.4, short
+    # "Hello, how are you today?" started false-firing. Greetings
+    # ending in a question mark with < 8 words are chitchat.
+    r"^\s*(hello|hi|hey|merhaba|selam|good morning|good afternoon|"
+    r"good evening|günaydın|iyi günler|iyi akşamlar)[,!.\s]",
 )
 
 
@@ -194,7 +215,13 @@ def detect_web_search_intent(user_message: str) -> WebSearchIntent:
     if word_count >= 20:
         score += 0.10
 
-    triggered = score >= 0.5
+    # Phase 11 final — lowered from 0.5 to 0.4 after production
+    # observation that prompts like "ai tools 2026" / "company
+    # research on Stripe" scored exactly 0.30-0.40 from a single
+    # domain hit. False positives are still cheap (one Tavily call)
+    # compared to false negatives (LLM returns the bad fallback
+    # template).
+    triggered = score >= 0.4
     return WebSearchIntent(
         triggered=  triggered,
         confidence= min(1.0, round(score, 2)),
