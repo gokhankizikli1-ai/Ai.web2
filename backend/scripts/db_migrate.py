@@ -280,12 +280,43 @@ def _sqlite_row_to_record(row) -> "MemoryRecord":
     )
 
 
+# ── vector-upgrade ─────────────────────────────────────────────────────────
+
+def _cmd_vector_upgrade(dims: int) -> int:
+    """Phase 6 slice 3 — ALTER memory_items.embedding from TEXT to
+    vector(dims). Idempotent. No data loss for properly-formatted
+    JSON-encoded vectors; malformed rows become NULL."""
+    if not engine.is_enabled():
+        print(
+            "ERROR: Postgres backend disabled. Cannot upgrade vector "
+            "column on SQLite.",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        from backend.services.memory_plane import store_pg
+        store_pg.init()
+        ok = store_pg.ensure_vector_column(dims=dims)
+        if ok:
+            print(f"[vector-upgrade] memory_items.embedding → vector({dims}) OK")
+            return 0
+        print(
+            f"[vector-upgrade] FAILED — pgvector extension not installed or "
+            f"ALTER raised. Check logs.",
+            file=sys.stderr,
+        )
+        return 3
+    except Exception as exc:
+        print(f"[vector-upgrade] error: {exc}", file=sys.stderr)
+        return 3
+
+
 # ── argparse entry ─────────────────────────────────────────────────────────
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="db_migrate",
-        description="KorvixAI DB migration helper (Phase 6 slice 2).",
+        description="KorvixAI DB migration helper (Phase 6 slices 2-3).",
     )
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -296,6 +327,15 @@ def _build_parser() -> argparse.ArgumentParser:
     c.add_argument("--subsystem", required=True, choices=KNOWN_SUBSYSTEMS)
     c.add_argument("--dry-run", action="store_true",
                    help="count what would be copied without writing")
+
+    v = sub.add_parser(
+        "vector-upgrade",
+        help="ALTER memory_items.embedding from TEXT to vector(N) "
+             "(requires pgvector extension)",
+    )
+    v.add_argument("--dims", type=int, default=1536,
+                   help="vector dimensionality (default 1536 for "
+                        "text-embedding-3-small)")
     return p
 
 
@@ -312,6 +352,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         return _cmd_status()
     if args.cmd == "copy":
         return _cmd_copy(args.subsystem, dry_run=bool(args.dry_run))
+    if args.cmd == "vector-upgrade":
+        return _cmd_vector_upgrade(dims=int(args.dims))
     return 1
 
 

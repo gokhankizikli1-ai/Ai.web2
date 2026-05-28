@@ -53,12 +53,16 @@ class TestDispatcher:
         assert not missing, f"dispatcher missing: {missing}"
 
     def test_public_surface_matches_pg(self):
-        """Same parity check against the Postgres store. The PG store
-        also exposes insert_bulk for the migration CLI — that's allowed
-        to be PG-only since SQLite never gets imported into PG."""
+        """Same parity check against the Postgres store. PG-only
+        operational helpers (used by db_migrate CLI, not by app code)
+        are excluded — they have no SQLite equivalent and shouldn't
+        clutter the dispatcher surface."""
         from backend.services.memory_plane import store_pg
+        # Operator-only helpers — never called from app code, only from
+        # the db_migrate CLI. Excluded from dispatch parity.
+        PG_ONLY_HELPERS = {"insert_bulk", "ensure_vector_column"}
         pg_public = {n for n in store_pg.__all__
-                     if not n.startswith("_") and n != "insert_bulk"}
+                     if not n.startswith("_") and n not in PG_ONLY_HELPERS}
         dispatcher_public = {n for n in mp_store.__all__ if not n.startswith("_")}
         missing = pg_public - dispatcher_public
         assert not missing, f"dispatcher missing: {missing}"

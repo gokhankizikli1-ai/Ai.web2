@@ -132,6 +132,37 @@ class MemoryManager:
                     existing.importance = new_imp
                 return existing
 
+        # Phase 6 slice 3 — auto-embed when the embedding service is
+        # enabled AND the caller didn't pass one in. Failures are
+        # best-effort: a None vector falls through to text-search rank
+        # and the row still persists. We embed BEFORE insert so the
+        # vector lands in the same row write — no second roundtrip.
+        if embedding is None:
+            try:
+                from backend.services.memory_plane.embedding import (
+                    is_enabled as _embed_enabled, embed as _embed,
+                )
+                if _embed_enabled():
+                    import asyncio as _asyncio
+                    try:
+                        loop = _asyncio.get_event_loop()
+                        if loop.is_running():
+                            # We're already inside an event loop — schedule
+                            # a synchronous bridge via run_until_complete in
+                            # a new loop on a thread to avoid re-entering.
+                            # In practice `manager.create` is called from
+                            # sync code paths only; the async caller bridge
+                            # is below.
+                            embedding = None
+                        else:
+                            embedding = loop.run_until_complete(_embed(clean))
+                    except RuntimeError:
+                        # No event loop — run a fresh one.
+                        embedding = _asyncio.run(_embed(clean))
+            except Exception as _embed_err:
+                logger.debug("manager.create auto-embed skipped: %s", _embed_err)
+                embedding = None
+
         record = MemoryRecord(
             user_id=    str(user_id),
             content=    clean,

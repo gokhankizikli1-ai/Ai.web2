@@ -605,10 +605,98 @@ def table_counts() -> dict:
     return out
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# Semantic recall (Phase 6 slice 3)
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# SQLite has no vector type. We do cosine ranking in Python over decoded
+# embeddings — slow for very large memory tables but adequate for dev,
+# tests, and the SQLite-fallback path. Postgres uses pgvector's `<=>`
+# operator in store_pg.semantic_recall.
+
+import math as _math    # local alias — keeps module-top imports minimal
+
+
+def _cosine(a: list[float], b: list[float]) -> float:
+    """Cosine similarity in [-1, 1]. Returns 0.0 on degenerate input
+    (mismatched dims, zero-norm) so the ranker treats it as 'no signal'."""
+    if not a or not b or len(a) != len(b):
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b))
+    na  = _math.sqrt(sum(x * x for x in a))
+    nb  = _math.sqrt(sum(y * y for y in b))
+    if na == 0.0 or nb == 0.0:
+        return 0.0
+    return dot / (na * nb)
+
+
+def semantic_recall(
+    user_id: str,
+    embedding: list[float],
+    *,
+    k: int = 10,
+    project_id: Optional[str] = None,
+    agent_id: Optional[str] = None,
+    kind: Optional[str] = None,
+    include_expired: bool = False,
+    candidate_pool: int = 500,
+) -> list[tuple[MemoryRecord, float]]:
+    """Top-k cosine-similarity matches for `embedding`.
+
+    Returns a list of (record, score) tuples sorted by score DESC.
+    score is the cosine similarity (higher = better, range [-1, 1]).
+    Records WITHOUT an embedding are skipped — they can't contribute
+    to a semantic match. Falls back to text/importance ranking via
+    the retriever in the empty case.
+    """
+    _ensure_init()
+    if not user_id or not embedding:
+        return []
+
+    sql = (
+        "SELECT * FROM memory_items "
+        "WHERE user_id=? AND deleted_at IS NULL "
+        "  AND embedding IS NOT NULL"
+    )
+    params: list = [str(user_id)]
+    if project_id is not None:
+        sql += " AND project_id=?"; params.append(project_id)
+    if agent_id is not None:
+        sql += " AND agent_id=?"; params.append(agent_id)
+    if kind is not None:
+        sql += " AND kind=?"; params.append(normalize_kind(kind))
+    if not include_expired:
+        sql += " AND (expires_at IS NULL OR expires_at > ?)"
+        params.append(_now())
+    sql += " ORDER BY importance DESC, created_at DESC LIMIT ?"
+    params.append(int(max(1, min(2000, candidate_pool))))
+
+    try:
+        with _conn() as c:
+            rows = c.execute(sql, params).fetchall()
+    except Exception as e:
+        logger.warning("memory_plane.store.semantic_recall sqlite error: %s", e)
+        _bump("searches", str(e))
+        return []
+
+    scored: list[tuple[MemoryRecord, float]] = []
+    for row in rows:
+        emb = _decode_embedding(row["embedding"])
+        if not emb:
+            continue
+        rec = _row_to_record(row)
+        score = _cosine(embedding, emb)
+        scored.append((rec, score))
+
+    scored.sort(key=lambda t: t[1], reverse=True)
+    _bump("searches")
+    return scored[:max(1, min(100, k))]
+
+
 __all__ = [
     "init", "_reset_for_tests",
     "insert", "update_embedding", "update_importance",
-    "get", "list_for_user", "search_text",
+    "get", "list_for_user", "search_text", "semantic_recall",
     "soft_delete", "hard_delete", "expire_due", "wipe_user",
     "store_stats", "table_counts",
 ]
