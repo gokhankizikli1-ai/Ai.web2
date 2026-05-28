@@ -15,7 +15,9 @@
 #   TAVILY_API_KEY=<key>                (required when provider=tavily)
 #   R1_TAVILY_CACHE_TTL_SEC=300         (optional override)
 #   R1_TAVILY_TIMEOUT_SEC=8             (optional override)
-from backend.services.research.client    import client, ResearchClient, stats, active_provider
+from backend.services.research.client    import (
+    client, ResearchClient, stats, active_provider, active_fallbacks,
+)
 from backend.services.research.types     import Citation, SearchResult, SOURCE_TYPES
 from backend.services.research.citations import (
     normalize_citation, dedupe_citations, trust_score, detect_source_type,
@@ -26,6 +28,7 @@ __all__ = [
     "ResearchClient",
     "stats",
     "active_provider",
+    "active_fallbacks",
     "Citation",
     "SearchResult",
     "SOURCE_TYPES",
