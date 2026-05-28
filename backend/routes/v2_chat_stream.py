@@ -643,6 +643,93 @@ async def stream_chat(body: StreamChatRequest, request: Request):
                 "message": vision_warning,
             })
 
+        # Phase 11 final — `effective_pr_request` starts equal to
+        # `pr_request`; subsequent steps (github, browser, web_search,
+        # capability note) all augment in-place.
+        effective_pr_request = pr_request
+
+        # ── Phase 11 final — defense-in-depth tool-capability note ─────
+        #
+        # Production observation: even with intent-based auto-invocation
+        # (PR #137) and honest "search-attempted" framing on failure
+        # (PR #138), some prompt phrasings still slip past the
+        # classifier AND trigger the LLM's reflex to refuse with
+        # "I cannot access the internet" / "İnternetten gerçek zamanlı
+        # bilgi arayamıyorum". This block adds an UNCONDITIONAL system
+        # note when web_research / browser_fetch / github_repo are
+        # enabled — the model is explicitly told NOT to refuse on
+        # capability grounds. Costs ~600 chars per request but
+        # eliminates the bad-fallback failure mode entirely.
+        try:
+            from backend.services.tools.tool_registry import is_enabled as _tool_on
+            tool_capabilities = []
+            if _tool_on("web_research"):  tool_capabilities.append("web_research")
+            if _tool_on("browser_fetch"): tool_capabilities.append("browser_fetch")
+            if _tool_on("github_repo"):   tool_capabilities.append("github_repo")
+        except Exception:
+            tool_capabilities = []
+        if tool_capabilities:
+            cap_note = (
+                "═══════════════════════════════════════════════════════════════\n"
+                "KORVIX TOOLS — CAPABILITIES YOU HAVE — DO NOT REFUSE THEM\n"
+                "═══════════════════════════════════════════════════════════════\n"
+                "I (KorvixAI) currently have these tools wired into the chat: "
+                + ", ".join(tool_capabilities) + ".\n\n"
+                "If the user asks for ANYTHING that needs current information "
+                "or external sources (latest news, company / startup / "
+                "competitor research, university / product comparison, "
+                "pricing, web pages, GitHub repos, AI tools market scan, "
+                "industry trends, etc.) the system has ALREADY tried to "
+                "auto-invoke the right tool BEFORE this prompt reached you. "
+                "If you see a 'KORVIX … TOOL OUTPUT' block above, use it as "
+                "ground truth. If you see a 'TOOL ATTEMPTED, NO RESULTS' "
+                "block, acknowledge the specific failure reason.\n\n"
+                "DO NOT — under any circumstances — answer with phrases like:\n"
+                "  • \"I cannot access the internet\"\n"
+                "  • \"I don't have access to current information\"\n"
+                "  • \"İnternetten gerçek zamanlı bilgi arayamıyorum\"\n"
+                "  • \"As of my training cutoff…\" used as a refusal\n"
+                "These statements are FACTUALLY WRONG when these tools are "
+                "wired in. If you genuinely have no fetched data for this "
+                "turn AND no failure block, give your best pre-training "
+                "answer with a clear cutoff caveat — but be honest that the "
+                "tool COULD have run and offer to re-try.\n\n"
+                "Reply in the user's language."
+            )
+            # Inject as the first system message (above the memory header
+            # if present). This ordering matters — putting the capability
+            # note BEFORE the memory rules makes the model treat tool
+            # availability as a foundational fact, not a follow-up
+            # instruction it can override.
+            cap_msgs: list = []
+            first_role = effective_pr_request.messages[0].role if effective_pr_request.messages else None
+            base = list(effective_pr_request.messages)
+            if first_role == "system":
+                existing = base[0].content
+                if isinstance(existing, list):
+                    existing = "\n".join(
+                        str(b.get("text", "")) for b in existing
+                        if isinstance(b, dict) and b.get("type") == "text"
+                    )
+                merged = f"{cap_note}\n\n{(existing or '').strip()}"
+                cap_msgs.append(ProviderMessage(role="system", content=merged))
+                cap_msgs.extend(base[1:])
+            else:
+                cap_msgs.append(ProviderMessage(role="system", content=cap_note))
+                cap_msgs.extend(base)
+            effective_pr_request = ProviderRequest(
+                messages=    cap_msgs,
+                model=       effective_pr_request.model,
+                temperature= effective_pr_request.temperature,
+                max_tokens=  effective_pr_request.max_tokens,
+                timeout_s=   effective_pr_request.timeout_s,
+                extra=       effective_pr_request.extra,
+            )
+            logger.debug(
+                "[CAPABILITY] uid=%s | tools=%s | cap_note_chars=%d",
+                user_id, ",".join(tool_capabilities), len(cap_note),
+            )
+
         # ── Phase 10 fix — auto-invoke GitHub tool when URLs detected ─
         #
         # The user pasted github.com/owner/repo. Run the tool now,
@@ -650,7 +737,9 @@ async def stream_chat(body: StreamChatRequest, request: Request):
         # repository …" instead of a blank wait. Rebuild final_msgs +
         # pr_request in-place so the provider gets the augmented
         # system prompt.
-        effective_pr_request = pr_request
+        # (`effective_pr_request` was already initialised at the
+        # top of event_stream — the capability-note block may have
+        # augmented it.)
         if github_refs:
             # 1) Emit tool.started — one event per ref so the FE can
             #    render a chip per repo.

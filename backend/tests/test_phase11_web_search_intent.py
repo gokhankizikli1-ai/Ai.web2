@@ -453,3 +453,105 @@ class TestChatStreamAutoSearch:
         assert last_user is not None
         ut = last_user.content if isinstance(last_user.content, str) else ""
         assert "Note for the assistant" in ut
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# C) Phase 11 final — expanded triggers + capability note
+# ════════════════════════════════════════════════════════════════════════════
+
+class TestExpandedTriggers:
+    """Phase 11 final — the user-listed prompts that previously
+    scored at the 0.40 borderline must now reliably trigger."""
+
+    @pytest.mark.parametrize("prompt", [
+        "Research the best AI startup opportunities in ecommerce.",
+        "What are the best AI tools for code review in 2026?",
+        "Run a company research on Stripe.",
+        "Do a website analysis of stripe.com",
+        "Summarise the latest ecommerce trends in fashion DTC.",
+        "Find me the top 3 universities for AI entrepreneurship.",
+        "Pricing research for Shopify Plus alternatives.",
+        "Şirket araştırması yap: Trendyol.",
+        "En iyi 5 yapay zeka aracını karşılaştır.",
+    ])
+    def test_borderline_prompts_now_trigger(self, prompt):
+        from backend.services.tool_extraction import detect_web_search_intent
+        i = detect_web_search_intent(prompt)
+        assert i.triggered is True, (
+            f"prompt did not trigger: {prompt!r} "
+            f"score={i.confidence:.2f} reason={i.reason}"
+        )
+
+
+class TestCapabilityNote:
+    """Phase 11 final — the unconditional 'KORVIX TOOLS — CAPABILITIES
+    YOU HAVE — DO NOT REFUSE THEM' system note must be injected on
+    EVERY chat turn whenever at least one external-info tool is
+    enabled. Defense in depth against intent-detector misses."""
+
+    def test_capability_note_present_when_tools_enabled(
+        self, client, monkeypatch, fake_provider,
+    ):
+        monkeypatch.setenv("ENABLE_TOOLS", "true")
+        monkeypatch.setenv("ENABLE_WEB_RESEARCH", "true")
+        # Send a prompt that should NOT trigger the intent classifier
+        # (small talk) — the capability note still must be present.
+        r = client.post("/v2/chat/stream", json={
+            "user_id": "u-cap",
+            "messages": [{"role": "user", "content": "Hello!"}],
+        })
+        assert r.status_code == 200
+        sys_prompt = fake_provider.last_system
+        assert "KORVIX TOOLS — CAPABILITIES YOU HAVE" in sys_prompt
+        # The exact refusal phrases the brief explicitly forbids.
+        assert "I cannot access the internet" in sys_prompt
+        assert "İnternetten gerçek zamanlı bilgi arayamıyorum" in sys_prompt
+        # Reply-in-language directive present.
+        assert "Reply in the user's language" in sys_prompt
+
+    def test_capability_note_absent_when_no_tools(
+        self, client, monkeypatch, fake_provider,
+    ):
+        """When NO external-info tool is enabled (no web_research,
+        no browser_fetch, no github_repo), the unconditional note
+        is NOT injected — it would be misleading to claim
+        capabilities the system doesn't have."""
+        monkeypatch.setenv("ENABLE_TOOLS", "true")
+        monkeypatch.delenv("ENABLE_WEB_RESEARCH", raising=False)
+        monkeypatch.delenv("ENABLE_BROWSER_TOOL", raising=False)
+        monkeypatch.delenv("ENABLE_GITHUB_TOOL", raising=False)
+        r = client.post("/v2/chat/stream", json={
+            "user_id": "u-no-tools",
+            "messages": [{"role": "user", "content": "Hi there"}],
+        })
+        assert r.status_code == 200
+        sys_prompt = fake_provider.last_system
+        assert "KORVIX TOOLS — CAPABILITIES YOU HAVE" not in sys_prompt
+
+    def test_capability_note_lists_specific_tools(
+        self, client, monkeypatch, fake_provider,
+    ):
+        """Only the ENABLED tools should be listed by name in the
+        note — wrong tool names would confuse the model."""
+        monkeypatch.setenv("ENABLE_TOOLS", "true")
+        monkeypatch.setenv("ENABLE_WEB_RESEARCH", "true")
+        monkeypatch.setenv("ENABLE_BROWSER_TOOL", "true")
+        monkeypatch.delenv("ENABLE_GITHUB_TOOL", raising=False)
+        r = client.post("/v2/chat/stream", json={
+            "user_id": "u-list",
+            "messages": [{"role": "user", "content": "Hi"}],
+        })
+        assert r.status_code == 200
+        sys_prompt = fake_provider.last_system
+        assert "web_research" in sys_prompt
+        assert "browser_fetch" in sys_prompt
+        # github_repo is OFF — must NOT be claimed as a capability.
+        # (We check the capability listing line specifically, not the
+        # whole prompt, because other text mentions github URLs.)
+        cap_line = next(
+            (ln for ln in sys_prompt.split("\n")
+             if ln.startswith("I (KorvixAI) currently have these tools")),
+            "",
+        )
+        assert cap_line, "capability listing line not found"
+        assert "github_repo" not in cap_line
