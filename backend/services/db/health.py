@@ -49,6 +49,15 @@ async def health_check() -> dict[str, Any]:
     from backend.services.db import metrics as _metrics
     out["metrics"] = _metrics.snapshot()
 
+    # Phase 7 slice 1 — Redis status when configured. Never raises.
+    try:
+        from backend.services.redis_client.health import (
+            health_check as _redis_health_check,
+        )
+        out["redis"] = await _redis_health_check()
+    except Exception as exc:                                  # pragma: no cover
+        out["redis"] = {"ok": False, "error": f"probe: {exc}"}
+
     if backend == "sqlite":
         # SQLite stores are self-contained — there's nothing for THIS
         # foundation to probe. The legacy per-store health endpoints

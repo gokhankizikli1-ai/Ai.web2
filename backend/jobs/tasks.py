@@ -1,29 +1,152 @@
 # coding: utf-8
-"""
-Phase 7 — Worker-side task module.
+"""Phase 7 slice 1 — Worker-side Celery task module.
 
-Importing this module triggers handler registration via the side-effect
-import of `backend.services.jobs.kinds`. A worker process started with
-`celery -A backend.jobs.celery_app worker` would `--include` this
-module to ensure all built-in kinds are registered.
+Imported by the worker process via:
 
-For Phase 7 (inline runner), the API process imports
-`backend.services.jobs` directly, which imports `kinds` for the same
-side effect. This file exists as the documented worker entry point.
+    celery -A backend.jobs.celery_app worker --include=backend.jobs.tasks
+
+Importing this module:
+  1. Loads `backend.services.jobs.kinds` to register every shipped
+     handler with the local handler registry (same registry the API
+     uses for InlineJobRunner).
+  2. Defines the single `korvix.jobs.dispatch` Celery task that the
+     API publishes per submit. The task is a thin shim: fetch
+     JobRecord → run the handler via the existing registry → write
+     status + result back to the store.
+
+Why ONE dispatcher task instead of one Celery task per kind:
+  * Keeps the registry contract identical between inline and celery
+    runners. Adding a new job kind is one decorator at the handler
+    site; no Celery boilerplate.
+  * Avoids the impedance mismatch of Celery-native task params vs the
+    typed JobRecord shape every existing handler expects.
+  * Routing per kind happens via the QUEUE (e.g. `korvix.research`,
+    `korvix.vision`) — see `_queue_for_record` in services/jobs/runner.
 """
+from __future__ import annotations
+
+import asyncio
+import logging
+import time
+
 from backend.services.jobs import kinds   # noqa: F401 — side-effect registration
 
-# Add additional internal-only handlers here in future phases.
-# Authoring pattern:
-#
-#     from backend.services.jobs.decorators import korvix_task
-#     from backend.services.jobs.registry import JobContext
-#
-#     @korvix_task("internal.my_kind")
-#     async def my_handler(ctx: JobContext) -> dict:
-#         ...
-#
-# Public-API kinds also need to be added to
-# `backend.services.jobs.kinds._PUBLIC_KINDS` for the route allowlist.
 
-__all__: list[str] = []
+logger = logging.getLogger(__name__)
+
+
+def _build_dispatch_task():
+    """Build + register the `korvix.jobs.dispatch` task on the Celery
+    app. Returns the task function for tests; the app uses it via
+    `send_task('korvix.jobs.dispatch', ...)`.
+
+    Defined as a factory so import order doesn't force celery to load
+    when the API just wants the kind side effects.
+    """
+    from backend.jobs.celery_app import get_app
+    app = get_app()
+    if app is None:
+        logger.warning(
+            "[JOB][WORKER] celery app unavailable — dispatch task NOT registered"
+        )
+        return None
+
+    @app.task(
+        name="korvix.jobs.dispatch",
+        bind=True,
+        acks_late=True,
+        max_retries=3,
+        default_retry_delay=10,
+    )
+    def dispatch(self, record_id: str) -> dict:
+        """The single worker entry point. Looks up the JobRecord from
+        the shared jobs store, runs the registered handler for its
+        kind, writes the result + status. Idempotent w.r.t. record
+        state — if the row is already terminal, we no-op."""
+        t0 = time.monotonic()
+        log = logging.getLogger("korvix.jobs.dispatch")
+        log.info("[JOB][WORKER] dispatch start record_id=%s", record_id)
+
+        try:
+            from backend.services.jobs import store
+            from backend.services.jobs.registry import get_handler, JobContext
+            from backend.services.jobs.types import (
+                STATUS_RUNNING, STATUS_SUCCEEDED, STATUS_FAILED,
+            )
+
+            record = store.get(record_id)
+            if record is None:
+                log.warning("[JOB][WORKER] record missing: %s", record_id)
+                return {"ok": False, "reason": "record_not_found"}
+
+            # If the row is already terminal, don't re-run — protects
+            # against double-dispatch from a Celery redelivery.
+            if record.status in (STATUS_SUCCEEDED, STATUS_FAILED, "cancelled"):
+                log.info(
+                    "[JOB][WORKER] record_id=%s already terminal status=%s — skip",
+                    record_id, record.status,
+                )
+                return {"ok": True, "skipped": True, "status": record.status}
+
+            handler = get_handler(record.kind)
+            if handler is None:
+                store.update(
+                    record_id,
+                    status=STATUS_FAILED,
+                    error=f"no handler for kind={record.kind}",
+                )
+                return {"ok": False, "reason": "no_handler"}
+
+            store.update(record_id, status=STATUS_RUNNING)
+
+            # Build the JobContext expected by every handler. The
+            # SSE-emit hook is a no-op in the worker — workers publish
+            # progress over the event bus, which the SSE bridge in
+            # slice 2 consumes via Redis pub/sub.
+            ctx = JobContext(
+                record=record,
+                report_progress=lambda *_a, **_kw: None,
+                is_cancelled=lambda: False,
+            )
+
+            # Handlers are async. Run on a fresh event loop in the
+            # worker process — Celery workers default to sync.
+            result = asyncio.run(handler(ctx))
+
+            store.update(
+                record_id,
+                status=STATUS_SUCCEEDED,
+                result=result,
+            )
+            elapsed_ms = int((time.monotonic() - t0) * 1000)
+            log.info(
+                "[JOB][WORKER] dispatch ok record_id=%s elapsed_ms=%d",
+                record_id, elapsed_ms,
+            )
+            return {"ok": True, "elapsed_ms": elapsed_ms}
+
+        except Exception as exc:
+            log.warning(
+                "[JOB][WORKER] dispatch failed record_id=%s err=%s",
+                record_id, exc,
+            )
+            try:
+                from backend.services.jobs import store
+                from backend.services.jobs.types import STATUS_FAILED
+                store.update(record_id, status=STATUS_FAILED, error=str(exc))
+            except Exception:                                     # pragma: no cover
+                pass
+            # Celery retry: raise so the task is requeued (up to
+            # max_retries with exponential backoff).
+            raise self.retry(exc=exc)
+
+    return dispatch
+
+
+# Eager registration when imported in worker process. In the API
+# process, get_app() returns None unless ENABLE_REDIS=true AND
+# JOB_QUEUE_MODE=celery — so this no-ops in the inline path.
+_DISPATCH_TASK = _build_dispatch_task()
+
+
+__all__ = ["_build_dispatch_task"]

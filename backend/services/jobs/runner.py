@@ -341,31 +341,117 @@ class InlineJobRunner:
             self._counters["completed"] += 1
 
 
-# ── CeleryJobRunner (stub) ───────────────────────────────────────────────────
+# ── CeleryJobRunner ──────────────────────────────────────────────────────────
 
 class CeleryJobRunner:
-    """Placeholder for Phase 14+. Constructed only when JOB_QUEUE_MODE=celery
-    AND `celery` is importable. We do NOT make celery a hard dep — until
-    that phase lands, this raises on first use so deploys fail loudly."""
+    """Phase 7 slice 1 — real Celery-backed runner.
+
+    Publishes one dispatcher task per `submit(record_id)` call. The
+    worker service (`celery -A backend.jobs.celery_app worker`)
+    consumes the task, looks the record up in the jobs store, and
+    runs the registered handler exactly the same way InlineJobRunner
+    does — same registry, same context, same event bus.
+
+    Requires:
+      * `celery` + `redis` packages installed (lazy import)
+      * REDIS_URL set
+      * ENABLE_REDIS=true
+      * JOB_QUEUE_MODE=celery
+
+    When any of those are missing, construction raises
+    NotImplementedError with a clear actionable message so deploys
+    fail loudly rather than silently dropping jobs.
+    """
 
     def __init__(self) -> None:
+        # Validate dependencies + env at construction so the error
+        # surfaces on app start, not on the first inbound request.
         try:
-            import celery  # noqa: F401
-            self._available = True
-        except Exception:
-            self._available = False
+            import celery   # noqa: F401, PLC0415
+            self._celery_available = True
+        except ImportError:
+            self._celery_available = False
+
+        from backend.services.redis_client import is_enabled as _redis_enabled
+        self._redis_enabled = _redis_enabled()
+
+        # We don't build the Celery app inside __init__ — `submit()`
+        # builds it lazily so the unit-test path can monkeypatch.
+        self._counters: dict = {
+            "submits":          0,
+            "submit_failed":    0,
+            "last_error":       "",
+        }
+
+    def _ensure_available(self) -> None:
+        if not self._celery_available:
+            raise NotImplementedError(
+                "CeleryJobRunner requires the `celery` package. "
+                "Add it to requirements.txt + reinstall."
+            )
+        if not self._redis_enabled:
+            raise NotImplementedError(
+                "CeleryJobRunner requires Redis. Set REDIS_URL + "
+                "ENABLE_REDIS=true."
+            )
 
     async def submit(self, record_id: str) -> None:
-        raise NotImplementedError(
-            "CeleryJobRunner is reserved for Phase 14+. "
-            "Set JOB_QUEUE_MODE=inline (default) for Phase 7.",
-        )
+        """Publish a `jobs.dispatch` task to Celery. The worker fetches
+        the JobRecord from the shared jobs store and runs the
+        registered handler.
+
+        Idempotency: the jobs store de-dupes by `idempotency_key` at
+        insert time, so re-submitting an existing record is safe — the
+        worker just observes status=running and skips.
+        """
+        self._ensure_available()
+        # Lazy build so monkeypatching in tests is straightforward.
+        from backend.jobs.celery_app import get_app
+        app = get_app()
+        if app is None:
+            self._counters["submit_failed"] += 1
+            raise NotImplementedError(
+                "Celery app construction returned None — check REDIS_URL "
+                "and that the celery package is importable."
+            )
+
+        try:
+            # The task name is the canonical handle. Defined in
+            # backend.jobs.tasks so the worker can find it.
+            app.send_task(
+                "korvix.jobs.dispatch",
+                args=[record_id],
+                queue=_queue_for_record(record_id),
+            )
+            self._counters["submits"] += 1
+        except Exception as exc:
+            self._counters["submit_failed"] += 1
+            self._counters["last_error"] = str(exc)[:140]
+            logger.warning(
+                "[JOB][CELERY] submit failed record_id=%s err=%s",
+                record_id, exc,
+            )
+            raise
 
     async def shutdown(self, *, drain_timeout_s: float = 5.0) -> None:
+        # Celery workers manage their own lifecycle. The API process
+        # has nothing to drain.
         return None
 
     def stats(self) -> dict:
-        return {"backend": "celery", "available": self._available, "submits": 0}
+        return {
+            "backend":            "celery",
+            "celery_available":   self._celery_available,
+            "redis_enabled":      self._redis_enabled,
+            **self._counters,
+        }
+
+
+def _queue_for_record(record_id: str) -> str:
+    """Route to the appropriate queue. For slice 1 every job lands on
+    the default queue; the routing per-kind ships in slice 2 once
+    handlers are ported."""
+    return "korvix.default"
 
 
 # ── Factory ──────────────────────────────────────────────────────────────────

@@ -53,17 +53,37 @@ def build_celery():
         broker=         redis_url or "memory://",
         backend=        redis_url or "cache+memory://",
     )
+    # Phase 7 slice 1 — production-ish defaults:
+    # * task_acks_late      worker acks AFTER the task succeeds, so a
+    #                       crash mid-task requeues rather than drops
+    # * prefetch_multiplier=1  pick one task at a time → fair scheduling
+    # * track_started       lets the SSE bridge surface STARTED
+    # * task_time_limit     hard cap so a runaway can't pin a worker
+    # * task_soft_time_limit fires SoftTimeLimitExceeded inside the
+    #                       task with enough headroom to checkpoint
+    # * result_expires      Redis result rows auto-evict in 24h
     app.conf.update(
         task_default_queue="korvix.default",
+        task_queues=[
+            # Per-domain queues for routing + per-queue worker scaling
+            # later. Slice 1 lets every queue exist; slice 2 picks
+            # which kind goes where via _queue_for_record.
+            {"name": "korvix.default"},
+            {"name": "korvix.research"},
+            {"name": "korvix.vision"},
+            {"name": "korvix.embeddings"},
+            {"name": "korvix.orchestration"},
+            {"name": "korvix.maintenance"},
+        ],
         task_acks_late=True,
         worker_prefetch_multiplier=1,
         task_track_started=True,
+        task_time_limit=900,            # 15 min hard cap
+        task_soft_time_limit=840,       # 14 min soft (let handlers checkpoint)
+        result_expires=60 * 60 * 24,    # 24h
+        broker_connection_retry_on_startup=True,
+        broker_pool_limit=10,
     )
-    # Importing tasks here would register them with celery; we keep
-    # the registration owned by `backend.services.jobs.registry`
-    # (single source of truth for handler dispatch) and only proxy
-    # via a celery task when JOB_QUEUE_MODE=celery is fully wired in
-    # Phase 14.
     return app
 
 
