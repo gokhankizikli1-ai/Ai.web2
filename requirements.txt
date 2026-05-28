@@ -25,3 +25,12 @@ python-multipart==0.0.9
 # runtime, but we pin them so prod-grade Railway builds have them ready.
 asyncpg==0.29.0
 psycopg[binary,pool]==3.1.18
+
+# Phase 7 slice 1 — async execution infrastructure.
+# redis covers both sync (Celery broker probe, diagnostic scripts) and
+# async (redis.asyncio for the SSE bridge + future async workers) from
+# one package. celery is the worker runtime, imported only by the
+# worker service AND lazily by CeleryJobRunner — the API process boots
+# fine without these on the path until JOB_QUEUE_MODE=celery is set.
+redis==5.0.4
+celery==5.4.0
