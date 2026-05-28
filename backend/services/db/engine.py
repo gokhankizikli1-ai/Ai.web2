@@ -45,6 +45,14 @@ logger = logging.getLogger(__name__)
 _POOL: Any = None                # asyncpg.Pool when initialised
 _POOL_LOCK = asyncio.Lock()
 
+# Phase 6 slice 2 — sync pool via psycopg3. The 10 existing stores are
+# all sync (raw sqlite3 + threading locks); they can't await on asyncpg
+# without a per-call event loop. psycopg3 ships with both sync and
+# async APIs from one package — we use the sync ConnectionPool here.
+_SYNC_POOL: Any = None
+import threading as _threading                  # local alias avoids a top-level rename
+_SYNC_POOL_LOCK = _threading.Lock()
+
 
 # ── Env helpers ─────────────────────────────────────────────────────────────
 
@@ -175,6 +183,106 @@ async def close_pool() -> None:
         logger.warning("postgres pool close failed: %s", exc)
 
 
+# ── Sync pool (psycopg3) ────────────────────────────────────────────────────
+#
+# For the 10 existing sync stores. Same DSN, same env flags. Lazy-imported
+# so the API process boots cleanly without psycopg installed (and so the
+# test runner doesn't need it for SQLite-only paths).
+
+def get_sync_pool():
+    """Return the shared psycopg3 ConnectionPool. Raises DBConfigError
+    when the env isn't set up; DBUnavailable on connect failure.
+
+    Thread-safe — the threading lock protects the build-once invariant.
+    """
+    global _SYNC_POOL
+    if _SYNC_POOL is not None:
+        return _SYNC_POOL
+
+    if not is_enabled():
+        raise DBConfigError(
+            "Postgres backend disabled. "
+            "Set DATABASE_URL and ENABLE_POSTGRES_BACKEND=true."
+        )
+
+    try:
+        from psycopg_pool import ConnectionPool   # noqa: PLC0415
+    except ImportError as exc:
+        raise DBConfigError(
+            "psycopg / psycopg_pool not installed. "
+            "Add `psycopg[binary,pool]` to requirements.txt and reinstall."
+        ) from exc
+
+    with _SYNC_POOL_LOCK:
+        if _SYNC_POOL is not None:
+            return _SYNC_POOL
+
+        dsn = _database_url()
+        min_size = int(os.getenv("DB_POOL_MIN_SIZE", "2") or 2)
+        max_size = int(os.getenv("DB_POOL_MAX_SIZE", "10") or 10)
+        timeout  = float(os.getenv("DB_POOL_TIMEOUT_SEC", "10") or 10.0)
+        stmt_timeout_ms = int(os.getenv("DB_STATEMENT_TIMEOUT_MS", "15000") or 15000)
+
+        # psycopg3's session-level options go on each new connection
+        # through `configure`. We set statement_timeout the same way
+        # the async pool does so behavior matches between paths.
+        def _configure(conn):
+            with conn.cursor() as cur:
+                cur.execute(f"SET statement_timeout = {stmt_timeout_ms}")
+
+        try:
+            pool = ConnectionPool(
+                conninfo=dsn,
+                min_size=min_size,
+                max_size=max_size,
+                timeout=timeout,
+                configure=_configure,
+                open=True,
+            )
+        except Exception as exc:
+            logger.warning("postgres sync pool init failed: %s", exc)
+            raise DBUnavailable(f"sync pool init: {exc}") from exc
+
+        logger.info(
+            "[DB] postgres sync pool ready min=%d max=%d timeout=%.1fs stmt_timeout=%dms",
+            min_size, max_size, timeout, stmt_timeout_ms,
+        )
+        _SYNC_POOL = pool
+        return _SYNC_POOL
+
+
+from contextlib import contextmanager as _contextmanager
+
+
+@_contextmanager
+def acquire_sync():
+    """Yield a psycopg3 connection from the shared sync pool.
+
+    Usage:
+        with acquire_sync() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+    """
+    pool = get_sync_pool()
+    with pool.connection() as conn:
+        yield conn
+
+
+def close_sync_pool() -> None:
+    """Close the sync pool — for graceful shutdown + test cleanup."""
+    global _SYNC_POOL
+    if _SYNC_POOL is None:
+        return
+    pool = _SYNC_POOL
+    _SYNC_POOL = None
+    try:
+        pool.close()
+    except Exception as exc:                                  # pragma: no cover
+        logger.warning("postgres sync pool close failed: %s", exc)
+
+
 __all__ = [
-    "get_pool", "acquire", "close_pool", "is_enabled", "current_backend",
+    "get_pool", "acquire", "close_pool",
+    "get_sync_pool", "acquire_sync", "close_sync_pool",
+    "is_enabled", "current_backend",
 ]

@@ -245,7 +245,13 @@ def tmp_memory_plane_db(tmp_path, monkeypatch):
     db_file = tmp_path / "memory-plane-test.db"
     monkeypatch.setenv("MEMORY_PLANE_DB_PATH", str(db_file))
     monkeypatch.setenv("ENABLE_MEMORY_PLANE", "true")
+    # Phase 6 slice 2 — `store` is now a dispatcher that delegates to
+    # store_sqlite or store_pg per call. The lazy-init flag lives on
+    # the active backend module, not on the dispatcher. Use the
+    # dispatcher's `_reset_for_tests()` so the right backend's flag
+    # is cleared and the next init() recreates the schema against the
+    # new tmp path.
     from backend.services.memory_plane import store as mp_store
-    monkeypatch.setattr(mp_store, "_INITIALIZED", False, raising=False)
+    mp_store._reset_for_tests()
     mp_store.init()
     yield db_file

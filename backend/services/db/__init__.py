@@ -27,7 +27,9 @@ so we can ship the wiring to prod and roll it forward in a single env
 flip rather than a deploy.
 """
 from backend.services.db.engine import (
-    get_pool, acquire, close_pool, is_enabled, current_backend,
+    get_pool, acquire, close_pool,
+    get_sync_pool, acquire_sync, close_sync_pool,
+    is_enabled, current_backend,
 )
 from backend.services.db.health import health_check
 from backend.services.db.pgvector import (
@@ -37,7 +39,9 @@ from backend.services.db import dialect
 from backend.services.db.errors import DBUnavailable, DBConfigError
 
 __all__ = [
-    "get_pool", "acquire", "close_pool", "is_enabled", "current_backend",
+    "get_pool", "acquire", "close_pool",
+    "get_sync_pool", "acquire_sync", "close_sync_pool",
+    "is_enabled", "current_backend",
     "health_check",
     "is_pgvector_available", "ensure_pgvector", "encode_vector", "decode_vector",
     "dialect",

@@ -17,7 +17,11 @@ pydantic==2.7.1
 python-multipart==0.0.9
 
 # Phase 6 — DB foundation. Postgres + pgvector path.
-# asyncpg is loaded LAZILY by backend/services/db/engine.py — when
-# ENABLE_POSTGRES_BACKEND=false (default) the package isn't required
-# at runtime, but we pin it so prod-grade Railway builds have it ready.
+# asyncpg powers async routes (e.g. /v2/db/health probe). psycopg3
+# powers the SYNC stores (memory_plane, jobs, assets, ...) because
+# those subsystems are sync-only and can't run an asyncio loop per
+# call. Both drivers are LAZILY imported by engine.py — when
+# ENABLE_POSTGRES_BACKEND=false (default) neither is required at
+# runtime, but we pin them so prod-grade Railway builds have them ready.
 asyncpg==0.29.0
+psycopg[binary,pool]==3.1.18
