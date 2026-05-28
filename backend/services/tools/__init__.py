@@ -19,6 +19,8 @@ try:
     # Phase 10 — read-only foundation tools.
     from backend.services.tools.browser_tool import BrowserFetchTool
     from backend.services.tools.github_tool import GithubRepoTool
+    # Phase 11 — structured university rankings extractor.
+    from backend.services.tools.university_rankings_tool import UniversityRankingsTool
 
     register(MarketDataTool())
     register(MacroDataTool())
@@ -30,6 +32,7 @@ try:
     register(NewsTool())
     register(BrowserFetchTool())
     register(GithubRepoTool())
-    logger.debug("tool package: 10 tools registered")
+    register(UniversityRankingsTool())
+    logger.debug("tool package: 11 tools registered")
 except Exception as _exc:
     logger.warning("tool package: registration failed (%s) — tools unavailable", _exc)
