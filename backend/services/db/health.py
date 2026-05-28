@@ -45,6 +45,10 @@ async def health_check() -> dict[str, Any]:
         "error":    None,
     }
 
+    # Phase 6 closure — metrics snapshot is cheap, attach to every probe
+    from backend.services.db import metrics as _metrics
+    out["metrics"] = _metrics.snapshot()
+
     if backend == "sqlite":
         # SQLite stores are self-contained — there's nothing for THIS
         # foundation to probe. The legacy per-store health endpoints
@@ -59,6 +63,7 @@ async def health_check() -> dict[str, Any]:
             row = await conn.fetchrow("SELECT version() AS v")
             out["server_version"] = (row and row["v"]) or "unknown"
         out["pgvector_available"] = await is_pgvector_available()
+        out["pool"] = _sync_pool_stats()
         out["ok"] = True
     except DBConfigError as exc:
         out["error"] = f"config: {exc}"
@@ -71,6 +76,29 @@ async def health_check() -> dict[str, Any]:
         out["latency_ms"] = int((time.monotonic() - t0) * 1000)
 
     return out
+
+
+def _sync_pool_stats() -> dict:
+    """Best-effort pool inspection. psycopg's ConnectionPool exposes
+    `_pool` (free) and `_pool_full` (max) but the public surface is the
+    `get_stats()` method on newer versions. Probe defensively — we
+    NEVER raise from the health endpoint."""
+    try:
+        from backend.services.db import engine as _engine
+        pool = _engine._SYNC_POOL
+        if pool is None:
+            return {"state": "not_initialized"}
+        if hasattr(pool, "get_stats") and callable(pool.get_stats):
+            return {"state": "ready", **(pool.get_stats() or {})}
+        # psycopg < 3.1.18 fallback
+        out = {"state": "ready"}
+        for attr in ("min_size", "max_size", "current_size"):
+            val = getattr(pool, attr, None)
+            if isinstance(val, (int, float)):
+                out[attr] = val
+        return out
+    except Exception:                                         # pragma: no cover
+        return {"state": "unknown"}
 
 
 __all__ = ["health_check"]
