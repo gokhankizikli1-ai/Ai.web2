@@ -172,6 +172,32 @@ def search_text(query: MemoryQuery) -> list[MemoryRecord]:
     return _dispatch("search_text", query)
 
 
+def semantic_recall(
+    user_id: str,
+    embedding: list[float],
+    *,
+    k: int = 10,
+    project_id: Optional[str] = None,
+    agent_id: Optional[str] = None,
+    kind: Optional[str] = None,
+    include_expired: bool = False,
+    candidate_pool: int = 500,
+) -> list[tuple]:
+    """Phase 6 slice 3 — cosine-similarity recall over stored vectors.
+
+    Returns a list of (record, similarity_score) tuples sorted by
+    score DESC. SQLite ranks in Python; Postgres uses pgvector when
+    the column has been upgraded (db_migrate vector-upgrade) and
+    falls back to Python cosine otherwise.
+    """
+    return _dispatch(
+        "semantic_recall",
+        user_id, embedding,
+        k=k, project_id=project_id, agent_id=agent_id, kind=kind,
+        include_expired=include_expired, candidate_pool=candidate_pool,
+    )
+
+
 # ── Deletes ────────────────────────────────────────────────────────────────
 
 def soft_delete(record_id: str, *, user_id: Optional[str] = None) -> bool:
@@ -205,7 +231,7 @@ def table_counts() -> dict:
 __all__ = [
     "init", "_reset_for_tests", "current_backend",
     "insert", "update_embedding", "update_importance",
-    "get", "list_for_user", "search_text",
+    "get", "list_for_user", "search_text", "semantic_recall",
     "soft_delete", "hard_delete", "expire_due", "wipe_user",
     "store_stats", "table_counts",
 ]

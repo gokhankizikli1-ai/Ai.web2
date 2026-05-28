@@ -265,6 +265,82 @@ def search_memories(
     )
 
 
+@router.get("/recall")
+async def recall_memories(
+    q: str = Query(..., min_length=1, max_length=400,
+                   description="Natural-language query — embedded and "
+                               "compared against stored vectors via cosine "
+                               "similarity."),
+    k: int = Query(10, ge=1, le=50,
+                   description="Top-K results to return."),
+    kind: Optional[str] = Query(None, max_length=32),
+    project_id: Optional[str] = Query(None, max_length=64),
+    agent_id: Optional[str] = Query(None, max_length=64),
+    user: User = Depends(current_user),
+) -> Dict[str, Any]:
+    """Phase 6 slice 3 — semantic recall.
+
+    Embeds `q` via the embedding service, then ranks the caller's
+    stored memories by cosine similarity. On Postgres + pgvector the
+    ranking uses the `<=>` operator; on SQLite (or PG before the
+    vector-upgrade) the ranking happens in Python over decoded JSON
+    embeddings. Same response shape either way.
+
+    Returns 503 when ENABLE_EMBEDDINGS is off — without the embedding
+    service we'd silently degrade to keyword search, which is what
+    /v2/memory/search already does. Use /search for keyword + LIKE.
+    """
+    _ensure_enabled()
+    if project_id:
+        _enforce_project_ownership(project_id, user)
+
+    from backend.services.memory_plane.embedding import is_enabled as embed_enabled, embed
+    if not embed_enabled():
+        raise HTTPException(
+            status_code=503,
+            detail="Embedding service disabled. Set ENABLE_EMBEDDINGS=true "
+                   "and OPENAI_API_KEY before calling /v2/memory/recall.",
+        )
+
+    vec = await embed(q)
+    if vec is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Failed to embed the query. Check OPENAI_API_KEY + quota.",
+        )
+
+    from backend.services.memory_plane import store
+    scored = store.semantic_recall(
+        user.id, vec,
+        k=k, project_id=project_id, agent_id=agent_id, kind=kind,
+    )
+
+    records: List[Dict[str, Any]] = []
+    for rec, score in scored:
+        payload = {
+            "id":           rec.id,
+            "content":      rec.content,
+            "kind":         rec.kind,
+            "importance":   rec.importance,
+            "created_at":   rec.created_at,
+            "updated_at":   rec.updated_at,
+            "project_id":   rec.project_id,
+            "agent_id":     rec.agent_id,
+            "similarity":   round(float(score), 4),
+        }
+        records.append(payload)
+
+    return envelope_ok(
+        data={"memories": records},
+        endpoint="/v2/memory/recall",
+        user_id=user.id,
+        query=q,
+        count=len(records),
+        k=k,
+        backend=store.current_backend(),
+    )
+
+
 @router.get("/project/{project_id}")
 def list_project_memories(
     project_id: str,
