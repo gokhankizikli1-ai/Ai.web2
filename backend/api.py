@@ -204,6 +204,7 @@ def _build_full_app():
         "backend.routes.v2_panels",         # Phase 9 — /v2/panels/* (gated by ENABLE_REAL_COORDINATION)
         "backend.routes.v2_agent_presence", # Phase 9 — /v2/agents/presence (gated by ENABLE_AGENT_PRESENCE)
         "backend.routes.v2_tools",          # Phase 10 — /v2/tools/* unified tools API
+        "backend.routes.v2_db_health",      # Phase 6 — /v2/db/health (owner-only)
     ]:
         try:
             _app.include_router(importlib.import_module(_mod).router)
