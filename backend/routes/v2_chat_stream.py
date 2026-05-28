@@ -69,6 +69,7 @@ return SSE we've already committed to the stream contract.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -1288,13 +1289,125 @@ async def stream_chat(body: StreamChatRequest, request: Request):
             user_id, _orch_elapsed, _budget_remaining(),
         )
 
+        # Phase 11 hang-fix #2 — production observation: after the
+        # pre-stream tool fixes in #140 landed, a NEW hang surfaced
+        # MID-STREAM. The model emits the first few tokens
+        # ("Bir dakikanızı alacak…") and then the upstream provider
+        # (OpenAI / Anthropic) stops sending without ever sending a
+        # terminal `done` event. The route's `async for event in
+        # provider.stream_chat_completion(...)` then awaits the next
+        # event forever and the FE is stuck on a partial answer.
+        #
+        # Cause: provider.stream_chat_completion's own
+        # asyncio.wait_for only protects the INITIAL connect/first-
+        # chunk handshake. Once tokens start flowing the iteration
+        # has no per-chunk ceiling — a silent stall in the upstream
+        # SSE pipe never breaks the await.
+        #
+        # Watchdog: wrap each iterator advance in asyncio.wait_for
+        # so any chunk gap longer than IDLE_TIMEOUT aborts the
+        # stream with an honest fallback message. Track the TOTAL
+        # wall clock separately so a very-long-but-still-flowing
+        # response can't grind past TOTAL_BUDGET either. EITHER
+        # ceiling firing flips us to the fallback path which ALWAYS
+        # emits `done` before returning, so the FE can never get
+        # stuck on a partial token list.
+        IDLE_TIMEOUT = 30.0     # seconds since last chunk
+        TOTAL_BUDGET = 90.0     # seconds since the LLM stream opened
+        _stream_t0 = _time.monotonic()
+        _last_event_at = _time.monotonic()
+        _token_count = 0
+
+        def _fallback_done(reason: str) -> tuple[str, str]:
+            """Return two SSE frames that close the stream cleanly:
+            a token frame carrying the polite Turkish-first fallback
+            (English mirror so EN users see something useful too),
+            and a `done` frame so the FE drops out of `isLoading`.
+            """
+            note_tr = (
+                "\n\n_İşlem zaman aşımına uğradı. Lütfen tekrar deneyin._"
+            )
+            note_en = (
+                " _(The model stopped responding. Please try again.)_"
+            )
+            return (
+                sse_event("token", {"delta": note_tr + note_en}),
+                sse_event("done", {
+                    "finish_reason": "timeout",
+                    "model":         effective_pr_request.model,
+                    "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                    "stop_reason":   reason,
+                }),
+            )
+
         try:
-            async for event in provider.stream_chat_completion(effective_pr_request):
+            stream_iter = provider.stream_chat_completion(effective_pr_request).__aiter__()
+            while True:
+                # Per-chunk watchdog. asyncio.wait_for(anext(...))
+                # raises TimeoutError if no new event arrives within
+                # IDLE_TIMEOUT — handled below as "stream hung".
+                try:
+                    event = await asyncio.wait_for(
+                        stream_iter.__anext__(),
+                        timeout=IDLE_TIMEOUT,
+                    )
+                except StopAsyncIteration:
+                    # Provider exhausted without a Done event. Surface
+                    # as a graceful done so the FE closes cleanly.
+                    logger.warning(
+                        "[STREAM] iterator exhausted without Done | uid=%s | "
+                        "tokens=%d | elapsed=%.2fs",
+                        user_id, _token_count, _time.monotonic() - _stream_t0,
+                    )
+                    tok_frame, done_frame = _fallback_done("iterator_exhausted")
+                    yield tok_frame
+                    yield done_frame
+                    return
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "[STREAM_TIMEOUT] idle | uid=%s | "
+                        "idle_for=%.1fs | tokens=%d | elapsed=%.2fs",
+                        user_id, IDLE_TIMEOUT, _token_count,
+                        _time.monotonic() - _stream_t0,
+                    )
+                    tok_frame, done_frame = _fallback_done("idle_timeout")
+                    yield tok_frame
+                    yield done_frame
+                    return
+
+                _last_event_at = _time.monotonic()
+                # Total-budget guard — fires even when the provider
+                # IS still streaming tokens but very slowly. 90 s is
+                # generous for a long research response; tune via
+                # the constant above if production latencies change.
+                if (_time.monotonic() - _stream_t0) > TOTAL_BUDGET:
+                    logger.warning(
+                        "[STREAM_TIMEOUT] total | uid=%s | "
+                        "budget=%.1fs | tokens=%d",
+                        user_id, TOTAL_BUDGET, _token_count,
+                    )
+                    tok_frame, done_frame = _fallback_done("total_budget")
+                    yield tok_frame
+                    yield done_frame
+                    return
+
                 if isinstance(event, ProviderStreamStart):
+                    logger.info(
+                        "[STREAM] ready | uid=%s | provider=%s | model=%s",
+                        user_id, event.provider, event.model,
+                    )
                     yield sse_event("ready", {"provider": event.provider, "model": event.model})
                 elif isinstance(event, ProviderStreamToken):
+                    _token_count += 1
                     yield sse_event("token", {"delta": event.delta})
                 elif isinstance(event, ProviderStreamDone):
+                    logger.info(
+                        "[STREAM] done | uid=%s | finish=%s | tokens=%d | "
+                        "elapsed=%.2fs | prompt_tokens=%d | completion_tokens=%d",
+                        user_id, event.finish_reason, _token_count,
+                        _time.monotonic() - _stream_t0,
+                        event.usage.prompt_tokens, event.usage.completion_tokens,
+                    )
                     yield sse_event("done", {
                         "finish_reason": event.finish_reason,
                         "model":         event.model,
@@ -1306,6 +1419,10 @@ async def stream_chat(body: StreamChatRequest, request: Request):
                     })
                     return
                 elif isinstance(event, ProviderStreamError):
+                    logger.warning(
+                        "[STREAM_ERROR] uid=%s | code=%s | msg=%s | provider=%s",
+                        user_id, event.code, event.message, event.provider,
+                    )
                     yield sse_event("error", {
                         "code":     event.code,
                         "message":  event.message,
@@ -1313,12 +1430,18 @@ async def stream_chat(body: StreamChatRequest, request: Request):
                     })
                     return
         except Exception as exc:
-            logger.exception("stream_chat unexpected exception")
+            logger.exception("[STREAM] unexpected exception | uid=%s", user_id)
+            # Always emit BOTH an error AND a done frame so the FE
+            # can never be stuck waiting. Some FE handlers stop on
+            # error; some need an explicit done — sending both
+            # covers every consumer.
             yield sse_event("error", {
                 "code":    "INTERNAL_ERROR",
                 "message": str(exc)[:300],
                 "provider": provider.name,
             })
+            tok_frame, done_frame = _fallback_done(f"exception:{type(exc).__name__}")
+            yield done_frame
 
     return sse_response(event_stream())
 
