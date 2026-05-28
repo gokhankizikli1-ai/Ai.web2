@@ -15,3 +15,9 @@ pydantic==2.7.1
 # Phase 8 — required by /v2/assets/upload (multipart File/Form support).
 # Tiny dep; FastAPI's standard extension for multipart parsing.
 python-multipart==0.0.9
+
+# Phase 6 — DB foundation. Postgres + pgvector path.
+# asyncpg is loaded LAZILY by backend/services/db/engine.py — when
+# ENABLE_POSTGRES_BACKEND=false (default) the package isn't required
+# at runtime, but we pin it so prod-grade Railway builds have it ready.
+asyncpg==0.29.0
