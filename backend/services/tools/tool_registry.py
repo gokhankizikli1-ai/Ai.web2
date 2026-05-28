@@ -37,6 +37,8 @@ _TOOL_FLAG_NAMES: Dict[str, str] = {
     # Phase 10 — read-only foundation tools.
     "browser_fetch":      "ENABLE_BROWSER_TOOL",
     "github_repo":        "ENABLE_GITHUB_TOOL",
+    # Phase 11 — structured rankings extractor.
+    "university_rankings": "ENABLE_UNIVERSITY_RANKINGS",
 }
 
 

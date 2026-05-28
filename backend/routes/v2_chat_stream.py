@@ -558,22 +558,26 @@ async def stream_chat(body: StreamChatRequest, request: Request):
     github_refs: list = []
     web_urls: list = []
     web_search_intent = None  # populated below when the helper signals it
+    ranking_intent = None     # Phase 11 — university rankings auto-invocation
     try:
         from backend.services.tool_extraction import (
             extract_github_refs as _extract_gh,
             extract_web_urls as _extract_web,
             detect_web_search_intent as _detect_search,
+            detect_ranking_intent as _detect_ranking,
         )
         from backend.services.tools.tool_registry import is_enabled as _tool_enabled
         # [ROUTER] visibility — log which auto-call paths are eligible
         # so an ops review can see the live flag state per request
         # without poking around in os.environ on Railway.
-        _gh_on  = _tool_enabled("github_repo")
-        _br_on  = _tool_enabled("browser_fetch")
-        _wr_on  = _tool_enabled("web_research")
+        _gh_on   = _tool_enabled("github_repo")
+        _br_on   = _tool_enabled("browser_fetch")
+        _wr_on   = _tool_enabled("web_research")
+        _rank_on = _tool_enabled("university_rankings")
         logger.info(
-            "[ROUTER] uid=%s | github_repo=%s | browser_fetch=%s | web_research=%s",
-            user_id, _gh_on, _br_on, _wr_on,
+            "[ROUTER] uid=%s | github_repo=%s | browser_fetch=%s | "
+            "web_research=%s | university_rankings=%s",
+            user_id, _gh_on, _br_on, _wr_on, _rank_on,
         )
         if last_user_msg:
             if _gh_on:
@@ -583,13 +587,29 @@ async def stream_chat(body: StreamChatRequest, request: Request):
             # so we never double-fetch.
             if _br_on:
                 web_urls = _extract_web(last_user_msg)
+            # Phase 11 — ranking intent runs BEFORE web_search because
+            # structured Wikipedia tables are strictly better than
+            # Tavily snippets for "top universities" / "QS ranking"
+            # type queries. Only triggers when the dedicated tool is
+            # enabled AND no URL was pasted.
+            if _rank_on and not github_refs and not web_urls:
+                ri = _detect_ranking(last_user_msg)
+                if ri is not None and ri.triggered:
+                    ranking_intent = ri
+                    logger.info(
+                        "[RANKING_DETECTED] uid=%s | system=%s | limit=%d | "
+                        "country=%s | reason=%s",
+                        user_id, ri.system, ri.limit, ri.country, ri.reason,
+                    )
             # Phase 11 fix — intent-based web search for prompts that
             # need current information but don't paste a URL ("latest
             # NVIDIA news", "compare universities", "internetten
             # araştır"). Only when the tool is enabled AND no URL was
             # pasted (the URL paths already produce real context, so
-            # an extra search would be wasteful).
-            if _wr_on and not github_refs and not web_urls:
+            # an extra search would be wasteful). ALSO skipped when
+            # ranking_intent already fired — structured data wins.
+            if (_wr_on and not github_refs and not web_urls
+                    and ranking_intent is None):
                 intent = _detect_search(last_user_msg)
                 if intent.triggered:
                     web_search_intent = intent
@@ -610,12 +630,13 @@ async def stream_chat(body: StreamChatRequest, request: Request):
         github_refs = []
         web_urls = []
         web_search_intent = None
+        ranking_intent = None
 
     # Owner debug — gate the raw payload exposure on a confirmed-owner
     # session. Non-owners never see raw GitHub API payloads or full
     # page bodies in the SSE stream, even when ENABLE_TOOLS_RUNTIME is on.
     owner_debug = False
-    if github_refs or web_urls or web_search_intent:
+    if github_refs or web_urls or web_search_intent or ranking_intent:
         try:
             from backend.services.admin.owner import is_owner as _is_owner
             owner_user = getattr(request.state, "user", None)
@@ -1025,6 +1046,117 @@ async def stream_chat(body: StreamChatRequest, request: Request):
         #   [TOOL_EXECUTION]  start / end of the actual tool call
         #   [WEB_SEARCH]      injection state (block in prompt?)
         #   [FALLBACK]        why we reached the no-block branch
+        # ── Phase 11 — ranking-intent auto-invocation ──────────────────
+        #
+        # Fires BEFORE web_search when the user asks for university
+        # rankings ("QS World University Rankings", "top 10 universities
+        # in USA", "üniversite sıralaması"). Wikipedia's maintained
+        # tables beat Tavily snippets for ranked-list queries because
+        # the model gets row-level ground truth instead of unranked
+        # paragraphs it has to re-rank by hand (and often hallucinates
+        # around).
+        if ranking_intent and ranking_intent.triggered and not _budget_exhausted():
+            yield sse_event("tool.started", {
+                "tool_id":      "university_rankings",
+                "input_summary": f"ranking: {ranking_intent.system} top {ranking_intent.limit}"
+                               + (f" ({ranking_intent.country})" if ranking_intent.country else ""),
+                "provider":     "wikipedia",
+                "ranking":      ranking_intent.system,
+            })
+            logger.info(
+                "[SOURCE_SELECTED] university_rankings | uid=%s | "
+                "system=%s | limit=%d | country=%s | "
+                "budget_remaining=%.1fs",
+                user_id, ranking_intent.system, ranking_intent.limit,
+                ranking_intent.country, _budget_remaining(),
+            )
+            try:
+                from backend.services.tool_extraction import build_rankings_context_block
+                ranking_block, ranking_payload = await build_rankings_context_block(
+                    user_id=     user_id,
+                    intent=      ranking_intent,
+                    project_id=  body.project_id,
+                    owner_debug= owner_debug,
+                )
+            except Exception as exc:
+                logger.warning("[RANKING] execution failed | uid=%s | err=%s",
+                               user_id, exc)
+                ranking_block = None
+                ranking_payload = {"triggered": True, "fetched": False,
+                                   "reason": str(exc)[:200]}
+
+            ranking_ok = bool((ranking_payload or {}).get("fetched"))
+            returned = int((ranking_payload or {}).get("returned") or 0)
+            yield sse_event("tool.completed", {
+                "tool_id":   "university_rankings",
+                "ranking":   ranking_intent.system,
+                "succeeded": ranking_ok,
+                "returned":  returned,
+                "block_chars": len(ranking_block or ""),
+            })
+            if ranking_ok:
+                logger.info(
+                    "[PARSE_SUCCESS] university_rankings | uid=%s | "
+                    "system=%s | rows=%d",
+                    user_id, ranking_intent.system, returned,
+                )
+
+            if owner_debug and ranking_payload:
+                yield sse_event("tool.debug", {
+                    "tool_id": "university_rankings",
+                    "payload": ranking_payload,
+                })
+
+            # Fold into prompt — same dual-injection pattern.
+            if ranking_block:
+                base_msgs = list(effective_pr_request.messages)
+                augmented_r: list = []
+                first_role = base_msgs[0].role if base_msgs else None
+                if first_role == "system":
+                    sys_content = base_msgs[0].content
+                    if isinstance(sys_content, list):
+                        sys_content = "\n".join(
+                            str(b.get("text", "")) for b in sys_content
+                            if isinstance(b, dict) and b.get("type") == "text"
+                        )
+                    new_sys = f"{(sys_content or '').strip()}\n\n{ranking_block}"
+                    augmented_r.append(ProviderMessage(role="system", content=new_sys))
+                    rest_r = base_msgs[1:]
+                else:
+                    augmented_r.append(ProviderMessage(role="system", content=ranking_block))
+                    rest_r = list(base_msgs)
+                last_user_idx_r: Optional[int] = None
+                for i in range(len(rest_r) - 1, -1, -1):
+                    if rest_r[i].role == "user":
+                        last_user_idx_r = i
+                        break
+                if last_user_idx_r is not None:
+                    um = rest_r[last_user_idx_r]
+                    suffix = (
+                        "\n\n---\n"
+                        "[Structured rankings I just fetched for you — "
+                        "cite by rank, do NOT invent entries:]\n"
+                        f"{ranking_block}"
+                    )
+                    if isinstance(um.content, list):
+                        new_content = list(um.content) + [{"type": "text", "text": suffix}]
+                        rest_r[last_user_idx_r] = ProviderMessage(
+                            role="user", content=new_content,
+                        )
+                    else:
+                        rest_r[last_user_idx_r] = ProviderMessage(
+                            role="user", content=(um.content or "") + suffix,
+                        )
+                augmented_r.extend(rest_r)
+                effective_pr_request = ProviderRequest(
+                    messages=    augmented_r,
+                    model=       effective_pr_request.model,
+                    temperature= effective_pr_request.temperature,
+                    max_tokens=  effective_pr_request.max_tokens,
+                    timeout_s=   effective_pr_request.timeout_s,
+                    extra=       effective_pr_request.extra,
+                )
+
         if web_search_intent and web_search_intent.triggered and not _budget_exhausted():
             logger.info(
                 "[INTENT] web_search triggered | uid=%s | confidence=%.2f | "
