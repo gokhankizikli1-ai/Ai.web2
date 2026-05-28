@@ -295,11 +295,18 @@ async def build_web_search_context_block(
         correlation_id= correlation_id,
     ) as run:
         try:
-            envelope = await tool.safe_run(query, {
-                "query": query,
-                "max_results": _DEFAULT_MAX_RESULTS,
-                "depth": "basic",
-            })
+            from backend.services.tool_extraction._safe_run import safe_run_with_timeout
+            envelope = await safe_run_with_timeout(
+                tool, query, {
+                    "query": query,
+                    "max_results": _DEFAULT_MAX_RESULTS,
+                    "depth": "basic",
+                },
+                # web_research can be slow on the "advanced" path —
+                # extra grace beyond the tool's own timeout so we don't
+                # truncate a real Tavily fetch.
+                override_timeout=12.0,
+            )
         except Exception as exc:
             run.failure("TOOL_RAISED", str(exc) or "web_research raised")
             envelope = {}
@@ -341,11 +348,17 @@ async def build_web_search_context_block(
                 correlation_id= correlation_id,
             ) as run:
                 try:
-                    envelope = await tool.safe_run(query, {
-                        "query": query,
-                        "max_results": _DEFAULT_MAX_RESULTS,
-                        "depth": "advanced",
-                    })
+                    envelope = await safe_run_with_timeout(
+                        tool, query, {
+                            "query": query,
+                            "max_results": _DEFAULT_MAX_RESULTS,
+                            "depth": "advanced",
+                        },
+                        # Retries pay extra latency budget on a known
+                        # slow path; still hard-capped so we can never
+                        # hang the SSE stream.
+                        override_timeout=15.0,
+                    )
                 except Exception as exc:
                     run.failure("TOOL_RAISED", str(exc) or "retry raised")
                     envelope = {}

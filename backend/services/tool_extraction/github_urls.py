@@ -330,7 +330,10 @@ async def build_github_context_block(
             correlation_id= correlation_id,
         ) as run:
             try:
-                envelope = await tool.safe_run(ref.full_name, {"repo": ref.full_name})
+                from backend.services.tool_extraction._safe_run import safe_run_with_timeout
+                envelope = await safe_run_with_timeout(
+                    tool, ref.full_name, {"repo": ref.full_name},
+                )
             except Exception as exc:
                 run.failure("TOOL_RAISED", str(exc) or "tool raised unexpectedly")
                 continue
@@ -368,10 +371,22 @@ async def build_github_context_block(
 
         # 2) Optional curated key-file fetch. Skipped silently on rate
         #    limit / token absence — the metadata block is still useful.
+        #    Total-call ceiling protects against a slow GitHub day where
+        #    individual file timeouts (6 s × N files in flight) could
+        #    still add up to a hang.
         key_files: list[dict] = []
         try:
-            files = await _fetch_key_files(ref.owner, ref.repo)
+            files = await asyncio.wait_for(
+                _fetch_key_files(ref.owner, ref.repo),
+                timeout=12.0,
+            )
             key_files = files[:_PER_REPO_KEY_FILE_BUDGET]
+        except asyncio.TimeoutError:
+            logger.warning(
+                "[TOOL_TIMEOUT] github key-files | repo=%s | "
+                "ceiling=12s — proceeding without key files",
+                ref.full_name,
+            )
         except Exception as e:
             logger.debug("github_url: key-file fetch failed for %s: %s",
                          ref.full_name, e)
