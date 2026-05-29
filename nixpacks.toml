@@ -1,0 +1,43 @@
+# Railway / Nixpacks build configuration.
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# Without this file, Nixpacks autodetects Python from `runtime.txt`
+# and installs the interpreter via mise. mise verifies downloaded
+# Python builds against GitHub artifact attestations — when those
+# checks transiently fail (upstream incident in early 2026), every
+# build fails with:
+#
+#   Failed to install core: python@3.11.9
+#   verify GitHub artifact attestations
+#   process "mise install" did not complete successfully
+#
+# Pinning `nixPkgs` here forces Nixpacks to resolve Python through
+# the Nix package manager (cached as a Railway build dep, no mise
+# round-trip, no GitHub artifact verification). The runtime.txt
+# value is preserved for documentation but mise no longer sees it.
+#
+# WHAT THIS FILE DOES NOT DO
+# --------------------------
+# * NO Dockerfile — we still use Nixpacks. Procfile-driven start
+#   commands still work: `web:` for the API service, `worker:` for
+#   the Celery worker service. Railway picks the right one per
+#   service.
+# * NO custom install command — `pip install -r requirements.txt`
+#   is autodetected by Nixpacks.
+# * NO start command override — defer to Procfile.
+#
+# IF YOU NEED TO CHANGE THE PYTHON VERSION
+# ----------------------------------------
+# Edit nixPkgs below AND update runtime.txt to match (the value
+# in runtime.txt is informational only after this file lands).
+# `python311` resolves to Python 3.11 latest in nixpkgs. To pin
+# a specific patch, switch to `python311 = "3.11.9"` style but
+# nixpkgs only provides the latest patch for each minor version.
+
+[phases.setup]
+# python311 = Python 3.11.x (latest patch in current nixpkgs)
+# gcc      = build toolchain for any wheel-less Python dep (asyncpg,
+#            psycopg, etc all ship binary wheels today but gcc is a
+#            cheap defensive backstop)
+nixPkgs = ["python311", "gcc"]
