@@ -50,6 +50,11 @@ export interface UseJobsResult {
   failedCount:   number;
   isAvailable:   boolean;  // false when /v2/jobs returned 503/401/network err
   lastUpdatedAt: number;
+  // Phase 7 closure — diagnostic surface exposed so the operator
+  // panel can render a visible debug strip without needing devtools.
+  lastEndpoint?: string;   // the exact URL just polled
+  lastStatus?:   number;   // HTTP status of the most recent fetch
+  lastError?:    string;   // first 200 chars of the error path
 }
 
 const EMPTY_RESULT: UseJobsResult = {
@@ -59,6 +64,9 @@ const EMPTY_RESULT: UseJobsResult = {
   failedCount:    0,
   isAvailable:    false,
   lastUpdatedAt:  0,
+  lastEndpoint:   undefined,
+  lastStatus:     undefined,
+  lastError:      undefined,
 };
 
 function getToken(): string | null {
@@ -107,29 +115,36 @@ export function useJobs(
       // Skip when there's no JWT — /v2/jobs requires auth.
       const tok = getToken();
       if (!tok) {
-        if (!cancelled) setState(EMPTY_RESULT);
+        if (!cancelled) setState({
+          ...EMPTY_RESULT,
+          lastError: 'no JWT in localStorage',
+        });
         return scheduleNext();
       }
       abort = new AbortController();
+      // Owner panel uses /v2/jobs/all so chat-created jobs assigned
+      // to a different user_id are visible. Non-owners get 404 ->
+      // the isAvailable=false branch + silent degrade.
+      const url = allJobs
+        ? `${JOBS_URL}/all?limit=20`
+        : `${JOBS_URL}?limit=20`;
       try {
-        // Owner panel uses /v2/jobs/all so chat-created jobs assigned
-        // to a different user_id are visible. Non-owners get 404 ->
-        // the isAvailable=false branch + silent degrade.
-        const url = allJobs
-          ? `${JOBS_URL}/all?limit=20`
-          : `${JOBS_URL}?limit=20`;
         const r = await fetch(url, {
           method: 'GET',
           headers: { Authorization: `Bearer ${tok}` },
           signal: abort.signal,
         });
         if (!r.ok) {
-          // 503 (queue disabled) or 401 (token expired). Treat as
-          // unavailable; do NOT spam the console.
+          // 503 (queue disabled) / 401 (token expired) / 404 (non-owner
+          // hitting /v2/jobs/all). Treat as unavailable; surface the
+          // status so the operator panel can render a debug hint.
           if (!cancelled) setState((prev) => ({
             ...prev,
-            isAvailable: false,
+            isAvailable:   false,
             lastUpdatedAt: Date.now(),
+            lastEndpoint:  url,
+            lastStatus:    r.status,
+            lastError:     `HTTP ${r.status}`,
           }));
           return scheduleNext();
         }
@@ -149,11 +164,19 @@ export function useJobs(
           failedCount:    failed,
           isAvailable:    true,
           lastUpdatedAt:  Date.now(),
+          lastEndpoint:   url,
+          lastStatus:     r.status,
+          lastError:      undefined,
         });
       } catch (e: unknown) {
         // Network error or abort — silently degrade.
         if ((e as Error)?.name === 'AbortError') return;
-        if (!cancelled) setState((prev) => ({ ...prev, isAvailable: false }));
+        if (!cancelled) setState((prev) => ({
+          ...prev,
+          isAvailable: false,
+          lastEndpoint: url,
+          lastError:    ((e as Error)?.message || String(e)).slice(0, 200),
+        }));
       } finally {
         scheduleNext();
       }
