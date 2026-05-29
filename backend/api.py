@@ -145,6 +145,17 @@ def _build_full_app():
         except Exception as _bg_err:
             logger.warning("background-task startup (non-fatal): %s", _bg_err)
 
+        # Phase 7 slice 2 — Redis fanout subscriber. No-op when
+        # ENABLE_REDIS=false, so production behaviour is unchanged on
+        # the default path. When Redis is on, this starts ONE
+        # PSUBSCRIBE task per API replica that bridges worker-published
+        # events to in-process SSE consumers.
+        try:
+            from backend.services.jobs.events_redis import get_fanout
+            await get_fanout().start()
+        except Exception as _fanout_err:
+            logger.warning("jobs.events_redis startup (non-fatal): %s", _fanout_err)
+
     @_app.on_event("shutdown")
     async def _shutdown():
         # Drain the background queue (within a 5s budget) before the
@@ -165,6 +176,12 @@ def _build_full_app():
                 await _jobs_client.shutdown(drain_timeout_s=5.0)
         except Exception as _jobs_err:
             logger.warning("jobs shutdown (non-fatal): %s", _jobs_err)
+        # Phase 7 slice 2 — stop the Redis fanout subscriber cleanly.
+        try:
+            from backend.services.jobs.events_redis import get_fanout
+            await get_fanout().stop()
+        except Exception as _fanout_err:
+            logger.warning("jobs.events_redis shutdown (non-fatal): %s", _fanout_err)
 
     @_app.get("/health", tags=["system"])
     async def health():

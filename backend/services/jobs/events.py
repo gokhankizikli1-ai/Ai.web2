@@ -61,8 +61,35 @@ class JobEventBus:
         }
 
     async def publish(self, event: JobEvent) -> None:
-        """Fan out to every subscriber of this job. Errors per-subscriber
-        never block the others or the publisher."""
+        """Fan out to every subscriber of this job + (when enabled)
+        publish to Redis so other API replicas can deliver to their
+        subscribers too. Errors per-subscriber never block the others
+        or the publisher.
+
+        IMPORTANT: this is the "origin" publish — the one a runner or
+        handler calls. The Redis fanout MUST NOT recurse through here,
+        or every event would re-publish itself to Redis on every API
+        replica forever. The fanout uses `_publish_local()` below.
+        """
+        if not event.timestamp:
+            event.timestamp = _now()
+
+        # Phase 7 slice 2 — Redis fanout. Additive: the local fan-out
+        # below still runs. The Redis publish is best-effort + scheduled
+        # so it never blocks the in-process consumers.
+        try:
+            from backend.services.jobs.events_redis import publish_to_redis
+            asyncio.create_task(publish_to_redis(event))
+        except Exception:                                       # pragma: no cover
+            pass
+
+        await self._publish_local(event)
+
+    async def _publish_local(self, event: JobEvent) -> None:
+        """In-process-only fanout. Called by `publish()` for origin
+        events AND by the RedisFanout when re-emitting events received
+        from other replicas (this path skips the Redis publish to
+        avoid an infinite republish loop)."""
         if not event.timestamp:
             event.timestamp = _now()
         async with self._lock:
