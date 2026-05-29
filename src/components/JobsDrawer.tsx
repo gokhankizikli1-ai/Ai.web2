@@ -43,8 +43,15 @@ export function JobsDrawer({
   const owner = useOwnerMode();
   // Owner panel reads /v2/jobs/all so chat-created jobs assigned to a
   // different user_id (e.g. anonymous guest session) are visible.
-  const { jobs, isAvailable } = useJobs(owner.isOwner, { allJobs: true });
+  const jobsState = useJobs(owner.isOwner, { allJobs: true });
+  const { jobs, isAvailable, lastEndpoint, lastStatus, lastError, lastUpdatedAt } = jobsState;
   const [filter, setFilter] = useState<StatusFilter>('all');
+
+  // Build commit injected by Vite at build time. Lets the operator
+  // confirm the FE bundle is actually the latest deploy, not a
+  // cached old build. `__BUILD_COMMIT__` is defined as a string in
+  // vite.config.ts; falls back to 'dev' in tests.
+  const buildCommit = typeof __BUILD_COMMIT__ !== 'undefined' ? __BUILD_COMMIT__ : 'dev';
 
   const filteredJobs = useMemo(() => {
     if (filter === 'all') return jobs.slice(0, limit);
@@ -73,6 +80,57 @@ export function JobsDrawer({
     <div className={`jobs-drawer ${className || ''}`} style={containerStyle}>
       <header style={headerStyle}>
         <h3 style={titleStyle}>Jobs</h3>
+
+        {/* Phase 7 closure — visible diagnostic strip. Lets the
+            operator confirm WITHOUT devtools:
+              * which build of the FE is loaded (catches stale Vercel)
+              * which endpoint the hook is polling
+              * the HTTP status of the most recent fetch
+              * whether the response carried 0 rows or rows weren't fetched
+            Owner-only by definition since the drawer is owner-gated. */}
+        <div
+          style={debugStripStyle}
+          aria-label="Jobs panel diagnostics"
+          data-testid="jobs-debug"
+        >
+          <span style={debugItemStyle}>
+            <span style={debugLabelStyle}>build:</span>&nbsp;
+            <code>{buildCommit.slice(0, 7)}</code>
+          </span>
+          <span style={debugItemStyle}>
+            <span style={debugLabelStyle}>endpoint:</span>&nbsp;
+            <code>{lastEndpoint
+              ? lastEndpoint.replace(/^https?:\/\/[^/]+/, '')
+              : '(pending)'}</code>
+          </span>
+          <span style={debugItemStyle}>
+            <span style={debugLabelStyle}>status:</span>&nbsp;
+            <code style={statusColor(lastStatus)}>
+              {lastStatus ?? '(pending)'}
+            </code>
+          </span>
+          <span style={debugItemStyle}>
+            <span style={debugLabelStyle}>count:</span>&nbsp;
+            <code>{jobs.length}</code>
+          </span>
+          <span style={debugItemStyle}>
+            <span style={debugLabelStyle}>owner:</span>&nbsp;
+            <code>{String(owner.isOwner)}</code>
+          </span>
+          <span style={debugItemStyle}>
+            <span style={debugLabelStyle}>updated:</span>&nbsp;
+            <code>{lastUpdatedAt
+              ? `${Math.round((Date.now() - lastUpdatedAt) / 1000)}s ago`
+              : '(never)'}</code>
+          </span>
+          {lastError ? (
+            <span style={{ ...debugItemStyle, color: '#fca5a5' }}>
+              <span style={debugLabelStyle}>error:</span>&nbsp;
+              <code>{lastError}</code>
+            </span>
+          ) : null}
+        </div>
+
         <div style={tabsStyle} role="tablist" aria-label="Filter by job status">
           {STATUS_TABS.map((t) => {
             const count = t === 'all' ? jobs.length : (counts[t] || 0);
@@ -276,6 +334,38 @@ const timeStyle: React.CSSProperties = {
   color: 'rgba(255,255,255,0.55)',
   textAlign: 'right',
 };
+
+// ── Debug strip styles ────────────────────────────────────────────────────
+
+const debugStripStyle: React.CSSProperties = {
+  display: 'flex',
+  flexWrap: 'wrap',
+  gap: '0.6rem',
+  padding: '0.4rem 0.6rem',
+  borderRadius: '6px',
+  background: 'rgba(255,255,255,0.04)',
+  border: '1px solid rgba(255,255,255,0.06)',
+  fontSize: '0.7rem',
+  fontFamily: 'ui-monospace, SFMono-Regular, monospace',
+  color: 'rgba(255,255,255,0.65)',
+};
+
+const debugItemStyle: React.CSSProperties = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  whiteSpace: 'nowrap',
+};
+
+const debugLabelStyle: React.CSSProperties = {
+  color: 'rgba(255,255,255,0.45)',
+};
+
+function statusColor(s: number | undefined): React.CSSProperties {
+  if (s === undefined) return { color: 'rgba(255,255,255,0.55)' };
+  if (s >= 200 && s < 300) return { color: '#86efac' };
+  if (s >= 400 && s < 500) return { color: '#fdba74' };
+  return { color: '#fca5a5' };
+}
 
 const emptyStyle: React.CSSProperties = {
   padding: '1.5rem 1rem',
