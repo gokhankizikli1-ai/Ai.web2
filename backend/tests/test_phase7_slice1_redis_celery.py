@@ -240,3 +240,24 @@ class TestRedisMetrics:
         snap = redis_metrics.snapshot()
         assert snap["pings_total"] == 2
         assert snap["pings_failed"] == 1
+
+
+# ── Celery worker boot contract ────────────────────────────────────────────
+
+class TestCeleryAppExport:
+    """`celery -A backend.jobs.celery_app` imports the module and looks
+    for a module-level attribute named `app` (or `celery`). Without it,
+    worker boot fails with: "Module backend.jobs.celery_app has no
+    attribute celery". This regression test locks in that the attribute
+    exists at import time."""
+
+    def test_module_exposes_app_attribute(self):
+        from backend.jobs import celery_app
+        assert hasattr(celery_app, "app"), (
+            "celery_app.app must exist at import time so "
+            "`celery -A backend.jobs.celery_app worker` can find it"
+        )
+
+    def test_app_is_in_dunder_all(self):
+        from backend.jobs import celery_app
+        assert "app" in celery_app.__all__
