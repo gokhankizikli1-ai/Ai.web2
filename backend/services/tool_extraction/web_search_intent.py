@@ -243,6 +243,90 @@ _TOTAL_CHAR_CAP = 14_000
 _DEFAULT_MAX_RESULTS = 5
 
 
+# ── Phase 7 closure — shadow-job for inline path ───────────────────────────
+#
+# Diagnosis (production fix #157 was not enough): when the operator
+# left WEB_RESEARCH_VIA_CELERY=false OR one of the routing flags was
+# off, the inline path served the chat answer but no row landed in
+# jobs_store. AdminPanel showed count=0 even though research had run.
+#
+# The fix: AT THE END of the inline path (after a result exists), we
+# record a "shadow" job — status=succeeded, no runner dispatch — so
+# every research request shows up in /v2/jobs/all regardless of the
+# routing flag. The Jobs panel becomes a faithful record of research
+# activity rather than a routing-flag-conditional view.
+#
+# Distinguishable from real Celery jobs by metadata.shadow=True.
+
+def _record_inline_research_job(
+    *,
+    user_id:     Optional[str],
+    query:       str,
+    triggers:    tuple[str, ...],
+    citations:   list,
+    answer:      str,
+    provider:    str,
+    project_id:  Optional[str] = None,
+    correlation_id: Optional[str] = None,
+) -> None:
+    """Persist a status=succeeded job row directly to jobs_store. NO
+    runner dispatch — the work is already done. Adds metadata.shadow
+    so operators can distinguish post-hoc records from real queued
+    jobs.
+
+    Never raises — logs at WARNING and returns. The chat response
+    is unaffected by any failure here.
+    """
+    try:
+        from backend.services.jobs import store as jobs_store
+        from backend.services.jobs.types import JobRecord, STATUS_SUCCEEDED
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
+
+        # Compact result mirrors the research.deep handler's return
+        # shape so the FE doesn't need to special-case shadow jobs.
+        result = {
+            "query":     query,
+            "answer":    answer or "",
+            "citations": citations or [],
+            "count":     len(citations or []),
+            "provider":  provider or "inline",
+            "cached":    False,
+            "elapsed_ms": 0,
+        }
+        rec = jobs_store.insert(JobRecord(
+            kind=        "research.deep",
+            user_id=     str(user_id or "anonymous"),
+            project_id=  project_id,
+            status=      STATUS_SUCCEEDED,
+            payload={
+                "query": query, "max_results": _DEFAULT_MAX_RESULTS,
+                "depth": "basic",
+            },
+            result=      result,
+            progress=    100,
+            started_at=  now,
+            finished_at= now,
+            metadata={
+                "caller":         "chat_inline",
+                "shadow":         True,
+                "triggers":       list(triggers),
+                "correlation_id": correlation_id,
+            },
+        ))
+        logger.info(
+            "[JOB][SHADOW] id=%s kind=research.deep user_id=%s "
+            "citations=%d provider=%s query=%s",
+            rec.id, user_id or "anonymous",
+            len(citations or []), provider, query[:80],
+        )
+    except Exception as exc:                                  # pragma: no cover
+        logger.warning(
+            "[JOB][SHADOW] insert failed user_id=%s err=%s",
+            user_id, exc,
+        )
+
+
 # ── Phase 7 closure — Celery dispatch for chat-triggered research ──────────
 #
 # Bypass diagnosis: prior to this fix the chat stream called the
@@ -616,6 +700,24 @@ async def build_web_search_context_block(
             "triggers":  list(triggers),
             "error":     msg,
         }
+
+    # Phase 7 closure — record a shadow job so the AdminPanel Jobs
+    # tab shows the research request regardless of the routing flag.
+    # We reach this point only on the INLINE path; the Celery path
+    # early-returned with a real job already created. Extract the
+    # citations + answer from the envelope to mirror what the
+    # research.deep handler would persist.
+    _inline_data = envelope.get("data") or {}
+    _record_inline_research_job(
+        user_id=        user_id,
+        query=          query,
+        triggers=       triggers,
+        citations=      _inline_data.get("citations") or [],
+        answer=         (_inline_data.get("answer") or ""),
+        provider=       envelope.get("provider") or "unknown",
+        project_id=     project_id,
+        correlation_id= correlation_id,
+    )
 
     return _format_envelope_to_block(
         envelope=envelope, query=query, triggers=triggers,
