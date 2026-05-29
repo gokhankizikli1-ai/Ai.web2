@@ -39,8 +39,14 @@ def build_celery():
     """
     try:
         from celery import Celery
+        # kombu.Queue is REQUIRED for task_queues — Celery's queue
+        # manager does `queue.name`, which crashes with AttributeError
+        # on plain dicts (older versions silently coerced; current
+        # versions surface the bug as: "'dict' object has no attribute
+        # 'name'" at worker boot).
+        from kombu import Queue
     except ImportError:
-        logger.warning("celery_app: celery package not installed — returning None")
+        logger.warning("celery_app: celery / kombu package not installed — returning None")
         return None
 
     redis_url = os.getenv("REDIS_URL", "")
@@ -66,14 +72,19 @@ def build_celery():
         task_default_queue="korvix.default",
         task_queues=[
             # Per-domain queues for routing + per-queue worker scaling
-            # later. Slice 1 lets every queue exist; slice 2 picks
-            # which kind goes where via _queue_for_record.
-            {"name": "korvix.default"},
-            {"name": "korvix.research"},
-            {"name": "korvix.vision"},
-            {"name": "korvix.embeddings"},
-            {"name": "korvix.orchestration"},
-            {"name": "korvix.maintenance"},
+            # later. Routing by kind is in services/jobs/runner.py
+            # `_queue_for_record` (Phase 7 slice 3).
+            #
+            # MUST be kombu.Queue objects — passing dicts here crashes
+            # the worker at boot with AttributeError: 'dict' object has
+            # no attribute 'name'. Locked in by a regression test in
+            # test_phase7_slice1_redis_celery.py.
+            Queue("korvix.default"),
+            Queue("korvix.research"),
+            Queue("korvix.vision"),
+            Queue("korvix.embeddings"),
+            Queue("korvix.orchestration"),
+            Queue("korvix.maintenance"),
         ],
         task_acks_late=True,
         worker_prefetch_multiplier=1,
