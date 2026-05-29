@@ -99,6 +99,15 @@ def _build_dispatch_task():
 
             store.update(record_id, status=STATUS_RUNNING)
 
+            # Phase 7 slice 4 — heartbeat tick at task start. Cheap
+            # SETEX so /v2/db/health.redis.workers shows this worker
+            # as alive even before the handler emits any progress.
+            try:
+                from backend.services.jobs.heartbeat import write_heartbeat
+                asyncio.run(write_heartbeat())
+            except Exception:                                  # pragma: no cover
+                pass
+
             # Phase 7 slice 3 — REAL progress + cancellation hooks.
             #
             # report_progress: writes the % + label to the DB row AND
@@ -185,14 +194,60 @@ def _build_dispatch_task():
                 "[JOB][WORKER] dispatch failed record_id=%s err=%s",
                 record_id, exc,
             )
+
+            # Phase 7 slice 4 — DLQ routing on final retry.
+            # When the task has already retried max_retries times,
+            # Celery's self.retry would raise MaxRetriesExceededError
+            # and bubble. Instead we proactively check: if the next
+            # retry WOULD exceed the cap, route the record to the DLQ
+            # and return cleanly (no further requeue).
+            current_attempt = int(getattr(self.request, "retries", 0) or 0)
+            max_retries     = int(getattr(self, "max_retries", 3) or 3)
+
+            if current_attempt >= max_retries:
+                # Exhausted — flip to STATUS_FAILED_DLQ + push to the
+                # Redis mirror. NEVER re-raise self.retry here, that
+                # would loop.
+                try:
+                    from backend.services.jobs.dlq import dlq_enqueue
+                    asyncio.run(dlq_enqueue(
+                        record_id,
+                        kind=record.kind if record is not None else "unknown",
+                        error=str(exc),
+                        attempts=current_attempt + 1,
+                        user_id=(record.user_id if record is not None else None),
+                    ))
+                except Exception as dlq_exc:                  # pragma: no cover
+                    log.warning(
+                        "[JOB][WORKER] DLQ enqueue failed record_id=%s err=%s",
+                        record_id, dlq_exc,
+                    )
+                    # Fall back to plain STATUS_FAILED.
+                    try:
+                        from backend.services.jobs import store
+                        from backend.services.jobs.types import STATUS_FAILED
+                        store.update(record_id,
+                                     status=STATUS_FAILED,
+                                     error={"message": str(exc),
+                                            "dlq_fallback": True})
+                    except Exception:                          # pragma: no cover
+                        pass
+                # Return the dispatch result so Celery considers the
+                # task SUCCEEDED-from-its-perspective — the row state
+                # is the actual record of failure.
+                return {"ok": False, "dlq": True, "attempts": current_attempt + 1}
+
+            # Not yet exhausted — record the transient failure on the
+            # row and let Celery retry.
             try:
                 from backend.services.jobs import store
                 from backend.services.jobs.types import STATUS_FAILED
-                store.update(record_id, status=STATUS_FAILED, error=str(exc))
+                store.update(
+                    record_id, status=STATUS_FAILED,
+                    error={"message": str(exc), "attempt": current_attempt},
+                )
             except Exception:                                     # pragma: no cover
                 pass
-            # Celery retry: raise so the task is requeued (up to
-            # max_retries with exponential backoff).
             raise self.retry(exc=exc)
 
     return dispatch

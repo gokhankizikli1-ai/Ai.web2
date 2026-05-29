@@ -35,15 +35,22 @@ STATUS_SUCCEEDED = "succeeded"
 STATUS_FAILED    = "failed"
 STATUS_CANCELLED = "cancelled"
 STATUS_RETRYING  = "retrying"
+# Phase 7 slice 4 — distinct terminal status for jobs that exhausted
+# their Celery retries AND were routed to the dead-letter queue. Lets
+# the operator triage these separately from generic STATUS_FAILED
+# (programmer errors, bad input) and from STATUS_CANCELLED (user
+# action). Treated as terminal in TERMINAL_STATUSES below.
+STATUS_FAILED_DLQ = "failed_dlq"
 
 JOB_STATUSES: tuple[str, ...] = (
     STATUS_QUEUED, STATUS_RUNNING, STATUS_SUCCEEDED,
     STATUS_FAILED, STATUS_CANCELLED, STATUS_RETRYING,
+    STATUS_FAILED_DLQ,
 )
 
 # Terminal = no further transitions allowed (manager will reject).
 TERMINAL_STATUSES: frozenset[str] = frozenset({
-    STATUS_SUCCEEDED, STATUS_FAILED, STATUS_CANCELLED,
+    STATUS_SUCCEEDED, STATUS_FAILED, STATUS_CANCELLED, STATUS_FAILED_DLQ,
 })
 
 
