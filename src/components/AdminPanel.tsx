@@ -19,8 +19,9 @@ import { motion } from 'framer-motion';
 import {
   X, ShieldCheck, Activity, Bot, Database, Wrench,
   FileCode, ClipboardList, MessageSquare, Loader2, AlertTriangle,
-  Zap,
+  Zap, ListChecks,
 } from 'lucide-react';
+import { JobsDrawer } from './JobsDrawer';
 import type { OwnerModeState, OrchestrationCapability } from '@/hooks/useOwnerMode';
 import { ORCHESTRATION_CAPABILITY_IDS } from '@/hooks/useOwnerMode';
 
@@ -32,7 +33,7 @@ const API_BASE = `${
 
 type TabId =
   | 'overview' | 'session' | 'agents' | 'memory' | 'tools'
-  | 'prompts' | 'audit' | 'owner-agent';
+  | 'prompts' | 'audit' | 'owner-agent' | 'jobs';
 
 const TABS: { id: TabId; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: 'overview',     label: 'Overview',     icon: Activity },
@@ -43,6 +44,8 @@ const TABS: { id: TabId; label: string; icon: React.ComponentType<{ className?: 
   { id: 'prompts',      label: 'Prompts',      icon: FileCode },
   { id: 'audit',        label: 'Audit',        icon: ClipboardList },
   { id: 'owner-agent',  label: 'Owner Agent',  icon: MessageSquare },
+  // Phase 7 slice 5 — live job queue inspector (owner-only).
+  { id: 'jobs',         label: 'Jobs',         icon: ListChecks },
 ];
 
 interface AdminPanelProps {
@@ -295,6 +298,7 @@ export default function AdminPanel({ ownerMode, onClose }: AdminPanelProps) {
                 {activeTab === 'prompts'     && <PromptsTab />}
                 {activeTab === 'audit'       && <AuditTab />}
                 {activeTab === 'owner-agent' && <OwnerAgentTab />}
+                {activeTab === 'jobs'        && <JobsDrawer />}
               </>
             )}
           </div>
