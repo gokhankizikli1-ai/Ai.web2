@@ -268,11 +268,29 @@ def _record_inline_research_job(
     provider:    str,
     project_id:  Optional[str] = None,
     correlation_id: Optional[str] = None,
+    caller:      str = "chat_inline",
 ) -> None:
     """Persist a status=succeeded job row directly to jobs_store. NO
     runner dispatch — the work is already done. Adds metadata.shadow
     so operators can distinguish post-hoc records from real queued
     jobs.
+
+    The `caller` param distinguishes invocation paths so the operator
+    can tell where the chat invoked web_research from:
+      * chat_inline  — build_web_search_context_block intent path
+      * chat_tool    — tool_orchestrator.run_tools_for_mode (mode-based)
+      * chat_func    — LLM function-calling path
+      * (future)     — any new caller adds itself here
+
+    Hard runtime proof (PR #159 requirement):
+    Three tagged log lines fire so the operator can see the full chain
+    in Railway logs:
+      [JOB][SHADOW] before insert
+      [JOB][SHADOW] after insert with job_id
+      [JOB][SHADOW_VERIFY] immediate re-read of jobs_store row count
+    If SHADOW_VERIFY count > 0 but /v2/jobs/all returns count = 0,
+    DB/session mismatch is the cause.
+    If SHADOW never appears, the chat is bypassing the helper.
 
     Never raises — logs at WARNING and returns. The chat response
     is unaffected by any failure here.
@@ -281,8 +299,15 @@ def _record_inline_research_job(
         from backend.services.jobs import store as jobs_store
         from backend.services.jobs.types import JobRecord, STATUS_SUCCEEDED
         from datetime import datetime, timezone
-        now = datetime.now(timezone.utc).isoformat()
 
+        logger.info(
+            "[JOB][SHADOW] before-insert caller=%s user_id=%s "
+            "query=%s citations=%d provider=%s",
+            caller, user_id or "anonymous",
+            query[:80], len(citations or []), provider,
+        )
+
+        now = datetime.now(timezone.utc).isoformat()
         # Compact result mirrors the research.deep handler's return
         # shape so the FE doesn't need to special-case shadow jobs.
         result = {
@@ -308,23 +333,52 @@ def _record_inline_research_job(
             started_at=  now,
             finished_at= now,
             metadata={
-                "caller":         "chat_inline",
+                "caller":         caller,
                 "shadow":         True,
                 "triggers":       list(triggers),
                 "correlation_id": correlation_id,
             },
         ))
         logger.info(
-            "[JOB][SHADOW] id=%s kind=research.deep user_id=%s "
-            "citations=%d provider=%s query=%s",
-            rec.id, user_id or "anonymous",
-            len(citations or []), provider, query[:80],
+            "[JOB][SHADOW] after-insert id=%s kind=research.deep caller=%s "
+            "user_id=%s db_path=%s",
+            rec.id, caller, user_id or "anonymous",
+            _jobs_db_path(),
         )
+
+        # IMMEDIATE re-read on the same store — proves the row landed
+        # in the SAME database that /v2/jobs/all reads from. If this
+        # number > 0 but /v2/jobs/all still returns 0, the operator
+        # knows it's a DB-path / multi-instance / SQLite-file mismatch.
+        try:
+            verify_rec = jobs_store.get(rec.id)
+            total = jobs_store.table_counts()
+            logger.info(
+                "[JOB][SHADOW_VERIFY] id=%s found=%s db_path=%s "
+                "total_rows=%s",
+                rec.id, verify_rec is not None,
+                _jobs_db_path(), total,
+            )
+        except Exception as ver_exc:                          # pragma: no cover
+            logger.warning(
+                "[JOB][SHADOW_VERIFY] re-read failed id=%s err=%s",
+                rec.id, ver_exc,
+            )
     except Exception as exc:                                  # pragma: no cover
         logger.warning(
             "[JOB][SHADOW] insert failed user_id=%s err=%s",
             user_id, exc,
         )
+
+
+def _jobs_db_path() -> str:
+    """Return the jobs_store DB path the API process is using. Lets
+    the operator visually compare the writer's path against the
+    reader's — a mismatch (different files / different containers)
+    is the most likely explanation when SHADOW_VERIFY shows rows but
+    /v2/jobs/all returns zero."""
+    import os
+    return os.getenv("JOBS_DB_PATH") or "(unset → ./jobs.db)"
 
 
 # ── Phase 7 closure — Celery dispatch for chat-triggered research ──────────

@@ -216,9 +216,17 @@ def list_all_jobs(
                                                      "message": "Not found"})
     items = jobs_client.list_all(kind=kind, status=status,
                                  limit=limit, offset=offset)
+    # Phase 7 closure — surface the DB path so the operator can
+    # compare against [JOB][SHADOW_VERIFY]. If the paths differ, the
+    # writer and reader are not seeing the same SQLite file (multi-
+    # container / ephemeral disk).
+    import os as _os
+    _db_path = _os.getenv("JOBS_DB_PATH") or "(unset → ./jobs.db)"
     logger.info(
-        "[JOB][JOBS_API] endpoint=/v2/jobs/all caller=%s count=%d filters: kind=%s status=%s",
-        user.id, len(items), kind or "*", status or "*",
+        "[JOB][JOBS_API] endpoint=/v2/jobs/all caller=%s count=%d "
+        "db_path=%s filters: kind=%s status=%s",
+        user.id, len(items), _db_path,
+        kind or "*", status or "*",
     )
     return envelope_ok(
         data={"jobs": [j.to_dict() for j in items]},
