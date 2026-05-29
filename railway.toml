@@ -1,0 +1,39 @@
+# Railway build + deploy configuration.
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# Railway has been migrating its default builder from Nixpacks to
+# Railpack. Railpack uses `mise` internally for runtime detection.
+# That's why our prior nixpacks.toml fix had no effect — Railway
+# wasn't even invoking Nixpacks anymore.
+#
+# Without this file, the build now fails with:
+#
+#   mise ERROR Failed to install core: python@3.11.9
+#   verify GitHub artifact attestations
+#   process "mise install" did not complete successfully
+#
+# This file explicitly selects NIXPACKS as the builder, so Railway
+# uses Nixpacks + reads our nixpacks.toml (which pins Python via
+# Nix packages, bypassing mise entirely).
+#
+# WHAT THIS FILE DOES NOT DO
+# --------------------------
+# * NO start command override — Procfile still drives the
+#   `web:` (API) and `worker:` (Celery) services.
+# * NO Dockerfile path — we deliberately stay on Nixpacks so the
+#   Procfile-per-service-process pattern keeps working.
+# * NO restart policy change — keep Railway's defaults.
+#
+# IF RAILWAY MIGRATES BUILDERS AGAIN
+# ----------------------------------
+# 1. Check the Railway docs for the new builder identifier
+# 2. Update [build].builder below
+# 3. Test with a preview deploy before merging the change
+
+[build]
+# Force Nixpacks even when the Railway account default has moved on
+# to Railpack or a newer builder. Nixpacks is mature, supports our
+# Procfile-driven multi-service setup, and our nixpacks.toml
+# explicitly pins Python via Nix packages (no mise round-trip).
+builder = "NIXPACKS"

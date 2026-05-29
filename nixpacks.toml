@@ -2,38 +2,39 @@
 #
 # WHY THIS FILE EXISTS
 # --------------------
-# Without this file, Nixpacks autodetects Python from `runtime.txt`
-# and installs the interpreter via mise. mise verifies downloaded
-# Python builds against GitHub artifact attestations — when those
-# checks transiently fail (upstream incident in early 2026), every
-# build fails with:
+# Railway migrated its default builder to Railpack, which uses
+# `mise` internally for runtime detection. Every build failed
+# with:
 #
-#   Failed to install core: python@3.11.9
+#   mise ERROR Failed to install core: python@3.11.9
 #   verify GitHub artifact attestations
 #   process "mise install" did not complete successfully
 #
-# Pinning `nixPkgs` here forces Nixpacks to resolve Python through
-# the Nix package manager (cached as a Railway build dep, no mise
-# round-trip, no GitHub artifact verification). The runtime.txt
-# value is preserved for documentation but mise no longer sees it.
+# `railway.toml` forces Nixpacks (back to the older, mise-free
+# builder). This file then pins Python via Nix packages so the
+# Nixpacks build cache resolves the interpreter directly — no
+# mise involvement at any step.
+#
+# `runtime.txt` was deleted in the same commit. It was the
+# legacy Heroku-style trigger that mise was reading. Without
+# it, even if Railway flips builders again, mise has nothing
+# to install.
 #
 # WHAT THIS FILE DOES NOT DO
 # --------------------------
-# * NO Dockerfile — we still use Nixpacks. Procfile-driven start
-#   commands still work: `web:` for the API service, `worker:` for
-#   the Celery worker service. Railway picks the right one per
-#   service.
+# * NO Dockerfile — still on Nixpacks, so the Procfile pattern
+#   keeps each Railway service (api + worker) on the right
+#   start command.
 # * NO custom install command — `pip install -r requirements.txt`
 #   is autodetected by Nixpacks.
 # * NO start command override — defer to Procfile.
 #
 # IF YOU NEED TO CHANGE THE PYTHON VERSION
 # ----------------------------------------
-# Edit nixPkgs below AND update runtime.txt to match (the value
-# in runtime.txt is informational only after this file lands).
-# `python311` resolves to Python 3.11 latest in nixpkgs. To pin
-# a specific patch, switch to `python311 = "3.11.9"` style but
-# nixpkgs only provides the latest patch for each minor version.
+# Edit nixPkgs below (e.g. `python312` for 3.12). `python311`
+# resolves to the latest 3.11.x patch in nixpkgs. nixpkgs only
+# ships the latest patch per minor; if a specific patch (e.g.
+# 3.11.9 exactly) is needed, an overlay is required.
 
 [phases.setup]
 # python311 = Python 3.11.x (latest patch in current nixpkgs)
