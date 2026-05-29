@@ -41,7 +41,9 @@ export function JobsDrawer({
   className, limit = 100,
 }: JobsDrawerProps): JSX.Element {
   const owner = useOwnerMode();
-  const { jobs, isAvailable } = useJobs(owner.isOwner);
+  // Owner panel reads /v2/jobs/all so chat-created jobs assigned to a
+  // different user_id (e.g. anonymous guest session) are visible.
+  const { jobs, isAvailable } = useJobs(owner.isOwner, { allJobs: true });
   const [filter, setFilter] = useState<StatusFilter>('all');
 
   const filteredJobs = useMemo(() => {

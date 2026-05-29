@@ -329,8 +329,8 @@ async def _run_research_via_celery(
         return None
 
     logger.info(
-        "[CELERY_DISPATCH] research.deep job_id=%s query=%s",
-        job.id, query[:80],
+        "[JOB][CREATE] id=%s kind=research.deep user_id=%s query=%s",
+        job.id, user_id or "anonymous", query[:80],
     )
 
     # 2) Subscribe to the job event bus + wait for the terminal frame.
@@ -466,7 +466,22 @@ async def build_web_search_context_block(
         return None, {"triggered": False, "reason": "empty query"}
 
     # ── Phase 7 closure — Celery dispatch path ───────────────────────────
-    if _route_research_via_celery():
+    # [JOB][CHAT_ROUTE] diagnostic — surface the routing decision so
+    # operators can confirm WEB_RESEARCH_VIA_CELERY is actually being
+    # read at runtime. The trio of flags is dumped explicitly so a
+    # "False" trace is self-explanatory.
+    import os as _os
+    _via_celery = _route_research_via_celery()
+    logger.info(
+        "[JOB][CHAT_ROUTE] uid=%s | via_celery=%s "
+        "| WEB_RESEARCH_VIA_CELERY=%s | ENABLE_JOB_QUEUE=%s | JOB_QUEUE_RESEARCH=%s",
+        user_id, _via_celery,
+        _os.getenv("WEB_RESEARCH_VIA_CELERY", "false"),
+        _os.getenv("ENABLE_JOB_QUEUE", "false"),
+        _os.getenv("JOB_QUEUE_RESEARCH", "false"),
+    )
+
+    if _via_celery:
         envelope = await _run_research_via_celery(
             user_id=user_id, query=query,
             project_id=project_id, correlation_id=correlation_id,

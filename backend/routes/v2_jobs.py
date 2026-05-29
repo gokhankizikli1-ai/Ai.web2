@@ -185,6 +185,10 @@ def list_jobs(
         project_id=project_id, agent_id=agent_id,
         limit=limit, offset=offset,
     )
+    logger.info(
+        "[JOB][JOBS_API] endpoint=/v2/jobs user_id=%s count=%d filters: kind=%s status=%s",
+        user.id, len(items), kind or "*", status or "*",
+    )
     return envelope_ok(
         data={"jobs": [j.to_dict() for j in items]},
         endpoint="/v2/jobs",
@@ -212,6 +216,10 @@ def list_all_jobs(
                                                      "message": "Not found"})
     items = jobs_client.list_all(kind=kind, status=status,
                                  limit=limit, offset=offset)
+    logger.info(
+        "[JOB][JOBS_API] endpoint=/v2/jobs/all caller=%s count=%d filters: kind=%s status=%s",
+        user.id, len(items), kind or "*", status or "*",
+    )
     return envelope_ok(
         data={"jobs": [j.to_dict() for j in items]},
         endpoint="/v2/jobs/all",
