@@ -103,6 +103,38 @@ class WebResearchTool(BaseTool):
         if result.error:
             return self._unavailable(result.error)
 
+        # Phase 7 closure — shadow-job recording AT the tool boundary.
+        # PR #158 added this in build_web_search_context_block, but the
+        # chat path can also reach this tool via:
+        #   * run_tools_for_mode("research"/"deep_think"/...) — the
+        #     mode-based orchestrator that bypasses intent detection
+        #   * OpenAI function-calling — when the LLM decides to invoke
+        #     web_research itself
+        # Putting the record_inline_research_job call HERE guarantees
+        # every successful tool run lands a row in jobs_store regardless
+        # of the caller. metadata.shadow=true + metadata.caller carries
+        # the originating context (chat_tool by default).
+        try:
+            from backend.services.tool_extraction.web_search_intent import (
+                _record_inline_research_job,
+            )
+            _record_inline_research_job(
+                user_id=    ctx.get("user_id"),
+                query=      q,
+                triggers=   tuple(ctx.get("triggers") or ("tool_call",)),
+                citations=  [c.to_dict() for c in result.citations],
+                answer=     result.answer or "",
+                provider=   result.provider or provider,
+                project_id= ctx.get("project_id"),
+                correlation_id=ctx.get("correlation_id"),
+                caller=     str(ctx.get("caller") or "chat_tool"),
+            )
+        except Exception as _shadow_exc:                          # pragma: no cover
+            logger.warning(
+                "web_research: shadow-job record failed (non-fatal): %s",
+                _shadow_exc,
+            )
+
         return self._ok(
             {
                 "query":      result.query,
