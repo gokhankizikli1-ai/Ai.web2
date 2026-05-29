@@ -448,9 +448,43 @@ class CeleryJobRunner:
 
 
 def _queue_for_record(record_id: str) -> str:
-    """Route to the appropriate queue. For slice 1 every job lands on
-    the default queue; the routing per-kind ships in slice 2 once
-    handlers are ported."""
+    """Phase 7 slice 3 — route a job to the right queue based on its
+    kind. Workers can then run with `-Q korvix.vision` (or similar) to
+    pin one process per heavy queue.
+
+    Mapping (prefix match, first hit wins):
+      vision.*       → korvix.vision
+      research.*     → korvix.research
+      embeddings.*   → korvix.embeddings
+      orchestration.*→ korvix.orchestration
+      memory.*       → korvix.maintenance        (memory consolidation,
+                                                  TTL evict, etc.)
+      default        → korvix.default
+
+    DB cost is one read per submit; sub-millisecond against either
+    SQLite or Postgres. Falls back to korvix.default silently when the
+    lookup fails (we still want the job to land somewhere).
+    """
+    try:
+        from backend.services.jobs import store
+        record = store.get(record_id)
+        if record is None or not record.kind:
+            return "korvix.default"
+        kind = record.kind.strip().lower()
+    except Exception:
+        return "korvix.default"
+
+    # Order matters — first matching prefix wins.
+    routes: tuple[tuple[str, str], ...] = (
+        ("vision.",        "korvix.vision"),
+        ("research.",      "korvix.research"),
+        ("embeddings.",    "korvix.embeddings"),
+        ("orchestration.", "korvix.orchestration"),
+        ("memory.",        "korvix.maintenance"),
+    )
+    for prefix, queue in routes:
+        if kind.startswith(prefix):
+            return queue
     return "korvix.default"
 
 
