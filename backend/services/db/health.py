@@ -58,6 +58,19 @@ async def health_check() -> dict[str, Any]:
     except Exception as exc:                                  # pragma: no cover
         out["redis"] = {"ok": False, "error": f"probe: {exc}"}
 
+    # Phase 7 slice 4 — queue depths + active workers. Owner-only
+    # endpoint; both probes are cheap and additive.
+    try:
+        from backend.services.redis_client.queues import get_queue_depths
+        out["redis"]["queues"] = await get_queue_depths()
+    except Exception as exc:                                  # pragma: no cover
+        out["redis"]["queues"] = []
+    try:
+        from backend.services.jobs.heartbeat import list_active_workers
+        out["redis"]["workers"] = await list_active_workers()
+    except Exception as exc:                                  # pragma: no cover
+        out["redis"]["workers"] = []
+
     if backend == "sqlite":
         # SQLite stores are self-contained — there's nothing for THIS
         # foundation to probe. The legacy per-store health endpoints

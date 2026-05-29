@@ -284,6 +284,10 @@ class TestCeleryQueuesAreKombuObjects:
         "korvix.embeddings",
         "korvix.orchestration",
         "korvix.maintenance",
+        # Phase 7 slice 4 — DLQ sink. Workers don't normally subscribe;
+        # operator inspects via the Redis LIST mirror (korvix.dlq.list)
+        # OR /v2/jobs?status=failed_dlq.
+        "korvix.dlq",
     }
 
     @pytest.fixture

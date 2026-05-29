@@ -85,6 +85,10 @@ def build_celery():
             Queue("korvix.embeddings"),
             Queue("korvix.orchestration"),
             Queue("korvix.maintenance"),
+            # Phase 7 slice 4 — DLQ for max-retries-exhausted jobs.
+            # No worker should normally subscribe to this queue; it's
+            # a sink the operator inspects via the Redis LIST mirror.
+            Queue("korvix.dlq"),
         ],
         task_acks_late=True,
         worker_prefetch_multiplier=1,
