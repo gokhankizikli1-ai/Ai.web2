@@ -99,23 +99,78 @@ def _build_dispatch_task():
 
             store.update(record_id, status=STATUS_RUNNING)
 
-            # Build the JobContext expected by every handler. The
-            # SSE-emit hook is a no-op in the worker — workers publish
-            # progress over the event bus, which the SSE bridge in
-            # slice 2 consumes via Redis pub/sub.
+            # Phase 7 slice 3 — REAL progress + cancellation hooks.
+            #
+            # report_progress: writes the % + label to the DB row AND
+            # publishes a JobEvent. JobEventBus.publish() schedules a
+            # Redis publish (slice 2), which the API replicas pick up
+            # via PSUBSCRIBE and re-emit to their local SSE consumers.
+            # End-to-end: worker handler → DB + Redis → API → SSE → FE.
+            #
+            # is_cancelled: re-reads the record from the store on each
+            # call. Costs one cheap query — handlers SHOULD call this
+            # between phases (not on a tight inner loop). When the FE
+            # POSTs /v2/jobs/{id}/cancel, the row flips to "cancelled"
+            # and the worker observes it on the next poll.
+            from backend.services.jobs.events import get_bus
+            from backend.services.jobs.types import (
+                JobEvent, STATUS_CANCELLED,
+            )
+
+            async def _report_progress(pct: int, label: str | None = None) -> None:
+                # Clamp inside the dispatcher — defensive against
+                # handler bugs that emit out-of-range values.
+                p = max(0, min(100, int(pct)))
+                try:
+                    store.update(record_id, progress=p, progress_label=label)
+                except Exception as upd_exc:                       # pragma: no cover
+                    log.warning("[JOB][WORKER] progress update failed: %s", upd_exc)
+                # Publish to the event bus → Redis → SSE consumers.
+                try:
+                    await get_bus().publish(JobEvent(
+                        job_id=record_id, kind="progress",
+                        payload={"progress": p, "label": label},
+                        timestamp="",
+                    ))
+                except Exception as pub_exc:                       # pragma: no cover
+                    log.warning("[JOB][WORKER] progress publish failed: %s", pub_exc)
+
+            async def _is_cancelled() -> bool:
+                # Lightweight re-read. Returns True when the row is
+                # `cancelled` (typically set by the /v2/jobs/{id}/cancel
+                # route).
+                try:
+                    cur = store.get(record_id)
+                    return cur is not None and cur.status == STATUS_CANCELLED
+                except Exception:
+                    # Don't false-positive cancellation on a transient
+                    # DB blip — let the handler keep running.
+                    return False
+
             ctx = JobContext(
                 record=record,
-                report_progress=lambda *_a, **_kw: None,
-                is_cancelled=lambda: False,
+                report_progress=_report_progress,
+                is_cancelled=_is_cancelled,
             )
 
             # Handlers are async. Run on a fresh event loop in the
             # worker process — Celery workers default to sync.
             result = asyncio.run(handler(ctx))
 
+            # If the handler bailed out due to cancellation it should
+            # have set the cancelled flag in the result. Honour both
+            # the explicit return AND the row state — whichever indicates
+            # cancellation wins.
+            cur = store.get(record_id)
+            final_status = STATUS_SUCCEEDED
+            if cur is not None and cur.status == STATUS_CANCELLED:
+                final_status = STATUS_CANCELLED
+            elif isinstance(result, dict) and result.get("cancelled_mid_flight"):
+                final_status = STATUS_CANCELLED
+
             store.update(
                 record_id,
-                status=STATUS_SUCCEEDED,
+                status=final_status,
                 result=result,
             )
             elapsed_ms = int((time.monotonic() - t0) * 1000)

@@ -42,7 +42,19 @@ _PUBLIC_KINDS: tuple[str, ...] = (
     "echo",
     "sleep_progress",
     "memory_consolidation_stub",
+    # Phase 7 slice 3 — handler ports
+    "vision.analyze",
+    "research.deep",
 )
+
+
+# Phase 7 slice 3 — per-handler env gates so a single misbehaving
+# handler can be rolled back without disabling all of Celery. Read
+# dynamically on every invocation so a Railway env flip is live without
+# restarting the worker.
+def _kind_enabled(env_name: str) -> bool:
+    import os
+    return os.getenv(env_name, "false").strip().lower() == "true"
 
 
 def public_kinds() -> tuple[str, ...]:
@@ -141,5 +153,170 @@ async def memory_consolidation_stub(ctx: JobContext) -> dict:
     }
 
 
+# ── vision.analyze ───────────────────────────────────────────────────────────
+
+@korvix_task("vision.analyze")
+async def vision_analyze(ctx: JobContext) -> dict:
+    """Phase 7 slice 3 — port of the vision pipeline to the job queue.
+
+    Payload:
+      asset_id: str  — required. Asset to analyze.
+      force:    bool — re-analyze even when a cached result exists.
+      user_id:  str  — ownership check; defaults to record.user_id.
+
+    Routes via per-kind queue mapping to korvix.vision. Behind a
+    `JOB_QUEUE_VISION=true` gate so a single bad ship doesn't block
+    other Celery work.
+
+    Progress checkpoints:
+       5%  validating asset
+      20%  loaded record
+      40%  running analyzer
+      90%  persisting result
+     100%  done
+
+    Cancellation: handler polls `ctx.is_cancelled()` between phases.
+    A late cancel during the analyzer call doesn't interrupt the
+    OpenAI request — that one's atomic — but stops us before we
+    persist the result so the row reflects the cancellation.
+    """
+    if not _kind_enabled("JOB_QUEUE_VISION"):
+        return {
+            "skipped": True,
+            "reason":  "JOB_QUEUE_VISION disabled",
+        }
+
+    payload  = ctx.record.payload or {}
+    asset_id = str(payload.get("asset_id") or "").strip()
+    if not asset_id:
+        raise ValueError("vision.analyze: payload.asset_id is required")
+    user_id  = str(payload.get("user_id") or ctx.record.user_id or "").strip()
+    force    = bool(payload.get("force", False))
+
+    await ctx.report_progress(5, "validating asset")
+    if await ctx.is_cancelled():
+        return {"cancelled_mid_flight": True}
+
+    from backend.services.vision import client as vision_client
+    from backend.services.assets import client as assets_client
+
+    asset = assets_client.get(asset_id, user_id=user_id or None)
+    if asset is None:
+        raise ValueError(f"vision.analyze: asset {asset_id} not found")
+
+    await ctx.report_progress(20, "asset loaded")
+    if await ctx.is_cancelled():
+        return {"cancelled_mid_flight": True}
+
+    await ctx.report_progress(40, "running vision analyzer")
+    # The analyzer call is sync today — run in a thread so we don't
+    # block the worker's event loop.
+    result = await asyncio.to_thread(
+        vision_client.VisionClient().analyze,
+        asset_id, user_id=user_id or None, force=force,
+    )
+
+    if await ctx.is_cancelled():
+        return {"cancelled_mid_flight": True, "analyzer_completed": True}
+
+    if result is None:
+        # Analyzer returned None — either disabled or asset unsuitable.
+        raise RuntimeError(
+            "vision.analyze: analyzer returned no result "
+            "(check ENABLE_VISION_PIPELINE)"
+        )
+
+    await ctx.report_progress(90, "persisting result")
+    # vision_client.analyze already persists via store.upsert; nothing
+    # more to do here. The 100% tick fires from the dispatcher after
+    # this handler returns.
+
+    return {
+        "asset_id":  asset_id,
+        "kind":      result.kind,
+        "summary":   (result.summary or "")[:500],
+        "tokens":    getattr(result, "tokens", None),
+        "created_at": result.created_at,
+    }
+
+
+# ── research.deep ────────────────────────────────────────────────────────────
+
+@korvix_task("research.deep")
+async def research_deep(ctx: JobContext) -> dict:
+    """Phase 7 slice 3 — long-form web research as a job.
+
+    Replaces the inline path that watchdogs after 30s idle / 90s
+    total. Backed by the existing Tavily→Exa→Brave provider cascade
+    (Phase 11 — #143). Routes to korvix.research.
+
+    Payload:
+      query:       str  — required. Natural-language research query.
+      max_results: int  — citations to return (1-10, default 5)
+      depth:       str  — "basic" | "advanced" (default "basic")
+      include_domains: list[str] | None
+      exclude_domains: list[str] | None
+
+    Behind `JOB_QUEUE_RESEARCH=true`.
+
+    Progress:
+       5%  validating query
+      20%  dispatching to research client
+      80%  results received
+     100%  done
+    """
+    if not _kind_enabled("JOB_QUEUE_RESEARCH"):
+        return {
+            "skipped": True,
+            "reason":  "JOB_QUEUE_RESEARCH disabled",
+        }
+
+    payload = ctx.record.payload or {}
+    query   = str(payload.get("query") or "").strip()
+    if not query:
+        raise ValueError("research.deep: payload.query is required")
+
+    max_results = max(1, min(10, int(payload.get("max_results", 5))))
+    depth       = "advanced" if str(payload.get("depth", "")).lower() == "advanced" else "basic"
+    include     = payload.get("include_domains") or None
+    exclude     = payload.get("exclude_domains") or None
+
+    await ctx.report_progress(5, "validating query")
+    if await ctx.is_cancelled():
+        return {"cancelled_mid_flight": True}
+
+    from backend.services.research import client as research_client
+
+    await ctx.report_progress(20, "dispatching providers")
+    result = await research_client.search(
+        query,
+        max_results=    max_results,
+        depth=          depth,
+        include_domains=include,
+        exclude_domains=exclude,
+    )
+
+    if await ctx.is_cancelled():
+        return {"cancelled_mid_flight": True, "provider_completed": True}
+
+    await ctx.report_progress(80, "results received")
+
+    if result.error:
+        # Bubble the error so Celery's retry kicks in for transient
+        # provider issues (timeout / rate_limit). DLQ ships in slice 4.
+        raise RuntimeError(f"research.deep: {result.error}")
+
+    return {
+        "query":      result.query,
+        "answer":     result.answer,
+        "citations":  [c.to_dict() for c in result.citations],
+        "count":      len(result.citations),
+        "provider":   result.provider,
+        "cached":     result.cached,
+        "elapsed_ms": result.elapsed_ms,
+    }
+
+
 __all__ = ["public_kinds", "is_public_kind",
-           "echo", "sleep_progress", "memory_consolidation_stub"]
+           "echo", "sleep_progress", "memory_consolidation_stub",
+           "vision_analyze", "research_deep"]
