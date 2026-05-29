@@ -261,3 +261,68 @@ class TestCeleryAppExport:
     def test_app_is_in_dunder_all(self):
         from backend.jobs import celery_app
         assert "app" in celery_app.__all__
+
+
+# ── task_queues must be kombu.Queue objects ───────────────────────────────
+
+class TestCeleryQueuesAreKombuObjects:
+    """Production hotfix regression: passing plain dicts to task_queues
+    crashes the worker at boot with:
+
+        AttributeError: 'dict' object has no attribute 'name'
+
+    because Celery's queue manager does `queue.name` (attribute access),
+    not `queue["name"]`. The fix is to wrap each entry in `kombu.Queue`.
+    This test locks the fix in: every entry in `task_queues` must
+    expose a `.name` attribute matching the expected `korvix.*` set.
+    """
+
+    EXPECTED_QUEUES = {
+        "korvix.default",
+        "korvix.research",
+        "korvix.vision",
+        "korvix.embeddings",
+        "korvix.orchestration",
+        "korvix.maintenance",
+    }
+
+    @pytest.fixture
+    def app(self, monkeypatch):
+        # Provide a non-empty REDIS_URL so the app constructs cleanly;
+        # we never actually connect.
+        monkeypatch.setenv("REDIS_URL", "redis://stub@host/0")
+        from backend.jobs.celery_app import build_celery
+        a = build_celery()
+        if a is None:
+            pytest.skip("celery / kombu not installed in this environment")
+        return a
+
+    def test_task_queues_is_a_list(self, app):
+        queues = app.conf.task_queues
+        assert queues is not None
+        assert hasattr(queues, "__iter__")
+
+    def test_every_entry_has_name_attribute(self, app):
+        """The exact symptom of the boot crash — every entry must
+        expose `.name` as an attribute, not a dict key."""
+        for q in app.conf.task_queues:
+            assert hasattr(q, "name"), (
+                f"task_queues entry {q!r} has no `.name` attribute. "
+                f"This crashes the worker at boot — use kombu.Queue, "
+                f"not dict."
+            )
+            # Defensive: dicts pretend to have many things but never
+            # `.name` as attribute. Catch that case explicitly.
+            assert not isinstance(q, dict), (
+                f"task_queues entry must be kombu.Queue, got dict: {q!r}"
+            )
+
+    def test_expected_queue_names_present(self, app):
+        names = {q.name for q in app.conf.task_queues}
+        missing = self.EXPECTED_QUEUES - names
+        extra   = names - self.EXPECTED_QUEUES
+        assert not missing, f"missing queues: {sorted(missing)}"
+        assert not extra,   f"unexpected queues: {sorted(extra)}"
+
+    def test_default_queue_is_korvix_default(self, app):
+        assert app.conf.task_default_queue == "korvix.default"
