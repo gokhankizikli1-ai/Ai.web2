@@ -99,4 +99,24 @@ def get_app():
     return _app
 
 
-__all__ = ["build_celery", "get_app"]
+# ── Module-level `app` attribute — REQUIRED by `celery -A` ────────────────
+#
+# Celery's `-A backend.jobs.celery_app` flag does
+#     import backend.jobs.celery_app
+# then looks for an attribute named `app` (or `celery`). Without an
+# eagerly-constructed module-level handle, the worker boot fails with:
+#     "Module backend.jobs.celery_app has no attribute celery"
+#
+# This MUST be at import time, not inside a factory, because Celery
+# inspects the module object as soon as the import returns.
+#
+# Side effect: importing this module now eagerly constructs the Celery
+# app. That's fine because:
+#   * The API process does NOT import this module on startup
+#     (CeleryJobRunner.submit lazy-imports it). API boot is unaffected.
+#   * The worker process IS this module's only consumer at import time.
+#     Eager construction here is what the worker needs.
+app = build_celery()
+
+
+__all__ = ["build_celery", "get_app", "app"]
