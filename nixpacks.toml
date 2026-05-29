@@ -37,8 +37,12 @@
 # 3.11.9 exactly) is needed, an overlay is required.
 
 [phases.setup]
-# python311 = Python 3.11.x (latest patch in current nixpkgs)
-# gcc      = build toolchain for any wheel-less Python dep (asyncpg,
-#            psycopg, etc all ship binary wheels today but gcc is a
-#            cheap defensive backstop)
-nixPkgs = ["python311", "gcc"]
+# python311  = Python 3.11.x (latest patch in current nixpkgs)
+# nodejs_20  = Node 20 LTS — required because Nixpacks autodetects
+#              the JS build from package.json and runs `npm ci` +
+#              `npm run build` (tsc + vite). npm ships bundled with
+#              the Node package.
+# gcc        = build toolchain for any wheel-less Python dep (asyncpg,
+#              psycopg, etc all ship binary wheels today but gcc is a
+#              cheap defensive backstop)
+nixPkgs = ["python311", "nodejs_20", "gcc"]
