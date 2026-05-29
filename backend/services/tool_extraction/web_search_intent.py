@@ -243,6 +243,197 @@ _TOTAL_CHAR_CAP = 14_000
 _DEFAULT_MAX_RESULTS = 5
 
 
+# ── Phase 7 closure — Celery dispatch for chat-triggered research ──────────
+#
+# Bypass diagnosis: prior to this fix the chat stream called the
+# web_research tool INLINE (the entire research request ran in the
+# API process). Jobs panel stayed empty, worker logs never saw a
+# task. The `research.deep` Celery handler shipped in slice 3 was
+# orphaned — no caller dispatched to it.
+#
+# The fix: when WEB_RESEARCH_VIA_CELERY=true, build_web_search_context_block
+# creates a research.deep job and waits on the in-process JobEventBus
+# for the terminal event. On any failure (queue off, dispatch raises,
+# wait times out), we fall back to the inline path — chat must NEVER
+# be broken because Celery is down.
+
+# How long we wait for the job to complete before falling back. The
+# inline path's hard cap is 12-15s; we give Celery similar headroom
+# plus a small buffer for the worker pick-up.
+_CELERY_WAIT_TIMEOUT_S = 25.0
+
+
+def _route_research_via_celery() -> bool:
+    """True when the env flag is on AND the job queue is enabled.
+
+    Read dynamically so a Railway env flip is live on the next request.
+    """
+    import os
+    if os.getenv("WEB_RESEARCH_VIA_CELERY", "false").strip().lower() != "true":
+        return False
+    if os.getenv("ENABLE_JOB_QUEUE", "false").strip().lower() != "true":
+        return False
+    if os.getenv("JOB_QUEUE_RESEARCH", "false").strip().lower() != "true":
+        return False
+    return True
+
+
+async def _run_research_via_celery(
+    *,
+    user_id:        Optional[str],
+    query:          str,
+    project_id:     Optional[str],
+    correlation_id: Optional[str],
+) -> Optional[dict]:
+    """Submit a `research.deep` job + await its terminal event.
+
+    Returns the SAME envelope shape that the inline tool produces:
+      {"status": "available", "data": {citations, answer, provider, ...},
+       "provider": "..."}
+    OR None when the queue path failed (caller falls back to inline).
+    """
+    try:
+        from backend.services.jobs import client as jobs_client
+        from backend.services.jobs.errors import JobQueueDisabled
+        from backend.services.jobs.events import get_bus
+        from backend.services.jobs.types import (
+            STATUS_SUCCEEDED, STATUS_FAILED, STATUS_FAILED_DLQ,
+            STATUS_CANCELLED,
+        )
+    except Exception as exc:                                  # pragma: no cover
+        logger.warning("[CELERY_DISPATCH] imports failed: %s", exc)
+        return None
+
+    # 1) Create the job. JobQueueDisabled is the operator-visible
+    # "queue off" signal — we honour it by returning None so the
+    # caller falls back to inline.
+    try:
+        job = await jobs_client.create(
+            user_id=        user_id or "anonymous",
+            kind=           "research.deep",
+            payload={
+                "query":       query,
+                "max_results": _DEFAULT_MAX_RESULTS,
+                "depth":       "basic",
+            },
+            project_id=     project_id,
+            metadata={
+                "caller":         "chat_auto",
+                "correlation_id": correlation_id,
+            },
+        )
+    except JobQueueDisabled:
+        return None
+    except Exception as exc:
+        logger.warning("[CELERY_DISPATCH] create failed: %s", exc)
+        return None
+
+    logger.info(
+        "[CELERY_DISPATCH] research.deep job_id=%s query=%s",
+        job.id, query[:80],
+    )
+
+    # 2) Subscribe to the job event bus + wait for the terminal frame.
+    # Workers publish to Redis → fanout re-emits to the in-process
+    # bus → our consume() picks it up. Timeout falls through to
+    # inline.
+    bus = get_bus()
+    deadline_event = None
+    try:
+        import asyncio
+        async def _wait_for_terminal():
+            async for event in bus.consume(job.id, heartbeat_s=5.0):
+                if event.kind in {"done", "error"}:
+                    return event
+                # Other kinds (status / progress / heartbeat) keep us
+                # waiting but reset the heartbeat clock implicitly.
+        deadline_event = await asyncio.wait_for(
+            _wait_for_terminal(), timeout=_CELERY_WAIT_TIMEOUT_S,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "[CELERY_DISPATCH] timeout waiting for job_id=%s — fall back inline",
+            job.id,
+        )
+        return None
+    except Exception as exc:                                  # pragma: no cover
+        logger.warning("[CELERY_DISPATCH] bus consume raised: %s", exc)
+        return None
+
+    if deadline_event is None:                                # pragma: no cover
+        return None
+
+    # 3) Re-read the row to get the result + final status. The bus
+    # event carries the result but the DB is authoritative.
+    rec = None
+    try:
+        rec = jobs_client.get(job.id, user_id=user_id)
+    except Exception:                                         # pragma: no cover
+        pass
+
+    if rec is None or rec.status not in {STATUS_SUCCEEDED}:
+        if rec is not None and rec.status in {
+            STATUS_FAILED, STATUS_FAILED_DLQ, STATUS_CANCELLED,
+        }:
+            # Job ran but failed — surface as inline-compatible
+            # unavailable envelope.
+            err_msg = (
+                (rec.error or {}).get("message") if isinstance(rec.error, dict)
+                else None
+            ) or "research.deep failed"
+            return {"status": "unavailable", "message": err_msg}
+        return None
+
+    result = rec.result or {}
+    return {
+        "status":   "available",
+        "provider": result.get("provider") or "celery",
+        "data": {
+            "query":      result.get("query"),
+            "answer":     result.get("answer"),
+            "citations":  result.get("citations") or [],
+            "count":      result.get("count") or 0,
+            "cached":     bool(result.get("cached")),
+            "elapsed_ms": int(result.get("elapsed_ms") or 0),
+        },
+    }
+
+
+def _format_envelope_to_block(
+    *,
+    envelope:    dict,
+    query:       str,
+    triggers:    tuple[str, ...],
+    owner_debug: bool,
+) -> tuple[Optional[str], dict]:
+    """Re-use the existing envelope-to-block formatter.
+
+    Pulled out here so both the inline path (further down) and the
+    Celery path (above) share one source of truth for the prompt
+    block + raw_payload shape.
+    """
+    data = envelope.get("data") or {}
+    citations = data.get("citations") or []
+    answer    = (data.get("answer") or "").strip()
+    provider  = envelope.get("provider") or "unknown"
+
+    if not citations and not answer:
+        return None, {
+            "triggered": True,
+            "fetched":   False,
+            "query":     query,
+            "triggers":  list(triggers),
+            "error":     "no results returned",
+        }
+
+    block, raw = _envelope_to_chat_block(
+        query=query, triggers=triggers,
+        citations=citations, answer=answer, provider=provider,
+        owner_debug=owner_debug,
+    )
+    return block, raw
+
+
 async def build_web_search_context_block(
     *,
     user_id:        Optional[str],
@@ -256,16 +447,42 @@ async def build_web_search_context_block(
     """Invoke web_research and return `(block, raw_payload)`.
 
     `raw_payload` carries:
-      { triggered: True, query, triggers, citations: [...], answer,
+      { triggered: True, query, citations: [...], answer,
         provider, fetched: bool, error?: str }
 
     Returns `(None, {triggered: False, ...})` when:
       - web_research tool not enabled,
       - provider not configured (no TAVILY_API_KEY),
       - search returned no usable results.
+
+    Phase 7 closure fix — when `WEB_RESEARCH_VIA_CELERY=true` AND the
+    job queue is on, dispatch through `research.deep` job + await the
+    bus instead of running the tool inline. Same return shape so the
+    chat path doesn't change. Falls back to inline transparently when
+    the queue is off, dispatch fails, or the wait times out — chat
+    must never break because Celery is down.
     """
     if not query:
         return None, {"triggered": False, "reason": "empty query"}
+
+    # ── Phase 7 closure — Celery dispatch path ───────────────────────────
+    if _route_research_via_celery():
+        envelope = await _run_research_via_celery(
+            user_id=user_id, query=query,
+            project_id=project_id, correlation_id=correlation_id,
+        )
+        if envelope is not None and envelope.get("status") == "available":
+            return _format_envelope_to_block(
+                envelope=envelope, query=query, triggers=triggers,
+                owner_debug=owner_debug,
+            )
+        # Fall through to inline on Celery failure — chat must serve
+        # the response even when the queue is offline.
+        logger.info(
+            "web_search.celery fallback to inline | uid=%s | reason=%s",
+            user_id,
+            (envelope or {}).get("message") or "no envelope",
+        )
 
     try:
         from backend.services.tools.tool_registry import is_enabled, get_tool
@@ -385,21 +602,24 @@ async def build_web_search_context_block(
             "error":     msg,
         }
 
-    data = envelope.get("data") or {}
-    citations = data.get("citations") or []
-    answer    = (data.get("answer") or "").strip()
-    provider  = envelope.get("provider") or "unknown"
+    return _format_envelope_to_block(
+        envelope=envelope, query=query, triggers=triggers,
+        owner_debug=owner_debug,
+    )
 
-    if not citations and not answer:
-        return None, {
-            "triggered": True,
-            "fetched":   False,
-            "query":     query,
-            "triggers":  list(triggers),
-            "error":     "no results returned",
-        }
 
-    # Build the block.
+def _envelope_to_chat_block(
+    *,
+    query:       str,
+    triggers:    tuple[str, ...],
+    citations:   list,
+    answer:      str,
+    provider:    str,
+    owner_debug: bool,
+) -> tuple[str, dict]:
+    """Format a list of citations + answer into the assertive prompt
+    block + raw_payload pair. Pulled out so both inline and Celery
+    paths share one source of truth for the prompt shape."""
     header = (
         "═══════════════════════════════════════════════════════════════\n"
         "KORVIX WEB SEARCH RESULTS — REAL DATA FETCHED NOW — DO NOT REFUSE\n"
@@ -467,9 +687,9 @@ async def build_web_search_context_block(
     }
 
     logger.info(
-        "web_search.build | uid=%s | query=%s | citations=%d | "
+        "web_search.build | query=%s | citations=%d | "
         "provider=%s | block_chars=%d",
-        user_id, query[:80], len(citations), provider, len(block),
+        query[:80], len(citations), provider, len(block),
     )
     return block, raw_payload
 
