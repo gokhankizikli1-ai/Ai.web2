@@ -194,6 +194,14 @@ class InlineJobRunner:
                 error=None,
             ) or record
 
+            # [JOB][STATUS] diagnostic — explicit tagged log on each
+            # transition so operators can trace queue→run→done in
+            # Railway logs without grepping the bus events.
+            logger.info(
+                "[JOB][STATUS] id=%s kind=%s user_id=%s status=running attempts=%d",
+                record_id, updated.kind, updated.user_id, attempts,
+            )
+
             await bus.publish(JobEvent(
                 job_id=record_id, kind="status",
                 payload={"status": STATUS_RUNNING, "attempts": attempts},
@@ -331,6 +339,11 @@ class InlineJobRunner:
                 finished_at=_now(),
                 progress=100,
                 result=result if isinstance(result, dict) else {"value": result},
+            )
+            logger.info(
+                "[JOB][STATUS] id=%s kind=%s user_id=%s status=succeeded elapsed_ms=%d",
+                record_id, updated.kind, updated.user_id,
+                int((time.monotonic() - t0) * 1000),
             )
             await bus.publish(JobEvent(
                 job_id=record_id, kind="done",

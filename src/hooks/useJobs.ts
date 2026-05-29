@@ -69,13 +69,28 @@ function getToken(): string | null {
   }
 }
 
+export interface UseJobsOptions {
+  /** When true, hit /v2/jobs/all (owner-only) instead of the per-caller
+   *  /v2/jobs. Use this in admin/operator panels that need to see
+   *  every job regardless of who created it (chat sessions might
+   *  attribute jobs to a different user_id than the operator viewing
+   *  the panel). Non-owners get 404 from /v2/jobs/all and the hook
+   *  surfaces isAvailable=false silently. */
+  allJobs?: boolean;
+}
+
 /**
- * Poll /v2/jobs and return a small summary.
+ * Poll /v2/jobs (default) or /v2/jobs/all (owner-only) and return a
+ * small summary.
  *
- * Pass `enabled=false` to disable polling entirely (e.g. on marketing
- * pages where /v2/jobs is irrelevant). Defaults to enabled.
+ * Pass `enabled=false` to disable polling entirely. Defaults to
+ * enabled. Pass `options={allJobs: true}` for the owner panel path.
  */
-export function useJobs(enabled: boolean = true): UseJobsResult {
+export function useJobs(
+  enabled: boolean = true,
+  options: UseJobsOptions = {},
+): UseJobsResult {
+  const allJobs = !!options.allJobs;
   const [state, setState] = useState<UseJobsResult>(EMPTY_RESULT);
   // Track current document visibility — slow the poll when hidden.
   const hiddenRef = useRef<boolean>(
@@ -97,7 +112,13 @@ export function useJobs(enabled: boolean = true): UseJobsResult {
       }
       abort = new AbortController();
       try {
-        const r = await fetch(`${JOBS_URL}?limit=20`, {
+        // Owner panel uses /v2/jobs/all so chat-created jobs assigned
+        // to a different user_id are visible. Non-owners get 404 ->
+        // the isAvailable=false branch + silent degrade.
+        const url = allJobs
+          ? `${JOBS_URL}/all?limit=20`
+          : `${JOBS_URL}?limit=20`;
+        const r = await fetch(url, {
           method: 'GET',
           headers: { Authorization: `Bearer ${tok}` },
           signal: abort.signal,
