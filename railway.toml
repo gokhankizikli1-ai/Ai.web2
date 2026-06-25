@@ -1,4 +1,9 @@
-# Railway build + deploy configuration.
+# Railway build + deploy configuration — WEB service.
+#
+# The worker service uses `railway.worker.toml` (no HTTP
+# healthcheck — Celery has no port to probe). The worker's
+# Config file path is set in the Railway dashboard; see the
+# header of `railway.worker.toml` for the one-time setup.
 #
 # WHY THIS FILE EXISTS
 # --------------------

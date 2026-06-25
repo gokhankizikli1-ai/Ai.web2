@@ -1,0 +1,54 @@
+# Railway config — WORKER service only.
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# The worker service runs a pure Celery worker (see `worker:` in
+# the Procfile). Celery consumes from Redis queues and runs tasks
+# — it binds NO HTTP port. A Railway HTTP healthcheck against
+# this service ALWAYS fails because nothing is listening.
+#
+# Build + deploy succeed; only the healthcheck phase fails. The
+# fix is to not configure an HTTP healthcheck for this service.
+# Worker liveness is observable from Celery's own logs and from
+# Redis queue depth — Railway doesn't need to probe an endpoint.
+#
+# The web service (uvicorn + FastAPI) continues to use the
+# default `railway.toml` and keeps whatever healthcheck the
+# dashboard has set for it. Nothing here affects the web service.
+#
+# REQUIRED ONE-TIME DASHBOARD STEP
+# --------------------------------
+# In the Railway dashboard, for the WORKER service:
+#     Settings → Service → Config-as-Code → Config file path
+#     Set to: railway.worker.toml
+#
+# (The web service keeps the default `railway.toml`. Don't touch
+# its config path.)
+#
+# Per Railway docs: `rootDirectory` and `Config file path` can
+# only be set via the Dashboard or GraphQL API — not via the CLI
+# or config-as-code. So this one click is unavoidable. After it,
+# every redeploy of the worker honours this file.
+# https://docs.railway.com/deployments/monorepo
+
+[build]
+# Same builder as the web service. Both processes run from the
+# same Python image; Nixpacks already resolves Celery + Redis +
+# all task deps via `pip install -r requirements.txt`. Forcing
+# Nixpacks back from the Railpack/mise default — see commit
+# 7383beb (fix(build): force Nixpacks builder + remove runtime.txt).
+builder = "NIXPACKS"
+
+[deploy]
+# Intentionally NO `healthcheckPath` — Celery has no HTTP server.
+# Railway treats absence of the field as "do not run an HTTP
+# probe"; worker liveness is the process being up.
+#
+# `restartPolicyType = "ON_FAILURE"` — if the worker crashes
+# (e.g. Redis disconnect, OOM, an unhandled task exception that
+# escapes Celery's task barrier), Railway restarts it
+# automatically. Same default behaviour the web service relies
+# on; spelled out here so the worker's deploy contract is fully
+# captured by this file.
+restartPolicyType        = "ON_FAILURE"
+restartPolicyMaxRetries  = 10
