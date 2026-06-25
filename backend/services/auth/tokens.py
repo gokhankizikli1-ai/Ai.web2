@@ -16,8 +16,13 @@ Security mitigations:
   - base64url with manual padding so we never accept malformed input.
   - exp / nbf / iat / iss claims validated explicitly. Tokens with
     no `exp` are rejected.
-  - Refuses to issue tokens when `settings.JWT_SECRET_KEY` is empty
-    AND the environment is not "development".
+  - Refuses to issue or verify tokens when `JWT_SECRET_KEY` is empty
+    AND `ENVIRONMENT` is not literally "development". A leaked
+    `DEBUG=True` in a production-labelled deploy is NOT trusted to
+    enable the insecure fallback — that was Phase-1 finding R1.
+  - Rejects any provided `JWT_SECRET_KEY` shorter than 32 bytes
+    (Phase-1 finding R2). A 1-char prod secret is worse than no
+    secret because the latter fails closed.
 
 Token shape (claims):
   sub:   user id (string)
@@ -50,6 +55,12 @@ logger = logging.getLogger(__name__)
 
 ALGORITHM = "HS256"
 _HEADER_JSON = json.dumps({"alg": ALGORITHM, "typ": "JWT"}, separators=(",", ":")).encode()
+
+# Production-hardening constants (Phase-1 PR #1).
+# 32 bytes ≈ 256 bits — matches the HS256 output width. Shorter keys
+# weaken the HMAC and are almost always typos.
+_MIN_SECRET_BYTES = 32
+_INSECURE_DEV_KEY = b"insecure-dev-key-do-not-use-in-production"
 
 
 # ── Errors ────────────────────────────────────────────────────────────────
@@ -90,32 +101,48 @@ def _b64url_decode(data: str) -> bytes:
 # ── Secret-key plumbing ───────────────────────────────────────────────────
 
 def _secret() -> bytes:
-    """Return the HMAC key bytes. Raises if missing in production.
+    """Return the HMAC key bytes. Fails closed in any environment that
+    isn't literal "development" when the key is missing or too short.
 
     Reads `os.environ["JWT_SECRET_KEY"]` DYNAMICALLY at each call (not
     cached on `settings`) so tests can monkeypatch the env var and have
     it take effect immediately, AND so Railway env-var rotations don't
     require a process restart to pick up.
 
-    In development (DEBUG=True) a noisy fallback key is used so local
-    iteration works without setting an env var — but every issue/verify
-    call also logs a WARNING so the missing-secret state is impossible
-    to ignore.
+    Hardening rules (Phase-1 PR #1):
+      1. If a key is provided, it MUST be at least _MIN_SECRET_BYTES
+         long. A too-short key raises — fail loudly at first use.
+      2. If no key is provided, the insecure dev fallback is used ONLY
+         when `ENVIRONMENT == "development"` (case-insensitive, trimmed).
+         `settings.DEBUG` is intentionally NOT consulted: it's derived
+         from ENVIRONMENT at import time and can desync from the
+         current process env. A leaked DEBUG=True must NOT cause us to
+         sign tokens with the public dev key.
+      3. Any other environment with no key raises TokenSecretMissingError.
+         AuthMiddleware catches this and degrades the request to an
+         anonymous guest — the system is locked but doesn't crash.
     """
     key = os.environ.get("JWT_SECRET_KEY", "") or settings.JWT_SECRET_KEY
     if key:
-        return key.encode("utf-8")
-    # DEBUG is also read dynamically; the env var may have flipped since
-    # the Config class was imported.
-    env = os.environ.get("ENVIRONMENT", "production")
-    if env == "development" or settings.DEBUG:
+        key_bytes = key.encode("utf-8")
+        if len(key_bytes) < _MIN_SECRET_BYTES:
+            raise TokenSecretMissingError(
+                f"JWT_SECRET_KEY is too short ({len(key_bytes)} bytes). "
+                f"Minimum is {_MIN_SECRET_BYTES} bytes."
+            )
+        return key_bytes
+
+    env = os.environ.get("ENVIRONMENT", "production").strip().lower()
+    if env == "development":
         logger.warning(
             "JWT_SECRET_KEY is empty — using INSECURE development fallback. "
             "Set JWT_SECRET_KEY before any production deploy."
         )
-        return b"insecure-dev-key-do-not-use-in-production"
+        return _INSECURE_DEV_KEY
+
     raise TokenSecretMissingError(
-        "JWT_SECRET_KEY is not configured. Refusing to issue or verify tokens."
+        "JWT_SECRET_KEY is not configured and ENVIRONMENT is not 'development'. "
+        "Refusing to issue or verify tokens."
     )
 
 
