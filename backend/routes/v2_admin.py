@@ -249,10 +249,13 @@ async def admin_memory(
     rows: List[Dict[str, Any]] = []
     available = False
     try:
-        # Legacy memory module exposes get_recent (best-effort import).
-        from memory import get_user_history  # type: ignore
-        raw = get_user_history(user.id) or []
-        rows = [{"role": r, "content": c} for r, c in raw[-max(1, min(limit, 200)):]]
+        from memory import load_user_memory  # type: ignore
+        legacy_user_id = int(user.id) if str(user.id).isdigit() else hash(str(user.id)) % 2**31
+        raw = load_user_memory(legacy_user_id, max(1, min(limit, 200))) or []
+        rows = [
+            {"category": category, "content": content, "created_at": created_at}
+            for category, content, created_at in raw
+        ]
         available = True
     except Exception as exc:
         logger.debug("admin memory inspector unavailable: %s", exc)

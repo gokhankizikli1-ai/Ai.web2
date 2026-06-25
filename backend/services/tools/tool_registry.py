@@ -9,9 +9,12 @@
 # module-level ENABLE_* constants below are kept ONLY for backward
 # compatibility with callers that already imported them; they reflect
 # the value at import time and are no longer authoritative.
-import os
 import logging
-from typing import Dict
+import os
+import threading
+from collections import deque
+from datetime import datetime, timezone
+from typing import Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +55,8 @@ ENABLE_NEWS               = _flag("ENABLE_NEWS")
 
 # ── Registry store ─────────────────────────────────────────────────────────
 _registry: Dict[str, object] = {}   # tool_name → BaseTool instance
+_history_lock = threading.Lock()
+_tool_history = deque(maxlen=500)
 
 
 def register(tool) -> None:
@@ -63,6 +68,25 @@ def register(tool) -> None:
 def get_tool(name: str):
     """Return registered tool by name, or None."""
     return _registry.get(name)
+
+
+def record_call(tool_name: str, result: dict = None) -> None:
+    """Record a recent tool invocation for owner diagnostics."""
+    result = result if isinstance(result, dict) else {}
+    with _history_lock:
+        _tool_history.appendleft({
+            "tool":      tool_name,
+            "status":    result.get("status", "unknown"),
+            "provider":  result.get("provider"),
+            "timestamp": result.get("timestamp") or datetime.now(timezone.utc).isoformat(),
+        })
+
+
+def recent_calls(limit: int = 25) -> List[dict]:
+    """Return recent tool invocations, newest first."""
+    n = int(max(1, min(limit, 200)))
+    with _history_lock:
+        return list(_tool_history)[:n]
 
 
 def is_enabled(tool_name: str) -> bool:

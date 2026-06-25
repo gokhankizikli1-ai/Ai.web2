@@ -31,10 +31,16 @@ class BaseTool(ABC):
     async def safe_run(self, query: str, context: dict = None) -> dict:
         """Calls run() and catches any exception so callers never crash."""
         try:
-            return await self.run(query, context)
+            result = await self.run(query, context)
         except Exception as exc:
             logger.warning("tool '%s' raised in safe_run: %s", self.name, exc)
-            return self._error(str(exc))
+            result = self._error(str(exc))
+        try:
+            from backend.services.tools.tool_registry import record_call
+            record_call(self.name, result)
+        except Exception:
+            pass
+        return result
 
     # ── Normalized response helpers ────────────────────────────────────────
     #

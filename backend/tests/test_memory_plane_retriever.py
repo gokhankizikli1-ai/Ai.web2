@@ -56,6 +56,16 @@ def test_search_text_high_importance_overrides_low_match(tmp_memory_plane_db):
     assert out[0].content == "critical key fact about trading"
 
 
+def test_search_text_applies_offset_after_ranking(tmp_memory_plane_db):
+    _seed("u1", content="unrelated high importance", importance=IMPORTANCE_HIGH)
+    _seed("u1", content="target alpha",              importance=0.5)
+    _seed("u1", content="target beta",               importance=0.4)
+
+    out = retriever.search(MemoryQuery(user_id="u1", query="target", limit=1, offset=1))
+
+    assert [r.content for r in out] == ["target beta"]
+
+
 # ── Filters are forwarded ────────────────────────────────────────────────────
 
 def test_search_kind_filter(tmp_memory_plane_db):

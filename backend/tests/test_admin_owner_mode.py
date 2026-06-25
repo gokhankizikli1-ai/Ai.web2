@@ -490,6 +490,45 @@ def test_admin_diagnostics_owner_can_access(admin_env):
         app.dependency_overrides.clear()
 
 
+def test_admin_memory_returns_legacy_rows(admin_env, tmp_path, monkeypatch):
+    import memory
+    memory_path = tmp_path / "memory.db"
+    monkeypatch.setattr(memory, "DB_PATH", str(memory_path))
+    memory.init_memory_db()
+    memory.remember_fact(hash("owner-id") % 2**31, "owner legacy fact", "general")
+
+    client, app = _fresh_app()
+    _override_owner(app, owner=True)
+    try:
+        r = client.get("/v2/admin/memory?limit=5")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["data"]["available"] is True
+        assert body["data"]["rows"][0]["content"] == "owner legacy fact"
+        assert body["data"]["rows"][0]["category"] == "general"
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_admin_tool_history_returns_recent_calls(admin_env):
+    from backend.services.tools.tool_registry import record_call
+    record_call("admin_test_tool", {
+        "status": "available",
+        "provider": "test-provider",
+        "timestamp": "2026-01-01T00:00:00+00:00",
+    })
+
+    client, app = _fresh_app()
+    _override_owner(app, owner=True)
+    try:
+        r = client.get("/v2/admin/tools/history?limit=25")
+        assert r.status_code == 200
+        calls = r.json()["data"]["calls"]
+        assert any(call["tool"] == "admin_test_tool" for call in calls)
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_admin_audit_records_owner_actions(admin_env):
     client, app = _fresh_app()
     _override_owner(app, owner=True)

@@ -154,7 +154,17 @@ class MemoryRetriever:
         # Over-fetch so the ranker has options. Cap the candidate
         # pool so retrieval stays bounded even for users with thousands
         # of memories.
-        candidate_limit = min(200, max(query.limit * 4, query.limit))
+        safe_limit = int(max(1, query.limit))
+        safe_offset = int(max(0, query.offset))
+        if query.query:
+            candidate_limit = min(
+                200,
+                max((safe_limit + safe_offset) * 4, safe_limit),
+            )
+            candidate_offset = 0
+        else:
+            candidate_limit = safe_limit
+            candidate_offset = safe_offset
         candidate_query = MemoryQuery(
             user_id=          query.user_id,
             # IMPORTANT: when we plan to rank in-memory we deliberately
@@ -168,14 +178,14 @@ class MemoryRetriever:
             importance_floor= query.importance_floor,
             include_expired=  query.include_expired,
             limit=            candidate_limit,
-            offset=           query.offset,
+            offset=           candidate_offset,
         )
         candidates: Iterable[MemoryRecord] = store.search_text(candidate_query)
 
         # No free-text → SQL ordering is fine. Importance + recency
         # are already factored in at the SQL layer.
         if not query.query:
-            return list(candidates)[: query.limit]
+            return list(candidates)[:safe_limit]
 
         tokens = _tokenize(query.query)
         ranked = sorted(
@@ -183,7 +193,7 @@ class MemoryRetriever:
             key=lambda r: self.score_record(r, query_tokens=tokens),
             reverse=True,
         )
-        return ranked[: query.limit]
+        return ranked[safe_offset : safe_offset + safe_limit]
 
     # ── Convenience adapters used by the manager / hooks ───────────────────
 
