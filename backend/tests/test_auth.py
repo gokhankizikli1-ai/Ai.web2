@@ -102,6 +102,146 @@ def test_issue_disallows_overriding_standard_claims(tmp_auth_db):
 
 
 # ──────────────────────────────────────────────────────────────────────────
+# Phase-1 PR #1 — JWT_SECRET_KEY production hardening
+#
+# These tests cover the fail-closed behaviour of tokens._secret():
+#   - missing key in production / staging / unknown env → raises
+#   - missing key with leaked DEBUG=True → still raises (the key fix)
+#   - too-short key → raises in any environment
+#   - missing key in development → insecure dev fallback (unchanged)
+#   - case-insensitive + trimmed match on ENVIRONMENT=development
+# ──────────────────────────────────────────────────────────────────────────
+
+def _clear_secret(monkeypatch):
+    """Helper — remove both env-var and settings-cached JWT_SECRET_KEY
+    so _secret() truly sees an empty key."""
+    monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+    from backend.core.config import settings
+    monkeypatch.setattr(settings, "JWT_SECRET_KEY", "", raising=False)
+
+
+def test_secret_present_in_production_returns_bytes(monkeypatch):
+    monkeypatch.setenv("JWT_SECRET_KEY", "x" * 32)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    from backend.services.auth import tokens
+    assert tokens._secret() == b"x" * 32
+
+
+def test_secret_absent_in_production_raises(monkeypatch):
+    _clear_secret(monkeypatch)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    from backend.services.auth import tokens
+    with pytest.raises(tokens.TokenSecretMissingError):
+        tokens._secret()
+
+
+def test_secret_absent_in_unknown_env_raises(monkeypatch):
+    """Anything other than literal 'development' must fail closed,
+    including staging / preview / mistyped values."""
+    _clear_secret(monkeypatch)
+    monkeypatch.setenv("ENVIRONMENT", "staging")
+    from backend.services.auth import tokens
+    with pytest.raises(tokens.TokenSecretMissingError):
+        tokens._secret()
+
+
+def test_secret_absent_with_debug_true_in_production_still_raises(monkeypatch):
+    """Regression — settings.DEBUG=True (e.g. leaked from a misconfigured
+    deploy) must NOT enable the insecure fallback when ENVIRONMENT is
+    not literally 'development'. This is the leak finding R1."""
+    _clear_secret(monkeypatch)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    from backend.core.config import settings
+    monkeypatch.setattr(settings, "DEBUG", True, raising=False)
+    from backend.services.auth import tokens
+    with pytest.raises(tokens.TokenSecretMissingError):
+        tokens._secret()
+
+
+def test_secret_absent_in_development_uses_insecure_fallback(monkeypatch, caplog):
+    _clear_secret(monkeypatch)
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    from backend.services.auth import tokens
+    with caplog.at_level("WARNING", logger="backend.services.auth.tokens"):
+        secret = tokens._secret()
+    assert secret == tokens._INSECURE_DEV_KEY
+    assert any("INSECURE development fallback" in rec.message for rec in caplog.records)
+
+
+def test_secret_too_short_raises_in_production(monkeypatch):
+    monkeypatch.setenv("JWT_SECRET_KEY", "x" * (31))   # one byte too short
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    from backend.services.auth import tokens
+    with pytest.raises(tokens.TokenSecretMissingError):
+        tokens._secret()
+
+
+def test_secret_too_short_raises_in_development(monkeypatch):
+    """A bad key in dev is also bad in dev — fail equally so the same
+    mistake doesn't ship to prod."""
+    monkeypatch.setenv("JWT_SECRET_KEY", "x" * 31)
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    from backend.services.auth import tokens
+    with pytest.raises(tokens.TokenSecretMissingError):
+        tokens._secret()
+
+
+def test_secret_exact_min_length_accepted(monkeypatch):
+    """The lower bound is INCLUSIVE — exactly 32 bytes is accepted."""
+    monkeypatch.setenv("JWT_SECRET_KEY", "x" * 32)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    from backend.services.auth import tokens
+    assert tokens._secret() == b"x" * 32
+
+
+def test_secret_environment_case_insensitive(monkeypatch):
+    """ENVIRONMENT matching is trimmed + lowercased so common typos
+    ('Development', ' development ') still resolve to dev mode."""
+    _clear_secret(monkeypatch)
+    monkeypatch.setenv("ENVIRONMENT", "  Development  ")
+    from backend.services.auth import tokens
+    assert tokens._secret() == tokens._INSECURE_DEV_KEY
+
+
+def test_secret_default_environment_is_production(monkeypatch):
+    """When ENVIRONMENT is unset, default to production (fail closed)."""
+    _clear_secret(monkeypatch)
+    monkeypatch.delenv("ENVIRONMENT", raising=False)
+    from backend.services.auth import tokens
+    with pytest.raises(tokens.TokenSecretMissingError):
+        tokens._secret()
+
+
+def test_issue_raises_when_secret_missing_in_production(monkeypatch):
+    """End-to-end on the actual issue() path — a misconfigured prod
+    (no JWT_SECRET_KEY, ENVIRONMENT=production) must NOT silently sign
+    tokens with the dev fallback. Surfaces TokenSecretMissingError at
+    the issue() call, which AuthMiddleware's bare except in dispatch()
+    catches to degrade to anonymous guest."""
+    _clear_secret(monkeypatch)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    from backend.services.auth import tokens
+    with pytest.raises(tokens.TokenSecretMissingError):
+        tokens.issue("user-x", token_type="access", ttl_seconds=60)
+
+
+def test_verify_raises_when_secret_missing_in_production(monkeypatch):
+    """Same path on verify(): a JWT presented to a misconfigured prod
+    must NOT verify against the dev fallback. The verify call raises
+    cleanly so the middleware moves the request to guest fallback."""
+    # First mint a token under a known good config.
+    monkeypatch.setenv("JWT_SECRET_KEY", "y" * 32)
+    monkeypatch.setenv("ENVIRONMENT", "development")
+    from backend.services.auth import tokens
+    token, _ = tokens.issue("user-y", token_type="access", ttl_seconds=60)
+    # Now flip to misconfigured prod and present the token.
+    _clear_secret(monkeypatch)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    with pytest.raises(tokens.TokenSecretMissingError):
+        tokens.verify(token, expected_type="access")
+
+
+# ──────────────────────────────────────────────────────────────────────────
 # Storage
 # ──────────────────────────────────────────────────────────────────────────
 
