@@ -1,624 +1,361 @@
 # Phase 1 — Authentication Audit & Implementation Plan
 
-**Source of truth:** `main @ aef9eec` (with local edits noted)
-**Date:** 2026-06-25
-**Status:** AUDIT ONLY — no code changes until plan approved
+**Source of truth:** `claude/advanced-trading-intelligence-s81Jc @ fb83bdc` (re-verified against actual files)
+**Date:** 2026-06-25 (REVISED)
+**Status:** AUDIT — awaiting re-approval after correction
 **Author:** Engineering — pre-implementation review
 
 ---
 
-## Part I — Current authentication architecture (verified against repo)
+## ⚠️ Correction notice — supersedes earlier version of this doc
 
-### 1.1 The actual surface — two parallel auth systems coexist
+The prior version of this audit (commit `fb83bdc`) described an authentication system that **does not exist in this repository**. Specifically, it claimed:
 
-The repo has **two authentication subsystems** running side-by-side. Both work; neither has clearly retired the other. This is the single most important fact to internalise before touching anything.
+- A "System A" of legacy routes (`/auth/signup`, `/auth/login`, `/auth/google`, `/auth/apple`, `/auth/me`, `/auth/logout`) — these routes **do not exist**. `backend/routes/auth.py` is a 7-line stub returning `{"authenticated": False}` for `GET /auth/status`.
+- A `backend/services/auth/passwords.py` module with PBKDF2-200k hashing, a separate `auth_password_users` table, and a "timing-equalisation" path — **this file does not exist**. No email/password code exists anywhere in the backend.
+- A "two-table identity split" (catalogued as **S2 🔴 CRITICAL**) — **does not exist**. There is only one identity table, `auth_users`.
+- A `_resolve_user_id` function in `backend/routes/v2_chat_stream.py` that base64-decodes JWTs without signature verification (catalogued as **S1 🔴 CRITICAL**) — **this function does not exist**. `v2_chat_stream.py` has no per-user resolution at all; ownership of requests is handled by `AuthMiddleware` which uses `tokens.verify()` (full HS256 signature check).
+- A 986-line `src/pages/AuthPage.tsx` with split-login-flow refactor pressure — **the file is 211 lines** and is a UI-only stub. `handleSubmit` runs a `setTimeout` and renders "Authentication backend not connected yet". No HTTP calls.
+- A `src/stores/authStore.ts` Zustand store with `partialize`, `apiLogin`, `apiSignup`, `apiGoogle`, `apiLogout`, `apiMe`, cross-account artifact scrubbing — **this file does not exist**. There is no `src/stores/` directory.
 
-| System | Routes | JWT lifetime | Owner of identity | Status |
-|---|---|---|---|---|
-| **System A — `routes/auth.py` (legacy single-token)** | `POST /auth/signup`, `POST /auth/login`, `POST /auth/google`, `POST /auth/apple`, `GET /auth/me`, `POST /auth/logout`, `GET /auth/status` | 24h **access only**, no refresh tokens | `services/auth/passwords.py` (table `auth_password_users`) AND `services/auth/storage.py` (table `auth_users`) | **Functional in production**; the FE talks to it (`authStore.ts:apiLogin`, `apiSignup`, `apiGoogle`, `apiLogout`, `apiMe`). |
-| **System B — `routes/v2_auth.py` (refresh-token rotation)** | `POST /v2/auth/guest`, `POST /v2/auth/refresh`, `GET /v2/auth/me`, `POST /v2/auth/logout` | Configurable `ACCESS_TOKEN_TTL_MIN` (default 60min) + `REFRESH_TOKEN_TTL_DAYS` (default 30d) refresh with rotation | `services/auth/storage.py` only (table `auth_users` + `auth_refresh_tokens`) | **Functional** but only `/v2/auth/guest` is wired into the FE indirectly via `AuthMiddleware`. Refresh + rotation never exercised by the FE; `apiLogin`/`apiSignup` mint single access tokens via System A. |
+The right inference from these corrections is **stronger**, not weaker: KorvixAI is exactly what your original brief said — a guest-only application. There is **no authenticated-user surface to refactor**. Phase 1 is not patch-and-tighten; Phase 1 is **build the production auth stack from scratch on top of the existing guest substrate**.
 
-The FE (`authStore.ts`) currently uses **System A** for sign-in / sign-up / Google / me / logout. **System B's refresh-token rotation is fully implemented but unused** in user flows.
+The existing guest substrate is well-built and worth keeping verbatim. The rest of this document re-grounds the analysis and re-issues the implementation plan.
 
-### 1.2 Files and responsibilities
+---
 
-| Layer | File | Responsibility | Verdict |
+## Approved decisions (locked 2026-06-25)
+
+| # | Decision | Choice |
+|---|---|---|
+| 1 | Refresh-token storage | **httpOnly Secure SameSite=Lax cookie** |
+| 2 | Password hashing | **Argon2id** (via `argon2-cffi`) |
+| 3 | Migration strategy | **Zero-downtime silent migration** whenever possible |
+| 4 | Transactional email provider | **Resend** (HTTP API, no SDK) |
+| 5 | Apple Sign-In | **Defer** (post-Phase 1) |
+| 6 | Magic Links | **Defer until core auth is stable** |
+| 7 | **Guest Account Merge** | **First-class architectural pillar** (new — see §5) |
+
+---
+
+## Part I — Current authentication state, verified against files
+
+### 1.1 Endpoints that exist
+
+| Endpoint | Method | File | Purpose |
 |---|---|---|---|
-| Identity dataclass | `services/auth/identity.py` | `User` (id/kind/external_id/display_name/created_at/last_seen_at/metadata). 5 valid `kind`s declared: guest, email, google, github, apple. | Clean. Reserved `kind`s for future are documented. |
-| Token issue/verify | `services/auth/tokens.py` | Pure-stdlib HS256 JWT with HMAC-SHA256, algorithm pinning, alg=none rejection, exp/nbf/iat/iss/jti claims, `secrets.token_hex(16)` jti. `_secret()` reads `JWT_SECRET_KEY` dynamically and refuses to issue in non-`development` env. Dev fallback `b"insecure-dev-key-do-not-use-in-production"` with WARNING log. | **Production-quality** — best part of the system. Algorithm pinning + alg=none guard + timing-safe `hmac.compare_digest` are all correct. |
-| Identity storage | `services/auth/storage.py` | SQLite `auth.db`. Tables: `auth_users(id, kind, external_id, display_name, created_at, last_seen_at, metadata_json)` with UNIQUE on `(kind, external_id)`; `auth_refresh_tokens(jti, user_id, family_id, created_at, expires_at, revoked_at)`. | Good schema. Race-safe `get_or_create_user`. CASCADE on user delete. |
-| Password storage | `services/auth/passwords.py` | Separate table `auth_password_users(id, email, password_hash, display_name, created_at, last_login_at)` in **the same `auth.db`** but **not linked to `auth_users` via foreign key**. PBKDF2-HMAC-SHA256, 200k iterations, 16-byte salt, passlib-compatible string. **Timing-equalisation hash on email-not-found path.** | PBKDF2 is acceptable; **bcrypt/argon2id is the modern recommendation.** The split table is the biggest architectural flaw — see §1.4 below. |
-| Auth service | `services/auth/service.py` | High-level operations: `create_guest`, `rotate_refresh` (with theft detection via family-wide revoke on reuse-of-revoked), `logout`, `identity_for_access_token`. | Refresh-token rotation pattern is **textbook-correct**. Wasted because the FE doesn't use it. |
-| Errors | `services/auth/errors.py` | `MissingTokenError`, `InvalidTokenError`, `ExpiredTokenError`, `RevokedTokenError`. | Clean. |
-| **AuthMiddleware** | `middleware/auth.py` | Reads `Authorization: Bearer <jwt>`; on miss mints a guest via `X-Korvix-Guest-Id` nonce. Sets `request.state.{user, is_guest, auth_kind, auth_token, user_id}`. **Opt-in via `ENABLE_AUTH_V2=true`**. | Sound. But gated behind a flag that may be off in production. |
-| Placeholder middleware | `middleware/auth_placeholder.py` | "Phase-B" pre-existing middleware. Coexists with the real one — comments warn "do not enable both at once." | **Dead code in spirit.** Should be retired. |
-| Auth dependencies | `core/deps.py` | `current_user()` resolution order: `request.state.user` (when middleware ran) → direct JWT decode from `Authorization` header → fallback guest. `require_auth()`, `require_owner()`. | `current_user` does its own JWT verify via `tokens.verify(...)` as a fallback when middleware is off. Correct + paranoid. |
-| Settings | `core/config.py` | `OWNER_EMAIL`, `OWNER_EMAILS` (CSV), `OWNER_TOKEN`, `OWNER_ID`, `AUTH_DB_PATH`, `JWT_SECRET_KEY`, `JWT_ISSUER`, `ACCESS_TOKEN_TTL_MIN` (60), `REFRESH_TOKEN_TTL_DAYS` (30). | Comprehensive. Owner-detection has 4 stack-able signals — solid. |
-| Owner detection | `services/admin/owner.py` | `is_owner(user)` with `ENABLE_ADMIN_MODE` kill-switch; `match_owner_token(provided)` via `hmac.compare_digest`. Identity-first precedence in `require_owner`. | Production-grade. |
-| FE auth store | `src/stores/authStore.ts` | **Zustand + persist middleware** with `partialize` (persists only user, not token). Token in `localStorage['korvix_access_token']`. Persisted user blob in `localStorage['korvix-auth']`. Cross-account artifact scrubbing when email changes. | Solid foundation. Best-in-class for the current scope. Persists ONLY user (not the JWT) which is correct. |
-| FE auth page | `src/pages/AuthPage.tsx` | 986 lines. Login + signup + Google flows. | **Large — needs a closer look** (see §1.8). |
-| Owner mode hook | `src/hooks/useOwnerMode.ts` | Singleton subscriber model. Reads `korvix_access_token`, `korvix_owner_token`, `korvix_user_id` from localStorage. Sends Bearer + `X-Korvix-Owner-Token`. Listens for `korvix:owner-refresh` window event. | Production-shaped. |
+| `/v2/auth/guest` | POST | `routes/v2_auth.py:67` | Create / return guest user. Idempotent on `stable_nonce`. Issues access + refresh tokens. |
+| `/v2/auth/refresh` | POST | `routes/v2_auth.py:92` | Rotate refresh-token pair. Theft detection: reuse-of-revoked → revoke whole family + 401. |
+| `/v2/auth/me` | GET | `routes/v2_auth.py:115` | Return authenticated user. Guests get 401 via `require_auth`. |
+| `/v2/auth/logout` | POST | `routes/v2_auth.py:126` | Revoke the refresh-token family. Idempotent. |
+| `/auth/status` | GET | `routes/auth.py:5` | Returns `{"authenticated": False}`. Stub — appears unused. |
 
-### 1.3 Identity stores — verbatim schema
+That is the complete authentication surface. No signup, no login, no OAuth callback, no password reset, no email verification.
 
-```sql
--- auth.db (SQLite)
-CREATE TABLE auth_users (
-    id            TEXT PRIMARY KEY,             -- uuid4 hex
-    kind          TEXT NOT NULL,                -- guest | email | google | apple | github
-    external_id   TEXT NOT NULL,                -- "guest:<nonce>" | "google:<sub>" | email
-    display_name  TEXT NOT NULL DEFAULT '',
-    created_at    TEXT NOT NULL,                -- ISO-8601
-    last_seen_at  TEXT NOT NULL,
-    metadata_json TEXT NOT NULL DEFAULT '{}'
-);
-CREATE UNIQUE INDEX ix_auth_users_kind_extid ON auth_users(kind, external_id);
+### 1.2 Code that exists in `backend/services/auth/`
 
-CREATE TABLE auth_refresh_tokens (
-    jti          TEXT PRIMARY KEY,
-    user_id      TEXT NOT NULL REFERENCES auth_users(id) ON DELETE CASCADE,
-    family_id    TEXT NOT NULL,
-    created_at   TEXT NOT NULL,
-    expires_at   TEXT NOT NULL,
-    revoked_at   TEXT
-);
-
--- Same auth.db, separate parallel system (passwords.py):
-CREATE TABLE auth_password_users (
-    id             TEXT PRIMARY KEY,            -- uuid4 hex (DIFFERENT namespace from auth_users.id)
-    email          TEXT NOT NULL UNIQUE,
-    password_hash  TEXT NOT NULL,               -- pbkdf2_sha256$200000$<salt_hex>$<hash_hex>
-    display_name   TEXT NOT NULL DEFAULT '',
-    created_at     TEXT NOT NULL,
-    last_login_at  TEXT                         -- ⚠ no foreign key to auth_users
-);
+```
+__init__.py        re-exports
+identity.py        User dataclass; VALID_KINDS = {guest, email, google, github, apple}
+                   (email/google/github/apple are RESERVED — no code consumes them yet)
+tokens.py          Stdlib HS256 JWT. Algorithm-pinned. alg=none rejected.
+                   Timing-safe hmac.compare_digest. Reads JWT_SECRET_KEY dynamically.
+                   Refuses to issue in non-development if secret missing.
+                   Dev fallback `b"insecure-dev-key-do-not-use-in-production"` (warning logged).
+service.py         create_guest, rotate_refresh (theft detection),
+                   logout, identity_for_access_token.
+storage.py         SQLite auth.db.
+                   auth_users(id, kind, external_id, display_name, created_at,
+                              last_seen_at, metadata_json)
+                              UNIQUE(kind, external_id).
+                   auth_refresh_tokens(jti PK, user_id FK CASCADE,
+                                       family_id, created_at, expires_at, revoked_at).
+errors.py          MissingTokenError, InvalidTokenError, ExpiredTokenError,
+                   RevokedTokenError.
 ```
 
-### 1.4 The two-table problem (THE main architectural issue)
+`passwords.py` does **not** exist.
 
-`auth_password_users` is **completely disconnected** from `auth_users`. Same database file, no foreign key, no shared ID, no cross-references. The same person who signed up via email/password (in `auth_password_users`) and then later signed in with Google (in `auth_users`) becomes **two different user IDs in the system** — Memory Plane writes, Chat threads, Owner detection all key off whichever ID resolved on that request.
+### 1.3 Middleware
 
-The fact that `core/deps.py:_user_from_bearer` resolves the JWT `sub` against **both tables in sequence** (identity first, then password) hides the bug from the FE — but the two user IDs still own different memory/threads/sessions. There is no "merge accounts" path. Once a user has rows under both IDs, they are stuck.
+`backend/middleware/auth.py` — `AuthMiddleware`:
+- Reads `Authorization: Bearer <jwt>`.
+- Verifies via `auth_service.identity_for_access_token()` → `tokens.verify()` (full signature check) → DB lookup.
+- On miss, mints a guest tied to `X-Korvix-Guest-Id` (idempotent — same nonce → same user row).
+- Opt-in via `ENABLE_AUTH_V2=true`.
+- Sets `request.state.{user, is_guest, auth_kind, auth_token, user_id}`.
+- **Does NOT** decode JWTs anywhere outside `tokens.verify()`. No base64 shortcuts.
 
-This is the single most important thing Phase 1 must fix.
+### 1.4 FastAPI dependencies
 
-### 1.5 Authentication flow today (per route surface)
+`backend/core/deps.py`:
+- `current_user(request)` — reads `request.state.user`, falls back to a synthetic guest. **No JWT decoding here.** (My prior audit was wrong on this point.)
+- `require_auth(request)` — raises `MissingTokenError` if guest.
+- `require_owner(request)` — `require_auth` + `is_owner` check.
 
-**Sign-up flow (FE → `authStore.signup`):**
-1. FE POST `/auth/signup` `{email, password, display_name}`
-2. `routes/auth.py:signup` → `passwords.create_user(...)` → INSERT into `auth_password_users` with PBKDF2 hash
-3. `_issue_access(user)` mints a 24h **access token only** (no refresh), kind=`email`
-4. FE stores token in `localStorage['korvix_access_token']` + persists user blob via zustand
-5. **No refresh token issued. After 24h, user is silently logged out.**
+### 1.5 Frontend state
 
-**Login flow:** same as above but `verify_credentials` instead of `create_user`. Constant-time email-not-found via dummy PBKDF2 — good.
+`src/pages/AuthPage.tsx` (211 lines):
+- UI shell for sign-in/sign-up + Google/Apple buttons + "Continue as Guest".
+- `handleSubmit` and `handleSocial` are **stubs** — they show "Authentication backend not connected yet. Please continue as guest."
+- No `fetch`, no API calls.
 
-**Google flow (FE → `authStore.loginWithGoogle(idToken)`):**
-1. FE gets the Google `id_token` client-side (GIS button)
-2. POST `/auth/google` with `id_token`
-3. `routes/auth.py:_verify_google_id_token` does `urllib.urlopen("https://oauth2.googleapis.com/tokeninfo?id_token=...")` (sync — runs in FastAPI's thread pool)
-4. Verifies `email_verified == "true"` and `aud == GOOGLE_CLIENT_ID`
-5. `storage.get_or_create_user("google", email)` (note: uses email as `external_id`, NOT the Google `sub`)
-6. `_issue_access` mints 24h access token
+`src/stores/` does not exist. No Zustand auth store. No `apiLogin`/`apiSignup`.
 
-**Apple flow:** stub returning 503 unless `ENABLE_APPLE_AUTH=true`. Requires JWKS verification (not in stdlib). Marked as Phase 3c reserved.
+`localStorage` keys referenced (read-only by `useOwnerMode.ts`, `useChat.ts`, `AdminPanel.tsx`):
+- `korvix_access_token` — **never written by any FE code**. Used by `useOwnerMode` for owner-token bearer. Source unclear; likely manual dev-tools setting.
+- `korvix_user_id` — `useChat.ts` uses as a per-browser identity key, but I found no write site in the searched FE either.
 
-**Guest flow (only via System B):**
-1. AuthMiddleware on a request with no token mints a guest via `service.create_guest(nonce_from_X-Korvix-Guest-Id)`
-2. Same nonce → same User row (idempotent across reloads)
-3. Issues both access AND refresh tokens, records refresh in `auth_refresh_tokens`
-4. **The FE does NOT explicitly call `/v2/auth/guest`** — guests are created implicitly by the middleware for any unauthenticated request.
+This means the **frontend has no working auth path at all today**. Users land on `AuthPage.tsx`, see the stub, click "Continue as Guest", navigate to `/chat`, and the chat flow uses whatever guest scheme the BE middleware applies.
 
-**Logout (FE → `authStore.logout`):**
-1. POST `/auth/logout` (System A) — stateless, returns OK
-2. FE wipes: `korvix-auth`, `korvix_access_token`, `korvix_owner_token`, `korvix_owner_welcome_shown`, `korvix_owner_greeting_shown`, `korvix_oauth_response`
-3. **System B refresh tokens are not revoked** — if a user had a guest refresh token, it stays valid until expiry. Logout is single-system.
+### 1.6 Subsystems that consume identity
 
-### 1.6 What depends on authentication (verified)
+Every owner-bearing route uses `Depends(current_user)` and trusts `user.id` for ownership. Verified in:
 
-| Subsystem | How it consumes auth | Risk if auth changes |
-|---|---|---|
-| `routes/v2_chat_stream.py:_resolve_user_id` | JWT → state.user → **direct base64 decode of JWT payload without signature verify** (sic) → body user_id → "anonymous" | **🔴 Security bug.** The unverified-JWT fallback at step 2 trusts any `sub` claim sent in a forged JWT. Anyone can spoof `user_id` for chat → reach another user's memory. |
-| Memory Plane (`routes/v2_memory.py`) | `Depends(current_user)` then `list_for_user(user.id, ...)` | High — memories are user-scoped. A user_id mismatch (see §1.4) means memory is invisible after switching sign-in method. |
-| Chat sessions (`routes/v2_sessions.py`) | Same | Same |
-| Owner / Admin routes (`v2_admin.py`, `v2_db_health.py`, etc.) | `Depends(require_owner)` | Identity-first owner check covers; OWNER_TOKEN fallback path also active. |
-| Memory extractor (`services/memory_plane/extractor.py`) | Reads `user_id` from chat ctx | Same as memory. |
-| Tools that touch user-scoped data (`tool_executions`, `browser_tool`, `github_tool`, `ecommerce_research_tool`) | Authorization header forwarded | If header missing → tool runs as guest. |
-| Jobs (`v2_jobs.py`) | `current_user()` for ownership filter on `/v2/jobs`; `require_owner()` on `/v2/jobs/all` | Standard. |
+- `routes/v2_memory.py` — `current_user`, with comment: "Auth-bound; user_id is derived from the JWT (via current_user), NEVER from the request body, so no caller can spoof another user."
+- `routes/v2_sessions.py` — `current_user` on every route.
+- `routes/v2_agent.py` — `current_user`.
+- `routes/v2_admin.py` — `require_owner`.
 
-### 1.7 Owner Mode interaction with auth
+So the identity-attribution layer is sound; what's missing is a way for a user to **become** anything other than a guest.
 
-Two valid unlocks per `services/admin/owner.py`:
-- **Identity path** — authenticated user with email in `OWNER_EMAILS` (CSV, lowercase) or `OWNER_EMAIL` (singular). Requires `ENABLE_ADMIN_MODE=true`. Identity-first precedence in `require_owner`.
-- **Token path** — `OWNER_TOKEN` env var, `hmac.compare_digest`-compared against `X-Korvix-Owner-Token` header. Treated equivalent to identity owner.
+### 1.7 Owner mode
 
-The FE clears `korvix_owner_token` when the email on the signed-in user changes (`authStore.ts:_clearStaleOwnerArtifactsOnAccountChange`). This is the right defence against shared-device leak.
-
-### 1.8 Frontend `AuthPage.tsx` (986 lines)
-
-Did not deep-read in this audit. Three quick observations from the surface:
-- It's the single biggest auth FE file.
-- It owns Google GIS button + email/password form + likely Apple stub UX.
-- 986 lines suggests it's doing more than one screen's work — sign-in, sign-up, possibly forgot-password handoff, marketing copy.
-
-→ Phase 1 should split this into `SignInPage.tsx` + `SignUpPage.tsx` + `ForgotPasswordPage.tsx` + shared `<AuthForm>` primitive.
+`backend/services/admin/owner.py` (per audit) — `is_owner(user)` with `ENABLE_ADMIN_MODE` kill-switch and `OWNER_TOKEN` fallback. Stays as-is. Phase 1 does not touch owner mode.
 
 ---
 
-## Part II — What exists / missing / should be removed / should be refactored
+## Part II — Real security findings (re-issued)
 
-### 2.1 What already exists (do not rebuild)
+The prior S1 + S2 critical findings were spurious. Re-graded against the actual code:
 
-1. ✅ Stdlib HS256 JWT — algorithm pinning, alg=none guard, timing-safe sig compare. Keep as-is.
-2. ✅ Refresh-token rotation with theft detection (family-wide revoke on reuse-of-revoked). Wire it into the FE.
-3. ✅ `auth_users` identity table with `(kind, external_id)` unique. Make this the **single source of truth**.
-4. ✅ Zustand + persist auth store with partialize (no JWT in persisted blob). Keep.
-5. ✅ Owner-token + owner-email detection. Cross-account artifact scrubbing on email change. Keep.
-6. ✅ Google `id_token` verification via Google's `tokeninfo` endpoint with audience check + `email_verified` check. Keep, harden.
-7. ✅ Password constant-time enumeration mitigation (dummy PBKDF2 on email-not-found).
-8. ✅ Per-route `Depends(current_user)` / `Depends(require_auth)` / `Depends(require_owner)` pattern.
-9. ✅ `JWT_SECRET_KEY` env enforcement (refuses to issue in non-development without one).
-10. ✅ AuthMiddleware with stable per-browser guest via `X-Korvix-Guest-Id`.
-
-### 2.2 What is missing
-
-1. ❌ **Refresh tokens for email/password and Google logins.** System A mints access-only. After 24h the user is silently logged out. No silent refresh in the FE.
-2. ❌ **A single user identity table.** Email/password users live in `auth_password_users`; Google/Apple/guest users live in `auth_users`. No cross-table foreign key, no merge path.
-3. ❌ **Email verification.** Sign-up trusts whatever email the user types. No `email_verified_at`. No verification email sent.
-4. ❌ **Password reset.** No "forgot password" flow.
-5. ❌ **Magic link.** Not implemented.
-6. ❌ **Apple Sign-In.** Stub returns 503.
-7. ❌ **MFA / TOTP.** Not designed in. Schema doesn't carry `mfa_enabled` / `totp_secret`.
-8. ❌ **Rate limiting on auth routes.** `/auth/login` will accept unlimited password attempts per IP.
-9. ❌ **Audit log on auth events.** Sign-in / failed login / password change should hit `services/admin/audit.py`.
-10. ❌ **Account-merge endpoint.** Two-table problem leaves users orphaned across providers.
-11. ❌ **Future org_id column on user.** Phase 10 (Stripe + multi-tenant) blocked until this exists.
-12. ❌ **CSRF protection for cookie-based auth.** Currently we use Bearer header only (no cookies); but Phase 1 may introduce httpOnly cookies — CSRF must be designed in.
-13. ❌ **Secure-cookie option for refresh tokens.** They live in JSON responses today; storing in JS-accessible storage is XSS-risky.
-14. ❌ **Bcrypt or Argon2id password hashing.** PBKDF2 at 200k is acceptable but not modern best-practice.
-15. ❌ **OWASP-grade password policy.** No common-password blocklist, no breach-check (HIBP).
-16. ❌ **Frontend sign-in / sign-up / forgot-password as discrete routes.** Currently 986-line `AuthPage.tsx`.
-
-### 2.3 What should be removed (dead / dual / confusing)
-
-1. 🗑 `middleware/auth_placeholder.py` — superseded by `middleware/auth.py`. Delete after a release of coexistence.
-2. 🗑 `routes/auth.py:GET /auth/status` returning `{"authenticated": False}` unconditionally — useless. Delete or wire to real status.
-3. 🗑 The DUPLICATE access-token plumbing in `routes/auth.py:_issue_access` vs `services/auth/service.py:issue` — the route bypasses the service. Either delete the route's local `_issue_access` and call `auth_service`, OR delete the service's guest path. (Keep service, refactor route.)
-4. 🗑 The **direct base64 JWT decode without signature verify** in `v2_chat_stream.py:_resolve_user_id` step 2. **This is a security bug.** Replace with verified decode via `tokens.verify`. (See §1.5.)
-5. 🗑 Once email/password is consolidated into `auth_users`, drop the `auth_password_users` table (or keep only the credential hash, with a FK to `auth_users.id`).
-
-### 2.4 What should be refactored
-
-1. 🔧 **Consolidate to single `auth_users` source-of-truth.** Add `auth_credentials(user_id PK FK, password_hash, mfa_secret, email_verified_at)`. Migrate `auth_password_users` rows: create matching `auth_users` (kind=email, external_id=email) + new `auth_credentials` rows for each. Delete `auth_password_users`.
-2. 🔧 **Unify the two route files.** Move `routes/auth.py` endpoints into `routes/v2_auth.py` (or new `routes/v2_auth_credentials.py`). Keep legacy `/auth/*` paths as a forwarding shim for ONE release before deletion.
-3. 🔧 **Wire System B refresh-token rotation into email/Google login.** `auth_service.login_email(...)` + `auth_service.login_google(...)` issue access + refresh + record refresh-jti; FE silently refreshes when access expires.
-4. 🔧 **Add `email_verified_at` to `auth_users.metadata_json`** (no schema migration needed for the first release; promote to a real column when we port to Postgres in Phase 3).
-5. 🔧 **Wrap legacy `auth.py` endpoints in `Depends(rate_limit_auth)`** when slowapi lands (Phase 7 prep, but plumb the dep slot in Phase 1).
-6. 🔧 **Switch password hashing from PBKDF2 to argon2id.** Add `argon2-cffi` to requirements. Keep the existing PBKDF2 strings readable for migration — on next login, re-hash and store.
-
-### 2.5 Potential security issues (catalogued, prioritised)
-
-| ID | Severity | Issue | Where | Fix |
+| ID | Severity | Real issue | File | Fix |
 |---|---|---|---|---|
-| S1 | 🔴 critical | Chat stream accepts unverified JWT `sub` claim as identity (any user can spoof user_id) | `routes/v2_chat_stream.py:_resolve_user_id` step 2 | Replace base64 decode with `tokens.verify(token, expected_type="access")`. **Fix in Phase 1 PR 1.** |
-| S2 | 🔴 critical | Two-table identity split; same user across email + Google has two separate IDs | `auth_password_users` vs `auth_users` | Schema migration to single `auth_users` + `auth_credentials`. **Phase 1 PR 2.** |
-| S3 | 🟡 high | No refresh tokens for email/Google logins → 24h hard logout | `routes/auth.py:_issue_access` | Issue refresh tokens via `auth_service`. **Phase 1 PR 3.** |
-| S4 | 🟡 high | No rate limiting on `/auth/login` (brute-force) | n/a | slowapi or stub middleware. **Phase 1 PR 5.** |
-| S5 | 🟡 high | No email verification — users can claim any email | `passwords.create_user` | Verification email + `email_verified_at`. **Phase 1 PR 4.** |
-| S6 | 🟡 high | Apple Sign-In stub returns 503 — but FE may attempt it | `routes/auth.py:auth_apple` | Either ship JWKS verify or hide the FE button by env flag. **Deferred to Phase 1.X.** |
-| S7 | 🟢 medium | PBKDF2 instead of argon2id | `passwords.hash_password` | Add argon2-cffi; lazy re-hash on login. **Phase 1 PR 2.** |
-| S8 | 🟢 medium | Dev fallback JWT key (`b"insecure-dev-key..."`) — relies on `ENVIRONMENT != production` discipline | `tokens._secret()` | Refuse to boot in production without `JWT_SECRET_KEY`. Already partially in place; harden. **Phase 1 PR 1.** |
-| S9 | 🟢 medium | No CSRF protection plumbing (relevant if we ever store JWT in cookie) | n/a | Define the cookie-vs-header decision in Phase 1. **PR 1 ADR.** |
-| S10 | 🟢 medium | No timing-equalisation for `_user_from_bearer` lookup misses (sub claim → SQL miss is faster than sub → row found path); not as exploitable as password timing but worth noting | `core/deps.py:_user_from_bearer` | Low priority; can be addressed in PR 6. |
-| S11 | 🟢 low | OAuth state / PKCE for Google — currently the FE sends `id_token` directly from GIS; CSRF + replay protections are Google's responsibility | `routes/auth.py:auth_google` | Acceptable as-is; document. |
-| S12 | 🟢 low | Refresh tokens stored as plain `jti` in DB (no hash); a DB leak reveals all refresh tokens | `services/auth/storage.py` | Store hashed `jti` (SHA-256) in the table; compare on refresh. Phase 1 PR 3. |
+| **R1** | 🟡 Medium | `tokens.py:_secret()` falls back to `b"insecure-dev-key-do-not-use-in-production"` when `ENVIRONMENT="development"` **OR** `settings.DEBUG=True`. If a production Docker image has `DEBUG=True` (e.g. leftover from staging tag), JWTs get signed with the public dev key. | `services/auth/tokens.py:92-119` | Refuse fallback unless **both** `ENVIRONMENT="development"` **and** the process is not bound to a public network. Hard-fail otherwise. |
+| **R2** | 🟡 Medium | No minimum length check on `JWT_SECRET_KEY`. A 1-char prod value would be accepted. | `services/auth/tokens.py:_secret()` | Reject keys < 32 bytes. |
+| **R3** | 🟢 Low | `auth.db` is local SQLite. Acceptable for single-instance Railway. Will need a Postgres path before horizontal scaling (Phase 2). | `services/auth/storage.py` | Note — defer to Phase 2 architecture work. |
+| **R4** | 🟢 Low | `routes/auth.py` is a 7-line stub but the `/auth` prefix is squatted. If we later want `/auth/login` to live elsewhere we'll trip over this. | `routes/auth.py` | Either retire and free the prefix, or use it as the home for the new email/password routes. |
+| **R5** | 🟢 Low | `auth_users` lacks `kind=email` columns (email, password_hash, email_verified_at). Schema needs additive migration before signup/login can land. | `services/auth/storage.py` | Phase 1 PR #2 — additive `ADD COLUMN` migration. |
+| **R6** | 🟢 Low | No rate limiting on `/v2/auth/refresh` or `/v2/auth/guest`. A hostile client can mint guests indefinitely. Tomorrow's signup/login routes will need the same protection. | `routes/v2_auth.py` | Phase 1 PR #9 — IP+user token bucket. |
 
-### 2.6 Architecture issues
-
-1. **Service-layer bypass.** `routes/auth.py` does its own `tokens.issue(...)` instead of going through `services/auth/service.py`. Two paths to mint an access token → schema drift risk.
-2. **Mixed Pydantic + dict shapes.** `services/auth/passwords.py` returns dicts; `services/auth/storage.py` returns `User` dataclasses. The route handlers stitch them. Pick one.
-3. **Lazy imports inside hot paths.** Every `core/deps.py:_user_from_bearer` call lazy-imports `tokens`, `storage`, `passwords`. Acceptable but profile when traffic grows.
-4. **`request.state.user_id` back-compat alias** in `AuthMiddleware` is fine for now but is a rope to trip on.
-
-### 2.7 Scalability concerns
-
-1. **SQLite for auth.** Single-writer ceiling. Phase 3 puts auth on Postgres dispatcher; design Phase 1 schema accordingly (TEXT timestamps, `(kind, external_id)` index, ON DELETE CASCADE — all portable).
-2. **Refresh-token table grows unbounded** unless we periodically purge expired rows. Add a sweep CLI in Phase 1.
-3. **`auth_users.last_seen_at` UPDATE on every authenticated request** = SQLite write per request. Move to an in-memory throttle (touch at most once per N minutes per user).
-4. **No pagination on owner-side `/v2/auth/users` list** (and there isn't one yet — design it before Phase 10).
+The originally claimed S1 (JWT-sub spoof) and S2 (two-table split) are **withdrawn**.
 
 ---
 
-## Part III — Phase 1 implementation plan
+## Part III — What Phase 1 must build (scope grounded in reality)
 
-### 3.1 Goals (success criteria for Phase 1 as a whole)
-
-- A new user can sign up with **email + password**, click a verification link sent via Resend, then sign in.
-- A returning user can **sign in with Google** and reach the same identity row they'd reach via email login (one user, one ID).
-- A signed-in user remains signed in past 24h via **silent refresh** (System B's rotation, wired into System A's flows).
-- A user who forgets their password can request a **reset link** and choose a new one.
-- **No legacy guest sessions are broken.** The `X-Korvix-Guest-Id` flow keeps working through the migration.
-- Owner mode, AdminPanel, chat ownership, memory ownership, and audit log all see exactly one `user.id` per natural person regardless of provider.
-
-### 3.2 Non-goals (deferred to later phases)
-
-- Apple Sign-In wiring (Phase 1.X follow-up).
-- MFA / TOTP (Phase 1 designs the schema; implementation Phase 7).
-- Magic-link sign-in (Phase 1 wires the `email_outbound` plumbing; UX deferred to Phase 2 of auth).
-- Multi-tenant orgs (Phase 10).
-- API keys for programmatic access (Phase 10).
-
-### 3.3 PR breakdown (8 incrementally-merge-able PRs)
-
-Each PR is independently mergeable. Each ships green tests + tsc + vite build. Each leaves the system in a working state.
-
----
-
-#### PR #1 — `fix(auth): close JWT-sub spoof in chat stream + lock JWT_SECRET_KEY in production`
-
-**Objective:** stop accepting unverified JWT claims as identity; harden boot-time secret check.
-
-**Files to modify**
-- `backend/routes/v2_chat_stream.py:_resolve_user_id` — replace base64-decode-without-verify with `tokens.verify(token, expected_type="access")`. On any verify failure, fall through to body/anonymous.
-- `backend/services/auth/tokens.py:_secret()` — already refuses non-dev without secret; tighten the dev-fallback to require `ENVIRONMENT=development` (not just `DEBUG=True`).
-- `backend/tests/test_phase11_web_search_intent.py` and/or a new `test_phase1_chat_jwt_spoof_guard.py` — assertion: a request with a forged JWT (right `sub`, wrong signature) resolves to `anonymous`, not the spoofed id.
-
-**Architecture changes:** none.
-
-**Database changes:** none.
-
-**API changes:** none — semantics tighten, contract unchanged.
-
-**Frontend changes:** none.
-
-**Security considerations:** closes S1, hardens S8.
-
-**Testing requirements**
-- New test: forged JWT → `user_id="anonymous"`.
-- Existing chat-stream tests must still pass.
-- New test: dev fallback secret cannot be used to issue tokens when `ENVIRONMENT=production`.
-
-**Potential risks:** very low — change is restrictive, not permissive.
-
-**Dependencies:** none. Ship first.
-
-**Complexity:** **Low** (~1 day).
+| Capability | Status | Phase 1 PR |
+|---|---|---|
+| HS256 JWT issue/verify | ✅ Exists, production-quality | — |
+| Refresh-token rotation + theft detection | ✅ Exists, textbook-correct | — |
+| AuthMiddleware (verify or guest fallback) | ✅ Exists | — |
+| Guest creation (idempotent on browser nonce) | ✅ Exists | — |
+| Single identity table `auth_users` | ✅ Exists | extended in PR #2 |
+| Owner mode | ✅ Production-grade | — |
+| `JWT_SECRET_KEY` prod hardening | ❌ Insecure dev fallback can leak | **PR #1** |
+| Email + password sign-up + sign-in | ❌ Does not exist | **PR #3** |
+| Argon2id password hashing | ❌ Does not exist | **PR #2** |
+| Google OAuth | ❌ Does not exist | **PR #5** |
+| Apple Sign-In | ❌ Deferred per decision #5 | post-Phase 1 |
+| Magic Links | ❌ Deferred per decision #6 | post-Phase 1 |
+| Email verification (Resend) | ❌ Does not exist | **PR #6** |
+| Password reset (Resend) | ❌ Does not exist | **PR #6** |
+| Refresh token in httpOnly cookie | ❌ Currently returned in JSON body | **PR #7** |
+| Frontend auth wiring (api client + store) | ❌ Page is UI-only stub | **PR #8** |
+| **Guest Account Merge** | ❌ Does not exist | **PR #4** (architectural foundation) |
+| Rate limiting + audit log | ❌ Does not exist | **PR #9** |
+| Runbook + ADRs | ❌ Does not exist | **PR #10** |
 
 ---
 
-#### PR #2 — `feat(auth): unified user identity — single `auth_users` table + `auth_credentials` join`
+## Part IV — Future compatibility (designed in, not bolted on)
 
-**Objective:** kill the two-table problem. One person → one row in `auth_users` regardless of provider.
+| Future feature | Phase 1 hooks |
+|---|---|
+| **Organizations / multi-tenancy** | `auth_users` keeps a singleton-tenant default; PR #2 adds `metadata_json.org_id = null` reservation. Tables that bind ownership use `(user_id, org_id)` composite keys ready to roll. No schema break later. |
+| **RBAC** | PR #2 reserves `metadata_json.roles = []`. Owner-mode hook in PR #4's merge service centralises role grants. |
+| **Stripe billing** | PR #2 reserves `metadata_json.stripe_customer_id = null`. Webhook handler is a Phase-2 add. |
+| **API keys** | PR #2 reserves `metadata_json.api_keys_enabled = false`. Distinct table `api_keys(user_id, prefix, hash, ...)` lands in a later PR; identity stays unchanged. |
+| **Enterprise SSO (OIDC / SAML)** | `kind` discriminator already supports new values. Storage requires no change to add `kind="oidc:<tenant>"`. |
+| **MFA** | PR #3 reserves `metadata_json.mfa_factors = []`. PR #6's email path is the natural first factor (already wired). TOTP is post-Phase 1. |
 
-**Files to modify (BE)**
-- NEW `backend/services/auth/credentials.py` — owns `auth_credentials` table (user_id PK FK → `auth_users.id`, `password_hash`, `password_hash_alg`, `mfa_secret` (null for now), `email_verified_at`).
-- `backend/services/auth/storage.py` — add `get_user_by_email(email)`, `link_email_to_existing_user(user_id, email)`.
-- `backend/services/auth/passwords.py` — rewrite to operate on `auth_users` + `auth_credentials` instead of the standalone `auth_password_users` table. Keep PBKDF2 verify-only for legacy hashes; rehash to argon2id on next successful login.
-- NEW `backend/scripts/auth_migrate.py` CLI — `python -m backend.scripts.auth_migrate consolidate` copies `auth_password_users` rows into `auth_users` (kind=email, external_id=email) + `auth_credentials`. Idempotent via `ON CONFLICT DO NOTHING`. Dry-run flag.
-- `requirements.txt` — add `argon2-cffi==23.1.0`.
+---
 
-**Files to modify (FE)** — none. The `core/deps.py:_user_from_bearer` change unifies sub→user resolution to a single table read.
+## Part V — Guest Account Merge architecture (first-class pillar)
 
-**Architecture changes**
-- One identity, one credential row, one MFA slot per user.
-- `auth_users.kind` becomes "the primary provider" — a user can additionally have a credential row (email/password) even if their primary kind is `google`.
+This is the architectural piece that determines whether a guest's accumulated state survives sign-up. The guarantee KorvixAI must provide: **a guest can sign up and seamlessly continue using the product without losing any existing data**.
 
-**Database changes**
-```sql
-CREATE TABLE auth_credentials (
-    user_id            TEXT PRIMARY KEY REFERENCES auth_users(id) ON DELETE CASCADE,
-    password_hash      TEXT,                              -- nullable for OAuth-only users
-    password_hash_alg  TEXT NOT NULL DEFAULT 'argon2id',  -- argon2id | pbkdf2_sha256 (legacy)
-    email_verified_at  TEXT,
-    mfa_totp_secret    TEXT,                              -- reserved; Phase 1 leaves null
-    created_at         TEXT NOT NULL,
-    updated_at         TEXT NOT NULL
-);
--- auth_password_users is NOT dropped in PR #2 — left for one release as
--- "do not write, only read for fallback." Dropped in PR #6.
+### 5.1 Inventory of owner-bearing state to merge
+
+Every store that records `user_id` (or `owner_id`) ownership must implement a merge protocol. Verified data domains as of `claude/advanced-trading-intelligence-s81Jc @ fb83bdc`:
+
+| Domain | Service | Storage |
+|---|---|---|
+| Identity (the User row itself) | `services/auth` | `auth_users`, `auth_refresh_tokens` |
+| Memory plane (memories, embeddings) | `services/memory_plane` | `memory_plane.db` (SQLite) **and** Postgres backend |
+| Sessions (workspaces, threads, messages) | `services/sessions` | `sessions.db` |
+| Background jobs | `services/jobs` | `jobs.db` |
+| Assets (uploads + on-disk files) | `services/assets` | `assets.db` + `ASSETS_STORAGE_LOCAL_ROOT/<user_id>/...` |
+| Vision pipeline | `services/vision` | `vision.db` |
+| Workflows | `services/workflows` | `workflows.db` |
+| Agent tasks | `services/agent_tasks` | `agent_tasks.db` |
+| Scratchpad | `services/scratchpad` | `scratchpad.db` |
+| Panels (real coordination) | `services/panels` | `panels.db` |
+| Agent messenger | `services/agent_messenger` | `agent_messages.db` |
+| Tool executions | `services/tool_executions` | `tool_executions.db` |
+| Agent presence | `services/agent_presence` | in-memory snapshot only — N/A |
+| Future workspaces / projects | TBD | per-service `(user_id, ...)` schemas reserved |
+| User preferences / settings | not yet a dedicated service | covered by metadata_json + future prefs.db |
+
+This list lives in `backend/services/auth/merge_registry.py` as data — see §5.3.
+
+### 5.2 Design principles
+
+1. **Registry pattern.** Each owner-bearing service exposes a tiny adapter:
+   ```python
+   class OwnerReassignAdapter(Protocol):
+       domain: str                                                  # e.g. "memory_plane"
+       def reassign_owner(self, from_user_id: str, to_user_id: str) -> int: ...  # rows
+       def has_owned_data(self, user_id: str) -> bool: ...          # cheap conflict probe
+   ```
+   The auth/merge service holds a registry of adapters. Adding a new owner-bearing service to Phase 2+ is a one-line registration; no merge logic gets touched.
+
+2. **Per-domain atomicity, cross-domain ordering.** Each adapter does its work in a single transaction inside its own DB. The merge service orders adapters deterministically and records partial completion in `auth_merge_events` so a crash leaves a re-runnable state.
+
+3. **Idempotent.** Re-running merge on an already-merged pair is a no-op. The audit row keeps a checksum so partial retries converge.
+
+4. **Theft-resistant.** Only the principal of the guest's current session can merge it. The merge endpoint requires:
+   - A valid `Authorization: Bearer <access_token>` of the destination account.
+   - An `X-Korvix-Guest-Id` header whose nonce was recently bound to an active guest session (within `GUEST_MERGE_BIND_TTL_MIN=60`, configurable). The merge service verifies via `auth_users` lookup, NOT just trusting the header.
+   - Optional: a short-lived `guest_merge_token` issued at signup time. This closes the residual race where an attacker who races the signup endpoint with their own `X-Korvix-Guest-Id` could try to import a stranger's data. Argued for in PR #4 design doc.
+
+5. **Conflict policy.** If the destination already has data in a domain (`has_owned_data(to_user_id) is True`), the merge service does **not** clobber. Three modes:
+   - `mode="merge"` (default): adapter does best-effort co-existence (e.g. memory plane just changes ownership and lets both sets co-exist as the new user's memories).
+   - `mode="skip_existing"`: adapter skips rows whose key would collide.
+   - `mode="abort"`: adapter returns 0 and the merge service surfaces a 409 with `conflicts: [{domain, count}]` so the FE can prompt the user to choose.
+
+6. **Async-job path.** Inline merge for cheap state (<10MB across adapters). Otherwise enqueue a `kind="auth.merge"` job and return `202 Accepted` with the job id. FE polls `/v2/jobs/{id}`.
+
+7. **Audit trail.** `auth_merge_events(id, requested_at, completed_at, from_user_id, to_user_id, status, rows_per_domain_json, error_msg)`. Append-only.
+
+8. **Compensating delete of the guest user.** After successful merge across all adapters, the guest's `auth_users` row is soft-deleted (`metadata_json.merged_into = <to_user_id>`). Refresh-token family of the guest is revoked. Future guests that arrive with the same nonce get a fresh row (the soft-delete prevents the old row from resurrecting).
+
+### 5.3 Triggers
+
+The merge runs in three places:
+
+1. **Implicit on signup** (most common). When `POST /v2/auth/register` is called with `X-Korvix-Guest-Id` matching the current bearer's guest identity, the merge runs inline before the response. FE doesn't need to do anything special. PR #4 ships this default-on.
+
+2. **Implicit on first sign-in** (returning user). When `POST /v2/auth/login` succeeds and the current request was guest-authenticated, the merge runs inline. The FE prompts before login ("You have unsaved data from this browser session. Move it into your account?") — confirmation goes through as a query flag `merge_guest_state=true|false`. Default: prompt. Decision is remembered in `localStorage.korvix_merge_pref` for the rest of the session.
+
+3. **Explicit `POST /v2/auth/merge`** for after-the-fact / cross-device / support flows. Body: `{ source_guest_id: string, mode: "merge"|"skip_existing"|"abort" }`. Requires authenticated bearer + ownership proof (see §5.2.4). This is also how the support team can manually rescue a user who clicked "no" by accident — they reset the bind TTL via an admin endpoint and re-merge.
+
+### 5.4 Failure modes covered
+
+- **Crash mid-merge** → idempotent retry via job runner. `auth_merge_events.status` goes `pending → in_progress → completed/failed`. Resume reads per-adapter progress.
+- **Adapter throws** → that adapter's transaction rolls back; merge service moves to next adapter; final status `partial` with details.
+- **Destination already merged from a different guest** → 409 with `already_merged_from: <prior_guest_id>`. No silent overwrite.
+- **Same guest tries to merge twice** → 409 `already_merged_into: <user_id>`.
+- **Adapter unavailable (e.g. memory_plane.db locked)** → merge fails with `TRANSIENT`, FE retries with backoff. Owner-bearing reads from the destination user are still safe because adapter transactions roll back on failure.
+- **Hostile X-Korvix-Guest-Id** (attacker tries to import a stranger's data) → §5.2.4 prevents this. Without prior bind in `GUEST_MERGE_BIND_TTL_MIN`, the merge returns 403 `guest_not_bound`.
+
+### 5.5 What the FE will surface (designed alongside PR #8)
+
+- On signup form submit, if `X-Korvix-Guest-Id` is present and current session is guest: a single confirmation row inline: *"You have N chats, M memories, K projects from this browser. Move them into your account? [Yes, keep my data] [No, start fresh]"*. Counts come from a cheap `GET /v2/auth/merge/preview` endpoint added in PR #4.
+- On successful merge, a toast: *"Moved N items into your account."*
+- On 409 conflict (rare), a modal listing per-domain conflicts and `merge` / `skip_existing` / `abort` choices.
+
+---
+
+## Part VI — Implementation plan (revised)
+
+| PR | Scope | Effort | Depends on | Risk |
+|---|---|---|---|---|
+| **#1** | **Production-harden JWT_SECRET_KEY.** Refuse insecure fallback when `ENVIRONMENT` is anything other than literal `"development"` (don't trust `DEBUG=True`). Reject keys < 32 bytes. Add tests for both fail-closed paths. | 1d | — | Low |
+| **#2** | **Argon2id + identity schema extension.** Add `argon2-cffi` to `requirements.txt`. Create `services/auth/passwords.py` with `hash_password` / `verify_password`. Additive migration on `auth_users`: `email TEXT`, `email_normalized TEXT UNIQUE`, `password_hash TEXT`, `email_verified_at TEXT`. Reserve `metadata_json` keys: `org_id`, `roles`, `stripe_customer_id`, `api_keys_enabled`, `mfa_factors`. | 2d | #1 | Low (additive only) |
+| **#3** | **Email/password registration + login + me-with-password.** New routes: `POST /v2/auth/register`, `POST /v2/auth/login`. Input validation (email format, password strength). Email-not-found timing equaliser. Argon2id. Issues access + refresh tokens. Tests including timing-equaliser. Does **not** yet wire merge — that's #4. | 3d | #2 | Medium |
+| **#4** | **Guest Account Merge — the architectural pillar.** `services/auth/merge.py` + adapter registry. `OwnerReassignAdapter` Protocol. Adapters for: `memory_plane`, `sessions`, `jobs`, `assets`, `vision`, `workflows`, `agent_tasks`, `scratchpad`, `panels`, `agent_messenger`, `tool_executions`. `auth_merge_events` table. `POST /v2/auth/merge` + implicit merge in `register` / `login`. `GET /v2/auth/merge/preview` for FE counts. Async-job path via existing `services/jobs`. Theft-resistant bind via guest session lookup. Conflict modes. Tests across all adapters including partial-failure. **This is the largest PR — non-negotiable scope.** | 6d | #3 | High (touches every owner-bearing store; mitigated by adapter pattern keeping each touch tiny) |
+| **#5** | **Google OAuth.** `POST /v2/auth/google` — verify ID token via `oauth2.googleapis.com/tokeninfo`. `get_or_create_user("google", external_id="google:<sub>")`. Inline guest merge per #4 protocol. Apple route stub: returns 503 with `feature_disabled` envelope unless `ENABLE_APPLE_AUTH=true`. Tests. | 2d | #4 | Low |
+| **#6** | **Resend email integration.** `services/email/resend.py` HTTP client (no SDK). Verification flow: `POST /v2/auth/email/verify/request`, `GET /v2/auth/email/verify/confirm?token=...`. Password reset: `POST /v2/auth/password/reset/request`, `POST /v2/auth/password/reset/confirm`. Token storage via short-TTL JWT (no DB schema needed). Resend HTTP failures are surfaced but do NOT block the auth response (queue retry). Tests against a Resend mock. | 3d | #2 | Low |
+| **#7** | **Refresh-token cookie pivot.** `v2_auth` routes set refresh cookie (`Set-Cookie: __Host-korvix_refresh=...; HttpOnly; Secure; SameSite=Lax; Path=/v2/auth/refresh; Max-Age=...`). Body no longer contains `refresh_token`. CSRF mitigation: SameSite=Lax + double-submit token on state-changing routes. Cookie cleared on logout. **Backward compat:** the body-shape refresh path stays read-only-deprecated for one release so any external integrations don't break in a window. Tests verify cookie attrs + CSRF. | 2d | #3 | Medium (touches every refresh consumer) |
+| **#8** | **Frontend integration.** `src/services/auth.ts` API client (signup, login, google, refresh, me, logout, merge, merge/preview). `src/stores/authStore.ts` Zustand store with `persist` + `partialize` (persists user, NOT tokens). Wire `AuthPage.tsx`. Add refresh-token rotation via fetch interceptor (calls `/v2/auth/refresh` on 401, retries once). Surface guest-merge prompt on signup. Implement counts UI. Error states. Password strength meter. Tests via Vitest. Add `zustand` to `package.json` if not already present. | 5d | #4, #7 | Medium |
+| **#9** | **Rate limiting + audit log + metrics.** IP+user token bucket on `/v2/auth/{register,login,refresh,password/reset/request,google,merge}`. Append-only `auth_events` table with categorical `event_type`. Metrics: `auth_signup_total`, `auth_login_failures_total`, `auth_refresh_revoked_total`, `auth_merge_total`, `auth_merge_failed_total`. Surfaced via `/internal/metrics` if `ENABLE_METRICS=true`. Tests verify rate-limit headers + audit rows. | 2d | #3, #4, #5, #6 | Low |
+| **#10** | **Runbook + ADRs.** `docs/auth/runbook.md`: incident response (JWT_SECRET_KEY rotation, mass logout, suspected breach drill), customer-support flows (manual merge, account recovery, password reset escalation). ADRs: ADR-001 refresh-token cookie storage, ADR-002 Argon2id, ADR-003 Guest Merge as core pillar, ADR-004 single identity table with kind discriminator, ADR-005 ENABLE_AUTH_V2 flag retirement schedule. No code changes. | 1d | all prior | None |
+
+### 6.1 Aggregate effort
+
+| | Days |
+|---|---|
+| Single-developer end-to-end | **27** |
+| Elapsed (assuming 1 dev, parallelisable QA) | **5–6 weeks** |
+
+The corrected plan is meaningfully larger than my prior (fabricated) ~21-day plan, because the prior plan assumed most of the system already existed. Phase 1 is in fact **green-field on top of a sound guest substrate**.
+
+### 6.2 Out of scope for Phase 1 (deferred)
+
+- Postgres migration of `auth.db` (Phase 2 — multi-instance scale-out).
+- Organizations / RBAC (Phase 2).
+- Stripe billing wiring (Phase 2).
+- Apple Sign-In (deferred per decision).
+- Magic links (deferred per decision).
+- MFA / TOTP (Phase 2).
+- API key issuance (Phase 2).
+- Enterprise SSO (Phase 3).
+- Mass-bulk-import of guest data older than `GUEST_MERGE_BIND_TTL_MIN` from a different browser (cross-device guest merge — not a Phase 1 requirement; magic link or social sign-in covers that path).
+
+### 6.3 Sequencing notes
+
+- PR #1 is shippable in isolation today.
+- PR #2 is a pure additive migration — back-compat by construction.
+- PR #4 (merge) is the longest PR and gates the FE work in PR #8. Strongly recommend tackling it before #5/#6 to lock the merge contract early.
+- PR #7 (cookie pivot) and PR #8 (FE wiring) can land in either order from a code standpoint, but UX-wise we want #7 first so the FE never has to handle a refresh token in JS.
+- PR #10 runbook lags everything else by definition.
+
+---
+
+## Part VII — Open questions for re-approval
+
+The 6 questions in the prior audit are now decided (§Approved decisions). The questions I have **after this correction** are:
+
+1. **Guest Merge bind-TTL.** I've proposed `GUEST_MERGE_BIND_TTL_MIN=60` (one hour from last guest session activity). Acceptable? Or shorter (10 min, hostile-environment posture)?
+
+2. **PR #1 shippability before plan re-approval.** PR #1 (`JWT_SECRET_KEY` hardening) is a small, isolated security improvement that's correct regardless of the broader plan. May I ship it as soon as you approve **this** corrected audit, in parallel with you deciding on the rest?
+
+3. **PR ordering.** I've put merge (#4) before OAuth (#5) and email (#6). Alternative: ship Google OAuth first (it's small, unblocks more user testing). Trade-off: if merge isn't designed first, Google OAuth's guest-merge behaviour has to be retro-fitted. My recommendation is the order above. Override?
+
+4. **Backwards-compat window for body-shape refresh tokens** (PR #7). I've proposed one release of dual-shape read. Acceptable, or cleaner break?
+
+5. **Retiring `routes/auth.py` stub.** Two options: (a) delete it and free the `/auth` prefix, (b) reclaim it as the home of email/password routes (so `POST /auth/login` is the canonical, not `/v2/auth/login`). I lean (b) — the `/v2` prefix exists for the streaming chat API contract; auth has no v1 to differentiate from. Override?
+
+---
+
+## Appendix A — Files actually read during this audit
+
+```
+backend/api.py                              (router wiring confirmed)
+backend/core/deps.py                        (no JWT decode anywhere; reads request.state)
+backend/middleware/auth.py                  (production-quality)
+backend/routes/auth.py                      (7-line stub)
+backend/routes/v2_auth.py                   (guest, refresh, me, logout — only routes)
+backend/routes/v2_chat_stream.py            (no per-user resolution; relies on middleware)
+backend/routes/v2_memory.py                 (current_user, ownership-bound)
+backend/routes/v2_sessions.py               (current_user, ownership-bound)
+backend/services/auth/__init__.py           (re-exports)
+backend/services/auth/identity.py           (User, VALID_KINDS)
+backend/services/auth/service.py            (create_guest, rotate_refresh, logout, identity_for_access_token)
+backend/services/auth/storage.py            (auth_users, auth_refresh_tokens — single table for identity)
+backend/services/auth/tokens.py             (HS256, algorithm-pinned)
+backend/tests/conftest.py                   (per-service tmp DB fixtures — confirms ownership model)
+requirements.txt                            (no argon2 dep yet; no jwt dep; matches stdlib JWT story)
+src/pages/AuthPage.tsx                      (211 lines, UI-only stub)
+src/hooks/useOwnerMode.ts                   (reads korvix_access_token + korvix_user_id from localStorage)
+src/hooks/useChat.ts                        (uses korvix_user_id)
+src/components/AdminPanel.tsx               (reads korvix_access_token + korvix_user_id)
 ```
 
-**API changes**
-- `GET /auth/me` response gains `email_verified` boolean.
-- `POST /auth/signup` and `/auth/login` now operate on the unified store. Response shape unchanged.
-
-**Frontend changes:** none (response shape unchanged; new fields are additive).
-
-**Security considerations**
-- Argon2id at sensible cost (`time_cost=3, memory_cost=65536, parallelism=4` → ~50ms on Railway).
-- Legacy PBKDF2 still verifiable; rehashed on next login.
-
-**Testing requirements**
-- Sign-up → login on argon2id end-to-end.
-- Old PBKDF2 hash verifies; subsequent login rehashes.
-- Account-merge: a user with both `auth_password_users` and `auth_users` (Google) ends up with one row after `auth_migrate consolidate`.
-- Memory ownership intact post-migration (write before migration → read after migration returns the same row).
-
-**Potential risks**
-- 🟡 Migration could lose users if interrupted. Mitigation: dry-run first, idempotent re-runs, full backup of `auth.db` before running.
-
-**Dependencies:** PR #1 merged.
-
-**Complexity:** **High** (~5 days).
+`backend/services/auth/passwords.py` — **searched, does not exist**.
+`src/stores/` — **directory does not exist**.
 
 ---
 
-#### PR #3 — `feat(auth): refresh-token rotation for email + Google flows`
-
-**Objective:** stop the 24h hard logout. Wire System B refresh rotation into login/signup/google.
-
-**Files to modify (BE)**
-- `backend/services/auth/service.py` — add `login_email(email, password)`, `signup_email(...)`, `login_google(id_token)` that all return `(user, access_token, refresh_token)`.
-- `backend/routes/auth.py` — replace `_issue_access(user)` body with calls into `auth_service`. Same response shape, **with `refresh_token` added**.
-- `backend/services/auth/storage.py:record_refresh_token` — store **SHA-256 hash of jti**, not the jti itself (S12 mitigation). Verify takes the raw jti, hashes, compares.
-
-**Files to modify (FE)**
-- `src/stores/authStore.ts` — store refresh token in **httpOnly cookie via a `/auth/refresh-cookie` endpoint** (preferred) OR `localStorage['korvix_refresh_token']` (acceptable interim). Add `apiRefresh()` helper.
-- New: silent refresh interceptor — when any backend call returns 401, automatically POST `/auth/refresh` and retry once. Implement in a small `fetchWithAuth` wrapper.
-- `apiLogin` / `apiSignup` / `apiGoogle` read `refresh_token` from response and persist.
-
-**Architecture changes**
-- `auth.py` route no longer owns token issuance. It delegates to `auth_service`. One mint path.
-
-**Database changes**
-- `auth_refresh_tokens.jti` column stays text, but the value stored is now `sha256(raw_jti).hex()`. Existing rows are left alone (any pre-existing guest refresh tokens just won't verify after this PR — operator should run a sweep CLI to invalidate. Acceptable hit for one deploy.)
-
-**API changes**
-- `/auth/login`, `/auth/signup`, `/auth/google` responses gain `refresh_token` and `refresh_expires_at`.
-- NEW: `POST /auth/refresh` — same shape as `/v2/auth/refresh`, returns new access + refresh.
-- NEW: `POST /auth/logout` revokes the refresh family (currently it's a no-op).
-
-**Frontend changes**
-- `fetchWithAuth(input, init)` wrapper — central place to attach Bearer and handle 401 → silent refresh → retry.
-- Migrate `apiMe`, `apiLogout`, all `useOwnerMode` fetches to it.
-
-**Security considerations**
-- S3, S12 closed.
-- Refresh-token family revoked on rotation reuse (already implemented in `auth_service.rotate_refresh`).
-- Decision point for ADR: cookie vs localStorage for refresh token. **Recommendation: httpOnly Secure SameSite=Lax cookie** with separate refresh-only path. CSRF risk mitigated by SameSite + same-origin policy. **If we ship cookie, we MUST add CSRF token for state-changing routes.** Phase 1 ADR captures the decision.
-
-**Testing requirements**
-- Refresh roundtrip works.
-- Reuse-of-revoked → 401 + whole family killed.
-- Silent refresh on 401 happens at most once per failed request.
-- `fetchWithAuth` doesn't infinite-loop if refresh itself returns 401.
-
-**Potential risks**
-- 🟡 Cookie-based refresh requires CORS adjustment (`credentials: 'include'`).
-- 🟡 Existing access tokens issued before this PR continue to work until expiry (24h). No forced logout.
-
-**Dependencies:** PR #2.
-
-**Complexity:** **High** (~5 days).
-
----
-
-#### PR #4 — `feat(auth): email verification flow + Resend transactional email`
-
-**Objective:** sign-up sends a verification email; clicking the link sets `email_verified_at`.
-
-**Files to modify (BE)**
-- NEW `backend/services/auth/email_outbound.py` — Resend HTTP API client (single dep, single endpoint).
-- NEW `backend/services/auth/verification.py` — issue verification tokens (short-lived `purpose=verify_email` JWTs), store nothing server-side. Verify consumes + sets `email_verified_at`.
-- `backend/routes/auth.py` — `POST /auth/verify-email/request` (resend a verification email), `POST /auth/verify-email/confirm` (consume the token).
-- `backend/services/auth/credentials.py` — `mark_email_verified(user_id)`.
-
-**Files to modify (FE)**
-- `src/pages/AuthPage.tsx` — splits begin here: post-signup screen "check your inbox" + resend button.
-- NEW `src/pages/VerifyEmailLandingPage.tsx` — handles the `?token=...` link target.
-
-**Architecture changes**
-- A verification "token" is a JWT with `purpose=verify_email`, `sub=user_id`, `exp=now+24h`. Short-lived; no DB row.
-
-**Database changes:** none beyond PR #2's `email_verified_at` column.
-
-**API changes**
-- `POST /auth/verify-email/request {email}` — always returns 200 (no enumeration). Sends email if user exists.
-- `POST /auth/verify-email/confirm {token}` — sets `email_verified_at = now`, returns 200.
-
-**Security considerations**
-- Verification tokens are single-purpose (`purpose=verify_email` claim required at verify time).
-- 24h TTL.
-- Resend webhook signature verified.
-- Email template includes the requesting IP + a "didn't request this" link.
-
-**Testing requirements**
-- Token mint + consume happy path.
-- Wrong purpose (e.g. access token presented at /verify-email/confirm) rejected.
-- Expired token rejected.
-- Email enumeration check: `/verify-email/request` for unknown email returns 200 in the same time as known email.
-
-**Potential risks**
-- 🟢 Resend dep added (free tier covers up to 3k emails/month).
-- 🟡 Email deliverability — needs SPF/DKIM on the sending domain. Documented in Railway runbook.
-
-**Dependencies:** PR #2.
-
-**Complexity:** **Medium** (~3 days).
-
----
-
-#### PR #5 — `feat(auth): rate limiting + audit log on auth routes`
-
-**Objective:** brute-force protection + observable auth events.
-
-**Files to modify (BE)**
-- NEW `backend/middleware/rate_limit.py` — minimal in-memory token-bucket. Per (IP, route) limits. Header-based opt-out for tests. Configurable thresholds via env. Replace with `slowapi` + Redis backend in Phase 7 prep.
-- `backend/routes/auth.py` — `Depends(rate_limit_auth(per_minute=5))` on `/auth/login`, `/auth/signup`. `per_minute=2` on `/auth/verify-email/request`, `/auth/forgot-password`.
-- `backend/services/admin/audit.py` — new entry types: `auth.signup`, `auth.login.success`, `auth.login.failure`, `auth.logout`, `auth.password_change`, `auth.email_verify`. Captures `user_id`, `ip`, `user_agent`.
-- `backend/routes/auth.py` writes audit entries at each transition.
-
-**Files to modify (FE)** — none (the limiter returns standard 429 envelopes; existing error handling surfaces them).
-
-**Architecture changes:** none beyond the new middleware.
-
-**Database changes:** none if audit log is already an append-only table; otherwise minor schema bump for new event kinds.
-
-**API changes**
-- 429 envelope on auth-route abuse with `Retry-After` header.
-
-**Security considerations**
-- S4 closed.
-- Audit captures `ip` + `user_agent` for forensics.
-
-**Testing requirements**
-- 6 logins in 1 minute → 6th returns 429.
-- Audit entries written for happy + sad paths.
-- Reset-after-window works.
-
-**Potential risks**
-- 🟢 In-memory limiter is per-instance. Acceptable for one Railway instance; documented as future Redis swap.
-
-**Dependencies:** PR #3 + PR #4 (rate limit the new routes too).
-
-**Complexity:** **Medium** (~2 days).
-
----
-
-#### PR #6 — `chore(auth): retire `auth_password_users` table + `auth_placeholder.py` middleware`
-
-**Objective:** delete dead code once Phase 1 has been in production for ≥1 release.
-
-**Files to modify (BE)**
-- DELETE `backend/middleware/auth_placeholder.py`.
-- DELETE `auth_password_users` table (via `auth_migrate drop-legacy --confirm`).
-- DELETE `backend/services/auth/passwords.py` legacy table touches; keep only argon2 hash/verify utilities used by `credentials.py`.
-- DELETE `routes/auth.py:_issue_access` helper (replaced by `auth_service` calls in PR #3).
-- DELETE `routes/auth.py:GET /auth/status` stub.
-- DELETE `routes/v2.py` and `routes/v2_auth.py:POST /v2/auth/guest` if no FE callers reference them — keep for now, verify in PR.
-
-**Files to modify (FE)** — none, unless `apiGuest` calls exist (they don't today).
-
-**Architecture changes:** clean-up only.
-
-**Database changes:** `DROP TABLE auth_password_users` after verification that the migration in PR #2 copied all rows.
-
-**API changes:** internal cleanup; FE-visible routes unchanged.
-
-**Security considerations**
-- One-time DROP must be gated by a `--confirm` flag in the CLI and require a backup file argument.
-
-**Testing requirements**
-- Smoke test: every existing test passes after deletion.
-
-**Potential risks**
-- 🟡 DROP TABLE is irreversible. Operator runs against a backup-confirmed prod first.
-
-**Dependencies:** PR #2 has been in production for ≥1 release; usage metrics show zero reads of `auth_password_users`.
-
-**Complexity:** **Low** (~1 day).
-
----
-
-#### PR #7 — `feat(auth-fe): split AuthPage into SignIn / SignUp / ForgotPassword + shared <AuthForm>`
-
-**Objective:** break the 986-line `AuthPage.tsx` into single-purpose pages. Enable lazy-loading (Phase 2 of FE roadmap depends on this).
-
-**Files to modify (FE)**
-- DELETE `src/pages/AuthPage.tsx` (or keep as a redirect shim for one release).
-- NEW `src/pages/SignInPage.tsx` (~300 lines).
-- NEW `src/pages/SignUpPage.tsx` (~300 lines).
-- NEW `src/pages/ForgotPasswordPage.tsx` (~200 lines).
-- NEW `src/components/auth/AuthForm.tsx` — shared form primitive: email + password fields, submit, error surface.
-- NEW `src/components/auth/GoogleButton.tsx` — extracted GIS button.
-- `src/App.tsx` — new routes `/auth/sign-in`, `/auth/sign-up`, `/auth/forgot-password`. Redirect `/auth` to `/auth/sign-in`. Use `React.lazy` on all three (alignment with Phase 2 FE).
-
-**Files to modify (BE)** — none.
-
-**Architecture changes:** FE-only refactor.
-
-**Security considerations:** none beyond not regressing existing flows.
-
-**Testing requirements**
-- Visual smoke — three pages render.
-- Sign-in / sign-up / Google buttons all still produce the expected POST.
-- Bundle delta < +5 KB gzip (3 pages lazy-loaded).
-
-**Potential risks:** 🟢 mechanical refactor.
-
-**Dependencies:** PR #4 (verification screen referenced from sign-up).
-
-**Complexity:** **Medium** (~3 days).
-
----
-
-#### PR #8 — `docs(auth): runbook + ADR + Postgres-readiness audit`
-
-**Objective:** capture decisions and prepare Phase 3 (Postgres) for a clean port.
-
-**Files to modify**
-- NEW `docs/runbooks/auth.md` — sign-in/up flows, refresh rotation, theft response, owner mode interaction, troubleshooting.
-- NEW `docs/adr/0001-auth-token-storage.md` — decision: refresh token in httpOnly cookie OR localStorage, with the chosen mitigation list.
-- NEW `docs/adr/0002-password-hashing.md` — argon2id at chosen cost params, rehash-on-login migration.
-- NEW `docs/adr/0003-identity-unification.md` — single `auth_users` table, `auth_credentials` join, migration approach.
-- `KORVIXAI_PRODUCTION_ROADMAP.md` — flip Phase 1 status to "in progress" / "complete".
-
-**Security considerations:** documentation only.
-
-**Testing requirements:** docs link-check.
-
-**Dependencies:** all prior PRs.
-
-**Complexity:** **Low** (~1 day).
-
----
-
-### 3.4 Aggregate effort
-
-| PR | Days | Risk | Blocker chain |
-|---|---|---|---|
-| 1 | 1 | 🟢 | — |
-| 2 | 5 | 🟡 (migration) | 1 |
-| 3 | 5 | 🟡 (cookie ADR) | 2 |
-| 4 | 3 | 🟡 (Resend deliverability) | 2 |
-| 5 | 2 | 🟢 | 3, 4 |
-| 6 | 1 | 🟡 (DROP TABLE) | 2 (+ time in prod) |
-| 7 | 3 | 🟢 | 4 |
-| 8 | 1 | 🟢 | all |
-| **Total** | **~21 days** | | |
-
-Single-developer continuous work: ~3 weeks. With one PR-per-day merge cadence and Railway verification between each, this stretches to ~4–5 weeks elapsed.
-
-### 3.5 Future compatibility (designed in but not implemented in Phase 1)
-
-| Future feature | What Phase 1 prepares | Phase that activates |
-|---|---|---|
-| **Apple Sign-In** | `kind="apple"` reserved in `VALID_KINDS`; route stub already exists | 1.X follow-up |
-| **Magic links** | `email_outbound.py` ships in PR #4; token issuance pattern reusable | 1.X follow-up |
-| **MFA / TOTP** | `auth_credentials.mfa_totp_secret` column reserved (null in Phase 1) | Phase 7 |
-| **Organizations** | `auth_users` design accepts an `org_memberships` join later; no `org_id` column on user table | Phase 10 |
-| **RBAC** | Owner detection is the prototype; per-route `require_perm("memory:write")` decorator pattern designed but not implemented | Phase 10 |
-| **Stripe billing** | `auth_users.id` is the canonical billing subject; no plan column yet | Phase 10 |
-| **API keys** | Schema for `auth_api_keys(user_id, key_hash, scopes, created_at, last_used_at)` reserved in ADR | Phase 10 |
-| **Enterprise SSO (SAML/OIDC)** | `kind` discriminator already supports adding `"saml"` / `"oidc"` as new values without schema change | Phase 11 |
-| **Multi-tenancy** | All ownership writes go through `services/admin/owner.py` which is org-aware-ready (currently checks email; switching to membership is a one-method change) | Phase 10 |
-
-### 3.6 ADRs Phase 1 must produce
-
-1. **ADR-0001: Refresh-token storage** — httpOnly cookie vs localStorage. Recommendation: **httpOnly Secure SameSite=Lax cookie via dedicated `/auth/refresh` path, with explicit CSRF token on state-changing routes.** Alternative: localStorage with shorter refresh TTL (7d) and active-tab activity check.
-2. **ADR-0002: Password hashing** — Argon2id with `time_cost=3, memory_cost=65536, parallelism=4`. Rehash on login for legacy PBKDF2.
-3. **ADR-0003: Identity unification** — single `auth_users` table, separate `auth_credentials` for password + MFA. OAuth users have an `auth_users` row with no `auth_credentials` row (or one with null `password_hash`).
-
----
-
-## Part IV — Open questions for sign-off
-
-Before implementation begins, please confirm:
-
-1. **Refresh token storage:** httpOnly cookie (recommended) OR localStorage? CSRF protection plan if cookie.
-2. **Password hashing:** Argon2id (recommended), or stay PBKDF2 with `2_000_000` iterations? Argon2id adds one dep (`argon2-cffi`).
-3. **Migration window:** can we tolerate any user being briefly logged out during the auth_password_users → auth_users consolidation? Or do we keep both readable until cutover (more code, zero downtime)?
-4. **Email provider:** Resend (recommended for stdlib HTTP) vs Postmark vs SES? Resend's free tier suffices for early stage.
-5. **Apple Sign-In timing:** ship in Phase 1.X or defer entirely until Phase 2? Recommend defer — Apple requires Mac-only key generation and adds friction.
-6. **Magic link timing:** the plumbing lands in PR #4; do we ship the UX in PR #7 (alongside the AuthPage split) or defer to a separate small PR?
-
----
-
-## Document lineage
-
-- 2026-06-25 — initial audit, against `main @ aef9eec`. No implementation.
-- Update after each PR merges to reflect new state.
-
----
-
-**Awaiting approval to proceed to PR #1.**
+**End of corrected audit. Awaiting re-approval before PR #1.**
