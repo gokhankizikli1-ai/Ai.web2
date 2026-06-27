@@ -94,6 +94,49 @@ def _safe_task_stats() -> dict:
         return {"enabled": False, "worker_alive": False, "error": str(exc)[:120]}
 
 
+def _safe_redis_status() -> dict:
+    """Best-effort Redis fanout snapshot — never fails the health probe.
+
+    Reads ONLY in-memory state: the env-driven `is_enabled()` flag (no
+    I/O), and the fanout singleton's stats dict (in-memory counters).
+    Does NOT probe Redis itself — that would defeat the point of a
+    bulletproof health endpoint. The fanout's stats already reflect
+    real connectivity via its `errors` counter and `last_error` string.
+
+    Returned `state`:
+      "disabled" — ENABLE_REDIS=false or REDIS_URL unset (no fanout running)
+      "ok"       — fanout running, no errors recorded
+      "degraded" — fanout running but errors recorded (Redis unreachable
+                   or pubsub failing). Surfaced as degraded; HTTP status
+                   stays 200 because the API itself is alive.
+    """
+    try:
+        from backend.services.redis_client import is_enabled
+        if not is_enabled():
+            return {"state": "disabled", "enabled": False}
+    except Exception as exc:
+        logger.warning("v2/health redis is_enabled() failed: %s", exc)
+        return {"state": "unknown", "enabled": False, "error": str(exc)[:120]}
+
+    try:
+        from backend.services.jobs.events_redis import get_fanout
+        stats = get_fanout().stats()
+    except Exception as exc:
+        logger.warning("v2/health fanout stats failed: %s", exc)
+        return {"state": "unknown", "enabled": True, "error": str(exc)[:120]}
+
+    state = "degraded" if (stats.get("errors", 0) > 0 or stats.get("last_error")) else "ok"
+    return {
+        "state":            state,
+        "enabled":          True,
+        "fanout_started":   bool(stats.get("started", False)),
+        "messages_total":   int(stats.get("messages", 0)),
+        "republishes_total": int(stats.get("republishes", 0)),
+        "errors_total":     int(stats.get("errors", 0)),
+        "last_error":       (stats.get("last_error") or "")[:240],
+    }
+
+
 @router.get("/health")
 async def v2_health() -> dict:
     """Reference implementation of the v2 envelope.
@@ -155,6 +198,11 @@ async def v2_health() -> dict:
         # operators can confirm a flag flip took effect without
         # waiting for a real chat call.
         routing                  = _safe_routing_snapshot(),
+        # Phase 7 slice 2 — Redis fanout status. Reads ONLY in-memory
+        # state — never probes Redis. Surfaced here so operators can
+        # see "degraded" without affecting HTTP status (the API itself
+        # is alive even when Redis is unreachable; /health stays 200).
+        services                 = {"redis": _safe_redis_status()},
     )
 
 
