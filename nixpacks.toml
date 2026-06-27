@@ -63,15 +63,29 @@
 # 3.11.9 exactly) is needed, an overlay is required.
 
 [phases.setup]
-# python311  = Python 3.11.x (latest patch in current nixpkgs)
-# nodejs_20  = Node 20 LTS — required because Nixpacks autodetects
-#              the JS build from package.json and runs `npm ci` +
-#              `npm run build` (tsc + vite). npm ships bundled with
-#              the Node package.
-# gcc        = build toolchain for any wheel-less Python dep (asyncpg,
-#              psycopg, etc all ship binary wheels today but gcc is a
-#              cheap defensive backstop)
-nixPkgs = ["python311", "nodejs_20", "gcc"]
+# python311              = Python 3.11.x (latest patch in current nixpkgs).
+# python311Packages.pip  = pip installed at the Nix layer. CRITICAL —
+#                          the bare `python311` derivation in nixpkgs
+#                          does NOT include pip by default; an explicit
+#                          `python -m pip` call fails with
+#                          "No module named pip" (production 2026-06-27).
+#                          This is the Nix-native way to bootstrap pip;
+#                          preferred over `python -m ensurepip` because
+#                          (a) it's declarative and cacheable across
+#                          builds, (b) ensurepip can be stripped from
+#                          minimal Python builds in Nix, (c) it survives
+#                          a future move to python312 by just renaming
+#                          the prefix (python312Packages.pip).
+# nodejs_20              = Node 20 LTS — required because Nixpacks
+#                          autodetects the JS build from package.json
+#                          and runs `npm ci` + `npm run build` (tsc +
+#                          vite). npm ships bundled with the Node
+#                          package.
+# gcc                    = build toolchain for any wheel-less Python
+#                          dep (asyncpg, psycopg, etc all ship binary
+#                          wheels today but gcc is a cheap defensive
+#                          backstop).
+nixPkgs = ["python311", "python311Packages.pip", "nodejs_20", "gcc"]
 
 [phases.install]
 # Explicit install — DO NOT rely on Nixpacks Python/Node
@@ -80,7 +94,13 @@ nixPkgs = ["python311", "nodejs_20", "gcc"]
 #
 # `python -m pip` rather than bare `pip` so we always hit the
 # Python 3.11 interpreter Nixpacks installed in [phases.setup],
-# never a system Python that might lack the venv path.
+# never a system Python that might lack the venv path. pip itself
+# is provided by `python311Packages.pip` in [phases.setup] above.
+#
+# No `pip install --upgrade pip` step: the Nix-managed pip is the
+# version we want; upgrading via pip itself would write to the
+# user-site directory and create a second pip on PATH, which causes
+# subtle "which pip am I" confusion in later builds.
 #
 # `npm ci` is preserved — the Vite build in [phases.build] needs
 # node_modules. Vercel serves the FE in production, but the
@@ -88,7 +108,6 @@ nixPkgs = ["python311", "nodejs_20", "gcc"]
 # auto-detects package.json; if that step is removed in the
 # future, `npm ci` here can be too.
 cmds = [
-    "python -m pip install --upgrade pip",
     "python -m pip install -r requirements.txt",
     "npm ci",
 ]
