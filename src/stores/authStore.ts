@@ -49,16 +49,33 @@ interface AuthState {
    API + TOKEN PLUMBING
    ═══════════════════════════════════════════ */
 
+// Production failure 2026-06-27: when `VITE_API_URL` was missing in
+// Vercel, the prior code resolved auth endpoints to RELATIVE paths
+// (e.g. `/auth/google`). The browser sent those POSTs to the Vercel
+// domain, which `vercel.json` rewrites to `index.html`. POST against
+// a static HTML file returns **HTTP 405 Method Not Allowed** — which
+// is exactly what surfaced as "Google login returns HTTP 405", "Email
+// login fails", "Email signup fails", and AuthPage's
+// "backend rejected the id_token" misattribution.
+//
+// Every other hook in src/hooks/* already bundles a default backend
+// host for this exact reason (useOwnerMode.ts:36, useAgentPresence.ts:20,
+// useClassify.ts:11). authStore was the lone holdout. This mirrors
+// useOwnerMode.ts's pattern verbatim — same host, same fallback shape.
+//
+// `VITE_API_URL` (when set in Vercel) STILL wins — this is purely a
+// fallback for the unset / empty case. Setting the env var to a
+// different backend (e.g. a custom api.korvixai.com domain) overrides
+// the default without any code change.
+const DEFAULT_API_HOST = 'https://korvixai-backend-production.up.railway.app';
 const RAW_API_BASE = (import.meta.env.VITE_API_URL || '').trim();
-const API_BASE = RAW_API_BASE.replace(/\/+$/, '');
+const API_BASE = (RAW_API_BASE || DEFAULT_API_HOST).replace(/\/+$/, '');
 
-if (!API_BASE) {
-  // Non-fatal — apiUrl() returns relative paths and apiMe() degrades
-  // gracefully to "no user, stay guest".
+if (!RAW_API_BASE) {
   // eslint-disable-next-line no-console
   console.warn(
-    '[authStore] VITE_API_URL is not set — auth endpoints will resolve ' +
-    'to relative paths. Set VITE_API_URL in Vercel to enable real auth.',
+    `[authStore] VITE_API_URL is not set — falling back to ${DEFAULT_API_HOST}. ` +
+    'Set VITE_API_URL in Vercel to override.',
   );
 }
 
