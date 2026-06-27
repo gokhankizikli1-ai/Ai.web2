@@ -47,6 +47,18 @@
 # with the provider-installed pip if left in. Net result: a
 # SMALLER file, not a larger one.
 #
+# WHY `nodejs_20` IS NOT IN `nixPkgs`
+# -----------------------------------
+# PR #171 introduced `providers = ["python", "node"]` but kept
+# `nodejs_20` in nixPkgs from the pre-providers era. With the Node
+# provider active, that caused a Nix file conflict on shared
+# Node header files (v8-microtask.h etc.) because two derivations
+# tried to install the same files. The Node provider's own Node
+# install is canonical — drop the manual nodejs_20 here and trust
+# the provider for Node. Python is different: we still pin
+# python311 in nixPkgs to keep the build off the mise path (see
+# top of file).
+#
 # WHAT THIS FILE DOES NOT DO
 # --------------------------
 # * NO Dockerfile — still on Nixpacks, so the Procfile pattern
@@ -71,10 +83,20 @@ providers = ["python", "node"]
 [phases.setup]
 # python311  = Python 3.11.x (latest patch in current nixpkgs).
 #              The Python provider installs pip + creates a venv
-#              against whatever Python is in nixPkgs.
-# nodejs_20  = Node 20 LTS — the Node provider runs `npm ci` +
-#              `npm run build` (tsc + vite) against this Node.
+#              against whatever Python is in nixPkgs. We KEEP this
+#              entry because removing it would let Nixpacks/Railpack
+#              fall back to mise for Python resolution, which is the
+#              exact failure mode railway.toml + this file were
+#              created to escape (mise ERROR Failed to install core:
+#              python@3.11.9 — see commits 9ceb694 + 7383beb).
+#
+# NOTE — no `nodejs_20` entry. The Node provider installs Node
+# itself. Listing `nodejs_20` here too caused a Nix file conflict
+# on shared header files (v8-microtask.h etc.) in 2026-06-27's
+# build because the SAME files were installed by two derivations.
+# The Node provider's own Node install is the canonical one.
+#
 # gcc        = build toolchain for any wheel-less Python dep
 #              (asyncpg, psycopg, etc all ship binary wheels today
 #              but gcc is a cheap defensive backstop).
-nixPkgs = ["python311", "nodejs_20", "gcc"]
+nixPkgs = ["python311", "gcc"]
