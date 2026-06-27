@@ -49,7 +49,13 @@ def tmp_auth_db(tmp_path, monkeypatch):
     monkeypatch.setenv("AUTH_DB_PATH", str(db_file))
     monkeypatch.setenv("JWT_SECRET_KEY", "test-secret-key-32-chars-minimum-aaaa")
     from backend.services.auth import storage as auth_storage
-    monkeypatch.setattr(auth_storage, "_INITIALIZED", False, raising=False)
+    from backend.services.auth import passwords as auth_passwords
+    monkeypatch.setattr(auth_storage,   "_INITIALIZED", False, raising=False)
+    # Phase-1 PR #2 — passwords.py also keeps a module-level lazy-init
+    # flag; reset it so each test gets a clean auth_password_users
+    # schema in its own tmp DB instead of inheriting state from a
+    # previous test that already ran init() against a different file.
+    monkeypatch.setattr(auth_passwords, "_INITIALIZED", False, raising=False)
     yield db_file
 
 
