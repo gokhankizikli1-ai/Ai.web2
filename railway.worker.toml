@@ -16,20 +16,32 @@
 # default `railway.toml` and keeps whatever healthcheck the
 # dashboard has set for it. Nothing here affects the web service.
 #
-# REQUIRED ONE-TIME DASHBOARD STEP
-# --------------------------------
-# In the Railway dashboard, for the WORKER service:
-#     Settings → Service → Config-as-Code → Config file path
-#     Set to: railway.worker.toml
+# REQUIRED ONE-TIME DASHBOARD STEPS (worker service only)
+# -------------------------------------------------------
+# All four steps must be performed in the Railway dashboard for
+# the WORKER service. The file alone cannot fix the failure — some
+# settings can ONLY be configured in the dashboard or GraphQL API
+# (per Railway docs: https://docs.railway.com/deployments/monorepo).
 #
-# (The web service keeps the default `railway.toml`. Don't touch
-# its config path.)
+#   1. Settings → Service Source → Config-as-Code →
+#        Config file path  =  railway.worker.toml
 #
-# Per Railway docs: `rootDirectory` and `Config file path` can
-# only be set via the Dashboard or GraphQL API — not via the CLI
-# or config-as-code. So this one click is unavoidable. After it,
-# every redeploy of the worker honours this file.
-# https://docs.railway.com/deployments/monorepo
+#   2. Settings → Deploy → Custom Start Command  →  CLEAR
+#      (Production currently has a stale value pointing at uvicorn
+#       backend.api:app. The `startCommand` declared below
+#       supersedes it only after this dashboard field is empty.)
+#
+#   3. Settings → Networking → Public Networking  →  REMOVE
+#      (A worker has no HTTP server; an externally-routed port
+#       8080 forces the platform proxy to probe, which fails.)
+#
+#   4. Settings → Deploy → Healthcheck Path  →  CLEAR
+#      (Setting it to empty in the dashboard, not just absent
+#       from this file. Some Railway versions merge file +
+#       dashboard config rather than replacing.)
+#
+# The web service stays untouched: keeps `railway.toml`, its
+# public domain, and its `/health` healthcheck.
 
 [build]
 # Same builder as the web service. Both processes run from the
@@ -40,6 +52,37 @@
 builder = "NIXPACKS"
 
 [deploy]
+# `startCommand` is the SOURCE OF TRUTH for the worker.
+#
+# Without this field, Railway falls back to (in order):
+#   1. Dashboard "Custom Start Command" (if set on the service)
+#   2. Procfile process matching the service name
+#   3. Nixpacks auto-detection (which picks `python -m uvicorn ...`
+#      because the project also exposes a FastAPI app)
+#
+# Real-world failure mode this guards against (Production 2026-06-25):
+# the worker service had a stale dashboard-set Custom Start Command —
+# `uvicorn backend.api:app --host 0.0.0.0 --port $PORT` — left over
+# from when `backend/api.py` was the canonical web entry point
+# (now superseded by root `api.py`). That made the worker silently
+# run as a duplicate of the web API rather than as Celery. Healthcheck
+# probed /health on a uvicorn that may or may not have been booting
+# cleanly inside the worker container; either way it never ran tasks.
+#
+# Declaring startCommand here makes the file-driven value override
+# the dashboard's stale value. The operator must also CLEAR the
+# dashboard's Custom Start Command (see header) — otherwise the two
+# fields fight on every redeploy.
+#
+# Mirrors Procfile `worker:` verbatim — keep in sync if Procfile
+# changes. Tested against:
+#   * backend/jobs/celery_app.py — exports module-level `app`
+#   * backend/jobs/tasks.py      — registers `korvix.jobs.dispatch`
+#   * backend/jobs/celery_app.py:73-92 — defines the 6 queues below
+#     (`korvix.dlq` is intentionally not subscribed; it's a sink
+#     for operator inspection only.)
+startCommand = "celery -A backend.jobs.celery_app worker --include=backend.jobs.tasks --loglevel=info --concurrency=2 -Q korvix.default,korvix.research,korvix.vision,korvix.embeddings,korvix.orchestration,korvix.maintenance"
+
 # Intentionally NO `healthcheckPath` — Celery has no HTTP server.
 # Railway treats absence of the field as "do not run an HTTP
 # probe"; worker liveness is the process being up.
