@@ -36,9 +36,10 @@
 #       8080 forces the platform proxy to probe, which fails.)
 #
 #   4. Settings → Deploy → Healthcheck Path  →  CLEAR
-#      (Setting it to empty in the dashboard, not just absent
-#       from this file. Some Railway versions merge file +
-#       dashboard config rather than replacing.)
+#      (Belt-and-suspenders: this file now declares
+#       `healthcheckPath = ""` explicitly, which should override
+#       the dashboard value. Clearing the dashboard field too is
+#       still recommended so the two sources agree visually.)
 #
 # The web service stays untouched: keeps `railway.toml`, its
 # public domain, and its `/health` healthcheck.
@@ -83,10 +84,18 @@ builder = "NIXPACKS"
 #     for operator inspection only.)
 startCommand = "celery -A backend.jobs.celery_app worker --include=backend.jobs.tasks --loglevel=info --concurrency=2 -Q korvix.default,korvix.research,korvix.vision,korvix.embeddings,korvix.orchestration,korvix.maintenance"
 
-# Intentionally NO `healthcheckPath` — Celery has no HTTP server.
-# Railway treats absence of the field as "do not run an HTTP
-# probe"; worker liveness is the process being up.
+# `healthcheckPath = ""` — Celery has no HTTP server. The empty
+# string is declared EXPLICITLY (not omitted) so the file-driven
+# value supersedes any dashboard-persisted value.
 #
+# Why the empty string instead of omitting the key: Railway merges
+# file + dashboard config rather than strictly replacing. Omitting
+# `healthcheckPath` from the file leaves the dashboard's prior
+# value (e.g. "/health") in effect. Declaring `""` here is the
+# config-as-code way to say "no healthcheck on this service" so
+# the dashboard's stale `/health` gets overridden.
+healthcheckPath = ""
+
 # `restartPolicyType = "ON_FAILURE"` — if the worker crashes
 # (e.g. Redis disconnect, OOM, an unhandled task exception that
 # escapes Celery's task barrier), Railway restarts it
