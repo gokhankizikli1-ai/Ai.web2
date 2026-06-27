@@ -15,45 +15,45 @@
 # Nixpacks build cache resolves the interpreter directly — no
 # mise involvement at any step.
 #
-# `runtime.txt` was deleted in the same commit. It was the
-# legacy Heroku-style trigger that mise was reading. Without
-# it, even if Railway flips builders again, mise has nothing
-# to install.
+# `runtime.txt` was deleted in the same commit. It was the legacy
+# Heroku-style trigger that mise was reading. Without it, even if
+# Railway flips builders again, mise has nothing to install.
+#
+# WHY WE DECLARE `providers` EXPLICITLY
+# -------------------------------------
+# Real failure (Production 2026-06-27): the Railway dashboard
+# reported **"Providers: No providers"** for the web service.
+# Nixpacks' auto-detection silently failed to identify Python /
+# Node from requirements.txt + package.json. With no provider,
+# Nixpacks ran the start command against a bare Python interpreter
+# with NO pip installed:
+#
+#   RUN python -m pip install --upgrade pip
+#   /root/.nix-profile/bin/python: No module named pip
+#
+# Two earlier attempts (PR #169 explicit [phases.install], PR #170
+# pip-via-Nix) papered over this — but the actual fix is to tell
+# Nixpacks "this IS a Python+Node project" up front. With
+# `providers` declared, Nixpacks:
+#   * Activates its Python provider → installs pip, creates a venv,
+#     runs `pip install -r requirements.txt` correctly.
+#   * Activates its Node provider → runs `npm ci` + `npm run build`.
+#   * Shows the activated providers in the Railway dashboard
+#     (instead of "No providers").
+#
+# Reverting PR #169/#170's workarounds in the same commit: the
+# explicit [phases.install] and python311Packages.pip in nixPkgs
+# are no longer needed (providers handle both) and would conflict
+# with the provider-installed pip if left in. Net result: a
+# SMALLER file, not a larger one.
 #
 # WHAT THIS FILE DOES NOT DO
 # --------------------------
 # * NO Dockerfile — still on Nixpacks, so the Procfile pattern
-#   keeps each Railway service (api + worker) on the right
+#   keeps each Railway service (web + worker) on the right
 #   start command.
 # * NO start command override — defer to Procfile (web) and
 #   railway.worker.toml (worker).
-#
-# WHY WE NOW DECLARE [phases.install] EXPLICITLY
-# ----------------------------------------------
-# Real failure (Production 2026-06-27): web service crashed with
-#   ModuleNotFoundError: No module named 'uvicorn'
-# even though `uvicorn==0.30.1` is in requirements.txt and the
-# worker (which uses celery + redis from the same file) was
-# healthy. This means Nixpacks' Python auto-detection ran for the
-# worker but NOT for the web service — almost certainly because the
-# web service has a Custom Build Command set in the Railway
-# dashboard that overrides Nixpacks' auto-generated install step.
-# Declaring the install commands here in code-as-config makes the
-# pip install explicit and deterministic — Nixpacks runs whatever
-# [phases.install] declares, no detection needed. A dashboard-set
-# Custom Build Command can STILL override this; the operator must
-# clear that field too (see "REQUIRED DASHBOARD AUDIT" below).
-#
-# REQUIRED DASHBOARD AUDIT (web service)
-# --------------------------------------
-# If pip install still does not run after this change, the
-# Railway dashboard has an override that beats nixpacks.toml.
-# For the WEB service only, in Settings → Deploy, CLEAR:
-#   - "Custom Build Command"    (must be empty)
-#   - "Custom Install Command"  (must be empty)
-# And in Settings → Source, verify:
-#   - "Root Directory" is "/" or empty (NOT a subdir — Nixpacks
-#     reads requirements.txt + package.json from the build root).
 #
 # IF YOU NEED TO CHANGE THE PYTHON VERSION
 # ----------------------------------------
@@ -62,52 +62,19 @@
 # ships the latest patch per minor; if a specific patch (e.g.
 # 3.11.9 exactly) is needed, an overlay is required.
 
-[phases.setup]
-# python311              = Python 3.11.x (latest patch in current nixpkgs).
-# python311Packages.pip  = pip installed at the Nix layer. CRITICAL —
-#                          the bare `python311` derivation in nixpkgs
-#                          does NOT include pip by default; an explicit
-#                          `python -m pip` call fails with
-#                          "No module named pip" (production 2026-06-27).
-#                          This is the Nix-native way to bootstrap pip;
-#                          preferred over `python -m ensurepip` because
-#                          (a) it's declarative and cacheable across
-#                          builds, (b) ensurepip can be stripped from
-#                          minimal Python builds in Nix, (c) it survives
-#                          a future move to python312 by just renaming
-#                          the prefix (python312Packages.pip).
-# nodejs_20              = Node 20 LTS — required because Nixpacks
-#                          autodetects the JS build from package.json
-#                          and runs `npm ci` + `npm run build` (tsc +
-#                          vite). npm ships bundled with the Node
-#                          package.
-# gcc                    = build toolchain for any wheel-less Python
-#                          dep (asyncpg, psycopg, etc all ship binary
-#                          wheels today but gcc is a cheap defensive
-#                          backstop).
-nixPkgs = ["python311", "python311Packages.pip", "nodejs_20", "gcc"]
+# Explicitly activate both providers — beats Nixpacks' fragile
+# auto-detection. Shows up in the Railway dashboard's "Providers"
+# field and triggers the canonical install behaviour for each
+# language (pip + venv for Python, npm ci + npm run build for Node).
+providers = ["python", "node"]
 
-[phases.install]
-# Explicit install — DO NOT rely on Nixpacks Python/Node
-# auto-detection alone. The web service deploy proved the
-# auto-detection is fragile (see header).
-#
-# `python -m pip` rather than bare `pip` so we always hit the
-# Python 3.11 interpreter Nixpacks installed in [phases.setup],
-# never a system Python that might lack the venv path. pip itself
-# is provided by `python311Packages.pip` in [phases.setup] above.
-#
-# No `pip install --upgrade pip` step: the Nix-managed pip is the
-# version we want; upgrading via pip itself would write to the
-# user-site directory and create a second pip on PATH, which causes
-# subtle "which pip am I" confusion in later builds.
-#
-# `npm ci` is preserved — the Vite build in [phases.build] needs
-# node_modules. Vercel serves the FE in production, but the
-# Railway build still runs `npm run build` because Nixpacks
-# auto-detects package.json; if that step is removed in the
-# future, `npm ci` here can be too.
-cmds = [
-    "python -m pip install -r requirements.txt",
-    "npm ci",
-]
+[phases.setup]
+# python311  = Python 3.11.x (latest patch in current nixpkgs).
+#              The Python provider installs pip + creates a venv
+#              against whatever Python is in nixPkgs.
+# nodejs_20  = Node 20 LTS — the Node provider runs `npm ci` +
+#              `npm run build` (tsc + vite) against this Node.
+# gcc        = build toolchain for any wheel-less Python dep
+#              (asyncpg, psycopg, etc all ship binary wheels today
+#              but gcc is a cheap defensive backstop).
+nixPkgs = ["python311", "nodejs_20", "gcc"]
