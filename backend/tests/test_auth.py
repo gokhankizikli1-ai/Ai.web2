@@ -102,6 +102,171 @@ def test_issue_disallows_overriding_standard_claims(tmp_auth_db):
 
 
 # ──────────────────────────────────────────────────────────────────────────
+# Phase-1 PR #2 — Argon2id default + lazy PBKDF2 → Argon2id migration
+#
+# Coverage:
+#   - hash_password() produces Argon2id, not PBKDF2.
+#   - verify_password() handles BOTH formats (forward compat for new
+#     Argon2id hashes; backward compat for existing PBKDF2 hashes).
+#   - needs_rehash() returns True for legacy PBKDF2, False for fresh
+#     Argon2id.
+#   - verify_credentials() silently re-hashes a successful PBKDF2
+#     login to Argon2id (zero-downtime migration).
+#   - A rehash failure NEVER turns a successful login into a failed
+#     one — login still succeeds; logs warn.
+#   - The not-found timing equaliser does not crash on missing email.
+# ──────────────────────────────────────────────────────────────────────────
+
+def test_hash_password_produces_argon2id(tmp_auth_db):
+    from backend.services.auth import passwords
+    h = passwords.hash_password("hunter22-correct-horse")
+    assert h.startswith("$argon2id$"), f"expected Argon2id, got {h[:24]}"
+
+
+def test_verify_argon2id_round_trip(tmp_auth_db):
+    from backend.services.auth import passwords
+    h = passwords.hash_password("hunter22-correct-horse")
+    assert passwords.verify_password("hunter22-correct-horse", h) is True
+    assert passwords.verify_password("hunter22-wrong-horse",   h) is False
+
+
+def test_verify_pbkdf2_legacy_still_works(tmp_auth_db):
+    """A pre-existing PBKDF2 hash from before this PR MUST still verify."""
+    import hashlib, secrets
+    from backend.services.auth import passwords
+    iters = passwords._PBKDF2_ITERATIONS
+    salt = secrets.token_bytes(16)
+    pw = "hunter22-legacy"
+    dk = hashlib.pbkdf2_hmac("sha256", pw.encode("utf-8"), salt, iters)
+    legacy_hash = f"pbkdf2_sha256${iters}${salt.hex()}${dk.hex()}"
+    assert legacy_hash.startswith("pbkdf2_sha256$")
+    assert passwords.verify_password(pw,           legacy_hash) is True
+    assert passwords.verify_password("wrong-pass", legacy_hash) is False
+
+
+def test_verify_returns_false_on_garbage_hash(tmp_auth_db):
+    """Bad data must never raise — always returns False."""
+    from backend.services.auth import passwords
+    assert passwords.verify_password("anything", "")              is False
+    assert passwords.verify_password("anything", "not-a-hash")    is False
+    assert passwords.verify_password("anything", "$argon2id$bad") is False
+
+
+def test_needs_rehash_true_for_pbkdf2(tmp_auth_db):
+    from backend.services.auth import passwords
+    legacy = (
+        f"pbkdf2_sha256${passwords._PBKDF2_ITERATIONS}$"
+        f"00112233445566778899aabbccddeeff$" + "00" * 32
+    )
+    assert passwords.needs_rehash(legacy) is True
+
+
+def test_needs_rehash_false_for_fresh_argon2id(tmp_auth_db):
+    from backend.services.auth import passwords
+    fresh = passwords.hash_password("hunter22")
+    assert passwords.needs_rehash(fresh) is False
+
+
+def test_verify_credentials_silently_migrates_pbkdf2_to_argon2id(tmp_auth_db):
+    """Zero-downtime migration end-to-end:
+       1. Create a user with the LEGACY PBKDF2 hash directly in the
+          DB (simulating a pre-PR account).
+       2. Call verify_credentials with the correct password.
+       3. Confirm login succeeded AND the stored hash is now Argon2id.
+       4. Next verify_credentials must still succeed against the
+          re-hashed credential."""
+    import hashlib, secrets, uuid
+    from datetime import datetime, timezone
+    from backend.services.auth import passwords
+
+    passwords.init()
+    pw = "hunter22-correct-horse-battery"
+    email = "migrate@korvix.test"
+    iters = passwords._PBKDF2_ITERATIONS
+    salt = secrets.token_bytes(16)
+    dk = hashlib.pbkdf2_hmac("sha256", pw.encode("utf-8"), salt, iters)
+    legacy_hash = f"pbkdf2_sha256${iters}${salt.hex()}${dk.hex()}"
+    uid = uuid.uuid4().hex
+    now = datetime.now(timezone.utc).isoformat()
+    with passwords._conn() as c:
+        c.execute(
+            "INSERT INTO auth_password_users "
+            "(id, email, password_hash, display_name, created_at, last_login_at) "
+            "VALUES (?, ?, ?, ?, ?, NULL)",
+            (uid, email, legacy_hash, "Test", now),
+        )
+
+    # 1st login — should succeed AND silently re-hash.
+    result = passwords.verify_credentials(email, pw)
+    assert result is not None
+    assert result["id"] == uid
+
+    # Stored hash is now Argon2id.
+    with passwords._conn() as c:
+        cur = c.execute("SELECT password_hash FROM auth_password_users WHERE id = ?", (uid,))
+        new_hash = cur.fetchone()["password_hash"]
+    assert new_hash.startswith("$argon2id$"), f"expected migration, got {new_hash[:24]}"
+    assert new_hash != legacy_hash
+
+    # 2nd login still works (against the now-Argon2id hash).
+    again = passwords.verify_credentials(email, pw)
+    assert again is not None
+    assert again["id"] == uid
+
+
+def test_verify_credentials_login_succeeds_even_if_rehash_fails(tmp_auth_db, monkeypatch):
+    """A failure inside the lazy migration NEVER turns a successful
+    login into a failed one. Monkeypatch _update_password_hash to
+    raise; the login must still return the user."""
+    from backend.services.auth import passwords
+    user = passwords.create_user("rehash-fail@korvix.test", "hunter22-correct")
+
+    # Sabotage the rehash persistence path.
+    def boom(*_a, **_k):
+        raise RuntimeError("simulated DB outage during rehash")
+    monkeypatch.setattr(passwords, "_update_password_hash", boom)
+
+    # Force a legacy hash so needs_rehash() returns True and the
+    # sabotaged path actually fires.
+    import hashlib, secrets
+    pw = "hunter22-correct"
+    iters = passwords._PBKDF2_ITERATIONS
+    salt = secrets.token_bytes(16)
+    dk = hashlib.pbkdf2_hmac("sha256", pw.encode("utf-8"), salt, iters)
+    legacy = f"pbkdf2_sha256${iters}${salt.hex()}${dk.hex()}"
+    with passwords._conn() as c:
+        c.execute("UPDATE auth_password_users SET password_hash = ? WHERE id = ?",
+                  (legacy, user["id"]))
+
+    # Login still succeeds despite the rehash boom.
+    result = passwords.verify_credentials("rehash-fail@korvix.test", pw)
+    assert result is not None
+    assert result["id"] == user["id"]
+
+
+def test_create_user_then_login_uses_argon2id_directly(tmp_auth_db):
+    """A brand-new account created post-PR is Argon2id from the start
+    — no migration step required on first login."""
+    from backend.services.auth import passwords
+    u = passwords.create_user("fresh@korvix.test", "hunter22-fresh")
+    with passwords._conn() as c:
+        cur = c.execute(
+            "SELECT password_hash FROM auth_password_users WHERE id = ?", (u["id"],)
+        )
+        stored = cur.fetchone()["password_hash"]
+    assert stored.startswith("$argon2id$")
+    assert passwords.verify_credentials("fresh@korvix.test", "hunter22-fresh") is not None
+
+
+def test_verify_credentials_unknown_email_returns_none(tmp_auth_db):
+    """The not-found path must return None cleanly + run the timing
+    equaliser without crashing."""
+    from backend.services.auth import passwords
+    passwords.init()
+    assert passwords.verify_credentials("ghost@korvix.test", "anything-here") is None
+
+
+# ──────────────────────────────────────────────────────────────────────────
 # Phase-1 PR #1 — JWT_SECRET_KEY production hardening
 #
 # These tests cover the fail-closed behaviour of tokens._secret():

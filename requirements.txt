@@ -34,3 +34,12 @@ psycopg[binary,pool]==3.1.18
 # fine without these on the path until JOB_QUEUE_MODE=celery is set.
 redis==5.0.4
 celery==5.4.0
+
+# Phase 1 PR #2 — Argon2id password hashing.
+# Default for new hashes + lazy silent migration from the legacy
+# PBKDF2-HMAC-SHA256 format on next successful login (no forced
+# re-login). Pure-Python wrapper around libargon2 (the reference
+# C implementation). argon2-cffi ships pre-built wheels for every
+# platform Railway runs on, so no compile toolchain is needed at
+# install time. Pinned to 25.1.0 (current stable as of 2026-06).
+argon2-cffi==25.1.0
