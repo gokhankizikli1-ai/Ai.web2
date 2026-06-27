@@ -25,9 +25,35 @@
 # * NO Dockerfile — still on Nixpacks, so the Procfile pattern
 #   keeps each Railway service (api + worker) on the right
 #   start command.
-# * NO custom install command — `pip install -r requirements.txt`
-#   is autodetected by Nixpacks.
-# * NO start command override — defer to Procfile.
+# * NO start command override — defer to Procfile (web) and
+#   railway.worker.toml (worker).
+#
+# WHY WE NOW DECLARE [phases.install] EXPLICITLY
+# ----------------------------------------------
+# Real failure (Production 2026-06-27): web service crashed with
+#   ModuleNotFoundError: No module named 'uvicorn'
+# even though `uvicorn==0.30.1` is in requirements.txt and the
+# worker (which uses celery + redis from the same file) was
+# healthy. This means Nixpacks' Python auto-detection ran for the
+# worker but NOT for the web service — almost certainly because the
+# web service has a Custom Build Command set in the Railway
+# dashboard that overrides Nixpacks' auto-generated install step.
+# Declaring the install commands here in code-as-config makes the
+# pip install explicit and deterministic — Nixpacks runs whatever
+# [phases.install] declares, no detection needed. A dashboard-set
+# Custom Build Command can STILL override this; the operator must
+# clear that field too (see "REQUIRED DASHBOARD AUDIT" below).
+#
+# REQUIRED DASHBOARD AUDIT (web service)
+# --------------------------------------
+# If pip install still does not run after this change, the
+# Railway dashboard has an override that beats nixpacks.toml.
+# For the WEB service only, in Settings → Deploy, CLEAR:
+#   - "Custom Build Command"    (must be empty)
+#   - "Custom Install Command"  (must be empty)
+# And in Settings → Source, verify:
+#   - "Root Directory" is "/" or empty (NOT a subdir — Nixpacks
+#     reads requirements.txt + package.json from the build root).
 #
 # IF YOU NEED TO CHANGE THE PYTHON VERSION
 # ----------------------------------------
@@ -46,3 +72,23 @@
 #              psycopg, etc all ship binary wheels today but gcc is a
 #              cheap defensive backstop)
 nixPkgs = ["python311", "nodejs_20", "gcc"]
+
+[phases.install]
+# Explicit install — DO NOT rely on Nixpacks Python/Node
+# auto-detection alone. The web service deploy proved the
+# auto-detection is fragile (see header).
+#
+# `python -m pip` rather than bare `pip` so we always hit the
+# Python 3.11 interpreter Nixpacks installed in [phases.setup],
+# never a system Python that might lack the venv path.
+#
+# `npm ci` is preserved — the Vite build in [phases.build] needs
+# node_modules. Vercel serves the FE in production, but the
+# Railway build still runs `npm run build` because Nixpacks
+# auto-detects package.json; if that step is removed in the
+# future, `npm ci` here can be too.
+cmds = [
+    "python -m pip install --upgrade pip",
+    "python -m pip install -r requirements.txt",
+    "npm ci",
+]
