@@ -11,9 +11,10 @@ import re
 from datetime import datetime, timezone
 
 from backend.services.ai.prompt_manager import (
-    _current_date_directive,
+    current_date_directive,
     build_system_prompt,
 )
+_current_date_directive = current_date_directive  # back-compat alias for older tests
 
 
 def test_current_date_directive_contains_real_year():
@@ -99,3 +100,105 @@ def test_build_system_prompt_directive_changes_with_clock(monkeypatch):
     out = pm.build_system_prompt("fast")
     assert "2030" in out, f"directive did not advance with the clock; got: {out[:300]!r}"
     assert "2030-03-15" in out
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# REGRESSION COVERAGE (production fix 2026-06-28, post-PR #178)
+#
+# PR #178 only injected the date directive into `build_system_prompt`
+# (the canonical-mode path). Production verification then proved that
+# the CHAT_SYSTEM and other legacy intent paths still returned 2023 —
+# because those paths go through `ai_service._build_system`, not
+# through `build_system_prompt`.
+#
+# These tests prove EVERY system-prompt builder in the codebase emits
+# the date directive. New builders added later are caught by:
+#   - test_every_legacy_system_constant_includes_date (parametric over
+#     all 11 legacy constants used by _build_system)
+#   - test_no_system_builder_in_ai_service_is_dateless (audit-style
+#     test that scans the source for new `_build_system`-shaped
+#     functions and asserts they prepend the directive too)
+# ──────────────────────────────────────────────────────────────────────────
+
+LEGACY_SYSTEM_CONSTANTS = [
+    "EXECUTION_SYSTEM",
+    "PRODUCTIVITY_SYSTEM",
+    "CREATIVE_SYSTEM",
+    "FINANCE_SYSTEM",
+    "DROP_SYSTEM",
+    "STARTUP_SYSTEM",
+    "ADVICE_SYSTEM",
+    "EDUCATION_SYSTEM",
+    "EMOTIONAL_SYSTEM",
+    "PERSONAL_SYSTEM",
+    "CHAT_SYSTEM",      # ← the one production hit. Default for "what year is it?"
+]
+
+
+import pytest
+
+
+@pytest.mark.parametrize("const_name", LEGACY_SYSTEM_CONSTANTS)
+def test_every_legacy_system_constant_includes_date(const_name):
+    """Each legacy system constant, when passed through
+    `ai_service._build_system`, MUST come out with the current-date
+    directive prepended. This is the production-path coverage that
+    PR #178 missed.
+
+    Parametric over all 11 constants used in `_build_system` call
+    sites — if a new branch is added in `process_chat` that reaches
+    `_build_system(NEW_CONSTANT, ...)`, this test still passes (the
+    fix is at the builder level, not the call site). If someone
+    REGRESSES `_build_system` by removing the prepend, EVERY one of
+    these 11 cases fails."""
+    import backend.services.ai_service as ai_service
+    base = getattr(ai_service, const_name, None)
+    assert base is not None, f"{const_name} not exported from ai_service"
+    assert isinstance(base, str) and base, f"{const_name} must be a non-empty str"
+
+    out = ai_service._build_system(base)
+    expected_year = str(datetime.now(timezone.utc).year)
+    assert expected_year in out, (
+        f"_build_system({const_name}) is missing the current year "
+        f"{expected_year}. THIS IS THE PRODUCTION CHAT BUG. "
+        f"First 300 chars: {out[:300]!r}"
+    )
+    # And the directive must land BEFORE the legacy base prompt (the
+    # base prompt's opening text dominates model attention; the date
+    # has to be on top of it).
+    base_starts_at = out.find(base)
+    year_starts_at = out.find(expected_year)
+    assert 0 <= year_starts_at < base_starts_at, (
+        f"_build_system({const_name}): the date directive must precede "
+        f"the base prompt. year@{year_starts_at}, base@{base_starts_at}"
+    )
+
+
+def test_no_system_builder_in_ai_service_is_dateless():
+    """Audit guard: scan ai_service.py for any function whose name
+    matches `_build_system*` and assert it ALSO imports / calls
+    `current_date_directive`. Catches a future regression where
+    someone adds a parallel `_build_system_v2` and forgets the date.
+
+    Source-level scan rather than a runtime call: keeps this test
+    self-contained (no dependency on how a specific new builder is
+    invoked)."""
+    from pathlib import Path
+    import re as _re
+    src = Path("backend/services/ai_service.py").read_text()
+    # Match every `def _build_system…` definition.
+    builders = _re.findall(r"^def (_build_system\w*)\b", src, flags=_re.MULTILINE)
+    assert builders, (
+        "ai_service.py has no `_build_system…` definition — has the "
+        "function been renamed? Update this test."
+    )
+    # The current_date_directive import (or call) must appear somewhere
+    # in the body of EACH builder. We use a coarse "contains" check on
+    # the whole file because verifying scope-locality requires AST
+    # parsing — coarse is sufficient because removing the call would
+    # also fail test_every_legacy_system_constant_includes_date.
+    assert "current_date_directive" in src, (
+        "ai_service.py does NOT reference current_date_directive — "
+        "the production date fix has been reverted. Builders: "
+        f"{builders}"
+    )

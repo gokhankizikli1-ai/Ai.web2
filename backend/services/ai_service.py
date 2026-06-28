@@ -154,7 +154,16 @@ def _has(text, kw_list):
 
 
 def _build_system(base, mem_summary="", style_prompt="", profile=""):
-    sys_p = base
+    # PREPEND the current-date directive (production fix 2026-06-28).
+    # PR #178 added this to build_system_prompt() but missed
+    # _build_system() — the legacy intent-routed path used by 11 of the
+    # 13 system constants (CHAT_SYSTEM, EXECUTION_SYSTEM, FINANCE_SYSTEM,
+    # etc). Without this line, "şu an hangi yıldayız?" returns the
+    # LLM's training-cutoff year. Lazy import keeps the cyclic-import
+    # risk at zero: prompt_manager imports from mode_manager but never
+    # from ai_service.
+    from backend.services.ai.prompt_manager import current_date_directive
+    sys_p = current_date_directive() + "\n\n" + base
     if profile and "No user info" not in profile and profile.strip():
         sys_p += "\n\nKullanici profili:\n" + profile
     if mem_summary and mem_summary.strip():

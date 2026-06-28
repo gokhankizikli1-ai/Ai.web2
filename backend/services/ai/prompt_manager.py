@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from backend.services.ai.mode_manager import get_mode, resolve_mode_name
 
 
-def _current_date_directive() -> str:
+def current_date_directive() -> str:
     """Return a short, model-agnostic directive that pins the LLM's
     notion of "today" to real wall-clock time.
 
@@ -25,7 +25,13 @@ def _current_date_directive() -> str:
 
     Format choice: include weekday + ISO date + year explicitly so
     the model can quote any of them naturally in either Turkish or
-    English without translation gymnastics."""
+    English without translation gymnastics.
+
+    PUBLIC API: this is intentionally exported (no leading underscore)
+    so other system-prompt builders — `ai_service._build_system`,
+    future builders — can reuse the same directive. There must be ONE
+    place that decides what "today" looks like.
+    """
     now = datetime.now(timezone.utc)
     return (
         f"Current date: {now.strftime('%A, %B %d, %Y')} "
@@ -34,6 +40,13 @@ def _current_date_directive() -> str:
         f"events, use THIS value — do not fall back to your training "
         f"data cutoff."
     )
+
+
+# Back-compat alias for any caller that imported the private name.
+# PR #178 shipped with the underscore-prefixed form; renaming without
+# the alias would 500 on any worker that imports the old name during
+# a rolling redeploy.
+_current_date_directive = current_date_directive
 
 # Maps existing intent/category strings (from detect_intent) to canonical mode names.
 # Used when ai_service routes by intent and wants to pick the best mode automatically.
@@ -84,7 +97,7 @@ def build_system_prompt(
     # the system prompt — most attention from the model lives in the
     # opening lines, and we want the temporal grounding to win over any
     # training-cutoff intuition the rest of the prompt might trigger.
-    parts = [_current_date_directive(), mode.system_prompt]
+    parts = [current_date_directive(), mode.system_prompt]
 
     if profile and profile.strip() and "No user info" not in profile:
         parts.append("Kullanici profili:\n" + profile.strip())
