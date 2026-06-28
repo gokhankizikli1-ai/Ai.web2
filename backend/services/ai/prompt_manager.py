@@ -7,7 +7,33 @@ Usage:
 
     sys_p = build_system_prompt("trading_analyst", mem_summary=..., profile=...)
 """
+from datetime import datetime, timezone
+
 from backend.services.ai.mode_manager import get_mode, resolve_mode_name
+
+
+def _current_date_directive() -> str:
+    """Return a short, model-agnostic directive that pins the LLM's
+    notion of "today" to real wall-clock time.
+
+    Why this exists (production fix 2026-06-28): users asked the
+    assistant what year it is and got "Şu anda 2023 yılındayız"
+    — the model fell back to its training-data cutoff because the
+    system prompt didn't inject any temporal grounding. Injecting
+    the current UTC date on every request keeps the answer correct
+    forever, with no hardcoded year to rot.
+
+    Format choice: include weekday + ISO date + year explicitly so
+    the model can quote any of them naturally in either Turkish or
+    English without translation gymnastics."""
+    now = datetime.now(timezone.utc)
+    return (
+        f"Current date: {now.strftime('%A, %B %d, %Y')} "
+        f"(ISO {now.strftime('%Y-%m-%d')} UTC). "
+        f"When asked about today's date, the current year, or recent "
+        f"events, use THIS value — do not fall back to your training "
+        f"data cutoff."
+    )
 
 # Maps existing intent/category strings (from detect_intent) to canonical mode names.
 # Used when ai_service routes by intent and wants to pick the best mode automatically.
@@ -54,7 +80,11 @@ def build_system_prompt(
     if mode is None:
         mode = get_mode("fast")  # safe fallback
 
-    parts = [mode.system_prompt]
+    # PREPEND the current-date directive so it lands at the very top of
+    # the system prompt — most attention from the model lives in the
+    # opening lines, and we want the temporal grounding to win over any
+    # training-cutoff intuition the rest of the prompt might trigger.
+    parts = [_current_date_directive(), mode.system_prompt]
 
     if profile and profile.strip() and "No user info" not in profile:
         parts.append("Kullanici profili:\n" + profile.strip())

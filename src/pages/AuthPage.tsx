@@ -679,9 +679,14 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
       return;
     }
     setGoogleBusy(true);
-    // 2s watchdog: if neither the credential callback nor the
-    // notification callback resolves in time, we assume popup was
-    // blocked and reset the button.
+    // 5s watchdog: if neither the credential callback nor the
+    // notification callback resolves in time, assume the popup was
+    // blocked and reset the button. Was 2s — below the normal Google
+    // round-trip on slower networks, which produced a false-positive
+    // red banner that flashed for ~1s during successful logins
+    // (production 2026-06-28). 5s is comfortably above Google's
+    // typical popup-to-credential time while still short enough that
+    // a truly blocked popup doesn't strand the user.
     let resolved = false;
     const finish = (reason?: GoogleAuthReason, extra?: string): void => {
       if (resolved) return;
@@ -695,14 +700,23 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
         setGoogleBusy(false);
       }
     };
-    watchdogRef.current = setTimeout(() => finish('callback_timeout'), 2000);
+    watchdogRef.current = setTimeout(() => finish('callback_timeout'), 5000);
 
     // The credential callback path (success) resolves us via the
     // credentialHandlerRef. The notification callback path (popup
     // failure) resolves us here. Either way the watchdog gets cleared.
     const originalHandler = credentialHandlerRef.current;
     credentialHandlerRef.current = (resp) => {
+      // Belt + suspenders: even if the watchdog already fired and
+      // flagged callback_timeout, a late credential arrival means
+      // Google was simply slow — NOT a failure. Clear the stale
+      // error so the user doesn't see a red banner during what is
+      // actually a successful login. Keep the spinner up via
+      // setGoogleBusy(true) while the backend round-trip to
+      // /auth/google completes.
       finish();
+      clearGoogleErr();
+      setGoogleBusy(true);
       return originalHandler(resp);
     };
 
