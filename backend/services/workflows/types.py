@@ -73,8 +73,16 @@ class WorkflowRecord:
         return self.status in TERMINAL_WORKFLOW_STATUSES
 
 
+# Re-export the typed Step record so callers can do
+# `from backend.services.workflows.types import Step` without needing
+# to know it lives in `steps.py`. Avoids cyclic imports — steps.py is
+# import-cheap and does not depend on types.py.
+from backend.services.workflows.steps import Step  # noqa: E402,F401  (re-export)
+
+
 __all__ = [
     "WorkflowRecord",
+    "Step",
     "WORKFLOW_TYPES", "WORKFLOW_STATUSES",
     "STATUS_QUEUED", "STATUS_RUNNING", "STATUS_COMPLETED",
     "STATUS_FAILED", "STATUS_CANCELLED",

@@ -239,5 +239,62 @@ def table_counts() -> dict:
     return out
 
 
-__all__ = ["init", "_reset_for_tests", "insert", "update", "get", "list_user",
-           "table_counts"]
+def update_steps(
+    record_id: str,
+    *,
+    steps: list[dict],
+    current_step: Optional[int] = None,
+    progress: Optional[int] = None,
+) -> None:
+    """Phase A.1 — write the runner's typed step list back into
+    `steps_json` plus optionally bump derived counters.
+
+    Carved out from `update()` because `update()` only knows about the
+    legacy `list[str]` shape via `WorkflowRecord.steps`. The runner
+    stores `list[dict]` (each entry is a typed Step). Doing this via
+    `update()` would require extending its accepted-keys allowlist
+    AND wrapping the dict-list back into a WorkflowRecord-compatible
+    shape on read. A dedicated helper keeps `update()` unchanged and
+    makes the runner's persistence path explicit + auditable.
+    """
+    _ensure_init()
+    if not record_id:
+        return
+    sets: list[str] = ["steps_json=?"]
+    params: list = [json.dumps(steps or [])]
+    if current_step is not None:
+        sets.append("current_step=?"); params.append(int(current_step))
+    if progress is not None:
+        sets.append("progress=?")
+        params.append(int(max(0, min(100, int(progress)))))
+    sets.append("updated_at=?"); params.append(_now())
+    params.append(record_id)
+    try:
+        with _conn() as c:
+            c.execute(f"UPDATE workflows SET {', '.join(sets)} WHERE id=?", params)
+    except Exception as e:
+        logger.warning("workflows.update_steps %s error: %s", record_id, e)
+
+
+def list_running() -> list[WorkflowRecord]:
+    """Phase A.1 — return every workflow whose status is `running`.
+
+    Used by the runner's `sweep_orphans()` at startup to find rows
+    whose driver task was lost (process restart). Does NOT filter by
+    user — the sweep is a cross-user maintenance pass.
+    """
+    _ensure_init()
+    try:
+        with _conn() as c:
+            rows = c.execute(
+                "SELECT * FROM workflows WHERE status=? ORDER BY updated_at",
+                ("running",),
+            ).fetchall()
+        return [_row_to_record(r) for r in rows]
+    except Exception as e:
+        logger.warning("workflows.list_running error: %s", e)
+        return []
+
+
+__all__ = ["init", "_reset_for_tests", "insert", "update", "update_steps",
+           "list_running", "get", "list_user", "table_counts"]

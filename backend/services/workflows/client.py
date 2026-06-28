@@ -145,6 +145,26 @@ class WorkflowsClient:
             return rec
         return store.update(workflow_id, status=STATUS_CANCELLED)
 
+    # ── Phase A.1: DAG runner entry point ──────────────────────────────────
+
+    async def start_run(self, workflow_id: str, *, user_id: str) -> dict:
+        """Phase-A.1 thin wrapper around `workflows.runner.run_workflow`.
+
+        Gated by the separate `ENABLE_WORKFLOW_RUNNER` flag (NOT
+        `ENABLE_WORKFLOWS` — the runner is a sub-capability that can
+        ship to production while keeping itself off until it's
+        verified). Lazy-imports `runner` so a parse error in that
+        module never blocks the rest of the client surface from
+        loading.
+        """
+        from backend.services.workflows import runner as wf_runner
+        if not wf_runner.is_enabled():
+            raise wf_runner.WorkflowRunnerDisabled(
+                "Workflow runner is disabled. "
+                "Set ENABLE_WORKFLOW_RUNNER=true."
+            )
+        return await wf_runner.run_workflow(workflow_id, user_id=user_id)
+
     # ── Observability ──────────────────────────────────────────────────────
 
     def stats(self) -> dict:

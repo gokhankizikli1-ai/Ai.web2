@@ -150,7 +150,14 @@ def tmp_vision_db(tmp_path, monkeypatch):
 
 @pytest.fixture()
 def tmp_workflows_db(tmp_path, monkeypatch):
-    """Phase 8 — isolate workflows.db per test."""
+    """Phase 8 — isolate workflows.db per test.
+
+    Phase A.1 (PR #1): also resets the runner module's per-workflow
+    locks + live-driver registry so each test starts with no
+    in-flight drivers from a prior test. Without this, a test that
+    monkeypatches the runner's poll interval can race with leftover
+    state from the previous test and intermittently hang.
+    """
     db_file = tmp_path / "workflows-test.db"
     monkeypatch.setenv("WORKFLOWS_DB_PATH", str(db_file))
     monkeypatch.setenv("ENABLE_WORKFLOWS", "true")
@@ -158,6 +165,13 @@ def tmp_workflows_db(tmp_path, monkeypatch):
     ws = importlib.import_module("backend.services.workflows.store")
     monkeypatch.setattr(ws, "_INITIALIZED", False, raising=False)
     ws.init()
+    # Reset runner module state (lazy import — runner only loads if
+    # the test explicitly imports it, but reset is cheap + safe).
+    try:
+        wr = importlib.import_module("backend.services.workflows.runner")
+        wr._reset_for_tests()
+    except Exception:
+        pass
     yield db_file
 
 
