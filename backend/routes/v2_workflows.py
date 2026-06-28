@@ -7,12 +7,15 @@ import os
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from backend.core.deps import current_user
+from backend.core.responses import err as envelope_err
 from backend.core.responses import ok as envelope_ok
 from backend.services.auth.identity import User
 from backend.services.workflows import client as wf_client
+from backend.services.workflows.client import client as workflows_client
 from backend.services.workflows.types import WORKFLOW_TYPES
 
 
@@ -109,6 +112,89 @@ def cancel_workflow(
     return envelope_ok(data={"workflow": rec.to_dict()},
                        endpoint=f"/v2/workflows/{workflow_id}/cancel",
                        user_id=user.id)
+
+
+# ── Phase A.1 — Workflow DAG Runner entry point ───────────────────────────
+#
+# Single new route in this PR. Returns v2 envelope shape via
+# JSONResponse (NOT HTTPException) so the body matches the
+# success/error envelope contract every /v2/* consumer already
+# expects. Mirrors the /v2/auth/register pattern shipped in PR #176.
+
+def _envelope_error_response(
+    status_code: int, code: str, message: str, endpoint: str,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=status_code,
+        content=envelope_err(message, code=code, endpoint=endpoint),
+    )
+
+
+@router.post("/workflows/{workflow_id}/run")
+async def run_workflow_route(
+    workflow_id: str = Path(..., max_length=128),
+    user: User = Depends(current_user),
+):
+    """Start a DAG-runner driver for an existing workflow.
+
+    Gated by `ENABLE_WORKFLOW_RUNNER` — independent of the
+    `ENABLE_WORKFLOWS` flag that gates the CRUD routes above. The
+    runner is a sub-capability that ships to production behind its
+    OWN flag so we can defer its activation until production
+    verification of Phase A.1 is complete.
+    """
+    # Defer to the runner module entirely — the route is a thin v2
+    # envelope adapter over its exceptions.
+    from backend.services.workflows import runner as wf_runner
+    from backend.services.workflows.steps import StepsParseError
+
+    if not wf_runner.is_enabled():
+        return _envelope_error_response(
+            503, "workflow_runner_disabled",
+            "Workflow runner is disabled. "
+            "Set ENABLE_WORKFLOW_RUNNER=true to activate.",
+            f"/v2/workflows/{workflow_id}/run",
+        )
+    # The CRUD routes above gate on ENABLE_WORKFLOWS; mirror that
+    # here so a half-enabled deployment (runner on, workflows off)
+    # produces a sensible error instead of a hidden 500.
+    if not workflows_client.is_enabled():
+        return _envelope_error_response(
+            503, "workflows_disabled",
+            "Workflows are disabled. Set ENABLE_WORKFLOWS=true.",
+            f"/v2/workflows/{workflow_id}/run",
+        )
+    try:
+        snapshot = await workflows_client.start_run(workflow_id, user_id=user.id)
+    except wf_runner.WorkflowNotFound:
+        return _envelope_error_response(
+            404, "workflow_not_found",
+            "Workflow not found.",
+            f"/v2/workflows/{workflow_id}/run",
+        )
+    except wf_runner.WorkflowAlreadyTerminalError as exc:
+        return _envelope_error_response(
+            409, "workflow_already_terminal",
+            str(exc),
+            f"/v2/workflows/{workflow_id}/run",
+        )
+    except wf_runner.WorkflowAlreadyRunningError as exc:
+        return _envelope_error_response(
+            409, "workflow_already_running",
+            str(exc),
+            f"/v2/workflows/{workflow_id}/run",
+        )
+    except StepsParseError as exc:
+        return _envelope_error_response(
+            400, "workflow_steps_invalid",
+            str(exc),
+            f"/v2/workflows/{workflow_id}/run",
+        )
+    return envelope_ok(
+        data=snapshot,
+        endpoint=f"/v2/workflows/{workflow_id}/run",
+        user_id=user.id,
+    )
 
 
 __all__ = ["router"]

@@ -156,6 +156,22 @@ def _build_full_app():
         except Exception as _fanout_err:
             logger.warning("jobs.events_redis startup (non-fatal): %s", _fanout_err)
 
+        # Phase A.1 — Workflow DAG runner orphan sweep. No-op when
+        # ENABLE_WORKFLOW_RUNNER=false (which is the default), so this
+        # has zero blast radius on production until the flag is
+        # flipped. When the runner IS enabled, this re-attaches a
+        # driver to every workflow whose status is `running` but has
+        # no live driver in this process (the typical case after an
+        # API restart). See backend/services/workflows/runner.py
+        # `sweep_orphans` for the resume semantics.
+        try:
+            from backend.services.workflows import runner as _wf_runner
+            await _wf_runner.sweep_orphans()
+        except Exception as _wf_err:
+            logger.warning(
+                "workflows.runner startup sweep (non-fatal): %s", _wf_err,
+            )
+
     @_app.on_event("shutdown")
     async def _shutdown():
         # Drain the background queue (within a 5s budget) before the
