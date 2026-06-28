@@ -114,6 +114,115 @@ function clearToken(): void {
   catch { /* ignore */ }
 }
 
+/* ─── User-scoped storage wipe — P0 cross-account leak fix ────────────────
+ *
+ * SECURITY: in production 2026-06-28 we observed account B viewing
+ * account A's chat history on the same browser. Root cause: localStorage
+ * keys that hold user-owned DATA (not just auth tokens) survived logout,
+ * and the next login on the same browser inherited the previous account's
+ * state. The leaking keys were never registered in the logout wipe list.
+ *
+ * Two contributing FE causes, both fixed here:
+ *   1. The chat history (`korvix_sessions`, `korvix_active_session_id`,
+ *      `korvix_tab_sessions`) and project state
+ *      (`korvix_projects`, `korvix_project_agents_*`, `korvix_project_tasks_*`,
+ *      `korvix_standalone_agents`, `korvix_saved_prompts`) are written by
+ *      hooks/stores without any per-user scoping. They persisted across
+ *      logout, so the next logged-in user's UI rendered the previous
+ *      user's data.
+ *   2. The `korvix_user_id` localStorage key is the browser's stable
+ *      GUEST nonce — also used as `req.user_id` for backend calls that
+ *      don't enforce JWT-bound identity. If it survived logout, post-
+ *      logout traffic and any next-user fallback paths shared the same
+ *      backend identity as the prior user's guest tail. Rotating to a
+ *      fresh nonce on logout closes that channel.
+ *
+ * USER_SCOPED_KEYS — explicit allowlist of localStorage keys to clear
+ * on logout / user-switch login. Anything user-owned (data, identity,
+ * cached UI state derived from identity) goes here.
+ *
+ * USER_SCOPED_PREFIXES — for keys with per-project / per-resource
+ * suffixes (e.g. `korvix_project_agents_<project_id>`). We enumerate
+ * localStorage and remove every key starting with one of these.
+ *
+ * PRESERVED on logout: UI preferences that aren't user-data (timezone,
+ * experimental flags, theme, guest-badge dismissal, debug flag,
+ * trading-timeframe). They're explicit-by-omission. */
+
+const USER_SCOPED_KEYS = [
+  // ── Auth identity ──────────────────────────────────────────────────────
+  'korvix-auth',                  // zustand persisted user blob
+  TOKEN_KEY,                      // 'korvix_access_token' — JWT
+  'korvix_owner_token',           // shared-secret owner unlock
+  'korvix_oauth_response',        // in-flight redirect callback
+  // ── User-scoped UI state derived from identity ─────────────────────────
+  'korvix_owner_welcome_shown',
+  'korvix_owner_greeting_shown',
+  // ── Chat history (the leak the operator hit) ───────────────────────────
+  'korvix_sessions',
+  'korvix_active_session_id',
+  'korvix_tab_sessions',
+  // ── Project / agent / task state ───────────────────────────────────────
+  'korvix_projects',
+  'korvix_standalone_agents',
+  'korvix_projects_migrated_v1',  // migration flag — re-run for the new user
+  // ── Saved prompts (per-user content) ───────────────────────────────────
+  'korvix_saved_prompts',
+];
+
+const USER_SCOPED_PREFIXES = [
+  'korvix_project_agents_',       // per-project agent cache
+  'korvix_project_tasks_',        // per-project task cache
+];
+
+/** Rotate the browser's guest identifier so post-logout traffic uses a
+ *  fresh backend identity, not the previous account's guest tail.
+ *
+ *  Returns the new id (also written to localStorage). Best-effort — if
+ *  storage is unavailable (private mode), returns a random ephemeral id
+ *  without persisting; useChat / projectStore tolerate that. */
+function rotateGuestNonce(): string {
+  const fresh = (typeof crypto !== 'undefined' && 'randomUUID' in crypto)
+    ? crypto.randomUUID()
+    : `u-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  try { localStorage.setItem('korvix_user_id', fresh); }
+  catch { /* private mode — ephemeral is acceptable */ }
+  return fresh;
+}
+
+/** Wipe every localStorage key that carries user-owned data or identity.
+ *  Also rotates the guest nonce. Idempotent + storage-failure tolerant.
+ *
+ *  Call this on EVERY auth boundary:
+ *    - logout()
+ *    - login/signup/loginWithGoogle when the new user differs from the
+ *      previously persisted one (handles the "log in as B without
+ *      explicit logout from A" case).
+ *
+ *  Why not just `localStorage.clear()`: would also nuke user preferences
+ *  (theme, timezone, experimental flags) that aren't user-owned data
+ *  and degrade UX for the legitimate next user. Allowlist is safer. */
+function wipeUserScopedStorage(): void {
+  for (const k of USER_SCOPED_KEYS) {
+    try { localStorage.removeItem(k); } catch { /* ignore */ }
+    try { sessionStorage.removeItem(k); } catch { /* ignore */ }
+  }
+  // Enumerate prefix-suffixed keys. localStorage.length + key(i) is the
+  // only way to iterate; we collect first to avoid mutating mid-enumeration.
+  try {
+    const matched: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k) continue;
+      if (USER_SCOPED_PREFIXES.some(p => k.startsWith(p))) matched.push(k);
+    }
+    for (const k of matched) {
+      try { localStorage.removeItem(k); } catch { /* ignore */ }
+    }
+  } catch { /* private mode / quota — best-effort */ }
+  rotateGuestNonce();
+}
+
 function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
@@ -294,6 +403,13 @@ export const useAuthStore = create<AuthState>()(
 
       login: async (email: string, password: string) => {
         set({ isLoading: true, error: null });
+        // SECURITY: defensive wipe BEFORE we accept any token. If a
+        // previous account's data lingers in localStorage (e.g. user
+        // logged into A, closed tab without logout, opened later and
+        // logged into B), apiLogin's success would otherwise reveal A's
+        // chats/projects to B. wipeUserScopedStorage is idempotent —
+        // safe to run on every login attempt, succeed-or-fail.
+        wipeUserScopedStorage();
         const { user, error } = await apiLogin(email, password);
         if (user) {
           set({ user, isAuthenticated: true, isLoading: false, error: null });
@@ -306,6 +422,9 @@ export const useAuthStore = create<AuthState>()(
 
       signup: async (email: string, password: string, name: string) => {
         set({ isLoading: true, error: null });
+        // SECURITY: same rationale as login — wipe before we mint a
+        // new identity so the fresh account starts on a clean slate.
+        wipeUserScopedStorage();
         const { user, error } = await apiSignup(email, password, name);
         if (user) {
           set({ user, isAuthenticated: true, isLoading: false, error: null });
@@ -318,6 +437,8 @@ export const useAuthStore = create<AuthState>()(
 
       loginWithGoogle: async (idToken: string) => {
         set({ isLoading: true, error: null });
+        // SECURITY: same rationale as login.
+        wipeUserScopedStorage();
         const { user, error } = await apiGoogle(idToken);
         if (user) {
           set({ user, isAuthenticated: true, isLoading: false, error: null });
@@ -332,22 +453,12 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true });
         await apiLogout();
         set({ user: null, isAuthenticated: false, isLoading: false, error: null });
-        // Wipe EVERY auth- / owner-adjacent piece of local state.
-        // Critical for the "shared device" + "account swap" cases:
-        // the previous owner's OWNER_TOKEN must not silently grant
-        // admin to whoever signs in next.
-        const keysToWipe = [
-          'korvix-auth',                   // zustand persist
-          'korvix_access_token',           // JWT (cleared by apiLogout too — belt + suspenders)
-          'korvix_owner_token',            // shared-secret unlock
-          'korvix_owner_welcome_shown',    // welcome-toast guard
-          'korvix_owner_greeting_shown',   // owner chat-greeting guard
-          'korvix_oauth_response',         // any in-flight redirect callback
-        ];
-        for (const k of keysToWipe) {
-          try { localStorage.removeItem(k); } catch { /* ignore */ }
-          try { sessionStorage.removeItem(k); } catch { /* ignore */ }
-        }
+        // SECURITY: wipe ALL user-scoped data (chat history, projects,
+        // agents, tasks, saved prompts, owner state) and rotate the
+        // guest nonce so the next account on this browser starts on a
+        // clean backend identity. See USER_SCOPED_KEYS comment for the
+        // full inventory + rationale.
+        wipeUserScopedStorage();
         notifyAuthChanged(null);
       },
 

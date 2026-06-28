@@ -314,6 +314,18 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
     e.preventDefault();
     setLocalError(null);
     clearError();
+    // UI fix (2026-06-28): if the user clicked Google → got the 2s
+    // popup watchdog → then switched to email/password, the in-flight
+    // watchdog would still fire and flash a red Google error banner
+    // for ~2s during a successful email login. Cancel any pending
+    // Google work and reset google-specific state so an email-flow
+    // login is visually clean.
+    if (watchdogRef.current) {
+      clearTimeout(watchdogRef.current);
+      watchdogRef.current = null;
+    }
+    setGoogleBusy(false);
+    clearGoogleErr();
 
     if (!email.trim() || !password.trim()) {
       setLocalError('Please fill in all fields');
