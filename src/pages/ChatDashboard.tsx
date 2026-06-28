@@ -296,10 +296,21 @@ export default function ChatDashboard() {
     selectSession(id);
   }, [selectSession]);
 
-  const handleHoverAction = useCallback((action: string, prompt: string) => {
-    setInputText(prompt);
-    addToast(`${action} applied`, 'success');
-  }, [setInputText, addToast]);
+  // No-op kept for API stability with ChatView's onHoverAction prop.
+  // Production fix 2026-06-28: previous implementation called
+  // setInputText(prompt) on every hover over an assistant-message
+  // quick-action button ("Explain more", "Show examples", "Simplify",
+  // "Action items"), so users had text dumped into their composer just
+  // by mousing past the buttons. Quick actions must only fire on
+  // explicit click — the button's onClick still routes through
+  // onResponseAction (and ultimately doSend), so the click path is
+  // unchanged. The hover state on the button itself (color/shadow) is
+  // a CSS-only effect inside ResponseActions.tsx and stays.
+  // Intentionally accepts (_action, _prompt) so the type still
+  // matches the prop signature consumers expect.
+  const handleHoverAction = useCallback((_action: string, _prompt: string) => {
+    /* no-op — see comment above */
+  }, []);
 
   // Settings change handler
   const handleSettingsChange = useCallback((partial: Partial<typeof settings>) => {
