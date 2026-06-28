@@ -2,7 +2,7 @@
 import time
 import logging
 import uuid
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 
@@ -59,6 +59,76 @@ def _uid(raw: str) -> int:
     return int(raw) if raw.isdigit() else hash(raw) % 2**31
 
 
+def _resolve_authoritative_uid(request: Request, body_user_id: str) -> str:
+    """Return the user_id we trust, IGNORING `body.user_id` when a
+    stronger auth signal exists.
+
+    SECURITY (Phase-1 P0 fix, 2026-06-28): the original implementation
+    trusted `req.user_id` from the request body. A logged-in client
+    could send a different account's user_id and be served that
+    account's memory + safety context. This helper now matches the
+    JWT-first / guest-fallback precedence used by AuthMiddleware +
+    core/deps.current_user.
+
+    Resolution order:
+      1. Verified JWT subject — when AuthMiddleware (or the inline
+         verify below) confirms a Bearer token, sub is the source of
+         truth and body.user_id is silently overridden.
+      2. X-Korvix-Guest-Id header — the FE's stable browser nonce.
+      3. body.user_id — legacy fallback, only when NEITHER auth
+         signal exists. Logged as a warning so we can spot
+         pre-fix clients in production logs.
+
+    A bad / expired JWT does NOT fall through to body.user_id —
+    that would re-open the leak. It falls through to the guest /
+    legacy paths just as if no Bearer was sent at all.
+    """
+    # 1. AuthMiddleware-populated state (production path when
+    #    ENABLE_AUTH_V2=true).
+    state_uid = getattr(request.state, "user_id", None)
+    if isinstance(state_uid, str) and state_uid and state_uid != "guest:anonymous":
+        return state_uid
+
+    # 2. Direct Authorization header — middleware may be off; verify
+    #    here so the security guarantee holds either way.
+    auth = (request.headers.get("authorization") or "").strip()
+    if auth.lower().startswith("bearer "):
+        token = auth[7:].strip()
+        if token:
+            try:
+                from backend.services.auth import tokens
+                claims = tokens.verify(token, expected_type="access")
+                sub = claims.get("sub")
+                if isinstance(sub, str) and sub:
+                    return sub
+            except Exception as exc:
+                # Bad / expired / mis-signed token → DO NOT silently
+                # use body.user_id. That was the leak. Fall through to
+                # guest/legacy paths, log so we see prod auth issues.
+                logger.warning(
+                    "CHAT | bearer present but unverifiable (%s) — "
+                    "falling through to guest path, NOT body.user_id",
+                    type(exc).__name__,
+                )
+
+    # 3. Guest stable nonce from the FE.
+    guest_hdr = (request.headers.get("x-korvix-guest-id") or "").strip()
+    if guest_hdr:
+        return guest_hdr[:64]   # match the AuthMiddleware truncation contract
+
+    # 4. Legacy fallback — body.user_id. Pre-fix clients still work; new
+    #    clients hit this only when explicitly anonymous + no guest nonce.
+    if body_user_id:
+        logger.warning(
+            "CHAT | no auth signal (no Bearer, no X-Korvix-Guest-Id) — "
+            "falling back to body.user_id. Pre-fix client OR proxy "
+            "stripped the auth header."
+        )
+        return body_user_id
+
+    return "anonymous"
+
+
 # Small, safe language map. Unknown / missing → "" (no hint → existing
 # behaviour, which already defaults to the user's language / TR-EN).
 _LANG_NAMES = {
@@ -98,10 +168,20 @@ def _with_language(style_prompt: str, language: Optional[str]) -> str:
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest):
+async def chat(req: ChatRequest, request: Request):
+    """Chat completion.
+
+    SECURITY (Phase-1 P0, 2026-06-28): `user_id` is derived from the
+    authenticated identity via `_resolve_authoritative_uid()`, NOT from
+    `req.user_id`. The body field is preserved for backward
+    compatibility but is OVERRIDDEN whenever a Bearer token or
+    X-Korvix-Guest-Id header is present. This blocks the cross-account
+    leak observed in production where one logged-in user could be
+    served another user's memory by sending the wrong body.user_id.
+    """
     request_id = str(uuid.uuid4())[:8]
     t_start = time.monotonic()
-    user_id = _uid(req.user_id)
+    user_id = _uid(_resolve_authoritative_uid(request, req.user_id))
     message = req.message.strip()
     platform = req.platform or "web"
 
