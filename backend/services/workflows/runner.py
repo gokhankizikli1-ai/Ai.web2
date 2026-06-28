@@ -39,6 +39,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -142,6 +143,8 @@ _WORKFLOW_LOCKS: dict[str, asyncio.Lock] = {}
 # already attached.
 _LIVE_DRIVERS: dict[str, asyncio.Task] = {}
 
+_DRIVER_OWNER_ID = f"{os.getpid()}-{uuid.uuid4().hex}"
+
 
 def _get_or_create_lock(workflow_id: str) -> asyncio.Lock:
     lock = _WORKFLOW_LOCKS.get(workflow_id)
@@ -149,6 +152,10 @@ def _get_or_create_lock(workflow_id: str) -> asyncio.Lock:
         lock = asyncio.Lock()
         _WORKFLOW_LOCKS[workflow_id] = lock
     return lock
+
+
+def _lease_ttl_sec() -> float:
+    return max(60.0, _poll_interval_sec() * 3)
 
 
 def _reset_for_tests() -> None:
@@ -240,10 +247,12 @@ async def run_workflow(workflow_id: str, *, user_id: Optional[str] = None) -> di
     except StepsParseError:
         raise
 
-    # Persist the (possibly promoted) typed shape so the driver and any
-    # observer reads the same data.
-    _persist_steps(workflow_id, steps)
-    wf_store.update(workflow_id, status=STATUS_RUNNING)
+    if not wf_store.acquire_driver_lease(
+        workflow_id, _DRIVER_OWNER_ID, ttl_s=_lease_ttl_sec(),
+    ):
+        raise WorkflowAlreadyRunningError(
+            f"workflow {workflow_id} already has a live driver"
+        )
 
     # CRITICAL — acquire the per-workflow lock SYNCHRONOUSLY (within
     # `run_workflow`) so that by the time we return, a second
@@ -251,16 +260,29 @@ async def run_workflow(workflow_id: str, *, user_id: Optional[str] = None) -> di
     # WorkflowAlreadyRunningError. If we let the driver task acquire
     # the lock on its first tick, there's a race window where the
     # second call can sneak through before the task is scheduled.
-    await lock.acquire()
-    # Build the driver task. The driver loop is responsible for
-    # releasing the lock in its `finally` block. We register the task
-    # in _LIVE_DRIVERS before awaiting anything so a fast-failing
-    # driver doesn't leave a stale registry entry.
-    task = asyncio.create_task(
-        _driver_loop(workflow_id, lock),
-        name=f"workflow-runner-{workflow_id}",
-    )
-    _LIVE_DRIVERS[workflow_id] = task
+    try:
+        # Persist the (possibly promoted) typed shape so the driver and any
+        # observer reads the same data.
+        _persist_steps(workflow_id, steps)
+        wf_store.update(workflow_id, status=STATUS_RUNNING)
+        await lock.acquire()
+        # Build the driver task. The driver loop is responsible for
+        # releasing the lock in its `finally` block. We register the task
+        # in _LIVE_DRIVERS before awaiting anything so a fast-failing
+        # driver doesn't leave a stale registry entry.
+        task = asyncio.create_task(
+            _driver_loop(workflow_id, lock, _DRIVER_OWNER_ID),
+            name=f"workflow-runner-{workflow_id}",
+        )
+        _LIVE_DRIVERS[workflow_id] = task
+    except BaseException:
+        try:
+            if lock.locked():
+                lock.release()
+        except RuntimeError:
+            pass
+        wf_store.release_driver_lease(workflow_id, _DRIVER_OWNER_ID)
+        raise
 
     # Return a snapshot now — caller can poll GET /v2/workflows/{id}
     # for progress.
@@ -297,20 +319,33 @@ async def resume_workflow(workflow_id: str) -> Optional[asyncio.Task]:
             result={"error": "driver_died_during_run", "detail": str(exc)},
         )
         return None
-    _persist_steps(workflow_id, steps)
+    if not wf_store.acquire_driver_lease(
+        workflow_id, _DRIVER_OWNER_ID, ttl_s=_lease_ttl_sec(),
+    ):
+        return None
     lock = _get_or_create_lock(workflow_id)
-    if lock.locked():
-        # Another caller already attached a driver in the gap between
-        # our resume check and now. Yield to that driver — don't try
-        # to double-attach.
-        return _LIVE_DRIVERS.get(workflow_id)
-    # Same synchronous-acquire pattern as `run_workflow`.
-    await lock.acquire()
-    task = asyncio.create_task(
-        _driver_loop(workflow_id, lock),
-        name=f"workflow-runner-{workflow_id}",
-    )
-    _LIVE_DRIVERS[workflow_id] = task
+    try:
+        _persist_steps(workflow_id, steps)
+        if lock.locked():
+            # Another caller already attached a driver in the gap between
+            # our resume check and now. Yield to that driver — don't try
+            # to double-attach.
+            return _LIVE_DRIVERS.get(workflow_id)
+        # Same synchronous-acquire pattern as `run_workflow`.
+        await lock.acquire()
+        task = asyncio.create_task(
+            _driver_loop(workflow_id, lock, _DRIVER_OWNER_ID),
+            name=f"workflow-runner-{workflow_id}",
+        )
+        _LIVE_DRIVERS[workflow_id] = task
+    except BaseException:
+        try:
+            if lock.locked():
+                lock.release()
+        except RuntimeError:
+            pass
+        wf_store.release_driver_lease(workflow_id, _DRIVER_OWNER_ID)
+        raise
     logger.info("workflow_runner.resume_workflow | resumed %s", workflow_id)
     return task
 
@@ -348,7 +383,11 @@ async def sweep_orphans() -> int:
 
 # ── Driver loop ─────────────────────────────────────────────────────────────
 
-async def _driver_loop(workflow_id: str, lock: asyncio.Lock) -> None:
+async def _driver_loop(
+    workflow_id: str,
+    lock: asyncio.Lock,
+    owner_id: str,
+) -> None:
     """The actual executor. The per-workflow lock is acquired by
     `run_workflow` (or `resume_workflow`) BEFORE the task is spawned,
     so by the time this function starts, `lock.locked()` is already
@@ -356,7 +395,7 @@ async def _driver_loop(workflow_id: str, lock: asyncio.Lock) -> None:
     its `finally` block so a crash or cancel never leaves stale state.
     """
     try:
-        await _driver_loop_inner(workflow_id)
+        await _driver_loop_inner(workflow_id, owner_id)
     except asyncio.CancelledError:
         # External cancel (e.g. from sweep_orphans replacement OR
         # test_reset). Persist current state and let the cancel
@@ -381,13 +420,14 @@ async def _driver_loop(workflow_id: str, lock: asyncio.Lock) -> None:
         # lock releases sees `_LIVE_DRIVERS` consistent with the
         # workflow's now-terminal state.
         _LIVE_DRIVERS.pop(workflow_id, None)
+        wf_store.release_driver_lease(workflow_id, owner_id)
         try:
             lock.release()
         except RuntimeError:                                    # pragma: no cover
             pass
 
 
-async def _driver_loop_inner(workflow_id: str) -> None:
+async def _driver_loop_inner(workflow_id: str, owner_id: str) -> None:
     """Repeatedly: load state → check cancel → dispatch eligible
     steps → poll in-flight → advance terminal state. Exits when the
     workflow reaches a terminal status.
@@ -403,8 +443,16 @@ async def _driver_loop_inner(workflow_id: str) -> None:
     """
     poll_interval = _poll_interval_sec()
     parallel_cap = _max_parallel_per_run()
+    lease_ttl = _lease_ttl_sec()
 
     while True:
+        if not wf_store.refresh_driver_lease(
+            workflow_id, owner_id, ttl_s=lease_ttl,
+        ):
+            logger.warning(
+                "workflow_runner | lost driver lease for %s", workflow_id,
+            )
+            return
         rec = wf_store.get(workflow_id)
         if rec is None:
             logger.warning(
@@ -512,6 +560,7 @@ async def _dispatch_step(
                 kind=       str(job_kind),
                 payload=    (step.payload or {}).get("input") or {},
                 project_id= project_id,
+                idempotency_key=f"workflow:{workflow_id}:step:{step.id}",
                 metadata=   {
                     "workflow_id": workflow_id,
                     "step_id":     step.id,

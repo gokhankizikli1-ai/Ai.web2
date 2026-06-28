@@ -243,6 +243,7 @@ async def test_job_step_dispatches_via_jobs_client(
     assert steps[0].dispatched_id == "job-1"
     assert created_calls[0]["kind"] == "echo"
     assert created_calls[0]["payload"] == {"msg": "hi"}
+    assert created_calls[0]["idempotency_key"] == f"workflow:{rec.id}:step:J"
     assert created_calls[0]["metadata"]["workflow_id"] == rec.id
     assert created_calls[0]["metadata"]["step_id"] == "J"
 
@@ -426,10 +427,23 @@ async def test_start_run_on_already_running_returns_409(
     # Slow poll so the first driver is still alive when we call again.
     monkeypatch.setenv("WORKFLOW_RUNNER_POLL_INTERVAL_SEC", "30.0")
 
+    class _StubRecord:
+        def __init__(self, _id, status):
+            self.id = _id; self.status = status
+            self.result = None; self.error = None
+
+    async def _stub_create(**kwargs):
+        return _StubRecord("job-running-test", "queued")
+
+    def _stub_get(job_id, *, user_id=None):
+        return _StubRecord(job_id, "queued")
+
+    from backend.services.jobs import client as jobs_client_mod
+    monkeypatch.setattr(jobs_client_mod, "create", _stub_create)
+    monkeypatch.setattr(jobs_client_mod, "get", _stub_get)
+
     rec = _make_workflow(steps=[
-        _typed_step("X", kind="noop"),
-        # An unsatisfiable dep keeps the loop alive at least one tick.
-        _typed_step("Y", kind="noop", deps=["X"]),
+        _typed_step("X", kind="job", payload={"kind": "echo"}),
     ])
     await wf_runner.run_workflow(rec.id, user_id=rec.user_id)
     # Second call should see the per-workflow lock held.

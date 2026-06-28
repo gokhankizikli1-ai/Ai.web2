@@ -9,7 +9,7 @@ import sqlite3
 import threading
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Iterator, Optional
 
 from backend.services.workflows.types import (
@@ -61,6 +61,13 @@ CREATE TABLE IF NOT EXISTS workflows (
 CREATE INDEX IF NOT EXISTS ix_workflows_user    ON workflows(user_id);
 CREATE INDEX IF NOT EXISTS ix_workflows_project ON workflows(user_id, project_id);
 CREATE INDEX IF NOT EXISTS ix_workflows_type    ON workflows(type);
+
+CREATE TABLE IF NOT EXISTS workflow_driver_leases (
+    workflow_id TEXT PRIMARY KEY,
+    owner_id    TEXT NOT NULL,
+    acquired_at TEXT NOT NULL,
+    expires_at  TEXT NOT NULL
+);
 """
 
 
@@ -93,6 +100,11 @@ def _ensure_init() -> None:
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _lease_expires_at(ttl_s: float) -> str:
+    ttl = max(1.0, float(ttl_s or 1.0))
+    return (datetime.now(timezone.utc) + timedelta(seconds=ttl)).isoformat()
 
 
 def _new_id() -> str:
@@ -296,5 +308,87 @@ def list_running() -> list[WorkflowRecord]:
         return []
 
 
+def acquire_driver_lease(
+    workflow_id: str,
+    owner_id: str,
+    *,
+    ttl_s: float,
+) -> bool:
+    """Acquire or renew the cross-process workflow driver lease."""
+    _ensure_init()
+    if not (workflow_id and owner_id):
+        return False
+    now = _now()
+    expires_at = _lease_expires_at(ttl_s)
+    try:
+        with _conn() as c:
+            c.execute("BEGIN IMMEDIATE")
+            row = c.execute(
+                "SELECT owner_id, expires_at FROM workflow_driver_leases "
+                "WHERE workflow_id=?",
+                (workflow_id,),
+            ).fetchone()
+            if (
+                row is not None
+                and row["owner_id"] != owner_id
+                and str(row["expires_at"]) > now
+            ):
+                return False
+            if row is None:
+                c.execute(
+                    "INSERT INTO workflow_driver_leases "
+                    "(workflow_id, owner_id, acquired_at, expires_at) "
+                    "VALUES (?,?,?,?)",
+                    (workflow_id, owner_id, now, expires_at),
+                )
+            else:
+                c.execute(
+                    "UPDATE workflow_driver_leases "
+                    "SET owner_id=?, "
+                    "acquired_at=CASE WHEN owner_id=? THEN acquired_at ELSE ? END, "
+                    "expires_at=? WHERE workflow_id=?",
+                    (owner_id, owner_id, now, expires_at, workflow_id),
+                )
+        return True
+    except Exception as e:
+        logger.warning("workflows.acquire_driver_lease %s error: %s", workflow_id, e)
+        return False
+
+
+def refresh_driver_lease(workflow_id: str, owner_id: str, *, ttl_s: float) -> bool:
+    """Extend a lease only if this process still owns it."""
+    _ensure_init()
+    if not (workflow_id and owner_id):
+        return False
+    try:
+        with _conn() as c:
+            cur = c.execute(
+                "UPDATE workflow_driver_leases SET expires_at=? "
+                "WHERE workflow_id=? AND owner_id=?",
+                (_lease_expires_at(ttl_s), workflow_id, owner_id),
+            )
+        return cur.rowcount == 1
+    except Exception as e:
+        logger.warning("workflows.refresh_driver_lease %s error: %s", workflow_id, e)
+        return False
+
+
+def release_driver_lease(workflow_id: str, owner_id: str) -> None:
+    """Release a driver lease without disturbing another owner's lease."""
+    _ensure_init()
+    if not (workflow_id and owner_id):
+        return
+    try:
+        with _conn() as c:
+            c.execute(
+                "DELETE FROM workflow_driver_leases "
+                "WHERE workflow_id=? AND owner_id=?",
+                (workflow_id, owner_id),
+            )
+    except Exception as e:
+        logger.warning("workflows.release_driver_lease %s error: %s", workflow_id, e)
+
+
 __all__ = ["init", "_reset_for_tests", "insert", "update", "update_steps",
-           "list_running", "get", "list_user", "table_counts"]
+           "list_running", "acquire_driver_lease", "refresh_driver_lease",
+           "release_driver_lease", "get", "list_user", "table_counts"]
