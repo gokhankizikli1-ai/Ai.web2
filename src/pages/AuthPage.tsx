@@ -613,9 +613,23 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
     );
     /* eslint-enable no-console */
     setGoogleBusy(true);
+    // Belt + suspenders for the production fix 2026-06-28: a popup_blocked
+    // / suppressed_by_user notification from an EARLIER one-tap attempt may
+    // have left a red banner in state. Once we're successfully processing
+    // a redirect-flow id_token, that earlier "popup blocked" message is no
+    // longer relevant — clear it so the loading spinner is the only thing
+    // visible until navigate fires. (Necessary because the popup-flow's
+    // credentialHandlerRef.clearGoogleErr() in handleGoogle does NOT fire
+    // on the redirect path — the credential arrives via the URL hash, not
+    // via gis.prompt.)
+    clearGoogleErr();
     loginWithGoogle(idToken).then((ok) => {
       setGoogleBusy(false);
       if (ok) {
+        // Final clearGoogleErr before navigation — defends against any
+        // error that may have been set between the clear above and now
+        // (e.g. by an in-flight watchdog from a parallel attempt).
+        clearGoogleErr();
         const from = (location.state as { from?: string } | null)?.from || '/chat';
         /* eslint-disable no-console */
         console.log(
@@ -723,7 +737,24 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
     try {
       gis.prompt((notification: GoogleNotification) => {
         if (notification.isNotDisplayed?.()) {
-          finish('popup_blocked', notification.getNotDisplayedReason?.() || 'unknown');
+          const reason = notification.getNotDisplayedReason?.() || 'unknown';
+          // suppressed_by_user / opt_out_or_no_session aren't ACTUAL
+          // failures — Google's One Tap is paused but full OAuth still
+          // works via the redirect flow. Production fix 2026-06-28:
+          // before, we'd flash a red "popup blocked" banner and ask
+          // the user to click "Use redirect instead" — but when login
+          // then succeeded via that redirect, the banner remained
+          // visible. Now: silently switch to the redirect flow + clear
+          // any prior error. The user sees a single Google-OAuth nav
+          // instead of error→retry→nav.
+          if (reason === 'suppressed_by_user' || reason === 'opt_out_or_no_session') {
+            finish();          // dismiss the watchdog cleanly (no error)
+            clearGoogleErr();
+            setGoogleBusy(true);
+            startGoogleRedirect(GOOGLE_CLIENT_ID);
+            return;            // page unloads on the redirect
+          }
+          finish('popup_blocked', reason);
         } else if (notification.isSkippedMoment?.()) {
           const r = notification.getSkippedReason?.() || 'unknown';
           // user_cancel is benign — they closed the prompt themselves
