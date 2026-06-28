@@ -533,6 +533,132 @@ def test_v2_auth_logout_revokes_token(client, tmp_auth_db):
 
 
 # ──────────────────────────────────────────────────────────────────────────
+# Phase-1 PR #3 — POST /v2/auth/register and POST /v2/auth/login
+#
+# Scoped MVP: email + password registration + login wrapped in the v2
+# envelope. Access-only tokens (refresh tokens for email users wait on
+# PR #4 cross-table identity unification). Argon2id under the hood (PR #2).
+# ──────────────────────────────────────────────────────────────────────────
+
+def test_v2_register_happy_path(client, tmp_auth_db):
+    """Register returns 200 + v2 envelope + access token + the new user."""
+    r = client.post("/v2/auth/register", json={
+        "email":        "newuser@korvix.test",
+        "password":     "hunter22-correct",
+        "display_name": "New User",
+    })
+    assert r.status_code == 200
+    body = r.json()
+    assert body["success"] is True
+    data = body["data"]
+    assert data["token_type"] == "Bearer"
+    assert data["access_token"] and data["access_token"].count(".") == 2
+    assert data["user"]["email"] == "newuser@korvix.test"
+    assert data["user"]["kind"]  == "email"
+    assert data["user"]["display_name"] == "New User"
+
+
+def test_v2_register_validation_error_invalid_email(client, tmp_auth_db):
+    r = client.post("/v2/auth/register", json={
+        "email": "not-an-email", "password": "hunter22-correct",
+    })
+    # 422 is Pydantic-level (Field constraints — though "not-an-email"
+    # passes min_length=3, it fails the EMAIL_RE inside passwords.py).
+    # 400 is the envelope-shape passwords.InvalidInputError path.
+    assert r.status_code == 400
+    body = r.json()
+    assert body["success"] is False
+    assert body["metadata"]["code"] == "validation_error"
+
+
+def test_v2_register_validation_error_password_too_short(client, tmp_auth_db):
+    """PASSWORD_MIN=8 is enforced at the Pydantic layer → 422 from FastAPI."""
+    r = client.post("/v2/auth/register", json={
+        "email": "shortpass@korvix.test", "password": "short",
+    })
+    assert r.status_code == 422
+
+
+def test_v2_register_duplicate_email_returns_409(client, tmp_auth_db):
+    payload = {"email": "dup@korvix.test", "password": "hunter22-correct"}
+    r1 = client.post("/v2/auth/register", json=payload)
+    assert r1.status_code == 200
+    r2 = client.post("/v2/auth/register", json=payload)
+    assert r2.status_code == 409
+    body = r2.json()
+    assert body["success"] is False
+    assert body["metadata"]["code"] == "email_exists"
+
+
+def test_v2_login_happy_path(client, tmp_auth_db):
+    """Register then login → both return access tokens. Token from login
+    must be a NEW JWT (different jti, possibly different iat)."""
+    creds = {"email": "loginuser@korvix.test", "password": "hunter22-correct"}
+    reg = client.post("/v2/auth/register", json=creds).json()["data"]
+    login = client.post("/v2/auth/login", json=creds)
+    assert login.status_code == 200
+    body = login.json()
+    assert body["success"] is True
+    data = body["data"]
+    assert data["token_type"] == "Bearer"
+    assert data["access_token"] and data["access_token"].count(".") == 2
+    assert data["user"]["email"] == "loginuser@korvix.test"
+    assert data["user"]["id"] == reg["user"]["id"]
+
+
+def test_v2_login_wrong_password_returns_401(client, tmp_auth_db):
+    client.post("/v2/auth/register", json={
+        "email": "wrongpass@korvix.test", "password": "hunter22-correct",
+    })
+    r = client.post("/v2/auth/login", json={
+        "email": "wrongpass@korvix.test", "password": "hunter22-INCORRECT",
+    })
+    assert r.status_code == 401
+    body = r.json()
+    assert body["success"] is False
+    assert body["metadata"]["code"] == "invalid_credentials"
+
+
+def test_v2_login_unknown_email_returns_401(client, tmp_auth_db):
+    """Unknown email returns the SAME generic invalid_credentials error
+    as a wrong password (defeats user enumeration via response body).
+    Timing equaliser in passwords.verify_credentials covers the latency
+    side of the same defence."""
+    r = client.post("/v2/auth/login", json={
+        "email": "ghost@korvix.test", "password": "hunter22-any",
+    })
+    assert r.status_code == 401
+    body = r.json()
+    assert body["success"] is False
+    assert body["metadata"]["code"] == "invalid_credentials"
+    # Generic message — MUST NOT reveal that the email doesn't exist.
+    assert body["error"] == "Invalid email or password."
+
+
+def test_v2_register_then_login_token_unlocks_me(client, tmp_auth_db, monkeypatch):
+    """End-to-end: registered email user → access token → GET /auth/me
+    resolves the user. Proves the token issued by /v2/auth/register is
+    accepted by the same identity-resolution path the legacy /auth/me
+    uses (`core/deps.get_current_user` reads BOTH password + identity
+    stores by `sub`)."""
+    monkeypatch.setenv("ENABLE_AUTH_V2", "true")
+    reg = client.post("/v2/auth/register", json={
+        "email":        "rtu@korvix.test",
+        "password":     "hunter22-correct",
+        "display_name": "Round Tripper",
+    })
+    assert reg.status_code == 200
+    token = reg.json()["data"]["access_token"]
+    # GET /auth/me uses Bearer; verifies the token was issued by us and
+    # resolves to the right user.
+    me = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
+    assert me.status_code == 200
+    me_body = me.json()
+    assert me_body["user"]["email"] == "rtu@korvix.test"
+    assert me_body["user"]["kind"]  == "email"
+
+
+# ──────────────────────────────────────────────────────────────────────────
 # Regression — legacy contracts intact
 # ──────────────────────────────────────────────────────────────────────────
 
