@@ -42,8 +42,64 @@ function resolveApiUrl(): string {
 }
 
 const API_URL = resolveApiUrl();
-const SESSIONS_KEY = 'korvix_sessions';
-const ACTIVE_SESSION_KEY = 'korvix_active_session_id';
+
+/* ─── Per-user storage keys (production fix 2026-06-28) ─────────────────
+ *
+ * Chat history is now namespaced by the authenticated user_id so that:
+ *   - User A's sessions persist across A's logout/login cycle
+ *     (key `korvix_sessions_<A>` survives the wipe).
+ *   - User B never reads A's sessions even on the same browser
+ *     (key `korvix_sessions_<B>` is a different localStorage entry).
+ *   - Guest sessions are scoped to the browser nonce so guest history
+ *     persists per-device without leaking across explicit accounts.
+ *
+ * authStore.logout() no longer wipes these keys — isolation is
+ * structural (per-user key), not destructive. The unsuffixed legacy
+ * keys (`korvix_sessions`, `korvix_active_session_id`) are still in
+ * the wipe list so any pre-PR data left in localStorage is cleared.
+ */
+const SESSIONS_KEY_BASE = 'korvix_sessions';
+const ACTIVE_SESSION_KEY_BASE = 'korvix_active_session_id';
+
+/** Return the localStorage scope for the current identity.
+ *
+ * Authenticated user → `user_<id>` (id from zustand's persisted
+ * `korvix-auth` blob, written by authStore on every login). Guest →
+ * `guest_<browser_nonce>` (the same `korvix_user_id` value useChat
+ * sends as `req.user_id` for guests). Falls back to `guest_anon` if
+ * storage is unavailable (private mode) — guarantees the function
+ * never returns the empty string, so storage keys are always
+ * well-defined.
+ */
+function currentStorageScope(): string {
+  // Authenticated identity — read directly from the zustand persist
+  // blob so this hook doesn't have to import authStore (avoids a
+  // circular dep between auth and chat layers).
+  try {
+    const blob = localStorage.getItem('korvix-auth');
+    if (blob) {
+      const parsed = JSON.parse(blob);
+      const uid = parsed?.state?.user?.id;
+      if (typeof uid === 'string' && uid) return `user_${uid}`;
+    }
+  } catch { /* fall through to guest */ }
+  // Guest — same nonce used by the backend as the X-Korvix-Guest-Id
+  // header. authStore.wipeUserScopedStorage() rotates this on every
+  // logout, so the guest scope changes whenever the prior account
+  // signs out (cross-account isolation stays intact).
+  try {
+    const nonce = localStorage.getItem('korvix_user_id');
+    if (typeof nonce === 'string' && nonce) return `guest_${nonce}`;
+  } catch { /* ignore */ }
+  return 'guest_anon';
+}
+
+function sessionsKey(): string {
+  return `${SESSIONS_KEY_BASE}_${currentStorageScope()}`;
+}
+function activeSessionKey(): string {
+  return `${ACTIVE_SESSION_KEY_BASE}_${currentStorageScope()}`;
+}
 
 /* ═══════════════════════════════════════════
    STREAMING (Phase 1.1) — opt-in via VITE_CHAT_STREAMING=true
@@ -262,7 +318,7 @@ function normalizeSession(raw: unknown): ChatSession | null {
 
 function loadSessions(): ChatSession[] | null {
   try {
-    const raw = localStorage.getItem(SESSIONS_KEY);
+    const raw = localStorage.getItem(sessionsKey());
     if (!raw) return null;
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed) || parsed.length === 0) return null;
@@ -276,21 +332,21 @@ function loadSessions(): ChatSession[] | null {
 
 function saveSessions(sessions: ChatSession[]) {
   try {
-    localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
+    localStorage.setItem(sessionsKey(), JSON.stringify(sessions));
   } catch { /* ignore */ }
 }
 
 /* ─── Active-session persistence ─── */
 function loadActiveSessionId(): string | null {
   try {
-    const raw = localStorage.getItem(ACTIVE_SESSION_KEY);
+    const raw = localStorage.getItem(activeSessionKey());
     return typeof raw === 'string' && raw.length > 0 ? raw : null;
   } catch { return null; }
 }
 
 function saveActiveSessionId(id: string) {
   try {
-    if (id) localStorage.setItem(ACTIVE_SESSION_KEY, id);
+    if (id) localStorage.setItem(activeSessionKey(), id);
   } catch { /* ignore */ }
 }
 

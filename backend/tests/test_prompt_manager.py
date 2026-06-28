@@ -202,3 +202,119 @@ def test_no_system_builder_in_ai_service_is_dateless():
         "the production date fix has been reverted. Builders: "
         f"{builders}"
     )
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# v2/chat/stream — THIRD chat path (production fix 2026-06-28 attempt 3)
+#
+# PRs #178/#179 fixed the legacy /chat builders. Production verification
+# still returned 2023 because the FE was hitting /v2/chat/stream — a
+# different route with its own prompt assembly. Fix: v2_chat_stream
+# unconditionally prepends current_date_directive() to the FIRST system
+# message in the outgoing ProviderRequest. These tests prove that
+# guarantee end-to-end so a future PR that reorganises the route's
+# prompt-merging code can't silently strip the date.
+# ──────────────────────────────────────────────────────────────────────────
+
+def test_v2_chat_stream_source_imports_current_date_directive():
+    """Source-level guard: any prompt-merging path that ends in
+    /v2/chat/stream's `final_msgs` MUST reference
+    `current_date_directive`. Coarse import-presence check defeats
+    accidental removal of the prepend without changing how messages
+    are assembled.
+    """
+    from pathlib import Path
+    src = Path("backend/routes/v2_chat_stream.py").read_text()
+    assert "current_date_directive" in src, (
+        "v2_chat_stream.py no longer references current_date_directive "
+        "— production date fix has been reverted. Restore the import "
+        "+ the `_date_block` prepend block before merging."
+    )
+
+
+def test_v2_chat_stream_prepends_date_to_first_system_message():
+    """Behavioural test: call the route's prompt-assembly path with a
+    no-system-message body and confirm the resulting final_msgs starts
+    with a system message containing the current year.
+
+    Doesn't fire the real OpenAI/Anthropic call — we just assert on
+    the assembled messages. The integration is exercised by the
+    route handler's first half (mp_system_prompt resolution + the
+    new date-prepend block).
+    """
+    from fastapi.testclient import TestClient
+    from backend.api import app
+    from backend.services.ai.prompt_manager import current_date_directive
+
+    # The current_date_directive() is a pure function; capture its
+    # output ONCE so we can check exact substring presence.
+    expected_year = str(datetime.now(timezone.utc).year)
+
+    # Force a deterministic provider that yields a quick error frame
+    # so we don't hit OpenAI. ProviderNotRegistered (400) gives us a
+    # clean response without touching the prompt-merge path —
+    # so instead we ASSERT on the merged messages via a monkeypatch
+    # of get_provider that captures the request.
+    captured = {}
+
+    class _Provider:
+        name = "stub"
+        default_model = "stub-1"
+        supports_streaming = True
+
+        async def stream_chat_completion(self, req):
+            captured["request"] = req
+            from backend.services.providers.streaming import (
+                ProviderStreamStart, ProviderStreamDone,
+            )
+            from backend.services.providers.types import TokenUsage
+            yield ProviderStreamStart(provider="stub", model=req.model)
+            yield ProviderStreamDone(
+                finish_reason="stop",
+                model=req.model,
+                usage=TokenUsage(prompt_tokens=0, completion_tokens=0, total_tokens=0),
+            )
+
+    import backend.routes.v2_chat_stream as route_mod
+    original_get_provider = route_mod.get_provider
+    route_mod.get_provider = lambda _name: _Provider()
+    try:
+        client = TestClient(app)
+        resp = client.post("/v2/chat/stream", json={
+            "messages": [{"role": "user", "content": "what year is it?"}],
+            "provider": "stub",
+        })
+        # Streaming endpoint returns 200 with SSE body — we don't care
+        # about the body, only that get_provider's _Provider received
+        # a request whose first system message contains the year.
+        assert resp.status_code == 200, resp.text
+    finally:
+        route_mod.get_provider = original_get_provider
+
+    req = captured.get("request")
+    assert req is not None, "stub provider was never called"
+    assert req.messages, "stub provider received an empty messages list"
+    first = req.messages[0]
+    assert first.role == "system", (
+        f"first message should be the date system prompt, got role={first.role!r}"
+    )
+    assert expected_year in first.content, (
+        f"v2_chat_stream did NOT prepend the current year {expected_year}; "
+        f"first system message: {first.content[:200]!r}"
+    )
+    # And the directive must include the explicit anti-cutoff
+    # instruction so the model knows to override training memory.
+    assert "training" in first.content.lower(), (
+        "date directive present but missing the anti-training-cutoff "
+        "instruction — the model may still fall back to its training year"
+    )
+    # Sanity: ensure we didn't accidentally lose the user's actual
+    # message. It must still come AFTER the system prompt.
+    user_msgs = [m for m in req.messages if m.role == "user"]
+    assert any("what year is it?" in m.content for m in user_msgs)
+    # Confirm we're emitting current_date_directive's actual content,
+    # not just a 4-digit year coincidence elsewhere.
+    assert current_date_directive().split(".")[0] in first.content, (
+        "first system message does NOT contain the literal directive "
+        "text — something else assembled the prompt"
+    )

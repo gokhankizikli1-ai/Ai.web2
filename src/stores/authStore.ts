@@ -158,7 +158,14 @@ const USER_SCOPED_KEYS = [
   // ── User-scoped UI state derived from identity ─────────────────────────
   'korvix_owner_welcome_shown',
   'korvix_owner_greeting_shown',
-  // ── Chat history (the leak the operator hit) ───────────────────────────
+  // ── Legacy unsuffixed chat-history keys (PR-177 wipe list) ─────────────
+  // After the 2026-06-28 per-user namespacing change in useChat.ts, the
+  // active keys are now `korvix_sessions_<scope>` and
+  // `korvix_active_session_id_<scope>` (handled by the *_PREFIX_ALL_USERS
+  // list below). These unsuffixed entries still get wiped on logout so
+  // any data left over from pre-PR builds doesn't linger as a global
+  // leak — but the NEW per-user keys are NOT wiped, so same-user
+  // re-login restores their own history.
   'korvix_sessions',
   'korvix_active_session_id',
   'korvix_tab_sessions',
@@ -174,6 +181,24 @@ const USER_SCOPED_PREFIXES = [
   'korvix_project_agents_',       // per-project agent cache
   'korvix_project_tasks_',        // per-project task cache
 ];
+
+// Per-user-namespaced keys that we explicitly DO NOT wipe on logout —
+// isolation is structural (each user has their own key) and the goal
+// is to RESTORE the same user's history on re-login. Listed here for
+// future readers / audits: if you add a new per-user-namespaced
+// store, add its prefix here so the rationale stays documented.
+//
+// useChat.ts derives keys via `currentStorageScope()` → either
+// `user_<auth_user_id>` for authenticated users or
+// `guest_<browser_nonce>` for guests. Logging out as A then in as B
+// changes the scope; B reads from its own key and never sees A's
+// history. Same-user logout/login uses the SAME scope and history
+// persists.
+const _PERSISTED_PER_USER_PREFIXES = [
+  'korvix_sessions_',             // per-user chat history
+  'korvix_active_session_id_',    // per-user active session
+];
+void _PERSISTED_PER_USER_PREFIXES;   // documentation-only export
 
 /** Rotate the browser's guest identifier so post-logout traffic uses a
  *  fresh backend identity, not the previous account's guest tail.

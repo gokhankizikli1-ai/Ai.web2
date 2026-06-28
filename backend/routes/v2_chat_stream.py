@@ -433,6 +433,28 @@ async def stream_chat(body: StreamChatRequest, request: Request):
             for m in body.messages
         ]
 
+    # ── Universal date directive (production fix 2026-06-28, third pass) ──
+    # PRs #178 and #179 patched the legacy /chat builders, but the
+    # /v2/chat/stream path uses a different prompt assembly. Without
+    # this block the LLM falls back to its training-cutoff year and
+    # answers "Şu an 2023 yılındayız". We fold the current-date
+    # directive into the FIRST system message (merging if one already
+    # exists from the memory-plane path) so EVERY streaming response
+    # is temporally grounded regardless of memory state or caller
+    # system-message content. Choke-point design: any future builder
+    # that returns its prompt to this route inherits the fix for free.
+    from backend.services.ai.prompt_manager import current_date_directive
+    _date_block = current_date_directive()
+    if final_msgs and final_msgs[0].role == "system":
+        first_sys = final_msgs[0]
+        first_sys = ProviderMessage(
+            role="system",
+            content=f"{_date_block}\n\n{first_sys.content}",
+        )
+        final_msgs = [first_sys] + final_msgs[1:]
+    else:
+        final_msgs = [ProviderMessage(role="system", content=_date_block)] + final_msgs
+
     # ── Phase 9 vision — fold uploaded images into the LAST user turn ─────
     # When the model supports vision and the request carries image-typed
     # assets, transform the most-recent user message's content into a
