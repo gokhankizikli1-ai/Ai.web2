@@ -524,6 +524,56 @@ async def test_empty_or_fallback_agent_output_fails_the_run(po_env, monkeypatch)
     assert rstore.get_run(run_id)["status"] == "errored"
 
 
+@pytest.mark.asyncio
+async def test_list_project_runs_builds_conversation(po_env):
+    """28. EPIC 1 — the permanent conversation. Two runs in one project are
+    listed chronologically as turns with request text + deliverable
+    summaries (no content blob); single-agent runs are excluded; the list
+    is owner-scoped."""
+    pid = "proj-conv"
+    s1 = await orch.start_project_run(
+        user_id="user-CV", user_request="research the market",
+        template_id="generic_research", project_id=pid,
+    )
+    await _wait_for_run_status(s1["run_id"], "user-CV", "completed")
+    s2 = await orch.start_project_run(
+        user_id="user-CV", user_request="now design a brand",
+        template_id="generic_creation", project_id=pid,
+    )
+    await _wait_for_run_status(s2["run_id"], "user-CV", "completed")
+
+    turns = orch.list_project_runs(user_id="user-CV", project_id=pid)
+    assert [t["run_id"] for t in turns] == [s1["run_id"], s2["run_id"]]  # chronological
+    assert turns[0]["user_request"] == "research the market"
+    assert turns[1]["user_request"] == "now design a brand"
+    # deliverable summaries carry the FE-needed fields but NOT content.
+    d = turns[0]["deliverables"][0]
+    assert {"id", "node_id", "title", "agent_id", "status", "kind"} <= set(d)
+    assert "content" not in d
+    # owner isolation.
+    assert orch.list_project_runs(user_id="someone-else", project_id=pid) == []
+
+
+def test_list_runs_route_scoped_and_gated(client, po_env, monkeypatch):
+    """29. GET /v2/orchestrator/runs returns the project's conversation and
+    503s when the orchestrator is disabled."""
+    monkeypatch.setenv("ENABLE_WORKFLOW_RUNNER", "false")  # deterministic scaffold-only run
+    r = client.post("/v2/orchestrator/run",
+                    json={"user_request": "build", "template_id": "generic_research",
+                          "project_id": "p-route"})
+    assert r.status_code == 200
+    rid = r.json()["data"]["run_id"]
+
+    lst = client.get("/v2/orchestrator/runs?project_id=p-route")
+    assert lst.status_code == 200
+    runs = lst.json()["data"]["runs"]
+    assert any(t["run_id"] == rid for t in runs)
+
+    monkeypatch.setenv("ENABLE_PROJECT_ORCHESTRATOR", "false")
+    off = client.get("/v2/orchestrator/runs?project_id=p-route")
+    assert off.status_code == 503
+
+
 def test_landing_page_run_404_when_template_flag_off(client, po_env, monkeypatch):
     """26. Requesting the landing_page template while ITS flag is off (even
     though the orchestrator is on) is a clean 404 — not a silent fallback

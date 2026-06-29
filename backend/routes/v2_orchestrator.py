@@ -160,6 +160,24 @@ async def start_run_route(
     return envelope_ok(data=snapshot, endpoint=endpoint, user_id=user.id)
 
 
+# ── List a project's runs (the permanent conversation) ───────────────
+
+@router.get("/runs")
+def list_runs_route(
+    project_id: str = Query(..., max_length=64),
+    limit: int = Query(20, ge=1, le=100),
+    user: User = Depends(current_user),
+) -> Any:
+    endpoint = "/v2/orchestrator/runs"
+    if not orch.is_enabled():
+        return _disabled_response(endpoint)
+    turns = orch.list_project_runs(
+        user_id=user.id, project_id=project_id, limit=limit,
+    )
+    return envelope_ok(data={"runs": turns}, endpoint=endpoint,
+                       user_id=user.id, count=len(turns))
+
+
 # ── Read a run ────────────────────────────────────────────────────────
 
 @router.get("/runs/{run_id}")

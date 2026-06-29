@@ -409,8 +409,64 @@ def cancel_run(run_id: str, *, user_id: Optional[str] = None) -> Optional[Dict[s
     return get_run_snapshot(run_id, user_id=user_id)
 
 
+# ── List a project's runs (the permanent conversation) ────────────────
+
+def list_project_runs(
+    *, user_id: str, project_id: str, limit: int = 20,
+) -> List[Dict[str, Any]]:
+    """Return a project's PROJECT-orchestrator runs, oldest→newest, as
+    lightweight conversation turns. Reuses runs_store + get_run_snapshot
+    (which reconciles terminal state) and strips deliverable `content`
+    so the list payload stays small — the full content is fetched
+    on-demand via GET /runs/{id} when a deliverable is previewed.
+
+    Filters to runs created by the Project Orchestrator
+    (`metadata.kind == 'project_run'`) so single-agent /v2/orchestrate
+    runs (which also live in runs_store) don't leak into the project
+    conversation. No new storage — purely a read over existing tables.
+    """
+    from backend.services.orchestrator.runs_store import list_runs
+    limit = max(1, min(int(limit or 20), 100))
+    rows = list_runs(user_id=str(user_id), project_id=project_id, limit=limit)
+    turns: List[Dict[str, Any]] = []
+    for row in rows:
+        if (row.get("metadata") or {}).get("kind") != "project_run":
+            continue
+        snap = get_run_snapshot(row["id"], user_id=user_id)
+        if snap is None:
+            continue
+        meta = (snap.get("run") or {}).get("metadata") or {}
+        turns.append({
+            "run_id":       snap["run_id"],
+            "status":       snap["status"],
+            "user_request": meta.get("user_request") or "",
+            "template_id":  snap.get("template_id"),
+            "created_at":   (snap.get("run") or {}).get("started_at"),
+            "deliverables": [_strip_content(d) for d in (snap.get("deliverables") or [])],
+            "task_graph":   snap.get("task_graph"),
+        })
+    # runs_store returns newest-first; reverse to chronological for the
+    # conversation transcript.
+    turns.reverse()
+    return turns
+
+
+def _strip_content(deliverable: Dict[str, Any]) -> Dict[str, Any]:
+    """Deliverable summary without the (potentially large) content blob.
+    Preview fetches the full snapshot on demand."""
+    return {
+        "id":       deliverable.get("id"),
+        "node_id":  deliverable.get("node_id"),
+        "kind":     deliverable.get("kind"),
+        "title":    deliverable.get("title"),
+        "agent_id": deliverable.get("agent_id"),
+        "status":   deliverable.get("status"),
+        "error":    deliverable.get("error"),
+    }
+
+
 __all__ = [
     "is_enabled", "flags_snapshot",
-    "start_project_run", "get_run_snapshot", "cancel_run",
+    "start_project_run", "get_run_snapshot", "cancel_run", "list_project_runs",
     "ProjectOrchestratorDisabled", "UnknownTemplateError", "RunNotFoundError",
 ]

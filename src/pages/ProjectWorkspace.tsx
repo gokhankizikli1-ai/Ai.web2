@@ -858,9 +858,9 @@ export default function ProjectWorkspace() {
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl mx-auto mb-4" style={{ background: 'linear-gradient(135deg, rgba(34,211,238,0.08), rgba(59,130,246,0.08))', border: '1px solid rgba(34,211,238,0.08)', boxShadow: '0 0 24px rgba(34,211,238,0.04)' }}>
                   <Sparkles className="h-6 w-6 text-cyan-400/30" />
                 </div>
-                <h3 className="text-[15px] font-semibold text-white/60 mb-1.5">{agents.length === 0 ? 'No agents yet' : 'Select an agent'}</h3>
+                <h3 className="text-[15px] font-semibold text-white/60 mb-1.5">{agents.length === 0 ? 'What would you like Korvix to build?' : 'Select an agent'}</h3>
                 <p className="text-[12px] text-white/25 mb-5 max-w-xs mx-auto">
-                  {agents.length === 0 ? 'Create your first AI agent to start collaborating on this project.' : 'Choose an agent from the sidebar to start chatting.'}
+                  {agents.length === 0 ? 'Project runs are turned off on this deployment. You can still collaborate with a classic agent below.' : 'Choose an agent from the sidebar to start chatting.'}
                 </p>
                 {agents.length === 0 && (
                   <button onClick={() => setShowCreateAgent(true)} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-semibold text-white" style={{ background: 'linear-gradient(180deg, #1B2230, #11151C)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 4px 16px rgba(0,0,0,0.2)' }}>

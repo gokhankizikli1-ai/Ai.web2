@@ -93,6 +93,29 @@ export interface TemplateView {
   nodes: Array<{ key: string; agent_id: string; title: string; deliverable_kind: string; depends_on: string[] }>;
 }
 
+// A deliverable as it appears in a conversation turn (no `content` —
+// fetched on demand via getRun when previewed).
+export interface DeliverableSummary {
+  id:       string;
+  node_id:  string;
+  kind:     string;
+  title:    string;
+  agent_id: string;
+  status:   DeliverableStatus;
+  error:    string | null;
+}
+
+// One turn of the permanent project conversation.
+export interface RunTurn {
+  run_id:       string;
+  status:       string;
+  user_request: string;
+  template_id:  string | null;
+  created_at:   string | null;
+  deliverables: DeliverableSummary[];
+  task_graph?:  { tasks: TaskView[]; total_count: number } | null;
+}
+
 const TERMINAL = new Set(['completed', 'failed', 'cancelled', 'finished', 'errored']);
 
 export function isRunTerminal(status: string | undefined | null): boolean {
@@ -136,6 +159,13 @@ export const projectOrchestratorClient = {
       headers: authHeaders(), signal,
     });
     return unwrap<RunSnapshot>(res);
+  },
+
+  async listRuns(projectId: string, limit = 20, signal?: AbortSignal): Promise<RunTurn[]> {
+    const url = `${BASE}/v2/orchestrator/runs?project_id=${encodeURIComponent(projectId)}&limit=${limit}`;
+    const res = await fetch(url, { headers: authHeaders(), signal });
+    const data = await unwrap<{ runs: RunTurn[] }>(res);
+    return data.runs ?? [];
   },
 
   async cancelRun(runId: string): Promise<RunSnapshot> {

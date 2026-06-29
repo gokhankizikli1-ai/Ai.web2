@@ -1,24 +1,23 @@
-// ProjectRunCenter — Phase B/C UX fix — the PRIMARY project surface when
-// the Project Orchestrator is enabled.
+// ProjectRunCenter — EPIC 1 / Milestone 1 — the Universal Project Composer.
 //
-// Replaces "create an agent, then chat it" with "type what you want built".
-// The main composer here IS the project-request composer:
-//   * No active run → a prominent request box with an Auto default +
-//     suggested templates + example prompts.
-//   * Active run → live status + agent/task progress + a deliverables
-//     grid with preview (reusing DeliverablePreviewModal).
+// The project IS the interaction model: the center of the workspace is a
+// PERMANENT project conversation, not a per-agent chat. Users describe any
+// task in natural language ("Build me a SaaS", "Research Tesla stock",
+// "Generate a Roblox game"); the coordinator classifies it and picks (or
+// dynamically composes) a workflow — no manual template selection required
+// (Auto is the default). Each run APPENDS to the same conversation; the
+// page is never recreated.
+//
+// Conversation persistence is backend-backed: turns are listed from
+// /v2/orchestrator/runs (the orchestrator runs_store), so a reload restores
+// the full transcript and resumes polling any in-flight run. No new tables.
 //
 // Mounted by ProjectWorkspace ONLY when orchestrator availability resolves
-// to `available`; when the orchestrator is disabled (or the probe fails),
-// ProjectWorkspace falls back to the normal agent chat — so this component
-// never has to handle the disabled state.
-//
-// Shares the run-id localStorage key with the right-rail ProjectRunPanel so
-// the two stay loosely in sync (the rail remains a secondary status view).
-import { useCallback, useEffect, useMemo, useState } from 'react';
+// to `available`; the disabled path keeps the classic agent chat fallback.
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Workflow, Play, Loader2, CheckCircle2, Circle, XCircle,
-  MinusCircle, RotateCcw, Sparkles,
+  MinusCircle, Sparkles,
 } from 'lucide-react';
 import {
   projectOrchestratorClient,
@@ -27,6 +26,8 @@ import {
   type TemplateView,
   type DeliverableView,
   type DeliverableStatus,
+  type DeliverableSummary,
+  type RunTurn,
 } from '@/hooks/useProjectOrchestrator';
 import DeliverablePreviewModal from '@/components/DeliverablePreviewModal';
 
@@ -61,37 +62,66 @@ const STATUS_STYLE: Record<string, { label: string; color: string }> = {
 
 const EXAMPLES = [
   'Build me a Shopify landing page for a coffee subscription',
-  'Make a research report on the EV charging market',
-  'Design a brand and copy for a productivity app',
+  'Research the EV charging market and summarise the opportunity',
+  'Design a brand and landing copy for a productivity app',
+  'Create an AI automation that triages support tickets',
 ];
 
+function toSummary(d: DeliverableView): DeliverableSummary {
+  return {
+    id: d.id, node_id: d.node_id, kind: d.kind, title: d.title,
+    agent_id: d.agent_id, status: d.status, error: d.error,
+  };
+}
+
 export default function ProjectRunCenter({ projectId }: { projectId: string }) {
+  const [turns, setTurns] = useState<RunTurn[]>([]);
   const [templates, setTemplates] = useState<TemplateView[]>([]);
-  const [runId, setRunId] = useState<string | null>(null);
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [request, setRequest] = useState('');
   const [templateId, setTemplateId] = useState<string>('');   // '' = Auto
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
-  const [previewId, setPreviewId] = useState<string | null>(null);
+  const [preview, setPreview] = useState<DeliverableView | null>(null);
+  const bottomRef = useRef<HTMLDivElement | null>(null);
 
-  const { snapshot, error } = useProjectRun(runId);
+  // Live polling of whichever run is currently in flight.
+  const { snapshot } = useProjectRun(activeRunId);
 
+  // ── Initial load: templates + the persisted conversation ──────────────
   useEffect(() => {
     let active = true;
     projectOrchestratorClient.listTemplates()
       .then(t => { if (active) setTemplates(t); })
-      .catch(() => { /* availability handled by parent; ignore here */ });
-    try {
-      const saved = localStorage.getItem(lastRunKey(projectId));
-      if (saved) setRunId(saved);
-    } catch { /* ignore */ }
+      .catch(() => { /* availability handled by parent */ });
+    projectOrchestratorClient.listRuns(projectId)
+      .then(rs => {
+        if (!active) return;
+        setTurns(rs);
+        // Resume polling the most recent in-flight run, if any.
+        const live = [...rs].reverse().find(r => !isRunTerminal(r.status));
+        if (live) setActiveRunId(live.run_id);
+      })
+      .catch(() => { /* empty conversation / disabled — composer still shown */ });
     return () => { active = false; };
   }, [projectId]);
+
+  // ── Merge live snapshot into its conversation turn ────────────────────
+  useEffect(() => {
+    if (!snapshot) return;
+    setTurns(prev => prev.map(t => t.run_id === snapshot.run_id
+      ? { ...t, status: snapshot.status, deliverables: (snapshot.deliverables || []).map(toSummary) }
+      : t));
+  }, [snapshot]);
+
+  // Auto-scroll to the newest turn.
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [turns.length]);
 
   const persistRun = useCallback((id: string | null) => {
     try {
       if (id) localStorage.setItem(lastRunKey(projectId), id);
-      else localStorage.removeItem(lastRunKey(projectId));
     } catch { /* ignore */ }
   }, [projectId]);
 
@@ -107,13 +137,25 @@ export default function ProjectRunCenter({ projectId }: { projectId: string }) {
           userRequest, projectId, templateId: templateId || undefined,
         });
       } catch (e: unknown) {
+        // ENABLE_PROJECTS on + a local-only project id → ownership 404.
+        // Fall back to a project-less run so the request still works.
         if ((e as { code?: string })?.code === 'project_not_found') {
           snap = await projectOrchestratorClient.startRun({
             userRequest, templateId: templateId || undefined,
           });
         } else { throw e; }
       }
-      setRunId(snap.run_id);
+      const turn: RunTurn = {
+        run_id: snap.run_id,
+        status: snap.status,
+        user_request: userRequest,
+        template_id: snap.template_id ?? (templateId || null),
+        created_at: null,
+        deliverables: (snap.deliverables || []).map(toSummary),
+        task_graph: snap.task_graph ? { tasks: snap.task_graph.tasks, total_count: snap.task_graph.total_count } : null,
+      };
+      setTurns(prev => [...prev, turn]);
+      setActiveRunId(snap.run_id);
       persistRun(snap.run_id);
       setRequest('');
     } catch (e: unknown) {
@@ -123,155 +165,179 @@ export default function ProjectRunCenter({ projectId }: { projectId: string }) {
     }
   }, [request, projectId, templateId, starting, persistRun]);
 
-  const cancelRun = useCallback(async () => {
-    if (!runId) return;
-    try { await projectOrchestratorClient.cancelRun(runId); } catch { /* poll shows status */ }
-  }, [runId]);
+  const cancelRun = useCallback(async (runId: string) => {
+    try { await projectOrchestratorClient.cancelRun(runId); } catch { /* poll reflects status */ }
+  }, []);
 
-  const resetRun = useCallback(() => {
-    setRunId(null); persistRun(null); setStartError(null);
-  }, [persistRun]);
+  const openPreview = useCallback(async (runId: string, deliverableId: string) => {
+    try {
+      const snap = await projectOrchestratorClient.getRun(runId);
+      const d = (snap.deliverables || []).find(x => x.id === deliverableId) || null;
+      setPreview(d);
+    } catch { /* ignore — preview is best-effort */ }
+  }, []);
 
-  const notFound = !!runId && !snapshot && /not.?found/i.test(error || '');
-
-  const deliverables: DeliverableView[] = snapshot?.deliverables || [];
-  const done = deliverables.filter(d => d.status === 'completed').length;
-  const status = snapshot?.status || (runId ? 'running' : '');
-  const style = STATUS_STYLE[status] || { label: status, color: 'rgb(148,163,184)' };
-  const progress = snapshot?.workflow?.progress ?? (
-    deliverables.length ? Math.round((done / deliverables.length) * 100) : 0
-  );
-  const running = !!runId && !isRunTerminal(status);
-  const previewDeliverable = useMemo(
-    () => deliverables.find(d => d.id === previewId) || null,
-    [deliverables, previewId],
-  );
-
-  // ── No run (or stale run) → request composer ──────────────────────────
-  if (!runId || notFound) {
-    return (
-      <div className="flex-1 overflow-y-auto flex items-center justify-center px-6 py-8 scrollbar-thin">
-        <div className="w-full max-w-xl">
-          <div className="flex items-center gap-2 mb-2">
-            <Workflow className="h-5 w-5 text-cyan-400/70" />
-            <h2 className="text-[18px] font-semibold text-white/85">What should the agents build?</h2>
-          </div>
-          <p className="text-[12px] text-white/35 mb-4">
-            Describe a project in plain language — a team of specialist agents will plan and build it.
-            {notFound && ' (Your previous run is no longer available.)'}
-          </p>
-
-          {/* Template chips — Auto default; Landing Page appears only when its backend flag is on */}
-          <div className="flex flex-wrap gap-1.5 mb-3">
-            <Chip active={templateId === ''} onClick={() => setTemplateId('')} label="Auto" icon />
-            {templates.map(t => (
-              <Chip key={t.id} active={templateId === t.id} onClick={() => setTemplateId(t.id)} label={t.name} />
-            ))}
-          </div>
-
+  const composer = (
+    <div className="shrink-0 px-4 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.05)', background: 'rgba(17,21,28,0.4)' }}>
+      <div className="max-w-2xl mx-auto">
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          <Chip active={templateId === ''} onClick={() => setTemplateId('')} label="Auto" icon />
+          {templates.map(t => (
+            <Chip key={t.id} active={templateId === t.id} onClick={() => setTemplateId(t.id)} label={t.name} />
+          ))}
+        </div>
+        <div className="flex items-end gap-2 rounded-xl px-3 py-2"
+          style={{ background: 'rgba(27,34,48,0.5)', border: '1px solid rgba(255,255,255,0.06)' }}>
           <textarea
             value={request}
             onChange={(e) => setRequest(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); startRun(); } }}
-            placeholder="e.g. Build me a Shopify landing page for a coffee subscription"
-            rows={3}
-            className="w-full bg-transparent text-[13px] text-white/85 placeholder:text-white/20 outline-none resize-none rounded-xl px-3 py-2.5 mb-2"
-            style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)' }}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); startRun(); } }}
+            placeholder="Describe what you want Korvix to build…"
+            rows={1}
+            className="flex-1 bg-transparent text-[13px] text-white/85 placeholder:text-white/20 outline-none resize-none py-1.5 max-h-[120px] scrollbar-thin"
           />
           <button
             onClick={startRun}
             disabled={!request.trim() || starting}
-            className="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-[13px] font-medium text-cyan-200 disabled:opacity-40 transition-all"
-            style={{ background: 'rgba(34,211,238,0.08)', border: '1px solid rgba(34,211,238,0.16)' }}>
-            {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-            {starting ? 'Starting project…' : 'Start project'}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium text-cyan-200 disabled:opacity-40 transition-all shrink-0"
+            style={{ background: 'rgba(34,211,238,0.1)', border: '1px solid rgba(34,211,238,0.18)' }}>
+            {starting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+            {starting ? 'Starting' : 'Build'}
           </button>
-          {startError && <p className="text-[10px] text-red-400/70 mt-2">{startError}</p>}
+        </div>
+        {startError && <p className="text-[10px] text-red-400/70 mt-1.5 max-w-2xl mx-auto">{startError}</p>}
+      </div>
+    </div>
+  );
 
-          <div className="mt-5">
-            <p className="text-[9px] uppercase tracking-wider text-white/25 mb-1.5">Try</p>
-            <div className="space-y-1.5">
+  return (
+    <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 overflow-y-auto px-4 py-5 scrollbar-thin">
+        {turns.length === 0 ? (
+          // ── Empty state: invite a project, never "No agents yet" ────────
+          <div className="h-full flex flex-col items-center justify-center text-center px-6">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl mb-4"
+              style={{ background: 'linear-gradient(135deg, rgba(34,211,238,0.1), rgba(59,130,246,0.1))', border: '1px solid rgba(34,211,238,0.12)' }}>
+              <Workflow className="h-6 w-6 text-cyan-400/60" />
+            </div>
+            <h2 className="text-[18px] font-semibold text-white/85 mb-1.5">What would you like Korvix to build?</h2>
+            <p className="text-[12px] text-white/35 max-w-md mb-5">
+              Describe any project in plain language — a team of specialist agents will plan and build it. No setup required.
+            </p>
+            <div className="w-full max-w-md space-y-1.5">
               {EXAMPLES.map(ex => (
                 <button key={ex} onClick={() => setRequest(ex)}
-                  className="flex items-center gap-2 w-full text-left text-[11px] text-white/45 hover:text-white/70 rounded-lg px-2 py-1.5 transition-colors"
+                  className="flex items-center gap-2 w-full text-left text-[11px] text-white/45 hover:text-white/70 rounded-lg px-2.5 py-2 transition-colors"
                   style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.03)' }}>
                   <Sparkles className="h-3 w-3 text-cyan-400/40 shrink-0" /> {ex}
                 </button>
               ))}
             </div>
           </div>
+        ) : (
+          // ── The permanent conversation ──────────────────────────────────
+          <div className="max-w-2xl mx-auto space-y-5">
+            {turns.map(turn => (
+              <ConversationTurn
+                key={turn.run_id}
+                turn={turn}
+                onCancel={() => cancelRun(turn.run_id)}
+                onPreview={(dId) => openPreview(turn.run_id, dId)}
+              />
+            ))}
+            <div ref={bottomRef} />
+          </div>
+        )}
+      </div>
+
+      {composer}
+
+      <DeliverablePreviewModal deliverable={preview} onClose={() => setPreview(null)} />
+    </div>
+  );
+}
+
+// ── One conversation turn: the request + its run result ──────────────────
+function ConversationTurn({
+  turn, onCancel, onPreview,
+}: {
+  turn: RunTurn;
+  onCancel: () => void;
+  onPreview: (deliverableId: string) => void;
+}) {
+  const style = STATUS_STYLE[turn.status] || { label: turn.status, color: 'rgb(148,163,184)' };
+  const done = turn.deliverables.filter(d => d.status === 'completed').length;
+  const total = turn.deliverables.length;
+  const progress = total ? Math.round((done / total) * 100) : 0;
+  const running = !isRunTerminal(turn.status);
+
+  return (
+    <div>
+      {/* Request bubble */}
+      <div className="flex justify-end mb-2">
+        <div className="max-w-[80%] rounded-2xl rounded-br-sm px-3 py-2 text-[13px] text-white/85"
+          style={{ background: 'rgba(34,211,238,0.08)', border: '1px solid rgba(34,211,238,0.12)' }}>
+          {turn.user_request || '(project run)'}
         </div>
       </div>
-    );
-  }
 
-  // ── Active / finished run ─────────────────────────────────────────────
-  return (
-    <div className="flex-1 overflow-y-auto px-6 py-5 scrollbar-thin">
-      <div className="max-w-2xl mx-auto">
-        <div className="flex items-center justify-between mb-1">
+      {/* Run card */}
+      <div className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.04)' }}>
+        <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <Workflow className="h-4 w-4 text-cyan-400/60" />
-            <h2 className="text-[15px] font-semibold text-white/80">Project Run</h2>
-            <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px]"
+            <Workflow className="h-3.5 w-3.5 text-cyan-400/50" />
+            <span className="text-[11px] font-semibold text-white/60">Project Run</span>
+            <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px]"
               style={{ background: `${style.color}14`, color: style.color }}>
-              <span className="w-1.5 h-1.5 rounded-full" style={{ background: style.color, boxShadow: running ? `0 0 5px ${style.color}` : 'none' }} />
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: style.color, boxShadow: running ? `0 0 4px ${style.color}` : 'none' }} />
               {style.label}
             </span>
           </div>
-          {running ? (
-            <button onClick={cancelRun} className="flex items-center gap-1 text-[11px] text-white/40 hover:text-red-300 transition-colors">
-              <XCircle className="h-3.5 w-3.5" /> Cancel
-            </button>
-          ) : (
-            <button onClick={resetRun} className="flex items-center gap-1 text-[11px] text-cyan-400/70 hover:text-cyan-300 transition-colors">
-              <RotateCcw className="h-3.5 w-3.5" /> New run
+          {running && (
+            <button onClick={onCancel} className="flex items-center gap-1 text-[10px] text-white/40 hover:text-red-300 transition-colors">
+              <XCircle className="h-3 w-3" /> Cancel
             </button>
           )}
         </div>
 
-        {/* Progress */}
-        <div className="flex items-center justify-between mb-1 mt-3">
-          <span className="text-[10px] text-white/35">{done}/{deliverables.length} deliverables complete</span>
-          <span className="text-[10px] text-white/35">{progress}%</span>
-        </div>
-        <div className="h-1.5 rounded-full overflow-hidden mb-4" style={{ background: 'rgba(255,255,255,0.05)' }}>
-          <div className="h-full rounded-full transition-all" style={{ width: `${progress}%`, background: style.color }} />
-        </div>
+        {total > 0 && (
+          <>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[9px] text-white/30">{done}/{total} deliverables</span>
+              <span className="text-[9px] text-white/30">{progress}%</span>
+            </div>
+            <div className="h-1 rounded-full overflow-hidden mb-2.5" style={{ background: 'rgba(255,255,255,0.05)' }}>
+              <div className="h-full rounded-full transition-all" style={{ width: `${progress}%`, background: style.color }} />
+            </div>
+          </>
+        )}
 
-        {/* Deliverables grid (each = an agent + its deliverable; click to preview) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {deliverables.map(d => {
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+          {turn.deliverables.map(d => {
             const previewable = d.status === 'completed';
             return (
-              <button
-                key={d.id}
-                onClick={() => previewable && setPreviewId(d.id)}
+              <button key={d.id}
+                onClick={() => previewable && onPreview(d.id)}
                 disabled={!previewable}
-                className="flex items-start gap-2 text-left rounded-xl px-3 py-2.5 transition-colors disabled:cursor-default enabled:hover:bg-white/[0.03]"
-                style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.04)' }}>
+                className="flex items-start gap-1.5 text-left rounded-lg px-2 py-1.5 transition-colors disabled:cursor-default enabled:hover:bg-white/[0.03]"
+                style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.03)' }}>
                 <span className="mt-0.5 shrink-0">{deliverableIcon(d.status)}</span>
                 <div className="min-w-0">
-                  <p className="text-[12px] text-white/75 truncate">{d.title || d.kind}</p>
-                  <p className="text-[9px] text-white/30">
+                  <p className="text-[11px] text-white/70 truncate">{d.title || d.kind}</p>
+                  <p className="text-[8px] text-white/30">
                     {humanAgent(d.agent_id)}
-                    {d.status === 'in_progress' ? ' · working…' : ''}
-                    {previewable ? ' · click to preview' : ''}
+                    {d.status === 'in_progress' ? ' · working…' : previewable ? ' · preview' : ''}
                   </p>
                   {d.status === 'failed' && d.error && (
-                    <p className="text-[9px] text-red-400/60 mt-0.5 line-clamp-2">{d.error}</p>
+                    <p className="text-[8px] text-red-400/60 mt-0.5 line-clamp-2">{d.error}</p>
                   )}
                 </div>
               </button>
             );
           })}
-          {deliverables.length === 0 && (
-            <p className="text-[11px] text-white/25 py-2">Preparing run…</p>
-          )}
+          {total === 0 && <p className="text-[10px] text-white/25 py-1">Preparing run…</p>}
         </div>
       </div>
-
-      <DeliverablePreviewModal deliverable={previewDeliverable} onClose={() => setPreviewId(null)} />
     </div>
   );
 }
