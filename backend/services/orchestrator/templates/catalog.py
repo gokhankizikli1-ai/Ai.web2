@@ -26,6 +26,7 @@ from backend.services.orchestrator.templates.base import (
     ProjectTemplate, TemplateNode, TemplateError,
 )
 from backend.services.orchestrator.templates.builtins import BUILTIN_TEMPLATES
+from backend.services.orchestrator.templates.app import APP_TEMPLATES
 from backend.services.orchestrator.templates import landing_page as _landing
 
 logger = logging.getLogger(__name__)
@@ -33,8 +34,9 @@ logger = logging.getLogger(__name__)
 
 # Validate every built-in once at import — a malformed built-in is a
 # programming error we want to surface immediately, not at run time.
+# APP_TEMPLATES (M2) are always-on built-ins (no feature flag).
 _REGISTRY: Dict[str, ProjectTemplate] = {}
-for _t in BUILTIN_TEMPLATES:
+for _t in (*BUILTIN_TEMPLATES, *APP_TEMPLATES):
     _t.validate()
     _REGISTRY[_t.id] = _t
 
@@ -171,7 +173,22 @@ _CREATION_HINT = re.compile(
 )
 _RESEARCH_HINT = re.compile(
     r"\b(research|investigate|compare|analy[sz]e|find\s+out|look\s+up|"
-    r"market|competitor|araştır|incele|karşılaştır)\b",
+    r"market|competitor|araştır|incele|karşılaştır|report)\b",
+    re.IGNORECASE,
+)
+# M2 — specialized-intent routing. A WEB request → an HTML page
+# (landing_page when its flag is on, else the always-on app prototype
+# which also emits HTML). An APP/dashboard/game request → the app
+# prototype. These take precedence so app/website asks stop landing on
+# the text-only generic_creation template (requirement #5).
+_WEB_HINT = re.compile(
+    r"\b(website|web\s*site|web\s*page|landing\s*page|home\s*page|"
+    r"store\s*page|shopify|site)\b",
+    re.IGNORECASE,
+)
+_APP_HINT = re.compile(
+    r"\b(app|application|dashboard|saas|crm|game|prototype|mobile|"
+    r"android|ios|discord\s*bot|bot|web\s*app|admin\s*panel|ui)\b",
     re.IGNORECASE,
 )
 
@@ -179,12 +196,26 @@ _RESEARCH_HINT = re.compile(
 def choose_template(user_request: str, plan=None) -> ProjectTemplate:
     """Pick a template for a free-form request.
 
-    Heuristic, deterministic, and honest:
-      * A multi-agent coordinator plan (>1 distinct agent) → ad-hoc
-        template built from that plan (the richest signal we have).
-      * Otherwise a keyword nudge toward a built-in: research vs
-        creation. Research is the safe default.
+    Order (most specific first):
+      1. Specialized intents — WEB → landing_page (or app prototype), and
+         APP/dashboard/game → app prototype. These emit real previewable
+         artifacts and take precedence over the generic templates.
+      2. Research intent → generic_research.
+      3. A multi-agent coordinator plan (>1 distinct agent) → ad-hoc.
+      4. Creation intent → generic_creation. Research is the safe default.
     """
+    text = user_request or ""
+
+    # 1. Specialized intents → artifact-producing templates.
+    if _WEB_HINT.search(text):
+        return get_template("landing_page") or _REGISTRY["app_prototype"]
+    if _APP_HINT.search(text):
+        return _REGISTRY["app_prototype"]
+
+    # 2. Research intent.
+    if _RESEARCH_HINT.search(text):
+        return _REGISTRY["generic_research"]
+
     distinct_agents = 0
     if plan is not None:
         distinct_agents = len({
@@ -192,14 +223,13 @@ def choose_template(user_request: str, plan=None) -> ProjectTemplate:
             if getattr(a, "agent_id", None)
         })
 
+    # 3. Multi-agent plan → ad-hoc.
     if distinct_agents > 1:
         return build_adhoc_template(plan, user_request)
 
-    text = user_request or ""
-    if _CREATION_HINT.search(text) and not _RESEARCH_HINT.search(text):
+    # 4. Creation intent / default.
+    if _CREATION_HINT.search(text):
         return _REGISTRY["generic_creation"]
-    if _RESEARCH_HINT.search(text):
-        return _REGISTRY["generic_research"]
     # No strong signal — default to research (lowest-risk multi-step
     # plan; never fabricates creative output for a vague request).
     return _REGISTRY["generic_research"]

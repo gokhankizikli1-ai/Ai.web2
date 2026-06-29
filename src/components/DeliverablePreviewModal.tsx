@@ -1,29 +1,55 @@
-// DeliverablePreviewModal — Phase C — preview a completed orchestrator
-// deliverable. HTML deliverables (the Landing Page vertical's
-// `landing_page_html`) render in a sandboxed iframe with a client-side
-// download; text deliverables (research brief, brand brief, copy
-// variants, wireframe) render as formatted text. Copy-to-clipboard for
-// both.
+// DeliverablePreviewModal — EPIC 1 / M2 — the central Artifact Preview area.
 //
-// Generic by design: it switches on the deliverable's shape, so it works
-// for ANY orchestrator deliverable, not just landing pages. No backend
-// calls — it renders the content already present in the run snapshot, so
-// it is flag-agnostic and adds no new network surface.
+// Renders a completed deliverable's typed artifact prominently with
+// Preview / Copy / Download / Open:
+//   * html            → sandboxed iframe + "Open in new tab" + download .html
+//   * react_component / project_file → code view + download
+//   * file_tree       → file list + per-file code + download bundle
+//   * markdown / text → formatted text
+//
+// Artifact-aware but backwards compatible: pre-M2 deliverables carry only
+// `content.text` and still render as text. No backend calls — it renders
+// content already present in the run snapshot.
 import { useCallback, useMemo, useState } from 'react';
-import { X, Download, Copy, Check, ExternalLink } from 'lucide-react';
-import type { DeliverableView } from '@/hooks/useProjectOrchestrator';
+import { X, Download, Copy, Check, ExternalLink, FileCode } from 'lucide-react';
+import type { DeliverableView, Artifact } from '@/hooks/useProjectOrchestrator';
 
-function extractText(d: DeliverableView): string {
-  const c = d.content as Record<string, unknown> | undefined;
-  if (c && typeof c.text === 'string') return c.text;
-  if (typeof d.content === 'string') return d.content as unknown as string;
-  try { return JSON.stringify(d.content, null, 2); } catch { return ''; }
+interface Resolved {
+  type:     string;
+  preview:  'iframe' | 'code' | 'markdown' | 'file_tree';
+  body:     string;
+  files:    Array<{ path: string; content: string; language: string }>;
+  filename: string;
+  mime:     string;
 }
 
-function looksLikeHtml(kind: string, text: string): boolean {
-  if (kind === 'landing_page_html') return true;
+function resolve(d: DeliverableView): Resolved {
+  const c = (d.content || {}) as Record<string, unknown>;
+  const art = c.artifact as Artifact | undefined;
+  if (art && typeof art.content === 'string') {
+    return {
+      type: art.type,
+      preview: art.preview,
+      body: art.content,
+      files: art.files || [],
+      filename: art.download?.filename || `${d.node_id || d.kind}.txt`,
+      mime: art.download?.mime || 'text/plain',
+    };
+  }
+  // Legacy fallback — pre-M2 deliverables only have `content.text`.
+  const text = typeof c.text === 'string' ? c.text
+    : (typeof d.content === 'string' ? (d.content as unknown as string) : '');
   const head = text.trimStart().slice(0, 200).toLowerCase();
-  return head.startsWith('<!doctype html') || head.startsWith('<html');
+  const isHtml = d.kind === 'landing_page_html'
+    || head.startsWith('<!doctype html') || head.startsWith('<html');
+  return {
+    type: isHtml ? 'html' : 'markdown',
+    preview: isHtml ? 'iframe' : 'markdown',
+    body: text,
+    files: [],
+    filename: `${d.node_id || d.kind}${isHtml ? '.html' : '.txt'}`,
+    mime: isHtml ? 'text/html' : 'text/plain',
+  };
 }
 
 export default function DeliverablePreviewModal({
@@ -33,40 +59,35 @@ export default function DeliverablePreviewModal({
   onClose: () => void;
 }) {
   const [copied, setCopied] = useState(false);
-
-  const text = useMemo(() => deliverable ? extractText(deliverable) : '', [deliverable]);
-  const isHtml = useMemo(
-    () => deliverable ? looksLikeHtml(deliverable.kind, text) : false,
-    [deliverable, text],
-  );
+  const r = useMemo(() => deliverable ? resolve(deliverable) : null, [deliverable]);
 
   const copy = useCallback(async () => {
+    if (!r) return;
     try {
-      await navigator.clipboard.writeText(text);
+      await navigator.clipboard.writeText(r.body);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch { /* clipboard may be blocked; ignore */ }
-  }, [text]);
+  }, [r]);
 
   const download = useCallback(() => {
-    if (!deliverable) return;
-    const blob = new Blob([text], { type: isHtml ? 'text/html' : 'text/plain' });
+    if (!r) return;
+    const blob = new Blob([r.body], { type: r.mime });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = `${deliverable.node_id || deliverable.kind}${isHtml ? '.html' : '.txt'}`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
+    a.href = url; a.download = r.filename;
+    document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(url);
-  }, [deliverable, text, isHtml]);
+  }, [r]);
 
   const openInTab = useCallback(() => {
+    if (!r) return;
     const w = window.open('', '_blank');
-    if (w) { w.document.open(); w.document.write(text); w.document.close(); }
-  }, [text]);
+    if (w) { w.document.open(); w.document.write(r.body); w.document.close(); }
+  }, [r]);
 
-  if (!deliverable) return null;
+  if (!deliverable || !r) return null;
+  const isHtml = r.preview === 'iframe';
 
   return (
     <div
@@ -81,7 +102,7 @@ export default function DeliverablePreviewModal({
         <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
           <div className="min-w-0">
             <p className="text-[13px] font-semibold text-white/80 truncate">{deliverable.title || deliverable.kind}</p>
-            <p className="text-[10px] text-white/30">{deliverable.kind} · {deliverable.agent_id}</p>
+            <p className="text-[10px] text-white/30">{r.type} · {deliverable.agent_id}</p>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
             <button onClick={copy} title="Copy" className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] text-white/50 hover:text-white/80 transition-colors" style={{ background: 'rgba(255,255,255,0.03)' }}>
@@ -106,12 +127,24 @@ export default function DeliverablePreviewModal({
           {isHtml ? (
             <iframe
               title={`preview-${deliverable.id}`}
-              srcDoc={text}
+              srcDoc={r.body}
               sandbox=""
               className="w-full h-[70vh] bg-white"
             />
+          ) : r.preview === 'file_tree' && r.files.length > 0 ? (
+            <div className="px-4 py-3 space-y-3">
+              {r.files.map((f, i) => (
+                <div key={`${f.path}-${i}`}>
+                  <p className="flex items-center gap-1.5 text-[11px] text-cyan-300/80 mb-1">
+                    <FileCode className="h-3 w-3" /> {f.path}
+                  </p>
+                  <pre className="text-[11px] text-white/70 whitespace-pre-wrap break-words rounded-lg px-3 py-2"
+                    style={{ background: 'rgba(255,255,255,0.02)' }}>{f.content}</pre>
+                </div>
+              ))}
+            </div>
           ) : (
-            <pre className="text-[12px] text-white/75 whitespace-pre-wrap break-words px-4 py-3 leading-relaxed">{text}</pre>
+            <pre className="text-[12px] text-white/75 whitespace-pre-wrap break-words px-4 py-3 leading-relaxed">{r.body}</pre>
           )}
         </div>
       </div>

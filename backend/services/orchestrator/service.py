@@ -214,6 +214,9 @@ async def start_project_run(
                     "task_id":           task_id[n.key],
                     "project_id":        project_id,
                     "user_request":      (user_request or "")[:4000],
+                    # M2 — let the agent.run handler type the artifact.
+                    "deliverable_kind":  n.deliverable_kind,
+                    "node_title":        n.title,
                 },
             },
         })
@@ -452,16 +455,21 @@ def list_project_runs(
 
 
 def _strip_content(deliverable: Dict[str, Any]) -> Dict[str, Any]:
-    """Deliverable summary without the (potentially large) content blob.
-    Preview fetches the full snapshot on demand."""
+    """Deliverable summary without the (potentially large) content blob,
+    but WITH the artifact's type/preview/title so the FE can render the
+    right affordance (Preview/Download/Open) without fetching the full
+    content first. Full content is fetched on demand via GET /runs/{id}."""
+    artifact = (deliverable.get("content") or {}).get("artifact") or {}
     return {
-        "id":       deliverable.get("id"),
-        "node_id":  deliverable.get("node_id"),
-        "kind":     deliverable.get("kind"),
-        "title":    deliverable.get("title"),
-        "agent_id": deliverable.get("agent_id"),
-        "status":   deliverable.get("status"),
-        "error":    deliverable.get("error"),
+        "id":            deliverable.get("id"),
+        "node_id":       deliverable.get("node_id"),
+        "kind":          deliverable.get("kind"),
+        "title":         deliverable.get("title"),
+        "agent_id":      deliverable.get("agent_id"),
+        "status":        deliverable.get("status"),
+        "error":         deliverable.get("error"),
+        "artifact_type": artifact.get("type"),
+        "artifact_preview": artifact.get("preview"),
     }
 
 
