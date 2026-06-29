@@ -60,73 +60,78 @@ def test_pages_have_meaningful_interactions(prompt, min_interactions):
     assert sum(m in html for m in markers) >= min_interactions
 
 
+LANDING = ["Build a premium SaaS landing page", "Build a restaurant website"]
+APPS = ["Build a fitness tracking application", "Build a banking dashboard",
+        "Build a crypto portfolio dashboard", "Build an AI chat application"]
+
+
 # ── Fitness app behaviors (req #6) ────────────────────────────────────
 
 def test_fitness_app_interactions():
     html = _page("Build a fitness tracking application")
-    # Start training reveals today's workout (hidden until revealed) — laid
-    # on top of the FULL premium page (hero etc. still present).
-    assert "ds-hero" in html                          # premium layout preserved
+    # Rich pseudo-pages that switch (Dashboard / Workouts / Nutrition / …).
+    assert 'data-panel="page-0"' in html and 'data-panel="page-1"' in html
+    assert 'data-nav="page-0"' in html
+    # Start training reveals today's workout (hidden until revealed).
     assert 'data-reveal="reveal-detail"' in html
     assert 'id="reveal-detail"' in html and "ds-hidden" in html
-    # Workout cards are selectable.
+    # Workout cards selectable.
     assert "data-select-group" in html and "data-select" in html
-    # Nav items are wired (scroll + active state).
-    assert "data-nav=" in html
 
 
 # ── Dashboard behaviors (req #8) ──────────────────────────────────────
 
-def test_dashboard_nav_and_reveal():
+def test_dashboard_panel_switching():
     html = _page("Build a banking dashboard")
-    # Premium dashboard page (hero + metric cards) — NOT a simplified
-    # tab/panel template.
-    assert "ds-hero" in html and "ds-stat-value" in html
-    assert 'data-panel="panel-1"' not in html         # no simplified panel template
-    # Interactive: nav active/scroll + CTA reveals a detail block.
-    assert "data-nav=" in html
-    assert 'id="reveal-detail"' in html
+    # Full pseudo-page panels switch via nav; first active, others hidden.
+    assert 'data-panel="page-0"' in html and 'data-panel="page-1"' in html
+    assert 'data-nav="page-0"' in html and 'class="is-active"' in html
+    assert "ds-hidden" in html                         # non-active pages hidden
+    # Rich dashboard content (metric bento + chart bars + activity feed).
+    assert 'class="ds-bento"' in html
+    assert 'class="ds-stat-value"' in html
+    assert 'class="ds-bars"' in html
+    assert "ds-feed-item" in html
 
 
-# ── SaaS landing behaviors (req #7) ───────────────────────────────────
+# ── SaaS landing behaviors (req #4, #7) ───────────────────────────────
 
-def test_saas_landing_interactions():
+def test_saas_landing_sections():
     html = _page("Build a premium SaaS landing page")
-    # Pricing CTA scrolls (hero primary → pricing/get-started).
-    assert "data-scroll=" in html
-    # FAQ expand/collapse via native <details>.
-    assert "<details" in html
-    # Nav items wired for scroll/active.
-    assert "data-nav=" in html
+    assert 'class="ds-hero"' in html                   # premium hero element
+    assert 'class="ds-bento"' in html                  # feature bento
+    assert "ds-mock-bar" in html                       # product preview mockup
+    assert 'class="ds-logos"' in html                  # social proof
+    assert "ds-plan-featured" in html and "Choose plan" in html  # pricing
+    assert "★★★★★" in html                              # testimonials
+    assert "<details" in html                          # FAQ accordion
+    assert "data-scroll=" in html and "data-nav=" in html
 
 
-# ── Premium-preserved regression guard (the PR #192 regression) ───────
+# ── Premium-preserved regression guard ────────────────────────────────
 
-@pytest.mark.parametrize("prompt", [
-    "Build a fitness tracking application",   # dashboard (regressed in #192)
-    "Build a banking dashboard",
-    "Build a crypto portfolio dashboard",
-    "Build a premium SaaS landing page",
-    "Build a restaurant website",
-])
-def test_premium_visual_preserved_with_interactivity(prompt):
-    """Adding interactivity must NOT downgrade the premium renderer.
-    Every page keeps the PR #191 premium structure/classes AND scores
-    high on the quality reviewer — while remaining interactive."""
+@pytest.mark.parametrize("prompt", LANDING + APPS)
+def test_premium_visual_preserved(prompt):
+    """Visual quality must stay premium (the PR #192 regression). Every
+    page uses the real premium components (not flat blocks), scores high
+    on the quality reviewer, and stays interactive."""
     from backend.services.generation import quality
     html = _page(prompt)
-    # Premium design system + structure present.
-    for marker in ["ds-nav", "ds-hero", "ds-card", "ds-grid",
-                   "ds-btn-primary", "var(--", "<h1", "ds-footer"]:
-        assert marker in html, f"{prompt}: missing premium marker {marker}"
-    # Internal quality reviewer still rates it premium (high).
+    # Real premium component USAGE (class="..."), not just CSS defs.
+    for marker in ['class="ds-nav"', 'class="ds-bento"', 'class="ds-card', 'class="ds-bars"',
+                   'class="ds-footer"', "var(--", "<h1"]:
+        assert marker in html, f"{prompt}: missing {marker}"
     assert quality.is_premium(html)
-    score, _ = quality.score(html)
-    assert score >= 90, f"{prompt}: quality regressed to {score}"
-    # Still interactive.
+    assert quality.score(html)[0] >= 95, f"{prompt}: quality {quality.score(html)[0]}"
     assert "<script>" in html and "data-nav=" in html
-    # The simplified #192 panel template must NOT be used.
-    assert 'data-panel="panel-1"' not in html
+
+
+def test_no_placeholder_junk():
+    for prompt in LANDING + APPS:
+        html = _page(prompt).lower()
+        for junk in ["feature 1", "my app", "lorem ipsum", "© 2023",
+                     "section 1", "card 1", "your app"]:
+            assert junk not in html, f"{prompt}: contains {junk!r}"
 
 
 # ── Metadata reflects interactivity (req #10) ─────────────────────────
