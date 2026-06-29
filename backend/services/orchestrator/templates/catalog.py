@@ -26,6 +26,7 @@ from backend.services.orchestrator.templates.base import (
     ProjectTemplate, TemplateNode, TemplateError,
 )
 from backend.services.orchestrator.templates.builtins import BUILTIN_TEMPLATES
+from backend.services.orchestrator.templates import landing_page as _landing
 
 logger = logging.getLogger(__name__)
 
@@ -38,12 +39,33 @@ for _t in BUILTIN_TEMPLATES:
     _REGISTRY[_t.id] = _t
 
 
+# Phase C — flag-gated vertical templates. These are validated at import
+# (correctness is flag-independent) but only become VISIBLE in the
+# catalog when their feature flag is on, so the template surface is
+# byte-identical to the always-on built-ins until a flag is flipped.
+# Map: template_id -> (template, enabled_predicate).
+_GATED_TEMPLATES: Dict[str, tuple] = {
+    _landing.LANDING_PAGE_TEMPLATE_ID: (_landing.LANDING_PAGE, _landing.is_enabled),
+}
+
+
+def _enabled_gated() -> List[ProjectTemplate]:
+    return [tpl for (tpl, enabled) in _GATED_TEMPLATES.values() if enabled()]
+
+
 def get_template(template_id: str) -> Optional[ProjectTemplate]:
-    return _REGISTRY.get((template_id or "").strip())
+    tid = (template_id or "").strip()
+    hit = _REGISTRY.get(tid)
+    if hit is not None:
+        return hit
+    gated = _GATED_TEMPLATES.get(tid)
+    if gated is not None and gated[1]():
+        return gated[0]
+    return None
 
 
 def list_templates() -> List[ProjectTemplate]:
-    return list(_REGISTRY.values())
+    return list(_REGISTRY.values()) + _enabled_gated()
 
 
 # ── Ad-hoc template from a coordinator Plan ──────────────────────────
