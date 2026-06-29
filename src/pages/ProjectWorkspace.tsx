@@ -6,7 +6,7 @@ import {
   ArrowLeft, Plus, Send, Bot, Paperclip, MoreHorizontal,
   FolderOpen, Zap, Sparkles, X, Pencil, Trash2,
   Layout, Server, Search, Rocket, ShoppingBag,
-  TrendingUp, Palette, Activity,
+  TrendingUp, Palette, Activity, Loader2,
 } from 'lucide-react';
 
 const ROLE_ICONS: Record<string, React.ElementType> = {
@@ -277,7 +277,9 @@ export default function ProjectWorkspace() {
   // becomes the project-request composer + live run view (no need to create
   // an agent first). When it's disabled / the probe fails, we fall back to
   // the normal agent chat below. Fails CLOSED to agent chat (safe default).
-  const [orchAvailable, setOrchAvailable] = useState(false);
+  // Tri-state so we render a NEUTRAL skeleton while the probe is in flight —
+  // never the old "Create Agent" empty-state (avoids the first-load flicker).
+  const [orchProbe, setOrchProbe] = useState<'checking' | 'available' | 'unavailable'>('checking');
   const [isTyping, setIsTyping] = useState(false);
   const [showCreateAgent, setShowCreateAgent] = useState(false);
   const [editingAgent, setEditingAgent] = useState<string | null>(null);
@@ -351,9 +353,10 @@ export default function ProjectWorkspace() {
   /* ─── Phase B/C — orchestrator availability probe ─── */
   useEffect(() => {
     let active = true;
+    setOrchProbe('checking');
     projectOrchestratorClient.listTemplates()
-      .then(() => { if (active) setOrchAvailable(true); })
-      .catch(() => { if (active) setOrchAvailable(false); });  // 503/disabled/network → agent-chat fallback
+      .then(() => { if (active) setOrchProbe('available'); })
+      .catch(() => { if (active) setOrchProbe('unavailable'); });  // 503/disabled/network → agent-chat fallback
     return () => { active = false; };
   }, [projectId]);
 
@@ -747,9 +750,14 @@ export default function ProjectWorkspace() {
           </div>
         </div>
 
-        {/* CENTER: Project run composer (orchestrator on) OR agent chat (fallback) */}
+        {/* CENTER: neutral skeleton while probing → project composer (orchestrator on) OR agent chat (fallback) */}
         <div className="flex-1 flex flex-col min-w-0">
-          {orchAvailable ? (
+          {orchProbe === 'checking' ? (
+            <div className="flex-1 flex flex-col items-center justify-center gap-3">
+              <Loader2 className="h-5 w-5 text-white/20 animate-spin" />
+              <span className="text-[11px] text-white/25">Loading workspace…</span>
+            </div>
+          ) : orchProbe === 'available' ? (
             <ProjectRunCenter projectId={projectId || ''} />
           ) : selectedAgent ? (
             <>

@@ -525,6 +525,25 @@ async def test_empty_or_fallback_agent_output_fails_the_run(po_env, monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_project_run_disables_tool_calling(po_env, monkeypatch):
+    """30. Bug-2 — the project-run path must request agents with tool
+    calling DISABLED (allow_tools=False), so the runtime never produces
+    the OpenAI tool_call contract error."""
+    captured: dict = {}
+
+    async def _capture(req):
+        captured["allow_tools"] = getattr(req, "allow_tools", None)
+        return SimpleNamespace(reply="ok", fallback=False, metadata={})
+
+    monkeypatch.setattr(ark, "run_agent", _capture)
+    snap = await orch.start_project_run(
+        user_id="user-NT", user_request="x", template_id="generic_research",
+    )
+    await _wait_for_run_status(snap["run_id"], "user-NT", "completed")
+    assert captured["allow_tools"] is False
+
+
+@pytest.mark.asyncio
 async def test_list_project_runs_builds_conversation(po_env):
     """28. EPIC 1 — the permanent conversation. Two runs in one project are
     listed chronologically as turns with request text + deliverable

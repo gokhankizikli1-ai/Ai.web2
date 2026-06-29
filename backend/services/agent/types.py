@@ -64,6 +64,13 @@ class AgentRequest:
     # Typed as Any to avoid a circular import (spec→tools→runtime→spec).
     # Duck-typed at the use site for .allowed_tools / .can_delegate.
     spec:         Optional[Any] = None
+    # When False, the runtime exposes NO tools to the model (single LLM
+    # pass, no tool_calls). Used by the project-run path until the
+    # tool-call message loop is hardened — avoids OpenAI's "assistant
+    # message with tool_calls must be followed by tool messages"
+    # contract error. Default True → /chat + /v2/orchestrate behaviour
+    # is byte-identical.
+    allow_tools:  bool = True
 
 
 @dataclass
