@@ -17,7 +17,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Workflow, Play, Loader2, CheckCircle2, Circle, XCircle,
-  MinusCircle, Sparkles,
+  MinusCircle, Sparkles, Eye, Monitor, Code2, FolderTree,
 } from 'lucide-react';
 import {
   projectOrchestratorClient,
@@ -60,6 +60,28 @@ const STATUS_STYLE: Record<string, { label: string; color: string }> = {
   cancelled: { label: 'Cancelled', color: 'rgb(251,191,36)' },
 };
 
+// Artifact preview kinds that get the prominent "Preview" card (vs the
+// compact supporting-deliverable rows).
+const ARTIFACT_PREVIEWS = new Set(['iframe', 'code', 'file_tree']);
+
+function artifactGlyph(preview?: string | null) {
+  if (preview === 'iframe')    return <Monitor className="h-4 w-4 text-cyan-300" />;
+  if (preview === 'code')      return <Code2 className="h-4 w-4 text-cyan-300" />;
+  if (preview === 'file_tree') return <FolderTree className="h-4 w-4 text-cyan-300" />;
+  return <Sparkles className="h-4 w-4 text-cyan-300" />;
+}
+
+function artifactLabel(type?: string | null): string {
+  switch (type) {
+    case 'html':            return 'Live HTML preview';
+    case 'react_component': return 'React component';
+    case 'project_file':    return 'Project file';
+    case 'file_tree':       return 'File tree';
+    case 'zip_ready_bundle': return 'Bundle';
+    default:                return 'Artifact';
+  }
+}
+
 const EXAMPLES = [
   'Build me a Shopify landing page for a coffee subscription',
   'Research the EV charging market and summarise the opportunity',
@@ -68,9 +90,13 @@ const EXAMPLES = [
 ];
 
 function toSummary(d: DeliverableView): DeliverableSummary {
+  const art = (d.content as Record<string, unknown> | undefined)?.artifact as
+    { type?: string; preview?: string } | undefined;
   return {
     id: d.id, node_id: d.node_id, kind: d.kind, title: d.title,
     agent_id: d.agent_id, status: d.status, error: d.error,
+    artifact_type: (art?.type as DeliverableSummary['artifact_type']) ?? null,
+    artifact_preview: art?.preview ?? null,
   };
 }
 
@@ -312,29 +338,58 @@ function ConversationTurn({
           </>
         )}
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-          {turn.deliverables.map(d => {
-            const previewable = d.status === 'completed';
-            return (
-              <button key={d.id}
-                onClick={() => previewable && onPreview(d.id)}
-                disabled={!previewable}
-                className="flex items-start gap-1.5 text-left rounded-lg px-2 py-1.5 transition-colors disabled:cursor-default enabled:hover:bg-white/[0.03]"
-                style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.03)' }}>
-                <span className="mt-0.5 shrink-0">{deliverableIcon(d.status)}</span>
-                <div className="min-w-0">
-                  <p className="text-[11px] text-white/70 truncate">{d.title || d.kind}</p>
-                  <p className="text-[8px] text-white/30">
-                    {humanAgent(d.agent_id)}
-                    {d.status === 'in_progress' ? ' · working…' : previewable ? ' · preview' : ''}
-                  </p>
-                  {d.status === 'failed' && d.error && (
-                    <p className="text-[8px] text-red-400/60 mt-0.5 line-clamp-2">{d.error}</p>
-                  )}
+        {/* Prominent artifact(s) — the real, previewable outputs (html /
+            react / file tree). Never hidden behind a tiny row (req #4). */}
+        {turn.deliverables
+          .filter(d => d.status === 'completed' && ARTIFACT_PREVIEWS.has(d.artifact_preview || ''))
+          .map(d => (
+            <button key={`art-${d.id}`} onClick={() => onPreview(d.id)}
+              className="w-full text-left rounded-xl px-3 py-3 mb-1.5 transition-colors hover:bg-white/[0.04]"
+              style={{ background: 'linear-gradient(135deg, rgba(34,211,238,0.07), rgba(59,130,246,0.05))', border: '1px solid rgba(34,211,238,0.18)' }}>
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg shrink-0"
+                  style={{ background: 'rgba(34,211,238,0.12)' }}>
+                  {artifactGlyph(d.artifact_preview)}
                 </div>
-              </button>
-            );
-          })}
+                <div className="min-w-0 flex-1">
+                  <p className="text-[12px] font-semibold text-white/85 truncate">{d.title || d.kind}</p>
+                  <p className="text-[9px] text-white/40">{artifactLabel(d.artifact_type)} · {humanAgent(d.agent_id)}</p>
+                </div>
+                <span className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-cyan-200 shrink-0"
+                  style={{ background: 'rgba(34,211,238,0.12)', border: '1px solid rgba(34,211,238,0.2)' }}>
+                  <Eye className="h-3.5 w-3.5" /> Preview
+                </span>
+              </div>
+              <p className="text-[8px] text-white/30 mt-1.5">Preview · Copy · Download · Open</p>
+            </button>
+          ))}
+
+        {/* Supporting deliverables (plans, concepts) as compact rows. */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+          {turn.deliverables
+            .filter(d => !(d.status === 'completed' && ARTIFACT_PREVIEWS.has(d.artifact_preview || '')))
+            .map(d => {
+              const previewable = d.status === 'completed';
+              return (
+                <button key={d.id}
+                  onClick={() => previewable && onPreview(d.id)}
+                  disabled={!previewable}
+                  className="flex items-start gap-1.5 text-left rounded-lg px-2 py-1.5 transition-colors disabled:cursor-default enabled:hover:bg-white/[0.03]"
+                  style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.03)' }}>
+                  <span className="mt-0.5 shrink-0">{deliverableIcon(d.status)}</span>
+                  <div className="min-w-0">
+                    <p className="text-[11px] text-white/70 truncate">{d.title || d.kind}</p>
+                    <p className="text-[8px] text-white/30">
+                      {humanAgent(d.agent_id)}
+                      {d.status === 'in_progress' ? ' · working…' : previewable ? ' · preview' : ''}
+                    </p>
+                    {d.status === 'failed' && d.error && (
+                      <p className="text-[8px] text-red-400/60 mt-0.5 line-clamp-2">{d.error}</p>
+                    )}
+                  </div>
+                </button>
+              );
+            })}
           {total === 0 && <p className="text-[10px] text-white/25 py-1">Preparing run…</p>}
         </div>
       </div>

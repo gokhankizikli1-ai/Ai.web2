@@ -103,9 +103,9 @@ async def _wait_for_run_status(run_id, user_id, targets, *, timeout_s=6.0):
 # ──────────────────────────────────────────────────────────────────────────
 
 def test_builtin_templates_registered_and_valid():
-    """1. Exactly two built-ins, both valid DAGs."""
+    """1. Always-on built-ins (incl. the M2 app_prototype), all valid DAGs."""
     ids = {t.id for t in tmpl.list_templates()}
-    assert ids == {"generic_research", "generic_creation"}
+    assert ids == {"generic_research", "generic_creation", "app_prototype"}
     for t in tmpl.list_templates():
         t.validate()  # must not raise
 
@@ -163,9 +163,13 @@ def test_build_adhoc_template_from_plan():
 
 
 def test_choose_template_heuristics():
-    """6. choose_template: research vs creation vs default-to-research."""
+    """6. choose_template: research / web / generic-creation / default.
+    (M2 routes web + app intents to artifact templates; see test 31.)"""
     assert tmpl.choose_template("research the market", None).id == "generic_research"
-    assert tmpl.choose_template("build me a landing page", None).id == "generic_creation"
+    # 'landing page' is a WEB intent → app_prototype (HTML) when the
+    # landing flag is off; a generic creative ask still → generic_creation.
+    assert tmpl.choose_template("build me a landing page", None).id == "app_prototype"
+    assert tmpl.choose_template("write a launch announcement", None).id == "generic_creation"
     # Vague request with no plan → safe default.
     assert tmpl.choose_template("hello there", None).id == "generic_research"
 
@@ -344,14 +348,15 @@ def test_run_disabled_returns_503(client, monkeypatch):
     assert body["metadata"]["code"] == "project_orchestrator_disabled"
 
 
-def test_templates_route_lists_two(client, po_env):
-    """17. /templates returns the two built-ins when enabled."""
+def test_templates_route_lists_builtins(client, po_env):
+    """17. /templates returns the always-on built-ins when enabled
+    (incl. the M2 app_prototype)."""
     r = client.get("/v2/orchestrator/templates")
     assert r.status_code == 200
     body = r.json()
     assert body["success"] is True
     assert {t["id"] for t in body["data"]["templates"]} == {
-        "generic_research", "generic_creation",
+        "generic_research", "generic_creation", "app_prototype",
     }
 
 
@@ -522,6 +527,44 @@ async def test_empty_or_fallback_agent_output_fails_the_run(po_env, monkeypatch)
     # actionable error mentioning the provider/config cause
     assert "OPENAI_API_KEY" in (dels["scope"]["error"] or "")
     assert rstore.get_run(run_id)["status"] == "errored"
+
+
+def test_app_requests_route_to_app_prototype():
+    """31. M2 — app/dashboard/game requests select the artifact-producing
+    app_prototype template, not the text-only generic_creation."""
+    for req in ("Build a fitness app", "Design a dashboard",
+                "Build a simple game", "Create a CRM"):
+        assert tmpl.choose_template(req, None).id == "app_prototype", req
+    # app_prototype is an always-on built-in (no flag).
+    assert "app_prototype" in {t.id for t in tmpl.list_templates()}
+
+
+@pytest.mark.asyncio
+async def test_app_run_produces_previewable_html_artifact(po_env):
+    """32. M2 — an app run completes and the prototype deliverable carries
+    a non-empty, previewable (iframe) HTML artifact exposed to the FE."""
+    snap = await orch.start_project_run(
+        user_id="user-APP", user_request="Build a fitness app",
+        template_id="app_prototype",
+    )
+    run_id = snap["run_id"]
+    await _wait_for_run_status(run_id, "user-APP", "completed")
+
+    # Full snapshot: the prototype deliverable has a typed HTML artifact.
+    full = orch.get_run_snapshot(run_id, user_id="user-APP")
+    proto = next(d for d in full["deliverables"] if d["node_id"] == "prototype")
+    art = proto["content"]["artifact"]
+    assert art["type"] == "html"
+    assert art["preview"] == "iframe"
+    assert art["content"].strip() != ""          # non-empty artifact
+    assert art["download"]["filename"].endswith(".html")
+
+    # Conversation summary exposes the artifact type/preview WITHOUT content.
+    from backend.services.orchestrator.service import _strip_content
+    s = _strip_content(proto)
+    assert s["artifact_type"] == "html"
+    assert s["artifact_preview"] == "iframe"
+    assert "content" not in s
 
 
 @pytest.mark.asyncio

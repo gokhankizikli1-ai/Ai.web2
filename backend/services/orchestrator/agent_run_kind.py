@@ -162,10 +162,20 @@ async def _agent_run_handler(ctx: JobContext) -> dict:
 
     await ctx.report_progress(90, "persisting deliverable")
 
+    # EPIC 1 / M2 — turn the raw reply into a typed, previewable artifact
+    # (html → iframe, react_component / project_file → code, file_tree →
+    # tree, else markdown). `text` is preserved for back-compat.
+    from backend.services.orchestrator.artifacts import build_artifact
+    artifact = build_artifact(
+        kind=str(payload.get("deliverable_kind") or ""),
+        title=str(payload.get("node_title") or payload.get("node_id") or "artifact"),
+        text=reply,
+    )
     content = {
         "text":     reply,
         "agent_id": spec.id,
         "node_id":  payload.get("node_id"),
+        "artifact": artifact,
     }
     _mark_deliverable(deliverable_id, "completed", content=content)
 

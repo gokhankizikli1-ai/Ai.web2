@@ -93,8 +93,24 @@ export interface TemplateView {
   nodes: Array<{ key: string; agent_id: string; title: string; deliverable_kind: string; depends_on: string[] }>;
 }
 
-// A deliverable as it appears in a conversation turn (no `content` —
-// fetched on demand via getRun when previewed).
+// EPIC 1 / M2 — typed artifact produced for a deliverable.
+export type ArtifactType =
+  | 'markdown' | 'html' | 'react_component'
+  | 'project_file' | 'file_tree' | 'zip_ready_bundle';
+
+export interface Artifact {
+  type:     ArtifactType;
+  title:    string;
+  language: string;
+  content:  string;
+  files?:   Array<{ path: string; content: string; language: string }>;
+  preview:  'iframe' | 'code' | 'markdown' | 'file_tree';
+  download: { filename: string; mime: string; [k: string]: unknown };
+}
+
+// A deliverable as it appears in a conversation turn (no full `content` —
+// fetched on demand via getRun when previewed — but it carries the
+// artifact's type/preview so the FE can render the right affordance).
 export interface DeliverableSummary {
   id:       string;
   node_id:  string;
@@ -103,6 +119,8 @@ export interface DeliverableSummary {
   agent_id: string;
   status:   DeliverableStatus;
   error:    string | null;
+  artifact_type?:    ArtifactType | null;
+  artifact_preview?: string | null;
 }
 
 // One turn of the permanent project conversation.
