@@ -201,22 +201,37 @@ def _footer(spec: ProductSpec) -> str:
 </footer>"""
 
 
-# ── Marketing layout (scroll + reveal) ────────────────────────────────
+# ── Unified premium layout (PR #191 visual) + interactivity on top ────
+#
+# ONE premium layout for every spec — the rich PR #191 page (nav + hero
+# + full sections + footer). Interactivity is layered ON TOP via
+# data-attributes; it never replaces or simplifies the markup:
+#   * marketing  → hero/nav CTAs smooth-scroll to the relevant section.
+#   * app/dash   → the primary CTA reveals a hidden detail block (e.g.
+#                  "Start training" → today's plan) — the rest of the
+#                  premium page (hero, metrics, features, panels, cta)
+#                  still renders in full.
+# Nav items get active state + scroll; cards are selectable; FAQ uses
+# native <details>.
 
-def _marketing(spec: ProductSpec) -> str:
+def _premium_layout(spec: ProductSpec) -> str:
     links = "".join(
         f'<a data-nav="{_slug(l)}" href="#{_slug(l)}">{_e(l)}</a>' for l in spec.navigation
     )
-    # Hero CTAs scroll to the most relevant section.
     section_slugs = [_slug(s.title or s.kind) for s in spec.sections]
     has_pricing = any(s.kind == "pricing" for s in spec.sections)
     primary_target = "pricing" if has_pricing else ("get-started" if any(s.kind == "cta" for s in spec.sections) else (section_slugs[0] if section_slugs else "get-started"))
     secondary_target = next((_slug(s.title or s.kind) for s in spec.sections if s.kind == "features"), primary_target)
+
+    # App/dashboards: primary CTA reveals a detail block; marketing: scroll.
+    is_dash = spec.is_dashboard
+    primary_attr = 'data-reveal="reveal-detail"' if is_dash else f'data-scroll="{primary_target}"'
+
     nav = f"""
 <header class="ds-nav">
   <div class="ds-nav-brand"><span class="ds-nav-logo"></span>{_e(spec.name)}</div>
   <nav class="ds-nav-links">{links}</nav>
-  <button class="ds-btn ds-btn-primary" data-scroll="{primary_target}">{_e(spec.cta_primary)}</button>
+  <button class="ds-btn ds-btn-primary" {primary_attr}>{_e(spec.cta_primary)}</button>
 </header>"""
     hero = f"""
 <section class="ds-hero ds-container" id="overview">
@@ -224,15 +239,33 @@ def _marketing(spec: ProductSpec) -> str:
   <h1 class="ds-rise">{_e(spec.tagline)}</h1>
   <p class="ds-rise">{_e(spec.description)}</p>
   <div class="ds-hero-actions ds-rise">
-    <button class="ds-btn ds-btn-primary" data-scroll="{primary_target}">{_e(spec.cta_primary)}</button>
+    <button class="ds-btn ds-btn-primary" {primary_attr}>{_e(spec.cta_primary)}</button>
     <button class="ds-btn ds-btn-ghost" data-scroll="{secondary_target}">{_e(spec.cta_secondary)}</button>
   </div>
 </section>"""
     parts = [nav, "<main>", hero]
+    if is_dash:
+        parts.append(_reveal_block(spec))
     for sec in spec.sections:
         parts.append(_render_section(spec, sec))
     parts += ["</main>", _footer(spec)]
     return "\n".join(parts)
+
+
+def _reveal_block(spec: ProductSpec) -> str:
+    """Hidden, premium detail block revealed by the primary CTA. Reuses
+    the premium card/grid components + selectable cards."""
+    feats = next((s.items for s in spec.sections if s.kind == "features"), []) or []
+    items = feats[:3] or [{"title": "Get started", "body": "Begin now.", "icon": "▶"}]
+    grid = _feature_grid(items, selectable=True)
+    return f"""
+<section class="ds-section ds-container ds-hidden" id="reveal-detail">
+  <div style="margin-bottom:24px;text-align:center">
+    <h2>{_e(spec.cta_primary)} — your plan</h2>
+    <p style="margin-top:10px">Pick a focus to begin.</p>
+  </div>
+  {grid}
+</section>"""
 
 
 def _render_section(spec: ProductSpec, sec: Section) -> str:
@@ -259,71 +292,13 @@ def _render_section(spec: ProductSpec, sec: Section) -> str:
     return _wrap_section(sec, _feature_grid(sec.items))
 
 
-# ── App / dashboard layout (tabs + panels + reveal) ───────────────────
-
-def _app(spec: ProductSpec) -> str:
-    tabs = "".join(
-        f'<button class="ds-tab{" is-active" if i == 0 else ""}" data-nav="panel-{i}">{_e(l)}</button>'
-        for i, l in enumerate(spec.navigation)
-    )
-    nav = f"""
-<header class="ds-nav">
-  <div class="ds-nav-brand"><span class="ds-nav-logo"></span>{_e(spec.name)}</div>
-  <nav class="ds-tabs">{tabs}</nav>
-  <button class="ds-btn ds-btn-primary" data-reveal="reveal-detail">{_e(spec.cta_primary)}</button>
-</header>"""
-
-    feature_items = next((s.items for s in spec.sections if s.kind == "features"), []) or []
-    # Hidden reveal panel — the primary CTA ("Start training") reveals it.
-    reveal = f"""
-<div id="reveal-detail" class="ds-card ds-glass ds-hidden" style="margin-top:24px;padding:0;overflow:hidden">
-  <div style="padding:16px;border-bottom:1px solid var(--border);font-weight:600">
-    {_e(spec.cta_primary)} — pick your focus
-  </div>
-  <div class="ds-grid" data-select-group style="padding:16px">
-    {''.join(f'''<div class="ds-card ds-selectable" data-select>
-      <div class="ds-icon">{_e(c.get('icon','●'))}</div>
-      <h3>{_e(c.get('title'))}</h3>
-      <p style="margin-top:6px;font-size:.85rem">{_e(c.get('body'))}</p>
-    </div>''' for c in (feature_items[:3] or [{'title': 'Session', 'body': 'Get started', 'icon': '▶'}]))}
-  </div>
-</div>"""
-
-    # Panel 0 — the live dashboard.
-    p0 = f"""
-<section class="ds-section ds-container ds-panel" data-panel="panel-0" id="panel-0">
-  <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:24px">
-    <div>
-      <span class="ds-eyebrow">{_e(spec.navigation[0] if spec.navigation else 'Dashboard')}</span>
-      <h1 style="margin-top:6px;font-size:clamp(1.75rem,3.5vw,2.5rem)">{_e(spec.tagline)}</h1>
-    </div>
-    <button class="ds-btn ds-btn-primary" data-reveal="reveal-detail">{_e(spec.cta_primary)}</button>
-  </div>
-  {_metric_grid(spec.metrics) if spec.metrics else ''}
-  {reveal}
-  <div style="margin-top:32px">{_feature_grid(feature_items)}</div>
-</section>"""
-
-    # Panels 1..N — one per remaining nav item.
-    extra = ""
-    for i, label in enumerate(spec.navigation):
-        if i == 0:
-            continue
-        extra += f"""
-<section class="ds-section ds-container ds-panel ds-hidden" data-panel="panel-{i}" id="panel-{i}">
-  <div style="margin-bottom:24px"><h2>{_e(label)}</h2>
-    <p style="margin-top:8px">Your {_e(label.lower())} in {_e(spec.name)}.</p></div>
-  {_feature_grid(feature_items)}
-</section>"""
-
-    return "\n".join([nav, "<main>", p0, extra, _footer(spec)])
-
-
 # ── Document assembly ─────────────────────────────────────────────────
 
 def render_premium_page(spec: ProductSpec) -> str:
-    """Render the full premium, INTERACTIVE HTML document for a spec."""
-    body = _app(spec) if spec.is_dashboard else _marketing(spec)
+    """Render the full premium, INTERACTIVE HTML document for a spec.
+    ONE premium layout for every spec (PR #191 visual) with the
+    interaction layer applied on top — never a simplified template."""
+    body = _premium_layout(spec)
     css = design_system_css(spec.theme.get("accent", "#6366f1"),
                             spec.theme.get("accent2", "#22d3ee"))
     mode_class = "" if spec.dark_mode else "light"
