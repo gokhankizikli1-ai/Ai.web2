@@ -112,8 +112,24 @@ async def _agent_run_handler(ctx: JobContext) -> dict:
     # for the M2 artifact generators.
     model = "gpt-4o-mini"
 
+    # EPIC 2 — expand the prompt via the generation engine (planning +
+    # invisible prompt expansion + component selection + design
+    # directives). Orchestration-independent; falls back to the raw task
+    # instructions if the engine is unavailable.
+    user_message = task_desc or "Proceed with your assigned task."
+    try:
+        from backend.services.generation import build_prompt as _build_prompt
+        user_message = _build_prompt(
+            deliverable_kind=str(payload.get("deliverable_kind") or ""),
+            node_role=spec.id,
+            base_instructions=task_desc or "",
+            user_request=str(payload.get("user_request") or ""),
+        )
+    except Exception as exc:  # pragma: no cover — never block a run
+        logger.debug("generation.build_prompt soft-failed: %s", exc)
+
     request = AgentRequest(
-        user_message=task_desc or "Proceed with your assigned task.",
+        user_message=user_message,
         mode=spec.id,
         user_id=user_id,
         model=model,
@@ -171,12 +187,22 @@ async def _agent_run_handler(ctx: JobContext) -> dict:
     # EPIC 1 / M2 — turn the raw reply into a typed, previewable artifact
     # (html → iframe, react_component / project_file → code, file_tree →
     # tree, else markdown). `text` is preserved for back-compat.
-    from backend.services.orchestrator.artifacts import build_artifact
-    artifact = build_artifact(
-        kind=str(payload.get("deliverable_kind") or ""),
-        title=str(payload.get("node_title") or payload.get("node_id") or "artifact"),
-        text=reply,
-    )
+    # EPIC 2 — finalize through the generation engine (visual polish +
+    # design-system enforcement + accessibility + internal quality review
+    # + one deterministic premium-refinement pass + metadata). Falls back
+    # to the base artifact builder if the engine is unavailable.
+    kind = str(payload.get("deliverable_kind") or "")
+    title = str(payload.get("node_title") or payload.get("node_id") or "artifact")
+    try:
+        from backend.services.generation import finalize_artifact as _finalize
+        artifact = _finalize(
+            deliverable_kind=kind, node_title=title, raw_reply=reply,
+            user_request=str(payload.get("user_request") or ""),
+        )
+    except Exception as exc:  # pragma: no cover — never block a run
+        logger.debug("generation.finalize_artifact soft-failed: %s", exc)
+        from backend.services.orchestrator.artifacts import build_artifact
+        artifact = build_artifact(kind=kind, title=title, text=reply)
     content = {
         "text":     reply,
         "agent_id": spec.id,

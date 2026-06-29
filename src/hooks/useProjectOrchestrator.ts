@@ -98,6 +98,20 @@ export type ArtifactType =
   | 'markdown' | 'html' | 'react_component'
   | 'project_file' | 'file_tree' | 'zip_ready_bundle';
 
+export interface ArtifactMetadata {
+  title?:           string;
+  description?:     string;
+  artifact_type?:   string;
+  theme?:           { mode?: string; accent?: string };
+  components_used?: string[];
+  responsive?:      boolean;
+  dark_mode?:       boolean;
+  complexity?:      string;
+  files?:           string[];
+  product_type?:    string;
+  [k: string]: unknown;
+}
+
 export interface Artifact {
   type:     ArtifactType;
   title:    string;
@@ -106,6 +120,7 @@ export interface Artifact {
   files?:   Array<{ path: string; content: string; language: string }>;
   preview:  'iframe' | 'code' | 'markdown' | 'file_tree';
   download: { filename: string; mime: string; [k: string]: unknown };
+  metadata?: ArtifactMetadata;
 }
 
 // A deliverable as it appears in a conversation turn (no full `content` —
