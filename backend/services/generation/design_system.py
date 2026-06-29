@@ -12,7 +12,9 @@
 
 from __future__ import annotations
 
-from typing import Dict
+from typing import Dict, Optional
+
+from backend.services.generation.styles import density_values, font_stack
 
 DESIGN_TOKENS: Dict[str, object] = {
     "typography": {
@@ -32,9 +34,13 @@ DESIGN_TOKENS: Dict[str, object] = {
 }
 
 
-def design_system_css(accent: str = "#6366f1", accent2: str = "#22d3ee") -> str:
-    """Full premium design-system stylesheet, themed by an accent pair."""
-    return f"""
+def design_system_css(accent: str = "#6366f1", accent2: str = "#22d3ee",
+                      style: Optional[Dict] = None) -> str:
+    """Full premium design-system stylesheet, themed by an accent pair and
+    (optionally) a Design-Diversity style mode. The `style` arg is purely
+    additive — called positionally with two accents it behaves exactly as
+    before, so all existing callers/tests are unaffected."""
+    base = f"""
 :root {{
   --accent: {accent}; --accent-2: {accent2};
   --grad: linear-gradient(135deg, {accent} 0%, {accent2} 100%);
@@ -213,6 +219,53 @@ p {{ color: var(--text-muted); }}
 /* Footer */
 .ds-footer {{ border-top: 1px solid var(--border); padding: 44px 0; color: var(--text-dim); font-size: .88rem; }}
 
+/* App shells (editor / ecommerce / booking) */
+.ds-toolbar {{ display: flex; align-items: center; gap: 12px; padding: 12px 18px;
+  border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 60%, transparent); }}
+.ds-input {{ flex: 1; min-width: 0; font: inherit; font-size: .9rem; color: var(--text);
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 9px 14px; outline: none; transition: border-color var(--t) var(--ease); }}
+.ds-input:focus {{ border-color: var(--accent); }}
+.ds-shell {{ display: grid; grid-template-columns: 232px 320px 1fr; min-height: 72vh;
+  border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden;
+  background: var(--surface); box-shadow: var(--shadow); }}
+.ds-pane {{ border-right: 1px solid var(--border); overflow: auto; }}
+.ds-pane:last-child {{ border-right: 0; }}
+.ds-pane-pad {{ padding: 16px; }}
+.ds-folder {{ display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 9px 12px; border-radius: var(--radius); color: var(--text-muted); cursor: pointer;
+  font-size: .9rem; font-weight: 550; transition: all var(--t) var(--ease); }}
+.ds-folder:hover {{ background: var(--surface-2); color: var(--text); }}
+.ds-folder.is-active {{ background: color-mix(in srgb, var(--accent) 16%, var(--surface-2));
+  color: var(--text); }}
+.ds-folder-count {{ font-size: .75rem; color: var(--text-dim); }}
+.ds-note-item {{ padding: 13px 14px; border-bottom: 1px solid var(--border); cursor: pointer;
+  transition: background var(--t) var(--ease); }}
+.ds-note-item:hover {{ background: var(--surface-2); }}
+.ds-note-item.is-selected {{ background: color-mix(in srgb, var(--accent) 14%, var(--surface-2));
+  box-shadow: inset 3px 0 0 var(--accent); }}
+.ds-note-title {{ color: var(--text); font-weight: 650; font-size: .95rem; }}
+.ds-note-snippet {{ color: var(--text-dim); font-size: .82rem; margin-top: 3px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+.ds-editor {{ padding: 30px clamp(20px, 4vw, 52px); }}
+.ds-editor-title {{ font-size: 1.9rem; font-weight: 720; letter-spacing: -.02em; color: var(--text); }}
+.ds-editor-body {{ margin-top: 18px; color: var(--text-muted); white-space: pre-wrap;
+  line-height: 1.75; font-size: 1.02rem; }}
+.ds-price {{ color: var(--text); font-weight: 700; }}
+.ds-cart-count {{ display: inline-grid; place-items: center; min-width: 22px; height: 22px;
+  padding: 0 6px; border-radius: 9999px; background: var(--surface-2); color: var(--text);
+  font-size: .75rem; font-weight: 700; border: 1px solid var(--border-strong); }}
+.ds-cart-count.is-on {{ background: var(--grad); color: #fff; border-color: transparent; }}
+.ds-chip {{ display: inline-flex; align-items: center; padding: 7px 14px; border-radius: 9999px;
+  font-size: .85rem; font-weight: 600; color: var(--text-muted); cursor: pointer;
+  background: var(--surface-2); border: 1px solid var(--border); transition: all var(--t) var(--ease); }}
+.ds-chip:hover {{ color: var(--text); }}
+.ds-chip.is-active {{ background: var(--grad); color: #fff; border-color: transparent; }}
+@media (max-width: 860px) {{
+  .ds-shell {{ grid-template-columns: 1fr; min-height: auto; }}
+  .ds-shell .ds-pane {{ border-right: 0; border-bottom: 1px solid var(--border); max-height: 320px; }}
+}}
+
 /* Pseudo-pages */
 .ds-page {{ animation: ds-rise var(--t-slow) var(--ease) both; }}
 
@@ -243,6 +296,87 @@ p {{ color: var(--text-muted); }}
   .ds-section {{ padding: 56px 0; }}
 }}
 """.strip()
+    if not style:
+        return base
+    return base + "\n\n/* ── Style mode overrides ── */\n" + _style_overrides(style)
+
+
+def _style_overrides(style: Dict) -> str:
+    """Per-style-mode CSS overrides: typography, card radius, spacing
+    density and background treatment. This is what makes two products in
+    different modes look genuinely different."""
+    font = font_stack(style.get("font", "inter"))
+    radius = style.get("radius", "16px")
+    sec_pad, card_pad, gap = density_values(style.get("density", "normal"))
+    bg = style.get("bg", "subtle")
+    accent = style.get("accent", "#6366f1")
+    accent2 = style.get("accent2", "#22d3ee")
+
+    # Background treatments per style mode.
+    treatments = {
+        "clean":      "var(--bg)",
+        "paper":      "var(--bg)",
+        "mono":       "var(--bg)",
+        "subtle":     ("radial-gradient(1100px 600px at 88% -12%, "
+                       f"color-mix(in srgb, {accent} 9%, transparent), transparent 60%), var(--bg)"),
+        "gradient":   ("radial-gradient(900px 520px at 80% -10%, "
+                       f"color-mix(in srgb, {accent} 22%, transparent), transparent 60%), "
+                       "radial-gradient(760px 480px at 0% 0%, "
+                       f"color-mix(in srgb, {accent2} 18%, transparent), transparent 55%), var(--bg)"),
+        "glass":      ("radial-gradient(900px 560px at 78% -8%, "
+                       f"color-mix(in srgb, {accent} 16%, transparent), transparent 58%), "
+                       "radial-gradient(700px 480px at 4% 2%, "
+                       f"color-mix(in srgb, {accent2} 14%, transparent), transparent 55%), var(--bg)"),
+        "neon":       ("radial-gradient(700px 480px at 14% 4%, "
+                       f"color-mix(in srgb, {accent} 28%, transparent), transparent 52%), "
+                       "radial-gradient(760px 520px at 86% 10%, "
+                       f"color-mix(in srgb, {accent2} 26%, transparent), transparent 55%), var(--bg)"),
+        "command":    ("radial-gradient(620px 420px at 50% -6%, "
+                       f"color-mix(in srgb, {accent} 16%, transparent), transparent 60%), var(--bg)"),
+        "editorial":  ("radial-gradient(120% 80% at 50% 0%, "
+                       f"color-mix(in srgb, {accent} 7%, transparent), transparent 60%), var(--bg)"),
+        "editorial-light": "var(--bg)",
+    }
+    body_bg = treatments.get(bg, treatments["subtle"])
+
+    parts = [
+        ":root {",
+        f"  --font: {font};",
+        f"  --radius-sm: calc({radius} - 4px); --radius: {radius};",
+        f"  --radius-lg: calc({radius} + 6px); --radius-xl: calc({radius} + 16px);",
+        "}",
+        f"body {{ background: {body_bg}; }}",
+        f".ds-section {{ padding: {sec_pad} 0; }}",
+        f".ds-card {{ padding: {card_pad}; }}",
+        f".ds-grid, .ds-bento {{ gap: {gap}; }}",
+    ]
+
+    # Mode-specific flourishes.
+    if bg == "mono":
+        # Vercel-style: tighten letter-spacing, square chrome, hairline borders.
+        parts += [
+            "body { letter-spacing: 0; }",
+            ".ds-hero::after { opacity: .28; }",
+            ".ds-btn-primary { color: #0a0a0a; }",
+            ".ds-nav { backdrop-filter: blur(10px); }",
+        ]
+    if bg == "neon":
+        parts += [
+            ".ds-card { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent); }",
+            ".ds-nav-logo, .ds-icon { box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 60%, transparent); }",
+        ]
+    if style.get("font") == "serif":
+        parts += [
+            "h1, h2, h3 { font-weight: 600; letter-spacing: -0.01em; }",
+            ".ds-eyebrow { letter-spacing: .22em; }",
+        ]
+    if style.get("mode") == "light":
+        # Calmer, flatter chrome for light/native modes (Apple/Notion feel).
+        parts += [
+            ".ds-hero::before { opacity: .5; }",
+            ".ds-card { box-shadow: var(--shadow-sm); }",
+        ]
+    return "\n".join(parts)
 
 
 __all__ = ["DESIGN_TOKENS", "design_system_css"]

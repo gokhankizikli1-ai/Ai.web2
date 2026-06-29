@@ -179,6 +179,9 @@ def _metadata(spec: ProductSpec, artifact_type: str, components_used: List[str],
         "source": source,
         "quality_score": qscore,
         "product_type": spec.product_type,
+        "intent": spec.intent,
+        "layout": spec.layout,
+        "style": (spec.style or {}).get("mode_name") or (spec.style or {}).get("label"),
     }
 
 
@@ -189,7 +192,10 @@ def _count_interactions(html: str) -> int:
     h = html or ""
     n = 0
     for marker in ("data-nav=", "data-reveal=", "data-scroll=",
-                   "data-select-group", "<details"):
+                   "data-select-group", "<details", "data-tab=",
+                   "data-search", "data-folder=", "data-note",
+                   "data-filter=", "data-add-cart", "data-product=",
+                   "data-room=", "data-book"):
         if marker in h:
             n += 1
     return n

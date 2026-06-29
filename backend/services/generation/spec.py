@@ -43,6 +43,12 @@ class ProductSpec:
     is_dashboard: bool = False
     responsive: bool = True
     dark_mode: bool = True
+    # CRITICAL FIX — product intent + interface architecture.
+    layout: str = "landing"         # app|editor|ecommerce|booking|landing|portfolio
+    intent: str = "landing_page"    # one of the 12 product intents
+    style: Dict[str, Any] = field(default_factory=dict)        # resolved style mode
+    capabilities: Dict[str, bool] = field(default_factory=dict)  # needs_* flags
+    data: Dict[str, Any] = field(default_factory=dict)        # layout-specific seed data
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -52,6 +58,8 @@ class ProductSpec:
     # ── Compact spec block injected into the (invisible) LLM prompt ────
     def to_prompt_block(self) -> str:
         lines = [
+            f"PRODUCT INTENT: {self.intent} (render as the actual {self.layout} interface — NOT a marketing page unless the layout is 'landing'/'portfolio')",
+            f"VISUAL STYLE: {self.style.get('label', 'modern')} ({self.style.get('mode', 'dark')} mode)",
             f"PRODUCT TYPE: {self.product_type}",
             f"PRODUCT NAME: {self.name}",
             f"TAGLINE: {self.tagline}",
@@ -67,6 +75,12 @@ class ProductSpec:
         ]
         if self.metrics:
             lines.append("DASHBOARD WIDGETS: " + ", ".join(m["label"] for m in self.metrics))
+        on = [k.replace("needs_", "") for k, v in (self.capabilities or {}).items() if v]
+        if on:
+            lines.append("REQUIRED SURFACES: " + ", ".join(on))
+            off = [k.replace("needs_", "") for k, v in self.capabilities.items() if not v]
+            if off:
+                lines.append("DO NOT INCLUDE: " + ", ".join(off))
         return "\n".join(lines)
 
 
