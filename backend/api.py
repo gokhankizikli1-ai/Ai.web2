@@ -221,6 +221,7 @@ def _build_full_app():
         "backend.routes.v2_sessions",  # Phase 5 — /v2/sessions/* (auth-bound, parallel to legacy)
         "backend.routes.v2_agent",     # Phase 6d — /v2/agent/execute (gated by ENABLE_AGENT)
         "backend.routes.v2_orchestrate",  # Phase 3.4 — /v2/orchestrate (gated by ENABLE_ORCHESTRATOR)
+        "backend.routes.v2_orchestrator",  # Phase A.2 — /v2/orchestrator/* project runs (gated by ENABLE_PROJECT_ORCHESTRATOR)
         "backend.routes.v2_events",    # Phase 3.5 — /v2/events/stream (gated by ENABLE_REALTIME_EVENTS)
         "backend.routes.market",       # Phase 8e — /market/quote/{symbol} (gated by ENABLE_MARKET_QUOTE)
         "backend.routes.v2_memory",    # Phase 6 — /v2/memory/* Memory Plane (gated by ENABLE_MEMORY_PLANE)
