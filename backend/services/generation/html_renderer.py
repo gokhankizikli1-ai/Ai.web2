@@ -1,18 +1,21 @@
 # coding: utf-8
-# EPIC 2 / M2 — Premium HTML renderer with interactive prototype behavior.
+# EPIC 2 — Premium HTML renderer (demo-grade) with interactive behavior.
 #
-# Turns a ProductSpec into ONE clean, semantic, responsive, dark-mode,
-# premium HTML document that FEELS interactive (not just visual):
-#   * marketing pages  — nav smooth-scrolls + active state, hero CTAs
-#                        scroll to pricing/CTA, FAQ expand/collapse
-#                        (native <details>), selectable feature cards.
-#   * app/dashboards    — tab nav switches visible panels, primary CTA
-#                        reveals a detail panel (e.g. "Start training" →
-#                        today's workout), selectable cards.
+# Renders a ProductSpec into ONE clean, semantic, responsive, dark, premium
+# HTML document that looks like a real funded product (Linear / Vercel /
+# Stripe / Apple / Raycast vibe) and FEELS like an app:
+#   * landing  → big hero + product mockup + social proof + feature bento
+#                + product-preview mockup + pricing + testimonials + FAQ
+#                accordion + CTA + footer. Nav smooth-scrolls + active.
+#   * app/dash → tab nav switches between full RICH pseudo-pages (overview
+#                with metric bento + chart blocks + activity feed; plus a
+#                distinct page per nav item: charts / planner / feed /
+#                settings). Primary CTA reveals a detail panel; cards
+#                selectable.
 #
-# All behavior is wired by ONE tiny, sandbox-safe inline <script> driven
-# by data-attributes. Strict CSP + no external resources (no fonts CDN,
-# no scripts, no network, no eval) → instant, safe preview.
+# All behavior is wired by ONE tiny sandbox-safe inline <script> (data
+# attributes; no eval, no network, no external deps). Strict CSP + no
+# external resources → instant, safe preview.
 
 from __future__ import annotations
 
@@ -32,15 +35,9 @@ def _slug(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", (s or "section").lower()).strip("-") or "section"
 
 
-# Content Security Policy: block ALL network (default-src 'none'),
-# allow only inline CSS/JS + data: images. Belt-and-suspenders with the
-# preview iframe's sandbox="allow-scripts" (no allow-same-origin).
 _CSP = ("default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
         "img-src data:; font-src data:; base-uri 'none'; form-action 'none'")
 
-# Generic, framework-free interaction layer. No eval, no network, no
-# external deps. Wires data-nav / data-panel / data-reveal / data-scroll
-# / data-select-group. Plain string (NOT an f-string) — no escaping.
 _SCRIPT = """
 (function(){
   function list(sel, root){ return [].slice.call((root||document).querySelectorAll(sel)); }
@@ -66,13 +63,8 @@ _SCRIPT = """
       setActive(navs, a);
       var switched = showPanel(id);
       var target = document.getElementById(id);
-      if(target && !switched){
-        e.preventDefault();
-        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      } else if(switched){
-        e.preventDefault();
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      }
+      if(switched){ e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+      else if(target){ e.preventDefault(); target.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
     });
   });
   if(panels.length){
@@ -102,203 +94,355 @@ _SCRIPT = """
       });
     });
   });
+  list('.ds-switch').forEach(function(s){
+    s.addEventListener('click', function(){ s.classList.toggle('is-on'); });
+  });
 })();
 """.strip()
 
+_BAR_HEIGHTS = [44, 68, 54, 82, 62, 90, 70, 96, 58, 78]
+_LOGOS = ["Vantage", "Lumio", "Northwind", "Mercura", "Cobalt"]
 
-# ── Section renderers ─────────────────────────────────────────────────
 
-def _feature_grid(items, selectable: bool = True) -> str:
+# ── Reusable rich widgets ─────────────────────────────────────────────
+
+def _bars(n: int = 8) -> str:
+    bars = "".join(f'<span style="height:{_BAR_HEIGHTS[i % len(_BAR_HEIGHTS)]}%"></span>'
+                   for i in range(n))
+    return f'<div class="ds-bars" aria-hidden="true">{bars}</div>'
+
+
+def _icon(ic: str) -> str:
+    return f'<div class="ds-icon">{_e(ic or "●")}</div>'
+
+
+def _feature_bento(items, selectable: bool = True) -> str:
     grp = ' data-select-group' if selectable else ''
     sel = ' ds-selectable' if selectable else ''
-    attr = ' data-select' if selectable else ''
-    cards = "".join(f"""
-    <div class="ds-card{sel} ds-rise"{attr}>
-      <div class="ds-icon">{_e(c.get('icon','●'))}</div>
+    at = ' data-select' if selectable else ''
+    if not items:
+        return ""
+    lead = items[0]
+    cells = [f"""
+    <div class="ds-card{sel} ds-col-4 ds-row-2 ds-rise"{at}>
+      {_icon(lead.get('icon'))}
+      <h3 style="font-size:1.5rem">{_e(lead.get('title'))}</h3>
+      <p style="margin-top:10px;max-width:46ch">{_e(lead.get('body'))}</p>
+      {_bars(10)}
+    </div>"""]
+    for c in items[1:]:
+        cells.append(f"""
+    <div class="ds-card{sel} ds-col-2 ds-rise"{at}>
+      {_icon(c.get('icon'))}
       <h3>{_e(c.get('title'))}</h3>
-      <p style="margin-top:8px">{_e(c.get('body'))}</p>
-    </div>""" for c in items)
-    return f'<div class="ds-grid"{grp}>{cards}</div>'
+      <p style="margin-top:8px;font-size:.92rem">{_e(c.get('body'))}</p>
+    </div>""")
+    return f'<div class="ds-bento"{grp}>{"".join(cells)}</div>'
 
 
-def _metric_grid(metrics) -> str:
+def _metric_bento(spec: ProductSpec) -> str:
+    m = (spec.metrics or [])[:4]
+    while len(m) < 4:
+        m.append({"label": "Metric", "value": "—", "delta": ""})
+    chart = f"""
+    <div class="ds-card ds-col-4 ds-row-2 ds-rise">
+      <div style="display:flex;justify-content:space-between;align-items:start">
+        <div><span style="color:var(--text-dim);font-size:.85rem">{_e(m[0].get('label'))}</span>
+        <div class="ds-stat-value">{_e(m[0].get('value'))}</div></div>
+        <span class="ds-badge"><span class="ds-badge-dot"></span>Live</span>
+      </div>
+      {_bars(12)}
+    </div>"""
     cards = "".join(f"""
-    <div class="ds-card ds-stat ds-rise">
-      <span style="color:var(--text-dim);font-size:.85rem">{_e(m.get('label'))}</span>
-      <span class="ds-stat-value">{_e(m.get('value'))}</span>
-      <span class="ds-stat-delta">{_e(m.get('delta'))}</span>
-    </div>""" for m in metrics)
-    return f'<div class="ds-grid">{cards}</div>'
+    <div class="ds-card ds-col-2 ds-rise">
+      <span style="color:var(--text-dim);font-size:.82rem">{_e(x.get('label'))}</span>
+      <div class="ds-stat-value" style="font-size:1.6rem;margin-top:6px">{_e(x.get('value'))}</div>
+      <span class="ds-stat-delta">{_e(x.get('delta'))}</span>
+    </div>""" for x in m[1:])
+    ring = """
+    <div class="ds-card ds-col-2 ds-rise" style="align-items:center;text-align:center;display:flex;flex-direction:column;gap:10px">
+      <div class="ds-ring" style="--pct:74%"></div>
+      <span style="color:var(--text-dim);font-size:.82rem">Goal progress</span>
+    </div>"""
+    return f'<div class="ds-bento">{chart}{cards}{ring}</div>'
+
+
+def _feed(spec: ProductSpec) -> str:
+    items = [(c.get("icon", "●"), c.get("title"), c.get("body"))
+             for c in (next((s.items for s in spec.sections if s.kind == "features"), []) or [])][:5]
+    if not items:
+        items = [("✓", "Updated", "Just now")]
+    rows = "".join(f"""
+    <div class="ds-feed-item">
+      <div class="ds-feed-dot">{_e(ic)}</div>
+      <div><div style="color:var(--text);font-weight:600;font-size:.92rem">{_e(t)}</div>
+        <div style="color:var(--text-dim);font-size:.82rem">{_e(b)}</div></div>
+    </div>""" for ic, t, b in items)
+    return f'<div class="ds-card ds-rise"><h3 style="margin-bottom:6px">Recent activity</h3><div class="ds-feed">{rows}</div></div>'
+
+
+def _planner(spec: ProductSpec, title: str) -> str:
+    items = (next((s.items for s in spec.sections if s.kind == "features"), []) or [])[:4]
+    rows = "".join(f"""
+    <div class="ds-card ds-selectable ds-rise" data-select style="display:flex;align-items:center;gap:14px;padding:18px">
+      {_icon(c.get('icon'))}
+      <div style="flex:1"><h3 style="font-size:1.05rem">{_e(c.get('title'))}</h3>
+        <p style="font-size:.88rem;margin-top:4px">{_e(c.get('body'))}</p></div>
+      <span class="ds-btn ds-btn-ghost ds-btn-sm">Open</span>
+    </div>""" for c in items)
+    return f'<div style="display:grid;gap:14px" data-select-group>{rows}</div>'
+
+
+def _settings_panel(spec: ProductSpec) -> str:
+    toggles = [("Email notifications", True), ("Weekly summary", True),
+               ("Dark appearance", True), ("Two-factor auth", False)]
+    rows = "".join(f"""
+    <div class="ds-row"><div><div style="color:var(--text);font-weight:600">{_e(label)}</div>
+      <div style="color:var(--text-dim);font-size:.82rem">Manage your {_e(label.lower())}.</div></div>
+      <div class="ds-switch{' is-on' if on else ''}" role="switch" tabindex="0"></div></div>""" for label, on in toggles)
+    return f"""
+    <div class="ds-card ds-rise" style="max-width:620px">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:8px">
+        <div class="ds-icon">◐</div>
+        <div><h3>{_e(spec.name)} account</h3>
+          <p style="font-size:.88rem">{_e(spec.audience)}</p></div>
+      </div>
+      {rows}
+    </div>"""
+
+
+def _mockup(spec: ProductSpec) -> str:
+    chips = "".join(f"""
+      <div class="ds-card ds-col-2" style="padding:16px">
+        <span style="color:var(--text-dim);font-size:.78rem">{_e(x.get('label'))}</span>
+        <div class="ds-stat-value" style="font-size:1.4rem;margin-top:4px">{_e(x.get('value'))}</div>
+      </div>""" for x in (spec.metrics or [{"label": "Active", "value": "12.4k"},
+                                           {"label": "Growth", "value": "+18%"}])[:2])
+    return f"""
+  <div class="ds-mock ds-rise" style="max-width:980px;margin:0 auto">
+    <div class="ds-mock-bar"><i></i><i></i><i></i>
+      <span style="margin-left:10px;color:var(--text-dim);font-size:.8rem">{_e(spec.name)} — preview</span></div>
+    <div class="ds-mock-body">
+      <div class="ds-bento">
+        <div class="ds-card ds-col-4 ds-row-2">
+          <span class="ds-eyebrow">Overview</span>
+          <h3 style="margin-top:6px">{_e(spec.tagline)}</h3>
+          {_bars(12)}
+        </div>
+        {chips}
+        <div class="ds-card ds-col-2"><div class="ds-spark"></div></div>
+      </div>
+    </div>
+  </div>"""
+
+
+# ── Section renderers (landing) ───────────────────────────────────────
+
+def _wrap(sec_id: str, title: str, subtitle: str, inner: str) -> str:
+    head = ""
+    if title:
+        head = (f'<div class="ds-center" style="margin-bottom:40px">'
+                f'<h2>{_e(title)}</h2>'
+                + (f'<p class="ds-lead" style="margin-top:12px">{_e(subtitle)}</p>' if subtitle else "")
+                + "</div>")
+    return f'<section class="ds-section ds-container" id="{sec_id}">{head}{inner}</section>'
 
 
 def _pricing(sec: Section) -> str:
+    n = len(sec.items)
     cards = "".join(f"""
-    <div class="ds-card ds-rise" style="text-align:center">
+    <div class="ds-card ds-rise{' ds-plan-featured' if (n >= 2 and i == 1) else ''}" style="text-align:center">
+      {'<span class="ds-badge" style="margin-bottom:12px">Most popular</span>' if (n >= 2 and i == 1) else ''}
       <h3>{_e(c.get('title'))}</h3>
-      <div class="ds-stat-value" style="margin:10px 0">{_e(c.get('body'))}</div>
-      <p>{_e(c.get('icon'))}</p>
-      <button class="ds-btn ds-btn-ghost" style="margin-top:16px;width:100%">Choose plan</button>
-    </div>""" for c in sec.items)
-    return _wrap_section(sec, f'<div class="ds-grid">{cards}</div>')
+      <div class="ds-stat-value" style="margin:12px 0">{_e(c.get('body'))}</div>
+      <p style="font-size:.88rem">{_e(c.get('icon'))}</p>
+      <button class="ds-btn {'ds-btn-primary' if (n >= 2 and i == 1) else 'ds-btn-ghost'}" style="margin-top:18px;width:100%">Choose plan</button>
+    </div>""" for i, c in enumerate(sec.items))
+    return _wrap("pricing", sec.title or "Pricing", sec.subtitle, f'<div class="ds-grid">{cards}</div>')
 
 
 def _testimonials(sec: Section) -> str:
     cards = "".join(f"""
     <div class="ds-card ds-rise">
-      <p style="color:var(--text);font-size:1.05rem">{_e(c.get('title'))}</p>
+      <div style="color:var(--accent-2);font-size:1.1rem">★★★★★</div>
+      <p style="color:var(--text);font-size:1.05rem;margin-top:12px">{_e(c.get('title'))}</p>
       <p style="margin-top:14px;font-size:.85rem">{_e(c.get('body'))}</p>
     </div>""" for c in sec.items)
-    return _wrap_section(sec, f'<div class="ds-grid">{cards}</div>')
+    return _wrap(_slug(sec.title or "customers"), sec.title or "Loved by teams", sec.subtitle, f'<div class="ds-grid">{cards}</div>')
 
 
 def _faq(sec: Section) -> str:
     items = "".join(f"""
     <details class="ds-card ds-rise" style="cursor:pointer">
-      <summary style="font-weight:600;color:var(--text)">{_e(c.get('title'))}</summary>
-      <p style="margin-top:10px">{_e(c.get('body'))}</p>
+      <summary style="font-weight:650;color:var(--text);list-style:none">{_e(c.get('title'))}</summary>
+      <p style="margin-top:12px">{_e(c.get('body'))}</p>
     </details>""" for c in sec.items)
-    return _wrap_section(sec, f'<div style="display:grid;gap:12px;max-width:760px;margin:0 auto">{items}</div>')
+    return _wrap("faq", sec.title or "Frequently asked", sec.subtitle,
+                 f'<div style="display:grid;gap:12px;max-width:780px;margin:0 auto">{items}</div>')
 
 
 def _gallery(sec: Section) -> str:
     tiles = "".join(
         f'<div class="ds-card ds-selectable ds-rise" data-select style="aspect-ratio:4/3;'
-        f'background:linear-gradient(135deg,color-mix(in srgb,var(--accent) {20+10*i}%,transparent),'
-        f'color-mix(in srgb,var(--accent-2) {20+10*i}%,transparent))"></div>'
+        f'background:linear-gradient(135deg,color-mix(in srgb,var(--accent) {18+11*i}%,transparent),'
+        f'color-mix(in srgb,var(--accent-2) {18+11*i}%,transparent))"></div>'
         for i in range(6))
-    return _wrap_section(sec, f'<div class="ds-grid" data-select-group>{tiles}</div>')
+    return _wrap(_slug(sec.title or "gallery"), sec.title or "Gallery", sec.subtitle,
+                 f'<div class="ds-grid" data-select-group>{tiles}</div>')
 
 
-def _panel_rows(spec: ProductSpec) -> str:
+def _cta(spec: ProductSpec, sec: Section) -> str:
+    return f"""
+<section class="ds-section ds-container" id="get-started">
+  <div class="ds-card ds-glass ds-rise ds-center" style="padding:64px 28px;position:relative;overflow:hidden">
+    <span class="ds-eyebrow">Ready when you are</span>
+    <h2 style="margin:14px auto 14px;max-width:18ch">{_e(sec.title or 'Get started today')}</h2>
+    <p class="ds-lead" style="max-width:44ch;margin:0 auto 28px">{_e(spec.description)}</p>
+    <div class="ds-hero-actions"><button class="ds-btn ds-btn-primary" data-scroll="overview">{_e(spec.cta_primary)}</button>
+      <button class="ds-btn ds-btn-ghost" data-scroll="features">{_e(spec.cta_secondary)}</button></div>
+  </div>
+</section>"""
+
+
+def _landing_section(spec: ProductSpec, sec: Section) -> str:
+    if sec.kind == "features":
+        return _wrap(_slug(sec.title or "features"), sec.title or "Features", sec.subtitle, _feature_bento(sec.items))
+    if sec.kind == "metrics":      return _wrap("metrics", sec.title or "By the numbers", sec.subtitle, _metric_bento(spec))
+    if sec.kind == "pricing":      return _pricing(sec)
+    if sec.kind == "testimonials": return _testimonials(sec)
+    if sec.kind == "faq":          return _faq(sec)
+    if sec.kind == "gallery":      return _gallery(sec)
+    if sec.kind == "panel":        return _wrap(_slug(sec.title or "preview"), sec.title or "Product preview", sec.subtitle, _mockup(spec))
+    if sec.kind == "cta":          return _cta(spec, sec)
+    return _wrap(_slug(sec.title or "section"), sec.title, sec.subtitle, _feature_bento(sec.items))
+
+
+# ── Layouts ───────────────────────────────────────────────────────────
+
+def _logos_row() -> str:
+    logos = "".join(f'<span class="ds-logo">{_e(n)}</span>' for n in _LOGOS)
+    return f"""
+<section class="ds-section ds-container ds-center" id="customers" style="padding-top:24px">
+  <p style="color:var(--text-dim);font-size:.82rem;text-transform:uppercase;letter-spacing:.12em;margin-bottom:20px">Trusted by fast-moving teams</p>
+  <div class="ds-logos">{logos}</div>
+</section>"""
+
+
+def _hero(spec: ProductSpec, primary_attr: str, secondary_target: str) -> str:
+    return f"""
+<section class="ds-hero" id="overview">
+  <div class="ds-container">
+    <span class="ds-badge ds-rise"><span class="ds-badge-dot"></span>{_e(spec.product_type.replace('_',' ').title())}</span>
+    <h1 class="ds-rise">{_e(spec.tagline)}</h1>
+    <p class="ds-lead ds-rise">{_e(spec.description)}</p>
+    <div class="ds-hero-actions ds-rise">
+      <button class="ds-btn ds-btn-primary" {primary_attr}>{_e(spec.cta_primary)}</button>
+      <button class="ds-btn ds-btn-ghost" data-scroll="{secondary_target}">{_e(spec.cta_secondary)}</button>
+    </div>
+  </div>
+</section>"""
+
+
+def _marketing(spec: ProductSpec) -> str:
+    links = "".join(f'<a data-nav="{_slug(l)}" href="#{_slug(l)}">{_e(l)}</a>' for l in spec.navigation)
+    has_pricing = any(s.kind == "pricing" for s in spec.sections)
+    primary_target = "pricing" if has_pricing else "get-started"
+    secondary_target = next((_slug(s.title or "features") for s in spec.sections if s.kind == "features"), "overview")
+    nav = f"""
+<header class="ds-nav">
+  <div class="ds-nav-brand"><span class="ds-nav-logo"></span>{_e(spec.name)}</div>
+  <nav class="ds-nav-links">{links}</nav>
+  <button class="ds-btn ds-btn-primary ds-btn-sm" data-scroll="{primary_target}">{_e(spec.cta_primary)}</button>
+</header>"""
+    parts = [nav, "<main>",
+             _hero(spec, f'data-scroll="{primary_target}"', secondary_target),
+             f'<section class="ds-section ds-container" style="padding-top:8px">{_mockup(spec)}</section>',
+             _logos_row()]
+    for sec in spec.sections:
+        parts.append(_landing_section(spec, sec))
+    parts += ["</main>", _footer(spec)]
+    return "\n".join(parts)
+
+
+def _app_page(spec: ProductSpec, idx: int, label: str) -> str:
+    key = label.lower()
+    hidden = "" if idx == 0 else " ds-hidden"
+    head = f'<div style="margin-bottom:28px"><span class="ds-eyebrow">{_e(spec.name)}</span><h2 style="margin-top:6px">{_e(label)}</h2></div>'
+    if idx == 0:
+        body = (_metric_bento(spec)
+                + f'<div style="margin-top:20px">{_reveal_block_inline(spec)}</div>'
+                + f'<div class="ds-bento" style="margin-top:20px"><div class="ds-col-4">{_feature_bento(next((s.items for s in spec.sections if s.kind=="features"), []))}</div><div class="ds-col-2">{_feed(spec)}</div></div>')
+        head = f'''<div style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:16px;margin-bottom:28px">
+          <div><span class="ds-eyebrow">{_e(label)}</span><h1 style="margin-top:8px;font-size:clamp(2rem,4vw,2.75rem)">{_e(spec.tagline)}</h1></div>
+          <button class="ds-btn ds-btn-primary" data-reveal="reveal-detail">{_e(spec.cta_primary)}</button></div>'''
+    elif re.search(r"progress|analytic|report|insight|market|chart", key):
+        body = f'<div class="ds-bento"><div class="ds-card ds-col-4 ds-row-2"><h3>Trends</h3>{_bars(14)}</div><div class="ds-card ds-col-2"><div class="ds-ring" style="--pct:68%"></div></div><div class="ds-card ds-col-2"><div class="ds-spark"></div></div></div>'
+    elif re.search(r"profile|setting|account", key):
+        body = _settings_panel(spec)
+    elif re.search(r"nutrition|activity|transaction|asset|alert|notif|customer", key):
+        body = f'<div class="ds-bento"><div class="ds-col-4">{_feed(spec)}</div><div class="ds-col-2">{_metric_card_stack(spec)}</div></div>'
+    elif re.search(r"workout|task|chat|plan|library|model", key):
+        body = _planner(spec, label)
+    else:
+        body = _feature_bento(next((s.items for s in spec.sections if s.kind == "features"), []))
+    return f'<section class="ds-section ds-container ds-page{hidden}" data-panel="page-{idx}" id="page-{idx}">{head}{body}</section>'
+
+
+def _metric_card_stack(spec: ProductSpec) -> str:
+    return "".join(f"""<div class="ds-card ds-rise" style="margin-bottom:14px">
+      <span style="color:var(--text-dim);font-size:.82rem">{_e(m.get('label'))}</span>
+      <div class="ds-stat-value" style="font-size:1.5rem;margin-top:4px">{_e(m.get('value'))}</div>
+      <span class="ds-stat-delta">{_e(m.get('delta'))}</span></div>""" for m in (spec.metrics or [])[:3])
+
+
+def _reveal_block_inline(spec: ProductSpec) -> str:
+    feats = (next((s.items for s in spec.sections if s.kind == "features"), []) or [])[:3]
+    items = feats or [{"title": "Get started", "body": "Begin now.", "icon": "▶"}]
+    return (f'<section class="ds-hidden" id="reveal-detail"><h3 style="margin-bottom:14px">{_e(spec.cta_primary)} — your plan</h3>'
+            f'{_planner_items(items)}</section>')
+
+
+def _planner_items(items) -> str:
     rows = "".join(f"""
-      <div style="display:flex;justify-content:space-between;align-items:center;
-        padding:14px 16px;border-bottom:1px solid var(--border)">
-        <span style="color:var(--text)">{_e(m.get('label'))}</span>
-        <span class="ds-stat-delta">{_e(m.get('delta'))}</span>
-      </div>""" for m in (spec.metrics or [])[:4])
-    return rows
+    <div class="ds-card ds-selectable" data-select style="display:flex;align-items:center;gap:14px;padding:16px">
+      {_icon(c.get('icon'))}<div style="flex:1"><h3 style="font-size:1rem">{_e(c.get('title'))}</h3>
+      <p style="font-size:.85rem;margin-top:2px">{_e(c.get('body'))}</p></div>
+      <span class="ds-btn ds-btn-ghost ds-btn-sm">Start</span></div>""" for c in items)
+    return f'<div style="display:grid;gap:12px" data-select-group>{rows}</div>'
 
 
-def _wrap_section(sec: Section, inner: str, extra_attr: str = "") -> str:
-    head = ""
-    if sec.title:
-        head = (f'<div style="margin-bottom:32px;text-align:center">'
-                f'<h2>{_e(sec.title)}</h2>'
-                + (f'<p style="margin-top:10px">{_e(sec.subtitle)}</p>' if sec.subtitle else "")
-                + '</div>')
-    return f'<section class="ds-section ds-container" id="{_slug(sec.title)}"{extra_attr}>{head}{inner}</section>'
+def _app(spec: ProductSpec) -> str:
+    tabs = "".join(
+        f'<a class="{"is-active" if i == 0 else ""}" data-nav="page-{i}">{_e(l)}</a>'
+        for i, l in enumerate(spec.navigation)
+    )
+    nav = f"""
+<header class="ds-nav">
+  <div class="ds-nav-brand"><span class="ds-nav-logo"></span>{_e(spec.name)}</div>
+  <nav class="ds-nav-links">{tabs}</nav>
+  <button class="ds-btn ds-btn-primary ds-btn-sm" data-reveal="reveal-detail">{_e(spec.cta_primary)}</button>
+</header>"""
+    pages = "".join(_app_page(spec, i, l) for i, l in enumerate(spec.navigation))
+    return "\n".join([nav, "<main>", pages, _footer(spec)])
 
 
 def _footer(spec: ProductSpec) -> str:
     links = "".join(f'<a href="#{_slug(l)}" style="margin-right:20px">{_e(l)}</a>' for l in spec.navigation)
     return f"""
 <footer class="ds-footer">
-  <div class="ds-container" style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px">
+  <div class="ds-container" style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px;align-items:center">
     <div class="ds-nav-brand"><span class="ds-nav-logo"></span>{_e(spec.name)}</div>
     <div>{links}</div>
-    <span>© {_e(spec.name)}. Crafted with Korvix.</span>
+    <span>© {_e(spec.name)} · Crafted with Korvix</span>
   </div>
 </footer>"""
-
-
-# ── Unified premium layout (PR #191 visual) + interactivity on top ────
-#
-# ONE premium layout for every spec — the rich PR #191 page (nav + hero
-# + full sections + footer). Interactivity is layered ON TOP via
-# data-attributes; it never replaces or simplifies the markup:
-#   * marketing  → hero/nav CTAs smooth-scroll to the relevant section.
-#   * app/dash   → the primary CTA reveals a hidden detail block (e.g.
-#                  "Start training" → today's plan) — the rest of the
-#                  premium page (hero, metrics, features, panels, cta)
-#                  still renders in full.
-# Nav items get active state + scroll; cards are selectable; FAQ uses
-# native <details>.
-
-def _premium_layout(spec: ProductSpec) -> str:
-    links = "".join(
-        f'<a data-nav="{_slug(l)}" href="#{_slug(l)}">{_e(l)}</a>' for l in spec.navigation
-    )
-    section_slugs = [_slug(s.title or s.kind) for s in spec.sections]
-    has_pricing = any(s.kind == "pricing" for s in spec.sections)
-    primary_target = "pricing" if has_pricing else ("get-started" if any(s.kind == "cta" for s in spec.sections) else (section_slugs[0] if section_slugs else "get-started"))
-    secondary_target = next((_slug(s.title or s.kind) for s in spec.sections if s.kind == "features"), primary_target)
-
-    # App/dashboards: primary CTA reveals a detail block; marketing: scroll.
-    is_dash = spec.is_dashboard
-    primary_attr = 'data-reveal="reveal-detail"' if is_dash else f'data-scroll="{primary_target}"'
-
-    nav = f"""
-<header class="ds-nav">
-  <div class="ds-nav-brand"><span class="ds-nav-logo"></span>{_e(spec.name)}</div>
-  <nav class="ds-nav-links">{links}</nav>
-  <button class="ds-btn ds-btn-primary" {primary_attr}>{_e(spec.cta_primary)}</button>
-</header>"""
-    hero = f"""
-<section class="ds-hero ds-container" id="overview">
-  <span class="ds-eyebrow ds-rise">{_e(spec.product_type.replace('_',' ').title())}</span>
-  <h1 class="ds-rise">{_e(spec.tagline)}</h1>
-  <p class="ds-rise">{_e(spec.description)}</p>
-  <div class="ds-hero-actions ds-rise">
-    <button class="ds-btn ds-btn-primary" {primary_attr}>{_e(spec.cta_primary)}</button>
-    <button class="ds-btn ds-btn-ghost" data-scroll="{secondary_target}">{_e(spec.cta_secondary)}</button>
-  </div>
-</section>"""
-    parts = [nav, "<main>", hero]
-    if is_dash:
-        parts.append(_reveal_block(spec))
-    for sec in spec.sections:
-        parts.append(_render_section(spec, sec))
-    parts += ["</main>", _footer(spec)]
-    return "\n".join(parts)
-
-
-def _reveal_block(spec: ProductSpec) -> str:
-    """Hidden, premium detail block revealed by the primary CTA. Reuses
-    the premium card/grid components + selectable cards."""
-    feats = next((s.items for s in spec.sections if s.kind == "features"), []) or []
-    items = feats[:3] or [{"title": "Get started", "body": "Begin now.", "icon": "▶"}]
-    grid = _feature_grid(items, selectable=True)
-    return f"""
-<section class="ds-section ds-container ds-hidden" id="reveal-detail">
-  <div style="margin-bottom:24px;text-align:center">
-    <h2>{_e(spec.cta_primary)} — your plan</h2>
-    <p style="margin-top:10px">Pick a focus to begin.</p>
-  </div>
-  {grid}
-</section>"""
-
-
-def _render_section(spec: ProductSpec, sec: Section) -> str:
-    if sec.kind == "metrics":      return _wrap_section(sec, _metric_grid(spec.metrics))
-    if sec.kind == "features":     return _wrap_section(sec, _feature_grid(sec.items))
-    if sec.kind == "pricing":      return _pricing(sec)
-    if sec.kind == "testimonials": return _testimonials(sec)
-    if sec.kind == "faq":          return _faq(sec)
-    if sec.kind == "gallery":      return _gallery(sec)
-    if sec.kind == "panel":
-        body = f"""<div class="ds-card ds-glass ds-rise" style="padding:0;overflow:hidden">
-          <div style="padding:16px;border-bottom:1px solid var(--border);font-weight:600">{_e(sec.subtitle or sec.title)}</div>
-          {_panel_rows(spec)}</div>"""
-        return _wrap_section(sec, body)
-    if sec.kind == "cta":
-        return f"""
-<section class="ds-section ds-container" id="get-started">
-  <div class="ds-card ds-glass ds-rise" style="text-align:center;padding:56px 24px">
-    <h2>{_e(sec.title or 'Get started today')}</h2>
-    <p style="max-width:40ch;margin:14px auto 28px">{_e(spec.description)}</p>
-    <button class="ds-btn ds-btn-primary" data-scroll="overview">{_e(spec.cta_primary)}</button>
-  </div>
-</section>"""
-    return _wrap_section(sec, _feature_grid(sec.items))
 
 
 # ── Document assembly ─────────────────────────────────────────────────
 
 def render_premium_page(spec: ProductSpec) -> str:
-    """Render the full premium, INTERACTIVE HTML document for a spec.
-    ONE premium layout for every spec (PR #191 visual) with the
-    interaction layer applied on top — never a simplified template."""
-    body = _premium_layout(spec)
+    """Render the full premium, interactive HTML document for a spec."""
+    body = _app(spec) if spec.is_dashboard else _marketing(spec)
     css = design_system_css(spec.theme.get("accent", "#6366f1"),
                             spec.theme.get("accent2", "#22d3ee"))
     mode_class = "" if spec.dark_mode else "light"
@@ -324,28 +468,22 @@ def render_premium_page(spec: ProductSpec) -> str:
 
 
 def ensure_viewport(html_doc: str) -> str:
-    """Guarantee a responsive viewport meta on an otherwise-good LLM doc."""
     if "viewport" in (html_doc or "").lower():
         return html_doc
     return html_doc.replace(
-        "<head>",
-        '<head>\n<meta name="viewport" content="width=device-width, initial-scale=1">',
-        1,
+        "<head>", '<head>\n<meta name="viewport" content="width=device-width, initial-scale=1">', 1,
     ) if "<head>" in html_doc else html_doc
 
 
 def ensure_csp(html_doc: str) -> str:
-    """Guarantee the network-blocking CSP on ANY html artifact (incl.
-    model-kept output), since the preview iframe runs scripts. No-op if a
-    CSP is already present."""
     h = html_doc or ""
     if "Content-Security-Policy" in h:
         return h
     meta = f'<meta http-equiv="Content-Security-Policy" content="{_CSP}">'
     if "<head>" in h:
         return h.replace("<head>", "<head>\n" + meta, 1)
-    if "<html" in h:  # insert right after the opening <html ...> tag
-        return re.sub(r"(<html[^>]*>)", r"\1\n" + meta.replace("\\", "\\\\"), h, count=1)
+    if "<html" in h:
+        return re.sub(r"(<html[^>]*>)", lambda mm: mm.group(1) + "\n" + meta, h, count=1)
     return meta + "\n" + h
 
 
