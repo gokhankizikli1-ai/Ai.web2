@@ -98,13 +98,19 @@ async def _agent_run_handler(ctx: JobContext) -> dict:
     _mark_deliverable(deliverable_id, "in_progress")
     await ctx.report_progress(15, f"running {spec.id}")
 
-    # Env-tiered model routing — same resolution specialists go through
-    # in delegate(). Defensive: fall back to the spec default.
-    try:
-        from backend.services.agent.model_routing import resolve_model_for_spec
-        model = resolve_model_for_spec(spec)
-    except Exception:
-        model = getattr(spec, "default_model", None)
+    # Model selection for the project-run path.
+    #
+    # The agent runtime is OpenAI-only (openai.AsyncOpenAI →
+    # chat.completions.create). The cross-provider router
+    # (model_routing.resolve_model_for_spec) resolves some specialists to
+    # NON-OpenAI ids — e.g. researcher → "gemini-2.5-pro", frontend →
+    # "claude-sonnet-*" — which the OpenAI client rejects with a 400, so
+    # the agent returns an empty/fallback reply and the deliverable fails.
+    # We therefore pin a known-good OpenAI model here and do NOT consult
+    # the router on this path (provider=openai, base_url=OpenAI default,
+    # key=OPENAI_API_KEY). gpt-4o-mini is valid, cheap, and sufficient
+    # for the M2 artifact generators.
+    model = "gpt-4o-mini"
 
     request = AgentRequest(
         user_message=task_desc or "Proceed with your assigned task.",

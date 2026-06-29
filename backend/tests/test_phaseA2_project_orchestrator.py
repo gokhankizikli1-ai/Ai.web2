@@ -568,6 +568,31 @@ async def test_app_run_produces_previewable_html_artifact(po_env):
 
 
 @pytest.mark.asyncio
+async def test_project_run_pins_openai_model(po_env, monkeypatch):
+    """33. The OpenAI-only runtime must receive a valid OpenAI model on
+    EVERY project-run node — never a cross-provider id (gemini-*/claude-*)
+    from the router, which 400s and fails the deliverable. We pin
+    gpt-4o-mini regardless of the spec's routing tier."""
+    seen: list[str] = []
+
+    async def _capture(req):
+        seen.append(getattr(req, "model", None))
+        return SimpleNamespace(reply="ok", fallback=False, metadata={})
+
+    monkeypatch.setattr(ark, "run_agent", _capture)
+    # generic_research leads with the `researcher` spec, which the router
+    # would otherwise resolve to gemini-2.5-pro.
+    snap = await orch.start_project_run(
+        user_id="user-MODEL", user_request="research the market",
+        template_id="generic_research",
+    )
+    await _wait_for_run_status(snap["run_id"], "user-MODEL", "completed")
+    assert seen, "no agent runs captured"
+    assert all(m == "gpt-4o-mini" for m in seen), seen
+    assert all(str(m).startswith("gpt-") for m in seen)
+
+
+@pytest.mark.asyncio
 async def test_project_run_disables_tool_calling(po_env, monkeypatch):
     """30. Bug-2 — the project-run path must request agents with tool
     calling DISABLED (allow_tools=False), so the runtime never produces
