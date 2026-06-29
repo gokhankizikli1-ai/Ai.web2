@@ -161,6 +161,13 @@ def build_artifact(*, kind: str, title: str, text: str) -> Dict[str, Any]:
                              "zip_ready_bundle": True, "file_count": len(files)},
             }
         # No parseable files → render the list as markdown.
+        return {
+            "type": ARTIFACT_MARKDOWN, "title": safe_title, "language": "markdown",
+            "content": text.strip(), "files": [],
+            "preview": _PREVIEW_FOR[ARTIFACT_MARKDOWN],
+            "download": {"filename": _slugify(safe_title, "notes") + ".md",
+                         "mime": "text/markdown"},
+        }
 
     # ── React component / single project file ────────────────────────
     if kind in _REACT_KINDS or _is_react(text):

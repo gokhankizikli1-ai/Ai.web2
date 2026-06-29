@@ -66,6 +66,14 @@ def test_file_tree_artifact_parses_files():
     assert art["download"].get("zip_ready_bundle") is True
 
 
+def test_unparseable_file_list_falls_back_to_markdown():
+    reply = "```tsx\nexport default function App(){ return <div/>; }\n```"
+    art = build_artifact(kind="file_list", title="Files", text=reply)
+    assert art["type"] == ARTIFACT_MARKDOWN
+    assert art["preview"] == "markdown"
+    assert art["files"] == []
+
+
 def test_never_empty_even_on_garbage():
     art = build_artifact(kind="", title="", text="   ")
     assert art["type"] == ARTIFACT_MARKDOWN
