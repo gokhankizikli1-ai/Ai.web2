@@ -32,6 +32,13 @@ def _slug(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", (s or "section").lower()).strip("-") or "section"
 
 
+def _section_id(sec: Section) -> str:
+    if sec.kind == "cta":
+        return "get-started"
+    slug = _slug(sec.title or sec.kind)
+    return f"{_slug(sec.kind)}-overview" if slug == "overview" else slug
+
+
 # Content Security Policy: block ALL network (default-src 'none'),
 # allow only inline CSS/JS + data: images. Belt-and-suspenders with the
 # preview iframe's sandbox="allow-scripts" (no allow-same-origin).
@@ -179,18 +186,22 @@ def _panel_rows(spec: ProductSpec) -> str:
     return rows
 
 
-def _wrap_section(sec: Section, inner: str, extra_attr: str = "") -> str:
+def _wrap_section(sec: Section, inner: str, extra_attr: str = "", section_id: str = "") -> str:
     head = ""
     if sec.title:
         head = (f'<div style="margin-bottom:32px;text-align:center">'
                 f'<h2>{_e(sec.title)}</h2>'
                 + (f'<p style="margin-top:10px">{_e(sec.subtitle)}</p>' if sec.subtitle else "")
                 + '</div>')
-    return f'<section class="ds-section ds-container" id="{_slug(sec.title)}"{extra_attr}>{head}{inner}</section>'
+    return f'<section class="ds-section ds-container" id="{section_id or _section_id(sec)}"{extra_attr}>{head}{inner}</section>'
 
 
-def _footer(spec: ProductSpec) -> str:
-    links = "".join(f'<a href="#{_slug(l)}" style="margin-right:20px">{_e(l)}</a>' for l in spec.navigation)
+def _footer(spec: ProductSpec, nav_targets=None) -> str:
+    targets = nav_targets or [_slug(l) for l in spec.navigation]
+    links = "".join(
+        f'<a href="#{_e(t)}" style="margin-right:20px">{_e(l)}</a>'
+        for l, t in zip(spec.navigation, targets)
+    )
     return f"""
 <footer class="ds-footer">
   <div class="ds-container" style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px">
@@ -214,17 +225,35 @@ def _footer(spec: ProductSpec) -> str:
 # Nav items get active state + scroll; cards are selectable; FAQ uses
 # native <details>.
 
+def _dashboard_nav_targets(spec: ProductSpec, section_ids: List[str]) -> List[str]:
+    offset = 1 if spec.navigation and _slug(spec.navigation[0]) in ("dashboard", "overview") else 0
+    targets = []
+    for i, label in enumerate(spec.navigation):
+        label_slug = _slug(label)
+        if label_slug in section_ids:
+            targets.append(label_slug)
+        elif label_slug in ("dashboard", "overview"):
+            targets.append("overview")
+        elif section_ids:
+            targets.append(section_ids[min(max(i - offset, 0), len(section_ids) - 1)])
+        else:
+            targets.append("overview")
+    return targets
+
+
 def _premium_layout(spec: ProductSpec) -> str:
+    section_ids = [_section_id(s) for s in spec.sections]
+    is_dash = spec.is_dashboard
+    nav_targets = _dashboard_nav_targets(spec, section_ids) if is_dash else [_slug(l) for l in spec.navigation]
     links = "".join(
-        f'<a data-nav="{_slug(l)}" href="#{_slug(l)}">{_e(l)}</a>' for l in spec.navigation
+        f'<a data-nav="{_e(t)}" href="#{_e(t)}">{_e(l)}</a>'
+        for l, t in zip(spec.navigation, nav_targets)
     )
-    section_slugs = [_slug(s.title or s.kind) for s in spec.sections]
     has_pricing = any(s.kind == "pricing" for s in spec.sections)
-    primary_target = "pricing" if has_pricing else ("get-started" if any(s.kind == "cta" for s in spec.sections) else (section_slugs[0] if section_slugs else "get-started"))
+    primary_target = "pricing" if has_pricing else ("get-started" if any(s.kind == "cta" for s in spec.sections) else (section_ids[0] if section_ids else "get-started"))
     secondary_target = next((_slug(s.title or s.kind) for s in spec.sections if s.kind == "features"), primary_target)
 
     # App/dashboards: primary CTA reveals a detail block; marketing: scroll.
-    is_dash = spec.is_dashboard
     primary_attr = 'data-reveal="reveal-detail"' if is_dash else f'data-scroll="{primary_target}"'
 
     nav = f"""
@@ -246,9 +275,9 @@ def _premium_layout(spec: ProductSpec) -> str:
     parts = [nav, "<main>", hero]
     if is_dash:
         parts.append(_reveal_block(spec))
-    for sec in spec.sections:
-        parts.append(_render_section(spec, sec))
-    parts += ["</main>", _footer(spec)]
+    for sec, section_id in zip(spec.sections, section_ids):
+        parts.append(_render_section(spec, sec, section_id))
+    parts += ["</main>", _footer(spec, nav_targets)]
     return "\n".join(parts)
 
 
@@ -268,9 +297,9 @@ def _reveal_block(spec: ProductSpec) -> str:
 </section>"""
 
 
-def _render_section(spec: ProductSpec, sec: Section) -> str:
-    if sec.kind == "metrics":      return _wrap_section(sec, _metric_grid(spec.metrics))
-    if sec.kind == "features":     return _wrap_section(sec, _feature_grid(sec.items))
+def _render_section(spec: ProductSpec, sec: Section, section_id: str = "") -> str:
+    if sec.kind == "metrics":      return _wrap_section(sec, _metric_grid(spec.metrics), section_id=section_id)
+    if sec.kind == "features":     return _wrap_section(sec, _feature_grid(sec.items), section_id=section_id)
     if sec.kind == "pricing":      return _pricing(sec)
     if sec.kind == "testimonials": return _testimonials(sec)
     if sec.kind == "faq":          return _faq(sec)
@@ -279,17 +308,18 @@ def _render_section(spec: ProductSpec, sec: Section) -> str:
         body = f"""<div class="ds-card ds-glass ds-rise" style="padding:0;overflow:hidden">
           <div style="padding:16px;border-bottom:1px solid var(--border);font-weight:600">{_e(sec.subtitle or sec.title)}</div>
           {_panel_rows(spec)}</div>"""
-        return _wrap_section(sec, body)
+        return _wrap_section(sec, body, section_id=section_id)
     if sec.kind == "cta":
+        primary_attr = 'data-reveal="reveal-detail"' if spec.is_dashboard else 'data-scroll="overview"'
         return f"""
-<section class="ds-section ds-container" id="get-started">
+<section class="ds-section ds-container" id="{section_id or _section_id(sec)}">
   <div class="ds-card ds-glass ds-rise" style="text-align:center;padding:56px 24px">
     <h2>{_e(sec.title or 'Get started today')}</h2>
     <p style="max-width:40ch;margin:14px auto 28px">{_e(spec.description)}</p>
-    <button class="ds-btn ds-btn-primary" data-scroll="overview">{_e(spec.cta_primary)}</button>
+    <button class="ds-btn ds-btn-primary" {primary_attr}>{_e(spec.cta_primary)}</button>
   </div>
 </section>"""
-    return _wrap_section(sec, _feature_grid(sec.items))
+    return _wrap_section(sec, _feature_grid(sec.items), section_id=section_id)
 
 
 # ── Document assembly ─────────────────────────────────────────────────
