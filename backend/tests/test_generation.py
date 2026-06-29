@@ -66,7 +66,8 @@ def test_render_premium_page_is_valid_and_distinct():
         assert not quality.has_placeholders(html), f"{key} has placeholders"
         # context-aware: at least one app-specific marker present
         assert any(m.lower() in html.lower() for m in markers), f"{key} missing {markers}"
-        titles.add(html[:200])
+        import re as _re
+        titles.add(_re.search(r"<title>([^<]+)</title>", html).group(1))
     assert len(titles) == len(SUCCESS_PROMPTS)         # completely different
 
 
@@ -137,6 +138,9 @@ def test_finalize_keeps_premium_model_output():
     assert art["type"] == "html"
     assert art["metadata"]["source"] == "model"   # good LLM output kept
     assert "Cadence" in art["content"]
+    # even model-kept output carries the network-blocking CSP (the iframe
+    # runs scripts).
+    assert "Content-Security-Policy" in art["content"]
 
 
 def test_finalize_markdown_kind_delegates_with_metadata():

@@ -156,8 +156,28 @@ p {{ color: var(--text-muted); }}
 .ds-rise:nth-child(4) {{ animation-delay: 180ms; }}
 :focus-visible {{ outline: 2px solid var(--accent-2); outline-offset: 3px;
   border-radius: 6px; }}
+.ds-btn:active {{ transform: translateY(0) scale(.98); }}
+
+/* Interactive states (wired by the inline interaction layer) */
+.ds-hidden {{ display: none !important; }}
+@keyframes ds-reveal {{ from {{ opacity: 0; transform: translateY(10px); }}
+  to {{ opacity: 1; transform: none; }} }}
+.ds-revealed {{ animation: ds-reveal var(--t) var(--ease) both; }}
+.ds-tabs {{ display: flex; gap: 6px; flex-wrap: wrap; }}
+.ds-tab {{ cursor: pointer; font: inherit; font-weight: 500; font-size: .9rem;
+  color: var(--text-muted); padding: 8px 14px; border-radius: var(--radius);
+  background: transparent; border: 1px solid transparent;
+  transition: all var(--t) var(--ease); }}
+.ds-tab:hover {{ color: var(--text); background: var(--surface-2); }}
+.ds-tab.is-active {{ color: var(--text); background: var(--surface-2);
+  border-color: var(--border-strong); }}
+.ds-nav-links a.is-active {{ color: var(--text); }}
+.ds-selectable {{ cursor: pointer; }}
+.ds-selectable.is-selected {{ border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), var(--shadow); }}
 @media (prefers-reduced-motion: reduce) {{
   *, *::before, *::after {{ animation: none !important; transition: none !important; }}
+  html {{ scroll-behavior: auto; }}
 }}
 @media (max-width: 768px) {{
   .ds-nav-links {{ display: none; }}
