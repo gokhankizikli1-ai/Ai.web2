@@ -25,6 +25,8 @@ import AgentMessageRenderer from '@/components/AgentMessageRenderer';
 import OwnerModeChip from '@/components/OwnerModeChip';
 import OwnerSessionIndicator from '@/components/OwnerSessionIndicator';
 import ProjectRunPanel from '@/components/ProjectRunPanel';
+import ProjectRunCenter from '@/components/ProjectRunCenter';
+import { projectOrchestratorClient } from '@/hooks/useProjectOrchestrator';
 
 /* ═══════════════════════════════════════════════════════════════════
    Phase 3.7 — typewriter helpers.
@@ -271,6 +273,11 @@ export default function ProjectWorkspace() {
   const [agents, setAgents] = useState<ProjectAgent[]>(() => getProjectAgents(projectId || ''));
   const [selectedAgentId, setSelectedAgentId] = useState(agents[0]?.id || '');
   const [inputMessage, setInputMessage] = useState('');
+  // Phase B/C — when the Project Orchestrator is enabled, the center column
+  // becomes the project-request composer + live run view (no need to create
+  // an agent first). When it's disabled / the probe fails, we fall back to
+  // the normal agent chat below. Fails CLOSED to agent chat (safe default).
+  const [orchAvailable, setOrchAvailable] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [showCreateAgent, setShowCreateAgent] = useState(false);
   const [editingAgent, setEditingAgent] = useState<string | null>(null);
@@ -340,6 +347,15 @@ export default function ProjectWorkspace() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [selectedAgent?.messages.length, isTyping]);
+
+  /* ─── Phase B/C — orchestrator availability probe ─── */
+  useEffect(() => {
+    let active = true;
+    projectOrchestratorClient.listTemplates()
+      .then(() => { if (active) setOrchAvailable(true); })
+      .catch(() => { if (active) setOrchAvailable(false); });  // 503/disabled/network → agent-chat fallback
+    return () => { active = false; };
+  }, [projectId]);
 
   /* ─── Agent CRUD ─── */
   const refreshAgents = useCallback(() => {
@@ -731,9 +747,11 @@ export default function ProjectWorkspace() {
           </div>
         </div>
 
-        {/* CENTER: Chat */}
+        {/* CENTER: Project run composer (orchestrator on) OR agent chat (fallback) */}
         <div className="flex-1 flex flex-col min-w-0">
-          {selectedAgent ? (
+          {orchAvailable ? (
+            <ProjectRunCenter projectId={projectId || ''} />
+          ) : selectedAgent ? (
             <>
               {/* Agent Header */}
               <div className="shrink-0 flex items-center justify-between px-4 py-2.5" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
