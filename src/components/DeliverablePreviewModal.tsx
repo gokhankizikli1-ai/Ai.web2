@@ -167,7 +167,10 @@ export default function DeliverablePreviewModal({
                 key={`${device}-${refreshKey}`}
                 title={`preview-${deliverable.id}`}
                 srcDoc={r.body}
-                sandbox=""
+                // allow-scripts (NO allow-same-origin) → inline prototype JS
+                // runs in an opaque origin: no access to parent, cookies or
+                // storage. The artifact's own CSP blocks all network.
+                sandbox="allow-scripts"
                 className="bg-white rounded-lg shadow-2xl transition-all"
                 style={{ width: width ? `${width}px` : '100%', maxWidth: '100%',
                          height: fullscreen ? '82vh' : '64vh', border: 'none' }}

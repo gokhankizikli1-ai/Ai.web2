@@ -28,7 +28,7 @@ from backend.services.generation.components import (
     catalog_prompt_block, detect_components,
 )
 from backend.services.generation.html_renderer import (
-    ensure_viewport, render_premium_page,
+    ensure_csp, ensure_viewport, render_premium_page,
 )
 from backend.services.generation.prompt_expander import expand
 from backend.services.generation import quality
@@ -78,7 +78,9 @@ OUTPUT:
         extracted = _strip_html(raw_reply or "")
         qscore, issues = quality.score(extracted)
         if quality.is_premium(extracted):
-            final_html, source = ensure_viewport(extracted), "model"
+            # Keep the bespoke model page, but guarantee viewport + the
+            # network-blocking CSP (the preview iframe runs scripts).
+            final_html, source = ensure_csp(ensure_viewport(extracted)), "model"
         else:
             # Internal quality review failed → one deterministic refinement
             # pass: render the guaranteed-premium page from the spec.
@@ -160,6 +162,7 @@ def finalize_artifact(*, deliverable_kind: str, node_title: str,
 
 def _metadata(spec: ProductSpec, artifact_type: str, components_used: List[str],
               html: str, source: str, qscore) -> Dict:
+    interactions = _count_interactions(html) if artifact_type == "html" else 0
     return {
         "title": spec.name,
         "description": spec.description,
@@ -169,12 +172,27 @@ def _metadata(spec: ProductSpec, artifact_type: str, components_used: List[str],
         "components_used": components_used,
         "responsive": True,
         "dark_mode": spec.dark_mode,
+        "interactive": interactions > 0,
+        "interactions": interactions,
         "complexity": _complexity(html, components_used),
         "files": [_slug(spec.name) + (".html" if artifact_type == "html" else ".md")],
         "source": source,
         "quality_score": qscore,
         "product_type": spec.product_type,
     }
+
+
+def _count_interactions(html: str) -> int:
+    """Count the distinct wired interaction kinds present in the page
+    (nav/panel switch, reveal, scroll, selectable, FAQ). Used for the
+    `interactions` metadata + the quality signal."""
+    h = html or ""
+    n = 0
+    for marker in ("data-nav=", "data-reveal=", "data-scroll=",
+                   "data-select-group", "<details"):
+        if marker in h:
+            n += 1
+    return n
 
 
 def _complexity(html: str, components_used: List[str]) -> str:
