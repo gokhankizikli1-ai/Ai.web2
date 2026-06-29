@@ -131,7 +131,29 @@ async def _agent_run_handler(ctx: JobContext) -> dict:
         _mark_deliverable(deliverable_id, "failed", error=str(exc)[:300])
         raise
 
-    reply = (getattr(response, "reply", "") or "")
+    reply = (getattr(response, "reply", "") or "").strip()
+
+    # Fail loudly when the agent produced no usable output. The agent
+    # runtime is OpenAI-only and degrades to an EMPTY, `fallback=True`
+    # response when it can't reach the model (missing OPENAI_API_KEY, a
+    # non-OpenAI MODEL_* id routed to the OpenAI client, a timeout, ...).
+    # Marking that "completed" yields a green run with blank deliverables
+    # — a silent fake-success. Instead, fail the step with an actionable
+    # reason so the run surfaces the real problem (and the workflow's
+    # failure handling skips the downstream steps).
+    is_fallback = bool(getattr(response, "fallback", False))
+    if is_fallback or not reply:
+        meta = getattr(response, "metadata", None) or {}
+        reason = meta.get("fallback_reason") or "agent returned no content"
+        detail = (
+            f"agent '{spec.id}' produced no output ({reason}). "
+            "Check OPENAI_API_KEY and that MODEL_* routing resolves to an "
+            "OpenAI model id."
+        )
+        _mark_task(task_id, "failed", error=detail)
+        _mark_deliverable(deliverable_id, "failed", error=detail[:300])
+        raise RuntimeError(detail)
+
     await ctx.report_progress(90, "persisting deliverable")
 
     content = {

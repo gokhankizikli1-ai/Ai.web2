@@ -497,6 +497,33 @@ def test_landing_page_route_listing_respects_flag(client, po_env, monkeypatch):
     assert "landing_page" in ids2
 
 
+@pytest.mark.asyncio
+async def test_empty_or_fallback_agent_output_fails_the_run(po_env, monkeypatch):
+    """27. Fix A — a provider that yields no output must FAIL the run, not
+    fake-succeed with blank deliverables. The OpenAI-only agent runtime
+    returns reply='' + fallback=True when it can't reach the model
+    (missing OPENAI_API_KEY / non-OpenAI MODEL_*); the agent.run handler
+    must surface that as a failed deliverable + errored run."""
+    async def _fallback(req):
+        return SimpleNamespace(
+            reply="", fallback=True,
+            metadata={"fallback_reason": "openai_client: OPENAI_API_KEY missing"},
+        )
+    monkeypatch.setattr(ark, "run_agent", _fallback)
+
+    snap = await orch.start_project_run(
+        user_id="user-FB", user_request="anything",
+        template_id="generic_research",
+    )
+    run_id = snap["run_id"]
+    await _wait_for_run_status(run_id, "user-FB", {"failed", "errored"})
+    dels = {d["node_id"]: d for d in dstore.list_for_run(run_id)}
+    assert dels["scope"]["status"] == "failed"
+    # actionable error mentioning the provider/config cause
+    assert "OPENAI_API_KEY" in (dels["scope"]["error"] or "")
+    assert rstore.get_run(run_id)["status"] == "errored"
+
+
 def test_landing_page_run_404_when_template_flag_off(client, po_env, monkeypatch):
     """26. Requesting the landing_page template while ITS flag is off (even
     though the orchestrator is on) is a clean 404 — not a silent fallback
