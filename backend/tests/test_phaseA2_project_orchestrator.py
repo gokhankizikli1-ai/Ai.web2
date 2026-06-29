@@ -394,3 +394,38 @@ def test_run_then_snapshot_then_cancel_http(client, po_env, monkeypatch):
     # is errored.
     assert data3["status"] in {"cancelled", "errored"}
     assert data3["run"]["status"] == "errored"
+
+
+def test_snapshot_shape_matches_frontend_contract(client, po_env, monkeypatch):
+    """21. Phase B FE contract guard. The /v2/orchestrator/run + snapshot
+    payload must carry exactly the keys `useProjectOrchestrator.ts`
+    (RunSnapshot / DeliverableView / TaskView) reads. If the backend
+    shape drifts, the wired ProjectWorkspace panel breaks silently — so
+    pin it here next to the route tests."""
+    monkeypatch.setenv("ENABLE_WORKFLOW_RUNNER", "false")
+    r = client.post("/v2/orchestrator/run",
+                    json={"user_request": "build a campaign",
+                          "template_id": "generic_creation"})
+    assert r.status_code == 200
+    snap = r.json()["data"]
+
+    # Top-level keys the hook's RunSnapshot type depends on.
+    for key in ("run_id", "status", "template_id", "panel_id",
+                "workflow", "deliverables", "task_graph"):
+        assert key in snap, f"missing snapshot key: {key}"
+
+    # DeliverableView fields used by the checklist UI.
+    assert len(snap["deliverables"]) == 4
+    d = snap["deliverables"][0]
+    for key in ("id", "title", "agent_id", "node_id", "kind", "status", "version"):
+        assert key in d, f"missing deliverable key: {key}"
+    assert d["status"] in {"pending", "in_progress", "completed", "failed", "skipped"}
+
+    # task_graph shape used for progress.
+    tg = snap["task_graph"]
+    assert "tasks" in tg and "total_count" in tg
+    assert tg["total_count"] == 4
+    if tg["tasks"]:
+        t = tg["tasks"][0]
+        for key in ("id", "title", "assigned_agent", "status", "dependencies"):
+            assert key in t, f"missing task key: {key}"

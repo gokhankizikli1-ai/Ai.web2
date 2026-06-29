@@ -24,6 +24,7 @@ import { useProjectActivity } from '@/hooks/useProjectActivity';
 import AgentMessageRenderer from '@/components/AgentMessageRenderer';
 import OwnerModeChip from '@/components/OwnerModeChip';
 import OwnerSessionIndicator from '@/components/OwnerSessionIndicator';
+import ProjectRunPanel from '@/components/ProjectRunPanel';
 
 /* ═══════════════════════════════════════════════════════════════════
    Phase 3.7 — typewriter helpers.
@@ -855,6 +856,11 @@ export default function ProjectWorkspace() {
 
         {/* RIGHT: Context & Tasks */}
         <div className="hidden xl:flex flex-col w-[260px] shrink-0 overflow-y-auto scrollbar-thin p-3 gap-3" style={{ background: 'rgba(17,21,28,0.3)', borderLeft: '1px solid rgba(255,255,255,0.04)' }}>
+          {/* Phase B — Project Orchestrator run panel (PR #182 backend). Self-
+              contained + frontend-safe: renders a disabled empty state when
+              ENABLE_PROJECT_ORCHESTRATOR is off, so it never blocks the rest
+              of the workspace. */}
+          {projectId && <ProjectRunPanel projectId={projectId} />}
           {/* Shared Context — Phase 2.5: project memory + sync indicator */}
           <div className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.04)' }}>
             <div className="flex items-center justify-between mb-3">
