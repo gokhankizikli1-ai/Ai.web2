@@ -17,8 +17,8 @@ QUALITY_THRESHOLD = 70
 # Phrases that betray a beginner template / placeholder output.
 _PLACEHOLDERS = [
     r"\bmy app\b", r"\byour app\b", r"\bfeature\s*\d\b", r"lorem ipsum",
-    r"\bplaceholder\b", r"example\.com", r"\bcard\s*\d\b", r"\bitem\s*\d\b",
-    r"\btitle goes here\b", r"\bsection\s*\d\b", r"\btodo\b",
+    r"\bplaceholder\b(?!\s*=)", r"example\.com", r"\bcard\s*\d\b", r"\bitem\s*\d\b",
+    r"\btitle goes here\b", r"\bsection\s*\d\b", r"\btodo[:!]",
 ]
 
 
