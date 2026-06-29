@@ -85,7 +85,7 @@ def test_dashboard_panel_switching():
     html = _page("Build a banking dashboard")
     # Full pseudo-page panels switch via nav; first active, others hidden.
     assert 'data-panel="page-0"' in html and 'data-panel="page-1"' in html
-    assert 'data-nav="page-0"' in html and 'class="is-active"' in html
+    assert 'data-nav="page-0"' in html and 'is-active"' in html
     assert "ds-hidden" in html                         # non-active pages hidden
     # Rich dashboard content (metric bento + chart bars + activity feed).
     assert 'class="ds-bento"' in html
@@ -117,9 +117,10 @@ def test_premium_visual_preserved(prompt):
     on the quality reviewer, and stays interactive."""
     from backend.services.generation import quality
     html = _page(prompt)
-    # Real premium component USAGE (class="..."), not just CSS defs.
-    for marker in ['class="ds-nav"', 'class="ds-bento"', 'class="ds-card', 'class="ds-bars"',
-                   'class="ds-footer"', "var(--", "<h1"]:
+    # Real premium component USAGE (class="..." prefix tolerates additional
+    # classes on the same element), not just CSS defs.
+    for marker in ['class="ds-nav', 'class="ds-bento', 'class="ds-card', 'class="ds-bars',
+                   'class="ds-footer', "var(--", "<h1"]:
         assert marker in html, f"{prompt}: missing {marker}"
     assert quality.is_premium(html)
     assert quality.score(html)[0] >= 95, f"{prompt}: quality {quality.score(html)[0]}"

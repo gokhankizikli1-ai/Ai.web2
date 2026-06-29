@@ -228,31 +228,32 @@ def _notes(user_request: str, style: Dict) -> ProductSpec:
     NOT a marketing page. The headline regression: "Apple Notes style app"."""
     name = _title_from_request(user_request) or "Notes"
     folders = [
-        {"name": "All Notes", "key": "all", "count": 6},
-        {"name": "Personal", "key": "personal", "count": 2},
-        {"name": "Work", "key": "work", "count": 2},
-        {"name": "Ideas", "key": "ideas", "count": 1},
-        {"name": "Archive", "key": "archive", "count": 1},
+        {"name": "All Notes", "key": "all", "count": 6, "icon": "🗒"},
+        {"name": "Personal", "key": "personal", "count": 2, "icon": "👤"},
+        {"name": "Work", "key": "work", "count": 2, "icon": "💼"},
+        {"name": "Ideas", "key": "ideas", "count": 1, "icon": "💡"},
+        {"name": "Archive", "key": "archive", "count": 1, "icon": "🗄"},
     ]
+    tags = ["Important", "Follow-up", "Reading", "Draft"]
     notes = [
-        {"title": "Welcome to your notes", "folder": "personal",
+        {"title": "Welcome to your notes", "folder": "personal", "date": "Today, 9:14 AM", "time": "9:14 AM",
          "snippet": "Everything in one calm, fast place. Pin what matters.",
-         "body": "Everything in one calm, fast place.\n\nUse folders on the left to organise, search to find anything instantly, and ⌘N to start a new note. Your writing autosaves as you go."},
-        {"title": "Q3 product roadmap", "folder": "work",
+         "body": "Everything in one calm, fast place.\n\nUse the folders on the left to organise, the search field to find anything instantly, and the New Note button (⌘N) to start writing. Your notes autosave as you type.\n\nTry it:\n• Click a note to open it here\n• Switch folders to filter the list\n• Search to narrow things down"},
+        {"title": "Q3 product roadmap", "folder": "work", "date": "Yesterday, 4:32 PM", "time": "Yesterday",
          "snippet": "Editor polish, sync, offline mode, sharing.",
-         "body": "Q3 roadmap\n\n1. Editor polish — typography, slash commands.\n2. Real-time sync across devices.\n3. Offline mode with conflict resolution.\n4. Shareable note links."},
-        {"title": "Reading list", "folder": "personal",
+         "body": "Q3 roadmap\n\n1. Editor polish — typography, slash commands, checklists.\n2. Real-time sync across every device.\n3. Offline mode with conflict resolution.\n4. Shareable note links with permissions.\n\nOwner: Maya · Review: end of month."},
+        {"title": "Reading list", "folder": "personal", "date": "Mon, 8:02 AM", "time": "Mon",
          "snippet": "Books and essays to get through this season.",
-         "body": "Reading list\n\n• Thinking in Systems\n• The Timeless Way of Building\n• A handful of essays on craft and focus."},
-        {"title": "Meeting — design sync", "folder": "work",
+         "body": "Reading list\n\n• Thinking in Systems — Donella Meadows\n• The Timeless Way of Building — Christopher Alexander\n• A handful of essays on craft, focus and taste.\n\nStarted: The Timeless Way of Building."},
+        {"title": "Meeting — design sync", "folder": "work", "date": "Mon, 11:20 AM", "time": "Mon",
          "snippet": "Decisions, owners and next steps from today.",
-         "body": "Design sync\n\nDecisions:\n- Ship the three-pane layout.\n- Keep the command palette.\n\nNext steps:\n- Spec the sharing flow.\n- Prototype the search filter."},
-        {"title": "App idea — quiet focus", "folder": "ideas",
+         "body": "Design sync\n\nDecisions\n- Ship the three-pane layout.\n- Keep the command palette.\n- Native feel over web chrome.\n\nNext steps\n- Spec the sharing flow (Daniel)\n- Prototype the search filter (Ana)"},
+        {"title": "App idea — quiet focus", "folder": "ideas", "date": "Sun, 7:48 PM", "time": "Sun",
          "snippet": "A note app that disappears while you write.",
-         "body": "Quiet focus\n\nA note app that gets out of the way: no chrome, instant search, native feel, keyboard-first. Everything one keystroke away."},
-        {"title": "Old draft", "folder": "archive",
-         "snippet": "Kept for reference. Archived last month.",
-         "body": "Archived draft\n\nKept for reference. Nothing to do here."},
+         "body": "Quiet focus\n\nA note app that gets out of the way: no chrome, instant search, native feel, keyboard-first. Everything one keystroke away.\n\nThe goal: open, write, done."},
+        {"title": "Trip planning", "folder": "archive", "date": "Last week", "time": "Last week",
+         "snippet": "Lisbon itinerary — kept for reference.",
+         "body": "Lisbon\n\nDay 1 — Alfama, viewpoints, late dinner.\nDay 2 — Belém, pastéis, river walk.\nDay 3 — day trip to Sintra.\n\nArchived for next time."},
     ]
     return ProductSpec(
         product_type="notes", name=name, tagline="Every thought, instantly at hand.",
@@ -274,7 +275,7 @@ def _notes(user_request: str, style: Dict) -> ProductSpec:
         cta_primary="New Note", cta_secondary="Search",
         theme={"accent": "", "accent2": "", "mode": style.get("mode", "light")},
         components=["Sidebar", "Search Bar", "Editor", "List View", "Settings", "Toolbar"],
-        data={"folders": folders, "notes": notes},
+        data={"folders": folders, "notes": notes, "tags": tags},
     )
 
 
@@ -448,8 +449,10 @@ def _generic_dashboard(user_request: str, style: Dict, intent: str = "dashboard"
 
 
 def _title_from_request(user_request: str) -> str:
-    t = re.sub(r"^\s*(build|create|make|design|generate|develop)\s+(me\s+)?(a|an|the)?\s*",
+    t = re.sub(r"^\s*(build|create|make|design|generate|develop)\s+(me\s+)?(?:an|a|the)\s+",
                "", (user_request or "").strip(), flags=re.IGNORECASE)
+    t = re.sub(r"^\s*(build|create|make|design|generate|develop)\s+",
+               "", t, flags=re.IGNORECASE)
     t = re.sub(r"\b(style|like|inspired\s*by)\b.*$", "", t, flags=re.IGNORECASE)
     t = re.sub(r"\b(app|application|website|site|dashboard|landing\s*page|page|tool|"
                r"platform|software|store|shop)\b.*$", "", t, flags=re.IGNORECASE).strip(" .-")

@@ -1,0 +1,218 @@
+# coding: utf-8
+# CRITICAL REBUILD — premium SaaS landing renderer.
+#
+# A funded-startup marketing page: sticky nav, large gradient hero with a
+# product mockup, social-proof logo row, a bento feature grid, a product
+# preview, pricing tiers, testimonials, an FAQ accordion, a CTA band and a
+# rich footer. Nav smooth-scrolls / highlights.
+
+from __future__ import annotations
+
+from backend.services.generation.renderers import base
+from backend.services.generation.renderers.base import bars, e, icon, slug, spark
+from backend.services.generation.spec import ProductSpec, Section
+
+CSS = """
+/* ── Landing extras ── */
+.ds-mock { border:1px solid var(--border-strong); border-radius:var(--radius-lg); overflow:hidden;
+  background:var(--bg-2); box-shadow:var(--shadow-lg); max-width:1000px; margin:0 auto; }
+.ds-mock-bar { display:flex; gap:7px; align-items:center; padding:12px 16px; border-bottom:1px solid var(--border); background:var(--surface); }
+.ds-mock-bar i { width:11px; height:11px; border-radius:9999px; background:var(--text-dim); opacity:.5; }
+.ds-mock-body { padding:22px; }
+.ds-logos { display:flex; flex-wrap:wrap; gap:14px 44px; align-items:center; justify-content:center; opacity:.7; }
+.ds-logo { font-weight:750; font-size:1.1rem; letter-spacing:-.02em; color:var(--text-muted); }
+.ld-plan-price { font-size:2.6rem; font-weight:780; letter-spacing:-.03em; }
+.ld-faq { display:grid; gap:12px; max-width:780px; margin:0 auto; }
+.ld-faq details { cursor:pointer; }
+.ld-faq summary { font-weight:650; color:var(--text); list-style:none; display:flex; justify-content:space-between; align-items:center; }
+.ld-faq summary::-webkit-details-marker { display:none; }
+.ld-faq summary::after { content:'+'; color:var(--accent-2); font-size:1.3rem; font-weight:600; }
+.ld-faq details[open] summary::after { content:'–'; }
+.ld-testi-stars { color:var(--accent-2); font-size:1.05rem; letter-spacing:2px; }
+""".strip()
+
+_LOGOS = ["Vantage", "Lumio", "Northwind", "Mercura", "Cobalt", "Atlas"]
+
+
+def _wrap(sec_id, title, subtitle, inner) -> str:
+    head = ""
+    if title:
+        head = (f'<div class="ds-center" style="margin-bottom:44px"><h2>{e(title)}</h2>'
+                + (f'<p class="ds-lead" style="margin-top:12px;max-width:50ch;margin-left:auto;margin-right:auto">{e(subtitle)}</p>' if subtitle else "")
+                + "</div>")
+    return f'<section class="ds-section ds-container" id="{sec_id}">{head}{inner}</section>'
+
+
+def _hero(spec: ProductSpec, primary_target: str, secondary_target: str) -> str:
+    return f"""
+<section class="ds-hero" id="overview"><div class="ds-container">
+  <span class="ds-badge ds-rise"><span class="ds-badge-dot"></span>{e(spec.product_type.replace('_',' ').title())}</span>
+  <h1 class="ds-rise">{e(spec.tagline)}</h1>
+  <p class="ds-lead ds-rise">{e(spec.description)}</p>
+  <div class="ds-hero-actions ds-rise">
+    <button class="ds-btn ds-btn-primary" data-scroll="{primary_target}">{e(spec.cta_primary)}</button>
+    <button class="ds-btn ds-btn-ghost" data-scroll="{secondary_target}">{e(spec.cta_secondary)}</button></div>
+</div></section>"""
+
+
+def _mockup(spec: ProductSpec) -> str:
+    chips = "".join(f"""
+      <div class="ds-card ds-col-2" style="padding:16px"><span style="color:var(--text-dim);font-size:.78rem">{e(x.get('label'))}</span>
+        <div class="ds-stat-value" style="font-size:1.4rem;margin-top:4px">{e(x.get('value'))}</div></div>"""
+                    for x in (spec.metrics or [{"label": "Active", "value": "12.4k"}, {"label": "Growth", "value": "+18%"}])[:2])
+    return f"""
+<section class="ds-section ds-container" style="padding-top:8px"><div class="ds-mock ds-rise">
+  <div class="ds-mock-bar"><i></i><i></i><i></i>
+    <span style="margin-left:10px;color:var(--text-dim);font-size:.8rem">{e(spec.name)} — preview</span></div>
+  <div class="ds-mock-body"><div class="ds-bento">
+    <div class="ds-card ds-col-4 ds-row-2"><span class="ds-eyebrow">Overview</span>
+      <h3 style="margin-top:6px">{e(spec.tagline)}</h3>{bars(14)}</div>
+    {chips}
+    <div class="ds-card ds-col-2">{spark()}</div>
+  </div></div>
+</div></section>"""
+
+
+def _logos() -> str:
+    logos = "".join(f'<span class="ds-logo">{e(n)}</span>' for n in _LOGOS)
+    return f"""
+<section class="ds-section ds-container ds-center" id="customers" style="padding-top:24px;padding-bottom:24px">
+  <p style="color:var(--text-dim);font-size:.82rem;text-transform:uppercase;letter-spacing:.12em;margin-bottom:22px">Trusted by fast-moving teams</p>
+  <div class="ds-logos">{logos}</div></section>"""
+
+
+def _feature_bento(items) -> str:
+    if not items:
+        return ""
+    lead = items[0]
+    cells = [f"""
+    <div class="ds-card ds-col-4 ds-row-2 ds-rise">{icon(lead.get('icon'))}
+      <h3 style="font-size:1.5rem">{e(lead.get('title'))}</h3>
+      <p style="margin-top:10px;max-width:46ch">{e(lead.get('body'))}</p>{bars(12)}</div>"""]
+    for c in items[1:]:
+        cells.append(f"""
+    <div class="ds-card ds-col-2 ds-rise">{icon(c.get('icon'))}<h3>{e(c.get('title'))}</h3>
+      <p style="margin-top:8px;font-size:.92rem">{e(c.get('body'))}</p></div>""")
+    return f'<div class="ds-bento">{"".join(cells)}</div>'
+
+
+def _pricing(sec: Section) -> str:
+    n = len(sec.items)
+    cards = "".join(f"""
+    <div class="ds-card ds-rise{' ds-plan-featured' if (n >= 2 and i == 1) else ''}" style="text-align:center">
+      {'<span class="ds-badge" style="margin-bottom:12px">Most popular</span>' if (n >= 2 and i == 1) else ''}
+      <h3>{e(c.get('title'))}</h3><div class="ld-plan-price" style="margin:12px 0">{e(c.get('body'))}</div>
+      <p style="font-size:.88rem">{e(c.get('icon'))}</p>
+      <button class="ds-btn {'ds-btn-primary' if (n >= 2 and i == 1) else 'ds-btn-ghost'}" data-scroll="get-started" style="margin-top:18px;width:100%">Choose plan</button>
+    </div>""" for i, c in enumerate(sec.items))
+    return _wrap("pricing", sec.title or "Simple, scalable pricing", sec.subtitle, f'<div class="ds-grid">{cards}</div>')
+
+
+def _testimonials(sec: Section) -> str:
+    cards = "".join(f"""
+    <div class="ds-card ds-rise"><div class="ld-testi-stars">★★★★★</div>
+      <p style="color:var(--text);font-size:1.05rem;margin-top:12px">{e(c.get('title'))}</p>
+      <p style="margin-top:14px;font-size:.85rem">{e(c.get('body'))}</p></div>""" for c in sec.items)
+    return _wrap(slug(sec.title or "customers"), sec.title or "Loved by teams that ship", sec.subtitle, f'<div class="ds-grid">{cards}</div>')
+
+
+def _faq(sec: Section) -> str:
+    items = "".join(f"""
+    <details class="ds-card ds-rise"><summary>{e(c.get('title'))}</summary>
+      <p style="margin-top:12px">{e(c.get('body'))}</p></details>""" for c in sec.items)
+    return _wrap("faq", sec.title or "Frequently asked", sec.subtitle, f'<div class="ld-faq">{items}</div>')
+
+
+def _gallery(sec: Section) -> str:
+    items = sec.items or []
+    if items:
+        tiles = "".join(f"""
+        <div class="ds-card ds-rise ds-selectable" data-select style="overflow:hidden;padding:0">
+          <div style="aspect-ratio:4/3;background:linear-gradient(135deg,color-mix(in srgb,var(--accent) {20+9*i}%,var(--surface-2)),color-mix(in srgb,var(--accent-2) {16*i%40+12}%,var(--surface)))"></div>
+          <div style="padding:14px 16px"><h3 style="font-size:1rem">{e(it.get('title'))}</h3>
+            <p style="font-size:.84rem;margin-top:2px">{e(it.get('body'))}</p></div></div>""" for i, it in enumerate(items))
+    else:
+        tiles = "".join(
+            f'<div class="ds-card ds-rise ds-selectable" data-select style="aspect-ratio:4/3;'
+            f'background:linear-gradient(135deg,color-mix(in srgb,var(--accent) {18+11*i}%,transparent),'
+            f'color-mix(in srgb,var(--accent-2) {18+11*i}%,transparent))"></div>' for i in range(6))
+    return _wrap(slug(sec.title or "gallery"), sec.title or "Gallery", sec.subtitle, f'<div class="ds-grid" data-select-group>{tiles}</div>')
+
+
+def _panel(spec: ProductSpec, sec: Section) -> str:
+    return _wrap(slug(sec.title or "preview"), sec.title or "Take a closer look", sec.subtitle,
+                 '<div class="ds-mock ds-rise"><div class="ds-mock-bar"><i></i><i></i><i></i></div>'
+                 f'<div class="ds-mock-body"><div class="ds-bento"><div class="ds-card ds-col-4 ds-row-2">{bars(12)}</div>'
+                 f'<div class="ds-card ds-col-2">{spark()}</div>'
+                 f'<div class="ds-card ds-col-2"><div class="ds-stat-value">{e(spec.cta_primary)}</div></div></div></div></div>')
+
+
+def _cta(spec: ProductSpec, sec: Section) -> str:
+    return f"""
+<section class="ds-section ds-container" id="get-started">
+  <div class="ds-card ds-glass ds-rise ds-center" style="padding:64px 28px;overflow:hidden">
+    <span class="ds-eyebrow">Ready when you are</span>
+    <h2 style="margin:14px auto;max-width:18ch">{e(sec.title or 'Get started today')}</h2>
+    <p class="ds-lead" style="max-width:44ch;margin:0 auto 28px">{e(spec.description)}</p>
+    <div class="ds-hero-actions"><button class="ds-btn ds-btn-primary" data-scroll="overview">{e(spec.cta_primary)}</button>
+      <button class="ds-btn ds-btn-ghost" data-scroll="features">{e(spec.cta_secondary)}</button></div>
+  </div></section>"""
+
+
+def _section(spec: ProductSpec, sec: Section) -> str:
+    if sec.kind == "features":     return _wrap(slug(sec.title or "features"), sec.title or "Features", sec.subtitle, _feature_bento(sec.items))
+    if sec.kind == "pricing":      return _pricing(sec)
+    if sec.kind == "testimonials": return _testimonials(sec)
+    if sec.kind == "faq":          return _faq(sec)
+    if sec.kind == "gallery":      return _gallery(sec)
+    if sec.kind == "panel":        return _panel(spec, sec)
+    if sec.kind == "cta":          return _cta(spec, sec)
+    if sec.kind == "metrics":      return _wrap("metrics", sec.title or "By the numbers", sec.subtitle, _feature_bento(sec.items))
+    return _wrap(slug(sec.title or "section"), sec.title, sec.subtitle, _feature_bento(sec.items))
+
+
+def _footer(spec: ProductSpec) -> str:
+    cols = {
+        "Product": ["Overview", "Features", "Pricing", "Changelog"],
+        "Company": ["About", "Careers", "Blog", "Contact"],
+        "Resources": ["Docs", "Guides", "Support", "Status"],
+    }
+    colhtml = "".join(
+        f'<div><div style="color:var(--text);font-weight:650;margin-bottom:10px">{e(h)}</div>'
+        + "".join(f'<a href="#" style="display:block;color:var(--text-dim);font-size:.88rem;padding:4px 0">{e(x)}</a>' for x in items)
+        + "</div>" for h, items in cols.items())
+    return f"""
+<footer class="ds-footer"><div class="ds-container">
+  <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:28px">
+    <div><div class="ds-nav-brand"><span class="ds-nav-logo"></span>{e(spec.name)}</div>
+      <p style="font-size:.88rem;margin-top:12px;max-width:32ch">{e(spec.tagline)}</p></div>
+    {colhtml}
+  </div>
+  <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-top:30px;padding-top:20px;border-top:1px solid var(--border)">
+    <span>© {e(spec.name)} · Crafted with Korvix</span><span>Privacy · Terms</span></div>
+</div></footer>"""
+
+
+def render(spec: ProductSpec) -> str:
+    links = "".join(f'<a data-nav="{slug(l)}" data-scroll="{slug(l)}">{e(l)}</a>' for l in spec.navigation)
+    has_pricing = any(s.kind == "pricing" for s in spec.sections)
+    primary_target = "pricing" if has_pricing else "get-started"
+    secondary_target = next((slug(s.title or "features") for s in spec.sections if s.kind == "features"), "features")
+    nav = f"""
+<header class="ds-nav">
+  <div class="ds-nav-brand"><span class="ds-nav-logo"></span>{e(spec.name)}</div>
+  <nav class="ds-nav-links">{links}</nav>
+  <button class="ds-btn ds-btn-primary ds-btn-sm" data-scroll="{primary_target}">{e(spec.cta_primary)}</button>
+</header>"""
+    parts = [nav, "<main>", _hero(spec, primary_target, secondary_target), _mockup(spec), _logos()]
+    for sec in spec.sections:
+        if sec.kind == "metrics":   # avoid a second mockup-ish block right after the hero mockup
+            continue
+        parts.append(_section(spec, sec))
+    if not any(s.kind == "cta" for s in spec.sections):
+        parts.append(_cta(spec, Section(kind="cta", title="Get started today")))
+    parts += ["</main>", _footer(spec)]
+    return "\n".join(parts)
+
+
+__all__ = ["CSS", "render"]
