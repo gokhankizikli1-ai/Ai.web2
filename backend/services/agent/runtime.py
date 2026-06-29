@@ -256,7 +256,11 @@ async def _run_agent_inner(request: AgentRequest) -> AgentResponse:
     # back to the legacy mode→tools mapping so /chat behaviour is
     # byte-identical.
     _spec = getattr(request, "spec", None)
-    if _spec is not None:
+    if not getattr(request, "allow_tools", True):
+        # Tool calling explicitly disabled for this request (project-run
+        # path). No tools exposed → no tool_calls → single LLM pass.
+        tools = []
+    elif _spec is not None:
         tools = tools_for_spec(_spec)
     else:
         tools = tools_for_mode(request.mode)

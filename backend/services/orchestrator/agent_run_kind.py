@@ -116,6 +116,12 @@ async def _agent_run_handler(ctx: JobContext) -> dict:
         system_prompt=spec.system_prompt,
         max_steps=getattr(spec, "max_steps", 6),
         spec=spec,
+        # Tool calling is disabled for the project-run path until the
+        # runtime's tool-call message loop is hardened (truncated
+        # tool_calls violate OpenAI's "assistant tool_calls must be
+        # followed by matching tool messages" contract). Agents produce
+        # their deliverable from the model directly — non-empty + valid.
+        allow_tools=False,
         metadata_in={
             "orchestrator_agent_run": True,
             "run_id":   run_id,
