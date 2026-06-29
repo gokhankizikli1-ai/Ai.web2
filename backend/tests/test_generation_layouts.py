@@ -32,17 +32,20 @@ def test_apple_notes_is_an_app_not_a_landing():
     assert spec.dark_mode is False                      # apple_minimal → light
 
     html = _page("Build an Apple Notes style app")
-    # The actual product interface: sidebar folders + notes list + editor.
-    assert 'class="ds-shell"' in html
+    # The actual desktop product interface: macOS window + 3 panes.
+    assert 'class="ed-window"' in html                   # macOS app window
+    assert 'class="ds-traffic"' in html                  # traffic-light chrome
+    assert 'class="ed-toolbar"' in html and "data-format" in html  # formatting toolbar
     assert "data-folder=" in html                        # folder sidebar
     assert 'id="notes-list"' in html and "data-note" in html  # notes list
     assert 'id="note-title"' in html and 'id="note-body"' in html  # editor
     assert "data-search" in html                         # search
     assert "data-new-note" in html                       # New Note
-    # NOT a marketing page — no hero pricing / testimonials / FAQ.
+    # NOT a marketing page — no hero / pricing / testimonials / FAQ / footer.
     assert 'id="pricing"' not in html and ">Choose plan<" not in html
     assert "★★★★★" not in html
     assert "<details" not in html                        # no FAQ accordion
+    assert "<footer" not in html and "© 2023" not in html  # no marketing footer
 
 
 def test_note_editor_interactions_are_wired():
