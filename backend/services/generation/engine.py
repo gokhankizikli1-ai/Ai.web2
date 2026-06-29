@@ -1,0 +1,196 @@
+# coding: utf-8
+# EPIC 2 — Generation engine.
+#
+# The single seam the orchestrator calls. It owns the multi-pass
+# generation pipeline and is DELIBERATELY decoupled from orchestration
+# and from the rendering target:
+#
+#   build_prompt()      planning + (invisible) prompt expansion +
+#                       component selection + design directives → the
+#                       prompt handed to the (unchanged) agent runtime.
+#   finalize_artifact() layout extraction + visual-polish/design-system
+#                       enforcement + accessibility (viewport) + internal
+#                       quality review + one deterministic refinement
+#                       (premium fallback) + artifact metadata.
+#
+# FUTURE-PROOF: page rendering goes through a Renderer registry. Today
+# the only renderer is `html` (single-file HTML). A future milestone can
+# register a `react_vite` renderer (multi-file project) and flip
+# GENERATION_RENDERER without touching orchestration, templates, runtime
+# or this engine's public API.
+
+from __future__ import annotations
+
+import os
+from typing import Dict, List
+
+from backend.services.generation.components import (
+    catalog_prompt_block, detect_components,
+)
+from backend.services.generation.html_renderer import (
+    ensure_viewport, render_premium_page,
+)
+from backend.services.generation.prompt_expander import expand
+from backend.services.generation import quality
+from backend.services.generation.spec import ProductSpec
+
+# Deliverable kinds that represent a full UI page/prototype (vs. markdown
+# planning artifacts like concept/screens/file lists).
+PAGE_KINDS = {"landing_page_html", "app_prototype_html", "html", "web_page"}
+
+
+# ── Renderer registry (the swap seam) ─────────────────────────────────
+
+class HtmlRenderer:
+    """Single-file HTML renderer. The default page renderer."""
+    name = "html"
+    artifact_type = "html"
+    preview = "iframe"
+
+    def build_prompt(self, *, base_instructions: str, spec: ProductSpec) -> str:
+        return f"""You are a senior product designer and front-end engineer. Produce a PREMIUM, production-quality prototype that looks like a real, funded startup product (think Linear, Stripe, Vercel, Apple, Notion, Raycast) — NOT a beginner HTML template.
+
+TASK:
+{base_instructions}
+
+INTERNAL PRODUCT SPECIFICATION (use it; do NOT echo it back):
+{spec.to_prompt_block()}
+
+ASSEMBLE THE PAGE FROM THESE REUSABLE COMPONENTS (use the ones that fit):
+{catalog_prompt_block()}
+
+DESIGN REQUIREMENTS:
+- Dark mode by default; cohesive design system (consistent typography scale, spacing, radius, soft shadows, gradients, glassmorphism where tasteful).
+- Fully responsive, mobile-first. Smooth transitions and subtle micro-animations.
+- Semantic HTML (header/nav/main/section/footer), accessible focus states.
+- Clean, organized CSS in a single <style> block. No inline styles unless unavoidable. No external scripts.
+
+COPYWRITING:
+- Realistic, specific, startup-quality copy for THIS product. Real headlines, feature names, button labels and navigation.
+- NEVER output placeholders like "My App", "Feature 1", "Lorem ipsum", "Title goes here".
+
+OUTPUT:
+- Return ONLY one complete, self-contained HTML document starting with <!DOCTYPE html>. A Google Fonts <link> is allowed; nothing else external.
+"""
+
+    def finalize(self, *, node_title: str, raw_reply: str, spec: ProductSpec) -> Dict:
+        from backend.services.orchestrator.artifacts import _strip_html  # reuse extractor
+        extracted = _strip_html(raw_reply or "")
+        qscore, issues = quality.score(extracted)
+        if quality.is_premium(extracted):
+            final_html, source = ensure_viewport(extracted), "model"
+        else:
+            # Internal quality review failed → one deterministic refinement
+            # pass: render the guaranteed-premium page from the spec.
+            final_html, source = render_premium_page(spec), "generated"
+            qscore, issues = quality.score(final_html)
+
+        components_used = detect_components(final_html)
+        title = spec.name if source == "generated" else (node_title or spec.name)
+        return {
+            "type": "html",
+            "title": title,
+            "language": "html",
+            "content": final_html,
+            "files": [],
+            "preview": "iframe",
+            "download": {"filename": _slug(spec.name) + ".html", "mime": "text/html"},
+            "metadata": _metadata(spec, "html", components_used, final_html, source, qscore),
+        }
+
+
+_RENDERERS: Dict[str, object] = {"html": HtmlRenderer()}
+
+
+def register_renderer(name: str, renderer: object) -> None:
+    """Register a page renderer (e.g. a future `react_vite`)."""
+    _RENDERERS[name] = renderer
+
+
+def _page_renderer():
+    name = (os.getenv("GENERATION_RENDERER", "html").strip().lower() or "html")
+    return _RENDERERS.get(name) or _RENDERERS["html"]
+
+
+# ── Public engine API (called by the orchestrator's agent.run) ────────
+
+def build_prompt(*, deliverable_kind: str, node_role: str,
+                 base_instructions: str, user_request: str) -> str:
+    """Pass 1-3: planning + invisible prompt expansion + component
+    selection + design directives. Returns the prompt for the (unchanged)
+    agent runtime. For non-page nodes (concept/screens/file lists), the
+    base instructions are kept but enriched with product context so copy
+    stays on-brand and premium."""
+    spec = expand(user_request or "")
+    if (deliverable_kind or "").lower() in PAGE_KINDS:
+        return _page_renderer().build_prompt(base_instructions=base_instructions, spec=spec)
+    # Planning / markdown nodes — light context injection.
+    return (
+        f"{base_instructions}\n\n"
+        f"PRODUCT CONTEXT (use it; keep copy specific and premium — no placeholders):\n"
+        f"{spec.to_prompt_block()}"
+    )
+
+
+def finalize_artifact(*, deliverable_kind: str, node_title: str,
+                      raw_reply: str, user_request: str) -> Dict:
+    """Pass 4-6: visual polish + design-system enforcement + accessibility
+    + internal quality review + one deterministic refinement, returning a
+    typed artifact (+ metadata). Page kinds go through the active page
+    renderer; everything else reuses the base artifact builder."""
+    kind = (deliverable_kind or "").lower()
+    if kind in PAGE_KINDS:
+        spec = expand(user_request or "")
+        return _page_renderer().finalize(
+            node_title=node_title, raw_reply=raw_reply, spec=spec,
+        )
+    # Non-page artifact (markdown / file list / code) — reuse the base
+    # builder and attach light metadata for a consistent FE contract.
+    from backend.services.orchestrator.artifacts import build_artifact
+    art = build_artifact(kind=deliverable_kind, title=node_title, text=raw_reply)
+    spec = expand(user_request or "")
+    art.setdefault("metadata", _metadata(
+        spec, art.get("type", "markdown"),
+        components_used=[], html="", source="model", qscore=None,
+    ))
+    return art
+
+
+# ── Metadata (requirement #10) ────────────────────────────────────────
+
+def _metadata(spec: ProductSpec, artifact_type: str, components_used: List[str],
+              html: str, source: str, qscore) -> Dict:
+    return {
+        "title": spec.name,
+        "description": spec.description,
+        "artifact_type": artifact_type,
+        "theme": {"mode": "dark" if spec.dark_mode else "light",
+                  "accent": spec.theme.get("accent")},
+        "components_used": components_used,
+        "responsive": True,
+        "dark_mode": spec.dark_mode,
+        "complexity": _complexity(html, components_used),
+        "files": [_slug(spec.name) + (".html" if artifact_type == "html" else ".md")],
+        "source": source,
+        "quality_score": qscore,
+        "product_type": spec.product_type,
+    }
+
+
+def _complexity(html: str, components_used: List[str]) -> str:
+    n = len(components_used)
+    size = len(html or "")
+    if n >= 6 or size >= 12000: return "high"
+    if n >= 3 or size >= 4000:  return "medium"
+    return "low"
+
+
+def _slug(s: str) -> str:
+    import re
+    return re.sub(r"[^a-zA-Z0-9]+", "-", (s or "app").strip()).strip("-").lower() or "app"
+
+
+__all__ = [
+    "PAGE_KINDS", "build_prompt", "finalize_artifact",
+    "register_renderer", "HtmlRenderer",
+]
