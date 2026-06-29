@@ -14,7 +14,7 @@
 //
 // Mounted by ProjectWorkspace ONLY when orchestrator availability resolves
 // to `available`; the disabled path keeps the classic agent chat fallback.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Workflow, Play, Loader2, CheckCircle2, Circle, XCircle,
   MinusCircle, Sparkles,
