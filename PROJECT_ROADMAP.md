@@ -4,7 +4,7 @@
 
 **Status:** Phases 1–5 (auth, owner mode, chat workspace, agent registry, safety guardrails) are shipped to production. This document covers **Phases 6–15** — the path from "chatbot with tabs" to "coordinated digital AI team."
 
-> **AI-OS track update (2026-06-29):** the multi-agent orchestration layer is now landing per `AI_OS_ROADMAP.md` Phase A. PR #1 (Workflow DAG Runner, `#181`) shipped. **PR #2 — Project Orchestrator service** is now implemented behind `ENABLE_PROJECT_ORCHESTRATOR` (the conductor: one request → tracked multi-agent run with deliverables + task graph + workflow). See `PHASE_A2_PROJECT_ORCHESTRATOR.md`. Next: PR #3 wires `ProjectWorkspace` to the new `/v2/orchestrator/*` routes.
+> **AI-OS track update (2026-06-29):** the multi-agent orchestration layer is landing per `AI_OS_ROADMAP.md` Phases A–B. PR #1 (Workflow DAG Runner, `#181`) shipped. **PR #2 — Project Orchestrator service** is implemented behind `ENABLE_PROJECT_ORCHESTRATOR` (the conductor: one request → tracked multi-agent run with deliverables + task graph + workflow); see `PHASE_A2_PROJECT_ORCHESTRATOR.md`. **Phase B — Project hub UX** now wires `ProjectWorkspace` to the new `/v2/orchestrator/*` routes via the `ProjectRunPanel` component + `useProjectOrchestrator` hook (start a run, live status, deliverables checklist, per-agent/task progress; frontend-safe disabled state when the flag is off). Next: the landing-page template + richer task-graph view (remaining Phase C/B polish).
 
 **Legend**
 - **Priority:** `P0` blocker for the next phase · `P1` important · `P2` nice-to-have
