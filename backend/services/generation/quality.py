@@ -12,6 +12,8 @@ from __future__ import annotations
 import re
 from typing import List, Tuple
 
+from backend.services.generation.html_renderer import has_viewport_meta
+
 QUALITY_THRESHOLD = 70
 
 # Phrases that betray a beginner template / placeholder output.
@@ -49,7 +51,7 @@ def score(html: str) -> Tuple[int, List[str]]:
     else: issues.append("no semantic structure")
 
     # Responsiveness (15)
-    if "viewport" in low and ("@media" in low or "minmax(" in low or "grid-template" in low):
+    if has_viewport_meta(h) and ("@media" in low or "minmax(" in low or "grid-template" in low):
         pts += 15
     else: issues.append("not responsive (missing viewport / media queries)")
 
@@ -79,4 +81,4 @@ def is_premium(html: str) -> bool:
     return s >= QUALITY_THRESHOLD and not has_placeholders(html)
 
 
-__all__ = ["QUALITY_THRESHOLD", "score", "is_premium", "has_placeholders"]
+__all__ = ["QUALITY_THRESHOLD", "score", "is_premium", "has_placeholders", "has_viewport_meta"]

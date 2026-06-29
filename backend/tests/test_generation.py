@@ -8,6 +8,8 @@ renderer-registry swap seam.
 """
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from backend.services.generation import build_prompt, finalize_artifact, register_renderer
@@ -70,6 +72,15 @@ def test_render_premium_page_is_valid_and_distinct():
     assert len(titles) == len(SUCCESS_PROMPTS)         # completely different
 
 
+def test_render_premium_page_navigation_links_target_existing_ids():
+    for prompt, _ in SUCCESS_PROMPTS.values():
+        html = render_premium_page(expand(prompt))
+        ids = set(re.findall(r'\bid="([^"]+)"', html))
+        hrefs = re.findall(r'href="#([^"]+)"', html)
+        assert hrefs
+        assert set(hrefs) <= ids
+
+
 def test_components_detected_in_premium_page():
     html = render_premium_page(expand("Build a premium SaaS landing page"))
     comps = detect_components(html)
@@ -90,6 +101,18 @@ def test_quality_scores_premium_high_and_junk_low():
     assert s_junk < quality.QUALITY_THRESHOLD
     assert quality.has_placeholders(junk)
     assert not quality.is_premium(junk)
+
+
+def test_quality_requires_viewport_meta_not_just_word():
+    premium = render_premium_page(expand("Build a premium SaaS landing page"))
+    no_meta = premium.replace(
+        '<meta name="viewport" content="width=device-width, initial-scale=1">',
+        "<!-- viewport is handled by CSS -->",
+    )
+    assert not quality.has_viewport_meta(no_meta)
+
+    _, issues = quality.score(no_meta)
+    assert "not responsive (missing viewport / media queries)" in issues
 
 
 # ── Engine: build_prompt ──────────────────────────────────────────────
@@ -137,6 +160,20 @@ def test_finalize_keeps_premium_model_output():
     assert art["type"] == "html"
     assert art["metadata"]["source"] == "model"   # good LLM output kept
     assert "Cadence" in art["content"]
+
+
+def test_finalize_injects_missing_viewport_meta_into_model_output():
+    premium = render_premium_page(expand("Build a premium SaaS landing page"))
+    no_meta = premium.replace("<head>", '<head data-note="viewport-copy">').replace(
+        '<meta name="viewport" content="width=device-width, initial-scale=1">',
+        "<!-- viewport is handled by CSS -->",
+    )
+    art = finalize_artifact(deliverable_kind="landing_page_html", node_title="Page",
+                            raw_reply=no_meta,
+                            user_request="Build a SaaS landing page")
+    assert art["metadata"]["source"] == "model"
+    assert quality.has_viewport_meta(art["content"])
+    assert art["metadata"]["responsive"] is True
 
 
 def test_finalize_markdown_kind_delegates_with_metadata():

@@ -11,10 +11,19 @@
 from __future__ import annotations
 
 import html as _html
+import re
 from typing import List
 
 from backend.services.generation.design_system import design_system_css
 from backend.services.generation.spec import ProductSpec, Section
+
+_VIEWPORT_META = '<meta name="viewport" content="width=device-width, initial-scale=1">'
+_VIEWPORT_META_RE = re.compile(
+    r"<meta\b(?=[^>]*\bname\s*=\s*['\"]viewport['\"])[^>]*>",
+    re.IGNORECASE,
+)
+_HEAD_RE = re.compile(r"<head\b[^>]*>", re.IGNORECASE)
+_HTML_RE = re.compile(r"<html\b[^>]*>", re.IGNORECASE)
 
 
 def _e(s: str) -> str:
@@ -22,7 +31,7 @@ def _e(s: str) -> str:
 
 
 def _nav(spec: ProductSpec) -> str:
-    links = "".join(f'<a href="#{_slug(l)}">{_e(l)}</a>' for l in spec.navigation)
+    links = "".join(f'<a href="#{target}">{_e(label)}</a>' for label, target in _nav_targets(spec))
     return f"""
 <header class="ds-nav">
   <div class="ds-nav-brand"><span class="ds-nav-logo"></span>{_e(spec.name)}</div>
@@ -33,7 +42,7 @@ def _nav(spec: ProductSpec) -> str:
 
 def _hero(spec: ProductSpec) -> str:
     return f"""
-<section class="ds-hero ds-container" id="overview">
+<section class="ds-hero ds-container" id="{_hero_id(spec)}">
   <span class="ds-eyebrow ds-rise">{_e(spec.product_type.replace('_',' ').title())}</span>
   <h1 class="ds-rise">{_e(spec.tagline)}</h1>
   <p class="ds-rise">{_e(spec.description)}</p>
@@ -146,7 +155,10 @@ def _wrap_section(sec: Section, inner: str) -> str:
 
 
 def _footer(spec: ProductSpec) -> str:
-    links = "".join(f'<a href="#{_slug(l)}" style="margin-right:20px">{_e(l)}</a>' for l in spec.navigation)
+    links = "".join(
+        f'<a href="#{target}" style="margin-right:20px">{_e(label)}</a>'
+        for label, target in _nav_targets(spec)
+    )
     return f"""
 <footer class="ds-footer">
   <div class="ds-container" style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px">
@@ -158,8 +170,48 @@ def _footer(spec: ProductSpec) -> str:
 
 
 def _slug(s: str) -> str:
-    import re
     return re.sub(r"[^a-z0-9]+", "-", (s or "section").lower()).strip("-") or "section"
+
+
+def _section_id(sec: Section) -> str:
+    return "get-started" if sec.kind == "cta" else _slug(sec.title)
+
+
+def _hero_id(spec: ProductSpec) -> str:
+    section_ids = {_section_id(sec) for sec in spec.sections}
+    return "hero" if "overview" in section_ids else "overview"
+
+
+def _nav_targets(spec: ProductSpec):
+    section_ids = [_section_id(sec) for sec in spec.sections]
+    fallback_ids = section_ids if spec.is_dashboard else [_hero_id(spec)] + section_ids
+    fallback_ids = fallback_ids or [_hero_id(spec)]
+    return [(label, _nav_target(spec, label, i, fallback_ids)) for i, label in enumerate(spec.navigation)]
+
+
+def _nav_target(spec: ProductSpec, label: str, index: int, fallback_ids: List[str]) -> str:
+    label_slug = _slug(label)
+    for sec in spec.sections:
+        if _section_matches_nav(sec, label_slug):
+            return _section_id(sec)
+    if label_slug in {"home", "product", "overview"}:
+        return _hero_id(spec)
+    if label_slug == "dashboard" and spec.sections:
+        return _section_id(spec.sections[0])
+    return fallback_ids[min(index, len(fallback_ids) - 1)]
+
+
+def _section_matches_nav(sec: Section, label_slug: str) -> bool:
+    synonyms = {
+        "customers": {"testimonials"},
+        "docs": {"faq", "frequently-asked"},
+        "contact": {"cta", "get-started"},
+        "reservations": {"reserve", "reservation"},
+    }
+    terms = {label_slug, label_slug.rstrip("s")} | synonyms.get(label_slug, set())
+    item_text = " ".join(str(v) for item in sec.items for v in item.values())
+    haystack = _slug(f"{sec.kind} {sec.title} {sec.subtitle} {item_text}")
+    return any(term and term in haystack for term in terms)
 
 
 def render_premium_page(spec: ProductSpec) -> str:
@@ -202,13 +254,17 @@ def render_premium_page(spec: ProductSpec) -> str:
 
 def ensure_viewport(html_doc: str) -> str:
     """Guarantee a responsive viewport meta on an otherwise-good LLM doc."""
-    if "viewport" in (html_doc or "").lower():
+    if has_viewport_meta(html_doc):
         return html_doc
-    return html_doc.replace(
-        "<head>",
-        '<head>\n<meta name="viewport" content="width=device-width, initial-scale=1">',
-        1,
-    ) if "<head>" in html_doc else html_doc
+    html_doc = html_doc or ""
+    with_meta, count = _HEAD_RE.subn(lambda m: f"{m.group(0)}\n{_VIEWPORT_META}", html_doc, count=1)
+    if count:
+        return with_meta
+    return _HTML_RE.sub(lambda m: f"{m.group(0)}\n<head>\n{_VIEWPORT_META}\n</head>", html_doc, count=1)
 
 
-__all__ = ["render_premium_page", "ensure_viewport"]
+def has_viewport_meta(html_doc: str) -> bool:
+    return bool(_VIEWPORT_META_RE.search(html_doc or ""))
+
+
+__all__ = ["render_premium_page", "ensure_viewport", "has_viewport_meta"]
