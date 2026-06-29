@@ -429,3 +429,81 @@ def test_snapshot_shape_matches_frontend_contract(client, po_env, monkeypatch):
         t = tg["tasks"][0]
         for key in ("id", "title", "assigned_agent", "status", "dependencies"):
             assert key in t, f"missing task key: {key}"
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# 22–26  Phase C — Landing Page vertical (flag-gated template)
+# ──────────────────────────────────────────────────────────────────────────
+
+def test_landing_page_hidden_when_flag_off(monkeypatch):
+    """22. With ENABLE_LANDING_PAGE_TEMPLATE off, the template is invisible
+    in the catalog — list + lookup both exclude it (back-compat)."""
+    monkeypatch.delenv("ENABLE_LANDING_PAGE_TEMPLATE", raising=False)
+    assert tmpl.get_template("landing_page") is None
+    assert "landing_page" not in {t.id for t in tmpl.list_templates()}
+
+
+def test_landing_page_visible_when_flag_on(monkeypatch):
+    """23. Flipped on, the template appears and is a valid DAG matching
+    the roadmap: research → [brand ∥ copy] → design(brand) → code(copy+design)."""
+    monkeypatch.setenv("ENABLE_LANDING_PAGE_TEMPLATE", "true")
+    t = tmpl.get_template("landing_page")
+    assert t is not None
+    assert "landing_page" in {x.id for x in tmpl.list_templates()}
+    t.validate()  # must not raise
+    by_key = {n.key: n for n in t.nodes}
+    assert set(by_key) == {"research", "brand", "copy", "design", "code"}
+    assert by_key["research"].depends_on == []
+    assert by_key["brand"].depends_on == ["research"]
+    assert by_key["copy"].depends_on == ["research"]
+    assert by_key["design"].depends_on == ["brand"]
+    assert set(by_key["code"].depends_on) == {"copy", "design"}
+    # The Coder's deliverable is the HTML page the FE previews/downloads.
+    assert by_key["code"].deliverable_kind == "landing_page_html"
+
+
+@pytest.mark.asyncio
+async def test_landing_page_end_to_end(po_env, monkeypatch):
+    """24. Full vertical: a landing-page run drives all 5 specialists to
+    completion and produces the landing_page_html deliverable with
+    content — the first end-to-end vertical on the existing orchestrator."""
+    monkeypatch.setenv("ENABLE_LANDING_PAGE_TEMPLATE", "true")
+    snap = await orch.start_project_run(
+        user_id="user-LP", user_request="a landing page for my coffee subscription",
+        template_id="landing_page",
+    )
+    assert snap["runner_started"] is True
+    run_id = snap["run_id"]
+    await _wait_for_run_status(run_id, "user-LP", "completed")
+    dels = {d["node_id"]: d for d in dstore.list_for_run(run_id)}
+    assert set(dels) == {"research", "brand", "copy", "design", "code"}
+    assert all(d["status"] == "completed" for d in dels.values())
+    page = dels["code"]
+    assert page["kind"] == "landing_page_html"
+    assert page["content"].get("text")          # the produced page content
+
+
+def test_landing_page_route_listing_respects_flag(client, po_env, monkeypatch):
+    """25. /v2/orchestrator/templates includes landing_page only when the
+    flag is on."""
+    monkeypatch.setenv("ENABLE_LANDING_PAGE_TEMPLATE", "false")
+    r = client.get("/v2/orchestrator/templates")
+    ids = {t["id"] for t in r.json()["data"]["templates"]}
+    assert "landing_page" not in ids
+
+    monkeypatch.setenv("ENABLE_LANDING_PAGE_TEMPLATE", "true")
+    r2 = client.get("/v2/orchestrator/templates")
+    ids2 = {t["id"] for t in r2.json()["data"]["templates"]}
+    assert "landing_page" in ids2
+
+
+def test_landing_page_run_404_when_template_flag_off(client, po_env, monkeypatch):
+    """26. Requesting the landing_page template while ITS flag is off (even
+    though the orchestrator is on) is a clean 404 — not a silent fallback
+    to a different template."""
+    monkeypatch.setenv("ENABLE_LANDING_PAGE_TEMPLATE", "false")
+    monkeypatch.setenv("ENABLE_WORKFLOW_RUNNER", "false")
+    r = client.post("/v2/orchestrator/run",
+                    json={"user_request": "x", "template_id": "landing_page"})
+    assert r.status_code == 404
+    assert r.json()["metadata"]["code"] == "project_template_unknown"

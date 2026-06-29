@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Workflow, Play, Loader2, CheckCircle2, Circle, XCircle,
-  MinusCircle, RotateCcw, X,
+  MinusCircle, RotateCcw, X, Eye,
 } from 'lucide-react';
 import {
   projectOrchestratorClient,
@@ -25,6 +25,7 @@ import {
   type DeliverableView,
   type DeliverableStatus,
 } from '@/hooks/useProjectOrchestrator';
+import DeliverablePreviewModal from '@/components/DeliverablePreviewModal';
 
 type Availability = 'unknown' | 'available' | 'disabled';
 
@@ -66,6 +67,7 @@ export default function ProjectRunPanel({ projectId }: { projectId: string }) {
   const [templateId, setTemplateId] = useState<string>('');   // '' = let coordinator choose
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
+  const [previewId, setPreviewId] = useState<string | null>(null);
 
   const { snapshot, error, isTerminal, refresh } = useProjectRun(runId);
 
@@ -247,17 +249,34 @@ export default function ProjectRunPanel({ projectId }: { projectId: string }) {
 
       {/* Deliverables checklist (each row = an agent + its deliverable) */}
       <div className="space-y-1.5 mb-2">
-        {deliverables.map((d) => (
-          <div key={d.id} className="flex items-start gap-1.5">
-            <span className="mt-0.5 shrink-0">{deliverableIcon(d.status)}</span>
-            <div className="min-w-0">
-              <p className="text-[10px] text-white/60 truncate">{d.title || d.kind}</p>
-              <p className="text-[8px] text-white/25">
-                {humanAgent(d.agent_id)}{d.status === 'in_progress' ? ' · working…' : ''}
-              </p>
+        {deliverables.map((d) => {
+          const previewable = d.status === 'completed';
+          const Row = (
+            <>
+              <span className="mt-0.5 shrink-0">{deliverableIcon(d.status)}</span>
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] text-white/60 truncate">{d.title || d.kind}</p>
+                <p className="text-[8px] text-white/25">
+                  {humanAgent(d.agent_id)}{d.status === 'in_progress' ? ' · working…' : ''}
+                </p>
+              </div>
+              {previewable && <Eye className="h-3 w-3 text-white/25 shrink-0 mt-0.5" />}
+            </>
+          );
+          return previewable ? (
+            <button
+              key={d.id}
+              onClick={() => setPreviewId(d.id)}
+              title="Preview deliverable"
+              className="flex items-start gap-1.5 w-full text-left rounded-md px-1 -mx-1 py-0.5 hover:bg-white/[0.03] transition-colors">
+              {Row}
+            </button>
+          ) : (
+            <div key={d.id} className="flex items-start gap-1.5 px-1 -mx-1 py-0.5">
+              {Row}
             </div>
-          </div>
-        ))}
+          );
+        })}
         {deliverables.length === 0 && (
           <p className="text-[10px] text-white/20 py-1">Preparing run…</p>
         )}
@@ -275,6 +294,11 @@ export default function ProjectRunPanel({ projectId }: { projectId: string }) {
           </button>
         )}
       </div>
+
+      <DeliverablePreviewModal
+        deliverable={deliverables.find(d => d.id === previewId) || null}
+        onClose={() => setPreviewId(null)}
+      />
     </Card>
   );
 }
