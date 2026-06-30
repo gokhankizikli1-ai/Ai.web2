@@ -118,6 +118,18 @@ CSS = """
 .cl-field input:focus, .cl-field textarea:focus, .cl-field select:focus { outline:none; border-color:var(--accent); }
 .cl-field textarea { resize:vertical; min-height:96px; }
 
+/* Command/filter bar (Sprint 2.3) — search + filter chips for dense
+   admin/productivity tables, wired into the shared data-search/
+   data-filter interaction script (no new JS). */
+.cl-toolbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:16px; }
+.cl-toolbar-search { flex:1; min-width:160px; display:flex; align-items:center; gap:8px; padding:9px 13px;
+  background:var(--surface-2); border:1px solid var(--border); border-radius:10px; }
+.cl-toolbar-search .ds-svg-icon { width:15px; height:15px; opacity:.65; flex:0 0 auto; }
+.cl-toolbar-search input { flex:1; min-width:0; font:inherit; font-size:.86rem; color:var(--text);
+  background:transparent; border:0; outline:none; }
+.cl-toolbar-filters { display:flex; gap:8px; flex-wrap:wrap; }
+.cl-table-caption { font-size:.78rem; color:var(--text-dim); margin-bottom:10px; }
+
 /* Empty state (Sprint 2.2) — a real, premium "nothing here yet" panel,
    used wherever a list/table has no data instead of a bare text row. */
 .cl-empty { display:flex; flex-direction:column; align-items:center; text-align:center; gap:8px;
@@ -208,19 +220,47 @@ def empty_state(icon: str, title: str, body: str = "", cta_label: str = "") -> s
             f'<h3>{e(title)}</h3>{body_html}{cta_html}</div>')
 
 
+# ── Command / filter bar ─────────────────────────────────────────────
+
+def toolbar(filters: Sequence[Dict[str, str]], search_placeholder: str = "Search…") -> str:
+    """A dense command/filter bar — a real search input + filter chips —
+    used above tables/lists in admin & productivity-style surfaces
+    instead of a bare unfiltered list. Wired into the shared
+    data-search/data-filter interaction script already used by the
+    ecommerce renderer, so chip/search behavior is free and consistent."""
+    chips = "".join(
+        f'<span class="ds-chip{" is-active" if i == 0 else ""}" data-filter="{e(f.get("key", ""))}">{e(f.get("label", ""))}</span>'
+        for i, f in enumerate(filters)
+    )
+    return (f'<div class="cl-toolbar" data-component="toolbar">'
+            f'<label class="cl-toolbar-search">{svg_icon("search")}'
+            f'<input type="text" placeholder="{e(search_placeholder)}" data-search aria-label="{e(search_placeholder)}"></label>'
+            f'<div class="cl-toolbar-filters">{chips}</div></div>')
+
+
 # ── Table ────────────────────────────────────────────────────────────
 
 def table(headers: Sequence[str], rows: Sequence[Sequence[Any]], escape_cells: bool = True,
-         empty_title: str = "No records yet.", empty_body: str = "They'll show up here once you add some.") -> str:
+         empty_title: str = "No records yet.", empty_body: str = "They'll show up here once you add some.",
+         row_attrs=None) -> str:
     """A real data table — header row + body rows. `escape_cells=False`
     lets a caller pass pre-built safe HTML cells (e.g. `status_pill()`
     chips) — the caller is then responsible for escaping any raw text.
-    No rows → a real empty state, not a bare text row."""
+    No rows → a real empty state, not a bare text row.
+
+    `row_attrs(index, row) -> str` optionally returns extra attributes
+    (e.g. ` data-category="active"`) for a row — this is what lets a
+    dense admin/productivity table wire into the shared filter-chip
+    interaction script without any new JS."""
     if not rows:
         return empty_state("folder", empty_title, empty_body)
     head = "".join(f"<th>{e(h)}</th>" for h in headers)
     cell = (lambda c: e(c)) if escape_cells else (lambda c: str(c))
-    body = "".join("<tr>" + "".join(f"<td>{cell(c)}</td>" for c in row) + "</tr>" for row in rows)
+    attrs = row_attrs or (lambda i, row: "")
+    body = "".join(
+        f"<tr{attrs(i, row)}>" + "".join(f"<td>{cell(c)}</td>" for c in row) + "</tr>"
+        for i, row in enumerate(rows)
+    )
     return (f'<div class="cl-table-wrap" data-component="table">'
             f'<table class="cl-table"><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>')
 
@@ -418,7 +458,7 @@ def food_panel() -> str:
 
 
 __all__ = [
-    "CSS", "status_pill", "empty_state", "table", "timeline", "calendar_grid", "waveform",
+    "CSS", "status_pill", "empty_state", "toolbar", "table", "timeline", "calendar_grid", "waveform",
     "music_player", "notifications_panel", "form_fields", "premium_metric_card",
     "action_card", "watchlist_row", "portfolio_card", "recipe_steps",
     "ingredient_chips", "food_panel",

@@ -236,13 +236,31 @@ _SAMPLE_PEOPLE = [
 ]
 
 
+_STATUS_TONE = {"active": "positive", "invited": "warning", "suspended": "negative"}
+
+
 def _records_page(spec: ProductSpec) -> str:
+    """Sprint 2.3 — a dense, scannable admin records page: a real
+    search+filter command bar (wired into the shared interaction script,
+    no new JS) and colored status pills, not a plain unfiltered table."""
     headers = ["Name", "Role", "Status", "Last active"]
-    rows = [[name, role, status, f"{i + 1}h ago"] for i, (name, role, status) in enumerate(_SAMPLE_PEOPLE)]
+    statuses = list(dict.fromkeys(status for _, _, status in _SAMPLE_PEOPLE))
+    filters = [{"key": "all", "label": "All"}] + [{"key": s.lower(), "label": s} for s in statuses]
+    rows = [
+        [e(name), e(role), cl.status_pill(status, _STATUS_TONE.get(status.lower(), "neutral")), e(f"{i + 1}h ago")]
+        for i, (name, role, status) in enumerate(_SAMPLE_PEOPLE)
+    ]
+
+    def _row_attrs(i, _row):
+        name, role, status = _SAMPLE_PEOPLE[i]
+        return f' data-category="{e(status.lower())}" data-searchable="{e(f"{name} {role} {status}".lower())}"'
+
     return (f'<div class="ds-card ds-rise"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">'
             f'<h3>{e(spec.name)} records</h3>'
             f'<button class="ds-btn ds-btn-ghost ds-btn-sm" data-select>+ Add record</button></div>'
-            f'{cl.table(headers, rows)}</div>')
+            f'{cl.toolbar(filters, "Search records…")}'
+            f'<p class="cl-table-caption">{len(_SAMPLE_PEOPLE)} records</p>'
+            f'{cl.table(headers, rows, escape_cells=False, row_attrs=_row_attrs)}</div>')
 
 
 # ── Sprint 2.0 — Analytics Dashboard variant: an insights timeline ─────
