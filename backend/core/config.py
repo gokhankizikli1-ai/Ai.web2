@@ -135,6 +135,14 @@ class Config:
     # so production behaviour is byte-identical until flipped.
     ENABLE_PRODUCT_INTELLIGENCE: bool = os.getenv("ENABLE_PRODUCT_INTELLIGENCE", "false").strip().lower() == "true"
 
+    # ── Sprint 1.4 — Blueprint → Orchestrator bridge ────────────────────
+    # Gate for the /v2/intelligence/orchestrate endpoint. When OFF the route
+    # returns 503. When ON, DRY-RUN works (pure planning, no jobs/LLM);
+    # EXECUTION additionally requires ENABLE_PRODUCT_INTELLIGENCE +
+    # ENABLE_PROJECT_ORCHESTRATOR (+ the orchestrator's own workflow/job
+    # flags). Default OFF so production behaviour is unchanged until flipped.
+    ENABLE_BLUEPRINT_ORCHESTRATOR_BRIDGE: bool = os.getenv("ENABLE_BLUEPRINT_ORCHESTRATOR_BRIDGE", "false").strip().lower() == "true"
+
     # ── Phase 8 — Unified AI OS Foundation ──────────────────────────────
     # Six independent flags so each subsystem can be enabled/disabled
     # separately on Railway. All default OFF so production behaviour
