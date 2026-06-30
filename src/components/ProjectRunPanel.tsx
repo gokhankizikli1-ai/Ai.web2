@@ -20,12 +20,13 @@ import {
 } from 'lucide-react';
 import {
   projectOrchestratorClient,
-  useProjectRun,
   isRunTerminal,
   type TemplateView,
   type DeliverableView,
   type DeliverableStatus,
 } from '@/hooks/useProjectOrchestrator';
+import { useLiveRun } from '@/hooks/useLiveRun';
+import { useStartRun } from '@/hooks/useStartRun';
 import DeliverablePreviewModal from '@/components/DeliverablePreviewModal';
 
 type Availability = 'unknown' | 'available' | 'disabled';
@@ -66,11 +67,13 @@ export default function ProjectRunPanel({ projectId }: { projectId: string }) {
   const [runId, setRunId] = useState<string | null>(null);
   const [request, setRequest] = useState('');
   const [templateId, setTemplateId] = useState<string>('');   // '' = let coordinator choose
-  const [starting, setStarting] = useState(false);
-  const [startError, setStartError] = useState<string | null>(null);
   const [previewId, setPreviewId] = useState<string | null>(null);
 
-  const { snapshot, error, isTerminal, refresh } = useProjectRun(runId);
+  // Live snapshot via SSE (poll fallback). Run creation goes through the shared
+  // useStartRun so there is no duplicated launch logic.
+  const live = useLiveRun(runId);
+  const { snapshot, isTerminal } = live;
+  const { start, starting, error: startError, reset: resetStartError } = useStartRun();
 
   // Probe availability + load templates once; re-attach a persisted run.
   useEffect(() => {
@@ -102,49 +105,21 @@ export default function ProjectRunPanel({ projectId }: { projectId: string }) {
   }, [projectId]);
 
   const startRun = useCallback(async () => {
-    const userRequest = request.trim();
-    if (!userRequest || starting) return;
-    setStarting(true);
-    setStartError(null);
-    try {
-      let snap;
-      try {
-        snap = await projectOrchestratorClient.startRun({
-          userRequest, projectId, templateId: templateId || undefined,
-        });
-      } catch (e: unknown) {
-        // If ENABLE_PROJECTS is on and this is a local-only project id, the
-        // route 404s on ownership. Fall back to a project-less run so the
-        // orchestration still works end-to-end.
-        if ((e as { code?: string })?.code === 'project_not_found') {
-          snap = await projectOrchestratorClient.startRun({
-            userRequest, templateId: templateId || undefined,
-          });
-        } else {
-          throw e;
-        }
-      }
+    const snap = await start({
+      userRequest: request, projectId, templateId: templateId || undefined,
+    });
+    if (snap) {
       setRunId(snap.run_id);
       persistRun(snap.run_id);
       setRequest('');
-    } catch (e: unknown) {
-      setStartError((e as Error)?.message || 'Failed to start run');
-    } finally {
-      setStarting(false);
     }
-  }, [request, projectId, templateId, starting, persistRun]);
-
-  const cancelRun = useCallback(async () => {
-    if (!runId) return;
-    try { await projectOrchestratorClient.cancelRun(runId); refresh(); }
-    catch { /* surfaced via snapshot status on next poll */ }
-  }, [runId, refresh]);
+  }, [start, request, projectId, templateId, persistRun]);
 
   const resetRun = useCallback(() => {
     setRunId(null);
     persistRun(null);
-    setStartError(null);
-  }, [persistRun]);
+    resetStartError();
+  }, [persistRun, resetStartError]);
 
   // ── Disabled: quiet, honest empty state ──────────────────────────────
   if (availability === 'disabled') {
@@ -161,7 +136,7 @@ export default function ProjectRunPanel({ projectId }: { projectId: string }) {
   }
 
   // ── Stale / foreign run id ────────────────────────────────────────────
-  const notFound = !!runId && !snapshot && /not.?found/i.test(error || '');
+  const notFound = !!runId && !snapshot && live.connection === 'error';
   if (notFound) {
     return (
       <Card>
@@ -295,7 +270,7 @@ export default function ProjectRunPanel({ projectId }: { projectId: string }) {
       {/* Controls */}
       <div className="flex items-center gap-2 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
         {running ? (
-          <button onClick={cancelRun} className="flex items-center gap-1 text-[10px] text-white/40 hover:text-red-300 transition-colors">
+          <button onClick={live.cancel} className="flex items-center gap-1 text-[10px] text-white/40 hover:text-red-300 transition-colors">
             <X className="h-3 w-3" /> Cancel
           </button>
         ) : (

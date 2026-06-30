@@ -41,7 +41,13 @@ export interface UseRunResult {
 
 const POLL_MS = 2500;
 
-export function useRunResult(runId: string | null | undefined): UseRunResult {
+export function useRunResult(
+  runId: string | null | undefined,
+  opts: { enabled?: boolean } = {},
+): UseRunResult {
+  // `enabled` lets a caller (e.g. useLiveRun) defer result fetching until there
+  // is something to resolve, avoiding redundant polling during an early run.
+  const enabled = opts.enabled ?? true;
   const [payload, setPayload]           = useState<PreviewPayload | null>(null);
   const [phase, setPhase]               = useState<OrchestratePhase>('idle');
   const [loading, setLoading]           = useState(false);
@@ -107,16 +113,17 @@ export function useRunResult(runId: string | null | undefined): UseRunResult {
   }, [clearTimer]);
 
   const refresh = useCallback(() => {
-    if (!runId) return;
+    if (!runId || !enabled) return;
     seq.current += 1;
     load(seq.current, runId);
-  }, [runId, load]);
+  }, [runId, enabled, load]);
 
   useEffect(() => {
     seq.current += 1;
-    load(seq.current, runId ?? null);
+    // When disabled, load(null) resets to idle and fetches nothing.
+    load(seq.current, enabled ? (runId ?? null) : null);
     return () => { seq.current += 1; clearTimer(); abort.current?.abort(); };
-  }, [runId, load, clearTimer]);
+  }, [runId, enabled, load, clearTimer]);
 
   return {
     payload, phase, label: orchestratePhaseLabel(phase),

@@ -1,20 +1,16 @@
-// RunResultDetails — Sprint 1.7 — everything about ONE selected run.
+// RunResultDetails — Sprint 1.7/1.8 — everything about ONE selected run, LIVE.
 //
 // Composes EXISTING contracts only:
-//   * useProjectRun(runId)  → snapshot (run metadata + full deliverables)
-//   * useRunResult(runId)   → the Sprint 1.5 PreviewPayload (headline result)
+//   * useLiveRun(runId)     → live snapshot via SSE (poll fallback) + result
 //   * <PreviewResult/>      → Sprint 1.6 renderer-agnostic result view
-//   * <DeliverablesViewer/> → every deliverable
-//   * <ExecutionTimeline/>  → pure pipeline visualization
-// No new endpoints, no fabricated data. Every value shown comes from the
-// backend snapshot or the result payload.
-import { useCallback, useState } from 'react';
-import { X, RotateCcw, Radio, ChevronDown, ChevronRight, Layers } from 'lucide-react';
-import {
-  projectOrchestratorClient, useProjectRun, isRunTerminal,
-  type DeliverableView,
-} from '@/hooks/useProjectOrchestrator';
-import { useRunResult } from '@/hooks/useRunResult';
+//   * <DeliverablesViewer/> → every deliverable (updates live)
+//   * <ExecutionTimeline/>  → pure pipeline visualization (live stages)
+// No new endpoints, no fabricated data, no fake progress. Every value shown
+// comes from the backend snapshot or the result payload.
+import { useState } from 'react';
+import { X, RotateCcw, Radio, Wifi, ChevronDown, ChevronRight, Layers, Ban } from 'lucide-react';
+import { type DeliverableView } from '@/hooks/useProjectOrchestrator';
+import { useLiveRun, type LiveConnection } from '@/hooks/useLiveRun';
 import PreviewResult from '@/components/PreviewResult';
 import DeliverablesViewer from '@/components/results/DeliverablesViewer';
 import ExecutionTimeline from '@/components/results/ExecutionTimeline';
@@ -24,29 +20,25 @@ import { formatAbsolute, formatDuration } from '@/lib/time';
 interface RunResultDetailsProps {
   runId:          string | null;
   promptFallback?: string;
+  initialStatus?: string;
 }
 
-export default function RunResultDetails({ runId, promptFallback }: RunResultDetailsProps) {
-  const { snapshot, loading, error, isTerminal, refresh } = useProjectRun(runId);
-  const result = useRunResult(runId);
+export default function RunResultDetails({ runId, promptFallback, initialStatus }: RunResultDetailsProps) {
+  const live = useLiveRun(runId, { initialStatus });
+  const result = live.result;
+  const snapshot = live.snapshot;
 
   const run = (snapshot?.run || undefined) as Record<string, unknown> | undefined;
   const meta = (run?.metadata || {}) as Record<string, unknown>;
-  const deliverables: DeliverableView[] = snapshot?.deliverables || [];
+  const deliverables: DeliverableView[] = live.deliverables;
 
   const prompt = String(meta.user_request || promptFallback || '') || 'Untitled run';
   const workspace = String(meta.workspace || '');
-  const status = snapshot?.status || (runId ? 'pending' : '');
+  const status = live.status || (runId ? 'pending' : '');
   const desc = describeStatus(status);
   const started = (run?.started_at as string) || (run?.created_at as string) || null;
   const finished = (run?.finished_at as string) || null;
-  const running = !!runId && !isTerminal && !isRunTerminal(status);
-
-  const cancel = useCallback(async () => {
-    if (!runId) return;
-    try { await projectOrchestratorClient.cancelRun(runId); refresh(); }
-    catch { /* surfaced on next poll */ }
-  }, [runId, refresh]);
+  const running = !!runId && !live.isTerminal && live.connection !== 'disabled' && live.connection !== 'error';
 
   // ── No selection ─────────────────────────────────────────────────────────
   if (!runId) {
@@ -59,8 +51,21 @@ export default function RunResultDetails({ runId, promptFallback }: RunResultDet
     );
   }
 
+  // ── Orchestrator disabled (feature gate) ──────────────────────────────────
+  if (live.connection === 'disabled') {
+    return (
+      <Center>
+        <Ban className="h-6 w-6 text-amber-400/70 mb-2" />
+        <p className="text-[13px] text-white/55">Orchestrator disabled</p>
+        <p className="text-[11px] text-white/30 mt-1">
+          Live runs activate when <code className="text-white/45">ENABLE_PROJECT_ORCHESTRATOR</code> is enabled on the backend.
+        </p>
+      </Center>
+    );
+  }
+
   // ── Run not found (stale id / cross-user) ─────────────────────────────────
-  if (!snapshot && error && /not.?found/i.test(error)) {
+  if (!snapshot && live.connection === 'error') {
     return (
       <Center>
         <X className="h-6 w-6 text-white/25 mb-2" />
@@ -71,7 +76,7 @@ export default function RunResultDetails({ runId, promptFallback }: RunResultDet
   }
 
   // ── Loading first snapshot ────────────────────────────────────────────────
-  if (!snapshot && loading) {
+  if (!snapshot && (live.connection === 'connecting' || live.connection === 'idle')) {
     return (
       <div className="p-4 space-y-3">
         <div className="h-6 w-2/3 rounded bg-white/[0.03] animate-pulse" />
@@ -101,25 +106,18 @@ export default function RunResultDetails({ runId, promptFallback }: RunResultDet
           {workspace && <Meta k="Workspace" v={workspace} />}
           <Meta k="Created" v={formatAbsolute(started)} />
           <Meta k="Duration" v={formatDuration(started, finished)} />
+          <ConnectionBadge connection={live.connection} running={running} />
           {running && (
-            <span className="flex items-center gap-1 text-cyan-400/70">
-              <Radio className="h-3 w-3 animate-pulse" /> Live · updating
-            </span>
-          )}
-          {!!error && snapshot && (
-            <span className="text-amber-400/70">reconnecting…</span>
-          )}
-          {running && (
-            <button onClick={cancel} className="flex items-center gap-1 text-white/40 hover:text-red-300 transition-colors">
+            <button onClick={live.cancel} className="flex items-center gap-1 text-white/40 hover:text-red-300 transition-colors">
               <X className="h-3 w-3" /> Cancel
             </button>
           )}
         </div>
       </div>
 
-      {/* Execution timeline */}
+      {/* Execution timeline (live stages) */}
       <Section title="Execution">
-        <ExecutionTimeline runStatus={status} resultStatus={result.payload?.status ?? null} />
+        <ExecutionTimeline runStatus={status} resultStatus={result.payload?.status ?? null} stages={live.phases} />
       </Section>
 
       {/* Headline result (Sprint 1.6 PreviewResult) */}
@@ -205,6 +203,29 @@ function ExecutionMetadata({
       )}
     </div>
   );
+}
+
+// Live connection indicator. Honest about whether updates are streaming, are
+// falling back to polling, or the run has settled.
+function ConnectionBadge({ connection, running }: { connection: LiveConnection; running: boolean }) {
+  if (connection === 'live') {
+    return (
+      <span className="flex items-center gap-1 text-cyan-400/80" title="Streaming live updates">
+        <Radio className="h-3 w-3 animate-pulse" /> Live
+      </span>
+    );
+  }
+  if (connection === 'polling' && running) {
+    return (
+      <span className="flex items-center gap-1 text-amber-400/70" title="Live updates unavailable, using polling">
+        <Wifi className="h-3 w-3" /> Polling
+      </span>
+    );
+  }
+  if (connection === 'connecting' && running) {
+    return <span className="text-white/40">Connecting…</span>;
+  }
+  return null;
 }
 
 // ── Small presentational helpers ───────────────────────────────────────────
