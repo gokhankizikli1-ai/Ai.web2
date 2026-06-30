@@ -12,6 +12,7 @@ import { ArrowLeft } from 'lucide-react';
 import Navigation from '@/components/Navigation';
 import RunHistoryPanel from '@/components/results/RunHistoryPanel';
 import RunResultDetails from '@/components/results/RunResultDetails';
+import RunLauncher from '@/components/results/RunLauncher';
 import { useProjectRuns } from '@/hooks/useProjectRuns';
 import { getProject } from '@/stores/projectStore';
 
@@ -26,8 +27,8 @@ export default function ProjectResults() {
 
   const project = useMemo(() => (pid ? getProject(pid) : undefined), [pid]);
 
-  const promptFallback = useMemo(
-    () => runs.find(r => r.run_id === selectedRunId)?.user_request,
+  const selectedTurn = useMemo(
+    () => runs.find(r => r.run_id === selectedRunId),
     [runs, selectedRunId],
   );
 
@@ -53,19 +54,30 @@ export default function ProjectResults() {
 
       {/* Two-pane layout */}
       <div className="flex-1 min-h-0 flex flex-col md:flex-row">
-        <aside className="w-full md:w-[320px] md:shrink-0 border-b md:border-b-0 md:border-r border-white/[0.05] md:h-[calc(100vh-110px)]">
-          <RunHistoryPanel
-            runs={runs}
-            selectedRunId={selectedRunId}
-            onSelect={setPicked}
-            loading={loading}
-            error={error}
-            availability={availability}
-            onRetry={refresh}
+        <aside className="w-full md:w-[320px] md:shrink-0 border-b md:border-b-0 md:border-r border-white/[0.05] md:h-[calc(100vh-110px)] flex flex-col">
+          <RunLauncher
+            projectId={pid}
+            disabled={availability === 'disabled'}
+            onStarted={(id) => { setPicked(id); refresh(); }}
           />
+          <div className="flex-1 min-h-0">
+            <RunHistoryPanel
+              runs={runs}
+              selectedRunId={selectedRunId}
+              onSelect={setPicked}
+              loading={loading}
+              error={error}
+              availability={availability}
+              onRetry={refresh}
+            />
+          </div>
         </aside>
         <main className="flex-1 min-w-0 md:h-[calc(100vh-110px)] overflow-hidden">
-          <RunResultDetails runId={selectedRunId} promptFallback={promptFallback} />
+          <RunResultDetails
+            runId={selectedRunId}
+            promptFallback={selectedTurn?.user_request}
+            initialStatus={selectedTurn?.status}
+          />
         </main>
       </div>
     </div>
