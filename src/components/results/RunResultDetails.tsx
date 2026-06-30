@@ -76,7 +76,12 @@ export default function RunResultDetails({ runId, promptFallback, initialStatus 
   }
 
   // ── Loading first snapshot ────────────────────────────────────────────────
-  if (!snapshot && (live.connection === 'connecting' || live.connection === 'idle')) {
+  if (!snapshot && (
+    live.connection === 'connecting'
+    || live.connection === 'idle'
+    || live.connection === 'polling'
+    || live.connection === 'live'
+  )) {
     return (
       <div className="p-4 space-y-3">
         <div className="h-6 w-2/3 rounded bg-white/[0.03] animate-pulse" />

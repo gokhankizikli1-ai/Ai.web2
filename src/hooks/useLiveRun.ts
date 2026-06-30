@@ -78,8 +78,9 @@ export function useLiveRun(
   // Mirror connection into a ref so the poll loop reads it without a dep cycle.
   const connectionRef = useRef<LiveConnection>('idle');
   connectionRef.current = connection;
+  const initialStatusRef = useRef(opts.initialStatus);
+  initialStatusRef.current = opts.initialStatus;
 
-  const initialStatus = opts.initialStatus;
   const isTerminal = isRunTerminal(status);
   const deliverables = snapshot?.deliverables ?? [];
 
@@ -225,9 +226,9 @@ export function useLiveRun(
   useEffect(() => {
     stop();
     seq.current += 1;
-    kick(runId ?? null, initialStatus);
+    kick(runId ?? null, initialStatusRef.current);
     return () => { seq.current += 1; stop(); };
-  }, [runId, initialStatus, kick, stop]);
+  }, [runId, kick, stop]);
 
   const phases = deriveStages(status, result.payload?.status ?? null);
   const warnings = result.payload?.warnings ?? [];
