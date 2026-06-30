@@ -116,6 +116,11 @@ async def _agent_run_handler(ctx: JobContext) -> dict:
     # invisible prompt expansion + component selection + design
     # directives). Orchestration-independent; falls back to the raw task
     # instructions if the engine is unavailable.
+    # Sprint 1.9 — the optional ProductBlueprint summary carried on the run
+    # (set only when the run was started via the blueprint bridge). None for
+    # plain orchestrator runs — fully backward compatible.
+    blueprint = payload.get("blueprint") if isinstance(payload.get("blueprint"), dict) else None
+
     user_message = task_desc or "Proceed with your assigned task."
     try:
         from backend.services.generation import build_prompt as _build_prompt
@@ -124,6 +129,7 @@ async def _agent_run_handler(ctx: JobContext) -> dict:
             node_role=spec.id,
             base_instructions=task_desc or "",
             user_request=str(payload.get("user_request") or ""),
+            blueprint=blueprint,
         )
     except Exception as exc:  # pragma: no cover — never block a run
         logger.debug("generation.build_prompt soft-failed: %s", exc)
@@ -198,6 +204,7 @@ async def _agent_run_handler(ctx: JobContext) -> dict:
         artifact = _finalize(
             deliverable_kind=kind, node_title=title, raw_reply=reply,
             user_request=str(payload.get("user_request") or ""),
+            blueprint=blueprint,
         )
     except Exception as exc:  # pragma: no cover — never block a run
         logger.debug("generation.finalize_artifact soft-failed: %s", exc)

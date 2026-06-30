@@ -22,7 +22,7 @@
 from __future__ import annotations
 
 import os
-from typing import Dict, List
+from typing import Any, Dict, List, Optional
 
 from backend.services.generation.components import (
     catalog_prompt_block, detect_components,
@@ -40,6 +40,39 @@ PAGE_KINDS = {"landing_page_html", "app_prototype_html", "html", "web_page"}
 
 
 # ── Renderer registry (the swap seam) ─────────────────────────────────
+
+# Layout-specific structural guidance for the LLM path (Sprint 1.9). The
+# deterministic fallback renderer already enforces this per-layout shape via
+# dedicated modules (renderers/mobile.py, dashboard.py, landing.py, ...) —
+# this block gets the SAME structural intent to the model so a good LLM
+# reply doesn't need the fallback to look right.
+_LAYOUT_GUIDANCE: Dict[str, str] = {
+    "mobile": (
+        "LAYOUT — MOBILE APP SHELL (not a desktop dashboard):\n"
+        "- A centered, phone-width canvas (~390-430px) even on a wide screen — NOT a left sidebar.\n"
+        "- A sticky top app-bar (avatar/title + a notification icon).\n"
+        "- A scrollable content column: a hero/profile card (consider a circular progress ring), "
+        "a 2-column metric grid, a vertical list panel, and a couple of pill-shaped quick-action buttons.\n"
+        "- A STICKY BOTTOM TAB BAR with 3-5 icon+label destinations (use the navigation items) — "
+        "this replaces the sidebar entirely.\n"
+        "- Optionally a floating action button above the tab bar for the primary action."
+    ),
+    "app": (
+        "LAYOUT — SAAS APP SHELL:\n"
+        "- A fixed left sidebar (navigation + brand) and a sticky top bar (search + actions).\n"
+        "- Dashboard cards, charts/sparkline mockups, an activity feed, and a settings panel."
+    ),
+    "landing": (
+        "LAYOUT — MARKETING LANDING PAGE:\n"
+        "- Sticky top nav, a strong hero with a primary + secondary CTA, a social-proof logo row, "
+        "a feature grid, pricing, testimonials, an FAQ, a closing CTA band and a rich footer."
+    ),
+}
+
+
+def _layout_guidance(spec: ProductSpec) -> str:
+    return _LAYOUT_GUIDANCE.get((spec.layout or "").lower(), "")
+
 
 class HtmlRenderer:
     """Single-file HTML renderer. The default page renderer."""
@@ -59,11 +92,14 @@ INTERNAL PRODUCT SPECIFICATION (use it; do NOT echo it back):
 ASSEMBLE THE PAGE FROM THESE REUSABLE COMPONENTS (use the ones that fit):
 {catalog_prompt_block()}
 
+{_layout_guidance(spec)}
+
 DESIGN REQUIREMENTS:
 - Dark mode by default; cohesive design system (consistent typography scale, spacing, radius, soft shadows, gradients, glassmorphism where tasteful).
 - Fully responsive, mobile-first. Smooth transitions and subtle micro-animations.
 - Semantic HTML (header/nav/main/section/footer), accessible focus states.
 - Clean, organized CSS in a single <style> block. No inline styles unless unavoidable. No external scripts.
+- Icons: inline SVG or CSS-only only — never reference an external icon font or CDN.
 
 COPYWRITING:
 - Realistic, specific, startup-quality copy for THIS product. Real headlines, feature names, button labels and navigation.
@@ -117,13 +153,19 @@ def _page_renderer():
 # ── Public engine API (called by the orchestrator's agent.run) ────────
 
 def build_prompt(*, deliverable_kind: str, node_role: str,
-                 base_instructions: str, user_request: str) -> str:
+                 base_instructions: str, user_request: str,
+                 blueprint: Optional[Dict[str, Any]] = None) -> str:
     """Pass 1-3: planning + invisible prompt expansion + component
     selection + design directives. Returns the prompt for the (unchanged)
     agent runtime. For non-page nodes (concept/screens/file lists), the
     base instructions are kept but enriched with product context so copy
-    stays on-brand and premium."""
-    spec = expand(user_request or "")
+    stays on-brand and premium.
+
+    `blueprint` (Sprint 1.9) is the OPTIONAL Sprint 1.3 ProductBlueprint
+    summary carried on the orchestrator run's metadata — see
+    prompt_expander.expand() for what it does. None (the default) is fully
+    backward compatible."""
+    spec = expand(user_request or "", blueprint=blueprint)
     if (deliverable_kind or "").lower() in PAGE_KINDS:
         return _page_renderer().build_prompt(base_instructions=base_instructions, spec=spec)
     # Planning / markdown nodes — light context injection.
@@ -135,14 +177,17 @@ def build_prompt(*, deliverable_kind: str, node_role: str,
 
 
 def finalize_artifact(*, deliverable_kind: str, node_title: str,
-                      raw_reply: str, user_request: str) -> Dict:
+                      raw_reply: str, user_request: str,
+                      blueprint: Optional[Dict[str, Any]] = None) -> Dict:
     """Pass 4-6: visual polish + design-system enforcement + accessibility
     + internal quality review + one deterministic refinement, returning a
     typed artifact (+ metadata). Page kinds go through the active page
-    renderer; everything else reuses the base artifact builder."""
+    renderer; everything else reuses the base artifact builder.
+
+    `blueprint` — see build_prompt(). None is fully backward compatible."""
     kind = (deliverable_kind or "").lower()
     if kind in PAGE_KINDS:
-        spec = expand(user_request or "")
+        spec = expand(user_request or "", blueprint=blueprint)
         return _page_renderer().finalize(
             node_title=node_title, raw_reply=raw_reply, spec=spec,
         )
@@ -150,7 +195,7 @@ def finalize_artifact(*, deliverable_kind: str, node_title: str,
     # builder and attach light metadata for a consistent FE contract.
     from backend.services.orchestrator.artifacts import build_artifact
     art = build_artifact(kind=deliverable_kind, title=node_title, text=raw_reply)
-    spec = expand(user_request or "")
+    spec = expand(user_request or "", blueprint=blueprint)
     art.setdefault("metadata", _metadata(
         spec, art.get("type", "markdown"),
         components_used=[], html="", source="model", qscore=None,

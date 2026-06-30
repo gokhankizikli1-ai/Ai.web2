@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 from backend.services.generation.renderers import (
-    base, booking, dashboard, ecommerce, editor, landing, portfolio,
+    base, booking, dashboard, ecommerce, editor, landing, mobile, portfolio,
 )
 
 # layout key → renderer module (each exposes `render(spec)` and `CSS`).
@@ -16,11 +16,12 @@ RENDERERS = {
     "editor":    editor,
     "app":       dashboard,
     "dashboard": dashboard,
+    "mobile":    mobile,
     "ecommerce": ecommerce,
     "booking":   booking,
     "landing":   landing,
     "portfolio": portfolio,
 }
 
-__all__ = ["base", "RENDERERS", "editor", "dashboard", "ecommerce",
+__all__ = ["base", "RENDERERS", "editor", "dashboard", "mobile", "ecommerce",
            "booking", "landing", "portfolio"]

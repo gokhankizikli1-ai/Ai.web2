@@ -82,6 +82,36 @@ def kbd(*keys: str) -> str:
     return "".join(f'<kbd class="ds-kbd">{e(k)}</kbd>' for k in keys)
 
 
+# ── inline SVG icon set (no external icon font / CDN) ──────────────────
+# Minimal 20x20 stroke-style line icons, hand-authored, zero network. Used
+# by the mobile app shell's bottom tab bar and anywhere a crisp (non-emoji)
+# icon is preferable to the emoji glyphs used in decorative feature cards.
+
+_SVG_ICONS = {
+    "home": '<path d="M3 10.5 10 4l7 6.5"/><path d="M5 9v7h10V9"/><path d="M8 16v-4h4v4"/>',
+    "chart": '<path d="M4 16V9"/><path d="M10 16V4"/><path d="M16 16v-7"/><path d="M3 17h14"/>',
+    "list": '<path d="M7 5h10"/><path d="M7 10h10"/><path d="M7 15h10"/><circle cx="3.3" cy="5" r=".9" fill="currentColor" stroke="none"/><circle cx="3.3" cy="10" r=".9" fill="currentColor" stroke="none"/><circle cx="3.3" cy="15" r=".9" fill="currentColor" stroke="none"/>',
+    "bell": '<path d="M6 8a4 4 0 0 1 8 0c0 4 1.5 5 1.5 5h-11S6 12 6 8Z"/><path d="M8.3 15.5a1.8 1.8 0 0 0 3.4 0"/>',
+    "person": '<circle cx="10" cy="6.5" r="3"/><path d="M4 17c0-3.3 2.7-5.5 6-5.5s6 2.2 6 5.5"/>',
+    "heart": '<path d="M10 16.5 4.6 11A3.6 3.6 0 0 1 10 6.2 3.6 3.6 0 0 1 15.4 11Z"/>',
+    "calendar": '<rect x="3.5" y="4.5" width="13" height="12" rx="2"/><path d="M3.5 8.5h13"/><path d="M7 3v3"/><path d="M13 3v3"/>',
+    "play": '<path d="M6.5 4.5v11l9-5.5Z"/>',
+    "bag": '<path d="M5 7h10l-1 9.5H6Z"/><path d="M7.5 7V5.5a2.5 2.5 0 0 1 5 0V7"/>',
+    "plus": '<path d="M10 4v12"/><path d="M4 10h12"/>',
+    "compass": '<circle cx="10" cy="10" r="6.5"/><path d="m12.5 7.5-1.5 4-4 1.5 1.5-4Z"/>',
+    "dot": '<circle cx="10" cy="10" r="2.4" fill="currentColor" stroke="none"/>',
+}
+
+
+def svg_icon(name: str, cls: str = "ds-svg-icon") -> str:
+    """A small inline stroke-style SVG icon. Falls back to a plain dot for
+    an unknown name — never raises, never fetches anything external."""
+    body = _SVG_ICONS.get((name or "").strip().lower(), _SVG_ICONS["dot"])
+    return (f'<svg class="{cls}" viewBox="0 0 20 20" fill="none" stroke="currentColor" '
+            f'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" '
+            f'aria-hidden="true">{body}</svg>')
+
+
 def feature_items(spec: ProductSpec) -> List[dict]:
     for s in spec.sections:
         if s.kind == "features" and s.items:
@@ -282,6 +312,7 @@ SHELL_CSS = """
 .ds-ring-label { color:var(--text-dim); font-size:.82rem; }
 .ds-spark { width:100%; height:46px; display:block; }
 .ds-divider { height:1px; background:var(--border); margin:14px 0; border:0; }
+.ds-svg-icon { width:20px; height:20px; flex:0 0 auto; }
 
 /* Drawers + scrim (product detail, cart) */
 .ds-scrim { position:fixed; inset:0; background:rgba(2,4,10,.55); backdrop-filter:blur(2px);
@@ -354,5 +385,5 @@ def ensure_csp(html_doc: str) -> str:
 
 
 __all__ = ["e", "slug", "CSP", "icon", "bars", "spark", "ring", "avatar",
-           "traffic_lights", "kbd", "feature_items", "SCRIPT", "SHELL_CSS",
+           "traffic_lights", "kbd", "svg_icon", "feature_items", "SCRIPT", "SHELL_CSS",
            "document", "ensure_viewport", "ensure_csp"]
