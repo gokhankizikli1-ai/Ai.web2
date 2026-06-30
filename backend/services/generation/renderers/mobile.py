@@ -101,6 +101,18 @@ CSS = """
 .mb-tab.is-active { color:var(--accent); }
 
 .mb-reveal { border:1px solid var(--border); border-radius:var(--radius-lg); padding:18px; background:var(--surface); }
+
+/* ── Sprint 2.1 — renderer personality per mobile-native vertical ── */
+.mb-personality-wellness .mb-frame { --radius-lg:28px; --radius-xl:36px; }
+.mb-personality-wellness .mb-hero { padding:26px; }
+.mb-personality-wellness .mb-scroll { gap:24px; }
+.mb-personality-media .mb-hero { background:linear-gradient(160deg,
+  color-mix(in srgb, var(--accent) 88%, #000 6%), color-mix(in srgb, var(--accent-2) 70%, #000 18%)); }
+.mb-personality-media .mb-topbar { background:color-mix(in srgb, var(--bg) 78%, transparent); }
+.mb-personality-food .mb-topbar { background:linear-gradient(180deg,
+  color-mix(in srgb, var(--accent) 7%, var(--bg)), color-mix(in srgb, var(--bg) 86%, transparent)); }
+.mb-personality-fitness .mb-hero { background:linear-gradient(135deg, var(--accent), var(--accent-2)); }
+.mb-personality-fitness .mb-metric-card { border-color:color-mix(in srgb, var(--accent) 24%, var(--border)); }
 """.strip()
 
 CSS = CSS + "\n\n" + cl.CSS
@@ -209,12 +221,36 @@ def _music_widget(spec: ProductSpec) -> str:
 
 
 def _streak_calendar(spec: ProductSpec) -> str:
-    """Sprint 2.0 — a real month grid for the habit/wellness vertical,
+    """Sprint 2.0/2.1 — a real month grid for the habit/wellness vertical,
     visualising the streak instead of only a progress ring."""
     pct = _progress_pct(spec)
     marked_through = max(1, round(pct / 100 * 18))
     return cl.calendar_grid(f"{spec.name} streak", list(range(1, marked_through + 1)),
-                            today=marked_through, days_in_month=30, start_weekday=2)
+                            today=marked_through, days_in_month=30, start_weekday=2,
+                            streak_label=f"{marked_through} day streak")
+
+
+def _calm_session(spec: ProductSpec) -> str:
+    """Sprint 2.1 — a soft, rounded "session" card for the wellness/
+    meditation vertical (calm personality: rounded, gradient-tinted,
+    breathing-session framed — not another flat list row)."""
+    feats = feature_items(spec)
+    body = feats[0]["body"] if feats else "A short guided session to help you reset."
+    return cl.action_card("heart", "Start a session", body, spec.cta_primary, tone="calm")
+
+
+def _recipe_widget(spec: ProductSpec) -> str:
+    """Sprint 2.1 — the food vertical's warm, editorial widget: a CSS-
+    gradient "food panel" hero, ingredient chips and numbered prep steps,
+    in place of just another generic list."""
+    feats = feature_items(spec)
+    ingredients = [c.get("title", "") for c in feats[:6] if c.get("title")] or ["Olive oil", "Garlic", "Herbs"]
+    steps = [c.get("body", "") for c in feats[:4] if c.get("body")] or [
+        "Prep the ingredients.", "Cook over medium heat.", "Plate and serve warm.",
+    ]
+    return (f'<div class="mb-section">{cl.food_panel()}'
+            f'<div style="margin-top:14px">{cl.ingredient_chips(ingredients)}</div>'
+            f'<div style="margin-top:14px">{cl.recipe_steps(steps)}</div></div>')
 
 
 def _home_page(spec: ProductSpec) -> str:
@@ -222,7 +258,10 @@ def _home_page(spec: ProductSpec) -> str:
     if spec.product_type == "media":
         extra = f'<div class="mb-section">{_music_widget(spec)}</div>'
     elif spec.product_type == "wellness":
-        extra = f'<div class="mb-section ds-card" style="padding:16px">{_streak_calendar(spec)}</div>'
+        extra = (f'<div class="mb-section ds-card" style="padding:16px">{_streak_calendar(spec)}</div>'
+                 f'<div class="mb-section">{_calm_session(spec)}</div>')
+    elif spec.product_type == "food":
+        extra = _recipe_widget(spec)
     return (_hero(spec) + extra + _metric_grid(spec) + _list_panel(spec) + _actions(spec))
 
 
@@ -237,6 +276,10 @@ def _secondary_page(spec: ProductSpec, label: str) -> str:
             f'<div class="mb-list">{rows}</div></div>{_metric_grid(spec)}')
 
 
+_PERSONALITY_BY_TYPE = {"wellness": "mb-personality-wellness", "media": "mb-personality-media",
+                        "food": "mb-personality-food", "fitness": "mb-personality-fitness"}
+
+
 def render(spec: ProductSpec) -> str:
     nav = spec.navigation or ["Home", "Activity", "Profile"]
     tabs = "".join(
@@ -247,8 +290,10 @@ def render(spec: ProductSpec) -> str:
         hidden = "" if i == 0 else " ds-hidden"
         body = _home_page(spec) if i == 0 else _secondary_page(spec, l)
         pages.append(f'<section class="ds-page{hidden}" data-panel="mpage-{i}" id="mpage-{i}">{body}</section>')
+    personality = _PERSONALITY_BY_TYPE.get(spec.product_type, "")
+    shell_cls = f"mb-shell {personality}".strip()
     return f"""
-<div class="mb-shell"><div class="mb-frame">
+<div class="{shell_cls}"><div class="mb-frame">
   <header class="mb-topbar">
     {avatar(spec.name)}
     <div class="mb-greeting"><div class="hi">Welcome back</div><h1>{e(spec.name)}</h1></div>

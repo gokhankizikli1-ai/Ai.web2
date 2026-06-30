@@ -64,9 +64,18 @@ CSS = """
 }
 .db-notif-dot { position:absolute; top:6px; right:6px; width:7px; height:7px;
   border-radius:9999px; background:var(--accent-2); }
+
+/* ── Sprint 2.1 — renderer personality per dashboard vertical ── */
+.db-personality-fitness .ds-badge { background:linear-gradient(135deg, var(--accent), var(--accent-2)); color:#fff; border-color:transparent; }
+.db-personality-fitness .ds-ring { box-shadow:var(--glow); }
+.db-personality-finance .cl-watch-sym, .db-personality-finance .ds-stat-value { font-variant-numeric:tabular-nums; }
+.db-personality-finance .db-sidebar { background:color-mix(in srgb, var(--surface) 70%, var(--bg)); }
 """.strip()
 
 CSS = CSS + "\n\n" + cl.CSS
+
+_PERSONALITY_BY_TYPE = {"fitness": "db-personality-fitness", "crypto": "db-personality-finance",
+                        "banking": "db-personality-finance"}
 
 _NAV_ICONS = {
     "dashboard": "▦", "overview": "▦", "home": "▦", "workouts": "🏋", "nutrition": "🍎",
@@ -81,6 +90,21 @@ def _nav_icon(label: str) -> str:
     return _NAV_ICONS.get(label.strip().lower(), "•")
 
 
+_METRIC_ICON_MAP = [
+    (re.compile(r"calor|heart|bpm|pulse", re.I), "heart"),
+    (re.compile(r"progress|goal|streak", re.I), "chart"),
+    (re.compile(r"balance|spend|revenue|profit|price|\$", re.I), "chart"),
+    (re.compile(r"user|member|customer|player", re.I), "person"),
+]
+
+
+def _metric_icon(label: str) -> str:
+    for pattern, name in _METRIC_ICON_MAP:
+        if pattern.search(label or ""):
+            return name
+    return "dot"
+
+
 def _metric_grid(spec: ProductSpec) -> str:
     m = (spec.metrics or [])[:4]
     while len(m) < 4:
@@ -93,10 +117,13 @@ def _metric_grid(spec: ProductSpec) -> str:
       <span class="ds-badge"><span class="ds-badge-dot"></span>Live</span></div>
     {bars(16)}
   </div>"""
-    cards = "".join(f"""
-  <div class="ds-card ds-col-2 ds-rise"><div class="db-stat"><span class="lbl">{e(x.get('label'))}</span>
-    <span class="ds-stat-value" style="font-size:1.55rem">{e(x.get('value'))}</span>
-    <span class="ds-stat-delta">{e(x.get('delta'))}</span></div></div>""" for x in m[1:3])
+    # Sprint 2.1 — the two side cards use the richer gradient-badge metric
+    # card (premium_metric_card) instead of a plain label/value/delta
+    # stack, so a dashboard's overview never reads as flat stat text.
+    cards = "".join(
+        f'<div class="ds-col-2">{cl.premium_metric_card(x.get("label", ""), x.get("value", ""), x.get("delta", ""), icon=_metric_icon(x.get("label", "")), trend_positive=not str(x.get("delta", "")).strip().startswith("-"))}</div>'
+        for x in m[1:3]
+    )
     ringcard = f"""
   <div class="ds-card ds-col-2 ds-rise" style="display:flex;flex-direction:column;align-items:center;gap:12px;justify-content:center">
     {ring(74, m[3].get('label','Goal'))}</div>"""
@@ -172,6 +199,15 @@ def _insights_timeline(spec: ProductSpec) -> str:
     return f'<div class="ds-card ds-rise" style="margin-top:18px"><h3 style="margin-bottom:14px">Insight timeline</h3>{cl.timeline(items)}</div>'
 
 
+# ── Sprint 2.1 — Fitness personality: energetic, performance-oriented ──
+
+def _activity_timeline(spec: ProductSpec) -> str:
+    feats = feature_items(spec)[:4] or [{"title": "Workout logged", "body": "Great session today."}]
+    items = [{"icon": "heart", "title": c.get("title", ""), "body": c.get("body", ""), "time": f"{i + 1}d ago"}
+             for i, c in enumerate(feats)]
+    return f'<div class="ds-card ds-rise" style="margin-top:18px"><h3 style="margin-bottom:14px">Training timeline</h3>{cl.timeline(items)}</div>'
+
+
 # ── Sprint 2.0 — shared notifications panel (every dashboard variant) ──
 
 def _notifications(spec: ProductSpec) -> str:
@@ -182,12 +218,39 @@ def _notifications(spec: ProductSpec) -> str:
             f'<h3 style="margin-bottom:14px">Notifications</h3>{cl.notifications_panel(items)}</section>')
 
 
+# ── Sprint 2.1 — Crypto/Trading personality: analytical, not flat text ──
+
+_SAMPLE_TICKERS = [
+    ("BTC", "Bitcoin", "$64,210.30", 3.4), ("ETH", "Ethereum", "$3,184.12", -1.2),
+    ("SOL", "Solana", "$142.80", 6.7), ("USDC", "USD Coin", "$1.00", 0.0),
+]
+
+
+def _finance_panel(spec: ProductSpec) -> str:
+    rows = "".join(cl.watchlist_row(sym, name, price, chg) for sym, name, price, chg in _SAMPLE_TICKERS)
+    alloc = (spec.metrics or [])[:3] or [{"label": "Holdings", "value": "—"}]
+    allocations = [46, 32, 18]
+    cards = "".join(
+        cl.portfolio_card(m.get("label", "Asset"), m.get("value", "—"),
+                          allocation_pct=allocations[i % len(allocations)], trend_positive=i % 2 == 0)
+        for i, m in enumerate(alloc)
+    )
+    return (f'<div class="ds-bento" style="margin-top:18px">'
+            f'<div class="ds-card ds-col-3 ds-rise"><h3 style="margin-bottom:10px">Watchlist</h3>{rows}</div>'
+            f'<div class="ds-col-3" style="display:grid;gap:14px">{cards}</div></div>')
+
+
 def _overview(spec: ProductSpec, label: str) -> str:
     feats = feature_items(spec)[:3]
     cards = "".join(f"""
       <div class="ds-card ds-rise" style="padding:18px">{icon(c.get('icon'))}
         <h3 style="font-size:1.02rem;margin-top:6px">{e(c.get('title'))}</h3>
         <p style="font-size:.86rem;margin-top:4px">{e(c.get('body'))}</p></div>""" for c in feats)
+    # Sprint 2.1 — crypto/trading gets an analytical watchlist + portfolio
+    # allocation panel right in the overview (its defining personality),
+    # in place of a second generic activity feed.
+    finance = _finance_panel(spec) if spec.product_type == "crypto" else ""
+    perf_secondary = finance or f'<div class="ds-col-2">{_feed(spec)}</div>'
     return f"""
   <div class="db-tabs" role="tablist">
     <span class="db-tab is-active" data-tab="seg-week" data-tab-group="ov">This week</span>
@@ -201,7 +264,7 @@ def _overview(spec: ProductSpec, label: str) -> str:
   <h2 style="font-size:1.25rem;margin:26px 0 14px">Performance</h2>
   <div class="ds-bento">
     <div class="ds-card ds-col-4 ds-rise"><h3 style="margin-bottom:6px">Trend</h3>{spark()}{bars(18)}</div>
-    <div class="ds-col-2">{_feed(spec)}</div>
+    {perf_secondary}
   </div>
   <h2 style="font-size:1.25rem;margin:26px 0 14px">Quick actions</h2>
   <div class="ds-grid">{cards}</div>"""
@@ -220,6 +283,8 @@ def _page_body(spec: ProductSpec, idx: int, label: str) -> str:
                 f'<div class="ds-col-6">{_feed(spec, "Latest updates")}</div></div>')
         if (spec.data or {}).get("variant") == "analytics_dashboard":
             body += _insights_timeline(spec)
+        elif spec.product_type == "fitness":
+            body += _activity_timeline(spec)
         return body
     if re.search(r"setting|profile|account$|cards", key):
         return _settings(spec)
@@ -275,8 +340,11 @@ def render(spec: ProductSpec) -> str:
     # Notifications panel sits as a top-level <main> sibling (not nested in
     # any data-panel page) so its reveal target is reachable from any tab —
     # the same structural fix Sprint 1.9 applied to the mobile shell's FAB.
-    return (f'<div class="db-shell">{sidebar}<div class="db-main-col">{topbar}'
-            f'<main>{"".join(pages)}<div class="db-page" style="padding-top:0">{_notifications(spec)}</div></main>{foot}</div></div>')
+    personality = _PERSONALITY_BY_TYPE.get(spec.product_type, "")
+    wrap_open = f'<div class="{personality}">' if personality else ""
+    wrap_close = "</div>" if personality else ""
+    return (f'{wrap_open}<div class="db-shell">{sidebar}<div class="db-main-col">{topbar}'
+            f'<main>{"".join(pages)}<div class="db-page" style="padding-top:0">{_notifications(spec)}</div></main>{foot}</div></div>{wrap_close}')
 
 
 __all__ = ["CSS", "render"]

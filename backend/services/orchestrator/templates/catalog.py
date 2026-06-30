@@ -191,6 +191,15 @@ _APP_HINT = re.compile(
     r"android|ios|discord\s*bot|bot|web\s*app|admin\s*panel|ui)\b",
     re.IGNORECASE,
 )
+# Sprint 2.1 — a product NOUN alone ("habit tracker", "music player",
+# "workout planner") is just as strong a build signal as the word "app"
+# itself, but only when paired with an explicit BUILD verb — this keeps a
+# genuinely research-flavored ask ("research the best fitness trackers")
+# or a content-writing ask ("write a journal entry") from being hijacked
+# into an app-prototype build. Checked AFTER `_RESEARCH_HINT` below so a
+# research verb always wins.
+_APP_NOUN_HINT = re.compile(r"\b(tracker|player|planner|organizer)\b", re.IGNORECASE)
+_BUILD_VERB_HINT = re.compile(r"\b(build|create|design|make|generate|develop|produce)\b", re.IGNORECASE)
 
 
 def choose_template(user_request: str, plan=None) -> ProjectTemplate:
@@ -201,8 +210,14 @@ def choose_template(user_request: str, plan=None) -> ProjectTemplate:
          APP/dashboard/game → app prototype. These emit real previewable
          artifacts and take precedence over the generic templates.
       2. Research intent → generic_research.
-      3. A multi-agent coordinator plan (>1 distinct agent) → ad-hoc.
-      4. Creation intent → generic_creation. Research is the safe default.
+      3. A product NOUN ("tracker"/"player"/"planner"/"organizer") paired
+         with an explicit BUILD verb → app prototype. Checked AFTER
+         research so "research the best fitness trackers" still goes to
+         research; this is what stops "Build a habit tracker"/"Build a
+         music player" (no literal "app" in the prompt) from falling
+         through to the text-only generic_creation template below.
+      4. A multi-agent coordinator plan (>1 distinct agent) → ad-hoc.
+      5. Creation intent → generic_creation. Research is the safe default.
     """
     text = user_request or ""
 
@@ -215,6 +230,10 @@ def choose_template(user_request: str, plan=None) -> ProjectTemplate:
     # 2. Research intent.
     if _RESEARCH_HINT.search(text):
         return _REGISTRY["generic_research"]
+
+    # 3. Product noun + build verb → app prototype.
+    if _APP_NOUN_HINT.search(text) and _BUILD_VERB_HINT.search(text):
+        return _REGISTRY["app_prototype"]
 
     distinct_agents = 0
     if plan is not None:
