@@ -77,8 +77,9 @@ export function orchestratePhaseLabel(p: OrchestratePhase): string {
   return PHASE_LABELS[p];
 }
 
-// Map a result-payload status onto a display phase.
-function phaseForStatus(status: ResultStatus): OrchestratePhase {
+// Map a result-payload status onto a display phase. Exported so the Sprint 1.7
+// run-result view can reuse the exact same mapping (no duplicated contract).
+export function phaseForStatus(status: ResultStatus): OrchestratePhase {
   switch (status) {
     case 'pending':
     case 'running':            return 'running';

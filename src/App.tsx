@@ -26,6 +26,7 @@ import ComingSoon from './pages/ComingSoon';
 import AuthPage from './pages/AuthPage';
 import ProjectsDashboard from './pages/ProjectsDashboard';
 import ProjectWorkspace from './pages/ProjectWorkspace';
+import ProjectResults from './pages/ProjectResults';
 import AgentsPage from './pages/AgentsPage';
 import AgentChatPage from './pages/AgentChatPage';
 import CreditsPage from './pages/CreditsPage';
@@ -133,6 +134,7 @@ export default function App() {
         {/* ═══ Project-based Multi-Agent Workspace — guest allowed ═══ */}
         <Route path="/projects" element={<ProtectedRoute guestAllowed><ProjectsDashboard /></ProtectedRoute>} />
         <Route path="/projects/:projectId" element={<ProtectedRoute guestAllowed><ProjectWorkspace /></ProtectedRoute>} />
+        <Route path="/projects/:projectId/runs" element={<ProtectedRoute guestAllowed><ProjectResults /></ProtectedRoute>} />
 
         {/* ═══ Agents — guest allowed ═══ */}
         <Route path="/agents" element={<ProtectedRoute guestAllowed><AgentsPage /></ProtectedRoute>} />

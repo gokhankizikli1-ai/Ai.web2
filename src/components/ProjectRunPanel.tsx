@@ -13,9 +13,10 @@
 // Nothing here can break the existing chat/agents/memory panels — it is an
 // additive card with its own state + its own localStorage key.
 import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router';
 import {
   Workflow, Play, Loader2, CheckCircle2, Circle, XCircle,
-  MinusCircle, RotateCcw, X, Eye,
+  MinusCircle, RotateCcw, X, Eye, History,
 } from 'lucide-react';
 import {
   projectOrchestratorClient,
@@ -149,7 +150,7 @@ export default function ProjectRunPanel({ projectId }: { projectId: string }) {
   if (availability === 'disabled') {
     return (
       <Card>
-        <Header />
+        <Header projectId={projectId} />
         <p className="text-[10px] text-white/30 leading-snug">
           Project Orchestrator is off. Multi-agent runs activate when
           <span className="text-white/45"> ENABLE_PROJECT_ORCHESTRATOR </span>
@@ -164,7 +165,7 @@ export default function ProjectRunPanel({ projectId }: { projectId: string }) {
   if (notFound) {
     return (
       <Card>
-        <Header />
+        <Header projectId={projectId} />
         <p className="text-[10px] text-white/30 mb-2">This run is no longer available.</p>
         <button onClick={resetRun} className="flex items-center gap-1 text-[10px] text-cyan-400/70 hover:text-cyan-300">
           <RotateCcw className="h-3 w-3" /> Start a new run
@@ -177,7 +178,7 @@ export default function ProjectRunPanel({ projectId }: { projectId: string }) {
   if (!runId) {
     return (
       <Card>
-        <Header />
+        <Header projectId={projectId} />
         <textarea
           value={request}
           onChange={(e) => setRequest(e.target.value)}
@@ -228,10 +229,19 @@ export default function ProjectRunPanel({ projectId }: { projectId: string }) {
           <Workflow className="h-3.5 w-3.5 text-cyan-400/50" />
           <span className="text-[11px] font-semibold text-white/60">Project Run</span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full"
-            style={{ background: style.color, boxShadow: running ? `0 0 4px ${style.color}` : 'none' }} />
-          <span className="text-[9px]" style={{ color: style.color }}>{style.label}</span>
+        <div className="flex items-center gap-2">
+          <Link
+            to={`/projects/${projectId}/runs`}
+            title="View run history & results"
+            className="flex items-center gap-1 text-[9px] text-white/35 hover:text-cyan-300 transition-colors"
+          >
+            <History className="h-3 w-3" /> History
+          </Link>
+          <div className="flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full"
+              style={{ background: style.color, boxShadow: running ? `0 0 4px ${style.color}` : 'none' }} />
+            <span className="text-[9px]" style={{ color: style.color }}>{style.label}</span>
+          </div>
         </div>
       </div>
 
@@ -312,11 +322,22 @@ function Card({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Header() {
+function Header({ projectId }: { projectId?: string }) {
   return (
-    <div className="flex items-center gap-2 mb-3">
-      <Workflow className="h-3.5 w-3.5 text-cyan-400/50" />
-      <span className="text-[11px] font-semibold text-white/60">Project Run</span>
+    <div className="flex items-center justify-between mb-3">
+      <div className="flex items-center gap-2">
+        <Workflow className="h-3.5 w-3.5 text-cyan-400/50" />
+        <span className="text-[11px] font-semibold text-white/60">Project Run</span>
+      </div>
+      {projectId && (
+        <Link
+          to={`/projects/${projectId}/runs`}
+          title="View run history & results"
+          className="flex items-center gap-1 text-[9px] text-white/35 hover:text-cyan-300 transition-colors"
+        >
+          <History className="h-3 w-3" /> History
+        </Link>
+      )}
     </div>
   );
 }
