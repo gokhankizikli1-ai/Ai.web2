@@ -60,6 +60,16 @@ CSS = """
 .db-stat { display:flex; flex-direction:column; gap:6px; }
 .db-stat .lbl { color:var(--text-dim); font-size:.82rem; }
 .db-stat-top { display:flex; align-items:center; justify-content:space-between; }
+/* Sprint 2.2 — dominant hero metric (real visual hierarchy: one big
+   focal point before the supporting grid, not equal-weight cards). */
+.db-hero-metric { padding:clamp(24px,3vw,38px); border-radius:var(--radius-xl); margin-bottom:28px;
+  background:linear-gradient(155deg, color-mix(in srgb, var(--accent) 12%, var(--surface)), var(--surface) 60%);
+  border:1px solid var(--border-strong); box-shadow:var(--shadow); }
+.db-hero-metric-top { display:flex; align-items:center; justify-content:space-between; gap:28px; margin-bottom:20px; }
+.db-hero-metric-value { font-size:clamp(2.2rem,4vw,3.25rem); font-weight:780; letter-spacing:-.03em; margin:8px 0 6px; }
+.db-hero-metric-ring .ds-ring { width:84px; height:84px; }
+.db-hero-metric .ds-bars { height:96px; }
+@media (max-width:640px) { .db-hero-metric-ring { display:none; } }
 @media (max-width:900px){
   .db-shell { grid-template-columns:1fr; }
   .db-sidebar { position:static; height:auto; flex-direction:row; flex-wrap:wrap; overflow:visible; }
@@ -127,6 +137,27 @@ def _metric_icon(label: str) -> str:
         if pattern.search(label or ""):
             return name
     return "dot"
+
+
+# ── Sprint 2.2 — dominant hero metric: ONE clear focal point before the
+# supporting grid, instead of every overview card competing at equal
+# visual weight. Reusable across every dashboard-layout product. ───────
+
+def _hero_metric(spec: ProductSpec) -> str:
+    m = (spec.metrics or [{"label": "Overview", "value": "—", "delta": ""}])
+    primary = m[0]
+    return f"""
+  <div class="db-hero-metric ds-rise">
+    <div class="db-hero-metric-top">
+      <div class="db-hero-metric-copy">
+        <span class="ds-eyebrow">{e(primary.get('label', 'Overview'))}</span>
+        <div class="db-hero-metric-value">{e(primary.get('value', ''))}</div>
+        <span class="ds-stat-delta">{e(primary.get('delta', ''))}</span>
+      </div>
+      <div class="db-hero-metric-ring">{ring(78, "On track")}</div>
+    </div>
+    {bars(28)}
+  </div>"""
 
 
 def _metric_grid(spec: ProductSpec) -> str:
@@ -276,6 +307,7 @@ def _overview(spec: ProductSpec, label: str) -> str:
     finance = _finance_panel(spec) if spec.product_type == "crypto" else ""
     perf_secondary = finance or f'<div class="ds-col-2">{_feed(spec)}</div>'
     return f"""
+  {_hero_metric(spec)}
   <div class="db-tabs" role="tablist">
     <span class="db-tab is-active" data-tab="seg-week" data-tab-group="ov">This week</span>
     <span class="db-tab" data-tab="seg-month" data-tab-group="ov">This month</span>

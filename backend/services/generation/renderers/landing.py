@@ -30,6 +30,26 @@ CSS = """
 .ld-faq summary::after { content:'+'; color:var(--accent-2); font-size:1.3rem; font-weight:600; }
 .ld-faq details[open] summary::after { content:'–'; }
 .ld-testi-stars { color:var(--accent-2); font-size:1.05rem; letter-spacing:2px; }
+
+/* ── Premium split hero (Sprint 2.2) — product visual beside the
+   headline, not below the fold. Reusable for every landing page. Scoped
+   to .ds-hero-grid/.ds-hero-copy (not a .ds-hero modifier class) so the
+   plain `class="ds-hero"` element stays untouched for callers that key
+   off it. ── */
+.ds-hero-grid { display:grid; grid-template-columns:1.05fr 1fr; gap:clamp(32px,5vw,64px); align-items:center; text-align:left; }
+.ds-hero-grid .ds-hero-copy h1 { margin:18px 0 16px; max-width:none; }
+.ds-hero-grid .ds-hero-copy .ds-lead { margin:0 0 30px; max-width:48ch; }
+.ds-hero-grid .ds-hero-actions { justify-content:flex-start; }
+.ds-hero-trust { margin-top:22px; font-size:.84rem; color:var(--text-dim); max-width:42ch; }
+.ds-hero-mock { max-width:none; margin:0; }
+.ds-hero-mock .ds-bars { height:88px; }
+@media (max-width:980px) {
+  .ds-hero-grid { grid-template-columns:1fr; gap:40px; text-align:center; }
+  .ds-hero-grid .ds-hero-copy h1 { max-width:20ch; margin:18px auto 16px; }
+  .ds-hero-grid .ds-hero-copy .ds-lead { margin:0 auto 30px; }
+  .ds-hero-grid .ds-hero-actions { justify-content:center; }
+  .ds-hero-trust { margin-left:auto; margin-right:auto; }
+}
 """.strip()
 
 CSS = CSS + "\n\n" + cl.CSS
@@ -46,25 +66,16 @@ def _wrap(sec_id, title, subtitle, inner) -> str:
     return f'<section class="ds-section ds-container" id="{sec_id}">{head}{inner}</section>'
 
 
-def _hero(spec: ProductSpec, primary_target: str, secondary_target: str) -> str:
-    return f"""
-<section class="ds-hero" id="overview"><div class="ds-container">
-  <span class="ds-badge ds-rise"><span class="ds-badge-dot"></span>{e(spec.product_type.replace('_',' ').title())}</span>
-  <h1 class="ds-rise">{e(spec.tagline)}</h1>
-  <p class="ds-lead ds-rise">{e(spec.description)}</p>
-  <div class="ds-hero-actions ds-rise">
-    <button class="ds-btn ds-btn-primary" data-scroll="{primary_target}">{e(spec.cta_primary)}</button>
-    <button class="ds-btn ds-btn-ghost" data-scroll="{secondary_target}">{e(spec.cta_secondary)}</button></div>
-</div></section>"""
-
-
-def _mockup(spec: ProductSpec) -> str:
+def _hero_visual(spec: ProductSpec) -> str:
+    """The product preview mockup, embedded directly beside the headline
+    (premium split-hero pattern — Stripe/Linear/Vercel show the product
+    immediately, never below the fold) instead of a separate section."""
     chips = "".join(f"""
       <div class="ds-card ds-col-2" style="padding:16px"><span style="color:var(--text-dim);font-size:.78rem">{e(x.get('label'))}</span>
         <div class="ds-stat-value" style="font-size:1.4rem;margin-top:4px">{e(x.get('value'))}</div></div>"""
                     for x in (spec.metrics or [{"label": "Active", "value": "12.4k"}, {"label": "Growth", "value": "+18%"}])[:2])
     return f"""
-<section class="ds-section ds-container" style="padding-top:8px"><div class="ds-mock ds-rise">
+<div class="ds-mock ds-hero-mock ds-rise">
   <div class="ds-mock-bar"><i></i><i></i><i></i>
     <span style="margin-left:10px;color:var(--text-dim);font-size:.8rem">{e(spec.name)} — preview</span></div>
   <div class="ds-mock-body"><div class="ds-bento">
@@ -73,6 +84,23 @@ def _mockup(spec: ProductSpec) -> str:
     {chips}
     <div class="ds-card ds-col-2">{spark()}</div>
   </div></div>
+</div>"""
+
+
+def _hero(spec: ProductSpec, primary_target: str, secondary_target: str) -> str:
+    return f"""
+<section class="ds-hero" id="overview"><div class="ds-container ds-hero-grid">
+  <div class="ds-hero-copy">
+    <span class="ds-badge ds-rise"><span class="ds-badge-dot"></span>{e(spec.product_type.replace('_',' ').title())}</span>
+    <h1 class="ds-rise">{e(spec.tagline)}</h1>
+    <p class="ds-lead ds-rise">{e(spec.description)}</p>
+    <div class="ds-hero-actions ds-rise">
+      <button class="ds-btn ds-btn-primary" data-scroll="{primary_target}">{e(spec.cta_primary)}</button>
+      <button class="ds-btn ds-btn-ghost" data-scroll="{secondary_target}">{e(spec.cta_secondary)}</button>
+    </div>
+    <p class="ds-hero-trust ds-rise">{e(spec.audience)}</p>
+  </div>
+  {_hero_visual(spec)}
 </div></section>"""
 
 
@@ -220,7 +248,7 @@ def render(spec: ProductSpec) -> str:
   <nav class="ds-nav-links">{links}</nav>
   <button class="ds-btn ds-btn-primary ds-btn-sm" data-scroll="{primary_target}">{e(spec.cta_primary)}</button>
 </header>"""
-    parts = [nav, "<main>", _hero(spec, primary_target, secondary_target), _mockup(spec), _logos()]
+    parts = [nav, "<main>", _hero(spec, primary_target, secondary_target), _logos()]
     for sec in spec.sections:
         if sec.kind == "metrics":   # avoid a second mockup-ish block right after the hero mockup
             continue

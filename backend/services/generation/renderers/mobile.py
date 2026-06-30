@@ -47,15 +47,28 @@ CSS = """
 
 .mb-scroll { flex:1; overflow-y:auto; padding:18px 18px 110px; display:flex; flex-direction:column; gap:20px; }
 
-.mb-hero { border-radius:var(--radius-lg); padding:22px; background:var(--grad); color:#fff;
-  display:flex; align-items:center; gap:18px; box-shadow:var(--glow); position:relative; overflow:hidden; }
-.mb-hero::after { content:''; position:absolute; inset:-40% -20% auto auto; width:60%; aspect-ratio:1;
-  background:radial-gradient(closest-side, rgba(255,255,255,.18), transparent); }
-.mb-hero-ring .ds-ring { background:conic-gradient(#fff var(--pct,72%), rgba(255,255,255,.25) 0); width:84px; height:84px; }
-.mb-hero-ring .ds-ring::after { background:color-mix(in srgb, var(--accent) 78%, #000 10%); width:64px; height:64px; }
-.mb-hero-ring .ds-ring b { color:#fff; font-size:.98rem; }
-.mb-hero-copy h2 { font-size:1.15rem; color:#fff; margin-bottom:4px; }
-.mb-hero-copy p { color:rgba(255,255,255,.82); font-size:.84rem; }
+/* Sprint 2.2 — a taller, layered "flagship app" first screen: a bigger
+   ring, dual-glow depth, and a glassy stat strip, instead of a thin
+   single-row gradient card. */
+.mb-hero { border-radius:var(--radius-xl); padding:32px 24px 26px; background:var(--grad); color:#fff;
+  display:flex; flex-direction:column; align-items:center; text-align:center; gap:20px;
+  box-shadow:var(--glow), var(--shadow-lg); position:relative; overflow:hidden; }
+.mb-hero::after { content:''; position:absolute; inset:-55% -35% auto auto; width:80%; aspect-ratio:1;
+  background:radial-gradient(closest-side, rgba(255,255,255,.22), transparent); }
+.mb-hero::before { content:''; position:absolute; inset:auto auto -45% -28%; width:70%; aspect-ratio:1;
+  background:radial-gradient(closest-side, rgba(255,255,255,.13), transparent); }
+.mb-hero-ring { position:relative; z-index:1; }
+.mb-hero-ring .ds-ring { background:conic-gradient(#fff var(--pct,72%), rgba(255,255,255,.25) 0); width:130px; height:130px; }
+.mb-hero-ring .ds-ring::after { background:color-mix(in srgb, var(--accent) 80%, #000 12%); width:100px; height:100px; }
+.mb-hero-ring .ds-ring b { color:#fff; font-size:1.3rem; font-weight:780; }
+.mb-hero-copy { position:relative; z-index:1; }
+.mb-hero-copy h2 { font-size:1.4rem; color:#fff; margin-bottom:6px; letter-spacing:-.02em; }
+.mb-hero-copy p { color:rgba(255,255,255,.85); font-size:.9rem; max-width:30ch; margin:0 auto; }
+.mb-hero-stats { position:relative; z-index:1; display:flex; gap:10px; width:100%; }
+.mb-hero-stat { flex:1; padding:12px 8px; border-radius:14px; background:rgba(255,255,255,.14);
+  backdrop-filter:blur(6px); text-align:center; }
+.mb-hero-stat .v { font-size:1.05rem; font-weight:760; color:#fff; letter-spacing:-.01em; }
+.mb-hero-stat .l { font-size:.68rem; color:rgba(255,255,255,.78); margin-top:2px; }
 
 .mb-metric-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
 .mb-metric-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
@@ -160,10 +173,17 @@ def _panel_section(spec: ProductSpec):
 def _hero(spec: ProductSpec) -> str:
     pct = _progress_pct(spec)
     headline = (spec.metrics[0]["label"] if spec.metrics else spec.tagline)
+    extra = (spec.metrics or [])[1:3]
+    stats = "".join(
+        f'<div class="mb-hero-stat"><div class="v">{e(x.get("value", ""))}</div><div class="l">{e(x.get("label", ""))}</div></div>'
+        for x in extra
+    )
+    stats_html = f'<div class="mb-hero-stats">{stats}</div>' if stats else ""
     return f"""
   <div class="mb-hero">
     <div class="mb-hero-ring">{ring(pct)}</div>
     <div class="mb-hero-copy"><h2>{e(headline)}</h2><p>{e(spec.tagline)}</p></div>
+    {stats_html}
   </div>"""
 
 
