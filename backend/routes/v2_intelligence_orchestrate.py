@@ -133,6 +133,13 @@ async def orchestrate(body: OrchestrateBody, request: Request) -> dict:
         out["execution"] = result.to_dict()
         out["disabled_prerequisites"] = result.disabled_prerequisites
         out["mode"] = "execute"
+        # Sprint 1.5 — point the caller at where to fetch the produced output
+        # later (the run is async; do NOT block here waiting for jobs). Just a
+        # string reference; no import of the result resolver.
+        if result.run_id:
+            out["result_route"] = f"/v2/orchestrator/runs/{result.run_id}/result"
+        elif result.project_id:
+            out["result_route"] = f"/v2/orchestrator/projects/{result.project_id}/result"
     else:
         dr = _dry_run(orch_request)
         out["dry_run"] = dr.to_dict()
