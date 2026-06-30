@@ -23,7 +23,16 @@ from backend.services.product_intelligence.types import (
 
 # Below this normalised confidence we treat the request as UNKNOWN.
 _MIN_CONFIDENCE = 0.18
+_CONFIDENCE_CALIBRATION = 4.0
 _WORD_RE = re.compile(r"[a-z0-9][a-z0-9\-']*")
+
+
+def _pattern_signal(match: re.Match[str]) -> str:
+    """Return a readable signal for regex hits instead of the raw pattern."""
+    groups = [g.strip() for g in match.groups() if g and g.strip()]
+    if groups:
+        return max(groups, key=len)
+    return match.group(0).strip()
 
 
 def _raw_scores(text: str) -> List[WorkspaceScore]:
@@ -40,9 +49,10 @@ def _raw_scores(text: str) -> List[WorkspaceScore]:
                 matched.append(kw)
         # Regex/phrase signals.
         for pat, weight in profile.compiled_patterns():
-            if pat.search(low):
+            match = pat.search(low)
+            if match:
                 total += weight
-                matched.append(pat.pattern)
+                matched.append(_pattern_signal(match))
         if total > 0:
             scores.append(WorkspaceScore(
                 workspace=profile.kind, confidence=total, matched_signals=matched,
@@ -62,10 +72,11 @@ def classify(text: str) -> WorkspaceClassification:
             primary=WorkspaceKind.UNKNOWN, confidence=0.0, scores=[],
         )
 
-    # Normalise to a 0..1 distribution so confidence is comparable.
+    # Normalise without letting a lone weak hit look fully confident.
     grand = sum(s.confidence for s in raw) or 1.0
+    scale = max(grand, _CONFIDENCE_CALIBRATION)
     norm = [
-        WorkspaceScore(s.workspace, s.confidence / grand, s.matched_signals)
+        WorkspaceScore(s.workspace, s.confidence / scale, s.matched_signals)
         for s in raw
     ]
     norm.sort(key=lambda s: s.confidence, reverse=True)

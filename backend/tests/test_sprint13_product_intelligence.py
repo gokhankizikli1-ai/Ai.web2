@@ -49,6 +49,12 @@ def test_unknown_request_classified_unknown():
     assert cls.confidence == 0.0
 
 
+def test_weak_single_signal_degrades_to_general():
+    cls = classify("site")
+    assert cls.primary is WorkspaceKind.GENERAL
+    assert 0.0 < cls.confidence < 0.18
+
+
 def test_unknown_blueprint_is_honest_scaffold():
     plan = plan_product("zzz nothing meaningful here qqq")
     assert plan.intent.workspace is WorkspaceKind.UNKNOWN
@@ -95,6 +101,18 @@ def test_intent_complexity_escalates():
         "an enterprise multi-tenant platform with auth, payments, api integrations and admin"
     )
     assert complex_.complexity.value in ("complex", "advanced")
+
+
+def test_regex_signals_do_not_leak_into_product_type():
+    intent = understand("build a landing page")
+    assert "\\" not in intent.product_type
+    assert "(" not in intent.product_type
+
+
+def test_facet_signals_require_word_boundaries():
+    intent = understand("write a capital planning brief for authors")
+    assert intent.technical_context == ""
+    assert intent.complexity.value == "simple"
 
 
 # ── Blueprint generation ──────────────────────────────────────────────────

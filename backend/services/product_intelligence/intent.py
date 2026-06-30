@@ -24,8 +24,8 @@ from backend.services.product_intelligence.types import (
 # ── Facet signal tables (data, not switch logic) ─────────────────────────
 
 _INDUSTRY_SIGNALS = {
-    "fintech": ["fintech", "bank", "payment", "lending", "trading", "crypto", "finance"],
-    "healthcare": ["health", "medical", "clinic", "patient", "fitness", "wellness"],
+    "fintech": ["fintech", "bank", "payment", "payments", "lending", "trading", "crypto", "finance"],
+    "healthcare": ["health", "healthcare", "medical", "clinic", "patient", "fitness", "wellness"],
     "education": ["education", "course", "student", "learn", "school", "tutoring"],
     "retail": ["retail", "store", "shop", "ecommerce", "fashion", "product"],
     "saas": ["saas", "b2b", "dashboard", "subscription", "platform"],
@@ -43,8 +43,8 @@ _AUDIENCE_PATTERNS = [
 ]
 
 _TECH_SIGNALS = {
-    "authentication": ["login", "sign up", "auth", "account", "user accounts"],
-    "payments": ["payment", "checkout", "stripe", "billing", "subscription"],
+    "authentication": ["login", "sign up", "auth", "account", "accounts", "user accounts"],
+    "payments": ["payment", "payments", "checkout", "stripe", "billing", "subscription"],
     "database": ["database", "store data", "records", "crud", "persistence"],
     "api": ["api", "integration", "webhook", "third-party"],
     "realtime": ["realtime", "real-time", "live", "websocket", "streaming"],
@@ -74,7 +74,10 @@ _MOBILE_RE = re.compile(r"\b(mobile app|ios app|android app|mobile-first)\b", re
 
 def _contains_any(text: str, needles: List[str]) -> List[str]:
     low = text.lower()
-    return [n for n in needles if n in low]
+    return [
+        n for n in needles
+        if re.search(rf"(?<![a-z0-9]){re.escape(n.lower())}(?![a-z0-9])", low)
+    ]
 
 
 def _infer_industry(text: str, default: str) -> str:
