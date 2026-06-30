@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 from backend.services.generation.renderers import base
-from backend.services.generation.renderers.base import e, traffic_lights
+from backend.services.generation.renderers.base import e, svg_icon, traffic_lights
 from backend.services.generation.spec import ProductSpec
 
 CSS = """
@@ -25,9 +25,12 @@ CSS = """
 .ed-tool { display:inline-flex; align-items:center; gap:7px; cursor:pointer; font:inherit; font-weight:600;
   font-size:.84rem; color:var(--accent); background:transparent; border:0; padding:6px 8px; border-radius:8px; }
 .ed-tool:hover { background:var(--surface-2); }
-.ed-search { margin-left:auto; width:min(260px,40%); font:inherit; font-size:.84rem; color:var(--text);
-  background:var(--surface-2); border:1px solid var(--border); border-radius:8px; padding:7px 12px 7px 30px; outline:none;
-  background-image:radial-gradient(circle at 13px 50%, transparent 5px, transparent 5px); }
+.ed-tool .ds-svg-icon { width:15px; height:15px; }
+.ed-search-wrap { position:relative; margin-left:auto; width:min(260px,40%); }
+.ed-search-wrap .ds-svg-icon { position:absolute; left:10px; top:50%; transform:translateY(-50%);
+  width:14px; height:14px; opacity:.55; pointer-events:none; }
+.ed-search { width:100%; font:inherit; font-size:.84rem; color:var(--text);
+  background:var(--surface-2); border:1px solid var(--border); border-radius:8px; padding:7px 12px 7px 30px; outline:none; }
 .ed-search:focus { border-color:var(--accent); }
 .ed-cols { flex:1; display:grid; grid-template-columns:228px 312px 1fr; min-height:0; }
 .ed-sidebar { background:var(--surface-2); border-right:1px solid var(--border); padding:14px 10px; overflow:auto; }
@@ -35,7 +38,8 @@ CSS = """
   color:var(--text-dim); padding:10px 10px 6px; }
 .ed-folder { display:flex; align-items:center; gap:10px; padding:8px 10px; border-radius:8px; cursor:pointer;
   color:var(--text-muted); font-size:.9rem; font-weight:550; transition:background var(--t) var(--ease); }
-.ed-folder .ed-fi { width:18px; text-align:center; opacity:.8; }
+.ed-folder .ed-fi { width:18px; display:inline-flex; align-items:center; justify-content:center; opacity:.8; }
+.ed-folder .ed-fi .ds-svg-icon { width:16px; height:16px; }
 .ed-folder .ed-fc { margin-left:auto; font-size:.76rem; color:var(--text-dim); }
 .ed-folder:hover { background:color-mix(in srgb,var(--accent) 10%, transparent); color:var(--text); }
 .ed-folder.is-active { background:color-mix(in srgb,var(--accent) 18%, transparent); color:var(--text); font-weight:650; }
@@ -102,11 +106,14 @@ def render(spec: ProductSpec) -> str:
     notes = data.get("notes") or [{"title": spec.name, "snippet": "", "body": "", "folder": "all", "date": ""}]
     tags = data.get("tags") or ["Important", "Work", "Ideas", "Later"]
 
-    folder_icons = {"all": "🗒", "personal": "👤", "work": "💼", "ideas": "💡", "archive": "🗄"}
+    # Sprint 2.2 — folder icons resolved via the shared SVG icon system
+    # (crisp, monochrome, consistent with every other renderer) instead of
+    # emoji glyphs, regardless of any legacy emoji embedded in seed data.
+    folder_icons = {"all": "book", "personal": "person", "work": "folder", "ideas": "idea", "archive": "archive"}
     folder_rows = "".join(
         f'<div class="ed-folder{" is-active" if i == 0 else ""}" data-folder="{e(f.get("key","all"))}" '
         f'data-folder-name="{e(f.get("name"))}">'
-        f'<span class="ed-fi">{e(f.get("icon") or folder_icons.get(f.get("key"),"🗂"))}</span>'
+        f'<span class="ed-fi">{svg_icon(folder_icons.get(f.get("key"), "folder"))}</span>'
         f'<span>{e(f.get("name"))}</span><span class="ed-fc">{e(f.get("count",""))}</span></div>'
         for i, f in enumerate(folders))
     tag_chips = "".join(f'<span class="ed-tag"># {e(t)}</span>' for t in tags)
@@ -128,8 +135,10 @@ def render(spec: ProductSpec) -> str:
   <div class="ed-titlebar">
     {traffic_lights()}
     <div class="ed-title-actions">
-      <button class="ed-tool" data-new-note title="New note">✎ New Note</button>
-      <input class="ed-search" type="text" placeholder="Search" data-search aria-label="Search notes">
+      <button class="ed-tool" data-new-note title="New note">{svg_icon('plus')} New Note</button>
+      <span class="ed-search-wrap">{svg_icon('search')}
+        <input class="ed-search" type="text" placeholder="Search" data-search aria-label="Search notes">
+      </span>
     </div>
   </div>
   <div class="ed-cols">

@@ -80,12 +80,25 @@ img {{ max-width: 100%; display: block; }}
 .ds-center {{ text-align: center; }}
 .ds-eyebrow {{ color: var(--accent-2); font-size: .8rem; font-weight: 600;
   text-transform: uppercase; letter-spacing: .12em; }}
-h1,h2,h3 {{ line-height: 1.08; letter-spacing: -0.03em; font-weight: 760; }}
+h1,h2,h3,h4 {{ line-height: 1.08; letter-spacing: -0.03em; font-weight: 760; }}
 h1 {{ font-size: clamp(2.5rem, 6vw, 4.25rem); }}
 h2 {{ font-size: clamp(1.9rem, 4vw, 2.75rem); }}
 h3 {{ font-size: 1.2rem; letter-spacing: -0.02em; }}
+h4 {{ font-size: 1.02rem; letter-spacing: -0.01em; font-weight: 700; }}
 p {{ color: var(--text-muted); }}
 .ds-lead {{ font-size: 1.2rem; color: var(--text-muted); }}
+/* Typography hierarchy (Sprint 2.2) — wires the design-token type scale
+   into real, reusable utility classes instead of leaving it as unread
+   metadata. Every renderer can reach for these instead of one-off inline
+   font-size styles. */
+.ds-text-lg {{ font-size: 1.08rem; line-height: 1.65; }}
+.ds-text-sm {{ font-size: .88rem; line-height: 1.55; }}
+.ds-label {{ font-size: .82rem; font-weight: 650; color: var(--text-muted); }}
+.ds-caption {{ font-size: .76rem; color: var(--text-dim); }}
+/* A section sub-heading with consistent vertical rhythm (32px above /
+   16px below — both on the design-token spacing scale), replacing the
+   ad-hoc inline `style="margin:26px 0 14px"` repeated across renderers. */
+.ds-subhead {{ font-size: 1.25rem; font-weight: 720; letter-spacing: -.015em; margin: 32px 0 16px; }}
 
 /* Buttons */
 .ds-btn {{ display: inline-flex; align-items: center; gap: 8px; cursor: pointer;
@@ -282,6 +295,11 @@ p {{ color: var(--text-muted); }}
 .ds-selectable {{ cursor: pointer; }}
 .ds-selectable.is-selected {{ border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent), var(--glow); }}
+/* Tactile press states (Sprint 2.2) — every clickable surface gets a
+   consistent, subtle "pressed" feedback, not just primary buttons. */
+.ds-card:active {{ transform: translateY(-1px) scale(.995); }}
+.ds-selectable:active {{ transform: scale(.98); }}
+.ds-chip:active, .ds-badge:active {{ transform: scale(.96); }}
 :focus-visible {{ outline: 2px solid var(--accent-2); outline-offset: 3px; border-radius: 6px; }}
 @media (prefers-reduced-motion: reduce) {{
   *, *::before, *::after {{ animation: none !important; transition: none !important; }}

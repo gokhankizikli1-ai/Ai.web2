@@ -30,8 +30,11 @@ CSS = """
   color:var(--text-dim); padding:14px 12px 6px; }
 .db-link { display:flex; align-items:center; gap:11px; padding:9px 12px; border-radius:10px; cursor:pointer;
   color:var(--text-muted); font-size:.92rem; font-weight:600; transition:all var(--t) var(--ease); }
-.db-link .db-ic { width:20px; text-align:center; opacity:.85; }
+.db-link .db-ic { width:20px; display:inline-flex; align-items:center; justify-content:center; opacity:.85; }
+.db-link .db-ic .ds-svg-icon { width:18px; height:18px; }
+.db-search .ds-svg-icon { width:16px; height:16px; flex:0 0 auto; opacity:.8; }
 .db-link:hover { background:var(--surface-2); color:var(--text); }
+.db-link:active { transform:scale(.98); }
 .db-link.is-active { background:color-mix(in srgb,var(--accent) 16%, var(--surface-2)); color:var(--text);
   box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 30%, transparent); }
 .db-side-foot { margin-top:auto; display:flex; align-items:center; gap:10px; padding:12px 10px; border-top:1px solid var(--border); }
@@ -77,17 +80,38 @@ CSS = CSS + "\n\n" + cl.CSS
 _PERSONALITY_BY_TYPE = {"fitness": "db-personality-fitness", "crypto": "db-personality-finance",
                         "banking": "db-personality-finance"}
 
-_NAV_ICONS = {
-    "dashboard": "▦", "overview": "▦", "home": "▦", "workouts": "🏋", "nutrition": "🍎",
-    "progress": "📈", "analytics": "📊", "reports": "🧾", "activity": "🕑", "profile": "👤",
-    "settings": "⚙", "accounts": "🏦", "transactions": "💳", "investments": "📈", "cards": "💳",
-    "portfolio": "🪙", "markets": "📉", "assets": "🗂", "alerts": "🔔", "chats": "💬",
-    "models": "🧠", "library": "📚", "leaderboard": "🏆", "players": "🎮",
-}
+# Sprint 2.2 — sidebar nav icons resolved via the crisp inline-SVG icon
+# system (base.svg_icon) instead of emoji glyphs, which render inconsistently
+# across OS/browser and read as "generic template" next to the rest of the
+# design system. Keyword-matched against the nav LABEL TEXT (reusable across
+# every vertical's navigation, never hardcoded per product).
+_NAV_ICON_MAP = [
+    (re.compile(r"dashboard|overview|home", re.I), "home"),
+    (re.compile(r"workout|exercise|train", re.I), "pulse"),
+    (re.compile(r"nutrition|meal|diet", re.I), "apple"),
+    (re.compile(r"setting", re.I), "gear"),
+    (re.compile(r"report", re.I), "document"),
+    (re.compile(r"progress|insight", re.I), "chart"),
+    (re.compile(r"analytic|stat", re.I), "chart"),
+    (re.compile(r"activity|history|log", re.I), "clock"),
+    (re.compile(r"profile|account$|players?$", re.I), "person"),
+    (re.compile(r"transaction|payment", re.I), "swap"),
+    (re.compile(r"account|card", re.I), "card"),
+    (re.compile(r"investment|portfolio|market", re.I), "coin"),
+    (re.compile(r"asset|record", re.I), "folder"),
+    (re.compile(r"alert|notif", re.I), "bell"),
+    (re.compile(r"chat|message", re.I), "chat"),
+    (re.compile(r"model|\bai\b", re.I), "cpu"),
+    (re.compile(r"librar", re.I), "book"),
+    (re.compile(r"leaderboard|rank", re.I), "trophy"),
+]
 
 
 def _nav_icon(label: str) -> str:
-    return _NAV_ICONS.get(label.strip().lower(), "•")
+    for pattern, name in _NAV_ICON_MAP:
+        if pattern.search(label or ""):
+            return name
+    return "dot"
 
 
 _METRIC_ICON_MAP = [
@@ -261,12 +285,12 @@ def _overview(spec: ProductSpec, label: str) -> str:
   <div data-tabpanel="seg-month" data-tab-group="ov" class="ds-hidden">{_metric_grid(spec)}</div>
   <div data-tabpanel="seg-quarter" data-tab-group="ov" class="ds-hidden">{_metric_grid(spec)}</div>
   {_reveal(spec)}
-  <h2 style="font-size:1.25rem;margin:26px 0 14px">Performance</h2>
+  <h2 class="ds-subhead">Performance</h2>
   <div class="ds-bento">
     <div class="ds-card ds-col-4 ds-rise"><h3 style="margin-bottom:6px">Trend</h3>{spark()}{bars(18)}</div>
     {perf_secondary}
   </div>
-  <h2 style="font-size:1.25rem;margin:26px 0 14px">Quick actions</h2>
+  <h2 class="ds-subhead">Quick actions</h2>
   <div class="ds-grid">{cards}</div>"""
 
 
@@ -309,7 +333,7 @@ def render(spec: ProductSpec) -> str:
         nav.append("Insights")
     links = "".join(
         f'<a class="db-link{" is-active" if i == 0 else ""}" data-nav="page-{i}">'
-        f'<span class="db-ic">{e(_nav_icon(l))}</span>{e(l)}</a>' for i, l in enumerate(nav))
+        f'<span class="db-ic">{svg_icon(_nav_icon(l))}</span>{e(l)}</a>' for i, l in enumerate(nav))
     sidebar = f"""
   <aside class="db-sidebar">
     <div class="db-brand"><span class="ds-nav-logo"></span>{e(spec.name)}</div>
@@ -320,7 +344,7 @@ def render(spec: ProductSpec) -> str:
   </aside>"""
     topbar = f"""
     <header class="ds-nav db-topbar">
-      <div class="db-search">🔍 Search {e(spec.name)}…</div>
+      <div class="db-search">{svg_icon('search')} Search {e(spec.name)}…</div>
       <span class="db-spacer"></span>
       <button class="db-iconbtn db-notif-trigger" data-reveal="reveal-notifications" title="Notifications">{svg_icon('bell')}<span class="db-notif-dot"></span></button>
       <button class="ds-btn ds-btn-primary ds-btn-sm" data-reveal="reveal-detail">{e(spec.cta_primary)}</button>

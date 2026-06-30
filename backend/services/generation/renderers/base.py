@@ -108,6 +108,24 @@ _SVG_ICONS = {
     "grid": '<rect x="3.5" y="3.5" width="5.5" height="5.5" rx="1.4"/><rect x="11" y="3.5" width="5.5" height="5.5" rx="1.4"/><rect x="3.5" y="11" width="5.5" height="5.5" rx="1.4"/><rect x="11" y="11" width="5.5" height="5.5" rx="1.4"/>',
     "music": '<circle cx="6" cy="15" r="2.2"/><circle cx="14.5" cy="13.2" r="2.2"/><path d="M8.2 15V5.5L16.7 4v9.2"/>',
     "clock": '<circle cx="10" cy="10" r="6.8"/><path d="M10 6.2v4l2.8 1.6"/>',
+    # Sprint 2.2 — sidebar/nav/folder icon system (replaces emoji glyphs in
+    # dashboard/editor sidebars — every dashboard- and editor-layout
+    # product benefits, not any one vertical).
+    "gear": '<circle cx="10" cy="10" r="3"/><path d="M10 3v2.4M10 14.6V17M3 10h2.4M14.6 10H17M5.3 5.3l1.7 1.7M13 13l1.7 1.7M14.7 5.3 13 7M7 13l-1.7 1.7"/>',
+    "card": '<rect x="2.5" y="5" width="15" height="10" rx="2"/><path d="M2.5 8.5h15"/>',
+    "coin": '<circle cx="10" cy="10" r="7"/><path d="M10 6.5v7M12.3 8.2c0-.9-1-1.7-2.3-1.7s-2.3.6-2.3 1.5c0 2 4.6 1 4.6 3 0 .9-1 1.5-2.3 1.5s-2.3-.8-2.3-1.7"/>',
+    "folder": '<path d="M3 6.5a1.5 1.5 0 0 1 1.5-1.5h3.6l1.4 1.6h6a1.5 1.5 0 0 1 1.5 1.5v6.4A1.5 1.5 0 0 1 15.5 16h-11A1.5 1.5 0 0 1 3 14.5Z"/>',
+    "chat": '<path d="M3.5 5.5A2 2 0 0 1 5.5 3.5h9a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H9l-3.5 3v-3H5.5a2 2 0 0 1-2-2Z"/>',
+    "cpu": '<rect x="6" y="6" width="8" height="8" rx="1.4"/><path d="M10 2.5V6M10 14v3.5M2.5 10H6M14 10h3.5M5.5 5.5 7 7M13 13l1.5 1.5M14.5 5.5 13 7M7 13l-1.5 1.5"/>',
+    "book": '<path d="M10 5.5C8.5 4.3 6 4 3.5 4.3v10.4c2.5-.3 5 0 6.5 1.2 1.5-1.2 4-1.5 6.5-1.2V4.3C14 4 11.5 4.3 10 5.5Z"/><path d="M10 5.5v10.4"/>',
+    "trophy": '<path d="M6.5 4h7v4a3.5 3.5 0 0 1-7 0Z"/><path d="M6.5 5H4.5a1.5 1.5 0 0 0 0 3H6M13.5 5h2a1.5 1.5 0 0 1 0 3h-1.6"/><path d="M10 11.5v2.5M7.5 17h5M8.5 14h3"/>',
+    "apple": '<path d="M10 7.3c-1.6-1.7-4.6-1.4-5.6.6-1.2 2.4-.2 6.6 2 8.6 1 .9 2.2 1 3.6 1s2.6-.1 3.6-1c2.2-2 3.2-6.2 2-8.6-1-2-4-2.3-5.6-.6Z"/><path d="M10 7.3V5M9 4c.6-.8 1.8-1 2.6-.6"/>',
+    "pulse": '<path d="M2.5 11h3l1.5-4 2.5 8 1.8-6 1.2 2h5.5"/>',
+    "search": '<circle cx="8.6" cy="8.6" r="5.1"/><path d="m16.5 16.5-4-4"/>',
+    "document": '<path d="M5.5 3h6l3 3v11h-9Z"/><path d="M11.5 3v3h3"/><path d="M7.5 10.5h5M7.5 13h5"/>',
+    "swap": '<path d="M4 7h11M12 4l3 3-3 3"/><path d="M16 13H5M8 10l-3 3 3 3"/>',
+    "idea": '<path d="M7 14.5h6M8 17h4"/><path d="M10 3.5a5 5 0 0 0-2.6 9.3c.6.4.9 1 .9 1.7h3.4c0-.7.3-1.3.9-1.7A5 5 0 0 0 10 3.5Z"/>',
+    "archive": '<rect x="3" y="4" width="14" height="3.5" rx="1"/><path d="M4.5 7.5v7a1.5 1.5 0 0 0 1.5 1.5h8a1.5 1.5 0 0 0 1.5-1.5v-7"/><path d="M8.3 10.5h3.4"/>',
 }
 
 

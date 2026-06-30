@@ -70,6 +70,7 @@ CSS = """
 .mb-list-item { display:flex; align-items:center; gap:12px; padding:12px 14px; border-radius:var(--radius);
   background:var(--surface); border:1px solid var(--border); cursor:pointer; transition:all var(--t) var(--ease); }
 .mb-list-item:hover { border-color:var(--border-strong); transform:translateY(-1px); }
+.mb-list-item:active { transform:scale(.985); }
 .mb-list-ic { width:36px; height:36px; border-radius:11px; display:grid; place-items:center; flex:0 0 auto;
   background:color-mix(in srgb,var(--accent) 16%, var(--surface-2)); color:var(--accent); }
 .mb-list-body { flex:1; min-width:0; }
@@ -84,6 +85,7 @@ CSS = """
   background:var(--surface-2); color:var(--text); transition:all var(--t) var(--ease); }
 .mb-pill.is-primary { background:var(--grad); color:#fff; border-color:transparent; box-shadow:var(--glow); }
 .mb-pill:hover { transform:translateY(-1px); }
+.mb-pill:active { transform:scale(.96); }
 
 .mb-fab { position:absolute; right:18px; bottom:96px; width:54px; height:54px; border-radius:50%;
   background:var(--grad); color:#fff; display:grid; place-items:center; box-shadow:var(--glow), var(--shadow-lg);

@@ -118,6 +118,16 @@ CSS = """
 .cl-field input:focus, .cl-field textarea:focus, .cl-field select:focus { outline:none; border-color:var(--accent); }
 .cl-field textarea { resize:vertical; min-height:96px; }
 
+/* Empty state (Sprint 2.2) — a real, premium "nothing here yet" panel,
+   used wherever a list/table has no data instead of a bare text row. */
+.cl-empty { display:flex; flex-direction:column; align-items:center; text-align:center; gap:8px;
+  padding:48px 24px; border-radius:var(--radius-lg); border:1px dashed var(--border-strong);
+  background:color-mix(in srgb, var(--surface) 55%, transparent); }
+.cl-empty-ic { width:48px; height:48px; border-radius:9999px; display:grid; place-items:center;
+  background:color-mix(in srgb, var(--accent) 14%, var(--surface-2)); color:var(--accent); margin-bottom:6px; }
+.cl-empty h3 { font-size:1rem; }
+.cl-empty p { font-size:.86rem; max-width:38ch; }
+
 /* Premium metric card — gradient-tinted icon badge + bold value, used in
    place of a plain stat block wherever a renderer wants extra punch. */
 .cl-metric-card { display:flex; flex-direction:column; gap:10px; padding:18px; border-radius:var(--radius-lg);
@@ -184,17 +194,33 @@ def status_pill(text: str, tone: str = "neutral") -> str:
     return f'<span class="cl-pill {cls}">{e(text)}</span>'
 
 
+# ── Empty state ──────────────────────────────────────────────────────
+
+def empty_state(icon: str, title: str, body: str = "", cta_label: str = "") -> str:
+    """A real, premium empty state — icon badge + title + body + an
+    optional action — used wherever a list/table has no data, instead of
+    a bare "nothing here" text string or (worse) an empty container."""
+    body_html = f'<p>{e(body)}</p>' if body else ""
+    cta_html = (f'<button type="button" class="ds-btn ds-btn-ghost ds-btn-sm" data-select>{e(cta_label)}</button>'
+                if cta_label else "")
+    return (f'<div class="cl-empty" data-component="empty-state">'
+            f'<span class="cl-empty-ic">{svg_icon(icon)}</span>'
+            f'<h3>{e(title)}</h3>{body_html}{cta_html}</div>')
+
+
 # ── Table ────────────────────────────────────────────────────────────
 
-def table(headers: Sequence[str], rows: Sequence[Sequence[Any]], escape_cells: bool = True) -> str:
+def table(headers: Sequence[str], rows: Sequence[Sequence[Any]], escape_cells: bool = True,
+         empty_title: str = "No records yet.", empty_body: str = "They'll show up here once you add some.") -> str:
     """A real data table — header row + body rows. `escape_cells=False`
     lets a caller pass pre-built safe HTML cells (e.g. `status_pill()`
-    chips) — the caller is then responsible for escaping any raw text."""
+    chips) — the caller is then responsible for escaping any raw text.
+    No rows → a real empty state, not a bare text row."""
+    if not rows:
+        return empty_state("folder", empty_title, empty_body)
     head = "".join(f"<th>{e(h)}</th>" for h in headers)
     cell = (lambda c: e(c)) if escape_cells else (lambda c: str(c))
-    body = "".join(
-        "<tr>" + "".join(f"<td>{cell(c)}</td>" for c in row) + "</tr>" for row in rows
-    ) or f'<tr><td colspan="{max(len(headers), 1)}" style="color:var(--text-dim)">No records yet.</td></tr>'
+    body = "".join("<tr>" + "".join(f"<td>{cell(c)}</td>" for c in row) + "</tr>" for row in rows)
     return (f'<div class="cl-table-wrap" data-component="table">'
             f'<table class="cl-table"><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>')
 
@@ -392,7 +418,7 @@ def food_panel() -> str:
 
 
 __all__ = [
-    "CSS", "status_pill", "table", "timeline", "calendar_grid", "waveform",
+    "CSS", "status_pill", "empty_state", "table", "timeline", "calendar_grid", "waveform",
     "music_player", "notifications_panel", "form_fields", "premium_metric_card",
     "action_card", "watchlist_row", "portfolio_card", "recipe_steps",
     "ingredient_chips", "food_panel",
