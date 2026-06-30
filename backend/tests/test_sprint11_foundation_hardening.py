@@ -109,12 +109,14 @@ class _FakeHeaders(dict):
         return super().get(key.lower(), default)
 
 
-def _fake_request(headers=None, state_uid=None):
+def _fake_request(headers=None, state_uid=None, state_is_guest=None):
     req = types.SimpleNamespace()
     req.headers = _FakeHeaders({k.lower(): v for k, v in (headers or {}).items()})
     req.state = types.SimpleNamespace()
     if state_uid is not None:
         req.state.user_id = state_uid
+    if state_is_guest is not None:
+        req.state.is_guest = state_is_guest
     return req
 
 
@@ -158,6 +160,12 @@ def test_resolve_uid_guest_beats_bad_bearer(monkeypatch):
         "X-Korvix-Guest-Id": "g-9",
     })
     assert resolve_authoritative_uid(req, "attacker") == "g-9"
+
+
+def test_orchestrate_guest_state_is_not_verified_identity():
+    from backend.routes.v2_orchestrate import _has_verified_identity
+    req = _fake_request(state_uid="guest-db-user", state_is_guest=True)
+    assert _has_verified_identity(req) is False
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -233,14 +241,17 @@ def orchestrate_client(monkeypatch):
     monkeypatch.setenv("JWT_SECRET_KEY", "x" * 40)
     for m in (
         "backend.services.orchestrator.runs_store",
+        "backend.services.orchestrator.tasks_store",
+        "backend.services.orchestrator",
         "backend.routes.v2_orchestrate",
     ):
         if m in sys.modules:
             importlib.reload(sys.modules[m])
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-    from backend.services.orchestrator import init_runs_table
+    from backend.services.orchestrator import init_runs_table, init_tasks_table
     init_runs_table()
+    init_tasks_table()
 
     from backend.routes import v2_orchestrate as o_route
     from backend.services.agent.types import AgentResponse
@@ -291,3 +302,31 @@ def test_orchestrate_read_routes_scope_by_identity(orchestrate_client):
     # Authenticated listing is scoped to self regardless of ?user_id.
     listed = orchestrate_client.get("/v2/orchestrate/runs?user_id=alice", headers=_bearer("mallory")).json()
     assert all(row["user_id"] != "alice" for row in listed["runs"])
+
+
+def test_orchestrate_project_tasks_scoped_to_authenticated_owner(orchestrate_client):
+    import importlib as _il
+    rstore = _il.import_module("backend.services.orchestrator.runs_store")
+    tstore = _il.import_module("backend.services.orchestrator.tasks_store")
+    alice_run = rstore.create_run(
+        user_id="alice", agent_id="supervisor", project_id="shared-project",
+    )
+    bob_run = rstore.create_run(
+        user_id="bob", agent_id="supervisor", project_id="shared-project",
+    )
+    alice_task = tstore.create_task(
+        run_id=alice_run, project_id="shared-project", title="Alice task",
+        assigned_agent="researcher",
+    )
+    bob_task = tstore.create_task(
+        run_id=bob_run, project_id="shared-project", title="Bob task",
+        assigned_agent="researcher",
+    )
+
+    r = orchestrate_client.get(
+        "/v2/orchestrate/projects/shared-project/tasks", headers=_bearer("alice"),
+    )
+    assert r.status_code == 200, r.text
+    task_ids = {row["id"] for row in r.json()["tasks"]}
+    assert alice_task in task_ids
+    assert bob_task not in task_ids

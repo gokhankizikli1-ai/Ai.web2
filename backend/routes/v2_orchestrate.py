@@ -520,6 +520,8 @@ def _has_verified_identity(request: Request) -> bool:
     auth store: a token-only caller is still bound to its `sub`, and runs
     are keyed by that subject, so isolation must be enforced for them too.
     """
+    if getattr(request.state, "is_guest", False) is True:
+        return False
     st = getattr(request.state, "user_id", None)
     if isinstance(st, str) and st and st != "guest:anonymous":
         return True
@@ -532,8 +534,8 @@ def _has_verified_identity(request: Request) -> bool:
         if token:
             try:
                 from backend.services.auth import tokens
-                tokens.verify(token, expected_type="access")
-                return True
+                claims = tokens.verify(token, expected_type="access")
+                return claims.get("kind") != "guest"
             except Exception:
                 return False
     return False
@@ -637,5 +639,7 @@ def get_project_tasks_route(project_id: str, request: Request, limit: int = 100)
         own = list_runs(user_id=resolved, project_id=project_id, limit=1)
         if not own:
             raise HTTPException(status_code=404, detail={"error": "project_not_found"})
-    rows = list_tasks_for_project(project_id, limit=limit)
+    rows = list_tasks_for_project(
+        project_id, limit=limit, user_id=resolved if is_authed and not is_owner else None,
+    )
     return {"tasks": rows}

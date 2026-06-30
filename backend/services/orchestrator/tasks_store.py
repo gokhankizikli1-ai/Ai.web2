@@ -300,16 +300,25 @@ def list_tasks_for_run(run_id: str) -> List[dict]:
 
 
 def list_tasks_for_project(
-    project_id: str, *, limit: int = 100,
+    project_id: str, *, limit: int = 100, user_id: Optional[str] = None,
 ) -> List[dict]:
     limit = max(1, min(int(limit or 100), 500))
     try:
         with _conn() as c:
-            rows = c.execute(
-                """SELECT * FROM tasks WHERE project_id = ?
-                   ORDER BY created_at DESC LIMIT ?""",
-                (project_id, limit),
-            ).fetchall()
+            if user_id:
+                rows = c.execute(
+                    """SELECT tasks.* FROM tasks
+                       INNER JOIN runs ON runs.id = tasks.run_id
+                       WHERE tasks.project_id = ? AND runs.user_id = ?
+                       ORDER BY tasks.created_at DESC LIMIT ?""",
+                    (project_id, str(user_id), limit),
+                ).fetchall()
+            else:
+                rows = c.execute(
+                    """SELECT * FROM tasks WHERE project_id = ?
+                       ORDER BY created_at DESC LIMIT ?""",
+                    (project_id, limit),
+                ).fetchall()
         return [_row_to_dict(r) for r in rows]
     except Exception:
         return []
