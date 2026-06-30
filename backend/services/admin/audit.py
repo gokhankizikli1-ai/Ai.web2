@@ -51,7 +51,8 @@ _DEFAULT_PATH = "admin_audit.db"
 
 
 def _db_path() -> str:
-    return os.getenv("ADMIN_AUDIT_DB_PATH", _DEFAULT_PATH)
+    from backend.core.paths import resolve_db_path
+    return resolve_db_path(_DEFAULT_PATH, "ADMIN_AUDIT_DB_PATH")
 
 
 @contextlib.contextmanager

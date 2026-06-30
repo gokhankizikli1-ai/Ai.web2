@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import sqlite3
+from backend.core.paths import resolve_db_path
 import threading
 import uuid
 from contextlib import contextmanager
@@ -28,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 def _db_path() -> str:
-    return os.getenv("TOOL_EXECUTIONS_DB_PATH", "tool_executions.db")
+    return resolve_db_path("tool_executions.db", "TOOL_EXECUTIONS_DB_PATH")
 
 
 _LOCK = threading.Lock()

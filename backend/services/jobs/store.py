@@ -23,6 +23,7 @@ from __future__ import annotations
 import logging
 import os
 import sqlite3
+from backend.core.paths import resolve_db_path
 import threading
 import uuid
 from contextlib import contextmanager
@@ -42,7 +43,7 @@ logger = logging.getLogger(__name__)
 # ── DB path ──────────────────────────────────────────────────────────────────
 
 def _db_path() -> str:
-    return os.getenv("JOBS_DB_PATH", "jobs.db")
+    return resolve_db_path("jobs.db", "JOBS_DB_PATH")
 
 
 # ── Observability ────────────────────────────────────────────────────────────

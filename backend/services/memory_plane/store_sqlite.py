@@ -32,6 +32,7 @@ import json
 import logging
 import os
 import sqlite3
+from backend.core.paths import resolve_db_path
 import threading
 import uuid
 from contextlib import contextmanager
@@ -56,7 +57,7 @@ logger = logging.getLogger(__name__)
 # carry over.
 
 def _db_path() -> str:
-    return os.getenv("MEMORY_PLANE_DB_PATH", "memory_plane.db")
+    return resolve_db_path("memory_plane.db", "MEMORY_PLANE_DB_PATH")
 
 
 # ── Observability counters ───────────────────────────────────────────────────

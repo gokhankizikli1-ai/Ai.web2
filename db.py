@@ -3,7 +3,14 @@ import sqlite3
 import os
 from datetime import datetime
 
-DB_PATH = "memory.db"
+# Shares the same SQLite file as memory.py / usage_limits.py. Resolved via
+# backend.core.paths so it follows KORVIX_DATA_DIR onto a durable volume.
+# `DB_PATH` env wins; default stays "memory.db" so behaviour is unchanged.
+try:
+    from backend.core.paths import resolve_db_path as _resolve_db_path
+    DB_PATH = _resolve_db_path("memory.db", "DB_PATH")
+except Exception:  # pragma: no cover — standalone import without backend pkg
+    DB_PATH = os.getenv("DB_PATH", "memory.db")
 FREE_DAILY_LIMIT = 3
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 

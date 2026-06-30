@@ -226,4 +226,124 @@ def require_owner(request: Request) -> User:
     )
 
 
-__all__ = ["current_user", "require_auth", "require_owner"]
+# ── Authoritative user-id resolution (shared) ────────────────────────────
+#
+# Single source of truth for "which user_id do we trust", used by every
+# guest-allowed route that takes a user_id in its body (chat, orchestrate).
+# Identity comes from the AUTHENTICATED context, never blindly from the
+# request payload — a logged-in client cannot act as another account by
+# putting a different user_id in the body.
+#
+# Precedence (mirrors AuthMiddleware + current_user):
+#   1. Verified JWT subject — request.state.user_id (AuthMiddleware path)
+#      or an inline Bearer verify here, so the guarantee holds whether or
+#      not ENABLE_AUTH_V2 is on. A bad/expired token does NOT fall through
+#      to body.user_id (that would re-open the impersonation hole) — it
+#      falls through to the guest/legacy paths as if no token was sent.
+#   2. X-Korvix-Guest-Id header — the FE's stable browser nonce (the
+#      identity for guest sessions, which this product explicitly supports).
+#   3. body_user_id — legacy fallback, ONLY when neither auth signal
+#      exists. Logged so pre-fix / proxied clients are visible in prod.
+#
+# Extracted from routes/chat.py (the original Phase-1 P0 fix) so
+# /v2/orchestrate and any future user_id-bearing route reuse the exact same
+# precedence instead of re-implementing (and drifting from) it.
+
+def resolve_authoritative_uid(
+    request: Request, body_user_id: str = "", *, log_prefix: str = "",
+) -> str:
+    tag = (log_prefix or "AUTH").strip()
+
+    # 1a. AuthMiddleware-populated state (ENABLE_AUTH_V2=true path).
+    state_uid = getattr(request.state, "user_id", None)
+    if isinstance(state_uid, str) and state_uid and state_uid != "guest:anonymous":
+        return state_uid
+
+    # 1b. Direct Authorization header — middleware may be off; verify here
+    #     so the security guarantee holds either way.
+    try:
+        auth = (request.headers.get("authorization") or "").strip()
+    except Exception:
+        auth = ""
+    if auth.lower().startswith("bearer "):
+        token = auth[7:].strip()
+        if token:
+            try:
+                from backend.services.auth import tokens
+                claims = tokens.verify(token, expected_type="access")
+                sub = claims.get("sub")
+                if isinstance(sub, str) and sub:
+                    return sub
+            except Exception as exc:
+                # Bad / expired / mis-signed token → DO NOT fall back to
+                # body.user_id. Fall through to guest/legacy paths.
+                logger.warning(
+                    "%s | bearer present but unverifiable (%s) — falling "
+                    "through to guest path, NOT body.user_id",
+                    tag, type(exc).__name__,
+                )
+
+    # 2. Guest stable nonce from the FE.
+    try:
+        guest_hdr = (request.headers.get("x-korvix-guest-id") or "").strip()
+    except Exception:
+        guest_hdr = ""
+    if guest_hdr:
+        return guest_hdr[:64]  # match the AuthMiddleware truncation contract
+
+    # 3. Legacy fallback — body.user_id. Pre-fix clients still work; new
+    #    clients hit this only when explicitly anonymous + no guest nonce.
+    if body_user_id:
+        logger.warning(
+            "%s | no auth signal (no Bearer, no X-Korvix-Guest-Id) — falling "
+            "back to body.user_id. Pre-fix client OR proxy stripped the header.",
+            tag,
+        )
+        return body_user_id
+
+    return "anonymous"
+
+
+def authorize_user_scope(request: Request, requested_user_id: str, *, normalize=None) -> bool:
+    """Return True if the caller is allowed to act on `requested_user_id`.
+
+    Used to retrofit ownership onto the legacy, pre-auth per-user routes
+    (/memory, /profile) WITHOUT trusting the caller-supplied id for
+    identity.
+
+      - Owner → always allowed (may inspect any user).
+      - Otherwise the caller's AUTHENTICATED identity (verified JWT, or a
+        guest's X-Korvix-Guest-Id nonce) must match `requested_user_id`.
+        Crucially the identity is resolved with NO body/path fallback, so
+        an unauthenticated caller resolves to "anonymous" and can never
+        match a real user's id — closing the IDOR.
+
+    `normalize` lets a route map both ids through its own id scheme (e.g.
+    the int-hash these legacy routes use) before comparing.
+    """
+    # Identity WITHOUT the requested-id fallback — an unauthenticated
+    # caller must NOT resolve to the id they are asking about.
+    caller = resolve_authoritative_uid(request, "", log_prefix="LEGACY")
+    try:
+        u = current_user(request)
+        from backend.services.admin.owner import is_owner_request
+        if is_owner_request(u, owner_token=_extract_owner_token(request)):
+            return True
+    except Exception:  # pragma: no cover — never let the authz check 500
+        pass
+    a, b = caller, str(requested_user_id or "")
+    if normalize is not None:
+        try:
+            a, b = normalize(caller), normalize(str(requested_user_id or ""))
+        except Exception:  # pragma: no cover
+            return False
+    return str(a) == str(b)
+
+
+__all__ = [
+    "current_user",
+    "require_auth",
+    "require_owner",
+    "resolve_authoritative_uid",
+    "authorize_user_scope",
+]

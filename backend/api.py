@@ -120,6 +120,36 @@ def _build_full_app():
     async def _startup():
         logger.info("KorvixAI v3 | env=%s | fast=%s | strong=%s",
                     _ENV, _MODEL_FAST, _MODEL_STRONG)
+
+        # ── Persistence + configuration self-check (fail-safe) ──────────
+        # Surfaces data-volatility and insecure-config issues LOUDLY at
+        # boot without ever crashing the process (Railway's /health probe
+        # must still pass even with a misconfigured env). See
+        # backend/core/config.py::validate_runtime + backend/core/paths.py.
+        try:
+            from backend.core.paths import persistence_summary
+            from backend.core.config import settings as _settings
+            _persist = persistence_summary()
+            if _persist["durable"]:
+                logger.info(
+                    "Persistence | DURABLE | data_dir=%s (source=%s)",
+                    _persist["data_dir"], _persist["source"],
+                )
+            else:
+                logger.warning(
+                    "Persistence | EPHEMERAL | DBs under CWD — wiped on "
+                    "redeploy. Set KORVIX_DATA_DIR or mount a Railway volume.",
+                )
+            for _level, _msg in _settings.validate_runtime():
+                if _level == "critical":
+                    logger.critical("CONFIG CHECK [critical] %s", _msg)
+                elif _level == "warning":
+                    logger.warning("CONFIG CHECK [warning] %s", _msg)
+                else:
+                    logger.info("CONFIG CHECK [info] %s", _msg)
+        except Exception as _cfg_err:  # never block boot on the self-check
+            logger.warning("startup config self-check skipped: %s", _cfg_err)
+
         try:
             from memory import init_memory_db
             from usage_limits import init_usage_db

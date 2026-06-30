@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import sqlite3
+from backend.core.paths import resolve_db_path
 import threading
 import uuid
 from contextlib import contextmanager
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 def _db_path() -> str:
-    return os.getenv("AGENT_TASKS_DB_PATH", "agent_tasks.db")
+    return resolve_db_path("agent_tasks.db", "AGENT_TASKS_DB_PATH")
 
 
 _LOCK = threading.Lock()
