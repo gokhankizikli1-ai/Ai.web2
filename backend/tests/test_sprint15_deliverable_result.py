@@ -106,6 +106,15 @@ def test_failed_run_returns_failure(orch_db):
     assert res.content is None and res.html_preview is None
 
 
+def test_cancelled_run_returns_cancelled(orch_db):
+    from backend.services.deliverable_result import resolve_run_result, ResultStatus
+    from backend.services.orchestrator.runs_store import error_run
+    _seed_run("r1", "u1")
+    error_run("r1", error="cancelled", metadata={"cancelled": True})
+    res = resolve_run_result("r1", user_id="u1")
+    assert res.status is ResultStatus.CANCELLED
+
+
 def test_partial_requires_include_flag(orch_db):
     from backend.services.deliverable_result import resolve_run_result, ResultStatus
     _seed_run("r1", "u1")

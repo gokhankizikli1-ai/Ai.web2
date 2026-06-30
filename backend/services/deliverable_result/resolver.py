@@ -136,7 +136,8 @@ def resolve_run_result(
     project_id = run.get("project_id")
     overall = str(snapshot.get("status") or run.get("status") or "").lower()
     wf = snapshot.get("workflow") or {}
-    workflow_id = (wf.get("id") if isinstance(wf, dict) else None) or (run.get("metadata") or {}).get("workflow_id")
+    metadata = run.get("metadata") or {}
+    workflow_id = (wf.get("id") if isinstance(wf, dict) else None) or metadata.get("workflow_id")
     deliverables = snapshot.get("deliverables") or []
     sources = _source_refs(deliverables)
     created_at = run.get("started_at") or run.get("created_at")
@@ -150,12 +151,16 @@ def resolve_run_result(
         )
 
     # ── Failure / cancellation — explicit terminal states ────────────────
+    if (
+        overall in _CANCELLED_RUN
+        or str(run.get("error") or "").lower() == "cancelled"
+        or bool(metadata.get("cancelled"))
+    ):
+        return _base(ResultStatus.CANCELLED, warnings=["run_cancelled"])
     if overall in _FAILED_RUN:
         errs = [str(run.get("error") or "run_failed")]
         errs += [str(d.get("error")) for d in deliverables if d.get("status") == "failed" and d.get("error")]
         return _base(ResultStatus.FAILED, errors=errs)
-    if overall in _CANCELLED_RUN:
-        return _base(ResultStatus.CANCELLED, warnings=["run_cancelled"])
 
     completed = [d for d in deliverables if d.get("status") == "completed" and _has_artifact(d)]
     run_done = overall in _DONE_RUN
