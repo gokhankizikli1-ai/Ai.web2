@@ -111,6 +111,29 @@ def _resolve_template(template_id: Optional[str], user_request: str):
     return tmpl.choose_template(user_request, plan)
 
 
+# Sprint 1.9 — a small, JSON-serializable product-context hint forwarded to
+# HTML generation. The orchestrator does NOT import or know about any
+# upstream planning package — it only recognises a few well-known field
+# names if a caller's `metadata` happens to carry them (an upstream layer
+# may attach product context here; the orchestrator stays decoupled from
+# whatever that layer is). A plain run with no such fields yields None,
+# identical to before this sprint. Never raises.
+_PRODUCT_CONTEXT_FIELDS = (
+    "workspace", "product_category", "audience", "complexity",
+    "recommended_renderer", "core_features",
+)
+
+
+def _blueprint_hint(metadata: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    try:
+        if not metadata:
+            return None
+        hint = {k: metadata.get(k) for k in _PRODUCT_CONTEXT_FIELDS if metadata.get(k)}
+        return hint or None
+    except Exception:  # pragma: no cover — defensive, never blocks a run
+        return None
+
+
 # ── Start a run ───────────────────────────────────────────────────────
 
 async def start_project_run(
@@ -194,6 +217,7 @@ async def start_project_run(
         )
 
     # ── 4. Workflow of `agent.run` job steps ─────────────────────────
+    blueprint_hint = _blueprint_hint(metadata)
     workflow_id: Optional[str] = None
     steps_payload: List[dict] = []
     for n in template.nodes:
@@ -217,6 +241,11 @@ async def start_project_run(
                     # M2 — let the agent.run handler type the artifact.
                     "deliverable_kind":  n.deliverable_kind,
                     "node_title":        n.title,
+                    # Sprint 1.9 — carry the ProductBlueprint summary (when
+                    # this run was started via the blueprint bridge) so HTML
+                    # generation can use it instead of re-guessing from raw
+                    # text alone. None for plain orchestrator runs.
+                    "blueprint":         blueprint_hint,
                 },
             },
         })

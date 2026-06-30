@@ -68,7 +68,10 @@ APP_PROMPTS = [
 @pytest.mark.parametrize("prompt", APP_PROMPTS)
 def test_app_prompts_render_product_ui_not_marketing(prompt):
     spec = expand(prompt)
-    assert spec.layout in ("app", "editor")
+    # Sprint 1.9 added a "mobile" layout (phone shell + bottom tab bar) for
+    # genuinely mobile-native products (e.g. meditation) — still a real
+    # product interface, not a marketing page, so it belongs in this set.
+    assert spec.layout in ("app", "editor", "mobile")
     html = _page(prompt)
     # No marketing pricing table in a real app.
     assert 'id="pricing"' not in html and ">Choose plan<" not in html

@@ -18,7 +18,7 @@
 from __future__ import annotations
 
 import re
-from typing import Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from backend.services.generation.intent import ProductIntent, classify
 from backend.services.generation.spec import ProductSpec, Section
@@ -218,6 +218,103 @@ def _saas() -> ProductSpec:
         cta_primary="Start free", cta_secondary="Book a demo",
         theme={"accent": "#6366f1", "accent2": "#22d3ee", "mode": "dark"},
         components=["Navbar", "Hero", "Feature Grid", "Pricing Tables", "Testimonials", "FAQ", "CTA", "Footer"],
+    )
+
+
+# ── Sprint 1.9 — mobile-native vertical presets ────────────────────────
+# These three use the new `mobile` layout (phone-width shell + bottom tab
+# bar) instead of the sidebar dashboard shell — genuinely mobile-native
+# product categories (personal wellness, media playback, recipes) that
+# previously fell into the generic SaaS-dashboard fallback regardless of
+# how little a sidebar suits them.
+
+def _habit_tracker() -> ProductSpec:
+    return ProductSpec(
+        product_type="wellness", name="Calm Streak", tagline="Small habits. Real momentum.",
+        description="A focused habit and mindfulness tracker — build streaks, log how you feel, and see your consistency add up.",
+        audience="People building consistent habits who want gentle, motivating daily check-ins.",
+        primary_goals=["Build daily streaks", "Track mood & mindfulness minutes", "See consistency over time"],
+        ux_goals=["Glanceable streak", "One-tap logging", "Calm, non-judgmental tone"],
+        navigation=["Today", "Habits", "Insights", "Profile"],
+        is_dashboard=True, layout="mobile", intent="application_ui",
+        metrics=[
+            {"label": "Current streak", "value": "12 days", "delta": "Personal best"},
+            {"label": "Mindful minutes", "value": "140", "delta": "+18 this week"},
+            {"label": "Mood avg", "value": "78%", "delta": "+5% this week"},
+            {"label": "Habits on track", "value": "5/6", "delta": "83%"},
+        ],
+        sections=[
+            _S("panel", "Today's habits", subtitle="Morning meditation · Hydration · Wind-down"),
+            _S("features", "Built to keep you consistent", items=[
+                _card("Streaks", "Visual streaks that make consistency satisfying.", "🔥"),
+                _card("Mood log", "A ten-second daily check-in.", "🌤"),
+                _card("Mindful timer", "Guided sessions, no account needed.", "🧘"),
+                _card("Insights", "See which habits actually stick.", "📈"),
+            ]),
+        ],
+        cta_primary="Log today", cta_secondary="Start session",
+        theme={"accent": "#14b8a6", "accent2": "#a855f7", "mode": "dark"},
+        components=["Sidebar", "Dashboard Cards", "Statistics", "Notifications", "Settings", "Footer"],
+    )
+
+
+def _music_player() -> ProductSpec:
+    return ProductSpec(
+        product_type="media", name="Reverb", tagline="Your sound, everywhere.",
+        description="A focused music player — pick up where you left off, browse your library, and queue up what's next.",
+        audience="Listeners who want a fast, clean way to play and organise their music.",
+        primary_goals=["Resume playback instantly", "Browse library & playlists", "Queue up what's next"],
+        ux_goals=["One-tap resume", "Fast browsing", "Distraction-free now-playing"],
+        navigation=["Library", "Discover", "Playlists", "Profile"],
+        is_dashboard=True, layout="mobile", intent="application_ui",
+        metrics=[
+            {"label": "Listened this week", "value": "18h 40m", "delta": "+3h vs last week"},
+            {"label": "Top genre", "value": "Indie Pop", "delta": "42% of plays"},
+            {"label": "Playlists", "value": "23", "delta": "3 new"},
+            {"label": "Downloaded", "value": "9.2 GB", "delta": "offline ready"},
+        ],
+        sections=[
+            _S("panel", "Up next", subtitle="Queued from your Evening Wind-down playlist"),
+            _S("features", "Built for listening", items=[
+                _card("Smart queue", "Keeps the vibe going automatically.", "▶"),
+                _card("Offline mode", "Download playlists for anywhere.", "⬇"),
+                _card("Lyrics sync", "Follow along, line by line.", "🎤"),
+                _card("Crossfade", "Seamless transitions between tracks.", "🔊"),
+            ]),
+        ],
+        cta_primary="Resume playback", cta_secondary="Shuffle library",
+        theme={"accent": "#a855f7", "accent2": "#ec4899", "mode": "dark"},
+        components=["Sidebar", "Dashboard Cards", "Statistics", "Notifications", "Settings", "Footer"],
+    )
+
+
+def _recipe_app() -> ProductSpec:
+    return ProductSpec(
+        product_type="food", name="Thyme", tagline="Cook something good tonight.",
+        description="A recipe companion — save what you love, plan the week, and follow along with clear, step-by-step cooking.",
+        audience="Home cooks who want fast meal ideas and a tidy place to save recipes.",
+        primary_goals=["Find a recipe fast", "Save favourites", "Plan the week's meals"],
+        ux_goals=["Appetising browsing", "One-tap save", "Clear step-by-step cooking"],
+        navigation=["Today", "Recipes", "Saved", "Profile"],
+        is_dashboard=True, layout="mobile", intent="application_ui",
+        metrics=[
+            {"label": "Cooked this week", "value": "4", "delta": "+1 vs last week"},
+            {"label": "Saved recipes", "value": "62", "delta": "8 new"},
+            {"label": "Avg prep time", "value": "28 min", "delta": "Weeknight friendly"},
+            {"label": "Meal plan", "value": "5/7 days", "delta": "2 to fill"},
+        ],
+        sections=[
+            _S("panel", "Tonight's pick", subtitle="Lemon herb chicken · 30 min · Easy"),
+            _S("features", "Built for weeknight cooking", items=[
+                _card("Smart search", "Find recipes by what's in your fridge.", "🔎"),
+                _card("Step-by-step", "Clear instructions, no scrolling back.", "📋"),
+                _card("Meal planner", "Drag recipes onto your week.", "🗓"),
+                _card("Shopping list", "Auto-built from your plan.", "🛒"),
+            ]),
+        ],
+        cta_primary="Start cooking", cta_secondary="Browse recipes",
+        theme={"accent": "#f59e0b", "accent2": "#ef4444", "mode": "dark"},
+        components=["Sidebar", "Dashboard Cards", "Statistics", "Notifications", "Settings", "Footer"],
     )
 
 
@@ -469,15 +566,37 @@ _VERTICAL_RULES: List[Tuple[re.Pattern, Callable[[], ProductSpec]]] = [
     (re.compile(r"\b(bank|banking|fintech)\b", re.I), _banking),
     (re.compile(r"\b(restaurant|cafe|café|bistro|kitchen|dining)\b", re.I), _restaurant),
     (re.compile(r"\b(saas|startup\s*(?:site|landing)|product\s*page)\b", re.I), _saas),
+    # Sprint 1.9 — mobile-native verticals (genuinely phone-shaped products,
+    # not a sidebar SaaS dashboard).
+    (re.compile(r"\b(habit\s*tracker|habit[\s-]*building|meditation|mindfulness|"
+                r"sleep\s*tracker|mood\s*tracker)\b", re.I), _habit_tracker),
+    (re.compile(r"\b(music\s*(?:player|app)|podcast\s*app|audio\s*player|"
+                r"playlist\s*app)\b", re.I), _music_player),
+    (re.compile(r"\b(recipe(?:\s*app|\s*box)?|cooking\s*app|meal\s*plan(?:ner)?)\b", re.I), _recipe_app),
 ]
 
 
-def _route(text: str, intent: ProductIntent, style: Dict) -> ProductSpec:
+def _route(text: str, match_text: str, intent: ProductIntent, style: Dict) -> ProductSpec:
     """Pick the spec builder. Known verticals win; otherwise route by the
-    classified interface layout — defaulting to a real application UI."""
+    classified interface layout — defaulting to a real application UI.
+
+    `text` is the ORIGINAL user prompt (used for naming via
+    `_title_from_request`); `match_text` is `text` optionally widened with
+    ProductBlueprint signal (see `expand`). They're the same string when no
+    blueprint is supplied — fully backward compatible.
+
+    An explicit keyword already in the user's OWN prompt always wins over a
+    (possibly stale or contradictory) blueprint hint: vertical rules are
+    checked against `text` FIRST; the blueprint-widened `match_text` is only
+    consulted when the prompt alone matched nothing — i.e. blueprint data
+    HELPS classify an ambiguous prompt, it never overrides an explicit one."""
     for pattern, builder in _VERTICAL_RULES:
         if pattern.search(text):
             return builder()
+    if match_text != text:
+        for pattern, builder in _VERTICAL_RULES:
+            if pattern.search(match_text):
+                return builder()
     layout = intent.layout
     if layout == "editor":     return _notes(text, style)
     if layout == "ecommerce":  return _ecommerce(text, style)
@@ -489,14 +608,64 @@ def _route(text: str, intent: ProductIntent, style: Dict) -> ProductSpec:
     return _generic_app(text, style, intent=intent.intent)   # real app interface
 
 
-def expand(user_request: str) -> ProductSpec:
+def _apply_blueprint(spec: ProductSpec, blueprint: Dict[str, Any]) -> None:
+    """Sprint 1.9 — let the already-computed ProductBlueprint (Sprint 1.3)
+    refine a spec's tone/data instead of being silently discarded. Additive
+    only: it overrides text fields when the blueprint actually supplied
+    something non-empty, and appends (never replaces) feature items — it
+    never changes which renderer/layout was already chosen."""
+    audience = str(blueprint.get("audience") or "").strip()
+    if audience:
+        spec.audience = audience
+    features = [f.strip() for f in (blueprint.get("core_features") or [])
+               if isinstance(f, str) and f.strip()]
+    if features:
+        # Primary goals: blueprint's own language, capped to keep it tight.
+        spec.primary_goals = features[:4]
+        # Feature cards: append up to 2 blueprint-derived items beyond the
+        # preset's own curated set (capped so a section never balloons).
+        for s in spec.sections:
+            if s.kind == "features":
+                existing = {str(it.get("title", "")).lower() for it in s.items}
+                added = 0
+                for f in features:
+                    if added >= 2:
+                        break
+                    if f.lower() in existing:
+                        continue
+                    s.items.append({"title": f, "body": f"Built for {spec.product_type}.", "icon": "✓"})
+                    added += 1
+                break
+
+
+def expand(user_request: str, blueprint: Optional[Dict[str, Any]] = None) -> ProductSpec:
     """Expand a one-line prompt into a context-aware ProductSpec. Never
     raises. Runs intent classification → style resolution → layout-specific
-    spec, so an app request renders the actual product (not a landing)."""
+    spec, so an app request renders the actual product (not a landing).
+
+    `blueprint` is the OPTIONAL Sprint 1.3 ProductBlueprint summary attached
+    to the orchestrator run (workspace/product_category/audience/complexity/
+    recommended_renderer/core_features — see blueprint_bridge.orchestrator_
+    metadata()). When present it (a) widens the text used for vertical/
+    layout classification with the blueprint's own category/feature words,
+    so a terse prompt that Product Intelligence already classified routes
+    correctly even if its raw wording is ambiguous, and (b) refines the
+    chosen spec's audience/feature copy. When absent (the common direct-
+    orchestrator-run path), behaviour is IDENTICAL to before this sprint."""
     text = user_request or ""
-    intent = classify(text)
+    match_text = text
+    if blueprint:
+        extra_terms = " ".join(str(t) for t in [
+            blueprint.get("workspace"), blueprint.get("product_category"),
+            blueprint.get("recommended_renderer"),
+            *(blueprint.get("core_features") or []),
+        ] if t)
+        if extra_terms:
+            match_text = f"{text} {extra_terms}".strip()
+
+    intent = classify(match_text)
     style = resolve_style(intent.style_mode)
-    spec = _route(text, intent, style)
+    spec = _route(text, match_text, intent, style)
 
     # Attach product-intent + Design-Diversity metadata. Presets own their
     # product copy + brand accent; the classifier owns intent/capabilities;
@@ -512,6 +681,9 @@ def expand(user_request: str) -> ProductSpec:
     if not theme.get("accent2"):
         theme["accent2"] = style.get("accent2", "#22d3ee")
     spec.theme = theme
+
+    if blueprint:
+        _apply_blueprint(spec, blueprint)
     return spec
 
 

@@ -77,6 +77,7 @@ class OrchestrationRequest:
             "audience": self.audience,
             "complexity": self.complexity,
             "recommended_renderer": self.recommended_renderer,
+            "core_features": list(self.core_features),
             "recommended_agents": list(self.recommended_agents),
             "recommended_deliverables": list(self.recommended_deliverables),
             **(self.metadata or {}),
