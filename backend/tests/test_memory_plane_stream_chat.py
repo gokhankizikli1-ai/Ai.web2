@@ -288,22 +288,48 @@ class TestIdentityResolution:
         assert r.status_code == 200
         assert "distinctive-fact" in fake_provider.last_system
 
-    def test_jwt_overrides_body_user_id(self, client, tmp_memory_plane_db, fake_provider):
-        """Identity-first precedence — a body-supplied user_id MUST
-        NOT win over a Bearer token. This is the same security
-        contract as /v2/memory."""
-        # Seed alice and bob — bob's content is in the body, alice's
-        # is in the JWT-claimed user.
+    def test_verified_jwt_overrides_body_user_id(self, client, tmp_memory_plane_db, fake_provider, monkeypatch):
+        """Identity-first precedence — a body-supplied user_id MUST NOT win
+        over a VERIFIED Bearer token. Same security contract as /v2/memory.
+
+        Sprint 1.2: the token must be properly signed — identity comes only
+        from authenticated context, never from an unsigned `sub`."""
+        monkeypatch.setenv("JWT_SECRET_KEY", "x" * 40)
         plane_client.create(user_id="alice-jwt-id", content="alice-memo",
                             importance=0.9)
         plane_client.create(user_id="bob-body-id",  content="bob-memo",
                             importance=0.9)
 
-        # Craft a minimal unverified JWT with sub=alice-jwt-id.
-        import json, base64
+        from backend.services.auth import tokens
+        token, _ = tokens.issue(sub="alice-jwt-id", token_type="access", ttl_seconds=3600)
+        r = client.post(
+            "/v2/chat/stream",
+            json={"user_id": "bob-body-id",
+                  "messages": [{"role": "user", "content": "who am I?"}]},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert r.status_code == 200
+        sp = fake_provider.last_system
+        assert "alice-memo" in sp      # JWT-resolved identity wins
+        assert "bob-memo" not in sp    # body-claimed id ignored
+
+    def test_forged_jwt_is_rejected(self, client, tmp_memory_plane_db, fake_provider, monkeypatch):
+        """Sprint 1.2 SECURITY FIX: a forged/unsigned JWT must NOT be trusted.
+
+        Previously /v2/chat/stream base64-decoded the `sub` without verifying
+        the signature, so anyone could read another user's memory namespace by
+        crafting a token. Now a forged token degrades to the body/guest path —
+        it can never grant the victim's identity."""
+        monkeypatch.setenv("JWT_SECRET_KEY", "x" * 40)
+        plane_client.create(user_id="alice-jwt-id", content="alice-secret-memo",
+                            importance=0.9)
+        plane_client.create(user_id="bob-body-id",  content="bob-memo",
+                            importance=0.9)
+
+        import json as _json, base64
         def _b64u(d):
-            return base64.urlsafe_b64encode(json.dumps(d).encode()).rstrip(b"=").decode()
-        token = ".".join([
+            return base64.urlsafe_b64encode(_json.dumps(d).encode()).rstrip(b"=").decode()
+        forged = ".".join([
             _b64u({"alg": "HS256", "typ": "JWT"}),
             _b64u({"sub": "alice-jwt-id"}),
             "fakesig",
@@ -312,14 +338,13 @@ class TestIdentityResolution:
             "/v2/chat/stream",
             json={"user_id": "bob-body-id",
                   "messages": [{"role": "user", "content": "who am I?"}]},
-            headers={"Authorization": f"Bearer {token}"},
+            headers={"Authorization": f"Bearer {forged}"},
         )
         assert r.status_code == 200
-        # System prompt must contain Alice's content (JWT-resolved),
-        # NOT Bob's (body-claimed).
         sp = fake_provider.last_system
-        assert "alice-memo" in sp
-        assert "bob-memo" not in sp
+        # The forged token MUST NOT surface Alice's data; it falls back to
+        # the body id (bob), so only bob's memo can appear.
+        assert "alice-secret-memo" not in sp
 
 
 class TestFlagOff:

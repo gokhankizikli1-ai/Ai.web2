@@ -22,7 +22,7 @@ import logging
 import os
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from backend.services.events import bus, is_enabled as _events_enabled
 from backend.utils.sse import sse_event, sse_response
@@ -69,40 +69,86 @@ def events_health() -> dict:
     }
 
 
+# ── Scope-ownership lookups (best-effort, fail secure) ────────────────────
+
+def _project_owner(project_id: str) -> Optional[str]:
+    try:
+        from backend.services.projects.store import get_project
+        p = get_project(project_id)
+        return getattr(p, "owner_user_id", None) if p is not None else None
+    except Exception:  # pragma: no cover — defensive
+        return None
+
+
+def _run_owner(run_id: str) -> Optional[str]:
+    try:
+        from backend.services.orchestrator import get_run
+        r = get_run(run_id)
+        return (r or {}).get("user_id") if r else None
+    except Exception:  # pragma: no cover — defensive
+        return None
+
+
 @router.get("/stream")
 async def stream(
+    request: Request,
     scope: str = "*",
-    user_id: Optional[str] = None,   # accepted for symmetry with /v2/orchestrate
+    user_id: Optional[str] = None,   # accepted for symmetry; identity is from auth
     heartbeat: float = HEARTBEAT_SECONDS,
 ):
     """Stream ActivityEvents matching `scope` as SSE.
 
     Scope conventions (set by emitters in Phase 3.2 / 3.3 / 3.4):
-      - "project:<project_id>"  events visible to a project's members
-      - "user:<user_id>"        user-scoped events outside a project
-      - "run:<run_id>"          run-scoped streams (sub-run filtering)
-      - "*"                     wildcard — receive every event
+      - "project:<project_id>"  events for a project the caller OWNS
+      - "user:<user_id>"        the caller's OWN user-scoped events
+      - "run:<run_id>"          a run the caller OWNS
+      - "*"                     wildcard — OWNER/ADMIN only
 
-    The connection stays open until the client disconnects or
-    `bus.subscribe()` is closed (which happens via the with-block
-    when the generator is finalised).
+    SECURITY (Sprint 1.2): the requested scope is authorized against the
+    authenticated principal. A caller can only subscribe to scopes they
+    own; `*` is restricted to owners/admins. This closes the cross-tenant
+    event-leak where any client could subscribe to `user:<victim>`,
+    `project:<victim>` or `*` and receive another tenant's activity.
+    Identity is resolved once at connect from the verified token/guest
+    nonce and remains bound to the subscription for the stream's lifetime.
 
-    Wire protocol:
-      event: ready
-      data: {"scope":"project:abc","heartbeat_seconds":25}
-
-      event: <kind>
-      data: <ActivityEvent.to_dict() as JSON>
-
-      : heartbeat                  (idle keep-alive; client ignores)
+    Wire protocol unchanged (ready frame, <kind> frames, heartbeat comments).
     """
     _ensure_enabled()
+
+    requested_scope = (scope or "*").strip() or "*"
+
+    from backend.core.principal import resolve_principal
+    principal = resolve_principal(request)
+    if not principal.may_access_scope(
+        requested_scope,
+        project_owner_lookup=_project_owner,
+        run_owner_lookup=_run_owner,
+    ):
+        logger.warning(
+            "events.stream denied scope=%s for principal=%s",
+            requested_scope, principal.to_audit(),
+        )
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error":   "scope_forbidden",
+                "message": "You may only subscribe to event scopes you own.",
+                "scope":   requested_scope,
+            },
+        )
 
     # Heartbeat lower bound is intentionally low (50ms) so tests can
     # drive the stream without long-polling waits. Production browsers
     # never request anything below the default (25s).
     hb = max(0.05, min(float(heartbeat), 120.0))
-    requested_scope = (scope or "*").strip() or "*"
+    return _open_stream(requested_scope, hb)
+
+
+def _open_stream(requested_scope: str, hb: float):
+    """SSE streaming mechanics for an ALREADY-AUTHORIZED scope. Kept
+    separate from `stream` so the route owns authorization and this owns
+    the bus subscription lifecycle."""
 
     async def _gen():
         # The with-block guarantees Subscription.close() runs on every

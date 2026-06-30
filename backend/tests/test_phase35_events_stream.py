@@ -107,7 +107,12 @@ async def _consume_stream(
     from backend.routes import v2_events
     from backend.services.events import bus
 
-    resp = await v2_events.stream(scope=scope, heartbeat=heartbeat)
+    # Sprint 1.2: authorization now lives in the HTTP `stream` route; the
+    # streaming mechanics live in `_open_stream`. These tests exercise the
+    # bus/streaming behaviour, so they drive `_open_stream` directly with an
+    # already-authorized scope. HTTP-level scope authorization is covered by
+    # the Sprint 1.2 security tests.
+    resp = v2_events._open_stream(scope, heartbeat)
     body = resp.body_iterator   # AsyncGenerator[str | bytes, None]
 
     async def _publisher():

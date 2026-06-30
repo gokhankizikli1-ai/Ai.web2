@@ -249,18 +249,27 @@ def require_owner(request: Request) -> User:
 # /v2/orchestrate and any future user_id-bearing route reuse the exact same
 # precedence instead of re-implementing (and drifting from) it.
 
-def resolve_authoritative_uid(
+def resolve_uid_and_source(
     request: Request, body_user_id: str = "", *, log_prefix: str = "",
-) -> str:
+) -> tuple[str, str]:
+    """Resolve the trusted user_id AND its provenance in one place.
+
+    Returns (user_id, source) where source ∈
+    {"middleware","jwt","guest-header","body","anonymous"}. This is THE
+    implementation; resolve_authoritative_uid is a thin wrapper. Having a
+    single function means /chat, /v2/chat/stream and /v2/orchestrate cannot
+    drift apart on the identity contract.
+    """
     tag = (log_prefix or "AUTH").strip()
 
     # 1a. AuthMiddleware-populated state (ENABLE_AUTH_V2=true path).
     state_uid = getattr(request.state, "user_id", None)
     if isinstance(state_uid, str) and state_uid and state_uid != "guest:anonymous":
-        return state_uid
+        return state_uid, "middleware"
 
-    # 1b. Direct Authorization header — middleware may be off; verify here
-    #     so the security guarantee holds either way.
+    # 1b. Direct Authorization header — middleware may be off; VERIFY the
+    #     signature here so the security guarantee holds either way. (We must
+    #     never trust an unsigned/forged `sub`.)
     try:
         auth = (request.headers.get("authorization") or "").strip()
     except Exception:
@@ -273,7 +282,7 @@ def resolve_authoritative_uid(
                 claims = tokens.verify(token, expected_type="access")
                 sub = claims.get("sub")
                 if isinstance(sub, str) and sub:
-                    return sub
+                    return sub, "jwt"
             except Exception as exc:
                 # Bad / expired / mis-signed token → DO NOT fall back to
                 # body.user_id. Fall through to guest/legacy paths.
@@ -289,7 +298,7 @@ def resolve_authoritative_uid(
     except Exception:
         guest_hdr = ""
     if guest_hdr:
-        return guest_hdr[:64]  # match the AuthMiddleware truncation contract
+        return guest_hdr[:64], "guest-header"  # match AuthMiddleware truncation
 
     # 3. Legacy fallback — body.user_id. Pre-fix clients still work; new
     #    clients hit this only when explicitly anonymous + no guest nonce.
@@ -299,9 +308,16 @@ def resolve_authoritative_uid(
             "back to body.user_id. Pre-fix client OR proxy stripped the header.",
             tag,
         )
-        return body_user_id
+        return body_user_id, "body"
 
-    return "anonymous"
+    return "anonymous", "anonymous"
+
+
+def resolve_authoritative_uid(
+    request: Request, body_user_id: str = "", *, log_prefix: str = "",
+) -> str:
+    """Trusted user_id (see resolve_uid_and_source for the full contract)."""
+    return resolve_uid_and_source(request, body_user_id, log_prefix=log_prefix)[0]
 
 
 def authorize_user_scope(request: Request, requested_user_id: str, *, normalize=None) -> bool:
@@ -345,5 +361,6 @@ __all__ = [
     "require_auth",
     "require_owner",
     "resolve_authoritative_uid",
+    "resolve_uid_and_source",
     "authorize_user_scope",
 ]
