@@ -143,6 +143,13 @@ class Config:
     # flags). Default OFF so production behaviour is unchanged until flipped.
     ENABLE_BLUEPRINT_ORCHESTRATOR_BRIDGE: bool = os.getenv("ENABLE_BLUEPRINT_ORCHESTRATOR_BRIDGE", "false").strip().lower() == "true"
 
+    # ── Sprint 1.5 — Deliverable Result / preview API ───────────────────
+    # Gate for the /v2/orchestrator/runs/{id}/result + /projects/{id}/result
+    # read endpoints. The resolver only READS existing, ownership-scoped
+    # orchestrator deliverables (no execution, no fabrication); this flag
+    # only governs HTTP exposure. Default OFF → 503 when off.
+    ENABLE_DELIVERABLE_RESULT_API: bool = os.getenv("ENABLE_DELIVERABLE_RESULT_API", "false").strip().lower() == "true"
+
     # ── Phase 8 — Unified AI OS Foundation ──────────────────────────────
     # Six independent flags so each subsystem can be enabled/disabled
     # separately on Railway. All default OFF so production behaviour
