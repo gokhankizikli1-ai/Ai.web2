@@ -164,7 +164,10 @@ export default function DeliverablePreviewModal({
           {isHtml ? (
             <div className="flex justify-center py-3 px-3 min-h-full">
               <iframe
-                key={`${device}-${refreshKey}`}
+                // deliverable.id + content length so a different deliverable
+                // (or a re-run that changed this one's content) always gets a
+                // fresh DOM node, not just an in-place srcDoc mutation.
+                key={`${deliverable.id}-${r.body.length}-${device}-${refreshKey}`}
                 title={`preview-${deliverable.id}`}
                 srcDoc={r.body}
                 // allow-scripts (NO allow-same-origin) → inline prototype JS
