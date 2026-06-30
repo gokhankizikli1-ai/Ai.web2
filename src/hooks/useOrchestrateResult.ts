@@ -121,6 +121,7 @@ export function useOrchestrateResult(): UseOrchestrateResult {
   const runSeq   = useRef(0);
   const timer    = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const busyRef  = useRef(false);
 
   const stopTimers = useCallback(() => {
     if (timer.current) { clearTimeout(timer.current); timer.current = null; }
@@ -130,6 +131,7 @@ export function useOrchestrateResult(): UseOrchestrateResult {
 
   const reset = useCallback(() => {
     runSeq.current += 1;        // invalidate any in-flight loop
+    busyRef.current = false;
     stopTimers();
     setPhase('idle'); setPayload(null); setError(null);
     setDisabledReason(null); setDisabledPrereqs([]); setRunId(null);
@@ -144,6 +146,7 @@ export function useOrchestrateResult(): UseOrchestrateResult {
     function tick(attempt: number) {
       if (seq !== runSeq.current) return;        // superseded
       if (attempt > MAX_POLLS) {
+        busyRef.current = false;
         setError('result polling timed out'); setPhase('error'); return;
       }
       const ctrl = new AbortController();
@@ -153,6 +156,7 @@ export function useOrchestrateResult(): UseOrchestrateResult {
         .then(async (res) => {
           if (seq !== runSeq.current) return;
           if (res.status === 503) {              // result API gated off
+            busyRef.current = false;
             setDisabledReason('The result API is disabled on the server (ENABLE_DELIVERABLE_RESULT_API).');
             setPhase('disabled');
             return;
@@ -160,6 +164,7 @@ export function useOrchestrateResult(): UseOrchestrateResult {
           const body = (await res.json().catch(() => ({}))) as Partial<ResultResponse>;
           const result = body?.result;
           if (!res.ok || !result) {
+            busyRef.current = false;
             setError(`result request failed (${res.status})`); setPhase('error');
             return;
           }
@@ -169,6 +174,8 @@ export function useOrchestrateResult(): UseOrchestrateResult {
           // Keep polling only while non-terminal.
           if (!isResultTerminal(result.status)) {
             timer.current = setTimeout(() => tick(attempt + 1), POLL_MS);
+          } else {
+            busyRef.current = false;
           }
         })
         .catch((e: unknown) => {
@@ -185,6 +192,8 @@ export function useOrchestrateResult(): UseOrchestrateResult {
   const run = useCallback((prompt: string, opts: { projectId?: string } = {}) => {
     const trimmed = prompt.trim();
     if (!trimmed) return;
+    if (busyRef.current) return;
+    busyRef.current = true;
     // Start a fresh run: invalidate prior loop, clear state.
     runSeq.current += 1;
     const seq = runSeq.current;
@@ -210,12 +219,14 @@ export function useOrchestrateResult(): UseOrchestrateResult {
       .then(async (res) => {
         if (seq !== runSeq.current) return;
         if (res.status === 503) {                // bridge gated off
+          busyRef.current = false;
           setDisabledReason('AI execution is disabled on the server (ENABLE_BLUEPRINT_ORCHESTRATOR_BRIDGE).');
           setPhase('disabled');
           return;
         }
         const body = (await res.json().catch(() => ({}))) as OrchestrateResponse;
         if (!res.ok) {
+          busyRef.current = false;
           setError(`orchestrate failed (${res.status})`); setPhase('error');
           return;
         }
@@ -224,6 +235,7 @@ export function useOrchestrateResult(): UseOrchestrateResult {
         const prereqs = exec?.disabled_prerequisites || body.disabled_prerequisites || [];
         // Execution prerequisites off → nothing actually ran. Be honest.
         if (!exec?.executed || !route) {
+          busyRef.current = false;
           setDisabledPrereqs(prereqs);
           setDisabledReason(
             prereqs.length
@@ -240,13 +252,14 @@ export function useOrchestrateResult(): UseOrchestrateResult {
       .catch((e: unknown) => {
         if ((e as { name?: string })?.name === 'AbortError') return;
         if (seq !== runSeq.current) return;
+        busyRef.current = false;
         setError((e as Error)?.message || 'orchestrate request failed');
         setPhase('error');
       });
   }, [poll, stopTimers]);
 
   // Stop everything on unmount.
-  useEffect(() => () => { runSeq.current += 1; stopTimers(); }, [stopTimers]);
+  useEffect(() => () => { runSeq.current += 1; busyRef.current = false; stopTimers(); }, [stopTimers]);
 
   const isBusy = phase === 'planning' || phase === 'running' || phase === 'rendering';
 
