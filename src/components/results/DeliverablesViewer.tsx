@@ -25,6 +25,14 @@ interface Resolved {
   hasArtifact: boolean;
 }
 
+function contentFingerprint(body: string): string {
+  let hash = 0;
+  for (let i = 0; i < body.length; i += 1) {
+    hash = (Math.imul(hash, 31) + body.charCodeAt(i)) >>> 0;
+  }
+  return `${body.length}-${hash.toString(36)}`;
+}
+
 function resolve(d: DeliverableView): Resolved {
   const c = (d.content || {}) as Record<string, unknown>;
   const art = c.artifact as Artifact | undefined;
@@ -154,7 +162,7 @@ function ArtifactInline({ resolved, title, id }: { resolved: Resolved; title: st
         // Force a fresh DOM node (not just a srcDoc mutation) whenever the
         // deliverable identity OR its content changes, so a re-run never
         // leaves stale in-page JS state / scroll position behind.
-        key={`${id}-${resolved.body.length}`}
+        key={`${id}-${contentFingerprint(resolved.body)}`}
         title={title}
         srcDoc={resolved.body}
         sandbox="allow-scripts"

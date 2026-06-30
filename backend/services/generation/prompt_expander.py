@@ -689,7 +689,7 @@ def expand(user_request: str, blueprint: Optional[Dict[str, Any]] = None) -> Pro
     # Sprint 2.0 — Universal Renderer Selector: label the already-chosen
     # layout with one of the 7 named renderer categories + an optional
     # content variant. Additive only — never changes `spec.layout`.
-    selection = select_renderer(text=text, layout=spec.layout,
+    selection = select_renderer(text=match_text, layout=spec.layout,
                                 product_type=spec.product_type, blueprint=blueprint)
     spec.renderer = selection["category"]
     if selection.get("variant"):

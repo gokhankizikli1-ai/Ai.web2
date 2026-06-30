@@ -25,6 +25,14 @@ interface Resolved {
   metadata?: ArtifactMetadata;
 }
 
+function contentFingerprint(body: string): string {
+  let hash = 0;
+  for (let i = 0; i < body.length; i += 1) {
+    hash = (Math.imul(hash, 31) + body.charCodeAt(i)) >>> 0;
+  }
+  return `${body.length}-${hash.toString(36)}`;
+}
+
 function resolve(d: DeliverableView): Resolved {
   const c = (d.content || {}) as Record<string, unknown>;
   const art = c.artifact as Artifact | undefined;
@@ -164,10 +172,10 @@ export default function DeliverablePreviewModal({
           {isHtml ? (
             <div className="flex justify-center py-3 px-3 min-h-full">
               <iframe
-                // deliverable.id + content length so a different deliverable
+                // deliverable.id + content fingerprint so a different deliverable
                 // (or a re-run that changed this one's content) always gets a
                 // fresh DOM node, not just an in-place srcDoc mutation.
-                key={`${deliverable.id}-${r.body.length}-${device}-${refreshKey}`}
+                key={`${deliverable.id}-${contentFingerprint(r.body)}-${device}-${refreshKey}`}
                 title={`preview-${deliverable.id}`}
                 srcDoc={r.body}
                 // allow-scripts (NO allow-same-origin) → inline prototype JS
