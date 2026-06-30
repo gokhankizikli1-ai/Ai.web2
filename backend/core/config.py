@@ -128,6 +128,13 @@ class Config:
     # Railway deploy template.
     REDIS_URL: str = os.getenv("REDIS_URL", "")
 
+    # ── Sprint 1.3 — Universal Product Intelligence ─────────────────────
+    # Master gate for the /v2/intelligence/* planning API. The engine itself
+    # is a pure, side-effect-free library that other modules import directly;
+    # this flag only governs whether the HTTP surface is exposed. Default OFF
+    # so production behaviour is byte-identical until flipped.
+    ENABLE_PRODUCT_INTELLIGENCE: bool = os.getenv("ENABLE_PRODUCT_INTELLIGENCE", "false").strip().lower() == "true"
+
     # ── Phase 8 — Unified AI OS Foundation ──────────────────────────────
     # Six independent flags so each subsystem can be enabled/disabled
     # separately on Railway. All default OFF so production behaviour
