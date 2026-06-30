@@ -29,14 +29,15 @@ interface RunResultDetailsProps {
 export default function RunResultDetails({ runId, promptFallback }: RunResultDetailsProps) {
   const { snapshot, loading, error, isTerminal, refresh } = useProjectRun(runId);
   const result = useRunResult(runId);
+  const activeSnapshot = snapshot?.run_id === runId ? snapshot : null;
 
-  const run = (snapshot?.run || undefined) as Record<string, unknown> | undefined;
+  const run = (activeSnapshot?.run || undefined) as Record<string, unknown> | undefined;
   const meta = (run?.metadata || {}) as Record<string, unknown>;
-  const deliverables: DeliverableView[] = snapshot?.deliverables || [];
+  const deliverables: DeliverableView[] = activeSnapshot?.deliverables || [];
 
   const prompt = String(meta.user_request || promptFallback || '') || 'Untitled run';
   const workspace = String(meta.workspace || '');
-  const status = snapshot?.status || (runId ? 'pending' : '');
+  const status = activeSnapshot?.status || (runId ? 'pending' : '');
   const desc = describeStatus(status);
   const started = (run?.started_at as string) || (run?.created_at as string) || null;
   const finished = (run?.finished_at as string) || null;
@@ -59,19 +60,8 @@ export default function RunResultDetails({ runId, promptFallback }: RunResultDet
     );
   }
 
-  // ── Run not found (stale id / cross-user) ─────────────────────────────────
-  if (!snapshot && error && /not.?found/i.test(error)) {
-    return (
-      <Center>
-        <X className="h-6 w-6 text-white/25 mb-2" />
-        <p className="text-[13px] text-white/55">Run not available</p>
-        <p className="text-[11px] text-white/30 mt-1">This run could not be found or isn't accessible.</p>
-      </Center>
-    );
-  }
-
-  // ── Loading first snapshot ────────────────────────────────────────────────
-  if (!snapshot && loading) {
+  // ── Loading first/current snapshot ────────────────────────────────────────
+  if (!activeSnapshot && loading) {
     return (
       <div className="p-4 space-y-3">
         <div className="h-6 w-2/3 rounded bg-white/[0.03] animate-pulse" />
@@ -79,6 +69,17 @@ export default function RunResultDetails({ runId, promptFallback }: RunResultDet
         <div className="h-24 rounded-xl bg-white/[0.02] animate-pulse" />
         <div className="h-40 rounded-xl bg-white/[0.02] animate-pulse" />
       </div>
+    );
+  }
+
+  // ── Run not found (stale id / cross-user) ─────────────────────────────────
+  if (!activeSnapshot && error && /not.?found/i.test(error)) {
+    return (
+      <Center>
+        <X className="h-6 w-6 text-white/25 mb-2" />
+        <p className="text-[13px] text-white/55">Run not available</p>
+        <p className="text-[11px] text-white/30 mt-1">This run could not be found or isn't accessible.</p>
+      </Center>
     );
   }
 
@@ -106,7 +107,7 @@ export default function RunResultDetails({ runId, promptFallback }: RunResultDet
               <Radio className="h-3 w-3 animate-pulse" /> Live · updating
             </span>
           )}
-          {!!error && snapshot && (
+          {!!error && activeSnapshot && (
             <span className="text-amber-400/70">reconnecting…</span>
           )}
           {running && (
@@ -155,8 +156,8 @@ export default function RunResultDetails({ runId, promptFallback }: RunResultDet
       <ExecutionMetadata
         runId={runId}
         meta={meta}
-        templateId={snapshot?.template_id ?? null}
-        workflowId={snapshot?.workflow?.id ?? null}
+        templateId={activeSnapshot?.template_id ?? null}
+        workflowId={activeSnapshot?.workflow?.id ?? null}
         renderer={result.payload?.renderer ?? (meta.recommended_renderer as string) ?? null}
         sourceCount={result.payload?.source_deliverables?.length ?? null}
       />

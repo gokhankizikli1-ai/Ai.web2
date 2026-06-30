@@ -24,7 +24,10 @@ export interface UseProjectRuns {
 const POLL_MS = 5000;   // gentle background refresh while a run is active
 
 export function useProjectRuns(projectId: string | null | undefined): UseProjectRuns {
-  const [runs, setRuns]                 = useState<RunTurn[]>([]);
+  const [runsState, setRunsState]       = useState<{ projectId: string | null; runs: RunTurn[] }>({
+    projectId: null,
+    runs: [],
+  });
   const [loading, setLoading]           = useState(false);
   const [error, setError]               = useState<string | null>(null);
   const [availability, setAvailability] = useState<RunsAvailability>('unknown');
@@ -53,7 +56,7 @@ export function useProjectRuns(projectId: string | null | undefined): UseProject
         if (mySeq !== seq.current) return;
         // Backend returns chronological (oldest→newest); show newest first.
         const ordered = [...list].reverse();
-        setRuns(ordered);
+        setRunsState({ projectId, runs: ordered });
         setAvailability('available');
         setError(null);
         // Keep refreshing only while something is still running.
@@ -84,11 +87,21 @@ export function useProjectRuns(projectId: string | null | undefined): UseProject
   }, [load]);
 
   useEffect(() => {
-    if (!projectId) return;
     seq.current += 1;
+    clearTimer();
+    abort.current?.abort();
+    setRunsState({ projectId: projectId ?? null, runs: [] });
+    setError(null);
+    if (!projectId) {
+      setLoading(false);
+      setAvailability('unknown');
+      return;
+    }
     load(seq.current);
     return () => { seq.current += 1; clearTimer(); abort.current?.abort(); };
   }, [projectId, load, clearTimer]);
+
+  const runs = runsState.projectId === (projectId ?? null) ? runsState.runs : [];
 
   return { runs, loading, error, availability, refresh };
 }

@@ -6,7 +6,7 @@
 // the selected run's result, deliverables, timeline and metadata. Everything
 // reads existing contracts (listRuns / getRun / PreviewPayload) — no new
 // backend, no fake data.
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useParams, Link } from 'react-router';
 import { ArrowLeft } from 'lucide-react';
 import Navigation from '@/components/Navigation';
@@ -19,10 +19,12 @@ export default function ProjectResults() {
   const { projectId } = useParams<{ projectId: string }>();
   const pid = projectId || '';
   const { runs, loading, error, availability, refresh } = useProjectRuns(pid);
-  // Derive the effective selection: an explicit pick, else the newest run.
+  // Derive the effective selection: an explicit pick for this project, else the newest run.
   // (Derived during render — no auto-select effect, no cascading setState.)
-  const [picked, setPicked] = useState<string | null>(null);
-  const selectedRunId = picked ?? runs[0]?.run_id ?? null;
+  const [picked, setPicked] = useState<{ projectId: string; runId: string } | null>(null);
+  const pickedRunId = picked?.projectId === pid ? picked.runId : null;
+  const selectedRunId = pickedRunId ?? runs[0]?.run_id ?? null;
+  const selectRun = useCallback((runId: string) => setPicked({ projectId: pid, runId }), [pid]);
 
   const project = useMemo(() => (pid ? getProject(pid) : undefined), [pid]);
 
@@ -57,7 +59,7 @@ export default function ProjectResults() {
           <RunHistoryPanel
             runs={runs}
             selectedRunId={selectedRunId}
-            onSelect={setPicked}
+            onSelect={selectRun}
             loading={loading}
             error={error}
             availability={availability}

@@ -99,6 +99,8 @@ export function useRunResult(runId: string | null | undefined): UseRunResult {
         if ((e as { name?: string })?.name === 'AbortError') return;
         if (mySeq !== seq.current) return;
         setError((e as Error)?.message || 'failed to load result');
+        clearTimer();
+        timer.current = setTimeout(() => tick(attempt + 1), POLL_MS);
       } finally {
         if (mySeq === seq.current) setLoading(false);
       }
