@@ -100,3 +100,41 @@ providers = ["python", "node"]
 #              (asyncpg, psycopg, etc all ship binary wheels today
 #              but gcc is a cheap defensive backstop).
 nixPkgs = ["python311", "gcc"]
+
+# ── Node install command override (2026-06-30 deploy fix) ──────────────
+# WHY THIS EXISTS
+# ----------------
+# Railway production build failed with:
+#   Unknown command: "ci"
+#   "npm ci" did not complete successfully
+#
+# Root cause (verified locally with `npm ci --dry-run`): package.json and
+# package-lock.json are out of sync — Sprint 1.8 added `vitest` as a
+# devDependency but the lockfile was never regenerated (the dev sandbox's
+# npm registry access was restricted, documented in
+# SPRINT_1_8_LIVE_RUN_STREAMING.md). `npm ci` requires byte-for-byte sync
+# between the two files and hard-fails otherwise:
+#   npm error `npm ci` can only install packages when your package.json
+#   and package-lock.json ... are in sync ... Missing: vitest@4.1.9 ...
+# The Node provider (active via `providers = [..., "node"]` above) defaults
+# to `npm ci` whenever a package-lock.json is present — that's what Railway
+# was running.
+#
+# THE FIX
+# -------
+# Override ONLY the Node provider's install command to `npm install`, which
+# reconciles the lockfile against package.json instead of requiring strict
+# pre-existing sync — so a future dependency added without a lockfile
+# regen no longer hard-fails the whole deploy.
+#
+# `providers = ["python", "node"]` makes "python" the FIRST provider and
+# "node" the SECOND. Nixpacks exposes per-provider phase overrides via the
+# `"<provider>:<phase>"` key syntax — `phases."node:install"` touches ONLY
+# the Node provider's install phase. The Python provider's install phase
+# (`phases.install`, the first/unprefixed name) is INTENTIONALLY left
+# untouched here, so its pip/venv setup keeps using the provider default —
+# exactly the behaviour `providers = [...]` was introduced to guarantee
+# (see the long comment above). No other phase, no other provider, and no
+# `nixPkgs` entry changes.
+[phases."node:install"]
+cmds = ["npm install"]
