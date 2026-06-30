@@ -646,12 +646,12 @@ def expand(user_request: str, blueprint: Optional[Dict[str, Any]] = None) -> Pro
     `blueprint` is the OPTIONAL Sprint 1.3 ProductBlueprint summary attached
     to the orchestrator run (workspace/product_category/audience/complexity/
     recommended_renderer/core_features — see blueprint_bridge.orchestrator_
-    metadata()). When present it (a) widens the text used for vertical/
-    layout classification with the blueprint's own category/feature words,
-    so a terse prompt that Product Intelligence already classified routes
-    correctly even if its raw wording is ambiguous, and (b) refines the
-    chosen spec's audience/feature copy. When absent (the common direct-
-    orchestrator-run path), behaviour is IDENTICAL to before this sprint."""
+    metadata()). When present it (a) widens the text used for ambiguous
+    prompt classification/vertical matching with the blueprint's own category/
+    feature words, so a terse prompt that Product Intelligence already
+    classified routes correctly, and (b) refines the chosen spec's audience/
+    feature copy. When absent (the common direct-orchestrator-run path),
+    behaviour is IDENTICAL to before this sprint."""
     text = user_request or ""
     match_text = text
     if blueprint:
@@ -663,7 +663,9 @@ def expand(user_request: str, blueprint: Optional[Dict[str, Any]] = None) -> Pro
         if extra_terms:
             match_text = f"{text} {extra_terms}".strip()
 
-    intent = classify(match_text)
+    intent = classify(text)
+    if match_text != text and intent.confidence < 0.9:
+        intent = classify(match_text)
     style = resolve_style(intent.style_mode)
     spec = _route(text, match_text, intent, style)
 

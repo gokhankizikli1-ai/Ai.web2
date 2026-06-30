@@ -183,6 +183,16 @@ def test_blueprint_widens_classification_for_a_terse_prompt():
     assert spec.product_type == "fitness"
 
 
+def test_blueprint_keywords_do_not_override_explicit_app_intent():
+    blueprint = {
+        "product_category": "ecommerce",
+        "core_features": ["Shopping cart", "Checkout flow"],
+    }
+    spec = expand("Build an app", blueprint=blueprint)
+    assert spec.layout == "app"
+    assert spec.product_type == "app"
+
+
 def test_blueprint_never_changes_an_explicit_vertical_match():
     """An explicit keyword in the prompt itself still wins regardless of a
     (possibly stale/contradictory) blueprint hint — defensive ordering."""
