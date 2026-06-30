@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import re
 
+from backend.services.generation import component_library as cl
 from backend.services.generation.renderers import base
 from backend.services.generation.renderers.base import (
     avatar, bars, e, feature_items, ring, spark, svg_icon,
@@ -101,6 +102,8 @@ CSS = """
 
 .mb-reveal { border:1px solid var(--border); border-radius:var(--radius-lg); padding:18px; background:var(--surface); }
 """.strip()
+
+CSS = CSS + "\n\n" + cl.CSS
 
 # nav label keyword → svg icon name (falls back to a generic dot, never errors).
 _NAV_ICON_MAP = [
@@ -197,8 +200,30 @@ def _reveal(spec: ProductSpec) -> str:
             f'<h3 style="margin-bottom:4px">{e(spec.cta_primary)}</h3>{rows}</section>')
 
 
+def _music_widget(spec: ProductSpec) -> str:
+    """Sprint 2.0 — a real player widget for the music/podcast vertical,
+    not just another list row."""
+    feats = feature_items(spec)
+    track = feats[0]["title"] if feats else spec.tagline
+    return cl.music_player(track, spec.name, progress_pct=42)
+
+
+def _streak_calendar(spec: ProductSpec) -> str:
+    """Sprint 2.0 — a real month grid for the habit/wellness vertical,
+    visualising the streak instead of only a progress ring."""
+    pct = _progress_pct(spec)
+    marked_through = max(1, round(pct / 100 * 18))
+    return cl.calendar_grid(f"{spec.name} streak", list(range(1, marked_through + 1)),
+                            today=marked_through, days_in_month=30, start_weekday=2)
+
+
 def _home_page(spec: ProductSpec) -> str:
-    return (_hero(spec) + _metric_grid(spec) + _list_panel(spec) + _actions(spec))
+    extra = ""
+    if spec.product_type == "media":
+        extra = f'<div class="mb-section">{_music_widget(spec)}</div>'
+    elif spec.product_type == "wellness":
+        extra = f'<div class="mb-section ds-card" style="padding:16px">{_streak_calendar(spec)}</div>'
+    return (_hero(spec) + extra + _metric_grid(spec) + _list_panel(spec) + _actions(spec))
 
 
 def _secondary_page(spec: ProductSpec, label: str) -> str:

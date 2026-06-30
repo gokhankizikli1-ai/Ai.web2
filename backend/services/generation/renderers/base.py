@@ -100,6 +100,14 @@ _SVG_ICONS = {
     "plus": '<path d="M10 4v12"/><path d="M4 10h12"/>',
     "compass": '<circle cx="10" cy="10" r="6.5"/><path d="m12.5 7.5-1.5 4-4 1.5 1.5-4Z"/>',
     "dot": '<circle cx="10" cy="10" r="2.4" fill="currentColor" stroke="none"/>',
+    # Sprint 2.0 — component library icons (table/timeline/calendar/music
+    # player/notifications/forms).
+    "prev": '<path d="M13 5 7 10l6 5"/><path d="M6 5v10"/>',
+    "next": '<path d="M7 5l6 5-6 5"/><path d="M14 5v10"/>',
+    "send": '<path d="M17 3 9 11"/><path d="M17 3 11.5 17 9 11 3 8.5Z"/>',
+    "grid": '<rect x="3.5" y="3.5" width="5.5" height="5.5" rx="1.4"/><rect x="11" y="3.5" width="5.5" height="5.5" rx="1.4"/><rect x="3.5" y="11" width="5.5" height="5.5" rx="1.4"/><rect x="11" y="11" width="5.5" height="5.5" rx="1.4"/>',
+    "music": '<circle cx="6" cy="15" r="2.2"/><circle cx="14.5" cy="13.2" r="2.2"/><path d="M8.2 15V5.5L16.7 4v9.2"/>',
+    "clock": '<circle cx="10" cy="10" r="6.8"/><path d="M10 6.2v4l2.8 1.6"/>',
 }
 
 

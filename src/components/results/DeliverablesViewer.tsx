@@ -135,7 +135,7 @@ function DeliverableCard({
       {/* Inline preview (branches only on the generic `preview` hint) */}
       {open && previewable && (
         <div className="px-3 pb-3 border-t border-white/[0.04] pt-2">
-          <ArtifactInline resolved={r} title={deliverable.title || deliverable.kind} />
+          <ArtifactInline resolved={r} title={deliverable.title || deliverable.kind} id={deliverable.id} />
         </div>
       )}
 
@@ -146,11 +146,15 @@ function DeliverableCard({
   );
 }
 
-function ArtifactInline({ resolved, title }: { resolved: Resolved; title: string }) {
+function ArtifactInline({ resolved, title, id }: { resolved: Resolved; title: string; id: string }) {
   const preview = (resolved.preview || '').toLowerCase();
   if (preview === 'iframe' && resolved.body) {
     return (
       <iframe
+        // Force a fresh DOM node (not just a srcDoc mutation) whenever the
+        // deliverable identity OR its content changes, so a re-run never
+        // leaves stale in-page JS state / scroll position behind.
+        key={`${id}-${resolved.body.length}`}
         title={title}
         srcDoc={resolved.body}
         sandbox="allow-scripts"

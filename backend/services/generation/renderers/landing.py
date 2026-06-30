@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+from backend.services.generation import component_library as cl
 from backend.services.generation.renderers import base
 from backend.services.generation.renderers.base import bars, e, icon, slug, spark
 from backend.services.generation.spec import ProductSpec, Section
@@ -30,6 +31,8 @@ CSS = """
 .ld-faq details[open] summary::after { content:'–'; }
 .ld-testi-stars { color:var(--accent-2); font-size:1.05rem; letter-spacing:2px; }
 """.strip()
+
+CSS = CSS + "\n\n" + cl.CSS
 
 _LOGOS = ["Vantage", "Lumio", "Northwind", "Mercura", "Cobalt", "Atlas"]
 
@@ -147,6 +150,19 @@ def _panel(spec: ProductSpec, sec: Section) -> str:
                  f'<div class="ds-card ds-col-2"><div class="ds-stat-value">{e(spec.cta_primary)}</div></div></div></div></div>')
 
 
+def _contact(spec: ProductSpec) -> str:
+    """Sprint 2.0 — Marketing Website variant: a real contact/inquiry form
+    (agency/brand sites lead with "get in touch", not a pricing table)."""
+    fields = [
+        {"name": "name", "label": "Your name", "type": "text", "placeholder": "Jane Doe"},
+        {"name": "email", "label": "Work email", "type": "email", "placeholder": "jane@company.com"},
+        {"name": "project", "label": "Tell us about your project", "type": "textarea",
+         "placeholder": f"What are you looking to build with {spec.name}?"},
+    ]
+    return _wrap("contact", "Let's work together", "Tell us about your project and we'll get back within a day.",
+                 f'<div class="ds-card ds-rise" style="max-width:560px;margin:0 auto">{cl.form_fields(fields, "Send inquiry")}</div>')
+
+
 def _cta(spec: ProductSpec, sec: Section) -> str:
     return f"""
 <section class="ds-section ds-container" id="get-started">
@@ -211,6 +227,8 @@ def render(spec: ProductSpec) -> str:
         parts.append(_section(spec, sec))
     if not any(s.kind == "cta" for s in spec.sections):
         parts.append(_cta(spec, Section(kind="cta", title="Get started today")))
+    if (spec.data or {}).get("variant") == "marketing_website":
+        parts.append(_contact(spec))
     parts += ["</main>", _footer(spec)]
     return "\n".join(parts)
 

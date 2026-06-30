@@ -21,6 +21,7 @@ import re
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from backend.services.generation.intent import ProductIntent, classify
+from backend.services.generation.renderer_selector import select_renderer
 from backend.services.generation.spec import ProductSpec, Section
 from backend.services.generation.styles import resolve_style
 
@@ -684,6 +685,17 @@ def expand(user_request: str, blueprint: Optional[Dict[str, Any]] = None) -> Pro
 
     if blueprint:
         _apply_blueprint(spec, blueprint)
+
+    # Sprint 2.0 — Universal Renderer Selector: label the already-chosen
+    # layout with one of the 7 named renderer categories + an optional
+    # content variant. Additive only — never changes `spec.layout`.
+    selection = select_renderer(text=text, layout=spec.layout,
+                                product_type=spec.product_type, blueprint=blueprint)
+    spec.renderer = selection["category"]
+    if selection.get("variant"):
+        spec.data = dict(spec.data or {})
+        spec.data["variant"] = selection["variant"]
+
     return spec
 
 

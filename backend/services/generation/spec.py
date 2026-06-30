@@ -49,6 +49,12 @@ class ProductSpec:
     style: Dict[str, Any] = field(default_factory=dict)        # resolved style mode
     capabilities: Dict[str, bool] = field(default_factory=dict)  # needs_* flags
     data: Dict[str, Any] = field(default_factory=dict)        # layout-specific seed data
+    # Sprint 2.0 — Universal Renderer Selector: one of the 7 named
+    # renderer categories (mobile_app/saas_dashboard/landing_page/
+    # admin_panel/marketing_website/portfolio/analytics_dashboard). Purely
+    # a label/composition hint layered on top of `layout` — never changes
+    # which renderer module actually renders the page.
+    renderer: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -72,6 +78,7 @@ class ProductSpec:
             f"THEME: {self.theme.get('mode','dark')} mode, accent {self.theme.get('accent')}",
             f"RESPONSIVE: yes (mobile-first)",
             f"DARK MODE: {'yes' if self.dark_mode else 'no'}",
+            f"RENDERER CATEGORY: {self.renderer or self.layout}",
         ]
         if self.metrics:
             lines.append("DASHBOARD WIDGETS: " + ", ".join(m["label"] for m in self.metrics))

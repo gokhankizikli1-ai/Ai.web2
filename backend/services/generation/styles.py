@@ -99,6 +99,13 @@ STYLE_MODES: Dict[str, Dict[str, str]] = {
         "accent2": "#0ea5e9", "radius": "10px", "density": "compact",
         "font": "system", "bg": "clean",
     },
+    # Sprint 2.0 — "Apple, Linear, Stripe, Notion, Arc Browser, Vercel"
+    # reference set: Arc's warm, very-rounded, gradient-glow command feel.
+    "arc_browser": {
+        "label": "Arc Browser", "mode": "dark", "accent": "#7c5cff",
+        "accent2": "#ff7a5c", "radius": "22px", "density": "airy",
+        "font": "grotesk", "bg": "gradient",
+    },
 }
 
 DEFAULT_STYLE = "linear_dark"
@@ -111,6 +118,7 @@ _STYLE_KEYWORDS = [
     (re.compile(r"\bvercel|monospace|terminal\s*style\b", re.I), "vercel_mono"),
     (re.compile(r"\bnotion\b", re.I), "notion_clean"),
     (re.compile(r"\braycast|command\s*(?:bar|palette|menu)\b", re.I), "raycast_command"),
+    (re.compile(r"\barc\s*browser\b|\bthe\s*browser\s*company\b", re.I), "arc_browser"),
     (re.compile(r"\bluxur|editorial|elegant|premium\s*brand|high[\s-]*end\b", re.I), "luxury_editorial"),
     (re.compile(r"\bgaming|game|neon|cyberpunk|esports|arcade\b", re.I), "gaming_neon"),
     (re.compile(r"\bhealth|medical|clinic|wellness|hospital|patient\b", re.I), "healthcare_clean"),

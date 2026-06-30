@@ -226,6 +226,7 @@ def _metadata(spec: ProductSpec, artifact_type: str, components_used: List[str],
         "product_type": spec.product_type,
         "intent": spec.intent,
         "layout": spec.layout,
+        "renderer_category": spec.renderer,
         "style": (spec.style or {}).get("mode_name") or (spec.style or {}).get("label"),
     }
 

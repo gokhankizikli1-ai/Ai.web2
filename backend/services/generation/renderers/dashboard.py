@@ -11,9 +11,10 @@ from __future__ import annotations
 
 import re
 
+from backend.services.generation import component_library as cl
 from backend.services.generation.renderers import base
 from backend.services.generation.renderers.base import (
-    avatar, bars, e, feature_items, icon, ring, spark,
+    avatar, bars, e, feature_items, icon, ring, spark, svg_icon,
 )
 from backend.services.generation.spec import ProductSpec
 
@@ -40,7 +41,7 @@ CSS = """
 .db-topbar .db-search { flex:1; max-width:420px; display:flex; align-items:center; gap:9px; padding:8px 13px;
   background:var(--surface-2); border:1px solid var(--border); border-radius:10px; color:var(--text-dim); font-size:.86rem; }
 .db-topbar .db-spacer { flex:1; }
-.db-iconbtn { width:36px; height:36px; border-radius:10px; display:grid; place-items:center; cursor:pointer;
+.db-iconbtn { position:relative; width:36px; height:36px; border-radius:10px; display:grid; place-items:center; cursor:pointer;
   background:var(--surface-2); border:1px solid var(--border); color:var(--text-muted); }
 .db-iconbtn:hover { color:var(--text); }
 .db-page { padding:clamp(20px,3vw,34px); animation:ds-rise var(--t-slow) var(--ease) both; }
@@ -61,7 +62,11 @@ CSS = """
   .db-sidebar { position:static; height:auto; flex-direction:row; flex-wrap:wrap; overflow:visible; }
   .db-side-foot { display:none; }
 }
+.db-notif-dot { position:absolute; top:6px; right:6px; width:7px; height:7px;
+  border-radius:9999px; background:var(--accent-2); }
 """.strip()
+
+CSS = CSS + "\n\n" + cl.CSS
 
 _NAV_ICONS = {
     "dashboard": "▦", "overview": "▦", "home": "▦", "workouts": "🏋", "nutrition": "🍎",
@@ -140,6 +145,43 @@ def _reveal(spec: ProductSpec) -> str:
             f'{_planner(spec)}</section>')
 
 
+# ── Sprint 2.0 — Admin Panel variant: a dense records table page ───────
+
+_SAMPLE_PEOPLE = [
+    ("Ava Chen", "Owner", "Active"), ("Marcus Lee", "Editor", "Active"),
+    ("Priya Nair", "Viewer", "Invited"), ("Diego Ramirez", "Editor", "Active"),
+    ("Sofia Müller", "Viewer", "Suspended"), ("Noah Kim", "Editor", "Active"),
+]
+
+
+def _records_page(spec: ProductSpec) -> str:
+    headers = ["Name", "Role", "Status", "Last active"]
+    rows = [[name, role, status, f"{i + 1}h ago"] for i, (name, role, status) in enumerate(_SAMPLE_PEOPLE)]
+    return (f'<div class="ds-card ds-rise"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">'
+            f'<h3>{e(spec.name)} records</h3>'
+            f'<button class="ds-btn ds-btn-ghost ds-btn-sm" data-select>+ Add record</button></div>'
+            f'{cl.table(headers, rows)}</div>')
+
+
+# ── Sprint 2.0 — Analytics Dashboard variant: an insights timeline ─────
+
+def _insights_timeline(spec: ProductSpec) -> str:
+    feats = feature_items(spec)[:4] or [{"icon": "chart", "title": "Traffic up", "body": "Steady week-over-week growth."}]
+    items = [{"icon": "chart", "title": e_title, "body": e_body, "time": f"{i + 1}h"}
+             for i, (e_title, e_body) in enumerate((c.get("title", ""), c.get("body", "")) for c in feats)]
+    return f'<div class="ds-card ds-rise" style="margin-top:18px"><h3 style="margin-bottom:14px">Insight timeline</h3>{cl.timeline(items)}</div>'
+
+
+# ── Sprint 2.0 — shared notifications panel (every dashboard variant) ──
+
+def _notifications(spec: ProductSpec) -> str:
+    feats = feature_items(spec)[:4] or [{"icon": "bell", "title": "Welcome", "body": "Your workspace is ready."}]
+    items = [{"icon": "bell", "title": c.get("title", ""), "body": c.get("body", ""),
+              "time": f"{i + 1}h", "unread": i < 2} for i, c in enumerate(feats)]
+    return (f'<section class="ds-hidden ds-card ds-rise" id="reveal-notifications" style="margin:18px 0 0">'
+            f'<h3 style="margin-bottom:14px">Notifications</h3>{cl.notifications_panel(items)}</section>')
+
+
 def _overview(spec: ProductSpec, label: str) -> str:
     feats = feature_items(spec)[:3]
     cards = "".join(f"""
@@ -169,11 +211,16 @@ def _page_body(spec: ProductSpec, idx: int, label: str) -> str:
     if idx == 0:
         return _overview(spec, label)
     key = label.lower()
+    if re.search(r"record", key):
+        return _records_page(spec)
     if re.search(r"progress|analytic|report|insight|market|chart|stat", key):
-        return (f'<div class="ds-bento"><div class="ds-card ds-col-4 ds-row-2 ds-rise"><h3>Trends</h3>{bars(20)}</div>'
+        body = (f'<div class="ds-bento"><div class="ds-card ds-col-4 ds-row-2 ds-rise"><h3>Trends</h3>{bars(20)}</div>'
                 f'<div class="ds-card ds-col-2 ds-rise" style="display:flex;flex-direction:column;align-items:center;gap:10px;justify-content:center">{ring(68,"Goal")}</div>'
                 f'<div class="ds-card ds-col-2 ds-rise"><h3 style="margin-bottom:6px">Momentum</h3>{spark()}</div>'
                 f'<div class="ds-col-6">{_feed(spec, "Latest updates")}</div></div>')
+        if (spec.data or {}).get("variant") == "analytics_dashboard":
+            body += _insights_timeline(spec)
+        return body
     if re.search(r"setting|profile|account$|cards", key):
         return _settings(spec)
     if re.search(r"activit|transaction|asset|alert|notif|customer|order|history", key):
@@ -189,7 +236,12 @@ def _page_body(spec: ProductSpec, idx: int, label: str) -> str:
 
 
 def render(spec: ProductSpec) -> str:
-    nav = spec.navigation or ["Overview", "Activity", "Reports", "Settings"]
+    nav = list(spec.navigation or ["Overview", "Activity", "Reports", "Settings"])
+    variant = (spec.data or {}).get("variant", "saas_dashboard")
+    if variant == "admin_panel" and not any("record" in n.lower() for n in nav):
+        nav.append("Records")
+    if variant == "analytics_dashboard" and not any("insight" in n.lower() for n in nav):
+        nav.append("Insights")
     links = "".join(
         f'<a class="db-link{" is-active" if i == 0 else ""}" data-nav="page-{i}">'
         f'<span class="db-ic">{e(_nav_icon(l))}</span>{e(l)}</a>' for i, l in enumerate(nav))
@@ -205,7 +257,7 @@ def render(spec: ProductSpec) -> str:
     <header class="ds-nav db-topbar">
       <div class="db-search">🔍 Search {e(spec.name)}…</div>
       <span class="db-spacer"></span>
-      <button class="db-iconbtn" title="Notifications">🔔</button>
+      <button class="db-iconbtn db-notif-trigger" data-reveal="reveal-notifications" title="Notifications">{svg_icon('bell')}<span class="db-notif-dot"></span></button>
       <button class="ds-btn ds-btn-primary ds-btn-sm" data-reveal="reveal-detail">{e(spec.cta_primary)}</button>
       {avatar(spec.name)}
     </header>"""
@@ -220,7 +272,11 @@ def render(spec: ProductSpec) -> str:
         pages.append(f'<section class="db-page ds-page{hidden}" data-panel="page-{i}" id="page-{i}">{head}{_page_body(spec, i, l)}</section>')
     foot = (f'<footer class="ds-footer db-foot"><span>© {e(spec.name)} · all systems operational</span>'
             f'<span>Crafted with Korvix</span></footer>')
-    return f'<div class="db-shell">{sidebar}<div class="db-main-col">{topbar}<main>{"".join(pages)}</main>{foot}</div></div>'
+    # Notifications panel sits as a top-level <main> sibling (not nested in
+    # any data-panel page) so its reveal target is reachable from any tab —
+    # the same structural fix Sprint 1.9 applied to the mobile shell's FAB.
+    return (f'<div class="db-shell">{sidebar}<div class="db-main-col">{topbar}'
+            f'<main>{"".join(pages)}<div class="db-page" style="padding-top:0">{_notifications(spec)}</div></main>{foot}</div></div>')
 
 
 __all__ = ["CSS", "render"]

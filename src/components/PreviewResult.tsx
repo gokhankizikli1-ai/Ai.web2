@@ -134,6 +134,7 @@ function RenderedArtifact({ payload }: { payload: PreviewPayload }) {
     // access to parent, cookies or storage.
     view = (
       <iframe
+        key={payload.artifact_id || payload.run_id || payload.title || 'preview'}
         title={payload.title || 'preview'}
         srcDoc={html}
         sandbox="allow-scripts"
