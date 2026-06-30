@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import sqlite3
+from backend.core.paths import resolve_db_path
 import threading
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -24,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 def _db_path() -> str:
-    return os.getenv("VISION_DB_PATH", "vision.db")
+    return resolve_db_path("vision.db", "VISION_DB_PATH")
 
 
 _LOCK = threading.Lock()

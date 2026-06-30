@@ -8,6 +8,8 @@ NOT at import time, so Railway can boot cleanly even before secrets are injected
 import os
 import logging
 
+from backend.core.paths import resolve_db_path, persistence_summary
+
 logger = logging.getLogger(__name__)
 
 
@@ -81,13 +83,18 @@ class Config:
     ENABLE_ADMIN_DEBUG: bool = os.getenv("ENABLE_ADMIN_DEBUG", "false").strip().lower() == "true"
 
     # ── Database ─────────────────────────────────────────────────────────
-    DB_PATH: str = os.getenv("DB_PATH", "memory.db")
-    AUTH_DB_PATH: str = os.getenv("AUTH_DB_PATH", "auth.db")
+    # Paths resolve via backend.core.paths.resolve_db_path: an explicit
+    # env var still wins (legacy + test behaviour unchanged), otherwise the
+    # file lands under KORVIX_DATA_DIR / the Railway volume when configured,
+    # else the bare relative filename. This is what lets a single env var
+    # move every DB onto durable storage. See backend/core/paths.py.
+    DB_PATH: str = resolve_db_path("memory.db", "DB_PATH")
+    AUTH_DB_PATH: str = resolve_db_path("auth.db", "AUTH_DB_PATH")
     # Phase 6 — Memory Plane SQLite file. Kept separate from memory.db /
     # sessions.db / auth.db so each phase has a clean rollback path
     # (rm memory_plane.db forgets the whole subsystem; nothing else
     # moves).
-    MEMORY_PLANE_DB_PATH: str = os.getenv("MEMORY_PLANE_DB_PATH", "memory_plane.db")
+    MEMORY_PLANE_DB_PATH: str = resolve_db_path("memory_plane.db", "MEMORY_PLANE_DB_PATH")
 
     # ── Phase 6 — Memory Plane ───────────────────────────────────────────
     # Master kill-switch for the Memory Plane (PROJECT_ROADMAP.md Phase 6).
@@ -115,7 +122,7 @@ class Config:
     JOB_QUEUE_INLINE_CONCURRENCY: int = int(os.getenv("JOB_QUEUE_INLINE_CONCURRENCY", "4"))
     # Dedicated SQLite file for the jobs table — same isolation pattern
     # as memory_plane.db / sessions.db. Override only for tests.
-    JOBS_DB_PATH: str = os.getenv("JOBS_DB_PATH", "jobs.db")
+    JOBS_DB_PATH: str = resolve_db_path("jobs.db", "JOBS_DB_PATH")
     # Redis broker URL — Phase 14 dependency. Unused when
     # JOB_QUEUE_MODE=inline; documented here for parity with the
     # Railway deploy template.
@@ -134,10 +141,10 @@ class Config:
     # Per-subsystem SQLite paths. Same isolation pattern as Phase 6/7:
     # one file per subsystem so each rollback is `rm <file>` and
     # nothing else moves.
-    ASSETS_DB_PATH:        str = os.getenv("ASSETS_DB_PATH",        "assets.db")
-    VISION_DB_PATH:        str = os.getenv("VISION_DB_PATH",        "vision.db")
-    WORKFLOWS_DB_PATH:     str = os.getenv("WORKFLOWS_DB_PATH",     "workflows.db")
-    AGENT_TASKS_DB_PATH:   str = os.getenv("AGENT_TASKS_DB_PATH",   "agent_tasks.db")
+    ASSETS_DB_PATH:        str = resolve_db_path("assets.db",       "ASSETS_DB_PATH")
+    VISION_DB_PATH:        str = resolve_db_path("vision.db",       "VISION_DB_PATH")
+    WORKFLOWS_DB_PATH:     str = resolve_db_path("workflows.db",    "WORKFLOWS_DB_PATH")
+    AGENT_TASKS_DB_PATH:   str = resolve_db_path("agent_tasks.db",  "AGENT_TASKS_DB_PATH")
     # Asset file storage. Local filesystem by default (Railway-compatible
     # at the working dir; mount a persistent volume in production).
     # When ASSETS_STORAGE_BACKEND=r2 / s3 / supabase is set with the
@@ -148,6 +155,15 @@ class Config:
     # Per-asset upload cap. 10 MB matches reasonable image/PDF sizes;
     # video uploads are accepted but flagged processing_not_supported.
     ASSETS_MAX_BYTES:          int = int(os.getenv("ASSETS_MAX_BYTES", str(10 * 1024 * 1024)))
+
+    # ── Legacy per-user routes (/memory, /profile, /stats) ───────────────
+    # These pre-auth routes are superseded by the auth-bound /v2/* surface
+    # and are NOT called by the current frontend. They are now ownership-
+    # enforced (a caller can only touch their own user_id; owners may touch
+    # any). This flag is the deprecation off-switch: set false to retire the
+    # whole legacy surface (routes return 410 Gone, pointing at /v2/*).
+    # Default true so nothing breaks until an operator opts out.
+    ENABLE_LEGACY_USER_ROUTES: bool = os.getenv("ENABLE_LEGACY_USER_ROUTES", "true").strip().lower() == "true"
 
     # ── Phase 3 — JWT auth ───────────────────────────────────────────────
     # JWT_SECRET_KEY: HS256 signing key. In production this MUST be set
@@ -179,6 +195,108 @@ class Config:
             logger.error("OPENAI_API_KEY is not set")
             return False
         return True
+
+    # ── Startup self-check ────────────────────────────────────────────────
+    def validate_runtime(self) -> list[tuple[str, str]]:
+        """Return a list of (severity, message) configuration issues.
+
+        Severity is one of: "critical" | "warning" | "info".
+
+        Design contract — FAIL SAFE, NEVER FAIL HARD at import/boot:
+        this only *reports*. Railway must always be able to boot (so the
+        /health probe passes even before secrets are injected), so we never
+        raise here. The startup hook in backend/api.py logs these loudly.
+        The goal is to make insecure / data-volatile configuration LOUD and
+        visible instead of silently accepted.
+
+        Checks are gated on whether the relevant subsystem is actually
+        enabled, so an operator only sees warnings about things that can
+        actually bite them in the current configuration.
+        """
+        issues: list[tuple[str, str]] = []
+        is_prod = self.ENVIRONMENT.strip().lower() not in ("development", "dev", "test", "testing")
+
+        # 1. Persistence durability — the #1 production risk. If any
+        #    stateful subsystem is on (or we're in prod at all) but no
+        #    durable data dir is configured, surface it.
+        persist = persistence_summary()
+        stateful_on = any([
+            self.ENABLE_MEMORY_PLANE, self.ENABLE_JOB_QUEUE,
+            self.ENABLE_ASSET_SYSTEM, self.ENABLE_AGENT_ORCHESTRATION,
+            self.ENABLE_WORKFLOWS,
+        ])
+        if not persist["durable"]:
+            if is_prod:
+                lvl = "critical" if stateful_on else "warning"
+                issues.append((
+                    lvl,
+                    "Persistence is EPHEMERAL: no KORVIX_DATA_DIR / Railway "
+                    "volume configured, so all SQLite databases live under the "
+                    "container working directory and are WIPED on every "
+                    "redeploy (user accounts, memory, jobs, projects). Mount a "
+                    "persistent volume and set KORVIX_DATA_DIR to its path.",
+                ))
+            else:
+                issues.append((
+                    "info",
+                    "Persistence is ephemeral (no data dir configured) — fine "
+                    "for local/dev.",
+                ))
+
+        # 2. JWT secret — only matters once real auth verification is on.
+        auth_on = (
+            os.getenv("ENABLE_AUTH_V2", "false").strip().lower() == "true"
+            or os.getenv("ENABLE_AUTH_MIDDLEWARE", "false").strip().lower() == "true"
+        )
+        key = self.JWT_SECRET_KEY.strip()
+        if auth_on:
+            if not key:
+                issues.append((
+                    "critical",
+                    "ENABLE_AUTH_V2/ENABLE_AUTH_MIDDLEWARE is on but "
+                    "JWT_SECRET_KEY is empty — token issue/verify will fail "
+                    "closed. Set a 32+ byte JWT_SECRET_KEY.",
+                ))
+            elif len(key.encode("utf-8")) < 32:
+                issues.append((
+                    "critical",
+                    f"JWT_SECRET_KEY is too short ({len(key.encode('utf-8'))} "
+                    "bytes); HS256 needs >= 32 bytes. Tokens will be rejected.",
+                ))
+        elif is_prod and not key:
+            issues.append((
+                "info",
+                "JWT_SECRET_KEY is unset (auth verification is off, so this "
+                "is currently harmless — set it before enabling ENABLE_AUTH_V2).",
+            ))
+
+        # 3. Owner mode hardening — if admin mode is on, an unauthenticated
+        #    token unlock without a strong token is a foot-gun.
+        if self.ENABLE_ADMIN_MODE:
+            tok = self.OWNER_TOKEN.strip()
+            emails = bool(self.OWNER_EMAIL or self.OWNER_EMAILS)
+            if not emails and (not tok or len(tok) < 16):
+                issues.append((
+                    "warning",
+                    "ENABLE_ADMIN_MODE is on but neither OWNER_EMAIL(S) nor a "
+                    "strong OWNER_TOKEN (>=16 chars) is set — owner mode is "
+                    "either unreachable or weakly protected.",
+                ))
+
+        # 4. Orchestration write surface needs verified identity. If the
+        #    orchestrator is enabled but auth verification is off, identity
+        #    falls back to the guest header / body — acceptable for guests
+        #    but operators should know real auth isn't being enforced.
+        if os.getenv("ENABLE_ORCHESTRATOR", "false").strip().lower() == "true" and not auth_on:
+            issues.append((
+                "warning",
+                "ENABLE_ORCHESTRATOR is on but ENABLE_AUTH_V2 is off — "
+                "authenticated identity is derived inline from the Bearer "
+                "token, but enabling AuthMiddleware (ENABLE_AUTH_V2) is "
+                "recommended before exposing orchestration in multi-tenant prod.",
+            ))
+
+        return issues
 
 
 settings = Config()

@@ -24,6 +24,7 @@
 import logging
 import os
 import sqlite3
+from backend.core.paths import resolve_db_path
 import threading
 import uuid
 from contextlib import contextmanager
@@ -32,7 +33,7 @@ from typing import Any, Dict, Iterator, List, Optional
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = os.getenv("PROJECTS_DB_PATH", "projects.db")
+DB_PATH = resolve_db_path("projects.db", "PROJECTS_DB_PATH")
 
 _LOCK = threading.Lock()
 _COUNTS = {

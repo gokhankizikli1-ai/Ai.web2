@@ -66,67 +66,16 @@ def _resolve_authoritative_uid(request: Request, body_user_id: str) -> str:
     SECURITY (Phase-1 P0 fix, 2026-06-28): the original implementation
     trusted `req.user_id` from the request body. A logged-in client
     could send a different account's user_id and be served that
-    account's memory + safety context. This helper now matches the
-    JWT-first / guest-fallback precedence used by AuthMiddleware +
-    core/deps.current_user.
+    account's memory + safety context.
 
-    Resolution order:
-      1. Verified JWT subject — when AuthMiddleware (or the inline
-         verify below) confirms a Bearer token, sub is the source of
-         truth and body.user_id is silently overridden.
-      2. X-Korvix-Guest-Id header — the FE's stable browser nonce.
-      3. body.user_id — legacy fallback, only when NEITHER auth
-         signal exists. Logged as a warning so we can spot
-         pre-fix clients in production logs.
-
-    A bad / expired JWT does NOT fall through to body.user_id —
-    that would re-open the leak. It falls through to the guest /
-    legacy paths just as if no Bearer was sent at all.
+    The precedence (verified JWT subject → X-Korvix-Guest-Id → body
+    fallback, with a bad/expired token NEVER falling through to the body)
+    now lives in backend.core.deps.resolve_authoritative_uid so this
+    route and /v2/orchestrate share ONE implementation instead of two
+    that can drift. This thin wrapper preserves the "CHAT" log prefix.
     """
-    # 1. AuthMiddleware-populated state (production path when
-    #    ENABLE_AUTH_V2=true).
-    state_uid = getattr(request.state, "user_id", None)
-    if isinstance(state_uid, str) and state_uid and state_uid != "guest:anonymous":
-        return state_uid
-
-    # 2. Direct Authorization header — middleware may be off; verify
-    #    here so the security guarantee holds either way.
-    auth = (request.headers.get("authorization") or "").strip()
-    if auth.lower().startswith("bearer "):
-        token = auth[7:].strip()
-        if token:
-            try:
-                from backend.services.auth import tokens
-                claims = tokens.verify(token, expected_type="access")
-                sub = claims.get("sub")
-                if isinstance(sub, str) and sub:
-                    return sub
-            except Exception as exc:
-                # Bad / expired / mis-signed token → DO NOT silently
-                # use body.user_id. That was the leak. Fall through to
-                # guest/legacy paths, log so we see prod auth issues.
-                logger.warning(
-                    "CHAT | bearer present but unverifiable (%s) — "
-                    "falling through to guest path, NOT body.user_id",
-                    type(exc).__name__,
-                )
-
-    # 3. Guest stable nonce from the FE.
-    guest_hdr = (request.headers.get("x-korvix-guest-id") or "").strip()
-    if guest_hdr:
-        return guest_hdr[:64]   # match the AuthMiddleware truncation contract
-
-    # 4. Legacy fallback — body.user_id. Pre-fix clients still work; new
-    #    clients hit this only when explicitly anonymous + no guest nonce.
-    if body_user_id:
-        logger.warning(
-            "CHAT | no auth signal (no Bearer, no X-Korvix-Guest-Id) — "
-            "falling back to body.user_id. Pre-fix client OR proxy "
-            "stripped the auth header."
-        )
-        return body_user_id
-
-    return "anonymous"
+    from backend.core.deps import resolve_authoritative_uid
+    return resolve_authoritative_uid(request, body_user_id, log_prefix="CHAT")
 
 
 # Small, safe language map. Unknown / missing → "" (no hint → existing

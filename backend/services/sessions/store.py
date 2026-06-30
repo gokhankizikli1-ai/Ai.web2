@@ -14,6 +14,7 @@
 # the schema is portable to Postgres later (M3+) with no type re-mapping.
 import os
 import sqlite3
+from backend.core.paths import resolve_db_path
 import logging
 import threading
 import uuid
@@ -30,7 +31,7 @@ from backend.services.sessions.types import (
 
 logger = logging.getLogger(__name__)
 
-DB_PATH = os.getenv("SESSIONS_DB_PATH", "sessions.db")
+DB_PATH = resolve_db_path("sessions.db", "SESSIONS_DB_PATH")
 
 _LOCK   = threading.Lock()
 _COUNTS = {

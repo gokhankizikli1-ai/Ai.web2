@@ -3,7 +3,17 @@ import sqlite3
 import re
 from datetime import datetime
 
-DB_PATH = "memory.db"
+# DB_PATH resolves via backend.core.paths so the live user-memory store can
+# be moved onto a durable Railway volume (KORVIX_DATA_DIR) instead of the
+# ephemeral working directory. The `DB_PATH` env var still wins; with nothing
+# configured the path is the legacy "memory.db", so behaviour is unchanged.
+# Defensive fallback keeps this legacy module importable on its own.
+try:
+    from backend.core.paths import resolve_db_path as _resolve_db_path
+    DB_PATH = _resolve_db_path("memory.db", "DB_PATH")
+except Exception:  # pragma: no cover — standalone import without backend pkg
+    import os as _os
+    DB_PATH = _os.getenv("DB_PATH", "memory.db")
 
 
 def init_memory_db():

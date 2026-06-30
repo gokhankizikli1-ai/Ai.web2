@@ -147,6 +147,18 @@ def _routing_summary_safe() -> dict:
 async def orchestrate(body: OrchestrateBody, request: Request) -> dict:
     _ensure_enabled()
 
+    # ── 0a. Authoritative identity ─────────────────────────────────────
+    # SECURITY: never trust body.user_id for identity. A logged-in client
+    # could otherwise orchestrate (and write run/task rows) under another
+    # account by putting a different user_id in the payload. Resolve from
+    # the authenticated context (verified JWT → guest nonce → body
+    # fallback) via the SAME helper /chat uses. body.user_id is only used
+    # as a last-resort legacy fallback for anonymous, header-less clients.
+    from backend.core.deps import resolve_authoritative_uid
+    resolved_uid = resolve_authoritative_uid(
+        request, str(body.user_id or ""), log_prefix="ORCH",
+    )
+
     # ── 0. Owner-session detection ─────────────────────────────────────
     # Run BEFORE spec lookup so the policy decision is visible across
     # the rest of this function (system prompt, start_run, audit).
@@ -234,7 +246,7 @@ async def orchestrate(body: OrchestrateBody, request: Request) -> dict:
 
     create_run(
         run_id=run_id,
-        user_id=body.user_id,
+        user_id=resolved_uid,
         project_id=body.project_id,
         agent_id=spec.id,
         metadata={
@@ -316,7 +328,7 @@ async def orchestrate(body: OrchestrateBody, request: Request) -> dict:
     agent_request = AgentRequest(
         user_message=body.message.strip(),
         mode=(body.mode or spec.id),
-        user_id=str(body.user_id),
+        user_id=str(resolved_uid),
         # Phase 4.2 — env-tiered model routing (was spec.default_model).
         model=selected_supervisor_model,
         temperature=spec.temperature,
@@ -337,7 +349,7 @@ async def orchestrate(body: OrchestrateBody, request: Request) -> dict:
     err_msg: Optional[str] = None
     try:
         with start_run(
-            user_id=body.user_id,
+            user_id=resolved_uid,
             project_id=body.project_id,
             project_context_block=project_block,
             run_id=run_id,
@@ -482,28 +494,113 @@ async def orchestrate(body: OrchestrateBody, request: Request) -> dict:
     }
 
 
+# ── Read-route authorization helpers ──────────────────────────────────
+#
+# SECURITY (audit P0): the run/task read routes used to be fully open —
+# any caller could enumerate ANY user's runs/tasks by guessing a user_id
+# or run_id. We close the cross-tenant hole WITHOUT breaking the product's
+# first-class guest support:
+#
+#   - AUTHENTICATED (non-guest) caller → scoped to their own data; an
+#     attempt to read another user's run/task graph returns 404 (existence-
+#     hiding), unless they are the owner (owners may inspect everything).
+#   - GUEST / anonymous caller → legacy behaviour: results are scoped by
+#     the identifiers they explicitly pass. Guests have no server-verified
+#     identity to enforce, and this preserves the existing FE + test
+#     contract for the (default-OFF) orchestrator.
+#
+# The whole router is gated by ENABLE_ORCHESTRATOR, so this is hardening
+# applied BEFORE the surface is ever enabled in production.
+
+def _has_verified_identity(request: Request) -> bool:
+    """True when the request carries a server-VERIFIED identity (a valid
+    JWT, or AuthMiddleware state) — as opposed to a guest nonce / body id.
+
+    This is intentionally independent of whether the user row exists in the
+    auth store: a token-only caller is still bound to its `sub`, and runs
+    are keyed by that subject, so isolation must be enforced for them too.
+    """
+    st = getattr(request.state, "user_id", None)
+    if isinstance(st, str) and st and st != "guest:anonymous":
+        return True
+    try:
+        auth = (request.headers.get("authorization") or "").strip()
+    except Exception:
+        return False
+    if auth.lower().startswith("bearer "):
+        token = auth[7:].strip()
+        if token:
+            try:
+                from backend.services.auth import tokens
+                tokens.verify(token, expected_type="access")
+                return True
+            except Exception:
+                return False
+    return False
+
+
+def _caller(request: Request, body_user_id: str = "") -> tuple[str, bool, bool]:
+    """Return (resolved_uid, is_authenticated, is_owner) for a read route."""
+    from backend.core.deps import (
+        current_user, resolve_authoritative_uid, _extract_owner_token,
+    )
+    resolved = resolve_authoritative_uid(request, str(body_user_id or ""), log_prefix="ORCH")
+    is_authed = _has_verified_identity(request)
+    is_owner = False
+    try:
+        u = current_user(request)
+        from backend.services.admin.owner import is_owner_request
+        is_owner = is_owner_request(u, owner_token=_extract_owner_token(request))
+    except Exception:  # pragma: no cover — never let authz checks 500 a read
+        pass
+    return resolved, is_authed, is_owner
+
+
 # ── Convenience read route — list a project's recent runs ─────────────
 # Tiny GET so the frontend can render a "previous orchestrations" list
 # in Phase 3.5 without needing a new endpoint then.
 
 @router.get("/runs")
 def list_runs_route(
+    request: Request,
     user_id: Optional[str] = None,
     project_id: Optional[str] = None,
     limit: int = 50,
 ) -> dict:
     _ensure_enabled()
     from backend.services.orchestrator import list_runs
-    rows = list_runs(user_id=user_id, project_id=project_id, limit=limit)
+    resolved, is_authed, is_owner = _caller(request, user_id or "")
+    # Owner → honour the explicit filter. Authenticated non-owner → force
+    # scope to self (a spoofed ?user_id is ignored). Guest → legacy: honour
+    # whatever user_id was passed.
+    if is_owner:
+        eff_user = user_id
+    elif is_authed:
+        eff_user = resolved
+    else:
+        eff_user = user_id
+    rows = list_runs(user_id=eff_user, project_id=project_id, limit=limit)
     return {"runs": rows}
 
 
+def _run_visible(row: dict, resolved: str, is_authed: bool, is_owner: bool) -> bool:
+    """A run is visible to owners always; to an authenticated caller only
+    when it is theirs; to guests/anonymous under the legacy open contract."""
+    if is_owner:
+        return True
+    if is_authed:
+        return str(row.get("user_id") or "") == str(resolved)
+    return True
+
+
 @router.get("/runs/{run_id}")
-def get_run_route(run_id: str) -> dict:
+def get_run_route(run_id: str, request: Request) -> dict:
     _ensure_enabled()
     from backend.services.orchestrator import get_run
     row = get_run(run_id)
-    if not row:
+    resolved, is_authed, is_owner = _caller(request)
+    # Hide existence on a cross-user read (404, not 403).
+    if not row or not _run_visible(row, resolved, is_authed, is_owner):
         raise HTTPException(status_code=404, detail={"error": "run_not_found"})
     return row
 
@@ -511,21 +608,34 @@ def get_run_route(run_id: str) -> dict:
 # ── Phase 5.1 — task graph endpoints ──────────────────────────────────
 
 @router.get("/runs/{run_id}/tasks")
-def get_run_tasks_route(run_id: str) -> dict:
+def get_run_tasks_route(run_id: str, request: Request) -> dict:
     """Return the execution graph for a run. Used by the frontend to
     backfill after a tab refresh — the SSE stream only delivers events
     going forward, so on mount the UI fetches the historical task
     list from here."""
     _ensure_enabled()
-    from backend.services.orchestrator import ExecutionGraph
+    from backend.services.orchestrator import ExecutionGraph, get_run
+    # Authorize against the parent run's ownership before returning its
+    # task graph (same existence-hiding contract as GET /runs/{id}).
+    row = get_run(run_id)
+    resolved, is_authed, is_owner = _caller(request)
+    if row is not None and not _run_visible(row, resolved, is_authed, is_owner):
+        raise HTTPException(status_code=404, detail={"error": "run_not_found"})
     return ExecutionGraph.for_run(run_id).to_envelope()
 
 
 @router.get("/projects/{project_id}/tasks")
-def get_project_tasks_route(project_id: str, limit: int = 100) -> dict:
+def get_project_tasks_route(project_id: str, request: Request, limit: int = 100) -> dict:
     """List recent tasks for a project (across all runs). Cap at 500
     to bound payload size; default 100. Sorted newest-first."""
     _ensure_enabled()
-    from backend.services.orchestrator import list_tasks_for_project
+    from backend.services.orchestrator import list_tasks_for_project, list_runs
+    resolved, is_authed, is_owner = _caller(request)
+    # Authenticated non-owner: only expose a project's tasks when at least
+    # one run in that project belongs to them (existence-hiding 404 else).
+    if is_authed and not is_owner:
+        own = list_runs(user_id=resolved, project_id=project_id, limit=1)
+        if not own:
+            raise HTTPException(status_code=404, detail={"error": "project_not_found"})
     rows = list_tasks_for_project(project_id, limit=limit)
     return {"tasks": rows}
