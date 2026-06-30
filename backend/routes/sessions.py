@@ -300,12 +300,7 @@ def delete_message(message_id: str, request: Request) -> dict:
     if msg is not None:
         _enforce_owner(request, _thread_owner(getattr(msg, "thread_id", "")))
     else:
-        # No lookup available — still require an authenticated identity so an
-        # anonymous caller can't delete arbitrary messages.
-        from backend.core.principal import resolve_principal
-        pr = resolve_principal(request)
-        if not (pr.is_authenticated or pr.is_owner):
-            raise HTTPException(404, detail={"error": "not_found", "id": message_id})
+        raise HTTPException(404, detail={"error": "not_found", "id": message_id})
     ok = client.delete_message(message_id)
     if not ok:
         raise HTTPException(404, detail={"error": "not_found", "id": message_id})
