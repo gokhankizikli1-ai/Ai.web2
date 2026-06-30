@@ -122,7 +122,7 @@ async def search(
     raw_results = web.get("results") or []
 
     # Client-side exclude_domains filter.
-    excl = {d.lower().lstrip("www.") for d in (exclude_domains or [])}
+    excl = {d.lower().removeprefix("www.") for d in (exclude_domains or [])}
     citations: list[Citation] = []
     for r in raw_results:
         if not isinstance(r, dict):
