@@ -134,49 +134,31 @@ class StreamChatRequest(BaseModel):
 # ── Identity resolution ──────────────────────────────────────────────────────
 
 def _resolve_user_id(request: Request, body_user_id: Optional[str]) -> tuple[str, str]:
-    """Return (user_id, source) where source ∈ {"jwt","body","anonymous"}.
+    """Return (user_id, source) for the streaming chat request.
 
-    Identity-first precedence — JWT-derived `User.id` always wins over
-    body-supplied user_id so an authenticated user can't be impersonated
-    via a forged body field. This is the SAME contract Phase 6 / 7
-    relied on; do NOT widen it to dual-namespace reads (that's a
-    cross-user leak vector — see test_jwt_overrides_body_user_id).
+    SECURITY (Sprint 1.2): identity now flows through the SINGLE shared
+    resolver (backend.core.deps.resolve_uid_and_source), which VERIFIES the
+    JWT signature before trusting `sub`. The previous implementation parsed
+    the Bearer payload with an UNSIGNED base64 decode and trusted whatever
+    `sub` it found — a forged token could read/write another user's memory
+    namespace when AuthMiddleware was off. That hole is now closed: a
+    forged/expired token degrades to the guest/body path instead of being
+    trusted.
+
+    Precedence is unchanged for legitimate clients: verified JWT →
+    X-Korvix-Guest-Id nonce → body.user_id (legacy) → anonymous.
     """
-    # 1) Try the AuthMiddleware-populated state (Phase 3 — only when
-    #    ENABLE_AUTH_V2 is on). request.state.user is a `User` dataclass
-    #    or absent.
-    try:
-        user = getattr(request.state, "user", None)
-        if user is not None and getattr(user, "id", None) and not getattr(user, "is_guest", True):
-            return str(user.id), "jwt"
-    except Exception:
-        pass
-    # 2) Direct Authorization header parse — covers the case where
-    #    AuthMiddleware isn't installed but the frontend still sends a
-    #    Bearer token. We don't VERIFY the token here (that's the
-    #    middleware's job); we just extract the `sub` claim and use it
-    #    as a stable identity. This is intentionally lenient — an
-    #    unverified JWT identity is still a stable per-user id and the
-    #    blast radius is one user's memory namespace.
-    try:
-        auth = request.headers.get("authorization") or request.headers.get("Authorization")
-        if auth and auth.lower().startswith("bearer "):
-            token = auth.split(None, 1)[1].strip()
-            import base64
-            parts = token.split(".")
-            if len(parts) >= 2:
-                pad = "=" * (-len(parts[1]) % 4)
-                payload = json.loads(base64.urlsafe_b64decode(parts[1] + pad))
-                sub = payload.get("sub")
-                if isinstance(sub, str) and sub:
-                    return sub, "jwt"
-    except Exception:
-        pass
-    # 3) Body-supplied user_id (matches legacy /chat).
-    if body_user_id and body_user_id.strip():
-        return body_user_id.strip(), "body"
-    # 4) Synthetic — no memory will be retrieved.
-    return "anonymous", "anonymous"
+    from backend.core.deps import resolve_uid_and_source
+    uid, source = resolve_uid_and_source(
+        request, (body_user_id or "").strip(), log_prefix="CHATSTREAM",
+    )
+    # Map to this route's historical source labels so existing logs /
+    # dashboards keep working ("jwt" for any server-verified identity).
+    if source in ("middleware", "jwt"):
+        source = "jwt"
+    elif source == "guest-header":
+        source = "guest"
+    return uid, source
 
 
 # ── Explicit-save SSE short-circuit ──────────────────────────────────────────
