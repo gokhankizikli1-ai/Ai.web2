@@ -89,6 +89,7 @@ def orchestrate_health() -> dict:
         missing = execution_prerequisites()
     except Exception as exc:  # pragma: no cover — defensive
         logger.warning("bridge health: prerequisites unavailable: %s", exc)
+        missing = ["execution_prerequisites_unavailable"]
     return {
         "enabled": flags["ENABLE_BLUEPRINT_ORCHESTRATOR_BRIDGE"],
         "phase": "1.4 — blueprint→orchestrator bridge",

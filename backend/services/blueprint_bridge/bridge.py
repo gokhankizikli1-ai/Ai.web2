@@ -83,7 +83,8 @@ def execution_prerequisites() -> List[str]:
 # ── Dry-run (NO execution) ────────────────────────────────────────────────
 
 def _project_title(request: OrchestrationRequest) -> str:
-    text = (request.user_request or "").strip().splitlines()[0] if request.user_request else ""
+    lines = (request.user_request or "").strip().splitlines()
+    text = lines[0] if lines else ""
     text = text[:60].strip() or request.workspace.replace("_", " ").title()
     return text
 

@@ -95,6 +95,20 @@ def test_dry_run_reports_missing_prerequisites():
     assert "ENABLE_PROJECT_ORCHESTRATOR" in dr.missing_prerequisites
 
 
+def test_dry_run_whitespace_prompt_uses_workspace_title():
+    req = OrchestrationRequest(
+        user_request="   ",
+        workspace="website_app",
+        product_category="web_app",
+        audience="general users",
+        complexity="simple",
+        recommended_renderer="html",
+        suggested_template_id="app_prototype",
+    )
+    dr = dry_run(req)
+    assert dr.project_title == "Website App"
+
+
 # ── Module separation (no boundary violations) ────────────────────────────
 
 def test_product_intelligence_has_no_orchestrator_or_builder_import():
@@ -147,6 +161,20 @@ def test_route_disabled_returns_503(monkeypatch):
     c = TestClient(app)
     assert c.post("/v2/intelligence/orchestrate", json={"prompt": "x"}).status_code == 503
     assert c.get("/v2/intelligence/orchestrate/health").status_code == 200  # always callable
+
+
+def test_route_health_not_execution_ready_when_prerequisites_error(bridge_app, monkeypatch):
+    import backend.services.blueprint_bridge as bridge_pkg
+
+    def _raise():
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(bridge_pkg, "execution_prerequisites", _raise)
+    r = bridge_app.get("/v2/intelligence/orchestrate/health")
+    assert r.status_code == 200
+    j = r.json()
+    assert j["execution_ready"] is False
+    assert "execution_prerequisites_unavailable" in j["missing_prerequisites"]
 
 
 def test_route_dry_run_returns_stable_json(bridge_app):
