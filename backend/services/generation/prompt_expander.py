@@ -477,8 +477,8 @@ def _portfolio(user_request: str, style: Dict) -> ProductSpec:
 
 
 _RETAIL_HINT_RE = re.compile(
-    r"shopify|e-?commerce|online\s*store|retail\w*|storefront|merchant\w*|"
-    r"\bshop\b|\bstore\b|fashion|apparel|boutique", re.I,
+    r"shopify|e-?commerce|online\s*(?:store|shop)|retail\w*|storefront|merchant\w*|"
+    r"fashion|apparel|boutique", re.I,
 )
 _ANALYTICS_HINT_RE = re.compile(
     r"analytics?|dashboard|metrics?|\bkpi\b|insight\w*|reporting", re.I,

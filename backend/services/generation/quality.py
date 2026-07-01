@@ -32,10 +32,12 @@ _GENERIC_COPY = [
 ]
 
 # A hardcoded copyright YEAR ("© 2023", "(c) 2024 Acme Inc") is a dead
-# giveaway of stale boilerplate — the deterministic renderer's own footer
-# never emits one (it reads "© {brand} · ..."), so any occurrence here can
-# only have come from generic/templated model output.
-_STALE_COPYRIGHT_RE = re.compile(r"(?:©|\(c\))\s*(?:19|20)\d{2}", re.I)
+# giveaway of stale boilerplate, except when the year is the first token of
+# the deterministic renderer's brand footer ("© {brand} · ...").
+_STALE_COPYRIGHT_RE = re.compile(
+    r"(?:©|\(c\))\s*(?:19|20)\d{2}(?![^<]*·\s*(?:crafted with korvix|all systems operational))",
+    re.I,
+)
 
 # The design system is CSS/SVG-only by contract (the preview CSP only
 # allows `img-src data:`) — any <img> tag in model output renders as a
