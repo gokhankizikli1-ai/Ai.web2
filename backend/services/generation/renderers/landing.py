@@ -70,6 +70,17 @@ CSS = """
   .ld-hero-mock { transform:none; }
   .ld-float-card { display:none; }
 }
+
+/* ── Section rhythm (Sprint 1.10) ──
+   Alternating full-bleed tinted bands between content sections so a
+   generated page reads as a sequence of deliberate, distinct sections
+   instead of one flat, repeating column — the "visual rhythm" gap
+   flagged for the Website Builder. Purely additive: a new wrapper +
+   modifier class, no change to the shared `.ds-section` other renderers
+   use. */
+.ld-section-band { padding:clamp(56px,9vw,112px) 0; }
+.ld-tone-alt { background:color-mix(in srgb, var(--surface) 45%, transparent);
+  border-top:1px solid var(--border); border-bottom:1px solid var(--border); }
 """.strip()
 
 CSS = CSS + "\n\n" + cl.CSS
@@ -77,13 +88,31 @@ CSS = CSS + "\n\n" + cl.CSS
 _LOGOS = ["Vantage", "Lumio", "Northwind", "Mercura", "Cobalt", "Atlas"]
 
 
-def _wrap(sec_id, title, subtitle, inner) -> str:
+def _wrap(sec_id, title, subtitle, inner, tone=None) -> str:
     head = ""
     if title:
         head = (f'<div class="ds-center" style="margin-bottom:44px"><h2>{e(title)}</h2>'
                 + (f'<p class="ds-lead" style="margin-top:12px;max-width:50ch;margin-left:auto;margin-right:auto">{e(subtitle)}</p>' if subtitle else "")
                 + "</div>")
-    return f'<section class="ds-section ds-container" id="{sec_id}">{head}{inner}</section>'
+    band_cls = "ld-section-band" + (" ld-tone-alt" if tone == "alt" else "")
+    return f'<section class="{band_cls}" id="{sec_id}"><div class="ds-container">{head}{inner}</div></section>'
+
+
+def _section_id(sec: Section) -> str:
+    """The DOM id a section will render with. Centralised so every
+    `_xxx()` renderer and the nav-link filter in `render()` agree on the
+    same id — previously each function recomputed this inline, and the
+    testimonials section's untitled fallback ("customers") silently
+    collided with the always-rendered logos section's `id="customers"`,
+    producing duplicate DOM ids. Fixed here once, for every future spec."""
+    if sec.kind == "pricing":      return "pricing"
+    if sec.kind == "testimonials": return slug(sec.title or "testimonials")
+    if sec.kind == "faq":          return "faq"
+    if sec.kind == "gallery":      return slug(sec.title or "gallery")
+    if sec.kind == "panel":        return slug(sec.title or "preview")
+    if sec.kind == "features":     return slug(sec.title or "features")
+    if sec.kind == "metrics":      return "metrics"
+    return slug(sec.title or "section")
 
 
 def _hero(spec: ProductSpec, primary_target: str, secondary_target: str) -> str:
@@ -152,7 +181,7 @@ def _feature_bento(items) -> str:
     return f'<div class="ds-bento">{"".join(cells)}</div>'
 
 
-def _pricing(sec: Section) -> str:
+def _pricing(sec: Section, tone=None) -> str:
     n = len(sec.items)
     cards = "".join(f"""
     <div class="ds-card ds-rise{' ds-plan-featured' if (n >= 2 and i == 1) else ''}" style="text-align:center">
@@ -161,25 +190,25 @@ def _pricing(sec: Section) -> str:
       <p style="font-size:.88rem">{e(c.get('icon'))}</p>
       <button class="ds-btn {'ds-btn-primary' if (n >= 2 and i == 1) else 'ds-btn-ghost'}" data-scroll="get-started" style="margin-top:18px;width:100%">Choose plan</button>
     </div>""" for i, c in enumerate(sec.items))
-    return _wrap("pricing", sec.title or "Simple, scalable pricing", sec.subtitle, f'<div class="ds-grid">{cards}</div>')
+    return _wrap(_section_id(sec), sec.title or "Simple, scalable pricing", sec.subtitle, f'<div class="ds-grid">{cards}</div>', tone)
 
 
-def _testimonials(sec: Section) -> str:
+def _testimonials(sec: Section, tone=None) -> str:
     cards = "".join(f"""
     <div class="ds-card ds-rise"><div class="ld-testi-stars">★★★★★</div>
       <p style="color:var(--text);font-size:1.05rem;margin-top:12px">{e(c.get('title'))}</p>
       <p style="margin-top:14px;font-size:.85rem">{e(c.get('body'))}</p></div>""" for c in sec.items)
-    return _wrap(slug(sec.title or "customers"), sec.title or "Loved by teams that ship", sec.subtitle, f'<div class="ds-grid">{cards}</div>')
+    return _wrap(_section_id(sec), sec.title or "Loved by teams that ship", sec.subtitle, f'<div class="ds-grid">{cards}</div>', tone)
 
 
-def _faq(sec: Section) -> str:
+def _faq(sec: Section, tone=None) -> str:
     items = "".join(f"""
     <details class="ds-card ds-rise"><summary>{e(c.get('title'))}</summary>
       <p style="margin-top:12px">{e(c.get('body'))}</p></details>""" for c in sec.items)
-    return _wrap("faq", sec.title or "Frequently asked", sec.subtitle, f'<div class="ld-faq">{items}</div>')
+    return _wrap(_section_id(sec), sec.title or "Frequently asked", sec.subtitle, f'<div class="ld-faq">{items}</div>', tone)
 
 
-def _gallery(sec: Section) -> str:
+def _gallery(sec: Section, tone=None) -> str:
     items = sec.items or []
     if items:
         tiles = "".join(f"""
@@ -192,15 +221,15 @@ def _gallery(sec: Section) -> str:
             f'<div class="ds-card ds-rise ds-selectable" data-select style="aspect-ratio:4/3;'
             f'background:linear-gradient(135deg,color-mix(in srgb,var(--accent) {18+11*i}%,transparent),'
             f'color-mix(in srgb,var(--accent-2) {18+11*i}%,transparent))"></div>' for i in range(6))
-    return _wrap(slug(sec.title or "gallery"), sec.title or "Gallery", sec.subtitle, f'<div class="ds-grid" data-select-group>{tiles}</div>')
+    return _wrap(_section_id(sec), sec.title or "Gallery", sec.subtitle, f'<div class="ds-grid" data-select-group>{tiles}</div>', tone)
 
 
-def _panel(spec: ProductSpec, sec: Section) -> str:
-    return _wrap(slug(sec.title or "preview"), sec.title or "Take a closer look", sec.subtitle,
+def _panel(spec: ProductSpec, sec: Section, tone=None) -> str:
+    return _wrap(_section_id(sec), sec.title or "Take a closer look", sec.subtitle,
                  '<div class="ds-mock ds-rise"><div class="ds-mock-bar"><i></i><i></i><i></i></div>'
                  f'<div class="ds-mock-body"><div class="ds-bento"><div class="ds-card ds-col-4 ds-row-2">{bars(12)}</div>'
                  f'<div class="ds-card ds-col-2">{spark()}</div>'
-                 f'<div class="ds-card ds-col-2"><div class="ds-stat-value">{e(spec.cta_primary)}</div></div></div></div></div>')
+                 f'<div class="ds-card ds-col-2"><div class="ds-stat-value">{e(spec.cta_primary)}</div></div></div></div></div>', tone)
 
 
 def _contact(spec: ProductSpec) -> str:
@@ -216,7 +245,7 @@ def _contact(spec: ProductSpec) -> str:
                  f'<div class="ds-card ds-rise" style="max-width:560px;margin:0 auto">{cl.form_fields(fields, "Send inquiry")}</div>')
 
 
-def _cta(spec: ProductSpec, sec: Section) -> str:
+def _cta(spec: ProductSpec, sec: Section, secondary_target: str = "features") -> str:
     return f"""
 <section class="ds-section ds-container" id="get-started">
   <div class="ds-card ds-glass ds-rise ds-center" style="padding:64px 28px;overflow:hidden">
@@ -224,20 +253,20 @@ def _cta(spec: ProductSpec, sec: Section) -> str:
     <h2 style="margin:14px auto;max-width:18ch">{e(sec.title or 'Get started today')}</h2>
     <p class="ds-lead" style="max-width:44ch;margin:0 auto 28px">{e(spec.description)}</p>
     <div class="ds-hero-actions"><button class="ds-btn ds-btn-primary" data-scroll="overview">{e(spec.cta_primary)}</button>
-      <button class="ds-btn ds-btn-ghost" data-scroll="features">{e(spec.cta_secondary)}</button></div>
+      <button class="ds-btn ds-btn-ghost" data-scroll="{secondary_target}">{e(spec.cta_secondary)}</button></div>
   </div></section>"""
 
 
-def _section(spec: ProductSpec, sec: Section) -> str:
-    if sec.kind == "features":     return _wrap(slug(sec.title or "features"), sec.title or "Features", sec.subtitle, _feature_bento(sec.items))
-    if sec.kind == "pricing":      return _pricing(sec)
-    if sec.kind == "testimonials": return _testimonials(sec)
-    if sec.kind == "faq":          return _faq(sec)
-    if sec.kind == "gallery":      return _gallery(sec)
-    if sec.kind == "panel":        return _panel(spec, sec)
-    if sec.kind == "cta":          return _cta(spec, sec)
-    if sec.kind == "metrics":      return _wrap("metrics", sec.title or "By the numbers", sec.subtitle, _feature_bento(sec.items))
-    return _wrap(slug(sec.title or "section"), sec.title, sec.subtitle, _feature_bento(sec.items))
+def _section(spec: ProductSpec, sec: Section, tone=None, secondary_target: str = "features") -> str:
+    if sec.kind == "features":     return _wrap(_section_id(sec), sec.title or "Features", sec.subtitle, _feature_bento(sec.items), tone)
+    if sec.kind == "pricing":      return _pricing(sec, tone)
+    if sec.kind == "testimonials": return _testimonials(sec, tone)
+    if sec.kind == "faq":          return _faq(sec, tone)
+    if sec.kind == "gallery":      return _gallery(sec, tone)
+    if sec.kind == "panel":        return _panel(spec, sec, tone)
+    if sec.kind == "cta":          return _cta(spec, sec, secondary_target)
+    if sec.kind == "metrics":      return _wrap(_section_id(sec), sec.title or "By the numbers", sec.subtitle, _feature_bento(sec.items), tone)
+    return _wrap(_section_id(sec), sec.title, sec.subtitle, _feature_bento(sec.items), tone)
 
 
 def _footer(spec: ProductSpec) -> str:
@@ -263,10 +292,17 @@ def _footer(spec: ProductSpec) -> str:
 
 
 def render(spec: ProductSpec) -> str:
+    is_marketing = (spec.data or {}).get("variant") == "marketing_website"
+    content_sections = [s for s in spec.sections if s.kind != "metrics"]
+
     links = "".join(f'<a data-nav="{slug(l)}" data-scroll="{slug(l)}">{e(l)}</a>' for l in spec.navigation)
+
     has_pricing = any(s.kind == "pricing" for s in spec.sections)
     primary_target = "pricing" if has_pricing else "get-started"
-    secondary_target = next((slug(s.title or "features") for s in spec.sections if s.kind == "features"), "features")
+    # Fall back to "customers" (the always-rendered logos section), not the
+    # literal string "features" — a spec with no features section would
+    # otherwise point the hero's own secondary CTA at a nonexistent anchor.
+    secondary_target = next((_section_id(s) for s in spec.sections if s.kind == "features"), "customers")
     nav = f"""
 <header class="ds-nav">
   <div class="ds-nav-brand"><span class="ds-nav-logo"></span>{e(spec.name)}</div>
@@ -274,13 +310,19 @@ def render(spec: ProductSpec) -> str:
   <button class="ds-btn ds-btn-primary ds-btn-sm" data-scroll="{primary_target}">{e(spec.cta_primary)}</button>
 </header>"""
     parts = [nav, "<main>", _hero(spec, primary_target, secondary_target), _logos()]
-    for sec in spec.sections:
-        if sec.kind == "metrics":   # avoid a second mockup-ish block right after the hero mockup
+    # Alternating tinted bands (skipping `cta`, which already has its own
+    # glass-card treatment) give the page a deliberate section rhythm
+    # instead of one flat, repeating column.
+    band_i = 0
+    for sec in content_sections:
+        if sec.kind == "cta":
+            parts.append(_section(spec, sec, secondary_target=secondary_target))
             continue
-        parts.append(_section(spec, sec))
+        parts.append(_section(spec, sec, tone="alt" if band_i % 2 == 0 else None))
+        band_i += 1
     if not any(s.kind == "cta" for s in spec.sections):
-        parts.append(_cta(spec, Section(kind="cta", title="Get started today")))
-    if (spec.data or {}).get("variant") == "marketing_website":
+        parts.append(_cta(spec, Section(kind="cta", title="Get started today"), secondary_target))
+    if is_marketing:
         parts.append(_contact(spec))
     parts += ["</main>", _footer(spec)]
     return "\n".join(parts)

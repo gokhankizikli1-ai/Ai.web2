@@ -34,10 +34,18 @@ def score(html: str) -> Tuple[int, List[str]]:
     issues: List[str] = []
     pts = 0
 
-    # Substance (20)
-    if len(h) >= 1200: pts += 20
-    elif len(h) >= 600: pts += 10
+    # Substance (20) — real length AND actual structural depth. Raw
+    # character count alone can be gamed by verbose CSS on a single flat
+    # section; a genuinely premium page reads as several distinct
+    # sections (hero, features, proof, CTA, ...), so multi-section depth
+    # is required for full marks, not just byte count.
+    section_count = len(re.findall(r"<section[\s>]", low))
+    if len(h) >= 1200 and section_count >= 3: pts += 20
+    elif len(h) >= 1200 or section_count >= 2: pts += 12
+    elif len(h) >= 600: pts += 6
     else: issues.append("too short / thin content")
+    if 0 < section_count < 3:
+        issues.append("thin section depth (fewer than 3 distinct sections)")
 
     # Design system / real CSS (20)
     if "var(--" in h or "ds-" in h: pts += 20

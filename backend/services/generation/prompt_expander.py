@@ -477,10 +477,19 @@ def _portfolio(user_request: str, style: Dict) -> ProductSpec:
 
 
 def _website(user_request: str, style: Dict) -> ProductSpec:
+    """The generic marketing-site fallback — hit by any "build a website
+    for X" request that doesn't match a named vertical (a bakery, an
+    agency, a local business, ...). This is the single most-hit path for
+    literal Website Builder prompts, so it previously being the thinnest
+    spec (3 sections, generic "What we offer" copy) was the biggest gap
+    between "a template" and "someone designed this." Brought up to the
+    same depth as the hand-built verticals (_saas, _fitness, ...): social
+    proof, a real reason-to-believe section, testimonials and an FAQ —
+    using only Section kinds the landing renderer already supports."""
     name = _title_from_request(user_request) or "Northwind"
     return ProductSpec(
-        product_type="website", name=name, tagline="A clearer way forward.",
-        description=f"{name} — a polished, responsive site that explains the offering clearly and earns trust fast.",
+        product_type="website", name=name, tagline=f"{name} — a clearer way forward.",
+        description=f"{name} is a polished, responsive site built to explain the offering fast, earn trust immediately, and turn visitors into the next step.",
         audience="Visitors who need to understand the offering quickly and trust it.",
         primary_goals=["Communicate clearly", "Build trust", "Drive the next step"],
         ux_goals=["Strong first impression", "Skimmable content", "Clear call to action"],
@@ -488,18 +497,27 @@ def _website(user_request: str, style: Dict) -> ProductSpec:
         is_dashboard=False, layout="landing", intent="website",
         metrics=[],
         sections=[
-            _S("features", "What we offer", items=[
-                _card("Thoughtful craft", "Every detail considered.", "✨"),
-                _card("Fast by default", "Instant, responsive, smooth.", "⚡"),
-                _card("Built to scale", "Ready for what's next.", "🚀"),
-                _card("Always on", "Reliable, everywhere.", "🛡"),
+            _S("features", "Why it works", items=[
+                _card("Thoughtful craft", "Every detail considered, nothing left generic.", "✨"),
+                _card("Fast by default", "Instant, responsive, smooth on every device.", "⚡"),
+                _card("Built to scale", "Ready for the next stage of growth.", "🚀"),
+                _card("Always on", "Reliable and dependable, every single day.", "🛡"),
             ]),
             _S("gallery", "A closer look"),
+            _S("testimonials", "What people are saying", items=[
+                _card(f"“{name} was exactly what we needed — clear, fast, and easy to trust.”", "Early customer", "★"),
+                _card("“We were live the same day and it already feels like a real product.”", "Early customer", "★"),
+            ]),
+            _S("faq", "Good to know", items=[
+                _card("How fast can we get started?", "Most teams are live the same day — there's no long setup."),
+                _card("Does it work well on mobile?", "Yes — every section is fully responsive by default."),
+                _card("Can this be customised later?", "Always. Nothing here is locked in."),
+            ]),
             _S("cta", "Ready to get started?"),
         ],
         cta_primary="Get started", cta_secondary="Learn more",
         theme={"accent": "", "accent2": "", "mode": style.get("mode", "dark")},
-        components=["Navbar", "Hero", "Feature Grid", "Gallery", "CTA", "Footer"],
+        components=["Navbar", "Hero", "Feature Grid", "Gallery", "Testimonials", "FAQ", "CTA", "Footer"],
     )
 
 
