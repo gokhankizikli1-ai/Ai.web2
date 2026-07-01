@@ -71,28 +71,36 @@ export default function WebsitePreviewCanvas({ content, activeSection, siteName 
           </button>
         </div>
         {/* Product screenshot mock — a mini app frame instead of a bare icon */}
-        <div className="mt-14 mx-auto max-w-3xl rounded-2xl border border-white/[0.08] bg-white/[0.02] backdrop-blur-xl p-2 shadow-2xl shadow-black/40">
-          <div className="rounded-xl border border-white/[0.05] bg-[#0d0d13] overflow-hidden text-left flex h-48 sm:h-64">
-            <div className="hidden sm:block w-28 shrink-0 border-r border-white/[0.05] p-3 space-y-2">
-              <div className="h-2 w-14 rounded bg-white/[0.08]" />
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className={`h-6 rounded-md ${i === 0 ? 'bg-violet-500/20' : 'bg-white/[0.03]'}`} />
-              ))}
+        <div className="mt-14 mx-auto max-w-3xl rounded-2xl border border-white/[0.08] bg-white/[0.02] backdrop-blur-xl p-2 shadow-2xl shadow-black/50">
+          <div className="rounded-xl border border-white/[0.05] bg-[#0d0d13] overflow-hidden text-left">
+            <div className="flex items-center gap-1.5 px-3 py-2 border-b border-white/[0.05]">
+              <span className="w-2 h-2 rounded-full bg-[#ff5f57]/70" />
+              <span className="w-2 h-2 rounded-full bg-[#febc2e]/70" />
+              <span className="w-2 h-2 rounded-full bg-[#28c840]/70" />
+              <span className="ml-2 h-1.5 w-24 rounded-full bg-white/[0.06]" />
             </div>
-            <div className="flex-1 min-w-0 p-3 sm:p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="h-2 w-20 rounded bg-white/[0.1]" />
-                <div className="h-5 w-14 rounded-md bg-gradient-to-r from-violet-500/40 to-cyan-400/40" />
-              </div>
-              <div className="grid grid-cols-3 gap-2 mb-3">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} className="h-10 rounded-lg bg-white/[0.04] border border-white/[0.05]" />
+            <div className="flex h-44 sm:h-60">
+              <div className="hidden sm:block w-28 shrink-0 border-r border-white/[0.05] p-3 space-y-2">
+                <div className="h-2 w-14 rounded bg-white/[0.08]" />
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className={`h-6 rounded-md ${i === 0 ? 'bg-violet-500/20' : 'bg-white/[0.03]'}`} />
                 ))}
               </div>
-              <div className="flex items-end gap-1.5 h-16 sm:h-24 px-1">
-                {[38, 62, 45, 80, 55, 70, 40, 90, 60].map((h, i) => (
-                  <div key={i} className="flex-1 rounded-sm bg-gradient-to-t from-violet-500/50 to-cyan-400/40" style={{ height: `${h}%` }} />
-                ))}
+              <div className="flex-1 min-w-0 p-3 sm:p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="h-2 w-20 rounded bg-white/[0.1]" />
+                  <div className="h-5 w-14 rounded-md bg-gradient-to-r from-violet-500/40 to-cyan-400/40" />
+                </div>
+                <div className="grid grid-cols-3 gap-2 mb-3">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <div key={i} className="h-10 rounded-lg bg-white/[0.04] border border-white/[0.05]" />
+                  ))}
+                </div>
+                <div className="flex items-end gap-1.5 h-16 sm:h-24 px-1">
+                  {[38, 62, 45, 80, 55, 70, 40, 90, 60].map((h, i) => (
+                    <div key={i} className="flex-1 rounded-sm bg-gradient-to-t from-violet-500/50 to-cyan-400/40" style={{ height: `${h}%` }} />
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -111,7 +119,7 @@ export default function WebsitePreviewCanvas({ content, activeSection, siteName 
           {content.features.map((f, i) => {
             const Icon = FEATURE_ICONS[i % FEATURE_ICONS.length];
             return (
-              <div key={f.title} className="p-5 rounded-2xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-xl hover:bg-white/[0.03] transition-colors">
+              <div key={f.title} className="p-5 rounded-2xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-xl hover:bg-white/[0.04] hover:border-white/[0.12] hover:-translate-y-0.5 transition-all">
                 <div className="w-9 h-9 rounded-lg bg-violet-500/[0.12] border border-violet-500/20 flex items-center justify-center mb-3">
                   <Icon className="w-4 h-4 text-violet-300" />
                 </div>
@@ -131,8 +139,10 @@ export default function WebsitePreviewCanvas({ content, activeSection, siteName 
           {content.pricing.map((tier) => (
             <div
               key={tier.name}
-              className={`p-5 rounded-2xl border backdrop-blur-xl flex flex-col ${
-                tier.highlighted ? 'border-violet-500/40 bg-gradient-to-b from-violet-500/[0.08] to-transparent' : 'border-white/[0.06] bg-white/[0.02]'
+              className={`p-5 rounded-2xl border backdrop-blur-xl flex flex-col transition-all hover:-translate-y-0.5 ${
+                tier.highlighted
+                  ? 'border-violet-500/40 bg-gradient-to-b from-violet-500/[0.1] to-transparent shadow-xl shadow-violet-500/10'
+                  : 'border-white/[0.06] bg-white/[0.02] hover:border-white/[0.12]'
               }`}
             >
               {tier.highlighted && (
@@ -162,7 +172,7 @@ export default function WebsitePreviewCanvas({ content, activeSection, siteName 
         <h2 className="text-center text-xl sm:text-2xl font-semibold mb-10">Loved by teams everywhere</h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-3xl mx-auto">
           {content.testimonials.map((t) => (
-            <div key={t.name} className="p-5 rounded-2xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-xl">
+            <div key={t.name} className="p-5 rounded-2xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-xl hover:border-white/[0.12] hover:-translate-y-0.5 transition-all">
               <div className="flex gap-0.5 mb-3">
                 {Array.from({ length: 5 }).map((_, i) => <Star key={i} className="w-3 h-3 fill-amber-400 text-amber-400" />)}
               </div>

@@ -7,6 +7,7 @@
 import {
   LayoutDashboard, BarChart3, Users2, Settings2, Search, Bell,
   ArrowUpRight, ArrowDownRight, Sparkles, ChevronRight, FileCode2,
+  Wallet, TrendingUp,
 } from 'lucide-react';
 import BrowserFrame from './BrowserFrame';
 import { appNameFromIdea, mockStatsFromIdea } from './appPreviewData';
@@ -18,6 +19,8 @@ const SIDEBAR_ITEMS = [
   { label: 'Customers', icon: Users2 },
   { label: 'Settings', icon: Settings2 },
 ];
+
+const STAT_ICONS = [Users2, Wallet, TrendingUp];
 
 const STATUS_STYLE: Record<OrchestratePhase, { dot: string; text: string; label: string }> = {
   idle:       { dot: 'bg-slate-600', text: 'text-slate-500', label: 'Idle' },
@@ -59,21 +62,25 @@ export default function AppPreviewShell({ idea, phase, children }: AppPreviewShe
       <div className="flex text-white min-h-[70vh]" style={{ background: 'radial-gradient(120% 100% at 0% 0%, #14141f 0%, #0a0a0e 55%, #08080b 100%)' }}>
         {/* Sidebar */}
         <div className="hidden sm:flex flex-col gap-1 w-16 md:w-52 py-5 px-2 md:px-3 border-r border-white/[0.05] shrink-0">
-          <div className="flex items-center gap-2 px-1.5 mb-5">
+          <div className="flex items-center gap-2 px-1.5 mb-5 pb-4 border-b border-white/[0.05]">
             <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-cyan-400 shrink-0" />
             <span className="hidden md:block text-[12px] font-semibold text-white truncate">{appName}</span>
           </div>
           {SIDEBAR_ITEMS.map(({ label, icon: Icon }, i) => (
             <div
               key={label}
-              className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg transition-colors ${
-                i === 0 ? 'bg-white/[0.06] text-indigo-300' : 'text-slate-500'
+              className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg border-l-2 transition-colors ${
+                i === 0 ? 'bg-white/[0.06] text-indigo-300 border-indigo-400' : 'text-slate-500 border-transparent'
               }`}
             >
               <Icon className="w-4 h-4 shrink-0" />
               <span className="hidden md:block text-[12px]">{label}</span>
             </div>
           ))}
+          <div className="mt-auto pt-4 border-t border-white/[0.05] flex items-center gap-2 px-1.5">
+            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-400/60 to-cyan-400/60 shrink-0" />
+            <span className="hidden md:block text-[11px] text-slate-500 truncate">Workspace owner</span>
+          </div>
         </div>
 
         {/* Main */}
@@ -107,27 +114,35 @@ export default function AppPreviewShell({ idea, phase, children }: AppPreviewShe
 
           {/* Stat cards */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
-            {stats.map((s) => (
-              <div key={s.label} className={`p-4 rounded-xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-xl ${busy ? 'animate-pulse' : ''}`}>
-                <p className="text-[10px] text-slate-500 mb-1.5">{s.label}</p>
-                <div className="flex items-end justify-between gap-2 mb-3">
-                  <span className="text-xl font-semibold text-white">{s.value}</span>
-                  <span className={`flex items-center gap-0.5 text-[10px] ${s.positive ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {s.positive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
-                    {s.delta}
-                  </span>
+            {stats.map((s, i) => {
+              const Icon = STAT_ICONS[i % STAT_ICONS.length];
+              return (
+                <div key={s.label} className={`p-4 rounded-xl border border-white/[0.07] bg-gradient-to-br from-white/[0.04] to-white/[0.01] backdrop-blur-xl ${busy ? 'animate-pulse' : ''}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[10px] text-slate-500">{s.label}</p>
+                    <div className="w-6 h-6 rounded-md bg-white/[0.05] flex items-center justify-center">
+                      <Icon className="w-3 h-3 text-indigo-300" />
+                    </div>
+                  </div>
+                  <div className="flex items-end justify-between gap-2 mb-3">
+                    <span className="text-xl font-semibold text-white">{s.value}</span>
+                    <span className={`flex items-center gap-0.5 text-[10px] ${s.positive ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {s.positive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
+                      {s.delta}
+                    </span>
+                  </div>
+                  <div className="flex items-end gap-0.5 h-8">
+                    {sparkline(s.value + s.delta).map((h, j) => (
+                      <div
+                        key={j}
+                        className={`flex-1 rounded-sm ${s.positive ? 'bg-emerald-400/30' : 'bg-rose-400/30'}`}
+                        style={{ height: `${h}%` }}
+                      />
+                    ))}
+                  </div>
                 </div>
-                <div className="flex items-end gap-0.5 h-8">
-                  {sparkline(s.value + s.delta).map((h, i) => (
-                    <div
-                      key={i}
-                      className={`flex-1 rounded-sm ${s.positive ? 'bg-emerald-400/30' : 'bg-rose-400/30'}`}
-                      style={{ height: `${h}%` }}
-                    />
-                  ))}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Primary CTA */}
@@ -139,12 +154,15 @@ export default function AppPreviewShell({ idea, phase, children }: AppPreviewShe
           </div>
 
           {/* Real backend-driven content */}
-          <div className="rounded-2xl border border-white/[0.06] bg-white/[0.015] overflow-hidden">
-            <div className="flex items-center gap-2 px-4 py-2.5 border-b border-white/[0.05]">
+          <div className="rounded-2xl border border-white/[0.07] bg-white/[0.015] overflow-hidden">
+            <div className="relative flex items-center gap-2 px-4 py-2.5 border-b border-white/[0.05]">
               <FileCode2 className="w-3.5 h-3.5 text-indigo-300" />
               <span className="text-[11px] font-medium text-slate-300">Generated artifact</span>
+              {busy && (
+                <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-indigo-500 via-cyan-400 to-indigo-500 animate-pulse-soft" />
+              )}
             </div>
-            <div className="p-3 sm:p-4">
+            <div className="p-3.5 sm:p-5">
               {children}
             </div>
           </div>
