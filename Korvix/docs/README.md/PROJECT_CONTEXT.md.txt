@@ -1,0 +1,256 @@
+# PROJECT_CONTEXT.md
+
+# KorvixAI Project Context
+
+Version: 1.0
+
+Last Updated: June 2026
+
+---
+
+# Overview
+
+KorvixAI is an AI Operating System currently under active development.
+
+The objective of KorvixAI is **not** to become another chatbot.
+
+Instead, KorvixAI is being designed as a complete AI Operating System capable of planning, reasoning, executing, collaborating and continuously improving through multiple specialized AI agents.
+
+Every architectural decision should support this long-term vision.
+
+---
+
+# Mission
+
+Our mission is to build the world's most capable AI Operating System.
+
+KorvixAI should become the primary workspace where users can build businesses, software, websites, research, games, trading systems and automations through collaboration with intelligent AI agents.
+
+---
+
+# Vision
+
+Long term, KorvixAI should replace many traditional software tools by combining them into one intelligent platform.
+
+Instead of opening ten different applications, users should simply open KorvixAI.
+
+Future capabilities include:
+
+* Software Engineering
+* Business Management
+* Website Creation
+* Shopify Store Builder
+* Game Development
+* Research
+* Trading
+* Marketing
+* Content Creation
+* Workflow Automation
+* Multi-Agent Collaboration
+
+---
+
+# Current Development Status
+
+Current Stage:
+
+Active Development
+
+Current Milestone:
+
+Workflow Engine
+
+Current Focus:
+
+Project Orchestrator
+
+Workflow Execution
+
+Agent Collaboration
+
+Project Workspace
+
+---
+
+# Technology Stack
+
+## Frontend
+
+* React
+* TypeScript
+* Vite
+* TailwindCSS
+
+## Backend
+
+* FastAPI
+* Python
+* PostgreSQL
+* Redis
+* Railway
+
+## AI Providers
+
+* OpenAI
+* Anthropic Claude
+* Google Gemini
+
+---
+
+# Development Philosophy
+
+KorvixAI follows several engineering principles.
+
+## Security First
+
+Security is never optional.
+
+Authentication, authorization, encryption and user isolation are mandatory.
+
+---
+
+## Production First
+
+Every feature should be production-ready.
+
+Avoid temporary hacks.
+
+Avoid shortcuts.
+
+Always think about maintainability.
+
+---
+
+## Modular Architecture
+
+Every system should remain modular.
+
+Components should be replaceable without affecting unrelated parts of the system.
+
+---
+
+## AI Native
+
+KorvixAI is built around AI.
+
+AI should not be treated as an additional feature.
+
+AI is the foundation of every system.
+
+---
+
+## Multi-Agent Ready
+
+Every new feature should be designed assuming multiple AI agents will collaborate together.
+
+Avoid single-agent assumptions.
+
+---
+
+# Development Workflow
+
+Every feature should follow this workflow.
+
+1. Planning
+2. Design Review
+3. Implementation
+4. Testing
+5. Pull Request
+6. Code Review
+7. Merge
+8. Deployment
+9. Smoke Tests
+10. Documentation Update
+
+No feature is considered complete until documentation has been updated.
+
+---
+
+# Documentation Structure
+
+Project documentation is organized inside the docs folder.
+
+Important documents include:
+
+* README.md
+* SYSTEM_ARCHITECTURE.md
+* FEATURES.md
+* DATABASE_SCHEMA.md
+* API_REFERENCE.md
+* DEVELOPMENT_RULES.md
+* DESIGN_SYSTEM.md
+* CHANGELOG.md
+* DECISIONS.md
+* KORVIX_HISTORY.md
+* KNOWN_ISSUES.md
+* TODO_NEXT.md
+
+Every major implementation should update the relevant documentation.
+
+---
+
+# Roadmap
+
+Long-term planning is maintained inside:
+
+roadmaps/
+
+The roadmap is the single source of truth.
+
+Features should follow roadmap priorities.
+
+---
+
+# Current Priorities
+
+Highest Priority
+
+* Project Orchestrator
+* Workflow Engine
+* Agent Runtime
+* Workspace
+* Shared Memory
+* Multi-Agent Communication
+
+Upcoming
+
+* Shopify Agent
+* Coding Agent
+* Website Builder
+* Research Agent
+* Trading Agent
+* Automation Engine
+
+Future
+
+* Marketplace
+* Voice
+* Mobile Applications
+* Enterprise Features
+
+---
+
+# Code Quality Standards
+
+Every implementation should be:
+
+* Readable
+* Modular
+* Testable
+* Secure
+* Production Ready
+* Well Documented
+
+Always prefer maintainability over clever implementations.
+
+---
+
+# Long-Term Goal
+
+KorvixAI aims to become the world's most advanced AI Operating System.
+
+Every subsystem should move the platform closer to autonomous project execution through intelligent multi-agent collaboration.
+
+This document should always reflect the current state of the project.
+
+Whenever a major milestone is completed, update this file accordingly.

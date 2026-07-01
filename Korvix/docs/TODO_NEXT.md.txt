@@ -1,0 +1,128 @@
+# TODO_NEXT.md
+
+# KorvixAI Development Queue
+
+Version: 1.0
+
+Last Updated: June 2026
+
+---
+
+# Purpose
+
+This document tracks the highest priority engineering work currently planned for KorvixAI.
+
+Unlike the long-term roadmap, this file only contains the immediate development priorities.
+
+When a milestone is completed, this file should be updated before beginning the next milestone.
+
+---
+
+# Current Phase
+
+Workflow Engine
+
+---
+
+# Current Milestone
+
+Project Orchestrator
+
+---
+
+# Active Pull Request
+
+PR #2
+
+Project Orchestrator Foundation
+
+Status:
+
+Planning
+
+---
+
+# Highest Priority
+
+1. Project Orchestrator
+
+Build the central orchestration layer responsible for coordinating workflows, projects and AI agents.
+
+---
+
+2. Workspace Service
+
+Create the project workspace responsible for managing files, tasks, assets and shared project context.
+
+---
+
+3. Agent Runtime
+
+Enable multiple specialized AI agents to collaborate on the same project.
+
+---
+
+4. Shared Memory
+
+Implement long-term memory shared between projects, users and AI agents.
+
+---
+
+5. Workflow Monitoring
+
+Provide real-time workflow progress, execution status and retry management.
+
+---
+
+# Upcoming Features
+
+* Shopify Agent
+* Coding Agent
+* Website Builder
+* Research Agent
+* Trading Agent
+* Business Agent
+* Document Agent
+* Automation Engine
+
+---
+
+# Future Features
+
+* Marketplace
+* Enterprise Organizations
+* Voice Assistant
+* Mobile Applications
+* Plugin Ecosystem
+
+---
+
+# Blocked
+
+Current blockers:
+
+None
+
+---
+
+# Known Technical Debt
+
+Current technical debt:
+
+None significant.
+
+Future improvements should continue reducing complexity while maintaining modular architecture.
+
+---
+
+# Reminder
+
+Before beginning any new implementation:
+
+* Read PROJECT_CONTEXT.md
+* Review SYSTEM_ARCHITECTURE.md
+* Follow DEVELOPMENT_RULES.md
+* Verify roadmap priorities
+* Update documentation after implementation
+
+This document should always represent the next engineering priorities.

@@ -1,0 +1,154 @@
+# CHANGELOG.md
+
+# KorvixAI Changelog
+
+Version: 1.0
+
+Last Updated: June 2026
+
+---
+
+# Purpose
+
+This document records significant changes made to KorvixAI.
+
+Every completed milestone, major feature, security improvement, architectural change, or production release should be documented here.
+
+Minor refactors and internal cleanups do not need to be recorded.
+
+---
+
+# Version 0.1.0
+
+## Foundation Release
+
+### Added
+
+* Initial project structure
+* FastAPI backend
+* React frontend
+* Railway deployment
+* PostgreSQL integration
+* Redis integration
+
+---
+
+# Version 0.2.0
+
+## Authentication
+
+### Added
+
+* Email Authentication
+* Google Authentication
+* JWT Authentication
+* Secure Session Management
+* User Registration
+
+### Improved
+
+* Authentication reliability
+* Login flow
+* Logout flow
+
+---
+
+# Version 0.3.0
+
+## Security
+
+### Added
+
+* User Isolation
+* Session Isolation
+* Protected API Endpoints
+
+### Fixed
+
+* Cross-account chat visibility
+* Session persistence issues
+* Authentication regressions
+
+---
+
+# Version 0.4.0
+
+## Chat System
+
+### Added
+
+* Streaming responses
+* Conversation history
+* Persistent chats
+* Context management
+
+### Fixed
+
+* History synchronization
+* UI interaction bugs
+* Prompt date handling
+
+---
+
+# Version 0.5.0
+
+## Workflow Engine
+
+### Added
+
+* Workflow DAG Runner
+* Dependency Resolution
+* Execution Graph
+* Feature Flag Support
+
+### Improved
+
+* Workflow execution stability
+* Internal orchestration foundation
+
+---
+
+# Upcoming Releases
+
+## Version 0.6.0
+
+Planned
+
+* Project Orchestrator
+* Shared Workspace
+* Workflow Coordination
+
+---
+
+## Version 0.7.0
+
+Planned
+
+* Multi-Agent Runtime
+* Agent Collaboration
+* Shared Memory
+
+---
+
+## Version 0.8.0
+
+Planned
+
+* Coding Agent
+* Shopify Agent
+* Website Builder
+
+---
+
+# Release Notes
+
+Every production release should include:
+
+* New Features
+* Improvements
+* Bug Fixes
+* Breaking Changes
+* Security Updates
+* Migration Notes (if required)
+
+This document should always represent the latest public development progress.

@@ -1,0 +1,295 @@
+# DESIGN_SYSTEM.md
+
+# KorvixAI Design System
+
+Version: 1.0
+
+Last Updated: June 2026
+
+---
+
+# Purpose
+
+This document defines the visual identity, interaction principles, and UI standards of KorvixAI.
+
+Every interface should feel like a premium software product.
+
+KorvixAI should never look like a generic AI-generated website.
+
+---
+
+# Design Philosophy
+
+KorvixAI combines inspiration from:
+
+* Apple
+* Linear
+* OpenAI
+* Anthropic
+* Vercel
+* Stripe
+* Notion
+
+The interface should feel:
+
+* Clean
+* Premium
+* Minimal
+* Modern
+* Professional
+* Fast
+* Confident
+
+---
+
+# Core Principles
+
+## Minimalism
+
+Remove unnecessary elements.
+
+Every component should have a purpose.
+
+Whitespace is a feature.
+
+---
+
+## Consistency
+
+Spacing
+
+Typography
+
+Buttons
+
+Cards
+
+Colors
+
+Animations
+
+must remain consistent across the product.
+
+---
+
+## Simplicity
+
+Complex functionality.
+
+Simple interface.
+
+Never expose unnecessary complexity.
+
+---
+
+## AI Native
+
+The interface should feel built for AI interactions.
+
+Not adapted afterward.
+
+---
+
+# Color Philosophy
+
+Prefer:
+
+Neutral colors
+
+Subtle accents
+
+Professional palettes
+
+Avoid:
+
+Random gradients
+
+Oversaturated colors
+
+Rainbow themes
+
+Cheap visual effects
+
+---
+
+# Typography
+
+Hierarchy is essential.
+
+Prefer:
+
+Large readable headings
+
+Comfortable line height
+
+Consistent font sizes
+
+Readable paragraphs
+
+Avoid tiny text.
+
+---
+
+# Layout
+
+Use generous spacing.
+
+Keep layouts clean.
+
+Prefer fewer components with higher quality.
+
+Avoid visual clutter.
+
+---
+
+# Components
+
+Every component should follow a shared design language.
+
+Buttons
+
+Inputs
+
+Cards
+
+Dialogs
+
+Dropdowns
+
+Tables
+
+Navigation
+
+must feel like part of the same product.
+
+---
+
+# Animations
+
+Animations should:
+
+Be subtle.
+
+Be smooth.
+
+Improve usability.
+
+Never distract users.
+
+---
+
+# Icons
+
+Use a single icon system.
+
+Icons should communicate actions clearly.
+
+Avoid decorative icons.
+
+---
+
+# Chat Experience
+
+The chat interface is the heart of KorvixAI.
+
+Requirements:
+
+* Comfortable reading width
+* Excellent typography
+* Smooth streaming
+* Clear code formatting
+* Beautiful markdown rendering
+* Fast interactions
+
+---
+
+# Dashboard
+
+The dashboard should provide clarity.
+
+Users should immediately understand:
+
+* Current projects
+* Active workflows
+* Running agents
+* Recent conversations
+
+---
+
+# Workspace
+
+Projects should feel organized.
+
+Every workspace should provide:
+
+* Files
+* Tasks
+* AI Agents
+* Conversations
+* Workflows
+
+without overwhelming the user.
+
+---
+
+# Responsive Design
+
+Desktop first.
+
+Tablet optimized.
+
+Mobile supported.
+
+Never sacrifice usability.
+
+---
+
+# Accessibility
+
+Support:
+
+Keyboard navigation
+
+Readable contrast
+
+Clear focus states
+
+Proper labels
+
+Accessible interactions
+
+---
+
+# Performance
+
+Beautiful interfaces should also be fast.
+
+Avoid unnecessary animations.
+
+Avoid heavy rendering.
+
+Prioritize responsiveness.
+
+---
+
+# Design Rule
+
+When unsure:
+
+Choose the simpler solution.
+
+Good design removes complexity.
+
+Great design makes complexity invisible.
+
+---
+
+# Final Principle
+
+Every screen inside KorvixAI should make users feel they are using a world-class AI platform built for professionals—not a generic AI demo.
+
+When implementing UI, always ask:
+
+"Would this feel at home in Apple, Linear, or OpenAI?"
+
+If the answer is no, redesign it.

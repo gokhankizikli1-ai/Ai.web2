@@ -1,0 +1,315 @@
+# SYSTEM_ARCHITECTURE.md
+
+# KorvixAI System Architecture
+
+Version: 1.0
+
+Last Updated: June 2026
+
+---
+
+# Overview
+
+KorvixAI follows a modular, service-oriented architecture designed for scalability, maintainability, and future multi-agent collaboration.
+
+The system is intentionally divided into independent layers so each subsystem can evolve without tightly coupling to the others.
+
+The architecture prioritizes:
+
+* Scalability
+* Security
+* Modularity
+* AI-first design
+* Multi-agent execution
+* Production reliability
+
+---
+
+# High Level Architecture
+
+```text
+User
+    │
+    ▼
+Frontend (React + TypeScript)
+    │
+    ▼
+API Gateway (FastAPI)
+    │
+    ▼
+Core Services
+│
+├── Authentication
+├── Chat Service
+├── Project Service
+├── Workflow Engine
+├── Agent Runtime
+├── Tool Router
+├── LLM Router
+├── Memory System
+├── File Service
+├── Research Service
+├── Trading Service
+└── Business Service
+    │
+    ▼
+Infrastructure
+│
+├── PostgreSQL
+├── Redis
+├── Railway
+├── Storage
+└── External AI APIs
+```
+
+---
+
+# Frontend
+
+Responsibilities:
+
+* User Interface
+* Chat Experience
+* Workspace
+* Projects
+* Settings
+* Agent Dashboard
+* File Management
+* Workflow Visualization
+
+Technology:
+
+* React
+* TypeScript
+* Vite
+* TailwindCSS
+
+---
+
+# Backend
+
+The backend is built with FastAPI.
+
+Responsibilities include:
+
+* Authentication
+* Authorization
+* API Routing
+* Workflow execution
+* Agent orchestration
+* Database operations
+* Tool execution
+* AI provider communication
+
+---
+
+# Authentication Layer
+
+Responsible for:
+
+* User registration
+* Login
+* OAuth
+* Session management
+* JWT validation
+* User isolation
+* Security
+
+Security is mandatory.
+
+No service should bypass authentication.
+
+---
+
+# Chat Service
+
+Responsibilities:
+
+* Conversation management
+* Streaming
+* History
+* Context building
+* Prompt generation
+* Message persistence
+
+Future:
+
+Shared conversations.
+
+Project conversations.
+
+Agent conversations.
+
+---
+
+# Project Service
+
+Future central component.
+
+Responsibilities:
+
+* Projects
+* Workspaces
+* Assets
+* Tasks
+* Project settings
+
+Every future feature should eventually belong to a project.
+
+---
+
+# Workflow Engine
+
+Responsible for executing complex workflows.
+
+Capabilities:
+
+* DAG execution
+* Parallel tasks
+* Dependency resolution
+* Retry handling
+* Status tracking
+
+The Workflow Engine coordinates execution but does not contain business logic.
+
+---
+
+# Agent Runtime
+
+Responsible for autonomous AI agents.
+
+Future agents include:
+
+* Coding Agent
+* Research Agent
+* Trading Agent
+* Shopify Agent
+* Website Builder
+* Game Developer
+* QA Agent
+* Deployment Agent
+
+Agents should communicate through shared context rather than direct coupling.
+
+---
+
+# LLM Router
+
+Responsible for selecting the appropriate AI model.
+
+Supported providers:
+
+* OpenAI
+* Anthropic Claude
+* Google Gemini
+
+Future providers should integrate through this layer only.
+
+---
+
+# Tool Router
+
+Provides AI access to external capabilities.
+
+Examples:
+
+* Web Search
+* Code Execution
+* File Operations
+* Trading APIs
+* Browser Automation
+* Document Analysis
+
+All tools should expose a common interface.
+
+---
+
+# Memory System
+
+Responsible for:
+
+* Long-term memory
+* Project memory
+* User memory
+* Agent memory
+* Shared context
+
+Memory should be scoped correctly to preserve security.
+
+---
+
+# Database
+
+Primary database:
+
+PostgreSQL
+
+Stores:
+
+* Users
+* Chats
+* Messages
+* Projects
+* Workflows
+* Tasks
+* Agents
+* Files
+* Knowledge
+* Settings
+
+---
+
+# Redis
+
+Used for:
+
+* Cache
+* Sessions
+* Streaming
+* Queues
+* Temporary workflow state
+
+Redis should never become the primary source of truth.
+
+---
+
+# Infrastructure
+
+Deployment:
+
+Railway
+
+Future:
+
+* CDN
+* Object Storage
+* Monitoring
+* Metrics
+* Observability
+* Auto Scaling
+
+---
+
+# Design Principles
+
+The architecture follows these principles:
+
+* Modular
+* Testable
+* Replaceable
+* Observable
+* Secure
+* AI Native
+* Multi-Agent Ready
+
+---
+
+# Future Direction
+
+The long-term architecture will evolve toward an AI Operating System where multiple autonomous agents collaborate on user projects.
+
+Every architectural decision should support this vision while preserving backward compatibility.
+
+No subsystem should become tightly coupled to another.
+
+Maintain modular boundaries at all times.

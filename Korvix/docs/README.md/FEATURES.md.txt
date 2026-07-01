@@ -1,0 +1,253 @@
+# FEATURES.md
+
+# KorvixAI Feature Matrix
+
+Version: 1.0
+
+Last Updated: June 2026
+
+---
+
+# Overview
+
+This document tracks every major feature of KorvixAI.
+
+Each feature belongs to one of the following states:
+
+✅ Complete
+
+🚧 In Development
+
+📋 Planned
+
+🔮 Future Vision
+
+---
+
+# Authentication
+
+| Feature                   | Status |
+| ------------------------- | ------ |
+| Email Login               | ✅      |
+| Google Login              | ✅      |
+| Secure Password Hashing   | ✅      |
+| JWT Authentication        | ✅      |
+| User Isolation            | ✅      |
+| Session Management        | ✅      |
+| OAuth Support             | ✅      |
+| Guest Accounts            | 🚧     |
+| Email Verification        | 📋     |
+| Password Reset            | 📋     |
+| Two Factor Authentication | 🔮     |
+
+---
+
+# Chat
+
+| Feature              | Status |
+| -------------------- | ------ |
+| AI Chat              | ✅      |
+| Streaming Responses  | ✅      |
+| Chat History         | ✅      |
+| Message Persistence  | ✅      |
+| Conversation Context | ✅      |
+| Markdown Rendering   | ✅      |
+| Code Highlighting    | 📋     |
+| Shared Conversations | 📋     |
+| Team Conversations   | 🔮     |
+
+---
+
+# AI Models
+
+| Feature                   | Status |
+| ------------------------- | ------ |
+| OpenAI                    | ✅      |
+| Claude                    | ✅      |
+| Gemini                    | ✅      |
+| Model Routing             | 🚧     |
+| Automatic Model Selection | 📋     |
+| Cost Optimization         | 📋     |
+
+---
+
+# Projects
+
+| Feature            | Status |
+| ------------------ | ------ |
+| Project Dashboard  | 📋     |
+| Workspaces         | 📋     |
+| Assets             | 📋     |
+| Tasks              | 📋     |
+| Team Collaboration | 🔮     |
+
+---
+
+# Workflow Engine
+
+| Feature               | Status |
+| --------------------- | ------ |
+| Workflow DAG Runner   | ✅      |
+| Dependency Resolution | ✅      |
+| Parallel Execution    | 🚧     |
+| Retry System          | 📋     |
+| Scheduling            | 📋     |
+| Workflow Monitoring   | 📋     |
+
+---
+
+# Multi-Agent System
+
+| Feature              | Status |
+| -------------------- | ------ |
+| Agent Runtime        | 🚧     |
+| Agent Collaboration  | 📋     |
+| Shared Context       | 📋     |
+| Agent Messaging      | 📋     |
+| Task Delegation      | 📋     |
+| Project Orchestrator | 📋     |
+
+---
+
+# Coding
+
+| Feature                 | Status |
+| ----------------------- | ------ |
+| Code Generation         | 📋     |
+| Code Review             | 📋     |
+| Debug Assistant         | 📋     |
+| Project Refactoring     | 📋     |
+| Documentation Generator | 📋     |
+
+---
+
+# Website Builder
+
+| Feature              | Status |
+| -------------------- | ------ |
+| Landing Pages        | 📋     |
+| Portfolio Sites      | 📋     |
+| Business Websites    | 📋     |
+| Blog Generator       | 📋     |
+| Full Website Builder | 🔮     |
+
+---
+
+# Shopify
+
+| Feature              | Status |
+| -------------------- | ------ |
+| Store Creation       | 📋     |
+| Product Import       | 📋     |
+| Theme Builder        | 📋     |
+| SEO Optimization     | 📋     |
+| Marketing Automation | 🔮     |
+
+---
+
+# Trading
+
+| Feature              | Status |
+| -------------------- | ------ |
+| Market Analysis      | ✅      |
+| Crypto Analysis      | ✅      |
+| Stock Analysis       | ✅      |
+| AI Signals           | 📋     |
+| Portfolio Management | 📋     |
+| Strategy Builder     | 🔮     |
+
+---
+
+# Research
+
+| Feature          | Status |
+| ---------------- | ------ |
+| AI Research      | 📋     |
+| Citation Support | 📋     |
+| Paper Analysis   | 📋     |
+| Deep Research    | 🔮     |
+
+---
+
+# Documents
+
+| Feature              | Status |
+| -------------------- | ------ |
+| PDF Analysis         | 📋     |
+| DOCX Analysis        | 📋     |
+| Spreadsheet Analysis | 📋     |
+| OCR                  | 🔮     |
+
+---
+
+# Automation
+
+| Feature             | Status |
+| ------------------- | ------ |
+| Scheduled Tasks     | 📋     |
+| Workflow Automation | 📋     |
+| Browser Automation  | 📋     |
+| API Automation      | 🔮     |
+
+---
+
+# Memory
+
+| Feature             | Status |
+| ------------------- | ------ |
+| User Memory         | 📋     |
+| Project Memory      | 📋     |
+| Shared Agent Memory | 📋     |
+| Long-Term Memory    | 🔮     |
+
+---
+
+# Voice
+
+| Feature           | Status |
+| ----------------- | ------ |
+| Voice Chat        | 📋     |
+| Speech To Text    | 📋     |
+| Text To Speech    | 📋     |
+| Live Conversation | 🔮     |
+
+---
+
+# Images
+
+| Feature            | Status |
+| ------------------ | ------ |
+| Image Generation   | 📋     |
+| Image Editing      | 📋     |
+| Diagram Generation | 📋     |
+| UI Generation      | 🔮     |
+
+---
+
+# Video
+
+| Feature          | Status |
+| ---------------- | ------ |
+| Video Generation | 🔮     |
+| Video Editing    | 🔮     |
+| AI Avatar        | 🔮     |
+
+---
+
+# Enterprise
+
+| Feature       | Status |
+| ------------- | ------ |
+| Organizations | 🔮     |
+| Teams         | 🔮     |
+| Permissions   | 🔮     |
+| Audit Logs    | 🔮     |
+| Billing       | 📋     |
+
+---
+
+# Future Vision
+
+KorvixAI will evolve into a complete AI Operating System capable of managing software engineering, research, business operations, trading, autonomous execution, and multi-agent collaboration from one unified platform.
+
+Every new feature should contribute toward this long-term vision.
