@@ -18,6 +18,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Workflow, Play, Loader2, CheckCircle2, Circle, XCircle,
   MinusCircle, Sparkles, Eye, Monitor, Code2, FolderTree, Pencil,
+  ArrowDown,
 } from 'lucide-react';
 import {
   projectOrchestratorClient,
@@ -69,6 +70,11 @@ const STATUS_STYLE: Record<string, { label: string; color: string }> = {
 // Artifact preview kinds that get the prominent "Preview" card (vs the
 // compact supporting-deliverable rows).
 const ARTIFACT_PREVIEWS = new Set(['iframe', 'code', 'file_tree']);
+
+// Within this distance of the bottom the viewport counts as "following" —
+// new content auto-anchors. Further up, the user is inspecting history and
+// updates surface as the "Jump to latest" control instead.
+const FOLLOW_THRESHOLD_PX = 120;
 
 function artifactGlyph(preview?: string | null) {
   if (preview === 'iframe')    return <Monitor className="h-4 w-4 text-cyan-300" />;
@@ -173,7 +179,18 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
   const [startError, setStartError] = useState<string | null>(null);
   const [preview, setPreview] = useState<DeliverableView | null>(null);
   const [briefPrompt, setBriefPrompt] = useState<string | null>(null);
-  const bottomRef = useRef<HTMLDivElement | null>(null);
+
+  // ── Latest-content follow ────────────────────────────────────────────
+  // The conversation has its OWN scroll container (never window scroll).
+  // `atBottomRef` mirrors `atBottom` for effects that must read the live
+  // value without re-subscribing; `hasFreshContent` drives the
+  // "Jump to latest" affordance when updates arrive while the user is
+  // inspecting older content further up.
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const atBottomRef = useRef(true);
+  const didInitialAnchor = useRef(false);
+  const [atBottom, setAtBottom] = useState(true);
+  const [hasFreshContent, setHasFreshContent] = useState(false);
 
   // Live polling of whichever run is currently in flight.
   const { snapshot } = useProjectRun(activeRunId);
@@ -219,10 +236,53 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
     onOverview?.(computeOverview(turns));
   }, [turns, onOverview]);
 
-  // Auto-scroll to the newest turn (or the design interview, once it opens).
+  const scrollToLatest = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    const el = scrollRef.current;
+    if (!el) return;
+    // rAF so the measurement sees the just-committed content height.
+    requestAnimationFrame(() => {
+      el.scrollTo({ top: el.scrollHeight, behavior });
+      atBottomRef.current = true;
+      setAtBottom(true);
+      setHasFreshContent(false);
+    });
+  }, []);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const near = el.scrollHeight - el.scrollTop - el.clientHeight < FOLLOW_THRESHOLD_PX;
+    atBottomRef.current = near;
+    setAtBottom(near);
+    if (near) setHasFreshContent(false);
+  }, []);
+
+  // User-initiated growth — a turn was appended (new build, Build now,
+  // edit/refine instruction) or the Design Interview opened/closed. The
+  // user just acted, so always anchor to the newest content. 'auto' on
+  // the very first anchor so restoring a long history doesn't animate
+  // through the whole transcript.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [turns.length, briefPrompt]);
+    scrollToLatest(didInitialAnchor.current ? 'smooth' : 'auto');
+    didInitialAnchor.current = true;
+  }, [turns.length, briefPrompt, scrollToLatest]);
+
+  // Background growth — run status / deliverable changes arriving from
+  // polling. Follow only when the user is already near the bottom;
+  // otherwise surface "Jump to latest" instead of yanking them down.
+  const turnsSignature = turns
+    .map(t => `${t.run_id}:${t.status}:${t.deliverables.map(d => d.status).join(',')}`)
+    .join('|');
+  useEffect(() => {
+    if (!turnsSignature) return;
+    if (atBottomRef.current) scrollToLatest();
+    else setHasFreshContent(true);
+  }, [turnsSignature, scrollToLatest]);
+
+  // Stable identity — the interview's step effect depends on this
+  // callback, so an inline arrow would re-fire it (and force a scroll)
+  // on every unrelated host re-render, e.g. while typing in the composer.
+  const handleInterviewAdvance = useCallback(() => { scrollToLatest(); }, [scrollToLatest]);
 
   const persistRun = useCallback((id: string | null) => {
     try {
@@ -383,7 +443,11 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
 
   return (
     <div className="flex-1 flex flex-col min-w-0">
-      <div className="flex-1 overflow-y-auto px-4 py-5 scrollbar-thin">
+      {/* The scroll viewport gets a relative wrapper so "Jump to latest"
+          can float just above the composer without a second scroll system.
+          pb-10 keeps the last card comfortably readable above the input. */}
+      <div className="relative flex-1 min-h-0">
+      <div ref={scrollRef} onScroll={handleScroll} className="h-full overflow-y-auto px-4 pt-5 pb-10 scrollbar-thin">
         {turns.length === 0 && !briefPrompt ? (
           // ── Empty state: invite a project, never "No agents yet" ────────
           <div className="h-full flex flex-col items-center justify-center text-center px-6">
@@ -424,11 +488,22 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
                 prompt={briefPrompt}
                 onBuild={(enhanced) => { setBriefPrompt(null); runRequest(enhanced); }}
                 onCancel={() => setBriefPrompt(null)}
+                onAdvance={handleInterviewAdvance}
               />
             )}
-            <div ref={bottomRef} />
           </div>
         )}
+      </div>
+      {/* Subtle latest-content affordance — only when updates arrived
+          while the user was inspecting older content further up. */}
+      {hasFreshContent && !atBottom && (
+        <button
+          onClick={() => scrollToLatest()}
+          className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium text-cyan-200 transition-all hover:brightness-110"
+          style={{ background: 'rgba(27,34,48,0.92)', border: '1px solid rgba(34,211,238,0.25)', boxShadow: '0 8px 24px rgba(0,0,0,0.45)', backdropFilter: 'blur(8px)' }}>
+          <ArrowDown className="h-3 w-3" /> Jump to latest
+        </button>
+      )}
       </div>
 
       {composer}

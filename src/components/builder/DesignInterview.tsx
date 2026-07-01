@@ -61,9 +61,13 @@ interface DesignInterviewProps {
   onCancel?: () => void;
   /** Hide the leading user-prompt bubble when the host already renders it. */
   showPromptBubble?: boolean;
+  /** Fires after each step transition commits (question answered, back,
+      jump-to-answer, confirm reached) so the host can keep the newest
+      card anchored in its scroll viewport. */
+  onAdvance?: (stepIndex: number) => void;
 }
 
-export default function DesignInterview({ prompt, onBuild, onCancel, showPromptBubble = true }: DesignInterviewProps) {
+export default function DesignInterview({ prompt, onBuild, onCancel, showPromptBubble = true, onAdvance }: DesignInterviewProps) {
   const [stepIndex, setStepIndex] = useState(0); // 0..STEPS.length-1 = asking, STEPS.length = confirm
   const [answers, setAnswers] = useState<CompactAnswers>(() => smartDefaultsFromPrompt(prompt));
 
@@ -71,6 +75,9 @@ export default function DesignInterview({ prompt, onBuild, onCancel, showPromptB
     setAnswers(smartDefaultsFromPrompt(prompt));
     setStepIndex(0);
   }, [prompt]);
+
+  // Post-commit so the host measures the freshly-rendered step's height.
+  useEffect(() => { onAdvance?.(stepIndex); }, [stepIndex, onAdvance]);
 
   const finish = (compact: CompactAnswers) => {
     const full = fillBriefDefaults(compact, prompt);
