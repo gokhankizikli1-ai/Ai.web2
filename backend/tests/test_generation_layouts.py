@@ -77,6 +77,24 @@ def test_app_prompts_render_product_ui_not_marketing(prompt):
     assert 'id="pricing"' not in html and ">Choose plan<" not in html
 
 
+def test_launch_and_waitlist_dashboards_stay_app_shells():
+    for prompt in ("Build a product launch dashboard", "Build a waitlist analytics app"):
+        spec = expand(prompt)
+        assert spec.intent == "dashboard"
+        assert spec.layout == "app"
+
+    explicit_landing = expand("Build a landing page for a finance analytics startup")
+    assert explicit_landing.layout == "landing"
+
+
+def test_balanced_density_prompt_block_is_not_data_dense():
+    spec = expand("Build an analytics dashboard\n\nDESIGN_BRIEF:\n- Density: Balanced")
+    block = spec.to_prompt_block()
+    assert "DENSITY: balanced" in block
+    assert "data-dense" not in block
+    assert "balance whitespace with useful detail" in block
+
+
 # ── Page architecture per product (req #3, #8) ────────────────────────
 
 def test_fitness_screen_map():

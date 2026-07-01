@@ -85,11 +85,19 @@ class ProductSpec:
         ]
         density = (self.data or {}).get("density")
         if density:
-            lines.append(f"DENSITY: {density} — "
-                         + ("favor generous whitespace, fewer panels per screen, one clear focal element."
-                            if density == "clean" else
-                            "pack in more KPI cards, chart panels and table rows per screen; this product "
-                            "should read as data-dense, not sparse."))
+            if density == "clean":
+                density_guidance = "favor generous whitespace, fewer panels per screen, one clear focal element."
+            elif density in ("data heavy", "highly detailed"):
+                density_guidance = (
+                    "pack in more KPI cards, chart panels and table rows per screen; this product "
+                    "should read as data-dense, not sparse."
+                )
+            else:
+                density_guidance = (
+                    "balance whitespace with useful detail; keep hierarchy clear without feeling sparse "
+                    "or overloaded."
+                )
+            lines.append(f"DENSITY: {density} — " + density_guidance)
         if (self.data or {}).get("product_showcase"):
             lines.append("HERO EMPHASIS: give the hero's product mockup/screenshot extra visual prominence "
                          "— this is a product-showcase-style layout.")

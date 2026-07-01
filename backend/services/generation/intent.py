@@ -120,8 +120,15 @@ _RULES: List[Tuple[re.Pattern, str]] = [
     # own domain ("landing page for a finance analytics startup" must not
     # fall to the generic "analytics" → dashboard rule below it).
     (re.compile(r"\b(landing\s*page|marketing\s*(?:site|page)|"
-                r"product\s*launch|waitlist|coming\s*soon|saas\s*landing|"
-                r"startup\s*(?:site|landing|website))\b", re.I), "landing_page"),
+                r"saas\s*landing|startup\s*(?:site|landing|website))\b", re.I), "landing_page"),
+    # Dashboard intent can describe launch/waitlist data; keep those app
+    # shells from falling through to the softer marketing rule below.
+    (re.compile(r"\b(product\s*launch|waitlist|coming\s*soon)\b.*\b(dashboard|analytics|"
+                r"metrics|monitoring|reporting|data\s*viz|kpi|telemetry|stats?\s*panel)\b|"
+                r"\b(dashboard|analytics|metrics|monitoring|reporting|data\s*viz|kpi|"
+                r"telemetry|stats?\s*panel)\b.*\b(product\s*launch|waitlist|coming\s*soon)\b",
+                re.I), "dashboard"),
+    (re.compile(r"\b(product\s*launch|waitlist|coming\s*soon)\b", re.I), "landing_page"),
     # Finance / banking / crypto.
     (re.compile(r"\b(bank|banking|fintech|wallet|crypto|trading|stock|equit|"
                 r"invest|expense|budget|accounting|payroll|finance\s*(?:app|tool))\b", re.I), "finance_tool"),
