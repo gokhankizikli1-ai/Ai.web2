@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from backend.services.generation import component_library as cl
 from backend.services.generation.renderers import base
-from backend.services.generation.renderers.base import bars, e, icon, slug, spark
+from backend.services.generation.renderers.base import avatar, bars, e, icon, slug, spark
 from backend.services.generation.spec import ProductSpec, Section
 
 CSS = """
@@ -30,6 +30,46 @@ CSS = """
 .ld-faq summary::after { content:'+'; color:var(--accent-2); font-size:1.3rem; font-weight:600; }
 .ld-faq details[open] summary::after { content:'–'; }
 .ld-testi-stars { color:var(--accent-2); font-size:1.05rem; letter-spacing:2px; }
+
+/* ── Split hero (Sprint 2.3) ──
+   Premium two-column hero: left-aligned copy, right visual with depth
+   (glow + tilted mockup + floating stat chip). Collapses to a single
+   centered column on narrow viewports. Scoped to landing only — new
+   `ld-hero*` classes, no changes to the shared `.ds-hero*` rules other
+   renderers reuse. */
+.ld-hero { position:relative; overflow:hidden; padding:clamp(92px,13vw,156px) 0 clamp(64px,9vw,100px); }
+.ld-hero::before { content:''; position:absolute; inset:-35% -10% auto 10%; height:640px; z-index:-1;
+  background:radial-gradient(46% 60% at 70% 10%, color-mix(in srgb, var(--accent) 30%, transparent), transparent 72%); }
+.ld-hero-grid { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.08fr);
+  gap:clamp(36px,6vw,84px); align-items:center; }
+.ld-hero-copy { text-align:left; }
+.ld-hero-copy h1 { margin:22px 0 18px; max-width:15ch; text-align:left; }
+.ld-hero-copy .ds-lead { text-align:left; max-width:46ch; margin:0 0 34px; }
+.ld-hero-actions { justify-content:flex-start; }
+.ld-btn-arrow { display:inline-flex; align-items:center; gap:8px; }
+.ld-btn-arrow svg { width:16px; height:16px; transition:transform var(--t) var(--ease); }
+.ld-btn-arrow:hover svg { transform:translateX(3px); }
+.ld-hero-proof { display:flex; align-items:center; gap:14px; margin-top:40px; color:var(--text-dim); font-size:.85rem; }
+.ld-avatars { display:flex; flex:0 0 auto; }
+.ld-avatars span { width:30px; height:30px; border-radius:9999px; margin-left:-9px; background:var(--grad);
+  border:2px solid var(--bg); box-shadow:var(--shadow-sm); }
+.ld-avatars span:first-child { margin-left:0; }
+.ld-hero-visual { position:relative; }
+.ld-hero-glow { position:absolute; inset:-18% -14%; z-index:-1; filter:blur(64px); opacity:.65;
+  background:radial-gradient(60% 60% at 60% 30%, color-mix(in srgb, var(--accent) 40%, transparent), transparent 70%),
+    radial-gradient(50% 50% at 20% 80%, color-mix(in srgb, var(--accent-2) 32%, transparent), transparent 70%); }
+.ld-hero-mock { transform:perspective(1600px) rotateY(-7deg) rotateX(2deg); transform-origin:0% 50%; }
+.ld-float-card { position:absolute; left:-8%; bottom:-28px; display:flex; align-items:center; gap:12px;
+  padding:14px 18px; background:var(--surface); border:1px solid var(--border-strong); border-radius:var(--radius-lg);
+  box-shadow:var(--shadow-lg); }
+.ld-float-card .ds-stat-value { font-size:1.1rem; }
+@media (max-width:960px) {
+  .ld-hero-grid { grid-template-columns:1fr; text-align:center; }
+  .ld-hero-copy, .ld-hero-copy h1, .ld-hero-copy .ds-lead { text-align:center; margin-left:auto; margin-right:auto; }
+  .ld-hero-actions, .ld-hero-proof { justify-content:center; }
+  .ld-hero-mock { transform:none; }
+  .ld-float-card { display:none; }
+}
 """.strip()
 
 CSS = CSS + "\n\n" + cl.CSS
@@ -47,32 +87,45 @@ def _wrap(sec_id, title, subtitle, inner) -> str:
 
 
 def _hero(spec: ProductSpec, primary_target: str, secondary_target: str) -> str:
-    return f"""
-<section class="ds-hero" id="overview"><div class="ds-container">
-  <span class="ds-badge ds-rise"><span class="ds-badge-dot"></span>{e(spec.product_type.replace('_',' ').title())}</span>
-  <h1 class="ds-rise">{e(spec.tagline)}</h1>
-  <p class="ds-lead ds-rise">{e(spec.description)}</p>
-  <div class="ds-hero-actions ds-rise">
-    <button class="ds-btn ds-btn-primary" data-scroll="{primary_target}">{e(spec.cta_primary)}</button>
-    <button class="ds-btn ds-btn-ghost" data-scroll="{secondary_target}">{e(spec.cta_secondary)}</button></div>
-</div></section>"""
-
-
-def _mockup(spec: ProductSpec) -> str:
+    metrics = spec.metrics or [{"label": "Active", "value": "12.4k"}, {"label": "Growth", "value": "+18%"}]
     chips = "".join(f"""
       <div class="ds-card ds-col-2" style="padding:16px"><span style="color:var(--text-dim);font-size:.78rem">{e(x.get('label'))}</span>
         <div class="ds-stat-value" style="font-size:1.4rem;margin-top:4px">{e(x.get('value'))}</div></div>"""
-                    for x in (spec.metrics or [{"label": "Active", "value": "12.4k"}, {"label": "Growth", "value": "+18%"}])[:2])
+                    for x in metrics[:2])
+    float_metric = metrics[0]
+    arrow = ('<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" '
+             'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+             '<path d="M3 8h10"/><path d="M9 4l4 4-4 4"/></svg>')
     return f"""
-<section class="ds-section ds-container" style="padding-top:8px"><div class="ds-mock ds-rise">
-  <div class="ds-mock-bar"><i></i><i></i><i></i>
-    <span style="margin-left:10px;color:var(--text-dim);font-size:.8rem">{e(spec.name)} — preview</span></div>
-  <div class="ds-mock-body"><div class="ds-bento">
-    <div class="ds-card ds-col-4 ds-row-2"><span class="ds-eyebrow">Overview</span>
-      <h3 style="margin-top:6px">{e(spec.tagline)}</h3>{bars(14)}</div>
-    {chips}
-    <div class="ds-card ds-col-2">{spark()}</div>
-  </div></div>
+<section class="ld-hero" id="overview"><div class="ds-container ld-hero-grid">
+  <div class="ld-hero-copy">
+    <span class="ds-badge ds-rise"><span class="ds-badge-dot"></span>{e(spec.product_type.replace('_',' ').title())}</span>
+    <h1 class="ds-rise">{e(spec.tagline)}</h1>
+    <p class="ds-lead ds-rise">{e(spec.description)}</p>
+    <div class="ds-hero-actions ld-hero-actions ds-rise">
+      <button class="ds-btn ds-btn-primary" data-scroll="{primary_target}">{e(spec.cta_primary)}</button>
+      <button class="ds-btn ds-btn-ghost ld-btn-arrow" data-scroll="{secondary_target}">{e(spec.cta_secondary)}{arrow}</button>
+    </div>
+    <div class="ld-hero-proof ds-rise">
+      <span class="ld-avatars">{avatar('A')}{avatar('B')}{avatar('C')}</span>
+      <span>Trusted by fast-moving teams</span>
+    </div>
+  </div>
+  <div class="ld-hero-visual ds-rise">
+    <span class="ld-hero-glow" aria-hidden="true"></span>
+    <div class="ds-mock ld-hero-mock">
+      <div class="ds-mock-bar"><i></i><i></i><i></i>
+        <span style="margin-left:10px;color:var(--text-dim);font-size:.8rem">{e(spec.name)} — preview</span></div>
+      <div class="ds-mock-body"><div class="ds-bento">
+        <div class="ds-card ds-col-4 ds-row-2"><span class="ds-eyebrow">Overview</span>
+          <h3 style="margin-top:6px">{e(spec.tagline)}</h3>{bars(14)}</div>
+        {chips}
+        <div class="ds-card ds-col-2">{spark()}</div>
+      </div></div>
+    </div>
+    <div class="ld-float-card"><span class="ds-eyebrow" style="margin:0">{e(float_metric.get('label'))}</span>
+      <div class="ds-stat-value">{e(float_metric.get('value'))}</div></div>
+  </div>
 </div></section>"""
 
 
@@ -220,7 +273,7 @@ def render(spec: ProductSpec) -> str:
   <nav class="ds-nav-links">{links}</nav>
   <button class="ds-btn ds-btn-primary ds-btn-sm" data-scroll="{primary_target}">{e(spec.cta_primary)}</button>
 </header>"""
-    parts = [nav, "<main>", _hero(spec, primary_target, secondary_target), _mockup(spec), _logos()]
+    parts = [nav, "<main>", _hero(spec, primary_target, secondary_target), _logos()]
     for sec in spec.sections:
         if sec.kind == "metrics":   # avoid a second mockup-ish block right after the hero mockup
             continue
