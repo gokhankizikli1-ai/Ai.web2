@@ -776,8 +776,9 @@ export default function ProjectWorkspace() {
           </div>
         </div>
 
-        {/* CENTER: neutral skeleton while probing → project composer (orchestrator on) OR agent chat (fallback) */}
-        <div className="flex-1 flex flex-col min-w-0">
+        {/* CENTER: neutral skeleton while probing → project composer (orchestrator on) OR agent chat (fallback).
+            min-h-0 lets the inner scroll container bound its own height instead of growing the column. */}
+        <div className="flex-1 flex flex-col min-w-0 min-h-0">
           {orchProbe === 'checking' ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-3">
               <Loader2 className="h-5 w-5 text-white/20 animate-spin" />

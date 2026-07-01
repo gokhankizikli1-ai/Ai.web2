@@ -46,6 +46,14 @@ class RunNotFoundError(LookupError):
     code = "orchestrator_run_not_found"
 
 
+class UnsupportedRequestError(ValueError):
+    """The request is outside the builder's supported scope (explicit /
+    illegal / harmful content). Raised BEFORE template selection so an
+    unsupported prompt is never normalised into the closest-matching
+    generic template — the frontend shows a polished notice instead."""
+    code = "unsupported_request"
+
+
 # ── Flags ─────────────────────────────────────────────────────────────
 
 def is_enabled() -> bool:
@@ -154,6 +162,20 @@ async def start_project_run(
         raise ProjectOrchestratorDisabled(
             "Project orchestrator is disabled. "
             "Set ENABLE_PROJECT_ORCHESTRATOR=true."
+        )
+
+    # Build-scope content policy — BEFORE template selection, so an
+    # unsupported prompt is never converted into a random dashboard/app.
+    try:
+        from backend.services.generation.content_policy import unsupported_reason
+        reason = unsupported_reason(user_request)
+    except Exception:  # pragma: no cover — a broken policy module never blocks legit runs
+        reason = None
+    if reason:
+        raise UnsupportedRequestError(
+            f"Korvix can't build this — {reason} is outside the supported "
+            "builder scope. Try a product idea instead: a storefront, a SaaS "
+            "dashboard, a portfolio, a landing page."
         )
 
     _ensure_tables()

@@ -99,6 +99,13 @@ _CAPABILITIES = {
 # a marketing page.
 
 _RULES: List[Tuple[re.Pattern, str]] = [
+    # Legal / contract / compliance work → a document-workflow DASHBOARD.
+    # Placed before the editor rule so "legal document review tool" routes
+    # to the legal ops surface instead of falling into the notes editor
+    # via its bare "document" keyword.
+    (re.compile(r"\b(legal\w*|law\s*firm|lawyer|attorney|paralegal|complian\w*|"
+                r"contract\s*(?:review|management|workflow|analysis)|clauses?|"
+                r"document\s*(?:review|workflow|approval|intake)|\bnda\b)\b", re.I), "dashboard"),
     # Editors / note-taking / writing / productivity tools → real app UI.
     (re.compile(r"\b(notes?|note[\s-]*taking|notepad|markdown|editor|writing|"
                 r"document|docs?\s*app|word\s*processor|wiki|journal\w*|outliner)\b", re.I), "application_ui"),
