@@ -154,25 +154,22 @@ export function promptHasDesignDetail(prompt: string): boolean {
 // the composer needs to tell an EDIT of the latest build apart from a NEW
 // build request. Deterministic, ordered rules (same spirit as the intent
 // classifier on the backend): an explicit "build/create me a(n) X" always
-// reads as a fresh product; otherwise a leading edit verb, or a short
-// message that talks about parts of the current build, reads as an edit.
+// reads as a fresh product; otherwise require an explicit edit verb. Bare
+// references like "this" and "it" are too ambiguous because the Project
+// Workspace also accepts general chat/research turns.
 // Callers only apply this when a completed build actually exists.
 
 const NEW_BUILD_RE =
   /\b(?:build|create|design|generate|make|develop)\s+(?:me\s+|us\s+)?(?:a|an|another|new)\b/i;
 
 const REFINE_VERB_RE =
-  /^\s*(?:please\s+|now\s+|also\s+|then\s+|and\s+)*(?:change|swap|replace|rename|rewrite|reword|adjust|update|improve|refine|polish|remove|delete|drop|hide|show|add|insert|include|make|turn|set|use|tweak|shorten|lengthen|expand|tighten|simplify|increase|decrease|reduce|darken|lighten|convert|emphasize|emphasise)\b/i;
-
-const REFINE_REFERENCE_RE =
-  /\b(?:this|it|the\s+(?:hero|brand|cta|footer|nav(?:bar)?|dashboard|testimonials?|pricing|sections?|colou?rs?|accent|palette|copy|headline|layout|design|page|build|logo|font|typography|spacing|metrics?))\b/i;
+  /^\s*(?:please\s+|now\s+|also\s+|then\s+|and\s+)*(?:(?:can|could|would)\s+you\s+)?(?:change|swap|replace|rename|rewrite|reword|adjust|update|improve|refine|polish|remove|delete|drop|hide|show|add|insert|include|make|turn|set|use|tweak|shorten|lengthen|expand|tighten|simplify|increase|decrease|reduce|darken|lighten|convert|emphasize|emphasise)\b/i;
 
 export function isRefineIntentPrompt(prompt: string): boolean {
   const p = (prompt || '').trim();
   if (!p) return false;
   if (NEW_BUILD_RE.test(p)) return false;
-  if (REFINE_VERB_RE.test(p)) return true;
-  return REFINE_REFERENCE_RE.test(p) && p.split(/\s+/).length <= 24;
+  return REFINE_VERB_RE.test(p);
 }
 
 // ── Fold the answers into the exact prompt string sent to the backend ────

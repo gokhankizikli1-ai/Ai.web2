@@ -134,16 +134,18 @@ function computeOverview(turns: RunTurn[]): BuildOverview | null {
   const latestBuild = [...turns].reverse().find(t => t.deliverables.some(isBuildArtifact)) || null;
   const artifact = latestBuild?.deliverables.find(isBuildArtifact) || null;
   const buildRequest = latestBuild?.user_request || '';
-  const brief = buildRequest ? resolveBriefAnswers(buildRequest) : null;
+  const latestRequest = latest.user_request || '';
+  const overviewRequest = !isRunTerminal(latest.status) ? latestRequest || buildRequest : buildRequest;
+  const brief = overviewRequest ? resolveBriefAnswers(overviewRequest) : null;
   // Category detection runs on the clean visible prompt — brief field
   // values ("Target feel: Ecommerce conversion") must not skew it.
-  const visibleBuild = parseVisiblePrompt(buildRequest).visible;
+  const visibleRequest = parseVisiblePrompt(overviewRequest).visible;
   return {
     totalRuns: turns.length,
     running: !isRunTerminal(latest.status),
     status: latest.status || null,
-    latestPrompt: visibleBuild || parseVisiblePrompt(latest.user_request || '').visible || null,
-    categoryLabel: visibleBuild ? CATEGORY_LABELS[detectCategory(visibleBuild)] : null,
+    latestPrompt: visibleRequest || parseVisiblePrompt(latestRequest).visible || null,
+    categoryLabel: visibleRequest ? CATEGORY_LABELS[detectCategory(visibleRequest)] : null,
     artifactTitle: artifact?.title || null,
     artifactType: artifact?.artifact_type ?? null,
     designSummary: brief ? summarizeAnswers(brief) : null,
