@@ -70,15 +70,42 @@ export default function WebsitePreviewCanvas({ content, activeSection, siteName 
             {content.hero.secondaryCta}
           </button>
         </div>
-        <div className="mt-14 mx-auto max-w-3xl rounded-2xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-xl p-2 shadow-2xl">
-          <div className="rounded-xl bg-gradient-to-br from-white/[0.04] to-transparent h-40 sm:h-56 flex items-center justify-center border border-white/[0.04]">
-            <BarChart3 className="w-10 h-10 text-slate-700" />
+        {/* Product screenshot mock — a mini app frame instead of a bare icon */}
+        <div className="mt-14 mx-auto max-w-3xl rounded-2xl border border-white/[0.08] bg-white/[0.02] backdrop-blur-xl p-2 shadow-2xl shadow-black/40">
+          <div className="rounded-xl border border-white/[0.05] bg-[#0d0d13] overflow-hidden text-left flex h-48 sm:h-64">
+            <div className="hidden sm:block w-28 shrink-0 border-r border-white/[0.05] p-3 space-y-2">
+              <div className="h-2 w-14 rounded bg-white/[0.08]" />
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className={`h-6 rounded-md ${i === 0 ? 'bg-violet-500/20' : 'bg-white/[0.03]'}`} />
+              ))}
+            </div>
+            <div className="flex-1 min-w-0 p-3 sm:p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="h-2 w-20 rounded bg-white/[0.1]" />
+                <div className="h-5 w-14 rounded-md bg-gradient-to-r from-violet-500/40 to-cyan-400/40" />
+              </div>
+              <div className="grid grid-cols-3 gap-2 mb-3">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} className="h-10 rounded-lg bg-white/[0.04] border border-white/[0.05]" />
+                ))}
+              </div>
+              <div className="flex items-end gap-1.5 h-16 sm:h-24 px-1">
+                {[38, 62, 45, 80, 55, 70, 40, 90, 60].map((h, i) => (
+                  <div key={i} className="flex-1 rounded-sm bg-gradient-to-t from-violet-500/50 to-cyan-400/40" style={{ height: `${h}%` }} />
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Features */}
-      <div ref={setRef('features')} className={`px-6 sm:px-10 py-16 rounded-lg transition-all ${ring('features')}`}>
+      <div
+        ref={setRef('features')}
+        className={`px-6 sm:px-10 py-16 sm:py-20 rounded-lg transition-all ${ring('features')}`}
+        style={{ background: 'radial-gradient(80% 60% at 50% 0%, rgba(99,102,241,0.06), transparent 70%)' }}
+      >
+        <p className="text-center text-[10px] font-semibold tracking-[0.2em] text-violet-400/70 mb-3">FEATURES</p>
         <h2 className="text-center text-xl sm:text-2xl font-semibold mb-10">Everything you need</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-3xl mx-auto">
           {content.features.map((f, i) => {
@@ -97,7 +124,8 @@ export default function WebsitePreviewCanvas({ content, activeSection, siteName 
       </div>
 
       {/* Pricing */}
-      <div ref={setRef('pricing')} className={`px-6 sm:px-10 py-16 rounded-lg transition-all ${ring('pricing')}`}>
+      <div ref={setRef('pricing')} className={`px-6 sm:px-10 py-16 sm:py-20 rounded-lg transition-all ${ring('pricing')}`}>
+        <p className="text-center text-[10px] font-semibold tracking-[0.2em] text-cyan-400/70 mb-3">PRICING</p>
         <h2 className="text-center text-xl sm:text-2xl font-semibold mb-10">Simple, transparent pricing</h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-3xl mx-auto items-stretch">
           {content.pricing.map((tier) => (
@@ -125,7 +153,12 @@ export default function WebsitePreviewCanvas({ content, activeSection, siteName 
       </div>
 
       {/* Testimonials */}
-      <div ref={setRef('testimonials')} className={`px-6 sm:px-10 py-16 rounded-lg transition-all ${ring('testimonials')}`}>
+      <div
+        ref={setRef('testimonials')}
+        className={`px-6 sm:px-10 py-16 sm:py-20 rounded-lg transition-all ${ring('testimonials')}`}
+        style={{ background: 'radial-gradient(80% 60% at 50% 0%, rgba(34,211,238,0.05), transparent 70%)' }}
+      >
+        <p className="text-center text-[10px] font-semibold tracking-[0.2em] text-violet-400/70 mb-3">TESTIMONIALS</p>
         <h2 className="text-center text-xl sm:text-2xl font-semibold mb-10">Loved by teams everywhere</h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-3xl mx-auto">
           {content.testimonials.map((t) => (
@@ -141,7 +174,8 @@ export default function WebsitePreviewCanvas({ content, activeSection, siteName 
       </div>
 
       {/* FAQ */}
-      <div ref={setRef('faq')} className={`px-6 sm:px-10 py-16 rounded-lg transition-all ${ring('faq')}`}>
+      <div ref={setRef('faq')} className={`px-6 sm:px-10 py-16 sm:py-20 rounded-lg transition-all ${ring('faq')}`}>
+        <p className="text-center text-[10px] font-semibold tracking-[0.2em] text-cyan-400/70 mb-3">FAQ</p>
         <h2 className="text-center text-xl sm:text-2xl font-semibold mb-10">Frequently asked questions</h2>
         <div className="max-w-xl mx-auto space-y-2">
           {content.faq.map((qa) => (
@@ -154,7 +188,8 @@ export default function WebsitePreviewCanvas({ content, activeSection, siteName 
       </div>
 
       {/* Brand + typography */}
-      <div ref={setRef('brand')} className={`px-6 sm:px-10 py-16 rounded-lg transition-all ${ring('brand')}`}>
+      <div ref={setRef('brand')} className={`px-6 sm:px-10 py-16 sm:py-20 rounded-lg transition-all ${ring('brand')}`}>
+        <p className="text-center text-[10px] font-semibold tracking-[0.2em] text-violet-400/70 mb-3">BRAND SYSTEM</p>
         <h2 className="text-center text-xl sm:text-2xl font-semibold mb-10">Brand system</h2>
         <div className="flex items-center justify-center gap-3 flex-wrap max-w-3xl mx-auto">
           {content.brand.map((c) => (
