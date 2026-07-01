@@ -81,6 +81,15 @@ CSS = """
 .ld-section-band { padding:clamp(56px,9vw,112px) 0; }
 .ld-tone-alt { background:color-mix(in srgb, var(--surface) 45%, transparent);
   border-top:1px solid var(--border); border-bottom:1px solid var(--border); }
+
+/* ── Section eyebrow + footer responsiveness (Sprint 1.11) ──
+   Every section head now pairs a small eyebrow label with its heading —
+   the hero and CTA band already used this; sections were the flatter
+   outlier. Purely typographic, reuses the existing `.ds-eyebrow` token. */
+.ld-section-eyebrow { display:block; margin-bottom:10px; }
+.ld-footer-grid { display:grid; grid-template-columns:1.4fr 1fr 1fr 1fr; gap:28px; }
+@media (max-width:720px) { .ld-footer-grid { grid-template-columns:1fr 1fr; row-gap:32px; } }
+@media (max-width:480px) { .ld-footer-grid { grid-template-columns:1fr; } }
 """.strip()
 
 CSS = CSS + "\n\n" + cl.CSS
@@ -88,10 +97,11 @@ CSS = CSS + "\n\n" + cl.CSS
 _LOGOS = ["Vantage", "Lumio", "Northwind", "Mercura", "Cobalt", "Atlas"]
 
 
-def _wrap(sec_id, title, subtitle, inner, tone=None) -> str:
+def _wrap(sec_id, title, subtitle, inner, tone=None, eyebrow=None) -> str:
     head = ""
     if title:
-        head = (f'<div class="ds-center" style="margin-bottom:44px"><h2>{e(title)}</h2>'
+        eyebrow_html = f'<span class="ds-eyebrow ld-section-eyebrow">{e(eyebrow)}</span>' if eyebrow else ""
+        head = (f'<div class="ds-center" style="margin-bottom:44px">{eyebrow_html}<h2>{e(title)}</h2>'
                 + (f'<p class="ds-lead" style="margin-top:12px;max-width:50ch;margin-left:auto;margin-right:auto">{e(subtitle)}</p>' if subtitle else "")
                 + "</div>")
     band_cls = "ld-section-band" + (" ld-tone-alt" if tone == "alt" else "")
@@ -190,22 +200,24 @@ def _pricing(sec: Section, tone=None) -> str:
       <p style="font-size:.88rem">{e(c.get('icon'))}</p>
       <button class="ds-btn {'ds-btn-primary' if (n >= 2 and i == 1) else 'ds-btn-ghost'}" data-scroll="get-started" style="margin-top:18px;width:100%">Choose plan</button>
     </div>""" for i, c in enumerate(sec.items))
-    return _wrap(_section_id(sec), sec.title or "Simple, scalable pricing", sec.subtitle, f'<div class="ds-grid">{cards}</div>', tone)
+    return _wrap(_section_id(sec), sec.title or "Simple, scalable pricing", sec.subtitle, f'<div class="ds-grid">{cards}</div>', tone, "Pricing")
 
 
 def _testimonials(sec: Section, tone=None) -> str:
     cards = "".join(f"""
     <div class="ds-card ds-rise"><div class="ld-testi-stars">★★★★★</div>
       <p style="color:var(--text);font-size:1.05rem;margin-top:12px">{e(c.get('title'))}</p>
-      <p style="margin-top:14px;font-size:.85rem">{e(c.get('body'))}</p></div>""" for c in sec.items)
-    return _wrap(_section_id(sec), sec.title or "Loved by teams that ship", sec.subtitle, f'<div class="ds-grid">{cards}</div>', tone)
+      <div style="display:flex;align-items:center;gap:10px;margin-top:16px">{avatar(c.get('body') or 'U')}
+        <span style="font-size:.85rem;color:var(--text-dim)">{e(c.get('body'))}</span></div>
+    </div>""" for c in sec.items)
+    return _wrap(_section_id(sec), sec.title or "Loved by teams that ship", sec.subtitle, f'<div class="ds-grid">{cards}</div>', tone, "Testimonials")
 
 
 def _faq(sec: Section, tone=None) -> str:
     items = "".join(f"""
     <details class="ds-card ds-rise"><summary>{e(c.get('title'))}</summary>
       <p style="margin-top:12px">{e(c.get('body'))}</p></details>""" for c in sec.items)
-    return _wrap(_section_id(sec), sec.title or "Frequently asked", sec.subtitle, f'<div class="ld-faq">{items}</div>', tone)
+    return _wrap(_section_id(sec), sec.title or "Frequently asked", sec.subtitle, f'<div class="ld-faq">{items}</div>', tone, "FAQ")
 
 
 def _gallery(sec: Section, tone=None) -> str:
@@ -221,7 +233,7 @@ def _gallery(sec: Section, tone=None) -> str:
             f'<div class="ds-card ds-rise ds-selectable" data-select style="aspect-ratio:4/3;'
             f'background:linear-gradient(135deg,color-mix(in srgb,var(--accent) {18+11*i}%,transparent),'
             f'color-mix(in srgb,var(--accent-2) {18+11*i}%,transparent))"></div>' for i in range(6))
-    return _wrap(_section_id(sec), sec.title or "Gallery", sec.subtitle, f'<div class="ds-grid" data-select-group>{tiles}</div>', tone)
+    return _wrap(_section_id(sec), sec.title or "Gallery", sec.subtitle, f'<div class="ds-grid" data-select-group>{tiles}</div>', tone, "Gallery")
 
 
 def _panel(spec: ProductSpec, sec: Section, tone=None) -> str:
@@ -229,7 +241,7 @@ def _panel(spec: ProductSpec, sec: Section, tone=None) -> str:
                  '<div class="ds-mock ds-rise"><div class="ds-mock-bar"><i></i><i></i><i></i></div>'
                  f'<div class="ds-mock-body"><div class="ds-bento"><div class="ds-card ds-col-4 ds-row-2">{bars(12)}</div>'
                  f'<div class="ds-card ds-col-2">{spark()}</div>'
-                 f'<div class="ds-card ds-col-2"><div class="ds-stat-value">{e(spec.cta_primary)}</div></div></div></div></div>', tone)
+                 f'<div class="ds-card ds-col-2"><div class="ds-stat-value">{e(spec.cta_primary)}</div></div></div></div></div>', tone, "Preview")
 
 
 def _contact(spec: ProductSpec) -> str:
@@ -258,15 +270,15 @@ def _cta(spec: ProductSpec, sec: Section, secondary_target: str = "features") ->
 
 
 def _section(spec: ProductSpec, sec: Section, tone=None, secondary_target: str = "features") -> str:
-    if sec.kind == "features":     return _wrap(_section_id(sec), sec.title or "Features", sec.subtitle, _feature_bento(sec.items), tone)
+    if sec.kind == "features":     return _wrap(_section_id(sec), sec.title or "Features", sec.subtitle, _feature_bento(sec.items), tone, "Features")
     if sec.kind == "pricing":      return _pricing(sec, tone)
     if sec.kind == "testimonials": return _testimonials(sec, tone)
     if sec.kind == "faq":          return _faq(sec, tone)
     if sec.kind == "gallery":      return _gallery(sec, tone)
     if sec.kind == "panel":        return _panel(spec, sec, tone)
     if sec.kind == "cta":          return _cta(spec, sec, secondary_target)
-    if sec.kind == "metrics":      return _wrap(_section_id(sec), sec.title or "By the numbers", sec.subtitle, _feature_bento(sec.items), tone)
-    return _wrap(_section_id(sec), sec.title, sec.subtitle, _feature_bento(sec.items), tone)
+    if sec.kind == "metrics":      return _wrap(_section_id(sec), sec.title or "By the numbers", sec.subtitle, _feature_bento(sec.items), tone, "Metrics")
+    return _wrap(_section_id(sec), sec.title, sec.subtitle, _feature_bento(sec.items), tone, sec.kind.replace("_", " ").title() or None)
 
 
 def _footer(spec: ProductSpec) -> str:
@@ -281,7 +293,7 @@ def _footer(spec: ProductSpec) -> str:
         + "</div>" for h, items in cols.items())
     return f"""
 <footer class="ds-footer"><div class="ds-container">
-  <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:28px">
+  <div class="ld-footer-grid">
     <div><div class="ds-nav-brand"><span class="ds-nav-logo"></span>{e(spec.name)}</div>
       <p style="font-size:.88rem;margin-top:12px;max-width:32ch">{e(spec.tagline)}</p></div>
     {colhtml}
