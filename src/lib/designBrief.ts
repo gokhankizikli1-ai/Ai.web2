@@ -205,3 +205,43 @@ export function parseVisiblePrompt(text: string): ParsedPrompt {
     .filter((v): v is string => !!v);
   return { visible, summary: parts.length ? parts.join(' · ') : null };
 }
+
+// Full reverse-parse of every DESIGN_BRIEF field (not just the compact
+// summary) — used by the generated-preview layer so the visual style,
+// color direction, density and required sections chosen in the interview
+// actually drive the generated content, not just its display summary.
+// Returns null when the prompt carries no DESIGN_BRIEF block at all.
+export function parseBriefAnswers(text: string): DesignBriefAnswers | null {
+  const raw = text || '';
+  const idx = raw.indexOf(BRIEF_MARKER);
+  if (idx === -1) return null;
+
+  const briefBlock = raw.slice(idx + BRIEF_MARKER.length);
+  const field = (label: string): string | null => {
+    const m = briefBlock.match(new RegExp(`^-\\s*${label}:\\s*(.+)$`, 'mi'));
+    return m ? m[1].trim() : null;
+  };
+  const sectionsRaw = field('Required pages/sections');
+  const sections = sectionsRaw && sectionsRaw !== 'best-fit sections for this product'
+    ? sectionsRaw.split(',').map((s) => s.trim()).filter(Boolean)
+    : [];
+
+  return {
+    visualStyle: field('Visual style') || FALLBACK_DEFAULTS.visualStyle,
+    colorDirection: field('Color direction') || FALLBACK_DEFAULTS.colorDirection,
+    layoutType: field('Layout') || FALLBACK_DEFAULTS.layoutType,
+    buttonStyle: field('Button style') || FALLBACK_DEFAULTS.buttonStyle,
+    density: field('Density') || FALLBACK_DEFAULTS.density,
+    targetFeel: field('Target feel') || FALLBACK_DEFAULTS.targetFeel,
+    sections: sections.length ? sections : [...FALLBACK_DEFAULTS.sections],
+  };
+}
+
+// Resolve the effective design-brief answers for a (possibly enhanced)
+// prompt: parse an explicit DESIGN_BRIEF block if present (interview was
+// shown), otherwise fall back to the same keyword-sniffed smart defaults
+// used when the interview is skipped — so generation is always driven by
+// a real DesignBriefAnswers object, never left to guess.
+export function resolveBriefAnswers(promptOrEnhanced: string): DesignBriefAnswers {
+  return parseBriefAnswers(promptOrEnhanced) || smartDefaultsFromPrompt(promptOrEnhanced);
+}

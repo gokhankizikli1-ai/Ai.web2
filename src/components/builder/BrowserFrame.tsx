@@ -15,9 +15,9 @@ const VIEWPORT_WIDTH: Record<Viewport, string> = {
   mobile: '390px',
 };
 
-const ACCENT_TEXT: Record<string, string> = {
-  violet: 'text-violet-400',
-  indigo: 'text-indigo-400',
+const ACCENT_HEX: Record<string, string> = {
+  violet: '#a78bfa',
+  indigo: '#818cf8',
 };
 
 interface BrowserFrameProps {
@@ -25,13 +25,15 @@ interface BrowserFrameProps {
   children: React.ReactNode;
   showViewportControls?: boolean;
   accent?: 'violet' | 'indigo';
+  /** Hex color, overrides `accent` — used by surfaces with a dynamic brand palette (e.g. Website Builder's Design Brief color direction). */
+  accentColor?: string;
 }
 
 export default function BrowserFrame({
-  url, children, showViewportControls = true, accent = 'violet',
+  url, children, showViewportControls = true, accent = 'violet', accentColor,
 }: BrowserFrameProps) {
   const [viewport, setViewport] = useState<Viewport>('desktop');
-  const accentText = ACCENT_TEXT[accent] || ACCENT_TEXT.violet;
+  const activeHex = accentColor || ACCENT_HEX[accent] || ACCENT_HEX.violet;
 
   return (
     <div
@@ -60,9 +62,8 @@ export default function BrowserFrame({
                 key={v}
                 onClick={() => setViewport(v)}
                 title={v}
-                className={`p-1.5 rounded-md transition-colors ${
-                  viewport === v ? `${accentText} bg-white/[0.05]` : 'text-slate-600 hover:text-slate-400'
-                }`}
+                className={`p-1.5 rounded-md transition-colors ${viewport === v ? 'bg-white/[0.05]' : 'text-slate-600 hover:text-slate-400'}`}
+                style={viewport === v ? { color: activeHex } : undefined}
               >
                 <Icon className="w-3 h-3" />
               </button>
