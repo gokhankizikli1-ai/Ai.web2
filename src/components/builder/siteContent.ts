@@ -52,13 +52,20 @@ interface Ctx {
   retail: boolean;
 }
 
+// The per-category copy banks never set `category`/`brand`/`typography`
+// (assembled once in `generateSiteContent`) or `brandName` (resolved once,
+// from the same `brand` string passed into `Ctx` — never re-derived per
+// category). One shared alias instead of repeating this Omit union on
+// every builder below keeps them all in sync by construction.
+type CategoryContent = Omit<SiteContent, 'category' | 'brand' | 'typography' | 'brandName'>;
+
 function tier(name: string, price: string, period: string, desc: string, highlighted = false) {
   return { name, price, period, desc, highlighted };
 }
 
 // ── Per-category copy banks ────────────────────────────────────────────
 
-function financeContent(ctx: Ctx): Omit<SiteContent, 'category' | 'brand' | 'typography'> {
+function financeContent(ctx: Ctx): CategoryContent {
   const { brand } = ctx;
   return {
     nav: ['Markets', 'Portfolio', 'Risk', 'Pricing'],
@@ -107,7 +114,7 @@ function financeContent(ctx: Ctx): Omit<SiteContent, 'category' | 'brand' | 'typ
   };
 }
 
-function analyticsContent(ctx: Ctx): Omit<SiteContent, 'category' | 'brand' | 'typography'> {
+function analyticsContent(ctx: Ctx): CategoryContent {
   const { brand, retail } = ctx;
   if (retail) {
     return {
@@ -203,7 +210,7 @@ function analyticsContent(ctx: Ctx): Omit<SiteContent, 'category' | 'brand' | 't
   };
 }
 
-function ecommerceContent(ctx: Ctx): Omit<SiteContent, 'category' | 'brand' | 'typography'> {
+function ecommerceContent(ctx: Ctx): CategoryContent {
   const { brand } = ctx;
   return {
     nav: ['Shop', 'Collections', 'About', 'Support'],
@@ -252,7 +259,7 @@ function ecommerceContent(ctx: Ctx): Omit<SiteContent, 'category' | 'brand' | 't
   };
 }
 
-function educationContent(ctx: Ctx): Omit<SiteContent, 'category' | 'brand' | 'typography'> {
+function educationContent(ctx: Ctx): CategoryContent {
   const { brand } = ctx;
   return {
     nav: ['Courses', 'Curriculum', 'Educators', 'Pricing'],
@@ -301,7 +308,7 @@ function educationContent(ctx: Ctx): Omit<SiteContent, 'category' | 'brand' | 't
   };
 }
 
-function creatorContent(ctx: Ctx): Omit<SiteContent, 'category' | 'brand' | 'typography'> {
+function creatorContent(ctx: Ctx): CategoryContent {
   const { brand } = ctx;
   return {
     nav: ['Studio', 'Schedule', 'Audience', 'Pricing'],
@@ -350,7 +357,7 @@ function creatorContent(ctx: Ctx): Omit<SiteContent, 'category' | 'brand' | 'typ
   };
 }
 
-function agencyContent(ctx: Ctx): Omit<SiteContent, 'category' | 'brand' | 'typography'> {
+function agencyContent(ctx: Ctx): CategoryContent {
   const { brand } = ctx;
   return {
     nav: ['Work', 'Services', 'Process', 'Contact'],
@@ -399,7 +406,7 @@ function agencyContent(ctx: Ctx): Omit<SiteContent, 'category' | 'brand' | 'typo
   };
 }
 
-function portfolioContent(ctx: Ctx): Omit<SiteContent, 'category' | 'brand' | 'typography'> {
+function portfolioContent(ctx: Ctx): CategoryContent {
   const { brand } = ctx;
   return {
     nav: ['Work', 'About', 'Contact'],
@@ -444,7 +451,7 @@ function portfolioContent(ctx: Ctx): Omit<SiteContent, 'category' | 'brand' | 't
   };
 }
 
-function internalToolContent(ctx: Ctx): Omit<SiteContent, 'category' | 'brand' | 'typography'> {
+function internalToolContent(ctx: Ctx): CategoryContent {
   const { brand } = ctx;
   return {
     nav: ['Operations', 'Requests', 'Reports', 'Access'],
@@ -489,7 +496,7 @@ function internalToolContent(ctx: Ctx): Omit<SiteContent, 'category' | 'brand' |
   };
 }
 
-function saasContent(ctx: Ctx): Omit<SiteContent, 'category' | 'brand' | 'typography'> {
+function saasContent(ctx: Ctx): CategoryContent {
   const { brand } = ctx;
   return {
     nav: ['Product', 'Pipeline', 'Integrations', 'Pricing'],
@@ -538,7 +545,7 @@ function saasContent(ctx: Ctx): Omit<SiteContent, 'category' | 'brand' | 'typogr
   };
 }
 
-function aiContent(ctx: Ctx): Omit<SiteContent, 'category' | 'brand' | 'typography'> {
+function aiContent(ctx: Ctx): CategoryContent {
   const { brand } = ctx;
   return {
     nav: ['Product', 'How it works', 'Pricing', 'Docs'],
@@ -587,7 +594,7 @@ function aiContent(ctx: Ctx): Omit<SiteContent, 'category' | 'brand' | 'typograp
   };
 }
 
-function dashboardContent(ctx: Ctx): Omit<SiteContent, 'category' | 'brand' | 'typography'> {
+function dashboardContent(ctx: Ctx): CategoryContent {
   const { brand } = ctx;
   return {
     nav: ['Overview', 'Reports', 'Team', 'Settings'],
@@ -636,7 +643,7 @@ function dashboardContent(ctx: Ctx): Omit<SiteContent, 'category' | 'brand' | 't
   };
 }
 
-const BUILDERS: Record<BuilderCategory, (ctx: Ctx) => Omit<SiteContent, 'category' | 'brand' | 'typography'>> = {
+const BUILDERS: Record<BuilderCategory, (ctx: Ctx) => CategoryContent> = {
   finance: financeContent,
   analytics: analyticsContent,
   ecommerce: ecommerceContent,
