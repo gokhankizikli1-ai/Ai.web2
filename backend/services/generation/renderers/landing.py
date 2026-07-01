@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from backend.services.generation import component_library as cl
 from backend.services.generation.renderers import base
-from backend.services.generation.renderers.base import avatar, bars, e, feature_items, icon, slug, spark
+from backend.services.generation.renderers.base import avatar, bars, e, feature_items, icon, slug, spark, svg_icon
 from backend.services.generation.spec import ProductSpec, Section
 
 CSS = """
@@ -90,6 +90,40 @@ CSS = """
 .ld-footer-grid { display:grid; grid-template-columns:1.4fr 1fr 1fr 1fr; gap:28px; }
 @media (max-width:720px) { .ld-footer-grid { grid-template-columns:1fr 1fr; row-gap:32px; } }
 @media (max-width:480px) { .ld-footer-grid { grid-template-columns:1fr; } }
+
+/* ── Commerce-analytics product mockup (retail_analytics vertical) ──
+   A real sidebar + topbar + content screenshot instead of decorative
+   bars/spark — revenue, ROAS, margin, a conversion funnel, top
+   collections, a best-sellers leaderboard and an alerts feed. */
+.ld-commerce-mock .ds-mock-body { padding:0; }
+.ld-commerce-body { display:flex; min-height:380px; }
+.ld-mock-sidebar { width:136px; flex:0 0 auto; padding:16px 10px; border-right:1px solid var(--border);
+  display:flex; flex-direction:column; gap:3px; }
+.ld-mock-nav-item { padding:8px 10px; border-radius:8px; font-size:.78rem; color:var(--text-dim); }
+.ld-mock-nav-item.is-active { background:color-mix(in srgb, var(--accent) 14%, var(--surface-2));
+  color:var(--text); font-weight:650; }
+.ld-mock-main { flex:1; min-width:0; padding:18px 20px; }
+.ld-mock-topbar { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; gap:12px; }
+.ld-mock-search { display:flex; align-items:center; gap:8px; padding:7px 12px; border-radius:9px;
+  background:var(--surface-2); border:1px solid var(--border); color:var(--text-dim); font-size:.8rem;
+  max-width:220px; flex:1; }
+.ld-mock-search .ds-svg-icon { width:14px; height:14px; flex:0 0 auto; }
+.ld-mock-avatar { width:28px; height:28px; border-radius:9999px; background:var(--grad); box-shadow:var(--glow); flex:0 0 auto; }
+.ld-mock-grid { display:grid; grid-template-columns:1.15fr 1fr; gap:16px; align-items:start; margin-top:16px; }
+@media (max-width:720px) { .ld-mock-grid { grid-template-columns:1fr; } }
+.ld-mock-block { padding:16px; border-radius:var(--radius-lg); background:var(--surface); border:1px solid var(--border); }
+.ld-mock-block .ds-eyebrow { display:block; margin-bottom:12px; }
+.ld-funnel-row { display:flex; align-items:center; gap:10px; margin-bottom:8px; }
+.ld-funnel-row:last-child { margin-bottom:0; }
+.ld-funnel-label { width:92px; flex:0 0 auto; font-size:.76rem; color:var(--text-dim); }
+.ld-funnel-bar { flex:1; height:8px; border-radius:9999px; background:var(--surface-2); overflow:hidden; }
+.ld-funnel-bar span { display:block; height:100%; background:var(--grad); }
+.ld-funnel-pct { width:34px; flex:0 0 auto; text-align:right; font-size:.76rem; font-variant-numeric:tabular-nums; color:var(--text); }
+.ld-collection-row { display:flex; align-items:center; gap:10px; margin-top:8px; }
+.ld-collection-name { width:92px; flex:0 0 auto; font-size:.76rem; color:var(--text-dim); }
+.ld-collection-bar { flex:1; height:6px; border-radius:9999px; background:var(--surface-2); overflow:hidden; }
+.ld-collection-bar span { display:block; height:100%; background:color-mix(in srgb, var(--accent-2) 70%, var(--accent)); }
+.ld-collection-value { width:56px; flex:0 0 auto; text-align:right; font-size:.76rem; color:var(--text); font-variant-numeric:tabular-nums; }
 """.strip()
 
 CSS = CSS + "\n\n" + cl.CSS
@@ -277,7 +311,79 @@ def _gallery(sec: Section, tone=None) -> str:
     return _wrap(_section_id(sec), sec.title or "Gallery", sec.subtitle, f'<div class="ds-grid" data-select-group>{tiles}</div>', tone, "Gallery")
 
 
+_FUNNEL_STAGES = [("Sessions", 100), ("Product view", 62), ("Add to cart", 28), ("Checkout", 14), ("Purchase", 9)]
+_TOP_COLLECTIONS = [("Outerwear", "$142K", 100), ("Knitwear", "$98K", 69), ("Accessories", "$61K", 43)]
+_BEST_SELLERS = [
+    ["Silk Wrap Dress", "482", "$38.4K", "42%"],
+    ["Tailored Blazer", "310", "$29.1K", "38%"],
+    ["Merino Knit", "268", "$14.6K", "21%"],
+    ["Leather Tote", "121", "$18.9K", "46%"],
+]
+_COMMERCE_ALERTS = [
+    {"icon": "flame", "title": "Merino Knit demand up 3x — seasonal signal", "body": "Trending in the Northeast; consider a restock ahead of the shift.", "time": "2h", "unread": True},
+    {"icon": "shield", "title": "Leather Tote below 2-week inventory cover", "body": "Current sell-through leaves 12 units — reorder recommended.", "time": "5h", "unread": True},
+    {"icon": "chart", "title": "Instagram campaign ROAS crossed 4x", "body": "Reallocate spend from underperforming search ads.", "time": "1d"},
+]
+
+
+def _commerce_analytics_mock(spec: ProductSpec) -> str:
+    """A real sidebar + topbar + content dashboard screenshot for the
+    retail-analytics vertical — revenue, campaign ROAS and margin as
+    chart cards, a conversion funnel, top collections by revenue, a
+    best-sellers leaderboard and an alerts/recommendations feed. Reuses
+    the shared component library so it stays visually consistent with
+    every other renderer, never a decorative bars-only placeholder."""
+    nav = ["Overview", "Revenue", "Inventory", "Cohorts", "Collections"]
+    sidebar = "".join(
+        f'<div class="ld-mock-nav-item{" is-active" if i == 0 else ""}">{e(n)}</div>' for i, n in enumerate(nav)
+    )
+    metric_cards = "".join(f'<div class="ds-col-2">{c}</div>' for c in [
+        cl.premium_metric_card("Revenue (30d)", "$482K", "+18% MoM", icon="chart", trend_positive=True),
+        cl.premium_metric_card("Campaign ROAS", "4.2x", "+0.6x", icon="bolt", trend_positive=True),
+        cl.premium_metric_card("Margin signal", "41%", "+2.1pt", icon="coin", trend_positive=True),
+    ])
+    funnel = "".join(f"""
+      <div class="ld-funnel-row"><span class="ld-funnel-label">{e(stage)}</span>
+        <div class="ld-funnel-bar"><span style="width:{pct}%"></span></div>
+        <span class="ld-funnel-pct">{pct}%</span></div>""" for stage, pct in _FUNNEL_STAGES)
+    collections = "".join(f"""
+      <div class="ld-collection-row"><span class="ld-collection-name">{e(name)}</span>
+        <div class="ld-collection-bar"><span style="width:{pct}%"></span></div>
+        <span class="ld-collection-value">{e(value)}</span></div>""" for name, value, pct in _TOP_COLLECTIONS)
+    leaderboard = cl.table(
+        ["Product", "Units", "Revenue", "Margin"],
+        [[name, units, revenue, cl.status_pill(margin, "positive" if int(margin.rstrip('%')) >= 35 else "warning")]
+         for name, units, revenue, margin in _BEST_SELLERS],
+        escape_cells=False,
+    )
+    alerts = cl.notifications_panel(_COMMERCE_ALERTS)
+    return f"""
+    <div class="ds-mock ld-commerce-mock ds-rise">
+      <div class="ds-mock-bar"><i></i><i></i><i></i>
+        <span style="margin-left:10px;color:var(--text-dim);font-size:.8rem">{e(spec.name)} — Overview</span></div>
+      <div class="ld-commerce-body">
+        <aside class="ld-mock-sidebar">{sidebar}</aside>
+        <div class="ld-mock-main">
+          <div class="ld-mock-topbar">
+            <div class="ld-mock-search">{svg_icon('search')} Search products, collections…</div>
+            <div class="ld-mock-avatar"></div>
+          </div>
+          <div class="ds-bento">{metric_cards}</div>
+          <div class="ld-mock-grid">
+            <div class="ld-mock-block"><span class="ds-eyebrow">Conversion funnel</span>{funnel}
+              <span class="ds-eyebrow" style="margin-top:16px">Top collections</span>{collections}</div>
+            <div class="ld-mock-block"><span class="ds-eyebrow">Best sellers</span>{leaderboard}</div>
+          </div>
+          <div class="ld-mock-block" style="margin-top:16px"><span class="ds-eyebrow">Alerts &amp; recommendations</span>{alerts}</div>
+        </div>
+      </div>
+    </div>"""
+
+
 def _panel(spec: ProductSpec, sec: Section, tone=None) -> str:
+    if spec.product_type == "retail_analytics":
+        return _wrap(_section_id(sec), sec.title or "Take a closer look", sec.subtitle,
+                     _commerce_analytics_mock(spec), tone, "Preview")
     return _wrap(_section_id(sec), sec.title or "Take a closer look", sec.subtitle,
                  '<div class="ds-mock ds-rise"><div class="ds-mock-bar"><i></i><i></i><i></i></div>'
                  f'<div class="ds-mock-body"><div class="ds-bento"><div class="ds-card ds-col-4 ds-row-2">{bars(12)}</div>'

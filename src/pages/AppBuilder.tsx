@@ -1,12 +1,18 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Cpu, Sparkles } from 'lucide-react';
 import PreviewResult from '@/components/PreviewResult';
 import BuilderWorkspaceFrame from '@/components/builder/BuilderWorkspaceFrame';
 import BuilderPromptCard from '@/components/builder/BuilderPromptCard';
 import AppPreviewShell from '@/components/builder/AppPreviewShell';
+import BuilderRefinePanel, { APP_QUICK_EDITS, type RefinePatch } from '@/components/builder/BuilderRefinePanel';
 import DesignInterview from '@/components/builder/DesignInterview';
-import { promptHasDesignDetail } from '@/lib/designBrief';
+import { appNameFromIdea } from '@/components/builder/appPreviewData';
+import { CATEGORY_LABELS, detectCategory, paletteForDirection } from '@/components/builder/promptCategory';
+import {
+  buildEnhancedPrompt, promptHasDesignDetail, resolveBriefAnswers, smartDefaultsFromPrompt,
+  type DesignBriefAnswers,
+} from '@/lib/designBrief';
 import { useOrchestrateResult } from '@/hooks/useOrchestrateResult';
 
 const fadeUp = (delay = 0) => ({
@@ -29,18 +35,51 @@ const EXAMPLE_PROMPTS = [
 // works for any future module without change. Nothing here is mocked; only
 // the chrome around the result (sidebar/module cards/metrics/activity) is
 // decorative, prompt-derived UI — the artifact itself stays fully driven by
-// the backend result payload.
+// the backend result payload. The refine panel re-runs this SAME flow with
+// an enhanced prompt (buildEnhancedPrompt) — it never fabricates a result.
 export default function AppBuilder() {
   const [idea, setIdea] = useState('');
+  const [buildIdea, setBuildIdea] = useState('');
+  const [brief, setBrief] = useState<DesignBriefAnswers>(() => smartDefaultsFromPrompt(''));
+  const [nameOverride, setNameOverride] = useState<string | null>(null);
   const [briefPrompt, setBriefPrompt] = useState<string | null>(null);
   const { phase, label, payload, error, disabledReason, disabledPrerequisites, isBusy, run } =
     useOrchestrateResult();
 
   const handleGenerate = () => {
     if (!idea.trim() || isBusy) return;
-    if (promptHasDesignDetail(idea)) { run(idea); return; }
+    setNameOverride(null);
+    if (promptHasDesignDetail(idea)) {
+      setBuildIdea(idea);
+      setBrief(resolveBriefAnswers(idea));
+      run(idea);
+      return;
+    }
     setBriefPrompt(idea);
   };
+
+  // Refine — folds the settings patch + free-text instruction back into the
+  // SAME buildEnhancedPrompt() the Design Interview uses, then re-runs the
+  // real orchestrator. Nothing is fabricated: a new run genuinely happens.
+  const handleRefine = (patch: RefinePatch) => {
+    if (patch.brandName) setNameOverride(patch.brandName);
+    const nextBrief: DesignBriefAnswers = {
+      ...brief,
+      colorDirection: patch.colorDirection || brief.colorDirection,
+      density: patch.density || brief.density,
+      layoutType: patch.layoutType || brief.layoutType,
+    };
+    setBrief(nextBrief);
+    const asks: string[] = [];
+    if (patch.instruction) asks.push(patch.instruction);
+    if (patch.brandName) asks.push(`Use the app name "${patch.brandName}".`);
+    const basePrompt = asks.length ? `${buildIdea} ${asks.join(' ')}`.trim() : buildIdea;
+    run(buildEnhancedPrompt(basePrompt, nextBrief));
+  };
+
+  const palette = useMemo(() => paletteForDirection(brief.colorDirection), [brief.colorDirection]);
+  const categoryLabel = useMemo(() => CATEGORY_LABELS[detectCategory(buildIdea || idea)], [buildIdea, idea]);
+  const displayName = nameOverride || appNameFromIdea(buildIdea || idea);
 
   const showResult = phase !== 'idle';
   const showInterview = !!briefPrompt;
@@ -83,7 +122,12 @@ export default function AppBuilder() {
           >
             <DesignInterview
               prompt={briefPrompt || ''}
-              onBuild={(enhanced) => { setBriefPrompt(null); run(enhanced); }}
+              onBuild={(enhanced) => {
+                setBriefPrompt(null);
+                setBuildIdea(idea);
+                setBrief(resolveBriefAnswers(enhanced));
+                run(enhanced);
+              }}
               onCancel={() => setBriefPrompt(null)}
             />
           </motion.div>
@@ -92,10 +136,22 @@ export default function AppBuilder() {
 
       {/* Result — driven entirely by the backend PreviewPayload, wrapped
           in a premium app-shell frame (sidebar/topbar/module cards/metrics/
-          activity panel). */}
+          activity panel), with a refine panel to re-run the build. */}
       {showResult && !showInterview && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-          <AppPreviewShell idea={idea} phase={phase}>
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+          <BuilderRefinePanel
+            accent={palette.accent}
+            accent2={palette.accent2}
+            palette={palette}
+            categoryLabel={categoryLabel}
+            brief={brief}
+            brandName={displayName}
+            brandLabel="App name"
+            quickEdits={APP_QUICK_EDITS}
+            onApply={handleRefine}
+            busy={isBusy}
+          />
+          <AppPreviewShell idea={buildIdea || idea} phase={phase} palette={palette} nameOverride={nameOverride}>
             <PreviewResult
               phase={phase}
               label={label}

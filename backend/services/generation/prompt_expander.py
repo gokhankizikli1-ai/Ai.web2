@@ -560,6 +560,8 @@ def _website(user_request: str, style: Dict) -> ProductSpec:
     proof, a real reason-to-believe section, testimonials and an FAQ —
     using only Section kinds the landing renderer already supports."""
     name = _title_from_request(user_request) or "Northwind"
+    if not _has_believable_brand(name.split()):
+        name = _synthesize_brand(user_request)
     if _RETAIL_HINT_RE.search(user_request) and _ANALYTICS_HINT_RE.search(user_request):
         return _retail_analytics_website(user_request, style, name)
     return ProductSpec(
@@ -953,6 +955,38 @@ def _apply_design_brief(spec: ProductSpec, brief: Dict[str, str]) -> None:
         spec.data["product_showcase"] = True
 
 
+# ── Brand naming ─────────────────────────────────────────────────────
+# A third-party platform named in a prompt ("Shopify analytics dashboard")
+# is CONTEXT for the product being built (an integration/data source), not
+# the product's own brand — `_title_from_request()` used to happily title-
+# case whatever words survived, including the platform name itself, which
+# is how "Shopify analytics dashboard" became the brand "Premium Shopify
+# Analytics". Platform names are filtered out before naming; when nothing
+# believable survives that (generic filler adjectives + bare category
+# words don't make a brand), `_synthesize_brand()` produces a real
+# product-style name instead.
+
+_PLATFORM_WORDS = {
+    "shopify", "amazon", "stripe", "tiktok", "meta", "instagram", "facebook",
+    "google", "youtube", "twitter", "linkedin", "pinterest", "snapchat",
+    "woocommerce", "salesforce", "hubspot", "square", "paypal", "etsy",
+}
+
+_GENERIC_FILLER_WORDS = {
+    "premium", "modern", "simple", "new", "pro", "smart", "best", "top",
+    "quick", "easy", "great", "amazing", "awesome", "advanced", "ultimate",
+}
+
+_CATEGORY_DESCRIPTOR_WORDS = {
+    "analytics", "dashboard", "metrics", "insights", "insight", "commerce",
+    "retail", "store", "shop", "fashion", "apparel", "boutique", "platform",
+    "tool", "data", "reporting", "kpi", "landing", "page", "website", "site",
+}
+
+_BRAND_PREFIXES = ("Thread", "Loom", "Atelier", "Mercer", "Bolt", "Drape", "Selvage", "Weft")
+_BRAND_SUFFIXES = ("Metrics", "Ledger", "Insight", "Pulse", "Signal", "IQ", "Command")
+
+
 def _title_from_request(user_request: str) -> str:
     t = re.sub(r"^\s*(build|create|make|design|generate|develop)\s+(me\s+)?(?:an|a|the)\s+",
                "", (user_request or "").strip(), flags=re.IGNORECASE)
@@ -961,8 +995,33 @@ def _title_from_request(user_request: str) -> str:
     t = re.sub(r"\b(style|like|inspired\s*by)\b.*$", "", t, flags=re.IGNORECASE)
     t = re.sub(r"\b(app|application|website|site|dashboard|landing\s*page|page|tool|"
                r"platform|software|store|shop)\b.*$", "", t, flags=re.IGNORECASE).strip(" .-")
-    words = [w for w in re.split(r"\s+", t) if w][:3]
+    words = [w for w in re.split(r"\s+", t) if w]
+    # A named platform/integration is context, never the generated brand.
+    words = [w for w in words if w.lower() not in _PLATFORM_WORDS][:3]
     return " ".join(w.capitalize() for w in words)
+
+
+def _has_believable_brand(words: List[str]) -> bool:
+    """True when at least one word is a real brand candidate — not a
+    generic filler adjective ("premium") or a bare category word
+    ("analytics", "dashboard") that reads as a label, not a name."""
+    return any(
+        w.lower() not in _GENERIC_FILLER_WORDS and w.lower() not in _CATEGORY_DESCRIPTOR_WORDS
+        for w in words
+    )
+
+
+def _synthesize_brand(user_request: str) -> str:
+    """A deterministic, product-style brand name for when a prompt names
+    no real brand of its own — the same prompt always yields the same
+    name (stable across a session/rebuild); different prompts land on
+    different prefix/suffix pairs. Two invented words read as a real
+    product name (in the spirit of "Peel Insights", "Triple Whale"),
+    never a literal platform or category label."""
+    seed = sum((i + 1) * ord(c) for i, c in enumerate(user_request or "korvix"))
+    prefix = _BRAND_PREFIXES[seed % len(_BRAND_PREFIXES)]
+    suffix = _BRAND_SUFFIXES[(seed // len(_BRAND_PREFIXES)) % len(_BRAND_SUFFIXES)]
+    return f"{prefix} {suffix}"
 
 
 # ── Known-vertical keyword rules (preset products win first) ──────────

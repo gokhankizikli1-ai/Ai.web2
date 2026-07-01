@@ -106,23 +106,73 @@ const BRAND_STOPWORDS = new Set([
   'to', 'that', 'with', 'and', 'of', 'my', 'our',
 ]);
 
+// A named third-party platform/integration ("Shopify analytics dashboard")
+// is CONTEXT for the product being built, never the product's own brand —
+// mirrors the backend's identical fix in prompt_expander.py.
+const PLATFORM_WORDS = new Set([
+  'shopify', 'amazon', 'stripe', 'tiktok', 'meta', 'instagram', 'facebook',
+  'google', 'youtube', 'twitter', 'linkedin', 'pinterest', 'snapchat',
+  'woocommerce', 'salesforce', 'hubspot', 'square', 'paypal', 'etsy',
+]);
+
+// Generic filler adjectives and bare category/descriptor words don't make a
+// believable brand on their own ("Premium Analytics" reads as a category
+// label, not a product name) — used to decide when to synthesize instead.
+const GENERIC_FILLER_WORDS = new Set([
+  'premium', 'modern', 'simple', 'new', 'pro', 'smart', 'best', 'top',
+  'quick', 'easy', 'great', 'amazing', 'awesome', 'advanced', 'ultimate',
+]);
+const CATEGORY_DESCRIPTOR_WORDS = new Set([
+  'analytics', 'metrics', 'insights', 'insight', 'commerce', 'retail',
+  'store', 'shop', 'fashion', 'apparel', 'boutique', 'tool', 'data',
+  'reporting', 'kpi',
+]);
+
+const BRAND_PREFIXES = ['Thread', 'Loom', 'Atelier', 'Mercer', 'Bolt', 'Drape', 'Selvage', 'Weft'];
+const BRAND_SUFFIXES = ['Metrics', 'Ledger', 'Insight', 'Pulse', 'Signal', 'IQ', 'Command'];
+
 export function brandWordsFromPrompt(prompt: string): string[] {
   return (prompt || '')
     .replace(/[^a-zA-Z0-9\s]/g, '')
     .split(/\s+/)
     .filter(Boolean)
-    .filter((w) => !BRAND_STOPWORDS.has(w.toLowerCase()));
+    .filter((w) => !BRAND_STOPWORDS.has(w.toLowerCase()))
+    .filter((w) => !PLATFORM_WORDS.has(w.toLowerCase()));
 }
 
-// A Title Case brand name for on-page copy, e.g. "Lumen Analytics".
+function hasBelievableBrand(words: string[]): boolean {
+  return words.some((w) => !GENERIC_FILLER_WORDS.has(w.toLowerCase()) && !CATEGORY_DESCRIPTOR_WORDS.has(w.toLowerCase()));
+}
+
+// A deterministic, product-style brand name for when a prompt names no
+// real brand of its own — the same prompt always yields the same name;
+// different prompts land on different prefix/suffix pairs. Mirrors the
+// backend's `_synthesize_brand()`.
+function synthesizeBrand(prompt: string): string {
+  const text = prompt || 'korvix';
+  let seed = 0;
+  for (let i = 0; i < text.length; i++) seed += (i + 1) * text.charCodeAt(i);
+  const prefix = BRAND_PREFIXES[seed % BRAND_PREFIXES.length];
+  const suffix = BRAND_SUFFIXES[Math.floor(seed / BRAND_PREFIXES.length) % BRAND_SUFFIXES.length];
+  return `${prefix} ${suffix}`;
+}
+
+// A Title Case brand name for on-page copy, e.g. "Lumen Analytics" — or a
+// synthesized product-style name when the prompt names no real brand of
+// its own (only a platform + generic/category words).
 export function brandNameFromPrompt(prompt: string, fallback = 'Korvix Studio'): string {
   const words = brandWordsFromPrompt(prompt).slice(0, 2);
   if (words.length === 0) return fallback;
+  if (!hasBelievableBrand(words)) return synthesizeBrand(prompt);
   return words.map((w) => w[0].toUpperCase() + w.slice(1)).join(' ');
 }
 
-// A lowercase, no-space slug for the fake address bar / app URL.
+// A lowercase, no-space slug for the fake address bar / app URL — derived
+// from the same (possibly synthesized) brand name as `brandNameFromPrompt`,
+// so the fake domain always matches the on-page brand.
 export function brandSlugFromPrompt(prompt: string, fallback = 'yourbrand'): string {
   const words = brandWordsFromPrompt(prompt).slice(0, 2);
-  return words.length ? words.join('').toLowerCase() : fallback;
+  if (words.length === 0) return fallback;
+  if (!hasBelievableBrand(words)) return synthesizeBrand(prompt).replace(/\s+/g, '').toLowerCase();
+  return words.join('').toLowerCase();
 }

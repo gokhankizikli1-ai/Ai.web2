@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import BrowserFrame from './BrowserFrame';
 import { appNameFromIdea, chromeFromIdea, type ChromeIcon } from './appPreviewData';
-import { CATEGORY_LABELS } from './promptCategory';
+import { CATEGORY_LABELS, type BuilderPalette } from './promptCategory';
 import type { OrchestratePhase } from '@/hooks/useOrchestrateResult';
 
 const ICONS: Record<ChromeIcon, React.ComponentType<{ className?: string }>> = {
@@ -53,25 +53,29 @@ function sparkline(seed: string): number[] {
 interface AppPreviewShellProps {
   idea: string;
   phase: OrchestratePhase;
+  palette: BuilderPalette;
+  /** Overrides the idea-derived app name — set once the user renames the app via the refine panel. */
+  nameOverride?: string | null;
   children: React.ReactNode;
 }
 
-export default function AppPreviewShell({ idea, phase, children }: AppPreviewShellProps) {
-  const appName = appNameFromIdea(idea);
+export default function AppPreviewShell({ idea, phase, palette, nameOverride, children }: AppPreviewShellProps) {
+  const appName = (nameOverride || '').trim() || appNameFromIdea(idea);
   const chrome = chromeFromIdea(idea);
   const busy = phase === 'planning' || phase === 'running' || phase === 'rendering';
   const failed = phase === 'failed' || phase === 'error' || phase === 'cancelled' || phase === 'not_found';
   const status = STATUS_STYLE[phase];
+  const grad = `linear-gradient(135deg, ${palette.accent}, ${palette.accent2})`;
 
   const artifactHeaderLabel = failed ? 'Artifact unavailable' : busy ? 'Generating artifact…' : 'Generated artifact';
 
   return (
-    <BrowserFrame url={`app.korvixai.com/${appName.toLowerCase().replace(/\s+/g, '-')}`} accent="indigo">
+    <BrowserFrame url={`app.korvixai.com/${appName.toLowerCase().replace(/\s+/g, '-')}`} accentColor={palette.accent}>
       <div className="flex text-white min-h-[70vh]" style={{ background: 'radial-gradient(120% 100% at 0% 0%, #14141f 0%, #0a0a0e 55%, #08080b 100%)' }}>
         {/* Sidebar — category-aware */}
         <div className="hidden sm:flex flex-col gap-1 w-16 md:w-52 py-5 px-2 md:px-3 border-r border-white/[0.05] shrink-0">
           <div className="flex items-center gap-2 px-1.5 mb-5 pb-4 border-b border-white/[0.05]">
-            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-indigo-500 to-cyan-400 shrink-0" />
+            <div className="w-7 h-7 rounded-lg shrink-0" style={{ background: grad }} />
             <span className="hidden md:block text-[12px] font-semibold text-white truncate">{appName}</span>
           </div>
           {chrome.sidebar.map(({ label, icon }, i) => {
@@ -79,9 +83,10 @@ export default function AppPreviewShell({ idea, phase, children }: AppPreviewShe
             return (
               <div
                 key={label}
-                className={`flex items-center gap-2.5 px-2.5 py-2 rounded-lg border-l-2 transition-colors ${
-                  i === 0 ? 'bg-white/[0.06] text-indigo-300 border-indigo-400' : 'text-slate-500 border-transparent'
-                }`}
+                className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg border-l-2 transition-colors"
+                style={i === 0
+                  ? { background: 'rgba(255,255,255,0.06)', color: palette.accent, borderColor: palette.accent }
+                  : { color: '#64748b', borderColor: 'transparent' }}
               >
                 <Icon className="w-4 h-4 shrink-0" />
                 <span className="hidden md:block text-[12px]">{label}</span>
@@ -89,7 +94,7 @@ export default function AppPreviewShell({ idea, phase, children }: AppPreviewShe
             );
           })}
           <div className="mt-auto pt-4 border-t border-white/[0.05] flex items-center gap-2 px-1.5">
-            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-400/60 to-cyan-400/60 shrink-0" />
+            <div className="w-6 h-6 rounded-full shrink-0" style={{ background: grad, opacity: 0.7 }} />
             <span className="hidden md:block text-[11px] text-slate-500 truncate">Workspace owner</span>
           </div>
         </div>
@@ -119,7 +124,7 @@ export default function AppPreviewShell({ idea, phase, children }: AppPreviewShe
               <div className="p-1.5 rounded-lg bg-white/[0.03] border border-white/[0.05]">
                 <Bell className="w-3.5 h-3.5 text-slate-500" />
               </div>
-              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-400/60 to-cyan-400/60" />
+              <div className="w-7 h-7 rounded-full" style={{ background: grad, opacity: 0.7 }} />
             </div>
           </div>
 
@@ -132,7 +137,7 @@ export default function AppPreviewShell({ idea, phase, children }: AppPreviewShe
                   <div className="flex items-center justify-between mb-2">
                     <p className="text-[10px] text-slate-500">{s.label}</p>
                     <div className="w-6 h-6 rounded-md bg-white/[0.05] flex items-center justify-center">
-                      <Icon className="w-3 h-3 text-indigo-300" />
+                      <Icon className="w-3 h-3" style={{ color: palette.accent }} />
                     </div>
                   </div>
                   <div className="flex items-end justify-between gap-2 mb-3">
@@ -163,8 +168,8 @@ export default function AppPreviewShell({ idea, phase, children }: AppPreviewShe
               return (
                 <div key={m.label} className={`p-4 rounded-xl border border-white/[0.06] bg-white/[0.02] ${busy ? 'animate-pulse-soft' : ''}`}>
                   <div className="flex items-center gap-2 mb-2">
-                    <div className="w-6 h-6 rounded-md bg-indigo-500/[0.12] border border-indigo-500/20 flex items-center justify-center shrink-0">
-                      <Icon className="w-3 h-3 text-indigo-300" />
+                    <div className="w-6 h-6 rounded-md border flex items-center justify-center shrink-0" style={{ background: `${palette.accent}1f`, borderColor: `${palette.accent}33` }}>
+                      <Icon className="w-3 h-3" style={{ color: palette.accent }} />
                     </div>
                     <p className="text-[12px] font-medium text-white truncate">{m.label}</p>
                   </div>
@@ -177,7 +182,7 @@ export default function AppPreviewShell({ idea, phase, children }: AppPreviewShe
           {/* Primary CTA */}
           <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
             <p className="text-[12px] text-slate-500">Generated result for your idea</p>
-            <button className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-indigo-500 to-cyan-400 text-black text-[11px] font-semibold">
+            <button className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[11px] font-semibold" style={{ background: grad, color: palette.onAccent }}>
               <Sparkles className="w-3 h-3" /> Refine with AI
             </button>
           </div>
@@ -186,10 +191,10 @@ export default function AppPreviewShell({ idea, phase, children }: AppPreviewShe
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <div className={`lg:col-span-2 rounded-2xl border overflow-hidden ${failed ? 'border-rose-500/15' : 'border-white/[0.07]'} bg-white/[0.015]`}>
               <div className="relative flex items-center gap-2 px-4 py-2.5 border-b border-white/[0.05]">
-                <FileCode2 className={`w-3.5 h-3.5 ${failed ? 'text-rose-300' : 'text-indigo-300'}`} />
+                <FileCode2 className="w-3.5 h-3.5" style={{ color: failed ? '#fda4af' : palette.accent }} />
                 <span className="text-[11px] font-medium text-slate-300">{artifactHeaderLabel}</span>
                 {busy && (
-                  <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-gradient-to-r from-indigo-500 via-cyan-400 to-indigo-500 animate-pulse-soft" />
+                  <div className="absolute bottom-0 left-0 right-0 h-[2px] animate-pulse-soft" style={{ background: `linear-gradient(90deg, ${palette.accent}, ${palette.accent2}, ${palette.accent})` }} />
                 )}
               </div>
               <div className="p-3.5 sm:p-5">
@@ -200,7 +205,7 @@ export default function AppPreviewShell({ idea, phase, children }: AppPreviewShe
             {/* Workflow / activity panel */}
             <div className="rounded-2xl border border-white/[0.07] bg-white/[0.015] overflow-hidden">
               <div className="flex items-center gap-2 px-4 py-2.5 border-b border-white/[0.05]">
-                <Activity className="w-3.5 h-3.5 text-indigo-300" />
+                <Activity className="w-3.5 h-3.5" style={{ color: palette.accent }} />
                 <span className="text-[11px] font-medium text-slate-300">Workflow activity</span>
               </div>
               <div className="p-3.5 sm:p-4 space-y-3">

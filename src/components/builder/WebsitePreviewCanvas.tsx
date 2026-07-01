@@ -26,11 +26,10 @@ const FEATURE_ICONS: Record<FeatureIcon, React.ComponentType<{ className?: strin
 interface WebsitePreviewCanvasProps {
   content: SiteContent;
   activeSection: string;
-  siteName: string;
   palette: BuilderPalette;
 }
 
-export default function WebsitePreviewCanvas({ content, activeSection, siteName, palette }: WebsitePreviewCanvasProps) {
+export default function WebsitePreviewCanvas({ content, activeSection, palette }: WebsitePreviewCanvasProps) {
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   useEffect(() => {
@@ -54,7 +53,7 @@ export default function WebsitePreviewCanvas({ content, activeSection, siteName,
       <div ref={setRef('nav')} className="sticky top-0 z-10 flex items-center justify-between px-6 sm:px-10 py-4 backdrop-blur-xl bg-black/30 border-b border-white/[0.05] transition-all rounded-lg" style={ringStyle('nav')}>
         <div className="flex items-center gap-2">
           <div className="w-6 h-6 rounded-md" style={{ background: grad }} />
-          <span className="text-[13px] font-semibold tracking-tight">{siteName}</span>
+          <span className="text-[13px] font-semibold tracking-tight">{content.brandName}</span>
         </div>
         <div className="hidden md:flex items-center gap-6">
           {content.nav.map((link) => (
@@ -134,7 +133,7 @@ export default function WebsitePreviewCanvas({ content, activeSection, siteName,
       {/* Features */}
       <div ref={setRef('features')} className="px-6 sm:px-10 py-16 sm:py-20 rounded-lg transition-all" style={ringStyle('features')}>
         <p className="text-center text-[10px] font-semibold tracking-[0.2em] mb-3" style={{ color: palette.accent }}>FEATURES</p>
-        <h2 className="text-center text-xl sm:text-2xl font-semibold mb-10">Built for how {siteName} actually works</h2>
+        <h2 className="text-center text-xl sm:text-2xl font-semibold mb-10">Built for how {content.brandName} actually works</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-3xl mx-auto">
           {content.features.map((f) => {
             const Icon = FEATURE_ICONS[f.icon] || Sparkles;
@@ -255,6 +254,15 @@ export default function WebsitePreviewCanvas({ content, activeSection, siteName,
           </button>
         </div>
       </div>
+
+      {/* Footer */}
+      <footer className="px-6 sm:px-10 py-8 border-t border-white/[0.05] flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-2">
+          <div className="w-5 h-5 rounded-md" style={{ background: grad }} />
+          <span className="text-[12px] font-medium text-slate-300">{content.brandName}</span>
+        </div>
+        <span className="text-[11px] text-slate-600">Crafted with Korvix</span>
+      </footer>
     </div>
   );
 }
