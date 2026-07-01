@@ -21,10 +21,40 @@ _PLACEHOLDERS = [
     r"\btitle goes here\b", r"\bsection\s*\d\b", r"\btodo[:!]",
 ]
 
+# Generic marketing filler that reads as templated rather than written for
+# THIS product — model output leaning on these is a strong "not premium"
+# signal even when it otherwise looks structurally fine. "Everything you
+# need" is only flagged BARE — "...for reports"/"...to know" are legitimate,
+# page-specific completions the deterministic renderer itself uses.
+_GENERIC_COPY = [
+    r"a clearer way forward", r"everything you need\b(?!\s+(?:for|to\s+know)\b)",
+    r"this tool transformed our business", r"real-time data\b",
+]
+
+# A hardcoded copyright YEAR ("© 2023", "(c) 2024 Acme Inc") is a dead
+# giveaway of stale boilerplate — the deterministic renderer's own footer
+# never emits one (it reads "© {brand} · ..."), so any occurrence here can
+# only have come from generic/templated model output.
+_STALE_COPYRIGHT_RE = re.compile(r"(?:©|\(c\))\s*(?:19|20)\d{2}", re.I)
+
+# The design system is CSS/SVG-only by contract (the preview CSP only
+# allows `img-src data:`) — any <img> tag in model output renders as a
+# broken image in the sandboxed iframe, exactly the "broken product mockup"
+# failure mode this guards against.
+_IMG_TAG_RE = re.compile(r"<img[\s>]", re.I)
+
 
 def has_placeholders(html: str) -> bool:
     h = (html or "").lower()
-    return any(re.search(p, h) for p in _PLACEHOLDERS)
+    if any(re.search(p, h) for p in _PLACEHOLDERS):
+        return True
+    if any(re.search(p, h) for p in _GENERIC_COPY):
+        return True
+    if _STALE_COPYRIGHT_RE.search(h):
+        return True
+    if _IMG_TAG_RE.search(h):
+        return True
+    return False
 
 
 def score(html: str) -> Tuple[int, List[str]]:

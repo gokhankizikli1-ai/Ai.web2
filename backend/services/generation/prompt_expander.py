@@ -476,6 +476,79 @@ def _portfolio(user_request: str, style: Dict) -> ProductSpec:
     )
 
 
+_RETAIL_HINT_RE = re.compile(
+    r"shopify|e-?commerce|online\s*store|retail\w*|storefront|merchant\w*|"
+    r"\bshop\b|\bstore\b|fashion|apparel|boutique", re.I,
+)
+_ANALYTICS_HINT_RE = re.compile(
+    r"analytics?|dashboard|metrics?|\bkpi\b|insight\w*|reporting", re.I,
+)
+
+
+def _retail_analytics_website(user_request: str, style: Dict, name: str) -> ProductSpec:
+    """A commerce-analytics landing page — "Build a Shopify analytics
+    dashboard landing page for a fashion store" and its many variants. The
+    single most-requested Website Builder shape that used to fall through
+    to `_website()`'s fully generic fallback (empty metrics, no retail
+    language at all). Real retail-analytics vocabulary throughout: revenue,
+    AOV, conversion, campaign ROAS, inventory velocity, best-sellers,
+    seasonal demand, cohorts, margin — using only Section kinds the landing
+    renderer already supports."""
+    return ProductSpec(
+        product_type="retail_analytics", name=name,
+        tagline=f"{name} — the analytics command center built for fashion commerce.",
+        description=(
+            f"{name} turns revenue, inventory and campaign data into decisions your "
+            "merchandising team can act on the same day — no more stitching together "
+            "five separate storefront apps."
+        ),
+        audience="Merchandising, growth and ops teams running a fashion or apparel storefront.",
+        primary_goals=[
+            "Track revenue and margin by collection",
+            "Spot inventory risk before a stockout",
+            "Prove campaign ROAS",
+        ],
+        ux_goals=["Data-dense but scannable", "Real numbers, not vanity metrics", "Fast to act on"],
+        navigation=["Overview", "Insights", "Best Sellers", "Contact"],
+        is_dashboard=False, layout="landing", intent="website",
+        metrics=[
+            {"label": "Revenue (30d)", "value": "$482K", "delta": "+18% MoM"},
+            {"label": "Avg. order value", "value": "$96", "delta": "+6%"},
+            {"label": "Conversion rate", "value": "3.4%", "delta": "+0.4pt"},
+            {"label": "Campaign ROAS", "value": "4.2x", "delta": "+0.6x"},
+        ],
+        sections=[
+            _S("features", "Insights", subtitle="Everything a merchandising team checks before 9am.", items=[
+                _card("Revenue by collection", "See which drops actually drive margin, not just units sold.", "chart"),
+                _card("Inventory velocity", "Restock urgency ranked by sell-through, before it's a stockout.", "bag"),
+                _card("Campaign ROAS tracking", "Every paid and email campaign traced straight to revenue.", "bolt"),
+                _card("Customer cohort retention", "Know which launch brought back repeat buyers.", "person"),
+            ]),
+            _S("panel", "Best Sellers", subtitle="Best-selling products and seasonal demand, ranked by margin."),
+            _S("testimonials", "What merchandising teams say", items=[
+                _card(
+                    f"“{name} showed us our best-selling color was losing money on returns "
+                    "— we'd never have caught that.”",
+                    "Elena Ruiz, Head of Merchandising",
+                ),
+                _card(
+                    "“Restock decisions used to take a Friday afternoon. Now it's a five-minute glance.”",
+                    "Diego Ramirez, Ecommerce Ops Lead",
+                ),
+            ]),
+            _S("faq", "Good to know", items=[
+                _card("Which platforms does this connect to?", "Shopify, WooCommerce and a direct API — inventory and orders sync within minutes."),
+                _card("Does it track margin, not just revenue?", "Yes — every metric nets against COGS and returns, not gross sales alone."),
+                _card("Can I see seasonal demand shifts?", "Yes — demand is tracked against the same period last season, not just last month."),
+            ]),
+            _S("cta", "Stop guessing which products earn their shelf space"),
+        ],
+        cta_primary="See the dashboard", cta_secondary="Watch a 90-second tour",
+        theme={"accent": "", "accent2": "", "mode": style.get("mode", "dark")},
+        components=["Navbar", "Hero", "Metrics", "Feature Grid", "Product Preview", "Testimonials", "FAQ", "CTA", "Footer"],
+    )
+
+
 def _website(user_request: str, style: Dict) -> ProductSpec:
     """The generic marketing-site fallback — hit by any "build a website
     for X" request that doesn't match a named vertical (a bakery, an
@@ -487,8 +560,10 @@ def _website(user_request: str, style: Dict) -> ProductSpec:
     proof, a real reason-to-believe section, testimonials and an FAQ —
     using only Section kinds the landing renderer already supports."""
     name = _title_from_request(user_request) or "Northwind"
+    if _RETAIL_HINT_RE.search(user_request) and _ANALYTICS_HINT_RE.search(user_request):
+        return _retail_analytics_website(user_request, style, name)
     return ProductSpec(
-        product_type="website", name=name, tagline=f"{name} — a clearer way forward.",
+        product_type="website", name=name, tagline=f"{name} — built to earn trust in the first five seconds.",
         description=f"{name} is a polished, responsive site built to explain the offering fast, earn trust immediately, and turn visitors into the next step.",
         audience="Visitors who need to understand the offering quickly and trust it.",
         primary_goals=["Communicate clearly", "Build trust", "Drive the next step"],
