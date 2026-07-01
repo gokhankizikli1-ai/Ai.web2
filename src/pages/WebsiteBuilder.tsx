@@ -9,7 +9,9 @@ import {
 import Navigation from '@/components/Navigation';
 import BrowserFrame from '@/components/builder/BrowserFrame';
 import WebsitePreviewCanvas from '@/components/builder/WebsitePreviewCanvas';
+import DesignBriefPanel from '@/components/builder/DesignBriefPanel';
 import { SITE_CONTENT, siteNameFromPrompt } from '@/components/builder/siteContent';
+import { promptHasDesignDetail } from '@/lib/designBrief';
 
 const fadeUp = (delay = 0) => ({
   initial: { opacity: 0, y: 16 },
@@ -74,15 +76,21 @@ export default function WebsiteBuilder() {
   const [activeSection, setActiveSection] = useState('hero');
   const [view, setView] = useState<'preview' | 'structure'>('preview');
   const [lastPrompt, setLastPrompt] = useState('');
+  const [briefPrompt, setBriefPrompt] = useState<string | null>(null);
 
-  const handleGenerate = () => {
-    if (!prompt.trim()) return;
+  const startGeneration = (finalPrompt: string) => {
     setGenerating(true);
-    setLastPrompt(prompt);
+    setLastPrompt(finalPrompt);
     setTimeout(() => {
       setGenerating(false);
       setGenerated(true);
     }, 2000);
+  };
+
+  const handleGenerate = () => {
+    if (!prompt.trim()) return;
+    if (promptHasDesignDetail(prompt)) { startGeneration(prompt); return; }
+    setBriefPrompt(prompt);
   };
 
   const siteName = `${siteNameFromPrompt(lastPrompt)}.ai`;
@@ -221,6 +229,13 @@ export default function WebsiteBuilder() {
           )}
         </div>
       </div>
+
+      <DesignBriefPanel
+        open={!!briefPrompt}
+        initialPrompt={briefPrompt || ''}
+        onCancel={() => setBriefPrompt(null)}
+        onConfirm={(enhanced) => { setBriefPrompt(null); startGeneration(enhanced); }}
+      />
     </div>
   );
 }
