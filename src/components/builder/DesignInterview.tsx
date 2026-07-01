@@ -20,7 +20,7 @@
 // parseVisiblePrompt() wherever the prompt text is shown to the user.
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ChevronLeft, Sparkles, Wand2, Zap } from 'lucide-react';
+import { ChevronLeft, Palette, Sparkles, Wand2, Zap } from 'lucide-react';
 import {
   VISUAL_STYLES, COLOR_DIRECTIONS, LAYOUT_TYPES, DENSITIES,
   smartDefaultsFromPrompt, fillBriefDefaults, buildEnhancedPrompt, summarizeAnswers,
@@ -92,7 +92,17 @@ export default function DesignInterview({ prompt, onBuild, onCancel, showPromptB
   const answered = STEPS.slice(0, Math.min(stepIndex, STEPS.length));
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3.5">
+      <div className="flex items-center gap-2 pb-1">
+        <div className="flex h-6 w-6 items-center justify-center rounded-lg shrink-0" style={{ background: 'rgba(99,102,241,0.14)' }}>
+          <Palette className="h-3 w-3 text-indigo-300" />
+        </div>
+        <p className="text-[11px] font-medium tracking-wide text-white/45 uppercase">Design Brief</p>
+        {!isConfirm && (
+          <span className="ml-auto text-[10px] text-white/25">{stepIndex + 1} of {STEPS.length}</span>
+        )}
+      </div>
+
       {showPromptBubble && (
         <div className="flex justify-end">
           <div className="max-w-[80%] rounded-2xl rounded-br-sm px-3 py-2 text-[13px] text-white/85"
@@ -116,10 +126,7 @@ export default function DesignInterview({ prompt, onBuild, onCancel, showPromptB
             transition={{ duration: 0.18, ease: 'easeOut' }}
           >
             <AssistantBubble>
-              <div className="flex items-start justify-between gap-3 mb-2.5">
-                <p className="text-[13px] text-white/85 leading-snug">{STEPS[stepIndex].assistant}</p>
-                <span className="text-[10px] text-white/25 shrink-0 mt-0.5">{stepIndex + 1} of {STEPS.length}</span>
-              </div>
+              <p className="text-[13px] text-white/85 leading-snug mb-2.5">{STEPS[stepIndex].assistant}</p>
               <div className="flex flex-wrap gap-1.5">
                 {STEPS[stepIndex].options.map((opt) => (
                   <button
@@ -173,7 +180,8 @@ export default function DesignInterview({ prompt, onBuild, onCancel, showPromptB
               </div>
               <button
                 onClick={confirmBuild}
-                className="flex items-center justify-center gap-2 w-full px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-500 to-cyan-400 text-black text-[13px] font-semibold hover:brightness-105 transition-all"
+                className="flex items-center justify-center gap-2 w-full px-4 py-3 rounded-xl bg-gradient-to-r from-indigo-500 to-cyan-400 text-black text-[13px] font-semibold hover:brightness-105 hover:-translate-y-px transition-all"
+                style={{ boxShadow: '0 14px 34px -16px rgba(99,102,241,0.55)' }}
               >
                 <Wand2 className="w-4 h-4" /> Build now
               </button>
