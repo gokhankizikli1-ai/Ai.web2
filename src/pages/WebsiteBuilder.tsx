@@ -88,7 +88,7 @@ export default function WebsiteBuilder() {
   };
 
   const handleGenerate = () => {
-    if (!prompt.trim()) return;
+    if (!prompt.trim() || briefPrompt) return;
     if (promptHasDesignDetail(prompt)) { startGeneration(prompt); return; }
     setBriefPrompt(prompt);
   };
@@ -118,6 +118,7 @@ export default function WebsiteBuilder() {
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 placeholder="Describe the website you want to build..."
+                disabled={!!briefPrompt}
                 className="flex-1 h-12 px-4 rounded-xl bg-white/[0.02] border border-white/[0.04] text-[14px] text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-violet-500/20 focus:bg-white/[0.03] transition-all"
                 onKeyDown={(e) => e.key === 'Enter' && handleGenerate()}
               />
@@ -125,7 +126,7 @@ export default function WebsiteBuilder() {
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={handleGenerate}
-                disabled={generating || !prompt.trim()}
+                disabled={generating || !!briefPrompt || !prompt.trim()}
                 className="h-12 px-6 rounded-xl bg-violet-500/[0.1] border border-violet-500/15 text-violet-400 font-medium text-[13px] hover:bg-violet-500/[0.15] transition-colors disabled:opacity-40 flex items-center gap-2"
               >
                 {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}

@@ -53,7 +53,7 @@ export const SECTION_OPTIONS = [
 // ── Smart defaults — keyword-sniffed from the user's own prompt, no LLM. ──
 
 const SMART_DEFAULT_BUCKETS: Array<[RegExp, DesignBriefAnswers]> = [
-  [/financ\w*|analytics?|trading|invest\w*|hedge\s*fund|portfolio\s*manag\w*/i, {
+  [/financ\w*|analytics?|trading|\binvest(?:ing|ments?|ors?)?\b|hedge\s*fund|portfolio\s*manag\w*/i, {
     visualStyle: 'Luxury Dark', colorDirection: 'Black + Gold', layoutType: 'Data/Analytics Workspace',
     buttonStyle: 'Rounded Pill', density: 'Data Heavy', targetFeel: 'Investor-ready',
     sections: ['Dashboard', 'Reports', 'Analytics', 'Settings'],
@@ -108,12 +108,16 @@ const DESIGN_DETAIL_WORDS = [
   'investor-ready', 'investor ready', 'enterprise product', 'ecommerce conversion', 'portfolio site',
 ];
 
+const DESIGN_DETAIL_PATTERNS = DESIGN_DETAIL_WORDS.map((word) => (
+  new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i')
+));
+
 // True when the prompt already carries enough explicit design direction
 // that asking again would be redundant — Korvix should generate straight
 // away in that case.
 export function promptHasDesignDetail(prompt: string): boolean {
-  const text = (prompt || '').toLowerCase();
-  const hits = DESIGN_DETAIL_WORDS.filter((w) => text.includes(w)).length;
+  const text = prompt || '';
+  const hits = DESIGN_DETAIL_PATTERNS.filter((pattern) => pattern.test(text)).length;
   return hits >= 2;
 }
 

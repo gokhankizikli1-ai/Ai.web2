@@ -202,13 +202,13 @@ export default function ProjectRunCenter({ projectId }: { projectId: string }) {
   // that don't already carry enough explicit design detail.
   const startRun = useCallback(() => {
     const userRequest = request.trim();
-    if (!userRequest || starting) return;
+    if (!userRequest || starting || briefPrompt) return;
     if (isBuildIntentPrompt(userRequest) && !promptHasDesignDetail(userRequest)) {
       setBriefPrompt(userRequest);
       return;
     }
     runRequest(userRequest);
-  }, [request, starting, runRequest]);
+  }, [request, starting, briefPrompt, runRequest]);
 
   const cancelRun = useCallback(async (runId: string) => {
     try { await projectOrchestratorClient.cancelRun(runId); } catch { /* poll reflects status */ }
@@ -239,11 +239,12 @@ export default function ProjectRunCenter({ projectId }: { projectId: string }) {
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); startRun(); } }}
             placeholder="Describe what you want Korvix to build…"
             rows={1}
+            disabled={!!briefPrompt}
             className="flex-1 bg-transparent text-[13px] text-white/85 placeholder:text-white/20 outline-none resize-none py-1.5 max-h-[120px] scrollbar-thin"
           />
           <button
             onClick={startRun}
-            disabled={!request.trim() || starting}
+            disabled={!request.trim() || starting || !!briefPrompt}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium text-cyan-200 disabled:opacity-40 transition-all shrink-0"
             style={{ background: 'rgba(34,211,238,0.1)', border: '1px solid rgba(34,211,238,0.18)' }}>
             {starting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}

@@ -26,7 +26,7 @@ export default function AppBuilder() {
     useOrchestrateResult();
 
   const handleGenerate = () => {
-    if (!idea.trim() || isBusy) return;
+    if (!idea.trim() || isBusy || briefPrompt) return;
     if (promptHasDesignDetail(idea)) { run(idea); return; }
     setBriefPrompt(idea);
   };
@@ -56,6 +56,7 @@ export default function AppBuilder() {
                 value={idea}
                 onChange={(e) => setIdea(e.target.value)}
                 placeholder="Describe what you want to build..."
+                disabled={!!briefPrompt}
                 className="flex-1 h-12 px-4 rounded-xl bg-white/[0.02] border border-white/[0.04] text-[14px] text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/20 focus:bg-white/[0.03] transition-all"
                 onKeyDown={(e) => e.key === 'Enter' && handleGenerate()}
               />
@@ -63,7 +64,7 @@ export default function AppBuilder() {
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={handleGenerate}
-                disabled={isBusy || !idea.trim()}
+                disabled={isBusy || !!briefPrompt || !idea.trim()}
                 className="h-12 px-6 rounded-xl bg-indigo-500/[0.1] border border-indigo-500/15 text-indigo-400 font-medium text-[13px] hover:bg-indigo-500/[0.15] transition-colors disabled:opacity-40 flex items-center gap-2"
               >
                 {isBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
