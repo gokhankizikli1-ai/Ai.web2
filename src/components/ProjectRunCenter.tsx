@@ -321,11 +321,11 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
   }, [runRequest]);
 
   // Starter mode chips (Auto / templates) are a fresh-project affordance:
-  // once the first build request has been submitted (a turn exists, or the
-  // Design Interview for it is open) the session IS the build conversation,
-  // so the chips disappear and the composer reads as continuation. A brand
-  // new empty project shows them again.
-  const showStarterChips = turns.length === 0 && !briefPrompt;
+  // once the first build request has been submitted (a turn exists, the
+  // Design Interview is open, or a run is starting) the session IS the build
+  // conversation, so the chips disappear and the composer reads as
+  // continuation. A brand new empty project shows them again.
+  const showStarterChips = turns.length === 0 && !briefPrompt && !starting;
 
   const composer = (
     <div className="shrink-0 px-4 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.05)', background: 'rgba(17,21,28,0.4)' }}>
