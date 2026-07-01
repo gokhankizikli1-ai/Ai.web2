@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Cpu, Wand2, Loader2 } from 'lucide-react';
 import Navigation from '@/components/Navigation';
 import PreviewResult from '@/components/PreviewResult';
+import AppPreviewShell from '@/components/builder/AppPreviewShell';
 import { useOrchestrateResult } from '@/hooks/useOrchestrateResult';
 
 const fadeUp = (delay = 0) => ({
@@ -32,7 +33,7 @@ export default function AppBuilder() {
     <div className="min-h-screen bg-[#0a0a0a] text-slate-300 flex flex-col">
       <Navigation />
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
 
           <motion.div {...fadeUp(0)} className="mb-8">
             <div className="flex items-center gap-3 mb-2">
@@ -67,18 +68,21 @@ export default function AppBuilder() {
             </div>
           </motion.div>
 
-          {/* Result — driven entirely by the backend PreviewPayload */}
+          {/* Result — driven entirely by the backend PreviewPayload, wrapped
+              in a premium app-shell frame (topbar/sidebar/stat cards). */}
           {showResult && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-              <PreviewResult
-                phase={phase}
-                label={label}
-                payload={payload}
-                error={error}
-                disabledReason={disabledReason}
-                disabledPrerequisites={disabledPrerequisites}
-                onRetry={handleGenerate}
-              />
+              <AppPreviewShell idea={idea} phase={phase}>
+                <PreviewResult
+                  phase={phase}
+                  label={label}
+                  payload={payload}
+                  error={error}
+                  disabledReason={disabledReason}
+                  disabledPrerequisites={disabledPrerequisites}
+                  onRetry={handleGenerate}
+                />
+              </AppPreviewShell>
             </motion.div>
           )}
 

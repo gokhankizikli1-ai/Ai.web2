@@ -4,8 +4,12 @@ import {
   Layout, Wand2, Palette, Type,
   CheckCircle2, ChevronRight, Loader2,
   Star, DollarSign, HelpCircle, ArrowRight,
+  Eye, FileText,
 } from 'lucide-react';
 import Navigation from '@/components/Navigation';
+import BrowserFrame from '@/components/builder/BrowserFrame';
+import WebsitePreviewCanvas from '@/components/builder/WebsitePreviewCanvas';
+import { SITE_CONTENT, siteNameFromPrompt } from '@/components/builder/siteContent';
 
 const fadeUp = (delay = 0) => ({
   initial: { opacity: 0, y: 16 },
@@ -31,15 +35,36 @@ const SECTIONS = [
   { id: 'cta', label: 'Final CTA', icon: ArrowRight },
 ];
 
-const MOCK_OUTPUT: Record<string, { title: string; content: string }> = {
-  hero: { title: 'Hero Section', content: 'Headline: "Transform Your Workflow with AI"\\nSubheadline: "The intelligent platform that automates tasks, analyzes data, and helps your team ship faster."\\nCTA: "Start Free Trial" | "Watch Demo"' },
-  features: { title: 'Key Features', content: '• AI-Powered Analytics — Real-time insights from your data\\n• Smart Automation — Eliminate repetitive tasks\\n• Team Collaboration — Work together seamlessly\\n• Enterprise Security — SOC2 compliant, end-to-end encryption' },
-  pricing: { title: 'Pricing Tiers', content: 'Starter: $29/mo — 1 user, basic analytics\\nPro: $79/mo — 5 users, advanced features, priority support\\nEnterprise: Custom — Unlimited, SSO, dedicated success manager' },
-  testimonials: { title: 'Testimonials', content: '"Cut our reporting time by 80%" — Sarah K., CTO at TechFlow\\n"The AI insights are genuinely game-changing" — Marcus L., VP Product\\n"Best investment we made this year" — Elena R., Founder' },
-  faq: { title: 'FAQ', content: 'Q: How does the AI work?\\nA: Our AI analyzes your data patterns and generates insights using proprietary ML models.\\n\\nQ: Is my data secure?\\nA: Yes, we are SOC2 Type II certified with end-to-end encryption.\\n\\nQ: Can I cancel anytime?\\nA: Absolutely, no contracts or hidden fees.' },
-  brand: { title: 'Brand Colors', content: 'Primary: #0A0A0A (dark)\\nAccent: #22D3EE (cyan)\\nSecondary: #6366F1 (indigo)\\nSuccess: #34D399 (emerald)\\nText: #FFFFFF / #A1A1AA' },
-  typography: { title: 'Typography', content: 'Headlines: Inter, 48-72px, weight 700\\nBody: Inter, 16px, weight 400, line-height 1.6\\nCaptions: Inter, 14px, weight 500\\nCode: JetBrains Mono, 14px' },
-  cta: { title: 'Final CTA', content: '"Ready to transform your workflow?"\\nSubtext: "Join 10,000+ teams already using our platform"\\nButton: "Get Started Free" — 14-day trial, no credit card' },
+// Structure/Copy tab — same content the visual canvas renders, formatted as
+// plain readable text per section.
+function structureText(id: string): string {
+  const c = SITE_CONTENT;
+  switch (id) {
+    case 'hero':
+      return `Headline: "${c.hero.headline}"\nSubheadline: "${c.hero.subheadline}"\nCTA: "${c.hero.primaryCta}" | "${c.hero.secondaryCta}"`;
+    case 'features':
+      return c.features.map((f) => `• ${f.title} — ${f.desc}`).join('\n');
+    case 'pricing':
+      return c.pricing.map((p) => `${p.name}: ${p.price}${p.period} — ${p.desc}`).join('\n');
+    case 'testimonials':
+      return c.testimonials.map((t) => `"${t.quote}" — ${t.name}, ${t.role}`).join('\n');
+    case 'faq':
+      return c.faq.map((qa) => `Q: ${qa.q}\nA: ${qa.a}`).join('\n\n');
+    case 'brand':
+      return c.brand.map((b) => `${b.label}: ${b.hex}`).join('\n');
+    case 'typography':
+      return c.typography;
+    case 'cta':
+      return `"${c.cta.headline}"\nSubtext: "${c.cta.subtext}"\nButton: "${c.cta.button}"`;
+    default:
+      return '';
+  }
+}
+
+const SECTION_TITLES: Record<string, string> = {
+  hero: 'Hero Section', features: 'Key Features', pricing: 'Pricing Tiers',
+  testimonials: 'Testimonials', faq: 'FAQ', brand: 'Brand Colors',
+  typography: 'Typography', cta: 'Final CTA',
 };
 
 export default function WebsiteBuilder() {
@@ -47,21 +72,26 @@ export default function WebsiteBuilder() {
   const [generating, setGenerating] = useState(false);
   const [generated, setGenerated] = useState(false);
   const [activeSection, setActiveSection] = useState('hero');
+  const [view, setView] = useState<'preview' | 'structure'>('preview');
+  const [lastPrompt, setLastPrompt] = useState('');
 
   const handleGenerate = () => {
     if (!prompt.trim()) return;
     setGenerating(true);
+    setLastPrompt(prompt);
     setTimeout(() => {
       setGenerating(false);
       setGenerated(true);
     }, 2000);
   };
 
+  const siteName = `${siteNameFromPrompt(lastPrompt)}.ai`;
+
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-slate-300 flex flex-col">
       <Navigation />
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8">
 
           <motion.div {...fadeUp(0)} className="mb-8">
             <div className="flex items-center gap-3 mb-2">
@@ -74,7 +104,7 @@ export default function WebsiteBuilder() {
           </motion.div>
 
           {/* Prompt Input */}
-          <motion.div {...fadeUp(0.05)} className="mb-4">
+          <motion.div {...fadeUp(0.05)} className="mb-4 max-w-4xl">
             <div className="flex gap-2">
               <input
                 value={prompt}
@@ -97,7 +127,7 @@ export default function WebsiteBuilder() {
           </motion.div>
 
           {/* Quick Prompts */}
-          <motion.div {...fadeUp(0.08)} className="flex gap-2 mb-8 flex-wrap">
+          <motion.div {...fadeUp(0.08)} className="flex gap-2 mb-8 flex-wrap max-w-4xl">
             {EXAMPLE_PROMPTS.map((p) => (
               <button
                 key={p}
@@ -109,16 +139,24 @@ export default function WebsiteBuilder() {
             ))}
           </motion.div>
 
+          {/* Generating state */}
+          {generating && (
+            <motion.div {...fadeUp(0)} className="rounded-2xl border border-white/[0.05] bg-white/[0.01] p-10 text-center">
+              <Loader2 className="w-8 h-8 text-violet-400 animate-spin mx-auto mb-3" />
+              <p className="text-[13px] text-slate-400">Generating your premium website preview…</p>
+            </motion.div>
+          )}
+
           {/* Generated Content */}
-          {generated && (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {generated && !generating && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="grid grid-cols-1 lg:grid-cols-4 gap-4">
               {/* Section Selector */}
               <div className="lg:col-span-1 space-y-1">
                 {SECTIONS.map((s) => (
                   <motion.button
                     key={s.id}
                     whileHover={{ x: 2 }}
-                    onClick={() => setActiveSection(s.id)}
+                    onClick={() => { setActiveSection(s.id); setView('preview'); }}
                     className={`flex items-center gap-2.5 w-full px-3 py-2.5 rounded-xl text-left transition-all ${
                       activeSection === s.id ? 'bg-white/[0.04] border border-white/[0.06]' : 'hover:bg-white/[0.02] border border-transparent'
                     }`}
@@ -130,20 +168,47 @@ export default function WebsiteBuilder() {
                 ))}
               </div>
 
-              {/* Section Preview */}
-              <motion.div
-                key={activeSection}
-                initial={{ opacity: 0, x: 8 }}
-                animate={{ opacity: 1, x: 0 }}
-                className="lg:col-span-2 p-6 rounded-2xl border border-white/[0.03] bg-white/[0.01]"
-              >
-                <h3 className="text-sm font-medium text-white mb-4">
-                  {MOCK_OUTPUT[activeSection]?.title}
-                </h3>
-                <div className="whitespace-pre-line text-[13px] text-slate-400 leading-relaxed">
-                  {MOCK_OUTPUT[activeSection]?.content}
+              {/* Preview canvas */}
+              <div className="lg:col-span-3 space-y-3">
+                <div className="flex items-center justify-end">
+                  <div className="flex items-center gap-0.5 rounded-lg bg-white/[0.02] border border-white/[0.04] p-0.5">
+                    <button
+                      onClick={() => setView('preview')}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium transition-colors ${
+                        view === 'preview' ? 'bg-white/[0.06] text-white' : 'text-slate-500 hover:text-slate-300'
+                      }`}
+                    >
+                      <Eye className="w-3 h-3" /> Preview
+                    </button>
+                    <button
+                      onClick={() => setView('structure')}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium transition-colors ${
+                        view === 'structure' ? 'bg-white/[0.06] text-white' : 'text-slate-500 hover:text-slate-300'
+                      }`}
+                    >
+                      <FileText className="w-3 h-3" /> Structure / Copy
+                    </button>
+                  </div>
                 </div>
-              </motion.div>
+
+                {view === 'preview' ? (
+                  <BrowserFrame url={siteName} accent="violet">
+                    <WebsitePreviewCanvas content={SITE_CONTENT} activeSection={activeSection} siteName={siteNameFromPrompt(lastPrompt) || 'Brand'} />
+                  </BrowserFrame>
+                ) : (
+                  <motion.div
+                    key={activeSection}
+                    initial={{ opacity: 0, x: 8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="p-6 rounded-2xl border border-white/[0.03] bg-white/[0.01]"
+                  >
+                    <h3 className="text-sm font-medium text-white mb-4">{SECTION_TITLES[activeSection]}</h3>
+                    <div className="whitespace-pre-line text-[13px] text-slate-400 leading-relaxed">
+                      {structureText(activeSection)}
+                    </div>
+                  </motion.div>
+                )}
+              </div>
             </motion.div>
           )}
 
