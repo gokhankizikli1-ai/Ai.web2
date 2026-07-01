@@ -521,10 +521,220 @@ def _website(user_request: str, style: Dict) -> ProductSpec:
     )
 
 
-def _generic_app(user_request: str, style: Dict, intent: str = "application_ui") -> ProductSpec:
-    """A REAL application interface for an otherwise-unmatched app request.
-    This is the root-cause fix: ambiguous requests no longer become a
-    marketing landing page."""
+# ── Sprint 2.2 — diversified generic app/dashboard verticals ───────────
+# `_generic_app()` / `_generic_dashboard()` used to hand every otherwise-
+# unmatched "app" or "dashboard" request the SAME fixed page inventory
+# (Overview/Analytics/Reports/Activity/Settings) — every generated
+# dashboard felt identical regardless of what the user actually asked for.
+# Both now route through this small library of vertical-aware page
+# inventories, picked by lightweight keyword sniffing on the user's own
+# prompt — still deterministic, no LLM, no network. Only reached when no
+# NAMED vertical (fitness/ai_chat/crypto/banking/restaurant/saas/...)
+# already matched above, i.e. this is purely the "otherwise unmatched
+# app/dashboard request" path.
+
+def _finance_ops(user_request: str, style: Dict, intent: str) -> ProductSpec:
+    name = _title_from_request(user_request) or "Meridian"
+    return ProductSpec(
+        product_type="finance_ops", name=name, tagline=f"{name} — clarity on every position.",
+        description=f"{name} is a real-time command center for markets, risk and performance — signals, exposure and reporting in one calm view.",
+        audience="Analysts, traders and portfolio managers who need a fast, trustworthy read on risk and performance.",
+        primary_goals=["Track portfolio performance", "Surface trading signals", "Monitor risk exposure"],
+        ux_goals=["Fast scanning", "Confident decisions", "Clear risk signals"],
+        navigation=["Command Center", "Portfolio", "Signals", "Risk", "Reports", "Settings"],
+        is_dashboard=True, layout="app", intent=intent,
+        metrics=[
+            {"label": "AUM", "value": "$18.4M", "delta": "+3.1% MTD"},
+            {"label": "Today's P&L", "value": "+$62,480", "delta": "+0.9%"},
+            {"label": "Active signals", "value": "14", "delta": "5 new"},
+            {"label": "Risk exposure", "value": "Moderate", "delta": "Within limits"},
+        ],
+        sections=[
+            _S("metrics", "Command Center"),
+            _S("features", "Built for serious desks", items=[
+                _card("Live signals", "Model-driven entries and exits, ranked by conviction.", "📡"),
+                _card("Risk monitor", "Exposure, drawdown and limits, always visible.", "🛡"),
+                _card("Portfolio analytics", "Attribution and performance, sliced any way.", "📊"),
+                _card("Reporting", "Investor-ready reports in one click.", "🧾"),
+            ]),
+            _S("panel", "Today's signals", subtitle="Ranked by model conviction"),
+        ],
+        cta_primary="Open command center", cta_secondary="View signals",
+        theme={"accent": "", "accent2": "", "mode": style.get("mode", "dark")},
+        components=["Sidebar", "Dashboard Cards", "Statistics", "Charts", "Watchlist", "Reports", "Settings", "Footer"],
+    )
+
+
+def _ecommerce_ops(user_request: str, style: Dict, intent: str) -> ProductSpec:
+    """A seller/merchant back-office dashboard — distinct from `_ecommerce()`
+    above, which is the customer-facing storefront (`layout="ecommerce"`).
+    This is the operator's view: sales, orders, customers, campaigns."""
+    name = _title_from_request(user_request) or "Merchant Hub"
+    return ProductSpec(
+        product_type="ecommerce_ops", name=name, tagline=f"{name} — every order, one dashboard.",
+        description=f"{name} is a seller command center — sales, inventory, customers and campaigns in one fast, well-designed view.",
+        audience="Merchants and store operators running a growing online store.",
+        primary_goals=["Track sales performance", "Fulfil orders fast", "Understand customers"],
+        ux_goals=["Glanceable daily numbers", "Fast order triage", "Confident campaign decisions"],
+        navigation=["Dashboard", "Products", "Orders", "Customers", "Campaigns", "Insights"],
+        is_dashboard=True, layout="app", intent=intent,
+        metrics=[
+            {"label": "Revenue today", "value": "$6,240", "delta": "+14% vs yesterday"},
+            {"label": "Orders", "value": "182", "delta": "+22 today"},
+            {"label": "Conversion rate", "value": "3.4%", "delta": "+0.4pt"},
+            {"label": "Avg order value", "value": "$68", "delta": "+$5"},
+        ],
+        sections=[
+            _S("metrics", "Store overview"),
+            _S("features", "Run the whole store from here", items=[
+                _card("Inventory sync", "Stock levels update the moment an order lands.", "📦"),
+                _card("Order fulfilment", "Pick, pack and ship without leaving the tab.", "🚚"),
+                _card("Customer insights", "Repeat buyers and lifetime value, at a glance.", "🧑"),
+                _card("Campaign performance", "See what's actually driving sales.", "📣"),
+            ]),
+            _S("panel", "Latest orders", subtitle="Customer · items · total · status"),
+        ],
+        cta_primary="View orders", cta_secondary="Add product",
+        theme={"accent": "", "accent2": "", "mode": style.get("mode", "dark")},
+        components=["Sidebar", "Dashboard Cards", "Statistics", "Charts", "Orders Table", "Settings", "Footer"],
+    )
+
+
+def _crm(user_request: str, style: Dict, intent: str) -> ProductSpec:
+    name = _title_from_request(user_request) or "Pipeline"
+    return ProductSpec(
+        product_type="crm", name=name, tagline=f"{name} — deals that don't fall through the cracks.",
+        description=f"{name} is a sales CRM — pipeline, leads and forecast in one clear, fast workspace built to close more deals.",
+        audience="Sales teams and account managers tracking a live pipeline.",
+        primary_goals=["Track deals through the pipeline", "Manage leads", "Forecast revenue"],
+        ux_goals=["Clear stage-by-stage view", "Fast lead triage", "Confident forecasting"],
+        navigation=["Pipeline", "Leads", "Accounts", "Tasks", "Forecast", "Settings"],
+        is_dashboard=True, layout="app", intent=intent,
+        metrics=[
+            {"label": "Open pipeline", "value": "$412k", "delta": "+8% this month"},
+            {"label": "New leads", "value": "36", "delta": "+11 this week"},
+            {"label": "Win rate", "value": "28%", "delta": "+3pt"},
+            {"label": "Deals closing", "value": "9", "delta": "This month"},
+        ],
+        sections=[
+            _S("metrics", "Pipeline overview"),
+            _S("features", "Everything sales needs", items=[
+                _card("Deal stages", "Drag deals through a pipeline that matches your process.", "🧭"),
+                _card("Lead scoring", "Know who to call first.", "🎯"),
+                _card("Task reminders", "Never miss a follow-up again.", "⏰"),
+                _card("Forecasting", "Confidence-weighted revenue, always current.", "📈"),
+            ]),
+            _S("panel", "Top deals", subtitle="Account · stage · value · owner"),
+        ],
+        cta_primary="Add deal", cta_secondary="View forecast",
+        theme={"accent": "", "accent2": "", "mode": style.get("mode", "dark")},
+        components=["Sidebar", "Dashboard Cards", "Statistics", "Pipeline Board", "Tasks", "Settings", "Footer"],
+    )
+
+
+def _saas_ai(user_request: str, style: Dict, intent: str) -> ProductSpec:
+    name = _title_from_request(user_request) or "Nexus"
+    return ProductSpec(
+        product_type="saas_ai", name=name, tagline=f"{name} — your team's operating system.",
+        description=f"{name} is an AI-powered workspace — automations, insights and integrations that keep the whole team in sync.",
+        audience="Product, ops and growth teams automating their busywork.",
+        primary_goals=["Automate repetitive work", "Surface real-time insights", "Keep the team aligned"],
+        ux_goals=["Fast setup", "Clear automation status", "Trustworthy insights"],
+        navigation=["Workspace", "Automations", "Insights", "Team", "Integrations", "Settings"],
+        is_dashboard=True, layout="app", intent=intent,
+        metrics=[
+            {"label": "Active automations", "value": "18", "delta": "+3 this week"},
+            {"label": "Hours saved", "value": "142h", "delta": "This month"},
+            {"label": "Team members", "value": "24", "delta": "+2 this week"},
+            {"label": "Integrations", "value": "9", "delta": "connected"},
+        ],
+        sections=[
+            _S("metrics", "Workspace overview"),
+            _S("features", "Built to remove busywork", items=[
+                _card("Automations", "One-click rules that run the moment something changes.", "⚡"),
+                _card("Insights", "Real-time visibility into what's actually happening.", "📊"),
+                _card("Team spaces", "Keep every project and context separate.", "🗂"),
+                _card("Integrations", "Connect the tools your team already uses.", "🔌"),
+            ]),
+            _S("panel", "Today", subtitle="What needs your attention"),
+        ],
+        cta_primary="New automation", cta_secondary="View insights",
+        theme={"accent": "", "accent2": "", "mode": style.get("mode", "dark")},
+        components=["Sidebar", "Dashboard Cards", "Statistics", "Automations", "Integrations", "Settings", "Footer"],
+    )
+
+
+def _health(user_request: str, style: Dict, intent: str) -> ProductSpec:
+    """A health/wellbeing dashboard for the bare word "health" — distinct
+    from the dedicated `_fitness()` vertical above, which already owns the
+    workout/gym/calorie/nutrition keyword space and its own nav."""
+    name = _title_from_request(user_request) or "Vitality"
+    return ProductSpec(
+        product_type="health", name=name, tagline=f"{name} — your health, one clear view.",
+        description=f"{name} is a personal health companion — plans, progress and coaching that adapt to you.",
+        audience="People building a consistent, guided health routine.",
+        primary_goals=["Follow a personalised plan", "Track progress over time", "Get expert coaching"],
+        ux_goals=["Glanceable daily plan", "Motivating progress view", "Trustworthy guidance"],
+        navigation=["Dashboard", "Plans", "Progress", "Nutrition", "Coaching", "Settings"],
+        is_dashboard=True, layout="app", intent=intent,
+        metrics=[
+            {"label": "Today's plan", "value": "82%", "delta": "+6% vs goal"},
+            {"label": "Streak", "value": "9 days", "delta": "Personal best"},
+            {"label": "Check-ins", "value": "5/7", "delta": "This week"},
+            {"label": "Coach sessions", "value": "2", "delta": "This month"},
+        ],
+        sections=[
+            _S("metrics", "Health overview"),
+            _S("features", "Guided, every step", items=[
+                _card("Personal plans", "Adapts to your goals and progress.", "🗺"),
+                _card("Progress tracking", "See trends, not just numbers.", "📈"),
+                _card("Nutrition guidance", "Meals that fit your plan.", "🥗"),
+                _card("1:1 coaching", "Real feedback from a real coach.", "🎯"),
+            ]),
+            _S("panel", "This week's plan", subtitle="Movement · nutrition · recovery"),
+        ],
+        cta_primary="Open today's plan", cta_secondary="Message coach",
+        theme={"accent": "", "accent2": "", "mode": style.get("mode", "dark")},
+        components=["Sidebar", "Dashboard Cards", "Statistics", "Charts", "Coaching", "Settings", "Footer"],
+    )
+
+
+def _education(user_request: str, style: Dict, intent: str) -> ProductSpec:
+    name = _title_from_request(user_request) or "Learnly"
+    return ProductSpec(
+        product_type="education", name=name, tagline=f"{name} — learning that keeps you moving.",
+        description=f"{name} is a learning workspace — courses, lessons and progress in one clear, motivating place.",
+        audience="Students and lifelong learners working through structured courses.",
+        primary_goals=["Follow a course", "Track learning progress", "Stay connected to peers"],
+        ux_goals=["Clear next lesson", "Motivating progress view", "Easy peer discussion"],
+        navigation=["Dashboard", "Courses", "Lessons", "Progress", "Community", "Settings"],
+        is_dashboard=True, layout="app", intent=intent,
+        metrics=[
+            {"label": "Course progress", "value": "64%", "delta": "+8% this week"},
+            {"label": "Lessons completed", "value": "31", "delta": "+4 this week"},
+            {"label": "Study streak", "value": "6 days", "delta": "Keep it up"},
+            {"label": "Certificates", "value": "2", "delta": "1 in progress"},
+        ],
+        sections=[
+            _S("metrics", "Learning overview"),
+            _S("features", "Built to keep you learning", items=[
+                _card("Structured courses", "A clear path from beginner to done.", "🎓"),
+                _card("Bite-sized lessons", "Learn in minutes, not hours.", "📚"),
+                _card("Progress tracking", "See exactly how far you've come.", "📈"),
+                _card("Community", "Ask questions, get unstuck faster.", "💬"),
+            ]),
+            _S("panel", "Continue learning", subtitle="Pick up right where you left off"),
+        ],
+        cta_primary="Continue course", cta_secondary="Browse courses",
+        theme={"accent": "", "accent2": "", "mode": style.get("mode", "dark")},
+        components=["Sidebar", "Dashboard Cards", "Statistics", "Charts", "Community", "Settings", "Footer"],
+    )
+
+
+def _generic_fallback(user_request: str, style: Dict, intent: str) -> ProductSpec:
+    """The last-resort default when no vertical keyword matched at all —
+    still a real, distinct page inventory, not the old Overview/Analytics/
+    Reports/Activity/Settings set."""
     name = _title_from_request(user_request) or "Workspace"
     return ProductSpec(
         product_type="app", name=name, tagline=f"{name}, built for what you do.",
@@ -532,7 +742,7 @@ def _generic_app(user_request: str, style: Dict, intent: str = "application_ui")
         audience="People who expect a fast, modern, well-designed product.",
         primary_goals=["Deliver the core workflow", "Make it effortless", "Keep everything in view"],
         ux_goals=["Clarity", "Speed", "Focus"],
-        navigation=["Dashboard", "Activity", "Library", "Reports", "Settings"],
+        navigation=["Command", "Workflows", "Insights", "Library", "Activity", "Settings"],
         is_dashboard=True, layout="app", intent=intent,
         metrics=[
             {"label": "Active items", "value": "1,248", "delta": "+9% this week"},
@@ -541,10 +751,10 @@ def _generic_app(user_request: str, style: Dict, intent: str = "application_ui")
             {"label": "This month", "value": "4.8k", "delta": "+12%"},
         ],
         sections=[
-            _S("metrics", "Overview"),
+            _S("metrics", "Command"),
             _S("features", "Everything in one place", items=[
                 _card("Fast capture", "Add anything in a keystroke.", "⚡"),
-                _card("Smart views", "See your work the way you think.", "🧭"),
+                _card("Smart workflows", "Automate the steps you repeat.", "🧭"),
                 _card("Activity", "A clear record of what changed.", "🕑"),
                 _card("Settings", "Make it yours.", "⚙"),
             ]),
@@ -556,12 +766,36 @@ def _generic_app(user_request: str, style: Dict, intent: str = "application_ui")
     )
 
 
+_GENERIC_VERTICAL_RULES: List[Tuple[re.Pattern, Callable[[str, Dict, str], ProductSpec]]] = [
+    (re.compile(r"\b(financ\w*|analytics?|trading|invest\w*|hedge\s*fund|portfolio\s*manag\w*)\b", re.I), _finance_ops),
+    (re.compile(r"\b(e-?commerce|shopify|online\s*store|storefront|retail\w*|merchant\w*)\b", re.I), _ecommerce_ops),
+    (re.compile(r"\bcrm\b|\bsales\s*(?:pipeline|team)\b|\bleads?\b|\bdeal\s*flow\b", re.I), _crm),
+    (re.compile(r"\bproductivity\b|\bautomation\w*\b|\bworkflow\w*\b|\bai\s*(?:tool|platform|assistant)\b", re.I), _saas_ai),
+    (re.compile(r"\bhealth\b", re.I), _health),
+    (re.compile(r"\beducation\w*|\blearning\b|\bcourses?\b|\bstudents?\b|\bclassroom\b|\be-?learning\b", re.I), _education),
+]
+
+
+def _diversified_generic(user_request: str, style: Dict, intent: str) -> ProductSpec:
+    text = user_request or ""
+    for pattern, builder in _GENERIC_VERTICAL_RULES:
+        if pattern.search(text):
+            return builder(user_request, style, intent)
+    return _generic_fallback(user_request, style, intent)
+
+
+def _generic_app(user_request: str, style: Dict, intent: str = "application_ui") -> ProductSpec:
+    """A REAL application interface for an otherwise-unmatched app request.
+    Diversified (Sprint 2.2) — see `_diversified_generic` above."""
+    return _diversified_generic(user_request, style, intent)
+
+
 def _generic_dashboard(user_request: str, style: Dict, intent: str = "dashboard") -> ProductSpec:
-    spec = _generic_app(user_request, style, intent=intent)
-    spec.product_type = "dashboard"
-    spec.tagline = f"{spec.name} — everything at a glance."
-    spec.navigation = ["Overview", "Analytics", "Reports", "Activity", "Settings"]
-    return spec
+    """Same diversified vertical pool as `_generic_app` (Sprint 2.2) — the
+    old fixed Overview/Analytics/Reports/Activity/Settings default is
+    gone; every otherwise-unmatched dashboard request is now routed by
+    prompt keyword instead."""
+    return _diversified_generic(user_request, style, intent)
 
 
 def _title_from_request(user_request: str) -> str:
