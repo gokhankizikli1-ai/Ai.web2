@@ -16,7 +16,7 @@ import { appNameFromIdea, chromeFromIdea, type ChromeIcon } from './appPreviewDa
 import { CATEGORY_LABELS, type BuilderPalette } from './promptCategory';
 import type { OrchestratePhase } from '@/hooks/useOrchestrateResult';
 
-const ICONS: Record<ChromeIcon, React.ComponentType<{ className?: string }>> = {
+const ICONS: Record<ChromeIcon, React.ComponentType<{ className?: string; style?: React.CSSProperties }>> = {
   dashboard: LayoutDashboard, chart: BarChart3, users: Users2, settings: Settings2,
   cart: ShoppingCart, package: Package, shield: ShieldCheck, graduation: GraduationCap,
   chat: MessageCircle, layers: Layers, building: Building2, crown: Crown,
