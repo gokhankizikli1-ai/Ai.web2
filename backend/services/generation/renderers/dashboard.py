@@ -15,7 +15,7 @@ from typing import List, Tuple
 from backend.services.generation import component_library as cl
 from backend.services.generation.renderers import base
 from backend.services.generation.renderers.base import (
-    avatar, bars, e, feature_items, icon, ring, spark, svg_icon,
+    avatar, bars, e, feature_items, icon, resolve_icon_name, ring, spark, svg_icon,
 )
 from backend.services.generation.spec import ProductSpec
 
@@ -78,26 +78,28 @@ CSS = CSS + "\n\n" + cl.CSS
 _PERSONALITY_BY_TYPE = {"fitness": "db-personality-fitness", "crypto": "db-personality-finance",
                         "banking": "db-personality-finance"}
 
+# Sprint 2.3 — nav icons are SVG icon NAMES (resolved via svg_icon()), not
+# emoji glyphs. No raw emoji ever reaches the sidebar.
 _NAV_ICONS = {
-    "dashboard": "▦", "overview": "▦", "home": "▦", "workouts": "🏋", "nutrition": "🍎",
-    "progress": "📈", "analytics": "📊", "reports": "🧾", "activity": "🕑", "profile": "👤",
-    "settings": "⚙", "accounts": "🏦", "transactions": "💳", "investments": "📈", "cards": "💳",
-    "portfolio": "🪙", "markets": "📉", "assets": "🗂", "alerts": "🔔", "chats": "💬",
-    "models": "🧠", "library": "📚", "leaderboard": "🏆", "players": "🎮",
+    "dashboard": "home", "overview": "home", "home": "home", "workouts": "heart", "nutrition": "leaf",
+    "progress": "chart", "analytics": "chart", "reports": "list", "activity": "clock", "profile": "person",
+    "settings": "gear", "accounts": "coin", "transactions": "list", "investments": "chart", "cards": "bag",
+    "portfolio": "coin", "markets": "chart", "assets": "folder", "alerts": "bell", "chats": "send",
+    "models": "brain", "library": "folder", "leaderboard": "target", "players": "grid",
     # Sprint 2.2 — diversified generic verticals (finance ops / ecommerce
     # ops / CRM / SaaS-AI / health / education) + the richer generic
     # fallback nav.
-    "command center": "🎯", "command": "🎯", "signals": "📡", "risk": "🛡", "insights": "📊",
-    "products": "📦", "orders": "🧾", "customers": "🧑", "campaigns": "📣",
-    "pipeline": "🧭", "leads": "🎯", "tasks": "✅", "forecast": "📈",
-    "workspace": "🗂", "automations": "⚡", "team": "🧑", "integrations": "🔌",
-    "plans": "🗺", "coaching": "🎯", "courses": "🎓", "lessons": "📚", "community": "💬",
-    "workflows": "🧭",
+    "command center": "target", "command": "target", "signals": "compass", "risk": "shield", "insights": "chart",
+    "products": "bag", "orders": "list", "customers": "person", "campaigns": "send",
+    "pipeline": "folder", "leads": "target", "tasks": "check", "forecast": "chart",
+    "workspace": "folder", "automations": "bolt", "team": "person", "integrations": "link",
+    "plans": "compass", "coaching": "target", "courses": "folder", "lessons": "folder", "community": "send",
+    "workflows": "compass",
 }
 
 
 def _nav_icon(label: str) -> str:
-    return _NAV_ICONS.get(label.strip().lower(), "•")
+    return _NAV_ICONS.get(label.strip().lower(), "dot")
 
 
 _METRIC_ICON_MAP = [
@@ -143,7 +145,7 @@ def _metric_grid(spec: ProductSpec) -> str:
 def _feed(spec: ProductSpec, title: str = "Recent activity") -> str:
     feats = feature_items(spec)[:5] or [{"icon": "✓", "title": "Updated", "body": "Just now"}]
     rows = "".join(f"""
-    <div class="ds-feed-item"><span class="ds-feed-dot">{e(c.get('icon','●'))}</span>
+    <div class="ds-feed-item"><span class="ds-feed-dot">{svg_icon(resolve_icon_name(c.get('icon', 'dot')))}</span>
       <div><div style="color:var(--text);font-weight:600;font-size:.92rem">{e(c.get('title'))}</div>
         <div style="color:var(--text-dim);font-size:.82rem">{e(c.get('body'))}</div></div>
       <span style="margin-left:auto;color:var(--text-dim);font-size:.76rem">just now</span></div>""" for c in feats)
@@ -377,7 +379,14 @@ def _finance_panel(spec: ProductSpec) -> str:
 
 
 def _overview(spec: ProductSpec, label: str) -> str:
-    feats = feature_items(spec)[:3]
+    # Sprint 2.3 — Design Brief "Density" hint: "Clean" trims the page to
+    # fewer, more spacious panels; "Data Heavy"/"Highly Detailed" adds an
+    # extra KPI row. Absent (no brief) → unchanged, normal behaviour.
+    density = (spec.data or {}).get("density", "")
+    is_clean = density == "clean"
+    is_dense = density in ("data heavy", "highly detailed")
+
+    feats = feature_items(spec)[:2 if is_clean else 3]
     cards = "".join(f"""
       <div class="ds-card ds-rise" style="padding:18px">{icon(c.get('icon'))}
         <h3 style="font-size:1.02rem;margin-top:6px">{e(c.get('title'))}</h3>
@@ -386,7 +395,15 @@ def _overview(spec: ProductSpec, label: str) -> str:
     # allocation panel right in the overview (its defining personality),
     # in place of a second generic activity feed.
     finance = _finance_panel(spec) if spec.product_type == "crypto" else ""
-    perf_secondary = finance or f'<div class="ds-col-2">{_feed(spec)}</div>'
+    perf_secondary = finance or ("" if is_clean else f'<div class="ds-col-2">{_feed(spec)}</div>')
+
+    extra_dense = ""
+    if is_dense and spec.metrics:
+        kpi_cards = "".join(
+            f'<div class="ds-col-2">{cl.premium_metric_card(m.get("label", ""), m.get("value", ""), m.get("delta", ""), icon=_metric_icon(m.get("label", "")), trend_positive=not str(m.get("delta", "")).strip().startswith("-"))}</div>'
+            for m in (spec.metrics or [])[:3]
+        )
+        extra_dense = f'<div class="ds-bento" style="margin-top:16px">{kpi_cards}<div class="ds-col-2">{ring(74, "Target")}</div></div>'
     # Sprint 2.2 — a hero summary banner above the tabs: a one-line status
     # + a goal ring, so Overview reads as a command center, not just a
     # metric grid straight under the page head.
@@ -415,6 +432,7 @@ def _overview(spec: ProductSpec, label: str) -> str:
     <div class="ds-card ds-col-4 ds-rise"><h3 style="margin-bottom:6px">Trend</h3>{spark()}{bars(18)}</div>
     {perf_secondary}
   </div>
+  {extra_dense}
   <h2 style="font-size:1.25rem;margin:26px 0 14px">Quick actions</h2>
   <div class="ds-grid">{cards}</div>"""
 
@@ -480,7 +498,7 @@ def render(spec: ProductSpec) -> str:
         nav.append("Insights")
     links = "".join(
         f'<a class="db-link{" is-active" if i == 0 else ""}" data-nav="page-{i}">'
-        f'<span class="db-ic">{e(_nav_icon(l))}</span>{e(l)}</a>' for i, l in enumerate(nav))
+        f'<span class="db-ic">{svg_icon(_nav_icon(l))}</span>{e(l)}</a>' for i, l in enumerate(nav))
     sidebar = f"""
   <aside class="db-sidebar">
     <div class="db-brand"><span class="ds-nav-logo"></span>{e(spec.name)}</div>
@@ -491,7 +509,7 @@ def render(spec: ProductSpec) -> str:
   </aside>"""
     topbar = f"""
     <header class="ds-nav db-topbar">
-      <div class="db-search">🔍 Search {e(spec.name)}…</div>
+      <div class="db-search">{svg_icon('search')} Search {e(spec.name)}…</div>
       <span class="db-spacer"></span>
       <button class="db-iconbtn db-notif-trigger" data-reveal="reveal-notifications" title="Notifications">{svg_icon('bell')}<span class="db-notif-dot"></span></button>
       <button class="ds-btn ds-btn-primary ds-btn-sm" data-reveal="reveal-detail">{e(spec.cta_primary)}</button>

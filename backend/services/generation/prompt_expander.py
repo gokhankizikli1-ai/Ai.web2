@@ -23,7 +23,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from backend.services.generation.intent import ProductIntent, classify
 from backend.services.generation.renderer_selector import select_renderer
 from backend.services.generation.spec import ProductSpec, Section
-from backend.services.generation.styles import resolve_style
+from backend.services.generation.styles import resolve_style, resolve_style_mode
 
 
 def _S(kind, title="", subtitle="", items=None) -> Section:
@@ -798,6 +798,85 @@ def _generic_dashboard(user_request: str, style: Dict, intent: str = "dashboard"
     return _diversified_generic(user_request, style, intent)
 
 
+# ── Sprint 2.3 — Design Brief parsing ───────────────────────────────────
+# The frontend's step-by-step Design Brief (src/lib/designBrief.ts) folds
+# the user's chip answers into the prompt as a trailing, parseable
+# `DESIGN_BRIEF:` block (`- Label: value` lines). This is the ONLY place
+# that block is read structurally — everything else in this module keeps
+# treating `user_request` as plain text. Absent for any prompt that never
+# went through the brief (the common case) — `{}`  then, no behaviour
+# change at all.
+
+_BRIEF_MARKER_RE = re.compile(r"\n\nDESIGN_BRIEF:\n")
+
+_BRIEF_FIELDS = [
+    ("Visual style", "visual_style"), ("Color direction", "color_direction"),
+    ("Layout", "layout"), ("Button style", "button_style"),
+    ("Density", "density"), ("Target feel", "target_feel"),
+    ("Required pages/sections", "sections"),
+]
+
+
+def _parse_design_brief(user_request: str) -> Dict[str, str]:
+    text = user_request or ""
+    m = _BRIEF_MARKER_RE.search(text)
+    if not m:
+        return {}
+    block = text[m.end():]
+    fields: Dict[str, str] = {}
+    for label, key in _BRIEF_FIELDS:
+        fm = re.search(rf"^-\s*{re.escape(label)}:\s*(.+)$", block, re.I | re.M)
+        if fm:
+            fields[key] = fm.group(1).strip()
+    return fields
+
+
+# Layout chip → the `layout` dispatch value `_route()` already understands.
+# "Product Showcase" stays on the landing renderer (a real, unrelated
+# storefront spec would be wrong here) with a data hint the landing
+# renderer uses to give the hero mockup more prominence.
+_BRIEF_LAYOUT_OVERRIDE = {
+    "landing page": "landing",
+    "data dashboard": "app",
+    "saas app shell": "app",
+    "product showcase": "landing",
+}
+
+# Color direction chip → explicit theme override. "Custom" (or anything
+# unrecognised) leaves whatever the style mode / vertical already chose.
+_BRIEF_COLOR_OVERRIDE: Dict[str, Tuple[str, str, str]] = {
+    "black + gold": ("#d4af37", "#f2d374", "dark"),
+    "black + cyan": ("#22d3ee", "#0891b2", "dark"),
+    "white + graphite": ("#374151", "#6b7280", "light"),
+}
+
+
+def _apply_design_brief(spec: ProductSpec, brief: Dict[str, str]) -> None:
+    """Apply the parsed brief's structural/theme overrides. Called AFTER
+    the spec is fully built (theme/dark_mode already assembled) so this is
+    the last word — a design choice the user explicitly made always wins
+    over a heuristic default."""
+    if not brief:
+        return
+
+    color = (brief.get("color_direction") or "").strip().lower()
+    override = _BRIEF_COLOR_OVERRIDE.get(color)
+    if override:
+        accent, accent2, mode = override
+        theme = dict(spec.theme or {})
+        theme["accent"], theme["accent2"], theme["mode"] = accent, accent2, mode
+        spec.theme = theme
+        spec.dark_mode = mode != "light"
+
+    if brief.get("density"):
+        spec.data = dict(spec.data or {})
+        spec.data["density"] = brief["density"].strip().lower()
+
+    if (brief.get("layout") or "").strip().lower() == "product showcase":
+        spec.data = dict(spec.data or {})
+        spec.data["product_showcase"] = True
+
+
 def _title_from_request(user_request: str) -> str:
     t = re.sub(r"^\s*(build|create|make|design|generate|develop)\s+(me\s+)?(?:an|a|the)\s+",
                "", (user_request or "").strip(), flags=re.IGNORECASE)
@@ -905,7 +984,19 @@ def expand(user_request: str, blueprint: Optional[Dict[str, Any]] = None) -> Pro
     correctly even if its raw wording is ambiguous, and (b) refines the
     chosen spec's audience/feature copy. When absent (the common direct-
     orchestrator-run path), behaviour is IDENTICAL to before this sprint."""
-    text = user_request or ""
+    raw = user_request or ""
+    brief = _parse_design_brief(raw)
+
+    # Strip the DESIGN_BRIEF block before ANY keyword-based classification.
+    # Its own field VALUES ("Target feel: Ecommerce conversion", "Target
+    # feel: Premium SaaS", ...) can otherwise accidentally trip an unrelated
+    # vertical/intent keyword rule that has nothing to do with the user's
+    # actual product. The parsed `brief` dict above is the ONLY channel the
+    # brief's fields reach classification through, via the explicit
+    # overrides below — never a raw-text scan.
+    brief_match = _BRIEF_MARKER_RE.search(raw)
+    text = raw[:brief_match.start()].rstrip() if brief_match else raw
+
     match_text = text
     if blueprint:
         extra_terms = " ".join(str(t) for t in [
@@ -917,6 +1008,31 @@ def expand(user_request: str, blueprint: Optional[Dict[str, Any]] = None) -> Pro
             match_text = f"{text} {extra_terms}".strip()
 
     intent = classify(match_text)
+
+    # An explicit Design Brief "Layout" answer always wins over the
+    # keyword-classified layout — the user just told us, no guessing needed.
+    forced_layout = _BRIEF_LAYOUT_OVERRIDE.get((brief.get("layout") or "").strip().lower())
+    if forced_layout:
+        intent.layout = forced_layout
+        # Keep `intent.intent` (purely descriptive — shown to the LLM,
+        # attached to metadata) consistent with the layout we just forced,
+        # so the prompt never says e.g. "PRODUCT INTENT: landing_page
+        # (render as the actual app interface)" — a stale label left over
+        # from classification before the brief's explicit override.
+        if forced_layout == "landing" and intent.intent not in ("landing_page", "website", "portfolio"):
+            intent.intent = "landing_page"
+        elif forced_layout == "app" and intent.intent not in (
+            "dashboard", "admin_panel", "finance_tool", "application_ui", "productivity_tool", "ai_tool", "game_ui",
+        ):
+            intent.intent = "dashboard"
+
+    # An explicit "Visual style" answer resolves deterministically through
+    # the existing Design Diversity keyword engine — fed just the clean
+    # chip value ("Luxury Dark") instead of hoping it survives a full-text
+    # scan (it no longer would, now that the brief block is stripped above).
+    if brief.get("visual_style"):
+        intent.style_mode = resolve_style_mode(brief["visual_style"], intent.intent)
+
     style = resolve_style(intent.style_mode)
     spec = _route(text, match_text, intent, style)
 
@@ -934,6 +1050,8 @@ def expand(user_request: str, blueprint: Optional[Dict[str, Any]] = None) -> Pro
     if not theme.get("accent2"):
         theme["accent2"] = style.get("accent2", "#22d3ee")
     spec.theme = theme
+
+    _apply_design_brief(spec, brief)
 
     if blueprint:
         _apply_blueprint(spec, blueprint)

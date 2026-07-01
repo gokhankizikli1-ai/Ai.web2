@@ -120,6 +120,9 @@ _STYLE_KEYWORDS = [
     (re.compile(r"\braycast|command\s*(?:bar|palette|menu)\b", re.I), "raycast_command"),
     (re.compile(r"\barc\s*browser\b|\bthe\s*browser\s*company\b", re.I), "arc_browser"),
     (re.compile(r"\bluxur|editorial|elegant|premium\s*brand|high[\s-]*end\b", re.I), "luxury_editorial"),
+    # "Futuristic Glass" (Design Brief chip) — glassmorphism + gradient +
+    # neon-adjacent accent, without the arcade/gaming connotation.
+    (re.compile(r"\bfuturistic|glass(?:morphism)?\b", re.I), "fintech_glass"),
     (re.compile(r"\bgaming|game|neon|cyberpunk|esports|arcade\b", re.I), "gaming_neon"),
     (re.compile(r"\bhealth|medical|clinic|wellness|hospital|patient\b", re.I), "healthcare_clean"),
 ]

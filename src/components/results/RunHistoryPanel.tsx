@@ -9,6 +9,7 @@ import type { RunTurn } from '@/hooks/useProjectOrchestrator';
 import type { RunsAvailability } from '@/hooks/useProjectRuns';
 import { describeStatus } from '@/lib/runStatus';
 import { formatRelativeTime } from '@/lib/time';
+import { parseVisiblePrompt } from '@/lib/designBrief';
 
 interface RunHistoryPanelProps {
   runs:          RunTurn[];
@@ -90,7 +91,7 @@ export default function RunHistoryPanel({
                       </span>
                     </div>
                     <p className="text-[12px] text-white/75 truncate">
-                      {r.user_request || 'Untitled run'}
+                      {parseVisiblePrompt(r.user_request || '').visible || 'Untitled run'}
                     </p>
                     <div className="flex items-center gap-2 mt-0.5">
                       {r.template_id && (

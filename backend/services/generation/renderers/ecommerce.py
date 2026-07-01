@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 from backend.services.generation.renderers import base
-from backend.services.generation.renderers.base import e, feature_items, icon, slug
+from backend.services.generation.renderers.base import e, feature_items, icon, slug, svg_icon
 from backend.services.generation.spec import ProductSpec
 
 CSS = """
@@ -68,7 +68,7 @@ def render(spec: ProductSpec) -> str:
 <header class="ds-nav sh-nav">
   <div class="ds-nav-brand"><span class="ds-nav-logo"></span>{e(spec.name)}</div>
   <nav class="sh-links">{links}</nav>
-  <button class="sh-cartbtn" data-open="cart">🛍 Cart <span class="ds-cart-count" id="cart-count">0</span></button>
+  <button class="sh-cartbtn" data-open="cart">{svg_icon('bag')} Cart <span class="ds-cart-count" id="cart-count">0</span></button>
 </header>"""
     hero = f"""
 <section class="sh-hero ds-container"><div class="sh-hero-inner">
@@ -114,9 +114,9 @@ def render(spec: ProductSpec) -> str:
   <div class="ds-nav-brand"><span class="ds-nav-logo"></span>{e(spec.name)}</div>
   <span>Free shipping over $75 · 30-day returns</span><span>Crafted with Korvix</span></div></footer>"""
     # drawers
-    product_drawer = """
+    product_drawer = f"""
 <aside class="ds-drawer" id="product-detail" data-scrim="scrim">
-  <div class="ds-drawer-head"><strong>Product details</strong><span class="ds-x" data-close>✕</span></div>
+  <div class="ds-drawer-head"><strong>Product details</strong><span class="ds-x" data-close>{svg_icon('close')}</span></div>
   <div class="ds-drawer-body">
     <div class="sh-detail-art"></div>
     <span class="ds-eyebrow" id="detail-cat">Category</span>
@@ -128,9 +128,9 @@ def render(spec: ProductSpec) -> str:
     <button class="ds-btn ds-btn-primary" id="detail-add" data-add-cart data-price="0" data-name="Item" data-label="Add to cart" style="width:100%">Add to cart</button>
   </div>
 </aside>"""
-    cart_drawer = """
+    cart_drawer = f"""
 <aside class="ds-drawer" id="cart" data-scrim="scrim">
-  <div class="ds-drawer-head"><strong>Your cart</strong><span class="ds-x" data-close>✕</span></div>
+  <div class="ds-drawer-head"><strong>Your cart</strong><span class="ds-x" data-close>{svg_icon('close')}</span></div>
   <div class="ds-drawer-body">
     <p id="cart-empty" style="color:var(--text-dim)">Your cart is empty — add something you love.</p>
     <div id="cart-items"></div>
@@ -140,7 +140,7 @@ def render(spec: ProductSpec) -> str:
     <div class="sh-checkout-line"><span>Shipping</span><span>Free</span></div>
     <div class="sh-checkout-total"><span>Total</span><span>at checkout</span></div>
     <button class="ds-btn ds-btn-primary" data-reveal="checkout-status" style="width:100%;margin-top:12px">Checkout</button>
-    <div id="checkout-status" class="ds-badge ds-hidden" style="margin-top:12px">✓ Order placed — confirmation sent</div>
+    <div id="checkout-status" class="ds-badge ds-hidden" style="margin-top:12px;display:inline-flex;align-items:center;gap:6px">{svg_icon('check')} Order placed — confirmation sent</div>
   </div>
 </aside>"""
     return "\n".join([nav, "<main>", hero, shop, feat_sec, "</main>", footer,

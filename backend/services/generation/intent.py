@@ -113,6 +113,15 @@ _RULES: List[Tuple[re.Pattern, str]] = [
     (re.compile(r"\b(portfolio\s*(?:site|website|page)|personal\s*(?:site|website)|"
                 r"design(?:er)?\s*portfolio|resume|cv\b|showcase\s*site|"
                 r"photographer\s*site|portfolio\s*for)\b", re.I), "portfolio"),
+    # Explicit marketing surfaces → landing. Placed HIGH (before finance/
+    # ecommerce/admin/dashboard/fitness) — a request that explicitly says
+    # "landing page" / "marketing site" / "SaaS landing" is about a
+    # MARKETING PAGE FOR a product, even when it also names the product's
+    # own domain ("landing page for a finance analytics startup" must not
+    # fall to the generic "analytics" → dashboard rule below it).
+    (re.compile(r"\b(landing\s*page|marketing\s*(?:site|page)|"
+                r"product\s*launch|waitlist|coming\s*soon|saas\s*landing|"
+                r"startup\s*(?:site|landing|website))\b", re.I), "landing_page"),
     # Finance / banking / crypto.
     (re.compile(r"\b(bank|banking|fintech|wallet|crypto|trading|stock|equit|"
                 r"invest|expense|budget|accounting|payroll|finance\s*(?:app|tool))\b", re.I), "finance_tool"),
@@ -136,10 +145,6 @@ _RULES: List[Tuple[re.Pattern, str]] = [
     # Generic fitness / health apps → application_ui (real product), not marketing.
     (re.compile(r"\b(fitness|workout|gym|exercise|calorie|nutrition|"
                 r"meditation|sleep\s*tracker|habit)\b", re.I), "application_ui"),
-    # Explicit marketing surfaces → landing.
-    (re.compile(r"\b(landing\s*page|marketing\s*(?:site|page)|"
-                r"product\s*launch|waitlist|coming\s*soon|saas\s*landing|"
-                r"startup\s*(?:site|landing))\b", re.I), "landing_page"),
     # Generic content website.
     (re.compile(r"\b(website|web\s*site|web\s*page|homepage|company\s*site|"
                 r"agency\s*site|blog)\b", re.I), "website"),
