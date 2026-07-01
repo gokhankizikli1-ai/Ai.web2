@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import re
+from typing import List, Tuple
 
 from backend.services.generation import component_library as cl
 from backend.services.generation.renderers import base
@@ -83,6 +84,15 @@ _NAV_ICONS = {
     "settings": "⚙", "accounts": "🏦", "transactions": "💳", "investments": "📈", "cards": "💳",
     "portfolio": "🪙", "markets": "📉", "assets": "🗂", "alerts": "🔔", "chats": "💬",
     "models": "🧠", "library": "📚", "leaderboard": "🏆", "players": "🎮",
+    # Sprint 2.2 — diversified generic verticals (finance ops / ecommerce
+    # ops / CRM / SaaS-AI / health / education) + the richer generic
+    # fallback nav.
+    "command center": "🎯", "command": "🎯", "signals": "📡", "risk": "🛡", "insights": "📊",
+    "products": "📦", "orders": "🧾", "customers": "🧑", "campaigns": "📣",
+    "pipeline": "🧭", "leads": "🎯", "tasks": "✅", "forecast": "📈",
+    "workspace": "🗂", "automations": "⚡", "team": "🧑", "integrations": "🔌",
+    "plans": "🗺", "coaching": "🎯", "courses": "🎓", "lessons": "📚", "community": "💬",
+    "workflows": "🧭",
 }
 
 
@@ -151,19 +161,145 @@ def _planner(spec: ProductSpec) -> str:
 
 
 def _settings(spec: ProductSpec) -> str:
-    toggles = [("Email notifications", True), ("Weekly summary", True),
-               ("Dark appearance", bool(spec.dark_mode)), ("Two-factor auth", False)]
-    rows = "".join(f"""
-    <div class="ds-row"><div><div style="color:var(--text);font-weight:600">{e(l)}</div>
-      <div style="color:var(--text-dim);font-size:.82rem">Manage your {e(l.lower())}.</div></div>
-      <div class="ds-switch{' is-on' if on else ''}" role="switch" tabindex="0"></div></div>""" for l, on in toggles)
+    # Sprint 2.2 — grouped settings sections (Account / Workspace / Security)
+    # instead of one flat toggle list, so a Settings page has real hierarchy.
+    groups = [
+        ("Account", [("Email notifications", True), ("Weekly summary", True)]),
+        ("Workspace", [("Dark appearance", bool(spec.dark_mode)), ("Compact density", False)]),
+        ("Security", [("Two-factor auth", False), ("Login alerts", True)]),
+    ]
+    section_html = "".join(f"""
+    <div class="ds-card ds-rise" style="margin-bottom:14px">
+      <div class="db-section-label" style="padding:0 0 10px">{e(title)}</div>
+      {"".join(f'''
+      <div class="ds-row"><div><div style="color:var(--text);font-weight:600">{e(l)}</div>
+        <div style="color:var(--text-dim);font-size:.82rem">Manage your {e(l.lower())}.</div></div>
+        <div class="ds-switch{" is-on" if on else ""}" role="switch" tabindex="0"></div></div>''' for l, on in rows)}
+    </div>""" for title, rows in groups)
     return f"""
-    <div style="display:grid;grid-template-columns:1fr;gap:18px;max-width:640px">
-      <div class="ds-card ds-rise" style="display:flex;align-items:center;gap:14px">
+    <div style="display:grid;grid-template-columns:1fr;gap:4px;max-width:640px">
+      <div class="ds-card ds-rise" style="display:flex;align-items:center;gap:14px;margin-bottom:14px">
         {avatar(spec.name)}<div><h3>{e(spec.name)} workspace</h3>
         <p style="font-size:.86rem">{e(spec.audience)}</p></div></div>
-      <div class="ds-card ds-rise">{rows}</div>
+      {section_html}
     </div>"""
+
+
+# ── Sprint 2.2 — realistic table/card pages for the diversified generic
+# verticals (ecommerce ops / CRM): Products, Orders, Campaigns, Pipeline,
+# Leads, Forecast. Keyword-matched on the page LABEL, not the vertical, so
+# it works for any nav that uses these words.
+
+_TABLE_KIND_RULES: List[Tuple[re.Pattern, str]] = [
+    (re.compile(r"product"), "products"),
+    (re.compile(r"campaign"), "campaigns"),
+    (re.compile(r"pipeline|deal"), "pipeline"),
+    (re.compile(r"lead"), "leads"),
+    (re.compile(r"forecast"), "forecast"),
+]
+
+
+def _table_rows(kind: str, spec: ProductSpec):
+    if kind == "products":
+        return (["Product", "Price", "Stock", "Status"], [
+            ["Runner Low", "$148", "42 in stock", "Active"],
+            ["Trail Boot", "$220", "18 in stock", "Active"],
+            ["Shell Jacket", "$320", "6 in stock", "Low stock"],
+            ["Wool Overcoat", "$410", "0 in stock", "Out of stock"],
+            ["Leather Tote", "$180", "27 in stock", "Active"],
+        ])
+    if kind == "campaigns":
+        return (["Campaign", "Channel", "Spend", "Conversions"], [
+            ["Spring Launch", "Email", "$1,200", "312"],
+            ["Retarget — Cart", "Paid Social", "$860", "148"],
+            ["Search — Brand", "Search", "$540", "204"],
+            ["Influencer Drop", "Social", "$2,100", "96"],
+        ])
+    if kind == "pipeline":
+        return (["Deal", "Stage", "Value", "Owner"], [
+            ["Northwind Logistics", "Negotiation", "$84,000", "Ava Chen"],
+            ["Mercura Retail", "Proposal", "$52,000", "Marcus Lee"],
+            ["Cobalt Finance", "Discovery", "$120,000", "Priya Nair"],
+            ["Lumio Group", "Closed won", "$36,000", "Diego Ramirez"],
+        ])
+    if kind == "leads":
+        return (["Lead", "Company", "Stage", "Value"], [
+            ["Ava Chen", "Northwind", "Qualified", "$18,000"],
+            ["Marcus Lee", "Mercura", "New", "$9,500"],
+            ["Priya Nair", "Cobalt", "Contacted", "$42,000"],
+            ["Diego Ramirez", "Lumio", "Qualified", "$27,000"],
+        ])
+    if kind == "forecast":
+        return (["Period", "Target", "Forecast", "Variance"], [
+            ["This month", "$120k", "$132k", "+10%"],
+            ["Next month", "$130k", "$118k", "-9%"],
+            ["Quarter", "$390k", "$402k", "+3%"],
+        ])
+    return (["Metric", "Value", "Change"],
+            [[m.get("label", "—"), m.get("value", "—"), m.get("delta", "")] for m in (spec.metrics or [])[:5]])
+
+
+def _data_table_page(spec: ProductSpec, label: str) -> str:
+    kind = "generic"
+    for pattern, name in _TABLE_KIND_RULES:
+        if pattern.search(label.lower()):
+            kind = name
+            break
+    headers, rows = _table_rows(kind, spec)
+    stat_cards = "".join(
+        f'<div class="ds-col-2"><div class="ds-card ds-rise db-stat">'
+        f'<span class="lbl">{e(m.get("label"))}</span>'
+        f'<span class="ds-stat-value" style="font-size:1.3rem">{e(m.get("value"))}</span>'
+        f'<span class="ds-stat-delta">{e(m.get("delta"))}</span></div></div>'
+        for m in (spec.metrics or [])[:3]
+    )
+    add_label = label[:-1] if label.lower().endswith("s") else label
+    return (
+        (f'<div class="ds-bento" style="margin-bottom:16px">{stat_cards}</div>' if stat_cards else "")
+        + f'<div class="ds-card ds-rise"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">'
+        f'<h3>{e(label)}</h3><button class="ds-btn ds-btn-ghost ds-btn-sm" data-select>+ Add {e(add_label)}</button></div>'
+        f'{cl.table(headers, rows)}</div>'
+    )
+
+
+# ── Sprint 2.2 — integrations + team pages (SaaS/AI vertical) ──────────
+
+_INTEGRATIONS = [
+    ("Slack", "Team notifications and alerts", True),
+    ("Google Drive", "Sync files and documents", True),
+    ("Stripe", "Payments and billing", False),
+    ("Zapier", "Connect thousands of apps", False),
+    ("GitHub", "Link code and deployments", True),
+    ("Notion", "Sync docs and wikis", False),
+]
+
+
+def _integrations_page(spec: ProductSpec) -> str:
+    cards = "".join(f"""
+    <div class="ds-card ds-rise" style="display:flex;align-items:center;gap:14px;padding:16px">
+      {avatar(name)}
+      <div style="flex:1"><h3 style="font-size:.98rem">{e(name)}</h3>
+        <p style="font-size:.84rem;margin-top:2px">{e(desc)}</p></div>
+      {cl.status_pill("Connected" if connected else "Connect", "positive" if connected else "neutral")}
+    </div>""" for name, desc, connected in _INTEGRATIONS)
+    return f'<div style="display:grid;gap:12px">{cards}</div>'
+
+
+_TEAM_SAMPLE = [
+    ("Ava Chen", "Product Lead", "Active"), ("Marcus Lee", "Engineering", "Active"),
+    ("Priya Nair", "Design", "Away"), ("Diego Ramirez", "Growth", "Active"),
+]
+
+
+def _team_page(spec: ProductSpec) -> str:
+    cards = "".join(f"""
+    <div class="ds-card ds-rise" style="display:flex;align-items:center;gap:14px;padding:16px">
+      {avatar(name)}
+      <div style="flex:1"><h3 style="font-size:.98rem">{e(name)}</h3>
+        <p style="font-size:.84rem;margin-top:2px">{e(role)}</p></div>
+      {cl.status_pill(status, "positive" if status == "Active" else "neutral")}
+    </div>""" for name, role, status in _TEAM_SAMPLE)
+    return f'<div class="ds-grid">{cards}</div>'
 
 
 def _reveal(spec: ProductSpec) -> str:
@@ -251,7 +387,20 @@ def _overview(spec: ProductSpec, label: str) -> str:
     # in place of a second generic activity feed.
     finance = _finance_panel(spec) if spec.product_type == "crypto" else ""
     perf_secondary = finance or f'<div class="ds-col-2">{_feed(spec)}</div>'
+    # Sprint 2.2 — a hero summary banner above the tabs: a one-line status
+    # + a goal ring, so Overview reads as a command center, not just a
+    # metric grid straight under the page head.
+    top_metric = (spec.metrics or [{}])[0]
+    hero = f"""
+  <div class="ds-card ds-rise" style="margin-bottom:20px;padding:20px;display:flex;align-items:center;
+    justify-content:space-between;gap:18px;background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 12%,var(--surface)),var(--surface))">
+    <div><h2 style="font-size:1.05rem;margin-bottom:6px">{e(spec.primary_goals[0] if spec.primary_goals else "Everything is up to date.")}</h2>
+      <p style="font-size:.86rem;margin:0">{e(top_metric.get('label', 'Status'))}: <strong style="color:var(--text)">{e(top_metric.get('value', '—'))}</strong>
+        {("· " + e(top_metric.get("delta", ""))) if top_metric.get("delta") else ""}</p></div>
+    {ring(78, "On track")}
+  </div>"""
     return f"""
+  {hero}
   <div class="db-tabs" role="tablist">
     <span class="db-tab is-active" data-tab="seg-week" data-tab-group="ov">This week</span>
     <span class="db-tab" data-tab="seg-month" data-tab-group="ov">This month</span>
@@ -276,11 +425,33 @@ def _page_body(spec: ProductSpec, idx: int, label: str) -> str:
     key = label.lower()
     if re.search(r"record", key):
         return _records_page(spec)
-    if re.search(r"progress|analytic|report|insight|market|chart|stat", key):
-        body = (f'<div class="ds-bento"><div class="ds-card ds-col-4 ds-row-2 ds-rise"><h3>Trends</h3>{bars(20)}</div>'
+    if re.search(r"integrat", key):
+        return _integrations_page(spec)
+    if re.search(r"\bteam\b", key):
+        return _team_page(spec)
+    # Sprint 2.2 — realistic table/list pages for the ecommerce-ops/CRM
+    # verticals (Products, Campaigns, Pipeline, Leads, Forecast). Placed
+    # ahead of the analytics/activity buckets below so these words win.
+    if re.search(r"product|campaign|pipeline|lead|forecast|deal", key):
+        return _data_table_page(spec, label)
+    if re.search(r"progress|analytic|report|insight|market|chart|stat|signal|risk|invest", key):
+        # Sprint 2.2 — a KPI/insight-card row on top of the existing chart
+        # grid, so an analytics-ish page reads as data-dense, not just a
+        # trend line + one feed.
+        insight_cards = "".join(
+            f'<div class="ds-col-2">{cl.premium_metric_card(m.get("label", ""), m.get("value", ""), m.get("delta", ""), icon=_metric_icon(m.get("label", "")), trend_positive=not str(m.get("delta", "")).strip().startswith("-"))}</div>'
+            for m in (spec.metrics or [])[:3]
+        )
+        body = (f'<div class="ds-bento" style="margin-bottom:16px">{insight_cards}</div>' if insight_cards else "")
+        body += (f'<div class="ds-bento"><div class="ds-card ds-col-4 ds-row-2 ds-rise"><h3>Trends</h3>{bars(20)}</div>'
                 f'<div class="ds-card ds-col-2 ds-rise" style="display:flex;flex-direction:column;align-items:center;gap:10px;justify-content:center">{ring(68,"Goal")}</div>'
                 f'<div class="ds-card ds-col-2 ds-rise"><h3 style="margin-bottom:6px">Momentum</h3>{spark()}</div>'
                 f'<div class="ds-col-6">{_feed(spec, "Latest updates")}</div></div>')
+        if re.search(r"report", key) and spec.metrics:
+            body += (f'<div class="ds-card ds-rise" style="margin-top:16px"><h3 style="margin-bottom:10px">Report summary</h3>'
+                    + cl.table(["Metric", "This period", "Change"],
+                               [[m.get("label", "—"), m.get("value", "—"), m.get("delta", "")] for m in (spec.metrics or [])[:4]])
+                    + '</div>')
         if (spec.data or {}).get("variant") == "analytics_dashboard":
             body += _insights_timeline(spec)
         elif spec.product_type == "fitness":
@@ -288,14 +459,14 @@ def _page_body(spec: ProductSpec, idx: int, label: str) -> str:
         return body
     if re.search(r"setting|profile|account$|cards", key):
         return _settings(spec)
-    if re.search(r"activit|transaction|asset|alert|notif|customer|order|history", key):
+    if re.search(r"activit|transaction|asset|alert|notif|customer|order|history|communit", key):
         return (f'<div class="ds-bento"><div class="ds-col-4">{_feed(spec, label)}</div>'
                 f'<div class="ds-card ds-col-2 ds-rise"><h3 style="margin-bottom:8px">Summary</h3>'
                 + "".join(f'<div class="db-stat" style="margin-bottom:12px"><span class="lbl">{e(m.get("label"))}</span>'
                           f'<span class="ds-stat-value" style="font-size:1.4rem">{e(m.get("value"))}</span>'
                           f'<span class="ds-stat-delta">{e(m.get("delta"))}</span></div>' for m in (spec.metrics or [])[:3])
                 + '</div></div>')
-    if re.search(r"workout|task|plan|library|model|chat|account", key):
+    if re.search(r"workout|task|plan|library|model|chat|account|nutrition|coach|course|lesson|workflow|automat", key):
         return _planner(spec)
     return _overview(spec, label)
 
