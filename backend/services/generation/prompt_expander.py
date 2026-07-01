@@ -987,6 +987,10 @@ _BRAND_PREFIXES = ("Thread", "Loom", "Atelier", "Mercer", "Bolt", "Drape", "Selv
 _BRAND_SUFFIXES = ("Metrics", "Ledger", "Insight", "Pulse", "Signal", "IQ", "Command")
 
 
+def _brand_token_key(word: str) -> str:
+    return re.sub(r"^[^a-z0-9]+|[^a-z0-9]+$", "", word.lower())
+
+
 def _title_from_request(user_request: str) -> str:
     t = re.sub(r"^\s*(build|create|make|design|generate|develop)\s+(me\s+)?(?:an|a|the)\s+",
                "", (user_request or "").strip(), flags=re.IGNORECASE)
@@ -997,7 +1001,7 @@ def _title_from_request(user_request: str) -> str:
                r"platform|software|store|shop)\b.*$", "", t, flags=re.IGNORECASE).strip(" .-")
     words = [w for w in re.split(r"\s+", t) if w]
     # A named platform/integration is context, never the generated brand.
-    words = [w for w in words if w.lower() not in _PLATFORM_WORDS][:3]
+    words = [w for w in words if _brand_token_key(w) not in _PLATFORM_WORDS][:3]
     return " ".join(w.capitalize() for w in words)
 
 

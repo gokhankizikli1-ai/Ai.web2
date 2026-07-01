@@ -101,6 +101,7 @@ export default function BuilderRefinePanel({
   const openTo = (t: Tab) => { setOpen(true); setTab(t); };
 
   const handleChip = (qe: QuickEdit) => {
+    if (busy) return;
     if (qe.patch) { onApply({ instruction: '', ...qe.patch }); return; }
     if (qe.instruction) { setInstruction(qe.instruction); openTo('refine'); return; }
     openTo('settings');
@@ -164,7 +165,8 @@ export default function BuilderRefinePanel({
                   <button
                     key={qe.label}
                     onClick={() => handleChip(qe)}
-                    className="px-2.5 py-1.5 rounded-lg text-[11px] border bg-white/[0.02] text-slate-300 hover:text-white transition-all"
+                    disabled={busy}
+                    className="px-2.5 py-1.5 rounded-lg text-[11px] border bg-white/[0.02] text-slate-300 hover:text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                     style={{ borderColor: `${accent}30` }}
                   >
                     {qe.label}

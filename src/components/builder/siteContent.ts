@@ -683,11 +683,11 @@ function brandSwatchesForDirection(colorDirection?: string): Array<{ hex: string
 }
 
 export function generateSiteContent(
-  prompt: string, brief?: DesignBriefAnswers | null, brandOverride?: string | null,
+  prompt: string, brief?: DesignBriefAnswers | null, brandOverride?: string | null, brandPrompt = prompt,
 ): SiteContent {
   const category = detectCategory(prompt);
   const retail = detectRetailFlavor(prompt);
-  const brand = (brandOverride || '').trim() || brandNameFromPrompt(prompt);
+  const brand = (brandOverride || '').trim() || brandNameFromPrompt(brandPrompt);
   const body = BUILDERS[category]({ brand, retail });
   return {
     category,

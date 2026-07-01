@@ -88,6 +88,7 @@ export default function WebsiteBuilder() {
   const [activeSection, setActiveSection] = useState('hero');
   const [view, setView] = useState<'preview' | 'structure'>('preview');
   const [lastPrompt, setLastPrompt] = useState('');
+  const [brandPrompt, setBrandPrompt] = useState('');
   const [brief, setBrief] = useState<DesignBriefAnswers>(() => smartDefaultsFromPrompt(''));
   const [briefPrompt, setBriefPrompt] = useState<string | null>(null);
   const [brandOverride, setBrandOverride] = useState<string | null>(null);
@@ -96,6 +97,7 @@ export default function WebsiteBuilder() {
   const startGeneration = (finalPrompt: string, answers: DesignBriefAnswers) => {
     setGenerating(true);
     setLastPrompt(finalPrompt);
+    setBrandPrompt(finalPrompt);
     setBrief(answers);
     setBrandOverride(null);
     setCtaOverride(null);
@@ -139,10 +141,10 @@ export default function WebsiteBuilder() {
   };
 
   const content = useMemo(() => {
-    const c = generateSiteContent(lastPrompt, brief, brandOverride);
+    const c = generateSiteContent(lastPrompt, brief, brandOverride, brandPrompt);
     if (!ctaOverride) return c;
     return { ...c, hero: { ...c.hero, primaryCta: ctaOverride }, cta: { ...c.cta, button: ctaOverride } };
-  }, [lastPrompt, brief, brandOverride, ctaOverride]);
+  }, [lastPrompt, brandPrompt, brief, brandOverride, ctaOverride]);
   const palette = useMemo(() => paletteForDirection(brief.colorDirection), [brief.colorDirection]);
   const siteUrl = `${(content.brandName || 'yourbrand').replace(/\s+/g, '').toLowerCase()}.ai`;
   const visibleSections = SECTIONS.filter((s) => s.id !== 'pricing' || content.pricing.length > 0);
