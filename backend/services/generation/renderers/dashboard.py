@@ -76,7 +76,7 @@ CSS = """
 CSS = CSS + "\n\n" + cl.CSS
 
 _PERSONALITY_BY_TYPE = {"fitness": "db-personality-fitness", "crypto": "db-personality-finance",
-                        "banking": "db-personality-finance"}
+                        "banking": "db-personality-finance", "finance_ops": "db-personality-finance"}
 
 # Sprint 2.3 — nav icons are SVG icon NAMES (resolved via svg_icon()), not
 # emoji glyphs. No raw emoji ever reaches the sidebar.
@@ -198,6 +198,7 @@ _TABLE_KIND_RULES: List[Tuple[re.Pattern, str]] = [
     (re.compile(r"pipeline|deal"), "pipeline"),
     (re.compile(r"lead"), "leads"),
     (re.compile(r"forecast"), "forecast"),
+    (re.compile(r"portfolio"), "holdings"),
 ]
 
 
@@ -237,6 +238,11 @@ def _table_rows(kind: str, spec: ProductSpec):
             ["Next month", "$130k", "$118k", "-9%"],
             ["Quarter", "$390k", "$402k", "+3%"],
         ])
+    if kind == "holdings":
+        asset_classes = (spec.data or {}).get("asset_classes") or []
+        return (["Asset class", "Value", "Allocation"],
+                [[a.get("label", "—"), a.get("value", "—"), f"{a.get('pct', 0)}%"] for a in asset_classes] or
+                [["Holdings", "—", "—"]])
     return (["Metric", "Value", "Change"],
             [[m.get("label", "—"), m.get("value", "—"), m.get("delta", "")] for m in (spec.metrics or [])[:5]])
 
@@ -365,17 +371,48 @@ _SAMPLE_TICKERS = [
 
 
 def _finance_panel(spec: ProductSpec) -> str:
-    rows = "".join(cl.watchlist_row(sym, name, price, chg) for sym, name, price, chg in _SAMPLE_TICKERS)
-    alloc = (spec.metrics or [])[:3] or [{"label": "Holdings", "value": "—"}]
-    allocations = [46, 32, 18]
-    cards = "".join(
-        cl.portfolio_card(m.get("label", "Asset"), m.get("value", "—"),
-                          allocation_pct=allocations[i % len(allocations)], trend_positive=i % 2 == 0)
-        for i, m in enumerate(alloc)
-    )
+    """Watchlist + allocation cards — crypto uses its own sample tickers;
+    finance_ops carries a real equity watchlist + asset-class exposure in
+    `spec.data`, generated for this exact prompt (not the crypto sample)."""
+    tickers = (spec.data or {}).get("watchlist") or _SAMPLE_TICKERS
+    rows = "".join(cl.watchlist_row(sym, name, price, chg) for sym, name, price, chg in tickers)
+    asset_classes = (spec.data or {}).get("asset_classes")
+    if asset_classes:
+        cards = "".join(
+            cl.portfolio_card(a.get("label", "Asset"), a.get("value", "—"),
+                              allocation_pct=int(a.get("pct", 0)), trend_positive=i % 2 == 0)
+            for i, a in enumerate(asset_classes)
+        )
+    else:
+        alloc = (spec.metrics or [])[:3] or [{"label": "Holdings", "value": "—"}]
+        allocations = [46, 32, 18]
+        cards = "".join(
+            cl.portfolio_card(m.get("label", "Asset"), m.get("value", "—"),
+                              allocation_pct=allocations[i % len(allocations)], trend_positive=i % 2 == 0)
+            for i, m in enumerate(alloc)
+        )
     return (f'<div class="ds-bento" style="margin-top:18px">'
             f'<div class="ds-card ds-col-3 ds-rise"><h3 style="margin-bottom:10px">Watchlist</h3>{rows}</div>'
             f'<div class="ds-col-3" style="display:grid;gap:14px">{cards}</div></div>')
+
+
+def _finance_command_center_extras(spec: ProductSpec) -> str:
+    """Risk heatmap + AI insights + scenario alerts — the depth that makes
+    a finance dashboard read as an actual command center rather than a
+    plain metric-card grid. No-op when the spec carries none of these
+    (every other dashboard vertical)."""
+    data = spec.data or {}
+    heatmap, insights, alerts = data.get("risk_heatmap"), data.get("ai_insights"), data.get("scenario_alerts")
+    if not (heatmap or insights or alerts):
+        return ""
+    blocks = []
+    if heatmap:
+        blocks.append(f'<div class="ds-card ds-col-3 ds-rise"><h3 style="margin-bottom:10px">Risk heatmap</h3>{cl.risk_heatmap(heatmap)}</div>')
+    if insights:
+        blocks.append(f'<div class="ds-card ds-col-3 ds-rise"><h3 style="margin-bottom:10px">AI insights</h3>{cl.notifications_panel(insights)}</div>')
+    if alerts:
+        blocks.append(f'<div class="ds-card ds-col-6 ds-rise"><h3 style="margin-bottom:10px">Scenario alerts</h3>{cl.notifications_panel(alerts)}</div>')
+    return f'<div class="ds-bento" style="margin-top:18px">{"".join(blocks)}</div>'
 
 
 def _overview(spec: ProductSpec, label: str) -> str:
@@ -394,8 +431,9 @@ def _overview(spec: ProductSpec, label: str) -> str:
     # Sprint 2.1 — crypto/trading gets an analytical watchlist + portfolio
     # allocation panel right in the overview (its defining personality),
     # in place of a second generic activity feed.
-    finance = _finance_panel(spec) if spec.product_type == "crypto" else ""
+    finance = _finance_panel(spec) if spec.product_type in ("crypto", "finance_ops") else ""
     perf_secondary = finance or ("" if is_clean else f'<div class="ds-col-2">{_feed(spec)}</div>')
+    finance_extras = _finance_command_center_extras(spec) if spec.product_type == "finance_ops" else ""
 
     extra_dense = ""
     if is_dense and spec.metrics:
@@ -433,6 +471,7 @@ def _overview(spec: ProductSpec, label: str) -> str:
     {perf_secondary}
   </div>
   {extra_dense}
+  {finance_extras}
   <h2 style="font-size:1.25rem;margin:26px 0 14px">Quick actions</h2>
   <div class="ds-grid">{cards}</div>"""
 
@@ -447,10 +486,11 @@ def _page_body(spec: ProductSpec, idx: int, label: str) -> str:
         return _integrations_page(spec)
     if re.search(r"\bteam\b", key):
         return _team_page(spec)
-    # Sprint 2.2 — realistic table/list pages for the ecommerce-ops/CRM
-    # verticals (Products, Campaigns, Pipeline, Leads, Forecast). Placed
-    # ahead of the analytics/activity buckets below so these words win.
-    if re.search(r"product|campaign|pipeline|lead|forecast|deal", key):
+    # Sprint 2.2 — realistic table/list pages for the ecommerce-ops/CRM/
+    # finance-ops verticals (Products, Campaigns, Pipeline, Leads,
+    # Forecast, Portfolio holdings). Placed ahead of the analytics/
+    # activity buckets below so these words win.
+    if re.search(r"product|campaign|pipeline|lead|forecast|deal|portfolio", key):
         return _data_table_page(spec, label)
     if re.search(r"progress|analytic|report|insight|market|chart|stat|signal|risk|invest", key):
         # Sprint 2.2 — a KPI/insight-card row on top of the existing chart

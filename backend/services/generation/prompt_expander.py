@@ -324,7 +324,7 @@ def _recipe_app() -> ProductSpec:
 def _notes(user_request: str, style: Dict) -> ProductSpec:
     """A real note-taking / editor application (sidebar + list + editor),
     NOT a marketing page. The headline regression: "Apple Notes style app"."""
-    name = _title_from_request(user_request) or "Notes"
+    name = _brand_name(user_request, "Notes")
     folders = [
         {"name": "All Notes", "key": "all", "count": 6, "icon": "🗒"},
         {"name": "Personal", "key": "personal", "count": 2, "icon": "👤"},
@@ -378,7 +378,7 @@ def _notes(user_request: str, style: Dict) -> ProductSpec:
 
 
 def _ecommerce(user_request: str, style: Dict) -> ProductSpec:
-    name = _title_from_request(user_request) or "Atelier"
+    name = _brand_name(user_request, "Atelier")
     categories = [
         {"name": "All", "key": "all"}, {"name": "Footwear", "key": "footwear"},
         {"name": "Outerwear", "key": "outerwear"}, {"name": "Accessories", "key": "accessories"},
@@ -415,7 +415,7 @@ def _ecommerce(user_request: str, style: Dict) -> ProductSpec:
 
 
 def _booking(user_request: str, style: Dict) -> ProductSpec:
-    name = _title_from_request(user_request) or "Wander"
+    name = _brand_name(user_request, "Wander")
     rooms = [
         {"name": "Garden Studio", "price": "$180", "per": "night", "blurb": "Cosy studio opening onto the courtyard.", "features": ["1 bed", "Garden view", "28 m²"]},
         {"name": "Deluxe King", "price": "$240", "per": "night", "blurb": "Spacious king room with city views.", "features": ["King bed", "City view", "40 m²"]},
@@ -445,7 +445,7 @@ def _booking(user_request: str, style: Dict) -> ProductSpec:
 
 
 def _portfolio(user_request: str, style: Dict) -> ProductSpec:
-    name = _title_from_request(user_request) or "Studio"
+    name = _brand_name(user_request, "Studio")
     projects = [
         _card("Northwind", "Brand & product design for a logistics startup.", "◆"),
         _card("Mercura", "Design system and marketing site.", "◇"),
@@ -559,9 +559,7 @@ def _website(user_request: str, style: Dict) -> ProductSpec:
     same depth as the hand-built verticals (_saas, _fitness, ...): social
     proof, a real reason-to-believe section, testimonials and an FAQ —
     using only Section kinds the landing renderer already supports."""
-    name = _title_from_request(user_request) or "Northwind"
-    if not _has_believable_brand(name.split()):
-        name = _synthesize_brand(user_request)
+    name = _brand_name(user_request, "Northwind")
     if _RETAIL_HINT_RE.search(user_request) and _ANALYTICS_HINT_RE.search(user_request):
         return _retail_analytics_website(user_request, style, name)
     return ProductSpec(
@@ -611,7 +609,14 @@ def _website(user_request: str, style: Dict) -> ProductSpec:
 # app/dashboard request" path.
 
 def _finance_ops(user_request: str, style: Dict, intent: str) -> ProductSpec:
-    name = _title_from_request(user_request) or "Meridian"
+    """A portfolio-intelligence command center — "Create a luxury AI finance
+    dashboard for portfolio managers" and its many variants. Metrics go
+    beyond the headline four (AUM, P&L, signals, risk) into the figures a
+    real desk actually watches — drawdown, alpha/beta, volatility — and
+    `data` carries the structured extras (watchlist, asset-class exposure,
+    risk heatmap, AI insights, scenario alerts) the dashboard renderer
+    assembles into a genuine command-center mockup, not a plain card grid."""
+    name = _brand_name(user_request, "Meridian")
     return ProductSpec(
         product_type="finance_ops", name=name, tagline=f"{name} — clarity on every position.",
         description=f"{name} is a real-time command center for markets, risk and performance — signals, exposure and reporting in one calm view.",
@@ -625,20 +630,58 @@ def _finance_ops(user_request: str, style: Dict, intent: str) -> ProductSpec:
             {"label": "Today's P&L", "value": "+$62,480", "delta": "+0.9%"},
             {"label": "Active signals", "value": "14", "delta": "5 new"},
             {"label": "Risk exposure", "value": "Moderate", "delta": "Within limits"},
+            {"label": "Max drawdown", "value": "-4.2%", "delta": "Within -6% policy"},
+            {"label": "Volatility (30d)", "value": "11.8%", "delta": "-0.9pt"},
+            {"label": "Alpha", "value": "1.6", "delta": "vs. benchmark"},
+            {"label": "Beta", "value": "0.87", "delta": "vs. benchmark"},
         ],
         sections=[
             _S("metrics", "Command Center"),
             _S("features", "Built for serious desks", items=[
-                _card("Live signals", "Model-driven entries and exits, ranked by conviction.", "📡"),
-                _card("Risk monitor", "Exposure, drawdown and limits, always visible.", "🛡"),
-                _card("Portfolio analytics", "Attribution and performance, sliced any way.", "📊"),
-                _card("Reporting", "Investor-ready reports in one click.", "🧾"),
+                _card("Live signals", "Model-driven entries and exits, ranked by conviction.", "compass"),
+                _card("Risk monitor", "Exposure, drawdown and limits, always visible.", "shield"),
+                _card("Portfolio analytics", "Attribution and performance, sliced any way.", "chart"),
+                _card("Reporting", "Investor-ready reports in one click.", "list"),
             ]),
             _S("panel", "Today's signals", subtitle="Ranked by model conviction"),
         ],
         cta_primary="Open command center", cta_secondary="View signals",
         theme={"accent": "", "accent2": "", "mode": style.get("mode", "dark")},
-        components=["Sidebar", "Dashboard Cards", "Statistics", "Charts", "Watchlist", "Reports", "Settings", "Footer"],
+        components=["Sidebar", "Dashboard Cards", "Statistics", "Charts", "Watchlist", "Risk Heatmap", "AI Insights", "Reports", "Settings", "Footer"],
+        data={
+            "watchlist": [
+                ("AAPL", "Apple Inc.", "$228.40", 1.2), ("MSFT", "Microsoft Corp.", "$412.65", 0.6),
+                ("NVDA", "NVIDIA Corp.", "$118.90", -2.1), ("XOM", "Exxon Mobil", "$114.20", 0.4),
+            ],
+            "asset_classes": [
+                {"label": "Equities", "value": "$8.5M", "pct": 46},
+                {"label": "Fixed Income", "value": "$5.9M", "pct": 32},
+                {"label": "Alternatives", "value": "$4.0M", "pct": 22},
+            ],
+            "risk_heatmap": [
+                {"label": "Equities", "level": "medium"}, {"label": "Rates", "level": "low"},
+                {"label": "Credit", "level": "medium"}, {"label": "FX", "level": "high"},
+                {"label": "Liquidity", "level": "low"}, {"label": "Concentration", "level": "critical"},
+            ],
+            "ai_insights": [
+                {"icon": "shield", "title": "Drawdown approaching threshold",
+                 "body": "Portfolio drawdown is -4.2%, within the -6% policy limit but trending down for 3 sessions.", "unread": True},
+                {"icon": "chart", "title": "Alpha decay in the momentum sleeve",
+                 "body": "Rolling alpha has fallen from 2.1 to 0.6 over the last 10 sessions.", "unread": True},
+                {"icon": "compass", "title": "Rebalancing opportunity",
+                 "body": "Fixed income has drifted 3.2pt above target — consider trimming.", "unread": False},
+                {"icon": "bolt", "title": "Volatility breakout signal",
+                 "body": "Cross-asset volatility crossed its 30-day average; 3 positions flagged for review.", "unread": False},
+            ],
+            "scenario_alerts": [
+                {"icon": "bell", "title": "Rate hike scenario (+50bps)",
+                 "body": "Estimated impact: -1.8% NAV, concentrated in duration-sensitive holdings.", "unread": True},
+                {"icon": "bell", "title": "Equity drawdown scenario (-10%)",
+                 "body": "Hedges offset ~40% of the estimated loss; unhedged exposure remains in tech.", "unread": False},
+                {"icon": "bell", "title": "USD strength scenario",
+                 "body": "Net FX exposure would reduce returns by an estimated -0.6%.", "unread": False},
+            ],
+        },
     )
 
 
@@ -646,7 +689,7 @@ def _ecommerce_ops(user_request: str, style: Dict, intent: str) -> ProductSpec:
     """A seller/merchant back-office dashboard — distinct from `_ecommerce()`
     above, which is the customer-facing storefront (`layout="ecommerce"`).
     This is the operator's view: sales, orders, customers, campaigns."""
-    name = _title_from_request(user_request) or "Merchant Hub"
+    name = _brand_name(user_request, "Merchant Hub")
     return ProductSpec(
         product_type="ecommerce_ops", name=name, tagline=f"{name} — every order, one dashboard.",
         description=f"{name} is a seller command center — sales, inventory, customers and campaigns in one fast, well-designed view.",
@@ -678,7 +721,7 @@ def _ecommerce_ops(user_request: str, style: Dict, intent: str) -> ProductSpec:
 
 
 def _crm(user_request: str, style: Dict, intent: str) -> ProductSpec:
-    name = _title_from_request(user_request) or "Pipeline"
+    name = _brand_name(user_request, "Pipeline")
     return ProductSpec(
         product_type="crm", name=name, tagline=f"{name} — deals that don't fall through the cracks.",
         description=f"{name} is a sales CRM — pipeline, leads and forecast in one clear, fast workspace built to close more deals.",
@@ -710,7 +753,7 @@ def _crm(user_request: str, style: Dict, intent: str) -> ProductSpec:
 
 
 def _saas_ai(user_request: str, style: Dict, intent: str) -> ProductSpec:
-    name = _title_from_request(user_request) or "Nexus"
+    name = _brand_name(user_request, "Nexus")
     return ProductSpec(
         product_type="saas_ai", name=name, tagline=f"{name} — your team's operating system.",
         description=f"{name} is an AI-powered workspace — automations, insights and integrations that keep the whole team in sync.",
@@ -745,7 +788,7 @@ def _health(user_request: str, style: Dict, intent: str) -> ProductSpec:
     """A health/wellbeing dashboard for the bare word "health" — distinct
     from the dedicated `_fitness()` vertical above, which already owns the
     workout/gym/calorie/nutrition keyword space and its own nav."""
-    name = _title_from_request(user_request) or "Vitality"
+    name = _brand_name(user_request, "Vitality")
     return ProductSpec(
         product_type="health", name=name, tagline=f"{name} — your health, one clear view.",
         description=f"{name} is a personal health companion — plans, progress and coaching that adapt to you.",
@@ -777,7 +820,7 @@ def _health(user_request: str, style: Dict, intent: str) -> ProductSpec:
 
 
 def _education(user_request: str, style: Dict, intent: str) -> ProductSpec:
-    name = _title_from_request(user_request) or "Learnly"
+    name = _brand_name(user_request, "Learnly")
     return ProductSpec(
         product_type="education", name=name, tagline=f"{name} — learning that keeps you moving.",
         description=f"{name} is a learning workspace — courses, lessons and progress in one clear, motivating place.",
@@ -808,11 +851,48 @@ def _education(user_request: str, style: Dict, intent: str) -> ProductSpec:
     )
 
 
+def _analytics_bi(user_request: str, style: Dict, intent: str) -> ProductSpec:
+    """A general-purpose BI/reporting dashboard — "build an analytics
+    dashboard" with no finance/ecommerce/CRM/health/education signal of
+    its own. Split out from `_finance_ops` (which used to catch every
+    bare "analytics"/"dashboard" prompt via its regex, mislabeling any
+    non-finance BI request as a finance command center)."""
+    name = _brand_name(user_request, "Insight Board")
+    return ProductSpec(
+        product_type="analytics_bi", name=name, tagline=f"{name} — every metric, one clear view.",
+        description=f"{name} turns raw events into decisions — live dashboards, anomaly alerts and shareable reports without wrangling a spreadsheet.",
+        audience="Analysts and operators who need trustworthy numbers fast.",
+        primary_goals=["See what changed and why", "Catch anomalies early", "Share reports the business trusts"],
+        ux_goals=["Data-dense but scannable", "Fast to explore", "Confident, sourced numbers"],
+        navigation=["Overview", "Reports", "Explore", "Alerts", "Settings"],
+        is_dashboard=True, layout="app", intent=intent,
+        metrics=[
+            {"label": "Weekly active users", "value": "48.2K", "delta": "+6.4%"},
+            {"label": "Data freshness", "value": "2 min", "delta": "Real-time"},
+            {"label": "Reports shared", "value": "312", "delta": "+28 this week"},
+            {"label": "Anomalies flagged", "value": "5", "delta": "2 need review"},
+        ],
+        sections=[
+            _S("metrics", "Overview"),
+            _S("features", "Built for trustworthy reporting", items=[
+                _card("Live dashboards", "Every chart pulls from the same source of truth, always current.", "chart"),
+                _card("Custom reports", "Build once, share with anyone — no spreadsheet exports.", "list"),
+                _card("Anomaly detection", "Flags the metric that broke pattern, before a stakeholder asks.", "bell"),
+                _card("Data lineage", "Trace any number back to the exact source and transform.", "compass"),
+            ]),
+            _S("panel", "Top reports", subtitle="Most viewed this week"),
+        ],
+        cta_primary="Open dashboard", cta_secondary="Build a report",
+        theme={"accent": "", "accent2": "", "mode": style.get("mode", "dark")},
+        components=["Sidebar", "Dashboard Cards", "Statistics", "Charts", "Reports", "Settings", "Footer"],
+    )
+
+
 def _generic_fallback(user_request: str, style: Dict, intent: str) -> ProductSpec:
     """The last-resort default when no vertical keyword matched at all —
     still a real, distinct page inventory, not the old Overview/Analytics/
     Reports/Activity/Settings set."""
-    name = _title_from_request(user_request) or "Workspace"
+    name = _brand_name(user_request, "Workspace")
     return ProductSpec(
         product_type="app", name=name, tagline=f"{name}, built for what you do.",
         description=f"{name} is a focused, responsive workspace that keeps your day in one fast, well-designed place.",
@@ -844,12 +924,18 @@ def _generic_fallback(user_request: str, style: Dict, intent: str) -> ProductSpe
 
 
 _GENERIC_VERTICAL_RULES: List[Tuple[re.Pattern, Callable[[str, Dict, str], ProductSpec]]] = [
-    (re.compile(r"\b(financ\w*|analytics?|trading|invest\w*|hedge\s*fund|portfolio\s*manag\w*)\b", re.I), _finance_ops),
+    # "analytics"/"dashboard" alone used to be enough to match THIS rule,
+    # mislabeling any generic BI request ("marketing analytics dashboard")
+    # as a finance command center. Now requires an actual finance/trading/
+    # investment word — bare analytics/BI falls through to `_analytics_bi`.
+    (re.compile(r"\b(financ\w*|trading|invest\w*|hedge\s*fund|portfolio\s*manag\w*|"
+                r"asset\s*manag\w*|wealth\s*manag\w*)\b", re.I), _finance_ops),
     (re.compile(r"\b(e-?commerce|shopify|online\s*store|storefront|retail\w*|merchant\w*)\b", re.I), _ecommerce_ops),
     (re.compile(r"\bcrm\b|\bsales\s*(?:pipeline|team)\b|\bleads?\b|\bdeal\s*flow\b", re.I), _crm),
     (re.compile(r"\bproductivity\b|\bautomation\w*\b|\bworkflow\w*\b|\bai\s*(?:tool|platform|assistant)\b", re.I), _saas_ai),
     (re.compile(r"\bhealth\b", re.I), _health),
     (re.compile(r"\beducation\w*|\blearning\b|\bcourses?\b|\bstudents?\b|\bclassroom\b|\be-?learning\b", re.I), _education),
+    (re.compile(r"\banalytics?\b|\bmetrics?\b|\bkpi\b|\binsight\w*\b|\breporting\b|\bbusiness\s*intelligence\b|\bbi\s*(?:tool|dashboard|platform)\b", re.I), _analytics_bi),
 ]
 
 
@@ -972,15 +1058,34 @@ _PLATFORM_WORDS = {
     "woocommerce", "salesforce", "hubspot", "square", "paypal", "etsy",
 }
 
+# Function words a dangling "CRM for sales teams" or "tool with reporting"
+# would otherwise carry straight into the brand ("Crm For Sales") — never
+# meaningful on their own, always stripped before naming.
+_STOPWORDS = {
+    "a", "an", "the", "for", "and", "of", "with", "to", "in", "on", "at",
+    "by", "your", "our", "my", "that", "this", "into",
+}
+
 _GENERIC_FILLER_WORDS = {
     "premium", "modern", "simple", "new", "pro", "smart", "best", "top",
     "quick", "easy", "great", "amazing", "awesome", "advanced", "ultimate",
+    "luxury", "elite", "prime", "leading", "professional", "enterprise",
+    "powerful", "intelligent", "innovative", "next", "custom",
 }
 
 _CATEGORY_DESCRIPTOR_WORDS = {
     "analytics", "dashboard", "metrics", "insights", "insight", "commerce",
     "retail", "store", "shop", "fashion", "apparel", "boutique", "platform",
     "tool", "data", "reporting", "kpi", "landing", "page", "website", "site",
+    # Sprint 2.4 — category labels for the non-retail verticals (finance,
+    # SaaS/B2B, AI product, ops/BI, agency/service): same principle as the
+    # retail set above — a bare category word reads as a label ("AI
+    # Finance Dashboard"), never a brand a real company would pick.
+    "finance", "financial", "portfolio", "trading", "investment", "invest",
+    "ai", "saas", "crm", "health", "wellness", "education", "learning",
+    "operations", "ops", "admin", "internal", "workspace", "management",
+    "system", "software", "app", "agency", "service", "business", "startup",
+    "product", "b2b", "bi",
 }
 
 _BRAND_PREFIXES = ("Thread", "Loom", "Atelier", "Mercer", "Bolt", "Drape", "Selvage", "Weft")
@@ -997,7 +1102,7 @@ def _title_from_request(user_request: str) -> str:
                r"platform|software|store|shop)\b.*$", "", t, flags=re.IGNORECASE).strip(" .-")
     words = [w for w in re.split(r"\s+", t) if w]
     # A named platform/integration is context, never the generated brand.
-    words = [w for w in words if w.lower() not in _PLATFORM_WORDS][:3]
+    words = [w for w in words if w.lower() not in _PLATFORM_WORDS and w.lower() not in _STOPWORDS][:3]
     return " ".join(w.capitalize() for w in words)
 
 
@@ -1009,6 +1114,18 @@ def _has_believable_brand(words: List[str]) -> bool:
         w.lower() not in _GENERIC_FILLER_WORDS and w.lower() not in _CATEGORY_DESCRIPTOR_WORDS
         for w in words
     )
+
+
+def _brand_name(user_request: str, fallback: str) -> str:
+    """The one call every spec builder should use to name its product:
+    the user's own words when they read as a real brand, otherwise a
+    synthesized product-style name — never a bare category label or a
+    third-party platform name. `fallback` only matters when the prompt
+    yields no words at all (`_title_from_request` returns "")."""
+    name = _title_from_request(user_request) or fallback
+    if not _has_believable_brand(name.split()):
+        name = _synthesize_brand(user_request)
+    return name
 
 
 def _synthesize_brand(user_request: str) -> str:
