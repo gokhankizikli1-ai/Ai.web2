@@ -158,22 +158,22 @@ export default function ProjectRunCenter({ projectId }: { projectId: string }) {
   // button (guarded by the design brief below) and the brief panel's
   // confirm/smart-defaults actions can trigger it with the final
   // (possibly design-brief-enhanced) request text.
-  const runRequest = useCallback(async (userRequest: string) => {
-    if (!userRequest || starting) return;
+  const runRequest = useCallback(async (userRequest: string, runTemplateId = templateId): Promise<boolean> => {
+    if (!userRequest || starting) return false;
     setStarting(true);
     setStartError(null);
     try {
       let snap;
       try {
         snap = await projectOrchestratorClient.startRun({
-          userRequest, projectId, templateId: templateId || undefined,
+          userRequest, projectId, templateId: runTemplateId || undefined,
         });
       } catch (e: unknown) {
         // ENABLE_PROJECTS on + a local-only project id → ownership 404.
         // Fall back to a project-less run so the request still works.
         if ((e as { code?: string })?.code === 'project_not_found') {
           snap = await projectOrchestratorClient.startRun({
-            userRequest, templateId: templateId || undefined,
+            userRequest, templateId: runTemplateId || undefined,
           });
         } else { throw e; }
       }
@@ -181,7 +181,7 @@ export default function ProjectRunCenter({ projectId }: { projectId: string }) {
         run_id: snap.run_id,
         status: snap.status,
         user_request: userRequest,
-        template_id: snap.template_id ?? (templateId || null),
+        template_id: snap.template_id ?? (runTemplateId || null),
         created_at: null,
         deliverables: (snap.deliverables || []).map(toSummary),
         task_graph: snap.task_graph ? { tasks: snap.task_graph.tasks, total_count: snap.task_graph.total_count } : null,
@@ -190,8 +190,10 @@ export default function ProjectRunCenter({ projectId }: { projectId: string }) {
       setActiveRunId(snap.run_id);
       persistRun(snap.run_id);
       setRequest('');
+      return true;
     } catch (e: unknown) {
       setStartError((e as Error)?.message || 'Failed to start run');
+      return false;
     } finally {
       setStarting(false);
     }
@@ -226,11 +228,12 @@ export default function ProjectRunCenter({ projectId }: { projectId: string }) {
   // design brief + edit instruction); re-running it through the SAME
   // runRequest() the composer uses appends a real new turn to this
   // conversation, so the refined build is never fabricated. The modal
-  // stays open (with its own busy state) until the new run has started.
+  // stays open (with its own busy state) unless the new run has started.
   const handleRefine = useCallback(async (enhancedPrompt: string) => {
-    await runRequest(enhancedPrompt);
-    setPreview(null);
-  }, [runRequest]);
+    const sourceTurn = preview ? turns.find(t => t.run_id === preview.run_id) : undefined;
+    const started = await runRequest(enhancedPrompt, sourceTurn?.template_id ?? '');
+    if (started) setPreview(null);
+  }, [preview, runRequest, turns]);
 
   const composer = (
     <div className="shrink-0 px-4 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.05)', background: 'rgba(17,21,28,0.4)' }}>
