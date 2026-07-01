@@ -8,7 +8,7 @@ import {
   type BuilderCategory, detectCategory, detectRetailFlavor,
   brandNameFromPrompt, brandSlugFromPrompt, paletteForDirection,
 } from './promptCategory';
-import type { DesignBriefAnswers } from '@/lib/designBrief';
+import { parseVisiblePrompt, type DesignBriefAnswers } from '@/lib/designBrief';
 
 export type MockupKind = 'dashboard' | 'commerce' | 'gallery' | 'chat' | 'timeline' | 'workflow';
 
@@ -681,9 +681,10 @@ function brandSwatchesForDirection(colorDirection?: string): Array<{ hex: string
 }
 
 export function generateSiteContent(prompt: string, brief?: DesignBriefAnswers | null): SiteContent {
-  const category = detectCategory(prompt);
-  const retail = detectRetailFlavor(prompt);
-  const brand = brandNameFromPrompt(prompt);
+  const contentPrompt = parseVisiblePrompt(prompt).visible || prompt;
+  const category = detectCategory(contentPrompt);
+  const retail = detectRetailFlavor(contentPrompt);
+  const brand = brandNameFromPrompt(contentPrompt);
   const body = BUILDERS[category]({ brand, retail });
   return {
     category,
