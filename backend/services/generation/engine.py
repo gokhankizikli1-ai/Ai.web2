@@ -120,7 +120,18 @@ OUTPUT:
         from backend.services.orchestrator.artifacts import _strip_html  # reuse extractor
         extracted = _strip_html(raw_reply or "")
         qscore, issues = quality.score(extracted)
-        if quality.is_premium(extracted):
+        # retail_analytics (the Shopify/fashion commerce-analytics vertical)
+        # has an exact, numbers-specific spec — $482K revenue, 4.2x ROAS, a
+        # best-sellers table — that only the deterministic renderer
+        # reproduces. quality.is_premium() only checks generic structural
+        # signals (sections/CSS/semantics/responsiveness), so a structurally
+        # fine but generic model reply can clear that bar while silently
+        # dropping the vertical's whole point. Always render the guaranteed
+        # spec for this build type instead of gambling on the model reply.
+        if spec.product_type == "retail_analytics":
+            final_html, source = render_premium_page(spec), "generated"
+            qscore, issues = quality.score(final_html)
+        elif quality.is_premium(extracted):
             # Keep the bespoke model page, but guarantee viewport + the
             # network-blocking CSP (the preview iframe runs scripts).
             final_html, source = ensure_csp(ensure_viewport(extracted)), "model"
