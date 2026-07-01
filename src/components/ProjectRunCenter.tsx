@@ -263,6 +263,7 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
   // the very first anchor so restoring a long history doesn't animate
   // through the whole transcript.
   useEffect(() => {
+    if (turns.length === 0 && !briefPrompt) return;
     scrollToLatest(didInitialAnchor.current ? 'smooth' : 'auto');
     didInitialAnchor.current = true;
   }, [turns.length, briefPrompt, scrollToLatest]);
