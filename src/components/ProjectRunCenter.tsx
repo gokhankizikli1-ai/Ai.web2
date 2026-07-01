@@ -14,10 +14,10 @@
 //
 // Mounted by ProjectWorkspace ONLY when orchestrator availability resolves
 // to `available`; the disabled path keeps the classic agent chat fallback.
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Workflow, Play, Loader2, CheckCircle2, Circle, XCircle,
-  MinusCircle, Sparkles, Eye, Monitor, Code2, FolderTree,
+  MinusCircle, Sparkles, Eye, Monitor, Code2, FolderTree, Pencil,
 } from 'lucide-react';
 import {
   projectOrchestratorClient,
@@ -31,7 +31,11 @@ import {
 } from '@/hooks/useProjectOrchestrator';
 import DeliverablePreviewModal from '@/components/DeliverablePreviewModal';
 import DesignInterview from '@/components/builder/DesignInterview';
-import { isBuildIntentPrompt, promptHasDesignDetail, parseVisiblePrompt } from '@/lib/designBrief';
+import {
+  isBuildIntentPrompt, promptHasDesignDetail, parseVisiblePrompt,
+  isRefineIntentPrompt, buildEnhancedPrompt, resolveBriefAnswers, summarizeAnswers,
+} from '@/lib/designBrief';
+import { CATEGORY_LABELS, detectCategory } from '@/components/builder/promptCategory';
 
 function lastRunKey(projectId: string): string {
   return `korvix_project_run_${projectId}`;
@@ -73,7 +77,7 @@ function artifactGlyph(preview?: string | null) {
   return <Sparkles className="h-4 w-4 text-cyan-300" />;
 }
 
-function artifactLabel(type?: string | null): string {
+export function artifactLabel(type?: string | null): string {
   switch (type) {
     case 'html':            return 'Live HTML preview';
     case 'react_component': return 'React component';
@@ -102,7 +106,64 @@ function toSummary(d: DeliverableView): DeliverableSummary {
   };
 }
 
-export default function ProjectRunCenter({ projectId }: { projectId: string }) {
+// ── Build overview — a compact projection of the conversation the host
+// workspace renders in builder mode (left build sidebar + right Build
+// Inspector). Computed here so this component stays the only owner of
+// turn state; null means "no runs yet".
+export interface BuildOverview {
+  totalRuns: number;
+  running: boolean;
+  status: string | null;
+  latestPrompt: string | null;
+  categoryLabel: string | null;
+  artifactTitle: string | null;
+  artifactType: string | null;
+  designSummary: string | null;
+  briefSections: string[];
+  assetCount: number;
+  history: Array<{ runId: string; label: string; status: string }>;
+}
+
+function isBuildArtifact(d: DeliverableSummary): boolean {
+  return d.status === 'completed' && ARTIFACT_PREVIEWS.has(d.artifact_preview || '');
+}
+
+function computeOverview(turns: RunTurn[]): BuildOverview | null {
+  if (turns.length === 0) return null;
+  const latest = turns[turns.length - 1];
+  const latestBuild = [...turns].reverse().find(t => t.deliverables.some(isBuildArtifact)) || null;
+  const artifact = latestBuild?.deliverables.find(isBuildArtifact) || null;
+  const buildRequest = latestBuild?.user_request || '';
+  const brief = buildRequest ? resolveBriefAnswers(buildRequest) : null;
+  // Category detection runs on the clean visible prompt — brief field
+  // values ("Target feel: Ecommerce conversion") must not skew it.
+  const visibleBuild = parseVisiblePrompt(buildRequest).visible;
+  return {
+    totalRuns: turns.length,
+    running: !isRunTerminal(latest.status),
+    status: latest.status || null,
+    latestPrompt: visibleBuild || parseVisiblePrompt(latest.user_request || '').visible || null,
+    categoryLabel: visibleBuild ? CATEGORY_LABELS[detectCategory(visibleBuild)] : null,
+    artifactTitle: artifact?.title || null,
+    artifactType: artifact?.artifact_type ?? null,
+    designSummary: brief ? summarizeAnswers(brief) : null,
+    briefSections: brief ? brief.sections : [],
+    assetCount: turns.reduce((acc, t) => acc + t.deliverables.filter(isBuildArtifact).length, 0),
+    history: [...turns].reverse().slice(0, 5).map(t => ({
+      runId: t.run_id,
+      label: parseVisiblePrompt(t.user_request || '').visible.slice(0, 64) || 'Project run',
+      status: t.status,
+    })),
+  };
+}
+
+export default function ProjectRunCenter({ projectId, onOverview }: {
+  projectId: string;
+  /** Builder-mode hosts subscribe to a compact build overview (left build
+      sidebar / right Build Inspector render from it). Optional — omitting
+      it changes nothing. */
+  onOverview?: (overview: BuildOverview | null) => void;
+}) {
   const [turns, setTurns] = useState<RunTurn[]>([]);
   const [templates, setTemplates] = useState<TemplateView[]>([]);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
@@ -142,6 +203,21 @@ export default function ProjectRunCenter({ projectId }: { projectId: string }) {
       ? { ...t, status: snapshot.status, deliverables: (snapshot.deliverables || []).map(toSummary) }
       : t));
   }, [snapshot]);
+
+  // Latest turn with a completed, previewable artifact — the target a
+  // chat-native edit instruction refines.
+  const latestBuildTurn = useMemo(() =>
+    [...turns].reverse().find(t => t.deliverables.some(isBuildArtifact)) || null,
+  [turns]);
+
+  // Live intent read of the draft: is the user editing the latest build or
+  // describing a new one? Drives the contextual chip + the Build button label.
+  const refineIntent = !!latestBuildTurn && isRefineIntentPrompt(request);
+
+  // Surface the compact overview to the host workspace.
+  useEffect(() => {
+    onOverview?.(computeOverview(turns));
+  }, [turns, onOverview]);
 
   // Auto-scroll to the newest turn (or the design interview, once it opens).
   useEffect(() => {
@@ -198,17 +274,29 @@ export default function ProjectRunCenter({ projectId }: { projectId: string }) {
   }, [projectId, templateId, starting, persistRun]);
 
   // Gate: general-purpose composer (not every request here is a build —
-  // "research X" is valid too), so only intercept build-intent prompts
-  // that don't already carry enough explicit design detail.
+  // "research X" is valid too). Precedence:
+  //   1. A completed build exists AND the message reads as an edit
+  //      ("make the dashboard denser") → refine THAT build: preserve its
+  //      original request + design brief, fold the instruction in, and
+  //      re-run through the same flow — editing is just continuing the
+  //      conversation, never a separate form. No interview re-ask.
+  //   2. A build-intent prompt without design detail → Design Interview.
+  //   3. Everything else runs as-is.
   const startRun = useCallback(() => {
     const userRequest = request.trim();
     if (!userRequest || starting) return;
+    if (latestBuildTurn && isRefineIntentPrompt(userRequest)) {
+      const base = latestBuildTurn.user_request || '';
+      const { visible } = parseVisiblePrompt(base);
+      runRequest(buildEnhancedPrompt(`${visible} ${userRequest}`.trim(), resolveBriefAnswers(base)));
+      return;
+    }
     if (isBuildIntentPrompt(userRequest) && !promptHasDesignDetail(userRequest)) {
       setBriefPrompt(userRequest);
       return;
     }
     runRequest(userRequest);
-  }, [request, starting, runRequest]);
+  }, [request, starting, runRequest, latestBuildTurn]);
 
   const cancelRun = useCallback(async (runId: string) => {
     try { await projectOrchestratorClient.cancelRun(runId); } catch { /* poll reflects status */ }
@@ -235,11 +323,24 @@ export default function ProjectRunCenter({ projectId }: { projectId: string }) {
   const composer = (
     <div className="shrink-0 px-4 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.05)', background: 'rgba(17,21,28,0.4)' }}>
       <div className="max-w-2xl mx-auto">
-        <div className="flex flex-wrap gap-1.5 mb-2">
+        <div className="flex flex-wrap items-center gap-1.5 mb-2">
           <Chip active={templateId === ''} onClick={() => setTemplateId('')} label="Auto" icon />
           {templates.map(t => (
             <Chip key={t.id} active={templateId === t.id} onClick={() => setTemplateId(t.id)} label={t.name} />
           ))}
+          {/* Contextual intent chip — only once a completed build exists and
+              a draft is being typed, so the composer stays quiet otherwise. */}
+          {latestBuildTurn && request.trim() !== '' && (
+            <span className="ml-auto flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium"
+              style={{
+                background: refineIntent ? 'rgba(52,211,153,0.08)' : 'rgba(34,211,238,0.06)',
+                border: `1px solid ${refineIntent ? 'rgba(52,211,153,0.2)' : 'rgba(34,211,238,0.14)'}`,
+                color: refineIntent ? 'rgb(110,231,183)' : 'rgb(103,232,249)',
+              }}>
+              {refineIntent ? <Pencil className="h-2.5 w-2.5" /> : <Sparkles className="h-2.5 w-2.5" />}
+              {refineIntent ? 'Editing latest build' : 'New build'}
+            </span>
+          )}
         </div>
         <div className="flex items-end gap-2 rounded-xl px-3 py-2"
           style={{ background: 'rgba(27,34,48,0.5)', border: '1px solid rgba(255,255,255,0.06)' }}>
@@ -247,7 +348,9 @@ export default function ProjectRunCenter({ projectId }: { projectId: string }) {
             value={request}
             onChange={(e) => setRequest(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); startRun(); } }}
-            placeholder="Describe what you want Korvix to build…"
+            placeholder={latestBuildTurn
+              ? 'Ask Korvix to edit this build or describe a new one…'
+              : 'Describe what you want Korvix to build…'}
             rows={1}
             className="flex-1 bg-transparent text-[13px] text-white/85 placeholder:text-white/20 outline-none resize-none py-1.5 max-h-[120px] scrollbar-thin"
           />
@@ -257,7 +360,7 @@ export default function ProjectRunCenter({ projectId }: { projectId: string }) {
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium text-cyan-200 disabled:opacity-40 transition-all shrink-0"
             style={{ background: 'rgba(34,211,238,0.1)', border: '1px solid rgba(34,211,238,0.18)' }}>
             {starting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
-            {starting ? 'Starting' : 'Build'}
+            {starting ? 'Starting' : refineIntent ? 'Update' : 'Build'}
           </button>
         </div>
         {startError && <p className="text-[10px] text-red-400/70 mt-1.5 max-w-2xl mx-auto">{startError}</p>}
@@ -416,7 +519,7 @@ function ConversationTurn({
                   <Eye className="h-3.5 w-3.5" /> Preview
                 </span>
               </div>
-              <p className="text-[8px] text-white/30 mt-1.5">Preview · Copy · Download · Open</p>
+              <p className="text-[8px] text-white/30 mt-1.5">Preview · Copy · Download · Open — or type an edit below</p>
             </button>
           ))}
 

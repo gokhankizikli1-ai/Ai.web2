@@ -7,6 +7,7 @@ import {
   FolderOpen, Zap, Sparkles, X, Pencil, Trash2,
   Layout, Server, Search, Rocket, ShoppingBag,
   TrendingUp, Palette, Activity, Loader2,
+  History, ChevronRight, Monitor,
 } from 'lucide-react';
 
 const ROLE_ICONS: Record<string, React.ElementType> = {
@@ -25,7 +26,7 @@ import AgentMessageRenderer from '@/components/AgentMessageRenderer';
 import OwnerModeChip from '@/components/OwnerModeChip';
 import OwnerSessionIndicator from '@/components/OwnerSessionIndicator';
 import ProjectRunPanel from '@/components/ProjectRunPanel';
-import ProjectRunCenter from '@/components/ProjectRunCenter';
+import ProjectRunCenter, { artifactLabel, type BuildOverview } from '@/components/ProjectRunCenter';
 import { projectOrchestratorClient } from '@/hooks/useProjectOrchestrator';
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -345,6 +346,15 @@ export default function ProjectWorkspace() {
 
   const selectedAgent = agents.find(a => a.id === selectedAgentId);
   const activeAgentCount = agents.filter(a => a.status === 'active').length;
+
+  /* ── Builder mode ────────────────────────────────────────────────────
+     The orchestrator composer is live and no agents have been added: the
+     workspace is a build studio, so the agent-centric side panels give
+     way to build-centric ones (left build sidebar + right Build
+     Inspector) instead of empty agent states. Adding an agent from the
+     top bar switches the panels back instantly. */
+  const builderMode = orchProbe === 'available' && agents.length === 0;
+  const [buildOverview, setBuildOverview] = useState<BuildOverview | null>(null);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -670,16 +680,25 @@ export default function ProjectWorkspace() {
             <FolderOpen className="h-3 w-3 text-white" />
           </div>
           <h1 className="text-[13px] font-semibold text-white/90">{project.name}</h1>
-          <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(52,211,153,0.06)', border: '1px solid rgba(52,211,153,0.12)' }}>
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-[9px] text-emerald-400/80 font-medium">{activeAgentCount} active</span>
-          </div>
+          {builderMode ? (
+            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(34,211,238,0.06)', border: '1px solid rgba(34,211,238,0.12)' }}>
+              <div className={`w-1.5 h-1.5 rounded-full bg-cyan-400 ${buildOverview?.running ? 'animate-pulse' : ''}`} />
+              <span className="text-[9px] text-cyan-400/80 font-medium">Build Studio</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(52,211,153,0.06)', border: '1px solid rgba(52,211,153,0.12)' }}>
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-[9px] text-emerald-400/80 font-medium">{activeAgentCount} active</span>
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <div className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-lg" style={{ background: 'rgba(255,255,255,0.02)' }}>
-            <Bot className="h-3 w-3 text-white/25" />
-            <span className="text-[10px] text-white/35">{agents.length} agents</span>
-          </div>
+          {!builderMode && (
+            <div className="hidden sm:flex items-center gap-1 px-2 py-1 rounded-lg" style={{ background: 'rgba(255,255,255,0.02)' }}>
+              <Bot className="h-3 w-3 text-white/25" />
+              <span className="text-[10px] text-white/35">{agents.length} agents</span>
+            </div>
+          )}
           <button onClick={() => setShowCreateAgent(true)} className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium text-cyan-400/70 hover:text-cyan-300 transition-all" style={{ background: 'rgba(34,211,238,0.04)', border: '1px solid rgba(34,211,238,0.08)' }}>
             <Plus className="h-3 w-3" /> Agent
           </button>
@@ -697,8 +716,14 @@ export default function ProjectWorkspace() {
           off-screen on iPad. The center pane uses flex-1 min-w-0 which
           is the canonical "shrink below intrinsic content width" combo. */}
       <div className="relative flex-1 flex min-h-0 min-w-0 overflow-hidden">
-        {/* LEFT: Agent List */}
+        {/* LEFT: build sidebar (builder mode) OR agent list */}
         <div className="hidden lg:flex flex-col w-[230px] shrink-0 overflow-hidden" style={{ background: 'rgba(17,21,28,0.5)', borderRight: '1px solid rgba(255,255,255,0.04)' }}>
+          {builderMode ? (
+            <BuilderSidebar
+              overview={buildOverview}
+              onHistory={() => navigate(`/projects/${projectId}/runs`)}
+            />
+          ) : (
           <div className="flex-1 overflow-y-auto px-2.5 py-3 scrollbar-thin">
             <div className="flex items-center justify-between mb-2 px-1">
               <span className="text-[10px] font-semibold text-white/25 uppercase tracking-wider">Agents</span>
@@ -739,6 +764,7 @@ export default function ProjectWorkspace() {
               <Plus className="h-3 w-3" /> Add Agent
             </button>
           </div>
+          )}
 
           {/* Shared memory indicator */}
           <div className="shrink-0 px-3 py-2.5" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
@@ -758,7 +784,7 @@ export default function ProjectWorkspace() {
               <span className="text-[11px] text-white/25">Loading workspace…</span>
             </div>
           ) : orchProbe === 'available' ? (
-            <ProjectRunCenter projectId={projectId || ''} />
+            <ProjectRunCenter projectId={projectId || ''} onOverview={setBuildOverview} />
           ) : selectedAgent ? (
             <>
               {/* Agent Header */}
@@ -882,12 +908,21 @@ export default function ProjectWorkspace() {
 
         {/* RIGHT: Context & Tasks */}
         <div className="hidden xl:flex flex-col w-[260px] shrink-0 overflow-y-auto scrollbar-thin p-3 gap-3" style={{ background: 'rgba(17,21,28,0.3)', borderLeft: '1px solid rgba(255,255,255,0.04)' }}>
-          {/* Phase B — Project Orchestrator run panel (PR #182 backend). Self-
-              contained + frontend-safe: renders a disabled empty state when
-              ENABLE_PROJECT_ORCHESTRATOR is off, so it never blocks the rest
-              of the workspace. */}
-          {projectId && <ProjectRunPanel projectId={projectId} />}
-          {/* Shared Context — Phase 2.5: project memory + sync indicator */}
+          {/* Builder mode → Build Inspector (current build status, brief,
+              category, history shortcut). Otherwise the Phase B run panel —
+              in builder mode it would just duplicate the center composer. */}
+          {builderMode ? (
+            <BuildInspector
+              overview={buildOverview}
+              onHistory={() => navigate(`/projects/${projectId}/runs`)}
+            />
+          ) : (
+            projectId && <ProjectRunPanel projectId={projectId} />
+          )}
+          {/* Shared Context — Phase 2.5: project memory + sync indicator.
+              In builder mode only shown when it carries real content — a
+              grid of zero-counts tells a builder nothing. */}
+          {(!builderMode || memory.length > 0) && (
           <div className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.04)' }}>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
@@ -930,18 +965,20 @@ export default function ProjectWorkspace() {
                 {memorySyncState === 'unknown'   && 'Checking…'}
               </span>
             </div>
-            <div className="grid grid-cols-3 gap-1.5">
-              {[
-                { label: 'Agents',  value: `${agents.length}` },
-                { label: 'Memory',  value: `${memory.length}` },
-                { label: 'Messages', value: `${agents.reduce((acc, a) => acc + a.messages.length, 0)}` },
-              ].map(s => (
-                <div key={s.label} className="rounded-lg p-2 text-center" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.03)' }}>
-                  <p className="text-[13px] font-semibold text-white/60">{s.value}</p>
-                  <p className="text-[8px] text-white/20">{s.label}</p>
-                </div>
-              ))}
-            </div>
+            {!builderMode && (
+              <div className="grid grid-cols-3 gap-1.5">
+                {[
+                  { label: 'Agents',  value: `${agents.length}` },
+                  { label: 'Memory',  value: `${memory.length}` },
+                  { label: 'Messages', value: `${agents.reduce((acc, a) => acc + a.messages.length, 0)}` },
+                ].map(s => (
+                  <div key={s.label} className="rounded-lg p-2 text-center" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.03)' }}>
+                    <p className="text-[13px] font-semibold text-white/60">{s.value}</p>
+                    <p className="text-[8px] text-white/20">{s.label}</p>
+                  </div>
+                ))}
+              </div>
+            )}
             {/* Recent memory entries (latest 3, terse) */}
             {memory.length > 0 && (
               <div className="mt-3 pt-3 space-y-1.5" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
@@ -962,15 +999,19 @@ export default function ProjectWorkspace() {
                 Last synced {new Date(memorySyncedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </p>
             )}
-            {/* File upload placeholder — Phase 2.5: schema exists, UI hint only */}
-            <div
-              className="mt-3 pt-3 flex items-center gap-1.5 cursor-not-allowed"
-              style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}
-              title="Project file uploads — coming soon. Backend schema is ready; upload pipeline lands in Phase 2.6.">
-              <Paperclip className="h-3 w-3 text-white/15" />
-              <span className="text-[9px] text-white/25">Files · coming soon</span>
-            </div>
+            {/* File upload placeholder — Phase 2.5: schema exists, UI hint only.
+                Hidden in builder mode (a coming-soon stub is noise there). */}
+            {!builderMode && (
+              <div
+                className="mt-3 pt-3 flex items-center gap-1.5 cursor-not-allowed"
+                style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}
+                title="Project file uploads — coming soon. Backend schema is ready; upload pipeline lands in Phase 2.6.">
+                <Paperclip className="h-3 w-3 text-white/15" />
+                <span className="text-[9px] text-white/25">Files · coming soon</span>
+              </div>
+            )}
           </div>
+          )}
 
           {/* Active Tasks — Phase 3.5: shows realtime SSE events when an
               orchestration is in flight; falls back to the per-agent
@@ -1134,6 +1175,188 @@ export default function ProjectWorkspace() {
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════
+   BUILDER MODE PANELS
+   ═══════════════════════════════════════════
+   Rendered instead of the agent list / project-context rails when the
+   workspace is a build studio (orchestrator live, no agents). Both are
+   pure projections of the BuildOverview that ProjectRunCenter reports —
+   no state of their own, no duplicate run logic. */
+
+function buildStatusColor(status: string | null): string {
+  if (!status) return 'rgb(148,163,184)';
+  if (/^running|^pending/i.test(status))    return 'rgb(34,211,238)';
+  if (/complete|finish/i.test(status))      return 'rgb(52,211,153)';
+  if (/fail|error/i.test(status))           return 'rgb(248,113,113)';
+  if (/cancel/i.test(status))               return 'rgb(251,191,36)';
+  return 'rgb(148,163,184)';
+}
+
+function buildStatusLabel(status: string | null): string {
+  if (!status) return 'Idle';
+  const map: Record<string, string> = {
+    running: 'Running', pending: 'Pending', completed: 'Completed',
+    finished: 'Completed', failed: 'Failed', errored: 'Failed', cancelled: 'Cancelled',
+  };
+  return map[status] || status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function BuilderSidebar({ overview, onHistory }: {
+  overview: BuildOverview | null;
+  onHistory: () => void;
+}) {
+  return (
+    <div className="flex-1 overflow-y-auto px-2.5 py-3 scrollbar-thin">
+      <div className="flex items-center justify-between mb-2 px-1">
+        <span className="text-[10px] font-semibold text-white/25 uppercase tracking-wider">Build</span>
+        {overview && <span className="text-[10px] text-white/15">{overview.totalRuns}</span>}
+      </div>
+
+      {!overview ? (
+        <div className="py-8 text-center px-2">
+          <Layout className="h-8 w-8 text-white/[0.06] mx-auto mb-2" />
+          <p className="text-[11px] text-white/25">No builds yet</p>
+          <p className="text-[10px] text-white/15 mt-1.5 leading-relaxed">
+            Describe what you want Korvix to build in the composer.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {/* Current build */}
+          <div className="rounded-lg px-2.5 py-2" style={{ background: 'rgba(34,211,238,0.04)', border: '1px solid rgba(34,211,238,0.1)' }}>
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-[9px] uppercase tracking-wider text-white/25">Current build</p>
+              <span className="w-1.5 h-1.5 rounded-full" style={{
+                background: buildStatusColor(overview.status),
+                boxShadow: overview.running ? `0 0 4px ${buildStatusColor(overview.status)}` : 'none',
+              }} />
+            </div>
+            {overview.categoryLabel && (
+              <p className="text-[11px] font-medium text-white/75">{overview.categoryLabel}</p>
+            )}
+            {overview.latestPrompt && (
+              <p className="text-[10px] text-white/35 leading-snug mt-0.5 line-clamp-2">{overview.latestPrompt}</p>
+            )}
+          </div>
+
+          {/* Latest artifact */}
+          {overview.artifactTitle && (
+            <div className="rounded-lg px-2.5 py-2" style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.04)' }}>
+              <p className="text-[9px] uppercase tracking-wider text-white/25 mb-1">Latest artifact</p>
+              <div className="flex items-center gap-1.5">
+                <Monitor className="h-3 w-3 text-cyan-400/60 shrink-0" />
+                <p className="text-[10px] text-white/65 truncate">{overview.artifactTitle}</p>
+              </div>
+              {overview.artifactType && (
+                <p className="text-[9px] text-white/25 mt-0.5">{artifactLabel(overview.artifactType)}</p>
+              )}
+            </div>
+          )}
+
+          {/* Design brief */}
+          {overview.designSummary && (
+            <div className="px-1">
+              <p className="text-[9px] uppercase tracking-wider text-white/25 mb-1">Design brief</p>
+              <p className="text-[10px] text-indigo-300/70 leading-snug">{overview.designSummary}</p>
+            </div>
+          )}
+
+          {/* Pages / sections */}
+          {overview.briefSections.length > 0 && (
+            <div className="px-1">
+              <p className="text-[9px] uppercase tracking-wider text-white/25 mb-1">Sections</p>
+              <div className="flex flex-wrap gap-1">
+                {overview.briefSections.slice(0, 6).map(s => (
+                  <span key={s} className="px-1.5 py-0.5 rounded text-[9px] text-white/40"
+                    style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.04)' }}>
+                    {s}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Build history */}
+          {overview.history.length > 0 && (
+            <div className="px-1">
+              <p className="text-[9px] uppercase tracking-wider text-white/25 mb-1.5">History</p>
+              <div className="space-y-1.5">
+                {overview.history.map(h => (
+                  <div key={h.runId} className="flex items-start gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full mt-1 shrink-0" style={{ background: buildStatusColor(h.status) }} />
+                    <p className="text-[10px] text-white/40 leading-snug line-clamp-2">{h.label}</p>
+                  </div>
+                ))}
+              </div>
+              <button onClick={onHistory} className="mt-2 flex items-center gap-1 text-[10px] text-cyan-400/50 hover:text-cyan-300 transition-colors">
+                <History className="h-3 w-3" /> All builds
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InspectorRow({ label, value, children }: {
+  label: string;
+  value?: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-[9px] uppercase tracking-wider text-white/25 shrink-0">{label}</span>
+      {children ?? <span className="text-[10px] text-white/60 text-right truncate">{value}</span>}
+    </div>
+  );
+}
+
+function BuildInspector({ overview, onHistory }: {
+  overview: BuildOverview | null;
+  onHistory: () => void;
+}) {
+  const color = buildStatusColor(overview?.status ?? null);
+  return (
+    <div className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.04)' }}>
+      <div className="flex items-center gap-2 mb-3">
+        <Layout className="h-3.5 w-3.5 text-cyan-400/50" />
+        <span className="text-[11px] font-semibold text-white/60">Build Inspector</span>
+      </div>
+      {!overview ? (
+        <p className="text-[10px] text-white/25 leading-relaxed">
+          No build yet. Describe what you want Korvix to build in the composer below.
+        </p>
+      ) : (
+        <div className="space-y-2.5">
+          <InspectorRow label="Status">
+            <span className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full" style={{ background: color, boxShadow: overview.running ? `0 0 4px ${color}` : 'none' }} />
+              <span className="text-[10px]" style={{ color }}>{buildStatusLabel(overview.status)}</span>
+            </span>
+          </InspectorRow>
+          {overview.categoryLabel && <InspectorRow label="Category" value={overview.categoryLabel} />}
+          {overview.artifactType && <InspectorRow label="Artifact" value={artifactLabel(overview.artifactType)} />}
+          <InspectorRow label="Builds" value={`${overview.totalRuns}`} />
+          {overview.assetCount > 0 && <InspectorRow label="Artifacts" value={`${overview.assetCount}`} />}
+          {overview.designSummary && (
+            <div>
+              <p className="text-[9px] uppercase tracking-wider text-white/25 mb-1">Design brief</p>
+              <p className="text-[10px] text-indigo-300/80 leading-snug">{overview.designSummary}</p>
+            </div>
+          )}
+          <button onClick={onHistory}
+            className="w-full flex items-center justify-between px-2 py-1.5 rounded-lg text-[10px] text-white/45 hover:text-white/75 transition-colors"
+            style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
+            <span className="flex items-center gap-1.5"><History className="h-3 w-3" /> Build history</span>
+            <ChevronRight className="h-3 w-3" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
