@@ -15,7 +15,7 @@ import {
 import type { SiteContent, MockupKind, FeatureIcon } from './siteContent';
 import type { BuilderPalette } from './promptCategory';
 
-const FEATURE_ICONS: Record<FeatureIcon, React.ComponentType<{ className?: string }>> = {
+const FEATURE_ICONS: Record<FeatureIcon, React.ComponentType<{ className?: string; style?: React.CSSProperties }>> = {
   chart: BarChart3, bolt: Zap, users: Users, shield: ShieldCheck, cart: ShoppingCart,
   tag: Tag, card: CreditCard, package: Package, layers: Layers, gauge: Gauge,
   pie: BarChart3, activity: Activity, graduation: GraduationCap, rocket: Rocket,
