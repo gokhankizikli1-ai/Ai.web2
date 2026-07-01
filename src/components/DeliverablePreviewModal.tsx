@@ -15,6 +15,15 @@ import { wrapWithPremiumCss } from '@/lib/previewHtml';
 import type {
   DeliverableView, Artifact, ArtifactMetadata,
 } from '@/hooks/useProjectOrchestrator';
+import BuilderRefinePanel, {
+  APP_QUICK_EDITS, WEBSITE_QUICK_EDITS, type RefinePatch,
+} from '@/components/builder/BuilderRefinePanel';
+import {
+  CATEGORY_LABELS, brandNameFromPrompt, detectCategory, paletteForDirection,
+} from '@/components/builder/promptCategory';
+import {
+  buildEnhancedPrompt, parseVisiblePrompt, resolveBriefAnswers, type DesignBriefAnswers,
+} from '@/lib/designBrief';
 
 interface Resolved {
   type:     string;
@@ -57,10 +66,16 @@ const DEVICE_WIDTH: Record<string, number | null> = {
 };
 
 export default function DeliverablePreviewModal({
-  deliverable, onClose,
+  deliverable, onClose, userRequest, onRefine, refining = false,
 }: {
   deliverable: DeliverableView | null;
   onClose: () => void;
+  /** The run's persisted (possibly design-brief-enhanced) request — enables the refine panel when present. */
+  userRequest?: string;
+  /** Re-runs the build with an enhanced prompt (original request + design brief + edit instruction). Omit to hide refine controls. */
+  onRefine?: (enhancedPrompt: string) => void;
+  /** True while a refine-triggered run is starting — disables the refine panel's apply action. */
+  refining?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
   const [device, setDevice] = useState<'desktop' | 'tablet' | 'mobile'>('desktop');
@@ -68,6 +83,27 @@ export default function DeliverablePreviewModal({
   const [refreshKey, setRefreshKey] = useState(0);
 
   const r = useMemo(() => deliverable ? resolve(deliverable) : null, [deliverable]);
+
+  // Refine — folds the settings patch + free-text instruction into the
+  // SAME buildEnhancedPrompt() the Design Interview uses, then hands the
+  // enhanced prompt to the host (ProjectRunCenter), which re-runs the real
+  // build flow. Nothing is fabricated: a new run genuinely happens.
+  const handleRefine = useCallback((patch: RefinePatch) => {
+    if (!userRequest || !onRefine) return;
+    const { visible } = parseVisiblePrompt(userRequest);
+    const currentBrief = resolveBriefAnswers(userRequest);
+    const nextBrief: DesignBriefAnswers = {
+      ...currentBrief,
+      colorDirection: patch.colorDirection || currentBrief.colorDirection,
+      density: patch.density || currentBrief.density,
+      layoutType: patch.layoutType || currentBrief.layoutType,
+    };
+    const asks: string[] = [];
+    if (patch.instruction) asks.push(patch.instruction);
+    if (patch.brandName) asks.push(`Use the brand name "${patch.brandName}".`);
+    const basePrompt = asks.length ? `${visible} ${asks.join(' ')}`.trim() : visible;
+    onRefine(buildEnhancedPrompt(basePrompt, nextBrief));
+  }, [userRequest, onRefine]);
 
   const copy = useCallback(async () => {
     if (!r) return;
@@ -100,6 +136,13 @@ export default function DeliverablePreviewModal({
   const isHtml = r.preview === 'iframe';
   const meta = r.metadata;
   const width = DEVICE_WIDTH[device];
+  // Refine panel is only meaningful for a generated website/app HTML
+  // artifact — never shown for plan/concept markdown deliverables, and
+  // never rendered inside the artifact itself (it lives in this wrapper).
+  const brief = userRequest ? resolveBriefAnswers(userRequest) : null;
+  const category = userRequest ? detectCategory(userRequest) : null;
+  const palette = paletteForDirection(brief?.colorDirection);
+  const isAppKind = /app_prototype|dashboard/i.test(deliverable.kind || '');
 
   return (
     <div
@@ -162,6 +205,25 @@ export default function DeliverablePreviewModal({
             </button>
           </div>
         </div>
+
+        {/* Edit / Refine / Settings — Korvix builder controls for the
+            generated artifact, never rendered inside the artifact itself. */}
+        {isHtml && userRequest && brief && category && onRefine && (
+          <div className="px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+            <BuilderRefinePanel
+              accent={palette.accent}
+              accent2={palette.accent2}
+              palette={palette}
+              categoryLabel={CATEGORY_LABELS[category]}
+              brief={brief}
+              brandName={brandNameFromPrompt(userRequest)}
+              brandLabel={isAppKind ? 'App name' : 'Brand name'}
+              quickEdits={isAppKind ? APP_QUICK_EDITS : WEBSITE_QUICK_EDITS}
+              onApply={handleRefine}
+              busy={refining}
+            />
+          </div>
+        )}
 
         {/* Body */}
         <div className="flex-1 overflow-auto" style={{ background: isHtml ? 'rgba(0,0,0,0.25)' : 'transparent' }}>
