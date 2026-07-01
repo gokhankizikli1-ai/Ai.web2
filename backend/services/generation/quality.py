@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 import re
-from typing import List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 QUALITY_THRESHOLD = 70
 
@@ -112,9 +112,34 @@ def score(html: str) -> Tuple[int, List[str]]:
     return min(100, pts), issues
 
 
-def is_premium(html: str) -> bool:
+def reflects_spec(html: str, spec_name: str = "", spec_metrics: Optional[List[Dict[str, str]]] = None) -> bool:
+    """True when the reply is demonstrably ABOUT this product, not a
+    generic template that would read the same for any prompt in the same
+    category. The deterministic spec's brand name and metric VALUES
+    ($482K, 4.2x, AUM figures, ...) are product-specific numbers an LLM
+    free-writing a generic reply won't coincidentally reproduce — so
+    requiring most of them to appear verbatim is a strong, cheap proxy for
+    "this is the real thing, not old fallback copy that ignores the
+    user's actual prompt." Called with no spec context (the common case
+    for direct is_premium() callers/tests), it's a no-op that always
+    passes — fully backward compatible."""
+    if not spec_name and not spec_metrics:
+        return True
+    h = html or ""
+    if spec_name and spec_name.lower() not in h.lower():
+        return False
+    values = [str(m.get("value", "")).strip() for m in (spec_metrics or []) if m.get("value")]
+    if not values:
+        return True
+    hits = sum(1 for v in values if v and v in h)
+    return hits >= max(1, len(values) // 2)
+
+
+def is_premium(html: str, *, spec_name: str = "", spec_metrics: Optional[List[Dict[str, str]]] = None) -> bool:
     s, _ = score(html)
-    return s >= QUALITY_THRESHOLD and not has_placeholders(html)
+    if not (s >= QUALITY_THRESHOLD and not has_placeholders(html)):
+        return False
+    return reflects_spec(html, spec_name, spec_metrics)
 
 
-__all__ = ["QUALITY_THRESHOLD", "score", "is_premium", "has_placeholders"]
+__all__ = ["QUALITY_THRESHOLD", "score", "is_premium", "has_placeholders", "reflects_spec"]

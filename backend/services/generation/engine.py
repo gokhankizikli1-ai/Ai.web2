@@ -131,7 +131,13 @@ OUTPUT:
         if spec.product_type == "retail_analytics":
             final_html, source = render_premium_page(spec), "generated"
             qscore, issues = quality.score(final_html)
-        elif quality.is_premium(extracted):
+        # Every OTHER category's spec is just as specific (its own brand
+        # name + its own exact metric figures) — quality.is_premium() now
+        # requires the model reply to actually contain them, so a generic
+        # reply that merely LOOKS structurally fine (the "old flat
+        # dashboard, stale footer" failure mode) can no longer pass for
+        # ANY vertical, not only the one hardened above.
+        elif quality.is_premium(extracted, spec_name=spec.name, spec_metrics=spec.metrics):
             # Keep the bespoke model page, but guarantee viewport + the
             # network-blocking CSP (the preview iframe runs scripts).
             final_html, source = ensure_csp(ensure_viewport(extracted)), "model"

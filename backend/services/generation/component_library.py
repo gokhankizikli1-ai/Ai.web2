@@ -47,6 +47,22 @@ CSS = """
 .cl-pill-warning  { background:color-mix(in srgb, #f59e0b 18%, transparent); color:#fbbf24; }
 .cl-pill-neutral  { background:var(--surface-2); color:var(--text-muted); }
 
+/* Risk heatmap — severity-tinted tiles, matching the pill palette above. */
+.cl-heat-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(112px,1fr)); gap:10px; }
+.cl-heat-cell { display:flex; flex-direction:column; gap:5px; padding:12px 14px; border-radius:var(--radius-lg);
+  border:1px solid var(--border); }
+.cl-heat-cell .lbl { font-size:.76rem; color:var(--text-dim); }
+.cl-heat-cell .lvl { font-size:.92rem; font-weight:700; }
+.cl-heat-low       { background:color-mix(in srgb, #22c55e 14%, transparent); }
+.cl-heat-low .lvl       { color:#4ade80; }
+.cl-heat-medium    { background:color-mix(in srgb, #f59e0b 14%, transparent); }
+.cl-heat-medium .lvl    { color:#fbbf24; }
+.cl-heat-high      { background:color-mix(in srgb, #ef4444 16%, transparent); }
+.cl-heat-high .lvl      { color:#f87171; }
+.cl-heat-critical  { background:color-mix(in srgb, #ef4444 26%, transparent);
+  border-color:color-mix(in srgb, #ef4444 40%, var(--border)); }
+.cl-heat-critical .lvl  { color:#fca5a5; }
+
 .cl-timeline { display:flex; flex-direction:column; gap:0; }
 .cl-timeline-item { display:flex; gap:14px; padding-bottom:22px; position:relative; }
 .cl-timeline-item:last-child { padding-bottom:0; }
@@ -370,6 +386,24 @@ def portfolio_card(label: str, value: str, allocation_pct: int, trend_positive: 
     </div>"""
 
 
+# ── Risk heatmap (finance / analytics / BI verticals) ────────────────
+
+_HEAT_TONE = {"low": "cl-heat-low", "medium": "cl-heat-medium",
+             "high": "cl-heat-high", "critical": "cl-heat-critical"}
+
+
+def risk_heatmap(cells: Sequence[Dict[str, str]]) -> str:
+    """A grid of labeled, severity-colored risk tiles — low/medium/high/
+    critical — never a plain gray box or a raw emoji traffic light."""
+    tiles = "".join(
+        f'<div class="cl-heat-cell {_HEAT_TONE.get(str(c.get("level", "low")).lower(), "cl-heat-low")}">'
+        f'<span class="lbl">{e(c.get("label", ""))}</span>'
+        f'<span class="lvl">{e(str(c.get("level", "")).title())}</span></div>'
+        for c in cells
+    )
+    return f'<div class="cl-heat-grid" data-component="risk-heatmap">{tiles}</div>'
+
+
 # ── Recipe steps + ingredients (warm/editorial, food vertical) ───────
 
 def recipe_steps(steps: Sequence[str]) -> str:
@@ -394,6 +428,6 @@ def food_panel() -> str:
 __all__ = [
     "CSS", "status_pill", "table", "timeline", "calendar_grid", "waveform",
     "music_player", "notifications_panel", "form_fields", "premium_metric_card",
-    "action_card", "watchlist_row", "portfolio_card", "recipe_steps",
+    "action_card", "watchlist_row", "portfolio_card", "risk_heatmap", "recipe_steps",
     "ingredient_chips", "food_panel",
 ]
