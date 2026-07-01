@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from backend.services.generation import component_library as cl
 from backend.services.generation.renderers import base
-from backend.services.generation.renderers.base import avatar, bars, e, icon, slug, spark
+from backend.services.generation.renderers.base import avatar, bars, e, feature_items, icon, slug, spark
 from backend.services.generation.spec import ProductSpec, Section
 
 CSS = """
@@ -132,6 +132,17 @@ def _hero(spec: ProductSpec, primary_target: str, secondary_target: str) -> str:
         <div class="ds-stat-value" style="font-size:1.4rem;margin-top:4px">{e(x.get('value'))}</div></div>"""
                     for x in metrics[:2])
     float_metric = metrics[0]
+    # Design Brief "Product Showcase" layout — give the mockup itself more
+    # prominence (a row of real product highlights under it) instead of
+    # just the single floating metric chip every other landing hero gets.
+    showcase = ""
+    if (spec.data or {}).get("product_showcase"):
+        highlights = feature_items(spec)[:3]
+        if highlights:
+            showcase_cells = "".join(f"""
+      <div class="ds-card ds-col-2 ds-rise" style="padding:14px">{icon(c.get('icon'))}
+        <p style="font-size:.86rem;margin-top:8px;color:var(--text)">{e(c.get('title'))}</p></div>""" for c in highlights)
+            showcase = f'<div class="ds-bento" style="margin-top:14px">{showcase_cells}</div>'
     arrow = ('<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" '
              'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
              '<path d="M3 8h10"/><path d="M9 4l4 4-4 4"/></svg>')
@@ -162,6 +173,7 @@ def _hero(spec: ProductSpec, primary_target: str, secondary_target: str) -> str:
         <div class="ds-card ds-col-2">{spark()}</div>
       </div></div>
     </div>
+    {showcase}
     <div class="ld-float-card"><span class="ds-eyebrow" style="margin:0">{e(float_metric.get('label'))}</span>
       <div class="ds-stat-value">{e(float_metric.get('value'))}</div></div>
   </div>

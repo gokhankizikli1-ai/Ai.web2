@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 from backend.services.generation.renderers import base
-from backend.services.generation.renderers.base import e, traffic_lights
+from backend.services.generation.renderers.base import e, resolve_icon_name, svg_icon, traffic_lights
 from backend.services.generation.spec import ProductSpec
 
 CSS = """
@@ -75,38 +75,43 @@ CSS = """
 }
 """.strip()
 
+# Letter/typographic glyphs (B/i/U/H/“”) are an intentional, universal
+# text-editor convention (Google Docs, Word, Notion all show literal
+# letters for these) — left as-is. The genuinely icon-shaped ones (list/
+# checklist/table/link) render through svg_icon(), never a raw emoji.
 _FORMAT_BTNS = [
-    ("B", "Bold", "style=font-weight:800"), ("i", "Italic", "style=font-style:italic;font-weight:700"),
-    ("U", "Underline", "style=text-decoration:underline"), ("SEP", "", ""),
-    ("H", "Heading", ""), ("•", "Bullet list", ""), ("☑", "Checklist", ""),
-    ("“”", "Quote", ""), ("SEP", "", ""), ("⊞", "Table", ""), ("🔗", "Link", ""),
+    ("B", "Bold", "style=font-weight:800", False), ("i", "Italic", "style=font-style:italic;font-weight:700", False),
+    ("U", "Underline", "style=text-decoration:underline", False), ("SEP", "", "", False),
+    ("H", "Heading", "", False), ("list", "Bullet list", "", True), ("check", "Checklist", "", True),
+    ("“”", "Quote", "", False), ("SEP", "", "", False), ("grid", "Table", "", True), ("link", "Link", "", True),
 ]
 
 
 def _toolbar() -> str:
     out = []
-    for glyph, title, st in _FORMAT_BTNS:
+    for glyph, title, st, is_icon in _FORMAT_BTNS:
         if glyph == "SEP":
             out.append('<span class="ed-fmt-sep"></span>')
             continue
-        out.append(f'<button class="ed-fmt" data-format title="{e(title)}" {st}>{e(glyph)}</button>')
+        content = svg_icon(glyph) if is_icon else e(glyph)
+        out.append(f'<button class="ed-fmt" data-format title="{e(title)}" {st}>{content}</button>')
     out.append('<span class="ed-tool-spacer"></span>')
-    out.append('<button class="ed-fmt" data-format title="Share">⇪</button>')
-    out.append('<button class="ed-fmt" data-format title="Note info">ⓘ</button>')
+    out.append(f'<button class="ed-fmt" data-format title="Share">{svg_icon("send")}</button>')
+    out.append(f'<button class="ed-fmt" data-format title="Note info">{svg_icon("info")}</button>')
     return f'<div class="ed-toolbar">{"".join(out)}</div>'
 
 
 def render(spec: ProductSpec) -> str:
     data = spec.data or {}
-    folders = data.get("folders") or [{"name": "All Notes", "key": "all", "count": 0, "icon": "🗒"}]
+    folders = data.get("folders") or [{"name": "All Notes", "key": "all", "count": 0, "icon": "folder"}]
     notes = data.get("notes") or [{"title": spec.name, "snippet": "", "body": "", "folder": "all", "date": ""}]
     tags = data.get("tags") or ["Important", "Work", "Ideas", "Later"]
 
-    folder_icons = {"all": "🗒", "personal": "👤", "work": "💼", "ideas": "💡", "archive": "🗄"}
+    folder_icons = {"all": "folder", "personal": "person", "work": "bag", "ideas": "bolt", "archive": "folder"}
     folder_rows = "".join(
         f'<div class="ed-folder{" is-active" if i == 0 else ""}" data-folder="{e(f.get("key","all"))}" '
         f'data-folder-name="{e(f.get("name"))}">'
-        f'<span class="ed-fi">{e(f.get("icon") or folder_icons.get(f.get("key"),"🗂"))}</span>'
+        f'<span class="ed-fi">{svg_icon(resolve_icon_name(f.get("icon") or folder_icons.get(f.get("key"), "folder")))}</span>'
         f'<span>{e(f.get("name"))}</span><span class="ed-fc">{e(f.get("count",""))}</span></div>'
         for i, f in enumerate(folders))
     tag_chips = "".join(f'<span class="ed-tag"># {e(t)}</span>' for t in tags)
@@ -128,7 +133,7 @@ def render(spec: ProductSpec) -> str:
   <div class="ed-titlebar">
     {traffic_lights()}
     <div class="ed-title-actions">
-      <button class="ed-tool" data-new-note title="New note">✎ New Note</button>
+      <button class="ed-tool" data-new-note title="New note">{svg_icon('plus')} New Note</button>
       <input class="ed-search" type="text" placeholder="Search" data-search aria-label="Search notes">
     </div>
   </div>

@@ -31,7 +31,7 @@ import {
 } from '@/hooks/useProjectOrchestrator';
 import DeliverablePreviewModal from '@/components/DeliverablePreviewModal';
 import DesignBriefPanel from '@/components/builder/DesignBriefPanel';
-import { isBuildIntentPrompt, promptHasDesignDetail } from '@/lib/designBrief';
+import { isBuildIntentPrompt, promptHasDesignDetail, parseVisiblePrompt } from '@/lib/designBrief';
 
 function lastRunKey(projectId: string): string {
   return `korvix_project_run_${projectId}`;
@@ -321,15 +321,26 @@ function ConversationTurn({
   const total = turn.deliverables.length;
   const progress = total ? Math.round((done / total) * 100) : 0;
   const running = !isRunTerminal(turn.status);
+  // The persisted user_request IS the design-brief-enhanced prompt (no
+  // separate backend field for the original) — parsed back apart here so
+  // the bubble only ever shows the clean request the user actually typed,
+  // with the design choices surfaced as a compact pill underneath.
+  const { visible: visibleRequest, summary: designSummary } = parseVisiblePrompt(turn.user_request || '');
 
   return (
     <div>
       {/* Request bubble */}
-      <div className="flex justify-end mb-2">
+      <div className="flex flex-col items-end gap-1 mb-2">
         <div className="max-w-[80%] rounded-2xl rounded-br-sm px-3 py-2 text-[13px] text-white/85"
           style={{ background: 'rgba(34,211,238,0.08)', border: '1px solid rgba(34,211,238,0.12)' }}>
-          {turn.user_request || '(project run)'}
+          {visibleRequest || '(project run)'}
         </div>
+        {designSummary && (
+          <span className="flex items-center gap-1 px-2 py-1 rounded-full text-[10px] text-indigo-300/80"
+            style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.16)' }}>
+            Design: {designSummary}
+          </span>
+        )}
       </div>
 
       {/* Run card */}

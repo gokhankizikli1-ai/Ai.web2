@@ -16,6 +16,7 @@ import DeliverablesViewer from '@/components/results/DeliverablesViewer';
 import ExecutionTimeline from '@/components/results/ExecutionTimeline';
 import { describeStatus } from '@/lib/runStatus';
 import { formatAbsolute, formatDuration } from '@/lib/time';
+import { parseVisiblePrompt } from '@/lib/designBrief';
 
 interface RunResultDetailsProps {
   runId:          string | null;
@@ -32,7 +33,8 @@ export default function RunResultDetails({ runId, promptFallback, initialStatus 
   const meta = (run?.metadata || {}) as Record<string, unknown>;
   const deliverables: DeliverableView[] = live.deliverables;
 
-  const prompt = String(meta.user_request || promptFallback || '') || 'Untitled run';
+  const rawPrompt = String(meta.user_request || promptFallback || '') || 'Untitled run';
+  const { visible: prompt, summary: designSummary } = parseVisiblePrompt(rawPrompt);
   const workspace = String(meta.workspace || '');
   const status = live.status || (runId ? 'pending' : '');
   const desc = describeStatus(status);
@@ -100,6 +102,12 @@ export default function RunResultDetails({ runId, promptFallback, initialStatus 
           </span>
         </div>
         <p className="text-[11px] text-white/40 mt-1">{desc.description}</p>
+        {designSummary && (
+          <span className="inline-flex items-center gap-1 mt-2 px-2 py-1 rounded-full text-[10px] text-indigo-300/80"
+            style={{ background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.16)' }}>
+            Design: {designSummary}
+          </span>
+        )}
 
         {/* Meta row */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-[11px] text-white/40">

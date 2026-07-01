@@ -79,7 +79,20 @@ class ProductSpec:
             f"RESPONSIVE: yes (mobile-first)",
             f"DARK MODE: {'yes' if self.dark_mode else 'no'}",
             f"RENDERER CATEGORY: {self.renderer or self.layout}",
+            "ICON RULES: NEVER use raw emoji characters as icons anywhere (nav, sidebar, cards, buttons). "
+            "Use inline SVG icons or CSS-only icon tiles/shapes instead — every icon must render in a "
+            "single, consistent line-icon style, colored via currentColor so it matches the theme.",
         ]
+        density = (self.data or {}).get("density")
+        if density:
+            lines.append(f"DENSITY: {density} — "
+                         + ("favor generous whitespace, fewer panels per screen, one clear focal element."
+                            if density == "clean" else
+                            "pack in more KPI cards, chart panels and table rows per screen; this product "
+                            "should read as data-dense, not sparse."))
+        if (self.data or {}).get("product_showcase"):
+            lines.append("HERO EMPHASIS: give the hero's product mockup/screenshot extra visual prominence "
+                         "— this is a product-showcase-style layout.")
         if self.metrics:
             lines.append("DASHBOARD WIDGETS: " + ", ".join(m["label"] for m in self.metrics))
         on = [k.replace("needs_", "") for k, v in (self.capabilities or {}).items() if v]

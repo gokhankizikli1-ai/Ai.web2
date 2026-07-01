@@ -21,7 +21,7 @@ import re
 from backend.services.generation import component_library as cl
 from backend.services.generation.renderers import base
 from backend.services.generation.renderers.base import (
-    avatar, bars, e, feature_items, ring, spark, svg_icon,
+    avatar, bars, e, feature_items, resolve_icon_name, ring, spark, svg_icon,
 )
 from backend.services.generation.spec import ProductSpec
 
@@ -206,7 +206,7 @@ def _list_panel(spec: ProductSpec) -> str:
     items = feature_items(spec)[:5] or [{"icon": "●", "title": "Get started", "body": "Tap to begin."}]
     rows = "".join(f"""
     <div class="mb-list-item" data-select data-searchable="{e(c.get('title'))}">
-      <span class="mb-list-ic">{e(c.get('icon', '●'))}</span>
+      <span class="mb-list-ic">{svg_icon(resolve_icon_name(c.get('icon', 'dot')))}</span>
       <div class="mb-list-body"><div class="t">{e(c.get('title'))}</div>
         <div class="s">{e(c.get('body'))}</div></div>
       <span class="mb-list-trail">›</span>
@@ -291,7 +291,7 @@ def _home_page(spec: ProductSpec) -> str:
 def _secondary_page(spec: ProductSpec, label: str) -> str:
     items = feature_items(spec)[:5] or [{"icon": "●", "title": label, "body": "Nothing here yet."}]
     rows = "".join(f"""
-    <div class="mb-list-item"><span class="mb-list-ic">{e(c.get('icon', '●'))}</span>
+    <div class="mb-list-item"><span class="mb-list-ic">{svg_icon(resolve_icon_name(c.get('icon', 'dot')))}</span>
       <div class="mb-list-body"><div class="t">{e(c.get('title'))}</div>
         <div class="s">{e(c.get('body'))}</div></div>
       <span class="mb-list-trail">›</span></div>""" for c in items)

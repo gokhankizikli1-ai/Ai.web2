@@ -44,7 +44,12 @@ _BAR_H = [42, 66, 52, 80, 60, 88, 70, 94, 56, 76, 64, 84, 50, 72]
 
 
 def icon(glyph: str, cls: str = "ds-icon") -> str:
-    return f'<span class="{cls}" aria-hidden="true">{e(glyph or "●")}</span>'
+    """A premium icon tile — resolves `glyph` (an SVG icon name OR a
+    legacy emoji character) to an inline SVG via resolve_icon_name(), so
+    this NEVER prints a raw emoji. `.ds-icon` is a gradient tile with
+    `color: #fff`, which an SVG (stroke="currentColor") picks up correctly
+    — an emoji glyph never did, since emoji render in their own colors."""
+    return f'<span class="{cls}" aria-hidden="true">{svg_icon(resolve_icon_name(glyph))}</span>'
 
 
 def bars(n: int = 12, cls: str = "ds-bars") -> str:
@@ -118,7 +123,93 @@ _SVG_ICONS = {
     "grid": '<rect x="3.5" y="3.5" width="5.5" height="5.5" rx="1.4"/><rect x="11" y="3.5" width="5.5" height="5.5" rx="1.4"/><rect x="3.5" y="11" width="5.5" height="5.5" rx="1.4"/><rect x="11" y="11" width="5.5" height="5.5" rx="1.4"/>',
     "music": '<circle cx="6" cy="15" r="2.2"/><circle cx="14.5" cy="13.2" r="2.2"/><path d="M8.2 15V5.5L16.7 4v9.2"/>',
     "clock": '<circle cx="10" cy="10" r="6.8"/><path d="M10 6.2v4l2.8 1.6"/>',
+    # Sprint 2.3 — Design Brief / no-raw-emoji: a handful of extra concepts
+    # the emoji→icon map below needs (settings/automation/security/goals/
+    # files/search/streaks/money/food/AI) that the original 17-icon set
+    # didn't cover.
+    "gear": '<circle cx="10" cy="10" r="3"/><path d="M10 2.6v2.2M10 15.2v2.2M2.6 10h2.2M15.2 10h2.2M4.9 4.9l1.6 1.6M13.5 13.5l1.6 1.6M4.9 15.1l1.6-1.6M13.5 6.5l1.6-1.6"/>',
+    "bolt": '<path d="M11 2 4 11h5l-1 7 7-9h-5l1-7Z"/>',
+    "check": '<path d="M4.5 10.5 8 14l7.5-8"/>',
+    "close": '<path d="M5 5l10 10M15 5 5 15"/>',
+    "shield": '<path d="M10 2.5 16 5v5c0 4-2.7 6.7-6 7.5C6.7 16.7 4 14 4 10V5Z"/>',
+    "target": '<circle cx="10" cy="10" r="6.5"/><circle cx="10" cy="10" r="3.2"/><circle cx="10" cy="10" r=".6" fill="currentColor" stroke="none"/>',
+    "folder": '<path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h3l1.5 2h6.5A1.5 1.5 0 0 1 17 8.5v6A1.5 1.5 0 0 1 15.5 16h-11A1.5 1.5 0 0 1 3 14.5Z"/>',
+    "link": '<path d="M8 12 12 8"/><path d="M7 9 5.5 10.5a2.5 2.5 0 0 0 3.5 3.5L10.5 12.5"/><path d="M13 11l1.5-1.5a2.5 2.5 0 0 0-3.5-3.5L9.5 7.5"/>',
+    "search": '<circle cx="9" cy="9" r="5.5"/><path d="m17 17-3.4-3.4"/>',
+    "flame": '<path d="M10 2.5c1 3 4 4 4 8a4 4 0 0 1-8 0c0-1.3.6-2 1.2-2.8.4 1 1.3 1.3 1.8.6-.4-1.8.6-3.5 1-5.8Z"/>',
+    "coin": '<circle cx="10" cy="10" r="6.5"/><path d="M12 8.2c0-1-.9-1.7-2-1.7s-2 .6-2 1.5c0 2 4 1 4 3 0 .9-.9 1.5-2 1.5s-2-.7-2-1.7"/><path d="M10 5.8v1M10 13.2v1"/>',
+    "leaf": '<path d="M4 16c0-7 4-11 11-11 0 7-4 11-11 11Z"/><path d="M4 16c2-4 5-6 8-8"/>',
+    "brain": '<circle cx="6" cy="6.5" r="1.6"/><circle cx="14" cy="6.5" r="1.6"/><circle cx="10" cy="14" r="1.6"/><path d="M7.3 7.4 9 12.7M12.7 7.4 11 12.7M7.6 6.5h4.8"/>',
+    "info": '<circle cx="10" cy="10" r="6.8"/><path d="M10 9v4.2"/><circle cx="10" cy="6.6" r=".9" fill="currentColor" stroke="none"/>',
 }
+
+# ── Sprint 2.3 — no raw emoji in generated output ──────────────────────
+# Content built from `prompt_expander.py`'s vertical presets still carries
+# an emoji glyph in its "icon" field (e.g. "🏋", "📈") for HISTORICAL
+# reasons — rewriting every one of those ~90 call sites individually would
+# be a huge, risky diff for no visual gain. Instead every renderer reads
+# icons through `icon()` / `resolve_icon_name()` below, which is the ONE
+# place an emoji glyph gets translated into a premium inline SVG tile (or
+# a neutral dot if nothing maps) before it ever reaches HTML. Nothing
+# upstream has to change; nothing downstream ever prints a raw emoji.
+_EMOJI_TO_ICON = {
+    # activity / fitness / wellness
+    "🏋": "heart", "🧘": "heart", "🔥": "flame",
+    # food / nutrition
+    "🍎": "leaf", "🥗": "leaf", "🥐": "leaf", "🍽": "leaf", "🍷": "leaf", "🍮": "leaf",
+    # charts / analytics / trends
+    "📈": "chart", "📉": "chart", "📊": "chart", "💹": "chart",
+    # navigation / direction / maps
+    "🧭": "compass", "🗺": "compass",
+    # goals / achievement / leads / education
+    "🏆": "target", "🎯": "target", "🎓": "target",
+    # AI / model
+    "🧠": "brain",
+    # time
+    "🕑": "clock", "🕛": "clock", "⏰": "clock", "🗓": "calendar",
+    # files / library / notes / pipeline
+    "🗂": "folder", "🗄": "folder", "🗒": "folder", "📚": "folder",
+    # search
+    "🔍": "search", "🔎": "search",
+    # notifications
+    "🔔": "bell",
+    # security / risk
+    "🛡": "shield",
+    # commerce / shipping / orders
+    "🛍": "bag", "🛒": "bag", "🚚": "bag", "📦": "bag", "🧾": "list", "💳": "bag", "💼": "bag",
+    # money
+    "🏦": "coin", "🪙": "coin",
+    # people
+    "👤": "person", "🧑": "person",
+    # settings
+    "⚙": "gear",
+    # automation / energy / ideas / launch
+    "⚡": "bolt", "💡": "bolt", "🚀": "bolt",
+    # done / durable
+    "✅": "check", "✓": "check", "♻": "check",
+    # remove
+    "✕": "close",
+    # integrations / attachments / sync
+    "🔌": "link", "📎": "link", "☁": "link",
+    # messaging
+    "💬": "send", "📣": "send",
+    # audio
+    "🔊": "music", "🎤": "music", "🎮": "grid",
+}
+
+
+def resolve_icon_name(glyph_or_name: str) -> str:
+    """Resolve any icon reference — an already-valid SVG icon name, a raw
+    emoji glyph from an older content preset, or anything else — to a
+    known `_SVG_ICONS` key. Never returns an emoji; unresolvable input
+    falls back to the neutral "dot" glyph tile, never raw text."""
+    key = (glyph_or_name or "").strip()
+    lower = key.lower()
+    if lower in _SVG_ICONS:
+        return lower
+    if key in _EMOJI_TO_ICON:
+        return _EMOJI_TO_ICON[key]
+    return "dot"
 
 
 def svg_icon(name: str, cls: str = "ds-svg-icon") -> str:
@@ -403,5 +494,5 @@ def ensure_csp(html_doc: str) -> str:
 
 
 __all__ = ["e", "slug", "CSP", "icon", "bars", "spark", "ring", "avatar",
-           "traffic_lights", "kbd", "svg_icon", "feature_items", "SCRIPT", "SHELL_CSS",
+           "traffic_lights", "kbd", "svg_icon", "resolve_icon_name", "feature_items", "SCRIPT", "SHELL_CSS",
            "document", "ensure_viewport", "ensure_csp"]
