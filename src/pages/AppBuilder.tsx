@@ -4,6 +4,8 @@ import { Cpu, Wand2, Loader2 } from 'lucide-react';
 import Navigation from '@/components/Navigation';
 import PreviewResult from '@/components/PreviewResult';
 import AppPreviewShell from '@/components/builder/AppPreviewShell';
+import DesignBriefPanel from '@/components/builder/DesignBriefPanel';
+import { promptHasDesignDetail } from '@/lib/designBrief';
 import { useOrchestrateResult } from '@/hooks/useOrchestrateResult';
 
 const fadeUp = (delay = 0) => ({
@@ -19,12 +21,14 @@ const fadeUp = (delay = 0) => ({
 // works for any future module without change. Nothing here is mocked.
 export default function AppBuilder() {
   const [idea, setIdea] = useState('');
+  const [briefPrompt, setBriefPrompt] = useState<string | null>(null);
   const { phase, label, payload, error, disabledReason, disabledPrerequisites, isBusy, run } =
     useOrchestrateResult();
 
   const handleGenerate = () => {
     if (!idea.trim() || isBusy) return;
-    run(idea);
+    if (promptHasDesignDetail(idea)) { run(idea); return; }
+    setBriefPrompt(idea);
   };
 
   const showResult = phase !== 'idle';
@@ -96,6 +100,13 @@ export default function AppBuilder() {
           )}
         </div>
       </div>
+
+      <DesignBriefPanel
+        open={!!briefPrompt}
+        initialPrompt={briefPrompt || ''}
+        onCancel={() => setBriefPrompt(null)}
+        onConfirm={(enhanced) => { setBriefPrompt(null); run(enhanced); }}
+      />
     </div>
   );
 }

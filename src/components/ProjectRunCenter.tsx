@@ -30,6 +30,8 @@ import {
   type RunTurn,
 } from '@/hooks/useProjectOrchestrator';
 import DeliverablePreviewModal from '@/components/DeliverablePreviewModal';
+import DesignBriefPanel from '@/components/builder/DesignBriefPanel';
+import { isBuildIntentPrompt, promptHasDesignDetail } from '@/lib/designBrief';
 
 function lastRunKey(projectId: string): string {
   return `korvix_project_run_${projectId}`;
@@ -109,6 +111,7 @@ export default function ProjectRunCenter({ projectId }: { projectId: string }) {
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const [preview, setPreview] = useState<DeliverableView | null>(null);
+  const [briefPrompt, setBriefPrompt] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   // Live polling of whichever run is currently in flight.
@@ -151,8 +154,11 @@ export default function ProjectRunCenter({ projectId }: { projectId: string }) {
     } catch { /* ignore */ }
   }, [projectId]);
 
-  const startRun = useCallback(async () => {
-    const userRequest = request.trim();
+  // The actual run-launch — extracted so both the composer's "Build"
+  // button (guarded by the design brief below) and the brief panel's
+  // confirm/smart-defaults actions can trigger it with the final
+  // (possibly design-brief-enhanced) request text.
+  const runRequest = useCallback(async (userRequest: string) => {
     if (!userRequest || starting) return;
     setStarting(true);
     setStartError(null);
@@ -189,7 +195,20 @@ export default function ProjectRunCenter({ projectId }: { projectId: string }) {
     } finally {
       setStarting(false);
     }
-  }, [request, projectId, templateId, starting, persistRun]);
+  }, [projectId, templateId, starting, persistRun]);
+
+  // Gate: general-purpose composer (not every request here is a build —
+  // "research X" is valid too), so only intercept build-intent prompts
+  // that don't already carry enough explicit design detail.
+  const startRun = useCallback(() => {
+    const userRequest = request.trim();
+    if (!userRequest || starting) return;
+    if (isBuildIntentPrompt(userRequest) && !promptHasDesignDetail(userRequest)) {
+      setBriefPrompt(userRequest);
+      return;
+    }
+    runRequest(userRequest);
+  }, [request, starting, runRequest]);
 
   const cancelRun = useCallback(async (runId: string) => {
     try { await projectOrchestratorClient.cancelRun(runId); } catch { /* poll reflects status */ }
@@ -279,6 +298,12 @@ export default function ProjectRunCenter({ projectId }: { projectId: string }) {
       {composer}
 
       <DeliverablePreviewModal deliverable={preview} onClose={() => setPreview(null)} />
+      <DesignBriefPanel
+        open={!!briefPrompt}
+        initialPrompt={briefPrompt || ''}
+        onCancel={() => setBriefPrompt(null)}
+        onConfirm={(enhanced) => { setBriefPrompt(null); runRequest(enhanced); }}
+      />
     </div>
   );
 }
