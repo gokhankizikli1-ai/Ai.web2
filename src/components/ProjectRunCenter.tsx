@@ -320,18 +320,29 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
     setPreview(null);
   }, [runRequest]);
 
+  // Starter mode chips (Auto / templates) are a fresh-project affordance:
+  // once the first build request has been submitted (a turn exists, or the
+  // Design Interview for it is open) the session IS the build conversation,
+  // so the chips disappear and the composer reads as continuation. A brand
+  // new empty project shows them again.
+  const showStarterChips = turns.length === 0 && !briefPrompt;
+
   const composer = (
     <div className="shrink-0 px-4 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.05)', background: 'rgba(17,21,28,0.4)' }}>
       <div className="max-w-2xl mx-auto">
-        <div className="flex flex-wrap items-center gap-1.5 mb-2">
-          <Chip active={templateId === ''} onClick={() => setTemplateId('')} label="Auto" icon />
-          {templates.map(t => (
-            <Chip key={t.id} active={templateId === t.id} onClick={() => setTemplateId(t.id)} label={t.name} />
-          ))}
-          {/* Contextual intent chip — only once a completed build exists and
-              a draft is being typed, so the composer stays quiet otherwise. */}
-          {latestBuildTurn && request.trim() !== '' && (
-            <span className="ml-auto flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium"
+        {showStarterChips && (
+          <div className="flex flex-wrap items-center gap-1.5 mb-2">
+            <Chip active={templateId === ''} onClick={() => setTemplateId('')} label="Auto" icon />
+            {templates.map(t => (
+              <Chip key={t.id} active={templateId === t.id} onClick={() => setTemplateId(t.id)} label={t.name} />
+            ))}
+          </div>
+        )}
+        {/* Contextual intent chip — only once a completed build exists and
+            a draft is being typed, so the composer stays quiet otherwise. */}
+        {!showStarterChips && latestBuildTurn && request.trim() !== '' && (
+          <div className="flex justify-end mb-2">
+            <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium"
               style={{
                 background: refineIntent ? 'rgba(52,211,153,0.08)' : 'rgba(34,211,238,0.06)',
                 border: `1px solid ${refineIntent ? 'rgba(52,211,153,0.2)' : 'rgba(34,211,238,0.14)'}`,
@@ -340,8 +351,8 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
               {refineIntent ? <Pencil className="h-2.5 w-2.5" /> : <Sparkles className="h-2.5 w-2.5" />}
               {refineIntent ? 'Editing latest build' : 'New build'}
             </span>
-          )}
-        </div>
+          </div>
+        )}
         <div className="flex items-end gap-2 rounded-xl px-3 py-2"
           style={{ background: 'rgba(27,34,48,0.5)', border: '1px solid rgba(255,255,255,0.06)' }}>
           <textarea
@@ -349,8 +360,10 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
             onChange={(e) => setRequest(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); startRun(); } }}
             placeholder={latestBuildTurn
-              ? 'Ask Korvix to edit this build or describe a new one…'
-              : 'Describe what you want Korvix to build…'}
+              ? 'Ask Korvix to edit this build or describe the next change…'
+              : showStarterChips
+                ? 'Describe what you want Korvix to build…'
+                : 'Describe the next step for this project…'}
             rows={1}
             className="flex-1 bg-transparent text-[13px] text-white/85 placeholder:text-white/20 outline-none resize-none py-1.5 max-h-[120px] scrollbar-thin"
           />

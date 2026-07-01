@@ -158,35 +158,62 @@ async def _agent_run_handler(ctx: JobContext) -> dict:
         },
     )
 
+    # Page artifacts (landing/app HTML) have a guaranteed deterministic
+    # premium renderer behind finalize_artifact(): when the model reply
+    # fails the quality gate — including when it's EMPTY — the engine
+    # renders the full premium page from the expanded ProductSpec, which
+    # carries the original user request, its DESIGN_BRIEF block and the
+    # detected category. For these kinds the model reply is an
+    # enhancement, not a requirement, so "no model output" degrades to
+    # that renderer instead of failing the whole build.
+    kind = str(payload.get("deliverable_kind") or "")
+    try:
+        from backend.services.generation.engine import PAGE_KINDS
+        renderable_page = kind.lower() in PAGE_KINDS
+    except Exception:  # engine unavailable → no deterministic fallback exists
+        renderable_page = False
+
+    degraded_reason: Optional[str] = None
+    reply = ""
     try:
         response = await run_agent(request)
+        reply = (getattr(response, "reply", "") or "").strip()
+        # The agent runtime is OpenAI-only and degrades to an EMPTY,
+        # `fallback=True` response when it can't reach the model (missing
+        # OPENAI_API_KEY, a non-OpenAI MODEL_* id routed to the OpenAI
+        # client, a timeout, ...).
+        if bool(getattr(response, "fallback", False)) or not reply:
+            meta = getattr(response, "metadata", None) or {}
+            degraded_reason = meta.get("fallback_reason") or "agent returned no content"
+            reply = ""
     except Exception as exc:
-        _mark_task(task_id, "failed", error=f"{type(exc).__name__}: {exc}")
-        _mark_deliverable(deliverable_id, "failed", error=str(exc)[:300])
-        raise
+        if not renderable_page:
+            _mark_task(task_id, "failed", error=f"{type(exc).__name__}: {exc}")
+            _mark_deliverable(deliverable_id, "failed", error=str(exc)[:300])
+            raise
+        degraded_reason = f"{type(exc).__name__}: {exc}"
 
-    reply = (getattr(response, "reply", "") or "").strip()
-
-    # Fail loudly when the agent produced no usable output. The agent
-    # runtime is OpenAI-only and degrades to an EMPTY, `fallback=True`
-    # response when it can't reach the model (missing OPENAI_API_KEY, a
-    # non-OpenAI MODEL_* id routed to the OpenAI client, a timeout, ...).
-    # Marking that "completed" yields a green run with blank deliverables
-    # — a silent fake-success. Instead, fail the step with an actionable
-    # reason so the run surfaces the real problem (and the workflow's
-    # failure handling skips the downstream steps).
-    is_fallback = bool(getattr(response, "fallback", False))
-    if is_fallback or not reply:
-        meta = getattr(response, "metadata", None) or {}
-        reason = meta.get("fallback_reason") or "agent returned no content"
+    # Fail loudly when the agent produced no usable output AND there is no
+    # deterministic renderer for this kind (plans/copy/markdown nodes).
+    # Marking that "completed" would yield a green run with blank
+    # deliverables — a silent fake-success. Fail the step with an
+    # actionable reason instead so the run surfaces the real problem.
+    if degraded_reason is not None and not renderable_page:
         detail = (
-            f"agent '{spec.id}' produced no output ({reason}). "
+            f"agent '{spec.id}' produced no output ({degraded_reason}). "
             "Check OPENAI_API_KEY and that MODEL_* routing resolves to an "
             "OpenAI model id."
         )
         _mark_task(task_id, "failed", error=detail)
         _mark_deliverable(deliverable_id, "failed", error=detail[:300])
         raise RuntimeError(detail)
+
+    if degraded_reason is not None:
+        logger.warning(
+            "agent.run | %s produced no usable output (%s) — rendering the "
+            "deterministic premium %s artifact from project context instead",
+            spec.id, degraded_reason, kind,
+        )
 
     await ctx.report_progress(90, "persisting deliverable")
 
@@ -197,7 +224,6 @@ async def _agent_run_handler(ctx: JobContext) -> dict:
     # design-system enforcement + accessibility + internal quality review
     # + one deterministic premium-refinement pass + metadata). Falls back
     # to the base artifact builder if the engine is unavailable.
-    kind = str(payload.get("deliverable_kind") or "")
     title = str(payload.get("node_title") or payload.get("node_id") or "artifact")
     try:
         from backend.services.generation import finalize_artifact as _finalize
@@ -206,7 +232,19 @@ async def _agent_run_handler(ctx: JobContext) -> dict:
             user_request=str(payload.get("user_request") or ""),
             blueprint=blueprint,
         )
-    except Exception as exc:  # pragma: no cover — never block a run
+    except Exception as exc:
+        if degraded_reason is not None:
+            # No model output AND the deterministic renderer failed too —
+            # nothing usable can be shown. Only now does the step fail.
+            detail = (
+                f"agent '{spec.id}' produced no output ({degraded_reason}) "
+                f"and the deterministic renderer was unavailable ({exc}). "
+                "Check OPENAI_API_KEY and that MODEL_* routing resolves to "
+                "an OpenAI model id."
+            )
+            _mark_task(task_id, "failed", error=detail)
+            _mark_deliverable(deliverable_id, "failed", error=detail[:300])
+            raise RuntimeError(detail)
         logger.debug("generation.finalize_artifact soft-failed: %s", exc)
         from backend.services.orchestrator.artifacts import build_artifact
         artifact = build_artifact(kind=kind, title=title, text=reply)
@@ -219,7 +257,8 @@ async def _agent_run_handler(ctx: JobContext) -> dict:
     _mark_deliverable(deliverable_id, "completed", content=content)
 
     from backend.services.orchestrator.execution_graph import truncate_for_summary
-    _mark_task(task_id, "completed", result_summary=truncate_for_summary(reply))
+    _mark_task(task_id, "completed", result_summary=truncate_for_summary(
+        reply or f"{title} — rendered deterministically (no model output)"))
 
     return {
         "agent_id":       spec.id,
