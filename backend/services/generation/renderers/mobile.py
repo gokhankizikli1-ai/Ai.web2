@@ -35,6 +35,13 @@ CSS = """
   border:1px solid var(--border); border-radius:30px; box-shadow:var(--shadow-lg); }
 @media (max-width:480px){ .mb-frame { border:0; border-radius:0; box-shadow:none; } }
 
+/* ── Device chrome (Sprint 1.12) — a real status bar makes the phone
+   canvas read as an actual screenshot instead of a rounded rectangle. */
+.mb-statusbar { flex:0 0 auto; display:flex; align-items:center; justify-content:space-between;
+  padding:12px 24px 0; font-size:.8rem; font-weight:700; letter-spacing:-.01em; color:var(--text); }
+.mb-statusbar-icons { display:flex; align-items:center; gap:5px; color:var(--text); }
+.mb-statusbar-icons svg { display:block; }
+
 .mb-topbar { position:sticky; top:0; z-index:20; display:flex; align-items:center; gap:12px;
   padding:18px 18px 14px; background:color-mix(in srgb,var(--bg) 88%, transparent);
   backdrop-filter:blur(10px); border-bottom:1px solid var(--border); }
@@ -57,12 +64,22 @@ CSS = """
 .mb-hero-copy h2 { font-size:1.15rem; color:#fff; margin-bottom:4px; }
 .mb-hero-copy p { color:rgba(255,255,255,.82); font-size:.84rem; }
 
-.mb-metric-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+/* Sprint 1.12 — a dominant lead metric + a compact supporting row,
+   instead of four equal-weight cards (the flat-metric-grid anti-pattern
+   the design philosophy explicitly calls out). */
+.mb-metric-grid { display:flex; flex-direction:column; gap:10px; }
+.mb-metric-sub { display:grid; grid-template-columns:repeat(3, 1fr); gap:10px; }
 .mb-metric-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
   padding:14px; display:flex; flex-direction:column; gap:4px; }
 .mb-metric-card .lbl { font-size:.74rem; color:var(--text-dim); }
 .mb-metric-card .val { font-size:1.3rem; font-weight:740; letter-spacing:-.02em; }
 .mb-metric-card .delta { font-size:.74rem; color:var(--accent-2); }
+.mb-metric-lead { flex-direction:row; align-items:center; justify-content:space-between;
+  padding:18px 20px; border-color:var(--border-strong);
+  background:linear-gradient(135deg, color-mix(in srgb, var(--accent) 10%, var(--surface)), var(--surface)); }
+.mb-metric-lead .val { font-size:2.1rem; }
+.mb-metric-sub .mb-metric-card { padding:11px; gap:2px; }
+.mb-metric-sub .val { font-size:1.02rem; }
 
 .mb-section h3 { font-size:1rem; margin-bottom:10px; }
 .mb-section .sub { font-size:.82rem; color:var(--text-dim); margin:-6px 0 10px; }
@@ -94,11 +111,12 @@ CSS = """
 .mb-tabbar { position:sticky; bottom:0; z-index:20; display:flex; justify-content:space-around;
   padding:10px 6px calc(10px + env(safe-area-inset-bottom,0px)); background:color-mix(in srgb,var(--bg) 90%, transparent);
   backdrop-filter:blur(10px); border-top:1px solid var(--border); }
-.mb-tab { display:flex; flex-direction:column; align-items:center; gap:3px; padding:4px 10px; border-radius:12px;
-  color:var(--text-dim); cursor:pointer; transition:color var(--t) var(--ease); flex:1; }
+.mb-tab { display:flex; flex-direction:column; align-items:center; gap:3px; padding:6px 10px; border-radius:12px;
+  color:var(--text-dim); cursor:pointer; transition:all var(--t) var(--ease); flex:1; }
 .mb-tab .ds-svg-icon { width:21px; height:21px; }
 .mb-tab span { font-size:.66rem; font-weight:650; }
-.mb-tab.is-active { color:var(--accent); }
+.mb-tab.is-active { color:var(--accent);
+  background:color-mix(in srgb, var(--accent) 12%, transparent); }
 
 .mb-reveal { border:1px solid var(--border); border-radius:var(--radius-lg); padding:18px; background:var(--surface); }
 
@@ -165,15 +183,20 @@ def _hero(spec: ProductSpec) -> str:
   </div>"""
 
 
+def _metric_card(x: dict, cls: str = "mb-metric-card") -> str:
+    return (f'<div class="{cls}"><span class="lbl">{e(x.get("label"))}</span>'
+            f'<span class="val">{e(x.get("value"))}</span>'
+            f'<span class="delta">{e(x.get("delta"))}</span></div>')
+
+
 def _metric_grid(spec: ProductSpec) -> str:
     m = (spec.metrics or [])[:4]
     while len(m) < 4:
         m.append({"label": "Metric", "value": "—", "delta": ""})
-    cards = "".join(f"""
-    <div class="mb-metric-card"><span class="lbl">{e(x.get('label'))}</span>
-      <span class="val">{e(x.get('value'))}</span>
-      <span class="delta">{e(x.get('delta'))}</span></div>""" for x in m)
-    return f'<div class="mb-metric-grid">{cards}</div>'
+    lead, rest = m[0], m[1:]
+    sub = "".join(_metric_card(x, "mb-metric-card") for x in rest)
+    return (f'<div class="mb-metric-grid">{_metric_card(lead, "mb-metric-card mb-metric-lead")}'
+            f'<div class="mb-metric-sub">{sub}</div></div>')
 
 
 def _list_panel(spec: ProductSpec) -> str:
@@ -280,6 +303,26 @@ _PERSONALITY_BY_TYPE = {"wellness": "mb-personality-wellness", "media": "mb-pers
                         "food": "mb-personality-food", "fitness": "mb-personality-fitness"}
 
 
+def _status_bar() -> str:
+    """A tiny, hand-authored status bar (time + signal/wifi/battery) so
+    the phone canvas reads as an actual screenshot, not a rounded
+    rectangle. Inline SVG, zero network — same sandbox-safe convention as
+    every other icon in the shared renderer base."""
+    signal = ('<svg width="16" height="11" viewBox="0 0 16 11" fill="currentColor" aria-hidden="true">'
+              '<rect x="0" y="7" width="3" height="4" rx=".5"/><rect x="4.5" y="5" width="3" height="6" rx=".5"/>'
+              '<rect x="9" y="2.5" width="3" height="8.5" rx=".5"/><rect x="13" y="0" width="3" height="11" rx=".5"/></svg>')
+    wifi = ('<svg width="15" height="11" viewBox="0 0 15 11" fill="none" stroke="currentColor" '
+            'stroke-width="1.4" stroke-linecap="round" aria-hidden="true">'
+            '<path d="M1 4.2a10 10 0 0 1 13 0"/><path d="M3.6 6.8a6.4 6.4 0 0 1 7.8 0"/>'
+            '<circle cx="7.5" cy="9.5" r="1.1" fill="currentColor" stroke="none"/></svg>')
+    battery = ('<svg width="24" height="12" viewBox="0 0 24 12" fill="none" aria-hidden="true">'
+               '<rect x=".75" y=".75" width="20" height="10.5" rx="2.5" stroke="currentColor" stroke-width="1"/>'
+               '<rect x="2.25" y="2.25" width="16" height="7.5" rx="1.3" fill="currentColor" opacity=".95"/>'
+               '<rect x="21.5" y="4" width="1.8" height="4" rx="1" fill="currentColor"/></svg>')
+    return (f'<div class="mb-statusbar"><span>9:41</span>'
+            f'<span class="mb-statusbar-icons">{signal}{wifi}{battery}</span></div>')
+
+
 def render(spec: ProductSpec) -> str:
     nav = spec.navigation or ["Home", "Activity", "Profile"]
     tabs = "".join(
@@ -294,6 +337,7 @@ def render(spec: ProductSpec) -> str:
     shell_cls = f"mb-shell {personality}".strip()
     return f"""
 <div class="{shell_cls}"><div class="mb-frame">
+  {_status_bar()}
   <header class="mb-topbar">
     {avatar(spec.name)}
     <div class="mb-greeting"><div class="hi">Welcome back</div><h1>{e(spec.name)}</h1></div>
