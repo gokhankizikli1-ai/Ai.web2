@@ -168,7 +168,7 @@ export default function WebsiteBuilder() {
           )}
 
           {/* Generated Content */}
-          {generated && !generating && (
+          {generated && !generating && !briefPrompt && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="grid grid-cols-1 lg:grid-cols-4 gap-4">
               {/* Section Selector */}
               <div className="lg:col-span-1 space-y-1">

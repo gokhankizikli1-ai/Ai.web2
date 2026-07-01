@@ -113,6 +113,7 @@ export default function ProjectRunCenter({ projectId }: { projectId: string }) {
   const [preview, setPreview] = useState<DeliverableView | null>(null);
   const [briefPrompt, setBriefPrompt] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const briefRef = useRef<HTMLDivElement | null>(null);
 
   // Live polling of whichever run is currently in flight.
   const { snapshot } = useProjectRun(activeRunId);
@@ -147,6 +148,15 @@ export default function ProjectRunCenter({ projectId }: { projectId: string }) {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [turns.length, briefPrompt]);
+
+  useEffect(() => {
+    if (!briefPrompt || !briefRef.current || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    });
+    observer.observe(briefRef.current);
+    return () => observer.disconnect();
+  }, [briefPrompt]);
 
   const persistRun = useCallback((id: string | null) => {
     try {
@@ -294,11 +304,13 @@ export default function ProjectRunCenter({ projectId }: { projectId: string }) {
               />
             ))}
             {briefPrompt && (
-              <DesignInterview
-                prompt={briefPrompt}
-                onBuild={(enhanced) => { setBriefPrompt(null); runRequest(enhanced); }}
-                onCancel={() => setBriefPrompt(null)}
-              />
+              <div ref={briefRef}>
+                <DesignInterview
+                  prompt={briefPrompt}
+                  onBuild={(enhanced) => { setBriefPrompt(null); runRequest(enhanced); }}
+                  onCancel={() => setBriefPrompt(null)}
+                />
+              </div>
             )}
             <div ref={bottomRef} />
           </div>
