@@ -6,7 +6,7 @@
 // direction / density). Pure string logic — no LLM, no network.
 import {
   type BuilderCategory, detectCategory, detectRetailFlavor,
-  brandNameFromPrompt, brandSlugFromPrompt, paletteForDirection,
+  brandNameFromPrompt, paletteForDirection,
 } from './promptCategory';
 import type { DesignBriefAnswers } from '@/lib/designBrief';
 
@@ -19,6 +19,8 @@ export type FeatureIcon =
 
 export interface SiteContent {
   category: BuilderCategory;
+  /** The resolved (possibly synthesized) product-style brand name shown in the navbar/footer. */
+  brandName: string;
   nav: string[];
   hero: {
     eyebrow: string;
@@ -680,21 +682,18 @@ function brandSwatchesForDirection(colorDirection?: string): Array<{ hex: string
   ];
 }
 
-export function generateSiteContent(prompt: string, brief?: DesignBriefAnswers | null): SiteContent {
+export function generateSiteContent(
+  prompt: string, brief?: DesignBriefAnswers | null, brandOverride?: string | null,
+): SiteContent {
   const category = detectCategory(prompt);
   const retail = detectRetailFlavor(prompt);
-  const brand = brandNameFromPrompt(prompt);
+  const brand = (brandOverride || '').trim() || brandNameFromPrompt(prompt);
   const body = BUILDERS[category]({ brand, retail });
   return {
     category,
+    brandName: brand,
     brand: brandSwatchesForDirection(brief?.colorDirection),
     typography: typographyForStyle(brief?.visualStyle),
     ...body,
   };
-}
-
-// A short, url-safe "domain" derived from the user's prompt, for the fake
-// browser address bar — purely cosmetic, no navigation happens.
-export function siteNameFromPrompt(prompt: string): string {
-  return brandSlugFromPrompt(prompt);
 }

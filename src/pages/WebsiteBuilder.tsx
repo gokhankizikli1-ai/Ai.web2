@@ -9,13 +9,13 @@ import BrowserFrame from '@/components/builder/BrowserFrame';
 import BuilderWorkspaceFrame from '@/components/builder/BuilderWorkspaceFrame';
 import BuilderPromptCard from '@/components/builder/BuilderPromptCard';
 import BuilderProgressCard from '@/components/builder/BuilderProgressCard';
-import DesignDirectionBadge from '@/components/builder/DesignDirectionBadge';
+import BuilderRefinePanel, { type RefinePatch } from '@/components/builder/BuilderRefinePanel';
 import WebsitePreviewCanvas from '@/components/builder/WebsitePreviewCanvas';
 import DesignInterview from '@/components/builder/DesignInterview';
-import { generateSiteContent, siteNameFromPrompt, type SiteContent } from '@/components/builder/siteContent';
+import { generateSiteContent, type SiteContent } from '@/components/builder/siteContent';
 import { CATEGORY_LABELS, paletteForDirection } from '@/components/builder/promptCategory';
 import {
-  promptHasDesignDetail, resolveBriefAnswers, summarizeAnswers, type DesignBriefAnswers,
+  promptHasDesignDetail, resolveBriefAnswers, smartDefaultsFromPrompt, type DesignBriefAnswers,
 } from '@/lib/designBrief';
 
 const fadeUp = (delay = 0) => ({
@@ -88,13 +88,17 @@ export default function WebsiteBuilder() {
   const [activeSection, setActiveSection] = useState('hero');
   const [view, setView] = useState<'preview' | 'structure'>('preview');
   const [lastPrompt, setLastPrompt] = useState('');
-  const [brief, setBrief] = useState<DesignBriefAnswers | null>(null);
+  const [brief, setBrief] = useState<DesignBriefAnswers>(() => smartDefaultsFromPrompt(''));
   const [briefPrompt, setBriefPrompt] = useState<string | null>(null);
+  const [brandOverride, setBrandOverride] = useState<string | null>(null);
+  const [ctaOverride, setCtaOverride] = useState<string | null>(null);
 
   const startGeneration = (finalPrompt: string, answers: DesignBriefAnswers) => {
     setGenerating(true);
     setLastPrompt(finalPrompt);
     setBrief(answers);
+    setBrandOverride(null);
+    setCtaOverride(null);
     setActiveSection('hero');
     setView('preview');
     setTimeout(() => {
@@ -112,9 +116,35 @@ export default function WebsiteBuilder() {
     setBriefPrompt(prompt);
   };
 
-  const content = useMemo(() => generateSiteContent(lastPrompt, brief), [lastPrompt, brief]);
-  const palette = useMemo(() => paletteForDirection(brief?.colorDirection), [brief]);
-  const siteName = `${siteNameFromPrompt(lastPrompt)}.ai`;
+  // Post-generation refine — folds a structured settings patch and/or a
+  // free-text edit instruction back into the same deterministic build
+  // flow used for the initial generation. The instruction is appended to
+  // the working prompt, so category-shifting asks ("make it more
+  // ecommerce-focused") genuinely re-route the generated content — it's
+  // not faked, it just can't rewrite prose no keyword maps to.
+  const handleRefine = (patch: RefinePatch) => {
+    if (patch.brandName) setBrandOverride(patch.brandName);
+    if (patch.ctaText) setCtaOverride(patch.ctaText);
+    if (patch.colorDirection || patch.density || patch.layoutType) {
+      setBrief((prev) => ({
+        ...prev,
+        colorDirection: patch.colorDirection || prev.colorDirection,
+        density: patch.density || prev.density,
+        layoutType: patch.layoutType || prev.layoutType,
+      }));
+    }
+    if (patch.instruction) {
+      setLastPrompt((prev) => `${prev} ${patch.instruction}`.trim());
+    }
+  };
+
+  const content = useMemo(() => {
+    const c = generateSiteContent(lastPrompt, brief, brandOverride);
+    if (!ctaOverride) return c;
+    return { ...c, hero: { ...c.hero, primaryCta: ctaOverride }, cta: { ...c.cta, button: ctaOverride } };
+  }, [lastPrompt, brief, brandOverride, ctaOverride]);
+  const palette = useMemo(() => paletteForDirection(brief.colorDirection), [brief.colorDirection]);
+  const siteUrl = `${(content.brandName || 'yourbrand').replace(/\s+/g, '').toLowerCase()}.ai`;
   const visibleSections = SECTIONS.filter((s) => s.id !== 'pricing' || content.pricing.length > 0);
 
   return (
@@ -169,13 +199,20 @@ export default function WebsiteBuilder() {
 
       {/* Generated content */}
       {generated && !generating && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-          <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
-            <DesignDirectionBadge
-              categoryLabel={CATEGORY_LABELS[content.category]}
-              designSummary={brief ? summarizeAnswers(brief) : null}
-              palette={palette}
-            />
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
+          <BuilderRefinePanel
+            accent={palette.accent}
+            accent2={palette.accent2}
+            palette={palette}
+            categoryLabel={CATEGORY_LABELS[content.category]}
+            brief={brief}
+            brandName={content.brandName}
+            brandLabel="Brand name"
+            ctaText={content.hero.primaryCta}
+            onApply={handleRefine}
+          />
+
+          <div className="flex items-center justify-end">
             <div className="flex items-center gap-0.5 rounded-lg bg-white/[0.02] border border-white/[0.04] p-0.5">
               <button
                 onClick={() => setView('preview')}
@@ -218,8 +255,8 @@ export default function WebsiteBuilder() {
             {/* Preview canvas */}
             <div className="lg:col-span-3">
               {view === 'preview' ? (
-                <BrowserFrame url={siteName} accentColor={palette.accent}>
-                  <WebsitePreviewCanvas content={content} activeSection={activeSection} siteName={siteNameFromPrompt(lastPrompt) || 'Brand'} palette={palette} />
+                <BrowserFrame url={siteUrl} accentColor={palette.accent}>
+                  <WebsitePreviewCanvas content={content} activeSection={activeSection} palette={palette} />
                 </BrowserFrame>
               ) : (
                 <motion.div
