@@ -82,13 +82,13 @@ const PREMIUM_PREVIEW_CSS = `
   }
   aside a, aside li, aside button,
   [class*="sidebar" i] a, [class*="sidebar" i] li, [class*="sidebar" i] button,
-  nav a, nav li {
+  [class*="side-nav" i] a, [class*="side-nav" i] li, [class*="side-nav" i] button {
     display: flex; align-items: center; gap: 10px;
     border-radius: 9px; padding: 9px 10px; margin: 2px 0;
     color: #9ca3af; list-style: none; font-size: 13px;
     border-left: 2px solid transparent;
   }
-  aside a:hover, [class*="sidebar" i] a:hover, nav a:hover {
+  aside a:hover, [class*="sidebar" i] a:hover, [class*="side-nav" i] a:hover {
     background: rgba(255,255,255,0.055); color: #fff; text-decoration: none;
   }
   aside [class*="active" i], aside [aria-current], aside [class*="selected" i],
@@ -193,7 +193,8 @@ const PREMIUM_PREVIEW_CSS = `
          Actual chart libraries (canvas/svg) render as-is; this only helps
          div-based bar/progress placeholders look intentional. */
   [class*="chart" i] { padding: 4px 0; }
-  [class*="progress" i]:not([class*="progress-bar" i]):not([class*="progress-fill" i]) {
+  [class~="progress" i]:not([class*="progress-bar" i]):not([class*="progress-fill" i]),
+  [class*="progress-track" i]:not([class*="progress-bar" i]):not([class*="progress-fill" i]) {
     background: rgba(255,255,255,0.08); border-radius: 999px; overflow: hidden; height: 8px;
   }
   [class*="progress-bar" i], [class*="progress-fill" i], [class*="bar-fill" i] {
