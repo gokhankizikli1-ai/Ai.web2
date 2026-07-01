@@ -4,7 +4,7 @@ import { Cpu, Wand2, Loader2 } from 'lucide-react';
 import Navigation from '@/components/Navigation';
 import PreviewResult from '@/components/PreviewResult';
 import AppPreviewShell from '@/components/builder/AppPreviewShell';
-import DesignBriefPanel from '@/components/builder/DesignBriefPanel';
+import DesignInterview from '@/components/builder/DesignInterview';
 import { promptHasDesignDetail } from '@/lib/designBrief';
 import { useOrchestrateResult } from '@/hooks/useOrchestrateResult';
 
@@ -32,6 +32,7 @@ export default function AppBuilder() {
   };
 
   const showResult = phase !== 'idle';
+  const showInterview = !!briefPrompt;
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-slate-300 flex flex-col">
@@ -72,9 +73,23 @@ export default function AppBuilder() {
             </div>
           </motion.div>
 
+          {/* Design Interview — Korvix asks the design questions as chat
+              messages inline in the page, never a floating modal. Only the
+              hidden enhanced prompt (built once "Build now" fires) carries
+              the DESIGN_BRIEF block to the backend. */}
+          {showInterview && (
+            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="mb-6 max-w-2xl">
+              <DesignInterview
+                prompt={briefPrompt || ''}
+                onBuild={(enhanced) => { setBriefPrompt(null); run(enhanced); }}
+                onCancel={() => setBriefPrompt(null)}
+              />
+            </motion.div>
+          )}
+
           {/* Result — driven entirely by the backend PreviewPayload, wrapped
               in a premium app-shell frame (topbar/sidebar/stat cards). */}
-          {showResult && (
+          {showResult && !showInterview && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
               <AppPreviewShell idea={idea} phase={phase}>
                 <PreviewResult
@@ -91,7 +106,7 @@ export default function AppBuilder() {
           )}
 
           {/* Empty state */}
-          {phase === 'idle' && (
+          {phase === 'idle' && !showInterview && (
             <motion.div {...fadeUp(0.1)} className="text-center py-16">
               <Cpu className="w-12 h-12 text-[#64748B] mx-auto mb-4" />
               <h3 className="text-sm font-medium text-white mb-1">Describe what you want to build</h3>
@@ -100,13 +115,6 @@ export default function AppBuilder() {
           )}
         </div>
       </div>
-
-      <DesignBriefPanel
-        open={!!briefPrompt}
-        initialPrompt={briefPrompt || ''}
-        onCancel={() => setBriefPrompt(null)}
-        onConfirm={(enhanced) => { setBriefPrompt(null); run(enhanced); }}
-      />
     </div>
   );
 }

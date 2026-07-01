@@ -365,6 +365,22 @@ def _style_overrides(style: Dict) -> str:
             ".ds-card { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent); }",
             ".ds-nav-logo, .ds-icon { box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 60%, transparent); }",
         ]
+    if bg == "glass":
+        # Real glassmorphism, not just a gradient backdrop: translucent
+        # frosted surfaces with backdrop-filter blur on cards/nav/drawers,
+        # a brighter hairline border to catch the "glass edge" highlight.
+        parts += [
+            ".ds-card, .ds-glass, .db-panel { "
+            "background: linear-gradient(180deg, color-mix(in srgb, var(--surface) 58%, transparent), "
+            "color-mix(in srgb, var(--surface) 30%, transparent)); "
+            "backdrop-filter: blur(22px) saturate(160%); -webkit-backdrop-filter: blur(22px) saturate(160%); "
+            "border: 1px solid color-mix(in srgb, #fff 14%, var(--border)); }",
+            ".ds-card:hover { border-color: color-mix(in srgb, #fff 22%, var(--border-strong)); }",
+            ".ds-nav, .db-sidebar, .ds-drawer { "
+            "background: color-mix(in srgb, var(--bg) 50%, transparent); "
+            "backdrop-filter: blur(22px) saturate(160%); -webkit-backdrop-filter: blur(22px) saturate(160%); }",
+            ".ds-hero-art, .sh-hero-art { box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 16%, transparent), var(--shadow-lg); }",
+        ]
     if style.get("font") == "serif":
         parts += [
             "h1, h2, h3 { font-weight: 600; letter-spacing: -0.01em; }",

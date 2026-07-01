@@ -848,6 +848,7 @@ _BRIEF_COLOR_OVERRIDE: Dict[str, Tuple[str, str, str]] = {
     "black + gold": ("#d4af37", "#f2d374", "dark"),
     "black + cyan": ("#22d3ee", "#0891b2", "dark"),
     "white + graphite": ("#374151", "#6b7280", "light"),
+    "purple + indigo": ("#a855f7", "#6366f1", "dark"),
 }
 
 
