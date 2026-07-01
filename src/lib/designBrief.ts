@@ -27,7 +27,7 @@ export interface DesignBriefAnswers {
 // per question instead of a wall of chips.
 
 export const VISUAL_STYLES = ['Luxury Dark', 'Apple Clean', 'Linear SaaS', 'Futuristic Glass'] as const;
-export const COLOR_DIRECTIONS = ['Black + Gold', 'Black + Cyan', 'White + Graphite', 'Custom'] as const;
+export const COLOR_DIRECTIONS = ['Black + Gold', 'Black + Cyan', 'White + Graphite', 'Purple + Indigo'] as const;
 export const LAYOUT_TYPES = ['Landing Page', 'Data Dashboard', 'SaaS App Shell', 'Product Showcase'] as const;
 export const DENSITIES = ['Clean', 'Balanced', 'Data Heavy', 'Highly Detailed'] as const;
 

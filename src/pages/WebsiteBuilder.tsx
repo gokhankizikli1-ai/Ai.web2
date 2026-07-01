@@ -9,7 +9,7 @@ import {
 import Navigation from '@/components/Navigation';
 import BrowserFrame from '@/components/builder/BrowserFrame';
 import WebsitePreviewCanvas from '@/components/builder/WebsitePreviewCanvas';
-import DesignBriefPanel from '@/components/builder/DesignBriefPanel';
+import DesignInterview from '@/components/builder/DesignInterview';
 import { SITE_CONTENT, siteNameFromPrompt } from '@/components/builder/siteContent';
 import { promptHasDesignDetail } from '@/lib/designBrief';
 
@@ -147,8 +147,20 @@ export default function WebsiteBuilder() {
             ))}
           </motion.div>
 
+          {/* Design Interview — Korvix asks the design questions as chat
+              messages inline in the page, never a floating modal. */}
+          {briefPrompt && (
+            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="mb-6 max-w-2xl">
+              <DesignInterview
+                prompt={briefPrompt}
+                onBuild={(enhanced) => { setBriefPrompt(null); startGeneration(enhanced); }}
+                onCancel={() => setBriefPrompt(null)}
+              />
+            </motion.div>
+          )}
+
           {/* Generating state */}
-          {generating && (
+          {generating && !briefPrompt && (
             <motion.div {...fadeUp(0)} className="rounded-2xl border border-white/[0.05] bg-white/[0.01] p-10 text-center">
               <Loader2 className="w-8 h-8 text-violet-400 animate-spin mx-auto mb-3" />
               <p className="text-[13px] text-slate-400">Generating your premium website preview…</p>
@@ -220,7 +232,7 @@ export default function WebsiteBuilder() {
             </motion.div>
           )}
 
-          {!generated && !generating && (
+          {!generated && !generating && !briefPrompt && (
             <motion.div {...fadeUp(0.1)} className="text-center py-16">
               <Layout className="w-12 h-12 text-[#64748B] mx-auto mb-4" />
               <h3 className="text-sm font-medium text-white mb-1">Describe your website</h3>
@@ -229,13 +241,6 @@ export default function WebsiteBuilder() {
           )}
         </div>
       </div>
-
-      <DesignBriefPanel
-        open={!!briefPrompt}
-        initialPrompt={briefPrompt || ''}
-        onCancel={() => setBriefPrompt(null)}
-        onConfirm={(enhanced) => { setBriefPrompt(null); startGeneration(enhanced); }}
-      />
     </div>
   );
 }

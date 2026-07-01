@@ -30,7 +30,7 @@ import {
   type RunTurn,
 } from '@/hooks/useProjectOrchestrator';
 import DeliverablePreviewModal from '@/components/DeliverablePreviewModal';
-import DesignBriefPanel from '@/components/builder/DesignBriefPanel';
+import DesignInterview from '@/components/builder/DesignInterview';
 import { isBuildIntentPrompt, promptHasDesignDetail, parseVisiblePrompt } from '@/lib/designBrief';
 
 function lastRunKey(projectId: string): string {
@@ -143,10 +143,10 @@ export default function ProjectRunCenter({ projectId }: { projectId: string }) {
       : t));
   }, [snapshot]);
 
-  // Auto-scroll to the newest turn.
+  // Auto-scroll to the newest turn (or the design interview, once it opens).
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [turns.length]);
+  }, [turns.length, briefPrompt]);
 
   const persistRun = useCallback((id: string | null) => {
     try {
@@ -258,7 +258,7 @@ export default function ProjectRunCenter({ projectId }: { projectId: string }) {
   return (
     <div className="flex-1 flex flex-col min-w-0">
       <div className="flex-1 overflow-y-auto px-4 py-5 scrollbar-thin">
-        {turns.length === 0 ? (
+        {turns.length === 0 && !briefPrompt ? (
           // ── Empty state: invite a project, never "No agents yet" ────────
           <div className="h-full flex flex-col items-center justify-center text-center px-6">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl mb-4"
@@ -281,6 +281,9 @@ export default function ProjectRunCenter({ projectId }: { projectId: string }) {
           </div>
         ) : (
           // ── The permanent conversation ──────────────────────────────────
+          // The Design Interview (when active) renders as the newest turn in
+          // this same transcript — Korvix's questions are assistant messages
+          // inline in the conversation, never a floating card over the page.
           <div className="max-w-2xl mx-auto space-y-5">
             {turns.map(turn => (
               <ConversationTurn
@@ -290,6 +293,13 @@ export default function ProjectRunCenter({ projectId }: { projectId: string }) {
                 onPreview={(dId) => openPreview(turn.run_id, dId)}
               />
             ))}
+            {briefPrompt && (
+              <DesignInterview
+                prompt={briefPrompt}
+                onBuild={(enhanced) => { setBriefPrompt(null); runRequest(enhanced); }}
+                onCancel={() => setBriefPrompt(null)}
+              />
+            )}
             <div ref={bottomRef} />
           </div>
         )}
@@ -298,12 +308,6 @@ export default function ProjectRunCenter({ projectId }: { projectId: string }) {
       {composer}
 
       <DeliverablePreviewModal deliverable={preview} onClose={() => setPreview(null)} />
-      <DesignBriefPanel
-        open={!!briefPrompt}
-        initialPrompt={briefPrompt || ''}
-        onCancel={() => setBriefPrompt(null)}
-        onConfirm={(enhanced) => { setBriefPrompt(null); runRequest(enhanced); }}
-      />
     </div>
   );
 }

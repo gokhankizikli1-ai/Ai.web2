@@ -180,6 +180,35 @@ def _hero(spec: ProductSpec, primary_target: str, secondary_target: str) -> str:
 </div></section>"""
 
 
+def _impact_band(spec: ProductSpec) -> str:
+    """A dedicated use-case / impact band between the social-proof logo row
+    and the feature grid — real KPI numbers when the spec carries them
+    (finance/analytics/ops verticals mostly do), otherwise a punchy 3-up
+    "why teams switch" reel built from the spec's own primary goals, so a
+    generated landing page never drops straight from logos into features
+    with nothing to substantiate the pitch in between."""
+    metrics = spec.metrics or []
+    if len(metrics) >= 2:
+        cards = "".join(f"""
+    <div class="ds-card ds-rise ds-center" style="padding:30px 20px">
+      <div class="ds-stat-value" style="font-size:2.4rem">{e(m.get('value'))}</div>
+      <p style="font-size:.86rem;margin-top:8px;color:var(--text-dim)">{e(m.get('label'))}</p>
+    </div>""" for m in metrics[:4])
+        title, subtitle = "Real results, not vaporware", "The numbers teams see after switching."
+    else:
+        goals = (spec.primary_goals or [])[:3] or ["Move faster", "Ship with confidence", "Grow revenue"]
+        cards = "".join(f"""
+    <div class="ds-card ds-rise" style="text-align:center">{icon('check')}
+      <p style="margin-top:10px;font-size:.95rem;color:var(--text)">{e(g)}</p>
+    </div>""" for g in goals)
+        audience_lead = (spec.audience or "your team").split(".")[0].strip() or "your team"
+        title = f"Built for how {audience_lead.lower()} works"
+        subtitle = "What changes the day you switch."
+    return _wrap("impact", title, subtitle,
+                 f'<div class="ds-grid" style="grid-template-columns:repeat(auto-fit,minmax(180px,1fr))">{cards}</div>',
+                 None, "Impact")
+
+
 def _logos() -> str:
     logos = "".join(f'<span class="ds-logo">{e(n)}</span>' for n in _LOGOS)
     return f"""
@@ -333,7 +362,7 @@ def render(spec: ProductSpec) -> str:
   <nav class="ds-nav-links">{links}</nav>
   <button class="ds-btn ds-btn-primary ds-btn-sm" data-scroll="{primary_target}">{e(spec.cta_primary)}</button>
 </header>"""
-    parts = [nav, "<main>", _hero(spec, primary_target, secondary_target), _logos()]
+    parts = [nav, "<main>", _hero(spec, primary_target, secondary_target), _logos(), _impact_band(spec)]
     # Alternating tinted bands (skipping `cta`, which already has its own
     # glass-card treatment) give the page a deliberate section rhythm
     # instead of one flat, repeating column.
