@@ -753,34 +753,88 @@ def _crm(user_request: str, style: Dict, intent: str) -> ProductSpec:
 
 
 def _saas_ai(user_request: str, style: Dict, intent: str) -> ProductSpec:
+    """An AI copilot command center — assistant workflows, a live
+    automation queue, ticket triage with confidence + human escalation,
+    and grounded knowledge sources. Previously a thin generic "AI
+    workspace" whose structure was interchangeable with any dashboard."""
     name = _brand_name(user_request, "Nexus")
     return ProductSpec(
-        product_type="saas_ai", name=name, tagline=f"{name} — your team's operating system.",
-        description=f"{name} is an AI-powered workspace — automations, insights and integrations that keep the whole team in sync.",
-        audience="Product, ops and growth teams automating their busywork.",
-        primary_goals=["Automate repetitive work", "Surface real-time insights", "Keep the team aligned"],
-        ux_goals=["Fast setup", "Clear automation status", "Trustworthy insights"],
-        navigation=["Workspace", "Automations", "Insights", "Team", "Integrations", "Settings"],
+        product_type="saas_ai", name=name, tagline=f"{name} — the copilot that clears your queue.",
+        description=(
+            f"{name} is an AI copilot command center — it drafts, triages and "
+            "resolves the repetitive work, and hands you only the calls that "
+            "genuinely need a human."
+        ),
+        audience="Support, ops and product teams running an AI copilot over their real workload.",
+        primary_goals=["Resolve routine work automatically", "Escalate low-confidence calls to a human", "Ground every answer in your own knowledge"],
+        ux_goals=["Live queue at a glance", "Trustworthy confidence signals", "Fast human handoff"],
+        navigation=["Command Center", "Automation Queue", "Tickets", "Knowledge", "Escalations", "Settings"],
         is_dashboard=True, layout="app", intent=intent,
         metrics=[
-            {"label": "Active automations", "value": "18", "delta": "+3 this week"},
+            {"label": "Resolved by copilot", "value": "68%", "delta": "+6pt this month"},
+            {"label": "Automation queue", "value": "42", "delta": "12 running now"},
+            {"label": "Open tickets", "value": "128", "delta": "-31 today"},
+            {"label": "Avg confidence", "value": "92%", "delta": "High"},
+            {"label": "Escalated to humans", "value": "9", "delta": "Needs review"},
+            {"label": "Median handle time", "value": "38s", "delta": "-12s"},
+            {"label": "Knowledge sources", "value": "14", "delta": "2 syncing"},
             {"label": "Hours saved", "value": "142h", "delta": "This month"},
-            {"label": "Team members", "value": "24", "delta": "+2 this week"},
-            {"label": "Integrations", "value": "9", "delta": "connected"},
         ],
         sections=[
-            _S("metrics", "Workspace overview"),
-            _S("features", "Built to remove busywork", items=[
-                _card("Automations", "One-click rules that run the moment something changes.", "⚡"),
-                _card("Insights", "Real-time visibility into what's actually happening.", "📊"),
-                _card("Team spaces", "Keep every project and context separate.", "🗂"),
-                _card("Integrations", "Connect the tools your team already uses.", "🔌"),
+            _S("metrics", "Copilot command center"),
+            _S("features", "Built to clear the queue", items=[
+                _card("Assistant workflows", "Multi-step runs that draft, act and verify before anything ships.", "bolt"),
+                _card("Automation queue", "Everything the copilot is working on right now, in one live queue.", "clock"),
+                _card("Knowledge sources", "Answers grounded in your docs, tickets and wikis — with citations.", "folder"),
+                _card("Confidence & escalation", "Low-confidence calls route to a human before they reach a customer.", "shield"),
             ]),
-            _S("panel", "Today", subtitle="What needs your attention"),
+            _S("panel", "Automation queue", subtitle="Task · source · confidence · status"),
         ],
-        cta_primary="New automation", cta_secondary="View insights",
+        cta_primary="Open command center", cta_secondary="Review escalations",
         theme={"accent": "", "accent2": "", "mode": style.get("mode", "dark")},
-        components=["Sidebar", "Dashboard Cards", "Statistics", "Automations", "Integrations", "Settings", "Footer"],
+        components=["Sidebar", "Dashboard Cards", "Statistics", "Automations", "Tickets Table", "Knowledge", "Escalations", "Settings", "Footer"],
+    )
+
+
+def _legal_ops(user_request: str, style: Dict, intent: str) -> ProductSpec:
+    """A legal / document-workflow surface — intake queue, clause
+    extraction, risk flags, compliance checks and approval routing.
+    Legal prompts previously fell into the notes editor (via the bare
+    "document" keyword) or the generic dashboard shell."""
+    name = _brand_name(user_request, "Docket")
+    return ProductSpec(
+        product_type="legal_ops", name=name, tagline=f"{name} — every contract, reviewed on time.",
+        description=(
+            f"{name} is a document intelligence workspace — intake, clause "
+            "extraction, risk flags and approvals in one calm queue, built for "
+            "small teams reviewing contracts without a legal-ops department."
+        ),
+        audience="Small business owners, in-house counsel and paralegals keeping contract review moving.",
+        primary_goals=["Track every document through review", "Catch risky clauses before signing", "Keep approvals moving"],
+        ux_goals=["Clear queue at a glance", "Trustworthy risk flags", "Fast turnaround"],
+        navigation=["Queue", "Documents", "Clauses", "Compliance", "Approvals", "Settings"],
+        is_dashboard=True, layout="app", intent=intent,
+        metrics=[
+            {"label": "In review", "value": "23", "delta": "+6 today"},
+            {"label": "Awaiting approval", "value": "7", "delta": "2 overdue"},
+            {"label": "Risk flags", "value": "11", "delta": "3 high severity"},
+            {"label": "Avg turnaround", "value": "1.8 days", "delta": "-0.4d this month"},
+            {"label": "Clauses extracted", "value": "412", "delta": "This week"},
+            {"label": "Compliance checks", "value": "96%", "delta": "passing"},
+        ],
+        sections=[
+            _S("metrics", "Review queue"),
+            _S("features", "Built for careful, fast review", items=[
+                _card("Clause extraction", "Key terms, renewal dates and liabilities pulled from every upload.", "list"),
+                _card("Risk flags", "Non-standard clauses ranked by severity before anyone signs.", "shield"),
+                _card("Approval workflow", "Each document routes to the right reviewer automatically.", "check"),
+                _card("Compliance insights", "Policy checks run on every version, with a clean audit trail.", "folder"),
+            ]),
+            _S("panel", "Document queue", subtitle="Document · counterparty · status · risk"),
+        ],
+        cta_primary="Open the queue", cta_secondary="Upload a document",
+        theme={"accent": "", "accent2": "", "mode": style.get("mode", "dark")},
+        components=["Sidebar", "Dashboard Cards", "Statistics", "Document Queue", "Clause Extraction", "Approvals", "Settings", "Footer"],
     )
 
 
@@ -891,13 +945,19 @@ def _analytics_bi(user_request: str, style: Dict, intent: str) -> ProductSpec:
 def _generic_fallback(user_request: str, style: Dict, intent: str) -> ProductSpec:
     """The last-resort default when no vertical keyword matched at all —
     still a real, distinct page inventory, not the old Overview/Analytics/
-    Reports/Activity/Settings set."""
+    Reports/Activity/Settings set. The user's OWN words lead the page:
+    the cleaned request becomes the primary goal shown in the overview
+    hero, so even an unmatched idea reads as built-for-this, never as a
+    reused template."""
     name = _brand_name(user_request, "Workspace")
+    focus = re.sub(r"^\s*(?:build|create|make|design|generate|develop)\s+(?:me\s+|us\s+)?(?:an?\s+|the\s+)?",
+                   "", (user_request or "").strip(), flags=re.IGNORECASE).strip(" .!")
+    lead_goal = (focus[:1].upper() + focus[1:])[:90] if focus else "Deliver the core workflow"
     return ProductSpec(
         product_type="app", name=name, tagline=f"{name}, built for what you do.",
         description=f"{name} is a focused, responsive workspace that keeps your day in one fast, well-designed place.",
         audience="People who expect a fast, modern, well-designed product.",
-        primary_goals=["Deliver the core workflow", "Make it effortless", "Keep everything in view"],
+        primary_goals=[lead_goal, "Make it effortless", "Keep everything in view"],
         ux_goals=["Clarity", "Speed", "Focus"],
         navigation=["Command", "Workflows", "Insights", "Library", "Activity", "Settings"],
         is_dashboard=True, layout="app", intent=intent,
@@ -932,7 +992,14 @@ _GENERIC_VERTICAL_RULES: List[Tuple[re.Pattern, Callable[[str, Dict, str], Produ
                 r"asset\s*manag\w*|wealth\s*manag\w*)\b", re.I), _finance_ops),
     (re.compile(r"\b(e-?commerce|shopify|online\s*store|storefront|retail\w*|merchant\w*)\b", re.I), _ecommerce_ops),
     (re.compile(r"\bcrm\b|\bsales\s*(?:pipeline|team)\b|\bleads?\b|\bdeal\s*flow\b", re.I), _crm),
-    (re.compile(r"\bproductivity\b|\bautomation\w*\b|\bworkflow\w*\b|\bai\s*(?:tool|platform|assistant)\b", re.I), _saas_ai),
+    # Legal/document work BEFORE the productivity/workflow rule — a
+    # "contract review workflow" is a legal surface, not a generic
+    # automation workspace.
+    (re.compile(r"\blegal\w*\b|\blaw\s*firm\b|\blawyer\w*\b|\battorney\w*\b|\bparalegal\w*\b|"
+                r"\bcomplian\w*\b|\bcontract\s*(?:review|management|workflow|analysis)\b|"
+                r"\bclauses?\b|\bdocument\s*(?:review|workflow|approval|intake)\b|\bnda\b", re.I), _legal_ops),
+    (re.compile(r"\bproductivity\b|\bautomation\w*\b|\bworkflow\w*\b|"
+                r"\bai\s*(?:tool|platform|assistant|copilot|agent)\b|\bcopilot\w*\b|\bchatbot\s*(?:platform|builder)\b", re.I), _saas_ai),
     (re.compile(r"\bhealth\b", re.I), _health),
     (re.compile(r"\beducation\w*|\blearning\b|\bcourses?\b|\bstudents?\b|\bclassroom\b|\be-?learning\b", re.I), _education),
     (re.compile(r"\banalytics?\b|\bmetrics?\b|\bkpi\b|\binsight\w*\b|\breporting\b|\bbusiness\s*intelligence\b|\bbi\s*(?:tool|dashboard|platform)\b", re.I), _analytics_bi),
@@ -1086,6 +1153,11 @@ _CATEGORY_DESCRIPTOR_WORDS = {
     "operations", "ops", "admin", "internal", "workspace", "management",
     "system", "software", "app", "agency", "service", "business", "startup",
     "product", "b2b", "bi",
+    # Legal/document + copilot verticals — the same label-vs-brand rule.
+    "legal", "law", "document", "documents", "contract", "contracts",
+    "review", "compliance", "clause", "clauses", "copilot", "assistant",
+    "automation", "workflow", "support", "ticket", "tickets", "triage",
+    "triages", "marketing", "sales", "team", "teams",
 }
 
 _BRAND_PREFIXES = ("Thread", "Loom", "Atelier", "Mercer", "Bolt", "Drape", "Selvage", "Weft")

@@ -78,6 +78,23 @@ CSS = CSS + "\n\n" + cl.CSS
 _PERSONALITY_BY_TYPE = {"fitness": "db-personality-fitness", "crypto": "db-personality-finance",
                         "banking": "db-personality-finance", "finance_ops": "db-personality-finance"}
 
+# Per-vertical footer line — a dashboard's footer is part of its voice
+# (a trading desk, a legal queue and a copilot don't sign off the same
+# way). Never a hardcoded year; the © carries the generated brand only.
+_FOOT_NOTE_BY_TYPE = {
+    "finance_ops":  "market data delayed 15 minutes",
+    "crypto":       "market data delayed 15 minutes",
+    "banking":      "deposits insured · statements available in-app",
+    "ecommerce_ops": "inventory synced 2 minutes ago",
+    "crm":          "pipeline synced with your inbox",
+    "saas_ai":      "copilot online · all checks passing",
+    "legal_ops":    "confidential — for internal review only",
+    "analytics_bi": "data fresh as of 2 minutes ago",
+    "education":    "keep the streak going",
+    "health":       "your data stays private",
+    "fitness":      "recovery matters — train smart",
+}
+
 # Sprint 2.3 — nav icons are SVG icon NAMES (resolved via svg_icon()), not
 # emoji glyphs. No raw emoji ever reaches the sidebar.
 _NAV_ICONS = {
@@ -95,6 +112,10 @@ _NAV_ICONS = {
     "workspace": "folder", "automations": "bolt", "team": "person", "integrations": "link",
     "plans": "compass", "coaching": "target", "courses": "folder", "lessons": "folder", "community": "send",
     "workflows": "compass",
+    # Legal ops + AI copilot verticals.
+    "queue": "list", "documents": "folder", "clauses": "list", "compliance": "shield",
+    "approvals": "check", "automation queue": "bolt", "tickets": "list",
+    "knowledge": "folder", "escalations": "bell",
 }
 
 
@@ -199,6 +220,11 @@ _TABLE_KIND_RULES: List[Tuple[re.Pattern, str]] = [
     (re.compile(r"lead"), "leads"),
     (re.compile(r"forecast"), "forecast"),
     (re.compile(r"portfolio"), "holdings"),
+    (re.compile(r"document"), "documents"),
+    (re.compile(r"ticket"), "tickets"),
+    # Bare "queue" resolves per vertical inside _table_rows: the legal
+    # surface's Queue is a document queue, the copilot's is automations.
+    (re.compile(r"queue"), "queue"),
 ]
 
 
@@ -243,6 +269,22 @@ def _table_rows(kind: str, spec: ProductSpec):
         return (["Asset class", "Value", "Allocation"],
                 [[a.get("label", "—"), a.get("value", "—"), f"{a.get('pct', 0)}%"] for a in asset_classes] or
                 [["Holdings", "—", "—"]])
+    if kind == "documents" or (kind == "queue" and spec.product_type == "legal_ops"):
+        return (["Document", "Counterparty", "Status", "Risk"], [
+            ["Master services agreement", "Northwind Logistics", "In review", "Medium"],
+            ["Mutual NDA", "Mercura Retail", "Approved", "Low"],
+            ["Vendor agreement", "Cobalt Finance", "Awaiting signature", "High"],
+            ["Lease amendment", "Lumio Group", "In review", "Low"],
+            ["Employment offer", "Atelier Studio", "Approved", "Low"],
+        ])
+    if kind in ("tickets", "queue"):
+        return (["Task", "Requester", "Confidence", "Status"], [
+            ["Refund request #4812", "Ava Chen", "96%", "Auto-resolved"],
+            ["Plan upgrade question", "Marcus Lee", "91%", "Auto-resolved"],
+            ["API webhook failing", "Priya Nair", "62%", "Escalated"],
+            ["Invoice mismatch", "Diego Ramirez", "88%", "In progress"],
+            ["Onboarding walkthrough", "Sofia Müller", "94%", "Drafted"],
+        ])
     return (["Metric", "Value", "Change"],
             [[m.get("label", "—"), m.get("value", "—"), m.get("delta", "")] for m in (spec.metrics or [])[:5]])
 
@@ -487,10 +529,11 @@ def _page_body(spec: ProductSpec, idx: int, label: str) -> str:
     if re.search(r"\bteam\b", key):
         return _team_page(spec)
     # Sprint 2.2 — realistic table/list pages for the ecommerce-ops/CRM/
-    # finance-ops verticals (Products, Campaigns, Pipeline, Leads,
-    # Forecast, Portfolio holdings). Placed ahead of the analytics/
-    # activity buckets below so these words win.
-    if re.search(r"product|campaign|pipeline|lead|forecast|deal|portfolio", key):
+    # finance-ops/legal-ops/copilot verticals (Products, Campaigns,
+    # Pipeline, Leads, Forecast, Portfolio holdings, Documents, Tickets,
+    # Queue). Placed ahead of the analytics/activity buckets below so
+    # these words win.
+    if re.search(r"product|campaign|pipeline|lead|forecast|deal|portfolio|document|ticket|queue", key):
         return _data_table_page(spec, label)
     if re.search(r"progress|analytic|report|insight|market|chart|stat|signal|risk|invest", key):
         # Sprint 2.2 — a KPI/insight-card row on top of the existing chart
@@ -517,14 +560,15 @@ def _page_body(spec: ProductSpec, idx: int, label: str) -> str:
         return body
     if re.search(r"setting|profile|account$|cards", key):
         return _settings(spec)
-    if re.search(r"activit|transaction|asset|alert|notif|customer|order|history|communit", key):
+    if re.search(r"activit|transaction|asset|alert|notif|customer|order|history|communit|"
+                 r"clause|complian|approval|escalat", key):
         return (f'<div class="ds-bento"><div class="ds-col-4">{_feed(spec, label)}</div>'
                 f'<div class="ds-card ds-col-2 ds-rise"><h3 style="margin-bottom:8px">Summary</h3>'
                 + "".join(f'<div class="db-stat" style="margin-bottom:12px"><span class="lbl">{e(m.get("label"))}</span>'
                           f'<span class="ds-stat-value" style="font-size:1.4rem">{e(m.get("value"))}</span>'
                           f'<span class="ds-stat-delta">{e(m.get("delta"))}</span></div>' for m in (spec.metrics or [])[:3])
                 + '</div></div>')
-    if re.search(r"workout|task|plan|library|model|chat|account|nutrition|coach|course|lesson|workflow|automat", key):
+    if re.search(r"workout|task|plan|library|model|chat|account|nutrition|coach|course|lesson|workflow|automat|knowledge", key):
         return _planner(spec)
     return _overview(spec, label)
 
@@ -564,7 +608,8 @@ def render(spec: ProductSpec) -> str:
                 + (f'<button class="ds-btn ds-btn-primary" data-reveal="reveal-detail">{e(spec.cta_primary)}</button>' if i == 0 else '')
                 + '</div>')
         pages.append(f'<section class="db-page ds-page{hidden}" data-panel="page-{i}" id="page-{i}">{head}{_page_body(spec, i, l)}</section>')
-    foot = (f'<footer class="ds-footer db-foot"><span>© {e(spec.name)} · all systems operational</span>'
+    foot_note = _FOOT_NOTE_BY_TYPE.get(spec.product_type, "all systems operational")
+    foot = (f'<footer class="ds-footer db-foot"><span>© {e(spec.name)} · {e(foot_note)}</span>'
             f'<span>Crafted with Korvix</span></footer>')
     # Notifications panel sits as a top-level <main> sibling (not nested in
     # any data-panel page) so its reveal target is reachable from any tab —

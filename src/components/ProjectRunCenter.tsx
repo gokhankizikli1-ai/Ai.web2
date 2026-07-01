@@ -18,7 +18,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Workflow, Play, Loader2, CheckCircle2, Circle, XCircle,
   MinusCircle, Sparkles, Eye, Monitor, Code2, FolderTree, Pencil,
-  ArrowDown,
+  ArrowDown, ShieldAlert,
 } from 'lucide-react';
 import {
   projectOrchestratorClient,
@@ -37,6 +37,7 @@ import {
   isRefineIntentPrompt, buildEnhancedPrompt, resolveBriefAnswers, summarizeAnswers,
 } from '@/lib/designBrief';
 import { CATEGORY_LABELS, detectCategory } from '@/components/builder/promptCategory';
+import { unsupportedBuildReason } from '@/lib/contentPolicy';
 
 function lastRunKey(projectId: string): string {
   return `korvix_project_run_${projectId}`;
@@ -179,6 +180,10 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
   const [startError, setStartError] = useState<string | null>(null);
   const [preview, setPreview] = useState<DeliverableView | null>(null);
   const [briefPrompt, setBriefPrompt] = useState<string | null>(null);
+  // Unsupported-prompt notice — rendered as a polished assistant-style
+  // card in the timeline (never a run, never a template). Cleared on the
+  // next successful submission so the composer stays fully usable.
+  const [unsupportedNotice, setUnsupportedNotice] = useState<string | null>(null);
 
   // ── Latest-content follow ────────────────────────────────────────────
   // The conversation has its OWN scroll container (never window scroll).
@@ -189,6 +194,11 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const atBottomRef = useRef(true);
   const didInitialAnchor = useRef(false);
+  // Timestamp (ms) until which onScroll ignores transient "not at bottom"
+  // frames from a settling programmatic scroll. Time-boxed so it always
+  // self-heals — a no-op scroll can never latch it on and swallow a real
+  // user scroll.
+  const programmaticUntilRef = useRef(0);
   const [atBottom, setAtBottom] = useState(true);
   const [hasFreshContent, setHasFreshContent] = useState(false);
 
@@ -239,6 +249,12 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
   const scrollToLatest = useCallback((behavior: ScrollBehavior = 'smooth') => {
     const el = scrollRef.current;
     if (!el) return;
+    // A programmatic smooth scroll fires many onScroll events on the way
+    // down, each reading "not at bottom" mid-flight — which would flip the
+    // follow state off and flash "Jump to latest". Suppress tracking for a
+    // short settling window (also cleared early by handleScroll once it
+    // lands). Instant ('auto') scrolls don't animate, so no window needed.
+    programmaticUntilRef.current = behavior === 'smooth' ? Date.now() + 700 : 0;
     // rAF so the measurement sees the just-committed content height.
     requestAnimationFrame(() => {
       el.scrollTo({ top: el.scrollHeight, behavior });
@@ -252,6 +268,13 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
     const el = scrollRef.current;
     if (!el) return;
     const near = el.scrollHeight - el.scrollTop - el.clientHeight < FOLLOW_THRESHOLD_PX;
+    // While a programmatic scroll is settling, only ACCEPT the "reached
+    // bottom" signal (which ends suppression early); ignore the transient
+    // "not yet at bottom" frames so the follow state never flaps.
+    if (Date.now() < programmaticUntilRef.current) {
+      if (near) programmaticUntilRef.current = 0;
+      else return;
+    }
     atBottomRef.current = near;
     setAtBottom(near);
     if (near) setHasFreshContent(false);
@@ -265,7 +288,7 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
   useEffect(() => {
     scrollToLatest(didInitialAnchor.current ? 'smooth' : 'auto');
     didInitialAnchor.current = true;
-  }, [turns.length, briefPrompt, scrollToLatest]);
+  }, [turns.length, briefPrompt, unsupportedNotice, scrollToLatest]);
 
   // Background growth — run status / deliverable changes arriving from
   // polling. Follow only when the user is already near the bottom;
@@ -322,12 +345,21 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
         deliverables: (snap.deliverables || []).map(toSummary),
         task_graph: snap.task_graph ? { tasks: snap.task_graph.tasks, total_count: snap.task_graph.total_count } : null,
       };
+      setUnsupportedNotice(null);
       setTurns(prev => [...prev, turn]);
       setActiveRunId(snap.run_id);
       persistRun(snap.run_id);
       setRequest('');
     } catch (e: unknown) {
-      setStartError((e as Error)?.message || 'Failed to start run');
+      // The backend content-policy gate rejects out-of-scope prompts with
+      // this typed code — surface it as the polished notice, not a run
+      // error, and keep the composer usable (text preserved).
+      if ((e as { code?: string })?.code === 'unsupported_request') {
+        setUnsupportedNotice((e as Error)?.message
+          || "Korvix can't build this — it's outside the supported builder scope.");
+      } else {
+        setStartError((e as Error)?.message || 'Failed to start run');
+      }
     } finally {
       setStarting(false);
     }
@@ -345,6 +377,20 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
   const startRun = useCallback(() => {
     const userRequest = request.trim();
     if (!userRequest || starting) return;
+    // Client-side scope pre-check — decline BEFORE opening the Design
+    // Interview or spending a round-trip, so an unsupported prompt never
+    // walks the user through four design questions first. The backend
+    // gate is still authoritative for anything this narrow mirror misses.
+    const scopeReason = unsupportedBuildReason(userRequest);
+    if (scopeReason) {
+      setBriefPrompt(null);
+      setStartError(null);
+      setUnsupportedNotice(
+        `Korvix can't build this — ${scopeReason} is outside the supported ` +
+        'builder scope. Try a product idea instead: a storefront, a SaaS ' +
+        'dashboard, a portfolio, or a landing page.');
+      return;
+    }
     if (latestBuildTurn && isRefineIntentPrompt(userRequest)) {
       const base = latestBuildTurn.user_request || '';
       const { visible } = parseVisiblePrompt(base);
@@ -352,6 +398,7 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
       return;
     }
     if (isBuildIntentPrompt(userRequest) && !promptHasDesignDetail(userRequest)) {
+      setUnsupportedNotice(null);
       setBriefPrompt(userRequest);
       return;
     }
@@ -442,13 +489,16 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
   );
 
   return (
-    <div className="flex-1 flex flex-col min-w-0">
+    // min-h-0 the whole way down so the scroll viewport below is bounded
+    // by the column height and scrolls internally — without it the list
+    // grows the page and the newest card slides behind the composer.
+    <div className="flex-1 flex flex-col min-w-0 min-h-0">
       {/* The scroll viewport gets a relative wrapper so "Jump to latest"
           can float just above the composer without a second scroll system.
           pb-10 keeps the last card comfortably readable above the input. */}
       <div className="relative flex-1 min-h-0">
       <div ref={scrollRef} onScroll={handleScroll} className="h-full overflow-y-auto px-4 pt-5 pb-10 scrollbar-thin">
-        {turns.length === 0 && !briefPrompt ? (
+        {turns.length === 0 && !briefPrompt && !unsupportedNotice ? (
           // ── Empty state: invite a project, never "No agents yet" ────────
           <div className="h-full flex flex-col items-center justify-center text-center px-6">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl mb-4"
@@ -490,6 +540,19 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
                 onCancel={() => setBriefPrompt(null)}
                 onAdvance={handleInterviewAdvance}
               />
+            )}
+            {unsupportedNotice && (
+              <div className="flex items-start gap-2">
+                <div className="flex h-6 w-6 items-center justify-center rounded-full shrink-0 mt-0.5"
+                  style={{ background: 'rgba(251,191,36,0.14)' }}>
+                  <ShieldAlert className="h-3 w-3 text-amber-300" />
+                </div>
+                <div className="max-w-[86%] rounded-2xl rounded-tl-sm px-3.5 py-3"
+                  style={{ background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.16)' }}>
+                  <p className="text-[11px] font-medium tracking-wide text-amber-300/80 uppercase mb-1">Can't build this</p>
+                  <p className="text-[13px] text-white/80 leading-snug">{unsupportedNotice}</p>
+                </div>
+              </div>
             )}
           </div>
         )}

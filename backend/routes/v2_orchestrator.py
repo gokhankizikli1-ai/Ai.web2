@@ -149,6 +149,8 @@ async def start_run_route(
         )
     except orch.ProjectOrchestratorDisabled:
         return _disabled_response(endpoint)
+    except orch.UnsupportedRequestError as exc:
+        return _err(422, "unsupported_request", str(exc), endpoint)
     except orch.UnknownTemplateError as exc:
         return _err(404, "project_template_unknown",
                     f"Unknown template: {exc}", endpoint)
