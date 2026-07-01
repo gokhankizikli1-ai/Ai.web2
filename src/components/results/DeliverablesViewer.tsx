@@ -11,6 +11,7 @@ import { ChevronDown, ChevronRight, Copy, Check, Download, Maximize2, FileCode }
 import MarkdownMessage from '@/components/MarkdownMessage';
 import CodeBlock from '@/components/CodeBlock';
 import DeliverablePreviewModal from '@/components/DeliverablePreviewModal';
+import { wrapWithPremiumCss } from '@/lib/previewHtml';
 import type { DeliverableView, Artifact } from '@/hooks/useProjectOrchestrator';
 import { describeStatus } from '@/lib/runStatus';
 
@@ -156,10 +157,10 @@ function ArtifactInline({ resolved, title, id }: { resolved: Resolved; title: st
         // leaves stale in-page JS state / scroll position behind.
         key={`${id}-${resolved.body.length}`}
         title={title}
-        srcDoc={resolved.body}
+        srcDoc={wrapWithPremiumCss(resolved.body)}
         sandbox="allow-scripts"
-        className="w-full bg-white rounded-lg"
-        style={{ height: '50vh', border: 'none' }}
+        className="w-full rounded-lg"
+        style={{ height: '50vh', border: 'none', background: '#0b0b10' }}
       />
     );
   }

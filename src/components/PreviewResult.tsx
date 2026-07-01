@@ -11,6 +11,7 @@
 import { Loader2, AlertTriangle, Ban, FileCode, Inbox } from 'lucide-react';
 import MarkdownMessage from './MarkdownMessage';
 import CodeBlock from './CodeBlock';
+import { wrapWithPremiumCss } from '@/lib/previewHtml';
 import type { PreviewPayload } from '@/types/preview';
 import type { OrchestratePhase } from '@/hooks/useOrchestrateResult';
 
@@ -136,10 +137,10 @@ function RenderedArtifact({ payload }: { payload: PreviewPayload }) {
       <iframe
         key={payload.artifact_id || payload.run_id || payload.title || 'preview'}
         title={payload.title || 'preview'}
-        srcDoc={html}
+        srcDoc={wrapWithPremiumCss(html)}
         sandbox="allow-scripts"
-        className="w-full bg-white rounded-lg"
-        style={{ height: '60vh', border: 'none' }}
+        className="w-full rounded-lg"
+        style={{ height: '60vh', border: 'none', background: '#0b0b10' }}
       />
     );
   } else if (renderer === 'file_tree' && files.length > 0) {

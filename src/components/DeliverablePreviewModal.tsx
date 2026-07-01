@@ -11,6 +11,7 @@ import {
   X, Download, Copy, Check, ExternalLink, FileCode,
   Monitor, Tablet, Smartphone, Maximize2, Minimize2, RotateCw,
 } from 'lucide-react';
+import { wrapWithPremiumCss } from '@/lib/previewHtml';
 import type {
   DeliverableView, Artifact, ArtifactMetadata,
 } from '@/hooks/useProjectOrchestrator';
@@ -89,7 +90,10 @@ export default function DeliverablePreviewModal({
   const openInTab = useCallback(() => {
     if (!r) return;
     const w = window.open('', '_blank');
-    if (w) { w.document.open(); w.document.write(r.body); w.document.close(); }
+    if (w) {
+      const out = r.preview === 'iframe' ? wrapWithPremiumCss(r.body) : r.body;
+      w.document.open(); w.document.write(out); w.document.close();
+    }
   }, [r]);
 
   if (!deliverable || !r) return null;
@@ -169,14 +173,14 @@ export default function DeliverablePreviewModal({
                 // fresh DOM node, not just an in-place srcDoc mutation.
                 key={`${deliverable.id}-${r.body.length}-${device}-${refreshKey}`}
                 title={`preview-${deliverable.id}`}
-                srcDoc={r.body}
+                srcDoc={wrapWithPremiumCss(r.body)}
                 // allow-scripts (NO allow-same-origin) → inline prototype JS
                 // runs in an opaque origin: no access to parent, cookies or
                 // storage. The artifact's own CSP blocks all network.
                 sandbox="allow-scripts"
-                className="bg-white rounded-lg shadow-2xl transition-all"
+                className="rounded-lg shadow-2xl transition-all"
                 style={{ width: width ? `${width}px` : '100%', maxWidth: '100%',
-                         height: fullscreen ? '82vh' : '64vh', border: 'none' }}
+                         height: fullscreen ? '82vh' : '64vh', border: 'none', background: '#0b0b10' }}
               />
             </div>
           ) : r.preview === 'file_tree' && r.files.length > 0 ? (
