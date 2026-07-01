@@ -222,6 +222,16 @@ export default function ProjectRunCenter({ projectId }: { projectId: string }) {
     } catch { /* ignore — preview is best-effort */ }
   }, []);
 
+  // Refine — the modal hands back an enhanced prompt (original request +
+  // design brief + edit instruction); re-running it through the SAME
+  // runRequest() the composer uses appends a real new turn to this
+  // conversation, so the refined build is never fabricated. The modal
+  // stays open (with its own busy state) until the new run has started.
+  const handleRefine = useCallback(async (enhancedPrompt: string) => {
+    await runRequest(enhancedPrompt);
+    setPreview(null);
+  }, [runRequest]);
+
   const composer = (
     <div className="shrink-0 px-4 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.05)', background: 'rgba(17,21,28,0.4)' }}>
       <div className="max-w-2xl mx-auto">
@@ -307,7 +317,13 @@ export default function ProjectRunCenter({ projectId }: { projectId: string }) {
 
       {composer}
 
-      <DeliverablePreviewModal deliverable={preview} onClose={() => setPreview(null)} />
+      <DeliverablePreviewModal
+        deliverable={preview}
+        onClose={() => setPreview(null)}
+        userRequest={preview ? turns.find(t => t.run_id === preview.run_id)?.user_request : undefined}
+        onRefine={handleRefine}
+        refining={starting}
+      />
     </div>
   );
 }
