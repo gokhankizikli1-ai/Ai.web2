@@ -772,7 +772,8 @@ _GENERIC_VERTICAL_RULES: List[Tuple[re.Pattern, Callable[[str, Dict, str], Produ
     (re.compile(r"\bcrm\b|\bsales\s*(?:pipeline|team)\b|\bleads?\b|\bdeal\s*flow\b", re.I), _crm),
     (re.compile(r"\bproductivity\b|\bautomation\w*\b|\bworkflow\w*\b|\bai\s*(?:tool|platform|assistant)\b", re.I), _saas_ai),
     (re.compile(r"\bhealth\b", re.I), _health),
-    (re.compile(r"\beducation\w*|\blearning\b|\bcourses?\b|\bstudents?\b|\bclassroom\b|\be-?learning\b", re.I), _education),
+    (re.compile(r"\beducation\w*|\be-?learning\b|\bonline\s+learning\b|"
+                r"\blearning\s+management\b|\bonline\s+courses?\b|\bstudents?\b|\bclassroom\b", re.I), _education),
 ]
 
 

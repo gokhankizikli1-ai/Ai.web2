@@ -192,11 +192,20 @@ def _settings(spec: ProductSpec) -> str:
 
 _TABLE_KIND_RULES: List[Tuple[re.Pattern, str]] = [
     (re.compile(r"product"), "products"),
+    (re.compile(r"\borders?\b"), "orders"),
     (re.compile(r"campaign"), "campaigns"),
     (re.compile(r"pipeline|deal"), "pipeline"),
     (re.compile(r"lead"), "leads"),
     (re.compile(r"forecast"), "forecast"),
 ]
+
+_TABLE_ADD_LABELS = {
+    "products": "Product",
+    "orders": "Order",
+    "campaigns": "Campaign",
+    "pipeline": "Deal",
+    "leads": "Lead",
+}
 
 
 def _table_rows(kind: str, spec: ProductSpec):
@@ -207,6 +216,13 @@ def _table_rows(kind: str, spec: ProductSpec):
             ["Shell Jacket", "$320", "6 in stock", "Low stock"],
             ["Wool Overcoat", "$410", "0 in stock", "Out of stock"],
             ["Leather Tote", "$180", "27 in stock", "Active"],
+        ])
+    if kind == "orders":
+        return (["Order", "Customer", "Total", "Status"], [
+            ["#1048", "Ava Chen", "$148", "Fulfilled"],
+            ["#1049", "Marcus Lee", "$220", "Packing"],
+            ["#1050", "Priya Nair", "$388", "Paid"],
+            ["#1051", "Diego Ramirez", "$68", "Processing"],
         ])
     if kind == "campaigns":
         return (["Campaign", "Channel", "Spend", "Conversions"], [
@@ -253,7 +269,7 @@ def _data_table_page(spec: ProductSpec, label: str) -> str:
         f'<span class="ds-stat-delta">{e(m.get("delta"))}</span></div></div>'
         for m in (spec.metrics or [])[:3]
     )
-    add_label = label[:-1] if label.lower().endswith("s") else label
+    add_label = _TABLE_ADD_LABELS.get(kind, label)
     return (
         (f'<div class="ds-bento" style="margin-bottom:16px">{stat_cards}</div>' if stat_cards else "")
         + f'<div class="ds-card ds-rise"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">'
@@ -430,9 +446,9 @@ def _page_body(spec: ProductSpec, idx: int, label: str) -> str:
     if re.search(r"\bteam\b", key):
         return _team_page(spec)
     # Sprint 2.2 — realistic table/list pages for the ecommerce-ops/CRM
-    # verticals (Products, Campaigns, Pipeline, Leads, Forecast). Placed
+    # verticals (Products, Orders, Campaigns, Pipeline, Leads, Forecast). Placed
     # ahead of the analytics/activity buckets below so these words win.
-    if re.search(r"product|campaign|pipeline|lead|forecast|deal", key):
+    if re.search(r"product|\borders?\b|campaign|pipeline|lead|forecast|deal", key):
         return _data_table_page(spec, label)
     if re.search(r"progress|analytic|report|insight|market|chart|stat|signal|risk|invest", key):
         # Sprint 2.2 — a KPI/insight-card row on top of the existing chart
