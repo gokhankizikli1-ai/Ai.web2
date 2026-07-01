@@ -19,12 +19,15 @@ const fadeUp = (delay = 0) => ({
 // works for any future module without change. Nothing here is mocked.
 export default function AppBuilder() {
   const [idea, setIdea] = useState('');
+  const [lastIdea, setLastIdea] = useState('');
   const { phase, label, payload, error, disabledReason, disabledPrerequisites, isBusy, run } =
     useOrchestrateResult();
 
   const handleGenerate = () => {
-    if (!idea.trim() || isBusy) return;
-    run(idea);
+    const submittedIdea = idea.trim();
+    if (!submittedIdea || isBusy) return;
+    setLastIdea(submittedIdea);
+    run(submittedIdea);
   };
 
   const showResult = phase !== 'idle';
@@ -72,7 +75,7 @@ export default function AppBuilder() {
               in a premium app-shell frame (topbar/sidebar/stat cards). */}
           {showResult && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-              <AppPreviewShell idea={idea} phase={phase}>
+              <AppPreviewShell idea={lastIdea} phase={phase}>
                 <PreviewResult
                   phase={phase}
                   label={label}
