@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import html as _html
+import itertools
 import re
 from typing import List, Optional
 
@@ -51,13 +52,22 @@ def bars(n: int = 12, cls: str = "ds-bars") -> str:
     return f'<div class="{cls}" aria-hidden="true">{cells}</div>'
 
 
+_spark_ids = itertools.count(1)
+
+
 def spark() -> str:
+    """A tiny sparkline chart. Bug fix (Sprint 1.10): the gradient used a
+    hardcoded `id="g"` — any page calling `spark()` more than once (e.g.
+    the landing hero + a later preview panel, or a dashboard's trend +
+    momentum cards) rendered duplicate DOM ids, which is invalid HTML and
+    makes `url(#g)` ambiguous. Each call now gets its own id."""
+    gid = f"ds-spark-g{next(_spark_ids)}"
     pts = "0,30 10,22 20,26 30,14 40,18 50,8 60,16 70,6 80,12 90,4 100,9"
     return ('<svg class="ds-spark" viewBox="0 0 100 34" preserveAspectRatio="none" aria-hidden="true">'
             f'<polyline points="{pts}" fill="none" stroke="var(--accent-2)" stroke-width="2" '
             'vector-effect="non-scaling-stroke"/>'
-            f'<polyline points="0,34 {pts} 100,34" fill="url(#g)" stroke="none" opacity=".18"/>'
-            '<defs><linearGradient id="g" x1="0" x2="0" y1="0" y2="1">'
+            f'<polyline points="0,34 {pts} 100,34" fill="url(#{gid})" stroke="none" opacity=".18"/>'
+            f'<defs><linearGradient id="{gid}" x1="0" x2="0" y1="0" y2="1">'
             '<stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="transparent"/>'
             '</linearGradient></defs></svg>')
 

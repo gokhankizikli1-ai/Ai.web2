@@ -64,8 +64,15 @@ _LAYOUT_GUIDANCE: Dict[str, str] = {
     ),
     "landing": (
         "LAYOUT — MARKETING LANDING PAGE:\n"
-        "- Sticky top nav, a strong hero with a primary + secondary CTA, a social-proof logo row, "
-        "a feature grid, pricing, testimonials, an FAQ, a closing CTA band and a rich footer."
+        "- Sticky top nav, then a SPLIT HERO — not a centered text block: headline/CTAs on one side, "
+        "a large product visual (mockup, dashboard preview, or illustration) on the other, with depth "
+        "(a soft glow, a layered/floating element) rather than a single flat panel.\n"
+        "- A primary + secondary CTA in the hero, a social-proof logo row, a feature grid, pricing, "
+        "testimonials, an FAQ, a closing CTA band and a rich footer.\n"
+        "- Alternate a subtle background tone between sections (not every section on the identical "
+        "background) so the page reads as a sequence of deliberate sections, not one flat scroll.\n"
+        "- Generous whitespace between sections; avoid four-identical-cards as the default layout — "
+        "prefer one dominant element per section over a wall of equal-weight boxes."
     ),
 }
 
