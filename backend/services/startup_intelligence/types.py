@@ -85,6 +85,12 @@ class MarketSignals:
     trending_keywords: list[str] = field(default_factory=list)
     underserved_segments: list[str] = field(default_factory=list)
     common_workarounds: list[str] = field(default_factory=list)
+    # Competitor → complaint-cluster association, computed from the full
+    # evidence text (which the frontend never sees in full). Each entry:
+    #   { competitor, cluster_id, cluster_label, evidence_count }
+    # Only populated when a competitor name actually appears inside a
+    # cluster's evidence — never inferred.
+    competitor_weaknesses: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return asdict(self)

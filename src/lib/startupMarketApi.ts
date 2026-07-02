@@ -49,11 +49,22 @@ export interface ComplaintCluster {
   evidence_urls: string[];
 }
 
+export interface CompetitorWeakness {
+  competitor: string;
+  cluster_id: string;
+  cluster_label: string;
+  evidence_count: number;
+}
+
 export interface MarketSignals {
   competitors_mentioned: string[];
   trending_keywords: string[];
   underserved_segments: string[];
   common_workarounds: string[];
+  /** Competitor → complaint-cluster association computed server-side from
+   * full evidence text. Optional: absent on reports cached before this
+   * field shipped. */
+  competitor_weaknesses?: CompetitorWeakness[];
 }
 
 export interface RadarRecommendations {

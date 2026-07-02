@@ -1,11 +1,17 @@
 import { motion } from 'framer-motion';
 import {
-  ArrowUpRight, CheckCircle2, CircleSlash, Clock3, Flame,
-  Lightbulb, ListChecks, MessageSquareWarning, Rocket, ShieldAlert,
-  Target, Users,
+  ArrowUpRight, CheckCircle2, CircleSlash, Clock3, Flame, Hammer,
+  ListChecks, MessageSquareWarning, Rocket, ShieldAlert, Target,
 } from 'lucide-react';
-import type { MarketComplaintReport, SourceStatus } from '@/lib/startupMarketApi';
+import type { MarketComplaintReport, RadarSourceHealth, SourceStatus } from '@/lib/startupMarketApi';
+import {
+  deriveDecision, deriveIcp, deriveValidationSprint,
+} from '@/lib/startupRadarInsights';
 import ComplaintClusterCard from './ComplaintClusterCard';
+import CompetitorWeaknessPanel from './CompetitorWeaknessPanel';
+import IcpPanel from './IcpPanel';
+import OpportunityDecisionBoard from './OpportunityDecisionBoard';
+import ValidationSprintPanel from './ValidationSprintPanel';
 
 const SOURCE_LABELS: Record<string, string> = {
   web: 'Web',
@@ -15,25 +21,62 @@ const SOURCE_LABELS: Record<string, string> = {
   producthunt: 'Product Hunt',
 };
 
+const SOURCE_ROLES: Record<string, string> = {
+  web: 'Broad current market evidence',
+  hackernews: 'Founder/developer discussion signal',
+  gdelt: 'News & trend signal',
+  reddit: 'Community complaint signal',
+  producthunt: 'Launch/product signal',
+};
+
 const CONFIDENCE_TONE: Record<string, string> = {
   high: 'text-emerald-300 border-emerald-500/25 bg-emerald-500/[0.08]',
   medium: 'text-amber-300 border-amber-500/25 bg-amber-500/[0.08]',
   low: 'text-slate-300 border-white/[0.08] bg-white/[0.03]',
 };
 
-function FreshnessChip({ source, status }: { source: string; status: SourceStatus }) {
-  const meta =
-    status === 'available'
-      ? { icon: CheckCircle2, tone: 'text-emerald-400/80', label: 'live' }
-      : status === 'skipped'
-        ? { icon: CircleSlash, tone: 'text-slate-600', label: 'skipped' }
-        : { icon: MessageSquareWarning, tone: 'text-rose-400/70', label: 'unavailable' };
+const DECISION_CHIP_TONE: Record<string, string> = {
+  build: 'text-emerald-300 border-emerald-500/25 bg-emerald-500/[0.08]',
+  validate: 'text-amber-300 border-amber-500/25 bg-amber-500/[0.08]',
+  avoid: 'text-rose-300 border-rose-500/25 bg-rose-500/[0.08]',
+};
+
+function formatGeneratedAt(iso: string): string {
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  } catch {
+    return '';
+  }
+}
+
+function SourceStatusCard({
+  source,
+  status,
+  configured,
+}: {
+  source: string;
+  status: SourceStatus;
+  configured: boolean | null; // null = health unknown
+}) {
+  const effective =
+    status === 'skipped' && configured === false
+      ? { icon: CircleSlash, tone: 'text-slate-600', label: 'not configured' }
+      : status === 'available'
+        ? { icon: CheckCircle2, tone: 'text-emerald-400/80', label: 'live' }
+        : status === 'skipped'
+          ? { icon: CircleSlash, tone: 'text-slate-600', label: 'skipped' }
+          : { icon: MessageSquareWarning, tone: 'text-rose-400/70', label: 'unavailable' };
   return (
-    <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border border-white/[0.04] bg-white/[0.01] text-[10px] text-slate-500">
-      <meta.icon className={`h-3 w-3 ${meta.tone}`} />
-      {SOURCE_LABELS[source] || source}
-      <span className={meta.tone}>{meta.label}</span>
-    </span>
+    <div className="rounded-lg border border-white/[0.03] bg-white/[0.008] px-2.5 py-2 min-w-0">
+      <div className="flex items-center gap-1.5">
+        <effective.icon className={`h-3 w-3 shrink-0 ${effective.tone}`} />
+        <span className="text-[11px] text-slate-300 truncate">{SOURCE_LABELS[source] || source}</span>
+        <span className={`ml-auto text-[9px] shrink-0 ${effective.tone}`}>{effective.label}</span>
+      </div>
+      <p className="text-[9px] text-slate-600 mt-1 leading-tight">{SOURCE_ROLES[source] || ''}</p>
+    </div>
   );
 }
 
@@ -85,22 +128,33 @@ function SignalList({ title, values }: { title: string; values: string[] }) {
 
 interface Props {
   report: MarketComplaintReport;
+  sourceHealth: RadarSourceHealth | null;
   onSendToAdvisor: () => void;
+  onSendToBuilder: () => void;
 }
 
 /**
- * Full radar result surface: opportunity summary, honest per-source
- * freshness, ranked complaint clusters with evidence, market signals,
- * deterministic recommendations, and the Startup Advisor handoff.
+ * Founder-grade result surface, ordered for decision-making:
+ * summary + decision → source status → complaint clusters → decision
+ * board → ICP → competitor weaknesses → MVP wedge → 7-day sprint →
+ * risks → citations. Every derived panel is deterministic and renders
+ * an honest "not enough evidence" state when the data is thin.
  */
-export default function MarketRadarResults({ report, onSendToAdvisor }: Props) {
+export default function MarketRadarResults({ report, sourceHealth, onSendToAdvisor, onSendToBuilder }: Props) {
   const { summary } = report;
   const hasClusters = report.complaint_clusters.length > 0;
+  const decision = deriveDecision(report);
+  const icp = deriveIcp(report);
+  const sprint = deriveValidationSprint(report);
+  const generatedAt = formatGeneratedAt(report.generated_at);
+
+  const unavailableSources = Object.entries(report.data_freshness).filter(([, s]) => s === 'unavailable');
+  const skippedSources = Object.entries(report.data_freshness).filter(([, s]) => s === 'skipped');
 
   return (
-    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
-      {/* Summary card */}
-      <div className="rounded-2xl border border-white/[0.04] bg-white/[0.008] p-5">
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+      {/* 1 — Summary: score + confidence + decision */}
+      <div className="rounded-2xl border border-white/[0.04] bg-white/[0.008] p-4 sm:p-5">
         <div className="flex flex-wrap items-center gap-4">
           {/* Opportunity gauge — real API value, not decoration */}
           <div className="relative w-20 h-20 shrink-0">
@@ -126,6 +180,9 @@ export default function MarketRadarResults({ report, onSendToAdvisor }: Props) {
               <span className={`px-2 py-0.5 rounded-md border text-[10px] font-medium ${CONFIDENCE_TONE[summary.confidence] || CONFIDENCE_TONE.low}`}>
                 {summary.confidence} confidence
               </span>
+              <span className={`px-2 py-0.5 rounded-md border text-[10px] font-semibold ${DECISION_CHIP_TONE[decision.bucket]}`}>
+                {decision.label}
+              </span>
               {report.cached && (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-white/[0.06] text-[10px] text-slate-500">
                   <Clock3 className="h-2.5 w-2.5" /> cached result
@@ -142,27 +199,32 @@ export default function MarketRadarResults({ report, onSendToAdvisor }: Props) {
             <p className="text-[11px] text-slate-600 mt-1">
               {summary.total_items_analyzed} items from {summary.total_sources} live source
               {summary.total_sources === 1 ? '' : 's'} · last {report.timeframe_days} days
+              {generatedAt && ` · generated ${generatedAt}`}
             </p>
           </div>
 
           {hasClusters && (
-            <motion.button
-              whileHover={{ scale: 1.01 }}
-              whileTap={{ scale: 0.99 }}
-              onClick={onSendToAdvisor}
-              className="shrink-0 h-10 px-4 rounded-xl bg-amber-500/[0.1] border border-amber-500/25 text-amber-200 text-[12px] hover:bg-amber-500/[0.14] transition-all flex items-center gap-2"
-            >
-              <Rocket className="h-3.5 w-3.5" /> Send to Startup Advisor
-              <ArrowUpRight className="h-3 w-3" />
-            </motion.button>
+            <div className="flex flex-col gap-1.5 shrink-0 w-full sm:w-auto">
+              <motion.button
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.99 }}
+                onClick={onSendToAdvisor}
+                className="h-9 px-4 rounded-xl bg-amber-500/[0.1] border border-amber-500/25 text-amber-200 text-[12px] hover:bg-amber-500/[0.14] transition-all flex items-center justify-center gap-2"
+              >
+                <Rocket className="h-3.5 w-3.5" /> Send to Startup Advisor
+                <ArrowUpRight className="h-3 w-3" />
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.01 }}
+                whileTap={{ scale: 0.99 }}
+                onClick={onSendToBuilder}
+                className="h-9 px-4 rounded-xl bg-white/[0.03] border border-white/[0.08] text-slate-300 text-[12px] hover:bg-white/[0.06] hover:text-white transition-all flex items-center justify-center gap-2"
+              >
+                <Hammer className="h-3.5 w-3.5" /> Send to Builder
+                <ArrowUpRight className="h-3 w-3" />
+              </motion.button>
+            </div>
           )}
-        </div>
-
-        {/* Per-source freshness — always shown, always honest */}
-        <div className="flex flex-wrap gap-1.5 mt-4">
-          {Object.entries(report.data_freshness).map(([source, status]) => (
-            <FreshnessChip key={source} source={source} status={status} />
-          ))}
         </div>
 
         {report.message && (
@@ -172,10 +234,42 @@ export default function MarketRadarResults({ report, onSendToAdvisor }: Props) {
         )}
       </div>
 
-      {/* Complaint clusters */}
+      {/* 2 — Source status + limitations */}
+      <div className="rounded-xl border border-white/[0.04] bg-white/[0.008] p-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+          {Object.entries(report.data_freshness).map(([source, status]) => (
+            <SourceStatusCard
+              key={source}
+              source={source}
+              status={status}
+              configured={sourceHealth ? sourceHealth.sources[source as keyof typeof sourceHealth.sources]?.configured ?? null : null}
+            />
+          ))}
+        </div>
+        <details className="mt-3 group">
+          <summary className="text-[10px] text-slate-600 hover:text-slate-400 cursor-pointer select-none transition-colors">
+            Data limitations
+          </summary>
+          <ul className="mt-2 space-y-1 text-[10px] text-slate-500">
+            {unavailableSources.length > 0 && (
+              <li>• Failed this run: {unavailableSources.map(([s]) => SOURCE_LABELS[s] || s).join(', ')}.</li>
+            )}
+            {skippedSources.length > 0 && (
+              <li>• Not used: {skippedSources.map(([s]) => SOURCE_LABELS[s] || s).join(', ')} (deselected or not configured).</li>
+            )}
+            {summary.confidence === 'low' && (
+              <li>• Confidence is LOW — treat every insight below as a hypothesis to test, not a finding.</li>
+            )}
+            {report.message && <li>• {report.message}</li>}
+            <li>• This is directional evidence from public discussions, not statistically representative proof.</li>
+          </ul>
+        </details>
+      </div>
+
+      {/* 3 — Complaint clusters */}
       {hasClusters && (
         <div>
-          <div className="flex items-center gap-2 mb-3">
+          <div className="flex items-center gap-2 mb-2.5">
             <Flame className="h-3.5 w-3.5 text-rose-400/70" />
             <h3 className="text-[13px] font-medium text-white">Ranked complaint clusters</h3>
           </div>
@@ -187,34 +281,51 @@ export default function MarketRadarResults({ report, onSendToAdvisor }: Props) {
         </div>
       )}
 
-      {/* Market signals */}
+      {/* 4 — Opportunity decision board */}
+      <OpportunityDecisionBoard decision={decision} />
+
+      {/* 5 — ICP / first users */}
+      <IcpPanel icp={icp} report={report} />
+
+      {/* 6 — Competitor weaknesses */}
+      <CompetitorWeaknessPanel report={report} />
+
+      {/* 7 — MVP wedge & positioning */}
+      {hasClusters && (
+        <RecommendationBlock
+          icon={ListChecks}
+          title="MVP wedge & positioning"
+          items={[
+            ...report.recommendations.mvp_wedge,
+            ...report.recommendations.startup_angles,
+            ...report.recommendations.landing_page_angles,
+          ]}
+        />
+      )}
+
+      {/* Market signals — compact, feeds the panels above */}
       <div className="rounded-xl border border-white/[0.04] bg-white/[0.008] p-4">
         <div className="flex items-center gap-2 mb-3">
           <Target className="h-3.5 w-3.5 text-cyan-400/70" />
           <h3 className="text-[12px] font-medium text-white">Market signals</h3>
         </div>
         <div className="grid sm:grid-cols-2 gap-4">
-          <SignalList title="Competitors mentioned in evidence" values={report.market_signals.competitors_mentioned} />
           <SignalList title="Trending keywords" values={report.market_signals.trending_keywords} />
           <SignalList title="Underserved segments" values={report.market_signals.underserved_segments} />
           <SignalList title="Common workarounds" values={report.market_signals.common_workarounds} />
+          <SignalList title="Competitors mentioned" values={report.market_signals.competitors_mentioned} />
         </div>
       </div>
 
-      {/* Recommendations */}
+      {/* 8 — 7-day validation sprint */}
+      {sprint && <ValidationSprintPanel sprint={sprint} />}
+
+      {/* 9 — Risks */}
       {hasClusters && (
-        <div className="grid sm:grid-cols-2 gap-2.5">
-          <RecommendationBlock icon={Lightbulb} title="Startup angles" items={report.recommendations.startup_angles} />
-          <RecommendationBlock icon={ListChecks} title="MVP wedge" items={report.recommendations.mvp_wedge} />
-          <RecommendationBlock icon={Users} title="First 100 customers" items={report.recommendations.first_100_customers} />
-          <RecommendationBlock icon={Rocket} title="Landing page angles" items={report.recommendations.landing_page_angles} />
-          <div className="sm:col-span-2">
-            <RecommendationBlock icon={ShieldAlert} title="Risks" items={report.recommendations.risks} />
-          </div>
-        </div>
+        <RecommendationBlock icon={ShieldAlert} title="Risks" items={report.recommendations.risks} />
       )}
 
-      {/* Citations */}
+      {/* 10 — Citations */}
       {report.citations.length > 0 && (
         <details className="rounded-xl border border-white/[0.04] bg-white/[0.008] p-4">
           <summary className="text-[12px] text-slate-400 cursor-pointer select-none">
