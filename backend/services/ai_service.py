@@ -308,6 +308,62 @@ async def process_chat(
                 except Exception as _terr:
                     logger.warning("process_chat | mode tool error: %s — continuing without tools", _terr)
 
+                # Research-in-Chat — the standalone Research tab is gone,
+                # so normal chat (mode "fast") detects research intent
+                # ("araştır", "internetten bak", "search the web",
+                # "latest ...") and auto-invokes web_research exactly like
+                # the streaming path does. Runs INSIDE the normal /chat
+                # request, so usage/credit counting is unchanged — no free
+                # tool bypass. Modes whose tool map already includes
+                # web_research (research, deep_think, startup_advisor, ...)
+                # are excluded to avoid a double search.
+                if canonical == "fast":
+                    try:
+                        from backend.services.tool_extraction import (
+                            detect_web_search_intent,
+                            build_web_search_context_block,
+                        )
+                        _ws = detect_web_search_intent(message)
+                        if _ws.triggered:
+                            _ws_block, _ws_payload = await build_web_search_context_block(
+                                user_id=  str(user_id),
+                                query=    _ws.query or message,
+                                triggers= _ws.triggers,
+                            )
+                            if _ws_block:
+                                sys_p += "\n\n" + _ws_block
+                                logger.info(
+                                    "process_chat | fast_mode web_research | uid=%s | "
+                                    "confidence=%.2f | fetched=%s",
+                                    user_id, _ws.confidence,
+                                    _ws_payload.get("fetched", True),
+                                )
+                            else:
+                                # Honest unavailable state: the user asked for
+                                # current/web-backed info but no result exists
+                                # (tool disabled, provider missing, or search
+                                # failed). Tell the model to say so instead of
+                                # inventing sources.
+                                sys_p += (
+                                    "\n\n[WEB_RESEARCH_STATUS]\n"
+                                    "The user asked for current / web-sourced information, "
+                                    "but live web research is unavailable right now. State this "
+                                    "clearly in the reply (e.g. 'Live web research is unavailable "
+                                    "right now.' / TR: 'Canli web arastirmasi su an kullanilamiyor.'), "
+                                    "answer from general knowledge with an explicit may-be-outdated "
+                                    "caveat, and do NOT invent sources, links, dates, or current figures."
+                                )
+                                logger.info(
+                                    "process_chat | fast_mode web_research unavailable | uid=%s | reason=%s",
+                                    user_id,
+                                    _ws_payload.get("error") or _ws_payload.get("reason") or "unknown",
+                                )
+                    except Exception as _ws_err:
+                        logger.warning(
+                            "process_chat | fast_mode web_research error: %s — continuing without",
+                            _ws_err,
+                        )
+
                 reply = await ask_ai(
                     message, sys_p, history,
                     model=cfg["model"],

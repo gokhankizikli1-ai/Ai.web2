@@ -68,10 +68,20 @@ _EXPLICIT_SEARCH_PHRASES: tuple[str, ...] = (
     "search the web", "search online", "look up online", "look up on the web",
     "google it", "google for", "find online", "search for",
     "browse the web", "check online",
+    # Nav-cleanup phase — Research tab removed; these direct asks must
+    # fire from normal Chat.
+    "research this", "look this up", "look it up", "look that up",
+    "find current data", "find current info", "with sources",
+    "show sources", "cite sources",
     # Turkish
     "internetten araştır", "webden bul", "webde ara", "internetten ara",
     "online araştır", "googleda ara", "google'da ara",
     "internetten bilgi", "internetten kontrol et",
+    # Nav-cleanup phase — TR direct asks. "kaynaklı" alone is ambiguous
+    # ("stres kaynaklı" = "caused by stress"), so only paired forms.
+    "internetten bak", "webden bak", "webe bak",
+    "kaynaklı araştır", "kaynaklı bak", "kaynak göster", "kaynak ver",
+    "güncel kaynak", "haberleri araştır",
 )
 
 # Research / analysis verbs.

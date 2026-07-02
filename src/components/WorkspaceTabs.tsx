@@ -1,17 +1,19 @@
 import { motion } from 'framer-motion';
-import {
-  Sparkles, Search, Building2, FolderOpen,
-  TrendingUp,
-} from 'lucide-react';
+import { Sparkles, Building2, TrendingUp } from 'lucide-react';
 import type { WorkspaceTab } from '@/types';
 
 interface WorkspaceTabsProps {
   activeTab: WorkspaceTab;
   onTabChange: (tab: WorkspaceTab) => void;
+  /** Owner-only private preview — Trading is hidden for normal users.
+   * Passed down from ChatDashboard's shared useOwnerMode() state. */
+  showTrading?: boolean;
 }
 
 /* ═══════════════════════════════════════════
-   TAB CONFIG — 5 direct tabs, no dropdown
+   TAB CONFIG — lean top nav.
+   Research is a capability inside Chat now (intent-based web research),
+   not a tab. Projects lives in the left sidebar, not here.
    ═══════════════════════════════════════════ */
 interface TabConfig {
   key: WorkspaceTab;
@@ -20,18 +22,20 @@ interface TabConfig {
   shortLabel?: string;
 }
 
-const TABS: TabConfig[] = [
+const BASE_TABS: TabConfig[] = [
   { key: 'chat',     label: 'Chat',     icon: Sparkles,   shortLabel: 'Chat' },
-  { key: 'research', label: 'Research', icon: Search,     shortLabel: 'Research' },
   { key: 'business', label: 'Business', icon: Building2,  shortLabel: 'Business' },
-  { key: 'agents',   label: 'Projects', icon: FolderOpen, shortLabel: 'Projects' },
-  { key: 'trading',  label: 'Trading',  icon: TrendingUp, shortLabel: 'Trading' },
 ];
 
-export default function WorkspaceTabs({ activeTab, onTabChange }: WorkspaceTabsProps) {
+const TRADING_TAB: TabConfig = {
+  key: 'trading', label: 'Trading', icon: TrendingUp, shortLabel: 'Trading',
+};
+
+export default function WorkspaceTabs({ activeTab, onTabChange, showTrading = false }: WorkspaceTabsProps) {
+  const tabs = showTrading ? [...BASE_TABS, TRADING_TAB] : BASE_TABS;
   return (
     <div className="flex items-center gap-0.5 px-1">
-      {TABS.map((tab) => {
+      {tabs.map((tab) => {
         const active = activeTab === tab.key;
         return (
           <button
