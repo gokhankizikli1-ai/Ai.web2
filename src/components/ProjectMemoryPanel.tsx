@@ -28,10 +28,10 @@ export default function ProjectMemoryPanel({
   };
 
   const memoryColors: Record<string, { bg: string; border: string; text: string; dot: string }> = {
-    knowledge: { bg: 'bg-[#52677A]/[0.06]', border: 'border-[#52677A]/[0.12]', text: 'text-[#52677A]', dot: 'bg-[#52677A]' },
-    decision: { bg: 'bg-[#52677A]/[0.06]', border: 'border-[#52677A]/[0.12]', text: 'text-[#52677A]', dot: 'bg-[#52677A]' },
-    conversation: { bg: 'bg-[#52677A]/[0.06]', border: 'border-[#52677A]/[0.12]', text: 'text-[#52677A]', dot: 'bg-[#52677A]' },
-    resource: { bg: 'bg-[#52677A]/[0.06]', border: 'border-[#52677A]/[0.12]', text: 'text-[#52677A]', dot: 'bg-[#52677A]' },
+    knowledge: { bg: 'bg-[#7EA6BF]/[0.06]', border: 'border-[#7EA6BF]/[0.12]', text: 'text-[#7EA6BF]', dot: 'bg-[#7EA6BF]' },
+    decision: { bg: 'bg-[#7EA6BF]/[0.06]', border: 'border-[#7EA6BF]/[0.12]', text: 'text-[#7EA6BF]', dot: 'bg-[#7EA6BF]' },
+    conversation: { bg: 'bg-[#7EA6BF]/[0.06]', border: 'border-[#7EA6BF]/[0.12]', text: 'text-[#7EA6BF]', dot: 'bg-[#7EA6BF]' },
+    resource: { bg: 'bg-[#7EA6BF]/[0.06]', border: 'border-[#7EA6BF]/[0.12]', text: 'text-[#7EA6BF]', dot: 'bg-[#7EA6BF]' },
   };
 
   return (
@@ -40,20 +40,20 @@ export default function ProjectMemoryPanel({
       <div
         className="rounded-xl p-3"
         style={{
-          background: 'linear-gradient(180deg, rgba(27,34,48,0.5) 0%, rgba(17,21,28,0.6) 100%)',
+          background: 'linear-gradient(180deg, rgba(27,34,48,0.5) 0%, rgba(17, 24, 32,0.6) 100%)',
           border: '1px solid rgba(255,255,255,0.06)',
         }}
       >
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-1.5">
-            <Brain className="h-3.5 w-3.5 text-[#52677A]" />
+            <Brain className="h-3.5 w-3.5 text-[#7EA6BF]" />
             <span className="text-[11px] font-semibold text-white/70">Context Health</span>
           </div>
-          <span className="text-[11px] font-bold text-[#52677A]">{context.contextHealth}%</span>
+          <span className="text-[11px] font-bold text-[#7EA6BF]">{context.contextHealth}%</span>
         </div>
         <div className="h-1.5 rounded-full bg-white/[0.04] overflow-hidden">
           <motion.div
-            className="h-full rounded-full bg-gradient-to-r from-[#52677A] to-[#7890A3]"
+            className="h-full rounded-full bg-gradient-to-r from-[#7EA6BF] to-[#9CBBD1]"
             initial={{ width: 0 }}
             animate={{ width: `${context.contextHealth}%` }}
             transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
@@ -62,7 +62,7 @@ export default function ProjectMemoryPanel({
         <div className="flex items-center justify-between mt-2">
           <span className="text-[9px] text-white/25">Last sync: {context.lastSync}</span>
           <div className="flex items-center gap-0.5">
-            <Zap className="h-2.5 w-2.5 text-[#52677A]/50" />
+            <Zap className="h-2.5 w-2.5 text-[#7EA6BF]/50" />
             <span className="text-[9px] text-white/25">Auto-sync on</span>
           </div>
         </div>
@@ -71,10 +71,10 @@ export default function ProjectMemoryPanel({
       {/* Stats Grid */}
       <div className="grid grid-cols-2 gap-2">
         {[
-          { icon: Brain, label: 'Shared Knowledge', value: `${context.sharedKnowledge.length} topics`, color: 'text-[#52677A]' },
-          { icon: MessageSquare, label: 'Conversations', value: `${context.syncedConversations}`, color: 'text-[#52677A]' },
-          { icon: FolderOpen, label: 'Resources', value: `${context.uploadedResources}`, color: 'text-[#52677A]' },
-          { icon: TrendingUp, label: 'Total Messages', value: `${context.totalMessages}`, color: 'text-[#52677A]' },
+          { icon: Brain, label: 'Shared Knowledge', value: `${context.sharedKnowledge.length} topics`, color: 'text-[#7EA6BF]' },
+          { icon: MessageSquare, label: 'Conversations', value: `${context.syncedConversations}`, color: 'text-[#7EA6BF]' },
+          { icon: FolderOpen, label: 'Resources', value: `${context.uploadedResources}`, color: 'text-[#7EA6BF]' },
+          { icon: TrendingUp, label: 'Total Messages', value: `${context.totalMessages}`, color: 'text-[#7EA6BF]' },
         ].map((stat, i) => (
           <motion.div
             key={stat.label}
@@ -111,7 +111,7 @@ export default function ProjectMemoryPanel({
         </div>
         <div className="h-1.5 rounded-full bg-white/[0.04] overflow-hidden">
           <div
-            className="h-full rounded-full bg-gradient-to-r from-[#52677A] to-[#7890A3]"
+            className="h-full rounded-full bg-gradient-to-r from-[#7EA6BF] to-[#9CBBD1]"
             style={{ width: `${(activeAgentCount / totalAgentCount) * 100}%` }}
           />
         </div>
@@ -124,10 +124,10 @@ export default function ProjectMemoryPanel({
           <p className="text-[12px] font-semibold text-[#6F8F7A]">{completedTasks}</p>
           <p className="text-[8px] text-[#6F8F7A]/50">Done</p>
         </div>
-        <div className="flex-1 rounded-lg p-2 text-center" style={{ background: 'rgba(82,103,122,0.06)', border: '1px solid rgba(82,103,122,0.1)' }}>
-          <Clock className="h-3 w-3 text-[#52677A] mx-auto mb-0.5" />
-          <p className="text-[12px] font-semibold text-[#52677A]">{inProgressTasks}</p>
-          <p className="text-[8px] text-[#52677A]/50">Active</p>
+        <div className="flex-1 rounded-lg p-2 text-center" style={{ background: 'rgba(126, 166, 191,0.06)', border: '1px solid rgba(126, 166, 191,0.1)' }}>
+          <Clock className="h-3 w-3 text-[#7EA6BF] mx-auto mb-0.5" />
+          <p className="text-[12px] font-semibold text-[#7EA6BF]">{inProgressTasks}</p>
+          <p className="text-[8px] text-[#7EA6BF]/50">Active</p>
         </div>
         <div className="flex-1 rounded-lg p-2 text-center" style={{ background: 'rgba(166,138,91,0.06)', border: '1px solid rgba(166,138,91,0.1)' }}>
           <AlertTriangle className="h-3 w-3 text-[#A68A5B] mx-auto mb-0.5" />
@@ -149,7 +149,7 @@ export default function ProjectMemoryPanel({
               className="flex items-start gap-2 p-2 rounded-lg"
               style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.03)' }}
             >
-              <Lightbulb className="h-3 w-3 text-[#52677A]/60 shrink-0 mt-0.5" />
+              <Lightbulb className="h-3 w-3 text-[#7EA6BF]/60 shrink-0 mt-0.5" />
               <span className="text-[10px] text-white/50 leading-relaxed">{decision}</span>
             </motion.div>
           ))}

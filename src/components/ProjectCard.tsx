@@ -14,14 +14,14 @@ const iconMap: Record<string, React.ElementType> = {
 const statusConfig = {
   active: { label: 'Active', bg: 'bg-[#6F8F7A]/[0.08]', text: 'text-[#6F8F7A]', dot: 'bg-[#6F8F7A]', pulse: true },
   draft: { label: 'Draft', bg: 'bg-[#A68A5B]/[0.08]', text: 'text-[#A68A5B]', dot: 'bg-[#A68A5B]', pulse: false },
-  archived: { label: 'Archived', bg: 'bg-slate-500/[0.08]', text: 'text-slate-400', dot: 'bg-slate-400', pulse: false },
+  archived: { label: 'Archived', bg: 'bg-slate-500/[0.08]', text: 'text-[#A9B7C6]', dot: 'bg-slate-400', pulse: false },
 };
 
 const categoryColor: Record<string, string> = {
-  Ecommerce: 'text-[#52677A]',
-  Trading: 'text-[#52677A]',
-  Startup: 'text-[#52677A]',
-  Development: 'text-[#52677A]',
+  Ecommerce: 'text-[#7EA6BF]',
+  Trading: 'text-[#7EA6BF]',
+  Startup: 'text-[#7EA6BF]',
+  Development: 'text-[#7EA6BF]',
 };
 
 interface ProjectCardProps {
@@ -56,7 +56,7 @@ export default function ProjectCard({ project, index, onDelete }: ProjectCardPro
       <div
         className="relative rounded-xl overflow-hidden transition-all duration-300 group-hover:border-white/[0.12]"
         style={{
-          background: 'linear-gradient(180deg, rgba(27,34,48,0.7) 0%, rgba(17,21,28,0.8) 100%)',
+          background: 'linear-gradient(180deg, rgba(27,34,48,0.7) 0%, rgba(17, 24, 32,0.8) 100%)',
           border: '1px solid rgba(255,255,255,0.06)',
           boxShadow: '0 4px 16px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.03)',
         }}
@@ -78,7 +78,7 @@ export default function ProjectCard({ project, index, onDelete }: ProjectCardPro
                 <h3 className="text-[13px] font-semibold text-white/90 group-hover:text-white transition-colors">
                   {project.name}
                 </h3>
-                <span className={`text-[10px] font-medium ${categoryColor[project.category] || 'text-slate-400'}`}>
+                <span className={`text-[10px] font-medium ${categoryColor[project.category] || 'text-[#A9B7C6]'}`}>
                   {project.category}
                 </span>
               </div>

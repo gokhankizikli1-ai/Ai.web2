@@ -15,17 +15,17 @@ export default function IcpPanel({
   return (
     <div className="rounded-xl border border-white/[0.05] bg-white/[0.01] p-4">
       <div className="flex items-center gap-2 mb-3">
-        <Users className="h-3.5 w-3.5 text-[#637B90]" />
+        <Users className="h-3.5 w-3.5 text-[#8FB4CC]" />
         <h3 className="text-[13px] font-semibold text-slate-100">Who to sell to first</h3>
         {icp?.isHypothesis && (
-          <span className="px-1.5 py-0.5 rounded text-[9px] bg-[#52677A]/[0.12] border border-[#52677A]/35 text-[#637B90]">
+          <span className="px-1.5 py-0.5 rounded text-[9px] bg-[#7EA6BF]/[0.12] border border-[#7EA6BF]/35 text-[#8FB4CC]">
             hypothesis
           </span>
         )}
       </div>
 
       {!icp ? (
-        <p className="text-[12px] text-slate-400">
+        <p className="text-[12px] text-[#A9B7C6]">
           Not enough evidence to name a first segment — no complaint clusters were found in this run.
         </p>
       ) : (
@@ -38,7 +38,7 @@ export default function IcpPanel({
             { label: 'Why they care now', value: icp.whyNow },
           ].map((row) => (
             <div key={row.label} className="flex flex-col sm:flex-row sm:items-start gap-0.5 sm:gap-3">
-              <span className="shrink-0 sm:w-32 text-[10px] text-slate-500 sm:pt-0.5">{row.label}</span>
+              <span className="shrink-0 sm:w-32 text-[10px] text-[#7F8FA3] sm:pt-0.5">{row.label}</span>
               <span className="text-[12px] text-slate-300 leading-relaxed min-w-0">{row.value}</span>
             </div>
           ))}

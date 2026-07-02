@@ -8,8 +8,8 @@ import {
 // floor for anything without a role (old cached reports).
 const ROLE_META: Record<string, { label: string; tone: string }> = {
   direct: { label: 'Direct complaint', tone: 'text-[#86A08F] border-[#6F8F7A]/40 bg-[#6F8F7A]/[0.12]' },
-  complaint: { label: 'Extracted complaint', tone: 'text-[#637B90] border-[#52677A]/35 bg-[#52677A]/[0.1]' },
-  broad: { label: 'Broad evidence', tone: 'text-slate-400 border-white/[0.08] bg-white/[0.03]' },
+  complaint: { label: 'Extracted complaint', tone: 'text-[#8FB4CC] border-[#7EA6BF]/35 bg-[#7EA6BF]/[0.1]' },
+  broad: { label: 'Broad evidence', tone: 'text-[#A9B7C6] border-white/[0.08] bg-white/[0.03]' },
   context: { label: 'Used as citation', tone: 'text-slate-300 border-white/[0.08] bg-white/[0.03]' },
 };
 
@@ -50,9 +50,9 @@ export default function EvidenceTrail({ report, defaultOpen = false }: Props) {
       className="rounded-xl border border-white/[0.05] bg-white/[0.01] p-4 group"
     >
       <summary className="flex items-center gap-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
-        <ChevronRight className="h-3.5 w-3.5 text-slate-500 transition-transform group-open:rotate-90" />
+        <ChevronRight className="h-3.5 w-3.5 text-[#7F8FA3] transition-transform group-open:rotate-90" />
         <span className="text-[13px] font-semibold text-slate-100">Evidence trail</span>
-        <span className="text-[11px] text-slate-500">
+        <span className="text-[11px] text-[#7F8FA3]">
           {report.citations.length} page{report.citations.length === 1 ? '' : 's'} used
         </span>
       </summary>
@@ -60,7 +60,7 @@ export default function EvidenceTrail({ report, defaultOpen = false }: Props) {
       <div className="mt-3 space-y-3">
         {ordered.map((source) => (
           <div key={source}>
-            <span className="block text-[10px] font-medium text-slate-500 uppercase tracking-wider mb-1.5">
+            <span className="block text-[10px] font-medium text-[#7F8FA3] uppercase tracking-wider mb-1.5">
               {sourceLabel(source)}
             </span>
             <ul className="space-y-1">
@@ -72,11 +72,11 @@ export default function EvidenceTrail({ report, defaultOpen = false }: Props) {
                       href={c.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 min-w-0 text-[12px] text-slate-300 hover:text-[#7890A3] transition-colors"
+                      className="flex items-center gap-1.5 min-w-0 text-[12px] text-slate-300 hover:text-[#9CBBD1] transition-colors"
                     >
-                      <ExternalLink className="h-2.5 w-2.5 shrink-0 text-slate-500" />
+                      <ExternalLink className="h-2.5 w-2.5 shrink-0 text-[#7F8FA3]" />
                       <span className="font-medium shrink-0">{domainOf(c.url)}</span>
-                      <span className="text-slate-500 truncate">{c.title}</span>
+                      <span className="text-[#7F8FA3] truncate">{c.title}</span>
                     </a>
                     <span className={`ml-auto shrink-0 px-1.5 py-0.5 rounded border text-[9px] ${role.tone}`}>
                       {role.label}

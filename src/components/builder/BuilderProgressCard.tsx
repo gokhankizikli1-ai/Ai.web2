@@ -38,7 +38,7 @@ export default function BuilderProgressCard({
         </div>
         <div className="min-w-0">
           <p className="text-[13px] font-medium text-white truncate">{label}</p>
-          <p className="text-[11px] text-slate-500">Korvix is building your preview</p>
+          <p className="text-[11px] text-[#7F8FA3]">Korvix is building your preview</p>
         </div>
       </div>
 
@@ -49,7 +49,7 @@ export default function BuilderProgressCard({
               className="h-1.5 w-1.5 shrink-0 rounded-full animate-pulse-soft"
               style={{ background: accent, animationDelay: `${i * 220}ms` }}
             />
-            <span className="text-[12px] text-slate-400">{step}</span>
+            <span className="text-[12px] text-[#A9B7C6]">{step}</span>
           </div>
         ))}
       </div>

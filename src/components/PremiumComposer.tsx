@@ -286,9 +286,9 @@ export default function PremiumComposer({
         transition={{ duration: 0.2 }}
         className={`relative rounded-2xl border transition-all duration-300 ${
           isDragging
-            ? 'border-[#52677A]/45'
+            ? 'border-[#7EA6BF]/45'
             : isFocused
-              ? 'border-[#52677A]/20'
+              ? 'border-[#7EA6BF]/20'
               : 'border-white/[0.05] hover:border-white/[0.07]'
         }`}
         style={{
@@ -312,7 +312,7 @@ export default function PremiumComposer({
                   'linear-gradient(135deg, rgba(34,211,238,0.10), rgba(99,102,241,0.10))',
               }}
             >
-              <div className="flex items-center gap-2 text-[#637B90] text-[12px] font-medium">
+              <div className="flex items-center gap-2 text-[#8FB4CC] text-[12px] font-medium">
                 <FileUp className="h-3.5 w-3.5" />
                 Drop to attach
               </div>
@@ -364,7 +364,7 @@ export default function PremiumComposer({
             onChange={onFileInputChange}
           />
           {activeTools.length === 0 && assets.pendingAssets.length === 0 && (
-            <span className="text-[11px] text-[#64748B] ml-1.5">Add tool or attach</span>
+            <span className="text-[11px] text-[#7F8FA3] ml-1.5">Add tool or attach</span>
           )}
         </div>
 
@@ -386,16 +386,16 @@ export default function PremiumComposer({
             }
             rows={1}
             disabled={disabled}
-            className="w-full bg-transparent text-[14px] text-slate-200 placeholder:text-slate-600/40 resize-none outline-none min-h-[28px] max-h-[200px] py-1 leading-[1.6] disabled:opacity-40 transition-opacity"
+            className="w-full bg-transparent text-[14px] text-slate-200 placeholder:text-[#7F8FA3]/40 resize-none outline-none min-h-[28px] max-h-[200px] py-1 leading-[1.6] disabled:opacity-40 transition-opacity"
           />
         </div>
 
         <div className="flex items-center justify-between px-2 pb-2 pt-0.5">
-          <div className="flex items-center gap-1 text-[11px]" style={{ color: 'rgba(148,163,184,0.2)' }}>
+          <div className="flex items-center gap-1 text-[11px]" style={{ color: 'rgba(169, 183, 198,0.2)' }}>
             <Command className="h-2.5 w-2.5" />
             <span>K to focus</span>
             {assets.isUploading && (
-              <span className="ml-2 text-[#94A3B8]">Uploading…</span>
+              <span className="ml-2 text-[#A9B7C6]">Uploading…</span>
             )}
           </div>
 
@@ -413,8 +413,8 @@ export default function PremiumComposer({
             transition={{ duration: 0.2 }}
             className={`flex items-center justify-center h-8 w-8 rounded-xl transition-all duration-200 ${
               canSend
-                ? 'text-white hover:text-[#637B90]'
-                : 'text-[#64748B]'
+                ? 'text-white hover:text-[#8FB4CC]'
+                : 'text-[#7F8FA3]'
             } disabled:opacity-30`}
           >
             <Send className="h-[15px] w-[15px]" />
@@ -423,7 +423,7 @@ export default function PremiumComposer({
       </motion.div>
 
       <div className="flex items-center justify-center mt-2">
-        <span className="text-[11px]" style={{ color: 'rgba(148,163,184,0.2)' }}>KorvixAI can make mistakes. Verify important information.</span>
+        <span className="text-[11px]" style={{ color: 'rgba(169, 183, 198,0.2)' }}>KorvixAI can make mistakes. Verify important information.</span>
       </div>
     </div>
   );

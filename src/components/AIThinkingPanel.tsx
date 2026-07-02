@@ -58,22 +58,22 @@ export default function AIThinkingPanel({ isVisible }: AIThinkingPanelProps) {
       transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
       className="w-full max-w-3xl mx-auto px-4 pb-3"
     >
-      <div className="rounded-xl border border-[#52677A]/[0.08] bg-[#52677A]/[0.02] backdrop-blur-md overflow-hidden">
+      <div className="rounded-xl border border-[#7EA6BF]/[0.08] bg-[#7EA6BF]/[0.02] backdrop-blur-md overflow-hidden">
         {/* Header */}
-        <div className="flex items-center gap-2 px-4 py-2 border-b border-[#52677A]/[0.06]">
+        <div className="flex items-center gap-2 px-4 py-2 border-b border-[#7EA6BF]/[0.06]">
           <div className="relative flex h-4 w-4 items-center justify-center">
-            <span className="absolute inline-flex h-full w-full rounded-full bg-[#52677A]/30 animate-ping" style={{ animationDuration: '2s' }} />
-            <Brain className="h-3.5 w-3.5 text-[#52677A] relative" />
+            <span className="absolute inline-flex h-full w-full rounded-full bg-[#7EA6BF]/30 animate-ping" style={{ animationDuration: '2s' }} />
+            <Brain className="h-3.5 w-3.5 text-[#7EA6BF] relative" />
           </div>
-          <span className="text-[11px] font-medium text-[#52677A]/70 uppercase tracking-wider">AI Processing</span>
+          <span className="text-[11px] font-medium text-[#7EA6BF]/70 uppercase tracking-wider">AI Processing</span>
           <motion.div
             className="ml-auto flex gap-[3px]"
             animate={{ opacity: [0.4, 1, 0.4] }}
             transition={{ duration: 2, repeat: Infinity }}
           >
-            <span className="h-1 w-1 rounded-full bg-[#52677A]/60" />
-            <span className="h-1 w-1 rounded-full bg-[#52677A]/40" />
-            <span className="h-1 w-1 rounded-full bg-[#52677A]/20" />
+            <span className="h-1 w-1 rounded-full bg-[#7EA6BF]/60" />
+            <span className="h-1 w-1 rounded-full bg-[#7EA6BF]/40" />
+            <span className="h-1 w-1 rounded-full bg-[#7EA6BF]/20" />
           </motion.div>
         </div>
 
@@ -103,7 +103,7 @@ export default function AIThinkingPanel({ isVisible }: AIThinkingPanelProps) {
                     </motion.div>
                   )}
                   {step.status === 'active' && (
-                    <Loader2 className="h-3 w-3 text-[#52677A] animate-spin" />
+                    <Loader2 className="h-3 w-3 text-[#7EA6BF] animate-spin" />
                   )}
                   {step.status === 'pending' && (
                     <div className="h-2 w-2 rounded-full bg-white/[0.06] border border-white/[0.04]" />
@@ -113,15 +113,15 @@ export default function AIThinkingPanel({ isVisible }: AIThinkingPanelProps) {
                 {/* Icon */}
                 <step.icon className={`h-3 w-3 ${
                   step.status === 'completed' ? 'text-[#6F8F7A]/60' :
-                  step.status === 'active' ? 'text-[#52677A]' :
-                  'text-[#64748B]'
+                  step.status === 'active' ? 'text-[#7EA6BF]' :
+                  'text-[#7F8FA3]'
                 }`} />
 
                 {/* Label */}
                 <span className={`text-[11px] ${
                   step.status === 'completed' ? 'text-[#6F8F7A]/60' :
-                  step.status === 'active' ? 'text-[#52677A]/80' :
-                  'text-[#64748B]'
+                  step.status === 'active' ? 'text-[#7EA6BF]/80' :
+                  'text-[#7F8FA3]'
                 }`}>
                   {step.label}
                 </span>
@@ -130,7 +130,7 @@ export default function AIThinkingPanel({ isVisible }: AIThinkingPanelProps) {
                 {step.status === 'active' && (
                   <div className="flex-1 h-[1px] bg-white/[0.02] rounded-full overflow-hidden ml-2">
                     <motion.div
-                      className="h-full bg-[#52677A]/30 rounded-full"
+                      className="h-full bg-[#7EA6BF]/30 rounded-full"
                       animate={{ width: ['0%', '100%', '0%'] }}
                       transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
                     />

@@ -14,11 +14,11 @@ const fadeUp = (delay = 0) => ({
 });
 
 const AGENTS = [
-  { id: 'research', name: 'Research Agent', role: 'Data Collection', icon: Brain, color: 'text-[#7890A3]', bg: 'bg-[#52677A]/[0.06]', desc: 'Gathers market data, competitor info, and trends' },
-  { id: 'strategy', name: 'Strategy Agent', role: 'Planning', icon: Target, color: 'text-[#7890A3]', bg: 'bg-[#52677A]/[0.06]', desc: 'Creates action plans and prioritizes initiatives' },
-  { id: 'marketing', name: 'Marketing Agent', role: 'Execution', icon: TrendingUp, color: 'text-[#7890A3]', bg: 'bg-[#52677A]/[0.06]', desc: 'Generates campaigns, copy, and growth tactics' },
-  { id: 'finance', name: 'Finance Agent', role: 'Analysis', icon: DollarSign, color: 'text-[#7890A3]', bg: 'bg-[#52677A]/[0.06]', desc: 'Evaluates costs, pricing, and ROI projections' },
-  { id: 'reviewer', name: 'Reviewer Agent', role: 'QA', icon: Shield, color: 'text-[#7890A3]', bg: 'bg-[#52677A]/[0.06]', desc: 'Validates output quality and checks for errors' },
+  { id: 'research', name: 'Research Agent', role: 'Data Collection', icon: Brain, color: 'text-[#9CBBD1]', bg: 'bg-[#7EA6BF]/[0.06]', desc: 'Gathers market data, competitor info, and trends' },
+  { id: 'strategy', name: 'Strategy Agent', role: 'Planning', icon: Target, color: 'text-[#9CBBD1]', bg: 'bg-[#7EA6BF]/[0.06]', desc: 'Creates action plans and prioritizes initiatives' },
+  { id: 'marketing', name: 'Marketing Agent', role: 'Execution', icon: TrendingUp, color: 'text-[#9CBBD1]', bg: 'bg-[#7EA6BF]/[0.06]', desc: 'Generates campaigns, copy, and growth tactics' },
+  { id: 'finance', name: 'Finance Agent', role: 'Analysis', icon: DollarSign, color: 'text-[#9CBBD1]', bg: 'bg-[#7EA6BF]/[0.06]', desc: 'Evaluates costs, pricing, and ROI projections' },
+  { id: 'reviewer', name: 'Reviewer Agent', role: 'QA', icon: Shield, color: 'text-[#9CBBD1]', bg: 'bg-[#7EA6BF]/[0.06]', desc: 'Validates output quality and checks for errors' },
 ];
 
 const STEPS = [
@@ -51,12 +51,12 @@ export default function MultiAgentSwarm() {
 
           <motion.div {...fadeUp(0)} className="mb-8">
             <div className="flex items-center gap-3 mb-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#52677A]/[0.1] border border-[#52677A]/15">
-                <Users className="h-4 w-4 text-[#7890A3]" />
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#7EA6BF]/[0.1] border border-[#7EA6BF]/15">
+                <Users className="h-4 w-4 text-[#9CBBD1]" />
               </div>
               <h1 className="text-2xl font-semibold text-white tracking-tight">Multi-Agent Swarm</h1>
             </div>
-            <p className="text-[13px] text-slate-500 ml-11">Assign complex tasks to multiple AI agents working together</p>
+            <p className="text-[13px] text-[#7F8FA3] ml-11">Assign complex tasks to multiple AI agents working together</p>
           </motion.div>
 
           {/* Agent Cards */}
@@ -74,7 +74,7 @@ export default function MultiAgentSwarm() {
                     <agent.icon className={`w-4 h-4 ${agent.color}`} />
                   </div>
                   <span className="text-[10px] font-medium text-white text-center">{agent.name}</span>
-                  <span className="text-[9px] text-slate-600">{agent.role}</span>
+                  <span className="text-[9px] text-[#7F8FA3]">{agent.role}</span>
                 </motion.div>
               ))}
             </div>
@@ -87,7 +87,7 @@ export default function MultiAgentSwarm() {
                 value={task}
                 onChange={(e) => setTask(e.target.value)}
                 placeholder="Describe a complex task for the agent swarm..."
-                className="flex-1 h-12 px-4 rounded-xl bg-white/[0.02] border border-white/[0.04] text-[14px] text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-[#52677A]/20 focus:bg-white/[0.03] transition-all"
+                className="flex-1 h-12 px-4 rounded-xl bg-white/[0.02] border border-white/[0.04] text-[14px] text-slate-300 placeholder:text-[#7F8FA3] focus:outline-none focus:border-[#7EA6BF]/20 focus:bg-white/[0.03] transition-all"
                 onKeyDown={(e) => e.key === 'Enter' && handleRun()}
               />
               <motion.button
@@ -95,7 +95,7 @@ export default function MultiAgentSwarm() {
                 whileTap={{ scale: 0.98 }}
                 onClick={handleRun}
                 disabled={generating || !task.trim()}
-                className="h-12 px-6 rounded-xl bg-[#52677A]/[0.1] border border-[#52677A]/15 text-[#7890A3] font-medium text-[13px] hover:bg-[#52677A]/[0.15] transition-colors disabled:opacity-40 flex items-center gap-2"
+                className="h-12 px-6 rounded-xl bg-[#7EA6BF]/[0.1] border border-[#7EA6BF]/15 text-[#9CBBD1] font-medium text-[13px] hover:bg-[#7EA6BF]/[0.15] transition-colors disabled:opacity-40 flex items-center gap-2"
               >
                 {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Zap className="w-4 h-4" />}
                 Run Swarm
@@ -109,7 +109,7 @@ export default function MultiAgentSwarm() {
               {/* Steps */}
               <div className="p-5 rounded-2xl border border-white/[0.03] bg-white/[0.01]">
                 <h3 className="text-sm font-medium text-white mb-4 flex items-center gap-2">
-                  <CircleDot className="w-4 h-4 text-[#7890A3]" /> Execution Timeline
+                  <CircleDot className="w-4 h-4 text-[#9CBBD1]" /> Execution Timeline
                 </h3>
                 <div className="space-y-0">
                   {STEPS.map((step, i) => (
@@ -123,7 +123,7 @@ export default function MultiAgentSwarm() {
                         {step.status === 'completed' && <CheckCircle2 className="w-3.5 h-3.5 text-[#6F8F7A]" />}
                         {step.status === 'active' && (
                           <motion.div
-                            className="w-3.5 h-3.5 rounded-full bg-[#7890A3]"
+                            className="w-3.5 h-3.5 rounded-full bg-[#9CBBD1]"
                             animate={{ opacity: [0.4, 1, 0.4] }}
                             transition={{ duration: 1.5, repeat: Infinity }}
                           />
@@ -132,12 +132,12 @@ export default function MultiAgentSwarm() {
                       </div>
                       <div className="pb-4 flex-1">
                         <p className="text-[12px] font-medium text-white">{step.agent}</p>
-                        <p className="text-[11px] text-slate-500">{step.action}</p>
+                        <p className="text-[11px] text-[#7F8FA3]">{step.action}</p>
                       </div>
                       <span className={`text-[9px] px-1.5 py-0.5 rounded ${
                         step.status === 'completed' ? 'bg-[#6F8F7A]/[0.08] text-[#6F8F7A]' :
-                        step.status === 'active' ? 'bg-[#52677A]/[0.08] text-[#7890A3]' :
-                        'bg-slate-500/[0.08] text-slate-500'
+                        step.status === 'active' ? 'bg-[#7EA6BF]/[0.08] text-[#9CBBD1]' :
+                        'bg-slate-500/[0.08] text-[#7F8FA3]'
                       }`}>
                         {step.status}
                       </span>
@@ -151,23 +151,23 @@ export default function MultiAgentSwarm() {
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.3 }}
-                className="p-5 rounded-2xl border border-[#52677A]/10 bg-[#52677A]/[0.02]"
+                className="p-5 rounded-2xl border border-[#7EA6BF]/10 bg-[#7EA6BF]/[0.02]"
               >
                 <h3 className="text-sm font-medium text-white mb-3 flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-[#7890A3]" /> Synthesis
+                  <Sparkles className="w-4 h-4 text-[#9CBBD1]" /> Synthesis
                 </h3>
-                <p className="text-[13px] text-slate-400 leading-relaxed">
+                <p className="text-[13px] text-[#A9B7C6] leading-relaxed">
                   Based on research across market data, competitor positioning, and growth metrics, the recommended approach prioritizes channel X for initial traction due to lower CAC and higher audience alignment. Marketing should focus on [specific angle] while finance recommends a freemium model to maximize user acquisition. Quality review confirms all data sources are within confidence thresholds.
                 </p>
                 <div className="flex gap-3 mt-4">
                   <div className="px-3 py-1.5 rounded-lg bg-[#6F8F7A]/[0.06] border border-[#6F8F7A]/10">
                     <span className="text-[10px] text-[#6F8F7A]">Confidence: 87%</span>
                   </div>
-                  <div className="px-3 py-1.5 rounded-lg bg-[#52677A]/[0.06] border border-[#52677A]/10">
-                    <span className="text-[10px] text-[#7890A3]">Sources: 12</span>
+                  <div className="px-3 py-1.5 rounded-lg bg-[#7EA6BF]/[0.06] border border-[#7EA6BF]/10">
+                    <span className="text-[10px] text-[#9CBBD1]">Sources: 12</span>
                   </div>
-                  <div className="px-3 py-1.5 rounded-lg bg-[#52677A]/[0.06] border border-[#52677A]/10">
-                    <span className="text-[10px] text-[#7890A3]">Agents: 5</span>
+                  <div className="px-3 py-1.5 rounded-lg bg-[#7EA6BF]/[0.06] border border-[#7EA6BF]/10">
+                    <span className="text-[10px] text-[#9CBBD1]">Agents: 5</span>
                   </div>
                 </div>
               </motion.div>
@@ -176,9 +176,9 @@ export default function MultiAgentSwarm() {
 
           {!generated && !generating && (
             <motion.div {...fadeUp(0.15)} className="text-center py-16">
-              <Users className="w-12 h-12 text-[#64748B] mx-auto mb-4" />
+              <Users className="w-12 h-12 text-[#7F8FA3] mx-auto mb-4" />
               <h3 className="text-sm font-medium text-white mb-1">Describe a complex task</h3>
-              <p className="text-[12px] text-slate-500">Multiple AI agents will collaborate to research, plan, execute, and validate</p>
+              <p className="text-[12px] text-[#7F8FA3]">Multiple AI agents will collaborate to research, plan, execute, and validate</p>
             </motion.div>
           )}
 

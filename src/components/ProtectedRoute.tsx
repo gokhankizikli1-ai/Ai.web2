@@ -37,7 +37,7 @@ export default function ProtectedRoute({ children, guestAllowed = true, redirect
   if (isLoading || !checked) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <Loader2 className="h-5 w-5 text-slate-600 animate-spin" />
+        <Loader2 className="h-5 w-5 text-[#7F8FA3] animate-spin" />
       </div>
     );
   }

@@ -123,14 +123,14 @@ const HUB_AGENTS: HubAgent[] = [
    COLOR MAP
    ═══════════════════════════════════════════ */
 const COLOR_MAP: Record<string, { bg: string; border: string; icon: string; glow: string }> = {
-  orange:  { bg: 'bg-[#52677A]/[0.05]',  border: 'border-[#52677A]/10',  icon: 'text-[#637B90]',  glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
-  blue:    { bg: 'bg-[#52677A]/[0.05]',    border: 'border-[#52677A]/10',    icon: 'text-[#637B90]',    glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
-  emerald: { bg: 'bg-[#52677A]/[0.05]', border: 'border-[#52677A]/10', icon: 'text-[#637B90]', glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
-  violet:  { bg: 'bg-[#52677A]/[0.05]',  border: 'border-[#52677A]/10',  icon: 'text-[#637B90]',  glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
-  red:     { bg: 'bg-[#52677A]/[0.05]',     border: 'border-[#52677A]/10',     icon: 'text-[#637B90]',     glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
-  cyan:    { bg: 'bg-[#52677A]/[0.05]',    border: 'border-[#52677A]/10',    icon: 'text-[#637B90]',    glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
-  indigo:  { bg: 'bg-[#52677A]/[0.05]',  border: 'border-[#52677A]/10',  icon: 'text-[#637B90]',  glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
-  amber:   { bg: 'bg-[#52677A]/[0.05]',   border: 'border-[#52677A]/10',   icon: 'text-[#637B90]',   glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
+  orange:  { bg: 'bg-[#7EA6BF]/[0.05]',  border: 'border-[#7EA6BF]/10',  icon: 'text-[#8FB4CC]',  glow: 'hover:shadow-[0_0_20px_-4px_rgba(126, 166, 191,0.08)]' },
+  blue:    { bg: 'bg-[#7EA6BF]/[0.05]',    border: 'border-[#7EA6BF]/10',    icon: 'text-[#8FB4CC]',    glow: 'hover:shadow-[0_0_20px_-4px_rgba(126, 166, 191,0.08)]' },
+  emerald: { bg: 'bg-[#7EA6BF]/[0.05]', border: 'border-[#7EA6BF]/10', icon: 'text-[#8FB4CC]', glow: 'hover:shadow-[0_0_20px_-4px_rgba(126, 166, 191,0.08)]' },
+  violet:  { bg: 'bg-[#7EA6BF]/[0.05]',  border: 'border-[#7EA6BF]/10',  icon: 'text-[#8FB4CC]',  glow: 'hover:shadow-[0_0_20px_-4px_rgba(126, 166, 191,0.08)]' },
+  red:     { bg: 'bg-[#7EA6BF]/[0.05]',     border: 'border-[#7EA6BF]/10',     icon: 'text-[#8FB4CC]',     glow: 'hover:shadow-[0_0_20px_-4px_rgba(126, 166, 191,0.08)]' },
+  cyan:    { bg: 'bg-[#7EA6BF]/[0.05]',    border: 'border-[#7EA6BF]/10',    icon: 'text-[#8FB4CC]',    glow: 'hover:shadow-[0_0_20px_-4px_rgba(126, 166, 191,0.08)]' },
+  indigo:  { bg: 'bg-[#7EA6BF]/[0.05]',  border: 'border-[#7EA6BF]/10',  icon: 'text-[#8FB4CC]',  glow: 'hover:shadow-[0_0_20px_-4px_rgba(126, 166, 191,0.08)]' },
+  amber:   { bg: 'bg-[#7EA6BF]/[0.05]',   border: 'border-[#7EA6BF]/10',   icon: 'text-[#8FB4CC]',   glow: 'hover:shadow-[0_0_20px_-4px_rgba(126, 166, 191,0.08)]' },
 };
 
 /* ═══════════════════════════════════════════
@@ -153,12 +153,12 @@ export default function AgentsPanel() {
       {/* Header */}
       <div className="shrink-0 px-5 pt-4 pb-3">
         <div className="flex items-center gap-3 mb-1">
-          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#52677A]/[0.06] border border-[#52677A]/10">
-            <Bot className="h-4 w-4 text-[#637B90]/70" />
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#7EA6BF]/[0.06] border border-[#7EA6BF]/10">
+            <Bot className="h-4 w-4 text-[#8FB4CC]/70" />
           </div>
           <div>
             <h2 className="text-[15px] font-semibold text-white">Agent Hub</h2>
-            <p className="text-[11px] text-slate-500">Specialised AI agents — click any action to route into chat</p>
+            <p className="text-[11px] text-[#7F8FA3]">Specialised AI agents — click any action to route into chat</p>
           </div>
         </div>
       </div>
@@ -186,9 +186,9 @@ export default function AgentsPanel() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
                       <span className="text-[13px] font-medium text-white">{agent.name}</span>
-                      <ChevronRight className={`h-4 w-4 text-[#64748B] transition-transform duration-300 ${isExpanded ? 'rotate-90' : ''}`} />
+                      <ChevronRight className={`h-4 w-4 text-[#7F8FA3] transition-transform duration-300 ${isExpanded ? 'rotate-90' : ''}`} />
                     </div>
-                    <p className="text-[11px] text-slate-600 leading-relaxed mt-0.5">{agent.description}</p>
+                    <p className="text-[11px] text-[#7F8FA3] leading-relaxed mt-0.5">{agent.description}</p>
                   </div>
                 </button>
 
@@ -203,10 +203,10 @@ export default function AgentsPanel() {
                         className="flex items-center gap-3 w-full p-2.5 rounded-xl border border-white/[0.02] bg-white/[0.01] hover:bg-white/[0.02] hover:border-white/[0.05] transition-all text-left group/action"
                       >
                         <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.02] border border-white/[0.03] shrink-0">
-                          <Zap className="h-3 w-3 text-slate-500 group-hover/action:text-slate-400 transition-colors" />
+                          <Zap className="h-3 w-3 text-[#7F8FA3] group-hover/action:text-[#A9B7C6] transition-colors" />
                         </div>
-                        <span className="text-[12px] text-slate-400 group-hover/action:text-slate-300 transition-colors">{p.label}</span>
-                        <ChevronRight className="h-3.5 w-3.5 text-[#64748B] ml-auto group-hover/action:text-slate-500 transition-colors" />
+                        <span className="text-[12px] text-[#A9B7C6] group-hover/action:text-slate-300 transition-colors">{p.label}</span>
+                        <ChevronRight className="h-3.5 w-3.5 text-[#7F8FA3] ml-auto group-hover/action:text-[#7F8FA3] transition-colors" />
                       </button>
                     ))}
                   </div>
@@ -218,8 +218,8 @@ export default function AgentsPanel() {
 
         {/* Disclaimer */}
         <div className="mt-4 flex items-start gap-2.5 p-3 rounded-xl border border-white/[0.02] bg-white/[0.005]">
-          <Sparkles className="h-3.5 w-3.5 text-slate-600 shrink-0 mt-0.5" />
-          <p className="text-[10px] text-slate-600 leading-relaxed">
+          <Sparkles className="h-3.5 w-3.5 text-[#7F8FA3] shrink-0 mt-0.5" />
+          <p className="text-[10px] text-[#7F8FA3] leading-relaxed">
             Each agent sends a specialised structured prompt into the AI chat. Responses are AI-generated guidance — no live data or external execution is performed.
           </p>
         </div>

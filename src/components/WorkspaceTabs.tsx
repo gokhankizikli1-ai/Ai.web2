@@ -42,7 +42,7 @@ export default function WorkspaceTabs({ activeTab, onTabChange, showTrading = fa
             key={tab.key}
             onClick={() => onTabChange(tab.key)}
             className={`relative flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium transition-all ${
-              active ? 'text-white' : 'text-slate-600 hover:text-slate-400'
+              active ? 'text-white' : 'text-[#7F8FA3] hover:text-[#A9B7C6]'
             }`}
           >
             {active && (

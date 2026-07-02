@@ -84,7 +84,7 @@ export default function MarketRadarForm({
         }}
         placeholder="AI customer support tools, small restaurant POS systems, crypto portfolio tracking…"
         rows={2}
-        className="w-full rounded-xl bg-white/[0.02] border border-white/[0.06] p-3 text-[13px] text-slate-100 placeholder:text-slate-500 focus:border-[#52677A]/40 focus:bg-white/[0.03] outline-none transition-all resize-none"
+        className="w-full rounded-xl bg-white/[0.02] border border-white/[0.06] p-3 text-[13px] text-slate-100 placeholder:text-[#7F8FA3] focus:border-[#7EA6BF]/40 focus:bg-white/[0.03] outline-none transition-all resize-none"
       />
 
       <div className="grid sm:grid-cols-2 gap-3 sm:gap-4 mt-4">
@@ -98,8 +98,8 @@ export default function MarketRadarForm({
                 onClick={() => onTimeframeChange(tf.days)}
                 className={`px-3 h-8 rounded-lg text-[12px] border transition-colors ${
                   timeframe === tf.days
-                    ? 'bg-[#52677A]/[0.14] border-[#52677A]/40 text-[#9DB0C2]'
-                    : 'bg-white/[0.02] border-white/[0.06] text-slate-400 hover:text-slate-200'
+                    ? 'bg-[#7EA6BF]/[0.14] border-[#7EA6BF]/40 text-[#9DB0C2]'
+                    : 'bg-white/[0.02] border-white/[0.06] text-[#A9B7C6] hover:text-slate-200'
                 }`}
               >
                 {tf.label}
@@ -112,13 +112,13 @@ export default function MarketRadarForm({
         <div>
           <label className="block text-[12px] font-medium text-slate-300 mb-1.5">Region</label>
           <div className="relative">
-            <Globe2 className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
+            <Globe2 className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#7F8FA3]" />
             <input
               type="text"
               value={region}
               onChange={(e) => onRegionChange(e.target.value)}
               placeholder="global"
-              className="w-full h-8 rounded-lg bg-white/[0.02] border border-white/[0.06] pl-8 pr-3 text-[12px] text-slate-100 placeholder:text-slate-500 focus:border-[#52677A]/40 outline-none transition-all"
+              className="w-full h-8 rounded-lg bg-white/[0.02] border border-white/[0.06] pl-8 pr-3 text-[12px] text-slate-100 placeholder:text-[#7F8FA3] focus:border-[#7EA6BF]/40 outline-none transition-all"
             />
           </div>
         </div>
@@ -140,10 +140,10 @@ export default function MarketRadarForm({
                 title={configured ? meta.role : `${meta.role} — not connected on this deployment`}
                 className={`px-2.5 h-7 rounded-lg text-[11px] border transition-colors ${
                   !configured
-                    ? 'bg-white/[0.008] border-white/[0.03] text-slate-600 cursor-not-allowed'
+                    ? 'bg-white/[0.008] border-white/[0.03] text-[#7F8FA3] cursor-not-allowed'
                     : active
-                      ? 'bg-[#52677A]/[0.14] border-[#52677A]/40 text-[#9DB0C2]'
-                      : 'bg-white/[0.02] border-white/[0.06] text-slate-400 hover:text-slate-200'
+                      ? 'bg-[#7EA6BF]/[0.14] border-[#7EA6BF]/40 text-[#9DB0C2]'
+                      : 'bg-white/[0.02] border-white/[0.06] text-[#A9B7C6] hover:text-slate-200'
                 }`}
               >
                 {meta.label}
@@ -161,8 +161,8 @@ export default function MarketRadarForm({
         disabled={!canSubmit}
         className={`mt-5 w-full h-11 rounded-xl text-[13px] font-medium flex items-center justify-center gap-2 border transition-all ${
           canSubmit
-            ? 'bg-[#52677A]/[0.16] border-[#52677A]/45 text-[#DCE4EC] hover:bg-[#52677A]/[0.22]'
-            : 'bg-white/[0.02] border-white/[0.05] text-slate-500 cursor-not-allowed'
+            ? 'bg-[#7EA6BF]/[0.16] border-[#7EA6BF]/45 text-[#DCE4EC] hover:bg-[#7EA6BF]/[0.22]'
+            : 'bg-white/[0.02] border-white/[0.05] text-[#7F8FA3] cursor-not-allowed'
         }`}
       >
         <Radar className="h-4 w-4" />

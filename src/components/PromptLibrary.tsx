@@ -31,24 +31,24 @@ export default function PromptLibrary({ open, onClose, onSelect }: PromptLibrary
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-5 pb-3">
           <div className="flex items-center gap-2">
-            <Bookmark className="h-4 w-4 text-[#52677A]" />
+            <Bookmark className="h-4 w-4 text-[#7EA6BF]" />
             <h3 className="text-sm font-semibold text-white">Prompt Library</h3>
           </div>
-          <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors p-1 rounded-md hover:bg-white/[0.05]">
+          <button onClick={onClose} className="text-[#7F8FA3] hover:text-white transition-colors p-1 rounded-md hover:bg-white/[0.05]">
             <X className="h-4 w-4" />
           </button>
         </div>
 
         {/* Search */}
         <div className="px-5 pb-3">
-          <div className="flex items-center gap-2 rounded-xl bg-white/[0.03] border border-white/[0.06] px-3 py-2 focus-within:border-[#52677A]/20 transition-colors">
-            <Search className="h-3.5 w-3.5 text-slate-600" />
+          <div className="flex items-center gap-2 rounded-xl bg-white/[0.03] border border-white/[0.06] px-3 py-2 focus-within:border-[#7EA6BF]/20 transition-colors">
+            <Search className="h-3.5 w-3.5 text-[#7F8FA3]" />
             <input
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search prompts..."
-              className="flex-1 bg-transparent text-[13px] text-white placeholder:text-slate-600 outline-none"
+              className="flex-1 bg-transparent text-[13px] text-white placeholder:text-[#7F8FA3] outline-none"
               autoFocus
             />
           </div>
@@ -59,7 +59,7 @@ export default function PromptLibrary({ open, onClose, onSelect }: PromptLibrary
           <button
             onClick={() => setActiveCategory('All')}
             className={`shrink-0 rounded-lg px-2.5 py-[3px] text-[11px] font-medium transition-all duration-200 ${
-              activeCategory === 'All' ? 'bg-white/[0.07] text-white border border-white/[0.08]' : 'text-slate-500 hover:text-slate-300 hover:bg-white/[0.03]'
+              activeCategory === 'All' ? 'bg-white/[0.07] text-white border border-white/[0.08]' : 'text-[#7F8FA3] hover:text-slate-300 hover:bg-white/[0.03]'
             }`}
           >
             All
@@ -69,7 +69,7 @@ export default function PromptLibrary({ open, onClose, onSelect }: PromptLibrary
               key={cat}
               onClick={() => setActiveCategory(cat)}
               className={`shrink-0 rounded-lg px-2.5 py-[3px] text-[11px] font-medium transition-all duration-200 ${
-                activeCategory === cat ? 'bg-white/[0.07] text-white border border-white/[0.08]' : 'text-slate-500 hover:text-slate-300 hover:bg-white/[0.03]'
+                activeCategory === cat ? 'bg-white/[0.07] text-white border border-white/[0.08]' : 'text-[#7F8FA3] hover:text-slate-300 hover:bg-white/[0.03]'
               }`}
             >
               {cat}
@@ -92,11 +92,11 @@ export default function PromptLibrary({ open, onClose, onSelect }: PromptLibrary
                 <div className="text-[13px] font-medium text-slate-300 group-hover:text-white transition-colors">
                   {prompt.title}
                 </div>
-                <div className="text-[11px] text-slate-600 truncate mt-0.5">{prompt.content}</div>
+                <div className="text-[11px] text-[#7F8FA3] truncate mt-0.5">{prompt.content}</div>
               </button>
             ))}
             {filtered.length === 0 && (
-              <div className="text-center py-8 text-slate-600 text-[13px]">No prompts found</div>
+              <div className="text-center py-8 text-[#7F8FA3] text-[13px]">No prompts found</div>
             )}
           </div>
         </div>

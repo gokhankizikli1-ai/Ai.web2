@@ -166,8 +166,8 @@ export default function SmartInput({ onSend, disabled, externalValue, onExternal
             className="absolute bottom-full left-0 right-0 mb-2 rounded-xl border border-white/[0.06] bg-[#171C24] backdrop-blur-xl shadow-2xl overflow-hidden z-30"
           >
             <div className="flex items-center gap-1.5 px-3 py-2 border-b border-white/[0.03]">
-              <Command className="h-3 w-3 text-slate-600" />
-              <span className="text-[10px] text-slate-600 font-medium uppercase tracking-wider">Commands</span>
+              <Command className="h-3 w-3 text-[#7F8FA3]" />
+              <span className="text-[10px] text-[#7F8FA3] font-medium uppercase tracking-wider">Commands</span>
             </div>
             <div className="max-h-[200px] overflow-y-auto scrollbar-thin py-1">
               {filteredSlash.map((cmd, i) => (
@@ -176,13 +176,13 @@ export default function SmartInput({ onSend, disabled, externalValue, onExternal
                   onClick={() => { insertText(cmd.insert); setShowSlashMenu(false); }}
                   onMouseEnter={() => setSelectedIndex(i)}
                   className={`w-full flex items-center gap-3 px-3 py-2 text-left transition-all ${
-                    i === selectedIndex ? 'bg-white/[0.05] text-white' : 'text-slate-400 hover:bg-white/[0.02]'
+                    i === selectedIndex ? 'bg-white/[0.05] text-white' : 'text-[#A9B7C6] hover:bg-white/[0.02]'
                   }`}
                 >
-                  <span className="text-[11px] font-mono text-[#52677A]/60 shrink-0">{cmd.command}</span>
+                  <span className="text-[11px] font-mono text-[#7EA6BF]/60 shrink-0">{cmd.command}</span>
                   <div className="flex-1 min-w-0">
                     <div className="text-[12px] font-medium">{cmd.label}</div>
-                    <div className="text-[10px] text-slate-600">{cmd.description}</div>
+                    <div className="text-[10px] text-[#7F8FA3]">{cmd.description}</div>
                   </div>
                 </button>
               ))}
@@ -202,8 +202,8 @@ export default function SmartInput({ onSend, disabled, externalValue, onExternal
             className="absolute bottom-full left-0 right-0 mb-2 rounded-xl border border-white/[0.06] bg-[#171C24] backdrop-blur-xl shadow-2xl overflow-hidden z-30"
           >
             <div className="flex items-center gap-1.5 px-3 py-2 border-b border-white/[0.03]">
-              <AtSign className="h-3 w-3 text-slate-600" />
-              <span className="text-[10px] text-slate-600 font-medium uppercase tracking-wider">Agents</span>
+              <AtSign className="h-3 w-3 text-[#7F8FA3]" />
+              <span className="text-[10px] text-[#7F8FA3] font-medium uppercase tracking-wider">Agents</span>
             </div>
             <div className="max-h-[200px] overflow-y-auto scrollbar-thin py-1">
               {filteredMentions.map((m, i) => (
@@ -212,15 +212,15 @@ export default function SmartInput({ onSend, disabled, externalValue, onExternal
                   onClick={() => { insertText(`@${m.name} `); setShowMentionMenu(false); }}
                   onMouseEnter={() => setSelectedIndex(i)}
                   className={`w-full flex items-center gap-3 px-3 py-2 text-left transition-all ${
-                    i === selectedIndex ? 'bg-white/[0.05] text-white' : 'text-slate-400 hover:bg-white/[0.02]'
+                    i === selectedIndex ? 'bg-white/[0.05] text-white' : 'text-[#A9B7C6] hover:bg-white/[0.02]'
                   }`}
                 >
-                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#52677A]/10 shrink-0">
-                    <Hash className="h-3.5 w-3.5 text-[#52677A]/50" />
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#7EA6BF]/10 shrink-0">
+                    <Hash className="h-3.5 w-3.5 text-[#7EA6BF]/50" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-[12px] font-medium">{m.label}</div>
-                    <div className="text-[10px] text-slate-600">{m.description}</div>
+                    <div className="text-[10px] text-[#7F8FA3]">{m.description}</div>
                   </div>
                 </button>
               ))}
@@ -233,11 +233,11 @@ export default function SmartInput({ onSend, disabled, externalValue, onExternal
       <div
         className={`relative flex items-end gap-1.5 rounded-[20px] bg-white/[0.03] border p-2 md:p-2.5 transition-all duration-300 ${
           isFocused && !showSlashMenu && !showMentionMenu
-            ? 'border-[#52677A]/25 bg-white/[0.05] shadow-[0_0_0_1px_rgba(82,103,122,0.06),0_0_20px_-5px_rgba(82,103,122,0.08)]'
+            ? 'border-[#7EA6BF]/25 bg-white/[0.05] shadow-[0_0_0_1px_rgba(126, 166, 191,0.06),0_0_20px_-5px_rgba(126, 166, 191,0.08)]'
             : 'border-white/[0.07] hover:border-white/[0.12]'
-        } ${(showSlashMenu || showMentionMenu) ? 'border-[#52677A]/20' : ''}`}
+        } ${(showSlashMenu || showMentionMenu) ? 'border-[#7EA6BF]/20' : ''}`}
       >
-        <button className="shrink-0 h-8 w-8 flex items-center justify-center text-slate-600 hover:text-white hover:bg-white/[0.06] rounded-[10px] transition-all">
+        <button className="shrink-0 h-8 w-8 flex items-center justify-center text-[#7F8FA3] hover:text-white hover:bg-white/[0.06] rounded-[10px] transition-all">
           <Paperclip className="h-[15px] w-[15px]" />
         </button>
 
@@ -251,13 +251,13 @@ export default function SmartInput({ onSend, disabled, externalValue, onExternal
           placeholder="Message KorvixAI...  Type / for commands, @ for agents"
           rows={1}
           disabled={disabled}
-          className="flex-1 bg-transparent text-[14px] text-white placeholder:text-[#64748B] resize-none outline-none min-h-[20px] max-h-[200px] py-[7px] leading-[1.5] disabled:opacity-50 transition-opacity"
+          className="flex-1 bg-transparent text-[14px] text-white placeholder:text-[#7F8FA3] resize-none outline-none min-h-[20px] max-h-[200px] py-[7px] leading-[1.5] disabled:opacity-50 transition-opacity"
         />
 
         <button
           onClick={handleSubmit}
           disabled={!value.trim() || disabled}
-          className="shrink-0 h-8 w-8 flex items-center justify-center bg-[#52677A]/15 text-[#52677A] hover:bg-[#52677A]/25 hover:text-[#637B90] disabled:opacity-25 disabled:hover:bg-[#52677A]/15 rounded-[10px] transition-all duration-200"
+          className="shrink-0 h-8 w-8 flex items-center justify-center bg-[#7EA6BF]/15 text-[#7EA6BF] hover:bg-[#7EA6BF]/25 hover:text-[#8FB4CC] disabled:opacity-25 disabled:hover:bg-[#7EA6BF]/15 rounded-[10px] transition-all duration-200"
         >
           <Send className="h-[15px] w-[15px]" />
         </button>

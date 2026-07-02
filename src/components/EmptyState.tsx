@@ -23,7 +23,7 @@ const CONFIG: Record<WorkspaceType, { headline: string; subline: string; gradien
   startup: {
     headline: 'Validate your next business idea',
     subline: 'Use AI-powered tools to validate, build, and launch your startup.',
-    gradient: 'from-[#52677A]/[0.03] to-[#7890A3]/[0.02]',
+    gradient: 'from-[#7EA6BF]/[0.03] to-[#9CBBD1]/[0.02]',
     actions: [
       { label: 'Validate Idea', icon: Lightbulb, path: '/startup' },
       { label: 'Generate SaaS Idea', icon: Sparkles, path: '/startup' },
@@ -34,7 +34,7 @@ const CONFIG: Record<WorkspaceType, { headline: string; subline: string; gradien
   ecommerce: {
     headline: 'Find, validate, and launch products faster',
     subline: 'AI-powered tools for your Shopify and ecommerce business.',
-    gradient: 'from-[#52677A]/[0.03] to-[#7890A3]/[0.02]',
+    gradient: 'from-[#7EA6BF]/[0.03] to-[#9CBBD1]/[0.02]',
     actions: [
       { label: 'Find Winning Product', icon: Search, path: '/ecommerce' },
       { label: 'Generate Shopify Page', icon: ShoppingBag, path: '/ecommerce' },
@@ -45,7 +45,7 @@ const CONFIG: Record<WorkspaceType, { headline: string; subline: string; gradien
   research: {
     headline: 'Research, compare, verify, and summarize',
     subline: 'Multi-source deep research with AI-powered analysis.',
-    gradient: 'from-[#52677A]/[0.03] to-[#7890A3]/[0.02]',
+    gradient: 'from-[#7EA6BF]/[0.03] to-[#9CBBD1]/[0.02]',
     actions: [
       { label: 'Deep Research', icon: Brain, path: '/chat' },
       { label: 'Compare Sources', icon: BookOpen, path: '/chat' },
@@ -56,7 +56,7 @@ const CONFIG: Record<WorkspaceType, { headline: string; subline: string; gradien
   coding: {
     headline: 'Write, debug, review, and ship code',
     subline: 'AI-powered coding assistant for every stage of development.',
-    gradient: 'from-[#52677A]/[0.03] to-[#7890A3]/[0.02]',
+    gradient: 'from-[#7EA6BF]/[0.03] to-[#9CBBD1]/[0.02]',
     actions: [
       { label: 'Generate Code', icon: Code2, path: '/chat' },
       { label: 'Debug Issue', icon: Bug, path: '/chat' },
@@ -67,7 +67,7 @@ const CONFIG: Record<WorkspaceType, { headline: string; subline: string; gradien
   creative: {
     headline: 'Create content, brands, and visuals with AI',
     subline: 'Your AI-powered creative studio for content and branding.',
-    gradient: 'from-[#52677A]/[0.03] to-[#7890A3]/[0.02]',
+    gradient: 'from-[#7EA6BF]/[0.03] to-[#9CBBD1]/[0.02]',
     actions: [
       { label: 'Generate Image Prompt', icon: Palette, path: '/tools/brand-builder' },
       { label: 'Write Video Script', icon: Video, path: '/tools/viral-content' },
@@ -78,7 +78,7 @@ const CONFIG: Record<WorkspaceType, { headline: string; subline: string; gradien
   study: {
     headline: 'Learn faster with AI-powered study tools',
     subline: 'Summarize, quiz yourself, and master any topic.',
-    gradient: 'from-[#52677A]/[0.03] to-[#7890A3]/[0.02]',
+    gradient: 'from-[#7EA6BF]/[0.03] to-[#9CBBD1]/[0.02]',
     actions: [
       { label: 'Summarize Text', icon: FileText, path: '/chat' },
       { label: 'Create Flashcards', icon: CreditCard, path: '/chat' },
@@ -110,13 +110,13 @@ export default function EmptyState({ type }: EmptyStateProps) {
         className="mb-6"
       >
         <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/[0.02] border border-white/[0.04]">
-          <Rocket className="w-7 h-7 text-slate-400" />
+          <Rocket className="w-7 h-7 text-[#A9B7C6]" />
         </div>
       </motion.div>
 
       {/* Text */}
       <h2 className="text-xl font-semibold text-white text-center mb-2">{config.headline}</h2>
-      <p className="text-[13px] text-slate-500 text-center max-w-md mb-8">{config.subline}</p>
+      <p className="text-[13px] text-[#7F8FA3] text-center max-w-md mb-8">{config.subline}</p>
 
       {/* Actions */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 w-full max-w-xl">
@@ -131,9 +131,9 @@ export default function EmptyState({ type }: EmptyStateProps) {
             onClick={() => navigate(action.path)}
             className="flex flex-col items-center gap-2.5 p-4 rounded-xl border border-white/[0.03] bg-white/[0.01] hover:bg-white/[0.02] transition-colors text-center"
           >
-            <action.icon className="w-5 h-5 text-slate-400" />
+            <action.icon className="w-5 h-5 text-[#A9B7C6]" />
             <span className="text-[12px] font-medium text-slate-300">{action.label}</span>
-            <ArrowRight className="w-3 h-3 text-slate-600" />
+            <ArrowRight className="w-3 h-3 text-[#7F8FA3]" />
           </motion.button>
         ))}
       </div>

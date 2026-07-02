@@ -149,7 +149,7 @@ function chipStyle(s: JobStatus): React.CSSProperties {
     running:    'rgba(96,165,250,0.20)',
     retrying:   'rgba(251,146,60,0.22)',
     succeeded:  'rgba(74,222,128,0.22)',
-    cancelled:  'rgba(148,163,184,0.20)',
+    cancelled:  'rgba(169, 183, 198,0.20)',
     failed:     'rgba(248,113,113,0.22)',
     failed_dlq: 'rgba(248,113,113,0.26)',
   };

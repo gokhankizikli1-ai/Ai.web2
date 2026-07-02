@@ -38,12 +38,12 @@ export default function HomeDashboard() {
               className="mb-6"
             >
               <div className="flex items-center gap-3 mb-1">
-                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#52677A]/[0.1] border border-[#52677A]/15">
-                  <Sparkles className="h-4 w-4 text-[#7890A3]" />
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#7EA6BF]/[0.1] border border-[#7EA6BF]/15">
+                  <Sparkles className="h-4 w-4 text-[#9CBBD1]" />
                 </div>
                 <div>
                   <h1 className="text-xl font-semibold text-white tracking-tight">Command Center</h1>
-                  <p className="text-[12px] text-slate-500">Your AI Business Operating System dashboard</p>
+                  <p className="text-[12px] text-[#7F8FA3]">Your AI Business Operating System dashboard</p>
                 </div>
               </div>
             </motion.div>

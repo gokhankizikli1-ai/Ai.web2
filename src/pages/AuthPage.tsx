@@ -2,11 +2,11 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Link, useNavigate, useLocation } from 'react-router';
 import {
-  Sparkles, Mail, Lock, Eye, EyeOff,
+  Mail, Lock, Eye, EyeOff,
   ArrowRight, User, ShieldAlert, UserPlus,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { useAuthStore } from '@/stores/authStore';
+import BrandLogo from '@/components/BrandLogo';
 
 /* ─── Google Identity Services (GIS) type stubs ─────────────────────────
  *
@@ -800,10 +800,16 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-premium text-foreground flex items-center justify-center px-4 relative overflow-hidden">
-      {/* Soft ambient orbs */}
-      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] sm:w-[500px] sm:h-[500px] bg-[#52677A]/[0.04] rounded-full blur-[100px] sm:blur-[150px] pointer-events-none" />
-      <div className="absolute bottom-1/4 right-1/4 w-[300px] h-[300px] sm:w-[400px] sm:h-[400px] bg-[#52677A]/[0.03] rounded-full blur-[80px] sm:blur-[120px] pointer-events-none" />
+    <div
+      className="min-h-screen flex items-center justify-center px-4 relative overflow-hidden"
+      style={{
+        colorScheme: 'light',
+        background:
+          'radial-gradient(880px 500px at 50% -8%, rgba(82,103,122,0.06), transparent 62%), linear-gradient(180deg, #F7F8FA 0%, #EEF1F4 100%)',
+      }}
+    >
+      {/* Soft ambient accent */}
+      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] sm:w-[500px] sm:h-[500px] bg-[#52677A]/[0.05] rounded-full blur-[100px] sm:blur-[150px] pointer-events-none" />
 
       <motion.div
         initial={{ opacity: 0, y: 16 }}
@@ -811,28 +817,25 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
         transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
         className="w-full max-w-[360px] sm:max-w-[380px]"
       >
-        {/* Logo */}
+        {/* Logo — shared brand, dark wordmark on porcelain */}
         <div className="text-center mb-7">
-          <Link to="/" className="inline-flex items-center gap-2.5 mb-3">
-            <div className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#52677A] to-[#7890A3] shadow-lg shadow-[#52677A]/10">
-              <Sparkles className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
-            </div>
-            <span className="text-lg sm:text-xl font-bold text-foreground tracking-tight">KorvixAI</span>
+          <Link to="/" className="inline-flex mb-3">
+            <BrandLogo tone="onLight" markSize={30} wordSize={19} />
           </Link>
-          <p className="text-[12px] sm:text-[13px] text-muted-foreground">
+          <p className="text-[12.5px] sm:text-[13px] text-[#64748B]">
             {mode === 'login' ? 'Welcome back to your AI workspace' : 'Create your AI workspace account'}
           </p>
         </div>
 
         {/* Card */}
-        <div className="rounded-2xl border border-border bg-card/80 backdrop-blur-xl p-5 sm:p-6 shadow-premium-lg">
+        <div
+          className="rounded-2xl border border-[#DDE3EA] bg-white p-5 sm:p-6"
+          style={{ boxShadow: '0 24px 60px -30px rgba(16,24,39,0.28), 0 8px 20px -14px rgba(16,24,39,0.12)' }}
+        >
 
           {/* Post-Google-redirect skeleton — replaces the form while the
               OAuth callback is being processed so the user sees clear
-              progress instead of a blank page or a flickering form.
-              The redirect-callback effect clears processingRedirect on
-              any failure path so the form returns; on success the page
-              navigates away before this is needed. */}
+              progress instead of a blank page or a flickering form. */}
           {processingRedirect ? (
             <div
               className="flex flex-col items-center justify-center py-8 text-center"
@@ -841,36 +844,36 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
               aria-live="polite"
             >
               <div className="relative h-10 w-10 mb-3">
-                <span className="absolute inset-0 rounded-full border-2 border-[#7890A3]/20" />
+                <span className="absolute inset-0 rounded-full border-2 border-[#52677A]/20" />
                 <span
                   className="absolute inset-0 rounded-full border-2 border-transparent animate-spin"
                   style={{ borderTopColor: 'rgba(82,103,122,0.9)' }}
                 />
               </div>
-              <div className="text-[13px] font-medium text-foreground mb-1">
+              <div className="text-[13px] font-semibold text-[#0F1729] mb-1">
                 Signing you in…
               </div>
-              <div className="text-[11px] text-muted-foreground max-w-[260px] leading-relaxed">
+              <div className="text-[11px] text-[#64748B] max-w-[260px] leading-relaxed">
                 Verifying your Google credentials with the backend.
               </div>
-              {/* Skeleton row group so the card doesn't visibly shrink
-                  while the redirect resolves — keeps the layout stable. */}
               <div className="w-full mt-5 space-y-2">
-                <div className="h-2.5 rounded bg-muted/60 animate-pulse" />
-                <div className="h-2.5 rounded bg-muted/60 animate-pulse w-3/4 mx-auto" />
-                <div className="h-2.5 rounded bg-muted/60 animate-pulse w-1/2 mx-auto" />
+                <div className="h-2.5 rounded bg-[#EEF1F4] animate-pulse" />
+                <div className="h-2.5 rounded bg-[#EEF1F4] animate-pulse w-3/4 mx-auto" />
+                <div className="h-2.5 rounded bg-[#EEF1F4] animate-pulse w-1/2 mx-auto" />
               </div>
             </div>
           ) : (
           <>
           {/* Tab switcher */}
-          <div className="flex gap-1 p-0.5 rounded-xl bg-muted border border-border mb-6">
+          <div className="flex gap-1 p-1 rounded-xl bg-[#EEF1F4] border border-[#DDE3EA] mb-6">
             {(['login', 'signup'] as const).map((m) => (
               <button
                 key={m}
                 onClick={() => switchMode(m)}
-                className={`flex-1 py-2 rounded-lg text-[12px] font-medium transition-all capitalize ${
-                  mode === m ? 'bg-background text-foreground shadow-premium' : 'text-muted-foreground hover:text-foreground'
+                className={`flex-1 py-2 rounded-lg text-[12.5px] font-semibold transition-all capitalize ${
+                  mode === m
+                    ? 'bg-white text-[#0F1729] shadow-[0_1px_3px_rgba(16,24,39,0.10)]'
+                    : 'text-[#64748B] hover:text-[#0F1729]'
                 }`}
               >
                 {m === 'login' ? 'Sign In' : 'Sign Up'}
@@ -883,34 +886,26 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
             <button
               onClick={handleGoogle}
               disabled={googleBusy}
-              className="w-full flex items-center justify-center gap-2.5 h-10 rounded-xl border border-border bg-muted/30 hover:bg-muted hover:border-border/80 transition-all text-[12px] text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full flex items-center justify-center gap-2.5 h-10 rounded-xl border border-[#DDE3EA] bg-white hover:bg-[#F7F8FA] hover:border-[#C3CDD8] transition-all text-[12.5px] font-medium text-[#334155] disabled:opacity-50 disabled:cursor-not-allowed"
               data-testid="auth-google-button"
             >
               <GoogleIcon className="h-4 w-4" />
               {googleLabel}
             </button>
-            {/* Manual redirect fallback. Appears only after the popup
-                flow failed (popup_blocked / callback_timeout / gis_not_loaded)
-                so we don't clutter the form on the happy path. On
-                Safari/iPad the main button already does the redirect
-                flow, so showing this would be redundant. */}
             {googleReason && !isSafariOrIOS() && (
               <button
                 onClick={handleGoogleRedirect}
                 disabled={googleBusy}
-                className="w-full flex items-center justify-center gap-2.5 h-9 rounded-xl border border-[#52677A]/25 bg-[#52677A]/[0.05] hover:bg-[#52677A]/[0.10] transition-all text-[11px] text-[#7890A3] disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full flex items-center justify-center gap-2.5 h-9 rounded-xl border border-[#52677A]/30 bg-[#52677A]/[0.06] hover:bg-[#52677A]/[0.12] transition-all text-[11px] font-medium text-[#52677A] disabled:opacity-50 disabled:cursor-not-allowed"
                 data-testid="auth-google-redirect-button"
               >
                 <GoogleIcon className="h-3.5 w-3.5" />
                 Use redirect instead
               </button>
             )}
-            {/* Reason-specific helper text shown directly below the
-                Google buttons so the user doesn't have to scan the
-                global error region for an explanation. */}
             {googleReason && (
               <p
-                className="text-[10px] text-[#B76E79]/80 leading-snug"
+                className="text-[10.5px] text-[#B76E79] leading-snug"
                 data-testid="auth-google-reason"
               >
                 {googleAuthMessage(googleReason, googleReasonExtra)}
@@ -918,7 +913,7 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
             )}
             <button
               onClick={handleApple}
-              className="w-full flex items-center justify-center gap-2.5 h-10 rounded-xl border border-border bg-muted/30 hover:bg-muted hover:border-border/80 transition-all text-[12px] text-foreground"
+              className="w-full flex items-center justify-center gap-2.5 h-10 rounded-xl border border-[#DDE3EA] bg-white hover:bg-[#F7F8FA] hover:border-[#C3CDD8] transition-all text-[12.5px] font-medium text-[#334155]"
             >
               <AppleIcon className="h-4 w-4" />
               Continue with Apple
@@ -927,9 +922,9 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
 
           {/* Divider */}
           <div className="flex items-center gap-3 mb-5">
-            <div className="flex-1 h-px bg-border" />
-            <span className="text-[10px] text-muted-foreground/50 uppercase tracking-wider">or</span>
-            <div className="flex-1 h-px bg-border" />
+            <div className="flex-1 h-px bg-[#DDE3EA]" />
+            <span className="text-[10px] text-[#94A3B8] uppercase tracking-wider">or</span>
+            <div className="flex-1 h-px bg-[#DDE3EA]" />
           </div>
 
           {/* Form */}
@@ -944,13 +939,13 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
                   transition={{ duration: 0.2 }}
                 >
                   <div className="relative">
-                    <UserPlus className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/50" />
+                    <UserPlus className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94A3B8]" />
                     <input
                       type="text"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       placeholder="Full name"
-                      className="w-full h-10 pl-10 pr-4 rounded-xl bg-muted/40 border border-border text-[13px] text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-[#52677A]/20 focus:bg-muted/60 transition-all"
+                      className="w-full h-10 pl-10 pr-4 rounded-xl bg-[#F7F8FA] border border-[#DDE3EA] text-[13px] text-[#0F1729] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#52677A] focus:bg-white focus:ring-2 focus:ring-[#52677A]/15 transition-all"
                     />
                   </div>
                 </motion.div>
@@ -958,28 +953,28 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
             </AnimatePresence>
 
             <div className="relative">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/50" />
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94A3B8]" />
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Email address"
-                className="w-full h-10 pl-10 pr-4 rounded-xl bg-muted/40 border border-border text-[13px] text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-[#52677A]/20 focus:bg-muted/60 transition-all"
+                className="w-full h-10 pl-10 pr-4 rounded-xl bg-[#F7F8FA] border border-[#DDE3EA] text-[13px] text-[#0F1729] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#52677A] focus:bg-white focus:ring-2 focus:ring-[#52677A]/15 transition-all"
               />
             </div>
             <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/50" />
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94A3B8]" />
               <input
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Password"
-                className="w-full h-10 pl-10 pr-10 rounded-xl bg-muted/40 border border-border text-[13px] text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-[#52677A]/20 focus:bg-muted/60 transition-all"
+                className="w-full h-10 pl-10 pr-10 rounded-xl bg-[#F7F8FA] border border-[#DDE3EA] text-[13px] text-[#0F1729] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#52677A] focus:bg-white focus:ring-2 focus:ring-[#52677A]/15 transition-all"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-muted-foreground transition-colors"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-[#94A3B8] hover:text-[#52677A] transition-colors"
               >
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
@@ -992,35 +987,40 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
                   exit={{ opacity: 0, height: 0 }}
-                  className="flex items-start gap-2 p-2.5 rounded-lg bg-[#A68A5B]/10 border border-[#A68A5B]/20"
+                  className="flex items-start gap-2 p-2.5 rounded-lg bg-[#B76E79]/[0.08] border border-[#B76E79]/25"
                 >
-                  <ShieldAlert className="w-3.5 h-3.5 text-[#A68A5B] shrink-0 mt-0.5" />
-                  <p className="text-[11px] text-[#A68A5B]/90">{displayError}</p>
+                  <ShieldAlert className="w-3.5 h-3.5 text-[#B76E79] shrink-0 mt-0.5" />
+                  <p className="text-[11px] text-[#9B5560]">{displayError}</p>
                 </motion.div>
               )}
             </AnimatePresence>
 
-            <Button
+            <button
               type="submit"
               disabled={isLoading}
-              className="w-full h-10 bg-foreground hover:bg-foreground/90 text-background rounded-xl text-[13px] font-medium transition-all disabled:opacity-40 shadow-premium"
+              className="w-full h-11 flex items-center justify-center rounded-xl text-[13px] font-semibold text-[#F5F7FA] transition-all disabled:opacity-50 hover:-translate-y-px"
+              style={{
+                background: 'linear-gradient(180deg, #161C23 0%, #0B0E12 100%)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                boxShadow: '0 6px 18px rgba(16,24,39,0.16), inset 0 1px 0 rgba(255,255,255,0.07)',
+              }}
             >
               {isLoading ? (
-                <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }} className="w-4 h-4 border-2 border-foreground/30 border-t-foreground rounded-full" />
+                <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }} className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full" />
               ) : (
                 <>
                   {mode === 'login' ? 'Sign In' : 'Create Account'}
                   <ArrowRight className="ml-1.5 w-4 h-4" />
                 </>
               )}
-            </Button>
+            </button>
           </form>
 
           {/* Guest */}
-          <div className="mt-4 pt-4 border-t border-border text-center">
+          <div className="mt-4 pt-4 border-t border-[#DDE3EA] text-center">
             <button
               onClick={handleGuest}
-              className="inline-flex items-center gap-1.5 text-[12px] text-muted-foreground hover:text-[#52677A] transition-colors"
+              className="inline-flex items-center gap-1.5 text-[12px] text-[#64748B] hover:text-[#52677A] transition-colors"
             >
               <User className="w-3.5 h-3.5" />
               Continue as Guest
@@ -1031,11 +1031,11 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
         </div>
 
         {/* Footer */}
-        <p className="text-center text-[11px] text-muted-foreground/50 mt-5">
+        <p className="text-center text-[11px] text-[#94A3B8] mt-5">
           By continuing, you agree to our{' '}
-          <Link to="/terms" className="text-muted-foreground hover:text-foreground transition-colors">Terms</Link>
+          <Link to="/terms" className="text-[#64748B] hover:text-[#0F1729] underline underline-offset-2 decoration-[#DDE3EA] transition-colors">Terms</Link>
           {' '}and{' '}
-          <Link to="/privacy" className="text-muted-foreground hover:text-foreground transition-colors">Privacy Policy</Link>.
+          <Link to="/privacy" className="text-[#64748B] hover:text-[#0F1729] underline underline-offset-2 decoration-[#DDE3EA] transition-colors">Privacy Policy</Link>.
         </p>
       </motion.div>
     </div>

@@ -62,7 +62,7 @@ export default function MessageHoverActions({ content, onAction, isVisible }: Me
               onClick={() => handleAction(action.id)}
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-slate-600 hover:text-[#52677A] hover:bg-[#52677A]/[0.06] transition-all duration-150 border border-transparent hover:border-[#52677A]/10"
+              className="flex items-center gap-1 rounded-md px-2 py-1 text-[10px] text-[#7F8FA3] hover:text-[#7EA6BF] hover:bg-[#7EA6BF]/[0.06] transition-all duration-150 border border-transparent hover:border-[#7EA6BF]/10"
               title={action.label}
             >
               {action.id === 'copy' && copied ? (

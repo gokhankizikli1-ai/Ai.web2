@@ -97,7 +97,7 @@ export default function CreditConfirmation({ open, costKey, onConfirm, onCancel 
             <h3 className="text-[14px] font-semibold text-white text-center mb-1">
               Advanced Operation
             </h3>
-            <p className="text-[12px] text-slate-500 text-center mb-4">
+            <p className="text-[12px] text-[#7F8FA3] text-center mb-4">
               {cost.label} requires credits
             </p>
 
@@ -121,14 +121,14 @@ export default function CreditConfirmation({ open, costKey, onConfirm, onCancel 
             <div className="flex gap-2">
               <button
                 onClick={onCancel}
-                className="flex-1 h-9 rounded-xl border border-white/[0.06] bg-white/[0.02] text-[12px] text-slate-500 hover:text-slate-300 hover:bg-white/[0.04] transition-all"
+                className="flex-1 h-9 rounded-xl border border-white/[0.06] bg-white/[0.02] text-[12px] text-[#7F8FA3] hover:text-slate-300 hover:bg-white/[0.04] transition-all"
               >
                 Cancel
               </button>
               <button
                 onClick={handleConfirm}
                 disabled={loading}
-                className="flex-1 h-9 rounded-xl bg-[#52677A]/[0.08] border border-[#52677A]/12 text-[12px] font-medium text-[#52677A] hover:bg-[#52677A]/[0.12] transition-all disabled:opacity-50"
+                className="flex-1 h-9 rounded-xl bg-[#7EA6BF]/[0.08] border border-[#7EA6BF]/12 text-[12px] font-medium text-[#7EA6BF] hover:bg-[#7EA6BF]/[0.12] transition-all disabled:opacity-50"
               >
                 {loading ? 'Processing...' : 'Continue'}
               </button>
@@ -137,7 +137,7 @@ export default function CreditConfirmation({ open, costKey, onConfirm, onCancel 
             {/* Close */}
             <button
               onClick={onCancel}
-              className="absolute top-3 right-3 p-1 rounded text-slate-600 hover:text-slate-400 transition-colors"
+              className="absolute top-3 right-3 p-1 rounded text-[#7F8FA3] hover:text-[#A9B7C6] transition-colors"
             >
               <X className="h-3.5 w-3.5" />
             </button>

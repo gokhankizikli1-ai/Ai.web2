@@ -1,6 +1,7 @@
 import { Link } from 'react-router';
 import { useAuthStore } from '@/stores/authStore';
 import { getLandingHref, type NavTarget } from '@/lib/landingNav';
+import BrandLogo from '@/components/BrandLogo';
 
 /**
  * Shared marketing footer — v8 "Ink" dark style.
@@ -36,23 +37,6 @@ const legalLinks: FooterItem[] = [
   { label: 'Security' }, // no page yet → plain label (still public)
 ];
 
-const BrandMark = () => (
-  <div className="flex items-center gap-2.5">
-    <div
-      className="grid h-[29px] w-[29px] place-items-center rounded-lg"
-      style={{
-        background: 'linear-gradient(158deg, rgba(32,41,51,0.5) 0%, #0B0E12 100%), #12171E',
-        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.10), 0 2px 6px rgba(16,24,39,0.20)',
-      }}
-    >
-      <span className="font-mono text-[15px] font-bold text-[#EDF1F5]">K</span>
-    </div>
-    <div className="text-[17.5px] font-bold tracking-tight text-[#F5F7FA]">
-      Korvix<span className="font-semibold text-[#5A6774]">AI</span>
-    </div>
-  </div>
-);
-
 function FooterColumn({ title, links, isAuthed }: { title: string; links: FooterItem[]; isAuthed: boolean }) {
   return (
     <div>
@@ -82,7 +66,7 @@ export default function Footer() {
       <div className="mx-auto max-w-6xl px-7">
         <div className="grid grid-cols-2 gap-8 md:grid-cols-[1.7fr_1fr_1fr_1fr_1fr] md:gap-8">
           <div className="col-span-2 md:col-span-1">
-            <BrandMark />
+            <BrandLogo tone="onDark" />
             <p className="mt-3.5 max-w-[30ch] text-[12.5px] leading-relaxed text-[#93A3B5]">
               One AI workspace for researching markets, validating ideas, and turning evidence into work.
             </p>

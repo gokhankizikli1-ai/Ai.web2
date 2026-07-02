@@ -90,34 +90,34 @@ export default function AIActivityHUD({ activity, isVisible }: AIActivityHUDProp
           {/* Pulsing icon */}
           <div className="relative">
             <motion.div
-              className="p-1 rounded-lg bg-[#52677A]/[0.06] border border-[#52677A]/8"
+              className="p-1 rounded-lg bg-[#7EA6BF]/[0.06] border border-[#7EA6BF]/8"
               animate={{
                 boxShadow: [
-                  '0 0 6px -2px rgba(82,103,122,0.08)',
-                  '0 0 10px -2px rgba(82,103,122,0.15)',
-                  '0 0 6px -2px rgba(82,103,122,0.08)',
+                  '0 0 6px -2px rgba(126, 166, 191,0.08)',
+                  '0 0 10px -2px rgba(126, 166, 191,0.15)',
+                  '0 0 6px -2px rgba(126, 166, 191,0.08)',
                 ],
               }}
               transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
             >
-              <config.icon className="h-3 w-3 text-[#52677A]/70" />
+              <config.icon className="h-3 w-3 text-[#7EA6BF]/70" />
             </motion.div>
 
             {/* Active dot */}
             <motion.div
-              className="absolute -top-0.5 -right-0.5 w-[5px] h-[5px] rounded-full bg-[#52677A]"
+              className="absolute -top-0.5 -right-0.5 w-[5px] h-[5px] rounded-full bg-[#7EA6BF]"
               animate={{
                 scale: [1, 1.4, 1],
                 opacity: [0.7, 1, 0.7],
               }}
               transition={{ duration: 1.5, repeat: Infinity }}
-              style={{ boxShadow: '0 0 4px rgba(82,103,122,0.5)' }}
+              style={{ boxShadow: '0 0 4px rgba(126, 166, 191,0.5)' }}
             />
           </div>
 
           {/* Text */}
           <div className="flex flex-col">
-            <span className="text-[11px] text-slate-400 font-medium">{config.label}</span>
+            <span className="text-[11px] text-[#A9B7C6] font-medium">{config.label}</span>
             <AnimatePresence mode="wait">
               <motion.span
                 key={subIndex}
@@ -125,7 +125,7 @@ export default function AIActivityHUD({ activity, isVisible }: AIActivityHUDProp
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -3 }}
                 transition={{ duration: 0.2 }}
-                className="text-[10px] text-slate-600"
+                className="text-[10px] text-[#7F8FA3]"
               >
                 {config.sublabels[subIndex]}
               </motion.span>
@@ -135,7 +135,7 @@ export default function AIActivityHUD({ activity, isVisible }: AIActivityHUDProp
           {/* Subtle progress shimmer */}
           <div className="ml-auto w-12 h-[2px] rounded-full bg-white/[0.03] overflow-hidden">
             <motion.div
-              className="h-full rounded-full bg-[#52677A]/30"
+              className="h-full rounded-full bg-[#7EA6BF]/30"
               animate={{ width: ['0%', '70%', '40%', '90%', '60%'] }}
               transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
             />

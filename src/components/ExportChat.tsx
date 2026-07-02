@@ -59,8 +59,8 @@ export default function ExportChat({ open, onClose, session }: ExportChatProps) 
           .user { background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.12); }
           .ai { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); }
           .role { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
-          .user .role { color: #7890A3; }
-          .ai .role { color: #7890A3; }
+          .user .role { color: #9CBBD1; }
+          .ai .role { color: #9CBBD1; }
           .content { font-size: 13px; white-space: pre-wrap; }
           pre { background: rgba(255,255,255,0.04); padding: 12px; border-radius: 8px; overflow-x: auto; font-size: 12px; }
           code { font-family: ui-monospace, monospace; }
@@ -89,7 +89,7 @@ export default function ExportChat({ open, onClose, session }: ExportChatProps) 
       >
         <div className="flex items-center justify-between px-5 pt-5 pb-3">
           <h3 className="text-sm font-semibold text-white">Export Conversation</h3>
-          <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors p-1 rounded-md hover:bg-white/[0.05]">
+          <button onClick={onClose} className="text-[#7F8FA3] hover:text-white transition-colors p-1 rounded-md hover:bg-white/[0.05]">
             <X className="h-4 w-4" />
           </button>
         </div>

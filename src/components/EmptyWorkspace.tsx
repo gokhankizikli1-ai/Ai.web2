@@ -36,7 +36,7 @@ export default function EmptyWorkspace() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.3, duration: 0.5 }}
         className="text-[13px] relative z-10"
-        style={{ color: 'rgba(148,163,184,0.35)' }}
+        style={{ color: 'rgba(169, 183, 198,0.35)' }}
       >
         {t('sendAMessage')}
       </motion.p>

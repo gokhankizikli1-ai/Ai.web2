@@ -24,8 +24,8 @@ const statusConfig = {
     label: 'Idle',
   },
   syncing: {
-    dot: 'bg-[#52677A]',
-    shadow: '0 0 8px rgba(82,103,122,0.3)',
+    dot: 'bg-[#7EA6BF]',
+    shadow: '0 0 8px rgba(126, 166, 191,0.3)',
     label: 'Syncing',
   },
   offline: {
