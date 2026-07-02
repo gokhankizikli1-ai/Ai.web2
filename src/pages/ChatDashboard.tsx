@@ -286,13 +286,13 @@ export default function ChatDashboard() {
     // Research is a Chat capability now (intent-based web research),
     // not a destination — any leftover caller lands on Chat.
     if (tab === 'research') tab = 'chat';
-    // Trading is a private owner preview; non-owners stay on Chat.
-    if (tab === 'trading' && !ownerModeForGreeting.isOwner) tab = 'chat';
+    // Trading is a private owner preview; confirmed non-owners stay on Chat.
+    if (tab === 'trading' && !ownerModeForGreeting.loading && !ownerModeForGreeting.isOwner) tab = 'chat';
     setActiveTab(tab);
     switchTab(tab);
     // Sync URL param for deep-linking
     setSearchParams({ tab }, { replace: true });
-  }, [switchTab, setSearchParams, navigate, ownerModeForGreeting.isOwner]);
+  }, [switchTab, setSearchParams, navigate, ownerModeForGreeting.loading, ownerModeForGreeting.isOwner]);
 
   // Deep-link owner gate — a non-owner landing directly on
   // /chat?tab=trading gets moved to Chat once owner status resolves.
@@ -422,8 +422,17 @@ export default function ChatDashboard() {
 
     switch (activeTab) {
       case 'trading':
-        // Owner-only private preview. Non-owners see a quiet notice for
-        // the moment it takes the owner-gate effect to move them to Chat.
+        // Owner-only private preview. Unknown owner state gets a neutral
+        // access check until the owner-gate effect can make a decision.
+        if (ownerModeForGreeting.loading && !ownerModeForGreeting.isOwner) {
+          return (
+            <div className="h-full flex items-center justify-center">
+              <p className="text-[12px] text-slate-500">Checking trading access...</p>
+            </div>
+          );
+        }
+        // Confirmed non-owners see a quiet notice for the moment it takes
+        // the owner-gate effect to move them to Chat.
         if (!ownerModeForGreeting.isOwner) {
           return (
             <div className="h-full flex items-center justify-center">
