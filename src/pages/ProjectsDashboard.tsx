@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   FolderOpen, Plus, ArrowLeft, Sparkles, X, Pencil, Check,
@@ -54,12 +54,15 @@ function makeProject(name: string, category: string, description: string): Proje
 
 export default function ProjectsDashboard() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   /* ── Projects state ── */
   const [projects, setProjects] = useState<Project[]>(getProjects());
 
-  /* ── Modal state ── */
-  const [showCreate, setShowCreate] = useState(false);
+  /* ── Modal state ──
+     `?new=1` opens the create modal directly — the workspace's
+     "Project not found" recovery screen links here. */
+  const [showCreate, setShowCreate] = useState(() => searchParams.get('new') === '1');
   const [projectName, setProjectName] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [customCategory, setCustomCategory] = useState('');

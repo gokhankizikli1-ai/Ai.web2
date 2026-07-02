@@ -18,7 +18,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Workflow, Play, Loader2, CheckCircle2, Circle, XCircle,
   MinusCircle, Sparkles, Eye, Monitor, Code2, FolderTree, Pencil,
-  ArrowDown, ShieldAlert,
+  ArrowDown, ShieldAlert, RotateCw,
 } from 'lucide-react';
 import {
   projectOrchestratorClient,
@@ -76,6 +76,21 @@ const ARTIFACT_PREVIEWS = new Set(['iframe', 'code', 'file_tree']);
 // new content auto-anchors. Further up, the user is inspecting history and
 // updates surface as the "Jump to latest" control instead.
 const FOLLOW_THRESHOLD_PX = 120;
+
+// Conversation-restore fetches must always settle: on a cold backend a
+// bare fetch can pend for minutes, and a refreshed project page would
+// look permanently empty. Past this deadline the load flips to a
+// visible, retryable error state instead.
+const HISTORY_TIMEOUT_MS = 8000;
+
+function withDeadline<T>(p: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('request timed out')), ms);
+    }),
+  ]);
+}
 
 function artifactGlyph(preview?: string | null) {
   if (preview === 'iframe')    return <Monitor className="h-4 w-4 text-cyan-300" />;
@@ -206,22 +221,36 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
   const { snapshot } = useProjectRun(activeRunId);
 
   // ── Initial load: templates + the persisted conversation ──────────────
-  useEffect(() => {
-    let active = true;
-    projectOrchestratorClient.listTemplates()
-      .then(t => { if (active) setTemplates(t); })
-      .catch(() => { /* availability handled by parent */ });
-    projectOrchestratorClient.listRuns(projectId)
-      .then(rs => {
-        if (!active) return;
-        setTurns(rs);
-        // Resume polling the most recent in-flight run, if any.
-        const live = [...rs].reverse().find(r => !isRunTerminal(r.status));
-        if (live) setActiveRunId(live.run_id);
-      })
-      .catch(() => { /* empty conversation / disabled — composer still shown */ });
-    return () => { active = false; };
+  // Restoring the conversation is what makes a refreshed project URL come
+  // back with its build history, completed cards and preview actions — so
+  // the load is finite (deadline-raced) and a failure is a VISIBLE,
+  // retryable state instead of a silently empty timeline.
+  const [historyState, setHistoryState] = useState<'loading' | 'ready' | 'error'>('loading');
+
+  const loadConversation = useCallback(async (signal?: { active: boolean }) => {
+    setHistoryState('loading');
+    try {
+      const rs = await withDeadline(projectOrchestratorClient.listRuns(projectId), HISTORY_TIMEOUT_MS);
+      if (signal && !signal.active) return;
+      setTurns(rs);
+      // Resume polling the most recent in-flight run, if any.
+      const live = [...rs].reverse().find(r => !isRunTerminal(r.status));
+      if (live) setActiveRunId(live.run_id);
+      setHistoryState('ready');
+    } catch {
+      if (signal && !signal.active) return;
+      setHistoryState('error');  // composer stays usable; banner offers Retry
+    }
   }, [projectId]);
+
+  useEffect(() => {
+    const signal = { active: true };
+    projectOrchestratorClient.listTemplates()
+      .then(t => { if (signal.active) setTemplates(t); })
+      .catch(() => { /* availability handled by parent */ });
+    loadConversation(signal);
+    return () => { signal.active = false; };
+  }, [loadConversation]);
 
   // ── Merge live snapshot into its conversation turn ────────────────────
   useEffect(() => {
@@ -498,6 +527,20 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
           pb-10 keeps the last card comfortably readable above the input. */}
       <div className="relative flex-1 min-h-0">
       <div ref={scrollRef} onScroll={handleScroll} className="h-full overflow-y-auto px-4 pt-5 pb-10 scrollbar-thin">
+        {/* History restore failed (cold backend, network) — visible and
+            retryable, never a silently empty conversation. */}
+        {historyState === 'error' && (
+          <div className="max-w-2xl mx-auto mb-3 flex items-center justify-between gap-3 rounded-lg px-3 py-2"
+            style={{ background: 'rgba(251,191,36,0.05)', border: '1px solid rgba(251,191,36,0.14)' }}>
+            <span className="text-[11px] text-amber-200/70">
+              Couldn't load this project's build history — the backend may still be waking up.
+            </span>
+            <button onClick={() => loadConversation()}
+              className="flex items-center gap-1 text-[11px] font-medium text-amber-300 hover:text-amber-200 transition-colors shrink-0">
+              <RotateCw className="h-3 w-3" /> Retry
+            </button>
+          </div>
+        )}
         {turns.length === 0 && !briefPrompt && !unsupportedNotice ? (
           // ── Empty state: invite a project, never "No agents yet" ────────
           <div className="h-full flex flex-col items-center justify-center text-center px-6">
