@@ -15,7 +15,6 @@ import TradingPanel from '@/components/TradingPanel';
 import BusinessPanel from '@/components/BusinessPanel';
 import WorkspaceTabs from '@/components/WorkspaceTabs';
 import AIActivityFeed from '@/components/AIActivityFeed';
-import AgentTimeline from '@/components/AgentTimeline';
 
 import CommandPalette from '@/components/CommandPalette';
 import PromptLibrary from '@/components/PromptLibrary';
@@ -213,10 +212,14 @@ export default function ChatDashboard() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>(
-    (searchParams.get('tab') as WorkspaceTab) || settings.defaultWorkspace
-  );
-  // Timeline only shows for research/agent deep operations
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>(() => {
+    const urlTab = searchParams.get('tab') as WorkspaceTab | null;
+    // Legacy deep links: the Research tab is gone — research now runs
+    // inside normal Chat via intent detection, so tab=research lands
+    // on Chat. tab=trading is allowed here and owner-gated below.
+    if (urlTab === 'research') return 'chat';
+    return urlTab || settings.defaultWorkspace;
+  });
 
   // Sync active tab when defaultWorkspace changes
   useEffect(() => {
@@ -256,9 +259,6 @@ export default function ChatDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state]);
 
-  // Agent timeline visibility: only for research/agents deep mode
-  const showTimeline = isLoading && activeTab === 'research';
-
   // Responsive sidebar — close on tablet/mobile, open on desktop
   useEffect(() => {
     const check = () => {
@@ -283,11 +283,25 @@ export default function ChatDashboard() {
       navigate('/projects');
       return;
     }
+    // Research is a Chat capability now (intent-based web research),
+    // not a destination — any leftover caller lands on Chat.
+    if (tab === 'research') tab = 'chat';
+    // Trading is a private owner preview; non-owners stay on Chat.
+    if (tab === 'trading' && !ownerModeForGreeting.isOwner) tab = 'chat';
     setActiveTab(tab);
     switchTab(tab);
     // Sync URL param for deep-linking
     setSearchParams({ tab }, { replace: true });
-  }, [switchTab, setSearchParams, navigate]);
+  }, [switchTab, setSearchParams, navigate, ownerModeForGreeting.isOwner]);
+
+  // Deep-link owner gate — a non-owner landing directly on
+  // /chat?tab=trading gets moved to Chat once owner status resolves.
+  // (The initial render shows the quiet preview notice, never the panel.)
+  useEffect(() => {
+    if (activeTab === 'trading' && !ownerModeForGreeting.loading && !ownerModeForGreeting.isOwner) {
+      handleTabChange('chat');
+    }
+  }, [activeTab, ownerModeForGreeting.loading, ownerModeForGreeting.isOwner, handleTabChange]);
 
   // Listen for workspace switch events from sidebar mode shortcuts
   useEffect(() => {
@@ -311,7 +325,7 @@ export default function ChatDashboard() {
         // runs as startup_advisor. Non-chat workspaces (e.g. 'business',
         // which renders a panel instead of a conversation) keep the
         // original behavior and fall back to the plain chat tab.
-        const CHAT_SURFACES: WorkspaceTab[] = ['chat', 'research', 'coding', 'startup', 'study', 'creative'];
+        const CHAT_SURFACES: WorkspaceTab[] = ['chat', 'coding', 'startup', 'study', 'creative'];
         const target = detail.workspace && CHAT_SURFACES.includes(detail.workspace)
           ? detail.workspace
           : 'chat';
@@ -357,26 +371,26 @@ export default function ChatDashboard() {
     addToast(t('saved') === 'Kaydedildi' ? 'Ayarlar kaydedildi' : 'Settings saved', 'success');
   }, [updateSettings, addToast, t]);
 
-  // Command palette items
+  // Command palette items — Research tab entries removed (research runs
+  // inside Chat now), Projects lives in the sidebar (one palette entry,
+  // no duplicate top-tab entry), Trading entries are owner-only.
   const commandItems = useMemo(() => [
     { id: 'new-chat', label: t('newChat'), shortcut: '', icon: <Sparkles className="h-3.5 w-3.5" />, category: 'Actions', action: handleNewChat },
-    { id: 'deep-research', label: 'Deep Research', shortcut: '', icon: <Zap className="h-3.5 w-3.5" />, category: 'Actions', action: () => handleTabChange('research') },
-    { id: 'analyze-stock', label: t('trading'), shortcut: '', icon: <Zap className="h-3.5 w-3.5" />, category: 'Actions', action: () => handleTabChange('trading') },
+    ...(ownerModeForGreeting.isOwner ? [
+      { id: 'trading-tab', label: t('trading'), shortcut: '', icon: <Zap className="h-3.5 w-3.5" />, category: 'Navigation', action: () => handleTabChange('trading') },
+    ] : []),
     { id: 'open-projects', label: t('projects') || 'Projects', shortcut: '', icon: <FolderOpen className="h-3.5 w-3.5" />, category: 'Actions', action: () => navigate('/projects') },
     { id: 'export', label: t('export'), shortcut: '', icon: <Download className="h-3.5 w-3.5" />, category: 'Actions', action: () => setExportOpen(true) },
     { id: 'upgrade', label: t('upgrade'), shortcut: '', icon: <Zap className="h-3.5 w-3.5" />, category: 'Actions', action: () => setUpgradeOpen(true) },
     { id: 'chat-tab', label: t('chat'), shortcut: '', icon: <Sparkles className="h-3.5 w-3.5" />, category: 'Navigation', action: () => handleTabChange('chat') },
     { id: 'coding-tab', label: t('coding'), shortcut: '', icon: <Sparkles className="h-3.5 w-3.5" />, category: 'Navigation', action: () => handleTabChange('coding') },
-    { id: 'research-tab', label: t('research'), shortcut: '', icon: <Zap className="h-3.5 w-3.5" />, category: 'Navigation', action: () => handleTabChange('research') },
-    { id: 'trading-tab', label: t('trading'), shortcut: '', icon: <Zap className="h-3.5 w-3.5" />, category: 'Navigation', action: () => handleTabChange('trading') },
     { id: 'business-tab', label: t('business'), shortcut: '', icon: <Bot className="h-3.5 w-3.5" />, category: 'Navigation', action: () => handleTabChange('business') },
     { id: 'startup-tab', label: t('startup'), shortcut: '', icon: <Sparkles className="h-3.5 w-3.5" />, category: 'Navigation', action: () => handleTabChange('startup') },
-    { id: 'projects-tab', label: t('projects') || 'Projects', shortcut: '', icon: <FolderOpen className="h-3.5 w-3.5" />, category: 'Navigation', action: () => navigate('/projects') },
     { id: 'study-tab', label: t('study'), shortcut: '', icon: <Sparkles className="h-3.5 w-3.5" />, category: 'Navigation', action: () => handleTabChange('study') },
     { id: 'creative-tab', label: t('creative'), shortcut: '', icon: <Sparkles className="h-3.5 w-3.5" />, category: 'Navigation', action: () => handleTabChange('creative') },
     { id: 'prompts', label: t('prompts'), shortcut: '', icon: <Bookmark className="h-3.5 w-3.5" />, category: 'Actions', action: () => setPromptLibOpen(true) },
     { id: 'settings', label: t('settings'), shortcut: '', icon: <Settings className="h-3.5 w-3.5" />, category: 'Actions', action: () => setSettingsOpen(true) },
-  ], [handleNewChat, handleTabChange, t]);
+  ], [handleNewChat, handleTabChange, t, navigate, ownerModeForGreeting.isOwner]);
 
   const insertInput = (text: string) => {
     setInputText(text);
@@ -407,7 +421,17 @@ export default function ChatDashboard() {
     }
 
     switch (activeTab) {
-      case 'trading':  return <TradingPanel />;
+      case 'trading':
+        // Owner-only private preview. Non-owners see a quiet notice for
+        // the moment it takes the owner-gate effect to move them to Chat.
+        if (!ownerModeForGreeting.isOwner) {
+          return (
+            <div className="h-full flex items-center justify-center">
+              <p className="text-[12px] text-slate-500">Trading is in private preview.</p>
+            </div>
+          );
+        }
+        return <TradingPanel />;
       case 'business': return <BusinessPanel />;
       case 'agents': return null;
       default:         return (
@@ -494,7 +518,7 @@ export default function ChatDashboard() {
                 <PanelLeftOpen className="h-3.5 w-3.5" />
               </motion.button>
             )}
-            <WorkspaceTabs activeTab={activeTab} onTabChange={handleTabChange} />
+            <WorkspaceTabs activeTab={activeTab} onTabChange={handleTabChange} showTrading={ownerModeForGreeting.isOwner} />
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
@@ -527,7 +551,6 @@ export default function ChatDashboard() {
         </header>
 
         <AIActivityFeed activities={liveActivities} />
-        <AgentTimeline isVisible={showTimeline} />
 
         {/* Main content — NO AnimatePresence mode="wait" to prevent composer freeze */}
         <div className="relative flex-1 overflow-hidden flex z-0">
