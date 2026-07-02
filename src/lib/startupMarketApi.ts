@@ -100,6 +100,11 @@ export interface RadarCitation {
   url: string;
   source: string;
   published_at?: string | null;
+  /** How the item actually contributed (backend-observed, never guessed):
+   * direct = first-person complaint · complaint = fed a cluster ·
+   * broad = low-quality/SEO content · context = market context only.
+   * Optional: absent on reports cached before this field shipped. */
+  evidence_role?: 'direct' | 'complaint' | 'broad' | 'context';
 }
 
 export interface MarketComplaintReport {

@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
-import { History, Loader2, MessageSquareWarning, X } from 'lucide-react';
+import { History, MessageSquareWarning, X } from 'lucide-react';
 import MarketRadarForm from './MarketRadarForm';
 import MarketRadarResults from './MarketRadarResults';
 import RadarEmptyState from './RadarEmptyState';
 import RecentAnalyses from './RecentAnalyses';
+import ResearchActivity from './ResearchActivity';
+import { cleanTitle } from '@/lib/chatTitles';
 import {
   analyzeMarketComplaints, fetchRadarHealth, RadarError,
   type MarketComplaintReport, type MarketComplaintRequest,
@@ -16,13 +18,6 @@ import {
   clearRadarHistory, loadRadarHistory, saveRadarReport,
   type RadarHistoryEntry,
 } from '@/lib/startupRadarHistory';
-
-const LOADING_STAGES = [
-  'Scanning public discussions…',
-  'Collecting current market signals…',
-  'Clustering complaint patterns…',
-  'Ranking opportunity gaps…',
-];
 
 const DEFAULT_SOURCES: RadarSource[] = ['web', 'hackernews', 'gdelt'];
 
@@ -109,8 +104,9 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
 
   const [report, setReport] = useState<MarketComplaintReport | null>(null);
   const [loading, setLoading] = useState(false);
-  const [stage, setStage] = useState(0);
   const [error, setError] = useState<RadarError | null>(null);
+  // true only right after a live analysis — opens the evidence trail.
+  const [freshAnalysis, setFreshAnalysis] = useState(false);
   const [lastRequest, setLastRequest] = useState<MarketComplaintRequest | null>(null);
   const [sourceHealth, setSourceHealth] = useState<RadarSourceHealth | null>(null);
   const [history, setHistory] = useState<RadarHistoryEntry[]>(() => loadRadarHistory());
@@ -130,6 +126,9 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
       setTimeframe(latest.report.timeframe_days || 30);
       setSources(sourcesFromReport(latest.report));
       setRestoredNote(true);
+      // Land the user at the top of the restored result, not wherever
+      // the browser's scroll restoration left them.
+      if (!embedded) requestAnimationFrame(() => window.scrollTo({ top: 0 }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -142,14 +141,6 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
     return () => { cancelled = true; };
   }, []);
 
-  // Rotate honest progress copy while the radar runs.
-  useEffect(() => {
-    if (!loading) return;
-    setStage(0);
-    const t = setInterval(() => setStage((s) => Math.min(s + 1, LOADING_STAGES.length - 1)), 2500);
-    return () => clearInterval(t);
-  }, [loading]);
-
   const runAnalysis = async (req: MarketComplaintRequest) => {
     setLoading(true);
     setError(null);
@@ -159,6 +150,7 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
     try {
       const result = await analyzeMarketComplaints(req);
       setReport(result);
+      setFreshAnalysis(true);
       // History stores exactly what's on screen — last 5, local only.
       setHistory(saveRadarReport(result));
     } catch (e) {
@@ -171,6 +163,7 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
   const restoreFromHistory = (entry: RadarHistoryEntry) => {
     setError(null);
     setRestoredNote(false);
+    setFreshAnalysis(false);
     setQuery(entry.report.query);
     setTimeframe(entry.report.timeframe_days || 30);
     setSources(sourcesFromReport(entry.report));
@@ -183,19 +176,24 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
   };
 
   /** Shared handoff: in-app event when embedded in ChatDashboard,
-   * full navigation from the standalone /tools/startup page. */
-  const handOffToChat = (prompt: string) => {
+   * full navigation from the standalone /tools/startup page. Carries a
+   * ready session title so the chat never sits as "New Chat". */
+  const handOffToChat = (prompt: string, title: string) => {
     if (embedded) {
       window.dispatchEvent(new CustomEvent('korvix-route-to-chat', {
-        detail: { prompt, workspace: 'startup' },
+        detail: { prompt, workspace: 'startup', title },
       }));
     } else {
-      navigate('/chat?tab=startup', { state: { initialPrompt: prompt } });
+      navigate('/chat?tab=startup', { state: { initialPrompt: prompt, sessionTitle: title } });
     }
   };
 
   const sendToAdvisor = () => {
-    if (report) handOffToChat(buildAdvisorPrompt(report));
+    if (!report) return;
+    handOffToChat(
+      buildAdvisorPrompt(report),
+      cleanTitle(report.query, 'Startup: ') || 'Startup research',
+    );
   };
 
   // The builder pages don't accept an external prompt handoff, so the
@@ -204,12 +202,13 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
   const sendToBuilder = () => {
     if (!report) return;
     const prompt = buildBuilderPrompt(report);
+    const title = cleanTitle(report.query, 'Builder: ') || 'Builder: MVP concept';
     if (embedded) {
       window.dispatchEvent(new CustomEvent('korvix-route-to-chat', {
-        detail: { prompt, workspace: 'chat' },
+        detail: { prompt, workspace: 'chat', title },
       }));
     } else {
-      navigate('/chat', { state: { initialPrompt: prompt } });
+      navigate('/chat', { state: { initialPrompt: prompt, sessionTitle: title } });
     }
   };
 
@@ -232,14 +231,8 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
       <div className={embedded ? 'mt-3 space-y-3' : 'mt-5 space-y-4'}>
         <AnimatePresence mode="wait">
           {loading && (
-            <motion.div
-              key="loading"
-              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="rounded-2xl border border-white/[0.05] bg-white/[0.01] p-8 flex flex-col items-center gap-3"
-            >
-              <Loader2 className="h-5 w-5 text-amber-400/80 animate-spin" />
-              <p className="text-[13px] text-slate-200">{LOADING_STAGES[stage]}</p>
-              <p className="text-[11px] text-slate-500">Fetching current public signals — this usually takes a few seconds.</p>
+            <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <ResearchActivity />
             </motion.div>
           )}
 
@@ -289,6 +282,7 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
               <MarketRadarResults
                 report={report}
                 sourceHealth={sourceHealth}
+                freshAnalysis={freshAnalysis}
                 onSendToAdvisor={sendToAdvisor}
                 onSendToBuilder={sendToBuilder}
               />

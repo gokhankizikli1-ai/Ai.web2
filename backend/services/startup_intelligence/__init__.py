@@ -252,17 +252,29 @@ async def analyze_market_complaints(
     report.market_signals = signals_summary
     report.recommendations = _build_recommendations(query, clusters, signals_summary)
 
-    # Citations: every item that contributed, capped and deduped.
+    # Citations: every item that contributed, capped and deduped. Each
+    # carries its observed evidence role for the frontend research trail.
+    direct_urls = {h.signal.url for h in hits if h.is_direct and h.signal.url}
+    complaint_urls = {h.signal.url for h in hits if h.signal.url}
     seen_urls: set[str] = set()
     for sig in all_signals:
         if not sig.url or sig.url in seen_urls:
             continue
         seen_urls.add(sig.url)
+        if sig.url in direct_urls:
+            role = "direct"
+        elif sig.url in complaint_urls:
+            role = "complaint"
+        elif sig.quality < 0.45:
+            role = "broad"
+        else:
+            role = "context"
         report.citations.append(ReportCitation(
             title=sig.title or sig.url,
             url=sig.url,
             source=sig.source,
             published_at=sig.published_at,
+            evidence_role=role,
         ))
         if len(report.citations) >= 40:
             break

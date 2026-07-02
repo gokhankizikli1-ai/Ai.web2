@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { ChatSession, Message, AIMode, WorkspaceTab, ChatFolder, AttachedAsset } from '@/types';
+import { deriveSessionTitle } from '@/lib/chatTitles';
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
@@ -402,7 +403,12 @@ export function useChat() {
   const hadPersistedSessions = !!(persisted && persisted.length > 0);
   const initialSessions = hadPersistedSessions
     ? (persisted as ChatSession[])
-    : TAB_KEYS.map((tab) => createEmptySession(`New ${tab.charAt(0).toUpperCase() + tab.slice(1)}`));
+    // Seed sessions only for reachable tabs — Research is gone from the
+    // nav, Trading is owner-only, Agents redirects to /projects. Their
+    // sessions are still created lazily by switchTab when actually
+    // visited, so nothing breaks for owners/legacy links.
+    : TAB_KEYS.filter((tab) => !['research', 'trading', 'agents'].includes(tab))
+        .map((tab) => createEmptySession(`New ${tab.charAt(0).toUpperCase() + tab.slice(1)}`));
   const [sessions, setSessions] = useState<ChatSession[]>(initialSessions);
   // Restore the last-active session id so Home→back / refresh lands the
   // user on the SAME conversation they were viewing, not on the empty
@@ -490,6 +496,27 @@ export function useChat() {
     // Sort by most recently updated, limit to 7 visible in sidebar
     .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
     .slice(0, 7);
+
+  /* ─── Pending session title (handoff auto-naming) ───
+     Startup Radar → Advisor/Builder handoffs (and any future flow) can
+     stage a human title ("Startup: AI support tools") so the session
+     never sits as "New Chat". Applied as soon as the target session
+     activates; consumed at latest on the first send. Only ever renames
+     unused "New X" sessions — real conversations keep their titles. */
+  const pendingTitleRef = useRef<string | null>(null);
+  const setPendingSessionTitle = useCallback((title: string) => {
+    pendingTitleRef.current = (title || '').trim() || null;
+  }, []);
+  useEffect(() => {
+    const title = pendingTitleRef.current;
+    if (!title) return;
+    setSessions((prev) => prev.map((s) =>
+      s.id === activeSessionId && s.title.startsWith('New ') ? { ...s, title } : s,
+    ));
+    // Keep the ref until doSend consumes it — if the active session was
+    // already a named conversation, the rename intentionally didn't land.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSessionId]);
 
   /* ─── Switch to a tab — activates that tab's isolated session ─── */
   const switchTab = useCallback((tab: WorkspaceTab) => {
@@ -609,6 +636,11 @@ export function useChat() {
       ...(attachments.length > 0 ? { attachments } : {}),
     };
 
+    // Consume the staged handoff title BEFORE queueing the state update —
+    // the updater runs asynchronously, after the ref would be cleared.
+    const pendingTitle = pendingTitleRef.current;
+    pendingTitleRef.current = null;
+
     setSessions((prev) =>
       prev.map((s) =>
         s.id === activeSessionId
@@ -616,7 +648,14 @@ export function useChat() {
               ...s,
               messages: [...s.messages, userMessage],
               updatedAt: new Date(),
-              title: s.title.startsWith('New ') ? trimmed.slice(0, 40) : s.title,
+              // Meaningful auto-title on the first message: handoff title
+              // ("Startup: X") wins, then derived ("Research: topic"),
+              // then the legacy first-40-chars fallback.
+              title: s.title.startsWith('New ')
+                ? (pendingTitle
+                    ?? deriveSessionTitle(trimmed, currentTab)
+                    ?? trimmed.slice(0, 40))
+                : s.title,
             }
           : s
       )
@@ -1151,5 +1190,6 @@ export function useChat() {
     moveToFolder,
     addMemoryRef,
     switchTab,
+    setPendingSessionTitle,
   };
 }

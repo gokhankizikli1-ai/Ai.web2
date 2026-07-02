@@ -138,6 +138,7 @@ export default function ChatDashboard() {
     toolActivity,
     sendMessage, retry, togglePin,
     setAiMode, setSearchQuery, setInputText, switchTab,
+    setPendingSessionTitle,
   } = useChat();
 
   const { open: cmdOpen, setOpen: setCmdOpen } = useCommandPalette();
@@ -251,9 +252,12 @@ export default function ChatDashboard() {
   // Declared AFTER the deep-link sync above: switchTab() clears the
   // input, so this effect must win the same render pass.
   useEffect(() => {
-    const initialPrompt = (location.state as { initialPrompt?: string } | null)?.initialPrompt;
-    if (!initialPrompt) return;
-    setInputText(initialPrompt);
+    const navState = location.state as { initialPrompt?: string; sessionTitle?: string } | null;
+    if (!navState?.initialPrompt) return;
+    setInputText(navState.initialPrompt);
+    // Handoffs carry a human session title ("Startup: AI support tools")
+    // so the conversation never sits in the sidebar as "New Chat".
+    if (navState.sessionTitle) setPendingSessionTitle(navState.sessionTitle);
     addToast('Prompt ready — press Enter to send', 'success');
     navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -318,7 +322,9 @@ export default function ChatDashboard() {
   // Listen for route-to-chat events from business panel AI actions
   useEffect(() => {
     const handler = (e: Event) => {
-      const detail = (e as CustomEvent).detail as { prompt: string; workspace?: WorkspaceTab };
+      const detail = (e as CustomEvent).detail as {
+        prompt: string; workspace?: WorkspaceTab; title?: string;
+      };
       if (detail?.prompt) {
         // Land on the requested workspace when it's a chat surface — the
         // embedded Market Complaint Radar targets 'startup' so its handoff
@@ -331,12 +337,15 @@ export default function ChatDashboard() {
           : 'chat';
         handleTabChange(target);
         setInputText(detail.prompt);
+        // Human session title from the handoff (e.g. "Startup: AI support
+        // tools") — applied once the target tab's session activates.
+        if (detail.title) setPendingSessionTitle(detail.title);
         addToast('Prompt ready — press Enter to send', 'success');
       }
     };
     window.addEventListener('korvix-route-to-chat', handler);
     return () => window.removeEventListener('korvix-route-to-chat', handler);
-  }, [handleTabChange, setInputText, addToast]);
+  }, [handleTabChange, setInputText, addToast, setPendingSessionTitle]);
 
   // Global New Chat
   const handleNewChat = useCallback(() => {

@@ -124,6 +124,13 @@ class ReportCitation:
     url: str
     source: str
     published_at: Optional[str] = None
+    # How this item actually contributed (additive — powers the honest
+    # "evidence trail" UI; never inferred client-side):
+    #   direct    — carried first-person complaint language
+    #   complaint — matched complaint language, fed a cluster
+    #   broad     — fetched but low-quality/broad content (SEO/news)
+    #   context   — fetched market context, no complaint language
+    evidence_role: str = "context"
 
     def to_dict(self) -> dict:
         return asdict(self)
