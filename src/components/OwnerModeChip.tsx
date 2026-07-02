@@ -162,16 +162,16 @@ export default function OwnerModeChip() {
           whileHover={{ scale: 1.04 }}
           whileTap={{ scale: 0.96 }}
           onClick={() => setPanelOpen(true)}
-          className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#B98B63]/[0.1] border border-[#B98B63]/30 hover:border-[#B98B63]/50 transition-all shrink-0"
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#52677A]/[0.1] border border-[#52677A]/30 hover:border-[#52677A]/50 transition-all shrink-0"
           title="Owner Session Active — click to open the Owner Panel"
           data-testid="owner-mode-chip-unlocked"
         >
           <span className="relative flex h-1.5 w-1.5">
-            <span className="absolute inline-flex h-full w-full rounded-full bg-[#C99A70] opacity-40 animate-ping" />
-            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[#C99A70]" />
+            <span className="absolute inline-flex h-full w-full rounded-full bg-[#7890A3] opacity-40 animate-ping" />
+            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[#7890A3]" />
           </span>
-          <ShieldCheck className="h-3 w-3 text-[#C99A70]" />
-          <span className="text-[10px] font-semibold tracking-wide text-[#E3C7A8] whitespace-nowrap hidden sm:inline">
+          <ShieldCheck className="h-3 w-3 text-[#7890A3]" />
+          <span className="text-[10px] font-semibold tracking-wide text-[#C6D2DE] whitespace-nowrap hidden sm:inline">
             Owner Session Active
           </span>
         </motion.button>

@@ -11,7 +11,7 @@ import StartupMarketRadar from '@/components/startup/StartupMarketRadar';
 
 const COLOR_MAP: Record<string, { bg: string; border: string; icon: string }> = {
   amber:  { bg: 'bg-amber-500/[0.05]',  border: 'border-amber-500/10',  icon: 'text-amber-400' },
-  cyan:   { bg: 'bg-cyan-500/[0.05]',   border: 'border-cyan-500/10',   icon: 'text-cyan-400' },
+  cyan:   { bg: 'bg-cyan-500/[0.05]',   border: 'border-[#52677A]/20',   icon: 'text-[#7890A3]' },
   violet: { bg: 'bg-violet-500/[0.05]', border: 'border-violet-500/10', icon: 'text-violet-400' },
   emerald:{ bg: 'bg-emerald-500/[0.05]',border: 'border-emerald-500/10',icon: 'text-emerald-400' },
   rose:   { bg: 'bg-rose-500/[0.05]',   border: 'border-rose-500/10',   icon: 'text-rose-400' },
@@ -51,7 +51,7 @@ export default function StartupHub() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0B0B0C] text-white flex flex-col">
+    <div className="min-h-screen bg-[#0B0E12] text-white flex flex-col">
       <Navigation />
 
       <div className="flex-1 overflow-y-auto scrollbar-thin">
@@ -65,8 +65,8 @@ export default function StartupHub() {
               </button>
             </div>
             <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#B98B63]/[0.1] border border-[#B98B63]/25">
-                <Radar className="h-5 w-5 text-[#C99A70]" />
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#52677A]/[0.1] border border-[#52677A]/25">
+                <Radar className="h-5 w-5 text-[#637B90]" />
               </div>
               <div>
                 <h1 className="text-2xl font-semibold text-white tracking-tight">Market Complaint Radar</h1>
@@ -140,13 +140,13 @@ export default function StartupHub() {
                                 <textarea
                                   value={formValues[i] || ''} onChange={(e) => setFormValues((p) => ({ ...p, [i]: e.target.value }))}
                                   placeholder={input.placeholder} rows={4}
-                                  className="w-full rounded-xl bg-white/[0.015] border border-white/[0.04] p-3 text-[13px] text-white placeholder:text-[#64748B] focus:border-[#B98B63]/30 focus:bg-white/[0.02] outline-none transition-all resize-none"
+                                  className="w-full rounded-xl bg-white/[0.015] border border-white/[0.04] p-3 text-[13px] text-white placeholder:text-[#64748B] focus:border-[#52677A]/30 focus:bg-white/[0.02] outline-none transition-all resize-none"
                                 />
                               ) : (
                                 <input
                                   type="text" value={formValues[i] || ''} onChange={(e) => setFormValues((p) => ({ ...p, [i]: e.target.value }))}
                                   placeholder={input.placeholder}
-                                  className="w-full h-10 rounded-xl bg-white/[0.015] border border-white/[0.04] px-3 text-[13px] text-white placeholder:text-[#64748B] focus:border-[#B98B63]/30 focus:bg-white/[0.02] outline-none transition-all"
+                                  className="w-full h-10 rounded-xl bg-white/[0.015] border border-white/[0.04] px-3 text-[13px] text-white placeholder:text-[#64748B] focus:border-[#52677A]/30 focus:bg-white/[0.02] outline-none transition-all"
                                 />
                               )}
                             </div>

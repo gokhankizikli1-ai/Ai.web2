@@ -464,17 +464,17 @@ export default function ChatDashboard() {
   };
 
   return (
-    <div className="relative flex h-[100dvh] w-full max-w-full overflow-hidden" style={{ background: '#0B0B0C', color: '#F2F2F3' }}>
+    <div className="relative flex h-[100dvh] w-full max-w-full overflow-hidden" style={{ background: '#0B0E12', color: '#F5F7FA' }}>
       {/* Ambient background layers */}
       <div className="absolute inset-0 pointer-events-none">
         {/* Base gradient */}
-        <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, #0B0B0C 0%, #111113 40%, #0E0E10 100%)' }} />
+        <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, #0B0E12 0%, #11161C 40%, #0E0E10 100%)' }} />
         {/* Top-right cyan ambient glow */}
-        <div className="absolute -top-[200px] -right-[200px] w-[600px] h-[600px] rounded-full opacity-[0.04]" style={{ background: 'radial-gradient(circle, #B98B63 0%, transparent 70%)' }} />
+        <div className="absolute -top-[200px] -right-[200px] w-[600px] h-[600px] rounded-full opacity-[0.04]" style={{ background: 'radial-gradient(circle, #52677A 0%, transparent 70%)' }} />
         {/* Bottom-left blue ambient glow */}
-        <div className="absolute -bottom-[200px] -left-[200px] w-[500px] h-[500px] rounded-full opacity-[0.03]" style={{ background: 'radial-gradient(circle, #8F8F98 0%, transparent 70%)' }} />
+        <div className="absolute -bottom-[200px] -left-[200px] w-[500px] h-[500px] rounded-full opacity-[0.03]" style={{ background: 'radial-gradient(circle, #94A3B8 0%, transparent 70%)' }} />
         {/* Center subtle depth */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] rounded-full opacity-[0.015]" style={{ background: 'radial-gradient(circle, #B98B63 0%, transparent 60%)' }} />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] rounded-full opacity-[0.015]" style={{ background: 'radial-gradient(circle, #52677A 0%, transparent 60%)' }} />
         {/* Subtle grid overlay */}
         <div className="absolute inset-0 opacity-[0.008]" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '80px 80px' }} />
       </div>
@@ -521,7 +521,7 @@ export default function ChatDashboard() {
             {!sidebarOpen && (
               <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
                 onClick={() => setSidebarOpen(true)}
-                className="h-7 w-7 shrink-0 flex items-center justify-center rounded-md transition-all border hover:text-cyan-400 hover:bg-white/[0.04] hover:border-cyan-500/15"
+                className="h-7 w-7 shrink-0 flex items-center justify-center rounded-md transition-all border hover:text-[#7890A3] hover:bg-white/[0.04] hover:border-[#52677A]/20"
                 style={{ color: 'rgba(148,163,184,0.5)', borderColor: 'rgba(255,255,255,0.05)' }}
               >
                 <PanelLeftOpen className="h-3.5 w-3.5" />

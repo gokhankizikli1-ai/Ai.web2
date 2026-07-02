@@ -42,12 +42,12 @@ export default function TestimonialsSection() {
             >
               <div className="flex gap-1 mb-4">
                 {[...Array(5)].map((_, i) => (
-                  <Star key={i} className="h-4 w-4 fill-cyan-400 text-cyan-600" />
+                  <Star key={i} className="h-4 w-4 fill-cyan-400 text-[#52677A]" />
                 ))}
               </div>
               <p className="text-foreground mb-6 leading-relaxed text-sm">"{t.quote}"</p>
               <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-cyan-600 to-blue-600 text-[#111827] text-sm font-bold">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-[#101827] to-[#52677A] text-[#111827] text-sm font-bold">
                   {t.avatar}
                 </div>
                 <div>

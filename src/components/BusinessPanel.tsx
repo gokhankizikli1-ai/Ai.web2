@@ -55,8 +55,8 @@ export default function BusinessPanel() {
       {/* Header */}
       <div className="shrink-0 px-4 pt-3 pb-1.5">
         <div className="flex items-center gap-2">
-          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[#B98B63]/[0.08] border border-[#B98B63]/20">
-            <Building2 className="h-3 w-3 text-[#C99A70]" />
+          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[#52677A]/[0.08] border border-[#52677A]/20">
+            <Building2 className="h-3 w-3 text-[#637B90]" />
           </div>
           <div>
             <h2 className="text-[13px] font-semibold text-white">Business Workspace</h2>
@@ -90,7 +90,7 @@ export default function BusinessPanel() {
                 embedded mode hands "Send to Startup Advisor" off via the
                 in-app korvix-route-to-chat event instead of a navigation. */}
             <div className="flex items-center gap-2 mb-2.5">
-              <Radar className="h-3.5 w-3.5 text-[#C99A70]" />
+              <Radar className="h-3.5 w-3.5 text-[#637B90]" />
               <div>
                 <span className="text-[13px] font-medium text-white">Market Complaint Radar</span>
                 <p className="text-[10px] text-slate-500">Find where the market is angry before you build — live public signals, honest source status.</p>

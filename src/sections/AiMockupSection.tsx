@@ -22,7 +22,7 @@ export default function AiMockupSection() {
           <div className="p-4 sm:p-6 space-y-5">
             {/* AI message */}
             <div className="flex gap-3">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-cyan-600 to-blue-600">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#101827] to-[#52677A]">
                 <Sparkles className="h-4 w-4 text-[#111827]" />
               </div>
               <div className="space-y-1 min-w-0 flex-1">
@@ -51,7 +51,7 @@ export default function AiMockupSection() {
 
             {/* AI response */}
             <div className="flex gap-3">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-cyan-600 to-blue-600">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#101827] to-[#52677A]">
                 <Sparkles className="h-4 w-4 text-[#111827]" />
               </div>
               <div className="space-y-1 min-w-0 flex-1 max-w-lg">
@@ -75,7 +75,7 @@ export default function AiMockupSection() {
             <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-3 mt-4">
               <MessageSquare className="h-4 w-4 text-muted-foreground shrink-0" />
               <div className="flex-1 text-sm text-muted-foreground">Type a message...</div>
-              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-500/20 text-cyan-600 shrink-0">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#EEF1F4]0/20 text-[#52677A] shrink-0">
                 <Send className="h-3.5 w-3.5" />
               </div>
             </div>

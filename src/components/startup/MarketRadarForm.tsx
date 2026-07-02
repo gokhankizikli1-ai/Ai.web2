@@ -84,7 +84,7 @@ export default function MarketRadarForm({
         }}
         placeholder="AI customer support tools, small restaurant POS systems, crypto portfolio tracking…"
         rows={2}
-        className="w-full rounded-xl bg-white/[0.02] border border-white/[0.06] p-3 text-[13px] text-slate-100 placeholder:text-slate-500 focus:border-[#B98B63]/40 focus:bg-white/[0.03] outline-none transition-all resize-none"
+        className="w-full rounded-xl bg-white/[0.02] border border-white/[0.06] p-3 text-[13px] text-slate-100 placeholder:text-slate-500 focus:border-[#52677A]/40 focus:bg-white/[0.03] outline-none transition-all resize-none"
       />
 
       <div className="grid sm:grid-cols-2 gap-3 sm:gap-4 mt-4">
@@ -98,7 +98,7 @@ export default function MarketRadarForm({
                 onClick={() => onTimeframeChange(tf.days)}
                 className={`px-3 h-8 rounded-lg text-[12px] border transition-colors ${
                   timeframe === tf.days
-                    ? 'bg-[#B98B63]/[0.14] border-[#B98B63]/40 text-[#E3C7A8]'
+                    ? 'bg-[#52677A]/[0.14] border-[#52677A]/40 text-[#9DB0C2]'
                     : 'bg-white/[0.02] border-white/[0.06] text-slate-400 hover:text-slate-200'
                 }`}
               >
@@ -118,7 +118,7 @@ export default function MarketRadarForm({
               value={region}
               onChange={(e) => onRegionChange(e.target.value)}
               placeholder="global"
-              className="w-full h-8 rounded-lg bg-white/[0.02] border border-white/[0.06] pl-8 pr-3 text-[12px] text-slate-100 placeholder:text-slate-500 focus:border-[#B98B63]/40 outline-none transition-all"
+              className="w-full h-8 rounded-lg bg-white/[0.02] border border-white/[0.06] pl-8 pr-3 text-[12px] text-slate-100 placeholder:text-slate-500 focus:border-[#52677A]/40 outline-none transition-all"
             />
           </div>
         </div>
@@ -142,7 +142,7 @@ export default function MarketRadarForm({
                   !configured
                     ? 'bg-white/[0.008] border-white/[0.03] text-slate-600 cursor-not-allowed'
                     : active
-                      ? 'bg-[#B98B63]/[0.14] border-[#B98B63]/40 text-[#E3C7A8]'
+                      ? 'bg-[#52677A]/[0.14] border-[#52677A]/40 text-[#9DB0C2]'
                       : 'bg-white/[0.02] border-white/[0.06] text-slate-400 hover:text-slate-200'
                 }`}
               >
@@ -161,14 +161,14 @@ export default function MarketRadarForm({
         disabled={!canSubmit}
         className={`mt-5 w-full h-11 rounded-xl text-[13px] font-medium flex items-center justify-center gap-2 border transition-all ${
           canSubmit
-            ? 'bg-[#B98B63]/[0.16] border-[#B98B63]/45 text-[#F2E3D0] hover:bg-[#B98B63]/[0.22]'
+            ? 'bg-[#52677A]/[0.16] border-[#52677A]/45 text-[#DCE4EC] hover:bg-[#52677A]/[0.22]'
             : 'bg-white/[0.02] border-white/[0.05] text-slate-500 cursor-not-allowed'
         }`}
       >
         <Radar className="h-4 w-4" />
         {loading ? 'Analyzing…' : 'Analyze market complaints'}
         {canSubmit && !loading && (
-          <kbd className="hidden sm:inline-flex items-center rounded bg-black/20 border border-white/[0.08] px-1.5 py-0.5 text-[9px] text-[#E3C7A8]/70 font-mono ml-1">
+          <kbd className="hidden sm:inline-flex items-center rounded bg-black/20 border border-white/[0.08] px-1.5 py-0.5 text-[9px] text-[#9DB0C2]/70 font-mono ml-1">
             ⌘↵
           </kbd>
         )}

@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -52,7 +52,7 @@ const markdownComponents = {
       );
     }
     return (
-      <code className="px-1.5 py-0.5 rounded-md bg-white/[0.06] text-[#C99A70] text-[12px] font-mono" {...props}>
+      <code className="px-1.5 py-0.5 rounded-md bg-white/[0.06] text-[#637B90] text-[12px] font-mono" {...props}>
         {children}
       </code>
     );
@@ -79,7 +79,7 @@ const markdownComponents = {
     return <h3 className="text-[13px] font-medium text-white mt-3 mb-1">{children}</h3>;
   },
   blockquote({ children }: any) {
-    return <blockquote className="border-l-2 border-[#B98B63]/30 pl-3 my-2 text-slate-400 italic">{children}</blockquote>;
+    return <blockquote className="border-l-2 border-[#52677A]/30 pl-3 my-2 text-slate-400 italic">{children}</blockquote>;
   },
   hr() {
     return <hr className="my-3 border-white/[0.04]" />;
@@ -98,7 +98,7 @@ const markdownComponents = {
   },
   a({ href, children }: any) {
     return (
-      <a href={href} target="_blank" rel="noopener noreferrer" className="text-[#C99A70] hover:text-[#D9AC84] underline underline-offset-2 decoration-[#B98B63]/30 hover:decoration-[#B98B63]/60 transition-colors">
+      <a href={href} target="_blank" rel="noopener noreferrer" className="text-[#637B90] hover:text-[#7890A3] underline underline-offset-2 decoration-[#52677A]/30 hover:decoration-[#52677A]/60 transition-colors">
         {children}
       </a>
     );
@@ -149,28 +149,16 @@ export default function MessageBubble({
   const [copied, setCopied] = useState(false);
   const { addToast } = useToast();
   const contentRef = useRef<HTMLDivElement>(null);
-  const [displayedContent, setDisplayedContent] = useState(shouldAnimate ? '' : content);
   const isShort = content.length < 80 && !content.includes('\n') && !content.includes('```');
 
-  // Stream-in animation for latest assistant message
-  useEffect(() => {
-    if (!shouldAnimate) {
-      setDisplayedContent(content);
-      return;
-    }
-    let index = 0;
-    const chunkSize = Math.max(1, Math.floor(content.length / 40));
-    const interval = setInterval(() => {
-      index += chunkSize;
-      if (index >= content.length) {
-        setDisplayedContent(content);
-        clearInterval(interval);
-      } else {
-        setDisplayedContent(content.slice(0, index));
-      }
-    }, 25);
-    return () => clearInterval(interval);
-  }, [shouldAnimate, content]);
+  // Replay-bug fix: there is NO client-side typewriter. Server streaming
+  // already fills the bubble token-by-token live (see useChat), so a
+  // second client-side replay after completion was the "answer streams
+  // again very fast" bug. We render `content` directly — actively
+  // streaming messages update live, completed messages are static, and
+  // history restored from localStorage never animates. `shouldAnimate`
+  // is accepted for API compatibility but intentionally unused.
+  void shouldAnimate;
 
   const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(content);
@@ -239,12 +227,11 @@ export default function MessageBubble({
 
   // ─── Assistant message ───
   // Split a trailing model-written sources block into a compact collapsed
-  // control. Only once the text is fully displayed — mid-typewriter the
-  // partial content would make detection unstable.
-  const isComplete = !isGenerating && displayedContent === content;
-  const { body, sources, count } = isComplete
-    ? splitTrailingSources(displayedContent)
-    : { body: displayedContent, sources: null, count: 0 };
+  // control — only once generation is complete (partial content mid-stream
+  // would make detection unstable).
+  const { body, sources, count } = !isGenerating
+    ? splitTrailingSources(content)
+    : { body: content, sources: null, count: 0 };
 
   return (
     <motion.div
@@ -275,18 +262,13 @@ export default function MessageBubble({
             </ReactMarkdown>
           </div>
 
-          {/* Streaming cursor — post-stream typewriter effect only.
-              The rich "Thinking… / Analyzing… / Building…" indicator
-              renders OUTSIDE the bubble (in ChatView, above the
-              assistant area) ONLY during the initial latency before
-              the first token arrives. As soon as streaming begins,
-              the placeholder bubble appears and content fills it
-              live — the indicator is gone by then. We deliberately
-              do NOT render any indicator inside the bubble while
-              text is streaming. */}
-          {shouldAnimate && displayedContent.length < content.length && (
+          {/* Live streaming caret — shown ONLY while THIS message is the
+              actively generating one. Server tokens fill the bubble live;
+              the caret trails the text. It disappears the moment
+              generation completes, so no post-completion replay. */}
+          {isGenerating && isLatestAssistant && (
             <motion.span
-              className="inline-block w-[2px] h-4 bg-[#B98B63]/60 ml-0.5 align-middle"
+              className="inline-block w-[2px] h-4 bg-[#7890A3] ml-0.5 align-middle"
               animate={{ opacity: [1, 0] }}
               transition={{ duration: 0.5, repeat: Infinity }}
             />
@@ -297,10 +279,10 @@ export default function MessageBubble({
             Only real links the model actually wrote; nothing invented. */}
         {sources && (
           <details className="mt-1.5 group/sources">
-            <summary className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] text-[#8F8F98] hover:text-[#C9C9CE] border border-[#2A2A2D] bg-white/[0.01] cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden transition-colors">
+            <summary className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] text-[#94A3B8] hover:text-[#D7DEE8] border border-[#2A3440] bg-white/[0.01] cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden transition-colors">
               Sources ({count})
             </summary>
-            <div className="mt-1.5 px-3 py-2 rounded-xl border border-[#2A2A2D] bg-white/[0.01] prose prose-invert prose-sm max-w-none">
+            <div className="mt-1.5 px-3 py-2 rounded-xl border border-[#2A3440] bg-white/[0.01] prose prose-invert prose-sm max-w-none">
               <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                 {sources}
               </ReactMarkdown>
@@ -322,10 +304,10 @@ export default function MessageBubble({
             {onPin && (
               <button
                 onClick={() => onPin(fullMessage)}
-                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[#64748B] hover:text-[#C99A70] hover:bg-[#B98B63]/[0.06] transition-all"
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[#64748B] hover:text-[#637B90] hover:bg-[#52677A]/[0.06] transition-all"
                 title={isPinned ? 'Unpin' : 'Pin'}
               >
-                {isPinned ? <PinOff className="h-3 w-3 text-[#C99A70]" /> : <Pin className="h-3 w-3" />}
+                {isPinned ? <PinOff className="h-3 w-3 text-[#637B90]" /> : <Pin className="h-3 w-3" />}
               </button>
             )}
 

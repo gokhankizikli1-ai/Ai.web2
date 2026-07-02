@@ -13,7 +13,7 @@ export default function ValidationSprintPanel({ sprint }: { sprint: SprintDay[] 
   return (
     <div className="rounded-xl border border-white/[0.05] bg-white/[0.01] p-4">
       <div className="flex items-center gap-2 mb-3">
-        <CalendarCheck className="h-3.5 w-3.5 text-[#9FB48D]" />
+        <CalendarCheck className="h-3.5 w-3.5 text-[#86A08F]" />
         <h3 className="text-[13px] font-semibold text-slate-100">7-day validation sprint</h3>
       </div>
       <div className="space-y-2.5">
@@ -32,7 +32,7 @@ export default function ValidationSprintPanel({ sprint }: { sprint: SprintDay[] 
       {!expanded && sprint.length > VISIBLE_BY_DEFAULT && (
         <button
           onClick={() => setExpanded(true)}
-          className="mt-3 flex items-center gap-1 text-[11px] text-[#C99A70] hover:text-[#D9AC84] transition-colors"
+          className="mt-3 flex items-center gap-1 text-[11px] text-[#637B90] hover:text-[#7890A3] transition-colors"
         >
           <ChevronDown className="h-3 w-3" />
           Show full sprint (Day 3–{sprint.length})

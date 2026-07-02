@@ -46,8 +46,8 @@ export default function Navbar() {
         <div className="flex items-center justify-between h-14">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2.5 group">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-500/[0.08] border border-cyan-100 group-hover:bg-cyan-500/[0.12] transition-all">
-              <Sparkles className="h-3.5 w-3.5 text-cyan-500" />
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#EEF1F4]0/[0.08] border border-[#DDE3EA] group-hover:bg-[#EEF1F4]0/[0.12] transition-all">
+              <Sparkles className="h-3.5 w-3.5 text-[#52677A]" />
             </div>
             <span className="text-[15px] font-bold tracking-tight text-foreground">KorvixAI</span>
           </Link>
@@ -84,8 +84,8 @@ export default function Navbar() {
                   </Button>
                 </Link>
                 <div className="flex items-center gap-2 pl-2.5 border-l border-border">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-cyan-50 border border-cyan-100">
-                    <span className="text-[10px] font-semibold text-cyan-600">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#EEF1F4] border border-[#DDE3EA]">
+                    <span className="text-[10px] font-semibold text-[#52677A]">
                       {(user?.name || 'U').slice(0, 2).toUpperCase()}
                     </span>
                   </div>

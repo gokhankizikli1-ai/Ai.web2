@@ -11,7 +11,7 @@ export default function CTASection() {
       {/* Animated background */}
       <div className="absolute inset-0">
         {/* Central glow — subtle, not foggy */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] bg-cyan-400/[0.04] rounded-full blur-[180px] pointer-events-none" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] bg-[#7890A3]/[0.04] rounded-full blur-[180px] pointer-events-none" />
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[350px] bg-violet-400/[0.025] rounded-full blur-[150px] pointer-events-none" />
 
         {/* Grid */}
@@ -28,7 +28,7 @@ export default function CTASection() {
       {[...Array(8)].map((_, i) => (
         <motion.div
           key={i}
-          className="absolute w-1 h-1 rounded-full bg-cyan-400/15 pointer-events-none"
+          className="absolute w-1 h-1 rounded-full bg-[#7890A3]/15 pointer-events-none"
           style={{
             left: `${10 + i * 12}%`,
             top: `${15 + (i % 4) * 20}%`,
@@ -54,9 +54,9 @@ export default function CTASection() {
           viewport={{ once: true }}
           className="mb-6"
         >
-          <span className="inline-flex items-center gap-2 rounded-full border border-cyan-500/15 bg-cyan-50 px-4 py-1.5">
-            <Sparkles className="h-3 w-3 text-cyan-600" />
-            <span className="text-[12px] font-medium text-cyan-600">Start building today</span>
+          <span className="inline-flex items-center gap-2 rounded-full border border-[#52677A]/15 bg-[#EEF1F4] px-4 py-1.5">
+            <Sparkles className="h-3 w-3 text-[#52677A]" />
+            <span className="text-[12px] font-medium text-[#52677A]">Start building today</span>
           </span>
         </motion.div>
 
@@ -69,7 +69,7 @@ export default function CTASection() {
           className="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight text-[#111827] mb-5"
         >
           Build Faster With{' '}
-          <span className="bg-clip-text text-transparent bg-gradient-to-r from-cyan-600 to-purple-600">
+          <span className="bg-clip-text text-transparent bg-gradient-to-r from-[#101827] to-[#52677A]">
             AI
           </span>
         </motion.h2>

@@ -11,10 +11,10 @@ const fadeUp = (delay = 0) => ({
 
 const TOOLS = [
   { icon: Search, label: 'Product Research', desc: 'Find winning products with demand signals.', color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-100' },
-  { icon: Layers, label: 'Product Analyzer', desc: 'Deep-dive on any product, niche, or listing.', color: 'text-cyan-600', bg: 'bg-cyan-50', border: 'border-cyan-100' },
+  { icon: Layers, label: 'Product Analyzer', desc: 'Deep-dive on any product, niche, or listing.', color: 'text-[#52677A]', bg: 'bg-[#EEF1F4]', border: 'border-[#DDE3EA]' },
   { icon: Megaphone, label: 'Ad Copy Generator', desc: 'High-converting ads for Facebook, Google, and TikTok.', color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-100' },
   { icon: Flame, label: 'TikTok Hooks', desc: 'Viral hooks and scripts for short-form video.', color: 'text-rose-600', bg: 'bg-rose-50', border: 'border-rose-100' },
-  { icon: Globe, label: 'Shopify SEO', desc: 'Optimize product pages and collections for search.', color: 'text-violet-600', bg: 'bg-violet-50', border: 'border-violet-100' },
+  { icon: Globe, label: 'Shopify SEO', desc: 'Optimize product pages and collections for search.', color: 'text-violet-600', bg: 'bg-[#EEF1F4]', border: 'border-[#DDE3EA]' },
   { icon: DollarSign, label: 'Pricing Optimizer', desc: 'Smart pricing based on elasticity and competitors.', color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100' },
 ];
 

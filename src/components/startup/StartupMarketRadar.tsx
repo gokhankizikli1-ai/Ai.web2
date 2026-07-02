@@ -232,10 +232,10 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
             <motion.div
               key="error"
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="rounded-2xl border border-[#C27676]/30 bg-[#C27676]/[0.06] p-6"
+              className="rounded-2xl border border-[#B76E79]/30 bg-[#B76E79]/[0.06] p-6"
             >
               <div className="flex items-start gap-3">
-                <MessageSquareWarning className="h-4 w-4 text-[#D28C8C] shrink-0 mt-0.5" />
+                <MessageSquareWarning className="h-4 w-4 text-[#C98A93] shrink-0 mt-0.5" />
                 <div className="min-w-0 flex-1">
                   <h3 className="text-[13px] font-semibold text-slate-100 mb-1">
                     {error.kind === 'disabled' ? 'Market Intelligence is not enabled'

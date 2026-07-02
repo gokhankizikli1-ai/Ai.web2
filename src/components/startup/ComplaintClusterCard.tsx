@@ -3,8 +3,8 @@ import { ChevronRight, ExternalLink, Quote } from 'lucide-react';
 import { sourceLabel, type ComplaintCluster } from '@/lib/startupMarketApi';
 
 function painTone(score: number): string {
-  if (score >= 70) return 'text-[#DFA9A9] border-[#C27676]/40 bg-[#C27676]/[0.12]';
-  if (score >= 40) return 'text-[#E3C7A8] border-[#B98B63]/40 bg-[#B98B63]/[0.12]';
+  if (score >= 70) return 'text-[#D7A6AD] border-[#B76E79]/40 bg-[#B76E79]/[0.12]';
+  if (score >= 40) return 'text-[#9DB0C2] border-[#52677A]/40 bg-[#52677A]/[0.12]';
   return 'text-slate-200 border-white/[0.1] bg-white/[0.04]';
 }
 
@@ -49,7 +49,7 @@ export default function ComplaintClusterCard({
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[10px] text-slate-400">
         <span>{cluster.frequency} signal{cluster.frequency === 1 ? '' : 's'}</span>
         {typeof cluster.direct_complaints === 'number' && cluster.direct_complaints > 0 && (
-          <span className="text-[#9FB48D] font-medium">
+          <span className="text-[#86A08F] font-medium">
             {cluster.direct_complaints} direct complaint{cluster.direct_complaints === 1 ? '' : 's'}
           </span>
         )}
@@ -77,7 +77,7 @@ export default function ComplaintClusterCard({
             <div key={s.label}>
               <div className="h-1 rounded-full bg-white/[0.06] overflow-hidden">
                 <div
-                  className={`h-full rounded-full ${s.label === 'Saturation' ? 'bg-[#C27676]/70' : 'bg-[#B98B63]/60'}`}
+                  className={`h-full rounded-full ${s.label === 'Saturation' ? 'bg-[#B76E79]/70' : 'bg-[#52677A]/60'}`}
                   style={{ width: `${Math.min(100, Math.max(0, s.value))}%` }}
                 />
               </div>
@@ -93,7 +93,7 @@ export default function ComplaintClusterCard({
                 href={url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] text-slate-400 border border-white/[0.06] hover:text-[#D9AC84] hover:border-[#B98B63]/35 transition-colors max-w-[220px]"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] text-slate-400 border border-white/[0.06] hover:text-[#7890A3] hover:border-[#52677A]/35 transition-colors max-w-[220px]"
               >
                 <ExternalLink className="h-2.5 w-2.5 shrink-0" />
                 <span className="truncate">{url.replace(/^https?:\/\/(www\.)?/, '')}</span>
