@@ -31,11 +31,11 @@ const SECTIONS = [
 ];
 
 const ACCENT_COLORS = [
-  { id: 'cyan', label: 'Cyan', class: 'from-cyan-400 to-blue-600', dot: 'bg-cyan-400' },
-  { id: 'emerald', label: 'Emerald', class: 'from-emerald-400 to-emerald-600', dot: 'bg-emerald-400' },
-  { id: 'violet', label: 'Violet', class: 'from-violet-400 to-purple-600', dot: 'bg-violet-400' },
-  { id: 'amber', label: 'Amber', class: 'from-amber-400 to-orange-600', dot: 'bg-amber-400' },
-  { id: 'rose', label: 'Rose', class: 'from-rose-400 to-pink-600', dot: 'bg-rose-400' },
+  { id: 'cyan', label: 'Cyan', class: 'from-[#7890A3] to-[#52677A]', dot: 'bg-[#7890A3]' },
+  { id: 'emerald', label: 'Emerald', class: 'from-[#6F8F7A] to-[#6F8F7A]', dot: 'bg-[#6F8F7A]' },
+  { id: 'violet', label: 'Violet', class: 'from-[#7890A3] to-[#52677A]', dot: 'bg-[#7890A3]' },
+  { id: 'amber', label: 'Amber', class: 'from-[#A68A5B] to-[#A68A5B]', dot: 'bg-[#A68A5B]' },
+  { id: 'rose', label: 'Rose', class: 'from-[#B76E79] to-[#52677A]', dot: 'bg-[#B76E79]' },
 ];
 
 const TIMEZONES = [
@@ -213,7 +213,7 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
                       className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[12px] transition-all ${currentLang === l.code ? 'bg-white/[0.05] text-white' : 'text-slate-500 hover:text-slate-300 hover:bg-white/[0.03]'}`}>
                       <Globe className="w-3.5 h-3.5 text-slate-600 shrink-0" />
                       <span className="flex-1">{l.label}</span>
-                      {currentLang === l.code && <Check className="h-3 w-3 text-cyan-400 shrink-0" />}
+                      {currentLang === l.code && <Check className="h-3 w-3 text-[#52677A] shrink-0" />}
                     </button>
                   ))}
                 </div>
@@ -327,11 +327,11 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
                   background: 'rgba(255,255,255,0.04)',
                   border: '1px solid rgba(255,255,255,0.06)',
                 }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(239,68,68,0.2)'; }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(183,110,121,0.2)'; }}
                 onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.06)'; }}
               >
                 <span>{tag}</span>
-                <X className="h-2.5 w-2.5 text-white/20 group-hover:text-red-400/60 transition-colors" />
+                <X className="h-2.5 w-2.5 text-white/20 group-hover:text-[#B76E79]/60 transition-colors" />
               </motion.button>
             ))}
           </div>
@@ -390,8 +390,8 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
             animate={{ opacity: 1, scale: 1 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => { addTag(newTag); setNewTag(''); }}
-            className="px-3 py-2 rounded-lg text-[11px] font-medium text-cyan-400/70 hover:text-cyan-300 transition-all"
-            style={{ background: 'rgba(34,211,238,0.06)', border: '1px solid rgba(34,211,238,0.1)' }}
+            className="px-3 py-2 rounded-lg text-[11px] font-medium text-[#52677A]/70 hover:text-[#637B90] transition-all"
+            style={{ background: 'rgba(82,103,122,0.06)', border: '1px solid rgba(82,103,122,0.1)' }}
           >
             Add
           </motion.button>
@@ -411,20 +411,20 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
       <div
         className="flex items-center justify-between px-4 py-3.5 rounded-xl mb-5"
         style={{
-          background: draft.memoryEnabled ? 'rgba(34,211,238,0.02)' : 'rgba(255,255,255,0.015)',
-          border: `1px solid ${draft.memoryEnabled ? 'rgba(34,211,238,0.08)' : 'rgba(255,255,255,0.04)'}`,
+          background: draft.memoryEnabled ? 'rgba(82,103,122,0.02)' : 'rgba(255,255,255,0.015)',
+          border: `1px solid ${draft.memoryEnabled ? 'rgba(82,103,122,0.08)' : 'rgba(255,255,255,0.04)'}`,
         }}
       >
         <div className="flex items-center gap-3">
           <div
             className="flex h-8 w-8 items-center justify-center rounded-lg"
             style={{
-              background: draft.memoryEnabled ? 'rgba(34,211,238,0.08)' : 'rgba(255,255,255,0.03)',
-              border: `1px solid ${draft.memoryEnabled ? 'rgba(34,211,238,0.12)' : 'rgba(255,255,255,0.05)'}`,
-              boxShadow: draft.memoryEnabled ? '0 0 8px rgba(34,211,238,0.06)' : 'none',
+              background: draft.memoryEnabled ? 'rgba(82,103,122,0.08)' : 'rgba(255,255,255,0.03)',
+              border: `1px solid ${draft.memoryEnabled ? 'rgba(82,103,122,0.12)' : 'rgba(255,255,255,0.05)'}`,
+              boxShadow: draft.memoryEnabled ? '0 0 8px rgba(82,103,122,0.06)' : 'none',
             }}
           >
-            <Brain className="h-4 w-4" style={{ color: draft.memoryEnabled ? 'rgba(34,211,238,0.7)' : 'rgba(148,163,184,0.3)' }} />
+            <Brain className="h-4 w-4" style={{ color: draft.memoryEnabled ? 'rgba(82,103,122,0.7)' : 'rgba(148,163,184,0.3)' }} />
           </div>
           <div>
             <p className="text-[13px] text-white/80 font-medium">Enable Memory</p>
@@ -437,7 +437,7 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
       {draft.memoryEnabled && (
         <div className="space-y-2">
           <p className="text-[10px] text-slate-500 flex items-center gap-1.5">
-            <Zap className="h-2.5 w-2.5 text-cyan-400/40" />
+            <Zap className="h-2.5 w-2.5 text-[#52677A]/40" />
             Interactive memory map — hover nodes to explore connections
           </p>
           <MemoryGraph />
@@ -481,8 +481,8 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
     <>
       <SectionCard title="Security" subtitle="Your data and account security">
         <SettingRow label="Data Encryption" description="End-to-end protection">
-          <span className="text-[12px] text-emerald-400/70 flex items-center gap-1.5">
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" style={{ boxShadow: '0 0 4px rgba(52,211,153,0.4)' }} />
+          <span className="text-[12px] text-[#6F8F7A]/70 flex items-center gap-1.5">
+            <div className="w-1.5 h-1.5 rounded-full bg-[#6F8F7A]" style={{ boxShadow: '0 0 4px rgba(111,143,122,0.4)' }} />
             Active
           </span>
         </SettingRow>
@@ -496,7 +496,7 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
         </SettingRow>
         <Divider />
         <SettingRow label="Delete Account" description="Permanently remove all data">
-          <Button variant="ghost" size="sm" className="h-8 text-[12px] text-red-400/60 hover:text-red-400 hover:bg-red-500/[0.06] gap-2" style={{ border: '1px solid rgba(239,68,68,0.08)' }}>
+          <Button variant="ghost" size="sm" className="h-8 text-[12px] text-[#B76E79]/60 hover:text-[#B76E79] hover:bg-[#B76E79]/[0.06] gap-2" style={{ border: '1px solid rgba(183,110,121,0.08)' }}>
             <Trash2 className="h-3.5 w-3.5" /> Delete
           </Button>
         </SettingRow>
@@ -591,14 +591,14 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
                   <div
                     className="flex h-7 w-7 items-center justify-center rounded-md shrink-0"
                     style={{
-                      background: isActive ? 'rgba(34,211,238,0.08)' : 'rgba(255,255,255,0.02)',
-                      border: `1px solid ${isActive ? 'rgba(34,211,238,0.12)' : 'rgba(255,255,255,0.04)'}`,
+                      background: isActive ? 'rgba(82,103,122,0.08)' : 'rgba(255,255,255,0.02)',
+                      border: `1px solid ${isActive ? 'rgba(82,103,122,0.12)' : 'rgba(255,255,255,0.04)'}`,
                     }}
                   >
-                    <s.icon className="h-3.5 w-3.5" style={{ color: isActive ? 'rgba(34,211,238,0.7)' : 'rgba(148,163,184,0.35)' }} />
+                    <s.icon className="h-3.5 w-3.5" style={{ color: isActive ? 'rgba(82,103,122,0.7)' : 'rgba(148,163,184,0.35)' }} />
                   </div>
                   <span className={`text-[13px] ${isActive ? 'font-medium' : ''}`}>{s.label}</span>
-                  {isActive && <div className="ml-auto w-1 h-1 rounded-full bg-cyan-400/50 shrink-0" style={{ boxShadow: '0 0 4px rgba(34,211,238,0.3)' }} />}
+                  {isActive && <div className="ml-auto w-1 h-1 rounded-full bg-[#52677A]/50 shrink-0" style={{ boxShadow: '0 0 4px rgba(82,103,122,0.3)' }} />}
                 </button>
               );
             })}
@@ -628,17 +628,17 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
           </button>
           <div className="flex items-center gap-3">
             {saved && (
-              <motion.span initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 8 }} className="text-[12px] text-emerald-400/70 flex items-center gap-1.5">
+              <motion.span initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 8 }} className="text-[12px] text-[#6F8F7A]/70 flex items-center gap-1.5">
                 <Check className="h-3.5 w-3.5" /> Saved
               </motion.span>
             )}
             <Button onClick={handleSave} disabled={!hasChanges}
               className="h-8 px-5 text-[12px] font-medium transition-all disabled:opacity-30"
               style={{
-                background: hasChanges ? 'linear-gradient(135deg, rgba(34,211,238,0.8), rgba(59,130,246,0.8))' : 'rgba(255,255,255,0.05)',
+                background: hasChanges ? 'linear-gradient(135deg, rgba(82,103,122,0.8), rgba(120,144,163,0.8))' : 'rgba(255,255,255,0.05)',
                 color: 'white',
                 border: 'none',
-                boxShadow: hasChanges ? '0 4px 16px rgba(34,211,238,0.15)' : 'none',
+                boxShadow: hasChanges ? '0 4px 16px rgba(82,103,122,0.15)' : 'none',
               }}>
               <Save className="h-3.5 w-3.5 mr-1.5" /> Save Changes
             </Button>

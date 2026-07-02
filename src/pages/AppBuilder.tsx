@@ -86,10 +86,10 @@ export default function AppBuilder() {
 
   return (
     <BuilderWorkspaceFrame
-      icon={<Cpu className="h-4 w-4 text-indigo-400" />}
+      icon={<Cpu className="h-4 w-4 text-[#52677A]" />}
       title="App Builder"
       subtitle="Describe what you want to build — Korvix locks a design direction, then plans, runs, and shows a real product workspace"
-      accent="#818cf8"
+      accent="#52677A"
       maxWidth="max-w-5xl"
     >
       {/* Input */}
@@ -102,8 +102,8 @@ export default function AppBuilder() {
           ctaLabel="Plan"
           busyLabel={label}
           busy={isBusy}
-          accent="#818cf8"
-          accent2="#22d3ee"
+          accent="#52677A"
+          accent2="#7890A3"
           examples={EXAMPLE_PROMPTS}
           onExampleSelect={setIdea}
         />
@@ -169,7 +169,7 @@ export default function AppBuilder() {
       {phase === 'idle' && !showInterview && (
         <motion.div {...fadeUp(0.1)} className="max-w-lg mx-auto text-center py-14">
           <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-white/[0.06] bg-white/[0.02]">
-            <Sparkles className="w-6 h-6 text-indigo-300/70" />
+            <Sparkles className="w-6 h-6 text-[#7890A3]/70" />
           </div>
           <h3 className="text-[15px] font-medium text-white mb-2">Describe what you want to build</h3>
           <p className="text-[12px] text-slate-500 leading-relaxed mb-6">

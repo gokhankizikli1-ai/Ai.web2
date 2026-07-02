@@ -56,7 +56,7 @@ export default function UseCasesPage() {
                 key={useCase.title}
                 className="flex items-start gap-5 rounded-2xl border border-white/10 bg-white/[0.02] p-6 sm:p-8 hover:bg-white/[0.04] transition-all duration-300"
               >
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 text-purple-400">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#52677A]/20 to-[#7890A3]/20 text-[#7890A3]">
                   <useCase.icon className="h-6 w-6" />
                 </div>
                 <div>

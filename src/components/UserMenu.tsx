@@ -40,7 +40,7 @@ export default function UserMenu() {
         className="flex items-center gap-2 pl-2 pr-1.5 py-1 rounded-lg hover:bg-white/[0.03] transition-all border border-transparent hover:border-white/[0.04]"
       >
         {/* Avatar */}
-        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-cyan-500/[0.1] border border-cyan-500/15 text-[10px] font-medium text-cyan-400/80">
+        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#52677A]/[0.1] border border-[#52677A]/15 text-[10px] font-medium text-[#52677A]/80">
           {initials}
         </div>
         <div className="hidden sm:flex items-center gap-1">
@@ -61,7 +61,7 @@ export default function UserMenu() {
             {/* User info header */}
             <div className="px-3 py-2.5 border-b border-white/[0.03]">
               <div className="flex items-center gap-2.5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-cyan-500/[0.1] border border-cyan-500/15 text-[11px] font-medium text-cyan-400/80">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#52677A]/[0.1] border border-[#52677A]/15 text-[11px] font-medium text-[#52677A]/80">
                   {initials}
                 </div>
                 <div className="min-w-0">
@@ -72,8 +72,8 @@ export default function UserMenu() {
               {/* Plan badge */}
               <div className="mt-2 flex items-center gap-1.5">
                 <span className={`text-[9px] px-1.5 py-[1px] rounded-full font-medium capitalize ${
-                  user.plan === 'pro' ? 'bg-amber-500/[0.08] text-amber-400 border border-amber-500/10' :
-                  user.plan === 'enterprise' ? 'bg-purple-500/[0.08] text-purple-400 border border-purple-500/10' :
+                  user.plan === 'pro' ? 'bg-[#52677A]/[0.08] text-[#52677A] border border-[#52677A]/10' :
+                  user.plan === 'enterprise' ? 'bg-[#52677A]/[0.08] text-[#52677A] border border-[#52677A]/10' :
                   'bg-white/[0.03] text-slate-500 border border-white/[0.04]'
                 }`}>
                   {user.plan === 'free' && <Sparkles className="h-2.5 w-2.5 inline mr-0.5" />}
@@ -105,7 +105,7 @@ export default function UserMenu() {
             <div className="border-t border-white/[0.03] py-1">
               <button
                 onClick={handleLogout}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-[12px] text-red-400/70 hover:text-red-400 hover:bg-red-500/[0.04] transition-all"
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-[12px] text-[#B76E79]/70 hover:text-[#B76E79] hover:bg-[#B76E79]/[0.04] transition-all"
               >
                 <LogOut className="h-3.5 w-3.5" />
                 Log out

@@ -88,8 +88,8 @@ export default function CreditConfirmation({ open, costKey, onConfirm, onCancel 
           >
             {/* Icon */}
             <div className="flex items-center justify-center mb-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-500/[0.06] border border-amber-500/10">
-                <Coins className="h-5 w-5 text-amber-400/70" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#A68A5B]/[0.06] border border-[#A68A5B]/10">
+                <Coins className="h-5 w-5 text-[#A68A5B]/70" />
               </div>
             </div>
 
@@ -103,16 +103,16 @@ export default function CreditConfirmation({ open, costKey, onConfirm, onCancel 
 
             {/* Cost */}
             <div className="flex items-center justify-center gap-2 mb-4 py-2.5 rounded-xl bg-white/[0.02] border border-white/[0.03]">
-              <Coins className="h-4 w-4 text-amber-400/60" />
-              <span className="text-[13px] font-semibold text-amber-400/80">
+              <Coins className="h-4 w-4 text-[#A68A5B]/60" />
+              <span className="text-[13px] font-semibold text-[#A68A5B]/80">
                 ~{cost.minCredits === cost.maxCredits ? cost.minCredits : `${cost.minCredits}–${cost.maxCredits}`} credit{cost.maxCredits > 1 ? 's' : ''}
               </span>
             </div>
 
             {/* Note */}
-            <div className="flex items-start gap-2 mb-4 px-2.5 py-2 rounded-lg bg-emerald-500/[0.02] border border-emerald-500/6">
-              <AlertTriangle className="h-3 w-3 text-emerald-400/40 shrink-0 mt-0.5" />
-              <p className="text-[10px] text-emerald-400/50 leading-relaxed">
+            <div className="flex items-start gap-2 mb-4 px-2.5 py-2 rounded-lg bg-[#6F8F7A]/[0.02] border border-[#6F8F7A]/6">
+              <AlertTriangle className="h-3 w-3 text-[#6F8F7A]/40 shrink-0 mt-0.5" />
+              <p className="text-[10px] text-[#6F8F7A]/50 leading-relaxed">
                 Normal casual chat is always free. Credits are only used for advanced operations.
               </p>
             </div>
@@ -128,7 +128,7 @@ export default function CreditConfirmation({ open, costKey, onConfirm, onCancel 
               <button
                 onClick={handleConfirm}
                 disabled={loading}
-                className="flex-1 h-9 rounded-xl bg-cyan-500/[0.08] border border-cyan-500/12 text-[12px] font-medium text-cyan-400 hover:bg-cyan-500/[0.12] transition-all disabled:opacity-50"
+                className="flex-1 h-9 rounded-xl bg-[#52677A]/[0.08] border border-[#52677A]/12 text-[12px] font-medium text-[#52677A] hover:bg-[#52677A]/[0.12] transition-all disabled:opacity-50"
               >
                 {loading ? 'Processing...' : 'Continue'}
               </button>

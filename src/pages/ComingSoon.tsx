@@ -29,8 +29,8 @@ export default function ComingSoon({ title, description, pageType = 'blog' }: Co
           transition={{ duration: 0.5 }}
           className="text-center max-w-md"
         >
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-cyan-500/[0.06] border border-cyan-500/10 mx-auto mb-5">
-            <Clock className="h-6 w-6 text-cyan-400" />
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#52677A]/[0.06] border border-[#52677A]/10 mx-auto mb-5">
+            <Clock className="h-6 w-6 text-[#7890A3]" />
           </div>
           <h1 className="text-2xl font-semibold text-white mb-2">{title}</h1>
           <p className="text-[13px] text-slate-500 mb-1">{description || msg.desc}</p>

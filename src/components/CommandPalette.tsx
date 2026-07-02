@@ -35,7 +35,7 @@ function PaletteIcon({ id, selected }: { id: string; selected: boolean }) {
   const icon = ICON_MAP[id];
   if (!icon) return <Terminal className="h-4 w-4 text-slate-600" />;
   return (
-    <span className={selected ? 'text-cyan-400' : 'text-slate-600'}>
+    <span className={selected ? 'text-[#52677A]' : 'text-slate-600'}>
       {icon}
     </span>
   );
@@ -192,7 +192,7 @@ export default function CommandPalette({ open, onClose, commands }: CommandPalet
                       }`}
                     >
                       <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors ${
-                        isSelected ? 'bg-cyan-500/10' : 'bg-white/[0.02]'
+                        isSelected ? 'bg-[#52677A]/10' : 'bg-white/[0.02]'
                       }`}>
                         <PaletteIcon id={item.id} selected={isSelected} />
                       </div>

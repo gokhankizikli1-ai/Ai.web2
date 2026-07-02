@@ -25,19 +25,19 @@ const ICONS: Record<ChromeIcon, React.ComponentType<{ className?: string; style?
 
 const STATUS_STYLE: Record<OrchestratePhase, { dot: string; text: string; label: string }> = {
   idle:       { dot: 'bg-slate-600', text: 'text-slate-500', label: 'Idle' },
-  planning:   { dot: 'bg-indigo-400 animate-pulse', text: 'text-indigo-300', label: 'Planning' },
-  running:    { dot: 'bg-indigo-400 animate-pulse', text: 'text-indigo-300', label: 'Running' },
-  rendering:  { dot: 'bg-indigo-400 animate-pulse', text: 'text-indigo-300', label: 'Rendering' },
-  completed:  { dot: 'bg-emerald-400', text: 'text-emerald-300', label: 'Live' },
-  failed:     { dot: 'bg-rose-400', text: 'text-rose-300', label: 'Failed' },
+  planning:   { dot: 'bg-[#52677A] animate-pulse', text: 'text-[#7890A3]', label: 'Planning' },
+  running:    { dot: 'bg-[#52677A] animate-pulse', text: 'text-[#7890A3]', label: 'Running' },
+  rendering:  { dot: 'bg-[#52677A] animate-pulse', text: 'text-[#7890A3]', label: 'Rendering' },
+  completed:  { dot: 'bg-[#6F8F7A]', text: 'text-[#6F8F7A]', label: 'Live' },
+  failed:     { dot: 'bg-[#B76E79]', text: 'text-[#B76E79]', label: 'Failed' },
   cancelled:  { dot: 'bg-slate-500', text: 'text-slate-400', label: 'Cancelled' },
   not_found:  { dot: 'bg-slate-500', text: 'text-slate-400', label: 'Not found' },
-  disabled:   { dot: 'bg-amber-400', text: 'text-amber-300', label: 'Unavailable' },
-  error:      { dot: 'bg-rose-400', text: 'text-rose-300', label: 'Error' },
+  disabled:   { dot: 'bg-[#A68A5B]', text: 'text-[#A68A5B]', label: 'Unavailable' },
+  error:      { dot: 'bg-[#B76E79]', text: 'text-[#B76E79]', label: 'Error' },
 };
 
 const TONE_DOT: Record<'positive' | 'neutral' | 'warning', string> = {
-  positive: 'bg-emerald-400', neutral: 'bg-slate-500', warning: 'bg-amber-400',
+  positive: 'bg-[#6F8F7A]', neutral: 'bg-slate-500', warning: 'bg-[#A68A5B]',
 };
 
 // Deterministic mini sparkline bars (purely decorative) derived from a stat's
@@ -142,7 +142,7 @@ export default function AppPreviewShell({ idea, phase, palette, nameOverride, ch
                   </div>
                   <div className="flex items-end justify-between gap-2 mb-3">
                     <span className="text-xl font-semibold text-white">{s.value}</span>
-                    <span className={`flex items-center gap-0.5 text-[10px] ${s.positive ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    <span className={`flex items-center gap-0.5 text-[10px] ${s.positive ? 'text-[#6F8F7A]' : 'text-[#B76E79]'}`}>
                       {s.positive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
                       {s.delta}
                     </span>
@@ -151,7 +151,7 @@ export default function AppPreviewShell({ idea, phase, palette, nameOverride, ch
                     {sparkline(s.value + s.delta).map((h, j) => (
                       <div
                         key={j}
-                        className={`flex-1 rounded-sm ${s.positive ? 'bg-emerald-400/30' : 'bg-rose-400/30'}`}
+                        className={`flex-1 rounded-sm ${s.positive ? 'bg-[#6F8F7A]/30' : 'bg-[#B76E79]/30'}`}
                         style={{ height: `${h}%` }}
                       />
                     ))}
@@ -189,9 +189,9 @@ export default function AppPreviewShell({ idea, phase, palette, nameOverride, ch
 
           {/* Artifact preview zone + workflow/activity panel */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <div className={`lg:col-span-2 rounded-2xl border overflow-hidden ${failed ? 'border-rose-500/15' : 'border-white/[0.07]'} bg-white/[0.015]`}>
+            <div className={`lg:col-span-2 rounded-2xl border overflow-hidden ${failed ? 'border-[#B76E79]/15' : 'border-white/[0.07]'} bg-white/[0.015]`}>
               <div className="relative flex items-center gap-2 px-4 py-2.5 border-b border-white/[0.05]">
-                <FileCode2 className="w-3.5 h-3.5" style={{ color: failed ? '#fda4af' : palette.accent }} />
+                <FileCode2 className="w-3.5 h-3.5" style={{ color: failed ? '#B76E79' : palette.accent }} />
                 <span className="text-[11px] font-medium text-slate-300">{artifactHeaderLabel}</span>
                 {busy && (
                   <div className="absolute bottom-0 left-0 right-0 h-[2px] animate-pulse-soft" style={{ background: `linear-gradient(90deg, ${palette.accent}, ${palette.accent2}, ${palette.accent})` }} />

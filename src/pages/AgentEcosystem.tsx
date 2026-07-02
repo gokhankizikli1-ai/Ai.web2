@@ -33,18 +33,18 @@ interface Agent {
 }
 
 const AGENTS: Agent[] = [
-  { id: 'scraper', name: 'Web Scraper Agent', description: 'Scrape any website and extract structured data automatically', icon: Globe, color: 'text-cyan-400', border: 'border-cyan-500/10', bg: 'bg-cyan-500/[0.04]', category: 'Research', categoryColor: 'text-cyan-400/70 bg-cyan-500/[0.06]', rating: 4.8, users: '12.4K', badge: 'Popular', features: ['Auto-scrape websites', 'Data extraction', 'Format conversion', 'Schedule runs'], inputs: [{ label: 'Website URL', placeholder: 'https://example.com' }, { label: 'What to extract', placeholder: 'Product names and prices' }], examples: ['Scrape competitor pricing', 'Extract article summaries', 'Monitor price changes'], activity: '1.2K runs/hr', confidence: 94, status: 'live', conversations: 12400, avgResponse: '2.1s' },
-  { id: 'seo', name: 'SEO Optimizer Agent', description: 'Optimize content for search engines with keyword research', icon: BarChart3, color: 'text-emerald-400', border: 'border-emerald-500/10', bg: 'bg-emerald-500/[0.04]', category: 'Content', categoryColor: 'text-emerald-400/70 bg-emerald-500/[0.06]', rating: 4.7, users: '8.9K', badge: undefined, features: ['Keyword research', 'Content optimization', 'Meta generation', 'Rank tracking'], inputs: [{ label: 'Website or content URL', placeholder: 'https://yoursite.com/blog' }], examples: ['Optimize blog post', 'Generate meta descriptions', 'Find keyword gaps'], activity: '890 runs/hr', confidence: 91, status: 'live', conversations: 8900, avgResponse: '1.8s' },
-  { id: 'writer', name: 'AI Writer Agent', description: 'Generate blog posts, emails, and social media content', icon: FileText, color: 'text-amber-400', border: 'border-amber-500/10', bg: 'bg-amber-500/[0.04]', category: 'Content', categoryColor: 'text-amber-400/70 bg-amber-500/[0.06]', rating: 4.9, users: '24.7K', badge: 'Popular', features: ['Blog posts', 'Email copy', 'Social content', 'SEO articles'], inputs: [{ label: 'Topic or brief', placeholder: 'Write about AI in healthcare', type: 'textarea' }], examples: ['Write a blog post', 'Generate email sequence', 'Create social media calendar'], activity: '3.1K runs/hr', confidence: 97, status: 'live', conversations: 24700, avgResponse: '3.2s' },
-  { id: 'analyst', name: 'Data Analyst Agent', description: 'Analyze data sets, create charts, and find insights', icon: Cpu, color: 'text-violet-400', border: 'border-violet-500/10', bg: 'bg-violet-500/[0.04]', category: 'Research', categoryColor: 'text-violet-400/70 bg-violet-500/[0.06]', rating: 4.6, users: '6.3K', badge: undefined, features: ['CSV analysis', 'Chart generation', 'Pattern detection', 'Report creation'], inputs: [{ label: 'Upload or paste data', placeholder: 'Paste CSV or describe dataset', type: 'textarea' }], examples: ['Analyze sales data', 'Generate trend report', 'Find anomalies'], activity: '520 runs/hr', confidence: 88, status: 'live', conversations: 6300, avgResponse: '4.5s' },
-  { id: 'designer', name: 'UI/UX Designer Agent', description: 'Design interfaces, wireframes, and user experiences', icon: Palette, color: 'text-rose-400', border: 'border-rose-500/10', bg: 'bg-rose-500/[0.04]', category: 'Creative', categoryColor: 'text-rose-400/70 bg-rose-500/[0.06]', rating: 4.5, users: '4.1K', badge: 'New', features: ['Wireframe generation', 'Design review', 'Color palette', 'Component design'], inputs: [{ label: 'Describe your UI need', placeholder: 'Design a landing page for...', type: 'textarea' }], examples: ['Design onboarding flow', 'Review current UI', 'Create color system'], activity: '340 runs/hr', confidence: 85, status: 'live', conversations: 4100, avgResponse: '3.8s' },
-  { id: 'security', name: 'Security Auditor Agent', description: 'Audit code and systems for security vulnerabilities', icon: Shield, color: 'text-blue-400', border: 'border-blue-500/10', bg: 'bg-blue-500/[0.04]', category: 'DevOps', categoryColor: 'text-blue-400/70 bg-blue-500/[0.06]', rating: 4.7, users: '3.2K', badge: undefined, features: ['Code audit', 'Vulnerability scan', 'Best practices', 'Compliance check'], inputs: [{ label: 'Paste code or describe system', placeholder: 'function authenticate(user)...', type: 'textarea' }], examples: ['Audit auth system', 'Check for SQL injection', 'Review API security'], activity: '180 runs/hr', confidence: 92, status: 'live', conversations: 3200, avgResponse: '5.1s' },
-  { id: 'researcher', name: 'Deep Research Agent', description: 'Conduct deep research across multiple sources with citations', icon: BookOpen, color: 'text-indigo-400', border: 'border-indigo-500/10', bg: 'bg-indigo-500/[0.04]', category: 'Research', categoryColor: 'text-indigo-400/70 bg-indigo-500/[0.06]', rating: 4.8, users: '9.8K', badge: 'Popular', features: ['Multi-source research', 'Citation tracking', 'Summary generation', 'Trend analysis'], inputs: [{ label: 'Research topic', placeholder: 'The impact of quantum computing on cryptography', type: 'textarea' }], examples: ['Research AI regulation', 'Compare cloud providers', 'Analyze market trends'], activity: '1.5K runs/hr', confidence: 96, status: 'live', conversations: 9800, avgResponse: '6.2s' },
-  { id: 'social', name: 'Social Media Agent', description: 'Create content calendars and generate social media posts', icon: MessageSquare, color: 'text-pink-400', border: 'border-pink-500/10', bg: 'bg-pink-500/[0.04]', category: 'Content', categoryColor: 'text-pink-400/70 bg-pink-500/[0.06]', rating: 4.4, users: '7.6K', badge: undefined, features: ['Content calendar', 'Post generation', 'Hashtag research', 'Engagement analysis'], inputs: [{ label: 'Brand or topic', placeholder: 'KorvixAI — AI productivity platform' }], examples: ['Generate weekly content', 'Create Twitter thread', 'Plan product launch'], activity: '780 runs/hr', confidence: 83, status: 'live', conversations: 7600, avgResponse: '2.4s' },
-  { id: 'trading', name: 'Trading Signal Agent', description: 'Analyze markets and generate trading signals with risk metrics', icon: BarChart3, color: 'text-green-400', border: 'border-green-500/10', bg: 'bg-green-500/[0.04]', category: 'Finance', categoryColor: 'text-green-400/70 bg-green-500/[0.06]', rating: 4.3, users: '5.4K', badge: 'Beta', features: ['Signal detection', 'Risk analysis', 'Portfolio review', 'Market alerts'], inputs: [{ label: 'Stock or crypto symbol', placeholder: 'AAPL or BTC' }], examples: ['Analyze NVDA setup', 'Review portfolio risk', 'Find swing trades'], activity: '420 runs/hr', confidence: 79, status: 'beta', conversations: 5400, avgResponse: '4.8s' },
-  { id: 'onboarding', name: 'Customer Onboarding Agent', description: 'Design user onboarding flows and activation sequences', icon: Users, color: 'text-teal-400', border: 'border-teal-500/10', bg: 'bg-teal-500/[0.04]', category: 'Growth', categoryColor: 'text-teal-400/70 bg-teal-500/[0.06]', rating: 4.6, users: '3.8K', badge: undefined, features: ['Welcome sequences', 'User education', 'FAQ builder', 'Activation flows'], inputs: [{ label: 'Product description', placeholder: 'SaaS analytics platform for e-commerce', type: 'textarea' }], examples: ['Design onboarding flow', 'Create help docs', 'Build email sequence'], activity: '290 runs/hr', confidence: 87, status: 'live', conversations: 3800, avgResponse: '3.0s' },
-  { id: 'api', name: 'API Builder Agent', description: 'Design REST APIs, generate schemas, and create documentation', icon: Code, color: 'text-orange-400', border: 'border-orange-500/10', bg: 'bg-orange-500/[0.04]', category: 'DevOps', categoryColor: 'text-orange-400/70 bg-orange-500/[0.06]', rating: 4.7, users: '4.6K', badge: undefined, features: ['Endpoint design', 'Schema generation', 'Documentation', 'Testing'], inputs: [{ label: 'Describe your API', placeholder: 'A REST API for a todo app with users, projects...', type: 'textarea' }], examples: ['Design payment API', 'Generate OpenAPI spec', 'Create auth endpoints'], activity: '360 runs/hr', confidence: 93, status: 'live', conversations: 4600, avgResponse: '3.5s' },
-  { id: 'launch', name: 'Product Launch Agent', description: 'Plan product launches with checklists and growth playbooks', icon: Rocket, color: 'text-yellow-400', border: 'border-yellow-500/10', bg: 'bg-yellow-500/[0.04]', category: 'Growth', categoryColor: 'text-yellow-400/70 bg-yellow-500/[0.06]', rating: 4.5, users: '2.9K', badge: 'New', features: ['Launch checklist', 'Press kit', 'Beta program', 'Growth playbook'], inputs: [{ label: 'Product details', placeholder: 'KorvixAI — AI workspace...', type: 'textarea' }], examples: ['Plan product launch', 'Create press release', 'Design beta signup'], activity: '210 runs/hr', confidence: 84, status: 'live', conversations: 2900, avgResponse: '2.8s' },
+  { id: 'scraper', name: 'Web Scraper Agent', description: 'Scrape any website and extract structured data automatically', icon: Globe, color: 'text-[#7890A3]', border: 'border-[#52677A]/10', bg: 'bg-[#52677A]/[0.04]', category: 'Research', categoryColor: 'text-[#7890A3]/70 bg-[#52677A]/[0.06]', rating: 4.8, users: '12.4K', badge: 'Popular', features: ['Auto-scrape websites', 'Data extraction', 'Format conversion', 'Schedule runs'], inputs: [{ label: 'Website URL', placeholder: 'https://example.com' }, { label: 'What to extract', placeholder: 'Product names and prices' }], examples: ['Scrape competitor pricing', 'Extract article summaries', 'Monitor price changes'], activity: '1.2K runs/hr', confidence: 94, status: 'live', conversations: 12400, avgResponse: '2.1s' },
+  { id: 'seo', name: 'SEO Optimizer Agent', description: 'Optimize content for search engines with keyword research', icon: BarChart3, color: 'text-[#7890A3]', border: 'border-[#52677A]/10', bg: 'bg-[#52677A]/[0.04]', category: 'Content', categoryColor: 'text-[#7890A3]/70 bg-[#52677A]/[0.06]', rating: 4.7, users: '8.9K', badge: undefined, features: ['Keyword research', 'Content optimization', 'Meta generation', 'Rank tracking'], inputs: [{ label: 'Website or content URL', placeholder: 'https://yoursite.com/blog' }], examples: ['Optimize blog post', 'Generate meta descriptions', 'Find keyword gaps'], activity: '890 runs/hr', confidence: 91, status: 'live', conversations: 8900, avgResponse: '1.8s' },
+  { id: 'writer', name: 'AI Writer Agent', description: 'Generate blog posts, emails, and social media content', icon: FileText, color: 'text-[#7890A3]', border: 'border-[#52677A]/10', bg: 'bg-[#52677A]/[0.04]', category: 'Content', categoryColor: 'text-[#7890A3]/70 bg-[#52677A]/[0.06]', rating: 4.9, users: '24.7K', badge: 'Popular', features: ['Blog posts', 'Email copy', 'Social content', 'SEO articles'], inputs: [{ label: 'Topic or brief', placeholder: 'Write about AI in healthcare', type: 'textarea' }], examples: ['Write a blog post', 'Generate email sequence', 'Create social media calendar'], activity: '3.1K runs/hr', confidence: 97, status: 'live', conversations: 24700, avgResponse: '3.2s' },
+  { id: 'analyst', name: 'Data Analyst Agent', description: 'Analyze data sets, create charts, and find insights', icon: Cpu, color: 'text-[#7890A3]', border: 'border-[#52677A]/10', bg: 'bg-[#52677A]/[0.04]', category: 'Research', categoryColor: 'text-[#7890A3]/70 bg-[#52677A]/[0.06]', rating: 4.6, users: '6.3K', badge: undefined, features: ['CSV analysis', 'Chart generation', 'Pattern detection', 'Report creation'], inputs: [{ label: 'Upload or paste data', placeholder: 'Paste CSV or describe dataset', type: 'textarea' }], examples: ['Analyze sales data', 'Generate trend report', 'Find anomalies'], activity: '520 runs/hr', confidence: 88, status: 'live', conversations: 6300, avgResponse: '4.5s' },
+  { id: 'designer', name: 'UI/UX Designer Agent', description: 'Design interfaces, wireframes, and user experiences', icon: Palette, color: 'text-[#7890A3]', border: 'border-[#52677A]/10', bg: 'bg-[#52677A]/[0.04]', category: 'Creative', categoryColor: 'text-[#7890A3]/70 bg-[#52677A]/[0.06]', rating: 4.5, users: '4.1K', badge: 'New', features: ['Wireframe generation', 'Design review', 'Color palette', 'Component design'], inputs: [{ label: 'Describe your UI need', placeholder: 'Design a landing page for...', type: 'textarea' }], examples: ['Design onboarding flow', 'Review current UI', 'Create color system'], activity: '340 runs/hr', confidence: 85, status: 'live', conversations: 4100, avgResponse: '3.8s' },
+  { id: 'security', name: 'Security Auditor Agent', description: 'Audit code and systems for security vulnerabilities', icon: Shield, color: 'text-[#7890A3]', border: 'border-[#52677A]/10', bg: 'bg-[#52677A]/[0.04]', category: 'DevOps', categoryColor: 'text-[#7890A3]/70 bg-[#52677A]/[0.06]', rating: 4.7, users: '3.2K', badge: undefined, features: ['Code audit', 'Vulnerability scan', 'Best practices', 'Compliance check'], inputs: [{ label: 'Paste code or describe system', placeholder: 'function authenticate(user)...', type: 'textarea' }], examples: ['Audit auth system', 'Check for SQL injection', 'Review API security'], activity: '180 runs/hr', confidence: 92, status: 'live', conversations: 3200, avgResponse: '5.1s' },
+  { id: 'researcher', name: 'Deep Research Agent', description: 'Conduct deep research across multiple sources with citations', icon: BookOpen, color: 'text-[#7890A3]', border: 'border-[#52677A]/10', bg: 'bg-[#52677A]/[0.04]', category: 'Research', categoryColor: 'text-[#7890A3]/70 bg-[#52677A]/[0.06]', rating: 4.8, users: '9.8K', badge: 'Popular', features: ['Multi-source research', 'Citation tracking', 'Summary generation', 'Trend analysis'], inputs: [{ label: 'Research topic', placeholder: 'The impact of quantum computing on cryptography', type: 'textarea' }], examples: ['Research AI regulation', 'Compare cloud providers', 'Analyze market trends'], activity: '1.5K runs/hr', confidence: 96, status: 'live', conversations: 9800, avgResponse: '6.2s' },
+  { id: 'social', name: 'Social Media Agent', description: 'Create content calendars and generate social media posts', icon: MessageSquare, color: 'text-[#7890A3]', border: 'border-[#52677A]/10', bg: 'bg-[#52677A]/[0.04]', category: 'Content', categoryColor: 'text-[#7890A3]/70 bg-[#52677A]/[0.06]', rating: 4.4, users: '7.6K', badge: undefined, features: ['Content calendar', 'Post generation', 'Hashtag research', 'Engagement analysis'], inputs: [{ label: 'Brand or topic', placeholder: 'KorvixAI — AI productivity platform' }], examples: ['Generate weekly content', 'Create Twitter thread', 'Plan product launch'], activity: '780 runs/hr', confidence: 83, status: 'live', conversations: 7600, avgResponse: '2.4s' },
+  { id: 'trading', name: 'Trading Signal Agent', description: 'Analyze markets and generate trading signals with risk metrics', icon: BarChart3, color: 'text-[#7890A3]', border: 'border-[#52677A]/10', bg: 'bg-[#52677A]/[0.04]', category: 'Finance', categoryColor: 'text-[#7890A3]/70 bg-[#52677A]/[0.06]', rating: 4.3, users: '5.4K', badge: 'Beta', features: ['Signal detection', 'Risk analysis', 'Portfolio review', 'Market alerts'], inputs: [{ label: 'Stock or crypto symbol', placeholder: 'AAPL or BTC' }], examples: ['Analyze NVDA setup', 'Review portfolio risk', 'Find swing trades'], activity: '420 runs/hr', confidence: 79, status: 'beta', conversations: 5400, avgResponse: '4.8s' },
+  { id: 'onboarding', name: 'Customer Onboarding Agent', description: 'Design user onboarding flows and activation sequences', icon: Users, color: 'text-[#7890A3]', border: 'border-[#52677A]/10', bg: 'bg-[#52677A]/[0.04]', category: 'Growth', categoryColor: 'text-[#7890A3]/70 bg-[#52677A]/[0.06]', rating: 4.6, users: '3.8K', badge: undefined, features: ['Welcome sequences', 'User education', 'FAQ builder', 'Activation flows'], inputs: [{ label: 'Product description', placeholder: 'SaaS analytics platform for e-commerce', type: 'textarea' }], examples: ['Design onboarding flow', 'Create help docs', 'Build email sequence'], activity: '290 runs/hr', confidence: 87, status: 'live', conversations: 3800, avgResponse: '3.0s' },
+  { id: 'api', name: 'API Builder Agent', description: 'Design REST APIs, generate schemas, and create documentation', icon: Code, color: 'text-[#7890A3]', border: 'border-[#52677A]/10', bg: 'bg-[#52677A]/[0.04]', category: 'DevOps', categoryColor: 'text-[#7890A3]/70 bg-[#52677A]/[0.06]', rating: 4.7, users: '4.6K', badge: undefined, features: ['Endpoint design', 'Schema generation', 'Documentation', 'Testing'], inputs: [{ label: 'Describe your API', placeholder: 'A REST API for a todo app with users, projects...', type: 'textarea' }], examples: ['Design payment API', 'Generate OpenAPI spec', 'Create auth endpoints'], activity: '360 runs/hr', confidence: 93, status: 'live', conversations: 4600, avgResponse: '3.5s' },
+  { id: 'launch', name: 'Product Launch Agent', description: 'Plan product launches with checklists and growth playbooks', icon: Rocket, color: 'text-[#7890A3]', border: 'border-[#52677A]/10', bg: 'bg-[#52677A]/[0.04]', category: 'Growth', categoryColor: 'text-[#7890A3]/70 bg-[#52677A]/[0.06]', rating: 4.5, users: '2.9K', badge: 'New', features: ['Launch checklist', 'Press kit', 'Beta program', 'Growth playbook'], inputs: [{ label: 'Product details', placeholder: 'KorvixAI — AI workspace...', type: 'textarea' }], examples: ['Plan product launch', 'Create press release', 'Design beta signup'], activity: '210 runs/hr', confidence: 84, status: 'live', conversations: 2900, avgResponse: '2.8s' },
 ];
 
 const CATEGORIES = ['All', 'Research', 'Content', 'Creative', 'Finance', 'DevOps', 'Growth'];
@@ -74,8 +74,8 @@ export default function AgentEcosystem() {
         {/* Header */}
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
           <div className="flex items-center gap-3 mb-1">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/[0.08] border border-cyan-500/15">
-              <Bot className="h-5 w-5 text-cyan-400/70" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#52677A]/[0.08] border border-[#52677A]/15">
+              <Bot className="h-5 w-5 text-[#7890A3]/70" />
             </div>
             <div>
               <h1 className="text-[22px] sm:text-[26px] font-semibold tracking-tight">AI Agent Ecosystem</h1>
@@ -86,8 +86,8 @@ export default function AgentEcosystem() {
 
         {/* Activity Bar */}
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="mb-6 flex items-center gap-4 py-3 px-4 rounded-2xl border border-white/[0.03] bg-white/[0.01] overflow-x-auto">
-          <div className="flex items-center gap-1.5 text-[11px] text-emerald-400/60 shrink-0">
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <div className="flex items-center gap-1.5 text-[11px] text-[#6F8F7A]/60 shrink-0">
+            <div className="w-1.5 h-1.5 rounded-full bg-[#6F8F7A] animate-pulse" />
             <span>All systems operational</span>
           </div>
           <div className="w-px h-4 bg-white/[0.04] shrink-0" />
@@ -129,8 +129,8 @@ export default function AgentEcosystem() {
                   <agent.icon className={`h-4 w-4 ${agent.color}`} />
                 </div>
                 <div className="flex items-center gap-1.5">
-                  {agent.status === 'live' && <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />}
-                  {agent.status === 'beta' && <div className="w-1.5 h-1.5 rounded-full bg-amber-400" />}
+                  {agent.status === 'live' && <div className="w-1.5 h-1.5 rounded-full bg-[#6F8F7A]" />}
+                  {agent.status === 'beta' && <div className="w-1.5 h-1.5 rounded-full bg-[#A68A5B]" />}
                   <span className={`text-[9px] px-1.5 py-[1px] rounded ${agent.categoryColor}`}>{agent.category}</span>
                 </div>
               </div>
@@ -141,13 +141,13 @@ export default function AgentEcosystem() {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <span className="text-[10px] text-[#64748B] flex items-center gap-0.5">
-                    <Star className="h-2.5 w-2.5 text-amber-400/50" /> {agent.rating}
+                    <Star className="h-2.5 w-2.5 text-[#7890A3]/50" /> {agent.rating}
                   </span>
                   <span className="text-[10px] text-[#64748B] flex items-center gap-0.5">
                     <Users className="h-2.5 w-2.5" /> {agent.users}
                   </span>
                 </div>
-                <span className="text-[10px] text-cyan-400/50 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                <span className="text-[10px] text-[#7890A3]/50 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                   Launch <ChevronRight className="h-3 w-3" />
                 </span>
               </div>
@@ -196,7 +196,7 @@ export default function AgentEcosystem() {
                 <div className="grid grid-cols-4 gap-2">
                   <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/[0.02] text-center">
                     <p className="text-[11px] text-slate-600 mb-0.5">Rating</p>
-                    <p className="text-[13px] font-medium text-amber-400 flex items-center justify-center gap-0.5"><Star className="h-3 w-3" /> {selectedAgent.rating}</p>
+                    <p className="text-[13px] font-medium text-[#7890A3] flex items-center justify-center gap-0.5"><Star className="h-3 w-3" /> {selectedAgent.rating}</p>
                   </div>
                   <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/[0.02] text-center">
                     <p className="text-[11px] text-slate-600 mb-0.5">Users</p>
@@ -204,11 +204,11 @@ export default function AgentEcosystem() {
                   </div>
                   <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/[0.02] text-center">
                     <p className="text-[11px] text-slate-600 mb-0.5">Speed</p>
-                    <p className="text-[13px] font-medium text-cyan-400">{selectedAgent.avgResponse}</p>
+                    <p className="text-[13px] font-medium text-[#7890A3]">{selectedAgent.avgResponse}</p>
                   </div>
                   <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/[0.02] text-center">
                     <p className="text-[11px] text-slate-600 mb-0.5">Accuracy</p>
-                    <p className="text-[13px] font-medium text-emerald-400">{selectedAgent.confidence}%</p>
+                    <p className="text-[13px] font-medium text-[#6F8F7A]">{selectedAgent.confidence}%</p>
                   </div>
                 </div>
 
@@ -250,7 +250,7 @@ export default function AgentEcosystem() {
                           onChange={(e) => setFormValues((p) => ({ ...p, [i]: e.target.value }))}
                           placeholder={input.placeholder}
                           rows={3}
-                          className="w-full rounded-xl bg-white/[0.02] border border-white/[0.04] p-3 text-[12px] text-white placeholder:text-[#64748B] focus:border-cyan-500/20 outline-none transition-all resize-none"
+                          className="w-full rounded-xl bg-white/[0.02] border border-white/[0.04] p-3 text-[12px] text-white placeholder:text-[#64748B] focus:border-[#52677A]/20 outline-none transition-all resize-none"
                         />
                       ) : (
                         <input
@@ -258,7 +258,7 @@ export default function AgentEcosystem() {
                           value={formValues[i] || ''}
                           onChange={(e) => setFormValues((p) => ({ ...p, [i]: e.target.value }))}
                           placeholder={input.placeholder}
-                          className="w-full h-9 rounded-xl bg-white/[0.02] border border-white/[0.04] px-3 text-[12px] text-white placeholder:text-[#64748B] focus:border-cyan-500/20 outline-none transition-all"
+                          className="w-full h-9 rounded-xl bg-white/[0.02] border border-white/[0.04] px-3 text-[12px] text-white placeholder:text-[#64748B] focus:border-[#52677A]/20 outline-none transition-all"
                         />
                       )}
                     </div>
@@ -270,7 +270,7 @@ export default function AgentEcosystem() {
               <div className="shrink-0 p-4 border-t border-white/[0.04] bg-white/[0.01]">
                 <button
                   onClick={handleLaunch}
-                  className="w-full h-10 rounded-xl bg-cyan-500/[0.08] text-cyan-400 border border-cyan-500/15 text-[13px] hover:bg-cyan-500/[0.12] transition-all flex items-center justify-center gap-2"
+                  className="w-full h-10 rounded-xl bg-[#52677A]/[0.08] text-[#7890A3] border border-[#52677A]/15 text-[13px] hover:bg-[#52677A]/[0.12] transition-all flex items-center justify-center gap-2"
                 >
                   <Play className="h-4 w-4" /> Deploy {selectedAgent.name}
                 </button>

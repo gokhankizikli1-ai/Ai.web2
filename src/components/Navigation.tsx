@@ -109,7 +109,7 @@ export default function Navigation() {
         </div>
         <button
           onClick={() => navigate('/settings')}
-          className="h-6 w-6 flex items-center justify-center text-slate-600 hover:text-amber-400 hover:bg-amber-500/[0.06] rounded transition-all border border-transparent hover:border-white/[0.04]"
+          className="h-6 w-6 flex items-center justify-center text-slate-600 hover:text-[#52677A] hover:bg-[#52677A]/[0.06] rounded transition-all border border-transparent hover:border-white/[0.04]"
         >
           <Settings className="h-3 w-3" />
         </button>

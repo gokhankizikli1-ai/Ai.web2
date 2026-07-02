@@ -30,7 +30,7 @@ export default function Onboarding({ onDismiss, onStartChat }: OnboardingProps) 
             </button>
           </div>
 
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-400 to-blue-600 mb-5 shadow-lg shadow-cyan-500/15">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-[#52677A] to-[#7890A3] mb-5 shadow-lg shadow-[#52677A]/15">
             <Sparkles className="h-6 w-6 text-white" />
           </div>
 
@@ -47,7 +47,7 @@ export default function Onboarding({ onDismiss, onStartChat }: OnboardingProps) 
               { icon: Sparkles, text: 'Use the prompt library for quick, powerful starting points' },
             ].map((item, i) => (
               <div key={i} className="flex items-start gap-3 rounded-xl bg-white/[0.02] border border-white/[0.04] px-4 py-3">
-                <item.icon className="h-4 w-4 text-cyan-400/70 mt-0.5 shrink-0" />
+                <item.icon className="h-4 w-4 text-[#52677A]/70 mt-0.5 shrink-0" />
                 <span className="text-[12px] text-slate-400">{item.text}</span>
               </div>
             ))}
@@ -131,7 +131,7 @@ export default function Onboarding({ onDismiss, onStartChat }: OnboardingProps) 
               }}
               className="w-full flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3 text-left hover:bg-white/[0.05] hover:border-white/[0.1] transition-all duration-200 group"
             >
-              <MessageSquare className="h-4 w-4 text-cyan-400/60 shrink-0 group-hover:scale-110 transition-transform" />
+              <MessageSquare className="h-4 w-4 text-[#52677A]/60 shrink-0 group-hover:scale-110 transition-transform" />
               <span className="text-[13px] text-slate-300">{uc.label}</span>
               <ArrowRight className="h-3.5 w-3.5 text-slate-600 ml-auto group-hover:text-slate-400 transition-colors" />
             </button>

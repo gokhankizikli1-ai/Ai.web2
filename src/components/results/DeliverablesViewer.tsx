@@ -125,7 +125,7 @@ function DeliverableCard({
         {previewable && (
           <div className="flex items-center gap-1 shrink-0">
             <IconBtn title={copied ? 'Copied' : 'Copy'} onClick={copy}>
-              {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+              {copied ? <Check className="h-3 w-3 text-[#6F8F7A]" /> : <Copy className="h-3 w-3" />}
             </IconBtn>
             <IconBtn title="Download" onClick={download}><Download className="h-3 w-3" /></IconBtn>
             <IconBtn title="Open full preview" onClick={onOpenModal}><Maximize2 className="h-3 w-3" /></IconBtn>
@@ -141,7 +141,7 @@ function DeliverableCard({
       )}
 
       {deliverable.status === 'failed' && deliverable.error && (
-        <p className="px-3 pb-2 text-[10px] text-red-400/70">{deliverable.error}</p>
+        <p className="px-3 pb-2 text-[10px] text-[#B76E79]/70">{deliverable.error}</p>
       )}
     </div>
   );
@@ -169,7 +169,7 @@ function ArtifactInline({ resolved, title, id }: { resolved: Resolved; title: st
       <div className="space-y-2">
         {resolved.files.map((f, i) => (
           <div key={`${f.path}-${i}`}>
-            <p className="flex items-center gap-1.5 text-[11px] text-cyan-300/80 mb-1">
+            <p className="flex items-center gap-1.5 text-[11px] text-[#7890A3]/80 mb-1">
               <FileCode className="h-3 w-3" /> {f.path}
             </p>
             <CodeBlock language={f.language || 'text'}>{f.content}</CodeBlock>

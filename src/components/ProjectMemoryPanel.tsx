@@ -28,10 +28,10 @@ export default function ProjectMemoryPanel({
   };
 
   const memoryColors: Record<string, { bg: string; border: string; text: string; dot: string }> = {
-    knowledge: { bg: 'bg-cyan-500/[0.06]', border: 'border-cyan-500/[0.12]', text: 'text-cyan-400', dot: 'bg-cyan-400' },
-    decision: { bg: 'bg-amber-500/[0.06]', border: 'border-amber-500/[0.12]', text: 'text-amber-400', dot: 'bg-amber-400' },
-    conversation: { bg: 'bg-violet-500/[0.06]', border: 'border-violet-500/[0.12]', text: 'text-violet-400', dot: 'bg-violet-400' },
-    resource: { bg: 'bg-emerald-500/[0.06]', border: 'border-emerald-500/[0.12]', text: 'text-emerald-400', dot: 'bg-emerald-400' },
+    knowledge: { bg: 'bg-[#52677A]/[0.06]', border: 'border-[#52677A]/[0.12]', text: 'text-[#52677A]', dot: 'bg-[#52677A]' },
+    decision: { bg: 'bg-[#52677A]/[0.06]', border: 'border-[#52677A]/[0.12]', text: 'text-[#52677A]', dot: 'bg-[#52677A]' },
+    conversation: { bg: 'bg-[#52677A]/[0.06]', border: 'border-[#52677A]/[0.12]', text: 'text-[#52677A]', dot: 'bg-[#52677A]' },
+    resource: { bg: 'bg-[#52677A]/[0.06]', border: 'border-[#52677A]/[0.12]', text: 'text-[#52677A]', dot: 'bg-[#52677A]' },
   };
 
   return (
@@ -46,14 +46,14 @@ export default function ProjectMemoryPanel({
       >
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-1.5">
-            <Brain className="h-3.5 w-3.5 text-cyan-400" />
+            <Brain className="h-3.5 w-3.5 text-[#52677A]" />
             <span className="text-[11px] font-semibold text-white/70">Context Health</span>
           </div>
-          <span className="text-[11px] font-bold text-cyan-400">{context.contextHealth}%</span>
+          <span className="text-[11px] font-bold text-[#52677A]">{context.contextHealth}%</span>
         </div>
         <div className="h-1.5 rounded-full bg-white/[0.04] overflow-hidden">
           <motion.div
-            className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-cyan-400"
+            className="h-full rounded-full bg-gradient-to-r from-[#52677A] to-[#7890A3]"
             initial={{ width: 0 }}
             animate={{ width: `${context.contextHealth}%` }}
             transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
@@ -62,7 +62,7 @@ export default function ProjectMemoryPanel({
         <div className="flex items-center justify-between mt-2">
           <span className="text-[9px] text-white/25">Last sync: {context.lastSync}</span>
           <div className="flex items-center gap-0.5">
-            <Zap className="h-2.5 w-2.5 text-cyan-400/50" />
+            <Zap className="h-2.5 w-2.5 text-[#52677A]/50" />
             <span className="text-[9px] text-white/25">Auto-sync on</span>
           </div>
         </div>
@@ -71,10 +71,10 @@ export default function ProjectMemoryPanel({
       {/* Stats Grid */}
       <div className="grid grid-cols-2 gap-2">
         {[
-          { icon: Brain, label: 'Shared Knowledge', value: `${context.sharedKnowledge.length} topics`, color: 'text-cyan-400' },
-          { icon: MessageSquare, label: 'Conversations', value: `${context.syncedConversations}`, color: 'text-violet-400' },
-          { icon: FolderOpen, label: 'Resources', value: `${context.uploadedResources}`, color: 'text-emerald-400' },
-          { icon: TrendingUp, label: 'Total Messages', value: `${context.totalMessages}`, color: 'text-amber-400' },
+          { icon: Brain, label: 'Shared Knowledge', value: `${context.sharedKnowledge.length} topics`, color: 'text-[#52677A]' },
+          { icon: MessageSquare, label: 'Conversations', value: `${context.syncedConversations}`, color: 'text-[#52677A]' },
+          { icon: FolderOpen, label: 'Resources', value: `${context.uploadedResources}`, color: 'text-[#52677A]' },
+          { icon: TrendingUp, label: 'Total Messages', value: `${context.totalMessages}`, color: 'text-[#52677A]' },
         ].map((stat, i) => (
           <motion.div
             key={stat.label}
@@ -105,13 +105,13 @@ export default function ProjectMemoryPanel({
         <div className="flex items-center justify-between mb-2">
           <span className="text-[11px] font-semibold text-white/70">Active Agents</span>
           <div className="flex items-center gap-1">
-            <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-[10px] text-emerald-400">{activeAgentCount}/{totalAgentCount}</span>
+            <div className="w-1.5 h-1.5 rounded-full bg-[#6F8F7A] animate-pulse" />
+            <span className="text-[10px] text-[#6F8F7A]">{activeAgentCount}/{totalAgentCount}</span>
           </div>
         </div>
         <div className="h-1.5 rounded-full bg-white/[0.04] overflow-hidden">
           <div
-            className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-cyan-400"
+            className="h-full rounded-full bg-gradient-to-r from-[#52677A] to-[#7890A3]"
             style={{ width: `${(activeAgentCount / totalAgentCount) * 100}%` }}
           />
         </div>
@@ -119,20 +119,20 @@ export default function ProjectMemoryPanel({
 
       {/* Task Summary */}
       <div className="flex items-center gap-2">
-        <div className="flex-1 rounded-lg p-2 text-center" style={{ background: 'rgba(52,211,153,0.06)', border: '1px solid rgba(52,211,153,0.1)' }}>
-          <CheckCircle2 className="h-3 w-3 text-emerald-400 mx-auto mb-0.5" />
-          <p className="text-[12px] font-semibold text-emerald-400">{completedTasks}</p>
-          <p className="text-[8px] text-emerald-400/50">Done</p>
+        <div className="flex-1 rounded-lg p-2 text-center" style={{ background: 'rgba(111,143,122,0.06)', border: '1px solid rgba(111,143,122,0.1)' }}>
+          <CheckCircle2 className="h-3 w-3 text-[#6F8F7A] mx-auto mb-0.5" />
+          <p className="text-[12px] font-semibold text-[#6F8F7A]">{completedTasks}</p>
+          <p className="text-[8px] text-[#6F8F7A]/50">Done</p>
         </div>
-        <div className="flex-1 rounded-lg p-2 text-center" style={{ background: 'rgba(34,211,238,0.06)', border: '1px solid rgba(34,211,238,0.1)' }}>
-          <Clock className="h-3 w-3 text-cyan-400 mx-auto mb-0.5" />
-          <p className="text-[12px] font-semibold text-cyan-400">{inProgressTasks}</p>
-          <p className="text-[8px] text-cyan-400/50">Active</p>
+        <div className="flex-1 rounded-lg p-2 text-center" style={{ background: 'rgba(82,103,122,0.06)', border: '1px solid rgba(82,103,122,0.1)' }}>
+          <Clock className="h-3 w-3 text-[#52677A] mx-auto mb-0.5" />
+          <p className="text-[12px] font-semibold text-[#52677A]">{inProgressTasks}</p>
+          <p className="text-[8px] text-[#52677A]/50">Active</p>
         </div>
-        <div className="flex-1 rounded-lg p-2 text-center" style={{ background: 'rgba(251,191,36,0.06)', border: '1px solid rgba(251,191,36,0.1)' }}>
-          <AlertTriangle className="h-3 w-3 text-amber-400 mx-auto mb-0.5" />
-          <p className="text-[12px] font-semibold text-amber-400">{tasks.filter(t => t.priority === 'critical').length}</p>
-          <p className="text-[8px] text-amber-400/50">Critical</p>
+        <div className="flex-1 rounded-lg p-2 text-center" style={{ background: 'rgba(166,138,91,0.06)', border: '1px solid rgba(166,138,91,0.1)' }}>
+          <AlertTriangle className="h-3 w-3 text-[#A68A5B] mx-auto mb-0.5" />
+          <p className="text-[12px] font-semibold text-[#A68A5B]">{tasks.filter(t => t.priority === 'critical').length}</p>
+          <p className="text-[8px] text-[#A68A5B]/50">Critical</p>
         </div>
       </div>
 
@@ -149,7 +149,7 @@ export default function ProjectMemoryPanel({
               className="flex items-start gap-2 p-2 rounded-lg"
               style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.03)' }}
             >
-              <Lightbulb className="h-3 w-3 text-amber-400/60 shrink-0 mt-0.5" />
+              <Lightbulb className="h-3 w-3 text-[#52677A]/60 shrink-0 mt-0.5" />
               <span className="text-[10px] text-white/50 leading-relaxed">{decision}</span>
             </motion.div>
           ))}

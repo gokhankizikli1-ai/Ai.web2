@@ -45,7 +45,7 @@ export default function ChatInput({ onSend, disabled, externalValue, onExternalV
       <div
         className={`relative flex items-end gap-1.5 rounded-[20px] bg-white/[0.03] border p-2 md:p-2.5 transition-all duration-300 ${
           isFocused
-            ? 'border-cyan-500/25 bg-white/[0.05] shadow-[0_0_0_1px_rgba(34,211,238,0.06),0_0_20px_-5px_rgba(34,211,238,0.08)]'
+            ? 'border-[#52677A]/25 bg-white/[0.05] shadow-[0_0_0_1px_rgba(82,103,122,0.06),0_0_20px_-5px_rgba(82,103,122,0.08)]'
             : 'border-white/[0.07] hover:border-white/[0.12]'
         }`}
       >
@@ -75,7 +75,7 @@ export default function ChatInput({ onSend, disabled, externalValue, onExternalV
           size="icon"
           onClick={handleSubmit}
           disabled={!value.trim() || disabled}
-          className="shrink-0 h-8 w-8 bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 hover:text-cyan-300 disabled:opacity-25 disabled:hover:bg-cyan-500/15 rounded-[10px] transition-all duration-200"
+          className="shrink-0 h-8 w-8 bg-[#52677A]/15 text-[#52677A] hover:bg-[#52677A]/25 hover:text-[#637B90] disabled:opacity-25 disabled:hover:bg-[#52677A]/15 rounded-[10px] transition-all duration-200"
         >
           <Send className="h-[15px] w-[15px]" />
         </Button>

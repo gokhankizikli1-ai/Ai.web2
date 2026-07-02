@@ -170,8 +170,8 @@ export default function DeliverablePreviewModal({
               {([['desktop', Monitor], ['tablet', Tablet], ['mobile', Smartphone]] as const).map(([d, Icon]) => (
                 <button key={d} onClick={() => setDevice(d)} title={d}
                   className="p-1.5 rounded-md transition-colors"
-                  style={{ background: device === d ? 'rgba(34,211,238,0.14)' : 'transparent',
-                           color: device === d ? 'rgb(103,232,249)' : 'rgba(255,255,255,0.45)' }}>
+                  style={{ background: device === d ? 'rgba(82,103,122,0.14)' : 'transparent',
+                           color: device === d ? 'rgb(120,144,163)' : 'rgba(255,255,255,0.45)' }}>
                   <Icon className="h-3.5 w-3.5" />
                 </button>
               ))}
@@ -190,14 +190,14 @@ export default function DeliverablePreviewModal({
               </button>
             )}
             <button onClick={copy} title="Copy" className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] text-white/50 hover:text-white/80 transition-colors" style={{ background: 'rgba(255,255,255,0.03)' }}>
-              {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />} {copied ? 'Copied' : 'Copy'}
+              {copied ? <Check className="h-3 w-3 text-[#6F8F7A]" /> : <Copy className="h-3 w-3" />} {copied ? 'Copied' : 'Copy'}
             </button>
             {isHtml && (
               <button onClick={openInTab} title="Open in new tab" className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] text-white/50 hover:text-white/80 transition-colors" style={{ background: 'rgba(255,255,255,0.03)' }}>
                 <ExternalLink className="h-3 w-3" /> Open
               </button>
             )}
-            <button onClick={download} title="Download" className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] text-cyan-300 transition-colors" style={{ background: 'rgba(34,211,238,0.08)' }}>
+            <button onClick={download} title="Download" className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] text-[#7890A3] transition-colors" style={{ background: 'rgba(82,103,122,0.08)' }}>
               <Download className="h-3 w-3" /> Download
             </button>
             <button onClick={onClose} aria-label="Close" className="p-1 rounded-lg text-white/40 hover:text-white/80 transition-colors">
@@ -249,7 +249,7 @@ export default function DeliverablePreviewModal({
             <div className="px-4 py-3 space-y-3">
               {r.files.map((f, i) => (
                 <div key={`${f.path}-${i}`}>
-                  <p className="flex items-center gap-1.5 text-[11px] text-cyan-300/80 mb-1">
+                  <p className="flex items-center gap-1.5 text-[11px] text-[#7890A3]/80 mb-1">
                     <FileCode className="h-3 w-3" /> {f.path}
                   </p>
                   <pre className="text-[11px] text-white/70 whitespace-pre-wrap break-words rounded-lg px-3 py-2" style={{ background: 'rgba(255,255,255,0.02)' }}>{f.content}</pre>

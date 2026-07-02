@@ -12,10 +12,10 @@ export interface ToolShortcut {
 }
 
 const SHORTCUTS: ToolShortcut[] = [
-  { id: 'deep-think', label: 'Deep Think', icon: Brain, prompt: 'Think deeply and analyze this thoroughly before answering: ', color: 'hover:text-violet-400 hover:bg-violet-500/[0.05] hover:border-violet-500/[0.1]' },
-  { id: 'research',   label: 'Research',   icon: Search,    prompt: 'Research this topic in depth: ', color: 'hover:text-cyan-400 hover:bg-cyan-500/[0.05] hover:border-cyan-500/[0.1]' },
-  { id: 'code',       label: 'Coding',     icon: Code2,     prompt: 'Write clean, well-documented code for: ', color: 'hover:text-emerald-400 hover:bg-emerald-500/[0.05] hover:border-emerald-500/[0.1]' },
-  { id: 'market',     label: 'Market',     icon: TrendingUp, prompt: 'Analyze market trends and signals for: ', color: 'hover:text-amber-400 hover:bg-amber-500/[0.05] hover:border-amber-500/[0.1]' },
+  { id: 'deep-think', label: 'Deep Think', icon: Brain, prompt: 'Think deeply and analyze this thoroughly before answering: ', color: 'hover:text-[#637B90] hover:bg-[#52677A]/[0.05] hover:border-[#52677A]/[0.1]' },
+  { id: 'research',   label: 'Research',   icon: Search,    prompt: 'Research this topic in depth: ', color: 'hover:text-[#637B90] hover:bg-[#52677A]/[0.05] hover:border-[#52677A]/[0.1]' },
+  { id: 'code',       label: 'Coding',     icon: Code2,     prompt: 'Write clean, well-documented code for: ', color: 'hover:text-[#637B90] hover:bg-[#52677A]/[0.05] hover:border-[#52677A]/[0.1]' },
+  { id: 'market',     label: 'Market',     icon: TrendingUp, prompt: 'Analyze market trends and signals for: ', color: 'hover:text-[#637B90] hover:bg-[#52677A]/[0.05] hover:border-[#52677A]/[0.1]' },
 ];
 
 interface ToolShortcutsProps {

@@ -199,22 +199,22 @@ export default function OwnerUnlockModal({ onClose }: OwnerUnlockModalProps) {
         exit={{ opacity: 0, scale: 0.96, y: 8 }}
         transition={{ duration: 0.18 }}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md rounded-2xl border border-amber-500/20 bg-[#0b0b12]/95 shadow-2xl shadow-amber-500/5 overflow-hidden"
+        className="w-full max-w-md rounded-2xl border border-[#52677A]/20 bg-[#0b0b12]/95 shadow-2xl shadow-[#52677A]/5 overflow-hidden"
         role="dialog"
         aria-modal="true"
         aria-label="Unlock owner mode"
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.05] bg-gradient-to-r from-amber-500/[0.04] to-transparent">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.05] bg-gradient-to-r from-[#52677A]/[0.04] to-transparent">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="h-7 w-7 flex items-center justify-center rounded-lg bg-amber-500/[0.1] border border-amber-500/20 shrink-0">
-              <Key className="h-3.5 w-3.5 text-amber-300" />
+            <div className="h-7 w-7 flex items-center justify-center rounded-lg bg-[#52677A]/[0.1] border border-[#52677A]/20 shrink-0">
+              <Key className="h-3.5 w-3.5 text-[#7890A3]" />
             </div>
             <div className="min-w-0">
               <div className="text-[13px] font-semibold text-white tracking-tight">
                 Unlock Owner Mode
               </div>
-              <div className="text-[10px] text-amber-300/60 truncate">
+              <div className="text-[10px] text-[#7890A3]/60 truncate">
                 Paste OWNER_TOKEN. Token-only — no sign-in required.
               </div>
             </div>
@@ -232,19 +232,19 @@ export default function OwnerUnlockModal({ onClose }: OwnerUnlockModalProps) {
         {/* Success banner — replaces the body for a clear "DONE" state */}
         {result.kind === 'ok' ? (
           <div className="p-6 flex flex-col items-center text-center">
-            <div className="h-12 w-12 rounded-full bg-emerald-500/[0.1] border border-emerald-500/30 flex items-center justify-center mb-3">
-              <ShieldCheck className="h-6 w-6 text-emerald-300" />
+            <div className="h-12 w-12 rounded-full bg-[#6F8F7A]/[0.1] border border-[#6F8F7A]/30 flex items-center justify-center mb-3">
+              <ShieldCheck className="h-6 w-6 text-[#6F8F7A]" />
             </div>
-            <div className="text-[14px] font-semibold text-emerald-200 mb-1">
+            <div className="text-[14px] font-semibold text-[#6F8F7A] mb-1">
               Owner Session Active
             </div>
-            <div className="text-[11px] text-emerald-300/70 mb-4">
+            <div className="text-[11px] text-[#6F8F7A]/70 mb-4">
               {result.capabilitiesCount} owner capabilities granted. The
               chip in the top bar will switch to amber within a moment.
             </div>
             <button
               onClick={closeAndRefresh}
-              className="px-3 py-1.5 rounded-md bg-emerald-500/[0.12] border border-emerald-500/30 text-[11px] text-emerald-200 hover:bg-emerald-500/[0.18] transition-all"
+              className="px-3 py-1.5 rounded-md bg-[#6F8F7A]/[0.12] border border-[#6F8F7A]/30 text-[11px] text-[#6F8F7A] hover:bg-[#6F8F7A]/[0.18] transition-all"
             >
               Done
             </button>
@@ -269,7 +269,7 @@ export default function OwnerUnlockModal({ onClose }: OwnerUnlockModalProps) {
                 autoComplete="off"
                 spellCheck={false}
                 disabled={result.kind === 'checking'}
-                className="w-full rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[12px] font-mono text-slate-200 focus:border-amber-500/40 focus:outline-none focus:bg-white/[0.04] transition-all disabled:opacity-50"
+                className="w-full rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[12px] font-mono text-slate-200 focus:border-[#52677A]/40 focus:outline-none focus:bg-white/[0.04] transition-all disabled:opacity-50"
               />
               <div className="text-[10px] text-slate-600 mt-1.5">
                 Sent as <code className="px-1 rounded bg-white/[0.04] text-slate-400">X-Korvix-Owner-Token</code>.
@@ -279,17 +279,17 @@ export default function OwnerUnlockModal({ onClose }: OwnerUnlockModalProps) {
 
             {/* Result panels */}
             {result.kind === 'denied' && (
-              <div className="rounded-lg border border-rose-500/25 bg-rose-500/[0.06] px-3 py-2 flex items-start gap-2">
-                <AlertTriangle className="h-3.5 w-3.5 text-rose-300 mt-0.5 shrink-0" />
+              <div className="rounded-lg border border-[#B76E79]/25 bg-[#B76E79]/[0.06] px-3 py-2 flex items-start gap-2">
+                <AlertTriangle className="h-3.5 w-3.5 text-[#B76E79] mt-0.5 shrink-0" />
                 <div className="min-w-0">
-                  <div className="text-[11px] font-medium text-rose-200">
+                  <div className="text-[11px] font-medium text-[#B76E79]">
                     Invalid owner token
                   </div>
-                  <div className="text-[10px] text-rose-300/80 break-words mt-0.5">
+                  <div className="text-[10px] text-[#B76E79]/80 break-words mt-0.5">
                     {result.reason}
                   </div>
                   {result.signInRequired && (
-                    <div className="mt-2 flex items-center gap-1.5 text-[10px] text-amber-300/80">
+                    <div className="mt-2 flex items-center gap-1.5 text-[10px] text-[#A68A5B]/80">
                       <LogIn className="h-3 w-3" />
                       Owner Mode normally works token-only.
                       If your deployment requires auth-first, sign in then retry.
@@ -299,13 +299,13 @@ export default function OwnerUnlockModal({ onClose }: OwnerUnlockModalProps) {
               </div>
             )}
             {result.kind === 'network-error' && (
-              <div className="rounded-lg border border-amber-500/25 bg-amber-500/[0.06] px-3 py-2 flex items-start gap-2">
-                <AlertTriangle className="h-3.5 w-3.5 text-amber-300 mt-0.5 shrink-0" />
+              <div className="rounded-lg border border-[#A68A5B]/25 bg-[#A68A5B]/[0.06] px-3 py-2 flex items-start gap-2">
+                <AlertTriangle className="h-3.5 w-3.5 text-[#A68A5B] mt-0.5 shrink-0" />
                 <div className="min-w-0">
-                  <div className="text-[11px] font-medium text-amber-200">
+                  <div className="text-[11px] font-medium text-[#A68A5B]">
                     Network error
                   </div>
-                  <div className="text-[10px] text-amber-300/80 break-words mt-0.5">
+                  <div className="text-[10px] text-[#A68A5B]/80 break-words mt-0.5">
                     Could not reach <code className="px-1 rounded bg-white/[0.04]">{API_BASE}</code> — {result.message}.
                     Check the backend is deployed and CORS allows
                     <code className="mx-1 px-1 rounded bg-white/[0.04]">X-Korvix-Owner-Token</code>.
@@ -319,7 +319,7 @@ export default function OwnerUnlockModal({ onClose }: OwnerUnlockModalProps) {
               <button
                 onClick={forget}
                 disabled={result.kind === 'checking'}
-                className="text-[10px] text-slate-500 hover:text-rose-300 flex items-center gap-1 transition-colors disabled:opacity-40"
+                className="text-[10px] text-slate-500 hover:text-[#B76E79] flex items-center gap-1 transition-colors disabled:opacity-40"
                 title="Remove the stored token from this browser"
               >
                 <Trash2 className="h-3 w-3" />
@@ -336,7 +336,7 @@ export default function OwnerUnlockModal({ onClose }: OwnerUnlockModalProps) {
                 <button
                   onClick={validate}
                   disabled={result.kind === 'checking' || token.trim().length === 0}
-                  className="px-3 py-1.5 rounded-md bg-amber-500/[0.12] border border-amber-500/30 text-[11px] text-amber-200 hover:bg-amber-500/[0.18] disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-1.5"
+                  className="px-3 py-1.5 rounded-md bg-[#52677A]/[0.12] border border-[#52677A]/30 text-[11px] text-[#7890A3] hover:bg-[#52677A]/[0.18] disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-1.5"
                 >
                   {result.kind === 'checking' && <Loader2 className="h-3 w-3 animate-spin" />}
                   {result.kind === 'checking' ? 'Verifying…' : 'Unlock'}

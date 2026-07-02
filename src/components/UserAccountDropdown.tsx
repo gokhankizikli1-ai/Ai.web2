@@ -22,10 +22,10 @@ interface UserAccountDropdownProps {
 
 const PLAN_CONFIG = {
   free:       { label: 'Free',       color: 'text-slate-400',       bg: 'bg-slate-500/[0.06]',       border: 'border-slate-500/10',       icon: Sparkles },
-  basic:      { label: 'Basic',      color: 'text-cyan-400',        bg: 'bg-cyan-500/[0.06]',        border: 'border-cyan-500/10',        icon: Zap },
-  pro:        { label: 'Pro',        color: 'text-amber-400',       bg: 'bg-amber-500/[0.06]',       border: 'border-amber-500/10',       icon: Crown },
-  ultra:      { label: 'Ultra',      color: 'text-purple-400',      bg: 'bg-purple-500/[0.06]',      border: 'border-purple-500/10',      icon: Shield },
-  enterprise: { label: 'Enterprise', color: 'text-rose-400',        bg: 'bg-rose-500/[0.06]',        border: 'border-rose-500/10',        icon: Landmark },
+  basic:      { label: 'Basic',      color: 'text-[#52677A]',        bg: 'bg-[#52677A]/[0.06]',        border: 'border-[#52677A]/10',        icon: Zap },
+  pro:        { label: 'Pro',        color: 'text-[#52677A]',       bg: 'bg-[#52677A]/[0.06]',       border: 'border-[#52677A]/10',       icon: Crown },
+  ultra:      { label: 'Ultra',      color: 'text-[#52677A]',      bg: 'bg-[#52677A]/[0.06]',      border: 'border-[#52677A]/10',      icon: Shield },
+  enterprise: { label: 'Enterprise', color: 'text-[#52677A]',        bg: 'bg-[#52677A]/[0.06]',        border: 'border-[#52677A]/10',        icon: Landmark },
 };
 
 export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: UserAccountDropdownProps) {
@@ -159,13 +159,13 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
             : 'bg-white/[0.015] border-white/[0.03] hover:bg-white/[0.03] hover:border-white/[0.06]'
         }`}
       >
-        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-cyan-400/20 to-blue-500/20 border border-cyan-500/10 shrink-0">
+        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-[#52677A]/20 to-[#7890A3]/20 border border-[#52677A]/10 shrink-0">
           {sessionActive ? (
-            <span className="text-[10px] font-medium text-cyan-400/80">
+            <span className="text-[10px] font-medium text-[#52677A]/80">
               {avatarInitials}
             </span>
           ) : (
-            <User className="w-3.5 h-3.5 text-cyan-400/70" />
+            <User className="w-3.5 h-3.5 text-[#52677A]/70" />
           )}
         </div>
         <div className="flex-1 min-w-0 text-left">
@@ -173,13 +173,13 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
             {displayName}
           </div>
           <div className="flex items-center gap-1.5 mt-0.5">
-            <div className="w-1 h-1 rounded-full bg-emerald-400/60" />
+            <div className="w-1 h-1 rounded-full bg-[#6F8F7A]/60" />
             <span className="text-[10px] text-slate-600">
               {isOwner ? 'Owner' : plan.label}
             </span>
           </div>
         </div>
-        <span className="text-[10px] text-amber-400/60 tabular-nums shrink-0">{remainingCredits}</span>
+        <span className="text-[10px] text-[#A68A5B]/60 tabular-nums shrink-0">{remainingCredits}</span>
       </button>
 
       {/* ═── Dropdown Menu ─══ */}
@@ -240,7 +240,7 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
                           <Globe className="w-3.5 h-3.5 text-slate-600 shrink-0" />
                           <span className="flex-1">{l.label}</span>
                           {lang === l.code && (
-                            <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 shrink-0" />
+                            <div className="w-1.5 h-1.5 rounded-full bg-[#52677A] shrink-0" />
                           )}
                         </button>
                       ))}
@@ -263,13 +263,13 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
                   {/* User Info Header */}
                   <div className="px-4 py-3.5 border-b border-white/[0.04]">
                     <div className="flex items-center gap-3 mb-3">
-                      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400/20 to-blue-500/20 border border-cyan-500/10 shrink-0">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#52677A]/20 to-[#7890A3]/20 border border-[#52677A]/10 shrink-0">
                         {sessionActive ? (
-                          <span className="text-[11px] font-medium text-cyan-400/80">
+                          <span className="text-[11px] font-medium text-[#52677A]/80">
                             {avatarInitials}
                           </span>
                         ) : (
-                          <User className="w-4 h-4 text-cyan-400/70" />
+                          <User className="w-4 h-4 text-[#52677A]/70" />
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
@@ -295,7 +295,7 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
                       <div className="flex flex-col gap-1.5">
                         <button
                           onClick={() => { setOpen(false); navigate('/signup'); }}
-                          className="w-full h-8 flex items-center justify-center gap-1.5 rounded-xl bg-cyan-500/[0.08] text-cyan-400 border border-cyan-500/15 text-[11px] font-medium hover:bg-cyan-500/[0.12] transition-all"
+                          className="w-full h-8 flex items-center justify-center gap-1.5 rounded-xl bg-[#52677A]/[0.08] text-[#52677A] border border-[#52677A]/15 text-[11px] font-medium hover:bg-[#52677A]/[0.12] transition-all"
                         >
                           <Sparkles className="w-3 h-3" /> Create Account
                         </button>
@@ -314,7 +314,7 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
                   <div className="px-4 py-3 border-b border-white/[0.04]">
                     <div className="flex items-center justify-between mb-1.5">
                       <div className="flex items-center gap-1.5">
-                        <Coins className="w-3.5 h-3.5 text-amber-400/60" />
+                        <Coins className="w-3.5 h-3.5 text-[#A68A5B]/60" />
                         <span className="text-[11px] text-slate-400">Credits</span>
                       </div>
                       <span className="text-[11px] font-medium text-white tabular-nums">
@@ -325,7 +325,7 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
                     {/* Progress bar */}
                     <div className="w-full h-1 bg-white/[0.03] rounded-full overflow-hidden mb-2">
                       <motion.div
-                        className="h-full rounded-full bg-cyan-400/40"
+                        className="h-full rounded-full bg-[#52677A]/40"
                         initial={{ width: 0 }}
                         animate={{ width: `${usagePercent}%` }}
                         transition={{ duration: 0.6, ease: 'easeOut' }}
@@ -334,21 +334,21 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
 
                     {/* Free chat badge */}
                     <div className="flex items-center gap-1.5 mb-2">
-                      <div className="w-1 h-1 rounded-full bg-emerald-400/40" />
-                      <span className="text-[9px] text-emerald-400/50">Casual chat is free</span>
+                      <div className="w-1 h-1 rounded-full bg-[#6F8F7A]/40" />
+                      <span className="text-[9px] text-[#6F8F7A]/50">Casual chat is free</span>
                     </div>
 
                     {/* Action Buttons — stacked for narrow sidebar */}
                     <div className="flex flex-col gap-1.5">
                       <button
                         onClick={handleBuyCredits}
-                        className="w-full h-7 flex items-center justify-center gap-1.5 rounded-lg bg-cyan-500/[0.05] text-cyan-400 border border-cyan-500/8 text-[11px] font-medium hover:bg-cyan-500/[0.08] transition-all"
+                        className="w-full h-7 flex items-center justify-center gap-1.5 rounded-lg bg-[#52677A]/[0.05] text-[#52677A] border border-[#52677A]/8 text-[11px] font-medium hover:bg-[#52677A]/[0.08] transition-all"
                       >
                         <CreditCard className="w-3 h-3" /> Buy Credits
                       </button>
                       <button
                         onClick={handleUpgrade}
-                        className="w-full h-7 flex items-center justify-center gap-1.5 rounded-lg bg-amber-500/[0.05] text-amber-400 border border-amber-500/8 text-[11px] hover:bg-amber-500/[0.08] transition-all"
+                        className="w-full h-7 flex items-center justify-center gap-1.5 rounded-lg bg-[#A68A5B]/[0.05] text-[#A68A5B] border border-[#A68A5B]/8 text-[11px] hover:bg-[#A68A5B]/[0.08] transition-all"
                       >
                         <Crown className="w-3 h-3" /> Upgrade Plan
                       </button>
@@ -398,11 +398,11 @@ function MenuItem({
       onClick={onClick}
       className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[12px] transition-all ${
         danger
-          ? 'text-red-400/60 hover:text-red-400 hover:bg-red-500/[0.04]'
+          ? 'text-[#B76E79]/60 hover:text-[#B76E79] hover:bg-[#B76E79]/[0.04]'
           : 'text-slate-500 hover:text-slate-300 hover:bg-white/[0.03]'
       }`}
     >
-      <Icon className={`w-3.5 h-3.5 ${danger ? 'text-red-400/40' : 'text-slate-600'}`} />
+      <Icon className={`w-3.5 h-3.5 ${danger ? 'text-[#B76E79]/40' : 'text-slate-600'}`} />
       <span className="flex-1">{label}</span>
       {hasSubmenu && <ChevronRight className="w-3 h-3 text-[#64748B]" />}
     </button>

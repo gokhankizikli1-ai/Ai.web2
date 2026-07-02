@@ -29,7 +29,7 @@ export default function PinnedMessages({ messages, onRemove, open, onToggle }: P
               key={msg.id}
               className="flex items-start gap-2 rounded-lg bg-white/[0.02] border border-white/[0.04] p-2.5 group relative"
             >
-              <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-cyan-400/80 to-blue-600/80 mt-0.5">
+              <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-[#52677A]/80 to-[#7890A3]/80 mt-0.5">
                 <Sparkles className="h-3 w-3 text-white" />
               </div>
               <p className="text-[11px] text-slate-400 leading-relaxed line-clamp-3 flex-1 min-w-0">
@@ -37,7 +37,7 @@ export default function PinnedMessages({ messages, onRemove, open, onToggle }: P
               </p>
               <button
                 onClick={() => onRemove(msg.id)}
-                className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded text-slate-600 hover:text-red-400 hover:bg-red-500/10"
+                className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded text-slate-600 hover:text-[#B76E79] hover:bg-[#B76E79]/10"
               >
                 <X className="h-3 w-3" />
               </button>

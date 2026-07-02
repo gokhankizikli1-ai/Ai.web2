@@ -12,16 +12,16 @@ const iconMap: Record<string, React.ElementType> = {
 };
 
 const statusConfig = {
-  active: { label: 'Active', bg: 'bg-emerald-500/[0.08]', text: 'text-emerald-400', dot: 'bg-emerald-400', pulse: true },
-  draft: { label: 'Draft', bg: 'bg-amber-500/[0.08]', text: 'text-amber-400', dot: 'bg-amber-400', pulse: false },
+  active: { label: 'Active', bg: 'bg-[#6F8F7A]/[0.08]', text: 'text-[#6F8F7A]', dot: 'bg-[#6F8F7A]', pulse: true },
+  draft: { label: 'Draft', bg: 'bg-[#A68A5B]/[0.08]', text: 'text-[#A68A5B]', dot: 'bg-[#A68A5B]', pulse: false },
   archived: { label: 'Archived', bg: 'bg-slate-500/[0.08]', text: 'text-slate-400', dot: 'bg-slate-400', pulse: false },
 };
 
 const categoryColor: Record<string, string> = {
-  Ecommerce: 'text-emerald-400',
-  Trading: 'text-cyan-400',
-  Startup: 'text-amber-400',
-  Development: 'text-indigo-400',
+  Ecommerce: 'text-[#52677A]',
+  Trading: 'text-[#52677A]',
+  Startup: 'text-[#52677A]',
+  Development: 'text-[#52677A]',
 };
 
 interface ProjectCardProps {
@@ -157,7 +157,7 @@ export default function ProjectCard({ project, index, onDelete }: ProjectCardPro
             }}
             aria-label={`Delete project ${project.name}`}
             data-testid={`project-delete-${project.id}`}
-            className="absolute top-2 right-2 h-8 w-8 flex items-center justify-center rounded-md text-white/30 opacity-40 group-hover:opacity-100 focus:opacity-100 hover:text-rose-400 hover:bg-rose-500/[0.08] transition-all"
+            className="absolute top-2 right-2 h-8 w-8 flex items-center justify-center rounded-md text-white/30 opacity-40 group-hover:opacity-100 focus:opacity-100 hover:text-[#B76E79] hover:bg-[#B76E79]/[0.08] transition-all"
           >
             <Trash2 className="h-3.5 w-3.5" />
           </button>

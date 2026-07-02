@@ -18,8 +18,8 @@ const PLANS = [
     description: 'For professionals who need more power',
     icon: Zap,
     color: 'cyan',
-    gradient: 'from-cyan-500/10 to-blue-500/5',
-    border: 'border-cyan-500/20',
+    gradient: 'from-[#52677A]/10 to-[#7890A3]/5',
+    border: 'border-[#52677A]/20',
     features: [
       'Unlimited messages',
       '2x faster responses',
@@ -38,8 +38,8 @@ const PLANS = [
     description: 'For power users and teams',
     icon: Crown,
     color: 'amber',
-    gradient: 'from-amber-500/10 to-orange-500/5',
-    border: 'border-amber-500/20',
+    gradient: 'from-[#52677A]/10 to-[#7890A3]/5',
+    border: 'border-[#52677A]/20',
     features: [
       'Everything in Pro',
       'All AI agents unlocked',
@@ -58,8 +58,8 @@ const PLANS = [
     description: 'For organizations at scale',
     icon: Building2,
     color: 'violet',
-    gradient: 'from-violet-500/10 to-purple-500/5',
-    border: 'border-violet-500/20',
+    gradient: 'from-[#52677A]/10 to-[#7890A3]/5',
+    border: 'border-[#52677A]/20',
     features: [
       'Everything in Ultra',
       'SSO & SAML',
@@ -104,10 +104,10 @@ export default function UpgradeModal({ open, onClose }: UpgradeModalProps) {
               </button>
 
               <div className="flex items-center gap-2 mb-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-500/10 border border-cyan-500/15">
-                  <Sparkles className="h-4 w-4 text-cyan-400" />
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#52677A]/10 border border-[#52677A]/15">
+                  <Sparkles className="h-4 w-4 text-[#52677A]" />
                 </div>
-                <span className="text-[11px] font-semibold text-cyan-400/70 uppercase tracking-wider">Upgrade</span>
+                <span className="text-[11px] font-semibold text-[#52677A]/70 uppercase tracking-wider">Upgrade</span>
               </div>
               <h2 className="text-2xl font-semibold text-white mb-1 tracking-tight">Unlock the full power of KorvixAI</h2>
               <p className="text-[13px] text-slate-500">Choose the plan that fits your ambition. Upgrade anytime.</p>
@@ -132,7 +132,7 @@ export default function UpgradeModal({ open, onClose }: UpgradeModalProps) {
                   <motion.span
                     initial={{ opacity: 0, x: -5 }}
                     animate={{ opacity: 1, x: 0 }}
-                    className="text-[11px] text-emerald-400/70 font-medium flex items-center gap-1"
+                    className="text-[11px] text-[#6F8F7A]/70 font-medium flex items-center gap-1"
                   >
                     <Star className="h-3 w-3" />
                     Save 20%
@@ -150,12 +150,12 @@ export default function UpgradeModal({ open, onClose }: UpgradeModalProps) {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.08, duration: 0.35 }}
                   className={`relative rounded-xl border ${plan.border} bg-gradient-to-b ${plan.gradient} p-5 flex flex-col ${
-                    plan.popular ? 'ring-1 ring-cyan-500/10' : ''
+                    plan.popular ? 'ring-1 ring-[#52677A]/10' : ''
                   }`}
                 >
                   {plan.popular && (
                     <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                      <div className="flex items-center gap-1 rounded-full bg-cyan-500/15 border border-cyan-500/20 px-2.5 py-0.5 text-[10px] font-semibold text-cyan-400">
+                      <div className="flex items-center gap-1 rounded-full bg-[#52677A]/15 border border-[#52677A]/20 px-2.5 py-0.5 text-[10px] font-semibold text-[#52677A]">
                         <Star className="h-2.5 w-2.5" />
                         Most Popular
                       </div>
@@ -164,8 +164,8 @@ export default function UpgradeModal({ open, onClose }: UpgradeModalProps) {
 
                   <div className="mb-4">
                     <div className="flex items-center gap-2 mb-2">
-                      <div className={`flex h-7 w-7 items-center justify-center rounded-lg bg-${plan.color}-500/10 border border-${plan.color}-500/15`}>
-                        <plan.icon className={`h-3.5 w-3.5 text-${plan.color}-400`} />
+                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#52677A]/10 border border-[#52677A]/15">
+                        <plan.icon className="h-3.5 w-3.5 text-[#52677A]" />
                       </div>
                       <h3 className="text-[15px] font-semibold text-white">{plan.name}</h3>
                     </div>
@@ -185,7 +185,7 @@ export default function UpgradeModal({ open, onClose }: UpgradeModalProps) {
                   <ul className="space-y-2 mb-5 flex-1">
                     {plan.features.map((f) => (
                       <li key={f} className="flex items-start gap-2 text-[11px] text-slate-400">
-                        <Check className={`h-3 w-3 shrink-0 mt-0.5 text-${plan.color}-400/60`} />
+                        <Check className="h-3 w-3 shrink-0 mt-0.5 text-[#52677A]/60" />
                         {f}
                       </li>
                     ))}

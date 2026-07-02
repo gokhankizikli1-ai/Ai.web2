@@ -82,14 +82,14 @@ interface StateStyle {
 
 const STATE_STYLES: Record<string, StateStyle> = {
   idle:        { dotClass: 'bg-slate-500',   ringClass: 'border-slate-500/20',   spinning: false, label: 'Idle' },
-  thinking:    { dotClass: 'bg-cyan-400',    ringClass: 'border-cyan-400/30',    spinning: true,  label: 'Thinking' },
-  researching: { dotClass: 'bg-cyan-400',    ringClass: 'border-cyan-400/30',    spinning: true,  label: 'Researching' },
-  coding:      { dotClass: 'bg-violet-400',  ringClass: 'border-violet-400/30',  spinning: true,  label: 'Coding' },
-  analyzing:   { dotClass: 'bg-amber-400',   ringClass: 'border-amber-400/30',   spinning: true,  label: 'Analyzing' },
-  waiting:     { dotClass: 'bg-amber-300',   ringClass: 'border-amber-300/30',   spinning: false, label: 'Waiting' },
-  blocked:     { dotClass: 'bg-orange-400',  ringClass: 'border-orange-400/30',  spinning: false, label: 'Blocked' },
-  completed:   { dotClass: 'bg-emerald-400', ringClass: 'border-emerald-400/30', spinning: false, label: 'Completed' },
-  failed:      { dotClass: 'bg-red-400',     ringClass: 'border-red-400/30',     spinning: false, label: 'Failed' },
+  thinking:    { dotClass: 'bg-[#52677A]',    ringClass: 'border-[#52677A]/30',    spinning: true,  label: 'Thinking' },
+  researching: { dotClass: 'bg-[#52677A]',    ringClass: 'border-[#52677A]/30',    spinning: true,  label: 'Researching' },
+  coding:      { dotClass: 'bg-[#52677A]',  ringClass: 'border-[#52677A]/30',  spinning: true,  label: 'Coding' },
+  analyzing:   { dotClass: 'bg-[#52677A]',   ringClass: 'border-[#52677A]/30',   spinning: true,  label: 'Analyzing' },
+  waiting:     { dotClass: 'bg-[#A68A5B]',   ringClass: 'border-[#A68A5B]/30',   spinning: false, label: 'Waiting' },
+  blocked:     { dotClass: 'bg-[#A68A5B]',  ringClass: 'border-[#A68A5B]/30',  spinning: false, label: 'Blocked' },
+  completed:   { dotClass: 'bg-[#6F8F7A]', ringClass: 'border-[#6F8F7A]/30', spinning: false, label: 'Completed' },
+  failed:      { dotClass: 'bg-[#B76E79]',     ringClass: 'border-[#B76E79]/30',     spinning: false, label: 'Failed' },
 };
 
 function styleFor(state: string): StateStyle {
@@ -184,10 +184,10 @@ function Chip({ row, now }: { row: AgentPresenceView; now: number }) {
             <Loader2 className="h-2.5 w-2.5 text-slate-500 animate-spin shrink-0" />
           )}
           {row.state === 'completed' && (
-            <CheckCircle2 className="h-2.5 w-2.5 text-emerald-400/80 shrink-0" />
+            <CheckCircle2 className="h-2.5 w-2.5 text-[#6F8F7A]/80 shrink-0" />
           )}
           {row.state === 'failed' && (
-            <AlertCircle className="h-2.5 w-2.5 text-red-400/80 shrink-0" />
+            <AlertCircle className="h-2.5 w-2.5 text-[#B76E79]/80 shrink-0" />
           )}
         </div>
         {/* second line: state · current_task · active for Ns */}

@@ -10,16 +10,16 @@ import Navigation from '@/components/Navigation';
 import StartupMarketRadar from '@/components/startup/StartupMarketRadar';
 
 const COLOR_MAP: Record<string, { bg: string; border: string; icon: string }> = {
-  amber:  { bg: 'bg-amber-500/[0.05]',  border: 'border-amber-500/10',  icon: 'text-amber-400' },
-  cyan:   { bg: 'bg-cyan-500/[0.05]',   border: 'border-[#52677A]/20',   icon: 'text-[#7890A3]' },
-  violet: { bg: 'bg-violet-500/[0.05]', border: 'border-violet-500/10', icon: 'text-violet-400' },
-  emerald:{ bg: 'bg-emerald-500/[0.05]',border: 'border-emerald-500/10',icon: 'text-emerald-400' },
-  rose:   { bg: 'bg-rose-500/[0.05]',   border: 'border-rose-500/10',   icon: 'text-rose-400' },
-  blue:   { bg: 'bg-blue-500/[0.05]',   border: 'border-blue-500/10',   icon: 'text-blue-400' },
-  indigo: { bg: 'bg-indigo-500/[0.05]', border: 'border-indigo-500/10', icon: 'text-indigo-400' },
-  pink:   { bg: 'bg-pink-500/[0.05]',   border: 'border-pink-500/10',   icon: 'text-pink-400' },
-  teal:   { bg: 'bg-teal-500/[0.05]',   border: 'border-teal-500/10',   icon: 'text-teal-400' },
-  orange: { bg: 'bg-orange-500/[0.05]', border: 'border-orange-500/10', icon: 'text-orange-400' },
+  amber:  { bg: 'bg-[#52677A]/[0.05]',  border: 'border-[#52677A]/10',  icon: 'text-[#7890A3]' },
+  cyan:   { bg: 'bg-[#52677A]/[0.05]',   border: 'border-[#52677A]/20',   icon: 'text-[#7890A3]' },
+  violet: { bg: 'bg-[#52677A]/[0.05]', border: 'border-[#52677A]/10', icon: 'text-[#7890A3]' },
+  emerald:{ bg: 'bg-[#52677A]/[0.05]',border: 'border-[#52677A]/10',icon: 'text-[#7890A3]' },
+  rose:   { bg: 'bg-[#52677A]/[0.05]',   border: 'border-[#52677A]/10',   icon: 'text-[#7890A3]' },
+  blue:   { bg: 'bg-[#52677A]/[0.05]',   border: 'border-[#52677A]/10',   icon: 'text-[#7890A3]' },
+  indigo: { bg: 'bg-[#52677A]/[0.05]', border: 'border-[#52677A]/10', icon: 'text-[#7890A3]' },
+  pink:   { bg: 'bg-[#52677A]/[0.05]',   border: 'border-[#52677A]/10',   icon: 'text-[#7890A3]' },
+  teal:   { bg: 'bg-[#52677A]/[0.05]',   border: 'border-[#52677A]/10',   icon: 'text-[#7890A3]' },
+  orange: { bg: 'bg-[#52677A]/[0.05]', border: 'border-[#52677A]/10', icon: 'text-[#7890A3]' },
 };
 
 // Secondary prompt-based tools — kept as a compact launcher into Startup

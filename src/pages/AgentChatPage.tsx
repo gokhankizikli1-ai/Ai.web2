@@ -128,9 +128,9 @@ export default function AgentChatPage() {
               <div className="flex items-center gap-2">
                 <h1 className="text-[13px] font-semibold text-white/90">{agent.name}</h1>
                 <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium ${
-                  agent.status === 'active' ? 'bg-emerald-500/[0.08] text-emerald-400' : 'bg-slate-500/[0.06] text-slate-400'
+                  agent.status === 'active' ? 'bg-[#6F8F7A]/[0.08] text-[#6F8F7A]' : 'bg-slate-500/[0.06] text-slate-400'
                 }`}>
-                  {agent.status === 'active' && <span className="w-1 h-1 rounded-full bg-emerald-400" />}
+                  {agent.status === 'active' && <span className="w-1 h-1 rounded-full bg-[#6F8F7A]" />}
                   {agent.status}
                 </span>
               </div>
@@ -142,14 +142,14 @@ export default function AgentChatPage() {
           {agent.projectId && (
             <button
               onClick={() => navigate(`/projects/${agent.projectId}`)}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] text-cyan-400/60 transition-all"
-              style={{ background: 'rgba(34,211,238,0.04)', border: '1px solid rgba(34,211,238,0.08)' }}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] text-[#7890A3]/60 transition-all"
+              style={{ background: 'rgba(82,103,122,0.04)', border: '1px solid rgba(82,103,122,0.08)' }}
             >
               <FolderOpen className="h-3 w-3" />
               {agent.projectName || 'Project'}
             </button>
           )}
-          <button onClick={handleDelete} className="p-2 rounded-lg text-white/15 hover:text-red-400 hover:bg-red-500/[0.06] transition-all">
+          <button onClick={handleDelete} className="p-2 rounded-lg text-white/15 hover:text-[#B76E79] hover:bg-[#B76E79]/[0.06] transition-all">
             <Trash2 className="h-3.5 w-3.5" />
           </button>
         </div>
@@ -158,7 +158,7 @@ export default function AgentChatPage() {
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6 space-y-4 scrollbar-thin">
         <div className="fixed inset-0 pointer-events-none overflow-hidden">
-          <div className="absolute -top-[200px] right-[10%] w-[400px] h-[400px] rounded-full opacity-[0.012]" style={{ background: 'radial-gradient(circle, #6366F1 0%, transparent 70%)' }} />
+          <div className="absolute -top-[200px] right-[10%] w-[400px] h-[400px] rounded-full opacity-[0.012]" style={{ background: 'radial-gradient(circle, #637B90 0%, transparent 70%)' }} />
         </div>
 
         {agent.messages.map((msg) => {
@@ -177,8 +177,8 @@ export default function AgentChatPage() {
               <div
                 className="max-w-[75%] rounded-xl px-3.5 py-2.5 text-[12px] leading-relaxed whitespace-pre-wrap"
                 style={{
-                  background: isAgent ? 'rgba(255,255,255,0.025)' : 'rgba(34,211,238,0.04)',
-                  border: isAgent ? '1px solid rgba(255,255,255,0.04)' : '1px solid rgba(34,211,238,0.08)',
+                  background: isAgent ? 'rgba(255,255,255,0.025)' : 'rgba(82,103,122,0.04)',
+                  border: isAgent ? '1px solid rgba(255,255,255,0.04)' : '1px solid rgba(82,103,122,0.08)',
                   color: isAgent ? 'rgba(226,232,240,0.65)' : 'rgba(226,232,240,0.8)',
                 }}
                 dangerouslySetInnerHTML={{ __html: msg.content }}
@@ -223,7 +223,7 @@ export default function AgentChatPage() {
             disabled={!input.trim()}
             className="flex h-7 w-7 items-center justify-center rounded-lg transition-all disabled:opacity-30"
             style={{
-              background: input.trim() ? 'linear-gradient(135deg, #22D3EE, #3B82F6)' : 'rgba(255,255,255,0.04)',
+              background: input.trim() ? 'linear-gradient(135deg, #7890A3, #637B90)' : 'rgba(255,255,255,0.04)',
             }}
           >
             <Send className="h-3 w-3 text-white" />

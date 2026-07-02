@@ -44,13 +44,13 @@ export default function MarkdownMessage({ content }: MarkdownMessageProps) {
           }
 
           return (
-            <code className="px-[5px] py-[2px] rounded-md bg-white/[0.06] text-cyan-300/90 text-[12px] font-mono border border-white/[0.05]">
+            <code className="px-[5px] py-[2px] rounded-md bg-white/[0.06] text-[#7890A3]/90 text-[12px] font-mono border border-white/[0.05]">
               {children}
             </code>
           );
         },
         blockquote: ({ children }) => (
-          <blockquote className="border-l-2 border-cyan-500/30 pl-4 my-3 text-slate-500 italic">
+          <blockquote className="border-l-2 border-[#52677A]/30 pl-4 my-3 text-slate-500 italic">
             {children}
           </blockquote>
         ),
@@ -60,7 +60,7 @@ export default function MarkdownMessage({ content }: MarkdownMessageProps) {
             href={href}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-cyan-400/80 hover:text-cyan-300 underline underline-offset-2 transition-colors"
+            className="text-[#52677A]/80 hover:text-[#7890A3] underline underline-offset-2 transition-colors"
           >
             {children}
           </a>

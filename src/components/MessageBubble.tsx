@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, memo } from 'react';
 import { motion } from 'framer-motion';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
@@ -110,6 +110,25 @@ const markdownComponents = {
     return <em className="text-slate-400 italic">{children}</em>;
   },
 };
+
+/** Memoized markdown body.
+ *
+ * Re-render / "replay" fix: the assistant bubble re-renders on every
+ * parent state change — hover in/out, and (critically) the moment
+ * `isGenerating` flips false on completion. ReactMarkdown + the Prism
+ * SyntaxHighlighter are expensive to re-parse, and re-parsing identical
+ * text is what read as the answer "flickering" or "soft-reloading"
+ * after the stream settled. Memoizing on the exact markdown string means
+ * a re-render with unchanged content reuses the already-parsed tree —
+ * the completed message renders once and stays put. During streaming the
+ * string changes each token, so live typing is unaffected. */
+const MarkdownBody = memo(function MarkdownBody({ text }: { text: string }) {
+  return (
+    <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+      {text}
+    </ReactMarkdown>
+  );
+});
 
 /** Detect a trailing "Sources / Kaynaklar / References" block the model
  * appended and split it out so it renders as a compact collapsed control
@@ -254,12 +273,7 @@ export default function MessageBubble({
           }`}
         >
           <div ref={contentRef} className="prose prose-invert prose-sm max-w-none">
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              components={markdownComponents}
-            >
-              {body}
-            </ReactMarkdown>
+            <MarkdownBody text={body} />
           </div>
 
           {/* Live streaming caret — shown ONLY while THIS message is the
@@ -283,9 +297,7 @@ export default function MessageBubble({
               Sources ({count})
             </summary>
             <div className="mt-1.5 px-3 py-2 rounded-xl border border-[#2A3440] bg-white/[0.01] prose prose-invert prose-sm max-w-none">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                {sources}
-              </ReactMarkdown>
+              <MarkdownBody text={sources} />
             </div>
           </details>
         )}
@@ -321,11 +333,11 @@ export default function MessageBubble({
               </button>
             )}
 
-            <button className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[#64748B] hover:text-emerald-400 hover:bg-emerald-500/[0.03] transition-all">
+            <button className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[#64748B] hover:text-[#6F8F7A] hover:bg-[#6F8F7A]/[0.03] transition-all">
               <ThumbsUp className="h-3 w-3" />
             </button>
 
-            <button className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[#64748B] hover:text-red-400 hover:bg-red-500/[0.03] transition-all">
+            <button className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[#64748B] hover:text-[#B76E79] hover:bg-[#B76E79]/[0.03] transition-all">
               <ThumbsDown className="h-3 w-3" />
             </button>
 

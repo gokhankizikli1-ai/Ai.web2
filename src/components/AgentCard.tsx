@@ -14,18 +14,18 @@ const iconMap: Record<string, React.ElementType> = {
 
 const statusConfig = {
   active: {
-    dot: 'bg-emerald-400',
-    shadow: '0 0 8px rgba(52,211,153,0.3)',
+    dot: 'bg-[#6F8F7A]',
+    shadow: '0 0 8px rgba(111,143,122,0.3)',
     label: 'Active',
   },
   idle: {
-    dot: 'bg-amber-400',
-    shadow: '0 0 6px rgba(251,191,36,0.2)',
+    dot: 'bg-[#A68A5B]',
+    shadow: '0 0 6px rgba(166,138,91,0.2)',
     label: 'Idle',
   },
   syncing: {
-    dot: 'bg-cyan-400',
-    shadow: '0 0 8px rgba(34,211,238,0.3)',
+    dot: 'bg-[#52677A]',
+    shadow: '0 0 8px rgba(82,103,122,0.3)',
     label: 'Syncing',
   },
   offline: {
@@ -94,16 +94,16 @@ export default function AgentCard({ agent, isSelected, onClick, index }: AgentCa
               <div
                 className="flex items-center gap-0.5 px-1 py-0.5 rounded-full shrink-0"
                 style={{
-                  background: agent.contextSync >= 90 ? 'rgba(52,211,153,0.1)' : 'rgba(251,191,36,0.1)',
+                  background: agent.contextSync >= 90 ? 'rgba(111,143,122,0.1)' : 'rgba(166,138,91,0.1)',
                 }}
               >
                 <div
                   className="w-1 h-1 rounded-full"
-                  style={{ background: agent.contextSync >= 90 ? '#34d399' : '#fbbf24' }}
+                  style={{ background: agent.contextSync >= 90 ? '#6F8F7A' : '#A68A5B' }}
                 />
                 <span
                   className="text-[8px] font-medium"
-                  style={{ color: agent.contextSync >= 90 ? '#34d399' : '#fbbf24' }}
+                  style={{ color: agent.contextSync >= 90 ? '#6F8F7A' : '#A68A5B' }}
                 >
                   {agent.contextSync}%
                 </span>

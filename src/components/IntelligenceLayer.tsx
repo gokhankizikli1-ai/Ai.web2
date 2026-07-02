@@ -16,11 +16,11 @@ interface ActivityItem {
 }
 
 const DEMO_ACTIVITIES: ActivityItem[] = [
-  { id: 'a1', status: 'active', message: 'Deep Research on NVDA Q3 Earnings', detail: 'Analyzing financial statements...', progress: 65, icon: Brain, color: 'text-violet-400' },
-  { id: 'a2', status: 'active', message: 'Market Sentiment Scan', detail: 'Processing 12K social posts...', progress: 34, icon: TrendingUp, color: 'text-emerald-400' },
-  { id: 'a3', status: 'completed', message: 'Portfolio Risk Analysis', detail: 'Completed with 3 alerts', icon: CheckCircle2, color: 'text-cyan-400' },
+  { id: 'a1', status: 'active', message: 'Deep Research on NVDA Q3 Earnings', detail: 'Analyzing financial statements...', progress: 65, icon: Brain, color: 'text-[#52677A]' },
+  { id: 'a2', status: 'active', message: 'Market Sentiment Scan', detail: 'Processing 12K social posts...', progress: 34, icon: TrendingUp, color: 'text-[#52677A]' },
+  { id: 'a3', status: 'completed', message: 'Portfolio Risk Analysis', detail: 'Completed with 3 alerts', icon: CheckCircle2, color: 'text-[#52677A]' },
   { id: 'a4', status: 'queued', message: 'Weekly Trend Forecast', detail: 'Scheduled for 2:00 PM', icon: Activity, color: 'text-slate-400' },
-  { id: 'a5', status: 'active', message: 'Startup Idea Validation', detail: 'Scoring across 10 dimensions...', progress: 78, icon: Brain, color: 'text-purple-400' },
+  { id: 'a5', status: 'active', message: 'Startup Idea Validation', detail: 'Scoring across 10 dimensions...', progress: 78, icon: Brain, color: 'text-[#52677A]' },
 ];
 
 function ThinkingPulse() {
@@ -29,7 +29,7 @@ function ThinkingPulse() {
       {[0, 1, 2].map((i) => (
         <motion.div
           key={i}
-          className="w-1 h-1 rounded-full bg-cyan-400"
+          className="w-1 h-1 rounded-full bg-[#52677A]"
           animate={{ y: [0, -4, 0] }}
           transition={{ duration: 0.6, repeat: Infinity, delay: i * 0.15, ease: 'easeInOut' }}
         />
@@ -44,7 +44,7 @@ function SyncIndicator() {
       animate={{ rotate: 360 }}
       transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
     >
-      <Loader2 className="w-3 h-3 text-cyan-400/60" />
+      <Loader2 className="w-3 h-3 text-[#52677A]/60" />
     </motion.div>
   );
 }
@@ -60,7 +60,7 @@ function StatusDot({ status, color }: { status: string; color: string }) {
     );
   }
   if (status === 'completed') {
-    return <CheckCircle2 className="w-3 h-3 text-cyan-400" />;
+    return <CheckCircle2 className="w-3 h-3 text-[#6F8F7A]" />;
   }
   return <Activity className="w-3 h-3 text-slate-500" />;
 }
@@ -80,11 +80,11 @@ export default function IntelligenceLayer({ variant = 'compact' }: IntelligenceL
         {/* Live indicator */}
         <div className="flex items-center gap-1.5">
           <motion.div
-            className="w-2 h-2 rounded-full bg-emerald-400"
+            className="w-2 h-2 rounded-full bg-[#6F8F7A]"
             animate={{ opacity: [0.4, 1, 0.4], scale: [1, 1.2, 1] }}
             transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
           />
-          <span className="text-[10px] font-medium text-emerald-400/70 uppercase tracking-wider">Live</span>
+          <span className="text-[10px] font-medium text-[#6F8F7A]/70 uppercase tracking-wider">Live</span>
         </div>
 
         {/* Scrolling activity pills */}
@@ -134,7 +134,7 @@ export default function IntelligenceLayer({ variant = 'compact' }: IntelligenceL
                     {a.status === 'active' && a.progress !== undefined && (
                       <div className="w-16 h-1 rounded-full bg-white/[0.04] overflow-hidden">
                         <motion.div
-                          className="h-full rounded-full bg-cyan-400/60"
+                          className="h-full rounded-full bg-[#52677A]/60"
                           initial={{ width: 0 }}
                           animate={{ width: `${a.progress}%` }}
                           transition={{ duration: 1 }}

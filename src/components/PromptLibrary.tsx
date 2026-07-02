@@ -31,7 +31,7 @@ export default function PromptLibrary({ open, onClose, onSelect }: PromptLibrary
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-5 pb-3">
           <div className="flex items-center gap-2">
-            <Bookmark className="h-4 w-4 text-cyan-400" />
+            <Bookmark className="h-4 w-4 text-[#52677A]" />
             <h3 className="text-sm font-semibold text-white">Prompt Library</h3>
           </div>
           <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors p-1 rounded-md hover:bg-white/[0.05]">
@@ -41,7 +41,7 @@ export default function PromptLibrary({ open, onClose, onSelect }: PromptLibrary
 
         {/* Search */}
         <div className="px-5 pb-3">
-          <div className="flex items-center gap-2 rounded-xl bg-white/[0.03] border border-white/[0.06] px-3 py-2 focus-within:border-cyan-500/20 transition-colors">
+          <div className="flex items-center gap-2 rounded-xl bg-white/[0.03] border border-white/[0.06] px-3 py-2 focus-within:border-[#52677A]/20 transition-colors">
             <Search className="h-3.5 w-3.5 text-slate-600" />
             <input
               type="text"

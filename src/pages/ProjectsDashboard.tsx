@@ -11,18 +11,18 @@ import { getProjects, addProject, deleteProject as deleteProjectFromStore } from
 
 /* ─── Category config ─── */
 const CATEGORIES = [
-  { id: 'ecommerce', label: 'Ecommerce', gradient: 'from-emerald-500 to-teal-500', glow: 'rgba(52,211,153,0.2)', color: 'emerald' },
-  { id: 'trading', label: 'Trading', gradient: 'from-cyan-500 to-blue-500', glow: 'rgba(34,211,238,0.2)', color: 'cyan' },
-  { id: 'startup', label: 'Startup', gradient: 'from-amber-500 to-orange-500', glow: 'rgba(245,158,11,0.2)', color: 'amber' },
-  { id: 'development', label: 'Development', gradient: 'from-indigo-500 to-violet-500', glow: 'rgba(139,92,246,0.2)', color: 'indigo' },
+  { id: 'ecommerce', label: 'Ecommerce', gradient: 'from-[#52677A] to-[#7890A3]', glow: 'rgba(82,103,122,0.2)', color: 'emerald' },
+  { id: 'trading', label: 'Trading', gradient: 'from-[#52677A] to-[#7890A3]', glow: 'rgba(82,103,122,0.2)', color: 'cyan' },
+  { id: 'startup', label: 'Startup', gradient: 'from-[#52677A] to-[#7890A3]', glow: 'rgba(82,103,122,0.2)', color: 'amber' },
+  { id: 'development', label: 'Development', gradient: 'from-[#52677A] to-[#7890A3]', glow: 'rgba(82,103,122,0.2)', color: 'indigo' },
   { id: 'custom', label: 'Custom', gradient: 'from-slate-400 to-slate-500', glow: 'rgba(148,163,184,0.12)', color: 'slate' },
 ];
 
 const CAT_GRADIENT: Record<string, string> = {
-  ecommerce: 'from-emerald-500 to-teal-500',
-  trading: 'from-cyan-500 to-blue-500',
-  startup: 'from-amber-500 to-orange-500',
-  development: 'from-indigo-500 to-violet-500',
+  ecommerce: 'from-[#52677A] to-[#7890A3]',
+  trading: 'from-[#52677A] to-[#7890A3]',
+  startup: 'from-[#52677A] to-[#7890A3]',
+  development: 'from-[#52677A] to-[#7890A3]',
 };
 
 /* ─── Helpers ─── */
@@ -134,8 +134,8 @@ export default function ProjectsDashboard() {
     <div className="min-h-[100dvh]" style={{ background: '#11151C', color: '#E2E8F0' }}>
       {/* Ambient orbs */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute -top-[200px] -right-[200px] w-[600px] h-[600px] rounded-full opacity-[0.04]" style={{ background: 'radial-gradient(circle, #22D3EE 0%, transparent 70%)' }} />
-        <div className="absolute bottom-0 left-0 w-[400px] h-[400px] rounded-full opacity-[0.03]" style={{ background: 'radial-gradient(circle, #818CF8 0%, transparent 70%)' }} />
+        <div className="absolute -top-[200px] -right-[200px] w-[600px] h-[600px] rounded-full opacity-[0.04]" style={{ background: 'radial-gradient(circle, #52677A 0%, transparent 70%)' }} />
+        <div className="absolute bottom-0 left-0 w-[400px] h-[400px] rounded-full opacity-[0.03]" style={{ background: 'radial-gradient(circle, #7890A3 0%, transparent 70%)' }} />
       </div>
 
       <div className="relative max-w-6xl mx-auto px-4 sm:px-6 py-6">
@@ -149,7 +149,7 @@ export default function ProjectsDashboard() {
 
           <div className="flex items-start justify-between mb-8">
             <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: 'linear-gradient(135deg, #22D3EE 0%, #3B82F6 100%)', boxShadow: '0 2px 8px rgba(34,211,238,0.2)' }}>
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: 'linear-gradient(135deg, #52677A 0%, #7890A3 100%)', boxShadow: '0 2px 8px rgba(82,103,122,0.2)' }}>
                 <FolderOpen className="h-4 w-4 text-white" />
               </div>
               <div>
@@ -196,8 +196,8 @@ export default function ProjectsDashboard() {
               transition={{ delay: 0.15, duration: 0.5 }}
               className="flex flex-col items-center justify-center py-24"
             >
-              <div className="flex h-16 w-16 items-center justify-center rounded-2xl mb-5" style={{ background: 'linear-gradient(135deg, rgba(34,211,238,0.08) 0%, rgba(59,130,246,0.08) 100%)', boxShadow: '0 0 24px rgba(34,211,238,0.06), inset 0 1px 0 rgba(255,255,255,0.04)', border: '1px solid rgba(34,211,238,0.08)' }}>
-                <FolderOpen className="h-7 w-7 text-cyan-400/40" />
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl mb-5" style={{ background: 'linear-gradient(135deg, rgba(82,103,122,0.08) 0%, rgba(82,103,122,0.08) 100%)', boxShadow: '0 0 24px rgba(82,103,122,0.06), inset 0 1px 0 rgba(255,255,255,0.04)', border: '1px solid rgba(82,103,122,0.08)' }}>
+                <FolderOpen className="h-7 w-7 text-[#7890A3]/40" />
               </div>
               <h2 className="text-[15px] font-semibold text-white/70 mb-1.5">No projects yet</h2>
               <p className="text-[13px] text-white/30 mb-6">Create your first AI workspace</p>
@@ -233,7 +233,7 @@ export default function ProjectsDashboard() {
               {/* Modal header */}
               <div className="flex items-center justify-between mb-5">
                 <div className="flex items-center gap-2">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ background: 'linear-gradient(135deg, #22D3EE, #3B82F6)' }}>
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ background: 'linear-gradient(135deg, #52677A, #7890A3)' }}>
                     <Sparkles className="h-3.5 w-3.5 text-white" />
                   </div>
                   <h2 className="text-[15px] font-semibold text-white/90">Create Project</h2>
@@ -246,7 +246,7 @@ export default function ProjectsDashboard() {
               <div className="space-y-4">
                 {/* Project Name */}
                 <div>
-                  <label className="text-[11px] font-medium text-white/40 mb-1.5 block">Project Name <span className="text-red-400/60">*</span></label>
+                  <label className="text-[11px] font-medium text-white/40 mb-1.5 block">Project Name <span className="text-[#B76E79]/60">*</span></label>
                   <input
                     type="text"
                     value={projectName}
@@ -255,16 +255,16 @@ export default function ProjectsDashboard() {
                     className="w-full px-3 py-2.5 rounded-xl text-[13px] text-white/80 placeholder:text-white/20 outline-none transition-all"
                     style={{
                       background: 'rgba(255,255,255,0.03)',
-                      border: `1px solid ${errors.name ? 'rgba(239,68,68,0.3)' : 'rgba(255,255,255,0.06)'}`,
+                      border: `1px solid ${errors.name ? 'rgba(183,110,121,0.3)' : 'rgba(255,255,255,0.06)'}`,
                     }}
                   />
-                  {errors.name && <p className="text-[10px] text-red-400/70 mt-1">{errors.name}</p>}
+                  {errors.name && <p className="text-[10px] text-[#B76E79]/70 mt-1">{errors.name}</p>}
                 </div>
 
                 {/* Category */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <label className="text-[11px] font-medium text-white/40">Category <span className="text-red-400/60">*</span></label>
+                    <label className="text-[11px] font-medium text-white/40">Category <span className="text-[#B76E79]/60">*</span></label>
                     <span className="text-[9px] text-white/20">{isCustom ? 'Type your own' : 'Select one'}</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
@@ -293,7 +293,7 @@ export default function ProjectsDashboard() {
                       );
                     })}
                   </div>
-                  {errors.category && <p className="text-[10px] text-red-400/70 mt-1">{errors.category}</p>}
+                  {errors.category && <p className="text-[10px] text-[#B76E79]/70 mt-1">{errors.category}</p>}
 
                   {/* Custom input */}
                   <AnimatePresence>
@@ -340,7 +340,7 @@ export default function ProjectsDashboard() {
                   <button
                     onClick={handleCreate}
                     className="w-full py-2.5 rounded-xl text-[13px] font-semibold text-white transition-all hover:brightness-110"
-                    style={{ background: 'linear-gradient(135deg, #22D3EE, #3B82F6)', boxShadow: '0 4px 16px rgba(34,211,238,0.2)' }}
+                    style={{ background: 'linear-gradient(135deg, #52677A, #7890A3)', boxShadow: '0 4px 16px rgba(82,103,122,0.2)' }}
                   >
                     Create Project
                   </button>

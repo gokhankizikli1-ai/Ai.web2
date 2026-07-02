@@ -48,9 +48,9 @@ function AgentCard({ agent, onChat, onAttach, onDelete }: {
           <div className="flex items-center gap-2">
             <h3 className="text-[13px] font-semibold text-white/90 truncate">{agent.name}</h3>
             <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium ${
-              agent.status === 'active' ? 'bg-emerald-500/[0.08] text-emerald-400' : 'bg-slate-500/[0.06] text-slate-400'
+              agent.status === 'active' ? 'bg-[#6F8F7A]/[0.08] text-[#6F8F7A]' : 'bg-slate-500/[0.06] text-slate-400'
             }`}>
-              {agent.status === 'active' && <span className="w-1 h-1 rounded-full bg-emerald-400" />}
+              {agent.status === 'active' && <span className="w-1 h-1 rounded-full bg-[#6F8F7A]" />}
               {agent.status}
             </span>
           </div>
@@ -58,7 +58,7 @@ function AgentCard({ agent, onChat, onAttach, onDelete }: {
         </div>
         {/* Actions */}
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button onClick={onDelete} className="p-1 rounded text-white/15 hover:text-red-400 hover:bg-red-500/[0.06] transition-all">
+          <button onClick={onDelete} className="p-1 rounded text-white/15 hover:text-[#B76E79] hover:bg-[#B76E79]/[0.06] transition-all">
             <Trash2 className="h-3.5 w-3.5" />
           </button>
         </div>
@@ -75,7 +75,7 @@ function AgentCard({ agent, onChat, onAttach, onDelete }: {
           {agent.memoryMode === 'project' ? 'Project Context' : 'Independent'}
         </span>
         {isProjectAttached && (
-          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-cyan-500/[0.06] text-[9px] text-cyan-400/70 border border-cyan-500/10">
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#52677A]/[0.06] text-[9px] text-[#52677A]/70 border border-[#52677A]/10">
             <FolderOpen className="h-2.5 w-2.5" />
             {agent.projectName || 'Project'}
           </span>
@@ -112,7 +112,7 @@ function AgentCard({ agent, onChat, onAttach, onDelete }: {
         {!isProjectAttached && (
           <button
             onClick={onAttach}
-            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-medium text-cyan-400/70 transition-all"
+            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-medium text-[#52677A]/70 transition-all"
             style={{
               background: 'rgba(34,211,238,0.04)',
               border: '1px solid rgba(34,211,238,0.08)',
@@ -206,7 +206,7 @@ function AttachToProjectModal({ agent, onClose, onAttach }: {
           disabled={!selected}
           className="w-full py-2.5 rounded-xl text-[13px] font-semibold text-white transition-all disabled:opacity-30"
           style={{
-            background: 'linear-gradient(135deg, #22D3EE, #3B82F6)',
+            background: 'linear-gradient(135deg, #52677A, #7890A3)',
             boxShadow: '0 4px 16px rgba(34,211,238,0.15)',
           }}
         >
@@ -253,7 +253,7 @@ export default function AgentsPage() {
     <div className="min-h-[100dvh]" style={{ background: '#11151C', color: '#E2E8F0' }}>
       {/* Ambient glow */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute -top-[300px] right-[10%] w-[500px] h-[500px] rounded-full opacity-[0.025]" style={{ background: 'radial-gradient(circle, #8B5CF6 0%, transparent 70%)' }} />
+        <div className="absolute -top-[300px] right-[10%] w-[500px] h-[500px] rounded-full opacity-[0.025]" style={{ background: 'radial-gradient(circle, #52677A 0%, transparent 70%)' }} />
       </div>
 
       <div className="relative max-w-4xl mx-auto px-4 sm:px-6 pt-4 pb-20">
@@ -264,8 +264,8 @@ export default function AgentsPage() {
               <ArrowLeft className="h-3.5 w-3.5" />
             </button>
             <div className="w-px h-5 bg-white/10" />
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-500/[0.08] border border-indigo-500/15">
-              <Bot className="h-4 w-4 text-indigo-400/70" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#52677A]/[0.08] border border-[#52677A]/15">
+              <Bot className="h-4 w-4 text-[#52677A]/70" />
             </div>
             <div>
               <h1 className="text-[16px] font-semibold text-white/90">Agents</h1>
@@ -276,7 +276,7 @@ export default function AgentsPage() {
             onClick={() => navigate('/agents/builder')}
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-[12px] font-semibold text-white transition-all hover:brightness-110"
             style={{
-              background: 'linear-gradient(135deg, #22D3EE, #3B82F6)',
+              background: 'linear-gradient(135deg, #52677A, #7890A3)',
               boxShadow: '0 4px 16px rgba(34,211,238,0.15)',
             }}
           >
@@ -332,7 +332,7 @@ export default function AgentsPage() {
                 boxShadow: '0 0 24px rgba(139,92,246,0.04)',
               }}
             >
-              <Bot className="h-7 w-7 text-indigo-400/30" />
+              <Bot className="h-7 w-7 text-[#52677A]/30" />
             </div>
             <h2 className="text-[15px] font-semibold text-white/60 mb-1.5">No agents yet</h2>
             <p className="text-[12px] text-white/25 mb-6 max-w-xs">
@@ -342,7 +342,7 @@ export default function AgentsPage() {
               onClick={() => navigate('/agents/builder')}
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-semibold text-white transition-all hover:brightness-110"
               style={{
-                background: 'linear-gradient(135deg, #22D3EE, #3B82F6)',
+                background: 'linear-gradient(135deg, #52677A, #7890A3)',
                 boxShadow: '0 4px 16px rgba(34,211,238,0.15)',
               }}
             >

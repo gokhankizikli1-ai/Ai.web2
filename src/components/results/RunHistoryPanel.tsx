@@ -28,7 +28,7 @@ export default function RunHistoryPanel({
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/[0.05]">
         <div className="flex items-center gap-2">
-          <History className="h-3.5 w-3.5 text-cyan-400/60" />
+          <History className="h-3.5 w-3.5 text-[#52677A]/60" />
           <span className="text-[12px] font-semibold text-white/70">Run History</span>
           {runs.length > 0 && (
             <span className="text-[10px] text-white/30">{runs.length}</span>
@@ -46,14 +46,14 @@ export default function RunHistoryPanel({
       <div className="flex-1 overflow-y-auto">
         {/* Feature gate off */}
         {availability === 'disabled' ? (
-          <Notice icon={<Ban className="h-4 w-4 text-amber-400/80" />} title="Orchestrator disabled">
+          <Notice icon={<Ban className="h-4 w-4 text-[#A68A5B]/80" />} title="Orchestrator disabled">
             Run history activates when <code className="text-white/45">ENABLE_PROJECT_ORCHESTRATOR</code> is
             enabled on the backend.
           </Notice>
         ) : error ? (
-          <Notice icon={<Ban className="h-4 w-4 text-red-400/80" />} title="Couldn't load runs">
+          <Notice icon={<Ban className="h-4 w-4 text-[#B76E79]/80" />} title="Couldn't load runs">
             <p className="mb-2">{error}</p>
-            <button onClick={onRetry} className="inline-flex items-center gap-1 text-[11px] text-cyan-400/80 hover:text-cyan-300">
+            <button onClick={onRetry} className="inline-flex items-center gap-1 text-[11px] text-[#52677A]/80 hover:text-[#637B90]">
               <RotateCcw className="h-3 w-3" /> Try again
             </button>
           </Notice>
@@ -79,7 +79,7 @@ export default function RunHistoryPanel({
                     onClick={() => onSelect(r.run_id)}
                     className={`w-full text-left rounded-lg px-2.5 py-2 transition-colors border ${
                       selected
-                        ? 'bg-cyan-500/[0.06] border-cyan-500/20'
+                        ? 'bg-[#52677A]/[0.06] border-[#52677A]/20'
                         : 'bg-transparent border-transparent hover:bg-white/[0.03]'
                     }`}
                   >

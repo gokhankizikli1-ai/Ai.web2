@@ -15,18 +15,18 @@ interface Suggestion {
 }
 
 const CHAT_SUGGESTIONS: Suggestion[] = [
-  { icon: Brain, label: 'Deep analysis', prompt: 'Analyze the implications of AI on software development in the next 5 years', color: 'text-violet-400', bg: 'bg-violet-500/[0.04]', border: 'border-violet-500/10' },
-  { icon: Globe, label: 'Research', prompt: 'Research the latest developments in quantum computing and their practical applications', color: 'text-cyan-400', bg: 'bg-cyan-500/[0.04]', border: 'border-cyan-500/10' },
-  { icon: Code, label: 'Coding', prompt: 'Write a clean, production-ready React hook for real-time WebSocket data management', color: 'text-blue-400', bg: 'bg-blue-500/[0.04]', border: 'border-blue-500/10' },
-  { icon: TrendingUp, label: 'Market', prompt: 'Analyze the current tech sector trends and identify potential investment opportunities', color: 'text-emerald-400', bg: 'bg-emerald-500/[0.04]', border: 'border-emerald-500/10' },
-  { icon: FileText, label: 'Document', prompt: 'Summarize the key points from this topic and create an executive summary format', color: 'text-amber-400', bg: 'bg-amber-500/[0.04]', border: 'border-amber-500/10' },
-  { icon: BarChart3, label: 'Strategy', prompt: 'Create a step-by-step strategy for launching a SaaS product in the AI space', color: 'text-rose-400', bg: 'bg-rose-500/[0.04]', border: 'border-rose-500/10' },
+  { icon: Brain, label: 'Deep analysis', prompt: 'Analyze the implications of AI on software development in the next 5 years', color: 'text-[#52677A]', bg: 'bg-[#52677A]/[0.04]', border: 'border-[#52677A]/10' },
+  { icon: Globe, label: 'Research', prompt: 'Research the latest developments in quantum computing and their practical applications', color: 'text-[#52677A]', bg: 'bg-[#52677A]/[0.04]', border: 'border-[#52677A]/10' },
+  { icon: Code, label: 'Coding', prompt: 'Write a clean, production-ready React hook for real-time WebSocket data management', color: 'text-[#52677A]', bg: 'bg-[#52677A]/[0.04]', border: 'border-[#52677A]/10' },
+  { icon: TrendingUp, label: 'Market', prompt: 'Analyze the current tech sector trends and identify potential investment opportunities', color: 'text-[#52677A]', bg: 'bg-[#52677A]/[0.04]', border: 'border-[#52677A]/10' },
+  { icon: FileText, label: 'Document', prompt: 'Summarize the key points from this topic and create an executive summary format', color: 'text-[#52677A]', bg: 'bg-[#52677A]/[0.04]', border: 'border-[#52677A]/10' },
+  { icon: BarChart3, label: 'Strategy', prompt: 'Create a step-by-step strategy for launching a SaaS product in the AI space', color: 'text-[#52677A]', bg: 'bg-[#52677A]/[0.04]', border: 'border-[#52677A]/10' },
 ];
 
 const RESEARCH_SUGGESTIONS: Suggestion[] = [
-  { icon: Search, label: 'Deep dive', prompt: 'Conduct comprehensive research on the latest LLM architectures and their trade-offs', color: 'text-violet-400', bg: 'bg-violet-500/[0.04]', border: 'border-violet-500/10' },
-  { icon: Globe, label: 'Sources', prompt: 'Find the most cited academic papers on transformer models from 2024', color: 'text-cyan-400', bg: 'bg-cyan-500/[0.04]', border: 'border-cyan-500/10' },
-  { icon: Sparkles, label: 'Compare', prompt: 'Compare GPT-4, Claude, and Gemini across reasoning, coding, and creative tasks', color: 'text-amber-400', bg: 'bg-amber-500/[0.04]', border: 'border-amber-500/10' },
+  { icon: Search, label: 'Deep dive', prompt: 'Conduct comprehensive research on the latest LLM architectures and their trade-offs', color: 'text-[#52677A]', bg: 'bg-[#52677A]/[0.04]', border: 'border-[#52677A]/10' },
+  { icon: Globe, label: 'Sources', prompt: 'Find the most cited academic papers on transformer models from 2024', color: 'text-[#52677A]', bg: 'bg-[#52677A]/[0.04]', border: 'border-[#52677A]/10' },
+  { icon: Sparkles, label: 'Compare', prompt: 'Compare GPT-4, Claude, and Gemini across reasoning, coding, and creative tasks', color: 'text-[#52677A]', bg: 'bg-[#52677A]/[0.04]', border: 'border-[#52677A]/10' },
 ];
 
 interface SmartSuggestionsProps {
@@ -93,7 +93,7 @@ export default function SmartSuggestions({ variant = 'chat', onSelect }: SmartSu
             key={i}
             onClick={() => setActiveIndex(i)}
             className={`rounded-full transition-all duration-300 ${
-              i === activeIndex ? 'w-4 h-1 bg-cyan-400/50' : 'w-1 h-1 bg-slate-800 hover:bg-slate-700'
+              i === activeIndex ? 'w-4 h-1 bg-[#52677A]/50' : 'w-1 h-1 bg-slate-800 hover:bg-slate-700'
             }`}
           />
         ))}

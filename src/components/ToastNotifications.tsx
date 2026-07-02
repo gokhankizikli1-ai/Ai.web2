@@ -10,17 +10,17 @@ const ICONS = {
 };
 
 const STYLES = {
-  success: 'border-emerald-500/15 bg-emerald-500/[0.04] text-emerald-400',
-  warning: 'border-amber-500/15 bg-amber-500/[0.04] text-amber-400',
-  error: 'border-red-500/15 bg-red-500/[0.04] text-red-400',
-  info: 'border-cyan-500/15 bg-cyan-500/[0.04] text-cyan-400',
+  success: 'border-[#6F8F7A]/15 bg-[#6F8F7A]/[0.04] text-[#6F8F7A]',
+  warning: 'border-[#A68A5B]/15 bg-[#A68A5B]/[0.04] text-[#A68A5B]',
+  error: 'border-[#B76E79]/15 bg-[#B76E79]/[0.04] text-[#B76E79]',
+  info: 'border-[#52677A]/15 bg-[#52677A]/[0.04] text-[#52677A]',
 };
 
 const ICON_COLORS = {
-  success: 'text-emerald-400',
-  warning: 'text-amber-400',
-  error: 'text-red-400',
-  info: 'text-cyan-400',
+  success: 'text-[#6F8F7A]',
+  warning: 'text-[#A68A5B]',
+  error: 'text-[#B76E79]',
+  info: 'text-[#52677A]',
 };
 
 interface ToastNotificationsProps {

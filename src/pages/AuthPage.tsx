@@ -188,14 +188,14 @@ function startGoogleRedirect(clientId: string): void {
   /* eslint-disable no-console */
   console.log(
     '%c[korvixai-auth] Google OAuth → redirect_uri =',
-    'color:#22d3ee;font-weight:bold;',
+    'color:#7890A3;font-weight:bold;',
     redirectUri,
   );
   console.log(
     '%c[korvixai-auth] Add this VERBATIM to Google Cloud Console → ' +
     'APIs & Services → Credentials → OAuth 2.0 Client → ' +
     'Authorized redirect URIs',
-    'color:#22d3ee;',
+    'color:#7890A3;',
   );
   console.log('[korvixai-auth] window.location.origin   =', window.location.origin);
   console.log('[korvixai-auth] window.location.host     =', window.location.host);
@@ -430,7 +430,7 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
     /* eslint-disable no-console */
     console.log(
       '%c[korvixai-auth] Google redirect_uri (add to Google Console) =',
-      'color:#22d3ee;font-weight:bold;',
+      'color:#7890A3;font-weight:bold;',
       `${window.location.origin}/login`,
     );
     /* eslint-enable no-console */
@@ -513,7 +513,7 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
     /* eslint-disable no-console */
     console.log(
       '%c[korvixai-auth] AuthPage mount — OAuth response detected',
-      'color:#22d3ee;font-weight:bold;',
+      'color:#7890A3;font-weight:bold;',
       `${hash.length} chars`,
     );
     /* eslint-enable no-console */
@@ -537,12 +537,12 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
       /* eslint-disable no-console */
       console.error(
         '%c[korvixai-auth] Google returned an OAuth error',
-        'color:#f87171;font-weight:bold;',
+        'color:#B76E79;font-weight:bold;',
         { error: errCode, error_description: errDesc.replace(/\+/g, ' ') },
       );
       console.error(
         '%c[korvixai-auth] The exact redirect_uri this build sent =',
-        'color:#f87171;font-weight:bold;',
+        'color:#B76E79;font-weight:bold;',
         sentRedirectUri,
       );
       if (errCode === 'redirect_uri_mismatch') {
@@ -550,7 +550,7 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
           '%c[korvixai-auth] Fix: add the line above VERBATIM to ' +
           'Google Cloud Console → APIs & Services → Credentials → ' +
           'OAuth 2.0 Client → Authorized redirect URIs',
-          'color:#f87171;',
+          'color:#B76E79;',
         );
       }
       /* eslint-enable no-console */
@@ -592,7 +592,7 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
       /* eslint-disable no-console */
       console.error(
         '%c[korvixai-auth] OAuth state mismatch — possible CSRF or stale tab',
-        'color:#f87171;font-weight:bold;',
+        'color:#B76E79;font-weight:bold;',
         { expected: expectedState.slice(0, 8) + '…', got: incomingState.slice(0, 8) + '…' },
       );
       /* eslint-enable no-console */
@@ -608,7 +608,7 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
     /* eslint-disable no-console */
     console.log(
       '%c[korvixai-auth] id_token received from Google — POSTing to /auth/google',
-      'color:#22d3ee;font-weight:bold;',
+      'color:#7890A3;font-weight:bold;',
       { id_token_length: idToken.length, state_ok: !expectedState || incomingState === expectedState },
     );
     /* eslint-enable no-console */
@@ -634,7 +634,7 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
         /* eslint-disable no-console */
         console.log(
           '%c[korvixai-auth] Backend /auth/google accepted token → navigating to',
-          'color:#34d399;font-weight:bold;',
+          'color:#6F8F7A;font-weight:bold;',
           from,
         );
         /* eslint-enable no-console */
@@ -643,7 +643,7 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
         /* eslint-disable no-console */
         console.error(
           '%c[korvixai-auth] Backend /auth/google REJECTED the id_token',
-          'color:#f87171;font-weight:bold;',
+          'color:#B76E79;font-weight:bold;',
           'See authStore.error for the message',
         );
         /* eslint-enable no-console */
@@ -658,7 +658,7 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
       /* eslint-disable no-console */
       console.error(
         '%c[korvixai-auth] loginWithGoogle threw unexpectedly',
-        'color:#f87171;font-weight:bold;',
+        'color:#B76E79;font-weight:bold;',
         e,
       );
       /* eslint-enable no-console */
@@ -802,8 +802,8 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
   return (
     <div className="min-h-screen bg-gradient-premium text-foreground flex items-center justify-center px-4 relative overflow-hidden">
       {/* Soft ambient orbs */}
-      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] sm:w-[500px] sm:h-[500px] bg-cyan-500/[0.04] rounded-full blur-[100px] sm:blur-[150px] pointer-events-none" />
-      <div className="absolute bottom-1/4 right-1/4 w-[300px] h-[300px] sm:w-[400px] sm:h-[400px] bg-violet-500/[0.03] rounded-full blur-[80px] sm:blur-[120px] pointer-events-none" />
+      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[400px] h-[400px] sm:w-[500px] sm:h-[500px] bg-[#52677A]/[0.04] rounded-full blur-[100px] sm:blur-[150px] pointer-events-none" />
+      <div className="absolute bottom-1/4 right-1/4 w-[300px] h-[300px] sm:w-[400px] sm:h-[400px] bg-[#52677A]/[0.03] rounded-full blur-[80px] sm:blur-[120px] pointer-events-none" />
 
       <motion.div
         initial={{ opacity: 0, y: 16 }}
@@ -814,7 +814,7 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
         {/* Logo */}
         <div className="text-center mb-7">
           <Link to="/" className="inline-flex items-center gap-2.5 mb-3">
-            <div className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400 to-blue-500 shadow-lg shadow-cyan-500/10">
+            <div className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#52677A] to-[#7890A3] shadow-lg shadow-[#52677A]/10">
               <Sparkles className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
             </div>
             <span className="text-lg sm:text-xl font-bold text-foreground tracking-tight">KorvixAI</span>
@@ -841,10 +841,10 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
               aria-live="polite"
             >
               <div className="relative h-10 w-10 mb-3">
-                <span className="absolute inset-0 rounded-full border-2 border-cyan-400/20" />
+                <span className="absolute inset-0 rounded-full border-2 border-[#7890A3]/20" />
                 <span
                   className="absolute inset-0 rounded-full border-2 border-transparent animate-spin"
-                  style={{ borderTopColor: 'rgba(34,211,238,0.9)' }}
+                  style={{ borderTopColor: 'rgba(82,103,122,0.9)' }}
                 />
               </div>
               <div className="text-[13px] font-medium text-foreground mb-1">
@@ -898,7 +898,7 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
               <button
                 onClick={handleGoogleRedirect}
                 disabled={googleBusy}
-                className="w-full flex items-center justify-center gap-2.5 h-9 rounded-xl border border-amber-500/25 bg-amber-500/[0.05] hover:bg-amber-500/[0.10] transition-all text-[11px] text-amber-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full flex items-center justify-center gap-2.5 h-9 rounded-xl border border-[#52677A]/25 bg-[#52677A]/[0.05] hover:bg-[#52677A]/[0.10] transition-all text-[11px] text-[#7890A3] disabled:opacity-50 disabled:cursor-not-allowed"
                 data-testid="auth-google-redirect-button"
               >
                 <GoogleIcon className="h-3.5 w-3.5" />
@@ -910,7 +910,7 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
                 global error region for an explanation. */}
             {googleReason && (
               <p
-                className="text-[10px] text-rose-400/80 leading-snug"
+                className="text-[10px] text-[#B76E79]/80 leading-snug"
                 data-testid="auth-google-reason"
               >
                 {googleAuthMessage(googleReason, googleReasonExtra)}
@@ -950,7 +950,7 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       placeholder="Full name"
-                      className="w-full h-10 pl-10 pr-4 rounded-xl bg-muted/40 border border-border text-[13px] text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-cyan-500/20 focus:bg-muted/60 transition-all"
+                      className="w-full h-10 pl-10 pr-4 rounded-xl bg-muted/40 border border-border text-[13px] text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-[#52677A]/20 focus:bg-muted/60 transition-all"
                     />
                   </div>
                 </motion.div>
@@ -964,7 +964,7 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Email address"
-                className="w-full h-10 pl-10 pr-4 rounded-xl bg-muted/40 border border-border text-[13px] text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-cyan-500/20 focus:bg-muted/60 transition-all"
+                className="w-full h-10 pl-10 pr-4 rounded-xl bg-muted/40 border border-border text-[13px] text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-[#52677A]/20 focus:bg-muted/60 transition-all"
               />
             </div>
             <div className="relative">
@@ -974,7 +974,7 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Password"
-                className="w-full h-10 pl-10 pr-10 rounded-xl bg-muted/40 border border-border text-[13px] text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-cyan-500/20 focus:bg-muted/60 transition-all"
+                className="w-full h-10 pl-10 pr-10 rounded-xl bg-muted/40 border border-border text-[13px] text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:border-[#52677A]/20 focus:bg-muted/60 transition-all"
               />
               <button
                 type="button"
@@ -992,10 +992,10 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
                   exit={{ opacity: 0, height: 0 }}
-                  className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-50 border border-amber-100"
+                  className="flex items-start gap-2 p-2.5 rounded-lg bg-[#A68A5B]/10 border border-[#A68A5B]/20"
                 >
-                  <ShieldAlert className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
-                  <p className="text-[11px] text-amber-700/70">{displayError}</p>
+                  <ShieldAlert className="w-3.5 h-3.5 text-[#A68A5B] shrink-0 mt-0.5" />
+                  <p className="text-[11px] text-[#A68A5B]/90">{displayError}</p>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -1020,7 +1020,7 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
           <div className="mt-4 pt-4 border-t border-border text-center">
             <button
               onClick={handleGuest}
-              className="inline-flex items-center gap-1.5 text-[12px] text-muted-foreground hover:text-cyan-600 transition-colors"
+              className="inline-flex items-center gap-1.5 text-[12px] text-muted-foreground hover:text-[#52677A] transition-colors"
             >
               <User className="w-3.5 h-3.5" />
               Continue as Guest

@@ -152,7 +152,7 @@ export default function AdminPanel({ ownerMode, onClose }: AdminPanelProps) {
         exit={{ opacity: 0 }}
         transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
         onClick={(e) => e.stopPropagation()}
-        className="z-[80] rounded-2xl border border-amber-500/20 bg-[#0b0b12]/95 shadow-2xl shadow-amber-500/5 overflow-hidden flex flex-col"
+        className="z-[80] rounded-2xl border border-[#52677A]/20 bg-[#0b0b12]/95 shadow-2xl shadow-[#52677A]/5 overflow-hidden flex flex-col"
         style={{
           // ── Anchored BELOW the top navbar (96px down from viewport top).
           // Per user spec — opening upward from the Owner Session button
@@ -200,12 +200,12 @@ export default function AdminPanel({ ownerMode, onClose }: AdminPanelProps) {
           }}
         >
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="h-7 w-7 flex items-center justify-center rounded-lg bg-amber-500/[0.1] border border-amber-500/20 shrink-0">
-              <ShieldCheck className="h-3.5 w-3.5 text-amber-300" />
+            <div className="h-7 w-7 flex items-center justify-center rounded-lg bg-[#52677A]/[0.1] border border-[#52677A]/20 shrink-0">
+              <ShieldCheck className="h-3.5 w-3.5 text-[#7890A3]" />
             </div>
             <div className="min-w-0">
               <div className="text-[13px] font-semibold text-white tracking-tight truncate">Owner Panel</div>
-              <div className="text-[10px] text-amber-300/60 truncate">
+              <div className="text-[10px] text-[#7890A3]/60 truncate">
                 {ownerMode.capabilities.length} capabilities unlocked
               </div>
             </div>
@@ -243,7 +243,7 @@ export default function AdminPanel({ ownerMode, onClose }: AdminPanelProps) {
                     onClick={() => setActiveTab(t.id)}
                     className={`shrink-0 md:w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[11px] transition-all whitespace-nowrap ${
                       active
-                        ? 'bg-amber-500/[0.08] text-amber-200 border border-amber-500/15'
+                        ? 'bg-[#52677A]/[0.08] text-[#7890A3] border border-[#52677A]/15'
                         : 'text-slate-500 hover:text-slate-300 hover:bg-white/[0.03] border border-transparent'
                     }`}
                   >
@@ -277,13 +277,13 @@ export default function AdminPanel({ ownerMode, onClose }: AdminPanelProps) {
                 data-testid="admin-panel-loading"
               >
                 <div className="relative h-8 w-8 mb-3">
-                  <span className="absolute inset-0 rounded-full border-2 border-amber-500/15" />
+                  <span className="absolute inset-0 rounded-full border-2 border-[#52677A]/15" />
                   <span
                     className="absolute inset-0 rounded-full border-2 border-transparent animate-spin"
-                    style={{ borderTopColor: 'rgba(245,158,11,0.8)' }}
+                    style={{ borderTopColor: 'rgba(82,103,122,0.8)' }}
                   />
                 </div>
-                <div className="text-[12px] text-amber-200/80">Loading owner console…</div>
+                <div className="text-[12px] text-[#7890A3]/80">Loading owner console…</div>
                 <div className="text-[10px] text-slate-600 mt-1">
                   Verifying capabilities with the backend.
                 </div>
@@ -315,7 +315,7 @@ export default function AdminPanel({ ownerMode, onClose }: AdminPanelProps) {
         onClick={onClose}
         aria-label="Close owner panel (viewport)"
         data-testid="admin-panel-close-viewport"
-        className="z-[81] h-10 w-10 flex items-center justify-center rounded-full bg-black/70 backdrop-blur-md text-amber-200 hover:text-white hover:bg-black/85 active:scale-95 transition-all border border-amber-500/40 shadow-lg shadow-black/40"
+        className="z-[81] h-10 w-10 flex items-center justify-center rounded-full bg-black/70 backdrop-blur-md text-[#7890A3] hover:text-white hover:bg-black/85 active:scale-95 transition-all border border-[#52677A]/40 shadow-lg shadow-black/40"
         style={{
           position: 'fixed',
           top:      'max(20px, calc(env(safe-area-inset-top, 0px) + 12px))',
@@ -333,7 +333,7 @@ export default function AdminPanel({ ownerMode, onClose }: AdminPanelProps) {
 function Empty({ message }: { message: string }) {
   return (
     <div className="flex flex-col items-center justify-center py-8 text-slate-600">
-      <AlertTriangle className="h-4 w-4 mb-2 text-amber-500/40" />
+      <AlertTriangle className="h-4 w-4 mb-2 text-[#52677A]/40" />
       <span className="text-[11px]">{message}</span>
     </div>
   );
@@ -501,17 +501,17 @@ function SessionTab({ ownerMode }: { ownerMode: OwnerModeState }) {
   return (
     <div>
       <Section title="Session State">
-        <div className="rounded-lg border border-amber-500/20 bg-gradient-to-br from-amber-500/[0.06] to-fuchsia-500/[0.04] p-3 mb-4">
+        <div className="rounded-lg border border-[#52677A]/20 bg-gradient-to-br from-[#52677A]/[0.06] to-[#7890A3]/[0.04] p-3 mb-4">
           <div className="flex items-center gap-2 mb-1">
             <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-60 animate-ping" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-300" />
+              <span className="absolute inline-flex h-full w-full rounded-full bg-[#637B90] opacity-60 animate-ping" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-[#7890A3]" />
             </span>
-            <div className="text-[12px] font-semibold text-amber-200">
+            <div className="text-[12px] font-semibold text-[#7890A3]">
               {ownerMode.isOwner ? 'Owner Session Active' : 'Owner session not active'}
             </div>
           </div>
-          <div className="text-[10px] text-amber-300/70">
+          <div className="text-[10px] text-[#7890A3]/70">
             {ownerMode.isOwner
               ? `${orchCaps.size} of ${allOrch.length} orchestration permissions granted. The supervisor and every delegated specialist see the OWNER MODE authorisation block in their system prompt.`
               : 'Confirm OWNER_TOKEN is set on Railway and stored in localStorage on this device.'}
@@ -529,13 +529,13 @@ function SessionTab({ ownerMode }: { ownerMode: OwnerModeState }) {
                 key={cap}
                 className={`flex items-start gap-2.5 rounded-md border px-2.5 py-1.5 ${
                   active
-                    ? 'border-amber-500/20 bg-amber-500/[0.04]'
+                    ? 'border-[#52677A]/20 bg-[#52677A]/[0.04]'
                     : 'border-white/[0.04] bg-white/[0.015] opacity-50'
                 }`}
               >
                 <div
                   className={`mt-0.5 h-1.5 w-1.5 rounded-full shrink-0 ${
-                    active ? 'bg-amber-300' : 'bg-slate-700'
+                    active ? 'bg-[#7890A3]' : 'bg-slate-700'
                   }`}
                 />
                 <div className="min-w-0 flex-1">
@@ -547,7 +547,7 @@ function SessionTab({ ownerMode }: { ownerMode: OwnerModeState }) {
                 </div>
                 <span
                   className={`text-[9px] uppercase tracking-wider shrink-0 ${
-                    active ? 'text-amber-300/80' : 'text-slate-600'
+                    active ? 'text-[#7890A3]/80' : 'text-slate-600'
                   }`}
                 >
                   {active ? 'granted' : 'inactive'}
@@ -559,15 +559,15 @@ function SessionTab({ ownerMode }: { ownerMode: OwnerModeState }) {
       </Section>
 
       <Section title="Still blocked (non-negotiable)">
-        <div className="rounded-md border border-rose-500/15 bg-rose-500/[0.03] p-2.5">
-          <div className="text-[10px] text-rose-300/80 mb-1.5">
+        <div className="rounded-md border border-[#B76E79]/15 bg-[#B76E79]/[0.03] p-2.5">
+          <div className="text-[10px] text-[#B76E79]/80 mb-1.5">
             Owner mode does NOT relax safety policy. Requests in any of
             the following categories are refused regardless of who's asking:
           </div>
           <ul className="space-y-0.5">
             {SAFETY_RETAINED.map((s) => (
               <li key={s} className="text-[10px] text-slate-400 flex items-start gap-1.5">
-                <span className="text-rose-400/60 mt-0.5">×</span>
+                <span className="text-[#B76E79]/60 mt-0.5">×</span>
                 <span>{s}</span>
               </li>
             ))}
@@ -615,7 +615,7 @@ function AgentsTab() {
           {(d.owner_agent?.capabilities || []).map((c) => (
             <span
               key={c}
-              className="px-2 py-0.5 rounded-full text-[10px] bg-amber-500/[0.06] border border-amber-500/15 text-amber-200"
+              className="px-2 py-0.5 rounded-full text-[10px] bg-[#52677A]/[0.06] border border-[#52677A]/15 text-[#7890A3]"
             >
               {c}
             </span>
@@ -731,7 +731,7 @@ function PromptsTab() {
                 onClick={() => setExpanded(expanded === name ? null : name)}
                 className="w-full text-left px-3 py-1.5 flex items-center justify-between hover:bg-white/[0.02] transition-colors"
               >
-                <span className="text-[11px] font-mono text-amber-300/80">{name}</span>
+                <span className="text-[11px] font-mono text-[#7890A3]/80">{name}</span>
                 <span className="text-[10px] text-slate-600">{body.length} chars</span>
               </button>
               {expanded === name && (
@@ -788,7 +788,7 @@ function AuditTab() {
         </span>
         <button
           onClick={load}
-          className="text-[10px] text-amber-300/80 hover:text-amber-200"
+          className="text-[10px] text-[#7890A3]/80 hover:text-[#7890A3]"
         >
           refresh
         </button>
@@ -799,12 +799,12 @@ function AuditTab() {
             key={e.id}
             className={`text-[11px] font-mono rounded border px-2 py-1 ${
               e.status === 'blocked'
-                ? 'border-rose-500/20 bg-rose-500/[0.04] text-rose-200'
+                ? 'border-[#B76E79]/20 bg-[#B76E79]/[0.04] text-[#B76E79]'
                 : 'border-white/[0.04] bg-white/[0.015] text-slate-300'
             }`}
           >
             <span className="text-slate-500">{e.ts.slice(11, 19)}</span>
-            <span className="mx-2 text-amber-300/80">{e.action}</span>
+            <span className="mx-2 text-[#7890A3]/80">{e.action}</span>
             <span className="text-slate-500">{e.status}</span>
             {e.path && <span className="text-slate-600 ml-2">{e.path}</span>}
           </div>
@@ -876,7 +876,7 @@ function OwnerAgentTab() {
         <select
           value={capability}
           onChange={(e) => setCapability(e.target.value)}
-          className="bg-white/[0.03] border border-white/[0.06] rounded-md text-[11px] text-slate-200 px-2 py-1 focus:outline-none focus:border-amber-500/30"
+          className="bg-white/[0.03] border border-white/[0.06] rounded-md text-[11px] text-slate-200 px-2 py-1 focus:outline-none focus:border-[#52677A]/30"
         >
           {CAPABILITIES.map((c) => (
             <option key={c} value={c} className="bg-[#0b0b12]">{c}</option>
@@ -901,9 +901,9 @@ function OwnerAgentTab() {
               key={i}
               className={`rounded-md p-2 text-[11px] whitespace-pre-wrap break-words ${
                 m.role === 'user'
-                  ? 'bg-amber-500/[0.04] border border-amber-500/15 text-amber-100'
+                  ? 'bg-[#52677A]/[0.04] border border-[#52677A]/15 text-[#7890A3]'
                   : m.blocked
-                    ? 'bg-rose-500/[0.04] border border-rose-500/20 text-rose-200'
+                    ? 'bg-[#B76E79]/[0.04] border border-[#B76E79]/20 text-[#B76E79]'
                     : 'bg-white/[0.02] border border-white/[0.05] text-slate-200'
               }`}
             >
@@ -927,12 +927,12 @@ function OwnerAgentTab() {
             }
           }}
           placeholder="Ask the Owner Agent…  (Cmd/Ctrl-Enter to send)"
-          className="flex-1 min-h-[44px] max-h-32 resize-none rounded-md bg-white/[0.02] border border-white/[0.05] focus:border-amber-500/30 focus:outline-none px-3 py-2 text-[11px] text-slate-200"
+          className="flex-1 min-h-[44px] max-h-32 resize-none rounded-md bg-white/[0.02] border border-white/[0.05] focus:border-[#52677A]/30 focus:outline-none px-3 py-2 text-[11px] text-slate-200"
         />
         <button
           onClick={send}
           disabled={busy || !message.trim()}
-          className="px-3 py-2 rounded-md bg-amber-500/[0.1] border border-amber-500/30 text-amber-200 text-[11px] disabled:opacity-40 hover:bg-amber-500/[0.15] transition-all"
+          className="px-3 py-2 rounded-md bg-[#52677A]/[0.1] border border-[#52677A]/30 text-[#7890A3] text-[11px] disabled:opacity-40 hover:bg-[#52677A]/[0.15] transition-all"
         >
           {busy ? 'Sending…' : 'Send'}
         </button>

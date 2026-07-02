@@ -26,7 +26,7 @@ export default function RunLauncher({ projectId, onStarted, disabled }: RunLaunc
   return (
     <div className="p-2.5 border-b border-white/[0.05]">
       <div className="flex items-center gap-1.5 mb-1.5">
-        <Sparkles className="h-3 w-3 text-cyan-400/60" />
+        <Sparkles className="h-3 w-3 text-[#52677A]/60" />
         <span className="text-[11px] font-medium text-white/55">Start a run</span>
       </div>
       <textarea
@@ -35,18 +35,18 @@ export default function RunLauncher({ projectId, onStarted, disabled }: RunLaunc
         placeholder="Describe what to build — it runs and streams here…"
         rows={2}
         onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submit(); }}
-        className="w-full bg-white/[0.02] border border-white/[0.05] rounded-lg px-2 py-1.5 text-[12px] text-white/80 placeholder:text-white/25 outline-none resize-none focus:border-cyan-500/20"
+        className="w-full bg-white/[0.02] border border-white/[0.05] rounded-lg px-2 py-1.5 text-[12px] text-white/80 placeholder:text-white/25 outline-none resize-none focus:border-[#52677A]/20"
       />
       <button
         onClick={submit}
         disabled={!text.trim() || starting}
-        className="mt-1.5 flex items-center justify-center gap-1.5 w-full py-1.5 rounded-lg text-[12px] font-medium text-cyan-300 disabled:opacity-40 transition-colors"
-        style={{ background: 'rgba(34,211,238,0.07)', border: '1px solid rgba(34,211,238,0.14)' }}
+        className="mt-1.5 flex items-center justify-center gap-1.5 w-full py-1.5 rounded-lg text-[12px] font-medium text-[#637B90] disabled:opacity-40 transition-colors"
+        style={{ background: 'rgba(82,103,122,0.07)', border: '1px solid rgba(82,103,122,0.14)' }}
       >
         {starting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
         {starting ? 'Starting…' : 'Start run'}
       </button>
-      {error && <p className="text-[10px] text-red-400/70 mt-1">{error}</p>}
+      {error && <p className="text-[10px] text-[#B76E79]/70 mt-1">{error}</p>}
     </div>
   );
 }
