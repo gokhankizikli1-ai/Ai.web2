@@ -159,8 +159,8 @@ def extract_complaints(signals: list[RawSignal], query: str) -> list[ComplaintHi
 def cluster_complaints(hits: list[ComplaintHit], max_clusters: int = 8) -> list[tuple[str, list[ComplaintHit]]]:
     """Deterministic pass 2 — group complaints by their most frequent
     shared topic term. Returns [(label, hits)] sorted by cluster size.
-    Produces 0..max_clusters clusters; tiny 1-item groups fold into a
-    'general' bucket only when there is other evidence."""
+    Produces 0..max_clusters clusters; unmatched items fold into a
+    general bucket so detected complaints are never hidden."""
     if not hits:
         return []
 
@@ -190,12 +190,12 @@ def cluster_complaints(hits: list[ComplaintHit], max_clusters: int = 8) -> list[
         co = Counter()
         for m in members:
             co.update(t for t in set(m.topic_tokens) if t != seed)
-        second = next((t for t, _ in co.most_common(3) if t not in seed), None)
+        second = next((t for t, _ in co.most_common(3) if t != seed), None)
         label = f"{seed} · {second}" if second else seed
         clusters.append((label, members))
 
-    # Small datasets: everything leftover becomes one honest bucket.
-    if leftovers and (clusters or len(leftovers) >= 2):
+    # Small datasets: every unmatched complaint still becomes one honest bucket.
+    if leftovers:
         clusters.append(("other complaint signals", leftovers))
 
     clusters.sort(key=lambda c: len(c[1]), reverse=True)

@@ -161,7 +161,9 @@ async def analyze_market_complaints(
     if isinstance(cached, dict):
         return {**cached, "cached": True}
 
-    collected = await collect_all(search_query, timeframe_days, requested, max_items)
+    collected = await collect_all(
+        search_query, timeframe_days, requested, max_items, region=region,
+    )
     data_freshness = {s: collected[s].status for s in SOURCES}
     all_signals = [sig for r in collected.values() for sig in r.signals]
     available_sources = sum(1 for r in collected.values() if r.status == STATUS_AVAILABLE)

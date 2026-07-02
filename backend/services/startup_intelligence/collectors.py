@@ -62,9 +62,21 @@ def _clip(text: str, limit: int = 400) -> str:
     return text[:limit]
 
 
+def _region_query(query: str, region: str = "global") -> str:
+    region = " ".join((region or "").split())
+    if not region or region.lower() in {"global", "world", "worldwide"}:
+        return query
+    return f"{query} {region}".strip()
+
+
 # ── web (existing research provider cascade) ────────────────────────────────
 
-async def collect_web(query: str, timeframe_days: int, max_items: int) -> CollectorResult:
+async def collect_web(
+    query: str,
+    timeframe_days: int,
+    max_items: int,
+    region: str = "global",
+) -> CollectorResult:
     try:
         from backend.services.research import client, active_provider
     except Exception as exc:
@@ -82,11 +94,12 @@ async def collect_web(query: str, timeframe_days: int, max_items: int) -> Collec
     signals: list[RawSignal] = []
     seen_urls: set[str] = set()
     errors: list[str] = []
+    scoped_query = _region_query(query, region)
 
     for pattern in _WEB_COMPLAINT_PATTERNS:
         try:
             result = await client.search(
-                pattern.format(q=query),
+                pattern.format(q=scoped_query),
                 max_results=per_pattern,
                 depth="basic",
                 include_answer=False,
@@ -119,16 +132,22 @@ async def collect_web(query: str, timeframe_days: int, max_items: int) -> Collec
 
 # ── Hacker News (Algolia public search) ─────────────────────────────────────
 
-async def collect_hackernews(query: str, timeframe_days: int, max_items: int) -> CollectorResult:
+async def collect_hackernews(
+    query: str,
+    timeframe_days: int,
+    max_items: int,
+    region: str = "global",
+) -> CollectorResult:
     try:
         import httpx
     except Exception as exc:
         return CollectorResult("hackernews", STATUS_UNAVAILABLE,
                                note=f"httpx unavailable: {exc}")
 
+    scoped_query = _region_query(query, region)
     since = datetime.now(timezone.utc) - timedelta(days=max(1, timeframe_days))
     params = {
-        "query": query,
+        "query": scoped_query,
         "tags": "(story,comment)",
         "hitsPerPage": str(max(10, min(50, max_items))),
         "numericFilters": f"created_at_i>{int(since.timestamp())}",
@@ -170,7 +189,12 @@ async def collect_hackernews(query: str, timeframe_days: int, max_items: int) ->
 
 # ── GDELT (public DOC 2.0 API — broad news/market signal) ───────────────────
 
-async def collect_gdelt(query: str, timeframe_days: int, max_items: int) -> CollectorResult:
+async def collect_gdelt(
+    query: str,
+    timeframe_days: int,
+    max_items: int,
+    region: str = "global",
+) -> CollectorResult:
     try:
         import httpx
     except Exception as exc:
@@ -178,7 +202,7 @@ async def collect_gdelt(query: str, timeframe_days: int, max_items: int) -> Coll
                                note=f"httpx unavailable: {exc}")
 
     params = {
-        "query": query,
+        "query": _region_query(query, region),
         "mode": "ArtList",
         "format": "json",
         "timespan": f"{max(1, min(90, timeframe_days))}d",
@@ -227,7 +251,12 @@ async def collect_gdelt(query: str, timeframe_days: int, max_items: int) -> Coll
 
 # ── Reddit (OAuth client-credentials — optional) ────────────────────────────
 
-async def collect_reddit(query: str, timeframe_days: int, max_items: int) -> CollectorResult:
+async def collect_reddit(
+    query: str,
+    timeframe_days: int,
+    max_items: int,
+    region: str = "global",
+) -> CollectorResult:
     client_id = os.getenv("REDDIT_CLIENT_ID", "").strip()
     client_secret = os.getenv("REDDIT_CLIENT_SECRET", "").strip()
     if not client_id or not client_secret:
@@ -244,6 +273,7 @@ async def collect_reddit(query: str, timeframe_days: int, max_items: int) -> Col
 
     t_param = "week" if timeframe_days <= 7 else ("month" if timeframe_days <= 31 else "year")
     headers = {"User-Agent": "korvix-startup-radar/1.0"}
+    scoped_query = _region_query(query, region)
     try:
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SEC, headers=headers) as http:
             token_resp = await http.post(
@@ -259,7 +289,7 @@ async def collect_reddit(query: str, timeframe_days: int, max_items: int) -> Col
             search_resp = await http.get(
                 "https://oauth.reddit.com/search",
                 params={
-                    "q": f"{query} (complaint OR problem OR alternative OR hate)",
+                    "q": f"{scoped_query} (complaint OR problem OR alternative OR hate)",
                     "sort": "relevance",
                     "t": t_param,
                     "limit": str(max(10, min(50, max_items))),
@@ -297,7 +327,12 @@ async def collect_reddit(query: str, timeframe_days: int, max_items: int) -> Col
 
 # ── Product Hunt (GraphQL v2 — optional) ────────────────────────────────────
 
-async def collect_producthunt(query: str, timeframe_days: int, max_items: int) -> CollectorResult:
+async def collect_producthunt(
+    query: str,
+    timeframe_days: int,
+    max_items: int,
+    region: str = "global",
+) -> CollectorResult:
     token = os.getenv("PRODUCTHUNT_TOKEN", "").strip()
     if not token:
         return CollectorResult(
@@ -342,7 +377,10 @@ async def collect_producthunt(query: str, timeframe_days: int, max_items: int) -
         return CollectorResult("producthunt", STATUS_UNAVAILABLE,
                                note=f"Product Hunt query failed: {type(exc).__name__}")
 
-    tokens = [t for t in query.lower().split() if len(t) >= 3]
+    query_tokens = [t for t in query.lower().split() if len(t) >= 3]
+    region_tokens = [
+        t for t in _region_query("", region).lower().split() if len(t) >= 3
+    ]
     signals: list[RawSignal] = []
     nodes = (((payload.get("data") or {}).get("posts") or {}).get("nodes") or [])
     for node in nodes:
@@ -350,7 +388,9 @@ async def collect_producthunt(query: str, timeframe_days: int, max_items: int) -
             node.get("name") or "", node.get("tagline") or "",
             node.get("description") or "",
         ]).lower()
-        if tokens and not any(t in haystack for t in tokens):
+        if query_tokens and not any(t in haystack for t in query_tokens):
+            continue
+        if region_tokens and not any(t in haystack for t in region_tokens):
             continue
         signals.append(RawSignal(
             source="producthunt",
@@ -385,6 +425,8 @@ async def collect_all(
     timeframe_days: int,
     sources: list[str],
     max_items: int,
+    *,
+    region: str = "global",
 ) -> dict[str, CollectorResult]:
     """Run requested collectors concurrently. Sources NOT requested are
     marked "skipped". A collector crash is downgraded to "unavailable" —
@@ -394,7 +436,7 @@ async def collect_all(
 
     async def _run(source: str) -> CollectorResult:
         try:
-            return await _COLLECTORS[source](query, timeframe_days, per_source)
+            return await _COLLECTORS[source](query, timeframe_days, per_source, region)
         except Exception as exc:  # absolute backstop — collectors shouldn't raise
             logger.warning("[STARTUP_INTEL] collector %s crashed: %s", source, exc)
             return CollectorResult(source, STATUS_UNAVAILABLE,
