@@ -278,25 +278,25 @@ export default function PremiumComposer({
         onDrop={onDrop}
         animate={{
           boxShadow: isDragging
-            ? '0 0 0 2px rgba(34,211,238,0.45), 0 0 28px -4px rgba(34,211,238,0.30)'
+            ? '0 0 0 2px rgba(126,166,191,0.45), 0 0 28px -4px rgba(126,166,191,0.30)'
             : isFocused
-              ? '0 0 0 1px rgba(255,255,255,0.08), 0 0 20px -4px rgba(34,211,238,0.06)'
+              ? '0 0 0 1px rgba(126,166,191,0.30), 0 0 22px -4px rgba(126,166,191,0.14)'
               : '0 0 0 1px transparent, 0 1px 3px rgba(0,0,0,0.1)',
         }}
         transition={{ duration: 0.2 }}
         className={`relative rounded-2xl border transition-all duration-300 ${
           isDragging
-            ? 'border-[#7EA6BF]/45'
+            ? 'border-[#7EA6BF]/50'
             : isFocused
-              ? 'border-[#7EA6BF]/20'
-              : 'border-white/[0.05] hover:border-white/[0.07]'
+              ? 'border-[#7EA6BF]/40'
+              : 'border-white/[0.06] hover:border-[#7EA6BF]/20'
         }`}
         style={{
-          background: isFocused ? 'rgba(27,34,48,0.6)' : 'rgba(27,34,48,0.4)',
+          background: isFocused ? 'rgba(24,33,43,0.68)' : 'rgba(21,28,36,0.5)',
           backdropFilter: 'blur(20px)',
           boxShadow: isFocused
-            ? '0 0 24px -6px rgba(34,211,238,0.08), inset 0 1px 0 rgba(255,255,255,0.04)'
-            : '0 4px 16px -8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.02)',
+            ? '0 0 26px -6px rgba(126,166,191,0.16), inset 0 1px 0 rgba(255,255,255,0.05)'
+            : '0 4px 16px -8px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.02)',
         }}
       >
         <AnimatePresence>
@@ -309,7 +309,7 @@ export default function PremiumComposer({
               className="absolute inset-0 rounded-2xl pointer-events-none flex items-center justify-center z-10"
               style={{
                 background:
-                  'linear-gradient(135deg, rgba(34,211,238,0.10), rgba(99,102,241,0.10))',
+                  'linear-gradient(135deg, rgba(126, 166, 191,0.10), rgba(126, 166, 191,0.10))',
               }}
             >
               <div className="flex items-center gap-2 text-[#8FB4CC] text-[12px] font-medium">
@@ -407,7 +407,7 @@ export default function PremiumComposer({
             animate={{
               backgroundColor: canSend ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.02)',
               boxShadow: canSend
-                ? '0 0 12px -2px rgba(34,211,238,0.15)'
+                ? '0 0 12px -2px rgba(126, 166, 191,0.15)'
                 : 'none',
             }}
             transition={{ duration: 0.2 }}

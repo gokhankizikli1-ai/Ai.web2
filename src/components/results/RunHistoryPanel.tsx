@@ -46,12 +46,12 @@ export default function RunHistoryPanel({
       <div className="flex-1 overflow-y-auto">
         {/* Feature gate off */}
         {availability === 'disabled' ? (
-          <Notice icon={<Ban className="h-4 w-4 text-[#A68A5B]/80" />} title="Orchestrator disabled">
+          <Notice icon={<Ban className="h-4 w-4 text-[#C2A15A]/80" />} title="Orchestrator disabled">
             Run history activates when <code className="text-white/45">ENABLE_PROJECT_ORCHESTRATOR</code> is
             enabled on the backend.
           </Notice>
         ) : error ? (
-          <Notice icon={<Ban className="h-4 w-4 text-[#B76E79]/80" />} title="Couldn't load runs">
+          <Notice icon={<Ban className="h-4 w-4 text-[#C98282]/80" />} title="Couldn't load runs">
             <p className="mb-2">{error}</p>
             <button onClick={onRetry} className="inline-flex items-center gap-1 text-[11px] text-[#7EA6BF]/80 hover:text-[#8FB4CC]">
               <RotateCcw className="h-3 w-3" /> Try again

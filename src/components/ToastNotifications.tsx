@@ -10,16 +10,16 @@ const ICONS = {
 };
 
 const STYLES = {
-  success: 'border-[#6F8F7A]/15 bg-[#6F8F7A]/[0.04] text-[#6F8F7A]',
-  warning: 'border-[#A68A5B]/15 bg-[#A68A5B]/[0.04] text-[#A68A5B]',
-  error: 'border-[#B76E79]/15 bg-[#B76E79]/[0.04] text-[#B76E79]',
+  success: 'border-[#86A88B]/15 bg-[#86A88B]/[0.04] text-[#86A88B]',
+  warning: 'border-[#C2A15A]/15 bg-[#C2A15A]/[0.04] text-[#C2A15A]',
+  error: 'border-[#C98282]/15 bg-[#C98282]/[0.04] text-[#C98282]',
   info: 'border-[#7EA6BF]/15 bg-[#7EA6BF]/[0.04] text-[#7EA6BF]',
 };
 
 const ICON_COLORS = {
-  success: 'text-[#6F8F7A]',
-  warning: 'text-[#A68A5B]',
-  error: 'text-[#B76E79]',
+  success: 'text-[#86A88B]',
+  warning: 'text-[#C2A15A]',
+  error: 'text-[#C98282]',
   info: 'text-[#7EA6BF]',
 };
 

@@ -84,7 +84,7 @@ export default function KnowledgeVault() {
                     <p className="text-[12px] text-slate-300 truncate">{s.name}</p>
                     <p className="text-[10px] text-[#7F8FA3]">{s.type} · {s.size} · {s.date}</p>
                   </div>
-                  <span className={`text-[9px] px-2 py-0.5 rounded-full ${s.indexed ? 'bg-[#6F8F7A]/[0.08] text-[#6F8F7A]' : 'bg-[#A68A5B]/[0.08] text-[#A68A5B]'}`}>
+                  <span className={`text-[9px] px-2 py-0.5 rounded-full ${s.indexed ? 'bg-[#86A88B]/[0.08] text-[#86A88B]' : 'bg-[#C2A15A]/[0.08] text-[#C2A15A]'}`}>
                     {s.indexed ? 'Indexed' : 'Pending'}
                   </span>
                 </div>
@@ -93,11 +93,11 @@ export default function KnowledgeVault() {
           </motion.div>
 
           {/* Memory Status */}
-          <motion.div {...fadeUp(0.2)} className="mb-6 p-4 rounded-2xl border border-[#6F8F7A]/10 bg-[#6F8F7A]/[0.02]">
+          <motion.div {...fadeUp(0.2)} className="mb-6 p-4 rounded-2xl border border-[#86A88B]/10 bg-[#86A88B]/[0.02]">
             <div className="flex items-center gap-2 mb-2">
-              <Brain className="w-4 h-4 text-[#6F8F7A]" />
+              <Brain className="w-4 h-4 text-[#86A88B]" />
               <span className="text-[12px] font-medium text-white">Memory Status</span>
-              <span className="text-[10px] text-[#6F8F7A] ml-auto">Active</span>
+              <span className="text-[10px] text-[#86A88B] ml-auto">Active</span>
             </div>
             <p className="text-[11px] text-[#7F8FA3]">49 documents indexed · 12 collections · Last indexed: 2 hours ago</p>
           </motion.div>
@@ -122,8 +122,8 @@ export default function KnowledgeVault() {
           </motion.div>
 
           {/* Placeholder notice */}
-          <motion.div {...fadeUp(0.3)} className="mt-6 p-4 rounded-2xl border border-[#A68A5B]/10 bg-[#A68A5B]/[0.02] text-center">
-            <AlertCircle className="w-5 h-5 text-[#A68A5B] mx-auto mb-2" />
+          <motion.div {...fadeUp(0.3)} className="mt-6 p-4 rounded-2xl border border-[#C2A15A]/10 bg-[#C2A15A]/[0.02] text-center">
+            <AlertCircle className="w-5 h-5 text-[#C2A15A] mx-auto mb-2" />
             <p className="text-[11px] text-[#7F8FA3]">Knowledge Vault backend not fully connected. Upload and indexing are simulated.</p>
           </motion.div>
 

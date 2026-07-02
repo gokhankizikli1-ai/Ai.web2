@@ -86,8 +86,8 @@ export default function AgentEcosystem() {
 
         {/* Activity Bar */}
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="mb-6 flex items-center gap-4 py-3 px-4 rounded-2xl border border-white/[0.03] bg-white/[0.01] overflow-x-auto">
-          <div className="flex items-center gap-1.5 text-[11px] text-[#6F8F7A]/60 shrink-0">
-            <div className="w-1.5 h-1.5 rounded-full bg-[#6F8F7A] animate-pulse" />
+          <div className="flex items-center gap-1.5 text-[11px] text-[#86A88B]/60 shrink-0">
+            <div className="w-1.5 h-1.5 rounded-full bg-[#86A88B] animate-pulse" />
             <span>All systems operational</span>
           </div>
           <div className="w-px h-4 bg-white/[0.04] shrink-0" />
@@ -129,8 +129,8 @@ export default function AgentEcosystem() {
                   <agent.icon className={`h-4 w-4 ${agent.color}`} />
                 </div>
                 <div className="flex items-center gap-1.5">
-                  {agent.status === 'live' && <div className="w-1.5 h-1.5 rounded-full bg-[#6F8F7A]" />}
-                  {agent.status === 'beta' && <div className="w-1.5 h-1.5 rounded-full bg-[#A68A5B]" />}
+                  {agent.status === 'live' && <div className="w-1.5 h-1.5 rounded-full bg-[#86A88B]" />}
+                  {agent.status === 'beta' && <div className="w-1.5 h-1.5 rounded-full bg-[#C2A15A]" />}
                   <span className={`text-[9px] px-1.5 py-[1px] rounded ${agent.categoryColor}`}>{agent.category}</span>
                 </div>
               </div>
@@ -208,7 +208,7 @@ export default function AgentEcosystem() {
                   </div>
                   <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/[0.02] text-center">
                     <p className="text-[11px] text-[#7F8FA3] mb-0.5">Accuracy</p>
-                    <p className="text-[13px] font-medium text-[#6F8F7A]">{selectedAgent.confidence}%</p>
+                    <p className="text-[13px] font-medium text-[#86A88B]">{selectedAgent.confidence}%</p>
                   </div>
                 </div>
 

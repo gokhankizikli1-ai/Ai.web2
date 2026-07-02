@@ -247,10 +247,10 @@ export default function ChatView({
                         />
                       )}
                       {toolActivity.status === 'completed' && (
-                        <div className="h-2 w-2 rounded-full bg-[#6F8F7A]" aria-label="completed" />
+                        <div className="h-2 w-2 rounded-full bg-[#86A88B]" aria-label="completed" />
                       )}
                       {toolActivity.status === 'failed' && (
-                        <div className="h-2 w-2 rounded-full bg-[#B76E79]" aria-label="failed" />
+                        <div className="h-2 w-2 rounded-full bg-[#C98282]" aria-label="failed" />
                       )}
                       <span className="text-[11px] text-slate-300">{toolActivity.label}</span>
                     </div>
@@ -293,16 +293,16 @@ export default function ChatView({
                   animate={{ opacity: 1, y: 0 }}
                   className="flex gap-2.5"
                 >
-                  <div className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md bg-[#B76E79]/10">
-                    <AlertTriangle className="h-3 w-3 text-[#B76E79]/60" />
+                  <div className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md bg-[#C98282]/10">
+                    <AlertTriangle className="h-3 w-3 text-[#C98282]/60" />
                   </div>
-                  <div className="rounded-2xl rounded-tl-sm bg-[#B76E79]/[0.02] border border-[#B76E79]/[0.06] px-4 py-2.5 max-w-[85%]">
-                    <p className="text-[12px] text-[#B76E79]/70 mb-2">{error}</p>
+                  <div className="rounded-2xl rounded-tl-sm bg-[#C98282]/[0.02] border border-[#C98282]/[0.06] px-4 py-2.5 max-w-[85%]">
+                    <p className="text-[12px] text-[#C98282]/70 mb-2">{error}</p>
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={handleRetry}
-                      className="h-6 gap-1.5 text-[11px] text-[#B76E79]/60 hover:text-[#B76E79] hover:bg-[#B76E79]/[0.06] rounded-lg px-2"
+                      className="h-6 gap-1.5 text-[11px] text-[#C98282]/60 hover:text-[#C98282] hover:bg-[#C98282]/[0.06] rounded-lg px-2"
                     >
                       <RefreshCw className="h-3 w-3" /> Retry
                     </Button>

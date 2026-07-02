@@ -33,9 +33,9 @@ function StatusIcon({ status }: { status: TimelineStep['status'] }) {
       <motion.div
         initial={{ scale: 0 }}
         animate={{ scale: 1 }}
-        className="h-5 w-5 rounded-full bg-[#6F8F7A]/15 border border-[#6F8F7A]/25 flex items-center justify-center"
+        className="h-5 w-5 rounded-full bg-[#86A88B]/15 border border-[#86A88B]/25 flex items-center justify-center"
       >
-        <CheckCircle2 className="h-3 w-3 text-[#6F8F7A]" />
+        <CheckCircle2 className="h-3 w-3 text-[#86A88B]" />
       </motion.div>
     );
   }
@@ -56,7 +56,7 @@ function StatusIcon({ status }: { status: TimelineStep['status'] }) {
 function ConnectorLine({ status }: { status: 'before-active' | 'active' | 'after-active' }) {
   if (status === 'before-active') {
     return (
-      <div className="w-[2px] h-full bg-[#6F8F7A]/20" />
+      <div className="w-[2px] h-full bg-[#86A88B]/20" />
     );
   }
   if (status === 'active') {
@@ -154,7 +154,7 @@ export default function AgentTimeline({ isVisible, steps = DEFAULT_STEPS }: Agen
                   <div className="flex-1 pb-3">
                     <div className="flex items-center gap-2">
                       <span className={`text-[11px] font-medium ${
-                        step.status === 'completed' ? 'text-[#6F8F7A]/70' :
+                        step.status === 'completed' ? 'text-[#86A88B]/70' :
                         step.status === 'active' ? 'text-[#7EA6BF]' :
                         'text-[#7F8FA3]'
                       }`}>
@@ -168,7 +168,7 @@ export default function AgentTimeline({ isVisible, steps = DEFAULT_STEPS }: Agen
                       )}
                     </div>
                     <span className={`text-[10px] ${
-                      step.status === 'completed' ? 'text-[#6F8F7A]/40' :
+                      step.status === 'completed' ? 'text-[#86A88B]/40' :
                       step.status === 'active' ? 'text-[#7EA6BF]/50' :
                       'text-[#7F8FA3]'
                     }`}>

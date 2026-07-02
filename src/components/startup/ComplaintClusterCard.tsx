@@ -3,7 +3,7 @@ import { ChevronRight, ExternalLink, Quote } from 'lucide-react';
 import { sourceLabel, type ComplaintCluster } from '@/lib/startupMarketApi';
 
 function painTone(score: number): string {
-  if (score >= 70) return 'text-[#D7A6AD] border-[#B76E79]/40 bg-[#B76E79]/[0.12]';
+  if (score >= 70) return 'text-[#D7A6AD] border-[#C98282]/40 bg-[#C98282]/[0.12]';
   if (score >= 40) return 'text-[#9DB0C2] border-[#7EA6BF]/40 bg-[#7EA6BF]/[0.12]';
   return 'text-slate-200 border-white/[0.1] bg-white/[0.04]';
 }
@@ -32,7 +32,7 @@ export default function ComplaintClusterCard({
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: rank * 0.05 }}
-      className="rounded-xl border border-white/[0.05] bg-white/[0.01] p-4"
+      className="rounded-xl border border-[#2F3B4A] bg-[#111820] p-4 transition-colors hover:border-[rgba(126,166,191,0.30)] hover:shadow-[0_0_0_1px_rgba(126,166,191,0.10)]"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2.5 min-w-0">
@@ -57,8 +57,8 @@ export default function ComplaintClusterCard({
 
       {/* The one best evidence quote */}
       {quote && (
-        <div className="mt-2.5 flex items-start gap-2 rounded-lg bg-white/[0.015] border border-white/[0.04] px-2.5 py-2">
-          <Quote className="h-3 w-3 text-[#7F8FA3] shrink-0 mt-0.5" />
+        <div className="mt-2.5 flex items-start gap-2 rounded-lg bg-[#18212B] border border-[#2F3B4A] px-2.5 py-2">
+          <Quote className="h-3 w-3 text-[#7EA6BF] shrink-0 mt-0.5" />
           <p className="text-[12px] text-slate-300 leading-relaxed break-words min-w-0">
             “{quote.text}”
             <span className="ml-1.5 text-[9px] text-[#7F8FA3]">— {sourceLabel(quote.source)}</span>
@@ -77,7 +77,7 @@ export default function ComplaintClusterCard({
             <div key={s.label}>
               <div className="h-1 rounded-full bg-white/[0.06] overflow-hidden">
                 <div
-                  className={`h-full rounded-full ${s.label === 'Saturation' ? 'bg-[#B76E79]/70' : 'bg-[#7EA6BF]/60'}`}
+                  className={`h-full rounded-full ${s.label === 'Saturation' ? 'bg-[#C98282]/70' : 'bg-[#7EA6BF]/60'}`}
                   style={{ width: `${Math.min(100, Math.max(0, s.value))}%` }}
                 />
               </div>

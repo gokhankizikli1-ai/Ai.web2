@@ -38,10 +38,10 @@ module.exports = {
           "muted-light": "#64748B",
         },
         status: {
-          success: "#6F8F7A",
-          warning: "#A68A5B",
-          danger: "#B76E79",
-          info: "#52677A",
+          success: "#86A88B",  // muted green
+          warning: "#C2A15A",  // muted gold — real warning states only
+          danger: "#C98282",   // muted red
+          info: "#7EA6BF",     // brand slate-blue
         },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",

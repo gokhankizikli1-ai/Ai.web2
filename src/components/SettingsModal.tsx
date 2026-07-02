@@ -32,10 +32,10 @@ const SECTIONS = [
 
 const ACCENT_COLORS = [
   { id: 'cyan', label: 'Cyan', class: 'from-[#9CBBD1] to-[#7EA6BF]', dot: 'bg-[#9CBBD1]' },
-  { id: 'emerald', label: 'Emerald', class: 'from-[#6F8F7A] to-[#6F8F7A]', dot: 'bg-[#6F8F7A]' },
+  { id: 'emerald', label: 'Emerald', class: 'from-[#86A88B] to-[#86A88B]', dot: 'bg-[#86A88B]' },
   { id: 'violet', label: 'Violet', class: 'from-[#9CBBD1] to-[#7EA6BF]', dot: 'bg-[#9CBBD1]' },
-  { id: 'amber', label: 'Amber', class: 'from-[#A68A5B] to-[#A68A5B]', dot: 'bg-[#A68A5B]' },
-  { id: 'rose', label: 'Rose', class: 'from-[#B76E79] to-[#7EA6BF]', dot: 'bg-[#B76E79]' },
+  { id: 'amber', label: 'Amber', class: 'from-[#C2A15A] to-[#C2A15A]', dot: 'bg-[#C2A15A]' },
+  { id: 'rose', label: 'Rose', class: 'from-[#C98282] to-[#7EA6BF]', dot: 'bg-[#C98282]' },
 ];
 
 const TIMEZONES = [
@@ -327,11 +327,11 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
                   background: 'rgba(255,255,255,0.04)',
                   border: '1px solid rgba(255,255,255,0.06)',
                 }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(183,110,121,0.2)'; }}
+                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(201, 130, 130,0.2)'; }}
                 onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.06)'; }}
               >
                 <span>{tag}</span>
-                <X className="h-2.5 w-2.5 text-white/20 group-hover:text-[#B76E79]/60 transition-colors" />
+                <X className="h-2.5 w-2.5 text-white/20 group-hover:text-[#C98282]/60 transition-colors" />
               </motion.button>
             ))}
           </div>
@@ -481,8 +481,8 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
     <>
       <SectionCard title="Security" subtitle="Your data and account security">
         <SettingRow label="Data Encryption" description="End-to-end protection">
-          <span className="text-[12px] text-[#6F8F7A]/70 flex items-center gap-1.5">
-            <div className="w-1.5 h-1.5 rounded-full bg-[#6F8F7A]" style={{ boxShadow: '0 0 4px rgba(111,143,122,0.4)' }} />
+          <span className="text-[12px] text-[#86A88B]/70 flex items-center gap-1.5">
+            <div className="w-1.5 h-1.5 rounded-full bg-[#86A88B]" style={{ boxShadow: '0 0 4px rgba(134, 168, 139,0.4)' }} />
             Active
           </span>
         </SettingRow>
@@ -496,7 +496,7 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
         </SettingRow>
         <Divider />
         <SettingRow label="Delete Account" description="Permanently remove all data">
-          <Button variant="ghost" size="sm" className="h-8 text-[12px] text-[#B76E79]/60 hover:text-[#B76E79] hover:bg-[#B76E79]/[0.06] gap-2" style={{ border: '1px solid rgba(183,110,121,0.08)' }}>
+          <Button variant="ghost" size="sm" className="h-8 text-[12px] text-[#C98282]/60 hover:text-[#C98282] hover:bg-[#C98282]/[0.06] gap-2" style={{ border: '1px solid rgba(201, 130, 130,0.08)' }}>
             <Trash2 className="h-3.5 w-3.5" /> Delete
           </Button>
         </SettingRow>
@@ -628,7 +628,7 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
           </button>
           <div className="flex items-center gap-3">
             {saved && (
-              <motion.span initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 8 }} className="text-[12px] text-[#6F8F7A]/70 flex items-center gap-1.5">
+              <motion.span initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 8 }} className="text-[12px] text-[#86A88B]/70 flex items-center gap-1.5">
                 <Check className="h-3.5 w-3.5" /> Saved
               </motion.span>
             )}

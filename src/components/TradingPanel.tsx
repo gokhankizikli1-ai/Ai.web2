@@ -227,7 +227,7 @@ function MiniSparkline({ price, isPositive }: { price: number; isPositive: boole
     <div className="flex items-end gap-px h-8 w-16">
       {data.map((v, i) => {
         const h = max === min ? 50 : ((v - min) / (max - min)) * 100;
-        return <div key={i} className={`flex-1 rounded-sm ${isPositive ? 'bg-[#6F8F7A]/20' : 'bg-[#B76E79]/20'}`} style={{ height: `${Math.max(10, h)}%` }} />;
+        return <div key={i} className={`flex-1 rounded-sm ${isPositive ? 'bg-[#86A88B]/20' : 'bg-[#C98282]/20'}`} style={{ height: `${Math.max(10, h)}%` }} />;
       })}
     </div>
   );
@@ -251,14 +251,14 @@ function generateSparkline(basePrice: number, points: number = 15): number[] {
 // ═══════════════════════════════════════════
 
 function ConfidenceMeter({ confidence }: { confidence: number }) {
-  const color = confidence >= 75 ? 'bg-[#6F8F7A]' : confidence >= 50 ? 'bg-[#A68A5B]' : 'bg-[#B76E79]';
+  const color = confidence >= 75 ? 'bg-[#86A88B]' : confidence >= 50 ? 'bg-[#C2A15A]' : 'bg-[#C98282]';
   return (
     <div className="flex items-center gap-2">
       <div className="flex-1 h-1.5 bg-white/[0.04] rounded-full overflow-hidden">
         <motion.div className={`h-full rounded-full ${color}`}
           initial={{ width: 0 }} animate={{ width: `${confidence}%` }} transition={{ duration: 0.8, delay: 0.2 }} />
       </div>
-      <span className={`text-[10px] font-semibold tabular-nums ${confidence >= 75 ? 'text-[#6F8F7A]' : confidence >= 50 ? 'text-[#A68A5B]' : 'text-[#B76E79]'}`}>
+      <span className={`text-[10px] font-semibold tabular-nums ${confidence >= 75 ? 'text-[#86A88B]' : confidence >= 50 ? 'text-[#C2A15A]' : 'text-[#C98282]'}`}>
         {confidence}%
       </span>
     </div>
@@ -271,9 +271,9 @@ function ConfidenceMeter({ confidence }: { confidence: number }) {
 
 function RiskBadge({ level }: { level: 'Low' | 'Medium' | 'High' }) {
   const colors = {
-    Low: { bg: 'bg-[#6F8F7A]/[0.06]', text: 'text-[#6F8F7A]', border: 'border-[#6F8F7A]/10' },
-    Medium: { bg: 'bg-[#A68A5B]/[0.06]', text: 'text-[#A68A5B]', border: 'border-[#A68A5B]/10' },
-    High: { bg: 'bg-[#B76E79]/[0.06]', text: 'text-[#B76E79]', border: 'border-[#B76E79]/10' },
+    Low: { bg: 'bg-[#86A88B]/[0.06]', text: 'text-[#86A88B]', border: 'border-[#86A88B]/10' },
+    Medium: { bg: 'bg-[#C2A15A]/[0.06]', text: 'text-[#C2A15A]', border: 'border-[#C2A15A]/10' },
+    High: { bg: 'bg-[#C98282]/[0.06]', text: 'text-[#C98282]', border: 'border-[#C98282]/10' },
   };
   const c = colors[level];
   return (
@@ -290,9 +290,9 @@ function RiskBadge({ level }: { level: 'Low' | 'Medium' | 'High' }) {
 
 function ScenarioChip({ scenario }: { scenario: 'bullish' | 'neutral' | 'bearish' }) {
   const config = {
-    bullish: { icon: TrendingUp, color: 'text-[#6F8F7A]', bg: 'bg-[#6F8F7A]/[0.06]', border: 'border-[#6F8F7A]/10', label: 'Bullish' },
-    neutral: { icon: Minus, color: 'text-[#A68A5B]', bg: 'bg-[#A68A5B]/[0.06]', border: 'border-[#A68A5B]/10', label: 'Neutral' },
-    bearish: { icon: TrendingDown, color: 'text-[#B76E79]', bg: 'bg-[#B76E79]/[0.06]', border: 'border-[#B76E79]/10', label: 'Bearish' },
+    bullish: { icon: TrendingUp, color: 'text-[#86A88B]', bg: 'bg-[#86A88B]/[0.06]', border: 'border-[#86A88B]/10', label: 'Bullish' },
+    neutral: { icon: Minus, color: 'text-[#C2A15A]', bg: 'bg-[#C2A15A]/[0.06]', border: 'border-[#C2A15A]/10', label: 'Neutral' },
+    bearish: { icon: TrendingDown, color: 'text-[#C98282]', bg: 'bg-[#C98282]/[0.06]', border: 'border-[#C98282]/10', label: 'Bearish' },
   };
   const c = config[scenario];
   const Icon = c.icon;
@@ -323,9 +323,9 @@ function SignalTag({ tag }: { tag: string }) {
 function PremiumSignalCard({ signal }: { signal: MockSignal }) {
   const [expanded, setExpanded] = useState(false);
   const dirColors = {
-    long: { bg: 'bg-[#6F8F7A]/[0.04]', border: 'border-[#6F8F7A]/10', text: 'text-[#6F8F7A]', badge: 'bg-[#6F8F7A]/[0.08] text-[#6F8F7A]', icon: ArrowUpRight },
-    short: { bg: 'bg-[#B76E79]/[0.04]', border: 'border-[#B76E79]/10', text: 'text-[#B76E79]', badge: 'bg-[#B76E79]/[0.08] text-[#B76E79]', icon: ArrowDownRight },
-    wait: { bg: 'bg-[#A68A5B]/[0.04]', border: 'border-[#A68A5B]/10', text: 'text-[#A68A5B]', badge: 'bg-[#A68A5B]/[0.08] text-[#A68A5B]', icon: Minus },
+    long: { bg: 'bg-[#86A88B]/[0.04]', border: 'border-[#86A88B]/10', text: 'text-[#86A88B]', badge: 'bg-[#86A88B]/[0.08] text-[#86A88B]', icon: ArrowUpRight },
+    short: { bg: 'bg-[#C98282]/[0.04]', border: 'border-[#C98282]/10', text: 'text-[#C98282]', badge: 'bg-[#C98282]/[0.08] text-[#C98282]', icon: ArrowDownRight },
+    wait: { bg: 'bg-[#C2A15A]/[0.04]', border: 'border-[#C2A15A]/10', text: 'text-[#C2A15A]', badge: 'bg-[#C2A15A]/[0.08] text-[#C2A15A]', icon: Minus },
     neutral: { bg: 'bg-slate-500/[0.04]', border: 'border-slate-500/10', text: 'text-[#A9B7C6]', badge: 'bg-slate-500/[0.08] text-[#A9B7C6]', icon: Minus },
   };
   const colors = dirColors[signal.direction] || dirColors.neutral;
@@ -344,7 +344,7 @@ function PremiumSignalCard({ signal }: { signal: MockSignal }) {
               const min = Math.min(...signal.sparkline!);
               const max = Math.max(...signal.sparkline!);
               const h = max === min ? 50 : ((v - min) / (max - min)) * 100;
-              return <div key={i} className={`flex-1 rounded-sm ${signal.direction === 'long' ? 'bg-[#6F8F7A]/25' : signal.direction === 'short' ? 'bg-[#B76E79]/25' : 'bg-[#A68A5B]/20'}`} style={{ height: `${Math.max(10, h)}%` }} />;
+              return <div key={i} className={`flex-1 rounded-sm ${signal.direction === 'long' ? 'bg-[#86A88B]/25' : signal.direction === 'short' ? 'bg-[#C98282]/25' : 'bg-[#C2A15A]/20'}`} style={{ height: `${Math.max(10, h)}%` }} />;
             })}
           </div>
         )}
@@ -362,7 +362,7 @@ function PremiumSignalCard({ signal }: { signal: MockSignal }) {
           <div className="flex items-center gap-2 mt-1.5">
             <RiskBadge level={signal.riskLevel} />
             <span className="text-[10px] text-[#7F8FA3]">{signal.timeframe}</span>
-            <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${signal.setupGrade === 'A' ? 'bg-[#6F8F7A]/[0.08] text-[#6F8F7A]' : signal.setupGrade === 'B' ? 'bg-[#A68A5B]/[0.08] text-[#A68A5B]' : 'bg-slate-500/[0.08] text-[#A9B7C6]'}`}>
+            <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${signal.setupGrade === 'A' ? 'bg-[#86A88B]/[0.08] text-[#86A88B]' : signal.setupGrade === 'B' ? 'bg-[#C2A15A]/[0.08] text-[#C2A15A]' : 'bg-slate-500/[0.08] text-[#A9B7C6]'}`}>
               Grade {signal.setupGrade}
             </span>
           </div>
@@ -395,21 +395,21 @@ function PremiumSignalCard({ signal }: { signal: MockSignal }) {
                     <p className="text-[13px] font-semibold text-white">${signal.entryPrice}</p>
                   </div>
                   {signal.targetPrice && (
-                    <div className="p-2.5 rounded-lg bg-[#6F8F7A]/[0.04] border border-[#6F8F7A]/10">
+                    <div className="p-2.5 rounded-lg bg-[#86A88B]/[0.04] border border-[#86A88B]/10">
                       <div className="flex items-center gap-1 mb-1">
-                        <Target className="w-3 h-3 text-[#6F8F7A]/60" />
-                        <p className="text-[9px] text-[#6F8F7A]/60">Target</p>
+                        <Target className="w-3 h-3 text-[#86A88B]/60" />
+                        <p className="text-[9px] text-[#86A88B]/60">Target</p>
                       </div>
-                      <p className="text-[13px] font-semibold text-[#6F8F7A]">${signal.targetPrice}</p>
+                      <p className="text-[13px] font-semibold text-[#86A88B]">${signal.targetPrice}</p>
                     </div>
                   )}
                   {signal.stopLoss && (
-                    <div className="p-2.5 rounded-lg bg-[#B76E79]/[0.04] border border-[#B76E79]/10">
+                    <div className="p-2.5 rounded-lg bg-[#C98282]/[0.04] border border-[#C98282]/10">
                       <div className="flex items-center gap-1 mb-1">
-                        <Shield className="w-3 h-3 text-[#B76E79]/60" />
-                        <p className="text-[9px] text-[#B76E79]/60">Stop</p>
+                        <Shield className="w-3 h-3 text-[#C98282]/60" />
+                        <p className="text-[9px] text-[#C98282]/60">Stop</p>
                       </div>
-                      <p className="text-[13px] font-semibold text-[#B76E79]">${signal.stopLoss}</p>
+                      <p className="text-[13px] font-semibold text-[#C98282]">${signal.stopLoss}</p>
                     </div>
                   )}
                 </div>
@@ -456,7 +456,7 @@ function WatchlistRow({ item, onToggleFav, onToggleWatchlist, inWatchlist }: {
   return (
     <div className="flex items-center gap-3 p-3 rounded-xl border border-white/[0.02] bg-white/[0.01] hover:border-white/[0.05] hover:bg-white/[0.02] transition-all duration-200 group">
       <button onClick={onToggleFav} className="shrink-0">
-        <Star className={`w-3.5 h-3.5 ${item.isFavorite ? 'text-[#A68A5B] fill-[#A68A5B]' : 'text-[#7F8FA3] hover:text-[#7F8FA3]'} transition-colors`} />
+        <Star className={`w-3.5 h-3.5 ${item.isFavorite ? 'text-[#C2A15A] fill-[#C2A15A]' : 'text-[#7F8FA3] hover:text-[#7F8FA3]'} transition-colors`} />
       </button>
 
       {/* Sparkline */}
@@ -465,7 +465,7 @@ function WatchlistRow({ item, onToggleFav, onToggleWatchlist, inWatchlist }: {
           const min = Math.min(...item.sparkline);
           const max = Math.max(...item.sparkline);
           const h = max === min ? 50 : ((v - min) / (max - min)) * 100;
-          return <div key={i} className={`flex-1 rounded-sm ${isPositive ? 'bg-[#6F8F7A]/25' : 'bg-[#B76E79]/25'}`} style={{ height: `${Math.max(15, h)}%` }} />;
+          return <div key={i} className={`flex-1 rounded-sm ${isPositive ? 'bg-[#86A88B]/25' : 'bg-[#C98282]/25'}`} style={{ height: `${Math.max(15, h)}%` }} />;
         })}
       </div>
 
@@ -478,14 +478,14 @@ function WatchlistRow({ item, onToggleFav, onToggleWatchlist, inWatchlist }: {
 
       <div className="text-right shrink-0">
         <p className="text-[12px] font-medium text-white">${item.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-        <div className={`flex items-center gap-0.5 ${isPositive ? 'text-[#6F8F7A]' : 'text-[#B76E79]'}`}>
+        <div className={`flex items-center gap-0.5 ${isPositive ? 'text-[#86A88B]' : 'text-[#C98282]'}`}>
           {isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
           <span className="text-[10px] font-medium">{isPositive ? '+' : ''}{item.changePercent.toFixed(2)}%</span>
         </div>
       </div>
 
       <button onClick={onToggleWatchlist}
-        className={`shrink-0 p-1.5 rounded-lg transition-all ${inWatchlist ? 'bg-[#6F8F7A]/[0.08] text-[#6F8F7A] border border-[#6F8F7A]/15' : 'text-slate-700 hover:text-[#7F8FA3] border border-transparent'}`}
+        className={`shrink-0 p-1.5 rounded-lg transition-all ${inWatchlist ? 'bg-[#86A88B]/[0.08] text-[#86A88B] border border-[#86A88B]/15' : 'text-slate-700 hover:text-[#7F8FA3] border border-transparent'}`}
         title={inWatchlist ? 'Remove from watchlist' : 'Add to watchlist'}>
         {inWatchlist ? <Eye className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
       </button>
@@ -498,8 +498,8 @@ function WatchlistRow({ item, onToggleFav, onToggleWatchlist, inWatchlist }: {
 // ═══════════════════════════════════════════
 
 function SentimentGauge({ sentiment }: { sentiment: MarketSentiment }) {
-  const sentimentColor = sentiment.overall === 'bullish' ? 'text-[#6F8F7A]' : sentiment.overall === 'bearish' ? 'text-[#B76E79]' : 'text-[#A68A5B]';
-  const sentimentBg = sentiment.overall === 'bullish' ? 'bg-[#6F8F7A]/[0.06]' : sentiment.overall === 'bearish' ? 'bg-[#B76E79]/[0.06]' : 'bg-[#A68A5B]/[0.06]';
+  const sentimentColor = sentiment.overall === 'bullish' ? 'text-[#86A88B]' : sentiment.overall === 'bearish' ? 'text-[#C98282]' : 'text-[#C2A15A]';
+  const sentimentBg = sentiment.overall === 'bullish' ? 'bg-[#86A88B]/[0.06]' : sentiment.overall === 'bearish' ? 'bg-[#C98282]/[0.06]' : 'bg-[#C2A15A]/[0.06]';
 
   return (
     <div className={`p-4 rounded-xl border border-white/[0.04] ${sentimentBg} transition-all duration-200 hover:border-white/[0.06]`}>
@@ -517,7 +517,7 @@ function SentimentGauge({ sentiment }: { sentiment: MarketSentiment }) {
           <span className="text-[10px] text-white font-medium">{sentiment.score}/100</span>
         </div>
         <div className="w-full h-1.5 bg-white/[0.04] rounded-full overflow-hidden">
-          <motion.div className={`h-full rounded-full ${sentiment.overall === 'bullish' ? 'bg-[#6F8F7A]' : sentiment.overall === 'bearish' ? 'bg-[#B76E79]' : 'bg-[#A68A5B]'}`}
+          <motion.div className={`h-full rounded-full ${sentiment.overall === 'bullish' ? 'bg-[#86A88B]' : sentiment.overall === 'bearish' ? 'bg-[#C98282]' : 'bg-[#C2A15A]'}`}
             initial={{ width: 0 }} animate={{ width: `${sentiment.score}%` }} transition={{ duration: 1, delay: 0.2 }} />
         </div>
       </div>
@@ -525,10 +525,10 @@ function SentimentGauge({ sentiment }: { sentiment: MarketSentiment }) {
       <div className="grid grid-cols-2 gap-2">
         {(() => {
           const items = [
-            { label: 'Fear & Greed', value: sentiment.fearGreedIndex, display: `${sentiment.fearGreedIndex} (${sentiment.fearGreedIndex > 60 ? 'Greed' : sentiment.fearGreedIndex < 40 ? 'Fear' : 'Neutral'})`, color: sentiment.fearGreedIndex > 60 ? 'text-[#6F8F7A]' : sentiment.fearGreedIndex < 40 ? 'text-[#B76E79]' : 'text-[#A68A5B]' },
+            { label: 'Fear & Greed', value: sentiment.fearGreedIndex, display: `${sentiment.fearGreedIndex} (${sentiment.fearGreedIndex > 60 ? 'Greed' : sentiment.fearGreedIndex < 40 ? 'Fear' : 'Neutral'})`, color: sentiment.fearGreedIndex > 60 ? 'text-[#86A88B]' : sentiment.fearGreedIndex < 40 ? 'text-[#C98282]' : 'text-[#C2A15A]' },
             { label: 'VIX', value: sentiment.vix, display: `${sentiment.vix}`, color: 'text-white' },
-            { label: 'Put/Call', value: sentiment.putCallRatio, display: `${sentiment.putCallRatio}`, color: sentiment.putCallRatio < 1 ? 'text-[#6F8F7A]' : 'text-[#B76E79]' },
-            { label: 'A/D Ratio', value: sentiment.advanceDecline, display: `${sentiment.advanceDecline}`, color: sentiment.advanceDecline > 1 ? 'text-[#6F8F7A]' : 'text-[#B76E79]' },
+            { label: 'Put/Call', value: sentiment.putCallRatio, display: `${sentiment.putCallRatio}`, color: sentiment.putCallRatio < 1 ? 'text-[#86A88B]' : 'text-[#C98282]' },
+            { label: 'A/D Ratio', value: sentiment.advanceDecline, display: `${sentiment.advanceDecline}`, color: sentiment.advanceDecline > 1 ? 'text-[#86A88B]' : 'text-[#C98282]' },
           ];
           return items.map(m => (
             <div key={m.label} className="p-2 rounded-lg bg-white/[0.02]">
@@ -562,7 +562,7 @@ function ChartPlaceholder({ symbol, timeframe, isLoading }: { symbol?: string; t
           <span className="text-[9px] text-[#7F8FA3]">{tfLabel}</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="w-1.5 h-1.5 rounded-full bg-[#6F8F7A] animate-pulse" />
+          <div className="w-1.5 h-1.5 rounded-full bg-[#86A88B] animate-pulse" />
           <span className="text-[9px] text-[#7F8FA3]">AI analyzing</span>
         </div>
       </div>
@@ -572,7 +572,7 @@ function ChartPlaceholder({ symbol, timeframe, isLoading }: { symbol?: string; t
         {Array.from({ length: 40 }).map((_, i) => {
           const h = 20 + Math.sin(i * 0.4) * 30 + Math.random() * 40;
           return (
-            <motion.div key={i} className="flex-1 rounded-sm bg-[#6F8F7A]/10"
+            <motion.div key={i} className="flex-1 rounded-sm bg-[#86A88B]/10"
               initial={{ height: 0 }} animate={{ height: `${h}%` }}
               transition={{ duration: 0.5, delay: i * 0.01 }} />
           );
@@ -621,7 +621,7 @@ function EmptySignalsState() {
 
 function DelayedDataBadge() {
   return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-medium bg-[#A68A5B]/[0.06] text-[#A68A5B] border border-[#A68A5B]/10">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-medium bg-[#C2A15A]/[0.06] text-[#C2A15A] border border-[#C2A15A]/10">
       <Clock className="w-2.5 h-2.5" />
       Delayed data
     </span>
@@ -634,8 +634,8 @@ function DelayedDataBadge() {
 
 function MarketStatus({ isOpen }: { isOpen: boolean }) {
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-medium ${isOpen ? 'bg-[#6F8F7A]/[0.06] text-[#6F8F7A] border border-[#6F8F7A]/10' : 'bg-slate-500/[0.06] text-[#A9B7C6] border border-slate-500/10'}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${isOpen ? 'bg-[#6F8F7A]' : 'bg-slate-500'}`} />
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-medium ${isOpen ? 'bg-[#86A88B]/[0.06] text-[#86A88B] border border-[#86A88B]/10' : 'bg-slate-500/[0.06] text-[#A9B7C6] border border-slate-500/10'}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${isOpen ? 'bg-[#86A88B]' : 'bg-slate-500'}`} />
       {isOpen ? 'Market Open' : 'Market Closed'}
     </span>
   );
@@ -765,19 +765,19 @@ export default function TradingPanel() {
         {/* Title Row */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <div className="relative flex h-7 w-7 items-center justify-center rounded-lg bg-[#6F8F7A]/[0.06] border border-[#6F8F7A]/10 shadow-[0_0_8px_-2px_rgba(111,143,122,0.06)]">
-              <TrendingUp className="h-4 w-4 text-[#6F8F7A]" />
+            <div className="relative flex h-7 w-7 items-center justify-center rounded-lg bg-[#86A88B]/[0.06] border border-[#86A88B]/10 shadow-[0_0_8px_-2px_rgba(134, 168, 139,0.06)]">
+              <TrendingUp className="h-4 w-4 text-[#86A88B]" />
               {!hasLiveSignals && (
-                <motion.div className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[#A68A5B]"
+                <motion.div className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[#C2A15A]"
                   animate={{ scale: [1, 1.5, 1], opacity: [0.7, 1, 0.7] }}
                   transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-                  style={{ boxShadow: '0 0 4px rgba(166,138,91,0.5)' }} />
+                  style={{ boxShadow: '0 0 4px rgba(194, 161, 90,0.5)' }} />
               )}
               {hasLiveSignals && (
-                <motion.div className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[#6F8F7A]"
+                <motion.div className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[#86A88B]"
                   animate={{ scale: [1, 1.5, 1], opacity: [0.7, 1, 0.7] }}
                   transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-                  style={{ boxShadow: '0 0 4px rgba(111,143,122,0.5)' }} />
+                  style={{ boxShadow: '0 0 4px rgba(134, 168, 139,0.5)' }} />
               )}
             </div>
             <div>
@@ -796,7 +796,7 @@ export default function TradingPanel() {
             </span>
             <motion.button onClick={handleRefresh} animate={{ rotate: isRefreshing ? 360 : 0 }}
               transition={{ duration: 0.8, ease: 'linear' }}
-              className="h-7 w-7 flex items-center justify-center rounded-lg border border-white/[0.04] text-[#7F8FA3] hover:text-[#6F8F7A] hover:bg-[#6F8F7A]/[0.04] transition-all">
+              className="h-7 w-7 flex items-center justify-center rounded-lg border border-white/[0.04] text-[#7F8FA3] hover:text-[#86A88B] hover:bg-[#86A88B]/[0.04] transition-all">
               <RefreshCw className="h-3.5 w-3.5" />
             </motion.button>
           </div>
@@ -809,7 +809,7 @@ export default function TradingPanel() {
             <button key={tf.value} onClick={() => handleTimeframeChange(tf.value)}
               className={`px-2.5 py-[3px] rounded-md text-[10px] font-semibold transition-all ${
                 timeframe === tf.value
-                  ? 'bg-[#6F8F7A]/[0.08] text-[#6F8F7A] border border-[#6F8F7A]/15 shadow-[0_0_8px_-2px_rgba(111,143,122,0.08)]'
+                  ? 'bg-[#86A88B]/[0.08] text-[#86A88B] border border-[#86A88B]/15 shadow-[0_0_8px_-2px_rgba(134, 168, 139,0.08)]'
                   : 'text-[#7F8FA3] hover:text-[#A9B7C6] border border-transparent hover:bg-white/[0.02]'
               }`}>
               {tf.label}
@@ -841,9 +841,9 @@ export default function TradingPanel() {
               /* Loading skeletons */
               <div className="space-y-3">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
-                  {[{ label: 'Long', color: 'text-[#6F8F7A]', border: 'border-[#6F8F7A]/10', bg: 'bg-[#6F8F7A]/[0.04]' },
-                    { label: 'Short', color: 'text-[#B76E79]', border: 'border-[#B76E79]/10', bg: 'bg-[#B76E79]/[0.04]' },
-                    { label: 'Hold', color: 'text-[#A68A5B]', border: 'border-[#A68A5B]/10', bg: 'bg-[#A68A5B]/[0.04]' },
+                  {[{ label: 'Long', color: 'text-[#86A88B]', border: 'border-[#86A88B]/10', bg: 'bg-[#86A88B]/[0.04]' },
+                    { label: 'Short', color: 'text-[#C98282]', border: 'border-[#C98282]/10', bg: 'bg-[#C98282]/[0.04]' },
+                    { label: 'Hold', color: 'text-[#C2A15A]', border: 'border-[#C2A15A]/10', bg: 'bg-[#C2A15A]/[0.04]' },
                     { label: 'Avg Conf', color: 'text-white', border: 'border-white/[0.04]', bg: 'bg-white/[0.01]' }].map((stat) => (
                     <div key={stat.label} className={`p-3 rounded-xl border ${stat.border} ${stat.bg} text-center`}>
                       <p className={`text-lg font-semibold ${stat.color}`}>--</p>
@@ -859,16 +859,16 @@ export default function TradingPanel() {
               <>
                 {/* Summary Stats */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                  <div className="p-3 rounded-xl border border-[#6F8F7A]/10 bg-[#6F8F7A]/[0.04] text-center">
-                    <p className="text-lg font-semibold text-[#6F8F7A]">{longCount}</p>
+                  <div className="p-3 rounded-xl border border-[#86A88B]/10 bg-[#86A88B]/[0.04] text-center">
+                    <p className="text-lg font-semibold text-[#86A88B]">{longCount}</p>
                     <p className="text-[9px] text-[#7F8FA3]">Long</p>
                   </div>
-                  <div className="p-3 rounded-xl border border-[#B76E79]/10 bg-[#B76E79]/[0.04] text-center">
-                    <p className="text-lg font-semibold text-[#B76E79]">{shortCount}</p>
+                  <div className="p-3 rounded-xl border border-[#C98282]/10 bg-[#C98282]/[0.04] text-center">
+                    <p className="text-lg font-semibold text-[#C98282]">{shortCount}</p>
                     <p className="text-[9px] text-[#7F8FA3]">Short</p>
                   </div>
-                  <div className="p-3 rounded-xl border border-[#A68A5B]/10 bg-[#A68A5B]/[0.04] text-center">
-                    <p className="text-lg font-semibold text-[#A68A5B]">{holdCount}</p>
+                  <div className="p-3 rounded-xl border border-[#C2A15A]/10 bg-[#C2A15A]/[0.04] text-center">
+                    <p className="text-lg font-semibold text-[#C2A15A]">{holdCount}</p>
                     <p className="text-[9px] text-[#7F8FA3]">Hold</p>
                   </div>
                   <div className="p-3 rounded-xl border border-white/[0.04] bg-white/[0.01] text-center">
@@ -920,7 +920,7 @@ export default function TradingPanel() {
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#7F8FA3]" />
               <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search assets..."
-                className="w-full h-8 pl-8 pr-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[11px] text-slate-300 placeholder:text-[#7F8FA3] focus:outline-none focus:border-[#6F8F7A]/20 transition-all" />
+                className="w-full h-8 pl-8 pr-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[11px] text-slate-300 placeholder:text-[#7F8FA3] focus:outline-none focus:border-[#86A88B]/20 transition-all" />
             </div>
 
             {isRefreshing ? <WatchlistSkeleton /> : (
@@ -968,9 +968,9 @@ export default function TradingPanel() {
                   </h3>
                   <div className="space-y-2">
                     {[
-                      { label: 'Bullish', count: longCount, total: filteredSignals.length, color: 'bg-[#6F8F7A]', text: 'text-[#6F8F7A]' },
-                      { label: 'Neutral', count: holdCount, total: filteredSignals.length, color: 'bg-[#A68A5B]', text: 'text-[#A68A5B]' },
-                      { label: 'Bearish', count: shortCount, total: filteredSignals.length, color: 'bg-[#B76E79]', text: 'text-[#B76E79]' },
+                      { label: 'Bullish', count: longCount, total: filteredSignals.length, color: 'bg-[#86A88B]', text: 'text-[#86A88B]' },
+                      { label: 'Neutral', count: holdCount, total: filteredSignals.length, color: 'bg-[#C2A15A]', text: 'text-[#C2A15A]' },
+                      { label: 'Bearish', count: shortCount, total: filteredSignals.length, color: 'bg-[#C98282]', text: 'text-[#C98282]' },
                     ].map((d) => (
                       <div key={d.label} className="flex items-center gap-3">
                         <span className={`text-[11px] ${d.text} w-14`}>{d.label}</span>
@@ -1001,7 +1001,7 @@ export default function TradingPanel() {
                     <div key={s.sector} className="flex items-center gap-3 py-2 border-b border-white/[0.02] last:border-0">
                       <span className="text-[11px] text-[#A9B7C6] w-20">{s.sector}</span>
                       <div className="flex-1 h-1.5 bg-white/[0.04] rounded-full overflow-hidden">
-                        <motion.div className={`h-full rounded-full ${s.score > 60 ? 'bg-[#6F8F7A]' : s.score < 40 ? 'bg-[#B76E79]' : 'bg-[#A68A5B]'}`}
+                        <motion.div className={`h-full rounded-full ${s.score > 60 ? 'bg-[#86A88B]' : s.score < 40 ? 'bg-[#C98282]' : 'bg-[#C2A15A]'}`}
                           initial={{ width: 0 }} animate={{ width: `${s.score}%` }} transition={{ duration: 0.8, delay: 0.1 }} />
                       </div>
                       <span className="text-[10px] text-[#7F8FA3] w-8 text-right">{s.score}</span>
@@ -1032,7 +1032,7 @@ export default function TradingPanel() {
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#7F8FA3]" />
               <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={`Search ${assetCategory}...`}
-                className="w-full h-8 pl-8 pr-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[11px] text-slate-300 placeholder:text-[#7F8FA3] focus:outline-none focus:border-[#6F8F7A]/20 transition-all" />
+                className="w-full h-8 pl-8 pr-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[11px] text-slate-300 placeholder:text-[#7F8FA3] focus:outline-none focus:border-[#86A88B]/20 transition-all" />
             </div>
 
             {/* Asset Cards Grid */}
@@ -1054,7 +1054,7 @@ export default function TradingPanel() {
                         <div className="flex items-center gap-1">
                           <ScenarioChip scenario={isPositive ? 'bullish' : 'bearish'} />
                           <button onClick={() => toggleWatchlist(asset.symbol)}
-                            className={`p-1 rounded transition-all ${inWl ? 'text-[#6F8F7A]' : 'text-slate-700 hover:text-[#7F8FA3]'}`}>
+                            className={`p-1 rounded transition-all ${inWl ? 'text-[#86A88B]' : 'text-slate-700 hover:text-[#7F8FA3]'}`}>
                             {inWl ? <Eye className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
                           </button>
                         </div>
@@ -1062,7 +1062,7 @@ export default function TradingPanel() {
                       <div className="flex items-end justify-between">
                         <div>
                           <p className="text-[14px] font-semibold text-white">${asset.price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                          <div className={`flex items-center gap-0.5 ${isPositive ? 'text-[#6F8F7A]' : 'text-[#B76E79]'}`}>
+                          <div className={`flex items-center gap-0.5 ${isPositive ? 'text-[#86A88B]' : 'text-[#C98282]'}`}>
                             {isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
                             <span className="text-[10px] font-medium">{isPositive ? '+' : ''}{asset.changePercent.toFixed(2)}%</span>
                           </div>

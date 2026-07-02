@@ -333,11 +333,11 @@ export default function MessageBubble({
               </button>
             )}
 
-            <button className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[#7F8FA3] hover:text-[#6F8F7A] hover:bg-[#6F8F7A]/[0.03] transition-all">
+            <button className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[#7F8FA3] hover:text-[#86A88B] hover:bg-[#86A88B]/[0.03] transition-all">
               <ThumbsUp className="h-3 w-3" />
             </button>
 
-            <button className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[#7F8FA3] hover:text-[#B76E79] hover:bg-[#B76E79]/[0.03] transition-all">
+            <button className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[#7F8FA3] hover:text-[#C98282] hover:bg-[#C98282]/[0.03] transition-all">
               <ThumbsDown className="h-3 w-3" />
             </button>
 

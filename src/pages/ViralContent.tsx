@@ -173,7 +173,7 @@ export default function ViralContent() {
                     onClick={() => copyItem(line, i)}
                     className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
                   >
-                    {copied === i ? <CheckCircle2 className="w-3.5 h-3.5 text-[#6F8F7A]" /> : <Copy className="w-3.5 h-3.5 text-[#7F8FA3]" />}
+                    {copied === i ? <CheckCircle2 className="w-3.5 h-3.5 text-[#86A88B]" /> : <Copy className="w-3.5 h-3.5 text-[#7F8FA3]" />}
                   </button>
                 </motion.div>
               ))}

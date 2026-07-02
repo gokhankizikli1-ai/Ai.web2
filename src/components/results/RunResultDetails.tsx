@@ -57,7 +57,7 @@ export default function RunResultDetails({ runId, promptFallback, initialStatus 
   if (live.connection === 'disabled') {
     return (
       <Center>
-        <Ban className="h-6 w-6 text-[#A68A5B]/70 mb-2" />
+        <Ban className="h-6 w-6 text-[#C2A15A]/70 mb-2" />
         <p className="text-[13px] text-white/55">Orchestrator disabled</p>
         <p className="text-[11px] text-white/30 mt-1">
           Live runs activate when <code className="text-white/45">ENABLE_PROJECT_ORCHESTRATOR</code> is enabled on the backend.
@@ -116,7 +116,7 @@ export default function RunResultDetails({ runId, promptFallback, initialStatus 
           <Meta k="Duration" v={formatDuration(started, finished)} />
           <ConnectionBadge connection={live.connection} running={running} />
           {running && (
-            <button onClick={live.cancel} className="flex items-center gap-1 text-white/40 hover:text-[#B76E79] transition-colors">
+            <button onClick={live.cancel} className="flex items-center gap-1 text-white/40 hover:text-[#C98282] transition-colors">
               <X className="h-3 w-3" /> Cancel
             </button>
           )}
@@ -225,7 +225,7 @@ function ConnectionBadge({ connection, running }: { connection: LiveConnection; 
   }
   if (connection === 'polling' && running) {
     return (
-      <span className="flex items-center gap-1 text-[#A68A5B]/70" title="Live updates unavailable, using polling">
+      <span className="flex items-center gap-1 text-[#C2A15A]/70" title="Live updates unavailable, using polling">
         <Wifi className="h-3 w-3" /> Polling
       </span>
     );

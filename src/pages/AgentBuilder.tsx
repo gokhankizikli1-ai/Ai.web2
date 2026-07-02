@@ -62,9 +62,9 @@ function AgentPreviewCard({ config, onCreate, onEdit, onChat }: {
   const gradients = [
     'from-[#9CBBD1] to-[#9CBBD1]',
     'from-[#9CBBD1] to-[#9CBBD1]',
-    'from-[#6F8F7A] to-[#9CBBD1]',
-    'from-[#A68A5B] to-[#A68A5B]',
-    'from-[#9CBBD1] to-[#B76E79]',
+    'from-[#86A88B] to-[#9CBBD1]',
+    'from-[#C2A15A] to-[#C2A15A]',
+    'from-[#9CBBD1] to-[#C98282]',
   ];
   const idx = Math.abs(config.specialty.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % gradients.length;
 
@@ -118,7 +118,7 @@ function AgentPreviewCard({ config, onCreate, onEdit, onChat }: {
           <div className="flex flex-wrap gap-1 mt-1.5">
             {['Natural Language', 'Context Awareness', 'Multi-step Reasoning', 'Memory Persistence'].map(c => (
               <span key={c} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/[0.03] text-[9px] text-white/30 border border-white/[0.04]">
-                <Check className="h-2 w-2 text-[#6F8F7A]/50" />
+                <Check className="h-2 w-2 text-[#86A88B]/50" />
                 {c}
               </span>
             ))}

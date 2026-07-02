@@ -236,7 +236,7 @@ export default function BuildInfoOverlay() {
         // bottom-nav safe area on mobile.
         className={`fixed right-3 z-[55] h-7 w-7 rounded-full backdrop-blur-md shadow-lg flex items-center justify-center pointer-events-auto ${
           commitMismatch
-            ? 'bg-[#B76E79]/30 border border-[#B76E79]/50'
+            ? 'bg-[#C98282]/30 border border-[#C98282]/50'
             : 'bg-[#0b0b12]/85 border border-white/[0.08]'
         }`}
         style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 5rem)' }}
@@ -244,7 +244,7 @@ export default function BuildInfoOverlay() {
         aria-label="Build info"
         data-testid="build-info-minimized"
       >
-        <GitCommit className={`h-3 w-3 ${commitMismatch ? 'text-[#B76E79]' : 'text-[#9CBBD1]/70'}`} />
+        <GitCommit className={`h-3 w-3 ${commitMismatch ? 'text-[#C98282]' : 'text-[#9CBBD1]/70'}`} />
       </motion.button>
     );
   }
@@ -264,20 +264,20 @@ export default function BuildInfoOverlay() {
       <div
         className={`rounded-lg border backdrop-blur-md shadow-2xl text-[10px] font-mono transition-all ${
           commitMismatch
-            ? 'border-[#B76E79]/35 bg-[#B76E79]/[0.08] shadow-[#B76E79]/10'
+            ? 'border-[#C98282]/35 bg-[#C98282]/[0.08] shadow-[#C98282]/10'
             : 'border-white/[0.08] bg-[#0b0b12]/85'
         }`}
       >
         {/* Collapsed bar — fe/be commit + env + controls. */}
         <div className="flex items-center gap-2 px-2 py-1">
-          <GitCommit className={`h-3 w-3 ${commitMismatch ? 'text-[#B76E79]' : 'text-[#9CBBD1]/60'}`} />
-          <span className={`${commitMismatch ? 'text-[#B76E79]' : 'text-slate-300'}`}>
+          <GitCommit className={`h-3 w-3 ${commitMismatch ? 'text-[#C98282]' : 'text-[#9CBBD1]/60'}`} />
+          <span className={`${commitMismatch ? 'text-[#C98282]' : 'text-slate-300'}`}>
             fe <span className="font-bold">{feCommit}</span>
           </span>
           {beCommit && (
             <>
               <span className="text-slate-700">·</span>
-              <span className={`${commitMismatch ? 'text-[#B76E79]' : 'text-slate-300'}`}>
+              <span className={`${commitMismatch ? 'text-[#C98282]' : 'text-slate-300'}`}>
                 be <span className="font-bold">{beCommit}</span>
               </span>
             </>
@@ -301,7 +301,7 @@ export default function BuildInfoOverlay() {
           </button>
           <button
             onClick={handleDismiss}
-            className="h-4 w-4 flex items-center justify-center text-[#7F8FA3] hover:text-[#B76E79]"
+            className="h-4 w-4 flex items-center justify-center text-[#7F8FA3] hover:text-[#C98282]"
             title="Hide for this session"
           >
             <X className="h-3 w-3" />
@@ -319,7 +319,7 @@ export default function BuildInfoOverlay() {
               className="border-t border-white/[0.05] px-2 py-2 space-y-1 overflow-hidden"
             >
               {commitMismatch && (
-                <div className="text-[10px] text-[#B76E79] mb-1">
+                <div className="text-[10px] text-[#C98282] mb-1">
                   ⚠ Frontend and backend are on DIFFERENT commits.
                   At least one of the two deploys is stale.
                 </div>

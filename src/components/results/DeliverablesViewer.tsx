@@ -125,7 +125,7 @@ function DeliverableCard({
         {previewable && (
           <div className="flex items-center gap-1 shrink-0">
             <IconBtn title={copied ? 'Copied' : 'Copy'} onClick={copy}>
-              {copied ? <Check className="h-3 w-3 text-[#6F8F7A]" /> : <Copy className="h-3 w-3" />}
+              {copied ? <Check className="h-3 w-3 text-[#86A88B]" /> : <Copy className="h-3 w-3" />}
             </IconBtn>
             <IconBtn title="Download" onClick={download}><Download className="h-3 w-3" /></IconBtn>
             <IconBtn title="Open full preview" onClick={onOpenModal}><Maximize2 className="h-3 w-3" /></IconBtn>
@@ -141,7 +141,7 @@ function DeliverableCard({
       )}
 
       {deliverable.status === 'failed' && deliverable.error && (
-        <p className="px-3 pb-2 text-[10px] text-[#B76E79]/70">{deliverable.error}</p>
+        <p className="px-3 pb-2 text-[10px] text-[#C98282]/70">{deliverable.error}</p>
       )}
     </div>
   );

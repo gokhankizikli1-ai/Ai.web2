@@ -12,7 +12,7 @@ const buttonVariants = cva(
         default:
           "btn-primary",
         destructive:
-          "bg-[#B76E79]/10 text-[#B76E79] border border-[#B76E79]/20 hover:bg-[#B76E79]/20 hover:border-[#B76E79]/30",
+          "bg-[#C98282]/10 text-[#C98282] border border-[#C98282]/20 hover:bg-[#C98282]/20 hover:border-[#C98282]/30",
         outline:
           "btn-glass",
         secondary:

@@ -94,8 +94,8 @@ export function QuickActionsWidget() {
 
   const COLOR_MAP: Record<string, string> = {
     cyan: 'hover:shadow-[0_0_20px_-4px_rgba(126, 166, 191,0.12)] hover:border-[#8FB4CC]/20',
-    orange: 'hover:shadow-[0_0_20px_-4px_rgba(126, 166, 191,0.12)] hover:border-[#A68A5B]/20',
-    emerald: 'hover:shadow-[0_0_20px_-4px_rgba(126, 166, 191,0.12)] hover:border-[#6F8F7A]/20',
+    orange: 'hover:shadow-[0_0_20px_-4px_rgba(126, 166, 191,0.12)] hover:border-[#8FB4CC]/20',
+    emerald: 'hover:shadow-[0_0_20px_-4px_rgba(126, 166, 191,0.12)] hover:border-[#86A88B]/20',
     violet: 'hover:shadow-[0_0_20px_-4px_rgba(126, 166, 191,0.12)] hover:border-[#8FB4CC]/20',
     indigo: 'hover:shadow-[0_0_20px_-4px_rgba(126, 166, 191,0.12)] hover:border-[#8FB4CC]/20',
     blue: 'hover:shadow-[0_0_20px_-4px_rgba(126, 166, 191,0.12)] hover:border-[#8FB4CC]/20',
@@ -112,7 +112,7 @@ export function QuickActionsWidget() {
             onClick={() => navigate(a.path)}
             className={`flex flex-col items-start gap-1.5 p-3.5 rounded-xl border border-white/[0.03] bg-white/[0.01] transition-all ${COLOR_MAP[a.color]}`}
           >
-            <a.icon className="w-4 h-4 text-[#A9B7C6]" />
+            <a.icon className="w-4 h-4 text-[#8FB4CC]" />
             <span className="text-[12px] font-medium text-white">{a.label}</span>
             <span className="text-[10px] text-[#7F8FA3]">{a.desc}</span>
           </motion.button>
@@ -128,7 +128,7 @@ export function QuickActionsWidget() {
 export function ActivityTimelineWidget() {
   const items = [
     { action: 'Deep Research completed', detail: 'NVDA Q3 Earnings Analysis', time: '2m ago', icon: Brain, color: 'text-[#9CBBD1]' },
-    { action: 'Trading signal detected', detail: 'AAPL Long — 87% confidence', time: '15m ago', icon: TrendingUp, color: 'text-[#6F8F7A]' },
+    { action: 'Trading signal detected', detail: 'AAPL Long — 87% confidence', time: '15m ago', icon: TrendingUp, color: 'text-[#86A88B]' },
     { action: 'New chat started', detail: 'System Architecture Discussion', time: '32m ago', icon: MessageSquare, color: 'text-[#9CBBD1]' },
     { action: 'Agent task finished', detail: 'Market Scanner — 2 signals', time: '1h ago', icon: Bot, color: 'text-[#9CBBD1]' },
     { action: 'Landing page generated', detail: 'Acme AI — conversion optimized', time: '2h ago', icon: FileText, color: 'text-[#9CBBD1]' },
@@ -159,8 +159,8 @@ export function ActivityTimelineWidget() {
    ═══════════════════════════════════════════ */
 export function ActiveAgentsWidget() {
   const agents = [
-    { name: 'Startup Mentor', status: 'active', color: 'bg-[#A68A5B]', icon: Rocket },
-    { name: 'Shopify Expert', status: 'idle', color: 'bg-[#6F8F7A]', icon: ShoppingBag },
+    { name: 'Startup Mentor', status: 'active', color: 'bg-[#C2A15A]', icon: Rocket },
+    { name: 'Shopify Expert', status: 'idle', color: 'bg-[#86A88B]', icon: ShoppingBag },
     { name: 'Code Reviewer', status: 'active', color: 'bg-[#9CBBD1]', icon: Code2 },
     { name: 'Research AI', status: 'idle', color: 'bg-[#9CBBD1]', icon: Brain },
   ];
@@ -174,7 +174,7 @@ export function ActiveAgentsWidget() {
             className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.02] border border-white/[0.03] hover:border-white/[0.06] hover:bg-white/[0.03] transition-all shrink-0"
           >
             <div className="relative">
-              <a.icon className="w-4 h-4 text-[#A9B7C6]" />
+              <a.icon className="w-4 h-4 text-[#8FB4CC]" />
               <div className={`absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full ${a.color} ${a.status === 'active' ? 'animate-pulse' : 'opacity-40'}`} />
             </div>
             <span className="text-[11px] text-slate-300 whitespace-nowrap">{a.name}</span>
@@ -191,10 +191,10 @@ export function ActiveAgentsWidget() {
 export function WorkspaceActivityWidget() {
   const data = [
     { name: 'Startup', value: 42, color: '#9CBBD1' },
-    { name: 'Ecom', value: 28, color: '#6F8F7A' },
+    { name: 'Ecom', value: 28, color: '#86A88B' },
     { name: 'Research', value: 18, color: '#9CBBD1' },
     { name: 'Code', value: 35, color: '#9CBBD1' },
-    { name: 'Trading', value: 12, color: '#6F8F7A' },
+    { name: 'Trading', value: 12, color: '#86A88B' },
     { name: 'Creative', value: 8, color: '#9CBBD1' },
   ];
 
@@ -224,12 +224,12 @@ export function WorkspaceActivityWidget() {
 export function TrendingStartupsWidget() {
   const startups = [
     { name: 'AI Contract Intelligence', category: 'LegalTech', score: 94, trend: '+12%', color: '#9CBBD1' },
-    { name: 'Carbon Intelligence Platform', category: 'ClimateTech', score: 89, trend: '+8%', color: '#6F8F7A' },
+    { name: 'Carbon Intelligence Platform', category: 'ClimateTech', score: 89, trend: '+8%', color: '#86A88B' },
     { name: 'Cross-Chain Liquidity Router', category: 'DeFi', score: 86, trend: '+15%', color: '#9CBBD1' },
   ];
 
   return (
-    <WidgetCard title="Trending Startups" icon={<Flame className="w-3.5 h-3.5 text-[#A68A5B]" />} delay={0.25}>
+    <WidgetCard title="Trending Startups" icon={<Flame className="w-3.5 h-3.5 text-[#C2A15A]" />} delay={0.25}>
       <div className="space-y-3">
         {startups.map((s, i) => (
           <div key={i} className="flex items-center gap-3">
@@ -238,7 +238,7 @@ export function TrendingStartupsWidget() {
               <p className="text-[12px] font-medium text-white truncate">{s.name}</p>
               <div className="flex items-center gap-2 mt-0.5">
                 <span className="text-[10px] text-[#7F8FA3]">{s.category}</span>
-                <span className="text-[10px] text-[#6F8F7A]">{s.trend}</span>
+                <span className="text-[10px] text-[#86A88B]">{s.trend}</span>
               </div>
             </div>
           </div>
@@ -253,12 +253,12 @@ export function TrendingStartupsWidget() {
    ═══════════════════════════════════════════ */
 export function EcommerceOpportunitiesWidget() {
   const products = [
-    { name: 'Smart Garden Hub', virality: 87, margin: '$42', competition: 'Low', color: 'text-[#6F8F7A]' },
-    { name: 'LED Face Mask Pro', virality: 92, margin: '$68', competition: 'Medium', color: 'text-[#A68A5B]' },
+    { name: 'Smart Garden Hub', virality: 87, margin: '$42', competition: 'Low', color: 'text-[#86A88B]' },
+    { name: 'LED Face Mask Pro', virality: 92, margin: '$68', competition: 'Medium', color: 'text-[#C2A15A]' },
   ];
 
   return (
-    <WidgetCard title="Ecommerce Opportunities" icon={<ShoppingBag className="w-3.5 h-3.5 text-[#6F8F7A]" />} delay={0.3}>
+    <WidgetCard title="Ecommerce Opportunities" icon={<ShoppingBag className="w-3.5 h-3.5 text-[#86A88B]" />} delay={0.3}>
       <div className="space-y-2.5">
         {products.map((p, i) => (
           <div key={i} className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.03]">
@@ -283,19 +283,19 @@ export function EcommerceOpportunitiesWidget() {
    ═══════════════════════════════════════════ */
 export function MarketSnapshotWidget() {
   return (
-    <WidgetCard title="Market Snapshot" icon={<TrendingUp className="w-3.5 h-3.5 text-[#6F8F7A]" />} delay={0.35}>
+    <WidgetCard title="Market Snapshot" icon={<TrendingUp className="w-3.5 h-3.5 text-[#86A88B]" />} delay={0.35}>
       <div className="flex items-center gap-4 mb-3">
         <div>
           <p className="text-2xl font-semibold text-white">$187.42</p>
           <div className="flex items-center gap-1">
-            <TrendingUp className="w-3 h-3 text-[#6F8F7A]" />
-            <span className="text-[12px] text-[#6F8F7A]">+2.34%</span>
+            <TrendingUp className="w-3 h-3 text-[#86A88B]" />
+            <span className="text-[12px] text-[#86A88B]">+2.34%</span>
           </div>
         </div>
         <div className="flex-1 h-12 opacity-60">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={[{ v: 30 }, { v: 45 }, { v: 35 }, { v: 50 }, { v: 42 }, { v: 55 }, { v: 48 }]} barSize={6}>
-              <Bar dataKey="v" fill="#6F8F7A" fillOpacity={0.5} radius={[2, 2, 0, 0]} />
+              <Bar dataKey="v" fill="#86A88B" fillOpacity={0.5} radius={[2, 2, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -324,7 +324,7 @@ export function QuickLaunchWidget() {
         </div>
         <div className="flex gap-2 mt-3 flex-wrap">
           {['Landing page', 'SaaS idea', 'Shopify product', 'Brand kit'].map((chip) => (
-            <span key={chip} className="px-2.5 py-1 rounded-lg bg-white/[0.02] text-[10px] text-[#7F8FA3] border border-white/[0.03] hover:border-white/[0.06] cursor-pointer transition-colors">
+            <span key={chip} className="px-2.5 py-1 rounded-lg bg-white/[0.02] text-[10px] text-[#A9B7C6] border border-[#7EA6BF]/25 hover:border-[#7EA6BF]/40 hover:bg-[#7EA6BF]/[0.06] cursor-pointer transition-colors">
               {chip}
             </span>
           ))}
@@ -370,7 +370,7 @@ export function ProductivityStatsWidget() {
 export function RecentGenerationsWidget() {
   const generations = [
     { type: 'Landing Page', preview: 'Hero section with CTA for AI analytics SaaS...', time: '5m ago', color: 'text-[#9CBBD1]', bg: 'bg-[#8FB4CC]/[0.06]' },
-    { type: 'TikTok Script', preview: 'Hook: "This $19 gadget saved me $400..."', time: '12m ago', color: 'text-[#B76E79]', bg: 'bg-[#B76E79]/[0.06]' },
+    { type: 'TikTok Script', preview: 'Hook: "This $19 gadget saved me $400..."', time: '12m ago', color: 'text-[#C98282]', bg: 'bg-[#C98282]/[0.06]' },
     { type: 'Market Research', preview: 'TAM: $4.2B, SAM: $680M, SOM: $45M...', time: '1h ago', color: 'text-[#9CBBD1]', bg: 'bg-[#8FB4CC]/[0.06]' },
     { type: 'Brand Kit', preview: 'Name: "Nexora", Tagline: "Intelligence..."', time: '2h ago', color: 'text-[#9CBBD1]', bg: 'bg-[#8FB4CC]/[0.06]' },
   ];

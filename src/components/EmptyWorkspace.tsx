@@ -8,7 +8,7 @@ export default function EmptyWorkspace() {
   return (
     <div className="flex-1 flex flex-col items-center justify-center relative overflow-hidden">
       {/* Ambient glow behind the orb */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[300px] rounded-full pointer-events-none" style={{ background: 'radial-gradient(circle, rgba(34,211,238,0.04) 0%, transparent 60%)' }} />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[300px] rounded-full pointer-events-none" style={{ background: 'radial-gradient(circle, rgba(126,166,191,0.05) 0%, transparent 60%)' }} />
 
       {/* AI Core Orb */}
       <motion.div

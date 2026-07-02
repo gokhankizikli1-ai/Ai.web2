@@ -46,7 +46,7 @@ export default function RunLauncher({ projectId, onStarted, disabled }: RunLaunc
         {starting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
         {starting ? 'Starting…' : 'Start run'}
       </button>
-      {error && <p className="text-[10px] text-[#B76E79]/70 mt-1">{error}</p>}
+      {error && <p className="text-[10px] text-[#C98282]/70 mt-1">{error}</p>}
     </div>
   );
 }

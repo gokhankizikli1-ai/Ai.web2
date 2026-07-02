@@ -121,20 +121,20 @@ export default function Sidebar({
           onClick={() => onSelect(session.id)}
           className={`w-full min-w-0 flex items-center gap-2 rounded-lg px-2.5 py-[6px] text-left transition-all duration-200 border ${
             active
-              ? 'border-white/[0.06] shadow-[0_0_12px_-4px_rgba(126, 166, 191,0.04)]'
-              : 'border-transparent hover:border-white/[0.03]'
+              ? 'border-[#7EA6BF]/25 shadow-[0_0_14px_-4px_rgba(126,166,191,0.20)]'
+              : 'border-transparent hover:border-[#7EA6BF]/12'
           }`}
           style={active
-            ? { background: 'rgba(255,255,255,0.04)', color: '#E2E8F0' }
-            : { color: 'rgba(169, 183, 198,0.4)' }
+            ? { background: 'rgba(126, 166, 191, 0.10)', color: '#E7EDF3' }
+            : { color: 'rgba(169, 183, 198,0.55)' }
           }
         >
           {/* Active indicator dot */}
           <div className={`w-[3px] h-[3px] rounded-full shrink-0 transition-all duration-300 ${
-            active ? 'bg-[#7EA6BF]/60 scale-100' : 'bg-transparent scale-0'
+            active ? 'bg-[#9BBBD0] scale-100' : 'bg-transparent scale-0'
           }`} />
 
-          <MessageSquare className={`h-2.5 w-2.5 shrink-0 transition-colors ${active ? 'text-white/40' : 'text-white/20'}`} />
+          <MessageSquare className={`h-2.5 w-2.5 shrink-0 transition-colors ${active ? 'text-[#9BBBD0]' : 'text-white/25'}`} />
 
           {/* Chat title wrapper — min-w-0 lets the flex child shrink
               below intrinsic content width; overflow-hidden clips any
@@ -164,7 +164,7 @@ export default function Sidebar({
           >
             <button
               onClick={(e) => { e.stopPropagation(); setDeleteTarget(session.id); }}
-              className="p-1 rounded text-white/30 hover:text-[#B76E79] hover:bg-[#B76E79]/[0.06] transition-all"
+              className="p-1 rounded text-white/30 hover:text-[#C98282] hover:bg-[#C98282]/[0.06] transition-all"
             >
               <Trash2 className="h-2.5 w-2.5" />
             </button>

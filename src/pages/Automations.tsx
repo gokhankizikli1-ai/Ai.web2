@@ -79,11 +79,11 @@ export default function Automations() {
           {/* Stats */}
           <motion.div {...fadeUp(0.05)} className="grid grid-cols-3 gap-3 mb-6">
             <div className="p-4 rounded-xl border border-white/[0.03] bg-white/[0.01] text-center">
-              <p className="text-xl font-semibold text-[#6F8F7A]">{items.filter((i) => i.status === 'active').length}</p>
+              <p className="text-xl font-semibold text-[#86A88B]">{items.filter((i) => i.status === 'active').length}</p>
               <p className="text-[10px] text-[#7F8FA3] mt-0.5">Active</p>
             </div>
             <div className="p-4 rounded-xl border border-white/[0.03] bg-white/[0.01] text-center">
-              <p className="text-xl font-semibold text-[#A68A5B]">{items.filter((i) => i.status === 'paused').length}</p>
+              <p className="text-xl font-semibold text-[#C2A15A]">{items.filter((i) => i.status === 'paused').length}</p>
               <p className="text-[10px] text-[#7F8FA3] mt-0.5">Paused</p>
             </div>
             <div className="p-4 rounded-xl border border-white/[0.03] bg-white/[0.01] text-center">
@@ -110,7 +110,7 @@ export default function Automations() {
                     <div className="flex items-center gap-2">
                       <h3 className="text-[13px] font-medium text-white">{item.name}</h3>
                       <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${
-                        item.status === 'active' ? 'bg-[#6F8F7A]/[0.08] text-[#6F8F7A]' : 'bg-[#A68A5B]/[0.08] text-[#A68A5B]'
+                        item.status === 'active' ? 'bg-[#86A88B]/[0.08] text-[#86A88B]' : 'bg-[#C2A15A]/[0.08] text-[#C2A15A]'
                       }`}>
                         {item.status === 'active' ? 'Active' : 'Paused'}
                       </span>
@@ -125,8 +125,8 @@ export default function Automations() {
                     onClick={() => toggleStatus(item.id)}
                     className={`p-2 rounded-lg transition-colors ${
                       item.status === 'active'
-                        ? 'text-[#6F8F7A] hover:bg-[#6F8F7A]/[0.08]'
-                        : 'text-[#A68A5B] hover:bg-[#A68A5B]/[0.08]'
+                        ? 'text-[#86A88B] hover:bg-[#86A88B]/[0.08]'
+                        : 'text-[#C2A15A] hover:bg-[#C2A15A]/[0.08]'
                     }`}
                   >
                     {item.status === 'active' ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}

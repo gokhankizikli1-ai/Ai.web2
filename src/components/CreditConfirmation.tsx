@@ -88,8 +88,8 @@ export default function CreditConfirmation({ open, costKey, onConfirm, onCancel 
           >
             {/* Icon */}
             <div className="flex items-center justify-center mb-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#A68A5B]/[0.06] border border-[#A68A5B]/10">
-                <Coins className="h-5 w-5 text-[#A68A5B]/70" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#C2A15A]/[0.06] border border-[#C2A15A]/10">
+                <Coins className="h-5 w-5 text-[#C2A15A]/70" />
               </div>
             </div>
 
@@ -103,16 +103,16 @@ export default function CreditConfirmation({ open, costKey, onConfirm, onCancel 
 
             {/* Cost */}
             <div className="flex items-center justify-center gap-2 mb-4 py-2.5 rounded-xl bg-white/[0.02] border border-white/[0.03]">
-              <Coins className="h-4 w-4 text-[#A68A5B]/60" />
-              <span className="text-[13px] font-semibold text-[#A68A5B]/80">
+              <Coins className="h-4 w-4 text-[#C2A15A]/60" />
+              <span className="text-[13px] font-semibold text-[#C2A15A]/80">
                 ~{cost.minCredits === cost.maxCredits ? cost.minCredits : `${cost.minCredits}–${cost.maxCredits}`} credit{cost.maxCredits > 1 ? 's' : ''}
               </span>
             </div>
 
             {/* Note */}
-            <div className="flex items-start gap-2 mb-4 px-2.5 py-2 rounded-lg bg-[#6F8F7A]/[0.02] border border-[#6F8F7A]/6">
-              <AlertTriangle className="h-3 w-3 text-[#6F8F7A]/40 shrink-0 mt-0.5" />
-              <p className="text-[10px] text-[#6F8F7A]/50 leading-relaxed">
+            <div className="flex items-start gap-2 mb-4 px-2.5 py-2 rounded-lg bg-[#86A88B]/[0.02] border border-[#86A88B]/6">
+              <AlertTriangle className="h-3 w-3 text-[#86A88B]/40 shrink-0 mt-0.5" />
+              <p className="text-[10px] text-[#86A88B]/50 leading-relaxed">
                 Normal casual chat is always free. Credits are only used for advanced operations.
               </p>
             </div>

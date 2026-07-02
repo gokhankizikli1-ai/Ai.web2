@@ -464,7 +464,7 @@ export default function ChatDashboard() {
   };
 
   return (
-    <div className="relative flex h-[100dvh] w-full max-w-full overflow-hidden" style={{ background: '#0B0F14', color: '#F5F7FA' }}>
+    <div className="relative flex h-[100dvh] w-full max-w-full overflow-hidden" style={{ background: 'radial-gradient(1200px 680px at 50% -14%, rgba(126, 166, 191, 0.06), transparent 60%), radial-gradient(820px 560px at 100% 0%, rgba(126, 166, 191, 0.035), transparent 62%), #0B0F14', color: '#E7EDF3' }}>
       {/* Ambient background layers */}
       <div className="absolute inset-0 pointer-events-none">
         {/* Base gradient */}

@@ -20,22 +20,22 @@ import ValidationSprintPanel from './ValidationSprintPanel';
 const TOP_CLUSTERS_VISIBLE = 3;
 
 const CONFIDENCE_TONE: Record<string, string> = {
-  high: 'text-[#86A08F] border-[#6F8F7A]/40 bg-[#6F8F7A]/[0.12]',
+  high: 'text-[#86A08F] border-[#86A88B]/40 bg-[#86A88B]/[0.12]',
   medium: 'text-[#8FB4CC] border-[#7EA6BF]/40 bg-[#7EA6BF]/[0.12]',
   low: 'text-slate-300 border-white/[0.1] bg-white/[0.04]',
 };
 
 const DECISION_CHIP_TONE: Record<string, string> = {
-  build: 'text-[#86A08F] border-[#6F8F7A]/40 bg-[#6F8F7A]/[0.12]',
+  build: 'text-[#86A08F] border-[#86A88B]/40 bg-[#86A88B]/[0.12]',
   validate: 'text-[#8FB4CC] border-[#7EA6BF]/40 bg-[#7EA6BF]/[0.12]',
-  avoid: 'text-[#C98A93] border-[#B76E79]/40 bg-[#B76E79]/[0.12]',
+  avoid: 'text-[#C98A93] border-[#C98282]/40 bg-[#C98282]/[0.12]',
 };
 
 /** Evidence-quality badge tiers (avg item quality 0-100 from backend). */
 function evidenceQualityBadge(score: number): { label: string; tone: string } {
-  if (score >= 70) return { label: 'strong evidence', tone: 'text-[#86A08F] border-[#6F8F7A]/40 bg-[#6F8F7A]/[0.12]' };
+  if (score >= 70) return { label: 'strong evidence', tone: 'text-[#86A08F] border-[#86A88B]/40 bg-[#86A88B]/[0.12]' };
   if (score >= 45) return { label: 'moderate evidence', tone: 'text-[#8FB4CC] border-[#7EA6BF]/40 bg-[#7EA6BF]/[0.12]' };
-  return { label: 'weak evidence', tone: 'text-[#C98A93] border-[#B76E79]/40 bg-[#B76E79]/[0.12]' };
+  return { label: 'weak evidence', tone: 'text-[#C98A93] border-[#C98282]/40 bg-[#C98282]/[0.12]' };
 }
 
 function formatGeneratedAt(iso: string): string {
@@ -349,10 +349,10 @@ export default function MarketRadarResults({
 
       {/* Secondary — market signals + risks, collapsed */}
       {hasClusters && (
-        <details className="rounded-xl border border-white/[0.05] bg-white/[0.01] p-4 group/sig">
+        <details className="rounded-xl border border-[#2F3B4A] bg-[#111820] p-4 group/sig transition-colors hover:border-[rgba(126,166,191,0.30)]">
           <summary className="flex items-center gap-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
             <ChevronRight className="h-3.5 w-3.5 text-[#7F8FA3] transition-transform group-open/sig:rotate-90" />
-            <Target className="h-3.5 w-3.5 text-[#A9B7C6]" />
+            <Target className="h-3.5 w-3.5 text-[#7EA6BF]" />
             <span className="text-[13px] font-semibold text-slate-100">Market signals & risks</span>
           </summary>
           <div className="grid sm:grid-cols-2 gap-4 mt-3">

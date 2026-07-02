@@ -45,9 +45,9 @@ function lastRunKey(projectId: string): string {
 
 function deliverableIcon(status: DeliverableStatus) {
   switch (status) {
-    case 'completed':   return <CheckCircle2 className="h-4 w-4 text-[#6F8F7A]/80" />;
+    case 'completed':   return <CheckCircle2 className="h-4 w-4 text-[#86A88B]/80" />;
     case 'in_progress': return <Loader2 className="h-4 w-4 text-[#7EA6BF]/80 animate-spin" />;
-    case 'failed':      return <XCircle className="h-4 w-4 text-[#B76E79]/70" />;
+    case 'failed':      return <XCircle className="h-4 w-4 text-[#C98282]/70" />;
     case 'skipped':     return <MinusCircle className="h-4 w-4 text-white/25" />;
     default:            return <Circle className="h-4 w-4 text-white/25" />;
   }
@@ -480,8 +480,8 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
           <div className="flex justify-end mb-2">
             <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium"
               style={{
-                background: refineIntent ? 'rgba(111,143,122,0.08)' : 'rgba(126, 166, 191,0.06)',
-                border: `1px solid ${refineIntent ? 'rgba(111,143,122,0.2)' : 'rgba(126, 166, 191,0.14)'}`,
+                background: refineIntent ? 'rgba(134, 168, 139,0.08)' : 'rgba(126, 166, 191,0.06)',
+                border: `1px solid ${refineIntent ? 'rgba(134, 168, 139,0.2)' : 'rgba(126, 166, 191,0.14)'}`,
                 color: refineIntent ? 'rgb(111,143,122)' : 'rgb(156, 187, 209)',
               }}>
               {refineIntent ? <Pencil className="h-2.5 w-2.5" /> : <Sparkles className="h-2.5 w-2.5" />}
@@ -512,7 +512,7 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
             {starting ? 'Starting' : refineIntent ? 'Update' : 'Build'}
           </button>
         </div>
-        {startError && <p className="text-[10px] text-[#B76E79]/70 mt-1.5 max-w-2xl mx-auto">{startError}</p>}
+        {startError && <p className="text-[10px] text-[#C98282]/70 mt-1.5 max-w-2xl mx-auto">{startError}</p>}
       </div>
     </div>
   );
@@ -531,12 +531,12 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
             retryable, never a silently empty conversation. */}
         {historyState === 'error' && (
           <div className="max-w-2xl mx-auto mb-3 flex items-center justify-between gap-3 rounded-lg px-3 py-2"
-            style={{ background: 'rgba(166,138,91,0.05)', border: '1px solid rgba(166,138,91,0.14)' }}>
-            <span className="text-[11px] text-[#A68A5B]/70">
+            style={{ background: 'rgba(194, 161, 90,0.05)', border: '1px solid rgba(194, 161, 90,0.14)' }}>
+            <span className="text-[11px] text-[#C2A15A]/70">
               Couldn't load this project's build history — the backend may still be waking up.
             </span>
             <button onClick={() => loadConversation()}
-              className="flex items-center gap-1 text-[11px] font-medium text-[#A68A5B] hover:text-[#A68A5B] transition-colors shrink-0">
+              className="flex items-center gap-1 text-[11px] font-medium text-[#C2A15A] hover:text-[#C2A15A] transition-colors shrink-0">
               <RotateCw className="h-3 w-3" /> Retry
             </button>
           </div>
@@ -587,12 +587,12 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
             {unsupportedNotice && (
               <div className="flex items-start gap-2">
                 <div className="flex h-6 w-6 items-center justify-center rounded-full shrink-0 mt-0.5"
-                  style={{ background: 'rgba(166,138,91,0.14)' }}>
-                  <ShieldAlert className="h-3 w-3 text-[#A68A5B]" />
+                  style={{ background: 'rgba(194, 161, 90,0.14)' }}>
+                  <ShieldAlert className="h-3 w-3 text-[#C2A15A]" />
                 </div>
                 <div className="max-w-[86%] rounded-2xl rounded-tl-sm px-3.5 py-3"
-                  style={{ background: 'rgba(166,138,91,0.06)', border: '1px solid rgba(166,138,91,0.16)' }}>
-                  <p className="text-[11px] font-medium tracking-wide text-[#A68A5B]/80 uppercase mb-1">Can't build this</p>
+                  style={{ background: 'rgba(194, 161, 90,0.06)', border: '1px solid rgba(194, 161, 90,0.16)' }}>
+                  <p className="text-[11px] font-medium tracking-wide text-[#C2A15A]/80 uppercase mb-1">Can't build this</p>
                   <p className="text-[13px] text-white/80 leading-snug">{unsupportedNotice}</p>
                 </div>
               </div>
@@ -673,7 +673,7 @@ function ConversationTurn({
             </span>
           </div>
           {running && (
-            <button onClick={onCancel} className="flex items-center gap-1 text-[10px] text-white/40 hover:text-[#B76E79] transition-colors">
+            <button onClick={onCancel} className="flex items-center gap-1 text-[10px] text-white/40 hover:text-[#C98282] transition-colors">
               <XCircle className="h-3 w-3" /> Cancel
             </button>
           )}
@@ -737,7 +737,7 @@ function ConversationTurn({
                       {d.status === 'in_progress' ? ' · working…' : previewable ? ' · preview' : ''}
                     </p>
                     {d.status === 'failed' && d.error && (
-                      <p className="text-[8px] text-[#B76E79]/60 mt-0.5 line-clamp-2">{d.error}</p>
+                      <p className="text-[8px] text-[#C98282]/60 mt-0.5 line-clamp-2">{d.error}</p>
                     )}
                   </div>
                 </button>

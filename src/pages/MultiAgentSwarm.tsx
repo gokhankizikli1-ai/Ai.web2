@@ -120,7 +120,7 @@ export default function MultiAgentSwarm() {
                       )}
                       {/* Status dot */}
                       <div className="mt-1 shrink-0">
-                        {step.status === 'completed' && <CheckCircle2 className="w-3.5 h-3.5 text-[#6F8F7A]" />}
+                        {step.status === 'completed' && <CheckCircle2 className="w-3.5 h-3.5 text-[#86A88B]" />}
                         {step.status === 'active' && (
                           <motion.div
                             className="w-3.5 h-3.5 rounded-full bg-[#9CBBD1]"
@@ -135,7 +135,7 @@ export default function MultiAgentSwarm() {
                         <p className="text-[11px] text-[#7F8FA3]">{step.action}</p>
                       </div>
                       <span className={`text-[9px] px-1.5 py-0.5 rounded ${
-                        step.status === 'completed' ? 'bg-[#6F8F7A]/[0.08] text-[#6F8F7A]' :
+                        step.status === 'completed' ? 'bg-[#86A88B]/[0.08] text-[#86A88B]' :
                         step.status === 'active' ? 'bg-[#7EA6BF]/[0.08] text-[#9CBBD1]' :
                         'bg-slate-500/[0.08] text-[#7F8FA3]'
                       }`}>
@@ -160,8 +160,8 @@ export default function MultiAgentSwarm() {
                   Based on research across market data, competitor positioning, and growth metrics, the recommended approach prioritizes channel X for initial traction due to lower CAC and higher audience alignment. Marketing should focus on [specific angle] while finance recommends a freemium model to maximize user acquisition. Quality review confirms all data sources are within confidence thresholds.
                 </p>
                 <div className="flex gap-3 mt-4">
-                  <div className="px-3 py-1.5 rounded-lg bg-[#6F8F7A]/[0.06] border border-[#6F8F7A]/10">
-                    <span className="text-[10px] text-[#6F8F7A]">Confidence: 87%</span>
+                  <div className="px-3 py-1.5 rounded-lg bg-[#86A88B]/[0.06] border border-[#86A88B]/10">
+                    <span className="text-[10px] text-[#86A88B]">Confidence: 87%</span>
                   </div>
                   <div className="px-3 py-1.5 rounded-lg bg-[#7EA6BF]/[0.06] border border-[#7EA6BF]/10">
                     <span className="text-[10px] text-[#9CBBD1]">Sources: 12</span>

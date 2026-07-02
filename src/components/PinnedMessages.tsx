@@ -37,7 +37,7 @@ export default function PinnedMessages({ messages, onRemove, open, onToggle }: P
               </p>
               <button
                 onClick={() => onRemove(msg.id)}
-                className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded text-[#7F8FA3] hover:text-[#B76E79] hover:bg-[#B76E79]/10"
+                className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded text-[#7F8FA3] hover:text-[#C98282] hover:bg-[#C98282]/10"
               >
                 <X className="h-3 w-3" />
               </button>

@@ -128,9 +128,9 @@ export default function AgentChatPage() {
               <div className="flex items-center gap-2">
                 <h1 className="text-[13px] font-semibold text-white/90">{agent.name}</h1>
                 <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium ${
-                  agent.status === 'active' ? 'bg-[#6F8F7A]/[0.08] text-[#6F8F7A]' : 'bg-slate-500/[0.06] text-[#A9B7C6]'
+                  agent.status === 'active' ? 'bg-[#86A88B]/[0.08] text-[#86A88B]' : 'bg-slate-500/[0.06] text-[#A9B7C6]'
                 }`}>
-                  {agent.status === 'active' && <span className="w-1 h-1 rounded-full bg-[#6F8F7A]" />}
+                  {agent.status === 'active' && <span className="w-1 h-1 rounded-full bg-[#86A88B]" />}
                   {agent.status}
                 </span>
               </div>
@@ -149,7 +149,7 @@ export default function AgentChatPage() {
               {agent.projectName || 'Project'}
             </button>
           )}
-          <button onClick={handleDelete} className="p-2 rounded-lg text-white/15 hover:text-[#B76E79] hover:bg-[#B76E79]/[0.06] transition-all">
+          <button onClick={handleDelete} className="p-2 rounded-lg text-white/15 hover:text-[#C98282] hover:bg-[#C98282]/[0.06] transition-all">
             <Trash2 className="h-3.5 w-3.5" />
           </button>
         </div>

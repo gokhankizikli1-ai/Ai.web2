@@ -86,10 +86,10 @@ const STATE_STYLES: Record<string, StateStyle> = {
   researching: { dotClass: 'bg-[#7EA6BF]',    ringClass: 'border-[#7EA6BF]/30',    spinning: true,  label: 'Researching' },
   coding:      { dotClass: 'bg-[#7EA6BF]',  ringClass: 'border-[#7EA6BF]/30',  spinning: true,  label: 'Coding' },
   analyzing:   { dotClass: 'bg-[#7EA6BF]',   ringClass: 'border-[#7EA6BF]/30',   spinning: true,  label: 'Analyzing' },
-  waiting:     { dotClass: 'bg-[#A68A5B]',   ringClass: 'border-[#A68A5B]/30',   spinning: false, label: 'Waiting' },
-  blocked:     { dotClass: 'bg-[#A68A5B]',  ringClass: 'border-[#A68A5B]/30',  spinning: false, label: 'Blocked' },
-  completed:   { dotClass: 'bg-[#6F8F7A]', ringClass: 'border-[#6F8F7A]/30', spinning: false, label: 'Completed' },
-  failed:      { dotClass: 'bg-[#B76E79]',     ringClass: 'border-[#B76E79]/30',     spinning: false, label: 'Failed' },
+  waiting:     { dotClass: 'bg-[#C2A15A]',   ringClass: 'border-[#C2A15A]/30',   spinning: false, label: 'Waiting' },
+  blocked:     { dotClass: 'bg-[#C2A15A]',  ringClass: 'border-[#C2A15A]/30',  spinning: false, label: 'Blocked' },
+  completed:   { dotClass: 'bg-[#86A88B]', ringClass: 'border-[#86A88B]/30', spinning: false, label: 'Completed' },
+  failed:      { dotClass: 'bg-[#C98282]',     ringClass: 'border-[#C98282]/30',     spinning: false, label: 'Failed' },
 };
 
 function styleFor(state: string): StateStyle {
@@ -184,10 +184,10 @@ function Chip({ row, now }: { row: AgentPresenceView; now: number }) {
             <Loader2 className="h-2.5 w-2.5 text-[#7F8FA3] animate-spin shrink-0" />
           )}
           {row.state === 'completed' && (
-            <CheckCircle2 className="h-2.5 w-2.5 text-[#6F8F7A]/80 shrink-0" />
+            <CheckCircle2 className="h-2.5 w-2.5 text-[#86A88B]/80 shrink-0" />
           )}
           {row.state === 'failed' && (
-            <AlertCircle className="h-2.5 w-2.5 text-[#B76E79]/80 shrink-0" />
+            <AlertCircle className="h-2.5 w-2.5 text-[#C98282]/80 shrink-0" />
           )}
         </div>
         {/* second line: state · current_task · active for Ns */}

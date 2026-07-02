@@ -21,7 +21,7 @@ export default function CircularGauge({
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (value / 100) * circumference;
 
-  const defaultColor = value >= 70 ? '#34d399' : value >= 40 ? '#fbbf24' : '#f87171';
+  const defaultColor = value >= 70 ? '#86A88B' : value >= 40 ? '#C2A15A' : '#C98282';
   const strokeColor = color || defaultColor;
 
   return (

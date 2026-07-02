@@ -21,7 +21,7 @@ const DEFAULT_STEPS = [
 ];
 
 export default function BuilderProgressCard({
-  label, steps = DEFAULT_STEPS, accent = '#6366f1', accent2 = '#22d3ee',
+  label, steps = DEFAULT_STEPS, accent = '#7EA6BF', accent2 = '#7EA6BF',
 }: BuilderProgressCardProps) {
   return (
     <div className="relative overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.015] p-8">

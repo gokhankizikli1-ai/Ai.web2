@@ -559,15 +559,15 @@ function SessionTab({ ownerMode }: { ownerMode: OwnerModeState }) {
       </Section>
 
       <Section title="Still blocked (non-negotiable)">
-        <div className="rounded-md border border-[#B76E79]/15 bg-[#B76E79]/[0.03] p-2.5">
-          <div className="text-[10px] text-[#B76E79]/80 mb-1.5">
+        <div className="rounded-md border border-[#C98282]/15 bg-[#C98282]/[0.03] p-2.5">
+          <div className="text-[10px] text-[#C98282]/80 mb-1.5">
             Owner mode does NOT relax safety policy. Requests in any of
             the following categories are refused regardless of who's asking:
           </div>
           <ul className="space-y-0.5">
             {SAFETY_RETAINED.map((s) => (
               <li key={s} className="text-[10px] text-[#A9B7C6] flex items-start gap-1.5">
-                <span className="text-[#B76E79]/60 mt-0.5">×</span>
+                <span className="text-[#C98282]/60 mt-0.5">×</span>
                 <span>{s}</span>
               </li>
             ))}
@@ -799,7 +799,7 @@ function AuditTab() {
             key={e.id}
             className={`text-[11px] font-mono rounded border px-2 py-1 ${
               e.status === 'blocked'
-                ? 'border-[#B76E79]/20 bg-[#B76E79]/[0.04] text-[#B76E79]'
+                ? 'border-[#C98282]/20 bg-[#C98282]/[0.04] text-[#C98282]'
                 : 'border-white/[0.04] bg-white/[0.015] text-slate-300'
             }`}
           >
@@ -903,7 +903,7 @@ function OwnerAgentTab() {
                 m.role === 'user'
                   ? 'bg-[#7EA6BF]/[0.04] border border-[#7EA6BF]/15 text-[#9CBBD1]'
                   : m.blocked
-                    ? 'bg-[#B76E79]/[0.04] border border-[#B76E79]/20 text-[#B76E79]'
+                    ? 'bg-[#C98282]/[0.04] border border-[#C98282]/20 text-[#C98282]'
                     : 'bg-white/[0.02] border border-white/[0.05] text-slate-200'
               }`}
             >

@@ -50,8 +50,8 @@ export default function AssetChip({ asset, onDismiss, compact = false }: AssetCh
   // Colour the border by status so the user reads progress at a glance
   // without having to focus on the text.
   const borderClass = (() => {
-    if (status === 'ready')     return 'border-[#6F8F7A]/20';
-    if (status === 'failed')    return 'border-[#B76E79]/25';
+    if (status === 'ready')     return 'border-[#86A88B]/20';
+    if (status === 'failed')    return 'border-[#C98282]/25';
     if (status === 'cancelled') return 'border-white/[0.06]';
     if (status === 'uploading') return 'border-[#7EA6BF]/25';
     return 'border-white/[0.08]';
@@ -103,7 +103,7 @@ export default function AssetChip({ asset, onDismiss, compact = false }: AssetCh
         </span>
         <span className={`${compact ? 'text-[9px]' : 'text-[10px]'} text-[#7F8FA3] leading-tight`}>
           {status === 'failed' && asset.errorMessage
-            ? <span className="text-[#B76E79]/80">{asset.errorMessage}</span>
+            ? <span className="text-[#C98282]/80">{asset.errorMessage}</span>
             : status === 'uploading'
               ? `${asset.progress}% · ${formatSize(asset.sizeBytes)}`
               : status === 'cancelled'
@@ -119,10 +119,10 @@ export default function AssetChip({ asset, onDismiss, compact = false }: AssetCh
           <Loader2 className="h-3 w-3 text-[#7EA6BF]/70 animate-spin" />
         )}
         {status === 'ready' && (
-          <Check className="h-3 w-3 text-[#6F8F7A]/80" />
+          <Check className="h-3 w-3 text-[#86A88B]/80" />
         )}
         {status === 'failed' && (
-          <AlertCircle className="h-3 w-3 text-[#B76E79]/80" />
+          <AlertCircle className="h-3 w-3 text-[#C98282]/80" />
         )}
       </div>
 

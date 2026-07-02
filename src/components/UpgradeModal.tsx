@@ -132,7 +132,7 @@ export default function UpgradeModal({ open, onClose }: UpgradeModalProps) {
                   <motion.span
                     initial={{ opacity: 0, x: -5 }}
                     animate={{ opacity: 1, x: 0 }}
-                    className="text-[11px] text-[#6F8F7A]/70 font-medium flex items-center gap-1"
+                    className="text-[11px] text-[#86A88B]/70 font-medium flex items-center gap-1"
                   >
                     <Star className="h-3 w-3" />
                     Save 20%

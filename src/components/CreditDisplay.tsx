@@ -27,11 +27,11 @@ export default function CreditDisplay() {
         whileHover={{ scale: 1.02 }}
         whileTap={{ scale: 0.98 }}
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#A68A5B]/[0.04] border border-[#A68A5B]/6 hover:bg-[#A68A5B]/[0.07] transition-colors"
+        className="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-[#C2A15A]/[0.04] border border-[#C2A15A]/6 hover:bg-[#C2A15A]/[0.07] transition-colors"
       >
-        <Coins className="w-3 h-3 text-[#A68A5B]/60" />
-        <span className="text-[10px] font-medium text-[#A68A5B]/70 tabular-nums">{creditsRemaining}</span>
-        <span className="text-[9px] text-[#A68A5B]/30">/{creditsTotal}</span>
+        <Coins className="w-3 h-3 text-[#C2A15A]/60" />
+        <span className="text-[10px] font-medium text-[#C2A15A]/70 tabular-nums">{creditsRemaining}</span>
+        <span className="text-[9px] text-[#C2A15A]/30">/{creditsTotal}</span>
       </motion.button>
 
       <AnimatePresence>
@@ -47,9 +47,9 @@ export default function CreditDisplay() {
             <div className="p-3.5 border-b border-white/[0.03]">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[10px] text-[#7F8FA3] uppercase tracking-wider">Credits</span>
-                <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#A68A5B]/[0.06]">
-                  <Crown className="w-2.5 h-2.5 text-[#A68A5B]" />
-                  <span className="text-[9px] text-[#A68A5B] font-medium">Pro</span>
+                <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#C2A15A]/[0.06]">
+                  <Crown className="w-2.5 h-2.5 text-[#C2A15A]" />
+                  <span className="text-[9px] text-[#C2A15A] font-medium">Pro</span>
                 </div>
               </div>
 
@@ -66,9 +66,9 @@ export default function CreditDisplay() {
             </div>
 
             {/* Free chat badge */}
-            <div className="mx-3 mt-2.5 flex items-center gap-1.5 px-2 py-1 rounded-lg bg-[#6F8F7A]/[0.04] border border-[#6F8F7A]/8">
-              <Zap className="w-3 h-3 text-[#6F8F7A]/50" />
-              <span className="text-[10px] text-[#6F8F7A]/60">Casual chat is free</span>
+            <div className="mx-3 mt-2.5 flex items-center gap-1.5 px-2 py-1 rounded-lg bg-[#86A88B]/[0.04] border border-[#86A88B]/8">
+              <Zap className="w-3 h-3 text-[#86A88B]/50" />
+              <span className="text-[10px] text-[#86A88B]/60">Casual chat is free</span>
             </div>
 
             {/* CTA */}

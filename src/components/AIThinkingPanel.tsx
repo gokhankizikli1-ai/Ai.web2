@@ -95,9 +95,9 @@ export default function AIThinkingPanel({ isVisible }: AIThinkingPanelProps) {
                     <motion.div
                       initial={{ scale: 0 }}
                       animate={{ scale: 1 }}
-                      className="h-3 w-3 rounded-full bg-[#6F8F7A]/20 border border-[#6F8F7A]/30 flex items-center justify-center"
+                      className="h-3 w-3 rounded-full bg-[#86A88B]/20 border border-[#86A88B]/30 flex items-center justify-center"
                     >
-                      <svg className="h-2 w-2 text-[#6F8F7A]" viewBox="0 0 12 12" fill="none">
+                      <svg className="h-2 w-2 text-[#86A88B]" viewBox="0 0 12 12" fill="none">
                         <path d="M2 6l3 3 5-5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
                     </motion.div>
@@ -112,14 +112,14 @@ export default function AIThinkingPanel({ isVisible }: AIThinkingPanelProps) {
 
                 {/* Icon */}
                 <step.icon className={`h-3 w-3 ${
-                  step.status === 'completed' ? 'text-[#6F8F7A]/60' :
+                  step.status === 'completed' ? 'text-[#86A88B]/60' :
                   step.status === 'active' ? 'text-[#7EA6BF]' :
                   'text-[#7F8FA3]'
                 }`} />
 
                 {/* Label */}
                 <span className={`text-[11px] ${
-                  step.status === 'completed' ? 'text-[#6F8F7A]/60' :
+                  step.status === 'completed' ? 'text-[#86A88B]/60' :
                   step.status === 'active' ? 'text-[#7EA6BF]/80' :
                   'text-[#7F8FA3]'
                 }`}>

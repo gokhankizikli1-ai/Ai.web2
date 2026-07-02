@@ -22,7 +22,7 @@ export default function PremiumSlider({
   label,
   showValue = true,
   valueFormatter = (v) => `${v}%`,
-  color = '#22d3ee',
+  color = '#7EA6BF',
 }: PremiumSliderProps) {
   const trackRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);

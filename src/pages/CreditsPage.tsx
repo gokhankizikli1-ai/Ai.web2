@@ -18,13 +18,13 @@ import PremiumSlider from '@/components/PremiumSlider';
    ═══════════════════════════════════════════ */
 
 const CREDIT_COSTS = [
-  { name: 'Casual Chat', cost: 0, desc: 'Normal conversation', icon: Sparkles, color: 'text-[#6F8F7A]' },
-  { name: 'Fast Response', cost: 0, desc: 'Quick AI reply', icon: Zap, color: 'text-[#6F8F7A]' },
+  { name: 'Casual Chat', cost: 0, desc: 'Normal conversation', icon: Sparkles, color: 'text-[#86A88B]' },
+  { name: 'Fast Response', cost: 0, desc: 'Quick AI reply', icon: Zap, color: 'text-[#86A88B]' },
   { name: 'Deep Think', cost: '1-2', desc: 'Simple reasoning', icon: Brain, color: 'text-[#9CBBD1]' },
   { name: 'Deep Think Pro', cost: '3-5', desc: 'Complex multi-step', icon: Brain, color: 'text-[#9CBBD1]' },
   { name: 'Web Research', cost: '5-20', desc: 'Live data search', icon: Globe, color: 'text-[#9CBBD1]' },
   { name: 'File Analysis', cost: '3-15', desc: 'PDF, CSV, docs', icon: FileText, color: 'text-[#9CBBD1]' },
-  { name: 'Trading Intel', cost: '2-10', desc: 'Market signals', icon: TrendingUp, color: 'text-[#A68A5B]' },
+  { name: 'Trading Intel', cost: '2-10', desc: 'Market signals', icon: TrendingUp, color: 'text-[#C2A15A]' },
   { name: 'AI Agents', cost: '5-50', desc: 'Custom workflows', icon: Bot, color: 'text-[#9CBBD1]' },
   { name: 'Premium Reasoning', cost: 'Variable', desc: 'Long context tasks', icon: Shield, color: 'text-[#9CBBD1]' },
 ];
@@ -149,11 +149,11 @@ const CREDIT_RATE = 0.10;
 
 const QUICK_PACKS = [
   { credits: 10, color: 'text-slate-300', glow: 'hover:shadow-[0_0_20px_rgba(255,255,255,0.03)]' },
-  { credits: 20, color: 'text-[#6F8F7A]', glow: 'hover:shadow-[0_0_20px_rgba(156, 187, 209,0.06)]' },
+  { credits: 20, color: 'text-[#86A88B]', glow: 'hover:shadow-[0_0_20px_rgba(156, 187, 209,0.06)]' },
   { credits: 50, color: 'text-[#9CBBD1]', glow: 'hover:shadow-[0_0_20px_rgba(156, 187, 209,0.06)]' },
   { credits: 100, color: 'text-[#9CBBD1]', glow: 'hover:shadow-[0_0_20px_rgba(156, 187, 209,0.06)]' },
   { credits: 500, color: 'text-[#9CBBD1]', glow: 'hover:shadow-[0_0_20px_rgba(156, 187, 209,0.06)]' },
-  { credits: 1000, color: 'text-[#A68A5B]', glow: 'hover:shadow-[0_0_24px_rgba(166,138,91,0.08)]' },
+  { credits: 1000, color: 'text-[#C2A15A]', glow: 'hover:shadow-[0_0_24px_rgba(194, 161, 90,0.08)]' },
   { credits: 2000, color: 'text-[#9CBBD1]', glow: 'hover:shadow-[0_0_28px_rgba(156, 187, 209,0.10)]' },
 ];
 
@@ -234,7 +234,7 @@ function PlanCard({
       whileHover={{ y: -2 }}
       className={`relative p-5 rounded-2xl border ${
         plan.current
-          ? 'border-[#A68A5B]/15 bg-[#A68A5B]/[0.02]'
+          ? 'border-[#C2A15A]/15 bg-[#C2A15A]/[0.02]'
           : plan.enterprise
             ? 'border-[#7EA6BF]/10 bg-[#7EA6BF]/[0.02]'
             : 'border-white/[0.03] bg-white/[0.01]'
@@ -242,7 +242,7 @@ function PlanCard({
     >
       {plan.popular && (
         <div className="absolute -top-px left-1/2 -translate-x-1/2">
-          <span className="text-[9px] font-semibold px-3 py-0.5 rounded-b-lg bg-[#A68A5B]/[0.1] border border-[#A68A5B]/15 border-t-0 text-[#A68A5B] uppercase tracking-wider">
+          <span className="text-[9px] font-semibold px-3 py-0.5 rounded-b-lg bg-[#C2A15A]/[0.1] border border-[#C2A15A]/15 border-t-0 text-[#C2A15A] uppercase tracking-wider">
             Most Popular
           </span>
         </div>
@@ -269,7 +269,7 @@ function PlanCard({
       </div>
 
       {isYearly && yearlySavings > 0 && !plan.enterprise && (
-        <p className="text-[10px] text-[#6F8F7A]/60 mb-2">Save ${yearlySavings}/year</p>
+        <p className="text-[10px] text-[#86A88B]/60 mb-2">Save ${yearlySavings}/year</p>
       )}
 
       {plan.credits > 0 && (
@@ -285,7 +285,7 @@ function PlanCard({
       <ul className="space-y-1.5 mb-4 flex-1">
         {plan.features.map((f) => (
           <li key={f} className="flex items-start gap-1.5 text-[11px] text-[#A9B7C6]">
-            <Check className="w-3 h-3 text-[#6F8F7A]/50 shrink-0 mt-0.5" />
+            <Check className="w-3 h-3 text-[#86A88B]/50 shrink-0 mt-0.5" />
             {f}
           </li>
         ))}
@@ -304,7 +304,7 @@ function PlanCard({
             : plan.enterprise
               ? 'bg-[#7EA6BF]/[0.08] text-[#9CBBD1] border border-[#7EA6BF]/15 hover:bg-[#7EA6BF]/[0.12]'
               : plan.popular
-                ? 'bg-[#A68A5B]/[0.08] text-[#A68A5B] border border-[#A68A5B]/15 hover:bg-[#A68A5B]/[0.12]'
+                ? 'bg-[#C2A15A]/[0.08] text-[#C2A15A] border border-[#C2A15A]/15 hover:bg-[#C2A15A]/[0.12]'
                 : 'bg-white/[0.03] text-[#A9B7C6] border border-white/[0.04] hover:bg-white/[0.05]'
         }`}
         disabled={plan.current}
@@ -408,7 +408,7 @@ function CustomPlanBuilder({ isYearly }: { isYearly: boolean }) {
                           {feature.price > 0 ? (
                             <span className={`text-[11px] font-medium ${isSelected ? 'text-[#9CBBD1]' : 'text-[#7F8FA3]'}`}>+${feature.price}/mo</span>
                           ) : (
-                            <span className="text-[10px] text-[#6F8F7A]/50">Included</span>
+                            <span className="text-[10px] text-[#86A88B]/50">Included</span>
                           )}
                         </div>
                       </button>
@@ -493,7 +493,7 @@ function CustomPlanBuilder({ isYearly }: { isYearly: boolean }) {
                 </span>
               </div>
               {isYearly && (
-                <p className="text-[10px] text-[#6F8F7A]/50 mt-1 text-right">
+                <p className="text-[10px] text-[#86A88B]/50 mt-1 text-right">
                   Save ${Math.round(monthlyTotal * 12 - yearlyTotal)} vs monthly
                 </p>
               )}
@@ -543,8 +543,8 @@ export default function CreditsPage() {
           {/* ═══ HEADER ═══ */}
           <motion.div {...fadeUp(0)} className="mb-6">
             <div className="flex items-center gap-3 mb-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#A68A5B]/[0.08] border border-[#A68A5B]/15">
-                <Coins className="h-5 w-5 text-[#A68A5B]" />
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#C2A15A]/[0.08] border border-[#C2A15A]/15">
+                <Coins className="h-5 w-5 text-[#C2A15A]" />
               </div>
               <div>
                 <h1 className="text-2xl font-semibold text-white tracking-tight">Credits &amp; Plans</h1>
@@ -557,8 +557,8 @@ export default function CreditsPage() {
           <motion.div {...fadeUp(0.05)} className="mb-8 p-5 sm:p-6 rounded-2xl border border-white/[0.04] bg-white/[0.01]">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div className="flex items-center gap-4">
-                <div className="p-3 rounded-xl bg-[#A68A5B]/[0.06] border border-[#A68A5B]/10">
-                  <CreditCard className="w-6 h-6 text-[#A68A5B]" />
+                <div className="p-3 rounded-xl bg-[#C2A15A]/[0.06] border border-[#C2A15A]/10">
+                  <CreditCard className="w-6 h-6 text-[#C2A15A]" />
                 </div>
                 <div>
                   <p className="text-[11px] text-[#7F8FA3] uppercase tracking-wider">Remaining Credits</p>
@@ -586,17 +586,17 @@ export default function CreditsPage() {
               </div>
 
               <div className="flex items-center gap-2 shrink-0">
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#A68A5B]/[0.06] border border-[#A68A5B]/10">
-                  <Crown className="w-3.5 h-3.5 text-[#A68A5B]" />
-                  <span className="text-[11px] font-medium text-[#A68A5B]">Pro</span>
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#C2A15A]/[0.06] border border-[#C2A15A]/10">
+                  <Crown className="w-3.5 h-3.5 text-[#C2A15A]" />
+                  <span className="text-[11px] font-medium text-[#C2A15A]">Pro</span>
                 </div>
               </div>
             </div>
 
             {/* Casual chat = free notice */}
-            <div className="mt-4 flex items-center gap-2 px-3 py-2 rounded-lg bg-[#6F8F7A]/[0.03] border border-[#6F8F7A]/8">
-              <Zap className="w-3.5 h-3.5 text-[#6F8F7A]/60" />
-              <p className="text-[11px] text-[#6F8F7A]/70">
+            <div className="mt-4 flex items-center gap-2 px-3 py-2 rounded-lg bg-[#86A88B]/[0.03] border border-[#86A88B]/8">
+              <Zap className="w-3.5 h-3.5 text-[#86A88B]/60" />
+              <p className="text-[11px] text-[#86A88B]/70">
                 <span className="font-medium">Casual chat is free.</span> Credits only used for advanced operations like Deep Think, Research, Agents, and Trading.
               </p>
             </div>
@@ -637,7 +637,7 @@ export default function CreditsPage() {
                     }`}
                   >
                     Yearly
-                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#6F8F7A]/[0.08] text-[#6F8F7A] font-medium">
+                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[#86A88B]/[0.08] text-[#86A88B] font-medium">
                       Save 20%
                     </span>
                   </button>
@@ -650,12 +650,12 @@ export default function CreditsPage() {
           {activeTab === 'plans' && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}>
               {/* Free chat banner */}
-              <div className="mb-4 p-3 rounded-xl border border-[#6F8F7A]/8 bg-[#6F8F7A]/[0.02] flex items-center gap-3">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#6F8F7A]/[0.06] border border-[#6F8F7A]/10 shrink-0">
-                  <Sparkles className="h-4 w-4 text-[#6F8F7A]/70" />
+              <div className="mb-4 p-3 rounded-xl border border-[#86A88B]/8 bg-[#86A88B]/[0.02] flex items-center gap-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#86A88B]/[0.06] border border-[#86A88B]/10 shrink-0">
+                  <Sparkles className="h-4 w-4 text-[#86A88B]/70" />
                 </div>
                 <div>
-                  <p className="text-[12px] font-medium text-[#6F8F7A]/80">Casual chat is always free</p>
+                  <p className="text-[12px] font-medium text-[#86A88B]/80">Casual chat is always free</p>
                   <p className="text-[10px] text-[#7F8FA3] mt-0.5">Credits are only used for advanced operations below.</p>
                 </div>
               </div>
@@ -726,9 +726,9 @@ export default function CreditsPage() {
 
               {/* Pricing rate banner */}
               <div className="mb-6 flex items-center justify-center gap-2 py-3 rounded-2xl border border-white/[0.03] bg-white/[0.01]">
-                <Coins className="w-3.5 h-3.5 text-[#A68A5B]/50" />
+                <Coins className="w-3.5 h-3.5 text-[#C2A15A]/50" />
                 <span className="text-[11px] text-[#A9B7C6]">
-                  Rate: <span className="text-[#A68A5B]/70 font-medium">$0.10 per credit</span> — Premium AI compute
+                  Rate: <span className="text-[#C2A15A]/70 font-medium">$0.10 per credit</span> — Premium AI compute
                 </span>
               </div>
 
@@ -751,7 +751,7 @@ export default function CreditsPage() {
                       onClick={() => setSelectedPack(`q${pack.credits}`)}
                       className={`relative p-4 rounded-2xl border text-center transition-all duration-200 ${
                         isSelected
-                          ? 'border-[#A68A5B]/20 bg-[#A68A5B]/[0.03] shadow-[0_0_24px_rgba(166,138,91,0.06)]'
+                          ? 'border-[#C2A15A]/20 bg-[#C2A15A]/[0.03] shadow-[0_0_24px_rgba(194, 161, 90,0.06)]'
                           : 'border-white/[0.03] bg-white/[0.01] hover:border-white/[0.08]'
                       } ${pack.glow}`}
                     >
@@ -759,7 +759,7 @@ export default function CreditsPage() {
                       <p className="text-[9px] text-[#7F8FA3] mb-2">credits</p>
                       <p className={`text-[13px] font-semibold ${pack.color}`}>${price}</p>
                       {pack.credits >= 1000 && (
-                        <span className="absolute -top-1.5 -right-1.5 text-[8px] font-semibold px-1.5 py-0.5 rounded-full bg-[#A68A5B]/[0.1] border border-[#A68A5B]/15 text-[#A68A5B] uppercase">
+                        <span className="absolute -top-1.5 -right-1.5 text-[8px] font-semibold px-1.5 py-0.5 rounded-full bg-[#C2A15A]/[0.1] border border-[#C2A15A]/15 text-[#C2A15A] uppercase">
                           Bulk
                         </span>
                       )}
@@ -773,11 +773,11 @@ export default function CreditsPage() {
                 <motion.div
                   initial={{ opacity: 0, y: 8 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="mb-8 p-4 rounded-2xl border border-[#A68A5B]/15 bg-[#A68A5B]/[0.02] flex items-center justify-between"
+                  className="mb-8 p-4 rounded-2xl border border-[#C2A15A]/15 bg-[#C2A15A]/[0.02] flex items-center justify-between"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-xl bg-[#A68A5B]/[0.06] border border-[#A68A5B]/10">
-                      <Coins className="w-4 h-4 text-[#A68A5B]" />
+                    <div className="p-2 rounded-xl bg-[#C2A15A]/[0.06] border border-[#C2A15A]/10">
+                      <Coins className="w-4 h-4 text-[#C2A15A]" />
                     </div>
                     <div>
                       <p className="text-[12px] text-white font-medium">
@@ -788,7 +788,7 @@ export default function CreditsPage() {
                       </p>
                     </div>
                   </div>
-                  <Button className="h-8 px-5 rounded-xl bg-[#A68A5B]/[0.08] text-[#A68A5B] border border-[#A68A5B]/15 text-[11px] hover:bg-[#A68A5B]/[0.12]">
+                  <Button className="h-8 px-5 rounded-xl bg-[#C2A15A]/[0.08] text-[#C2A15A] border border-[#C2A15A]/15 text-[11px] hover:bg-[#C2A15A]/[0.12]">
                     Purchase
                   </Button>
                 </motion.div>
@@ -905,7 +905,7 @@ export default function CreditsPage() {
                       <div key={d.day} className="flex-1 flex flex-col items-center gap-1">
                         <div className="w-full flex gap-px h-20 items-end">
                           <motion.div
-                            className="flex-1 rounded-t bg-[#6F8F7A]/20"
+                            className="flex-1 rounded-t bg-[#86A88B]/20"
                             initial={{ height: 0 }}
                             animate={{ height: `${casualH}%` }}
                             transition={{ duration: 0.5, delay: i * 0.05 }}
@@ -926,7 +926,7 @@ export default function CreditsPage() {
                 </div>
                 <div className="flex items-center gap-4 mt-3">
                   <div className="flex items-center gap-1.5">
-                    <div className="w-2 h-2 rounded-sm bg-[#6F8F7A]/30" />
+                    <div className="w-2 h-2 rounded-sm bg-[#86A88B]/30" />
                     <span className="text-[10px] text-[#7F8FA3]">Casual (free)</span>
                   </div>
                   <div className="flex items-center gap-1.5">
@@ -941,7 +941,7 @@ export default function CreditsPage() {
                 <div className="p-4 rounded-2xl border border-white/[0.03] bg-white/[0.01]">
                   <p className="text-[11px] text-[#7F8FA3] mb-1">Total Messages</p>
                   <p className="text-2xl font-bold text-white">1,247</p>
-                  <p className="text-[10px] text-[#6F8F7A]/60 mt-1">
+                  <p className="text-[10px] text-[#86A88B]/60 mt-1">
                     <ArrowUpRight className="w-3 h-3 inline" /> 340 casual (free)
                   </p>
                 </div>
@@ -978,8 +978,8 @@ export default function CreditsPage() {
           )}
 
           {/* ═══ FOOTER NOTE ═══ */}
-          <motion.div {...fadeUp(0.15)} className="mt-8 p-4 rounded-2xl border border-[#A68A5B]/10 bg-[#A68A5B]/[0.02] flex items-start gap-2.5">
-            <AlertCircle className="w-4 h-4 text-[#A68A5B] shrink-0 mt-0.5" />
+          <motion.div {...fadeUp(0.15)} className="mt-8 p-4 rounded-2xl border border-[#C2A15A]/10 bg-[#C2A15A]/[0.02] flex items-start gap-2.5">
+            <AlertCircle className="w-4 h-4 text-[#C2A15A] shrink-0 mt-0.5" />
             <div>
               <p className="text-[11px] text-[#7F8FA3]">
                 Payment processing coming soon. All features currently available during early access.
