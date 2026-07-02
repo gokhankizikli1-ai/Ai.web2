@@ -4,7 +4,7 @@ import type { SprintDay } from '@/lib/startupRadarInsights';
 
 const VISIBLE_BY_DEFAULT = 2;
 
-/** Deterministic 7-day validation sprint generated from the top complaint
+/** Deterministic Validation plan generated from the top complaint
  * cluster + ICP. Days 1-2 show by default; the rest expands on demand. */
 export default function ValidationSprintPanel({ sprint }: { sprint: SprintDay[] }) {
   const [expanded, setExpanded] = useState(false);
@@ -14,7 +14,7 @@ export default function ValidationSprintPanel({ sprint }: { sprint: SprintDay[] 
     <div className="rounded-xl border border-white/[0.05] bg-white/[0.01] p-4">
       <div className="flex items-center gap-2 mb-3">
         <CalendarCheck className="h-3.5 w-3.5 text-[#86A08F]" />
-        <h3 className="text-[13px] font-semibold text-slate-100">7-day validation sprint</h3>
+        <h3 className="text-[13px] font-semibold text-slate-100">Validation plan</h3>
       </div>
       <div className="space-y-2.5">
         {visible.map((d) => (
@@ -35,7 +35,7 @@ export default function ValidationSprintPanel({ sprint }: { sprint: SprintDay[] 
           className="mt-3 flex items-center gap-1 text-[11px] text-[#60A5FA] hover:text-[#60A5FA] transition-colors"
         >
           <ChevronDown className="h-3 w-3" />
-          Show full sprint (Day 3–{sprint.length})
+          Show full plan (Day 3–{sprint.length})
         </button>
       )}
     </div>

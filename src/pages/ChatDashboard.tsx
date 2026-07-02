@@ -347,6 +347,21 @@ export default function ChatDashboard() {
     return () => window.removeEventListener('korvix-route-to-chat', handler);
   }, [handleTabChange, setInputText, addToast, setPendingSessionTitle]);
 
+  // Title-only signal — the embedded Startup Radar fires this when the
+  // user runs an analysis so the active workspace session stops sitting
+  // as "New Business" and adopts the query (e.g. "AI support chatbot
+  // complaints"). No tab switch, no prompt. setPendingSessionTitle only
+  // ever renames an unused "New X" session, so real conversations are
+  // never overwritten.
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { title?: string };
+      if (detail?.title) setPendingSessionTitle(detail.title);
+    };
+    window.addEventListener('korvix-set-session-title', handler);
+    return () => window.removeEventListener('korvix-set-session-title', handler);
+  }, [setPendingSessionTitle]);
+
   // Global New Chat
   const handleNewChat = useCallback(() => {
     createNewChat();

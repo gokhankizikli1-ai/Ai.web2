@@ -51,7 +51,7 @@ export default function EvidenceTrail({ report, defaultOpen = false }: Props) {
     >
       <summary className="flex items-center gap-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
         <ChevronRight className="h-3.5 w-3.5 text-[#94A3B8] transition-transform group-open:rotate-90" />
-        <span className="text-[13px] font-semibold text-slate-100">Evidence trail</span>
+        <span className="text-[13px] font-semibold text-slate-100">Sources used</span>
         <span className="text-[11px] text-[#94A3B8]">
           {report.citations.length} page{report.citations.length === 1 ? '' : 's'} used
         </span>

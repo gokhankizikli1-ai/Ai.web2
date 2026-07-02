@@ -145,6 +145,17 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
     setReport(null);
     setRestoredNote(false);
     setLastRequest(req);
+    // Chat-naming fix: when embedded in the workspace, adopt the query as
+    // the active session title so the sidebar shows the research topic
+    // instead of a stale "New Business". Title-only — no tab switch. The
+    // chat hook only renames unused "New X" sessions, so an existing
+    // named conversation is never overwritten.
+    if (embedded) {
+      const title = cleanTitle(req.query);
+      if (title) {
+        window.dispatchEvent(new CustomEvent('korvix-set-session-title', { detail: { title } }));
+      }
+    }
     try {
       const result = await analyzeMarketComplaints(req);
       setReport(result);
