@@ -21,6 +21,8 @@ try:
     from backend.services.tools.github_tool import GithubRepoTool
     # Phase 11 — structured university rankings extractor.
     from backend.services.tools.university_rankings_tool import UniversityRankingsTool
+    # Startup Market Intelligence — complaint radar for startup_advisor.
+    from backend.services.tools.startup_complaints_tool import StartupComplaintsTool
 
     register(MarketDataTool())
     register(MacroDataTool())
@@ -33,6 +35,7 @@ try:
     register(BrowserFetchTool())
     register(GithubRepoTool())
     register(UniversityRankingsTool())
-    logger.debug("tool package: 11 tools registered")
+    register(StartupComplaintsTool())
+    logger.debug("tool package: 12 tools registered")
 except Exception as _exc:
     logger.warning("tool package: registration failed (%s) — tools unavailable", _exc)

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useSearchParams, useNavigate } from 'react-router';
+import { useSearchParams, useNavigate, useLocation } from 'react-router';
 import { useChat, TAB_KEYS } from '@/hooks/useChat';
 import { useCommandPalette } from '@/hooks/useCommandPalette';
 import { useJobActivities } from '@/hooks/useJobs';
@@ -212,6 +212,7 @@ export default function ChatDashboard() {
       : DEMO_ACTIVITIES;
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [activeTab, setActiveTab] = useState<WorkspaceTab>(
     (searchParams.get('tab') as WorkspaceTab) || settings.defaultWorkspace
   );
@@ -224,6 +225,36 @@ export default function ChatDashboard() {
       setActiveTab(settings.defaultWorkspace);
     }
   }, [settings.defaultWorkspace, searchParams]);
+
+  // Deep-link tab sync — /chat?tab=startup initializes `activeTab` from
+  // the URL, but useChat's internal `currentTab` still boots as 'chat'.
+  // Without this one-time sync, messages sent on a deep-linked tab would
+  // land in the wrong isolated session AND miss tab-based mode routing
+  // (the startup tab must send mode=startup_advisor). Runs once on mount.
+  const deepLinkSyncedRef = useRef(false);
+  useEffect(() => {
+    if (deepLinkSyncedRef.current) return;
+    deepLinkSyncedRef.current = true;
+    if (activeTab !== currentTab && activeTab !== 'agents' && TAB_KEYS.includes(activeTab)) {
+      switchTab(activeTab);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Prompt handoff — pages like StartupHub navigate here with
+  // { state: { initialPrompt } } (e.g. "Send to Startup Advisor" carrying
+  // the Market Complaint Radar result). Populate the composer and clear
+  // the history state so refresh/back doesn't re-inject the prompt.
+  // Declared AFTER the deep-link sync above: switchTab() clears the
+  // input, so this effect must win the same render pass.
+  useEffect(() => {
+    const initialPrompt = (location.state as { initialPrompt?: string } | null)?.initialPrompt;
+    if (!initialPrompt) return;
+    setInputText(initialPrompt);
+    addToast('Prompt ready — press Enter to send', 'success');
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state]);
 
   // Agent timeline visibility: only for research/agents deep mode
   const showTimeline = isLoading && activeTab === 'research';

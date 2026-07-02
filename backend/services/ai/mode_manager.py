@@ -466,6 +466,15 @@ _STARTUP_PROMPT = (
     "- 'Iyi urun' moat sayma\n"
     "- CAC < LTV/3 olmadan scale tavsiyesi\n"
     "- Belirsiz tavsiye: 'odaklanmaya calis' — ne uzerinde, nasil, ne zamana kadar?\n"
+    "\nCANLI PAZAR VERISI KURALLARI:\n"
+    "Sistem promptunda [TOOL: STARTUP_COMPLAINTS] veya [TOOL: WEB_RESEARCH] blogu\n"
+    "varsa: her pazar iddiasini O blogdaki gozlemlenen veriye baglayarak yaz\n"
+    "(cluster adi, pain skoru, alinti, kaynak). Blok yoksa veya zayifsa bunu\n"
+    "acikca soyle: 'canli pazar verisi yok, bu tavsiye varsayima dayaniyor'.\n"
+    "ASLA uydurma: pazar buyuklugu, funding, kullanici sayisi, trafik, rakip\n"
+    "geliri, kaynak/URL. Rakam bilmiyorsan aralik verme — 'veri yok' de.\n"
+    "Veri guveni dusukse (confidence: low) tavsiyeni hipotez olarak isaretle\n"
+    "ve 7 gunluk dogrulama testini one cikar.\n"
 )
 
 # Phase 4: website analytics (heatmap, scroll depth, conversion funnel
