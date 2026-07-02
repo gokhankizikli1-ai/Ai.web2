@@ -12,7 +12,9 @@ logger = logging.getLogger(__name__)
 _MODE_TOOL_MAP: Dict[str, List[str]] = {
     "trading_analyst":        ["market_data", "macro_data"],
     "marketing_dropshipping": ["ecommerce_research", "web_research"],
-    "startup_advisor":        ["web_research"],
+    # startup_advisor gets the complaint radar first (structured pain
+    # clusters + evidence) plus generic web research for anything else.
+    "startup_advisor":        ["startup_complaints", "web_research"],
     "research":               ["web_research"],
     "deep_think":             ["web_research"],
     # Phase 6d — safe utility tools, bound to a dedicated mode so the
@@ -96,6 +98,8 @@ def build_tool_context_block(tool_results: Dict[str, dict]) -> str:
             sections.append(header + _format_market_data(data))
         elif tool_name == "macro_data" and isinstance(data, dict):
             sections.append(header + _format_macro_data(data))
+        elif tool_name == "startup_complaints" and isinstance(data, dict):
+            sections.append(header + _format_startup_complaints(data))
         elif isinstance(data, dict):
             sections.append(header + _format_generic_dict(data))
         else:
@@ -271,6 +275,64 @@ def _format_smart_money(z: dict) -> str:
         )
 
     return "\n".join(out)
+
+
+def _format_startup_complaints(d: dict) -> str:
+    """Compact [TOOL: STARTUP_COMPLAINTS] block. Only observed data goes
+    in — the advisor prompt forbids inventing anything beyond it."""
+    lines = [""]
+    lines.append(f"Query: {d.get('query', '')}")
+    lines.append(f"Generated at: {d.get('generated_at', '')} "
+                 f"(timeframe: last {d.get('timeframe_days', '?')} days"
+                 + (", cached" if d.get("cached") else "") + ")")
+    freshness = d.get("data_freshness") or {}
+    if freshness:
+        lines.append("Sources: " + ", ".join(
+            f"{name}={status}" for name, status in freshness.items()
+        ))
+    lines.append(f"Confidence: {d.get('confidence', 'low')} | "
+                 f"opportunity_score: {d.get('opportunity_score', 0)}/100 | "
+                 f"items_analyzed: {d.get('total_items_analyzed', 0)}")
+
+    clusters = d.get("clusters") or []
+    if clusters:
+        lines.append("Top complaint clusters:")
+        for i, c in enumerate(clusters, 1):
+            lines.append(
+                f"{i}. {c.get('label', '?')} — pain {c.get('pain_score', 0)}/100, "
+                f"{c.get('frequency', 0)} signals, "
+                f"WTP {c.get('willingness_to_pay_signal', 0)}/100"
+            )
+            quote = c.get("sample_quote") or ""
+            if quote:
+                lines.append(f"   quote: \"{quote[:160]}\"")
+        lines.append("Evidence:")
+        for c in clusters:
+            url = c.get("evidence_url") or ""
+            if url:
+                lines.append(f"- {url}")
+
+    signals = d.get("market_signals") or {}
+    signal_lines = []
+    for key in ("competitors_mentioned", "trending_keywords",
+                "underserved_segments", "common_workarounds"):
+        values = signals.get(key) or []
+        if values:
+            signal_lines.append(f"- {key}: {', '.join(str(v) for v in values[:6])}")
+    if signal_lines:
+        lines.append("Market signals:")
+        lines.extend(signal_lines)
+
+    limitations = d.get("limitations") or ""
+    unavailable = [name for name, status in freshness.items() if status != "available"]
+    lines.append("Data limitations:")
+    if limitations:
+        lines.append(f"- {limitations}")
+    if unavailable:
+        lines.append(f"- sources without data this run: {', '.join(unavailable)}")
+    if not limitations and not unavailable:
+        lines.append("- none observed; evidence is directional, not exhaustive")
+    return "\n".join(lines)
 
 
 def _format_macro_data(d: dict) -> str:

@@ -634,7 +634,15 @@ export function useChat() {
       'startup_advisor', 'marketing_dropshipping', 'trading_analyst',
     ]);
     const normalizedMode = aiMode ? aiMode.replace('-', '_') : '';
-    const requestMode = KNOWN_BACKEND_MODES.has(normalizedMode) ? normalizedMode : undefined;
+    let requestMode = KNOWN_BACKEND_MODES.has(normalizedMode) ? normalizedMode : undefined;
+    // The Startup workspace is a specialized advisor surface, not generic
+    // chat: its messages must run as startup_advisor on the backend so the
+    // mode's founder persona + tools (startup_complaints, web_research)
+    // activate. Only the default 'fast' mode is overridden — an explicit
+    // user pick of a heavier mode (deep_think, research, …) is respected.
+    if (currentTab === 'startup' && (!requestMode || requestMode === 'fast')) {
+      requestMode = 'startup_advisor';
+    }
 
     // When streaming creates a placeholder assistant message, both the
     // legacy /chat fallback and the demo fallback REPLACE that
@@ -1051,7 +1059,7 @@ export function useChat() {
     // demo-mode reply — in both cases the conversation got a usable
     // assistant turn, so report success to the composer.
     return true;
-  }, [activeSessionId, aiMode]);
+  }, [activeSessionId, aiMode, currentTab]);
 
   const sendMessage = useCallback(
     async (

@@ -39,6 +39,9 @@ _TOOL_FLAG_NAMES: Dict[str, str] = {
     "github_repo":        "ENABLE_GITHUB_TOOL",
     # Phase 11 — structured rankings extractor.
     "university_rankings": "ENABLE_UNIVERSITY_RANKINGS",
+    # Startup Market Intelligence — same flag as /v2/startup routes so
+    # one switch controls both the HTTP surface and the chat tool.
+    "startup_complaints": "ENABLE_STARTUP_MARKET_INTEL",
 }
 
 
