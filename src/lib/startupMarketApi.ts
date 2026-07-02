@@ -34,9 +34,9 @@ export type SourceStatus = 'available' | 'unavailable' | 'skipped';
  * Single source of truth for every startup component.
  */
 export const SOURCE_DISPLAY: Record<RadarSource, { label: string; role: string }> = {
-  web: { label: 'Web scan', role: 'Broad web evidence' },
+  web: { label: 'Web', role: 'Broad web evidence' },
   hackernews: { label: 'Founder forums', role: 'Founder/developer discussion signal' },
-  gdelt: { label: 'News trends', role: 'News and trend signal' },
+  gdelt: { label: 'News', role: 'News and trend signal' },
   reddit: { label: 'Communities', role: 'Community complaint signal' },
   producthunt: { label: 'Product launches', role: 'Launch and product signal' },
 };
