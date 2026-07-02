@@ -7,8 +7,8 @@ import {
 // Backend-observed contribution → user label. "Opened" is the honest
 // floor for anything without a role (old cached reports).
 const ROLE_META: Record<string, { label: string; tone: string }> = {
-  direct: { label: 'Direct complaint', tone: 'text-emerald-300 border-emerald-500/25 bg-emerald-500/[0.08]' },
-  complaint: { label: 'Extracted complaint', tone: 'text-cyan-300 border-cyan-500/25 bg-cyan-500/[0.08]' },
+  direct: { label: 'Direct complaint', tone: 'text-[#9FB48D] border-[#8A9A7A]/40 bg-[#8A9A7A]/[0.12]' },
+  complaint: { label: 'Extracted complaint', tone: 'text-[#C99A70] border-[#B98B63]/35 bg-[#B98B63]/[0.1]' },
   broad: { label: 'Broad evidence', tone: 'text-slate-400 border-white/[0.08] bg-white/[0.03]' },
   context: { label: 'Used as citation', tone: 'text-slate-300 border-white/[0.08] bg-white/[0.03]' },
 };
@@ -72,7 +72,7 @@ export default function EvidenceTrail({ report, defaultOpen = false }: Props) {
                       href={c.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-1.5 min-w-0 text-[12px] text-slate-300 hover:text-cyan-300 transition-colors"
+                      className="flex items-center gap-1.5 min-w-0 text-[12px] text-slate-300 hover:text-[#D9AC84] transition-colors"
                     >
                       <ExternalLink className="h-2.5 w-2.5 shrink-0 text-slate-500" />
                       <span className="font-medium shrink-0">{domainOf(c.url)}</span>

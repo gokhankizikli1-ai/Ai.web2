@@ -2,8 +2,8 @@ import { ChevronRight, Clock3, Target, Trash2 } from 'lucide-react';
 import type { RadarHistoryEntry } from '@/lib/startupRadarHistory';
 
 const CONFIDENCE_TONE: Record<string, string> = {
-  high: 'text-emerald-300',
-  medium: 'text-amber-300',
+  high: 'text-[#9FB48D]',
+  medium: 'text-[#C99A70]',
   low: 'text-slate-400',
 };
 
@@ -46,7 +46,7 @@ export default function RecentAnalyses({ history, defaultOpen, onRestore, onClea
         <span className="text-[11px] text-slate-500">({history.length})</span>
         <button
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); onClearHistory(); }}
-          className="ml-auto flex items-center gap-1 text-[10px] text-slate-500 hover:text-rose-300 transition-colors"
+          className="ml-auto flex items-center gap-1 text-[10px] text-slate-500 hover:text-[#D28C8C] transition-colors"
         >
           <Trash2 className="h-3 w-3" /> Clear history
         </button>
@@ -58,7 +58,7 @@ export default function RecentAnalyses({ history, defaultOpen, onRestore, onClea
             onClick={() => onRestore(entry)}
             className="flex items-center gap-3 w-full text-left px-2.5 py-2 rounded-lg border border-white/[0.03] bg-white/[0.008] hover:bg-white/[0.03] hover:border-white/[0.08] transition-all group/item"
           >
-            <Target className="h-3 w-3 text-slate-500 group-hover/item:text-amber-400/70 shrink-0 transition-colors" />
+            <Target className="h-3 w-3 text-slate-500 group-hover/item:text-[#C99A70] shrink-0 transition-colors" />
             <span className="flex-1 min-w-0 text-[12px] text-slate-200 truncate">{entry.report.query}</span>
             <span className="shrink-0 text-[11px] font-semibold text-slate-100">
               {entry.report.summary.opportunity_score}

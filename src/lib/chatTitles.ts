@@ -32,6 +32,13 @@ const RESEARCH_TRIGGERS = [
   'son gelişmeler', 'son gelismeler', 'kaynak göster', 'kaynak goster',
 ];
 
+/** Lightweight check used for UI hints (typing-indicator labels, titles).
+ * The backend has its own authoritative detector for running research. */
+export function looksLikeResearchAsk(text: string): boolean {
+  const lower = (text || '').toLowerCase();
+  return RESEARCH_TRIGGERS.some((t) => lower.includes(t));
+}
+
 /** Strip the trigger phrase so "research Tesla latest" → "Tesla latest". */
 function stripTriggers(text: string): string {
   let out = text;

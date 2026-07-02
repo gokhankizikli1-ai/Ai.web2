@@ -13,7 +13,7 @@ export default function CompetitorWeaknessPanel({ report }: { report: MarketComp
   return (
     <div className="rounded-xl border border-white/[0.05] bg-white/[0.01] p-4">
       <div className="flex items-center gap-2 mb-3">
-        <Swords className="h-3.5 w-3.5 text-violet-300" />
+        <Swords className="h-3.5 w-3.5 text-[#A7A7AD]" />
         <h3 className="text-[13px] font-semibold text-slate-100">Competitor weaknesses found in evidence</h3>
       </div>
 

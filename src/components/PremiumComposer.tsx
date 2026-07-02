@@ -286,9 +286,9 @@ export default function PremiumComposer({
         transition={{ duration: 0.2 }}
         className={`relative rounded-2xl border transition-all duration-300 ${
           isDragging
-            ? 'border-cyan-400/40'
+            ? 'border-[#B98B63]/45'
             : isFocused
-              ? 'border-cyan-500/15'
+              ? 'border-[#B98B63]/20'
               : 'border-white/[0.05] hover:border-white/[0.07]'
         }`}
         style={{
@@ -312,7 +312,7 @@ export default function PremiumComposer({
                   'linear-gradient(135deg, rgba(34,211,238,0.10), rgba(99,102,241,0.10))',
               }}
             >
-              <div className="flex items-center gap-2 text-cyan-300 text-[12px] font-medium">
+              <div className="flex items-center gap-2 text-[#C99A70] text-[12px] font-medium">
                 <FileUp className="h-3.5 w-3.5" />
                 Drop to attach
               </div>
@@ -395,7 +395,7 @@ export default function PremiumComposer({
             <Command className="h-2.5 w-2.5" />
             <span>K to focus</span>
             {assets.isUploading && (
-              <span className="ml-2 text-cyan-400/60">Uploading…</span>
+              <span className="ml-2 text-[#A7A7AD]">Uploading…</span>
             )}
           </div>
 
@@ -413,7 +413,7 @@ export default function PremiumComposer({
             transition={{ duration: 0.2 }}
             className={`flex items-center justify-center h-8 w-8 rounded-xl transition-all duration-200 ${
               canSend
-                ? 'text-white hover:text-cyan-300'
+                ? 'text-white hover:text-[#C99A70]'
                 : 'text-[#64748B]'
             } disabled:opacity-30`}
           >

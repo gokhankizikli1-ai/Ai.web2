@@ -500,23 +500,31 @@ export function useChat() {
   /* ─── Pending session title (handoff auto-naming) ───
      Startup Radar → Advisor/Builder handoffs (and any future flow) can
      stage a human title ("Startup: AI support tools") so the session
-     never sits as "New Chat". Applied as soon as the target session
-     activates; consumed at latest on the first send. Only ever renames
-     unused "New X" sessions — real conversations keep their titles. */
+     never sits as "New Chat". State-driven so the sidebar renames
+     IMMEDIATELY — both when the handoff switches tabs (the batched
+     activeSessionId change re-runs the effect with the target session)
+     and when the user is already on the target tab (the pendingTitle
+     change alone re-runs it). Consumed at latest on the first send.
+     Only ever renames unused "New X" sessions — real conversations
+     keep their titles. */
+  const [pendingTitle, setPendingTitle] = useState<string | null>(null);
   const pendingTitleRef = useRef<string | null>(null);
   const setPendingSessionTitle = useCallback((title: string) => {
-    pendingTitleRef.current = (title || '').trim() || null;
+    const t = (title || '').trim() || null;
+    pendingTitleRef.current = t;
+    setPendingTitle(t);
   }, []);
   useEffect(() => {
-    const title = pendingTitleRef.current;
-    if (!title) return;
+    if (!pendingTitle) return;
+    const active = sessionsRef.current.find((s) => s.id === activeSessionId);
+    if (!active || !active.title.startsWith('New ')) return;
     setSessions((prev) => prev.map((s) =>
-      s.id === activeSessionId && s.title.startsWith('New ') ? { ...s, title } : s,
+      s.id === activeSessionId && s.title.startsWith('New ') ? { ...s, title: pendingTitle } : s,
     ));
-    // Keep the ref until doSend consumes it — if the active session was
-    // already a named conversation, the rename intentionally didn't land.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSessionId]);
+    // Applied — clear so a later manual tab switch can't rename another
+    // fresh session. (doSend keeps its own ref copy as the fallback.)
+    setPendingTitle(null);
+  }, [pendingTitle, activeSessionId]);
 
   /* ─── Switch to a tab — activates that tab's isolated session ─── */
   const switchTab = useCallback((tab: WorkspaceTab) => {
@@ -638,8 +646,9 @@ export function useChat() {
 
     // Consume the staged handoff title BEFORE queueing the state update —
     // the updater runs asynchronously, after the ref would be cleared.
-    const pendingTitle = pendingTitleRef.current;
+    const stagedTitle = pendingTitleRef.current;
     pendingTitleRef.current = null;
+    setPendingTitle(null);
 
     setSessions((prev) =>
       prev.map((s) =>
@@ -652,7 +661,7 @@ export function useChat() {
               // ("Startup: X") wins, then derived ("Research: topic"),
               // then the legacy first-40-chars fallback.
               title: s.title.startsWith('New ')
-                ? (pendingTitle
+                ? (stagedTitle
                     ?? deriveSessionTitle(trimmed, currentTab)
                     ?? trimmed.slice(0, 40))
                 : s.title,
