@@ -12,7 +12,7 @@ interface FeatureCard {
 }
 
 const FEATURES: FeatureCard[] = [
-  { icon: LayoutGrid, label: 'Multi-Workspace AI', color: 'text-cyan-600', glow: 'group-hover:shadow-[0_0_24px_-6px_rgba(34,211,238,0.15)] group-hover:border-cyan-500/20' },
+  { icon: LayoutGrid, label: 'Multi-Workspace AI', color: 'text-[#52677A]', glow: 'group-hover:shadow-[0_0_24px_-6px_rgba(34,211,238,0.15)] group-hover:border-[#52677A]/20' },
   { icon: Rocket, label: 'Startup Operating System', color: 'text-orange-500', glow: 'group-hover:shadow-[0_0_24px_-6px_rgba(251,146,60,0.15)] group-hover:border-orange-500/20' },
   { icon: ShoppingBag, label: 'Ecommerce Intelligence', color: 'text-emerald-600', glow: 'group-hover:shadow-[0_0_24px_-6px_rgba(52,211,153,0.15)] group-hover:border-emerald-500/20' },
   { icon: TrendingUp, label: 'Trading Signals', color: 'text-green-600', glow: 'group-hover:shadow-[0_0_24px_-6px_rgba(74,222,128,0.15)] group-hover:border-green-500/20' },

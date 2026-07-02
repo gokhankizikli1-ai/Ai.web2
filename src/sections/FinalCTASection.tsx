@@ -14,21 +14,21 @@ export default function FinalCTASection() {
     <section className="relative py-24 md:py-32 overflow-hidden">
       {/* Large background glow */}
       <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] bg-cyan-500/[0.03] rounded-full blur-[180px]" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[200px] bg-violet-500/[0.02] rounded-full blur-[100px]" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] bg-[#EEF1F4]0/[0.03] rounded-full blur-[180px]" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[200px] bg-[#EEF1F4]0/[0.02] rounded-full blur-[100px]" />
       </div>
 
       <div className="relative max-w-3xl mx-auto px-4 sm:px-6 text-center">
         <motion.div {...fadeUp(0)}>
           {/* Badge */}
-          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-cyan-500/[0.06] border border-cyan-100 text-cyan-600 text-[11px] mb-6">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#EEF1F4]0/[0.06] border border-[#DDE3EA] text-[#52677A] text-[11px] mb-6">
             <Zap className="h-3 w-3" />
             <span>Start building with AI today</span>
           </div>
 
           <h2 className="text-3xl sm:text-4xl md:text-5xl font-bold text-[#111827] mb-5 tracking-tight leading-tight">
             Ready to{' '}
-            <span className="bg-clip-text text-transparent bg-gradient-to-r from-cyan-600 via-blue-400 to-violet-400">
+            <span className="bg-clip-text text-transparent bg-gradient-to-r from-[#334155] to-[#52677A]">
               Build the Future
             </span>
             ?

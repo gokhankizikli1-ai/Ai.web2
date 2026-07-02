@@ -7,7 +7,7 @@ const ACTIVITIES = [
   { icon: ShoppingBag, text: 'Generating ecommerce strategy...', color: 'text-emerald-600', bg: 'bg-emerald-500/[0.08]' },
   { icon: TrendingUp, text: 'Signal updated — AAPL', color: 'text-green-600', bg: 'bg-green-500/[0.08]' },
   { icon: Rocket, text: 'Workspace synced', color: 'text-orange-500', bg: 'bg-orange-500/[0.08]' },
-  { icon: Activity, text: '12 tasks completed today', color: 'text-cyan-600', bg: 'bg-cyan-500/[0.08]' },
+  { icon: Activity, text: '12 tasks completed today', color: 'text-[#52677A]', bg: 'bg-[#EEF1F4]0/[0.08]' },
 ];
 
 export default function LiveActivityBar() {

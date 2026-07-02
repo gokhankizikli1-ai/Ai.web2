@@ -13,9 +13,9 @@ const FEATURES = [
     icon: MessageSquare,
     title: 'AI Chat',
     desc: 'Deep Think, Fast, Research, Creative, Code, Study modes. Context-aware multi-turn conversations with streaming responses.',
-    color: 'text-cyan-600',
-    bg: 'bg-cyan-50',
-    border: 'border-cyan-100',
+    color: 'text-[#52677A]',
+    bg: 'bg-[#EEF1F4]',
+    border: 'border-[#DDE3EA]',
   },
   {
     icon: Globe,
@@ -38,8 +38,8 @@ const FEATURES = [
     title: 'AI Agents',
     desc: '12 specialized agents — startup strategists, product researchers, SEO optimizers, security auditors, and more.',
     color: 'text-violet-600',
-    bg: 'bg-violet-50',
-    border: 'border-violet-100',
+    bg: 'bg-[#EEF1F4]',
+    border: 'border-[#DDE3EA]',
   },
   {
     icon: TrendingUp,
@@ -78,7 +78,7 @@ const FEATURES = [
 export default function FeatureShowcaseSection() {
   return (
     <section className="relative py-24 md:py-32 overflow-hidden">
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[400px] bg-violet-500/[0.015] rounded-full blur-[150px] pointer-events-none" />
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[400px] bg-[#EEF1F4]0/[0.015] rounded-full blur-[150px] pointer-events-none" />
 
       <div className="relative max-w-6xl mx-auto px-4 sm:px-6">
         <motion.div {...fadeUp(0)} className="text-center mb-16">

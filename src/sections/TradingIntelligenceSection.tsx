@@ -12,9 +12,9 @@ const fadeUp = (delay = 0) => ({
 const FEATURES = [
   { icon: Star, label: 'Watchlist', desc: 'Track your favorite stocks and crypto with real-time sparklines and price alerts.', color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-100' },
   { icon: TrendingUp, label: 'Signals', desc: 'AI-generated trade signals with confidence scoring and setup grades.', color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-100' },
-  { icon: BookOpen, label: 'Journal', desc: 'Log every trade with notes, review performance, and identify patterns.', color: 'text-cyan-600', bg: 'bg-cyan-50', border: 'border-cyan-100' },
+  { icon: BookOpen, label: 'Journal', desc: 'Log every trade with notes, review performance, and identify patterns.', color: 'text-[#52677A]', bg: 'bg-[#EEF1F4]', border: 'border-[#DDE3EA]' },
   { icon: Bell, label: 'Alerts', desc: 'Get notified when your conditions trigger — price, volume, or sentiment.', color: 'text-rose-600', bg: 'bg-rose-50', border: 'border-rose-100' },
-  { icon: ShieldCheck, label: 'Risk/Reward', desc: 'Every signal includes entry, target, stop-loss, and risk/reward ratio.', color: 'text-violet-600', bg: 'bg-violet-50', border: 'border-violet-100' },
+  { icon: ShieldCheck, label: 'Risk/Reward', desc: 'Every signal includes entry, target, stop-loss, and risk/reward ratio.', color: 'text-violet-600', bg: 'bg-[#EEF1F4]', border: 'border-[#DDE3EA]' },
   { icon: Clock, label: 'Confidence Engine', desc: 'Multi-factor scoring: technicals, sentiment, volume, and market context.', color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100' },
 ];
 

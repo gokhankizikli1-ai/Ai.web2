@@ -53,7 +53,7 @@ export default function FeaturesSection() {
               className="group relative rounded-2xl border border-slate-200 bg-slate-50 p-6 hover:bg-white transition-all duration-300 hover:border-slate-300 hover:shadow-md"
               style={{ animationDelay: `${i * 0.05}s` }}
             >
-              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-100 to-blue-100 text-cyan-600 group-hover:scale-110 transition-transform duration-300">
+              <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#EEF1F4] to-[#DDE3EA] text-[#52677A] group-hover:scale-110 transition-transform duration-300">
                 <feature.icon className="h-5 w-5" />
               </div>
               <h3 className="text-[15px] font-semibold text-[#111827] mb-1.5">{feature.title}</h3>

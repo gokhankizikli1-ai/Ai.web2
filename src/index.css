@@ -3,69 +3,75 @@
 @tailwind utilities;
 
 @layer base {
+  /* ═══════════════════════════════════════════════════════════════════
+     Korvix identity — "Ink + Porcelain + Muted Slate Blue"
+     Light = landing/porcelain, Dark = app/ink graphite.
+     Accent is a single muted slate blue (#52677A) — no cyan, no brown,
+     no yellow/orange, no strong red as brand.
+     ═══════════════════════════════════════════════════════════════════ */
   :root {
-    /* ── Light Theme (Landing Page) ── */
-    --background: 0 0% 97%;
-    --foreground: 220 15% 18%;
-    --card: 0 0% 100%;
-    --card-foreground: 220 15% 18%;
+    /* ── Light Theme (Landing / Porcelain) ── */
+    --background: 210 20% 98%;      /* #F7F8FA */
+    --foreground: 222 30% 11%;      /* #101827 */
+    --card: 0 0% 100%;              /* #FFFFFF */
+    --card-foreground: 222 30% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 220 15% 18%;
-    --primary: 220 15% 18%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 220 10% 94%;
-    --secondary-foreground: 220 15% 18%;
-    --muted: 220 10% 94%;
-    --muted-foreground: 220 8% 48%;
-    --accent: 220 10% 94%;
-    --accent-foreground: 220 15% 18%;
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 220 10% 90%;
-    --input: 220 10% 90%;
-    --ring: 190 90% 50%;
+    --popover-foreground: 222 30% 11%;
+    --primary: 222 30% 11%;         /* ink */
+    --primary-foreground: 210 20% 98%;
+    --secondary: 213 24% 94%;       /* #EEF1F4 */
+    --secondary-foreground: 222 30% 11%;
+    --muted: 213 24% 94%;
+    --muted-foreground: 215 20% 47%; /* #64748B */
+    --accent: 205 20% 40%;          /* #52677A muted slate blue */
+    --accent-foreground: 0 0% 100%;
+    --destructive: 347 34% 57%;     /* #B76E79 muted */
+    --destructive-foreground: 0 0% 100%;
+    --border: 213 24% 89%;          /* #DDE3EA */
+    --input: 213 24% 89%;
+    --ring: 205 20% 40%;            /* slate accent */
     --radius: 0.625rem;
     --sidebar-background: 0 0% 100%;
-    --sidebar-foreground: 220 15% 18%;
-    --sidebar-primary: 190 90% 50%;
+    --sidebar-foreground: 222 30% 11%;
+    --sidebar-primary: 205 20% 40%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 220 10% 96%;
-    --sidebar-accent-foreground: 220 15% 18%;
-    --sidebar-border: 220 10% 92%;
-    --sidebar-ring: 190 90% 50%;
+    --sidebar-accent: 213 24% 96%;
+    --sidebar-accent-foreground: 222 30% 11%;
+    --sidebar-border: 213 24% 91%;
+    --sidebar-ring: 205 20% 40%;
   }
 
   .dark {
-    /* ── Graphite Dark Theme (Workspace) ── */
-    /* Primary tones: #11151C #171C24 #1B2230 #202736 */
-    --background: 220 20% 10%;      /* #11151C */
-    --foreground: 210 20% 93%;      /* #E2E8F0 */
-    --card: 220 18% 12%;            /* #171C24 */
-    --card-foreground: 210 20% 93%; /* #E2E8F0 */
-    --popover: 218 20% 14%;         /* #1B2230 */
-    --popover-foreground: 210 20% 93%;
-    --primary: 220 20% 17%;         /* #202736 */
-    --primary-foreground: 210 20% 93%;
-    --secondary: 218 20% 14%;       /* #1B2230 */
-    --secondary-foreground: 210 20% 93%;
-    --muted: 220 18% 12%;           /* #171C24 */
-    --muted-foreground: 215 15% 60%;
-    --accent: 220 20% 17%;          /* #202736 */
-    --accent-foreground: 210 20% 93%;
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 210 20% 93%;
-    --border: 220 15% 18%;
-    --input: 220 15% 18%;
-    --ring: 190 90% 50%;
+    /* ── Ink Dark Theme (Workspace) ── */
+    /* Surfaces: #0B0E12 #11161C #161C23 #1B222B  · border #2A3440 */
+    --background: 213 24% 6%;       /* #0B0E12 */
+    --foreground: 210 30% 96%;      /* #F5F7FA */
+    --card: 210 24% 9%;             /* #11161C */
+    --card-foreground: 210 30% 96%;
+    --popover: 212 22% 12%;         /* #161C23 */
+    --popover-foreground: 210 30% 96%;
+    --primary: 211 21% 15%;         /* #1B222B */
+    --primary-foreground: 210 30% 96%;
+    --secondary: 212 22% 12%;       /* #161C23 */
+    --secondary-foreground: 210 30% 96%;
+    --muted: 210 24% 9%;
+    --muted-foreground: 215 20% 61%; /* #94A3B8 */
+    --accent: 205 20% 40%;          /* #52677A muted slate blue */
+    --accent-foreground: 210 30% 96%;
+    --destructive: 347 34% 57%;     /* #B76E79 muted */
+    --destructive-foreground: 210 30% 96%;
+    --border: 209 21% 20%;          /* #2A3440 */
+    --input: 209 21% 20%;
+    --ring: 205 24% 47%;            /* slate accent hover */
     --radius: 0.625rem;
-    --sidebar-background: 220 20% 10%;
-    --sidebar-foreground: 210 20% 93%;
-    --sidebar-primary: 190 90% 50%;
+    --sidebar-background: 213 24% 6%;
+    --sidebar-foreground: 210 30% 96%;
+    --sidebar-primary: 205 24% 47%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 220 18% 14%;
-    --sidebar-accent-foreground: 210 20% 93%;
-    --sidebar-border: 220 15% 16%;
-    --sidebar-ring: 190 90% 50%;
+    --sidebar-accent: 212 22% 12%;
+    --sidebar-accent-foreground: 210 30% 96%;
+    --sidebar-border: 209 21% 18%;
+    --sidebar-ring: 205 24% 47%;
   }
 
   html {
@@ -92,7 +98,7 @@
   }
 
   ::selection {
-    background: rgba(34, 211, 238, 0.2);
+    background: rgba(82, 103, 122, 0.28);
   }
 
   /* ── Scrollbar ── */
@@ -152,10 +158,13 @@
 }
 
 @layer utilities {
-  /* ── Text gradient ── */
+  /* ── Text gradient — calm ink→slate, no neon ── */
   .text-gradient {
     @apply bg-clip-text text-transparent;
-    background-image: linear-gradient(to right, #22D3EE, #A78BFA);
+    background-image: linear-gradient(to right, #101827, #52677A);
+  }
+  .dark .text-gradient {
+    background-image: linear-gradient(to right, #F5F7FA, #7890A3);
   }
 
   /* ── Glass surfaces ── */
@@ -181,7 +190,7 @@
   .btn-primary:hover {
     background: linear-gradient(180deg, #252D3D 0%, #1C2230 100%);
     border-color: rgba(255, 255, 255, 0.12);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3), 0 0 12px rgba(34, 211, 238, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.06);
     transform: translateY(-1px);
   }
   .btn-primary:active {
@@ -203,11 +212,11 @@
     color: #E2E8F0;
   }
 
-  /* ── Surface layers ── */
-  .surface-layer-1 { background: #11151C; }
-  .surface-layer-2 { background: #171C24; }
-  .surface-layer-3 { background: #1B2230; }
-  .surface-layer-4 { background: #202736; }
+  /* ── Surface layers (ink graphite) ── */
+  .surface-layer-1 { background: #0B0E12; }
+  .surface-layer-2 { background: #11161C; }
+  .surface-layer-3 { background: #161C23; }
+  .surface-layer-4 { background: #1B222B; }
 
   /* ── Shadows ── */
   .shadow-graphite-sm {
@@ -219,8 +228,9 @@
   .shadow-graphite-lg {
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3), 0 4px 8px rgba(0, 0, 0, 0.2);
   }
+  /* Legacy name kept for compatibility — now a soft slate glow. */
   .shadow-cyan-glow {
-    box-shadow: 0 0 20px rgba(34, 211, 238, 0.08);
+    box-shadow: 0 0 20px rgba(82, 103, 122, 0.1);
   }
 
   /* ── Hover lift ── */
@@ -237,14 +247,14 @@
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
   }
   .hover-glow:hover {
-    border-color: rgba(34, 211, 238, 0.15);
-    box-shadow: 0 0 16px rgba(34, 211, 238, 0.04);
+    border-color: rgba(82, 103, 122, 0.25);
+    box-shadow: 0 0 16px rgba(82, 103, 122, 0.06);
   }
 
-  /* ── Focus glow ── */
+  /* ── Focus ring — muted slate accent ── */
   .focus-glow:focus-within {
-    border-color: rgba(34, 211, 238, 0.2);
-    box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.06);
+    border-color: rgba(82, 103, 122, 0.4);
+    box-shadow: 0 0 0 3px rgba(82, 103, 122, 0.12);
   }
 
   /* ── Shimmer loading ── */
@@ -267,8 +277,8 @@
     transition: all 0.35s cubic-bezier(0.22, 1, 0.36, 1);
   }
 
-  /* ── Light theme gradients ── */
+  /* ── Landing porcelain background — calm, near-flat ── */
   .bg-gradient-premium {
-    background: linear-gradient(135deg, #F8FAFC 0%, #F1F5F9 50%, #F8FAFC 100%);
+    background: linear-gradient(180deg, #F7F8FA 0%, #EEF1F4 100%);
   }
 }

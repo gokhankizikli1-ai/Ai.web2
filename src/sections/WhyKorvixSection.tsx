@@ -17,8 +17,8 @@ const FEATURES = [
     desc: 'Switch between AI modes without losing context. Code, research, trade, and launch — all connected.',
     span: 'col-span-1 md:col-span-2',
     bg: 'bg-slate-50',
-    iconBg: 'bg-cyan-50',
-    iconColor: 'text-cyan-600',
+    iconBg: 'bg-[#EEF1F4]',
+    iconColor: 'text-[#52677A]',
   },
   {
     icon: Cpu,
@@ -26,7 +26,7 @@ const FEATURES = [
     desc: 'Deploy specialized AI agents for frontend, backend, design, marketing, and trading.',
     span: 'col-span-1',
     bg: 'bg-white',
-    iconBg: 'bg-violet-50',
+    iconBg: 'bg-[#EEF1F4]',
     iconColor: 'text-violet-600',
   },
   {
@@ -70,15 +70,15 @@ const FEATURES = [
 export default function WhyKorvixSection() {
   return (
     <section id="features" className="relative py-20 md:py-28 overflow-hidden">
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] bg-cyan-400/[0.02] rounded-full blur-[150px] pointer-events-none" />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[400px] bg-[#7890A3]/[0.02] rounded-full blur-[150px] pointer-events-none" />
 
       <div className="relative max-w-5xl mx-auto px-4 sm:px-6">
         {/* Section Header */}
         <motion.div {...fadeUp(0)} className="text-center mb-12 md:mb-16">
-          <span className="text-[11px] font-semibold text-cyan-600 uppercase tracking-widest">Why KorvixAI</span>
+          <span className="text-[11px] font-semibold text-[#52677A] uppercase tracking-widest">Why KorvixAI</span>
           <h2 className="text-3xl sm:text-4xl md:text-[42px] font-bold text-slate-900 mt-3 mb-4 tracking-tight leading-tight">
             One Platform.{' '}
-            <span className="bg-clip-text text-transparent bg-gradient-to-r from-cyan-500 to-blue-600">
+            <span className="bg-clip-text text-transparent bg-gradient-to-r from-[#101827] to-[#52677A]">
               Infinite Workflows.
             </span>
           </h2>

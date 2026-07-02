@@ -72,13 +72,13 @@ export default function PricingSection() {
               key={plan.name}
               className={`relative rounded-2xl border p-8 flex flex-col ${
                 plan.popular
-                  ? 'border-cyan-500/30 bg-gradient-to-b from-cyan-500/10 to-transparent'
+                  ? 'border-[#52677A]/40 bg-gradient-to-b from-[#52677A]/10 to-transparent'
                   : 'border-slate-200 bg-white'
               }`}
             >
               {plan.popular && (
                 <div className="absolute -top-4 left-1/2 -translate-x-1/2">
-                  <div className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-cyan-500 to-blue-600 px-3 py-1 text-xs font-semibold text-[#111827]">
+                  <div className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-[#101827] to-[#52677A] px-3 py-1 text-xs font-semibold text-[#111827]">
                     <Sparkles className="h-3 w-3" />
                     Most Popular
                   </div>
@@ -97,7 +97,7 @@ export default function PricingSection() {
               <ul className="space-y-3 mb-8 flex-1">
                 {plan.features.map((feature) => (
                   <li key={feature} className="flex items-start gap-3 text-sm text-foreground">
-                    <Check className={`h-4 w-4 shrink-0 mt-0.5 ${plan.popular ? 'text-cyan-600' : 'text-slate-400'}`} />
+                    <Check className={`h-4 w-4 shrink-0 mt-0.5 ${plan.popular ? 'text-[#52677A]' : 'text-slate-400'}`} />
                     {feature}
                   </li>
                 ))}

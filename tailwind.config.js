@@ -5,31 +5,42 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Premium Graphite + Warm Stone — the calm dark palette the app
-        // is converging on. Prefer these tokens over raw hex/cyan/amber
-        // for new UI. (Existing surfaces are being migrated gradually.)
-        graphite: {
-          950: "#0B0B0C",   // background
-          900: "#111113",   // main surface
-          850: "#171719",   // elevated surface
-          800: "#1D1D20",   // card surface
-          600: "#2A2A2D",   // border
-        },
-        stoneac: {
-          DEFAULT: "#B98B63",
-          hover: "#C99A70",
-        },
+        // ── Korvix identity — "Ink + Porcelain + Muted Slate Blue" ──
+        // Prefer these tokens over raw hex / cyan / amber for new UI.
+        // No cyan, no brown/bronze, no yellow/orange, no strong red.
         ink: {
-          DEFAULT: "#F2F2F3", // primary text
-          body: "#C9C9CE",
-          muted: "#8F8F98",
-          disabled: "#5F6068",
+          950: "#080A0D",   // app background
+          900: "#0B0E12",   // main background
+          850: "#11161C",   // surface
+          800: "#161C23",   // elevated surface
+          700: "#1B222B",   // card surface
+          600: "#2A3440",   // border
+        },
+        porcelain: {
+          50: "#FFFFFF",    // white surface
+          100: "#FDFDFE",   // elevated surface
+          200: "#F7F8FA",   // page background
+          300: "#EEF1F4",   // soft section background
+          400: "#DDE3EA",   // border
+        },
+        slateaccent: {
+          DEFAULT: "#52677A", // primary accent
+          hover: "#637B90",
+          active: "#7890A3",
+        },
+        content: {
+          DEFAULT: "#F5F7FA", // primary text on dark
+          body: "#D7DEE8",
+          muted: "#94A3B8",
+          "on-light": "#101827",
+          "body-light": "#334155",
+          "muted-light": "#64748B",
         },
         status: {
-          success: "#8A9A7A",
-          warning: "#B98B63",
-          danger: "#C27676",
-          info: "#A7A7AD",
+          success: "#6F8F7A",
+          warning: "#A68A5B",
+          danger: "#B76E79",
+          info: "#52677A",
         },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",

@@ -12,9 +12,9 @@ const fadeUp = (delay = 0) => ({
 const AGENTS = [
   { icon: Rocket, label: 'Startup Strategist', desc: 'Validate, plan, and scale your startup.', color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-100' },
   { icon: Search, label: 'Product Researcher', desc: 'Find winning products and analyze markets.', color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-100' },
-  { icon: TrendingUp, label: 'Dropshipping Analyst', desc: 'Margins, shipping, supplier scoring.', color: 'text-cyan-600', bg: 'bg-cyan-50', border: 'border-cyan-100' },
+  { icon: TrendingUp, label: 'Dropshipping Analyst', desc: 'Margins, shipping, supplier scoring.', color: 'text-[#52677A]', bg: 'bg-[#EEF1F4]', border: 'border-[#DDE3EA]' },
   { icon: Megaphone, label: 'Ad Copywriter', desc: 'High-converting ads for every platform.', color: 'text-rose-600', bg: 'bg-rose-50', border: 'border-rose-100' },
-  { icon: BarChart3, label: 'Competitor Analyst', desc: 'Spy, benchmark, and outperform rivals.', color: 'text-violet-600', bg: 'bg-violet-50', border: 'border-violet-100' },
+  { icon: BarChart3, label: 'Competitor Analyst', desc: 'Spy, benchmark, and outperform rivals.', color: 'text-violet-600', bg: 'bg-[#EEF1F4]', border: 'border-[#DDE3EA]' },
   { icon: Globe, label: 'SEO Analyst', desc: 'Optimize rankings, find keywords, audit sites.', color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100' },
   { icon: Shield, label: 'Finance Analyst', desc: 'Unit economics, cash flow, projections.', color: 'text-teal-600', bg: 'bg-teal-50', border: 'border-teal-100' },
   { icon: TrendingUp, label: 'Trading Analyst', desc: 'Signals, risk analysis, and backtesting.', color: 'text-green-600', bg: 'bg-green-50', border: 'border-green-100' },
@@ -23,7 +23,7 @@ const AGENTS = [
 export default function AgentHubSection() {
   return (
     <section className="relative py-24 md:py-32 overflow-hidden">
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[400px] bg-violet-500/[0.015] rounded-full blur-[150px] pointer-events-none" />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[400px] bg-[#EEF1F4]0/[0.015] rounded-full blur-[150px] pointer-events-none" />
 
       <div className="relative max-w-6xl mx-auto px-4 sm:px-6">
         <motion.div {...fadeUp(0)} className="text-center mb-14">
@@ -74,7 +74,7 @@ export default function AgentHubSection() {
         <motion.div {...fadeUp(0.4)} className="text-center">
           <Link
             to="/agents"
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-violet-500/[0.06] text-violet-600 border border-violet-100 text-[13px] hover:bg-violet-500/[0.1] transition-all"
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#EEF1F4]0/[0.06] text-violet-600 border border-[#DDE3EA] text-[13px] hover:bg-[#EEF1F4]0/[0.1] transition-all"
           >
             <Bot className="h-4 w-4" /> Explore Agent Hub
           </Link>

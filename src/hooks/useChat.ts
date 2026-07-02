@@ -283,9 +283,26 @@ function normalizeSession(raw: unknown): ChatSession | null {
   const s = raw as Record<string, unknown>;
 
   const messagesRaw = Array.isArray(s.messages) ? s.messages : [];
-  const messages: Message[] = messagesRaw
+  const normalized: Message[] = messagesRaw
     .map(normalizeMessage)
     .filter((m): m is Message => m !== null);
+  // Conservative hydration dedupe — protects against any historical
+  // double-append (same id, or an identical role+content pair landing
+  // back-to-back within a 2s window). Only ever collapses adjacent
+  // exact duplicates; distinct messages and repeated legitimate
+  // questions are never removed.
+  const messages: Message[] = [];
+  const seenIds = new Set<string>();
+  for (const m of normalized) {
+    if (seenIds.has(m.id)) continue;
+    const prev = messages[messages.length - 1];
+    if (prev && prev.role === m.role && prev.content === m.content && m.content &&
+        Math.abs(m.timestamp.getTime() - prev.timestamp.getTime()) < 2000) {
+      continue;
+    }
+    seenIds.add(m.id);
+    messages.push(m);
+  }
 
   const id = typeof s.id === 'string' && s.id ? s.id : generateId();
 

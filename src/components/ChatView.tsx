@@ -39,7 +39,6 @@ export default function ChatView({
   onSend, onRetry, onSetInput, onTogglePin, pinnedMessages,
   onHoverAction,
 }: ChatViewProps) {
-  const [animatedMessageId, setAnimatedMessageId] = useState<string | null>(null);
   const [activeTools, setActiveTools] = useState<ComposerTool[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
@@ -109,24 +108,10 @@ export default function ChatView({
     }
   }, [latestAssistantContentLen, isLoading]);
 
-  // Track latest assistant message for stream animation.
-  // Replay-bug fix: only animate a message that COMPLETED during this
-  // mount (loading → done transition). On hydration/refresh/route
-  // change, isLoading was never true here, so persisted history renders
-  // instantly as completed text instead of re-typing itself.
-  const wasLoadingRef = useRef(false);
-  useEffect(() => {
-    if (isLoading) {
-      wasLoadingRef.current = true;
-      return;
-    }
-    if (!wasLoadingRef.current) return;
-    wasLoadingRef.current = false;
-    const lastMsg = messages[messages.length - 1];
-    if (lastMsg && lastMsg.role === 'assistant') {
-      setAnimatedMessageId(lastMsg.id);
-    }
-  }, [messages, isLoading]);
+  // Replay-bug fix: no client-side typewriter animation state at all.
+  // Server streaming fills the active bubble live; completed and
+  // hydrated messages render statically (see MessageBubble). This
+  // removes the post-completion / post-refresh re-stream entirely.
 
   const handleSend = useCallback(async (
     msg: string,
@@ -209,7 +194,7 @@ export default function ChatView({
                       role={message.role}
                       content={message.content}
                       fullMessage={message}
-                      shouldAnimate={message.id === animatedMessageId}
+                      shouldAnimate={false}
                       isPinned={isPinned(message.id)}
                       onPin={onTogglePin}
                       onRegenerate={message.role === 'assistant' ? handleRetry : undefined}
@@ -249,7 +234,7 @@ export default function ChatView({
                         <motion.div
                           animate={{ rotate: 360 }}
                           transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
-                          className="h-2.5 w-2.5 rounded-full border-2 border-[#B98B63]/40 border-t-[#B98B63]"
+                          className="h-2.5 w-2.5 rounded-full border-2 border-[#52677A]/40 border-t-[#52677A]"
                           aria-label="working"
                         />
                       )}

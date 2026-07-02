@@ -130,7 +130,7 @@ export default function Sidebar({
         >
           {/* Active indicator dot */}
           <div className={`w-[3px] h-[3px] rounded-full shrink-0 transition-all duration-300 ${
-            active ? 'bg-[#B98B63]/60 scale-100' : 'bg-transparent scale-0'
+            active ? 'bg-[#52677A]/60 scale-100' : 'bg-transparent scale-0'
           }`} />
 
           <MessageSquare className={`h-2.5 w-2.5 shrink-0 transition-colors ${active ? 'text-white/40' : 'text-white/20'}`} />
@@ -276,7 +276,7 @@ export default function Sidebar({
                   boxShadow: '0 0 8px rgba(34,211,238,0.08), inset 0 1px 0 rgba(255,255,255,0.06)',
                 }}
               >
-                <FolderOpen className="h-3 w-3 text-[#A7A7AD]" />
+                <FolderOpen className="h-3 w-3 text-[#94A3B8]" />
               </div>
               <span className="text-[12px] font-medium text-white/60 group-hover:text-white/90 transition-colors">Projects</span>
               <div className="ml-auto flex items-center gap-0.5 text-white/15 group-hover:text-white/30 transition-colors">
@@ -399,7 +399,7 @@ export default function Sidebar({
               <div className="flex flex-col gap-1.5">
                 <button
                   onClick={() => navigate('/signup')}
-                  className="w-full h-7 flex items-center justify-center gap-1.5 rounded-lg bg-[#B98B63]/[0.14] text-[#E3C7A8] border border-[#B98B63]/30 text-[11px] font-medium hover:bg-[#B98B63]/[0.2] transition-all"
+                  className="w-full h-7 flex items-center justify-center gap-1.5 rounded-lg bg-[#52677A]/[0.14] text-[#9DB0C2] border border-[#52677A]/30 text-[11px] font-medium hover:bg-[#52677A]/[0.2] transition-all"
                 >
                   <Sparkles className="w-3 h-3" /> {t('createAccount')}
                 </button>
@@ -440,7 +440,7 @@ export default function Sidebar({
             <Button
               variant="ghost"
               onClick={onOpenUpgrade}
-              className="w-full h-7 gap-1.5 text-[11px] text-white/30 hover:text-[#C99A70] hover:bg-[#B98B63]/[0.08] rounded-lg transition-all border border-transparent hover:border-[#B98B63]/25"
+              className="w-full h-7 gap-1.5 text-[11px] text-white/30 hover:text-[#637B90] hover:bg-[#52677A]/[0.08] rounded-lg transition-all border border-transparent hover:border-[#52677A]/25"
             >
               <Crown className="h-3 w-3" />
               {t('upgradePro')}

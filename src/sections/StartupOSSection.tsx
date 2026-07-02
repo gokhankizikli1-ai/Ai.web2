@@ -11,8 +11,8 @@ const fadeUp = (delay = 0) => ({
 
 const TOOLS = [
   { icon: Lightbulb, label: 'Idea Validator', desc: 'Score your idea across 10 dimensions. Get honest feedback.', color: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-100' },
-  { icon: Zap, label: 'MVP Planner', desc: 'Define minimum features to launch fast and iterate.', color: 'text-cyan-600', bg: 'bg-cyan-50', border: 'border-cyan-100' },
-  { icon: FileText, label: 'Pitch Deck AI', desc: 'Build investor-ready pitch decks slide by slide.', color: 'text-violet-600', bg: 'bg-violet-50', border: 'border-violet-100' },
+  { icon: Zap, label: 'MVP Planner', desc: 'Define minimum features to launch fast and iterate.', color: 'text-[#52677A]', bg: 'bg-[#EEF1F4]', border: 'border-[#DDE3EA]' },
+  { icon: FileText, label: 'Pitch Deck AI', desc: 'Build investor-ready pitch decks slide by slide.', color: 'text-violet-600', bg: 'bg-[#EEF1F4]', border: 'border-[#DDE3EA]' },
   { icon: BarChart3, label: 'Market Research', desc: 'TAM, SAM, SOM analysis with trend detection.', color: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-100' },
   { icon: DollarSign, label: 'Monetization', desc: 'Revenue models, pricing tiers, and unit economics.', color: 'text-rose-600', bg: 'bg-rose-50', border: 'border-rose-100' },
   { icon: Shield, label: 'Competitor Radar', desc: 'Find weaknesses and position your startup.', color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100' },

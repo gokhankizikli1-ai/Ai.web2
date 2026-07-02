@@ -20,22 +20,22 @@ import ValidationSprintPanel from './ValidationSprintPanel';
 const TOP_CLUSTERS_VISIBLE = 3;
 
 const CONFIDENCE_TONE: Record<string, string> = {
-  high: 'text-[#9FB48D] border-[#8A9A7A]/40 bg-[#8A9A7A]/[0.12]',
-  medium: 'text-[#C99A70] border-[#B98B63]/40 bg-[#B98B63]/[0.12]',
+  high: 'text-[#86A08F] border-[#6F8F7A]/40 bg-[#6F8F7A]/[0.12]',
+  medium: 'text-[#637B90] border-[#52677A]/40 bg-[#52677A]/[0.12]',
   low: 'text-slate-300 border-white/[0.1] bg-white/[0.04]',
 };
 
 const DECISION_CHIP_TONE: Record<string, string> = {
-  build: 'text-[#9FB48D] border-[#8A9A7A]/40 bg-[#8A9A7A]/[0.12]',
-  validate: 'text-[#C99A70] border-[#B98B63]/40 bg-[#B98B63]/[0.12]',
-  avoid: 'text-[#D28C8C] border-[#C27676]/40 bg-[#C27676]/[0.12]',
+  build: 'text-[#86A08F] border-[#6F8F7A]/40 bg-[#6F8F7A]/[0.12]',
+  validate: 'text-[#637B90] border-[#52677A]/40 bg-[#52677A]/[0.12]',
+  avoid: 'text-[#C98A93] border-[#B76E79]/40 bg-[#B76E79]/[0.12]',
 };
 
 /** Evidence-quality badge tiers (avg item quality 0-100 from backend). */
 function evidenceQualityBadge(score: number): { label: string; tone: string } {
-  if (score >= 70) return { label: 'strong evidence', tone: 'text-[#9FB48D] border-[#8A9A7A]/40 bg-[#8A9A7A]/[0.12]' };
-  if (score >= 45) return { label: 'moderate evidence', tone: 'text-[#C99A70] border-[#B98B63]/40 bg-[#B98B63]/[0.12]' };
-  return { label: 'weak evidence', tone: 'text-[#D28C8C] border-[#C27676]/40 bg-[#C27676]/[0.12]' };
+  if (score >= 70) return { label: 'strong evidence', tone: 'text-[#86A08F] border-[#6F8F7A]/40 bg-[#6F8F7A]/[0.12]' };
+  if (score >= 45) return { label: 'moderate evidence', tone: 'text-[#637B90] border-[#52677A]/40 bg-[#52677A]/[0.12]' };
+  return { label: 'weak evidence', tone: 'text-[#C98A93] border-[#B76E79]/40 bg-[#B76E79]/[0.12]' };
 }
 
 function formatGeneratedAt(iso: string): string {
@@ -174,7 +174,7 @@ export default function MarketRadarResults({
             <svg className="w-20 h-20 -rotate-90" viewBox="0 0 80 80">
               <circle cx="40" cy="40" r="34" fill="none" stroke="white" strokeOpacity="0.06" strokeWidth="5" />
               <motion.circle
-                cx="40" cy="40" r="34" fill="none" stroke="#B98B63" strokeWidth="5" strokeLinecap="round"
+                cx="40" cy="40" r="34" fill="none" stroke="#52677A" strokeWidth="5" strokeLinecap="round"
                 strokeDasharray={2 * Math.PI * 34}
                 initial={{ strokeDashoffset: 2 * Math.PI * 34 }}
                 animate={{ strokeDashoffset: 2 * Math.PI * 34 * (1 - summary.opportunity_score / 100) }}
@@ -215,7 +215,7 @@ export default function MarketRadarResults({
               {summary.total_items_analyzed} items from {summary.total_sources} live source
               {summary.total_sources === 1 ? '' : 's'}
               {typeof summary.direct_complaints === 'number' && (
-                <> · <span className="text-[#9FB48D]">{summary.direct_complaints} direct complaint{summary.direct_complaints === 1 ? '' : 's'}</span></>
+                <> · <span className="text-[#86A08F]">{summary.direct_complaints} direct complaint{summary.direct_complaints === 1 ? '' : 's'}</span></>
               )}
               {' '}· last {report.timeframe_days} days
               {generatedAt && ` · ${generatedAt}`}
@@ -228,7 +228,7 @@ export default function MarketRadarResults({
                 whileHover={{ scale: 1.01 }}
                 whileTap={{ scale: 0.99 }}
                 onClick={onSendToAdvisor}
-                className="h-9 px-4 rounded-xl bg-[#B98B63]/[0.16] border border-[#B98B63]/45 text-[#F2E3D0] text-[12px] font-medium hover:bg-[#B98B63]/[0.22] transition-all flex items-center justify-center gap-2"
+                className="h-9 px-4 rounded-xl bg-[#52677A]/[0.16] border border-[#52677A]/45 text-[#DCE4EC] text-[12px] font-medium hover:bg-[#52677A]/[0.22] transition-all flex items-center justify-center gap-2"
               >
                 <Rocket className="h-3.5 w-3.5" /> Send to Startup Advisor
                 <ArrowUpRight className="h-3 w-3" />
@@ -250,10 +250,10 @@ export default function MarketRadarResults({
         {(broadWebWarning || sourceIssues || (!hasClusters && report.message)) && (
           <div className="mt-3 space-y-1">
             {!hasClusters && report.message && (
-              <p className="text-[12px] text-slate-300 border-l-2 border-[#B98B63]/40 pl-2.5">{report.message}</p>
+              <p className="text-[12px] text-slate-300 border-l-2 border-[#52677A]/40 pl-2.5">{report.message}</p>
             )}
             {broadWebWarning && (
-              <p className="text-[12px] text-slate-300 border-l-2 border-[#B98B63]/40 pl-2.5">
+              <p className="text-[12px] text-slate-300 border-l-2 border-[#52677A]/40 pl-2.5">
                 Evidence is mostly broad web content; validate with direct user conversations.
               </p>
             )}
@@ -291,7 +291,7 @@ export default function MarketRadarResults({
       {hasClusters && (
         <div>
           <div className="flex items-center gap-2 mb-2.5">
-            <Flame className="h-3.5 w-3.5 text-[#D28C8C]" />
+            <Flame className="h-3.5 w-3.5 text-[#C98A93]" />
             <h3 className="text-[13px] font-semibold text-slate-100">Top pains</h3>
           </div>
           <div className="space-y-2.5">
@@ -302,7 +302,7 @@ export default function MarketRadarResults({
           {!showAllClusters && hiddenClusterCount > 0 && (
             <button
               onClick={() => setShowAllClusters(true)}
-              className="mt-2.5 flex items-center gap-1 text-[11px] text-[#C99A70] hover:text-[#D9AC84] transition-colors"
+              className="mt-2.5 flex items-center gap-1 text-[11px] text-[#637B90] hover:text-[#7890A3] transition-colors"
             >
               <ChevronDown className="h-3 w-3" />
               Show {hiddenClusterCount} more cluster{hiddenClusterCount === 1 ? '' : 's'}
@@ -313,10 +313,10 @@ export default function MarketRadarResults({
 
       {/* 3 — What to build first */}
       {hasClusters && buildFirstItems.length > 0 && (
-        <Section icon={ListChecks} iconTone="text-[#C99A70]" title="What to build first">
+        <Section icon={ListChecks} iconTone="text-[#637B90]" title="What to build first">
           <BulletList items={buildFirstItems} />
           <div className="mt-2.5 flex items-start gap-2 rounded-lg bg-white/[0.015] border border-white/[0.04] px-2.5 py-2">
-            <AlertTriangle className="h-3 w-3 text-[#C99A70] shrink-0 mt-0.5" />
+            <AlertTriangle className="h-3 w-3 text-[#637B90] shrink-0 mt-0.5" />
             <p className="text-[12px] text-slate-300 leading-relaxed">
               <span className="text-slate-100 font-medium">Riskiest assumption: </span>
               {decision.riskiestAssumption}
@@ -364,7 +364,7 @@ export default function MarketRadarResults({
           {report.recommendations.risks.length > 0 && (
             <div className="mt-4">
               <div className="flex items-center gap-1.5 mb-2">
-                <ShieldAlert className="h-3 w-3 text-[#C99A70]" />
+                <ShieldAlert className="h-3 w-3 text-[#637B90]" />
                 <span className="text-[11px] font-medium text-slate-200">Risks</span>
               </div>
               <BulletList items={report.recommendations.risks} />
