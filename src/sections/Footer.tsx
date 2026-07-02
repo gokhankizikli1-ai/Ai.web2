@@ -1,14 +1,40 @@
 import { Link } from 'react-router';
+import { useAuthStore } from '@/stores/authStore';
+import { getLandingHref, type NavTarget } from '@/lib/landingNav';
 
 /**
  * Shared marketing footer — v8 "Ink" dark style.
  *
- * Clean columns (Product / Resources / Company / Legal) and subtle
- * X / LinkedIn / GitHub social marks. No fabricated metrics, no
- * "Roadmap" link. Placeholder destinations are rendered as plain
- * (non-clickable) labels rather than fake links, so nothing pretends
- * to lead somewhere it doesn't.
+ * Routing rule (see src/lib/landingNav.ts): for a logged-OUT visitor
+ * every product / resource / company link resolves to /signup — no
+ * footer link opens the app. Legal links (Privacy, Terms, Security)
+ * stay public. Logged-IN users get the real in-app destinations.
  */
+
+type FooterItem = { label: string; target?: NavTarget };
+
+const productLinks: FooterItem[] = [
+  { label: 'Workspace', target: 'workspace' },
+  { label: 'Startup Radar', target: 'startup' },
+  { label: 'Ecommerce Builder', target: 'ecommerce' },
+  { label: 'Game Builder', target: 'game' },
+  { label: 'Agents', target: 'agents' },
+];
+const resourceLinks: FooterItem[] = [
+  { label: 'Features', target: 'features' },
+  { label: 'Pricing', target: 'pricing' },
+  { label: 'Use cases', target: 'use-cases' },
+  { label: 'Changelog' }, // no page yet → plain label
+];
+const companyLinks: FooterItem[] = [
+  { label: 'About', target: 'about' },
+  { label: 'Contact via Chat', target: 'contact' },
+];
+const legalLinks: FooterItem[] = [
+  { label: 'Privacy', target: 'privacy' },
+  { label: 'Terms', target: 'terms' },
+  { label: 'Security' }, // no page yet → plain label (still public)
+];
 
 const BrandMark = () => (
   <div className="flex items-center gap-2.5">
@@ -27,38 +53,15 @@ const BrandMark = () => (
   </div>
 );
 
-// Real, existing routes only. Anything not yet built is a muted label.
-const productLinks: Array<{ label: string; to?: string }> = [
-  { label: 'Workspace', to: '/workspace' },
-  { label: 'Startup Radar', to: '/#startup-radar' },
-  { label: 'Ecommerce Builder', to: '/ecommerce' },
-  { label: 'Agents', to: '/agents' },
-];
-const resourceLinks: Array<{ label: string; to?: string }> = [
-  { label: 'Features', to: '/features' },
-  { label: 'Pricing', to: '/pricing' },
-  { label: 'Use cases', to: '/use-cases' },
-  { label: 'Changelog' },
-];
-const companyLinks: Array<{ label: string; to?: string }> = [
-  { label: 'About', to: '/about' },
-  { label: 'Contact via Chat', to: '/chat' },
-];
-const legalLinks: Array<{ label: string; to?: string }> = [
-  { label: 'Privacy' },
-  { label: 'Terms' },
-  { label: 'Security' },
-];
-
-function FooterColumn({ title, links }: { title: string; links: Array<{ label: string; to?: string }> }) {
+function FooterColumn({ title, links, isAuthed }: { title: string; links: FooterItem[]; isAuthed: boolean }) {
   return (
     <div>
       <h5 className="mb-3.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-[#6C7A88]">{title}</h5>
       <ul className="space-y-2.5">
         {links.map((l) => (
           <li key={l.label}>
-            {l.to ? (
-              <Link to={l.to} className="text-[13px] text-[#93A3B5] transition-colors hover:text-[#F5F7FA]">
+            {l.target ? (
+              <Link to={getLandingHref(l.target, isAuthed)} className="text-[13px] text-[#93A3B5] transition-colors hover:text-[#F5F7FA]">
                 {l.label}
               </Link>
             ) : (
@@ -72,6 +75,8 @@ function FooterColumn({ title, links }: { title: string; links: Array<{ label: s
 }
 
 export default function Footer() {
+  const { isAuthenticated } = useAuthStore();
+
   return (
     <footer className="border-t border-[#28323D] bg-[#0A0D11] pt-14 pb-6">
       <div className="mx-auto max-w-6xl px-7">
@@ -82,10 +87,10 @@ export default function Footer() {
               One AI workspace for researching markets, validating ideas, and turning evidence into work.
             </p>
           </div>
-          <FooterColumn title="Product" links={productLinks} />
-          <FooterColumn title="Resources" links={resourceLinks} />
-          <FooterColumn title="Company" links={companyLinks} />
-          <FooterColumn title="Legal" links={legalLinks} />
+          <FooterColumn title="Product" links={productLinks} isAuthed={isAuthenticated} />
+          <FooterColumn title="Resources" links={resourceLinks} isAuthed={isAuthenticated} />
+          <FooterColumn title="Company" links={companyLinks} isAuthed={isAuthenticated} />
+          <FooterColumn title="Legal" links={legalLinks} isAuthed={isAuthenticated} />
         </div>
 
         <div className="mt-9 flex items-center justify-between border-t border-white/[0.06] pt-6">

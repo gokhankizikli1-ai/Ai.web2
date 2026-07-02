@@ -4,6 +4,7 @@ import { X } from 'lucide-react';
 import Navbar from '@/sections/Navbar';
 import Footer from '@/sections/Footer';
 import { useAuthStore } from '@/stores/authStore';
+import { getLandingHref } from '@/lib/landingNav';
 
 /**
  * KorvixAI landing page — ported from the approved "v8" design.
@@ -148,7 +149,7 @@ const MK_CSS = `
 /* surfaces */
 .mk .grid6{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-top:36px;}
 .mk .scard{background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:18px 18px; min-height:150px;
-  display:flex; flex-direction:column; transition:transform .16s,border-color .16s;}
+  display:flex; flex-direction:column; transition:transform .16s,border-color .16s; text-decoration:none; color:inherit;}
 .mk .scard:hover{transform:translateY(-2px); border-color:#C6D0DA;}
 .mk .scard .top{display:flex; align-items:center; gap:10px; margin-bottom:10px;}
 .mk .scard .ico{width:33px; height:33px; border-radius:9px; background:var(--section); color:var(--accent); display:grid; place-items:center; flex:none;} .mk .scard .ico svg{width:17px; height:17px;}
@@ -160,7 +161,7 @@ const MK_CSS = `
 /* use cases */
 .mk .uc{display:flex; gap:12px; justify-content:center; flex-wrap:wrap; margin-top:32px;}
 .mk .ucard{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:13px 16px; display:flex; align-items:center; gap:10px;
-  font-size:13px; font-weight:540; color:var(--body); transition:border-color .16s, transform .16s;}
+  font-size:13px; font-weight:540; color:var(--body); transition:border-color .16s, transform .16s; text-decoration:none;}
 .mk .ucard:hover{border-color:#C6D0DA; transform:translateY(-2px);}
 .mk .ucard svg{width:15px; height:15px; color:var(--accent); flex:none;}
 
@@ -193,7 +194,7 @@ const MK_CSS = `
 /** Polished placeholder shown when a visitor clicks "Watch Demo" — no
  * real walkthrough video exists yet, so we're honest about it rather
  * than linking a fake asset. */
-function DemoModal({ onClose }: { onClose: () => void }) {
+function DemoModal({ onClose, ctaTo, ctaLabel }: { onClose: () => void; ctaTo: string; ctaLabel: string }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     window.addEventListener('keydown', onKey);
@@ -237,12 +238,12 @@ function DemoModal({ onClose }: { onClose: () => void }) {
           </p>
           <div className="mt-6 flex items-center justify-center gap-3">
             <Link
-              to="/signup"
+              to={ctaTo}
               onClick={onClose}
               className="inline-flex h-10 items-center rounded-xl px-5 text-[13px] font-semibold text-[#0F1729]"
               style={{ background: '#F5F7FA' }}
             >
-              Get Started Free
+              {ctaLabel}
             </Link>
             <button
               onClick={onClose}
@@ -265,7 +266,9 @@ export default function LandingPage() {
 
   // Auth-aware primary CTA: never show "Open Workspace" to logged-out
   // visitors (they have no account yet); send them to signup instead.
-  const primaryTo = isAuthenticated ? '/workspace' : '/signup';
+  // Routing is centralized in getLandingHref so logged-out clicks can
+  // never enter the app.
+  const primaryTo = getLandingHref('workspace', isAuthenticated);
   const primaryLabel = isAuthenticated ? 'Open Workspace' : 'Get Started Free';
 
   return (
@@ -402,12 +405,12 @@ export default function LandingPage() {
           </div>
           <div className="wrap">
             <div className="grid6">
-              <div className="scard"><div className="top"><div className="ico"><svg className="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M12 3v3M12 18v3M3 12h3M18 12h3" /></svg></div><h3>Startup Intelligence</h3></div><p>Find market complaints, validation angles, and first-customer signals before building.</p></div>
-              <div className="scard"><div className="top"><div className="ico"><svg className="ic" viewBox="0 0 24 24"><path d="M5 7h14l-1.2 10H6.2z" /><path d="M9 7V5a3 3 0 0 1 6 0v2" /></svg></div><h3>Ecommerce Builder</h3></div><p>Research products, offers, pages, and store workflows from one workspace.</p></div>
-              <div className="scard"><div className="top"><div className="ico"><svg className="ic" viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="3" /><path d="M9 12h2M15 11v2" /></svg></div><h3>AI Game Builder</h3><span className="tag">Beta</span></div><p>Turn game ideas into structured build plans, scripts, and prototype steps.</p></div>
-              <div className="scard"><div className="top"><div className="ico"><svg className="ic" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h9" /></svg></div><h3>Website / App Builder</h3></div><p>Move from idea to landing page, app screen, or workflow plan.</p></div>
-              <div className="scard"><div className="top"><div className="ico"><svg className="ic" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.2" /><path d="M5 20c0-3.3 3.1-5.5 7-5.5s7 2.2 7 5.5" /></svg></div><h3>Agents &amp; Automation</h3></div><p>Create focused AI workers for repeatable research, building, and operations.</p></div>
-              <div className="scard"><div className="top"><div className="ico"><svg className="ic" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M4 10h16" /></svg></div><h3>Project Memory</h3></div><p>Keep chats, research, files, decisions, and builds organized.</p></div>
+              <Link className="scard" to={getLandingHref('startup', isAuthenticated)}><div className="top"><div className="ico"><svg className="ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M12 3v3M12 18v3M3 12h3M18 12h3" /></svg></div><h3>Startup Intelligence</h3></div><p>Find market complaints, validation angles, and first-customer signals before building.</p></Link>
+              <Link className="scard" to={getLandingHref('ecommerce', isAuthenticated)}><div className="top"><div className="ico"><svg className="ic" viewBox="0 0 24 24"><path d="M5 7h14l-1.2 10H6.2z" /><path d="M9 7V5a3 3 0 0 1 6 0v2" /></svg></div><h3>Ecommerce Builder</h3></div><p>Research products, offers, pages, and store workflows from one workspace.</p></Link>
+              <Link className="scard" to={getLandingHref('game', isAuthenticated)}><div className="top"><div className="ico"><svg className="ic" viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="3" /><path d="M9 12h2M15 11v2" /></svg></div><h3>AI Game Builder</h3><span className="tag">Beta</span></div><p>Turn game ideas into structured build plans, scripts, and prototype steps.</p></Link>
+              <Link className="scard" to={getLandingHref('app-builder', isAuthenticated)}><div className="top"><div className="ico"><svg className="ic" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h9" /></svg></div><h3>Website / App Builder</h3></div><p>Move from idea to landing page, app screen, or workflow plan.</p></Link>
+              <Link className="scard" to={getLandingHref('agents', isAuthenticated)}><div className="top"><div className="ico"><svg className="ic" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.2" /><path d="M5 20c0-3.3 3.1-5.5 7-5.5s7 2.2 7 5.5" /></svg></div><h3>Agents &amp; Automation</h3></div><p>Create focused AI workers for repeatable research, building, and operations.</p></Link>
+              <Link className="scard" to={getLandingHref('projects', isAuthenticated)}><div className="top"><div className="ico"><svg className="ic" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M4 10h16" /></svg></div><h3>Project Memory</h3></div><p>Keep chats, research, files, decisions, and builds organized.</p></Link>
             </div>
             <p className="undercopy">Chat and research run underneath every workflow.</p>
           </div>
@@ -419,10 +422,10 @@ export default function LandingPage() {
             <span className="sec-label">Use cases</span>
             <h2 className="h2">Start from the work you already want to do.</h2>
             <div className="uc">
-              <span className="ucard"><svg className="ic" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4" /><circle cx="12" cy="12" r="9" /></svg> Validate a startup idea</span>
-              <span className="ucard"><svg className="ic" viewBox="0 0 24 24"><path d="M5 7h14l-1.2 10H6.2z" /><path d="M9 7V5a3 3 0 0 1 6 0v2" /></svg> Find ecommerce product angles</span>
-              <span className="ucard"><svg className="ic" viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="3" /><path d="M9 12h2M15 11v2" /></svg> Plan a game prototype</span>
-              <span className="ucard"><svg className="ic" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M4 10h16" /></svg> Turn research into a project</span>
+              <Link className="ucard" to={getLandingHref('startup', isAuthenticated)}><svg className="ic" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4" /><circle cx="12" cy="12" r="9" /></svg> Validate a startup idea</Link>
+              <Link className="ucard" to={getLandingHref('ecommerce', isAuthenticated)}><svg className="ic" viewBox="0 0 24 24"><path d="M5 7h14l-1.2 10H6.2z" /><path d="M9 7V5a3 3 0 0 1 6 0v2" /></svg> Find ecommerce product angles</Link>
+              <Link className="ucard" to={getLandingHref('game', isAuthenticated)}><svg className="ic" viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="3" /><path d="M9 12h2M15 11v2" /></svg> Plan a game prototype</Link>
+              <Link className="ucard" to={getLandingHref('projects', isAuthenticated)}><svg className="ic" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M4 10h16" /></svg> Turn research into a project</Link>
             </div>
           </div>
         </section>
@@ -447,7 +450,7 @@ export default function LandingPage() {
       </main>
 
       <Footer />
-      {showDemo && <DemoModal onClose={() => setShowDemo(false)} />}
+      {showDemo && <DemoModal onClose={() => setShowDemo(false)} ctaTo={primaryTo} ctaLabel={primaryLabel} />}
     </div>
   );
 }
