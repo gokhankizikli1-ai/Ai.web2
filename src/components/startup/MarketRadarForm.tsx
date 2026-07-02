@@ -84,7 +84,7 @@ export default function MarketRadarForm({
         }}
         placeholder="AI customer support tools, small restaurant POS systems, crypto portfolio tracking…"
         rows={2}
-        className="w-full rounded-xl bg-white/[0.02] border border-white/[0.06] p-3 text-[13px] text-slate-100 placeholder:text-slate-500 focus:border-amber-500/30 focus:bg-white/[0.03] outline-none transition-all resize-none"
+        className="w-full rounded-xl bg-white/[0.02] border border-white/[0.06] p-3 text-[13px] text-slate-100 placeholder:text-slate-500 focus:border-cyan-500/30 focus:bg-white/[0.03] outline-none transition-all resize-none"
       />
 
       <div className="grid sm:grid-cols-2 gap-3 sm:gap-4 mt-4">
@@ -98,7 +98,7 @@ export default function MarketRadarForm({
                 onClick={() => onTimeframeChange(tf.days)}
                 className={`px-3 h-8 rounded-lg text-[12px] border transition-colors ${
                   timeframe === tf.days
-                    ? 'bg-amber-500/[0.12] border-amber-500/30 text-amber-200'
+                    ? 'bg-cyan-500/[0.1] border-cyan-500/30 text-cyan-200'
                     : 'bg-white/[0.02] border-white/[0.06] text-slate-400 hover:text-slate-200'
                 }`}
               >
@@ -118,7 +118,7 @@ export default function MarketRadarForm({
               value={region}
               onChange={(e) => onRegionChange(e.target.value)}
               placeholder="global"
-              className="w-full h-8 rounded-lg bg-white/[0.02] border border-white/[0.06] pl-8 pr-3 text-[12px] text-slate-100 placeholder:text-slate-500 focus:border-amber-500/30 outline-none transition-all"
+              className="w-full h-8 rounded-lg bg-white/[0.02] border border-white/[0.06] pl-8 pr-3 text-[12px] text-slate-100 placeholder:text-slate-500 focus:border-cyan-500/30 outline-none transition-all"
             />
           </div>
         </div>
@@ -161,14 +161,14 @@ export default function MarketRadarForm({
         disabled={!canSubmit}
         className={`mt-5 w-full h-11 rounded-xl text-[13px] font-medium flex items-center justify-center gap-2 border transition-all ${
           canSubmit
-            ? 'bg-amber-500/[0.16] border-amber-500/40 text-amber-100 hover:bg-amber-500/[0.22] shadow-[0_0_24px_-8px_rgba(251,191,36,0.4)]'
+            ? 'bg-cyan-500/[0.14] border-cyan-500/40 text-cyan-100 hover:bg-cyan-500/[0.2] shadow-[0_0_24px_-8px_rgba(34,211,238,0.4)]'
             : 'bg-white/[0.02] border-white/[0.05] text-slate-500 cursor-not-allowed'
         }`}
       >
         <Radar className="h-4 w-4" />
         {loading ? 'Analyzing…' : 'Analyze market complaints'}
         {canSubmit && !loading && (
-          <kbd className="hidden sm:inline-flex items-center rounded bg-black/20 border border-white/[0.08] px-1.5 py-0.5 text-[9px] text-amber-200/70 font-mono ml-1">
+          <kbd className="hidden sm:inline-flex items-center rounded bg-black/20 border border-white/[0.08] px-1.5 py-0.5 text-[9px] text-cyan-200/70 font-mono ml-1">
             ⌘↵
           </kbd>
         )}
