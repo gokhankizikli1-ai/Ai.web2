@@ -133,8 +133,6 @@ export function deriveIcp(report: MarketComplaintReport): RadarIcp | null {
       ? `They are actively hunting for a replacement — the "${top.label}" evidence includes switching/alternative-seeking language.`
       : `Hitting "${top.label}" pain in their current tool or workflow.`;
 
-  const wtp = top.willingness_to_pay_signal;
-
   return {
     segment,
     buyingTrigger: trigger,

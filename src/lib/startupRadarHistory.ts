@@ -1,11 +1,11 @@
 /**
  * Startup Radar — local analysis history.
  *
- * Stores the last 5 full reports in localStorage so a founder can flip
- * between recent analyses without re-hitting the API. The stored data is
- * exactly the report already shown on screen — nothing extra is captured.
+ * Stores the last 5 reports in localStorage so a founder can flip between
+ * recent analyses without re-hitting the API. The original request is stored
+ * with new entries so restoring history also restores form inputs.
  */
-import type { MarketComplaintReport } from './startupMarketApi';
+import type { MarketComplaintReport, MarketComplaintRequest } from './startupMarketApi';
 
 const STORAGE_KEY = 'korvix_startup_radar_history';
 const MAX_ENTRIES = 5;
@@ -13,6 +13,7 @@ const MAX_ENTRIES = 5;
 export interface RadarHistoryEntry {
   savedAt: string; // ISO — when the user ran the analysis
   report: MarketComplaintReport;
+  request?: MarketComplaintRequest;
 }
 
 export function loadRadarHistory(): RadarHistoryEntry[] {
@@ -32,8 +33,15 @@ export function loadRadarHistory(): RadarHistoryEntry[] {
 
 /** Prepend a report (deduped by query — a re-run replaces the old entry)
  * and return the updated list. */
-export function saveRadarReport(report: MarketComplaintReport): RadarHistoryEntry[] {
-  const entry: RadarHistoryEntry = { savedAt: new Date().toISOString(), report };
+export function saveRadarReport(
+  report: MarketComplaintReport,
+  request?: MarketComplaintRequest,
+): RadarHistoryEntry[] {
+  const entry: RadarHistoryEntry = {
+    savedAt: new Date().toISOString(),
+    report,
+    request,
+  };
   const next = [
     entry,
     ...loadRadarHistory().filter(

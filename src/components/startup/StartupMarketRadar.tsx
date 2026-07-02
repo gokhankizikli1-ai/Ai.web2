@@ -7,7 +7,10 @@ import MarketRadarResults from './MarketRadarResults';
 import RadarEmptyState from './RadarEmptyState';
 import {
   analyzeMarketComplaints, fetchRadarHealth, RadarError,
-  type MarketComplaintReport, type MarketComplaintRequest, type RadarSourceHealth,
+  type MarketComplaintReport,
+  type MarketComplaintRequest,
+  type RadarSource,
+  type RadarSourceHealth,
 } from '@/lib/startupMarketApi';
 import { buildBuilderPrompt } from '@/lib/startupRadarInsights';
 import {
@@ -21,6 +24,8 @@ const LOADING_STAGES = [
   'Clustering complaint patterns…',
   'Ranking opportunity gaps…',
 ];
+
+const DEFAULT_SOURCES: RadarSource[] = ['web', 'hackernews', 'gdelt'];
 
 /** Structured handoff into Startup Advisor chat. First line stays
  * `Market: <query>` — the backend startup_complaints tool keys its radar
@@ -87,6 +92,9 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
   const navigate = useNavigate();
 
   const [query, setQuery] = useState('');
+  const [timeframe, setTimeframe] = useState(30);
+  const [region, setRegion] = useState('global');
+  const [sources, setSources] = useState<RadarSource[]>(DEFAULT_SOURCES);
   const [report, setReport] = useState<MarketComplaintReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [stage, setStage] = useState(0);
@@ -119,8 +127,8 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
     try {
       const result = await analyzeMarketComplaints(req);
       setReport(result);
-      // History stores exactly what's on screen — last 5, local only.
-      setHistory(saveRadarReport(result));
+      // History stores the visible report plus form inputs — last 5, local only.
+      setHistory(saveRadarReport(result, req));
     } catch (e) {
       setError(e instanceof RadarError ? e : new RadarError('server', 'Analysis failed unexpectedly.'));
     } finally {
@@ -129,8 +137,15 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
   };
 
   const restoreFromHistory = (entry: RadarHistoryEntry) => {
+    const restoredSources = entry.request?.sources
+      ?? Object.entries(entry.report.data_freshness ?? {})
+        .filter(([, status]) => status !== 'skipped')
+        .map(([source]) => source as RadarSource);
     setError(null);
     setQuery(entry.report.query);
+    setTimeframe(entry.request?.timeframe_days ?? entry.report.timeframe_days);
+    setRegion(entry.request?.region ?? 'global');
+    setSources(restoredSources.length ? restoredSources : DEFAULT_SOURCES);
     setReport(entry.report);
   };
 
@@ -177,6 +192,12 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
         sourceHealth={sourceHealth}
         query={query}
         onQueryChange={setQuery}
+        timeframe={timeframe}
+        onTimeframeChange={setTimeframe}
+        region={region}
+        onRegionChange={setRegion}
+        sources={sources}
+        onSourcesChange={setSources}
         onAnalyze={runAnalysis}
       />
 

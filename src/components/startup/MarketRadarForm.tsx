@@ -1,7 +1,6 @@
 import { motion } from 'framer-motion';
 import { Radar, Globe2 } from 'lucide-react';
 import type { RadarSource, RadarSourceHealth, MarketComplaintRequest } from '@/lib/startupMarketApi';
-import { useState } from 'react';
 
 const TIMEFRAMES = [
   { days: 7, label: '7d' },
@@ -24,6 +23,12 @@ interface Props {
    * and history restore can populate it. */
   query: string;
   onQueryChange: (query: string) => void;
+  timeframe: number;
+  onTimeframeChange: (timeframe: number) => void;
+  region: string;
+  onRegionChange: (region: string) => void;
+  sources: RadarSource[];
+  onSourcesChange: (sources: RadarSource[]) => void;
   onAnalyze: (req: MarketComplaintRequest) => void;
 }
 
@@ -33,18 +38,26 @@ interface Props {
  * with an honest "not configured" hint — never silently faked.
  * Ctrl/Cmd+Enter (or plain Enter) in the query field runs the analysis.
  */
-export default function MarketRadarForm({ loading, sourceHealth, query, onQueryChange, onAnalyze }: Props) {
-  const [timeframe, setTimeframe] = useState(30);
-  const [region, setRegion] = useState('global');
-  const [sources, setSources] = useState<RadarSource[]>(['web', 'hackernews', 'gdelt']);
-
+export default function MarketRadarForm({
+  loading,
+  sourceHealth,
+  query,
+  onQueryChange,
+  timeframe,
+  onTimeframeChange,
+  region,
+  onRegionChange,
+  sources,
+  onSourcesChange,
+  onAnalyze,
+}: Props) {
   const isConfigured = (id: RadarSource): boolean =>
     sourceHealth ? sourceHealth.sources[id]?.configured !== false : true;
 
   const toggleSource = (id: RadarSource) => {
     if (!isConfigured(id)) return;
-    setSources((prev) =>
-      prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id],
+    onSourcesChange(
+      sources.includes(id) ? sources.filter((s) => s !== id) : [...sources, id],
     );
   };
 
@@ -90,7 +103,7 @@ export default function MarketRadarForm({ loading, sourceHealth, query, onQueryC
             {TIMEFRAMES.map((tf) => (
               <button
                 key={tf.days}
-                onClick={() => setTimeframe(tf.days)}
+                onClick={() => onTimeframeChange(tf.days)}
                 className={`px-3 h-8 rounded-lg text-[12px] border transition-colors ${
                   timeframe === tf.days
                     ? 'bg-amber-500/[0.1] border-amber-500/25 text-amber-300'
@@ -111,7 +124,7 @@ export default function MarketRadarForm({ loading, sourceHealth, query, onQueryC
             <input
               type="text"
               value={region}
-              onChange={(e) => setRegion(e.target.value)}
+              onChange={(e) => onRegionChange(e.target.value)}
               placeholder="global"
               className="w-full h-8 rounded-lg bg-white/[0.015] border border-white/[0.04] pl-8 pr-3 text-[12px] text-white placeholder:text-[#64748B] focus:border-amber-500/25 outline-none transition-all"
             />
