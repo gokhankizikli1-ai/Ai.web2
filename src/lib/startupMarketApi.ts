@@ -28,6 +28,23 @@ function authHeaders(): Record<string, string> {
 export type RadarSource = 'web' | 'hackernews' | 'gdelt' | 'reddit' | 'producthunt';
 export type SourceStatus = 'available' | 'unavailable' | 'skipped';
 
+/**
+ * User-facing source naming — internal provider keys stay unchanged, but
+ * normal users see product language ("Founder forums", not "Hacker News").
+ * Single source of truth for every startup component.
+ */
+export const SOURCE_DISPLAY: Record<RadarSource, { label: string; role: string }> = {
+  web: { label: 'Web scan', role: 'Broad web evidence' },
+  hackernews: { label: 'Founder forums', role: 'Founder/developer discussion signal' },
+  gdelt: { label: 'News trends', role: 'News and trend signal' },
+  reddit: { label: 'Communities', role: 'Community complaint signal' },
+  producthunt: { label: 'Product launches', role: 'Launch and product signal' },
+};
+
+export function sourceLabel(source: string): string {
+  return SOURCE_DISPLAY[source as RadarSource]?.label ?? source;
+}
+
 export interface SampleQuote {
   text: string;
   source: RadarSource;

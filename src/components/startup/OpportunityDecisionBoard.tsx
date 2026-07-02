@@ -12,10 +12,10 @@ const BUCKETS: { id: DecisionBucket; label: string; icon: typeof Hammer; activeT
  * with the reason, next action, and riskiest assumption spelled out. */
 export default function OpportunityDecisionBoard({ decision }: { decision: RadarDecision }) {
   return (
-    <div className="rounded-xl border border-white/[0.04] bg-white/[0.008] p-4">
+    <div className="rounded-xl border border-white/[0.05] bg-white/[0.01] p-4">
       <div className="flex items-center gap-2 mb-3">
-        <Compass className="h-3.5 w-3.5 text-amber-400/70" />
-        <h3 className="text-[12px] font-medium text-white">Opportunity decision</h3>
+        <Compass className="h-3.5 w-3.5 text-amber-300" />
+        <h3 className="text-[13px] font-semibold text-slate-100">Opportunity decision</h3>
       </div>
 
       {/* Buckets */}
@@ -26,7 +26,7 @@ export default function OpportunityDecisionBoard({ decision }: { decision: Radar
             <div
               key={b.id}
               className={`flex items-center justify-center gap-1.5 rounded-lg border px-2 py-2 text-[11px] font-medium transition-colors ${
-                active ? b.activeTone : 'border-white/[0.03] bg-white/[0.005] text-slate-700'
+                active ? b.activeTone : 'border-white/[0.04] bg-white/[0.008] text-slate-500'
               }`}
             >
               <b.icon className="h-3 w-3 shrink-0" />
@@ -38,18 +38,18 @@ export default function OpportunityDecisionBoard({ decision }: { decision: Radar
 
       {/* Detail */}
       <div className="mt-3 space-y-2">
-        <p className="text-[12px] text-slate-400 leading-relaxed">{decision.reason}</p>
-        <div className="flex items-start gap-2 rounded-lg bg-white/[0.01] border border-white/[0.03] px-2.5 py-2">
-          <ArrowRight className="h-3 w-3 text-slate-500 shrink-0 mt-0.5" />
-          <p className="text-[11px] text-slate-400 leading-relaxed">
-            <span className="text-slate-300 font-medium">Next action: </span>
+        <p className="text-[12px] text-slate-300 leading-relaxed">{decision.reason}</p>
+        <div className="flex items-start gap-2 rounded-lg bg-white/[0.015] border border-white/[0.04] px-2.5 py-2">
+          <ArrowRight className="h-3 w-3 text-slate-400 shrink-0 mt-0.5" />
+          <p className="text-[12px] text-slate-300 leading-relaxed">
+            <span className="text-slate-100 font-medium">Next action: </span>
             {decision.nextAction}
           </p>
         </div>
-        <div className="flex items-start gap-2 rounded-lg bg-white/[0.01] border border-white/[0.03] px-2.5 py-2">
-          <AlertTriangle className="h-3 w-3 text-amber-400/60 shrink-0 mt-0.5" />
-          <p className="text-[11px] text-slate-400 leading-relaxed">
-            <span className="text-slate-300 font-medium">Riskiest assumption: </span>
+        <div className="flex items-start gap-2 rounded-lg bg-white/[0.015] border border-white/[0.04] px-2.5 py-2">
+          <AlertTriangle className="h-3 w-3 text-amber-300/80 shrink-0 mt-0.5" />
+          <p className="text-[12px] text-slate-300 leading-relaxed">
+            <span className="text-slate-100 font-medium">Riskiest assumption: </span>
             {decision.riskiestAssumption}
           </p>
         </div>
