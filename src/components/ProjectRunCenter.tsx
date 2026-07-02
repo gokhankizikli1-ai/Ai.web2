@@ -226,20 +226,28 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
   // the load is finite (deadline-raced) and a failure is a VISIBLE,
   // retryable state instead of a silently empty timeline.
   const [historyState, setHistoryState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const historyLoadSeq = useRef(0);
+  const hasVisibleHistory = useRef(false);
+
+  useEffect(() => {
+    hasVisibleHistory.current = turns.length > 0;
+  }, [turns.length]);
 
   const loadConversation = useCallback(async (signal?: { active: boolean }) => {
+    const requestSeq = ++historyLoadSeq.current;
     setHistoryState('loading');
     try {
       const rs = await withDeadline(projectOrchestratorClient.listRuns(projectId), HISTORY_TIMEOUT_MS);
-      if (signal && !signal.active) return;
+      if ((signal && !signal.active) || requestSeq !== historyLoadSeq.current) return;
+      hasVisibleHistory.current = rs.length > 0;
       setTurns(rs);
       // Resume polling the most recent in-flight run, if any.
       const live = [...rs].reverse().find(r => !isRunTerminal(r.status));
       if (live) setActiveRunId(live.run_id);
       setHistoryState('ready');
     } catch {
-      if (signal && !signal.active) return;
-      setHistoryState('error');  // composer stays usable; banner offers Retry
+      if ((signal && !signal.active) || requestSeq !== historyLoadSeq.current) return;
+      setHistoryState(hasVisibleHistory.current ? 'ready' : 'error');  // composer stays usable; banner offers Retry
     }
   }, [projectId]);
 
