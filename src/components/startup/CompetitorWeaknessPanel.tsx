@@ -28,10 +28,10 @@ export default function CompetitorWeaknessPanel({ report }: { report: MarketComp
                 key={name}
                 className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg bg-white/[0.01] border border-white/[0.03] px-2.5 py-2"
               >
-                <span className="text-[12px] font-medium text-white capitalize">{name}</span>
+                <span className="text-[12px] font-medium text-white">{name}</span>
                 {w ? (
                   <>
-                    <span className="text-[11px] text-slate-400 min-w-0 flex-1 capitalize">
+                    <span className="text-[11px] text-slate-400 min-w-0 flex-1">
                       Weakness signal: {w.cluster_label}
                     </span>
                     <span className="text-[10px] text-slate-600 shrink-0">

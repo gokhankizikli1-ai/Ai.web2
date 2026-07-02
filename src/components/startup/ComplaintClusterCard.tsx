@@ -43,7 +43,7 @@ export default function ComplaintClusterCard({
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2.5 min-w-0">
           <span className="text-[11px] text-slate-600 shrink-0">#{rank + 1}</span>
-          <h4 className="text-[13px] font-medium text-white truncate capitalize">
+          <h4 className="text-[13px] font-medium text-white truncate">
             {cluster.label}
           </h4>
         </div>
@@ -54,6 +54,11 @@ export default function ComplaintClusterCard({
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-2 text-[10px] text-slate-500">
         <span>{cluster.frequency} signal{cluster.frequency === 1 ? '' : 's'}</span>
+        {typeof cluster.direct_complaints === 'number' && cluster.direct_complaints > 0 && (
+          <span className="text-emerald-400/70">
+            {cluster.direct_complaints} direct complaint{cluster.direct_complaints === 1 ? '' : 's'}
+          </span>
+        )}
         {mix.map(([src, n]) => (
           <span key={src} className="text-slate-600">
             {SOURCE_LABELS[src] || src} × {n}

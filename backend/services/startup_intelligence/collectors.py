@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -37,14 +38,86 @@ logger = logging.getLogger(__name__)
 # radar's worst case is ~one timeout, not the sum.
 _HTTP_TIMEOUT_SEC = 8.0
 
-# Complaint-focused query expansions for the generic web provider.
-# Kept short — each expansion is one provider search call.
-_WEB_COMPLAINT_PATTERNS = (
+# ── Complaint-focused query expansion ───────────────────────────────────────
+# Deterministic variants around complaint intent. BOUNDED: at most
+# _MAX_QUERY_VARIANTS provider calls per run — never spam providers.
+_EN_QUERY_VARIANTS = (
     "{q} complaints",
-    "{q} problems pain points",
-    "{q} alternatives users complain",
-    "{q} reviews too expensive hard to use",
+    "{q} problems",
+    "{q} pain points",
+    "{q} frustrated users",
+    "{q} alternative",
+    "{q} pricing complaints",
+    "why people stop using {q}",
 )
+_TR_QUERY_VARIANTS = (
+    "{q} şikayet",
+    "{q} sorun",
+    "{q} kullanıcı şikayetleri",
+    "{q} alternatif",
+    "{q} pahalı",
+    "{q} memnun değil",
+)
+_MAX_QUERY_VARIANTS = 6
+
+_TR_CHARS = set("çğıöşüÇĞİÖŞÜ")
+_TR_HINT_WORDS = ("için", "uygulama", "araç", "yazılım", "takip", "yönetim", "sitesi")
+
+
+def _looks_turkish(query: str) -> bool:
+    if any(ch in _TR_CHARS for ch in query):
+        return True
+    lower = f" {query.lower()} "
+    return any(f" {w} " in lower for w in _TR_HINT_WORDS)
+
+
+def complaint_query_variants(query: str) -> list[str]:
+    """Bounded, deterministic complaint-intent expansions of the niche."""
+    templates = _TR_QUERY_VARIANTS if _looks_turkish(query) else _EN_QUERY_VARIANTS
+    return [t.format(q=query) for t in templates[:_MAX_QUERY_VARIANTS]]
+
+
+# ── Evidence quality (0-1) ──────────────────────────────────────────────────
+# Base weight by where the item came from: real discussion beats broad
+# SEO/blog/news content. The analyzer adds complaint-language bonuses on
+# top; both feed cluster scoring and confidence calibration.
+_WEB_TYPE_QUALITY = {
+    "forum": 0.85,      # reddit / HN / stackexchange style pages
+    "social": 0.60,
+    "unknown": 0.50,
+    "blog": 0.45,       # SEO/listicle-prone
+    "video": 0.40,
+    "news": 0.40,
+    "corporate": 0.35,  # vendor marketing pages
+    "wiki": 0.35,
+    "academic": 0.35,
+    "government": 0.30,
+}
+
+# Listicle / SEO title shapes ("7 best AI support tools 2026", "Top 10 …",
+# "Ultimate guide to …") — topical coverage, not user pain.
+_LISTICLE_TITLE_RE = re.compile(
+    r"(^\s*\d+\s+(best|top|great|essential|proven|ways|reasons|tips|tools)\b"
+    r"|\btop\s+\d+\b|\bbest\b.*\b20\d\d\b|\bultimate guide\b|\bcomplete guide\b)",
+    re.IGNORECASE,
+)
+
+
+def _clamp01(v: float) -> float:
+    return max(0.05, min(0.95, v))
+
+
+def _web_quality(citation) -> float:
+    base = _WEB_TYPE_QUALITY.get(getattr(citation, "source_type", "unknown"), 0.5)
+    trust = float(getattr(citation, "trust_score", 0.5) or 0.5)
+    q = 0.75 * base + 0.25 * trust
+    if _LISTICLE_TITLE_RE.search(citation.title or ""):
+        q -= 0.20
+    return _clamp01(q)
+
+
+def _is_timeout(exc: Exception) -> bool:
+    return "timeout" in type(exc).__name__.lower()
 
 
 def _iso(ts: Optional[float]) -> Optional[str]:
@@ -72,22 +145,24 @@ async def collect_web(query: str, timeframe_days: int, max_items: int) -> Collec
                                note=f"research package unavailable: {exc}")
 
     if not active_provider():
+        # Not configured is a deployment choice, not a failure.
         return CollectorResult(
-            "web", STATUS_UNAVAILABLE,
-            note="Web research provider not configured "
+            "web", STATUS_SKIPPED,
+            note="Web research not configured — broad market evidence skipped "
                  "(set WEB_RESEARCH_PROVIDER + provider API key).",
         )
 
-    per_pattern = max(2, min(6, max_items // len(_WEB_COMPLAINT_PATTERNS)))
+    variants = complaint_query_variants(query)
+    per_variant = max(2, min(5, max_items // len(variants)))
     signals: list[RawSignal] = []
     seen_urls: set[str] = set()
     errors: list[str] = []
 
-    for pattern in _WEB_COMPLAINT_PATTERNS:
+    for variant in variants:
         try:
             result = await client.search(
-                pattern.format(q=query),
-                max_results=per_pattern,
+                variant,
+                max_results=per_variant,
                 depth="basic",
                 include_answer=False,
                 timeout=_HTTP_TIMEOUT_SEC,
@@ -108,12 +183,13 @@ async def collect_web(query: str, timeframe_days: int, max_items: int) -> Collec
                 text=_clip(c.snippet),
                 url=c.url,
                 published_at=c.date,
+                quality=_web_quality(c),
             ))
 
     if signals:
         return CollectorResult("web", STATUS_AVAILABLE, signals=signals[:max_items])
-    note = f"provider returned no results ({errors[0]})" if errors \
-        else "provider returned no results for complaint queries"
+    note = "web research returned no results — broad market evidence missing this run" \
+        + (f" ({errors[0]})" if errors else "")
     return CollectorResult("web", STATUS_UNAVAILABLE, note=note)
 
 
@@ -127,45 +203,63 @@ async def collect_hackernews(query: str, timeframe_days: int, max_items: int) ->
                                note=f"httpx unavailable: {exc}")
 
     since = datetime.now(timezone.utc) - timedelta(days=max(1, timeframe_days))
-    params = {
-        "query": query,
-        "tags": "(story,comment)",
-        "hitsPerPage": str(max(10, min(50, max_items))),
-        "numericFilters": f"created_at_i>{int(since.timestamp())}",
-    }
+    # Two bounded queries: the plain niche + one complaint-flavored
+    # variant, so discussion threads about problems surface even when
+    # the plain phrase is dominated by launch/show threads.
+    hn_queries = [query, complaint_query_variants(query)[1]]
+    signals: list[RawSignal] = []
+    seen_ids: set[str] = set()
     try:
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SEC) as http:
-            resp = await http.get("https://hn.algolia.com/api/v1/search", params=params)
-            resp.raise_for_status()
-            payload = resp.json()
+            for q in hn_queries:
+                resp = await http.get(
+                    "https://hn.algolia.com/api/v1/search",
+                    params={
+                        "query": q,
+                        "tags": "(story,comment)",
+                        "hitsPerPage": str(max(10, min(40, max_items))),
+                        "numericFilters": f"created_at_i>{int(since.timestamp())}",
+                    },
+                )
+                resp.raise_for_status()
+                for hit in (resp.json().get("hits") or []):
+                    object_id = hit.get("objectID") or ""
+                    if not object_id or object_id in seen_ids:
+                        continue
+                    seen_ids.add(object_id)
+                    title = hit.get("title") or hit.get("story_title") or ""
+                    body = hit.get("story_text") or hit.get("comment_text") or ""
+                    url = hit.get("url") or f"https://news.ycombinator.com/item?id={object_id}"
+                    if not (title or body):
+                        continue
+                    signals.append(RawSignal(
+                        source="hackernews",
+                        title=_clip(title, 160),
+                        text=_clip(body),
+                        url=url,
+                        published_at=_iso(hit.get("created_at_i")),
+                        engagement=int(hit.get("points") or 0) + int(hit.get("num_comments") or 0),
+                        # Comments/stories with body text are real discussion;
+                        # bare titles carry less complaint signal.
+                        quality=0.85 if body else 0.65,
+                    ))
+                    if len(signals) >= max_items:
+                        break
+                if len(signals) >= max_items:
+                    break
     except Exception as exc:
         logger.warning("[STARTUP_INTEL] hackernews fetch failed: %s", exc)
-        return CollectorResult("hackernews", STATUS_UNAVAILABLE,
-                               note=f"HN search failed: {type(exc).__name__}")
-
-    signals: list[RawSignal] = []
-    for hit in (payload.get("hits") or [])[:max_items]:
-        object_id = hit.get("objectID") or ""
-        title = hit.get("title") or hit.get("story_title") or ""
-        body = hit.get("story_text") or hit.get("comment_text") or ""
-        url = hit.get("url") or (
-            f"https://news.ycombinator.com/item?id={object_id}" if object_id else ""
-        )
-        if not (title or body) or not url:
-            continue
-        signals.append(RawSignal(
-            source="hackernews",
-            title=_clip(title, 160),
-            text=_clip(body),
-            url=url,
-            published_at=_iso(hit.get("created_at_i")),
-            engagement=int(hit.get("points") or 0) + int(hit.get("num_comments") or 0),
-        ))
+        note = ("Hacker News timed out — discussion signal unavailable this run"
+                if _is_timeout(exc)
+                else "Hacker News search failed — discussion signal unavailable this run")
+        # Partial results from the first query still count.
+        if not signals:
+            return CollectorResult("hackernews", STATUS_UNAVAILABLE, note=note)
 
     if signals:
         return CollectorResult("hackernews", STATUS_AVAILABLE, signals=signals)
     return CollectorResult("hackernews", STATUS_UNAVAILABLE,
-                           note="no HN discussions matched in the timeframe")
+                           note="no Hacker News discussions matched in the timeframe")
 
 
 # ── GDELT (public DOC 2.0 API — broad news/market signal) ───────────────────
@@ -193,8 +287,10 @@ async def collect_gdelt(query: str, timeframe_days: int, max_items: int) -> Coll
             payload = resp.json()
     except Exception as exc:
         logger.warning("[STARTUP_INTEL] gdelt fetch failed: %s", exc)
-        return CollectorResult("gdelt", STATUS_UNAVAILABLE,
-                               note=f"GDELT query failed: {type(exc).__name__}")
+        note = ("GDELT timed out — news/trend signal unavailable this run"
+                if _is_timeout(exc)
+                else "GDELT unavailable — news/trend signal missing this run")
+        return CollectorResult("gdelt", STATUS_UNAVAILABLE, note=note)
 
     signals: list[RawSignal] = []
     seen: set[str] = set()
@@ -217,12 +313,14 @@ async def collect_gdelt(query: str, timeframe_days: int, max_items: int) -> Coll
             title=_clip(title, 160),
             url=url,
             published_at=published,
+            # News headlines are trend context, not user complaints.
+            quality=0.35,
         ))
 
     if signals:
         return CollectorResult("gdelt", STATUS_AVAILABLE, signals=signals)
     return CollectorResult("gdelt", STATUS_UNAVAILABLE,
-                           note="no GDELT articles matched in the timeframe")
+                           note="no GDELT articles matched — news/trend signal empty this run")
 
 
 # ── Reddit (OAuth client-credentials — optional) ────────────────────────────
@@ -233,7 +331,8 @@ async def collect_reddit(query: str, timeframe_days: int, max_items: int) -> Col
     if not client_id or not client_secret:
         return CollectorResult(
             "reddit", STATUS_SKIPPED,
-            note="Reddit not configured (set REDDIT_CLIENT_ID + REDDIT_CLIENT_SECRET).",
+            note="Reddit not configured — community complaint signal skipped "
+                 "(set REDDIT_CLIENT_ID + REDDIT_CLIENT_SECRET).",
         )
 
     try:
@@ -287,12 +386,14 @@ async def collect_reddit(query: str, timeframe_days: int, max_items: int) -> Col
             url=f"https://www.reddit.com{permalink}",
             published_at=_iso(d.get("created_utc")),
             engagement=int(d.get("score") or 0) + int(d.get("num_comments") or 0),
+            # Community posts are first-hand complaint territory.
+            quality=0.85 if d.get("selftext") else 0.7,
         ))
 
     if signals:
         return CollectorResult("reddit", STATUS_AVAILABLE, signals=signals)
     return CollectorResult("reddit", STATUS_UNAVAILABLE,
-                           note="no Reddit posts matched in the timeframe")
+                           note="no Reddit posts matched — community complaint signal empty this run")
 
 
 # ── Product Hunt (GraphQL v2 — optional) ────────────────────────────────────
@@ -302,7 +403,8 @@ async def collect_producthunt(query: str, timeframe_days: int, max_items: int) -
     if not token:
         return CollectorResult(
             "producthunt", STATUS_SKIPPED,
-            note="Product Hunt not configured (set PRODUCTHUNT_TOKEN).",
+            note="Product Hunt not configured — launch signal skipped "
+                 "(set PRODUCTHUNT_TOKEN).",
         )
 
     try:
@@ -359,6 +461,8 @@ async def collect_producthunt(query: str, timeframe_days: int, max_items: int) -
             url=node.get("url") or "",
             published_at=node.get("createdAt"),
             engagement=int(node.get("votesCount") or 0) + int(node.get("commentsCount") or 0),
+            # Launch copy signals market activity, not complaints.
+            quality=0.5,
         ))
         if len(signals) >= max_items:
             break

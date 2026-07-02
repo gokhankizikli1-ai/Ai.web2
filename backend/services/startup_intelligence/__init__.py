@@ -198,6 +198,15 @@ async def analyze_market_complaints(
     grouped = cluster_complaints(hits)
     query_token_count = len(re.findall(r"\w+", query))
 
+    # Evidence quality telemetry — feeds score/confidence calibration and
+    # the honest broad-web warning. Uses complaint-hit effective quality
+    # when hits exist, otherwise the raw collector base quality.
+    if hits:
+        avg_quality = sum(h.quality for h in hits) / len(hits)
+    else:
+        avg_quality = sum(s.quality for s in all_signals) / len(all_signals)
+    direct_total = sum(1 for h in hits if h.is_direct)
+
     signals_summary = extract_market_signals(all_signals, search_query)
     competitor_mentions = len(signals_summary.competitors_mentioned)
     largest = max((len(m) for _, m in grouped), default=0)
@@ -263,23 +272,37 @@ async def analyze_market_complaints(
         cluster_count=len(clusters),
         citation_count=len(report.citations),
         complaint_count=len(hits),
+        direct_complaints=direct_total,
+        avg_quality=avg_quality,
     )
     report.summary = {
         "top_complaint_area": clusters[0].label if clusters else "",
         "opportunity_score": opportunity_score(
-            clusters, available_sources=available_sources, total_items=len(all_signals),
+            clusters, available_sources=available_sources,
+            total_items=len(all_signals), avg_quality=avg_quality,
         ),
         "confidence": confidence,
         "total_sources": available_sources,
         "total_items_analyzed": len(all_signals),
+        # Additive quality telemetry for the UI.
+        "evidence_quality": int(max(0, min(100, round(avg_quality * 100)))),
+        "direct_complaints": direct_total,
     }
+    messages: list[str] = []
     if not clusters:
-        report.message = (
+        messages.append(
             "Sources returned market items but none contained clear complaint "
             "language — try a more specific niche or a longer timeframe."
         )
-    elif unavailable_notes:
-        report.message = "Partial data: " + " | ".join(unavailable_notes[:3])
+    else:
+        if avg_quality < 0.45:
+            messages.append(
+                "Evidence is mostly broad web content; validate with direct "
+                "user conversations."
+            )
+        if unavailable_notes:
+            messages.append("Partial data: " + " | ".join(unavailable_notes[:3]))
+    report.message = " ".join(messages)
 
     result = report.to_dict()
     intel_cache.set_report(cache_key, result, has_data=bool(clusters))
