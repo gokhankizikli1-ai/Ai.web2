@@ -306,8 +306,16 @@ export default function ChatDashboard() {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail as { prompt: string; workspace?: WorkspaceTab };
       if (detail?.prompt) {
-        // Switch to chat tab and populate input
-        handleTabChange('chat');
+        // Land on the requested workspace when it's a chat surface — the
+        // embedded Market Complaint Radar targets 'startup' so its handoff
+        // runs as startup_advisor. Non-chat workspaces (e.g. 'business',
+        // which renders a panel instead of a conversation) keep the
+        // original behavior and fall back to the plain chat tab.
+        const CHAT_SURFACES: WorkspaceTab[] = ['chat', 'research', 'coding', 'startup', 'study', 'creative'];
+        const target = detail.workspace && CHAT_SURFACES.includes(detail.workspace)
+          ? detail.workspace
+          : 'chat';
+        handleTabChange(target);
         setInputText(detail.prompt);
         addToast('Prompt ready — press Enter to send', 'success');
       }
