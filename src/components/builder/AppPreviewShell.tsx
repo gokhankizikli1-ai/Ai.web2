@@ -28,16 +28,16 @@ const STATUS_STYLE: Record<OrchestratePhase, { dot: string; text: string; label:
   planning:   { dot: 'bg-[#7EA6BF] animate-pulse', text: 'text-[#9CBBD1]', label: 'Planning' },
   running:    { dot: 'bg-[#7EA6BF] animate-pulse', text: 'text-[#9CBBD1]', label: 'Running' },
   rendering:  { dot: 'bg-[#7EA6BF] animate-pulse', text: 'text-[#9CBBD1]', label: 'Rendering' },
-  completed:  { dot: 'bg-[#6F8F7A]', text: 'text-[#6F8F7A]', label: 'Live' },
-  failed:     { dot: 'bg-[#B76E79]', text: 'text-[#B76E79]', label: 'Failed' },
+  completed:  { dot: 'bg-[#86A88B]', text: 'text-[#86A88B]', label: 'Live' },
+  failed:     { dot: 'bg-[#C98282]', text: 'text-[#C98282]', label: 'Failed' },
   cancelled:  { dot: 'bg-slate-500', text: 'text-[#A9B7C6]', label: 'Cancelled' },
   not_found:  { dot: 'bg-slate-500', text: 'text-[#A9B7C6]', label: 'Not found' },
-  disabled:   { dot: 'bg-[#A68A5B]', text: 'text-[#A68A5B]', label: 'Unavailable' },
-  error:      { dot: 'bg-[#B76E79]', text: 'text-[#B76E79]', label: 'Error' },
+  disabled:   { dot: 'bg-[#C2A15A]', text: 'text-[#C2A15A]', label: 'Unavailable' },
+  error:      { dot: 'bg-[#C98282]', text: 'text-[#C98282]', label: 'Error' },
 };
 
 const TONE_DOT: Record<'positive' | 'neutral' | 'warning', string> = {
-  positive: 'bg-[#6F8F7A]', neutral: 'bg-slate-500', warning: 'bg-[#A68A5B]',
+  positive: 'bg-[#86A88B]', neutral: 'bg-slate-500', warning: 'bg-[#C2A15A]',
 };
 
 // Deterministic mini sparkline bars (purely decorative) derived from a stat's
@@ -142,7 +142,7 @@ export default function AppPreviewShell({ idea, phase, palette, nameOverride, ch
                   </div>
                   <div className="flex items-end justify-between gap-2 mb-3">
                     <span className="text-xl font-semibold text-white">{s.value}</span>
-                    <span className={`flex items-center gap-0.5 text-[10px] ${s.positive ? 'text-[#6F8F7A]' : 'text-[#B76E79]'}`}>
+                    <span className={`flex items-center gap-0.5 text-[10px] ${s.positive ? 'text-[#86A88B]' : 'text-[#C98282]'}`}>
                       {s.positive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
                       {s.delta}
                     </span>
@@ -151,7 +151,7 @@ export default function AppPreviewShell({ idea, phase, palette, nameOverride, ch
                     {sparkline(s.value + s.delta).map((h, j) => (
                       <div
                         key={j}
-                        className={`flex-1 rounded-sm ${s.positive ? 'bg-[#6F8F7A]/30' : 'bg-[#B76E79]/30'}`}
+                        className={`flex-1 rounded-sm ${s.positive ? 'bg-[#86A88B]/30' : 'bg-[#C98282]/30'}`}
                         style={{ height: `${h}%` }}
                       />
                     ))}
@@ -189,9 +189,9 @@ export default function AppPreviewShell({ idea, phase, palette, nameOverride, ch
 
           {/* Artifact preview zone + workflow/activity panel */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <div className={`lg:col-span-2 rounded-2xl border overflow-hidden ${failed ? 'border-[#B76E79]/15' : 'border-white/[0.07]'} bg-white/[0.015]`}>
+            <div className={`lg:col-span-2 rounded-2xl border overflow-hidden ${failed ? 'border-[#C98282]/15' : 'border-white/[0.07]'} bg-white/[0.015]`}>
               <div className="relative flex items-center gap-2 px-4 py-2.5 border-b border-white/[0.05]">
-                <FileCode2 className="w-3.5 h-3.5" style={{ color: failed ? '#B76E79' : palette.accent }} />
+                <FileCode2 className="w-3.5 h-3.5" style={{ color: failed ? '#C98282' : palette.accent }} />
                 <span className="text-[11px] font-medium text-slate-300">{artifactHeaderLabel}</span>
                 {busy && (
                   <div className="absolute bottom-0 left-0 right-0 h-[2px] animate-pulse-soft" style={{ background: `linear-gradient(90deg, ${palette.accent}, ${palette.accent2}, ${palette.accent})` }} />

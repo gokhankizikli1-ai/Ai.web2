@@ -60,7 +60,7 @@ function StatusDot({ status, color }: { status: string; color: string }) {
     );
   }
   if (status === 'completed') {
-    return <CheckCircle2 className="w-3 h-3 text-[#6F8F7A]" />;
+    return <CheckCircle2 className="w-3 h-3 text-[#86A88B]" />;
   }
   return <Activity className="w-3 h-3 text-[#7F8FA3]" />;
 }
@@ -80,11 +80,11 @@ export default function IntelligenceLayer({ variant = 'compact' }: IntelligenceL
         {/* Live indicator */}
         <div className="flex items-center gap-1.5">
           <motion.div
-            className="w-2 h-2 rounded-full bg-[#6F8F7A]"
+            className="w-2 h-2 rounded-full bg-[#86A88B]"
             animate={{ opacity: [0.4, 1, 0.4], scale: [1, 1.2, 1] }}
             transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
           />
-          <span className="text-[10px] font-medium text-[#6F8F7A]/70 uppercase tracking-wider">Live</span>
+          <span className="text-[10px] font-medium text-[#86A88B]/70 uppercase tracking-wider">Live</span>
         </div>
 
         {/* Scrolling activity pills */}

@@ -12,8 +12,8 @@ const iconMap: Record<string, React.ElementType> = {
 };
 
 const statusConfig = {
-  active: { label: 'Active', bg: 'bg-[#6F8F7A]/[0.08]', text: 'text-[#6F8F7A]', dot: 'bg-[#6F8F7A]', pulse: true },
-  draft: { label: 'Draft', bg: 'bg-[#A68A5B]/[0.08]', text: 'text-[#A68A5B]', dot: 'bg-[#A68A5B]', pulse: false },
+  active: { label: 'Active', bg: 'bg-[#86A88B]/[0.08]', text: 'text-[#86A88B]', dot: 'bg-[#86A88B]', pulse: true },
+  draft: { label: 'Draft', bg: 'bg-[#C2A15A]/[0.08]', text: 'text-[#C2A15A]', dot: 'bg-[#C2A15A]', pulse: false },
   archived: { label: 'Archived', bg: 'bg-slate-500/[0.08]', text: 'text-[#A9B7C6]', dot: 'bg-slate-400', pulse: false },
 };
 
@@ -54,7 +54,7 @@ export default function ProjectCard({ project, index, onDelete }: ProjectCardPro
     >
       {/* Card */}
       <div
-        className="relative rounded-xl overflow-hidden transition-all duration-300 group-hover:border-white/[0.12]"
+        className="relative rounded-xl overflow-hidden transition-all duration-300 group-hover:border-[#7EA6BF]/30"
         style={{
           background: 'linear-gradient(180deg, rgba(27,34,48,0.7) 0%, rgba(17, 24, 32,0.8) 100%)',
           border: '1px solid rgba(255,255,255,0.06)',
@@ -114,15 +114,15 @@ export default function ProjectCard({ project, index, onDelete }: ProjectCardPro
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1">
-                <Bot className="h-3 w-3 text-white/25" />
+                <Bot className="h-3 w-3 text-[#7EA6BF]/70" />
                 <span className="text-[10px] text-white/40">{activeAgents}/{project.agents.length} agents</span>
               </div>
               <div className="flex items-center gap-1">
-                <Activity className="h-3 w-3 text-white/25" />
+                <Activity className="h-3 w-3 text-[#7EA6BF]/70" />
                 <span className="text-[10px] text-white/40">{project.tasks.filter(t => t.status === 'in_progress').length} tasks</span>
               </div>
             </div>
-            <div className="flex items-center gap-1 text-white/20 group-hover:text-white/50 transition-colors">
+            <div className="flex items-center gap-1 text-white/20 group-hover:text-[#9BBBD0] transition-colors">
               <span className="text-[10px]">Open</span>
               <ChevronRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
             </div>
@@ -157,7 +157,7 @@ export default function ProjectCard({ project, index, onDelete }: ProjectCardPro
             }}
             aria-label={`Delete project ${project.name}`}
             data-testid={`project-delete-${project.id}`}
-            className="absolute top-2 right-2 h-8 w-8 flex items-center justify-center rounded-md text-white/30 opacity-40 group-hover:opacity-100 focus:opacity-100 hover:text-[#B76E79] hover:bg-[#B76E79]/[0.08] transition-all"
+            className="absolute top-2 right-2 h-8 w-8 flex items-center justify-center rounded-md text-white/30 opacity-40 group-hover:opacity-100 focus:opacity-100 hover:text-[#C98282] hover:bg-[#C98282]/[0.08] transition-all"
           >
             <Trash2 className="h-3.5 w-3.5" />
           </button>

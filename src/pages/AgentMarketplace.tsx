@@ -90,7 +90,7 @@ export default function AgentMarketplace() {
   }, 0);
 
   const stats = [
-    { label: 'Installed', value: `${installedCount}`, icon: CheckCircle2, color: 'text-[#6F8F7A]', bg: 'bg-[#6F8F7A]/[0.06]', border: 'border-[#6F8F7A]/10' },
+    { label: 'Installed', value: `${installedCount}`, icon: CheckCircle2, color: 'text-[#86A88B]', bg: 'bg-[#86A88B]/[0.06]', border: 'border-[#86A88B]/10' },
     { label: 'Available', value: `${AGENTS.length}`, icon: Bot, color: 'text-[#9CBBD1]', bg: 'bg-[#7EA6BF]/[0.06]', border: 'border-[#7EA6BF]/10' },
     { label: 'Top Rating', value: `${topRating}`, icon: Trophy, color: 'text-[#9CBBD1]', bg: 'bg-[#7EA6BF]/[0.06]', border: 'border-[#7EA6BF]/10' },
     { label: 'Downloads', value: `${(totalDownloads / 1000).toFixed(1)}k`, icon: Download, color: 'text-[#9CBBD1]', bg: 'bg-[#7EA6BF]/[0.06]', border: 'border-[#7EA6BF]/10' },
@@ -177,9 +177,9 @@ export default function AgentMarketplace() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.15 }}
-          className="mb-4 p-3 rounded-xl border border-[#A68A5B]/10 bg-[#A68A5B]/[0.02] flex items-center gap-2.5"
+          className="mb-4 p-3 rounded-xl border border-[#C2A15A]/10 bg-[#C2A15A]/[0.02] flex items-center gap-2.5"
         >
-          <AlertCircle className="w-4 h-4 text-[#A68A5B] shrink-0" />
+          <AlertCircle className="w-4 h-4 text-[#C2A15A] shrink-0" />
           <p className="text-[11px] text-[#7F8FA3]">
             All agents shown are demonstration previews. Install actions are simulated. Connect your backend to enable real agent execution.
           </p>
@@ -274,7 +274,7 @@ export default function AgentMarketplace() {
                       </div>
                     </div>
                     <div className="shrink-0 self-center">
-                      <div className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#6F8F7A]/[0.06] text-[#6F8F7A] border border-[#6F8F7A]/10 text-[11px] font-medium">
+                      <div className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#86A88B]/[0.06] text-[#86A88B] border border-[#86A88B]/10 text-[11px] font-medium">
                         <CheckCircle2 className="h-3.5 w-3.5" /> Installed
                       </div>
                     </div>
@@ -309,7 +309,7 @@ export default function AgentMarketplace() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
                       <span className="text-[13px] font-medium text-slate-200 group-hover:text-white transition-colors">{agent.name}</span>
-                      {agent.installed && <CheckCircle2 className="h-3.5 w-3.5 text-[#6F8F7A]/60 shrink-0" />}
+                      {agent.installed && <CheckCircle2 className="h-3.5 w-3.5 text-[#86A88B]/60 shrink-0" />}
                     </div>
                     <p className="text-[11px] text-[#7F8FA3] leading-relaxed mt-0.5">{agent.description}</p>
                   </div>
@@ -348,7 +348,7 @@ export default function AgentMarketplace() {
                 <button
                   className={`w-full h-9 rounded-xl text-[11px] font-medium transition-all duration-200 flex items-center justify-center gap-1.5 ${
                     agent.installed
-                      ? 'bg-[#6F8F7A]/[0.06] text-[#6F8F7A]/70 border border-[#6F8F7A]/10 cursor-default'
+                      ? 'bg-[#86A88B]/[0.06] text-[#86A88B]/70 border border-[#86A88B]/10 cursor-default'
                       : 'bg-white/[0.03] text-[#A9B7C6] hover:text-white hover:bg-white/[0.06] border border-white/[0.05] hover:border-white/[0.1] active:scale-[0.98]'
                   }`}
                 >

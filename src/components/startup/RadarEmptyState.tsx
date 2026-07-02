@@ -20,7 +20,7 @@ export default function RadarEmptyState({ query, onPickExample }: Props) {
   const showExamples = query.trim().length === 0;
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-      <div className="rounded-2xl border border-white/[0.05] bg-white/[0.01] p-6">
+      <div className="rounded-2xl border border-[#2F3B4A] bg-[#111820] p-6 transition-colors hover:border-[rgba(126,166,191,0.30)]">
         <h3 className="text-[15px] font-semibold text-slate-100">Find angry markets before you build.</h3>
         <p className="text-[12px] text-[#A9B7C6] mt-1.5 leading-relaxed">
           Korvix scans public signals, clusters complaints, and turns them into startup wedges.

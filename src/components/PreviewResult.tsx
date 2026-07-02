@@ -61,7 +61,7 @@ export default function PreviewResult({
   // ── Feature gate off (bridge / result API / prerequisites) ───────────────
   if (phase === 'disabled') {
     return (
-      <StatusCard tone="muted" icon={<Ban className="w-4 h-4 text-[#A68A5B]" />} title="Execution unavailable">
+      <StatusCard tone="muted" icon={<Ban className="w-4 h-4 text-[#C2A15A]" />} title="Execution unavailable">
         <p className="text-[12px] text-[#A9B7C6]">{disabledReason || 'This capability is disabled on the server.'}</p>
         {disabledPrerequisites.length > 0 && (
           <div className="mt-2">
@@ -85,7 +85,7 @@ export default function PreviewResult({
       : isFail ? 'Run failed' : 'Something went wrong';
     const errs = payload?.errors?.length ? payload.errors : (error ? [error] : []);
     return (
-      <StatusCard tone="error" icon={<AlertTriangle className="w-4 h-4 text-[#B76E79]" />} title={title}>
+      <StatusCard tone="error" icon={<AlertTriangle className="w-4 h-4 text-[#C98282]" />} title={title}>
         {errs.length > 0 ? (
           <ul className="text-[12px] text-[#A9B7C6] list-disc list-inside space-y-0.5">
             {errs.map((e, i) => <li key={i}>{e}</li>)}
@@ -181,7 +181,7 @@ function RenderedArtifact({ payload }: { payload: PreviewPayload }) {
       {payload.warnings.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {payload.warnings.map((w, i) => (
-            <span key={i} className="px-1.5 py-0.5 rounded bg-[#A68A5B]/[0.06] text-[10px] text-[#A68A5B]/80">{w}</span>
+            <span key={i} className="px-1.5 py-0.5 rounded bg-[#C2A15A]/[0.06] text-[10px] text-[#C2A15A]/80">{w}</span>
           ))}
         </div>
       )}
@@ -197,7 +197,7 @@ function StatusCard({
   title: string;
   children: React.ReactNode;
 }) {
-  const border = tone === 'error' ? 'border-[#B76E79]/15'
+  const border = tone === 'error' ? 'border-[#C98282]/15'
     : tone === 'busy' ? 'border-[#7EA6BF]/15' : 'border-white/[0.04]';
   return (
     <div className={`p-5 rounded-2xl border ${border} bg-white/[0.01]`}>

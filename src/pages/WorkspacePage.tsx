@@ -135,7 +135,7 @@ function WorkspaceCard({ ws }: { ws: typeof WORKSPACES[0] }) {
 function StatsBar() {
   const stats = [
     { icon: Zap, label: 'Active', value: '7', color: 'text-[#9CBBD1]' },
-    { icon: Activity, label: 'Running', value: '3', color: 'text-[#6F8F7A]' },
+    { icon: Activity, label: 'Running', value: '3', color: 'text-[#86A88B]' },
     { icon: Star, label: 'Pinned', value: '3', color: 'text-[#9CBBD1]' },
     { icon: Clock, label: 'This Week', value: '42', color: 'text-[#9CBBD1]' },
   ];

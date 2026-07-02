@@ -25,7 +25,7 @@ function StatusIcon({ status }: { status: AIActivity['status'] }) {
       </span>
     );
   }
-  if (status === 'completed') return <CheckCircle2 className="h-3 w-3 text-[#6F8F7A]/60" />;
+  if (status === 'completed') return <CheckCircle2 className="h-3 w-3 text-[#86A88B]/60" />;
   return <Clock className="h-3 w-3 text-[#7F8FA3]" />;
 }
 

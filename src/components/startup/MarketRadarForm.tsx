@@ -161,7 +161,7 @@ export default function MarketRadarForm({
         disabled={!canSubmit}
         className={`mt-5 w-full h-11 rounded-xl text-[13px] font-medium flex items-center justify-center gap-2 border transition-all ${
           canSubmit
-            ? 'bg-[#7EA6BF]/[0.16] border-[#7EA6BF]/45 text-[#DCE4EC] hover:bg-[#7EA6BF]/[0.22]'
+            ? 'bg-gradient-to-b from-[#294050] to-[#1B2A36] border-[rgba(126,166,191,0.36)] text-[#EAF1F6] shadow-[0_1px_0_rgba(126,166,191,0.10)_inset] hover:from-[#2E4757] hover:to-[#1F3040] hover:border-[rgba(126,166,191,0.48)]'
             : 'bg-white/[0.02] border-white/[0.05] text-[#7F8FA3] cursor-not-allowed'
         }`}
       >

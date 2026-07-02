@@ -129,7 +129,7 @@ export default function ExplorePage() {
                         <div className={`p-2 rounded-lg bg-white/[0.03]`}>
                           <item.icon className={`w-4 h-4 ${item.color}`} />
                         </div>
-                        <span className="text-[11px] font-medium text-[#6F8F7A]">{item.trend}</span>
+                        <span className="text-[11px] font-medium text-[#86A88B]">{item.trend}</span>
                       </div>
                       <h3 className="text-[13px] font-medium text-white mb-0.5">{item.title}</h3>
                       <p className="text-[11px] text-[#7F8FA3]">{item.category} · {item.views} views</p>

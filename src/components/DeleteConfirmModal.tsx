@@ -47,8 +47,8 @@ export default function DeleteConfirmModal({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start gap-3 mb-4">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#B76E79]/[0.06] border border-[#B76E79]/10 shrink-0">
-                <AlertTriangle className="h-4 w-4 text-[#B76E79]" />
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#C98282]/[0.06] border border-[#C98282]/10 shrink-0">
+                <AlertTriangle className="h-4 w-4 text-[#C98282]" />
               </div>
               <div>
                 <h3 className="text-[14px] font-semibold text-white">{title}</h3>
@@ -67,7 +67,7 @@ export default function DeleteConfirmModal({
               <Button
                 size="sm"
                 onClick={onConfirm}
-                className="h-8 px-4 text-[12px] bg-[#B76E79]/[0.1] text-[#B76E79] hover:bg-[#B76E79]/[0.15] border border-[#B76E79]/15 rounded-lg"
+                className="h-8 px-4 text-[12px] bg-[#C98282]/[0.1] text-[#C98282] hover:bg-[#C98282]/[0.15] border border-[#C98282]/15 rounded-lg"
               >
                 Delete
               </Button>

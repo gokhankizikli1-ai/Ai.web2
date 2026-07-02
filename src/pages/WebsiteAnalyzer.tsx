@@ -157,7 +157,7 @@ export default function WebsiteAnalyzer() {
                           { text: 'Color contrast meets WCAG AA', score: 'good' },
                         ].map((item, i) => (
                           <div key={i} className="flex items-center gap-2">
-                            {item.score === 'good' ? <CheckCircle2 className="w-3.5 h-3.5 text-[#6F8F7A] shrink-0" /> : <AlertTriangle className="w-3.5 h-3.5 text-[#A68A5B] shrink-0" />}
+                            {item.score === 'good' ? <CheckCircle2 className="w-3.5 h-3.5 text-[#86A88B] shrink-0" /> : <AlertTriangle className="w-3.5 h-3.5 text-[#C2A15A] shrink-0" />}
                             <span className="text-[12px] text-[#A9B7C6]">{item.text}</span>
                           </div>
                         ))}
@@ -177,9 +177,9 @@ export default function WebsiteAnalyzer() {
                         { text: 'Image alt text missing on 40% of images', score: 'fail' },
                       ].map((item, i) => (
                         <div key={i} className="flex items-center gap-2">
-                          {item.score === 'good' && <CheckCircle2 className="w-3.5 h-3.5 text-[#6F8F7A] shrink-0" />}
-                          {item.score === 'warn' && <AlertTriangle className="w-3.5 h-3.5 text-[#A68A5B] shrink-0" />}
-                          {item.score === 'fail' && <AlertCircle className="w-3.5 h-3.5 text-[#B76E79] shrink-0" />}
+                          {item.score === 'good' && <CheckCircle2 className="w-3.5 h-3.5 text-[#86A88B] shrink-0" />}
+                          {item.score === 'warn' && <AlertTriangle className="w-3.5 h-3.5 text-[#C2A15A] shrink-0" />}
+                          {item.score === 'fail' && <AlertCircle className="w-3.5 h-3.5 text-[#C98282] shrink-0" />}
                           <span className="text-[12px] text-[#A9B7C6]">{item.text}</span>
                         </div>
                       ))}
@@ -188,8 +188,8 @@ export default function WebsiteAnalyzer() {
                 )}
 
                 {activeTab === 'competitor' && (
-                  <div className="p-6 rounded-2xl border border-[#A68A5B]/10 bg-[#A68A5B]/[0.02] text-center">
-                    <AlertCircle className="w-8 h-8 text-[#A68A5B] mx-auto mb-3" />
+                  <div className="p-6 rounded-2xl border border-[#C2A15A]/10 bg-[#C2A15A]/[0.02] text-center">
+                    <AlertCircle className="w-8 h-8 text-[#C2A15A] mx-auto mb-3" />
                     <h3 className="text-sm font-medium text-white mb-1">Competitor Analysis Backend Not Connected</h3>
                     <p className="text-[12px] text-[#7F8FA3]">This feature requires a research backend. Connect it to enable competitor comparisons.</p>
                   </div>
@@ -205,7 +205,7 @@ export default function WebsiteAnalyzer() {
                         { text: 'Recommendation: A/B test headline variants', score: 'warn' },
                       ].map((item, i) => (
                         <div key={i} className="flex items-center gap-2">
-                          {item.score === 'good' ? <CheckCircle2 className="w-3.5 h-3.5 text-[#6F8F7A] shrink-0" /> : <AlertTriangle className="w-3.5 h-3.5 text-[#A68A5B] shrink-0" />}
+                          {item.score === 'good' ? <CheckCircle2 className="w-3.5 h-3.5 text-[#86A88B] shrink-0" /> : <AlertTriangle className="w-3.5 h-3.5 text-[#C2A15A] shrink-0" />}
                           <span className="text-[12px] text-[#A9B7C6]">{item.text}</span>
                         </div>
                       ))}
@@ -220,9 +220,9 @@ export default function WebsiteAnalyzer() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {CHECKLIST.map((item, i) => (
                     <div key={i} className="flex items-center gap-2 py-1">
-                      {item.status === 'pass' && <CheckCircle2 className="w-3.5 h-3.5 text-[#6F8F7A] shrink-0" />}
-                      {item.status === 'warn' && <AlertTriangle className="w-3.5 h-3.5 text-[#A68A5B] shrink-0" />}
-                      {item.status === 'fail' && <AlertCircle className="w-3.5 h-3.5 text-[#B76E79] shrink-0" />}
+                      {item.status === 'pass' && <CheckCircle2 className="w-3.5 h-3.5 text-[#86A88B] shrink-0" />}
+                      {item.status === 'warn' && <AlertTriangle className="w-3.5 h-3.5 text-[#C2A15A] shrink-0" />}
+                      {item.status === 'fail' && <AlertCircle className="w-3.5 h-3.5 text-[#C98282] shrink-0" />}
                       <span className="text-[11px] text-[#A9B7C6]">{item.label}</span>
                     </div>
                   ))}

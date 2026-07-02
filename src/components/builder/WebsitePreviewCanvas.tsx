@@ -175,7 +175,7 @@ export default function WebsitePreviewCanvas({ content, activeSection, palette }
                   {tier.period && <span className="text-[11px] text-[#7F8FA3]">{tier.period}</span>}
                 </div>
                 <p className="mt-2 text-[11px] text-[#A9B7C6] leading-relaxed flex-1">{tier.desc}</p>
-                <div className="mt-3 flex items-center gap-1.5 text-[10px] text-[#6F8F7A]">
+                <div className="mt-3 flex items-center gap-1.5 text-[10px] text-[#86A88B]">
                   <Check className="w-3 h-3" /> Included features
                 </div>
               </div>
@@ -196,7 +196,7 @@ export default function WebsitePreviewCanvas({ content, activeSection, palette }
           {content.testimonials.map((t) => (
             <div key={t.name} className="p-5 rounded-2xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-xl hover:border-white/[0.12] hover:-translate-y-0.5 transition-all">
               <div className="flex gap-0.5 mb-3">
-                {Array.from({ length: 5 }).map((_, i) => <Star key={i} className="w-3 h-3 fill-[#A68A5B] text-[#A68A5B]" />)}
+                {Array.from({ length: 5 }).map((_, i) => <Star key={i} className="w-3 h-3 fill-[#C2A15A] text-[#C2A15A]" />)}
               </div>
               <p className="text-[12px] text-slate-300 leading-relaxed mb-3">&ldquo;{t.quote}&rdquo;</p>
               <p className="text-[11px] text-[#7F8FA3]">{t.name} — {t.role}</p>

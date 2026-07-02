@@ -246,7 +246,7 @@ export default function ProjectsDashboard() {
               <div className="space-y-4">
                 {/* Project Name */}
                 <div>
-                  <label className="text-[11px] font-medium text-white/40 mb-1.5 block">Project Name <span className="text-[#B76E79]/60">*</span></label>
+                  <label className="text-[11px] font-medium text-white/40 mb-1.5 block">Project Name <span className="text-[#C98282]/60">*</span></label>
                   <input
                     type="text"
                     value={projectName}
@@ -255,16 +255,16 @@ export default function ProjectsDashboard() {
                     className="w-full px-3 py-2.5 rounded-xl text-[13px] text-white/80 placeholder:text-white/20 outline-none transition-all"
                     style={{
                       background: 'rgba(255,255,255,0.03)',
-                      border: `1px solid ${errors.name ? 'rgba(183,110,121,0.3)' : 'rgba(255,255,255,0.06)'}`,
+                      border: `1px solid ${errors.name ? 'rgba(201, 130, 130,0.3)' : 'rgba(255,255,255,0.06)'}`,
                     }}
                   />
-                  {errors.name && <p className="text-[10px] text-[#B76E79]/70 mt-1">{errors.name}</p>}
+                  {errors.name && <p className="text-[10px] text-[#C98282]/70 mt-1">{errors.name}</p>}
                 </div>
 
                 {/* Category */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <label className="text-[11px] font-medium text-white/40">Category <span className="text-[#B76E79]/60">*</span></label>
+                    <label className="text-[11px] font-medium text-white/40">Category <span className="text-[#C98282]/60">*</span></label>
                     <span className="text-[9px] text-white/20">{isCustom ? 'Type your own' : 'Select one'}</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
@@ -293,7 +293,7 @@ export default function ProjectsDashboard() {
                       );
                     })}
                   </div>
-                  {errors.category && <p className="text-[10px] text-[#B76E79]/70 mt-1">{errors.category}</p>}
+                  {errors.category && <p className="text-[10px] text-[#C98282]/70 mt-1">{errors.category}</p>}
 
                   {/* Custom input */}
                   <AnimatePresence>

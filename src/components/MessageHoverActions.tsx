@@ -66,7 +66,7 @@ export default function MessageHoverActions({ content, onAction, isVisible }: Me
               title={action.label}
             >
               {action.id === 'copy' && copied ? (
-                <Check className="h-2.5 w-2.5 text-[#6F8F7A]" />
+                <Check className="h-2.5 w-2.5 text-[#86A88B]" />
               ) : (
                 <action.icon className="h-2.5 w-2.5" />
               )}

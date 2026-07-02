@@ -105,7 +105,7 @@ export default function UserMenu() {
             <div className="border-t border-white/[0.03] py-1">
               <button
                 onClick={handleLogout}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-[12px] text-[#B76E79]/70 hover:text-[#B76E79] hover:bg-[#B76E79]/[0.04] transition-all"
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-[12px] text-[#C98282]/70 hover:text-[#C98282] hover:bg-[#C98282]/[0.04] transition-all"
               >
                 <LogOut className="h-3.5 w-3.5" />
                 Log out

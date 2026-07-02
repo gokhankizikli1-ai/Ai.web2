@@ -42,8 +42,8 @@ export default function MessageActions({ content, onRegenerate }: MessageActions
       >
         {copied ? (
           <>
-            <Check className="h-3.5 w-3.5 text-[#6F8F7A]" />
-            <span className="text-[#6F8F7A]">Copied</span>
+            <Check className="h-3.5 w-3.5 text-[#86A88B]" />
+            <span className="text-[#86A88B]">Copied</span>
           </>
         ) : (
           <>
@@ -72,7 +72,7 @@ export default function MessageActions({ content, onRegenerate }: MessageActions
         size="sm"
         onClick={handleLike}
         className={`h-7 w-7 p-0 rounded-md transition-all duration-200 ${
-          liked ? 'text-[#6F8F7A] bg-[#6F8F7A]/10' : 'text-[#7F8FA3] hover:text-slate-300 hover:bg-white/[0.06]'
+          liked ? 'text-[#86A88B] bg-[#86A88B]/10' : 'text-[#7F8FA3] hover:text-slate-300 hover:bg-white/[0.06]'
         }`}
       >
         <ThumbsUp className="h-3.5 w-3.5" />
@@ -83,7 +83,7 @@ export default function MessageActions({ content, onRegenerate }: MessageActions
         size="sm"
         onClick={handleDislike}
         className={`h-7 w-7 p-0 rounded-md transition-all duration-200 ${
-          disliked ? 'text-[#B76E79] bg-[#B76E79]/10' : 'text-[#7F8FA3] hover:text-slate-300 hover:bg-white/[0.06]'
+          disliked ? 'text-[#C98282] bg-[#C98282]/10' : 'text-[#7F8FA3] hover:text-slate-300 hover:bg-white/[0.06]'
         }`}
       >
         <ThumbsDown className="h-3.5 w-3.5" />

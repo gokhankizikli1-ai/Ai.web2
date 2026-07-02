@@ -83,8 +83,8 @@ export default function ProjectMemoryPanel({
             transition={{ delay: 0.1 + i * 0.05 }}
             className="rounded-lg p-2.5"
             style={{
-              background: 'rgba(255,255,255,0.02)',
-              border: '1px solid rgba(255,255,255,0.04)',
+              background: 'rgba(126,166,191,0.04)',
+              border: '1px solid rgba(126,166,191,0.14)',
             }}
           >
             <stat.icon className={`h-3 w-3 ${stat.color} mb-1`} />
@@ -105,8 +105,8 @@ export default function ProjectMemoryPanel({
         <div className="flex items-center justify-between mb-2">
           <span className="text-[11px] font-semibold text-white/70">Active Agents</span>
           <div className="flex items-center gap-1">
-            <div className="w-1.5 h-1.5 rounded-full bg-[#6F8F7A] animate-pulse" />
-            <span className="text-[10px] text-[#6F8F7A]">{activeAgentCount}/{totalAgentCount}</span>
+            <div className="w-1.5 h-1.5 rounded-full bg-[#86A88B] animate-pulse" />
+            <span className="text-[10px] text-[#86A88B]">{activeAgentCount}/{totalAgentCount}</span>
           </div>
         </div>
         <div className="h-1.5 rounded-full bg-white/[0.04] overflow-hidden">
@@ -119,20 +119,20 @@ export default function ProjectMemoryPanel({
 
       {/* Task Summary */}
       <div className="flex items-center gap-2">
-        <div className="flex-1 rounded-lg p-2 text-center" style={{ background: 'rgba(111,143,122,0.06)', border: '1px solid rgba(111,143,122,0.1)' }}>
-          <CheckCircle2 className="h-3 w-3 text-[#6F8F7A] mx-auto mb-0.5" />
-          <p className="text-[12px] font-semibold text-[#6F8F7A]">{completedTasks}</p>
-          <p className="text-[8px] text-[#6F8F7A]/50">Done</p>
+        <div className="flex-1 rounded-lg p-2 text-center" style={{ background: 'rgba(134, 168, 139,0.06)', border: '1px solid rgba(134, 168, 139,0.1)' }}>
+          <CheckCircle2 className="h-3 w-3 text-[#86A88B] mx-auto mb-0.5" />
+          <p className="text-[12px] font-semibold text-[#86A88B]">{completedTasks}</p>
+          <p className="text-[8px] text-[#86A88B]/50">Done</p>
         </div>
         <div className="flex-1 rounded-lg p-2 text-center" style={{ background: 'rgba(126, 166, 191,0.06)', border: '1px solid rgba(126, 166, 191,0.1)' }}>
           <Clock className="h-3 w-3 text-[#7EA6BF] mx-auto mb-0.5" />
           <p className="text-[12px] font-semibold text-[#7EA6BF]">{inProgressTasks}</p>
           <p className="text-[8px] text-[#7EA6BF]/50">Active</p>
         </div>
-        <div className="flex-1 rounded-lg p-2 text-center" style={{ background: 'rgba(166,138,91,0.06)', border: '1px solid rgba(166,138,91,0.1)' }}>
-          <AlertTriangle className="h-3 w-3 text-[#A68A5B] mx-auto mb-0.5" />
-          <p className="text-[12px] font-semibold text-[#A68A5B]">{tasks.filter(t => t.priority === 'critical').length}</p>
-          <p className="text-[8px] text-[#A68A5B]/50">Critical</p>
+        <div className="flex-1 rounded-lg p-2 text-center" style={{ background: 'rgba(194, 161, 90,0.06)', border: '1px solid rgba(194, 161, 90,0.1)' }}>
+          <AlertTriangle className="h-3 w-3 text-[#C2A15A] mx-auto mb-0.5" />
+          <p className="text-[12px] font-semibold text-[#C2A15A]">{tasks.filter(t => t.priority === 'critical').length}</p>
+          <p className="text-[8px] text-[#C2A15A]/50">Critical</p>
         </div>
       </div>
 

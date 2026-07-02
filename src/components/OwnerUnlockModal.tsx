@@ -232,19 +232,19 @@ export default function OwnerUnlockModal({ onClose }: OwnerUnlockModalProps) {
         {/* Success banner — replaces the body for a clear "DONE" state */}
         {result.kind === 'ok' ? (
           <div className="p-6 flex flex-col items-center text-center">
-            <div className="h-12 w-12 rounded-full bg-[#6F8F7A]/[0.1] border border-[#6F8F7A]/30 flex items-center justify-center mb-3">
-              <ShieldCheck className="h-6 w-6 text-[#6F8F7A]" />
+            <div className="h-12 w-12 rounded-full bg-[#86A88B]/[0.1] border border-[#86A88B]/30 flex items-center justify-center mb-3">
+              <ShieldCheck className="h-6 w-6 text-[#86A88B]" />
             </div>
-            <div className="text-[14px] font-semibold text-[#6F8F7A] mb-1">
+            <div className="text-[14px] font-semibold text-[#86A88B] mb-1">
               Owner Session Active
             </div>
-            <div className="text-[11px] text-[#6F8F7A]/70 mb-4">
+            <div className="text-[11px] text-[#86A88B]/70 mb-4">
               {result.capabilitiesCount} owner capabilities granted. The
               chip in the top bar will switch to amber within a moment.
             </div>
             <button
               onClick={closeAndRefresh}
-              className="px-3 py-1.5 rounded-md bg-[#6F8F7A]/[0.12] border border-[#6F8F7A]/30 text-[11px] text-[#6F8F7A] hover:bg-[#6F8F7A]/[0.18] transition-all"
+              className="px-3 py-1.5 rounded-md bg-[#86A88B]/[0.12] border border-[#86A88B]/30 text-[11px] text-[#86A88B] hover:bg-[#86A88B]/[0.18] transition-all"
             >
               Done
             </button>
@@ -279,17 +279,17 @@ export default function OwnerUnlockModal({ onClose }: OwnerUnlockModalProps) {
 
             {/* Result panels */}
             {result.kind === 'denied' && (
-              <div className="rounded-lg border border-[#B76E79]/25 bg-[#B76E79]/[0.06] px-3 py-2 flex items-start gap-2">
-                <AlertTriangle className="h-3.5 w-3.5 text-[#B76E79] mt-0.5 shrink-0" />
+              <div className="rounded-lg border border-[#C98282]/25 bg-[#C98282]/[0.06] px-3 py-2 flex items-start gap-2">
+                <AlertTriangle className="h-3.5 w-3.5 text-[#C98282] mt-0.5 shrink-0" />
                 <div className="min-w-0">
-                  <div className="text-[11px] font-medium text-[#B76E79]">
+                  <div className="text-[11px] font-medium text-[#C98282]">
                     Invalid owner token
                   </div>
-                  <div className="text-[10px] text-[#B76E79]/80 break-words mt-0.5">
+                  <div className="text-[10px] text-[#C98282]/80 break-words mt-0.5">
                     {result.reason}
                   </div>
                   {result.signInRequired && (
-                    <div className="mt-2 flex items-center gap-1.5 text-[10px] text-[#A68A5B]/80">
+                    <div className="mt-2 flex items-center gap-1.5 text-[10px] text-[#C2A15A]/80">
                       <LogIn className="h-3 w-3" />
                       Owner Mode normally works token-only.
                       If your deployment requires auth-first, sign in then retry.
@@ -299,13 +299,13 @@ export default function OwnerUnlockModal({ onClose }: OwnerUnlockModalProps) {
               </div>
             )}
             {result.kind === 'network-error' && (
-              <div className="rounded-lg border border-[#A68A5B]/25 bg-[#A68A5B]/[0.06] px-3 py-2 flex items-start gap-2">
-                <AlertTriangle className="h-3.5 w-3.5 text-[#A68A5B] mt-0.5 shrink-0" />
+              <div className="rounded-lg border border-[#C2A15A]/25 bg-[#C2A15A]/[0.06] px-3 py-2 flex items-start gap-2">
+                <AlertTriangle className="h-3.5 w-3.5 text-[#C2A15A] mt-0.5 shrink-0" />
                 <div className="min-w-0">
-                  <div className="text-[11px] font-medium text-[#A68A5B]">
+                  <div className="text-[11px] font-medium text-[#C2A15A]">
                     Network error
                   </div>
-                  <div className="text-[10px] text-[#A68A5B]/80 break-words mt-0.5">
+                  <div className="text-[10px] text-[#C2A15A]/80 break-words mt-0.5">
                     Could not reach <code className="px-1 rounded bg-white/[0.04]">{API_BASE}</code> — {result.message}.
                     Check the backend is deployed and CORS allows
                     <code className="mx-1 px-1 rounded bg-white/[0.04]">X-Korvix-Owner-Token</code>.
@@ -319,7 +319,7 @@ export default function OwnerUnlockModal({ onClose }: OwnerUnlockModalProps) {
               <button
                 onClick={forget}
                 disabled={result.kind === 'checking'}
-                className="text-[10px] text-[#7F8FA3] hover:text-[#B76E79] flex items-center gap-1 transition-colors disabled:opacity-40"
+                className="text-[10px] text-[#7F8FA3] hover:text-[#C98282] flex items-center gap-1 transition-colors disabled:opacity-40"
                 title="Remove the stored token from this browser"
               >
                 <Trash2 className="h-3 w-3" />

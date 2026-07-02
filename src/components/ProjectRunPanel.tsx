@@ -38,9 +38,9 @@ function lastRunKey(projectId: string): string {
 // ── Deliverable status presentation ───────────────────────────────────
 function deliverableIcon(status: DeliverableStatus) {
   switch (status) {
-    case 'completed':   return <CheckCircle2 className="h-3 w-3 text-[#6F8F7A]/80" />;
+    case 'completed':   return <CheckCircle2 className="h-3 w-3 text-[#86A88B]/80" />;
     case 'in_progress': return <Loader2 className="h-3 w-3 text-[#7EA6BF]/80 animate-spin" />;
-    case 'failed':      return <XCircle className="h-3 w-3 text-[#B76E79]/70" />;
+    case 'failed':      return <XCircle className="h-3 w-3 text-[#C98282]/70" />;
     case 'skipped':     return <MinusCircle className="h-3 w-3 text-white/25" />;
     default:            return <Circle className="h-3 w-3 text-white/25" />;
   }
@@ -182,7 +182,7 @@ export default function ProjectRunPanel({ projectId }: { projectId: string }) {
           {starting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
           {starting ? 'Starting…' : 'Start project run'}
         </button>
-        {startError && <p className="text-[9px] text-[#B76E79]/70 mt-1.5">{startError}</p>}
+        {startError && <p className="text-[9px] text-[#C98282]/70 mt-1.5">{startError}</p>}
       </Card>
     );
   }
@@ -270,7 +270,7 @@ export default function ProjectRunPanel({ projectId }: { projectId: string }) {
       {/* Controls */}
       <div className="flex items-center gap-2 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
         {running ? (
-          <button onClick={live.cancel} className="flex items-center gap-1 text-[10px] text-white/40 hover:text-[#B76E79] transition-colors">
+          <button onClick={live.cancel} className="flex items-center gap-1 text-[10px] text-white/40 hover:text-[#C98282] transition-colors">
             <X className="h-3 w-3" /> Cancel
           </button>
         ) : (

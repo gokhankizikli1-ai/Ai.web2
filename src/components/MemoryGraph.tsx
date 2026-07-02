@@ -27,8 +27,8 @@ const NODES: MemoryNode[] = [
 ];
 
 const COLORS: Record<string, { bg: string; border: string; line: string; glow: string }> = {
-  core:   { bg: 'rgba(34,211,238,0.12)', border: 'rgba(34,211,238,0.35)', line: 'rgba(34,211,238,0.22)', glow: 'rgba(34,211,238,0.15)' },
-  warm:   { bg: 'rgba(251,191,36,0.10)', border: 'rgba(251,191,36,0.28)', line: 'rgba(251,191,36,0.18)', glow: 'rgba(251,191,36,0.12)' },
+  core:   { bg: 'rgba(126, 166, 191,0.12)', border: 'rgba(126, 166, 191,0.35)', line: 'rgba(126, 166, 191,0.22)', glow: 'rgba(126, 166, 191,0.15)' },
+  warm:   { bg: 'rgba(126, 166, 191,0.10)', border: 'rgba(126, 166, 191,0.28)', line: 'rgba(126, 166, 191,0.18)', glow: 'rgba(126, 166, 191,0.12)' },
   cool:   { bg: 'rgba(167,139,250,0.10)', border: 'rgba(167,139,250,0.28)', line: 'rgba(167,139,250,0.18)', glow: 'rgba(167,139,250,0.12)' },
   soft:   { bg: 'rgba(52,211,153,0.10)', border: 'rgba(52,211,153,0.28)', line: 'rgba(52,211,153,0.18)', glow: 'rgba(52,211,153,0.12)' },
 };
@@ -48,8 +48,8 @@ function EnergyParticles({ active }: { active: boolean }) {
           key={i}
           className="absolute w-1 h-1 rounded-full pointer-events-none"
           style={{
-            background: 'rgba(34,211,238,0.35)',
-            boxShadow: '0 0 4px rgba(34,211,238,0.3)',
+            background: 'rgba(126, 166, 191,0.35)',
+            boxShadow: '0 0 4px rgba(126, 166, 191,0.3)',
             left: '50%',
             top: '50%',
             animation: `memoryEnergy 3s ease-in-out ${i * 1}s infinite`,
@@ -112,7 +112,7 @@ export default function MemoryGraph() {
           transform: 'translate(-50%, -50%)',
           width: `${120 + breathPhase * 20}px`,
           height: `${120 + breathPhase * 20}px`,
-          background: `radial-gradient(circle, rgba(34,211,238,${0.04 + breathPhase * 0.03}) 0%, rgba(34,211,238,0.015) 45%, transparent 70%)`,
+          background: `radial-gradient(circle, rgba(126, 166, 191,${0.04 + breathPhase * 0.03}) 0%, rgba(126, 166, 191,0.015) 45%, transparent 70%)`,
           transition: 'width 0.5s ease-out, height 0.5s ease-out',
           zIndex: 0,
         }}
@@ -125,7 +125,7 @@ export default function MemoryGraph() {
           left: `${NODES[0].x}%`, top: `${NODES[0].y}%`,
           width: '40px', height: '40px',
           borderRadius: '50%',
-          border: '1px solid rgba(34,211,238,0.12)',
+          border: '1px solid rgba(126, 166, 191,0.12)',
           animation: 'memoryPulse 3s ease-in-out infinite',
           zIndex: 1,
         }}
@@ -136,7 +136,7 @@ export default function MemoryGraph() {
           left: `${NODES[0].x}%`, top: `${NODES[0].y}%`,
           width: '40px', height: '40px',
           borderRadius: '50%',
-          border: '1px solid rgba(34,211,238,0.08)',
+          border: '1px solid rgba(126, 166, 191,0.08)',
           animation: 'memoryPulse 3s ease-in-out 1.5s infinite',
           zIndex: 1,
         }}
@@ -251,10 +251,10 @@ export default function MemoryGraph() {
                   width: isCore ? 16 : 13,
                   height: isCore ? 16 : 13,
                   color: isHovered
-                    ? (isCore ? 'rgba(34,211,238,0.9)' : node.colorKey === 'warm' ? 'rgba(251,191,36,0.85)' : node.colorKey === 'cool' ? 'rgba(167,139,250,0.85)' : 'rgba(52,211,153,0.85)')
+                    ? (isCore ? 'rgba(126, 166, 191,0.9)' : node.colorKey === 'warm' ? 'rgba(126, 166, 191,0.85)' : node.colorKey === 'cool' ? 'rgba(167,139,250,0.85)' : 'rgba(52,211,153,0.85)')
                     : isConnected
-                    ? (isCore ? 'rgba(34,211,238,0.6)' : node.colorKey === 'warm' ? 'rgba(251,191,36,0.55)' : node.colorKey === 'cool' ? 'rgba(167,139,250,0.55)' : 'rgba(52,211,153,0.55)')
-                    : (isCore ? 'rgba(34,211,238,0.45)' : 'rgba(169, 183, 198,0.35)'),
+                    ? (isCore ? 'rgba(126, 166, 191,0.6)' : node.colorKey === 'warm' ? 'rgba(126, 166, 191,0.55)' : node.colorKey === 'cool' ? 'rgba(167,139,250,0.55)' : 'rgba(52,211,153,0.55)')
+                    : (isCore ? 'rgba(126, 166, 191,0.45)' : 'rgba(169, 183, 198,0.35)'),
                   transition: 'color 0.2s ease',
                 }}
               />
@@ -295,8 +295,8 @@ export default function MemoryGraph() {
       {/* Legend */}
       <div className="absolute bottom-2 left-2.5 flex items-center gap-2.5 z-[4]">
         {[
-          { label: 'You', color: 'rgba(34,211,238,0.5)' },
-          { label: 'Goals', color: 'rgba(251,191,36,0.4)' },
+          { label: 'You', color: 'rgba(126, 166, 191,0.5)' },
+          { label: 'Goals', color: 'rgba(126, 166, 191,0.4)' },
           { label: 'Style', color: 'rgba(167,139,250,0.4)' },
           { label: 'Traits', color: 'rgba(52,211,153,0.4)' },
         ].map((item) => (

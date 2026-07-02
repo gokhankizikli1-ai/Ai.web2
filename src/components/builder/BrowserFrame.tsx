@@ -17,7 +17,7 @@ const VIEWPORT_WIDTH: Record<Viewport, string> = {
 
 const ACCENT_HEX: Record<string, string> = {
   violet: '#a78bfa',
-  indigo: '#818cf8',
+  indigo: '#9BBBD0',
 };
 
 interface BrowserFrameProps {

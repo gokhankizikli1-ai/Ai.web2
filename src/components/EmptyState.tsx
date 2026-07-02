@@ -109,8 +109,8 @@ export default function EmptyState({ type }: EmptyStateProps) {
         transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
         className="mb-6"
       >
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white/[0.02] border border-white/[0.04]">
-          <Rocket className="w-7 h-7 text-[#A9B7C6]" />
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#7EA6BF]/[0.06] border border-[#7EA6BF]/25">
+          <Rocket className="w-7 h-7 text-[#9BBBD0]" />
         </div>
       </motion.div>
 
@@ -126,14 +126,14 @@ export default function EmptyState({ type }: EmptyStateProps) {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 + i * 0.08 }}
-            whileHover={{ y: -2, borderColor: 'rgba(255,255,255,0.08)' }}
+            whileHover={{ y: -2, borderColor: 'rgba(126,166,191,0.40)' }}
             whileTap={{ scale: 0.97 }}
             onClick={() => navigate(action.path)}
-            className="flex flex-col items-center gap-2.5 p-4 rounded-xl border border-white/[0.03] bg-white/[0.01] hover:bg-white/[0.02] transition-colors text-center"
+            className="flex flex-col items-center gap-2.5 p-4 rounded-xl border border-[#7EA6BF]/25 bg-white/[0.01] hover:bg-[#7EA6BF]/[0.06] transition-colors text-center"
           >
-            <action.icon className="w-5 h-5 text-[#A9B7C6]" />
-            <span className="text-[12px] font-medium text-slate-300">{action.label}</span>
-            <ArrowRight className="w-3 h-3 text-[#7F8FA3]" />
+            <action.icon className="w-5 h-5 text-[#7EA6BF]" />
+            <span className="text-[12px] font-medium text-[#A9B7C6]">{action.label}</span>
+            <ArrowRight className="w-3 h-3 text-[#7EA6BF]/70" />
           </motion.button>
         ))}
       </div>

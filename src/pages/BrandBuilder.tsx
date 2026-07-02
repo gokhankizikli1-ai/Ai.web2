@@ -103,7 +103,7 @@ export default function BrandBuilder() {
                       className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.02] border border-white/[0.03] hover:border-white/[0.08] transition-all group"
                     >
                       <span className="text-[13px] font-medium text-white">{name}</span>
-                      {copied === `name-${name}` ? <CheckCircle2 className="w-3 h-3 text-[#6F8F7A]" /> : <Copy className="w-3 h-3 text-[#7F8FA3] group-hover:text-[#A9B7C6]" />}
+                      {copied === `name-${name}` ? <CheckCircle2 className="w-3 h-3 text-[#86A88B]" /> : <Copy className="w-3 h-3 text-[#7F8FA3] group-hover:text-[#A9B7C6]" />}
                     </button>
                   ))}
                 </div>
@@ -119,7 +119,7 @@ export default function BrandBuilder() {
                     <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02]">
                       <span className="text-[12px] text-[#A9B7C6] italic">"{slogan}"</span>
                       <button onClick={() => copy(slogan, `slogan-${i}`)}>
-                        {copied === `slogan-${i}` ? <CheckCircle2 className="w-3.5 h-3.5 text-[#6F8F7A]" /> : <Copy className="w-3.5 h-3.5 text-[#7F8FA3] hover:text-[#A9B7C6]" />}
+                        {copied === `slogan-${i}` ? <CheckCircle2 className="w-3.5 h-3.5 text-[#86A88B]" /> : <Copy className="w-3.5 h-3.5 text-[#7F8FA3] hover:text-[#A9B7C6]" />}
                       </button>
                     </div>
                   ))}

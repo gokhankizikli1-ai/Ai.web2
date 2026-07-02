@@ -100,7 +100,7 @@ export default function ExportChat({ open, onClose, session }: ExportChatProps) 
             onClick={handleCopyMarkdown}
             className="w-full justify-start h-10 gap-3 text-[13px] text-slate-300 hover:text-white hover:bg-white/[0.05] border border-white/[0.04]"
           >
-            {copied ? <Check className="h-4 w-4 text-[#6F8F7A]" /> : <Copy className="h-4 w-4" />}
+            {copied ? <Check className="h-4 w-4 text-[#86A88B]" /> : <Copy className="h-4 w-4" />}
             {copied ? 'Copied Markdown' : 'Copy as Markdown'}
           </Button>
 

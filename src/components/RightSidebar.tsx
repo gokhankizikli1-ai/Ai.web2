@@ -147,7 +147,7 @@ export default function RightSidebar({
             ))
           )}
           <div className="flex items-center gap-1.5 pt-1">
-            <Sparkles className="h-3 w-3 text-[#7F8FA3]" />
+            <Sparkles className="h-3 w-3 text-[#7EA6BF]/60" />
             <span className="text-[10px] text-[#7F8FA3]">Auto-detection enabled</span>
           </div>
         </div>
@@ -164,7 +164,7 @@ export default function RightSidebar({
           ) : (
             memoryRefs.map((ref, i) => (
               <div key={i} className="flex items-start gap-2 text-[11px] text-[#A9B7C6]">
-                <Hash className="h-3 w-3 text-[#7F8FA3] mt-0.5 shrink-0" />
+                <Hash className="h-3 w-3 text-[#7EA6BF]/60 mt-0.5 shrink-0" />
                 <span className="truncate">{ref}</span>
               </div>
             ))

@@ -84,9 +84,9 @@ function ScoreBar({ label, value, color }: { label: string; value: number; color
 
 function VerdictBadge({ verdict }: { verdict: 'Test' | 'Watch' | 'Avoid' }) {
   const config = {
-    Test:   { bg: 'bg-[#6F8F7A]/[0.08]', text: 'text-[#6F8F7A]', border: 'border-[#6F8F7A]/15', dot: 'bg-[#6F8F7A]' },
-    Watch:  { bg: 'bg-[#A68A5B]/[0.08]', text: 'text-[#A68A5B]', border: 'border-[#A68A5B]/15', dot: 'bg-[#A68A5B]' },
-    Avoid:  { bg: 'bg-[#B76E79]/[0.08]', text: 'text-[#B76E79]', border: 'border-[#B76E79]/15', dot: 'bg-[#B76E79]' },
+    Test:   { bg: 'bg-[#86A88B]/[0.08]', text: 'text-[#86A88B]', border: 'border-[#86A88B]/15', dot: 'bg-[#86A88B]' },
+    Watch:  { bg: 'bg-[#C2A15A]/[0.08]', text: 'text-[#C2A15A]', border: 'border-[#C2A15A]/15', dot: 'bg-[#C2A15A]' },
+    Avoid:  { bg: 'bg-[#C98282]/[0.08]', text: 'text-[#C98282]', border: 'border-[#C98282]/15', dot: 'bg-[#C98282]' },
   };
   const c = config[verdict];
   return (
@@ -169,8 +169,8 @@ function Dashboard({ onTool }: { onTool: (t: ToolView) => void }) {
         {[
           { label: 'Products Researched', value: '12', icon: Package, color: 'from-[#9CBBD1]/20 to-[#9CBBD1]/20' },
           { label: 'Hooks Generated', value: '48', icon: Sparkles, color: 'from-[#9CBBD1]/20 to-[#9CBBD1]/20' },
-          { label: 'Ad Sets Created', value: '6', icon: Megaphone, color: 'from-[#A68A5B]/20 to-[#A68A5B]/20' },
-          { label: 'Store Health', value: '--', icon: BarChart3, color: 'from-[#6F8F7A]/20 to-[#9CBBD1]/20' },
+          { label: 'Ad Sets Created', value: '6', icon: Megaphone, color: 'from-[#C2A15A]/20 to-[#C2A15A]/20' },
+          { label: 'Store Health', value: '--', icon: BarChart3, color: 'from-[#86A88B]/20 to-[#9CBBD1]/20' },
         ].map((s) => (
           <div key={s.label} className="p-3 rounded-xl border border-white/[0.03] bg-white/[0.01]">
             <div className="flex items-center gap-2 mb-1.5">
@@ -190,11 +190,11 @@ function Dashboard({ onTool }: { onTool: (t: ToolView) => void }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           <ToolCard icon={Search} title="Product Research" desc="Find winning products with AI-powered trend analysis, saturation scores, and margin estimates." color="bg-gradient-to-br from-[#9CBBD1] to-[#8FB4CC]" onClick={() => onTool('product-research')} />
           <ToolCard icon={Layout} title="AI Store Builder" desc="Generate complete Shopify store sections — hero, product grid, reviews, FAQ, and trust badges." color="bg-gradient-to-br from-[#9CBBD1] to-[#8FB4CC]" onClick={() => onTool('store-builder')} />
-          <ToolCard icon={ShoppingCart} title="Shopify Connect" desc="Connect your store, sync products, and manage everything from one dashboard." color="bg-gradient-to-br from-[#6F8F7A] to-[#8FB4CC]" onClick={() => onTool('shopify')} badge="Coming soon" />
-          <ToolCard icon={Sparkles} title="TikTok Hooks" desc="Generate viral hooks, UGC scripts, and short-form video structures for any product." color="bg-gradient-to-br from-[#9CBBD1] to-[#B76E79]" onClick={() => onTool('tiktok')} />
-          <ToolCard icon={Megaphone} title="Meta Ads Builder" desc="Create high-converting Facebook & Instagram ads with AI-generated copy and targeting." color="bg-gradient-to-br from-[#A68A5B] to-[#A68A5B]" onClick={() => onTool('meta-ads')} />
+          <ToolCard icon={ShoppingCart} title="Shopify Connect" desc="Connect your store, sync products, and manage everything from one dashboard." color="bg-gradient-to-br from-[#86A88B] to-[#8FB4CC]" onClick={() => onTool('shopify')} badge="Coming soon" />
+          <ToolCard icon={Sparkles} title="TikTok Hooks" desc="Generate viral hooks, UGC scripts, and short-form video structures for any product." color="bg-gradient-to-br from-[#9CBBD1] to-[#C98282]" onClick={() => onTool('tiktok')} />
+          <ToolCard icon={Megaphone} title="Meta Ads Builder" desc="Create high-converting Facebook & Instagram ads with AI-generated copy and targeting." color="bg-gradient-to-br from-[#C2A15A] to-[#C2A15A]" onClick={() => onTool('meta-ads')} />
           <ToolCard icon={DollarSign} title="Pricing Optimizer" desc="Calculate optimal pricing, margins, break-even ROAS, and upsell suggestions." color="bg-gradient-to-br from-[#9CBBD1] to-[#8FB4CC]" onClick={() => onTool('pricing')} />
-          <ToolCard icon={BarChart3} title="Store Analytics" desc="Track revenue, orders, conversion rate, AOV, ROAS, and CPA." color="bg-gradient-to-br from-[#6F8F7A] to-[#6F8F7A]" onClick={() => onTool('analytics')} badge="Connect Shopify" />
+          <ToolCard icon={BarChart3} title="Store Analytics" desc="Track revenue, orders, conversion rate, AOV, ROAS, and CPA." color="bg-gradient-to-br from-[#86A88B] to-[#86A88B]" onClick={() => onTool('analytics')} badge="Connect Shopify" />
           <ToolCard icon={Target} title="Product Page Analyzer" desc="Analyze your product pages for conversion optimization and get AI recommendations." color="bg-gradient-to-br from-[#9CBBD1] to-[#8FB4CC]" onClick={() => onTool('product-research')} />
         </div>
       </div>
@@ -206,7 +206,7 @@ function Dashboard({ onTool }: { onTool: (t: ToolView) => void }) {
           {[
             { icon: Search, name: 'Product Research Agent', desc: 'Finds trending products with winning potential', color: 'from-[#9CBBD1] to-[#9CBBD1]', status: 'active' },
             { icon: Layout, name: 'Store Builder Agent', desc: 'Creates optimized store pages and sections', color: 'from-[#9CBBD1] to-[#9CBBD1]', status: 'active' },
-            { icon: Sparkles, name: 'Ads Creator Agent', desc: 'Generates TikTok hooks and Meta ad campaigns', color: 'from-[#9CBBD1] to-[#B76E79]', status: 'standby' },
+            { icon: Sparkles, name: 'Ads Creator Agent', desc: 'Generates TikTok hooks and Meta ad campaigns', color: 'from-[#9CBBD1] to-[#C98282]', status: 'standby' },
             { icon: DollarSign, name: 'Pricing Agent', desc: 'Optimizes margins, pricing, and upsell strategy', color: 'from-[#9CBBD1] to-[#9CBBD1]', status: 'standby' },
           ].map((agent, i) => (
             <div key={agent.name} className="flex items-center gap-3">
@@ -216,8 +216,8 @@ function Dashboard({ onTool }: { onTool: (t: ToolView) => void }) {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-[12px] font-medium text-white/80">{agent.name}</span>
-                  <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-medium ${agent.status === 'active' ? 'bg-[#6F8F7A]/[0.08] text-[#6F8F7A]' : 'bg-slate-500/[0.06] text-[#A9B7C6]'}`}>
-                    {agent.status === 'active' && <span className="w-1 h-1 rounded-full bg-[#6F8F7A]" />}
+                  <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-medium ${agent.status === 'active' ? 'bg-[#86A88B]/[0.08] text-[#86A88B]' : 'bg-slate-500/[0.06] text-[#A9B7C6]'}`}>
+                    {agent.status === 'active' && <span className="w-1 h-1 rounded-full bg-[#86A88B]" />}
                     {agent.status}
                   </span>
                 </div>
@@ -293,8 +293,8 @@ function ProductResearch({ onBack }: { onBack: () => void }) {
                 </div>
                 <div className="text-right">
                   <div className="flex items-center gap-1">
-                    <TrendingUp className="h-3 w-3 text-[#6F8F7A]/60" />
-                    <span className="text-[14px] font-semibold text-[#6F8F7A]">{product.trendScore}</span>
+                    <TrendingUp className="h-3 w-3 text-[#86A88B]/60" />
+                    <span className="text-[14px] font-semibold text-[#86A88B]">{product.trendScore}</span>
                   </div>
                   <p className="text-[8px] text-[#7F8FA3]">Trend Score</p>
                 </div>
@@ -304,10 +304,10 @@ function ProductResearch({ onBack }: { onBack: () => void }) {
 
               {/* Score Bars */}
               <div className="space-y-1.5 mb-2.5">
-                <ScoreBar label="Saturation" value={product.saturation} color="bg-[#A68A5B]" />
-                <ScoreBar label="Est. Margin" value={product.margin} color="bg-[#6F8F7A]" />
+                <ScoreBar label="Saturation" value={product.saturation} color="bg-[#C2A15A]" />
+                <ScoreBar label="Est. Margin" value={product.margin} color="bg-[#86A88B]" />
                 <ScoreBar label="Viral Pot." value={product.viral} color="bg-[#9CBBD1]" />
-                <ScoreBar label="Competitor" value={product.competitor} color="bg-[#B76E79]" />
+                <ScoreBar label="Competitor" value={product.competitor} color="bg-[#C98282]" />
                 <ScoreBar label="Audience" value={product.audience} color="bg-[#9CBBD1]" />
               </div>
 
@@ -317,9 +317,9 @@ function ProductResearch({ onBack }: { onBack: () => void }) {
                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
                     <div className="pt-2.5 border-t border-white/[0.03] space-y-2">
                       <div className="grid grid-cols-3 gap-2">
-                        <div className="p-2 rounded-lg bg-[#6F8F7A]/[0.04] border border-[#6F8F7A]/10 text-center">
-                          <p className="text-[9px] text-[#6F8F7A]/60">Est. Margin</p>
-                          <p className="text-[13px] font-semibold text-[#6F8F7A]">{product.margin}%</p>
+                        <div className="p-2 rounded-lg bg-[#86A88B]/[0.04] border border-[#86A88B]/10 text-center">
+                          <p className="text-[9px] text-[#86A88B]/60">Est. Margin</p>
+                          <p className="text-[13px] font-semibold text-[#86A88B]">{product.margin}%</p>
                         </div>
                         <div className="p-2 rounded-lg bg-[#8FB4CC]/[0.04] border border-[#8FB4CC]/10 text-center">
                           <p className="text-[9px] text-[#9CBBD1]/60">Sell Price</p>
@@ -331,7 +331,7 @@ function ProductResearch({ onBack }: { onBack: () => void }) {
                         </div>
                       </div>
                       <p className="text-[10px] text-[#7F8FA3]">
-                        <Zap className="h-2.5 w-2.5 inline mr-1 text-[#A68A5B]/50" />
+                        <Zap className="h-2.5 w-2.5 inline mr-1 text-[#C2A15A]/50" />
                         AI Recommendation: {product.verdict === 'Test' ? 'Strong potential. Low saturation with high margin. Consider testing with a small ad budget.' : product.verdict === 'Watch' ? 'Moderate potential. High trend but watch saturation levels.' : 'High competition and low margins. Consider a different product or niche.'}
                       </p>
                     </div>
@@ -466,7 +466,7 @@ function TikTokHooks({ onBack }: { onBack: () => void }) {
             {/* CTAs */}
             <div className="p-3.5 rounded-xl border border-white/[0.04] bg-white/[0.015]">
               <h4 className="text-[11px] font-semibold text-white/70 mb-2 flex items-center gap-1.5">
-                <Zap className="h-3 w-3 text-[#A68A5B]" /> CTA Ideas
+                <Zap className="h-3 w-3 text-[#C2A15A]" /> CTA Ideas
               </h4>
               {output.ctas.map((c, i) => (
                 <p key={i} className="text-[10px] text-[#A9B7C6] py-0.5">{i + 1}. {c}</p>
@@ -476,7 +476,7 @@ function TikTokHooks({ onBack }: { onBack: () => void }) {
             {/* Structure */}
             <div className="p-3.5 rounded-xl border border-white/[0.04] bg-white/[0.015]">
               <h4 className="text-[11px] font-semibold text-white/70 mb-2 flex items-center gap-1.5">
-                <Share2 className="h-3 w-3 text-[#6F8F7A]" /> Video Structure
+                <Share2 className="h-3 w-3 text-[#86A88B]" /> Video Structure
               </h4>
               {output.structure.map((s, i) => (
                 <p key={i} className="text-[10px] text-[#A9B7C6] py-0.5">{s}</p>
@@ -554,7 +554,7 @@ function MetaAdsBuilder({ onBack }: { onBack: () => void }) {
           onClick={generate}
           disabled={!product.trim() || generating}
           className="w-full h-9 rounded-xl text-[12px] font-semibold text-white transition-all disabled:opacity-30 hover:brightness-110"
-          style={{ background: 'linear-gradient(135deg, #A68A5B, #A68A5B)', boxShadow: '0 4px 16px rgba(166,138,91,0.15)' }}>
+          style={{ background: 'linear-gradient(135deg, #C2A15A, #C2A15A)', boxShadow: '0 4px 16px rgba(194, 161, 90,0.15)' }}>
           {generating ? <RefreshCw className="h-4 w-4 animate-spin mx-auto" /> : <><Megaphone className="h-3.5 w-3.5 inline mr-1.5" />Generate Ad Campaign</>}
         </button>
       </div>
@@ -564,7 +564,7 @@ function MetaAdsBuilder({ onBack }: { onBack: () => void }) {
         {output && (
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-3">
             {[
-              { title: 'Primary Text', items: output.primaryTexts, icon: FileText as React.ElementType, color: 'text-[#A68A5B]', border: 'border-[#A68A5B]/10', bg: 'bg-[#A68A5B]/[0.03]' },
+              { title: 'Primary Text', items: output.primaryTexts, icon: FileText as React.ElementType, color: 'text-[#C2A15A]', border: 'border-[#C2A15A]/10', bg: 'bg-[#C2A15A]/[0.03]' },
               { title: 'Headlines', items: output.headlines, icon: Type as React.ElementType, color: 'text-[#9CBBD1]', border: 'border-[#8FB4CC]/10', bg: 'bg-[#8FB4CC]/[0.03]' },
               { title: 'Descriptions', items: output.descriptions, icon: FileText as React.ElementType, color: 'text-[#9CBBD1]', border: 'border-[#8FB4CC]/10', bg: 'bg-[#8FB4CC]/[0.03]' },
             ].map((section) => (
@@ -585,7 +585,7 @@ function MetaAdsBuilder({ onBack }: { onBack: () => void }) {
             <div className="grid grid-cols-3 gap-2">
               <div className="p-2.5 rounded-lg bg-white/[0.015] border border-white/[0.04]">
                 <p className="text-[9px] text-[#7F8FA3] mb-1">CTA Buttons</p>
-                {output.ctas.map((c, i) => <p key={i} className="text-[10px] text-[#6F8F7A]/80 py-0.5">{c}</p>)}
+                {output.ctas.map((c, i) => <p key={i} className="text-[10px] text-[#86A88B]/80 py-0.5">{c}</p>)}
               </div>
               <div className="p-2.5 rounded-lg bg-white/[0.015] border border-white/[0.04]">
                 <p className="text-[9px] text-[#7F8FA3] mb-1">Audiences</p>
@@ -685,7 +685,7 @@ function StoreBuilder({ onBack }: { onBack: () => void }) {
             {/* Sections */}
             <div className="p-3.5 rounded-xl border border-white/[0.04] bg-white/[0.015]">
               <h4 className="text-[11px] font-semibold text-white/70 mb-2.5 flex items-center gap-1.5">
-                <Layout className="h-3 w-3 text-[#6F8F7A]" /> Store Sections ({sections.length})
+                <Layout className="h-3 w-3 text-[#86A88B]" /> Store Sections ({sections.length})
               </h4>
               <div className="space-y-1.5">
                 {sections.map((s, i) => (
@@ -695,7 +695,7 @@ function StoreBuilder({ onBack }: { onBack: () => void }) {
                       <p className="text-[11px] font-medium text-white/80">{s.name}</p>
                       <p className="text-[9px] text-[#7F8FA3]">{s.desc}</p>
                     </div>
-                    <Check className="h-3 w-3 text-[#6F8F7A]/50 ml-auto shrink-0" />
+                    <Check className="h-3 w-3 text-[#86A88B]/50 ml-auto shrink-0" />
                   </div>
                 ))}
               </div>
@@ -730,8 +730,8 @@ function ShopifyConnect({ onBack }: { onBack: () => void }) {
       <SectionHeader title="Shopify Connect" subtitle="Connect your store to unlock live sync and analytics" />
 
       <div className="flex flex-col items-center text-center py-10">
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#6F8F7A]/[0.06] border border-[#6F8F7A]/15 mb-4">
-          <ShoppingCart className="h-7 w-7 text-[#6F8F7A]/40" />
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#86A88B]/[0.06] border border-[#86A88B]/15 mb-4">
+          <ShoppingCart className="h-7 w-7 text-[#86A88B]/40" />
         </div>
         <h3 className="text-[15px] font-semibold text-white/70 mb-1.5">Not Connected</h3>
         <p className="text-[11px] text-[#7F8FA3] max-w-xs mb-6">Connect your Shopify store to sync products, track analytics, and manage everything from KorvixAI.</p>
@@ -833,17 +833,17 @@ function PricingOptimizer({ onBack }: { onBack: () => void }) {
           <p className="text-[9px] text-[#9CBBD1]/60 mb-1">Suggested Price</p>
           <p className="text-[18px] font-semibold text-[#9CBBD1]">${result.suggested}</p>
         </div>
-        <div className="p-3 rounded-xl border border-[#6F8F7A]/10 bg-[#6F8F7A]/[0.04]">
-          <p className="text-[9px] text-[#6F8F7A]/60 mb-1">Actual Margin</p>
-          <p className="text-[18px] font-semibold text-[#6F8F7A]">{result.margin}%</p>
+        <div className="p-3 rounded-xl border border-[#86A88B]/10 bg-[#86A88B]/[0.04]">
+          <p className="text-[9px] text-[#86A88B]/60 mb-1">Actual Margin</p>
+          <p className="text-[18px] font-semibold text-[#86A88B]">{result.margin}%</p>
         </div>
         <div className="p-3 rounded-xl border border-[#8FB4CC]/10 bg-[#8FB4CC]/[0.04]">
           <p className="text-[9px] text-[#9CBBD1]/60 mb-1">Profit / Order</p>
           <p className="text-[18px] font-semibold text-[#9CBBD1]">${result.profit}</p>
         </div>
-        <div className="p-3 rounded-xl border border-[#A68A5B]/10 bg-[#A68A5B]/[0.04]">
-          <p className="text-[9px] text-[#A68A5B]/60 mb-1">Break-even ROAS</p>
-          <p className="text-[18px] font-semibold text-[#A68A5B]">{result.breakEven}x</p>
+        <div className="p-3 rounded-xl border border-[#C2A15A]/10 bg-[#C2A15A]/[0.04]">
+          <p className="text-[9px] text-[#C2A15A]/60 mb-1">Break-even ROAS</p>
+          <p className="text-[18px] font-semibold text-[#C2A15A]">{result.breakEven}x</p>
         </div>
       </div>
 
@@ -873,8 +873,8 @@ function StoreAnalytics({ onBack }: { onBack: () => void }) {
 
       {/* Locked State */}
       <div className="flex flex-col items-center text-center py-8 mb-4">
-        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#6F8F7A]/[0.06] border border-[#6F8F7A]/15 mb-3">
-          <BarChart3 className="h-6 w-6 text-[#6F8F7A]/40" />
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#86A88B]/[0.06] border border-[#86A88B]/15 mb-3">
+          <BarChart3 className="h-6 w-6 text-[#86A88B]/40" />
         </div>
         <h3 className="text-[14px] font-semibold text-white/70 mb-1">Connect Shopify to unlock</h3>
         <p className="text-[11px] text-[#7F8FA3] max-w-xs">Link your store to see live revenue, orders, conversion rates, and more.</p>

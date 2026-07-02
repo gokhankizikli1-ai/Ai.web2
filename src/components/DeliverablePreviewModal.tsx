@@ -190,7 +190,7 @@ export default function DeliverablePreviewModal({
               </button>
             )}
             <button onClick={copy} title="Copy" className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] text-white/50 hover:text-white/80 transition-colors" style={{ background: 'rgba(255,255,255,0.03)' }}>
-              {copied ? <Check className="h-3 w-3 text-[#6F8F7A]" /> : <Copy className="h-3 w-3" />} {copied ? 'Copied' : 'Copy'}
+              {copied ? <Check className="h-3 w-3 text-[#86A88B]" /> : <Copy className="h-3 w-3" />} {copied ? 'Copied' : 'Copy'}
             </button>
             {isHtml && (
               <button onClick={openInTab} title="Open in new tab" className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] text-white/50 hover:text-white/80 transition-colors" style={{ background: 'rgba(255,255,255,0.03)' }}>

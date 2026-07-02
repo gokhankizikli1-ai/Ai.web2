@@ -7,7 +7,7 @@ import {
 // Backend-observed contribution → user label. "Opened" is the honest
 // floor for anything without a role (old cached reports).
 const ROLE_META: Record<string, { label: string; tone: string }> = {
-  direct: { label: 'Direct complaint', tone: 'text-[#86A08F] border-[#6F8F7A]/40 bg-[#6F8F7A]/[0.12]' },
+  direct: { label: 'Direct complaint', tone: 'text-[#86A08F] border-[#86A88B]/40 bg-[#86A88B]/[0.12]' },
   complaint: { label: 'Extracted complaint', tone: 'text-[#8FB4CC] border-[#7EA6BF]/35 bg-[#7EA6BF]/[0.1]' },
   broad: { label: 'Broad evidence', tone: 'text-[#A9B7C6] border-white/[0.08] bg-white/[0.03]' },
   context: { label: 'Used as citation', tone: 'text-slate-300 border-white/[0.08] bg-white/[0.03]' },

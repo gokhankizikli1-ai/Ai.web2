@@ -173,13 +173,13 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
             {displayName}
           </div>
           <div className="flex items-center gap-1.5 mt-0.5">
-            <div className="w-1 h-1 rounded-full bg-[#6F8F7A]/60" />
+            <div className="w-1 h-1 rounded-full bg-[#86A88B]/60" />
             <span className="text-[10px] text-[#7F8FA3]">
               {isOwner ? 'Owner' : plan.label}
             </span>
           </div>
         </div>
-        <span className="text-[10px] text-[#A68A5B]/60 tabular-nums shrink-0">{remainingCredits}</span>
+        <span className="text-[10px] text-[#C2A15A]/60 tabular-nums shrink-0">{remainingCredits}</span>
       </button>
 
       {/* ═── Dropdown Menu ─══ */}
@@ -314,7 +314,7 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
                   <div className="px-4 py-3 border-b border-white/[0.04]">
                     <div className="flex items-center justify-between mb-1.5">
                       <div className="flex items-center gap-1.5">
-                        <Coins className="w-3.5 h-3.5 text-[#A68A5B]/60" />
+                        <Coins className="w-3.5 h-3.5 text-[#C2A15A]/60" />
                         <span className="text-[11px] text-[#A9B7C6]">Credits</span>
                       </div>
                       <span className="text-[11px] font-medium text-white tabular-nums">
@@ -334,8 +334,8 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
 
                     {/* Free chat badge */}
                     <div className="flex items-center gap-1.5 mb-2">
-                      <div className="w-1 h-1 rounded-full bg-[#6F8F7A]/40" />
-                      <span className="text-[9px] text-[#6F8F7A]/50">Casual chat is free</span>
+                      <div className="w-1 h-1 rounded-full bg-[#86A88B]/40" />
+                      <span className="text-[9px] text-[#86A88B]/50">Casual chat is free</span>
                     </div>
 
                     {/* Action Buttons — stacked for narrow sidebar */}
@@ -348,7 +348,7 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
                       </button>
                       <button
                         onClick={handleUpgrade}
-                        className="w-full h-7 flex items-center justify-center gap-1.5 rounded-lg bg-[#A68A5B]/[0.05] text-[#A68A5B] border border-[#A68A5B]/8 text-[11px] hover:bg-[#A68A5B]/[0.08] transition-all"
+                        className="w-full h-7 flex items-center justify-center gap-1.5 rounded-lg bg-[#C2A15A]/[0.05] text-[#C2A15A] border border-[#C2A15A]/8 text-[11px] hover:bg-[#C2A15A]/[0.08] transition-all"
                       >
                         <Crown className="w-3 h-3" /> Upgrade Plan
                       </button>
@@ -398,11 +398,11 @@ function MenuItem({
       onClick={onClick}
       className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[12px] transition-all ${
         danger
-          ? 'text-[#B76E79]/60 hover:text-[#B76E79] hover:bg-[#B76E79]/[0.04]'
+          ? 'text-[#C98282]/60 hover:text-[#C98282] hover:bg-[#C98282]/[0.04]'
           : 'text-[#7F8FA3] hover:text-slate-300 hover:bg-white/[0.03]'
       }`}
     >
-      <Icon className={`w-3.5 h-3.5 ${danger ? 'text-[#B76E79]/40' : 'text-[#7F8FA3]'}`} />
+      <Icon className={`w-3.5 h-3.5 ${danger ? 'text-[#C98282]/40' : 'text-[#7F8FA3]'}`} />
       <span className="flex-1">{label}</span>
       {hasSubmenu && <ChevronRight className="w-3 h-3 text-[#7F8FA3]" />}
     </button>
