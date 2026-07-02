@@ -10,17 +10,17 @@ const ICONS = {
 };
 
 const STYLES = {
-  success: 'border-[#86A88B]/15 bg-[#86A88B]/[0.04] text-[#86A88B]',
-  warning: 'border-[#C2A15A]/15 bg-[#C2A15A]/[0.04] text-[#C2A15A]',
-  error: 'border-[#C98282]/15 bg-[#C98282]/[0.04] text-[#C98282]',
-  info: 'border-[#7EA6BF]/15 bg-[#7EA6BF]/[0.04] text-[#7EA6BF]',
+  success: 'border-[#4ADE80]/15 bg-[#4ADE80]/[0.04] text-[#4ADE80]',
+  warning: 'border-[#FACC15]/15 bg-[#FACC15]/[0.04] text-[#FACC15]',
+  error: 'border-[#F87171]/15 bg-[#F87171]/[0.04] text-[#F87171]',
+  info: 'border-[#8B5CF6]/15 bg-[#8B5CF6]/[0.04] text-[#8B5CF6]',
 };
 
 const ICON_COLORS = {
-  success: 'text-[#86A88B]',
-  warning: 'text-[#C2A15A]',
-  error: 'text-[#C98282]',
-  info: 'text-[#7EA6BF]',
+  success: 'text-[#4ADE80]',
+  warning: 'text-[#FACC15]',
+  error: 'text-[#F87171]',
+  info: 'text-[#8B5CF6]',
 };
 
 interface ToastNotificationsProps {
@@ -47,7 +47,7 @@ export default function ToastNotifications({ toasts, onRemove }: ToastNotificati
               <span className="text-[12px] text-slate-300 flex-1">{toast.message}</span>
               <button
                 onClick={() => onRemove(toast.id)}
-                className="text-[#7F8FA3] hover:text-[#A9B7C6] transition-colors p-0.5 rounded"
+                className="text-[#858B99] hover:text-[#B6BBC6] transition-colors p-0.5 rounded"
               >
                 <X className="h-3 w-3" />
               </button>

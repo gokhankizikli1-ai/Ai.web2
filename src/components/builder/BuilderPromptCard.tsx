@@ -32,7 +32,7 @@ export default function BuilderPromptCard({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
-          className="flex-1 h-12 px-4 rounded-xl bg-black/20 border border-white/[0.05] text-[14px] text-slate-200 placeholder:text-[#7F8FA3] focus:outline-none transition-all"
+          className="flex-1 h-12 px-4 rounded-xl bg-black/20 border border-white/[0.05] text-[14px] text-slate-200 placeholder:text-[#858B99] focus:outline-none transition-all"
           style={{ borderColor: value ? `${accent}30` : undefined }}
           onKeyDown={(e) => e.key === 'Enter' && onSubmit()}
         />
@@ -56,7 +56,7 @@ export default function BuilderPromptCard({
             <button
               key={ex}
               onClick={() => onExampleSelect?.(ex)}
-              className="px-2.5 py-1 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[11px] text-[#7F8FA3] hover:text-slate-300 hover:border-white/[0.08] transition-all"
+              className="px-2.5 py-1 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[11px] text-[#858B99] hover:text-slate-300 hover:border-white/[0.08] transition-all"
             >
               {ex}
             </button>

@@ -12,16 +12,16 @@ const iconMap: Record<string, React.ElementType> = {
 };
 
 const statusConfig = {
-  active: { label: 'Active', bg: 'bg-[#86A88B]/[0.08]', text: 'text-[#86A88B]', dot: 'bg-[#86A88B]', pulse: true },
-  draft: { label: 'Draft', bg: 'bg-[#C2A15A]/[0.08]', text: 'text-[#C2A15A]', dot: 'bg-[#C2A15A]', pulse: false },
-  archived: { label: 'Archived', bg: 'bg-slate-500/[0.08]', text: 'text-[#A9B7C6]', dot: 'bg-slate-400', pulse: false },
+  active: { label: 'Active', bg: 'bg-[#4ADE80]/[0.08]', text: 'text-[#4ADE80]', dot: 'bg-[#4ADE80]', pulse: true },
+  draft: { label: 'Draft', bg: 'bg-[#FACC15]/[0.08]', text: 'text-[#FACC15]', dot: 'bg-[#FACC15]', pulse: false },
+  archived: { label: 'Archived', bg: 'bg-slate-500/[0.08]', text: 'text-[#B6BBC6]', dot: 'bg-slate-400', pulse: false },
 };
 
 const categoryColor: Record<string, string> = {
-  Ecommerce: 'text-[#7EA6BF]',
-  Trading: 'text-[#7EA6BF]',
-  Startup: 'text-[#7EA6BF]',
-  Development: 'text-[#7EA6BF]',
+  Ecommerce: 'text-[#8B5CF6]',
+  Trading: 'text-[#8B5CF6]',
+  Startup: 'text-[#8B5CF6]',
+  Development: 'text-[#8B5CF6]',
 };
 
 interface ProjectCardProps {
@@ -54,9 +54,9 @@ export default function ProjectCard({ project, index, onDelete }: ProjectCardPro
     >
       {/* Card */}
       <div
-        className="relative rounded-xl overflow-hidden transition-all duration-300 group-hover:border-[#7EA6BF]/30"
+        className="relative rounded-xl overflow-hidden transition-all duration-300 group-hover:border-[#8B5CF6]/30"
         style={{
-          background: 'linear-gradient(180deg, rgba(27,34,48,0.7) 0%, rgba(17, 24, 32,0.8) 100%)',
+          background: 'linear-gradient(180deg, rgba(27,34,48,0.7) 0%, rgba(13, 14, 18,0.8) 100%)',
           border: '1px solid rgba(255,255,255,0.06)',
           boxShadow: '0 4px 16px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.03)',
         }}
@@ -78,7 +78,7 @@ export default function ProjectCard({ project, index, onDelete }: ProjectCardPro
                 <h3 className="text-[13px] font-semibold text-white/90 group-hover:text-white transition-colors">
                   {project.name}
                 </h3>
-                <span className={`text-[10px] font-medium ${categoryColor[project.category] || 'text-[#A9B7C6]'}`}>
+                <span className={`text-[10px] font-medium ${categoryColor[project.category] || 'text-[#B6BBC6]'}`}>
                   {project.category}
                 </span>
               </div>
@@ -114,15 +114,15 @@ export default function ProjectCard({ project, index, onDelete }: ProjectCardPro
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1">
-                <Bot className="h-3 w-3 text-[#7EA6BF]/70" />
+                <Bot className="h-3 w-3 text-[#8B5CF6]/70" />
                 <span className="text-[10px] text-white/40">{activeAgents}/{project.agents.length} agents</span>
               </div>
               <div className="flex items-center gap-1">
-                <Activity className="h-3 w-3 text-[#7EA6BF]/70" />
+                <Activity className="h-3 w-3 text-[#8B5CF6]/70" />
                 <span className="text-[10px] text-white/40">{project.tasks.filter(t => t.status === 'in_progress').length} tasks</span>
               </div>
             </div>
-            <div className="flex items-center gap-1 text-white/20 group-hover:text-[#9BBBD0] transition-colors">
+            <div className="flex items-center gap-1 text-white/20 group-hover:text-[#A78BFA] transition-colors">
               <span className="text-[10px]">Open</span>
               <ChevronRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
             </div>
@@ -157,7 +157,7 @@ export default function ProjectCard({ project, index, onDelete }: ProjectCardPro
             }}
             aria-label={`Delete project ${project.name}`}
             data-testid={`project-delete-${project.id}`}
-            className="absolute top-2 right-2 h-8 w-8 flex items-center justify-center rounded-md text-white/30 opacity-40 group-hover:opacity-100 focus:opacity-100 hover:text-[#C98282] hover:bg-[#C98282]/[0.08] transition-all"
+            className="absolute top-2 right-2 h-8 w-8 flex items-center justify-center rounded-md text-white/30 opacity-40 group-hover:opacity-100 focus:opacity-100 hover:text-[#F87171] hover:bg-[#F87171]/[0.08] transition-all"
           >
             <Trash2 className="h-3.5 w-3.5" />
           </button>

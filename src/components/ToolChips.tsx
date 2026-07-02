@@ -22,11 +22,11 @@ export default function ToolChips({ tools, onRemove }: ToolChipsProps) {
             transition={{ duration: 0.15 }}
             className="flex items-center gap-1.5 rounded-md border border-white/[0.05] bg-white/[0.02] px-2 py-[3px]"
           >
-            <tool.icon className="h-3 w-3 text-[#7F8FA3]" />
-            <span className="text-[11px] text-[#A9B7C6]">{tool.chip}</span>
+            <tool.icon className="h-3 w-3 text-[#858B99]" />
+            <span className="text-[11px] text-[#B6BBC6]">{tool.chip}</span>
             <button
               onClick={() => onRemove(tool)}
-              className="text-[#7F8FA3] hover:text-[#A9B7C6] transition-colors p-0.5 rounded"
+              className="text-[#858B99] hover:text-[#B6BBC6] transition-colors p-0.5 rounded"
             >
               <X className="h-2.5 w-2.5" />
             </button>

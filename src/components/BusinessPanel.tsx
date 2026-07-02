@@ -55,12 +55,12 @@ export default function BusinessPanel() {
       {/* Header */}
       <div className="shrink-0 px-4 pt-3 pb-1.5">
         <div className="flex items-center gap-2">
-          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[#7EA6BF]/[0.08] border border-[#7EA6BF]/20">
-            <Building2 className="h-3 w-3 text-[#8FB4CC]" />
+          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[#8B5CF6]/[0.08] border border-[#8B5CF6]/20">
+            <Building2 className="h-3 w-3 text-[#A78BFA]" />
           </div>
           <div>
             <h2 className="text-[13px] font-semibold text-white">Business Workspace</h2>
-            <p className="text-[10px] text-[#7F8FA3]">Startup market intelligence · e-commerce command center</p>
+            <p className="text-[10px] text-[#858B99]">Startup market intelligence · e-commerce command center</p>
           </div>
         </div>
       </div>
@@ -74,7 +74,7 @@ export default function BusinessPanel() {
             className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all ${
               subTab === t.id
                 ? 'bg-white/[0.06] text-white'
-                : 'text-[#7F8FA3] hover:text-[#A9B7C6] hover:bg-white/[0.015]'
+                : 'text-[#858B99] hover:text-[#B6BBC6] hover:bg-white/[0.015]'
             }`}
           >
             {t.label}
@@ -90,10 +90,10 @@ export default function BusinessPanel() {
                 embedded mode hands "Send to Startup Advisor" off via the
                 in-app korvix-route-to-chat event instead of a navigation. */}
             <div className="flex items-center gap-2 mb-2.5">
-              <Radar className="h-3.5 w-3.5 text-[#8FB4CC]" />
+              <Radar className="h-3.5 w-3.5 text-[#A78BFA]" />
               <div>
                 <span className="text-[13px] font-medium text-white">Market Complaint Radar</span>
-                <p className="text-[10px] text-[#7F8FA3]">Find where the market is angry before you build — live public signals, honest source status.</p>
+                <p className="text-[10px] text-[#858B99]">Find where the market is angry before you build — live public signals, honest source status.</p>
               </div>
             </div>
             <StartupMarketRadar embedded />

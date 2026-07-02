@@ -45,9 +45,9 @@ function lastRunKey(projectId: string): string {
 
 function deliverableIcon(status: DeliverableStatus) {
   switch (status) {
-    case 'completed':   return <CheckCircle2 className="h-4 w-4 text-[#86A88B]/80" />;
-    case 'in_progress': return <Loader2 className="h-4 w-4 text-[#7EA6BF]/80 animate-spin" />;
-    case 'failed':      return <XCircle className="h-4 w-4 text-[#C98282]/70" />;
+    case 'completed':   return <CheckCircle2 className="h-4 w-4 text-[#4ADE80]/80" />;
+    case 'in_progress': return <Loader2 className="h-4 w-4 text-[#8B5CF6]/80 animate-spin" />;
+    case 'failed':      return <XCircle className="h-4 w-4 text-[#F87171]/70" />;
     case 'skipped':     return <MinusCircle className="h-4 w-4 text-white/25" />;
     default:            return <Circle className="h-4 w-4 text-white/25" />;
   }
@@ -60,7 +60,7 @@ function humanAgent(id: string): string {
 }
 
 const STATUS_STYLE: Record<string, { label: string; color: string }> = {
-  running:   { label: 'Running',   color: 'rgb(126, 166, 191)' },
+  running:   { label: 'Running',   color: 'rgb(139, 92, 246)' },
   completed: { label: 'Completed', color: 'rgb(111,143,122)' },
   finished:  { label: 'Completed', color: 'rgb(111,143,122)' },
   failed:    { label: 'Failed',    color: 'rgb(183,110,121)' },
@@ -93,10 +93,10 @@ function withDeadline<T>(p: Promise<T>, ms: number): Promise<T> {
 }
 
 function artifactGlyph(preview?: string | null) {
-  if (preview === 'iframe')    return <Monitor className="h-4 w-4 text-[#9CBBD1]" />;
-  if (preview === 'code')      return <Code2 className="h-4 w-4 text-[#9CBBD1]" />;
-  if (preview === 'file_tree') return <FolderTree className="h-4 w-4 text-[#9CBBD1]" />;
-  return <Sparkles className="h-4 w-4 text-[#9CBBD1]" />;
+  if (preview === 'iframe')    return <Monitor className="h-4 w-4 text-[#A78BFA]" />;
+  if (preview === 'code')      return <Code2 className="h-4 w-4 text-[#A78BFA]" />;
+  if (preview === 'file_tree') return <FolderTree className="h-4 w-4 text-[#A78BFA]" />;
+  return <Sparkles className="h-4 w-4 text-[#A78BFA]" />;
 }
 
 export function artifactLabel(type?: string | null): string {
@@ -464,7 +464,7 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
   const showStarterChips = turns.length === 0 && !briefPrompt;
 
   const composer = (
-    <div className="shrink-0 px-4 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.05)', background: 'rgba(17, 24, 32,0.4)' }}>
+    <div className="shrink-0 px-4 py-3" style={{ borderTop: '1px solid rgba(255,255,255,0.05)', background: 'rgba(13, 14, 18,0.4)' }}>
       <div className="max-w-2xl mx-auto">
         {showStarterChips && (
           <div className="flex flex-wrap items-center gap-1.5 mb-2">
@@ -480,8 +480,8 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
           <div className="flex justify-end mb-2">
             <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium"
               style={{
-                background: refineIntent ? 'rgba(134, 168, 139,0.08)' : 'rgba(126, 166, 191,0.06)',
-                border: `1px solid ${refineIntent ? 'rgba(134, 168, 139,0.2)' : 'rgba(126, 166, 191,0.14)'}`,
+                background: refineIntent ? 'rgba(134, 168, 139,0.08)' : 'rgba(139, 92, 246,0.06)',
+                border: `1px solid ${refineIntent ? 'rgba(134, 168, 139,0.2)' : 'rgba(139, 92, 246,0.14)'}`,
                 color: refineIntent ? 'rgb(111,143,122)' : 'rgb(156, 187, 209)',
               }}>
               {refineIntent ? <Pencil className="h-2.5 w-2.5" /> : <Sparkles className="h-2.5 w-2.5" />}
@@ -506,13 +506,13 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
           <button
             onClick={startRun}
             disabled={!request.trim() || starting}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium text-[#9CBBD1] disabled:opacity-40 transition-all shrink-0"
-            style={{ background: 'rgba(126, 166, 191,0.1)', border: '1px solid rgba(126, 166, 191,0.18)' }}>
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium text-[#A78BFA] disabled:opacity-40 transition-all shrink-0"
+            style={{ background: 'rgba(139, 92, 246,0.1)', border: '1px solid rgba(139, 92, 246,0.18)' }}>
             {starting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
             {starting ? 'Starting' : refineIntent ? 'Update' : 'Build'}
           </button>
         </div>
-        {startError && <p className="text-[10px] text-[#C98282]/70 mt-1.5 max-w-2xl mx-auto">{startError}</p>}
+        {startError && <p className="text-[10px] text-[#F87171]/70 mt-1.5 max-w-2xl mx-auto">{startError}</p>}
       </div>
     </div>
   );
@@ -532,11 +532,11 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
         {historyState === 'error' && (
           <div className="max-w-2xl mx-auto mb-3 flex items-center justify-between gap-3 rounded-lg px-3 py-2"
             style={{ background: 'rgba(194, 161, 90,0.05)', border: '1px solid rgba(194, 161, 90,0.14)' }}>
-            <span className="text-[11px] text-[#C2A15A]/70">
+            <span className="text-[11px] text-[#FACC15]/70">
               Couldn't load this project's build history — the backend may still be waking up.
             </span>
             <button onClick={() => loadConversation()}
-              className="flex items-center gap-1 text-[11px] font-medium text-[#C2A15A] hover:text-[#C2A15A] transition-colors shrink-0">
+              className="flex items-center gap-1 text-[11px] font-medium text-[#FACC15] hover:text-[#FACC15] transition-colors shrink-0">
               <RotateCw className="h-3 w-3" /> Retry
             </button>
           </div>
@@ -545,8 +545,8 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
           // ── Empty state: invite a project, never "No agents yet" ────────
           <div className="h-full flex flex-col items-center justify-center text-center px-6">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl mb-4"
-              style={{ background: 'linear-gradient(135deg, rgba(126, 166, 191,0.1), rgba(156, 187, 209,0.1))', border: '1px solid rgba(126, 166, 191,0.12)' }}>
-              <Workflow className="h-6 w-6 text-[#7EA6BF]/60" />
+              style={{ background: 'linear-gradient(135deg, rgba(139, 92, 246,0.1), rgba(156, 187, 209,0.1))', border: '1px solid rgba(139, 92, 246,0.12)' }}>
+              <Workflow className="h-6 w-6 text-[#8B5CF6]/60" />
             </div>
             <h2 className="text-[18px] font-semibold text-white/85 mb-1.5">What would you like Korvix to build?</h2>
             <p className="text-[12px] text-white/35 max-w-md mb-5">
@@ -557,7 +557,7 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
                 <button key={ex} onClick={() => setRequest(ex)}
                   className="flex items-center gap-2 w-full text-left text-[11px] text-white/45 hover:text-white/70 rounded-lg px-2.5 py-2 transition-colors"
                   style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.03)' }}>
-                  <Sparkles className="h-3 w-3 text-[#7EA6BF]/40 shrink-0" /> {ex}
+                  <Sparkles className="h-3 w-3 text-[#8B5CF6]/40 shrink-0" /> {ex}
                 </button>
               ))}
             </div>
@@ -588,11 +588,11 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
               <div className="flex items-start gap-2">
                 <div className="flex h-6 w-6 items-center justify-center rounded-full shrink-0 mt-0.5"
                   style={{ background: 'rgba(194, 161, 90,0.14)' }}>
-                  <ShieldAlert className="h-3 w-3 text-[#C2A15A]" />
+                  <ShieldAlert className="h-3 w-3 text-[#FACC15]" />
                 </div>
                 <div className="max-w-[86%] rounded-2xl rounded-tl-sm px-3.5 py-3"
                   style={{ background: 'rgba(194, 161, 90,0.06)', border: '1px solid rgba(194, 161, 90,0.16)' }}>
-                  <p className="text-[11px] font-medium tracking-wide text-[#C2A15A]/80 uppercase mb-1">Can't build this</p>
+                  <p className="text-[11px] font-medium tracking-wide text-[#FACC15]/80 uppercase mb-1">Can't build this</p>
                   <p className="text-[13px] text-white/80 leading-snug">{unsupportedNotice}</p>
                 </div>
               </div>
@@ -605,8 +605,8 @@ export default function ProjectRunCenter({ projectId, onOverview }: {
       {hasFreshContent && !atBottom && (
         <button
           onClick={() => scrollToLatest()}
-          className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium text-[#9CBBD1] transition-all hover:brightness-110"
-          style={{ background: 'rgba(27,34,48,0.92)', border: '1px solid rgba(126, 166, 191,0.25)', boxShadow: '0 8px 24px rgba(0,0,0,0.45)', backdropFilter: 'blur(8px)' }}>
+          className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-medium text-[#A78BFA] transition-all hover:brightness-110"
+          style={{ background: 'rgba(27,34,48,0.92)', border: '1px solid rgba(139, 92, 246,0.25)', boxShadow: '0 8px 24px rgba(0,0,0,0.45)', backdropFilter: 'blur(8px)' }}>
           <ArrowDown className="h-3 w-3" /> Jump to latest
         </button>
       )}
@@ -633,7 +633,7 @@ function ConversationTurn({
   onCancel: () => void;
   onPreview: (deliverableId: string) => void;
 }) {
-  const style = STATUS_STYLE[turn.status] || { label: turn.status, color: 'rgb(169, 183, 198)' };
+  const style = STATUS_STYLE[turn.status] || { label: turn.status, color: 'rgb(182, 187, 198)' };
   const done = turn.deliverables.filter(d => d.status === 'completed').length;
   const total = turn.deliverables.length;
   const progress = total ? Math.round((done / total) * 100) : 0;
@@ -649,12 +649,12 @@ function ConversationTurn({
       {/* Request bubble */}
       <div className="flex flex-col items-end gap-1 mb-2">
         <div className="max-w-[80%] rounded-2xl rounded-br-sm px-3 py-2 text-[13px] text-white/85"
-          style={{ background: 'rgba(126, 166, 191,0.08)', border: '1px solid rgba(126, 166, 191,0.12)' }}>
+          style={{ background: 'rgba(139, 92, 246,0.08)', border: '1px solid rgba(139, 92, 246,0.12)' }}>
           {visibleRequest || '(project run)'}
         </div>
         {designSummary && (
-          <span className="flex items-center gap-1 px-2 py-1 rounded-full text-[10px] text-[#9CBBD1]/80"
-            style={{ background: 'rgba(126, 166, 191,0.08)', border: '1px solid rgba(126, 166, 191,0.16)' }}>
+          <span className="flex items-center gap-1 px-2 py-1 rounded-full text-[10px] text-[#A78BFA]/80"
+            style={{ background: 'rgba(139, 92, 246,0.08)', border: '1px solid rgba(139, 92, 246,0.16)' }}>
             Design: {designSummary}
           </span>
         )}
@@ -664,7 +664,7 @@ function ConversationTurn({
       <div className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.04)' }}>
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <Workflow className="h-3.5 w-3.5 text-[#7EA6BF]/50" />
+            <Workflow className="h-3.5 w-3.5 text-[#8B5CF6]/50" />
             <span className="text-[11px] font-semibold text-white/60">Project Run</span>
             <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px]"
               style={{ background: `${style.color}14`, color: style.color }}>
@@ -673,7 +673,7 @@ function ConversationTurn({
             </span>
           </div>
           {running && (
-            <button onClick={onCancel} className="flex items-center gap-1 text-[10px] text-white/40 hover:text-[#C98282] transition-colors">
+            <button onClick={onCancel} className="flex items-center gap-1 text-[10px] text-white/40 hover:text-[#F87171] transition-colors">
               <XCircle className="h-3 w-3" /> Cancel
             </button>
           )}
@@ -698,18 +698,18 @@ function ConversationTurn({
           .map(d => (
             <button key={`art-${d.id}`} onClick={() => onPreview(d.id)}
               className="w-full text-left rounded-xl px-3 py-3 mb-1.5 transition-colors hover:bg-white/[0.04]"
-              style={{ background: 'linear-gradient(135deg, rgba(126, 166, 191,0.07), rgba(156, 187, 209,0.05))', border: '1px solid rgba(126, 166, 191,0.18)' }}>
+              style={{ background: 'linear-gradient(135deg, rgba(139, 92, 246,0.07), rgba(156, 187, 209,0.05))', border: '1px solid rgba(139, 92, 246,0.18)' }}>
               <div className="flex items-center gap-2.5">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg shrink-0"
-                  style={{ background: 'rgba(126, 166, 191,0.12)' }}>
+                  style={{ background: 'rgba(139, 92, 246,0.12)' }}>
                   {artifactGlyph(d.artifact_preview)}
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-[12px] font-semibold text-white/85 truncate">{d.title || d.kind}</p>
                   <p className="text-[9px] text-white/40">{artifactLabel(d.artifact_type)} · {humanAgent(d.agent_id)}</p>
                 </div>
-                <span className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-[#9CBBD1] shrink-0"
-                  style={{ background: 'rgba(126, 166, 191,0.12)', border: '1px solid rgba(126, 166, 191,0.2)' }}>
+                <span className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-[#A78BFA] shrink-0"
+                  style={{ background: 'rgba(139, 92, 246,0.12)', border: '1px solid rgba(139, 92, 246,0.2)' }}>
                   <Eye className="h-3.5 w-3.5" /> Preview
                 </span>
               </div>
@@ -737,7 +737,7 @@ function ConversationTurn({
                       {d.status === 'in_progress' ? ' · working…' : previewable ? ' · preview' : ''}
                     </p>
                     {d.status === 'failed' && d.error && (
-                      <p className="text-[8px] text-[#C98282]/60 mt-0.5 line-clamp-2">{d.error}</p>
+                      <p className="text-[8px] text-[#F87171]/60 mt-0.5 line-clamp-2">{d.error}</p>
                     )}
                   </div>
                 </button>
@@ -755,8 +755,8 @@ function Chip({ label, active, onClick, icon }: { label: string; active: boolean
     <button onClick={onClick}
       className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] transition-colors"
       style={{
-        background: active ? 'rgba(126, 166, 191,0.12)' : 'rgba(255,255,255,0.02)',
-        border: `1px solid ${active ? 'rgba(126, 166, 191,0.25)' : 'rgba(255,255,255,0.06)'}`,
+        background: active ? 'rgba(139, 92, 246,0.12)' : 'rgba(255,255,255,0.02)',
+        border: `1px solid ${active ? 'rgba(139, 92, 246,0.25)' : 'rgba(255,255,255,0.06)'}`,
         color: active ? 'rgb(156, 187, 209)' : 'rgba(255,255,255,0.5)',
       }}>
       {icon && <Sparkles className="h-3 w-3" />} {label}

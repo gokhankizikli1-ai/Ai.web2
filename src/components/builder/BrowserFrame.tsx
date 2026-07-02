@@ -17,7 +17,7 @@ const VIEWPORT_WIDTH: Record<Viewport, string> = {
 
 const ACCENT_HEX: Record<string, string> = {
   violet: '#a78bfa',
-  indigo: '#9BBBD0',
+  indigo: '#A78BFA',
 };
 
 interface BrowserFrameProps {
@@ -50,8 +50,8 @@ export default function BrowserFrame({
 
         <div className="flex-1 flex items-center justify-center min-w-0">
           <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-black/30 border border-white/[0.05] max-w-full">
-            <Lock className="w-2.5 h-2.5 text-[#7F8FA3] shrink-0" />
-            <span className="text-[11px] text-[#7F8FA3] truncate">{url}</span>
+            <Lock className="w-2.5 h-2.5 text-[#858B99] shrink-0" />
+            <span className="text-[11px] text-[#858B99] truncate">{url}</span>
           </div>
         </div>
 
@@ -62,7 +62,7 @@ export default function BrowserFrame({
                 key={v}
                 onClick={() => setViewport(v)}
                 title={v}
-                className={`p-1.5 rounded-md transition-colors ${viewport === v ? 'bg-white/[0.05]' : 'text-[#7F8FA3] hover:text-[#A9B7C6]'}`}
+                className={`p-1.5 rounded-md transition-colors ${viewport === v ? 'bg-white/[0.05]' : 'text-[#858B99] hover:text-[#B6BBC6]'}`}
                 style={viewport === v ? { color: activeHex } : undefined}
               >
                 <Icon className="w-3 h-3" />

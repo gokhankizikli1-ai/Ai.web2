@@ -152,7 +152,7 @@ export default function AdminPanel({ ownerMode, onClose }: AdminPanelProps) {
         exit={{ opacity: 0 }}
         transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
         onClick={(e) => e.stopPropagation()}
-        className="z-[80] rounded-2xl border border-[#7EA6BF]/20 bg-[#0b0b12]/95 shadow-2xl shadow-[#7EA6BF]/5 overflow-hidden flex flex-col"
+        className="z-[80] rounded-2xl border border-[#8B5CF6]/20 bg-[#0b0b12]/95 shadow-2xl shadow-[#8B5CF6]/5 overflow-hidden flex flex-col"
         style={{
           // ── Anchored BELOW the top navbar (96px down from viewport top).
           // Per user spec — opening upward from the Owner Session button
@@ -200,12 +200,12 @@ export default function AdminPanel({ ownerMode, onClose }: AdminPanelProps) {
           }}
         >
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="h-7 w-7 flex items-center justify-center rounded-lg bg-[#7EA6BF]/[0.1] border border-[#7EA6BF]/20 shrink-0">
-              <ShieldCheck className="h-3.5 w-3.5 text-[#9CBBD1]" />
+            <div className="h-7 w-7 flex items-center justify-center rounded-lg bg-[#8B5CF6]/[0.1] border border-[#8B5CF6]/20 shrink-0">
+              <ShieldCheck className="h-3.5 w-3.5 text-[#A78BFA]" />
             </div>
             <div className="min-w-0">
               <div className="text-[13px] font-semibold text-white tracking-tight truncate">Owner Panel</div>
-              <div className="text-[10px] text-[#9CBBD1]/60 truncate">
+              <div className="text-[10px] text-[#A78BFA]/60 truncate">
                 {ownerMode.capabilities.length} capabilities unlocked
               </div>
             </div>
@@ -216,7 +216,7 @@ export default function AdminPanel({ ownerMode, onClose }: AdminPanelProps) {
             // iPad fat fingers a generous target. Previously this was
             // 32×32 on desktop; bumping mobile-style everywhere is
             // cheaper than dealing with another "can't close" report.
-            className="h-11 w-11 flex items-center justify-center rounded-md text-[#A9B7C6] hover:text-white hover:bg-white/[0.05] active:bg-white/[0.08] transition-all shrink-0"
+            className="h-11 w-11 flex items-center justify-center rounded-md text-[#B6BBC6] hover:text-white hover:bg-white/[0.05] active:bg-white/[0.08] transition-all shrink-0"
             aria-label="Close owner panel"
             data-testid="admin-panel-close"
           >
@@ -243,8 +243,8 @@ export default function AdminPanel({ ownerMode, onClose }: AdminPanelProps) {
                     onClick={() => setActiveTab(t.id)}
                     className={`shrink-0 md:w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[11px] transition-all whitespace-nowrap ${
                       active
-                        ? 'bg-[#7EA6BF]/[0.08] text-[#9CBBD1] border border-[#7EA6BF]/15'
-                        : 'text-[#7F8FA3] hover:text-slate-300 hover:bg-white/[0.03] border border-transparent'
+                        ? 'bg-[#8B5CF6]/[0.08] text-[#A78BFA] border border-[#8B5CF6]/15'
+                        : 'text-[#858B99] hover:text-slate-300 hover:bg-white/[0.03] border border-transparent'
                     }`}
                   >
                     <Icon className="h-3 w-3" />
@@ -273,18 +273,18 @@ export default function AdminPanel({ ownerMode, onClose }: AdminPanelProps) {
           >
             {ownerMode.loading && ownerMode.capabilities.length === 0 ? (
               <div
-                className="flex flex-col items-center justify-center py-12 text-[#7F8FA3]"
+                className="flex flex-col items-center justify-center py-12 text-[#858B99]"
                 data-testid="admin-panel-loading"
               >
                 <div className="relative h-8 w-8 mb-3">
-                  <span className="absolute inset-0 rounded-full border-2 border-[#7EA6BF]/15" />
+                  <span className="absolute inset-0 rounded-full border-2 border-[#8B5CF6]/15" />
                   <span
                     className="absolute inset-0 rounded-full border-2 border-transparent animate-spin"
-                    style={{ borderTopColor: 'rgba(126, 166, 191,0.8)' }}
+                    style={{ borderTopColor: 'rgba(139, 92, 246,0.8)' }}
                   />
                 </div>
-                <div className="text-[12px] text-[#9CBBD1]/80">Loading owner console…</div>
-                <div className="text-[10px] text-[#7F8FA3] mt-1">
+                <div className="text-[12px] text-[#A78BFA]/80">Loading owner console…</div>
+                <div className="text-[10px] text-[#858B99] mt-1">
                   Verifying capabilities with the backend.
                 </div>
               </div>
@@ -315,7 +315,7 @@ export default function AdminPanel({ ownerMode, onClose }: AdminPanelProps) {
         onClick={onClose}
         aria-label="Close owner panel (viewport)"
         data-testid="admin-panel-close-viewport"
-        className="z-[81] h-10 w-10 flex items-center justify-center rounded-full bg-black/70 backdrop-blur-md text-[#9CBBD1] hover:text-white hover:bg-black/85 active:scale-95 transition-all border border-[#7EA6BF]/40 shadow-lg shadow-black/40"
+        className="z-[81] h-10 w-10 flex items-center justify-center rounded-full bg-black/70 backdrop-blur-md text-[#A78BFA] hover:text-white hover:bg-black/85 active:scale-95 transition-all border border-[#8B5CF6]/40 shadow-lg shadow-black/40"
         style={{
           position: 'fixed',
           top:      'max(20px, calc(env(safe-area-inset-top, 0px) + 12px))',
@@ -332,8 +332,8 @@ export default function AdminPanel({ ownerMode, onClose }: AdminPanelProps) {
 
 function Empty({ message }: { message: string }) {
   return (
-    <div className="flex flex-col items-center justify-center py-8 text-[#7F8FA3]">
-      <AlertTriangle className="h-4 w-4 mb-2 text-[#7EA6BF]/40" />
+    <div className="flex flex-col items-center justify-center py-8 text-[#858B99]">
+      <AlertTriangle className="h-4 w-4 mb-2 text-[#8B5CF6]/40" />
       <span className="text-[11px]">{message}</span>
     </div>
   );
@@ -341,7 +341,7 @@ function Empty({ message }: { message: string }) {
 
 function Loading() {
   return (
-    <div className="flex items-center gap-2 text-[#7F8FA3] text-[11px] py-4">
+    <div className="flex items-center gap-2 text-[#858B99] text-[11px] py-4">
       <Loader2 className="h-3 w-3 animate-spin" />
       Loading…
     </div>
@@ -351,7 +351,7 @@ function Loading() {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="mb-5">
-      <h3 className="text-[10px] uppercase tracking-wider text-[#7F8FA3] mb-2">{title}</h3>
+      <h3 className="text-[10px] uppercase tracking-wider text-[#858B99] mb-2">{title}</h3>
       {children}
     </section>
   );
@@ -360,7 +360,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function KV({ k, v }: { k: string; v: React.ReactNode }) {
   return (
     <div className="flex items-start gap-3 py-1 border-b border-white/[0.03]">
-      <span className="text-[#7F8FA3] text-[11px] w-40 shrink-0">{k}</span>
+      <span className="text-[#858B99] text-[11px] w-40 shrink-0">{k}</span>
       <span className="text-slate-200 text-[11px] font-mono break-all">{v}</span>
     </div>
   );
@@ -407,7 +407,7 @@ function OverviewTab() {
       </Section>
       <Section title="Providers">
         {(d.providers || []).length === 0 ? (
-          <div className="text-[#7F8FA3] text-[11px]">no providers registered</div>
+          <div className="text-[#858B99] text-[11px]">no providers registered</div>
         ) : (
           d.providers.map((p) => (
             <KV
@@ -501,17 +501,17 @@ function SessionTab({ ownerMode }: { ownerMode: OwnerModeState }) {
   return (
     <div>
       <Section title="Session State">
-        <div className="rounded-lg border border-[#7EA6BF]/20 bg-gradient-to-br from-[#7EA6BF]/[0.06] to-[#9CBBD1]/[0.04] p-3 mb-4">
+        <div className="rounded-lg border border-[#8B5CF6]/20 bg-gradient-to-br from-[#8B5CF6]/[0.06] to-[#A78BFA]/[0.04] p-3 mb-4">
           <div className="flex items-center gap-2 mb-1">
             <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full rounded-full bg-[#8FB4CC] opacity-60 animate-ping" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-[#9CBBD1]" />
+              <span className="absolute inline-flex h-full w-full rounded-full bg-[#A78BFA] opacity-60 animate-ping" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-[#A78BFA]" />
             </span>
-            <div className="text-[12px] font-semibold text-[#9CBBD1]">
+            <div className="text-[12px] font-semibold text-[#A78BFA]">
               {ownerMode.isOwner ? 'Owner Session Active' : 'Owner session not active'}
             </div>
           </div>
-          <div className="text-[10px] text-[#9CBBD1]/70">
+          <div className="text-[10px] text-[#A78BFA]/70">
             {ownerMode.isOwner
               ? `${orchCaps.size} of ${allOrch.length} orchestration permissions granted. The supervisor and every delegated specialist see the OWNER MODE authorisation block in their system prompt.`
               : 'Confirm OWNER_TOKEN is set on Railway and stored in localStorage on this device.'}
@@ -529,25 +529,25 @@ function SessionTab({ ownerMode }: { ownerMode: OwnerModeState }) {
                 key={cap}
                 className={`flex items-start gap-2.5 rounded-md border px-2.5 py-1.5 ${
                   active
-                    ? 'border-[#7EA6BF]/20 bg-[#7EA6BF]/[0.04]'
+                    ? 'border-[#8B5CF6]/20 bg-[#8B5CF6]/[0.04]'
                     : 'border-white/[0.04] bg-white/[0.015] opacity-50'
                 }`}
               >
                 <div
                   className={`mt-0.5 h-1.5 w-1.5 rounded-full shrink-0 ${
-                    active ? 'bg-[#9CBBD1]' : 'bg-slate-700'
+                    active ? 'bg-[#A78BFA]' : 'bg-slate-700'
                   }`}
                 />
                 <div className="min-w-0 flex-1">
-                  <div className={`text-[11px] ${active ? 'text-slate-100' : 'text-[#7F8FA3]'}`}>
+                  <div className={`text-[11px] ${active ? 'text-slate-100' : 'text-[#858B99]'}`}>
                     {meta.label}
                   </div>
-                  <div className="text-[10px] text-[#7F8FA3] mt-0.5">{meta.detail}</div>
+                  <div className="text-[10px] text-[#858B99] mt-0.5">{meta.detail}</div>
                   <div className="text-[9px] text-slate-700 font-mono mt-0.5">{cap}</div>
                 </div>
                 <span
                   className={`text-[9px] uppercase tracking-wider shrink-0 ${
-                    active ? 'text-[#9CBBD1]/80' : 'text-[#7F8FA3]'
+                    active ? 'text-[#A78BFA]/80' : 'text-[#858B99]'
                   }`}
                 >
                   {active ? 'granted' : 'inactive'}
@@ -559,15 +559,15 @@ function SessionTab({ ownerMode }: { ownerMode: OwnerModeState }) {
       </Section>
 
       <Section title="Still blocked (non-negotiable)">
-        <div className="rounded-md border border-[#C98282]/15 bg-[#C98282]/[0.03] p-2.5">
-          <div className="text-[10px] text-[#C98282]/80 mb-1.5">
+        <div className="rounded-md border border-[#F87171]/15 bg-[#F87171]/[0.03] p-2.5">
+          <div className="text-[10px] text-[#F87171]/80 mb-1.5">
             Owner mode does NOT relax safety policy. Requests in any of
             the following categories are refused regardless of who's asking:
           </div>
           <ul className="space-y-0.5">
             {SAFETY_RETAINED.map((s) => (
-              <li key={s} className="text-[10px] text-[#A9B7C6] flex items-start gap-1.5">
-                <span className="text-[#C98282]/60 mt-0.5">×</span>
+              <li key={s} className="text-[10px] text-[#B6BBC6] flex items-start gap-1.5">
+                <span className="text-[#F87171]/60 mt-0.5">×</span>
                 <span>{s}</span>
               </li>
             ))}
@@ -615,7 +615,7 @@ function AgentsTab() {
           {(d.owner_agent?.capabilities || []).map((c) => (
             <span
               key={c}
-              className="px-2 py-0.5 rounded-full text-[10px] bg-[#7EA6BF]/[0.06] border border-[#7EA6BF]/15 text-[#9CBBD1]"
+              className="px-2 py-0.5 rounded-full text-[10px] bg-[#8B5CF6]/[0.06] border border-[#8B5CF6]/15 text-[#A78BFA]"
             >
               {c}
             </span>
@@ -624,7 +624,7 @@ function AgentsTab() {
       </Section>
       <Section title="Internal Agents">
         {(d.internal_agents || []).length === 0 ? (
-          <div className="text-[#7F8FA3] text-[11px]">
+          <div className="text-[#858B99] text-[11px]">
             No internal-agent registry yet. Reserved slot.
           </div>
         ) : (
@@ -662,7 +662,7 @@ function MemoryTab() {
           key={i}
           className="rounded-md border border-white/[0.04] p-2 bg-white/[0.015]"
         >
-          <div className="text-[9px] uppercase text-[#7F8FA3] mb-1">{row.role}</div>
+          <div className="text-[9px] uppercase text-[#858B99] mb-1">{row.role}</div>
           <div className="text-[11px] text-slate-300 whitespace-pre-wrap break-words">
             {row.content.slice(0, 600)}
           </div>
@@ -723,7 +723,7 @@ function PromptsTab() {
     <div>
       <Section title="System Prompts">
         {entries.length === 0 ? (
-          <div className="text-[#7F8FA3] text-[11px]">No prompts loaded.</div>
+          <div className="text-[#858B99] text-[11px]">No prompts loaded.</div>
         ) : (
           entries.map(([name, body]) => (
             <div key={name} className="mb-2 border border-white/[0.04] rounded-md">
@@ -731,11 +731,11 @@ function PromptsTab() {
                 onClick={() => setExpanded(expanded === name ? null : name)}
                 className="w-full text-left px-3 py-1.5 flex items-center justify-between hover:bg-white/[0.02] transition-colors"
               >
-                <span className="text-[11px] font-mono text-[#9CBBD1]/80">{name}</span>
-                <span className="text-[10px] text-[#7F8FA3]">{body.length} chars</span>
+                <span className="text-[11px] font-mono text-[#A78BFA]/80">{name}</span>
+                <span className="text-[10px] text-[#858B99]">{body.length} chars</span>
               </button>
               {expanded === name && (
-                <pre className="px-3 py-2 text-[10px] text-[#A9B7C6] whitespace-pre-wrap break-words border-t border-white/[0.04] max-h-64 overflow-y-auto font-mono">
+                <pre className="px-3 py-2 text-[10px] text-[#B6BBC6] whitespace-pre-wrap break-words border-t border-white/[0.04] max-h-64 overflow-y-auto font-mono">
                   {body}
                 </pre>
               )}
@@ -783,12 +783,12 @@ function AuditTab() {
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
-        <span className="text-[10px] text-[#7F8FA3]">
+        <span className="text-[10px] text-[#858B99]">
           {d.entries.length} of {d.total} entries
         </span>
         <button
           onClick={load}
-          className="text-[10px] text-[#9CBBD1]/80 hover:text-[#9CBBD1]"
+          className="text-[10px] text-[#A78BFA]/80 hover:text-[#A78BFA]"
         >
           refresh
         </button>
@@ -799,14 +799,14 @@ function AuditTab() {
             key={e.id}
             className={`text-[11px] font-mono rounded border px-2 py-1 ${
               e.status === 'blocked'
-                ? 'border-[#C98282]/20 bg-[#C98282]/[0.04] text-[#C98282]'
+                ? 'border-[#F87171]/20 bg-[#F87171]/[0.04] text-[#F87171]'
                 : 'border-white/[0.04] bg-white/[0.015] text-slate-300'
             }`}
           >
-            <span className="text-[#7F8FA3]">{e.ts.slice(11, 19)}</span>
-            <span className="mx-2 text-[#9CBBD1]/80">{e.action}</span>
-            <span className="text-[#7F8FA3]">{e.status}</span>
-            {e.path && <span className="text-[#7F8FA3] ml-2">{e.path}</span>}
+            <span className="text-[#858B99]">{e.ts.slice(11, 19)}</span>
+            <span className="mx-2 text-[#A78BFA]/80">{e.action}</span>
+            <span className="text-[#858B99]">{e.status}</span>
+            {e.path && <span className="text-[#858B99] ml-2">{e.path}</span>}
           </div>
         ))}
       </div>
@@ -872,11 +872,11 @@ function OwnerAgentTab() {
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="flex items-center gap-2 mb-3">
-        <label className="text-[10px] text-[#7F8FA3]">capability</label>
+        <label className="text-[10px] text-[#858B99]">capability</label>
         <select
           value={capability}
           onChange={(e) => setCapability(e.target.value)}
-          className="bg-white/[0.03] border border-white/[0.06] rounded-md text-[11px] text-slate-200 px-2 py-1 focus:outline-none focus:border-[#7EA6BF]/30"
+          className="bg-white/[0.03] border border-white/[0.06] rounded-md text-[11px] text-slate-200 px-2 py-1 focus:outline-none focus:border-[#8B5CF6]/30"
         >
           {CAPABILITIES.map((c) => (
             <option key={c} value={c} className="bg-[#0b0b12]">{c}</option>
@@ -885,7 +885,7 @@ function OwnerAgentTab() {
         {history.length > 0 && (
           <button
             onClick={() => setHistory([])}
-            className="ml-auto text-[10px] text-[#7F8FA3] hover:text-slate-300"
+            className="ml-auto text-[10px] text-[#858B99] hover:text-slate-300"
           >
             clear
           </button>
@@ -901,13 +901,13 @@ function OwnerAgentTab() {
               key={i}
               className={`rounded-md p-2 text-[11px] whitespace-pre-wrap break-words ${
                 m.role === 'user'
-                  ? 'bg-[#7EA6BF]/[0.04] border border-[#7EA6BF]/15 text-[#9CBBD1]'
+                  ? 'bg-[#8B5CF6]/[0.04] border border-[#8B5CF6]/15 text-[#A78BFA]'
                   : m.blocked
-                    ? 'bg-[#C98282]/[0.04] border border-[#C98282]/20 text-[#C98282]'
+                    ? 'bg-[#F87171]/[0.04] border border-[#F87171]/20 text-[#F87171]'
                     : 'bg-white/[0.02] border border-white/[0.05] text-slate-200'
               }`}
             >
-              <div className="text-[9px] uppercase text-[#7F8FA3] mb-1">
+              <div className="text-[9px] uppercase text-[#858B99] mb-1">
                 {m.role}{m.blocked ? ' · blocked' : ''}
               </div>
               {m.content}
@@ -927,12 +927,12 @@ function OwnerAgentTab() {
             }
           }}
           placeholder="Ask the Owner Agent…  (Cmd/Ctrl-Enter to send)"
-          className="flex-1 min-h-[44px] max-h-32 resize-none rounded-md bg-white/[0.02] border border-white/[0.05] focus:border-[#7EA6BF]/30 focus:outline-none px-3 py-2 text-[11px] text-slate-200"
+          className="flex-1 min-h-[44px] max-h-32 resize-none rounded-md bg-white/[0.02] border border-white/[0.05] focus:border-[#8B5CF6]/30 focus:outline-none px-3 py-2 text-[11px] text-slate-200"
         />
         <button
           onClick={send}
           disabled={busy || !message.trim()}
-          className="px-3 py-2 rounded-md bg-[#7EA6BF]/[0.1] border border-[#7EA6BF]/30 text-[#9CBBD1] text-[11px] disabled:opacity-40 hover:bg-[#7EA6BF]/[0.15] transition-all"
+          className="px-3 py-2 rounded-md bg-[#8B5CF6]/[0.1] border border-[#8B5CF6]/30 text-[#A78BFA] text-[11px] disabled:opacity-40 hover:bg-[#8B5CF6]/[0.15] transition-all"
         >
           {busy ? 'Sending…' : 'Send'}
         </button>

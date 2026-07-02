@@ -20,9 +20,9 @@ export default function RadarEmptyState({ query, onPickExample }: Props) {
   const showExamples = query.trim().length === 0;
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
-      <div className="rounded-2xl border border-[#2F3B4A] bg-[#111820] p-6 transition-colors hover:border-[rgba(126,166,191,0.30)]">
+      <div className="rounded-2xl border border-[#272A33] bg-[#111217] p-6 transition-colors hover:border-[rgba(139, 92, 246,0.30)]">
         <h3 className="text-[15px] font-semibold text-slate-100">Find angry markets before you build.</h3>
-        <p className="text-[12px] text-[#A9B7C6] mt-1.5 leading-relaxed">
+        <p className="text-[12px] text-[#B6BBC6] mt-1.5 leading-relaxed">
           Korvix scans public signals, clusters complaints, and turns them into startup wedges.
         </p>
 
@@ -33,7 +33,7 @@ export default function RadarEmptyState({ query, onPickExample }: Props) {
               <button
                 key={ex}
                 onClick={() => onPickExample(ex)}
-                className="px-2.5 py-1.5 rounded-lg text-[11px] text-slate-300 border border-white/[0.06] bg-white/[0.015] hover:text-[#9DB0C2] hover:border-[#7EA6BF]/40 hover:bg-[#7EA6BF]/[0.08] transition-colors"
+                className="px-2.5 py-1.5 rounded-lg text-[11px] text-slate-300 border border-white/[0.06] bg-white/[0.015] hover:text-[#A78BFA] hover:border-[#8B5CF6]/40 hover:bg-[#8B5CF6]/[0.08] transition-colors"
               >
                 {ex}
               </button>
@@ -41,7 +41,7 @@ export default function RadarEmptyState({ query, onPickExample }: Props) {
           </div>
         )}
 
-        <p className="text-[11px] text-[#7F8FA3] mt-5">
+        <p className="text-[11px] text-[#858B99] mt-5">
           You'll get: complaint clusters · competitor weaknesses · MVP wedge · first customers · 7-day validation plan
         </p>
       </div>

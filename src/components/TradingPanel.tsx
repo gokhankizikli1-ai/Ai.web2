@@ -227,7 +227,7 @@ function MiniSparkline({ price, isPositive }: { price: number; isPositive: boole
     <div className="flex items-end gap-px h-8 w-16">
       {data.map((v, i) => {
         const h = max === min ? 50 : ((v - min) / (max - min)) * 100;
-        return <div key={i} className={`flex-1 rounded-sm ${isPositive ? 'bg-[#86A88B]/20' : 'bg-[#C98282]/20'}`} style={{ height: `${Math.max(10, h)}%` }} />;
+        return <div key={i} className={`flex-1 rounded-sm ${isPositive ? 'bg-[#4ADE80]/20' : 'bg-[#F87171]/20'}`} style={{ height: `${Math.max(10, h)}%` }} />;
       })}
     </div>
   );
@@ -251,14 +251,14 @@ function generateSparkline(basePrice: number, points: number = 15): number[] {
 // ═══════════════════════════════════════════
 
 function ConfidenceMeter({ confidence }: { confidence: number }) {
-  const color = confidence >= 75 ? 'bg-[#86A88B]' : confidence >= 50 ? 'bg-[#C2A15A]' : 'bg-[#C98282]';
+  const color = confidence >= 75 ? 'bg-[#4ADE80]' : confidence >= 50 ? 'bg-[#FACC15]' : 'bg-[#F87171]';
   return (
     <div className="flex items-center gap-2">
       <div className="flex-1 h-1.5 bg-white/[0.04] rounded-full overflow-hidden">
         <motion.div className={`h-full rounded-full ${color}`}
           initial={{ width: 0 }} animate={{ width: `${confidence}%` }} transition={{ duration: 0.8, delay: 0.2 }} />
       </div>
-      <span className={`text-[10px] font-semibold tabular-nums ${confidence >= 75 ? 'text-[#86A88B]' : confidence >= 50 ? 'text-[#C2A15A]' : 'text-[#C98282]'}`}>
+      <span className={`text-[10px] font-semibold tabular-nums ${confidence >= 75 ? 'text-[#4ADE80]' : confidence >= 50 ? 'text-[#FACC15]' : 'text-[#F87171]'}`}>
         {confidence}%
       </span>
     </div>
@@ -271,9 +271,9 @@ function ConfidenceMeter({ confidence }: { confidence: number }) {
 
 function RiskBadge({ level }: { level: 'Low' | 'Medium' | 'High' }) {
   const colors = {
-    Low: { bg: 'bg-[#86A88B]/[0.06]', text: 'text-[#86A88B]', border: 'border-[#86A88B]/10' },
-    Medium: { bg: 'bg-[#C2A15A]/[0.06]', text: 'text-[#C2A15A]', border: 'border-[#C2A15A]/10' },
-    High: { bg: 'bg-[#C98282]/[0.06]', text: 'text-[#C98282]', border: 'border-[#C98282]/10' },
+    Low: { bg: 'bg-[#4ADE80]/[0.06]', text: 'text-[#4ADE80]', border: 'border-[#4ADE80]/10' },
+    Medium: { bg: 'bg-[#FACC15]/[0.06]', text: 'text-[#FACC15]', border: 'border-[#FACC15]/10' },
+    High: { bg: 'bg-[#F87171]/[0.06]', text: 'text-[#F87171]', border: 'border-[#F87171]/10' },
   };
   const c = colors[level];
   return (
@@ -290,9 +290,9 @@ function RiskBadge({ level }: { level: 'Low' | 'Medium' | 'High' }) {
 
 function ScenarioChip({ scenario }: { scenario: 'bullish' | 'neutral' | 'bearish' }) {
   const config = {
-    bullish: { icon: TrendingUp, color: 'text-[#86A88B]', bg: 'bg-[#86A88B]/[0.06]', border: 'border-[#86A88B]/10', label: 'Bullish' },
-    neutral: { icon: Minus, color: 'text-[#C2A15A]', bg: 'bg-[#C2A15A]/[0.06]', border: 'border-[#C2A15A]/10', label: 'Neutral' },
-    bearish: { icon: TrendingDown, color: 'text-[#C98282]', bg: 'bg-[#C98282]/[0.06]', border: 'border-[#C98282]/10', label: 'Bearish' },
+    bullish: { icon: TrendingUp, color: 'text-[#4ADE80]', bg: 'bg-[#4ADE80]/[0.06]', border: 'border-[#4ADE80]/10', label: 'Bullish' },
+    neutral: { icon: Minus, color: 'text-[#FACC15]', bg: 'bg-[#FACC15]/[0.06]', border: 'border-[#FACC15]/10', label: 'Neutral' },
+    bearish: { icon: TrendingDown, color: 'text-[#F87171]', bg: 'bg-[#F87171]/[0.06]', border: 'border-[#F87171]/10', label: 'Bearish' },
   };
   const c = config[scenario];
   const Icon = c.icon;
@@ -310,7 +310,7 @@ function ScenarioChip({ scenario }: { scenario: 'bullish' | 'neutral' | 'bearish
 
 function SignalTag({ tag }: { tag: string }) {
   return (
-    <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-medium bg-white/[0.03] text-[#7F8FA3] border border-white/[0.04] hover:text-[#A9B7C6] hover:border-white/[0.06] transition-colors cursor-default">
+    <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-medium bg-white/[0.03] text-[#858B99] border border-white/[0.04] hover:text-[#B6BBC6] hover:border-white/[0.06] transition-colors cursor-default">
       {tag}
     </span>
   );
@@ -323,10 +323,10 @@ function SignalTag({ tag }: { tag: string }) {
 function PremiumSignalCard({ signal }: { signal: MockSignal }) {
   const [expanded, setExpanded] = useState(false);
   const dirColors = {
-    long: { bg: 'bg-[#86A88B]/[0.04]', border: 'border-[#86A88B]/10', text: 'text-[#86A88B]', badge: 'bg-[#86A88B]/[0.08] text-[#86A88B]', icon: ArrowUpRight },
-    short: { bg: 'bg-[#C98282]/[0.04]', border: 'border-[#C98282]/10', text: 'text-[#C98282]', badge: 'bg-[#C98282]/[0.08] text-[#C98282]', icon: ArrowDownRight },
-    wait: { bg: 'bg-[#C2A15A]/[0.04]', border: 'border-[#C2A15A]/10', text: 'text-[#C2A15A]', badge: 'bg-[#C2A15A]/[0.08] text-[#C2A15A]', icon: Minus },
-    neutral: { bg: 'bg-slate-500/[0.04]', border: 'border-slate-500/10', text: 'text-[#A9B7C6]', badge: 'bg-slate-500/[0.08] text-[#A9B7C6]', icon: Minus },
+    long: { bg: 'bg-[#4ADE80]/[0.04]', border: 'border-[#4ADE80]/10', text: 'text-[#4ADE80]', badge: 'bg-[#4ADE80]/[0.08] text-[#4ADE80]', icon: ArrowUpRight },
+    short: { bg: 'bg-[#F87171]/[0.04]', border: 'border-[#F87171]/10', text: 'text-[#F87171]', badge: 'bg-[#F87171]/[0.08] text-[#F87171]', icon: ArrowDownRight },
+    wait: { bg: 'bg-[#FACC15]/[0.04]', border: 'border-[#FACC15]/10', text: 'text-[#FACC15]', badge: 'bg-[#FACC15]/[0.08] text-[#FACC15]', icon: Minus },
+    neutral: { bg: 'bg-slate-500/[0.04]', border: 'border-slate-500/10', text: 'text-[#B6BBC6]', badge: 'bg-slate-500/[0.08] text-[#B6BBC6]', icon: Minus },
   };
   const colors = dirColors[signal.direction] || dirColors.neutral;
   const DirIcon = colors.icon;
@@ -344,7 +344,7 @@ function PremiumSignalCard({ signal }: { signal: MockSignal }) {
               const min = Math.min(...signal.sparkline!);
               const max = Math.max(...signal.sparkline!);
               const h = max === min ? 50 : ((v - min) / (max - min)) * 100;
-              return <div key={i} className={`flex-1 rounded-sm ${signal.direction === 'long' ? 'bg-[#86A88B]/25' : signal.direction === 'short' ? 'bg-[#C98282]/25' : 'bg-[#C2A15A]/20'}`} style={{ height: `${Math.max(10, h)}%` }} />;
+              return <div key={i} className={`flex-1 rounded-sm ${signal.direction === 'long' ? 'bg-[#4ADE80]/25' : signal.direction === 'short' ? 'bg-[#F87171]/25' : 'bg-[#FACC15]/20'}`} style={{ height: `${Math.max(10, h)}%` }} />;
             })}
           </div>
         )}
@@ -353,7 +353,7 @@ function PremiumSignalCard({ signal }: { signal: MockSignal }) {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[13px] font-semibold text-white">{signal.symbol}</span>
-            <span className="text-[10px] text-[#7F8FA3]">{signal.name}</span>
+            <span className="text-[10px] text-[#858B99]">{signal.name}</span>
             <span className={`inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded-full ${colors.badge}`}>
               <DirIcon className="w-2.5 h-2.5" />
               {signal.direction.toUpperCase()}
@@ -361,8 +361,8 @@ function PremiumSignalCard({ signal }: { signal: MockSignal }) {
           </div>
           <div className="flex items-center gap-2 mt-1.5">
             <RiskBadge level={signal.riskLevel} />
-            <span className="text-[10px] text-[#7F8FA3]">{signal.timeframe}</span>
-            <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${signal.setupGrade === 'A' ? 'bg-[#86A88B]/[0.08] text-[#86A88B]' : signal.setupGrade === 'B' ? 'bg-[#C2A15A]/[0.08] text-[#C2A15A]' : 'bg-slate-500/[0.08] text-[#A9B7C6]'}`}>
+            <span className="text-[10px] text-[#858B99]">{signal.timeframe}</span>
+            <span className={`text-[9px] px-1.5 py-0.5 rounded-full ${signal.setupGrade === 'A' ? 'bg-[#4ADE80]/[0.08] text-[#4ADE80]' : signal.setupGrade === 'B' ? 'bg-[#FACC15]/[0.08] text-[#FACC15]' : 'bg-slate-500/[0.08] text-[#B6BBC6]'}`}>
               Grade {signal.setupGrade}
             </span>
           </div>
@@ -371,11 +371,11 @@ function PremiumSignalCard({ signal }: { signal: MockSignal }) {
         {/* Price Column */}
         <div className="text-right shrink-0 hidden sm:block">
           <ConfidenceMeter confidence={signal.confidence} />
-          {signal.entryPrice && <p className="text-[10px] text-[#7F8FA3] mt-1">Entry <span className="text-white/70">${signal.entryPrice}</span></p>}
+          {signal.entryPrice && <p className="text-[10px] text-[#858B99] mt-1">Entry <span className="text-white/70">${signal.entryPrice}</span></p>}
         </div>
 
         <motion.div animate={{ rotate: expanded ? 90 : 0 }} className="shrink-0">
-          <ChevronRight className="w-4 h-4 text-[#7F8FA3]" />
+          <ChevronRight className="w-4 h-4 text-[#858B99]" />
         </motion.div>
       </button>
 
@@ -389,27 +389,27 @@ function PremiumSignalCard({ signal }: { signal: MockSignal }) {
                 <div className="grid grid-cols-3 gap-2">
                   <div className="p-2.5 rounded-lg bg-white/[0.02] border border-white/[0.03]">
                     <div className="flex items-center gap-1 mb-1">
-                      <Crosshair className="w-3 h-3 text-[#7F8FA3]" />
-                      <p className="text-[9px] text-[#7F8FA3]">Entry</p>
+                      <Crosshair className="w-3 h-3 text-[#858B99]" />
+                      <p className="text-[9px] text-[#858B99]">Entry</p>
                     </div>
                     <p className="text-[13px] font-semibold text-white">${signal.entryPrice}</p>
                   </div>
                   {signal.targetPrice && (
-                    <div className="p-2.5 rounded-lg bg-[#86A88B]/[0.04] border border-[#86A88B]/10">
+                    <div className="p-2.5 rounded-lg bg-[#4ADE80]/[0.04] border border-[#4ADE80]/10">
                       <div className="flex items-center gap-1 mb-1">
-                        <Target className="w-3 h-3 text-[#86A88B]/60" />
-                        <p className="text-[9px] text-[#86A88B]/60">Target</p>
+                        <Target className="w-3 h-3 text-[#4ADE80]/60" />
+                        <p className="text-[9px] text-[#4ADE80]/60">Target</p>
                       </div>
-                      <p className="text-[13px] font-semibold text-[#86A88B]">${signal.targetPrice}</p>
+                      <p className="text-[13px] font-semibold text-[#4ADE80]">${signal.targetPrice}</p>
                     </div>
                   )}
                   {signal.stopLoss && (
-                    <div className="p-2.5 rounded-lg bg-[#C98282]/[0.04] border border-[#C98282]/10">
+                    <div className="p-2.5 rounded-lg bg-[#F87171]/[0.04] border border-[#F87171]/10">
                       <div className="flex items-center gap-1 mb-1">
-                        <Shield className="w-3 h-3 text-[#C98282]/60" />
-                        <p className="text-[9px] text-[#C98282]/60">Stop</p>
+                        <Shield className="w-3 h-3 text-[#F87171]/60" />
+                        <p className="text-[9px] text-[#F87171]/60">Stop</p>
                       </div>
-                      <p className="text-[13px] font-semibold text-[#C98282]">${signal.stopLoss}</p>
+                      <p className="text-[13px] font-semibold text-[#F87171]">${signal.stopLoss}</p>
                     </div>
                   )}
                 </div>
@@ -418,7 +418,7 @@ function PremiumSignalCard({ signal }: { signal: MockSignal }) {
               {/* Confidence + Scenario */}
               <div className="flex items-center gap-3 flex-wrap">
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-[#7F8FA3]">Confidence</span>
+                  <span className="text-[10px] text-[#858B99]">Confidence</span>
                   <ConfidenceMeter confidence={signal.confidence} />
                 </div>
                 <ScenarioChip scenario={signal.scenario} />
@@ -432,10 +432,10 @@ function PremiumSignalCard({ signal }: { signal: MockSignal }) {
               {/* Reasoning */}
               <div className="p-2.5 rounded-lg bg-white/[0.02] border border-white/[0.03]">
                 <div className="flex items-center gap-1.5 mb-1.5">
-                  <Sparkles className="w-3 h-3 text-[#7EA6BF]/50" />
-                  <span className="text-[10px] text-[#7F8FA3]">AI Analysis</span>
+                  <Sparkles className="w-3 h-3 text-[#8B5CF6]/50" />
+                  <span className="text-[10px] text-[#858B99]">AI Analysis</span>
                 </div>
-                <p className="text-[11px] text-[#A9B7C6] leading-relaxed">{signal.reasoning}</p>
+                <p className="text-[11px] text-[#B6BBC6] leading-relaxed">{signal.reasoning}</p>
               </div>
             </div>
           </motion.div>
@@ -456,7 +456,7 @@ function WatchlistRow({ item, onToggleFav, onToggleWatchlist, inWatchlist }: {
   return (
     <div className="flex items-center gap-3 p-3 rounded-xl border border-white/[0.02] bg-white/[0.01] hover:border-white/[0.05] hover:bg-white/[0.02] transition-all duration-200 group">
       <button onClick={onToggleFav} className="shrink-0">
-        <Star className={`w-3.5 h-3.5 ${item.isFavorite ? 'text-[#C2A15A] fill-[#C2A15A]' : 'text-[#7F8FA3] hover:text-[#7F8FA3]'} transition-colors`} />
+        <Star className={`w-3.5 h-3.5 ${item.isFavorite ? 'text-[#FACC15] fill-[#FACC15]' : 'text-[#858B99] hover:text-[#858B99]'} transition-colors`} />
       </button>
 
       {/* Sparkline */}
@@ -465,27 +465,27 @@ function WatchlistRow({ item, onToggleFav, onToggleWatchlist, inWatchlist }: {
           const min = Math.min(...item.sparkline);
           const max = Math.max(...item.sparkline);
           const h = max === min ? 50 : ((v - min) / (max - min)) * 100;
-          return <div key={i} className={`flex-1 rounded-sm ${isPositive ? 'bg-[#86A88B]/25' : 'bg-[#C98282]/25'}`} style={{ height: `${Math.max(15, h)}%` }} />;
+          return <div key={i} className={`flex-1 rounded-sm ${isPositive ? 'bg-[#4ADE80]/25' : 'bg-[#F87171]/25'}`} style={{ height: `${Math.max(15, h)}%` }} />;
         })}
       </div>
 
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
           <span className="text-[12px] font-semibold text-white">{item.symbol}</span>
-          <span className="text-[10px] text-[#7F8FA3] truncate">{item.name}</span>
+          <span className="text-[10px] text-[#858B99] truncate">{item.name}</span>
         </div>
       </div>
 
       <div className="text-right shrink-0">
         <p className="text-[12px] font-medium text-white">${item.price.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-        <div className={`flex items-center gap-0.5 ${isPositive ? 'text-[#86A88B]' : 'text-[#C98282]'}`}>
+        <div className={`flex items-center gap-0.5 ${isPositive ? 'text-[#4ADE80]' : 'text-[#F87171]'}`}>
           {isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
           <span className="text-[10px] font-medium">{isPositive ? '+' : ''}{item.changePercent.toFixed(2)}%</span>
         </div>
       </div>
 
       <button onClick={onToggleWatchlist}
-        className={`shrink-0 p-1.5 rounded-lg transition-all ${inWatchlist ? 'bg-[#86A88B]/[0.08] text-[#86A88B] border border-[#86A88B]/15' : 'text-slate-700 hover:text-[#7F8FA3] border border-transparent'}`}
+        className={`shrink-0 p-1.5 rounded-lg transition-all ${inWatchlist ? 'bg-[#4ADE80]/[0.08] text-[#4ADE80] border border-[#4ADE80]/15' : 'text-slate-700 hover:text-[#858B99] border border-transparent'}`}
         title={inWatchlist ? 'Remove from watchlist' : 'Add to watchlist'}>
         {inWatchlist ? <Eye className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
       </button>
@@ -498,8 +498,8 @@ function WatchlistRow({ item, onToggleFav, onToggleWatchlist, inWatchlist }: {
 // ═══════════════════════════════════════════
 
 function SentimentGauge({ sentiment }: { sentiment: MarketSentiment }) {
-  const sentimentColor = sentiment.overall === 'bullish' ? 'text-[#86A88B]' : sentiment.overall === 'bearish' ? 'text-[#C98282]' : 'text-[#C2A15A]';
-  const sentimentBg = sentiment.overall === 'bullish' ? 'bg-[#86A88B]/[0.06]' : sentiment.overall === 'bearish' ? 'bg-[#C98282]/[0.06]' : 'bg-[#C2A15A]/[0.06]';
+  const sentimentColor = sentiment.overall === 'bullish' ? 'text-[#4ADE80]' : sentiment.overall === 'bearish' ? 'text-[#F87171]' : 'text-[#FACC15]';
+  const sentimentBg = sentiment.overall === 'bullish' ? 'bg-[#4ADE80]/[0.06]' : sentiment.overall === 'bearish' ? 'bg-[#F87171]/[0.06]' : 'bg-[#FACC15]/[0.06]';
 
   return (
     <div className={`p-4 rounded-xl border border-white/[0.04] ${sentimentBg} transition-all duration-200 hover:border-white/[0.06]`}>
@@ -513,11 +513,11 @@ function SentimentGauge({ sentiment }: { sentiment: MarketSentiment }) {
 
       <div className="mb-3">
         <div className="flex justify-between mb-1">
-          <span className="text-[10px] text-[#7F8FA3]">Bullish Score</span>
+          <span className="text-[10px] text-[#858B99]">Bullish Score</span>
           <span className="text-[10px] text-white font-medium">{sentiment.score}/100</span>
         </div>
         <div className="w-full h-1.5 bg-white/[0.04] rounded-full overflow-hidden">
-          <motion.div className={`h-full rounded-full ${sentiment.overall === 'bullish' ? 'bg-[#86A88B]' : sentiment.overall === 'bearish' ? 'bg-[#C98282]' : 'bg-[#C2A15A]'}`}
+          <motion.div className={`h-full rounded-full ${sentiment.overall === 'bullish' ? 'bg-[#4ADE80]' : sentiment.overall === 'bearish' ? 'bg-[#F87171]' : 'bg-[#FACC15]'}`}
             initial={{ width: 0 }} animate={{ width: `${sentiment.score}%` }} transition={{ duration: 1, delay: 0.2 }} />
         </div>
       </div>
@@ -525,14 +525,14 @@ function SentimentGauge({ sentiment }: { sentiment: MarketSentiment }) {
       <div className="grid grid-cols-2 gap-2">
         {(() => {
           const items = [
-            { label: 'Fear & Greed', value: sentiment.fearGreedIndex, display: `${sentiment.fearGreedIndex} (${sentiment.fearGreedIndex > 60 ? 'Greed' : sentiment.fearGreedIndex < 40 ? 'Fear' : 'Neutral'})`, color: sentiment.fearGreedIndex > 60 ? 'text-[#86A88B]' : sentiment.fearGreedIndex < 40 ? 'text-[#C98282]' : 'text-[#C2A15A]' },
+            { label: 'Fear & Greed', value: sentiment.fearGreedIndex, display: `${sentiment.fearGreedIndex} (${sentiment.fearGreedIndex > 60 ? 'Greed' : sentiment.fearGreedIndex < 40 ? 'Fear' : 'Neutral'})`, color: sentiment.fearGreedIndex > 60 ? 'text-[#4ADE80]' : sentiment.fearGreedIndex < 40 ? 'text-[#F87171]' : 'text-[#FACC15]' },
             { label: 'VIX', value: sentiment.vix, display: `${sentiment.vix}`, color: 'text-white' },
-            { label: 'Put/Call', value: sentiment.putCallRatio, display: `${sentiment.putCallRatio}`, color: sentiment.putCallRatio < 1 ? 'text-[#86A88B]' : 'text-[#C98282]' },
-            { label: 'A/D Ratio', value: sentiment.advanceDecline, display: `${sentiment.advanceDecline}`, color: sentiment.advanceDecline > 1 ? 'text-[#86A88B]' : 'text-[#C98282]' },
+            { label: 'Put/Call', value: sentiment.putCallRatio, display: `${sentiment.putCallRatio}`, color: sentiment.putCallRatio < 1 ? 'text-[#4ADE80]' : 'text-[#F87171]' },
+            { label: 'A/D Ratio', value: sentiment.advanceDecline, display: `${sentiment.advanceDecline}`, color: sentiment.advanceDecline > 1 ? 'text-[#4ADE80]' : 'text-[#F87171]' },
           ];
           return items.map(m => (
             <div key={m.label} className="p-2 rounded-lg bg-white/[0.02]">
-              <p className="text-[9px] text-[#7F8FA3]">{m.label}</p>
+              <p className="text-[9px] text-[#858B99]">{m.label}</p>
               <p className={`text-[11px] font-semibold ${m.color}`}>{m.display}</p>
             </div>
           ));
@@ -557,13 +557,13 @@ function ChartPlaceholder({ symbol, timeframe, isLoading }: { symbol?: string; t
     <div className="rounded-xl border border-white/[0.04] bg-white/[0.01] p-4 space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <BarChart3 className="w-4 h-4 text-[#7F8FA3]" />
+          <BarChart3 className="w-4 h-4 text-[#858B99]" />
           <span className="text-[12px] font-medium text-white">{symbol || 'Market Overview'}</span>
-          <span className="text-[9px] text-[#7F8FA3]">{tfLabel}</span>
+          <span className="text-[9px] text-[#858B99]">{tfLabel}</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="w-1.5 h-1.5 rounded-full bg-[#86A88B] animate-pulse" />
-          <span className="text-[9px] text-[#7F8FA3]">AI analyzing</span>
+          <div className="w-1.5 h-1.5 rounded-full bg-[#4ADE80] animate-pulse" />
+          <span className="text-[9px] text-[#858B99]">AI analyzing</span>
         </div>
       </div>
 
@@ -572,7 +572,7 @@ function ChartPlaceholder({ symbol, timeframe, isLoading }: { symbol?: string; t
         {Array.from({ length: 40 }).map((_, i) => {
           const h = 20 + Math.sin(i * 0.4) * 30 + Math.random() * 40;
           return (
-            <motion.div key={i} className="flex-1 rounded-sm bg-[#86A88B]/10"
+            <motion.div key={i} className="flex-1 rounded-sm bg-[#4ADE80]/10"
               initial={{ height: 0 }} animate={{ height: `${h}%` }}
               transition={{ duration: 0.5, delay: i * 0.01 }} />
           );
@@ -580,16 +580,16 @@ function ChartPlaceholder({ symbol, timeframe, isLoading }: { symbol?: string; t
         {/* Overlay */}
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="text-center">
-            <Sparkles className="w-6 h-6 text-[#7EA6BF]/30 mx-auto mb-2" />
-            <p className="text-[11px] text-[#7F8FA3]">Premium chart coming soon</p>
+            <Sparkles className="w-6 h-6 text-[#8B5CF6]/30 mx-auto mb-2" />
+            <p className="text-[11px] text-[#858B99]">Premium chart coming soon</p>
             <p className="text-[9px] text-slate-700 mt-0.5">Real-time market data integration in progress</p>
           </div>
         </div>
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="text-[10px] text-[#7F8FA3]">Provider:</span>
-        <span className="text-[10px] text-[#A9B7C6]">AI-generated market intelligence</span>
+        <span className="text-[10px] text-[#858B99]">Provider:</span>
+        <span className="text-[10px] text-[#B6BBC6]">AI-generated market intelligence</span>
         <span className="ml-auto text-[9px] text-slate-700 flex items-center gap-1">
           <AlertTriangle className="w-3 h-3" />
           Not financial advice
@@ -607,10 +607,10 @@ function EmptySignalsState() {
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col items-center justify-center py-12 px-6 text-center">
       <div className="w-12 h-12 rounded-full bg-white/[0.03] border border-white/[0.06] flex items-center justify-center mb-4">
-        <Radar className="w-5 h-5 text-[#7F8FA3]" />
+        <Radar className="w-5 h-5 text-[#858B99]" />
       </div>
-      <p className="text-[13px] font-medium text-[#A9B7C6] mb-1">No signals yet</p>
-      <p className="text-[11px] text-[#7F8FA3] max-w-xs">Add assets to your watchlist to generate AI trading signals. Our engine analyzes price action, volume, and momentum patterns.</p>
+      <p className="text-[13px] font-medium text-[#B6BBC6] mb-1">No signals yet</p>
+      <p className="text-[11px] text-[#858B99] max-w-xs">Add assets to your watchlist to generate AI trading signals. Our engine analyzes price action, volume, and momentum patterns.</p>
     </motion.div>
   );
 }
@@ -621,7 +621,7 @@ function EmptySignalsState() {
 
 function DelayedDataBadge() {
   return (
-    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-medium bg-[#C2A15A]/[0.06] text-[#C2A15A] border border-[#C2A15A]/10">
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-medium bg-[#FACC15]/[0.06] text-[#FACC15] border border-[#FACC15]/10">
       <Clock className="w-2.5 h-2.5" />
       Delayed data
     </span>
@@ -634,8 +634,8 @@ function DelayedDataBadge() {
 
 function MarketStatus({ isOpen }: { isOpen: boolean }) {
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-medium ${isOpen ? 'bg-[#86A88B]/[0.06] text-[#86A88B] border border-[#86A88B]/10' : 'bg-slate-500/[0.06] text-[#A9B7C6] border border-slate-500/10'}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${isOpen ? 'bg-[#86A88B]' : 'bg-slate-500'}`} />
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-medium ${isOpen ? 'bg-[#4ADE80]/[0.06] text-[#4ADE80] border border-[#4ADE80]/10' : 'bg-slate-500/[0.06] text-[#B6BBC6] border border-slate-500/10'}`}>
+      <span className={`w-1.5 h-1.5 rounded-full ${isOpen ? 'bg-[#4ADE80]' : 'bg-slate-500'}`} />
       {isOpen ? 'Market Open' : 'Market Closed'}
     </span>
   );
@@ -765,16 +765,16 @@ export default function TradingPanel() {
         {/* Title Row */}
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <div className="relative flex h-7 w-7 items-center justify-center rounded-lg bg-[#86A88B]/[0.06] border border-[#86A88B]/10 shadow-[0_0_8px_-2px_rgba(134, 168, 139,0.06)]">
-              <TrendingUp className="h-4 w-4 text-[#86A88B]" />
+            <div className="relative flex h-7 w-7 items-center justify-center rounded-lg bg-[#4ADE80]/[0.06] border border-[#4ADE80]/10 shadow-[0_0_8px_-2px_rgba(134, 168, 139,0.06)]">
+              <TrendingUp className="h-4 w-4 text-[#4ADE80]" />
               {!hasLiveSignals && (
-                <motion.div className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[#C2A15A]"
+                <motion.div className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[#FACC15]"
                   animate={{ scale: [1, 1.5, 1], opacity: [0.7, 1, 0.7] }}
                   transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
                   style={{ boxShadow: '0 0 4px rgba(194, 161, 90,0.5)' }} />
               )}
               {hasLiveSignals && (
-                <motion.div className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[#86A88B]"
+                <motion.div className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[#4ADE80]"
                   animate={{ scale: [1, 1.5, 1], opacity: [0.7, 1, 0.7] }}
                   transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
                   style={{ boxShadow: '0 0 4px rgba(134, 168, 139,0.5)' }} />
@@ -782,7 +782,7 @@ export default function TradingPanel() {
             </div>
             <div>
               <h2 className="text-[14px] font-semibold text-white">Trading Intelligence</h2>
-              <p className="text-[10px] text-[#7F8FA3]">
+              <p className="text-[10px] text-[#858B99]">
                 {hasLiveSignals ? `Live · ${provider}` : 'AI-powered market analysis'}
               </p>
             </div>
@@ -790,13 +790,13 @@ export default function TradingPanel() {
           <div className="flex items-center gap-2">
             <MarketStatus isOpen={isMarketOpen} />
             <DelayedDataBadge />
-            <span className="text-[10px] text-[#7F8FA3] tabular-nums">
+            <span className="text-[10px] text-[#858B99] tabular-nums">
               <Clock className="w-3 h-3 inline mr-1" />
               {lastRefresh.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </span>
             <motion.button onClick={handleRefresh} animate={{ rotate: isRefreshing ? 360 : 0 }}
               transition={{ duration: 0.8, ease: 'linear' }}
-              className="h-7 w-7 flex items-center justify-center rounded-lg border border-white/[0.04] text-[#7F8FA3] hover:text-[#86A88B] hover:bg-[#86A88B]/[0.04] transition-all">
+              className="h-7 w-7 flex items-center justify-center rounded-lg border border-white/[0.04] text-[#858B99] hover:text-[#4ADE80] hover:bg-[#4ADE80]/[0.04] transition-all">
               <RefreshCw className="h-3.5 w-3.5" />
             </motion.button>
           </div>
@@ -804,18 +804,18 @@ export default function TradingPanel() {
 
         {/* Timeframe Controls */}
         <div className="flex items-center gap-1 mb-3">
-          <span className="text-[9px] text-[#7F8FA3] uppercase tracking-wider mr-1">{t('timeframe')}</span>
+          <span className="text-[9px] text-[#858B99] uppercase tracking-wider mr-1">{t('timeframe')}</span>
           {TIMEFRAMES.map((tf) => (
             <button key={tf.value} onClick={() => handleTimeframeChange(tf.value)}
               className={`px-2.5 py-[3px] rounded-md text-[10px] font-semibold transition-all ${
                 timeframe === tf.value
-                  ? 'bg-[#86A88B]/[0.08] text-[#86A88B] border border-[#86A88B]/15 shadow-[0_0_8px_-2px_rgba(134, 168, 139,0.08)]'
-                  : 'text-[#7F8FA3] hover:text-[#A9B7C6] border border-transparent hover:bg-white/[0.02]'
+                  ? 'bg-[#4ADE80]/[0.08] text-[#4ADE80] border border-[#4ADE80]/15 shadow-[0_0_8px_-2px_rgba(134, 168, 139,0.08)]'
+                  : 'text-[#858B99] hover:text-[#B6BBC6] border border-transparent hover:bg-white/[0.02]'
               }`}>
               {tf.label}
             </button>
           ))}
-          <span className="ml-auto text-[9px] text-[#7F8FA3] tabular-nums font-mono">{timeframe}</span>
+          <span className="ml-auto text-[9px] text-[#858B99] tabular-nums font-mono">{timeframe}</span>
         </div>
 
         {/* Tabs */}
@@ -823,7 +823,7 @@ export default function TradingPanel() {
           {tabs.map((tab) => (
             <button key={tab.id} onClick={() => { setActiveTab(tab.id); setSearch(''); if (tab.id === 'assets') setAssetCategory('stocks'); if (tab.id === 'watchlist') setAssetCategory('stocks'); }}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium transition-all duration-200 ${
-                activeTab === tab.id ? 'bg-white/[0.06] text-white shadow-[0_1px_4px_-1px_rgba(0,0,0,0.2)]' : 'text-[#7F8FA3] hover:text-[#A9B7C6]'
+                activeTab === tab.id ? 'bg-white/[0.06] text-white shadow-[0_1px_4px_-1px_rgba(0,0,0,0.2)]' : 'text-[#858B99] hover:text-[#B6BBC6]'
               }`}>
               <tab.icon className="w-3 h-3" />
               {tab.label}
@@ -841,13 +841,13 @@ export default function TradingPanel() {
               /* Loading skeletons */
               <div className="space-y-3">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-2">
-                  {[{ label: 'Long', color: 'text-[#86A88B]', border: 'border-[#86A88B]/10', bg: 'bg-[#86A88B]/[0.04]' },
-                    { label: 'Short', color: 'text-[#C98282]', border: 'border-[#C98282]/10', bg: 'bg-[#C98282]/[0.04]' },
-                    { label: 'Hold', color: 'text-[#C2A15A]', border: 'border-[#C2A15A]/10', bg: 'bg-[#C2A15A]/[0.04]' },
+                  {[{ label: 'Long', color: 'text-[#4ADE80]', border: 'border-[#4ADE80]/10', bg: 'bg-[#4ADE80]/[0.04]' },
+                    { label: 'Short', color: 'text-[#F87171]', border: 'border-[#F87171]/10', bg: 'bg-[#F87171]/[0.04]' },
+                    { label: 'Hold', color: 'text-[#FACC15]', border: 'border-[#FACC15]/10', bg: 'bg-[#FACC15]/[0.04]' },
                     { label: 'Avg Conf', color: 'text-white', border: 'border-white/[0.04]', bg: 'bg-white/[0.01]' }].map((stat) => (
                     <div key={stat.label} className={`p-3 rounded-xl border ${stat.border} ${stat.bg} text-center`}>
                       <p className={`text-lg font-semibold ${stat.color}`}>--</p>
-                      <p className="text-[9px] text-[#7F8FA3]">{stat.label}</p>
+                      <p className="text-[9px] text-[#858B99]">{stat.label}</p>
                     </div>
                   ))}
                 </div>
@@ -859,21 +859,21 @@ export default function TradingPanel() {
               <>
                 {/* Summary Stats */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                  <div className="p-3 rounded-xl border border-[#86A88B]/10 bg-[#86A88B]/[0.04] text-center">
-                    <p className="text-lg font-semibold text-[#86A88B]">{longCount}</p>
-                    <p className="text-[9px] text-[#7F8FA3]">Long</p>
+                  <div className="p-3 rounded-xl border border-[#4ADE80]/10 bg-[#4ADE80]/[0.04] text-center">
+                    <p className="text-lg font-semibold text-[#4ADE80]">{longCount}</p>
+                    <p className="text-[9px] text-[#858B99]">Long</p>
                   </div>
-                  <div className="p-3 rounded-xl border border-[#C98282]/10 bg-[#C98282]/[0.04] text-center">
-                    <p className="text-lg font-semibold text-[#C98282]">{shortCount}</p>
-                    <p className="text-[9px] text-[#7F8FA3]">Short</p>
+                  <div className="p-3 rounded-xl border border-[#F87171]/10 bg-[#F87171]/[0.04] text-center">
+                    <p className="text-lg font-semibold text-[#F87171]">{shortCount}</p>
+                    <p className="text-[9px] text-[#858B99]">Short</p>
                   </div>
-                  <div className="p-3 rounded-xl border border-[#C2A15A]/10 bg-[#C2A15A]/[0.04] text-center">
-                    <p className="text-lg font-semibold text-[#C2A15A]">{holdCount}</p>
-                    <p className="text-[9px] text-[#7F8FA3]">Hold</p>
+                  <div className="p-3 rounded-xl border border-[#FACC15]/10 bg-[#FACC15]/[0.04] text-center">
+                    <p className="text-lg font-semibold text-[#FACC15]">{holdCount}</p>
+                    <p className="text-[9px] text-[#858B99]">Hold</p>
                   </div>
                   <div className="p-3 rounded-xl border border-white/[0.04] bg-white/[0.01] text-center">
                     <p className="text-lg font-semibold text-white">{avgConf}%</p>
-                    <p className="text-[9px] text-[#7F8FA3]">Avg Conf</p>
+                    <p className="text-[9px] text-[#858B99]">Avg Conf</p>
                   </div>
                 </div>
 
@@ -909,7 +909,7 @@ export default function TradingPanel() {
               {(['stocks', 'crypto', 'watchlist'] as const).map((cat) => (
                 <button key={cat} onClick={() => setAssetCategory(cat)}
                   className={`px-3 py-1 rounded-md text-[11px] font-medium transition-all ${
-                    assetCategory === cat ? 'bg-white/[0.06] text-white' : 'text-[#7F8FA3] hover:text-[#A9B7C6]'
+                    assetCategory === cat ? 'bg-white/[0.06] text-white' : 'text-[#858B99] hover:text-[#B6BBC6]'
                   }`}>
                   {cat === 'watchlist' ? `My Watchlist (${watchlistSymbols.length})` : cat === 'stocks' ? 'Stocks' : 'Crypto'}
                 </button>
@@ -918,9 +918,9 @@ export default function TradingPanel() {
 
             {/* Search */}
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#7F8FA3]" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#858B99]" />
               <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search assets..."
-                className="w-full h-8 pl-8 pr-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[11px] text-slate-300 placeholder:text-[#7F8FA3] focus:outline-none focus:border-[#86A88B]/20 transition-all" />
+                className="w-full h-8 pl-8 pr-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[11px] text-slate-300 placeholder:text-[#858B99] focus:outline-none focus:border-[#4ADE80]/20 transition-all" />
             </div>
 
             {isRefreshing ? <WatchlistSkeleton /> : (
@@ -928,7 +928,7 @@ export default function TradingPanel() {
                 {searchedItems.length === 0 ? (
                   <div className="text-center py-8">
                     <Search className="w-8 h-8 text-white/[0.06] mx-auto mb-2" />
-                    <p className="text-[12px] text-[#7F8FA3]">No assets found</p>
+                    <p className="text-[12px] text-[#858B99]">No assets found</p>
                     <p className="text-[10px] text-slate-700 mt-1">Try a different search term</p>
                   </div>
                 ) : (
@@ -964,13 +964,13 @@ export default function TradingPanel() {
                 {/* Scenario Distribution */}
                 <div className="p-4 rounded-xl border border-white/[0.04] bg-white/[0.01]">
                   <h3 className="text-[12px] font-semibold text-white mb-3 flex items-center gap-2">
-                    <BarChart3 className="w-3.5 h-3.5 text-[#7F8FA3]" /> Signal Distribution
+                    <BarChart3 className="w-3.5 h-3.5 text-[#858B99]" /> Signal Distribution
                   </h3>
                   <div className="space-y-2">
                     {[
-                      { label: 'Bullish', count: longCount, total: filteredSignals.length, color: 'bg-[#86A88B]', text: 'text-[#86A88B]' },
-                      { label: 'Neutral', count: holdCount, total: filteredSignals.length, color: 'bg-[#C2A15A]', text: 'text-[#C2A15A]' },
-                      { label: 'Bearish', count: shortCount, total: filteredSignals.length, color: 'bg-[#C98282]', text: 'text-[#C98282]' },
+                      { label: 'Bullish', count: longCount, total: filteredSignals.length, color: 'bg-[#4ADE80]', text: 'text-[#4ADE80]' },
+                      { label: 'Neutral', count: holdCount, total: filteredSignals.length, color: 'bg-[#FACC15]', text: 'text-[#FACC15]' },
+                      { label: 'Bearish', count: shortCount, total: filteredSignals.length, color: 'bg-[#F87171]', text: 'text-[#F87171]' },
                     ].map((d) => (
                       <div key={d.label} className="flex items-center gap-3">
                         <span className={`text-[11px] ${d.text} w-14`}>{d.label}</span>
@@ -980,7 +980,7 @@ export default function TradingPanel() {
                             animate={{ width: d.total > 0 ? `${(d.count / d.total) * 100}%` : '0%' }}
                             transition={{ duration: 0.8, delay: 0.1 }} />
                         </div>
-                        <span className="text-[10px] text-[#7F8FA3] w-6 text-right">{d.count}</span>
+                        <span className="text-[10px] text-[#858B99] w-6 text-right">{d.count}</span>
                       </div>
                     ))}
                   </div>
@@ -989,7 +989,7 @@ export default function TradingPanel() {
                 {/* Sector Sentiment */}
                 <div className="p-4 rounded-xl border border-white/[0.04] bg-white/[0.01]">
                   <h3 className="text-[12px] font-semibold text-white mb-3 flex items-center gap-2">
-                    <Layers className="w-3.5 h-3.5 text-[#7F8FA3]" /> Sector Sentiment
+                    <Layers className="w-3.5 h-3.5 text-[#858B99]" /> Sector Sentiment
                   </h3>
                   {[
                     { sector: 'Technology', score: 78, trend: 'up' },
@@ -999,12 +999,12 @@ export default function TradingPanel() {
                     { sector: 'Crypto', score: 71, trend: 'up' },
                   ].map((s) => (
                     <div key={s.sector} className="flex items-center gap-3 py-2 border-b border-white/[0.02] last:border-0">
-                      <span className="text-[11px] text-[#A9B7C6] w-20">{s.sector}</span>
+                      <span className="text-[11px] text-[#B6BBC6] w-20">{s.sector}</span>
                       <div className="flex-1 h-1.5 bg-white/[0.04] rounded-full overflow-hidden">
-                        <motion.div className={`h-full rounded-full ${s.score > 60 ? 'bg-[#86A88B]' : s.score < 40 ? 'bg-[#C98282]' : 'bg-[#C2A15A]'}`}
+                        <motion.div className={`h-full rounded-full ${s.score > 60 ? 'bg-[#4ADE80]' : s.score < 40 ? 'bg-[#F87171]' : 'bg-[#FACC15]'}`}
                           initial={{ width: 0 }} animate={{ width: `${s.score}%` }} transition={{ duration: 0.8, delay: 0.1 }} />
                       </div>
-                      <span className="text-[10px] text-[#7F8FA3] w-8 text-right">{s.score}</span>
+                      <span className="text-[10px] text-[#858B99] w-8 text-right">{s.score}</span>
                     </div>
                   ))}
                 </div>
@@ -1021,7 +1021,7 @@ export default function TradingPanel() {
               {(['stocks', 'crypto'] as const).map((cat) => (
                 <button key={cat} onClick={() => { setAssetCategory(cat); setSearch(''); }}
                   className={`px-3 py-1 rounded-md text-[11px] font-medium transition-all ${
-                    assetCategory === cat ? 'bg-white/[0.06] text-white' : 'text-[#7F8FA3] hover:text-[#A9B7C6]'
+                    assetCategory === cat ? 'bg-white/[0.06] text-white' : 'text-[#858B99] hover:text-[#B6BBC6]'
                   }`}>
                   {cat === 'stocks' ? `Stocks (${ALL_ASSETS.filter(a => a.type === 'stock').length})` : `Crypto (${ALL_ASSETS.filter(a => a.type === 'crypto').length})`}
                 </button>
@@ -1030,9 +1030,9 @@ export default function TradingPanel() {
 
             {/* Search */}
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#7F8FA3]" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#858B99]" />
               <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={`Search ${assetCategory}...`}
-                className="w-full h-8 pl-8 pr-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[11px] text-slate-300 placeholder:text-[#7F8FA3] focus:outline-none focus:border-[#86A88B]/20 transition-all" />
+                className="w-full h-8 pl-8 pr-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[11px] text-slate-300 placeholder:text-[#858B99] focus:outline-none focus:border-[#4ADE80]/20 transition-all" />
             </div>
 
             {/* Asset Cards Grid */}
@@ -1049,12 +1049,12 @@ export default function TradingPanel() {
                       <div className="flex items-center justify-between mb-2">
                         <div className="flex items-center gap-2">
                           <span className="text-[12px] font-semibold text-white">{asset.symbol}</span>
-                          <span className="text-[9px] text-[#7F8FA3] truncate max-w-[80px]">{asset.name}</span>
+                          <span className="text-[9px] text-[#858B99] truncate max-w-[80px]">{asset.name}</span>
                         </div>
                         <div className="flex items-center gap-1">
                           <ScenarioChip scenario={isPositive ? 'bullish' : 'bearish'} />
                           <button onClick={() => toggleWatchlist(asset.symbol)}
-                            className={`p-1 rounded transition-all ${inWl ? 'text-[#86A88B]' : 'text-slate-700 hover:text-[#7F8FA3]'}`}>
+                            className={`p-1 rounded transition-all ${inWl ? 'text-[#4ADE80]' : 'text-slate-700 hover:text-[#858B99]'}`}>
                             {inWl ? <Eye className="w-3 h-3" /> : <Plus className="w-3 h-3" />}
                           </button>
                         </div>
@@ -1062,7 +1062,7 @@ export default function TradingPanel() {
                       <div className="flex items-end justify-between">
                         <div>
                           <p className="text-[14px] font-semibold text-white">${asset.price.toLocaleString('en-US', { minimumFractionDigits: 2 })}</p>
-                          <div className={`flex items-center gap-0.5 ${isPositive ? 'text-[#86A88B]' : 'text-[#C98282]'}`}>
+                          <div className={`flex items-center gap-0.5 ${isPositive ? 'text-[#4ADE80]' : 'text-[#F87171]'}`}>
                             {isPositive ? <ArrowUpRight className="w-3 h-3" /> : <ArrowDownRight className="w-3 h-3" />}
                             <span className="text-[10px] font-medium">{isPositive ? '+' : ''}{asset.changePercent.toFixed(2)}%</span>
                           </div>
@@ -1078,7 +1078,7 @@ export default function TradingPanel() {
             {ALL_ASSETS.filter(a => a.type === assetCategory).filter(a => !search || a.symbol.toLowerCase().includes(search.toLowerCase())).length === 0 && (
               <div className="text-center py-8">
                 <Search className="w-8 h-8 text-white/[0.06] mx-auto mb-2" />
-                <p className="text-[12px] text-[#7F8FA3]">No assets found</p>
+                <p className="text-[12px] text-[#858B99]">No assets found</p>
               </div>
             )}
           </>

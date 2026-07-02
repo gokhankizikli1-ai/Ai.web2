@@ -2,15 +2,15 @@ import { memo } from 'react';
 import type { WorkspaceTab } from '@/types';
 
 const WORKSPACE_COLORS: Record<WorkspaceTab, { glow: string; opacity: string }> = {
-  chat:     { glow: 'bg-[#7EA6BF]/3',    opacity: 'opacity-15' },
-  coding:   { glow: 'bg-[#7EA6BF]/3',    opacity: 'opacity-15' },
-  research: { glow: 'bg-[#7EA6BF]/3',  opacity: 'opacity-15' },
-  trading:  { glow: 'bg-[#7EA6BF]/3', opacity: 'opacity-20' },
-  business: { glow: 'bg-[#7EA6BF]/3',   opacity: 'opacity-15' },
-  startup:  { glow: 'bg-[#7EA6BF]/3',  opacity: 'opacity-15' },
-  agents:   { glow: 'bg-[#7EA6BF]/3',  opacity: 'opacity-15' },
-  study:    { glow: 'bg-[#7EA6BF]/3',    opacity: 'opacity-15' },
-  creative: { glow: 'bg-[#7EA6BF]/3',  opacity: 'opacity-15' },
+  chat:     { glow: 'bg-[#8B5CF6]/3',    opacity: 'opacity-15' },
+  coding:   { glow: 'bg-[#8B5CF6]/3',    opacity: 'opacity-15' },
+  research: { glow: 'bg-[#8B5CF6]/3',  opacity: 'opacity-15' },
+  trading:  { glow: 'bg-[#8B5CF6]/3', opacity: 'opacity-20' },
+  business: { glow: 'bg-[#8B5CF6]/3',   opacity: 'opacity-15' },
+  startup:  { glow: 'bg-[#8B5CF6]/3',  opacity: 'opacity-15' },
+  agents:   { glow: 'bg-[#8B5CF6]/3',  opacity: 'opacity-15' },
+  study:    { glow: 'bg-[#8B5CF6]/3',    opacity: 'opacity-15' },
+  creative: { glow: 'bg-[#8B5CF6]/3',  opacity: 'opacity-15' },
 };
 
 const AdaptiveBackground = memo(function AdaptiveBackground({ activeTab }: { activeTab: WorkspaceTab }) {

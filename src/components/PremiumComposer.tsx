@@ -278,24 +278,24 @@ export default function PremiumComposer({
         onDrop={onDrop}
         animate={{
           boxShadow: isDragging
-            ? '0 0 0 2px rgba(126,166,191,0.45), 0 0 28px -4px rgba(126,166,191,0.30)'
+            ? '0 0 0 2px rgba(139, 92, 246,0.45), 0 0 28px -4px rgba(139, 92, 246,0.30)'
             : isFocused
-              ? '0 0 0 1px rgba(126,166,191,0.30), 0 0 22px -4px rgba(126,166,191,0.14)'
+              ? '0 0 0 1px rgba(139, 92, 246,0.30), 0 0 22px -4px rgba(139, 92, 246,0.14)'
               : '0 0 0 1px transparent, 0 1px 3px rgba(0,0,0,0.1)',
         }}
         transition={{ duration: 0.2 }}
         className={`relative rounded-2xl border transition-all duration-300 ${
           isDragging
-            ? 'border-[#7EA6BF]/50'
+            ? 'border-[#8B5CF6]/50'
             : isFocused
-              ? 'border-[#7EA6BF]/40'
-              : 'border-white/[0.06] hover:border-[#7EA6BF]/20'
+              ? 'border-[#8B5CF6]/40'
+              : 'border-white/[0.06] hover:border-[#8B5CF6]/20'
         }`}
         style={{
-          background: isFocused ? 'rgba(24,33,43,0.68)' : 'rgba(21,28,36,0.5)',
+          background: isFocused ? 'rgba(22, 24, 32,0.68)' : 'rgba(18, 20, 27,0.5)',
           backdropFilter: 'blur(20px)',
           boxShadow: isFocused
-            ? '0 0 26px -6px rgba(126,166,191,0.16), inset 0 1px 0 rgba(255,255,255,0.05)'
+            ? '0 0 26px -6px rgba(139, 92, 246,0.16), inset 0 1px 0 rgba(255,255,255,0.05)'
             : '0 4px 16px -8px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.02)',
         }}
       >
@@ -309,10 +309,10 @@ export default function PremiumComposer({
               className="absolute inset-0 rounded-2xl pointer-events-none flex items-center justify-center z-10"
               style={{
                 background:
-                  'linear-gradient(135deg, rgba(126, 166, 191,0.10), rgba(126, 166, 191,0.10))',
+                  'linear-gradient(135deg, rgba(139, 92, 246,0.10), rgba(139, 92, 246,0.10))',
               }}
             >
-              <div className="flex items-center gap-2 text-[#8FB4CC] text-[12px] font-medium">
+              <div className="flex items-center gap-2 text-[#A78BFA] text-[12px] font-medium">
                 <FileUp className="h-3.5 w-3.5" />
                 Drop to attach
               </div>
@@ -364,7 +364,7 @@ export default function PremiumComposer({
             onChange={onFileInputChange}
           />
           {activeTools.length === 0 && assets.pendingAssets.length === 0 && (
-            <span className="text-[11px] text-[#7F8FA3] ml-1.5">Add tool or attach</span>
+            <span className="text-[11px] text-[#858B99] ml-1.5">Add tool or attach</span>
           )}
         </div>
 
@@ -386,16 +386,16 @@ export default function PremiumComposer({
             }
             rows={1}
             disabled={disabled}
-            className="w-full bg-transparent text-[14px] text-slate-200 placeholder:text-[#7F8FA3]/40 resize-none outline-none min-h-[28px] max-h-[200px] py-1 leading-[1.6] disabled:opacity-40 transition-opacity"
+            className="w-full bg-transparent text-[14px] text-slate-200 placeholder:text-[#858B99]/40 resize-none outline-none min-h-[28px] max-h-[200px] py-1 leading-[1.6] disabled:opacity-40 transition-opacity"
           />
         </div>
 
         <div className="flex items-center justify-between px-2 pb-2 pt-0.5">
-          <div className="flex items-center gap-1 text-[11px]" style={{ color: 'rgba(169, 183, 198,0.2)' }}>
+          <div className="flex items-center gap-1 text-[11px]" style={{ color: 'rgba(182, 187, 198,0.2)' }}>
             <Command className="h-2.5 w-2.5" />
             <span>K to focus</span>
             {assets.isUploading && (
-              <span className="ml-2 text-[#A9B7C6]">Uploading…</span>
+              <span className="ml-2 text-[#B6BBC6]">Uploading…</span>
             )}
           </div>
 
@@ -407,14 +407,14 @@ export default function PremiumComposer({
             animate={{
               backgroundColor: canSend ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.02)',
               boxShadow: canSend
-                ? '0 0 12px -2px rgba(126, 166, 191,0.15)'
+                ? '0 0 12px -2px rgba(139, 92, 246,0.15)'
                 : 'none',
             }}
             transition={{ duration: 0.2 }}
             className={`flex items-center justify-center h-8 w-8 rounded-xl transition-all duration-200 ${
               canSend
-                ? 'text-white hover:text-[#8FB4CC]'
-                : 'text-[#7F8FA3]'
+                ? 'text-white hover:text-[#A78BFA]'
+                : 'text-[#858B99]'
             } disabled:opacity-30`}
           >
             <Send className="h-[15px] w-[15px]" />
@@ -423,7 +423,7 @@ export default function PremiumComposer({
       </motion.div>
 
       <div className="flex items-center justify-center mt-2">
-        <span className="text-[11px]" style={{ color: 'rgba(169, 183, 198,0.2)' }}>KorvixAI can make mistakes. Verify important information.</span>
+        <span className="text-[11px]" style={{ color: 'rgba(182, 187, 198,0.2)' }}>KorvixAI can make mistakes. Verify important information.</span>
       </div>
     </div>
   );
