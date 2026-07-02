@@ -91,12 +91,12 @@ export default function CodeBlock({ language = 'text', children }: CodeBlockProp
     <div className="my-3 rounded-lg overflow-hidden border border-white/[0.04] bg-[#11151C] group/code">
       {/* Header - minimal, monochrome */}
       <div className="flex items-center justify-between px-3.5 py-1.5 bg-white/[0.015] border-b border-white/[0.03]">
-        <span className="text-[11px] text-[#858B99] uppercase tracking-wider">
+        <span className="text-[11px] text-[#94A3B8] uppercase tracking-wider">
           {displayLang}
         </span>
         <button
           onClick={handleCopy}
-          className="flex items-center gap-1 px-1.5 py-0.5 text-[11px] text-[#858B99] hover:text-[#B6BBC6] hover:bg-white/[0.03] transition-all duration-150 rounded"
+          className="flex items-center gap-1 px-1.5 py-0.5 text-[11px] text-[#94A3B8] hover:text-[#CBD5E1] hover:bg-white/[0.03] transition-all duration-150 rounded"
         >
           {copied ? (
             <>

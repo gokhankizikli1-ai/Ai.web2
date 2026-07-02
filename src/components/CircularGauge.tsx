@@ -61,8 +61,8 @@ export default function CircularGauge({
           </motion.span>
         </div>
       </div>
-      {label && <span className="text-[11px] font-medium text-[#B6BBC6]">{label}</span>}
-      {sublabel && <span className="text-[10px] text-[#858B99]">{sublabel}</span>}
+      {label && <span className="text-[11px] font-medium text-[#CBD5E1]">{label}</span>}
+      {sublabel && <span className="text-[10px] text-[#94A3B8]">{sublabel}</span>}
     </div>
   );
 }

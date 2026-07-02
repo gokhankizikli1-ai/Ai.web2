@@ -86,10 +86,10 @@ export default function AppBuilder() {
 
   return (
     <BuilderWorkspaceFrame
-      icon={<Cpu className="h-4 w-4 text-[#8B5CF6]" />}
+      icon={<Cpu className="h-4 w-4 text-[#3B82F6]" />}
       title="App Builder"
       subtitle="Describe what you want to build — Korvix locks a design direction, then plans, runs, and shows a real product workspace"
-      accent="#8B5CF6"
+      accent="#3B82F6"
       maxWidth="max-w-5xl"
     >
       {/* Input */}
@@ -102,8 +102,8 @@ export default function AppBuilder() {
           ctaLabel="Plan"
           busyLabel={label}
           busy={isBusy}
-          accent="#8B5CF6"
-          accent2="#A78BFA"
+          accent="#3B82F6"
+          accent2="#60A5FA"
           examples={EXAMPLE_PROMPTS}
           onExampleSelect={setIdea}
         />
@@ -169,16 +169,16 @@ export default function AppBuilder() {
       {phase === 'idle' && !showInterview && (
         <motion.div {...fadeUp(0.1)} className="max-w-lg mx-auto text-center py-14">
           <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-white/[0.06] bg-white/[0.02]">
-            <Sparkles className="w-6 h-6 text-[#A78BFA]/70" />
+            <Sparkles className="w-6 h-6 text-[#60A5FA]/70" />
           </div>
           <h3 className="text-[15px] font-medium text-white mb-2">Describe what you want to build</h3>
-          <p className="text-[12px] text-[#858B99] leading-relaxed mb-6">
+          <p className="text-[12px] text-[#94A3B8] leading-relaxed mb-6">
             Korvix locks a design direction, plans the build, runs it through the orchestrator, and shows the
             result inside a real product workspace — sidebar, module cards, metrics and activity included.
           </p>
           <div className="flex items-center justify-center gap-2 flex-wrap">
             {['Dashboard', 'CRM', 'Analytics', 'Internal Tool', 'AI Product'].map((c) => (
-              <span key={c} className="px-2.5 py-1 rounded-full bg-white/[0.02] border border-white/[0.05] text-[10px] text-[#858B99]">{c}</span>
+              <span key={c} className="px-2.5 py-1 rounded-full bg-white/[0.02] border border-white/[0.05] text-[10px] text-[#94A3B8]">{c}</span>
             ))}
           </div>
         </motion.div>

@@ -64,24 +64,24 @@ export default function WebsiteAnalyzer() {
           {/* Header */}
           <motion.div {...fadeUp(0)} className="mb-8">
             <div className="flex items-center gap-3 mb-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#8B5CF6]/[0.1] border border-[#8B5CF6]/15">
-                <Globe className="h-4 w-4 text-[#A78BFA]" />
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#3B82F6]/[0.1] border border-[#3B82F6]/15">
+                <Globe className="h-4 w-4 text-[#60A5FA]" />
               </div>
               <h1 className="text-2xl font-semibold text-white tracking-tight">Website Analyzer</h1>
             </div>
-            <p className="text-[13px] text-[#858B99] ml-11">Analyze any website for UX, SEO, conversion, speed, and copy</p>
+            <p className="text-[13px] text-[#94A3B8] ml-11">Analyze any website for UX, SEO, conversion, speed, and copy</p>
           </motion.div>
 
           {/* URL Input */}
           <motion.div {...fadeUp(0.05)} className="mb-8">
             <div className="flex gap-2">
               <div className="flex-1 relative">
-                <Globe className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#858B99]" />
+                <Globe className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94A3B8]" />
                 <input
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
                   placeholder="https://example.com"
-                  className="w-full h-12 pl-11 pr-4 rounded-xl bg-white/[0.02] border border-white/[0.04] text-[14px] text-slate-300 placeholder:text-[#858B99] focus:outline-none focus:border-[#8B5CF6]/20 focus:bg-white/[0.03] transition-all"
+                  className="w-full h-12 pl-11 pr-4 rounded-xl bg-white/[0.02] border border-white/[0.04] text-[14px] text-slate-300 placeholder:text-[#94A3B8] focus:outline-none focus:border-[#3B82F6]/20 focus:bg-white/[0.03] transition-all"
                   onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
                 />
               </div>
@@ -90,7 +90,7 @@ export default function WebsiteAnalyzer() {
                 whileTap={{ scale: 0.98 }}
                 onClick={handleAnalyze}
                 disabled={loading || !url.trim()}
-                className="h-12 px-6 rounded-xl bg-[#8B5CF6]/[0.1] border border-[#8B5CF6]/15 text-[#A78BFA] font-medium text-[13px] hover:bg-[#8B5CF6]/[0.15] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+                className="h-12 px-6 rounded-xl bg-[#3B82F6]/[0.1] border border-[#3B82F6]/15 text-[#60A5FA] font-medium text-[13px] hover:bg-[#3B82F6]/[0.15] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 {loading ? (
                   <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}>
@@ -116,7 +116,7 @@ export default function WebsiteAnalyzer() {
                     {tabs.slice(0, 5).map((t) => (
                       <div key={t.id} className="text-center">
                         <p className="text-lg font-semibold text-white">{t.score}</p>
-                        <p className="text-[10px] text-[#858B99]">{t.label}</p>
+                        <p className="text-[10px] text-[#94A3B8]">{t.label}</p>
                       </div>
                     ))}
                   </div>
@@ -130,7 +130,7 @@ export default function WebsiteAnalyzer() {
                     key={t.id}
                     onClick={() => setActiveTab(t.id)}
                     className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-medium transition-all whitespace-nowrap ${
-                      activeTab === t.id ? 'bg-white/[0.06] text-white' : 'text-[#858B99] hover:text-slate-300'
+                      activeTab === t.id ? 'bg-white/[0.06] text-white' : 'text-[#94A3B8] hover:text-slate-300'
                     }`}
                   >
                     <t.icon className="w-3.5 h-3.5" /> {t.label}
@@ -158,7 +158,7 @@ export default function WebsiteAnalyzer() {
                         ].map((item, i) => (
                           <div key={i} className="flex items-center gap-2">
                             {item.score === 'good' ? <CheckCircle2 className="w-3.5 h-3.5 text-[#4ADE80] shrink-0" /> : <AlertTriangle className="w-3.5 h-3.5 text-[#FACC15] shrink-0" />}
-                            <span className="text-[12px] text-[#B6BBC6]">{item.text}</span>
+                            <span className="text-[12px] text-[#CBD5E1]">{item.text}</span>
                           </div>
                         ))}
                       </div>
@@ -180,7 +180,7 @@ export default function WebsiteAnalyzer() {
                           {item.score === 'good' && <CheckCircle2 className="w-3.5 h-3.5 text-[#4ADE80] shrink-0" />}
                           {item.score === 'warn' && <AlertTriangle className="w-3.5 h-3.5 text-[#FACC15] shrink-0" />}
                           {item.score === 'fail' && <AlertCircle className="w-3.5 h-3.5 text-[#F87171] shrink-0" />}
-                          <span className="text-[12px] text-[#B6BBC6]">{item.text}</span>
+                          <span className="text-[12px] text-[#CBD5E1]">{item.text}</span>
                         </div>
                       ))}
                     </div>
@@ -191,7 +191,7 @@ export default function WebsiteAnalyzer() {
                   <div className="p-6 rounded-2xl border border-[#FACC15]/10 bg-[#FACC15]/[0.02] text-center">
                     <AlertCircle className="w-8 h-8 text-[#FACC15] mx-auto mb-3" />
                     <h3 className="text-sm font-medium text-white mb-1">Competitor Analysis Backend Not Connected</h3>
-                    <p className="text-[12px] text-[#858B99]">This feature requires a research backend. Connect it to enable competitor comparisons.</p>
+                    <p className="text-[12px] text-[#94A3B8]">This feature requires a research backend. Connect it to enable competitor comparisons.</p>
                   </div>
                 )}
 
@@ -206,7 +206,7 @@ export default function WebsiteAnalyzer() {
                       ].map((item, i) => (
                         <div key={i} className="flex items-center gap-2">
                           {item.score === 'good' ? <CheckCircle2 className="w-3.5 h-3.5 text-[#4ADE80] shrink-0" /> : <AlertTriangle className="w-3.5 h-3.5 text-[#FACC15] shrink-0" />}
-                          <span className="text-[12px] text-[#B6BBC6]">{item.text}</span>
+                          <span className="text-[12px] text-[#CBD5E1]">{item.text}</span>
                         </div>
                       ))}
                     </div>
@@ -223,7 +223,7 @@ export default function WebsiteAnalyzer() {
                       {item.status === 'pass' && <CheckCircle2 className="w-3.5 h-3.5 text-[#4ADE80] shrink-0" />}
                       {item.status === 'warn' && <AlertTriangle className="w-3.5 h-3.5 text-[#FACC15] shrink-0" />}
                       {item.status === 'fail' && <AlertCircle className="w-3.5 h-3.5 text-[#F87171] shrink-0" />}
-                      <span className="text-[11px] text-[#B6BBC6]">{item.label}</span>
+                      <span className="text-[11px] text-[#CBD5E1]">{item.label}</span>
                     </div>
                   ))}
                 </div>
@@ -234,9 +234,9 @@ export default function WebsiteAnalyzer() {
           {/* Empty state before analysis */}
           {!analyzed && !loading && (
             <motion.div {...fadeUp(0.1)} className="text-center py-16">
-              <Globe className="w-12 h-12 text-[#858B99] mx-auto mb-4" />
+              <Globe className="w-12 h-12 text-[#94A3B8] mx-auto mb-4" />
               <h3 className="text-sm font-medium text-white mb-1">Enter a URL to start analyzing</h3>
-              <p className="text-[12px] text-[#858B99]">Get UX, SEO, conversion, and performance insights</p>
+              <p className="text-[12px] text-[#94A3B8]">Get UX, SEO, conversion, and performance insights</p>
             </motion.div>
           )}
         </div>

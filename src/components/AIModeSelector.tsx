@@ -37,8 +37,8 @@ export default function AIModeSelector({ currentMode, onModeChange }: AIModeSele
         className="flex items-center gap-1.5 rounded-md bg-white/[0.015] hover:bg-white/[0.03] border border-white/[0.04] hover:border-white/[0.06] px-2.5 py-[5px] transition-all duration-150"
         title={`Mode: ${current.label}`}
       >
-        <span className="text-[#858B99]">{current.icon}</span>
-        <span className="text-[11px] text-[#B6BBC6] hidden sm:inline">{current.label}</span>
+        <span className="text-[#94A3B8]">{current.icon}</span>
+        <span className="text-[11px] text-[#CBD5E1] hidden sm:inline">{current.label}</span>
       </button>
 
       {open && (
@@ -53,20 +53,20 @@ export default function AIModeSelector({ currentMode, onModeChange }: AIModeSele
               className={`w-full flex items-center gap-2.5 px-3 py-2 text-left transition-all duration-150 ${
                 currentMode === mode.id
                   ? 'bg-white/[0.03] text-white'
-                  : 'text-[#858B99] hover:bg-white/[0.015] hover:text-slate-300'
+                  : 'text-[#94A3B8] hover:bg-white/[0.015] hover:text-slate-300'
               }`}
             >
-              <span className={currentMode === mode.id ? 'text-[#B6BBC6]' : 'text-[#858B99]'}>
+              <span className={currentMode === mode.id ? 'text-[#CBD5E1]' : 'text-[#94A3B8]'}>
                 {mode.icon}
               </span>
               <div className="flex-1 min-w-0">
                 <div className="text-[12px] flex items-center gap-1.5">
                   {mode.label}
                   {currentMode === mode.id && (
-                    <Check className="h-3 w-3 text-[#858B99]" />
+                    <Check className="h-3 w-3 text-[#94A3B8]" />
                   )}
                 </div>
-                <div className="text-[10px] text-[#858B99] leading-tight">{mode.description}</div>
+                <div className="text-[10px] text-[#94A3B8] leading-tight">{mode.description}</div>
               </div>
             </button>
           ))}

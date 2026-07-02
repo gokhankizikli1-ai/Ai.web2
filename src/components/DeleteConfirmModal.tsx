@@ -52,7 +52,7 @@ export default function DeleteConfirmModal({
               </div>
               <div>
                 <h3 className="text-[14px] font-semibold text-white">{title}</h3>
-                <p className="text-[12px] text-[#858B99] mt-1 leading-relaxed">{description}</p>
+                <p className="text-[12px] text-[#94A3B8] mt-1 leading-relaxed">{description}</p>
               </div>
             </div>
             <div className="flex items-center justify-end gap-2">
@@ -60,7 +60,7 @@ export default function DeleteConfirmModal({
                 variant="ghost"
                 size="sm"
                 onClick={onCancel}
-                className="h-8 px-4 text-[12px] text-[#B6BBC6] hover:text-white hover:bg-white/[0.04] rounded-lg"
+                className="h-8 px-4 text-[12px] text-[#CBD5E1] hover:text-white hover:bg-white/[0.04] rounded-lg"
               >
                 Cancel
               </Button>

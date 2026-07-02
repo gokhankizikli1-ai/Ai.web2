@@ -38,12 +38,12 @@ export default function TypingIndicator({
       className={`flex items-center gap-2.5 ${compact ? 'py-1' : 'py-2'}`}
     >
       <motion.span
-        className="h-2 w-2 rounded-full bg-[#8B5CF6]"
+        className="h-2 w-2 rounded-full bg-[#3B82F6]"
         animate={{ opacity: [0.35, 1, 0.35] }}
         transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
         aria-label="working"
       />
-      <span className="text-[12px] text-[#B6BBC6]">{steps[index]}</span>
+      <span className="text-[12px] text-[#CBD5E1]">{steps[index]}</span>
     </motion.div>
   );
 }

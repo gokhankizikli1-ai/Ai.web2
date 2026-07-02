@@ -353,13 +353,13 @@ export function uid(): string {
 }
 
 export const AGENT_ROLES = [
-  { id: 'frontend', label: 'Frontend Engineer', color: 'blue', gradient: 'from-blue-400 to-indigo-400', icon: 'Layout', description: 'Builds responsive UI components and frontend architecture.' },
-  { id: 'backend', label: 'Backend Engineer', color: 'cyan', gradient: 'from-cyan-400 to-teal-400', icon: 'Server', description: 'Designs scalable APIs, databases, and microservices.' },
-  { id: 'research', label: 'Research Analyst', color: 'purple', gradient: 'from-violet-400 to-purple-400', icon: 'Search', description: 'Conducts deep research, analysis, and reporting.' },
+  { id: 'frontend', label: 'Frontend Engineer', color: 'blue', gradient: 'from-blue-400 to-blue-400', icon: 'Layout', description: 'Builds responsive UI components and frontend architecture.' },
+  { id: 'backend', label: 'Backend Engineer', color: 'cyan', gradient: 'from-blue-400 to-teal-400', icon: 'Server', description: 'Designs scalable APIs, databases, and microservices.' },
+  { id: 'research', label: 'Research Analyst', color: 'purple', gradient: 'from-blue-400 to-blue-400', icon: 'Search', description: 'Conducts deep research, analysis, and reporting.' },
   { id: 'startup', label: 'Startup Strategist', color: 'orange', gradient: 'from-amber-400 to-orange-400', icon: 'Rocket', description: 'Validates ideas, analyzes markets, creates strategies.' },
   { id: 'ecommerce', label: 'Ecommerce Expert', color: 'emerald', gradient: 'from-emerald-400 to-green-400', icon: 'ShoppingBag', description: 'Optimizes stores, pricing, ads, and product research.' },
   { id: 'trading', label: 'Trading Analyst', color: 'green', gradient: 'from-green-400 to-emerald-400', icon: 'TrendingUp', description: 'Generates signals, analyzes markets, manages risk.' },
-  { id: 'design', label: 'UI/UX Designer', color: 'pink', gradient: 'from-pink-400 to-rose-400', icon: 'Palette', description: 'Creates design systems, prototypes, and visual experiences.' },
+  { id: 'design', label: 'UI/UX Designer', color: 'pink', gradient: 'from-blue-400 to-rose-400', icon: 'Palette', description: 'Creates design systems, prototypes, and visual experiences.' },
   { id: 'custom', label: 'Custom', color: 'slate', gradient: 'from-slate-400 to-slate-500', icon: 'Sparkles', description: 'A custom agent with a role you define.' },
 ];
 

@@ -48,7 +48,7 @@ function AgentCard({ agent, onChat, onAttach, onDelete }: {
           <div className="flex items-center gap-2">
             <h3 className="text-[13px] font-semibold text-white/90 truncate">{agent.name}</h3>
             <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium ${
-              agent.status === 'active' ? 'bg-[#4ADE80]/[0.08] text-[#4ADE80]' : 'bg-slate-500/[0.06] text-[#B6BBC6]'
+              agent.status === 'active' ? 'bg-[#4ADE80]/[0.08] text-[#4ADE80]' : 'bg-slate-500/[0.06] text-[#CBD5E1]'
             }`}>
               {agent.status === 'active' && <span className="w-1 h-1 rounded-full bg-[#4ADE80]" />}
               {agent.status}
@@ -75,7 +75,7 @@ function AgentCard({ agent, onChat, onAttach, onDelete }: {
           {agent.memoryMode === 'project' ? 'Project Context' : 'Independent'}
         </span>
         {isProjectAttached && (
-          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#8B5CF6]/[0.06] text-[9px] text-[#8B5CF6]/70 border border-[#8B5CF6]/10">
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#3B82F6]/[0.06] text-[9px] text-[#3B82F6]/70 border border-[#3B82F6]/10">
             <FolderOpen className="h-2.5 w-2.5" />
             {agent.projectName || 'Project'}
           </span>
@@ -112,18 +112,18 @@ function AgentCard({ agent, onChat, onAttach, onDelete }: {
         {!isProjectAttached && (
           <button
             onClick={onAttach}
-            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-medium text-[#8B5CF6]/70 transition-all"
+            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[11px] font-medium text-[#3B82F6]/70 transition-all"
             style={{
-              background: 'rgba(139, 92, 246,0.04)',
-              border: '1px solid rgba(139, 92, 246,0.08)',
+              background: 'rgba(59, 130, 246,0.04)',
+              border: '1px solid rgba(59, 130, 246,0.08)',
             }}
             onMouseEnter={(e) => {
-              (e.currentTarget as HTMLElement).style.background = 'rgba(139, 92, 246,0.08)';
-              (e.currentTarget as HTMLElement).style.borderColor = 'rgba(139, 92, 246,0.15)';
+              (e.currentTarget as HTMLElement).style.background = 'rgba(59, 130, 246,0.08)';
+              (e.currentTarget as HTMLElement).style.borderColor = 'rgba(59, 130, 246,0.15)';
             }}
             onMouseLeave={(e) => {
-              (e.currentTarget as HTMLElement).style.background = 'rgba(139, 92, 246,0.04)';
-              (e.currentTarget as HTMLElement).style.borderColor = 'rgba(139, 92, 246,0.08)';
+              (e.currentTarget as HTMLElement).style.background = 'rgba(59, 130, 246,0.04)';
+              (e.currentTarget as HTMLElement).style.borderColor = 'rgba(59, 130, 246,0.08)';
             }}
           >
             <FolderOpen className="h-3.5 w-3.5" />
@@ -160,7 +160,7 @@ function AttachToProjectModal({ agent, onClose, onAttach }: {
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-sm rounded-2xl p-5"
         style={{
-          background: 'linear-gradient(180deg, #161820, #171C24)',
+          background: 'linear-gradient(180deg, #151C28, #171C24)',
           border: '1px solid rgba(255,255,255,0.08)',
           boxShadow: '0 24px 48px rgba(0,0,0,0.4)',
         }}
@@ -206,8 +206,8 @@ function AttachToProjectModal({ agent, onClose, onAttach }: {
           disabled={!selected}
           className="w-full py-2.5 rounded-xl text-[13px] font-semibold text-white transition-all disabled:opacity-30"
           style={{
-            background: 'linear-gradient(135deg, #8B5CF6, #A78BFA)',
-            boxShadow: '0 4px 16px rgba(139, 92, 246,0.15)',
+            background: 'linear-gradient(135deg, #3B82F6, #60A5FA)',
+            boxShadow: '0 4px 16px rgba(59, 130, 246,0.15)',
           }}
         >
           Attach to Project
@@ -253,7 +253,7 @@ export default function AgentsPage() {
     <div className="min-h-[100dvh]" style={{ background: '#11151C', color: '#E2E8F0' }}>
       {/* Ambient glow */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute -top-[300px] right-[10%] w-[500px] h-[500px] rounded-full opacity-[0.025]" style={{ background: 'radial-gradient(circle, #8B5CF6 0%, transparent 70%)' }} />
+        <div className="absolute -top-[300px] right-[10%] w-[500px] h-[500px] rounded-full opacity-[0.025]" style={{ background: 'radial-gradient(circle, #3B82F6 0%, transparent 70%)' }} />
       </div>
 
       <div className="relative max-w-4xl mx-auto px-4 sm:px-6 pt-4 pb-20">
@@ -264,8 +264,8 @@ export default function AgentsPage() {
               <ArrowLeft className="h-3.5 w-3.5" />
             </button>
             <div className="w-px h-5 bg-white/10" />
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#8B5CF6]/[0.08] border border-[#8B5CF6]/15">
-              <Bot className="h-4 w-4 text-[#8B5CF6]/70" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#3B82F6]/[0.08] border border-[#3B82F6]/15">
+              <Bot className="h-4 w-4 text-[#3B82F6]/70" />
             </div>
             <div>
               <h1 className="text-[16px] font-semibold text-white/90">Agents</h1>
@@ -276,8 +276,8 @@ export default function AgentsPage() {
             onClick={() => navigate('/agents/builder')}
             className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-[12px] font-semibold text-white transition-all hover:brightness-110"
             style={{
-              background: 'linear-gradient(135deg, #8B5CF6, #A78BFA)',
-              boxShadow: '0 4px 16px rgba(139, 92, 246,0.15)',
+              background: 'linear-gradient(135deg, #3B82F6, #60A5FA)',
+              boxShadow: '0 4px 16px rgba(59, 130, 246,0.15)',
             }}
           >
             <Plus className="h-4 w-4" />
@@ -327,12 +327,12 @@ export default function AgentsPage() {
             <div
               className="flex h-16 w-16 items-center justify-center rounded-2xl mb-4"
               style={{
-                background: 'linear-gradient(135deg, rgba(139, 92, 246,0.08), rgba(139, 92, 246,0.08))',
-                border: '1px solid rgba(139, 92, 246,0.12)',
-                boxShadow: '0 0 24px rgba(139, 92, 246,0.04)',
+                background: 'linear-gradient(135deg, rgba(59, 130, 246,0.08), rgba(59, 130, 246,0.08))',
+                border: '1px solid rgba(59, 130, 246,0.12)',
+                boxShadow: '0 0 24px rgba(59, 130, 246,0.04)',
               }}
             >
-              <Bot className="h-7 w-7 text-[#8B5CF6]/30" />
+              <Bot className="h-7 w-7 text-[#3B82F6]/30" />
             </div>
             <h2 className="text-[15px] font-semibold text-white/60 mb-1.5">No agents yet</h2>
             <p className="text-[12px] text-white/25 mb-6 max-w-xs">
@@ -342,8 +342,8 @@ export default function AgentsPage() {
               onClick={() => navigate('/agents/builder')}
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-semibold text-white transition-all hover:brightness-110"
               style={{
-                background: 'linear-gradient(135deg, #8B5CF6, #A78BFA)',
-                boxShadow: '0 4px 16px rgba(139, 92, 246,0.15)',
+                background: 'linear-gradient(135deg, #3B82F6, #60A5FA)',
+                boxShadow: '0 4px 16px rgba(59, 130, 246,0.15)',
               }}
             >
               <Plus className="h-4 w-4" />

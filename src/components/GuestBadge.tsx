@@ -31,11 +31,11 @@ export default function GuestBadge() {
           initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -8 }}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#8B5CF6]/[0.06] border border-[#8B5CF6]/10"
+          className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#3B82F6]/[0.06] border border-[#3B82F6]/10"
         >
-          <User className="h-3 w-3 text-[#8B5CF6]" />
-          <span className="text-[11px] text-[#A78BFA]/80">Guest mode</span>
-          <button onClick={dismiss} className="ml-1 text-[#8B5CF6]/40 hover:text-[#A78BFA] transition-colors">
+          <User className="h-3 w-3 text-[#3B82F6]" />
+          <span className="text-[11px] text-[#60A5FA]/80">Guest mode</span>
+          <button onClick={dismiss} className="ml-1 text-[#3B82F6]/40 hover:text-[#60A5FA] transition-colors">
             <X className="h-3 w-3" />
           </button>
         </motion.div>

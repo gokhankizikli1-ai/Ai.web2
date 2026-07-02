@@ -43,31 +43,31 @@ const AGENTS: MarketplaceAgent[] = [
 ];
 
 const COLOR_ICON: Record<string, string> = {
-  orange: 'text-[#A78BFA]', emerald: 'text-[#A78BFA]', blue: 'text-[#A78BFA]',
-  cyan: 'text-[#A78BFA]', violet: 'text-[#A78BFA]', pink: 'text-[#A78BFA]',
-  red: 'text-[#A78BFA]', teal: 'text-[#A78BFA]', indigo: 'text-[#A78BFA]',
-  amber: 'text-[#A78BFA]', slate: 'text-[#B6BBC6]', green: 'text-[#A78BFA]',
+  orange: 'text-[#60A5FA]', emerald: 'text-[#60A5FA]', blue: 'text-[#60A5FA]',
+  cyan: 'text-[#60A5FA]', violet: 'text-[#60A5FA]', pink: 'text-[#60A5FA]',
+  red: 'text-[#60A5FA]', teal: 'text-[#60A5FA]', indigo: 'text-[#60A5FA]',
+  amber: 'text-[#60A5FA]', slate: 'text-[#CBD5E1]', green: 'text-[#60A5FA]',
 };
 
 const COLOR_BG_ICON: Record<string, string> = {
-  orange: 'bg-[#8B5CF6]/[0.06]', emerald: 'bg-[#8B5CF6]/[0.06]', blue: 'bg-[#8B5CF6]/[0.06]',
-  cyan: 'bg-[#8B5CF6]/[0.06]', violet: 'bg-[#8B5CF6]/[0.06]', pink: 'bg-[#8B5CF6]/[0.06]',
-  red: 'bg-[#8B5CF6]/[0.06]', teal: 'bg-[#8B5CF6]/[0.06]', indigo: 'bg-[#8B5CF6]/[0.06]',
-  amber: 'bg-[#8B5CF6]/[0.06]', slate: 'bg-slate-500/[0.06]', green: 'bg-[#8B5CF6]/[0.06]',
+  orange: 'bg-[#3B82F6]/[0.06]', emerald: 'bg-[#3B82F6]/[0.06]', blue: 'bg-[#3B82F6]/[0.06]',
+  cyan: 'bg-[#3B82F6]/[0.06]', violet: 'bg-[#3B82F6]/[0.06]', pink: 'bg-[#3B82F6]/[0.06]',
+  red: 'bg-[#3B82F6]/[0.06]', teal: 'bg-[#3B82F6]/[0.06]', indigo: 'bg-[#3B82F6]/[0.06]',
+  amber: 'bg-[#3B82F6]/[0.06]', slate: 'bg-slate-500/[0.06]', green: 'bg-[#3B82F6]/[0.06]',
 };
 
 const COLOR_BORDER_ICON: Record<string, string> = {
-  orange: 'border-[#8B5CF6]/15', emerald: 'border-[#8B5CF6]/15', blue: 'border-[#8B5CF6]/15',
-  cyan: 'border-[#8B5CF6]/15', violet: 'border-[#8B5CF6]/15', pink: 'border-[#8B5CF6]/15',
-  red: 'border-[#8B5CF6]/15', teal: 'border-[#8B5CF6]/15', indigo: 'border-[#8B5CF6]/15',
-  amber: 'border-[#8B5CF6]/15', slate: 'border-slate-500/15', green: 'border-[#8B5CF6]/15',
+  orange: 'border-[#3B82F6]/15', emerald: 'border-[#3B82F6]/15', blue: 'border-[#3B82F6]/15',
+  cyan: 'border-[#3B82F6]/15', violet: 'border-[#3B82F6]/15', pink: 'border-[#3B82F6]/15',
+  red: 'border-[#3B82F6]/15', teal: 'border-[#3B82F6]/15', indigo: 'border-[#3B82F6]/15',
+  amber: 'border-[#3B82F6]/15', slate: 'border-slate-500/15', green: 'border-[#3B82F6]/15',
 };
 
 const COLOR_GLOW: Record<string, string> = {
-  orange: 'group-hover:shadow-[0_0_20px_-4px_rgba(139, 92, 246,0.08)]', emerald: 'group-hover:shadow-[0_0_20px_-4px_rgba(139, 92, 246,0.08)]', blue: 'group-hover:shadow-[0_0_20px_-4px_rgba(139, 92, 246,0.08)]',
-  cyan: 'group-hover:shadow-[0_0_20px_-4px_rgba(139, 92, 246,0.08)]', violet: 'group-hover:shadow-[0_0_20px_-4px_rgba(139, 92, 246,0.08)]', pink: 'group-hover:shadow-[0_0_20px_-4px_rgba(139, 92, 246,0.08)]',
-  red: 'group-hover:shadow-[0_0_20px_-4px_rgba(139, 92, 246,0.08)]', teal: 'group-hover:shadow-[0_0_20px_-4px_rgba(139, 92, 246,0.08)]', indigo: 'group-hover:shadow-[0_0_20px_-4px_rgba(139, 92, 246,0.08)]',
-  amber: 'group-hover:shadow-[0_0_20px_-4px_rgba(139, 92, 246,0.08)]', slate: 'group-hover:shadow-[0_0_20px_-4px_rgba(182, 187, 198,0.08)]', green: 'group-hover:shadow-[0_0_20px_-4px_rgba(139, 92, 246,0.08)]',
+  orange: 'group-hover:shadow-[0_0_20px_-4px_rgba(59, 130, 246,0.08)]', emerald: 'group-hover:shadow-[0_0_20px_-4px_rgba(59, 130, 246,0.08)]', blue: 'group-hover:shadow-[0_0_20px_-4px_rgba(59, 130, 246,0.08)]',
+  cyan: 'group-hover:shadow-[0_0_20px_-4px_rgba(59, 130, 246,0.08)]', violet: 'group-hover:shadow-[0_0_20px_-4px_rgba(59, 130, 246,0.08)]', pink: 'group-hover:shadow-[0_0_20px_-4px_rgba(59, 130, 246,0.08)]',
+  red: 'group-hover:shadow-[0_0_20px_-4px_rgba(59, 130, 246,0.08)]', teal: 'group-hover:shadow-[0_0_20px_-4px_rgba(59, 130, 246,0.08)]', indigo: 'group-hover:shadow-[0_0_20px_-4px_rgba(59, 130, 246,0.08)]',
+  amber: 'group-hover:shadow-[0_0_20px_-4px_rgba(59, 130, 246,0.08)]', slate: 'group-hover:shadow-[0_0_20px_-4px_rgba(203, 213, 225,0.08)]', green: 'group-hover:shadow-[0_0_20px_-4px_rgba(59, 130, 246,0.08)]',
 };
 
 export default function AgentMarketplace() {
@@ -91,9 +91,9 @@ export default function AgentMarketplace() {
 
   const stats = [
     { label: 'Installed', value: `${installedCount}`, icon: CheckCircle2, color: 'text-[#4ADE80]', bg: 'bg-[#4ADE80]/[0.06]', border: 'border-[#4ADE80]/10' },
-    { label: 'Available', value: `${AGENTS.length}`, icon: Bot, color: 'text-[#A78BFA]', bg: 'bg-[#8B5CF6]/[0.06]', border: 'border-[#8B5CF6]/10' },
-    { label: 'Top Rating', value: `${topRating}`, icon: Trophy, color: 'text-[#A78BFA]', bg: 'bg-[#8B5CF6]/[0.06]', border: 'border-[#8B5CF6]/10' },
-    { label: 'Downloads', value: `${(totalDownloads / 1000).toFixed(1)}k`, icon: Download, color: 'text-[#A78BFA]', bg: 'bg-[#8B5CF6]/[0.06]', border: 'border-[#8B5CF6]/10' },
+    { label: 'Available', value: `${AGENTS.length}`, icon: Bot, color: 'text-[#60A5FA]', bg: 'bg-[#3B82F6]/[0.06]', border: 'border-[#3B82F6]/10' },
+    { label: 'Top Rating', value: `${topRating}`, icon: Trophy, color: 'text-[#60A5FA]', bg: 'bg-[#3B82F6]/[0.06]', border: 'border-[#3B82F6]/10' },
+    { label: 'Downloads', value: `${(totalDownloads / 1000).toFixed(1)}k`, icon: Download, color: 'text-[#60A5FA]', bg: 'bg-[#3B82F6]/[0.06]', border: 'border-[#3B82F6]/10' },
   ];
 
   return (
@@ -110,7 +110,7 @@ export default function AgentMarketplace() {
         >
           <Link
             to="/workspace"
-            className="inline-flex items-center gap-1.5 text-[11px] text-[#858B99] hover:text-slate-300 transition-colors"
+            className="inline-flex items-center gap-1.5 text-[11px] text-[#94A3B8] hover:text-slate-300 transition-colors"
           >
             <ArrowLeft className="h-3 w-3" />
             Back to Workspace
@@ -125,11 +125,11 @@ export default function AgentMarketplace() {
           className="mb-6"
         >
           <div className="flex items-center gap-3 mb-2">
-            <div className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-[#8B5CF6]/[0.06] border border-[#8B5CF6]/15">
-              <Bot className="h-5 w-5 text-[#A78BFA]/70" />
+            <div className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-[#3B82F6]/[0.06] border border-[#3B82F6]/15">
+              <Bot className="h-5 w-5 text-[#60A5FA]/70" />
               {/* Orbital ring */}
               <motion.div
-                className="absolute inset-0 rounded-xl border border-[#8B5CF6]/[0.08]"
+                className="absolute inset-0 rounded-xl border border-[#3B82F6]/[0.08]"
                 animate={{ rotate: 360 }}
                 transition={{ duration: 8, repeat: Infinity, ease: 'linear' }}
                 style={{ borderStyle: 'dashed' }}
@@ -137,7 +137,7 @@ export default function AgentMarketplace() {
             </div>
             <div>
               <h1 className="text-[22px] sm:text-[26px] font-semibold tracking-tight">Agent Marketplace</h1>
-              <p className="text-[13px] text-[#858B99]">Browse, install, and create AI agents for your workspace.</p>
+              <p className="text-[13px] text-[#94A3B8]">Browse, install, and create AI agents for your workspace.</p>
             </div>
           </div>
         </motion.div>
@@ -165,7 +165,7 @@ export default function AgentMarketplace() {
                 </div>
                 <div>
                   <p className="text-[16px] font-semibold text-white">{s.value}</p>
-                  <p className="text-[10px] text-[#858B99]">{s.label}</p>
+                  <p className="text-[10px] text-[#94A3B8]">{s.label}</p>
                 </div>
               </div>
             </motion.div>
@@ -180,7 +180,7 @@ export default function AgentMarketplace() {
           className="mb-4 p-3 rounded-xl border border-[#FACC15]/10 bg-[#FACC15]/[0.02] flex items-center gap-2.5"
         >
           <AlertCircle className="w-4 h-4 text-[#FACC15] shrink-0" />
-          <p className="text-[11px] text-[#858B99]">
+          <p className="text-[11px] text-[#94A3B8]">
             All agents shown are demonstration previews. Install actions are simulated. Connect your backend to enable real agent execution.
           </p>
         </motion.div>
@@ -193,17 +193,17 @@ export default function AgentMarketplace() {
           className="mb-6 space-y-3"
         >
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2 rounded-xl bg-white/[0.015] border border-white/[0.04] px-3.5 py-2.5 max-w-sm focus-within:border-[#8B5CF6]/15 focus-within:bg-white/[0.02] transition-all w-full sm:w-auto">
-              <Search className="h-3.5 w-3.5 text-[#858B99] shrink-0" />
+            <div className="flex items-center gap-2 rounded-xl bg-white/[0.015] border border-white/[0.04] px-3.5 py-2.5 max-w-sm focus-within:border-[#3B82F6]/15 focus-within:bg-white/[0.02] transition-all w-full sm:w-auto">
+              <Search className="h-3.5 w-3.5 text-[#94A3B8] shrink-0" />
               <input
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search agents, tags..."
-                className="flex-1 bg-transparent text-[12px] text-white placeholder:text-[#858B99] outline-none min-w-0"
+                className="flex-1 bg-transparent text-[12px] text-white placeholder:text-[#94A3B8] outline-none min-w-0"
               />
             </div>
-            <div className="flex items-center gap-1.5 text-[10px] text-[#858B99]">
+            <div className="flex items-center gap-1.5 text-[10px] text-[#94A3B8]">
               <Users className="h-3 w-3" />
               <span>{filtered.length} agent{filtered.length !== 1 ? 's' : ''} {activeCategory !== 'All' ? `in ${activeCategory}` : ''}</span>
             </div>
@@ -217,7 +217,7 @@ export default function AgentMarketplace() {
                 className={`px-3 py-[6px] rounded-lg text-[11px] font-medium transition-all ${
                   activeCategory === c
                     ? 'bg-white/[0.06] text-white border border-white/[0.06] shadow-[0_1px_4px_-1px_rgba(0,0,0,0.2)]'
-                    : 'text-[#858B99] hover:text-[#B6BBC6] hover:bg-white/[0.015] border border-transparent hover:border-white/[0.03]'
+                    : 'text-[#94A3B8] hover:text-[#CBD5E1] hover:bg-white/[0.015] border border-transparent hover:border-white/[0.03]'
                 }`}
               >
                 {c}
@@ -251,24 +251,24 @@ export default function AgentMarketplace() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="flex items-center gap-1 text-[9px] font-medium text-[#A78BFA] bg-[#8B5CF6]/[0.06] border border-[#8B5CF6]/10 px-1.5 py-0.5 rounded-full">
+                        <span className="flex items-center gap-1 text-[9px] font-medium text-[#60A5FA] bg-[#3B82F6]/[0.06] border border-[#3B82F6]/10 px-1.5 py-0.5 rounded-full">
                           <Zap className="h-2.5 w-2.5" /> Featured
                         </span>
-                        <span className="text-[9px] text-[#858B99]">by {featured.creator}</span>
+                        <span className="text-[9px] text-[#94A3B8]">by {featured.creator}</span>
                       </div>
                       <h3 className="text-[16px] font-semibold text-white mb-1">{featured.name}</h3>
-                      <p className="text-[12px] text-[#858B99] leading-relaxed mb-3">{featured.description}</p>
+                      <p className="text-[12px] text-[#94A3B8] leading-relaxed mb-3">{featured.description}</p>
                       <div className="flex items-center gap-3">
                         <div className="flex items-center gap-1">
                           {[1, 2, 3, 4, 5].map((s) => (
                             <Star
                               key={s}
-                              className={`h-3 w-3 ${s <= Math.floor(featured.rating) ? 'text-[#A78BFA] fill-[#A78BFA]' : 'text-[#858B99]'}`}
+                              className={`h-3 w-3 ${s <= Math.floor(featured.rating) ? 'text-[#60A5FA] fill-[#60A5FA]' : 'text-[#94A3B8]'}`}
                             />
                           ))}
-                          <span className="text-[11px] text-[#B6BBC6] ml-1">{featured.rating}</span>
+                          <span className="text-[11px] text-[#CBD5E1] ml-1">{featured.rating}</span>
                         </div>
-                        <span className="text-[10px] text-[#858B99] flex items-center gap-1">
+                        <span className="text-[10px] text-[#94A3B8] flex items-center gap-1">
                           <Download className="h-3 w-3" /> {featured.downloads}
                         </span>
                       </div>
@@ -311,23 +311,23 @@ export default function AgentMarketplace() {
                       <span className="text-[13px] font-medium text-slate-200 group-hover:text-white transition-colors">{agent.name}</span>
                       {agent.installed && <CheckCircle2 className="h-3.5 w-3.5 text-[#4ADE80]/60 shrink-0" />}
                     </div>
-                    <p className="text-[11px] text-[#858B99] leading-relaxed mt-0.5">{agent.description}</p>
+                    <p className="text-[11px] text-[#94A3B8] leading-relaxed mt-0.5">{agent.description}</p>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between text-[10px] text-[#858B99] mb-3">
-                  <span>by <span className="text-[#858B99]">{agent.creator}</span></span>
+                <div className="flex items-center justify-between text-[10px] text-[#94A3B8] mb-3">
+                  <span>by <span className="text-[#94A3B8]">{agent.creator}</span></span>
                   <div className="flex items-center gap-2.5">
                     <span className="flex items-center gap-1">
                       {[1, 2, 3, 4, 5].map((s) => (
                         <Star
                           key={s}
-                          className={`h-2.5 w-2.5 ${s <= Math.floor(agent.rating) ? 'text-[#A78BFA]/50 fill-[#A78BFA]/50' : 'text-[#858B99]'}`}
+                          className={`h-2.5 w-2.5 ${s <= Math.floor(agent.rating) ? 'text-[#60A5FA]/50 fill-[#60A5FA]/50' : 'text-[#94A3B8]'}`}
                         />
                       ))}
-                      <span className="text-[#858B99] ml-0.5">{agent.rating}</span>
+                      <span className="text-[#94A3B8] ml-0.5">{agent.rating}</span>
                     </span>
-                    <span className="flex items-center gap-0.5 text-[#858B99]">
+                    <span className="flex items-center gap-0.5 text-[#94A3B8]">
                       <Download className="h-2.5 w-2.5" />
                       {agent.downloads}
                     </span>
@@ -338,7 +338,7 @@ export default function AgentMarketplace() {
                   {agent.tags.slice(0, 3).map((t) => (
                     <span
                       key={t}
-                      className="text-[9px] text-[#858B99] bg-white/[0.02] border border-white/[0.03] px-2 py-[2px] rounded-md"
+                      className="text-[9px] text-[#94A3B8] bg-white/[0.02] border border-white/[0.03] px-2 py-[2px] rounded-md"
                     >
                       {t}
                     </span>
@@ -349,7 +349,7 @@ export default function AgentMarketplace() {
                   className={`w-full h-9 rounded-xl text-[11px] font-medium transition-all duration-200 flex items-center justify-center gap-1.5 ${
                     agent.installed
                       ? 'bg-[#4ADE80]/[0.06] text-[#4ADE80]/70 border border-[#4ADE80]/10 cursor-default'
-                      : 'bg-white/[0.03] text-[#B6BBC6] hover:text-white hover:bg-white/[0.06] border border-white/[0.05] hover:border-white/[0.1] active:scale-[0.98]'
+                      : 'bg-white/[0.03] text-[#CBD5E1] hover:text-white hover:bg-white/[0.06] border border-white/[0.05] hover:border-white/[0.1] active:scale-[0.98]'
                   }`}
                 >
                   {agent.installed ? (
@@ -375,10 +375,10 @@ export default function AgentMarketplace() {
             className="flex flex-col items-center justify-center py-16 text-center"
           >
             <div className="relative p-8 rounded-2xl border border-white/[0.04] bg-white/[0.015] max-w-sm w-full">
-              <div className="absolute -top-6 left-1/2 -translate-x-1/2 w-16 h-16 bg-[#8B5CF6]/[0.03] rounded-full blur-xl pointer-events-none" />
-              <Search className="h-8 w-8 text-[#858B99] mx-auto mb-3" />
-              <p className="text-[14px] font-medium text-[#B6BBC6] mb-1">No agents found</p>
-              <p className="text-[12px] text-[#858B99]">Try adjusting your search or category filter.</p>
+              <div className="absolute -top-6 left-1/2 -translate-x-1/2 w-16 h-16 bg-[#3B82F6]/[0.03] rounded-full blur-xl pointer-events-none" />
+              <Search className="h-8 w-8 text-[#94A3B8] mx-auto mb-3" />
+              <p className="text-[14px] font-medium text-[#CBD5E1] mb-1">No agents found</p>
+              <p className="text-[12px] text-[#94A3B8]">Try adjusting your search or category filter.</p>
             </div>
           </motion.div>
         )}

@@ -142,7 +142,7 @@ export default function BuilderRefinePanel({
           <ToolbarButton icon={Eye} label="Preview" onClick={() => setOpen(false)} accent={accent} />
           <button
             onClick={() => setOpen((v) => !v)}
-            className="ml-0.5 flex h-7 w-7 items-center justify-center rounded-lg text-[#858B99] hover:text-slate-300 hover:bg-white/[0.04] transition-colors"
+            className="ml-0.5 flex h-7 w-7 items-center justify-center rounded-lg text-[#94A3B8] hover:text-slate-300 hover:bg-white/[0.04] transition-colors"
             title={open ? 'Collapse' : 'Expand'}
           >
             <ChevronDown className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
@@ -183,7 +183,7 @@ export default function BuilderRefinePanel({
                   onChange={(e) => setInstruction(e.target.value)}
                   placeholder="Tell Korvix what to change in this build…"
                   rows={3}
-                  className="w-full px-3.5 py-3 rounded-xl bg-black/20 border text-[13px] text-slate-200 placeholder:text-[#858B99] focus:outline-none resize-none transition-colors"
+                  className="w-full px-3.5 py-3 rounded-xl bg-black/20 border text-[13px] text-slate-200 placeholder:text-[#94A3B8] focus:outline-none resize-none transition-colors"
                   style={{ borderColor: `${accent}30` }}
                 />
               ) : (
@@ -242,7 +242,7 @@ function ToolbarButton({
       onClick={onClick}
       className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-colors"
       style={{
-        color: active ? accent : '#B6BBC6',
+        color: active ? accent : '#CBD5E1',
         background: active ? `${accent}18` : 'transparent',
       }}
     >
@@ -257,7 +257,7 @@ function TabButton({ label, active, onClick }: { label: string; active: boolean;
     <button
       onClick={onClick}
       className={`px-3 py-1.5 rounded-md text-[11px] font-medium transition-colors ${
-        active ? 'bg-white/[0.06] text-white' : 'text-[#858B99] hover:text-slate-300'
+        active ? 'bg-white/[0.06] text-white' : 'text-[#94A3B8] hover:text-slate-300'
       }`}
     >
       {label}
@@ -268,7 +268,7 @@ function TabButton({ label, active, onClick }: { label: string; active: boolean;
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1.5">
-      <p className="text-[11px] text-[#858B99]">{label}</p>
+      <p className="text-[11px] text-[#94A3B8]">{label}</p>
       {children}
     </div>
   );
@@ -290,7 +290,7 @@ function ChipRow({
             className="px-2.5 py-1 rounded-md text-[11px] border transition-all"
             style={isActive
               ? { background: `${accent}22`, borderColor: `${accent}55`, color: '#fff' }
-              : { background: 'rgba(255,255,255,0.02)', borderColor: 'rgba(255,255,255,0.07)', color: '#B6BBC6' }}
+              : { background: 'rgba(255,255,255,0.02)', borderColor: 'rgba(255,255,255,0.07)', color: '#CBD5E1' }}
           >
             {opt}
           </button>

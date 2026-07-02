@@ -244,7 +244,7 @@ export default function BuildInfoOverlay() {
         aria-label="Build info"
         data-testid="build-info-minimized"
       >
-        <GitCommit className={`h-3 w-3 ${commitMismatch ? 'text-[#F87171]' : 'text-[#A78BFA]/70'}`} />
+        <GitCommit className={`h-3 w-3 ${commitMismatch ? 'text-[#F87171]' : 'text-[#60A5FA]/70'}`} />
       </motion.button>
     );
   }
@@ -270,7 +270,7 @@ export default function BuildInfoOverlay() {
       >
         {/* Collapsed bar — fe/be commit + env + controls. */}
         <div className="flex items-center gap-2 px-2 py-1">
-          <GitCommit className={`h-3 w-3 ${commitMismatch ? 'text-[#F87171]' : 'text-[#A78BFA]/60'}`} />
+          <GitCommit className={`h-3 w-3 ${commitMismatch ? 'text-[#F87171]' : 'text-[#60A5FA]/60'}`} />
           <span className={`${commitMismatch ? 'text-[#F87171]' : 'text-slate-300'}`}>
             fe <span className="font-bold">{feCommit}</span>
           </span>
@@ -283,17 +283,17 @@ export default function BuildInfoOverlay() {
             </>
           )}
           <span className="text-slate-700">·</span>
-          <span className="text-[#858B99] hidden sm:inline">{fe.env}</span>
+          <span className="text-[#94A3B8] hidden sm:inline">{fe.env}</span>
           <button
             onClick={() => setView(view === 'expanded' ? 'collapsed' : 'expanded')}
-            className="ml-1 h-4 w-4 flex items-center justify-center text-[#858B99] hover:text-white"
+            className="ml-1 h-4 w-4 flex items-center justify-center text-[#94A3B8] hover:text-white"
             title={view === 'expanded' ? 'Collapse' : 'Expand'}
           >
             {view === 'expanded' ? <ChevronDown className="h-3 w-3" /> : <ChevronUp className="h-3 w-3" />}
           </button>
           <button
             onClick={() => setView('minimized')}
-            className="h-4 w-4 flex items-center justify-center text-[#858B99] hover:text-[#A78BFA]"
+            className="h-4 w-4 flex items-center justify-center text-[#94A3B8] hover:text-[#60A5FA]"
             title="Minimize"
             aria-label="Minimize"
           >
@@ -301,7 +301,7 @@ export default function BuildInfoOverlay() {
           </button>
           <button
             onClick={handleDismiss}
-            className="h-4 w-4 flex items-center justify-center text-[#858B99] hover:text-[#F87171]"
+            className="h-4 w-4 flex items-center justify-center text-[#94A3B8] hover:text-[#F87171]"
             title="Hide for this session"
           >
             <X className="h-3 w-3" />
@@ -348,7 +348,7 @@ export default function BuildInfoOverlay() {
                       detection_debug() when admin-debug flag is on)
                   All values are user-observed — no secret leaks. */}
               <div className="pt-2 mt-1 border-t border-white/[0.05]">
-                <div className="text-[9px] uppercase tracking-wider text-[#A78BFA]/60 mb-1">
+                <div className="text-[9px] uppercase tracking-wider text-[#60A5FA]/60 mb-1">
                   Owner-mode diagnostic
                 </div>
                 <Row label="signed in"   value={authIsAuthenticated ? 'yes' : 'no'} />
@@ -377,7 +377,7 @@ export default function BuildInfoOverlay() {
                   next to the value so you can paste it into the Google
                   Console with one tap. */}
               <div className="pt-2 mt-1 border-t border-white/[0.05]">
-                <div className="text-[9px] uppercase tracking-wider text-[#A78BFA]/60 mb-1">
+                <div className="text-[9px] uppercase tracking-wider text-[#60A5FA]/60 mb-1">
                   OAuth redirect_uri (this build)
                 </div>
                 <Row
@@ -392,7 +392,7 @@ export default function BuildInfoOverlay() {
               <div className="pt-1 flex items-center justify-between gap-2">
                 <button
                   onClick={fetchBackend}
-                  className="text-[10px] text-[#A78BFA]/80 hover:text-[#A78BFA]"
+                  className="text-[10px] text-[#60A5FA]/80 hover:text-[#60A5FA]"
                 >
                   refresh
                 </button>
@@ -400,7 +400,7 @@ export default function BuildInfoOverlay() {
                   href={`${API_BASE}/v2/health`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-[10px] text-[#858B99] hover:text-slate-300 flex items-center gap-1"
+                  className="text-[10px] text-[#94A3B8] hover:text-slate-300 flex items-center gap-1"
                 >
                   /v2/health <ExternalLink className="h-2.5 w-2.5" />
                 </a>
@@ -422,7 +422,7 @@ function Row({
 }) {
   return (
     <div className="flex items-baseline gap-2">
-      <span className="text-[#858B99] w-16 shrink-0">{label}</span>
+      <span className="text-[#94A3B8] w-16 shrink-0">{label}</span>
       <span className="text-slate-300 flex-1 break-all">{value}</span>
       {onCopy && (
         <button

@@ -21,7 +21,7 @@ const DEFAULT_STEPS = [
 ];
 
 export default function BuilderProgressCard({
-  label, steps = DEFAULT_STEPS, accent = '#8B5CF6', accent2 = '#8B5CF6',
+  label, steps = DEFAULT_STEPS, accent = '#3B82F6', accent2 = '#3B82F6',
 }: BuilderProgressCardProps) {
   return (
     <div className="relative overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.015] p-8">
@@ -38,7 +38,7 @@ export default function BuilderProgressCard({
         </div>
         <div className="min-w-0">
           <p className="text-[13px] font-medium text-white truncate">{label}</p>
-          <p className="text-[11px] text-[#858B99]">Korvix is building your preview</p>
+          <p className="text-[11px] text-[#94A3B8]">Korvix is building your preview</p>
         </div>
       </div>
 
@@ -49,7 +49,7 @@ export default function BuilderProgressCard({
               className="h-1.5 w-1.5 shrink-0 rounded-full animate-pulse-soft"
               style={{ background: accent, animationDelay: `${i * 220}ms` }}
             />
-            <span className="text-[12px] text-[#B6BBC6]">{step}</span>
+            <span className="text-[12px] text-[#CBD5E1]">{step}</span>
           </div>
         ))}
       </div>

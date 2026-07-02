@@ -21,11 +21,11 @@ interface UserAccountDropdownProps {
 }
 
 const PLAN_CONFIG = {
-  free:       { label: 'Free',       color: 'text-[#B6BBC6]',       bg: 'bg-slate-500/[0.06]',       border: 'border-slate-500/10',       icon: Sparkles },
-  basic:      { label: 'Basic',      color: 'text-[#8B5CF6]',        bg: 'bg-[#8B5CF6]/[0.06]',        border: 'border-[#8B5CF6]/10',        icon: Zap },
-  pro:        { label: 'Pro',        color: 'text-[#8B5CF6]',       bg: 'bg-[#8B5CF6]/[0.06]',       border: 'border-[#8B5CF6]/10',       icon: Crown },
-  ultra:      { label: 'Ultra',      color: 'text-[#8B5CF6]',      bg: 'bg-[#8B5CF6]/[0.06]',      border: 'border-[#8B5CF6]/10',      icon: Shield },
-  enterprise: { label: 'Enterprise', color: 'text-[#8B5CF6]',        bg: 'bg-[#8B5CF6]/[0.06]',        border: 'border-[#8B5CF6]/10',        icon: Landmark },
+  free:       { label: 'Free',       color: 'text-[#CBD5E1]',       bg: 'bg-slate-500/[0.06]',       border: 'border-slate-500/10',       icon: Sparkles },
+  basic:      { label: 'Basic',      color: 'text-[#3B82F6]',        bg: 'bg-[#3B82F6]/[0.06]',        border: 'border-[#3B82F6]/10',        icon: Zap },
+  pro:        { label: 'Pro',        color: 'text-[#3B82F6]',       bg: 'bg-[#3B82F6]/[0.06]',       border: 'border-[#3B82F6]/10',       icon: Crown },
+  ultra:      { label: 'Ultra',      color: 'text-[#3B82F6]',      bg: 'bg-[#3B82F6]/[0.06]',      border: 'border-[#3B82F6]/10',      icon: Shield },
+  enterprise: { label: 'Enterprise', color: 'text-[#3B82F6]',        bg: 'bg-[#3B82F6]/[0.06]',        border: 'border-[#3B82F6]/10',        icon: Landmark },
 };
 
 export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: UserAccountDropdownProps) {
@@ -159,13 +159,13 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
             : 'bg-white/[0.015] border-white/[0.03] hover:bg-white/[0.03] hover:border-white/[0.06]'
         }`}
       >
-        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-[#8B5CF6]/20 to-[#A78BFA]/20 border border-[#8B5CF6]/10 shrink-0">
+        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-[#3B82F6]/20 to-[#60A5FA]/20 border border-[#3B82F6]/10 shrink-0">
           {sessionActive ? (
-            <span className="text-[10px] font-medium text-[#8B5CF6]/80">
+            <span className="text-[10px] font-medium text-[#3B82F6]/80">
               {avatarInitials}
             </span>
           ) : (
-            <User className="w-3.5 h-3.5 text-[#8B5CF6]/70" />
+            <User className="w-3.5 h-3.5 text-[#3B82F6]/70" />
           )}
         </div>
         <div className="flex-1 min-w-0 text-left">
@@ -174,7 +174,7 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
           </div>
           <div className="flex items-center gap-1.5 mt-0.5">
             <div className="w-1 h-1 rounded-full bg-[#4ADE80]/60" />
-            <span className="text-[10px] text-[#858B99]">
+            <span className="text-[10px] text-[#94A3B8]">
               {isOwner ? 'Owner' : plan.label}
             </span>
           </div>
@@ -207,7 +207,7 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
                   <div className="flex items-center gap-2 px-4 py-3 border-b border-white/[0.04] shrink-0">
                     <button
                       onClick={() => setShowLangMenu(false)}
-                      className="h-6 w-6 flex items-center justify-center rounded-md text-[#858B99] hover:text-white hover:bg-white/[0.04] transition-all"
+                      className="h-6 w-6 flex items-center justify-center rounded-md text-[#94A3B8] hover:text-white hover:bg-white/[0.04] transition-all"
                     >
                       <ChevronRight className="h-3.5 w-3.5 rotate-180" />
                     </button>
@@ -217,7 +217,7 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
                   {/* Scrollable language list with fade gradients */}
                   <div className="relative">
                     {/* Top fade gradient */}
-                    <div className="absolute top-0 left-0 right-0 h-3 bg-gradient-to-b from-[#0e0e14] to-transparent z-10 pointer-events-none rounded-t-lg" />
+                    <div className="absolute top-0 left-0 right-0 h-3 bg-gradient-to-b from-[#0A0D12] to-transparent z-10 pointer-events-none rounded-t-lg" />
 
                     <div
                       className="p-2 overflow-y-auto scrollbar-thin"
@@ -234,20 +234,20 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
                           className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[12px] transition-all ${
                             lang === l.code
                               ? 'bg-white/[0.05] text-white'
-                              : 'text-[#858B99] hover:text-slate-300 hover:bg-white/[0.03]'
+                              : 'text-[#94A3B8] hover:text-slate-300 hover:bg-white/[0.03]'
                           }`}
                         >
-                          <Globe className="w-3.5 h-3.5 text-[#858B99] shrink-0" />
+                          <Globe className="w-3.5 h-3.5 text-[#94A3B8] shrink-0" />
                           <span className="flex-1">{l.label}</span>
                           {lang === l.code && (
-                            <div className="w-1.5 h-1.5 rounded-full bg-[#8B5CF6] shrink-0" />
+                            <div className="w-1.5 h-1.5 rounded-full bg-[#3B82F6] shrink-0" />
                           )}
                         </button>
                       ))}
                     </div>
 
                     {/* Bottom fade gradient */}
-                    <div className="absolute bottom-0 left-0 right-0 h-4 bg-gradient-to-t from-[#0e0e14] to-transparent z-10 pointer-events-none rounded-b-lg" />
+                    <div className="absolute bottom-0 left-0 right-0 h-4 bg-gradient-to-t from-[#0A0D12] to-transparent z-10 pointer-events-none rounded-b-lg" />
                   </div>
                 </motion.div>
               ) : (
@@ -263,20 +263,20 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
                   {/* User Info Header */}
                   <div className="px-4 py-3.5 border-b border-white/[0.04]">
                     <div className="flex items-center gap-3 mb-3">
-                      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#8B5CF6]/20 to-[#A78BFA]/20 border border-[#8B5CF6]/10 shrink-0">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#3B82F6]/20 to-[#60A5FA]/20 border border-[#3B82F6]/10 shrink-0">
                         {sessionActive ? (
-                          <span className="text-[11px] font-medium text-[#8B5CF6]/80">
+                          <span className="text-[11px] font-medium text-[#3B82F6]/80">
                             {avatarInitials}
                           </span>
                         ) : (
-                          <User className="w-4 h-4 text-[#8B5CF6]/70" />
+                          <User className="w-4 h-4 text-[#3B82F6]/70" />
                         )}
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-[13px] font-medium text-white truncate">
                           {sessionActive ? displayName : 'Guest User'}
                         </p>
-                        <p className="text-[11px] text-[#858B99] truncate">
+                        <p className="text-[11px] text-[#94A3B8] truncate">
                           {sessionActive ? (displaySubtitle || ' ') : 'user@korvix.ai'}
                         </p>
                       </div>
@@ -295,18 +295,18 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
                       <div className="flex flex-col gap-1.5">
                         <button
                           onClick={() => { setOpen(false); navigate('/signup'); }}
-                          className="w-full h-8 flex items-center justify-center gap-1.5 rounded-xl bg-[#8B5CF6]/[0.08] text-[#8B5CF6] border border-[#8B5CF6]/15 text-[11px] font-medium hover:bg-[#8B5CF6]/[0.12] transition-all"
+                          className="w-full h-8 flex items-center justify-center gap-1.5 rounded-xl bg-[#3B82F6]/[0.08] text-[#3B82F6] border border-[#3B82F6]/15 text-[11px] font-medium hover:bg-[#3B82F6]/[0.12] transition-all"
                         >
                           <Sparkles className="w-3 h-3" /> Create Account
                         </button>
                         <button
                           onClick={() => { setOpen(false); navigate('/login'); }}
-                          className="w-full h-8 flex items-center justify-center gap-1.5 rounded-xl bg-white/[0.02] text-[#B6BBC6] border border-white/[0.04] text-[11px] hover:bg-white/[0.04] hover:text-slate-300 transition-all"
+                          className="w-full h-8 flex items-center justify-center gap-1.5 rounded-xl bg-white/[0.02] text-[#CBD5E1] border border-white/[0.04] text-[11px] hover:bg-white/[0.04] hover:text-slate-300 transition-all"
                         >
                           <LogIn className="w-3 h-3" /> Sign In
                         </button>
                       </div>
-                      <p className="text-[9px] text-[#858B99] mt-1.5 text-center">Sync across devices</p>
+                      <p className="text-[9px] text-[#94A3B8] mt-1.5 text-center">Sync across devices</p>
                     </div>
                   )}
 
@@ -315,17 +315,17 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
                     <div className="flex items-center justify-between mb-1.5">
                       <div className="flex items-center gap-1.5">
                         <Coins className="w-3.5 h-3.5 text-[#FACC15]/60" />
-                        <span className="text-[11px] text-[#B6BBC6]">Credits</span>
+                        <span className="text-[11px] text-[#CBD5E1]">Credits</span>
                       </div>
                       <span className="text-[11px] font-medium text-white tabular-nums">
-                        {remainingCredits} <span className="text-[#858B99]">/ {totalCredits}</span>
+                        {remainingCredits} <span className="text-[#94A3B8]">/ {totalCredits}</span>
                       </span>
                     </div>
 
                     {/* Progress bar */}
                     <div className="w-full h-1 bg-white/[0.03] rounded-full overflow-hidden mb-2">
                       <motion.div
-                        className="h-full rounded-full bg-[#8B5CF6]/40"
+                        className="h-full rounded-full bg-[#3B82F6]/40"
                         initial={{ width: 0 }}
                         animate={{ width: `${usagePercent}%` }}
                         transition={{ duration: 0.6, ease: 'easeOut' }}
@@ -342,7 +342,7 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
                     <div className="flex flex-col gap-1.5">
                       <button
                         onClick={handleBuyCredits}
-                        className="w-full h-7 flex items-center justify-center gap-1.5 rounded-lg bg-[#8B5CF6]/[0.05] text-[#8B5CF6] border border-[#8B5CF6]/8 text-[11px] font-medium hover:bg-[#8B5CF6]/[0.08] transition-all"
+                        className="w-full h-7 flex items-center justify-center gap-1.5 rounded-lg bg-[#3B82F6]/[0.05] text-[#3B82F6] border border-[#3B82F6]/8 text-[11px] font-medium hover:bg-[#3B82F6]/[0.08] transition-all"
                       >
                         <CreditCard className="w-3 h-3" /> Buy Credits
                       </button>
@@ -399,12 +399,12 @@ function MenuItem({
       className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[12px] transition-all ${
         danger
           ? 'text-[#F87171]/60 hover:text-[#F87171] hover:bg-[#F87171]/[0.04]'
-          : 'text-[#858B99] hover:text-slate-300 hover:bg-white/[0.03]'
+          : 'text-[#94A3B8] hover:text-slate-300 hover:bg-white/[0.03]'
       }`}
     >
-      <Icon className={`w-3.5 h-3.5 ${danger ? 'text-[#F87171]/40' : 'text-[#858B99]'}`} />
+      <Icon className={`w-3.5 h-3.5 ${danger ? 'text-[#F87171]/40' : 'text-[#94A3B8]'}`} />
       <span className="flex-1">{label}</span>
-      {hasSubmenu && <ChevronRight className="w-3 h-3 text-[#858B99]" />}
+      {hasSubmenu && <ChevronRight className="w-3 h-3 text-[#94A3B8]" />}
     </button>
   );
 }

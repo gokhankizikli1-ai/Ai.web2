@@ -42,38 +42,38 @@
   }
 
   .dark {
-    /* ── Neutral-Dark Workspace + Indigo/Violet brand accent ──
-       Base: #090A0F bg · #0D0E12 chrome · #111217 card · #161820 elevated
-       · #12141B input · border #272A33 / strong #343846
-       Text: #F4F4F5 / #B6BBC6 / #858B99 · accent #8B5CF6 (soft #A78BFA) */
-    --background: 228 22% 5%;       /* #090A0F */
-    --foreground: 240 5% 96%;       /* #F4F4F5 */
-    --card: 230 15% 8%;             /* #111217 */
-    --card-foreground: 240 5% 96%;
-    --popover: 228 19% 11%;         /* #161820 elevated */
-    --popover-foreground: 240 5% 96%;
-    --primary: 228 19% 11%;         /* #161820 neutral surface */
-    --primary-foreground: 240 5% 96%;
-    --secondary: 229 20% 9%;        /* #12141B */
-    --secondary-foreground: 240 5% 96%;
-    --muted: 230 15% 8%;
-    --muted-foreground: 222 9% 56%; /* #858B99 muted text */
-    --accent: 258 90% 66%;          /* #8B5CF6 brand violet */
-    --accent-foreground: 240 5% 96%;
+    /* ── Graphite Workspace + Royal-Blue brand accent ──
+       Base: #07090D bg · #0D1117 chrome · #111722 card · #151C28 elevated
+       · #101620 input · border #253142 / strong #334155
+       Text: #F8FAFC / #CBD5E1 / #94A3B8 · accent #3B82F6 (soft #60A5FA) */
+    --background: 220 24% 4%;       /* #07090D */
+    --foreground: 210 40% 98%;      /* #F8FAFC */
+    --card: 218 34% 10%;            /* #111722 */
+    --card-foreground: 210 40% 98%;
+    --popover: 216 30% 12%;         /* #151C28 elevated */
+    --popover-foreground: 210 40% 98%;
+    --primary: 216 30% 12%;         /* #151C28 neutral surface */
+    --primary-foreground: 210 40% 98%;
+    --secondary: 216 33% 9%;        /* #101620 */
+    --secondary-foreground: 210 40% 98%;
+    --muted: 218 34% 10%;
+    --muted-foreground: 215 20% 65%; /* #94A3B8 muted text */
+    --accent: 217 91% 60%;          /* #3B82F6 royal blue */
+    --accent-foreground: 210 40% 98%;
     --destructive: 0 91% 71%;       /* #F87171 */
-    --destructive-foreground: 240 5% 96%;
-    --border: 225 13% 18%;          /* #272A33 */
-    --input: 225 13% 18%;
-    --ring: 255 92% 76%;            /* #A78BFA soft accent */
+    --destructive-foreground: 210 40% 98%;
+    --border: 213 27% 20%;          /* #253142 */
+    --input: 213 27% 20%;
+    --ring: 213 94% 68%;            /* #60A5FA soft accent */
     --radius: 0.625rem;
-    --sidebar-background: 234 13% 6%;   /* #0D0E12 */
-    --sidebar-foreground: 240 5% 96%;
-    --sidebar-primary: 258 90% 66%;     /* #8B5CF6 */
+    --sidebar-background: 215 30% 6%;   /* #0D1117 */
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 217 91% 60%;     /* #3B82F6 */
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 228 19% 11%;
-    --sidebar-accent-foreground: 240 5% 96%;
-    --sidebar-border: 225 13% 16%;
-    --sidebar-ring: 255 92% 76%;
+    --sidebar-accent: 216 30% 12%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 213 27% 18%;
+    --sidebar-ring: 213 94% 68%;
   }
 
   html {
@@ -109,8 +109,8 @@
     z-index: 0;
     pointer-events: none;
     background:
-      radial-gradient(1100px 620px at 50% -12%, rgba(139, 92, 246, 0.06), transparent 60%),
-      radial-gradient(760px 520px at 100% 0%, rgba(139, 92, 246, 0.035), transparent 62%);
+      radial-gradient(1100px 620px at 50% -12%, rgba(59, 130, 246, 0.06), transparent 60%),
+      radial-gradient(760px 520px at 100% 0%, rgba(59, 130, 246, 0.035), transparent 62%);
   }
 
   ::selection {
@@ -180,7 +180,7 @@
     background-image: linear-gradient(to right, #101827, #52677A);
   }
   .dark .text-gradient {
-    background-image: linear-gradient(to right, #F4F4F5, #A78BFA);
+    background-image: linear-gradient(to right, #F8FAFC, #60A5FA);
   }
 
   /* ── Glass surfaces ── */
@@ -197,23 +197,23 @@
 
   /* ── Button gradient (Primary) ── */
   .btn-primary {
-    /* Brand-accent primary — indigo/violet so a CTA clearly reads as
-       clickable and premium (Linear/Cursor-like), not flat gray. */
-    background: linear-gradient(180deg, #8B5CF6 0%, #6D5DF6 100%);
-    border: 1px solid rgba(167, 139, 250, 0.45);
-    color: #F7F5FF;
-    box-shadow: 0 2px 8px rgba(109, 93, 246, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+    /* Premium DARK primary — graphite with a subtle blue edge; the royal
+       blue only comes forward on hover/focus (not a saturated fill). */
+    background: linear-gradient(180deg, #1A2233 0%, #111722 100%);
+    border: 1px solid rgba(96, 165, 250, 0.22);
+    color: #F8FAFC;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.05);
     transition: all 0.2s cubic-bezier(0.22, 1, 0.36, 1);
   }
   .btn-primary:hover {
-    background: linear-gradient(180deg, #9670F8 0%, #7A6AF8 100%);
-    border-color: rgba(167, 139, 250, 0.7);
-    box-shadow: 0 6px 18px rgba(109, 93, 246, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    background: linear-gradient(180deg, #1E293B 0%, #141B29 100%);
+    border-color: rgba(96, 165, 250, 0.5);
+    box-shadow: 0 4px 16px rgba(37, 99, 235, 0.25), 0 0 0 1px rgba(59, 130, 246, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.07);
     transform: translateY(-1px);
   }
   .btn-primary:active {
     transform: translateY(0);
-    box-shadow: 0 1px 3px rgba(109, 93, 246, 0.3);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
   }
 
   /* ── Button glass (Secondary) ── */
@@ -225,9 +225,9 @@
     transition: all 0.2s cubic-bezier(0.22, 1, 0.36, 1);
   }
   .btn-glass:hover {
-    background: rgba(139, 92, 246, 0.10);
-    border-color: rgba(167, 139, 250, 0.30);
-    color: #F4F4F5;
+    background: rgba(59, 130, 246, 0.10);
+    border-color: rgba(96, 165, 250, 0.30);
+    color: #F8FAFC;
   }
 
   /* ── Surface layers (ink graphite) ── */

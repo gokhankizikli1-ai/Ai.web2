@@ -3,8 +3,8 @@ import type { RadarHistoryEntry } from '@/lib/startupRadarHistory';
 
 const CONFIDENCE_TONE: Record<string, string> = {
   high: 'text-[#86A08F]',
-  medium: 'text-[#A78BFA]',
-  low: 'text-[#B6BBC6]',
+  medium: 'text-[#60A5FA]',
+  low: 'text-[#CBD5E1]',
 };
 
 function timeAgo(iso: string): string {
@@ -40,13 +40,13 @@ export default function RecentAnalyses({ history, defaultOpen, onRestore, onClea
       className="rounded-2xl border border-white/[0.05] bg-white/[0.01] p-4 group"
     >
       <summary className="flex items-center gap-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
-        <ChevronRight className="h-3.5 w-3.5 text-[#858B99] transition-transform group-open:rotate-90" />
-        <Clock3 className="h-3.5 w-3.5 text-[#B6BBC6]" />
+        <ChevronRight className="h-3.5 w-3.5 text-[#94A3B8] transition-transform group-open:rotate-90" />
+        <Clock3 className="h-3.5 w-3.5 text-[#CBD5E1]" />
         <span className="text-[13px] font-semibold text-slate-100">Recent analyses</span>
-        <span className="text-[11px] text-[#858B99]">({history.length})</span>
+        <span className="text-[11px] text-[#94A3B8]">({history.length})</span>
         <button
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); onClearHistory(); }}
-          className="ml-auto flex items-center gap-1 text-[10px] text-[#858B99] hover:text-[#C98A93] transition-colors"
+          className="ml-auto flex items-center gap-1 text-[10px] text-[#94A3B8] hover:text-[#C98A93] transition-colors"
         >
           <Trash2 className="h-3 w-3" /> Clear history
         </button>
@@ -58,20 +58,20 @@ export default function RecentAnalyses({ history, defaultOpen, onRestore, onClea
             onClick={() => onRestore(entry)}
             className="flex items-center gap-3 w-full text-left px-2.5 py-2 rounded-lg border border-white/[0.03] bg-white/[0.008] hover:bg-white/[0.03] hover:border-white/[0.08] transition-all group/item"
           >
-            <Target className="h-3 w-3 text-[#858B99] group-hover/item:text-[#A78BFA] shrink-0 transition-colors" />
+            <Target className="h-3 w-3 text-[#94A3B8] group-hover/item:text-[#60A5FA] shrink-0 transition-colors" />
             <span className="flex-1 min-w-0 text-[12px] text-slate-200 truncate">{entry.report.query}</span>
             <span className="shrink-0 text-[11px] font-semibold text-slate-100">
               {entry.report.summary.opportunity_score}
-              <span className="text-[9px] font-normal text-[#858B99]">/100</span>
+              <span className="text-[9px] font-normal text-[#94A3B8]">/100</span>
             </span>
-            <span className={`shrink-0 text-[10px] ${CONFIDENCE_TONE[entry.report.summary.confidence] || 'text-[#B6BBC6]'}`}>
+            <span className={`shrink-0 text-[10px] ${CONFIDENCE_TONE[entry.report.summary.confidence] || 'text-[#CBD5E1]'}`}>
               {entry.report.summary.confidence}
             </span>
-            <span className="shrink-0 text-[10px] text-[#858B99] hidden sm:inline">{timeAgo(entry.savedAt)}</span>
+            <span className="shrink-0 text-[10px] text-[#94A3B8] hidden sm:inline">{timeAgo(entry.savedAt)}</span>
           </button>
         ))}
       </div>
-      <p className="text-[10px] text-[#858B99] mt-2">Stored locally in this browser — restoring does not re-fetch data.</p>
+      <p className="text-[10px] text-[#94A3B8] mt-2">Stored locally in this browser — restoring does not re-fetch data.</p>
     </details>
   );
 }

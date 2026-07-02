@@ -14,14 +14,14 @@ const iconMap: Record<string, React.ElementType> = {
 const statusConfig = {
   active: { label: 'Active', bg: 'bg-[#4ADE80]/[0.08]', text: 'text-[#4ADE80]', dot: 'bg-[#4ADE80]', pulse: true },
   draft: { label: 'Draft', bg: 'bg-[#FACC15]/[0.08]', text: 'text-[#FACC15]', dot: 'bg-[#FACC15]', pulse: false },
-  archived: { label: 'Archived', bg: 'bg-slate-500/[0.08]', text: 'text-[#B6BBC6]', dot: 'bg-slate-400', pulse: false },
+  archived: { label: 'Archived', bg: 'bg-slate-500/[0.08]', text: 'text-[#CBD5E1]', dot: 'bg-slate-400', pulse: false },
 };
 
 const categoryColor: Record<string, string> = {
-  Ecommerce: 'text-[#8B5CF6]',
-  Trading: 'text-[#8B5CF6]',
-  Startup: 'text-[#8B5CF6]',
-  Development: 'text-[#8B5CF6]',
+  Ecommerce: 'text-[#3B82F6]',
+  Trading: 'text-[#3B82F6]',
+  Startup: 'text-[#3B82F6]',
+  Development: 'text-[#3B82F6]',
 };
 
 interface ProjectCardProps {
@@ -54,9 +54,9 @@ export default function ProjectCard({ project, index, onDelete }: ProjectCardPro
     >
       {/* Card */}
       <div
-        className="relative rounded-xl overflow-hidden transition-all duration-300 group-hover:border-[#8B5CF6]/30"
+        className="relative rounded-xl overflow-hidden transition-all duration-300 group-hover:border-[#3B82F6]/30"
         style={{
-          background: 'linear-gradient(180deg, rgba(27,34,48,0.7) 0%, rgba(13, 14, 18,0.8) 100%)',
+          background: 'linear-gradient(180deg, rgba(27,34,48,0.7) 0%, rgba(13, 17, 23,0.8) 100%)',
           border: '1px solid rgba(255,255,255,0.06)',
           boxShadow: '0 4px 16px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.03)',
         }}
@@ -78,7 +78,7 @@ export default function ProjectCard({ project, index, onDelete }: ProjectCardPro
                 <h3 className="text-[13px] font-semibold text-white/90 group-hover:text-white transition-colors">
                   {project.name}
                 </h3>
-                <span className={`text-[10px] font-medium ${categoryColor[project.category] || 'text-[#B6BBC6]'}`}>
+                <span className={`text-[10px] font-medium ${categoryColor[project.category] || 'text-[#CBD5E1]'}`}>
                   {project.category}
                 </span>
               </div>
@@ -114,15 +114,15 @@ export default function ProjectCard({ project, index, onDelete }: ProjectCardPro
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="flex items-center gap-1">
-                <Bot className="h-3 w-3 text-[#8B5CF6]/70" />
+                <Bot className="h-3 w-3 text-[#3B82F6]/70" />
                 <span className="text-[10px] text-white/40">{activeAgents}/{project.agents.length} agents</span>
               </div>
               <div className="flex items-center gap-1">
-                <Activity className="h-3 w-3 text-[#8B5CF6]/70" />
+                <Activity className="h-3 w-3 text-[#3B82F6]/70" />
                 <span className="text-[10px] text-white/40">{project.tasks.filter(t => t.status === 'in_progress').length} tasks</span>
               </div>
             </div>
-            <div className="flex items-center gap-1 text-white/20 group-hover:text-[#A78BFA] transition-colors">
+            <div className="flex items-center gap-1 text-white/20 group-hover:text-[#60A5FA] transition-colors">
               <span className="text-[10px]">Open</span>
               <ChevronRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
             </div>

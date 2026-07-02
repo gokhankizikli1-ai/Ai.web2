@@ -6,13 +6,13 @@ interface WorkspaceBackgroundProps {
 }
 
 const GRADIENTS: Record<string, string> = {
-  startup: 'radial-gradient(ellipse at 50% 0%, rgba(139, 92, 246,0.04) 0%, transparent 60%)',
+  startup: 'radial-gradient(ellipse at 50% 0%, rgba(59, 130, 246,0.04) 0%, transparent 60%)',
   ecommerce: 'radial-gradient(ellipse at 80% 0%, rgba(52,211,153,0.04) 0%, transparent 60%)',
   trading: 'radial-gradient(ellipse at 50% 50%, rgba(74,222,128,0.02) 0%, transparent 70%)',
-  research: 'radial-gradient(ellipse at 20% 0%, rgba(167,139,250,0.04) 0%, transparent 60%)',
+  research: 'radial-gradient(ellipse at 20% 0%, rgba(96, 165, 250,0.04) 0%, transparent 60%)',
   coding: 'radial-gradient(ellipse at 50% 0%, rgba(96,165,250,0.04) 0%, transparent 60%)',
-  creative: 'radial-gradient(ellipse at 30% 20%, rgba(139, 92, 246,0.03) 0%, transparent 60%)',
-  study: 'radial-gradient(ellipse at 50% 0%, rgba(139, 92, 246,0.04) 0%, transparent 60%)',
+  creative: 'radial-gradient(ellipse at 30% 20%, rgba(59, 130, 246,0.03) 0%, transparent 60%)',
+  study: 'radial-gradient(ellipse at 50% 0%, rgba(59, 130, 246,0.04) 0%, transparent 60%)',
   default: 'none',
 };
 

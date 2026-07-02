@@ -57,7 +57,7 @@ export default function WebsitePreviewCanvas({ content, activeSection, palette }
         </div>
         <div className="hidden md:flex items-center gap-6">
           {content.nav.map((link) => (
-            <span key={link} className="text-[12px] text-[#B6BBC6]">{link}</span>
+            <span key={link} className="text-[12px] text-[#CBD5E1]">{link}</span>
           ))}
         </div>
         <button className="text-[11px] font-medium px-3.5 py-1.5 rounded-full bg-white text-black">
@@ -78,7 +78,7 @@ export default function WebsitePreviewCanvas({ content, activeSection, palette }
         <h1 className="text-3xl sm:text-5xl font-semibold tracking-tight max-w-2xl mx-auto leading-tight">
           {content.hero.headline}
         </h1>
-        <p className="mt-5 text-[14px] sm:text-base text-[#B6BBC6] max-w-lg mx-auto leading-relaxed">
+        <p className="mt-5 text-[14px] sm:text-base text-[#CBD5E1] max-w-lg mx-auto leading-relaxed">
           {content.hero.subheadline}
         </p>
         <div className="mt-8 flex items-center justify-center gap-3 flex-wrap">
@@ -103,7 +103,7 @@ export default function WebsitePreviewCanvas({ content, activeSection, palette }
           {content.metrics.map((m) => (
             <div key={m.label} className="text-center px-2">
               <p className="text-xl sm:text-2xl font-semibold tracking-tight" style={{ color: palette.accent }}>{m.value}</p>
-              <p className="text-[11px] text-[#858B99] mt-1">{m.label}</p>
+              <p className="text-[11px] text-[#94A3B8] mt-1">{m.label}</p>
             </div>
           ))}
         </div>
@@ -117,7 +117,7 @@ export default function WebsitePreviewCanvas({ content, activeSection, palette }
       >
         <p className="text-center text-[10px] font-semibold tracking-[0.2em] mb-3" style={{ color: palette.accent }}>{content.showcase.eyebrow}</p>
         <h2 className="text-center text-xl sm:text-2xl font-semibold mb-4 max-w-xl mx-auto">{content.showcase.title}</h2>
-        <p className="text-center text-[13px] text-[#B6BBC6] max-w-lg mx-auto mb-10 leading-relaxed">{content.showcase.description}</p>
+        <p className="text-center text-[13px] text-[#CBD5E1] max-w-lg mx-auto mb-10 leading-relaxed">{content.showcase.description}</p>
         <div className="max-w-3xl mx-auto">
           <ProductMockup kind={content.showcase.kind} palette={palette} size="md" />
         </div>
@@ -143,7 +143,7 @@ export default function WebsitePreviewCanvas({ content, activeSection, palette }
                   <Icon className="w-4 h-4" style={{ color: palette.accent }} />
                 </div>
                 <h3 className="text-[13px] font-medium text-white mb-1">{f.title}</h3>
-                <p className="text-[12px] text-[#B6BBC6] leading-relaxed">{f.desc}</p>
+                <p className="text-[12px] text-[#CBD5E1] leading-relaxed">{f.desc}</p>
               </div>
             );
           })}
@@ -172,9 +172,9 @@ export default function WebsitePreviewCanvas({ content, activeSection, palette }
                 <h3 className="text-[13px] font-medium text-white">{tier.name}</h3>
                 <div className="mt-2 flex items-baseline gap-1">
                   <span className="text-2xl font-semibold text-white">{tier.price}</span>
-                  {tier.period && <span className="text-[11px] text-[#858B99]">{tier.period}</span>}
+                  {tier.period && <span className="text-[11px] text-[#94A3B8]">{tier.period}</span>}
                 </div>
-                <p className="mt-2 text-[11px] text-[#B6BBC6] leading-relaxed flex-1">{tier.desc}</p>
+                <p className="mt-2 text-[11px] text-[#CBD5E1] leading-relaxed flex-1">{tier.desc}</p>
                 <div className="mt-3 flex items-center gap-1.5 text-[10px] text-[#4ADE80]">
                   <Check className="w-3 h-3" /> Included features
                 </div>
@@ -199,7 +199,7 @@ export default function WebsitePreviewCanvas({ content, activeSection, palette }
                 {Array.from({ length: 5 }).map((_, i) => <Star key={i} className="w-3 h-3 fill-[#FACC15] text-[#FACC15]" />)}
               </div>
               <p className="text-[12px] text-slate-300 leading-relaxed mb-3">&ldquo;{t.quote}&rdquo;</p>
-              <p className="text-[11px] text-[#858B99]">{t.name} — {t.role}</p>
+              <p className="text-[11px] text-[#94A3B8]">{t.name} — {t.role}</p>
             </div>
           ))}
         </div>
@@ -213,7 +213,7 @@ export default function WebsitePreviewCanvas({ content, activeSection, palette }
           {content.faq.map((qa) => (
             <div key={qa.q} className="p-4 rounded-xl border border-white/[0.06] bg-white/[0.02]">
               <p className="text-[12px] font-medium text-white mb-1">{qa.q}</p>
-              <p className="text-[11px] text-[#B6BBC6] leading-relaxed">{qa.a}</p>
+              <p className="text-[11px] text-[#CBD5E1] leading-relaxed">{qa.a}</p>
             </div>
           ))}
         </div>
@@ -227,15 +227,15 @@ export default function WebsitePreviewCanvas({ content, activeSection, palette }
           {content.brand.map((c) => (
             <div key={c.hex} className="text-center">
               <div className="w-16 h-16 rounded-2xl border border-white/[0.08] shadow-lg mb-2" style={{ background: c.hex }} />
-              <p className="text-[10px] text-[#858B99] font-mono">{c.hex}</p>
-              <p className="text-[10px] text-[#858B99]">{c.label}</p>
+              <p className="text-[10px] text-[#94A3B8] font-mono">{c.hex}</p>
+              <p className="text-[10px] text-[#94A3B8]">{c.label}</p>
             </div>
           ))}
         </div>
       </div>
       <div ref={setRef('typography')} className="px-6 sm:px-10 py-10 rounded-lg transition-all" style={ringStyle('typography')}>
         <p className="text-center text-3xl font-semibold tracking-tight">Aa</p>
-        <p className="text-center text-[11px] text-[#858B99] mt-1">{content.typography}</p>
+        <p className="text-center text-[11px] text-[#94A3B8] mt-1">{content.typography}</p>
       </div>
 
       {/* Final CTA */}
@@ -245,7 +245,7 @@ export default function WebsitePreviewCanvas({ content, activeSection, palette }
           style={{ borderColor: palette.ring, background: `linear-gradient(180deg, ${palette.accent}14, transparent)` }}
         >
           <h2 className="text-xl sm:text-2xl font-semibold mb-2">{content.cta.headline}</h2>
-          <p className="text-[12px] text-[#B6BBC6] mb-6">{content.cta.subtext}</p>
+          <p className="text-[12px] text-[#CBD5E1] mb-6">{content.cta.subtext}</p>
           <button
             className="px-6 py-2.5 rounded-xl text-[13px] font-semibold"
             style={{ background: grad, color: palette.onAccent }}
@@ -261,7 +261,7 @@ export default function WebsitePreviewCanvas({ content, activeSection, palette }
           <div className="w-5 h-5 rounded-md" style={{ background: grad }} />
           <span className="text-[12px] font-medium text-slate-300">{content.brandName}</span>
         </div>
-        <span className="text-[11px] text-[#858B99]">Crafted with Korvix</span>
+        <span className="text-[11px] text-[#94A3B8]">Crafted with Korvix</span>
       </footer>
     </div>
   );

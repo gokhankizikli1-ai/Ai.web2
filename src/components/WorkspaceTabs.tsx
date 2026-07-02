@@ -42,7 +42,7 @@ export default function WorkspaceTabs({ activeTab, onTabChange, showTrading = fa
             key={tab.key}
             onClick={() => onTabChange(tab.key)}
             className={`relative flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium transition-all ${
-              active ? 'text-[#F4F4F5]' : 'text-[#858B99] hover:text-[#B6BBC6]'
+              active ? 'text-[#F8FAFC]' : 'text-[#94A3B8] hover:text-[#CBD5E1]'
             }`}
           >
             {active && (
@@ -50,15 +50,15 @@ export default function WorkspaceTabs({ activeTab, onTabChange, showTrading = fa
                 layoutId="wsTab"
                 className="absolute inset-0 rounded-md border"
                 style={{
-                  background: 'rgba(139, 92, 246, 0.12)',
-                  borderColor: 'rgba(139, 92, 246, 0.32)',
-                  boxShadow: '0 0 0 1px rgba(139, 92, 246,0.05), inset 0 1px 0 rgba(255,255,255,0.04)',
+                  background: 'rgba(59, 130, 246, 0.12)',
+                  borderColor: 'rgba(59, 130, 246, 0.32)',
+                  boxShadow: '0 0 0 1px rgba(59, 130, 246,0.05), inset 0 1px 0 rgba(255,255,255,0.04)',
                 }}
                 transition={{ type: 'spring', duration: 0.4, bounce: 0.15 }}
               />
             )}
             <span className="relative z-10 flex items-center gap-1">
-              <tab.icon className={`h-3 w-3 ${active ? 'text-[#A78BFA]' : ''}`} />
+              <tab.icon className={`h-3 w-3 ${active ? 'text-[#60A5FA]' : ''}`} />
               <span className="hidden sm:inline">{tab.label}</span>
               <span className="sm:hidden">{tab.shortLabel || tab.label}</span>
             </span>

@@ -38,7 +38,7 @@ export default function MessageActions({ content, onRegenerate }: MessageActions
         variant="ghost"
         size="sm"
         onClick={handleCopy}
-        className="h-7 gap-1.5 px-2 text-[11px] text-[#858B99] hover:text-slate-300 hover:bg-white/[0.06] rounded-md transition-all duration-200"
+        className="h-7 gap-1.5 px-2 text-[11px] text-[#94A3B8] hover:text-slate-300 hover:bg-white/[0.06] rounded-md transition-all duration-200"
       >
         {copied ? (
           <>
@@ -58,7 +58,7 @@ export default function MessageActions({ content, onRegenerate }: MessageActions
           variant="ghost"
           size="sm"
           onClick={onRegenerate}
-          className="h-7 gap-1.5 px-2 text-[11px] text-[#858B99] hover:text-slate-300 hover:bg-white/[0.06] rounded-md transition-all duration-200"
+          className="h-7 gap-1.5 px-2 text-[11px] text-[#94A3B8] hover:text-slate-300 hover:bg-white/[0.06] rounded-md transition-all duration-200"
         >
           <RefreshCw className="h-3.5 w-3.5" />
           <span>Regenerate</span>
@@ -72,7 +72,7 @@ export default function MessageActions({ content, onRegenerate }: MessageActions
         size="sm"
         onClick={handleLike}
         className={`h-7 w-7 p-0 rounded-md transition-all duration-200 ${
-          liked ? 'text-[#4ADE80] bg-[#4ADE80]/10' : 'text-[#858B99] hover:text-slate-300 hover:bg-white/[0.06]'
+          liked ? 'text-[#4ADE80] bg-[#4ADE80]/10' : 'text-[#94A3B8] hover:text-slate-300 hover:bg-white/[0.06]'
         }`}
       >
         <ThumbsUp className="h-3.5 w-3.5" />
@@ -83,7 +83,7 @@ export default function MessageActions({ content, onRegenerate }: MessageActions
         size="sm"
         onClick={handleDislike}
         className={`h-7 w-7 p-0 rounded-md transition-all duration-200 ${
-          disliked ? 'text-[#F87171] bg-[#F87171]/10' : 'text-[#858B99] hover:text-slate-300 hover:bg-white/[0.06]'
+          disliked ? 'text-[#F87171] bg-[#F87171]/10' : 'text-[#94A3B8] hover:text-slate-300 hover:bg-white/[0.06]'
         }`}
       >
         <ThumbsDown className="h-3.5 w-3.5" />

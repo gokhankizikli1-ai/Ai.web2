@@ -33,9 +33,9 @@ const ICON_MAP: Record<string, React.ReactNode> = {
 
 function PaletteIcon({ id, selected }: { id: string; selected: boolean }) {
   const icon = ICON_MAP[id];
-  if (!icon) return <Terminal className="h-4 w-4 text-[#858B99]" />;
+  if (!icon) return <Terminal className="h-4 w-4 text-[#94A3B8]" />;
   return (
-    <span className={selected ? 'text-[#8B5CF6]' : 'text-[#858B99]'}>
+    <span className={selected ? 'text-[#3B82F6]' : 'text-[#94A3B8]'}>
       {icon}
     </span>
   );
@@ -135,17 +135,17 @@ export default function CommandPalette({ open, onClose, commands }: CommandPalet
       >
         {/* Search */}
         <div className="flex items-center gap-3 px-5 py-4 border-b border-white/[0.04]">
-          <Search className="h-4.5 w-4.5 text-[#858B99]" />
+          <Search className="h-4.5 w-4.5 text-[#94A3B8]" />
           <input
             ref={inputRef}
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Type a command or search..."
-            className="flex-1 bg-transparent text-[15px] text-white placeholder:text-[#858B99] outline-none"
+            className="flex-1 bg-transparent text-[15px] text-white placeholder:text-[#94A3B8] outline-none"
             autoFocus
           />
-          <kbd className="hidden sm:inline-flex items-center rounded-md bg-white/[0.04] border border-white/[0.06] px-2 py-0.5 text-[10px] text-[#858B99] font-mono">
+          <kbd className="hidden sm:inline-flex items-center rounded-md bg-white/[0.04] border border-white/[0.06] px-2 py-0.5 text-[10px] text-[#94A3B8] font-mono">
             ESC
           </kbd>
         </div>
@@ -154,9 +154,9 @@ export default function CommandPalette({ open, onClose, commands }: CommandPalet
         <div className="max-h-[380px] overflow-y-auto scrollbar-thin py-2">
           {flatItems.length === 0 && (
             <div className="flex flex-col items-center py-10 text-center">
-              <Search className="h-8 w-8 text-[#B6BBC6] mb-3" />
-              <p className="text-[13px] text-[#858B99] mb-1">No commands found</p>
-              <p className="text-[11px] text-[#B6BBC6]">Try a different search term</p>
+              <Search className="h-8 w-8 text-[#CBD5E1] mb-3" />
+              <p className="text-[13px] text-[#94A3B8] mb-1">No commands found</p>
+              <p className="text-[11px] text-[#CBD5E1]">Try a different search term</p>
             </div>
           )}
 
@@ -165,7 +165,7 @@ export default function CommandPalette({ open, onClose, commands }: CommandPalet
             return (
               <div key={category} className="mb-1">
                 <div className="px-5 py-1.5 flex items-center gap-2">
-                  <span className="text-[10px] font-semibold text-[#858B99] uppercase tracking-wider">{category}</span>
+                  <span className="text-[10px] font-semibold text-[#94A3B8] uppercase tracking-wider">{category}</span>
                   <div className="flex-1 h-px bg-white/[0.03]" />
                 </div>
                 {groupItems.map((item) => {
@@ -188,25 +188,25 @@ export default function CommandPalette({ open, onClose, commands }: CommandPalet
                       }}
                       transition={{ duration: 0.1 }}
                       className={`w-full flex items-center gap-3 px-5 py-2.5 text-left transition-colors duration-100 ${
-                        isSelected ? 'text-white' : 'text-[#B6BBC6] hover:text-slate-300'
+                        isSelected ? 'text-white' : 'text-[#CBD5E1] hover:text-slate-300'
                       }`}
                     >
                       <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors ${
-                        isSelected ? 'bg-[#8B5CF6]/10' : 'bg-white/[0.02]'
+                        isSelected ? 'bg-[#3B82F6]/10' : 'bg-white/[0.02]'
                       }`}>
                         <PaletteIcon id={item.id} selected={isSelected} />
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="text-[13px] font-medium">{item.label}</div>
                         {item.shortcut && (
-                          <div className="text-[11px] text-[#858B99]">{item.shortcut}</div>
+                          <div className="text-[11px] text-[#94A3B8]">{item.shortcut}</div>
                         )}
                       </div>
                       {isSelected && (
                         <motion.div
                           initial={{ opacity: 0, x: -4 }}
                           animate={{ opacity: 1, x: 0 }}
-                          className="flex items-center gap-1 text-[#858B99]"
+                          className="flex items-center gap-1 text-[#94A3B8]"
                         >
                           <span className="text-[10px]">Open</span>
                           <ArrowRight className="h-3 w-3" />
@@ -222,7 +222,7 @@ export default function CommandPalette({ open, onClose, commands }: CommandPalet
 
         {/* Footer */}
         <div className="flex items-center justify-between px-5 py-2.5 border-t border-white/[0.04] bg-white/[0.01]">
-          <div className="flex items-center gap-2 text-[10px] text-[#858B99]">
+          <div className="flex items-center gap-2 text-[10px] text-[#94A3B8]">
             <span className="flex items-center gap-1">
               <kbd className="font-mono bg-white/[0.04] px-1 rounded">↑↓</kbd> to navigate
             </span>
@@ -230,7 +230,7 @@ export default function CommandPalette({ open, onClose, commands }: CommandPalet
               <kbd className="font-mono bg-white/[0.04] px-1 rounded">↵</kbd> to select
             </span>
           </div>
-          <div className="flex items-center gap-2 text-[10px] text-[#858B99]">
+          <div className="flex items-center gap-2 text-[10px] text-[#94A3B8]">
             <span className="flex items-center gap-1">
               <kbd className="font-mono bg-white/[0.04] px-1 rounded">ESC</kbd> close
             </span>

@@ -84,7 +84,7 @@ export default function MarketRadarForm({
         }}
         placeholder="AI customer support tools, small restaurant POS systems, crypto portfolio tracking…"
         rows={2}
-        className="w-full rounded-xl bg-white/[0.02] border border-white/[0.06] p-3 text-[13px] text-slate-100 placeholder:text-[#858B99] focus:border-[#8B5CF6]/40 focus:bg-white/[0.03] outline-none transition-all resize-none"
+        className="w-full rounded-xl bg-white/[0.02] border border-white/[0.06] p-3 text-[13px] text-slate-100 placeholder:text-[#94A3B8] focus:border-[#3B82F6]/40 focus:bg-white/[0.03] outline-none transition-all resize-none"
       />
 
       <div className="grid sm:grid-cols-2 gap-3 sm:gap-4 mt-4">
@@ -98,8 +98,8 @@ export default function MarketRadarForm({
                 onClick={() => onTimeframeChange(tf.days)}
                 className={`px-3 h-8 rounded-lg text-[12px] border transition-colors ${
                   timeframe === tf.days
-                    ? 'bg-[#8B5CF6]/[0.14] border-[#8B5CF6]/40 text-[#A78BFA]'
-                    : 'bg-white/[0.02] border-white/[0.06] text-[#B6BBC6] hover:text-slate-200'
+                    ? 'bg-[#3B82F6]/[0.14] border-[#3B82F6]/40 text-[#60A5FA]'
+                    : 'bg-white/[0.02] border-white/[0.06] text-[#CBD5E1] hover:text-slate-200'
                 }`}
               >
                 {tf.label}
@@ -112,13 +112,13 @@ export default function MarketRadarForm({
         <div>
           <label className="block text-[12px] font-medium text-slate-300 mb-1.5">Region</label>
           <div className="relative">
-            <Globe2 className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#858B99]" />
+            <Globe2 className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#94A3B8]" />
             <input
               type="text"
               value={region}
               onChange={(e) => onRegionChange(e.target.value)}
               placeholder="global"
-              className="w-full h-8 rounded-lg bg-white/[0.02] border border-white/[0.06] pl-8 pr-3 text-[12px] text-slate-100 placeholder:text-[#858B99] focus:border-[#8B5CF6]/40 outline-none transition-all"
+              className="w-full h-8 rounded-lg bg-white/[0.02] border border-white/[0.06] pl-8 pr-3 text-[12px] text-slate-100 placeholder:text-[#94A3B8] focus:border-[#3B82F6]/40 outline-none transition-all"
             />
           </div>
         </div>
@@ -140,10 +140,10 @@ export default function MarketRadarForm({
                 title={configured ? meta.role : `${meta.role} — not connected on this deployment`}
                 className={`px-2.5 h-7 rounded-lg text-[11px] border transition-colors ${
                   !configured
-                    ? 'bg-white/[0.008] border-white/[0.03] text-[#858B99] cursor-not-allowed'
+                    ? 'bg-white/[0.008] border-white/[0.03] text-[#94A3B8] cursor-not-allowed'
                     : active
-                      ? 'bg-[#8B5CF6]/[0.14] border-[#8B5CF6]/40 text-[#A78BFA]'
-                      : 'bg-white/[0.02] border-white/[0.06] text-[#B6BBC6] hover:text-slate-200'
+                      ? 'bg-[#3B82F6]/[0.14] border-[#3B82F6]/40 text-[#60A5FA]'
+                      : 'bg-white/[0.02] border-white/[0.06] text-[#CBD5E1] hover:text-slate-200'
                 }`}
               >
                 {meta.label}
@@ -161,14 +161,14 @@ export default function MarketRadarForm({
         disabled={!canSubmit}
         className={`mt-5 w-full h-11 rounded-xl text-[13px] font-medium flex items-center justify-center gap-2 border transition-all ${
           canSubmit
-            ? 'bg-gradient-to-b from-[#8B5CF6] to-[#6D5DF6] border-[rgba(167,139,250,0.5)] text-[#F7F5FF] shadow-[0_2px_10px_rgba(109,93,246,0.30),inset_0_1px_0_rgba(255,255,255,0.14)] hover:from-[#9670F8] hover:to-[#7A6AF8] hover:border-[rgba(167,139,250,0.72)]'
-            : 'bg-white/[0.02] border-white/[0.05] text-[#858B99] cursor-not-allowed'
+            ? 'bg-gradient-to-b from-[#1A2233] to-[#111722] border-[rgba(96,165,250,0.22)] text-[#F8FAFC] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] hover:from-[#1E293B] hover:to-[#141B29] hover:border-[rgba(96,165,250,0.5)] hover:shadow-[0_4px_16px_rgba(37,99,235,0.25),0_0_0_1px_rgba(59,130,246,0.18)]'
+            : 'bg-white/[0.02] border-white/[0.05] text-[#94A3B8] cursor-not-allowed'
         }`}
       >
         <Radar className="h-4 w-4" />
         {loading ? 'Analyzing…' : 'Analyze market complaints'}
         {canSubmit && !loading && (
-          <kbd className="hidden sm:inline-flex items-center rounded bg-black/20 border border-white/[0.08] px-1.5 py-0.5 text-[9px] text-[#A78BFA]/70 font-mono ml-1">
+          <kbd className="hidden sm:inline-flex items-center rounded bg-black/20 border border-white/[0.08] px-1.5 py-0.5 text-[9px] text-[#60A5FA]/70 font-mono ml-1">
             ⌘↵
           </kbd>
         )}

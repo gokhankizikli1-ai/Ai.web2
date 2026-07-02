@@ -40,7 +40,7 @@ export default function BuilderWorkspaceFrame({
               </div>
               <h1 className="text-2xl font-semibold text-white tracking-tight">{title}</h1>
             </div>
-            <p className="text-[13px] text-[#858B99] ml-12">{subtitle}</p>
+            <p className="text-[13px] text-[#94A3B8] ml-12">{subtitle}</p>
           </motion.div>
 
           {children}

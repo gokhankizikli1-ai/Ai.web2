@@ -259,13 +259,13 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
           {!loading && !error && report && (
             <motion.div key="results" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
               {restoredNote && (
-                <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg border border-[#8B5CF6]/25 bg-[#8B5CF6]/[0.10]">
-                  <History className="h-3 w-3 text-[#8B5CF6] shrink-0" />
+                <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg border border-[#3B82F6]/25 bg-[#3B82F6]/[0.10]">
+                  <History className="h-3 w-3 text-[#3B82F6] shrink-0" />
                   <span className="text-[11px] text-slate-300">Restored from recent analysis</span>
                   <button
                     onClick={() => setRestoredNote(false)}
                     aria-label="Dismiss"
-                    className="ml-auto text-[#858B99] hover:text-slate-300 transition-colors"
+                    className="ml-auto text-[#94A3B8] hover:text-slate-300 transition-colors"
                   >
                     <X className="h-3 w-3" />
                   </button>

@@ -85,7 +85,7 @@ export default function ComposerTools({
         className={`flex h-7 w-7 items-center justify-center rounded-lg transition-all duration-200 disabled:opacity-30 ${
           open
             ? 'bg-white/[0.06] text-white rotate-45'
-            : 'text-[#858B99] hover:text-slate-300 hover:bg-white/[0.04]'
+            : 'text-[#94A3B8] hover:text-slate-300 hover:bg-white/[0.04]'
         }`}
       >
         <Plus className="h-4 w-4 transition-transform duration-200" />
@@ -104,8 +104,8 @@ export default function ComposerTools({
           >
             {/* Header */}
             <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-white/[0.03]">
-              <span className="text-[10px] font-semibold text-[#858B99] uppercase tracking-wider">Attach &amp; Tools</span>
-              <button onClick={() => setOpen(false)} className="text-[#858B99] hover:text-[#B6BBC6] transition-colors p-0.5 rounded" aria-label="Close menu">
+              <span className="text-[10px] font-semibold text-[#94A3B8] uppercase tracking-wider">Attach &amp; Tools</span>
+              <button onClick={() => setOpen(false)} className="text-[#94A3B8] hover:text-[#CBD5E1] transition-colors p-0.5 rounded" aria-label="Close menu">
                 <X className="h-3 w-3" />
               </button>
             </div>
@@ -116,7 +116,7 @@ export default function ComposerTools({
                   ComposerTools get a tools-only menu, unchanged. */}
               {showAttachments && (
                 <div>
-                  <div className="text-[9px] font-semibold text-[#858B99] uppercase tracking-wider px-2 mb-1">
+                  <div className="text-[9px] font-semibold text-[#94A3B8] uppercase tracking-wider px-2 mb-1">
                     Attachments
                   </div>
                   <div className="space-y-0.5">
@@ -127,12 +127,12 @@ export default function ComposerTools({
                         onClick={() => { onAttachPhoto(); setOpen(false); }}
                         className="w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-all duration-150 hover:bg-white/[0.03]"
                       >
-                        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#8B5CF6]/[0.08] border border-[#8B5CF6]/[0.12]">
-                          <ImageIcon className="h-3 w-3 text-[#8B5CF6]/80" />
+                        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#3B82F6]/[0.08] border border-[#3B82F6]/[0.12]">
+                          <ImageIcon className="h-3 w-3 text-[#3B82F6]/80" />
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="text-[11px] font-medium text-slate-300">Photo Library</div>
-                          <div className="text-[10px] text-[#858B99] leading-tight">Pick an image</div>
+                          <div className="text-[10px] text-[#94A3B8] leading-tight">Pick an image</div>
                         </div>
                       </button>
                     )}
@@ -143,12 +143,12 @@ export default function ComposerTools({
                         onClick={() => { onAttachCamera(); setOpen(false); }}
                         className="w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-all duration-150 hover:bg-white/[0.03]"
                       >
-                        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#8B5CF6]/[0.08] border border-[#8B5CF6]/[0.12]">
-                          <Camera className="h-3 w-3 text-[#8B5CF6]/80" />
+                        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#3B82F6]/[0.08] border border-[#3B82F6]/[0.12]">
+                          <Camera className="h-3 w-3 text-[#3B82F6]/80" />
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="text-[11px] font-medium text-slate-300">Take Photo or Video</div>
-                          <div className="text-[10px] text-[#858B99] leading-tight">Use the device camera</div>
+                          <div className="text-[10px] text-[#94A3B8] leading-tight">Use the device camera</div>
                         </div>
                       </button>
                     )}
@@ -159,12 +159,12 @@ export default function ComposerTools({
                         onClick={() => { onAttachFile(); setOpen(false); }}
                         className="w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-all duration-150 hover:bg-white/[0.03]"
                       >
-                        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#8B5CF6]/[0.08] border border-[#8B5CF6]/[0.12]">
-                          <FolderOpen className="h-3 w-3 text-[#8B5CF6]/80" />
+                        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#3B82F6]/[0.08] border border-[#3B82F6]/[0.12]">
+                          <FolderOpen className="h-3 w-3 text-[#3B82F6]/80" />
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="text-[11px] font-medium text-slate-300">Choose Files</div>
-                          <div className="text-[10px] text-[#858B99] leading-tight">PDF, text, images, video</div>
+                          <div className="text-[10px] text-[#94A3B8] leading-tight">PDF, text, images, video</div>
                         </div>
                       </button>
                     )}
@@ -174,7 +174,7 @@ export default function ComposerTools({
 
               {/* Tools — single category in the trimmed menu. */}
               <div>
-                <div className="text-[9px] font-semibold text-[#858B99] uppercase tracking-wider px-2 mb-1">
+                <div className="text-[9px] font-semibold text-[#94A3B8] uppercase tracking-wider px-2 mb-1">
                   Tools
                 </div>
                 <div className="space-y-0.5">
@@ -195,16 +195,16 @@ export default function ComposerTools({
                       }`}
                     >
                       <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white/[0.03] border border-white/[0.04]">
-                        <tool.icon className="h-3 w-3 text-[#858B99]" />
+                        <tool.icon className="h-3 w-3 text-[#94A3B8]" />
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="text-[11px] font-medium text-slate-300 flex items-center gap-1.5">
                           {tool.label}
                           {tool.soon && (
-                            <span className="text-[8px] px-1 py-[1px] rounded bg-white/[0.03] text-[#858B99] border border-white/[0.03]">Soon</span>
+                            <span className="text-[8px] px-1 py-[1px] rounded bg-white/[0.03] text-[#94A3B8] border border-white/[0.03]">Soon</span>
                           )}
                         </div>
-                        <div className="text-[10px] text-[#858B99] leading-tight">{tool.description}</div>
+                        <div className="text-[10px] text-[#94A3B8] leading-tight">{tool.description}</div>
                       </div>
                     </button>
                   ))}

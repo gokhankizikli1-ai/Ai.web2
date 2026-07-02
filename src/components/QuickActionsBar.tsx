@@ -18,7 +18,7 @@ export default function QuickActionsBar({ onSelect }: QuickActionsBarProps) {
         <button
           key={chip.label}
           onClick={() => onSelect(chip.prompt)}
-          className="flex items-center gap-1 rounded-lg bg-white/[0.02] hover:bg-white/[0.05] border border-white/[0.04] hover:border-white/[0.08] px-2.5 py-[5px] text-[11px] text-[#858B99] hover:text-slate-300 transition-all duration-200"
+          className="flex items-center gap-1 rounded-lg bg-white/[0.02] hover:bg-white/[0.05] border border-white/[0.04] hover:border-white/[0.08] px-2.5 py-[5px] text-[11px] text-[#94A3B8] hover:text-slate-300 transition-all duration-200"
         >
           <chip.icon className="h-3 w-3" />
           {chip.label}
