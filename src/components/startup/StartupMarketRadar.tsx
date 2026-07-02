@@ -105,8 +105,6 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
   const [report, setReport] = useState<MarketComplaintReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<RadarError | null>(null);
-  // true only right after a live analysis — opens the evidence trail.
-  const [freshAnalysis, setFreshAnalysis] = useState(false);
   const [lastRequest, setLastRequest] = useState<MarketComplaintRequest | null>(null);
   const [sourceHealth, setSourceHealth] = useState<RadarSourceHealth | null>(null);
   const [history, setHistory] = useState<RadarHistoryEntry[]>(() => loadRadarHistory());
@@ -150,7 +148,6 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
     try {
       const result = await analyzeMarketComplaints(req);
       setReport(result);
-      setFreshAnalysis(true);
       // History stores exactly what's on screen — last 5, local only.
       setHistory(saveRadarReport(result));
     } catch (e) {
@@ -163,7 +160,6 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
   const restoreFromHistory = (entry: RadarHistoryEntry) => {
     setError(null);
     setRestoredNote(false);
-    setFreshAnalysis(false);
     setQuery(entry.report.query);
     setTimeframe(entry.report.timeframe_days || 30);
     setSources(sourcesFromReport(entry.report));
@@ -176,15 +172,16 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
   };
 
   /** Shared handoff: in-app event when embedded in ChatDashboard,
-   * full navigation from the standalone /tools/startup page. Carries a
-   * ready session title so the chat never sits as "New Chat". */
+   * full navigation from the standalone /tools/startup page. Both
+   * handoffs land in NORMAL Chat (never a project/build context) and
+   * carry a ready session title so the chat never sits as "New Chat". */
   const handOffToChat = (prompt: string, title: string) => {
     if (embedded) {
       window.dispatchEvent(new CustomEvent('korvix-route-to-chat', {
-        detail: { prompt, workspace: 'startup', title },
+        detail: { prompt, workspace: 'chat', title },
       }));
     } else {
-      navigate('/chat?tab=startup', { state: { initialPrompt: prompt, sessionTitle: title } });
+      navigate('/chat', { state: { initialPrompt: prompt, sessionTitle: title } });
     }
   };
 
@@ -201,15 +198,10 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
   // prompt (evidence-backed wedge → landing page + MVP concept).
   const sendToBuilder = () => {
     if (!report) return;
-    const prompt = buildBuilderPrompt(report);
-    const title = cleanTitle(report.query, 'Builder: ') || 'Builder: MVP concept';
-    if (embedded) {
-      window.dispatchEvent(new CustomEvent('korvix-route-to-chat', {
-        detail: { prompt, workspace: 'chat', title },
-      }));
-    } else {
-      navigate('/chat', { state: { initialPrompt: prompt, sessionTitle: title } });
-    }
+    handOffToChat(
+      buildBuilderPrompt(report),
+      cleanTitle(report.query, 'Builder: ') || 'Builder: MVP concept',
+    );
   };
 
   return (
@@ -240,10 +232,10 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
             <motion.div
               key="error"
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="rounded-2xl border border-rose-500/20 bg-rose-500/[0.04] p-6"
+              className="rounded-2xl border border-[#C27676]/30 bg-[#C27676]/[0.06] p-6"
             >
               <div className="flex items-start gap-3">
-                <MessageSquareWarning className="h-4 w-4 text-rose-300 shrink-0 mt-0.5" />
+                <MessageSquareWarning className="h-4 w-4 text-[#D28C8C] shrink-0 mt-0.5" />
                 <div className="min-w-0 flex-1">
                   <h3 className="text-[13px] font-semibold text-slate-100 mb-1">
                     {error.kind === 'disabled' ? 'Market Intelligence is not enabled'
@@ -282,7 +274,6 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
               <MarketRadarResults
                 report={report}
                 sourceHealth={sourceHealth}
-                freshAnalysis={freshAnalysis}
                 onSendToAdvisor={sendToAdvisor}
                 onSendToBuilder={sendToBuilder}
               />

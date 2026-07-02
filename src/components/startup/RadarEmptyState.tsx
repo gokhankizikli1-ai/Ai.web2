@@ -33,7 +33,7 @@ export default function RadarEmptyState({ query, onPickExample }: Props) {
               <button
                 key={ex}
                 onClick={() => onPickExample(ex)}
-                className="px-2.5 py-1.5 rounded-lg text-[11px] text-slate-300 border border-white/[0.06] bg-white/[0.015] hover:text-cyan-200 hover:border-cyan-500/30 hover:bg-cyan-500/[0.06] transition-colors"
+                className="px-2.5 py-1.5 rounded-lg text-[11px] text-slate-300 border border-white/[0.06] bg-white/[0.015] hover:text-[#E3C7A8] hover:border-[#B98B63]/40 hover:bg-[#B98B63]/[0.08] transition-colors"
               >
                 {ex}
               </button>

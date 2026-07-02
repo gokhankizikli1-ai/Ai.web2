@@ -8,6 +8,7 @@ import type { ComposerTool } from '@/components/ComposerTools';
 import type { AttachedAsset, Message, ToolActivity, WorkspaceTab } from '@/types';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { looksLikeResearchAsk } from '@/lib/chatTitles';
 
 interface ChatViewProps {
   messages: Message[];
@@ -108,10 +109,21 @@ export default function ChatView({
     }
   }, [latestAssistantContentLen, isLoading]);
 
-  // Track latest assistant message for stream animation
+  // Track latest assistant message for stream animation.
+  // Replay-bug fix: only animate a message that COMPLETED during this
+  // mount (loading → done transition). On hydration/refresh/route
+  // change, isLoading was never true here, so persisted history renders
+  // instantly as completed text instead of re-typing itself.
+  const wasLoadingRef = useRef(false);
   useEffect(() => {
+    if (isLoading) {
+      wasLoadingRef.current = true;
+      return;
+    }
+    if (!wasLoadingRef.current) return;
+    wasLoadingRef.current = false;
     const lastMsg = messages[messages.length - 1];
-    if (lastMsg && lastMsg.role === 'assistant' && !isLoading) {
+    if (lastMsg && lastMsg.role === 'assistant') {
       setAnimatedMessageId(lastMsg.id);
     }
   }, [messages, isLoading]);
@@ -145,6 +157,16 @@ export default function ChatView({
   }, [onSetInput]);
 
   const isPinned = useCallback((msgId: string) => pinnedMessages.some((m) => m.id === msgId), [pinnedMessages]);
+
+  // Honest research-activity labels: when the pending turn LOOKS like a
+  // research ask, the typing indicator cycles generic research steps
+  // (no URLs are invented — real sources appear after the answer).
+  const researchAsk = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') return looksLikeResearchAsk(messages[i].content);
+    }
+    return false;
+  }, [messages]);
 
   const isEmptyState = messages.length === 0 && !error && !isLoading;
 
@@ -213,7 +235,7 @@ export default function ChatView({
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -2 }}
                     transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
-                    className="flex items-center gap-2 pl-[36px] py-1"
+                    className="flex items-center gap-2 py-1"
                   >
                     <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl border bg-white/[0.02]"
                          style={{
@@ -221,13 +243,13 @@ export default function ChatView({
                              ? 'rgba(248,113,113,0.20)'
                              : toolActivity.status === 'completed'
                                ? 'rgba(52,211,153,0.20)'
-                               : 'rgba(34,211,238,0.20)',
+                               : 'rgba(185,139,99,0.25)',
                          }}>
                       {toolActivity.status === 'running' && (
                         <motion.div
                           animate={{ rotate: 360 }}
                           transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
-                          className="h-2.5 w-2.5 rounded-full border-2 border-cyan-400/40 border-t-cyan-400"
+                          className="h-2.5 w-2.5 rounded-full border-2 border-[#B98B63]/40 border-t-[#B98B63]"
                           aria-label="working"
                         />
                       )}
@@ -262,7 +284,11 @@ export default function ChatView({
                     exit={{ opacity: 0, y: -2 }}
                     transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
                   >
-                    <TypingIndicator />
+                    <TypingIndicator
+                      labels={researchAsk
+                        ? ['Searching web…', 'Reading sources…', 'Extracting relevant points…', 'Preparing answer…']
+                        : undefined}
+                    />
                   </motion.div>
                 )}
               </AnimatePresence>
@@ -272,7 +298,7 @@ export default function ChatView({
                 <motion.div
                   initial={{ opacity: 0, y: 4 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="flex gap-2.5 pl-[36px]"
+                  className="flex gap-2.5"
                 >
                   <div className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md bg-red-500/10">
                     <AlertTriangle className="h-3 w-3 text-red-400/60" />

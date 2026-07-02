@@ -464,17 +464,17 @@ export default function ChatDashboard() {
   };
 
   return (
-    <div className="relative flex h-[100dvh] w-full max-w-full overflow-hidden" style={{ background: '#11151C', color: '#E2E8F0' }}>
+    <div className="relative flex h-[100dvh] w-full max-w-full overflow-hidden" style={{ background: '#0B0B0C', color: '#F2F2F3' }}>
       {/* Ambient background layers */}
       <div className="absolute inset-0 pointer-events-none">
         {/* Base gradient */}
-        <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, #11151C 0%, #171C24 40%, #141821 100%)' }} />
+        <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, #0B0B0C 0%, #111113 40%, #0E0E10 100%)' }} />
         {/* Top-right cyan ambient glow */}
-        <div className="absolute -top-[200px] -right-[200px] w-[600px] h-[600px] rounded-full opacity-[0.04]" style={{ background: 'radial-gradient(circle, #22D3EE 0%, transparent 70%)' }} />
+        <div className="absolute -top-[200px] -right-[200px] w-[600px] h-[600px] rounded-full opacity-[0.04]" style={{ background: 'radial-gradient(circle, #B98B63 0%, transparent 70%)' }} />
         {/* Bottom-left blue ambient glow */}
-        <div className="absolute -bottom-[200px] -left-[200px] w-[500px] h-[500px] rounded-full opacity-[0.03]" style={{ background: 'radial-gradient(circle, #3B82F6 0%, transparent 70%)' }} />
+        <div className="absolute -bottom-[200px] -left-[200px] w-[500px] h-[500px] rounded-full opacity-[0.03]" style={{ background: 'radial-gradient(circle, #8F8F98 0%, transparent 70%)' }} />
         {/* Center subtle depth */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] rounded-full opacity-[0.015]" style={{ background: 'radial-gradient(circle, #22D3EE 0%, transparent 60%)' }} />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] rounded-full opacity-[0.015]" style={{ background: 'radial-gradient(circle, #B98B63 0%, transparent 60%)' }} />
         {/* Subtle grid overlay */}
         <div className="absolute inset-0 opacity-[0.008]" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '80px 80px' }} />
       </div>
@@ -531,8 +531,14 @@ export default function ChatDashboard() {
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
-            <AIModeSelector currentMode={aiMode} onModeChange={setAiMode} />
-            <div className="w-px h-3.5 bg-border hidden sm:block" />
+            {/* Mode selector is an owner-only power control — normal chat
+                stays clean (mode routing still works via tab defaults). */}
+            {ownerModeForGreeting.isOwner && (
+              <>
+                <AIModeSelector currentMode={aiMode} onModeChange={setAiMode} />
+                <div className="w-px h-3.5 bg-border hidden sm:block" />
+              </>
+            )}
             <button onClick={() => setUpgradeOpen(true)} className="hidden sm:block">
               <PremiumBadge />
             </button>

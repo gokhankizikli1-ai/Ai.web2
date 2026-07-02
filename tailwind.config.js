@@ -5,6 +5,32 @@ module.exports = {
   theme: {
     extend: {
       colors: {
+        // Premium Graphite + Warm Stone — the calm dark palette the app
+        // is converging on. Prefer these tokens over raw hex/cyan/amber
+        // for new UI. (Existing surfaces are being migrated gradually.)
+        graphite: {
+          950: "#0B0B0C",   // background
+          900: "#111113",   // main surface
+          850: "#171719",   // elevated surface
+          800: "#1D1D20",   // card surface
+          600: "#2A2A2D",   // border
+        },
+        stoneac: {
+          DEFAULT: "#B98B63",
+          hover: "#C99A70",
+        },
+        ink: {
+          DEFAULT: "#F2F2F3", // primary text
+          body: "#C9C9CE",
+          muted: "#8F8F98",
+          disabled: "#5F6068",
+        },
+        status: {
+          success: "#8A9A7A",
+          warning: "#B98B63",
+          danger: "#C27676",
+          info: "#A7A7AD",
+        },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",

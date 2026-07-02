@@ -15,10 +15,10 @@ export default function IcpPanel({
   return (
     <div className="rounded-xl border border-white/[0.05] bg-white/[0.01] p-4">
       <div className="flex items-center gap-2 mb-3">
-        <Users className="h-3.5 w-3.5 text-cyan-300" />
+        <Users className="h-3.5 w-3.5 text-[#C99A70]" />
         <h3 className="text-[13px] font-semibold text-slate-100">Who to sell to first</h3>
         {icp?.isHypothesis && (
-          <span className="px-1.5 py-0.5 rounded text-[9px] bg-amber-500/[0.1] border border-amber-500/25 text-amber-300">
+          <span className="px-1.5 py-0.5 rounded text-[9px] bg-[#B98B63]/[0.12] border border-[#B98B63]/35 text-[#C99A70]">
             hypothesis
           </span>
         )}

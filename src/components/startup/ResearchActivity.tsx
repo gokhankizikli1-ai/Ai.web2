@@ -45,9 +45,9 @@ export default function ResearchActivity() {
             <div key={step} className="flex items-center gap-2.5">
               <span className="flex h-4 w-4 items-center justify-center shrink-0">
                 {done ? (
-                  <Check className="h-3.5 w-3.5 text-cyan-300" />
+                  <Check className="h-3.5 w-3.5 text-[#C99A70]" />
                 ) : active ? (
-                  <Loader2 className="h-3.5 w-3.5 text-cyan-300 animate-spin" />
+                  <Loader2 className="h-3.5 w-3.5 text-[#C99A70] animate-spin" />
                 ) : (
                   <span className="h-1.5 w-1.5 rounded-full bg-white/[0.12]" />
                 )}

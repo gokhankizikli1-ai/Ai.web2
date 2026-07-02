@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { Sparkles, Pin, PinOff, Copy, Check, ThumbsUp, ThumbsDown, RotateCcw } from 'lucide-react';
+import { Pin, PinOff, Copy, Check, ThumbsUp, ThumbsDown, RotateCcw } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import ResponseActions from './ResponseActions';
@@ -52,7 +52,7 @@ const markdownComponents = {
       );
     }
     return (
-      <code className="px-1.5 py-0.5 rounded-md bg-white/[0.06] text-cyan-300/80 text-[12px] font-mono" {...props}>
+      <code className="px-1.5 py-0.5 rounded-md bg-white/[0.06] text-[#C99A70] text-[12px] font-mono" {...props}>
         {children}
       </code>
     );
@@ -79,7 +79,7 @@ const markdownComponents = {
     return <h3 className="text-[13px] font-medium text-white mt-3 mb-1">{children}</h3>;
   },
   blockquote({ children }: any) {
-    return <blockquote className="border-l-2 border-cyan-500/20 pl-3 my-2 text-slate-400 italic">{children}</blockquote>;
+    return <blockquote className="border-l-2 border-[#B98B63]/30 pl-3 my-2 text-slate-400 italic">{children}</blockquote>;
   },
   hr() {
     return <hr className="my-3 border-white/[0.04]" />;
@@ -98,7 +98,7 @@ const markdownComponents = {
   },
   a({ href, children }: any) {
     return (
-      <a href={href} target="_blank" rel="noopener noreferrer" className="text-cyan-400/70 hover:text-cyan-300 underline underline-offset-2 decoration-cyan-400/20 hover:decoration-cyan-400/50 transition-colors">
+      <a href={href} target="_blank" rel="noopener noreferrer" className="text-[#C99A70] hover:text-[#D9AC84] underline underline-offset-2 decoration-[#B98B63]/30 hover:decoration-[#B98B63]/60 transition-colors">
         {children}
       </a>
     );
@@ -110,6 +110,35 @@ const markdownComponents = {
     return <em className="text-slate-400 italic">{children}</em>;
   },
 };
+
+/** Detect a trailing "Sources / Kaynaklar / References" block the model
+ * appended and split it out so it renders as a compact collapsed control
+ * under the answer instead of a wall of links inside it. Detection is
+ * conservative: a heading-like line followed mostly by links. When
+ * nothing matches, the message renders unchanged — never fabricated. */
+function splitTrailingSources(content: string): { body: string; sources: string | null; count: number } {
+  const lines = content.split('\n');
+  let headingIdx = -1;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (/^\s{0,3}(#{1,4}\s*)?(\*\*)?\s*(sources?|kaynaklar|references|citations)(\s+used)?(\*\*)?\s*:?\s*$/i.test(lines[i])) {
+      headingIdx = i;
+      break;
+    }
+  }
+  if (headingIdx < 0) return { body: content, sources: null, count: 0 };
+  const tail = lines.slice(headingIdx + 1);
+  const nonEmpty = tail.filter((l) => l.trim());
+  if (nonEmpty.length === 0) return { body: content, sources: null, count: 0 };
+  const linkish = nonEmpty.filter((l) => /https?:\/\/|\[[^\]]+\]\([^)]+\)/.test(l));
+  if (linkish.length < Math.max(1, Math.ceil(nonEmpty.length * 0.5))) {
+    return { body: content, sources: null, count: 0 };
+  }
+  return {
+    body: lines.slice(0, headingIdx).join('\n').trimEnd(),
+    sources: tail.join('\n').trim(),
+    count: linkish.length,
+  };
+}
 
 export default function MessageBubble({
   role, content, fullMessage, shouldAnimate = false, isPinned = false,
@@ -209,21 +238,26 @@ export default function MessageBubble({
   }
 
   // ─── Assistant message ───
+  // Split a trailing model-written sources block into a compact collapsed
+  // control. Only once the text is fully displayed — mid-typewriter the
+  // partial content would make detection unstable.
+  const isComplete = !isGenerating && displayedContent === content;
+  const { body, sources, count } = isComplete
+    ? splitTrailingSources(displayedContent)
+    : { body: displayedContent, sources: null, count: 0 };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
-      className="flex gap-2.5 py-1 group"
+      className="flex py-1 group"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      {/* Avatar */}
-      <div className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-400/20 to-blue-600/20 border border-cyan-500/10 mt-0.5 shadow-[0_0_8px_-2px_rgba(34,211,238,0.08)]">
-        <Sparkles className="h-3 w-3 text-cyan-400/70" />
-      </div>
-
-      <div className="flex-1 min-w-0 max-w-[90%] md:max-w-[85%] lg:max-w-[80%]">
+      {/* No assistant avatar — clean ChatGPT/Claude-style flow; the
+          typing indicator carries the activity state instead. */}
+      <div className="flex-1 min-w-0 max-w-[92%] md:max-w-[88%] lg:max-w-[84%]">
         {/* Bubble */}
         <div
           className={`rounded-2xl rounded-tl-sm border transition-all duration-200 ${
@@ -237,7 +271,7 @@ export default function MessageBubble({
               remarkPlugins={[remarkGfm]}
               components={markdownComponents}
             >
-              {displayedContent}
+              {body}
             </ReactMarkdown>
           </div>
 
@@ -252,12 +286,27 @@ export default function MessageBubble({
               text is streaming. */}
           {shouldAnimate && displayedContent.length < content.length && (
             <motion.span
-              className="inline-block w-[2px] h-4 bg-cyan-400/50 ml-0.5 align-middle"
+              className="inline-block w-[2px] h-4 bg-[#B98B63]/60 ml-0.5 align-middle"
               animate={{ opacity: [1, 0] }}
               transition={{ duration: 0.5, repeat: Infinity }}
             />
           )}
         </div>
+
+        {/* Compact collapsed sources — answer first, sources on demand.
+            Only real links the model actually wrote; nothing invented. */}
+        {sources && (
+          <details className="mt-1.5 group/sources">
+            <summary className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] text-[#8F8F98] hover:text-[#C9C9CE] border border-[#2A2A2D] bg-white/[0.01] cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden transition-colors">
+              Sources ({count})
+            </summary>
+            <div className="mt-1.5 px-3 py-2 rounded-xl border border-[#2A2A2D] bg-white/[0.01] prose prose-invert prose-sm max-w-none">
+              <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                {sources}
+              </ReactMarkdown>
+            </div>
+          </details>
+        )}
 
         {/* Action row — shows on hover, hidden during generation */}
         {!isGenerating && (
@@ -273,10 +322,10 @@ export default function MessageBubble({
             {onPin && (
               <button
                 onClick={() => onPin(fullMessage)}
-                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[#64748B] hover:text-amber-400 hover:bg-amber-500/[0.03] transition-all"
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[#64748B] hover:text-[#C99A70] hover:bg-[#B98B63]/[0.06] transition-all"
                 title={isPinned ? 'Unpin' : 'Pin'}
               >
-                {isPinned ? <PinOff className="h-3 w-3 text-amber-400" /> : <Pin className="h-3 w-3" />}
+                {isPinned ? <PinOff className="h-3 w-3 text-[#C99A70]" /> : <Pin className="h-3 w-3" />}
               </button>
             )}
 
