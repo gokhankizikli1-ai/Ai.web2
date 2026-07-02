@@ -125,10 +125,10 @@ export default function PricingPage() {
           className="text-center mb-14"
         >
           <div className="flex items-center justify-center gap-2 mb-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-500/10 border border-cyan-500/15">
-              <Crown className="h-4 w-4 text-cyan-400" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#52677A]/10 border border-[#52677A]/15">
+              <Crown className="h-4 w-4 text-[#7890A3]" />
             </div>
-            <span className="text-[11px] font-semibold text-cyan-400/70 uppercase tracking-wider">Pricing</span>
+            <span className="text-[11px] font-semibold text-[#7890A3]/70 uppercase tracking-wider">Pricing</span>
           </div>
           <h1 className="text-4xl font-semibold mb-3 tracking-tight">Choose your plan</h1>
           <p className="text-[14px] text-slate-500 max-w-md mx-auto mb-6">
@@ -144,7 +144,7 @@ export default function PricingPage() {
               >Yearly</button>
             </div>
             {yearly && (
-              <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-[13px] text-emerald-400/70 font-medium">
+              <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-[13px] text-[#6F8F7A]/70 font-medium">
                 Save 20%
               </motion.span>
             )}
@@ -159,11 +159,11 @@ export default function PricingPage() {
               initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.1, duration: 0.4 }}
-              className={`relative rounded-2xl border ${plan.popular ? 'border-cyan-500/15 bg-cyan-500/[0.02]' : 'border-white/[0.04] bg-white/[0.005]'} p-6 flex flex-col hover:border-white/[0.06] transition-all`}
+              className={`relative rounded-2xl border ${plan.popular ? 'border-[#52677A]/15 bg-[#52677A]/[0.02]' : 'border-white/[0.04] bg-white/[0.005]'} p-6 flex flex-col hover:border-white/[0.06] transition-all`}
             >
               {plan.popular && (
                 <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                  <div className="flex items-center gap-1 rounded-full bg-cyan-500/15 border border-cyan-500/20 px-3 py-0.5 text-[10px] font-semibold text-cyan-400">
+                  <div className="flex items-center gap-1 rounded-full bg-[#52677A]/15 border border-[#52677A]/20 px-3 py-0.5 text-[10px] font-semibold text-[#7890A3]">
                     <Star className="h-2.5 w-2.5" /> Most Popular
                   </div>
                 </div>
@@ -171,7 +171,7 @@ export default function PricingPage() {
 
               <div className="mb-4">
                 <div className="flex items-center gap-2 mb-2">
-                  <plan.icon className={`h-5 w-5 ${plan.id === 'free' ? 'text-slate-600' : 'text-cyan-400/70'}`} />
+                  <plan.icon className={`h-5 w-5 ${plan.id === 'free' ? 'text-slate-600' : 'text-[#7890A3]/70'}`} />
                   <h3 className="text-[18px] font-semibold">{plan.name}</h3>
                 </div>
                 <div className="flex items-baseline gap-1 mb-1">
@@ -190,7 +190,7 @@ export default function PricingPage() {
               <ul className="space-y-2.5 mb-6 flex-1">
                 {plan.features.map((f) => (
                   <li key={f} className="flex items-start gap-2 text-[12px] text-slate-400">
-                    <Check className="h-3.5 w-3.5 shrink-0 text-emerald-400/60 mt-0.5" />
+                    <Check className="h-3.5 w-3.5 shrink-0 text-[#6F8F7A]/60 mt-0.5" />
                     {f}
                   </li>
                 ))}
@@ -247,10 +247,10 @@ export default function PricingPage() {
                 {FEATURES_COMPARE.map((row) => (
                   <tr key={row.name} className="border-b border-white/[0.02] hover:bg-white/[0.01] transition-colors">
                     <td className="px-6 py-3 text-slate-400">{row.name}</td>
-                    <td className="text-center px-4 py-3 text-slate-600">{typeof row.free === 'boolean' ? (row.free ? <Check className="h-3.5 w-3.5 text-emerald-400/60 mx-auto" /> : <X className="h-3.5 w-3.5 text-[#94A3B8] mx-auto" />) : row.free}</td>
-                    <td className="text-center px-4 py-3 text-slate-400">{typeof row.pro === 'boolean' ? (row.pro ? <Check className="h-3.5 w-3.5 text-emerald-400/60 mx-auto" /> : <X className="h-3.5 w-3.5 text-[#94A3B8] mx-auto" />) : row.pro}</td>
-                    <td className="text-center px-4 py-3 text-slate-400">{typeof row.ultra === 'boolean' ? (row.ultra ? <Check className="h-3.5 w-3.5 text-emerald-400/60 mx-auto" /> : <X className="h-3.5 w-3.5 text-[#94A3B8] mx-auto" />) : row.ultra}</td>
-                    <td className="text-center px-4 py-3 text-slate-400">{typeof row.enterprise === 'boolean' ? (row.enterprise ? <Check className="h-3.5 w-3.5 text-emerald-400/60 mx-auto" /> : <X className="h-3.5 w-3.5 text-[#94A3B8] mx-auto" />) : row.enterprise}</td>
+                    <td className="text-center px-4 py-3 text-slate-600">{typeof row.free === 'boolean' ? (row.free ? <Check className="h-3.5 w-3.5 text-[#6F8F7A]/60 mx-auto" /> : <X className="h-3.5 w-3.5 text-[#94A3B8] mx-auto" />) : row.free}</td>
+                    <td className="text-center px-4 py-3 text-slate-400">{typeof row.pro === 'boolean' ? (row.pro ? <Check className="h-3.5 w-3.5 text-[#6F8F7A]/60 mx-auto" /> : <X className="h-3.5 w-3.5 text-[#94A3B8] mx-auto" />) : row.pro}</td>
+                    <td className="text-center px-4 py-3 text-slate-400">{typeof row.ultra === 'boolean' ? (row.ultra ? <Check className="h-3.5 w-3.5 text-[#6F8F7A]/60 mx-auto" /> : <X className="h-3.5 w-3.5 text-[#94A3B8] mx-auto" />) : row.ultra}</td>
+                    <td className="text-center px-4 py-3 text-slate-400">{typeof row.enterprise === 'boolean' ? (row.enterprise ? <Check className="h-3.5 w-3.5 text-[#6F8F7A]/60 mx-auto" /> : <X className="h-3.5 w-3.5 text-[#94A3B8] mx-auto" />) : row.enterprise}</td>
                   </tr>
                 ))}
               </tbody>
@@ -263,7 +263,7 @@ export default function PricingPage() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.5 }}
-          className="mt-8 p-4 rounded-xl border border-amber-500/10 bg-amber-500/[0.02] text-center"
+          className="mt-8 p-4 rounded-xl border border-[#A68A5B]/10 bg-[#A68A5B]/[0.02] text-center"
         >
           <p className="text-[12px] text-slate-500">
             Payments processing coming soon. All features currently available in Free tier during early access.

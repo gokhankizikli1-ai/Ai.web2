@@ -59,8 +59,8 @@ export default function ExportChat({ open, onClose, session }: ExportChatProps) 
           .user { background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.12); }
           .ai { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); }
           .role { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
-          .user .role { color: #60a5fa; }
-          .ai .role { color: #22d3ee; }
+          .user .role { color: #7890A3; }
+          .ai .role { color: #7890A3; }
           .content { font-size: 13px; white-space: pre-wrap; }
           pre { background: rgba(255,255,255,0.04); padding: 12px; border-radius: 8px; overflow-x: auto; font-size: 12px; }
           code { font-family: ui-monospace, monospace; }
@@ -100,7 +100,7 @@ export default function ExportChat({ open, onClose, session }: ExportChatProps) 
             onClick={handleCopyMarkdown}
             className="w-full justify-start h-10 gap-3 text-[13px] text-slate-300 hover:text-white hover:bg-white/[0.05] border border-white/[0.04]"
           >
-            {copied ? <Check className="h-4 w-4 text-green-400" /> : <Copy className="h-4 w-4" />}
+            {copied ? <Check className="h-4 w-4 text-[#6F8F7A]" /> : <Copy className="h-4 w-4" />}
             {copied ? 'Copied Markdown' : 'Copy as Markdown'}
           </Button>
 

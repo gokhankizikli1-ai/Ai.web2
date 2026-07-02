@@ -123,14 +123,14 @@ const HUB_AGENTS: HubAgent[] = [
    COLOR MAP
    ═══════════════════════════════════════════ */
 const COLOR_MAP: Record<string, { bg: string; border: string; icon: string; glow: string }> = {
-  orange:  { bg: 'bg-orange-500/[0.05]',  border: 'border-orange-500/10',  icon: 'text-orange-400',  glow: 'hover:shadow-[0_0_20px_-4px_rgba(251,146,60,0.08)]' },
-  blue:    { bg: 'bg-blue-500/[0.05]',    border: 'border-blue-500/10',    icon: 'text-blue-400',    glow: 'hover:shadow-[0_0_20px_-4px_rgba(96,165,250,0.08)]' },
-  emerald: { bg: 'bg-emerald-500/[0.05]', border: 'border-emerald-500/10', icon: 'text-emerald-400', glow: 'hover:shadow-[0_0_20px_-4px_rgba(52,211,153,0.08)]' },
-  violet:  { bg: 'bg-violet-500/[0.05]',  border: 'border-violet-500/10',  icon: 'text-violet-400',  glow: 'hover:shadow-[0_0_20px_-4px_rgba(167,139,250,0.08)]' },
-  red:     { bg: 'bg-red-500/[0.05]',     border: 'border-red-500/10',     icon: 'text-red-400',     glow: 'hover:shadow-[0_0_20px_-4px_rgba(248,113,113,0.08)]' },
-  cyan:    { bg: 'bg-cyan-500/[0.05]',    border: 'border-cyan-500/10',    icon: 'text-cyan-400',    glow: 'hover:shadow-[0_0_20px_-4px_rgba(34,211,238,0.08)]' },
-  indigo:  { bg: 'bg-indigo-500/[0.05]',  border: 'border-indigo-500/10',  icon: 'text-indigo-400',  glow: 'hover:shadow-[0_0_20px_-4px_rgba(129,140,248,0.08)]' },
-  amber:   { bg: 'bg-amber-500/[0.05]',   border: 'border-amber-500/10',   icon: 'text-amber-400',   glow: 'hover:shadow-[0_0_20px_-4px_rgba(251,191,36,0.08)]' },
+  orange:  { bg: 'bg-[#52677A]/[0.05]',  border: 'border-[#52677A]/10',  icon: 'text-[#637B90]',  glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
+  blue:    { bg: 'bg-[#52677A]/[0.05]',    border: 'border-[#52677A]/10',    icon: 'text-[#637B90]',    glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
+  emerald: { bg: 'bg-[#52677A]/[0.05]', border: 'border-[#52677A]/10', icon: 'text-[#637B90]', glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
+  violet:  { bg: 'bg-[#52677A]/[0.05]',  border: 'border-[#52677A]/10',  icon: 'text-[#637B90]',  glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
+  red:     { bg: 'bg-[#52677A]/[0.05]',     border: 'border-[#52677A]/10',     icon: 'text-[#637B90]',     glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
+  cyan:    { bg: 'bg-[#52677A]/[0.05]',    border: 'border-[#52677A]/10',    icon: 'text-[#637B90]',    glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
+  indigo:  { bg: 'bg-[#52677A]/[0.05]',  border: 'border-[#52677A]/10',  icon: 'text-[#637B90]',  glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
+  amber:   { bg: 'bg-[#52677A]/[0.05]',   border: 'border-[#52677A]/10',   icon: 'text-[#637B90]',   glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
 };
 
 /* ═══════════════════════════════════════════
@@ -153,8 +153,8 @@ export default function AgentsPanel() {
       {/* Header */}
       <div className="shrink-0 px-5 pt-4 pb-3">
         <div className="flex items-center gap-3 mb-1">
-          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-500/[0.06] border border-indigo-500/10">
-            <Bot className="h-4 w-4 text-indigo-400/70" />
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#52677A]/[0.06] border border-[#52677A]/10">
+            <Bot className="h-4 w-4 text-[#637B90]/70" />
           </div>
           <div>
             <h2 className="text-[15px] font-semibold text-white">Agent Hub</h2>

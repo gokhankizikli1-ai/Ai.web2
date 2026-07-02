@@ -149,10 +149,10 @@ export default function WebsiteBuilder() {
 
   return (
     <BuilderWorkspaceFrame
-      icon={<Layout className="h-4 w-4" style={{ color: '#a78bfa' }} />}
+      icon={<Layout className="h-4 w-4" style={{ color: '#7890A3' }} />}
       title="Website Builder"
       subtitle="Describe the website you want — Korvix locks a design direction, then generates a premium, category-aware preview"
-      accent="#a78bfa"
+      accent="#7890A3"
       maxWidth="max-w-6xl"
     >
       {/* Prompt input */}
@@ -165,8 +165,8 @@ export default function WebsiteBuilder() {
           ctaLabel="Generate"
           busyLabel="Generating…"
           busy={generating}
-          accent="#a78bfa"
-          accent2="#22d3ee"
+          accent="#7890A3"
+          accent2="#7890A3"
           examples={EXAMPLE_PROMPTS}
           onExampleSelect={setPrompt}
         />
@@ -279,7 +279,7 @@ export default function WebsiteBuilder() {
       {!generated && !generating && !briefPrompt && (
         <motion.div {...fadeUp(0.1)} className="max-w-lg mx-auto text-center py-14">
           <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-white/[0.06] bg-white/[0.02]">
-            <Sparkles className="w-6 h-6 text-violet-300/70" />
+            <Sparkles className="w-6 h-6 text-[#7890A3]/70" />
           </div>
           <h3 className="text-[15px] font-medium text-white mb-2">Describe your website</h3>
           <p className="text-[12px] text-slate-500 leading-relaxed mb-6">

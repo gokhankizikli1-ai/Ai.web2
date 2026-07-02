@@ -120,7 +120,7 @@ export default function Sidebar({
           onClick={() => onSelect(session.id)}
           className={`w-full min-w-0 flex items-center gap-2 rounded-lg px-2.5 py-[6px] text-left transition-all duration-200 border ${
             active
-              ? 'border-white/[0.06] shadow-[0_0_12px_-4px_rgba(34,211,238,0.04)]'
+              ? 'border-white/[0.06] shadow-[0_0_12px_-4px_rgba(82,103,122,0.04)]'
               : 'border-transparent hover:border-white/[0.03]'
           }`}
           style={active
@@ -163,7 +163,7 @@ export default function Sidebar({
           >
             <button
               onClick={(e) => { e.stopPropagation(); setDeleteTarget(session.id); }}
-              className="p-1 rounded text-white/30 hover:text-red-400 hover:bg-red-500/[0.06] transition-all"
+              className="p-1 rounded text-white/30 hover:text-[#B76E79] hover:bg-[#B76E79]/[0.06] transition-all"
             >
               <Trash2 className="h-2.5 w-2.5" />
             </button>
@@ -272,8 +272,8 @@ export default function Sidebar({
               <div
                 className="flex h-6 w-6 items-center justify-center rounded-md shrink-0"
                 style={{
-                  background: 'linear-gradient(135deg, rgba(34,211,238,0.15) 0%, rgba(59,130,246,0.15) 100%)',
-                  boxShadow: '0 0 8px rgba(34,211,238,0.08), inset 0 1px 0 rgba(255,255,255,0.06)',
+                  background: 'linear-gradient(135deg, rgba(82,103,122,0.15) 0%, rgba(120,144,163,0.15) 100%)',
+                  boxShadow: '0 0 8px rgba(82,103,122,0.08), inset 0 1px 0 rgba(255,255,255,0.06)',
                 }}
               >
                 <FolderOpen className="h-3 w-3 text-[#94A3B8]" />
@@ -305,11 +305,11 @@ export default function Sidebar({
               <div
                 className="flex h-6 w-6 items-center justify-center rounded-md shrink-0"
                 style={{
-                  background: 'linear-gradient(135deg, rgba(99,102,241,0.15) 0%, rgba(139,92,246,0.15) 100%)',
-                  boxShadow: '0 0 8px rgba(99,102,241,0.08), inset 0 1px 0 rgba(255,255,255,0.06)',
+                  background: 'linear-gradient(135deg, rgba(82,103,122,0.15) 0%, rgba(120,144,163,0.15) 100%)',
+                  boxShadow: '0 0 8px rgba(82,103,122,0.08), inset 0 1px 0 rgba(255,255,255,0.06)',
                 }}
               >
-                <Bot className="h-3 w-3 text-indigo-400/70" />
+                <Bot className="h-3 w-3 text-[#7890A3]" />
               </div>
               <span className="text-[12px] font-medium text-white/60 group-hover:text-white/90 transition-colors">Agents</span>
             </motion.button>

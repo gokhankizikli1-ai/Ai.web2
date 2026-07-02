@@ -42,22 +42,22 @@ export default function BottomNav() {
               {isActive && (
                 <motion.div
                   layoutId="bottomNavActive"
-                  className="absolute -top-px left-1/2 -translate-x-1/2 w-6 h-0.5 bg-cyan-400 rounded-full"
+                  className="absolute -top-px left-1/2 -translate-x-1/2 w-6 h-0.5 bg-[#52677A] rounded-full"
                   transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                 />
               )}
               {/* Subtle glow for active */}
               {isActive && (
-                <div className="absolute inset-1 rounded-xl bg-cyan-400/[0.04]" />
+                <div className="absolute inset-1 rounded-xl bg-[#52677A]/[0.04]" />
               )}
               <item.icon
                 className={`w-[18px] h-[18px] transition-colors relative z-10 ${
-                  isActive ? 'text-cyan-400' : 'text-slate-600'
+                  isActive ? 'text-[#52677A]' : 'text-slate-600'
                 }`}
               />
               <span
                 className={`text-[10px] font-medium transition-colors relative z-10 ${
-                  isActive ? 'text-cyan-400' : 'text-slate-600'
+                  isActive ? 'text-[#52677A]' : 'text-slate-600'
                 }`}
               >
                 {item.label}

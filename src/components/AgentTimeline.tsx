@@ -33,16 +33,16 @@ function StatusIcon({ status }: { status: TimelineStep['status'] }) {
       <motion.div
         initial={{ scale: 0 }}
         animate={{ scale: 1 }}
-        className="h-5 w-5 rounded-full bg-emerald-500/15 border border-emerald-500/25 flex items-center justify-center"
+        className="h-5 w-5 rounded-full bg-[#6F8F7A]/15 border border-[#6F8F7A]/25 flex items-center justify-center"
       >
-        <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+        <CheckCircle2 className="h-3 w-3 text-[#6F8F7A]" />
       </motion.div>
     );
   }
   if (status === 'active') {
     return (
-      <div className="h-5 w-5 rounded-full bg-cyan-500/15 border border-cyan-500/25 flex items-center justify-center">
-        <Loader2 className="h-3 w-3 text-cyan-400 animate-spin" />
+      <div className="h-5 w-5 rounded-full bg-[#52677A]/15 border border-[#52677A]/25 flex items-center justify-center">
+        <Loader2 className="h-3 w-3 text-[#52677A] animate-spin" />
       </div>
     );
   }
@@ -56,7 +56,7 @@ function StatusIcon({ status }: { status: TimelineStep['status'] }) {
 function ConnectorLine({ status }: { status: 'before-active' | 'active' | 'after-active' }) {
   if (status === 'before-active') {
     return (
-      <div className="w-[2px] h-full bg-emerald-500/20" />
+      <div className="w-[2px] h-full bg-[#6F8F7A]/20" />
     );
   }
   if (status === 'active') {
@@ -64,7 +64,7 @@ function ConnectorLine({ status }: { status: 'before-active' | 'active' | 'after
       <div className="w-[2px] h-full relative overflow-hidden">
         <div className="absolute inset-0 bg-white/[0.03]" />
         <motion.div
-          className="absolute top-0 left-0 w-full bg-cyan-400/30"
+          className="absolute top-0 left-0 w-full bg-[#52677A]/30"
           animate={{ height: ['0%', '100%'] }}
           transition={{ duration: 2, ease: 'easeInOut' }}
         />
@@ -110,13 +110,13 @@ export default function AgentTimeline({ isVisible, steps = DEFAULT_STEPS }: Agen
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/[0.03]">
           <div className="flex items-center gap-2">
-            <Zap className="h-3.5 w-3.5 text-cyan-400/60" />
+            <Zap className="h-3.5 w-3.5 text-[#52677A]/60" />
             <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">Execution Pipeline</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-16 h-1 bg-white/[0.03] rounded-full overflow-hidden">
               <motion.div
-                className="h-full bg-cyan-400/40 rounded-full"
+                className="h-full bg-[#52677A]/40 rounded-full"
                 animate={{ width: `${(completedCount / displaySteps.length) * 100}%` }}
                 transition={{ duration: 0.5 }}
               />
@@ -154,8 +154,8 @@ export default function AgentTimeline({ isVisible, steps = DEFAULT_STEPS }: Agen
                   <div className="flex-1 pb-3">
                     <div className="flex items-center gap-2">
                       <span className={`text-[11px] font-medium ${
-                        step.status === 'completed' ? 'text-emerald-400/70' :
-                        step.status === 'active' ? 'text-cyan-400' :
+                        step.status === 'completed' ? 'text-[#6F8F7A]/70' :
+                        step.status === 'active' ? 'text-[#52677A]' :
                         'text-slate-600'
                       }`}>
                         {step.label}
@@ -168,8 +168,8 @@ export default function AgentTimeline({ isVisible, steps = DEFAULT_STEPS }: Agen
                       )}
                     </div>
                     <span className={`text-[10px] ${
-                      step.status === 'completed' ? 'text-emerald-500/40' :
-                      step.status === 'active' ? 'text-cyan-400/50' :
+                      step.status === 'completed' ? 'text-[#6F8F7A]/40' :
+                      step.status === 'active' ? 'text-[#52677A]/50' :
                       'text-[#64748B]'
                     }`}>
                       {step.description}

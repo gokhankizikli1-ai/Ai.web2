@@ -66,7 +66,7 @@ export default function FeaturesPage() {
                 key={feature.title}
                 className="group relative rounded-2xl border border-white/10 bg-white/[0.02] p-6 hover:bg-white/[0.04] transition-all duration-300 hover:border-white/[0.06]0"
               >
-                <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 text-cyan-400 group-hover:scale-110 transition-transform duration-300">
+                <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#52677A]/20 to-[#7890A3]/20 text-[#7890A3] group-hover:scale-110 transition-transform duration-300">
                   <feature.icon className="h-5 w-5" />
                 </div>
                 <h3 className="text-lg font-semibold text-white mb-2">{feature.title}</h3>

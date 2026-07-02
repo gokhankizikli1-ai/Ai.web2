@@ -179,7 +179,7 @@ export default function SmartInput({ onSend, disabled, externalValue, onExternal
                     i === selectedIndex ? 'bg-white/[0.05] text-white' : 'text-slate-400 hover:bg-white/[0.02]'
                   }`}
                 >
-                  <span className="text-[11px] font-mono text-cyan-400/60 shrink-0">{cmd.command}</span>
+                  <span className="text-[11px] font-mono text-[#52677A]/60 shrink-0">{cmd.command}</span>
                   <div className="flex-1 min-w-0">
                     <div className="text-[12px] font-medium">{cmd.label}</div>
                     <div className="text-[10px] text-slate-600">{cmd.description}</div>
@@ -215,8 +215,8 @@ export default function SmartInput({ onSend, disabled, externalValue, onExternal
                     i === selectedIndex ? 'bg-white/[0.05] text-white' : 'text-slate-400 hover:bg-white/[0.02]'
                   }`}
                 >
-                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-cyan-500/10 shrink-0">
-                    <Hash className="h-3.5 w-3.5 text-cyan-400/50" />
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#52677A]/10 shrink-0">
+                    <Hash className="h-3.5 w-3.5 text-[#52677A]/50" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="text-[12px] font-medium">{m.label}</div>
@@ -233,9 +233,9 @@ export default function SmartInput({ onSend, disabled, externalValue, onExternal
       <div
         className={`relative flex items-end gap-1.5 rounded-[20px] bg-white/[0.03] border p-2 md:p-2.5 transition-all duration-300 ${
           isFocused && !showSlashMenu && !showMentionMenu
-            ? 'border-cyan-500/25 bg-white/[0.05] shadow-[0_0_0_1px_rgba(34,211,238,0.06),0_0_20px_-5px_rgba(34,211,238,0.08)]'
+            ? 'border-[#52677A]/25 bg-white/[0.05] shadow-[0_0_0_1px_rgba(82,103,122,0.06),0_0_20px_-5px_rgba(82,103,122,0.08)]'
             : 'border-white/[0.07] hover:border-white/[0.12]'
-        } ${(showSlashMenu || showMentionMenu) ? 'border-cyan-500/20' : ''}`}
+        } ${(showSlashMenu || showMentionMenu) ? 'border-[#52677A]/20' : ''}`}
       >
         <button className="shrink-0 h-8 w-8 flex items-center justify-center text-slate-600 hover:text-white hover:bg-white/[0.06] rounded-[10px] transition-all">
           <Paperclip className="h-[15px] w-[15px]" />
@@ -257,7 +257,7 @@ export default function SmartInput({ onSend, disabled, externalValue, onExternal
         <button
           onClick={handleSubmit}
           disabled={!value.trim() || disabled}
-          className="shrink-0 h-8 w-8 flex items-center justify-center bg-cyan-500/15 text-cyan-400 hover:bg-cyan-500/25 hover:text-cyan-300 disabled:opacity-25 disabled:hover:bg-cyan-500/15 rounded-[10px] transition-all duration-200"
+          className="shrink-0 h-8 w-8 flex items-center justify-center bg-[#52677A]/15 text-[#52677A] hover:bg-[#52677A]/25 hover:text-[#637B90] disabled:opacity-25 disabled:hover:bg-[#52677A]/15 rounded-[10px] transition-all duration-200"
         >
           <Send className="h-[15px] w-[15px]" />
         </button>

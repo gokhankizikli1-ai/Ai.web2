@@ -60,11 +60,11 @@ function AgentPreviewCard({ config, onCreate, onEdit, onChat }: {
   config: AgentConfig; onCreate: () => void; onEdit: () => void; onChat: () => void;
 }) {
   const gradients = [
-    'from-cyan-400 to-blue-400',
-    'from-violet-400 to-purple-400',
-    'from-emerald-400 to-teal-400',
-    'from-amber-400 to-orange-400',
-    'from-pink-400 to-rose-400',
+    'from-[#7890A3] to-[#7890A3]',
+    'from-[#7890A3] to-[#7890A3]',
+    'from-[#6F8F7A] to-[#7890A3]',
+    'from-[#A68A5B] to-[#A68A5B]',
+    'from-[#7890A3] to-[#B76E79]',
   ];
   const idx = Math.abs(config.specialty.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % gradients.length;
 
@@ -118,7 +118,7 @@ function AgentPreviewCard({ config, onCreate, onEdit, onChat }: {
           <div className="flex flex-wrap gap-1 mt-1.5">
             {['Natural Language', 'Context Awareness', 'Multi-step Reasoning', 'Memory Persistence'].map(c => (
               <span key={c} className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-white/[0.03] text-[9px] text-white/30 border border-white/[0.04]">
-                <Check className="h-2 w-2 text-emerald-400/50" />
+                <Check className="h-2 w-2 text-[#6F8F7A]/50" />
                 {c}
               </span>
             ))}
@@ -153,8 +153,8 @@ function AgentPreviewCard({ config, onCreate, onEdit, onChat }: {
           onClick={onCreate}
           className="flex-1 flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-[12px] font-semibold text-white transition-all hover:brightness-110"
           style={{
-            background: 'linear-gradient(135deg, #22D3EE, #3B82F6)',
-            boxShadow: '0 4px 16px rgba(34,211,238,0.15)',
+            background: 'linear-gradient(135deg, #7890A3, #637B90)',
+            boxShadow: '0 4px 16px rgba(82,103,122,0.15)',
           }}
         >
           <Zap className="h-3.5 w-3.5" />
@@ -179,8 +179,8 @@ function ChatMessage({ msg, onOptionClick }: { msg: ConversationMessage; onOptio
       className={`flex gap-3 ${isAI ? '' : 'flex-row-reverse'}`}
     >
       {/* Avatar */}
-      <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${isAI ? 'bg-indigo-500/[0.08] border border-indigo-500/15' : 'bg-white/[0.04] border border-white/[0.06]'}`}>
-        {isAI ? <Sparkles className="h-3.5 w-3.5 text-indigo-400/70" /> : <User className="h-3.5 w-3.5 text-white/40" />}
+      <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${isAI ? 'bg-[#637B90]/[0.08] border border-[#637B90]/15' : 'bg-white/[0.04] border border-white/[0.06]'}`}>
+        {isAI ? <Sparkles className="h-3.5 w-3.5 text-[#7890A3]/70" /> : <User className="h-3.5 w-3.5 text-white/40" />}
       </div>
 
       {/* Content */}
@@ -188,8 +188,8 @@ function ChatMessage({ msg, onOptionClick }: { msg: ConversationMessage; onOptio
         <div
           className="inline-block rounded-xl px-3.5 py-2.5 text-[12px] leading-relaxed"
           style={{
-            background: isAI ? 'rgba(255,255,255,0.03)' : 'rgba(34,211,238,0.06)',
-            border: isAI ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(34,211,238,0.1)',
+            background: isAI ? 'rgba(255,255,255,0.03)' : 'rgba(82,103,122,0.06)',
+            border: isAI ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(82,103,122,0.1)',
             color: isAI ? 'rgba(226,232,240,0.65)' : 'rgba(226,232,240,0.8)',
           }}
         >
@@ -462,8 +462,8 @@ export default function AgentBuilder() {
           </button>
           <div className="w-px h-5 bg-white/10" />
           <div className="flex items-center gap-2">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-500/[0.08] border border-indigo-500/15">
-              <Bot className="h-3.5 w-3.5 text-indigo-400/70" />
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#637B90]/[0.08] border border-[#637B90]/15">
+              <Bot className="h-3.5 w-3.5 text-[#7890A3]/70" />
             </div>
             <div>
               <h1 className="text-[13px] font-semibold text-white/90">Agent Creator</h1>
@@ -482,7 +482,7 @@ export default function AgentBuilder() {
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4 scrollbar-thin">
         {/* Subtle ambient */}
         <div className="fixed inset-0 pointer-events-none overflow-hidden">
-          <div className="absolute top-[10%] right-[20%] w-[400px] h-[400px] rounded-full opacity-[0.015]" style={{ background: 'radial-gradient(circle, #6366F1 0%, transparent 70%)' }} />
+          <div className="absolute top-[10%] right-[20%] w-[400px] h-[400px] rounded-full opacity-[0.015]" style={{ background: 'radial-gradient(circle, #637B90 0%, transparent 70%)' }} />
         </div>
 
         {messages.map((msg) => (
@@ -529,7 +529,7 @@ export default function AgentBuilder() {
             disabled={!inputText.trim()}
             className="flex h-7 w-7 items-center justify-center rounded-lg transition-all disabled:opacity-30"
             style={{
-              background: inputText.trim() ? 'linear-gradient(135deg, #22D3EE, #3B82F6)' : 'rgba(255,255,255,0.04)',
+              background: inputText.trim() ? 'linear-gradient(135deg, #7890A3, #637B90)' : 'rgba(255,255,255,0.04)',
             }}
           >
             <Send className="h-3 w-3 text-white" />

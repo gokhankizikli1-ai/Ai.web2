@@ -199,12 +199,12 @@ export default function OwnerModeChip() {
           whileHover={{ scale: 1.04 }}
           whileTap={{ scale: 0.96 }}
           onClick={() => setUnlockOpen(true)}
-          className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-rose-500/[0.05] border border-rose-500/20 hover:bg-rose-500/[0.08] hover:border-rose-500/35 transition-all shrink-0"
+          className="flex items-center gap-1.5 px-2 py-1 rounded-full bg-[#B76E79]/[0.05] border border-[#B76E79]/20 hover:bg-[#B76E79]/[0.08] hover:border-[#B76E79]/35 transition-all shrink-0"
           title={`Owner token saved but not validated: ${reason}. Click to fix.`}
           data-testid="owner-mode-chip-pending"
         >
-          <ShieldAlert className="h-3 w-3 text-rose-300" />
-          <span className="text-[10px] font-medium text-rose-200 whitespace-nowrap hidden sm:inline">
+          <ShieldAlert className="h-3 w-3 text-[#B76E79]" />
+          <span className="text-[10px] font-medium text-[#B76E79] whitespace-nowrap hidden sm:inline">
             {verifying ? 'Verifying…' : 'Owner: invalid'}
           </span>
         </motion.button>

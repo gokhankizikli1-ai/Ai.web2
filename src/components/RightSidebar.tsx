@@ -29,7 +29,7 @@ function ModeBadge({ mode }: { mode: AIMode }) {
     study: 'Study',
   };
   return (
-    <span className="text-[11px] text-cyan-400/70 bg-cyan-500/[0.06] border border-cyan-500/10 px-2 py-0.5 rounded-md">
+    <span className="text-[11px] text-[#52677A]/70 bg-[#52677A]/[0.06] border border-[#52677A]/10 px-2 py-0.5 rounded-md">
       {labels[mode]}
     </span>
   );
@@ -39,8 +39,8 @@ function StatusPulse({ active }: { active: boolean }) {
   if (!active) return <span className="h-1.5 w-1.5 rounded-full bg-slate-700" />;
   return (
     <span className="relative flex h-1.5 w-1.5">
-      <span className="absolute inline-flex h-full w-full rounded-full bg-cyan-400/50 animate-ping" style={{ animationDuration: '2s' }} />
-      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-cyan-400" />
+      <span className="absolute inline-flex h-full w-full rounded-full bg-[#7890A3]/50 animate-ping" style={{ animationDuration: '2s' }} />
+      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[#7890A3]" />
     </span>
   );
 }
@@ -108,7 +108,7 @@ export default function RightSidebar({
           {isLoading && (
             <div className="h-1 bg-white/[0.03] rounded-full overflow-hidden">
               <motion.div
-                className="h-full bg-cyan-400/40 rounded-full"
+                className="h-full bg-[#7890A3]/40 rounded-full"
                 animate={{ width: ['0%', '60%', '80%', '40%', '90%'] }}
                 transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
               />
@@ -141,7 +141,7 @@ export default function RightSidebar({
           ) : (
             activeTools.map((tool) => (
               <div key={tool} className="flex items-center gap-2 text-[11px] text-slate-400">
-                <Zap className="h-3 w-3 text-cyan-400/50" />
+                <Zap className="h-3 w-3 text-[#7890A3]/50" />
                 {tool}
               </div>
             ))
@@ -182,7 +182,7 @@ export default function RightSidebar({
             <p className="text-[11px] text-[#64748B]">No pinned messages</p>
           ) : (
             pinnedMessages.slice(0, 3).map((msg) => (
-              <div key={msg.id} className="text-[11px] text-slate-400 truncate border-l-2 border-cyan-500/20 pl-2">
+              <div key={msg.id} className="text-[11px] text-slate-400 truncate border-l-2 border-[#637B90]/20 pl-2">
                 {msg.content.slice(0, 60)}...
               </div>
             ))
@@ -238,7 +238,7 @@ export default function RightSidebar({
             {/* Header */}
             <div className="flex items-center justify-between px-3 py-2 border-b border-white/[0.02] shrink-0">
               <div className="flex items-center gap-2">
-                <Cpu className="h-3.5 w-3.5 text-cyan-400/50" />
+                <Cpu className="h-3.5 w-3.5 text-[#7890A3]/50" />
                 <span className="text-[11px] font-medium text-slate-400">Context Panel</span>
               </div>
               <button

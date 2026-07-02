@@ -10,16 +10,16 @@ import {
 import Navigation from '@/components/Navigation';
 
 const COLOR_MAP: Record<string, { bg: string; border: string; icon: string; glow: string }> = {
-  emerald: { bg: 'bg-emerald-500/[0.05]', border: 'border-emerald-500/10', icon: 'text-emerald-400', glow: 'hover:shadow-[0_0_20px_-4px_rgba(52,211,153,0.08)]' },
-  cyan:    { bg: 'bg-cyan-500/[0.05]',    border: 'border-cyan-500/10',    icon: 'text-cyan-400',    glow: 'hover:shadow-[0_0_20px_-4px_rgba(34,211,238,0.08)]' },
-  violet:  { bg: 'bg-violet-500/[0.05]',  border: 'border-violet-500/10',  icon: 'text-violet-400',  glow: 'hover:shadow-[0_0_20px_-4px_rgba(167,139,250,0.08)]' },
-  amber:   { bg: 'bg-amber-500/[0.05]',   border: 'border-amber-500/10',   icon: 'text-amber-400',   glow: 'hover:shadow-[0_0_20px_-4px_rgba(251,191,36,0.08)]' },
-  rose:    { bg: 'bg-rose-500/[0.05]',    border: 'border-rose-500/10',    icon: 'text-rose-400',    glow: 'hover:shadow-[0_0_20px_-4px_rgba(251,113,133,0.08)]' },
-  blue:    { bg: 'bg-blue-500/[0.05]',    border: 'border-blue-500/10',    icon: 'text-blue-400',    glow: 'hover:shadow-[0_0_20px_-4px_rgba(96,165,250,0.08)]' },
-  indigo:  { bg: 'bg-indigo-500/[0.05]',  border: 'border-indigo-500/10',  icon: 'text-indigo-400',  glow: 'hover:shadow-[0_0_20px_-4px_rgba(129,140,248,0.08)]' },
-  pink:    { bg: 'bg-pink-500/[0.05]',    border: 'border-pink-500/10',    icon: 'text-pink-400',    glow: 'hover:shadow-[0_0_20px_-4px_rgba(244,114,182,0.08)]' },
-  teal:    { bg: 'bg-teal-500/[0.05]',    border: 'border-teal-500/10',    icon: 'text-teal-400',    glow: 'hover:shadow-[0_0_20px_-4px_rgba(45,212,191,0.08)]' },
-  orange:  { bg: 'bg-orange-500/[0.05]',  border: 'border-orange-500/10',  icon: 'text-orange-400',  glow: 'hover:shadow-[0_0_20px_-4px_rgba(251,146,60,0.08)]' },
+  emerald: { bg: 'bg-[#52677A]/[0.05]', border: 'border-[#52677A]/10', icon: 'text-[#7890A3]', glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
+  cyan:    { bg: 'bg-[#52677A]/[0.05]',    border: 'border-[#52677A]/10',    icon: 'text-[#7890A3]',    glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
+  violet:  { bg: 'bg-[#52677A]/[0.05]',  border: 'border-[#52677A]/10',  icon: 'text-[#7890A3]',  glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
+  amber:   { bg: 'bg-[#52677A]/[0.05]',   border: 'border-[#52677A]/10',   icon: 'text-[#7890A3]',   glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
+  rose:    { bg: 'bg-[#52677A]/[0.05]',    border: 'border-[#52677A]/10',    icon: 'text-[#7890A3]',    glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
+  blue:    { bg: 'bg-[#52677A]/[0.05]',    border: 'border-[#52677A]/10',    icon: 'text-[#7890A3]',    glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
+  indigo:  { bg: 'bg-[#52677A]/[0.05]',  border: 'border-[#52677A]/10',  icon: 'text-[#7890A3]',  glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
+  pink:    { bg: 'bg-[#52677A]/[0.05]',    border: 'border-[#52677A]/10',    icon: 'text-[#7890A3]',    glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
+  teal:    { bg: 'bg-[#52677A]/[0.05]',    border: 'border-[#52677A]/10',    icon: 'text-[#7890A3]',    glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
+  orange:  { bg: 'bg-[#52677A]/[0.05]',  border: 'border-[#52677A]/10',  icon: 'text-[#7890A3]',  glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
 };
 
 const TOOLS = [
@@ -64,8 +64,8 @@ export default function EcommerceOS() {
               </button>
             </div>
             <div className="flex items-center gap-3 mb-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/[0.08] border border-emerald-500/15">
-                <ShoppingCart className="h-5 w-5 text-emerald-400/70" />
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#52677A]/[0.08] border border-[#52677A]/15">
+                <ShoppingCart className="h-5 w-5 text-[#7890A3]/70" />
               </div>
               <div>
                 <h1 className="text-2xl font-semibold text-white tracking-tight">Ecommerce OS</h1>
@@ -76,11 +76,11 @@ export default function EcommerceOS() {
             {/* Revenue bar */}
             <div className="flex flex-wrap items-center gap-3 sm:gap-4 mt-4">
               {[
-                { icon: DollarSign, label: 'Revenue', value: '$24,680', color: 'text-emerald-400' },
-                { icon: ShoppingCart, label: 'Orders', value: '1,247', color: 'text-cyan-400' },
-                { icon: Users, label: 'Visitors', value: '8.4K', color: 'text-violet-400' },
-                { icon: TrendingUp, label: 'Conversion', value: '3.2%', color: 'text-amber-400' },
-                { icon: Award, label: 'AOV', value: '$47.20', color: 'text-rose-400' },
+                { icon: DollarSign, label: 'Revenue', value: '$24,680', color: 'text-[#7890A3]' },
+                { icon: ShoppingCart, label: 'Orders', value: '1,247', color: 'text-[#7890A3]' },
+                { icon: Users, label: 'Visitors', value: '8.4K', color: 'text-[#7890A3]' },
+                { icon: TrendingUp, label: 'Conversion', value: '3.2%', color: 'text-[#7890A3]' },
+                { icon: Award, label: 'AOV', value: '$47.20', color: 'text-[#7890A3]' },
               ].map((s, i) => (
                 <motion.div key={s.label} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 + i * 0.04 }}
                   className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.01] border border-white/[0.03]">
@@ -110,7 +110,7 @@ export default function EcommerceOS() {
                             <tool.icon className={`h-4 w-4 ${c.icon}`} />
                           </div>
                           {tool.badge && (
-                            <span className={`text-[9px] font-semibold px-1.5 py-[2px] rounded ${tool.badge === 'Popular' ? 'bg-amber-500/[0.08] text-amber-400/70' : 'bg-emerald-500/[0.08] text-emerald-400/70'}`}>
+                            <span className={`text-[9px] font-semibold px-1.5 py-[2px] rounded ${tool.badge === 'Popular' ? 'bg-[#52677A]/[0.08] text-[#7890A3]/70' : 'bg-[#52677A]/[0.08] text-[#7890A3]/70'}`}>
                               {tool.badge === 'Popular' && <Flame className="h-2.5 w-2.5 inline mr-0.5" />}
                               {tool.badge}
                             </span>
@@ -153,10 +153,10 @@ export default function EcommerceOS() {
                           <label className="block text-[12px] text-slate-400 mb-1.5">{input.label}</label>
                           {(input as any).type === 'textarea' ? (
                             <textarea value={formValues[i] || ''} onChange={(e) => setFormValues((p) => ({ ...p, [i]: e.target.value }))} placeholder={input.placeholder} rows={4}
-                              className="w-full rounded-xl bg-white/[0.015] border border-white/[0.04] p-3 text-[13px] text-white placeholder:text-[#64748B] focus:border-cyan-500/20 focus:bg-white/[0.02] outline-none transition-all resize-none" />
+                              className="w-full rounded-xl bg-white/[0.015] border border-white/[0.04] p-3 text-[13px] text-white placeholder:text-[#64748B] focus:border-[#52677A]/20 focus:bg-white/[0.02] outline-none transition-all resize-none" />
                           ) : (
                             <input type="text" value={formValues[i] || ''} onChange={(e) => setFormValues((p) => ({ ...p, [i]: e.target.value }))} placeholder={input.placeholder}
-                              className="w-full h-10 rounded-xl bg-white/[0.015] border border-white/[0.04] px-3 text-[13px] text-white placeholder:text-[#64748B] focus:border-cyan-500/20 focus:bg-white/[0.02] outline-none transition-all" />
+                              className="w-full h-10 rounded-xl bg-white/[0.015] border border-white/[0.04] px-3 text-[13px] text-white placeholder:text-[#64748B] focus:border-[#52677A]/20 focus:bg-white/[0.02] outline-none transition-all" />
                           )}
                         </motion.div>
                       ))}

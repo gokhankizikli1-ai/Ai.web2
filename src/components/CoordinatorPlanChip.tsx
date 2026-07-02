@@ -78,7 +78,7 @@ export default function CoordinatorPlanChip({ plan, onDismiss }: CoordinatorPlan
           transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
           className="flex items-center gap-2 mb-2 px-2.5 py-1.5 rounded-xl border bg-white/[0.02] hover:bg-white/[0.03] transition-colors"
           style={{
-            borderColor:    'rgba(34,211,238,0.10)',
+            borderColor:    'rgba(82,103,122,0.10)',
             backdropFilter: 'blur(8px)',
           }}
           aria-label="Coordinator plan preview"
@@ -86,7 +86,7 @@ export default function CoordinatorPlanChip({ plan, onDismiss }: CoordinatorPlan
           {/* Title — honest about routing method so users know it's
               not an LLM decision. */}
           <div className="flex items-center gap-1.5 shrink-0">
-            <Network className="h-3 w-3 text-cyan-400/70" />
+            <Network className="h-3 w-3 text-[#52677A]/70" />
             <span className="text-[10px] font-medium text-slate-300 uppercase tracking-wider">
               Plan
             </span>
@@ -105,7 +105,7 @@ export default function CoordinatorPlanChip({ plan, onDismiss }: CoordinatorPlan
                   {i > 0 && (
                     <span className="text-[9px] text-slate-700">→</span>
                   )}
-                  <Icon className="h-2.5 w-2.5 text-cyan-400/60 shrink-0" />
+                  <Icon className="h-2.5 w-2.5 text-[#52677A]/60 shrink-0" />
                   <span
                     className="text-[10px] text-slate-400 leading-none whitespace-nowrap"
                     title={a.reason}

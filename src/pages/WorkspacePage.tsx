@@ -18,60 +18,60 @@ const WORKSPACES = [
   {
     id: 'personal', name: 'Personal', description: 'Your default AI workspace',
     icon: Sparkles, color: 'cyan', tab: 'chat' as WorkspaceTab,
-    bg: 'bg-cyan-500/[0.06]', border: 'border-cyan-500/10', iconColor: 'text-cyan-400',
-    glow: 'hover:shadow-[0_0_24px_-6px_rgba(34,211,238,0.1)]',
+    bg: 'bg-[#52677A]/[0.06]', border: 'border-[#52677A]/10', iconColor: 'text-[#7890A3]',
+    glow: 'hover:shadow-[0_0_24px_-6px_rgba(82,103,122,0.1)]',
     stats: { chats: 24, agents: 3 }, pinned: true,
   },
   {
     id: 'startup', name: 'Startup Hub', description: 'Validate ideas, build MVPs, find PMF',
     icon: Rocket, color: 'orange', tab: 'startup' as WorkspaceTab,
-    bg: 'bg-amber-500/[0.06]', border: 'border-amber-500/10', iconColor: 'text-amber-400',
-    glow: 'hover:shadow-[0_0_24px_-6px_rgba(251,191,36,0.1)]',
+    bg: 'bg-[#52677A]/[0.06]', border: 'border-[#52677A]/10', iconColor: 'text-[#7890A3]',
+    glow: 'hover:shadow-[0_0_24px_-6px_rgba(82,103,122,0.1)]',
     stats: { tools: 12, projects: 5 }, pinned: true,
   },
   {
     id: 'ecommerce', name: 'Ecommerce OS', description: 'AI-powered Shopify command center',
     icon: ShoppingBag, color: 'emerald', tab: 'business' as WorkspaceTab,
-    bg: 'bg-emerald-500/[0.06]', border: 'border-emerald-500/10', iconColor: 'text-emerald-400',
-    glow: 'hover:shadow-[0_0_24px_-6px_rgba(52,211,153,0.1)]',
+    bg: 'bg-[#52677A]/[0.06]', border: 'border-[#52677A]/10', iconColor: 'text-[#7890A3]',
+    glow: 'hover:shadow-[0_0_24px_-6px_rgba(82,103,122,0.1)]',
     stats: { tools: 12, campaigns: 3 }, pinned: true,
   },
   {
     id: 'trading', name: 'Trading Desk', description: 'Real-time signals, charts, and analysis',
     icon: TrendingUp, color: 'green', tab: 'trading' as WorkspaceTab,
-    bg: 'bg-emerald-500/[0.06]', border: 'border-emerald-500/10', iconColor: 'text-emerald-400',
-    glow: 'hover:shadow-[0_0_24px_-6px_rgba(74,222,128,0.1)]',
+    bg: 'bg-[#52677A]/[0.06]', border: 'border-[#52677A]/10', iconColor: 'text-[#7890A3]',
+    glow: 'hover:shadow-[0_0_24px_-6px_rgba(82,103,122,0.1)]',
     stats: { signals: 12, watchlist: 8 }, pinned: false,
   },
   {
     id: 'research', name: 'Deep Research', description: 'Multi-source research and analysis',
     icon: Brain, color: 'violet', tab: 'research' as WorkspaceTab,
-    bg: 'bg-violet-500/[0.06]', border: 'border-violet-500/10', iconColor: 'text-violet-400',
-    glow: 'hover:shadow-[0_0_24px_-6px_rgba(167,139,250,0.1)]',
+    bg: 'bg-[#52677A]/[0.06]', border: 'border-[#52677A]/10', iconColor: 'text-[#7890A3]',
+    glow: 'hover:shadow-[0_0_24px_-6px_rgba(82,103,122,0.1)]',
     stats: { reports: 5, sources: 47 }, pinned: false,
   },
   {
     id: 'coding', name: 'Code Studio', description: 'Write, debug, review, and ship code',
     icon: Code2, color: 'blue', tab: 'coding' as WorkspaceTab,
-    bg: 'bg-blue-500/[0.06]', border: 'border-blue-500/10', iconColor: 'text-blue-400',
-    glow: 'hover:shadow-[0_0_24px_-6px_rgba(96,165,250,0.1)]',
+    bg: 'bg-[#52677A]/[0.06]', border: 'border-[#52677A]/10', iconColor: 'text-[#7890A3]',
+    glow: 'hover:shadow-[0_0_24px_-6px_rgba(82,103,122,0.1)]',
     stats: { files: 23, reviews: 7 }, pinned: false,
   },
   {
     id: 'agents', name: 'Agent Lab', description: 'Build and manage custom AI agents',
     icon: Bot, color: 'indigo', tab: 'agents' as WorkspaceTab,
-    bg: 'bg-indigo-500/[0.06]', border: 'border-indigo-500/10', iconColor: 'text-indigo-400',
-    glow: 'hover:shadow-[0_0_24px_-6px_rgba(129,140,248,0.1)]',
+    bg: 'bg-[#52677A]/[0.06]', border: 'border-[#52677A]/10', iconColor: 'text-[#7890A3]',
+    glow: 'hover:shadow-[0_0_24px_-6px_rgba(82,103,122,0.1)]',
     stats: { agents: 8, tasks: 34 }, pinned: false,
   },
 ];
 
 const RECENT_ITEMS = [
-  { title: 'NVDA Q3 Earnings Analysis', workspace: 'Deep Research', time: '2m ago', icon: Brain, color: 'text-violet-400', bg: 'bg-violet-500/[0.06]' },
-  { title: 'Landing Page Copy — Acme AI', workspace: 'Startup Hub', time: '1h ago', icon: Rocket, color: 'text-amber-400', bg: 'bg-amber-500/[0.06]' },
-  { title: 'Shopify Ad Campaign #3', workspace: 'Ecommerce OS', time: '3h ago', icon: ShoppingBag, color: 'text-emerald-400', bg: 'bg-emerald-500/[0.06]' },
-  { title: 'AAPL Technical Analysis', workspace: 'Trading Desk', time: '5h ago', icon: TrendingUp, color: 'text-emerald-400', bg: 'bg-emerald-500/[0.06]' },
-  { title: 'React Component Review', workspace: 'Code Studio', time: 'Yesterday', icon: Code2, color: 'text-blue-400', bg: 'bg-blue-500/[0.06]' },
+  { title: 'NVDA Q3 Earnings Analysis', workspace: 'Deep Research', time: '2m ago', icon: Brain, color: 'text-[#7890A3]', bg: 'bg-[#52677A]/[0.06]' },
+  { title: 'Landing Page Copy — Acme AI', workspace: 'Startup Hub', time: '1h ago', icon: Rocket, color: 'text-[#7890A3]', bg: 'bg-[#52677A]/[0.06]' },
+  { title: 'Shopify Ad Campaign #3', workspace: 'Ecommerce OS', time: '3h ago', icon: ShoppingBag, color: 'text-[#7890A3]', bg: 'bg-[#52677A]/[0.06]' },
+  { title: 'AAPL Technical Analysis', workspace: 'Trading Desk', time: '5h ago', icon: TrendingUp, color: 'text-[#7890A3]', bg: 'bg-[#52677A]/[0.06]' },
+  { title: 'React Component Review', workspace: 'Code Studio', time: 'Yesterday', icon: Code2, color: 'text-[#7890A3]', bg: 'bg-[#52677A]/[0.06]' },
 ];
 
 /* ─── Workspace Card ─── */
@@ -97,9 +97,9 @@ function WorkspaceCard({ ws }: { ws: typeof WORKSPACES[0] }) {
     >
       {/* Pinned badge */}
       {ws.pinned && (
-        <div className="absolute top-3 right-3 flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-500/[0.06] border border-amber-500/10">
-          <Pin className="w-2.5 h-2.5 text-amber-400/60" />
-          <span className="text-[9px] text-amber-400/60">Pinned</span>
+        <div className="absolute top-3 right-3 flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-[#52677A]/[0.06] border border-[#52677A]/10">
+          <Pin className="w-2.5 h-2.5 text-[#7890A3]/60" />
+          <span className="text-[9px] text-[#7890A3]/60">Pinned</span>
         </div>
       )}
 
@@ -124,7 +124,7 @@ function WorkspaceCard({ ws }: { ws: typeof WORKSPACES[0] }) {
       </div>
 
       {/* Hover action */}
-      <div className="flex items-center gap-1 text-[11px] text-[#64748B] group-hover:text-cyan-400/70 transition-colors">
+      <div className="flex items-center gap-1 text-[11px] text-[#64748B] group-hover:text-[#7890A3]/70 transition-colors">
         Open workspace <ArrowRight className="w-3 h-3 transition-transform group-hover:translate-x-0.5" />
       </div>
     </motion.div>
@@ -134,10 +134,10 @@ function WorkspaceCard({ ws }: { ws: typeof WORKSPACES[0] }) {
 /* ─── Stats Bar ─── */
 function StatsBar() {
   const stats = [
-    { icon: Zap, label: 'Active', value: '7', color: 'text-cyan-400' },
-    { icon: Activity, label: 'Running', value: '3', color: 'text-emerald-400' },
-    { icon: Star, label: 'Pinned', value: '3', color: 'text-amber-400' },
-    { icon: Clock, label: 'This Week', value: '42', color: 'text-violet-400' },
+    { icon: Zap, label: 'Active', value: '7', color: 'text-[#7890A3]' },
+    { icon: Activity, label: 'Running', value: '3', color: 'text-[#6F8F7A]' },
+    { icon: Star, label: 'Pinned', value: '3', color: 'text-[#7890A3]' },
+    { icon: Clock, label: 'This Week', value: '42', color: 'text-[#7890A3]' },
   ];
 
   return (
@@ -175,15 +175,15 @@ export default function WorkspacePage() {
           <motion.div {...fadeUp(0)} className="mb-6">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-500/[0.08] border border-cyan-500/15">
-                  <LayoutGrid className="h-5 w-5 text-cyan-400/70" />
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#52677A]/[0.08] border border-[#52677A]/15">
+                  <LayoutGrid className="h-5 w-5 text-[#7890A3]/70" />
                 </div>
                 <div>
                   <h1 className="text-2xl font-semibold text-white tracking-tight">Workspace</h1>
                   <p className="text-[12px] text-slate-500">Manage your AI workspaces</p>
                 </div>
               </div>
-              <button className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-cyan-500/[0.08] border border-cyan-500/15 text-[12px] text-cyan-400 hover:bg-cyan-500/[0.12] transition-colors">
+              <button className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#52677A]/[0.08] border border-[#52677A]/15 text-[12px] text-[#7890A3] hover:bg-[#52677A]/[0.12] transition-colors">
                 <Plus className="w-3.5 h-3.5" /> New
               </button>
             </div>
@@ -195,7 +195,7 @@ export default function WorkspacePage() {
           {/* Pinned Workspaces */}
           <motion.section {...fadeUp(0.05)} className="mb-8">
             <div className="flex items-center gap-2 mb-4">
-              <Star className="w-3.5 h-3.5 text-amber-400/60" />
+              <Star className="w-3.5 h-3.5 text-[#7890A3]/60" />
               <h2 className="text-[13px] font-semibold text-white">Pinned Workspaces</h2>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -240,12 +240,12 @@ export default function WorkspacePage() {
                     <item.icon className={`w-4 h-4 ${item.color}`} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-[13px] font-medium text-white group-hover:text-cyan-300 transition-colors truncate">{item.title}</h3>
+                    <h3 className="text-[13px] font-medium text-white group-hover:text-[#7890A3] transition-colors truncate">{item.title}</h3>
                     <p className="text-[11px] text-slate-600">{item.workspace}</p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <span className="text-[11px] text-[#64748B]">{item.time}</span>
-                    <ChevronRight className="w-3.5 h-3.5 text-[#94A3B8] group-hover:text-cyan-400/60 transition-colors" />
+                    <ChevronRight className="w-3.5 h-3.5 text-[#94A3B8] group-hover:text-[#7890A3]/60 transition-colors" />
                   </div>
                 </motion.div>
               ))}

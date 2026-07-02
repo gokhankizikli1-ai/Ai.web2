@@ -148,7 +148,7 @@ export default function SettingsPage() {
                           : 'text-slate-500 hover:text-slate-300 hover:bg-white/[0.02] border border-transparent'
                       }`}
                     >
-                      <section.icon className={`h-4 w-4 ${isActive ? 'text-cyan-400' : 'text-slate-600'}`} />
+                      <section.icon className={`h-4 w-4 ${isActive ? 'text-[#52677A]' : 'text-slate-600'}`} />
                       {section.label}
                     </button>
                   );
@@ -166,7 +166,7 @@ export default function SettingsPage() {
             >
               <div className="rounded-2xl border border-white/[0.06] bg-white/[0.01] overflow-hidden">
                 <div className="flex items-center gap-2 px-5 py-4 border-b border-white/[0.04]">
-                  <currentSection.icon className="h-4 w-4 text-cyan-400/60" />
+                  <currentSection.icon className="h-4 w-4 text-[#52677A]/60" />
                   <h2 className="text-[14px] font-semibold text-white">{currentSection.label}</h2>
                 </div>
 
@@ -188,7 +188,7 @@ export default function SettingsPage() {
                         <input
                           type="text"
                           defaultValue={String(setting.value)}
-                          className="bg-white/[0.03] border border-white/[0.06] rounded-lg px-3 py-1.5 text-[12px] text-white w-48 outline-none focus:border-cyan-500/30 transition-colors"
+                          className="bg-white/[0.03] border border-white/[0.06] rounded-lg px-3 py-1.5 text-[12px] text-white w-48 outline-none focus:border-[#52677A]/30 transition-colors"
                         />
                       )}
 
@@ -199,7 +199,7 @@ export default function SettingsPage() {
                       {setting.type === 'select' && (
                         <select
                           defaultValue={String(setting.value)}
-                          className="bg-white/[0.03] border border-white/[0.06] rounded-lg px-3 py-1.5 text-[12px] text-white outline-none focus:border-cyan-500/30 transition-colors appearance-none cursor-pointer"
+                          className="bg-white/[0.03] border border-white/[0.06] rounded-lg px-3 py-1.5 text-[12px] text-white outline-none focus:border-[#52677A]/30 transition-colors appearance-none cursor-pointer"
                         >
                           {setting.options?.map((opt) => (
                             <option key={opt} value={opt} className="bg-[#171C24]">{opt}</option>
@@ -213,15 +213,15 @@ export default function SettingsPage() {
 
               {/* Danger zone */}
               {activeSection === 'privacy' && (
-                <div className="mt-6 rounded-2xl border border-red-500/[0.08] bg-red-500/[0.02] p-5">
+                <div className="mt-6 rounded-2xl border border-[#B76E79]/[0.08] bg-[#B76E79]/[0.02] p-5">
                   <div className="flex items-center gap-2 mb-3">
-                    <AlertTriangle className="h-4 w-4 text-red-400/60" />
-                    <h3 className="text-[13px] font-semibold text-red-400/80">Danger Zone</h3>
+                    <AlertTriangle className="h-4 w-4 text-[#B76E79]/60" />
+                    <h3 className="text-[13px] font-semibold text-[#B76E79]/80">Danger Zone</h3>
                   </div>
                   <p className="text-[12px] text-slate-600 mb-4">These actions cannot be undone.</p>
                   <Button
                     variant="ghost"
-                    className="h-8 text-[12px] text-red-400/70 hover:text-red-400 hover:bg-red-500/10 border border-red-500/[0.1] rounded-lg"
+                    className="h-8 text-[12px] text-[#B76E79]/70 hover:text-[#B76E79] hover:bg-[#B76E79]/10 border border-[#B76E79]/[0.1] rounded-lg"
                   >
                     <Trash2 className="h-3.5 w-3.5 mr-1.5" />
                     Delete All Conversations

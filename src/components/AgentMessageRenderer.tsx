@@ -77,15 +77,15 @@ function splitOnH2(md: string): { lead: string; sections: Section[] } {
  *  all have stable header names — the icon makes the card scannable. */
 function iconFor(heading: string): { Icon: typeof ListTree; tone: string } {
   const h = heading.toLowerCase();
-  if (h.startsWith('plan'))                 return { Icon: Lightbulb, tone: 'text-cyan-300/70' };
-  if (h.startsWith('intent'))               return { Icon: Wand2,     tone: 'text-violet-300/70' };
-  if (h.startsWith('design'))               return { Icon: Sparkles,  tone: 'text-pink-300/70' };
-  if (h.startsWith('component'))            return { Icon: ListTree,  tone: 'text-emerald-300/70' };
-  if (h.startsWith('file'))                 return { Icon: FolderTree,tone: 'text-amber-300/70' };
-  if (h.startsWith('implementation'))       return { Icon: Layers,    tone: 'text-blue-300/70' };
-  if (h.startsWith('code'))                 return { Icon: FileCode2, tone: 'text-emerald-300/70' };
-  if (h.startsWith('next'))                 return { Icon: ListChecks,tone: 'text-cyan-300/70' };
-  if (h.startsWith('recommendation'))       return { Icon: Lightbulb, tone: 'text-cyan-300/70' };
+  if (h.startsWith('plan'))                 return { Icon: Lightbulb, tone: 'text-[#7890A3]/70' };
+  if (h.startsWith('intent'))               return { Icon: Wand2,     tone: 'text-[#7890A3]/70' };
+  if (h.startsWith('design'))               return { Icon: Sparkles,  tone: 'text-[#7890A3]/70' };
+  if (h.startsWith('component'))            return { Icon: ListTree,  tone: 'text-[#7890A3]/70' };
+  if (h.startsWith('file'))                 return { Icon: FolderTree,tone: 'text-[#7890A3]/70' };
+  if (h.startsWith('implementation'))       return { Icon: Layers,    tone: 'text-[#7890A3]/70' };
+  if (h.startsWith('code'))                 return { Icon: FileCode2, tone: 'text-[#7890A3]/70' };
+  if (h.startsWith('next'))                 return { Icon: ListChecks,tone: 'text-[#7890A3]/70' };
+  if (h.startsWith('recommendation'))       return { Icon: Lightbulb, tone: 'text-[#7890A3]/70' };
   // Specialist sections (## Coder, ## Researcher, ## Frontend Engineer …)
   // get a neutral icon — the bot avatar already implies "agent".
   return { Icon: Sparkles, tone: 'text-white/50' };
@@ -121,7 +121,7 @@ const mdComponents = {
   }) => {
     if (inline) {
       return (
-        <code className="px-1 py-0.5 rounded text-[11px] font-mono text-cyan-200/90 bg-cyan-500/[0.06] border border-cyan-400/[0.08]" {...rest}>
+        <code className="px-1 py-0.5 rounded text-[11px] font-mono text-[#7890A3]/90 bg-[#52677A]/[0.06] border border-[#52677A]/[0.08]" {...rest}>
           {children}
         </code>
       );
@@ -156,7 +156,7 @@ const mdComponents = {
     <h4 className="text-[11.5px] font-semibold text-white/70 mb-1 mt-1.5 first:mt-0">{children}</h4>
   ),
   blockquote: ({ children }: { children?: React.ReactNode }) => (
-    <blockquote className="border-l-2 border-cyan-400/30 pl-2.5 my-1.5 text-[11.5px] text-white/55 italic">
+    <blockquote className="border-l-2 border-[#52677A]/30 pl-2.5 my-1.5 text-[11.5px] text-white/55 italic">
       {children}
     </blockquote>
   ),
@@ -173,7 +173,7 @@ const mdComponents = {
   ),
   a: ({ href, children }: { href?: string; children?: React.ReactNode }) => (
     <a href={href} target="_blank" rel="noreferrer noopener"
-       className="text-cyan-300/80 hover:text-cyan-300 underline decoration-cyan-400/30 underline-offset-2">
+       className="text-[#7890A3]/80 hover:text-[#7890A3] underline decoration-[#52677A]/30 underline-offset-2">
       {children}
     </a>
   ),

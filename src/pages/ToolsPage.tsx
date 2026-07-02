@@ -27,7 +27,7 @@ const CATEGORIES: Category[] = [
   {
     name: 'Web & Research',
     icon: Globe,
-    color: 'text-violet-400/60',
+    color: 'text-[#52677A]/60',
     tools: [
       { name: 'Website Analyzer', desc: 'Analyze any website for UX, SEO, conversion', path: '/tools/website-analyzer', isNew: true },
       { name: 'Research Assistant', desc: 'Multi-source research synthesis' },
@@ -38,7 +38,7 @@ const CATEGORIES: Category[] = [
   {
     name: 'Builders',
     icon: Layout,
-    color: 'text-blue-400/60',
+    color: 'text-[#52677A]/60',
     tools: [
       { name: 'Website Builder', desc: 'Generate full website structure and copy', path: '/tools/website-builder', isNew: true },
       { name: 'App Builder', desc: 'Plan app structure, stack, and MVP', path: '/tools/app-builder', isNew: true },
@@ -48,7 +48,7 @@ const CATEGORIES: Category[] = [
   {
     name: 'Content & Creative',
     icon: Flame,
-    color: 'text-rose-400/60',
+    color: 'text-[#52677A]/60',
     tools: [
       { name: 'Viral Content Engine', desc: 'TikTok, YouTube, Instagram, X threads', path: '/tools/viral-content', isNew: true },
       { name: 'Blog Post Writer', desc: 'Generate full blog posts with SEO' },
@@ -61,7 +61,7 @@ const CATEGORIES: Category[] = [
   {
     name: 'Code',
     icon: Code2,
-    color: 'text-cyan-400/60',
+    color: 'text-[#52677A]/60',
     tools: [
       { name: 'Code Generator', desc: 'Write code in any language' },
       { name: 'Code Explainer', desc: 'Understand complex codebases' },
@@ -73,7 +73,7 @@ const CATEGORIES: Category[] = [
   {
     name: 'Data & Analytics',
     icon: BarChart3,
-    color: 'text-emerald-400/60',
+    color: 'text-[#52677A]/60',
     tools: [
       { name: 'CSV Analyzer', desc: 'Upload and analyze spreadsheet data' },
       { name: 'Chart Creator', desc: 'Visualize data with charts and graphs' },
@@ -84,7 +84,7 @@ const CATEGORIES: Category[] = [
   {
     name: 'Business',
     icon: TrendingUp,
-    color: 'text-amber-400/60',
+    color: 'text-[#52677A]/60',
     tools: [
       { name: 'Pitch Deck Builder', desc: 'Investor presentations slide by slide' },
       { name: 'Financial Modeler', desc: 'Revenue projections and forecasts' },
@@ -95,7 +95,7 @@ const CATEGORIES: Category[] = [
   {
     name: 'Operations',
     icon: Clock,
-    color: 'text-cyan-400/60',
+    color: 'text-[#52677A]/60',
     tools: [
       { name: 'Automations', desc: 'Schedule recurring AI tasks and reports', path: '/tools/automations', isNew: true },
       { name: 'Knowledge Vault', desc: 'Store and query your documents', path: '/tools/knowledge-vault', isNew: true },
@@ -139,7 +139,7 @@ export default function ToolsPage() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search tools..."
-                className="w-full h-11 pl-11 pr-4 rounded-xl bg-white/[0.02] border border-white/[0.04] text-[13px] text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-cyan-500/20 focus:bg-white/[0.03] transition-all"
+                className="w-full h-11 pl-11 pr-4 rounded-xl bg-white/[0.02] border border-white/[0.04] text-[13px] text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-[#52677A]/20 focus:bg-white/[0.03] transition-all"
               />
             </div>
           </motion.div>
@@ -176,7 +176,7 @@ export default function ToolsPage() {
                         <div className="flex items-center gap-2">
                           <span className="text-[13px] font-medium text-white">{tool.name}</span>
                           {tool.isNew && (
-                            <span className="text-[8px] font-semibold px-1.5 py-0.5 rounded bg-cyan-500/[0.1] text-cyan-400 uppercase tracking-wider">New</span>
+                            <span className="text-[8px] font-semibold px-1.5 py-0.5 rounded bg-[#52677A]/[0.1] text-[#52677A] uppercase tracking-wider">New</span>
                           )}
                           {tool.path && (
                             <ExternalLink className="w-3 h-3 text-slate-600 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -185,7 +185,7 @@ export default function ToolsPage() {
                         <p className="text-[11px] text-slate-500 mt-0.5">{tool.desc}</p>
                       </div>
                       {tool.path && (
-                        <ArrowRight className="w-4 h-4 text-[#64748B] group-hover:text-cyan-400 transition-colors shrink-0" />
+                        <ArrowRight className="w-4 h-4 text-[#64748B] group-hover:text-[#7890A3] transition-colors shrink-0" />
                       )}
                     </motion.button>
                   ))}

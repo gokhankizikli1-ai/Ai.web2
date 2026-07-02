@@ -15,30 +15,30 @@ interface QuickAction {
 
 const ACTIONS_BY_PATH: Record<string, QuickAction[]> = {
   '/startup': [
-    { label: 'Validate Idea', icon: Lightbulb, path: '/startup', color: 'text-amber-400' },
-    { label: 'Analyze Competitor', icon: Globe, path: '/startup', color: 'text-violet-400' },
-    { label: 'Build Pitch Deck', icon: FileText, path: '/startup', color: 'text-blue-400' },
+    { label: 'Validate Idea', icon: Lightbulb, path: '/startup', color: 'text-[#52677A]' },
+    { label: 'Analyze Competitor', icon: Globe, path: '/startup', color: 'text-[#52677A]' },
+    { label: 'Build Pitch Deck', icon: FileText, path: '/startup', color: 'text-[#52677A]' },
   ],
   '/ecommerce': [
-    { label: 'Find Product', icon: ShoppingBag, path: '/ecommerce', color: 'text-emerald-400' },
-    { label: 'Generate Page', icon: FileText, path: '/ecommerce', color: 'text-blue-400' },
-    { label: 'TikTok Hooks', icon: Sparkles, path: '/tools/viral-content', color: 'text-rose-400' },
+    { label: 'Find Product', icon: ShoppingBag, path: '/ecommerce', color: 'text-[#52677A]' },
+    { label: 'Generate Page', icon: FileText, path: '/ecommerce', color: 'text-[#52677A]' },
+    { label: 'TikTok Hooks', icon: Sparkles, path: '/tools/viral-content', color: 'text-[#52677A]' },
   ],
   '/agents': [
-    { label: 'Create Agent', icon: Bot, path: '/agents/builder', color: 'text-indigo-400' },
-    { label: 'Browse Market', icon: ShoppingBag, path: '/agents', color: 'text-cyan-400' },
+    { label: 'Create Agent', icon: Bot, path: '/agents/builder', color: 'text-[#52677A]' },
+    { label: 'Browse Market', icon: ShoppingBag, path: '/agents', color: 'text-[#52677A]' },
   ],
   '/chat': [
-    { label: 'Deep Research', icon: Wand2, path: '/chat', color: 'text-violet-400' },
-    { label: 'New Project', icon: Rocket, path: '/workspace', color: 'text-orange-400' },
+    { label: 'Deep Research', icon: Wand2, path: '/chat', color: 'text-[#52677A]' },
+    { label: 'New Project', icon: Rocket, path: '/workspace', color: 'text-[#52677A]' },
   ],
 };
 
 const DEFAULT_ACTIONS: QuickAction[] = [
-  { label: 'New Chat', icon: Sparkles, path: '/chat', color: 'text-cyan-400' },
-  { label: 'Startup Hub', icon: Rocket, path: '/startup', color: 'text-orange-400' },
-  { label: 'Ecommerce', icon: ShoppingBag, path: '/ecommerce', color: 'text-emerald-400' },
-  { label: 'Build Agent', icon: Bot, path: '/agents/builder', color: 'text-indigo-400' },
+  { label: 'New Chat', icon: Sparkles, path: '/chat', color: 'text-[#52677A]' },
+  { label: 'Startup Hub', icon: Rocket, path: '/startup', color: 'text-[#52677A]' },
+  { label: 'Ecommerce', icon: ShoppingBag, path: '/ecommerce', color: 'text-[#52677A]' },
+  { label: 'Build Agent', icon: Bot, path: '/agents/builder', color: 'text-[#52677A]' },
 ];
 
 export default function FloatingOrb() {
@@ -96,11 +96,11 @@ export default function FloatingOrb() {
         className="relative flex h-12 w-12 items-center justify-center rounded-full shadow-lg"
         style={{
           background: isOpen
-            ? 'linear-gradient(135deg, rgba(239,68,68,0.8), rgba(185,28,28,0.9))'
-            : 'linear-gradient(135deg, rgba(34,211,238,0.8), rgba(167,139,250,0.8))',
+            ? 'linear-gradient(135deg, rgba(99,123,144,0.85), rgba(82,103,122,0.95))'
+            : 'linear-gradient(135deg, rgba(82,103,122,0.8), rgba(120,144,163,0.8))',
           boxShadow: isOpen
-            ? '0 4px 24px rgba(239,68,68,0.3)'
-            : '0 4px 24px rgba(34,211,238,0.2)',
+            ? '0 4px 24px rgba(82,103,122,0.3)'
+            : '0 4px 24px rgba(82,103,122,0.2)',
         }}
       >
         <motion.div
@@ -114,7 +114,7 @@ export default function FloatingOrb() {
         {!isOpen && (
           <motion.div
             className="absolute inset-0 rounded-full"
-            style={{ border: '1px solid rgba(34,211,238,0.3)' }}
+            style={{ border: '1px solid rgba(82,103,122,0.3)' }}
             animate={{ scale: [1, 1.4], opacity: [0.5, 0] }}
             transition={{ duration: 2, repeat: Infinity, ease: 'easeOut' as const }}
           />

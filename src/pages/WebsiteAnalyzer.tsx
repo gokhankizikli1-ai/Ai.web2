@@ -64,8 +64,8 @@ export default function WebsiteAnalyzer() {
           {/* Header */}
           <motion.div {...fadeUp(0)} className="mb-8">
             <div className="flex items-center gap-3 mb-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500/[0.1] border border-blue-500/15">
-                <Globe className="h-4 w-4 text-blue-400" />
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#52677A]/[0.1] border border-[#52677A]/15">
+                <Globe className="h-4 w-4 text-[#7890A3]" />
               </div>
               <h1 className="text-2xl font-semibold text-white tracking-tight">Website Analyzer</h1>
             </div>
@@ -81,7 +81,7 @@ export default function WebsiteAnalyzer() {
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
                   placeholder="https://example.com"
-                  className="w-full h-12 pl-11 pr-4 rounded-xl bg-white/[0.02] border border-white/[0.04] text-[14px] text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-blue-500/20 focus:bg-white/[0.03] transition-all"
+                  className="w-full h-12 pl-11 pr-4 rounded-xl bg-white/[0.02] border border-white/[0.04] text-[14px] text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-[#52677A]/20 focus:bg-white/[0.03] transition-all"
                   onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
                 />
               </div>
@@ -90,7 +90,7 @@ export default function WebsiteAnalyzer() {
                 whileTap={{ scale: 0.98 }}
                 onClick={handleAnalyze}
                 disabled={loading || !url.trim()}
-                className="h-12 px-6 rounded-xl bg-blue-500/[0.1] border border-blue-500/15 text-blue-400 font-medium text-[13px] hover:bg-blue-500/[0.15] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
+                className="h-12 px-6 rounded-xl bg-[#52677A]/[0.1] border border-[#52677A]/15 text-[#7890A3] font-medium text-[13px] hover:bg-[#52677A]/[0.15] transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 {loading ? (
                   <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}>
@@ -157,7 +157,7 @@ export default function WebsiteAnalyzer() {
                           { text: 'Color contrast meets WCAG AA', score: 'good' },
                         ].map((item, i) => (
                           <div key={i} className="flex items-center gap-2">
-                            {item.score === 'good' ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" /> : <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+                            {item.score === 'good' ? <CheckCircle2 className="w-3.5 h-3.5 text-[#6F8F7A] shrink-0" /> : <AlertTriangle className="w-3.5 h-3.5 text-[#A68A5B] shrink-0" />}
                             <span className="text-[12px] text-slate-400">{item.text}</span>
                           </div>
                         ))}
@@ -177,9 +177,9 @@ export default function WebsiteAnalyzer() {
                         { text: 'Image alt text missing on 40% of images', score: 'fail' },
                       ].map((item, i) => (
                         <div key={i} className="flex items-center gap-2">
-                          {item.score === 'good' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
-                          {item.score === 'warn' && <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
-                          {item.score === 'fail' && <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />}
+                          {item.score === 'good' && <CheckCircle2 className="w-3.5 h-3.5 text-[#6F8F7A] shrink-0" />}
+                          {item.score === 'warn' && <AlertTriangle className="w-3.5 h-3.5 text-[#A68A5B] shrink-0" />}
+                          {item.score === 'fail' && <AlertCircle className="w-3.5 h-3.5 text-[#B76E79] shrink-0" />}
                           <span className="text-[12px] text-slate-400">{item.text}</span>
                         </div>
                       ))}
@@ -188,8 +188,8 @@ export default function WebsiteAnalyzer() {
                 )}
 
                 {activeTab === 'competitor' && (
-                  <div className="p-6 rounded-2xl border border-amber-500/10 bg-amber-500/[0.02] text-center">
-                    <AlertCircle className="w-8 h-8 text-amber-400 mx-auto mb-3" />
+                  <div className="p-6 rounded-2xl border border-[#A68A5B]/10 bg-[#A68A5B]/[0.02] text-center">
+                    <AlertCircle className="w-8 h-8 text-[#A68A5B] mx-auto mb-3" />
                     <h3 className="text-sm font-medium text-white mb-1">Competitor Analysis Backend Not Connected</h3>
                     <p className="text-[12px] text-slate-500">This feature requires a research backend. Connect it to enable competitor comparisons.</p>
                   </div>
@@ -205,7 +205,7 @@ export default function WebsiteAnalyzer() {
                         { text: 'Recommendation: A/B test headline variants', score: 'warn' },
                       ].map((item, i) => (
                         <div key={i} className="flex items-center gap-2">
-                          {item.score === 'good' ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" /> : <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+                          {item.score === 'good' ? <CheckCircle2 className="w-3.5 h-3.5 text-[#6F8F7A] shrink-0" /> : <AlertTriangle className="w-3.5 h-3.5 text-[#A68A5B] shrink-0" />}
                           <span className="text-[12px] text-slate-400">{item.text}</span>
                         </div>
                       ))}
@@ -220,9 +220,9 @@ export default function WebsiteAnalyzer() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {CHECKLIST.map((item, i) => (
                     <div key={i} className="flex items-center gap-2 py-1">
-                      {item.status === 'pass' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />}
-                      {item.status === 'warn' && <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
-                      {item.status === 'fail' && <AlertCircle className="w-3.5 h-3.5 text-red-400 shrink-0" />}
+                      {item.status === 'pass' && <CheckCircle2 className="w-3.5 h-3.5 text-[#6F8F7A] shrink-0" />}
+                      {item.status === 'warn' && <AlertTriangle className="w-3.5 h-3.5 text-[#A68A5B] shrink-0" />}
+                      {item.status === 'fail' && <AlertCircle className="w-3.5 h-3.5 text-[#B76E79] shrink-0" />}
                       <span className="text-[11px] text-slate-400">{item.label}</span>
                     </div>
                   ))}

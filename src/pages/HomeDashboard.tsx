@@ -38,8 +38,8 @@ export default function HomeDashboard() {
               className="mb-6"
             >
               <div className="flex items-center gap-3 mb-1">
-                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-cyan-500/[0.1] border border-cyan-500/15">
-                  <Sparkles className="h-4 w-4 text-cyan-400" />
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-[#52677A]/[0.1] border border-[#52677A]/15">
+                  <Sparkles className="h-4 w-4 text-[#7890A3]" />
                 </div>
                 <div>
                   <h1 className="text-xl font-semibold text-white tracking-tight">Command Center</h1>

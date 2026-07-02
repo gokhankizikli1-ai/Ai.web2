@@ -67,7 +67,7 @@ export default function ResponseActions({ onAction, onHoverAction, compact = fal
               px-2.5 py-1
               transition-all duration-150
               hover:border-white/[0.08] hover:bg-white/[0.03]
-              ${isHovered ? 'border-[#52677A]/20 bg-cyan-500/[0.02]' : ''}
+              ${isHovered ? 'border-[#52677A]/20 bg-[#52677A]/[0.02]' : ''}
             `}
           >
             <action.icon className="h-3 w-3 text-slate-600 group-hover:text-[#94A3B8] transition-colors" />
@@ -81,7 +81,7 @@ export default function ResponseActions({ onAction, onHoverAction, compact = fal
               className="ml-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
             >
               {isSaved ? (
-                <BookmarkCheck className="h-2.5 w-2.5 text-amber-400/70" />
+                <BookmarkCheck className="h-2.5 w-2.5 text-[#52677A]/70" />
               ) : (
                 <Bookmark className="h-2.5 w-2.5 text-[#64748B] hover:text-slate-500" />
               )}

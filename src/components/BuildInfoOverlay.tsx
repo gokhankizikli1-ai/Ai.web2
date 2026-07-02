@@ -236,7 +236,7 @@ export default function BuildInfoOverlay() {
         // bottom-nav safe area on mobile.
         className={`fixed right-3 z-[55] h-7 w-7 rounded-full backdrop-blur-md shadow-lg flex items-center justify-center pointer-events-auto ${
           commitMismatch
-            ? 'bg-rose-500/30 border border-rose-500/50'
+            ? 'bg-[#B76E79]/30 border border-[#B76E79]/50'
             : 'bg-[#0b0b12]/85 border border-white/[0.08]'
         }`}
         style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 5rem)' }}
@@ -244,7 +244,7 @@ export default function BuildInfoOverlay() {
         aria-label="Build info"
         data-testid="build-info-minimized"
       >
-        <GitCommit className={`h-3 w-3 ${commitMismatch ? 'text-rose-200' : 'text-cyan-300/70'}`} />
+        <GitCommit className={`h-3 w-3 ${commitMismatch ? 'text-[#B76E79]' : 'text-[#7890A3]/70'}`} />
       </motion.button>
     );
   }
@@ -264,20 +264,20 @@ export default function BuildInfoOverlay() {
       <div
         className={`rounded-lg border backdrop-blur-md shadow-2xl text-[10px] font-mono transition-all ${
           commitMismatch
-            ? 'border-rose-500/35 bg-rose-500/[0.08] shadow-rose-500/10'
+            ? 'border-[#B76E79]/35 bg-[#B76E79]/[0.08] shadow-[#B76E79]/10'
             : 'border-white/[0.08] bg-[#0b0b12]/85'
         }`}
       >
         {/* Collapsed bar — fe/be commit + env + controls. */}
         <div className="flex items-center gap-2 px-2 py-1">
-          <GitCommit className={`h-3 w-3 ${commitMismatch ? 'text-rose-300' : 'text-cyan-300/60'}`} />
-          <span className={`${commitMismatch ? 'text-rose-200' : 'text-slate-300'}`}>
+          <GitCommit className={`h-3 w-3 ${commitMismatch ? 'text-[#B76E79]' : 'text-[#7890A3]/60'}`} />
+          <span className={`${commitMismatch ? 'text-[#B76E79]' : 'text-slate-300'}`}>
             fe <span className="font-bold">{feCommit}</span>
           </span>
           {beCommit && (
             <>
               <span className="text-slate-700">·</span>
-              <span className={`${commitMismatch ? 'text-rose-200' : 'text-slate-300'}`}>
+              <span className={`${commitMismatch ? 'text-[#B76E79]' : 'text-slate-300'}`}>
                 be <span className="font-bold">{beCommit}</span>
               </span>
             </>
@@ -293,7 +293,7 @@ export default function BuildInfoOverlay() {
           </button>
           <button
             onClick={() => setView('minimized')}
-            className="h-4 w-4 flex items-center justify-center text-slate-500 hover:text-cyan-300"
+            className="h-4 w-4 flex items-center justify-center text-slate-500 hover:text-[#7890A3]"
             title="Minimize"
             aria-label="Minimize"
           >
@@ -301,7 +301,7 @@ export default function BuildInfoOverlay() {
           </button>
           <button
             onClick={handleDismiss}
-            className="h-4 w-4 flex items-center justify-center text-slate-500 hover:text-rose-300"
+            className="h-4 w-4 flex items-center justify-center text-slate-500 hover:text-[#B76E79]"
             title="Hide for this session"
           >
             <X className="h-3 w-3" />
@@ -319,7 +319,7 @@ export default function BuildInfoOverlay() {
               className="border-t border-white/[0.05] px-2 py-2 space-y-1 overflow-hidden"
             >
               {commitMismatch && (
-                <div className="text-[10px] text-rose-200 mb-1">
+                <div className="text-[10px] text-[#B76E79] mb-1">
                   ⚠ Frontend and backend are on DIFFERENT commits.
                   At least one of the two deploys is stale.
                 </div>
@@ -348,7 +348,7 @@ export default function BuildInfoOverlay() {
                       detection_debug() when admin-debug flag is on)
                   All values are user-observed — no secret leaks. */}
               <div className="pt-2 mt-1 border-t border-white/[0.05]">
-                <div className="text-[9px] uppercase tracking-wider text-amber-300/60 mb-1">
+                <div className="text-[9px] uppercase tracking-wider text-[#7890A3]/60 mb-1">
                   Owner-mode diagnostic
                 </div>
                 <Row label="signed in"   value={authIsAuthenticated ? 'yes' : 'no'} />
@@ -377,7 +377,7 @@ export default function BuildInfoOverlay() {
                   next to the value so you can paste it into the Google
                   Console with one tap. */}
               <div className="pt-2 mt-1 border-t border-white/[0.05]">
-                <div className="text-[9px] uppercase tracking-wider text-amber-300/60 mb-1">
+                <div className="text-[9px] uppercase tracking-wider text-[#7890A3]/60 mb-1">
                   OAuth redirect_uri (this build)
                 </div>
                 <Row
@@ -392,7 +392,7 @@ export default function BuildInfoOverlay() {
               <div className="pt-1 flex items-center justify-between gap-2">
                 <button
                   onClick={fetchBackend}
-                  className="text-[10px] text-cyan-300/80 hover:text-cyan-200"
+                  className="text-[10px] text-[#7890A3]/80 hover:text-[#7890A3]"
                 >
                   refresh
                 </button>

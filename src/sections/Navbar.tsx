@@ -2,16 +2,15 @@ import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-import { Menu, Sparkles, Rocket, ShoppingBag, TrendingUp, Code, Cpu, LayoutDashboard, LogOut } from 'lucide-react';
+import { Menu, Rocket, ShoppingBag, Code, Cpu, LayoutDashboard, LogOut } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '@/stores/authStore';
 
 const NAV_LINKS = [
-  { label: 'Features', href: '/#features', icon: Code },
-  { label: 'Startup', href: '/#startup', icon: Rocket },
-  { label: 'Ecommerce', href: '/#ecommerce', icon: ShoppingBag },
-  { label: 'Trading', href: '/#trading', icon: TrendingUp },
-  { label: 'Agents', href: '/#agents', icon: Cpu },
+  { label: 'Product', href: '/#features', icon: Code },
+  { label: 'Startup Radar', href: '/#startup-radar', icon: Rocket },
+  { label: 'How it works', href: '/#how', icon: Cpu },
+  { label: 'Use cases', href: '/#use-cases', icon: ShoppingBag },
 ];
 
 export default function Navbar() {
@@ -44,12 +43,20 @@ export default function Navbar() {
     >
       <div className="max-w-6xl mx-auto px-4 sm:px-6">
         <div className="flex items-center justify-between h-14">
-          {/* Logo */}
+          {/* Logo — dark "K" mark + high-contrast wordmark for readability */}
           <Link to="/" className="flex items-center gap-2.5 group">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#EEF1F4]0/[0.08] border border-[#DDE3EA] group-hover:bg-[#EEF1F4]0/[0.12] transition-all">
-              <Sparkles className="h-3.5 w-3.5 text-[#52677A]" />
+            <div
+              className="flex h-[29px] w-[29px] items-center justify-center rounded-lg"
+              style={{
+                background: 'linear-gradient(158deg, rgba(32,41,51,0.5) 0%, #0B0E12 100%), #12171E',
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.10), 0 2px 6px rgba(16,24,39,0.20)',
+              }}
+            >
+              <span className="font-mono text-[15px] font-bold text-[#EDF1F5]">K</span>
             </div>
-            <span className="text-[15px] font-bold tracking-tight text-foreground">KorvixAI</span>
+            <span className="text-[17px] font-bold tracking-tight text-slate-900">
+              Korvix<span className="font-semibold text-slate-500">AI</span>
+            </span>
           </Link>
 
           {/* Desktop Nav */}

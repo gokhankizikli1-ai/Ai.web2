@@ -15,10 +15,10 @@ import CircularGauge from './CircularGauge';
 export function SuggestionsWidget() {
   const navigate = useNavigate();
   const suggestions = [
-    { icon: Brain, text: 'Analyze Tesla Q3 earnings report', path: '/chat', color: 'text-violet-400', bg: 'bg-violet-500/[0.06]' },
-    { icon: Rocket, text: 'Validate your SaaS startup idea', path: '/startup', color: 'text-orange-400', bg: 'bg-orange-500/[0.06]' },
-    { icon: ShoppingBag, text: 'Generate TikTok hooks for your product', path: '/tools/viral-content', color: 'text-emerald-400', bg: 'bg-emerald-500/[0.06]' },
-    { icon: FileText, text: 'Build a landing page for your brand', path: '/tools/website-builder', color: 'text-blue-400', bg: 'bg-blue-500/[0.06]' },
+    { icon: Brain, text: 'Analyze Tesla Q3 earnings report', path: '/chat', color: 'text-[#637B90]', bg: 'bg-[#52677A]/[0.06]' },
+    { icon: Rocket, text: 'Validate your SaaS startup idea', path: '/startup', color: 'text-[#637B90]', bg: 'bg-[#52677A]/[0.06]' },
+    { icon: ShoppingBag, text: 'Generate TikTok hooks for your product', path: '/tools/viral-content', color: 'text-[#637B90]', bg: 'bg-[#52677A]/[0.06]' },
+    { icon: FileText, text: 'Build a landing page for your brand', path: '/tools/website-builder', color: 'text-[#637B90]', bg: 'bg-[#52677A]/[0.06]' },
   ];
 
   return (
@@ -38,7 +38,7 @@ export function SuggestionsWidget() {
               <s.icon className={`w-3.5 h-3.5 ${s.color}`} />
             </div>
             <span className="text-[12px] text-slate-400 group-hover:text-slate-200 transition-colors flex-1">{s.text}</span>
-            <ArrowRight className="w-3 h-3 text-slate-600 group-hover:text-cyan-400 transition-colors" />
+            <ArrowRight className="w-3 h-3 text-slate-600 group-hover:text-[#52677A] transition-colors" />
           </motion.button>
         ))}
       </div>
@@ -51,10 +51,10 @@ export function SuggestionsWidget() {
    ═══════════════════════════════════════════ */
 export function StatsRowWidget() {
   const stats = [
-    { label: 'Conversations', value: '24', icon: MessageSquare, color: 'text-cyan-400', bg: 'bg-cyan-500/[0.06]' },
-    { label: 'Agents Active', value: '3', icon: Bot, color: 'text-indigo-400', bg: 'bg-indigo-500/[0.06]' },
-    { label: 'Signals Today', value: '12', icon: TrendingUp, color: 'text-emerald-400', bg: 'bg-emerald-500/[0.06]' },
-    { label: 'Research Tasks', value: '5', icon: Brain, color: 'text-violet-400', bg: 'bg-violet-500/[0.06]' },
+    { label: 'Conversations', value: '24', icon: MessageSquare, color: 'text-[#637B90]', bg: 'bg-[#52677A]/[0.06]' },
+    { label: 'Agents Active', value: '3', icon: Bot, color: 'text-[#637B90]', bg: 'bg-[#52677A]/[0.06]' },
+    { label: 'Signals Today', value: '12', icon: TrendingUp, color: 'text-[#637B90]', bg: 'bg-[#52677A]/[0.06]' },
+    { label: 'Research Tasks', value: '5', icon: Brain, color: 'text-[#637B90]', bg: 'bg-[#52677A]/[0.06]' },
   ];
 
   return (
@@ -93,12 +93,12 @@ export function QuickActionsWidget() {
   ];
 
   const COLOR_MAP: Record<string, string> = {
-    cyan: 'hover:shadow-[0_0_20px_-4px_rgba(34,211,238,0.12)] hover:border-cyan-500/20',
-    orange: 'hover:shadow-[0_0_20px_-4px_rgba(251,146,60,0.12)] hover:border-orange-500/20',
-    emerald: 'hover:shadow-[0_0_20px_-4px_rgba(52,211,153,0.12)] hover:border-emerald-500/20',
-    violet: 'hover:shadow-[0_0_20px_-4px_rgba(167,139,250,0.12)] hover:border-violet-500/20',
-    indigo: 'hover:shadow-[0_0_20px_-4px_rgba(129,140,248,0.12)] hover:border-indigo-500/20',
-    blue: 'hover:shadow-[0_0_20px_-4px_rgba(96,165,250,0.12)] hover:border-blue-500/20',
+    cyan: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.12)] hover:border-[#637B90]/20',
+    orange: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.12)] hover:border-[#A68A5B]/20',
+    emerald: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.12)] hover:border-[#6F8F7A]/20',
+    violet: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.12)] hover:border-[#637B90]/20',
+    indigo: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.12)] hover:border-[#637B90]/20',
+    blue: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.12)] hover:border-[#637B90]/20',
   };
 
   return (
@@ -127,11 +127,11 @@ export function QuickActionsWidget() {
    ═══════════════════════════════════════════ */
 export function ActivityTimelineWidget() {
   const items = [
-    { action: 'Deep Research completed', detail: 'NVDA Q3 Earnings Analysis', time: '2m ago', icon: Brain, color: 'text-violet-400' },
-    { action: 'Trading signal detected', detail: 'AAPL Long — 87% confidence', time: '15m ago', icon: TrendingUp, color: 'text-emerald-400' },
-    { action: 'New chat started', detail: 'System Architecture Discussion', time: '32m ago', icon: MessageSquare, color: 'text-cyan-400' },
-    { action: 'Agent task finished', detail: 'Market Scanner — 2 signals', time: '1h ago', icon: Bot, color: 'text-indigo-400' },
-    { action: 'Landing page generated', detail: 'Acme AI — conversion optimized', time: '2h ago', icon: FileText, color: 'text-blue-400' },
+    { action: 'Deep Research completed', detail: 'NVDA Q3 Earnings Analysis', time: '2m ago', icon: Brain, color: 'text-[#7890A3]' },
+    { action: 'Trading signal detected', detail: 'AAPL Long — 87% confidence', time: '15m ago', icon: TrendingUp, color: 'text-[#6F8F7A]' },
+    { action: 'New chat started', detail: 'System Architecture Discussion', time: '32m ago', icon: MessageSquare, color: 'text-[#7890A3]' },
+    { action: 'Agent task finished', detail: 'Market Scanner — 2 signals', time: '1h ago', icon: Bot, color: 'text-[#7890A3]' },
+    { action: 'Landing page generated', detail: 'Acme AI — conversion optimized', time: '2h ago', icon: FileText, color: 'text-[#7890A3]' },
   ];
 
   return (
@@ -159,10 +159,10 @@ export function ActivityTimelineWidget() {
    ═══════════════════════════════════════════ */
 export function ActiveAgentsWidget() {
   const agents = [
-    { name: 'Startup Mentor', status: 'active', color: 'bg-orange-400', icon: Rocket },
-    { name: 'Shopify Expert', status: 'idle', color: 'bg-emerald-400', icon: ShoppingBag },
-    { name: 'Code Reviewer', status: 'active', color: 'bg-blue-400', icon: Code2 },
-    { name: 'Research AI', status: 'idle', color: 'bg-violet-400', icon: Brain },
+    { name: 'Startup Mentor', status: 'active', color: 'bg-[#A68A5B]', icon: Rocket },
+    { name: 'Shopify Expert', status: 'idle', color: 'bg-[#6F8F7A]', icon: ShoppingBag },
+    { name: 'Code Reviewer', status: 'active', color: 'bg-[#7890A3]', icon: Code2 },
+    { name: 'Research AI', status: 'idle', color: 'bg-[#7890A3]', icon: Brain },
   ];
 
   return (
@@ -190,12 +190,12 @@ export function ActiveAgentsWidget() {
    ═══════════════════════════════════════════ */
 export function WorkspaceActivityWidget() {
   const data = [
-    { name: 'Startup', value: 42, color: '#c084fc' },
-    { name: 'Ecom', value: 28, color: '#34d399' },
-    { name: 'Research', value: 18, color: '#a78bfa' },
-    { name: 'Code', value: 35, color: '#60a5fa' },
-    { name: 'Trading', value: 12, color: '#4ade80' },
-    { name: 'Creative', value: 8, color: '#f472b6' },
+    { name: 'Startup', value: 42, color: '#7890A3' },
+    { name: 'Ecom', value: 28, color: '#6F8F7A' },
+    { name: 'Research', value: 18, color: '#7890A3' },
+    { name: 'Code', value: 35, color: '#7890A3' },
+    { name: 'Trading', value: 12, color: '#6F8F7A' },
+    { name: 'Creative', value: 8, color: '#7890A3' },
   ];
 
   return (
@@ -213,7 +213,7 @@ export function WorkspaceActivityWidget() {
           </BarChart>
         </ResponsiveContainer>
       </div>
-      <p className="text-[11px] text-slate-500 mt-2">Most active: <span className="text-purple-400">Startup Hub</span></p>
+      <p className="text-[11px] text-slate-500 mt-2">Most active: <span className="text-[#7890A3]">Startup Hub</span></p>
     </WidgetCard>
   );
 }
@@ -223,13 +223,13 @@ export function WorkspaceActivityWidget() {
    ═══════════════════════════════════════════ */
 export function TrendingStartupsWidget() {
   const startups = [
-    { name: 'AI Contract Intelligence', category: 'LegalTech', score: 94, trend: '+12%', color: '#c084fc' },
-    { name: 'Carbon Intelligence Platform', category: 'ClimateTech', score: 89, trend: '+8%', color: '#34d399' },
-    { name: 'Cross-Chain Liquidity Router', category: 'DeFi', score: 86, trend: '+15%', color: '#60a5fa' },
+    { name: 'AI Contract Intelligence', category: 'LegalTech', score: 94, trend: '+12%', color: '#7890A3' },
+    { name: 'Carbon Intelligence Platform', category: 'ClimateTech', score: 89, trend: '+8%', color: '#6F8F7A' },
+    { name: 'Cross-Chain Liquidity Router', category: 'DeFi', score: 86, trend: '+15%', color: '#7890A3' },
   ];
 
   return (
-    <WidgetCard title="Trending Startups" icon={<Flame className="w-3.5 h-3.5 text-orange-400" />} delay={0.25}>
+    <WidgetCard title="Trending Startups" icon={<Flame className="w-3.5 h-3.5 text-[#A68A5B]" />} delay={0.25}>
       <div className="space-y-3">
         {startups.map((s, i) => (
           <div key={i} className="flex items-center gap-3">
@@ -238,7 +238,7 @@ export function TrendingStartupsWidget() {
               <p className="text-[12px] font-medium text-white truncate">{s.name}</p>
               <div className="flex items-center gap-2 mt-0.5">
                 <span className="text-[10px] text-slate-500">{s.category}</span>
-                <span className="text-[10px] text-emerald-400">{s.trend}</span>
+                <span className="text-[10px] text-[#6F8F7A]">{s.trend}</span>
               </div>
             </div>
           </div>
@@ -253,18 +253,18 @@ export function TrendingStartupsWidget() {
    ═══════════════════════════════════════════ */
 export function EcommerceOpportunitiesWidget() {
   const products = [
-    { name: 'Smart Garden Hub', virality: 87, margin: '$42', competition: 'Low', color: 'text-emerald-400' },
-    { name: 'LED Face Mask Pro', virality: 92, margin: '$68', competition: 'Medium', color: 'text-amber-400' },
+    { name: 'Smart Garden Hub', virality: 87, margin: '$42', competition: 'Low', color: 'text-[#6F8F7A]' },
+    { name: 'LED Face Mask Pro', virality: 92, margin: '$68', competition: 'Medium', color: 'text-[#A68A5B]' },
   ];
 
   return (
-    <WidgetCard title="Ecommerce Opportunities" icon={<ShoppingBag className="w-3.5 h-3.5 text-emerald-400" />} delay={0.3}>
+    <WidgetCard title="Ecommerce Opportunities" icon={<ShoppingBag className="w-3.5 h-3.5 text-[#6F8F7A]" />} delay={0.3}>
       <div className="space-y-2.5">
         {products.map((p, i) => (
           <div key={i} className="p-3 rounded-xl bg-white/[0.02] border border-white/[0.03]">
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-[12px] font-medium text-white">{p.name}</span>
-              <button className="text-[10px] text-cyan-400 hover:text-cyan-300 transition-colors">Analyze</button>
+              <button className="text-[10px] text-[#7890A3] hover:text-[#7890A3] transition-colors">Analyze</button>
             </div>
             <div className="flex items-center gap-3 text-[10px] text-slate-500">
               <span>Virality: <span className="text-white">{p.virality}</span></span>
@@ -283,19 +283,19 @@ export function EcommerceOpportunitiesWidget() {
    ═══════════════════════════════════════════ */
 export function MarketSnapshotWidget() {
   return (
-    <WidgetCard title="Market Snapshot" icon={<TrendingUp className="w-3.5 h-3.5 text-emerald-400" />} delay={0.35}>
+    <WidgetCard title="Market Snapshot" icon={<TrendingUp className="w-3.5 h-3.5 text-[#6F8F7A]" />} delay={0.35}>
       <div className="flex items-center gap-4 mb-3">
         <div>
           <p className="text-2xl font-semibold text-white">$187.42</p>
           <div className="flex items-center gap-1">
-            <TrendingUp className="w-3 h-3 text-emerald-400" />
-            <span className="text-[12px] text-emerald-400">+2.34%</span>
+            <TrendingUp className="w-3 h-3 text-[#6F8F7A]" />
+            <span className="text-[12px] text-[#6F8F7A]">+2.34%</span>
           </div>
         </div>
         <div className="flex-1 h-12 opacity-60">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={[{ v: 30 }, { v: 45 }, { v: 35 }, { v: 50 }, { v: 42 }, { v: 55 }, { v: 48 }]} barSize={6}>
-              <Bar dataKey="v" fill="#34d399" fillOpacity={0.5} radius={[2, 2, 0, 0]} />
+              <Bar dataKey="v" fill="#6F8F7A" fillOpacity={0.5} radius={[2, 2, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -316,9 +316,9 @@ export function QuickLaunchWidget() {
           <input
             type="text"
             placeholder="Describe what you want to build..."
-            className="flex-1 h-10 px-4 rounded-xl bg-white/[0.02] border border-white/[0.04] text-[13px] text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-cyan-500/20 focus:bg-white/[0.03] transition-all"
+            className="flex-1 h-10 px-4 rounded-xl bg-white/[0.02] border border-white/[0.04] text-[13px] text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-[#637B90]/20 focus:bg-white/[0.03] transition-all"
           />
-          <button className="h-10 px-4 rounded-xl bg-cyan-500/[0.1] border border-cyan-500/15 text-cyan-400 hover:bg-cyan-500/[0.15] transition-colors">
+          <button className="h-10 px-4 rounded-xl bg-[#637B90]/[0.1] border border-[#637B90]/15 text-[#7890A3] hover:bg-[#637B90]/[0.15] transition-colors">
             <Sparkles className="w-4 h-4" />
           </button>
         </div>
@@ -355,7 +355,7 @@ export function ProductivityStatsWidget() {
           <BarChart data={data} barSize={20}>
             <XAxis dataKey="day" tick={{ fontSize: 11, fill: '#52525b' }} axisLine={false} tickLine={false} />
             <YAxis hide />
-            <Bar dataKey="conversations" fill="#22d3ee" fillOpacity={0.4} radius={[4, 4, 0, 0]} />
+            <Bar dataKey="conversations" fill="#7890A3" fillOpacity={0.4} radius={[4, 4, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -369,14 +369,14 @@ export function ProductivityStatsWidget() {
    ═══════════════════════════════════════════ */
 export function RecentGenerationsWidget() {
   const generations = [
-    { type: 'Landing Page', preview: 'Hero section with CTA for AI analytics SaaS...', time: '5m ago', color: 'text-blue-400', bg: 'bg-blue-500/[0.06]' },
-    { type: 'TikTok Script', preview: 'Hook: "This $19 gadget saved me $400..."', time: '12m ago', color: 'text-rose-400', bg: 'bg-rose-500/[0.06]' },
-    { type: 'Market Research', preview: 'TAM: $4.2B, SAM: $680M, SOM: $45M...', time: '1h ago', color: 'text-violet-400', bg: 'bg-violet-500/[0.06]' },
-    { type: 'Brand Kit', preview: 'Name: "Nexora", Tagline: "Intelligence..."', time: '2h ago', color: 'text-pink-400', bg: 'bg-pink-500/[0.06]' },
+    { type: 'Landing Page', preview: 'Hero section with CTA for AI analytics SaaS...', time: '5m ago', color: 'text-[#7890A3]', bg: 'bg-[#637B90]/[0.06]' },
+    { type: 'TikTok Script', preview: 'Hook: "This $19 gadget saved me $400..."', time: '12m ago', color: 'text-[#B76E79]', bg: 'bg-[#B76E79]/[0.06]' },
+    { type: 'Market Research', preview: 'TAM: $4.2B, SAM: $680M, SOM: $45M...', time: '1h ago', color: 'text-[#7890A3]', bg: 'bg-[#637B90]/[0.06]' },
+    { type: 'Brand Kit', preview: 'Name: "Nexora", Tagline: "Intelligence..."', time: '2h ago', color: 'text-[#7890A3]', bg: 'bg-[#637B90]/[0.06]' },
   ];
 
   return (
-    <WidgetCard title="AI Generations" icon={<Sparkles className="w-3.5 h-3.5 text-cyan-400" />} delay={0.5}>
+    <WidgetCard title="AI Generations" icon={<Sparkles className="w-3.5 h-3.5 text-[#7890A3]" />} delay={0.5}>
       <div className="space-y-2">
         {generations.map((g, i) => (
           <div key={i} className="flex items-start gap-2.5 p-2.5 rounded-xl hover:bg-white/[0.02] transition-colors cursor-pointer group">

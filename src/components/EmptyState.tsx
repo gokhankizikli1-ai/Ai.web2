@@ -23,7 +23,7 @@ const CONFIG: Record<WorkspaceType, { headline: string; subline: string; gradien
   startup: {
     headline: 'Validate your next business idea',
     subline: 'Use AI-powered tools to validate, build, and launch your startup.',
-    gradient: 'from-purple-500/[0.03] to-blue-500/[0.02]',
+    gradient: 'from-[#52677A]/[0.03] to-[#7890A3]/[0.02]',
     actions: [
       { label: 'Validate Idea', icon: Lightbulb, path: '/startup' },
       { label: 'Generate SaaS Idea', icon: Sparkles, path: '/startup' },
@@ -34,7 +34,7 @@ const CONFIG: Record<WorkspaceType, { headline: string; subline: string; gradien
   ecommerce: {
     headline: 'Find, validate, and launch products faster',
     subline: 'AI-powered tools for your Shopify and ecommerce business.',
-    gradient: 'from-emerald-500/[0.03] to-amber-500/[0.02]',
+    gradient: 'from-[#52677A]/[0.03] to-[#7890A3]/[0.02]',
     actions: [
       { label: 'Find Winning Product', icon: Search, path: '/ecommerce' },
       { label: 'Generate Shopify Page', icon: ShoppingBag, path: '/ecommerce' },
@@ -45,7 +45,7 @@ const CONFIG: Record<WorkspaceType, { headline: string; subline: string; gradien
   research: {
     headline: 'Research, compare, verify, and summarize',
     subline: 'Multi-source deep research with AI-powered analysis.',
-    gradient: 'from-violet-500/[0.03] to-purple-500/[0.02]',
+    gradient: 'from-[#52677A]/[0.03] to-[#7890A3]/[0.02]',
     actions: [
       { label: 'Deep Research', icon: Brain, path: '/chat' },
       { label: 'Compare Sources', icon: BookOpen, path: '/chat' },
@@ -56,7 +56,7 @@ const CONFIG: Record<WorkspaceType, { headline: string; subline: string; gradien
   coding: {
     headline: 'Write, debug, review, and ship code',
     subline: 'AI-powered coding assistant for every stage of development.',
-    gradient: 'from-blue-500/[0.03] to-cyan-500/[0.02]',
+    gradient: 'from-[#52677A]/[0.03] to-[#7890A3]/[0.02]',
     actions: [
       { label: 'Generate Code', icon: Code2, path: '/chat' },
       { label: 'Debug Issue', icon: Bug, path: '/chat' },
@@ -67,7 +67,7 @@ const CONFIG: Record<WorkspaceType, { headline: string; subline: string; gradien
   creative: {
     headline: 'Create content, brands, and visuals with AI',
     subline: 'Your AI-powered creative studio for content and branding.',
-    gradient: 'from-pink-500/[0.03] to-rose-500/[0.02]',
+    gradient: 'from-[#52677A]/[0.03] to-[#7890A3]/[0.02]',
     actions: [
       { label: 'Generate Image Prompt', icon: Palette, path: '/tools/brand-builder' },
       { label: 'Write Video Script', icon: Video, path: '/tools/viral-content' },
@@ -78,7 +78,7 @@ const CONFIG: Record<WorkspaceType, { headline: string; subline: string; gradien
   study: {
     headline: 'Learn faster with AI-powered study tools',
     subline: 'Summarize, quiz yourself, and master any topic.',
-    gradient: 'from-sky-500/[0.03] to-blue-500/[0.02]',
+    gradient: 'from-[#52677A]/[0.03] to-[#7890A3]/[0.02]',
     actions: [
       { label: 'Summarize Text', icon: FileText, path: '/chat' },
       { label: 'Create Flashcards', icon: CreditCard, path: '/chat' },

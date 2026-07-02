@@ -84,9 +84,9 @@ function ScoreBar({ label, value, color }: { label: string; value: number; color
 
 function VerdictBadge({ verdict }: { verdict: 'Test' | 'Watch' | 'Avoid' }) {
   const config = {
-    Test:   { bg: 'bg-emerald-500/[0.08]', text: 'text-emerald-400', border: 'border-emerald-500/15', dot: 'bg-emerald-400' },
-    Watch:  { bg: 'bg-amber-500/[0.08]', text: 'text-amber-400', border: 'border-amber-500/15', dot: 'bg-amber-400' },
-    Avoid:  { bg: 'bg-red-500/[0.08]', text: 'text-red-400', border: 'border-red-500/15', dot: 'bg-red-400' },
+    Test:   { bg: 'bg-[#6F8F7A]/[0.08]', text: 'text-[#6F8F7A]', border: 'border-[#6F8F7A]/15', dot: 'bg-[#6F8F7A]' },
+    Watch:  { bg: 'bg-[#A68A5B]/[0.08]', text: 'text-[#A68A5B]', border: 'border-[#A68A5B]/15', dot: 'bg-[#A68A5B]' },
+    Avoid:  { bg: 'bg-[#B76E79]/[0.08]', text: 'text-[#B76E79]', border: 'border-[#B76E79]/15', dot: 'bg-[#B76E79]' },
   };
   const c = config[verdict];
   return (
@@ -120,7 +120,7 @@ function ToolCard({ icon: Icon, title, desc, color, onClick, badge }: {
       </div>
       <h3 className="text-[12px] font-semibold text-white/90 mb-0.5">{title}</h3>
       <p className="text-[10px] text-slate-500 leading-relaxed">{desc}</p>
-      <div className="flex items-center gap-1 mt-2 text-[9px] text-cyan-400/50 group-hover:text-cyan-400/70 transition-colors">
+      <div className="flex items-center gap-1 mt-2 text-[9px] text-[#7890A3]/50 group-hover:text-[#7890A3]/70 transition-colors">
         <span>Open</span>
         <ChevronRight className="h-3 w-3" />
       </div>
@@ -167,10 +167,10 @@ function Dashboard({ onTool }: { onTool: (t: ToolView) => void }) {
       {/* Stats Row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         {[
-          { label: 'Products Researched', value: '12', icon: Package, color: 'from-cyan-400/20 to-blue-400/20' },
-          { label: 'Hooks Generated', value: '48', icon: Sparkles, color: 'from-violet-400/20 to-purple-400/20' },
-          { label: 'Ad Sets Created', value: '6', icon: Megaphone, color: 'from-amber-400/20 to-orange-400/20' },
-          { label: 'Store Health', value: '--', icon: BarChart3, color: 'from-emerald-400/20 to-teal-400/20' },
+          { label: 'Products Researched', value: '12', icon: Package, color: 'from-[#7890A3]/20 to-[#7890A3]/20' },
+          { label: 'Hooks Generated', value: '48', icon: Sparkles, color: 'from-[#7890A3]/20 to-[#7890A3]/20' },
+          { label: 'Ad Sets Created', value: '6', icon: Megaphone, color: 'from-[#A68A5B]/20 to-[#A68A5B]/20' },
+          { label: 'Store Health', value: '--', icon: BarChart3, color: 'from-[#6F8F7A]/20 to-[#7890A3]/20' },
         ].map((s) => (
           <div key={s.label} className="p-3 rounded-xl border border-white/[0.03] bg-white/[0.01]">
             <div className="flex items-center gap-2 mb-1.5">
@@ -188,14 +188,14 @@ function Dashboard({ onTool }: { onTool: (t: ToolView) => void }) {
       <div>
         <SectionHeader title="Tools" subtitle="Select a tool to get started" />
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-          <ToolCard icon={Search} title="Product Research" desc="Find winning products with AI-powered trend analysis, saturation scores, and margin estimates." color="bg-gradient-to-br from-cyan-400 to-blue-500" onClick={() => onTool('product-research')} />
-          <ToolCard icon={Layout} title="AI Store Builder" desc="Generate complete Shopify store sections — hero, product grid, reviews, FAQ, and trust badges." color="bg-gradient-to-br from-violet-400 to-purple-500" onClick={() => onTool('store-builder')} />
-          <ToolCard icon={ShoppingCart} title="Shopify Connect" desc="Connect your store, sync products, and manage everything from one dashboard." color="bg-gradient-to-br from-emerald-400 to-teal-500" onClick={() => onTool('shopify')} badge="Coming soon" />
-          <ToolCard icon={Sparkles} title="TikTok Hooks" desc="Generate viral hooks, UGC scripts, and short-form video structures for any product." color="bg-gradient-to-br from-pink-400 to-rose-500" onClick={() => onTool('tiktok')} />
-          <ToolCard icon={Megaphone} title="Meta Ads Builder" desc="Create high-converting Facebook & Instagram ads with AI-generated copy and targeting." color="bg-gradient-to-br from-amber-400 to-orange-500" onClick={() => onTool('meta-ads')} />
-          <ToolCard icon={DollarSign} title="Pricing Optimizer" desc="Calculate optimal pricing, margins, break-even ROAS, and upsell suggestions." color="bg-gradient-to-br from-indigo-400 to-blue-500" onClick={() => onTool('pricing')} />
-          <ToolCard icon={BarChart3} title="Store Analytics" desc="Track revenue, orders, conversion rate, AOV, ROAS, and CPA." color="bg-gradient-to-br from-emerald-400 to-green-500" onClick={() => onTool('analytics')} badge="Connect Shopify" />
-          <ToolCard icon={Target} title="Product Page Analyzer" desc="Analyze your product pages for conversion optimization and get AI recommendations." color="bg-gradient-to-br from-sky-400 to-cyan-500" onClick={() => onTool('product-research')} />
+          <ToolCard icon={Search} title="Product Research" desc="Find winning products with AI-powered trend analysis, saturation scores, and margin estimates." color="bg-gradient-to-br from-[#7890A3] to-[#637B90]" onClick={() => onTool('product-research')} />
+          <ToolCard icon={Layout} title="AI Store Builder" desc="Generate complete Shopify store sections — hero, product grid, reviews, FAQ, and trust badges." color="bg-gradient-to-br from-[#7890A3] to-[#637B90]" onClick={() => onTool('store-builder')} />
+          <ToolCard icon={ShoppingCart} title="Shopify Connect" desc="Connect your store, sync products, and manage everything from one dashboard." color="bg-gradient-to-br from-[#6F8F7A] to-[#637B90]" onClick={() => onTool('shopify')} badge="Coming soon" />
+          <ToolCard icon={Sparkles} title="TikTok Hooks" desc="Generate viral hooks, UGC scripts, and short-form video structures for any product." color="bg-gradient-to-br from-[#7890A3] to-[#B76E79]" onClick={() => onTool('tiktok')} />
+          <ToolCard icon={Megaphone} title="Meta Ads Builder" desc="Create high-converting Facebook & Instagram ads with AI-generated copy and targeting." color="bg-gradient-to-br from-[#A68A5B] to-[#A68A5B]" onClick={() => onTool('meta-ads')} />
+          <ToolCard icon={DollarSign} title="Pricing Optimizer" desc="Calculate optimal pricing, margins, break-even ROAS, and upsell suggestions." color="bg-gradient-to-br from-[#7890A3] to-[#637B90]" onClick={() => onTool('pricing')} />
+          <ToolCard icon={BarChart3} title="Store Analytics" desc="Track revenue, orders, conversion rate, AOV, ROAS, and CPA." color="bg-gradient-to-br from-[#6F8F7A] to-[#6F8F7A]" onClick={() => onTool('analytics')} badge="Connect Shopify" />
+          <ToolCard icon={Target} title="Product Page Analyzer" desc="Analyze your product pages for conversion optimization and get AI recommendations." color="bg-gradient-to-br from-[#7890A3] to-[#637B90]" onClick={() => onTool('product-research')} />
         </div>
       </div>
 
@@ -204,10 +204,10 @@ function Dashboard({ onTool }: { onTool: (t: ToolView) => void }) {
         <SectionHeader title="Multi-Agent Ecommerce Workflow" subtitle="Your AI agents work together to build and scale your store" />
         <div className="p-4 rounded-xl border border-white/[0.04] bg-white/[0.01] space-y-3">
           {[
-            { icon: Search, name: 'Product Research Agent', desc: 'Finds trending products with winning potential', color: 'from-cyan-400 to-blue-400', status: 'active' },
-            { icon: Layout, name: 'Store Builder Agent', desc: 'Creates optimized store pages and sections', color: 'from-violet-400 to-purple-400', status: 'active' },
-            { icon: Sparkles, name: 'Ads Creator Agent', desc: 'Generates TikTok hooks and Meta ad campaigns', color: 'from-pink-400 to-rose-400', status: 'standby' },
-            { icon: DollarSign, name: 'Pricing Agent', desc: 'Optimizes margins, pricing, and upsell strategy', color: 'from-indigo-400 to-blue-400', status: 'standby' },
+            { icon: Search, name: 'Product Research Agent', desc: 'Finds trending products with winning potential', color: 'from-[#7890A3] to-[#7890A3]', status: 'active' },
+            { icon: Layout, name: 'Store Builder Agent', desc: 'Creates optimized store pages and sections', color: 'from-[#7890A3] to-[#7890A3]', status: 'active' },
+            { icon: Sparkles, name: 'Ads Creator Agent', desc: 'Generates TikTok hooks and Meta ad campaigns', color: 'from-[#7890A3] to-[#B76E79]', status: 'standby' },
+            { icon: DollarSign, name: 'Pricing Agent', desc: 'Optimizes margins, pricing, and upsell strategy', color: 'from-[#7890A3] to-[#7890A3]', status: 'standby' },
           ].map((agent, i) => (
             <div key={agent.name} className="flex items-center gap-3">
               <div className={`flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br ${agent.color} shrink-0`}>
@@ -216,8 +216,8 @@ function Dashboard({ onTool }: { onTool: (t: ToolView) => void }) {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-[12px] font-medium text-white/80">{agent.name}</span>
-                  <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-medium ${agent.status === 'active' ? 'bg-emerald-500/[0.08] text-emerald-400' : 'bg-slate-500/[0.06] text-slate-400'}`}>
-                    {agent.status === 'active' && <span className="w-1 h-1 rounded-full bg-emerald-400" />}
+                  <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-medium ${agent.status === 'active' ? 'bg-[#6F8F7A]/[0.08] text-[#6F8F7A]' : 'bg-slate-500/[0.06] text-slate-400'}`}>
+                    {agent.status === 'active' && <span className="w-1 h-1 rounded-full bg-[#6F8F7A]" />}
                     {agent.status}
                   </span>
                 </div>
@@ -293,8 +293,8 @@ function ProductResearch({ onBack }: { onBack: () => void }) {
                 </div>
                 <div className="text-right">
                   <div className="flex items-center gap-1">
-                    <TrendingUp className="h-3 w-3 text-emerald-400/60" />
-                    <span className="text-[14px] font-semibold text-emerald-400">{product.trendScore}</span>
+                    <TrendingUp className="h-3 w-3 text-[#6F8F7A]/60" />
+                    <span className="text-[14px] font-semibold text-[#6F8F7A]">{product.trendScore}</span>
                   </div>
                   <p className="text-[8px] text-slate-600">Trend Score</p>
                 </div>
@@ -304,11 +304,11 @@ function ProductResearch({ onBack }: { onBack: () => void }) {
 
               {/* Score Bars */}
               <div className="space-y-1.5 mb-2.5">
-                <ScoreBar label="Saturation" value={product.saturation} color="bg-amber-400" />
-                <ScoreBar label="Est. Margin" value={product.margin} color="bg-emerald-400" />
-                <ScoreBar label="Viral Pot." value={product.viral} color="bg-pink-400" />
-                <ScoreBar label="Competitor" value={product.competitor} color="bg-red-400" />
-                <ScoreBar label="Audience" value={product.audience} color="bg-cyan-400" />
+                <ScoreBar label="Saturation" value={product.saturation} color="bg-[#A68A5B]" />
+                <ScoreBar label="Est. Margin" value={product.margin} color="bg-[#6F8F7A]" />
+                <ScoreBar label="Viral Pot." value={product.viral} color="bg-[#7890A3]" />
+                <ScoreBar label="Competitor" value={product.competitor} color="bg-[#B76E79]" />
+                <ScoreBar label="Audience" value={product.audience} color="bg-[#7890A3]" />
               </div>
 
               {/* Expanded */}
@@ -317,21 +317,21 @@ function ProductResearch({ onBack }: { onBack: () => void }) {
                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
                     <div className="pt-2.5 border-t border-white/[0.03] space-y-2">
                       <div className="grid grid-cols-3 gap-2">
-                        <div className="p-2 rounded-lg bg-emerald-500/[0.04] border border-emerald-500/10 text-center">
-                          <p className="text-[9px] text-emerald-400/60">Est. Margin</p>
-                          <p className="text-[13px] font-semibold text-emerald-400">{product.margin}%</p>
+                        <div className="p-2 rounded-lg bg-[#6F8F7A]/[0.04] border border-[#6F8F7A]/10 text-center">
+                          <p className="text-[9px] text-[#6F8F7A]/60">Est. Margin</p>
+                          <p className="text-[13px] font-semibold text-[#6F8F7A]">{product.margin}%</p>
                         </div>
-                        <div className="p-2 rounded-lg bg-cyan-500/[0.04] border border-cyan-500/10 text-center">
-                          <p className="text-[9px] text-cyan-400/60">Sell Price</p>
-                          <p className="text-[13px] font-semibold text-cyan-400">{product.price}</p>
+                        <div className="p-2 rounded-lg bg-[#637B90]/[0.04] border border-[#637B90]/10 text-center">
+                          <p className="text-[9px] text-[#7890A3]/60">Sell Price</p>
+                          <p className="text-[13px] font-semibold text-[#7890A3]">{product.price}</p>
                         </div>
-                        <div className="p-2 rounded-lg bg-violet-500/[0.04] border border-violet-500/10 text-center">
-                          <p className="text-[9px] text-violet-400/60">Viral Score</p>
-                          <p className="text-[13px] font-semibold text-violet-400">{product.viral}/100</p>
+                        <div className="p-2 rounded-lg bg-[#637B90]/[0.04] border border-[#637B90]/10 text-center">
+                          <p className="text-[9px] text-[#7890A3]/60">Viral Score</p>
+                          <p className="text-[13px] font-semibold text-[#7890A3]">{product.viral}/100</p>
                         </div>
                       </div>
                       <p className="text-[10px] text-slate-500">
-                        <Zap className="h-2.5 w-2.5 inline mr-1 text-amber-400/50" />
+                        <Zap className="h-2.5 w-2.5 inline mr-1 text-[#A68A5B]/50" />
                         AI Recommendation: {product.verdict === 'Test' ? 'Strong potential. Low saturation with high margin. Consider testing with a small ad budget.' : product.verdict === 'Watch' ? 'Moderate potential. High trend but watch saturation levels.' : 'High competition and low margins. Consider a different product or niche.'}
                       </p>
                     </div>
@@ -415,7 +415,7 @@ function TikTokHooks({ onBack }: { onBack: () => void }) {
           <div className="flex gap-1 flex-wrap">
             {tones.map(t => (
               <button key={t} onClick={() => setTone(t)}
-                className={`px-2.5 py-1 rounded-lg text-[10px] font-medium transition-all ${tone === t ? 'bg-pink-500/[0.12] text-pink-400 border border-pink-500/20' : 'text-slate-500 border border-white/[0.04] hover:text-slate-400'}`}>
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-medium transition-all ${tone === t ? 'bg-[#637B90]/[0.12] text-[#7890A3] border border-[#637B90]/20' : 'text-slate-500 border border-white/[0.04] hover:text-slate-400'}`}>
                 {t}
               </button>
             ))}
@@ -425,7 +425,7 @@ function TikTokHooks({ onBack }: { onBack: () => void }) {
           onClick={generate}
           disabled={!product.trim() || generating}
           className="w-full h-9 rounded-xl text-[12px] font-semibold text-white transition-all disabled:opacity-30 hover:brightness-110"
-          style={{ background: 'linear-gradient(135deg, #EC4899, #F43F5E)', boxShadow: '0 4px 16px rgba(236,72,153,0.15)' }}>
+          style={{ background: 'linear-gradient(135deg, #637B90, #7890A3)', boxShadow: '0 4px 16px rgba(82,103,122,0.15)' }}>
           {generating ? <RefreshCw className="h-4 w-4 animate-spin mx-auto" /> : <><Sparkles className="h-3.5 w-3.5 inline mr-1.5" />Generate Hooks</>}
         </button>
       </div>
@@ -435,13 +435,13 @@ function TikTokHooks({ onBack }: { onBack: () => void }) {
         {output && (
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-3">
             {/* 3-Second Hooks */}
-            <div className="p-3.5 rounded-xl border border-pink-500/10 bg-pink-500/[0.03]">
-              <h4 className="text-[11px] font-semibold text-pink-400/80 mb-2 flex items-center gap-1.5">
+            <div className="p-3.5 rounded-xl border border-[#637B90]/10 bg-[#637B90]/[0.03]">
+              <h4 className="text-[11px] font-semibold text-[#7890A3]/80 mb-2 flex items-center gap-1.5">
                 <Play className="h-3 w-3" /> 3-Second Hooks
               </h4>
               {output.hook3s.map((h, i) => (
                 <div key={i} className="flex items-start gap-2 py-1.5 border-b border-white/[0.02] last:border-0">
-                  <span className="text-[9px] text-pink-400/40 mt-0.5 shrink-0">{i + 1}</span>
+                  <span className="text-[9px] text-[#7890A3]/40 mt-0.5 shrink-0">{i + 1}</span>
                   <p className="text-[11px] text-white/70">{h}</p>
                 </div>
               ))}
@@ -450,7 +450,7 @@ function TikTokHooks({ onBack }: { onBack: () => void }) {
             {/* UGC Script */}
             <div className="p-3.5 rounded-xl border border-white/[0.04] bg-white/[0.015]">
               <h4 className="text-[11px] font-semibold text-white/70 mb-2 flex items-center gap-1.5">
-                <Smartphone className="h-3 w-3 text-violet-400" /> UGC Script
+                <Smartphone className="h-3 w-3 text-[#7890A3]" /> UGC Script
               </h4>
               <pre className="text-[10px] text-slate-400 leading-relaxed whitespace-pre-wrap">{output.ugcScript}</pre>
             </div>
@@ -458,7 +458,7 @@ function TikTokHooks({ onBack }: { onBack: () => void }) {
             {/* Problem/Solution */}
             <div className="p-3.5 rounded-xl border border-white/[0.04] bg-white/[0.015]">
               <h4 className="text-[11px] font-semibold text-white/70 mb-2 flex items-center gap-1.5">
-                <Target className="h-3 w-3 text-cyan-400" /> Problem / Solution Angle
+                <Target className="h-3 w-3 text-[#7890A3]" /> Problem / Solution Angle
               </h4>
               <pre className="text-[10px] text-slate-400 leading-relaxed whitespace-pre-wrap">{output.problemSolution}</pre>
             </div>
@@ -466,7 +466,7 @@ function TikTokHooks({ onBack }: { onBack: () => void }) {
             {/* CTAs */}
             <div className="p-3.5 rounded-xl border border-white/[0.04] bg-white/[0.015]">
               <h4 className="text-[11px] font-semibold text-white/70 mb-2 flex items-center gap-1.5">
-                <Zap className="h-3 w-3 text-amber-400" /> CTA Ideas
+                <Zap className="h-3 w-3 text-[#A68A5B]" /> CTA Ideas
               </h4>
               {output.ctas.map((c, i) => (
                 <p key={i} className="text-[10px] text-slate-400 py-0.5">{i + 1}. {c}</p>
@@ -476,7 +476,7 @@ function TikTokHooks({ onBack }: { onBack: () => void }) {
             {/* Structure */}
             <div className="p-3.5 rounded-xl border border-white/[0.04] bg-white/[0.015]">
               <h4 className="text-[11px] font-semibold text-white/70 mb-2 flex items-center gap-1.5">
-                <Share2 className="h-3 w-3 text-emerald-400" /> Video Structure
+                <Share2 className="h-3 w-3 text-[#6F8F7A]" /> Video Structure
               </h4>
               {output.structure.map((s, i) => (
                 <p key={i} className="text-[10px] text-slate-400 py-0.5">{s}</p>
@@ -554,7 +554,7 @@ function MetaAdsBuilder({ onBack }: { onBack: () => void }) {
           onClick={generate}
           disabled={!product.trim() || generating}
           className="w-full h-9 rounded-xl text-[12px] font-semibold text-white transition-all disabled:opacity-30 hover:brightness-110"
-          style={{ background: 'linear-gradient(135deg, #F59E0B, #F97316)', boxShadow: '0 4px 16px rgba(245,158,11,0.15)' }}>
+          style={{ background: 'linear-gradient(135deg, #A68A5B, #A68A5B)', boxShadow: '0 4px 16px rgba(166,138,91,0.15)' }}>
           {generating ? <RefreshCw className="h-4 w-4 animate-spin mx-auto" /> : <><Megaphone className="h-3.5 w-3.5 inline mr-1.5" />Generate Ad Campaign</>}
         </button>
       </div>
@@ -564,9 +564,9 @@ function MetaAdsBuilder({ onBack }: { onBack: () => void }) {
         {output && (
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-3">
             {[
-              { title: 'Primary Text', items: output.primaryTexts, icon: FileText as React.ElementType, color: 'text-amber-400', border: 'border-amber-500/10', bg: 'bg-amber-500/[0.03]' },
-              { title: 'Headlines', items: output.headlines, icon: Type as React.ElementType, color: 'text-cyan-400', border: 'border-cyan-500/10', bg: 'bg-cyan-500/[0.03]' },
-              { title: 'Descriptions', items: output.descriptions, icon: FileText as React.ElementType, color: 'text-violet-400', border: 'border-violet-500/10', bg: 'bg-violet-500/[0.03]' },
+              { title: 'Primary Text', items: output.primaryTexts, icon: FileText as React.ElementType, color: 'text-[#A68A5B]', border: 'border-[#A68A5B]/10', bg: 'bg-[#A68A5B]/[0.03]' },
+              { title: 'Headlines', items: output.headlines, icon: Type as React.ElementType, color: 'text-[#7890A3]', border: 'border-[#637B90]/10', bg: 'bg-[#637B90]/[0.03]' },
+              { title: 'Descriptions', items: output.descriptions, icon: FileText as React.ElementType, color: 'text-[#7890A3]', border: 'border-[#637B90]/10', bg: 'bg-[#637B90]/[0.03]' },
             ].map((section) => (
               <div key={section.title} className={`p-3.5 rounded-xl border ${section.border} ${section.bg}`}>
                 <h4 className={`text-[11px] font-semibold ${section.color} mb-2 flex items-center gap-1.5`}>
@@ -585,15 +585,15 @@ function MetaAdsBuilder({ onBack }: { onBack: () => void }) {
             <div className="grid grid-cols-3 gap-2">
               <div className="p-2.5 rounded-lg bg-white/[0.015] border border-white/[0.04]">
                 <p className="text-[9px] text-slate-500 mb-1">CTA Buttons</p>
-                {output.ctas.map((c, i) => <p key={i} className="text-[10px] text-emerald-400/80 py-0.5">{c}</p>)}
+                {output.ctas.map((c, i) => <p key={i} className="text-[10px] text-[#6F8F7A]/80 py-0.5">{c}</p>)}
               </div>
               <div className="p-2.5 rounded-lg bg-white/[0.015] border border-white/[0.04]">
                 <p className="text-[9px] text-slate-500 mb-1">Audiences</p>
-                {output.audiences.map((a, i) => <p key={i} className="text-[10px] text-cyan-400/80 py-0.5">{a}</p>)}
+                {output.audiences.map((a, i) => <p key={i} className="text-[10px] text-[#7890A3]/80 py-0.5">{a}</p>)}
               </div>
               <div className="p-2.5 rounded-lg bg-white/[0.015] border border-white/[0.04]">
                 <p className="text-[9px] text-slate-500 mb-1">Creative Formats</p>
-                {output.creatives.map((c, i) => <p key={i} className="text-[10px] text-violet-400/80 py-0.5">{c}</p>)}
+                {output.creatives.map((c, i) => <p key={i} className="text-[10px] text-[#7890A3]/80 py-0.5">{c}</p>)}
               </div>
             </div>
           </motion.div>
@@ -646,7 +646,7 @@ function StoreBuilder({ onBack }: { onBack: () => void }) {
           onClick={generate}
           disabled={!prompt.trim() || generating}
           className="w-full h-9 rounded-xl text-[12px] font-semibold text-white transition-all disabled:opacity-30 hover:brightness-110"
-          style={{ background: 'linear-gradient(135deg, #8B5CF6, #7C3AED)', boxShadow: '0 4px 16px rgba(139,92,246,0.15)' }}>
+          style={{ background: 'linear-gradient(135deg, #637B90, #52677A)', boxShadow: '0 4px 16px rgba(82,103,122,0.15)' }}>
           {generating ? <RefreshCw className="h-4 w-4 animate-spin mx-auto" /> : <><Wand2 className="h-3.5 w-3.5 inline mr-1.5" />Generate Store</>}
         </button>
       </div>
@@ -658,7 +658,7 @@ function StoreBuilder({ onBack }: { onBack: () => void }) {
             {/* Color Palette */}
             <div className="p-3.5 rounded-xl border border-white/[0.04] bg-white/[0.015]">
               <h4 className="text-[11px] font-semibold text-white/70 mb-2 flex items-center gap-1.5">
-                <Palette className="h-3 w-3 text-violet-400" /> Color Palette
+                <Palette className="h-3 w-3 text-[#7890A3]" /> Color Palette
               </h4>
               <div className="flex gap-2">
                 {['#1a1a2e', '#16213e', '#0f3460', '#e94560', '#f5f5f5'].map(c => (
@@ -673,7 +673,7 @@ function StoreBuilder({ onBack }: { onBack: () => void }) {
             {/* Typography */}
             <div className="p-3.5 rounded-xl border border-white/[0.04] bg-white/[0.015]">
               <h4 className="text-[11px] font-semibold text-white/70 mb-2 flex items-center gap-1.5">
-                <Type className="h-3 w-3 text-cyan-400" /> Typography
+                <Type className="h-3 w-3 text-[#7890A3]" /> Typography
               </h4>
               <div className="space-y-1">
                 <p className="text-[16px] font-bold text-white/90">Heading — Inter Bold</p>
@@ -685,17 +685,17 @@ function StoreBuilder({ onBack }: { onBack: () => void }) {
             {/* Sections */}
             <div className="p-3.5 rounded-xl border border-white/[0.04] bg-white/[0.015]">
               <h4 className="text-[11px] font-semibold text-white/70 mb-2.5 flex items-center gap-1.5">
-                <Layout className="h-3 w-3 text-emerald-400" /> Store Sections ({sections.length})
+                <Layout className="h-3 w-3 text-[#6F8F7A]" /> Store Sections ({sections.length})
               </h4>
               <div className="space-y-1.5">
                 {sections.map((s, i) => (
                   <div key={s.name} className="flex items-center gap-2.5 py-2 border-b border-white/[0.02] last:border-0">
-                    <div className="flex h-6 w-6 items-center justify-center rounded-md bg-violet-500/[0.08] text-[9px] text-violet-400 font-semibold shrink-0">{i + 1}</div>
+                    <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[#637B90]/[0.08] text-[9px] text-[#7890A3] font-semibold shrink-0">{i + 1}</div>
                     <div>
                       <p className="text-[11px] font-medium text-white/80">{s.name}</p>
                       <p className="text-[9px] text-slate-500">{s.desc}</p>
                     </div>
-                    <Check className="h-3 w-3 text-emerald-400/50 ml-auto shrink-0" />
+                    <Check className="h-3 w-3 text-[#6F8F7A]/50 ml-auto shrink-0" />
                   </div>
                 ))}
               </div>
@@ -730,8 +730,8 @@ function ShopifyConnect({ onBack }: { onBack: () => void }) {
       <SectionHeader title="Shopify Connect" subtitle="Connect your store to unlock live sync and analytics" />
 
       <div className="flex flex-col items-center text-center py-10">
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-500/[0.06] border border-emerald-500/15 mb-4">
-          <ShoppingCart className="h-7 w-7 text-emerald-400/40" />
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#6F8F7A]/[0.06] border border-[#6F8F7A]/15 mb-4">
+          <ShoppingCart className="h-7 w-7 text-[#6F8F7A]/40" />
         </div>
         <h3 className="text-[15px] font-semibold text-white/70 mb-1.5">Not Connected</h3>
         <p className="text-[11px] text-slate-500 max-w-xs mb-6">Connect your Shopify store to sync products, track analytics, and manage everything from KorvixAI.</p>
@@ -829,31 +829,31 @@ function PricingOptimizer({ onBack }: { onBack: () => void }) {
 
       {/* Results */}
       <div className="grid grid-cols-2 gap-2">
-        <div className="p-3 rounded-xl border border-indigo-500/10 bg-indigo-500/[0.04]">
-          <p className="text-[9px] text-indigo-400/60 mb-1">Suggested Price</p>
-          <p className="text-[18px] font-semibold text-indigo-400">${result.suggested}</p>
+        <div className="p-3 rounded-xl border border-[#637B90]/10 bg-[#637B90]/[0.04]">
+          <p className="text-[9px] text-[#7890A3]/60 mb-1">Suggested Price</p>
+          <p className="text-[18px] font-semibold text-[#7890A3]">${result.suggested}</p>
         </div>
-        <div className="p-3 rounded-xl border border-emerald-500/10 bg-emerald-500/[0.04]">
-          <p className="text-[9px] text-emerald-400/60 mb-1">Actual Margin</p>
-          <p className="text-[18px] font-semibold text-emerald-400">{result.margin}%</p>
+        <div className="p-3 rounded-xl border border-[#6F8F7A]/10 bg-[#6F8F7A]/[0.04]">
+          <p className="text-[9px] text-[#6F8F7A]/60 mb-1">Actual Margin</p>
+          <p className="text-[18px] font-semibold text-[#6F8F7A]">{result.margin}%</p>
         </div>
-        <div className="p-3 rounded-xl border border-cyan-500/10 bg-cyan-500/[0.04]">
-          <p className="text-[9px] text-cyan-400/60 mb-1">Profit / Order</p>
-          <p className="text-[18px] font-semibold text-cyan-400">${result.profit}</p>
+        <div className="p-3 rounded-xl border border-[#637B90]/10 bg-[#637B90]/[0.04]">
+          <p className="text-[9px] text-[#7890A3]/60 mb-1">Profit / Order</p>
+          <p className="text-[18px] font-semibold text-[#7890A3]">${result.profit}</p>
         </div>
-        <div className="p-3 rounded-xl border border-amber-500/10 bg-amber-500/[0.04]">
-          <p className="text-[9px] text-amber-400/60 mb-1">Break-even ROAS</p>
-          <p className="text-[18px] font-semibold text-amber-400">{result.breakEven}x</p>
+        <div className="p-3 rounded-xl border border-[#A68A5B]/10 bg-[#A68A5B]/[0.04]">
+          <p className="text-[9px] text-[#A68A5B]/60 mb-1">Break-even ROAS</p>
+          <p className="text-[18px] font-semibold text-[#A68A5B]">{result.breakEven}x</p>
         </div>
       </div>
 
       {/* Upsell */}
-      <div className="mt-3 p-3 rounded-xl border border-violet-500/10 bg-violet-500/[0.04]">
+      <div className="mt-3 p-3 rounded-xl border border-[#637B90]/10 bg-[#637B90]/[0.04]">
         <div className="flex items-center gap-2">
-          <Zap className="h-4 w-4 text-violet-400" />
+          <Zap className="h-4 w-4 text-[#7890A3]" />
           <div>
-            <p className="text-[10px] text-violet-400/60">Upsell Bundle Suggestion</p>
-            <p className="text-[13px] font-semibold text-violet-400">${result.upsell} bundle price (+35% AOV)</p>
+            <p className="text-[10px] text-[#7890A3]/60">Upsell Bundle Suggestion</p>
+            <p className="text-[13px] font-semibold text-[#7890A3]">${result.upsell} bundle price (+35% AOV)</p>
           </div>
         </div>
       </div>
@@ -873,8 +873,8 @@ function StoreAnalytics({ onBack }: { onBack: () => void }) {
 
       {/* Locked State */}
       <div className="flex flex-col items-center text-center py-8 mb-4">
-        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-500/[0.06] border border-emerald-500/15 mb-3">
-          <BarChart3 className="h-6 w-6 text-emerald-400/40" />
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#6F8F7A]/[0.06] border border-[#6F8F7A]/15 mb-3">
+          <BarChart3 className="h-6 w-6 text-[#6F8F7A]/40" />
         </div>
         <h3 className="text-[14px] font-semibold text-white/70 mb-1">Connect Shopify to unlock</h3>
         <p className="text-[11px] text-slate-500 max-w-xs">Link your store to see live revenue, orders, conversion rates, and more.</p>

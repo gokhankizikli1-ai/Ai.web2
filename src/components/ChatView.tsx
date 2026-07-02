@@ -181,10 +181,17 @@ export default function ChatView({
             {/* Message turns with comfortable spacing */}
             <div className="space-y-5">
               <AnimatePresence mode="popLayout" initial={false}>
-                {messages.map((message, index) => (
+                {messages.map((message, index) => {
+                  const isStreamingThis = isLoading && index === lastAssistantIndex;
+                  return (
                   <motion.div
                     key={message.id}
-                    layout
+                    // Don't run layout animation on the actively streaming
+                    // message: with `layout` on, framer re-measures every
+                    // token and nudges the whole list, which reads as the
+                    // answer flickering while it settles. The message
+                    // instead grows in place and settles once on completion.
+                    layout={isStreamingThis ? false : 'position'}
                     initial={{ opacity: 0, y: 6 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -4 }}
@@ -204,7 +211,8 @@ export default function ChatView({
                       isGenerating={isLoading && index === lastAssistantIndex}
                     />
                   </motion.div>
-                ))}
+                  );
+                })}
               </AnimatePresence>
 
               {/* Phase 10 fix — tool activity chip. Shows BEFORE the
@@ -239,10 +247,10 @@ export default function ChatView({
                         />
                       )}
                       {toolActivity.status === 'completed' && (
-                        <div className="h-2 w-2 rounded-full bg-emerald-400" aria-label="completed" />
+                        <div className="h-2 w-2 rounded-full bg-[#6F8F7A]" aria-label="completed" />
                       )}
                       {toolActivity.status === 'failed' && (
-                        <div className="h-2 w-2 rounded-full bg-red-400" aria-label="failed" />
+                        <div className="h-2 w-2 rounded-full bg-[#B76E79]" aria-label="failed" />
                       )}
                       <span className="text-[11px] text-slate-300">{toolActivity.label}</span>
                     </div>
@@ -285,16 +293,16 @@ export default function ChatView({
                   animate={{ opacity: 1, y: 0 }}
                   className="flex gap-2.5"
                 >
-                  <div className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md bg-red-500/10">
-                    <AlertTriangle className="h-3 w-3 text-red-400/60" />
+                  <div className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md bg-[#B76E79]/10">
+                    <AlertTriangle className="h-3 w-3 text-[#B76E79]/60" />
                   </div>
-                  <div className="rounded-2xl rounded-tl-sm bg-red-500/[0.02] border border-red-500/[0.06] px-4 py-2.5 max-w-[85%]">
-                    <p className="text-[12px] text-red-300/70 mb-2">{error}</p>
+                  <div className="rounded-2xl rounded-tl-sm bg-[#B76E79]/[0.02] border border-[#B76E79]/[0.06] px-4 py-2.5 max-w-[85%]">
+                    <p className="text-[12px] text-[#B76E79]/70 mb-2">{error}</p>
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={handleRetry}
-                      className="h-6 gap-1.5 text-[11px] text-red-400/60 hover:text-red-300 hover:bg-red-500/[0.06] rounded-lg px-2"
+                      className="h-6 gap-1.5 text-[11px] text-[#B76E79]/60 hover:text-[#B76E79] hover:bg-[#B76E79]/[0.06] rounded-lg px-2"
                     >
                       <RefreshCw className="h-3 w-3" /> Retry
                     </Button>

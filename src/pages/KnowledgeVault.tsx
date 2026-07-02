@@ -13,10 +13,10 @@ const fadeUp = (delay = 0) => ({
 });
 
 const COLLECTIONS = [
-  { name: 'Startup Research', count: 24, icon: FileText, color: 'text-purple-400', bg: 'bg-purple-500/[0.06]' },
-  { name: 'Product Docs', count: 12, icon: FileText, color: 'text-emerald-400', bg: 'bg-emerald-500/[0.06]' },
-  { name: 'Market Analysis', count: 8, icon: Brain, color: 'text-blue-400', bg: 'bg-blue-500/[0.06]' },
-  { name: 'Brand Guidelines', count: 5, icon: BookOpen, color: 'text-pink-400', bg: 'bg-pink-500/[0.06]' },
+  { name: 'Startup Research', count: 24, icon: FileText, color: 'text-[#7890A3]', bg: 'bg-[#52677A]/[0.06]' },
+  { name: 'Product Docs', count: 12, icon: FileText, color: 'text-[#7890A3]', bg: 'bg-[#52677A]/[0.06]' },
+  { name: 'Market Analysis', count: 8, icon: Brain, color: 'text-[#7890A3]', bg: 'bg-[#52677A]/[0.06]' },
+  { name: 'Brand Guidelines', count: 5, icon: BookOpen, color: 'text-[#7890A3]', bg: 'bg-[#52677A]/[0.06]' },
 ];
 
 const SOURCES = [
@@ -37,8 +37,8 @@ export default function KnowledgeVault() {
 
           <motion.div {...fadeUp(0)} className="mb-8">
             <div className="flex items-center gap-3 mb-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/[0.1] border border-amber-500/15">
-                <BookOpen className="h-4 w-4 text-amber-400" />
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#52677A]/[0.1] border border-[#52677A]/15">
+                <BookOpen className="h-4 w-4 text-[#7890A3]" />
               </div>
               <h1 className="text-2xl font-semibold text-white tracking-tight">Knowledge Vault</h1>
             </div>
@@ -84,7 +84,7 @@ export default function KnowledgeVault() {
                     <p className="text-[12px] text-slate-300 truncate">{s.name}</p>
                     <p className="text-[10px] text-slate-600">{s.type} · {s.size} · {s.date}</p>
                   </div>
-                  <span className={`text-[9px] px-2 py-0.5 rounded-full ${s.indexed ? 'bg-emerald-500/[0.08] text-emerald-400' : 'bg-amber-500/[0.08] text-amber-400'}`}>
+                  <span className={`text-[9px] px-2 py-0.5 rounded-full ${s.indexed ? 'bg-[#6F8F7A]/[0.08] text-[#6F8F7A]' : 'bg-[#A68A5B]/[0.08] text-[#A68A5B]'}`}>
                     {s.indexed ? 'Indexed' : 'Pending'}
                   </span>
                 </div>
@@ -93,11 +93,11 @@ export default function KnowledgeVault() {
           </motion.div>
 
           {/* Memory Status */}
-          <motion.div {...fadeUp(0.2)} className="mb-6 p-4 rounded-2xl border border-emerald-500/10 bg-emerald-500/[0.02]">
+          <motion.div {...fadeUp(0.2)} className="mb-6 p-4 rounded-2xl border border-[#6F8F7A]/10 bg-[#6F8F7A]/[0.02]">
             <div className="flex items-center gap-2 mb-2">
-              <Brain className="w-4 h-4 text-emerald-400" />
+              <Brain className="w-4 h-4 text-[#6F8F7A]" />
               <span className="text-[12px] font-medium text-white">Memory Status</span>
-              <span className="text-[10px] text-emerald-400 ml-auto">Active</span>
+              <span className="text-[10px] text-[#6F8F7A] ml-auto">Active</span>
             </div>
             <p className="text-[11px] text-slate-500">49 documents indexed · 12 collections · Last indexed: 2 hours ago</p>
           </motion.div>
@@ -112,18 +112,18 @@ export default function KnowledgeVault() {
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   placeholder="Ask anything about your documents..."
-                  className="w-full h-12 pl-11 pr-4 rounded-xl bg-white/[0.02] border border-white/[0.04] text-[14px] text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-amber-500/20 focus:bg-white/[0.03] transition-all"
+                  className="w-full h-12 pl-11 pr-4 rounded-xl bg-white/[0.02] border border-white/[0.04] text-[14px] text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-[#52677A]/20 focus:bg-white/[0.03] transition-all"
                 />
               </div>
-              <button className="h-12 px-5 rounded-xl bg-amber-500/[0.1] border border-amber-500/15 text-amber-400 hover:bg-amber-500/[0.15] transition-colors">
+              <button className="h-12 px-5 rounded-xl bg-[#52677A]/[0.1] border border-[#52677A]/15 text-[#7890A3] hover:bg-[#52677A]/[0.15] transition-colors">
                 <Search className="w-4 h-4" />
               </button>
             </div>
           </motion.div>
 
           {/* Placeholder notice */}
-          <motion.div {...fadeUp(0.3)} className="mt-6 p-4 rounded-2xl border border-amber-500/10 bg-amber-500/[0.02] text-center">
-            <AlertCircle className="w-5 h-5 text-amber-400 mx-auto mb-2" />
+          <motion.div {...fadeUp(0.3)} className="mt-6 p-4 rounded-2xl border border-[#A68A5B]/10 bg-[#A68A5B]/[0.02] text-center">
+            <AlertCircle className="w-5 h-5 text-[#A68A5B] mx-auto mb-2" />
             <p className="text-[11px] text-slate-500">Knowledge Vault backend not fully connected. Upload and indexing are simulated.</p>
           </motion.div>
 

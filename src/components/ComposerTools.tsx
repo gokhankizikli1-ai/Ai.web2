@@ -127,8 +127,8 @@ export default function ComposerTools({
                         onClick={() => { onAttachPhoto(); setOpen(false); }}
                         className="w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-all duration-150 hover:bg-white/[0.03]"
                       >
-                        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-cyan-500/[0.08] border border-cyan-500/[0.12]">
-                          <ImageIcon className="h-3 w-3 text-cyan-400/80" />
+                        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#52677A]/[0.08] border border-[#52677A]/[0.12]">
+                          <ImageIcon className="h-3 w-3 text-[#52677A]/80" />
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="text-[11px] font-medium text-slate-300">Photo Library</div>
@@ -143,8 +143,8 @@ export default function ComposerTools({
                         onClick={() => { onAttachCamera(); setOpen(false); }}
                         className="w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-all duration-150 hover:bg-white/[0.03]"
                       >
-                        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-violet-500/[0.08] border border-violet-500/[0.12]">
-                          <Camera className="h-3 w-3 text-violet-400/80" />
+                        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#52677A]/[0.08] border border-[#52677A]/[0.12]">
+                          <Camera className="h-3 w-3 text-[#52677A]/80" />
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="text-[11px] font-medium text-slate-300">Take Photo or Video</div>
@@ -159,8 +159,8 @@ export default function ComposerTools({
                         onClick={() => { onAttachFile(); setOpen(false); }}
                         className="w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-all duration-150 hover:bg-white/[0.03]"
                       >
-                        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-amber-500/[0.08] border border-amber-500/[0.12]">
-                          <FolderOpen className="h-3 w-3 text-amber-400/80" />
+                        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#52677A]/[0.08] border border-[#52677A]/[0.12]">
+                          <FolderOpen className="h-3 w-3 text-[#52677A]/80" />
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="text-[11px] font-medium text-slate-300">Choose Files</div>

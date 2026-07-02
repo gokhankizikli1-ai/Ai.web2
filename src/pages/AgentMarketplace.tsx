@@ -43,31 +43,31 @@ const AGENTS: MarketplaceAgent[] = [
 ];
 
 const COLOR_ICON: Record<string, string> = {
-  orange: 'text-orange-400', emerald: 'text-emerald-400', blue: 'text-blue-400',
-  cyan: 'text-cyan-400', violet: 'text-violet-400', pink: 'text-pink-400',
-  red: 'text-red-400', teal: 'text-teal-400', indigo: 'text-indigo-400',
-  amber: 'text-amber-400', slate: 'text-slate-400', green: 'text-green-400',
+  orange: 'text-[#7890A3]', emerald: 'text-[#7890A3]', blue: 'text-[#7890A3]',
+  cyan: 'text-[#7890A3]', violet: 'text-[#7890A3]', pink: 'text-[#7890A3]',
+  red: 'text-[#7890A3]', teal: 'text-[#7890A3]', indigo: 'text-[#7890A3]',
+  amber: 'text-[#7890A3]', slate: 'text-slate-400', green: 'text-[#7890A3]',
 };
 
 const COLOR_BG_ICON: Record<string, string> = {
-  orange: 'bg-orange-500/[0.06]', emerald: 'bg-emerald-500/[0.06]', blue: 'bg-blue-500/[0.06]',
-  cyan: 'bg-cyan-500/[0.06]', violet: 'bg-violet-500/[0.06]', pink: 'bg-pink-500/[0.06]',
-  red: 'bg-red-500/[0.06]', teal: 'bg-teal-500/[0.06]', indigo: 'bg-indigo-500/[0.06]',
-  amber: 'bg-amber-500/[0.06]', slate: 'bg-slate-500/[0.06]', green: 'bg-green-500/[0.06]',
+  orange: 'bg-[#52677A]/[0.06]', emerald: 'bg-[#52677A]/[0.06]', blue: 'bg-[#52677A]/[0.06]',
+  cyan: 'bg-[#52677A]/[0.06]', violet: 'bg-[#52677A]/[0.06]', pink: 'bg-[#52677A]/[0.06]',
+  red: 'bg-[#52677A]/[0.06]', teal: 'bg-[#52677A]/[0.06]', indigo: 'bg-[#52677A]/[0.06]',
+  amber: 'bg-[#52677A]/[0.06]', slate: 'bg-slate-500/[0.06]', green: 'bg-[#52677A]/[0.06]',
 };
 
 const COLOR_BORDER_ICON: Record<string, string> = {
-  orange: 'border-orange-500/15', emerald: 'border-emerald-500/15', blue: 'border-blue-500/15',
-  cyan: 'border-cyan-500/15', violet: 'border-violet-500/15', pink: 'border-pink-500/15',
-  red: 'border-red-500/15', teal: 'border-teal-500/15', indigo: 'border-indigo-500/15',
-  amber: 'border-amber-500/15', slate: 'border-slate-500/15', green: 'border-green-500/15',
+  orange: 'border-[#52677A]/15', emerald: 'border-[#52677A]/15', blue: 'border-[#52677A]/15',
+  cyan: 'border-[#52677A]/15', violet: 'border-[#52677A]/15', pink: 'border-[#52677A]/15',
+  red: 'border-[#52677A]/15', teal: 'border-[#52677A]/15', indigo: 'border-[#52677A]/15',
+  amber: 'border-[#52677A]/15', slate: 'border-slate-500/15', green: 'border-[#52677A]/15',
 };
 
 const COLOR_GLOW: Record<string, string> = {
-  orange: 'group-hover:shadow-[0_0_20px_-4px_rgba(251,146,60,0.08)]', emerald: 'group-hover:shadow-[0_0_20px_-4px_rgba(52,211,153,0.08)]', blue: 'group-hover:shadow-[0_0_20px_-4px_rgba(96,165,250,0.08)]',
-  cyan: 'group-hover:shadow-[0_0_20px_-4px_rgba(34,211,238,0.08)]', violet: 'group-hover:shadow-[0_0_20px_-4px_rgba(167,139,250,0.08)]', pink: 'group-hover:shadow-[0_0_20px_-4px_rgba(244,114,182,0.08)]',
-  red: 'group-hover:shadow-[0_0_20px_-4px_rgba(248,113,113,0.08)]', teal: 'group-hover:shadow-[0_0_20px_-4px_rgba(45,212,191,0.08)]', indigo: 'group-hover:shadow-[0_0_20px_-4px_rgba(129,140,248,0.08)]',
-  amber: 'group-hover:shadow-[0_0_20px_-4px_rgba(251,191,36,0.08)]', slate: 'group-hover:shadow-[0_0_20px_-4px_rgba(148,163,184,0.08)]', green: 'group-hover:shadow-[0_0_20px_-4px_rgba(74,222,128,0.08)]',
+  orange: 'group-hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]', emerald: 'group-hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]', blue: 'group-hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]',
+  cyan: 'group-hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]', violet: 'group-hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]', pink: 'group-hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]',
+  red: 'group-hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]', teal: 'group-hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]', indigo: 'group-hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]',
+  amber: 'group-hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]', slate: 'group-hover:shadow-[0_0_20px_-4px_rgba(148,163,184,0.08)]', green: 'group-hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]',
 };
 
 export default function AgentMarketplace() {
@@ -90,10 +90,10 @@ export default function AgentMarketplace() {
   }, 0);
 
   const stats = [
-    { label: 'Installed', value: `${installedCount}`, icon: CheckCircle2, color: 'text-emerald-400', bg: 'bg-emerald-500/[0.06]', border: 'border-emerald-500/10' },
-    { label: 'Available', value: `${AGENTS.length}`, icon: Bot, color: 'text-blue-400', bg: 'bg-blue-500/[0.06]', border: 'border-blue-500/10' },
-    { label: 'Top Rating', value: `${topRating}`, icon: Trophy, color: 'text-amber-400', bg: 'bg-amber-500/[0.06]', border: 'border-amber-500/10' },
-    { label: 'Downloads', value: `${(totalDownloads / 1000).toFixed(1)}k`, icon: Download, color: 'text-violet-400', bg: 'bg-violet-500/[0.06]', border: 'border-violet-500/10' },
+    { label: 'Installed', value: `${installedCount}`, icon: CheckCircle2, color: 'text-[#6F8F7A]', bg: 'bg-[#6F8F7A]/[0.06]', border: 'border-[#6F8F7A]/10' },
+    { label: 'Available', value: `${AGENTS.length}`, icon: Bot, color: 'text-[#7890A3]', bg: 'bg-[#52677A]/[0.06]', border: 'border-[#52677A]/10' },
+    { label: 'Top Rating', value: `${topRating}`, icon: Trophy, color: 'text-[#7890A3]', bg: 'bg-[#52677A]/[0.06]', border: 'border-[#52677A]/10' },
+    { label: 'Downloads', value: `${(totalDownloads / 1000).toFixed(1)}k`, icon: Download, color: 'text-[#7890A3]', bg: 'bg-[#52677A]/[0.06]', border: 'border-[#52677A]/10' },
   ];
 
   return (
@@ -125,11 +125,11 @@ export default function AgentMarketplace() {
           className="mb-6"
         >
           <div className="flex items-center gap-3 mb-2">
-            <div className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-violet-500/[0.06] border border-violet-500/15">
-              <Bot className="h-5 w-5 text-violet-400/70" />
+            <div className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-[#52677A]/[0.06] border border-[#52677A]/15">
+              <Bot className="h-5 w-5 text-[#7890A3]/70" />
               {/* Orbital ring */}
               <motion.div
-                className="absolute inset-0 rounded-xl border border-violet-500/[0.08]"
+                className="absolute inset-0 rounded-xl border border-[#52677A]/[0.08]"
                 animate={{ rotate: 360 }}
                 transition={{ duration: 8, repeat: Infinity, ease: 'linear' }}
                 style={{ borderStyle: 'dashed' }}
@@ -177,9 +177,9 @@ export default function AgentMarketplace() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.15 }}
-          className="mb-4 p-3 rounded-xl border border-amber-500/10 bg-amber-500/[0.02] flex items-center gap-2.5"
+          className="mb-4 p-3 rounded-xl border border-[#A68A5B]/10 bg-[#A68A5B]/[0.02] flex items-center gap-2.5"
         >
-          <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+          <AlertCircle className="w-4 h-4 text-[#A68A5B] shrink-0" />
           <p className="text-[11px] text-slate-500">
             All agents shown are demonstration previews. Install actions are simulated. Connect your backend to enable real agent execution.
           </p>
@@ -193,7 +193,7 @@ export default function AgentMarketplace() {
           className="mb-6 space-y-3"
         >
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2 rounded-xl bg-white/[0.015] border border-white/[0.04] px-3.5 py-2.5 max-w-sm focus-within:border-violet-500/15 focus-within:bg-white/[0.02] transition-all w-full sm:w-auto">
+            <div className="flex items-center gap-2 rounded-xl bg-white/[0.015] border border-white/[0.04] px-3.5 py-2.5 max-w-sm focus-within:border-[#52677A]/15 focus-within:bg-white/[0.02] transition-all w-full sm:w-auto">
               <Search className="h-3.5 w-3.5 text-[#64748B] shrink-0" />
               <input
                 type="text"
@@ -251,7 +251,7 @@ export default function AgentMarketplace() {
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="flex items-center gap-1 text-[9px] font-medium text-emerald-400 bg-emerald-500/[0.06] border border-emerald-500/10 px-1.5 py-0.5 rounded-full">
+                        <span className="flex items-center gap-1 text-[9px] font-medium text-[#7890A3] bg-[#52677A]/[0.06] border border-[#52677A]/10 px-1.5 py-0.5 rounded-full">
                           <Zap className="h-2.5 w-2.5" /> Featured
                         </span>
                         <span className="text-[9px] text-slate-600">by {featured.creator}</span>
@@ -263,7 +263,7 @@ export default function AgentMarketplace() {
                           {[1, 2, 3, 4, 5].map((s) => (
                             <Star
                               key={s}
-                              className={`h-3 w-3 ${s <= Math.floor(featured.rating) ? 'text-amber-400 fill-amber-400' : 'text-[#64748B]'}`}
+                              className={`h-3 w-3 ${s <= Math.floor(featured.rating) ? 'text-[#7890A3] fill-[#7890A3]' : 'text-[#64748B]'}`}
                             />
                           ))}
                           <span className="text-[11px] text-slate-400 ml-1">{featured.rating}</span>
@@ -274,7 +274,7 @@ export default function AgentMarketplace() {
                       </div>
                     </div>
                     <div className="shrink-0 self-center">
-                      <div className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500/[0.06] text-emerald-400 border border-emerald-500/10 text-[11px] font-medium">
+                      <div className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#6F8F7A]/[0.06] text-[#6F8F7A] border border-[#6F8F7A]/10 text-[11px] font-medium">
                         <CheckCircle2 className="h-3.5 w-3.5" /> Installed
                       </div>
                     </div>
@@ -309,7 +309,7 @@ export default function AgentMarketplace() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
                       <span className="text-[13px] font-medium text-slate-200 group-hover:text-white transition-colors">{agent.name}</span>
-                      {agent.installed && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400/60 shrink-0" />}
+                      {agent.installed && <CheckCircle2 className="h-3.5 w-3.5 text-[#6F8F7A]/60 shrink-0" />}
                     </div>
                     <p className="text-[11px] text-slate-600 leading-relaxed mt-0.5">{agent.description}</p>
                   </div>
@@ -322,7 +322,7 @@ export default function AgentMarketplace() {
                       {[1, 2, 3, 4, 5].map((s) => (
                         <Star
                           key={s}
-                          className={`h-2.5 w-2.5 ${s <= Math.floor(agent.rating) ? 'text-amber-400/50 fill-amber-400/50' : 'text-[#64748B]'}`}
+                          className={`h-2.5 w-2.5 ${s <= Math.floor(agent.rating) ? 'text-[#7890A3]/50 fill-[#7890A3]/50' : 'text-[#64748B]'}`}
                         />
                       ))}
                       <span className="text-slate-500 ml-0.5">{agent.rating}</span>
@@ -348,7 +348,7 @@ export default function AgentMarketplace() {
                 <button
                   className={`w-full h-9 rounded-xl text-[11px] font-medium transition-all duration-200 flex items-center justify-center gap-1.5 ${
                     agent.installed
-                      ? 'bg-emerald-500/[0.06] text-emerald-400/70 border border-emerald-500/10 cursor-default'
+                      ? 'bg-[#6F8F7A]/[0.06] text-[#6F8F7A]/70 border border-[#6F8F7A]/10 cursor-default'
                       : 'bg-white/[0.03] text-slate-400 hover:text-white hover:bg-white/[0.06] border border-white/[0.05] hover:border-white/[0.1] active:scale-[0.98]'
                   }`}
                 >
@@ -375,7 +375,7 @@ export default function AgentMarketplace() {
             className="flex flex-col items-center justify-center py-16 text-center"
           >
             <div className="relative p-8 rounded-2xl border border-white/[0.04] bg-white/[0.015] max-w-sm w-full">
-              <div className="absolute -top-6 left-1/2 -translate-x-1/2 w-16 h-16 bg-violet-500/[0.03] rounded-full blur-xl pointer-events-none" />
+              <div className="absolute -top-6 left-1/2 -translate-x-1/2 w-16 h-16 bg-[#52677A]/[0.03] rounded-full blur-xl pointer-events-none" />
               <Search className="h-8 w-8 text-[#64748B] mx-auto mb-3" />
               <p className="text-[14px] font-medium text-slate-400 mb-1">No agents found</p>
               <p className="text-[12px] text-slate-600">Try adjusting your search or category filter.</p>

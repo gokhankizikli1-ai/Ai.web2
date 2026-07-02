@@ -20,29 +20,29 @@ function StatusIcon({ status }: { status: AIActivity['status'] }) {
   if (status === 'active') {
     return (
       <span className="relative flex h-2 w-2">
-        <span className="absolute inline-flex h-full w-full rounded-full bg-cyan-400/50 animate-ping" style={{ animationDuration: '2s' }} />
-        <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400" />
+        <span className="absolute inline-flex h-full w-full rounded-full bg-[#52677A]/50 animate-ping" style={{ animationDuration: '2s' }} />
+        <span className="relative inline-flex rounded-full h-2 w-2 bg-[#52677A]" />
       </span>
     );
   }
-  if (status === 'completed') return <CheckCircle2 className="h-3 w-3 text-emerald-400/60" />;
+  if (status === 'completed') return <CheckCircle2 className="h-3 w-3 text-[#6F8F7A]/60" />;
   return <Clock className="h-3 w-3 text-[#64748B]" />;
 }
 
 function CategoryIcon({ message }: { message: string }) {
   const lower = message.toLowerCase();
-  if (lower.includes('code') || lower.includes('debug')) return <Code2 className="h-3 w-3 text-cyan-400/50" />;
-  if (lower.includes('research') || lower.includes('analysis')) return <Search className="h-3 w-3 text-violet-400/50" />;
-  if (lower.includes('write') || lower.includes('draft')) return <FileText className="h-3 w-3 text-blue-400/50" />;
-  if (lower.includes('market') || lower.includes('trade')) return <TrendingUp className="h-3 w-3 text-emerald-400/50" />;
-  return <Brain className="h-3 w-3 text-cyan-400/50" />;
+  if (lower.includes('code') || lower.includes('debug')) return <Code2 className="h-3 w-3 text-[#52677A]/50" />;
+  if (lower.includes('research') || lower.includes('analysis')) return <Search className="h-3 w-3 text-[#52677A]/50" />;
+  if (lower.includes('write') || lower.includes('draft')) return <FileText className="h-3 w-3 text-[#52677A]/50" />;
+  if (lower.includes('market') || lower.includes('trade')) return <TrendingUp className="h-3 w-3 text-[#52677A]/50" />;
+  return <Brain className="h-3 w-3 text-[#52677A]/50" />;
 }
 
 function ProgressBar({ value }: { value: number }) {
   return (
     <div className="w-10 h-[2px] bg-white/[0.03] rounded-full overflow-hidden">
       <motion.div
-        className="h-full bg-cyan-400/40 rounded-full"
+        className="h-full bg-[#52677A]/40 rounded-full"
         initial={{ width: 0 }}
         animate={{ width: `${value}%` }}
         transition={{ duration: 0.8, ease: 'easeOut' }}
@@ -85,10 +85,10 @@ export default function AIActivityFeed({ activities, events }: AIActivityFeedPro
       >
         <div className="flex items-center gap-2.5">
           <div className="relative flex items-center justify-center">
-            <Activity className="h-3 w-3 text-cyan-400/50" />
+            <Activity className="h-3 w-3 text-[#52677A]/50" />
             {activeCount > 0 && (
               <motion.span
-                className="absolute -top-0.5 -right-0.5 h-[5px] w-[5px] rounded-full bg-cyan-400"
+                className="absolute -top-0.5 -right-0.5 h-[5px] w-[5px] rounded-full bg-[#52677A]"
                 animate={{ scale: [1, 1.4, 1], opacity: [1, 0.6, 1] }}
                 transition={{ duration: 2, repeat: Infinity }}
               />
@@ -96,10 +96,10 @@ export default function AIActivityFeed({ activities, events }: AIActivityFeedPro
           </div>
           <span className="text-[10px] text-slate-600 font-semibold uppercase tracking-wider">Activity</span>
           {activeCount > 0 && (
-            <span className="text-[10px] text-cyan-400/70 font-medium flex items-center gap-1">
+            <span className="text-[10px] text-[#52677A]/70 font-medium flex items-center gap-1">
               <span className="relative flex h-1.5 w-1.5">
-                <span className="absolute inline-flex h-full w-full rounded-full bg-cyan-400/40 animate-ping" style={{ animationDuration: '2s' }} />
-                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-cyan-400" />
+                <span className="absolute inline-flex h-full w-full rounded-full bg-[#52677A]/40 animate-ping" style={{ animationDuration: '2s' }} />
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[#52677A]" />
               </span>
               {activeCount} active
             </span>
@@ -128,7 +128,7 @@ export default function AIActivityFeed({ activities, events }: AIActivityFeedPro
                     <div className="flex items-center gap-1.5">
                       <span className="text-[10px] text-slate-500 truncate">{activity.message}</span>
                       {activity.progress !== undefined && activity.status === 'active' && (
-                        <span className="text-[9px] text-cyan-400/50 shrink-0 font-mono">{activity.progress}%</span>
+                        <span className="text-[9px] text-[#52677A]/50 shrink-0 font-mono">{activity.progress}%</span>
                       )}
                     </div>
                     {activity.detail && (
