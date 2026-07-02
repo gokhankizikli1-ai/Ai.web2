@@ -85,7 +85,7 @@ export default function MemoryGraph() {
       ref={containerRef}
       className="relative w-full h-[280px] rounded-xl overflow-hidden select-none"
       style={{
-        background: 'linear-gradient(180deg, rgba(27,34,48,0.3) 0%, rgba(17,21,28,0.4) 100%)',
+        background: 'linear-gradient(180deg, rgba(27,34,48,0.3) 0%, rgba(17, 24, 32,0.4) 100%)',
         border: '1px solid rgba(255,255,255,0.06)',
         boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.03), 0 4px 16px rgba(0,0,0,0.1)',
       }}
@@ -254,7 +254,7 @@ export default function MemoryGraph() {
                     ? (isCore ? 'rgba(34,211,238,0.9)' : node.colorKey === 'warm' ? 'rgba(251,191,36,0.85)' : node.colorKey === 'cool' ? 'rgba(167,139,250,0.85)' : 'rgba(52,211,153,0.85)')
                     : isConnected
                     ? (isCore ? 'rgba(34,211,238,0.6)' : node.colorKey === 'warm' ? 'rgba(251,191,36,0.55)' : node.colorKey === 'cool' ? 'rgba(167,139,250,0.55)' : 'rgba(52,211,153,0.55)')
-                    : (isCore ? 'rgba(34,211,238,0.45)' : 'rgba(148,163,184,0.35)'),
+                    : (isCore ? 'rgba(34,211,238,0.45)' : 'rgba(169, 183, 198,0.35)'),
                   transition: 'color 0.2s ease',
                 }}
               />
@@ -264,7 +264,7 @@ export default function MemoryGraph() {
             <span
               className="text-[10px] font-medium whitespace-nowrap transition-colors duration-200"
               style={{
-                color: isHovered ? 'rgba(255,255,255,0.9)' : isConnected ? 'rgba(203,213,225,0.6)' : isCore ? 'rgba(203,213,225,0.5)' : 'rgba(148,163,184,0.35)',
+                color: isHovered ? 'rgba(255,255,255,0.9)' : isConnected ? 'rgba(203,213,225,0.6)' : isCore ? 'rgba(203,213,225,0.5)' : 'rgba(169, 183, 198,0.35)',
               }}
             >
               {node.label}
@@ -302,7 +302,7 @@ export default function MemoryGraph() {
         ].map((item) => (
           <div key={item.label} className="flex items-center gap-1">
             <div className="w-1.5 h-1.5 rounded-full" style={{ background: item.color, boxShadow: `0 0 3px ${item.color}` }} />
-            <span className="text-[9px] text-slate-500">{item.label}</span>
+            <span className="text-[9px] text-[#7F8FA3]">{item.label}</span>
           </div>
         ))}
       </div>

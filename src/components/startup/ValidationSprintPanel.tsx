@@ -32,7 +32,7 @@ export default function ValidationSprintPanel({ sprint }: { sprint: SprintDay[] 
       {!expanded && sprint.length > VISIBLE_BY_DEFAULT && (
         <button
           onClick={() => setExpanded(true)}
-          className="mt-3 flex items-center gap-1 text-[11px] text-[#637B90] hover:text-[#7890A3] transition-colors"
+          className="mt-3 flex items-center gap-1 text-[11px] text-[#8FB4CC] hover:text-[#9CBBD1] transition-colors"
         >
           <ChevronDown className="h-3 w-3" />
           Show full sprint (Day 3–{sprint.length})

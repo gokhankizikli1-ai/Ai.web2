@@ -29,7 +29,7 @@ function ModeBadge({ mode }: { mode: AIMode }) {
     study: 'Study',
   };
   return (
-    <span className="text-[11px] text-[#52677A]/70 bg-[#52677A]/[0.06] border border-[#52677A]/10 px-2 py-0.5 rounded-md">
+    <span className="text-[11px] text-[#7EA6BF]/70 bg-[#7EA6BF]/[0.06] border border-[#7EA6BF]/10 px-2 py-0.5 rounded-md">
       {labels[mode]}
     </span>
   );
@@ -39,8 +39,8 @@ function StatusPulse({ active }: { active: boolean }) {
   if (!active) return <span className="h-1.5 w-1.5 rounded-full bg-slate-700" />;
   return (
     <span className="relative flex h-1.5 w-1.5">
-      <span className="absolute inline-flex h-full w-full rounded-full bg-[#7890A3]/50 animate-ping" style={{ animationDuration: '2s' }} />
-      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[#7890A3]" />
+      <span className="absolute inline-flex h-full w-full rounded-full bg-[#9CBBD1]/50 animate-ping" style={{ animationDuration: '2s' }} />
+      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[#9CBBD1]" />
     </span>
   );
 }
@@ -101,30 +101,30 @@ export default function RightSidebar({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <StatusPulse active={isLoading} />
-              <span className="text-[11px] text-slate-400">{isLoading ? 'Processing' : 'Idle'}</span>
+              <span className="text-[11px] text-[#A9B7C6]">{isLoading ? 'Processing' : 'Idle'}</span>
             </div>
             <ModeBadge mode={aiMode} />
           </div>
           {isLoading && (
             <div className="h-1 bg-white/[0.03] rounded-full overflow-hidden">
               <motion.div
-                className="h-full bg-[#7890A3]/40 rounded-full"
+                className="h-full bg-[#9CBBD1]/40 rounded-full"
                 animate={{ width: ['0%', '60%', '80%', '40%', '90%'] }}
                 transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
               />
             </div>
           )}
           <div className="flex items-center justify-between text-[11px]">
-            <span className="text-slate-600">Workspace</span>
-            <span className="text-slate-400 capitalize">{activeTab}</span>
+            <span className="text-[#7F8FA3]">Workspace</span>
+            <span className="text-[#A9B7C6] capitalize">{activeTab}</span>
           </div>
           <div className="flex items-center justify-between text-[11px]">
-            <span className="text-slate-600">Messages</span>
-            <span className="text-slate-400">{activeSession.messages.length}</span>
+            <span className="text-[#7F8FA3]">Messages</span>
+            <span className="text-[#A9B7C6]">{activeSession.messages.length}</span>
           </div>
           <div className="flex items-center justify-between text-[11px]">
-            <span className="text-slate-600">Context size</span>
-            <span className="text-slate-400 font-mono">{Math.round(activeSession.messages.reduce((a, m) => a + m.content.length, 0) / 1000 * 10) / 10}k</span>
+            <span className="text-[#7F8FA3]">Context size</span>
+            <span className="text-[#A9B7C6] font-mono">{Math.round(activeSession.messages.reduce((a, m) => a + m.content.length, 0) / 1000 * 10) / 10}k</span>
           </div>
           <MiniSparkline data={sparkData} />
         </div>
@@ -137,18 +137,18 @@ export default function RightSidebar({
       content: (
         <div className="space-y-1.5">
           {activeTools.length === 0 ? (
-            <p className="text-[11px] text-[#64748B]">No tools active</p>
+            <p className="text-[11px] text-[#7F8FA3]">No tools active</p>
           ) : (
             activeTools.map((tool) => (
-              <div key={tool} className="flex items-center gap-2 text-[11px] text-slate-400">
-                <Zap className="h-3 w-3 text-[#7890A3]/50" />
+              <div key={tool} className="flex items-center gap-2 text-[11px] text-[#A9B7C6]">
+                <Zap className="h-3 w-3 text-[#9CBBD1]/50" />
                 {tool}
               </div>
             ))
           )}
           <div className="flex items-center gap-1.5 pt-1">
-            <Sparkles className="h-3 w-3 text-[#64748B]" />
-            <span className="text-[10px] text-[#64748B]">Auto-detection enabled</span>
+            <Sparkles className="h-3 w-3 text-[#7F8FA3]" />
+            <span className="text-[10px] text-[#7F8FA3]">Auto-detection enabled</span>
           </div>
         </div>
       ),
@@ -160,11 +160,11 @@ export default function RightSidebar({
       content: (
         <div className="space-y-1.5">
           {memoryRefs.length === 0 ? (
-            <p className="text-[11px] text-[#64748B]">No memory references yet</p>
+            <p className="text-[11px] text-[#7F8FA3]">No memory references yet</p>
           ) : (
             memoryRefs.map((ref, i) => (
-              <div key={i} className="flex items-start gap-2 text-[11px] text-slate-400">
-                <Hash className="h-3 w-3 text-[#64748B] mt-0.5 shrink-0" />
+              <div key={i} className="flex items-start gap-2 text-[11px] text-[#A9B7C6]">
+                <Hash className="h-3 w-3 text-[#7F8FA3] mt-0.5 shrink-0" />
                 <span className="truncate">{ref}</span>
               </div>
             ))
@@ -179,10 +179,10 @@ export default function RightSidebar({
       content: (
         <div className="space-y-1.5">
           {pinnedMessages.length === 0 ? (
-            <p className="text-[11px] text-[#64748B]">No pinned messages</p>
+            <p className="text-[11px] text-[#7F8FA3]">No pinned messages</p>
           ) : (
             pinnedMessages.slice(0, 3).map((msg) => (
-              <div key={msg.id} className="text-[11px] text-slate-400 truncate border-l-2 border-[#637B90]/20 pl-2">
+              <div key={msg.id} className="text-[11px] text-[#A9B7C6] truncate border-l-2 border-[#8FB4CC]/20 pl-2">
                 {msg.content.slice(0, 60)}...
               </div>
             ))
@@ -202,8 +202,8 @@ export default function RightSidebar({
             { action: 'Memory indexed', time: '1m ago' },
           ].map((item, i) => (
             <div key={i} className="flex items-center justify-between text-[11px]">
-              <span className="text-slate-500">{item.action}</span>
-              <span className="text-[#64748B]">{item.time}</span>
+              <span className="text-[#7F8FA3]">{item.action}</span>
+              <span className="text-[#7F8FA3]">{item.time}</span>
             </div>
           ))}
         </div>
@@ -218,7 +218,7 @@ export default function RightSidebar({
         <div className="fixed top-14 right-4 z-40 hidden lg:block">
           <button
             onClick={onToggle}
-            className="h-7 w-7 flex items-center justify-center text-[#64748B] hover:text-slate-400 hover:bg-white/[0.03] rounded-md transition-all border border-white/[0.04]"
+            className="h-7 w-7 flex items-center justify-center text-[#7F8FA3] hover:text-[#A9B7C6] hover:bg-white/[0.03] rounded-md transition-all border border-white/[0.04]"
             title="Open sidebar"
           >
             <PanelRightOpen className="h-3.5 w-3.5" />
@@ -238,12 +238,12 @@ export default function RightSidebar({
             {/* Header */}
             <div className="flex items-center justify-between px-3 py-2 border-b border-white/[0.02] shrink-0">
               <div className="flex items-center gap-2">
-                <Cpu className="h-3.5 w-3.5 text-[#7890A3]/50" />
-                <span className="text-[11px] font-medium text-slate-400">Context Panel</span>
+                <Cpu className="h-3.5 w-3.5 text-[#9CBBD1]/50" />
+                <span className="text-[11px] font-medium text-[#A9B7C6]">Context Panel</span>
               </div>
               <button
                 onClick={onToggle}
-                className="h-6 w-6 flex items-center justify-center text-[#64748B] hover:text-slate-400 hover:bg-white/[0.03] rounded transition-all"
+                className="h-6 w-6 flex items-center justify-center text-[#7F8FA3] hover:text-[#A9B7C6] hover:bg-white/[0.03] rounded transition-all"
               >
                 <PanelRightClose className="h-3 w-3" />
               </button>
@@ -258,7 +258,7 @@ export default function RightSidebar({
                     <button
                       onClick={() => toggleSection(section.id)}
                       className={`w-full flex items-center justify-between px-2.5 py-2 text-left transition-all duration-150 rounded-lg ${
-                        isExpanded ? 'bg-white/[0.03] text-white' : 'text-slate-500 hover:text-slate-300 hover:bg-white/[0.015]'
+                        isExpanded ? 'bg-white/[0.03] text-white' : 'text-[#7F8FA3] hover:text-slate-300 hover:bg-white/[0.015]'
                       }`}
                     >
                       <div className="flex items-center gap-2">
@@ -295,18 +295,18 @@ export default function RightSidebar({
             {/* Footer stats */}
             <div className="shrink-0 p-3 border-t border-white/[0.02] space-y-2">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-[10px] text-[#64748B]">
+                <div className="flex items-center gap-1.5 text-[10px] text-[#7F8FA3]">
                   <Target className="h-2.5 w-2.5" />
                   Token usage
                 </div>
-                <span className="text-[10px] text-slate-600 font-mono">-- / --</span>
+                <span className="text-[10px] text-[#7F8FA3] font-mono">-- / --</span>
               </div>
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-[10px] text-[#64748B]">
+                <div className="flex items-center gap-1.5 text-[10px] text-[#7F8FA3]">
                   <BarChart3 className="h-2.5 w-2.5" />
                   Efficiency
                 </div>
-                <span className="text-[10px] text-slate-600 font-mono">--</span>
+                <span className="text-[10px] text-[#7F8FA3] font-mono">--</span>
               </div>
             </div>
           </div>

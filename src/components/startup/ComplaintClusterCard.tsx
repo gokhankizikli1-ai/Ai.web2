@@ -4,7 +4,7 @@ import { sourceLabel, type ComplaintCluster } from '@/lib/startupMarketApi';
 
 function painTone(score: number): string {
   if (score >= 70) return 'text-[#D7A6AD] border-[#B76E79]/40 bg-[#B76E79]/[0.12]';
-  if (score >= 40) return 'text-[#9DB0C2] border-[#52677A]/40 bg-[#52677A]/[0.12]';
+  if (score >= 40) return 'text-[#9DB0C2] border-[#7EA6BF]/40 bg-[#7EA6BF]/[0.12]';
   return 'text-slate-200 border-white/[0.1] bg-white/[0.04]';
 }
 
@@ -36,7 +36,7 @@ export default function ComplaintClusterCard({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2.5 min-w-0">
-          <span className="text-[11px] text-slate-500 shrink-0">#{rank + 1}</span>
+          <span className="text-[11px] text-[#7F8FA3] shrink-0">#{rank + 1}</span>
           <h4 className="text-[13px] font-semibold text-slate-100 truncate">
             {cluster.label}
           </h4>
@@ -46,7 +46,7 @@ export default function ComplaintClusterCard({
         </span>
       </div>
 
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[10px] text-slate-400">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-[10px] text-[#A9B7C6]">
         <span>{cluster.frequency} signal{cluster.frequency === 1 ? '' : 's'}</span>
         {typeof cluster.direct_complaints === 'number' && cluster.direct_complaints > 0 && (
           <span className="text-[#86A08F] font-medium">
@@ -58,17 +58,17 @@ export default function ComplaintClusterCard({
       {/* The one best evidence quote */}
       {quote && (
         <div className="mt-2.5 flex items-start gap-2 rounded-lg bg-white/[0.015] border border-white/[0.04] px-2.5 py-2">
-          <Quote className="h-3 w-3 text-slate-500 shrink-0 mt-0.5" />
+          <Quote className="h-3 w-3 text-[#7F8FA3] shrink-0 mt-0.5" />
           <p className="text-[12px] text-slate-300 leading-relaxed break-words min-w-0">
             “{quote.text}”
-            <span className="ml-1.5 text-[9px] text-slate-500">— {sourceLabel(quote.source)}</span>
+            <span className="ml-1.5 text-[9px] text-[#7F8FA3]">— {sourceLabel(quote.source)}</span>
           </p>
         </div>
       )}
 
       {/* Detail scores + citations, collapsed by default */}
       <details className="mt-2 group/detail">
-        <summary className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-slate-300 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden transition-colors">
+        <summary className="flex items-center gap-1 text-[10px] text-[#7F8FA3] hover:text-slate-300 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden transition-colors">
           <ChevronRight className="h-3 w-3 transition-transform group-open/detail:rotate-90" />
           Details & citations
         </summary>
@@ -77,11 +77,11 @@ export default function ComplaintClusterCard({
             <div key={s.label}>
               <div className="h-1 rounded-full bg-white/[0.06] overflow-hidden">
                 <div
-                  className={`h-full rounded-full ${s.label === 'Saturation' ? 'bg-[#B76E79]/70' : 'bg-[#52677A]/60'}`}
+                  className={`h-full rounded-full ${s.label === 'Saturation' ? 'bg-[#B76E79]/70' : 'bg-[#7EA6BF]/60'}`}
                   style={{ width: `${Math.min(100, Math.max(0, s.value))}%` }}
                 />
               </div>
-              <span className="block mt-1 text-[9px] text-slate-500">{s.label}</span>
+              <span className="block mt-1 text-[9px] text-[#7F8FA3]">{s.label}</span>
             </div>
           ))}
         </div>
@@ -93,7 +93,7 @@ export default function ComplaintClusterCard({
                 href={url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] text-slate-400 border border-white/[0.06] hover:text-[#7890A3] hover:border-[#52677A]/35 transition-colors max-w-[220px]"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] text-[#A9B7C6] border border-white/[0.06] hover:text-[#9CBBD1] hover:border-[#7EA6BF]/35 transition-colors max-w-[220px]"
               >
                 <ExternalLink className="h-2.5 w-2.5 shrink-0" />
                 <span className="truncate">{url.replace(/^https?:\/\/(www\.)?/, '')}</span>

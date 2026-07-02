@@ -242,7 +242,7 @@ export default function ChatView({
                         <motion.div
                           animate={{ rotate: 360 }}
                           transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
-                          className="h-2.5 w-2.5 rounded-full border-2 border-[#52677A]/40 border-t-[#52677A]"
+                          className="h-2.5 w-2.5 rounded-full border-2 border-[#7EA6BF]/40 border-t-[#7EA6BF]"
                           aria-label="working"
                         />
                       )}

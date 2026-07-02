@@ -24,14 +24,14 @@ const ICONS: Record<ChromeIcon, React.ComponentType<{ className?: string; style?
 };
 
 const STATUS_STYLE: Record<OrchestratePhase, { dot: string; text: string; label: string }> = {
-  idle:       { dot: 'bg-slate-600', text: 'text-slate-500', label: 'Idle' },
-  planning:   { dot: 'bg-[#52677A] animate-pulse', text: 'text-[#7890A3]', label: 'Planning' },
-  running:    { dot: 'bg-[#52677A] animate-pulse', text: 'text-[#7890A3]', label: 'Running' },
-  rendering:  { dot: 'bg-[#52677A] animate-pulse', text: 'text-[#7890A3]', label: 'Rendering' },
+  idle:       { dot: 'bg-slate-600', text: 'text-[#7F8FA3]', label: 'Idle' },
+  planning:   { dot: 'bg-[#7EA6BF] animate-pulse', text: 'text-[#9CBBD1]', label: 'Planning' },
+  running:    { dot: 'bg-[#7EA6BF] animate-pulse', text: 'text-[#9CBBD1]', label: 'Running' },
+  rendering:  { dot: 'bg-[#7EA6BF] animate-pulse', text: 'text-[#9CBBD1]', label: 'Rendering' },
   completed:  { dot: 'bg-[#6F8F7A]', text: 'text-[#6F8F7A]', label: 'Live' },
   failed:     { dot: 'bg-[#B76E79]', text: 'text-[#B76E79]', label: 'Failed' },
-  cancelled:  { dot: 'bg-slate-500', text: 'text-slate-400', label: 'Cancelled' },
-  not_found:  { dot: 'bg-slate-500', text: 'text-slate-400', label: 'Not found' },
+  cancelled:  { dot: 'bg-slate-500', text: 'text-[#A9B7C6]', label: 'Cancelled' },
+  not_found:  { dot: 'bg-slate-500', text: 'text-[#A9B7C6]', label: 'Not found' },
   disabled:   { dot: 'bg-[#A68A5B]', text: 'text-[#A68A5B]', label: 'Unavailable' },
   error:      { dot: 'bg-[#B76E79]', text: 'text-[#B76E79]', label: 'Error' },
 };
@@ -86,7 +86,7 @@ export default function AppPreviewShell({ idea, phase, palette, nameOverride, ch
                 className="flex items-center gap-2.5 px-2.5 py-2 rounded-lg border-l-2 transition-colors"
                 style={i === 0
                   ? { background: 'rgba(255,255,255,0.06)', color: palette.accent, borderColor: palette.accent }
-                  : { color: '#64748b', borderColor: 'transparent' }}
+                  : { color: '#7F8FA3', borderColor: 'transparent' }}
               >
                 <Icon className="w-4 h-4 shrink-0" />
                 <span className="hidden md:block text-[12px]">{label}</span>
@@ -95,7 +95,7 @@ export default function AppPreviewShell({ idea, phase, palette, nameOverride, ch
           })}
           <div className="mt-auto pt-4 border-t border-white/[0.05] flex items-center gap-2 px-1.5">
             <div className="w-6 h-6 rounded-full shrink-0" style={{ background: grad, opacity: 0.7 }} />
-            <span className="hidden md:block text-[11px] text-slate-500 truncate">Workspace owner</span>
+            <span className="hidden md:block text-[11px] text-[#7F8FA3] truncate">Workspace owner</span>
           </div>
         </div>
 
@@ -104,10 +104,10 @@ export default function AppPreviewShell({ idea, phase, palette, nameOverride, ch
           {/* Topbar */}
           <div className="flex items-center justify-between gap-3 mb-6 flex-wrap">
             <div>
-              <div className="flex items-center gap-1.5 text-[11px] text-slate-600 mb-1">
+              <div className="flex items-center gap-1.5 text-[11px] text-[#7F8FA3] mb-1">
                 <span>{appName}</span>
                 <ChevronRight className="w-3 h-3" />
-                <span className="text-slate-400">{CATEGORY_LABELS[chrome.category]}</span>
+                <span className="text-[#A9B7C6]">{CATEGORY_LABELS[chrome.category]}</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <span className={`w-1.5 h-1.5 rounded-full ${status.dot}`} />
@@ -116,13 +116,13 @@ export default function AppPreviewShell({ idea, phase, palette, nameOverride, ch
             </div>
             <div className="hidden md:flex items-center gap-2 flex-1 max-w-xs">
               <div className="flex items-center gap-2 w-full px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/[0.05]">
-                <Search className="w-3 h-3 text-slate-600" />
-                <span className="text-[11px] text-slate-600">Search…</span>
+                <Search className="w-3 h-3 text-[#7F8FA3]" />
+                <span className="text-[11px] text-[#7F8FA3]">Search…</span>
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
               <div className="p-1.5 rounded-lg bg-white/[0.03] border border-white/[0.05]">
-                <Bell className="w-3.5 h-3.5 text-slate-500" />
+                <Bell className="w-3.5 h-3.5 text-[#7F8FA3]" />
               </div>
               <div className="w-7 h-7 rounded-full" style={{ background: grad, opacity: 0.7 }} />
             </div>
@@ -135,7 +135,7 @@ export default function AppPreviewShell({ idea, phase, palette, nameOverride, ch
               return (
                 <div key={s.label} className={`p-4 rounded-xl border border-white/[0.07] bg-gradient-to-br from-white/[0.04] to-white/[0.01] backdrop-blur-xl ${busy ? 'animate-pulse' : ''}`}>
                   <div className="flex items-center justify-between mb-2">
-                    <p className="text-[10px] text-slate-500">{s.label}</p>
+                    <p className="text-[10px] text-[#7F8FA3]">{s.label}</p>
                     <div className="w-6 h-6 rounded-md bg-white/[0.05] flex items-center justify-center">
                       <Icon className="w-3 h-3" style={{ color: palette.accent }} />
                     </div>
@@ -173,7 +173,7 @@ export default function AppPreviewShell({ idea, phase, palette, nameOverride, ch
                     </div>
                     <p className="text-[12px] font-medium text-white truncate">{m.label}</p>
                   </div>
-                  <p className="text-[11px] text-slate-500 leading-relaxed">{m.desc}</p>
+                  <p className="text-[11px] text-[#7F8FA3] leading-relaxed">{m.desc}</p>
                 </div>
               );
             })}
@@ -181,7 +181,7 @@ export default function AppPreviewShell({ idea, phase, palette, nameOverride, ch
 
           {/* Primary CTA */}
           <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
-            <p className="text-[12px] text-slate-500">Generated result for your idea</p>
+            <p className="text-[12px] text-[#7F8FA3]">Generated result for your idea</p>
             <button className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[11px] font-semibold" style={{ background: grad, color: palette.onAccent }}>
               <Sparkles className="w-3 h-3" /> Refine with AI
             </button>
@@ -214,7 +214,7 @@ export default function AppPreviewShell({ idea, phase, palette, nameOverride, ch
                     <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${TONE_DOT[a.tone]}`} />
                     <div className="min-w-0">
                       <p className="text-[11px] text-slate-300 leading-snug">{a.title}</p>
-                      <p className="text-[10px] text-slate-600 mt-0.5">{a.time}</p>
+                      <p className="text-[10px] text-[#7F8FA3] mt-0.5">{a.time}</p>
                     </div>
                   </div>
                 ))}

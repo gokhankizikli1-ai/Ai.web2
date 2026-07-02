@@ -78,7 +78,7 @@ export default function CoordinatorPlanChip({ plan, onDismiss }: CoordinatorPlan
           transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
           className="flex items-center gap-2 mb-2 px-2.5 py-1.5 rounded-xl border bg-white/[0.02] hover:bg-white/[0.03] transition-colors"
           style={{
-            borderColor:    'rgba(82,103,122,0.10)',
+            borderColor:    'rgba(126, 166, 191,0.10)',
             backdropFilter: 'blur(8px)',
           }}
           aria-label="Coordinator plan preview"
@@ -86,11 +86,11 @@ export default function CoordinatorPlanChip({ plan, onDismiss }: CoordinatorPlan
           {/* Title — honest about routing method so users know it's
               not an LLM decision. */}
           <div className="flex items-center gap-1.5 shrink-0">
-            <Network className="h-3 w-3 text-[#52677A]/70" />
+            <Network className="h-3 w-3 text-[#7EA6BF]/70" />
             <span className="text-[10px] font-medium text-slate-300 uppercase tracking-wider">
               Plan
             </span>
-            <span className="text-[9px] text-slate-600">rule-based</span>
+            <span className="text-[9px] text-[#7F8FA3]">rule-based</span>
           </div>
 
           {/* Agent chain — small icon + label per invocation. The
@@ -105,9 +105,9 @@ export default function CoordinatorPlanChip({ plan, onDismiss }: CoordinatorPlan
                   {i > 0 && (
                     <span className="text-[9px] text-slate-700">→</span>
                   )}
-                  <Icon className="h-2.5 w-2.5 text-[#52677A]/60 shrink-0" />
+                  <Icon className="h-2.5 w-2.5 text-[#7EA6BF]/60 shrink-0" />
                   <span
-                    className="text-[10px] text-slate-400 leading-none whitespace-nowrap"
+                    className="text-[10px] text-[#A9B7C6] leading-none whitespace-nowrap"
                     title={a.reason}
                   >
                     {labelFor(a.agent_id)}
@@ -116,7 +116,7 @@ export default function CoordinatorPlanChip({ plan, onDismiss }: CoordinatorPlan
               );
             })}
             {plan.agents.length > 4 && (
-              <span className="text-[9px] text-slate-600 shrink-0">
+              <span className="text-[9px] text-[#7F8FA3] shrink-0">
                 +{plan.agents.length - 4}
               </span>
             )}
@@ -127,7 +127,7 @@ export default function CoordinatorPlanChip({ plan, onDismiss }: CoordinatorPlan
             <button
               type="button"
               onClick={onDismiss}
-              className="shrink-0 h-4 w-4 flex items-center justify-center rounded text-slate-600 hover:text-slate-300 hover:bg-white/[0.04] transition-colors"
+              className="shrink-0 h-4 w-4 flex items-center justify-center rounded text-[#7F8FA3] hover:text-slate-300 hover:bg-white/[0.04] transition-colors"
               aria-label="Dismiss plan preview"
               title="Dismiss"
             >

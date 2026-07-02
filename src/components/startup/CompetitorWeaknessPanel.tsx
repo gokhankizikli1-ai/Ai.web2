@@ -13,12 +13,12 @@ export default function CompetitorWeaknessPanel({ report }: { report: MarketComp
   return (
     <div className="rounded-xl border border-white/[0.05] bg-white/[0.01] p-4">
       <div className="flex items-center gap-2 mb-3">
-        <Swords className="h-3.5 w-3.5 text-[#94A3B8]" />
+        <Swords className="h-3.5 w-3.5 text-[#A9B7C6]" />
         <h3 className="text-[13px] font-semibold text-slate-100">Competitor weaknesses found in evidence</h3>
       </div>
 
       {competitors.length === 0 ? (
-        <p className="text-[12px] text-slate-400">No strong competitor mentions found in this run.</p>
+        <p className="text-[12px] text-[#A9B7C6]">No strong competitor mentions found in this run.</p>
       ) : (
         <div className="space-y-1.5">
           {competitors.map((name) => {
@@ -34,19 +34,19 @@ export default function CompetitorWeaknessPanel({ report }: { report: MarketComp
                     <span className="text-[12px] text-slate-300 min-w-0 flex-1">
                       Weakness signal: {w.cluster_label}
                     </span>
-                    <span className="text-[10px] text-slate-500 shrink-0">
+                    <span className="text-[10px] text-[#7F8FA3] shrink-0">
                       {w.evidence_count} evidence item{w.evidence_count === 1 ? '' : 's'}
                     </span>
                   </>
                 ) : (
-                  <span className="text-[11px] text-slate-400 min-w-0 flex-1">
+                  <span className="text-[11px] text-[#A9B7C6] min-w-0 flex-1">
                     Named while switching/comparing — mention context not captured in complaint clusters.
                   </span>
                 )}
               </div>
             );
           })}
-          <p className="text-[10px] text-slate-500 mt-1">
+          <p className="text-[10px] text-[#7F8FA3] mt-1">
             Associations come only from evidence text that names the competitor — directional, not exhaustive.
           </p>
         </div>

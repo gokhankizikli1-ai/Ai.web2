@@ -69,7 +69,7 @@ const NICHE_OPTIONS = ['All Niches', 'Health', 'Beauty', 'Pets', 'Kitchen', 'Hom
 function ScoreBar({ label, value, color }: { label: string; value: number; color: string }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="text-[9px] text-slate-500 w-16 shrink-0">{label}</span>
+      <span className="text-[9px] text-[#7F8FA3] w-16 shrink-0">{label}</span>
       <div className="flex-1 h-1 bg-white/[0.03] rounded-full overflow-hidden">
         <motion.div className={`h-full rounded-full ${color}`} initial={{ width: 0 }} animate={{ width: `${value}%` }} transition={{ duration: 0.6 }} />
       </div>
@@ -115,12 +115,12 @@ function ToolCard({ icon: Icon, title, desc, color, onClick, badge }: {
           <Icon className="h-4 w-4 text-white" />
         </div>
         {badge && (
-          <span className="px-1.5 py-0.5 rounded text-[8px] font-medium bg-white/[0.04] text-slate-500 border border-white/[0.04]">{badge}</span>
+          <span className="px-1.5 py-0.5 rounded text-[8px] font-medium bg-white/[0.04] text-[#7F8FA3] border border-white/[0.04]">{badge}</span>
         )}
       </div>
       <h3 className="text-[12px] font-semibold text-white/90 mb-0.5">{title}</h3>
-      <p className="text-[10px] text-slate-500 leading-relaxed">{desc}</p>
-      <div className="flex items-center gap-1 mt-2 text-[9px] text-[#7890A3]/50 group-hover:text-[#7890A3]/70 transition-colors">
+      <p className="text-[10px] text-[#7F8FA3] leading-relaxed">{desc}</p>
+      <div className="flex items-center gap-1 mt-2 text-[9px] text-[#9CBBD1]/50 group-hover:text-[#9CBBD1]/70 transition-colors">
         <span>Open</span>
         <ChevronRight className="h-3 w-3" />
       </div>
@@ -136,7 +136,7 @@ function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }
   return (
     <div className="mb-3">
       <h2 className="text-[14px] font-semibold text-white/90">{title}</h2>
-      {subtitle && <p className="text-[10px] text-slate-500 mt-0.5">{subtitle}</p>}
+      {subtitle && <p className="text-[10px] text-[#7F8FA3] mt-0.5">{subtitle}</p>}
     </div>
   );
 }
@@ -147,7 +147,7 @@ function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }
 
 function BackButton({ onClick }: { onClick: () => void }) {
   return (
-    <button onClick={onClick} className="flex items-center gap-1 text-[11px] text-slate-500 hover:text-white/60 transition-colors mb-3">
+    <button onClick={onClick} className="flex items-center gap-1 text-[11px] text-[#7F8FA3] hover:text-white/60 transition-colors mb-3">
       <ChevronRight className="h-3 w-3 rotate-180" />
       Back to Dashboard
     </button>
@@ -167,17 +167,17 @@ function Dashboard({ onTool }: { onTool: (t: ToolView) => void }) {
       {/* Stats Row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
         {[
-          { label: 'Products Researched', value: '12', icon: Package, color: 'from-[#7890A3]/20 to-[#7890A3]/20' },
-          { label: 'Hooks Generated', value: '48', icon: Sparkles, color: 'from-[#7890A3]/20 to-[#7890A3]/20' },
+          { label: 'Products Researched', value: '12', icon: Package, color: 'from-[#9CBBD1]/20 to-[#9CBBD1]/20' },
+          { label: 'Hooks Generated', value: '48', icon: Sparkles, color: 'from-[#9CBBD1]/20 to-[#9CBBD1]/20' },
           { label: 'Ad Sets Created', value: '6', icon: Megaphone, color: 'from-[#A68A5B]/20 to-[#A68A5B]/20' },
-          { label: 'Store Health', value: '--', icon: BarChart3, color: 'from-[#6F8F7A]/20 to-[#7890A3]/20' },
+          { label: 'Store Health', value: '--', icon: BarChart3, color: 'from-[#6F8F7A]/20 to-[#9CBBD1]/20' },
         ].map((s) => (
           <div key={s.label} className="p-3 rounded-xl border border-white/[0.03] bg-white/[0.01]">
             <div className="flex items-center gap-2 mb-1.5">
               <div className={`flex h-5 w-5 items-center justify-center rounded-md bg-gradient-to-br ${s.color}`}>
                 <s.icon className="h-2.5 w-2.5 text-white/70" />
               </div>
-              <span className="text-[9px] text-slate-500">{s.label}</span>
+              <span className="text-[9px] text-[#7F8FA3]">{s.label}</span>
             </div>
             <p className="text-[18px] font-semibold text-white/90 tabular-nums">{s.value}</p>
           </div>
@@ -188,14 +188,14 @@ function Dashboard({ onTool }: { onTool: (t: ToolView) => void }) {
       <div>
         <SectionHeader title="Tools" subtitle="Select a tool to get started" />
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-          <ToolCard icon={Search} title="Product Research" desc="Find winning products with AI-powered trend analysis, saturation scores, and margin estimates." color="bg-gradient-to-br from-[#7890A3] to-[#637B90]" onClick={() => onTool('product-research')} />
-          <ToolCard icon={Layout} title="AI Store Builder" desc="Generate complete Shopify store sections — hero, product grid, reviews, FAQ, and trust badges." color="bg-gradient-to-br from-[#7890A3] to-[#637B90]" onClick={() => onTool('store-builder')} />
-          <ToolCard icon={ShoppingCart} title="Shopify Connect" desc="Connect your store, sync products, and manage everything from one dashboard." color="bg-gradient-to-br from-[#6F8F7A] to-[#637B90]" onClick={() => onTool('shopify')} badge="Coming soon" />
-          <ToolCard icon={Sparkles} title="TikTok Hooks" desc="Generate viral hooks, UGC scripts, and short-form video structures for any product." color="bg-gradient-to-br from-[#7890A3] to-[#B76E79]" onClick={() => onTool('tiktok')} />
+          <ToolCard icon={Search} title="Product Research" desc="Find winning products with AI-powered trend analysis, saturation scores, and margin estimates." color="bg-gradient-to-br from-[#9CBBD1] to-[#8FB4CC]" onClick={() => onTool('product-research')} />
+          <ToolCard icon={Layout} title="AI Store Builder" desc="Generate complete Shopify store sections — hero, product grid, reviews, FAQ, and trust badges." color="bg-gradient-to-br from-[#9CBBD1] to-[#8FB4CC]" onClick={() => onTool('store-builder')} />
+          <ToolCard icon={ShoppingCart} title="Shopify Connect" desc="Connect your store, sync products, and manage everything from one dashboard." color="bg-gradient-to-br from-[#6F8F7A] to-[#8FB4CC]" onClick={() => onTool('shopify')} badge="Coming soon" />
+          <ToolCard icon={Sparkles} title="TikTok Hooks" desc="Generate viral hooks, UGC scripts, and short-form video structures for any product." color="bg-gradient-to-br from-[#9CBBD1] to-[#B76E79]" onClick={() => onTool('tiktok')} />
           <ToolCard icon={Megaphone} title="Meta Ads Builder" desc="Create high-converting Facebook & Instagram ads with AI-generated copy and targeting." color="bg-gradient-to-br from-[#A68A5B] to-[#A68A5B]" onClick={() => onTool('meta-ads')} />
-          <ToolCard icon={DollarSign} title="Pricing Optimizer" desc="Calculate optimal pricing, margins, break-even ROAS, and upsell suggestions." color="bg-gradient-to-br from-[#7890A3] to-[#637B90]" onClick={() => onTool('pricing')} />
+          <ToolCard icon={DollarSign} title="Pricing Optimizer" desc="Calculate optimal pricing, margins, break-even ROAS, and upsell suggestions." color="bg-gradient-to-br from-[#9CBBD1] to-[#8FB4CC]" onClick={() => onTool('pricing')} />
           <ToolCard icon={BarChart3} title="Store Analytics" desc="Track revenue, orders, conversion rate, AOV, ROAS, and CPA." color="bg-gradient-to-br from-[#6F8F7A] to-[#6F8F7A]" onClick={() => onTool('analytics')} badge="Connect Shopify" />
-          <ToolCard icon={Target} title="Product Page Analyzer" desc="Analyze your product pages for conversion optimization and get AI recommendations." color="bg-gradient-to-br from-[#7890A3] to-[#637B90]" onClick={() => onTool('product-research')} />
+          <ToolCard icon={Target} title="Product Page Analyzer" desc="Analyze your product pages for conversion optimization and get AI recommendations." color="bg-gradient-to-br from-[#9CBBD1] to-[#8FB4CC]" onClick={() => onTool('product-research')} />
         </div>
       </div>
 
@@ -204,10 +204,10 @@ function Dashboard({ onTool }: { onTool: (t: ToolView) => void }) {
         <SectionHeader title="Multi-Agent Ecommerce Workflow" subtitle="Your AI agents work together to build and scale your store" />
         <div className="p-4 rounded-xl border border-white/[0.04] bg-white/[0.01] space-y-3">
           {[
-            { icon: Search, name: 'Product Research Agent', desc: 'Finds trending products with winning potential', color: 'from-[#7890A3] to-[#7890A3]', status: 'active' },
-            { icon: Layout, name: 'Store Builder Agent', desc: 'Creates optimized store pages and sections', color: 'from-[#7890A3] to-[#7890A3]', status: 'active' },
-            { icon: Sparkles, name: 'Ads Creator Agent', desc: 'Generates TikTok hooks and Meta ad campaigns', color: 'from-[#7890A3] to-[#B76E79]', status: 'standby' },
-            { icon: DollarSign, name: 'Pricing Agent', desc: 'Optimizes margins, pricing, and upsell strategy', color: 'from-[#7890A3] to-[#7890A3]', status: 'standby' },
+            { icon: Search, name: 'Product Research Agent', desc: 'Finds trending products with winning potential', color: 'from-[#9CBBD1] to-[#9CBBD1]', status: 'active' },
+            { icon: Layout, name: 'Store Builder Agent', desc: 'Creates optimized store pages and sections', color: 'from-[#9CBBD1] to-[#9CBBD1]', status: 'active' },
+            { icon: Sparkles, name: 'Ads Creator Agent', desc: 'Generates TikTok hooks and Meta ad campaigns', color: 'from-[#9CBBD1] to-[#B76E79]', status: 'standby' },
+            { icon: DollarSign, name: 'Pricing Agent', desc: 'Optimizes margins, pricing, and upsell strategy', color: 'from-[#9CBBD1] to-[#9CBBD1]', status: 'standby' },
           ].map((agent, i) => (
             <div key={agent.name} className="flex items-center gap-3">
               <div className={`flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br ${agent.color} shrink-0`}>
@@ -216,12 +216,12 @@ function Dashboard({ onTool }: { onTool: (t: ToolView) => void }) {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-[12px] font-medium text-white/80">{agent.name}</span>
-                  <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-medium ${agent.status === 'active' ? 'bg-[#6F8F7A]/[0.08] text-[#6F8F7A]' : 'bg-slate-500/[0.06] text-slate-400'}`}>
+                  <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-medium ${agent.status === 'active' ? 'bg-[#6F8F7A]/[0.08] text-[#6F8F7A]' : 'bg-slate-500/[0.06] text-[#A9B7C6]'}`}>
                     {agent.status === 'active' && <span className="w-1 h-1 rounded-full bg-[#6F8F7A]" />}
                     {agent.status}
                   </span>
                 </div>
-                <p className="text-[10px] text-slate-500">{agent.desc}</p>
+                <p className="text-[10px] text-[#7F8FA3]">{agent.desc}</p>
               </div>
               {i < 3 && <div className="hidden sm:block absolute left-5 translate-y-6 w-px h-3 bg-white/[0.04]" />}
             </div>
@@ -256,9 +256,9 @@ function ProductResearch({ onBack }: { onBack: () => void }) {
       {/* Search + Filter */}
       <div className="flex gap-2 mb-4">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-600" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[#7F8FA3]" />
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search products..."
-            className="w-full h-8 pl-9 pr-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[12px] text-white placeholder:text-slate-600 outline-none focus:border-white/[0.08]" />
+            className="w-full h-8 pl-9 pr-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[12px] text-white placeholder:text-[#7F8FA3] outline-none focus:border-white/[0.08]" />
         </div>
         <select value={niche} onChange={e => setNiche(e.target.value)}
           className="h-8 px-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[11px] text-white outline-none focus:border-white/[0.08]">
@@ -281,14 +281,14 @@ function ProductResearch({ onBack }: { onBack: () => void }) {
               <div className="flex items-start justify-between mb-2.5">
                 <div className="flex items-center gap-2.5">
                   <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/[0.03] border border-white/[0.05]">
-                    <Package className="h-4 w-4 text-slate-400" />
+                    <Package className="h-4 w-4 text-[#A9B7C6]" />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="text-[13px] font-semibold text-white/90">{product.name}</h3>
                       <VerdictBadge verdict={product.verdict} />
                     </div>
-                    <p className="text-[10px] text-slate-500">{product.category} · {product.price}</p>
+                    <p className="text-[10px] text-[#7F8FA3]">{product.category} · {product.price}</p>
                   </div>
                 </div>
                 <div className="text-right">
@@ -296,19 +296,19 @@ function ProductResearch({ onBack }: { onBack: () => void }) {
                     <TrendingUp className="h-3 w-3 text-[#6F8F7A]/60" />
                     <span className="text-[14px] font-semibold text-[#6F8F7A]">{product.trendScore}</span>
                   </div>
-                  <p className="text-[8px] text-slate-600">Trend Score</p>
+                  <p className="text-[8px] text-[#7F8FA3]">Trend Score</p>
                 </div>
               </div>
 
-              <p className="text-[11px] text-slate-400 mb-2.5">{product.description}</p>
+              <p className="text-[11px] text-[#A9B7C6] mb-2.5">{product.description}</p>
 
               {/* Score Bars */}
               <div className="space-y-1.5 mb-2.5">
                 <ScoreBar label="Saturation" value={product.saturation} color="bg-[#A68A5B]" />
                 <ScoreBar label="Est. Margin" value={product.margin} color="bg-[#6F8F7A]" />
-                <ScoreBar label="Viral Pot." value={product.viral} color="bg-[#7890A3]" />
+                <ScoreBar label="Viral Pot." value={product.viral} color="bg-[#9CBBD1]" />
                 <ScoreBar label="Competitor" value={product.competitor} color="bg-[#B76E79]" />
-                <ScoreBar label="Audience" value={product.audience} color="bg-[#7890A3]" />
+                <ScoreBar label="Audience" value={product.audience} color="bg-[#9CBBD1]" />
               </div>
 
               {/* Expanded */}
@@ -321,16 +321,16 @@ function ProductResearch({ onBack }: { onBack: () => void }) {
                           <p className="text-[9px] text-[#6F8F7A]/60">Est. Margin</p>
                           <p className="text-[13px] font-semibold text-[#6F8F7A]">{product.margin}%</p>
                         </div>
-                        <div className="p-2 rounded-lg bg-[#637B90]/[0.04] border border-[#637B90]/10 text-center">
-                          <p className="text-[9px] text-[#7890A3]/60">Sell Price</p>
-                          <p className="text-[13px] font-semibold text-[#7890A3]">{product.price}</p>
+                        <div className="p-2 rounded-lg bg-[#8FB4CC]/[0.04] border border-[#8FB4CC]/10 text-center">
+                          <p className="text-[9px] text-[#9CBBD1]/60">Sell Price</p>
+                          <p className="text-[13px] font-semibold text-[#9CBBD1]">{product.price}</p>
                         </div>
-                        <div className="p-2 rounded-lg bg-[#637B90]/[0.04] border border-[#637B90]/10 text-center">
-                          <p className="text-[9px] text-[#7890A3]/60">Viral Score</p>
-                          <p className="text-[13px] font-semibold text-[#7890A3]">{product.viral}/100</p>
+                        <div className="p-2 rounded-lg bg-[#8FB4CC]/[0.04] border border-[#8FB4CC]/10 text-center">
+                          <p className="text-[9px] text-[#9CBBD1]/60">Viral Score</p>
+                          <p className="text-[13px] font-semibold text-[#9CBBD1]">{product.viral}/100</p>
                         </div>
                       </div>
-                      <p className="text-[10px] text-slate-500">
+                      <p className="text-[10px] text-[#7F8FA3]">
                         <Zap className="h-2.5 w-2.5 inline mr-1 text-[#A68A5B]/50" />
                         AI Recommendation: {product.verdict === 'Test' ? 'Strong potential. Low saturation with high margin. Consider testing with a small ad budget.' : product.verdict === 'Watch' ? 'Moderate potential. High trend but watch saturation levels.' : 'High competition and low margins. Consider a different product or niche.'}
                       </p>
@@ -346,7 +346,7 @@ function ProductResearch({ onBack }: { onBack: () => void }) {
       {filtered.length === 0 && (
         <div className="text-center py-8">
           <Search className="h-8 w-8 text-white/[0.05] mx-auto mb-2" />
-          <p className="text-[12px] text-slate-500">No products found</p>
+          <p className="text-[12px] text-[#7F8FA3]">No products found</p>
         </div>
       )}
     </div>
@@ -394,28 +394,28 @@ function TikTokHooks({ onBack }: { onBack: () => void }) {
       {/* Inputs */}
       <div className="space-y-2.5 mb-4">
         <div>
-          <label className="text-[10px] text-slate-500 mb-1 block">Product Name</label>
+          <label className="text-[10px] text-[#7F8FA3] mb-1 block">Product Name</label>
           <input value={product} onChange={e => setProduct(e.target.value)} placeholder="e.g. posture corrector"
-            className="w-full h-8 px-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[12px] text-white placeholder:text-slate-600 outline-none focus:border-white/[0.08]" />
+            className="w-full h-8 px-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[12px] text-white placeholder:text-[#7F8FA3] outline-none focus:border-white/[0.08]" />
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div>
-            <label className="text-[10px] text-slate-500 mb-1 block">Target Audience</label>
+            <label className="text-[10px] text-[#7F8FA3] mb-1 block">Target Audience</label>
             <input value={audience} onChange={e => setAudience(e.target.value)} placeholder="e.g. office workers"
-              className="w-full h-8 px-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[12px] text-white placeholder:text-slate-600 outline-none focus:border-white/[0.08]" />
+              className="w-full h-8 px-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[12px] text-white placeholder:text-[#7F8FA3] outline-none focus:border-white/[0.08]" />
           </div>
           <div>
-            <label className="text-[10px] text-slate-500 mb-1 block">Pain Point</label>
+            <label className="text-[10px] text-[#7F8FA3] mb-1 block">Pain Point</label>
             <input value={painPoint} onChange={e => setPainPoint(e.target.value)} placeholder="e.g. back pain"
-              className="w-full h-8 px-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[12px] text-white placeholder:text-slate-600 outline-none focus:border-white/[0.08]" />
+              className="w-full h-8 px-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[12px] text-white placeholder:text-[#7F8FA3] outline-none focus:border-white/[0.08]" />
           </div>
         </div>
         <div>
-          <label className="text-[10px] text-slate-500 mb-1 block">Tone</label>
+          <label className="text-[10px] text-[#7F8FA3] mb-1 block">Tone</label>
           <div className="flex gap-1 flex-wrap">
             {tones.map(t => (
               <button key={t} onClick={() => setTone(t)}
-                className={`px-2.5 py-1 rounded-lg text-[10px] font-medium transition-all ${tone === t ? 'bg-[#637B90]/[0.12] text-[#7890A3] border border-[#637B90]/20' : 'text-slate-500 border border-white/[0.04] hover:text-slate-400'}`}>
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-medium transition-all ${tone === t ? 'bg-[#8FB4CC]/[0.12] text-[#9CBBD1] border border-[#8FB4CC]/20' : 'text-[#7F8FA3] border border-white/[0.04] hover:text-[#A9B7C6]'}`}>
                 {t}
               </button>
             ))}
@@ -425,7 +425,7 @@ function TikTokHooks({ onBack }: { onBack: () => void }) {
           onClick={generate}
           disabled={!product.trim() || generating}
           className="w-full h-9 rounded-xl text-[12px] font-semibold text-white transition-all disabled:opacity-30 hover:brightness-110"
-          style={{ background: 'linear-gradient(135deg, #637B90, #7890A3)', boxShadow: '0 4px 16px rgba(82,103,122,0.15)' }}>
+          style={{ background: 'linear-gradient(135deg, #8FB4CC, #9CBBD1)', boxShadow: '0 4px 16px rgba(126, 166, 191,0.15)' }}>
           {generating ? <RefreshCw className="h-4 w-4 animate-spin mx-auto" /> : <><Sparkles className="h-3.5 w-3.5 inline mr-1.5" />Generate Hooks</>}
         </button>
       </div>
@@ -435,13 +435,13 @@ function TikTokHooks({ onBack }: { onBack: () => void }) {
         {output && (
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-3">
             {/* 3-Second Hooks */}
-            <div className="p-3.5 rounded-xl border border-[#637B90]/10 bg-[#637B90]/[0.03]">
-              <h4 className="text-[11px] font-semibold text-[#7890A3]/80 mb-2 flex items-center gap-1.5">
+            <div className="p-3.5 rounded-xl border border-[#8FB4CC]/10 bg-[#8FB4CC]/[0.03]">
+              <h4 className="text-[11px] font-semibold text-[#9CBBD1]/80 mb-2 flex items-center gap-1.5">
                 <Play className="h-3 w-3" /> 3-Second Hooks
               </h4>
               {output.hook3s.map((h, i) => (
                 <div key={i} className="flex items-start gap-2 py-1.5 border-b border-white/[0.02] last:border-0">
-                  <span className="text-[9px] text-[#7890A3]/40 mt-0.5 shrink-0">{i + 1}</span>
+                  <span className="text-[9px] text-[#9CBBD1]/40 mt-0.5 shrink-0">{i + 1}</span>
                   <p className="text-[11px] text-white/70">{h}</p>
                 </div>
               ))}
@@ -450,17 +450,17 @@ function TikTokHooks({ onBack }: { onBack: () => void }) {
             {/* UGC Script */}
             <div className="p-3.5 rounded-xl border border-white/[0.04] bg-white/[0.015]">
               <h4 className="text-[11px] font-semibold text-white/70 mb-2 flex items-center gap-1.5">
-                <Smartphone className="h-3 w-3 text-[#7890A3]" /> UGC Script
+                <Smartphone className="h-3 w-3 text-[#9CBBD1]" /> UGC Script
               </h4>
-              <pre className="text-[10px] text-slate-400 leading-relaxed whitespace-pre-wrap">{output.ugcScript}</pre>
+              <pre className="text-[10px] text-[#A9B7C6] leading-relaxed whitespace-pre-wrap">{output.ugcScript}</pre>
             </div>
 
             {/* Problem/Solution */}
             <div className="p-3.5 rounded-xl border border-white/[0.04] bg-white/[0.015]">
               <h4 className="text-[11px] font-semibold text-white/70 mb-2 flex items-center gap-1.5">
-                <Target className="h-3 w-3 text-[#7890A3]" /> Problem / Solution Angle
+                <Target className="h-3 w-3 text-[#9CBBD1]" /> Problem / Solution Angle
               </h4>
-              <pre className="text-[10px] text-slate-400 leading-relaxed whitespace-pre-wrap">{output.problemSolution}</pre>
+              <pre className="text-[10px] text-[#A9B7C6] leading-relaxed whitespace-pre-wrap">{output.problemSolution}</pre>
             </div>
 
             {/* CTAs */}
@@ -469,7 +469,7 @@ function TikTokHooks({ onBack }: { onBack: () => void }) {
                 <Zap className="h-3 w-3 text-[#A68A5B]" /> CTA Ideas
               </h4>
               {output.ctas.map((c, i) => (
-                <p key={i} className="text-[10px] text-slate-400 py-0.5">{i + 1}. {c}</p>
+                <p key={i} className="text-[10px] text-[#A9B7C6] py-0.5">{i + 1}. {c}</p>
               ))}
             </div>
 
@@ -479,7 +479,7 @@ function TikTokHooks({ onBack }: { onBack: () => void }) {
                 <Share2 className="h-3 w-3 text-[#6F8F7A]" /> Video Structure
               </h4>
               {output.structure.map((s, i) => (
-                <p key={i} className="text-[10px] text-slate-400 py-0.5">{s}</p>
+                <p key={i} className="text-[10px] text-[#A9B7C6] py-0.5">{s}</p>
               ))}
             </div>
           </motion.div>
@@ -534,20 +534,20 @@ function MetaAdsBuilder({ onBack }: { onBack: () => void }) {
       {/* Inputs */}
       <div className="space-y-2.5 mb-4">
         <div>
-          <label className="text-[10px] text-slate-500 mb-1 block">Product Name</label>
+          <label className="text-[10px] text-[#7F8FA3] mb-1 block">Product Name</label>
           <input value={product} onChange={e => setProduct(e.target.value)} placeholder="e.g. LED makeup mirror"
-            className="w-full h-8 px-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[12px] text-white placeholder:text-slate-600 outline-none focus:border-white/[0.08]" />
+            className="w-full h-8 px-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[12px] text-white placeholder:text-[#7F8FA3] outline-none focus:border-white/[0.08]" />
         </div>
         <div className="grid grid-cols-2 gap-2">
           <div>
-            <label className="text-[10px] text-slate-500 mb-1 block">Target Audience</label>
+            <label className="text-[10px] text-[#7F8FA3] mb-1 block">Target Audience</label>
             <input value={audience} onChange={e => setAudience(e.target.value)} placeholder="e.g. women 25-40"
-              className="w-full h-8 px-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[12px] text-white placeholder:text-slate-600 outline-none focus:border-white/[0.08]" />
+              className="w-full h-8 px-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[12px] text-white placeholder:text-[#7F8FA3] outline-none focus:border-white/[0.08]" />
           </div>
           <div>
-            <label className="text-[10px] text-slate-500 mb-1 block">Key Benefit</label>
+            <label className="text-[10px] text-[#7F8FA3] mb-1 block">Key Benefit</label>
             <input value={benefit} onChange={e => setBenefit(e.target.value)} placeholder="e.g. flawless lighting"
-              className="w-full h-8 px-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[12px] text-white placeholder:text-slate-600 outline-none focus:border-white/[0.08]" />
+              className="w-full h-8 px-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[12px] text-white placeholder:text-[#7F8FA3] outline-none focus:border-white/[0.08]" />
           </div>
         </div>
         <button
@@ -565,8 +565,8 @@ function MetaAdsBuilder({ onBack }: { onBack: () => void }) {
           <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-3">
             {[
               { title: 'Primary Text', items: output.primaryTexts, icon: FileText as React.ElementType, color: 'text-[#A68A5B]', border: 'border-[#A68A5B]/10', bg: 'bg-[#A68A5B]/[0.03]' },
-              { title: 'Headlines', items: output.headlines, icon: Type as React.ElementType, color: 'text-[#7890A3]', border: 'border-[#637B90]/10', bg: 'bg-[#637B90]/[0.03]' },
-              { title: 'Descriptions', items: output.descriptions, icon: FileText as React.ElementType, color: 'text-[#7890A3]', border: 'border-[#637B90]/10', bg: 'bg-[#637B90]/[0.03]' },
+              { title: 'Headlines', items: output.headlines, icon: Type as React.ElementType, color: 'text-[#9CBBD1]', border: 'border-[#8FB4CC]/10', bg: 'bg-[#8FB4CC]/[0.03]' },
+              { title: 'Descriptions', items: output.descriptions, icon: FileText as React.ElementType, color: 'text-[#9CBBD1]', border: 'border-[#8FB4CC]/10', bg: 'bg-[#8FB4CC]/[0.03]' },
             ].map((section) => (
               <div key={section.title} className={`p-3.5 rounded-xl border ${section.border} ${section.bg}`}>
                 <h4 className={`text-[11px] font-semibold ${section.color} mb-2 flex items-center gap-1.5`}>
@@ -584,16 +584,16 @@ function MetaAdsBuilder({ onBack }: { onBack: () => void }) {
             {/* CTAs + Audiences + Creatives */}
             <div className="grid grid-cols-3 gap-2">
               <div className="p-2.5 rounded-lg bg-white/[0.015] border border-white/[0.04]">
-                <p className="text-[9px] text-slate-500 mb-1">CTA Buttons</p>
+                <p className="text-[9px] text-[#7F8FA3] mb-1">CTA Buttons</p>
                 {output.ctas.map((c, i) => <p key={i} className="text-[10px] text-[#6F8F7A]/80 py-0.5">{c}</p>)}
               </div>
               <div className="p-2.5 rounded-lg bg-white/[0.015] border border-white/[0.04]">
-                <p className="text-[9px] text-slate-500 mb-1">Audiences</p>
-                {output.audiences.map((a, i) => <p key={i} className="text-[10px] text-[#7890A3]/80 py-0.5">{a}</p>)}
+                <p className="text-[9px] text-[#7F8FA3] mb-1">Audiences</p>
+                {output.audiences.map((a, i) => <p key={i} className="text-[10px] text-[#9CBBD1]/80 py-0.5">{a}</p>)}
               </div>
               <div className="p-2.5 rounded-lg bg-white/[0.015] border border-white/[0.04]">
-                <p className="text-[9px] text-slate-500 mb-1">Creative Formats</p>
-                {output.creatives.map((c, i) => <p key={i} className="text-[10px] text-[#7890A3]/80 py-0.5">{c}</p>)}
+                <p className="text-[9px] text-[#7F8FA3] mb-1">Creative Formats</p>
+                {output.creatives.map((c, i) => <p key={i} className="text-[10px] text-[#9CBBD1]/80 py-0.5">{c}</p>)}
               </div>
             </div>
           </motion.div>
@@ -640,13 +640,13 @@ function StoreBuilder({ onBack }: { onBack: () => void }) {
           onChange={e => setPrompt(e.target.value)}
           placeholder="e.g. Build me a premium Shopify store for fitness accessories targeting women 25-40"
           rows={3}
-          className="w-full px-3 py-2.5 rounded-xl bg-white/[0.02] border border-white/[0.04] text-[12px] text-white placeholder:text-slate-600 outline-none focus:border-white/[0.08] resize-none"
+          className="w-full px-3 py-2.5 rounded-xl bg-white/[0.02] border border-white/[0.04] text-[12px] text-white placeholder:text-[#7F8FA3] outline-none focus:border-white/[0.08] resize-none"
         />
         <button
           onClick={generate}
           disabled={!prompt.trim() || generating}
           className="w-full h-9 rounded-xl text-[12px] font-semibold text-white transition-all disabled:opacity-30 hover:brightness-110"
-          style={{ background: 'linear-gradient(135deg, #637B90, #52677A)', boxShadow: '0 4px 16px rgba(82,103,122,0.15)' }}>
+          style={{ background: 'linear-gradient(135deg, #8FB4CC, #7EA6BF)', boxShadow: '0 4px 16px rgba(126, 166, 191,0.15)' }}>
           {generating ? <RefreshCw className="h-4 w-4 animate-spin mx-auto" /> : <><Wand2 className="h-3.5 w-3.5 inline mr-1.5" />Generate Store</>}
         </button>
       </div>
@@ -658,13 +658,13 @@ function StoreBuilder({ onBack }: { onBack: () => void }) {
             {/* Color Palette */}
             <div className="p-3.5 rounded-xl border border-white/[0.04] bg-white/[0.015]">
               <h4 className="text-[11px] font-semibold text-white/70 mb-2 flex items-center gap-1.5">
-                <Palette className="h-3 w-3 text-[#7890A3]" /> Color Palette
+                <Palette className="h-3 w-3 text-[#9CBBD1]" /> Color Palette
               </h4>
               <div className="flex gap-2">
                 {['#1a1a2e', '#16213e', '#0f3460', '#e94560', '#f5f5f5'].map(c => (
                   <div key={c} className="flex items-center gap-1.5">
                     <div className="w-6 h-6 rounded-md border border-white/[0.1]" style={{ background: c }} />
-                    <span className="text-[8px] text-slate-500">{c}</span>
+                    <span className="text-[8px] text-[#7F8FA3]">{c}</span>
                   </div>
                 ))}
               </div>
@@ -673,7 +673,7 @@ function StoreBuilder({ onBack }: { onBack: () => void }) {
             {/* Typography */}
             <div className="p-3.5 rounded-xl border border-white/[0.04] bg-white/[0.015]">
               <h4 className="text-[11px] font-semibold text-white/70 mb-2 flex items-center gap-1.5">
-                <Type className="h-3 w-3 text-[#7890A3]" /> Typography
+                <Type className="h-3 w-3 text-[#9CBBD1]" /> Typography
               </h4>
               <div className="space-y-1">
                 <p className="text-[16px] font-bold text-white/90">Heading — Inter Bold</p>
@@ -690,10 +690,10 @@ function StoreBuilder({ onBack }: { onBack: () => void }) {
               <div className="space-y-1.5">
                 {sections.map((s, i) => (
                   <div key={s.name} className="flex items-center gap-2.5 py-2 border-b border-white/[0.02] last:border-0">
-                    <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[#637B90]/[0.08] text-[9px] text-[#7890A3] font-semibold shrink-0">{i + 1}</div>
+                    <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[#8FB4CC]/[0.08] text-[9px] text-[#9CBBD1] font-semibold shrink-0">{i + 1}</div>
                     <div>
                       <p className="text-[11px] font-medium text-white/80">{s.name}</p>
-                      <p className="text-[9px] text-slate-500">{s.desc}</p>
+                      <p className="text-[9px] text-[#7F8FA3]">{s.desc}</p>
                     </div>
                     <Check className="h-3 w-3 text-[#6F8F7A]/50 ml-auto shrink-0" />
                   </div>
@@ -708,7 +708,7 @@ function StoreBuilder({ onBack }: { onBack: () => void }) {
             >
               <Lock className="h-3 w-3 inline mr-1.5" />
               Export to Shopify
-              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 rounded-lg bg-[#1B2230] border border-white/[0.08] text-[9px] text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 rounded-lg bg-[#1B2532] border border-white/[0.08] text-[9px] text-[#A9B7C6] opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
                 Shopify integration coming soon
               </div>
             </button>
@@ -734,7 +734,7 @@ function ShopifyConnect({ onBack }: { onBack: () => void }) {
           <ShoppingCart className="h-7 w-7 text-[#6F8F7A]/40" />
         </div>
         <h3 className="text-[15px] font-semibold text-white/70 mb-1.5">Not Connected</h3>
-        <p className="text-[11px] text-slate-500 max-w-xs mb-6">Connect your Shopify store to sync products, track analytics, and manage everything from KorvixAI.</p>
+        <p className="text-[11px] text-[#7F8FA3] max-w-xs mb-6">Connect your Shopify store to sync products, track analytics, and manage everything from KorvixAI.</p>
 
         <button
           disabled
@@ -742,7 +742,7 @@ function ShopifyConnect({ onBack }: { onBack: () => void }) {
         >
           <Lock className="h-3.5 w-3.5 inline mr-1.5" />
           Connect Shopify Store
-          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 rounded-lg bg-[#1B2230] border border-white/[0.08] text-[9px] text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1 rounded-lg bg-[#1B2532] border border-white/[0.08] text-[9px] text-[#A9B7C6] opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
             Shopify integration coming soon
           </div>
         </button>
@@ -759,9 +759,9 @@ function ShopifyConnect({ onBack }: { onBack: () => void }) {
           { icon: BarChart3, label: 'Store Health', desc: 'Performance score' },
         ].map(f => (
           <div key={f.label} className="p-3 rounded-xl border border-white/[0.02] bg-white/[0.01] opacity-40">
-            <f.icon className="h-4 w-4 text-slate-600 mb-1.5" />
+            <f.icon className="h-4 w-4 text-[#7F8FA3] mb-1.5" />
             <p className="text-[11px] font-medium text-white/50">{f.label}</p>
-            <p className="text-[9px] text-slate-600">{f.desc}</p>
+            <p className="text-[9px] text-[#7F8FA3]">{f.desc}</p>
           </div>
         ))}
       </div>
@@ -806,22 +806,22 @@ function PricingOptimizer({ onBack }: { onBack: () => void }) {
       {/* Inputs */}
       <div className="grid grid-cols-2 gap-2 mb-4">
         <div>
-          <label className="text-[10px] text-slate-500 mb-1 block">Product Cost ($)</label>
+          <label className="text-[10px] text-[#7F8FA3] mb-1 block">Product Cost ($)</label>
           <input type="number" value={cost} onChange={e => setCost(e.target.value)}
             className="w-full h-8 px-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[12px] text-white outline-none focus:border-white/[0.08]" />
         </div>
         <div>
-          <label className="text-[10px] text-slate-500 mb-1 block">Shipping Cost ($)</label>
+          <label className="text-[10px] text-[#7F8FA3] mb-1 block">Shipping Cost ($)</label>
           <input type="number" value={shipping} onChange={e => setShipping(e.target.value)}
             className="w-full h-8 px-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[12px] text-white outline-none focus:border-white/[0.08]" />
         </div>
         <div>
-          <label className="text-[10px] text-slate-500 mb-1 block">Target Margin (%)</label>
+          <label className="text-[10px] text-[#7F8FA3] mb-1 block">Target Margin (%)</label>
           <input type="number" value={targetMargin} onChange={e => setTargetMargin(e.target.value)}
             className="w-full h-8 px-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[12px] text-white outline-none focus:border-white/[0.08]" />
         </div>
         <div>
-          <label className="text-[10px] text-slate-500 mb-1 block">Competitor Price ($)</label>
+          <label className="text-[10px] text-[#7F8FA3] mb-1 block">Competitor Price ($)</label>
           <input type="number" value={competitorPrice} onChange={e => setCompetitorPrice(e.target.value)}
             className="w-full h-8 px-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-[12px] text-white outline-none focus:border-white/[0.08]" />
         </div>
@@ -829,17 +829,17 @@ function PricingOptimizer({ onBack }: { onBack: () => void }) {
 
       {/* Results */}
       <div className="grid grid-cols-2 gap-2">
-        <div className="p-3 rounded-xl border border-[#637B90]/10 bg-[#637B90]/[0.04]">
-          <p className="text-[9px] text-[#7890A3]/60 mb-1">Suggested Price</p>
-          <p className="text-[18px] font-semibold text-[#7890A3]">${result.suggested}</p>
+        <div className="p-3 rounded-xl border border-[#8FB4CC]/10 bg-[#8FB4CC]/[0.04]">
+          <p className="text-[9px] text-[#9CBBD1]/60 mb-1">Suggested Price</p>
+          <p className="text-[18px] font-semibold text-[#9CBBD1]">${result.suggested}</p>
         </div>
         <div className="p-3 rounded-xl border border-[#6F8F7A]/10 bg-[#6F8F7A]/[0.04]">
           <p className="text-[9px] text-[#6F8F7A]/60 mb-1">Actual Margin</p>
           <p className="text-[18px] font-semibold text-[#6F8F7A]">{result.margin}%</p>
         </div>
-        <div className="p-3 rounded-xl border border-[#637B90]/10 bg-[#637B90]/[0.04]">
-          <p className="text-[9px] text-[#7890A3]/60 mb-1">Profit / Order</p>
-          <p className="text-[18px] font-semibold text-[#7890A3]">${result.profit}</p>
+        <div className="p-3 rounded-xl border border-[#8FB4CC]/10 bg-[#8FB4CC]/[0.04]">
+          <p className="text-[9px] text-[#9CBBD1]/60 mb-1">Profit / Order</p>
+          <p className="text-[18px] font-semibold text-[#9CBBD1]">${result.profit}</p>
         </div>
         <div className="p-3 rounded-xl border border-[#A68A5B]/10 bg-[#A68A5B]/[0.04]">
           <p className="text-[9px] text-[#A68A5B]/60 mb-1">Break-even ROAS</p>
@@ -848,12 +848,12 @@ function PricingOptimizer({ onBack }: { onBack: () => void }) {
       </div>
 
       {/* Upsell */}
-      <div className="mt-3 p-3 rounded-xl border border-[#637B90]/10 bg-[#637B90]/[0.04]">
+      <div className="mt-3 p-3 rounded-xl border border-[#8FB4CC]/10 bg-[#8FB4CC]/[0.04]">
         <div className="flex items-center gap-2">
-          <Zap className="h-4 w-4 text-[#7890A3]" />
+          <Zap className="h-4 w-4 text-[#9CBBD1]" />
           <div>
-            <p className="text-[10px] text-[#7890A3]/60">Upsell Bundle Suggestion</p>
-            <p className="text-[13px] font-semibold text-[#7890A3]">${result.upsell} bundle price (+35% AOV)</p>
+            <p className="text-[10px] text-[#9CBBD1]/60">Upsell Bundle Suggestion</p>
+            <p className="text-[13px] font-semibold text-[#9CBBD1]">${result.upsell} bundle price (+35% AOV)</p>
           </div>
         </div>
       </div>
@@ -877,7 +877,7 @@ function StoreAnalytics({ onBack }: { onBack: () => void }) {
           <BarChart3 className="h-6 w-6 text-[#6F8F7A]/40" />
         </div>
         <h3 className="text-[14px] font-semibold text-white/70 mb-1">Connect Shopify to unlock</h3>
-        <p className="text-[11px] text-slate-500 max-w-xs">Link your store to see live revenue, orders, conversion rates, and more.</p>
+        <p className="text-[11px] text-[#7F8FA3] max-w-xs">Link your store to see live revenue, orders, conversion rates, and more.</p>
       </div>
 
       {/* Mock Cards (dimmed) */}
@@ -891,9 +891,9 @@ function StoreAnalytics({ onBack }: { onBack: () => void }) {
           { label: 'CPA', value: '$--', sub: 'Cost per acquisition' },
         ].map(m => (
           <div key={m.label} className="p-3 rounded-xl border border-white/[0.02] bg-white/[0.01] opacity-40">
-            <p className="text-[9px] text-slate-500 mb-1">{m.label}</p>
+            <p className="text-[9px] text-[#7F8FA3] mb-1">{m.label}</p>
             <p className="text-[16px] font-semibold text-white/50 tabular-nums">{m.value}</p>
-            <p className="text-[8px] text-slate-600">{m.sub}</p>
+            <p className="text-[8px] text-[#7F8FA3]">{m.sub}</p>
           </div>
         ))}
       </div>

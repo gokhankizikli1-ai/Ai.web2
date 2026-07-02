@@ -95,7 +95,7 @@ function ToolbarDropdown({
         whileTap={{ scale: 0.95 }}
         onClick={() => setOpen(!open)}
         className="h-7 w-7 flex items-center justify-center rounded-md transition-all border hover:text-slate-300 hover:bg-white/[0.04]"
-        style={{ color: 'rgba(148,163,184,0.4)', borderColor: 'rgba(255,255,255,0.05)' }}
+        style={{ color: 'rgba(169, 183, 198,0.4)', borderColor: 'rgba(255,255,255,0.05)' }}
       >
         <MoreHorizontal className="h-3.5 w-3.5" />
       </motion.button>
@@ -115,11 +115,11 @@ function ToolbarDropdown({
                 key={item.label}
                 onClick={item.action}
                 className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-[12px] transition-all hover:bg-white/[0.04]"
-                style={{ color: 'rgba(148,163,184,0.6)' }}
+                style={{ color: 'rgba(169, 183, 198,0.6)' }}
               >
-                <item.icon className="h-3.5 w-3.5" style={{ color: 'rgba(148,163,184,0.35)' }} />
+                <item.icon className="h-3.5 w-3.5" style={{ color: 'rgba(169, 183, 198,0.35)' }} />
                 <span className="flex-1 hover:text-slate-200 transition-colors">{item.label}</span>
-                {item.shortcut && <span className="text-[10px] font-mono" style={{ color: 'rgba(148,163,184,0.2)' }}>{item.shortcut}</span>}
+                {item.shortcut && <span className="text-[10px] font-mono" style={{ color: 'rgba(169, 183, 198,0.2)' }}>{item.shortcut}</span>}
               </button>
             ))}
           </motion.div>
@@ -436,7 +436,7 @@ export default function ChatDashboard() {
         if (!ownerModeForGreeting.isOwner) {
           return (
             <div className="h-full flex items-center justify-center">
-              <p className="text-[12px] text-slate-500">Trading is in private preview.</p>
+              <p className="text-[12px] text-[#7F8FA3]">Trading is in private preview.</p>
             </div>
           );
         }
@@ -464,17 +464,17 @@ export default function ChatDashboard() {
   };
 
   return (
-    <div className="relative flex h-[100dvh] w-full max-w-full overflow-hidden" style={{ background: '#0B0E12', color: '#F5F7FA' }}>
+    <div className="relative flex h-[100dvh] w-full max-w-full overflow-hidden" style={{ background: '#0B0F14', color: '#F5F7FA' }}>
       {/* Ambient background layers */}
       <div className="absolute inset-0 pointer-events-none">
         {/* Base gradient */}
-        <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, #0B0E12 0%, #11161C 40%, #0E0E10 100%)' }} />
+        <div className="absolute inset-0" style={{ background: 'linear-gradient(180deg, #0B0F14 0%, #111820 40%, #0E0E10 100%)' }} />
         {/* Top-right cyan ambient glow */}
-        <div className="absolute -top-[200px] -right-[200px] w-[600px] h-[600px] rounded-full opacity-[0.04]" style={{ background: 'radial-gradient(circle, #52677A 0%, transparent 70%)' }} />
+        <div className="absolute -top-[200px] -right-[200px] w-[600px] h-[600px] rounded-full opacity-[0.04]" style={{ background: 'radial-gradient(circle, #7EA6BF 0%, transparent 70%)' }} />
         {/* Bottom-left blue ambient glow */}
-        <div className="absolute -bottom-[200px] -left-[200px] w-[500px] h-[500px] rounded-full opacity-[0.03]" style={{ background: 'radial-gradient(circle, #94A3B8 0%, transparent 70%)' }} />
+        <div className="absolute -bottom-[200px] -left-[200px] w-[500px] h-[500px] rounded-full opacity-[0.03]" style={{ background: 'radial-gradient(circle, #A9B7C6 0%, transparent 70%)' }} />
         {/* Center subtle depth */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] rounded-full opacity-[0.015]" style={{ background: 'radial-gradient(circle, #52677A 0%, transparent 60%)' }} />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] rounded-full opacity-[0.015]" style={{ background: 'radial-gradient(circle, #7EA6BF 0%, transparent 60%)' }} />
         {/* Subtle grid overlay */}
         <div className="absolute inset-0 opacity-[0.008]" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '80px 80px' }} />
       </div>
@@ -516,13 +516,13 @@ export default function ChatDashboard() {
             the content pane) and at the tabs wrapper (`overflow-x-auto
             scrollbar-none`), so we get bleed protection AND popovers
             that escape the header bounds. */}
-        <header className="relative flex items-center justify-between gap-2 h-11 px-3 border-b shrink-0 z-20" style={{ borderColor: 'rgba(255,255,255,0.04)', background: 'rgba(17,21,28,0.7)', backdropFilter: 'blur(20px)' }}>
+        <header className="relative flex items-center justify-between gap-2 h-11 px-3 border-b shrink-0 z-20" style={{ borderColor: 'rgba(255,255,255,0.04)', background: 'rgba(17, 24, 32,0.7)', backdropFilter: 'blur(20px)' }}>
           <div className="flex items-center gap-2 min-w-0 flex-1 overflow-x-auto scrollbar-none">
             {!sidebarOpen && (
               <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
                 onClick={() => setSidebarOpen(true)}
-                className="h-7 w-7 shrink-0 flex items-center justify-center rounded-md transition-all border hover:text-[#7890A3] hover:bg-white/[0.04] hover:border-[#52677A]/20"
-                style={{ color: 'rgba(148,163,184,0.5)', borderColor: 'rgba(255,255,255,0.05)' }}
+                className="h-7 w-7 shrink-0 flex items-center justify-center rounded-md transition-all border hover:text-[#9CBBD1] hover:bg-white/[0.04] hover:border-[#7EA6BF]/20"
+                style={{ color: 'rgba(169, 183, 198,0.5)', borderColor: 'rgba(255,255,255,0.05)' }}
               >
                 <PanelLeftOpen className="h-3.5 w-3.5" />
               </motion.button>

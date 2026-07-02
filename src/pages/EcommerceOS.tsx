@@ -10,16 +10,16 @@ import {
 import Navigation from '@/components/Navigation';
 
 const COLOR_MAP: Record<string, { bg: string; border: string; icon: string; glow: string }> = {
-  emerald: { bg: 'bg-[#52677A]/[0.05]', border: 'border-[#52677A]/10', icon: 'text-[#7890A3]', glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
-  cyan:    { bg: 'bg-[#52677A]/[0.05]',    border: 'border-[#52677A]/10',    icon: 'text-[#7890A3]',    glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
-  violet:  { bg: 'bg-[#52677A]/[0.05]',  border: 'border-[#52677A]/10',  icon: 'text-[#7890A3]',  glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
-  amber:   { bg: 'bg-[#52677A]/[0.05]',   border: 'border-[#52677A]/10',   icon: 'text-[#7890A3]',   glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
-  rose:    { bg: 'bg-[#52677A]/[0.05]',    border: 'border-[#52677A]/10',    icon: 'text-[#7890A3]',    glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
-  blue:    { bg: 'bg-[#52677A]/[0.05]',    border: 'border-[#52677A]/10',    icon: 'text-[#7890A3]',    glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
-  indigo:  { bg: 'bg-[#52677A]/[0.05]',  border: 'border-[#52677A]/10',  icon: 'text-[#7890A3]',  glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
-  pink:    { bg: 'bg-[#52677A]/[0.05]',    border: 'border-[#52677A]/10',    icon: 'text-[#7890A3]',    glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
-  teal:    { bg: 'bg-[#52677A]/[0.05]',    border: 'border-[#52677A]/10',    icon: 'text-[#7890A3]',    glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
-  orange:  { bg: 'bg-[#52677A]/[0.05]',  border: 'border-[#52677A]/10',  icon: 'text-[#7890A3]',  glow: 'hover:shadow-[0_0_20px_-4px_rgba(82,103,122,0.08)]' },
+  emerald: { bg: 'bg-[#7EA6BF]/[0.05]', border: 'border-[#7EA6BF]/10', icon: 'text-[#9CBBD1]', glow: 'hover:shadow-[0_0_20px_-4px_rgba(126, 166, 191,0.08)]' },
+  cyan:    { bg: 'bg-[#7EA6BF]/[0.05]',    border: 'border-[#7EA6BF]/10',    icon: 'text-[#9CBBD1]',    glow: 'hover:shadow-[0_0_20px_-4px_rgba(126, 166, 191,0.08)]' },
+  violet:  { bg: 'bg-[#7EA6BF]/[0.05]',  border: 'border-[#7EA6BF]/10',  icon: 'text-[#9CBBD1]',  glow: 'hover:shadow-[0_0_20px_-4px_rgba(126, 166, 191,0.08)]' },
+  amber:   { bg: 'bg-[#7EA6BF]/[0.05]',   border: 'border-[#7EA6BF]/10',   icon: 'text-[#9CBBD1]',   glow: 'hover:shadow-[0_0_20px_-4px_rgba(126, 166, 191,0.08)]' },
+  rose:    { bg: 'bg-[#7EA6BF]/[0.05]',    border: 'border-[#7EA6BF]/10',    icon: 'text-[#9CBBD1]',    glow: 'hover:shadow-[0_0_20px_-4px_rgba(126, 166, 191,0.08)]' },
+  blue:    { bg: 'bg-[#7EA6BF]/[0.05]',    border: 'border-[#7EA6BF]/10',    icon: 'text-[#9CBBD1]',    glow: 'hover:shadow-[0_0_20px_-4px_rgba(126, 166, 191,0.08)]' },
+  indigo:  { bg: 'bg-[#7EA6BF]/[0.05]',  border: 'border-[#7EA6BF]/10',  icon: 'text-[#9CBBD1]',  glow: 'hover:shadow-[0_0_20px_-4px_rgba(126, 166, 191,0.08)]' },
+  pink:    { bg: 'bg-[#7EA6BF]/[0.05]',    border: 'border-[#7EA6BF]/10',    icon: 'text-[#9CBBD1]',    glow: 'hover:shadow-[0_0_20px_-4px_rgba(126, 166, 191,0.08)]' },
+  teal:    { bg: 'bg-[#7EA6BF]/[0.05]',    border: 'border-[#7EA6BF]/10',    icon: 'text-[#9CBBD1]',    glow: 'hover:shadow-[0_0_20px_-4px_rgba(126, 166, 191,0.08)]' },
+  orange:  { bg: 'bg-[#7EA6BF]/[0.05]',  border: 'border-[#7EA6BF]/10',  icon: 'text-[#9CBBD1]',  glow: 'hover:shadow-[0_0_20px_-4px_rgba(126, 166, 191,0.08)]' },
 };
 
 const TOOLS = [
@@ -59,34 +59,34 @@ export default function EcommerceOS() {
           {/* Header */}
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
             <div className="flex items-center gap-3 mb-4">
-              <button onClick={() => navigate('/workspace')} className="flex items-center gap-1.5 text-[11px] text-slate-500 hover:text-slate-300 transition-colors">
+              <button onClick={() => navigate('/workspace')} className="flex items-center gap-1.5 text-[11px] text-[#7F8FA3] hover:text-slate-300 transition-colors">
                 <ArrowLeft className="h-3 w-3" /> Workspace
               </button>
             </div>
             <div className="flex items-center gap-3 mb-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#52677A]/[0.08] border border-[#52677A]/15">
-                <ShoppingCart className="h-5 w-5 text-[#7890A3]/70" />
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#7EA6BF]/[0.08] border border-[#7EA6BF]/15">
+                <ShoppingCart className="h-5 w-5 text-[#9CBBD1]/70" />
               </div>
               <div>
                 <h1 className="text-2xl font-semibold text-white tracking-tight">Ecommerce OS</h1>
-                <p className="text-[12px] text-slate-500">From research to revenue</p>
+                <p className="text-[12px] text-[#7F8FA3]">From research to revenue</p>
               </div>
             </div>
 
             {/* Revenue bar */}
             <div className="flex flex-wrap items-center gap-3 sm:gap-4 mt-4">
               {[
-                { icon: DollarSign, label: 'Revenue', value: '$24,680', color: 'text-[#7890A3]' },
-                { icon: ShoppingCart, label: 'Orders', value: '1,247', color: 'text-[#7890A3]' },
-                { icon: Users, label: 'Visitors', value: '8.4K', color: 'text-[#7890A3]' },
-                { icon: TrendingUp, label: 'Conversion', value: '3.2%', color: 'text-[#7890A3]' },
-                { icon: Award, label: 'AOV', value: '$47.20', color: 'text-[#7890A3]' },
+                { icon: DollarSign, label: 'Revenue', value: '$24,680', color: 'text-[#9CBBD1]' },
+                { icon: ShoppingCart, label: 'Orders', value: '1,247', color: 'text-[#9CBBD1]' },
+                { icon: Users, label: 'Visitors', value: '8.4K', color: 'text-[#9CBBD1]' },
+                { icon: TrendingUp, label: 'Conversion', value: '3.2%', color: 'text-[#9CBBD1]' },
+                { icon: Award, label: 'AOV', value: '$47.20', color: 'text-[#9CBBD1]' },
               ].map((s, i) => (
                 <motion.div key={s.label} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 + i * 0.04 }}
                   className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.01] border border-white/[0.03]">
                   <s.icon className={`h-3 w-3 ${s.color}`} />
                   <span className="text-[12px] font-medium text-white">{s.value}</span>
-                  <span className="text-[10px] text-slate-600">{s.label}</span>
+                  <span className="text-[10px] text-[#7F8FA3]">{s.label}</span>
                 </motion.div>
               ))}
             </div>
@@ -110,15 +110,15 @@ export default function EcommerceOS() {
                             <tool.icon className={`h-4 w-4 ${c.icon}`} />
                           </div>
                           {tool.badge && (
-                            <span className={`text-[9px] font-semibold px-1.5 py-[2px] rounded ${tool.badge === 'Popular' ? 'bg-[#52677A]/[0.08] text-[#7890A3]/70' : 'bg-[#52677A]/[0.08] text-[#7890A3]/70'}`}>
+                            <span className={`text-[9px] font-semibold px-1.5 py-[2px] rounded ${tool.badge === 'Popular' ? 'bg-[#7EA6BF]/[0.08] text-[#9CBBD1]/70' : 'bg-[#7EA6BF]/[0.08] text-[#9CBBD1]/70'}`}>
                               {tool.badge === 'Popular' && <Flame className="h-2.5 w-2.5 inline mr-0.5" />}
                               {tool.badge}
                             </span>
                           )}
                         </div>
                         <h3 className="text-[13px] font-medium text-white mb-1 group-hover:text-slate-200 transition-colors">{tool.name}</h3>
-                        <p className="text-[11px] text-slate-600 leading-relaxed">{tool.desc}</p>
-                        <div className="flex items-center gap-1 mt-2 text-[#64748B] group-hover:text-slate-500 transition-colors">
+                        <p className="text-[11px] text-[#7F8FA3] leading-relaxed">{tool.desc}</p>
+                        <div className="flex items-center gap-1 mt-2 text-[#7F8FA3] group-hover:text-[#7F8FA3] transition-colors">
                           <span className="text-[10px]">Launch</span>
                           <ArrowUpRight className="h-2.5 w-2.5" />
                         </div>
@@ -130,7 +130,7 @@ export default function EcommerceOS() {
             ) : (
               <motion.div key="tool" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }}>
                 <div className="flex items-center gap-3 mb-6">
-                  <button onClick={() => setSelected(null)} className="flex items-center gap-1 text-[12px] text-slate-500 hover:text-white transition-colors">
+                  <button onClick={() => setSelected(null)} className="flex items-center gap-1 text-[12px] text-[#7F8FA3] hover:text-white transition-colors">
                     <ArrowLeft className="h-3.5 w-3.5" /> Back
                   </button>
                 </div>
@@ -143,20 +143,20 @@ export default function EcommerceOS() {
                       </div>
                       <div>
                         <h2 className="text-lg font-semibold text-white">{activeTool.name}</h2>
-                        <p className="text-[12px] text-slate-500">{activeTool.desc}</p>
+                        <p className="text-[12px] text-[#7F8FA3]">{activeTool.desc}</p>
                       </div>
                     </div>
 
                     <div className="space-y-4 mb-6">
                       {activeTool.inputs.map((input, i) => (
                         <motion.div key={i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}>
-                          <label className="block text-[12px] text-slate-400 mb-1.5">{input.label}</label>
+                          <label className="block text-[12px] text-[#A9B7C6] mb-1.5">{input.label}</label>
                           {(input as any).type === 'textarea' ? (
                             <textarea value={formValues[i] || ''} onChange={(e) => setFormValues((p) => ({ ...p, [i]: e.target.value }))} placeholder={input.placeholder} rows={4}
-                              className="w-full rounded-xl bg-white/[0.015] border border-white/[0.04] p-3 text-[13px] text-white placeholder:text-[#64748B] focus:border-[#52677A]/20 focus:bg-white/[0.02] outline-none transition-all resize-none" />
+                              className="w-full rounded-xl bg-white/[0.015] border border-white/[0.04] p-3 text-[13px] text-white placeholder:text-[#7F8FA3] focus:border-[#7EA6BF]/20 focus:bg-white/[0.02] outline-none transition-all resize-none" />
                           ) : (
                             <input type="text" value={formValues[i] || ''} onChange={(e) => setFormValues((p) => ({ ...p, [i]: e.target.value }))} placeholder={input.placeholder}
-                              className="w-full h-10 rounded-xl bg-white/[0.015] border border-white/[0.04] px-3 text-[13px] text-white placeholder:text-[#64748B] focus:border-[#52677A]/20 focus:bg-white/[0.02] outline-none transition-all" />
+                              className="w-full h-10 rounded-xl bg-white/[0.015] border border-white/[0.04] px-3 text-[13px] text-white placeholder:text-[#7F8FA3] focus:border-[#7EA6BF]/20 focus:bg-white/[0.02] outline-none transition-all" />
                           )}
                         </motion.div>
                       ))}

@@ -5,6 +5,7 @@ import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { Menu, Rocket, ShoppingBag, Code, Cpu, LayoutDashboard, LogOut } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '@/stores/authStore';
+import BrandLogo from '@/components/BrandLogo';
 
 const NAV_LINKS = [
   { label: 'Product', href: '/#features', icon: Code },
@@ -43,20 +44,9 @@ export default function Navbar() {
     >
       <div className="max-w-6xl mx-auto px-4 sm:px-6">
         <div className="flex items-center justify-between h-14">
-          {/* Logo — dark "K" mark + high-contrast wordmark for readability */}
-          <Link to="/" className="flex items-center gap-2.5 group">
-            <div
-              className="flex h-[29px] w-[29px] items-center justify-center rounded-lg"
-              style={{
-                background: 'linear-gradient(158deg, rgba(32,41,51,0.5) 0%, #0B0E12 100%), #12171E',
-                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.10), 0 2px 6px rgba(16,24,39,0.20)',
-              }}
-            >
-              <span className="font-mono text-[15px] font-bold text-[#EDF1F5]">K</span>
-            </div>
-            <span className="text-[17px] font-bold tracking-tight text-slate-900">
-              Korvix<span className="font-semibold text-slate-500">AI</span>
-            </span>
+          {/* Shared Korvix logo — dark on porcelain */}
+          <Link to="/" className="group">
+            <BrandLogo tone="onLight" wordSize={17} />
           </Link>
 
           {/* Desktop Nav */}

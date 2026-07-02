@@ -31,11 +31,11 @@ const SECTIONS = [
 ];
 
 const ACCENT_COLORS = [
-  { id: 'cyan', label: 'Cyan', class: 'from-[#7890A3] to-[#52677A]', dot: 'bg-[#7890A3]' },
+  { id: 'cyan', label: 'Cyan', class: 'from-[#9CBBD1] to-[#7EA6BF]', dot: 'bg-[#9CBBD1]' },
   { id: 'emerald', label: 'Emerald', class: 'from-[#6F8F7A] to-[#6F8F7A]', dot: 'bg-[#6F8F7A]' },
-  { id: 'violet', label: 'Violet', class: 'from-[#7890A3] to-[#52677A]', dot: 'bg-[#7890A3]' },
+  { id: 'violet', label: 'Violet', class: 'from-[#9CBBD1] to-[#7EA6BF]', dot: 'bg-[#9CBBD1]' },
   { id: 'amber', label: 'Amber', class: 'from-[#A68A5B] to-[#A68A5B]', dot: 'bg-[#A68A5B]' },
-  { id: 'rose', label: 'Rose', class: 'from-[#B76E79] to-[#52677A]', dot: 'bg-[#B76E79]' },
+  { id: 'rose', label: 'Rose', class: 'from-[#B76E79] to-[#7EA6BF]', dot: 'bg-[#B76E79]' },
 ];
 
 const TIMEZONES = [
@@ -144,7 +144,7 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
     <div className="inline-flex rounded-lg p-0.5" style={{ background: 'rgba(255,255,255,0.025)', border: '1px solid rgba(255,255,255,0.04)' }}>
       {options.map((o) => (
         <button key={o.value} onClick={() => onChange(o.value)}
-          className={`px-3 py-[5px] rounded-md text-[11px] font-medium transition-all duration-200 whitespace-nowrap ${value === o.value ? 'text-white' : 'text-slate-500 hover:text-slate-300'}`}
+          className={`px-3 py-[5px] rounded-md text-[11px] font-medium transition-all duration-200 whitespace-nowrap ${value === o.value ? 'text-white' : 'text-[#7F8FA3] hover:text-slate-300'}`}
           style={value === o.value ? { background: 'rgba(255,255,255,0.07)' } : { background: 'transparent' }}>
           {o.label}
         </button>
@@ -156,7 +156,7 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
     <div className="flex items-center justify-between py-3.5 gap-6">
       <div className="min-w-0 flex-1">
         <p className="text-[13px] font-medium text-white/80">{label}</p>
-        {description && <p className="text-[12px] text-slate-500 mt-0.5">{description}</p>}
+        {description && <p className="text-[12px] text-[#7F8FA3] mt-0.5">{description}</p>}
       </div>
       <div className="shrink-0">{children}</div>
     </div>
@@ -166,7 +166,7 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
     <div className="mb-6">
       <div className="mb-4">
         <h3 className="text-[15px] font-semibold text-white/90 tracking-tight">{title}</h3>
-        {subtitle && <p className="text-[12px] text-slate-500 mt-0.5">{subtitle}</p>}
+        {subtitle && <p className="text-[12px] text-[#7F8FA3] mt-0.5">{subtitle}</p>}
       </div>
       <div
         className="rounded-xl p-4"
@@ -195,9 +195,9 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
             className="flex items-center gap-2 rounded-lg px-3 py-2 text-[12px] text-white/80 hover:text-white transition-all min-w-[150px]"
             style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
           >
-            <Globe className="w-3.5 h-3.5 text-slate-500" />
+            <Globe className="w-3.5 h-3.5 text-[#7F8FA3]" />
             <span className="flex-1 text-left">{LANGUAGES.find((l) => l.code === currentLang)?.label || 'English'}</span>
-            <ChevronDown className={`w-3 h-3 text-slate-600 transition-transform ${langOpen ? 'rotate-180' : ''}`} />
+            <ChevronDown className={`w-3 h-3 text-[#7F8FA3] transition-transform ${langOpen ? 'rotate-180' : ''}`} />
           </button>
           <AnimatePresence>
             {langOpen && (
@@ -205,15 +205,15 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
                 initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }}
                 transition={{ duration: 0.15 }}
                 className="absolute right-0 top-full mt-1.5 w-48 rounded-xl overflow-hidden z-50"
-                style={{ background: 'linear-gradient(180deg, #1B2230, #171C24)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 16px 40px rgba(0,0,0,0.4)' }}
+                style={{ background: 'linear-gradient(180deg, #1B2532, #171C24)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 16px 40px rgba(0,0,0,0.4)' }}
               >
                 <div className="p-1.5 max-h-[240px] overflow-y-auto scrollbar-thin">
                   {LANGUAGES.map((l) => (
                     <button key={l.code} onClick={() => { setLang(l.code as Language); setLangOpen(false); setHasChanges(true); updateDraft('language', l.label as 'English' | 'Turkish'); }}
-                      className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[12px] transition-all ${currentLang === l.code ? 'bg-white/[0.05] text-white' : 'text-slate-500 hover:text-slate-300 hover:bg-white/[0.03]'}`}>
-                      <Globe className="w-3.5 h-3.5 text-slate-600 shrink-0" />
+                      className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[12px] transition-all ${currentLang === l.code ? 'bg-white/[0.05] text-white' : 'text-[#7F8FA3] hover:text-slate-300 hover:bg-white/[0.03]'}`}>
+                      <Globe className="w-3.5 h-3.5 text-[#7F8FA3] shrink-0" />
                       <span className="flex-1">{l.label}</span>
-                      {currentLang === l.code && <Check className="h-3 w-3 text-[#52677A] shrink-0" />}
+                      {currentLang === l.code && <Check className="h-3 w-3 text-[#7EA6BF] shrink-0" />}
                     </button>
                   ))}
                 </div>
@@ -284,7 +284,7 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
       {/* Intro card */}
       <div className="mb-6">
         <h3 className="text-[15px] font-semibold text-white/90 tracking-tight">About You</h3>
-        <p className="text-[12px] text-slate-500 mt-0.5">Help KorvixAI understand who you are</p>
+        <p className="text-[12px] text-[#7F8FA3] mt-0.5">Help KorvixAI understand who you are</p>
       </div>
 
       {/* Memory textarea */}
@@ -307,7 +307,7 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
             className="w-full bg-transparent text-[13px] text-white/80 placeholder:text-white/15 outline-none resize-none leading-relaxed"
           />
         </div>
-        <p className="text-[10px] text-slate-600 mt-1.5 ml-1">
+        <p className="text-[10px] text-[#7F8FA3] mt-1.5 ml-1">
           This information helps KorvixAI personalize its responses to you.
         </p>
       </div>
@@ -347,7 +347,7 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
               key={tag}
               whileTap={{ scale: 0.95 }}
               onClick={() => addTag(tag)}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] text-slate-500 hover:text-slate-300 transition-all duration-200"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] text-[#7F8FA3] hover:text-slate-300 transition-all duration-200"
               style={{
                 background: 'rgba(255,255,255,0.02)',
                 border: '1px solid rgba(255,255,255,0.04)',
@@ -390,8 +390,8 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
             animate={{ opacity: 1, scale: 1 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => { addTag(newTag); setNewTag(''); }}
-            className="px-3 py-2 rounded-lg text-[11px] font-medium text-[#52677A]/70 hover:text-[#637B90] transition-all"
-            style={{ background: 'rgba(82,103,122,0.06)', border: '1px solid rgba(82,103,122,0.1)' }}
+            className="px-3 py-2 rounded-lg text-[11px] font-medium text-[#7EA6BF]/70 hover:text-[#8FB4CC] transition-all"
+            style={{ background: 'rgba(126, 166, 191,0.06)', border: '1px solid rgba(126, 166, 191,0.1)' }}
           >
             Add
           </motion.button>
@@ -404,31 +404,31 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
     <>
       <div className="mb-5">
         <h3 className="text-[15px] font-semibold text-white/90 tracking-tight">Memory</h3>
-        <p className="text-[12px] text-slate-500 mt-0.5">Your AI's contextual memory system</p>
+        <p className="text-[12px] text-[#7F8FA3] mt-0.5">Your AI's contextual memory system</p>
       </div>
 
       {/* Enable Memory toggle */}
       <div
         className="flex items-center justify-between px-4 py-3.5 rounded-xl mb-5"
         style={{
-          background: draft.memoryEnabled ? 'rgba(82,103,122,0.02)' : 'rgba(255,255,255,0.015)',
-          border: `1px solid ${draft.memoryEnabled ? 'rgba(82,103,122,0.08)' : 'rgba(255,255,255,0.04)'}`,
+          background: draft.memoryEnabled ? 'rgba(126, 166, 191,0.02)' : 'rgba(255,255,255,0.015)',
+          border: `1px solid ${draft.memoryEnabled ? 'rgba(126, 166, 191,0.08)' : 'rgba(255,255,255,0.04)'}`,
         }}
       >
         <div className="flex items-center gap-3">
           <div
             className="flex h-8 w-8 items-center justify-center rounded-lg"
             style={{
-              background: draft.memoryEnabled ? 'rgba(82,103,122,0.08)' : 'rgba(255,255,255,0.03)',
-              border: `1px solid ${draft.memoryEnabled ? 'rgba(82,103,122,0.12)' : 'rgba(255,255,255,0.05)'}`,
-              boxShadow: draft.memoryEnabled ? '0 0 8px rgba(82,103,122,0.06)' : 'none',
+              background: draft.memoryEnabled ? 'rgba(126, 166, 191,0.08)' : 'rgba(255,255,255,0.03)',
+              border: `1px solid ${draft.memoryEnabled ? 'rgba(126, 166, 191,0.12)' : 'rgba(255,255,255,0.05)'}`,
+              boxShadow: draft.memoryEnabled ? '0 0 8px rgba(126, 166, 191,0.06)' : 'none',
             }}
           >
-            <Brain className="h-4 w-4" style={{ color: draft.memoryEnabled ? 'rgba(82,103,122,0.7)' : 'rgba(148,163,184,0.3)' }} />
+            <Brain className="h-4 w-4" style={{ color: draft.memoryEnabled ? 'rgba(126, 166, 191,0.7)' : 'rgba(169, 183, 198,0.3)' }} />
           </div>
           <div>
             <p className="text-[13px] text-white/80 font-medium">Enable Memory</p>
-            <p className="text-[11px] text-slate-500 mt-0.5">Store and reuse conversation context across sessions</p>
+            <p className="text-[11px] text-[#7F8FA3] mt-0.5">Store and reuse conversation context across sessions</p>
           </div>
         </div>
         <Switch checked={draft.memoryEnabled} onCheckedChange={(c) => updateDraft('memoryEnabled', c)} />
@@ -436,8 +436,8 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
 
       {draft.memoryEnabled && (
         <div className="space-y-2">
-          <p className="text-[10px] text-slate-500 flex items-center gap-1.5">
-            <Zap className="h-2.5 w-2.5 text-[#52677A]/40" />
+          <p className="text-[10px] text-[#7F8FA3] flex items-center gap-1.5">
+            <Zap className="h-2.5 w-2.5 text-[#7EA6BF]/40" />
             Interactive memory map — hover nodes to explore connections
           </p>
           <MemoryGraph />
@@ -448,7 +448,7 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
         <div className="flex items-center justify-center py-16">
           <div className="text-center">
             <Brain className="h-8 w-8 text-white/[0.06] mx-auto mb-2" />
-            <p className="text-[12px] text-slate-600">Enable memory to see your AI context graph</p>
+            <p className="text-[12px] text-[#7F8FA3]">Enable memory to see your AI context graph</p>
           </div>
         </div>
       )}
@@ -490,7 +490,7 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
 
       <SectionCard title="Data" subtitle="Export or remove your data">
         <SettingRow label="Export Data" description="Download all your data">
-          <Button variant="ghost" size="sm" className="h-8 text-[12px] text-slate-400 hover:text-white gap-2" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+          <Button variant="ghost" size="sm" className="h-8 text-[12px] text-[#A9B7C6] hover:text-white gap-2" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
             <Download className="h-3.5 w-3.5" /> Export
           </Button>
         </SettingRow>
@@ -563,9 +563,9 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
         <div className="flex items-center justify-between px-6 py-4 shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
           <div>
             <h2 className="text-[16px] font-semibold text-white tracking-tight">Settings</h2>
-            <p className="text-[11px] text-slate-500 mt-0.5">Manage your KorvixAI preferences</p>
+            <p className="text-[11px] text-[#7F8FA3] mt-0.5">Manage your KorvixAI preferences</p>
           </div>
-          <button onClick={() => onOpenChange(false)} className="h-8 w-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-white hover:bg-white/[0.05] transition-all">
+          <button onClick={() => onOpenChange(false)} className="h-8 w-8 flex items-center justify-center rounded-lg text-[#7F8FA3] hover:text-white hover:bg-white/[0.05] transition-all">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -581,7 +581,7 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
                   key={s.id}
                   onClick={() => setActiveSection(s.id)}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-all duration-200 mb-0.5 ${
-                    isActive ? 'text-white' : 'text-slate-500 hover:text-slate-300'
+                    isActive ? 'text-white' : 'text-[#7F8FA3] hover:text-slate-300'
                   }`}
                   style={{
                     background: isActive ? 'rgba(255,255,255,0.05)' : 'transparent',
@@ -591,14 +591,14 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
                   <div
                     className="flex h-7 w-7 items-center justify-center rounded-md shrink-0"
                     style={{
-                      background: isActive ? 'rgba(82,103,122,0.08)' : 'rgba(255,255,255,0.02)',
-                      border: `1px solid ${isActive ? 'rgba(82,103,122,0.12)' : 'rgba(255,255,255,0.04)'}`,
+                      background: isActive ? 'rgba(126, 166, 191,0.08)' : 'rgba(255,255,255,0.02)',
+                      border: `1px solid ${isActive ? 'rgba(126, 166, 191,0.12)' : 'rgba(255,255,255,0.04)'}`,
                     }}
                   >
-                    <s.icon className="h-3.5 w-3.5" style={{ color: isActive ? 'rgba(82,103,122,0.7)' : 'rgba(148,163,184,0.35)' }} />
+                    <s.icon className="h-3.5 w-3.5" style={{ color: isActive ? 'rgba(126, 166, 191,0.7)' : 'rgba(169, 183, 198,0.35)' }} />
                   </div>
                   <span className={`text-[13px] ${isActive ? 'font-medium' : ''}`}>{s.label}</span>
-                  {isActive && <div className="ml-auto w-1 h-1 rounded-full bg-[#52677A]/50 shrink-0" style={{ boxShadow: '0 0 4px rgba(82,103,122,0.3)' }} />}
+                  {isActive && <div className="ml-auto w-1 h-1 rounded-full bg-[#7EA6BF]/50 shrink-0" style={{ boxShadow: '0 0 4px rgba(126, 166, 191,0.3)' }} />}
                 </button>
               );
             })}
@@ -623,7 +623,7 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
 
         {/* ═── Footer ─══ */}
         <div className="flex items-center justify-between px-6 py-3.5 shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.04)', background: 'rgba(255,255,255,0.01)' }}>
-          <button onClick={handleReset} className="flex items-center gap-2 text-[12px] text-slate-500 hover:text-slate-300 transition-colors">
+          <button onClick={handleReset} className="flex items-center gap-2 text-[12px] text-[#7F8FA3] hover:text-slate-300 transition-colors">
             <RotateCcw className="h-3 w-3" /> Reset
           </button>
           <div className="flex items-center gap-3">
@@ -635,10 +635,10 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
             <Button onClick={handleSave} disabled={!hasChanges}
               className="h-8 px-5 text-[12px] font-medium transition-all disabled:opacity-30"
               style={{
-                background: hasChanges ? 'linear-gradient(135deg, rgba(82,103,122,0.8), rgba(120,144,163,0.8))' : 'rgba(255,255,255,0.05)',
+                background: hasChanges ? 'linear-gradient(135deg, rgba(126, 166, 191,0.8), rgba(156, 187, 209,0.8))' : 'rgba(255,255,255,0.05)',
                 color: 'white',
                 border: 'none',
-                boxShadow: hasChanges ? '0 4px 16px rgba(82,103,122,0.15)' : 'none',
+                boxShadow: hasChanges ? '0 4px 16px rgba(126, 166, 191,0.15)' : 'none',
               }}>
               <Save className="h-3.5 w-3.5 mr-1.5" /> Save Changes
             </Button>

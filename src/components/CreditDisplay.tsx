@@ -46,7 +46,7 @@ export default function CreditDisplay() {
             {/* Header */}
             <div className="p-3.5 border-b border-white/[0.03]">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-[10px] text-slate-500 uppercase tracking-wider">Credits</span>
+                <span className="text-[10px] text-[#7F8FA3] uppercase tracking-wider">Credits</span>
                 <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#A68A5B]/[0.06]">
                   <Crown className="w-2.5 h-2.5 text-[#A68A5B]" />
                   <span className="text-[9px] text-[#A68A5B] font-medium">Pro</span>
@@ -55,14 +55,14 @@ export default function CreditDisplay() {
 
               <div className="flex items-baseline gap-1.5">
                 <span className="text-lg font-bold text-white tabular-nums">{creditsRemaining}</span>
-                <span className="text-[10px] text-slate-600">/ {creditsTotal}</span>
+                <span className="text-[10px] text-[#7F8FA3]">/ {creditsTotal}</span>
               </div>
 
               {/* Progress */}
               <div className="w-full h-1 bg-white/[0.03] rounded-full mt-2 overflow-hidden">
-                <div className="h-full rounded-full bg-[#52677A]/40" style={{ width: `${usagePercent}%` }} />
+                <div className="h-full rounded-full bg-[#7EA6BF]/40" style={{ width: `${usagePercent}%` }} />
               </div>
-              <p className="text-[9px] text-[#64748B] mt-1">{usagePercent}% used · Resets in 12d</p>
+              <p className="text-[9px] text-[#7F8FA3] mt-1">{usagePercent}% used · Resets in 12d</p>
             </div>
 
             {/* Free chat badge */}
@@ -75,7 +75,7 @@ export default function CreditDisplay() {
             <div className="p-3">
               <button
                 onClick={() => { navigate('/credits'); setOpen(false); }}
-                className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#52677A]/[0.05] border border-[#52677A]/8 text-[11px] font-medium text-[#52677A] hover:bg-[#52677A]/[0.08] transition-colors"
+                className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#7EA6BF]/[0.05] border border-[#7EA6BF]/8 text-[11px] font-medium text-[#7EA6BF] hover:bg-[#7EA6BF]/[0.08] transition-colors"
               >
                 Manage <ArrowRight className="w-3 h-3" />
               </button>

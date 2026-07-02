@@ -138,21 +138,21 @@ function humanAgentName(id: string | null | undefined): string {
 /** Phase 4.1 — workflow-stage colour for an agent_id, so multi-agent
  *  panels read as a colourful timeline rather than a uniform blob. */
 function agentTone(id: string | null | undefined): string {
-  if (!id) return '#52677A';
+  if (!id) return '#7EA6BF';
   const map: Record<string, string> = {
-    researcher:         '#7890A3',  // violet — analysis
-    product_strategist: '#637B90',  // orange — strategy
-    ux_designer:        '#7890A3',  // sky — design flow
-    brand_designer:     '#637B90',  // pink — visual
-    copywriter:         '#637B90',  // amber — voice
-    coder:              '#52677A',  // emerald — build
-    marketer:           '#637B90',  // yellow — growth
-    strategist:         '#637B90',  // orange — advice
-    trader:             '#52677A',  // cyan — markets
+    researcher:         '#9CBBD1',  // violet — analysis
+    product_strategist: '#8FB4CC',  // orange — strategy
+    ux_designer:        '#9CBBD1',  // sky — design flow
+    brand_designer:     '#8FB4CC',  // pink — visual
+    copywriter:         '#8FB4CC',  // amber — voice
+    coder:              '#7EA6BF',  // emerald — build
+    marketer:           '#8FB4CC',  // yellow — growth
+    strategist:         '#8FB4CC',  // orange — advice
+    trader:             '#7EA6BF',  // cyan — markets
   };
   if (map[id]) return map[id];
-  if (id.startsWith('ephemeral-')) return '#7890A3';  // purple — ephemeral
-  return '#52677A';
+  if (id.startsWith('ephemeral-')) return '#9CBBD1';  // purple — ephemeral
+  return '#7EA6BF';
 }
 
 function orchestrationStatusFor(evt: {
@@ -167,9 +167,9 @@ function orchestrationStatusFor(evt: {
 
   switch (evt.kind) {
     case 'run.started':
-      return { label: 'Supervisor planning…', color: '#52677A', pulse: true };
+      return { label: 'Supervisor planning…', color: '#7EA6BF', pulse: true };
     case 'run.finished':
-      return { label: 'Orchestration complete', color: '#94a3b8', pulse: false };
+      return { label: 'Orchestration complete', color: '#A9B7C6', pulse: false };
     case 'run.errored':
       return { label: `Orchestration errored — ${p.error ?? 'unknown'}`, color: '#A68A5B', pulse: false };
     case 'delegate.started':
@@ -180,17 +180,17 @@ function orchestrationStatusFor(evt: {
         color: targetColor, pulse: true,
       };
     case 'delegate.returned':
-      return { label: `${targetName} ready`, color: '#94a3b8', pulse: false };
+      return { label: `${targetName} ready`, color: '#A9B7C6', pulse: false };
     case 'delegate.errored':
       return { label: `Delegation failed — ${p.code ?? p.error ?? 'unknown'}`, color: '#A68A5B', pulse: false };
     case 'agent.started':
       return { label: `${targetName} thinking…`, color: targetColor, pulse: true };
     case 'agent.finished':
-      return { label: `${targetName} delivered`, color: '#94a3b8', pulse: false };
+      return { label: `${targetName} delivered`, color: '#A9B7C6', pulse: false };
     case 'tool.called':
-      return { label: `Calling tool: ${p.tool ?? 'unknown'}`, color: '#52677A', pulse: true };
+      return { label: `Calling tool: ${p.tool ?? 'unknown'}`, color: '#7EA6BF', pulse: true };
     case 'tool.completed':
-      return { label: `${p.tool ?? 'Tool'} done`, color: '#94a3b8', pulse: false };
+      return { label: `${p.tool ?? 'Tool'} done`, color: '#A9B7C6', pulse: false };
     case 'tool.errored':
       return { label: `${p.tool ?? 'Tool'} failed`, color: '#A68A5B', pulse: false };
 
@@ -251,7 +251,7 @@ function orchestrationStatusFor(evt: {
         : '';
       return {
         label: `Task completed — ${humanAgentName(aid)}${elapsedStr}`,
-        color: '#94a3b8',
+        color: '#A9B7C6',
         pulse: false,
       };
     }
@@ -265,7 +265,7 @@ function orchestrationStatusFor(evt: {
       };
     }
     default:
-      return { label: evt.kind, color: '#94a3b8', pulse: false };
+      return { label: evt.kind, color: '#A9B7C6', pulse: false };
   }
 }
 
@@ -691,7 +691,7 @@ export default function ProjectWorkspace() {
           <div className="flex items-center justify-center gap-2">
             <button onClick={() => navigate('/projects')}
               className="px-4 py-2 rounded-xl text-[12px] font-semibold text-white transition-all hover:brightness-110"
-              style={{ background: 'linear-gradient(135deg, #52677A, #7890A3)' }}>
+              style={{ background: 'linear-gradient(135deg, #7EA6BF, #9CBBD1)' }}>
               Back to Projects
             </button>
             <button onClick={() => navigate('/projects?new=1')}
@@ -709,11 +709,11 @@ export default function ProjectWorkspace() {
     <div className="h-[100dvh] w-full max-w-full flex flex-col overflow-hidden" style={{ background: '#11151C', color: '#E2E8F0' }}>
       {/* Ambient */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute -top-[200px] -right-[200px] w-[600px] h-[600px] rounded-full opacity-[0.03]" style={{ background: 'radial-gradient(circle, #52677A 0%, transparent 70%)' }} />
+        <div className="absolute -top-[200px] -right-[200px] w-[600px] h-[600px] rounded-full opacity-[0.03]" style={{ background: 'radial-gradient(circle, #7EA6BF 0%, transparent 70%)' }} />
       </div>
 
       {/* Top Bar */}
-      <div className="relative shrink-0 flex items-center justify-between px-4 py-2.5" style={{ background: 'rgba(17,21,28,0.85)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(255,255,255,0.05)', zIndex: 10 }}>
+      <div className="relative shrink-0 flex items-center justify-between px-4 py-2.5" style={{ background: 'rgba(17, 24, 32,0.85)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(255,255,255,0.05)', zIndex: 10 }}>
         <div className="flex items-center gap-3">
           <button onClick={() => navigate('/projects')} className="flex items-center gap-1 text-[11px] text-white/30 hover:text-white/60 transition-colors">
             <ArrowLeft className="h-3.5 w-3.5" />
@@ -725,8 +725,8 @@ export default function ProjectWorkspace() {
           <h1 className="text-[13px] font-semibold text-white/90">{project.name}</h1>
           {builderMode ? (
             <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(34,211,238,0.06)', border: '1px solid rgba(34,211,238,0.12)' }}>
-              <div className={`w-1.5 h-1.5 rounded-full bg-[#7890A3] ${buildOverview?.running ? 'animate-pulse' : ''}`} />
-              <span className="text-[9px] text-[#7890A3]/80 font-medium">Build Studio</span>
+              <div className={`w-1.5 h-1.5 rounded-full bg-[#9CBBD1] ${buildOverview?.running ? 'animate-pulse' : ''}`} />
+              <span className="text-[9px] text-[#9CBBD1]/80 font-medium">Build Studio</span>
             </div>
           ) : (
             <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(52,211,153,0.06)', border: '1px solid rgba(52,211,153,0.12)' }}>
@@ -742,7 +742,7 @@ export default function ProjectWorkspace() {
               <span className="text-[10px] text-white/35">{agents.length} agents</span>
             </div>
           )}
-          <button onClick={() => setShowCreateAgent(true)} className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium text-[#52677A]/70 hover:text-[#7890A3] transition-all" style={{ background: 'rgba(34,211,238,0.04)', border: '1px solid rgba(34,211,238,0.08)' }}>
+          <button onClick={() => setShowCreateAgent(true)} className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-medium text-[#7EA6BF]/70 hover:text-[#9CBBD1] transition-all" style={{ background: 'rgba(34,211,238,0.04)', border: '1px solid rgba(34,211,238,0.08)' }}>
             <Plus className="h-3 w-3" /> Agent
           </button>
           {/* Owner-mode entry point — locked variant for non-owners,
@@ -760,7 +760,7 @@ export default function ProjectWorkspace() {
           is the canonical "shrink below intrinsic content width" combo. */}
       <div className="relative flex-1 flex min-h-0 min-w-0 overflow-hidden">
         {/* LEFT: build sidebar (builder mode) OR agent list */}
-        <div className="hidden lg:flex flex-col w-[230px] shrink-0 overflow-hidden" style={{ background: 'rgba(17,21,28,0.5)', borderRight: '1px solid rgba(255,255,255,0.04)' }}>
+        <div className="hidden lg:flex flex-col w-[230px] shrink-0 overflow-hidden" style={{ background: 'rgba(17, 24, 32,0.5)', borderRight: '1px solid rgba(255,255,255,0.04)' }}>
           {builderMode ? (
             <BuilderSidebar
               overview={buildOverview}
@@ -777,7 +777,7 @@ export default function ProjectWorkspace() {
               <div className="py-8 text-center px-2">
                 <Bot className="h-8 w-8 text-white/[0.06] mx-auto mb-2" />
                 <p className="text-[11px] text-white/25 mb-3">No agents yet</p>
-                <button onClick={() => setShowCreateAgent(true)} className="text-[11px] text-[#52677A]/50 hover:text-[#7890A3] transition-colors">Create your first agent</button>
+                <button onClick={() => setShowCreateAgent(true)} className="text-[11px] text-[#7EA6BF]/50 hover:text-[#9CBBD1] transition-colors">Create your first agent</button>
               </div>
             ) : (
               <div className="space-y-1">
@@ -812,8 +812,8 @@ export default function ProjectWorkspace() {
           {/* Shared memory indicator */}
           <div className="shrink-0 px-3 py-2.5" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
             <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg" style={{ background: 'rgba(34,211,238,0.02)', border: '1px solid rgba(34,211,238,0.05)' }}>
-              <Zap className="h-3 w-3 text-[#52677A]/40" />
-              <span className="text-[10px] text-[#52677A]/40">Project context active</span>
+              <Zap className="h-3 w-3 text-[#7EA6BF]/40" />
+              <span className="text-[10px] text-[#7EA6BF]/40">Project context active</span>
               <span className="text-[9px] text-white/15 ml-auto">{agents.length > 0 ? 'Synced' : '—'}</span>
             </div>
           </div>
@@ -922,7 +922,7 @@ export default function ProjectWorkspace() {
                     <Paperclip className="h-4 w-4" />
                   </button>
                   <textarea value={inputMessage} onChange={(e) => setInputMessage(e.target.value)} onKeyDown={handleKeyDown} placeholder={`Message ${selectedAgent.name}...`} rows={1} className="flex-1 bg-transparent text-[13px] text-white/80 placeholder:text-white/15 outline-none resize-none py-1.5 max-h-[80px] scrollbar-thin" />
-                  <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={handleSendMessage} disabled={!inputMessage.trim()} className={`shrink-0 p-2 rounded-lg transition-all ${inputMessage.trim() ? 'bg-[#52677A]/15 text-[#52677A]' : 'text-white/10'}`}>
+                  <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={handleSendMessage} disabled={!inputMessage.trim()} className={`shrink-0 p-2 rounded-lg transition-all ${inputMessage.trim() ? 'bg-[#7EA6BF]/15 text-[#7EA6BF]' : 'text-white/10'}`}>
                     <Send className="h-3.5 w-3.5" />
                   </motion.button>
                 </div>
@@ -934,14 +934,14 @@ export default function ProjectWorkspace() {
             <div className="flex-1 flex flex-col items-center justify-center">
               <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="text-center">
                 <div className="flex h-14 w-14 items-center justify-center rounded-2xl mx-auto mb-4" style={{ background: 'linear-gradient(135deg, rgba(34,211,238,0.08), rgba(59,130,246,0.08))', border: '1px solid rgba(34,211,238,0.08)', boxShadow: '0 0 24px rgba(34,211,238,0.04)' }}>
-                  <Sparkles className="h-6 w-6 text-[#52677A]/30" />
+                  <Sparkles className="h-6 w-6 text-[#7EA6BF]/30" />
                 </div>
                 <h3 className="text-[15px] font-semibold text-white/60 mb-1.5">{agents.length === 0 ? 'What would you like Korvix to build?' : 'Select an agent'}</h3>
                 <p className="text-[12px] text-white/25 mb-5 max-w-xs mx-auto">
                   {agents.length === 0 ? 'Project runs are turned off on this deployment. You can still collaborate with a classic agent below.' : 'Choose an agent from the sidebar to start chatting.'}
                 </p>
                 {agents.length === 0 && (
-                  <button onClick={() => setShowCreateAgent(true)} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-semibold text-white" style={{ background: 'linear-gradient(180deg, #1B2230, #11151C)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 4px 16px rgba(0,0,0,0.2)' }}>
+                  <button onClick={() => setShowCreateAgent(true)} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-semibold text-white" style={{ background: 'linear-gradient(180deg, #1B2532, #11151C)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 4px 16px rgba(0,0,0,0.2)' }}>
                     <Plus className="h-4 w-4" /> Create Agent
                   </button>
                 )}
@@ -951,7 +951,7 @@ export default function ProjectWorkspace() {
         </div>
 
         {/* RIGHT: Context & Tasks */}
-        <div className="hidden xl:flex flex-col w-[260px] shrink-0 overflow-y-auto scrollbar-thin p-3 gap-3" style={{ background: 'rgba(17,21,28,0.3)', borderLeft: '1px solid rgba(255,255,255,0.04)' }}>
+        <div className="hidden xl:flex flex-col w-[260px] shrink-0 overflow-y-auto scrollbar-thin p-3 gap-3" style={{ background: 'rgba(17, 24, 32,0.3)', borderLeft: '1px solid rgba(255,255,255,0.04)' }}>
           {/* Builder mode → Build Inspector (current build status, brief,
               category, history shortcut). Otherwise the Phase B run panel —
               in builder mode it would just duplicate the center composer. */}
@@ -970,12 +970,12 @@ export default function ProjectWorkspace() {
           <div className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.04)' }}>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <Zap className="h-3.5 w-3.5 text-[#52677A]/50" />
+                <Zap className="h-3.5 w-3.5 text-[#7EA6BF]/50" />
                 <span className="text-[11px] font-semibold text-white/60">Project Context</span>
               </div>
               <button
                 onClick={() => { setShowAddMemory(true); setNewMemoryContent(''); }}
-                className="p-1 rounded-md text-white/30 hover:text-[#7890A3] transition-colors"
+                className="p-1 rounded-md text-white/30 hover:text-[#9CBBD1] transition-colors"
                 title="Add memory note for this project"
                 aria-label="Add memory note">
                 <Plus className="h-3 w-3" />
@@ -989,7 +989,7 @@ export default function ProjectWorkspace() {
                     ? 'rgb(52,211,153)'
                     : memorySyncState === 'offline'
                       ? 'rgb(251,191,36)'
-                      : 'rgb(148,163,184)',
+                      : 'rgb(169, 183, 198)',
                   boxShadow: memorySyncState === 'connected'
                     ? '0 0 4px rgba(52,211,153,0.3)'
                     : 'none',
@@ -1002,7 +1002,7 @@ export default function ProjectWorkspace() {
                     ? 'rgba(52,211,153,0.7)'
                     : memorySyncState === 'offline'
                       ? 'rgba(251,191,36,0.7)'
-                      : 'rgba(148,163,184,0.5)',
+                      : 'rgba(169, 183, 198,0.5)',
                 }}>
                 {memorySyncState === 'connected' && 'Project context active'}
                 {memorySyncState === 'offline'   && 'Offline — local only'}
@@ -1073,7 +1073,7 @@ export default function ProjectWorkspace() {
                 style={{
                   background:
                     liveStatus === 'connected' ? 'rgb(52,211,153)' :
-                    liveStatus === 'connecting' ? 'rgb(148,163,184)' :
+                    liveStatus === 'connecting' ? 'rgb(169, 183, 198)' :
                     liveStatus === 'offline' ? 'rgb(251,191,36)' :
                     'rgb(100,116,139)',
                   boxShadow: liveStatus === 'connected' ? '0 0 4px rgba(52,211,153,0.3)' : 'none',
@@ -1112,7 +1112,7 @@ export default function ProjectWorkspace() {
               <div className="space-y-2">
                 {agents.slice(0, 5).map((agent) => (
                   <div key={agent.id} className="flex items-start gap-2">
-                    <div className="w-2 h-2 rounded-full mt-0.5 shrink-0" style={{ background: agent.status === 'active' ? '#6F8F7A' : '#94a3b8', boxShadow: agent.status === 'active' ? '0 0 4px rgba(52,211,153,0.3)' : 'none' }} />
+                    <div className="w-2 h-2 rounded-full mt-0.5 shrink-0" style={{ background: agent.status === 'active' ? '#6F8F7A' : '#A9B7C6', boxShadow: agent.status === 'active' ? '0 0 4px rgba(52,211,153,0.3)' : 'none' }} />
                     <div>
                       <p className="text-[10px] text-white/45">{agent.name}</p>
                       <p className="text-[8px] text-white/15">{agent.lastActive}</p>
@@ -1152,7 +1152,7 @@ export default function ProjectWorkspace() {
               style={{ background: 'rgba(20,24,32,0.95)', border: '1px solid rgba(255,255,255,0.06)', boxShadow: '0 24px 64px -16px rgba(0,0,0,0.5)' }}>
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
-                  <Zap className="h-4 w-4 text-[#52677A]/70" />
+                  <Zap className="h-4 w-4 text-[#7EA6BF]/70" />
                   <h3 className="text-[14px] font-semibold text-white/85">Add project memory</h3>
                 </div>
                 <button
@@ -1170,7 +1170,7 @@ export default function ProjectWorkspace() {
                   <button
                     key={k}
                     onClick={() => setNewMemoryKind(k)}
-                    className={`px-2.5 py-1 rounded-md text-[10px] font-medium transition-all ${newMemoryKind === k ? 'bg-[#52677A]/15 text-[#7890A3] border border-[#52677A]/20' : 'bg-white/[0.03] text-white/40 border border-white/[0.04] hover:text-white/60'}`}>
+                    className={`px-2.5 py-1 rounded-md text-[10px] font-medium transition-all ${newMemoryKind === k ? 'bg-[#7EA6BF]/15 text-[#9CBBD1] border border-[#7EA6BF]/20' : 'bg-white/[0.03] text-white/40 border border-white/[0.04] hover:text-white/60'}`}>
                     {k === 'note' ? '· Note' : k === 'fact' ? '◆ Fact' : '★ Decision'}
                   </button>
                 ))}
@@ -1210,7 +1210,7 @@ export default function ProjectWorkspace() {
                     whileTap={{ scale: 0.98 }}
                     onClick={handleAddMemory}
                     disabled={!newMemoryContent.trim() || memoryBusy}
-                    className={`px-3 py-1.5 rounded-md text-[11px] font-medium transition-all ${(!newMemoryContent.trim() || memoryBusy) ? 'bg-white/[0.04] text-white/20 cursor-not-allowed' : 'bg-[#52677A]/15 text-[#7890A3] hover:bg-[#52677A]/25'}`}>
+                    className={`px-3 py-1.5 rounded-md text-[11px] font-medium transition-all ${(!newMemoryContent.trim() || memoryBusy) ? 'bg-white/[0.04] text-white/20 cursor-not-allowed' : 'bg-[#7EA6BF]/15 text-[#9CBBD1] hover:bg-[#7EA6BF]/25'}`}>
                     {memoryBusy ? 'Saving…' : 'Save memory'}
                   </motion.button>
                 </div>
@@ -1232,12 +1232,12 @@ export default function ProjectWorkspace() {
    no state of their own, no duplicate run logic. */
 
 function buildStatusColor(status: string | null): string {
-  if (!status) return 'rgb(148,163,184)';
+  if (!status) return 'rgb(169, 183, 198)';
   if (/^running|^pending/i.test(status))    return 'rgb(34,211,238)';
   if (/complete|finish/i.test(status))      return 'rgb(52,211,153)';
   if (/fail|error/i.test(status))           return 'rgb(248,113,113)';
   if (/cancel/i.test(status))               return 'rgb(251,191,36)';
-  return 'rgb(148,163,184)';
+  return 'rgb(169, 183, 198)';
 }
 
 function buildStatusLabel(status: string | null): string {
@@ -1292,7 +1292,7 @@ function BuilderSidebar({ overview, onHistory }: {
             <div className="rounded-lg px-2.5 py-2" style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.04)' }}>
               <p className="text-[9px] uppercase tracking-wider text-white/25 mb-1">Latest artifact</p>
               <div className="flex items-center gap-1.5">
-                <Monitor className="h-3 w-3 text-[#52677A]/60 shrink-0" />
+                <Monitor className="h-3 w-3 text-[#7EA6BF]/60 shrink-0" />
                 <p className="text-[10px] text-white/65 truncate">{overview.artifactTitle}</p>
               </div>
               {overview.artifactType && (
@@ -1305,7 +1305,7 @@ function BuilderSidebar({ overview, onHistory }: {
           {overview.designSummary && (
             <div className="px-1">
               <p className="text-[9px] uppercase tracking-wider text-white/25 mb-1">Design brief</p>
-              <p className="text-[10px] text-[#7890A3]/70 leading-snug">{overview.designSummary}</p>
+              <p className="text-[10px] text-[#9CBBD1]/70 leading-snug">{overview.designSummary}</p>
             </div>
           )}
 
@@ -1336,7 +1336,7 @@ function BuilderSidebar({ overview, onHistory }: {
                   </div>
                 ))}
               </div>
-              <button onClick={onHistory} className="mt-2 flex items-center gap-1 text-[10px] text-[#52677A]/50 hover:text-[#7890A3] transition-colors">
+              <button onClick={onHistory} className="mt-2 flex items-center gap-1 text-[10px] text-[#7EA6BF]/50 hover:text-[#9CBBD1] transition-colors">
                 <History className="h-3 w-3" /> All builds
               </button>
             </div>
@@ -1368,7 +1368,7 @@ function BuildInspector({ overview, onHistory }: {
   return (
     <div className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.04)' }}>
       <div className="flex items-center gap-2 mb-3">
-        <Layout className="h-3.5 w-3.5 text-[#52677A]/50" />
+        <Layout className="h-3.5 w-3.5 text-[#7EA6BF]/50" />
         <span className="text-[11px] font-semibold text-white/60">Build Inspector</span>
       </div>
       {!overview ? (
@@ -1390,7 +1390,7 @@ function BuildInspector({ overview, onHistory }: {
           {overview.designSummary && (
             <div>
               <p className="text-[9px] uppercase tracking-wider text-white/25 mb-1">Design brief</p>
-              <p className="text-[10px] text-[#7890A3]/80 leading-snug">{overview.designSummary}</p>
+              <p className="text-[10px] text-[#9CBBD1]/80 leading-snug">{overview.designSummary}</p>
             </div>
           )}
           <button onClick={onHistory}
@@ -1447,7 +1447,7 @@ function AgentListItem({ agent, isSelected, isEditing, menuOpen, onSelect, onRen
           <p className="text-[9px] text-white/20 truncate">{agent.role}</p>
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          <div className="w-1 h-1 rounded-full" style={{ background: agent.status === 'active' ? '#6F8F7A' : '#94a3b8', boxShadow: agent.status === 'active' ? '0 0 3px rgba(52,211,153,0.3)' : 'none' }} />
+          <div className="w-1 h-1 rounded-full" style={{ background: agent.status === 'active' ? '#6F8F7A' : '#A9B7C6', boxShadow: agent.status === 'active' ? '0 0 3px rgba(52,211,153,0.3)' : 'none' }} />
           <button onClick={(e) => { e.stopPropagation(); onMenuToggle(); }} className="p-0.5 rounded text-white/10 hover:text-white/40 transition-colors opacity-0 group-hover:opacity-100">
             <MoreHorizontal className="h-3 w-3" />
           </button>
@@ -1456,7 +1456,7 @@ function AgentListItem({ agent, isSelected, isEditing, menuOpen, onSelect, onRen
 
       {/* Dropdown menu */}
       {menuOpen && (
-        <div className="absolute right-0 top-full mt-0.5 z-20 rounded-lg overflow-hidden" style={{ background: 'linear-gradient(180deg, #1B2230, #171C24)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}>
+        <div className="absolute right-0 top-full mt-0.5 z-20 rounded-lg overflow-hidden" style={{ background: 'linear-gradient(180deg, #1B2532, #171C24)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}>
           <button onClick={() => { onStartEdit(); onMenuToggle(); }} className="w-full flex items-center gap-2 px-3 py-2 text-[11px] text-white/50 hover:text-white/80 hover:bg-white/[0.03] transition-all">
             <Pencil className="h-3 w-3" /> Rename
           </button>
@@ -1493,7 +1493,7 @@ function CreateAgentModal({ onClose, onCreate }: { onClose: () => void; onCreate
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(8px)' }} onClick={onClose}>
-      <motion.div initial={{ opacity: 0, scale: 0.96, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96, y: 8 }} transition={{ duration: 0.2 }} onClick={(e) => e.stopPropagation()} className="w-full max-w-sm rounded-2xl p-6" style={{ background: 'linear-gradient(180deg, #1B2230, #171C24)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 24px 48px rgba(0,0,0,0.4)' }}>
+      <motion.div initial={{ opacity: 0, scale: 0.96, y: 8 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.96, y: 8 }} transition={{ duration: 0.2 }} onClick={(e) => e.stopPropagation()} className="w-full max-w-sm rounded-2xl p-6" style={{ background: 'linear-gradient(180deg, #1B2532, #171C24)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 24px 48px rgba(0,0,0,0.4)' }}>
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-[15px] font-semibold text-white/90">Create Agent</h2>
           <button onClick={onClose} className="text-white/25 hover:text-white/60 transition-colors"><X className="h-4 w-4" /></button>
@@ -1551,7 +1551,7 @@ function CreateAgentModal({ onClose, onCreate }: { onClose: () => void; onCreate
           )}
 
           {/* Submit */}
-          <button onClick={handleCreate} className="w-full py-2.5 rounded-xl text-[13px] font-semibold text-white transition-all hover:brightness-110" style={{ background: 'linear-gradient(135deg, #52677A, #7890A3)', boxShadow: '0 4px 16px rgba(34,211,238,0.15)' }}>
+          <button onClick={handleCreate} className="w-full py-2.5 rounded-xl text-[13px] font-semibold text-white transition-all hover:brightness-110" style={{ background: 'linear-gradient(135deg, #7EA6BF, #9CBBD1)', boxShadow: '0 4px 16px rgba(34,211,238,0.15)' }}>
             Create Agent
           </button>
         </div>

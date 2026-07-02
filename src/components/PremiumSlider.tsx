@@ -101,7 +101,7 @@ export default function PremiumSlider({
     <div className="w-full select-none">
       {(label || showValue) && (
         <div className="flex items-center justify-between mb-2">
-          {label && <span className="text-[11px] text-slate-500">{label}</span>}
+          {label && <span className="text-[11px] text-[#7F8FA3]">{label}</span>}
           {showValue && (
             <motion.span
               className="text-[11px] font-mono tabular-nums font-medium"

@@ -151,7 +151,7 @@ export default function DeliverablePreviewModal({
       onClick={onClose}>
       <div
         className={`flex flex-col rounded-2xl overflow-hidden ${fullscreen ? 'w-full h-full max-w-none max-h-none' : 'w-full max-w-4xl max-h-[88vh]'}`}
-        style={{ background: 'rgba(17,21,28,0.98)', border: '1px solid rgba(255,255,255,0.08)' }}
+        style={{ background: 'rgba(17, 24, 32,0.98)', border: '1px solid rgba(255,255,255,0.08)' }}
         onClick={(e) => e.stopPropagation()}>
 
         {/* Header */}
@@ -170,8 +170,8 @@ export default function DeliverablePreviewModal({
               {([['desktop', Monitor], ['tablet', Tablet], ['mobile', Smartphone]] as const).map(([d, Icon]) => (
                 <button key={d} onClick={() => setDevice(d)} title={d}
                   className="p-1.5 rounded-md transition-colors"
-                  style={{ background: device === d ? 'rgba(82,103,122,0.14)' : 'transparent',
-                           color: device === d ? 'rgb(120,144,163)' : 'rgba(255,255,255,0.45)' }}>
+                  style={{ background: device === d ? 'rgba(126, 166, 191,0.14)' : 'transparent',
+                           color: device === d ? 'rgb(156, 187, 209)' : 'rgba(255,255,255,0.45)' }}>
                   <Icon className="h-3.5 w-3.5" />
                 </button>
               ))}
@@ -197,7 +197,7 @@ export default function DeliverablePreviewModal({
                 <ExternalLink className="h-3 w-3" /> Open
               </button>
             )}
-            <button onClick={download} title="Download" className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] text-[#7890A3] transition-colors" style={{ background: 'rgba(82,103,122,0.08)' }}>
+            <button onClick={download} title="Download" className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] text-[#9CBBD1] transition-colors" style={{ background: 'rgba(126, 166, 191,0.08)' }}>
               <Download className="h-3 w-3" /> Download
             </button>
             <button onClick={onClose} aria-label="Close" className="p-1 rounded-lg text-white/40 hover:text-white/80 transition-colors">
@@ -249,7 +249,7 @@ export default function DeliverablePreviewModal({
             <div className="px-4 py-3 space-y-3">
               {r.files.map((f, i) => (
                 <div key={`${f.path}-${i}`}>
-                  <p className="flex items-center gap-1.5 text-[11px] text-[#7890A3]/80 mb-1">
+                  <p className="flex items-center gap-1.5 text-[11px] text-[#9CBBD1]/80 mb-1">
                     <FileCode className="h-3 w-3" /> {f.path}
                   </p>
                   <pre className="text-[11px] text-white/70 whitespace-pre-wrap break-words rounded-lg px-3 py-2" style={{ background: 'rgba(255,255,255,0.02)' }}>{f.content}</pre>

@@ -21,20 +21,20 @@ const TOP_CLUSTERS_VISIBLE = 3;
 
 const CONFIDENCE_TONE: Record<string, string> = {
   high: 'text-[#86A08F] border-[#6F8F7A]/40 bg-[#6F8F7A]/[0.12]',
-  medium: 'text-[#637B90] border-[#52677A]/40 bg-[#52677A]/[0.12]',
+  medium: 'text-[#8FB4CC] border-[#7EA6BF]/40 bg-[#7EA6BF]/[0.12]',
   low: 'text-slate-300 border-white/[0.1] bg-white/[0.04]',
 };
 
 const DECISION_CHIP_TONE: Record<string, string> = {
   build: 'text-[#86A08F] border-[#6F8F7A]/40 bg-[#6F8F7A]/[0.12]',
-  validate: 'text-[#637B90] border-[#52677A]/40 bg-[#52677A]/[0.12]',
+  validate: 'text-[#8FB4CC] border-[#7EA6BF]/40 bg-[#7EA6BF]/[0.12]',
   avoid: 'text-[#C98A93] border-[#B76E79]/40 bg-[#B76E79]/[0.12]',
 };
 
 /** Evidence-quality badge tiers (avg item quality 0-100 from backend). */
 function evidenceQualityBadge(score: number): { label: string; tone: string } {
   if (score >= 70) return { label: 'strong evidence', tone: 'text-[#86A08F] border-[#6F8F7A]/40 bg-[#6F8F7A]/[0.12]' };
-  if (score >= 45) return { label: 'moderate evidence', tone: 'text-[#637B90] border-[#52677A]/40 bg-[#52677A]/[0.12]' };
+  if (score >= 45) return { label: 'moderate evidence', tone: 'text-[#8FB4CC] border-[#7EA6BF]/40 bg-[#7EA6BF]/[0.12]' };
   return { label: 'weak evidence', tone: 'text-[#C98A93] border-[#B76E79]/40 bg-[#B76E79]/[0.12]' };
 }
 
@@ -107,7 +107,7 @@ function SignalList({ title, values }: { title: string; values: string[] }) {
   if (!values.length) return null;
   return (
     <div>
-      <span className="block text-[10px] text-slate-500 mb-1.5">{title}</span>
+      <span className="block text-[10px] text-[#7F8FA3] mb-1.5">{title}</span>
       <div className="flex flex-wrap gap-1.5">
         {values.map((v) => (
           <span key={v} className="px-2 py-0.5 rounded-md text-[11px] text-slate-300 border border-white/[0.06] bg-white/[0.015]">
@@ -174,7 +174,7 @@ export default function MarketRadarResults({
             <svg className="w-20 h-20 -rotate-90" viewBox="0 0 80 80">
               <circle cx="40" cy="40" r="34" fill="none" stroke="white" strokeOpacity="0.06" strokeWidth="5" />
               <motion.circle
-                cx="40" cy="40" r="34" fill="none" stroke="#52677A" strokeWidth="5" strokeLinecap="round"
+                cx="40" cy="40" r="34" fill="none" stroke="#7EA6BF" strokeWidth="5" strokeLinecap="round"
                 strokeDasharray={2 * Math.PI * 34}
                 initial={{ strokeDashoffset: 2 * Math.PI * 34 }}
                 animate={{ strokeDashoffset: 2 * Math.PI * 34 * (1 - summary.opportunity_score / 100) }}
@@ -183,7 +183,7 @@ export default function MarketRadarResults({
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center">
               <span className="text-lg font-bold text-white">{summary.opportunity_score}</span>
-              <span className="text-[8px] text-slate-500">/100</span>
+              <span className="text-[8px] text-[#7F8FA3]">/100</span>
             </div>
           </div>
 
@@ -204,14 +204,14 @@ export default function MarketRadarResults({
                 </span>
               )}
               {report.cached && (
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-white/[0.08] text-[10px] text-slate-400">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-white/[0.08] text-[10px] text-[#A9B7C6]">
                   <Clock3 className="h-2.5 w-2.5" /> cached
                 </span>
               )}
             </div>
             {/* The one-sentence reason */}
             <p className="text-[12px] text-slate-300 leading-relaxed mt-1.5">{decision.reason}</p>
-            <p className="text-[11px] text-slate-500 mt-1">
+            <p className="text-[11px] text-[#7F8FA3] mt-1">
               {summary.total_items_analyzed} items from {summary.total_sources} live source
               {summary.total_sources === 1 ? '' : 's'}
               {typeof summary.direct_complaints === 'number' && (
@@ -228,7 +228,7 @@ export default function MarketRadarResults({
                 whileHover={{ scale: 1.01 }}
                 whileTap={{ scale: 0.99 }}
                 onClick={onSendToAdvisor}
-                className="h-9 px-4 rounded-xl bg-[#52677A]/[0.16] border border-[#52677A]/45 text-[#DCE4EC] text-[12px] font-medium hover:bg-[#52677A]/[0.22] transition-all flex items-center justify-center gap-2"
+                className="h-9 px-4 rounded-xl bg-[#7EA6BF]/[0.16] border border-[#7EA6BF]/45 text-[#DCE4EC] text-[12px] font-medium hover:bg-[#7EA6BF]/[0.22] transition-all flex items-center justify-center gap-2"
               >
                 <Rocket className="h-3.5 w-3.5" /> Send to Startup Advisor
                 <ArrowUpRight className="h-3 w-3" />
@@ -250,24 +250,24 @@ export default function MarketRadarResults({
         {(broadWebWarning || sourceIssues || (!hasClusters && report.message)) && (
           <div className="mt-3 space-y-1">
             {!hasClusters && report.message && (
-              <p className="text-[12px] text-slate-300 border-l-2 border-[#52677A]/40 pl-2.5">{report.message}</p>
+              <p className="text-[12px] text-slate-300 border-l-2 border-[#7EA6BF]/40 pl-2.5">{report.message}</p>
             )}
             {broadWebWarning && (
-              <p className="text-[12px] text-slate-300 border-l-2 border-[#52677A]/40 pl-2.5">
+              <p className="text-[12px] text-slate-300 border-l-2 border-[#7EA6BF]/40 pl-2.5">
                 Evidence is mostly broad web content; validate with direct user conversations.
               </p>
             )}
             {sourceIssues && (
-              <p className="text-[11px] text-slate-400 border-l-2 border-white/[0.08] pl-2.5">{sourceIssues}</p>
+              <p className="text-[11px] text-[#A9B7C6] border-l-2 border-white/[0.08] pl-2.5">{sourceIssues}</p>
             )}
           </div>
         )}
         <details className="mt-2 group/lim">
-          <summary className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-slate-300 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden transition-colors">
+          <summary className="flex items-center gap-1 text-[10px] text-[#7F8FA3] hover:text-slate-300 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden transition-colors">
             <ChevronRight className="h-3 w-3 transition-transform group-open/lim:rotate-90" />
             Sources & limitations
           </summary>
-          <ul className="mt-2 space-y-1 text-[11px] text-slate-400">
+          <ul className="mt-2 space-y-1 text-[11px] text-[#A9B7C6]">
             <li>
               • Sources this run:{' '}
               {Object.entries(report.data_freshness)
@@ -302,7 +302,7 @@ export default function MarketRadarResults({
           {!showAllClusters && hiddenClusterCount > 0 && (
             <button
               onClick={() => setShowAllClusters(true)}
-              className="mt-2.5 flex items-center gap-1 text-[11px] text-[#637B90] hover:text-[#7890A3] transition-colors"
+              className="mt-2.5 flex items-center gap-1 text-[11px] text-[#8FB4CC] hover:text-[#9CBBD1] transition-colors"
             >
               <ChevronDown className="h-3 w-3" />
               Show {hiddenClusterCount} more cluster{hiddenClusterCount === 1 ? '' : 's'}
@@ -313,16 +313,16 @@ export default function MarketRadarResults({
 
       {/* 3 — What to build first */}
       {hasClusters && buildFirstItems.length > 0 && (
-        <Section icon={ListChecks} iconTone="text-[#637B90]" title="What to build first">
+        <Section icon={ListChecks} iconTone="text-[#8FB4CC]" title="What to build first">
           <BulletList items={buildFirstItems} />
           <div className="mt-2.5 flex items-start gap-2 rounded-lg bg-white/[0.015] border border-white/[0.04] px-2.5 py-2">
-            <AlertTriangle className="h-3 w-3 text-[#637B90] shrink-0 mt-0.5" />
+            <AlertTriangle className="h-3 w-3 text-[#8FB4CC] shrink-0 mt-0.5" />
             <p className="text-[12px] text-slate-300 leading-relaxed">
               <span className="text-slate-100 font-medium">Riskiest assumption: </span>
               {decision.riskiestAssumption}
             </p>
           </div>
-          <p className="text-[11px] text-slate-400 mt-2 pl-2.5 border-l-2 border-white/[0.08]">
+          <p className="text-[11px] text-[#A9B7C6] mt-2 pl-2.5 border-l-2 border-white/[0.08]">
             Next: {decision.nextAction}
           </p>
         </Section>
@@ -342,7 +342,7 @@ export default function MarketRadarResults({
       {competitors.length > 0 ? (
         <CompetitorWeaknessPanel report={report} />
       ) : (
-        <p className="text-[11px] text-slate-500 px-1">
+        <p className="text-[11px] text-[#7F8FA3] px-1">
           No strong competitor mentions found in this run.
         </p>
       )}
@@ -351,8 +351,8 @@ export default function MarketRadarResults({
       {hasClusters && (
         <details className="rounded-xl border border-white/[0.05] bg-white/[0.01] p-4 group/sig">
           <summary className="flex items-center gap-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
-            <ChevronRight className="h-3.5 w-3.5 text-slate-500 transition-transform group-open/sig:rotate-90" />
-            <Target className="h-3.5 w-3.5 text-slate-400" />
+            <ChevronRight className="h-3.5 w-3.5 text-[#7F8FA3] transition-transform group-open/sig:rotate-90" />
+            <Target className="h-3.5 w-3.5 text-[#A9B7C6]" />
             <span className="text-[13px] font-semibold text-slate-100">Market signals & risks</span>
           </summary>
           <div className="grid sm:grid-cols-2 gap-4 mt-3">
@@ -364,7 +364,7 @@ export default function MarketRadarResults({
           {report.recommendations.risks.length > 0 && (
             <div className="mt-4">
               <div className="flex items-center gap-1.5 mb-2">
-                <ShieldAlert className="h-3 w-3 text-[#637B90]" />
+                <ShieldAlert className="h-3 w-3 text-[#8FB4CC]" />
                 <span className="text-[11px] font-medium text-slate-200">Risks</span>
               </div>
               <BulletList items={report.recommendations.risks} />

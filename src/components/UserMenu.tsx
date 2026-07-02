@@ -40,12 +40,12 @@ export default function UserMenu() {
         className="flex items-center gap-2 pl-2 pr-1.5 py-1 rounded-lg hover:bg-white/[0.03] transition-all border border-transparent hover:border-white/[0.04]"
       >
         {/* Avatar */}
-        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#52677A]/[0.1] border border-[#52677A]/15 text-[10px] font-medium text-[#52677A]/80">
+        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#7EA6BF]/[0.1] border border-[#7EA6BF]/15 text-[10px] font-medium text-[#7EA6BF]/80">
           {initials}
         </div>
         <div className="hidden sm:flex items-center gap-1">
-          <span className="text-[11px] text-slate-400 max-w-[80px] truncate">{user.name || user.email.split('@')[0]}</span>
-          <ChevronDown className={`h-3 w-3 text-slate-600 transition-transform ${open ? 'rotate-180' : ''}`} />
+          <span className="text-[11px] text-[#A9B7C6] max-w-[80px] truncate">{user.name || user.email.split('@')[0]}</span>
+          <ChevronDown className={`h-3 w-3 text-[#7F8FA3] transition-transform ${open ? 'rotate-180' : ''}`} />
         </div>
       </button>
 
@@ -61,20 +61,20 @@ export default function UserMenu() {
             {/* User info header */}
             <div className="px-3 py-2.5 border-b border-white/[0.03]">
               <div className="flex items-center gap-2.5">
-                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#52677A]/[0.1] border border-[#52677A]/15 text-[11px] font-medium text-[#52677A]/80">
+                <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#7EA6BF]/[0.1] border border-[#7EA6BF]/15 text-[11px] font-medium text-[#7EA6BF]/80">
                   {initials}
                 </div>
                 <div className="min-w-0">
                   <p className="text-[12px] font-medium text-white truncate">{user.name || 'User'}</p>
-                  <p className="text-[10px] text-slate-600 truncate">{user.email}</p>
+                  <p className="text-[10px] text-[#7F8FA3] truncate">{user.email}</p>
                 </div>
               </div>
               {/* Plan badge */}
               <div className="mt-2 flex items-center gap-1.5">
                 <span className={`text-[9px] px-1.5 py-[1px] rounded-full font-medium capitalize ${
-                  user.plan === 'pro' ? 'bg-[#52677A]/[0.08] text-[#52677A] border border-[#52677A]/10' :
-                  user.plan === 'enterprise' ? 'bg-[#52677A]/[0.08] text-[#52677A] border border-[#52677A]/10' :
-                  'bg-white/[0.03] text-slate-500 border border-white/[0.04]'
+                  user.plan === 'pro' ? 'bg-[#7EA6BF]/[0.08] text-[#7EA6BF] border border-[#7EA6BF]/10' :
+                  user.plan === 'enterprise' ? 'bg-[#7EA6BF]/[0.08] text-[#7EA6BF] border border-[#7EA6BF]/10' :
+                  'bg-white/[0.03] text-[#7F8FA3] border border-white/[0.04]'
                 }`}>
                   {user.plan === 'free' && <Sparkles className="h-2.5 w-2.5 inline mr-0.5" />}
                   {user.plan === 'pro' && <Crown className="h-2.5 w-2.5 inline mr-0.5" />}
@@ -87,14 +87,14 @@ export default function UserMenu() {
             <div className="py-1">
               <button
                 onClick={() => { setOpen(false); navigate('/settings'); }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-[12px] text-slate-500 hover:text-slate-300 hover:bg-white/[0.03] transition-all"
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-[12px] text-[#7F8FA3] hover:text-slate-300 hover:bg-white/[0.03] transition-all"
               >
                 <Settings className="h-3.5 w-3.5" />
                 Settings
               </button>
               <button
                 onClick={() => { setOpen(false); navigate('/credits'); }}
-                className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-[12px] text-slate-500 hover:text-slate-300 hover:bg-white/[0.03] transition-all"
+                className="w-full flex items-center gap-2.5 px-3 py-2 text-left text-[12px] text-[#7F8FA3] hover:text-slate-300 hover:bg-white/[0.03] transition-all"
               >
                 <CreditCard className="h-3.5 w-3.5" />
                 Credits

@@ -199,22 +199,22 @@ export default function OwnerUnlockModal({ onClose }: OwnerUnlockModalProps) {
         exit={{ opacity: 0, scale: 0.96, y: 8 }}
         transition={{ duration: 0.18 }}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md rounded-2xl border border-[#52677A]/20 bg-[#0b0b12]/95 shadow-2xl shadow-[#52677A]/5 overflow-hidden"
+        className="w-full max-w-md rounded-2xl border border-[#7EA6BF]/20 bg-[#0b0b12]/95 shadow-2xl shadow-[#7EA6BF]/5 overflow-hidden"
         role="dialog"
         aria-modal="true"
         aria-label="Unlock owner mode"
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.05] bg-gradient-to-r from-[#52677A]/[0.04] to-transparent">
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.05] bg-gradient-to-r from-[#7EA6BF]/[0.04] to-transparent">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="h-7 w-7 flex items-center justify-center rounded-lg bg-[#52677A]/[0.1] border border-[#52677A]/20 shrink-0">
-              <Key className="h-3.5 w-3.5 text-[#7890A3]" />
+            <div className="h-7 w-7 flex items-center justify-center rounded-lg bg-[#7EA6BF]/[0.1] border border-[#7EA6BF]/20 shrink-0">
+              <Key className="h-3.5 w-3.5 text-[#9CBBD1]" />
             </div>
             <div className="min-w-0">
               <div className="text-[13px] font-semibold text-white tracking-tight">
                 Unlock Owner Mode
               </div>
-              <div className="text-[10px] text-[#7890A3]/60 truncate">
+              <div className="text-[10px] text-[#9CBBD1]/60 truncate">
                 Paste OWNER_TOKEN. Token-only — no sign-in required.
               </div>
             </div>
@@ -222,7 +222,7 @@ export default function OwnerUnlockModal({ onClose }: OwnerUnlockModalProps) {
           <button
             onClick={closeAndRefresh}
             disabled={result.kind === 'checking'}
-            className="h-7 w-7 flex items-center justify-center rounded-md text-slate-500 hover:text-white hover:bg-white/[0.05] transition-all disabled:opacity-40 shrink-0"
+            className="h-7 w-7 flex items-center justify-center rounded-md text-[#7F8FA3] hover:text-white hover:bg-white/[0.05] transition-all disabled:opacity-40 shrink-0"
             aria-label="Close"
           >
             <X className="h-3.5 w-3.5" />
@@ -254,7 +254,7 @@ export default function OwnerUnlockModal({ onClose }: OwnerUnlockModalProps) {
             <div>
               <label
                 htmlFor="owner-token-input"
-                className="block text-[10px] uppercase tracking-wider text-slate-500 mb-1.5"
+                className="block text-[10px] uppercase tracking-wider text-[#7F8FA3] mb-1.5"
               >
                 Owner Token
               </label>
@@ -269,10 +269,10 @@ export default function OwnerUnlockModal({ onClose }: OwnerUnlockModalProps) {
                 autoComplete="off"
                 spellCheck={false}
                 disabled={result.kind === 'checking'}
-                className="w-full rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[12px] font-mono text-slate-200 focus:border-[#52677A]/40 focus:outline-none focus:bg-white/[0.04] transition-all disabled:opacity-50"
+                className="w-full rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[12px] font-mono text-slate-200 focus:border-[#7EA6BF]/40 focus:outline-none focus:bg-white/[0.04] transition-all disabled:opacity-50"
               />
-              <div className="text-[10px] text-slate-600 mt-1.5">
-                Sent as <code className="px-1 rounded bg-white/[0.04] text-slate-400">X-Korvix-Owner-Token</code>.
+              <div className="text-[10px] text-[#7F8FA3] mt-1.5">
+                Sent as <code className="px-1 rounded bg-white/[0.04] text-[#A9B7C6]">X-Korvix-Owner-Token</code>.
                 The token is stored locally so you don't have to re-paste it.
               </div>
             </div>
@@ -319,7 +319,7 @@ export default function OwnerUnlockModal({ onClose }: OwnerUnlockModalProps) {
               <button
                 onClick={forget}
                 disabled={result.kind === 'checking'}
-                className="text-[10px] text-slate-500 hover:text-[#B76E79] flex items-center gap-1 transition-colors disabled:opacity-40"
+                className="text-[10px] text-[#7F8FA3] hover:text-[#B76E79] flex items-center gap-1 transition-colors disabled:opacity-40"
                 title="Remove the stored token from this browser"
               >
                 <Trash2 className="h-3 w-3" />
@@ -329,14 +329,14 @@ export default function OwnerUnlockModal({ onClose }: OwnerUnlockModalProps) {
                 <button
                   onClick={closeAndRefresh}
                   disabled={result.kind === 'checking'}
-                  className="px-3 py-1.5 rounded-md text-[11px] text-slate-400 hover:text-white hover:bg-white/[0.04] transition-all disabled:opacity-40"
+                  className="px-3 py-1.5 rounded-md text-[11px] text-[#A9B7C6] hover:text-white hover:bg-white/[0.04] transition-all disabled:opacity-40"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={validate}
                   disabled={result.kind === 'checking' || token.trim().length === 0}
-                  className="px-3 py-1.5 rounded-md bg-[#52677A]/[0.12] border border-[#52677A]/30 text-[11px] text-[#7890A3] hover:bg-[#52677A]/[0.18] disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-1.5"
+                  className="px-3 py-1.5 rounded-md bg-[#7EA6BF]/[0.12] border border-[#7EA6BF]/30 text-[11px] text-[#9CBBD1] hover:bg-[#7EA6BF]/[0.18] disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-1.5"
                 >
                   {result.kind === 'checking' && <Loader2 className="h-3 w-3 animate-spin" />}
                   {result.kind === 'checking' ? 'Verifying…' : 'Unlock'}

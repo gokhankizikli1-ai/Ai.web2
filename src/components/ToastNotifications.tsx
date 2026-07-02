@@ -13,14 +13,14 @@ const STYLES = {
   success: 'border-[#6F8F7A]/15 bg-[#6F8F7A]/[0.04] text-[#6F8F7A]',
   warning: 'border-[#A68A5B]/15 bg-[#A68A5B]/[0.04] text-[#A68A5B]',
   error: 'border-[#B76E79]/15 bg-[#B76E79]/[0.04] text-[#B76E79]',
-  info: 'border-[#52677A]/15 bg-[#52677A]/[0.04] text-[#52677A]',
+  info: 'border-[#7EA6BF]/15 bg-[#7EA6BF]/[0.04] text-[#7EA6BF]',
 };
 
 const ICON_COLORS = {
   success: 'text-[#6F8F7A]',
   warning: 'text-[#A68A5B]',
   error: 'text-[#B76E79]',
-  info: 'text-[#52677A]',
+  info: 'text-[#7EA6BF]',
 };
 
 interface ToastNotificationsProps {
@@ -47,7 +47,7 @@ export default function ToastNotifications({ toasts, onRemove }: ToastNotificati
               <span className="text-[12px] text-slate-300 flex-1">{toast.message}</span>
               <button
                 onClick={() => onRemove(toast.id)}
-                className="text-slate-600 hover:text-slate-400 transition-colors p-0.5 rounded"
+                className="text-[#7F8FA3] hover:text-[#A9B7C6] transition-colors p-0.5 rounded"
               >
                 <X className="h-3 w-3" />
               </button>

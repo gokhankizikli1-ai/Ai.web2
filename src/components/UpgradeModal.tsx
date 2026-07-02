@@ -18,8 +18,8 @@ const PLANS = [
     description: 'For professionals who need more power',
     icon: Zap,
     color: 'cyan',
-    gradient: 'from-[#52677A]/10 to-[#7890A3]/5',
-    border: 'border-[#52677A]/20',
+    gradient: 'from-[#7EA6BF]/10 to-[#9CBBD1]/5',
+    border: 'border-[#7EA6BF]/20',
     features: [
       'Unlimited messages',
       '2x faster responses',
@@ -38,8 +38,8 @@ const PLANS = [
     description: 'For power users and teams',
     icon: Crown,
     color: 'amber',
-    gradient: 'from-[#52677A]/10 to-[#7890A3]/5',
-    border: 'border-[#52677A]/20',
+    gradient: 'from-[#7EA6BF]/10 to-[#9CBBD1]/5',
+    border: 'border-[#7EA6BF]/20',
     features: [
       'Everything in Pro',
       'All AI agents unlocked',
@@ -58,8 +58,8 @@ const PLANS = [
     description: 'For organizations at scale',
     icon: Building2,
     color: 'violet',
-    gradient: 'from-[#52677A]/10 to-[#7890A3]/5',
-    border: 'border-[#52677A]/20',
+    gradient: 'from-[#7EA6BF]/10 to-[#9CBBD1]/5',
+    border: 'border-[#7EA6BF]/20',
     features: [
       'Everything in Ultra',
       'SSO & SAML',
@@ -98,32 +98,32 @@ export default function UpgradeModal({ open, onClose }: UpgradeModalProps) {
             <div className="relative px-8 pt-8 pb-6 border-b border-white/[0.04]">
               <button
                 onClick={onClose}
-                className="absolute top-4 right-4 h-8 w-8 flex items-center justify-center rounded-lg text-slate-600 hover:text-white hover:bg-white/[0.04] transition-all"
+                className="absolute top-4 right-4 h-8 w-8 flex items-center justify-center rounded-lg text-[#7F8FA3] hover:text-white hover:bg-white/[0.04] transition-all"
               >
                 <X className="h-4 w-4" />
               </button>
 
               <div className="flex items-center gap-2 mb-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#52677A]/10 border border-[#52677A]/15">
-                  <Sparkles className="h-4 w-4 text-[#52677A]" />
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#7EA6BF]/10 border border-[#7EA6BF]/15">
+                  <Sparkles className="h-4 w-4 text-[#7EA6BF]" />
                 </div>
-                <span className="text-[11px] font-semibold text-[#52677A]/70 uppercase tracking-wider">Upgrade</span>
+                <span className="text-[11px] font-semibold text-[#7EA6BF]/70 uppercase tracking-wider">Upgrade</span>
               </div>
               <h2 className="text-2xl font-semibold text-white mb-1 tracking-tight">Unlock the full power of KorvixAI</h2>
-              <p className="text-[13px] text-slate-500">Choose the plan that fits your ambition. Upgrade anytime.</p>
+              <p className="text-[13px] text-[#7F8FA3]">Choose the plan that fits your ambition. Upgrade anytime.</p>
 
               {/* Monthly / Yearly toggle */}
               <div className="flex items-center gap-3 mt-5">
                 <div className="flex items-center rounded-lg bg-white/[0.03] border border-white/[0.05] p-0.5">
                   <button
                     onClick={() => setYearly(false)}
-                    className={`px-3 py-1.5 rounded-md text-[11px] font-medium transition-all ${!yearly ? 'bg-white/[0.06] text-white' : 'text-slate-600 hover:text-slate-400'}`}
+                    className={`px-3 py-1.5 rounded-md text-[11px] font-medium transition-all ${!yearly ? 'bg-white/[0.06] text-white' : 'text-[#7F8FA3] hover:text-[#A9B7C6]'}`}
                   >
                     Monthly
                   </button>
                   <button
                     onClick={() => setYearly(true)}
-                    className={`px-3 py-1.5 rounded-md text-[11px] font-medium transition-all ${yearly ? 'bg-white/[0.06] text-white' : 'text-slate-600 hover:text-slate-400'}`}
+                    className={`px-3 py-1.5 rounded-md text-[11px] font-medium transition-all ${yearly ? 'bg-white/[0.06] text-white' : 'text-[#7F8FA3] hover:text-[#A9B7C6]'}`}
                   >
                     Yearly
                   </button>
@@ -150,12 +150,12 @@ export default function UpgradeModal({ open, onClose }: UpgradeModalProps) {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.08, duration: 0.35 }}
                   className={`relative rounded-xl border ${plan.border} bg-gradient-to-b ${plan.gradient} p-5 flex flex-col ${
-                    plan.popular ? 'ring-1 ring-[#52677A]/10' : ''
+                    plan.popular ? 'ring-1 ring-[#7EA6BF]/10' : ''
                   }`}
                 >
                   {plan.popular && (
                     <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                      <div className="flex items-center gap-1 rounded-full bg-[#52677A]/15 border border-[#52677A]/20 px-2.5 py-0.5 text-[10px] font-semibold text-[#52677A]">
+                      <div className="flex items-center gap-1 rounded-full bg-[#7EA6BF]/15 border border-[#7EA6BF]/20 px-2.5 py-0.5 text-[10px] font-semibold text-[#7EA6BF]">
                         <Star className="h-2.5 w-2.5" />
                         Most Popular
                       </div>
@@ -164,8 +164,8 @@ export default function UpgradeModal({ open, onClose }: UpgradeModalProps) {
 
                   <div className="mb-4">
                     <div className="flex items-center gap-2 mb-2">
-                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#52677A]/10 border border-[#52677A]/15">
-                        <plan.icon className="h-3.5 w-3.5 text-[#52677A]" />
+                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#7EA6BF]/10 border border-[#7EA6BF]/15">
+                        <plan.icon className="h-3.5 w-3.5 text-[#7EA6BF]" />
                       </div>
                       <h3 className="text-[15px] font-semibold text-white">{plan.name}</h3>
                     </div>
@@ -173,19 +173,19 @@ export default function UpgradeModal({ open, onClose }: UpgradeModalProps) {
                       {plan.price.monthly > 0 ? (
                         <>
                           <span className="text-2xl font-bold text-white">${yearly ? plan.price.yearly : plan.price.monthly}</span>
-                          <span className="text-[11px] text-slate-600">/month</span>
+                          <span className="text-[11px] text-[#7F8FA3]">/month</span>
                         </>
                       ) : (
                         <span className="text-2xl font-bold text-white">Custom</span>
                       )}
                     </div>
-                    <p className="text-[11px] text-slate-600 mt-1.5">{plan.description}</p>
+                    <p className="text-[11px] text-[#7F8FA3] mt-1.5">{plan.description}</p>
                   </div>
 
                   <ul className="space-y-2 mb-5 flex-1">
                     {plan.features.map((f) => (
-                      <li key={f} className="flex items-start gap-2 text-[11px] text-slate-400">
-                        <Check className="h-3 w-3 shrink-0 mt-0.5 text-[#52677A]/60" />
+                      <li key={f} className="flex items-start gap-2 text-[11px] text-[#A9B7C6]">
+                        <Check className="h-3 w-3 shrink-0 mt-0.5 text-[#7EA6BF]/60" />
                         {f}
                       </li>
                     ))}
@@ -212,11 +212,11 @@ export default function UpgradeModal({ open, onClose }: UpgradeModalProps) {
 
             {/* Footer */}
             <div className="px-8 py-4 border-t border-white/[0.03] flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-[11px] text-[#64748B]">
+              <div className="flex items-center gap-1.5 text-[11px] text-[#7F8FA3]">
                 <Shield className="h-3 w-3" />
                 Secure payment. Cancel anytime.
               </div>
-              <span className="text-[10px] text-[#94A3B8]">30-day money-back guarantee</span>
+              <span className="text-[10px] text-[#A9B7C6]">30-day money-back guarantee</span>
             </div>
           </motion.div>
         </motion.div>

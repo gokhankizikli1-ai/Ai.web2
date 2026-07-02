@@ -105,7 +105,7 @@ export default function AgentNetwork({ agents, selectedAgentId }: AgentNetworkPr
         ctx.beginPath();
         ctx.moveTo(cx, cy);
         ctx.lineTo(node.x, node.y);
-        ctx.strokeStyle = `rgba(148,163,184,${lineOpacity})`;
+        ctx.strokeStyle = `rgba(169, 183, 198,${lineOpacity})`;
         ctx.lineWidth = lineWidth;
         ctx.stroke();
 
@@ -119,7 +119,7 @@ export default function AgentNetwork({ agents, selectedAgentId }: AgentNetworkPr
             ctx.beginPath();
             ctx.moveTo(node.x, node.y);
             ctx.lineTo(other.x, other.y);
-            ctx.strokeStyle = `rgba(148,163,184,0.04)`;
+            ctx.strokeStyle = `rgba(169, 183, 198,0.04)`;
             ctx.lineWidth = 0.5;
             ctx.stroke();
           }
@@ -160,7 +160,7 @@ export default function AgentNetwork({ agents, selectedAgentId }: AgentNetworkPr
         // Node circle
         ctx.beginPath();
         ctx.arc(node.x, node.y, isSelected ? 7 : 5, 0, Math.PI * 2);
-        ctx.fillStyle = isActive ? 'rgba(52,211,153,0.8)' : isSelected ? 'rgba(34,211,238,0.8)' : 'rgba(148,163,184,0.4)';
+        ctx.fillStyle = isActive ? 'rgba(52,211,153,0.8)' : isSelected ? 'rgba(34,211,238,0.8)' : 'rgba(169, 183, 198,0.4)';
         ctx.fill();
 
         // White inner
@@ -231,7 +231,7 @@ export default function AgentNetwork({ agents, selectedAgentId }: AgentNetworkPr
                 <div
                   className="w-1.5 h-1.5 rounded-full shrink-0"
                   style={{
-                    background: agent.status === 'active' ? '#34d399' : agent.status === 'syncing' ? '#22d3ee' : '#94a3b8',
+                    background: agent.status === 'active' ? '#34d399' : agent.status === 'syncing' ? '#22d3ee' : '#A9B7C6',
                     boxShadow: agent.status === 'active' ? '0 0 4px rgba(52,211,153,0.5)' : 'none',
                   }}
                 />

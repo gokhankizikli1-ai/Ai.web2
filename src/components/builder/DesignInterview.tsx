@@ -101,8 +101,8 @@ export default function DesignInterview({ prompt, onBuild, onCancel, showPromptB
   return (
     <div className="space-y-3.5">
       <div className="flex items-center gap-2 pb-1">
-        <div className="flex h-6 w-6 items-center justify-center rounded-lg shrink-0" style={{ background: 'rgba(82,103,122,0.14)' }}>
-          <Palette className="h-3 w-3 text-[#7890A3]" />
+        <div className="flex h-6 w-6 items-center justify-center rounded-lg shrink-0" style={{ background: 'rgba(126, 166, 191,0.14)' }}>
+          <Palette className="h-3 w-3 text-[#9CBBD1]" />
         </div>
         <p className="text-[11px] font-medium tracking-wide text-white/45 uppercase">Design Brief</p>
         {!isConfirm && (
@@ -113,7 +113,7 @@ export default function DesignInterview({ prompt, onBuild, onCancel, showPromptB
       {showPromptBubble && (
         <div className="flex justify-end">
           <div className="max-w-[80%] rounded-2xl rounded-br-sm px-3 py-2 text-[13px] text-white/85"
-            style={{ background: 'rgba(82,103,122,0.08)', border: '1px solid rgba(82,103,122,0.12)' }}>
+            style={{ background: 'rgba(126, 166, 191,0.08)', border: '1px solid rgba(126, 166, 191,0.12)' }}>
             {prompt}
           </div>
         </div>
@@ -139,7 +139,7 @@ export default function DesignInterview({ prompt, onBuild, onCancel, showPromptB
                   <button
                     key={opt}
                     onClick={() => select(STEPS[stepIndex].key, opt)}
-                    className="px-3 py-1.5 rounded-lg text-[12px] border transition-all bg-white/[0.02] border-white/[0.08] text-slate-300 hover:border-[#52677A]/50 hover:text-white hover:bg-gradient-to-r hover:from-[#52677A]/[0.15] hover:to-[#7890A3]/[0.1]"
+                    className="px-3 py-1.5 rounded-lg text-[12px] border transition-all bg-white/[0.02] border-white/[0.08] text-slate-300 hover:border-[#7EA6BF]/50 hover:text-white hover:bg-gradient-to-r hover:from-[#7EA6BF]/[0.15] hover:to-[#9CBBD1]/[0.1]"
                   >
                     {opt}
                   </button>
@@ -147,14 +147,14 @@ export default function DesignInterview({ prompt, onBuild, onCancel, showPromptB
               </div>
               <div className="flex items-center gap-3 mt-3 pt-2.5 border-t border-white/[0.05]">
                 {stepIndex > 0 && (
-                  <button onClick={back} className="flex items-center gap-1 text-[11px] text-slate-500 hover:text-slate-300 transition-colors">
+                  <button onClick={back} className="flex items-center gap-1 text-[11px] text-[#7F8FA3] hover:text-slate-300 transition-colors">
                     <ChevronLeft className="w-3 h-3" /> Back
                   </button>
                 )}
-                <button onClick={useSmartDefaults} className="text-[11px] text-slate-400 hover:text-slate-200 transition-colors">
+                <button onClick={useSmartDefaults} className="text-[11px] text-[#A9B7C6] hover:text-slate-200 transition-colors">
                   Use smart defaults
                 </button>
-                <button onClick={skipAndBuild} className="flex items-center gap-1 text-[11px] text-[#7890A3]/80 hover:text-[#7890A3] transition-colors ml-auto">
+                <button onClick={skipAndBuild} className="flex items-center gap-1 text-[11px] text-[#9CBBD1]/80 hover:text-[#9CBBD1] transition-colors ml-auto">
                   <Zap className="w-3 h-3" /> Skip and build
                 </button>
               </div>
@@ -179,7 +179,7 @@ export default function DesignInterview({ prompt, onBuild, onCancel, showPromptB
                     key={s.key}
                     onClick={() => jumpTo(s.key)}
                     title={`Edit ${s.question.toLowerCase()}`}
-                    className="px-2.5 py-1 rounded-md text-[11px] bg-white/[0.04] border border-white/[0.07] text-slate-300 hover:border-[#52677A]/40 transition-colors"
+                    className="px-2.5 py-1 rounded-md text-[11px] bg-white/[0.04] border border-white/[0.07] text-slate-300 hover:border-[#7EA6BF]/40 transition-colors"
                   >
                     {answers[s.key]}
                   </button>
@@ -187,12 +187,12 @@ export default function DesignInterview({ prompt, onBuild, onCancel, showPromptB
               </div>
               <button
                 onClick={confirmBuild}
-                className="flex items-center justify-center gap-2 w-full px-4 py-3 rounded-xl bg-gradient-to-r from-[#52677A] to-[#7890A3] text-black text-[13px] font-semibold hover:brightness-105 hover:-translate-y-px transition-all"
-                style={{ boxShadow: '0 14px 34px -16px rgba(82,103,122,0.55)' }}
+                className="flex items-center justify-center gap-2 w-full px-4 py-3 rounded-xl bg-gradient-to-r from-[#7EA6BF] to-[#9CBBD1] text-black text-[13px] font-semibold hover:brightness-105 hover:-translate-y-px transition-all"
+                style={{ boxShadow: '0 14px 34px -16px rgba(126, 166, 191,0.55)' }}
               >
                 <Wand2 className="w-4 h-4" /> Build now
               </button>
-              <button onClick={back} className="flex items-center gap-1 mx-auto mt-2 text-[11px] text-slate-500 hover:text-slate-300 transition-colors">
+              <button onClick={back} className="flex items-center gap-1 mx-auto mt-2 text-[11px] text-[#7F8FA3] hover:text-slate-300 transition-colors">
                 <ChevronLeft className="w-3 h-3" /> Edit answers
               </button>
             </AssistantBubble>
@@ -215,11 +215,11 @@ function AssistantBubble({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex items-start gap-2">
       <div className="flex h-6 w-6 items-center justify-center rounded-full shrink-0 mt-0.5"
-        style={{ background: 'linear-gradient(135deg, rgba(82,103,122,0.28), rgba(120,144,163,0.22))' }}>
-        <Sparkles className="h-3 w-3 text-[#7890A3]" />
+        style={{ background: 'linear-gradient(135deg, rgba(126, 166, 191,0.28), rgba(156, 187, 209,0.22))' }}>
+        <Sparkles className="h-3 w-3 text-[#9CBBD1]" />
       </div>
       <div className="max-w-[86%] rounded-2xl rounded-tl-sm px-3.5 py-3 flex-1"
-        style={{ background: 'rgba(82,103,122,0.06)', border: '1px solid rgba(82,103,122,0.14)' }}>
+        style={{ background: 'rgba(126, 166, 191,0.06)', border: '1px solid rgba(126, 166, 191,0.14)' }}>
         {children}
       </div>
     </div>
@@ -236,8 +236,8 @@ function AnsweredExchange({ question, answer, onEdit }: { question: string; answ
         <button
           onClick={onEdit}
           title="Edit this answer"
-          className="max-w-[80%] rounded-2xl rounded-br-sm px-3 py-1.5 text-[12px] text-white/80 border transition-colors hover:border-[#52677A]/40"
-          style={{ background: 'rgba(82,103,122,0.08)', borderColor: 'rgba(82,103,122,0.14)' }}
+          className="max-w-[80%] rounded-2xl rounded-br-sm px-3 py-1.5 text-[12px] text-white/80 border transition-colors hover:border-[#7EA6BF]/40"
+          style={{ background: 'rgba(126, 166, 191,0.08)', borderColor: 'rgba(126, 166, 191,0.14)' }}
         >
           {answer}
         </button>
