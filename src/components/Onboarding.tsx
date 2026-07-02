@@ -24,18 +24,18 @@ export default function Onboarding({ onDismiss, onStartChat }: OnboardingProps) 
       <div className="flex flex-col items-center justify-center h-full px-6 animate-fade-in">
         <div className="max-w-md w-full">
           <div className="flex items-center justify-between mb-6">
-            <span className="text-[11px] text-[#858B99] font-medium uppercase tracking-wider">Welcome to KorvixAI</span>
-            <button onClick={onDismiss} className="text-[#858B99] hover:text-[#B6BBC6] transition-colors p-1 rounded-md hover:bg-white/[0.03]">
+            <span className="text-[11px] text-[#94A3B8] font-medium uppercase tracking-wider">Welcome to KorvixAI</span>
+            <button onClick={onDismiss} className="text-[#94A3B8] hover:text-[#CBD5E1] transition-colors p-1 rounded-md hover:bg-white/[0.03]">
               <X className="h-4 w-4" />
             </button>
           </div>
 
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-[#8B5CF6] to-[#A78BFA] mb-5 shadow-lg shadow-[#8B5CF6]/15">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-[#3B82F6] to-[#60A5FA] mb-5 shadow-lg shadow-[#3B82F6]/15">
             <Sparkles className="h-6 w-6 text-white" />
           </div>
 
           <h2 className="text-xl font-semibold text-white mb-2">Your AI workspace</h2>
-          <p className="text-[13px] text-[#858B99] leading-relaxed mb-8">
+          <p className="text-[13px] text-[#94A3B8] leading-relaxed mb-8">
             KorvixAI helps you write, code, analyze, and create with context-aware intelligence.
             Everything stays private to your session.
           </p>
@@ -47,8 +47,8 @@ export default function Onboarding({ onDismiss, onStartChat }: OnboardingProps) 
               { icon: Sparkles, text: 'Use the prompt library for quick, powerful starting points' },
             ].map((item, i) => (
               <div key={i} className="flex items-start gap-3 rounded-xl bg-white/[0.02] border border-white/[0.04] px-4 py-3">
-                <item.icon className="h-4 w-4 text-[#8B5CF6]/70 mt-0.5 shrink-0" />
-                <span className="text-[12px] text-[#B6BBC6]">{item.text}</span>
+                <item.icon className="h-4 w-4 text-[#3B82F6]/70 mt-0.5 shrink-0" />
+                <span className="text-[12px] text-[#CBD5E1]">{item.text}</span>
               </div>
             ))}
           </div>
@@ -70,14 +70,14 @@ export default function Onboarding({ onDismiss, onStartChat }: OnboardingProps) 
       <div className="flex flex-col items-center justify-center h-full px-6 animate-fade-in">
         <div className="max-w-md w-full">
           <div className="flex items-center justify-between mb-6">
-            <span className="text-[11px] text-[#858B99] font-medium uppercase tracking-wider">Step 2 of 3</span>
-            <button onClick={onDismiss} className="text-[#858B99] hover:text-[#B6BBC6] transition-colors p-1 rounded-md hover:bg-white/[0.03]">
+            <span className="text-[11px] text-[#94A3B8] font-medium uppercase tracking-wider">Step 2 of 3</span>
+            <button onClick={onDismiss} className="text-[#94A3B8] hover:text-[#CBD5E1] transition-colors p-1 rounded-md hover:bg-white/[0.03]">
               <X className="h-4 w-4" />
             </button>
           </div>
 
           <h2 className="text-xl font-semibold text-white mb-2">What will you use KorvixAI for?</h2>
-          <p className="text-[13px] text-[#858B99] leading-relaxed mb-6">
+          <p className="text-[13px] text-[#94A3B8] leading-relaxed mb-6">
             Choose your main use case. You can always change this later.
           </p>
 
@@ -96,7 +96,7 @@ export default function Onboarding({ onDismiss, onStartChat }: OnboardingProps) 
           <Button
             variant="ghost"
             onClick={() => setStep(2)}
-            className="w-full text-[#858B99] hover:text-white text-[12px]"
+            className="w-full text-[#94A3B8] hover:text-white text-[12px]"
           >
             Skip this step
           </Button>
@@ -110,14 +110,14 @@ export default function Onboarding({ onDismiss, onStartChat }: OnboardingProps) 
     <div className="flex flex-col items-center justify-center h-full px-6 animate-fade-in">
       <div className="max-w-md w-full">
         <div className="flex items-center justify-between mb-6">
-          <span className="text-[11px] text-[#858B99] font-medium uppercase tracking-wider">Step 3 of 3</span>
-          <button onClick={onDismiss} className="text-[#858B99] hover:text-[#B6BBC6] transition-colors p-1 rounded-md hover:bg-white/[0.03]">
+          <span className="text-[11px] text-[#94A3B8] font-medium uppercase tracking-wider">Step 3 of 3</span>
+          <button onClick={onDismiss} className="text-[#94A3B8] hover:text-[#CBD5E1] transition-colors p-1 rounded-md hover:bg-white/[0.03]">
             <X className="h-4 w-4" />
           </button>
         </div>
 
         <h2 className="text-xl font-semibold text-white mb-2">Start with a prompt</h2>
-        <p className="text-[13px] text-[#858B99] leading-relaxed mb-6">
+        <p className="text-[13px] text-[#94A3B8] leading-relaxed mb-6">
           Pick a starting point or type your own message.
         </p>
 
@@ -131,9 +131,9 @@ export default function Onboarding({ onDismiss, onStartChat }: OnboardingProps) 
               }}
               className="w-full flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3 text-left hover:bg-white/[0.05] hover:border-white/[0.1] transition-all duration-200 group"
             >
-              <MessageSquare className="h-4 w-4 text-[#8B5CF6]/60 shrink-0 group-hover:scale-110 transition-transform" />
+              <MessageSquare className="h-4 w-4 text-[#3B82F6]/60 shrink-0 group-hover:scale-110 transition-transform" />
               <span className="text-[13px] text-slate-300">{uc.label}</span>
-              <ArrowRight className="h-3.5 w-3.5 text-[#858B99] ml-auto group-hover:text-[#B6BBC6] transition-colors" />
+              <ArrowRight className="h-3.5 w-3.5 text-[#94A3B8] ml-auto group-hover:text-[#CBD5E1] transition-colors" />
             </button>
           ))}
         </div>
@@ -141,7 +141,7 @@ export default function Onboarding({ onDismiss, onStartChat }: OnboardingProps) 
         <Button
           variant="ghost"
           onClick={onDismiss}
-          className="w-full text-[#858B99] hover:text-white text-[12px]"
+          className="w-full text-[#94A3B8] hover:text-white text-[12px]"
         >
           I will type my own message
         </Button>

@@ -45,16 +45,16 @@ export default function ResearchActivity() {
             <div key={step} className="flex items-center gap-2.5">
               <span className="flex h-4 w-4 items-center justify-center shrink-0">
                 {done ? (
-                  <Check className="h-3.5 w-3.5 text-[#A78BFA]" />
+                  <Check className="h-3.5 w-3.5 text-[#60A5FA]" />
                 ) : active ? (
-                  <Loader2 className="h-3.5 w-3.5 text-[#A78BFA] animate-spin" />
+                  <Loader2 className="h-3.5 w-3.5 text-[#60A5FA] animate-spin" />
                 ) : (
                   <span className="h-1.5 w-1.5 rounded-full bg-white/[0.12]" />
                 )}
               </span>
               <span
                 className={`text-[12px] transition-colors ${
-                  done ? 'text-[#B6BBC6]' : active ? 'text-slate-100 font-medium' : 'text-[#858B99]'
+                  done ? 'text-[#CBD5E1]' : active ? 'text-slate-100 font-medium' : 'text-[#94A3B8]'
                 }`}
               >
                 {step}
@@ -63,7 +63,7 @@ export default function ResearchActivity() {
           );
         })}
       </div>
-      <p className="text-[10px] text-[#858B99] mt-4">
+      <p className="text-[10px] text-[#94A3B8] mt-4">
         Scanning live public sources — the exact pages used will be listed in the evidence trail.
       </p>
     </motion.div>

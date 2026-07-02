@@ -67,11 +67,11 @@ export default function ResponseActions({ onAction, onHoverAction, compact = fal
               px-2.5 py-1
               transition-all duration-150
               hover:border-white/[0.08] hover:bg-white/[0.03]
-              ${isHovered ? 'border-[#8B5CF6]/20 bg-[#8B5CF6]/[0.02]' : ''}
+              ${isHovered ? 'border-[#3B82F6]/20 bg-[#3B82F6]/[0.02]' : ''}
             `}
           >
-            <action.icon className="h-3 w-3 text-[#858B99] group-hover:text-[#B6BBC6] transition-colors" />
-            <span className="text-[11px] text-[#858B99] group-hover:text-slate-300 transition-colors">
+            <action.icon className="h-3 w-3 text-[#94A3B8] group-hover:text-[#CBD5E1] transition-colors" />
+            <span className="text-[11px] text-[#94A3B8] group-hover:text-slate-300 transition-colors">
               {action.label}
             </span>
 
@@ -81,9 +81,9 @@ export default function ResponseActions({ onAction, onHoverAction, compact = fal
               className="ml-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
             >
               {isSaved ? (
-                <BookmarkCheck className="h-2.5 w-2.5 text-[#8B5CF6]/70" />
+                <BookmarkCheck className="h-2.5 w-2.5 text-[#3B82F6]/70" />
               ) : (
-                <Bookmark className="h-2.5 w-2.5 text-[#858B99] hover:text-[#858B99]" />
+                <Bookmark className="h-2.5 w-2.5 text-[#94A3B8] hover:text-[#94A3B8]" />
               )}
             </button>
           </motion.button>

@@ -17,24 +17,24 @@ const fadeUp = (delay = 0) => ({
 });
 
 const TRENDING = [
-  { title: 'AI Agent Workflows', category: 'Technology', views: '12.4k', trend: '+34%', icon: Cpu, color: 'text-[#A78BFA]', bg: 'bg-[#8B5CF6]/[0.08]', border: 'border-[#8B5CF6]/10' },
-  { title: 'Shopify AI Tools', category: 'Ecommerce', views: '8.7k', trend: '+21%', icon: ShoppingBag, color: 'text-[#A78BFA]', bg: 'bg-[#8B5CF6]/[0.08]', border: 'border-[#8B5CF6]/10' },
-  { title: 'Startup Pitch AI', category: 'Startup', views: '6.2k', trend: '+18%', icon: Rocket, color: 'text-[#A78BFA]', bg: 'bg-[#8B5CF6]/[0.08]', border: 'border-[#8B5CF6]/10' },
-  { title: 'Code Generation', category: 'Development', views: '15.1k', trend: '+42%', icon: Code2, color: 'text-[#A78BFA]', bg: 'bg-[#8B5CF6]/[0.08]', border: 'border-[#8B5CF6]/10' },
+  { title: 'AI Agent Workflows', category: 'Technology', views: '12.4k', trend: '+34%', icon: Cpu, color: 'text-[#60A5FA]', bg: 'bg-[#3B82F6]/[0.08]', border: 'border-[#3B82F6]/10' },
+  { title: 'Shopify AI Tools', category: 'Ecommerce', views: '8.7k', trend: '+21%', icon: ShoppingBag, color: 'text-[#60A5FA]', bg: 'bg-[#3B82F6]/[0.08]', border: 'border-[#3B82F6]/10' },
+  { title: 'Startup Pitch AI', category: 'Startup', views: '6.2k', trend: '+18%', icon: Rocket, color: 'text-[#60A5FA]', bg: 'bg-[#3B82F6]/[0.08]', border: 'border-[#3B82F6]/10' },
+  { title: 'Code Generation', category: 'Development', views: '15.1k', trend: '+42%', icon: Code2, color: 'text-[#60A5FA]', bg: 'bg-[#3B82F6]/[0.08]', border: 'border-[#3B82F6]/10' },
 ];
 
 const FEATURED_AGENTS = [
-  { name: 'Growth Hacker', description: 'Viral growth strategies, funnel optimization, and acquisition tactics', icon: TrendingUp, color: 'text-[#A78BFA]', bg: 'bg-[#8B5CF6]/[0.06]', users: '4.2k', rating: 4.9, tags: ['Marketing', 'Growth'] },
-  { name: 'UX Researcher', description: 'User interviews, usability testing, and design validation', icon: Users, color: 'text-[#A78BFA]', bg: 'bg-[#8B5CF6]/[0.06]', users: '3.1k', rating: 4.8, tags: ['Design', 'Research'] },
-  { name: 'Security Auditor', description: 'Code security review, vulnerability assessment, compliance', icon: Shield, color: 'text-[#A78BFA]', bg: 'bg-[#8B5CF6]/[0.06]', users: '2.8k', rating: 4.7, tags: ['Security', 'Code'] },
-  { name: 'Data Scientist', description: 'Data analysis, ML models, visualization, and insights', icon: LineChart, color: 'text-[#A78BFA]', bg: 'bg-[#8B5CF6]/[0.06]', users: '5.6k', rating: 4.9, tags: ['Data', 'ML'] },
+  { name: 'Growth Hacker', description: 'Viral growth strategies, funnel optimization, and acquisition tactics', icon: TrendingUp, color: 'text-[#60A5FA]', bg: 'bg-[#3B82F6]/[0.06]', users: '4.2k', rating: 4.9, tags: ['Marketing', 'Growth'] },
+  { name: 'UX Researcher', description: 'User interviews, usability testing, and design validation', icon: Users, color: 'text-[#60A5FA]', bg: 'bg-[#3B82F6]/[0.06]', users: '3.1k', rating: 4.8, tags: ['Design', 'Research'] },
+  { name: 'Security Auditor', description: 'Code security review, vulnerability assessment, compliance', icon: Shield, color: 'text-[#60A5FA]', bg: 'bg-[#3B82F6]/[0.06]', users: '2.8k', rating: 4.7, tags: ['Security', 'Code'] },
+  { name: 'Data Scientist', description: 'Data analysis, ML models, visualization, and insights', icon: LineChart, color: 'text-[#60A5FA]', bg: 'bg-[#3B82F6]/[0.06]', users: '5.6k', rating: 4.9, tags: ['Data', 'ML'] },
 ];
 
 const NEW_ARRIVALS = [
-  { title: 'Creative Director AI', desc: 'Brand identity, visual strategy, and creative campaigns', icon: Palette, time: '2 days ago', color: 'text-[#A78BFA]' },
-  { title: 'Global Expansion Advisor', desc: 'Market entry strategy, localization, and compliance', icon: Globe, time: '3 days ago', color: 'text-[#A78BFA]' },
-  { title: 'Deep Research Pro', desc: 'Multi-source research with academic paper access', icon: Brain, time: '4 days ago', color: 'text-[#A78BFA]' },
-  { title: 'Conversational Designer', desc: 'Design chat flows, voice UI, and interaction patterns', icon: MessageSquare, time: '5 days ago', color: 'text-[#A78BFA]' },
+  { title: 'Creative Director AI', desc: 'Brand identity, visual strategy, and creative campaigns', icon: Palette, time: '2 days ago', color: 'text-[#60A5FA]' },
+  { title: 'Global Expansion Advisor', desc: 'Market entry strategy, localization, and compliance', icon: Globe, time: '3 days ago', color: 'text-[#60A5FA]' },
+  { title: 'Deep Research Pro', desc: 'Multi-source research with academic paper access', icon: Brain, time: '4 days ago', color: 'text-[#60A5FA]' },
+  { title: 'Conversational Designer', desc: 'Design chat flows, voice UI, and interaction patterns', icon: MessageSquare, time: '5 days ago', color: 'text-[#60A5FA]' },
 ];
 
 const COMMUNITY_PROMPTS = [
@@ -51,7 +51,7 @@ function BookmarkButton() {
   return (
     <button
       onClick={(e) => { e.stopPropagation(); setSaved(!saved); }}
-      className={`p-1.5 rounded-md transition-colors ${saved ? 'text-[#A78BFA] bg-[#8B5CF6]/10' : 'text-[#858B99] hover:text-[#B6BBC6] hover:bg-white/[0.03]'}`}
+      className={`p-1.5 rounded-md transition-colors ${saved ? 'text-[#60A5FA] bg-[#3B82F6]/10' : 'text-[#94A3B8] hover:text-[#CBD5E1] hover:bg-white/[0.03]'}`}
     >
       {saved ? <BookmarkCheck className="w-3.5 h-3.5" /> : <Bookmark className="w-3.5 h-3.5" />}
     </button>
@@ -77,12 +77,12 @@ export default function ExplorePage() {
           {/* Hero */}
           <motion.div {...fadeUp(0)} className="mb-10">
             <div className="flex items-center gap-3 mb-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#8B5CF6]/[0.1] border border-[#8B5CF6]/15">
-                <Compass className="h-4 w-4 text-[#A78BFA]" />
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#3B82F6]/[0.1] border border-[#3B82F6]/15">
+                <Compass className="h-4 w-4 text-[#60A5FA]" />
               </div>
               <h1 className="text-2xl font-semibold text-white tracking-tight">Explore</h1>
             </div>
-            <p className="text-[13px] text-[#858B99] ml-11">Discover trending agents, community prompts, and new arrivals</p>
+            <p className="text-[13px] text-[#94A3B8] ml-11">Discover trending agents, community prompts, and new arrivals</p>
           </motion.div>
 
           {/* Search + Tabs */}
@@ -92,7 +92,7 @@ export default function ExplorePage() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search agents, prompts, and tools..."
-                className="w-full h-10 pl-4 pr-4 rounded-xl bg-white/[0.02] border border-white/[0.04] text-[13px] text-slate-300 placeholder:text-[#858B99] focus:outline-none focus:border-[#8B5CF6]/20 focus:bg-white/[0.03] transition-all"
+                className="w-full h-10 pl-4 pr-4 rounded-xl bg-white/[0.02] border border-white/[0.04] text-[13px] text-slate-300 placeholder:text-[#94A3B8] focus:outline-none focus:border-[#3B82F6]/20 focus:bg-white/[0.03] transition-all"
               />
             </div>
             <div className="flex items-center gap-1 p-0.5 rounded-xl bg-white/[0.02] border border-white/[0.04]">
@@ -101,7 +101,7 @@ export default function ExplorePage() {
                   key={tab}
                   onClick={() => setActiveTab(tab)}
                   className={`px-3.5 py-2 rounded-lg text-[12px] font-medium transition-all capitalize ${
-                    activeTab === tab ? 'bg-white/[0.06] text-white' : 'text-[#858B99] hover:text-slate-300'
+                    activeTab === tab ? 'bg-white/[0.06] text-white' : 'text-[#94A3B8] hover:text-slate-300'
                   }`}
                 >
                   {tab}
@@ -115,7 +115,7 @@ export default function ExplorePage() {
             {(activeTab === 'all' || activeTab === 'trending') && (
               <motion.section {...fadeUp(0.1)} key="trending" className="mb-10">
                 <div className="flex items-center gap-2 mb-4">
-                  <Flame className="w-4 h-4 text-[#A78BFA]" />
+                  <Flame className="w-4 h-4 text-[#60A5FA]" />
                   <h2 className="text-sm font-medium text-white">Trending Now</h2>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -132,7 +132,7 @@ export default function ExplorePage() {
                         <span className="text-[11px] font-medium text-[#4ADE80]">{item.trend}</span>
                       </div>
                       <h3 className="text-[13px] font-medium text-white mb-0.5">{item.title}</h3>
-                      <p className="text-[11px] text-[#858B99]">{item.category} · {item.views} views</p>
+                      <p className="text-[11px] text-[#94A3B8]">{item.category} · {item.views} views</p>
                     </motion.div>
                   ))}
                 </div>
@@ -144,10 +144,10 @@ export default function ExplorePage() {
               <motion.section {...fadeUp(0.15)} key="agents" className="mb-10">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
-                    <Star className="w-4 h-4 text-[#A78BFA]" />
+                    <Star className="w-4 h-4 text-[#60A5FA]" />
                     <h2 className="text-sm font-medium text-white">Featured Agents</h2>
                   </div>
-                  <button onClick={() => navigate('/agents')} className="flex items-center gap-1 text-[11px] text-[#858B99] hover:text-[#A78BFA] transition-colors">
+                  <button onClick={() => navigate('/agents')} className="flex items-center gap-1 text-[11px] text-[#94A3B8] hover:text-[#60A5FA] transition-colors">
                     View all <ArrowRight className="w-3 h-3" />
                   </button>
                 </div>
@@ -167,13 +167,13 @@ export default function ExplorePage() {
                             <h3 className="text-[13px] font-medium text-white">{agent.name}</h3>
                             <BookmarkButton />
                           </div>
-                          <p className="text-[11px] text-[#858B99] mb-2">{agent.description}</p>
+                          <p className="text-[11px] text-[#94A3B8] mb-2">{agent.description}</p>
                           <div className="flex items-center gap-2 flex-wrap">
                             {agent.tags.map((tag) => (
-                              <span key={tag} className="px-1.5 py-0.5 rounded-md bg-white/[0.03] text-[10px] text-[#858B99]">{tag}</span>
+                              <span key={tag} className="px-1.5 py-0.5 rounded-md bg-white/[0.03] text-[10px] text-[#94A3B8]">{tag}</span>
                             ))}
-                            <span className="text-[10px] text-[#858B99] ml-auto flex items-center gap-1">
-                              <Users className="w-3 h-3" /> {agent.users} · <Star className="w-3 h-3 text-[#A78BFA]" /> {agent.rating}
+                            <span className="text-[10px] text-[#94A3B8] ml-auto flex items-center gap-1">
+                              <Users className="w-3 h-3" /> {agent.users} · <Star className="w-3 h-3 text-[#60A5FA]" /> {agent.rating}
                             </span>
                           </div>
                         </div>
@@ -188,7 +188,7 @@ export default function ExplorePage() {
             {activeTab === 'all' && (
               <motion.section {...fadeUp(0.2)} key="new" className="mb-10">
                 <div className="flex items-center gap-2 mb-4">
-                  <Sparkles className="w-4 h-4 text-[#A78BFA]" />
+                  <Sparkles className="w-4 h-4 text-[#60A5FA]" />
                   <h2 className="text-sm font-medium text-white">New Arrivals</h2>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -200,13 +200,13 @@ export default function ExplorePage() {
                     >
                       <div className="flex items-center gap-2 mb-2">
                         <item.icon className={`w-4 h-4 ${item.color}`} />
-                        <span className="text-[11px] text-[#858B99] ml-auto flex items-center gap-1">
+                        <span className="text-[11px] text-[#94A3B8] ml-auto flex items-center gap-1">
                           <Clock className="w-3 h-3" /> {item.time}
                         </span>
                       </div>
                       <h3 className="text-[13px] font-medium text-white mb-1">{item.title}</h3>
-                      <p className="text-[11px] text-[#858B99]">{item.desc}</p>
-                      <div className="flex items-center gap-1 mt-3 text-[11px] text-[#A78BFA]/70 group-hover:text-[#A78BFA] transition-colors">
+                      <p className="text-[11px] text-[#94A3B8]">{item.desc}</p>
+                      <div className="flex items-center gap-1 mt-3 text-[11px] text-[#60A5FA]/70 group-hover:text-[#60A5FA] transition-colors">
                         Try it <ChevronRight className="w-3 h-3" />
                       </div>
                     </motion.div>
@@ -220,7 +220,7 @@ export default function ExplorePage() {
               <motion.section {...fadeUp(0.25)} key="prompts">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
-                    <Zap className="w-4 h-4 text-[#A78BFA]" />
+                    <Zap className="w-4 h-4 text-[#60A5FA]" />
                     <h2 className="text-sm font-medium text-white">Community Prompts</h2>
                   </div>
                 </div>
@@ -234,16 +234,16 @@ export default function ExplorePage() {
                       className="flex items-center gap-4 p-3 rounded-xl border border-white/[0.02] bg-white/[0.01] hover:border-white/[0.06] hover:bg-white/[0.02] cursor-pointer transition-all group"
                     >
                       <div className="flex-1 min-w-0">
-                        <h3 className="text-[13px] font-medium text-white group-hover:text-[#A78BFA] transition-colors truncate">{prompt.title}</h3>
+                        <h3 className="text-[13px] font-medium text-white group-hover:text-[#60A5FA] transition-colors truncate">{prompt.title}</h3>
                         <div className="flex items-center gap-2 mt-0.5">
-                          <span className="text-[11px] text-[#858B99]">@{prompt.author}</span>
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/[0.03] text-[#858B99]">{prompt.category}</span>
+                          <span className="text-[11px] text-[#94A3B8]">@{prompt.author}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-white/[0.03] text-[#94A3B8]">{prompt.category}</span>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3 text-[11px] text-[#858B99] shrink-0">
+                      <div className="flex items-center gap-3 text-[11px] text-[#94A3B8] shrink-0">
                         <span className="flex items-center gap-1"><Sparkles className="w-3 h-3" /> {prompt.uses}</span>
-                        <span className="flex items-center gap-1"><Flame className="w-3 h-3 text-[#A78BFA]" /> {prompt.likes}</span>
-                        <ExternalLink className="w-3.5 h-3.5 text-[#858B99] group-hover:text-[#A78BFA] transition-colors" />
+                        <span className="flex items-center gap-1"><Flame className="w-3 h-3 text-[#60A5FA]" /> {prompt.likes}</span>
+                        <ExternalLink className="w-3.5 h-3.5 text-[#94A3B8] group-hover:text-[#60A5FA] transition-colors" />
                       </div>
                     </motion.div>
                   ))}
@@ -253,10 +253,10 @@ export default function ExplorePage() {
           </AnimatePresence>
 
           {/* Footer CTA */}
-          <motion.div {...fadeUp(0.3)} className="mt-12 p-6 rounded-2xl border border-[#8B5CF6]/10 bg-[#8B5CF6]/[0.02] text-center">
+          <motion.div {...fadeUp(0.3)} className="mt-12 p-6 rounded-2xl border border-[#3B82F6]/10 bg-[#3B82F6]/[0.02] text-center">
             <h3 className="text-sm font-medium text-white mb-1">Want to share your own prompts?</h3>
-            <p className="text-[12px] text-[#858B99] mb-3">Join the community and contribute your best AI prompts</p>
-            <button className="px-4 py-2 rounded-xl bg-[#8B5CF6]/[0.1] border border-[#8B5CF6]/15 text-[12px] font-medium text-[#A78BFA] hover:bg-[#8B5CF6]/[0.15] transition-colors">
+            <p className="text-[12px] text-[#94A3B8] mb-3">Join the community and contribute your best AI prompts</p>
+            <button className="px-4 py-2 rounded-xl bg-[#3B82F6]/[0.1] border border-[#3B82F6]/15 text-[12px] font-medium text-[#60A5FA] hover:bg-[#3B82F6]/[0.15] transition-colors">
               Coming Soon
             </button>
           </motion.div>

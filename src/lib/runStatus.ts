@@ -38,17 +38,17 @@ const MUTE = 'rgb(148,163,184)';  // slate
 const D: Record<string, StatusDescriptor> = {
   running: {
     key: 'running', label: 'Running', description: 'The run is in progress.',
-    Icon: Loader2, tone: 'busy', text: 'text-cyan-400', dot: BUSY,
+    Icon: Loader2, tone: 'busy', text: 'text-blue-400', dot: BUSY,
     spin: true, terminal: false, canRetry: false,
   },
   pending: {
     key: 'pending', label: 'Pending', description: 'Queued — waiting to start.',
-    Icon: Clock, tone: 'busy', text: 'text-cyan-400/80', dot: BUSY,
+    Icon: Clock, tone: 'busy', text: 'text-blue-400/80', dot: BUSY,
     spin: false, terminal: false, canRetry: false,
   },
   partial: {
     key: 'partial', label: 'Partial', description: 'Some deliverables are ready; still working.',
-    Icon: Loader2, tone: 'busy', text: 'text-cyan-400', dot: BUSY,
+    Icon: Loader2, tone: 'busy', text: 'text-blue-400', dot: BUSY,
     spin: true, terminal: false, canRetry: false,
   },
   completed: {

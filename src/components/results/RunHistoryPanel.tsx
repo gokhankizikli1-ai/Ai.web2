@@ -28,7 +28,7 @@ export default function RunHistoryPanel({
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-3 py-2.5 border-b border-white/[0.05]">
         <div className="flex items-center gap-2">
-          <History className="h-3.5 w-3.5 text-[#8B5CF6]/60" />
+          <History className="h-3.5 w-3.5 text-[#3B82F6]/60" />
           <span className="text-[12px] font-semibold text-white/70">Run History</span>
           {runs.length > 0 && (
             <span className="text-[10px] text-white/30">{runs.length}</span>
@@ -53,7 +53,7 @@ export default function RunHistoryPanel({
         ) : error ? (
           <Notice icon={<Ban className="h-4 w-4 text-[#F87171]/80" />} title="Couldn't load runs">
             <p className="mb-2">{error}</p>
-            <button onClick={onRetry} className="inline-flex items-center gap-1 text-[11px] text-[#8B5CF6]/80 hover:text-[#A78BFA]">
+            <button onClick={onRetry} className="inline-flex items-center gap-1 text-[11px] text-[#3B82F6]/80 hover:text-[#60A5FA]">
               <RotateCcw className="h-3 w-3" /> Try again
             </button>
           </Notice>
@@ -79,7 +79,7 @@ export default function RunHistoryPanel({
                     onClick={() => onSelect(r.run_id)}
                     className={`w-full text-left rounded-lg px-2.5 py-2 transition-colors border ${
                       selected
-                        ? 'bg-[#8B5CF6]/[0.06] border-[#8B5CF6]/20'
+                        ? 'bg-[#3B82F6]/[0.06] border-[#3B82F6]/20'
                         : 'bg-transparent border-transparent hover:bg-white/[0.03]'
                     }`}
                   >

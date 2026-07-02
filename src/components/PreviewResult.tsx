@@ -47,13 +47,13 @@ export default function PreviewResult({
   // ── Non-terminal: planning / running / rendering ─────────────────────────
   if (phase === 'planning' || phase === 'running' || phase === 'rendering') {
     return (
-      <StatusCard tone="busy" icon={<Loader2 className="w-4 h-4 animate-spin text-[#8B5CF6]" />} title={label}>
-        <p className="text-[12px] text-[#858B99]">
+      <StatusCard tone="busy" icon={<Loader2 className="w-4 h-4 animate-spin text-[#3B82F6]" />} title={label}>
+        <p className="text-[12px] text-[#94A3B8]">
           {phase === 'planning' && 'Understanding the request and preparing the run…'}
           {phase === 'running' && 'Agents are working on the deliverables…'}
           {phase === 'rendering' && 'Assembling the result…'}
         </p>
-        {payload?.summary && <p className="text-[12px] text-[#B6BBC6] mt-2">{payload.summary}</p>}
+        {payload?.summary && <p className="text-[12px] text-[#CBD5E1] mt-2">{payload.summary}</p>}
       </StatusCard>
     );
   }
@@ -62,13 +62,13 @@ export default function PreviewResult({
   if (phase === 'disabled') {
     return (
       <StatusCard tone="muted" icon={<Ban className="w-4 h-4 text-[#FACC15]" />} title="Execution unavailable">
-        <p className="text-[12px] text-[#B6BBC6]">{disabledReason || 'This capability is disabled on the server.'}</p>
+        <p className="text-[12px] text-[#CBD5E1]">{disabledReason || 'This capability is disabled on the server.'}</p>
         {disabledPrerequisites.length > 0 && (
           <div className="mt-2">
-            <p className="text-[11px] text-[#858B99] mb-1">Disabled prerequisites:</p>
+            <p className="text-[11px] text-[#94A3B8] mb-1">Disabled prerequisites:</p>
             <div className="flex flex-wrap gap-1.5">
               {disabledPrerequisites.map((p) => (
-                <span key={p} className="px-1.5 py-0.5 rounded bg-white/[0.03] text-[10px] text-[#858B99] font-mono">{p}</span>
+                <span key={p} className="px-1.5 py-0.5 rounded bg-white/[0.03] text-[10px] text-[#94A3B8] font-mono">{p}</span>
               ))}
             </div>
           </div>
@@ -87,11 +87,11 @@ export default function PreviewResult({
     return (
       <StatusCard tone="error" icon={<AlertTriangle className="w-4 h-4 text-[#F87171]" />} title={title}>
         {errs.length > 0 ? (
-          <ul className="text-[12px] text-[#B6BBC6] list-disc list-inside space-y-0.5">
+          <ul className="text-[12px] text-[#CBD5E1] list-disc list-inside space-y-0.5">
             {errs.map((e, i) => <li key={i}>{e}</li>)}
           </ul>
         ) : (
-          <p className="text-[12px] text-[#858B99]">No further detail was reported.</p>
+          <p className="text-[12px] text-[#94A3B8]">No further detail was reported.</p>
         )}
         {onRetry && (
           <button onClick={onRetry} className="mt-3 px-3 py-1.5 rounded-lg bg-white/[0.03] border border-white/[0.05] text-[12px] text-slate-300 hover:bg-white/[0.05] transition-colors">
@@ -107,8 +107,8 @@ export default function PreviewResult({
     const status = payload.status;
     if (status === 'completed_no_artifact' || status === 'artifact_not_found') {
       return (
-        <StatusCard tone="muted" icon={<Inbox className="w-4 h-4 text-[#B6BBC6]" />} title="Run finished — no preview">
-          <p className="text-[12px] text-[#B6BBC6]">
+        <StatusCard tone="muted" icon={<Inbox className="w-4 h-4 text-[#CBD5E1]" />} title="Run finished — no preview">
+          <p className="text-[12px] text-[#CBD5E1]">
             {payload.warnings?.[0] || 'The run completed but produced no previewable artifact.'}
           </p>
         </StatusCard>
@@ -148,7 +148,7 @@ function RenderedArtifact({ payload }: { payload: PreviewPayload }) {
       <div className="space-y-3">
         {files.map((f, i) => (
           <div key={`${f.path}-${i}`}>
-            <p className="flex items-center gap-1.5 text-[11px] text-[#A78BFA]/80 mb-1">
+            <p className="flex items-center gap-1.5 text-[11px] text-[#60A5FA]/80 mb-1">
               <FileCode className="h-3 w-3" /> {f.path}
             </p>
             <CodeBlock language={f.language || 'text'}>{f.content}</CodeBlock>
@@ -162,7 +162,7 @@ function RenderedArtifact({ payload }: { payload: PreviewPayload }) {
     // markdown | none | unknown-future renderer → safe, readable default.
     view = <MarkdownMessage content={body} />;
   } else {
-    view = <p className="text-[12px] text-[#858B99]">{payload.summary || 'No content was returned.'}</p>;
+    view = <p className="text-[12px] text-[#94A3B8]">{payload.summary || 'No content was returned.'}</p>;
   }
 
   return (
@@ -171,7 +171,7 @@ function RenderedArtifact({ payload }: { payload: PreviewPayload }) {
         <div className="flex items-center justify-between gap-3">
           <h3 className="text-sm font-medium text-white truncate">{payload.title || payload.artifact_type}</h3>
           {payload.artifact_type && (
-            <span className="px-1.5 py-0.5 rounded bg-white/[0.03] text-[10px] text-[#858B99] font-mono shrink-0">
+            <span className="px-1.5 py-0.5 rounded bg-white/[0.03] text-[10px] text-[#94A3B8] font-mono shrink-0">
               {payload.artifact_type}
             </span>
           )}
@@ -198,7 +198,7 @@ function StatusCard({
   children: React.ReactNode;
 }) {
   const border = tone === 'error' ? 'border-[#F87171]/15'
-    : tone === 'busy' ? 'border-[#8B5CF6]/15' : 'border-white/[0.04]';
+    : tone === 'busy' ? 'border-[#3B82F6]/15' : 'border-white/[0.04]';
   return (
     <div className={`p-5 rounded-2xl border ${border} bg-white/[0.01]`}>
       <div className="flex items-center gap-2 mb-2">

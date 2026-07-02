@@ -60,7 +60,7 @@ function PulseWave({ size: waveSize, delay, thickness = 0.6 }: { size: number; d
       style={{
         width: waveSize, height: waveSize,
         top: '50%', left: '50%', marginTop: -waveSize / 2, marginLeft: -waveSize / 2,
-        border: `${thickness}px solid rgba(139, 92, 246,0.06)`,
+        border: `${thickness}px solid rgba(59, 130, 246,0.06)`,
       }}
       initial={{ opacity: 0, scale: 0.5 }}
       animate={{ opacity: [0, 0.3, 0], scale: [0.5, 1.25, 1.5] }}
@@ -81,8 +81,8 @@ function CornerSparkle({ angle, radius, size, delay }: { angle: number; radius: 
         width: size, height: size,
         left: `${x}%`, top: `${y}%`,
         transform: 'translate(-50%, -50%)',
-        background: 'radial-gradient(circle, rgba(165,243,252,0.8), rgba(139, 92, 246,0.3))',
-        boxShadow: `0 0 ${size * 2}px rgba(139, 92, 246,0.3)`,
+        background: 'radial-gradient(circle, rgba(165,243,252,0.8), rgba(59, 130, 246,0.3))',
+        boxShadow: `0 0 ${size * 2}px rgba(59, 130, 246,0.3)`,
       }}
       animate={{ opacity: [0.2, 0.9, 0.2], scale: [0.7, 1.1, 0.7] }}
       transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut', delay }}
@@ -101,13 +101,13 @@ export default function KorvixOrb({ size = 'lg', variant = 'default', className 
   // Particle configs
   const [particles] = useState(() => [
     { id: 0, rx: px * 0.30, ry: px * 0.30, dur: 5.0, delay: 0.0,  sz: 2.2,  col: 'rgba(165,243,252,0.7)', glow: 'rgba(165,243,252,0.4)' },
-    { id: 1, rx: px * 0.36, ry: px * 0.28, dur: 6.5, delay: 1.2,  sz: 1.5,  col: 'rgba(139, 92, 246,0.6)',  glow: 'rgba(139, 92, 246,0.3)' },
-    { id: 2, rx: px * 0.24, ry: px * 0.36, dur: 4.2, delay: 2.5,  sz: 1.8,  col: 'rgba(139, 92, 246,0.5)',  glow: 'rgba(139, 92, 246,0.25)' },
+    { id: 1, rx: px * 0.36, ry: px * 0.28, dur: 6.5, delay: 1.2,  sz: 1.5,  col: 'rgba(59, 130, 246,0.6)',  glow: 'rgba(59, 130, 246,0.3)' },
+    { id: 2, rx: px * 0.24, ry: px * 0.36, dur: 4.2, delay: 2.5,  sz: 1.8,  col: 'rgba(59, 130, 246,0.5)',  glow: 'rgba(59, 130, 246,0.25)' },
     { id: 3, rx: px * 0.40, ry: px * 0.22, dur: 7.8, delay: 0.8,  sz: 1.2,  col: 'rgba(165,243,252,0.5)', glow: 'rgba(165,243,252,0.2)' },
-    { id: 4, rx: px * 0.22, ry: px * 0.38, dur: 5.5, delay: 3.0,  sz: 1.0,  col: 'rgba(139, 92, 246,0.45)', glow: 'rgba(139, 92, 246,0.15)' },
-    { id: 5, rx: px * 0.33, ry: px * 0.33, dur: 8.2, delay: 1.8,  sz: 1.6,  col: 'rgba(139, 92, 246,0.5)',  glow: 'rgba(139, 92, 246,0.2)' },
+    { id: 4, rx: px * 0.22, ry: px * 0.38, dur: 5.5, delay: 3.0,  sz: 1.0,  col: 'rgba(59, 130, 246,0.45)', glow: 'rgba(59, 130, 246,0.15)' },
+    { id: 5, rx: px * 0.33, ry: px * 0.33, dur: 8.2, delay: 1.8,  sz: 1.6,  col: 'rgba(59, 130, 246,0.5)',  glow: 'rgba(59, 130, 246,0.2)' },
     { id: 6, rx: px * 0.28, ry: px * 0.20, dur: 4.8, delay: 0.4,  sz: 0.9,  col: 'rgba(255,255,255,0.4)', glow: 'rgba(255,255,255,0.15)' },
-    { id: 7, rx: px * 0.38, ry: px * 0.30, dur: 9.0, delay: 2.2,  sz: 1.3,  col: 'rgba(139, 92, 246,0.4)',  glow: 'rgba(139, 92, 246,0.18)' },
+    { id: 7, rx: px * 0.38, ry: px * 0.30, dur: 9.0, delay: 2.2,  sz: 1.3,  col: 'rgba(59, 130, 246,0.4)',  glow: 'rgba(59, 130, 246,0.18)' },
   ]);
 
   const pulseWaves = [
@@ -128,7 +128,7 @@ export default function KorvixOrb({ size = 'lg', variant = 'default', className 
         className="absolute rounded-full"
         style={{
           width: px, height: px,
-          background: 'radial-gradient(circle, rgba(139, 92, 246,0.07) 0%, rgba(139, 92, 246,0.025) 35%, transparent 65%)',
+          background: 'radial-gradient(circle, rgba(59, 130, 246,0.07) 0%, rgba(59, 130, 246,0.025) 35%, transparent 65%)',
         }}
         animate={{ scale: [1, 1.06, 1], opacity: [0.5, 0.85, 0.5] }}
         transition={{ duration: isThinking ? 2 : 4, repeat: Infinity, ease: 'easeInOut' }}
@@ -137,7 +137,7 @@ export default function KorvixOrb({ size = 'lg', variant = 'default', className 
         className="absolute rounded-full"
         style={{
           width: px * 0.65, height: px * 0.65,
-          background: 'radial-gradient(circle, rgba(139, 92, 246,0.05) 0%, transparent 55%)',
+          background: 'radial-gradient(circle, rgba(59, 130, 246,0.05) 0%, transparent 55%)',
         }}
         animate={{ scale: [1, 1.1, 1], opacity: [0.4, 0.7, 0.4] }}
         transition={{ duration: isThinking ? 2.5 : 5, repeat: Infinity, ease: 'easeInOut', delay: 0.5 }}
@@ -157,26 +157,26 @@ export default function KorvixOrb({ size = 'lg', variant = 'default', className 
       <svg className="absolute" style={{ width: px, height: px }} viewBox={`0 0 ${px} ${px}`}>
         <defs>
           <linearGradient id={`grad1-${size}`} x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="rgba(139, 92, 246,0.2)" />
-            <stop offset="50%" stopColor="rgba(139, 92, 246,0.04)" />
-            <stop offset="100%" stopColor="rgba(139, 92, 246,0.15)" />
+            <stop offset="0%" stopColor="rgba(59, 130, 246,0.2)" />
+            <stop offset="50%" stopColor="rgba(59, 130, 246,0.04)" />
+            <stop offset="100%" stopColor="rgba(59, 130, 246,0.15)" />
           </linearGradient>
           <linearGradient id={`grad2-${size}`} x1="0%" y1="100%" x2="100%" y2="0%">
             <stop offset="0%" stopColor="rgba(165,243,252,0.15)" />
-            <stop offset="50%" stopColor="rgba(139, 92, 246,0.03)" />
-            <stop offset="100%" stopColor="rgba(139, 92, 246,0.1)" />
+            <stop offset="50%" stopColor="rgba(59, 130, 246,0.03)" />
+            <stop offset="100%" stopColor="rgba(59, 130, 246,0.1)" />
           </linearGradient>
           <radialGradient id={`coreGlow-${size}`}>
             <stop offset="0%" stopColor="rgba(165,243,252,0.9)" />
-            <stop offset="40%" stopColor="rgba(139, 92, 246,0.5)" />
-            <stop offset="100%" stopColor="rgba(139, 92, 246,0.1)" />
+            <stop offset="40%" stopColor="rgba(59, 130, 246,0.5)" />
+            <stop offset="100%" stopColor="rgba(59, 130, 246,0.1)" />
           </radialGradient>
           {/* Octagonal mesh pattern */}
           <pattern id={`octMesh-${size}`} width="14" height="14" patternUnits="userSpaceOnUse" patternTransform={`scale(${Math.max(0.5, s)})`}>
             <polygon
               points={octagonPoints(7, 7, 4)}
               fill="none"
-              stroke="rgba(139, 92, 246,0.06)"
+              stroke="rgba(59, 130, 246,0.06)"
               strokeWidth="0.4"
             />
           </pattern>
@@ -200,7 +200,7 @@ export default function KorvixOrb({ size = 'lg', variant = 'default', className 
             const a = (Math.PI / 180) * (i * 45 - 90);
             const nx = c + ring * 0.92 * Math.cos(a);
             const ny = c + ring * 0.92 * Math.sin(a);
-            return <circle key={i} cx={nx} cy={ny} r={Math.max(1.2, s * 1.8)} fill="rgba(139, 92, 246,0.2)" />;
+            return <circle key={i} cx={nx} cy={ny} r={Math.max(1.2, s * 1.8)} fill="rgba(59, 130, 246,0.2)" />;
           })}
         </motion.g>
 
@@ -237,7 +237,7 @@ export default function KorvixOrb({ size = 'lg', variant = 'default', className 
           transition={{ duration: isThinking ? 7 : 15, repeat: Infinity, ease: 'linear' }}
         >
           <circle cx={c} cy={c} r={ring * 0.62} fill="none"
-            stroke="rgba(139, 92, 246,0.06)" strokeWidth={Math.max(0.3, s * 0.5)} />
+            stroke="rgba(59, 130, 246,0.06)" strokeWidth={Math.max(0.3, s * 0.5)} />
           {/* Bright arc segment */}
           <circle cx={c} cy={c} r={ring * 0.62} fill="none"
             stroke="rgba(165,243,252,0.25)" strokeWidth={Math.max(0.6, s * 1.0)}
@@ -251,7 +251,7 @@ export default function KorvixOrb({ size = 'lg', variant = 'default', className 
           transition={{ duration: isThinking ? 4 : 9, repeat: Infinity, ease: 'linear' }}
         >
           <circle cx={c} cy={c} r={ring * 0.48} fill="none"
-            stroke="rgba(139, 92, 246,0.1)" strokeWidth={Math.max(0.3, s * 0.45)}
+            stroke="rgba(59, 130, 246,0.1)" strokeWidth={Math.max(0.3, s * 0.45)}
             strokeDasharray={`${px * 0.018} ${px * 0.035}`} />
         </motion.g>
 
@@ -270,7 +270,7 @@ export default function KorvixOrb({ size = 'lg', variant = 'default', className 
               <line key={i}
                 x1={c + r1 * Math.cos(a1)} y1={c + r1 * Math.sin(a1)}
                 x2={c + r2 * Math.cos(a2)} y2={c + r2 * Math.sin(a2)}
-                stroke="rgba(139, 92, 246,0.08)" strokeWidth={Math.max(0.3, s * 0.4)} strokeLinecap="round" />
+                stroke="rgba(59, 130, 246,0.08)" strokeWidth={Math.max(0.3, s * 0.4)} strokeLinecap="round" />
             );
           })}
         </motion.g>
@@ -309,11 +309,11 @@ export default function KorvixOrb({ size = 'lg', variant = 'default', className 
         style={{
           width: px * 0.30, height: px * 0.30,
           border: `${Math.max(1, s * 2)}px solid transparent`,
-          background: 'linear-gradient(#0a0a0a, #0a0a0a) padding-box, conic-gradient(from 0deg, rgba(139, 92, 246,0.3), rgba(165,243,252,0.15), rgba(139, 92, 246,0.3), rgba(139, 92, 246,0.3)) border-box',
+          background: 'linear-gradient(#0a0a0a, #0a0a0a) padding-box, conic-gradient(from 0deg, rgba(59, 130, 246,0.3), rgba(165,243,252,0.15), rgba(59, 130, 246,0.3), rgba(59, 130, 246,0.3)) border-box',
           boxShadow: `
-            0 0 ${px * 0.08}px rgba(139, 92, 246,0.15),
-            0 0 ${px * 0.16}px rgba(139, 92, 246,0.06),
-            inset 0 0 ${px * 0.04}px rgba(139, 92, 246,0.08)
+            0 0 ${px * 0.08}px rgba(59, 130, 246,0.15),
+            0 0 ${px * 0.16}px rgba(59, 130, 246,0.06),
+            inset 0 0 ${px * 0.04}px rgba(59, 130, 246,0.08)
           `,
         }}
         animate={{ rotate: [0, 360] }}
@@ -325,7 +325,7 @@ export default function KorvixOrb({ size = 'lg', variant = 'default', className 
         className="absolute rounded-full"
         style={{
           width: px * 0.24, height: px * 0.24,
-          border: `${Math.max(0.5, s)}px solid rgba(139, 92, 246,0.1)`,
+          border: `${Math.max(0.5, s)}px solid rgba(59, 130, 246,0.1)`,
         }}
         animate={{ rotate: [360, 0], scale: [1, 1.04, 1] }}
         transition={{ duration: isThinking ? 5 : 10, repeat: Infinity, ease: 'easeInOut' }}
@@ -336,10 +336,10 @@ export default function KorvixOrb({ size = 'lg', variant = 'default', className 
         className="absolute rounded-full flex items-center justify-center"
         style={{
           width: px * 0.17, height: px * 0.17,
-          background: 'radial-gradient(circle at 38% 32%, rgba(255,255,255,0.9) 0%, rgba(165,243,252,0.7) 15%, rgba(139, 92, 246,0.35) 45%, rgba(139, 92, 246,0.1) 75%, transparent 100%)',
+          background: 'radial-gradient(circle at 38% 32%, rgba(255,255,255,0.9) 0%, rgba(165,243,252,0.7) 15%, rgba(59, 130, 246,0.35) 45%, rgba(59, 130, 246,0.1) 75%, transparent 100%)',
           boxShadow: `
-            0 0 ${px * 0.06}px rgba(139, 92, 246,0.3),
-            0 0 ${px * 0.12}px rgba(139, 92, 246,0.1),
+            0 0 ${px * 0.06}px rgba(59, 130, 246,0.3),
+            0 0 ${px * 0.12}px rgba(59, 130, 246,0.1),
             0 0 ${px * 0.02}px rgba(165,243,252,0.5) inset
           `,
         }}
@@ -377,7 +377,7 @@ export default function KorvixOrb({ size = 'lg', variant = 'default', className 
                 y1={c + Math.sin(rad) * ring * 0.30}
                 x2={c + Math.cos(rad) * ring * 0.55}
                 y2={c + Math.sin(rad) * ring * 0.55}
-                stroke="rgba(139, 92, 246,0.025)" strokeWidth={Math.max(0.2, s * 0.35)} strokeLinecap="round" />
+                stroke="rgba(59, 130, 246,0.025)" strokeWidth={Math.max(0.2, s * 0.35)} strokeLinecap="round" />
             );
           })}
         </motion.g>

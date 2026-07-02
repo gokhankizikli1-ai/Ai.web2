@@ -106,12 +106,12 @@ export default function ViralContent() {
 
           <motion.div {...fadeUp(0)} className="mb-8">
             <div className="flex items-center gap-3 mb-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#8B5CF6]/[0.1] border border-[#8B5CF6]/15">
-                <Flame className="h-4 w-4 text-[#A78BFA]" />
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#3B82F6]/[0.1] border border-[#3B82F6]/15">
+                <Flame className="h-4 w-4 text-[#60A5FA]" />
               </div>
               <h1 className="text-2xl font-semibold text-white tracking-tight">Viral Content Engine</h1>
             </div>
-            <p className="text-[13px] text-[#858B99] ml-11">Generate TikTok scripts, YouTube ideas, Instagram carousels, X threads, and more</p>
+            <p className="text-[13px] text-[#94A3B8] ml-11">Generate TikTok scripts, YouTube ideas, Instagram carousels, X threads, and more</p>
           </motion.div>
 
           {/* Type Selector */}
@@ -124,7 +124,7 @@ export default function ViralContent() {
                   className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[11px] font-medium transition-all whitespace-nowrap ${
                     activeType === t.id
                       ? 'bg-white/[0.06] text-white border border-white/[0.06]'
-                      : 'text-[#858B99] hover:text-slate-300 bg-white/[0.02] border border-white/[0.03]'
+                      : 'text-[#94A3B8] hover:text-slate-300 bg-white/[0.02] border border-white/[0.03]'
                   }`}
                 >
                   <t.icon className="w-3.5 h-3.5" /> {t.label}
@@ -140,7 +140,7 @@ export default function ViralContent() {
                 value={topic}
                 onChange={(e) => setTopic(e.target.value)}
                 placeholder="What topic or product?"
-                className="flex-1 h-11 px-4 rounded-xl bg-white/[0.02] border border-white/[0.04] text-[14px] text-slate-300 placeholder:text-[#858B99] focus:outline-none focus:border-[#8B5CF6]/20 focus:bg-white/[0.03] transition-all"
+                className="flex-1 h-11 px-4 rounded-xl bg-white/[0.02] border border-white/[0.04] text-[14px] text-slate-300 placeholder:text-[#94A3B8] focus:outline-none focus:border-[#3B82F6]/20 focus:bg-white/[0.03] transition-all"
                 onKeyDown={(e) => e.key === 'Enter' && handleGenerate()}
               />
               <motion.button
@@ -148,7 +148,7 @@ export default function ViralContent() {
                 whileTap={{ scale: 0.98 }}
                 onClick={handleGenerate}
                 disabled={generating || !topic.trim()}
-                className="h-11 px-5 rounded-xl bg-[#8B5CF6]/[0.1] border border-[#8B5CF6]/15 text-[#A78BFA] font-medium text-[13px] hover:bg-[#8B5CF6]/[0.15] transition-colors disabled:opacity-40 flex items-center gap-2"
+                className="h-11 px-5 rounded-xl bg-[#3B82F6]/[0.1] border border-[#3B82F6]/15 text-[#60A5FA] font-medium text-[13px] hover:bg-[#3B82F6]/[0.15] transition-colors disabled:opacity-40 flex items-center gap-2"
               >
                 {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wand2 className="w-4 h-4" />}
                 Generate
@@ -167,13 +167,13 @@ export default function ViralContent() {
                   transition={{ delay: i * 0.05 }}
                   className="flex items-start gap-3 p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.03] hover:border-white/[0.06] transition-all group"
                 >
-                  <span className="text-[10px] text-[#858B99] font-mono mt-0.5 shrink-0">{String(i + 1).padStart(2, '0')}</span>
+                  <span className="text-[10px] text-[#94A3B8] font-mono mt-0.5 shrink-0">{String(i + 1).padStart(2, '0')}</span>
                   <p className="text-[13px] text-slate-300 flex-1">{line}</p>
                   <button
                     onClick={() => copyItem(line, i)}
                     className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
                   >
-                    {copied === i ? <CheckCircle2 className="w-3.5 h-3.5 text-[#4ADE80]" /> : <Copy className="w-3.5 h-3.5 text-[#858B99]" />}
+                    {copied === i ? <CheckCircle2 className="w-3.5 h-3.5 text-[#4ADE80]" /> : <Copy className="w-3.5 h-3.5 text-[#94A3B8]" />}
                   </button>
                 </motion.div>
               ))}
@@ -182,9 +182,9 @@ export default function ViralContent() {
 
           {!output && !generating && (
             <motion.div {...fadeUp(0.1)} className="text-center py-16">
-              <Flame className="w-12 h-12 text-[#858B99] mx-auto mb-4" />
+              <Flame className="w-12 h-12 text-[#94A3B8] mx-auto mb-4" />
               <h3 className="text-sm font-medium text-white mb-1">Select a content type and enter a topic</h3>
-              <p className="text-[12px] text-[#858B99]">AI will generate viral content optimized for your platform</p>
+              <p className="text-[12px] text-[#94A3B8]">AI will generate viral content optimized for your platform</p>
             </motion.div>
           )}
         </div>

@@ -15,30 +15,30 @@ interface QuickAction {
 
 const ACTIONS_BY_PATH: Record<string, QuickAction[]> = {
   '/startup': [
-    { label: 'Validate Idea', icon: Lightbulb, path: '/startup', color: 'text-[#8B5CF6]' },
-    { label: 'Analyze Competitor', icon: Globe, path: '/startup', color: 'text-[#8B5CF6]' },
-    { label: 'Build Pitch Deck', icon: FileText, path: '/startup', color: 'text-[#8B5CF6]' },
+    { label: 'Validate Idea', icon: Lightbulb, path: '/startup', color: 'text-[#3B82F6]' },
+    { label: 'Analyze Competitor', icon: Globe, path: '/startup', color: 'text-[#3B82F6]' },
+    { label: 'Build Pitch Deck', icon: FileText, path: '/startup', color: 'text-[#3B82F6]' },
   ],
   '/ecommerce': [
-    { label: 'Find Product', icon: ShoppingBag, path: '/ecommerce', color: 'text-[#8B5CF6]' },
-    { label: 'Generate Page', icon: FileText, path: '/ecommerce', color: 'text-[#8B5CF6]' },
-    { label: 'TikTok Hooks', icon: Sparkles, path: '/tools/viral-content', color: 'text-[#8B5CF6]' },
+    { label: 'Find Product', icon: ShoppingBag, path: '/ecommerce', color: 'text-[#3B82F6]' },
+    { label: 'Generate Page', icon: FileText, path: '/ecommerce', color: 'text-[#3B82F6]' },
+    { label: 'TikTok Hooks', icon: Sparkles, path: '/tools/viral-content', color: 'text-[#3B82F6]' },
   ],
   '/agents': [
-    { label: 'Create Agent', icon: Bot, path: '/agents/builder', color: 'text-[#8B5CF6]' },
-    { label: 'Browse Market', icon: ShoppingBag, path: '/agents', color: 'text-[#8B5CF6]' },
+    { label: 'Create Agent', icon: Bot, path: '/agents/builder', color: 'text-[#3B82F6]' },
+    { label: 'Browse Market', icon: ShoppingBag, path: '/agents', color: 'text-[#3B82F6]' },
   ],
   '/chat': [
-    { label: 'Deep Research', icon: Wand2, path: '/chat', color: 'text-[#8B5CF6]' },
-    { label: 'New Project', icon: Rocket, path: '/workspace', color: 'text-[#8B5CF6]' },
+    { label: 'Deep Research', icon: Wand2, path: '/chat', color: 'text-[#3B82F6]' },
+    { label: 'New Project', icon: Rocket, path: '/workspace', color: 'text-[#3B82F6]' },
   ],
 };
 
 const DEFAULT_ACTIONS: QuickAction[] = [
-  { label: 'New Chat', icon: Sparkles, path: '/chat', color: 'text-[#8B5CF6]' },
-  { label: 'Startup Hub', icon: Rocket, path: '/startup', color: 'text-[#8B5CF6]' },
-  { label: 'Ecommerce', icon: ShoppingBag, path: '/ecommerce', color: 'text-[#8B5CF6]' },
-  { label: 'Build Agent', icon: Bot, path: '/agents/builder', color: 'text-[#8B5CF6]' },
+  { label: 'New Chat', icon: Sparkles, path: '/chat', color: 'text-[#3B82F6]' },
+  { label: 'Startup Hub', icon: Rocket, path: '/startup', color: 'text-[#3B82F6]' },
+  { label: 'Ecommerce', icon: ShoppingBag, path: '/ecommerce', color: 'text-[#3B82F6]' },
+  { label: 'Build Agent', icon: Bot, path: '/agents/builder', color: 'text-[#3B82F6]' },
 ];
 
 export default function FloatingOrb() {
@@ -62,7 +62,7 @@ export default function FloatingOrb() {
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.03]">
               <span className="text-[11px] font-semibold text-white uppercase tracking-wider">Quick Actions</span>
-              <button onClick={() => setIsOpen(false)} className="text-[#858B99] hover:text-white transition-colors">
+              <button onClick={() => setIsOpen(false)} className="text-[#94A3B8] hover:text-white transition-colors">
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
@@ -96,11 +96,11 @@ export default function FloatingOrb() {
         className="relative flex h-12 w-12 items-center justify-center rounded-full shadow-lg"
         style={{
           background: isOpen
-            ? 'linear-gradient(135deg, rgba(143, 180, 204,0.85), rgba(139, 92, 246,0.95))'
-            : 'linear-gradient(135deg, rgba(139, 92, 246,0.8), rgba(156, 187, 209,0.8))',
+            ? 'linear-gradient(135deg, rgba(143, 180, 204,0.85), rgba(59, 130, 246,0.95))'
+            : 'linear-gradient(135deg, rgba(59, 130, 246,0.8), rgba(156, 187, 209,0.8))',
           boxShadow: isOpen
-            ? '0 4px 24px rgba(139, 92, 246,0.3)'
-            : '0 4px 24px rgba(139, 92, 246,0.2)',
+            ? '0 4px 24px rgba(59, 130, 246,0.3)'
+            : '0 4px 24px rgba(59, 130, 246,0.2)',
         }}
       >
         <motion.div
@@ -114,7 +114,7 @@ export default function FloatingOrb() {
         {!isOpen && (
           <motion.div
             className="absolute inset-0 rounded-full"
-            style={{ border: '1px solid rgba(139, 92, 246,0.3)' }}
+            style={{ border: '1px solid rgba(59, 130, 246,0.3)' }}
             animate={{ scale: [1, 1.4], opacity: [0.5, 0] }}
             transition={{ duration: 2, repeat: Infinity, ease: 'easeOut' as const }}
           />

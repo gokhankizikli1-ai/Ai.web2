@@ -41,8 +41,8 @@ function StatusIcon({ status }: { status: TimelineStep['status'] }) {
   }
   if (status === 'active') {
     return (
-      <div className="h-5 w-5 rounded-full bg-[#8B5CF6]/15 border border-[#8B5CF6]/25 flex items-center justify-center">
-        <Loader2 className="h-3 w-3 text-[#8B5CF6] animate-spin" />
+      <div className="h-5 w-5 rounded-full bg-[#3B82F6]/15 border border-[#3B82F6]/25 flex items-center justify-center">
+        <Loader2 className="h-3 w-3 text-[#3B82F6] animate-spin" />
       </div>
     );
   }
@@ -64,7 +64,7 @@ function ConnectorLine({ status }: { status: 'before-active' | 'active' | 'after
       <div className="w-[2px] h-full relative overflow-hidden">
         <div className="absolute inset-0 bg-white/[0.03]" />
         <motion.div
-          className="absolute top-0 left-0 w-full bg-[#8B5CF6]/30"
+          className="absolute top-0 left-0 w-full bg-[#3B82F6]/30"
           animate={{ height: ['0%', '100%'] }}
           transition={{ duration: 2, ease: 'easeInOut' }}
         />
@@ -110,18 +110,18 @@ export default function AgentTimeline({ isVisible, steps = DEFAULT_STEPS }: Agen
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/[0.03]">
           <div className="flex items-center gap-2">
-            <Zap className="h-3.5 w-3.5 text-[#8B5CF6]/60" />
-            <span className="text-[11px] font-medium text-[#B6BBC6] uppercase tracking-wider">Execution Pipeline</span>
+            <Zap className="h-3.5 w-3.5 text-[#3B82F6]/60" />
+            <span className="text-[11px] font-medium text-[#CBD5E1] uppercase tracking-wider">Execution Pipeline</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-16 h-1 bg-white/[0.03] rounded-full overflow-hidden">
               <motion.div
-                className="h-full bg-[#8B5CF6]/40 rounded-full"
+                className="h-full bg-[#3B82F6]/40 rounded-full"
                 animate={{ width: `${(completedCount / displaySteps.length) * 100}%` }}
                 transition={{ duration: 0.5 }}
               />
             </div>
-            <span className="text-[10px] text-[#858B99] font-mono">{completedCount}/{displaySteps.length}</span>
+            <span className="text-[10px] text-[#94A3B8] font-mono">{completedCount}/{displaySteps.length}</span>
           </div>
         </div>
 
@@ -155,13 +155,13 @@ export default function AgentTimeline({ isVisible, steps = DEFAULT_STEPS }: Agen
                     <div className="flex items-center gap-2">
                       <span className={`text-[11px] font-medium ${
                         step.status === 'completed' ? 'text-[#4ADE80]/70' :
-                        step.status === 'active' ? 'text-[#8B5CF6]' :
-                        'text-[#858B99]'
+                        step.status === 'active' ? 'text-[#3B82F6]' :
+                        'text-[#94A3B8]'
                       }`}>
                         {step.label}
                       </span>
                       {step.duration && (
-                        <span className="text-[9px] text-[#858B99] font-mono flex items-center gap-0.5">
+                        <span className="text-[9px] text-[#94A3B8] font-mono flex items-center gap-0.5">
                           <Timer className="h-2.5 w-2.5" />
                           {step.duration}
                         </span>
@@ -169,8 +169,8 @@ export default function AgentTimeline({ isVisible, steps = DEFAULT_STEPS }: Agen
                     </div>
                     <span className={`text-[10px] ${
                       step.status === 'completed' ? 'text-[#4ADE80]/40' :
-                      step.status === 'active' ? 'text-[#8B5CF6]/50' :
-                      'text-[#858B99]'
+                      step.status === 'active' ? 'text-[#3B82F6]/50' :
+                      'text-[#94A3B8]'
                     }`}>
                       {step.description}
                     </span>

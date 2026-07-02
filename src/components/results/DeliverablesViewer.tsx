@@ -169,7 +169,7 @@ function ArtifactInline({ resolved, title, id }: { resolved: Resolved; title: st
       <div className="space-y-2">
         {resolved.files.map((f, i) => (
           <div key={`${f.path}-${i}`}>
-            <p className="flex items-center gap-1.5 text-[11px] text-[#A78BFA]/80 mb-1">
+            <p className="flex items-center gap-1.5 text-[11px] text-[#60A5FA]/80 mb-1">
               <FileCode className="h-3 w-3" /> {f.path}
             </p>
             <CodeBlock language={f.language || 'text'}>{f.content}</CodeBlock>

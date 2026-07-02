@@ -68,17 +68,17 @@ export default function OwnerSessionIndicator() {
         whileHover={{ scale: 1.04 }}
         whileTap={{ scale: 0.96 }}
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gradient-to-r from-[#8B5CF6]/[0.20] to-[#A78BFA]/[0.12] border border-[#A78BFA]/40 hover:border-[#A78BFA]/60 shadow-[0_0_14px_-4px_rgba(139,92,246,0.55)] transition-all"
+        className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#151C28] border border-[#60A5FA]/40 hover:border-[#60A5FA]/60 hover:bg-[#1A2233] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] transition-all"
         title={`Owner Session Active — ${grantedCount} permissions granted (click to view)`}
         data-testid="owner-session-indicator"
       >
         {/* Pulsing dot signals "live elevated state". */}
         <span className="relative flex h-1.5 w-1.5">
-          <span className="absolute inline-flex h-full w-full rounded-full bg-[#A78BFA] opacity-60 animate-ping" />
-          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[#A78BFA]" />
+          <span className="absolute inline-flex h-full w-full rounded-full bg-[#60A5FA] opacity-60 animate-ping" />
+          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[#60A5FA]" />
         </span>
-        <Zap className="h-3 w-3 text-[#A78BFA]" />
-        <span className="text-[10px] font-semibold tracking-wide text-[#F4F4F5]">
+        <Zap className="h-3 w-3 text-[#60A5FA]" />
+        <span className="text-[10px] font-semibold tracking-wide text-[#F8FAFC]">
           Owner Session
         </span>
       </motion.button>
@@ -90,19 +90,19 @@ export default function OwnerSessionIndicator() {
             animate={{ opacity: 1, y: 0,  scale: 1 }}
             exit={{ opacity: 0, y: -4, scale: 0.97 }}
             transition={{ duration: 0.16 }}
-            className="absolute right-0 top-full mt-1.5 w-64 rounded-xl border border-[#8B5CF6]/20 bg-[#0e0e14]/95 shadow-2xl shadow-[#8B5CF6]/5 z-[55] overflow-hidden"
+            className="absolute right-0 top-full mt-1.5 w-64 rounded-xl border border-[#3B82F6]/20 bg-[#0A0D12]/95 shadow-2xl shadow-[#3B82F6]/5 z-[55] overflow-hidden"
           >
-            <div className="px-3 py-2 border-b border-white/[0.05] bg-gradient-to-r from-[#8B5CF6]/[0.05] to-transparent">
-              <div className="text-[11px] font-semibold text-[#F4F4F5]">
+            <div className="px-3 py-2 border-b border-white/[0.05] bg-gradient-to-r from-[#3B82F6]/[0.05] to-transparent">
+              <div className="text-[11px] font-semibold text-[#F8FAFC]">
                 Owner Session Active
               </div>
-              <div className="text-[10px] text-[#A78BFA]/60 mt-0.5">
+              <div className="text-[10px] text-[#60A5FA]/60 mt-0.5">
                 Authenticated for autonomous development work.
               </div>
             </div>
             <ul className="p-2 space-y-0.5 max-h-72 overflow-y-auto scrollbar-thin">
               {orchestrationCapabilities.length === 0 ? (
-                <li className="px-2 py-1.5 text-[10px] text-[#858B99]">
+                <li className="px-2 py-1.5 text-[10px] text-[#94A3B8]">
                   No orchestration capabilities granted.
                 </li>
               ) : (
@@ -111,12 +111,12 @@ export default function OwnerSessionIndicator() {
                     key={cap}
                     className="flex items-start gap-2 px-2 py-1.5 rounded-md hover:bg-white/[0.025]"
                   >
-                    <span className="mt-1 h-1 w-1 rounded-full bg-[#A78BFA]/70 shrink-0" />
+                    <span className="mt-1 h-1 w-1 rounded-full bg-[#60A5FA]/70 shrink-0" />
                     <div className="min-w-0">
                       <div className="text-[11px] text-slate-200 leading-tight">
                         {LABELS[cap] ?? cap}
                       </div>
-                      <div className="text-[9px] text-[#858B99] font-mono mt-0.5">
+                      <div className="text-[9px] text-[#94A3B8] font-mono mt-0.5">
                         {cap}
                       </div>
                     </div>
@@ -124,7 +124,7 @@ export default function OwnerSessionIndicator() {
                 ))
               )}
             </ul>
-            <div className="px-3 py-2 border-t border-white/[0.04] text-[9px] text-[#858B99]">
+            <div className="px-3 py-2 border-t border-white/[0.04] text-[9px] text-[#94A3B8]">
               Safety: malware / credential theft / exploit dev still blocked.
             </div>
           </motion.div>

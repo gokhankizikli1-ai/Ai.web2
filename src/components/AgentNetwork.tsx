@@ -80,9 +80,9 @@ export default function AgentNetwork({ agents, selectedAgentId }: AgentNetworkPr
 
       // Draw center hub
       const hubGlow = ctx.createRadialGradient(cx, cy, 0, cx, cy, 24);
-      hubGlow.addColorStop(0, 'rgba(139, 92, 246,0.15)');
-      hubGlow.addColorStop(0.5, 'rgba(139, 92, 246,0.05)');
-      hubGlow.addColorStop(1, 'rgba(139, 92, 246,0)');
+      hubGlow.addColorStop(0, 'rgba(59, 130, 246,0.15)');
+      hubGlow.addColorStop(0.5, 'rgba(59, 130, 246,0.05)');
+      hubGlow.addColorStop(1, 'rgba(59, 130, 246,0)');
       ctx.fillStyle = hubGlow;
       ctx.beginPath();
       ctx.arc(cx, cy, 24, 0, Math.PI * 2);
@@ -92,7 +92,7 @@ export default function AgentNetwork({ agents, selectedAgentId }: AgentNetworkPr
       const pulseSize = 6 + Math.sin(time * 3) * 2;
       ctx.beginPath();
       ctx.arc(cx, cy, pulseSize, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(139, 92, 246,0.6)';
+      ctx.fillStyle = 'rgba(59, 130, 246,0.6)';
       ctx.fill();
 
       // Draw connections
@@ -105,7 +105,7 @@ export default function AgentNetwork({ agents, selectedAgentId }: AgentNetworkPr
         ctx.beginPath();
         ctx.moveTo(cx, cy);
         ctx.lineTo(node.x, node.y);
-        ctx.strokeStyle = `rgba(182, 187, 198,${lineOpacity})`;
+        ctx.strokeStyle = `rgba(203, 213, 225,${lineOpacity})`;
         ctx.lineWidth = lineWidth;
         ctx.stroke();
 
@@ -119,7 +119,7 @@ export default function AgentNetwork({ agents, selectedAgentId }: AgentNetworkPr
             ctx.beginPath();
             ctx.moveTo(node.x, node.y);
             ctx.lineTo(other.x, other.y);
-            ctx.strokeStyle = `rgba(182, 187, 198,0.04)`;
+            ctx.strokeStyle = `rgba(203, 213, 225,0.04)`;
             ctx.lineWidth = 0.5;
             ctx.stroke();
           }
@@ -134,7 +134,7 @@ export default function AgentNetwork({ agents, selectedAgentId }: AgentNetworkPr
           ctx.arc(px, py, 1.5, 0, Math.PI * 2);
           ctx.fillStyle = node.agent.status === 'active'
             ? 'rgba(52,211,153,0.5)'
-            : 'rgba(139, 92, 246,0.4)';
+            : 'rgba(59, 130, 246,0.4)';
           ctx.fill();
         }
       });
@@ -149,8 +149,8 @@ export default function AgentNetwork({ agents, selectedAgentId }: AgentNetworkPr
           const glowSize = isSelected ? 14 : 8;
           const glowOpacity = isSelected ? 0.2 : 0.1;
           const glow = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, glowSize);
-          glow.addColorStop(0, `rgba(139, 92, 246,${glowOpacity})`);
-          glow.addColorStop(1, 'rgba(139, 92, 246,0)');
+          glow.addColorStop(0, `rgba(59, 130, 246,${glowOpacity})`);
+          glow.addColorStop(1, 'rgba(59, 130, 246,0)');
           ctx.fillStyle = glow;
           ctx.beginPath();
           ctx.arc(node.x, node.y, glowSize, 0, Math.PI * 2);
@@ -160,7 +160,7 @@ export default function AgentNetwork({ agents, selectedAgentId }: AgentNetworkPr
         // Node circle
         ctx.beginPath();
         ctx.arc(node.x, node.y, isSelected ? 7 : 5, 0, Math.PI * 2);
-        ctx.fillStyle = isActive ? 'rgba(52,211,153,0.8)' : isSelected ? 'rgba(139, 92, 246,0.8)' : 'rgba(182, 187, 198,0.4)';
+        ctx.fillStyle = isActive ? 'rgba(52,211,153,0.8)' : isSelected ? 'rgba(59, 130, 246,0.8)' : 'rgba(203, 213, 225,0.4)';
         ctx.fill();
 
         // White inner
@@ -180,7 +180,7 @@ export default function AgentNetwork({ agents, selectedAgentId }: AgentNetworkPr
       // Second ring
       ctx.beginPath();
       ctx.arc(cx, cy, Math.min(cx, cy) * 0.4, time * 0.2, time * 0.2 + Math.PI * 1.5);
-      ctx.strokeStyle = 'rgba(139, 92, 246,0.04)';
+      ctx.strokeStyle = 'rgba(59, 130, 246,0.04)';
       ctx.lineWidth = 1;
       ctx.stroke();
 
@@ -231,7 +231,7 @@ export default function AgentNetwork({ agents, selectedAgentId }: AgentNetworkPr
                 <div
                   className="w-1.5 h-1.5 rounded-full shrink-0"
                   style={{
-                    background: agent.status === 'active' ? '#4ADE80' : agent.status === 'syncing' ? '#8B5CF6' : '#B6BBC6',
+                    background: agent.status === 'active' ? '#4ADE80' : agent.status === 'syncing' ? '#3B82F6' : '#CBD5E1',
                     boxShadow: agent.status === 'active' ? '0 0 4px rgba(52,211,153,0.5)' : 'none',
                   }}
                 />

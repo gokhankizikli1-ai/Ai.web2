@@ -16,11 +16,11 @@ interface ActivityItem {
 }
 
 const DEMO_ACTIVITIES: ActivityItem[] = [
-  { id: 'a1', status: 'active', message: 'Deep Research on NVDA Q3 Earnings', detail: 'Analyzing financial statements...', progress: 65, icon: Brain, color: 'text-[#8B5CF6]' },
-  { id: 'a2', status: 'active', message: 'Market Sentiment Scan', detail: 'Processing 12K social posts...', progress: 34, icon: TrendingUp, color: 'text-[#8B5CF6]' },
-  { id: 'a3', status: 'completed', message: 'Portfolio Risk Analysis', detail: 'Completed with 3 alerts', icon: CheckCircle2, color: 'text-[#8B5CF6]' },
-  { id: 'a4', status: 'queued', message: 'Weekly Trend Forecast', detail: 'Scheduled for 2:00 PM', icon: Activity, color: 'text-[#B6BBC6]' },
-  { id: 'a5', status: 'active', message: 'Startup Idea Validation', detail: 'Scoring across 10 dimensions...', progress: 78, icon: Brain, color: 'text-[#8B5CF6]' },
+  { id: 'a1', status: 'active', message: 'Deep Research on NVDA Q3 Earnings', detail: 'Analyzing financial statements...', progress: 65, icon: Brain, color: 'text-[#3B82F6]' },
+  { id: 'a2', status: 'active', message: 'Market Sentiment Scan', detail: 'Processing 12K social posts...', progress: 34, icon: TrendingUp, color: 'text-[#3B82F6]' },
+  { id: 'a3', status: 'completed', message: 'Portfolio Risk Analysis', detail: 'Completed with 3 alerts', icon: CheckCircle2, color: 'text-[#3B82F6]' },
+  { id: 'a4', status: 'queued', message: 'Weekly Trend Forecast', detail: 'Scheduled for 2:00 PM', icon: Activity, color: 'text-[#CBD5E1]' },
+  { id: 'a5', status: 'active', message: 'Startup Idea Validation', detail: 'Scoring across 10 dimensions...', progress: 78, icon: Brain, color: 'text-[#3B82F6]' },
 ];
 
 function ThinkingPulse() {
@@ -29,7 +29,7 @@ function ThinkingPulse() {
       {[0, 1, 2].map((i) => (
         <motion.div
           key={i}
-          className="w-1 h-1 rounded-full bg-[#8B5CF6]"
+          className="w-1 h-1 rounded-full bg-[#3B82F6]"
           animate={{ y: [0, -4, 0] }}
           transition={{ duration: 0.6, repeat: Infinity, delay: i * 0.15, ease: 'easeInOut' }}
         />
@@ -44,7 +44,7 @@ function SyncIndicator() {
       animate={{ rotate: 360 }}
       transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
     >
-      <Loader2 className="w-3 h-3 text-[#8B5CF6]/60" />
+      <Loader2 className="w-3 h-3 text-[#3B82F6]/60" />
     </motion.div>
   );
 }
@@ -62,7 +62,7 @@ function StatusDot({ status, color }: { status: string; color: string }) {
   if (status === 'completed') {
     return <CheckCircle2 className="w-3 h-3 text-[#4ADE80]" />;
   }
-  return <Activity className="w-3 h-3 text-[#858B99]" />;
+  return <Activity className="w-3 h-3 text-[#94A3B8]" />;
 }
 
 interface IntelligenceLayerProps {
@@ -96,9 +96,9 @@ export default function IntelligenceLayer({ variant = 'compact' }: IntelligenceL
                 className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/[0.02] border border-white/[0.03] shrink-0"
               >
                 <StatusDot status={a.status} color={a.color} />
-                <span className="text-[11px] text-[#B6BBC6] truncate max-w-[140px]">{a.message}</span>
+                <span className="text-[11px] text-[#CBD5E1] truncate max-w-[140px]">{a.message}</span>
                 {a.status === 'active' && a.progress !== undefined && (
-                  <span className="text-[10px] text-[#858B99]">{a.progress}%</span>
+                  <span className="text-[10px] text-[#94A3B8]">{a.progress}%</span>
                 )}
               </div>
             ))}
@@ -108,7 +108,7 @@ export default function IntelligenceLayer({ variant = 'compact' }: IntelligenceL
         {/* Expand toggle */}
         <button
           onClick={() => setExpanded(!expanded)}
-          className="flex items-center gap-1 text-[#858B99] hover:text-slate-300 transition-colors"
+          className="flex items-center gap-1 text-[#94A3B8] hover:text-slate-300 transition-colors"
         >
           {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
         </button>
@@ -129,12 +129,12 @@ export default function IntelligenceLayer({ variant = 'compact' }: IntelligenceL
                     <a.icon className={`w-3.5 h-3.5 ${a.color}`} />
                     <div className="flex-1 min-w-0">
                       <p className="text-[12px] text-slate-300 truncate">{a.message}</p>
-                      {a.detail && <p className="text-[11px] text-[#858B99]">{a.detail}</p>}
+                      {a.detail && <p className="text-[11px] text-[#94A3B8]">{a.detail}</p>}
                     </div>
                     {a.status === 'active' && a.progress !== undefined && (
                       <div className="w-16 h-1 rounded-full bg-white/[0.04] overflow-hidden">
                         <motion.div
-                          className="h-full rounded-full bg-[#8B5CF6]/60"
+                          className="h-full rounded-full bg-[#3B82F6]/60"
                           initial={{ width: 0 }}
                           animate={{ width: `${a.progress}%` }}
                           transition={{ duration: 1 }}
@@ -161,9 +161,9 @@ export default function IntelligenceLayer({ variant = 'compact' }: IntelligenceL
           {activities.filter((a) => a.status === 'active').map((a) => (
             <div key={a.id} className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/[0.02]">
               <a.icon className={`w-3 h-3 ${a.color}`} />
-              <span className="text-[11px] text-[#B6BBC6]">{a.message}</span>
+              <span className="text-[11px] text-[#CBD5E1]">{a.message}</span>
               {a.progress !== undefined && (
-                <span className="text-[10px] text-[#858B99]">{a.progress}%</span>
+                <span className="text-[10px] text-[#94A3B8]">{a.progress}%</span>
               )}
             </div>
           ))}

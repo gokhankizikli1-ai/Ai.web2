@@ -103,8 +103,8 @@ export default function RunResultDetails({ runId, promptFallback, initialStatus 
         </div>
         <p className="text-[11px] text-white/40 mt-1">{desc.description}</p>
         {designSummary && (
-          <span className="inline-flex items-center gap-1 mt-2 px-2 py-1 rounded-full text-[10px] text-[#A78BFA]/80"
-            style={{ background: 'rgba(139, 92, 246,0.08)', border: '1px solid rgba(139, 92, 246,0.16)' }}>
+          <span className="inline-flex items-center gap-1 mt-2 px-2 py-1 rounded-full text-[10px] text-[#60A5FA]/80"
+            style={{ background: 'rgba(59, 130, 246,0.08)', border: '1px solid rgba(59, 130, 246,0.16)' }}>
             Design: {designSummary}
           </span>
         )}
@@ -218,7 +218,7 @@ function ExecutionMetadata({
 function ConnectionBadge({ connection, running }: { connection: LiveConnection; running: boolean }) {
   if (connection === 'live') {
     return (
-      <span className="flex items-center gap-1 text-[#8B5CF6]/80" title="Streaming live updates">
+      <span className="flex items-center gap-1 text-[#3B82F6]/80" title="Streaming live updates">
         <Radio className="h-3 w-3 animate-pulse" /> Live
       </span>
     );

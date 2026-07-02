@@ -138,18 +138,18 @@ function fillStyle(pct: number): React.CSSProperties {
     display: 'block',
     height: '100%',
     width: `${pct}%`,
-    background: 'linear-gradient(90deg,#A78BFA,#a78bfa)',
+    background: 'linear-gradient(90deg,#60A5FA,#60A5FA)',
     transition: 'width 250ms ease',
   };
 }
 
 function chipStyle(s: JobStatus): React.CSSProperties {
   const palette: Record<string, string> = {
-    queued:     'rgba(139, 92, 246,0.18)',
+    queued:     'rgba(59, 130, 246,0.18)',
     running:    'rgba(96,165,250,0.20)',
-    retrying:   'rgba(139, 92, 246,0.22)',
+    retrying:   'rgba(59, 130, 246,0.22)',
     succeeded:  'rgba(74,222,128,0.22)',
-    cancelled:  'rgba(182, 187, 198,0.20)',
+    cancelled:  'rgba(203, 213, 225,0.20)',
     failed:     'rgba(248,113,113,0.22)',
     failed_dlq: 'rgba(248,113,113,0.26)',
   };

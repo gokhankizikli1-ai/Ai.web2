@@ -39,7 +39,7 @@ function lastRunKey(projectId: string): string {
 function deliverableIcon(status: DeliverableStatus) {
   switch (status) {
     case 'completed':   return <CheckCircle2 className="h-3 w-3 text-[#4ADE80]/80" />;
-    case 'in_progress': return <Loader2 className="h-3 w-3 text-[#8B5CF6]/80 animate-spin" />;
+    case 'in_progress': return <Loader2 className="h-3 w-3 text-[#3B82F6]/80 animate-spin" />;
     case 'failed':      return <XCircle className="h-3 w-3 text-[#F87171]/70" />;
     case 'skipped':     return <MinusCircle className="h-3 w-3 text-white/25" />;
     default:            return <Circle className="h-3 w-3 text-white/25" />;
@@ -53,7 +53,7 @@ function humanAgent(id: string): string {
 }
 
 const STATUS_STYLE: Record<string, { label: string; color: string }> = {
-  running:   { label: 'Running',   color: 'rgb(139, 92, 246)' },
+  running:   { label: 'Running',   color: 'rgb(59, 130, 246)' },
   completed: { label: 'Completed', color: 'rgb(111,143,122)' },
   finished:  { label: 'Completed', color: 'rgb(111,143,122)' },
   failed:    { label: 'Failed',    color: 'rgb(183,110,121)' },
@@ -142,7 +142,7 @@ export default function ProjectRunPanel({ projectId }: { projectId: string }) {
       <Card>
         <Header projectId={projectId} />
         <p className="text-[10px] text-white/30 mb-2">This run is no longer available.</p>
-        <button onClick={resetRun} className="flex items-center gap-1 text-[10px] text-[#8B5CF6]/70 hover:text-[#A78BFA]">
+        <button onClick={resetRun} className="flex items-center gap-1 text-[10px] text-[#3B82F6]/70 hover:text-[#60A5FA]">
           <RotateCcw className="h-3 w-3" /> Start a new run
         </button>
       </Card>
@@ -177,8 +177,8 @@ export default function ProjectRunPanel({ projectId }: { projectId: string }) {
         <button
           onClick={startRun}
           disabled={!request.trim() || starting}
-          className="flex items-center justify-center gap-1.5 w-full py-1.5 rounded-lg text-[11px] font-medium text-[#A78BFA] disabled:opacity-40 transition-all"
-          style={{ background: 'rgba(139, 92, 246,0.06)', border: '1px solid rgba(139, 92, 246,0.12)' }}>
+          className="flex items-center justify-center gap-1.5 w-full py-1.5 rounded-lg text-[11px] font-medium text-[#60A5FA] disabled:opacity-40 transition-all"
+          style={{ background: 'rgba(59, 130, 246,0.06)', border: '1px solid rgba(59, 130, 246,0.12)' }}>
           {starting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
           {starting ? 'Starting…' : 'Start project run'}
         </button>
@@ -189,7 +189,7 @@ export default function ProjectRunPanel({ projectId }: { projectId: string }) {
 
   // ── Active / finished run ─────────────────────────────────────────────
   const status = snapshot?.status || 'running';
-  const style = STATUS_STYLE[status] || { label: status, color: 'rgb(182, 187, 198)' };
+  const style = STATUS_STYLE[status] || { label: status, color: 'rgb(203, 213, 225)' };
   const deliverables: DeliverableView[] = snapshot?.deliverables || [];
   const done = deliverables.filter(d => d.status === 'completed').length;
   const progress = snapshot?.workflow?.progress ?? (
@@ -201,14 +201,14 @@ export default function ProjectRunPanel({ projectId }: { projectId: string }) {
     <Card>
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
-          <Workflow className="h-3.5 w-3.5 text-[#8B5CF6]/50" />
+          <Workflow className="h-3.5 w-3.5 text-[#3B82F6]/50" />
           <span className="text-[11px] font-semibold text-white/60">Project Run</span>
         </div>
         <div className="flex items-center gap-2">
           <Link
             to={`/projects/${projectId}/runs`}
             title="View run history & results"
-            className="flex items-center gap-1 text-[9px] text-white/35 hover:text-[#A78BFA] transition-colors"
+            className="flex items-center gap-1 text-[9px] text-white/35 hover:text-[#60A5FA] transition-colors"
           >
             <History className="h-3 w-3" /> History
           </Link>
@@ -274,7 +274,7 @@ export default function ProjectRunPanel({ projectId }: { projectId: string }) {
             <X className="h-3 w-3" /> Cancel
           </button>
         ) : (
-          <button onClick={resetRun} className="flex items-center gap-1 text-[10px] text-[#8B5CF6]/70 hover:text-[#A78BFA] transition-colors">
+          <button onClick={resetRun} className="flex items-center gap-1 text-[10px] text-[#3B82F6]/70 hover:text-[#60A5FA] transition-colors">
             <RotateCcw className="h-3 w-3" /> New run
           </button>
         )}
@@ -301,14 +301,14 @@ function Header({ projectId }: { projectId?: string }) {
   return (
     <div className="flex items-center justify-between mb-3">
       <div className="flex items-center gap-2">
-        <Workflow className="h-3.5 w-3.5 text-[#8B5CF6]/50" />
+        <Workflow className="h-3.5 w-3.5 text-[#3B82F6]/50" />
         <span className="text-[11px] font-semibold text-white/60">Project Run</span>
       </div>
       {projectId && (
         <Link
           to={`/projects/${projectId}/runs`}
           title="View run history & results"
-          className="flex items-center gap-1 text-[9px] text-white/35 hover:text-[#A78BFA] transition-colors"
+          className="flex items-center gap-1 text-[9px] text-white/35 hover:text-[#60A5FA] transition-colors"
         >
           <History className="h-3 w-3" /> History
         </Link>

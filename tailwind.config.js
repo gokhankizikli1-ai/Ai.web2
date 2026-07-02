@@ -9,19 +9,19 @@ module.exports = {
         // Prefer these tokens over raw hex / cyan / amber for new UI.
         // No cyan, no brown/bronze, no yellow/orange, no strong red.
         ink: {
-          950: "#08090B",   // deepest background
-          900: "#090A0F",   // main app background
-          875: "#0D0E12",   // sidebar / header chrome
-          850: "#111217",   // panel / card surface
-          800: "#161820",   // elevated surface
-          700: "#12141B",   // input surface
-          600: "#272A33",   // border
-          500: "#343846",   // stronger border
+          950: "#07090D",   // app background
+          900: "#0A0D12",   // deep background
+          875: "#0D1117",   // sidebar / header chrome
+          850: "#111722",   // panel / card surface
+          800: "#151C28",   // elevated surface
+          700: "#101620",   // input surface
+          600: "#253142",   // border
+          500: "#334155",   // stronger border
         },
         brand: {
-          DEFAULT: "#8B5CF6", // indigo/violet brand accent
-          soft: "#A78BFA",
-          deep: "#6D5DF6",
+          DEFAULT: "#3B82F6", // royal blue brand accent
+          soft: "#60A5FA",
+          deep: "#2563EB",
         },
         porcelain: {
           50: "#FFFFFF",    // white surface
@@ -36,10 +36,10 @@ module.exports = {
           active: "#7890A3",
         },
         content: {
-          DEFAULT: "#F4F4F5", // primary text on dark
-          body: "#B6BBC6",
-          muted: "#858B99",
-          faint: "#555B68",
+          DEFAULT: "#F8FAFC", // primary text on dark
+          body: "#CBD5E1",
+          muted: "#94A3B8",
+          faint: "#64748B",
           "on-light": "#101827",
           "body-light": "#334155",
           "muted-light": "#64748B",
@@ -48,7 +48,7 @@ module.exports = {
           success: "#4ADE80",  // green
           warning: "#FACC15",  // gold — real warning states only
           danger: "#F87171",   // red
-          info: "#8B5CF6",     // brand violet
+          info: "#3B82F6",     // brand royal blue
         },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",

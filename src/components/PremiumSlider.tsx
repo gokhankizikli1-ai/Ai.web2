@@ -22,7 +22,7 @@ export default function PremiumSlider({
   label,
   showValue = true,
   valueFormatter = (v) => `${v}%`,
-  color = '#8B5CF6',
+  color = '#3B82F6',
 }: PremiumSliderProps) {
   const trackRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -101,7 +101,7 @@ export default function PremiumSlider({
     <div className="w-full select-none">
       {(label || showValue) && (
         <div className="flex items-center justify-between mb-2">
-          {label && <span className="text-[11px] text-[#858B99]">{label}</span>}
+          {label && <span className="text-[11px] text-[#94A3B8]">{label}</span>}
           {showValue && (
             <motion.span
               className="text-[11px] font-mono tabular-nums font-medium"

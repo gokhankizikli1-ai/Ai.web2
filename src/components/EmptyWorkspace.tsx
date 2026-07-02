@@ -8,7 +8,7 @@ export default function EmptyWorkspace() {
   return (
     <div className="flex-1 flex flex-col items-center justify-center relative overflow-hidden">
       {/* Ambient glow behind the orb */}
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[300px] rounded-full pointer-events-none" style={{ background: 'radial-gradient(circle, rgba(139, 92, 246,0.05) 0%, transparent 60%)' }} />
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[300px] rounded-full pointer-events-none" style={{ background: 'radial-gradient(circle, rgba(59, 130, 246,0.05) 0%, transparent 60%)' }} />
 
       {/* AI Core Orb */}
       <motion.div
@@ -36,7 +36,7 @@ export default function EmptyWorkspace() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.3, duration: 0.5 }}
         className="text-[13px] relative z-10"
-        style={{ color: 'rgba(182, 187, 198,0.35)' }}
+        style={{ color: 'rgba(203, 213, 225,0.35)' }}
       >
         {t('sendAMessage')}
       </motion.p>

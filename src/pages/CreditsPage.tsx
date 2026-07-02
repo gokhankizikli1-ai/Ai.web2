@@ -20,13 +20,13 @@ import PremiumSlider from '@/components/PremiumSlider';
 const CREDIT_COSTS = [
   { name: 'Casual Chat', cost: 0, desc: 'Normal conversation', icon: Sparkles, color: 'text-[#4ADE80]' },
   { name: 'Fast Response', cost: 0, desc: 'Quick AI reply', icon: Zap, color: 'text-[#4ADE80]' },
-  { name: 'Deep Think', cost: '1-2', desc: 'Simple reasoning', icon: Brain, color: 'text-[#A78BFA]' },
-  { name: 'Deep Think Pro', cost: '3-5', desc: 'Complex multi-step', icon: Brain, color: 'text-[#A78BFA]' },
-  { name: 'Web Research', cost: '5-20', desc: 'Live data search', icon: Globe, color: 'text-[#A78BFA]' },
-  { name: 'File Analysis', cost: '3-15', desc: 'PDF, CSV, docs', icon: FileText, color: 'text-[#A78BFA]' },
+  { name: 'Deep Think', cost: '1-2', desc: 'Simple reasoning', icon: Brain, color: 'text-[#60A5FA]' },
+  { name: 'Deep Think Pro', cost: '3-5', desc: 'Complex multi-step', icon: Brain, color: 'text-[#60A5FA]' },
+  { name: 'Web Research', cost: '5-20', desc: 'Live data search', icon: Globe, color: 'text-[#60A5FA]' },
+  { name: 'File Analysis', cost: '3-15', desc: 'PDF, CSV, docs', icon: FileText, color: 'text-[#60A5FA]' },
   { name: 'Trading Intel', cost: '2-10', desc: 'Market signals', icon: TrendingUp, color: 'text-[#FACC15]' },
-  { name: 'AI Agents', cost: '5-50', desc: 'Custom workflows', icon: Bot, color: 'text-[#A78BFA]' },
-  { name: 'Premium Reasoning', cost: 'Variable', desc: 'Long context tasks', icon: Shield, color: 'text-[#A78BFA]' },
+  { name: 'AI Agents', cost: '5-50', desc: 'Custom workflows', icon: Bot, color: 'text-[#60A5FA]' },
+  { name: 'Premium Reasoning', cost: 'Variable', desc: 'Long context tasks', icon: Shield, color: 'text-[#60A5FA]' },
 ];
 
 /* ═══════════════════════════════════════════
@@ -150,11 +150,11 @@ const CREDIT_RATE = 0.10;
 const QUICK_PACKS = [
   { credits: 10, color: 'text-slate-300', glow: 'hover:shadow-[0_0_20px_rgba(255,255,255,0.03)]' },
   { credits: 20, color: 'text-[#4ADE80]', glow: 'hover:shadow-[0_0_20px_rgba(156, 187, 209,0.06)]' },
-  { credits: 50, color: 'text-[#A78BFA]', glow: 'hover:shadow-[0_0_20px_rgba(156, 187, 209,0.06)]' },
-  { credits: 100, color: 'text-[#A78BFA]', glow: 'hover:shadow-[0_0_20px_rgba(156, 187, 209,0.06)]' },
-  { credits: 500, color: 'text-[#A78BFA]', glow: 'hover:shadow-[0_0_20px_rgba(156, 187, 209,0.06)]' },
+  { credits: 50, color: 'text-[#60A5FA]', glow: 'hover:shadow-[0_0_20px_rgba(156, 187, 209,0.06)]' },
+  { credits: 100, color: 'text-[#60A5FA]', glow: 'hover:shadow-[0_0_20px_rgba(156, 187, 209,0.06)]' },
+  { credits: 500, color: 'text-[#60A5FA]', glow: 'hover:shadow-[0_0_20px_rgba(156, 187, 209,0.06)]' },
   { credits: 1000, color: 'text-[#FACC15]', glow: 'hover:shadow-[0_0_24px_rgba(194, 161, 90,0.08)]' },
-  { credits: 2000, color: 'text-[#A78BFA]', glow: 'hover:shadow-[0_0_28px_rgba(156, 187, 209,0.10)]' },
+  { credits: 2000, color: 'text-[#60A5FA]', glow: 'hover:shadow-[0_0_28px_rgba(156, 187, 209,0.10)]' },
 ];
 
 function formatPrice(cents: number): string {
@@ -236,7 +236,7 @@ function PlanCard({
         plan.current
           ? 'border-[#FACC15]/15 bg-[#FACC15]/[0.02]'
           : plan.enterprise
-            ? 'border-[#8B5CF6]/10 bg-[#8B5CF6]/[0.02]'
+            ? 'border-[#3B82F6]/10 bg-[#3B82F6]/[0.02]'
             : 'border-white/[0.03] bg-white/[0.01]'
       } hover:border-white/[0.08] transition-all flex flex-col`}
     >
@@ -250,7 +250,7 @@ function PlanCard({
 
       <div className="flex items-center gap-2 mb-3">
         <div className="p-1.5 rounded-lg bg-white/[0.03]">
-          <plan.icon className="w-4 h-4 text-[#B6BBC6]" />
+          <plan.icon className="w-4 h-4 text-[#CBD5E1]" />
         </div>
         <span className="text-[13px] font-medium text-white">{plan.name}</span>
       </div>
@@ -263,7 +263,7 @@ function PlanCard({
             <span className="text-2xl font-bold text-white">
               ${displayPrice}
             </span>
-            <span className="text-[11px] text-[#858B99]">{period}</span>
+            <span className="text-[11px] text-[#94A3B8]">{period}</span>
           </>
         )}
       </div>
@@ -273,24 +273,24 @@ function PlanCard({
       )}
 
       {plan.credits > 0 && (
-        <p className="text-[11px] text-[#858B99] mb-3">{plan.credits.toLocaleString()} credits / mo</p>
+        <p className="text-[11px] text-[#94A3B8] mb-3">{plan.credits.toLocaleString()} credits / mo</p>
       )}
       {plan.credits === 0 && !plan.enterprise && (
-        <p className="text-[11px] text-[#858B99] mb-3">No credits needed</p>
+        <p className="text-[11px] text-[#94A3B8] mb-3">No credits needed</p>
       )}
       {plan.enterprise && (
-        <p className="text-[11px] text-[#858B99] mb-3">Custom pricing for teams</p>
+        <p className="text-[11px] text-[#94A3B8] mb-3">Custom pricing for teams</p>
       )}
 
       <ul className="space-y-1.5 mb-4 flex-1">
         {plan.features.map((f) => (
-          <li key={f} className="flex items-start gap-1.5 text-[11px] text-[#B6BBC6]">
+          <li key={f} className="flex items-start gap-1.5 text-[11px] text-[#CBD5E1]">
             <Check className="w-3 h-3 text-[#4ADE80]/50 shrink-0 mt-0.5" />
             {f}
           </li>
         ))}
         {plan.limits.map((l) => (
-          <li key={l} className="flex items-start gap-1.5 text-[11px] text-[#858B99]">
+          <li key={l} className="flex items-start gap-1.5 text-[11px] text-[#94A3B8]">
             <span className="w-3 h-3 rounded-full border border-slate-800 shrink-0 mt-0.5" />
             {l}
           </li>
@@ -302,10 +302,10 @@ function PlanCard({
           plan.current
             ? 'bg-white/[0.06] text-white border border-white/[0.08] cursor-default'
             : plan.enterprise
-              ? 'bg-[#8B5CF6]/[0.08] text-[#A78BFA] border border-[#8B5CF6]/15 hover:bg-[#8B5CF6]/[0.12]'
+              ? 'bg-[#3B82F6]/[0.08] text-[#60A5FA] border border-[#3B82F6]/15 hover:bg-[#3B82F6]/[0.12]'
               : plan.popular
                 ? 'bg-[#FACC15]/[0.08] text-[#FACC15] border border-[#FACC15]/15 hover:bg-[#FACC15]/[0.12]'
-                : 'bg-white/[0.03] text-[#B6BBC6] border border-white/[0.04] hover:bg-white/[0.05]'
+                : 'bg-white/[0.03] text-[#CBD5E1] border border-white/[0.04] hover:bg-white/[0.05]'
         }`}
         disabled={plan.current}
       >
@@ -367,9 +367,9 @@ function CustomPlanBuilder({ isYearly }: { isYearly: boolean }) {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-2">
         <div>
           <h3 className="text-[13px] font-medium text-white flex items-center gap-2">
-            <BarChart3 className="w-4 h-4 text-[#A78BFA]" /> Build Your Custom Plan
+            <BarChart3 className="w-4 h-4 text-[#60A5FA]" /> Build Your Custom Plan
           </h3>
-          <p className="text-[11px] text-[#858B99] mt-0.5">Select features, credits, and team size. Live price estimate.</p>
+          <p className="text-[11px] text-[#94A3B8] mt-0.5">Select features, credits, and team size. Live price estimate.</p>
         </div>
       </div>
 
@@ -380,7 +380,7 @@ function CustomPlanBuilder({ isYearly }: { isYearly: boolean }) {
             const CatIcon = categoryIcons[category] || Layers;
             return (
               <div key={category} className="p-4 rounded-2xl border border-white/[0.03] bg-white/[0.01]">
-                <h4 className="text-[11px] font-medium text-[#B6BBC6] uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <h4 className="text-[11px] font-medium text-[#CBD5E1] uppercase tracking-wider mb-3 flex items-center gap-1.5">
                   <CatIcon className="w-3 h-3" /> {category}
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -398,15 +398,15 @@ function CustomPlanBuilder({ isYearly }: { isYearly: boolean }) {
                         } ${isCore ? 'opacity-80' : ''}`}
                       >
                         <div className={`p-1.5 rounded-lg ${isSelected ? 'bg-white/[0.04]' : 'bg-white/[0.02]'}`}>
-                          <feature.icon className={`w-3.5 h-3.5 ${isSelected ? 'text-slate-300' : 'text-[#858B99]'}`} />
+                          <feature.icon className={`w-3.5 h-3.5 ${isSelected ? 'text-slate-300' : 'text-[#94A3B8]'}`} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className={`text-[11px] ${isSelected ? 'text-white' : 'text-[#858B99]'}`}>{feature.name}</p>
-                          <p className="text-[10px] text-[#858B99]">{feature.description}</p>
+                          <p className={`text-[11px] ${isSelected ? 'text-white' : 'text-[#94A3B8]'}`}>{feature.name}</p>
+                          <p className="text-[10px] text-[#94A3B8]">{feature.description}</p>
                         </div>
                         <div className="text-right shrink-0">
                           {feature.price > 0 ? (
-                            <span className={`text-[11px] font-medium ${isSelected ? 'text-[#A78BFA]' : 'text-[#858B99]'}`}>+${feature.price}/mo</span>
+                            <span className={`text-[11px] font-medium ${isSelected ? 'text-[#60A5FA]' : 'text-[#94A3B8]'}`}>+${feature.price}/mo</span>
                           ) : (
                             <span className="text-[10px] text-[#4ADE80]/50">Included</span>
                           )}
@@ -422,13 +422,13 @@ function CustomPlanBuilder({ isYearly }: { isYearly: boolean }) {
           {/* Monthly Credits Slider */}
           <div className="p-4 rounded-2xl border border-white/[0.03] bg-white/[0.01]">
             <div className="flex items-center justify-between mb-3">
-              <span className="text-[11px] text-[#B6BBC6]">Monthly Credits</span>
-              <span className="text-[13px] font-mono font-medium text-[#A78BFA]">{monthlyCredits.toLocaleString()}</span>
+              <span className="text-[11px] text-[#CBD5E1]">Monthly Credits</span>
+              <span className="text-[13px] font-mono font-medium text-[#60A5FA]">{monthlyCredits.toLocaleString()}</span>
             </div>
             <PremiumSlider value={monthlyCredits} min={100} max={5000} step={100} onChange={setMonthlyCredits} showValue={false} />
             <div className="flex justify-between mt-1">
-              <span className="text-[10px] text-[#858B99]">100</span>
-              <span className="text-[10px] text-[#858B99]">5,000</span>
+              <span className="text-[10px] text-[#94A3B8]">100</span>
+              <span className="text-[10px] text-[#94A3B8]">5,000</span>
             </div>
           </div>
 
@@ -436,47 +436,47 @@ function CustomPlanBuilder({ isYearly }: { isYearly: boolean }) {
           {selectedFeatures.has('team') && (
             <div className="p-4 rounded-2xl border border-white/[0.03] bg-white/[0.01]">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-[11px] text-[#B6BBC6]">Team Seats</span>
+                <span className="text-[11px] text-[#CBD5E1]">Team Seats</span>
                 <div className="flex items-center gap-2">
-                  <button onClick={() => setTeamSeats(Math.max(1, teamSeats - 1))} className="h-6 w-6 rounded-lg bg-white/[0.04] border border-white/[0.06] flex items-center justify-center text-[#B6BBC6] hover:text-white transition-colors">
+                  <button onClick={() => setTeamSeats(Math.max(1, teamSeats - 1))} className="h-6 w-6 rounded-lg bg-white/[0.04] border border-white/[0.06] flex items-center justify-center text-[#CBD5E1] hover:text-white transition-colors">
                     <Minus className="w-3 h-3" />
                   </button>
                   <span className="text-[12px] font-mono font-medium text-white w-8 text-center">{teamSeats}</span>
-                  <button onClick={() => setTeamSeats(Math.min(100, teamSeats + 1))} className="h-6 w-6 rounded-lg bg-white/[0.04] border border-white/[0.06] flex items-center justify-center text-[#B6BBC6] hover:text-white transition-colors">
+                  <button onClick={() => setTeamSeats(Math.min(100, teamSeats + 1))} className="h-6 w-6 rounded-lg bg-white/[0.04] border border-white/[0.06] flex items-center justify-center text-[#CBD5E1] hover:text-white transition-colors">
                     <Plus className="w-3 h-3" />
                   </button>
                 </div>
               </div>
-              <p className="text-[10px] text-[#858B99]">${5}/seat/month</p>
+              <p className="text-[10px] text-[#94A3B8]">${5}/seat/month</p>
             </div>
           )}
         </div>
 
         {/* Price Summary Sticky */}
         <div className="lg:col-span-1">
-          <div className="lg:sticky lg:top-4 p-5 rounded-2xl border border-[#8B5CF6]/10 bg-[#8B5CF6]/[0.02]">
+          <div className="lg:sticky lg:top-4 p-5 rounded-2xl border border-[#3B82F6]/10 bg-[#3B82F6]/[0.02]">
             <h4 className="text-[12px] font-medium text-white mb-4">Price Estimate</h4>
 
             <div className="space-y-2 mb-4">
               <div className="flex justify-between text-[11px]">
-                <span className="text-[#858B99]">Base platform</span>
+                <span className="text-[#94A3B8]">Base platform</span>
                 <span className="text-slate-300">${basePrice}/mo</span>
               </div>
               {featuresPrice > 0 && (
                 <div className="flex justify-between text-[11px]">
-                  <span className="text-[#858B99]">Features</span>
+                  <span className="text-[#94A3B8]">Features</span>
                   <span className="text-slate-300">+${featuresPrice}/mo</span>
                 </div>
               )}
               {seatsPrice > 0 && (
                 <div className="flex justify-between text-[11px]">
-                  <span className="text-[#858B99]">Team ({teamSeats} seats)</span>
+                  <span className="text-[#94A3B8]">Team ({teamSeats} seats)</span>
                   <span className="text-slate-300">+${seatsPrice}/mo</span>
                 </div>
               )}
               {creditsPrice > 0 && (
                 <div className="flex justify-between text-[11px]">
-                  <span className="text-[#858B99]">Credits ({monthlyCredits.toLocaleString()})</span>
+                  <span className="text-[#94A3B8]">Credits ({monthlyCredits.toLocaleString()})</span>
                   <span className="text-slate-300">+${creditsPrice}/mo</span>
                 </div>
               )}
@@ -484,12 +484,12 @@ function CustomPlanBuilder({ isYearly }: { isYearly: boolean }) {
 
             <div className="border-t border-white/[0.04] pt-3 mb-4">
               <div className="flex items-baseline justify-between">
-                <span className="text-[11px] text-[#B6BBC6]">
+                <span className="text-[11px] text-[#CBD5E1]">
                   {isYearly ? 'Yearly' : 'Monthly'} total
                 </span>
                 <span className="text-2xl font-bold text-white">
                   ${isYearly ? yearlyTotal : monthlyTotal}
-                  <span className="text-[11px] text-[#858B99] font-normal">{isYearly ? '/yr' : '/mo'}</span>
+                  <span className="text-[11px] text-[#94A3B8] font-normal">{isYearly ? '/yr' : '/mo'}</span>
                 </span>
               </div>
               {isYearly && (
@@ -499,11 +499,11 @@ function CustomPlanBuilder({ isYearly }: { isYearly: boolean }) {
               )}
             </div>
 
-            <Button className="w-full h-9 rounded-xl bg-[#8B5CF6]/[0.08] text-[#A78BFA] border border-[#8B5CF6]/15 text-[11px] font-medium hover:bg-[#8B5CF6]/[0.12] transition-all">
+            <Button className="w-full h-9 rounded-xl bg-[#3B82F6]/[0.08] text-[#60A5FA] border border-[#3B82F6]/15 text-[11px] font-medium hover:bg-[#3B82F6]/[0.12] transition-all">
               Request Enterprise Quote
             </Button>
 
-            <p className="text-[9px] text-[#858B99] text-center mt-2">
+            <p className="text-[9px] text-[#94A3B8] text-center mt-2">
               Our team will contact you within 24h
             </p>
           </div>
@@ -548,7 +548,7 @@ export default function CreditsPage() {
               </div>
               <div>
                 <h1 className="text-2xl font-semibold text-white tracking-tight">Credits &amp; Plans</h1>
-                <p className="text-[12px] text-[#858B99]">Advanced AI operations. Casual chat is always free.</p>
+                <p className="text-[12px] text-[#94A3B8]">Advanced AI operations. Casual chat is always free.</p>
               </div>
             </div>
           </motion.div>
@@ -561,10 +561,10 @@ export default function CreditsPage() {
                   <CreditCard className="w-6 h-6 text-[#FACC15]" />
                 </div>
                 <div>
-                  <p className="text-[11px] text-[#858B99] uppercase tracking-wider">Remaining Credits</p>
+                  <p className="text-[11px] text-[#94A3B8] uppercase tracking-wider">Remaining Credits</p>
                   <div className="flex items-baseline gap-2">
                     <p className="text-3xl font-bold text-white tabular-nums">{creditsRemaining}</p>
-                    <p className="text-[13px] text-[#858B99]">/ {creditsTotal}</p>
+                    <p className="text-[13px] text-[#94A3B8]">/ {creditsTotal}</p>
                   </div>
                 </div>
               </div>
@@ -572,12 +572,12 @@ export default function CreditsPage() {
               {/* Progress bar */}
               <div className="flex-1 max-w-xs">
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className="text-[10px] text-[#858B99]">{usagePercent}% used this period</span>
-                  <span className="text-[10px] text-[#858B99]">Resets in 12 days</span>
+                  <span className="text-[10px] text-[#94A3B8]">{usagePercent}% used this period</span>
+                  <span className="text-[10px] text-[#94A3B8]">Resets in 12 days</span>
                 </div>
                 <div className="w-full h-2 bg-white/[0.03] rounded-full overflow-hidden">
                   <motion.div
-                    className="h-full rounded-full bg-[#A78BFA]/50"
+                    className="h-full rounded-full bg-[#60A5FA]/50"
                     initial={{ width: 0 }}
                     animate={{ width: `${usagePercent}%` }}
                     transition={{ duration: 1, ease: 'easeOut' }}
@@ -610,7 +610,7 @@ export default function CreditsPage() {
                   key={t.id}
                   onClick={() => setActiveTab(t.id)}
                   className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-[12px] font-medium transition-all ${
-                    activeTab === t.id ? 'bg-white/[0.06] text-white' : 'text-[#858B99] hover:text-[#B6BBC6]'
+                    activeTab === t.id ? 'bg-white/[0.06] text-white' : 'text-[#94A3B8] hover:text-[#CBD5E1]'
                   }`}
                 >
                   <t.icon className="w-3.5 h-3.5" /> {t.label}
@@ -625,7 +625,7 @@ export default function CreditsPage() {
                   <button
                     onClick={() => setIsYearly(false)}
                     className={`px-3 py-1.5 rounded-md text-[11px] font-medium transition-all ${
-                      !isYearly ? 'bg-white/[0.06] text-white' : 'text-[#858B99] hover:text-[#B6BBC6]'
+                      !isYearly ? 'bg-white/[0.06] text-white' : 'text-[#94A3B8] hover:text-[#CBD5E1]'
                     }`}
                   >
                     Monthly
@@ -633,7 +633,7 @@ export default function CreditsPage() {
                   <button
                     onClick={() => setIsYearly(true)}
                     className={`px-3 py-1.5 rounded-md text-[11px] font-medium transition-all flex items-center gap-1.5 ${
-                      isYearly ? 'bg-white/[0.06] text-white' : 'text-[#858B99] hover:text-[#B6BBC6]'
+                      isYearly ? 'bg-white/[0.06] text-white' : 'text-[#94A3B8] hover:text-[#CBD5E1]'
                     }`}
                   >
                     Yearly
@@ -656,14 +656,14 @@ export default function CreditsPage() {
                 </div>
                 <div>
                   <p className="text-[12px] font-medium text-[#4ADE80]/80">Casual chat is always free</p>
-                  <p className="text-[10px] text-[#858B99] mt-0.5">Credits are only used for advanced operations below.</p>
+                  <p className="text-[10px] text-[#94A3B8] mt-0.5">Credits are only used for advanced operations below.</p>
                 </div>
               </div>
 
               {/* Credit cost breakdown */}
               <div className="mb-8 p-4 rounded-2xl border border-white/[0.03] bg-white/[0.01]">
                 <h3 className="text-[12px] font-medium text-white mb-3 flex items-center gap-2">
-                  <Coins className="w-3.5 h-3.5 text-[#858B99]" /> Credit Cost Guide
+                  <Coins className="w-3.5 h-3.5 text-[#94A3B8]" /> Credit Cost Guide
                 </h3>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {CREDIT_COSTS.map((item) => (
@@ -671,7 +671,7 @@ export default function CreditsPage() {
                       <item.icon className={`w-3.5 h-3.5 ${item.color} shrink-0`} />
                       <div className="min-w-0">
                         <p className="text-[11px] text-slate-300 truncate">{item.name}</p>
-                        <p className="text-[10px] text-[#858B99]">{item.desc}</p>
+                        <p className="text-[10px] text-[#94A3B8]">{item.desc}</p>
                       </div>
                       <span className={`text-[11px] font-mono font-medium ${item.color} shrink-0 ml-auto`}>
                         {typeof item.cost === 'number' && item.cost === 0 ? 'Free' : item.cost}
@@ -689,18 +689,18 @@ export default function CreditsPage() {
               </div>
 
               {/* Enterprise row */}
-              <div className="p-5 rounded-2xl border border-[#8B5CF6]/10 bg-[#8B5CF6]/[0.02] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="p-5 rounded-2xl border border-[#3B82F6]/10 bg-[#3B82F6]/[0.02] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div>
                   <div className="flex items-center gap-2 mb-1">
-                    <Shield className="w-4 h-4 text-[#A78BFA]" />
+                    <Shield className="w-4 h-4 text-[#60A5FA]" />
                     <span className="text-[13px] font-medium text-white">Enterprise</span>
-                    <span className="text-[10px] text-[#A78BFA]/50 bg-[#8B5CF6]/[0.06] px-1.5 py-0.5 rounded">Custom</span>
+                    <span className="text-[10px] text-[#60A5FA]/50 bg-[#3B82F6]/[0.06] px-1.5 py-0.5 rounded">Custom</span>
                   </div>
-                  <p className="text-[11px] text-[#858B99]">Custom pricing for teams. Unlimited credits, dedicated infrastructure, SLA guarantee, private deployment.</p>
+                  <p className="text-[11px] text-[#94A3B8]">Custom pricing for teams. Unlimited credits, dedicated infrastructure, SLA guarantee, private deployment.</p>
                 </div>
                 <Button
                   onClick={() => setActiveTab('custom')}
-                  className="h-8 px-5 rounded-xl bg-[#8B5CF6]/[0.08] text-[#A78BFA] border border-[#8B5CF6]/15 text-[11px] hover:bg-[#8B5CF6]/[0.12] shrink-0"
+                  className="h-8 px-5 rounded-xl bg-[#3B82F6]/[0.08] text-[#60A5FA] border border-[#3B82F6]/15 text-[11px] hover:bg-[#3B82F6]/[0.12] shrink-0"
                 >
                   Build Custom Plan
                 </Button>
@@ -712,13 +712,13 @@ export default function CreditsPage() {
           {activeTab === 'packs' && (
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}>
               {/* Usage transparency card */}
-              <div className="mb-6 p-4 rounded-2xl border border-[#8B5CF6]/8 bg-[#8B5CF6]/[0.02] flex items-start gap-3">
-                <Zap className="w-4 h-4 text-[#A78BFA]/60 shrink-0 mt-0.5" />
+              <div className="mb-6 p-4 rounded-2xl border border-[#3B82F6]/8 bg-[#3B82F6]/[0.02] flex items-start gap-3">
+                <Zap className="w-4 h-4 text-[#60A5FA]/60 shrink-0 mt-0.5" />
                 <div>
                   <p className="text-[11px] text-slate-300 mb-0.5">
                     <span className="font-medium">Simple chat is free.</span> Advanced AI features consume credits based on compute usage.
                   </p>
-                  <p className="text-[10px] text-[#858B99]">
+                  <p className="text-[10px] text-[#94A3B8]">
                     Deep Think 1-2cr, Research 5-20cr, File Analysis 3-15cr, Trading 2-10cr, Agents 5-50cr. Credits are non-refundable.
                   </p>
                 </div>
@@ -727,14 +727,14 @@ export default function CreditsPage() {
               {/* Pricing rate banner */}
               <div className="mb-6 flex items-center justify-center gap-2 py-3 rounded-2xl border border-white/[0.03] bg-white/[0.01]">
                 <Coins className="w-3.5 h-3.5 text-[#FACC15]/50" />
-                <span className="text-[11px] text-[#B6BBC6]">
+                <span className="text-[11px] text-[#CBD5E1]">
                   Rate: <span className="text-[#FACC15]/70 font-medium">$0.10 per credit</span> — Premium AI compute
                 </span>
               </div>
 
               {/* ═── Quick Pack Cards ─══ */}
               <h3 className="text-[12px] font-medium text-white mb-3 flex items-center gap-2">
-                <Package className="w-3.5 h-3.5 text-[#858B99]" /> Quick Packs
+                <Package className="w-3.5 h-3.5 text-[#94A3B8]" /> Quick Packs
               </h3>
               <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 mb-8">
                 {QUICK_PACKS.map((pack, i) => {
@@ -756,7 +756,7 @@ export default function CreditsPage() {
                       } ${pack.glow}`}
                     >
                       <p className={`text-lg font-bold text-white tabular-nums`}>{pack.credits}</p>
-                      <p className="text-[9px] text-[#858B99] mb-2">credits</p>
+                      <p className="text-[9px] text-[#94A3B8] mb-2">credits</p>
                       <p className={`text-[13px] font-semibold ${pack.color}`}>${price}</p>
                       {pack.credits >= 1000 && (
                         <span className="absolute -top-1.5 -right-1.5 text-[8px] font-semibold px-1.5 py-0.5 rounded-full bg-[#FACC15]/[0.1] border border-[#FACC15]/15 text-[#FACC15] uppercase">
@@ -783,7 +783,7 @@ export default function CreditsPage() {
                       <p className="text-[12px] text-white font-medium">
                         {selectedPack.replace('q', '')} Credits
                       </p>
-                      <p className="text-[11px] text-[#858B99]">
+                      <p className="text-[11px] text-[#94A3B8]">
                         ${formatPrice(Number(selectedPack.replace('q', '')))} at $0.10/cr
                       </p>
                     </div>
@@ -797,20 +797,20 @@ export default function CreditsPage() {
               {/* ═── Custom Credit Amount ─══ */}
               <div className="p-6 rounded-2xl border border-white/[0.04] bg-white/[0.01] relative overflow-hidden">
                 {/* Subtle glow background */}
-                <div className="absolute top-0 right-0 w-64 h-64 bg-[#8B5CF6]/[0.015] rounded-full blur-3xl pointer-events-none" />
+                <div className="absolute top-0 right-0 w-64 h-64 bg-[#3B82F6]/[0.015] rounded-full blur-3xl pointer-events-none" />
 
                 <h3 className="text-[13px] font-medium text-white mb-1 flex items-center gap-2">
-                  <BarChart3 className="w-4 h-4 text-[#A78BFA]/60" /> Custom Amount
+                  <BarChart3 className="w-4 h-4 text-[#60A5FA]/60" /> Custom Amount
                 </h3>
-                <p className="text-[11px] text-[#858B99] mb-6">Enter any amount. Price updates instantly.</p>
+                <p className="text-[11px] text-[#94A3B8] mb-6">Enter any amount. Price updates instantly.</p>
 
                 {/* Input + Live Price */}
                 <div className="flex flex-col sm:flex-row gap-4 mb-6">
                   {/* Credit Input */}
                   <div className="flex-1">
-                    <label className="text-[10px] text-[#858B99] uppercase tracking-wider mb-1.5 block">Credits</label>
-                    <div className="flex items-center gap-2 p-3 rounded-xl border border-white/[0.06] bg-white/[0.02] focus-within:border-[#8B5CF6]/20 transition-colors">
-                      <Coins className="w-4 h-4 text-[#858B99] shrink-0" />
+                    <label className="text-[10px] text-[#94A3B8] uppercase tracking-wider mb-1.5 block">Credits</label>
+                    <div className="flex items-center gap-2 p-3 rounded-xl border border-white/[0.06] bg-white/[0.02] focus-within:border-[#3B82F6]/20 transition-colors">
+                      <Coins className="w-4 h-4 text-[#94A3B8] shrink-0" />
                       <input
                         type="number"
                         min={1}
@@ -819,21 +819,21 @@ export default function CreditsPage() {
                         onChange={(e) => setCustomCredits(Math.max(1, Math.min(10000, Number(e.target.value) || 0)))}
                         className="flex-1 bg-transparent text-[18px] font-semibold text-white outline-none tabular-nums"
                       />
-                      <span className="text-[11px] text-[#858B99]">credits</span>
+                      <span className="text-[11px] text-[#94A3B8]">credits</span>
                     </div>
                   </div>
 
                   {/* Live Price Display */}
                   <div className="flex-1">
-                    <label className="text-[10px] text-[#858B99] uppercase tracking-wider mb-1.5 block">Total Price</label>
+                    <label className="text-[10px] text-[#94A3B8] uppercase tracking-wider mb-1.5 block">Total Price</label>
                     <motion.div
-                      className="p-3 rounded-xl border border-[#8B5CF6]/10 bg-[#8B5CF6]/[0.02] flex items-center justify-between"
+                      className="p-3 rounded-xl border border-[#3B82F6]/10 bg-[#3B82F6]/[0.02] flex items-center justify-between"
                       layout
                     >
-                      <span className="text-[11px] text-[#858B99]">{customCredits.toLocaleString()} x $0.10</span>
+                      <span className="text-[11px] text-[#94A3B8]">{customCredits.toLocaleString()} x $0.10</span>
                       <motion.span
                         key={customCredits}
-                        initial={{ scale: 1.1, color: '#A78BFA' }}
+                        initial={{ scale: 1.1, color: '#60A5FA' }}
                         animate={{ scale: 1, color: '#ffffff' }}
                         transition={{ duration: 0.2 }}
                         className="text-[18px] font-bold tabular-nums"
@@ -853,24 +853,24 @@ export default function CreditsPage() {
                     step={10}
                     onChange={setCustomCredits}
                     showValue={false}
-                    color="#A78BFA"
+                    color="#60A5FA"
                   />
                   <div className="flex justify-between mt-1">
-                    <span className="text-[10px] text-[#858B99]">10</span>
-                    <span className="text-[10px] text-[#858B99]">2,500</span>
-                    <span className="text-[10px] text-[#858B99]">5,000</span>
+                    <span className="text-[10px] text-[#94A3B8]">10</span>
+                    <span className="text-[10px] text-[#94A3B8]">2,500</span>
+                    <span className="text-[10px] text-[#94A3B8]">5,000</span>
                   </div>
                 </div>
 
                 {/* Purchase CTA */}
-                <Button className="w-full h-10 rounded-xl bg-[#8B5CF6]/[0.08] text-[#A78BFA] border border-[#8B5CF6]/15 text-[12px] font-medium hover:bg-[#8B5CF6]/[0.12] transition-all">
+                <Button className="w-full h-10 rounded-xl bg-[#3B82F6]/[0.08] text-[#60A5FA] border border-[#3B82F6]/15 text-[12px] font-medium hover:bg-[#3B82F6]/[0.12] transition-all">
                   Purchase {customCredits.toLocaleString()} Credits for ${formatPrice(customCredits)}
                 </Button>
               </div>
 
               {/* ═── Reference Table ─══ */}
               <div className="mt-6 p-4 rounded-2xl border border-white/[0.03] bg-white/[0.01]">
-                <h4 className="text-[11px] font-medium text-[#B6BBC6] uppercase tracking-wider mb-3">Reference Pricing</h4>
+                <h4 className="text-[11px] font-medium text-[#CBD5E1] uppercase tracking-wider mb-3">Reference Pricing</h4>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                   {[
                     { cr: 100, price: '$10.00' },
@@ -879,7 +879,7 @@ export default function CreditsPage() {
                     { cr: 2000, price: '$200.00' },
                   ].map((ref) => (
                     <div key={ref.cr} className="flex items-center justify-between p-2.5 rounded-lg bg-white/[0.02]">
-                      <span className="text-[11px] text-[#B6BBC6]">{ref.cr.toLocaleString()} cr</span>
+                      <span className="text-[11px] text-[#CBD5E1]">{ref.cr.toLocaleString()} cr</span>
                       <span className="text-[11px] font-mono font-medium text-slate-300">{ref.price}</span>
                     </div>
                   ))}
@@ -895,7 +895,7 @@ export default function CreditsPage() {
               <div className="p-5 rounded-2xl border border-white/[0.03] bg-white/[0.01] mb-6">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-[13px] font-medium text-white">This Week</h3>
-                  <span className="text-[10px] text-[#858B99]">Credits used</span>
+                  <span className="text-[10px] text-[#94A3B8]">Credits used</span>
                 </div>
                 <div className="flex items-end gap-2 h-28">
                   {USAGE_DATA.map((d, i) => {
@@ -912,14 +912,14 @@ export default function CreditsPage() {
                             title={`${d.casual} casual (free)`}
                           />
                           <motion.div
-                            className="flex-1 rounded-t bg-[#A78BFA]/30"
+                            className="flex-1 rounded-t bg-[#60A5FA]/30"
                             initial={{ height: 0 }}
                             animate={{ height: `${advancedH}%` }}
                             transition={{ duration: 0.5, delay: i * 0.05 + 0.1 }}
                             title={`${d.advanced} advanced (credits)`}
                           />
                         </div>
-                        <span className="text-[9px] text-[#858B99]">{d.day}</span>
+                        <span className="text-[9px] text-[#94A3B8]">{d.day}</span>
                       </div>
                     );
                   })}
@@ -927,11 +927,11 @@ export default function CreditsPage() {
                 <div className="flex items-center gap-4 mt-3">
                   <div className="flex items-center gap-1.5">
                     <div className="w-2 h-2 rounded-sm bg-[#4ADE80]/30" />
-                    <span className="text-[10px] text-[#858B99]">Casual (free)</span>
+                    <span className="text-[10px] text-[#94A3B8]">Casual (free)</span>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <div className="w-2 h-2 rounded-sm bg-[#A78BFA]/30" />
-                    <span className="text-[10px] text-[#858B99]">Advanced (credits)</span>
+                    <div className="w-2 h-2 rounded-sm bg-[#60A5FA]/30" />
+                    <span className="text-[10px] text-[#94A3B8]">Advanced (credits)</span>
                   </div>
                 </div>
               </div>
@@ -939,30 +939,30 @@ export default function CreditsPage() {
               {/* Usage breakdown */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="p-4 rounded-2xl border border-white/[0.03] bg-white/[0.01]">
-                  <p className="text-[11px] text-[#858B99] mb-1">Total Messages</p>
+                  <p className="text-[11px] text-[#94A3B8] mb-1">Total Messages</p>
                   <p className="text-2xl font-bold text-white">1,247</p>
                   <p className="text-[10px] text-[#4ADE80]/60 mt-1">
                     <ArrowUpRight className="w-3 h-3 inline" /> 340 casual (free)
                   </p>
                 </div>
                 <div className="p-4 rounded-2xl border border-white/[0.03] bg-white/[0.01]">
-                  <p className="text-[11px] text-[#858B99] mb-1">Credits Used</p>
+                  <p className="text-[11px] text-[#94A3B8] mb-1">Credits Used</p>
                   <p className="text-2xl font-bold text-white">153</p>
-                  <p className="text-[10px] text-[#A78BFA]/60 mt-1">of 400 monthly</p>
+                  <p className="text-[10px] text-[#60A5FA]/60 mt-1">of 400 monthly</p>
                 </div>
                 <div className="p-4 rounded-2xl border border-white/[0.03] bg-white/[0.01]">
-                  <p className="text-[11px] text-[#858B99] mb-1">Rollover Credits</p>
+                  <p className="text-[11px] text-[#94A3B8] mb-1">Rollover Credits</p>
                   <p className="text-2xl font-bold text-white">47</p>
-                  <p className="text-[10px] text-[#A78BFA]/60 mt-1">from last month</p>
+                  <p className="text-[10px] text-[#60A5FA]/60 mt-1">from last month</p>
                 </div>
               </div>
 
               {/* Rollover info */}
-              <div className="mt-6 p-4 rounded-2xl border border-[#8B5CF6]/10 bg-[#8B5CF6]/[0.02] flex items-start gap-3">
-                <Clock className="w-4 h-4 text-[#A78BFA]/60 shrink-0 mt-0.5" />
+              <div className="mt-6 p-4 rounded-2xl border border-[#3B82F6]/10 bg-[#3B82F6]/[0.02] flex items-start gap-3">
+                <Clock className="w-4 h-4 text-[#60A5FA]/60 shrink-0 mt-0.5" />
                 <div>
                   <p className="text-[12px] font-medium text-white mb-1">Credit Rollover</p>
-                  <p className="text-[11px] text-[#858B99]">
+                  <p className="text-[11px] text-[#94A3B8]">
                     Unused credits roll over to next month (up to 50% of plan). Pro plan: up to 200 credits rollover. Ultra plan: up to 500 credits rollover. Free plan: no rollover.
                   </p>
                 </div>
@@ -981,7 +981,7 @@ export default function CreditsPage() {
           <motion.div {...fadeUp(0.15)} className="mt-8 p-4 rounded-2xl border border-[#FACC15]/10 bg-[#FACC15]/[0.02] flex items-start gap-2.5">
             <AlertCircle className="w-4 h-4 text-[#FACC15] shrink-0 mt-0.5" />
             <div>
-              <p className="text-[11px] text-[#858B99]">
+              <p className="text-[11px] text-[#94A3B8]">
                 Payment processing coming soon. All features currently available during early access.
                 Credit costs are estimated and may be adjusted. Casual chat will always remain free.
               </p>

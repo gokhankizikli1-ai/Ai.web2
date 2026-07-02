@@ -98,12 +98,12 @@ export function buildAgentFromConversation(data: {
 }): StandaloneAgent {
   const now = new Date().toISOString();
   const gradients = [
-    'from-cyan-400 to-blue-400',
-    'from-violet-400 to-purple-400',
+    'from-blue-400 to-blue-400',
+    'from-blue-400 to-blue-400',
     'from-emerald-400 to-teal-400',
     'from-amber-400 to-orange-400',
-    'from-pink-400 to-rose-400',
-    'from-indigo-400 to-blue-400',
+    'from-blue-400 to-rose-400',
+    'from-blue-400 to-blue-400',
   ];
   const colors = ['cyan', 'violet', 'emerald', 'amber', 'pink', 'indigo'];
   const idx = Math.abs(data.specialty.split('').reduce((a, c) => a + c.charCodeAt(0), 0)) % gradients.length;

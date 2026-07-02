@@ -149,10 +149,10 @@ export default function WebsiteBuilder() {
 
   return (
     <BuilderWorkspaceFrame
-      icon={<Layout className="h-4 w-4" style={{ color: '#A78BFA' }} />}
+      icon={<Layout className="h-4 w-4" style={{ color: '#60A5FA' }} />}
       title="Website Builder"
       subtitle="Describe the website you want — Korvix locks a design direction, then generates a premium, category-aware preview"
-      accent="#A78BFA"
+      accent="#60A5FA"
       maxWidth="max-w-6xl"
     >
       {/* Prompt input */}
@@ -165,8 +165,8 @@ export default function WebsiteBuilder() {
           ctaLabel="Generate"
           busyLabel="Generating…"
           busy={generating}
-          accent="#A78BFA"
-          accent2="#A78BFA"
+          accent="#60A5FA"
+          accent2="#60A5FA"
           examples={EXAMPLE_PROMPTS}
           onExampleSelect={setPrompt}
         />
@@ -217,7 +217,7 @@ export default function WebsiteBuilder() {
               <button
                 onClick={() => setView('preview')}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium transition-colors ${
-                  view === 'preview' ? 'bg-white/[0.06] text-white' : 'text-[#858B99] hover:text-slate-300'
+                  view === 'preview' ? 'bg-white/[0.06] text-white' : 'text-[#94A3B8] hover:text-slate-300'
                 }`}
               >
                 <Eye className="w-3 h-3" /> Preview
@@ -225,7 +225,7 @@ export default function WebsiteBuilder() {
               <button
                 onClick={() => setView('structure')}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-medium transition-colors ${
-                  view === 'structure' ? 'bg-white/[0.06] text-white' : 'text-[#858B99] hover:text-slate-300'
+                  view === 'structure' ? 'bg-white/[0.06] text-white' : 'text-[#94A3B8] hover:text-slate-300'
                 }`}
               >
                 <FileText className="w-3 h-3" /> Structure / Copy
@@ -246,8 +246,8 @@ export default function WebsiteBuilder() {
                   }`}
                 >
                   <s.icon className="w-4 h-4" style={{ color: activeSection === s.id ? palette.accent : '#475569' }} />
-                  <span className={`text-[12px] ${activeSection === s.id ? 'text-white font-medium' : 'text-[#858B99]'}`}>{s.label}</span>
-                  <ChevronRight className="w-3 h-3 ml-auto" style={{ color: activeSection === s.id ? palette.accent : '#858B99' }} />
+                  <span className={`text-[12px] ${activeSection === s.id ? 'text-white font-medium' : 'text-[#94A3B8]'}`}>{s.label}</span>
+                  <ChevronRight className="w-3 h-3 ml-auto" style={{ color: activeSection === s.id ? palette.accent : '#94A3B8' }} />
                 </motion.button>
               ))}
             </div>
@@ -266,7 +266,7 @@ export default function WebsiteBuilder() {
                   className="p-6 rounded-2xl border border-white/[0.03] bg-white/[0.01]"
                 >
                   <h3 className="text-sm font-medium text-white mb-4">{SECTION_TITLES[activeSection]}</h3>
-                  <div className="whitespace-pre-line text-[13px] text-[#B6BBC6] leading-relaxed">
+                  <div className="whitespace-pre-line text-[13px] text-[#CBD5E1] leading-relaxed">
                     {structureText(activeSection, content)}
                   </div>
                 </motion.div>
@@ -279,16 +279,16 @@ export default function WebsiteBuilder() {
       {!generated && !generating && !briefPrompt && (
         <motion.div {...fadeUp(0.1)} className="max-w-lg mx-auto text-center py-14">
           <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-2xl border border-white/[0.06] bg-white/[0.02]">
-            <Sparkles className="w-6 h-6 text-[#A78BFA]/70" />
+            <Sparkles className="w-6 h-6 text-[#60A5FA]/70" />
           </div>
           <h3 className="text-[15px] font-medium text-white mb-2">Describe your website</h3>
-          <p className="text-[12px] text-[#858B99] leading-relaxed mb-6">
+          <p className="text-[12px] text-[#94A3B8] leading-relaxed mb-6">
             Korvix locks a design direction, then generates a premium hero, trust metrics, a category-specific
             showcase, features, pricing, testimonials, FAQ and brand system — tailored to your idea.
           </p>
           <div className="flex items-center justify-center gap-2 flex-wrap">
             {['Ecommerce', 'Analytics', 'SaaS', 'AI Product', 'Portfolio', 'Agency'].map((c) => (
-              <span key={c} className="px-2.5 py-1 rounded-full bg-white/[0.02] border border-white/[0.05] text-[10px] text-[#858B99]">{c}</span>
+              <span key={c} className="px-2.5 py-1 rounded-full bg-white/[0.02] border border-white/[0.05] text-[10px] text-[#94A3B8]">{c}</span>
             ))}
           </div>
         </motion.div>

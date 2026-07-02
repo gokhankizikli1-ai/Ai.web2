@@ -139,11 +139,11 @@ export default function OwnerWelcomeToast() {
           <div
             className="relative flex items-center gap-3 px-4 py-2.5 rounded-full overflow-hidden"
             style={{
-              background: 'linear-gradient(135deg, rgba(139, 92, 246,0.16) 0%, rgba(156, 187, 209,0.12) 100%)',
-              border: '1px solid rgba(139, 92, 246,0.30)',
+              background: 'linear-gradient(135deg, rgba(59, 130, 246,0.16) 0%, rgba(156, 187, 209,0.12) 100%)',
+              border: '1px solid rgba(59, 130, 246,0.30)',
               backdropFilter: 'blur(14px) saturate(1.1)',
               boxShadow:
-                '0 12px 32px -10px rgba(139, 92, 246,0.35), ' +
+                '0 12px 32px -10px rgba(59, 130, 246,0.35), ' +
                 '0 4px 12px rgba(0,0,0,0.45), ' +
                 'inset 0 1px 0 rgba(255,255,255,0.08)',
             }}
@@ -167,17 +167,17 @@ export default function OwnerWelcomeToast() {
             {/* Status dot — pulsing amber to mirror the OwnerModeChip's
                 "live" indicator. */}
             <span className="relative flex h-2 w-2 shrink-0">
-              <span className="absolute inline-flex h-full w-full rounded-full bg-[#A78BFA] opacity-60 animate-ping" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-[#A78BFA]" />
+              <span className="absolute inline-flex h-full w-full rounded-full bg-[#60A5FA] opacity-60 animate-ping" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-[#60A5FA]" />
             </span>
 
-            <ShieldCheck className="h-3.5 w-3.5 text-[#A78BFA] shrink-0" />
+            <ShieldCheck className="h-3.5 w-3.5 text-[#60A5FA] shrink-0" />
 
-            <span className="text-[12px] font-medium text-[#F4F4F5] tracking-tight whitespace-nowrap">
+            <span className="text-[12px] font-medium text-[#F8FAFC] tracking-tight whitespace-nowrap">
               {greeting}
             </span>
 
-            <Sparkles className="h-3 w-3 text-[#A78BFA]/70 shrink-0" />
+            <Sparkles className="h-3 w-3 text-[#60A5FA]/70 shrink-0" />
 
             <button
               onClick={() => {
@@ -187,7 +187,7 @@ export default function OwnerWelcomeToast() {
                 }
                 setVisible(false);
               }}
-              className="ml-1 h-5 w-5 flex items-center justify-center rounded-full text-[#A78BFA]/60 hover:text-[#F4F4F5] hover:bg-white/[0.05] transition-all"
+              className="ml-1 h-5 w-5 flex items-center justify-center rounded-full text-[#60A5FA]/60 hover:text-[#F8FAFC] hover:bg-white/[0.05] transition-all"
               aria-label="Dismiss welcome message"
             >
               <X className="h-3 w-3" />

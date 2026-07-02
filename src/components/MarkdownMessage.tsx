@@ -24,13 +24,13 @@ export default function MarkdownMessage({ content }: MarkdownMessageProps) {
           <h4 className="text-[13px] font-semibold text-white mt-2 mb-1">{children}</h4>
         ),
         p: ({ children }) => (
-          <p className="text-[14px] text-[#B6BBC6] leading-[1.65] mb-3 last:mb-0">{children}</p>
+          <p className="text-[14px] text-[#CBD5E1] leading-[1.65] mb-3 last:mb-0">{children}</p>
         ),
         ul: ({ children }) => (
-          <ul className="text-[14px] text-[#B6BBC6] list-disc list-inside space-y-1 mb-3 ml-1">{children}</ul>
+          <ul className="text-[14px] text-[#CBD5E1] list-disc list-inside space-y-1 mb-3 ml-1">{children}</ul>
         ),
         ol: ({ children }) => (
-          <ol className="text-[14px] text-[#B6BBC6] list-decimal list-inside space-y-1 mb-3 ml-1">{children}</ol>
+          <ol className="text-[14px] text-[#CBD5E1] list-decimal list-inside space-y-1 mb-3 ml-1">{children}</ol>
         ),
         li: ({ children }) => (
           <li className="leading-[1.65]">{children}</li>
@@ -44,13 +44,13 @@ export default function MarkdownMessage({ content }: MarkdownMessageProps) {
           }
 
           return (
-            <code className="px-[5px] py-[2px] rounded-md bg-white/[0.06] text-[#A78BFA]/90 text-[12px] font-mono border border-white/[0.05]">
+            <code className="px-[5px] py-[2px] rounded-md bg-white/[0.06] text-[#60A5FA]/90 text-[12px] font-mono border border-white/[0.05]">
               {children}
             </code>
           );
         },
         blockquote: ({ children }) => (
-          <blockquote className="border-l-2 border-[#8B5CF6]/30 pl-4 my-3 text-[#858B99] italic">
+          <blockquote className="border-l-2 border-[#3B82F6]/30 pl-4 my-3 text-[#94A3B8] italic">
             {children}
           </blockquote>
         ),
@@ -60,7 +60,7 @@ export default function MarkdownMessage({ content }: MarkdownMessageProps) {
             href={href}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-[#8B5CF6]/80 hover:text-[#A78BFA] underline underline-offset-2 transition-colors"
+            className="text-[#3B82F6]/80 hover:text-[#60A5FA] underline underline-offset-2 transition-colors"
           >
             {children}
           </a>
@@ -73,7 +73,7 @@ export default function MarkdownMessage({ content }: MarkdownMessageProps) {
         ),
         table: ({ children }) => (
           <div className="overflow-x-auto my-3 rounded-xl border border-white/[0.06]">
-            <table className="w-full text-[13px] text-left text-[#B6BBC6]">
+            <table className="w-full text-[13px] text-left text-[#CBD5E1]">
               {children}
             </table>
           </div>
@@ -91,7 +91,7 @@ export default function MarkdownMessage({ content }: MarkdownMessageProps) {
           <tr className="hover:bg-white/[0.015] transition-colors">{children}</tr>
         ),
         del: ({ children }) => (
-          <del className="line-through text-[#858B99]">{children}</del>
+          <del className="line-through text-[#94A3B8]">{children}</del>
         ),
       }}
     >

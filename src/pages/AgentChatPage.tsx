@@ -114,7 +114,7 @@ export default function AgentChatPage() {
     <div className="h-[100dvh] flex flex-col" style={{ background: '#11151C', color: '#E2E8F0' }}>
       {/* Header */}
       <div className="shrink-0 flex items-center justify-between px-4 h-14 border-b border-white/[0.04]"
-        style={{ background: 'linear-gradient(180deg, rgba(27,34,48,0.8), rgba(13, 14, 18,0.8))', backdropFilter: 'blur(12px)' }}>
+        style={{ background: 'linear-gradient(180deg, rgba(27,34,48,0.8), rgba(13, 17, 23,0.8))', backdropFilter: 'blur(12px)' }}>
         <div className="flex items-center gap-3">
           <button onClick={() => navigate('/agents')} className="flex items-center gap-1 text-[11px] text-white/30 hover:text-white/60 transition-colors">
             <ArrowLeft className="h-3.5 w-3.5" />
@@ -128,7 +128,7 @@ export default function AgentChatPage() {
               <div className="flex items-center gap-2">
                 <h1 className="text-[13px] font-semibold text-white/90">{agent.name}</h1>
                 <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium ${
-                  agent.status === 'active' ? 'bg-[#4ADE80]/[0.08] text-[#4ADE80]' : 'bg-slate-500/[0.06] text-[#B6BBC6]'
+                  agent.status === 'active' ? 'bg-[#4ADE80]/[0.08] text-[#4ADE80]' : 'bg-slate-500/[0.06] text-[#CBD5E1]'
                 }`}>
                   {agent.status === 'active' && <span className="w-1 h-1 rounded-full bg-[#4ADE80]" />}
                   {agent.status}
@@ -142,8 +142,8 @@ export default function AgentChatPage() {
           {agent.projectId && (
             <button
               onClick={() => navigate(`/projects/${agent.projectId}`)}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] text-[#A78BFA]/60 transition-all"
-              style={{ background: 'rgba(139, 92, 246,0.04)', border: '1px solid rgba(139, 92, 246,0.08)' }}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] text-[#60A5FA]/60 transition-all"
+              style={{ background: 'rgba(59, 130, 246,0.04)', border: '1px solid rgba(59, 130, 246,0.08)' }}
             >
               <FolderOpen className="h-3 w-3" />
               {agent.projectName || 'Project'}
@@ -158,7 +158,7 @@ export default function AgentChatPage() {
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6 space-y-4 scrollbar-thin">
         <div className="fixed inset-0 pointer-events-none overflow-hidden">
-          <div className="absolute -top-[200px] right-[10%] w-[400px] h-[400px] rounded-full opacity-[0.012]" style={{ background: 'radial-gradient(circle, #A78BFA 0%, transparent 70%)' }} />
+          <div className="absolute -top-[200px] right-[10%] w-[400px] h-[400px] rounded-full opacity-[0.012]" style={{ background: 'radial-gradient(circle, #60A5FA 0%, transparent 70%)' }} />
         </div>
 
         {agent.messages.map((msg) => {
@@ -177,8 +177,8 @@ export default function AgentChatPage() {
               <div
                 className="max-w-[75%] rounded-xl px-3.5 py-2.5 text-[12px] leading-relaxed whitespace-pre-wrap"
                 style={{
-                  background: isAgent ? 'rgba(255,255,255,0.025)' : 'rgba(139, 92, 246,0.04)',
-                  border: isAgent ? '1px solid rgba(255,255,255,0.04)' : '1px solid rgba(139, 92, 246,0.08)',
+                  background: isAgent ? 'rgba(255,255,255,0.025)' : 'rgba(59, 130, 246,0.04)',
+                  border: isAgent ? '1px solid rgba(255,255,255,0.04)' : '1px solid rgba(59, 130, 246,0.08)',
                   color: isAgent ? 'rgba(226,232,240,0.65)' : 'rgba(226,232,240,0.8)',
                 }}
                 dangerouslySetInnerHTML={{ __html: msg.content }}
@@ -223,7 +223,7 @@ export default function AgentChatPage() {
             disabled={!input.trim()}
             className="flex h-7 w-7 items-center justify-center rounded-lg transition-all disabled:opacity-30"
             style={{
-              background: input.trim() ? 'linear-gradient(135deg, #A78BFA, #A78BFA)' : 'rgba(255,255,255,0.04)',
+              background: input.trim() ? 'linear-gradient(135deg, #60A5FA, #60A5FA)' : 'rgba(255,255,255,0.04)',
             }}
           >
             <Send className="h-3 w-3 text-white" />

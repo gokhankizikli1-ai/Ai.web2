@@ -24,8 +24,8 @@ const statusConfig = {
     label: 'Idle',
   },
   syncing: {
-    dot: 'bg-[#8B5CF6]',
-    shadow: '0 0 8px rgba(139, 92, 246,0.3)',
+    dot: 'bg-[#3B82F6]',
+    shadow: '0 0 8px rgba(59, 130, 246,0.3)',
     label: 'Syncing',
   },
   offline: {
@@ -58,7 +58,7 @@ export default function AgentCard({ agent, isSelected, onClick, index }: AgentCa
         className={`relative rounded-lg px-2.5 py-2 transition-all duration-200 ${
           isSelected
             ? 'border-white/[0.12]'
-            : 'border-transparent hover:border-[#8B5CF6]/30'
+            : 'border-transparent hover:border-[#3B82F6]/30'
         }`}
         style={{
           background: isSelected
