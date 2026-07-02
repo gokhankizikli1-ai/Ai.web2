@@ -14,6 +14,12 @@ const ROLE_ICONS: Record<string, React.ElementType> = {
   Layout, Server, Search, Rocket, ShoppingBag, TrendingUp, Palette, Sparkles, Code: Bot, Bot,
 };
 
+// The orchestrator probe must always settle — a hanging fetch to a cold
+// backend may otherwise pend for minutes with the workspace stuck on
+// "Loading workspace…". Past this deadline the workspace renders
+// optimistically and recovers via ProjectRunCenter's own retry paths.
+const ORCH_PROBE_TIMEOUT_MS = 6000;
+
 import {
   getProject, getProjectAgents, addProjectAgent, updateProjectAgent,
   removeProjectAgent, addAgentMessage, updateAgentMessage,
@@ -360,13 +366,32 @@ export default function ProjectWorkspace() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [selectedAgent?.messages.length, isTyping]);
 
-  /* ─── Phase B/C — orchestrator availability probe ─── */
+  /* ─── Phase B/C — orchestrator availability probe ───
+     The probe fetch has no timeout of its own, so on a cold/unreachable
+     backend it could pend for minutes — which left a refreshed project
+     URL stuck on "Loading workspace…" indefinitely. The probe is now
+     FINITE (raced against a short deadline) and fails OPEN into Build
+     Studio: ProjectRunCenter degrades gracefully while the backend wakes
+     up (empty timeline + usable composer + its own history retry), which
+     is strictly better than an endless spinner or wrongly reverting a
+     builder project to the agent-chat fallback. Only an explicit
+     "orchestrator disabled" reply (flag off) or a missing route (404 on
+     an old deployment) selects the agent-chat path. */
   useEffect(() => {
     let active = true;
     setOrchProbe('checking');
-    projectOrchestratorClient.listTemplates()
+    const deadline = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(Object.assign(new Error('probe timed out'), { code: 'probe_timeout' })),
+        ORCH_PROBE_TIMEOUT_MS);
+    });
+    Promise.race([projectOrchestratorClient.listTemplates(), deadline])
       .then(() => { if (active) setOrchProbe('available'); })
-      .catch(() => { if (active) setOrchProbe('unavailable'); });  // 503/disabled/network → agent-chat fallback
+      .catch((e: unknown) => {
+        if (!active) return;
+        const code = (e as { code?: string })?.code || '';
+        const explicitlyOff = code === 'project_orchestrator_disabled' || code === 'http_404';
+        setOrchProbe(explicitlyOff ? 'unavailable' : 'available');
+      });
     return () => { active = false; };
   }, [projectId]);
 
@@ -649,14 +674,32 @@ export default function ProjectWorkspace() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage(); }
   };
 
-  /* ─── No project ─── */
+  /* ─── No project — a finite, recoverable state (never a spinner) ─── */
   if (!project) {
     return (
-      <div className="min-h-[100dvh] flex items-center justify-center" style={{ background: '#11151C' }}>
-        <div className="text-center">
-          <FolderOpen className="h-12 w-12 text-white/10 mx-auto mb-3" />
-          <p className="text-[13px] text-white/30">Project not found</p>
-          <button onClick={() => navigate('/projects')} className="text-[12px] text-cyan-400 hover:text-cyan-300 mt-2">Back to Projects</button>
+      <div className="min-h-[100dvh] flex items-center justify-center px-6" style={{ background: '#11151C' }}>
+        <div className="text-center max-w-sm">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl mx-auto mb-4"
+            style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+            <FolderOpen className="h-6 w-6 text-white/25" />
+          </div>
+          <h2 className="text-[16px] font-semibold text-white/80 mb-1.5">Project not found or not available locally</h2>
+          <p className="text-[12px] text-white/35 mb-5 leading-relaxed">
+            This project isn't in this browser's saved projects — it may have been created
+            on another device, or its local data was cleared.
+          </p>
+          <div className="flex items-center justify-center gap-2">
+            <button onClick={() => navigate('/projects')}
+              className="px-4 py-2 rounded-xl text-[12px] font-semibold text-white transition-all hover:brightness-110"
+              style={{ background: 'linear-gradient(135deg, #22D3EE, #3B82F6)' }}>
+              Back to Projects
+            </button>
+            <button onClick={() => navigate('/projects?new=1')}
+              className="px-4 py-2 rounded-xl text-[12px] font-medium text-white/60 hover:text-white/85 transition-colors"
+              style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
+              New project
+            </button>
+          </div>
         </div>
       </div>
     );
