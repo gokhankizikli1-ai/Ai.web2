@@ -214,6 +214,30 @@ async def analyze_market_complaints(
             query_token_count=query_token_count,
         )
         clusters.append(cluster)
+
+    # Competitor weakness association — for each mentioned competitor,
+    # find the complaint cluster whose evidence text actually contains
+    # the name. Runs BEFORE the pain-score sort so `clusters` and
+    # `grouped` stay index-aligned. No hit → no entry (never inferred).
+    for comp in signals_summary.competitors_mentioned:
+        comp_l = comp.lower()
+        best_count = 0
+        best_cluster = None
+        for cluster, (_label, members) in zip(clusters, grouped):
+            count = sum(
+                1 for m in members
+                if comp_l in m.signal.combined_text().lower()
+            )
+            if count > best_count:
+                best_count, best_cluster = count, cluster
+        if best_cluster is not None:
+            signals_summary.competitor_weaknesses.append({
+                "competitor": comp,
+                "cluster_id": best_cluster.id,
+                "cluster_label": best_cluster.label,
+                "evidence_count": best_count,
+            })
+
     clusters.sort(key=lambda c: c.pain_score, reverse=True)
     report.complaint_clusters = clusters
     report.market_signals = signals_summary

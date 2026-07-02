@@ -4,10 +4,16 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, MessageSquareWarning } from 'lucide-react';
 import MarketRadarForm from './MarketRadarForm';
 import MarketRadarResults from './MarketRadarResults';
+import RadarEmptyState from './RadarEmptyState';
 import {
   analyzeMarketComplaints, fetchRadarHealth, RadarError,
   type MarketComplaintReport, type MarketComplaintRequest, type RadarSourceHealth,
 } from '@/lib/startupMarketApi';
+import { buildBuilderPrompt } from '@/lib/startupRadarInsights';
+import {
+  clearRadarHistory, loadRadarHistory, saveRadarReport,
+  type RadarHistoryEntry,
+} from '@/lib/startupRadarHistory';
 
 const LOADING_STAGES = [
   'Scanning public discussions…',
@@ -62,28 +68,32 @@ export function buildAdvisorPrompt(report: MarketComplaintReport): string {
 
 interface Props {
   /** true when rendered inside an already-mounted chat surface (e.g. the
-   * Business Workspace subtab). Switches the Startup Advisor handoff from
-   * a route navigation to the in-app `korvix-route-to-chat` event —
-   * ChatDashboard doesn't remount on same-route navigation, so only the
-   * event path can actually activate the startup tab from inside it. */
+   * Business Workspace subtab). Switches the Startup Advisor / Builder
+   * handoffs from a route navigation to the in-app `korvix-route-to-chat`
+   * event — ChatDashboard doesn't remount on same-route navigation, so
+   * only the event path can actually switch tabs from inside it. */
   embedded?: boolean;
 }
 
 /**
  * The complete Market Complaint Radar experience: query/timeframe/region/
- * source form, honest loading/error/empty states, ranked result surface,
- * and the Send-to-Startup-Advisor handoff. Route-agnostic — /tools/startup
- * wraps it in the full page shell, BusinessPanel embeds it directly.
+ * source form, premium empty state with local analysis history, honest
+ * loading/error states, founder-grade result surface (decision board,
+ * ICP, competitor weaknesses, 7-day sprint), and Startup Advisor /
+ * Builder handoffs. Route-agnostic — /tools/startup wraps it in the full
+ * page shell, BusinessPanel embeds it directly.
  */
 export default function StartupMarketRadar({ embedded = false }: Props) {
   const navigate = useNavigate();
 
+  const [query, setQuery] = useState('');
   const [report, setReport] = useState<MarketComplaintReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [stage, setStage] = useState(0);
   const [error, setError] = useState<RadarError | null>(null);
   const [lastRequest, setLastRequest] = useState<MarketComplaintRequest | null>(null);
   const [sourceHealth, setSourceHealth] = useState<RadarSourceHealth | null>(null);
+  const [history, setHistory] = useState<RadarHistoryEntry[]>(() => loadRadarHistory());
 
   // Source configuration state — lets the form disable unconfigured
   // sources honestly instead of letting the request silently skip them.
@@ -109,6 +119,8 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
     try {
       const result = await analyzeMarketComplaints(req);
       setReport(result);
+      // History stores exactly what's on screen — last 5, local only.
+      setHistory(saveRadarReport(result));
     } catch (e) {
       setError(e instanceof RadarError ? e : new RadarError('server', 'Analysis failed unexpectedly.'));
     } finally {
@@ -116,25 +128,57 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
     }
   };
 
-  const sendToAdvisor = () => {
-    if (!report) return;
-    const prompt = buildAdvisorPrompt(report);
+  const restoreFromHistory = (entry: RadarHistoryEntry) => {
+    setError(null);
+    setQuery(entry.report.query);
+    setReport(entry.report);
+  };
+
+  const handleClearHistory = () => {
+    clearRadarHistory();
+    setHistory([]);
+  };
+
+  /** Shared handoff: in-app event when embedded in ChatDashboard,
+   * full navigation from the standalone /tools/startup page. */
+  const handOffToChat = (prompt: string) => {
     if (embedded) {
-      // In-app handoff: ChatDashboard's korvix-route-to-chat listener
-      // switches to the startup workspace and fills the composer.
       window.dispatchEvent(new CustomEvent('korvix-route-to-chat', {
         detail: { prompt, workspace: 'startup' },
       }));
     } else {
-      // Standalone page: full navigation; ChatDashboard consumes
-      // location.state.initialPrompt and ?tab=startup on mount.
       navigate('/chat?tab=startup', { state: { initialPrompt: prompt } });
+    }
+  };
+
+  const sendToAdvisor = () => {
+    if (report) handOffToChat(buildAdvisorPrompt(report));
+  };
+
+  // The builder pages don't accept an external prompt handoff, so the
+  // builder ask goes through chat with a build-oriented structured
+  // prompt (evidence-backed wedge → landing page + MVP concept).
+  const sendToBuilder = () => {
+    if (!report) return;
+    const prompt = buildBuilderPrompt(report);
+    if (embedded) {
+      window.dispatchEvent(new CustomEvent('korvix-route-to-chat', {
+        detail: { prompt, workspace: 'chat' },
+      }));
+    } else {
+      navigate('/chat', { state: { initialPrompt: prompt } });
     }
   };
 
   return (
     <div>
-      <MarketRadarForm loading={loading} sourceHealth={sourceHealth} onAnalyze={runAnalysis} />
+      <MarketRadarForm
+        loading={loading}
+        sourceHealth={sourceHealth}
+        query={query}
+        onQueryChange={setQuery}
+        onAnalyze={runAnalysis}
+      />
 
       <div className={embedded ? 'mt-3' : 'mt-5'}>
         <AnimatePresence mode="wait">
@@ -180,7 +224,23 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
 
           {!loading && !error && report && (
             <motion.div key="results" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <MarketRadarResults report={report} onSendToAdvisor={sendToAdvisor} />
+              <MarketRadarResults
+                report={report}
+                sourceHealth={sourceHealth}
+                onSendToAdvisor={sendToAdvisor}
+                onSendToBuilder={sendToBuilder}
+              />
+            </motion.div>
+          )}
+
+          {!loading && !error && !report && (
+            <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              <RadarEmptyState
+                history={history}
+                onPickExample={setQuery}
+                onRestore={restoreFromHistory}
+                onClearHistory={handleClearHistory}
+              />
             </motion.div>
           )}
         </AnimatePresence>

@@ -1,7 +1,7 @@
-import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Radar, Globe2 } from 'lucide-react';
 import type { RadarSource, RadarSourceHealth, MarketComplaintRequest } from '@/lib/startupMarketApi';
+import { useState } from 'react';
 
 const TIMEFRAMES = [
   { days: 7, label: '7d' },
@@ -17,17 +17,13 @@ const SOURCE_META: { id: RadarSource; label: string }[] = [
   { id: 'producthunt', label: 'Product Hunt' },
 ];
 
-const EXAMPLES = [
-  'AI customer support',
-  'Shopify fashion stores',
-  'student productivity',
-  'restaurant POS',
-  'Roblox game tools',
-];
-
 interface Props {
   loading: boolean;
   sourceHealth: RadarSourceHealth | null;
+  /** Query is controlled by the parent so the empty-state example chips
+   * and history restore can populate it. */
+  query: string;
+  onQueryChange: (query: string) => void;
   onAnalyze: (req: MarketComplaintRequest) => void;
 }
 
@@ -35,9 +31,9 @@ interface Props {
  * Market Complaint Radar input surface: niche query, timeframe, region,
  * source toggles. Unconfigured key-gated sources are shown but disabled
  * with an honest "not configured" hint — never silently faked.
+ * Ctrl/Cmd+Enter (or plain Enter) in the query field runs the analysis.
  */
-export default function MarketRadarForm({ loading, sourceHealth, onAnalyze }: Props) {
-  const [query, setQuery] = useState('');
+export default function MarketRadarForm({ loading, sourceHealth, query, onQueryChange, onAnalyze }: Props) {
   const [timeframe, setTimeframe] = useState(30);
   const [region, setRegion] = useState('global');
   const [sources, setSources] = useState<RadarSource[]>(['web', 'hackernews', 'gdelt']);
@@ -66,35 +62,27 @@ export default function MarketRadarForm({ loading, sourceHealth, onAnalyze }: Pr
   };
 
   return (
-    <div className="rounded-2xl border border-white/[0.04] bg-white/[0.008] p-5">
+    <div className="rounded-2xl border border-white/[0.04] bg-white/[0.008] p-4 sm:p-5">
       <label className="block text-[12px] text-slate-400 mb-1.5">
         Market, niche, or startup idea
       </label>
       <textarea
         value={query}
-        onChange={(e) => setQuery(e.target.value)}
+        onChange={(e) => onQueryChange(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
+          // Plain Enter and Ctrl/Cmd+Enter both run the analysis;
+          // Shift+Enter inserts a newline.
+          if (e.key === 'Enter' && (!e.shiftKey || e.metaKey || e.ctrlKey)) {
+            e.preventDefault();
+            submit();
+          }
         }}
         placeholder="AI customer support tools, small restaurant POS systems, crypto portfolio tracking…"
         rows={2}
         className="w-full rounded-xl bg-white/[0.015] border border-white/[0.04] p-3 text-[13px] text-white placeholder:text-[#64748B] focus:border-amber-500/25 focus:bg-white/[0.02] outline-none transition-all resize-none"
       />
 
-      {/* Example niches */}
-      <div className="flex flex-wrap gap-1.5 mt-2">
-        {EXAMPLES.map((ex) => (
-          <button
-            key={ex}
-            onClick={() => setQuery(ex)}
-            className="px-2 py-1 rounded-lg text-[10px] text-slate-500 border border-white/[0.04] bg-white/[0.01] hover:text-slate-300 hover:border-white/[0.08] transition-colors"
-          >
-            {ex}
-          </button>
-        ))}
-      </div>
-
-      <div className="grid sm:grid-cols-2 gap-4 mt-4">
+      <div className="grid sm:grid-cols-2 gap-3 sm:gap-4 mt-4">
         {/* Timeframe */}
         <div>
           <label className="block text-[12px] text-slate-400 mb-1.5">Timeframe</label>
@@ -167,12 +155,17 @@ export default function MarketRadarForm({ loading, sourceHealth, onAnalyze }: Pr
         disabled={!canSubmit}
         className={`mt-5 w-full h-11 rounded-xl text-[13px] flex items-center justify-center gap-2 border transition-all ${
           canSubmit
-            ? 'bg-amber-500/[0.1] border-amber-500/25 text-amber-200 hover:bg-amber-500/[0.14]'
+            ? 'bg-amber-500/[0.14] border-amber-500/35 text-amber-100 hover:bg-amber-500/[0.2] shadow-[0_0_24px_-8px_rgba(251,191,36,0.35)]'
             : 'bg-white/[0.02] border-white/[0.04] text-slate-600 cursor-not-allowed'
         }`}
       >
         <Radar className="h-4 w-4" />
         {loading ? 'Analyzing…' : 'Analyze market complaints'}
+        {canSubmit && !loading && (
+          <kbd className="hidden sm:inline-flex items-center rounded bg-black/20 border border-white/[0.06] px-1.5 py-0.5 text-[9px] text-amber-200/60 font-mono ml-1">
+            ⌘↵
+          </kbd>
+        )}
       </motion.button>
     </div>
   );
