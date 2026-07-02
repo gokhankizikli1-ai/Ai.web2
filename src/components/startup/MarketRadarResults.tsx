@@ -41,6 +41,13 @@ const DECISION_CHIP_TONE: Record<string, string> = {
   avoid: 'text-rose-300 border-rose-500/25 bg-rose-500/[0.08]',
 };
 
+/** Evidence-quality badge tiers (avg item quality 0-100 from backend). */
+function evidenceQualityBadge(score: number): { label: string; tone: string } {
+  if (score >= 70) return { label: 'strong evidence', tone: 'text-emerald-300 border-emerald-500/25 bg-emerald-500/[0.08]' };
+  if (score >= 45) return { label: 'moderate evidence', tone: 'text-amber-300 border-amber-500/25 bg-amber-500/[0.08]' };
+  return { label: 'weak evidence', tone: 'text-rose-300 border-rose-500/25 bg-rose-500/[0.08]' };
+}
+
 function formatGeneratedAt(iso: string): string {
   try {
     const d = new Date(iso);
@@ -183,6 +190,14 @@ export default function MarketRadarResults({ report, sourceHealth, onSendToAdvis
               <span className={`px-2 py-0.5 rounded-md border text-[10px] font-semibold ${DECISION_CHIP_TONE[decision.bucket]}`}>
                 {decision.label}
               </span>
+              {typeof summary.evidence_quality === 'number' && (
+                <span
+                  title={`Average evidence quality ${summary.evidence_quality}/100 — discussion/forum content scores high, SEO/blog/news low`}
+                  className={`px-2 py-0.5 rounded-md border text-[10px] font-medium ${evidenceQualityBadge(summary.evidence_quality).tone}`}
+                >
+                  {evidenceQualityBadge(summary.evidence_quality).label}
+                </span>
+              )}
               {report.cached && (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-white/[0.06] text-[10px] text-slate-500">
                   <Clock3 className="h-2.5 w-2.5" /> cached result
@@ -191,14 +206,17 @@ export default function MarketRadarResults({ report, sourceHealth, onSendToAdvis
             </div>
             {summary.top_complaint_area ? (
               <p className="text-[12px] text-slate-500 mt-1">
-                Loudest complaint area: <span className="text-slate-300 capitalize">{summary.top_complaint_area}</span>
+                Loudest complaint area: <span className="text-slate-300">{summary.top_complaint_area}</span>
               </p>
             ) : (
               <p className="text-[12px] text-slate-500 mt-1">No dominant complaint area detected.</p>
             )}
             <p className="text-[11px] text-slate-600 mt-1">
               {summary.total_items_analyzed} items from {summary.total_sources} live source
-              {summary.total_sources === 1 ? '' : 's'} · last {report.timeframe_days} days
+              {summary.total_sources === 1 ? '' : 's'}
+              {typeof summary.direct_complaints === 'number' &&
+                ` · ${summary.direct_complaints} direct complaint${summary.direct_complaints === 1 ? '' : 's'}`}
+              {' '}· last {report.timeframe_days} days
               {generatedAt && ` · generated ${generatedAt}`}
             </p>
           </div>

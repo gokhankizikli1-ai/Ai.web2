@@ -47,6 +47,9 @@ export interface ComplaintCluster {
   source_mix: Record<string, number>;
   sample_quotes: SampleQuote[];
   evidence_urls: string[];
+  /** Per-cluster quality telemetry (optional — see summary fields). */
+  evidence_quality?: number;
+  direct_complaints?: number;
 }
 
 export interface CompetitorWeakness {
@@ -93,6 +96,13 @@ export interface MarketComplaintReport {
     confidence: 'low' | 'medium' | 'high';
     total_sources: number;
     total_items_analyzed: number;
+    /** Avg evidence quality 0-100 (discussion/forum content scores high,
+     * SEO/blog/news low). Optional: absent on reports cached before this
+     * field shipped. */
+    evidence_quality?: number;
+    /** Items with first-person complaint phrasing — the strongest
+     * evidence class. Optional (same back-compat reason). */
+    direct_complaints?: number;
   };
   complaint_clusters: ComplaintCluster[];
   market_signals: MarketSignals;

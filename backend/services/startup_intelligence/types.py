@@ -33,6 +33,11 @@ class RawSignal:
     url: str = ""
     published_at: Optional[str] = None  # ISO-8601 when the source provides it
     engagement: int = 0               # points + comments / votes when available
+    # Evidence quality 0-1 — set by the collector from source kind and
+    # metadata (forum/discussion > blog/SEO/news), refined by the analyzer
+    # with complaint-language bonuses. Weights clustering, scoring, and
+    # confidence so broad web content can't masquerade as direct pain.
+    quality: float = 0.5
 
     def combined_text(self) -> str:
         return f"{self.title}\n{self.text}".strip()
@@ -71,6 +76,11 @@ class ComplaintCluster:
     source_mix: dict = field(default_factory=dict)   # source id → item count
     sample_quotes: list[SampleQuote] = field(default_factory=list)
     evidence_urls: list[str] = field(default_factory=list)
+    # Quality telemetry (additive) — how trustworthy this cluster's
+    # evidence is. evidence_quality 0-100 (avg item quality);
+    # direct_complaints = items with first-person complaint phrasing.
+    evidence_quality: int = 0
+    direct_complaints: int = 0
 
     def to_dict(self) -> dict:
         d = asdict(self)

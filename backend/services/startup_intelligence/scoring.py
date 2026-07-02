@@ -90,12 +90,21 @@ def score_cluster(
         - 0.15 * saturation
     )
 
+    # Quality calibration — a cluster made of SEO/listicle/news content
+    # must not score like one made of first-person complaints. Broad-web
+    # evidence (avg quality ~0.4) dampens pain by ~25%; direct forum
+    # complaints (~0.85) keep nearly full weight.
+    avg_quality = sum(m.quality for m in members) / n
+    pain *= (0.6 + 0.4 * avg_quality)
+
     cluster.pain_score = _clamp(pain)
     cluster.severity = _clamp(severity)
     cluster.recency = _clamp(recency)
     cluster.urgency = urgency
     cluster.willingness_to_pay_signal = _clamp(wtp)
     cluster.saturation_risk = _clamp(saturation)
+    cluster.evidence_quality = _clamp(avg_quality * 100)
+    cluster.direct_complaints = sum(1 for m in members if m.is_direct)
     return cluster
 
 
@@ -105,13 +114,23 @@ def confidence_level(
     cluster_count: int,
     citation_count: int,
     complaint_count: int,
+    direct_complaints: int = 0,
+    avg_quality: float = 0.5,
 ) -> str:
-    """high = multiple sources + multiple clusters + real citations;
-    medium = some sources + enough snippets; low = everything else."""
-    if available_sources >= 2 and cluster_count >= 2 and citation_count >= 8 \
-            and complaint_count >= 6:
+    """Calibrated confidence.
+
+    high   — multiple sources, multiple clusters, real citations AND
+             repeated first-person complaint evidence of decent quality.
+             Broad SEO/blog/news volume alone can never reach high.
+    medium — some sources + enough snippets + at least SOME direct
+             complaint language or above-broad-web quality.
+    low    — everything else (including 1-2 strong complaints only)."""
+    if (available_sources >= 2 and cluster_count >= 2 and citation_count >= 8
+            and complaint_count >= 6 and direct_complaints >= 4
+            and avg_quality >= 0.55):
         return "high"
-    if available_sources >= 1 and (cluster_count >= 1 and citation_count >= 4):
+    if (available_sources >= 1 and cluster_count >= 1 and citation_count >= 4
+            and (direct_complaints >= 2 or avg_quality >= 0.45)):
         return "medium"
     return "low"
 
@@ -121,14 +140,17 @@ def opportunity_score(
     *,
     available_sources: int,
     total_items: int,
+    avg_quality: float = 0.5,
 ) -> int:
-    """Blend of top-cluster pain, source diversity, and evidence volume."""
+    """Blend of top-cluster pain, source diversity, evidence volume, and
+    evidence quality — mostly-generic web content caps the score lower."""
     if not clusters:
         return 0
     top_pain = max(c.pain_score for c in clusters)
     diversity = min(100.0, available_sources * 25.0)
     volume = min(100.0, total_items * 2.0)
-    return _clamp(0.6 * top_pain + 0.2 * diversity + 0.2 * volume)
+    quality = avg_quality * 100.0
+    return _clamp(0.5 * top_pain + 0.2 * diversity + 0.15 * volume + 0.15 * quality)
 
 
 __all__ = ["score_cluster", "confidence_level", "opportunity_score"]
