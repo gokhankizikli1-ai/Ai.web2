@@ -106,11 +106,13 @@ export interface RadarIcp {
   isHypothesis: boolean;
 }
 
+// User-facing community naming — matches SOURCE_DISPLAY in
+// startupMarketApi.ts ("Founder forums", not "Hacker News").
 const SOURCE_COMMUNITY: Record<string, string> = {
-  hackernews: 'the Hacker News threads in the citations',
-  reddit: 'the Reddit threads in the citations',
+  hackernews: 'the founder-forum threads in the citations',
+  reddit: 'the community threads in the citations',
   web: 'the forums/review pages in the citations',
-  producthunt: 'Product Hunt launch comment sections',
+  producthunt: 'product-launch comment sections',
   gdelt: 'communities around the news articles in the citations',
 };
 

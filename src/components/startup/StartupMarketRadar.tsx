@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, MessageSquareWarning } from 'lucide-react';
+import { History, Loader2, MessageSquareWarning, X } from 'lucide-react';
 import MarketRadarForm from './MarketRadarForm';
 import MarketRadarResults from './MarketRadarResults';
 import RadarEmptyState from './RadarEmptyState';
+import RecentAnalyses from './RecentAnalyses';
 import {
   analyzeMarketComplaints, fetchRadarHealth, RadarError,
-  type MarketComplaintReport, type MarketComplaintRequest, type RadarSourceHealth,
+  type MarketComplaintReport, type MarketComplaintRequest,
+  type RadarSource, type RadarSourceHealth,
 } from '@/lib/startupMarketApi';
 import { buildBuilderPrompt } from '@/lib/startupRadarInsights';
 import {
@@ -21,6 +23,8 @@ const LOADING_STAGES = [
   'Clustering complaint patterns…',
   'Ranking opportunity gaps…',
 ];
+
+const DEFAULT_SOURCES: RadarSource[] = ['web', 'hackernews', 'gdelt'];
 
 /** Structured handoff into Startup Advisor chat. First line stays
  * `Market: <query>` — the backend startup_complaints tool keys its radar
@@ -66,6 +70,16 @@ export function buildAdvisorPrompt(report: MarketComplaintReport): string {
   return lines.join('\n');
 }
 
+/** Best-effort form restore from a stored report: the report carries the
+ * query + timeframe; selected sources are approximated as everything
+ * that wasn't skipped in that run. Region isn't stored — left as-is. */
+function sourcesFromReport(report: MarketComplaintReport): RadarSource[] {
+  const selected = Object.entries(report.data_freshness)
+    .filter(([, status]) => status !== 'skipped')
+    .map(([source]) => source as RadarSource);
+  return selected.length ? selected : DEFAULT_SOURCES;
+}
+
 interface Props {
   /** true when rendered inside an already-mounted chat surface (e.g. the
    * Business Workspace subtab). Switches the Startup Advisor / Builder
@@ -77,16 +91,22 @@ interface Props {
 
 /**
  * The complete Market Complaint Radar experience: query/timeframe/region/
- * source form, premium empty state with local analysis history, honest
- * loading/error states, founder-grade result surface (decision board,
- * ICP, competitor weaknesses, 7-day sprint), and Startup Advisor /
- * Builder handoffs. Route-agnostic — /tools/startup wraps it in the full
- * page shell, BusinessPanel embeds it directly.
+ * source form, premium empty state, local analysis history with automatic
+ * restore of the latest report after a refresh, honest loading/error
+ * states, the founder-grade result surface, and Startup Advisor / Builder
+ * handoffs. Route-agnostic — /tools/startup wraps it in the full page
+ * shell, BusinessPanel embeds it directly.
  */
 export default function StartupMarketRadar({ embedded = false }: Props) {
   const navigate = useNavigate();
 
+  // Form controls — lifted so example chips, history restore, and
+  // refresh-restore can repopulate the exact run setup.
   const [query, setQuery] = useState('');
+  const [timeframe, setTimeframe] = useState(30);
+  const [region, setRegion] = useState('global');
+  const [sources, setSources] = useState<RadarSource[]>(DEFAULT_SOURCES);
+
   const [report, setReport] = useState<MarketComplaintReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [stage, setStage] = useState(0);
@@ -94,8 +114,27 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
   const [lastRequest, setLastRequest] = useState<MarketComplaintRequest | null>(null);
   const [sourceHealth, setSourceHealth] = useState<RadarSourceHealth | null>(null);
   const [history, setHistory] = useState<RadarHistoryEntry[]>(() => loadRadarHistory());
+  // "Restored from recent analysis" note — shown after the automatic
+  // refresh-restore, dismissible, cleared by any fresh analysis.
+  const [restoredNote, setRestoredNote] = useState(false);
 
-  // Source configuration state — lets the form disable unconfigured
+  // Auto-restore the latest report on mount so a page refresh doesn't
+  // lose the analysis the user was just reading. No API call — this is
+  // the exact stored report. loadRadarHistory() already fails silently
+  // to [] on any localStorage/parse problem.
+  useEffect(() => {
+    const latest = loadRadarHistory()[0];
+    if (latest) {
+      setReport(latest.report);
+      setQuery(latest.report.query);
+      setTimeframe(latest.report.timeframe_days || 30);
+      setSources(sourcesFromReport(latest.report));
+      setRestoredNote(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Source configuration state — lets the form disable unconnected
   // sources honestly instead of letting the request silently skip them.
   useEffect(() => {
     let cancelled = false;
@@ -115,6 +154,7 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
     setLoading(true);
     setError(null);
     setReport(null);
+    setRestoredNote(false);
     setLastRequest(req);
     try {
       const result = await analyzeMarketComplaints(req);
@@ -130,7 +170,10 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
 
   const restoreFromHistory = (entry: RadarHistoryEntry) => {
     setError(null);
+    setRestoredNote(false);
     setQuery(entry.report.query);
+    setTimeframe(entry.report.timeframe_days || 30);
+    setSources(sourcesFromReport(entry.report));
     setReport(entry.report);
   };
 
@@ -177,20 +220,26 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
         sourceHealth={sourceHealth}
         query={query}
         onQueryChange={setQuery}
+        timeframe={timeframe}
+        onTimeframeChange={setTimeframe}
+        region={region}
+        onRegionChange={setRegion}
+        sources={sources}
+        onSourcesChange={setSources}
         onAnalyze={runAnalysis}
       />
 
-      <div className={embedded ? 'mt-3' : 'mt-5'}>
+      <div className={embedded ? 'mt-3 space-y-3' : 'mt-5 space-y-4'}>
         <AnimatePresence mode="wait">
           {loading && (
             <motion.div
               key="loading"
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="rounded-2xl border border-white/[0.04] bg-white/[0.008] p-8 flex flex-col items-center gap-3"
+              className="rounded-2xl border border-white/[0.05] bg-white/[0.01] p-8 flex flex-col items-center gap-3"
             >
-              <Loader2 className="h-5 w-5 text-amber-400/70 animate-spin" />
-              <p className="text-[12px] text-slate-400">{LOADING_STAGES[stage]}</p>
-              <p className="text-[10px] text-slate-600">Fetching current public signals — this usually takes a few seconds.</p>
+              <Loader2 className="h-5 w-5 text-amber-400/80 animate-spin" />
+              <p className="text-[13px] text-slate-200">{LOADING_STAGES[stage]}</p>
+              <p className="text-[11px] text-slate-500">Fetching current public signals — this usually takes a few seconds.</p>
             </motion.div>
           )}
 
@@ -198,21 +247,21 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
             <motion.div
               key="error"
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="rounded-2xl border border-rose-500/15 bg-rose-500/[0.03] p-6"
+              className="rounded-2xl border border-rose-500/20 bg-rose-500/[0.04] p-6"
             >
               <div className="flex items-start gap-3">
-                <MessageSquareWarning className="h-4 w-4 text-rose-400/80 shrink-0 mt-0.5" />
+                <MessageSquareWarning className="h-4 w-4 text-rose-300 shrink-0 mt-0.5" />
                 <div className="min-w-0 flex-1">
-                  <h3 className="text-[13px] font-medium text-white mb-1">
+                  <h3 className="text-[13px] font-semibold text-slate-100 mb-1">
                     {error.kind === 'disabled' ? 'Market Intelligence is not enabled'
                       : error.kind === 'network' ? 'Backend unreachable'
                       : 'Analysis failed'}
                   </h3>
-                  <p className="text-[12px] text-slate-400 leading-relaxed">{error.message}</p>
+                  <p className="text-[12px] text-slate-300 leading-relaxed">{error.message}</p>
                   {error.kind !== 'disabled' && lastRequest && (
                     <button
                       onClick={() => runAnalysis(lastRequest)}
-                      className="mt-3 px-3 h-8 rounded-lg text-[12px] text-slate-300 border border-white/[0.08] hover:bg-white/[0.03] transition-colors"
+                      className="mt-3 px-3 h-8 rounded-lg text-[12px] text-slate-200 border border-white/[0.1] hover:bg-white/[0.04] transition-colors"
                     >
                       Retry analysis
                     </button>
@@ -224,6 +273,19 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
 
           {!loading && !error && report && (
             <motion.div key="results" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+              {restoredNote && (
+                <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg border border-white/[0.05] bg-white/[0.015]">
+                  <History className="h-3 w-3 text-slate-400 shrink-0" />
+                  <span className="text-[11px] text-slate-300">Restored from recent analysis</span>
+                  <button
+                    onClick={() => setRestoredNote(false)}
+                    aria-label="Dismiss"
+                    className="ml-auto text-slate-500 hover:text-slate-300 transition-colors"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              )}
               <MarketRadarResults
                 report={report}
                 sourceHealth={sourceHealth}
@@ -235,15 +297,21 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
 
           {!loading && !error && !report && (
             <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <RadarEmptyState
-                history={history}
-                onPickExample={setQuery}
-                onRestore={restoreFromHistory}
-                onClearHistory={handleClearHistory}
-              />
+              <RadarEmptyState query={query} onPickExample={setQuery} />
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Recent analyses — expanded in the empty state, collapsed and
+            out of the way when a report is on screen. */}
+        {!loading && (
+          <RecentAnalyses
+            history={history}
+            defaultOpen={!report && !error}
+            onRestore={restoreFromHistory}
+            onClearHistory={handleClearHistory}
+          />
+        )}
       </div>
     </div>
   );
