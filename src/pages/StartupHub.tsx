@@ -10,16 +10,16 @@ import Navigation from '@/components/Navigation';
 import StartupMarketRadar from '@/components/startup/StartupMarketRadar';
 
 const COLOR_MAP: Record<string, { bg: string; border: string; icon: string }> = {
-  amber:  { bg: 'bg-[#7EA6BF]/[0.05]',  border: 'border-[#7EA6BF]/10',  icon: 'text-[#9CBBD1]' },
-  cyan:   { bg: 'bg-[#7EA6BF]/[0.05]',   border: 'border-[#7EA6BF]/20',   icon: 'text-[#9CBBD1]' },
-  violet: { bg: 'bg-[#7EA6BF]/[0.05]', border: 'border-[#7EA6BF]/10', icon: 'text-[#9CBBD1]' },
-  emerald:{ bg: 'bg-[#7EA6BF]/[0.05]',border: 'border-[#7EA6BF]/10',icon: 'text-[#9CBBD1]' },
-  rose:   { bg: 'bg-[#7EA6BF]/[0.05]',   border: 'border-[#7EA6BF]/10',   icon: 'text-[#9CBBD1]' },
-  blue:   { bg: 'bg-[#7EA6BF]/[0.05]',   border: 'border-[#7EA6BF]/10',   icon: 'text-[#9CBBD1]' },
-  indigo: { bg: 'bg-[#7EA6BF]/[0.05]', border: 'border-[#7EA6BF]/10', icon: 'text-[#9CBBD1]' },
-  pink:   { bg: 'bg-[#7EA6BF]/[0.05]',   border: 'border-[#7EA6BF]/10',   icon: 'text-[#9CBBD1]' },
-  teal:   { bg: 'bg-[#7EA6BF]/[0.05]',   border: 'border-[#7EA6BF]/10',   icon: 'text-[#9CBBD1]' },
-  orange: { bg: 'bg-[#7EA6BF]/[0.05]', border: 'border-[#7EA6BF]/10', icon: 'text-[#9CBBD1]' },
+  amber:  { bg: 'bg-[#8B5CF6]/[0.05]',  border: 'border-[#8B5CF6]/10',  icon: 'text-[#A78BFA]' },
+  cyan:   { bg: 'bg-[#8B5CF6]/[0.05]',   border: 'border-[#8B5CF6]/20',   icon: 'text-[#A78BFA]' },
+  violet: { bg: 'bg-[#8B5CF6]/[0.05]', border: 'border-[#8B5CF6]/10', icon: 'text-[#A78BFA]' },
+  emerald:{ bg: 'bg-[#8B5CF6]/[0.05]',border: 'border-[#8B5CF6]/10',icon: 'text-[#A78BFA]' },
+  rose:   { bg: 'bg-[#8B5CF6]/[0.05]',   border: 'border-[#8B5CF6]/10',   icon: 'text-[#A78BFA]' },
+  blue:   { bg: 'bg-[#8B5CF6]/[0.05]',   border: 'border-[#8B5CF6]/10',   icon: 'text-[#A78BFA]' },
+  indigo: { bg: 'bg-[#8B5CF6]/[0.05]', border: 'border-[#8B5CF6]/10', icon: 'text-[#A78BFA]' },
+  pink:   { bg: 'bg-[#8B5CF6]/[0.05]',   border: 'border-[#8B5CF6]/10',   icon: 'text-[#A78BFA]' },
+  teal:   { bg: 'bg-[#8B5CF6]/[0.05]',   border: 'border-[#8B5CF6]/10',   icon: 'text-[#A78BFA]' },
+  orange: { bg: 'bg-[#8B5CF6]/[0.05]', border: 'border-[#8B5CF6]/10', icon: 'text-[#A78BFA]' },
 };
 
 // Secondary prompt-based tools — kept as a compact launcher into Startup
@@ -51,7 +51,7 @@ export default function StartupHub() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0B0F14] text-white flex flex-col">
+    <div className="min-h-screen bg-[#090A0F] text-white flex flex-col">
       <Navigation />
 
       <div className="flex-1 overflow-y-auto scrollbar-thin">
@@ -60,17 +60,17 @@ export default function StartupHub() {
           {/* Header */}
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="mb-6">
             <div className="flex items-center gap-3 mb-4">
-              <button onClick={() => navigate('/workspace')} className="flex items-center gap-1.5 text-[11px] text-[#7F8FA3] hover:text-slate-300 transition-colors">
+              <button onClick={() => navigate('/workspace')} className="flex items-center gap-1.5 text-[11px] text-[#858B99] hover:text-slate-300 transition-colors">
                 <ArrowLeft className="h-3 w-3" /> Workspace
               </button>
             </div>
             <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#7EA6BF]/[0.1] border border-[#7EA6BF]/25">
-                <Radar className="h-5 w-5 text-[#8FB4CC]" />
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#8B5CF6]/[0.1] border border-[#8B5CF6]/25">
+                <Radar className="h-5 w-5 text-[#A78BFA]" />
               </div>
               <div>
                 <h1 className="text-2xl font-semibold text-white tracking-tight">Market Complaint Radar</h1>
-                <p className="text-[12px] text-[#7F8FA3]">Find where the market is angry before you build.</p>
+                <p className="text-[12px] text-[#858B99]">Find where the market is angry before you build.</p>
               </div>
             </div>
           </motion.div>
@@ -80,7 +80,7 @@ export default function StartupHub() {
 
           {/* Secondary — prompt-based startup tools */}
           <details className="mt-8 group">
-            <summary className="flex items-center gap-2 cursor-pointer select-none text-[12px] text-[#7F8FA3] hover:text-slate-300 transition-colors list-none">
+            <summary className="flex items-center gap-2 cursor-pointer select-none text-[12px] text-[#858B99] hover:text-slate-300 transition-colors list-none">
               <Sparkles className="h-3.5 w-3.5" />
               Startup Advisor tools
               <span className="text-[10px] text-slate-700">— prompt launchers into Startup Advisor chat</span>
@@ -104,8 +104,8 @@ export default function StartupHub() {
                               <tool.icon className={`h-4 w-4 ${c.icon}`} />
                             </div>
                             <h3 className="text-[12px] font-medium text-white mb-1">{tool.name}</h3>
-                            <p className="text-[10px] text-[#7F8FA3] leading-relaxed">{tool.desc}</p>
-                            <div className="flex items-center gap-1 mt-2 text-[#7F8FA3] group-hover/tool:text-[#7F8FA3] transition-colors">
+                            <p className="text-[10px] text-[#858B99] leading-relaxed">{tool.desc}</p>
+                            <div className="flex items-center gap-1 mt-2 text-[#858B99] group-hover/tool:text-[#858B99] transition-colors">
                               <span className="text-[10px]">Open in chat</span>
                               <ArrowUpRight className="h-2.5 w-2.5" />
                             </div>
@@ -116,7 +116,7 @@ export default function StartupHub() {
                   </motion.div>
                 ) : (
                   <motion.div key="tool" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }}>
-                    <button onClick={() => setSelectedTool(null)} className="flex items-center gap-1 text-[12px] text-[#7F8FA3] hover:text-white transition-colors mb-4">
+                    <button onClick={() => setSelectedTool(null)} className="flex items-center gap-1 text-[12px] text-[#858B99] hover:text-white transition-colors mb-4">
                       <ArrowLeft className="h-3.5 w-3.5" /> All tools
                     </button>
 
@@ -128,25 +128,25 @@ export default function StartupHub() {
                           </div>
                           <div>
                             <h2 className="text-lg font-semibold text-white">{activeTool.name}</h2>
-                            <p className="text-[12px] text-[#7F8FA3]">{activeTool.desc}</p>
+                            <p className="text-[12px] text-[#858B99]">{activeTool.desc}</p>
                           </div>
                         </div>
 
                         <div className="space-y-4 mb-5">
                           {activeTool.inputs.map((input, i) => (
                             <div key={i}>
-                              <label className="block text-[12px] text-[#A9B7C6] mb-1.5">{input.label}</label>
+                              <label className="block text-[12px] text-[#B6BBC6] mb-1.5">{input.label}</label>
                               {(input as { type?: string }).type === 'textarea' ? (
                                 <textarea
                                   value={formValues[i] || ''} onChange={(e) => setFormValues((p) => ({ ...p, [i]: e.target.value }))}
                                   placeholder={input.placeholder} rows={4}
-                                  className="w-full rounded-xl bg-white/[0.015] border border-white/[0.04] p-3 text-[13px] text-white placeholder:text-[#7F8FA3] focus:border-[#7EA6BF]/30 focus:bg-white/[0.02] outline-none transition-all resize-none"
+                                  className="w-full rounded-xl bg-white/[0.015] border border-white/[0.04] p-3 text-[13px] text-white placeholder:text-[#858B99] focus:border-[#8B5CF6]/30 focus:bg-white/[0.02] outline-none transition-all resize-none"
                                 />
                               ) : (
                                 <input
                                   type="text" value={formValues[i] || ''} onChange={(e) => setFormValues((p) => ({ ...p, [i]: e.target.value }))}
                                   placeholder={input.placeholder}
-                                  className="w-full h-10 rounded-xl bg-white/[0.015] border border-white/[0.04] px-3 text-[13px] text-white placeholder:text-[#7F8FA3] focus:border-[#7EA6BF]/30 focus:bg-white/[0.02] outline-none transition-all"
+                                  className="w-full h-10 rounded-xl bg-white/[0.015] border border-white/[0.04] px-3 text-[13px] text-white placeholder:text-[#858B99] focus:border-[#8B5CF6]/30 focus:bg-white/[0.02] outline-none transition-all"
                                 />
                               )}
                             </div>

@@ -82,14 +82,14 @@ interface StateStyle {
 
 const STATE_STYLES: Record<string, StateStyle> = {
   idle:        { dotClass: 'bg-slate-500',   ringClass: 'border-slate-500/20',   spinning: false, label: 'Idle' },
-  thinking:    { dotClass: 'bg-[#7EA6BF]',    ringClass: 'border-[#7EA6BF]/30',    spinning: true,  label: 'Thinking' },
-  researching: { dotClass: 'bg-[#7EA6BF]',    ringClass: 'border-[#7EA6BF]/30',    spinning: true,  label: 'Researching' },
-  coding:      { dotClass: 'bg-[#7EA6BF]',  ringClass: 'border-[#7EA6BF]/30',  spinning: true,  label: 'Coding' },
-  analyzing:   { dotClass: 'bg-[#7EA6BF]',   ringClass: 'border-[#7EA6BF]/30',   spinning: true,  label: 'Analyzing' },
-  waiting:     { dotClass: 'bg-[#C2A15A]',   ringClass: 'border-[#C2A15A]/30',   spinning: false, label: 'Waiting' },
-  blocked:     { dotClass: 'bg-[#C2A15A]',  ringClass: 'border-[#C2A15A]/30',  spinning: false, label: 'Blocked' },
-  completed:   { dotClass: 'bg-[#86A88B]', ringClass: 'border-[#86A88B]/30', spinning: false, label: 'Completed' },
-  failed:      { dotClass: 'bg-[#C98282]',     ringClass: 'border-[#C98282]/30',     spinning: false, label: 'Failed' },
+  thinking:    { dotClass: 'bg-[#8B5CF6]',    ringClass: 'border-[#8B5CF6]/30',    spinning: true,  label: 'Thinking' },
+  researching: { dotClass: 'bg-[#8B5CF6]',    ringClass: 'border-[#8B5CF6]/30',    spinning: true,  label: 'Researching' },
+  coding:      { dotClass: 'bg-[#8B5CF6]',  ringClass: 'border-[#8B5CF6]/30',  spinning: true,  label: 'Coding' },
+  analyzing:   { dotClass: 'bg-[#8B5CF6]',   ringClass: 'border-[#8B5CF6]/30',   spinning: true,  label: 'Analyzing' },
+  waiting:     { dotClass: 'bg-[#FACC15]',   ringClass: 'border-[#FACC15]/30',   spinning: false, label: 'Waiting' },
+  blocked:     { dotClass: 'bg-[#FACC15]',  ringClass: 'border-[#FACC15]/30',  spinning: false, label: 'Blocked' },
+  completed:   { dotClass: 'bg-[#4ADE80]', ringClass: 'border-[#4ADE80]/30', spinning: false, label: 'Completed' },
+  failed:      { dotClass: 'bg-[#F87171]',     ringClass: 'border-[#F87171]/30',     spinning: false, label: 'Failed' },
 };
 
 function styleFor(state: string): StateStyle {
@@ -129,7 +129,7 @@ export default function AgentPresenceList({
   return (
     <div className="flex flex-col gap-1.5">
       {title && (
-        <div className="text-[10px] font-semibold uppercase tracking-wider text-[#7F8FA3] px-1">
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-[#858B99] px-1">
           {title}
         </div>
       )}
@@ -140,7 +140,7 @@ export default function AgentPresenceList({
           ))}
         </AnimatePresence>
         {hidden > 0 && (
-          <div className="text-[10px] text-[#7F8FA3] px-1">
+          <div className="text-[10px] text-[#858B99] px-1">
             +{hidden} more…
           </div>
         )}
@@ -167,7 +167,7 @@ function Chip({ row, now }: { row: AgentPresenceView; now: number }) {
     >
       {/* Avatar + state dot */}
       <div className="relative shrink-0 flex items-center justify-center h-5 w-5 rounded-md bg-white/[0.03] border border-white/[0.04]">
-        <Icon className="h-2.5 w-2.5 text-[#A9B7C6]" />
+        <Icon className="h-2.5 w-2.5 text-[#B6BBC6]" />
         <span
           className={`absolute -bottom-0.5 -right-0.5 h-1.5 w-1.5 rounded-full ${style.dotClass}`}
           aria-hidden
@@ -181,17 +181,17 @@ function Chip({ row, now }: { row: AgentPresenceView; now: number }) {
             {labelFor(row.agent_id)}
           </span>
           {style.spinning && !isTerminal && (
-            <Loader2 className="h-2.5 w-2.5 text-[#7F8FA3] animate-spin shrink-0" />
+            <Loader2 className="h-2.5 w-2.5 text-[#858B99] animate-spin shrink-0" />
           )}
           {row.state === 'completed' && (
-            <CheckCircle2 className="h-2.5 w-2.5 text-[#86A88B]/80 shrink-0" />
+            <CheckCircle2 className="h-2.5 w-2.5 text-[#4ADE80]/80 shrink-0" />
           )}
           {row.state === 'failed' && (
-            <AlertCircle className="h-2.5 w-2.5 text-[#C98282]/80 shrink-0" />
+            <AlertCircle className="h-2.5 w-2.5 text-[#F87171]/80 shrink-0" />
           )}
         </div>
         {/* second line: state · current_task · active for Ns */}
-        <div className="flex items-center gap-1.5 text-[10px] text-[#7F8FA3] leading-tight truncate">
+        <div className="flex items-center gap-1.5 text-[10px] text-[#858B99] leading-tight truncate">
           <span>{style.label}</span>
           {row.current_task && (
             <>
@@ -212,7 +212,7 @@ function Chip({ row, now }: { row: AgentPresenceView; now: number }) {
 
       {/* Progress bar — only when the agent reports a numeric % */}
       {typeof row.progress === 'number' && (
-        <div className="shrink-0 text-[10px] text-[#7F8FA3] tabular-nums" aria-label="progress">
+        <div className="shrink-0 text-[10px] text-[#858B99] tabular-nums" aria-label="progress">
           {row.progress}%
         </div>
       )}

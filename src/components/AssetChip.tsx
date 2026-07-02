@@ -35,11 +35,11 @@ function formatSize(n: number): string {
 
 function TypeIcon({ mime }: { mime: string }) {
   const m = (mime || '').toLowerCase();
-  if (m.startsWith('image/')) return <ImageIcon className="h-3 w-3 text-[#7EA6BF]/70" />;
-  if (m.startsWith('video/')) return <FileVideo className="h-3 w-3 text-[#7EA6BF]/70" />;
+  if (m.startsWith('image/')) return <ImageIcon className="h-3 w-3 text-[#8B5CF6]/70" />;
+  if (m.startsWith('video/')) return <FileVideo className="h-3 w-3 text-[#8B5CF6]/70" />;
   if (m === 'application/pdf' || m.startsWith('text/'))
-    return <FileText className="h-3 w-3 text-[#7EA6BF]/70" />;
-  return <Paperclip className="h-3 w-3 text-[#A9B7C6]/70" />;
+    return <FileText className="h-3 w-3 text-[#8B5CF6]/70" />;
+  return <Paperclip className="h-3 w-3 text-[#B6BBC6]/70" />;
 }
 
 
@@ -50,10 +50,10 @@ export default function AssetChip({ asset, onDismiss, compact = false }: AssetCh
   // Colour the border by status so the user reads progress at a glance
   // without having to focus on the text.
   const borderClass = (() => {
-    if (status === 'ready')     return 'border-[#86A88B]/20';
-    if (status === 'failed')    return 'border-[#C98282]/25';
+    if (status === 'ready')     return 'border-[#4ADE80]/20';
+    if (status === 'failed')    return 'border-[#F87171]/25';
     if (status === 'cancelled') return 'border-white/[0.06]';
-    if (status === 'uploading') return 'border-[#7EA6BF]/25';
+    if (status === 'uploading') return 'border-[#8B5CF6]/25';
     return 'border-white/[0.08]';
   })();
 
@@ -101,9 +101,9 @@ export default function AssetChip({ asset, onDismiss, compact = false }: AssetCh
         >
           {asset.filename}
         </span>
-        <span className={`${compact ? 'text-[9px]' : 'text-[10px]'} text-[#7F8FA3] leading-tight`}>
+        <span className={`${compact ? 'text-[9px]' : 'text-[10px]'} text-[#858B99] leading-tight`}>
           {status === 'failed' && asset.errorMessage
-            ? <span className="text-[#C98282]/80">{asset.errorMessage}</span>
+            ? <span className="text-[#F87171]/80">{asset.errorMessage}</span>
             : status === 'uploading'
               ? `${asset.progress}% · ${formatSize(asset.sizeBytes)}`
               : status === 'cancelled'
@@ -116,13 +116,13 @@ export default function AssetChip({ asset, onDismiss, compact = false }: AssetCh
       {/* Status icon */}
       <div className="shrink-0 flex items-center justify-center">
         {status === 'uploading' && (
-          <Loader2 className="h-3 w-3 text-[#7EA6BF]/70 animate-spin" />
+          <Loader2 className="h-3 w-3 text-[#8B5CF6]/70 animate-spin" />
         )}
         {status === 'ready' && (
-          <Check className="h-3 w-3 text-[#86A88B]/80" />
+          <Check className="h-3 w-3 text-[#4ADE80]/80" />
         )}
         {status === 'failed' && (
-          <AlertCircle className="h-3 w-3 text-[#C98282]/80" />
+          <AlertCircle className="h-3 w-3 text-[#F87171]/80" />
         )}
       </div>
 
@@ -130,7 +130,7 @@ export default function AssetChip({ asset, onDismiss, compact = false }: AssetCh
       {onDismiss && (
         <button
           onClick={() => onDismiss(asset.localId)}
-          className="shrink-0 h-4 w-4 flex items-center justify-center rounded-full text-[#7F8FA3] hover:text-slate-300 hover:bg-white/[0.06] transition-colors"
+          className="shrink-0 h-4 w-4 flex items-center justify-center rounded-full text-[#858B99] hover:text-slate-300 hover:bg-white/[0.06] transition-colors"
           aria-label="Remove attachment"
         >
           <X className="h-2.5 w-2.5" />
@@ -142,7 +142,7 @@ export default function AssetChip({ asset, onDismiss, compact = false }: AssetCh
       {status === 'uploading' && (
         <div className="absolute left-0 right-0 bottom-0 h-[2px] bg-white/[0.04] overflow-hidden rounded-b-xl">
           <motion.div
-            className="h-full bg-[#7EA6BF]/50"
+            className="h-full bg-[#8B5CF6]/50"
             initial={{ width: 0 }}
             animate={{ width: `${asset.progress}%` }}
             transition={{ duration: 0.25, ease: 'easeOut' }}

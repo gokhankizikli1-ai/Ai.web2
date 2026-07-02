@@ -232,7 +232,7 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
             <motion.div
               key="error"
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              className="rounded-2xl border border-[#C98282]/30 bg-[#C98282]/[0.06] p-6"
+              className="rounded-2xl border border-[#F87171]/30 bg-[#F87171]/[0.06] p-6"
             >
               <div className="flex items-start gap-3">
                 <MessageSquareWarning className="h-4 w-4 text-[#C98A93] shrink-0 mt-0.5" />
@@ -259,13 +259,13 @@ export default function StartupMarketRadar({ embedded = false }: Props) {
           {!loading && !error && report && (
             <motion.div key="results" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
               {restoredNote && (
-                <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg border border-[#7EA6BF]/25 bg-[#7EA6BF]/[0.10]">
-                  <History className="h-3 w-3 text-[#7EA6BF] shrink-0" />
+                <div className="flex items-center gap-2 mb-3 px-3 py-2 rounded-lg border border-[#8B5CF6]/25 bg-[#8B5CF6]/[0.10]">
+                  <History className="h-3 w-3 text-[#8B5CF6] shrink-0" />
                   <span className="text-[11px] text-slate-300">Restored from recent analysis</span>
                   <button
                     onClick={() => setRestoredNote(false)}
                     aria-label="Dismiss"
-                    className="ml-auto text-[#7F8FA3] hover:text-slate-300 transition-colors"
+                    className="ml-auto text-[#858B99] hover:text-slate-300 transition-colors"
                   >
                     <X className="h-3 w-3" />
                   </button>

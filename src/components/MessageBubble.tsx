@@ -32,10 +32,10 @@ const markdownComponents = {
       return (
         <div className="my-3 rounded-xl overflow-hidden border border-white/[0.06] shadow-[0_2px_8px_-2px_rgba(0,0,0,0.3)]">
           <div className="flex items-center justify-between px-3 py-1.5 bg-white/[0.02] border-b border-white/[0.04]">
-            <span className="text-[10px] text-[#7F8FA3] font-mono">{lang}</span>
+            <span className="text-[10px] text-[#858B99] font-mono">{lang}</span>
             <button
               onClick={() => navigator.clipboard.writeText(String(children).replace(/\n$/, ''))}
-              className="text-[10px] text-[#7F8FA3] hover:text-[#A9B7C6] transition-colors"
+              className="text-[10px] text-[#858B99] hover:text-[#B6BBC6] transition-colors"
             >
               Copy
             </button>
@@ -52,7 +52,7 @@ const markdownComponents = {
       );
     }
     return (
-      <code className="px-1.5 py-0.5 rounded-md bg-white/[0.06] text-[#8FB4CC] text-[12px] font-mono" {...props}>
+      <code className="px-1.5 py-0.5 rounded-md bg-white/[0.06] text-[#A78BFA] text-[12px] font-mono" {...props}>
         {children}
       </code>
     );
@@ -79,7 +79,7 @@ const markdownComponents = {
     return <h3 className="text-[13px] font-medium text-white mt-3 mb-1">{children}</h3>;
   },
   blockquote({ children }: any) {
-    return <blockquote className="border-l-2 border-[#7EA6BF]/30 pl-3 my-2 text-[#A9B7C6] italic">{children}</blockquote>;
+    return <blockquote className="border-l-2 border-[#8B5CF6]/30 pl-3 my-2 text-[#B6BBC6] italic">{children}</blockquote>;
   },
   hr() {
     return <hr className="my-3 border-white/[0.04]" />;
@@ -91,14 +91,14 @@ const markdownComponents = {
     return <thead className="bg-white/[0.02]">{children}</thead>;
   },
   th({ children }: any) {
-    return <th className="text-left px-2.5 py-1.5 text-[#A9B7C6] font-medium border-b border-white/[0.06]">{children}</th>;
+    return <th className="text-left px-2.5 py-1.5 text-[#B6BBC6] font-medium border-b border-white/[0.06]">{children}</th>;
   },
   td({ children }: any) {
     return <td className="px-2.5 py-1.5 border-b border-white/[0.03] text-slate-300">{children}</td>;
   },
   a({ href, children }: any) {
     return (
-      <a href={href} target="_blank" rel="noopener noreferrer" className="text-[#8FB4CC] hover:text-[#9CBBD1] underline underline-offset-2 decoration-[#7EA6BF]/30 hover:decoration-[#7EA6BF]/60 transition-colors">
+      <a href={href} target="_blank" rel="noopener noreferrer" className="text-[#A78BFA] hover:text-[#A78BFA] underline underline-offset-2 decoration-[#8B5CF6]/30 hover:decoration-[#8B5CF6]/60 transition-colors">
         {children}
       </a>
     );
@@ -107,7 +107,7 @@ const markdownComponents = {
     return <strong className="text-slate-200 font-medium">{children}</strong>;
   },
   em({ children }: any) {
-    return <em className="text-[#A9B7C6] italic">{children}</em>;
+    return <em className="text-[#B6BBC6] italic">{children}</em>;
   },
 };
 
@@ -234,8 +234,8 @@ export default function MessageBubble({
             </div>
           )}
           <div className="flex items-center justify-end gap-1.5 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-            <span className="text-[10px] text-[#7F8FA3]">{formatTime(fullMessage.timestamp)}</span>
-            <button onClick={handleCopy} className="p-0.5 rounded text-[#7F8FA3] hover:text-[#A9B7C6] transition-colors">
+            <span className="text-[10px] text-[#858B99]">{formatTime(fullMessage.timestamp)}</span>
+            <button onClick={handleCopy} className="p-0.5 rounded text-[#858B99] hover:text-[#B6BBC6] transition-colors">
               {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
             </button>
           </div>
@@ -282,7 +282,7 @@ export default function MessageBubble({
               generation completes, so no post-completion replay. */}
           {isGenerating && isLatestAssistant && (
             <motion.span
-              className="inline-block w-[2px] h-4 bg-[#9CBBD1] ml-0.5 align-middle"
+              className="inline-block w-[2px] h-4 bg-[#A78BFA] ml-0.5 align-middle"
               animate={{ opacity: [1, 0] }}
               transition={{ duration: 0.5, repeat: Infinity }}
             />
@@ -293,10 +293,10 @@ export default function MessageBubble({
             Only real links the model actually wrote; nothing invented. */}
         {sources && (
           <details className="mt-1.5 group/sources">
-            <summary className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] text-[#A9B7C6] hover:text-[#E7EDF3] border border-[#2F3B4A] bg-white/[0.01] cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden transition-colors">
+            <summary className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] text-[#B6BBC6] hover:text-[#F4F4F5] border border-[#272A33] bg-white/[0.01] cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden transition-colors">
               Sources ({count})
             </summary>
-            <div className="mt-1.5 px-3 py-2 rounded-xl border border-[#2F3B4A] bg-white/[0.01] prose prose-invert prose-sm max-w-none">
+            <div className="mt-1.5 px-3 py-2 rounded-xl border border-[#272A33] bg-white/[0.01] prose prose-invert prose-sm max-w-none">
               <MarkdownBody text={sources} />
             </div>
           </details>
@@ -307,7 +307,7 @@ export default function MessageBubble({
           <div className={`flex items-center gap-0.5 mt-1.5 transition-opacity duration-200 ${isHovered ? 'opacity-100' : 'opacity-0'}`}>
             <button
               onClick={handleCopy}
-              className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[#7F8FA3] hover:text-[#A9B7C6] hover:bg-white/[0.03] transition-all"
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[#858B99] hover:text-[#B6BBC6] hover:bg-white/[0.03] transition-all"
               title="Copy"
             >
               {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
@@ -316,32 +316,32 @@ export default function MessageBubble({
             {onPin && (
               <button
                 onClick={() => onPin(fullMessage)}
-                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[#7F8FA3] hover:text-[#8FB4CC] hover:bg-[#7EA6BF]/[0.06] transition-all"
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[#858B99] hover:text-[#A78BFA] hover:bg-[#8B5CF6]/[0.06] transition-all"
                 title={isPinned ? 'Unpin' : 'Pin'}
               >
-                {isPinned ? <PinOff className="h-3 w-3 text-[#8FB4CC]" /> : <Pin className="h-3 w-3" />}
+                {isPinned ? <PinOff className="h-3 w-3 text-[#A78BFA]" /> : <Pin className="h-3 w-3" />}
               </button>
             )}
 
             {onRegenerate && (
               <button
                 onClick={onRegenerate}
-                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[#7F8FA3] hover:text-[#A9B7C6] hover:bg-white/[0.03] transition-all"
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[#858B99] hover:text-[#B6BBC6] hover:bg-white/[0.03] transition-all"
                 title="Regenerate"
               >
                 <RotateCcw className="h-3 w-3" />
               </button>
             )}
 
-            <button className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[#7F8FA3] hover:text-[#86A88B] hover:bg-[#86A88B]/[0.03] transition-all">
+            <button className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[#858B99] hover:text-[#4ADE80] hover:bg-[#4ADE80]/[0.03] transition-all">
               <ThumbsUp className="h-3 w-3" />
             </button>
 
-            <button className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[#7F8FA3] hover:text-[#C98282] hover:bg-[#C98282]/[0.03] transition-all">
+            <button className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-[#858B99] hover:text-[#F87171] hover:bg-[#F87171]/[0.03] transition-all">
               <ThumbsDown className="h-3 w-3" />
             </button>
 
-            <span className="text-[10px] text-[#A9B7C6] ml-1">{formatTime(fullMessage.timestamp)}</span>
+            <span className="text-[10px] text-[#B6BBC6] ml-1">{formatTime(fullMessage.timestamp)}</span>
           </div>
         )}
 

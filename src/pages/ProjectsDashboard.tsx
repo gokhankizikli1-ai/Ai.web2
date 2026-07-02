@@ -11,18 +11,18 @@ import { getProjects, addProject, deleteProject as deleteProjectFromStore } from
 
 /* ─── Category config ─── */
 const CATEGORIES = [
-  { id: 'ecommerce', label: 'Ecommerce', gradient: 'from-[#7EA6BF] to-[#9CBBD1]', glow: 'rgba(126, 166, 191,0.2)', color: 'emerald' },
-  { id: 'trading', label: 'Trading', gradient: 'from-[#7EA6BF] to-[#9CBBD1]', glow: 'rgba(126, 166, 191,0.2)', color: 'cyan' },
-  { id: 'startup', label: 'Startup', gradient: 'from-[#7EA6BF] to-[#9CBBD1]', glow: 'rgba(126, 166, 191,0.2)', color: 'amber' },
-  { id: 'development', label: 'Development', gradient: 'from-[#7EA6BF] to-[#9CBBD1]', glow: 'rgba(126, 166, 191,0.2)', color: 'indigo' },
-  { id: 'custom', label: 'Custom', gradient: 'from-slate-400 to-slate-500', glow: 'rgba(169, 183, 198,0.12)', color: 'slate' },
+  { id: 'ecommerce', label: 'Ecommerce', gradient: 'from-[#8B5CF6] to-[#A78BFA]', glow: 'rgba(139, 92, 246,0.2)', color: 'emerald' },
+  { id: 'trading', label: 'Trading', gradient: 'from-[#8B5CF6] to-[#A78BFA]', glow: 'rgba(139, 92, 246,0.2)', color: 'cyan' },
+  { id: 'startup', label: 'Startup', gradient: 'from-[#8B5CF6] to-[#A78BFA]', glow: 'rgba(139, 92, 246,0.2)', color: 'amber' },
+  { id: 'development', label: 'Development', gradient: 'from-[#8B5CF6] to-[#A78BFA]', glow: 'rgba(139, 92, 246,0.2)', color: 'indigo' },
+  { id: 'custom', label: 'Custom', gradient: 'from-slate-400 to-slate-500', glow: 'rgba(182, 187, 198,0.12)', color: 'slate' },
 ];
 
 const CAT_GRADIENT: Record<string, string> = {
-  ecommerce: 'from-[#7EA6BF] to-[#9CBBD1]',
-  trading: 'from-[#7EA6BF] to-[#9CBBD1]',
-  startup: 'from-[#7EA6BF] to-[#9CBBD1]',
-  development: 'from-[#7EA6BF] to-[#9CBBD1]',
+  ecommerce: 'from-[#8B5CF6] to-[#A78BFA]',
+  trading: 'from-[#8B5CF6] to-[#A78BFA]',
+  startup: 'from-[#8B5CF6] to-[#A78BFA]',
+  development: 'from-[#8B5CF6] to-[#A78BFA]',
 };
 
 /* ─── Helpers ─── */
@@ -134,8 +134,8 @@ export default function ProjectsDashboard() {
     <div className="min-h-[100dvh]" style={{ background: '#11151C', color: '#E2E8F0' }}>
       {/* Ambient orbs */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute -top-[200px] -right-[200px] w-[600px] h-[600px] rounded-full opacity-[0.04]" style={{ background: 'radial-gradient(circle, #7EA6BF 0%, transparent 70%)' }} />
-        <div className="absolute bottom-0 left-0 w-[400px] h-[400px] rounded-full opacity-[0.03]" style={{ background: 'radial-gradient(circle, #9CBBD1 0%, transparent 70%)' }} />
+        <div className="absolute -top-[200px] -right-[200px] w-[600px] h-[600px] rounded-full opacity-[0.04]" style={{ background: 'radial-gradient(circle, #8B5CF6 0%, transparent 70%)' }} />
+        <div className="absolute bottom-0 left-0 w-[400px] h-[400px] rounded-full opacity-[0.03]" style={{ background: 'radial-gradient(circle, #A78BFA 0%, transparent 70%)' }} />
       </div>
 
       <div className="relative max-w-6xl mx-auto px-4 sm:px-6 py-6">
@@ -149,7 +149,7 @@ export default function ProjectsDashboard() {
 
           <div className="flex items-start justify-between mb-8">
             <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: 'linear-gradient(135deg, #7EA6BF 0%, #9CBBD1 100%)', boxShadow: '0 2px 8px rgba(126, 166, 191,0.2)' }}>
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg" style={{ background: 'linear-gradient(135deg, #8B5CF6 0%, #A78BFA 100%)', boxShadow: '0 2px 8px rgba(139, 92, 246,0.2)' }}>
                 <FolderOpen className="h-4 w-4 text-white" />
               </div>
               <div>
@@ -161,7 +161,7 @@ export default function ProjectsDashboard() {
               whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
               onClick={() => setShowCreate(true)}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-[13px] font-semibold text-white transition-all"
-              style={{ background: 'linear-gradient(180deg, #1B2532 0%, #11151C 100%)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 4px 16px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.04)' }}
+              style={{ background: 'linear-gradient(180deg, #161820 0%, #11151C 100%)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 4px 16px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.04)' }}
             >
               <Plus className="h-4 w-4" /> New Project
             </motion.button>
@@ -196,8 +196,8 @@ export default function ProjectsDashboard() {
               transition={{ delay: 0.15, duration: 0.5 }}
               className="flex flex-col items-center justify-center py-24"
             >
-              <div className="flex h-16 w-16 items-center justify-center rounded-2xl mb-5" style={{ background: 'linear-gradient(135deg, rgba(126, 166, 191,0.08) 0%, rgba(126, 166, 191,0.08) 100%)', boxShadow: '0 0 24px rgba(126, 166, 191,0.06), inset 0 1px 0 rgba(255,255,255,0.04)', border: '1px solid rgba(126, 166, 191,0.08)' }}>
-                <FolderOpen className="h-7 w-7 text-[#9CBBD1]/40" />
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl mb-5" style={{ background: 'linear-gradient(135deg, rgba(139, 92, 246,0.08) 0%, rgba(139, 92, 246,0.08) 100%)', boxShadow: '0 0 24px rgba(139, 92, 246,0.06), inset 0 1px 0 rgba(255,255,255,0.04)', border: '1px solid rgba(139, 92, 246,0.08)' }}>
+                <FolderOpen className="h-7 w-7 text-[#A78BFA]/40" />
               </div>
               <h2 className="text-[15px] font-semibold text-white/70 mb-1.5">No projects yet</h2>
               <p className="text-[13px] text-white/30 mb-6">Create your first AI workspace</p>
@@ -205,7 +205,7 @@ export default function ProjectsDashboard() {
                 whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}
                 onClick={() => setShowCreate(true)}
                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-[13px] font-semibold text-white transition-all"
-                style={{ background: 'linear-gradient(180deg, #1B2532 0%, #11151C 100%)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 4px 16px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.04)' }}
+                style={{ background: 'linear-gradient(180deg, #161820 0%, #11151C 100%)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 4px 16px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.04)' }}
               >
                 <Plus className="h-4 w-4" /> New Project
               </motion.button>
@@ -228,12 +228,12 @@ export default function ProjectsDashboard() {
               transition={{ duration: 0.2 }}
               onClick={(e) => e.stopPropagation()}
               className="w-full max-w-md rounded-2xl p-6"
-              style={{ background: 'linear-gradient(180deg, #1B2532 0%, #171C24 100%)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 24px 48px rgba(0,0,0,0.4)' }}
+              style={{ background: 'linear-gradient(180deg, #161820 0%, #171C24 100%)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 24px 48px rgba(0,0,0,0.4)' }}
             >
               {/* Modal header */}
               <div className="flex items-center justify-between mb-5">
                 <div className="flex items-center gap-2">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ background: 'linear-gradient(135deg, #7EA6BF, #9CBBD1)' }}>
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg" style={{ background: 'linear-gradient(135deg, #8B5CF6, #A78BFA)' }}>
                     <Sparkles className="h-3.5 w-3.5 text-white" />
                   </div>
                   <h2 className="text-[15px] font-semibold text-white/90">Create Project</h2>
@@ -246,7 +246,7 @@ export default function ProjectsDashboard() {
               <div className="space-y-4">
                 {/* Project Name */}
                 <div>
-                  <label className="text-[11px] font-medium text-white/40 mb-1.5 block">Project Name <span className="text-[#C98282]/60">*</span></label>
+                  <label className="text-[11px] font-medium text-white/40 mb-1.5 block">Project Name <span className="text-[#F87171]/60">*</span></label>
                   <input
                     type="text"
                     value={projectName}
@@ -258,13 +258,13 @@ export default function ProjectsDashboard() {
                       border: `1px solid ${errors.name ? 'rgba(201, 130, 130,0.3)' : 'rgba(255,255,255,0.06)'}`,
                     }}
                   />
-                  {errors.name && <p className="text-[10px] text-[#C98282]/70 mt-1">{errors.name}</p>}
+                  {errors.name && <p className="text-[10px] text-[#F87171]/70 mt-1">{errors.name}</p>}
                 </div>
 
                 {/* Category */}
                 <div>
                   <div className="flex items-center justify-between mb-2">
-                    <label className="text-[11px] font-medium text-white/40">Category <span className="text-[#C98282]/60">*</span></label>
+                    <label className="text-[11px] font-medium text-white/40">Category <span className="text-[#F87171]/60">*</span></label>
                     <span className="text-[9px] text-white/20">{isCustom ? 'Type your own' : 'Select one'}</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
@@ -293,7 +293,7 @@ export default function ProjectsDashboard() {
                       );
                     })}
                   </div>
-                  {errors.category && <p className="text-[10px] text-[#C98282]/70 mt-1">{errors.category}</p>}
+                  {errors.category && <p className="text-[10px] text-[#F87171]/70 mt-1">{errors.category}</p>}
 
                   {/* Custom input */}
                   <AnimatePresence>
@@ -340,7 +340,7 @@ export default function ProjectsDashboard() {
                   <button
                     onClick={handleCreate}
                     className="w-full py-2.5 rounded-xl text-[13px] font-semibold text-white transition-all hover:brightness-110"
-                    style={{ background: 'linear-gradient(135deg, #7EA6BF, #9CBBD1)', boxShadow: '0 4px 16px rgba(126, 166, 191,0.2)' }}
+                    style={{ background: 'linear-gradient(135deg, #8B5CF6, #A78BFA)', boxShadow: '0 4px 16px rgba(139, 92, 246,0.2)' }}
                   >
                     Create Project
                   </button>

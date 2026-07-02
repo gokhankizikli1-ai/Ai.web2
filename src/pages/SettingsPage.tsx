@@ -77,9 +77,9 @@ function LanguageSelect() {
         onClick={() => setOpen(!open)}
         className="flex items-center gap-2 bg-white/[0.03] border border-white/[0.06] rounded-lg px-3 py-1.5 text-[12px] text-white hover:bg-white/[0.05] transition-colors min-w-[140px]"
       >
-        <Globe className="h-3 w-3 text-[#7F8FA3]" />
+        <Globe className="h-3 w-3 text-[#858B99]" />
         <span className="flex-1 text-left">{selected?.label || 'English'}</span>
-        <ChevronDown className={`h-3 w-3 text-[#7F8FA3] transition-transform ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`h-3 w-3 text-[#858B99] transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open && (
@@ -89,10 +89,10 @@ function LanguageSelect() {
               key={l.code}
               onClick={() => { setLang(l.code); setOpen(false); }}
               className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-[12px] transition-all ${
-                lang === l.code ? 'bg-white/[0.06] text-white' : 'text-[#7F8FA3] hover:text-slate-300 hover:bg-white/[0.02]'
+                lang === l.code ? 'bg-white/[0.06] text-white' : 'text-[#858B99] hover:text-slate-300 hover:bg-white/[0.02]'
               }`}
             >
-              <span className="text-[10px] font-medium text-[#7F8FA3] w-5">{l.flag}</span>
+              <span className="text-[10px] font-medium text-[#858B99] w-5">{l.flag}</span>
               {l.label}
             </button>
           ))}
@@ -122,13 +122,13 @@ export default function SettingsPage() {
           {/* Header */}
           <div className="flex items-center gap-3 mb-8">
             <Link to="/chat">
-              <Button variant="ghost" size="icon" className="h-8 w-8 text-[#7F8FA3] hover:text-white hover:bg-white/[0.05] rounded-lg">
+              <Button variant="ghost" size="icon" className="h-8 w-8 text-[#858B99] hover:text-white hover:bg-white/[0.05] rounded-lg">
                 <ArrowLeft className="h-4 w-4" />
               </Button>
             </Link>
             <div>
               <h1 className="text-xl font-semibold text-white">Settings</h1>
-              <p className="text-[12px] text-[#7F8FA3]">Customize your KorvixAI workspace</p>
+              <p className="text-[12px] text-[#858B99]">Customize your KorvixAI workspace</p>
             </div>
           </div>
 
@@ -145,10 +145,10 @@ export default function SettingsPage() {
                       className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] transition-all duration-200 ${
                         isActive
                           ? 'bg-white/[0.06] text-white border border-white/[0.08]'
-                          : 'text-[#7F8FA3] hover:text-slate-300 hover:bg-white/[0.02] border border-transparent'
+                          : 'text-[#858B99] hover:text-slate-300 hover:bg-white/[0.02] border border-transparent'
                       }`}
                     >
-                      <section.icon className={`h-4 w-4 ${isActive ? 'text-[#7EA6BF]' : 'text-[#7F8FA3]'}`} />
+                      <section.icon className={`h-4 w-4 ${isActive ? 'text-[#8B5CF6]' : 'text-[#858B99]'}`} />
                       {section.label}
                     </button>
                   );
@@ -166,7 +166,7 @@ export default function SettingsPage() {
             >
               <div className="rounded-2xl border border-white/[0.06] bg-white/[0.01] overflow-hidden">
                 <div className="flex items-center gap-2 px-5 py-4 border-b border-white/[0.04]">
-                  <currentSection.icon className="h-4 w-4 text-[#7EA6BF]/60" />
+                  <currentSection.icon className="h-4 w-4 text-[#8B5CF6]/60" />
                   <h2 className="text-[14px] font-semibold text-white">{currentSection.label}</h2>
                 </div>
 
@@ -188,7 +188,7 @@ export default function SettingsPage() {
                         <input
                           type="text"
                           defaultValue={String(setting.value)}
-                          className="bg-white/[0.03] border border-white/[0.06] rounded-lg px-3 py-1.5 text-[12px] text-white w-48 outline-none focus:border-[#7EA6BF]/30 transition-colors"
+                          className="bg-white/[0.03] border border-white/[0.06] rounded-lg px-3 py-1.5 text-[12px] text-white w-48 outline-none focus:border-[#8B5CF6]/30 transition-colors"
                         />
                       )}
 
@@ -199,7 +199,7 @@ export default function SettingsPage() {
                       {setting.type === 'select' && (
                         <select
                           defaultValue={String(setting.value)}
-                          className="bg-white/[0.03] border border-white/[0.06] rounded-lg px-3 py-1.5 text-[12px] text-white outline-none focus:border-[#7EA6BF]/30 transition-colors appearance-none cursor-pointer"
+                          className="bg-white/[0.03] border border-white/[0.06] rounded-lg px-3 py-1.5 text-[12px] text-white outline-none focus:border-[#8B5CF6]/30 transition-colors appearance-none cursor-pointer"
                         >
                           {setting.options?.map((opt) => (
                             <option key={opt} value={opt} className="bg-[#171C24]">{opt}</option>
@@ -213,15 +213,15 @@ export default function SettingsPage() {
 
               {/* Danger zone */}
               {activeSection === 'privacy' && (
-                <div className="mt-6 rounded-2xl border border-[#C98282]/[0.08] bg-[#C98282]/[0.02] p-5">
+                <div className="mt-6 rounded-2xl border border-[#F87171]/[0.08] bg-[#F87171]/[0.02] p-5">
                   <div className="flex items-center gap-2 mb-3">
-                    <AlertTriangle className="h-4 w-4 text-[#C98282]/60" />
-                    <h3 className="text-[13px] font-semibold text-[#C98282]/80">Danger Zone</h3>
+                    <AlertTriangle className="h-4 w-4 text-[#F87171]/60" />
+                    <h3 className="text-[13px] font-semibold text-[#F87171]/80">Danger Zone</h3>
                   </div>
-                  <p className="text-[12px] text-[#7F8FA3] mb-4">These actions cannot be undone.</p>
+                  <p className="text-[12px] text-[#858B99] mb-4">These actions cannot be undone.</p>
                   <Button
                     variant="ghost"
-                    className="h-8 text-[12px] text-[#C98282]/70 hover:text-[#C98282] hover:bg-[#C98282]/10 border border-[#C98282]/[0.1] rounded-lg"
+                    className="h-8 text-[12px] text-[#F87171]/70 hover:text-[#F87171] hover:bg-[#F87171]/10 border border-[#F87171]/[0.1] rounded-lg"
                   >
                     <Trash2 className="h-3.5 w-3.5 mr-1.5" />
                     Delete All Conversations

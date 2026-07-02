@@ -9,12 +9,19 @@ module.exports = {
         // Prefer these tokens over raw hex / cyan / amber for new UI.
         // No cyan, no brown/bronze, no yellow/orange, no strong red.
         ink: {
-          950: "#090D12",   // deepest background
-          900: "#0B0F14",   // main app background
-          850: "#111820",   // panel / card surface
-          800: "#18212B",   // elevated surface
-          700: "#1B2532",   // raised card surface
-          600: "#2F3B4A",   // border
+          950: "#08090B",   // deepest background
+          900: "#090A0F",   // main app background
+          875: "#0D0E12",   // sidebar / header chrome
+          850: "#111217",   // panel / card surface
+          800: "#161820",   // elevated surface
+          700: "#12141B",   // input surface
+          600: "#272A33",   // border
+          500: "#343846",   // stronger border
+        },
+        brand: {
+          DEFAULT: "#8B5CF6", // indigo/violet brand accent
+          soft: "#A78BFA",
+          deep: "#6D5DF6",
         },
         porcelain: {
           50: "#FFFFFF",    // white surface
@@ -29,19 +36,19 @@ module.exports = {
           active: "#7890A3",
         },
         content: {
-          DEFAULT: "#E7EDF3", // primary text on dark
-          body: "#C4D0DC",
-          muted: "#A9B7C6",
-          faint: "#7F8FA3",
+          DEFAULT: "#F4F4F5", // primary text on dark
+          body: "#B6BBC6",
+          muted: "#858B99",
+          faint: "#555B68",
           "on-light": "#101827",
           "body-light": "#334155",
           "muted-light": "#64748B",
         },
         status: {
-          success: "#86A88B",  // muted green
-          warning: "#C2A15A",  // muted gold — real warning states only
-          danger: "#C98282",   // muted red
-          info: "#7EA6BF",     // brand slate-blue
+          success: "#4ADE80",  // green
+          warning: "#FACC15",  // gold — real warning states only
+          danger: "#F87171",   // red
+          info: "#8B5CF6",     // brand violet
         },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",

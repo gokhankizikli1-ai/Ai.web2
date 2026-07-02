@@ -23,7 +23,7 @@ const CONFIG: Record<WorkspaceType, { headline: string; subline: string; gradien
   startup: {
     headline: 'Validate your next business idea',
     subline: 'Use AI-powered tools to validate, build, and launch your startup.',
-    gradient: 'from-[#7EA6BF]/[0.03] to-[#9CBBD1]/[0.02]',
+    gradient: 'from-[#8B5CF6]/[0.03] to-[#A78BFA]/[0.02]',
     actions: [
       { label: 'Validate Idea', icon: Lightbulb, path: '/startup' },
       { label: 'Generate SaaS Idea', icon: Sparkles, path: '/startup' },
@@ -34,7 +34,7 @@ const CONFIG: Record<WorkspaceType, { headline: string; subline: string; gradien
   ecommerce: {
     headline: 'Find, validate, and launch products faster',
     subline: 'AI-powered tools for your Shopify and ecommerce business.',
-    gradient: 'from-[#7EA6BF]/[0.03] to-[#9CBBD1]/[0.02]',
+    gradient: 'from-[#8B5CF6]/[0.03] to-[#A78BFA]/[0.02]',
     actions: [
       { label: 'Find Winning Product', icon: Search, path: '/ecommerce' },
       { label: 'Generate Shopify Page', icon: ShoppingBag, path: '/ecommerce' },
@@ -45,7 +45,7 @@ const CONFIG: Record<WorkspaceType, { headline: string; subline: string; gradien
   research: {
     headline: 'Research, compare, verify, and summarize',
     subline: 'Multi-source deep research with AI-powered analysis.',
-    gradient: 'from-[#7EA6BF]/[0.03] to-[#9CBBD1]/[0.02]',
+    gradient: 'from-[#8B5CF6]/[0.03] to-[#A78BFA]/[0.02]',
     actions: [
       { label: 'Deep Research', icon: Brain, path: '/chat' },
       { label: 'Compare Sources', icon: BookOpen, path: '/chat' },
@@ -56,7 +56,7 @@ const CONFIG: Record<WorkspaceType, { headline: string; subline: string; gradien
   coding: {
     headline: 'Write, debug, review, and ship code',
     subline: 'AI-powered coding assistant for every stage of development.',
-    gradient: 'from-[#7EA6BF]/[0.03] to-[#9CBBD1]/[0.02]',
+    gradient: 'from-[#8B5CF6]/[0.03] to-[#A78BFA]/[0.02]',
     actions: [
       { label: 'Generate Code', icon: Code2, path: '/chat' },
       { label: 'Debug Issue', icon: Bug, path: '/chat' },
@@ -67,7 +67,7 @@ const CONFIG: Record<WorkspaceType, { headline: string; subline: string; gradien
   creative: {
     headline: 'Create content, brands, and visuals with AI',
     subline: 'Your AI-powered creative studio for content and branding.',
-    gradient: 'from-[#7EA6BF]/[0.03] to-[#9CBBD1]/[0.02]',
+    gradient: 'from-[#8B5CF6]/[0.03] to-[#A78BFA]/[0.02]',
     actions: [
       { label: 'Generate Image Prompt', icon: Palette, path: '/tools/brand-builder' },
       { label: 'Write Video Script', icon: Video, path: '/tools/viral-content' },
@@ -78,7 +78,7 @@ const CONFIG: Record<WorkspaceType, { headline: string; subline: string; gradien
   study: {
     headline: 'Learn faster with AI-powered study tools',
     subline: 'Summarize, quiz yourself, and master any topic.',
-    gradient: 'from-[#7EA6BF]/[0.03] to-[#9CBBD1]/[0.02]',
+    gradient: 'from-[#8B5CF6]/[0.03] to-[#A78BFA]/[0.02]',
     actions: [
       { label: 'Summarize Text', icon: FileText, path: '/chat' },
       { label: 'Create Flashcards', icon: CreditCard, path: '/chat' },
@@ -109,14 +109,14 @@ export default function EmptyState({ type }: EmptyStateProps) {
         transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
         className="mb-6"
       >
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#7EA6BF]/[0.06] border border-[#7EA6BF]/25">
-          <Rocket className="w-7 h-7 text-[#9BBBD0]" />
+        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#8B5CF6]/[0.06] border border-[#8B5CF6]/25">
+          <Rocket className="w-7 h-7 text-[#A78BFA]" />
         </div>
       </motion.div>
 
       {/* Text */}
       <h2 className="text-xl font-semibold text-white text-center mb-2">{config.headline}</h2>
-      <p className="text-[13px] text-[#7F8FA3] text-center max-w-md mb-8">{config.subline}</p>
+      <p className="text-[13px] text-[#858B99] text-center max-w-md mb-8">{config.subline}</p>
 
       {/* Actions */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 w-full max-w-xl">
@@ -126,14 +126,14 @@ export default function EmptyState({ type }: EmptyStateProps) {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2 + i * 0.08 }}
-            whileHover={{ y: -2, borderColor: 'rgba(126,166,191,0.40)' }}
+            whileHover={{ y: -2, borderColor: 'rgba(139, 92, 246,0.40)' }}
             whileTap={{ scale: 0.97 }}
             onClick={() => navigate(action.path)}
-            className="flex flex-col items-center gap-2.5 p-4 rounded-xl border border-[#7EA6BF]/25 bg-white/[0.01] hover:bg-[#7EA6BF]/[0.06] transition-colors text-center"
+            className="flex flex-col items-center gap-2.5 p-4 rounded-xl border border-[#8B5CF6]/25 bg-white/[0.01] hover:bg-[#8B5CF6]/[0.06] transition-colors text-center"
           >
-            <action.icon className="w-5 h-5 text-[#7EA6BF]" />
-            <span className="text-[12px] font-medium text-[#A9B7C6]">{action.label}</span>
-            <ArrowRight className="w-3 h-3 text-[#7EA6BF]/70" />
+            <action.icon className="w-5 h-5 text-[#8B5CF6]" />
+            <span className="text-[12px] font-medium text-[#B6BBC6]">{action.label}</span>
+            <ArrowRight className="w-3 h-3 text-[#8B5CF6]/70" />
           </motion.button>
         ))}
       </div>

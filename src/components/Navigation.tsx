@@ -83,7 +83,7 @@ export default function Navigation() {
               className={`relative flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium transition-all duration-200 ${
                 isActive
                   ? 'text-[#E2E8F0]'
-                  : 'text-[#7F8FA3] hover:text-[#A9B7C6]'
+                  : 'text-[#858B99] hover:text-[#B6BBC6]'
               }`}
             >
               {isActive && (
@@ -109,7 +109,7 @@ export default function Navigation() {
         </div>
         <button
           onClick={() => navigate('/settings')}
-          className="h-6 w-6 flex items-center justify-center text-[#7F8FA3] hover:text-[#7EA6BF] hover:bg-[#7EA6BF]/[0.06] rounded transition-all border border-transparent hover:border-white/[0.04]"
+          className="h-6 w-6 flex items-center justify-center text-[#858B99] hover:text-[#8B5CF6] hover:bg-[#8B5CF6]/[0.06] rounded transition-all border border-transparent hover:border-white/[0.04]"
         >
           <Settings className="h-3 w-3" />
         </button>
@@ -120,7 +120,7 @@ export default function Navigation() {
           <>
             <button
               onClick={() => navigate('/login')}
-              className="h-6 px-2 flex items-center gap-1 rounded text-[10px] text-[#7F8FA3] hover:text-slate-300 hover:bg-white/[0.03] transition-all"
+              className="h-6 px-2 flex items-center gap-1 rounded text-[10px] text-[#858B99] hover:text-slate-300 hover:bg-white/[0.03] transition-all"
             >
               <LogIn className="h-3 w-3" />
               <span className="hidden md:inline">Sign In</span>

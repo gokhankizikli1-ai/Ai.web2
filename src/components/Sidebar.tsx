@@ -121,20 +121,20 @@ export default function Sidebar({
           onClick={() => onSelect(session.id)}
           className={`w-full min-w-0 flex items-center gap-2 rounded-lg px-2.5 py-[6px] text-left transition-all duration-200 border ${
             active
-              ? 'border-[#7EA6BF]/25 shadow-[0_0_14px_-4px_rgba(126,166,191,0.20)]'
-              : 'border-transparent hover:border-[#7EA6BF]/12'
+              ? 'border-[#8B5CF6]/25 shadow-[0_0_14px_-4px_rgba(139, 92, 246,0.20)]'
+              : 'border-transparent hover:border-[#8B5CF6]/12'
           }`}
           style={active
-            ? { background: 'rgba(126, 166, 191, 0.10)', color: '#E7EDF3' }
-            : { color: 'rgba(169, 183, 198,0.55)' }
+            ? { background: 'rgba(139, 92, 246, 0.10)', color: '#F4F4F5' }
+            : { color: 'rgba(182, 187, 198,0.55)' }
           }
         >
           {/* Active indicator dot */}
           <div className={`w-[3px] h-[3px] rounded-full shrink-0 transition-all duration-300 ${
-            active ? 'bg-[#9BBBD0] scale-100' : 'bg-transparent scale-0'
+            active ? 'bg-[#A78BFA] scale-100' : 'bg-transparent scale-0'
           }`} />
 
-          <MessageSquare className={`h-2.5 w-2.5 shrink-0 transition-colors ${active ? 'text-[#9BBBD0]' : 'text-white/25'}`} />
+          <MessageSquare className={`h-2.5 w-2.5 shrink-0 transition-colors ${active ? 'text-[#A78BFA]' : 'text-white/25'}`} />
 
           {/* Chat title wrapper — min-w-0 lets the flex child shrink
               below intrinsic content width; overflow-hidden clips any
@@ -164,7 +164,7 @@ export default function Sidebar({
           >
             <button
               onClick={(e) => { e.stopPropagation(); setDeleteTarget(session.id); }}
-              className="p-1 rounded text-white/30 hover:text-[#C98282] hover:bg-[#C98282]/[0.06] transition-all"
+              className="p-1 rounded text-white/30 hover:text-[#F87171] hover:bg-[#F87171]/[0.06] transition-all"
             >
               <Trash2 className="h-2.5 w-2.5" />
             </button>
@@ -230,7 +230,7 @@ export default function Sidebar({
             : 'lg:w-0    lg:min-w-0    lg:max-w-0',
         ].join(' ')}
         style={{
-          background: 'rgba(17, 24, 32,0.96)',
+          background: 'rgba(13, 14, 18,0.96)',
           backdropFilter: 'blur(12px) saturate(1.1)',
           borderRight: '1px solid rgba(255,255,255,0.035)',
         }}
@@ -273,11 +273,11 @@ export default function Sidebar({
               <div
                 className="flex h-6 w-6 items-center justify-center rounded-md shrink-0"
                 style={{
-                  background: 'linear-gradient(135deg, rgba(126, 166, 191,0.15) 0%, rgba(156, 187, 209,0.15) 100%)',
-                  boxShadow: '0 0 8px rgba(126, 166, 191,0.08), inset 0 1px 0 rgba(255,255,255,0.06)',
+                  background: 'linear-gradient(135deg, rgba(139, 92, 246,0.15) 0%, rgba(156, 187, 209,0.15) 100%)',
+                  boxShadow: '0 0 8px rgba(139, 92, 246,0.08), inset 0 1px 0 rgba(255,255,255,0.06)',
                 }}
               >
-                <FolderOpen className="h-3 w-3 text-[#A9B7C6]" />
+                <FolderOpen className="h-3 w-3 text-[#B6BBC6]" />
               </div>
               <span className="text-[12px] font-medium text-white/60 group-hover:text-white/90 transition-colors">Projects</span>
               <div className="ml-auto flex items-center gap-0.5 text-white/15 group-hover:text-white/30 transition-colors">
@@ -306,11 +306,11 @@ export default function Sidebar({
               <div
                 className="flex h-6 w-6 items-center justify-center rounded-md shrink-0"
                 style={{
-                  background: 'linear-gradient(135deg, rgba(126, 166, 191,0.15) 0%, rgba(156, 187, 209,0.15) 100%)',
-                  boxShadow: '0 0 8px rgba(126, 166, 191,0.08), inset 0 1px 0 rgba(255,255,255,0.06)',
+                  background: 'linear-gradient(135deg, rgba(139, 92, 246,0.15) 0%, rgba(156, 187, 209,0.15) 100%)',
+                  boxShadow: '0 0 8px rgba(139, 92, 246,0.08), inset 0 1px 0 rgba(255,255,255,0.06)',
                 }}
               >
-                <Bot className="h-3 w-3 text-[#9CBBD1]" />
+                <Bot className="h-3 w-3 text-[#A78BFA]" />
               </div>
               <span className="text-[12px] font-medium text-white/60 group-hover:text-white/90 transition-colors">Agents</span>
             </motion.button>
@@ -400,7 +400,7 @@ export default function Sidebar({
               <div className="flex flex-col gap-1.5">
                 <button
                   onClick={() => navigate('/signup')}
-                  className="w-full h-7 flex items-center justify-center gap-1.5 rounded-lg bg-[#7EA6BF]/[0.14] text-[#9DB0C2] border border-[#7EA6BF]/30 text-[11px] font-medium hover:bg-[#7EA6BF]/[0.2] transition-all"
+                  className="w-full h-7 flex items-center justify-center gap-1.5 rounded-lg bg-[#8B5CF6]/[0.14] text-[#A78BFA] border border-[#8B5CF6]/30 text-[11px] font-medium hover:bg-[#8B5CF6]/[0.2] transition-all"
                 >
                   <Sparkles className="w-3 h-3" /> {t('createAccount')}
                 </button>
@@ -441,7 +441,7 @@ export default function Sidebar({
             <Button
               variant="ghost"
               onClick={onOpenUpgrade}
-              className="w-full h-7 gap-1.5 text-[11px] text-white/30 hover:text-[#8FB4CC] hover:bg-[#7EA6BF]/[0.08] rounded-lg transition-all border border-transparent hover:border-[#7EA6BF]/25"
+              className="w-full h-7 gap-1.5 text-[11px] text-white/30 hover:text-[#A78BFA] hover:bg-[#8B5CF6]/[0.08] rounded-lg transition-all border border-transparent hover:border-[#8B5CF6]/25"
             >
               <Crown className="h-3 w-3" />
               {t('upgradePro')}

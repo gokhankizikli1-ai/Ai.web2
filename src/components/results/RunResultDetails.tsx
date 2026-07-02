@@ -57,7 +57,7 @@ export default function RunResultDetails({ runId, promptFallback, initialStatus 
   if (live.connection === 'disabled') {
     return (
       <Center>
-        <Ban className="h-6 w-6 text-[#C2A15A]/70 mb-2" />
+        <Ban className="h-6 w-6 text-[#FACC15]/70 mb-2" />
         <p className="text-[13px] text-white/55">Orchestrator disabled</p>
         <p className="text-[11px] text-white/30 mt-1">
           Live runs activate when <code className="text-white/45">ENABLE_PROJECT_ORCHESTRATOR</code> is enabled on the backend.
@@ -103,8 +103,8 @@ export default function RunResultDetails({ runId, promptFallback, initialStatus 
         </div>
         <p className="text-[11px] text-white/40 mt-1">{desc.description}</p>
         {designSummary && (
-          <span className="inline-flex items-center gap-1 mt-2 px-2 py-1 rounded-full text-[10px] text-[#9CBBD1]/80"
-            style={{ background: 'rgba(126, 166, 191,0.08)', border: '1px solid rgba(126, 166, 191,0.16)' }}>
+          <span className="inline-flex items-center gap-1 mt-2 px-2 py-1 rounded-full text-[10px] text-[#A78BFA]/80"
+            style={{ background: 'rgba(139, 92, 246,0.08)', border: '1px solid rgba(139, 92, 246,0.16)' }}>
             Design: {designSummary}
           </span>
         )}
@@ -116,7 +116,7 @@ export default function RunResultDetails({ runId, promptFallback, initialStatus 
           <Meta k="Duration" v={formatDuration(started, finished)} />
           <ConnectionBadge connection={live.connection} running={running} />
           {running && (
-            <button onClick={live.cancel} className="flex items-center gap-1 text-white/40 hover:text-[#C98282] transition-colors">
+            <button onClick={live.cancel} className="flex items-center gap-1 text-white/40 hover:text-[#F87171] transition-colors">
               <X className="h-3 w-3" /> Cancel
             </button>
           )}
@@ -218,14 +218,14 @@ function ExecutionMetadata({
 function ConnectionBadge({ connection, running }: { connection: LiveConnection; running: boolean }) {
   if (connection === 'live') {
     return (
-      <span className="flex items-center gap-1 text-[#7EA6BF]/80" title="Streaming live updates">
+      <span className="flex items-center gap-1 text-[#8B5CF6]/80" title="Streaming live updates">
         <Radio className="h-3 w-3 animate-pulse" /> Live
       </span>
     );
   }
   if (connection === 'polling' && running) {
     return (
-      <span className="flex items-center gap-1 text-[#C2A15A]/70" title="Live updates unavailable, using polling">
+      <span className="flex items-center gap-1 text-[#FACC15]/70" title="Live updates unavailable, using polling">
         <Wifi className="h-3 w-3" /> Polling
       </span>
     );

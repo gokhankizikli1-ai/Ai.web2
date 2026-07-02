@@ -255,7 +255,7 @@ function tabStyle(active: boolean): React.CSSProperties {
     borderRadius: '999px',
     cursor: 'pointer',
     background: active
-      ? 'linear-gradient(90deg,#7EA6BF,#7EA6BF)'
+      ? 'linear-gradient(90deg,#8B5CF6,#8B5CF6)'
       : 'rgba(255,255,255,0.06)',
     color: 'rgba(255,255,255,0.92)',
     transition: 'background 200ms ease',

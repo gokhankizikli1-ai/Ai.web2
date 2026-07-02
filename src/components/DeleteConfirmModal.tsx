@@ -47,12 +47,12 @@ export default function DeleteConfirmModal({
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start gap-3 mb-4">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#C98282]/[0.06] border border-[#C98282]/10 shrink-0">
-                <AlertTriangle className="h-4 w-4 text-[#C98282]" />
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#F87171]/[0.06] border border-[#F87171]/10 shrink-0">
+                <AlertTriangle className="h-4 w-4 text-[#F87171]" />
               </div>
               <div>
                 <h3 className="text-[14px] font-semibold text-white">{title}</h3>
-                <p className="text-[12px] text-[#7F8FA3] mt-1 leading-relaxed">{description}</p>
+                <p className="text-[12px] text-[#858B99] mt-1 leading-relaxed">{description}</p>
               </div>
             </div>
             <div className="flex items-center justify-end gap-2">
@@ -60,14 +60,14 @@ export default function DeleteConfirmModal({
                 variant="ghost"
                 size="sm"
                 onClick={onCancel}
-                className="h-8 px-4 text-[12px] text-[#A9B7C6] hover:text-white hover:bg-white/[0.04] rounded-lg"
+                className="h-8 px-4 text-[12px] text-[#B6BBC6] hover:text-white hover:bg-white/[0.04] rounded-lg"
               >
                 Cancel
               </Button>
               <Button
                 size="sm"
                 onClick={onConfirm}
-                className="h-8 px-4 text-[12px] bg-[#C98282]/[0.1] text-[#C98282] hover:bg-[#C98282]/[0.15] border border-[#C98282]/15 rounded-lg"
+                className="h-8 px-4 text-[12px] bg-[#F87171]/[0.1] text-[#F87171] hover:bg-[#F87171]/[0.15] border border-[#F87171]/15 rounded-lg"
               >
                 Delete
               </Button>

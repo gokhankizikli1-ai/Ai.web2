@@ -21,7 +21,7 @@ export default function CircularGauge({
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (value / 100) * circumference;
 
-  const defaultColor = value >= 70 ? '#86A88B' : value >= 40 ? '#C2A15A' : '#C98282';
+  const defaultColor = value >= 70 ? '#4ADE80' : value >= 40 ? '#FACC15' : '#F87171';
   const strokeColor = color || defaultColor;
 
   return (
@@ -61,8 +61,8 @@ export default function CircularGauge({
           </motion.span>
         </div>
       </div>
-      {label && <span className="text-[11px] font-medium text-[#A9B7C6]">{label}</span>}
-      {sublabel && <span className="text-[10px] text-[#7F8FA3]">{sublabel}</span>}
+      {label && <span className="text-[11px] font-medium text-[#B6BBC6]">{label}</span>}
+      {sublabel && <span className="text-[10px] text-[#858B99]">{sublabel}</span>}
     </div>
   );
 }

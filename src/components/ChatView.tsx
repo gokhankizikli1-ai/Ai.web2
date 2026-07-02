@@ -242,15 +242,15 @@ export default function ChatView({
                         <motion.div
                           animate={{ rotate: 360 }}
                           transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
-                          className="h-2.5 w-2.5 rounded-full border-2 border-[#7EA6BF]/40 border-t-[#7EA6BF]"
+                          className="h-2.5 w-2.5 rounded-full border-2 border-[#8B5CF6]/40 border-t-[#8B5CF6]"
                           aria-label="working"
                         />
                       )}
                       {toolActivity.status === 'completed' && (
-                        <div className="h-2 w-2 rounded-full bg-[#86A88B]" aria-label="completed" />
+                        <div className="h-2 w-2 rounded-full bg-[#4ADE80]" aria-label="completed" />
                       )}
                       {toolActivity.status === 'failed' && (
-                        <div className="h-2 w-2 rounded-full bg-[#C98282]" aria-label="failed" />
+                        <div className="h-2 w-2 rounded-full bg-[#F87171]" aria-label="failed" />
                       )}
                       <span className="text-[11px] text-slate-300">{toolActivity.label}</span>
                     </div>
@@ -293,16 +293,16 @@ export default function ChatView({
                   animate={{ opacity: 1, y: 0 }}
                   className="flex gap-2.5"
                 >
-                  <div className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md bg-[#C98282]/10">
-                    <AlertTriangle className="h-3 w-3 text-[#C98282]/60" />
+                  <div className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md bg-[#F87171]/10">
+                    <AlertTriangle className="h-3 w-3 text-[#F87171]/60" />
                   </div>
-                  <div className="rounded-2xl rounded-tl-sm bg-[#C98282]/[0.02] border border-[#C98282]/[0.06] px-4 py-2.5 max-w-[85%]">
-                    <p className="text-[12px] text-[#C98282]/70 mb-2">{error}</p>
+                  <div className="rounded-2xl rounded-tl-sm bg-[#F87171]/[0.02] border border-[#F87171]/[0.06] px-4 py-2.5 max-w-[85%]">
+                    <p className="text-[12px] text-[#F87171]/70 mb-2">{error}</p>
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={handleRetry}
-                      className="h-6 gap-1.5 text-[11px] text-[#C98282]/60 hover:text-[#C98282] hover:bg-[#C98282]/[0.06] rounded-lg px-2"
+                      className="h-6 gap-1.5 text-[11px] text-[#F87171]/60 hover:text-[#F87171] hover:bg-[#F87171]/[0.06] rounded-lg px-2"
                     >
                       <RefreshCw className="h-3 w-3" /> Retry
                     </Button>
