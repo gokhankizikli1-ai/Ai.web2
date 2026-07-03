@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router';
 import { motion } from 'framer-motion';
 import {
-  MessageSquare, Globe, Gamepad2, FolderOpen,
+  MessageSquare, Globe, Gamepad2,
   FlaskConical, Rocket, Building2, TrendingUp, Bot,
   Sparkles, Settings, LogIn, Zap,
 } from 'lucide-react';
@@ -37,12 +37,13 @@ export default function Navigation() {
   const [labsOpen, setLabsOpen] = useState(false);
   const labsRef = useRef<HTMLDivElement>(null);
 
-  /* ─── Public center items (ALL users) ─── */
+  /* ─── Public center items (ALL users). Projects intentionally NOT here —
+        it's the primary item in the left sidebar; duplicating it in the top
+        nav was redundant. ─── */
   const NAV_ITEMS: NavItem[] = [
     { id: 'chat',     label: t('navChat'),     icon: MessageSquare, path: '/chat' },
     { id: 'webbuild', label: t('navWebBuild'), icon: Globe,         path: '/tools/website-builder' },
     { id: 'game',     label: t('navGameBuild'),icon: Gamepad2,      path: '/tools/game-builder' },
-    { id: 'projects', label: t('navProjects'), icon: FolderOpen,    path: '/projects' },
   ];
 
   /* ─── Owner-only Labs dropdown items ─── */

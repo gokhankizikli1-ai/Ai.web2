@@ -7,6 +7,7 @@ import { useAuthStore } from '@/stores/authStore';
 import { useOwnerMode } from '@/hooks/useOwnerMode';
 import { useLanguageStore, LANGUAGES } from '@/stores/languageStore';
 import type { Language } from '@/stores/languageStore';
+import { resolvePlanKey } from '@/lib/plan';
 import {
   User, Crown, Zap, Shield, Coins,
   CreditCard, Settings, Globe, BookOpen,
@@ -72,7 +73,10 @@ export default function UserAccountDropdown({ onOpenSettings, onOpenUpgrade }: U
   const [showLangMenu, setShowLangMenu] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const plan = PLAN_CONFIG[settings.plan] || PLAN_CONFIG.free;
+  // Single source of truth (src/lib/plan.ts) — same resolution the top-right
+  // PremiumBadge uses, so the account card and the badge can never disagree.
+  const planKey = resolvePlanKey(user?.plan, settings.plan) ?? 'free';
+  const plan = PLAN_CONFIG[planKey] || PLAN_CONFIG.free;
   const PlanIcon = plan.icon;
 
   // Credit info

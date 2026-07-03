@@ -2,11 +2,18 @@ import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router';
 import { Coins, Crown, ArrowRight, Zap } from 'lucide-react';
+import { useApp } from '@/contexts/AppContext';
+import { useAuthStore } from '@/stores/authStore';
+import { getUserPlanLabel } from '@/lib/plan';
 
 export default function CreditDisplay() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const { settings } = useApp();
+  const user = useAuthStore((s) => s.user);
+  // Same source of truth as the plan badge / account card.
+  const planLabel = getUserPlanLabel(user?.plan, settings.plan);
 
   const creditsRemaining = 153;
   const creditsTotal = 300;
@@ -47,10 +54,12 @@ export default function CreditDisplay() {
             <div className="p-3.5 border-b border-white/[0.03]">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-[10px] text-[#94A3B8] uppercase tracking-wider">Credits</span>
-                <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#FACC15]/[0.06]">
-                  <Crown className="w-2.5 h-2.5 text-[#FACC15]" />
-                  <span className="text-[9px] text-[#FACC15] font-medium">Pro</span>
-                </div>
+                {planLabel && (
+                  <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#FACC15]/[0.06]">
+                    <Crown className="w-2.5 h-2.5 text-[#FACC15]" />
+                    <span className="text-[9px] text-[#FACC15] font-medium">{planLabel}</span>
+                  </div>
+                )}
               </div>
 
               <div className="flex items-baseline gap-1.5">
