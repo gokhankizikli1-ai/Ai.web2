@@ -274,8 +274,23 @@ function normalizeMessage(raw: unknown): Message | null {
       .filter((a) => !!a.asset_id);
     if (attachments.length === 0) attachments = undefined;
   }
+  // Preserve web sources across reloads. Defensive: keep only entries
+  // with a real http[s] url so stale/garbage storage can't break render.
+  let sources: { url: string; title?: string }[] | undefined;
+  const rawSrc = m.sources;
+  if (Array.isArray(rawSrc) && rawSrc.length > 0) {
+    sources = rawSrc
+      .filter((x): x is Record<string, unknown> => !!x && typeof x === 'object')
+      .map((x) => ({
+        url: typeof x.url === 'string' ? x.url : '',
+        ...(typeof x.title === 'string' ? { title: x.title } : {}),
+      }))
+      .filter((x) => /^https?:\/\//i.test(x.url));
+    if (sources.length === 0) sources = undefined;
+  }
   return { id, role, content, timestamp,
-           ...(attachments ? { attachments } : {}) };
+           ...(attachments ? { attachments } : {}),
+           ...(sources ? { sources } : {}) };
 }
 
 function normalizeSession(raw: unknown): ChatSession | null {
@@ -714,6 +729,11 @@ export function useChat() {
     // placeholder in-place. This is the only thing that guarantees no
     // duplicate assistant bubble appears if streaming fails partway.
     let assistantId: string | null = null;
+    // Web sources the backend actually used this turn — collected from
+    // tool.completed (web_research / browser_fetch `urls`) and attached to
+    // the assistant message so the bubble can show a "Show sources" drawer.
+    // Deduped by url; never fabricated.
+    const collectedSourceUrls: string[] = [];
 
     /* ── Streaming path (Phase 1.1, opt-in via VITE_CHAT_STREAMING) ──
        Phase 9 fix: when the turn carries attachments, FORCE streaming
@@ -880,6 +900,16 @@ export function useChat() {
               const repos = Array.isArray(t?.repos) ? t.repos as string[] : [];
               const urls  = Array.isArray(t?.urls)  ? t.urls  as string[] : [];
               const subjects = repos.length ? repos : urls;
+              // Persist real web sources (http[s] urls) for the message's
+              // "Show sources" drawer — dedup, cap generous. Only genuine
+              // urls the tool reported; nothing invented.
+              if (succeeded && (id === 'web_research' || id === 'browser_fetch')) {
+                for (const u of urls) {
+                  if (typeof u === 'string' && /^https?:\/\//i.test(u) && !collectedSourceUrls.includes(u)) {
+                    collectedSourceUrls.push(u);
+                  }
+                }
+              }
               const successLabel = (() => {
                 if (id === 'github_repo') {
                   return subjects.length
@@ -955,6 +985,21 @@ export function useChat() {
         }
         if (!sawDone && accumulated.length === 0) {
           throw new Error('Stream ended without any content.');
+        }
+
+        // Attach any web sources gathered this turn to the assistant
+        // message so the bubble can render a collapsed "Show sources"
+        // drawer (never inline in the answer text).
+        if (assistantId && collectedSourceUrls.length > 0) {
+          const targetId = assistantId;
+          const sources = collectedSourceUrls.map((url) => ({ url }));
+          setSessions((prev) =>
+            prev.map((s) =>
+              s.id === activeSessionId
+                ? { ...s, messages: s.messages.map((m) => (m.id === targetId ? { ...m, sources } : m)) }
+                : s,
+            ),
+          );
         }
 
         // Success — assistant message is fully populated by token frames.

@@ -183,15 +183,17 @@ export default function ChatView({
               <AnimatePresence mode="popLayout" initial={false}>
                 {messages.map((message, index) => {
                   const isStreamingThis = isLoading && index === lastAssistantIndex;
+                  // Assistant messages NEVER layout-animate — not while
+                  // streaming (framer would re-measure every token and nudge
+                  // the list, reading as flicker) and not on completion (a
+                  // final layout pass looks like the answer "re-loading").
+                  // The bubble grows in place and settles exactly once. Only
+                  // user messages keep position animation for send polish.
+                  const useLayout = message.role === 'user' && !isStreamingThis ? 'position' : false;
                   return (
                   <motion.div
                     key={message.id}
-                    // Don't run layout animation on the actively streaming
-                    // message: with `layout` on, framer re-measures every
-                    // token and nudges the whole list, which reads as the
-                    // answer flickering while it settles. The message
-                    // instead grows in place and settles once on completion.
-                    layout={isStreamingThis ? false : 'position'}
+                    layout={useLayout}
                     initial={{ opacity: 0, y: 6 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -4 }}
@@ -236,7 +238,7 @@ export default function ChatView({
                              ? 'rgba(248,113,113,0.20)'
                              : toolActivity.status === 'completed'
                                ? 'rgba(52,211,153,0.20)'
-                               : 'rgba(185,139,99,0.25)',
+                               : 'rgba(59,130,246,0.25)',
                          }}>
                       {toolActivity.status === 'running' && (
                         <motion.div

@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { CalendarCheck, ChevronDown } from 'lucide-react';
 import type { SprintDay } from '@/lib/startupRadarInsights';
 
-const VISIBLE_BY_DEFAULT = 2;
+const VISIBLE_BY_DEFAULT = 3;
 
 /** Deterministic Validation plan generated from the top complaint
- * cluster + ICP. Days 1-2 show by default; the rest expands on demand. */
+ * cluster + ICP. Default shows only the first 3 day titles (no detail);
+ * expanding reveals every day WITH its detail. */
 export default function ValidationSprintPanel({ sprint }: { sprint: SprintDay[] }) {
   const [expanded, setExpanded] = useState(false);
   const visible = expanded ? sprint : sprint.slice(0, VISIBLE_BY_DEFAULT);
@@ -24,7 +25,9 @@ export default function ValidationSprintPanel({ sprint }: { sprint: SprintDay[] 
             </div>
             <div className="min-w-0">
               <p className="text-[12px] font-semibold text-slate-100">{d.title}</p>
-              <p className="text-[12px] text-slate-300 leading-relaxed mt-0.5">{d.detail}</p>
+              {expanded && (
+                <p className="text-[12px] text-slate-300 leading-relaxed mt-0.5">{d.detail}</p>
+              )}
             </div>
           </div>
         ))}
@@ -35,7 +38,7 @@ export default function ValidationSprintPanel({ sprint }: { sprint: SprintDay[] 
           className="mt-3 flex items-center gap-1 text-[11px] text-[#60A5FA] hover:text-[#60A5FA] transition-colors"
         >
           <ChevronDown className="h-3 w-3" />
-          Show full plan (Day 3–{sprint.length})
+          Show full {sprint.length}-day plan
         </button>
       )}
     </div>

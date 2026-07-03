@@ -70,7 +70,7 @@ export default function ComplaintClusterCard({
       <details className="mt-2 group/detail">
         <summary className="flex items-center gap-1 text-[10px] text-[#94A3B8] hover:text-slate-300 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden transition-colors">
           <ChevronRight className="h-3 w-3 transition-transform group-open/detail:rotate-90" />
-          Details & citations
+          View evidence
         </summary>
         <div className="grid grid-cols-5 gap-2 mt-2.5">
           {subScores.map((s) => (

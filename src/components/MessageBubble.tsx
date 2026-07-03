@@ -7,7 +7,9 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import ResponseActions from './ResponseActions';
 import AssetChip from './AssetChip';
+import MessageSources from './MessageSources';
 import { useToast } from '@/hooks/useToast';
+import { useLanguageStore } from '@/stores/languageStore';
 import type { Message } from '@/types';
 
 interface MessageBubbleProps {
@@ -58,16 +60,16 @@ const markdownComponents = {
     );
   },
   p({ children }: any) {
-    return <p className="text-[13px] leading-[1.65] mb-2 last:mb-0">{children}</p>;
+    return <p className="text-[13.5px] leading-[1.7] text-[#DCE2EC] mb-2 last:mb-0">{children}</p>;
   },
   ul({ children }: any) {
-    return <ul className="text-[13px] list-disc pl-4 mb-2 space-y-0.5">{children}</ul>;
+    return <ul className="text-[13.5px] text-[#DCE2EC] list-disc pl-4 mb-2 space-y-0.5">{children}</ul>;
   },
   ol({ children }: any) {
-    return <ol className="text-[13px] list-decimal pl-4 mb-2 space-y-0.5">{children}</ol>;
+    return <ol className="text-[13.5px] text-[#DCE2EC] list-decimal pl-4 mb-2 space-y-0.5">{children}</ol>;
   },
   li({ children }: any) {
-    return <li className="text-[13px] leading-[1.6]">{children}</li>;
+    return <li className="text-[13.5px] leading-[1.65] text-[#DCE2EC]">{children}</li>;
   },
   h1({ children }: any) {
     return <h1 className="text-[15px] font-semibold text-white mt-4 mb-2">{children}</h1>;
@@ -167,6 +169,7 @@ export default function MessageBubble({
   const [isHovered, setIsHovered] = useState(false);
   const [copied, setCopied] = useState(false);
   const { addToast } = useToast();
+  const lang = useLanguageStore((s) => s.lang);
   const contentRef = useRef<HTMLDivElement>(null);
   const isShort = content.length < 80 && !content.includes('\n') && !content.includes('```');
 
@@ -252,6 +255,14 @@ export default function MessageBubble({
     ? splitTrailingSources(content)
     : { body: content, sources: null, count: 0 };
 
+  // Structured web sources (real backend `urls`) — rendered as a favicon
+  // drawer under the bubble. When present they supersede any model-written
+  // "Sources" text block so the drawer isn't duplicated.
+  const structuredSources = !isGenerating ? (fullMessage.sources ?? []) : [];
+  const hasStructuredSources = structuredSources.length > 0;
+  const showSourcesLabel = lang === 'tr' ? 'Kaynakları göster' : 'Show sources';
+  const usedLabel = lang === 'tr' ? 'Kullanıldı' : 'Used';
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }}
@@ -289,12 +300,18 @@ export default function MessageBubble({
           )}
         </div>
 
-        {/* Compact collapsed sources — answer first, sources on demand.
-            Only real links the model actually wrote; nothing invented. */}
-        {sources && (
+        {/* Structured web sources — favicon drawer under the bubble.
+            Never inline in the answer. Uses real backend `urls` only. */}
+        {hasStructuredSources && (
+          <MessageSources sources={structuredSources} showLabel={showSourcesLabel} usedLabel={usedLabel} />
+        )}
+
+        {/* Fallback: a model-written "Sources" text block (no structured
+            metadata). Kept collapsed so the answer stays clean. */}
+        {!hasStructuredSources && sources && (
           <details className="mt-1.5 group/sources">
             <summary className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] text-[#CBD5E1] hover:text-[#F8FAFC] border border-[#253142] bg-white/[0.01] cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden transition-colors">
-              Sources ({count})
+              {showSourcesLabel} · {count}
             </summary>
             <div className="mt-1.5 px-3 py-2 rounded-xl border border-[#253142] bg-white/[0.01] prose prose-invert prose-sm max-w-none">
               <MarkdownBody text={sources} />
