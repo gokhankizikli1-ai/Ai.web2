@@ -127,3 +127,63 @@ export function saveWebBuildToProject(
     ? appendWebBuildRevision(existingProjectId, idea, result)
     : createWebBuildProject(idea, result);
 }
+
+/** Project name from an accumulated payload (type or original prompt). */
+export function deriveWebProjectNameFromPayload(payload: WebBuildPayload): string {
+  const label = payload.brief?.type || payload.prompt.trim().replace(/\s+/g, ' ').slice(0, 48);
+  return `Website: ${label}`;
+}
+
+/**
+ * Save the page's ACCUMULATED payload (which already carries the full session
+ * step history + file diffs). Creates a new project, or merges the session's
+ * steps into an existing project's saved build. Returns the project.
+ */
+export function saveWebBuildPayloadToProject(
+  payload: WebBuildPayload, existingProjectId?: string,
+): Project {
+  const now = new Date().toISOString();
+  const saved = markSaved(payload);
+
+  if (existingProjectId) {
+    const existing = getProject(existingProjectId);
+    if (existing) {
+      const prevSteps = existing.webBuild?.steps || [];
+      const merged: WebBuildPayload = {
+        ...saved,
+        // Keep the earliest createdAt + the union of steps (existing first).
+        createdAt: existing.webBuild?.createdAt || saved.createdAt,
+        steps: [...prevSteps, ...saved.steps.filter((s) => !prevSteps.some((p) => p.id === s.id))],
+        updatedAt: now,
+      };
+      updateProject(existingProjectId, {
+        webBuild: merged, updatedAt: 'Just now',
+        progress: Math.min(100, (existing.progress || 40) + 10),
+      });
+      return { ...existing, webBuild: merged };
+    }
+  }
+
+  const project: Project = {
+    id: `proj-${uid()}`,
+    name: deriveWebProjectNameFromPayload(saved),
+    description: saved.prompt.trim().slice(0, 200),
+    category: 'Website',
+    status: 'active',
+    progress: 40,
+    agents: [], tasks: [],
+    memory: [{
+      id: `mem-${uid()}`, type: 'knowledge', title: 'Brief',
+      content: saved.prompt.trim(), createdAt: now, tags: ['web-build', 'brief'], confidence: 1,
+    }],
+    files: [],
+    createdAt: now,
+    updatedAt: 'Just now',
+    color: 'slate',
+    gradient: 'from-[#3B82F6] to-[#60A5FA]',
+    icon: 'Layout',
+    webBuild: saved,
+  };
+  addProject(project);
+  return project;
+}
