@@ -11,8 +11,9 @@ import {
   type GameBuildResult, type GameEngine,
 } from '@/lib/gameBuilderApi';
 
-const ACCENT = '#8B5CF6';
-const ACCENT_2 = '#A78BFA';
+// KorvixAI blue accent — same language as Chat / Tools / WorkspaceTabs.
+const ACCENT = '#3B82F6';
+const ACCENT_2 = '#60A5FA';
 
 const fadeUp = (delay = 0) => ({
   initial: { opacity: 0, y: 16 },
@@ -43,7 +44,7 @@ function EngineCard({
         'group relative flex-1 min-w-[180px] text-left rounded-2xl border px-4 py-4 transition-all duration-200',
         disabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer',
         selected
-          ? 'bg-white/[0.04] border-transparent shadow-[0_0_0_1px_rgba(139,92,246,0.55),0_8px_30px_-12px_rgba(139,92,246,0.5)]'
+          ? 'bg-white/[0.04] border-transparent shadow-[0_0_0_1px_rgba(59,130,246,0.55),0_8px_30px_-12px_rgba(59,130,246,0.5)]'
           : 'bg-white/[0.015] border-white/[0.06] hover:bg-white/[0.03] hover:border-white/[0.1]',
       ].join(' ')}
       style={selected ? { background: `linear-gradient(180deg, ${ACCENT}14, transparent)` } : undefined}
