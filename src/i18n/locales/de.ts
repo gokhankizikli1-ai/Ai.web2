@@ -241,4 +241,12 @@ export const de: Record<string, string> = {
   gbEnemyAi: "Gegner-KI",
   gbQuestTracker: "Quest-Tracker",
   gbDailyReward: "Tägliche Belohnung",
+  /* web build — save-to-project prompt */
+  wbSavePromptTitle: "Diese Website in einem Projekt speichern?",
+  wbCreateNewProject: "Neues Projekt erstellen",
+  wbAddToExisting: "Zu bestehendem Projekt hinzufügen",
+  wbNotNow: "Jetzt nicht",
+  wbChooseProject: "Projekt auswählen",
+  wbSavedToNamed: "In {name} gespeichert",
+  wbNoProjectsYet: "Noch keine Projekte",
 };

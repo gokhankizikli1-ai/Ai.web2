@@ -241,4 +241,12 @@ export const tr: Record<string, string> = {
   gbEnemyAi: "Düşman AI",
   gbQuestTracker: "Görev takipçisi",
   gbDailyReward: "Günlük ödül",
+  /* web build — save-to-project prompt */
+  wbSavePromptTitle: "Bu web sitesini bir projeye kaydet?",
+  wbCreateNewProject: "Yeni proje oluştur",
+  wbAddToExisting: "Mevcut projeye ekle",
+  wbNotNow: "Şimdi değil",
+  wbChooseProject: "Bir proje seç",
+  wbSavedToNamed: "{name} projesine kaydedildi",
+  wbNoProjectsYet: "Henüz proje yok",
 };

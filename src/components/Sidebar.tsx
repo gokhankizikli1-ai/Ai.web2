@@ -285,7 +285,9 @@ export default function Sidebar({
               </div>
             </motion.button>
 
-            {/* ═══ 1.5. AGENTS ═══ */}
+            {/* ═══ 1.5. AGENTS — owner-only (normal users reach nothing here;
+                 owners access Agents via the top-nav Labs menu too) ═══ */}
+            {isOwner && (
             <motion.button
               whileTap={{ scale: 0.98 }}
               onClick={() => navigate('/agents')}
@@ -312,8 +314,9 @@ export default function Sidebar({
               >
                 <Bot className="h-3 w-3 text-[#60A5FA]" />
               </div>
-              <span className="text-[12px] font-medium text-white/60 group-hover:text-white/90 transition-colors">Agents</span>
+              <span className="text-[12px] font-medium text-white/60 group-hover:text-white/90 transition-colors">{t('agents')}</span>
             </motion.button>
+            )}
 
             {/* ═══ 2. NEW CHAT ═══ */}
             <motion.button

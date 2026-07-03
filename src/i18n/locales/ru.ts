@@ -241,4 +241,12 @@ export const ru: Record<string, string> = {
   gbEnemyAi: "ИИ противника",
   gbQuestTracker: "Трекер заданий",
   gbDailyReward: "Ежедневная награда",
+  /* web build — save-to-project prompt */
+  wbSavePromptTitle: "Сохранить этот сайт в проект?",
+  wbCreateNewProject: "Создать новый проект",
+  wbAddToExisting: "Добавить в существующий проект",
+  wbNotNow: "Не сейчас",
+  wbChooseProject: "Выберите проект",
+  wbSavedToNamed: "Сохранено в {name}",
+  wbNoProjectsYet: "Пока нет проектов",
 };

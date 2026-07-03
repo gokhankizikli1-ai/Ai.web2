@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Link, useNavigate, useLocation } from 'react-router';
 import {
   Mail, Lock, Eye, EyeOff,
-  ArrowRight, User, ShieldAlert, UserPlus,
+  ArrowRight, ShieldAlert, UserPlus,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
 import BrandLogo from '@/components/BrandLogo';
@@ -351,11 +351,6 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
       const from = (location.state as any)?.from || '/chat';
       navigate(from, { replace: true });
     }
-  };
-
-  const handleGuest = () => {
-    const from = (location.state as any)?.from || '/chat';
-    navigate(from);
   };
 
   /* ─── Google OAuth — Safari/iPad-safe with timeout + redirect fallback
@@ -1016,16 +1011,6 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
             </button>
           </form>
 
-          {/* Guest */}
-          <div className="mt-4 pt-4 border-t border-[#DDE3EA] text-center">
-            <button
-              onClick={handleGuest}
-              className="inline-flex items-center gap-1.5 text-[12px] text-[#64748B] hover:text-[#52677A] transition-colors"
-            >
-              <User className="w-3.5 h-3.5" />
-              Continue as Guest
-            </button>
-          </div>
           </>
           )}
         </div>
