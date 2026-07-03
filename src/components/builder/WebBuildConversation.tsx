@@ -126,9 +126,6 @@ export default function WebBuildConversation({
           <div key={step.id} className="space-y-3">
             <UserMessage text={step.prompt} />
             <AssistantMessage>
-              <p className="text-[13px] text-[#CBD5E1] leading-relaxed">
-                {t(step.kind === 'revision' ? 'wbMsgReviseIntro' : 'wbMsgBuildIntro')}
-              </p>
               <WebBuildExecutionLog
                 step={step}
                 brief={brief}

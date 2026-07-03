@@ -139,8 +139,20 @@ export function buildWebBuildRequest(
     lines.push('', `Requested change: ${idea}`);
   } else {
     lines.push(
-      'Generate a real, buildable website package for the idea below. Understand the brief,',
-      'detect the website type, and tailor the layout to it.',
+      'Generate a real, buildable website package for the idea below.',
+      '',
+      'Before writing, reason about the brief: who the audience is, the single',
+      'conversion goal, and the tone. Then tailor the layout and copy to it.',
+      '',
+      'COPY QUALITY (important):',
+      '- Write specific, professional, benefit-led copy — never generic motivational',
+      '  filler (avoid empty lines like "Reach your dreams" / "Hayallerinize ulaşın").',
+      '- The hero headline must name the concrete offer and outcome; the subheadline',
+      '  should say how it works or what the visitor gets.',
+      '- Make the primary CTA specific to the goal (e.g. "Book a free intro call"),',
+      '  not a bland "Get started".',
+      '- Write all copy in the same language as the idea and keep it natural and fluent',
+      '  in that language.',
       '',
       `Idea: ${idea}`,
     );
