@@ -46,7 +46,7 @@ const AUTHED_HREF: Record<NavTarget, string> = {
   workspace: '/workspace',
   startup: '/chat?tab=startup',
   ecommerce: '/chat?tab=business',
-  game: '/chat?tab=agents',
+  game: '/tools/game-builder',
   'app-builder': '/tools/app-builder',
   agents: '/agents',
   projects: '/projects',

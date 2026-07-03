@@ -42,6 +42,7 @@ const CATEGORIES: Category[] = [
     tools: [
       { name: 'Website Builder', desc: 'Generate full website structure and copy', path: '/tools/website-builder', isNew: true },
       { name: 'App Builder', desc: 'Plan app structure, stack, and MVP', path: '/tools/app-builder', isNew: true },
+      { name: 'Game Builder', desc: 'Engine-ready builds for Roblox Studio & Unreal Engine 5', path: '/tools/game-builder', isNew: true },
       { name: 'Brand Builder', desc: 'Name, slogan, colors, positioning', path: '/tools/brand-builder', isNew: true },
     ],
   },

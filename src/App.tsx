@@ -17,6 +17,7 @@ import ExplorePage from './pages/ExplorePage';
 import WebsiteAnalyzer from './pages/WebsiteAnalyzer';
 import WebsiteBuilder from './pages/WebsiteBuilder';
 import AppBuilder from './pages/AppBuilder';
+import GameBuilder from './pages/GameBuilder';
 import BrandBuilder from './pages/BrandBuilder';
 import ViralContent from './pages/ViralContent';
 import KnowledgeVault from './pages/KnowledgeVault';
@@ -152,6 +153,7 @@ export default function App() {
         <Route path="/tools/website-analyzer" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><AnimatedRoute><WebsiteAnalyzer /></AnimatedRoute></ProtectedRoute>} />
         <Route path="/tools/website-builder" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><AnimatedRoute><WebsiteBuilder /></AnimatedRoute></ProtectedRoute>} />
         <Route path="/tools/app-builder" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><AnimatedRoute><AppBuilder /></AnimatedRoute></ProtectedRoute>} />
+        <Route path="/tools/game-builder" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><AnimatedRoute><GameBuilder /></AnimatedRoute></ProtectedRoute>} />
         <Route path="/tools/brand-builder" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><AnimatedRoute><BrandBuilder /></AnimatedRoute></ProtectedRoute>} />
         <Route path="/tools/viral-content" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><AnimatedRoute><ViralContent /></AnimatedRoute></ProtectedRoute>} />
         <Route path="/tools/knowledge-vault" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><AnimatedRoute><KnowledgeVault /></AnimatedRoute></ProtectedRoute>} />

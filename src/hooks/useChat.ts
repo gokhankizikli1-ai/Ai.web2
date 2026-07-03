@@ -712,6 +712,7 @@ export function useChat() {
     const KNOWN_BACKEND_MODES = new Set([
       'fast', 'deep_think', 'research', 'coding', 'study',
       'startup_advisor', 'marketing_dropshipping', 'trading_analyst',
+      'website_builder', 'game_developer',
     ]);
     const normalizedMode = aiMode ? aiMode.replace('-', '_') : '';
     let requestMode = KNOWN_BACKEND_MODES.has(normalizedMode) ? normalizedMode : undefined;
