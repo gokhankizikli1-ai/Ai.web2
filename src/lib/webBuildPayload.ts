@@ -190,6 +190,95 @@ export function deriveBuildActivity(result: WebBuildResult, files?: WebBuildFile
   return rows;
 }
 
+/**
+ * One row in the live execution log. Each op has a running-state and a
+ * done-state label (i18n keys), plus REAL data tied to the build. `file` ops
+ * are clickable (they open the file drawer on that path); `info` ops show a
+ * real-data detail line (brief bits, section names, design style). We only ever
+ * list files that are actually in the step's file set.
+ */
+export interface ExecOp {
+  id: string;
+  kind: 'info' | 'file';
+  /** i18n key for the running (in-progress) label. */
+  runKey: string;
+  /** i18n key for the completed label. */
+  doneKey: string;
+  /** {placeholder} params for both labels (e.g. { file }). */
+  params?: Record<string, string | number>;
+  /** Real, data-tied detail line (already resolved text; may be user-language). */
+  detail?: string;
+  /** For file ops — the path to open in the file drawer on click. */
+  file?: string;
+  /** For file ops — diff counts to render as +N −M. */
+  added?: number;
+  removed?: number;
+  /** For file ops — drives the icon/badge tone. */
+  fileStatus?: 'created' | 'modified' | 'read';
+}
+
+/**
+ * Turn a build/revision step into a chronological execution log tied to the
+ * REAL generated files. Fresh build: read brief → plan structure → design
+ * direction (each with real detail) → one op per created file → preview
+ * updated. Revision: per changed file, read-current then modify (or create),
+ * then preview updated. Never invents a file that isn't in `step.files`.
+ */
+export function deriveExecutionOps(
+  step: WebBuildStep,
+  brief: { type?: string; audience?: string; goal?: string; style?: string },
+): ExecOp[] {
+  const ops: ExecOp[] = [];
+  const changed = step.files.filter((f) => f.status !== 'unchanged');
+  const shown = changed.length ? changed : step.files;
+  const fileDetail = (f: WebBuildFile) =>
+    f.summary || (f.added || f.removed ? `+${f.added} −${f.removed}` : undefined);
+
+  if (step.kind === 'revision') {
+    for (const f of shown) {
+      if (f.status === 'modified') {
+        ops.push({
+          id: `read-${f.path}`, kind: 'file', runKey: 'wbOpReadFileRun', doneKey: 'wbOpReadFileDone',
+          params: { file: f.path }, file: f.path, fileStatus: 'read',
+        });
+        ops.push({
+          id: `mod-${f.path}`, kind: 'file', runKey: 'wbOpModifyRun', doneKey: 'wbOpModifyDone',
+          params: { file: f.path }, file: f.path, fileStatus: 'modified',
+          added: f.added, removed: f.removed, detail: fileDetail(f),
+        });
+      } else {
+        ops.push({
+          id: `new-${f.path}`, kind: 'file', runKey: 'wbOpCreateRun', doneKey: 'wbOpCreateDone',
+          params: { file: f.path }, file: f.path, fileStatus: 'created',
+          added: f.added, removed: f.removed, detail: fileDetail(f),
+        });
+      }
+    }
+    ops.push({ id: 'preview', kind: 'info', runKey: 'wbOpPreviewRun', doneKey: 'wbOpPreviewDone' });
+    return ops;
+  }
+
+  // Fresh build — brief / structure / design, then one op per created file.
+  const briefBits = [step.summary.type || brief.type, brief.audience, brief.goal].filter(Boolean).join(' · ');
+  ops.push({ id: 'brief', kind: 'info', runKey: 'wbOpReadBriefRun', doneKey: 'wbOpReadBriefDone', detail: briefBits || undefined });
+  ops.push({
+    id: 'plan', kind: 'info', runKey: 'wbOpPlanRun', doneKey: 'wbOpPlanDone',
+    detail: step.summary.sectionNames.length ? step.summary.sectionNames.join(', ') : undefined,
+  });
+  if (brief.style) {
+    ops.push({ id: 'design', kind: 'info', runKey: 'wbOpDesignRun', doneKey: 'wbOpDesignDone', detail: brief.style });
+  }
+  for (const f of shown) {
+    ops.push({
+      id: `file-${f.path}`, kind: 'file', runKey: 'wbOpCreateRun', doneKey: 'wbOpCreateDone',
+      params: { file: f.path }, file: f.path, fileStatus: 'created',
+      added: f.added, removed: f.removed, detail: fileDetail(f),
+    });
+  }
+  ops.push({ id: 'preview', kind: 'info', runKey: 'wbOpPreviewRun', doneKey: 'wbOpPreviewDone' });
+  return ops;
+}
+
 function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }

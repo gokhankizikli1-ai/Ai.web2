@@ -65,6 +65,7 @@ export default function WebsiteBuilder() {
 
   const [input, setInput] = useState('');
   const [payload, setPayload] = useState<WebBuildPayload | null>(null);
+  const [animateStepId, setAnimateStepId] = useState<string | undefined>(undefined);
   const [live, setLive] = useState<{ prompt: string; rows: WebBuildActivityRow[] } | null>(null);
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -145,7 +146,9 @@ export default function WebsiteBuilder() {
       const res = await generateWebBuild(trimmed, { signal: controller.signal });
       if (abortRef.current !== controller) return; // superseded
       clearActivityTimer();
-      setPayload(buildWebBuildPayload(trimmed, res));
+      const next = buildWebBuildPayload(trimmed, res);
+      setPayload(next);
+      setAnimateStepId(next.steps[next.steps.length - 1]?.id);
       setLive(null);
     } catch (err) {
       if (controller.signal.aborted) return;
@@ -176,7 +179,9 @@ export default function WebsiteBuilder() {
       });
       if (abortRef.current !== controller) return; // superseded
       clearActivityTimer();
-      setPayload(buildWebBuildPayload(trimmed, res, payload));
+      const next = buildWebBuildPayload(trimmed, res, payload);
+      setPayload(next);
+      setAnimateStepId(next.steps[next.steps.length - 1]?.id);
       setLive(null);
     } catch (err) {
       if (controller.signal.aborted) return;
@@ -306,6 +311,7 @@ export default function WebsiteBuilder() {
                 live={live}
                 extraCards={payload ? saveCard : undefined}
                 slug={slugFromIdea(payload?.prompt ?? live?.prompt ?? '')}
+                animateStepId={animateStepId}
               />
               {errorMsg && (
                 <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-rose-500/20 bg-rose-500/[0.04] px-4 py-3.5">

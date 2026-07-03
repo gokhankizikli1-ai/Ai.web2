@@ -333,6 +333,9 @@ function WebBuildProjectView({ project }: { project: Project }) {
   }, [project.webBuild]);
 
   const [payload, setPayload] = useState<WebBuildPayload>(initial);
+  // Undefined on load (saved builds render fully done); set to the newest step
+  // after an inline revision so only that step plays the live reveal.
+  const [animateStepId, setAnimateStepId] = useState<string | undefined>(undefined);
   const [input, setInput] = useState('');
   const [live, setLive] = useState<{ prompt: string; rows: WebBuildActivityRow[] } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -406,6 +409,7 @@ function WebBuildProjectView({ project }: { project: Project }) {
       // Persist the continuation onto the saved project.
       saveWebBuildPayloadToProject(next, project.id);
       setPayload(next);
+      setAnimateStepId(next.steps[next.steps.length - 1]?.id);
       setLive(null);
     } catch (err) {
       if (controller.signal.aborted) return;
@@ -484,6 +488,7 @@ function WebBuildProjectView({ project }: { project: Project }) {
               live={live}
               extraCards={savedCard}
               slug={wbSlug(project.name)}
+              animateStepId={animateStepId}
             />
             {errorMsg && (
               <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-rose-500/20 bg-rose-500/[0.04] px-4 py-3.5">

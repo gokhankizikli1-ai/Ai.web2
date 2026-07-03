@@ -369,4 +369,21 @@ export const tr: Record<string, string> = {
   /* web build — working messages */
   wbWorkingBrief: "Brief'i inceliyorum ve sayfa yapısını çıkarıyorum…",
   wbWorkingSections: "Bölümleri ve component yapısını hazırlıyorum…",
+  /* web build — live execution log */
+  wbMsgBuildIntro: "Web sitenizi oluşturuyorum — şu anda yaptıklarım:",
+  wbMsgReviseIntro: "Değişikliğiniz uygulanıyor:",
+  wbOpReadBriefRun: "Brief okunuyor…",
+  wbOpReadBriefDone: "Brief okundu",
+  wbOpPlanRun: "Sayfa yapısı planlanıyor…",
+  wbOpPlanDone: "Sayfa yapısı planlandı",
+  wbOpDesignRun: "Tasarım yönü seçiliyor…",
+  wbOpDesignDone: "Tasarım yönü seçildi",
+  wbOpCreateRun: "{file} oluşturuluyor…",
+  wbOpCreateDone: "{file} oluşturuldu",
+  wbOpModifyRun: "{file} güncelleniyor…",
+  wbOpModifyDone: "{file} güncellendi",
+  wbOpReadFileRun: "{file} okunuyor…",
+  wbOpReadFileDone: "{file} okundu",
+  wbOpPreviewRun: "Önizleme güncelleniyor…",
+  wbOpPreviewDone: "Önizleme güncellendi",
 };

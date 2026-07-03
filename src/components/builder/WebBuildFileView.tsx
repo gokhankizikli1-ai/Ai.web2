@@ -34,13 +34,16 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-export default function WebBuildFileView({ files }: { files: WebBuildFile[] }) {
+export default function WebBuildFileView({ files, initialPath }: { files: WebBuildFile[]; initialPath?: string }) {
   const { t } = useLanguageStore();
   const ordered = useMemo(
     () => [...files].sort((a, b) => a.path.localeCompare(b.path)),
     [files],
   );
-  const [active, setActive] = useState(0);
+  const [active, setActive] = useState(() => {
+    const i = initialPath ? ordered.findIndex((f) => f.path === initialPath) : -1;
+    return i >= 0 ? i : 0;
+  });
   const file = ordered[Math.min(active, ordered.length - 1)];
 
   if (ordered.length === 0) {
