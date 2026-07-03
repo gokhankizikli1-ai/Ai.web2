@@ -8,6 +8,7 @@ import {
   Layout, Server, Search, Rocket, ShoppingBag,
   TrendingUp, Palette, Activity, Loader2,
   History, ChevronRight, Monitor,
+  Code2, Copy, ArrowRight,
 } from 'lucide-react';
 
 const ROLE_ICONS: Record<string, React.ElementType> = {
@@ -34,6 +35,10 @@ import OwnerSessionIndicator from '@/components/OwnerSessionIndicator';
 import ProjectRunPanel from '@/components/ProjectRunPanel';
 import ProjectRunCenter, { artifactLabel, type BuildOverview } from '@/components/ProjectRunCenter';
 import { projectOrchestratorClient } from '@/hooks/useProjectOrchestrator';
+import WebBuildOutput from '@/components/builder/WebBuildOutput';
+import WebBuildActivityTable from '@/components/builder/WebBuildActivityTable';
+import { viewFromPayload } from '@/lib/webBuildPayload';
+import { useLanguageStore } from '@/stores/languageStore';
 
 /* ═══════════════════════════════════════════════════════════════════
    Phase 3.7 — typewriter helpers.
@@ -275,6 +280,7 @@ export default function ProjectWorkspace() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const { addToast } = useToast();
+  const { t } = useLanguageStore();
   const project = getProject(projectId || '');
 
   const [agents, setAgents] = useState<ProjectAgent[]>(() => getProjectAgents(projectId || ''));
@@ -699,6 +705,190 @@ export default function ProjectWorkspace() {
               style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}>
               New project
             </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  /* ─── Saved Web Build — a project created from Web Build renders its saved
+     build (Overview / Sections / Design / Copy / Code / Preview / Activity)
+     instead of the orchestrator/agent workspace. Placed BEFORE the
+     orchestrator probe / builder-mode logic so a web-build project never
+     shows generic suggestions, the run center, or "No builds yet". ─── */
+  if (project.webBuild) {
+    const wb = project.webBuild;
+    const view = viewFromPayload(wb);
+
+    const relTime = (iso?: string): string => {
+      if (!iso) return '';
+      const then = new Date(iso).getTime();
+      if (Number.isNaN(then)) return '';
+      const diff = Math.max(0, Date.now() - then);
+      const mins = Math.round(diff / 60000);
+      if (mins < 1) return t('wbProjSavedBuild');
+      if (mins < 60) return `${mins}m`;
+      const hrs = Math.round(mins / 60);
+      if (hrs < 24) return `${hrs}h`;
+      return `${Math.round(hrs / 24)}d`;
+    };
+
+    const overviewRows = [
+      { label: t('wbOverviewType'), value: wb.brief.type },
+      { label: t('wbOverviewAudience'), value: wb.brief.audience },
+      { label: t('wbOverviewGoal'), value: wb.brief.goal },
+      { label: t('wbOverviewStyle'), value: wb.brief.style },
+    ].filter((r) => Boolean(r.value));
+
+    const copyCode = async () => {
+      const codeBody = wb.sections.find((s) => /frontend\s*code/i.test(s.title))?.body || wb.reply;
+      try {
+        await navigator.clipboard.writeText(codeBody);
+        addToast(t('wbActExportCode'), 'success');
+      } catch {
+        addToast(t('wbActExportCode'), 'error');
+      }
+    };
+
+    const goBuilder = () => navigate('/tools/website-builder');
+
+    const nextActions: { key: string; icon: React.ElementType; onClick: () => void }[] = [
+      { key: 'wbActContinue', icon: ArrowRight, onClick: goBuilder },
+      { key: 'wbRefineDesign', icon: Palette, onClick: goBuilder },
+      { key: 'wbGenerateCode', icon: Code2, onClick: goBuilder },
+      { key: 'wbActAddSection', icon: Plus, onClick: goBuilder },
+      { key: 'wbActExportCode', icon: Copy, onClick: copyCode },
+      { key: 'wbActNewRevision', icon: History, onClick: goBuilder },
+    ];
+
+    return (
+      <div className="h-[100dvh] w-full max-w-full flex flex-col overflow-hidden" style={{ background: '#11151C', color: '#E2E8F0' }}>
+        {/* Ambient */}
+        <div className="fixed inset-0 pointer-events-none overflow-hidden">
+          <div className="absolute -top-[200px] -right-[200px] w-[600px] h-[600px] rounded-full opacity-[0.03]" style={{ background: 'radial-gradient(circle, #3B82F6 0%, transparent 70%)' }} />
+        </div>
+
+        {/* Top Bar — native project header */}
+        <div className="relative shrink-0 flex items-center justify-between px-4 py-2.5" style={{ background: 'rgba(13, 17, 23,0.85)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(255,255,255,0.05)', zIndex: 10 }}>
+          <div className="flex items-center gap-3">
+            <button onClick={() => navigate('/projects')} className="flex items-center gap-1 text-[11px] text-white/30 hover:text-white/60 transition-colors">
+              <ArrowLeft className="h-3.5 w-3.5" />
+            </button>
+            <div className="w-px h-4 bg-white/10" />
+            <div className={`flex h-6 w-6 items-center justify-center rounded-md bg-gradient-to-br ${project.gradient}`}>
+              <FolderOpen className="h-3 w-3 text-white" />
+            </div>
+            <h1 className="text-[13px] font-semibold text-white/90">{project.name}</h1>
+            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(59, 130, 246,0.06)', border: '1px solid rgba(59, 130, 246,0.12)' }}>
+              <Monitor className="h-2.5 w-2.5 text-[#60A5FA]/80" />
+              <span className="text-[9px] text-[#60A5FA]/80 font-medium">{t('wbProjWebsiteBuild')}</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <OwnerModeChip />
+            <OwnerSessionIndicator />
+          </div>
+        </div>
+
+        {/* 3-Panel Layout */}
+        <div className="relative flex-1 flex min-h-0 min-w-0 overflow-hidden">
+          {/* LEFT: saved build panel */}
+          <div className="hidden lg:flex flex-col w-[230px] shrink-0 overflow-y-auto scrollbar-thin px-2.5 py-3 gap-3" style={{ background: 'rgba(13, 17, 23,0.5)', borderRight: '1px solid rgba(255,255,255,0.04)' }}>
+            <div className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.05)' }}>
+              <div className="flex items-center gap-2 mb-2">
+                <Monitor className="h-3.5 w-3.5 text-[#60A5FA]/70" />
+                <span className="text-[11px] font-semibold text-white/70">{t('wbProjSavedBuild')}</span>
+              </div>
+              <p className="text-[12px] text-white/80 font-medium leading-snug truncate">{project.name}</p>
+              {wb.brief.type && (
+                <p className="text-[10px] text-white/40 mt-0.5">{wb.brief.type}</p>
+              )}
+              {wb.updatedAt && (
+                <p className="text-[9px] text-white/25 mt-1.5">{relTime(wb.updatedAt)}</p>
+              )}
+            </div>
+
+            {wb.revisions.length > 0 && (
+              <div>
+                <div className="flex items-center gap-1.5 mb-2 px-1">
+                  <History className="h-3 w-3 text-white/25" />
+                  <span className="text-[10px] font-semibold text-white/25 uppercase tracking-wider">{t('wbProjRevisions')}</span>
+                </div>
+                <div className="space-y-1">
+                  {wb.revisions.map((rev, i) => (
+                    <div key={`${rev.at}-${i}`} className="flex items-start gap-2 rounded-lg px-2 py-1.5" style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.03)' }}>
+                      <span className="text-[9px] text-white/25 mt-0.5 shrink-0">#{wb.revisions.length - i}</span>
+                      <span className="text-[10px] text-white/55 leading-snug line-clamp-2">{rev.note}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* CENTER: the saved build output */}
+          <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+            <div className="shrink-0 flex items-center gap-2 px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+              <Monitor className="h-4 w-4 text-[#60A5FA]/70" />
+              <h2 className="text-[13px] font-semibold text-white/80">{t('wbProjWebsiteBuild')}</h2>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin px-4 py-4">
+              <WebBuildOutput view={view} />
+            </div>
+          </div>
+
+          {/* RIGHT: inspector */}
+          <div className="hidden xl:flex flex-col w-[260px] shrink-0 overflow-y-auto scrollbar-thin p-3 gap-3" style={{ background: 'rgba(13, 17, 23,0.3)', borderLeft: '1px solid rgba(255,255,255,0.04)' }}>
+            {/* (a) Build Overview */}
+            {overviewRows.length > 0 && (
+              <div className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.04)' }}>
+                <div className="flex items-center gap-2 mb-2.5">
+                  <Sparkles className="h-3.5 w-3.5 text-[#3B82F6]/50" />
+                  <span className="text-[11px] font-semibold text-white/60">{t('wbTabOverview')}</span>
+                </div>
+                <div className="space-y-2">
+                  {overviewRows.map((r) => (
+                    <div key={r.label} className="flex flex-col gap-0.5">
+                      <span className="text-[9px] font-medium uppercase tracking-wide text-white/25">{r.label}</span>
+                      <span className="text-[11px] text-white/70 leading-snug">{r.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* (b) Build Activity */}
+            <div className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.04)' }}>
+              <div className="flex items-center gap-2 mb-2.5">
+                <Activity className="h-3.5 w-3.5 text-[#3B82F6]/50" />
+                <span className="text-[11px] font-semibold text-white/60">{t('wbBuildActivity')}</span>
+              </div>
+              <WebBuildActivityTable rows={wb.activity} />
+            </div>
+
+            {/* (c) Next actions */}
+            <div className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.04)' }}>
+              <div className="flex items-center gap-2 mb-2.5">
+                <Zap className="h-3.5 w-3.5 text-[#3B82F6]/50" />
+                <span className="text-[11px] font-semibold text-white/60">{t('wbProjNextActions')}</span>
+              </div>
+              <div className="space-y-1.5">
+                {nextActions.map((a) => {
+                  const Icon = a.icon;
+                  return (
+                    <button
+                      key={a.key}
+                      onClick={a.onClick}
+                      className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] text-white/55 hover:text-[#60A5FA] transition-all"
+                      style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}
+                    >
+                      <Icon className="h-3.5 w-3.5 shrink-0 text-[#3B82F6]/50" />
+                      <span className="text-left leading-snug">{t(a.key)}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </div>
       </div>

@@ -8,9 +8,18 @@
 import type { Project, ProjectMemory } from '@/types/projects';
 import { getProject, addProject, updateProject } from '@/stores/projectStore';
 import type { WebBuildResult } from '@/lib/webBuildApi';
+import { buildWebBuildPayload, type WebBuildPayload } from '@/lib/webBuildPayload';
 
 function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/** The build is now saved to a project, so mark the 'save' activity row done. */
+function markSaved(payload: WebBuildPayload): WebBuildPayload {
+  return {
+    ...payload,
+    activity: payload.activity.map((r) => (r.id === 'save' ? { ...r, status: 'done' as const } : r)),
+  };
 }
 
 /** Human-useful project name, e.g. "Website: SaaS Landing Page". Prefers the
@@ -64,7 +73,7 @@ export function createWebBuildProject(idea: string, result: WebBuildResult): Pro
     description: idea.trim().slice(0, 200),
     category: 'Website',
     status: 'active',
-    progress: 20,
+    progress: 40,
     agents: [],
     tasks: [],
     memory: [
@@ -81,6 +90,8 @@ export function createWebBuildProject(idea: string, result: WebBuildResult): Pro
     color: 'slate',
     gradient: 'from-[#3B82F6] to-[#60A5FA]',
     icon: 'Layout',
+    // Structured build package — what the project detail page renders.
+    webBuild: markSaved(buildWebBuildPayload(idea, result)),
   };
   addProject(project);
   return project;
@@ -96,8 +107,13 @@ export function appendWebBuildRevision(
   const existing = getProject(projectId);
   if (!existing) return createWebBuildProject(idea, result);
   const memory = [...sectionMemories(result, `revision: ${idea.trim().slice(0, 40)}`), ...existing.memory];
-  updateProject(projectId, { memory, updatedAt: 'Just now', progress: Math.min(100, existing.progress + 10) });
-  return { ...existing, memory };
+  // Extend the structured payload with the revision (keeps history).
+  const webBuild = markSaved(buildWebBuildPayload(idea, result, existing.webBuild));
+  updateProject(projectId, {
+    memory, webBuild, updatedAt: 'Just now',
+    progress: Math.min(100, existing.progress + 10),
+  });
+  return { ...existing, memory, webBuild };
 }
 
 /**
