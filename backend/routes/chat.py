@@ -19,8 +19,10 @@ class ChatRequest(BaseModel):
     platform: Optional[str] = "web"
     session_id: Optional[str] = None
     # Optional AI mode — recognized values: fast, deep_think, startup_advisor,
-    # marketing_dropshipping, trading_analyst, coding, study, research.
-    # Legacy aliases (e.g. "chat", "finance", "ecommerce") are also accepted.
+    # marketing_dropshipping, trading_analyst, coding, study, research,
+    # website_builder, game_developer.
+    # Legacy aliases (e.g. "chat", "finance", "ecommerce", "roblox", "ue5")
+    # are also accepted.
     # Omit or send null to use automatic intent-based routing (default behaviour).
     mode: Optional[str] = None
     # Optional UI language preference (e.g. "en", "tr", "de"). Additive &

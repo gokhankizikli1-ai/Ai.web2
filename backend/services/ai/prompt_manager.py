@@ -73,6 +73,11 @@ _INTENT_TO_MODE: dict = {
     # Website / landing pages
     "website":          "website_builder",
     "landing":          "website_builder",
+    # Game development (Roblox Studio / Unreal Engine 5)
+    "game":             "game_developer",
+    "game_dev":         "game_developer",
+    "roblox":           "game_developer",
+    "unreal":           "game_developer",
     # Everything else falls back to fast
 }
 
