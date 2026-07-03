@@ -1,27 +1,29 @@
 import { useNavigate, useLocation } from 'react-router';
 import { motion } from 'framer-motion';
 import {
-  MessageSquare, Compass, FolderOpen, Bot,
+  MessageSquare, Globe, Gamepad2, FolderOpen,
 } from 'lucide-react';
-
-const ITEMS = [
-  { id: 'chat', label: 'Chat', icon: MessageSquare, path: '/chat' },
-  { id: 'projects', label: 'Projects', icon: FolderOpen, path: '/projects' },
-  { id: 'agents', label: 'Agents', icon: Bot, path: '/agents' },
-  { id: 'explore', label: 'Explore', icon: Compass, path: '/explore' },
-];
+import { useLanguageStore } from '@/stores/languageStore';
 
 export default function BottomNav() {
   const navigate = useNavigate();
   const location = useLocation();
   const pathname = location.pathname;
+  const { t } = useLanguageStore();
+
+  const ITEMS = [
+    { id: 'chat', label: t('navChat'), icon: MessageSquare, path: '/chat' },
+    { id: 'webbuild', label: t('navWebBuild'), icon: Globe, path: '/tools/website-builder' },
+    { id: 'game', label: t('navGameBuild'), icon: Gamepad2, path: '/tools/game-builder' },
+    { id: 'projects', label: t('navProjects'), icon: FolderOpen, path: '/projects' },
+  ];
 
   // Determine active item based on current route
   const getActiveId = () => {
-    if (pathname === '/chat' || pathname.startsWith('/chat')) return 'chat';
+    if (pathname === '/tools/website-builder') return 'webbuild';
+    if (pathname === '/tools/game-builder') return 'game';
     if (pathname === '/projects' || pathname.startsWith('/projects')) return 'projects';
-    if (pathname === '/agents' || pathname.startsWith('/agents')) return 'agents';
-    if (pathname === '/explore') return 'explore';
+    if (pathname === '/chat' || pathname.startsWith('/chat')) return 'chat';
     return 'chat';
   };
 

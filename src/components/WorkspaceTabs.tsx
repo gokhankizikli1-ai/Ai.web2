@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { Sparkles, Building2, TrendingUp, Gamepad2 } from 'lucide-react';
 import type { WorkspaceTab } from '@/types';
+import { useLanguageStore } from '@/stores/languageStore';
 
 interface WorkspaceTabsProps {
   activeTab: WorkspaceTab;
@@ -27,17 +28,18 @@ interface TabConfig {
   shortLabel?: string;
 }
 
-const BASE_TABS: TabConfig[] = [
-  { key: 'chat',     label: 'Chat',     icon: Sparkles,   shortLabel: 'Chat' },
-  { key: 'business', label: 'Business', icon: Building2,  shortLabel: 'Business' },
-];
-
-const TRADING_TAB: TabConfig = {
-  key: 'trading', label: 'Trading', icon: TrendingUp, shortLabel: 'Trading',
-};
-
 export default function WorkspaceTabs({ activeTab, onTabChange, showTrading = false, onGameBuilderClick }: WorkspaceTabsProps) {
-  const tabs = showTrading ? [...BASE_TABS, TRADING_TAB] : BASE_TABS;
+  const { t } = useLanguageStore();
+
+  // Chat is public. Business + Trading are OWNER-ONLY (private preview) —
+  // ChatDashboard passes its useOwnerMode() `isOwner` in as `showTrading`.
+  const CHAT_TAB: TabConfig = { key: 'chat', label: t('chat'), icon: Sparkles, shortLabel: t('chat') };
+  const OWNER_TABS: TabConfig[] = [
+    { key: 'business', label: t('business'), icon: Building2,  shortLabel: t('business') },
+    { key: 'trading',  label: t('trading'),  icon: TrendingUp, shortLabel: t('trading') },
+  ];
+
+  const tabs = showTrading ? [CHAT_TAB, ...OWNER_TABS] : [CHAT_TAB];
   return (
     <div className="flex items-center gap-0.5 px-1">
       {tabs.map((tab) => {
@@ -81,8 +83,8 @@ export default function WorkspaceTabs({ activeTab, onTabChange, showTrading = fa
         >
           <span className="relative z-10 flex items-center gap-1">
             <Gamepad2 className="h-3 w-3" />
-            <span className="hidden sm:inline">Game</span>
-            <span className="sm:hidden">Game</span>
+            <span className="hidden sm:inline">{t('navGameBuild')}</span>
+            <span className="sm:hidden">{t('navGameBuild')}</span>
           </span>
         </button>
       )}

@@ -5,9 +5,9 @@ import {
 } from 'lucide-react';
 import BuilderWorkspaceFrame from '@/components/builder/BuilderWorkspaceFrame';
 import MarkdownMessage from '@/components/MarkdownMessage';
+import { useLanguageStore } from '@/stores/languageStore';
 import {
-  ENGINE_ORDER, EXAMPLE_PROMPTS, GAME_ENGINES,
-  BUILD_QUALITY_ORDER, BUILD_QUALITIES,
+  GAME_ENGINES, BUILD_QUALITIES,
   generateGameBuild, parseBuildSections, GameBuildError,
   type GameBuildResult, type GameEngine, type BuildQuality,
 } from '@/lib/gameBuilderApi';
@@ -16,52 +16,13 @@ import {
 const ACCENT = '#3B82F6';
 const ACCENT_2 = '#60A5FA';
 
+// Fixed internal defaults — the builder is prompt-first for the MVP, so the
+// engine and build quality are pinned rather than exposed as pickers. The
+// backend flow stays Roblox-compatible ('roblox' + the "Polished MVP" tier).
+const FIXED_ENGINE: GameEngine = 'roblox';
+const FIXED_QUALITY: BuildQuality = 'mvp';
+
 type Phase = 'idle' | 'loading' | 'result' | 'error';
-
-/* ─── Selector pill (engine + build quality share the look) ────────────── */
-
-function Pill({
-  label, sublabel, selected, onSelect, disabled, icon,
-}: {
-  label: string;
-  sublabel?: string;
-  selected: boolean;
-  onSelect: () => void;
-  disabled: boolean;
-  icon?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      disabled={disabled}
-      aria-pressed={selected}
-      className={[
-        'inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-[12.5px] font-medium transition-all',
-        disabled ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer',
-        selected
-          ? 'text-white'
-          : 'text-[#94A3B8] border-white/[0.07] bg-white/[0.015] hover:text-[#CBD5E1] hover:border-white/[0.12]',
-      ].join(' ')}
-      style={selected
-        ? { background: 'rgba(59,130,246,0.12)', borderColor: 'rgba(59,130,246,0.4)' }
-        : undefined}
-    >
-      {icon && <Gamepad2 className="h-3.5 w-3.5" style={{ color: selected ? ACCENT_2 : undefined }} />}
-      {label}
-      {sublabel && (
-        <span
-          className="text-[10px] font-normal px-1.5 py-0.5 rounded-md"
-          style={selected
-            ? { background: 'rgba(96,165,250,0.15)', color: ACCENT_2 }
-            : { background: 'rgba(255,255,255,0.04)', color: '#64748B' }}
-        >
-          {sublabel}
-        </span>
-      )}
-    </button>
-  );
-}
 
 /* ─── Structured, tabbed result ────────────────────────────────────────── */
 
@@ -187,26 +148,29 @@ function BuildResult({
 /* ─── Page ─────────────────────────────────────────────────────────────── */
 
 export default function GameBuilder() {
-  const [engine, setEngine] = useState<GameEngine>('roblox');
-  const [quality, setQuality] = useState<BuildQuality>('mvp');
+  const { t } = useLanguageStore();
   const [idea, setIdea] = useState('');
   const [phase, setPhase] = useState<Phase>('idle');
   const [result, setResult] = useState<GameBuildResult | null>(null);
   const [errorMsg, setErrorMsg] = useState('');
 
-  const lastRequestRef = useRef<{ engine: GameEngine; quality: BuildQuality; idea: string } | null>(null);
+  const lastIdeaRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
   const busy = phase === 'loading';
-  const examples = useMemo(() => EXAMPLE_PROMPTS[engine], [engine]);
 
-  const run = useCallback(async (
-    targetEngine: GameEngine,
-    targetQuality: BuildQuality,
-    targetIdea: string,
-  ) => {
+  // Prompt-first feature chips — clicking one fills the prompt input.
+  const chips = useMemo(
+    () => [
+      t('gbCoinUi'), t('gbHealthBar'), t('gbShopSystem'), t('gbCheckpoint'),
+      t('gbSprint'), t('gbEnemyAi'), t('gbQuestTracker'), t('gbDailyReward'),
+    ],
+    [t],
+  );
+
+  const run = useCallback(async (targetIdea: string) => {
     const trimmed = targetIdea.trim();
     if (!trimmed || busy) return;
 
@@ -215,13 +179,14 @@ export default function GameBuilder() {
     const controller = new AbortController();
     abortRef.current = controller;
 
-    lastRequestRef.current = { engine: targetEngine, quality: targetQuality, idea: trimmed };
+    lastIdeaRef.current = trimmed;
     setPhase('loading');
     setErrorMsg('');
     setResult(null);
 
     try {
-      const res = await generateGameBuild(targetEngine, targetQuality, trimmed, controller.signal);
+      // Engine + quality are pinned internally for the MVP (Roblox-compatible).
+      const res = await generateGameBuild(FIXED_ENGINE, FIXED_QUALITY, trimmed, controller.signal);
       if (abortRef.current !== controller) return; // superseded
       setResult(res);
       setPhase('result');
@@ -235,55 +200,19 @@ export default function GameBuilder() {
     }
   }, [busy]);
 
-  const handleGenerate = () => run(engine, quality, idea);
-  const handleRetry = () => {
-    const last = lastRequestRef.current;
-    if (last) run(last.engine, last.quality, last.idea);
-    else run(engine, quality, idea);
-  };
+  const handleGenerate = () => run(idea);
+  const handleRetry = () => run(lastIdeaRef.current ?? idea);
 
   const canGenerate = idea.trim().length > 0 && !busy;
 
   return (
     <BuilderWorkspaceFrame
       icon={<Gamepad2 className="h-4 w-4" style={{ color: ACCENT_2 }} />}
-      title="Game Development"
-      subtitle="Describe the game you want. Korvix turns it into an engine-ready build package."
+      title={t('gameBuildTitle')}
+      subtitle={t('gameBuildSubtitle')}
       accent={ACCENT}
       maxWidth="max-w-3xl"
     >
-      {/* Engine selector — two pills, prompt-first */}
-      <div className="flex flex-wrap items-center gap-2 mb-3">
-        {ENGINE_ORDER.map((e) => (
-          <Pill
-            key={e}
-            label={GAME_ENGINES[e].label}
-            sublabel={GAME_ENGINES[e].stack}
-            selected={engine === e}
-            onSelect={() => setEngine(e)}
-            disabled={busy}
-            icon
-          />
-        ))}
-      </div>
-
-      {/* Build quality — the only other selector */}
-      <div className="mb-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[11px] font-medium text-[#64748B] mr-0.5">Build quality</span>
-          {BUILD_QUALITY_ORDER.map((q) => (
-            <Pill
-              key={q}
-              label={BUILD_QUALITIES[q].label}
-              selected={quality === q}
-              onSelect={() => setQuality(q)}
-              disabled={busy}
-            />
-          ))}
-        </div>
-        <p className="mt-1.5 text-[10.5px] text-[#5B6472]">{BUILD_QUALITIES[quality].blurb}</p>
-      </div>
-
       {/* Prompt composer */}
       <div className="rounded-2xl border border-white/[0.07] bg-white/[0.018] focus-within:border-white/[0.14] transition-colors overflow-hidden">
         <textarea
@@ -293,11 +222,7 @@ export default function GameBuilder() {
             if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') handleGenerate();
           }}
           rows={5}
-          placeholder={
-            engine === 'unreal'
-              ? 'e.g. A UE5 third-person melee action prototype with a lock-on camera, health, enemy AI, and a basic HUD.'
-              : 'e.g. A Roblox first-person horror where you explore an abandoned school with a flashlight, an AI enemy, quests, checkpoints, and jumpscares.'
-          }
+          placeholder={t('gameBuildPlaceholder')}
           disabled={busy}
           className="w-full resize-none bg-transparent px-4 py-3.5 text-[14px] leading-relaxed text-slate-100 placeholder:text-[#5B6472] outline-none disabled:opacity-60"
         />
@@ -315,30 +240,29 @@ export default function GameBuilder() {
             {busy ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                Generating…
+                {t('gameBuildGenerating')}
               </>
             ) : (
               <>
                 <Wand2 className="h-4 w-4" />
-                Generate build
+                {t('gameBuildGenerate')}
               </>
             )}
           </button>
         </div>
       </div>
 
-      {/* Examples (max 2) + honesty note */}
+      {/* Feature chips — click to fill the prompt */}
       <div className="mt-2.5 flex flex-wrap items-center gap-2">
-        <span className="text-[11px] text-[#5B6472]">Try:</span>
-        {examples.map((ex) => (
+        {chips.map((label) => (
           <button
-            key={ex}
-            onClick={() => setIdea(ex)}
+            key={label}
+            onClick={() => setIdea(label)}
             disabled={busy}
             className="max-w-full truncate px-2.5 py-1 rounded-full text-[11px] text-[#94A3B8] bg-white/[0.02] border border-white/[0.05] hover:bg-white/[0.04] hover:text-slate-200 hover:border-white/[0.1] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-            title={ex}
+            title={label}
           >
-            {ex}
+            {label}
           </button>
         ))}
       </div>
@@ -371,8 +295,7 @@ export default function GameBuilder() {
             >
               <Loader2 className="h-4 w-4 animate-spin shrink-0" style={{ color: ACCENT_2 }} />
               <p className="text-[12.5px] text-[#94A3B8]">
-                Designing, architecting &amp; QA-passing your{' '}
-                {GAME_ENGINES[lastRequestRef.current?.engine ?? engine].label} build…
+                Designing, architecting &amp; QA-passing your build…
               </p>
             </motion.div>
           )}

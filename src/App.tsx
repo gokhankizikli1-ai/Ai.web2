@@ -35,6 +35,7 @@ import BottomNav from './components/BottomNav';
 import FloatingParticles from './components/FloatingParticles';
 import PageTransition from './components/PageTransition';
 import ProtectedRoute from './components/ProtectedRoute';
+import OwnerRoute from './components/OwnerRoute';
 import BuildInfoOverlay from './components/BuildInfoOverlay';
 import OwnerWelcomeToast from './components/OwnerWelcomeToast';
 
@@ -142,14 +143,14 @@ export default function App() {
         <Route path="/projects/:projectId/runs" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><ProjectResults /></ProtectedRoute>} />
 
         {/* Agents */}
-        <Route path="/agents" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><AgentsPage /></ProtectedRoute>} />
-        <Route path="/agents/:agentId" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><AgentChatPage /></ProtectedRoute>} />
-        <Route path="/agents/builder" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><AgentBuilder /></ProtectedRoute>} />
+        <Route path="/agents" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><OwnerRoute><AgentsPage /></OwnerRoute></ProtectedRoute>} />
+        <Route path="/agents/:agentId" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><OwnerRoute><AgentChatPage /></OwnerRoute></ProtectedRoute>} />
+        <Route path="/agents/builder" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><OwnerRoute><AgentBuilder /></OwnerRoute></ProtectedRoute>} />
 
         {/* Tools (standalone pages) */}
         <Route path="/tools" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><AnimatedRoute><ToolsPage /></AnimatedRoute></ProtectedRoute>} />
-        <Route path="/tools/startup" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><AnimatedRoute><StartupHub /></AnimatedRoute></ProtectedRoute>} />
-        <Route path="/tools/ecommerce" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><AnimatedRoute><EcommerceOS /></AnimatedRoute></ProtectedRoute>} />
+        <Route path="/tools/startup" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><OwnerRoute><AnimatedRoute><StartupHub /></AnimatedRoute></OwnerRoute></ProtectedRoute>} />
+        <Route path="/tools/ecommerce" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><OwnerRoute><AnimatedRoute><EcommerceOS /></AnimatedRoute></OwnerRoute></ProtectedRoute>} />
         <Route path="/tools/website-analyzer" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><AnimatedRoute><WebsiteAnalyzer /></AnimatedRoute></ProtectedRoute>} />
         <Route path="/tools/website-builder" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><AnimatedRoute><WebsiteBuilder /></AnimatedRoute></ProtectedRoute>} />
         <Route path="/tools/app-builder" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><AnimatedRoute><AppBuilder /></AnimatedRoute></ProtectedRoute>} />
