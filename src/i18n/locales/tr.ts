@@ -366,4 +366,7 @@ export const tr: Record<string, string> = {
   wbMsgCreatedFileShort: "{file} oluşturuldu",
   wbMsgModifiedFile: "{file} değiştirildi (+{added} −{removed})",
   wbErrNoFiles: "Kod dosyaları oluşturulmadı. Tekrar deneyin.",
+  /* web build — working messages */
+  wbWorkingBrief: "Brief'i inceliyorum ve sayfa yapısını çıkarıyorum…",
+  wbWorkingSections: "Bölümleri ve component yapısını hazırlıyorum…",
 };

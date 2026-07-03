@@ -366,4 +366,7 @@ export const es: Record<string, string> = {
   wbMsgCreatedFileShort: "{file} creado",
   wbMsgModifiedFile: "{file} modificado (+{added} −{removed})",
   wbErrNoFiles: "No se generaron archivos de código. Inténtalo de nuevo.",
+  /* web build — working messages */
+  wbWorkingBrief: "Estoy leyendo el brief y definiendo la estructura de la página…",
+  wbWorkingSections: "Estoy preparando las secciones y la estructura de componentes…",
 };

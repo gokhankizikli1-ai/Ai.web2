@@ -1,23 +1,38 @@
-import { useState, type ReactNode } from 'react';
+import { useState, useEffect, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Sparkles, Monitor, FolderTree, ArrowRight, X, Loader2,
 } from 'lucide-react';
 import { useLanguageStore } from '@/stores/languageStore';
-import WebBuildActivityCard from '@/components/builder/WebBuildActivityCard';
 import WebBuildFileView from '@/components/builder/WebBuildFileView';
 import WebBuildPreviewPanel from '@/components/builder/WebBuildPreviewPanel';
 import type {
-  WebBuildStep, WebBuildFile, WebBuildSectionItem, WebBuildActivityRow,
+  WebBuildStep, WebBuildFile, WebBuildSectionItem,
 } from '@/lib/webBuildPayload';
 
 /**
- * The Web Build conversation feed (Claude/Kimi style): user + assistant
- * messages, a collapsible Build activity card, and clickable Preview / All
- * files attachment cards that open a slide-in panel. Shared by the live Web
- * Build page and the saved-project view so both read identically.
+ * The Web Build conversation feed (Claude/Kimi style): natural assistant
+ * messages, compact per-file "Created …" rows (NO task table / checklist), and
+ * clickable Preview / All files attachment cards that open a slide-in panel.
+ * Shared by the live Web Build page and the saved-project view.
  */
 const ACCENT = '#60A5FA';
+
+/* ── Live "working" message (2 honest phases, no fake file rows) ──────── */
+function LiveWorking() {
+  const { t } = useLanguageStore();
+  const [phase, setPhase] = useState(0);
+  useEffect(() => {
+    const id = setTimeout(() => setPhase(1), 1800);
+    return () => clearTimeout(id);
+  }, []);
+  return (
+    <div className="flex items-center gap-2 text-[13px] text-[#CBD5E1]">
+      <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: ACCENT }} />
+      {t(phase === 0 ? 'wbWorkingBrief' : 'wbWorkingSections')}
+    </div>
+  );
+}
 
 /* ── Attachment card ─────────────────────────────────────────────────── */
 function AttachmentCard({
@@ -123,8 +138,10 @@ interface WebBuildConversationProps {
   files: WebBuildFile[];
   sectionItems: WebBuildSectionItem[];
   brief: { type?: string; audience?: string; goal?: string; style?: string };
-  /** A build in progress to append at the bottom. */
-  live?: { prompt: string; rows: WebBuildActivityRow[] } | null;
+  /** A build in progress to append at the bottom. `rows` (from the old task
+   *  table) is accepted but ignored — the live state is now just conversational
+   *  "working" messages, no checklist. */
+  live?: { prompt: string; rows?: unknown } | null;
   /** Extra cards (e.g. Save to Project) appended after the last assistant msg. */
   extraCards?: ReactNode;
   slug?: string;
@@ -150,7 +167,6 @@ export default function WebBuildConversation({
                 {lines(step).map((l, k) => <p key={k}>{l}</p>)}
               </div>
               <FileLog step={step} />
-              <WebBuildActivityCard rows={step.activity} defaultOpen={false} />
               {/* Output cards only on the latest step (current state). */}
               {isLast && (
                 <div className="flex flex-col gap-2 pt-0.5">
@@ -169,11 +185,8 @@ export default function WebBuildConversation({
         <div className="space-y-3">
           <UserMessage text={live.prompt} />
           <AssistantMessage>
-            <div className="flex items-center gap-2 text-[13px] text-[#CBD5E1]">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: ACCENT }} />
-              {t('wbMsgIntro')}
-            </div>
-            <WebBuildActivityCard rows={live.rows} defaultOpen />
+            <p className="text-[13px] text-[#CBD5E1] leading-relaxed">{t('wbMsgIntro')}</p>
+            <LiveWorking />
           </AssistantMessage>
         </div>
       )}
