@@ -249,4 +249,12 @@ export const de: Record<string, string> = {
   wbChooseProject: "Projekt auswählen",
   wbSavedToNamed: "In {name} gespeichert",
   wbNoProjectsYet: "Noch keine Projekte",
+  /* composer tools + attach menu */
+  attachTakePhoto: "Foto oder Video aufnehmen",
+  attachChooseFiles: "Dateien auswählen",
+  attachmentsHeader: "Anhänge",
+  attachAndTools: "Anhängen & Tools",
+  toolDeepResearchDesc: "Recherche aus mehreren Quellen",
+  toolCodeMode: "Code-Modus",
+  toolCodeModeDesc: "Programmierassistent",
 };

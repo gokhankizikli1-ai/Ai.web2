@@ -256,4 +256,12 @@ export const en: Record<string, string> = {
   wbChooseProject: "Choose a project",
   wbSavedToNamed: "Saved to {name}",
   wbNoProjectsYet: "No projects yet",
+  /* composer tools + attach menu */
+  attachTakePhoto: "Take Photo or Video",
+  attachChooseFiles: "Choose Files",
+  attachmentsHeader: "Attachments",
+  attachAndTools: "Attach & Tools",
+  toolDeepResearchDesc: "Multi-source research",
+  toolCodeMode: "Code Mode",
+  toolCodeModeDesc: "Coding assistant",
 };

@@ -249,4 +249,12 @@ export const tr: Record<string, string> = {
   wbChooseProject: "Bir proje seç",
   wbSavedToNamed: "{name} projesine kaydedildi",
   wbNoProjectsYet: "Henüz proje yok",
+  /* composer tools + attach menu */
+  attachTakePhoto: "Fotoğraf veya Video Çek",
+  attachChooseFiles: "Dosya Seç",
+  attachmentsHeader: "Ekler",
+  attachAndTools: "Ekle ve Araçlar",
+  toolDeepResearchDesc: "Çok kaynaklı araştırma",
+  toolCodeMode: "Kod Modu",
+  toolCodeModeDesc: "Kodlama asistanı",
 };
