@@ -110,6 +110,12 @@ _RESEARCH_SIGNALS: tuple[str, ...] = (
     "en iyi ", "ilk 10", "ilk 5", "ilk 3",
     "şirket araştırması", "üniversite karşılaştırması",
     "fiyat analizi", "pazar araştırması",
+    # University / admissions — current requirements benefit from live data.
+    "başvuru şartları", "basvuru sartlari", "başvuru koşulları",
+    "başvuru gereksinimleri", "kabul şartları", "kabul koşulları",
+    "kabul oranı", "kontenjan",
+    "admission requirements", "admission criteria", "application requirements",
+    "acceptance rate", "how to apply", "requirements for",
 )
 
 # Domain words that almost always imply external sources.
@@ -137,6 +143,176 @@ _DOMAIN_SIGNALS: tuple[str, ...] = (
     "şirket", "sektör", "pazar",
     "web sitesi", "site",
 )
+
+
+# ── Finance / current-price signals (mandatory live data) ──────────────────
+#
+# Any current price / market / stock / crypto / FX / commodity question must
+# ALWAYS hit the live layer — never be answered from model memory. The general
+# scorer above missed these: "NVDA kaç dolar" has no temporal/research word and
+# "kaç dolar" wasn't a domain cue (only "kaç tl" was), so it scored 0. This
+# block is a dedicated, high-confidence detector that force-triggers.
+
+# Unambiguous finance phrases — fire on their own.
+_FINANCE_STRONG: tuple[str, ...] = (
+    "market cap", "market capitalization", "piyasa değeri", "piyasa degeri",
+    "stock price", "share price", "hisse fiyatı", "hisse fiyati", "hisse senedi fiyat",
+    "coin fiyatı", "coin fiyati", "coin price", "crypto price", "kripto fiyat",
+    "güncel fiyat", "guncel fiyat", "anlık fiyat", "anlik fiyat", "current price",
+    "spot price", "spot fiyat", "trading at", "exchange rate", "döviz kuru", "doviz kuru",
+    "borsada ne kadar", "borsada kaç", "hisse fiyatı ne", "coin fiyatı ne",
+)
+
+# Price-question phrases — count as finance ONLY with an asset present.
+_FINANCE_PRICE_PHRASES: tuple[str, ...] = (
+    "kaç dolar", "kac dolar", "kaç usd", "kac usd", "kaç tl", "kac tl", "kaç lira",
+    "kac lira", "kaç ₺", "kaç euro", "kac euro", "kaç €", "kaç sterlin", "kac sterlin",
+    "kaç yen", "kaç para", "kac para", "kaça", "kaçta", "kacta", "kaçtan", "kactan",
+    "fiyatı ne", "fiyati ne", "fiyatı kaç", "fiyati kac", "fiyatı nedir", "fiyati nedir",
+    "fiyatı", "fiyati", "ne kadar", "kaç dolardan",
+    "price of", "how much is", "how much does", "how much for", "worth", "how much",
+)
+
+# Asset context — fx, crypto, commodities, equities/market words.
+_FINANCE_ASSETS: tuple[str, ...] = (
+    # fiat / fx
+    "dolar", "usd", "euro", "eur", "sterlin", "gbp", "pound", "yen", "jpy",
+    "try", "lira", "döviz", "doviz",
+    # crypto (names + a few common tickers as words)
+    "bitcoin", "btc", "ethereum", "eth", "solana", "ripple", "xrp", "dogecoin",
+    "doge", "cardano", "avax", "tether", "usdt", "kripto", "crypto", "coin", "altcoin",
+    # commodities
+    "altın", "altin", "gram altın", "gram altin", "gümüş", "gumus", "silver",
+    "gold", "petrol", "brent", "oil", "ons altın", "ons",
+    # equities / market
+    "hisse", "hisseleri", "hissesi", "borsa", "borsada", "stock", "shares", "share",
+    "nasdaq", "nyse", "bist", "endeks", "temettü", "dividend", "piyasa",
+)
+
+# Well-known equity + crypto + index tickers. Matched as UPPERCASE standalone
+# tokens in the ORIGINAL text (so lowercase words like TR "sol"/"ada"/"for"
+# don't false-match). Also used as the fuzzy-correction target set.
+_KNOWN_TICKERS: frozenset[str] = frozenset({
+    # US equities
+    "NVDA", "TSLA", "AAPL", "MSFT", "AMZN", "GOOGL", "GOOG", "META", "AMD", "INTC",
+    "NFLX", "DIS", "BABA", "PYPL", "UBER", "COIN", "PLTR", "SOFI", "NIO", "BAC",
+    "JPM", "ORCL", "CRM", "ADBE", "QCOM", "MU", "AVGO", "ARM", "SNAP", "SHOP",
+    "ABNB", "SPOT", "RBLX", "GME", "AMC", "BA", "KO", "PEP", "XOM", "CVX", "WMT",
+    "NKE", "MRNA", "PFE",
+    # crypto
+    "BTC", "ETH", "SOL", "XRP", "DOGE", "BNB", "ADA", "AVAX", "DOT", "MATIC",
+    "LTC", "LINK", "TRX", "SHIB", "USDT", "USDC",
+    # indices / etf
+    "SPY", "QQQ", "VOO", "DIA", "IWM",
+})
+
+# Company names that imply a stock-price question when paired with price/asset.
+_COMPANY_STOCK_NAMES: tuple[str, ...] = (
+    "nvidia", "tesla", "apple", "microsoft", "amazon", "google", "alphabet",
+    "meta", "facebook", "netflix", "intel", "alibaba", "paypal", "coinbase",
+    "palantir", "oracle", "salesforce", "adobe", "qualcomm", "broadcom",
+    "spotify", "roblox", "shopify", "airbnb", "disney",
+)
+
+
+def _levenshtein_le1(a: str, b: str) -> bool:
+    """True if edit distance(a, b) <= 1. Cheap early-exit variant — enough for
+    single-typo ticker correction ('ncda' → 'NVDA')."""
+    if a == b:
+        return True
+    la, lb = len(a), len(b)
+    if abs(la - lb) > 1:
+        return False
+    if la == lb:  # one substitution allowed
+        return sum(1 for x, y in zip(a, b) if x != y) == 1
+    # one insertion/deletion — make `a` the shorter
+    if la > lb:
+        a, b, la, lb = b, a, lb, la
+    i = j = 0
+    edited = False
+    while i < la and j < lb:
+        if a[i] == b[j]:
+            i += 1
+            j += 1
+        else:
+            if edited:
+                return False
+            edited = True
+            j += 1  # skip one char in the longer string
+    return True
+
+
+def _fuzzy_ticker(token: str) -> Optional[str]:
+    """Return the known ticker a 2-5 char alpha token likely means (edit
+    distance <= 1), else None. Used for finance typo recovery."""
+    t = token.upper()
+    if not (2 <= len(t) <= 5) or not t.isalpha():
+        return None
+    if t in _KNOWN_TICKERS:
+        return t
+    for known in _KNOWN_TICKERS:
+        if len(known) == len(t) and _levenshtein_le1(t, known):
+            return known
+    return None
+
+
+def detect_finance_intent(text: str, lower: str) -> Optional[tuple[str, str, list[str]]]:
+    """Detect a current-price / market / stock / crypto / FX / commodity query.
+
+    Returns (corrected_query, matched_ticker_or_empty, hits) when the message is
+    a finance/price question that MUST use live data, else None. `corrected_query`
+    has any obvious ticker typo fixed (e.g. 'ncda kaç dolar' → 'NVDA kaç dolar')
+    so the live search is well-formed. Never guesses a price — only routing.
+    """
+    hits: list[str] = []
+
+    strong = _contains_any(lower, _FINANCE_STRONG)
+    price  = _contains_any(lower, _FINANCE_PRICE_PHRASES)
+    asset  = _contains_any(lower, _FINANCE_ASSETS)
+    company = _contains_any(lower, _COMPANY_STOCK_NAMES)
+
+    # Exact uppercase ticker as a standalone token in the ORIGINAL text.
+    exact_ticker = ""
+    for tok in re.findall(r"\b[A-Za-z]{2,5}\b", text):
+        if tok.upper() in _KNOWN_TICKERS and (tok.isupper() or tok.upper() in _FINANCE_ASSETS):
+            exact_ticker = tok.upper()
+            break
+
+    # Fuzzy ticker (typo) — only when there's price/asset context, so a random
+    # word can't get "corrected" into a stock lookup.
+    fuzzy_ticker = ""
+    corrected_query = text
+    if not exact_ticker and (price or asset or strong):
+        for tok in re.findall(r"\b[A-Za-z]{2,5}\b", text):
+            if tok.upper() in _KNOWN_TICKERS:
+                continue
+            cand = _fuzzy_ticker(tok)
+            if cand:
+                fuzzy_ticker = cand
+                # Rewrite the typo'd token to the corrected ticker for search.
+                corrected_query = re.sub(
+                    rf"\b{re.escape(tok)}\b", cand, text, count=1,
+                )
+                break
+
+    ticker = exact_ticker or fuzzy_ticker
+
+    is_finance = bool(
+        strong
+        or (price and (asset or company or ticker))
+        or (ticker and (price or asset))
+    )
+    if not is_finance:
+        return None
+
+    hits.extend(strong[:1] or price[:1] or [])
+    if ticker:
+        hits.append(f"ticker:{ticker}")
+    if asset:
+        hits.append(f"asset:{asset[0]}")
+    if company:
+        hits.append(f"company:{company[0]}")
+    return corrected_query, ticker, (hits or ["finance"])
 
 
 # Phrases that NEGATE the intent — when present, even strong temporal
@@ -202,6 +378,28 @@ def detect_web_search_intent(user_message: str) -> WebSearchIntent:
             text, f"explicit search phrase: {explicit_hits[0]}",
         )
 
+    # Finance / current-price queries — MANDATORY live data. Force-trigger at
+    # high confidence with a typo-corrected query. Current prices/quotes must
+    # never come from model memory (the whole point of this fix).
+    finance = detect_finance_intent(text, lower)
+    if finance is not None:
+        corrected_query, ticker, fin_hits = finance
+        logger.info(
+            "[INTENT] finance | requires_live_data=True | ticker=%s | hits=%s",
+            ticker or "-", ",".join(fin_hits[:4]),
+        )
+        return WebSearchIntent(
+            triggered=  True,
+            confidence= 0.9,
+            triggers=   tuple(["finance", *fin_hits][:6]),
+            query=      corrected_query,
+            reason=(
+                "finance/current-price query — mandatory live data"
+                + (f"; ticker={ticker}" if ticker else "")
+                + (f"; corrected='{corrected_query}'" if corrected_query != text else "")
+            ),
+        )
+
     # Score: temporal + research + domain signals each add weight.
     temporal = _contains_any(lower, _TEMPORAL_SIGNALS)
     research = _contains_any(lower, _RESEARCH_SIGNALS)
@@ -243,6 +441,23 @@ def detect_web_search_intent(user_message: str) -> WebSearchIntent:
             f"domain={len(domain)}, words={word_count})"
         ),
     )
+
+
+def requires_live_data(user_message: str) -> bool:
+    """Central 'should this use the live web/research layer?' rule.
+
+    One source of truth for every chat surface (normal chat, business/startup
+    handoffs, trading follow-ups) and every session kind (guest / signed-in /
+    owner). True whenever the message is a finance/current-price query OR the
+    general intent detector would auto-invoke web_research. Finance always
+    qualifies — current prices must never be answered from memory.
+    """
+    if not user_message or not user_message.strip():
+        return False
+    lower = user_message.strip().lower().replace("i̇", "i")
+    if detect_finance_intent(user_message.strip(), lower) is not None:
+        return True
+    return detect_web_search_intent(user_message).triggered
 
 
 # ── Block builder ─────────────────────────────────────────────────────────
