@@ -1,6 +1,7 @@
 import { Users } from 'lucide-react';
 import type { MarketComplaintReport } from '@/lib/startupMarketApi';
 import type { RadarIcp } from '@/lib/startupRadarInsights';
+import { useLanguageStore } from '@/stores/languageStore';
 
 /** "First customers to target" — the initial ICP derived from observed
  * segments + the top complaint cluster. Flagged as hypothesis when the
@@ -12,11 +13,12 @@ export default function IcpPanel({
   icp: RadarIcp | null;
   report: MarketComplaintReport;
 }) {
+  const { t } = useLanguageStore();
   return (
     <div className="rounded-xl border border-white/[0.05] bg-white/[0.01] p-4">
       <div className="flex items-center gap-2 mb-3">
         <Users className="h-3.5 w-3.5 text-[#60A5FA]" />
-        <h3 className="text-[13px] font-semibold text-slate-100">First customers to target</h3>
+        <h3 className="text-[13px] font-semibold text-slate-100">{t('startupFirstCustomers')}</h3>
         {icp?.isHypothesis && (
           <span className="px-1.5 py-0.5 rounded text-[9px] bg-[#3B82F6]/[0.12] border border-[#3B82F6]/35 text-[#60A5FA]">
             hypothesis

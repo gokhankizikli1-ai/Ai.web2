@@ -29,6 +29,12 @@ class ChatRequest(BaseModel):
     # backward-compatible: omit/null → existing behaviour, byte-identical.
     # Never hard-translates; injected as a soft system-prompt hint only.
     language: Optional[str] = None
+    # i18n — the user's raw language choice ("auto" | "en" | "tr" | …) and,
+    # in Auto mode, the front-end's best-effort detection of THIS message's
+    # language. Used to enforce the answer-language policy. Additive &
+    # backward-compatible: omit/null → existing behaviour.
+    language_mode: Optional[str] = None
+    message_language: Optional[str] = None
     # Optional project namespace (Phase 2). When set AND ENABLE_PROJECTS
     # is on, a "Project Context" block (project description + recent
     # project memory) is injected into the LLM system prompt for shared
@@ -452,6 +458,9 @@ async def chat(req: ChatRequest, request: Request):
             mem_summary=mem_summary,
             style_prompt=style_prompt,
             mode=req.mode,
+            locale=req.language,
+            language_mode=req.language_mode,
+            message_language=req.message_language,
         )
         reply = ai_result.get("reply", "")
         intent = ai_result.get("intent", "normal_chat")

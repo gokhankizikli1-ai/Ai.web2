@@ -11,6 +11,7 @@ import {
 import {
   deriveDecision, deriveIcp, deriveValidationSprint,
 } from '@/lib/startupRadarInsights';
+import { useLanguageStore } from '@/stores/languageStore';
 import ComplaintClusterCard from './ComplaintClusterCard';
 import CompetitorWeaknessPanel from './CompetitorWeaknessPanel';
 import EvidenceTrail from './EvidenceTrail';
@@ -41,10 +42,10 @@ const CONFIDENCE_TONE: Record<string, string> = {
 };
 
 /** Evidence-quality badge tiers (avg item quality 0-100 from backend). */
-function evidenceQualityBadge(score: number): { label: string; tone: string } {
-  if (score >= 70) return { label: 'strong evidence', tone: 'text-[#86A08F] border-[#4ADE80]/40 bg-[#4ADE80]/[0.12]' };
-  if (score >= 45) return { label: 'moderate evidence', tone: 'text-[#60A5FA] border-[#3B82F6]/40 bg-[#3B82F6]/[0.12]' };
-  return { label: 'weak evidence', tone: 'text-[#C98A93] border-[#F87171]/40 bg-[#F87171]/[0.12]' };
+function evidenceQualityBadge(score: number): { key: string; tone: string } {
+  if (score >= 70) return { key: 'startupStrongEvidence', tone: 'text-[#86A08F] border-[#4ADE80]/40 bg-[#4ADE80]/[0.12]' };
+  if (score >= 45) return { key: 'startupModerateEvidence', tone: 'text-[#60A5FA] border-[#3B82F6]/40 bg-[#3B82F6]/[0.12]' };
+  return { key: 'startupWeakEvidence', tone: 'text-[#C98A93] border-[#F87171]/40 bg-[#F87171]/[0.12]' };
 }
 
 function formatGeneratedAt(iso: string): string {
@@ -159,9 +160,20 @@ interface Props {
 export default function MarketRadarResults({
   report, sourceHealth, onSendToAdvisor, onSendToBuilder,
 }: Props) {
+  const { t } = useLanguageStore();
   const { summary } = report;
   const hasClusters = report.complaint_clusters.length > 0;
   const decision = deriveDecision(report);
+  const decisionLabel: Record<string, string> = {
+    build: t('startupDecisionBuild'),
+    validate: t('startupDecisionValidate'),
+    avoid: t('startupDecisionAvoid'),
+  };
+  const confidenceLabel: Record<string, string> = {
+    high: t('startupConfidenceHigh'),
+    medium: t('startupConfidenceMedium'),
+    low: t('startupConfidenceLow'),
+  };
   const icp = deriveIcp(report);
   const sprint = deriveValidationSprint(report);
   const generatedAt = formatGeneratedAt(report.generated_at);
@@ -205,7 +217,7 @@ export default function MarketRadarResults({
             <span className="text-[13px] font-medium text-[#64748B]">/100</span>
           </div>
           <span className={`text-[22px] font-bold leading-none ${DECISION_VERDICT_TONE[decision.bucket] ?? 'text-slate-100'}`}>
-            {DECISION_LABEL[decision.bucket] ?? decision.label}
+            {decisionLabel[decision.bucket] ?? DECISION_LABEL[decision.bucket] ?? decision.label}
           </span>
         </div>
 
@@ -250,14 +262,14 @@ export default function MarketRadarResults({
         {/* Quiet secondary metadata row */}
         <div className="flex flex-wrap items-center gap-1.5 mt-4">
           <span className={`px-1.5 py-0.5 rounded border text-[9.5px] font-medium ${CONFIDENCE_TONE[summary.confidence] || CONFIDENCE_TONE.low}`}>
-            {summary.confidence} confidence
+            {confidenceLabel[summary.confidence] ?? `${summary.confidence} confidence`}
           </span>
           {typeof summary.evidence_quality === 'number' && (
             <span
               title={`Average evidence quality ${summary.evidence_quality}/100 — real discussion content scores high, SEO/blog/news low`}
               className={`px-1.5 py-0.5 rounded border text-[9.5px] font-medium ${evidenceQualityBadge(summary.evidence_quality).tone}`}
             >
-              {evidenceQualityBadge(summary.evidence_quality).label}
+              {t(evidenceQualityBadge(summary.evidence_quality).key)}
             </span>
           )}
           {report.cached && (
@@ -305,7 +317,7 @@ export default function MarketRadarResults({
         <div>
           <div className="flex items-center gap-2 mb-2.5">
             <Flame className="h-3.5 w-3.5 text-[#C98A93]" />
-            <h3 className="text-[13px] font-semibold text-slate-100">What people complain about</h3>
+            <h3 className="text-[13px] font-semibold text-slate-100">{t('startupWhatPeopleComplain')}</h3>
           </div>
           <div className="space-y-2.5">
             {visibleClusters.map((cluster, i) => (
@@ -326,7 +338,7 @@ export default function MarketRadarResults({
 
       {/* ── What to build first — clean labeled card ── */}
       {hasClusters && hasBuildGuidance && (
-        <Section icon={ListChecks} iconTone="text-[#60A5FA]" title="What to build first">
+        <Section icon={ListChecks} iconTone="text-[#60A5FA]" title={t('startupWhatToBuildFirst')}>
           <div className="rounded-xl border border-[#253142] bg-[#111722] p-4 space-y-3.5">
             {mvpWedge.length > 0 && (
               <LabeledBlock label="MVP wedge">
@@ -394,7 +406,7 @@ export default function MarketRadarResults({
           <summary className="flex items-center gap-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
             <ChevronRight className="h-3.5 w-3.5 text-[#94A3B8] transition-transform group-open/sig:rotate-90" />
             <Target className="h-3.5 w-3.5 text-[#3B82F6]" />
-            <span className="text-[13px] font-semibold text-slate-100">Signals and risks</span>
+            <span className="text-[13px] font-semibold text-slate-100">{t('startupSignalsRisks')}</span>
           </summary>
           <div className="grid sm:grid-cols-2 gap-4 mt-3">
             <SignalList title="Trending keywords" values={report.market_signals.trending_keywords} />

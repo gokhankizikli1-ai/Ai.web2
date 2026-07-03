@@ -199,6 +199,18 @@ const EN: Record<string, string> = {
   connectionLost: 'Connection lost', reconnecting: 'Reconnecting',
   rateLimit: 'Rate limit reached', slowDown: 'Please slow down',
   contextLimit: 'Context limit reached', startNewChat: 'Start a new chat',
+  /* startup workspace */
+  startupDecisionBuild: 'Build now', startupDecisionValidate: 'Validate first',
+  startupDecisionAvoid: 'Avoid for now',
+  startupConfidenceHigh: 'high confidence', startupConfidenceMedium: 'medium confidence',
+  startupConfidenceLow: 'low confidence',
+  startupWhatPeopleComplain: 'What people complain about',
+  startupWhatToBuildFirst: 'What to build first',
+  startupFirstCustomers: 'First customers to target',
+  startupValidationPlan: 'Validation plan', startupSourcesUsed: 'Sources used',
+  startupSignalsRisks: 'Signals and risks', startupPreviousAnalyses: 'Previous analyses',
+  startupStrongEvidence: 'strong evidence', startupModerateEvidence: 'moderate evidence',
+  startupWeakEvidence: 'weak evidence',
 };
 
 /* ═══════════════════════════════════════
@@ -281,6 +293,18 @@ const TR: Partial<Record<string, string>> = {
   // Shortcuts
   shortcuts: 'K\u0131sayollar', keyboardShortcuts: 'Klavye k\u0131sayollar\u0131',
   pressKey: 'Bas\u0131n', toFocus: 'odaklanmak i\u00e7in',
+  /* startup workspace */
+  startupDecisionBuild: '\u015eimdi yap', startupDecisionValidate: '\u00d6nce do\u011frula',
+  startupDecisionAvoid: '\u015eimdilik uzak dur',
+  startupConfidenceHigh: 'y\u00fcksek g\u00fcven', startupConfidenceMedium: 'orta g\u00fcven',
+  startupConfidenceLow: 'd\u00fc\u015f\u00fck g\u00fcven',
+  startupWhatPeopleComplain: '\u0130nsanlar neden \u015fikayet ediyor?',
+  startupWhatToBuildFirst: '\u0130lk ne yap\u0131lmal\u0131?',
+  startupFirstCustomers: '\u0130lk hedeflenecek m\u00fc\u015fteriler',
+  startupValidationPlan: 'Do\u011frulama plan\u0131', startupSourcesUsed: 'Kullan\u0131lan kaynaklar',
+  startupSignalsRisks: 'Sinyaller ve riskler', startupPreviousAnalyses: '\u00d6nceki analizler',
+  startupStrongEvidence: 'g\u00fc\u00e7l\u00fc kan\u0131t', startupModerateEvidence: 'orta d\u00fczey kan\u0131t',
+  startupWeakEvidence: 'zay\u0131f kan\u0131t',
 };
 
 /* ═══════════════════════════════════════
@@ -299,34 +323,75 @@ function buildTranslation(lang: Language): Record<string, string> {
   return { ...EN };
 }
 
+/** User's language choice. 'auto' resolves from the browser/device locale
+ *  (and, for the AI, the language of the latest message). A concrete code
+ *  pins the UI + AI to that language. */
+export type LangMode = 'auto' | Language;
+
+/** Resolve the browser/device UI language, clamped to a language we actually
+ *  ship translations for (extensible — add codes to isLanguageComplete). */
+export function resolveBrowserLang(): Language {
+  try {
+    const nav = (
+      (typeof navigator !== 'undefined' &&
+        (navigator.languages?.[0] || navigator.language)) || 'en'
+    ).toLowerCase();
+    const base = nav.split('-')[0] as Language;
+    return getEffectiveLanguage(base);   // complete → base, else 'en'
+  } catch {
+    return 'en';
+  }
+}
+
+/** Mode → effective UI language. */
+function resolveLang(mode: LangMode): Language {
+  return mode === 'auto' ? resolveBrowserLang() : getEffectiveLanguage(mode);
+}
+
+const _bootMode: LangMode = 'auto';
+const _bootLang = resolveLang(_bootMode);
+
 interface LanguageState {
+  /** The user's choice: 'auto' | 'en' | 'tr' | … */
+  mode: LangMode;
+  /** The resolved effective UI language actually rendered. */
   lang: Language;
   t: (key: string) => string;
+  /** Preferred setter — accepts 'auto' or a concrete code. */
+  setMode: (mode: LangMode) => void;
+  /** Back-compat: existing callers pass a concrete code. */
   setLang: (lang: Language) => void;
 }
 
 export const useLanguageStore = create<LanguageState>()(
   persist(
     (set) => ({
-      lang: 'en',
-      t: (key: string) => buildTranslation('en')[key] || key,
+      mode: _bootMode,
+      lang: _bootLang,
+      t: (key: string) => buildTranslation(_bootLang)[key] || key,
+      setMode: (mode: LangMode) => {
+        const lang = resolveLang(mode);
+        set({ mode, lang, t: (key: string) => buildTranslation(lang)[key] || key });
+      },
       setLang: (lang: Language) => {
-        const effectiveLang = getEffectiveLanguage(lang);
-        set({
-          lang: effectiveLang,
-          t: (key: string) => buildTranslation(effectiveLang)[key] || key,
-        });
+        const eff = resolveLang(lang);
+        set({ mode: lang, lang: eff, t: (key: string) => buildTranslation(eff)[key] || key });
       },
     }),
     {
       name: 'korvix-language',
-      partialize: (state) => ({ lang: state.lang }),
+      // Persist the CHOICE (mode), not the resolved value — so Auto keeps
+      // tracking the device locale on the next visit.
+      partialize: (state) => ({ mode: state.mode }),
       onRehydrateStorage: () => (state) => {
-        if (state?.lang) {
-          const effectiveLang = getEffectiveLanguage(state.lang);
-          state.lang = effectiveLang;
-          state.t = (key: string) => buildTranslation(effectiveLang)[key] || key;
-        }
+        if (!state) return;
+        // Migrate legacy persisted shape ({ lang } from before Auto mode).
+        const legacyLang = (state as unknown as { lang?: Language }).lang;
+        const mode: LangMode = state.mode ?? legacyLang ?? 'auto';
+        const lang = resolveLang(mode);
+        state.mode = mode;
+        state.lang = lang;
+        state.t = (key: string) => buildTranslation(lang)[key] || key;
       },
     }
   )

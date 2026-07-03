@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import type { ChatSession, Message, AIMode, WorkspaceTab, ChatFolder, AttachedAsset } from '@/types';
 import { deriveSessionTitle } from '@/lib/chatTitles';
+import { getRequestLocale } from '@/lib/locale';
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
@@ -780,6 +781,10 @@ export function useChat() {
             // saved via either path are visible to the other.
             user_id: userIdRef.current,
             ...(requestMode ? { mode: requestMode } : {}),
+            // i18n — resolved locale + user's language mode so the backend
+            // can enforce the answer-language policy (Auto follows the
+            // message language; a concrete code pins the reply language).
+            ...getRequestLocale(trimmed),
             // Phase 9 — attached assets. The backend
             // (v2_chat_stream.py) ownership-checks each id under
             // user_id and folds asset summaries into the system
@@ -1065,6 +1070,7 @@ export function useChat() {
           session_id: activeSessionId,
           platform: 'web',
           ...(requestMode ? { mode: requestMode } : {}),
+          ...getRequestLocale(trimmed),
         }),
       });
 
