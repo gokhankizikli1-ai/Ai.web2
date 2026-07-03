@@ -6,6 +6,7 @@ import {
 import { useLanguageStore } from '@/stores/languageStore';
 import WebBuildFileView from '@/components/builder/WebBuildFileView';
 import WebBuildPreviewPanel from '@/components/builder/WebBuildPreviewPanel';
+import WebBuildExecutionLog from '@/components/builder/WebBuildExecutionLog';
 import type {
   WebBuildStep, WebBuildFile, WebBuildSectionItem,
 } from '@/lib/webBuildPayload';
@@ -90,47 +91,6 @@ function AssistantMessage({ children }: { children: ReactNode }) {
   );
 }
 
-/* ── Assistant text composed from real summary data ──────────────────── */
-function useAssistantLines() {
-  const { t } = useLanguageStore();
-  return (step: WebBuildStep): string[] => {
-    const s = step.summary;
-    if (step.kind === 'revision') {
-      const changed = step.files.filter((f) => f.status !== 'unchanged').length;
-      if (s.added || s.removed) return [t('wbMsgRevision', { count: changed || step.files.length, added: s.added, removed: s.removed })];
-      return [t('wbMsgRevisionNoDiff')];
-    }
-    const lines = [s.type ? t('wbMsgDoneType', { type: s.type }) : t('wbMsgDone')];
-    if (s.sectionNames.length) lines.push(t('wbMsgSectionsLine', { sections: s.sectionNames.join(', ') }));
-    if (s.fileCount) lines.push(t('wbMsgFilesLine', { count: s.fileCount }));
-    return lines;
-  };
-}
-
-/* ── Per-file created/modified log (compact, builder-style) ──────────── */
-function FileLog({ step }: { step: WebBuildStep }) {
-  const { t } = useLanguageStore();
-  const changed = step.files.filter((f) => f.status !== 'unchanged');
-  const shown = changed.length ? changed : step.files;
-  if (shown.length === 0) return null;
-  return (
-    <div className="space-y-1">
-      {shown.map((f) => (
-        <div key={f.path} className="flex items-start gap-2 text-[11.5px]">
-          <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${f.status === 'modified' ? 'bg-[#60A5FA]' : 'bg-[#86A08F]'}`} />
-          <span className="text-[#CBD5E1] leading-snug">
-            {f.status === 'modified'
-              ? t('wbMsgModifiedFile', { file: f.path, added: f.added, removed: f.removed })
-              : f.summary
-                ? t('wbMsgCreatedFile', { file: f.path, summary: f.summary })
-                : t('wbMsgCreatedFileShort', { file: f.path })}
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 /* ── Conversation ────────────────────────────────────────────────────── */
 interface WebBuildConversationProps {
   steps: WebBuildStep[];
@@ -145,15 +105,18 @@ interface WebBuildConversationProps {
   /** Extra cards (e.g. Save to Project) appended after the last assistant msg. */
   extraCards?: ReactNode;
   slug?: string;
+  /** The newest step id — its execution log plays the sequential live reveal. */
+  animateStepId?: string;
 }
 
 export default function WebBuildConversation({
-  steps, files, sectionItems, brief, live, extraCards, slug,
+  steps, files, sectionItems, brief, live, extraCards, slug, animateStepId,
 }: WebBuildConversationProps) {
   const { t } = useLanguageStore();
-  const lines = useAssistantLines();
   const [panel, setPanel] = useState<'preview' | 'files' | null>(null);
+  const [filePath, setFilePath] = useState<string | undefined>(undefined);
   const lastIdx = steps.length - 1;
+  const openFile = (path?: string) => { setFilePath(path); setPanel('files'); };
 
   return (
     <div className="space-y-5">
@@ -163,15 +126,20 @@ export default function WebBuildConversation({
           <div key={step.id} className="space-y-3">
             <UserMessage text={step.prompt} />
             <AssistantMessage>
-              <div className="text-[13px] text-[#CBD5E1] leading-relaxed space-y-1">
-                {lines(step).map((l, k) => <p key={k}>{l}</p>)}
-              </div>
-              <FileLog step={step} />
+              <p className="text-[13px] text-[#CBD5E1] leading-relaxed">
+                {t(step.kind === 'revision' ? 'wbMsgReviseIntro' : 'wbMsgBuildIntro')}
+              </p>
+              <WebBuildExecutionLog
+                step={step}
+                brief={brief}
+                animate={step.id === animateStepId}
+                onOpenFile={(path) => openFile(path)}
+              />
               {/* Output cards only on the latest step (current state). */}
               {isLast && (
                 <div className="flex flex-col gap-2 pt-0.5">
                   <AttachmentCard icon={Monitor} title={t('wbCardPreview')} subtitle={t('wbCardPreviewSub')} actionLabel={t('wbCardOpen')} tone="accent" onClick={() => setPanel('preview')} />
-                  <AttachmentCard icon={FolderTree} title={t('wbCardAllFiles')} subtitle={t('wbCardAllFilesSub')} actionLabel={t('wbCardOpen')} onClick={() => setPanel('files')} />
+                  <AttachmentCard icon={FolderTree} title={t('wbCardAllFiles')} subtitle={t('wbCardAllFilesSub')} actionLabel={t('wbCardOpen')} onClick={() => openFile(undefined)} />
                   {extraCards}
                 </div>
               )}
@@ -214,7 +182,7 @@ export default function WebBuildConversation({
               </div>
               {panel === 'preview'
                 ? <WebBuildPreviewPanel sectionItems={sectionItems} brief={brief} slug={slug} />
-                : <WebBuildFileView files={files} />}
+                : <WebBuildFileView files={files} initialPath={filePath} />}
             </motion.div>
           </motion.div>
         )}

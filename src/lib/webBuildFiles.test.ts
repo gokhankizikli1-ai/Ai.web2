@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { parseBuildSections } from '@/lib/gameBuilderApi';
 import { resolveBuildFiles, synthesizeFiles } from '@/lib/webBuildFiles';
-import { resolveFiles, deriveBuildActivity } from '@/lib/webBuildPayload';
+import { resolveFiles, deriveBuildActivity, deriveExecutionOps, buildWebBuildPayload } from '@/lib/webBuildPayload';
+import { extractBrief } from '@/lib/webBuildApi';
 import type { WebBuildResult } from '@/lib/webBuildApi';
 
 // The bug case: backend returns Page Sections + Generated Copy but NO usable
@@ -86,5 +87,46 @@ describe('web build file synthesis', () => {
     expect(hero!.status).toBe('modified');
     const others = revised.filter((f) => !/Hero\.tsx/.test(f.path));
     expect(others.every((f) => f.status === 'unchanged')).toBe(true);
+  });
+});
+
+describe('web build execution log ops', () => {
+  const result = makeResult(REPLY);
+  const brief = extractBrief(result.sections);
+
+  it('a fresh build starts with brief/plan/design info rows carrying real data', () => {
+    const payload = buildWebBuildPayload('build a fitness coach site', result);
+    const ops = deriveExecutionOps(payload.steps[0], brief);
+    expect(ops[0].id).toBe('brief');
+    expect(ops[0].detail).toMatch(/fitness|professionals|appointment/i);
+    expect(ops[1].id).toBe('plan');
+    expect(ops[1].detail).toMatch(/hero/i);
+    // Last op is always the preview update.
+    expect(ops[ops.length - 1].id).toBe('preview');
+  });
+
+  it('a fresh build emits one clickable file op per created file, never inventing files', () => {
+    const payload = buildWebBuildPayload('build it', result);
+    const fileOps = deriveExecutionOps(payload.steps[0], brief).filter((o) => o.kind === 'file');
+    const realPaths = new Set(payload.files.map((f) => f.path));
+    expect(fileOps.length).toBe(payload.files.length);
+    expect(fileOps.every((o) => o.file && realPaths.has(o.file))).toBe(true);
+    expect(fileOps.every((o) => o.fileStatus === 'created')).toBe(true);
+  });
+
+  it('a revision emits read-then-modify ops for the changed file and a preview update', () => {
+    const first = buildWebBuildPayload('build it', result);
+    const revisedReply = REPLY.replace('Formda kal, randevunu al', 'Premium koçlukla hedefine ulaş');
+    const second = buildWebBuildPayload('change the hero headline', makeResult(revisedReply), first);
+    const step = second.steps[second.steps.length - 1];
+    const ops = deriveExecutionOps(step, brief);
+    const heroRead = ops.find((o) => o.fileStatus === 'read' && /Hero\.tsx/.test(o.file || ''));
+    const heroMod = ops.find((o) => o.fileStatus === 'modified' && /Hero\.tsx/.test(o.file || ''));
+    expect(heroRead).toBeTruthy();
+    expect(heroMod).toBeTruthy();
+    expect(ops.indexOf(heroRead!)).toBeLessThan(ops.indexOf(heroMod!));
+    expect(ops[ops.length - 1].id).toBe('preview');
+    // No brief/plan/design info rows on a revision.
+    expect(ops.some((o) => o.id === 'brief' || o.id === 'plan')).toBe(false);
   });
 });

@@ -369,4 +369,21 @@ export const fr: Record<string, string> = {
   /* web build — working messages */
   wbWorkingBrief: "Je lis le brief et je structure la page…",
   wbWorkingSections: "Je prépare les sections et la structure des composants…",
+  /* web build — live execution log */
+  wbMsgBuildIntro: "Je crée votre site web — voici ce que je fais :",
+  wbMsgReviseIntro: "Application de votre modification :",
+  wbOpReadBriefRun: "Lecture du brief…",
+  wbOpReadBriefDone: "Brief lu",
+  wbOpPlanRun: "Planification de la structure des pages…",
+  wbOpPlanDone: "Structure des pages planifiée",
+  wbOpDesignRun: "Choix de la direction artistique…",
+  wbOpDesignDone: "Direction artistique choisie",
+  wbOpCreateRun: "Création de {file}…",
+  wbOpCreateDone: "{file} créé",
+  wbOpModifyRun: "Modification de {file}…",
+  wbOpModifyDone: "{file} modifié",
+  wbOpReadFileRun: "Lecture de {file}…",
+  wbOpReadFileDone: "{file} lu",
+  wbOpPreviewRun: "Mise à jour de l'aperçu…",
+  wbOpPreviewDone: "Aperçu mis à jour",
 };

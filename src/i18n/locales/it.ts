@@ -369,4 +369,21 @@ export const it: Record<string, string> = {
   /* web build — working messages */
   wbWorkingBrief: "Sto leggendo il brief e definendo la struttura della pagina…",
   wbWorkingSections: "Sto preparando le sezioni e la struttura dei componenti…",
+  /* web build — live execution log */
+  wbMsgBuildIntro: "Sto creando il tuo sito web — ecco cosa sto facendo:",
+  wbMsgReviseIntro: "Applicazione della tua modifica:",
+  wbOpReadBriefRun: "Lettura del brief…",
+  wbOpReadBriefDone: "Brief letto",
+  wbOpPlanRun: "Pianificazione della struttura delle pagine…",
+  wbOpPlanDone: "Struttura delle pagine pianificata",
+  wbOpDesignRun: "Scelta della direzione di design…",
+  wbOpDesignDone: "Direzione di design scelta",
+  wbOpCreateRun: "Creazione di {file}…",
+  wbOpCreateDone: "{file} creato",
+  wbOpModifyRun: "Modifica di {file}…",
+  wbOpModifyDone: "{file} modificato",
+  wbOpReadFileRun: "Lettura di {file}…",
+  wbOpReadFileDone: "{file} letto",
+  wbOpPreviewRun: "Aggiornamento dell'anteprima…",
+  wbOpPreviewDone: "Anteprima aggiornata",
 };

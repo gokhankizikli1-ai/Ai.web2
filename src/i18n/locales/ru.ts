@@ -369,4 +369,21 @@ export const ru: Record<string, string> = {
   /* web build — working messages */
   wbWorkingBrief: "Читаю бриф и выстраиваю структуру страницы…",
   wbWorkingSections: "Готовлю разделы и структуру компонентов…",
+  /* web build — live execution log */
+  wbMsgBuildIntro: "Создаю ваш сайт — вот что я делаю:",
+  wbMsgReviseIntro: "Применяю ваше изменение:",
+  wbOpReadBriefRun: "Чтение брифа…",
+  wbOpReadBriefDone: "Бриф прочитан",
+  wbOpPlanRun: "Планирование структуры страниц…",
+  wbOpPlanDone: "Структура страниц спланирована",
+  wbOpDesignRun: "Выбор направления дизайна…",
+  wbOpDesignDone: "Направление дизайна выбрано",
+  wbOpCreateRun: "Создание {file}…",
+  wbOpCreateDone: "{file} создан",
+  wbOpModifyRun: "Изменение {file}…",
+  wbOpModifyDone: "{file} изменён",
+  wbOpReadFileRun: "Чтение {file}…",
+  wbOpReadFileDone: "{file} прочитан",
+  wbOpPreviewRun: "Обновление предпросмотра…",
+  wbOpPreviewDone: "Предпросмотр обновлён",
 };
