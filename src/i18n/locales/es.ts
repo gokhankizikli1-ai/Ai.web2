@@ -249,4 +249,12 @@ export const es: Record<string, string> = {
   wbChooseProject: "Elige un proyecto",
   wbSavedToNamed: "Guardado en {name}",
   wbNoProjectsYet: "Aún no hay proyectos",
+  /* composer tools + attach menu */
+  attachTakePhoto: "Tomar foto o video",
+  attachChooseFiles: "Elegir archivos",
+  attachmentsHeader: "Adjuntos",
+  attachAndTools: "Adjuntar y herramientas",
+  toolDeepResearchDesc: "Investigación multifuente",
+  toolCodeMode: "Modo Código",
+  toolCodeModeDesc: "Asistente de código",
 };

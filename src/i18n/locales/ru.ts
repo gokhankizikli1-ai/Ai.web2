@@ -249,4 +249,12 @@ export const ru: Record<string, string> = {
   wbChooseProject: "Выберите проект",
   wbSavedToNamed: "Сохранено в {name}",
   wbNoProjectsYet: "Пока нет проектов",
+  /* composer tools + attach menu */
+  attachTakePhoto: "Снять фото или видео",
+  attachChooseFiles: "Выбрать файлы",
+  attachmentsHeader: "Вложения",
+  attachAndTools: "Вложения и инструменты",
+  toolDeepResearchDesc: "Исследование по нескольким источникам",
+  toolCodeMode: "Режим кода",
+  toolCodeModeDesc: "Помощник по коду",
 };
