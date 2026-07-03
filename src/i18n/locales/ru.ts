@@ -356,4 +356,14 @@ export const ru: Record<string, string> = {
   wbComposerRevise: "Запросить изменение…",
   wbFeedYou: "Вы",
   wbClosePanel: "Закрыть",
+  /* web build — real file artifacts */
+  wbActRead: "Чтение вашего запроса",
+  wbActPlan: "Планирование структуры страниц",
+  wbActCreatingFile: "Создание {file}",
+  wbActModifyingFile: "Изменение {file}",
+  wbActPackage: "Упаковка {count} файлов",
+  wbMsgCreatedFile: "{file} создан — {summary}",
+  wbMsgCreatedFileShort: "{file} создан",
+  wbMsgModifiedFile: "{file} изменён (+{added} −{removed})",
+  wbErrNoFiles: "Файлы кода не были сгенерированы. Попробуйте снова.",
 };

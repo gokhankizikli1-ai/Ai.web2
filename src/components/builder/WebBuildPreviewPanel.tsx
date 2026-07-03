@@ -27,8 +27,9 @@ export default function WebBuildPreviewPanel({
   const pricing = has(sectionItems, /pricing|plan/);
   const cta = has(sectionItems, /cta|final|contact|book|appointment/);
 
-  const heroTitle = hero?.copyPreview?.split(/[.!?\n]/)[0] || brief?.type || 'Your website';
-  const heroSub = hero?.purpose || brief?.goal || '';
+  const heroTitle = hero?.headline || hero?.copyPreview?.split(/[.!?\n]/)[0] || brief?.type || 'Your website';
+  const heroSub = hero?.sub || hero?.purpose || brief?.goal || '';
+  const heroCta = hero?.cta || cta?.cta || cta?.name || t('wbCardOpen');
 
   return (
     <div>
@@ -50,7 +51,7 @@ export default function WebBuildPreviewPanel({
               {heroSub && <p className="mt-2 text-[11.5px] text-[#94A3B8] leading-relaxed">{heroSub}</p>}
               <div className="mt-4 flex items-center justify-center gap-2">
                 <div className="h-7 rounded-lg px-5 flex items-center text-[11px] font-medium text-[#05060a]" style={{ background: ACCENT }}>
-                  {cta?.name || t('wbCardOpen')}
+                  {heroCta}
                 </div>
                 <div className="h-7 w-24 rounded-lg border border-white/[0.1]" />
               </div>
@@ -63,9 +64,15 @@ export default function WebBuildPreviewPanel({
               {features.map((f) => (
                 <div key={f.id} className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
                   <div className="h-6 w-6 rounded-lg mb-2" style={{ background: `${ACCENT}22` }} />
-                  <div className="text-[11px] font-medium text-slate-200 mb-1 truncate">{f.name}</div>
-                  <div className="h-1 w-full rounded bg-white/[0.06] mb-1" />
-                  <div className="h-1 w-2/3 rounded bg-white/[0.04]" />
+                  <div className="text-[11px] font-medium text-slate-200 mb-1 truncate">{f.headline || f.name}</div>
+                  {(f.sub || f.bullets?.[0] || f.copyPreview) ? (
+                    <p className="text-[10px] text-[#94A3B8] leading-snug line-clamp-3">{f.sub || f.bullets?.[0] || f.copyPreview}</p>
+                  ) : (
+                    <>
+                      <div className="h-1 w-full rounded bg-white/[0.06] mb-1" />
+                      <div className="h-1 w-2/3 rounded bg-white/[0.04]" />
+                    </>
+                  )}
                 </div>
               ))}
             </div>

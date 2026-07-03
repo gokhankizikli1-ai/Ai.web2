@@ -356,4 +356,14 @@ export const fr: Record<string, string> = {
   wbComposerRevise: "Demander une modification…",
   wbFeedYou: "Vous",
   wbClosePanel: "Fermer",
+  /* web build — real file artifacts */
+  wbActRead: "Lecture de votre demande",
+  wbActPlan: "Planification de la structure des pages",
+  wbActCreatingFile: "Création de {file}",
+  wbActModifyingFile: "Modification de {file}",
+  wbActPackage: "Empaquetage de {count} fichiers",
+  wbMsgCreatedFile: "{file} créé — {summary}",
+  wbMsgCreatedFileShort: "{file} créé",
+  wbMsgModifiedFile: "{file} modifié (+{added} −{removed})",
+  wbErrNoFiles: "Les fichiers de code n'ont pas été générés. Réessayez.",
 };

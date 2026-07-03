@@ -55,8 +55,8 @@ export default function WebBuildActivityCard({ rows, defaultOpen = false }: WebB
               {rows.map((row) => (
                 <div key={row.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg">
                   <StatusIcon status={row.status} />
-                  <span className={`text-[12px] ${row.status === 'waiting' ? 'text-[#64748B]' : 'text-slate-200'}`}>
-                    {t(row.labelKey)}
+                  <span className={`text-[12px] font-mono ${row.status === 'waiting' ? 'text-[#64748B]' : 'text-slate-200'}`}>
+                    {t(row.labelKey, row.params)}
                   </span>
                   {row.detail && <span className="text-[11px] text-[#64748B] truncate">· {row.detail}</span>}
                   <span className="ml-auto text-[10px] text-[#64748B]">{t(STATUS_KEY[row.status])}</span>

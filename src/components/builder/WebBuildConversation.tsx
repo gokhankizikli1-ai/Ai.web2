@@ -92,6 +92,30 @@ function useAssistantLines() {
   };
 }
 
+/* ── Per-file created/modified log (compact, builder-style) ──────────── */
+function FileLog({ step }: { step: WebBuildStep }) {
+  const { t } = useLanguageStore();
+  const changed = step.files.filter((f) => f.status !== 'unchanged');
+  const shown = changed.length ? changed : step.files;
+  if (shown.length === 0) return null;
+  return (
+    <div className="space-y-1">
+      {shown.map((f) => (
+        <div key={f.path} className="flex items-start gap-2 text-[11.5px]">
+          <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${f.status === 'modified' ? 'bg-[#60A5FA]' : 'bg-[#86A08F]'}`} />
+          <span className="text-[#CBD5E1] leading-snug">
+            {f.status === 'modified'
+              ? t('wbMsgModifiedFile', { file: f.path, added: f.added, removed: f.removed })
+              : f.summary
+                ? t('wbMsgCreatedFile', { file: f.path, summary: f.summary })
+                : t('wbMsgCreatedFileShort', { file: f.path })}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /* ── Conversation ────────────────────────────────────────────────────── */
 interface WebBuildConversationProps {
   steps: WebBuildStep[];
@@ -125,6 +149,7 @@ export default function WebBuildConversation({
               <div className="text-[13px] text-[#CBD5E1] leading-relaxed space-y-1">
                 {lines(step).map((l, k) => <p key={k}>{l}</p>)}
               </div>
+              <FileLog step={step} />
               <WebBuildActivityCard rows={step.activity} defaultOpen={false} />
               {/* Output cards only on the latest step (current state). */}
               {isLast && (

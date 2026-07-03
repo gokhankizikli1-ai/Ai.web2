@@ -5,7 +5,8 @@
  * real build data — we never claim files/sections that aren't in the reply.
  */
 import type { BuildSection } from '@/lib/gameBuilderApi';
-import { extractBrief, extractFiles, type WebBuildResult } from '@/lib/webBuildApi';
+import { extractBrief, type WebBuildResult } from '@/lib/webBuildApi';
+import { resolveBuildFiles, parseSectionCopy, type SynthFile } from '@/lib/webBuildFiles';
 
 export type ActivityStatus = 'waiting' | 'running' | 'done' | 'failed';
 
@@ -13,6 +14,8 @@ export interface WebBuildActivityRow {
   id: string;
   /** i18n key for the task label. */
   labelKey: string;
+  /** Params for {placeholder} interpolation in the label (e.g. { file }). */
+  params?: Record<string, string | number>;
   status: ActivityStatus;
   /** Real, data-tied detail (already resolved to text — may be user-language). */
   detail?: string;
@@ -24,6 +27,11 @@ export interface WebBuildSectionItem {
   purpose?: string;
   copyPreview?: string;
   component?: string;
+  /** Rich copy for the preview (from Generated Copy). */
+  headline?: string;
+  sub?: string;
+  cta?: string;
+  bullets?: string[];
 }
 
 /** A generated file with a diff status relative to the previous build. */
@@ -31,6 +39,7 @@ export interface WebBuildFile {
   path: string;
   content: string;
   language?: string;
+  summary?: string;
   status: 'created' | 'modified' | 'unchanged';
   added: number;
   removed: number;
@@ -75,72 +84,27 @@ export interface WebBuildPayload {
   updatedAt: string;
 }
 
-const norm = (s: string) => s.toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim();
-
-function sectionBody(sections: BuildSection[], match: RegExp): string {
-  return sections.find((s) => match.test(s.title))?.body || '';
-}
-
-function humanize(id: string): string {
-  return id.replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
 function pascal(id: string): string {
   return id.replace(/(^|[-_ ]+)(\w)/g, (_, __, c) => c.toUpperCase());
 }
 
 /**
- * Parse the "Page Sections" list (`- <id>: purpose`) and enrich each with a
- * copy preview from "Generated Copy" (`### <id>` blocks) + a component name.
+ * Parse the page sections with rich copy (headline / sub / cta / bullets) so
+ * the preview reflects real generated content. Delegates the copy parsing to
+ * webBuildFiles.parseSectionCopy (single source of truth for section copy).
  */
 export function parseSectionItems(result: WebBuildResult): WebBuildSectionItem[] {
-  const pageBody = sectionBody(result.sections, /page\s*sections/i);
-  const copyBody = sectionBody(result.sections, /generated\s*copy/i);
-  const files = extractFiles(result.sections);
-
-  const copyById: Record<string, string> = {};
-  const parts = copyBody.split(/^###\s+/m).slice(1);
-  for (const part of parts) {
-    const nl = part.indexOf('\n');
-    const head = (nl >= 0 ? part.slice(0, nl) : part).trim();
-    const rest = (nl >= 0 ? part.slice(nl + 1) : '').trim();
-    copyById[norm(head)] = rest;
-  }
-
-  const items: WebBuildSectionItem[] = [];
-  const lineRe = /^\s*[-*]\s+`?([a-z0-9][a-z0-9-_ ]*?)`?\s*[:\-–]\s*(.+)$/gim;
-  let m: RegExpExecArray | null;
-  while ((m = lineRe.exec(pageBody)) !== null) {
-    const rawId = m[1].trim();
-    const id = rawId.toLowerCase().replace(/\s+/g, '-');
-    const purpose = m[2].trim();
-    const copy = copyById[norm(rawId)] || '';
-    const copyPreview = copy ? copy.replace(/\s+/g, ' ').slice(0, 200) : undefined;
-    const compFile = files.find((f) => norm(f).includes(norm(id)));
-    items.push({ id, name: humanize(rawId), purpose, copyPreview, component: compFile || `${pascal(id)}.tsx` });
-  }
-  return items;
-}
-
-/**
- * Parse the "Frontend Code" section into files: each `### <path>` heading
- * followed by a fenced code block becomes { path, content, language }.
- */
-export function extractFileEntries(sections: BuildSection[]): { path: string; content: string; language?: string }[] {
-  const codeBody = sectionBody(sections, /frontend\s*code|code\s*files/i);
-  if (!codeBody) return [];
-  const out: { path: string; content: string; language?: string }[] = [];
-  const parts = codeBody.split(/^###\s+/m).slice(1);
-  for (const part of parts) {
-    const nl = part.indexOf('\n');
-    const path = (nl >= 0 ? part.slice(0, nl) : part).trim().replace(/`/g, '');
-    const rest = nl >= 0 ? part.slice(nl + 1) : '';
-    const fence = rest.match(/```(\w+)?\n([\s\S]*?)```/);
-    const content = fence ? fence[2].replace(/\s+$/, '') : '';
-    const language = fence?.[1];
-    if (path) out.push({ path, content, language });
-  }
-  return out;
+  return parseSectionCopy(result).map((c) => ({
+    id: c.id,
+    name: c.name,
+    purpose: c.purpose,
+    copyPreview: (c.headline || c.sub || c.body || '').replace(/\s+/g, ' ').slice(0, 200) || undefined,
+    component: `${pascal(c.id)}.tsx`,
+    headline: c.headline,
+    sub: c.sub,
+    cta: c.cta,
+    bullets: c.bullets,
+  }));
 }
 
 /** Line-multiset diff between two file contents → added/removed counts. */
@@ -158,7 +122,7 @@ function lineDiff(before: string, after: string): { added: number; removed: numb
 }
 
 /** Diff a fresh file set against the previous build's files. */
-export function diffFiles(prev: WebBuildFile[] | undefined, next: { path: string; content: string; language?: string }[]): WebBuildFile[] {
+export function diffFiles(prev: WebBuildFile[] | undefined, next: SynthFile[]): WebBuildFile[] {
   const prevMap = new Map((prev || []).map((f) => [f.path, f.content]));
   return next.map((f) => {
     const lines = f.content ? f.content.split('\n').length : 0;
@@ -168,6 +132,11 @@ export function diffFiles(prev: WebBuildFile[] | undefined, next: { path: string
     const { added, removed } = lineDiff(before, f.content);
     return { ...f, status: 'modified' as const, added, removed };
   });
+}
+
+/** The authoritative file set for a result, diffed against the previous build. */
+export function resolveFiles(result: WebBuildResult, prev?: WebBuildFile[]): WebBuildFile[] {
+  return diffFiles(prev, resolveBuildFiles(result));
 }
 
 /** Structured summary tied to real data for the assistant message. */
@@ -185,26 +154,40 @@ export function summarize(result: WebBuildResult, files: WebBuildFile[]): WebBui
 }
 
 /**
- * Final "Build Activity" log for a result — rows tied to real returned data.
- * All 'done' except the save row (flipped once saved).
+ * File/component-based "Build Activity" — implementation-focused rows tied to
+ * the ACTUAL generated files. One row per created/modified file ("Creating
+ * components/Hero.tsx — <summary>"), bracketed by read/plan/preview/package.
+ * All 'done' except the save row (flipped once saved). Never claims a file
+ * that isn't in `files`.
  */
 export function deriveBuildActivity(result: WebBuildResult, files?: WebBuildFile[]): WebBuildActivityRow[] {
   const brief = extractBrief(result.sections);
   const items = parseSectionItems(result);
-  const fileList = files || diffFiles(undefined, extractFileEntries(result.sections));
-  const design = sectionBody(result.sections, /design\s*direction/i);
-  const copyBlocks = (sectionBody(result.sections, /generated\s*copy/i).match(/^###\s+/gm) || []).length;
-  const row = (id: string, labelKey: string, detail?: string): WebBuildActivityRow => ({ id, labelKey, status: 'done', detail });
-  return [
-    row('brief', 'wbStageBrief'),
-    row('type', 'wbStageType', brief.type),
-    row('plan', 'wbStagePlan', items.length ? items.map((s) => s.name).join(', ') : undefined),
-    row('design', 'wbStageDesign', brief.style || (design ? design.replace(/\s+/g, ' ').slice(0, 80) : undefined)),
-    row('copy', 'wbStageCopy', copyBlocks ? String(copyBlocks) : undefined),
-    row('code', 'wbStageCode', fileList.length ? String(fileList.length) : undefined),
-    row('preview', 'wbStagePreview'),
-    { id: 'save', labelKey: 'wbActSave', status: 'waiting' },
+  const fileList = files || resolveFiles(result);
+  const briefBits = [brief.type, brief.audience, brief.goal].filter(Boolean).join(' · ');
+
+  const rows: WebBuildActivityRow[] = [
+    { id: 'read', labelKey: 'wbActRead', status: 'done', detail: briefBits || undefined },
+    { id: 'plan', labelKey: 'wbActPlan', status: 'done', detail: items.length ? items.map((s) => s.name).join(', ') : undefined },
   ];
+
+  // One row per file actually produced (changed files first; unchanged noted).
+  const changed = fileList.filter((f) => f.status !== 'unchanged');
+  const shown = changed.length ? changed : fileList;
+  for (const f of shown) {
+    rows.push({
+      id: `file-${f.path}`,
+      labelKey: f.status === 'modified' ? 'wbActModifyingFile' : 'wbActCreatingFile',
+      params: { file: f.path },
+      status: 'done',
+      detail: f.summary || (f.added ? `+${f.added} −${f.removed}` : undefined),
+    });
+  }
+
+  rows.push({ id: 'preview', labelKey: 'wbStagePreview', status: 'done' });
+  rows.push({ id: 'package', labelKey: 'wbActPackage', params: { count: fileList.length }, status: 'done' });
+  rows.push({ id: 'save', labelKey: 'wbActSave', status: 'waiting' });
+  return rows;
 }
 
 function uid(): string {
@@ -214,7 +197,7 @@ function uid(): string {
 /** Build (or extend) the persisted payload from a result. */
 export function buildWebBuildPayload(prompt: string, result: WebBuildResult, prev?: WebBuildPayload): WebBuildPayload {
   const now = new Date().toISOString();
-  const files = diffFiles(prev?.files, extractFileEntries(result.sections));
+  const files = resolveFiles(result, prev?.files);
   const activity = deriveBuildActivity(result, files);
   const step: WebBuildStep = {
     id: `step-${uid()}`,
