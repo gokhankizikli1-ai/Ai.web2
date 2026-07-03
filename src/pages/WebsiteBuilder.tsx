@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Layout, Loader2, AlertTriangle, RotateCcw, Check, Eye, FileText,
   Sparkles, Wand2, Save, Star, DollarSign, Smartphone, Code2,
+  Plus, FolderOpen, X, ChevronLeft,
 } from 'lucide-react';
 import BuilderWorkspaceFrame from '@/components/builder/BuilderWorkspaceFrame';
 import BuilderPromptCard from '@/components/builder/BuilderPromptCard';
@@ -14,6 +15,7 @@ import {
   generateWebBuild, WebBuildError, WEB_BUILD_SECTIONS, type WebBuildResult,
 } from '@/lib/webBuildApi';
 import { saveWebBuildToProject } from '@/lib/webBuildProject';
+import { getProjects } from '@/stores/projectStore';
 import type { BuildSection } from '@/lib/gameBuilderApi';
 
 const ACCENT = '#60A5FA';
@@ -57,7 +59,10 @@ export default function WebsiteBuilder() {
   const [view, setView] = useState<'build' | 'preview'>('build');
 
   const [savedProjectId, setSavedProjectId] = useState<string | undefined>(undefined);
+  const [savedName, setSavedName] = useState('');
   const [savedFlash, setSavedFlash] = useState(false);
+  // Save flow: 'closed' | prompt (Create / Add-to-existing / Not now) | picker.
+  const [saveStep, setSaveStep] = useState<'closed' | 'prompt' | 'picker'>('closed');
 
   const abortRef = useRef<AbortController | null>(null);
   const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -170,14 +175,28 @@ export default function WebsiteBuilder() {
   const handleGenerate = () => runFresh(prompt);
   const handleRetry = () => runFresh(lastIdea || prompt);
 
-  const handleSave = () => {
+  // Persist to a project and show a "Saved to <name>" confirmation.
+  const commitSave = useCallback((projectId?: string) => {
     if (!result) return;
-    const project = saveWebBuildToProject(lastIdea, result, savedProjectId);
+    const project = saveWebBuildToProject(lastIdea, result, projectId);
     setSavedProjectId(project.id);
+    setSavedName(project.name);
     setSavedFlash(true);
+    setSaveStep('closed');
     if (savedTimer.current) clearTimeout(savedTimer.current);
-    savedTimer.current = setTimeout(() => setSavedFlash(false), 2200);
-  };
+    savedTimer.current = setTimeout(() => setSavedFlash(false), 2600);
+  }, [result, lastIdea]);
+
+  // Save button. Once this build already lives in a project, subsequent
+  // saves append to it silently with a confirmation. Otherwise ask the user
+  // how they want to save (new project / existing project / not now).
+  const handleSaveClick = useCallback(() => {
+    if (!result) return;
+    if (savedProjectId) { commitSave(savedProjectId); return; }
+    setSaveStep((s) => (s === 'closed' ? 'prompt' : 'closed'));
+  }, [result, savedProjectId, commitSave]);
+
+  const existingProjects = useMemo(() => (saveStep === 'picker' ? getProjects() : []), [saveStep]);
 
   const siteUrl = slugFromIdea(lastIdea);
 
@@ -301,14 +320,74 @@ export default function WebsiteBuilder() {
                   </button>
                 </div>
 
-                {/* Save to project */}
-                <button
-                  onClick={handleSave}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11.5px] font-medium text-slate-200 bg-white/[0.03] border border-white/[0.07] hover:bg-white/[0.06] transition-colors"
-                >
-                  {savedFlash ? <Check className="h-3.5 w-3.5" style={{ color: ACCENT }} /> : <Save className="h-3.5 w-3.5" />}
-                  {savedFlash ? t('wbSavedToProject') : t('wbSaveToProject')}
-                </button>
+                {/* Save to project — asks how to save on first save. */}
+                <div className="relative">
+                  <button
+                    onClick={handleSaveClick}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11.5px] font-medium text-slate-200 bg-white/[0.03] border border-white/[0.07] hover:bg-white/[0.06] transition-colors"
+                  >
+                    {savedFlash ? <Check className="h-3.5 w-3.5" style={{ color: ACCENT }} /> : <Save className="h-3.5 w-3.5" />}
+                    {savedFlash ? t('wbSavedToNamed', { name: savedName }) : t('wbSaveToProject')}
+                  </button>
+
+                  <AnimatePresence>
+                    {saveStep !== 'closed' && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+                        transition={{ duration: 0.15 }}
+                        className="absolute right-0 top-full mt-1.5 w-64 rounded-xl overflow-hidden z-50 p-1.5"
+                        style={{ background: 'linear-gradient(180deg, #151C28, #171C24)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 16px 40px rgba(0,0,0,0.45)' }}
+                      >
+                        {saveStep === 'prompt' ? (
+                          <>
+                            <p className="px-2.5 py-2 text-[12px] font-medium text-white">{t('wbSavePromptTitle')}</p>
+                            <button
+                              onClick={() => commitSave(undefined)}
+                              className="w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[12px] text-[#CBD5E1] hover:bg-white/[0.05] hover:text-white transition-colors"
+                            >
+                              <Plus className="h-3.5 w-3.5 shrink-0" style={{ color: ACCENT }} /> {t('wbCreateNewProject')}
+                            </button>
+                            <button
+                              onClick={() => setSaveStep('picker')}
+                              className="w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[12px] text-[#CBD5E1] hover:bg-white/[0.05] hover:text-white transition-colors"
+                            >
+                              <FolderOpen className="h-3.5 w-3.5 shrink-0 text-[#94A3B8]" /> {t('wbAddToExisting')}
+                            </button>
+                            <button
+                              onClick={() => setSaveStep('closed')}
+                              className="w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[12px] text-[#94A3B8] hover:bg-white/[0.05] hover:text-slate-300 transition-colors"
+                            >
+                              <X className="h-3.5 w-3.5 shrink-0" /> {t('wbNotNow')}
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-2 px-2.5 py-2">
+                              <button onClick={() => setSaveStep('prompt')} className="text-[#94A3B8] hover:text-white transition-colors">
+                                <ChevronLeft className="h-3.5 w-3.5" />
+                              </button>
+                              <span className="text-[12px] font-medium text-white">{t('wbChooseProject')}</span>
+                            </div>
+                            <div className="max-h-56 overflow-y-auto scrollbar-thin">
+                              {existingProjects.length === 0 ? (
+                                <p className="px-2.5 py-3 text-[11.5px] text-[#64748B]">{t('wbNoProjectsYet')}</p>
+                              ) : existingProjects.map((p) => (
+                                <button
+                                  key={p.id}
+                                  onClick={() => commitSave(p.id)}
+                                  className="w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[12px] text-[#CBD5E1] hover:bg-white/[0.05] hover:text-white transition-colors"
+                                >
+                                  <FolderOpen className="h-3.5 w-3.5 shrink-0 text-[#94A3B8]" />
+                                  <span className="truncate">{p.name}</span>
+                                </button>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
               </div>
             </div>
 
