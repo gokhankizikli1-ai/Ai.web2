@@ -142,6 +142,30 @@ async def chat(req: ChatRequest, request: Request):
     message = req.message.strip()
     platform = req.platform or "web"
 
+    # ── Specialized builder modes bypass ALL chat shortcuts ───────────────
+    # Modes like game_developer / website_builder / startup_advisor carry
+    # rich structured prompts (e.g. a "[GAME BUILD REQUEST]" block). The
+    # lightweight memory/style shortcuts below exist for NORMAL chat only.
+    # If one of them fires on a builder request it HIJACKS the whole request
+    # and returns a one-liner instead of the build — the live bug where a
+    # Game Build came back as "Stil guncellendi: Short" (the style shortcut
+    # matched a word in the idea and short-circuited the AI pipeline). For
+    # these modes we skip every shortcut and go straight to the mode
+    # pipeline, which resolves to the correct specialized persona.
+    _SPECIALIZED_BUILDER_MODES = {
+        "game_developer", "website_builder", "startup_advisor",
+        "marketing_dropshipping", "trading_analyst", "coding",
+    }
+    _is_specialized_builder = (
+        (req.mode or "").strip().lower() in _SPECIALIZED_BUILDER_MODES
+        or message.startswith("[GAME BUILD REQUEST]")
+    )
+    if _is_specialized_builder:
+        logger.info(
+            "CHAT | rid=%s | uid=%s | specialized_builder | mode=%s | shortcuts_bypassed",
+            request_id, user_id, (req.mode or "?"),
+        )
+
     # Per-stage timer — emits one structured log line at flush() with the
     # full per-stage timeline. Read these in production logs to find the
     # actual bottleneck (safety/context/AI/usage). Negligible overhead.
@@ -178,7 +202,7 @@ async def chat(req: ChatRequest, request: Request):
         "ne hatirliyorsun", "ne hatırlıyorsun", "ne kaydettin",
         "ne biliyorsun", "hafizanda ne var",
     ]
-    if any(kw in message.lower() for kw in _mem_list_kw):
+    if not _is_specialized_builder and any(kw in message.lower() for kw in _mem_list_kw):
         summary = ""
         try:
             from backend.services.memory_service import get_summary
@@ -202,7 +226,7 @@ async def chat(req: ChatRequest, request: Request):
     #      as before).
     try:
         from backend.services.memory_plane import chat_integration as _mp_chat
-        _save_cmd = _mp_chat.is_explicit_save_command(message)
+        _save_cmd = None if _is_specialized_builder else _mp_chat.is_explicit_save_command(message)
     except Exception:
         _save_cmd = None
     if _save_cmd:
@@ -257,7 +281,7 @@ async def chat(req: ChatRequest, request: Request):
         "hafizana kaydet:", "aklinda tut:", "not al:",
     ]
     for trigger in _mem_save:
-        if message.lower().startswith(trigger):
+        if not _is_specialized_builder and message.lower().startswith(trigger):
             fact = message[len(trigger):].strip()
             if fact and len(fact) >= 3:
                 try:
@@ -285,7 +309,7 @@ async def chat(req: ChatRequest, request: Request):
             )
 
     # ── Memory delete shortcut ────────────────────────────────────────────
-    if message.lower().startswith("unut:"):
+    if not _is_specialized_builder and message.lower().startswith("unut:"):
         keyword = message[5:].strip()
         if keyword:
             try:
@@ -298,9 +322,11 @@ async def chat(req: ChatRequest, request: Request):
         return _quick_response(request_id, user_id, "Silindi.", "memory", t_start)
 
     # ── Style shortcut ────────────────────────────────────────────────────
+    # NOTE: guarded by `_is_specialized_builder` — this is the shortcut that
+    # hijacked Game Builder (matched a word in the idea → "Stil guncellendi").
     try:
         from backend.services.memory_service import detect_style, apply_style
-        style_match = detect_style(message)
+        style_match = None if _is_specialized_builder else detect_style(message)
         if style_match:
             apply_style(user_id, message)
             timer.mark("style_shortcut")
