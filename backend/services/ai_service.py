@@ -202,6 +202,29 @@ async def process_chat(
                 cfg   = mode_get_config(canonical, depth_label, message)
                 sys_p = build_system_prompt(canonical, mem_summary, style_prompt, profile)
 
+                # Game Builder — adaptive output budget. The build size varies
+                # a lot (a Fast Prototype vs a Production-Style Roblox tycoon
+                # with economy + DataStore + shop + quests), so we infer a
+                # safe max_tokens from Build Quality + prompt complexity rather
+                # than using the mode's fixed value. Clamped to a provider-safe
+                # ceiling inside the estimator; the user never sees or controls
+                # this. Best-effort — falls back to cfg's value on any error.
+                if canonical == "game_developer":
+                    try:
+                        from backend.services.ai.game_dev_modules import (
+                            estimate_game_dev_token_budget,
+                        )
+                        _gd_budget = estimate_game_dev_token_budget(message)
+                        cfg["max_tokens"] = _gd_budget
+                        logger.info(
+                            "process_chat | game_dev adaptive max_tokens=%d", _gd_budget
+                        )
+                    except Exception as _gd_err:
+                        logger.warning(
+                            "process_chat | game_dev budget estimate failed (%s) — using cfg default",
+                            _gd_err,
+                        )
+
                 # Phase 8n — concise snapshot for a bare price ask.
                 if canonical == "trading_analyst" and _is_quick_quote_ask(message):
                     sys_p += _SNAPSHOT_DIRECTIVE

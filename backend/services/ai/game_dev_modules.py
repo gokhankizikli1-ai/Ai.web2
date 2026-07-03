@@ -282,6 +282,125 @@ def build_game_dev_knowledge_block() -> str:
     return "\n".join(parts)
 
 
+# ── Adaptive output/token budget ───────────────────────────────────────────
+# The game_developer output length varies enormously: a Fast Prototype for a
+# tiny idea needs far less room than a Production-Style Roblox tycoon with an
+# economy, DataStore, shop, pets, quests and anti-exploit notes. Rather than a
+# single fixed max_tokens (which either wastes budget on small builds or
+# truncates big ones), we infer a budget from Build Quality + prompt
+# complexity. This is applied in ai_service.process_chat for the
+# game_developer mode; the user never sees or controls token amounts.
+#
+# HARD CAP: gpt-4o (MODEL_STRONG) supports up to 16384 output tokens. We keep a
+# conservative safe ceiling well under that so a request can never crash the
+# provider. If a future provider is smaller, lower _SAFE_MAX_OUTPUT_TOKENS.
+_SAFE_MAX_OUTPUT_TOKENS = 12000
+_MIN_OUTPUT_TOKENS = 3500
+
+# Budget table: (quality, complexity bucket) → output tokens. Values sit inside
+# the ranges from the product spec and stay under the safe ceiling.
+_BUDGET_TABLE: Dict[str, Dict[str, int]] = {
+    "Fast Prototype": {"simple": 4000, "medium": 5200, "complex": 6500},
+    "Polished MVP":   {"simple": 6000, "medium": 7200, "complex": 8800},
+    "Production Style": {"simple": 8000, "medium": 9500, "complex": 11500},
+}
+
+# Complexity signal words. A hit means the build likely needs more files, more
+# code, and more setup/QA detail — i.e. more output room. Kept lightweight and
+# lowercase; matched as substrings against the whole request message.
+_COMPLEXITY_KEYWORDS = (
+    # shared / systems
+    "inventory", "shop", "economy", "currency", "save", "datastore", "data store",
+    "progression", "quest", "checkpoint", "multiplayer", "enemy", "ai ", " ai", "boss",
+    "behavior tree", "behaviour tree", "combat", "melee", "lock-on", "lock on",
+    "pet", "tycoon", "rebirth", "wave", "round", "hud", "menu", "mobile",
+    "production", "analytics", "monetization", "monetisation", "leaderboard",
+    "stamina", "interaction", "objective", "flashlight", "jumpscare", "crafting",
+    # roblox-leaning
+    "remoteevent", "remotefunction", "server-side", "server side", "gamepass", "game pass",
+    "developer product", "marketplaceservice",
+    # ue5-leaning
+    "third-person", "third person", "first-person", "first person", "component",
+    "health component", "savegame", "save game", "widget", "wbp", "c++", "gamemode",
+    "playercontroller", "enhanced input", "niagara",
+)
+
+
+def _extract_user_idea(message: str) -> str:
+    """Return only the user's idea, stripped of the fixed [GAME BUILD REQUEST]
+    wrapper. The wrapper itself mentions words like 'multiplayer', 'save',
+    'monetization' and the section list (full of commas), so scoring the whole
+    message would flag EVERY request as complex. Scoring only the idea keeps
+    the heuristic honest. Falls back to the whole (lowercased) message for
+    legacy raw prompts that have no wrapper marker.
+    """
+    text = (message or "").lower()
+    marker = "user idea:"
+    if marker in text:
+        return text.split(marker, 1)[1].strip()
+    return text
+
+
+def _complexity_bucket(message: str) -> str:
+    """Return 'simple' | 'medium' | 'complex' from lightweight heuristics.
+
+    Signals (measured on the USER IDEA only, never the wrapper): distinct
+    complexity-keyword hits, comma-separated system count, and idea length.
+    No database, no external call — just string scanning.
+    """
+    idea = _extract_user_idea(message)
+
+    # Distinct keyword hits (count each keyword at most once).
+    hits = 0
+    for kw in _COMPLEXITY_KEYWORDS:
+        if kw in idea:
+            hits += 1
+
+    # Comma count roughly tracks "how many systems were listed".
+    commas = idea.count(",")
+
+    # Idea length signal.
+    words = len(idea.split())
+
+    score = hits + min(commas, 8) + (0 if words < 40 else 2 if words < 110 else 4)
+
+    if score <= 4:
+        return "simple"
+    if score <= 10:
+        return "medium"
+    return "complex"
+
+
+def _detect_build_quality(message: str) -> str:
+    """Read 'Build quality: <label>' from the request block. Default Polished MVP."""
+    text = (message or "").lower()
+    if "production style" in text:
+        return "Production Style"
+    if "fast prototype" in text:
+        return "Fast Prototype"
+    return "Polished MVP"
+
+
+def estimate_game_dev_token_budget(
+    message: str,
+    hard_cap: int = _SAFE_MAX_OUTPUT_TOKENS,
+) -> int:
+    """Infer a safe output-token budget for a game_developer request.
+
+    Scales with Build Quality (Fast Prototype < Polished MVP < Production Style)
+    and prompt complexity (simple/medium/complex). Always clamped to
+    [_MIN_OUTPUT_TOKENS, hard_cap] so it can never exceed the provider's safe
+    limit or drop below a usable floor.
+
+    The user never controls this — it is inferred entirely from the request.
+    """
+    quality = _detect_build_quality(message)
+    bucket = _complexity_bucket(message)
+    budget = _BUDGET_TABLE.get(quality, _BUDGET_TABLE["Polished MVP"]).get(bucket, 7200)
+    safe_ceiling = min(hard_cap, _SAFE_MAX_OUTPUT_TOKENS)
+    return max(_MIN_OUTPUT_TOKENS, min(budget, safe_ceiling))
+
+
 __all__ = [
     "ROBLOX_MODULES",
     "UE5_MODULES",
@@ -289,4 +408,5 @@ __all__ = [
     "UE5_UI_TEMPLATES",
     "BUILD_QUALITY_TIERS",
     "build_game_dev_knowledge_block",
+    "estimate_game_dev_token_budget",
 ]
