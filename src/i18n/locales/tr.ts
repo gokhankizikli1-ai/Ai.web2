@@ -356,4 +356,14 @@ export const tr: Record<string, string> = {
   wbComposerRevise: "Bir değişiklik isteyin…",
   wbFeedYou: "Siz",
   wbClosePanel: "Kapat",
+  /* web build — real file artifacts */
+  wbActRead: "İsteğiniz okunuyor",
+  wbActPlan: "Sayfa yapısı planlanıyor",
+  wbActCreatingFile: "{file} oluşturuluyor",
+  wbActModifyingFile: "{file} değiştiriliyor",
+  wbActPackage: "{count} dosya paketleniyor",
+  wbMsgCreatedFile: "{file} oluşturuldu — {summary}",
+  wbMsgCreatedFileShort: "{file} oluşturuldu",
+  wbMsgModifiedFile: "{file} değiştirildi (+{added} −{removed})",
+  wbErrNoFiles: "Kod dosyaları oluşturulmadı. Tekrar deneyin.",
 };

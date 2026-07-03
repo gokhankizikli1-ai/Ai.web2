@@ -356,4 +356,14 @@ export const it: Record<string, string> = {
   wbComposerRevise: "Richiedi una modifica…",
   wbFeedYou: "Tu",
   wbClosePanel: "Chiudi",
+  /* web build — real file artifacts */
+  wbActRead: "Lettura della tua richiesta",
+  wbActPlan: "Pianificazione della struttura delle pagine",
+  wbActCreatingFile: "Creazione di {file}",
+  wbActModifyingFile: "Modifica di {file}",
+  wbActPackage: "Creazione pacchetto di {count} file",
+  wbMsgCreatedFile: "{file} creato — {summary}",
+  wbMsgCreatedFileShort: "{file} creato",
+  wbMsgModifiedFile: "{file} modificato (+{added} −{removed})",
+  wbErrNoFiles: "I file di codice non sono stati generati. Riprova.",
 };
