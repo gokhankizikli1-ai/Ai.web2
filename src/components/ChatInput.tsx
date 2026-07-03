@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Send, Paperclip, Lock } from 'lucide-react';
+import { useLanguageStore } from '@/stores/languageStore';
 
 interface ChatInputProps {
   onSend: (message: string) => void;
@@ -10,6 +11,7 @@ interface ChatInputProps {
 }
 
 export default function ChatInput({ onSend, disabled, externalValue, onExternalValueChange }: ChatInputProps) {
+  const { t } = useLanguageStore();
   const [internalValue, setInternalValue] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -64,7 +66,7 @@ export default function ChatInput({ onSend, disabled, externalValue, onExternalV
           onKeyDown={handleKeyDown}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
-          placeholder="Message KorvixAI..."
+          placeholder={t('messageKorvix')}
           rows={1}
           disabled={disabled}
           className="flex-1 bg-transparent text-[14px] text-white placeholder:text-[#94A3B8] resize-none outline-none min-h-[20px] max-h-[200px] py-[7px] leading-[1.5] disabled:opacity-50 transition-opacity"

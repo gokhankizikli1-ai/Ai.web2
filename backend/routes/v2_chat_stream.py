@@ -694,7 +694,10 @@ async def stream_chat(body: StreamChatRequest, request: Request):
         # when no tools are enabled (the cap_note block below is
         # tool-gated and cannot be relied on for language policy).
         try:
-            _LANG_NAMES = {"en": "English", "tr": "Turkish"}
+            _LANG_NAMES = {
+                "en": "English", "tr": "Turkish", "de": "German", "fr": "French",
+                "it": "Italian", "es": "Spanish", "ru": "Russian",
+            }
             _mode = (body.language_mode or "").strip().lower()
             _locale = (body.locale or "").strip().lower()
             _msg_lang = (body.message_language or "").strip().lower()

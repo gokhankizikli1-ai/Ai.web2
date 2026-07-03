@@ -11,7 +11,7 @@ import { Switch } from '@/components/ui/switch';
 import MemoryGraph from './MemoryGraph';
 import { useApp } from '@/contexts/AppContext';
 import type { AppSettings } from '@/contexts/AppContext';
-import { useLanguageStore } from '@/stores/languageStore';
+import { useLanguageStore, LANGUAGES } from '@/stores/languageStore';
 import type { LangMode } from '@/stores/languageStore';
 
 interface SettingsModalProps {
@@ -186,12 +186,11 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
   //  TAB CONTENT
   // ═══════════════════════════════════════════
 
-  // Only offer languages we fully ship, plus Auto (follows browser/device
-  // locale, and — for AI replies — the language of the latest message).
+  // Auto (follows browser/device locale, and — for AI replies — the language
+  // of the latest message) + every language we ship a complete dictionary for.
   const LANG_OPTIONS: { mode: LangMode; label: string; sub: string }[] = [
     { mode: 'auto', label: 'Auto', sub: 'Match device & message' },
-    { mode: 'en', label: 'English', sub: 'English' },
-    { mode: 'tr', label: 'Türkçe', sub: 'Turkish' },
+    ...LANGUAGES.map((l) => ({ mode: l.code as LangMode, label: l.label, sub: l.flag })),
   ];
   const currentLangOption = LANG_OPTIONS.find((o) => o.mode === langMode) || LANG_OPTIONS[0];
 

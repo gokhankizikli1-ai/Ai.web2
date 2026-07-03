@@ -173,7 +173,10 @@ def _build_system(base, mem_summary="", style_prompt="", profile=""):
     return sys_p
 
 
-_LANG_NAMES = {"en": "English", "tr": "Turkish"}
+_LANG_NAMES = {
+    "en": "English", "tr": "Turkish", "de": "German", "fr": "French",
+    "it": "Italian", "es": "Spanish", "ru": "Russian",
+}
 
 
 def _build_language_directive(
