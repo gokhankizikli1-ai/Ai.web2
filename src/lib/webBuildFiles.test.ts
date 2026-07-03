@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { parseBuildSections } from '@/lib/gameBuilderApi';
 import { resolveBuildFiles, synthesizeFiles } from '@/lib/webBuildFiles';
-import { resolveFiles, deriveBuildActivity, deriveExecutionOps, buildWebBuildPayload } from '@/lib/webBuildPayload';
+import { resolveFiles, deriveBuildActivity, deriveExecutionFeed, buildWebBuildPayload } from '@/lib/webBuildPayload';
 import { extractBrief } from '@/lib/webBuildApi';
 import type { WebBuildResult } from '@/lib/webBuildApi';
 
@@ -90,43 +90,42 @@ describe('web build file synthesis', () => {
   });
 });
 
-describe('web build execution log ops', () => {
+describe('web build execution feed', () => {
   const result = makeResult(REPLY);
   const brief = extractBrief(result.sections);
 
-  it('a fresh build starts with brief/plan/design info rows carrying real data', () => {
+  it('a fresh build opens with a text line, an analyze block, then a done line', () => {
     const payload = buildWebBuildPayload('build a fitness coach site', result);
-    const ops = deriveExecutionOps(payload.steps[0], brief);
-    expect(ops[0].id).toBe('brief');
-    expect(ops[0].detail).toMatch(/fitness|professionals|appointment/i);
-    expect(ops[1].id).toBe('plan');
-    expect(ops[1].detail).toMatch(/hero/i);
-    // Last op is always the preview update.
-    expect(ops[ops.length - 1].id).toBe('preview');
+    const feed = deriveExecutionFeed(payload.steps[0], brief);
+    expect(feed[0].kind).toBe('text');
+    expect(feed.some((i) => i.kind === 'analyze')).toBe(true);
+    expect(feed[feed.length - 1]).toMatchObject({ kind: 'text', key: 'wbFeedBuildDone' });
+    // No checklist "info" rows — only text / analyze / file items exist.
+    expect(feed.every((i) => i.kind === 'text' || i.kind === 'analyze' || i.kind === 'file')).toBe(true);
   });
 
-  it('a fresh build emits one clickable file op per created file, never inventing files', () => {
+  it('a fresh build emits one create file action per created file, never inventing files', () => {
     const payload = buildWebBuildPayload('build it', result);
-    const fileOps = deriveExecutionOps(payload.steps[0], brief).filter((o) => o.kind === 'file');
+    const fileItems = deriveExecutionFeed(payload.steps[0], brief).filter((i) => i.kind === 'file') as Extract<ReturnType<typeof deriveExecutionFeed>[number], { kind: 'file' }>[];
     const realPaths = new Set(payload.files.map((f) => f.path));
-    expect(fileOps.length).toBe(payload.files.length);
-    expect(fileOps.every((o) => o.file && realPaths.has(o.file))).toBe(true);
-    expect(fileOps.every((o) => o.fileStatus === 'created')).toBe(true);
+    expect(fileItems.length).toBe(payload.files.length);
+    expect(fileItems.every((i) => realPaths.has(i.path))).toBe(true);
+    expect(fileItems.every((i) => i.op === 'create')).toBe(true);
   });
 
-  it('a revision emits read-then-modify ops for the changed file and a preview update', () => {
+  it('a revision emits read-then-update actions for the changed file and no analyze block', () => {
     const first = buildWebBuildPayload('build it', result);
     const revisedReply = REPLY.replace('Formda kal, randevunu al', 'Premium koçlukla hedefine ulaş');
     const second = buildWebBuildPayload('change the hero headline', makeResult(revisedReply), first);
     const step = second.steps[second.steps.length - 1];
-    const ops = deriveExecutionOps(step, brief);
-    const heroRead = ops.find((o) => o.fileStatus === 'read' && /Hero\.tsx/.test(o.file || ''));
-    const heroMod = ops.find((o) => o.fileStatus === 'modified' && /Hero\.tsx/.test(o.file || ''));
+    const feed = deriveExecutionFeed(step, brief);
+    const files = feed.filter((i) => i.kind === 'file') as Extract<ReturnType<typeof deriveExecutionFeed>[number], { kind: 'file' }>[];
+    const heroRead = files.find((i) => i.op === 'read' && /Hero\.tsx/.test(i.path));
+    const heroUpd = files.find((i) => i.op === 'update' && /Hero\.tsx/.test(i.path));
     expect(heroRead).toBeTruthy();
-    expect(heroMod).toBeTruthy();
-    expect(ops.indexOf(heroRead!)).toBeLessThan(ops.indexOf(heroMod!));
-    expect(ops[ops.length - 1].id).toBe('preview');
-    // No brief/plan/design info rows on a revision.
-    expect(ops.some((o) => o.id === 'brief' || o.id === 'plan')).toBe(false);
+    expect(heroUpd).toBeTruthy();
+    expect(files.indexOf(heroRead!)).toBeLessThan(files.indexOf(heroUpd!));
+    expect(feed.some((i) => i.kind === 'analyze')).toBe(false);
+    expect(feed[feed.length - 1]).toMatchObject({ kind: 'text', key: 'wbFeedReviseDone' });
   });
 });

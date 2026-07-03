@@ -191,92 +191,77 @@ export function deriveBuildActivity(result: WebBuildResult, files?: WebBuildFile
 }
 
 /**
- * One row in the live execution log. Each op has a running-state and a
- * done-state label (i18n keys), plus REAL data tied to the build. `file` ops
- * are clickable (they open the file drawer on that path); `info` ops show a
- * real-data detail line (brief bits, section names, design style). We only ever
- * list files that are actually in the step's file set.
+ * One item in the execution FEED — a Kimi/Claude-style agent action stream.
+ * There are three shapes (no checklist / no ticks / no bullets):
+ *  - `text`    — a short natural assistant progress line (i18n key + params).
+ *  - `analyze` — a collapsible "Analyze request" block (details resolved in the
+ *                component from the brief + section names).
+ *  - `file`    — a compact tool action row (Create / Update / Read <path>) with
+ *                a one-line summary and +N −M; clickable → opens the file drawer.
+ * We only ever emit `file` items for files that are actually in `step.files`.
  */
-export interface ExecOp {
-  id: string;
-  kind: 'info' | 'file';
-  /** i18n key for the running (in-progress) label. */
-  runKey: string;
-  /** i18n key for the completed label. */
-  doneKey: string;
-  /** {placeholder} params for both labels (e.g. { file }). */
-  params?: Record<string, string | number>;
-  /** Real, data-tied detail line (already resolved text; may be user-language). */
-  detail?: string;
-  /** For file ops — the path to open in the file drawer on click. */
-  file?: string;
-  /** For file ops — diff counts to render as +N −M. */
-  added?: number;
-  removed?: number;
-  /** For file ops — drives the icon/badge tone. */
-  fileStatus?: 'created' | 'modified' | 'read';
+export type FeedItem =
+  | { kind: 'text'; id: string; key: string; params?: Record<string, string | number> }
+  | { kind: 'analyze'; id: string }
+  | {
+      kind: 'file'; id: string; op: 'create' | 'update' | 'read';
+      path: string; summary?: string; added: number; removed: number;
+    };
+
+/** Component base name of a file path (e.g. components/Hero.tsx → Hero). */
+function baseName(path: string): string {
+  return (path.split('/').pop() || path).replace(/\.\w+$/, '');
 }
 
 /**
- * Turn a build/revision step into a chronological execution log tied to the
- * REAL generated files. Fresh build: read brief → plan structure → design
- * direction (each with real detail) → one op per created file → preview
- * updated. Revision: per changed file, read-current then modify (or create),
- * then preview updated. Never invents a file that isn't in `step.files`.
+ * Turn a build/revision step into an execution feed tied to the REAL generated
+ * files. Fresh build: short opening line → Analyze request (collapsible) →
+ * short structure line → one file action per created file → done line.
+ * Revision: opening line naming the touched section(s) → per changed file a
+ * read-then-update (or create) action → done line. Never invents a file.
  */
-export function deriveExecutionOps(
+export function deriveExecutionFeed(
   step: WebBuildStep,
   brief: { type?: string; audience?: string; goal?: string; style?: string },
-): ExecOp[] {
-  const ops: ExecOp[] = [];
+): FeedItem[] {
+  const feed: FeedItem[] = [];
   const changed = step.files.filter((f) => f.status !== 'unchanged');
   const shown = changed.length ? changed : step.files;
-  const fileDetail = (f: WebBuildFile) =>
-    f.summary || (f.added || f.removed ? `+${f.added} −${f.removed}` : undefined);
 
   if (step.kind === 'revision') {
+    const targets = Array.from(new Set(shown.map((f) => baseName(f.path)))).slice(0, 4).join(', ');
+    feed.push(
+      targets
+        ? { kind: 'text', id: 'open', key: 'wbFeedReviseOpening', params: { targets } }
+        : { kind: 'text', id: 'open', key: 'wbFeedReviseOpeningPlain' },
+    );
     for (const f of shown) {
       if (f.status === 'modified') {
-        ops.push({
-          id: `read-${f.path}`, kind: 'file', runKey: 'wbOpReadFileRun', doneKey: 'wbOpReadFileDone',
-          params: { file: f.path }, file: f.path, fileStatus: 'read',
-        });
-        ops.push({
-          id: `mod-${f.path}`, kind: 'file', runKey: 'wbOpModifyRun', doneKey: 'wbOpModifyDone',
-          params: { file: f.path }, file: f.path, fileStatus: 'modified',
-          added: f.added, removed: f.removed, detail: fileDetail(f),
-        });
+        feed.push({ kind: 'file', id: `read-${f.path}`, op: 'read', path: f.path, added: 0, removed: 0 });
+        feed.push({ kind: 'file', id: `upd-${f.path}`, op: 'update', path: f.path, summary: f.summary, added: f.added, removed: f.removed });
       } else {
-        ops.push({
-          id: `new-${f.path}`, kind: 'file', runKey: 'wbOpCreateRun', doneKey: 'wbOpCreateDone',
-          params: { file: f.path }, file: f.path, fileStatus: 'created',
-          added: f.added, removed: f.removed, detail: fileDetail(f),
-        });
+        feed.push({ kind: 'file', id: `new-${f.path}`, op: 'create', path: f.path, summary: f.summary, added: f.added, removed: f.removed });
       }
     }
-    ops.push({ id: 'preview', kind: 'info', runKey: 'wbOpPreviewRun', doneKey: 'wbOpPreviewDone' });
-    return ops;
+    feed.push({ kind: 'text', id: 'done', key: 'wbFeedReviseDone' });
+    return feed;
   }
 
-  // Fresh build — brief / structure / design, then one op per created file.
-  const briefBits = [step.summary.type || brief.type, brief.audience, brief.goal].filter(Boolean).join(' · ');
-  ops.push({ id: 'brief', kind: 'info', runKey: 'wbOpReadBriefRun', doneKey: 'wbOpReadBriefDone', detail: briefBits || undefined });
-  ops.push({
-    id: 'plan', kind: 'info', runKey: 'wbOpPlanRun', doneKey: 'wbOpPlanDone',
-    detail: step.summary.sectionNames.length ? step.summary.sectionNames.join(', ') : undefined,
-  });
-  if (brief.style) {
-    ops.push({ id: 'design', kind: 'info', runKey: 'wbOpDesignRun', doneKey: 'wbOpDesignDone', detail: brief.style });
+  // Fresh build.
+  feed.push(
+    brief.goal
+      ? { kind: 'text', id: 'open', key: 'wbFeedBuildOpening', params: { goal: brief.goal } }
+      : { kind: 'text', id: 'open', key: 'wbFeedBuildOpeningPlain' },
+  );
+  feed.push({ kind: 'analyze', id: 'analyze' });
+  if (step.summary.sectionNames.length) {
+    feed.push({ kind: 'text', id: 'structure', key: 'wbFeedBuildStructure', params: { sections: step.summary.sectionNames.slice(0, 6).join(', ') } });
   }
   for (const f of shown) {
-    ops.push({
-      id: `file-${f.path}`, kind: 'file', runKey: 'wbOpCreateRun', doneKey: 'wbOpCreateDone',
-      params: { file: f.path }, file: f.path, fileStatus: 'created',
-      added: f.added, removed: f.removed, detail: fileDetail(f),
-    });
+    feed.push({ kind: 'file', id: `file-${f.path}`, op: f.status === 'modified' ? 'update' : 'create', path: f.path, summary: f.summary, added: f.added, removed: f.removed });
   }
-  ops.push({ id: 'preview', kind: 'info', runKey: 'wbOpPreviewRun', doneKey: 'wbOpPreviewDone' });
-  return ops;
+  feed.push({ kind: 'text', id: 'done', key: 'wbFeedBuildDone', params: { count: step.summary.fileCount || step.files.length } });
+  return feed;
 }
 
 function uid(): string {

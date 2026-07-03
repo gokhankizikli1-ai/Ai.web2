@@ -16,6 +16,7 @@ import ToolsPage from './pages/ToolsPage';
 import ExplorePage from './pages/ExplorePage';
 import WebsiteAnalyzer from './pages/WebsiteAnalyzer';
 import WebsiteBuilder from './pages/WebsiteBuilder';
+import WebBuildPreview from './pages/WebBuildPreview';
 import AppBuilder from './pages/AppBuilder';
 import GameBuilder from './pages/GameBuilder';
 import BrandBuilder from './pages/BrandBuilder';
@@ -178,6 +179,9 @@ export default function App() {
         <Route path="/ecommerce" element={<Navigate to="/chat?tab=business" replace />} />
         <Route path="/trading" element={<Navigate to="/chat?tab=trading" replace />} />
         {/* Note: /agents is kept for the standalone marketplace; but workspace agents goes to /chat?tab=agents */}
+
+        {/* Standalone generated Web Build preview (real openable URL, client-side). */}
+        <Route path="/preview/web-build" element={<WebBuildPreview />} />
 
         {/* ═══ Coming soon placeholders ═══ */}
         <Route path="/blog" element={<AnimatedRoute><ComingSoon title="Blog" pageType="blog" /></AnimatedRoute>} />

@@ -1,79 +1,95 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Loader2, Check, FileCode, FileText } from 'lucide-react';
-import { useLanguageStore } from '@/stores/languageStore';
-import { deriveExecutionOps, type WebBuildStep, type ExecOp } from '@/lib/webBuildPayload';
+import { motion } from 'framer-motion';
+import { FileCode, FilePlus2, FileText, ChevronRight } from 'lucide-react';
+import { useLanguageStore, LANGUAGES } from '@/stores/languageStore';
+import { deriveExecutionFeed, type WebBuildStep, type FeedItem } from '@/lib/webBuildPayload';
 
 /**
- * A live-looking, line-by-line build execution log (Claude/Kimi style). Each
- * operation is its own row that reveals sequentially — running (⏳) → done (✓) →
- * the next row appears — instead of a post-hoc summary dumped all at once.
+ * A Kimi/Claude-style build execution FEED — NOT a checklist. The assistant
+ * writes short natural progress lines interleaved with compact tool action
+ * rows (Create / Update / Read <path> · one-line summary · +N −M). No emojis,
+ * no green-tick waterfall, no table. File rows are clickable and open the file
+ * drawer on that path; the "Analyze request" block expands to show the brief.
  *
- * The backend is non-streaming, so for the newest step (`animate`) we SIMULATE
- * the reveal on the frontend with realistic timing. Every row's content is real
- * build data (from `deriveExecutionOps`) — we never fabricate files. History
- * steps render fully done, no animation. File rows are clickable and open the
- * file drawer focused on that path.
+ * The backend is non-streaming, so for the newest step (`animate`) we reveal
+ * items progressively (~250–400ms between rows) so it reads like an agent
+ * performing actions. Every row is real build data — no fabricated files.
+ * History steps render fully, no animation.
  */
-const ACCENT = '#60A5FA';
 
-/** Per-op reveal duration (ms) for the simulated live run. */
-function opDuration(op: ExecOp): number {
-  return op.kind === 'file' ? 560 : 400;
+/** Per-item reveal delay (ms) — text is quick, file rows are paced. */
+function itemDelay(item: FeedItem): number {
+  if (item.kind === 'text') return 220;
+  if (item.kind === 'analyze') return 260;
+  return 340;
 }
 
-function OpRow({
-  op, state, onOpenFile,
+const OP_ICON = { create: FilePlus2, update: FileCode, read: FileText } as const;
+const OP_KEY = { create: 'wbActionCreate', update: 'wbActionUpdate', read: 'wbActionRead' } as const;
+
+/* ── Compact tool action row (clickable file op) ─────────────────────── */
+function FileRow({
+  item, onOpenFile,
 }: {
-  op: ExecOp;
-  state: 'running' | 'done';
+  item: Extract<FeedItem, { kind: 'file' }>;
   onOpenFile: (path: string) => void;
 }) {
   const { t } = useLanguageStore();
-  const running = state === 'running';
-  const label = t(running ? op.runKey : op.doneKey, op.params);
-  const isFile = op.kind === 'file' && !!op.file;
-  const Icon = op.fileStatus === 'read' ? FileText : FileCode;
-
-  const icon = running
-    ? <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: ACCENT }} />
-    : <Check className="h-3.5 w-3.5" style={{ color: op.fileStatus === 'modified' ? ACCENT : '#86A08F' }} />;
-
-  const body = (
-    <>
-      <span className="mt-[1px] flex h-4 w-4 shrink-0 items-center justify-center">{icon}</span>
+  const Icon = OP_ICON[item.op];
+  return (
+    <button
+      onClick={() => onOpenFile(item.path)}
+      className="group flex w-full items-start gap-2.5 rounded-lg border border-white/[0.06] bg-white/[0.02] px-2.5 py-2 text-left transition-colors hover:border-white/[0.12] hover:bg-white/[0.04]"
+    >
+      <Icon className="mt-[1px] h-3.5 w-3.5 shrink-0 text-[#64748B] group-hover:text-[#94A3B8]" />
       <span className="min-w-0 flex-1">
-        <span className="flex items-center gap-1.5">
-          {isFile && <Icon className="h-3 w-3 shrink-0 text-[#64748B]" />}
-          <span className={`truncate text-[12.5px] leading-snug ${running ? 'text-[#94A3B8]' : 'text-[#CBD5E1]'}`}>
-            {label}
-          </span>
+        <span className="flex items-baseline gap-1.5">
+          <span className="text-[12px] font-medium text-[#CBD5E1]">{t(OP_KEY[item.op])}</span>
+          <span className="truncate font-mono text-[11.5px] text-slate-200">{item.path}</span>
         </span>
-        {op.detail && !running && (
-          <span className="mt-0.5 block truncate pl-[calc(0.375rem+12px)] text-[11px] text-[#64748B] leading-snug">
-            {op.detail}
-          </span>
+        {item.summary && (
+          <span className="mt-0.5 block truncate text-[11px] text-[#64748B]">{item.summary}</span>
         )}
       </span>
-      {(op.added || op.removed) ? (
+      {(item.added > 0 || item.removed > 0) && (
         <span className="shrink-0 self-start pt-[1px] font-mono text-[10.5px]">
-          <span className="text-[#86A08F]">+{op.added || 0}</span>{' '}
-          <span className="text-[#C98A93]">−{op.removed || 0}</span>
+          <span className="text-[#86A08F]">+{item.added}</span>{' '}
+          <span className="text-[#C98A93]">-{item.removed}</span>
         </span>
-      ) : null}
-    </>
+      )}
+    </button>
   );
+}
 
-  if (isFile) {
-    return (
+/* ── "Analyze request" collapsible block (brief details) ─────────────── */
+function AnalyzeRow({
+  details,
+}: {
+  details: { label: string; value: string }[];
+}) {
+  const { t } = useLanguageStore();
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="rounded-lg border border-white/[0.06] bg-white/[0.02]">
       <button
-        onClick={() => onOpenFile(op.file!)}
-        className="group flex w-full items-start gap-2 rounded-lg px-1.5 py-1 text-left transition-colors hover:bg-white/[0.035]"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-2.5 py-2 text-left"
       >
-        {body}
+        <ChevronRight className={`h-3.5 w-3.5 shrink-0 text-[#64748B] transition-transform ${open ? 'rotate-90' : ''}`} />
+        <span className="text-[12px] font-medium text-[#CBD5E1]">{t('wbActAnalyze')}</span>
       </button>
-    );
-  }
-  return <div className="flex items-start gap-2 px-1.5 py-1">{body}</div>;
+      {open && details.length > 0 && (
+        <div className="space-y-1 border-t border-white/[0.05] px-3 py-2.5 pl-[30px]">
+          {details.map((d) => (
+            <div key={d.label} className="flex gap-2 text-[11.5px] leading-snug">
+              <span className="shrink-0 text-[#64748B]">{d.label}:</span>
+              <span className="text-[#CBD5E1]">{d.value}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function WebBuildExecutionLog({
@@ -81,40 +97,59 @@ export default function WebBuildExecutionLog({
 }: {
   step: WebBuildStep;
   brief: { type?: string; audience?: string; goal?: string; style?: string };
-  /** Simulate the sequential reveal (only for the newest step). */
+  /** Reveal items progressively (only for the newest step). */
   animate: boolean;
   onOpenFile: (path: string) => void;
 }) {
-  const ops = useMemo(() => deriveExecutionOps(step, brief), [step, brief]);
-  const total = ops.length;
-  const [doneCount, setDoneCount] = useState(animate ? 0 : total);
+  const { t, lang } = useLanguageStore();
+  const feed = useMemo(() => deriveExecutionFeed(step, brief), [step, brief]);
+
+  // Analyze details from the real brief + section names (localized labels).
+  const analyzeDetails = useMemo(() => {
+    const langLabel = LANGUAGES.find((l) => l.code === lang)?.label || lang;
+    const rows: { label: string; value: string }[] = [];
+    if (brief.goal) rows.push({ label: t('wbAnalyzeGoal'), value: brief.goal });
+    if (brief.audience) rows.push({ label: t('wbAnalyzeAudience'), value: brief.audience });
+    rows.push({ label: t('wbAnalyzeLanguage'), value: langLabel });
+    if (brief.style) rows.push({ label: t('wbAnalyzeStyle'), value: brief.style });
+    if (step.summary.sectionNames.length) rows.push({ label: t('wbAnalyzeSections'), value: step.summary.sectionNames.join(', ') });
+    return rows;
+  }, [brief, step.summary.sectionNames, lang, t]);
+
+  const total = feed.length;
+  const [revealed, setRevealed] = useState(animate ? 0 : total);
 
   useEffect(() => {
-    if (!animate) { setDoneCount(total); return; }
-    setDoneCount(0);
+    if (!animate) { setRevealed(total); return; }
+    setRevealed(0);
     let acc = 0;
     const timers: ReturnType<typeof setTimeout>[] = [];
     for (let i = 0; i < total; i++) {
-      acc += opDuration(ops[i]);
-      timers.push(setTimeout(() => setDoneCount(i + 1), acc));
+      acc += itemDelay(feed[i]);
+      timers.push(setTimeout(() => setRevealed(i + 1), acc));
     }
     return () => timers.forEach(clearTimeout);
-  }, [ops, animate, total]);
+  }, [feed, animate, total]);
 
   if (total === 0) return null;
 
-  // The op at `doneCount` (if any) is currently running; earlier ops are done.
-  const visible = Math.min(total, doneCount + 1);
-
   return (
-    <div className="space-y-0.5">
-      {ops.slice(0, visible).map((op, i) => (
-        <OpRow
-          key={op.id}
-          op={op}
-          state={i < doneCount ? 'done' : 'running'}
-          onOpenFile={onOpenFile}
-        />
+    <div className="space-y-1.5">
+      {feed.slice(0, revealed).map((item) => (
+        <motion.div
+          key={item.id}
+          initial={animate ? { opacity: 0, y: 4 } : false}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.22 }}
+        >
+          {item.kind === 'text' ? (
+            <p className="text-[13px] leading-relaxed text-[#CBD5E1]">{t(item.key, item.params)}</p>
+          ) : item.kind === 'analyze' ? (
+            <AnalyzeRow details={analyzeDetails} />
+          ) : (
+            <FileRow item={item} onOpenFile={onOpenFile} />
+          )}
+        </motion.div>
       ))}
     </div>
   );
