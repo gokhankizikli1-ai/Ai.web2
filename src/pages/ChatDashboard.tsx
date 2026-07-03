@@ -542,7 +542,7 @@ export default function ChatDashboard() {
                 <PanelLeftOpen className="h-3.5 w-3.5" />
               </motion.button>
             )}
-            <WorkspaceTabs activeTab={activeTab} onTabChange={handleTabChange} showTrading={ownerModeForGreeting.isOwner} />
+            <WorkspaceTabs activeTab={activeTab} onTabChange={handleTabChange} showTrading={ownerModeForGreeting.isOwner} onGameBuilderClick={() => navigate('/tools/game-builder')} />
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">

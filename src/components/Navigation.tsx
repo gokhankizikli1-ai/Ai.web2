@@ -2,7 +2,7 @@ import { useNavigate, useLocation } from 'react-router';
 import { motion } from 'framer-motion';
 import {
   MessageSquare, Search, Building2, FolderOpen,
-  TrendingUp, Sparkles, Settings, LogIn,
+  TrendingUp, Gamepad2, Sparkles, Settings, LogIn,
 } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import { useAuthStore } from '@/stores/authStore';
@@ -28,6 +28,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'business', label: 'Business', icon: Building2,     path: '/chat?tab=business' },
   { id: 'projects', label: 'Projects', icon: FolderOpen,    path: '/projects' },
   { id: 'trading',  label: 'Trading',  icon: TrendingUp,    path: '/chat?tab=trading' },
+  { id: 'game',     label: 'Game',     icon: Gamepad2,      path: '/tools/game-builder' },
 ];
 
 /* ═══════════════════════════════════════════
@@ -63,6 +64,7 @@ export default function Navigation() {
       return 'chat';
     }
     if (pathname === '/projects' || pathname.startsWith('/projects')) return 'projects';
+    if (pathname === '/tools/game-builder') return 'game';
     return '';
   };
 
