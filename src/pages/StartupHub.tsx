@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import Navigation from '@/components/Navigation';
 import StartupMarketRadar from '@/components/startup/StartupMarketRadar';
+import { cleanTitle } from '@/lib/chatTitles';
 
 const COLOR_MAP: Record<string, { bg: string; border: string; icon: string }> = {
   amber:  { bg: 'bg-[#3B82F6]/[0.05]',  border: 'border-[#3B82F6]/10',  icon: 'text-[#60A5FA]' },
@@ -46,8 +47,12 @@ export default function StartupHub() {
   const activeTool = TOOLS.find((t) => t.id === selectedTool);
 
   const handleToolSubmit = () => {
-    const prompt = activeTool ? `${activeTool.name}: ${Object.values(formValues).join(' | ')}` : '';
-    navigate('/chat?tab=startup', { state: { initialPrompt: prompt } });
+    if (!activeTool) return;
+    const values = Object.values(formValues).map((v) => v.trim()).filter(Boolean);
+    const payload = values.join(' | ') || activeTool.name;
+    const prompt = `${activeTool.name}: ${payload}`;
+    const sessionTitle = cleanTitle(payload, 'Startup: ') || `Startup: ${activeTool.name}`;
+    navigate('/chat?tab=startup', { state: { initialPrompt: prompt, sessionTitle } });
   };
 
   return (
