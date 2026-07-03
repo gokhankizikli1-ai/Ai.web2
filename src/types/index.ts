@@ -17,6 +17,16 @@ export interface AttachedAsset {
   asset_type?: string;
 }
 
+/** A web source the backend actually used for an assistant answer.
+ *  Populated frontend-side from the SSE `tool.completed` payload
+ *  (web_research / browser_fetch `urls`) — no fabricated entries. The
+ *  bubble renders these under the message as a collapsed "Show sources"
+ *  drawer, never inline in the answer text. */
+export interface MessageSource {
+  url: string;
+  title?: string;
+}
+
 export interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -26,6 +36,9 @@ export interface Message {
    *  populates this from the composer's pending list when sending;
    *  MessageBubble renders read-only AssetChips below the bubble. */
   attachments?: AttachedAsset[];
+  /** Web sources the answer was grounded in (see MessageSource). Absent
+   *  when the turn used no web tools. */
+  sources?: MessageSource[];
 }
 
 /** Phase 10 fix — surfaced to the UI while a backend tool (browser /
