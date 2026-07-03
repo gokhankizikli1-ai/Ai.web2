@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Sparkles, Globe, Building2, TrendingUp, Gamepad2, FolderOpen } from 'lucide-react';
+import { Sparkles, Globe, Building2, TrendingUp, Gamepad2 } from 'lucide-react';
 import type { WorkspaceTab } from '@/types';
 import { useLanguageStore } from '@/stores/languageStore';
 
@@ -14,8 +14,6 @@ interface WorkspaceTabsProps {
   onWebBuildClick?: () => void;
   /** Game Build is a standalone page (/tools/game-builder). */
   onGameBuilderClick?: () => void;
-  /** Projects is a standalone page (/projects). */
-  onProjectsClick?: () => void;
 }
 
 /* ═══════════════════════════════════════════
@@ -37,7 +35,7 @@ const OWNER_TABS: TabConfig[] = [
 
 export default function WorkspaceTabs({
   activeTab, onTabChange, showTrading = false,
-  onWebBuildClick, onGameBuilderClick, onProjectsClick,
+  onWebBuildClick, onGameBuilderClick,
 }: WorkspaceTabsProps) {
   const { t } = useLanguageStore();
 
@@ -86,16 +84,6 @@ export default function WorkspaceTabs({
           <span className="relative z-10 flex items-center gap-1">
             <Gamepad2 className="h-3 w-3" />
             <span className="hidden sm:inline">{t('navGameBuild')}</span>
-          </span>
-        </button>
-      )}
-
-      {/* Projects — standalone page */}
-      {onProjectsClick && (
-        <button onClick={onProjectsClick} className={tabClass(false)}>
-          <span className="relative z-10 flex items-center gap-1">
-            <FolderOpen className="h-3 w-3" />
-            <span className="hidden sm:inline">{t('navProjects')}</span>
           </span>
         </button>
       )}
