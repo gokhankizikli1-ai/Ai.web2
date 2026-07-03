@@ -299,7 +299,7 @@ export default function MarketRadarResults({
                 <summary className="flex items-center gap-1 text-[11px] text-[#94A3B8] hover:text-slate-300 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden transition-colors">
                   <ChevronRight className="h-3 w-3 transition-transform group-open/src:rotate-90" />
                   Some sources were unavailable.
-                  <span className="text-[#64748B]">View source status</span>
+                  <span className="text-[#64748B]">{t('sourceViewStatus')}</span>
                 </summary>
                 <ul className="mt-1.5 ml-4 space-y-0.5 text-[11px] text-[#94A3B8]">
                   {issuePhrases.map((p) => (

@@ -169,7 +169,7 @@ export default function MessageBubble({
   const [isHovered, setIsHovered] = useState(false);
   const [copied, setCopied] = useState(false);
   const { addToast } = useToast();
-  const lang = useLanguageStore((s) => s.lang);
+  const t = useLanguageStore((s) => s.t);
   const contentRef = useRef<HTMLDivElement>(null);
   const isShort = content.length < 80 && !content.includes('\n') && !content.includes('```');
 
@@ -260,8 +260,8 @@ export default function MessageBubble({
   // "Sources" text block so the drawer isn't duplicated.
   const structuredSources = !isGenerating ? (fullMessage.sources ?? []) : [];
   const hasStructuredSources = structuredSources.length > 0;
-  const showSourcesLabel = lang === 'tr' ? 'Kaynakları göster' : 'Show sources';
-  const usedLabel = lang === 'tr' ? 'Kullanıldı' : 'Used';
+  const showSourcesLabel = t('sourceShowSources');
+  const usedLabel = t('sourceUsed');
 
   return (
     <motion.div

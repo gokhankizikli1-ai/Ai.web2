@@ -4,20 +4,22 @@ import {
   Lightbulb, TrendingUp, FileText, Zap,
   Bookmark, BookmarkCheck,
 } from 'lucide-react';
+import { useLanguageStore } from '@/stores/languageStore';
 
 export interface ResponseAction {
   id: string;
-  label: string;
+  /** i18n keys — resolved at render so chips follow the selected language. */
+  labelKey: string;
+  descKey: string;
   icon: typeof Lightbulb;
   prompt: string;
-  description: string;
 }
 
 export const RESPONSE_ACTIONS: ResponseAction[] = [
-  { id: 'explain', label: 'Explain more', icon: Lightbulb, prompt: 'Can you explain that in more detail?', description: 'Deeper explanation' },
-  { id: 'examples', label: 'Show examples', icon: FileText, prompt: 'Can you provide some concrete examples?', description: 'Practical examples' },
-  { id: 'simplify', label: 'Simplify', icon: Zap, prompt: 'Can you simplify that for a beginner?', description: 'Simpler version' },
-  { id: 'action', label: 'Action items', icon: TrendingUp, prompt: 'What are the specific action items from this?', description: 'Actionable steps' },
+  { id: 'explain', labelKey: 'actionExplainMore', icon: Lightbulb, prompt: 'Can you explain that in more detail?', descKey: 'actionExplainDesc' },
+  { id: 'examples', labelKey: 'actionShowExamples', icon: FileText, prompt: 'Can you provide some concrete examples?', descKey: 'actionExamplesDesc' },
+  { id: 'simplify', labelKey: 'actionSimplify', icon: Zap, prompt: 'Can you simplify that for a beginner?', descKey: 'actionSimplifyDesc' },
+  { id: 'action', labelKey: 'actionItems', icon: TrendingUp, prompt: 'What are the specific action items from this?', descKey: 'actionItemsDesc' },
 ];
 
 export function useSavedPrompts() {
@@ -41,6 +43,7 @@ interface ResponseActionsProps {
 }
 
 export default function ResponseActions({ onAction, onHoverAction, compact = false }: ResponseActionsProps) {
+  const { t } = useLanguageStore();
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const { saved, toggle: toggleSave } = useSavedPrompts();
 
@@ -58,7 +61,7 @@ export default function ResponseActions({ onAction, onHoverAction, compact = fal
             onClick={() => onAction(action.prompt)}
             onMouseEnter={() => {
               setHoveredId(action.id);
-              onHoverAction?.(action.label, action.prompt);
+              onHoverAction?.(t(action.labelKey), action.prompt);
             }}
             onMouseLeave={() => setHoveredId(null)}
             className={`
@@ -72,7 +75,7 @@ export default function ResponseActions({ onAction, onHoverAction, compact = fal
           >
             <action.icon className="h-3 w-3 text-[#94A3B8] group-hover:text-[#CBD5E1] transition-colors" />
             <span className="text-[11px] text-[#94A3B8] group-hover:text-slate-300 transition-colors">
-              {action.label}
+              {t(action.labelKey)}
             </span>
 
             {/* Save star */}

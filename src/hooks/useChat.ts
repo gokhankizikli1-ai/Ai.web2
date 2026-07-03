@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import type { ChatSession, Message, AIMode, WorkspaceTab, ChatFolder, AttachedAsset } from '@/types';
 import { deriveSessionTitle } from '@/lib/chatTitles';
 import { getRequestLocale } from '@/lib/locale';
+import { useLanguageStore } from '@/stores/languageStore';
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
@@ -883,7 +884,10 @@ export function useChat() {
                 }
                 if (id === 'web_research') {
                   const subj = String(t?.input_summary || '').replace(/^search:\s*/i, '');
-                  return subj ? `Searching the web for "${subj}"…` : 'Searching the web…';
+                  const tr = useLanguageStore.getState().t;
+                  return subj
+                    ? tr('sourceSearchingWebFor', { subject: subj })
+                    : tr('sourceSearchingWebEllipsis');
                 }
                 return id ? `Running ${id}…` : 'Running tool…';
               })();
@@ -936,9 +940,10 @@ export function useChat() {
                   // Phase 11 fix — chip surfaces the citation count
                   // so the user sees "Web search complete — 5 sources".
                   const count = typeof t?.citations === 'number' ? t.citations : 0;
+                  const tr = useLanguageStore.getState().t;
                   return count > 0
-                    ? `Web search complete — ${count} source${count === 1 ? '' : 's'}`
-                    : 'Web search complete';
+                    ? tr('sourceWebSearchCompleteCount', { count })
+                    : tr('sourceWebSearchComplete');
                 }
                 return subjects.length
                   ? `Inspected ${subjects.join(', ')}`
