@@ -49,64 +49,51 @@ function getUserId(): string {
 
 /* ─── Engines ─────────────────────────────────────────────────────────── */
 
-export type GameEngine = 'auto' | 'roblox' | 'unreal';
+// Prompt-first builder: the user picks ONLY the target engine (two choices)
+// and writes their idea naturally. Everything else — genre, camera, systems,
+// multiplayer, save, monetization, build scope — is inferred by the backend
+// `game_developer` mode from the prompt. There is intentionally no
+// "Auto-detect" choice in the UI.
+export type GameEngine = 'roblox' | 'unreal';
 
 export interface GameEngineMeta {
   id: GameEngine;
-  /** Short label for the selector chip. */
+  /** Short label for the selector pill. */
   label: string;
-  /** One-line description shown under the label. */
-  tagline: string;
   /** The exact engine name the backend [GAME BUILD REQUEST] block carries —
    *  the game_developer system prompt branches on these strings. */
-  backendName: 'Auto-detect' | 'Roblox Studio' | 'Unreal Engine 5';
-  /** Primary language / stack line for the selector card. */
+  backendName: 'Roblox Studio' | 'Unreal Engine 5';
+  /** Primary language / stack line for the selector pill. */
   stack: string;
 }
 
 export const GAME_ENGINES: Record<GameEngine, GameEngineMeta> = {
-  auto: {
-    id: 'auto',
-    label: 'Auto-detect',
-    tagline: 'Let Korvix pick the best-fit engine for your idea.',
-    backendName: 'Auto-detect',
-    stack: 'Roblox · Unreal',
-  },
   roblox: {
     id: 'roblox',
     label: 'Roblox Studio',
-    tagline: 'Luau scripts, services, Remotes, DataStores — server-authoritative.',
     backendName: 'Roblox Studio',
     stack: 'Luau',
   },
   unreal: {
     id: 'unreal',
     label: 'Unreal Engine 5',
-    tagline: 'Blueprint / C++ architecture, GameMode, components, HUD.',
     backendName: 'Unreal Engine 5',
     stack: 'Blueprint · C++',
   },
 };
 
-export const ENGINE_ORDER: GameEngine[] = ['auto', 'roblox', 'unreal'];
+export const ENGINE_ORDER: GameEngine[] = ['roblox', 'unreal'];
 
-/* ─── Example prompts (per engine) ────────────────────────────────────── */
+/* ─── Example prompts (per engine) — kept short: 2 per engine ─────────── */
 
 export const EXAMPLE_PROMPTS: Record<GameEngine, string[]> = {
-  auto: [
-    'A co-op survival game where players gather resources, craft tools, and defend a base at night',
-    'A fast arcade racer with drifting, boost pads, and a lap-time leaderboard',
-    'A puzzle-platformer where the player rewinds time to solve rooms',
-  ],
   roblox: [
-    'Create a Roblox tycoon game with pets, rebirths, upgrades, and monetization',
-    'Create a Roblox obby with checkpoints, a shop, and a coins-per-stage reward system',
-    'Create a Roblox simulator where players collect orbs, sell them, and buy pets with server-side currency',
+    'A Roblox tycoon with pets, rebirths, upgrades, and a server-side coin economy',
+    'A Roblox first-person horror where you explore an abandoned school with a flashlight, an AI enemy, quests, checkpoints, and jumpscares',
   ],
   unreal: [
-    'Create a UE5 horror survival prototype with inventory, flashlight, AI enemy, and objective system',
-    'Create a UE5 third-person action prototype with melee combat, health, and a lock-on camera',
-    'Create a UE5 first-person parkour prototype with wall-running, checkpoints, and a timer HUD',
+    'A UE5 third-person melee action prototype with a lock-on camera, health, enemy AI, and a basic HUD',
+    'A UE5 first-person horror survival with inventory, flashlight, an AI enemy, and an objective system',
   ],
 };
 
@@ -114,23 +101,26 @@ export const EXAMPLE_PROMPTS: Record<GameEngine, string[]> = {
 
 /**
  * Wrap the raw user idea in the [GAME BUILD REQUEST] context block the
- * `game_developer` mode is built to read. Carries the selected engine, the
- * desired output quality, and the honest delivery model so the backend
- * produces engine-specific, copy-ready output and never claims editor
- * automation.
+ * `game_developer` mode is built to read. Prompt-first: it carries only the
+ * selected engine + the raw idea, and instructs the backend to INFER every
+ * remaining design decision (genre, camera, systems, multiplayer, save,
+ * monetization, build scope) from the prompt and open with an Inferred Build
+ * Brief. Also states the honest, copy-ready delivery model.
  */
 export function buildGameBuildRequest(engine: GameEngine, idea: string): string {
   const meta = GAME_ENGINES[engine];
   return [
     '[GAME BUILD REQUEST]',
     `Target engine: ${meta.backendName}`,
+    'Mode: prompt-first. Infer ALL missing design details from the user idea — genre, camera style, core loop,',
+    'required systems, whether multiplayer / save / monetization are needed, and build scope (prototype / MVP /',
+    'advanced). Do not ask the user for more input; choose sensible defaults and state them.',
+    'Open the response with an "Inferred Build Brief", then follow the selected engine\'s full output contract.',
+    `Engine choice: use ${meta.backendName}. If the idea leans toward the other engine, adapt it to ${meta.backendName}`,
+    'and note that briefly — do not fail or ask to switch.',
     'Output quality: production-grade, comprehensive, and copy/export-ready.',
-    'Delivery model: KorvixAI generates engine-ready code, scripts, exact file/instance placement,',
-    'and architecture ONLY. It has no live editor connection and must not claim it inserted anything',
-    'into Roblox Studio or Unreal Engine 5.',
-    engine === 'auto'
-      ? 'Engine choice: auto-detect the best-fit engine from the idea and state the choice in one line at the top.'
-      : `Engine choice: use ${meta.backendName} — follow that engine's full output contract.`,
+    'Delivery model: KorvixAI generates engine-ready code, scripts, exact file/instance placement, and architecture',
+    'ONLY. It has no live editor connection and must not claim it inserted anything into Roblox Studio or UE5.',
     '',
     'User idea:',
     idea.trim(),
