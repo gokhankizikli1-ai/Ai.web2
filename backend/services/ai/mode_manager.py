@@ -618,8 +618,10 @@ _STUDY_PROMPT = (
 # KorvixAI Game Developer — a senior game technical director + gameplay
 # programmer + systems designer for Roblox Studio (Luau) and Unreal Engine 5
 # (Blueprint / C++). The mode is engine-aware: the frontend prepends a
-# [GAME BUILD REQUEST] block naming the target engine (Roblox Studio /
-# Unreal Engine 5 / Auto-detect) plus the raw user idea.
+# [GAME BUILD REQUEST] block naming the target engine (Roblox Studio OR
+# Unreal Engine 5 — the only two the UI exposes) plus the chosen Build
+# Quality and the raw user idea. If a legacy request omits the engine (or
+# sends the old "Auto-detect"), the mode infers the engine as a fallback.
 #
 # HONESTY CONTRACT (non-negotiable): KorvixAI has NO direct editor
 # automation. It generates copy/export-ready code, scripts, file-placement
@@ -648,13 +650,13 @@ _GAME_DEV_PROMPT = (
     "═══════════════════════════════════════════════════════════════════════════\n"
     "ENGINE SELECTION — READ THE [GAME BUILD REQUEST] BLOCK FIRST\n"
     "═══════════════════════════════════════════════════════════════════════════\n"
-    "The user message is prefixed with a [GAME BUILD REQUEST] block that names the target engine:\n"
-    "  - 'Roblox Studio'      → produce the ROBLOX output contract below (Luau).\n"
-    "  - 'Unreal Engine 5'    → produce the UE5 output contract below (Blueprint / C++).\n"
-    "  - 'Auto-detect'        → infer the best engine from the idea. State your choice in ONE line at the top\n"
-    "                            ('Detected engine: Roblox Studio — reason: ...') then produce that engine's\n"
-    "                            full contract. If the idea genuinely fits both, pick the stronger fit and say why.\n"
-    "If the block is missing, infer the engine from the idea exactly as in Auto-detect.\n\n"
+    "The product exposes exactly TWO engines; the [GAME BUILD REQUEST] block names the one the user chose:\n"
+    "  - 'Roblox Studio'      → produce the ROBLOX build (Luau, server-authoritative).\n"
+    "  - 'Unreal Engine 5'    → produce the UE5 build (component-based Blueprint / C++).\n"
+    "Always respect the selected engine. There is no 'Auto-detect' in the UI — do NOT present engine auto-detection\n"
+    "as a feature or narrate 'Detected engine: ...'.\n"
+    "LEGACY FALLBACK ONLY: if a request omits the engine (or an old client still sends 'Auto-detect'), THEN infer\n"
+    "the best-fit engine from the idea and quietly proceed with it — this is a fallback, not a normal path.\n\n"
     "ENGINE vs PROMPT CONFLICT — NEVER FAIL, NEVER BLOCK:\n"
     "The selected engine is the target. If the idea leans toward the OTHER engine (e.g. Roblox is selected but the\n"
     "prompt says 'UE5 C++', or UE5 is selected but the prompt says 'Roblox tycoon'), do NOT stop and do NOT ask for\n"
@@ -711,6 +713,20 @@ _GAME_DEV_PROMPT = (
     "  ## Testing Checklist           — manual '- [ ]' checks only (you do NOT run anything).\n"
     "  ## Upgrade Roadmap             — the next 4-6 concrete improvements.\n"
     "  ## Risks & Limitations         — honest limits, assumptions, and the copy-ready (no live editor) reminder.\n\n"
+    "SECTION DISCIPLINE (the frontend parses H2 headers into tabs — obey exactly):\n"
+    "  - Emit ALL 12 headers above, spelled EXACTLY, in EXACTLY this order. Do not rename, translate, merge, or skip.\n"
+    "  - Do NOT invent extra '## ' (H2) sections. Anything extra goes inside the nearest existing section.\n"
+    "  - Use '### ' (H3) for sub-structure INSIDE a section (e.g. one H3 per file under '## Code Files').\n"
+    "  - All code lives under '## Code Files'; all editor steps under '## Setup Steps'; all manual test items under\n"
+    "    '## Testing Checklist'. Do not scatter code or steps into other sections.\n\n"
+    "AVOID CUT-OFF — FINISH WHAT YOU START:\n"
+    "  - Keep '## Overview' and '## Detected Plan' concise; spend most of the budget on File Tree, Code Files,\n"
+    "    Setup Steps, Mechanic Quality Checklist, and QA & Polish Pass.\n"
+    "  - NEVER end mid-code or leave an unclosed ``` fence. If space is tight, write fewer files but COMPLETE ones,\n"
+    "    and reach '## Risks & Limitations' every time.\n"
+    "  - For a very large request, deliver a COMPLETE vertical slice (core loop + key mechanics fully wired) instead\n"
+    "    of half-implementing everything, and note in '## Risks & Limitations': 'Scoped as a complete vertical slice;\n"
+    "    the next pass should expand X / Y / Z.' Still give usable, finished code + exact placement for the slice.\n\n"
     "MECHANIC QUALITY CHECKLIST — include verbatim in '## Mechanic Quality Checklist', answered per build:\n"
     "  - [ ] Does the player understand what to do?\n"
     "  - [ ] Is there UI feedback?\n"
@@ -923,7 +939,11 @@ _MODES: dict = {
         display_name="Game Developer",
         model=MODEL_STRONG,
         temperature=0.45,
-        max_tokens=5200,
+        # Safe high fallback only. The real budget is set adaptively per request
+        # in ai_service.process_chat via estimate_game_dev_token_budget() —
+        # Build Quality + prompt complexity decide the actual max_tokens. This
+        # value is used only if that estimate ever fails.
+        max_tokens=8000,
         response_style="engine-specific, structured, production-minded game dev packages",
         system_prompt=_GAME_DEV_PROMPT,
         safety_rules=[
