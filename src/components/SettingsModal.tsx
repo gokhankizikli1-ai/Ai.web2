@@ -11,8 +11,8 @@ import { Switch } from '@/components/ui/switch';
 import MemoryGraph from './MemoryGraph';
 import { useApp } from '@/contexts/AppContext';
 import type { AppSettings } from '@/contexts/AppContext';
-import { useLanguageStore, LANGUAGES } from '@/stores/languageStore';
-import type { Language } from '@/stores/languageStore';
+import { useLanguageStore } from '@/stores/languageStore';
+import type { LangMode } from '@/stores/languageStore';
 
 interface SettingsModalProps {
   open: boolean;
@@ -55,7 +55,7 @@ const TIMEZONES = [
 
 export default function SettingsModal({ open, onOpenChange, onSettingsChange }: SettingsModalProps) {
   const { settings: appSettings, updateSettings } = useApp();
-  const { lang: currentLang, setLang } = useLanguageStore();
+  const { mode: langMode, setMode } = useLanguageStore();
   const [activeSection, setActiveSection] = useState('general');
   const [saved, setSaved] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
@@ -186,9 +186,18 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
   //  TAB CONTENT
   // ═══════════════════════════════════════════
 
+  // Only offer languages we fully ship, plus Auto (follows browser/device
+  // locale, and — for AI replies — the language of the latest message).
+  const LANG_OPTIONS: { mode: LangMode; label: string; sub: string }[] = [
+    { mode: 'auto', label: 'Auto', sub: 'Match device & message' },
+    { mode: 'en', label: 'English', sub: 'English' },
+    { mode: 'tr', label: 'Türkçe', sub: 'Turkish' },
+  ];
+  const currentLangOption = LANG_OPTIONS.find((o) => o.mode === langMode) || LANG_OPTIONS[0];
+
   const renderGeneral = () => (
     <SectionCard title="Language & Region" subtitle="Configure your interface language and timezone">
-      <SettingRow label="Language" description="Interface language">
+      <SettingRow label="Language" description="Interface & AI response language">
         <div className="relative">
           <button
             onClick={() => setLangOpen(!langOpen)}
@@ -196,7 +205,7 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
             style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
           >
             <Globe className="w-3.5 h-3.5 text-[#94A3B8]" />
-            <span className="flex-1 text-left">{LANGUAGES.find((l) => l.code === currentLang)?.label || 'English'}</span>
+            <span className="flex-1 text-left">{currentLangOption.label}</span>
             <ChevronDown className={`w-3 h-3 text-[#94A3B8] transition-transform ${langOpen ? 'rotate-180' : ''}`} />
           </button>
           <AnimatePresence>
@@ -208,12 +217,12 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
                 style={{ background: 'linear-gradient(180deg, #151C28, #171C24)', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0 16px 40px rgba(0,0,0,0.4)' }}
               >
                 <div className="p-1.5 max-h-[240px] overflow-y-auto scrollbar-thin">
-                  {LANGUAGES.map((l) => (
-                    <button key={l.code} onClick={() => { setLang(l.code as Language); setLangOpen(false); setHasChanges(true); updateDraft('language', l.label as 'English' | 'Turkish'); }}
-                      className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[12px] transition-all ${currentLang === l.code ? 'bg-white/[0.05] text-white' : 'text-[#94A3B8] hover:text-slate-300 hover:bg-white/[0.03]'}`}>
+                  {LANG_OPTIONS.map((o) => (
+                    <button key={String(o.mode)} onClick={() => { setMode(o.mode); setLangOpen(false); setHasChanges(true); updateDraft('language', (o.mode === 'tr' ? 'Turkish' : 'English') as 'English' | 'Turkish'); }}
+                      className={`w-full flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[12px] transition-all ${langMode === o.mode ? 'bg-white/[0.05] text-white' : 'text-[#94A3B8] hover:text-slate-300 hover:bg-white/[0.03]'}`}>
                       <Globe className="w-3.5 h-3.5 text-[#94A3B8] shrink-0" />
-                      <span className="flex-1">{l.label}</span>
-                      {currentLang === l.code && <Check className="h-3 w-3 text-[#3B82F6] shrink-0" />}
+                      <span className="flex-1">{o.label}<span className="ml-1.5 text-[10px] text-[#64748B]">{o.sub}</span></span>
+                      {langMode === o.mode && <Check className="h-3 w-3 text-[#3B82F6] shrink-0" />}
                     </button>
                   ))}
                 </div>

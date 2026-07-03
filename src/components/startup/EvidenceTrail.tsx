@@ -3,6 +3,7 @@ import {
   SOURCE_DISPLAY, sourceLabel,
   type MarketComplaintReport, type RadarCitation,
 } from '@/lib/startupMarketApi';
+import { useLanguageStore } from '@/stores/languageStore';
 
 // Backend-observed contribution → user label. "Opened" is the honest
 // floor for anything without a role (old cached reports).
@@ -33,6 +34,7 @@ interface Props {
  * here is invented — it is the citations list, made legible.
  */
 export default function EvidenceTrail({ report, defaultOpen = false }: Props) {
+  const { t } = useLanguageStore();
   if (report.citations.length === 0) return null;
 
   const bySource = new Map<string, RadarCitation[]>();
@@ -51,7 +53,7 @@ export default function EvidenceTrail({ report, defaultOpen = false }: Props) {
     >
       <summary className="flex items-center gap-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
         <ChevronRight className="h-3.5 w-3.5 text-[#94A3B8] transition-transform group-open:rotate-90" />
-        <span className="text-[13px] font-semibold text-slate-100">Sources used</span>
+        <span className="text-[13px] font-semibold text-slate-100">{t('startupSourcesUsed')}</span>
         <span className="text-[11px] text-[#94A3B8]">
           {report.citations.length} page{report.citations.length === 1 ? '' : 's'} used
         </span>

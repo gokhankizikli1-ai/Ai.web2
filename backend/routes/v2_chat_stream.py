@@ -129,6 +129,15 @@ class StreamChatRequest(BaseModel):
     # When ENABLE_ASSET_SYSTEM is off or the list is empty, this is
     # a zero-cost no-op.
     asset_ids:   Optional[List[str]] = Field(default=None, max_length=20)
+    # i18n — the user's resolved locale + language choice. `locale` is the
+    # effective UI language (e.g. "en" / "tr"); `language_mode` is the raw
+    # choice ("auto" | "en" | "tr" | …); `message_language` is the
+    # front-end's best-effort detection of THIS message's language, sent
+    # only in Auto mode as a hint. The route folds these into an
+    # answer-language directive appended to the system prompt.
+    locale:           Optional[str] = Field(default=None, max_length=16)
+    language_mode:    Optional[str] = Field(default=None, max_length=16)
+    message_language: Optional[str] = Field(default=None, max_length=16)
 
 
 # ── Identity resolution ──────────────────────────────────────────────────────
@@ -673,6 +682,96 @@ async def stream_chat(body: StreamChatRequest, request: Request):
         # `pr_request`; subsequent steps (github, browser, web_search,
         # capability note) all augment in-place.
         effective_pr_request = pr_request
+
+        # ── i18n — answer-language directive (UNCONDITIONAL) ───────────
+        #
+        # The user reported the AI replying in English to Turkish users.
+        # The front-end now tags every request with the resolved locale,
+        # the raw language mode ("auto" | "en" | "tr" | …) and — in Auto
+        # mode — a best-effort detection of THIS message's language. We
+        # fold a strong, explicit directive into the system prompt so the
+        # model always answers in the user's language. This runs even
+        # when no tools are enabled (the cap_note block below is
+        # tool-gated and cannot be relied on for language policy).
+        try:
+            _LANG_NAMES = {"en": "English", "tr": "Turkish"}
+            _mode = (body.language_mode or "").strip().lower()
+            _locale = (body.locale or "").strip().lower()
+            _msg_lang = (body.message_language or "").strip().lower()
+            # Resolve the language to enforce + a source label for logs.
+            if _mode and _mode != "auto":
+                _resolved = _mode
+                _source = "user_setting"
+            elif _msg_lang:
+                _resolved = _msg_lang
+                _source = "message_detect"
+            elif _locale:
+                _resolved = _locale
+                _source = "browser"
+            else:
+                _resolved = "en"
+                _source = "fallback"
+            _resolved_name = _LANG_NAMES.get(_resolved, _resolved or "English")
+
+            if _mode == "auto" or not _mode:
+                lang_directive = (
+                    "═══════════════════════════════════════════════════════════════\n"
+                    "ANSWER LANGUAGE POLICY (NON-NEGOTIABLE)\n"
+                    "═══════════════════════════════════════════════════════════════\n"
+                    "Respond in the user's selected language. The selected language "
+                    "is Auto, so respond in the SAME language as the user's latest "
+                    f"message (detected: {_resolved_name}). Do not switch to English "
+                    "unless the user asks in English or asks for English.\n"
+                    "Translate/write ALL of your prose — summaries, labels, headings, "
+                    "risk notes, next steps — in that language. Do NOT translate brand "
+                    "names, product names, URLs, tickers, code, file names, or "
+                    "technical identifiers; keep source/article titles as-is but "
+                    "explain them in the user's language."
+                )
+            else:
+                lang_directive = (
+                    "═══════════════════════════════════════════════════════════════\n"
+                    "ANSWER LANGUAGE POLICY (NON-NEGOTIABLE)\n"
+                    "═══════════════════════════════════════════════════════════════\n"
+                    f"Respond in the user's selected language: {_resolved_name}. "
+                    "Do not switch to English unless the user explicitly asks in "
+                    "English or asks for English.\n"
+                    "Write ALL of your prose — summaries, labels, headings, risk "
+                    f"notes, next steps — in {_resolved_name}. Do NOT translate brand "
+                    "names, product names, URLs, tickers, code, file names, or "
+                    "technical identifiers; keep source/article titles as-is but "
+                    f"explain them in {_resolved_name}."
+                )
+
+            _lang_base = list(effective_pr_request.messages)
+            _lang_first = _lang_base[0].role if _lang_base else None
+            if _lang_first == "system":
+                _existing = _lang_base[0].content
+                if isinstance(_existing, list):
+                    _existing = "\n".join(
+                        str(b.get("text", "")) for b in _existing
+                        if isinstance(b, dict) and b.get("type") == "text"
+                    )
+                _merged = f"{lang_directive}\n\n{(_existing or '').strip()}"
+                _lang_msgs = [ProviderMessage(role="system", content=_merged)] + _lang_base[1:]
+            else:
+                _lang_msgs = [ProviderMessage(role="system", content=lang_directive)] + _lang_base
+            effective_pr_request = ProviderRequest(
+                messages=    _lang_msgs,
+                model=       effective_pr_request.model,
+                temperature= effective_pr_request.temperature,
+                max_tokens=  effective_pr_request.max_tokens,
+                timeout_s=   effective_pr_request.timeout_s,
+                extra=       effective_pr_request.extra,
+            )
+            # Safe debug log — no tokens/secrets, just routing signal.
+            logger.info(
+                "[I18N] uid=%s | surface=chat_stream | resolved_locale=%s | "
+                "language_source=%s | language_mode=%s | user_message_language=%s",
+                user_id, _resolved, _source, _mode or "auto", _msg_lang or "-",
+            )
+        except Exception:
+            logger.debug("[I18N] language directive injection skipped", exc_info=True)
 
         # Phase 11 hang-fix — overall pre-LLM orchestration budget.
         # If the combined cost of every tool call exceeds this ceiling

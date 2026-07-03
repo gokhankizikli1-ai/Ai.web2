@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { CalendarCheck, ChevronDown } from 'lucide-react';
 import type { SprintDay } from '@/lib/startupRadarInsights';
+import { useLanguageStore } from '@/stores/languageStore';
 
 const VISIBLE_BY_DEFAULT = 3;
 
@@ -8,6 +9,7 @@ const VISIBLE_BY_DEFAULT = 3;
  * cluster + ICP. Default shows only the first 3 day titles (no detail);
  * expanding reveals every day WITH its detail. */
 export default function ValidationSprintPanel({ sprint }: { sprint: SprintDay[] }) {
+  const { t } = useLanguageStore();
   const [expanded, setExpanded] = useState(false);
   const visible = expanded ? sprint : sprint.slice(0, VISIBLE_BY_DEFAULT);
 
@@ -15,7 +17,7 @@ export default function ValidationSprintPanel({ sprint }: { sprint: SprintDay[] 
     <div className="rounded-xl border border-white/[0.05] bg-white/[0.01] p-4">
       <div className="flex items-center gap-2 mb-3">
         <CalendarCheck className="h-3.5 w-3.5 text-[#86A08F]" />
-        <h3 className="text-[13px] font-semibold text-slate-100">Validation plan</h3>
+        <h3 className="text-[13px] font-semibold text-slate-100">{t('startupValidationPlan')}</h3>
       </div>
       <div className="space-y-2.5">
         {visible.map((d) => (

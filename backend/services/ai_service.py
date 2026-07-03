@@ -173,6 +173,58 @@ def _build_system(base, mem_summary="", style_prompt="", profile=""):
     return sys_p
 
 
+_LANG_NAMES = {"en": "English", "tr": "Turkish"}
+
+
+def _build_language_directive(
+    locale: str = None, language_mode: str = None, message_language: str = None
+) -> str:
+    """Build the answer-language directive for the non-stream chat path.
+
+    Mirrors the streaming route's policy: a concrete mode pins the reply
+    language; Auto follows the language of the user's latest message.
+    Returns "" when no locale signal is present (byte-identical legacy
+    behaviour). Never translates brand names, tickers, URLs, or code.
+    """
+    mode = (language_mode or "").strip().lower()
+    loc = (locale or "").strip().lower()
+    msg = (message_language or "").strip().lower()
+
+    if mode and mode != "auto":
+        resolved, source = mode, "user_setting"
+    elif msg:
+        resolved, source = msg, "message_detect"
+    elif loc:
+        resolved, source = loc, "browser"
+    else:
+        return ""  # no signal → leave prompt untouched
+
+    name = _LANG_NAMES.get(resolved, resolved or "English")
+    logger.info(
+        "[I18N] surface=chat | resolved_locale=%s | language_source=%s | "
+        "language_mode=%s | user_message_language=%s",
+        resolved, source, mode or "auto", msg or "-",
+    )
+    if mode == "auto" or not mode:
+        return (
+            "ANSWER LANGUAGE POLICY (NON-NEGOTIABLE): Respond in the user's "
+            "selected language. The selected language is Auto, so respond in the "
+            f"SAME language as the user's latest message (detected: {name}). Do "
+            "not switch to English unless the user asks in English or asks for "
+            "English. Write ALL prose in that language, but do NOT translate "
+            "brand names, product names, URLs, tickers, code, file names, or "
+            "technical identifiers; keep source titles as-is and explain them in "
+            "the user's language."
+        )
+    return (
+        f"ANSWER LANGUAGE POLICY (NON-NEGOTIABLE): Respond in {name}. Do not "
+        "switch to English unless the user explicitly asks in English or asks "
+        f"for English. Write ALL prose in {name}, but do NOT translate brand "
+        "names, product names, URLs, tickers, code, file names, or technical "
+        "identifiers; keep source titles as-is and explain them in " + name + "."
+    )
+
+
 async def process_chat(
     user_id: str,
     message: str,
@@ -182,8 +234,22 @@ async def process_chat(
     mem_summary: str,
     style_prompt: str,
     mode: str = None,           # optional: explicit mode from frontend (e.g. "trading_analyst")
+    locale: str = None,             # i18n — resolved UI locale ("en"/"tr"/…)
+    language_mode: str = None,      # i18n — raw choice ("auto"|"en"|"tr"|…)
+    message_language: str = None,   # i18n — detected language of this message (Auto hint)
 ) -> dict:
     text_lower = message.lower().strip()
+
+    # ── i18n — fold an answer-language directive into style_prompt so it
+    # flows into EVERY branch's system prompt (both build_system_prompt and
+    # _build_system append style_prompt). The user reported English replies
+    # to Turkish users; this enforces the selected/detected language.
+    try:
+        _lang_directive = _build_language_directive(locale, language_mode, message_language)
+        if _lang_directive:
+            style_prompt = (style_prompt + "\n\n" + _lang_directive) if style_prompt else _lang_directive
+    except Exception:
+        logger.debug("process_chat | language directive skipped", exc_info=True)
 
     depth       = detect_research_depth(message)
     depth_label = DEPTH_CONFIG[depth]["label"]

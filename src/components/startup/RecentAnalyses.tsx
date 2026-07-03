@@ -1,5 +1,6 @@
 import { ChevronRight, Clock3, Target, Trash2 } from 'lucide-react';
 import type { RadarHistoryEntry } from '@/lib/startupRadarHistory';
+import { useLanguageStore } from '@/stores/languageStore';
 
 const CONFIDENCE_TONE: Record<string, string> = {
   high: 'text-[#86A08F]',
@@ -30,6 +31,7 @@ interface Props {
 /** Compact collapsible list of the last local analyses. Restoring never
  * re-fetches — it shows the exact stored report. */
 export default function RecentAnalyses({ history, defaultOpen, onRestore, onClearHistory }: Props) {
+  const { t } = useLanguageStore();
   if (history.length === 0) return null;
   return (
     // key on defaultOpen so switching contexts (empty ↔ report visible)
@@ -42,7 +44,7 @@ export default function RecentAnalyses({ history, defaultOpen, onRestore, onClea
       <summary className="flex items-center gap-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden">
         <ChevronRight className="h-3.5 w-3.5 text-[#94A3B8] transition-transform group-open:rotate-90" />
         <Clock3 className="h-3.5 w-3.5 text-[#CBD5E1]" />
-        <span className="text-[13px] font-semibold text-slate-100">Previous analyses</span>
+        <span className="text-[13px] font-semibold text-slate-100">{t('startupPreviousAnalyses')}</span>
         <span className="text-[11px] text-[#94A3B8]">({history.length})</span>
         <button
           onClick={(e) => { e.preventDefault(); e.stopPropagation(); onClearHistory(); }}

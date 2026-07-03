@@ -7,6 +7,8 @@
  * backend chat already uses.
  */
 
+import { useLanguageStore } from '@/stores/languageStore';
+
 const BUNDLED_BACKEND = 'https://worker-production-1345.up.railway.app';
 
 function apiBase(): string {
@@ -41,7 +43,24 @@ export const SOURCE_DISPLAY: Record<RadarSource, { label: string; role: string }
   producthunt: { label: 'Product launches', role: 'Launch and product signal' },
 };
 
+/** Turkish source labels (req 8 — provider labels understandable in TR).
+ *  Internal provider keys stay unchanged; only the visible label localizes. */
+const SOURCE_LABEL_TR: Record<RadarSource, string> = {
+  web: 'Web taraması',
+  hackernews: 'Kurucu forumları',
+  gdelt: 'Haber trendleri',
+  reddit: 'Topluluklar',
+  producthunt: 'Ürün lansmanları',
+};
+
 export function sourceLabel(source: string): string {
+  let lang: string = 'en';
+  try {
+    lang = useLanguageStore.getState().lang;
+  } catch { /* store not ready — fall back to EN */ }
+  if (lang === 'tr') {
+    return SOURCE_LABEL_TR[source as RadarSource] ?? SOURCE_DISPLAY[source as RadarSource]?.label ?? source;
+  }
   return SOURCE_DISPLAY[source as RadarSource]?.label ?? source;
 }
 
