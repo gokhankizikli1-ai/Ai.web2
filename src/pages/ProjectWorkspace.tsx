@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from '@/hooks/useToast';
@@ -8,7 +8,7 @@ import {
   Layout, Server, Search, Rocket, ShoppingBag,
   TrendingUp, Palette, Activity, Loader2,
   History, ChevronRight, Monitor,
-  Code2, Copy, ArrowRight,
+  Check, AlertTriangle, RotateCcw, ArrowUp,
 } from 'lucide-react';
 
 const ROLE_ICONS: Record<string, React.ElementType> = {
@@ -27,7 +27,7 @@ import {
   AGENT_ROLES, createAgent, uid,
   listProjectMemory, addProjectMemory, type ProjectMemoryEntry,
 } from '@/stores/projectStore';
-import type { ProjectAgent, AgentMessage } from '@/types/projects';
+import type { ProjectAgent, AgentMessage, Project } from '@/types/projects';
 import { useProjectActivity } from '@/hooks/useProjectActivity';
 import AgentMessageRenderer from '@/components/AgentMessageRenderer';
 import OwnerModeChip from '@/components/OwnerModeChip';
@@ -35,9 +35,13 @@ import OwnerSessionIndicator from '@/components/OwnerSessionIndicator';
 import ProjectRunPanel from '@/components/ProjectRunPanel';
 import ProjectRunCenter, { artifactLabel, type BuildOverview } from '@/components/ProjectRunCenter';
 import { projectOrchestratorClient } from '@/hooks/useProjectOrchestrator';
-import WebBuildOutput from '@/components/builder/WebBuildOutput';
-import WebBuildActivityTable from '@/components/builder/WebBuildActivityTable';
-import { viewFromPayload } from '@/lib/webBuildPayload';
+import WebBuildConversation from '@/components/builder/WebBuildConversation';
+import {
+  payloadSteps, buildWebBuildPayload,
+  type WebBuildPayload, type WebBuildActivityRow,
+} from '@/lib/webBuildPayload';
+import { saveWebBuildPayloadToProject } from '@/lib/webBuildProject';
+import { generateWebBuild, WebBuildError, webBuildErrorKeyFor } from '@/lib/webBuildApi';
 import { useLanguageStore } from '@/stores/languageStore';
 
 /* ═══════════════════════════════════════════════════════════════════
@@ -274,13 +278,266 @@ function orchestrationStatusFor(evt: {
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   SAVED WEB BUILD — conversation view.
+   ═══════════════════════════════════════════════════════════════════
+   A project created from a Web Build renders the Claude/Kimi-style build
+   CONVERSATION (identical to the live Web Build page) plus a continue
+   composer. Extracted into its own component so its hooks (state, refs,
+   timers) always run in a stable order — the `if (project.webBuild)`
+   early return in ProjectWorkspace must NOT call hooks conditionally. */
+
+const WB_ACCENT = '#60A5FA';
+
+/** i18n label key for each paced activity row id (mirrors WebsiteBuilder). */
+const WB_ACTIVITY_LABELS: Record<string, string> = {
+  brief: 'wbStageBrief',
+  type: 'wbStageType',
+  plan: 'wbStagePlan',
+  design: 'wbStageDesign',
+  copy: 'wbStageCopy',
+  code: 'wbStageCode',
+  preview: 'wbStagePreview',
+  save: 'wbActSave',
+};
+/** The rows the timer walks while a revision is in flight (stops at
+ *  'preview'; the real payload replaces the whole log on success). */
+const WB_ACTIVITY_FLOW = ['brief', 'type', 'plan', 'design', 'copy', 'code', 'preview'] as const;
+const WB_ACTIVITY_ORDER = [...WB_ACTIVITY_FLOW, 'save'] as const;
+/** Minimum visible duration per step so no step ever flashes past. */
+const WB_ACTIVITY_TICK_MS = 1100;
+
+function wbFreshActivityRows(): WebBuildActivityRow[] {
+  return WB_ACTIVITY_ORDER.map((id) => ({
+    id,
+    labelKey: WB_ACTIVITY_LABELS[id],
+    status: id === 'brief' ? 'running' : 'waiting',
+  }));
+}
+
+function wbSlug(name: string): string {
+  const base = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 18);
+  return `${base || 'yoursite'}.korvix.build`;
+}
+
+function WebBuildProjectView({ project }: { project: Project }) {
+  const navigate = useNavigate();
+  const { t } = useLanguageStore();
+
+  /* Normalize the saved payload into local state so continue-revisions
+     update it live. `payloadSteps` also backfills OLD payloads that predate
+     the conversation model; the latest step's files are the current set. */
+  const initial = useMemo(() => {
+    const steps = payloadSteps(project.webBuild!);
+    return { ...project.webBuild!, steps, files: steps[steps.length - 1].files };
+  }, [project.webBuild]);
+
+  const [payload, setPayload] = useState<WebBuildPayload>(initial);
+  const [input, setInput] = useState('');
+  const [live, setLive] = useState<{ prompt: string; rows: WebBuildActivityRow[] } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+
+  const abortRef = useRef<AbortController | null>(null);
+  const activityTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const activityIdxRef = useRef(0);
+  const feedEndRef = useRef<HTMLDivElement | null>(null);
+  const lastPromptRef = useRef('');
+
+  const clearActivityTimer = useCallback(() => {
+    if (activityTimer.current) { clearInterval(activityTimer.current); activityTimer.current = null; }
+  }, []);
+
+  // Clear timers + abort any in-flight revision on unmount.
+  useEffect(() => () => {
+    abortRef.current?.abort();
+    clearActivityTimer();
+  }, [clearActivityTimer]);
+
+  // Keep the newest message in view as the conversation grows.
+  useEffect(() => {
+    feedEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [payload, live]);
+
+  /** Start the paced live log and walk the flow rows on the timer. */
+  const startLive = useCallback((prompt: string) => {
+    clearActivityTimer();
+    setLive({ prompt, rows: wbFreshActivityRows() });
+    activityIdxRef.current = 0;
+    activityTimer.current = setInterval(() => {
+      const i = activityIdxRef.current;
+      if (i >= WB_ACTIVITY_FLOW.length - 1) { clearActivityTimer(); return; }
+      const cur = WB_ACTIVITY_FLOW[i];
+      const next = WB_ACTIVITY_FLOW[i + 1];
+      setLive((prev) => prev ? {
+        ...prev,
+        rows: prev.rows.map((r) =>
+          r.id === cur ? { ...r, status: 'done' }
+            : r.id === next ? { ...r, status: 'running' }
+            : r),
+      } : prev);
+      activityIdxRef.current = i + 1;
+    }, WB_ACTIVITY_TICK_MS);
+  }, [clearActivityTimer]);
+
+  /* ── Continue the build with a revision (persists to the project) ──── */
+  const runRevision = useCallback(async (text: string) => {
+    const trimmed = text.trim();
+    if (!trimmed || busy) return;
+    lastPromptRef.current = trimmed;
+
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    setBusy(true);
+    setErrorMsg('');
+    startLive(trimmed);
+
+    try {
+      const res = await generateWebBuild(trimmed, {
+        revise: true,
+        previousReply: payload.reply,
+        signal: controller.signal,
+      });
+      if (abortRef.current !== controller) return; // superseded
+      clearActivityTimer();
+      const next = buildWebBuildPayload(trimmed, res, payload);
+      // Persist the continuation onto the saved project.
+      saveWebBuildPayloadToProject(next, project.id);
+      setPayload(next);
+      setLive(null);
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      clearActivityTimer();
+      setLive(null);
+      const key = err instanceof WebBuildError ? webBuildErrorKeyFor(err.kind) : 'wbErrGeneric';
+      setErrorMsg(t(key) || t('wbErrGeneric'));
+    } finally {
+      if (abortRef.current === controller) setBusy(false);
+    }
+  }, [busy, payload, project.id, startLive, clearActivityTimer, t]);
+
+  const handleSubmit = useCallback(() => {
+    const text = input.trim();
+    if (!text || busy) return;
+    setInput('');
+    runRevision(text);
+  }, [input, busy, runRevision]);
+
+  const handleRetry = useCallback(() => {
+    setErrorMsg('');
+    if (lastPromptRef.current) runRevision(lastPromptRef.current);
+  }, [runRevision]);
+
+  /* "Saved to project" attachment card — the build is already persisted. */
+  const savedCard = (
+    <div className="w-full max-w-sm flex items-center gap-3 rounded-xl border border-white/[0.08] bg-white/[0.02] px-3 py-2.5">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ background: `${WB_ACCENT}1a` }}>
+        <Check className="h-4 w-4" style={{ color: WB_ACCENT }} strokeWidth={2.5} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="text-[12.5px] font-medium text-slate-100">{t('wbCardSaved')}</div>
+        <div className="text-[11px] text-[#94A3B8] truncate">{t('wbSavedToNamed', { name: project.name })}</div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="h-[100dvh] w-full max-w-full flex flex-col overflow-hidden" style={{ background: '#11151C', color: '#E2E8F0' }}>
+      {/* Ambient */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute -top-[200px] -right-[200px] w-[600px] h-[600px] rounded-full opacity-[0.03]" style={{ background: 'radial-gradient(circle, #3B82F6 0%, transparent 70%)' }} />
+      </div>
+
+      {/* Top Bar — native project header */}
+      <div className="relative shrink-0 flex items-center justify-between px-4 py-2.5" style={{ background: 'rgba(13, 17, 23,0.85)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(255,255,255,0.05)', zIndex: 10 }}>
+        <div className="flex items-center gap-3">
+          <button onClick={() => navigate('/projects')} className="flex items-center gap-1 text-[11px] text-white/30 hover:text-white/60 transition-colors" aria-label={t('wbProjWebsiteBuild')}>
+            <ArrowLeft className="h-3.5 w-3.5" />
+          </button>
+          <div className="w-px h-4 bg-white/10" />
+          <div className={`flex h-6 w-6 items-center justify-center rounded-md bg-gradient-to-br ${project.gradient}`}>
+            <FolderOpen className="h-3 w-3 text-white" />
+          </div>
+          <h1 className="text-[13px] font-semibold text-white/90">{project.name}</h1>
+          <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(59, 130, 246,0.06)', border: '1px solid rgba(59, 130, 246,0.12)' }}>
+            <Monitor className="h-2.5 w-2.5 text-[#60A5FA]/80" />
+            <span className="text-[9px] text-[#60A5FA]/80 font-medium">{t('wbProjWebsiteBuild')}</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <OwnerModeChip />
+          <OwnerSessionIndicator />
+        </div>
+      </div>
+
+      {/* Focused workspace — centered conversation feed + sticky composer */}
+      <div className="relative flex-1 min-h-0 overflow-y-auto scrollbar-thin">
+        <div className="mx-auto w-full max-w-3xl px-4 sm:px-6 flex flex-col min-h-full">
+          <div className="flex-1 pt-5">
+            <WebBuildConversation
+              steps={payload.steps}
+              files={payload.files}
+              sectionItems={payload.sectionItems}
+              brief={payload.brief}
+              live={live}
+              extraCards={savedCard}
+              slug={wbSlug(project.name)}
+            />
+            {errorMsg && (
+              <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-rose-500/20 bg-rose-500/[0.04] px-4 py-3.5">
+                <AlertTriangle className="h-4 w-4 shrink-0 text-rose-400" />
+                <p className="text-[12.5px] text-[#CBD5E1] flex-1 min-w-0">{errorMsg}</p>
+                <button
+                  onClick={handleRetry}
+                  disabled={busy}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium text-[#05060a] shrink-0 disabled:opacity-50"
+                  style={{ background: WB_ACCENT }}
+                >
+                  <RotateCcw className="h-3.5 w-3.5" /> {t('retry')}
+                </button>
+              </div>
+            )}
+            <div ref={feedEndRef} />
+          </div>
+
+          {/* Sticky continue composer */}
+          <div className="sticky bottom-0 pt-4 pb-4" style={{ background: 'linear-gradient(to top, #11151C, #11151C 60%, transparent)' }}>
+            <div className="flex items-end gap-2 rounded-2xl border border-white/[0.08] bg-white/[0.03] p-2 focus-within:border-white/[0.16] transition-colors">
+              <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); }
+                }}
+                placeholder={t('wbComposerRevise')}
+                rows={1}
+                className="flex-1 resize-none bg-transparent px-2.5 py-2 text-[13.5px] text-slate-100 placeholder:text-[#64748B] outline-none max-h-40 scrollbar-thin"
+              />
+              <button
+                onClick={handleSubmit}
+                disabled={busy || !input.trim()}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-[#05060a] transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ background: WB_ACCENT }}
+                aria-label={t('wbComposerRevise')}
+              >
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" strokeWidth={2.5} />}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ═══════════════════════════════════════════ */
 
 export default function ProjectWorkspace() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const { addToast } = useToast();
-  const { t } = useLanguageStore();
   const project = getProject(projectId || '');
 
   const [agents, setAgents] = useState<ProjectAgent[]>(() => getProjectAgents(projectId || ''));
@@ -711,188 +968,13 @@ export default function ProjectWorkspace() {
     );
   }
 
-  /* ─── Saved Web Build — a project created from Web Build renders its saved
-     build (Overview / Sections / Design / Copy / Code / Preview / Activity)
-     instead of the orchestrator/agent workspace. Placed BEFORE the
-     orchestrator probe / builder-mode logic so a web-build project never
-     shows generic suggestions, the run center, or "No builds yet". ─── */
+  /* ─── Saved Web Build — a project created from Web Build renders the
+     Claude/Kimi build CONVERSATION (identical to the Web Build page) plus a
+     continue composer, instead of the orchestrator/agent workspace. Placed
+     BEFORE the orchestrator probe / builder-mode logic so a web-build project
+     never shows generic suggestions, the run center, or "No builds yet". ─── */
   if (project.webBuild) {
-    const wb = project.webBuild;
-    const view = viewFromPayload(wb);
-
-    const relTime = (iso?: string): string => {
-      if (!iso) return '';
-      const then = new Date(iso).getTime();
-      if (Number.isNaN(then)) return '';
-      const diff = Math.max(0, Date.now() - then);
-      const mins = Math.round(diff / 60000);
-      if (mins < 1) return t('wbProjSavedBuild');
-      if (mins < 60) return `${mins}m`;
-      const hrs = Math.round(mins / 60);
-      if (hrs < 24) return `${hrs}h`;
-      return `${Math.round(hrs / 24)}d`;
-    };
-
-    const overviewRows = [
-      { label: t('wbOverviewType'), value: wb.brief.type },
-      { label: t('wbOverviewAudience'), value: wb.brief.audience },
-      { label: t('wbOverviewGoal'), value: wb.brief.goal },
-      { label: t('wbOverviewStyle'), value: wb.brief.style },
-    ].filter((r) => Boolean(r.value));
-
-    const copyCode = async () => {
-      const codeBody = wb.sections.find((s) => /frontend\s*code/i.test(s.title))?.body || wb.reply;
-      try {
-        await navigator.clipboard.writeText(codeBody);
-        addToast(t('wbActExportCode'), 'success');
-      } catch {
-        addToast(t('wbActExportCode'), 'error');
-      }
-    };
-
-    const goBuilder = () => navigate('/tools/website-builder');
-
-    const nextActions: { key: string; icon: React.ElementType; onClick: () => void }[] = [
-      { key: 'wbActContinue', icon: ArrowRight, onClick: goBuilder },
-      { key: 'wbRefineDesign', icon: Palette, onClick: goBuilder },
-      { key: 'wbGenerateCode', icon: Code2, onClick: goBuilder },
-      { key: 'wbActAddSection', icon: Plus, onClick: goBuilder },
-      { key: 'wbActExportCode', icon: Copy, onClick: copyCode },
-      { key: 'wbActNewRevision', icon: History, onClick: goBuilder },
-    ];
-
-    return (
-      <div className="h-[100dvh] w-full max-w-full flex flex-col overflow-hidden" style={{ background: '#11151C', color: '#E2E8F0' }}>
-        {/* Ambient */}
-        <div className="fixed inset-0 pointer-events-none overflow-hidden">
-          <div className="absolute -top-[200px] -right-[200px] w-[600px] h-[600px] rounded-full opacity-[0.03]" style={{ background: 'radial-gradient(circle, #3B82F6 0%, transparent 70%)' }} />
-        </div>
-
-        {/* Top Bar — native project header */}
-        <div className="relative shrink-0 flex items-center justify-between px-4 py-2.5" style={{ background: 'rgba(13, 17, 23,0.85)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(255,255,255,0.05)', zIndex: 10 }}>
-          <div className="flex items-center gap-3">
-            <button onClick={() => navigate('/projects')} className="flex items-center gap-1 text-[11px] text-white/30 hover:text-white/60 transition-colors">
-              <ArrowLeft className="h-3.5 w-3.5" />
-            </button>
-            <div className="w-px h-4 bg-white/10" />
-            <div className={`flex h-6 w-6 items-center justify-center rounded-md bg-gradient-to-br ${project.gradient}`}>
-              <FolderOpen className="h-3 w-3 text-white" />
-            </div>
-            <h1 className="text-[13px] font-semibold text-white/90">{project.name}</h1>
-            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(59, 130, 246,0.06)', border: '1px solid rgba(59, 130, 246,0.12)' }}>
-              <Monitor className="h-2.5 w-2.5 text-[#60A5FA]/80" />
-              <span className="text-[9px] text-[#60A5FA]/80 font-medium">{t('wbProjWebsiteBuild')}</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <OwnerModeChip />
-            <OwnerSessionIndicator />
-          </div>
-        </div>
-
-        {/* 3-Panel Layout */}
-        <div className="relative flex-1 flex min-h-0 min-w-0 overflow-hidden">
-          {/* LEFT: saved build panel */}
-          <div className="hidden lg:flex flex-col w-[230px] shrink-0 overflow-y-auto scrollbar-thin px-2.5 py-3 gap-3" style={{ background: 'rgba(13, 17, 23,0.5)', borderRight: '1px solid rgba(255,255,255,0.04)' }}>
-            <div className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.05)' }}>
-              <div className="flex items-center gap-2 mb-2">
-                <Monitor className="h-3.5 w-3.5 text-[#60A5FA]/70" />
-                <span className="text-[11px] font-semibold text-white/70">{t('wbProjSavedBuild')}</span>
-              </div>
-              <p className="text-[12px] text-white/80 font-medium leading-snug truncate">{project.name}</p>
-              {wb.brief.type && (
-                <p className="text-[10px] text-white/40 mt-0.5">{wb.brief.type}</p>
-              )}
-              {wb.updatedAt && (
-                <p className="text-[9px] text-white/25 mt-1.5">{relTime(wb.updatedAt)}</p>
-              )}
-            </div>
-
-            {wb.revisions.length > 0 && (
-              <div>
-                <div className="flex items-center gap-1.5 mb-2 px-1">
-                  <History className="h-3 w-3 text-white/25" />
-                  <span className="text-[10px] font-semibold text-white/25 uppercase tracking-wider">{t('wbProjRevisions')}</span>
-                </div>
-                <div className="space-y-1">
-                  {wb.revisions.map((rev, i) => (
-                    <div key={`${rev.at}-${i}`} className="flex items-start gap-2 rounded-lg px-2 py-1.5" style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.03)' }}>
-                      <span className="text-[9px] text-white/25 mt-0.5 shrink-0">#{wb.revisions.length - i}</span>
-                      <span className="text-[10px] text-white/55 leading-snug line-clamp-2">{rev.note}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* CENTER: the saved build output */}
-          <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
-            <div className="shrink-0 flex items-center gap-2 px-4 py-3" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-              <Monitor className="h-4 w-4 text-[#60A5FA]/70" />
-              <h2 className="text-[13px] font-semibold text-white/80">{t('wbProjWebsiteBuild')}</h2>
-            </div>
-            <div className="flex-1 min-h-0 overflow-y-auto scrollbar-thin px-4 py-4">
-              <WebBuildOutput view={view} />
-            </div>
-          </div>
-
-          {/* RIGHT: inspector */}
-          <div className="hidden xl:flex flex-col w-[260px] shrink-0 overflow-y-auto scrollbar-thin p-3 gap-3" style={{ background: 'rgba(13, 17, 23,0.3)', borderLeft: '1px solid rgba(255,255,255,0.04)' }}>
-            {/* (a) Build Overview */}
-            {overviewRows.length > 0 && (
-              <div className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.04)' }}>
-                <div className="flex items-center gap-2 mb-2.5">
-                  <Sparkles className="h-3.5 w-3.5 text-[#3B82F6]/50" />
-                  <span className="text-[11px] font-semibold text-white/60">{t('wbTabOverview')}</span>
-                </div>
-                <div className="space-y-2">
-                  {overviewRows.map((r) => (
-                    <div key={r.label} className="flex flex-col gap-0.5">
-                      <span className="text-[9px] font-medium uppercase tracking-wide text-white/25">{r.label}</span>
-                      <span className="text-[11px] text-white/70 leading-snug">{r.value}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* (b) Build Activity */}
-            <div className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.04)' }}>
-              <div className="flex items-center gap-2 mb-2.5">
-                <Activity className="h-3.5 w-3.5 text-[#3B82F6]/50" />
-                <span className="text-[11px] font-semibold text-white/60">{t('wbBuildActivity')}</span>
-              </div>
-              <WebBuildActivityTable rows={wb.activity} />
-            </div>
-
-            {/* (c) Next actions */}
-            <div className="rounded-xl p-3" style={{ background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.04)' }}>
-              <div className="flex items-center gap-2 mb-2.5">
-                <Zap className="h-3.5 w-3.5 text-[#3B82F6]/50" />
-                <span className="text-[11px] font-semibold text-white/60">{t('wbProjNextActions')}</span>
-              </div>
-              <div className="space-y-1.5">
-                {nextActions.map((a) => {
-                  const Icon = a.icon;
-                  return (
-                    <button
-                      key={a.key}
-                      onClick={a.onClick}
-                      className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-[11px] text-white/55 hover:text-[#60A5FA] transition-all"
-                      style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}
-                    >
-                      <Icon className="h-3.5 w-3.5 shrink-0 text-[#3B82F6]/50" />
-                      <span className="text-left leading-snug">{t(a.key)}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+    return <WebBuildProjectView project={project} />;
   }
 
   return (
