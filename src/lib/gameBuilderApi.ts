@@ -258,6 +258,83 @@ export class GameBuildError extends Error {
   }
 }
 
+/* ─── Response validation ─────────────────────────────────────────────────
+ *
+ * A live bug returned an unrelated one-liner ("Stil güncellendi: Short" — a
+ * style-shortcut reply) that the UI happily showed as a finished build. The
+ * frontend must NOT treat any non-empty reply as a valid game build. A real
+ * build is a structured markdown document with canonical `## ` sections; a
+ * style/settings/memory shortcut, a demo fallback, or any generic one-liner
+ * is not. We validate the shape here and throw GameBuildError otherwise, so
+ * the page renders an honest error instead of a fake "build is ready".
+ */
+
+/** The full canonical section set a real build should contain. */
+export const CANONICAL_BUILD_SECTIONS = [
+  'Overview', 'Detected Plan', 'Selected Modules', 'UI Templates',
+  'File Tree', 'Code Files', 'Setup Steps', 'Mechanic Quality Checklist',
+  'QA & Polish Pass', 'Testing Checklist', 'Upgrade Roadmap',
+  'Risks & Limitations',
+] as const;
+
+/** The minimum sections that MUST be present for the reply to be a build. */
+export const REQUIRED_BUILD_SECTIONS = [
+  'Overview', 'Detected Plan', 'File Tree', 'Code Files',
+  'Setup Steps', 'Risks & Limitations',
+] as const;
+
+/** The user-facing error for a structurally-invalid (non-build) reply. */
+export const INVALID_BUILD_MESSAGE =
+  'Game Builder did not receive a valid game build response. The backend may ' +
+  'not be using the game_developer mode yet. Please check backend deploy and try again.';
+
+/** Normalize a heading for tolerant matching: lowercase, "&"→"and",
+ *  collapse non-alphanumerics. So "Risks & Limitations" === "Risks and Limitations". */
+function normalizeHeading(s: string): string {
+  return s.toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+/**
+ * Throw GameBuildError unless `reply` is a real game build:
+ *   - the backend-reported `mode` (when present) must be game_developer —
+ *     a "style"/"memory"/etc. shortcut reply reports a different mode,
+ *   - the reply must contain canonical `## ` sections, and at minimum every
+ *     REQUIRED section (Overview / Detected Plan / File Tree / Code Files /
+ *     Setup Steps / Risks & Limitations).
+ * Logs a short debug snippet to the console for developers — the raw reply is
+ * kept out of the normal UI.
+ */
+export function assertValidGameBuild(reply: string, mode?: string): void {
+  const snippet = (reply || '').replace(/\s+/g, ' ').trim().slice(0, 140);
+
+  // 1) Backend-reported mode. When present it MUST be game_developer. A
+  //    shortcut reply (e.g. the style shortcut) reports mode "style". When
+  //    the backend omits mode we don't reject on this alone — the section
+  //    check below is authoritative.
+  if (typeof mode === 'string' && mode.trim() && mode.trim() !== GAME_DEVELOPER_MODE) {
+    // eslint-disable-next-line no-console
+    console.warn(`[GameBuilder] invalid reply — mode="${mode}" (expected ${GAME_DEVELOPER_MODE}): "${snippet}"`);
+    throw new GameBuildError(INVALID_BUILD_MESSAGE);
+  }
+
+  // 2) Structural sections. parseBuildSections ignores `##` inside code
+  //    fences, so this can't be fooled by a code comment.
+  const sections = parseBuildSections(reply);
+  const present = new Set(sections.map((s) => normalizeHeading(s.title)));
+  const missing = REQUIRED_BUILD_SECTIONS.filter(
+    (name) => !present.has(normalizeHeading(name)),
+  );
+
+  if (sections.length === 0 || missing.length > 0) {
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[GameBuilder] invalid reply — ${sections.length} section(s), missing ` +
+      `[${missing.join(', ')}]: "${snippet}"`,
+    );
+    throw new GameBuildError(INVALID_BUILD_MESSAGE);
+  }
+}
+
 /**
  * Generate a game development package for the given engine + idea.
  *
@@ -325,12 +402,19 @@ export async function generateGameBuild(
     throw new GameBuildError('The backend returned an empty result. Please try again.');
   }
 
+  const reportedMode = typeof data.mode === 'string' ? data.mode : '';
+
+  // Strict validation — reject style/settings/memory shortcut replies, demo
+  // fallbacks, or any non-build one-liner so the UI never shows a fake
+  // "build is ready". Throws GameBuildError (with a useful message) otherwise.
+  assertValidGameBuild(reply, reportedMode);
+
   return {
     reply,
     engine,
     quality,
     model: typeof data.model === 'string' ? data.model : 'unknown',
-    mode: typeof data.mode === 'string' ? data.mode : GAME_DEVELOPER_MODE,
+    mode: reportedMode || GAME_DEVELOPER_MODE,
     requestId: typeof data.request_id === 'string' ? data.request_id : '',
   };
 }
