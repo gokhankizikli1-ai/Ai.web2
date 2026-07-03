@@ -366,4 +366,7 @@ export const ru: Record<string, string> = {
   wbMsgCreatedFileShort: "{file} создан",
   wbMsgModifiedFile: "{file} изменён (+{added} −{removed})",
   wbErrNoFiles: "Файлы кода не были сгенерированы. Попробуйте снова.",
+  /* web build — working messages */
+  wbWorkingBrief: "Читаю бриф и выстраиваю структуру страницы…",
+  wbWorkingSections: "Готовлю разделы и структуру компонентов…",
 };

@@ -366,4 +366,7 @@ export const de: Record<string, string> = {
   wbMsgCreatedFileShort: "{file} erstellt",
   wbMsgModifiedFile: "{file} geändert (+{added} −{removed})",
   wbErrNoFiles: "Es wurden keine Code-Dateien generiert. Bitte erneut versuchen.",
+  /* web build — working messages */
+  wbWorkingBrief: "Ich lese den Brief und plane die Seitenstruktur…",
+  wbWorkingSections: "Ich bereite die Abschnitte und die Komponentenstruktur vor…",
 };
