@@ -70,6 +70,13 @@ export interface Project {
   color: string;
   gradient: string;
   icon: string;
+  /** Optional structured Web Build package. Additive — old projects simply
+   *  don't have it. When present, the project detail page renders the saved
+   *  build (overview / sections / copy / code / preview / activity) instead of
+   *  the generic orchestrator/agent empty state. Type is kept loose here to
+   *  avoid a type cycle; see WebBuildPayload in src/lib/webBuildPayload.ts. */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  webBuild?: import('@/lib/webBuildPayload').WebBuildPayload;
 }
 
 export interface ProjectContext {
