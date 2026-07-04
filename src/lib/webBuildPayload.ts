@@ -192,17 +192,23 @@ export function deriveBuildActivity(result: WebBuildResult, files?: WebBuildFile
 
 /**
  * One item in the execution FEED — a Kimi/Claude-style agent action stream.
- * There are three shapes (no checklist / no ticks / no bullets):
- *  - `text`    — a short natural assistant progress line (i18n key + params).
- *  - `analyze` — a collapsible "Analyze request" block (details resolved in the
- *                component from the brief + section names).
- *  - `file`    — a compact tool action row (Create / Update / Read <path>) with
- *                a one-line summary and +N −M; clickable → opens the file drawer.
+ * Three shapes (no checklist / no tick waterfall / no bullets / no table):
+ *  - `text`   — a short natural assistant progress line (i18n key + params).
+ *  - `action` — a compact action row. `details: 'brief' | 'sections'` makes it a
+ *               collapsible block (Analyze request / Plan website structure);
+ *               otherwise it's a plain status row (Create preview route / Build
+ *               completed). `icon` picks the neutral leading glyph.
+ *  - `file`   — a tool action row (Create / Update / Read <path>) with a
+ *               one-line summary and +N −M; clickable → opens the file drawer.
  * We only ever emit `file` items for files that are actually in `step.files`.
  */
+export type FeedActionIcon = 'analyze' | 'plan' | 'preview' | 'done';
 export type FeedItem =
   | { kind: 'text'; id: string; key: string; params?: Record<string, string | number> }
-  | { kind: 'analyze'; id: string }
+  | {
+      kind: 'action'; id: string; titleKey: string;
+      details?: 'brief' | 'sections'; icon: FeedActionIcon; tone?: 'default' | 'done';
+    }
   | {
       kind: 'file'; id: string; op: 'create' | 'update' | 'read';
       path: string; summary?: string; added: number; removed: number;
@@ -215,10 +221,11 @@ function baseName(path: string): string {
 
 /**
  * Turn a build/revision step into an execution feed tied to the REAL generated
- * files. Fresh build: short opening line → Analyze request (collapsible) →
- * short structure line → one file action per created file → done line.
- * Revision: opening line naming the touched section(s) → per changed file a
- * read-then-update (or create) action → done line. Never invents a file.
+ * files. Fresh build: opening line → Analyze request (collapsible brief) → Plan
+ * website structure (collapsible sections) → one file action per created file →
+ * Create preview route → Build completed. Revision: opening line naming the
+ * touched section(s) → per changed file a read-then-update (or create) action →
+ * Update preview → Build completed. Never invents a file.
  */
 export function deriveExecutionFeed(
   step: WebBuildStep,
@@ -243,7 +250,8 @@ export function deriveExecutionFeed(
         feed.push({ kind: 'file', id: `new-${f.path}`, op: 'create', path: f.path, summary: f.summary, added: f.added, removed: f.removed });
       }
     }
-    feed.push({ kind: 'text', id: 'done', key: 'wbFeedReviseDone' });
+    feed.push({ kind: 'action', id: 'preview-update', titleKey: 'wbActPreviewUpdate', icon: 'preview' });
+    feed.push({ kind: 'action', id: 'done', titleKey: 'wbActBuildDone', icon: 'done', tone: 'done' });
     return feed;
   }
 
@@ -253,14 +261,15 @@ export function deriveExecutionFeed(
       ? { kind: 'text', id: 'open', key: 'wbFeedBuildOpening', params: { goal: brief.goal } }
       : { kind: 'text', id: 'open', key: 'wbFeedBuildOpeningPlain' },
   );
-  feed.push({ kind: 'analyze', id: 'analyze' });
+  feed.push({ kind: 'action', id: 'analyze', titleKey: 'wbActAnalyze', details: 'brief', icon: 'analyze' });
   if (step.summary.sectionNames.length) {
-    feed.push({ kind: 'text', id: 'structure', key: 'wbFeedBuildStructure', params: { sections: step.summary.sectionNames.slice(0, 6).join(', ') } });
+    feed.push({ kind: 'action', id: 'plan', titleKey: 'wbActPlanStructure', details: 'sections', icon: 'plan' });
   }
   for (const f of shown) {
     feed.push({ kind: 'file', id: `file-${f.path}`, op: f.status === 'modified' ? 'update' : 'create', path: f.path, summary: f.summary, added: f.added, removed: f.removed });
   }
-  feed.push({ kind: 'text', id: 'done', key: 'wbFeedBuildDone', params: { count: step.summary.fileCount || step.files.length } });
+  feed.push({ kind: 'action', id: 'preview-route', titleKey: 'wbActPreviewRoute', icon: 'preview' });
+  feed.push({ kind: 'action', id: 'done', titleKey: 'wbActBuildDone', icon: 'done', tone: 'done' });
   return feed;
 }
 

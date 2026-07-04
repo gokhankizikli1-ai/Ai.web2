@@ -1,31 +1,40 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { FileCode, FilePlus2, FileText, ChevronRight } from 'lucide-react';
+import {
+  FileCode, FilePlus2, FileText, ChevronRight,
+  Search, ListTree, Globe, CircleCheck,
+} from 'lucide-react';
 import { useLanguageStore, LANGUAGES } from '@/stores/languageStore';
-import { deriveExecutionFeed, type WebBuildStep, type FeedItem } from '@/lib/webBuildPayload';
+import { deriveExecutionFeed, type WebBuildStep, type FeedItem, type FeedActionIcon } from '@/lib/webBuildPayload';
 
 /**
  * A Kimi/Claude-style build execution FEED — NOT a checklist. The assistant
- * writes short natural progress lines interleaved with compact tool action
- * rows (Create / Update / Read <path> · one-line summary · +N −M). No emojis,
- * no green-tick waterfall, no table. File rows are clickable and open the file
- * drawer on that path; the "Analyze request" block expands to show the brief.
+ * writes a short opening line, then compact action rows appear one by one:
+ * collapsible "Analyze request" / "Plan website structure" blocks, file tool
+ * rows (Create / Update / Read <path> · summary · +N −M), then "Create preview
+ * route" and a final "Build completed" row. No emojis, no green-tick waterfall,
+ * no table. File rows are clickable and open the file drawer on that path.
  *
  * The backend is non-streaming, so for the newest step (`animate`) we reveal
- * items progressively (~250–400ms between rows) so it reads like an agent
- * performing actions. Every row is real build data — no fabricated files.
- * History steps render fully, no animation.
+ * items progressively (~220–340ms apart) so it reads like an agent performing
+ * actions. Every row is real build data — no fabricated files. History steps
+ * render fully, no animation.
  */
 
-/** Per-item reveal delay (ms) — text is quick, file rows are paced. */
+/** Per-item reveal delay (ms) — text is quick, rows are paced. */
 function itemDelay(item: FeedItem): number {
   if (item.kind === 'text') return 220;
-  if (item.kind === 'analyze') return 260;
-  return 340;
+  if (item.kind === 'file') return 340;
+  return 300;
 }
 
 const OP_ICON = { create: FilePlus2, update: FileCode, read: FileText } as const;
 const OP_KEY = { create: 'wbActionCreate', update: 'wbActionUpdate', read: 'wbActionRead' } as const;
+const ACTION_ICON: Record<FeedActionIcon, typeof Search> = {
+  analyze: Search, plan: ListTree, preview: Globe, done: CircleCheck,
+};
+
+type DetailRow = { label?: string; value: string };
 
 /* ── Compact tool action row (clickable file op) ─────────────────────── */
 function FileRow({
@@ -61,28 +70,38 @@ function FileRow({
   );
 }
 
-/* ── "Analyze request" collapsible block (brief details) ─────────────── */
-function AnalyzeRow({
-  details,
+/* ── Action row: collapsible (with details) or a plain status row ────── */
+function ActionRow({
+  item, details,
 }: {
-  details: { label: string; value: string }[];
+  item: Extract<FeedItem, { kind: 'action' }>;
+  details: DetailRow[];
 }) {
   const { t } = useLanguageStore();
   const [open, setOpen] = useState(false);
+  const Icon = ACTION_ICON[item.icon];
+  const collapsible = !!item.details && details.length > 0;
+  const iconColor = item.tone === 'done' ? 'text-[#86A08F]' : 'text-[#64748B]';
+
   return (
     <div className="rounded-lg border border-white/[0.06] bg-white/[0.02]">
       <button
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-2.5 py-2 text-left"
+        onClick={() => collapsible && setOpen((v) => !v)}
+        disabled={!collapsible}
+        className={`flex w-full items-center gap-2 px-2.5 py-2 text-left ${collapsible ? '' : 'cursor-default'}`}
       >
-        <ChevronRight className={`h-3.5 w-3.5 shrink-0 text-[#64748B] transition-transform ${open ? 'rotate-90' : ''}`} />
-        <span className="text-[12px] font-medium text-[#CBD5E1]">{t('wbActAnalyze')}</span>
+        {collapsible ? (
+          <ChevronRight className={`h-3.5 w-3.5 shrink-0 text-[#64748B] transition-transform ${open ? 'rotate-90' : ''}`} />
+        ) : (
+          <Icon className={`h-3.5 w-3.5 shrink-0 ${iconColor}`} />
+        )}
+        <span className="text-[12px] font-medium text-[#CBD5E1]">{t(item.titleKey)}</span>
       </button>
-      {open && details.length > 0 && (
+      {collapsible && open && (
         <div className="space-y-1 border-t border-white/[0.05] px-3 py-2.5 pl-[30px]">
-          {details.map((d) => (
-            <div key={d.label} className="flex gap-2 text-[11.5px] leading-snug">
-              <span className="shrink-0 text-[#64748B]">{d.label}:</span>
+          {details.map((d, i) => (
+            <div key={i} className="flex gap-2 text-[11.5px] leading-snug">
+              {d.label && <span className="shrink-0 text-[#64748B]">{d.label}:</span>}
               <span className="text-[#CBD5E1]">{d.value}</span>
             </div>
           ))}
@@ -104,17 +123,25 @@ export default function WebBuildExecutionLog({
   const { t, lang } = useLanguageStore();
   const feed = useMemo(() => deriveExecutionFeed(step, brief), [step, brief]);
 
-  // Analyze details from the real brief + section names (localized labels).
-  const analyzeDetails = useMemo(() => {
+  // Brief details for the "Analyze request" block (localized labels).
+  const briefDetails = useMemo<DetailRow[]>(() => {
     const langLabel = LANGUAGES.find((l) => l.code === lang)?.label || lang;
-    const rows: { label: string; value: string }[] = [];
+    const rows: DetailRow[] = [];
     if (brief.goal) rows.push({ label: t('wbAnalyzeGoal'), value: brief.goal });
     if (brief.audience) rows.push({ label: t('wbAnalyzeAudience'), value: brief.audience });
     rows.push({ label: t('wbAnalyzeLanguage'), value: langLabel });
     if (brief.style) rows.push({ label: t('wbAnalyzeStyle'), value: brief.style });
-    if (step.summary.sectionNames.length) rows.push({ label: t('wbAnalyzeSections'), value: step.summary.sectionNames.join(', ') });
     return rows;
-  }, [brief, step.summary.sectionNames, lang, t]);
+  }, [brief, lang, t]);
+
+  // Section names for the "Plan website structure" block (one per row).
+  const sectionDetails = useMemo<DetailRow[]>(
+    () => step.summary.sectionNames.map((n) => ({ value: n })),
+    [step.summary.sectionNames],
+  );
+
+  const detailsFor = (item: Extract<FeedItem, { kind: 'action' }>): DetailRow[] =>
+    item.details === 'brief' ? briefDetails : item.details === 'sections' ? sectionDetails : [];
 
   const total = feed.length;
   const [revealed, setRevealed] = useState(animate ? 0 : total);
@@ -144,8 +171,8 @@ export default function WebBuildExecutionLog({
         >
           {item.kind === 'text' ? (
             <p className="text-[13px] leading-relaxed text-[#CBD5E1]">{t(item.key, item.params)}</p>
-          ) : item.kind === 'analyze' ? (
-            <AnalyzeRow details={analyzeDetails} />
+          ) : item.kind === 'action' ? (
+            <ActionRow item={item} details={detailsFor(item)} />
           ) : (
             <FileRow item={item} onOpenFile={onOpenFile} />
           )}
