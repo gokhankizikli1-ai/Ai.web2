@@ -35,10 +35,18 @@ export function readPreview(runId: string): WebBuildPreviewData | null {
   }
 }
 
-/** Stash the build data and open the standalone preview in a new tab. */
+/** Stash the build data and open the standalone preview in a new tab.
+ *
+ * The app runs under <HashRouter>, so the SPA route lives AFTER the `#`
+ * (e.g. https://host/#/chat). Opening a bare `/preview/web-build/:id` path
+ * hits the server, bypasses the SPA and renders a blank white page in
+ * production. We therefore build a proper hash URL against the current
+ * origin + path so the route resolves inside the app. */
 export function openPreviewInNewTab(data: WebBuildPreviewData): void {
   stashPreview(data);
   try {
-    window.open(`/preview/web-build/${encodeURIComponent(data.runId)}`, '_blank', 'noopener');
+    const base = window.location.href.split('#')[0];
+    const url = `${base}#/preview/web-build/${encodeURIComponent(data.runId)}`;
+    window.open(url, '_blank', 'noopener');
   } catch { /* ignore */ }
 }
