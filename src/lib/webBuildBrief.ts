@@ -21,6 +21,8 @@ export type IndustryKey =
 
 export interface InferredBrief {
   industry: IndustryKey;
+  /** The layout blueprint — different archetypes get different section shapes. */
+  layoutArchetype: string;
   businessType: string;
   targetAudience: string;
   conversionGoal: string;
@@ -32,6 +34,8 @@ export interface InferredBrief {
   recommendedMotion: string;
   trustSignals: string;
   previewVisualIdea: string;
+  /** A natural, research-flavored strategy line for the feed. */
+  strategyNote: string;
   heroHeadline: string;
   heroSub: string;
   /** Industry offerings used to fill card sections with real-feeling copy. */
@@ -40,6 +44,34 @@ export interface InferredBrief {
 
 type Lang = 'en' | 'tr' | string;
 const L = (lang: Lang, en: string, tr: string) => (lang === 'tr' ? tr : en);
+
+/** Layout blueprint per industry — drives which distinct section shapes render. */
+const ARCHETYPE: Record<IndustryKey, string> = {
+  landscaping: 'portfolio-consultation', ai_saas: 'product-demo-saas',
+  furniture: 'editorial-catalog', automotive: 'inventory-trust',
+  fitness: 'appointment-coach', restaurant: 'menu-reservation',
+  portfolio: 'case-study', agency: 'service-casestudy',
+  ecommerce: 'product-catalog', local_service: 'service-booking', generic: 'standard',
+};
+
+/** A short, natural "here's what strong sites in this niche do" line. */
+function strategyNoteFor(k: IndustryKey, lang: Lang): string {
+  const notes: Record<IndustryKey, [string, string]> = {
+    landscaping: ['Strong landscaping sites lead with a project gallery, a before/after story, and a clear consultation request — I\'m structuring it that way.', 'Peyzaj sitelerindeki güçlü örneklerde portfolyo galerisi, önce/sonra anlatımı ve net bir keşif talebi öne çıkıyor. Yapıyı buna göre kuruyorum.'],
+    ai_saas: ['Great AI/SaaS pages open with a live product/chat demo, then features, metrics and integrations toward a demo CTA — building it that way.', 'İyi AI/SaaS sayfaları canlı bir ürün/sohbet demosuyla açılıp özellikler, metrikler ve entegrasyonlarla demo CTA\'sına gidiyor. Yapıyı buna göre kuruyorum.'],
+    furniture: ['Premium furniture sites are editorial: collections, materials and a gallery leading to a showroom visit — structuring it that way.', 'Premium mobilya siteleri editoryal olur: koleksiyonlar, malzemeler ve galeri showroom ziyaretine götürür. Yapıyı buna göre kuruyorum.'],
+    automotive: ['Dealership sites showcase featured inventory with trust and financing, driving to a test drive — building it that way.', 'Oto galeri siteleri öne çıkan araçları güven ve finansmanla sunup test sürüşüne yönlendirir. Yapıyı buna göre kuruyorum.'],
+    fitness: ['Coaching sites focus on programs, process and results with an appointment CTA — structuring it that way.', 'Koçluk siteleri programlar, süreç ve sonuçlara odaklanıp randevu CTA\'sıyla ilerler. Yapıyı buna göre kuruyorum.'],
+    restaurant: ['Restaurant sites highlight the menu and ambiance with a reservation CTA — building it that way.', 'Restoran siteleri menü ve ambiyansı öne çıkarıp rezervasyon CTA\'sı kullanır. Yapıyı buna göre kuruyorum.'],
+    portfolio: ['Portfolios lead with selected work as case studies and a clear project CTA — structuring it that way.', 'Portfolyolar seçili işleri vaka çalışması olarak öne çıkarıp net bir proje CTA\'sı kullanır. Yapıyı buna göre kuruyorum.'],
+    agency: ['Agency sites pair a service stack with case studies and a booking CTA — building it that way.', 'Ajans siteleri hizmet listesini vaka çalışmaları ve görüşme CTA\'sıyla birleştirir. Yapıyı buna göre kuruyorum.'],
+    ecommerce: ['Product sites spotlight collections and benefits with a shop CTA — structuring it that way.', 'Ürün siteleri koleksiyon ve faydaları öne çıkarıp satın alma CTA\'sı kullanır. Yapıyı buna göre kuruyorum.'],
+    local_service: ['Local service sites build trust with services, process and reviews toward a booking — structuring it that way.', 'Yerel hizmet siteleri hizmetler, süreç ve yorumlarla güven kurup randevuya yönlendirir. Yapıyı buna göre kuruyorum.'],
+    generic: ['I\'m shaping a focused, conversion-first structure for this business.', 'Bu işletme için dönüşüm odaklı, net bir yapı kuruyorum.'],
+  };
+  const n = notes[k];
+  return L(lang, n[0], n[1]);
+}
 
 /** Build a unicode-boundary keyword regex. Plain `\b` fails around Turkish
  *  letters (ı, ç, ş, ğ, ö, ü aren't \w), so use letter-class lookarounds. */
@@ -67,8 +99,10 @@ export function detectIndustry(prompt: string): IndustryKey {
   return 'generic';
 }
 
+type Playbook = Omit<InferredBrief, 'layoutArchetype' | 'strategyNote'>;
+
 /** The industry playbook — sections, CTA, tone, motion, hero copy, offerings. */
-function playbook(industry: IndustryKey, lang: Lang): InferredBrief {
+function playbook(industry: IndustryKey, lang: Lang): Playbook {
   switch (industry) {
     case 'ai_saas':
       return {
@@ -79,7 +113,7 @@ function playbook(industry: IndustryKey, lang: Lang): InferredBrief {
         secondaryCTA: L(lang, 'Try it free', 'Ücretsiz dene'),
         tone: L(lang, 'modern, technical, trustworthy', 'modern, teknik, güven veren'),
         visualStyle: L(lang, 'clean modern SaaS, dark premium', 'temiz modern SaaS, koyu premium'),
-        recommendedSections: ['hero', 'product-demo', 'features', 'integrations', 'metrics', 'pricing', 'faq', 'final-cta', 'footer'],
+        recommendedSections: ['hero', 'product-demo', 'features', 'workflow', 'metrics', 'integrations', 'pricing', 'faq', 'final-cta', 'footer'],
         recommendedMotion: L(lang, 'animated product/chat demo card, moving gradient grid', 'animasyonlu ürün/sohbet demo kartı, hareketli gradient grid'),
         trustSignals: L(lang, 'logos, uptime, SOC2, customer metrics', 'logolar, uptime, SOC2, müşteri metrikleri'),
         previewVisualIdea: L(lang, 'floating chat/dashboard preview with metrics', 'metrikli, havada duran sohbet/dashboard önizlemesi'),
@@ -98,7 +132,7 @@ function playbook(industry: IndustryKey, lang: Lang): InferredBrief {
         secondaryCTA: L(lang, 'See programs', 'Programları gör'),
         tone: L(lang, 'motivating, premium, personal', 'motive edici, premium, kişisel'),
         visualStyle: L(lang, 'premium, energetic, mobile-first', 'premium, enerjik, mobil öncelikli'),
-        recommendedSections: ['hero', 'services', 'process', 'testimonials', 'faq', 'final-cta', 'footer'],
+        recommendedSections: ['hero', 'programs', 'process', 'results', 'testimonials', 'final-cta', 'footer'],
         recommendedMotion: L(lang, 'soft animated gradient hero, reveal cards', 'yumuşak animasyonlu gradient hero, beliren kartlar'),
         trustSignals: L(lang, 'client transformations, certifications', 'danışan dönüşümleri, sertifikalar'),
         previewVisualIdea: L(lang, 'transformation/process cards + appointment CTA', 'dönüşüm/süreç kartları + randevu CTA'),
@@ -117,7 +151,7 @@ function playbook(industry: IndustryKey, lang: Lang): InferredBrief {
         secondaryCTA: L(lang, 'View projects', 'Projeleri incele'),
         tone: L(lang, 'natural, premium, architectural', 'doğal, premium, mimari'),
         visualStyle: L(lang, 'organic, editorial, image-first', 'organik, editoryal, görsel öncelikli'),
-        recommendedSections: ['hero', 'services', 'gallery', 'process', 'testimonials', 'final-cta', 'footer'],
+        recommendedSections: ['hero', 'gallery', 'services', 'before-after', 'process', 'testimonials', 'final-cta', 'footer'],
         recommendedMotion: L(lang, 'subtle organic gradient, gallery reveal', 'ince organik gradient, galeri beliriş animasyonu'),
         trustSignals: L(lang, 'completed projects, before/after', 'tamamlanan projeler, öncesi/sonrası'),
         previewVisualIdea: L(lang, 'project gallery cards of outdoor transformations', 'dış mekan dönüşümlerinden proje galeri kartları'),
@@ -282,10 +316,18 @@ function playbook(industry: IndustryKey, lang: Lang): InferredBrief {
   }
 }
 
-/** Infer the full website brief from a (possibly one-line) prompt. */
+/** Infer the full website strategy from a (possibly one-line) prompt. */
 export function inferWebsiteBrief(prompt: string, lang: Lang = 'en'): InferredBrief {
-  return playbook(detectIndustry(prompt || ''), lang);
+  const industry = detectIndustry(prompt || '');
+  return {
+    ...playbook(industry, lang),
+    layoutArchetype: ARCHETYPE[industry],
+    strategyNote: strategyNoteFor(industry, lang),
+  };
 }
+
+/** Alias — the strategy IS the brief (industry, sections, layout, motion, copy). */
+export const inferWebsiteStrategy = inferWebsiteBrief;
 
 const humanize = (id: string, lang: Lang): string => {
   const map: Record<string, { en: string; tr: string }> = {
@@ -298,8 +340,12 @@ const humanize = (id: string, lang: Lang): string => {
     inventory: { en: 'Inventory', tr: 'Araçlar' },
     financing: { en: 'Financing', tr: 'Finansman' },
     'product-demo': { en: 'Product demo', tr: 'Ürün demosu' },
+    workflow: { en: 'How it works', tr: 'Nasıl çalışır' },
     integrations: { en: 'Integrations', tr: 'Entegrasyonlar' },
-    metrics: { en: 'Metrics', tr: 'Metrikler' },
+    metrics: { en: 'By the numbers', tr: 'Rakamlarla' },
+    results: { en: 'Results', tr: 'Sonuçlar' },
+    programs: { en: 'Programs', tr: 'Programlar' },
+    'before-after': { en: 'Before & after', tr: 'Önce & sonra' },
     process: { en: 'How it works', tr: 'Nasıl çalışır' },
     menu: { en: 'Menu', tr: 'Menü' },
     work: { en: 'Selected work', tr: 'Seçili işler' },
@@ -354,15 +400,22 @@ export interface QualityReport {
   hasClearCTA: boolean;
   hasIndustryRelevantSections: boolean;
   hasFiles: boolean;
+  hasLocalizedCopy: boolean;
   ok: boolean;
 }
 
 const GENERIC_HEADLINE = /^(your website|hoş geldin|welcome|hayallerinize ulaş|geleceği keşfet|işinizi büyüt|your headline)/i;
+/** Full English marketing phrases that must NOT appear in a Turkish build.
+ *  (Standalone labels like "Testimonials" are our own humanized defaults and are
+ *  localized elsewhere — only flag phrases that signal English-language copy.) */
+const ENGLISH_HEADING = /\b(what our clients|frequently asked questions|get started today|why choose us|about us|contact us|read more|learn more|book now|our services|view all|shop now|sign up free|our story)\b/i;
 
-/** Lightweight quality check over the resolved brief + sections + files. */
+/** Lightweight quality gate. When `lang` is 'tr', English headings/CTAs fail
+ *  the localization check so a mixed-language reply is repaired to Turkish. */
 export function checkQuality(
   sectionItems: WebBuildSectionItem[],
   fileCount: number,
+  lang: Lang = 'en',
 ): QualityReport {
   const hero = sectionItems.find((s) => /hero/.test(`${s.id} ${s.name}`.toLowerCase()));
   const headline = hero?.headline || '';
@@ -370,8 +423,11 @@ export function checkQuality(
   const hasClearCTA = sectionItems.some((s) => !!s.cta && s.cta.trim().length >= 3);
   const hasIndustryRelevantSections = sectionItems.length >= 4;
   const hasFiles = fileCount >= 3;
+  // Turkish build must not carry English headings/CTAs.
+  const hasLocalizedCopy = lang !== 'tr' || !sectionItems.some((s) =>
+    ENGLISH_HEADING.test(`${s.name} ${s.headline || ''} ${s.cta || ''}`));
   return {
-    hasSpecificHeadline, hasClearCTA, hasIndustryRelevantSections, hasFiles,
-    ok: hasSpecificHeadline && hasClearCTA && hasIndustryRelevantSections && hasFiles,
+    hasSpecificHeadline, hasClearCTA, hasIndustryRelevantSections, hasFiles, hasLocalizedCopy,
+    ok: hasSpecificHeadline && hasClearCTA && hasIndustryRelevantSections && hasFiles && hasLocalizedCopy,
   };
 }

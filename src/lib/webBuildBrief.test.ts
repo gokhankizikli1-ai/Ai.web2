@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { inferWebsiteBrief, detectIndustry, fallbackSectionItems, checkQuality } from '@/lib/webBuildBrief';
+import { sectionKind } from '@/lib/webBuildFiles';
+
+const kindsFor = (prompt: string) =>
+  new Set(fallbackSectionItems(inferWebsiteBrief(prompt, 'tr'), 'tr').map((s) => sectionKind(s.id, s.name)));
 
 describe('web build brief intelligence', () => {
   it('detects industry from low-detail prompts (TR + EN)', () => {
@@ -45,6 +49,43 @@ describe('web build brief intelligence', () => {
     const weak = checkQuality([{ id: 'hero', name: 'Hero', headline: 'Your website' }], 1);
     expect(weak.ok).toBe(false);
     const strong = fallbackSectionItems(inferWebsiteBrief('Mobilyacı için site yap', 'tr'), 'tr');
-    expect(checkQuality(strong, 8).ok).toBe(true);
+    expect(checkQuality(strong, 8, 'tr').ok).toBe(true);
+  });
+
+  it('quality gate rejects English headings in a Turkish build', () => {
+    const mixed = [
+      { id: 'hero', name: 'Hero', headline: 'Premium fitness koçluğu', cta: 'Randevu al' },
+      { id: 'testimonials', name: 'What our clients say' },
+      { id: 'services', name: 'Hizmetler' },
+      { id: 'cta', name: 'Randevu', cta: 'Randevu al' },
+    ];
+    expect(checkQuality(mixed, 6, 'tr').hasLocalizedCopy).toBe(false);
+    expect(checkQuality(mixed, 6, 'en').hasLocalizedCopy).toBe(true);
+  });
+
+  it('different industries produce genuinely different section layouts', () => {
+    const land = kindsFor('Peyzaj mimarı için site yap');
+    const saas = kindsFor('AI müşteri destek chatbotu için site yap');
+    const auto = kindsFor('Araba satıcısı için site kur');
+
+    // Landscaping → gallery + before/after; NOT product-demo or inventory.
+    expect(land.has('gallery')).toBe(true);
+    expect(land.has('beforeAfter')).toBe(true);
+    expect(land.has('productDemo')).toBe(false);
+    expect(land.has('inventory')).toBe(false);
+
+    // AI/SaaS → product demo + metrics + integrations; NOT gallery.
+    expect(saas.has('productDemo')).toBe(true);
+    expect(saas.has('metrics')).toBe(true);
+    expect(saas.has('integrations')).toBe(true);
+
+    // Dealership → inventory + financing; NOT product demo.
+    expect(auto.has('inventory')).toBe(true);
+    expect(auto.has('financing')).toBe(true);
+    expect(auto.has('productDemo')).toBe(false);
+
+    // The three layouts are not the same set of section kinds.
+    const key = (s: Set<string>) => [...s].sort().join(',');
+    expect(new Set([key(land), key(saas), key(auto)]).size).toBe(3);
   });
 });
