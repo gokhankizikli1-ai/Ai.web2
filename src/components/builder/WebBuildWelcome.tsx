@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
-import { Sparkles } from 'lucide-react';
 import { useLanguageStore } from '@/stores/languageStore';
+import WebBuildMascot, { type MascotState } from '@/components/builder/WebBuildMascot';
 
 /**
  * Web Build start screen — a calm, premium, centered welcome (in the spirit of
@@ -9,7 +9,6 @@ import { useLanguageStore } from '@/stores/languageStore';
  * friendly headline + subtitle, and a few high-quality example prompts that
  * kick off a real (persistent) Web Build session.
  */
-const ACCENT = '#60A5FA';
 const L = (lang: string, en: string, tr: string) => (lang === 'tr' ? tr : en);
 
 const EXAMPLES: { en: string; tr: string }[] = [
@@ -20,41 +19,17 @@ const EXAMPLES: { en: string; tr: string }[] = [
   { en: 'A website for a fitness coach', tr: 'Fitness koçluğu için site yap' },
 ];
 
-/** The Korvix mark — a gradient tile with a soft breathing pulse + a slow blink. */
-function KorvixMark() {
-  return (
-    <div className="relative">
-      <motion.div
-        aria-hidden
-        className="absolute inset-0 -z-10 rounded-3xl"
-        style={{ background: `radial-gradient(circle, ${ACCENT}55, transparent 65%)`, filter: 'blur(26px)' }}
-        animate={{ opacity: [0.4, 0.75, 0.4], scale: [0.92, 1.08, 0.92] }}
-        transition={{ duration: 4.5, repeat: Infinity, ease: 'easeInOut' }}
-      />
-      <motion.div
-        className="flex h-16 w-16 items-center justify-center rounded-3xl border border-white/10 bg-gradient-to-br from-indigo-500/30 to-cyan-400/15 shadow-lg shadow-black/40"
-        animate={{ y: [0, -4, 0], scale: [1, 1.03, 1] }}
-        transition={{ duration: 4.5, repeat: Infinity, ease: 'easeInOut' }}
-      >
-        <Sparkles className="h-7 w-7" style={{ color: ACCENT }} />
-        {/* subtle blink: a thin line that briefly closes like an eye */}
-        <motion.span
-          aria-hidden
-          className="absolute h-[2px] w-6 rounded-full bg-white/70"
-          animate={{ scaleY: [0, 0, 1, 0], opacity: [0, 0, 0.8, 0] }}
-          transition={{ duration: 5.5, repeat: Infinity, times: [0, 0.82, 0.9, 1], ease: 'easeInOut' }}
-        />
-      </motion.div>
-    </div>
-  );
-}
-
-export default function WebBuildWelcome({ onExample }: { onExample: (idea: string) => void }) {
+export default function WebBuildWelcome({
+  onExample, mascotState = 'idle',
+}: {
+  onExample: (idea: string) => void;
+  mascotState?: MascotState;
+}) {
   const { lang } = useLanguageStore();
   return (
     <div className="flex flex-col items-center justify-center px-4 py-16 text-center sm:py-24">
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
-        <KorvixMark />
+        <WebBuildMascot state={mascotState} />
       </motion.div>
       <motion.h2
         initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.08 }}
