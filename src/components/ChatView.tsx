@@ -12,6 +12,7 @@ import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { looksLikeResearchAsk } from '@/lib/chatTitles';
 import { type KorvixMode, detectBuilderIntent } from '@/lib/korvixMode';
+import type { BuilderMode } from '@/lib/builderMode';
 
 interface ChatViewProps {
   messages: Message[];
@@ -35,12 +36,15 @@ interface ChatViewProps {
   pinnedMessages: Message[];
   onHoverAction?: (action: string, prompt: string) => void;
   workspace?: WorkspaceTab;
+  /** Start an embedded Web Build in the current Chat surface (Website/App
+   *  from the Chat home) instead of navigating to /tools/website-builder. */
+  onStartWebBuild?: (prompt: string, mode: BuilderMode) => void;
 }
 
 export default function ChatView({
   messages, isLoading, error, inputText, toolActivity,
   onSend, onRetry, onSetInput, onTogglePin, pinnedMessages,
-  onHoverAction, workspace,
+  onHoverAction, workspace, onStartWebBuild,
 }: ChatViewProps) {
   const navigate = useNavigate();
   const [activeTools, setActiveTools] = useState<ComposerTool[]>([]);
@@ -134,6 +138,9 @@ export default function ChatView({
     if (raw && attachments.length === 0) {
       const target = builderMode ?? detectBuilderIntent(raw);
       if (target === 'website' || target === 'app') {
+        // Embed the Web Build inside the current chat instead of navigating
+        // away. Falls back to the standalone page if no embed handler exists.
+        if (onStartWebBuild) { onStartWebBuild(raw, target); return true; }
         navigate(`/tools/website-builder?prompt=${encodeURIComponent(raw)}&mode=${target}`);
         return true;
       }
@@ -157,7 +164,7 @@ export default function ChatView({
       setActiveTools([]);
     }
     return ok;
-  }, [onSend, onSetInput, activeTools, builderMode, navigate]);
+  }, [onSend, onSetInput, activeTools, builderMode, navigate, onStartWebBuild]);
 
   const insertInput = useCallback((text: string) => {
     onSetInput(text);

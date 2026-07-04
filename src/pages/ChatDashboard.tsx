@@ -11,6 +11,8 @@ import type { WorkspaceTab } from '@/types';
 import Sidebar from '@/components/Sidebar';
 import RightSidebar from '@/components/RightSidebar';
 import ChatView from '@/components/ChatView';
+import ChatWebBuild from '@/components/ChatWebBuild';
+import type { BuilderMode } from '@/lib/builderMode';
 import TradingPanel from '@/components/TradingPanel';
 import BusinessPanel from '@/components/BusinessPanel';
 import AIActivityFeed from '@/components/AIActivityFeed';
@@ -155,6 +157,12 @@ export default function ChatDashboard() {
   const [exportOpen, setExportOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
+  // Embedded Web Build surface — set when a Website/App build is started from
+  // the Chat home, or when a web_build sidebar session is reopened. When set,
+  // the content area renders <ChatWebBuild> in place of the normal chat.
+  const [embeddedBuild, setEmbeddedBuild] = useState<
+    { prompt?: string; mode?: BuilderMode | null; runId?: string; key: string } | null
+  >(null);
 
   // Phase 7 — real job state feeds the AI Activity badge. When /v2/jobs
   // is reachable for the authed user we use those rows; otherwise (guest
@@ -327,23 +335,31 @@ export default function ChatDashboard() {
     return () => window.removeEventListener('korvix-set-session-title', handler);
   }, [setPendingSessionTitle]);
 
-  // Global New Chat
+  // Global New Chat — always drops any embedded Web Build back to normal chat.
   const handleNewChat = useCallback(() => {
+    setEmbeddedBuild(null);
     createNewChat();
     setActiveTab(currentTab);
     addToast(t('saved') === 'Kaydedildi' ? 'Yeni sohbet baslatildi' : 'New conversation started', 'success');
   }, [createNewChat, addToast, t, currentTab]);
 
+  /** Start an embedded Web Build in the current Chat surface (Website/App from
+   *  the Chat home) — no navigation to /tools/website-builder. */
+  const handleStartWebBuild = useCallback((prompt: string, mode: BuilderMode) => {
+    setEmbeddedBuild({ prompt, mode, key: `wb-new-${Date.now().toString(36)}` });
+  }, []);
+
   const handleSelectSession = useCallback((id: string) => {
-    // Web Build sessions belong to the builder — route there and reopen the
-    // real Web Build session instead of loading it as a normal chat.
+    // Web Build sessions reopen the EMBEDDED build surface inside Chat (no
+    // longer route away to the standalone /tools/website-builder page).
     const picked = filteredSessions.find((s) => s.id === id);
     if (picked?.mode === 'web_build') {
-      navigate(`/tools/website-builder?session=${encodeURIComponent(picked.webBuildRunId || id)}`);
+      setEmbeddedBuild({ runId: picked.webBuildRunId || id, key: `wb-open-${id}` });
       return;
     }
+    setEmbeddedBuild(null);
     selectSession(id);
-  }, [selectSession, filteredSessions, navigate]);
+  }, [selectSession, filteredSessions]);
 
   // No-op kept for API stability with ChatView's onHoverAction prop.
   // Production fix 2026-06-28: previous implementation called
@@ -412,6 +428,7 @@ export default function ChatDashboard() {
           pinnedMessages={pinnedMessages}
           onHoverAction={handleHoverAction}
           workspace={activeTab}
+          onStartWebBuild={handleStartWebBuild}
         />
       );
     }
@@ -445,6 +462,7 @@ export default function ChatDashboard() {
           pinnedMessages={pinnedMessages}
           onHoverAction={handleHoverAction}
           workspace={activeTab}
+          onStartWebBuild={handleStartWebBuild}
         />
       );
     }
@@ -559,7 +577,14 @@ export default function ChatDashboard() {
         {/* Main content — NO AnimatePresence mode="wait" to prevent composer freeze */}
         <div className="relative flex-1 overflow-hidden flex z-0">
           <div className="flex-1 overflow-hidden">
-            {renderWorkspace()}
+            {embeddedBuild ? (
+              <ChatWebBuild
+                key={embeddedBuild.key}
+                initialPrompt={embeddedBuild.prompt}
+                initialMode={embeddedBuild.mode ?? null}
+                restoreRunId={embeddedBuild.runId}
+              />
+            ) : renderWorkspace()}
           </div>
 
           <RightSidebar
