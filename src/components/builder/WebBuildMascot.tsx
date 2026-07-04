@@ -86,7 +86,7 @@ const CSS = `
   will-change: transform;
 }
 .kxm-eye {
-  width: 10px; height: 16px;
+  width: 9px; height: 14px;
   border-radius: 6px;
   background: linear-gradient(180deg, #eaf2ff, #60a5fa);
   box-shadow: 0 0 10px rgba(96,165,250,0.85), inset 0 -1px 2px rgba(0,0,0,0.25);
@@ -97,7 +97,7 @@ const CSS = `
 
 /* Awake — input focused: brighter aura, taller eyes, steady gaze */
 .kxm-wrap[data-state="awake"] .kxm-glow { animation-duration: 3s; opacity: 1; }
-.kxm-wrap[data-state="awake"] .kxm-eye { height: 18px; box-shadow: 0 0 14px rgba(96,165,250,1), inset 0 -1px 2px rgba(0,0,0,0.25); }
+.kxm-wrap[data-state="awake"] .kxm-eye { height: 16px; box-shadow: 0 0 14px rgba(96,165,250,1), inset 0 -1px 2px rgba(0,0,0,0.25); }
 .kxm-wrap[data-state="awake"] .kxm-face { animation: none; }
 
 /* Typing — subtle pulse */

@@ -8,7 +8,7 @@ import {
   PanelLeftClose, PanelLeftOpen,
   Crown, Search, X,
   LogIn, Sparkles, FolderOpen,
-  Bot, Puzzle, ChevronDown, Code2, Briefcase,
+  Bot, Plug, SquareStack, ChevronDown, Code2, Briefcase,
 } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
 import type { ChatSession, ChatFolder } from '@/types';
@@ -228,7 +228,7 @@ export default function Sidebar({
           // lg+: flex sibling with hard-locked 320px width
           'lg:relative lg:inset-y-auto lg:left-auto lg:translate-x-0 lg:flex-none',
           isOpen
-            ? 'lg:w-[320px] lg:min-w-[320px] lg:max-w-[320px]'
+            ? 'lg:w-[288px] lg:min-w-[288px] lg:max-w-[288px]'
             : 'lg:w-0    lg:min-w-0    lg:max-w-0',
         ].join(' ')}
         style={{
@@ -329,14 +329,14 @@ export default function Sidebar({
                 type="button"
                 className="w-full flex items-center gap-2.5 px-3 h-8 rounded-lg text-[12px] text-white/55 hover:text-white/90 hover:bg-white/[0.04] transition-colors"
               >
-                <Puzzle className="h-3.5 w-3.5 shrink-0 text-white/40" />
+                <Plug className="h-3.5 w-3.5 shrink-0 text-white/40" />
                 <span className="font-medium">Plugins</span>
               </button>
               <button
                 type="button"
                 className="w-full flex items-center gap-2.5 px-3 h-8 rounded-lg text-[12px] text-white/55 hover:text-white/90 hover:bg-white/[0.04] transition-colors"
               >
-                <Sparkles className="h-3.5 w-3.5 shrink-0 text-white/40" />
+                <SquareStack className="h-3.5 w-3.5 shrink-0 text-white/40" />
                 <span className="font-medium">Skills</span>
               </button>
               <button

@@ -44,11 +44,11 @@ export interface ComposerTool {
 // a manual "Search Web" button is unnecessary noise.
 export const COMPOSER_TOOLS: ComposerTool[] = [
   { id: 'web',      label: 'Search Web',       description: 'Real-time web search',     icon: Search,     chip: 'Web Search',       placeholder: 'Ask KorvixAI to search the web for...',        category: 'Tools', hidden: true },
-  { id: 'research', label: 'Deep Research',    description: 'Multi-source research',    icon: Brain,      chip: 'Deep Research',    placeholder: 'Ask KorvixAI to research deeply about...',     category: 'Tools', labelKey: 'deepResearch', descKey: 'toolDeepResearchDesc' },
+  { id: 'research', label: 'Deep Research',    description: 'Multi-source research',    icon: Brain,      chip: 'Deep Research',    placeholder: 'Ask KorvixAI to research deeply about...',     category: 'Tools', hidden: true, labelKey: 'deepResearch', descKey: 'toolDeepResearchDesc' },
   { id: 'chart',    label: 'Create Chart',     description: 'Data visualizations',      icon: BarChart3,  chip: 'Chart',            placeholder: 'Describe the data you want to visualize...',   category: 'Tools', hidden: true },
   { id: 'market',   label: 'Analyze Market',   description: 'Financial analysis',       icon: TrendingUp, chip: 'Market Analysis',  placeholder: 'Ask KorvixAI to analyze the market for...',    category: 'Tools', hidden: true },
   { id: 'product',  label: 'Product Research', description: 'E-commerce intelligence',  icon: ShoppingBag,chip: 'Product Research', placeholder: 'Ask KorvixAI to research products...',         category: 'Tools', hidden: true },
-  { id: 'code',     label: 'Code Mode',        description: 'Coding assistant',         icon: Code,       chip: 'Code Mode',        placeholder: 'Write, debug, or refactor code...',            category: 'Tools', labelKey: 'toolCodeMode', descKey: 'toolCodeModeDesc' },
+  { id: 'code',     label: 'Code Mode',        description: 'Coding assistant',         icon: Code,       chip: 'Code Mode',        placeholder: 'Write, debug, or refactor code...',            category: 'Tools', hidden: true, labelKey: 'toolCodeMode', descKey: 'toolCodeModeDesc' },
 ];
 
 /** The tools actually shown in the public composer menu. */
@@ -182,8 +182,10 @@ export default function ComposerTools({
                 </div>
               )}
 
-              {/* Tools — only the publicly-visible tools (Deep Research,
-                  Code Mode). Web/live research runs automatically. */}
+              {/* Tools — hidden from the visible menu now (Deep Research /
+                  Code Mode still exist in the registry for chip lookups, but
+                  aren't surfaced here). Rendered only if any stay visible. */}
+              {VISIBLE_COMPOSER_TOOLS.length > 0 && (
               <div>
                 <div className="text-[9px] font-semibold text-[#94A3B8] uppercase tracking-wider px-2 mb-1">
                   {t('tools')}
@@ -221,6 +223,7 @@ export default function ComposerTools({
                   ))}
                 </div>
               </div>
+              )}
 
               {/* Extensions — Plugins / Skills / Web search, each with a
                   nested dark submenu panel. UI-only placeholders for now. */}
