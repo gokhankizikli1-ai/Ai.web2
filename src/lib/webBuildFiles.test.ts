@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { parseBuildSections } from '@/lib/gameBuilderApi';
 import { resolveBuildFiles, synthesizeFiles } from '@/lib/webBuildFiles';
 import { resolveFiles, deriveBuildActivity, buildWebBuildPayload } from '@/lib/webBuildPayload';
-import { stepToEvents } from '@/lib/webBuildRun';
+import { stepToEvents, eventsToRows, type RunRow } from '@/lib/webBuildRun';
 import { extractBrief } from '@/lib/webBuildApi';
 import type { WebBuildResult } from '@/lib/webBuildApi';
 
@@ -95,37 +95,38 @@ describe('web build run events', () => {
   const result = makeResult(REPLY);
   const brief = extractBrief(result.sections);
 
-  it('a fresh build emits assistant messages, Analyze + Plan actions, file_created per file, preview_ready', () => {
+  it('a fresh build is a coding run: Thinking + create_file per file, no Analyze/Plan rows', () => {
     const payload = buildWebBuildPayload('build a fitness coach site', result);
     const events = stepToEvents(payload.steps[0], brief);
-    expect(events[0]).toMatchObject({ type: 'assistant_message' });
-    expect(events.some((e) => e.type === 'action_complete' && e.group === 'analyze' && e.detailsSource === 'brief')).toBe(true);
-    expect(events.some((e) => e.type === 'action_complete' && e.group === 'plan')).toBe(true);
+    const rows = eventsToRows(events);
+    expect(rows[0].kind).toBe('message');
+    // Exactly one Thinking block, and it is NOT a prominent planning/analyze row.
+    expect(rows.filter((r) => r.kind === 'tool' && r.toolType === 'think').length).toBe(1);
+    expect(rows.some((r) => r.kind === 'tool' && (r.titleKey === 'wbActAnalyze' || r.titleKey === 'wbActPlanStructure'))).toBe(false);
+    // The main rows are file create blocks — one per real file, never invented.
+    const fileRows = rows.filter((r) => r.kind === 'tool' && r.toolType === 'create_file') as Extract<RunRow, { kind: 'tool' }>[];
+    const realPaths = new Set(payload.files.map((f) => f.path));
+    expect(fileRows.length).toBe(payload.files.length);
+    expect(fileRows.every((r) => r.filePath && realPaths.has(r.filePath) && r.clickable)).toBe(true);
+    // preview + 3 artifacts present in the event stream.
     expect(events.some((e) => e.type === 'preview_ready')).toBe(true);
     expect(events.filter((e) => e.type === 'artifact_ready').length).toBe(3);
-    // Only real generated files are announced — never invented.
-    const created = events.filter((e) => e.type === 'file_created');
-    const realPaths = new Set(payload.files.map((f) => f.path));
-    expect(created.length).toBe(payload.files.length);
-    expect(created.every((e) => e.filePath && realPaths.has(e.filePath))).toBe(true);
-    // No modify events on a fresh build.
-    expect(events.some((e) => e.type === 'file_modified')).toBe(false);
   });
 
-  it('a revision emits a Read action + file_modified for the changed file only, no Analyze/Plan', () => {
+  it('a revision emits a Read file + Edit file block for the changed file only', () => {
     const first = buildWebBuildPayload('build it', result);
     const revisedReply = REPLY.replace('Formda kal, randevunu al', 'Premium koçlukla hedefine ulaş');
     const second = buildWebBuildPayload('change the hero headline', makeResult(revisedReply), first);
     const step = second.steps[second.steps.length - 1];
-    const events = stepToEvents(step, brief);
-    const heroRead = events.find((e) => e.type === 'action_start' && e.group === 'read-components/Hero.tsx');
-    const heroMod = events.find((e) => e.type === 'file_modified' && /Hero\.tsx/.test(e.filePath || ''));
+    const rows = eventsToRows(stepToEvents(step, brief));
+    const tools = rows.filter((r) => r.kind === 'tool') as Extract<RunRow, { kind: 'tool' }>[];
+    const heroRead = tools.find((r) => r.toolType === 'read_file' && /Hero\.tsx/.test(r.filePath || ''));
+    const heroEdit = tools.find((r) => r.toolType === 'edit_file' && /Hero\.tsx/.test(r.filePath || ''));
     expect(heroRead).toBeTruthy();
-    expect(heroMod).toBeTruthy();
-    expect(events.indexOf(heroRead!)).toBeLessThan(events.indexOf(heroMod!));
-    // Targeted: only Hero is modified, nothing else.
-    expect(events.filter((e) => e.type === 'file_modified').length).toBe(1);
-    expect(events.some((e) => e.group === 'analyze' || e.group === 'plan')).toBe(false);
-    expect(events.some((e) => e.type === 'preview_ready')).toBe(true);
+    expect(heroEdit).toBeTruthy();
+    expect(tools.indexOf(heroRead!)).toBeLessThan(tools.indexOf(heroEdit!));
+    // Targeted: only Hero is edited, nothing else.
+    expect(tools.filter((r) => r.toolType === 'edit_file').length).toBe(1);
+    expect(heroRead!.clickable).toBe(true);
   });
 });
