@@ -63,20 +63,40 @@ export default function WebsiteBuilder() {
   const feedEndRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const lastPromptRef = useRef('');
+  // Latest runFresh, so the mount effect can kick off a build from a ?prompt=
+  // handoff without depending on callback declaration order.
+  const runFreshRef = useRef<((idea: string, mode?: BuilderMode | null) => void) | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
 
   useEffect(() => () => { abortRef.current?.abort(); }, []);
 
-  // Restore a persisted Web Build session on mount — a specific one from
-  // ?session=<id> (e.g. clicked in the sidebar), else the last active session —
-  // so leaving/returning or a refresh never loses the build. Runs once.
+  // Mount restore / handoff — runs once:
+  //   1. ?session=<id>  → reopen that exact Web Build (sidebar / refresh).
+  //   2. ?prompt=…      → a handoff from the Chat builder home: start a fresh
+  //                        build from that prompt, carrying ?mode= as context.
+  //   3. otherwise      → reopen the last active session.
   useEffect(() => {
     const sid = searchParams.get('session');
-    const restored = sid ? getWebBuildSession(sid) : getActiveWebBuildSession();
-    if (restored) {
-      setPayload(restored);
-      setAnimateStepId(undefined); // restored history renders fully, no replay
+    if (sid) {
+      const restored = getWebBuildSession(sid);
+      if (restored) { setPayload(restored); setAnimateStepId(undefined); }
+      return;
     }
+    const promptParam = searchParams.get('prompt');
+    if (promptParam && promptParam.trim()) {
+      const raw = searchParams.get('mode');
+      const m: BuilderMode | null =
+        raw && ['website', 'app', 'game', 'landing', 'ecommerce'].includes(raw)
+          ? (raw as BuilderMode) : null;
+      // App/game handoffs still run through the web pipeline for now, but keep
+      // their mode as context. Strip the params so a refresh doesn't re-run.
+      setSelectedMode(m);
+      setSearchParams({}, { replace: true });
+      runFreshRef.current?.(promptParam, m);
+      return;
+    }
+    const restored = getActiveWebBuildSession();
+    if (restored) { setPayload(restored); setAnimateStepId(undefined); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -137,7 +157,7 @@ export default function WebsiteBuilder() {
   }, [t]);
 
   /* ── Fresh generation ─────────────────────────────────────────────── */
-  const runFresh = useCallback(async (idea: string) => {
+  const runFresh = useCallback(async (idea: string, mode: BuilderMode | null = selectedMode) => {
     const trimmed = idea.trim();
     if (!trimmed) return;
     lastPromptRef.current = trimmed;
@@ -154,7 +174,7 @@ export default function WebsiteBuilder() {
     startLive(trimmed, 'build');
 
     try {
-      const res = await generateWebBuild(trimmed, { signal: controller.signal, mode: selectedMode });
+      const res = await generateWebBuild(trimmed, { signal: controller.signal, mode });
       if (abortRef.current !== controller) return; // superseded
       const next = buildWebBuildPayload(trimmed, res, undefined, lang);
       setPayload(next);
@@ -169,6 +189,7 @@ export default function WebsiteBuilder() {
       if (abortRef.current === controller) setBusy(false);
     }
   }, [startLive, failLive, lang, selectedMode]);
+  runFreshRef.current = runFresh;
 
   /* ── Revision (accumulates steps + diffs) ─────────────────────────── */
   const runRevision = useCallback(async (idea: string) => {

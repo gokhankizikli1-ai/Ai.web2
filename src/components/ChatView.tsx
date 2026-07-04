@@ -1,14 +1,17 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useNavigate } from 'react-router';
 import MessageBubble from '@/components/MessageBubble';
 import TypingIndicator from '@/components/TypingIndicator';
 import EmptyWorkspace from '@/components/EmptyWorkspace';
 import PremiumComposer from '@/components/PremiumComposer';
+import { KorvixModeChips, KorvixModePill } from '@/components/KorvixModeChips';
 import type { ComposerTool } from '@/components/ComposerTools';
 import type { AttachedAsset, Message, ToolActivity, WorkspaceTab } from '@/types';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { looksLikeResearchAsk } from '@/lib/chatTitles';
+import { type KorvixMode, detectBuilderIntent } from '@/lib/korvixMode';
 
 interface ChatViewProps {
   messages: Message[];
@@ -37,9 +40,15 @@ interface ChatViewProps {
 export default function ChatView({
   messages, isLoading, error, inputText, toolActivity,
   onSend, onRetry, onSetInput, onTogglePin, pinnedMessages,
-  onHoverAction,
+  onHoverAction, workspace,
 }: ChatViewProps) {
+  const navigate = useNavigate();
   const [activeTools, setActiveTools] = useState<ComposerTool[]>([]);
+  // Builder-home mode selection (Chat / Website / App / Game). `null` = nothing
+  // picked → intent is auto-detected on send; 'chat' = explicit stay-in-chat.
+  const [builderMode, setBuilderMode] = useState<KorvixMode | null>(null);
+  // The unified builder home only replaces the *normal Chat* empty state.
+  const isChatHome = workspace === 'chat' || workspace === undefined;
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -117,6 +126,23 @@ export default function ChatView({
     msg: string,
     attachments: AttachedAsset[] = [],
   ): Promise<boolean> => {
+    // ── Builder routing ──────────────────────────────────────────────
+    // If a build mode is selected (or intent clearly points to one), route
+    // the RAW prompt to the matching builder instead of answering in chat.
+    // Explicit 'chat' or an unclear prompt stays in normal Chat.
+    const raw = msg.trim();
+    if (raw && attachments.length === 0) {
+      const target = builderMode ?? detectBuilderIntent(raw);
+      if (target === 'website' || target === 'app') {
+        navigate(`/tools/website-builder?prompt=${encodeURIComponent(raw)}&mode=${target}`);
+        return true;
+      }
+      if (target === 'game') {
+        navigate(`/tools/game-builder?prompt=${encodeURIComponent(raw)}`);
+        return true;
+      }
+    }
+
     let finalMsg = msg;
     if (activeTools.length > 0) {
       const toolNames = activeTools.map((t) => t.chip).join(', ');
@@ -131,7 +157,7 @@ export default function ChatView({
       setActiveTools([]);
     }
     return ok;
-  }, [onSend, onSetInput, activeTools]);
+  }, [onSend, onSetInput, activeTools, builderMode, navigate]);
 
   const insertInput = useCallback((text: string) => {
     onSetInput(text);
@@ -140,6 +166,16 @@ export default function ChatView({
       if (el) { el.focus(); }
     }, 50);
   }, [onSetInput]);
+
+  // Toggle a home mode. Selecting the active one again returns to neutral
+  // (auto-detect). Never inserts text into the composer.
+  const handleSelectMode = useCallback((mode: KorvixMode) => {
+    setBuilderMode((prev) => (prev === mode ? null : mode));
+    setTimeout(() => {
+      const el = composerRef.current?.querySelector('textarea') as HTMLTextAreaElement | null;
+      el?.focus();
+    }, 50);
+  }, []);
 
   const isPinned = useCallback((msgId: string) => pinnedMessages.some((m) => m.id === msgId), [pinnedMessages]);
 
@@ -170,10 +206,10 @@ export default function ChatView({
       {/* Messages area */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto scrollbar-thin">
         {isEmptyState ? (
-          /* Empty state with suggestions */
+          /* Empty state — unified Korvix builder home on the normal Chat tab */
           <div className="flex flex-col h-full">
             <div className="flex-1 flex items-center justify-center px-4">
-              <EmptyWorkspace />
+              <EmptyWorkspace builder={isChatHome} />
             </div>
           </div>
         ) : (
@@ -321,6 +357,17 @@ export default function ChatView({
 
       {/* Input area — floating glass, integrated with workspace */}
       <div ref={composerRef} className="shrink-0 px-3 md:px-4 pb-3 md:pb-4 pt-1" style={{ background: 'transparent' }}>
+        {/* Builder-home mode chips — normal Chat empty state only. */}
+        {isChatHome && isEmptyState && (
+          <KorvixModeChips selected={builderMode} onSelect={handleSelectMode} />
+        )}
+        {/* Selected build mode — a premium pill attached to the composer. Chat
+            is the neutral default and shows no pill. */}
+        {isChatHome && builderMode && builderMode !== 'chat' && (
+          <div className="max-w-3xl mx-auto mb-2 px-0.5">
+            <KorvixModePill mode={builderMode} onRemove={() => setBuilderMode(null)} />
+          </div>
+        )}
         <PremiumComposer
           onSend={handleSend}
           disabled={isLoading}

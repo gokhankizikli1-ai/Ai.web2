@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Gamepad2, Wand2, Copy, Check, Loader2, AlertTriangle, RotateCcw, Sparkles,
@@ -156,6 +157,8 @@ export default function GameBuilder() {
 
   const lastIdeaRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const bootedRef = useRef(false);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -199,6 +202,20 @@ export default function GameBuilder() {
       setPhase('error');
     }
   }, [busy]);
+
+  // Handoff from the Chat builder home: ?prompt=… prefills and auto-runs a
+  // build. Strip the param so a refresh doesn't re-run. Once on mount.
+  useEffect(() => {
+    if (bootedRef.current) return;
+    bootedRef.current = true;
+    const promptParam = searchParams.get('prompt');
+    if (promptParam && promptParam.trim()) {
+      setIdea(promptParam);
+      setSearchParams({}, { replace: true });
+      run(promptParam);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleGenerate = () => run(idea);
   const handleRetry = () => run(lastIdeaRef.current ?? idea);
