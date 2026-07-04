@@ -260,7 +260,17 @@ function fileSummary(c: SectionCopy): string {
 /** Synthesize the full file set from the parsed sections + copy. */
 export function synthesizeFiles(result: WebBuildResult): SynthFile[] {
   const brief = extractBrief(result.sections);
-  const items = parseSectionCopy(result);
+  return synthesizeFromCopies(parseSectionCopy(result), brief);
+}
+
+/**
+ * Build the full React + Tailwind file set from a resolved copy set — reused by
+ * both the backend-parsed path and the industry fallback (webBuildBrief), so an
+ * inferred brief produces the same premium files as a real reply.
+ */
+export function synthesizeFromCopies(
+  items: SectionCopy[], brief: { goal?: string; type?: string },
+): SynthFile[] {
   if (items.length === 0) return [];
 
   const compNames = items.map((c) => pascal(c.id));
