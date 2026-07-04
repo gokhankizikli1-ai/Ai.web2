@@ -16,6 +16,7 @@
  */
 import { getRequestLocale } from '@/lib/locale';
 import { parseBuildSections, type BuildSection } from '@/lib/gameBuilderApi';
+import { type BuilderMode, buildModeContext } from '@/lib/builderMode';
 
 /** The canonical backend AI mode for this workspace. Must match the mode
  *  registered in backend/services/ai/mode_manager.py. */
@@ -124,9 +125,13 @@ const BUILD_TIMEOUT_MS = 90_000;
  */
 export function buildWebBuildRequest(
   idea: string,
-  opts?: { revise?: boolean; previousReply?: string },
+  opts?: { revise?: boolean; previousReply?: string; mode?: BuilderMode | null },
 ): string {
   const lines: string[] = ['[WEB BUILD REQUEST]'];
+  // Selected build mode is hidden context — it shapes what gets built without
+  // ever appearing in the user's message or the persisted prompt.
+  const modeCtx = buildModeContext(opts?.mode);
+  if (modeCtx) lines.push(`BUILD CONTEXT: ${modeCtx}`, '');
   if (opts?.revise) {
     lines.push(
       'This is a REVISION of an existing website. Apply ONLY the change the user asks for',
@@ -175,7 +180,7 @@ const norm = (s: string) => s.toLowerCase().replace(/&/g, ' and ').replace(/[^a-
  */
 export async function generateWebBuild(
   idea: string,
-  opts?: { signal?: AbortSignal; revise?: boolean; previousReply?: string },
+  opts?: { signal?: AbortSignal; revise?: boolean; previousReply?: string; mode?: BuilderMode | null },
 ): Promise<WebBuildResult> {
   const trimmed = idea.trim();
   if (!trimmed) throw new WebBuildError('empty_prompt', 'Describe the website you want before generating.');
@@ -205,7 +210,7 @@ export async function generateWebBuild(
       signal: timer.signal,
       body: JSON.stringify({
         user_id: getUserId(),
-        message: buildWebBuildRequest(trimmed, { revise: opts?.revise, previousReply: opts?.previousReply }),
+        message: buildWebBuildRequest(trimmed, { revise: opts?.revise, previousReply: opts?.previousReply, mode: opts?.mode }),
         platform: 'web',
         mode: WEBSITE_BUILDER_MODE,
         // Language — resolved app locale so the build is generated in the

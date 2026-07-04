@@ -32,8 +32,8 @@ export default function WebBuildWelcome({ mascotState = 'idle' }: { mascotState?
           className="mt-2.5 text-[13.5px] leading-relaxed text-[#94A3B8]"
         >
           {L(lang,
-            'Tell Korvix what you want to build — a website, app, landing page, store, or more. It plans the layout, writes the copy, builds the components, and prepares a preview.',
-            'Korvix’e ne inşa etmek istediğini söyle — web sitesi, uygulama, açılış sayfası, mağaza ve daha fazlası. Sayfayı planlar, metinleri yazar, bileşenleri oluşturur ve bir önizleme hazırlar.')}
+            'Tell Korvix what you want to build — a website, app, landing page, or game feature. It plans the structure, writes the copy, generates the components, and prepares a preview.',
+            'Korvix’e ne inşa etmek istediğini söyle — web sitesi, uygulama, açılış sayfası veya oyun özelliği. Yapıyı planlar, metinleri yazar, bileşenleri oluşturur ve bir önizleme hazırlar.')}
         </motion.p>
       </div>
     </div>
