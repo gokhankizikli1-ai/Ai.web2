@@ -243,13 +243,325 @@ ${list}
 `;
 }
 
+/* ── Archetype-specific templates (genuinely different layouts) ───────── */
+
+function galleryComponent(name: string, c: SectionCopy): string {
+  const tiles = (c.bullets.length ? c.bullets : [c.name]).slice(0, 6);
+  const cells = tiles.map((b, i) => `          <figure key={${i}} className="group relative overflow-hidden rounded-2xl border border-white/10 ${i % 5 === 0 ? 'sm:col-span-2' : ''}">
+            <div className="aspect-[4/3] w-full bg-gradient-to-br from-white/[0.06] to-white/[0.01] transition duration-500 group-hover:scale-[1.03]" />
+            <figcaption className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-4 text-sm font-medium text-white">{\`${esc(b)}\`}</figcaption>
+          </figure>`).join('\n');
+  return `export default function ${name}() {
+  return (
+    <section id="gallery" className="px-6 py-20">
+      <div className="mx-auto max-w-6xl">
+        ${c.headline ? `<h2 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">{\`${esc(c.headline)}\`}</h2>` : ''}
+        <div className="mt-10 grid grid-cols-2 gap-4 sm:grid-cols-3">
+${cells}
+        </div>
+      </div>
+    </section>
+  );
+}
+`;
+}
+
+function beforeAfterComponent(name: string, c: SectionCopy): string {
+  return `export default function ${name}() {
+  return (
+    <section className="px-6 py-20">
+      <div className="mx-auto max-w-5xl">
+        ${c.headline ? `<h2 className="text-center text-3xl font-semibold tracking-tight text-white sm:text-4xl">{\`${esc(c.headline)}\`}</h2>` : ''}
+        <div className="mt-10 grid gap-5 sm:grid-cols-2">
+          <div className="relative overflow-hidden rounded-2xl border border-white/10">
+            <span className="absolute left-3 top-3 rounded-full bg-black/50 px-2.5 py-1 text-xs text-slate-300">Öncesi</span>
+            <div className="aspect-[4/3] bg-white/[0.03]" />
+          </div>
+          <div className="relative overflow-hidden rounded-2xl border border-indigo-400/30 ring-1 ring-indigo-400/20">
+            <span className="absolute left-3 top-3 rounded-full bg-indigo-500 px-2.5 py-1 text-xs text-white">Sonrası</span>
+            <div className="aspect-[4/3] bg-gradient-to-br from-indigo-500/20 to-cyan-400/10" />
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+`;
+}
+
+function productDemoComponent(name: string, c: SectionCopy): string {
+  const lines = (c.bullets.length ? c.bullets : ['Merhaba, nasıl yardımcı olabilirim?', 'Siparişimi takip etmek istiyorum.', 'Tabii, sipariş numaranı paylaşır mısın?']).slice(0, 4);
+  const bubbles = lines.map((b, i) => `            <div key={${i}} className="max-w-[80%] ${i % 2 ? 'ml-auto bg-indigo-500 text-white' : 'bg-white/[0.06] text-slate-200'} rounded-2xl px-3.5 py-2 text-[13px]">{\`${esc(b)}\`}</div>`).join('\n');
+  return `export default function ${name}() {
+  return (
+    <section id="demo" className="relative isolate overflow-hidden px-6 py-20">
+      <div className="kx-aurora -z-10" style={{ top: '-4rem', right: '-4rem', width: '22rem', height: '22rem', background: 'radial-gradient(circle, #6366f1, transparent 60%)' }} aria-hidden="true" />
+      <div className="mx-auto grid max-w-6xl items-center gap-10 lg:grid-cols-2">
+        <div>
+          ${c.headline ? `<h2 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">{\`${esc(c.headline)}\`}</h2>` : ''}
+          ${c.sub ? `<p className="mt-4 text-slate-300">{\`${esc(c.sub)}\`}</p>` : ''}
+          ${c.cta ? `<a href="#contact" className="mt-6 inline-block rounded-xl bg-indigo-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30">{\`${esc(c.cta)}\`}</a>` : ''}
+        </div>
+        <div className="kx-float rounded-2xl border border-white/10 bg-white/[0.03] p-4 shadow-2xl shadow-black/40">
+          <div className="mb-3 flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-white/20" /><span className="h-2.5 w-2.5 rounded-full bg-white/20" /><span className="h-2.5 w-2.5 rounded-full bg-white/20" /></div>
+          <div className="space-y-2">
+${bubbles}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+`;
+}
+
+function workflowComponent(name: string, c: SectionCopy): string {
+  const steps = (c.bullets.length ? c.bullets : [c.name]).slice(0, 4);
+  const cells = steps.map((b, i) => `          <li key={${i}} className="relative rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+            <span className="text-sm font-semibold text-indigo-300">0${i + 1}</span>
+            <p className="mt-2 text-[15px] font-medium text-white">{\`${esc(b)}\`}</p>
+          </li>`).join('\n');
+  return `export default function ${name}() {
+  return (
+    <section id="process" className="px-6 py-20">
+      <div className="mx-auto max-w-6xl">
+        ${c.headline ? `<h2 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">{\`${esc(c.headline)}\`}</h2>` : ''}
+        <ol className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+${cells}
+        </ol>
+      </div>
+    </section>
+  );
+}
+`;
+}
+
+function metricsComponent(name: string, c: SectionCopy): string {
+  const stats = ['98%', '2.5x', '24/7', '<1dk'];
+  const labels = (c.bullets.length ? c.bullets : [c.name]).slice(0, 4);
+  const cells = labels.map((b, i) => `          <div key={${i}} className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 text-center">
+            <div className="text-4xl font-semibold tracking-tight text-white">${stats[i % stats.length]}</div>
+            <p className="mt-2 text-sm text-slate-400">{\`${esc(b)}\`}</p>
+          </div>`).join('\n');
+  return `export default function ${name}() {
+  return (
+    <section className="px-6 py-16">
+      <div className="mx-auto max-w-5xl">
+        ${c.headline ? `<h2 className="text-center text-2xl font-semibold tracking-tight text-white sm:text-3xl">{\`${esc(c.headline)}\`}</h2>` : ''}
+        <div className="mt-10 grid grid-cols-2 gap-4 lg:grid-cols-4">
+${cells}
+        </div>
+      </div>
+    </section>
+  );
+}
+`;
+}
+
+function integrationsComponent(name: string, c: SectionCopy): string {
+  const chips = (c.bullets.length ? c.bullets : ['Slack', 'Zendesk', 'Shopify', 'WhatsApp', 'HubSpot', 'Notion']).slice(0, 8);
+  const cells = chips.map((b, i) => `          <div key={${i}} className="flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-slate-300">
+            <span className="h-4 w-4 rounded bg-gradient-to-br from-indigo-500/50 to-cyan-400/30" />{\`${esc(b)}\`}
+          </div>`).join('\n');
+  return `export default function ${name}() {
+  return (
+    <section className="px-6 py-16">
+      <div className="mx-auto max-w-5xl text-center">
+        ${c.headline ? `<h2 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">{\`${esc(c.headline)}\`}</h2>` : ''}
+        <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
+${cells}
+        </div>
+      </div>
+    </section>
+  );
+}
+`;
+}
+
+function inventoryComponent(name: string, c: SectionCopy): string {
+  const cars = (c.bullets.length ? c.bullets : [c.name]).slice(0, 6);
+  const cells = cars.map((b, i) => `          <div key={${i}} className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
+            <div className="aspect-[16/10] bg-gradient-to-br from-white/[0.08] to-white/[0.01]" />
+            <div className="p-5">
+              <p className="text-[15px] font-semibold text-white">{\`${esc(b)}\`}</p>
+              <div className="mt-2 flex items-center justify-between text-xs text-slate-400"><span>2023 · Otomatik · Benzin</span><span className="font-semibold text-white">₺${(850 + i * 120).toLocaleString?.() || 850}.000</span></div>
+              <button className="mt-4 w-full rounded-lg bg-indigo-500 py-2 text-sm font-semibold text-white">İncele</button>
+            </div>
+          </div>`).join('\n');
+  return `export default function ${name}() {
+  return (
+    <section id="inventory" className="px-6 py-20">
+      <div className="mx-auto max-w-6xl">
+        ${c.headline ? `<h2 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">{\`${esc(c.headline)}\`}</h2>` : ''}
+        <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+${cells}
+        </div>
+      </div>
+    </section>
+  );
+}
+`;
+}
+
+function financingComponent(name: string, c: SectionCopy): string {
+  const badges = (c.bullets.length ? c.bullets : ['Garanti', 'Ekspertiz', 'Takas', 'Finansman']).slice(0, 4);
+  const cells = badges.map((b, i) => `          <div key={${i}} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
+            <span className="h-9 w-9 rounded-lg bg-gradient-to-br from-indigo-500/40 to-cyan-400/20" />
+            <span className="text-sm font-medium text-slate-200">{\`${esc(b)}\`}</span>
+          </div>`).join('\n');
+  return `export default function ${name}() {
+  return (
+    <section className="px-6 py-16">
+      <div className="mx-auto max-w-5xl rounded-3xl border border-white/10 bg-white/[0.02] p-8">
+        ${c.headline ? `<h2 className="text-center text-2xl font-semibold tracking-tight text-white sm:text-3xl">{\`${esc(c.headline)}\`}</h2>` : ''}
+        <div className="mt-8 grid grid-cols-2 gap-3 lg:grid-cols-4">
+${cells}
+        </div>
+      </div>
+    </section>
+  );
+}
+`;
+}
+
+function pricingComponent(name: string, c: SectionCopy): string {
+  const tiers = (c.bullets.length ? c.bullets : ['Başlangıç', 'Pro', 'Kurumsal']).slice(0, 3);
+  const cells = tiers.map((b, i) => {
+    const featured = i === 1;
+    const cardCls = featured ? 'border-indigo-400/40 bg-indigo-500/[0.06]' : 'border-white/10 bg-white/[0.03]';
+    const btnCls = featured ? 'bg-indigo-500 text-white' : 'border border-white/15 text-slate-200';
+    return `          <div key={${i}} className="rounded-2xl border p-6 ${cardCls}">
+            <p className="text-sm font-medium text-slate-300">{\`${esc(b)}\`}</p>
+            <div className="mt-3 text-3xl font-semibold text-white">₺${199 + i * 200}<span className="text-sm text-slate-400">/ay</span></div>
+            <button className="mt-5 w-full rounded-lg ${btnCls} py-2 text-sm font-semibold">Seç</button>
+          </div>`;
+  }).join('\n');
+  return `export default function ${name}() {
+  return (
+    <section id="pricing" className="px-6 py-20">
+      <div className="mx-auto max-w-5xl">
+        ${c.headline ? `<h2 className="text-center text-3xl font-semibold tracking-tight text-white sm:text-4xl">{\`${esc(c.headline)}\`}</h2>` : ''}
+        <div className="mt-10 grid gap-5 sm:grid-cols-3">
+${cells}
+        </div>
+      </div>
+    </section>
+  );
+}
+`;
+}
+
+function menuComponent(name: string, c: SectionCopy): string {
+  const dishes = (c.bullets.length ? c.bullets : [c.name]).slice(0, 6);
+  const cells = dishes.map((b, i) => `          <li key={${i}} className="flex items-baseline gap-3">
+            <span className="font-medium text-white">{\`${esc(b)}\`}</span>
+            <span className="flex-1 border-b border-dashed border-white/15" />
+            <span className="text-sm text-slate-400">₺${120 + i * 30}</span>
+          </li>`).join('\n');
+  return `export default function ${name}() {
+  return (
+    <section id="menu" className="px-6 py-20">
+      <div className="mx-auto max-w-3xl">
+        ${c.headline ? `<h2 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">{\`${esc(c.headline)}\`}</h2>` : ''}
+        <ul className="mt-8 space-y-4">
+${cells}
+        </ul>
+      </div>
+    </section>
+  );
+}
+`;
+}
+
+function testimonialComponent(name: string, c: SectionCopy): string {
+  const quotes = (c.bullets.length ? c.bullets : [c.sub || c.name]).slice(0, 3);
+  const cells = quotes.map((b, i) => `          <blockquote key={${i}} className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+            <p className="text-[15px] leading-relaxed text-slate-200">&ldquo;{\`${esc(b)}\`}&rdquo;</p>
+            <div className="mt-4 flex items-center gap-3"><span className="h-8 w-8 rounded-full bg-gradient-to-br from-indigo-500/50 to-cyan-400/30" /><span className="text-sm text-slate-400">Müşteri</span></div>
+          </blockquote>`).join('\n');
+  return `export default function ${name}() {
+  return (
+    <section className="px-6 py-20">
+      <div className="mx-auto max-w-5xl">
+        ${c.headline ? `<h2 className="text-center text-3xl font-semibold tracking-tight text-white sm:text-4xl">{\`${esc(c.headline)}\`}</h2>` : ''}
+        <div className="mt-10 grid gap-5 sm:grid-cols-3">
+${cells}
+        </div>
+      </div>
+    </section>
+  );
+}
+`;
+}
+
+function faqComponent(name: string, c: SectionCopy): string {
+  const qs = (c.bullets.length ? c.bullets : [c.name]).slice(0, 6);
+  const cells = qs.map((b, i) => `          <details key={${i}} className="group rounded-xl border border-white/10 bg-white/[0.03] p-4">
+            <summary className="cursor-pointer text-[15px] font-medium text-white marker:content-['']">{\`${esc(b)}\`}</summary>
+            <p className="mt-2 text-sm text-slate-400">Detaylı yanıt burada yer alır.</p>
+          </details>`).join('\n');
+  return `export default function ${name}() {
+  return (
+    <section id="faq" className="px-6 py-20">
+      <div className="mx-auto max-w-3xl">
+        ${c.headline ? `<h2 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">{\`${esc(c.headline)}\`}</h2>` : ''}
+        <div className="mt-8 space-y-3">
+${cells}
+        </div>
+      </div>
+    </section>
+  );
+}
+`;
+}
+
+/** Map a section id/name to a distinct visual template kind. */
+export type SectionKind =
+  | 'hero' | 'gallery' | 'beforeAfter' | 'productDemo' | 'workflow' | 'metrics'
+  | 'integrations' | 'inventory' | 'financing' | 'pricing' | 'menu'
+  | 'features' | 'testimonial' | 'faq' | 'cta' | 'footer' | 'generic';
+
+export function sectionKind(id: string, sectionName: string): SectionKind {
+  const k = `${id} ${sectionName}`.toLowerCase();
+  if (/hero/.test(k)) return 'hero';
+  if (/footer/.test(k)) return 'footer';
+  if (/before.?after|önce.?sonra/.test(k)) return 'beforeAfter';
+  if (/product.?demo|chatbot|chat|dashboard|demo/.test(k)) return 'productDemo';
+  if (/workflow|how.?it.?works|process|süreç|adım|nasıl/.test(k)) return 'workflow';
+  if (/metric|result|stat|sonuç|rakam/.test(k)) return 'metrics';
+  if (/integration|entegrasyon/.test(k)) return 'integrations';
+  if (/inventory|vehicle|featured.?(car|vehicle)|araç|araba|envanter/.test(k)) return 'inventory';
+  if (/financ|finans|kredi/.test(k)) return 'financing';
+  if (/pricing|price|plan|program|fiyat|paket/.test(k)) return 'pricing';
+  if (/menu|menü/.test(k)) return 'menu';
+  if (/gallery|galeri|collection|koleksiyon|material|malzeme|portfolio|portfolyo|proje|project|work|iş/.test(k)) return 'gallery';
+  if (/testimonial|social|proof|review|yorum|referans/.test(k)) return 'testimonial';
+  if (/faq|sıkça|soru/.test(k)) return 'faq';
+  if (/cta|final|contact|book|appointment|randevu|form|reservation|rezervasyon|iletişim/.test(k)) return 'cta';
+  if (/feature|service|benefit|hizmet|özellik/.test(k)) return 'features';
+  return 'generic';
+}
+
 function componentFor(name: string, c: SectionCopy, brief: { goal?: string; type?: string }): string {
-  const k = `${c.id} ${c.name}`.toLowerCase();
-  if (/hero/.test(k)) return heroComponent(name, c, brief);
-  if (/footer/.test(k)) return footerComponent(name, c);
-  if (/cta|final|contact|book|appointment|randevu/.test(k)) return ctaComponent(name, c);
-  if (/feature|service|benefit|pricing|plan|process|step|how|testimonial|social|proof|review|faq/.test(k)) return cardsComponent(name, c);
-  return genericComponent(name, c);
+  switch (sectionKind(c.id, c.name)) {
+    case 'hero': return heroComponent(name, c, brief);
+    case 'footer': return footerComponent(name, c);
+    case 'cta': return ctaComponent(name, c);
+    case 'gallery': return galleryComponent(name, c);
+    case 'beforeAfter': return beforeAfterComponent(name, c);
+    case 'productDemo': return productDemoComponent(name, c);
+    case 'workflow': return workflowComponent(name, c);
+    case 'metrics': return metricsComponent(name, c);
+    case 'integrations': return integrationsComponent(name, c);
+    case 'inventory': return inventoryComponent(name, c);
+    case 'financing': return financingComponent(name, c);
+    case 'pricing': return pricingComponent(name, c);
+    case 'menu': return menuComponent(name, c);
+    case 'testimonial': return testimonialComponent(name, c);
+    case 'faq': return faqComponent(name, c);
+    case 'features': return cardsComponent(name, c);
+    default: return genericComponent(name, c);
+  }
 }
 
 /** Short human file summary from the section purpose/name. */

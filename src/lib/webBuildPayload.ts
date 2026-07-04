@@ -232,7 +232,7 @@ export function buildWebBuildPayload(
   let files = resolveFiles(result, prev?.files);
 
   // Quality gate — repair a weak FRESH build with the inferred industry brief.
-  if (!prev && !checkQuality(sectionItems, files.length).ok) {
+  if (!prev && !checkQuality(sectionItems, files.length, effLang).ok) {
     sectionItems = fallbackSectionItems(inferred, effLang);
     files = diffFiles(undefined, synthesizeFromCopies(itemsToCopies(sectionItems), { goal: brief.goal, type: brief.type }));
   }
