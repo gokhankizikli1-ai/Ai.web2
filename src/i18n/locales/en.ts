@@ -380,7 +380,8 @@ export const en: Record<string, string> = {
   /* web build — execution feed (Kimi/Claude-style action stream) */
   wbFeedBuildOpening: "I'm building this {goal}-focused landing page. I'll set up the component structure, then write the files one by one.",
   wbFeedBuildOpeningPlain: "I'm building this landing page. I'll set up the component structure, then write the files one by one.",
-  wbToolThink: "Thinking",
+  wbToolThink: "Think",
+  wbFeedBuildStructureMsg: "I'm structuring the page around {sections}.",
   wbThinkPlan: "Planning the component structure and page flow…",
   wbThinkEdit: "Finding the file to change…",
   wbToolCreateFile: "Create file",

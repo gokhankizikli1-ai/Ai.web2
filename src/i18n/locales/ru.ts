@@ -374,6 +374,7 @@ export const ru: Record<string, string> = {
   wbFeedBuildOpening: "Я создаю эту посадочную страницу с фокусом на {goal}. Я настрою структуру компонентов, а затем напишу файлы один за другим.",
   wbFeedBuildOpeningPlain: "Я создаю эту посадочную страницу. Я настрою структуру компонентов, а затем напишу файлы один за другим.",
   wbToolThink: "Думаю",
+  wbFeedBuildStructureMsg: "Я выстраиваю страницу вокруг {sections}.",
   wbThinkPlan: "Планирую структуру компонентов и поток страницы…",
   wbThinkEdit: "Ищу файл для изменения…",
   wbToolCreateFile: "Создать файл",

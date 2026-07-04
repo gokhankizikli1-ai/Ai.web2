@@ -374,6 +374,7 @@ export const tr: Record<string, string> = {
   wbFeedBuildOpening: "Bu {goal} odaklı landing page'i oluşturuyorum. Önce component yapısını hazırlayıp dosyaları tek tek yazacağım.",
   wbFeedBuildOpeningPlain: "Bu landing page'i oluşturuyorum. Önce component yapısını hazırlayıp dosyaları tek tek yazacağım.",
   wbToolThink: "Düşünüyor",
+  wbFeedBuildStructureMsg: "Sayfa yapısını {sections} etrafında hazırlıyorum.",
   wbThinkPlan: "Component yapısını ve sayfa akışını planlıyorum…",
   wbThinkEdit: "Değişikliği uygulayacağım dosyayı belirliyorum…",
   wbToolCreateFile: "Dosya oluştur",

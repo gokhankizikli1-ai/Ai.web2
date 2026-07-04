@@ -374,6 +374,7 @@ export const es: Record<string, string> = {
   wbFeedBuildOpening: "Estoy creando esta landing page centrada en {goal}. Configuraré la estructura de componentes y luego escribiré los archivos uno por uno.",
   wbFeedBuildOpeningPlain: "Estoy creando esta landing page. Configuraré la estructura de componentes y luego escribiré los archivos uno por uno.",
   wbToolThink: "Pensando",
+  wbFeedBuildStructureMsg: "Estoy estructurando la página en torno a {sections}.",
   wbThinkPlan: "Planificando la estructura de componentes y el flujo de la página…",
   wbThinkEdit: "Buscando el archivo a cambiar…",
   wbToolCreateFile: "Crear archivo",
