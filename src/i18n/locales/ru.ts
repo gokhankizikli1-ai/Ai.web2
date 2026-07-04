@@ -356,6 +356,9 @@ export const ru: Record<string, string> = {
   wbComposerPlaceholder: "Опишите ваш сайт или запросите изменение…",
   wbComposerRevise: "Запросить изменение…",
   wbNewBuild: "Новая сборка",
+  wbBackToChat: "Назад к чату",
+  wbBuildsHistory: "Ваши сборки",
+  wbNoBuilds: "Сборок пока нет",
   wbFeedYou: "Вы",
   wbClosePanel: "Закрыть",
   /* web build — real file artifacts */
