@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, Monitor, FolderTree, ArrowRight, X } from 'lucide-react';
+import { Monitor, FolderTree, ArrowRight, X } from 'lucide-react';
 import { useLanguageStore } from '@/stores/languageStore';
+import KorvixAvatar from '@/components/builder/KorvixAvatar';
 import WebBuildFileView from '@/components/builder/WebBuildFileView';
 import WebBuildPreviewPanel from '@/components/builder/WebBuildPreviewPanel';
 import WebBuildAgentRun from '@/components/builder/WebBuildAgentRun';
@@ -17,7 +18,6 @@ import type {
  * files / Save to Project artifact cards close the run. Shared by the live Web
  * Build page and the saved-project view. No checklist / table / tick waterfall.
  */
-const ACCENT = '#60A5FA';
 
 /* ── Live run shown WHILE the backend call is in flight (Thinking runs) ─ */
 function LivePhases({ prompt, kind }: { prompt: string; kind: 'build' | 'revision' }) {
@@ -25,7 +25,7 @@ function LivePhases({ prompt, kind }: { prompt: string; kind: 'build' | 'revisio
   return (
     <div className="space-y-3">
       <UserMessage text={prompt} />
-      <AssistantMessage>
+      <AssistantMessage active>
         <WebBuildAgentRun rows={rows} animate={false} onOpenFile={() => {}} />
       </AssistantMessage>
     </div>
@@ -77,11 +77,11 @@ function UserMessage({ text }: { text: string }) {
   );
 }
 
-function AssistantMessage({ children }: { children: ReactNode }) {
+function AssistantMessage({ children, active = false }: { children: ReactNode; active?: boolean }) {
   return (
     <div className="flex items-start gap-2.5">
-      <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg" style={{ background: `${ACCENT}1a`, border: `1px solid ${ACCENT}33` }}>
-        <Sparkles className="h-3.5 w-3.5" style={{ color: ACCENT }} />
+      <div className="mt-0.5">
+        <KorvixAvatar size={26} active={active} />
       </div>
       <div className="min-w-0 flex-1 space-y-2.5">{children}</div>
     </div>
