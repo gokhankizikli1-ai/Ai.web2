@@ -4,7 +4,7 @@ import {
   Plus, Search, Brain, BarChart3, ShoppingBag,
   Code, X, TrendingUp,
   Camera, FolderOpen,
-  Puzzle, Sparkles, Globe, ChevronDown, Check,
+  Plug, FileText, Globe, ChevronDown, Check,
 } from 'lucide-react';
 import { useLanguageStore } from '@/stores/languageStore';
 
@@ -240,7 +240,7 @@ export default function ComposerTools({
                     className="w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-all duration-150 hover:bg-white/[0.03]"
                   >
                     <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white/[0.03] border border-white/[0.04]">
-                      <Puzzle className="h-3 w-3 text-[#94A3B8]" />
+                      <Plug className="h-3 w-3 text-[#94A3B8]" />
                     </div>
                     <div className="min-w-0 flex-1 text-[11px] font-medium text-slate-300">Plugins</div>
                     <ChevronDown className={`h-3 w-3 text-[#94A3B8] transition-transform ${submenu === 'plugins' ? 'rotate-180' : ''}`} />
@@ -263,7 +263,7 @@ export default function ComposerTools({
                     className="w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-all duration-150 hover:bg-white/[0.03]"
                   >
                     <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white/[0.03] border border-white/[0.04]">
-                      <Sparkles className="h-3 w-3 text-[#94A3B8]" />
+                      <FileText className="h-3 w-3 text-[#94A3B8]" />
                     </div>
                     <div className="min-w-0 flex-1 text-[11px] font-medium text-slate-300">Skills</div>
                     <ChevronDown className={`h-3 w-3 text-[#94A3B8] transition-transform ${submenu === 'skills' ? 'rotate-180' : ''}`} />
