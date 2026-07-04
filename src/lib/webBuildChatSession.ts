@@ -4,30 +4,16 @@
  * `mode: 'web_build'` + `webBuildRunId` so ChatDashboard routes a click to the
  * Web Build page (which reopens the real session) instead of opening Chat.
  *
- * We deliberately reuse the exact localStorage scope + key that useChat uses
- * (`korvix_sessions_<scope>`) so the sidebar picks the entry up on its next
- * load. Writes are additive and id-stable (one entry per Web Build session — no
- * duplicates); we never touch other sessions.
+ * We reuse the exact per-identity storage scope + key that useChat uses
+ * (`korvix_sessions_<scope>`, scope from userScope) so the entry lands in the
+ * SAME account bucket — never leaking to another user — and the sidebar picks
+ * it up on its next load. Writes are additive and id-stable (one entry per Web
+ * Build session — no duplicates); we never touch other sessions.
  */
-
-/** Mirror of useChat.currentStorageScope() — keep in sync. */
-function storageScope(): string {
-  try {
-    const blob = localStorage.getItem('korvix-auth');
-    if (blob) {
-      const uid = JSON.parse(blob)?.state?.user?.id;
-      if (typeof uid === 'string' && uid) return `user_${uid}`;
-    }
-  } catch { /* fall through */ }
-  try {
-    const nonce = localStorage.getItem('korvix_user_id');
-    if (typeof nonce === 'string' && nonce) return `guest_${nonce}`;
-  } catch { /* fall through */ }
-  return 'guest_anon';
-}
+import { currentUserScope } from '@/lib/userScope';
 
 function sessionsKey(): string {
-  return `korvix_sessions_${storageScope()}`;
+  return `korvix_sessions_${currentUserScope()}`;
 }
 
 interface StoredChatSession {

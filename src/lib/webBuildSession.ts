@@ -12,9 +12,20 @@
  */
 import type { WebBuildPayload } from '@/lib/webBuildPayload';
 import { inferWebsiteBrief, type IndustryKey } from '@/lib/webBuildBrief';
+import { scopedKey } from '@/lib/userScope';
 
-const SESSIONS_KEY = 'korvix_webbuild_sessions';
-const ACTIVE_KEY = 'korvix_webbuild_active';
+// Per-user scoped keys (never global) — isolate Web Build data per account.
+const sessionsKey = () => scopedKey('webbuild', 'sessions');
+const activeKey = () => scopedKey('webbuild', 'active');
+
+// One-time cleanup: the previous release used GLOBAL keys shared across all
+// accounts. Discard that leaked cache so it can never surface for any user.
+(function purgeLegacyGlobalKeys() {
+  try {
+    localStorage.removeItem('korvix_webbuild_sessions');
+    localStorage.removeItem('korvix_webbuild_active');
+  } catch { /* ignore */ }
+})();
 
 export interface WebBuildSessionMeta {
   id: string;
@@ -65,7 +76,7 @@ export function sessionIdOf(payload: WebBuildPayload): string {
 
 function readMap(): SessionMap {
   try {
-    const raw = localStorage.getItem(SESSIONS_KEY);
+    const raw = localStorage.getItem(sessionsKey());
     const map = raw ? (JSON.parse(raw) as SessionMap) : {};
     return map && typeof map === 'object' ? map : {};
   } catch {
@@ -74,7 +85,7 @@ function readMap(): SessionMap {
 }
 
 function writeMap(map: SessionMap): void {
-  try { localStorage.setItem(SESSIONS_KEY, JSON.stringify(map)); } catch { /* quota */ }
+  try { localStorage.setItem(sessionsKey(), JSON.stringify(map)); } catch { /* quota */ }
 }
 
 /** Persist (create or update) a session from a payload; marks it active. */
@@ -94,16 +105,16 @@ export function getWebBuildSession(id: string): WebBuildPayload | null {
 }
 
 export function setActiveWebBuildSession(id: string): void {
-  try { localStorage.setItem(ACTIVE_KEY, id); } catch { /* ignore */ }
+  try { localStorage.setItem(activeKey(), id); } catch { /* ignore */ }
 }
 
 export function getActiveWebBuildSessionId(): string | null {
-  try { return localStorage.getItem(ACTIVE_KEY); } catch { return null; }
+  try { return localStorage.getItem(activeKey()); } catch { return null; }
 }
 
 /** Clear the active pointer (used when starting a brand-new build). */
 export function clearActiveWebBuildSession(): void {
-  try { localStorage.removeItem(ACTIVE_KEY); } catch { /* ignore */ }
+  try { localStorage.removeItem(activeKey()); } catch { /* ignore */ }
 }
 
 export function getActiveWebBuildSession(): WebBuildPayload | null {
