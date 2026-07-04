@@ -23,8 +23,8 @@ export default function EmptyWorkspace({ builder = false }: { builder?: boolean 
   // free to fade out smoothly (clipping it produced the rectangular artifact).
   if (builder) {
     const headline = firstName
-      ? L(lang, `Hey ${firstName}, let’s build something.`, `Selam ${firstName}, bir şey inşa edelim.`)
-      : L(lang, 'Hey, let’s build something.', 'Haydi, bir şey inşa edelim.');
+      ? L(lang, `Hey ${firstName}, let’s create something.`, `Selam ${firstName}, bir şey oluşturalım.`)
+      : L(lang, 'Hey, let’s create something.', 'Haydi, bir şey oluşturalım.');
     return (
       <div className="flex w-full flex-col items-center gap-4 px-4 text-center sm:flex-row sm:justify-center sm:gap-5 sm:text-left">
         <motion.div
@@ -44,16 +44,6 @@ export default function EmptyWorkspace({ builder = false }: { builder?: boolean 
           >
             {headline}
           </motion.h1>
-          <motion.p
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.16, duration: 0.5 }}
-            className="mt-2 text-[13px] leading-relaxed text-[#94A3B8]"
-          >
-            {L(lang,
-              'Choose a mode or just describe what you want. Korvix can chat, build websites, draft apps, or create game features.',
-              'Bir mod seç ya da ne istediğini anlat. Korvix sohbet edebilir, web siteleri kurabilir, uygulama taslakları çıkarabilir veya oyun özellikleri oluşturabilir.')}
-          </motion.p>
         </div>
       </div>
     );

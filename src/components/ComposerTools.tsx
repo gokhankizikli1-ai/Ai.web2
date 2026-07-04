@@ -4,8 +4,19 @@ import {
   Plus, Search, Brain, BarChart3, ShoppingBag,
   Code, X, TrendingUp,
   Camera, FolderOpen,
+  Puzzle, Sparkles, Globe, ChevronDown, Check,
 } from 'lucide-react';
 import { useLanguageStore } from '@/stores/languageStore';
+
+/* ── Extension submenus (UI placeholders for now) ────────────────────── */
+const PLUGIN_ITEMS = [
+  'Academic Data', 'Global Finance Data', 'IMF International Monetary Fund',
+  'SEC', 'World Bank Open Data', 'Manage Plugins',
+];
+const SKILL_ITEMS = [
+  'xlsx', 'pdf', 'docx', 'deep-research', 'audience-adaptive-comms',
+  'Document to skills Beta', 'Create with Korvix', 'Manage Skills',
+];
 
 export interface ComposerTool {
   id: string;
@@ -63,14 +74,18 @@ export default function ComposerTools({
 }: ComposerToolsProps) {
   const { t } = useLanguageStore();
   const [open, setOpen] = useState(false);
+  // Which extension submenu is expanded (Plugins / Skills / Web search).
+  const [submenu, setSubmenu] = useState<'plugins' | 'skills' | 'websearch' | null>(null);
+  // Web search mode — UI-only for now; Auto is the default.
+  const [webSearch, setWebSearch] = useState<'auto' | 'off'>('auto');
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(e.target as Node)) { setOpen(false); setSubmenu(null); }
     };
     const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key === 'Escape') { setOpen(false); setSubmenu(null); }
     };
     if (open) {
       document.addEventListener('mousedown', handleClick);
@@ -89,7 +104,7 @@ export default function ComposerTools({
     <div ref={ref} className="relative">
       <button
         type="button"
-        onClick={() => setOpen(!open)}
+        onClick={() => { setOpen(!open); if (open) setSubmenu(null); }}
         disabled={disabled}
         aria-haspopup="menu"
         aria-expanded={open}
@@ -118,7 +133,7 @@ export default function ComposerTools({
             {/* Header */}
             <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-white/[0.03]">
               <span className="text-[10px] font-semibold text-[#94A3B8] uppercase tracking-wider">{t('attachAndTools')}</span>
-              <button onClick={() => setOpen(false)} className="text-[#94A3B8] hover:text-[#CBD5E1] transition-colors p-0.5 rounded" aria-label="Close menu">
+              <button onClick={() => { setOpen(false); setSubmenu(null); }} className="text-[#94A3B8] hover:text-[#CBD5E1] transition-colors p-0.5 rounded" aria-label="Close menu">
                 <X className="h-3 w-3" />
               </button>
             </div>
@@ -204,6 +219,97 @@ export default function ComposerTools({
                       </div>
                     </button>
                   ))}
+                </div>
+              </div>
+
+              {/* Extensions — Plugins / Skills / Web search, each with a
+                  nested dark submenu panel. UI-only placeholders for now. */}
+              <div>
+                <div className="text-[9px] font-semibold text-[#94A3B8] uppercase tracking-wider px-2 mb-1">
+                  Extensions
+                </div>
+                <div className="space-y-0.5">
+                  {/* Plugins */}
+                  <button
+                    type="button"
+                    onClick={() => setSubmenu((s) => (s === 'plugins' ? null : 'plugins'))}
+                    aria-expanded={submenu === 'plugins'}
+                    className="w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-all duration-150 hover:bg-white/[0.03]"
+                  >
+                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white/[0.03] border border-white/[0.04]">
+                      <Puzzle className="h-3 w-3 text-[#94A3B8]" />
+                    </div>
+                    <div className="min-w-0 flex-1 text-[11px] font-medium text-slate-300">Plugins</div>
+                    <ChevronDown className={`h-3 w-3 text-[#94A3B8] transition-transform ${submenu === 'plugins' ? 'rotate-180' : ''}`} />
+                  </button>
+                  {submenu === 'plugins' && (
+                    <div className="ml-8 mr-1 mb-1 mt-0.5 rounded-lg border border-white/[0.05] bg-black/25 p-1 space-y-0.5">
+                      {PLUGIN_ITEMS.map((it) => (
+                        <button key={it} type="button" className="w-full text-left rounded-md px-2 py-1.5 text-[11px] text-[#CBD5E1] hover:bg-white/[0.05] transition-colors">
+                          {it}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Skills */}
+                  <button
+                    type="button"
+                    onClick={() => setSubmenu((s) => (s === 'skills' ? null : 'skills'))}
+                    aria-expanded={submenu === 'skills'}
+                    className="w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-all duration-150 hover:bg-white/[0.03]"
+                  >
+                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white/[0.03] border border-white/[0.04]">
+                      <Sparkles className="h-3 w-3 text-[#94A3B8]" />
+                    </div>
+                    <div className="min-w-0 flex-1 text-[11px] font-medium text-slate-300">Skills</div>
+                    <ChevronDown className={`h-3 w-3 text-[#94A3B8] transition-transform ${submenu === 'skills' ? 'rotate-180' : ''}`} />
+                  </button>
+                  {submenu === 'skills' && (
+                    <div className="ml-8 mr-1 mb-1 mt-0.5 rounded-lg border border-white/[0.05] bg-black/25 p-1 space-y-0.5">
+                      {SKILL_ITEMS.map((it) => (
+                        <button key={it} type="button" className="w-full text-left rounded-md px-2 py-1.5 text-[11px] text-[#CBD5E1] hover:bg-white/[0.05] transition-colors">
+                          {it}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Web search */}
+                  <button
+                    type="button"
+                    onClick={() => setSubmenu((s) => (s === 'websearch' ? null : 'websearch'))}
+                    aria-expanded={submenu === 'websearch'}
+                    className="w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-all duration-150 hover:bg-white/[0.03]"
+                  >
+                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white/[0.03] border border-white/[0.04]">
+                      <Globe className="h-3 w-3 text-[#94A3B8]" />
+                    </div>
+                    <div className="min-w-0 flex-1 text-[11px] font-medium text-slate-300">Web search</div>
+                    <span className="text-[10px] text-[#94A3B8] capitalize mr-1">{webSearch}</span>
+                    <ChevronDown className={`h-3 w-3 text-[#94A3B8] transition-transform ${submenu === 'websearch' ? 'rotate-180' : ''}`} />
+                  </button>
+                  {submenu === 'websearch' && (
+                    <div className="ml-8 mr-1 mb-1 mt-0.5 rounded-lg border border-white/[0.05] bg-black/25 p-1 space-y-0.5">
+                      {([
+                        ['auto', 'Auto', 'Browse the web when needed'],
+                        ['off', 'Off', 'No web access'],
+                      ] as const).map(([val, label, desc]) => (
+                        <button
+                          key={val}
+                          type="button"
+                          onClick={() => setWebSearch(val)}
+                          className="w-full flex items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-white/[0.05] transition-colors"
+                        >
+                          <Check className={`h-3 w-3 mt-0.5 shrink-0 ${webSearch === val ? 'text-[#60A5FA]' : 'text-transparent'}`} />
+                          <div className="min-w-0">
+                            <div className="text-[11px] text-[#CBD5E1]">{label}</div>
+                            <div className="text-[10px] text-[#94A3B8] leading-tight">{desc}</div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

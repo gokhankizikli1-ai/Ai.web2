@@ -13,7 +13,6 @@ import RightSidebar from '@/components/RightSidebar';
 import ChatView from '@/components/ChatView';
 import TradingPanel from '@/components/TradingPanel';
 import BusinessPanel from '@/components/BusinessPanel';
-import WorkspaceTabs from '@/components/WorkspaceTabs';
 import AIActivityFeed from '@/components/AIActivityFeed';
 
 import CommandPalette from '@/components/CommandPalette';
@@ -515,7 +514,9 @@ export default function ChatDashboard() {
                 <PanelLeftOpen className="h-3.5 w-3.5" />
               </motion.button>
             )}
-            <WorkspaceTabs activeTab={activeTab} onTabChange={handleTabChange} showTrading={ownerModeForGreeting.isOwner} onWebBuildClick={() => navigate('/tools/website-builder')} onGameBuilderClick={() => navigate('/tools/game-builder')} />
+            {/* Top Chat / Web Build / Game Build nav removed for a cleaner
+                Chat home. Those pages keep their standalone routes; the empty
+                home's mode chips still route to them. */}
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">

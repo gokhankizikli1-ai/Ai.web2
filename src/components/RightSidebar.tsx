@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  PanelRightClose, PanelRightOpen, Wrench,
+  PanelRightClose, Wrench,
   Brain, Cpu, Activity, Clock, Zap, Target,
   BookOpen, BarChart3, ChevronRight, Sparkles, Hash,
 } from 'lucide-react';
@@ -213,18 +213,9 @@ export default function RightSidebar({
 
   return (
     <>
-      {/* Toggle button when closed */}
-      {!isOpen && (
-        <div className="fixed top-14 right-4 z-40 hidden lg:block">
-          <button
-            onClick={onToggle}
-            className="h-7 w-7 flex items-center justify-center text-[#94A3B8] hover:text-[#CBD5E1] hover:bg-white/[0.03] rounded-md transition-all border border-white/[0.04]"
-            title="Open sidebar"
-          >
-            <PanelRightOpen className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
+      {/* Closed-state floating opener removed — the Context Panel is opened
+          from the header's overflow menu ("Context Panel"), so the default
+          chat screen stays clean with no floating right-side button. */}
 
       {/* Sidebar */}
       <motion.aside

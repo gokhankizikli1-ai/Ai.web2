@@ -229,13 +229,12 @@ export default function ChatView({
       <div className="flex flex-col h-full">
         <div className="flex-1 overflow-y-auto scrollbar-thin flex flex-col items-center justify-center px-3 md:px-4">
           <div ref={composerRef} className="w-full max-w-3xl py-8">
-            <div className="mb-7 flex justify-center">
+            <div className="mb-6 flex justify-center">
               <EmptyWorkspace builder />
             </div>
+            {/* Mode chips sit between the hero and the composer. */}
+            <KorvixModeChips selected={builderMode} onSelect={handleSelectMode} />
             {composer}
-            <div className="mt-3">
-              <KorvixModeChips selected={builderMode} onSelect={handleSelectMode} />
-            </div>
           </div>
         </div>
       </div>
