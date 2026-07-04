@@ -27,14 +27,15 @@ export default function WebBuildWelcome({
 }) {
   const { lang } = useLanguageStore();
   return (
-    <div className="flex flex-col items-center px-4 pb-6 pt-[9vh] text-center sm:pt-[12vh]">
+    // Anchor the group toward the bottom so it sits closer to the composer.
+    <div className="flex min-h-[56vh] flex-col items-center justify-end px-4 pb-6 text-center">
       {/* Desktop: orb left, text right. Mobile: stacked. */}
-      <div className="flex flex-col items-center gap-5 text-center sm:flex-row sm:items-center sm:gap-6 sm:text-left">
+      <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-center sm:gap-5 sm:text-left">
         <motion.div
           initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
           className="shrink-0"
         >
-          <WebBuildMascot state={mascotState} />
+          <WebBuildMascot state={mascotState} size={60} />
         </motion.div>
         <div className="max-w-md">
           <motion.h2

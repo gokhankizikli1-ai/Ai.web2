@@ -313,7 +313,7 @@ export default function WebsiteBuilder() {
           onNewBuild={startNewBuild}
           onOpenSession={openSession}
         />
-        <div className="flex min-w-0 flex-1 flex-col min-h-[calc(100vh-220px)] lg:max-w-3xl">
+        <div className="flex min-w-0 flex-1 flex-col min-h-[calc(100vh-220px)] lg:mx-auto lg:max-w-3xl">
         {/* ── Conversation feed / idle state ─────────────────────────── */}
         <div className="flex-1">
           {/* Mobile New Build (desktop uses the left rail). */}

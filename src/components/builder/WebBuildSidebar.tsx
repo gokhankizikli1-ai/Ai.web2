@@ -24,7 +24,7 @@ export default function WebBuildSidebar({
   const sessions = listWebBuildSessions();
 
   return (
-    <aside className="hidden w-56 shrink-0 flex-col gap-2 lg:flex">
+    <aside className="sticky top-4 hidden w-56 shrink-0 self-start flex-col gap-2 border-r border-white/[0.06] pr-5 lg:flex">
       <button
         onClick={() => navigate('/chat')}
         className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-[12.5px] text-[#94A3B8] transition-colors hover:bg-white/[0.04] hover:text-white"
