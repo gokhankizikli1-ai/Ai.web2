@@ -206,9 +206,11 @@ export default function ChatView({
       {/* Messages area */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto scrollbar-thin">
         {isEmptyState ? (
-          /* Empty state — unified Korvix builder home on the normal Chat tab */
+          /* Empty state — unified Korvix builder home on the normal Chat tab.
+             The builder hero sits lower (items-end) so it reads as connected
+             to the chips + composer; other workspaces stay vertically centered. */
           <div className="flex flex-col h-full">
-            <div className="flex-1 flex items-center justify-center px-4">
+            <div className={`flex-1 flex justify-center px-4 ${isChatHome ? 'items-end pb-3' : 'items-center'}`}>
               <EmptyWorkspace builder={isChatHome} />
             </div>
           </div>
