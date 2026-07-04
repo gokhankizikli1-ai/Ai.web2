@@ -380,7 +380,7 @@ export const tr: Record<string, string> = {
   wbToolThink: "Düşünüyor",
   wbFeedBuildStructureMsg: "Sayfa yapısını {sections} etrafında kurguladım. Şimdi bunu React/Tailwind bileşenlerine dönüştürüyorum.",
   wbFeedBuildTransition: "Brief'e göre sayfa yapısını netleştirdim. Şimdi bunu React/Tailwind bileşenlerine dönüştürüyorum.",
-  wbThinkPlan: "Component yapısını ve sayfa akışını planlıyorum…",
+  wbThinkPlan: "Sektörü analiz ediyor, dönüşüm yolunu ve bölüm mimarisini tasarlıyorum…",
   wbThinkEdit: "Değişikliği uygulayacağım dosyayı belirliyorum…",
   wbToolCreateFile: "Dosya oluştur",
   wbToolEditFile: "Dosyayı düzenle",

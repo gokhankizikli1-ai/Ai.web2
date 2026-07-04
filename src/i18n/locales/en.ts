@@ -387,7 +387,7 @@ export const en: Record<string, string> = {
   wbToolThink: "Think",
   wbFeedBuildStructureMsg: "I've shaped the page around {sections}. Now I'm turning it into React/Tailwind components.",
   wbFeedBuildTransition: "I've shaped the page structure. Now I'm turning it into React/Tailwind components.",
-  wbThinkPlan: "Planning the component structure and page flow…",
+  wbThinkPlan: "Analyzing the niche, mapping the conversion path, and designing the section system…",
   wbThinkEdit: "Finding the file to change…",
   wbToolCreateFile: "Create file",
   wbToolEditFile: "Edit file",
