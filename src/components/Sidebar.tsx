@@ -8,7 +8,7 @@ import {
   PanelLeftClose, PanelLeftOpen,
   Crown, Search, X,
   LogIn, Sparkles, FolderOpen,
-  Bot,
+  Bot, Puzzle, ChevronDown, Code2, Briefcase,
 } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
 import type { ChatSession, ChatFolder } from '@/types';
@@ -60,6 +60,8 @@ export default function Sidebar({
 }: SidebarProps) {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  // "More" expander for the Korvix Code / Korvix Work placeholders.
+  const [moreOpen, setMoreOpen] = useState(false);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   // While isHydrating is true, the footer renders neither the guest CTA
   // nor the user card — just a thin skeleton. This kills the
@@ -317,6 +319,54 @@ export default function Sidebar({
               <span className="text-[12px] font-medium text-white/60 group-hover:text-white/90 transition-colors">{t('agents')}</span>
             </motion.button>
             )}
+
+            {/* ═══ 1.6. PLUGINS · SKILLS · MORE ═══
+                 Compact nav group. Plugins / Skills / the More children
+                 (Korvix Code, Korvix Work) are UI placeholders for now —
+                 they intentionally do not navigate to any route yet. */}
+            <div className="space-y-0.5">
+              <button
+                type="button"
+                className="w-full flex items-center gap-2.5 px-3 h-8 rounded-lg text-[12px] text-white/55 hover:text-white/90 hover:bg-white/[0.04] transition-colors"
+              >
+                <Puzzle className="h-3.5 w-3.5 shrink-0 text-white/40" />
+                <span className="font-medium">Plugins</span>
+              </button>
+              <button
+                type="button"
+                className="w-full flex items-center gap-2.5 px-3 h-8 rounded-lg text-[12px] text-white/55 hover:text-white/90 hover:bg-white/[0.04] transition-colors"
+              >
+                <Sparkles className="h-3.5 w-3.5 shrink-0 text-white/40" />
+                <span className="font-medium">Skills</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setMoreOpen((v) => !v)}
+                aria-expanded={moreOpen}
+                className="w-full flex items-center gap-2.5 px-3 h-8 rounded-lg text-[12px] text-white/55 hover:text-white/90 hover:bg-white/[0.04] transition-colors"
+              >
+                <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-white/40 transition-transform ${moreOpen ? 'rotate-180' : ''}`} />
+                <span className="font-medium">More</span>
+              </button>
+              {moreOpen && (
+                <div className="ml-3 space-y-0.5" style={{ borderLeft: '1px solid rgba(255,255,255,0.04)' }}>
+                  <button
+                    type="button"
+                    className="w-full flex items-center gap-2.5 pl-3 pr-3 h-7 rounded-lg text-[11.5px] text-white/45 hover:text-white/80 hover:bg-white/[0.03] transition-colors"
+                  >
+                    <Code2 className="h-3 w-3 shrink-0 text-white/35" />
+                    <span>Korvix Code</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="w-full flex items-center gap-2.5 pl-3 pr-3 h-7 rounded-lg text-[11.5px] text-white/45 hover:text-white/80 hover:bg-white/[0.03] transition-colors"
+                  >
+                    <Briefcase className="h-3 w-3 shrink-0 text-white/35" />
+                    <span>Korvix Work</span>
+                  </button>
+                </div>
+              )}
+            </div>
 
             {/* ═══ 2. NEW CHAT ═══ */}
             <motion.button
