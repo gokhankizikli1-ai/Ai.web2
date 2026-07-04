@@ -7,6 +7,7 @@ import { useSearchParams } from 'react-router';
 import BuilderWorkspaceFrame from '@/components/builder/BuilderWorkspaceFrame';
 import WebBuildConversation from '@/components/builder/WebBuildConversation';
 import WebBuildWelcome from '@/components/builder/WebBuildWelcome';
+import WebBuildStarterChips from '@/components/builder/WebBuildStarterChips';
 import WebBuildSidebar from '@/components/builder/WebBuildSidebar';
 import { useLanguageStore } from '@/stores/languageStore';
 import {
@@ -56,6 +57,7 @@ export default function WebsiteBuilder() {
 
   const abortRef = useRef<AbortController | null>(null);
   const feedEndRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const lastPromptRef = useRef('');
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -206,6 +208,18 @@ export default function WebsiteBuilder() {
     else runFresh(text);
   }, [input, busy, payload, runFresh, runRevision]);
 
+  /** A start-screen category chip seeds the composer with a flexible starter and
+   *  focuses it (cursor at the end) — it shapes the prompt, never auto-builds. */
+  const handlePickStarter = useCallback((starter: string) => {
+    setInput(starter);
+    const el = textareaRef.current;
+    if (!el) return;
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(starter.length, starter.length);
+    });
+  }, []);
+
   const handleRetry = useCallback(() => {
     setErrorMsg('');
     if (payload) {
@@ -315,7 +329,7 @@ export default function WebsiteBuilder() {
         />
         <div className="flex min-w-0 flex-1 flex-col min-h-[calc(100vh-220px)] lg:mx-auto lg:max-w-3xl">
         {/* ── Conversation feed / idle state ─────────────────────────── */}
-        <div className="flex-1">
+        <div className="flex flex-1 flex-col">
           {/* Mobile New Build (desktop uses the left rail). */}
           <div className="mb-3 flex justify-end lg:hidden">
             <button
@@ -355,8 +369,10 @@ export default function WebsiteBuilder() {
               )}
             </>
           ) : (
-            <>
-              <WebBuildWelcome onExample={(idea) => runFresh(idea)} mascotState={mascotState} />
+            // Empty state — hero centered in the free space; the chips + composer
+            // sit below it, near the input, so the composer never has to jump.
+            <div className="flex flex-1 flex-col items-center justify-center py-8">
+              <WebBuildWelcome mascotState={mascotState} />
               {errorMsg && (
                 <div className="mx-auto mt-8 w-full max-w-md flex flex-wrap items-center gap-3 rounded-xl border border-rose-500/20 bg-rose-500/[0.04] px-4 py-3.5 text-left">
                   <AlertTriangle className="h-4 w-4 shrink-0 text-rose-400" />
@@ -373,15 +389,18 @@ export default function WebsiteBuilder() {
                   )}
                 </div>
               )}
-            </>
+            </div>
           )}
           <div ref={feedEndRef} />
         </div>
 
         {/* ── Sticky bottom composer ─────────────────────────────────── */}
         <div className="sticky bottom-0 pt-4 pb-4 bg-gradient-to-t from-[#0a0a0a] via-[#0a0a0a] to-transparent">
+          {/* Build-mode chips sit right above the composer (empty state only). */}
+          {!hasConversation && <WebBuildStarterChips onPick={handlePickStarter} />}
           <div className="flex items-end gap-2 rounded-2xl border border-white/[0.08] bg-white/[0.03] p-2 focus-within:border-white/[0.16] transition-colors">
             <textarea
+              ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onFocus={() => setInputFocused(true)}
