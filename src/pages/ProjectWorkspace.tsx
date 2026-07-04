@@ -38,7 +38,7 @@ import { projectOrchestratorClient } from '@/hooks/useProjectOrchestrator';
 import WebBuildConversation from '@/components/builder/WebBuildConversation';
 import {
   payloadSteps, buildWebBuildPayload,
-  type WebBuildPayload, type WebBuildActivityRow,
+  type WebBuildPayload,
 } from '@/lib/webBuildPayload';
 import { saveWebBuildPayloadToProject } from '@/lib/webBuildProject';
 import { generateWebBuild, WebBuildError, webBuildErrorKeyFor } from '@/lib/webBuildApi';
@@ -289,32 +289,6 @@ function orchestrationStatusFor(evt: {
 
 const WB_ACCENT = '#60A5FA';
 
-/** i18n label key for each paced activity row id (mirrors WebsiteBuilder). */
-const WB_ACTIVITY_LABELS: Record<string, string> = {
-  brief: 'wbStageBrief',
-  type: 'wbStageType',
-  plan: 'wbStagePlan',
-  design: 'wbStageDesign',
-  copy: 'wbStageCopy',
-  code: 'wbStageCode',
-  preview: 'wbStagePreview',
-  save: 'wbActSave',
-};
-/** The rows the timer walks while a revision is in flight (stops at
- *  'preview'; the real payload replaces the whole log on success). */
-const WB_ACTIVITY_FLOW = ['brief', 'type', 'plan', 'design', 'copy', 'code', 'preview'] as const;
-const WB_ACTIVITY_ORDER = [...WB_ACTIVITY_FLOW, 'save'] as const;
-/** Minimum visible duration per step so no step ever flashes past. */
-const WB_ACTIVITY_TICK_MS = 1100;
-
-function wbFreshActivityRows(): WebBuildActivityRow[] {
-  return WB_ACTIVITY_ORDER.map((id) => ({
-    id,
-    labelKey: WB_ACTIVITY_LABELS[id],
-    status: id === 'brief' ? 'running' : 'waiting',
-  }));
-}
-
 function wbSlug(name: string): string {
   const base = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 18);
   return `${base || 'yoursite'}.korvix.build`;
@@ -337,51 +311,21 @@ function WebBuildProjectView({ project }: { project: Project }) {
   // after an inline revision so only that step plays the live reveal.
   const [animateStepId, setAnimateStepId] = useState<string | undefined>(undefined);
   const [input, setInput] = useState('');
-  const [live, setLive] = useState<{ prompt: string; rows: WebBuildActivityRow[] } | null>(null);
+  const [live, setLive] = useState<{ prompt: string; kind: 'build' | 'revision' } | null>(null);
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
   const abortRef = useRef<AbortController | null>(null);
-  const activityTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const activityIdxRef = useRef(0);
   const feedEndRef = useRef<HTMLDivElement | null>(null);
   const lastPromptRef = useRef('');
 
-  const clearActivityTimer = useCallback(() => {
-    if (activityTimer.current) { clearInterval(activityTimer.current); activityTimer.current = null; }
-  }, []);
-
-  // Clear timers + abort any in-flight revision on unmount.
-  useEffect(() => () => {
-    abortRef.current?.abort();
-    clearActivityTimer();
-  }, [clearActivityTimer]);
+  // Abort any in-flight revision on unmount.
+  useEffect(() => () => { abortRef.current?.abort(); }, []);
 
   // Keep the newest message in view as the conversation grows.
   useEffect(() => {
     feedEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [payload, live]);
-
-  /** Start the paced live log and walk the flow rows on the timer. */
-  const startLive = useCallback((prompt: string) => {
-    clearActivityTimer();
-    setLive({ prompt, rows: wbFreshActivityRows() });
-    activityIdxRef.current = 0;
-    activityTimer.current = setInterval(() => {
-      const i = activityIdxRef.current;
-      if (i >= WB_ACTIVITY_FLOW.length - 1) { clearActivityTimer(); return; }
-      const cur = WB_ACTIVITY_FLOW[i];
-      const next = WB_ACTIVITY_FLOW[i + 1];
-      setLive((prev) => prev ? {
-        ...prev,
-        rows: prev.rows.map((r) =>
-          r.id === cur ? { ...r, status: 'done' }
-            : r.id === next ? { ...r, status: 'running' }
-            : r),
-      } : prev);
-      activityIdxRef.current = i + 1;
-    }, WB_ACTIVITY_TICK_MS);
-  }, [clearActivityTimer]);
 
   /* ── Continue the build with a revision (persists to the project) ──── */
   const runRevision = useCallback(async (text: string) => {
@@ -395,7 +339,7 @@ function WebBuildProjectView({ project }: { project: Project }) {
 
     setBusy(true);
     setErrorMsg('');
-    startLive(trimmed);
+    setLive({ prompt: trimmed, kind: 'revision' });
 
     try {
       const res = await generateWebBuild(trimmed, {
@@ -404,7 +348,6 @@ function WebBuildProjectView({ project }: { project: Project }) {
         signal: controller.signal,
       });
       if (abortRef.current !== controller) return; // superseded
-      clearActivityTimer();
       const next = buildWebBuildPayload(trimmed, res, payload);
       // Persist the continuation onto the saved project.
       saveWebBuildPayloadToProject(next, project.id);
@@ -413,14 +356,13 @@ function WebBuildProjectView({ project }: { project: Project }) {
       setLive(null);
     } catch (err) {
       if (controller.signal.aborted) return;
-      clearActivityTimer();
       setLive(null);
       const key = err instanceof WebBuildError ? webBuildErrorKeyFor(err.kind) : 'wbErrGeneric';
       setErrorMsg(t(key) || t('wbErrGeneric'));
     } finally {
       if (abortRef.current === controller) setBusy(false);
     }
-  }, [busy, payload, project.id, startLive, clearActivityTimer, t]);
+  }, [busy, payload, project.id, t]);
 
   const handleSubmit = useCallback(() => {
     const text = input.trim();
@@ -489,6 +431,7 @@ function WebBuildProjectView({ project }: { project: Project }) {
               extraCards={savedCard}
               slug={wbSlug(project.name)}
               animateStepId={animateStepId}
+              runId={payload.steps[payload.steps.length - 1]?.id}
             />
             {errorMsg && (
               <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-rose-500/20 bg-rose-500/[0.04] px-4 py-3.5">

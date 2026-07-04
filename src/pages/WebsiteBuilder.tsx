@@ -10,40 +10,12 @@ import {
   generateWebBuild, WebBuildError, webBuildErrorKeyFor,
 } from '@/lib/webBuildApi';
 import {
-  buildWebBuildPayload, type WebBuildPayload, type WebBuildActivityRow,
+  buildWebBuildPayload, type WebBuildPayload,
 } from '@/lib/webBuildPayload';
 import { saveWebBuildPayloadToProject } from '@/lib/webBuildProject';
 import { getProjects } from '@/stores/projectStore';
 
 const ACCENT = '#60A5FA';
-
-/** i18n label key for each activity row id. */
-const ACTIVITY_LABELS: Record<string, string> = {
-  brief: 'wbStageBrief',
-  type: 'wbStageType',
-  plan: 'wbStagePlan',
-  design: 'wbStageDesign',
-  copy: 'wbStageCopy',
-  code: 'wbStageCode',
-  preview: 'wbStagePreview',
-  save: 'wbActSave',
-};
-/** The 7 rows the timer walks while a request is in flight (it stops at
- *  'preview' — the real payload replaces the whole log on success). */
-const ACTIVITY_FLOW = ['brief', 'type', 'plan', 'design', 'copy', 'code', 'preview'] as const;
-/** Full ordered set of live rows (the flow + the save row). */
-const ACTIVITY_ORDER = [...ACTIVITY_FLOW, 'save'] as const;
-/** Minimum visible duration per step so no step ever flashes past. */
-const ACTIVITY_TICK_MS = 1100;
-
-/** Fresh live rows: everything 'waiting' except 'brief', which starts 'running'. */
-function freshActivityRows(): WebBuildActivityRow[] {
-  return ACTIVITY_ORDER.map((id) => ({
-    id,
-    labelKey: ACTIVITY_LABELS[id],
-    status: id === 'brief' ? 'running' : 'waiting',
-  }));
-}
 
 function slugFromIdea(idea: string): string {
   const base = idea.trim().toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 18);
@@ -66,7 +38,7 @@ export default function WebsiteBuilder() {
   const [input, setInput] = useState('');
   const [payload, setPayload] = useState<WebBuildPayload | null>(null);
   const [animateStepId, setAnimateStepId] = useState<string | undefined>(undefined);
-  const [live, setLive] = useState<{ prompt: string; rows: WebBuildActivityRow[] } | null>(null);
+  const [live, setLive] = useState<{ prompt: string; kind: 'build' | 'revision' } | null>(null);
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -76,54 +48,27 @@ export default function WebsiteBuilder() {
   const [saveStep, setSaveStep] = useState<'closed' | 'prompt' | 'picker'>('closed');
 
   const abortRef = useRef<AbortController | null>(null);
-  const activityTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const activityIdxRef = useRef(0);
   const feedEndRef = useRef<HTMLDivElement | null>(null);
   const lastPromptRef = useRef('');
 
-  const clearActivityTimer = useCallback(() => {
-    if (activityTimer.current) { clearInterval(activityTimer.current); activityTimer.current = null; }
-  }, []);
-
-  useEffect(() => () => {
-    abortRef.current?.abort();
-    clearActivityTimer();
-  }, [clearActivityTimer]);
+  useEffect(() => () => { abortRef.current?.abort(); }, []);
 
   // Keep the newest message in view as the conversation grows.
   useEffect(() => {
     feedEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [payload, live]);
 
-  /** Start the paced live log for a turn and walk the flow rows on the timer. */
-  const startLive = useCallback((prompt: string) => {
-    clearActivityTimer();
-    setLive({ prompt, rows: freshActivityRows() });
-    activityIdxRef.current = 0;
-    // Each tick marks the current row done + the next running; we stop at
-    // 'preview' (left running) — the real payload replaces the log on success.
-    activityTimer.current = setInterval(() => {
-      const i = activityIdxRef.current;
-      if (i >= ACTIVITY_FLOW.length - 1) { clearActivityTimer(); return; }
-      const cur = ACTIVITY_FLOW[i];
-      const next = ACTIVITY_FLOW[i + 1];
-      setLive((prev) => prev ? {
-        ...prev,
-        rows: prev.rows.map((r) =>
-          r.id === cur ? { ...r, status: 'done' }
-            : r.id === next ? { ...r, status: 'running' }
-            : r),
-      } : prev);
-      activityIdxRef.current = i + 1;
-    }, ACTIVITY_TICK_MS);
-  }, [clearActivityTimer]);
+  /** Show the live agent run: the Analyze/Plan phases run WHILE the backend
+   *  call is in flight (the model really is analysing + generating here). */
+  const startLive = useCallback((prompt: string, kind: 'build' | 'revision') => {
+    setLive({ prompt, kind });
+  }, []);
 
   const failLive = useCallback((err: unknown) => {
-    clearActivityTimer();
     setLive(null);
     const key = err instanceof WebBuildError ? webBuildErrorKeyFor(err.kind) : 'wbErrGeneric';
     setErrorMsg(t(key) || t('wbErrGeneric'));
-  }, [clearActivityTimer, t]);
+  }, [t]);
 
   /* ── Fresh generation ─────────────────────────────────────────────── */
   const runFresh = useCallback(async (idea: string) => {
@@ -140,12 +85,11 @@ export default function WebsiteBuilder() {
     setPayload(null);
     setSavedProjectId(undefined);
     setSaveStep('closed');
-    startLive(trimmed);
+    startLive(trimmed, 'build');
 
     try {
       const res = await generateWebBuild(trimmed, { signal: controller.signal });
       if (abortRef.current !== controller) return; // superseded
-      clearActivityTimer();
       const next = buildWebBuildPayload(trimmed, res);
       setPayload(next);
       setAnimateStepId(next.steps[next.steps.length - 1]?.id);
@@ -156,7 +100,7 @@ export default function WebsiteBuilder() {
     } finally {
       if (abortRef.current === controller) setBusy(false);
     }
-  }, [startLive, clearActivityTimer, failLive]);
+  }, [startLive, failLive]);
 
   /* ── Revision (accumulates steps + diffs) ─────────────────────────── */
   const runRevision = useCallback(async (idea: string) => {
@@ -169,7 +113,7 @@ export default function WebsiteBuilder() {
 
     setBusy(true);
     setErrorMsg('');
-    startLive(trimmed);
+    startLive(trimmed, 'revision');
 
     try {
       const res = await generateWebBuild(trimmed, {
@@ -178,7 +122,6 @@ export default function WebsiteBuilder() {
         signal: controller.signal,
       });
       if (abortRef.current !== controller) return; // superseded
-      clearActivityTimer();
       const next = buildWebBuildPayload(trimmed, res, payload);
       setPayload(next);
       setAnimateStepId(next.steps[next.steps.length - 1]?.id);
@@ -189,7 +132,7 @@ export default function WebsiteBuilder() {
     } finally {
       if (abortRef.current === controller) setBusy(false);
     }
-  }, [payload, startLive, clearActivityTimer, failLive]);
+  }, [payload, startLive, failLive]);
 
   /* ── Composer submit ──────────────────────────────────────────────── */
   const handleSubmit = useCallback(() => {
@@ -312,6 +255,7 @@ export default function WebsiteBuilder() {
                 extraCards={payload ? saveCard : undefined}
                 slug={slugFromIdea(payload?.prompt ?? live?.prompt ?? '')}
                 animateStepId={animateStepId}
+                runId={payload?.steps[payload.steps.length - 1]?.id}
               />
               {errorMsg && (
                 <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-rose-500/20 bg-rose-500/[0.04] px-4 py-3.5">

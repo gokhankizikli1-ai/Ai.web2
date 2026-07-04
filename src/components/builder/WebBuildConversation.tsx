@@ -1,41 +1,43 @@
-import { useState, useEffect, type ReactNode } from 'react';
+import { useState, useEffect, useMemo, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  Sparkles, Monitor, FolderTree, ArrowRight, X, Loader2,
-} from 'lucide-react';
+import { Sparkles, Monitor, FolderTree, ArrowRight, X } from 'lucide-react';
 import { useLanguageStore } from '@/stores/languageStore';
 import WebBuildFileView from '@/components/builder/WebBuildFileView';
 import WebBuildPreviewPanel from '@/components/builder/WebBuildPreviewPanel';
-import WebBuildExecutionLog from '@/components/builder/WebBuildExecutionLog';
+import WebBuildAgentRun from '@/components/builder/WebBuildAgentRun';
+import { stepToEvents, eventsToRows, liveRows } from '@/lib/webBuildRun';
 import type {
   WebBuildStep, WebBuildFile, WebBuildSectionItem,
 } from '@/lib/webBuildPayload';
 
 /**
- * The Web Build conversation feed (Claude/Kimi style): natural assistant
- * messages, compact per-file "Created …" rows (NO task table / checklist), and
- * clickable Preview / All files attachment cards that open a slide-in panel.
- * Shared by the live Web Build page and the saved-project view.
+ * The Web Build conversation — a Kimi/Claude-style agent run per turn: the
+ * assistant writes short natural messages, compact action blocks appear as real
+ * operations, file changes render as clickable tool rows, and Preview / All
+ * files / Save to Project artifact cards close the run. Shared by the live Web
+ * Build page and the saved-project view. No checklist / table / tick waterfall.
  */
 const ACCENT = '#60A5FA';
 
-/* ── Live "working" message (2 honest phases, no fake file rows) ──────── */
-function LiveWorking() {
-  const { t } = useLanguageStore();
+/* ── Live phases shown WHILE the backend call is in flight ───────────── */
+function LivePhases({ prompt, kind }: { prompt: string; kind: 'build' | 'revision' }) {
   const [phase, setPhase] = useState(0);
   useEffect(() => {
-    const id = setTimeout(() => setPhase(1), 1800);
+    const id = setTimeout(() => setPhase(1), 1500);
     return () => clearTimeout(id);
   }, []);
+  const rows = useMemo(() => liveRows(kind, phase), [kind, phase]);
   return (
-    <div className="flex items-center gap-2 text-[13px] text-[#CBD5E1]">
-      <Loader2 className="h-3.5 w-3.5 animate-spin" style={{ color: ACCENT }} />
-      {t(phase === 0 ? 'wbWorkingBrief' : 'wbWorkingSections')}
+    <div className="space-y-3">
+      <UserMessage text={prompt} />
+      <AssistantMessage>
+        <WebBuildAgentRun rows={rows} brief={{}} animate={false} onOpenFile={() => {}} />
+      </AssistantMessage>
     </div>
   );
 }
 
-/* ── Attachment card ─────────────────────────────────────────────────── */
+/* ── Attachment / artifact card ──────────────────────────────────────── */
 function AttachmentCard({
   icon: Icon, title, subtitle, actionLabel, onClick, tone = 'default',
 }: {
@@ -91,6 +93,28 @@ function AssistantMessage({ children }: { children: ReactNode }) {
   );
 }
 
+/* ── One finished build/revision turn (agent run) ────────────────────── */
+function RunTurn({
+  step, brief, animate, onOpenFile, children,
+}: {
+  step: WebBuildStep;
+  brief: { type?: string; audience?: string; goal?: string; style?: string };
+  animate: boolean;
+  onOpenFile: (path?: string) => void;
+  children?: ReactNode;
+}) {
+  const rows = useMemo(() => eventsToRows(stepToEvents(step, brief)), [step, brief]);
+  return (
+    <div className="space-y-3">
+      <UserMessage text={step.prompt} />
+      <AssistantMessage>
+        <WebBuildAgentRun rows={rows} brief={brief} animate={animate} onOpenFile={onOpenFile} />
+        {children}
+      </AssistantMessage>
+    </div>
+  );
+}
+
 /* ── Conversation ────────────────────────────────────────────────────── */
 interface WebBuildConversationProps {
   steps: WebBuildStep[];
@@ -98,19 +122,19 @@ interface WebBuildConversationProps {
   files: WebBuildFile[];
   sectionItems: WebBuildSectionItem[];
   brief: { type?: string; audience?: string; goal?: string; style?: string };
-  /** A build in progress to append at the bottom. `rows` (from the old task
-   *  table) is accepted but ignored — the live state is now just conversational
-   *  "working" messages, no checklist. */
-  live?: { prompt: string; rows?: unknown } | null;
+  /** A build in progress to append at the bottom (phases run during the call). */
+  live?: { prompt: string; kind?: 'build' | 'revision' } | null;
   /** Extra cards (e.g. Save to Project) appended after the last assistant msg. */
   extraCards?: ReactNode;
   slug?: string;
-  /** The newest step id — its execution log plays the sequential live reveal. */
+  /** The newest step id — its run plays the sequential live reveal. */
   animateStepId?: string;
+  /** Stable id for the preview route (/preview/web-build/:runId). */
+  runId?: string;
 }
 
 export default function WebBuildConversation({
-  steps, files, sectionItems, brief, live, extraCards, slug, animateStepId,
+  steps, files, sectionItems, brief, live, extraCards, slug, animateStepId, runId,
 }: WebBuildConversationProps) {
   const { t } = useLanguageStore();
   const [panel, setPanel] = useState<'preview' | 'files' | null>(null);
@@ -123,38 +147,25 @@ export default function WebBuildConversation({
       {steps.map((step, i) => {
         const isLast = i === lastIdx && !live;
         return (
-          <div key={step.id} className="space-y-3">
-            <UserMessage text={step.prompt} />
-            <AssistantMessage>
-              <WebBuildExecutionLog
-                step={step}
-                brief={brief}
-                animate={step.id === animateStepId}
-                onOpenFile={(path) => openFile(path)}
-              />
-              {/* Output cards only on the latest step (current state). */}
-              {isLast && (
-                <div className="flex flex-col gap-2 pt-0.5">
-                  <AttachmentCard icon={Monitor} title={t('wbCardPreview')} subtitle={t('wbCardPreviewSub')} actionLabel={t('wbCardOpen')} tone="accent" onClick={() => setPanel('preview')} />
-                  <AttachmentCard icon={FolderTree} title={t('wbCardAllFiles')} subtitle={t('wbCardAllFilesSub')} actionLabel={t('wbCardOpen')} onClick={() => openFile(undefined)} />
-                  {extraCards}
-                </div>
-              )}
-            </AssistantMessage>
-          </div>
+          <RunTurn
+            key={step.id}
+            step={step}
+            brief={brief}
+            animate={step.id === animateStepId}
+            onOpenFile={openFile}
+          >
+            {isLast && (
+              <div className="flex flex-col gap-2 pt-0.5">
+                <AttachmentCard icon={Monitor} title={t('wbCardPreview')} subtitle={t('wbCardPreviewSub')} actionLabel={t('wbCardOpen')} tone="accent" onClick={() => setPanel('preview')} />
+                <AttachmentCard icon={FolderTree} title={t('wbCardAllFiles')} subtitle={t('wbCardAllFilesSub')} actionLabel={t('wbCardOpen')} onClick={() => openFile(undefined)} />
+                {extraCards}
+              </div>
+            )}
+          </RunTurn>
         );
       })}
 
-      {/* Live build in progress */}
-      {live && (
-        <div className="space-y-3">
-          <UserMessage text={live.prompt} />
-          <AssistantMessage>
-            <p className="text-[13px] text-[#CBD5E1] leading-relaxed">{t('wbMsgIntro')}</p>
-            <LiveWorking />
-          </AssistantMessage>
-        </div>
-      )}
+      {live && <LivePhases prompt={live.prompt} kind={live.kind || 'build'} />}
 
       {/* Slide-in panel (Preview / All files) */}
       <AnimatePresence>
@@ -178,7 +189,7 @@ export default function WebBuildConversation({
                 </button>
               </div>
               {panel === 'preview'
-                ? <WebBuildPreviewPanel sectionItems={sectionItems} brief={brief} slug={slug} />
+                ? <WebBuildPreviewPanel sectionItems={sectionItems} brief={brief} slug={slug} runId={runId} />
                 : <WebBuildFileView files={files} initialPath={filePath} />}
             </motion.div>
           </motion.div>

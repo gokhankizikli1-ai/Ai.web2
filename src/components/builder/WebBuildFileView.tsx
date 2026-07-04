@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { FileCode, Copy, Check } from 'lucide-react';
 import { useLanguageStore } from '@/stores/languageStore';
 import type { WebBuildFile } from '@/lib/webBuildPayload';
@@ -31,6 +31,25 @@ function CopyButton({ text }: { text: string }) {
       {copied ? <Check className="h-3 w-3" style={{ color: ACCENT }} /> : <Copy className="h-3 w-3" />}
       {copied ? t('copied') : t('copy')}
     </button>
+  );
+}
+
+/**
+ * An empty file on a SUCCESSFUL build is a real bug (backend truncation or a
+ * broken persistence path) — surface it loudly to the developer instead of a
+ * quiet "no code" placeholder, per the Web Build acceptance criteria.
+ */
+function EmptyCode({ path }: { path: string }) {
+  const { t } = useLanguageStore();
+  useEffect(() => {
+    // eslint-disable-next-line no-console
+    console.error(`[WebBuild] file "${path}" has empty content — generation/persistence bug (a successful build should never produce an empty file).`);
+  }, [path]);
+  return (
+    <div className="m-3 rounded-lg border border-rose-500/30 bg-rose-500/[0.06] px-4 py-4 text-[12px] text-rose-200">
+      <div className="font-medium">{t('wbNoCodeError')}</div>
+      <div className="mt-1 font-mono text-[11px] text-rose-300/80">{path}</div>
+    </div>
   );
 }
 
@@ -93,7 +112,7 @@ export default function WebBuildFileView({ files, initialPath }: { files: WebBui
             <code>{file.content}</code>
           </pre>
         ) : (
-          <div className="px-4 py-8 text-center text-[12px] text-[#64748B]">{t('wbNoCode')}</div>
+          <EmptyCode path={file.path} />
         )}
       </div>
     </div>

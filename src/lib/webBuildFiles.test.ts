@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { parseBuildSections } from '@/lib/gameBuilderApi';
 import { resolveBuildFiles, synthesizeFiles } from '@/lib/webBuildFiles';
-import { resolveFiles, deriveBuildActivity, deriveExecutionFeed, buildWebBuildPayload } from '@/lib/webBuildPayload';
+import { resolveFiles, deriveBuildActivity, buildWebBuildPayload } from '@/lib/webBuildPayload';
+import { stepToEvents } from '@/lib/webBuildRun';
 import { extractBrief } from '@/lib/webBuildApi';
 import type { WebBuildResult } from '@/lib/webBuildApi';
 
@@ -90,45 +91,41 @@ describe('web build file synthesis', () => {
   });
 });
 
-describe('web build execution feed', () => {
+describe('web build run events', () => {
   const result = makeResult(REPLY);
   const brief = extractBrief(result.sections);
 
-  it('a fresh build opens with a text line, has Analyze + Plan blocks, and ends with Build completed', () => {
+  it('a fresh build emits assistant messages, Analyze + Plan actions, file_created per file, preview_ready', () => {
     const payload = buildWebBuildPayload('build a fitness coach site', result);
-    const feed = deriveExecutionFeed(payload.steps[0], brief);
-    expect(feed[0].kind).toBe('text');
-    expect(feed.some((i) => i.kind === 'action' && i.id === 'analyze' && i.details === 'brief')).toBe(true);
-    expect(feed.some((i) => i.kind === 'action' && i.id === 'plan' && i.details === 'sections')).toBe(true);
-    expect(feed.some((i) => i.kind === 'action' && i.id === 'preview-route')).toBe(true);
-    expect(feed[feed.length - 1]).toMatchObject({ kind: 'action', id: 'done', titleKey: 'wbActBuildDone' });
-    // Only text / action / file items — no checklist rows.
-    expect(feed.every((i) => i.kind === 'text' || i.kind === 'action' || i.kind === 'file')).toBe(true);
-  });
-
-  it('a fresh build emits one create file action per created file, never inventing files', () => {
-    const payload = buildWebBuildPayload('build it', result);
-    const fileItems = deriveExecutionFeed(payload.steps[0], brief).filter((i) => i.kind === 'file') as Extract<ReturnType<typeof deriveExecutionFeed>[number], { kind: 'file' }>[];
+    const events = stepToEvents(payload.steps[0], brief);
+    expect(events[0]).toMatchObject({ type: 'assistant_message' });
+    expect(events.some((e) => e.type === 'action_complete' && e.group === 'analyze' && e.detailsSource === 'brief')).toBe(true);
+    expect(events.some((e) => e.type === 'action_complete' && e.group === 'plan')).toBe(true);
+    expect(events.some((e) => e.type === 'preview_ready')).toBe(true);
+    expect(events.filter((e) => e.type === 'artifact_ready').length).toBe(3);
+    // Only real generated files are announced — never invented.
+    const created = events.filter((e) => e.type === 'file_created');
     const realPaths = new Set(payload.files.map((f) => f.path));
-    expect(fileItems.length).toBe(payload.files.length);
-    expect(fileItems.every((i) => realPaths.has(i.path))).toBe(true);
-    expect(fileItems.every((i) => i.op === 'create')).toBe(true);
+    expect(created.length).toBe(payload.files.length);
+    expect(created.every((e) => e.filePath && realPaths.has(e.filePath))).toBe(true);
+    // No modify events on a fresh build.
+    expect(events.some((e) => e.type === 'file_modified')).toBe(false);
   });
 
-  it('a revision emits read-then-update actions for the changed file and no analyze/plan blocks', () => {
+  it('a revision emits a Read action + file_modified for the changed file only, no Analyze/Plan', () => {
     const first = buildWebBuildPayload('build it', result);
     const revisedReply = REPLY.replace('Formda kal, randevunu al', 'Premium koçlukla hedefine ulaş');
     const second = buildWebBuildPayload('change the hero headline', makeResult(revisedReply), first);
     const step = second.steps[second.steps.length - 1];
-    const feed = deriveExecutionFeed(step, brief);
-    const files = feed.filter((i) => i.kind === 'file') as Extract<ReturnType<typeof deriveExecutionFeed>[number], { kind: 'file' }>[];
-    const heroRead = files.find((i) => i.op === 'read' && /Hero\.tsx/.test(i.path));
-    const heroUpd = files.find((i) => i.op === 'update' && /Hero\.tsx/.test(i.path));
+    const events = stepToEvents(step, brief);
+    const heroRead = events.find((e) => e.type === 'action_start' && e.group === 'read-components/Hero.tsx');
+    const heroMod = events.find((e) => e.type === 'file_modified' && /Hero\.tsx/.test(e.filePath || ''));
     expect(heroRead).toBeTruthy();
-    expect(heroUpd).toBeTruthy();
-    expect(files.indexOf(heroRead!)).toBeLessThan(files.indexOf(heroUpd!));
-    expect(feed.some((i) => i.kind === 'action' && (i.id === 'analyze' || i.id === 'plan'))).toBe(false);
-    expect(feed.some((i) => i.kind === 'action' && i.id === 'preview-update')).toBe(true);
-    expect(feed[feed.length - 1]).toMatchObject({ kind: 'action', id: 'done', titleKey: 'wbActBuildDone' });
+    expect(heroMod).toBeTruthy();
+    expect(events.indexOf(heroRead!)).toBeLessThan(events.indexOf(heroMod!));
+    // Targeted: only Hero is modified, nothing else.
+    expect(events.filter((e) => e.type === 'file_modified').length).toBe(1);
+    expect(events.some((e) => e.group === 'analyze' || e.group === 'plan')).toBe(false);
+    expect(events.some((e) => e.type === 'preview_ready')).toBe(true);
   });
 });

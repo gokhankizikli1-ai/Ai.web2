@@ -1,20 +1,33 @@
 import { useMemo } from 'react';
-import { Link } from 'react-router';
+import { Link, useParams } from 'react-router';
 import { ArrowLeft, Lock } from 'lucide-react';
 import { useLanguageStore } from '@/stores/languageStore';
 import WebBuildPreviewDocument from '@/components/builder/WebBuildPreviewDocument';
-import { readPreview } from '@/lib/webBuildPreviewStash';
+import { readPreview, type WebBuildPreviewData } from '@/lib/webBuildPreviewStash';
+import { getProjects } from '@/stores/projectStore';
 
 /**
- * Standalone, openable preview of a generated Web Build (route:
- * /preview/web-build). Reads the build data stashed in localStorage by the
- * "Open preview" action and renders the REAL generated page full-screen with a
- * minimal browser-style top bar. Client-side only — no deployment/hosting yet,
- * but it's a real openable URL rendering real generated content.
+ * Standalone, openable preview of a generated Web Build
+ * (/preview/web-build/:runId). Reads the build data stashed by "Open preview";
+ * on a cold open (stash cleared) it falls back to a saved project whose Web
+ * Build contains a step with this runId, so a saved project's preview keeps
+ * working. Client-side only — no hosting yet, but a real openable URL that
+ * renders the real generated page.
  */
+function fromProject(runId: string): WebBuildPreviewData | null {
+  for (const p of getProjects()) {
+    const wb = p.webBuild;
+    if (wb && (wb.steps || []).some((s) => s.id === runId)) {
+      return { runId, sectionItems: wb.sectionItems || [], brief: wb.brief || {}, slug: undefined, prompt: wb.prompt };
+    }
+  }
+  return null;
+}
+
 export default function WebBuildPreview() {
   const { t } = useLanguageStore();
-  const data = useMemo(() => readPreview(), []);
+  const { runId = '' } = useParams();
+  const data = useMemo(() => readPreview(runId) || fromProject(runId), [runId]);
 
   if (!data || data.sectionItems.length === 0) {
     return (
