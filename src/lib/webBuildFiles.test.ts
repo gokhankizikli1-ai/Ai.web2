@@ -65,6 +65,22 @@ describe('web build file synthesis', () => {
     expect(hero!.content).toMatch(/Formda kal|Randevu al/);
   });
 
+  it('generates a premium, animated dark theme (aurora hero + motion keyframes)', () => {
+    const files = synthesizeFiles(result);
+    const hero = files.find((f) => /Hero\.tsx/.test(f.path))!;
+    const css = files.find((f) => f.path === 'index.css')!;
+    // Hero uses the animated premium background primitives.
+    expect(hero.content).toMatch(/kx-aurora/);
+    expect(hero.content).toMatch(/kx-grid/);
+    // index.css ships the motion keyframes + reduced-motion guard.
+    expect(css.content).toMatch(/@keyframes kx-aurora/);
+    expect(css.content).toMatch(/@keyframes kx-reveal/);
+    expect(css.content).toMatch(/prefers-reduced-motion/);
+    // Premium dark shell, not the old white template.
+    const app = files.find((f) => f.path === 'App.tsx')!;
+    expect(app.content).toMatch(/#05070d/);
+  });
+
   it('diffs mark all files created on the first build with line counts', () => {
     const files = resolveFiles(result);
     expect(files.every((f) => f.status === 'created')).toBe(true);

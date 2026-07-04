@@ -127,22 +127,36 @@ function extractCopyPieces(body: string, purpose?: string): { headline?: string;
 
 /* ── Component templates ─────────────────────────────────────────────── */
 
-function heroComponent(name: string, c: SectionCopy, brief: { goal?: string }): string {
+function heroComponent(name: string, c: SectionCopy, brief: { goal?: string; type?: string }): string {
   const headline = c.headline || 'Your headline here';
   const sub = c.sub || brief.goal || '';
   const cta = c.cta || 'Get started';
+  const eyebrow = brief.type || c.bullets?.[0] || '';
+  const secondary = c.bullets?.[1] || '';
+  const proof = c.bullets?.[2] || '';
   return `export default function ${name}() {
   return (
-    <section className="relative overflow-hidden px-6 py-24 sm:py-32 text-center">
-      <div className="mx-auto max-w-3xl">
-        <h1 className="text-4xl sm:text-5xl font-bold tracking-tight text-slate-900">
-          {\`${esc(headline)}\`}
-        </h1>
-        ${sub ? `<p className="mt-5 text-lg leading-relaxed text-slate-600">{\`${esc(sub)}\`}</p>` : ''}
-        <div className="mt-8 flex items-center justify-center gap-3">
-          <a href="#contact" className="rounded-xl bg-blue-600 px-6 py-3 text-white font-medium shadow-sm hover:bg-blue-700 transition-colors">
-            {\`${esc(cta)}\`}
-          </a>
+    <section className="relative isolate overflow-hidden">
+      {/* Animated premium background: soft grid + drifting aurora orbs */}
+      <div className="kx-grid absolute inset-0 -z-10" aria-hidden="true" />
+      <div className="kx-aurora -z-10" style={{ top: '-6rem', left: '-4rem', width: '28rem', height: '28rem', background: 'radial-gradient(circle, #6366f1, transparent 60%)' }} aria-hidden="true" />
+      <div className="kx-aurora -z-10" style={{ top: '3rem', right: '-6rem', width: '24rem', height: '24rem', background: 'radial-gradient(circle, #22d3ee, transparent 60%)', animationDelay: '-6s' }} aria-hidden="true" />
+      <div className="mx-auto max-w-6xl px-6 py-28 sm:py-36">
+        <div className="kx-reveal mx-auto max-w-3xl text-center">
+          ${eyebrow ? `<span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-medium text-indigo-200">
+            <span className="h-1.5 w-1.5 rounded-full bg-indigo-400" /> {\`${esc(eyebrow)}\`}
+          </span>` : ''}
+          <h1 className="mt-6 text-4xl font-semibold tracking-tight text-white sm:text-6xl">
+            {\`${esc(headline)}\`}
+          </h1>
+          ${sub ? `<p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-slate-300">{\`${esc(sub)}\`}</p>` : ''}
+          <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <a href="#contact" className="rounded-xl bg-indigo-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-400">
+              {\`${esc(cta)}\`}
+            </a>
+            ${secondary ? `<a href="#features" className="rounded-xl border border-white/15 px-6 py-3 text-sm font-medium text-slate-200 transition hover:bg-white/[0.05]">{\`${esc(secondary)}\`}</a>` : ''}
+          </div>
+          ${proof ? `<p className="mt-6 text-xs text-slate-400">{\`${esc(proof)}\`}</p>` : ''}
         </div>
       </div>
     </section>
@@ -153,16 +167,17 @@ function heroComponent(name: string, c: SectionCopy, brief: { goal?: string }): 
 
 function cardsComponent(name: string, c: SectionCopy): string {
   const items = (c.bullets.length ? c.bullets : [c.sub || c.purpose || '']).filter(Boolean).slice(0, 6);
-  const cards = items.map((b, i) => `        <div key={${i}} className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="mb-3 h-10 w-10 rounded-lg bg-blue-50" />
-          <p className="text-[15px] font-medium text-slate-900">{\`${esc(b)}\`}</p>
-        </div>`).join('\n');
+  const cards = items.map((b, i) => `          <div key={${i}} className="group relative rounded-2xl border border-white/10 bg-white/[0.03] p-6 transition duration-300 hover:-translate-y-1 hover:border-white/20 hover:bg-white/[0.05]">
+            <div className="mb-4 h-11 w-11 rounded-xl bg-gradient-to-br from-indigo-500/40 to-cyan-400/20 ring-1 ring-white/10" />
+            <p className="text-[15px] font-semibold leading-snug text-white">{\`${esc(b)}\`}</p>
+          </div>`).join('\n');
   return `export default function ${name}() {
   return (
-    <section className="px-6 py-20 bg-slate-50">
-      <div className="mx-auto max-w-5xl">
-        ${c.headline ? `<h2 className="text-3xl font-semibold text-slate-900 text-center mb-10">{\`${esc(c.headline)}\`}</h2>` : ''}
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+    <section id="features" className="relative px-6 py-20 sm:py-24">
+      <div className="mx-auto max-w-6xl">
+        ${c.headline ? `<h2 className="mx-auto max-w-2xl text-center text-3xl font-semibold tracking-tight text-white sm:text-4xl">{\`${esc(c.headline)}\`}</h2>` : ''}
+        ${c.sub ? `<p className="mx-auto mt-4 max-w-2xl text-center text-slate-400">{\`${esc(c.sub)}\`}</p>` : ''}
+        <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
 ${cards}
         </div>
       </div>
@@ -177,11 +192,12 @@ function ctaComponent(name: string, c: SectionCopy): string {
   const cta = c.cta || 'Book now';
   return `export default function ${name}() {
   return (
-    <section id="contact" className="px-6 py-20 text-center bg-blue-600">
-      <div className="mx-auto max-w-2xl">
-        <h2 className="text-3xl font-semibold text-white">{\`${esc(headline)}\`}</h2>
-        ${c.sub ? `<p className="mt-3 text-blue-100">{\`${esc(c.sub)}\`}</p>` : ''}
-        <a href="#" className="mt-6 inline-block rounded-xl bg-white px-6 py-3 font-medium text-blue-700 hover:bg-blue-50 transition-colors">
+    <section id="contact" className="relative isolate overflow-hidden px-6 py-24">
+      <div className="kx-aurora -z-10" style={{ bottom: '-8rem', left: '50%', width: '32rem', height: '20rem', transform: 'translateX(-50%)', background: 'radial-gradient(circle, #6366f1, transparent 60%)' }} aria-hidden="true" />
+      <div className="kx-reveal mx-auto max-w-2xl rounded-3xl border border-white/10 bg-white/[0.03] p-10 text-center backdrop-blur">
+        <h2 className="text-3xl font-semibold tracking-tight text-white">{\`${esc(headline)}\`}</h2>
+        ${c.sub ? `<p className="mt-3 text-slate-300">{\`${esc(c.sub)}\`}</p>` : ''}
+        <a href="#" className="mt-7 inline-block rounded-xl bg-indigo-500 px-7 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-400">
           {\`${esc(cta)}\`}
         </a>
       </div>
@@ -194,12 +210,12 @@ function ctaComponent(name: string, c: SectionCopy): string {
 function footerComponent(name: string, c: SectionCopy): string {
   return `export default function ${name}() {
   return (
-    <footer className="px-6 py-12 border-t border-slate-200 bg-white">
-      <div className="mx-auto max-w-5xl flex flex-col sm:flex-row items-center justify-between gap-4">
-        <p className="text-sm text-slate-500">{\`${esc(c.headline || '© Your Company')}\`}</p>
-        <nav className="flex gap-6 text-sm text-slate-500">
-          <a href="#" className="hover:text-slate-900">Home</a>
-          <a href="#contact" className="hover:text-slate-900">Contact</a>
+    <footer className="border-t border-white/10 px-6 py-12">
+      <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 sm:flex-row">
+        <p className="text-sm text-slate-400">{\`${esc(c.headline || '© Your Company')}\`}</p>
+        <nav className="flex gap-6 text-sm text-slate-400">
+          <a href="#features" className="transition hover:text-white">Features</a>
+          <a href="#contact" className="transition hover:text-white">Contact</a>
         </nav>
       </div>
     </footer>
@@ -212,13 +228,13 @@ function genericComponent(name: string, c: SectionCopy): string {
   const headline = c.headline || c.name;
   const bullets = c.bullets.slice(0, 6);
   const list = bullets.length
-    ? `        <ul className="mt-5 space-y-2 text-slate-600">\n${bullets.map((b, i) => `          <li key={${i}}>{\`${esc(b)}\`}</li>`).join('\n')}\n        </ul>`
-    : (c.sub ? `        <p className="mt-4 text-slate-600">{\`${esc(c.sub)}\`}</p>` : '');
+    ? `        <ul className="mt-6 space-y-3 text-slate-300">\n${bullets.map((b, i) => `          <li key={${i}} className="flex gap-3"><span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-400" />{\`${esc(b)}\`}</li>`).join('\n')}\n        </ul>`
+    : (c.sub ? `        <p className="mt-4 leading-relaxed text-slate-300">{\`${esc(c.sub)}\`}</p>` : '');
   return `export default function ${name}() {
   return (
     <section className="px-6 py-20">
       <div className="mx-auto max-w-4xl">
-        <h2 className="text-3xl font-semibold text-slate-900">{\`${esc(headline)}\`}</h2>
+        <h2 className="text-3xl font-semibold tracking-tight text-white">{\`${esc(headline)}\`}</h2>
 ${list}
       </div>
     </section>
@@ -227,7 +243,7 @@ ${list}
 `;
 }
 
-function componentFor(name: string, c: SectionCopy, brief: { goal?: string }): string {
+function componentFor(name: string, c: SectionCopy, brief: { goal?: string; type?: string }): string {
   const k = `${c.id} ${c.name}`.toLowerCase();
   if (/hero/.test(k)) return heroComponent(name, c, brief);
   if (/footer/.test(k)) return footerComponent(name, c);
@@ -266,19 +282,72 @@ export function synthesizeFiles(result: WebBuildResult): SynthFile[] {
 
 export default function App() {
   return (
-    <main className="min-h-screen bg-white text-slate-900 antialiased">
+    <main className="min-h-screen bg-[#05070d] text-slate-200 antialiased selection:bg-indigo-500/40">
 ${usage}
     </main>
   );
 }
 `;
-  files.unshift({ path: 'App.tsx', language: 'tsx', content: app, summary: 'Page layout composing all sections' });
+  files.unshift({ path: 'App.tsx', language: 'tsx', content: app, summary: 'Premium dark page shell composing all sections' });
 
   files.push({
     path: 'index.css',
     language: 'css',
-    content: `@tailwind base;\n@tailwind components;\n@tailwind utilities;\n\n:root {\n  color-scheme: light;\n}\n\nhtml {\n  scroll-behavior: smooth;\n}\n`,
-    summary: 'Tailwind base styles',
+    content: `@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: dark; }
+
+html { scroll-behavior: smooth; }
+body {
+  background: #05070d;
+  color: #e5e9f0;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Premium motion primitives (subtle, performance-friendly) ─────────── */
+@keyframes kx-aurora {
+  0%   { transform: translate3d(-8%, -6%, 0) scale(1); }
+  50%  { transform: translate3d(8%, 6%, 0) scale(1.18); }
+  100% { transform: translate3d(-8%, -6%, 0) scale(1); }
+}
+@keyframes kx-float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-12px); }
+}
+@keyframes kx-reveal {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Drifting aurora orb — position/size/color set inline per use. */
+.kx-aurora {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(70px);
+  opacity: 0.55;
+  animation: kx-aurora 16s ease-in-out infinite;
+  pointer-events: none;
+}
+.kx-float  { animation: kx-float 7s ease-in-out infinite; }
+.kx-reveal { animation: kx-reveal 0.8s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* Soft blueprint grid, faded toward the edges. */
+.kx-grid {
+  background-image:
+    linear-gradient(rgba(255,255,255,0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.045) 1px, transparent 1px);
+  background-size: 44px 44px;
+  -webkit-mask-image: radial-gradient(ellipse at center, #000 40%, transparent 75%);
+  mask-image: radial-gradient(ellipse at center, #000 40%, transparent 75%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kx-aurora, .kx-float, .kx-reveal { animation: none; }
+}
+`,
+    summary: 'Premium dark theme + subtle motion (aurora, float, reveal, grid)',
   });
 
   return files;
