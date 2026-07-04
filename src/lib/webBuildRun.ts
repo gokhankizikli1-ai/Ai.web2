@@ -110,7 +110,7 @@ export function stepToEvents(
   const fileEvent = (f: WebBuildFile, type: 'file_created' | 'file_modified'): WebBuildRunEvent => ({
     id: eid(), type, group: `file-${f.path}`, status: 'completed',
     tool: type === 'file_modified' ? 'edit_file' : 'create_file',
-    titleKey: type === 'file_modified' ? 'wbToolEditFile' : 'wbToolCreateFile',
+    titleKey: type === 'file_modified' ? 'wbActionUpdate' : 'wbActionCreate',
     filePath: f.path, language: f.language, summary: f.summary,
     linesAdded: f.added, linesRemoved: f.removed,
   });
@@ -122,10 +122,10 @@ export function stepToEvents(
       messageKey: targets ? 'wbFeedReviseOpening' : 'wbFeedReviseOpeningPlain',
       params: targets ? { targets } : undefined,
     });
-    pushTool(out, 'think', 'think', 'wbToolThink', { summaryKey: 'wbThinkEdit' });
+    pushTool(out, 'think', 'think', 'wbToolThink');
     for (const f of shown) {
       if (f.status === 'modified') {
-        pushTool(out, `read-${f.path}`, 'read_file', 'wbToolReadFile', { filePath: f.path });
+        pushTool(out, `read-${f.path}`, 'read_file', 'wbActionRead', { filePath: f.path });
         out.push(fileEvent(f, 'file_modified'));
       } else {
         out.push(fileEvent(f, 'file_created'));
@@ -148,7 +148,13 @@ export function stepToEvents(
     messageKey: brief.goal ? 'wbFeedBuildOpening' : 'wbFeedBuildOpeningPlain',
     params: brief.goal ? { goal: brief.goal } : undefined,
   });
-  pushTool(out, 'think', 'think', 'wbToolThink', { summaryKey: 'wbThinkPlan' });
+  pushTool(out, 'think', 'think', 'wbToolThink');
+  if (step.summary.sectionNames.length) {
+    out.push({
+      id: eid(), type: 'assistant_message', status: 'completed',
+      messageKey: 'wbFeedBuildStructureMsg', params: { sections: step.summary.sectionNames.slice(0, 6).join(', ') },
+    });
+  }
   for (const f of shown) out.push(fileEvent(f, 'file_created'));
   pushTool(out, 'preview', 'preview', 'wbActPreviewRoute', { summaryKey: 'wbPreviewNote' });
   out.push({ id: eid(), type: 'preview_ready', group: 'preview', status: 'completed' });
@@ -216,7 +222,7 @@ export function eventsToRows(events: WebBuildRunEvent[]): RunRow[] {
         rows.push({
           kind: 'tool', id: e.group || e.id,
           toolType: e.type === 'file_modified' ? 'edit_file' : 'create_file',
-          titleKey: e.titleKey || (e.type === 'file_modified' ? 'wbToolEditFile' : 'wbToolCreateFile'),
+          titleKey: e.titleKey || (e.type === 'file_modified' ? 'wbActionUpdate' : 'wbActionCreate'),
           status: 'completed', filePath: e.filePath, summary: e.summary,
           added: e.linesAdded || 0, removed: e.linesRemoved || 0, clickable: !!e.filePath,
         });

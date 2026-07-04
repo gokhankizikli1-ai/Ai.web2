@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useLanguageStore } from '@/stores/languageStore';
-import WebBuildToolCallBlock from '@/components/builder/WebBuildToolCallBlock';
+import WebBuildInlineExecutionLine from '@/components/builder/WebBuildInlineExecutionLine';
 import type { RunRow, ToolType } from '@/lib/webBuildRun';
 
 /**
- * Renders a Web Build coding-agent run: a short assistant message, a small
- * Thinking block, then the real work as file tool-call blocks (Create/Edit/Read
- * file · +N −M), then a preview block. No checklist, no planning rows, no table,
- * no tick waterfall, no emoji. File blocks are clickable → open the code drawer.
+ * Renders a Web Build coding-agent run as normal chat: short assistant
+ * paragraphs interleaved with MINIMAL inline execution lines (Think, Create
+ * components/Hero.tsx +48 −0, …). No cards, no table, no checklist, no tick
+ * waterfall, no emoji. The active line has a soft shimmer; completed file lines
+ * are calm/static and clickable → open the code drawer on that file.
  *
- * `animate` (newest run) reveals blocks one by one and plays each tool block
+ * `animate` (newest run) reveals lines one by one and plays each tool line
  * running → completed, so it reads like the agent is writing files live — even
  * though the non-streaming backend returned them together. History renders done.
  */
@@ -78,7 +79,7 @@ export default function WebBuildAgentRun({
           >
             {row.kind === 'message'
               ? <MessageRow row={row} />
-              : <WebBuildToolCallBlock row={{ ...row, status }} onOpenFile={onOpenFile} />}
+              : <ToolLine row={row} status={status} onOpenFile={onOpenFile} />}
           </motion.div>
         );
       })}
@@ -89,4 +90,25 @@ export default function WebBuildAgentRun({
 function MessageRow({ row }: { row: Extract<RunRow, { kind: 'message' }> }) {
   const { t } = useLanguageStore();
   return <p className="text-[13px] leading-relaxed text-[#CBD5E1]">{t(row.messageKey, row.params)}</p>;
+}
+
+function ToolLine({
+  row, status, onOpenFile,
+}: {
+  row: Extract<RunRow, { kind: 'tool' }>;
+  status: 'running' | 'completed' | 'failed';
+  onOpenFile: (path: string) => void;
+}) {
+  const { t } = useLanguageStore();
+  return (
+    <WebBuildInlineExecutionLine
+      label={t(row.titleKey)}
+      status={status}
+      filePath={row.filePath}
+      linesAdded={row.added}
+      linesRemoved={row.removed}
+      summary={row.summaryKey ? t(row.summaryKey) : row.summary}
+      onClick={row.clickable && row.filePath ? () => onOpenFile(row.filePath!) : undefined}
+    />
+  );
 }
