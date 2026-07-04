@@ -94,14 +94,16 @@ describe('web build execution feed', () => {
   const result = makeResult(REPLY);
   const brief = extractBrief(result.sections);
 
-  it('a fresh build opens with a text line, an analyze block, then a done line', () => {
+  it('a fresh build opens with a text line, has Analyze + Plan blocks, and ends with Build completed', () => {
     const payload = buildWebBuildPayload('build a fitness coach site', result);
     const feed = deriveExecutionFeed(payload.steps[0], brief);
     expect(feed[0].kind).toBe('text');
-    expect(feed.some((i) => i.kind === 'analyze')).toBe(true);
-    expect(feed[feed.length - 1]).toMatchObject({ kind: 'text', key: 'wbFeedBuildDone' });
-    // No checklist "info" rows — only text / analyze / file items exist.
-    expect(feed.every((i) => i.kind === 'text' || i.kind === 'analyze' || i.kind === 'file')).toBe(true);
+    expect(feed.some((i) => i.kind === 'action' && i.id === 'analyze' && i.details === 'brief')).toBe(true);
+    expect(feed.some((i) => i.kind === 'action' && i.id === 'plan' && i.details === 'sections')).toBe(true);
+    expect(feed.some((i) => i.kind === 'action' && i.id === 'preview-route')).toBe(true);
+    expect(feed[feed.length - 1]).toMatchObject({ kind: 'action', id: 'done', titleKey: 'wbActBuildDone' });
+    // Only text / action / file items — no checklist rows.
+    expect(feed.every((i) => i.kind === 'text' || i.kind === 'action' || i.kind === 'file')).toBe(true);
   });
 
   it('a fresh build emits one create file action per created file, never inventing files', () => {
@@ -113,7 +115,7 @@ describe('web build execution feed', () => {
     expect(fileItems.every((i) => i.op === 'create')).toBe(true);
   });
 
-  it('a revision emits read-then-update actions for the changed file and no analyze block', () => {
+  it('a revision emits read-then-update actions for the changed file and no analyze/plan blocks', () => {
     const first = buildWebBuildPayload('build it', result);
     const revisedReply = REPLY.replace('Formda kal, randevunu al', 'Premium koçlukla hedefine ulaş');
     const second = buildWebBuildPayload('change the hero headline', makeResult(revisedReply), first);
@@ -125,7 +127,8 @@ describe('web build execution feed', () => {
     expect(heroRead).toBeTruthy();
     expect(heroUpd).toBeTruthy();
     expect(files.indexOf(heroRead!)).toBeLessThan(files.indexOf(heroUpd!));
-    expect(feed.some((i) => i.kind === 'analyze')).toBe(false);
-    expect(feed[feed.length - 1]).toMatchObject({ kind: 'text', key: 'wbFeedReviseDone' });
+    expect(feed.some((i) => i.kind === 'action' && (i.id === 'analyze' || i.id === 'plan'))).toBe(false);
+    expect(feed.some((i) => i.kind === 'action' && i.id === 'preview-update')).toBe(true);
+    expect(feed[feed.length - 1]).toMatchObject({ kind: 'action', id: 'done', titleKey: 'wbActBuildDone' });
   });
 });
