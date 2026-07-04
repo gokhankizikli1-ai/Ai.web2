@@ -41,6 +41,7 @@ export default function WebsiteBuilder() {
   const { t, lang } = useLanguageStore();
 
   const [input, setInput] = useState('');
+  const [inputFocused, setInputFocused] = useState(false);
   const [payload, setPayload] = useState<WebBuildPayload | null>(null);
   const [animateStepId, setAnimateStepId] = useState<string | undefined>(undefined);
   const [live, setLive] = useState<{ prompt: string; kind: 'build' | 'revision' } | null>(null);
@@ -276,6 +277,9 @@ export default function WebsiteBuilder() {
   );
 
   const hasConversation = Boolean(payload || live);
+  // Mascot reacts to the composer: working while generating, awake when the
+  // input is focused, typing while there's text in it, else calm/idle.
+  const mascotState = busy || live ? 'working' : inputFocused ? (input.trim() ? 'typing' : 'awake') : 'idle';
   const placeholder = payload ? t('wbComposerRevise') : t('wbComposerPlaceholder');
 
   return (
@@ -289,17 +293,18 @@ export default function WebsiteBuilder() {
       <div className="flex flex-col min-h-[calc(100vh-220px)]">
         {/* ── Conversation feed / idle state ─────────────────────────── */}
         <div className="flex-1">
+          {/* New Build is always available — empty state and after a build. */}
+          <div className="mb-3 flex justify-end">
+            <button
+              onClick={startNewBuild}
+              disabled={busy}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.08] px-2.5 py-1.5 text-[12px] text-[#94A3B8] hover:text-white hover:border-white/[0.16] transition-colors disabled:opacity-50"
+            >
+              <Plus className="h-3.5 w-3.5" /> {t('wbNewBuild')}
+            </button>
+          </div>
           {hasConversation ? (
             <>
-              <div className="mb-3 flex justify-end">
-                <button
-                  onClick={startNewBuild}
-                  disabled={busy}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.08] px-2.5 py-1.5 text-[12px] text-[#94A3B8] hover:text-white hover:border-white/[0.16] transition-colors disabled:opacity-50"
-                >
-                  <Plus className="h-3.5 w-3.5" /> {t('wbNewBuild')}
-                </button>
-              </div>
               <WebBuildConversation
                 steps={payload?.steps ?? []}
                 files={payload?.files ?? []}
@@ -328,7 +333,7 @@ export default function WebsiteBuilder() {
             </>
           ) : (
             <>
-              <WebBuildWelcome onExample={(idea) => runFresh(idea)} />
+              <WebBuildWelcome onExample={(idea) => runFresh(idea)} mascotState={mascotState} />
               {errorMsg && (
                 <div className="mx-auto mt-8 w-full max-w-md flex flex-wrap items-center gap-3 rounded-xl border border-rose-500/20 bg-rose-500/[0.04] px-4 py-3.5 text-left">
                   <AlertTriangle className="h-4 w-4 shrink-0 text-rose-400" />
@@ -356,6 +361,8 @@ export default function WebsiteBuilder() {
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              onFocus={() => setInputFocused(true)}
+              onBlur={() => setInputFocused(false)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSubmit(); }
               }}
