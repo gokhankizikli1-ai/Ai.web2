@@ -355,6 +355,7 @@ export const fr: Record<string, string> = {
   wbNoCodeError: "Code manquant pour ce fichier — c'est un bug de build, il a été journalisé.",
   wbComposerPlaceholder: "Décrivez votre site, ou demandez une modification…",
   wbComposerRevise: "Demander une modification…",
+  wbNewBuild: "Nouveau build",
   wbFeedYou: "Vous",
   wbClosePanel: "Fermer",
   /* web build — real file artifacts */

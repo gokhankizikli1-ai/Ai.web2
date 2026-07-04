@@ -370,8 +370,15 @@ export default function ChatDashboard() {
   }, [createNewChat, addToast, t, currentTab]);
 
   const handleSelectSession = useCallback((id: string) => {
+    // Web Build sessions belong to the builder — route there and reopen the
+    // real Web Build session instead of loading it as a normal chat.
+    const picked = filteredSessions.find((s) => s.id === id);
+    if (picked?.mode === 'web_build') {
+      navigate(`/tools/website-builder?session=${encodeURIComponent(picked.webBuildRunId || id)}`);
+      return;
+    }
     selectSession(id);
-  }, [selectSession]);
+  }, [selectSession, filteredSessions, navigate]);
 
   // No-op kept for API stability with ChatView's onHoverAction prop.
   // Production fix 2026-06-28: previous implementation called

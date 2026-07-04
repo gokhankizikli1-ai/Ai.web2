@@ -3,9 +3,16 @@ import {
   Layout, Loader2, ArrowUp, AlertTriangle, RotateCcw,
   Check, FolderOpen, Plus, X, ChevronLeft, FolderPlus,
 } from 'lucide-react';
+import { useSearchParams } from 'react-router';
 import BuilderWorkspaceFrame from '@/components/builder/BuilderWorkspaceFrame';
 import WebBuildConversation from '@/components/builder/WebBuildConversation';
+import WebBuildWelcome from '@/components/builder/WebBuildWelcome';
 import { useLanguageStore } from '@/stores/languageStore';
+import {
+  saveWebBuildSession, getWebBuildSession, getActiveWebBuildSession,
+  clearActiveWebBuildSession, deriveWebBuildTitle,
+} from '@/lib/webBuildSession';
+import { upsertWebBuildChatSession } from '@/lib/webBuildChatSession';
 import {
   generateWebBuild, WebBuildError, webBuildErrorKeyFor,
 } from '@/lib/webBuildApi';
@@ -30,16 +37,6 @@ function slugFromIdea(idea: string): string {
   return `${base || 'yoursite'}.korvix.build`;
 }
 
-/** Prefill chips for the idle state → seed the composer with a starter idea. */
-const EXAMPLE_CHIPS: { label: string; idea: string }[] = [
-  { label: 'SaaS', idea: 'A SaaS landing page for an AI analytics tool' },
-  { label: 'Portfolio', idea: 'A portfolio site for a product designer' },
-  { label: 'Agency', idea: 'A website for a creative branding agency' },
-  { label: 'Restaurant', idea: 'A website for a modern neighbourhood restaurant' },
-  { label: 'Ecommerce', idea: 'A storefront landing page for a skincare brand' },
-  { label: 'Waitlist', idea: 'A waitlist landing page for a new productivity app' },
-];
-
 export default function WebsiteBuilder() {
   const { t, lang } = useLanguageStore();
 
@@ -58,8 +55,44 @@ export default function WebsiteBuilder() {
   const abortRef = useRef<AbortController | null>(null);
   const feedEndRef = useRef<HTMLDivElement | null>(null);
   const lastPromptRef = useRef('');
+  const [searchParams, setSearchParams] = useSearchParams();
 
   useEffect(() => () => { abortRef.current?.abort(); }, []);
+
+  // Restore a persisted Web Build session on mount — a specific one from
+  // ?session=<id> (e.g. clicked in the sidebar), else the last active session —
+  // so leaving/returning or a refresh never loses the build. Runs once.
+  useEffect(() => {
+    const sid = searchParams.get('session');
+    const restored = sid ? getWebBuildSession(sid) : getActiveWebBuildSession();
+    if (restored) {
+      setPayload(restored);
+      setAnimateStepId(undefined); // restored history renders fully, no replay
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** Persist the session + mirror it into the sidebar, and pin ?session=<id>
+   *  so a refresh reopens exactly this build. */
+  const persistSession = useCallback((p: WebBuildPayload) => {
+    const id = saveWebBuildSession(p, lang);
+    if (!id) return;
+    upsertWebBuildChatSession(id, deriveWebBuildTitle(p.prompt, lang), p.prompt);
+    setSearchParams({ session: id }, { replace: true });
+  }, [lang, setSearchParams]);
+
+  /** Start a brand-new build — clear the active session + URL, back to welcome. */
+  const startNewBuild = useCallback(() => {
+    abortRef.current?.abort();
+    setPayload(null);
+    setAnimateStepId(undefined);
+    setErrorMsg('');
+    setSavedProjectId(undefined);
+    setSaveStep('closed');
+    setInput('');
+    clearActiveWebBuildSession();
+    setSearchParams({}, { replace: true });
+  }, [setSearchParams]);
 
   // Keep the newest message in view as the conversation grows.
   useEffect(() => {
@@ -100,6 +133,7 @@ export default function WebsiteBuilder() {
       if (abortRef.current !== controller) return; // superseded
       const next = buildWebBuildPayload(trimmed, res, undefined, lang);
       setPayload(next);
+      persistSession(next);
       stashLatestPreview(next, slugFromIdea(next.prompt));
       setAnimateStepId(next.steps[next.steps.length - 1]?.id);
       setLive(null);
@@ -133,6 +167,7 @@ export default function WebsiteBuilder() {
       if (abortRef.current !== controller) return; // superseded
       const next = buildWebBuildPayload(trimmed, res, payload, lang);
       setPayload(next);
+      persistSession(next);
       stashLatestPreview(next, slugFromIdea(next.prompt));
       setAnimateStepId(next.steps[next.steps.length - 1]?.id);
       setLive(null);
@@ -256,6 +291,15 @@ export default function WebsiteBuilder() {
         <div className="flex-1">
           {hasConversation ? (
             <>
+              <div className="mb-3 flex justify-end">
+                <button
+                  onClick={startNewBuild}
+                  disabled={busy}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.08] px-2.5 py-1.5 text-[12px] text-[#94A3B8] hover:text-white hover:border-white/[0.16] transition-colors disabled:opacity-50"
+                >
+                  <Plus className="h-3.5 w-3.5" /> {t('wbNewBuild')}
+                </button>
+              </div>
               <WebBuildConversation
                 steps={payload?.steps ?? []}
                 files={payload?.files ?? []}
@@ -283,27 +327,10 @@ export default function WebsiteBuilder() {
               )}
             </>
           ) : (
-            <div className="flex flex-col items-center justify-center text-center py-16 sm:py-24">
-              <h2 className="text-[20px] sm:text-[22px] font-semibold text-white tracking-tight mb-2.5">
-                {t('webBuildEmptyTitle')}
-              </h2>
-              <p className="max-w-md text-[13px] text-[#94A3B8] leading-relaxed mb-6">
-                {t('webBuildEmptyBody')}
-              </p>
-              <div className="flex flex-wrap items-center justify-center gap-2">
-                {EXAMPLE_CHIPS.map((c) => (
-                  <button
-                    key={c.label}
-                    onClick={() => setInput(c.idea)}
-                    className="px-3 py-1.5 rounded-full bg-white/[0.02] border border-white/[0.06] text-[12px] text-[#94A3B8] hover:text-slate-100 hover:border-white/[0.14] transition-colors"
-                  >
-                    {c.label}
-                  </button>
-                ))}
-              </div>
-
+            <>
+              <WebBuildWelcome onExample={(idea) => runFresh(idea)} />
               {errorMsg && (
-                <div className="mt-8 w-full max-w-md flex flex-wrap items-center gap-3 rounded-xl border border-rose-500/20 bg-rose-500/[0.04] px-4 py-3.5 text-left">
+                <div className="mx-auto mt-8 w-full max-w-md flex flex-wrap items-center gap-3 rounded-xl border border-rose-500/20 bg-rose-500/[0.04] px-4 py-3.5 text-left">
                   <AlertTriangle className="h-4 w-4 shrink-0 text-rose-400" />
                   <p className="text-[12.5px] text-[#CBD5E1] flex-1 min-w-0">{errorMsg}</p>
                   {lastPromptRef.current && (
@@ -318,7 +345,7 @@ export default function WebsiteBuilder() {
                   )}
                 </div>
               )}
-            </div>
+            </>
           )}
           <div ref={feedEndRef} />
         </div>
