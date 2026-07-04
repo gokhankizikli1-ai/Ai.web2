@@ -41,6 +41,7 @@ import {
   type WebBuildPayload,
 } from '@/lib/webBuildPayload';
 import { saveWebBuildPayloadToProject } from '@/lib/webBuildProject';
+import { stashPreview } from '@/lib/webBuildPreviewStash';
 import { generateWebBuild, WebBuildError, webBuildErrorKeyFor } from '@/lib/webBuildApi';
 import { useLanguageStore } from '@/stores/languageStore';
 
@@ -296,7 +297,7 @@ function wbSlug(name: string): string {
 
 function WebBuildProjectView({ project }: { project: Project }) {
   const navigate = useNavigate();
-  const { t } = useLanguageStore();
+  const { t, lang } = useLanguageStore();
 
   /* Normalize the saved payload into local state so continue-revisions
      update it live. `payloadSteps` also backfills OLD payloads that predate
@@ -321,6 +322,13 @@ function WebBuildProjectView({ project }: { project: Project }) {
 
   // Abort any in-flight revision on unmount.
   useEffect(() => () => { abortRef.current?.abort(); }, []);
+
+  // Keep the preview route (/preview/web-build/:runId) loadable for this saved
+  // build — stash the latest step's preview data whenever the payload changes.
+  useEffect(() => {
+    const runId = payload.steps[payload.steps.length - 1]?.id;
+    if (runId) stashPreview({ runId, sectionItems: payload.sectionItems, brief: payload.brief, slug: wbSlug(project.name), prompt: payload.prompt });
+  }, [payload, project.name]);
 
   // Keep the newest message in view as the conversation grows.
   useEffect(() => {
@@ -348,7 +356,7 @@ function WebBuildProjectView({ project }: { project: Project }) {
         signal: controller.signal,
       });
       if (abortRef.current !== controller) return; // superseded
-      const next = buildWebBuildPayload(trimmed, res, payload);
+      const next = buildWebBuildPayload(trimmed, res, payload, lang);
       // Persist the continuation onto the saved project.
       saveWebBuildPayloadToProject(next, project.id);
       setPayload(next);
@@ -362,7 +370,7 @@ function WebBuildProjectView({ project }: { project: Project }) {
     } finally {
       if (abortRef.current === controller) setBusy(false);
     }
-  }, [busy, payload, project.id, t]);
+  }, [busy, payload, project.id, t, lang]);
 
   const handleSubmit = useCallback(() => {
     const text = input.trim();

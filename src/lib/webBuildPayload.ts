@@ -6,7 +6,9 @@
  */
 import type { BuildSection } from '@/lib/gameBuilderApi';
 import { extractBrief, type WebBuildResult } from '@/lib/webBuildApi';
-import { resolveBuildFiles, parseSectionCopy, type SynthFile } from '@/lib/webBuildFiles';
+import { resolveBuildFiles, parseSectionCopy, synthesizeFromCopies, type SynthFile, type SectionCopy as SynthCopy } from '@/lib/webBuildFiles';
+import { inferWebsiteBrief, fallbackSectionItems, checkQuality } from '@/lib/webBuildBrief';
+import { detectMessageLanguage } from '@/lib/locale';
 
 export type ActivityStatus = 'waiting' | 'running' | 'done' | 'failed';
 
@@ -194,17 +196,62 @@ function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/** Build (or extend) the persisted payload from a result. */
-export function buildWebBuildPayload(prompt: string, result: WebBuildResult, prev?: WebBuildPayload): WebBuildPayload {
+/** WebBuildSectionItem → SectionCopy (for synthesizing files from a brief). */
+function itemsToCopies(items: WebBuildSectionItem[]): SynthCopy[] {
+  return items.map((s) => ({
+    id: s.id, name: s.name, purpose: s.purpose,
+    headline: s.headline, sub: s.sub, cta: s.cta,
+    bullets: s.bullets || [], body: '',
+  }));
+}
+
+/**
+ * Build (or extend) the persisted payload from a result — with BRIEF
+ * INTELLIGENCE. Low-detail prompts ("mobilyacı için site yap") often come back
+ * with a thin/generic reply; we infer the industry (`inferWebsiteBrief`), fill
+ * any missing brief fields, and — on a FRESH build that fails the quality gate —
+ * synthesize an industry-appropriate section set + premium files so the user
+ * still gets a real, specific site. Revisions never overwrite a good build.
+ */
+export function buildWebBuildPayload(
+  prompt: string, result: WebBuildResult, prev?: WebBuildPayload, lang?: string,
+): WebBuildPayload {
   const now = new Date().toISOString();
-  const files = resolveFiles(result, prev?.files);
+  const effLang = lang || detectMessageLanguage(prompt);
+  const inferred = inferWebsiteBrief(prompt, effLang);
+
+  const backendBrief = extractBrief(result.sections);
+  const brief = {
+    type: backendBrief.type || inferred.businessType,
+    audience: backendBrief.audience || inferred.targetAudience,
+    goal: backendBrief.goal || inferred.conversionGoal,
+    style: backendBrief.style || inferred.visualStyle,
+  };
+
+  let sectionItems = parseSectionItems(result);
+  let files = resolveFiles(result, prev?.files);
+
+  // Quality gate — repair a weak FRESH build with the inferred industry brief.
+  if (!prev && !checkQuality(sectionItems, files.length).ok) {
+    sectionItems = fallbackSectionItems(inferred, effLang);
+    files = diffFiles(undefined, synthesizeFromCopies(itemsToCopies(sectionItems), { goal: brief.goal, type: brief.type }));
+  }
+
+  const changed = files.filter((f) => f.status !== 'unchanged');
+  const summary: WebBuildSummary = {
+    type: brief.type,
+    sectionNames: sectionItems.map((s) => s.name),
+    fileCount: files.length,
+    added: changed.reduce((n, f) => n + f.added, 0),
+    removed: changed.reduce((n, f) => n + f.removed, 0),
+  };
   const activity = deriveBuildActivity(result, files);
   const step: WebBuildStep = {
     id: `step-${uid()}`,
     at: now,
     kind: prev ? 'revision' : 'build',
     prompt,
-    summary: summarize(result, files),
+    summary,
     files,
     activity,
     reply: result.reply,
@@ -212,8 +259,8 @@ export function buildWebBuildPayload(prompt: string, result: WebBuildResult, pre
   return {
     source: 'web_build',
     prompt: prev?.prompt || prompt,
-    brief: extractBrief(result.sections),
-    sectionItems: parseSectionItems(result),
+    brief,
+    sectionItems,
     sections: result.sections,
     files,
     reply: result.reply,

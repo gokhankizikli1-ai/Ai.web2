@@ -107,6 +107,31 @@ describe('web build file synthesis', () => {
   });
 });
 
+describe('web build brief-intelligence fallback', () => {
+  it('a low-detail prompt with a thin reply falls back to an industry-specific premium site', () => {
+    const thin = makeResult('## Overview\nShort.');
+    const payload = buildWebBuildPayload('Peyzaj mimarı için site yap', thin, undefined, 'tr');
+    const ids = payload.sectionItems.map((s) => s.id);
+    expect(ids).toContain('hero');
+    expect(ids).toContain('gallery'); // landscaping-specific
+    expect(payload.files.length).toBeGreaterThanOrEqual(6);
+    // Specific Turkish hero headline + concrete consultation CTA (not generic).
+    const hero = payload.sectionItems.find((s) => s.id === 'hero');
+    expect((hero?.headline || '').length).toBeGreaterThan(12);
+    expect(payload.sectionItems.some((s) => /keşif/i.test(s.cta || ''))).toBe(true);
+    // Brief is enriched with the inferred industry.
+    expect(payload.brief.goal).toBeTruthy();
+    expect(payload.brief.style).toBeTruthy();
+  });
+
+  it('a full backend reply is used as-is (no fallback override)', () => {
+    const payload = buildWebBuildPayload('fitness coach landing', makeResult(REPLY), undefined, 'tr');
+    // The real parsed sections (hero/services/testimonials/…) drive it.
+    expect(payload.sectionItems.some((s) => /hero/.test(s.id))).toBe(true);
+    expect(payload.sectionItems.some((s) => /Formda kal|Randevu al/.test(s.headline || s.copyPreview || ''))).toBe(true);
+  });
+});
+
 describe('web build run events', () => {
   const result = makeResult(REPLY);
   const brief = extractBrief(result.sections);

@@ -13,7 +13,15 @@ import {
   buildWebBuildPayload, type WebBuildPayload,
 } from '@/lib/webBuildPayload';
 import { saveWebBuildPayloadToProject } from '@/lib/webBuildProject';
+import { stashPreview } from '@/lib/webBuildPreviewStash';
 import { getProjects } from '@/stores/projectStore';
+
+/** Persist the latest build's preview so the /preview/web-build/:runId route
+ *  can always load it (even after navigating to a new tab or refreshing). */
+function stashLatestPreview(p: WebBuildPayload, slug: string): void {
+  const runId = p.steps[p.steps.length - 1]?.id;
+  if (runId) stashPreview({ runId, sectionItems: p.sectionItems, brief: p.brief, slug, prompt: p.prompt });
+}
 
 const ACCENT = '#60A5FA';
 
@@ -33,7 +41,7 @@ const EXAMPLE_CHIPS: { label: string; idea: string }[] = [
 ];
 
 export default function WebsiteBuilder() {
-  const { t } = useLanguageStore();
+  const { t, lang } = useLanguageStore();
 
   const [input, setInput] = useState('');
   const [payload, setPayload] = useState<WebBuildPayload | null>(null);
@@ -90,8 +98,9 @@ export default function WebsiteBuilder() {
     try {
       const res = await generateWebBuild(trimmed, { signal: controller.signal });
       if (abortRef.current !== controller) return; // superseded
-      const next = buildWebBuildPayload(trimmed, res);
+      const next = buildWebBuildPayload(trimmed, res, undefined, lang);
       setPayload(next);
+      stashLatestPreview(next, slugFromIdea(next.prompt));
       setAnimateStepId(next.steps[next.steps.length - 1]?.id);
       setLive(null);
     } catch (err) {
@@ -100,7 +109,7 @@ export default function WebsiteBuilder() {
     } finally {
       if (abortRef.current === controller) setBusy(false);
     }
-  }, [startLive, failLive]);
+  }, [startLive, failLive, lang]);
 
   /* ── Revision (accumulates steps + diffs) ─────────────────────────── */
   const runRevision = useCallback(async (idea: string) => {
@@ -122,8 +131,9 @@ export default function WebsiteBuilder() {
         signal: controller.signal,
       });
       if (abortRef.current !== controller) return; // superseded
-      const next = buildWebBuildPayload(trimmed, res, payload);
+      const next = buildWebBuildPayload(trimmed, res, payload, lang);
       setPayload(next);
+      stashLatestPreview(next, slugFromIdea(next.prompt));
       setAnimateStepId(next.steps[next.steps.length - 1]?.id);
       setLive(null);
     } catch (err) {
@@ -132,7 +142,7 @@ export default function WebsiteBuilder() {
     } finally {
       if (abortRef.current === controller) setBusy(false);
     }
-  }, [payload, startLive, failLive]);
+  }, [payload, startLive, failLive, lang]);
 
   /* ── Composer submit ──────────────────────────────────────────────── */
   const handleSubmit = useCallback(() => {
