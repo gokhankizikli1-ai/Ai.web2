@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { useLanguageStore } from '@/stores/languageStore';
+import { useAuthStore } from '@/stores/authStore';
 import KorvixOrb from './KorvixOrb';
 import WebBuildMascot from '@/components/builder/WebBuildMascot';
 
@@ -13,11 +14,17 @@ const L = (lang: string, en: string, tr: string) => (lang === 'tr' ? tr : en);
 
 export default function EmptyWorkspace({ builder = false }: { builder?: boolean }) {
   const { t, lang } = useLanguageStore();
+  const firstName = useAuthStore(
+    (s) => (s.user?.name || s.user?.email?.split('@')[0] || '').trim().split(/\s+/)[0],
+  );
 
   // ── Builder home: compact horizontal hero (mascot left, text right). No
   // overflow-hidden / duplicate ambient glow — the mascot's own radial glow is
   // free to fade out smoothly (clipping it produced the rectangular artifact).
   if (builder) {
+    const headline = firstName
+      ? L(lang, `Hey ${firstName}, let’s build something.`, `Selam ${firstName}, bir şey inşa edelim.`)
+      : L(lang, 'Hey, let’s build something.', 'Haydi, bir şey inşa edelim.');
     return (
       <div className="flex w-full flex-col items-center gap-4 px-4 text-center sm:flex-row sm:justify-center sm:gap-5 sm:text-left">
         <motion.div
@@ -35,7 +42,7 @@ export default function EmptyWorkspace({ builder = false }: { builder?: boolean 
             transition={{ delay: 0.1, duration: 0.5 }}
             className="text-[21px] sm:text-[24px] font-semibold tracking-tight text-white"
           >
-            {L(lang, 'Hey, let’s build something.', 'Haydi, bir şey inşa edelim.')}
+            {headline}
           </motion.h1>
           <motion.p
             initial={{ opacity: 0, y: 8 }}

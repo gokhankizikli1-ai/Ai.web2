@@ -201,17 +201,56 @@ export default function ChatView({
 
   const handleRetry = useCallback(() => onRetry(), [onRetry]);
 
+  // The composer element — identical whether centered (empty home) or docked
+  // at the bottom (active conversation). The selected build-mode pill rides
+  // inside it via topSlot.
+  const modePill = isChatHome && builderMode && builderMode !== 'chat'
+    ? <KorvixModePill mode={builderMode} onRemove={() => setBuilderMode(null)} />
+    : undefined;
+  const composer = (
+    <PremiumComposer
+      onSend={handleSend}
+      disabled={isLoading}
+      activeTools={activeTools}
+      onAddTool={addTool}
+      onRemoveTool={removeTool}
+      externalValue={inputText}
+      onExternalValueChange={onSetInput}
+      topSlot={modePill}
+    />
+  );
+
+  // ── Kimi-style centered start screen — ONLY on an empty normal Chat. The
+  // hero + composer + mode chips sit as one centered group; there is no bottom
+  // composer, so nothing is duplicated. The first message flips this to the
+  // normal feed + docked composer below.
+  if (isChatHome && isEmptyState) {
+    return (
+      <div className="flex flex-col h-full">
+        <div className="flex-1 overflow-y-auto scrollbar-thin flex flex-col items-center justify-center px-3 md:px-4">
+          <div ref={composerRef} className="w-full max-w-3xl py-8">
+            <div className="mb-7 flex justify-center">
+              <EmptyWorkspace builder />
+            </div>
+            {composer}
+            <div className="mt-3">
+              <KorvixModeChips selected={builderMode} onSelect={handleSelectMode} />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full">
       {/* Messages area */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto scrollbar-thin">
         {isEmptyState ? (
-          /* Empty state — unified Korvix builder home on the normal Chat tab.
-             The builder hero sits lower (items-end) so it reads as connected
-             to the chips + composer; other workspaces stay vertically centered. */
+          /* Non-chat workspace empty state — classic centered orb. */
           <div className="flex flex-col h-full">
-            <div className={`flex-1 flex justify-center px-4 ${isChatHome ? 'items-end pb-3' : 'items-center'}`}>
-              <EmptyWorkspace builder={isChatHome} />
+            <div className="flex-1 flex items-center justify-center px-4">
+              <EmptyWorkspace />
             </div>
           </div>
         ) : (
@@ -357,26 +396,9 @@ export default function ChatView({
         )}
       </div>
 
-      {/* Input area — floating glass, integrated with workspace */}
+      {/* Input area — docked bottom composer once a conversation exists. */}
       <div ref={composerRef} className="shrink-0 px-3 md:px-4 pb-3 md:pb-4 pt-1" style={{ background: 'transparent' }}>
-        {/* Builder-home mode chips — normal Chat empty state only. */}
-        {isChatHome && isEmptyState && (
-          <KorvixModeChips selected={builderMode} onSelect={handleSelectMode} />
-        )}
-        <PremiumComposer
-          onSend={handleSend}
-          disabled={isLoading}
-          activeTools={activeTools}
-          onAddTool={addTool}
-          onRemoveTool={removeTool}
-          externalValue={inputText}
-          onExternalValueChange={onSetInput}
-          topSlot={
-            isChatHome && builderMode && builderMode !== 'chat'
-              ? <KorvixModePill mode={builderMode} onRemove={() => setBuilderMode(null)} />
-              : undefined
-          }
-        />
+        {composer}
       </div>
     </div>
   );
