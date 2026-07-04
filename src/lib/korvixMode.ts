@@ -38,14 +38,18 @@ const APP_RE = makeRe(
   ['app'],
 );
 const WEB_RE = makeRe(
-  ['web sitesi', 'websitesi', 'landing page', 'açılış sayfası', 'ecommerce', 'e-ticaret', 'eticaret', 'online mağaza', 'mağaza', 'portföy', 'vitrin'],
+  // Unambiguous multi-word site/store phrases route on their own.
+  ['web sitesi', 'websitesi', 'internet sitesi', 'tanıtım sitesi', 'kurumsal site',
+   'landing page', 'açılış sayfası', 'ecommerce', 'e-ticaret', 'eticaret', 'online mağaza', 'portföy', 'vitrin'],
   ['website', 'landing', 'portfolio'],
 );
-// Weak website words — route only alongside a build verb.
-const WEAK_WEB_RE = makeRe([], ['site', 'web', 'store', 'shop']);
+// Weak website words — route only ALONGSIDE a build verb, so "peyzaj sitesi
+// yap" builds but "onun sitesine baktım" stays chat. Stems so Turkish
+// inflections match ("site" → "siteyi", "sitesi" → "sitesini").
+const WEAK_WEB_RE = makeRe(['site', 'sitesi', 'sayfa', 'mağaza'], ['web', 'store', 'shop']);
 const BUILD_VERB_RE = makeRe(
-  ['oluştur', 'tasarla', 'hazırla', 'geliştir'],
-  ['yap', 'yapar', 'kur', 'build', 'make', 'create', 'generate', 'design'],
+  ['oluştur', 'tasarla', 'hazırla', 'geliştir', 'iste', 'üret'],
+  ['yap', 'yapar', 'yapsana', 'kur', 'build', 'make', 'create', 'generate', 'design', 'need', 'want', 'lazım', 'gerek'],
 );
 
 /**
