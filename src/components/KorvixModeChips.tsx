@@ -64,6 +64,9 @@ export function KorvixModePill({
   onRemove: () => void;
 }) {
   const { lang } = useLanguageStore();
+  // Chat is the neutral/default mode — it never renders a pill, so the
+  // composer stays clean when Chat is selected.
+  if (mode === 'chat') return null;
   const { icon: Icon } = META[mode];
   return (
     <span

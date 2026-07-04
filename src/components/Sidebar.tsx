@@ -8,7 +8,7 @@ import {
   PanelLeftClose, PanelLeftOpen,
   Crown, Search, X,
   LogIn, Sparkles, FolderOpen,
-  Bot, Plug, SquareStack, ChevronDown, Code2, Briefcase,
+  Bot, Plug, FileText, ChevronDown, Code2, Briefcase,
 } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
 import type { ChatSession, ChatFolder } from '@/types';
@@ -336,7 +336,7 @@ export default function Sidebar({
                 type="button"
                 className="w-full flex items-center gap-2.5 px-3 h-8 rounded-lg text-[12px] text-white/55 hover:text-white/90 hover:bg-white/[0.04] transition-colors"
               >
-                <SquareStack className="h-3.5 w-3.5 shrink-0 text-white/40" />
+                <FileText className="h-3.5 w-3.5 shrink-0 text-white/40" />
                 <span className="font-medium">Skills</span>
               </button>
               <button
