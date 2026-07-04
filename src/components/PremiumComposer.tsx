@@ -30,6 +30,9 @@ interface PremiumComposerProps {
   onExternalValueChange?: (value: string) => void;
   /** When set, every uploaded asset is auto-scoped to this project. */
   projectId?: string;
+  /** Optional content rendered INSIDE the composer box, above the input row
+   *  (e.g. a selected builder-mode pill on the Chat home). */
+  topSlot?: React.ReactNode;
 }
 
 
@@ -42,6 +45,7 @@ export default function PremiumComposer({
   externalValue,
   onExternalValueChange,
   projectId,
+  topSlot,
 }: PremiumComposerProps) {
   const [internalValue, setInternalValue] = useState('');
   const [isFocused, setIsFocused]   = useState(false);
@@ -319,6 +323,10 @@ export default function PremiumComposer({
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Attached context (e.g. the selected builder-mode pill) — sits
+            inside the composer box, above the input row. */}
+        {topSlot && <div className="px-3 pt-2.5">{topSlot}</div>}
 
         <div className="flex items-center gap-1 px-3 pt-2 pb-1">
           {/* SINGLE unified "+" menu. ComposerTools renders the only +
