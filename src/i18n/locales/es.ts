@@ -355,6 +355,7 @@ export const es: Record<string, string> = {
   wbNoCodeError: "Falta el código de este archivo — es un error de compilación y se ha registrado.",
   wbComposerPlaceholder: "Describe tu sitio web o solicita un cambio…",
   wbComposerRevise: "Solicita un cambio…",
+  wbNewBuild: "Nueva compilación",
   wbFeedYou: "Tú",
   wbClosePanel: "Cerrar",
   /* web build — real file artifacts */

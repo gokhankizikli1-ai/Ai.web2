@@ -355,6 +355,7 @@ export const tr: Record<string, string> = {
   wbNoCodeError: "Bu dosyanın kodu eksik — bu bir yapı hatasıdır ve kaydedildi.",
   wbComposerPlaceholder: "Web sitenizi anlatın veya bir değişiklik isteyin…",
   wbComposerRevise: "Bir değişiklik isteyin…",
+  wbNewBuild: "Yeni yapı",
   wbFeedYou: "Siz",
   wbClosePanel: "Kapat",
   /* web build — real file artifacts */

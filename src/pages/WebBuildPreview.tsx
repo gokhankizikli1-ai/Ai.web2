@@ -4,6 +4,7 @@ import { ArrowLeft, Lock } from 'lucide-react';
 import { useLanguageStore } from '@/stores/languageStore';
 import WebBuildPreviewDocument from '@/components/builder/WebBuildPreviewDocument';
 import { readPreview, type WebBuildPreviewData } from '@/lib/webBuildPreviewStash';
+import { listWebBuildSessions, getWebBuildSession } from '@/lib/webBuildSession';
 import { getProjects } from '@/stores/projectStore';
 
 /**
@@ -24,10 +25,21 @@ function fromProject(runId: string): WebBuildPreviewData | null {
   return null;
 }
 
+/** Fallback: a persisted Web Build session containing this run/step id. */
+function fromSession(runId: string): WebBuildPreviewData | null {
+  for (const meta of listWebBuildSessions()) {
+    const wb = getWebBuildSession(meta.id);
+    if (wb && (wb.steps || []).some((s) => s.id === runId)) {
+      return { runId, sectionItems: wb.sectionItems || [], brief: wb.brief || {}, slug: undefined, prompt: wb.prompt };
+    }
+  }
+  return null;
+}
+
 export default function WebBuildPreview() {
   const { t } = useLanguageStore();
   const { runId = '' } = useParams();
-  const data = useMemo(() => readPreview(runId) || fromProject(runId), [runId]);
+  const data = useMemo(() => readPreview(runId) || fromSession(runId) || fromProject(runId), [runId]);
 
   if (!data || data.sectionItems.length === 0) {
     return (

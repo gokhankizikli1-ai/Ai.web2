@@ -355,6 +355,7 @@ export const ru: Record<string, string> = {
   wbNoCodeError: "Код для этого файла отсутствует — это ошибка сборки, она залогирована.",
   wbComposerPlaceholder: "Опишите ваш сайт или запросите изменение…",
   wbComposerRevise: "Запросить изменение…",
+  wbNewBuild: "Новая сборка",
   wbFeedYou: "Вы",
   wbClosePanel: "Закрыть",
   /* web build — real file artifacts */

@@ -362,6 +362,7 @@ export const en: Record<string, string> = {
   wbNoCodeError: "Code missing for this file — this is a build bug and has been logged.",
   wbComposerPlaceholder: "Describe your website, or ask for a change…",
   wbComposerRevise: "Ask for a change…",
+  wbNewBuild: "New build",
   wbFeedYou: "You",
   wbClosePanel: "Close",
   /* web build — real file artifacts */

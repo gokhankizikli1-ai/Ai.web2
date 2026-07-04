@@ -339,6 +339,9 @@ function normalizeSession(raw: unknown): ChatSession | null {
     updatedAt = new Date();
   }
 
+  const mode = s.mode === 'web_build' || s.mode === 'game_build' || s.mode === 'chat'
+    ? (s.mode as ChatSession['mode']) : undefined;
+
   return {
     id,
     title,
@@ -348,6 +351,8 @@ function normalizeSession(raw: unknown): ChatSession | null {
     isFavorite: !!s.isFavorite,
     isArchived: !!s.isArchived,
     isDemo: !!s.isDemo,
+    ...(mode ? { mode } : {}),
+    ...(typeof s.webBuildRunId === 'string' ? { webBuildRunId: s.webBuildRunId } : {}),
   };
 }
 

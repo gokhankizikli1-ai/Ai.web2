@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { inferWebsiteBrief, detectIndustry, fallbackSectionItems, checkQuality } from '@/lib/webBuildBrief';
 import { sectionKind } from '@/lib/webBuildFiles';
+import { deriveWebBuildTitle } from '@/lib/webBuildSession';
 
 const kindsFor = (prompt: string) =>
   new Set(fallbackSectionItems(inferWebsiteBrief(prompt, 'tr'), 'tr').map((s) => sectionKind(s.id, s.name)));
@@ -61,6 +62,14 @@ describe('web build brief intelligence', () => {
     ];
     expect(checkQuality(mixed, 6, 'tr').hasLocalizedCopy).toBe(false);
     expect(checkQuality(mixed, 6, 'en').hasLocalizedCopy).toBe(true);
+  });
+
+  it('generates a short, language-matched session title per industry', () => {
+    expect(deriveWebBuildTitle('Peyzaj mimarı için site yap', 'tr')).toBe('Peyzaj Mimarı Sitesi');
+    expect(deriveWebBuildTitle('Araba satıcısı için site kur', 'tr')).toBe('Araba Galerisi Sitesi');
+    expect(deriveWebBuildTitle('build a site for my fitness coaching business', 'en')).toBe('Fitness Coaching Landing');
+    // Unknown → clean fallback, never "New Chat".
+    expect(deriveWebBuildTitle('', 'en')).toBe('Web Build');
   });
 
   it('different industries produce genuinely different section layouts', () => {

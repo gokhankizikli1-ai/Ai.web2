@@ -60,6 +60,9 @@ export interface ToolActivity {
   startedAtMs:   number;
 }
 
+/** A conversation's mode decides where clicking its sidebar entry routes. */
+export type ConversationMode = 'chat' | 'web_build' | 'game_build';
+
 export interface ChatSession {
   id: string;
   title: string;
@@ -69,6 +72,10 @@ export interface ChatSession {
   folder?: ChatFolder;
   isFavorite?: boolean;
   isArchived?: boolean;
+  /** Non-chat sessions (e.g. Web Build) — clicking routes to that tool. */
+  mode?: ConversationMode;
+  /** For web_build sessions: the Web Build session id to reopen. */
+  webBuildRunId?: string;
 }
 
 export interface PromptItem {

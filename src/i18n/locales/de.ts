@@ -355,6 +355,7 @@ export const de: Record<string, string> = {
   wbNoCodeError: "Code für diese Datei fehlt — das ist ein Build-Fehler und wurde protokolliert.",
   wbComposerPlaceholder: "Beschreibe deine Website oder bitte um eine Änderung…",
   wbComposerRevise: "Um eine Änderung bitten…",
+  wbNewBuild: "Neuer Build",
   wbFeedYou: "Du",
   wbClosePanel: "Schließen",
   /* web build — real file artifacts */
