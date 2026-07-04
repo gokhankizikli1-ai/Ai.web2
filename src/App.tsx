@@ -181,7 +181,7 @@ export default function App() {
         {/* Note: /agents is kept for the standalone marketplace; but workspace agents goes to /chat?tab=agents */}
 
         {/* Standalone generated Web Build preview (real openable URL, client-side). */}
-        <Route path="/preview/web-build" element={<WebBuildPreview />} />
+        <Route path="/preview/web-build/:runId" element={<WebBuildPreview />} />
 
         {/* ═══ Coming soon placeholders ═══ */}
         <Route path="/blog" element={<AnimatedRoute><ComingSoon title="Blog" pageType="blog" /></AnimatedRoute>} />

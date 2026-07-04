@@ -514,8 +514,21 @@ _WEBSITE_BUILDER_PROMPT = (
     "       don't fit the type (e.g. no pricing on a pure portfolio).\n"
     "  ## Generated Copy\n"
     "     — real, on-brand copy per section using `### <section-id>` subheadings. Headlines,\n"
-    "       subheadlines, button labels, feature bullets, FAQ Q&A, etc. No lorem ipsum, no vague\n"
-    "       hype ('the best in the market'). Concrete, specific, conversion-minded.\n"
+    "       subheadlines, button labels, feature bullets, FAQ Q&A, etc.\n"
+    "       COPY QUALITY BAR (enforce strictly):\n"
+    "         • Every headline names the concrete offer + outcome for THIS business — not a\n"
+    "           generic mood line. The subheadline explains how it works or what the visitor gets.\n"
+    "         • BANNED: lorem ipsum; vague hype ('the best in the market', 'world-class'); and\n"
+    "           empty motivational clichés. In Turkish specifically, DO NOT write filler like\n"
+    "           'Hayallerinize ulaşın', 'Kişisel fitness koçunuzla tanışın', 'Hedeflerinize ulaşın'.\n"
+    "         • WRITE like these (Turkish fitness-coach example of the RIGHT level):\n"
+    "             Headline: 'Hedeflerine göre tasarlanmış premium fitness koçluğu'\n"
+    "             Sub: 'Sana özel antrenman planı, sürdürülebilir beslenme yaklaşımı ve düzenli takip.'\n"
+    "             CTA: 'Ücretsiz ön görüşme planla'\n"
+    "         • The primary CTA must be specific to the conversion goal (book / subscribe / request\n"
+    "           a demo) — never a bland 'Get started' / 'Başla'.\n"
+    "         • Use the real brand/name if the user gave one; otherwise pick a fitting placeholder\n"
+    "           and stay consistent. Concrete, specific, conversion-minded throughout.\n"
     "  ## Frontend Code\n"
     "     — clean React + Tailwind. One `### <path>` per file, then a fenced ```tsx block. Prefer\n"
     "       a page component that composes small section components (Hero, Features, Pricing, …).\n"
@@ -907,9 +920,10 @@ _MODES: dict = {
         display_name="Web Build",
         model=MODEL_STRONG,
         temperature=0.60,
-        # Richer output now (plan + design + copy + real React/Tailwind code), so
-        # a larger budget than the old advice-only 2500. Still bounded.
-        max_tokens=6000,
+        # Richer output now (plan + design + copy + real React/Tailwind code). The
+        # Frontend Code section is large, so give it enough budget to avoid a
+        # truncated final file (which shows up as empty code in "All files").
+        max_tokens=8000,
         response_style="structured build package: plan, design direction, copy, and clean React+Tailwind code",
         system_prompt=_WEBSITE_BUILDER_PROMPT,
         safety_rules=[

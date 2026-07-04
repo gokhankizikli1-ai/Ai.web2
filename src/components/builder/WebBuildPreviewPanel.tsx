@@ -14,11 +14,12 @@ import type { WebBuildSectionItem } from '@/lib/webBuildPayload';
 const ACCENT = '#60A5FA';
 
 export default function WebBuildPreviewPanel({
-  sectionItems, brief, slug,
+  sectionItems, brief, slug, runId,
 }: {
   sectionItems: WebBuildSectionItem[];
   brief: { type?: string; audience?: string; goal?: string; style?: string };
   slug?: string;
+  runId?: string;
 }) {
   const { t } = useLanguageStore();
   const url = slug || 'preview.korvix.build';
@@ -31,7 +32,7 @@ export default function WebBuildPreviewPanel({
     <div>
       <div className="mb-3 flex justify-end">
         <button
-          onClick={() => openPreviewInNewTab({ sectionItems, brief, slug: url })}
+          onClick={() => openPreviewInNewTab({ runId: runId || `preview-${Date.now().toString(36)}`, sectionItems, brief, slug: url })}
           className="inline-flex items-center gap-1.5 rounded-lg border border-[#3B82F6]/30 bg-[#3B82F6]/[0.08] px-3 py-1.5 text-[12px] font-medium text-[#93C5FD] transition-colors hover:bg-[#3B82F6]/[0.14]"
         >
           <ExternalLink className="h-3.5 w-3.5" /> {t('wbOpenPreview')}
