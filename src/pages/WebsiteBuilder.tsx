@@ -7,8 +7,9 @@ import { useSearchParams } from 'react-router';
 import BuilderWorkspaceFrame from '@/components/builder/BuilderWorkspaceFrame';
 import WebBuildConversation from '@/components/builder/WebBuildConversation';
 import WebBuildWelcome from '@/components/builder/WebBuildWelcome';
-import WebBuildStarterChips from '@/components/builder/WebBuildStarterChips';
+import { WebBuildModeChips, WebBuildModePill } from '@/components/builder/WebBuildModeSelector';
 import WebBuildSidebar from '@/components/builder/WebBuildSidebar';
+import type { BuilderMode } from '@/lib/builderMode';
 import { useLanguageStore } from '@/stores/languageStore';
 import {
   saveWebBuildSession, getWebBuildSession, getActiveWebBuildSession,
@@ -44,6 +45,9 @@ export default function WebsiteBuilder() {
 
   const [input, setInput] = useState('');
   const [inputFocused, setInputFocused] = useState(false);
+  // Selected build mode (hidden context, ChatGPT/Kimi tool-style). Never
+  // inserted into the composer text — only sent as generation context.
+  const [selectedMode, setSelectedMode] = useState<BuilderMode | null>(null);
   const [payload, setPayload] = useState<WebBuildPayload | null>(null);
   const [animateStepId, setAnimateStepId] = useState<string | undefined>(undefined);
   const [live, setLive] = useState<{ prompt: string; kind: 'build' | 'revision' } | null>(null);
@@ -110,6 +114,7 @@ export default function WebsiteBuilder() {
     setSavedProjectId(undefined);
     setSaveStep('closed');
     setInput('');
+    setSelectedMode(null);
     clearActiveWebBuildSession();
     setSearchParams({}, { replace: true });
   }, [setSearchParams]);
@@ -149,7 +154,7 @@ export default function WebsiteBuilder() {
     startLive(trimmed, 'build');
 
     try {
-      const res = await generateWebBuild(trimmed, { signal: controller.signal });
+      const res = await generateWebBuild(trimmed, { signal: controller.signal, mode: selectedMode });
       if (abortRef.current !== controller) return; // superseded
       const next = buildWebBuildPayload(trimmed, res, undefined, lang);
       setPayload(next);
@@ -163,7 +168,7 @@ export default function WebsiteBuilder() {
     } finally {
       if (abortRef.current === controller) setBusy(false);
     }
-  }, [startLive, failLive, lang]);
+  }, [startLive, failLive, lang, selectedMode]);
 
   /* ── Revision (accumulates steps + diffs) ─────────────────────────── */
   const runRevision = useCallback(async (idea: string) => {
@@ -183,6 +188,7 @@ export default function WebsiteBuilder() {
         revise: true,
         previousReply: payload.reply,
         signal: controller.signal,
+        mode: selectedMode,
       });
       if (abortRef.current !== controller) return; // superseded
       const next = buildWebBuildPayload(trimmed, res, payload, lang);
@@ -197,7 +203,7 @@ export default function WebsiteBuilder() {
     } finally {
       if (abortRef.current === controller) setBusy(false);
     }
-  }, [payload, startLive, failLive, lang]);
+  }, [payload, startLive, failLive, lang, selectedMode]);
 
   /* ── Composer submit ──────────────────────────────────────────────── */
   const handleSubmit = useCallback(() => {
@@ -208,16 +214,11 @@ export default function WebsiteBuilder() {
     else runFresh(text);
   }, [input, busy, payload, runFresh, runRevision]);
 
-  /** A start-screen category chip seeds the composer with a flexible starter and
-   *  focuses it (cursor at the end) — it shapes the prompt, never auto-builds. */
-  const handlePickStarter = useCallback((starter: string) => {
-    setInput(starter);
-    const el = textareaRef.current;
-    if (!el) return;
-    requestAnimationFrame(() => {
-      el.focus();
-      el.setSelectionRange(starter.length, starter.length);
-    });
+  /** A mode chip SELECTS a build mode (hidden context) and focuses the composer.
+   *  It never inserts text — clicking the active mode again clears it. */
+  const handleSelectMode = useCallback((mode: BuilderMode) => {
+    setSelectedMode((prev) => (prev === mode ? null : mode));
+    requestAnimationFrame(() => textareaRef.current?.focus());
   }, []);
 
   const handleRetry = useCallback(() => {
@@ -397,8 +398,15 @@ export default function WebsiteBuilder() {
         {/* ── Sticky bottom composer ─────────────────────────────────── */}
         <div className="sticky bottom-0 pt-4 pb-4 bg-gradient-to-t from-[#0a0a0a] via-[#0a0a0a] to-transparent">
           {/* Build-mode chips sit right above the composer (empty state only). */}
-          {!hasConversation && <WebBuildStarterChips onPick={handlePickStarter} />}
-          <div className="flex items-end gap-2 rounded-2xl border border-white/[0.08] bg-white/[0.03] p-2 focus-within:border-white/[0.16] transition-colors">
+          {!hasConversation && <WebBuildModeChips selected={selectedMode} onSelect={handleSelectMode} />}
+          <div className="flex flex-col gap-2 rounded-2xl border border-white/[0.08] bg-white/[0.03] p-2 focus-within:border-white/[0.16] transition-colors">
+            {/* Selected build mode — a small premium pill attached to the composer. */}
+            {selectedMode && (
+              <div className="px-1 pt-0.5">
+                <WebBuildModePill mode={selectedMode} onRemove={() => setSelectedMode(null)} />
+              </div>
+            )}
+            <div className="flex items-end gap-2">
             <textarea
               ref={textareaRef}
               value={input}
@@ -421,6 +429,7 @@ export default function WebsiteBuilder() {
             >
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" strokeWidth={2.5} />}
             </button>
+            </div>
           </div>
         </div>
         </div>
