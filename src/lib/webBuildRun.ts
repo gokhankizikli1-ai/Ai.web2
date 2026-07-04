@@ -149,12 +149,14 @@ export function stepToEvents(
     params: brief.goal ? { goal: brief.goal } : undefined,
   });
   pushTool(out, 'think', 'think', 'wbToolThink');
-  if (step.summary.sectionNames.length) {
-    out.push({
-      id: eid(), type: 'assistant_message', status: 'completed',
-      messageKey: 'wbFeedBuildStructureMsg', params: { sections: step.summary.sectionNames.slice(0, 6).join(', ') },
-    });
-  }
+  // A natural transition line before writing files (names the real sections
+  // when we have them, otherwise a plain "now turning it into components").
+  out.push(step.summary.sectionNames.length
+    ? {
+        id: eid(), type: 'assistant_message', status: 'completed',
+        messageKey: 'wbFeedBuildStructureMsg', params: { sections: step.summary.sectionNames.slice(0, 6).join(', ') },
+      }
+    : { id: eid(), type: 'assistant_message', status: 'completed', messageKey: 'wbFeedBuildTransition' });
   for (const f of shown) out.push(fileEvent(f, 'file_created'));
   pushTool(out, 'preview', 'preview', 'wbActPreviewRoute', { summaryKey: 'wbPreviewNote' });
   out.push({ id: eid(), type: 'preview_ready', group: 'preview', status: 'completed' });
