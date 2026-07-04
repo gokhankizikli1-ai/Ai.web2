@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, type ReactNode } from 'react';
+import { useState, useMemo, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, Monitor, FolderTree, ArrowRight, X } from 'lucide-react';
 import { useLanguageStore } from '@/stores/languageStore';
@@ -19,19 +19,14 @@ import type {
  */
 const ACCENT = '#60A5FA';
 
-/* ── Live phases shown WHILE the backend call is in flight ───────────── */
+/* ── Live run shown WHILE the backend call is in flight (Thinking runs) ─ */
 function LivePhases({ prompt, kind }: { prompt: string; kind: 'build' | 'revision' }) {
-  const [phase, setPhase] = useState(0);
-  useEffect(() => {
-    const id = setTimeout(() => setPhase(1), 1500);
-    return () => clearTimeout(id);
-  }, []);
-  const rows = useMemo(() => liveRows(kind, phase), [kind, phase]);
+  const rows = useMemo(() => liveRows(kind), [kind]);
   return (
     <div className="space-y-3">
       <UserMessage text={prompt} />
       <AssistantMessage>
-        <WebBuildAgentRun rows={rows} brief={{}} animate={false} onOpenFile={() => {}} />
+        <WebBuildAgentRun rows={rows} animate={false} onOpenFile={() => {}} />
       </AssistantMessage>
     </div>
   );
@@ -108,7 +103,7 @@ function RunTurn({
     <div className="space-y-3">
       <UserMessage text={step.prompt} />
       <AssistantMessage>
-        <WebBuildAgentRun rows={rows} brief={brief} animate={animate} onOpenFile={onOpenFile} />
+        <WebBuildAgentRun rows={rows} animate={animate} onOpenFile={onOpenFile} />
         {children}
       </AssistantMessage>
     </div>
