@@ -361,13 +361,6 @@ export default function ChatView({
         {isChatHome && isEmptyState && (
           <KorvixModeChips selected={builderMode} onSelect={handleSelectMode} />
         )}
-        {/* Selected build mode — a premium pill attached to the composer. Chat
-            is the neutral default and shows no pill. */}
-        {isChatHome && builderMode && builderMode !== 'chat' && (
-          <div className="max-w-3xl mx-auto mb-2 px-0.5">
-            <KorvixModePill mode={builderMode} onRemove={() => setBuilderMode(null)} />
-          </div>
-        )}
         <PremiumComposer
           onSend={handleSend}
           disabled={isLoading}
@@ -376,6 +369,11 @@ export default function ChatView({
           onRemoveTool={removeTool}
           externalValue={inputText}
           onExternalValueChange={onSetInput}
+          topSlot={
+            isChatHome && builderMode && builderMode !== 'chat'
+              ? <KorvixModePill mode={builderMode} onRemove={() => setBuilderMode(null)} />
+              : undefined
+          }
         />
       </div>
     </div>

@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { useLanguageStore } from '@/stores/languageStore';
 import KorvixOrb from './KorvixOrb';
+import WebBuildMascot from '@/components/builder/WebBuildMascot';
 
 /**
  * The Chat empty state. When `builder` is set (the normal Chat home), it reads
@@ -27,14 +28,15 @@ export default function EmptyWorkspace({ builder = false }: { builder?: boolean 
       {/* Ambient glow behind the orb */}
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[300px] rounded-full pointer-events-none" style={{ background: 'radial-gradient(circle, rgba(59, 130, 246,0.05) 0%, transparent 60%)' }} />
 
-      {/* AI Core Orb */}
+      {/* Korvix mascot — the builder home uses the premium glassy-sphere orb
+          (same as Web Build); other workspaces keep the classic core orb. */}
       <motion.div
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
         className="mb-6 relative z-10"
       >
-        <KorvixOrb size="lg" />
+        {builder ? <WebBuildMascot state="idle" size={76} /> : <KorvixOrb size="lg" />}
       </motion.div>
 
       {/* Welcome Text */}
