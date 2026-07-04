@@ -7,10 +7,11 @@ import { useSearchParams } from 'react-router';
 import BuilderWorkspaceFrame from '@/components/builder/BuilderWorkspaceFrame';
 import WebBuildConversation from '@/components/builder/WebBuildConversation';
 import WebBuildWelcome from '@/components/builder/WebBuildWelcome';
+import WebBuildSidebar from '@/components/builder/WebBuildSidebar';
 import { useLanguageStore } from '@/stores/languageStore';
 import {
   saveWebBuildSession, getWebBuildSession, getActiveWebBuildSession,
-  clearActiveWebBuildSession, deriveWebBuildTitle,
+  setActiveWebBuildSession, clearActiveWebBuildSession, deriveWebBuildTitle,
 } from '@/lib/webBuildSession';
 import { upsertWebBuildChatSession } from '@/lib/webBuildChatSession';
 import {
@@ -81,6 +82,22 @@ export default function WebsiteBuilder() {
     upsertWebBuildChatSession(id, deriveWebBuildTitle(p.prompt, lang), p.prompt);
     setSearchParams({ session: id }, { replace: true });
   }, [lang, setSearchParams]);
+
+  /** Reopen an existing Web Build session (from the left rail) — restore its
+   *  feed/files/preview and make it active. */
+  const openSession = useCallback((id: string) => {
+    const restored = getWebBuildSession(id);
+    if (!restored) return;
+    abortRef.current?.abort();
+    setPayload(restored);
+    setActiveWebBuildSession(id);
+    setAnimateStepId(undefined);
+    setErrorMsg('');
+    setInput('');
+    setSaveStep('closed');
+    setSavedProjectId(undefined);
+    setSearchParams({ session: id }, { replace: true });
+  }, [setSearchParams]);
 
   /** Start a brand-new build — clear the active session + URL, back to welcome. */
   const startNewBuild = useCallback(() => {
@@ -288,13 +305,19 @@ export default function WebsiteBuilder() {
       title={t('webBuildTitle')}
       subtitle={t('webBuildSubtitle')}
       accent={ACCENT}
-      maxWidth="max-w-3xl"
+      maxWidth="max-w-6xl"
     >
-      <div className="flex flex-col min-h-[calc(100vh-220px)]">
+      <div className="flex gap-6">
+        <WebBuildSidebar
+          activeSessionId={payload?.steps[0]?.id}
+          onNewBuild={startNewBuild}
+          onOpenSession={openSession}
+        />
+        <div className="flex min-w-0 flex-1 flex-col min-h-[calc(100vh-220px)] lg:max-w-3xl">
         {/* ── Conversation feed / idle state ─────────────────────────── */}
         <div className="flex-1">
-          {/* New Build is always available — empty state and after a build. */}
-          <div className="mb-3 flex justify-end">
+          {/* Mobile New Build (desktop uses the left rail). */}
+          <div className="mb-3 flex justify-end lg:hidden">
             <button
               onClick={startNewBuild}
               disabled={busy}
@@ -380,6 +403,7 @@ export default function WebsiteBuilder() {
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" strokeWidth={2.5} />}
             </button>
           </div>
+        </div>
         </div>
       </div>
     </BuilderWorkspaceFrame>

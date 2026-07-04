@@ -356,6 +356,9 @@ export const tr: Record<string, string> = {
   wbComposerPlaceholder: "Web sitenizi anlatın veya bir değişiklik isteyin…",
   wbComposerRevise: "Bir değişiklik isteyin…",
   wbNewBuild: "Yeni yapı",
+  wbBackToChat: "Chat'e dön",
+  wbBuildsHistory: "Yapıların",
+  wbNoBuilds: "Henüz yapı yok",
   wbFeedYou: "Siz",
   wbClosePanel: "Kapat",
   /* web build — real file artifacts */

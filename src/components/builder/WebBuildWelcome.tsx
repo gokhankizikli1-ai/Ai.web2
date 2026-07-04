@@ -27,27 +27,35 @@ export default function WebBuildWelcome({
 }) {
   const { lang } = useLanguageStore();
   return (
-    <div className="flex flex-col items-center justify-center px-4 py-16 text-center sm:py-24">
-      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
-        <WebBuildMascot state={mascotState} />
-      </motion.div>
-      <motion.h2
-        initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.08 }}
-        className="mt-7 text-[24px] font-semibold tracking-tight text-white sm:text-[28px]"
-      >
-        {L(lang, 'Hey, let’s build something.', 'Haydi, bir şey inşa edelim.')}
-      </motion.h2>
-      <motion.p
-        initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.14 }}
-        className="mt-3 max-w-md text-[13.5px] leading-relaxed text-[#94A3B8]"
-      >
-        {L(lang,
-          'Tell Korvix what you want to build. It will plan the site, write the copy, create the components, and prepare a preview.',
-          'Korvix’e ne inşa etmek istediğini söyle. Sayfayı planlar, metinleri yazar, bileşenleri oluşturur ve bir önizleme hazırlar.')}
-      </motion.p>
+    <div className="flex flex-col items-center px-4 pb-6 pt-[9vh] text-center sm:pt-[12vh]">
+      {/* Desktop: orb left, text right. Mobile: stacked. */}
+      <div className="flex flex-col items-center gap-5 text-center sm:flex-row sm:items-center sm:gap-6 sm:text-left">
+        <motion.div
+          initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
+          className="shrink-0"
+        >
+          <WebBuildMascot state={mascotState} />
+        </motion.div>
+        <div className="max-w-md">
+          <motion.h2
+            initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.08 }}
+            className="text-[24px] font-semibold tracking-tight text-white sm:text-[28px]"
+          >
+            {L(lang, 'Hey, let’s build something.', 'Haydi, bir şey inşa edelim.')}
+          </motion.h2>
+          <motion.p
+            initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.14 }}
+            className="mt-2.5 text-[13.5px] leading-relaxed text-[#94A3B8]"
+          >
+            {L(lang,
+              'Tell Korvix what you want to build. It will plan the site, write the copy, create the components, and prepare a preview.',
+              'Korvix’e ne inşa etmek istediğini söyle. Sayfayı planlar, metinleri yazar, bileşenleri oluşturur ve bir önizleme hazırlar.')}
+          </motion.p>
+        </div>
+      </div>
       <motion.div
         initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5, delay: 0.22 }}
-        className="mt-8 flex max-w-lg flex-wrap items-center justify-center gap-2"
+        className="mt-7 flex max-w-lg flex-wrap items-center justify-center gap-2"
       >
         {EXAMPLES.map((ex) => {
           const idea = L(lang, ex.en, ex.tr);

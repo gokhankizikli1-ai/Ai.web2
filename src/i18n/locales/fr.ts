@@ -356,6 +356,9 @@ export const fr: Record<string, string> = {
   wbComposerPlaceholder: "Décrivez votre site, ou demandez une modification…",
   wbComposerRevise: "Demander une modification…",
   wbNewBuild: "Nouveau build",
+  wbBackToChat: "Retour au chat",
+  wbBuildsHistory: "Vos builds",
+  wbNoBuilds: "Aucun build pour l'instant",
   wbFeedYou: "Vous",
   wbClosePanel: "Fermer",
   /* web build — real file artifacts */
