@@ -1,4 +1,4 @@
-import { useState, useMemo, type ReactNode } from 'react';
+import { useState, useMemo, useEffect, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, Monitor, FolderTree, ArrowRight, X } from 'lucide-react';
 import { useLanguageStore } from '@/stores/languageStore';
@@ -99,12 +99,17 @@ function RunTurn({
   children?: ReactNode;
 }) {
   const rows = useMemo(() => eventsToRows(stepToEvents(step, brief)), [step, brief]);
+  // Hold the artifact cards until the run has fully finished revealing — the
+  // build must look complete before Preview / All files / Save appear. History
+  // (non-animated) steps are complete immediately.
+  const [runComplete, setRunComplete] = useState(!animate);
+  useEffect(() => { if (!animate) setRunComplete(true); }, [animate]);
   return (
     <div className="space-y-3">
       <UserMessage text={step.prompt} />
       <AssistantMessage>
-        <WebBuildAgentRun rows={rows} animate={animate} onOpenFile={onOpenFile} />
-        {children}
+        <WebBuildAgentRun rows={rows} animate={animate} onOpenFile={onOpenFile} onComplete={() => setRunComplete(true)} />
+        {runComplete && children}
       </AssistantMessage>
     </div>
   );

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useLanguageStore } from '@/stores/languageStore';
 import WebBuildInlineExecutionLine from '@/components/builder/WebBuildInlineExecutionLine';
@@ -25,26 +25,32 @@ const GAP_MS = 90;   // pause between a block completing and the next appearing
 const MSG_MS = 240;  // pause after an assistant message before the next block
 
 export default function WebBuildAgentRun({
-  rows, animate, onOpenFile,
+  rows, animate, onOpenFile, onComplete,
 }: {
   rows: RunRow[];
   brief?: Brief;
   animate: boolean;
   onOpenFile: (path: string) => void;
+  /** Fires once the whole run has finished revealing (all lines completed).
+   *  The parent uses this to hold the artifact cards until the build is done. */
+  onComplete?: () => void;
 }) {
   const total = rows.length;
   const [visible, setVisible] = useState(animate ? 0 : total);
   const [runningId, setRunningId] = useState<string | null>(null);
+  const completeRef = useRef(onComplete);
+  completeRef.current = onComplete;
 
   useEffect(() => {
-    if (!animate) { setVisible(total); setRunningId(null); return; }
+    if (!animate) { setVisible(total); setRunningId(null); completeRef.current?.(); return; }
     setVisible(0);
     setRunningId(null);
     let cancelled = false;
     const timers: ReturnType<typeof setTimeout>[] = [];
     let i = 0;
     const advance = () => {
-      if (cancelled || i >= total) { setRunningId(null); return; }
+      if (cancelled) return;
+      if (i >= total) { setRunningId(null); completeRef.current?.(); return; }
       const row = rows[i];
       setVisible(i + 1);
       if (row.kind === 'tool') {
