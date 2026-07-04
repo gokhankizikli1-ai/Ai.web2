@@ -80,8 +80,8 @@ function UserMessage({ text }: { text: string }) {
 function AssistantMessage({ children, active = false }: { children: ReactNode; active?: boolean }) {
   return (
     <div className="flex items-start gap-2.5">
-      <div className="mt-0.5">
-        <KorvixAvatar size={26} active={active} />
+      <div className="mt-[3px]">
+        <KorvixAvatar size={15} active={active} />
       </div>
       <div className="min-w-0 flex-1 space-y-2.5">{children}</div>
     </div>
