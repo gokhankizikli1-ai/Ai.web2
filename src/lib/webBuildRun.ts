@@ -196,6 +196,14 @@ function researchAgentDetails(r: ResearchAgentArtifact): string[] {
   const sources = Array.isArray(r.sources) ? r.sources : [];
   const d: string[] = [];
   d.push(r.didResearch ? `${r.sourceCount ?? 0} sources · ${angles.length} angles` : 'Strategy inference (no live sources)');
+  // When live research ran, name the real provider + query depth; when it did
+  // not, show the honest reason (disabled / failed / no sources) so the state is
+  // never ambiguous. Provider/reason come from real backend metadata only.
+  if (r.didResearch && r.provider) {
+    d.push(`Provider: ${r.provider}${typeof r.queryCount === 'number' ? ` · ${r.queryCount} queries` : ''}`);
+  } else if (!r.didResearch && r.fallbackReason) {
+    d.push(`Fallback: ${r.fallbackReason}`);
+  }
   if (angles.length) d.push(`Angles: ${angles.join(' · ')}`);
   if (insights.length) d.push(`Insights: ${insights.join(' · ')}`);
   if (category.length) d.push(`Category language: ${category.slice(0, 5).join(', ')}`);

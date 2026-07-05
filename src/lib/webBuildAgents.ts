@@ -71,6 +71,9 @@ export interface ResearchAgentArtifact {
   risksToAvoid: string[];
   differentiationOpportunities: string[];
   summary: string;
+  /** Why research did not produce live sources (present when didResearch is
+   *  false). Shown in the expandable details / owner debug — never fabricated. */
+  fallbackReason?: string;
 }
 
 /* ── UI / Art Director artifact ───────────────────────────────────────── */
@@ -286,6 +289,9 @@ export function deriveResearchAgent(
     risksToAvoid,
     differentiationOpportunities,
     summary,
+    // Only meaningful when research did NOT run — carried through for the
+    // expandable details / owner debug so a failure/disabled state is visible.
+    fallbackReason: didResearch ? undefined : research?.fallbackReason,
   };
 }
 

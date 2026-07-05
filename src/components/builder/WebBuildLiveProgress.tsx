@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { useLanguageStore } from '@/stores/languageStore';
 
@@ -18,7 +18,8 @@ import { useLanguageStore } from '@/stores/languageStore';
  */
 interface Group { id: string; nameKey: string; stages: string[] }
 
-const GROUPS: Group[] = [
+/* Fresh build — the four upstream agents run, then the preview is composed. */
+const BUILD_GROUPS: Group[] = [
   { id: 'research', nameKey: 'wbAgentResearch', stages: ['wbStageReadBrief', 'wbStageExtractGoal', 'wbStageResearch'] },
   { id: 'ui_art_director', nameKey: 'wbAgentArt', stages: ['wbStageVisualMood', 'wbStageTypography'] },
   { id: 'strategy', nameKey: 'wbAgentStrategy', stages: ['wbStageCta'] },
@@ -26,7 +27,12 @@ const GROUPS: Group[] = [
   { id: 'preview', nameKey: 'wbStagePreview', stages: ['wbStagePreview'] },
 ];
 
-const FLAT = GROUPS.flatMap((g, gi) => g.stages.map((stage) => ({ gi, stage })));
+/* Revision — a targeted change, not a full re-plan. Honest, shorter sequence. */
+const REVISE_GROUPS: Group[] = [
+  { id: 'revise', nameKey: 'wbAgentRevise', stages: ['wbStageReadBrief', 'wbStageReviseApply'] },
+  { id: 'preview', nameKey: 'wbStagePreview', stages: ['wbStagePreview'] },
+];
+
 const STEP_MS = 1100;
 
 function Spinner() {
@@ -47,24 +53,30 @@ const Check = () => (
 
 const Dot = () => <span aria-hidden className="inline-block h-1.5 w-1.5 rounded-full bg-white/20" />;
 
-export default function WebBuildLiveProgress() {
+export default function WebBuildLiveProgress({ kind = 'build' }: { kind?: 'build' | 'revision' }) {
   const { t } = useLanguageStore();
   const [k, setK] = useState(0);
+
+  const groups = kind === 'revision' ? REVISE_GROUPS : BUILD_GROUPS;
+  const flat = useMemo(
+    () => groups.flatMap((g, gi) => g.stages.map((stage) => ({ gi, stage }))),
+    [groups],
+  );
 
   useEffect(() => {
     setK(0);
     const id = setInterval(() => {
-      setK((prev) => (prev < FLAT.length - 1 ? prev + 1 : prev));
+      setK((prev) => (prev < flat.length - 1 ? prev + 1 : prev));
     }, STEP_MS);
     return () => clearInterval(id);
-  }, []);
+  }, [flat.length]);
 
-  const currentGroup = FLAT[Math.min(k, FLAT.length - 1)]?.gi ?? 0;
-  const currentStage = FLAT[Math.min(k, FLAT.length - 1)]?.stage;
+  const currentGroup = flat[Math.min(k, flat.length - 1)]?.gi ?? 0;
+  const currentStage = flat[Math.min(k, flat.length - 1)]?.stage;
 
   return (
     <div className="space-y-2">
-      {GROUPS.map((g, gi) => {
+      {groups.map((g, gi) => {
         const state = gi < currentGroup ? 'done' : gi === currentGroup ? 'running' : 'pending';
         return (
           <div key={g.id} className={`flex items-center gap-2.5 text-[13px] ${state === 'pending' ? 'opacity-45' : ''}`}>
