@@ -24,15 +24,16 @@ import type { WebBuildResearch } from '@/lib/webBuildApi';
 
 /* ── Live run shown WHILE the backend call is in flight (agents running) ─ */
 function LivePhases({ prompt, kind }: { prompt: string; kind: 'build' | 'revision' }) {
-  const { t } = useLanguageStore();
   return (
     <div className="space-y-3">
       <UserMessage text={prompt} />
       <AssistantMessage active>
-        <p className="mb-2.5 text-[13px] leading-relaxed text-[#CBD5E1]">
-          {t(kind === 'revision' ? 'wbFeedReviseOpeningPlain' : 'wbFeedBuildOpeningPlain')}
-        </p>
-        <WebBuildLiveProgress />
+        {/* The agent timeline below IS the loading surface. No generic
+            "Designing your website…" paragraph above it — that only duplicated
+            the timeline and made the run look messy. The timeline always
+            renders the agent rows (Research → … → Preview), so it stands
+            alone; the calm, premium progress lives inside the active row. */}
+        <WebBuildLiveProgress kind={kind} />
       </AssistantMessage>
     </div>
   );

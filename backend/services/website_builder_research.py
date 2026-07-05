@@ -349,8 +349,17 @@ async def run_web_build_research(*, user_id: Optional[str], idea: str) -> tuple[
 
     async def _one(angle: str, q: str) -> dict:
         try:
+            # owner_debug=True asks the search layer for the FULL provider
+            # citations (title + url + snippet/content), not the trimmed
+            # {title,url,date} projection. This is a SERVER-INTERNAL research
+            # pass: we re-normalize, score and cap the sources ourselves below,
+            # so nothing extra is exposed to the user — but the real snippets
+            # now flow into ranking (_score signal words), the synthesis block,
+            # and the capped UI sources. Without this every citation reaches
+            # synthesis with an empty snippet and the research feels shallow.
             _block, payload = await build_web_search_context_block(
                 user_id=user_id, query=q, triggers=("website_builder_research",),
+                owner_debug=True,
             )
             p = payload or {}
             p["_angle"] = angle
