@@ -18,7 +18,7 @@
  * recompute the same artifacts and nothing needs to be persisted to work.
  */
 import type { WebBuildBrief, WebBuildResearch, WebBuildResearchStatus, WebBuildSource } from '@/lib/webBuildApi';
-import { designTokensForBrief, type InferredBrief } from '@/lib/webBuildBrief';
+import { designTokensForBrief, type InferredBrief, type DesignTokens } from '@/lib/webBuildBrief';
 import { deriveDesignSystemFromStrategy } from '@/lib/webBuildDesignSystem';
 import type { WebBuildLayoutPlan, HeroComposition, SectionVariant } from '@/lib/webBuildLayoutPlan';
 
@@ -175,6 +175,10 @@ export interface ArtDirectionColorSystem {
   muted: string;
   surface: string;
   border: string;
+  /** Semantic colors — present so components have a coherent warning/trust hue
+   *  instead of an ad-hoc red/green. Optional for backward compatibility. */
+  dangerOrWarning?: string;
+  successOrTrust?: string;
 }
 
 export type ArtDensity = 'minimal' | 'balanced' | 'rich' | 'immersive';
@@ -184,9 +188,13 @@ export interface ArtDirectionArtifact {
   brandPersonality: string;
   typographyDirection: string;
   colorSystem: ArtDirectionColorSystem;
+  /** Why this palette fits the audience psychology (from the Research brief). */
+  colorPsychologyReasoning?: string;
   layoutFeeling: string;
   visualMetaphor: string;
   imageryDirection: string;
+  /** How icons should look (line/duotone/rounded, weight). */
+  iconographyDirection?: string;
   motionDirection: string;
   density: ArtDensity;
   premiumDetails: string[];
@@ -195,6 +203,12 @@ export interface ArtDirectionArtifact {
   componentStyleHints: string[];
   heroDirection: string;
   sectionRhythmDirection: string;
+  /** How the primary/secondary CTA should look and behave. */
+  ctaStyleDirection?: string;
+  /** How trust/proof blocks should be presented visually. */
+  trustVisualDirection?: string;
+  /** Desktop-first vs mobile-first responsive behavior. */
+  responsiveDesignDirection?: string;
   summary: string;
 }
 
@@ -818,12 +832,79 @@ function artDensity(density: 'compact' | 'comfortable' | 'spacious', motion: 'mi
 
 const isSerif = (font: string) => /serif|georgia|cambria|times/i.test(font);
 
+/** A coherent semantic palette per psychology category. Keyed on the mood the
+ *  Research Agent inferred — NOT the industry — so the color system follows the
+ *  audience psychology. Never the same SaaS indigo everywhere. */
+type PsychPalette = { bg: string; accent: string; accent2: string; success: string; danger: string };
+const PSYCH_PALETTES: Record<string, PsychPalette> = {
+  luxury:    { bg: '#0c0a08', accent: '#c9a24b', accent2: '#8b6b3d', success: '#9caf88', danger: '#b4534b' },
+  trust:     { bg: '#070d1a', accent: '#2f6fed', accent2: '#c9a227', success: '#2ea36b', danger: '#d1495b' },
+  data:      { bg: '#05070d', accent: '#22d3ee', accent2: '#818cf8', success: '#34d399', danger: '#f43f5e' },
+  wellness:  { bg: '#07130f', accent: '#2dd4bf', accent2: '#86efac', success: '#34d399', danger: '#fb923c' },
+  food:      { bg: '#0e0a07', accent: '#e0a35b', accent2: '#b45309', success: '#a3b18a', danger: '#c1440e' },
+  nature:    { bg: '#071009', accent: '#34d399', accent2: '#a3e635', success: '#4ade80', danger: '#d97706' },
+  playful:   { bg: '#0a0f1e', accent: '#fb7185', accent2: '#fbbf24', success: '#34d399', danger: '#f87171' },
+  editorial: { bg: '#08080a', accent: '#e5e7eb', accent2: '#94a3b8', success: '#a3e635', danger: '#f87171' },
+};
+/** Detect the psychology category from the Research Agent's color-psychology mood
+ *  words (ordered so the most specific intent wins). */
+function psychCategory(cp: ColorPsychology | undefined): string | undefined {
+  if (!cp) return undefined;
+  const t = [cp.primaryMood, cp.emotionalEffect, cp.trustEffect || '', (cp.recommendedPalette || []).join(' ')]
+    .join(' ').toLowerCase();
+  if (/prestige|refine|exclus|luxur|champagne|bronze|metallic/.test(t)) return 'luxury';
+  if (/trust|stabilit|competen|secure|reliab|authorit|navy|safety/.test(t)) return 'trust';
+  if (/precise|high-signal|high-contrast|data|scientific|cyan|signal/.test(t)) return 'data';
+  if (/calm|caring|clean|teal|wellness|soothing|reassur/.test(t)) return 'wellness';
+  if (/appetiz|warm|invit|amber|terracotta|hospitalit|espresso/.test(t)) return 'food';
+  if (/natural|grounded|botanic|green|earth|fresh|growth/.test(t)) return 'nature';
+  if (/playful|energetic|joy|bright|coral|sunshine|fun/.test(t)) return 'playful';
+  if (/editorial|expressive|bold|monochrome|memorab/.test(t)) return 'editorial';
+  return undefined;
+}
+
 /**
- * Build the UI / Art Director artifact. Converts research + brief into a strong,
- * DYNAMIC visual direction. The palette comes from the strategy-driven design
- * system (already prompt/industry/color-hint aware), so two different ideas
- * produce different color systems; the art director wraps it into a full system
- * (foreground/surface/border) and a coherent direction later agents can trust.
+ * Resolve the Art Director color system. When the MODEL gave an explicit color
+ * direction we honor the strategy-driven tokens (never overriding the model).
+ * Otherwise the Research Agent's color psychology drives a coherent hex palette
+ * (background/accent/accent2 + semantic success/danger) so the colors match the
+ * audience psychology instead of a generic default. Falls back to tokens.
+ */
+function resolveArtColorSystem(
+  cp: ColorPsychology | undefined, tokens: DesignTokens, modelChoseColor: boolean,
+): ArtDirectionColorSystem {
+  const base: ArtDirectionColorSystem = {
+    background: tokens.bg,
+    foreground: '#f1f5f9',
+    accent: tokens.accent,
+    accent2: tokens.accent2,
+    muted: '#94a3b8',
+    surface: 'rgba(255,255,255,0.04)',
+    border: 'rgba(255,255,255,0.10)',
+    successOrTrust: '#22c55e',
+    dangerOrWarning: '#f59e0b',
+  };
+  const cat = modelChoseColor ? undefined : psychCategory(cp);
+  const p = cat ? PSYCH_PALETTES[cat] : undefined;
+  if (!p) return base;
+  return {
+    ...base,
+    background: p.bg,
+    accent: p.accent,
+    accent2: p.accent2,
+    successOrTrust: p.success,
+    dangerOrWarning: p.danger,
+  };
+}
+
+/**
+ * Build the UI / Art Director artifact — a senior art director that CONSUMES the
+ * Research Agent brief (target user, color psychology, visual style, UX
+ * priorities, UI-agent instructions) and turns it into a specific, non-generic
+ * visual identity. The color system follows the color psychology; typography and
+ * density follow the audience and product; every field is a concrete direction,
+ * not a generic "modern and premium" phrase. All safe when the research is
+ * missing (falls back to the strategy-driven design system).
  */
 export function deriveArtDirection(
   brief: WebBuildBrief,
@@ -846,41 +927,79 @@ export function deriveArtDirection(
   };
   const tokens = designTokensForBrief(moodBrief);
 
-  const colorSystem: ArtDirectionColorSystem = {
-    background: tokens.bg,
-    foreground: '#f1f5f9',
-    accent: tokens.accent,
-    accent2: tokens.accent2,
-    muted: '#94a3b8',
-    surface: 'rgba(255,255,255,0.04)',
-    border: 'rgba(255,255,255,0.10)',
-  };
+  // Color system follows the Research Agent's color psychology (never a default
+  // SaaS indigo) — unless the MODEL chose an explicit color, which always wins.
+  const cp = research?.colorPsychology;
+  const modelChoseColor = !!(brief.colorDirection || brief.artAccent || brief.artBg);
+  const colorSystem = resolveArtColorSystem(cp, tokens, modelChoseColor);
 
-  const visualMood = brief.visualMood || brief.style
-    || research?.visualStyleRecommendation?.styleType || inferred.visualStyle;
-  const brandPersonality = uniq([inferred.tone, brief.audience || inferred.targetAudience]).join(' · ')
-    || L(lang, 'confident, modern, premium', 'kendinden emin, modern, premium');
+  // Read the Research brief signals so every direction is specific, not generic.
+  const tu = research?.targetUser;
+  const vsr = research?.visualStyleRecommendation;
+  const audience = brief.audience || inferred.targetAudience;
+  const desktopLean = /desktop/i.test(tu?.devicePreference || '');
+  const mobileLean = /mobile/i.test(tu?.devicePreference || '');
+  const premiumLevel = vsr?.premiumLevel;
+
+  // visualMood — a specific style statement (prefer the researched style type).
+  const visualMood = brief.visualMood || vsr?.styleType || brief.style || inferred.visualStyle;
+  // brandPersonality — composed from the real target user + tone + premium level,
+  // never a bare "confident, modern, premium".
+  const brandPersonality = uniq([
+    inferred.tone,
+    tu?.buyingMotivation ? L(lang, `speaks to someone who ${tu.buyingMotivation.toLowerCase()}`, `${tu.buyingMotivation.toLowerCase()} birine hitap eder`) : '',
+    premiumLevel ? L(lang, `${premiumLevel} finish`, `${premiumLevel} işçilik`) : '',
+    audience,
+  ]).slice(0, 4).join(' · ')
+    || L(lang, 'grounded, specific, quietly premium', 'sağlam, spesifik, sessizce premium');
+
+  // typography — dynamic on audience + product (editorial vs product UI, luxury
+  // vs playful, data-heavy vs visual-heavy, older-trust vs younger-exploratory).
   const typographyDirection = brief.typographyDirection
     || research?.uiAgentInstructions?.recommendedTypography
-    || (isSerif(tokens.headingFont)
-      ? L(lang, 'Editorial serif headlines with a clean sans body — refined, premium.',
-          'Editoryal serif başlıklar, temiz sans gövde — zarif, premium.')
-      : L(lang, 'Modern geometric sans headlines with a neutral sans body — crisp, confident.',
-          'Modern geometrik sans başlıklar, nötr sans gövde — net, kendinden emin.'));
+    || (premiumLevel === 'luxury' || (!!vsr?.styleType && /editorial|luxur/i.test(vsr.styleType))
+      ? L(lang, 'Editorial serif headlines with generous leading + a clean sans body — refined, unhurried.',
+          'Editoryal serif başlıklar, ferah satır aralığı + temiz sans gövde — zarif, telaşsız.')
+      : vsr?.styleType && /playful|kid/i.test(vsr.styleType)
+        ? L(lang, 'Rounded, friendly sans with large, approachable headlines and short lines.',
+            'Yuvarlak, samimi sans; büyük, ulaşılabilir başlıklar ve kısa satırlar.')
+      : /data|scientific|technical|dashboard/i.test(`${vsr?.styleType || ''} ${audience}`)
+        ? L(lang, 'Tight, high-contrast grotesk headlines with a monospaced/data body accent.',
+            'Sıkı, yüksek kontrastlı grotesk başlıklar; monospace/veri gövde vurgusu.')
+      : desktopLean
+        ? L(lang, 'Dense, confident sans hierarchy tuned for scanning on desktop.',
+            'Masaüstünde taramaya göre ayarlı yoğun, kendinden emin sans hiyerarşisi.')
+      : (isSerif(tokens.headingFont)
+        ? L(lang, 'Editorial serif headlines with a clean sans body — refined, premium.',
+            'Editoryal serif başlıklar, temiz sans gövde — zarif, premium.')
+        : L(lang, 'Modern geometric sans headlines with a neutral sans body — crisp, confident.',
+            'Modern geometrik sans başlıklar, nötr sans gövde — net, kendinden emin.')));
   const layoutFeeling = brief.layoutLogic
     || L(lang, `A ${ds.sectionRhythm} rhythm with ${ds.density} spacing that fits the concept.`,
         `Konsepte uygun ${ds.density} boşluklu ${ds.sectionRhythm} bir ritim.`);
   const visualMetaphor = brief.visualMetaphor || inferred.previewVisualIdea;
-  const imageryDirection = L(lang,
-    `Composed CSS/SVG visuals (${inferred.previewVisualIdea}) — no stock photos, no blank boxes.`,
-    `Kompoze CSS/SVG görseller (${inferred.previewVisualIdea}) — stok fotoğraf yok, boş kutu yok.`);
+  // imageryDirection — prefer the researched imagery type when present.
+  const imageryDirection = vsr?.imageryType
+    ? L(lang, `${vsr.imageryType} — composed, never stock or blank boxes.`,
+        `${vsr.imageryType} — kompoze, asla stok veya boş kutu değil.`)
+    : L(lang,
+        `Composed CSS/SVG visuals (${inferred.previewVisualIdea}) — no stock photos, no blank boxes.`,
+        `Kompoze CSS/SVG görseller (${inferred.previewVisualIdea}) — stok fotoğraf yok, boş kutu yok.`);
+  const iconographyDirection = vsr?.iconStyle
+    || L(lang, 'Consistent line/duotone icons, one weight, tied to the accent.',
+        'Tutarlı çizgi/duoton ikonlar, tek ağırlık, vurguya bağlı.');
   const motionByLevel = ds.motion === 'minimal'
     ? L(lang, 'Restrained, quiet motion — a single calm reveal, no distraction.', 'Ölçülü, sakin hareket — tek bir sakin beliriş, dikkat dağıtmadan.')
     : ds.motion === 'expressive'
       ? L(lang, 'Expressive, kinetic motion — bold reveals and depth, still tasteful.', 'İfade dolu, kinetik hareket — cesur belirişler ve derinlik, yine de zevkli.')
       : L(lang, 'Subtle premium motion — gentle reveals and hover states.', 'İnce premium hareket — yumuşak belirişler ve hover durumları.');
   const motionDirection = brief.motionDirection || motionByLevel || inferred.recommendedMotion;
-  const density = artDensity(ds.density, ds.motion);
+  // density — driven by premium level + device lean on top of the design system.
+  const density: ArtDensity = premiumLevel === 'luxury' ? 'immersive'
+    : premiumLevel === 'experimental' ? 'immersive'
+    : premiumLevel === 'simple' ? 'minimal'
+    : desktopLean ? 'rich'
+    : artDensity(ds.density, ds.motion);
 
   const premiumDetails = uniq([
     L(lang, 'Soft accent glow on primary actions', 'Ana eylemlerde yumuşak vurgu parıltısı'),
@@ -911,6 +1030,7 @@ export function deriveArtDirection(
   ]);
   const componentStyleHints = uniq([
     L(lang, `Cards: ${ds.cardStyle}`, `Kartlar: ${ds.cardStyle}`),
+    vsr?.backgroundStyle ? L(lang, `Background: ${vsr.backgroundStyle}`, `Arka plan: ${vsr.backgroundStyle}`) : '',
     L(lang, `Corner radius: ${tokens.radius}`, `Köşe yarıçapı: ${tokens.radius}`),
     L(lang, `Heading tracking: ${tokens.tracking}`, `Başlık aralığı: ${tokens.tracking}`),
     L(lang, `Accent used for a single focal action, not everywhere`, `Vurgu her yerde değil, tek odak eyleminde`),
@@ -922,18 +1042,44 @@ export function deriveArtDirection(
     `Vary section composition (${ds.sectionRhythm}); avoid repeating one card grid down the page.`,
     `Bölüm kompozisyonunu değiştir (${ds.sectionRhythm}); sayfa boyunca tek kart gridini tekrarlama.`);
 
+  // ── New, research-driven directions (all specific, none generic). ──
+  const colorPsychologyReasoning = cp
+    ? uniq([cp.reasoning, cp.emotionalEffect, cp.trustEffect || '', cp.conversionEffect || '']).join(' · ')
+    : undefined;
+  const primaryCTA = brief.primaryCTA || inferred.primaryCTA;
+  const ctaStyleDirection = L(lang,
+    `Solid ${premiumLevel === 'luxury' ? 'understated' : 'high-contrast'} primary button on the accent for "${primaryCTA}", with a soft glow; a quiet ghost/secondary for the alternate path. One primary per screen.`,
+    `"${primaryCTA}" için vurguda ${premiumLevel === 'luxury' ? 'gösterişsiz' : 'yüksek kontrastlı'} dolu ana buton, yumuşak parıltıyla; alternatif yol için sessiz hayalet/ikincil. Ekran başına tek ana buton.`);
+  const trustNeed = (tu?.trustNeeds || [])[0] || (research?.trustSignals || [])[0];
+  const trustVisualDirection = L(lang,
+    `Present proof (${trustNeed || 'credibility'}) as calm, real modules — logos, metrics, testimonials on quiet surfaces near the primary CTA, never loud badges.`,
+    `Kanıtı (${trustNeed || 'itibar'}) sakin, gerçek modüller olarak sun — ana CTA yakınında sessiz yüzeylerde logolar, metrikler, yorumlar; asla gürültülü rozetler değil.`);
+  const responsiveDesignDirection = mobileLean
+    ? L(lang, 'Mobile-first: single-column flow, thumb-reachable CTAs, large tap targets, progressive disclosure.',
+        'Mobil öncelikli: tek sütun akış, başparmakla erişilir CTA\'lar, büyük dokunma hedefleri, kademeli açılım.')
+    : desktopLean
+      ? L(lang, 'Desktop-first: multi-column density and comparison layouts that gracefully stack on mobile.',
+          'Masaüstü öncelikli: mobilde zarifçe yığılan çok sütunlu yoğunluk ve karşılaştırma düzenleri.')
+      : L(lang, 'Responsive: a strong single-column mobile story that expands into a composed desktop layout.',
+          'Duyarlı: mobilde güçlü tek sütun anlatı; masaüstünde kompoze düzene açılır.');
+
+  // Summary — specific: names the style, the palette intent and the target user,
+  // not a generic "modern and premium".
+  const paletteWord = (cp?.recommendedPalette || [])[0];
   const summary = L(lang,
-    `Art direction: ${visualMood}. ${isSerif(tokens.headingFont) ? 'Editorial' : 'Modern'} type, ${density} density, ${ds.motion} motion, metaphor "${visualMetaphor}".`,
-    `Sanat yönü: ${visualMood}. ${isSerif(tokens.headingFont) ? 'Editoryal' : 'Modern'} tipografi, ${density} yoğunluk, ${ds.motion} hareket, metafor "${visualMetaphor}".`);
+    `${visualMood} for ${audience}${paletteWord ? `, built on ${paletteWord}` : ''} — ${isSerif(tokens.headingFont) ? 'editorial' : 'modern'} type, ${density} density, ${ds.motion} motion, metaphor "${visualMetaphor}".`,
+    `${audience} için ${visualMood}${paletteWord ? `, ${paletteWord} üzerine` : ''} — ${isSerif(tokens.headingFont) ? 'editoryal' : 'modern'} tipografi, ${density} yoğunluk, ${ds.motion} hareket, metafor "${visualMetaphor}".`);
 
   return {
     visualMood,
     brandPersonality,
     typographyDirection,
     colorSystem,
+    colorPsychologyReasoning,
     layoutFeeling,
     visualMetaphor,
     imageryDirection,
+    iconographyDirection,
     motionDirection: motionDirection || inferred.recommendedMotion,
     density,
     premiumDetails,
@@ -942,6 +1088,9 @@ export function deriveArtDirection(
     componentStyleHints,
     heroDirection,
     sectionRhythmDirection,
+    ctaStyleDirection,
+    trustVisualDirection,
+    responsiveDesignDirection,
     summary,
   };
 }
