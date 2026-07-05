@@ -10,8 +10,8 @@ import { resolveBuildFiles, parseSectionCopy, synthesizeFromCopies, type SynthFi
 import { inferWebsiteBrief, fallbackSectionItems, checkQuality } from '@/lib/webBuildBrief';
 import { deriveLayoutPlan, type WebBuildLayoutPlan } from '@/lib/webBuildLayoutPlan';
 import {
-  deriveWebBuildAgents, WEB_BUILD_AGENTS_ENABLED,
-  type WebBuildAgent, type ResearchAgentArtifact, type ArtDirectionArtifact,
+  runUpstreamAgents, runLayoutArchitect, WEB_BUILD_AGENTS_ENABLED,
+  type WebBuildAgent, type WebBuildArtifacts,
 } from '@/lib/webBuildAgents';
 import { detectMessageLanguage } from '@/lib/locale';
 
@@ -83,7 +83,7 @@ export interface WebBuildStep {
   /** Phase-1 upstream agents for this turn (Research + UI/Art Director) and
    *  their artifacts. Optional → old saved steps still load. */
   agents?: WebBuildAgent[];
-  artifacts?: { research?: ResearchAgentArtifact; artDirection?: ArtDirectionArtifact };
+  artifacts?: WebBuildArtifacts;
 }
 
 export interface WebBuildPayload {
@@ -112,7 +112,7 @@ export interface WebBuildPayload {
   /** Phase-1 upstream agents (Research + UI/Art Director) for the latest build,
    *  and their artifacts. Optional → old saved builds still load. */
   agents?: WebBuildAgent[];
-  artifacts?: { research?: ResearchAgentArtifact; artDirection?: ArtDirectionArtifact };
+  artifacts?: WebBuildArtifacts;
   activity: WebBuildActivityRow[];
   /** Conversation history — one entry per build/revision. */
   steps: WebBuildStep[];
@@ -302,56 +302,37 @@ export function buildWebBuildPayload(
   // pass result; revisions skip the pre-pass, so keep the original build's status.
   const research: WebBuildResearch | undefined = result.research || prev?.research || undefined;
 
-  // PHASE 1 upstream agents (Research → UI / Art Director) are EXPERIMENTAL and
-  // OFF BY DEFAULT (WEB_BUILD_AGENTS_ENABLED). When disabled — the production
-  // default — this whole block is skipped and Web Build runs the stable
-  // non-agent path: the plain brief drives preview/files and no agent artifacts
-  // are produced. When enabled, agents are still fully additive: any failure is
-  // swallowed and the build falls back to the plain brief. Agents can therefore
-  // never mark a build package incomplete.
+  // The previous build's files, captured ONCE as a plainly-typed local before any
+  // `!prev` narrowing (avoids `prev?.files` narrowing to `never` inside `!prev`).
+  const prevFiles: WebBuildFile[] | undefined = prev?.files;
+
+  let sectionItems = parseSectionItems(result);
+
+  // UPSTREAM AGENTS (Research → UI/Art Director → Strategy). Gated by
+  // WEB_BUILD_AGENTS_ENABLED (ON by default; kill-switch via env). They are
+  // purely additive: each agent is guarded INTERNALLY (a failing agent is marked
+  // skipped and the rest continue) and the whole call is guarded again here, so
+  // an agent can NEVER block the build or mark a package incomplete. When they
+  // succeed, the enriched brief drives the design system / preview / files.
   let agents: WebBuildAgent[] | undefined;
-  let artifacts: { research?: ResearchAgentArtifact; artDirection?: ArtDirectionArtifact } | undefined;
+  let artifacts: WebBuildArtifacts | undefined;
   let artBrief: WebBuildBrief = mergedBrief;
   if (WEB_BUILD_AGENTS_ENABLED) {
     try {
-      const pipeline = deriveWebBuildAgents(prompt, mergedBrief, research, inferred, effLang);
-      agents = pipeline.agents;
-      artifacts = pipeline.artifacts;
-      const art = pipeline.artifacts.artDirection;
-      if (art && art.colorSystem) {
-        // Feed the Art Direction into the brief so the design system / preview /
-        // files are driven by it: explicit palette + heading style win, and any
-        // missing strategy fields are filled. All optional → backward compatible.
-        artBrief = {
-          ...mergedBrief,
-          artAccent: mergedBrief.artAccent || art.colorSystem.accent,
-          artAccent2: mergedBrief.artAccent2 || art.colorSystem.accent2,
-          artBg: mergedBrief.artBg || art.colorSystem.background,
-          artHeadingSerif: mergedBrief.artHeadingSerif ?? /serif/i.test(art.typographyDirection || ''),
-          visualMood: mergedBrief.visualMood || art.visualMood,
-          colorDirection: mergedBrief.colorDirection || art.visualMood,
-          motionDirection: mergedBrief.motionDirection || art.motionDirection,
-          visualMetaphor: mergedBrief.visualMetaphor || art.visualMetaphor,
-          typographyDirection: mergedBrief.typographyDirection || art.typographyDirection,
-          layoutLogic: mergedBrief.layoutLogic || art.layoutFeeling,
-        };
-      }
+      const up = runUpstreamAgents(
+        prompt, mergedBrief, research, inferred,
+        sectionItems.map((s) => ({ id: s.id, name: s.name })), effLang,
+      );
+      agents = up.agents;
+      artifacts = up.artifacts;
+      artBrief = up.enrichedBrief;
     } catch {
-      // Agents are additive — on any failure, fall back to the plain brief so the
-      // core Web Build package is still produced.
       agents = undefined;
       artifacts = undefined;
       artBrief = mergedBrief;
     }
   }
 
-  // The previous build's files, captured ONCE as a plainly-typed local before any
-  // `!prev` narrowing. Reusing this everywhere avoids `prev?.files` inside an
-  // `if (!prev …)` branch, where TS narrows `prev` to `undefined` and resolves
-  // `.files` on `never` (the TS2339 that broke the deploy).
-  const prevFiles: WebBuildFile[] | undefined = prev?.files;
-
-  let sectionItems = parseSectionItems(result);
   let files = resolveFiles(result, prevFiles, artBrief);
 
   // Quality gate — repair a weak FRESH build with the inferred industry brief.
@@ -374,6 +355,22 @@ export function buildWebBuildPayload(
   }
 
   const layoutPlan = deriveLayoutPlan(artBrief, sectionItems.map((s) => ({ id: s.id, name: s.name })));
+
+  // LAYOUT ARCHITECT AGENT — runs after the final plan + sections. It records a
+  // Page Blueprint that mirrors the composition the renderer actually uses. Fully
+  // guarded: on failure it adds a skipped row and the build continues unchanged.
+  if (WEB_BUILD_AGENTS_ENABLED && agents) {
+    try {
+      const la = runLayoutArchitect(
+        sectionItems.map((s) => ({ id: s.id, name: s.name })),
+        layoutPlan, artifacts?.artDirection, artifacts?.strategy, effLang,
+      );
+      agents = [...agents, la.agent];
+      artifacts = { ...(artifacts || {}), blueprint: la.blueprint };
+    } catch {
+      /* non-blocking — keep the upstream agents as-is */
+    }
+  }
 
   const changed = files.filter((f) => f.status !== 'unchanged');
   const summary: WebBuildSummary = {

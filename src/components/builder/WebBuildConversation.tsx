@@ -7,7 +7,8 @@ import KorvixAvatar from '@/components/builder/KorvixAvatar';
 import WebBuildFileView from '@/components/builder/WebBuildFileView';
 import WebBuildPreviewPanel from '@/components/builder/WebBuildPreviewPanel';
 import WebBuildAgentRun from '@/components/builder/WebBuildAgentRun';
-import { stepToEvents, eventsToRows, liveRows } from '@/lib/webBuildRun';
+import WebBuildLiveProgress from '@/components/builder/WebBuildLiveProgress';
+import { stepToEvents, eventsToRows } from '@/lib/webBuildRun';
 import type {
   WebBuildStep, WebBuildFile, WebBuildSectionItem,
 } from '@/lib/webBuildPayload';
@@ -21,14 +22,17 @@ import type { WebBuildResearch } from '@/lib/webBuildApi';
  * Build page and the saved-project view. No checklist / table / tick waterfall.
  */
 
-/* ── Live run shown WHILE the backend call is in flight (Thinking runs) ─ */
+/* ── Live run shown WHILE the backend call is in flight (agents running) ─ */
 function LivePhases({ prompt, kind }: { prompt: string; kind: 'build' | 'revision' }) {
-  const rows = useMemo(() => liveRows(kind), [kind]);
+  const { t } = useLanguageStore();
   return (
     <div className="space-y-3">
       <UserMessage text={prompt} />
       <AssistantMessage active>
-        <WebBuildAgentRun rows={rows} animate={false} onOpenFile={() => {}} />
+        <p className="mb-2.5 text-[13px] leading-relaxed text-[#CBD5E1]">
+          {t(kind === 'revision' ? 'wbFeedReviseOpeningPlain' : 'wbFeedBuildOpeningPlain')}
+        </p>
+        <WebBuildLiveProgress />
       </AssistantMessage>
     </div>
   );
