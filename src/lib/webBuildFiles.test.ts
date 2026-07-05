@@ -48,12 +48,16 @@ function makeResult(reply: string): WebBuildResult {
 describe('web build file synthesis', () => {
   const result = makeResult(REPLY);
 
-  it('produces real files even when the backend returned no code', () => {
+  it('produces a real dynamic project even when the backend returned no code', () => {
     const files = resolveBuildFiles(result);
-    expect(files.length).toBeGreaterThanOrEqual(6); // App + 5 sections + index.css
+    expect(files.length).toBeGreaterThanOrEqual(6); // base project + one component per section
     const paths = files.map((f) => f.path);
-    expect(paths).toContain('App.tsx');
-    expect(paths).toContain('index.css');
+    // Dynamic src/ project structure — entry, shell, styles, tokens, content.
+    expect(paths).toContain('src/App.tsx');
+    expect(paths).toContain('src/main.tsx');
+    expect(paths).toContain('src/styles.css');
+    expect(paths).toContain('src/lib/designSystem.ts');
+    expect(paths).toContain('src/data/siteContent.ts');
     expect(paths.some((p) => /components\/Hero\.tsx/.test(p))).toBe(true);
     // Every file has real content (no empty "no captured code").
     expect(files.every((f) => f.content.trim().length > 0)).toBe(true);
@@ -68,17 +72,20 @@ describe('web build file synthesis', () => {
   it('generates a premium, animated dark theme (aurora hero + motion keyframes)', () => {
     const files = synthesizeFiles(result);
     const hero = files.find((f) => /Hero\.tsx/.test(f.path))!;
-    const css = files.find((f) => f.path === 'index.css')!;
+    const css = files.find((f) => f.path === 'src/styles.css')!;
     // Hero uses the animated premium background primitives.
     expect(hero.content).toMatch(/kx-aurora/);
     expect(hero.content).toMatch(/kx-grid/);
-    // index.css ships the motion keyframes + reduced-motion guard.
+    // styles.css ships the motion keyframes + reduced-motion guard + tokens.
     expect(css.content).toMatch(/@keyframes kx-aurora/);
     expect(css.content).toMatch(/@keyframes kx-reveal/);
     expect(css.content).toMatch(/prefers-reduced-motion/);
-    // Premium dark shell, not the old white template.
-    const app = files.find((f) => f.path === 'App.tsx')!;
-    expect(app.content).toMatch(/#05070d/);
+    expect(css.content).toMatch(/--kx-accent/);
+    // Shell is driven by the design-system background token, not a fixed hex.
+    const app = files.find((f) => f.path === 'src/App.tsx')!;
+    expect(app.content).toMatch(/var\(--kx-bg\)/);
+    // The strategy-derived design system is emitted as a real token module.
+    expect(files.some((f) => f.path === 'src/lib/designSystem.ts' && /designSystem/.test(f.content))).toBe(true);
   });
 
   it('diffs mark all files created on the first build with line counts', () => {
@@ -96,14 +103,16 @@ describe('web build file synthesis', () => {
     expect(rows.some((r) => r.labelKey === 'wbActPackage')).toBe(true);
   });
 
-  it('a revision that changes only hero copy modifies only Hero.tsx', () => {
+  it('a revision that changes only hero copy modifies only the Hero component', () => {
     const first = resolveFiles(result);
     const revisedReply = REPLY.replace('Formda kal, randevunu al', 'Premium koçlukla hedefine ulaş');
     const revised = resolveFiles(makeResult(revisedReply), first);
     const hero = revised.find((f) => /Hero\.tsx/.test(f.path));
     expect(hero!.status).toBe('modified');
-    const others = revised.filter((f) => !/Hero\.tsx/.test(f.path));
-    expect(others.every((f) => f.status === 'unchanged')).toBe(true);
+    // No OTHER section component is rewritten (the structured content file may
+    // legitimately update since it holds the copy, but sibling components don't).
+    const otherComponents = revised.filter((f) => /components\//.test(f.path) && !/Hero\.tsx/.test(f.path));
+    expect(otherComponents.every((f) => f.status === 'unchanged')).toBe(true);
   });
 });
 
@@ -166,8 +175,9 @@ describe('web build run events', () => {
     expect(heroRead).toBeTruthy();
     expect(heroEdit).toBeTruthy();
     expect(tools.indexOf(heroRead!)).toBeLessThan(tools.indexOf(heroEdit!));
-    // Targeted: only Hero is edited, nothing else.
-    expect(tools.filter((r) => r.toolType === 'edit_file').length).toBe(1);
+    // Targeted: only the Hero COMPONENT is edited (data/content files may update
+    // too since they hold the copy, but no sibling component is rewritten).
+    expect(tools.filter((r) => r.toolType === 'edit_file' && /components\//.test(r.filePath || '')).length).toBe(1);
     expect(heroRead!.clickable).toBe(true);
   });
 });

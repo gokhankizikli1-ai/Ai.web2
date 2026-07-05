@@ -275,7 +275,7 @@ export function buildWebBuildPayload(
   // Quality gate — repair a weak FRESH build with the inferred industry brief.
   if (!prev && !checkQuality(sectionItems, files.length, effLang).ok) {
     sectionItems = fallbackSectionItems(inferred, effLang);
-    files = diffFiles(undefined, synthesizeFromCopies(itemsToCopies(sectionItems), { goal: mergedBrief.goal, type: mergedBrief.type }));
+    files = diffFiles(undefined, synthesizeFromCopies(itemsToCopies(sectionItems), mergedBrief));
   }
 
   const changed = files.filter((f) => f.status !== 'unchanged');

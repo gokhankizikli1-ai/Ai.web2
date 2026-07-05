@@ -55,6 +55,11 @@ export interface WebBuildRunEvent {
   summaryKey?: string;
   /** Real, data-tied summary (file blocks). */
   summary?: string;
+  /** Expandable detail lines (real data — file purpose, source titles/URLs). */
+  details?: string[];
+  /** i18n key for an honest, localized note shown when the row is expanded
+   *  (e.g. clarifying a generated project file is not a Korvix repo edit). */
+  noteKey?: string;
   params?: Record<string, string | number>;
   filePath?: string;
   language?: string;
@@ -70,6 +75,8 @@ export type RunRow =
       kind: 'tool'; id: string; toolType: ToolType; titleKey: string; status: WebBuildRunStatus;
       filePath?: string; summary?: string; summaryKey?: string; added?: number; removed?: number;
       clickable: boolean;
+      /** Expandable operation detail (real data) + an honest localized note. */
+      details?: string[]; noteKey?: string;
     };
 
 let _seq = 0;
@@ -113,6 +120,10 @@ export function stepToEvents(
     titleKey: type === 'file_modified' ? 'wbActionUpdate' : 'wbActionCreate',
     filePath: f.path, language: f.language, summary: f.summary,
     linesAdded: f.added, linesRemoved: f.removed,
+    // Expandable operation detail — the real file path + its purpose, plus an
+    // honest note that this is a generated project file (not a Korvix repo edit).
+    details: [f.path, f.summary].filter((x): x is string => !!x),
+    noteKey: 'wbOpFileNote',
   });
 
   if (step.kind === 'revision') {
@@ -183,13 +194,17 @@ function pushResearch(out: WebBuildRunEvent[], step: WebBuildStep): void {
   const count = r.sourceCount ?? (r.sources ? r.sources.length : 0);
   if (r.didResearch && count > 0) {
     const titles = (r.sources || []).slice(0, 3).map((s) => s.title).filter(Boolean).join(' · ');
-    pushTool(out, 'research', 'research', 'wbActResearch', { summary: titles || undefined });
+    // Expandable detail: the real source titles + URLs that were read.
+    const details = (r.sources || []).slice(0, 6).map((s) => `${s.title} — ${s.url}`);
+    pushTool(out, 'research', 'research', 'wbActResearch', {
+      summary: titles || undefined, details: details.length ? details : undefined, noteKey: 'wbOpResearchNote',
+    });
     out.push({
       id: eid(), type: 'assistant_message', status: 'completed',
       messageKey: 'wbFeedResearchDone', params: { count },
     });
   } else {
-    pushTool(out, 'research', 'research', 'wbToolStrategy');
+    pushTool(out, 'research', 'research', 'wbToolStrategy', { noteKey: 'wbOpStrategyNote' });
   }
 }
 
@@ -228,6 +243,7 @@ export function eventsToRows(events: WebBuildRunEvent[]): RunRow[] {
         const row: Extract<RunRow, { kind: 'tool' }> = {
           kind: 'tool', id: e.group || e.id, toolType: tool, titleKey: e.titleKey || '', status: 'running',
           filePath: e.filePath, summary: e.summary, summaryKey: e.summaryKey,
+          details: e.details, noteKey: e.noteKey,
           clickable: tool === 'read_file' && !!e.filePath,
         };
         if (e.group) groupRow.set(e.group, row);
@@ -241,6 +257,8 @@ export function eventsToRows(events: WebBuildRunEvent[]): RunRow[] {
           if (e.filePath) row.filePath = e.filePath;
           if (e.summary) row.summary = e.summary;
           if (e.summaryKey) row.summaryKey = e.summaryKey;
+          if (e.details) row.details = e.details;
+          if (e.noteKey) row.noteKey = e.noteKey;
         }
         break;
       }
@@ -251,6 +269,7 @@ export function eventsToRows(events: WebBuildRunEvent[]): RunRow[] {
           toolType: e.type === 'file_modified' ? 'edit_file' : 'create_file',
           titleKey: e.titleKey || (e.type === 'file_modified' ? 'wbActionUpdate' : 'wbActionCreate'),
           status: 'completed', filePath: e.filePath, summary: e.summary,
+          details: e.details, noteKey: e.noteKey,
           added: e.linesAdded || 0, removed: e.linesRemoved || 0, clickable: !!e.filePath,
         });
         break;
