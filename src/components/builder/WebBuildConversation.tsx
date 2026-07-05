@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Monitor, FolderTree, ArrowRight, X, Check } from 'lucide-react';
+import { Monitor, FolderTree, ArrowRight, X, Check, Minus } from 'lucide-react';
 import { useLanguageStore } from '@/stores/languageStore';
 import { useOwnerMode } from '@/hooks/useOwnerMode';
 import KorvixAvatar from '@/components/builder/KorvixAvatar';
@@ -10,7 +10,7 @@ import type {
   WebBuildStep, WebBuildFile, WebBuildSectionItem,
 } from '@/lib/webBuildPayload';
 import type { WebBuildResearch } from '@/lib/webBuildApi';
-import { deriveAgentActivity, type AgentActivityStatus } from '@/lib/webBuildAgents';
+import { deriveAgentWorkLog, type WebBuildAgentWorkLogEntry } from '@/lib/webBuildAgents';
 
 /**
  * The Web Build conversation — a Kimi/Claude-style agent run per turn: the
@@ -204,59 +204,67 @@ function ResearchDebug({ research }: { research?: WebBuildResearch }) {
   );
 }
 
-/* ── Completed agent activity recap ──────────────────────────────────────
- * After a build finishes, show one compact ✓ line per agent describing WHAT IT
- * COMPLETED — derived from the real agent artifacts on the step (deriveAgentActivity),
- * never fabricated. This is NOT a card/panel and NOT a static future checklist:
- * only agents that actually ran appear, each as a single quiet line. Honest on
- * fallback (research via strategy inference) and skip/fail. Renders nothing for
- * old builds / kill-switched agents, so it never leaves an empty surface. */
-const ACTIVITY_ICON_COLOR: Record<AgentActivityStatus, string> = {
-  completed: '#86A08F',
-  fallback: '#94A3B8',
-  skipped: '#64748B',
-  failed: '#64748B',
-};
-
-function AgentActivityRecap({ agents }: { agents: WebBuildStep['agents'] }) {
-  const { t, lang } = useLanguageStore();
-  const activity = useMemo(() => deriveAgentActivity(agents, lang), [agents, lang]);
-  if (!activity.completed.length) return null;
+/* ── Agent workstream (work log) ─────────────────────────────────────────
+ * The single running-activity surface for a finished turn: a compact work log
+ * of the REAL agent pipeline — what each agent did, which fields it passed to the
+ * next agent, and the real files the Component Engineer wrote with their real +/-
+ * line diffs. Derived from deriveAgentWorkLog(step.agents, step.files); never
+ * fabricated, honest fallback wording, no borders/panel, no future checklist.
+ * Renders nothing for old builds / kill-switched agents. */
+function WorkLogLine({ entry }: { entry: WebBuildAgentWorkLogEntry }) {
+  if (entry.type === 'file') {
+    return (
+      <div className="flex items-center gap-2 pl-5 text-[11.5px] leading-relaxed">
+        <span className="min-w-0 truncate font-mono text-[#CBD5E1]">{entry.filePath}</span>
+        <span className="shrink-0 font-mono">
+          <span className="text-[#86A08F]">+{entry.linesAdded ?? 0}</span>{' '}
+          <span className="text-[#C98A93]">-{entry.linesRemoved ?? 0}</span>
+        </span>
+      </div>
+    );
+  }
+  const isDid = entry.type === 'completed';
+  const isHandoff = entry.type === 'handoff';
+  const Icon = isDid ? Check : isHandoff ? ArrowRight : Minus;
+  const color = isDid ? '#86A08F' : isHandoff ? '#64748B' : '#94A3B8';
   return (
-    <div className="flex flex-col gap-1">
-      {activity.completed.map((line, idx) => {
-        const done = line.status === 'completed' || line.status === 'fallback';
-        return (
-          <motion.div
-            key={line.id}
-            initial={{ opacity: 0, y: 2 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.24, delay: Math.min(idx * 0.06, 0.4) }}
-            className="flex items-start gap-1.5 text-[12px] leading-relaxed"
-          >
-            <Check
-              className="mt-[2px] h-3.5 w-3.5 shrink-0"
-              style={{ color: ACTIVITY_ICON_COLOR[line.status], opacity: done ? 1 : 0.7 }}
-              strokeWidth={done ? 2.5 : 2}
-            />
-            <span className="min-w-0">
-              <span className="text-slate-200">{line.name}</span>
-              {done && <span className="text-[#64748B]"> {t('wbAgentCompleted')}:</span>}
-              <span className="text-[#94A3B8]">{done ? ' ' : ': '}{line.summary}</span>
-            </span>
-          </motion.div>
-        );
-      })}
+    <div className={`flex items-start gap-1.5 text-[12px] leading-relaxed ${isDid ? '' : 'pl-5'}`}>
+      <Icon
+        className="mt-[2px] h-3.5 w-3.5 shrink-0"
+        style={{ color, opacity: isDid ? 1 : 0.75 }}
+        strokeWidth={isDid ? 2.5 : 2}
+      />
+      <span className={`min-w-0 ${isDid ? 'text-slate-200' : 'text-[#94A3B8]'}`}>{entry.message}</span>
+    </div>
+  );
+}
+
+function AgentWorkLog({ agents, files }: { agents: WebBuildStep['agents']; files: WebBuildStep['files'] }) {
+  const { lang } = useLanguageStore();
+  const entries = useMemo(() => deriveAgentWorkLog(agents, files, lang), [agents, files, lang]);
+  if (!entries.length) return null;
+  return (
+    <div className="flex flex-col gap-[3px]">
+      {entries.map((entry, idx) => (
+        <motion.div
+          key={entry.id}
+          initial={{ opacity: 0, y: 2 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.22, delay: Math.min(idx * 0.045, 0.5) }}
+        >
+          <WorkLogLine entry={entry} />
+        </motion.div>
+      ))}
     </div>
   );
 }
 
 /* ── One finished build/revision turn ────────────────────────────────────
  * A completed turn is a normal assistant response: the user's prompt, the compact
- * agent-activity recap (what each agent completed, from real artifacts), then the
- * result cards (Preview / All Files / Save). The recap + cards render only on the
- * last (current) turn — kept compact, never a giant panel. The owner-only research
- * debug (after completion) is kept. */
+ * agent workstream (what each agent did / passed / wrote, from real artifacts and
+ * real file diffs), then the result cards (Preview / All Files / Save). The work
+ * log + cards render only on the last (current) turn — kept compact, never a giant
+ * panel. The owner-only research debug (after completion) is kept. */
 function RunTurn({ step, children }: { step: WebBuildStep; children?: ReactNode }) {
   return (
     <div className="space-y-3">
@@ -304,7 +312,7 @@ export default function WebBuildConversation({
           <RunTurn key={step.id} step={step}>
             {isLast && (
               <>
-                <AgentActivityRecap agents={step.agents} />
+                <AgentWorkLog agents={step.agents} files={step.files} />
                 <div className="flex flex-col gap-2 pt-0.5">
                   <AttachmentCard icon={Monitor} title={t('wbCardPreview')} subtitle={t('wbCardPreviewSub')} actionLabel={t('wbCardOpen')} tone="accent" onClick={() => setPanel('preview')} />
                   <AttachmentCard icon={FolderTree} title={t('wbCardAllFiles')} subtitle={t('wbCardAllFilesSub')} actionLabel={t('wbCardOpen')} onClick={() => openFile(undefined)} />
