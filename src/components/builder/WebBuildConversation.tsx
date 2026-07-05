@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Monitor, FolderTree, ArrowRight, X } from 'lucide-react';
 import { useLanguageStore } from '@/stores/languageStore';
@@ -6,9 +6,6 @@ import { useOwnerMode } from '@/hooks/useOwnerMode';
 import KorvixAvatar from '@/components/builder/KorvixAvatar';
 import WebBuildFileView from '@/components/builder/WebBuildFileView';
 import WebBuildPreviewPanel from '@/components/builder/WebBuildPreviewPanel';
-import WebBuildAgentRun from '@/components/builder/WebBuildAgentRun';
-import WebBuildLiveProgress from '@/components/builder/WebBuildLiveProgress';
-import { stepToEvents, eventsToRows } from '@/lib/webBuildRun';
 import type {
   WebBuildStep, WebBuildFile, WebBuildSectionItem,
 } from '@/lib/webBuildPayload';
@@ -23,17 +20,11 @@ import type { WebBuildResearch } from '@/lib/webBuildApi';
  */
 
 /* ── Live run shown WHILE the backend call is in flight ──────────────────
- * Under the prompt bubble, a COMPACT inline progress: completed agents settle as
- * ✓ lines, and the one active agent shows a small pulsing orb + "Think" with its
- * current action beneath. No card, no bordered panel, no static list of future
- * agents, no reserved blank area. */
-function LivePhases({ prompt, kind }: { prompt: string; kind: 'build' | 'revision' }) {
-  return (
-    <div className="space-y-2">
-      <UserMessage text={prompt} />
-      <WebBuildLiveProgress kind={kind} />
-    </div>
-  );
+ * The agents run internally, but NO progress/timeline UI renders in the chat
+ * while building — only the user's prompt bubble stays. When the build finishes,
+ * the normal result (Preview / All Files / Save) appears in place. */
+function LivePhases({ prompt }: { prompt: string; kind?: 'build' | 'revision' }) {
+  return <UserMessage text={prompt} />;
 }
 
 /* ── Attachment / artifact card ──────────────────────────────────────── */
@@ -141,29 +132,18 @@ function ResearchDebug({ research }: { research?: WebBuildResearch }) {
   );
 }
 
-/* ── One finished build/revision turn (agent run) ────────────────────── */
-function RunTurn({
-  step, brief, animate, onOpenFile, children,
-}: {
-  step: WebBuildStep;
-  brief: { type?: string; audience?: string; goal?: string; style?: string };
-  animate: boolean;
-  onOpenFile: (path?: string) => void;
-  children?: ReactNode;
-}) {
-  const rows = useMemo(() => eventsToRows(stepToEvents(step, brief)), [step, brief]);
-  // Hold the artifact cards until the run has fully finished revealing — the
-  // build must look complete before Preview / All files / Save appear. History
-  // (non-animated) steps are complete immediately.
-  const [runComplete, setRunComplete] = useState(!animate);
-  useEffect(() => { if (!animate) setRunComplete(true); }, [animate]);
+/* ── One finished build/revision turn ────────────────────────────────────
+ * A completed turn is a normal assistant response: the user's prompt, then the
+ * result cards (Preview / All Files / Save). NO agent-run timeline / progress
+ * reveal is rendered — that was a second running-state UI and is removed. The
+ * owner-only research debug (after completion) is kept. */
+function RunTurn({ step, children }: { step: WebBuildStep; children?: ReactNode }) {
   return (
     <div className="space-y-3">
       <UserMessage text={step.prompt} />
       <AssistantMessage>
-        <WebBuildAgentRun rows={rows} animate={animate} onOpenFile={onOpenFile} onComplete={() => setRunComplete(true)} />
-        {runComplete && <ResearchDebug research={step.research} />}
-        {runComplete && children}
+        <ResearchDebug research={step.research} />
+        {children}
       </AssistantMessage>
     </div>
   );
@@ -188,7 +168,7 @@ interface WebBuildConversationProps {
 }
 
 export default function WebBuildConversation({
-  steps, files, sectionItems, brief, live, extraCards, slug, animateStepId, runId,
+  steps, files, sectionItems, brief, live, extraCards, slug, runId,
 }: WebBuildConversationProps) {
   const { t } = useLanguageStore();
   const [panel, setPanel] = useState<'preview' | 'files' | null>(null);
@@ -201,13 +181,7 @@ export default function WebBuildConversation({
       {steps.map((step, i) => {
         const isLast = i === lastIdx && !live;
         return (
-          <RunTurn
-            key={step.id}
-            step={step}
-            brief={brief}
-            animate={step.id === animateStepId}
-            onOpenFile={openFile}
-          >
+          <RunTurn key={step.id} step={step}>
             {isLast && (
               <div className="flex flex-col gap-2 pt-0.5">
                 <AttachmentCard icon={Monitor} title={t('wbCardPreview')} subtitle={t('wbCardPreviewSub')} actionLabel={t('wbCardOpen')} tone="accent" onClick={() => setPanel('preview')} />
