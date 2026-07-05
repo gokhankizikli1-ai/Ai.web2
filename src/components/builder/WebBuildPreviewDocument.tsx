@@ -44,9 +44,14 @@ function Hero({ s, brief }: { s: S; brief: Brief }) {
   return (
     <section className="relative isolate overflow-hidden">
       <div aria-hidden className="absolute inset-0" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.045) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.045) 1px,transparent 1px)', backgroundSize: '44px 44px', WebkitMaskImage: 'radial-gradient(ellipse at center,#000 40%,transparent 75%)', maskImage: 'radial-gradient(ellipse at center,#000 40%,transparent 75%)' }} />
+      {/* Soft spotlight behind the headline for depth */}
+      <div aria-hidden className="pointer-events-none absolute left-1/2 top-0 h-[36rem] w-[52rem] -translate-x-1/2" style={{ background: 'radial-gradient(ellipse at center, rgba(99,102,241,0.16), transparent 68%)' }} />
       <Orb color="#6366f1" style={{ top: '-6rem', left: '-4rem', width: '28rem', height: '28rem' }} />
       <Orb color="#22d3ee" style={{ top: '3rem', right: '-6rem', width: '24rem', height: '24rem' }} delay={-6} />
-      <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }} className="mx-auto max-w-3xl px-6 py-24 text-center sm:py-28">
+      <Orb color="#a855f7" style={{ bottom: '-10rem', left: '30%', width: '22rem', height: '22rem' }} delay={-11} />
+      {/* Seam that blends the hero into the first content section */}
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-b from-transparent to-[#05070d]" />
+      <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }} className="relative mx-auto max-w-3xl px-6 py-24 text-center sm:py-28">
         {eyebrow && <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] font-medium text-indigo-200"><span className="h-1.5 w-1.5 rounded-full bg-indigo-400" />{eyebrow}</span>}
         <h1 className="mt-5 text-3xl font-semibold tracking-tight text-white sm:text-5xl">{title}</h1>
         {(s.sub || brief.goal) && <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-slate-300 sm:text-lg">{s.sub || brief.goal}</p>}
