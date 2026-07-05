@@ -114,6 +114,12 @@ export interface WebBuildBrief {
   // backward compatible. When set, these drive the design tokens directly so the
   // Art Direction actually controls the preview/files palette + heading style.
   artAccent?: string; artAccent2?: string; artBg?: string; artHeadingSerif?: boolean;
+  // Agent pipeline STRUCTURE overrides. The agents (Research/UI/Strategy) decide
+  // the layout archetype / hero composition / primary visual module and inject them
+  // here, so deriveLayoutPlan (used by BOTH preview and files) obeys the agents
+  // instead of re-detecting the archetype from prose. Plain strings (validated at
+  // the plan layer) to avoid an import cycle; all optional and backward compatible.
+  agentArchetype?: string; agentHero?: string; agentModule?: string;
 }
 
 /** Pull the labeled strategy lines out of the Build Plan / Design Direction. */

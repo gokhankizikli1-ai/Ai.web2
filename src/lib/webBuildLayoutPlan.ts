@@ -305,14 +305,41 @@ const MODULE_ROTATION: VisualModule[] = [
  * Derive the full, deterministic layout plan from the strategy brief + the
  * resolved section list ({ id, name }). Same inputs → same plan, everywhere.
  */
+/** Whitelists so an agent-supplied override is honored ONLY when it is a real
+ *  member of the vocabulary (malformed values fall back to detection). */
+const ARCHETYPE_SET = new Set<LayoutArchetype>(Object.keys(BLUEPRINT) as LayoutArchetype[]);
+const HERO_SET = new Set<HeroComposition>([
+  'split-editorial', 'asymmetric-visual', 'dashboard-product', 'immersive-full-bleed',
+  'membership-application', 'catalog-collection', 'data-map', 'luxury-service',
+  'story-editorial', 'event-experience', 'centered',
+]);
+const MODULE_SET = new Set<VisualModule>([
+  'data-dashboard', 'membership-pass', 'catalog-archive', 'spatial-floorplan',
+  'product-showcase', 'editorial-story', 'reservation-form', 'timeline-process',
+  'comparison', 'contour-terrain',
+]);
+
 export function deriveLayoutPlan(
   brief: WebBuildBrief | undefined,
   sections: Array<{ id: string; name: string }>,
 ): WebBuildLayoutPlan {
   const ds = deriveDesignSystemFromStrategy(brief);
-  const arch = ds.archetype;
-  const bp = BLUEPRINT[arch] || BLUEPRINT.standard;
   const b = brief || {};
+  // The agent pipeline (via the enriched brief) decides the STRUCTURE. Honor an
+  // agent-supplied archetype over prose re-detection — this is what makes the
+  // plan (and therefore both preview and files) actually obey the agents. Only a
+  // valid vocabulary member wins; anything else falls back to detection.
+  const agentArch = b.agentArchetype as LayoutArchetype | undefined;
+  const arch: LayoutArchetype = agentArch && ARCHETYPE_SET.has(agentArch) ? agentArch : ds.archetype;
+  const bpBase = BLUEPRINT[arch] || BLUEPRINT.standard;
+  // The agent may further pin the hero composition and/or primary visual module.
+  const agentHero = b.agentHero as HeroComposition | undefined;
+  const agentModule = b.agentModule as VisualModule | undefined;
+  const bp: Blueprint = {
+    ...bpBase,
+    hero: agentHero && HERO_SET.has(agentHero) ? agentHero : bpBase.hero,
+    module: agentModule && MODULE_SET.has(agentModule) ? agentModule : bpBase.module,
+  };
 
   // Resolve every section to a kind + composition variant.
   let contentIndex = 0;
@@ -361,7 +388,11 @@ export function deriveLayoutPlan(
     diversityCorrected: false,
   };
 
-  plan = enforceDiversity(plan, b);
+  // When the agent pipeline explicitly pinned the archetype, the hero/module/
+  // visual system are the AGENTS' decision — the diversity guard must not hash
+  // them away. It may still diversify repeated content-section variants (additive).
+  const agentPinned = !!(agentArch && ARCHETYPE_SET.has(agentArch));
+  plan = enforceDiversity(plan, b, agentPinned);
   plan.filePlan = planFiles(plan);
   return plan;
 }
@@ -373,7 +404,7 @@ export function deriveLayoutPlan(
  * correction keyed on a hash of the idea — so two different weak ideas still get
  * distinct heroes, modules, rhythm and section variants. Never loops; one pass.
  */
-function enforceDiversity(plan: WebBuildLayoutPlan, brief: WebBuildBrief): WebBuildLayoutPlan {
+function enforceDiversity(plan: WebBuildLayoutPlan, brief: WebBuildBrief, agentPinned = false): WebBuildLayoutPlan {
   const contentVariants = plan.sections
     .filter((s) => s.kind === 'features' || s.kind === 'generic')
     .map((s) => s.variant);
@@ -384,6 +415,28 @@ function enforceDiversity(plan: WebBuildLayoutPlan, brief: WebBuildBrief): WebBu
   const nonHero = plan.sections.filter((s) => s.kind !== 'hero');
   const distinctAll = new Set(nonHero.map((s) => s.variant)).size;
   const vs = plan.visualSystem;
+
+  // When the agents pinned the archetype, the hero/module/visual system are their
+  // decision — only re-vary repeated CONTENT sections (additive; never rewrite the
+  // agent's structural choices to a hash).
+  if (agentPinned) {
+    const needsSpread = (nonHero.length >= 4 && distinctAll < 3)
+      || (contentVariants.length >= 2 && distinctContent === 1);
+    if (!needsSpread) return plan;
+    const seedP = hashText([brief.type, brief.coreIdea, brief.goal].filter(Boolean).join(' ') || 'korvix');
+    const wheelP: SectionVariant[] = ['editorial-split', 'proof-strip', 'showcase', 'feature-grid', 'dashboard-data'];
+    let cp = 0;
+    const spread = plan.sections.map((s) => {
+      if (s.kind !== 'features' && s.kind !== 'generic') return s;
+      return { ...s, variant: wheelP[(seedP + cp++) % wheelP.length] };
+    });
+    return {
+      ...plan,
+      sections: spread,
+      sectionVariants: Object.fromEntries(spread.map((s) => [s.id, s.variant])),
+      diversityCorrected: true,
+    };
+  }
 
   const tooGeneric =
     // A weak strategy resolves to the neutral 'standard' archetype — without a

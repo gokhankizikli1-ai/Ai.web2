@@ -10,8 +10,8 @@ import { resolveBuildFiles, parseSectionCopy, synthesizeFromCopies, type SynthFi
 import { inferWebsiteBrief, fallbackSectionItems, checkQuality } from '@/lib/webBuildBrief';
 import { deriveLayoutPlan, type WebBuildLayoutPlan } from '@/lib/webBuildLayoutPlan';
 import {
-  runUpstreamAgents, runLayoutArchitect, WEB_BUILD_AGENTS_ENABLED,
-  type WebBuildAgent, type WebBuildArtifacts,
+  runUpstreamAgents, runLayoutArchitect, runComponentEngineer, WEB_BUILD_AGENTS_ENABLED,
+  type WebBuildAgent, type WebBuildArtifacts, type WebBuildEnforcement,
 } from '@/lib/webBuildAgents';
 import { detectMessageLanguage } from '@/lib/locale';
 
@@ -372,6 +372,31 @@ export function buildWebBuildPayload(
         ? { ...artifacts.context, layoutBlueprint: la.blueprint || null }
         : artifacts?.context;
       artifacts = { ...(artifacts || {}), blueprint: la.blueprint, context: ctx };
+
+      // COMPONENT ENGINEER — consumes the plan + blueprint + upstream artifacts and
+      // records the concrete component/file plan the synthesizer emits. Guarded.
+      const ce = runComponentEngineer(
+        layoutPlan, la.blueprint, artifacts?.research, artifacts?.artDirection, artifacts?.strategy, effLang,
+      );
+      agents = [...agents, ce.agent];
+      artifacts = { ...(artifacts || {}), componentEngineer: ce.artifact };
+
+      // ENFORCEMENT — prove the agents drove the build (Part 6). The layout plan is
+      // derived from the enriched (agent-steered) brief, so the archetype following
+      // the agent decision is verifiable; the generated files come from that same
+      // plan, so the component plan is honored 1:1.
+      const enforcement: WebBuildEnforcement = {
+        didUseResearchAgent: !!artifacts?.research && !artifacts.context?.fallbacks?.includes('research'),
+        didUseArtDirection: !!artifacts?.artDirection,
+        didUseStrategy: !!artifacts?.strategy,
+        didUseLayoutBlueprint: !!artifacts?.blueprint,
+        didUseComponentPlan: !!artifacts?.componentEngineer,
+        didPlanFollowAgents: !!artBrief.agentArchetype && layoutPlan.archetype === artBrief.agentArchetype,
+        fallbackReason: (artifacts?.context?.fallbacks?.length
+          ? `agents degraded: ${artifacts.context.fallbacks.join(', ')}`
+          : undefined),
+      };
+      artifacts = { ...(artifacts || {}), enforcement };
     } catch {
       /* non-blocking — keep the upstream agents as-is */
     }
