@@ -123,17 +123,17 @@ function ProductDemo({ s }: { s: S }) {
   const lines = (s.bullets?.length ? s.bullets : ['Merhaba, nasıl yardımcı olabilirim?', 'Siparişimi takip etmek istiyorum.', 'Tabii, sipariş numaranı paylaşır mısın?']).slice(0, 4);
   return (
     <section className="relative isolate overflow-hidden px-6 py-16">
-      <Orb color="#6366f1" style={{ top: '-4rem', right: '-4rem', width: '22rem', height: '22rem' }} />
+      <Orb color="var(--acc)" style={{ top: '-4rem', right: '-4rem', width: '22rem', height: '22rem' }} />
       <div className="mx-auto grid max-w-6xl items-center gap-10 lg:grid-cols-2">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">{heading(s)}</h2>
           {s.sub && <p className="mt-4 text-slate-300">{s.sub}</p>}
-          {s.cta && <span className="mt-6 inline-block rounded-xl bg-indigo-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30">{s.cta}</span>}
+          {s.cta && <span className="mt-6 inline-block rounded-xl px-6 py-3 text-sm font-semibold text-white shadow-lg" style={{ background: 'var(--acc)', boxShadow: '0 10px 30px -12px var(--acc)' }}>{s.cta}</span>}
         </div>
         <motion.div animate={{ y: [0, -10, 0] }} transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 shadow-2xl shadow-black/40">
           <div className="mb-3 flex gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-white/20" /><span className="h-2.5 w-2.5 rounded-full bg-white/20" /><span className="h-2.5 w-2.5 rounded-full bg-white/20" /></div>
           <div className="space-y-2">
-            {lines.map((b, i) => <div key={i} className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-[13px] ${i % 2 ? 'ml-auto bg-indigo-500 text-white' : 'bg-white/[0.06] text-slate-200'}`}>{b}</div>)}
+            {lines.map((b, i) => <div key={i} className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-[13px] ${i % 2 ? 'ml-auto text-white' : 'bg-white/[0.06] text-slate-200'}`} style={i % 2 ? { background: 'var(--acc)' } : undefined}>{b}</div>)}
           </div>
         </motion.div>
       </div>
@@ -150,7 +150,7 @@ function Workflow({ s }: { s: S }) {
         <ol className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {steps.map((b, i) => (
             <Reveal key={i} i={i}>
-              <li className="rounded-2xl border border-white/10 bg-white/[0.03] p-5"><span className="text-sm font-semibold text-indigo-300">0{i + 1}</span><p className="mt-2 text-[15px] font-medium text-white">{b}</p></li>
+              <li className="rounded-2xl border border-white/10 bg-white/[0.03] p-5"><span className="text-sm font-semibold" style={{ color: 'var(--acc)' }}>0{i + 1}</span><p className="mt-2 text-[15px] font-medium text-white">{b}</p></li>
             </Reveal>
           ))}
         </ol>
@@ -183,7 +183,7 @@ function Integrations({ s }: { s: S }) {
       <div className="mx-auto max-w-5xl text-center">
         <H2>{heading(s)}</H2>
         <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {chips.map((b, i) => <div key={i} className="flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-slate-300"><span className="h-4 w-4 rounded bg-gradient-to-br from-indigo-500/50 to-cyan-400/30" />{b}</div>)}
+          {chips.map((b, i) => <div key={i} className="flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-slate-300"><span className="h-4 w-4 rounded" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 55%, transparent), color-mix(in srgb, var(--acc2) 30%, transparent))' }} />{b}</div>)}
         </div>
       </div>
     </section>
@@ -213,7 +213,7 @@ function Inventory({ s }: { s: S }) {
                 <div className="p-5">
                   <p className="text-[15px] font-semibold text-white">{b}</p>
                   <div className="mt-2 flex items-center justify-between text-xs text-slate-400"><span>2023 · Otomatik · Benzin</span><span className="font-semibold text-white">₺{850 + i * 120}.000</span></div>
-                  <div className="mt-4 rounded-lg bg-indigo-500 py-2 text-center text-sm font-semibold text-white">İncele</div>
+                  <div className="mt-4 rounded-lg py-2 text-center text-sm font-semibold text-white" style={{ background: 'var(--acc)' }}>İncele</div>
                 </div>
               </div>
             </Reveal>
@@ -231,7 +231,7 @@ function Financing({ s }: { s: S }) {
       <div className="mx-auto max-w-5xl rounded-3xl border border-white/10 bg-white/[0.02] p-8">
         <H2>{heading(s)}</H2>
         <div className="mt-8 grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {badges.map((b, i) => <div key={i} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3"><span className="h-9 w-9 rounded-lg bg-gradient-to-br from-indigo-500/40 to-cyan-400/20" /><span className="text-sm font-medium text-slate-200">{b}</span></div>)}
+          {badges.map((b, i) => <div key={i} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3"><span className="h-9 w-9 rounded-lg" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 45%, transparent), color-mix(in srgb, var(--acc2) 22%, transparent))' }} /><span className="text-sm font-medium text-slate-200">{b}</span></div>)}
         </div>
       </div>
     </section>
@@ -246,10 +246,10 @@ function Pricing({ s }: { s: S }) {
         <H2>{heading(s)}</H2>
         <div className="mt-8 grid gap-5 sm:grid-cols-3">
           {tiers.map((b, i) => (
-            <div key={i} className={`rounded-2xl border p-6 ${i === 1 ? 'border-indigo-400/40 bg-indigo-500/[0.06]' : 'border-white/10 bg-white/[0.03]'}`}>
+            <div key={i} className="rounded-2xl border p-6" style={i === 1 ? { borderColor: 'color-mix(in srgb, var(--acc) 40%, transparent)', background: 'color-mix(in srgb, var(--acc) 7%, transparent)' } : { borderColor: 'rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.03)' }}>
               <p className="text-sm font-medium text-slate-300">{b}</p>
               <div className="mt-3 text-3xl font-semibold text-white">₺{199 + i * 200}<span className="text-sm text-slate-400">/ay</span></div>
-              <div className={`mt-5 rounded-lg py-2 text-center text-sm font-semibold ${i === 1 ? 'bg-indigo-500 text-white' : 'border border-white/15 text-slate-200'}`}>Seç</div>
+              <div className={`mt-5 rounded-lg py-2 text-center text-sm font-semibold ${i === 1 ? 'text-white' : 'border border-white/15 text-slate-200'}`} style={i === 1 ? { background: 'var(--acc)' } : undefined}>Seç</div>
             </div>
           ))}
         </div>
@@ -284,7 +284,7 @@ function Features({ s }: { s: S }) {
         <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {items.map((b, i) => (
             <Reveal key={i} i={i}>
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 transition hover:-translate-y-1 hover:border-white/20"><div className="mb-4 h-11 w-11 rounded-xl bg-gradient-to-br from-indigo-500/40 to-cyan-400/20 ring-1 ring-white/10" /><p className="text-[15px] font-semibold leading-snug text-white">{b}</p></div>
+              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 transition hover:-translate-y-1 hover:border-white/20"><div className="mb-4 h-11 w-11 rounded-xl ring-1 ring-white/10" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 45%, transparent), color-mix(in srgb, var(--acc2) 22%, transparent))' }} /><p className="text-[15px] font-semibold leading-snug text-white">{b}</p></div>
             </Reveal>
           ))}
         </div>
@@ -301,7 +301,7 @@ function Testimonial({ s }: { s: S }) {
         <H2>{heading(s)}</H2>
         <div className="mt-8 grid gap-5 sm:grid-cols-3">
           {quotes.map((b, i) => (
-            <blockquote key={i} className="rounded-2xl border border-white/10 bg-white/[0.03] p-6"><p className="text-[15px] leading-relaxed text-slate-200">“{b}”</p><div className="mt-4 flex items-center gap-3"><span className="h-8 w-8 rounded-full bg-gradient-to-br from-indigo-500/50 to-cyan-400/30" /><span className="text-sm text-slate-400">Müşteri</span></div></blockquote>
+            <blockquote key={i} className="rounded-2xl border border-white/10 bg-white/[0.03] p-6"><p className="text-[15px] leading-relaxed text-slate-200">“{b}”</p><div className="mt-4 flex items-center gap-3"><span className="h-8 w-8 rounded-full" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 55%, transparent), color-mix(in srgb, var(--acc2) 30%, transparent))' }} /><span className="text-sm text-slate-400">Müşteri</span></div></blockquote>
           ))}
         </div>
       </div>

@@ -285,23 +285,36 @@ async def run_web_build_research(*, user_id: Optional[str], idea: str) -> tuple[
             fallback_reason=reason,
         )
 
-    # Build the injection block — REAL sources, inspiration-only, honest citing.
+    # Build the injection block — REAL sources synthesized into a structured
+    # BUILD INTELLIGENCE brief the final generation must actually USE (not just
+    # cite). Sources are inspiration only; never copy wording or layouts.
     lines = [
-        "[WEB RESEARCH — REAL SOURCES]",
-        "These are REAL web search results for this idea. Use them ONLY as",
-        "inspiration to ground the strategy (audience, conversion patterns, trust",
-        "signals, visual language). Do NOT copy their wording or layouts. In Build",
-        "Plan you may cite a source URL ONLY if it appears in this list.",
+        "[BUILD INTELLIGENCE — GROUNDED IN LIVE WEB RESEARCH]",
+        "I ran REAL web research for this idea. Before writing the build, SYNTHESIZE",
+        "these findings into a structured Build Intelligence brief and let it drive",
+        "EVERY downstream decision — do not treat research as decoration.",
+        "",
+        "Derive and then USE these (skip any that don't apply — never invent facts):",
+        "  • positioning / core idea / audience / user intent / market category",
+        "  • adjacent patterns + conversion patterns worth adopting (not copying)",
+        "  • trust barriers → the specific trust signals that answer them",
+        "  • emotional tone + visual direction (palette, type, motion, metaphor)",
+        "  • section architecture that fits THIS concept + the CTA hierarchy",
+        "  • component/visual ideas + a differentiation angle vs. look-alikes",
+        "Rules: dedupe overlapping findings; prefer useful patterns over generic",
+        "facts; do NOT copy source wording or layouts; cite a source URL in Build",
+        "Plan ONLY if it appears in the list below.",
         f"Queries run: {' | '.join(queries)}",
         "",
+        "Real sources:",
     ]
     for i, s in enumerate(sources, 1):
         lines.append(f"{i}. {s['title']} — {s['url']}")
         if s["snippet"]:
             lines.append(f"   {s['snippet']}")
     lines.append("")
-    lines.append("Fold these findings into 'Research insight' and let them shape the")
-    lines.append("sections, copy, trust signals and visual direction.")
+    lines.append("Fold the synthesis into 'Research insight' in Build Plan, and let it shape")
+    lines.append("the sections, copy, CTA hierarchy, trust signals, visual system and motion.")
 
     logger.info(
         "web_build_research | uid=%s | did_research=true | status=used_sources | "

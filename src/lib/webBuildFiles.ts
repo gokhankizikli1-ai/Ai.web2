@@ -12,7 +12,8 @@
  * for a section the model didn't produce.
  */
 import type { BuildSection } from '@/lib/gameBuilderApi';
-import { extractBrief, type WebBuildResult } from '@/lib/webBuildApi';
+import { extractBrief, type WebBuildResult, type WebBuildBrief } from '@/lib/webBuildApi';
+import { deriveDesignSystemFromStrategy, designSystemFileContent, type WebBuildDesignSystem } from '@/lib/webBuildDesignSystem';
 
 export interface SynthFile { path: string; content: string; language?: string; summary?: string }
 
@@ -139,8 +140,8 @@ function heroComponent(name: string, c: SectionCopy, brief: { goal?: string; typ
     <section className="relative isolate overflow-hidden">
       {/* Animated premium background: soft grid + drifting aurora orbs */}
       <div className="kx-grid absolute inset-0 -z-10" aria-hidden="true" />
-      <div className="kx-aurora -z-10" style={{ top: '-6rem', left: '-4rem', width: '28rem', height: '28rem', background: 'radial-gradient(circle, #6366f1, transparent 60%)' }} aria-hidden="true" />
-      <div className="kx-aurora -z-10" style={{ top: '3rem', right: '-6rem', width: '24rem', height: '24rem', background: 'radial-gradient(circle, #22d3ee, transparent 60%)', animationDelay: '-6s' }} aria-hidden="true" />
+      <div className="kx-aurora -z-10" style={{ top: '-6rem', left: '-4rem', width: '28rem', height: '28rem', background: 'radial-gradient(circle, var(--kx-accent), transparent 60%)' }} aria-hidden="true" />
+      <div className="kx-aurora -z-10" style={{ top: '3rem', right: '-6rem', width: '24rem', height: '24rem', background: 'radial-gradient(circle, var(--kx-accent-2), transparent 60%)', animationDelay: '-6s' }} aria-hidden="true" />
       <div className="mx-auto max-w-6xl px-6 py-28 sm:py-36">
         <div className="kx-reveal mx-auto max-w-3xl text-center">
           ${eyebrow ? `<span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-medium text-indigo-200">
@@ -193,7 +194,7 @@ function ctaComponent(name: string, c: SectionCopy): string {
   return `export default function ${name}() {
   return (
     <section id="contact" className="relative isolate overflow-hidden px-6 py-24">
-      <div className="kx-aurora -z-10" style={{ bottom: '-8rem', left: '50%', width: '32rem', height: '20rem', transform: 'translateX(-50%)', background: 'radial-gradient(circle, #6366f1, transparent 60%)' }} aria-hidden="true" />
+      <div className="kx-aurora -z-10" style={{ bottom: '-8rem', left: '50%', width: '32rem', height: '20rem', transform: 'translateX(-50%)', background: 'radial-gradient(circle, var(--kx-accent), transparent 60%)' }} aria-hidden="true" />
       <div className="kx-reveal mx-auto max-w-2xl rounded-3xl border border-white/10 bg-white/[0.03] p-10 text-center backdrop-blur">
         <h2 className="text-3xl font-semibold tracking-tight text-white">{\`${esc(headline)}\`}</h2>
         ${c.sub ? `<p className="mt-3 text-slate-300">{\`${esc(c.sub)}\`}</p>` : ''}
@@ -295,7 +296,7 @@ function productDemoComponent(name: string, c: SectionCopy): string {
   return `export default function ${name}() {
   return (
     <section id="demo" className="relative isolate overflow-hidden px-6 py-20">
-      <div className="kx-aurora -z-10" style={{ top: '-4rem', right: '-4rem', width: '22rem', height: '22rem', background: 'radial-gradient(circle, #6366f1, transparent 60%)' }} aria-hidden="true" />
+      <div className="kx-aurora -z-10" style={{ top: '-4rem', right: '-4rem', width: '22rem', height: '22rem', background: 'radial-gradient(circle, var(--kx-accent), transparent 60%)' }} aria-hidden="true" />
       <div className="mx-auto grid max-w-6xl items-center gap-10 lg:grid-cols-2">
         <div>
           ${c.headline ? `<h2 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">{\`${esc(c.headline)}\`}</h2>` : ''}
@@ -575,23 +576,70 @@ export function synthesizeFiles(result: WebBuildResult): SynthFile[] {
   return synthesizeFromCopies(parseSectionCopy(result), brief);
 }
 
+/** A structured `siteContent.ts` module holding the real copy — so the project
+ *  keeps content organized instead of inlined everywhere. */
+function siteContentFile(items: SectionCopy[]): SynthFile {
+  const content = items.map((c) => ({
+    id: c.id,
+    name: c.name,
+    ...(c.headline ? { headline: c.headline } : {}),
+    ...(c.sub ? { sub: c.sub } : {}),
+    ...(c.cta ? { cta: c.cta } : {}),
+    ...(c.bullets?.length ? { bullets: c.bullets.slice(0, 8) } : {}),
+  }));
+  return {
+    path: 'src/data/siteContent.ts',
+    language: 'ts',
+    summary: 'Structured site copy (headline / sub / CTA / bullets per section)',
+    content: `/** Structured content for every section — edit copy here in one place. */
+export const siteContent = ${JSON.stringify(content, null, 2)} as const;
+
+export type SiteContent = typeof siteContent;
+`,
+  };
+}
+
+/** The Vite-style entry file — real, not a placeholder. */
+function mainFile(): SynthFile {
+  return {
+    path: 'src/main.tsx',
+    language: 'tsx',
+    summary: 'App entry — mounts the page and loads the design system styles',
+    content: `import { StrictMode } from 'react';
+import { createRoot } from 'react-dom/client';
+import App from './App';
+import './styles.css';
+
+createRoot(document.getElementById('root')!).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+);
+`,
+  };
+}
+
 /**
- * Build the full React + Tailwind file set from a resolved copy set — reused by
- * both the backend-parsed path and the industry fallback (webBuildBrief), so an
- * inferred brief produces the same premium files as a real reply.
+ * Build the full React + Tailwind PROJECT from a resolved copy set — a real,
+ * dynamic file tree (entry, shell, styles, design-system tokens, structured
+ * content, one component per section) whose SHAPE follows the strategy, not a
+ * fixed 5-file template. Reused by both the backend-parsed path and the industry
+ * fallback so an inferred brief produces the same premium project.
  */
 export function synthesizeFromCopies(
-  items: SectionCopy[], brief: { goal?: string; type?: string },
+  items: SectionCopy[], brief: WebBuildBrief,
 ): SynthFile[] {
   if (items.length === 0) return [];
 
+  const ds = deriveDesignSystemFromStrategy(brief);
   const compNames = items.map((c) => pascal(c.id));
   const files: SynthFile[] = [];
 
+  // One component file per real section — the tree GROWS with the site.
   items.forEach((c, i) => {
     const name = compNames[i];
     files.push({
-      path: `components/${name}.tsx`,
+      path: `src/components/${name}.tsx`,
       language: 'tsx',
       content: componentFor(name, c, brief),
       summary: fileSummary(c),
@@ -604,27 +652,50 @@ export function synthesizeFromCopies(
 
 export default function App() {
   return (
-    <main className="min-h-screen bg-[#05070d] text-slate-200 antialiased selection:bg-indigo-500/40">
+    <main
+      className="min-h-screen text-slate-200 antialiased"
+      style={{ background: 'var(--kx-bg)' }}
+    >
 ${usage}
     </main>
   );
 }
 `;
-  files.unshift({ path: 'App.tsx', language: 'tsx', content: app, summary: 'Premium dark page shell composing all sections' });
 
-  files.push({
-    path: 'index.css',
+  // Base project files (entry, shell, styles, tokens, content) — then sections.
+  files.unshift({ path: 'src/App.tsx', language: 'tsx', content: app, summary: 'Page shell composing all generated sections' });
+  files.unshift(mainFile());
+  files.push({ path: 'src/lib/designSystem.ts', language: 'ts', content: designSystemFileContent(ds), summary: 'Strategy-derived design tokens (palette, type, radius, motion)' });
+  files.push(siteContentFile(items));
+  files.push(stylesFile(ds));
+
+  return files;
+}
+
+/** The theme + motion stylesheet — CSS custom properties come from the derived
+ *  design system so a different strategy yields a different palette in code too. */
+function stylesFile(ds: WebBuildDesignSystem): SynthFile {
+  return {
+    path: 'src/styles.css',
     language: 'css',
+    summary: 'Design-system theme + subtle motion (aurora, float, reveal, grid)',
     content: `@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-:root { color-scheme: dark; }
+:root {
+  color-scheme: dark;
+  --kx-bg: ${ds.bg};
+  --kx-accent: ${ds.accent};
+  --kx-accent-2: ${ds.accent2};
+  --kx-radius: ${ds.radius};
+}
 
 html { scroll-behavior: smooth; }
 body {
-  background: #05070d;
+  background: var(--kx-bg);
   color: #e5e9f0;
+  font-family: ${ds.bodyFont};
   -webkit-font-smoothing: antialiased;
 }
 
@@ -669,10 +740,7 @@ body {
   .kx-aurora, .kx-float, .kx-reveal { animation: none; }
 }
 `,
-    summary: 'Premium dark theme + subtle motion (aurora, float, reveal, grid)',
-  });
-
-  return files;
+  };
 }
 
 /**

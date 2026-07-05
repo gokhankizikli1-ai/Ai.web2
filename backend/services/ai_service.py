@@ -479,10 +479,14 @@ async def process_chat(
                             # "Research found") and never invent citations.
                             _why = (_wb_research_meta or {}).get("fallback_reason") or "no live sources available"
                             sys_p += (
-                                "\n\n[RESEARCH_STATUS]\n"
-                                f"Live web research did not return usable sources ({_why}). "
-                                "Rely on internal strategy inference, label it 'Strategy insight' "
-                                "(not 'Research found'), and do NOT invent URLs, sources, "
+                                "\n\n[BUILD INTELLIGENCE — STRATEGY INFERENCE]\n"
+                                f"Live web research did not return usable sources ({_why}). Build a "
+                                "structured Build Intelligence brief from your own knowledge FIRST, "
+                                "then use it to drive the whole build: positioning, audience, user "
+                                "intent, emotional tone, visual direction (palette/type/motion/"
+                                "metaphor), section architecture, CTA hierarchy, trust signals, "
+                                "component ideas and differentiation. Label the insight 'Strategy "
+                                "insight' (NOT 'Research found'), and do NOT invent URLs, sources, "
                                 "competitors, statistics, or citations."
                             )
                         logger.info(

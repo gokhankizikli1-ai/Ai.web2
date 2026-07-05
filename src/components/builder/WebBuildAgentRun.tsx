@@ -114,6 +114,8 @@ function ToolLine({
       linesAdded={row.added}
       linesRemoved={row.removed}
       summary={row.summaryKey ? t(row.summaryKey) : row.summary}
+      details={row.details}
+      note={row.noteKey ? t(row.noteKey) : undefined}
       onClick={row.clickable && row.filePath ? () => onOpenFile(row.filePath!) : undefined}
     />
   );
