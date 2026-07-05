@@ -1057,9 +1057,11 @@ function fileSummary(c: SectionCopy): string {
   return (c.purpose || c.sub || c.name).replace(/\s+/g, ' ').slice(0, 90);
 }
 
-/** Synthesize the full file set from the parsed sections + copy. */
-export function synthesizeFiles(result: WebBuildResult): SynthFile[] {
-  const brief = extractBrief(result.sections);
+/** Synthesize the full file set from the parsed sections + copy. An optional
+ *  `briefOverride` (the Art-Director-enriched brief) drives the palette/visual
+ *  system so the generated files match the preview. */
+export function synthesizeFiles(result: WebBuildResult, briefOverride?: WebBuildBrief): SynthFile[] {
+  const brief = briefOverride || extractBrief(result.sections);
   return synthesizeFromCopies(parseSectionCopy(result), brief);
 }
 
@@ -1264,8 +1266,8 @@ body {
  * no parsable sections) — otherwise a uniform backend template would reintroduce
  * the very sameness this system removes.
  */
-export function resolveBuildFiles(result: WebBuildResult): SynthFile[] {
-  const synth = synthesizeFiles(result);
+export function resolveBuildFiles(result: WebBuildResult, briefOverride?: WebBuildBrief): SynthFile[] {
+  const synth = synthesizeFiles(result, briefOverride);
   if (synth.length > 0) return synth;
   const backend = extractFileEntries(result.sections).filter((f) => f.content && f.content.trim().length > 20);
   return backend.map((f) => ({ ...f, summary: undefined }));

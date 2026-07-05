@@ -110,6 +110,10 @@ export interface WebBuildBrief {
   // Design Direction
   visualMood?: string; layoutLogic?: string; typographyDirection?: string;
   colorDirection?: string; visualMetaphor?: string; motionDirection?: string;
+  // UI / Art Director agent palette override (Phase 1). All optional →
+  // backward compatible. When set, these drive the design tokens directly so the
+  // Art Direction actually controls the preview/files palette + heading style.
+  artAccent?: string; artAccent2?: string; artBg?: string; artHeadingSerif?: boolean;
 }
 
 /** Pull the labeled strategy lines out of the Build Plan / Design Direction. */
@@ -214,12 +218,15 @@ export function buildWebBuildRequest(
       'strategy is different. Interpret unusual, niche or sophisticated ideas on',
       'their own terms.',
       '',
-      'STEP 1 — RESEARCH & STRATEGY (do this before writing any build):',
+      'Run this as a PIPELINE OF UPSTREAM AGENTS, in this exact order, before any build:',
+      '',
+      'AGENT 1 — RESEARCH AGENT (do this first):',
       '- Interpret what the idea actually is (business / product / concept / model).',
       '- Work out why someone visits, what they must understand fast, the emotional',
       '  impression to create, the trust barriers, and the single primary conversion.',
-      '- Decide the layout logic, the visual metaphor, the sections that genuinely',
-      '  fit THIS concept, and the motion that supports it.',
+      '- Determine: category language, audience expectations, conversion patterns,',
+      '  the trust signals this category needs, common visual patterns, and the',
+      '  RISKS TO AVOID (generic template look, vague hype, no single CTA).',
       'RESEARCH: If you have web search / browsing / research tools available, USE',
       'them now to study adjacent sites, the product category, audience expectations',
       'and conversion patterns — as inspiration, not copying — and fold real findings',
@@ -227,6 +234,21 @@ export function buildWebBuildRequest(
       'actually returned them. If you have NO live tools, reason from knowledge and',
       'label it "Strategy insight" — do NOT invent URLs, sources, competitors,',
       'statistics, or claim you browsed/researched anything you did not fetch.',
+      '',
+      'AGENT 2 — UI / ART DIRECTOR AGENT (do this second, using the Research Agent):',
+      '- Convert the research + brief into a strong, SPECIFIC visual direction:',
+      '  visual mood, brand personality, typography direction, a full color system',
+      '  (background/foreground/accent/accent2/muted/surface/border), layout feeling,',
+      '  a concept-specific visual metaphor, imagery direction (composed CSS/SVG, no',
+      '  stock photos), motion direction, density, and premium details.',
+      '- This must be DYNAMIC from THIS idea — never a default indigo/cyan theme and',
+      '  never a fixed industry skin. Different ideas must get different art direction.',
+      '- Express it in the ## Design Direction fields below (they ARE the Art Direction).',
+      '',
+      'AGENT 3 — BUILD (do this last): generate the sections, copy and code and DO NOT',
+      'IGNORE the two artifacts above. Use the Art Direction to decide visual mood,',
+      'color system, typography, density and premium details; use the Research Agent',
+      'to decide trust signals, category language, conversion patterns and risks to avoid.',
       '',
       'STEP 2 — OUTPUT. Keep these EXACT H2 sections (the parser depends on them),',
       'and inside the first two use these EXACT labeled fields, one per line:',

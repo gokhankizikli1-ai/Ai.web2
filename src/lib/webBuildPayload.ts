@@ -9,6 +9,10 @@ import { extractBrief, type WebBuildResult, type WebBuildBrief, type WebBuildSou
 import { resolveBuildFiles, parseSectionCopy, synthesizeFromCopies, type SynthFile, type SectionCopy as SynthCopy } from '@/lib/webBuildFiles';
 import { inferWebsiteBrief, fallbackSectionItems, checkQuality } from '@/lib/webBuildBrief';
 import { deriveLayoutPlan, type WebBuildLayoutPlan } from '@/lib/webBuildLayoutPlan';
+import {
+  deriveWebBuildAgents,
+  type WebBuildAgent, type ResearchAgentArtifact, type ArtDirectionArtifact,
+} from '@/lib/webBuildAgents';
 import { detectMessageLanguage } from '@/lib/locale';
 
 export type ActivityStatus = 'waiting' | 'running' | 'done' | 'failed';
@@ -76,6 +80,10 @@ export interface WebBuildStep {
    *  brief + sections, so it's a record — not the source of truth. Optional →
    *  old saved steps still load. */
   layoutPlan?: WebBuildLayoutPlan;
+  /** Phase-1 upstream agents for this turn (Research + UI/Art Director) and
+   *  their artifacts. Optional → old saved steps still load. */
+  agents?: WebBuildAgent[];
+  artifacts?: { research?: ResearchAgentArtifact; artDirection?: ArtDirectionArtifact };
 }
 
 export interface WebBuildPayload {
@@ -101,6 +109,10 @@ export interface WebBuildPayload {
   /** The strategy-derived layout plan for the latest build (record; recomputed
    *  deterministically from brief + sections). Optional → old builds still load. */
   layoutPlan?: WebBuildLayoutPlan;
+  /** Phase-1 upstream agents (Research + UI/Art Director) for the latest build,
+   *  and their artifacts. Optional → old saved builds still load. */
+  agents?: WebBuildAgent[];
+  artifacts?: { research?: ResearchAgentArtifact; artDirection?: ArtDirectionArtifact };
   activity: WebBuildActivityRow[];
   /** Conversation history — one entry per build/revision. */
   steps: WebBuildStep[];
@@ -158,9 +170,11 @@ export function diffFiles(prev: WebBuildFile[] | undefined, next: SynthFile[]): 
   });
 }
 
-/** The authoritative file set for a result, diffed against the previous build. */
-export function resolveFiles(result: WebBuildResult, prev?: WebBuildFile[]): WebBuildFile[] {
-  return diffFiles(prev, resolveBuildFiles(result));
+/** The authoritative file set for a result, diffed against the previous build.
+ *  An optional `brief` override lets the Art-Director-enriched brief drive the
+ *  synthesized files' palette/visual system (so files match the preview). */
+export function resolveFiles(result: WebBuildResult, prev?: WebBuildFile[], brief?: WebBuildBrief): WebBuildFile[] {
+  return diffFiles(prev, resolveBuildFiles(result, brief));
 }
 
 /** Structured summary tied to real data for the assistant message. */
@@ -284,18 +298,45 @@ export function buildWebBuildPayload(
   ) as WebBuildBrief;
   const mergedBrief: WebBuildBrief = prev ? { ...prev.brief, ...definedBrief } : brief;
 
+  // Honest research status (needed by the Research Agent). Fresh builds carry the
+  // pass result; revisions skip the pre-pass, so keep the original build's status.
+  const research: WebBuildResearch | undefined = result.research || prev?.research || undefined;
+
+  // PHASE 1 — upstream agents run in order (Research → UI / Art Director) BEFORE
+  // preview/files, and produce structured artifacts the design system consumes.
+  const agentPipeline = deriveWebBuildAgents(prompt, mergedBrief, research, inferred, effLang);
+  const art = agentPipeline.artifacts.artDirection;
+
+  // Feed the Art Direction into the brief so the design system / preview / files
+  // are driven by it (Part 4): explicit palette + heading style win, and any
+  // missing strategy fields are filled from the art direction. All optional →
+  // backward compatible.
+  const artBrief: WebBuildBrief = art ? {
+    ...mergedBrief,
+    artAccent: mergedBrief.artAccent || art.colorSystem.accent,
+    artAccent2: mergedBrief.artAccent2 || art.colorSystem.accent2,
+    artBg: mergedBrief.artBg || art.colorSystem.background,
+    artHeadingSerif: mergedBrief.artHeadingSerif ?? /serif/i.test(art.typographyDirection),
+    visualMood: mergedBrief.visualMood || art.visualMood,
+    colorDirection: mergedBrief.colorDirection || art.visualMood,
+    motionDirection: mergedBrief.motionDirection || art.motionDirection,
+    visualMetaphor: mergedBrief.visualMetaphor || art.visualMetaphor,
+    typographyDirection: mergedBrief.typographyDirection || art.typographyDirection,
+    layoutLogic: mergedBrief.layoutLogic || art.layoutFeeling,
+  } : mergedBrief;
+
   let sectionItems = parseSectionItems(result);
-  let files = resolveFiles(result, prev?.files);
+  let files = resolveFiles(result, prev?.files, artBrief);
 
   // Quality gate — repair a weak FRESH build with the inferred industry brief.
   // The layout plan is derived from the FINAL section set so preview, files and
   // timeline all share one strategy-driven composition.
   if (!prev && !checkQuality(sectionItems, files.length, effLang).ok) {
     sectionItems = fallbackSectionItems(inferred, effLang);
-    const plan = deriveLayoutPlan(mergedBrief, sectionItems.map((s) => ({ id: s.id, name: s.name })));
-    files = diffFiles(undefined, synthesizeFromCopies(itemsToCopies(sectionItems), mergedBrief, plan));
+    const plan = deriveLayoutPlan(artBrief, sectionItems.map((s) => ({ id: s.id, name: s.name })));
+    files = diffFiles(undefined, synthesizeFromCopies(itemsToCopies(sectionItems), artBrief, plan));
   }
-  const layoutPlan = deriveLayoutPlan(mergedBrief, sectionItems.map((s) => ({ id: s.id, name: s.name })));
+  const layoutPlan = deriveLayoutPlan(artBrief, sectionItems.map((s) => ({ id: s.id, name: s.name })));
 
   const changed = files.filter((f) => f.status !== 'unchanged');
   const summary: WebBuildSummary = {
@@ -309,10 +350,6 @@ export function buildWebBuildPayload(
   // sources on later revisions unless a new pass returned some.
   const sources: WebBuildSource[] | undefined =
     (result.sources && result.sources.length ? result.sources : prev?.sources) || undefined;
-  // Honest research status. Fresh builds carry the pass result; revisions skip
-  // the pre-pass on the backend, so keep the original build's research so the
-  // debug panel still explains what happened.
-  const research: WebBuildResearch | undefined = result.research || prev?.research || undefined;
   const activity = deriveBuildActivity(result, files, sources, layoutPlan);
   const step: WebBuildStep = {
     id: `step-${uid()}`,
@@ -325,12 +362,16 @@ export function buildWebBuildPayload(
     reply: result.reply,
     // Only a fresh build actually ran research; a revision step has none.
     research: prev ? undefined : result.research,
+    agents: agentPipeline.agents,
+    artifacts: agentPipeline.artifacts,
     layoutPlan,
   };
   return {
     source: 'web_build',
     prompt: prev?.prompt || prompt,
-    brief: mergedBrief,
+    // The Art-Director-enriched brief IS the persisted brief so the preview and
+    // any recompute use the same art-direction palette + strategy fields.
+    brief: artBrief,
     sectionItems,
     sections: result.sections,
     files,
@@ -338,6 +379,8 @@ export function buildWebBuildPayload(
     sources,
     research,
     layoutPlan,
+    agents: agentPipeline.agents,
+    artifacts: agentPipeline.artifacts,
     activity,
     steps: prev ? [...prev.steps, step] : [step],
     createdAt: prev?.createdAt || now,

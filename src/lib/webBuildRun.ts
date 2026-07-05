@@ -21,6 +21,7 @@
  * row model + components below stay unchanged.
  */
 import type { WebBuildStep, WebBuildFile } from '@/lib/webBuildPayload';
+import type { ResearchAgentArtifact, ArtDirectionArtifact } from '@/lib/webBuildAgents';
 
 export type WebBuildRunStatus = 'queued' | 'running' | 'completed' | 'failed';
 
@@ -164,7 +165,7 @@ export function stepToEvents(
   // status. When real providers ran and returned URLs we show a research line
   // + the source count; otherwise we show a plain "strategy inference" line and
   // never claim research or name a provider. Silent on old steps with no meta.
-  pushResearch(out, step);
+  pushAgents(out, step);
   // A natural transition line before writing files (names the real sections
   // when we have them, otherwise a plain "now turning it into components").
   out.push(step.summary.sectionNames.length
@@ -182,6 +183,72 @@ export function stepToEvents(
   });
   pushArtifacts(out);
   return out;
+}
+
+/** Real, data-tied expandable detail for the Research Agent row. Shows source
+ *  URLs ONLY when live research actually ran. */
+function researchAgentDetails(r: ResearchAgentArtifact): string[] {
+  const d: string[] = [];
+  d.push(r.didResearch
+    ? `${r.sourceCount ?? 0} sources · ${r.researchAngles.length} angles`
+    : 'Strategy inference (no live sources)');
+  if (r.researchAngles.length) d.push(`Angles: ${r.researchAngles.join(' · ')}`);
+  if (r.sourceBackedInsights.length) d.push(`Insights: ${r.sourceBackedInsights.join(' · ')}`);
+  if (r.categoryLanguage.length) d.push(`Category language: ${r.categoryLanguage.slice(0, 5).join(', ')}`);
+  if (r.conversionPatterns.length) d.push(`Conversion: ${r.conversionPatterns.join(' · ')}`);
+  if (r.trustSignals.length) d.push(`Trust signals: ${r.trustSignals.join(' · ')}`);
+  if (r.risksToAvoid.length) d.push(`Risks to avoid: ${r.risksToAvoid.slice(0, 2).join(' · ')}`);
+  if (r.didResearch && r.sources?.length) d.push(...r.sources.slice(0, 6).map((s) => `${s.title} — ${s.url}`));
+  return d;
+}
+
+/** Real, data-tied expandable detail for the UI / Art Director Agent row. */
+function artDirectorDetails(a: ArtDirectionArtifact): string[] {
+  return [
+    `Visual mood: ${a.visualMood}`,
+    `Typography: ${a.typographyDirection}`,
+    `Color system: bg ${a.colorSystem.background} · accent ${a.colorSystem.accent} · accent2 ${a.colorSystem.accent2}`,
+    `Visual metaphor: ${a.visualMetaphor}`,
+    `Motion: ${a.motionDirection}`,
+    `Density: ${a.density}`,
+    a.avoid.length ? `Avoid: ${a.avoid.slice(0, 3).join(' · ')}` : '',
+  ].filter(Boolean);
+}
+
+/**
+ * Emit the two Phase-1 upstream agent rows (Research Agent → UI / Art Director
+ * Agent) as clean, expandable feed lines with real artifact detail. Falls back to
+ * the honest single research line for old steps that have no agent artifacts.
+ */
+function pushAgents(out: WebBuildRunEvent[], step: WebBuildStep): void {
+  const research = step.artifacts?.research;
+  const art = step.artifacts?.artDirection;
+  if (!research && !art) { pushResearch(out, step); return; }
+
+  if (research) {
+    pushTool(out, 'agent-research', 'research', 'wbAgentResearch', {
+      summary: research.summary,
+      details: researchAgentDetails(research),
+      noteKey: research.didResearch ? 'wbOpResearchNote' : 'wbOpStrategyNote',
+    });
+    // Honest source count message ONLY when live research actually ran.
+    if (research.didResearch && (research.sourceCount ?? 0) > 0) {
+      const count = research.sourceCount ?? 0;
+      const angleCount = research.researchAngles.length;
+      out.push({
+        id: eid(), type: 'assistant_message', status: 'completed',
+        messageKey: angleCount > 1 ? 'wbFeedResearchDeep' : 'wbFeedResearchDone',
+        params: angleCount > 1 ? { count, angles: angleCount } : { count },
+      });
+    }
+  }
+  if (art) {
+    pushTool(out, 'agent-art', 'research', 'wbAgentArt', {
+      summary: art.summary,
+      details: artDirectorDetails(art),
+      noteKey: 'wbOpArtNote',
+    });
+  }
 }
 
 /** Emit the honest research/analysis line for a fresh build. Reads the real

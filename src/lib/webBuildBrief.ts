@@ -377,15 +377,30 @@ const COLOR_HINTS: { re: RegExp; accent: string; accent2: string; bg: string }[]
  *  starting point; when the concept is generic, the palette is driven by the
  *  model's own color/mood/metaphor direction so different ideas look different. */
 export function designTokensForBrief(
-  brief: { type?: string; style?: string; goal?: string; colorDirection?: string; visualMood?: string; visualMetaphor?: string } | undefined,
+  brief: {
+    type?: string; style?: string; goal?: string; colorDirection?: string; visualMood?: string; visualMetaphor?: string;
+    /** Explicit palette from the UI / Art Director agent — wins over inference. */
+    artAccent?: string; artAccent2?: string; artBg?: string; artHeadingSerif?: boolean;
+  } | undefined,
 ): DesignTokens {
   const text = `${brief?.type || ''} ${brief?.style || ''} ${brief?.goal || ''} ${brief?.colorDirection || ''} ${brief?.visualMood || ''} ${brief?.visualMetaphor || ''}`;
   const industry = detectIndustry(text);
-  const base = TOKENS[industry] || TOKENS.generic;
+  let base = TOKENS[industry] || TOKENS.generic;
   if (industry === 'generic') {
     const hintSource = `${brief?.colorDirection || ''} ${brief?.visualMood || ''} ${brief?.visualMetaphor || ''} ${brief?.style || ''} ${brief?.type || ''}`;
     const hint = COLOR_HINTS.find((h) => h.re.test(hintSource));
-    if (hint) return { ...base, accent: hint.accent, accent2: hint.accent2, bg: hint.bg };
+    if (hint) base = { ...base, accent: hint.accent, accent2: hint.accent2, bg: hint.bg };
+  }
+  // The Art Director's explicit palette is the source of truth when present — so
+  // Art Direction actually drives the preview/files instead of a generic default.
+  if (brief?.artAccent || brief?.artAccent2 || brief?.artBg || brief?.artHeadingSerif !== undefined) {
+    base = {
+      ...base,
+      accent: brief.artAccent || base.accent,
+      accent2: brief.artAccent2 || base.accent2,
+      bg: brief.artBg || base.bg,
+      headingFont: brief.artHeadingSerif === true ? SERIF : brief.artHeadingSerif === false ? SANS : base.headingFont,
+    };
   }
   return base;
 }
