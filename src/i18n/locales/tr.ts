@@ -364,6 +364,8 @@ export const tr: Record<string, string> = {
   /* web build — real file artifacts */
   wbActRead: "İsteğiniz okunuyor",
   wbActResearch: "Web kaynaklarıyla araştırılıyor",
+  wbToolStrategy: "Strateji çıkarımı kullanılıyor",
+  wbFeedResearchDone: "{count} canlı kaynağı araştırdım ve bulguları stratejiye kattım.",
   wbActPlan: "Sayfa yapısı planlanıyor",
   wbActCreatingFile: "{file} oluşturuluyor",
   wbActModifyingFile: "{file} değiştiriliyor",

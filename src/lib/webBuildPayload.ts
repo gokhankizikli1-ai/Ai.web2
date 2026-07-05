@@ -5,7 +5,7 @@
  * real build data — we never claim files/sections that aren't in the reply.
  */
 import type { BuildSection } from '@/lib/gameBuilderApi';
-import { extractBrief, type WebBuildResult, type WebBuildBrief, type WebBuildSource } from '@/lib/webBuildApi';
+import { extractBrief, type WebBuildResult, type WebBuildBrief, type WebBuildSource, type WebBuildResearch } from '@/lib/webBuildApi';
 import { resolveBuildFiles, parseSectionCopy, synthesizeFromCopies, type SynthFile, type SectionCopy as SynthCopy } from '@/lib/webBuildFiles';
 import { inferWebsiteBrief, fallbackSectionItems, checkQuality } from '@/lib/webBuildBrief';
 import { detectMessageLanguage } from '@/lib/locale';
@@ -66,6 +66,10 @@ export interface WebBuildStep {
   files: WebBuildFile[];
   activity: WebBuildActivityRow[];
   reply: string;
+  /** Honest research status for THIS turn (fresh builds only; revisions skip
+   *  the research pre-pass on the backend). Drives the feed's research line +
+   *  the owner/admin debug panel. Optional → old saved steps still load. */
+  research?: WebBuildResearch;
 }
 
 export interface WebBuildPayload {
@@ -85,6 +89,9 @@ export interface WebBuildPayload {
   /** Real research sources from the backend web_research pre-pass. Present only
    *  when tools actually ran; optional so old saved builds still load. */
   sources?: WebBuildSource[];
+  /** Honest research status for the latest fresh build (mirrors the build
+   *  step's research). Optional so old saved builds still load. */
+  research?: WebBuildResearch;
   activity: WebBuildActivityRow[];
   /** Conversation history — one entry per build/revision. */
   steps: WebBuildStep[];
@@ -283,6 +290,10 @@ export function buildWebBuildPayload(
   // sources on later revisions unless a new pass returned some.
   const sources: WebBuildSource[] | undefined =
     (result.sources && result.sources.length ? result.sources : prev?.sources) || undefined;
+  // Honest research status. Fresh builds carry the pass result; revisions skip
+  // the pre-pass on the backend, so keep the original build's research so the
+  // debug panel still explains what happened.
+  const research: WebBuildResearch | undefined = result.research || prev?.research || undefined;
   const activity = deriveBuildActivity(result, files, sources);
   const step: WebBuildStep = {
     id: `step-${uid()}`,
@@ -293,6 +304,8 @@ export function buildWebBuildPayload(
     files,
     activity,
     reply: result.reply,
+    // Only a fresh build actually ran research; a revision step has none.
+    research: prev ? undefined : result.research,
   };
   return {
     source: 'web_build',
@@ -303,6 +316,7 @@ export function buildWebBuildPayload(
     files,
     reply: result.reply,
     sources,
+    research,
     activity,
     steps: prev ? [...prev.steps, step] : [step],
     createdAt: prev?.createdAt || now,

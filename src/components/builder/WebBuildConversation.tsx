@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Monitor, FolderTree, ArrowRight, X } from 'lucide-react';
 import { useLanguageStore } from '@/stores/languageStore';
+import { useOwnerMode } from '@/hooks/useOwnerMode';
 import KorvixAvatar from '@/components/builder/KorvixAvatar';
 import WebBuildFileView from '@/components/builder/WebBuildFileView';
 import WebBuildPreviewPanel from '@/components/builder/WebBuildPreviewPanel';
@@ -10,6 +11,7 @@ import { stepToEvents, eventsToRows, liveRows } from '@/lib/webBuildRun';
 import type {
   WebBuildStep, WebBuildFile, WebBuildSectionItem,
 } from '@/lib/webBuildPayload';
+import type { WebBuildResearch } from '@/lib/webBuildApi';
 
 /**
  * The Web Build conversation — a Kimi/Claude-style agent run per turn: the
@@ -88,6 +90,54 @@ function AssistantMessage({ children, active = false }: { children: ReactNode; a
   );
 }
 
+/* ── Owner/admin-only research debug (subtle, collapsible) ────────────── */
+/** Renders the honest research diagnostics for a build step — status, provider,
+ *  attempted providers, counts, fallback reason, real source URLs. Owner/admin
+ *  only, so it never clutters the normal user's polished feed. Never invents
+ *  data: it reflects exactly what the backend reported. */
+function ResearchDebug({ research }: { research?: WebBuildResearch }) {
+  const { isOwner } = useOwnerMode();
+  if (!isOwner || !research) return null;
+  const rows: Array<[string, string]> = [
+    ['Status', research.status],
+    ['did_research', String(research.didResearch)],
+  ];
+  if (research.provider) rows.push(['Provider', research.provider]);
+  if (research.attemptedProviders?.length) rows.push(['Attempted', research.attemptedProviders.join(', ')]);
+  if (typeof research.queryCount === 'number') rows.push(['Queries', String(research.queryCount)]);
+  if (typeof research.sourceCount === 'number') rows.push(['Sources', String(research.sourceCount)]);
+  if (research.fallbackReason) rows.push(['Fallback reason', research.fallbackReason]);
+  return (
+    <details className="mt-1 rounded-lg border border-white/[0.07] bg-white/[0.015] px-2.5 py-1.5 text-[11px] text-[#94A3B8]">
+      <summary className="cursor-pointer select-none text-[10.5px] uppercase tracking-wide text-[#64748B] hover:text-[#94A3B8]">
+        Research debug · owner
+      </summary>
+      <div className="mt-1.5 space-y-1">
+        {rows.map(([k, v]) => (
+          <div key={k} className="flex gap-2">
+            <span className="w-28 shrink-0 text-[#64748B]">{k}</span>
+            <span className="min-w-0 break-words text-[#CBD5E1]">{v}</span>
+          </div>
+        ))}
+        {research.sources?.length ? (
+          <div className="pt-1">
+            <span className="text-[#64748B]">Source URLs</span>
+            <ul className="mt-0.5 space-y-0.5">
+              {research.sources.map((s) => (
+                <li key={s.url} className="truncate">
+                  <a href={s.url} target="_blank" rel="noopener noreferrer" className="text-[#60A5FA] hover:underline">
+                    {s.url}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </div>
+    </details>
+  );
+}
+
 /* ── One finished build/revision turn (agent run) ────────────────────── */
 function RunTurn({
   step, brief, animate, onOpenFile, children,
@@ -109,6 +159,7 @@ function RunTurn({
       <UserMessage text={step.prompt} />
       <AssistantMessage>
         <WebBuildAgentRun rows={rows} animate={animate} onOpenFile={onOpenFile} onComplete={() => setRunComplete(true)} />
+        {runComplete && <ResearchDebug research={step.research} />}
         {runComplete && children}
       </AssistantMessage>
     </div>

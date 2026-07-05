@@ -16,10 +16,29 @@ from typing import Dict
 logger = logging.getLogger(__name__)
 
 
+# Accepted truthy spellings for boolean env flags. Operators set these on
+# Railway/Vercel/Docker in many shapes ("true", "1", "yes", "on", "TRUE") —
+# a strict `== "true"` silently disabled a tool when someone wrote "1" or
+# "yes", which read in the product as "research just doesn't run". Parse all
+# common truthy spellings so a correctly-intended flag can never fail closed
+# on formatting alone.
+_TRUTHY = frozenset({"true", "1", "yes", "on", "y", "t", "enabled"})
+
+
+def env_truthy(value: object) -> bool:
+    """Robust boolean parse for an env value. True for true/1/yes/on/enabled
+    (case-insensitive, whitespace-stripped); False for everything else,
+    including None."""
+    if value is None:
+        return False
+    return str(value).strip().lower() in _TRUTHY
+
+
 def _flag(key: str) -> bool:
-    """Read an env-var boolean flag dynamically. Returns False unless the
-    value is the literal string 'true' (case-insensitive, whitespace-stripped)."""
-    return os.getenv(key, "false").strip().lower() == "true"
+    """Read an env-var boolean flag dynamically. True for any common truthy
+    spelling (true/1/yes/on/enabled), case-insensitive + whitespace-stripped,
+    so a flag set as `ENABLE_WEB_RESEARCH=1` behaves the same as `=true`."""
+    return env_truthy(os.getenv(key))
 
 
 # Per-tool flag name table — single source of truth for which env var
