@@ -399,7 +399,7 @@ function ProofStrip({ s }: VarProps) {
   );
 }
 
-function DashboardData({ s, plan }: VarProps) {
+function DashboardData({ s }: VarProps) {
   const labels = bulletsOf(s).slice(0, 4);
   return (
     <div className="mx-auto grid max-w-6xl items-center gap-10 px-6 lg:grid-cols-[1fr_1.15fr]">
