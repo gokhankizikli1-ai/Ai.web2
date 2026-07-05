@@ -2238,12 +2238,16 @@ export function deriveAgentWorkLog(
           // No reliable diff — show an honest "generated N lines" (0 → skip).
           continue;
         }
+        // Message carries the real path + real +/- diff (never a fabricated
+        // minus); the renderer shows the path + diff, but every entry keeps a
+        // complete, honest message for a11y / non-file render paths.
         push({
           type: 'file',
           agent: name,
           filePath: f.path,
           linesAdded: added,
           linesRemoved: removed,
+          message: L(lang, `${name} generated ${f.path} +${added} -${removed}`, `${name}, ${f.path} dosyasını oluşturdu +${added} -${removed}`),
         });
       }
     } else if (toName) {
