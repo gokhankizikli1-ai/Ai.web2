@@ -21,7 +21,7 @@
  * row model + components below stay unchanged.
  */
 import type { WebBuildStep, WebBuildFile } from '@/lib/webBuildPayload';
-import type { ResearchAgentArtifact, ArtDirectionArtifact } from '@/lib/webBuildAgents';
+import { WEB_BUILD_AGENTS_ENABLED, type ResearchAgentArtifact, type ArtDirectionArtifact } from '@/lib/webBuildAgents';
 
 export type WebBuildRunStatus = 'queued' | 'running' | 'completed' | 'failed';
 
@@ -232,6 +232,8 @@ function artDirectorDetails(a: ArtDirectionArtifact): string[] {
  * the honest single research line for old steps that have no agent artifacts.
  */
 function pushAgents(out: WebBuildRunEvent[], step: WebBuildStep): void {
+  // Agents are OFF by default — render the stable research line, not agent rows.
+  if (!WEB_BUILD_AGENTS_ENABLED) { pushResearch(out, step); return; }
   const research = step.artifacts?.research;
   const art = step.artifacts?.artDirection;
   if (!research && !art) { pushResearch(out, step); return; }
