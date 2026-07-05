@@ -60,25 +60,53 @@ export interface WebBuildResult {
   partial: boolean;
 }
 
-/** Extracted brief fields for the Overview tab (best-effort, from Build Plan). */
+/**
+ * Extracted strategy/brief fields (best-effort, from Build Plan + Design
+ * Direction). Every field is OPTIONAL and backward compatible — old saved
+ * builds that only carry type/audience/goal/style still load. The richer fields
+ * let the frontend drive activity detail, preview visuals and file synthesis
+ * from the model's ACTUAL strategy instead of a fixed industry key.
+ */
 export interface WebBuildBrief {
   type?: string; audience?: string; goal?: string; style?: string;
+  // Build Plan strategy
+  coreIdea?: string; visitorIntent?: string; strategyInsight?: string;
+  conversionStrategy?: string; trustSignals?: string;
+  primaryCTA?: string; secondaryCTA?: string;
+  // Design Direction
+  visualMood?: string; layoutLogic?: string; typographyDirection?: string;
+  colorDirection?: string; visualMetaphor?: string; motionDirection?: string;
 }
 
-/** Pull the labeled brief lines out of the Build Plan / Design Direction. */
+/** Pull the labeled strategy lines out of the Build Plan / Design Direction. */
 export function extractBrief(sections: BuildSection[]): WebBuildBrief {
   const plan = sections.find((s) => /build\s*plan/i.test(s.title));
   const design = sections.find((s) => /design\s*direction/i.test(s.title));
   const body = `${plan?.body || ''}\n${design?.body || ''}`;
   const grab = (re: RegExp): string | undefined => {
     const m = body.match(re);
-    return m ? m[1].split(/\n/)[0].replace(/^[\s:–-]+/, '').trim() : undefined;
+    if (!m) return undefined;
+    const v = m[1].split(/\n/)[0].replace(/^[\s:–\-*]+/, '').replace(/\*+$/, '').trim();
+    return v || undefined;
   };
   return {
     type: grab(/(?:website\s*type|type)\s*[:\-–]\s*(.+)/i),
     audience: grab(/(?:audience|target\s*audience)\s*[:\-–]\s*(.+)/i),
-    goal: grab(/(?:goal|conversion\s*goal)\s*[:\-–]\s*(.+)/i),
-    style: grab(/(?:tone|style|mood|design\s*style)\s*[:\-–]\s*(.+)/i),
+    goal: grab(/(?:primary\s*goal|goal|conversion\s*goal)\s*[:\-–]\s*(.+)/i),
+    style: grab(/(?:visual\s*mood|tone|style|mood|design\s*style)\s*[:\-–]\s*(.+)/i),
+    coreIdea: grab(/(?:core\s*idea)\s*[:\-–]\s*(.+)/i),
+    visitorIntent: grab(/(?:visitor\s*intent)\s*[:\-–]\s*(.+)/i),
+    strategyInsight: grab(/(?:strategy\s*insight)\s*[:\-–]\s*(.+)/i),
+    conversionStrategy: grab(/(?:conversion\s*strategy)\s*[:\-–]\s*(.+)/i),
+    trustSignals: grab(/(?:trust\s*signals?)\s*[:\-–]\s*(.+)/i),
+    primaryCTA: grab(/(?:primary\s*cta)\s*[:\-–]\s*(.+)/i),
+    secondaryCTA: grab(/(?:secondary\s*cta)\s*[:\-–]\s*(.+)/i),
+    visualMood: grab(/(?:visual\s*mood)\s*[:\-–]\s*(.+)/i),
+    layoutLogic: grab(/(?:layout\s*logic|layout\s*archetype)\s*[:\-–]\s*(.+)/i),
+    typographyDirection: grab(/(?:typography\s*direction|typography)\s*[:\-–]\s*(.+)/i),
+    colorDirection: grab(/(?:color\s*direction|colou?r)\s*[:\-–]\s*(.+)/i),
+    visualMetaphor: grab(/(?:visual\s*metaphor)\s*[:\-–]\s*(.+)/i),
+    motionDirection: grab(/(?:motion\s*direction|motion\s*system|motion)\s*[:\-–]\s*(.+)/i),
   };
 }
 
@@ -145,53 +173,64 @@ export function buildWebBuildRequest(
     lines.push('', `Requested change: ${idea}`);
   } else {
     lines.push(
-      'You are a SENIOR product designer + front-end engineer building a real,',
-      'premium, production-grade marketing site — not a template. Think like someone',
-      'who ships award-worthy sites for this exact industry.',
+      'You are a SENIOR product designer + front-end engineer. Build a real,',
+      'premium, production-grade website for the idea below by REASONING FROM THE',
+      'IDEA ITSELF — not from a fixed industry template. Two very different ideas',
+      'must produce genuinely different structure, visuals and copy because their',
+      'strategy is different. Interpret unusual, niche or sophisticated ideas on',
+      'their own terms.',
       '',
-      'STEP 1 — STRATEGY / RESEARCH (reason before you build):',
-      '- Identify the exact industry / niche from the idea.',
-      '- Infer the audience, their intent, and the SINGLE primary conversion goal.',
-      '- Decide what strong modern sites in THIS niche must emphasize (trust signals,',
-      '  proof, the specific sections that convert for this business type).',
-      '- Choose a visual direction, a layout archetype, and a motion system that fit',
-      '  the niche — a landscaping studio should not look like a SaaS dashboard.',
-      'If you have web browsing / search tools available, use them to ground the',
-      'design in real patterns for this niche BEFORE writing. If you do NOT have live',
-      'tools, reason from industry knowledge — do NOT invent URLs, sources, competitor',
-      'names, statistics, or claim you "researched" anything you did not actually fetch.',
+      'STEP 1 — RESEARCH & STRATEGY (do this before writing any build):',
+      '- Interpret what the idea actually is (business / product / concept / model).',
+      '- Work out why someone visits, what they must understand fast, the emotional',
+      '  impression to create, the trust barriers, and the single primary conversion.',
+      '- Decide the layout logic, the visual metaphor, the sections that genuinely',
+      '  fit THIS concept, and the motion that supports it.',
+      'RESEARCH: If you have web search / browsing / research tools available, USE',
+      'them now to study adjacent sites, the product category, audience expectations',
+      'and conversion patterns — as inspiration, not copying — and fold real findings',
+      'into "Strategy insight". Include source URLs in Build Plan ONLY if a tool',
+      'actually returned them. If you have NO live tools, reason from knowledge and',
+      'label it "Strategy insight" — do NOT invent URLs, sources, competitors,',
+      'statistics, or claim you browsed/researched anything you did not fetch.',
       '',
-      'STEP 2 — OUTPUT (keep the exact H2 sections so the parser works):',
-      '## Build Plan — Website type · Industry · Audience · Goal · Strategy insight ·',
-      '   Conversion strategy · Trust signals · Primary CTA · Secondary CTA.',
-      '## Design Direction — Visual mood · Layout archetype · Color & typography ·',
-      '   Motion system · Premium UI details (depth, glass, gradients, lighting) ·',
-      '   Responsive behavior.',
-      '## Page Sections — an INDUSTRY-SPECIFIC section architecture, not a fixed list.',
-      '   e.g. landscaping: hero (outdoor visual) · project gallery · before/after ·',
-      '   services · process · testimonials · consultation CTA · FAQ · footer.',
-      '   SaaS: product demo · workflow · integrations · metrics · pricing · FAQ.',
-      '   Restaurant: menu highlights · ambiance gallery · reservation · location ·',
-      '   reviews. Ecommerce: collection hero · product grid · benefits · reviews ·',
-      '   trust. Portfolio: selected work · case studies · process · contact.',
-      '## Generated Copy — specific, natural, benefit-led copy for every section.',
-      '## Frontend Code — real, usable React + Tailwind components that reflect the',
-      '   section architecture (not tiny placeholders, not empty files).',
+      'STEP 2 — OUTPUT. Keep these EXACT H2 sections (the parser depends on them),',
+      'and inside the first two use these EXACT labeled fields, one per line:',
+      '',
+      '## Build Plan',
+      'Website type: <…>',
+      'Core idea: <one line: what this site is>',
+      'Audience: <…>',
+      'Visitor intent: <what the visitor is trying to do>',
+      'Primary goal: <the single conversion>',
+      'Strategy insight: <the key insight from research/analysis that shapes the site>',
+      'Conversion strategy: <how the page drives the goal>',
+      'Trust signals: <the proof this concept needs>',
+      'Primary CTA: <specific action>',
+      'Secondary CTA: <specific action>',
+      '',
+      '## Design Direction',
+      'Visual mood: <…>',
+      'Layout logic: <how sections are organized & why>',
+      'Typography direction: <headline/body personality>',
+      'Color direction: <palette intent, e.g. deep botanical greens / warm dining amber>',
+      'Visual metaphor: <the core visual idea, e.g. topographic garden plan / live dashboard>',
+      'Motion direction: <what animates and why>',
+      'Responsive behavior: <…>',
+      '',
+      '## Page Sections — a section architecture DERIVED from the strategy above (not',
+      '   a fixed list). Choose the sections this specific concept needs.',
+      '## Generated Copy — specific, natural, benefit-led copy for every section,',
+      '   grounded in the Core idea and Strategy insight (never generic filler like',
+      '   "Hayallerinize ulaşın", "Kaliteli hizmet", "Get started", "Welcome").',
+      '## Frontend Code — real, usable React + Tailwind components reflecting the',
+      '   sections + the Visual metaphor / Color direction / Motion direction above',
+      '   (no tiny placeholders, no empty files, no blank image boxes — compose',
+      '   visuals with CSS/SVG when there is no real image).',
       '## Next Steps.',
       '',
-      'COPY QUALITY (hard rules):',
-      '- Ban generic filler. Do NOT ship "Hayallerinize ulaşın", "İşinizi büyütün",',
-      '  "Kaliteli hizmet", "Modern çözümler", "Get started", "Welcome" unless made',
-      '  concretely specific to THIS business.',
-      '- The hero headline names the concrete offer + outcome; the subheadline says how',
-      '  it works or exactly what the visitor gets. CTAs are specific to the goal',
-      '  (e.g. "Ücretsiz keşif planla", "Book a free site visit").',
-      '',
-      'MOTION & INTERACTION (premium, restrained — never childish):',
-      '- Animated hero background/gradient, scroll-reveal on sections, floating/tilting',
-      '  cards, gallery hover states, subtle parallax/depth, animated metrics or process',
-      '  steps, smooth mobile transitions. Tasteful, performant, accessible.',
-      '',
+      'MOTION (premium, restrained, accessible): animated hero, scroll reveal,',
+      'floating/tilting cards, hover states, subtle depth/parallax — never childish.',
       'Write ALL copy in the same language as the idea, natural and fluent.',
       '',
       `Idea: ${idea}`,
