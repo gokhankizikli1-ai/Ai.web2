@@ -165,19 +165,10 @@ export function stepToEvents(
     params: brief.goal ? { goal: brief.goal } : undefined,
   });
   pushTool(out, 'think', 'think', 'wbToolThink');
-  // HONEST research/analysis line — driven by the backend's real research
-  // status. When real providers ran and returned URLs we show a research line
-  // + the source count; otherwise we show a plain "strategy inference" line and
-  // never claim research or name a provider. Silent on old steps with no meta.
+  // The upstream agents (Research → UI/Art Director → Strategy → Layout Architect)
+  // ARE the visible planning surface now — polished, expandable rows. No raw
+  // first-person "I'll map / I'm structuring" scratch text is emitted around them.
   pushAgents(out, step);
-  // A natural transition line before writing files (names the real sections
-  // when we have them, otherwise a plain "now turning it into components").
-  out.push(step.summary.sectionNames.length
-    ? {
-        id: eid(), type: 'assistant_message', status: 'completed',
-        messageKey: 'wbFeedBuildStructureMsg', params: { sections: step.summary.sectionNames.slice(0, 6).join(', ') },
-      }
-    : { id: eid(), type: 'assistant_message', status: 'completed', messageKey: 'wbFeedBuildTransition' });
   for (const f of shown) out.push(fileEvent(f, 'file_created'));
   pushTool(out, 'preview', 'preview', 'wbActPreviewRoute', { summaryKey: 'wbPreviewNote' });
   out.push({ id: eid(), type: 'preview_ready', group: 'preview', status: 'completed' });
@@ -307,25 +298,13 @@ function pushAgents(out: WebBuildRunEvent[], step: WebBuildStep): void {
       ? ((agent.artifact as ResearchAgentArtifact)?.didResearch ? 'wbOpResearchNote' : 'wbOpStrategyNote')
       : (AGENT_NOTE_KEY[agent.id] || undefined);
     const details = agentDetails(agent);
+    // The row's summary + expandable details carry the result — no separate
+    // chat paragraph (keeps the timeline to clean agent rows only).
     pushTool(out, `agent-${agent.id}`, 'research', titleKey, {
       summary: agent.summary || undefined,
       details: details.length ? details : undefined,
       noteKey,
     });
-
-    // Honest source-count message ONLY when live research actually ran.
-    if (agent.id === 'research' && agent.status === 'done') {
-      const r = agent.artifact as ResearchAgentArtifact;
-      if (r?.didResearch && (r.sourceCount ?? 0) > 0) {
-        const count = r.sourceCount ?? 0;
-        const angleCount = asArr(r.researchAngles).length;
-        out.push({
-          id: eid(), type: 'assistant_message', status: 'completed',
-          messageKey: angleCount > 1 ? 'wbFeedResearchDeep' : 'wbFeedResearchDone',
-          params: angleCount > 1 ? { count, angles: angleCount } : { count },
-        });
-      }
-    }
   }
 }
 

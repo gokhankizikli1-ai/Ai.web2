@@ -383,9 +383,9 @@ export const fr: Record<string, string> = {
   wbWorkingBrief: "Je lis le brief et je structure la page…",
   wbWorkingSections: "Je prépare les sections et la structure des composants…",
   /* web build — live execution log */
-  wbFeedBuildOpening: "Je construis cette landing page axée sur {goal}. Je vais mettre en place la structure des composants, puis écrire les fichiers un par un.",
-  wbFeedBuildOpeningPlain: "Je construis cette landing page. Je vais mettre en place la structure des composants, puis écrire les fichiers un par un.",
-  wbToolThink: "Réflexion",
+  wbFeedBuildOpening: "Conception de votre site web axé sur {goal} — les agents de design s'exécutent, puis le code est généré.",
+  wbFeedBuildOpeningPlain: "Conception de votre site web — les agents de design s'exécutent, puis le code est généré.",
+  wbToolThink: "Planification",
   wbFeedBuildStructureMsg: "J'ai structuré la page autour de {sections}. Je la convertis maintenant en composants React/Tailwind.",
   wbFeedBuildTransition: "J'ai défini la structure de la page. Je la convertis maintenant en composants React/Tailwind.",
   wbThinkPlan: "Je planifie la structure des composants et le flux de la page…",

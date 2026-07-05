@@ -383,9 +383,9 @@ export const tr: Record<string, string> = {
   wbWorkingBrief: "Brief'i inceliyorum ve sayfa yapısını çıkarıyorum…",
   wbWorkingSections: "Bölümleri ve component yapısını hazırlıyorum…",
   /* web build — execution feed (Kimi/Claude tarzı işlem akışı) */
-  wbFeedBuildOpening: "Bu {goal} odaklı landing page'i oluşturuyorum. Önce component yapısını hazırlayıp dosyaları tek tek yazacağım.",
-  wbFeedBuildOpeningPlain: "Bu landing page'i oluşturuyorum. Önce component yapısını hazırlayıp dosyaları tek tek yazacağım.",
-  wbToolThink: "Düşünüyor",
+  wbFeedBuildOpening: "{goal} odaklı web sitenizi tasarlıyorum — önce tasarım ajanları çalışıyor, ardından kod oluşturuluyor.",
+  wbFeedBuildOpeningPlain: "Web sitenizi tasarlıyorum — önce tasarım ajanları çalışıyor, ardından kod oluşturuluyor.",
+  wbToolThink: "Planlanıyor",
   wbFeedBuildStructureMsg: "Sayfa yapısını {sections} etrafında kurguladım. Şimdi bunu React/Tailwind bileşenlerine dönüştürüyorum.",
   wbFeedBuildTransition: "Brief'e göre sayfa yapısını netleştirdim. Şimdi bunu React/Tailwind bileşenlerine dönüştürüyorum.",
   wbThinkPlan: "Sektörü analiz ediyor, dönüşüm yolunu ve bölüm mimarisini tasarlıyorum…",
