@@ -366,6 +366,7 @@ export const de: Record<string, string> = {
   wbActResearch: "Recherche mit Web-Quellen",
   wbToolStrategy: "Strategie-Inferenz wird verwendet",
   wbFeedResearchDone: "Ich habe {count} Live-Quelle(n) recherchiert und die Erkenntnisse in die Strategie einfließen lassen.",
+  wbFeedResearchDeep: "Ich habe {count} Live-Quellen aus {angles} Blickwinkeln recherchiert und die Erkenntnisse in die Strategie einfließen lassen.",
   wbOpFileNote: "Generierte Projektdatei in diesem Web Build — keine Änderung an Korvix' eigenem Code.",
   wbOpResearchNote: "Echte Webquellen, die bei der Recherche gelesen wurden.",
   wbOpStrategyNote: "Keine Live-Quellen — Strategie aus dem Briefing abgeleitet.",

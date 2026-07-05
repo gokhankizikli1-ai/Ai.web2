@@ -373,6 +373,7 @@ export const en: Record<string, string> = {
   wbActResearch: "Researching with web sources",
   wbToolStrategy: "Using strategy inference",
   wbFeedResearchDone: "I researched {count} live source(s) and folded the findings into the strategy.",
+  wbFeedResearchDeep: "I researched {count} live sources across {angles} angles and folded the findings into the strategy.",
   wbOpFileNote: "Generated project file inside this Web Build — not a change to Korvix's own code.",
   wbOpResearchNote: "Real web sources read during research.",
   wbOpStrategyNote: "No live sources — strategy inferred from the brief.",

@@ -366,6 +366,7 @@ export const tr: Record<string, string> = {
   wbActResearch: "Web kaynaklarıyla araştırılıyor",
   wbToolStrategy: "Strateji çıkarımı kullanılıyor",
   wbFeedResearchDone: "{count} canlı kaynağı araştırdım ve bulguları stratejiye kattım.",
+  wbFeedResearchDeep: "{angles} açıdan {count} canlı kaynağı araştırdım ve bulguları stratejiye kattım.",
   wbOpFileNote: "Bu Web Build içinde üretilen proje dosyası — Korvix'in kendi kodunda bir değişiklik değil.",
   wbOpResearchNote: "Araştırma sırasında okunan gerçek web kaynakları.",
   wbOpStrategyNote: "Canlı kaynak yok — strateji brief'ten çıkarıldı.",

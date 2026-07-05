@@ -21,6 +21,14 @@ export type MotionLevel = 'minimal' | 'subtle' | 'expressive';
 export type CardStyle = 'glass' | 'solid' | 'outline';
 export type SectionRhythm = 'even' | 'alternating' | 'editorial';
 
+/** A high-level layout blueprint chosen from the strategy — it guides hero
+ *  composition, section rhythm, visual modules and content density WITHOUT being
+ *  a fixed template. The actual output is still generated from the real idea. */
+export type LayoutArchetype =
+  | 'editorial' | 'dashboard' | 'marketplace' | 'membership' | 'hospitality'
+  | 'data-platform' | 'archive' | 'luxury-service' | 'community' | 'event'
+  | 'portfolio' | 'technical' | 'standard';
+
 export interface WebBuildDesignSystem extends DesignTokens {
   /** Vertical spacing scale for section padding. */
   density: Density;
@@ -30,8 +38,32 @@ export interface WebBuildDesignSystem extends DesignTokens {
   cardStyle: CardStyle;
   /** How sections are paced down the page. */
   sectionRhythm: SectionRhythm;
+  /** The layout blueprint guiding hero/rhythm/modules (not a fixed template). */
+  archetype: LayoutArchetype;
   /** Section vertical padding class, derived from density. */
   sectionPad: string;
+}
+
+/** Keyword → archetype, most specific first. Driven by the strategy words, not
+ *  the raw prompt, so it stays general across any idea. */
+const ARCHETYPE_RULES: Array<[LayoutArchetype, RegExp]> = [
+  ['dashboard',     /(dashboard|analytics|admin|metrics|control panel|saas app|data app)/],
+  ['data-platform', /(data platform|research platform|api|developer|infrastructure|intelligence|dataset)/],
+  ['marketplace',   /(marketplace|catalog|catalogue|inventory|listings|storefront|shop|ecommerce|products grid)/],
+  ['membership',    /(membership|subscription|application|apply|enroll|portal|access|members only|community platform)/],
+  ['hospitality',   /(reservation|booking|restaurant|hotel|cafe|dining|hospitality|menu|table|stay)/],
+  ['event',         /(event|conference|festival|summit|experience|launch|ticket|schedule|lineup)/],
+  ['luxury-service',/(luxury|premium service|bespoke|boutique|atelier|concierge|high-end|exclusive)/],
+  ['archive',       /(archive|collection|library|gallery|museum|catalog of works|index of)/],
+  ['portfolio',     /(portfolio|case stud|selected work|showcase|photographer|designer)/],
+  ['community',     /(community|forum|network|social|members|creators|collective)/],
+  ['technical',     /(technical|engineering|open source|protocol|framework|cli|documentation)/],
+  ['editorial',     /(editorial|magazine|story|narrative|journal|essay|long-form|manifesto)/],
+];
+
+function deriveArchetype(words: string): LayoutArchetype {
+  for (const [arch, re] of ARCHETYPE_RULES) if (re.test(words)) return arch;
+  return 'standard';
 }
 
 const PAD: Record<Density, string> = {
@@ -75,12 +107,19 @@ export function deriveDesignSystemFromStrategy(brief: WebBuildBrief | undefined)
     : test(/(alternating|zigzag|split|asymmetr)/, words) ? 'alternating'
     : 'even';
 
+  // Archetype reads a wider signal — include the concept type/goal so the
+  // blueprint reflects what the site IS, not just its mood.
+  const archetypeWords = [
+    words, b.type, b.goal, b.audience, b.conversionStrategy, b.coreIdea,
+  ].filter(Boolean).join(' ').toLowerCase();
+
   return {
     ...tokens,
     density,
     motion,
     cardStyle,
     sectionRhythm,
+    archetype: deriveArchetype(archetypeWords),
     sectionPad: PAD[density],
   };
 }
@@ -89,13 +128,23 @@ export function deriveDesignSystemFromStrategy(brief: WebBuildBrief | undefined)
  *  real file in the generated project (not a placeholder). */
 export function designSystemFileContent(ds: WebBuildDesignSystem): string {
   const obj = {
-    colors: { background: ds.bg, accent: ds.accent, accentAlt: ds.accent2 },
+    colors: {
+      background: ds.bg,
+      accent: ds.accent,
+      accentAlt: ds.accent2,
+      foreground: '#f1f5f9',
+      muted: '#94a3b8',
+      border: 'rgba(255,255,255,0.10)',
+      card: 'rgba(255,255,255,0.03)',
+      glow: 'color-mix(in srgb, ' + ds.accent + ' 45%, transparent)',
+    },
     typography: { heading: ds.headingFont, body: ds.bodyFont, tracking: ds.tracking },
     radius: ds.radius,
     density: ds.density,
     motion: ds.motion,
     cardStyle: ds.cardStyle,
     sectionRhythm: ds.sectionRhythm,
+    archetype: ds.archetype,
   };
   return `/**
  * Design system tokens for this site — derived from the build strategy

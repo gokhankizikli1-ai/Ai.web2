@@ -530,6 +530,7 @@ async def process_chat(
                         "attempted_providers": _wb_research_meta.get("attempted_providers") or [],
                         "queries":             _wb_research_meta.get("queries") or [],
                         "query_count":         int(_wb_research_meta.get("query_count") or 0),
+                        "angles":              _wb_research_meta.get("angles") or [],
                         "source_count":        int(_wb_research_meta.get("source_count") or 0),
                         "fallback_reason":     _wb_research_meta.get("fallback_reason"),
                     }

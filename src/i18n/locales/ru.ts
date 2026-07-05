@@ -366,6 +366,7 @@ export const ru: Record<string, string> = {
   wbActResearch: "Исследование по веб-источникам",
   wbToolStrategy: "Используется стратегический вывод",
   wbFeedResearchDone: "Я изучил {count} актуальны(х) источник(ов) и учёл выводы в стратегии.",
+  wbFeedResearchDeep: "Я изучил {count} актуальных источников с {angles} ракурсов и учёл выводы в стратегии.",
   wbOpFileNote: "Сгенерированный файл проекта внутри этого Web Build — не изменение кода Korvix.",
   wbOpResearchNote: "Реальные веб-источники, прочитанные во время исследования.",
   wbOpStrategyNote: "Нет живых источников — стратегия выведена из брифа.",

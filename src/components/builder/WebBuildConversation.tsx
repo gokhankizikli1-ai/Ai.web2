@@ -105,6 +105,7 @@ function ResearchDebug({ research }: { research?: WebBuildResearch }) {
   if (research.provider) rows.push(['Provider', research.provider]);
   if (research.attemptedProviders?.length) rows.push(['Attempted', research.attemptedProviders.join(', ')]);
   if (typeof research.queryCount === 'number') rows.push(['Queries', String(research.queryCount)]);
+  if (research.angles?.length) rows.push(['Angles', research.angles.join(', ')]);
   if (typeof research.sourceCount === 'number') rows.push(['Sources', String(research.sourceCount)]);
   if (research.fallbackReason) rows.push(['Fallback reason', research.fallbackReason]);
   return (
