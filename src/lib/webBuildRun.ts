@@ -243,6 +243,10 @@ function researchAgentDetails(r: ResearchAgentArtifact): string[] {
   return d;
 }
 
+/** Format a "used upstream inputs" line for the pipeline dependency trace. */
+const usedInputsLine = (label: string, xs?: string[]): string =>
+  Array.isArray(xs) && xs.length ? `${label}: ${xs.join(', ')}` : '';
+
 /** Real, data-tied expandable detail for the UI / Art Director Agent row. */
 function artDirectorDetails(a: ArtDirectionArtifact): string[] {
   const c = a.colorSystem || ({} as ArtDirectionArtifact['colorSystem']);
@@ -254,6 +258,7 @@ function artDirectorDetails(a: ArtDirectionArtifact): string[] {
       + `${c.successOrTrust ? ` · trust ${c.successOrTrust}` : ''}${c.dangerOrWarning ? ` · warn ${c.dangerOrWarning}` : ''}`
     : '';
   return [
+    usedInputsLine('Used Research inputs', a.usedResearchInputs),
     a.visualMood ? `Visual mood: ${a.visualMood}` : '',
     a.brandPersonality ? `Brand personality: ${a.brandPersonality}` : '',
     a.typographyDirection ? `Typography: ${a.typographyDirection}` : '',
@@ -280,6 +285,8 @@ function strategyAgentDetails(s: StrategyAgentArtifact): string[] {
   const proof = asArr(s.aboveTheFoldMustProve);
   const cta = s.ctaHierarchy;
   return [
+    usedInputsLine('Used Research inputs', s.usedResearchInputs),
+    usedInputsLine('Used Art Direction inputs', s.usedArtDirectionInputs),
     s.positioning ? `Positioning: ${s.positioning}` : '',
     s.mainPromise ? `Main promise: ${s.mainPromise}` : '',
     s.conversionStrategy ? `Conversion strategy: ${s.conversionStrategy}` : '',
@@ -294,6 +301,9 @@ function layoutArchitectDetails(b: PageBlueprint): string[] {
   const hero = b.hero || ({} as PageBlueprint['hero']);
   const sections = Array.isArray(b.sections) ? b.sections : [];
   return [
+    usedInputsLine('Used Research inputs', b.usedResearchInputs),
+    usedInputsLine('Used Art Direction inputs', b.usedArtDirectionInputs),
+    usedInputsLine('Used Strategy inputs', b.usedStrategyInputs),
     b.architecture ? `Architecture: ${b.architecture}` : '',
     hero.variant ? `Hero variant: ${hero.variant} · module ${hero.visualModule}` : '',
     b.navigationStyle ? `Navigation: ${b.navigationStyle}` : '',

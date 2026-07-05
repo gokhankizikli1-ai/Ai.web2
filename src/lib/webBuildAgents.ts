@@ -209,6 +209,8 @@ export interface ArtDirectionArtifact {
   trustVisualDirection?: string;
   /** Desktop-first vs mobile-first responsive behavior. */
   responsiveDesignDirection?: string;
+  /** Which Research Agent inputs this art direction consumed (pipeline trace). */
+  usedResearchInputs?: string[];
   summary: string;
 }
 
@@ -229,6 +231,9 @@ export interface StrategyAgentArtifact {
   sectionIntent: StrategySectionIntent[];
   risksToAvoid: string[];
   differentiation: string;
+  /** Which Research / Art Direction inputs this strategy consumed (pipeline trace). */
+  usedResearchInputs?: string[];
+  usedArtDirectionInputs?: string[];
   summary: string;
 }
 
@@ -259,6 +264,10 @@ export interface PageBlueprint {
   trustPlacement: string;
   motionPattern: string;
   responsiveBehavior: string;
+  /** Which upstream artifacts this blueprint consumed (pipeline trace). */
+  usedResearchInputs?: string[];
+  usedArtDirectionInputs?: string[];
+  usedStrategyInputs?: string[];
   summary: string;
 }
 
@@ -281,11 +290,34 @@ export interface WebBuildArtifacts {
   artDirection?: ArtDirectionArtifact;
   strategy?: StrategyAgentArtifact;
   blueprint?: PageBlueprint;
+  /** The shared context the agents were run against (pipeline trace). */
+  context?: WebBuildAgentContext;
 }
 
 export interface WebBuildAgents {
   agents: WebBuildAgent[];
   artifacts: WebBuildArtifacts;
+}
+
+/**
+ * The single, shared context threaded through the agent pipeline. Each agent
+ * reads the upstream artifacts from here and writes its own back, so the run is a
+ * real sequence (Research → Art Direction → Strategy → Layout) instead of four
+ * independent derivations. Every field is optional and backward compatible: a
+ * missing upstream artifact simply arrives as null and the downstream agent falls
+ * back to safe defaults. `fallbacks` records agents that were skipped/degraded so
+ * the pipeline stays honest and observable without ever blocking the build.
+ */
+export interface WebBuildAgentContext {
+  prompt: string;
+  brief: WebBuildBrief;
+  research: ResearchAgentArtifact | null;
+  artDirection: ArtDirectionArtifact | null;
+  strategy: StrategyAgentArtifact | null;
+  layoutBlueprint: PageBlueprint | null;
+  sources: WebBuildSource[];
+  /** Names of agents that fell back to safe defaults (e.g. "research", "strategy"). */
+  fallbacks: string[];
 }
 
 /* ── Research Agent ───────────────────────────────────────────────────── */
@@ -1063,6 +1095,18 @@ export function deriveArtDirection(
       : L(lang, 'Responsive: a strong single-column mobile story that expands into a composed desktop layout.',
           'Duyarlı: mobilde güçlü tek sütun anlatı; masaüstünde kompoze düzene açılır.');
 
+  // Pipeline trace — which Research Agent inputs this art direction actually
+  // consumed (honest: only lists fields that were present and used).
+  const usedResearchInputs = uniq([
+    cp && !modelChoseColor ? 'colorPsychology' : '',
+    vsr ? 'visualStyleRecommendation' : '',
+    tu ? 'targetUser' : '',
+    (research?.uxPriorities || []).length ? 'uxPriorities' : '',
+    research?.uiAgentInstructions ? 'uiAgentInstructions' : '',
+    (research?.risksToAvoid || []).length ? 'risksToAvoid' : '',
+    (research?.trustSignals || []).length ? 'trustSignals' : '',
+  ]);
+
   // Summary — specific: names the style, the palette intent and the target user,
   // not a generic "modern and premium".
   const paletteWord = (cp?.recommendedPalette || [])[0];
@@ -1091,6 +1135,7 @@ export function deriveArtDirection(
     ctaStyleDirection,
     trustVisualDirection,
     responsiveDesignDirection,
+    usedResearchInputs: usedResearchInputs.length ? usedResearchInputs : undefined,
     summary,
   };
 }
@@ -1122,6 +1167,7 @@ export function deriveStrategyAgent(
   research: ResearchAgentArtifact | undefined,
   inferred: InferredBrief,
   sections: Array<{ id: string; name: string }>,
+  art: ArtDirectionArtifact | undefined,
   lang: Lang = 'en',
 ): StrategyAgentArtifact {
   const audience = brief.audience || inferred.targetAudience;
@@ -1132,8 +1178,14 @@ export function deriveStrategyAgent(
   const conversionStrategy = brief.conversionStrategy
     || uniq(research?.conversionPatterns || []).join(' · ')
     || L(lang, `Lead the visitor to one action: ${primary}.`, `Ziyaretçiyi tek eyleme yönlendir: ${primary}.`);
+  // Trust strategy consumes Research trust needs AND the UI Agent's trust visual
+  // direction, so the two agents agree on how proof is presented.
   const trustStrategy = brief.trustSignals
-    || uniq([...(research?.targetUser?.trustNeeds || []), ...(research?.trustSignals || [])]).join(' · ')
+    || uniq([
+        ...(research?.targetUser?.trustNeeds || []),
+        ...(research?.trustSignals || []),
+        art?.trustVisualDirection || '',
+      ]).join(' · ')
     || inferred.trustSignals;
   const differentiation = (research?.differentiationOpportunities || [])[0]
     || inferred.previewVisualIdea;
@@ -1161,15 +1213,33 @@ export function deriveStrategyAgent(
     `Positioning: ${positioning}. One promise, one path to "${primary}", proven by ${aboveTheFoldMustProve.length} above-the-fold signals.`,
     `Konumlandırma: ${positioning}. Tek vaat, "${primary}" için tek yol, ${aboveTheFoldMustProve.length} ilk-ekran sinyaliyle kanıtlanır.`);
 
+  // Pipeline trace — the upstream inputs this strategy actually consumed.
+  const usedResearchInputs = uniq([
+    research?.targetUser ? 'targetUser' : '',
+    (research?.conversionPatterns || []).length ? 'conversionPatterns' : '',
+    (research?.trustSignals || []).length ? 'trustSignals' : '',
+    (research?.audienceExpectations || []).length ? 'audienceExpectations' : '',
+    (research?.differentiationOpportunities || []).length ? 'differentiationOpportunities' : '',
+    (research?.risksToAvoid || []).length ? 'risksToAvoid' : '',
+  ]);
+  const usedArtDirectionInputs = uniq([
+    art?.visualMood ? 'visualMood' : '',
+    art?.brandPersonality ? 'brandPersonality' : '',
+    art?.ctaStyleDirection ? 'ctaStyleDirection' : '',
+    art?.trustVisualDirection ? 'trustVisualDirection' : '',
+  ]);
+
   return {
     positioning,
     mainPromise,
-    // Fold the researched target-user profile (motivation + pain points) into the
-    // audience psychology so strategy speaks to the real visitor, not a label.
+    // Fold the researched target-user profile (motivation + pain points) AND the UI
+    // Agent's brand personality into the audience psychology so strategy speaks to
+    // the real visitor and stays aligned with the art direction's tone.
     audiencePsychology: uniq([
       audience,
       research?.targetUser?.buyingMotivation || '',
       ...(research?.targetUser?.mainPainPoints || []).slice(0, 2),
+      art?.brandPersonality || '',
       ...(research?.audienceExpectations || []),
     ]).join(' · '),
     visitorIntent: brief.visitorIntent || research?.targetUser?.buyingMotivation
@@ -1183,6 +1253,8 @@ export function deriveStrategyAgent(
     sectionIntent,
     risksToAvoid: research?.risksToAvoid || [],
     differentiation,
+    usedResearchInputs: usedResearchInputs.length ? usedResearchInputs : undefined,
+    usedArtDirectionInputs: usedArtDirectionInputs.length ? usedArtDirectionInputs : undefined,
     summary,
   };
 }
@@ -1230,7 +1302,8 @@ const SECTION_DISPLAY: Record<SectionVariant, string> = {
 export function deriveLayoutArchitect(
   sections: Array<{ id: string; name: string }>,
   plan: WebBuildLayoutPlan,
-  _art: ArtDirectionArtifact | undefined,
+  research: ResearchAgentArtifact | undefined,
+  art: ArtDirectionArtifact | undefined,
   strategy: StrategyAgentArtifact | undefined,
   lang: Lang = 'en',
 ): PageBlueprint {
@@ -1248,6 +1321,7 @@ export function deriveLayoutArchitect(
       return {
         id: s.id,
         title,
+        // Purpose comes from the Strategy Agent's per-section intent when present.
         purpose: si?.purpose || L(lang, `Advance the visitor toward the primary action.`, `Ziyaretçiyi ana eyleme yaklaştır.`),
         variant: SECTION_DISPLAY[s.variant] || 'feature_grid',
         visualModule: s.hostsPrimaryModule ? plan.primaryVisualModule : (plan.secondaryVisualModules[0] || '—'),
@@ -1255,6 +1329,40 @@ export function deriveLayoutArchitect(
         ctaRole,
       };
     });
+
+  // Hero proof placement is shaped by the Strategy Agent's above-the-fold proof
+  // and the Research target-user trust needs — the plan already positions it, this
+  // records WHY.
+  const heroProof = (strategy?.aboveTheFoldMustProve || [])[0]
+    || (research?.targetUser?.trustNeeds || [])[0]
+    || plan.trustPlacement;
+  // Responsive behavior follows the Art Direction (which read the Research
+  // device preference); fall back to the target user, then a safe default.
+  const responsiveBehavior = art?.responsiveDesignDirection
+    || (research?.targetUser?.devicePreference
+      ? L(lang, `Tuned for ${research.targetUser.devicePreference}; single column on mobile, composed grid on desktop.`,
+          `${research.targetUser.devicePreference} için ayarlı; mobilde tek sütun, masaüstünde kompoze grid.`)
+      : L(lang, 'Single column on mobile; multi-column grids collapse; the hero visual stacks under the copy.',
+          'Mobilde tek sütun; grid\'ler tek sütuna iner; hero görseli metnin altına yığılır.'));
+
+  const usedResearchInputs = uniq([
+    (research?.recommendedPages || []).length ? 'recommendedPages' : '',
+    (research?.recommendedComponents || []).length ? 'recommendedComponents' : '',
+    research?.targetUser ? 'targetUser' : '',
+    (research?.trustSignals || []).length ? 'trustSignals' : '',
+  ]);
+  const usedArtDirectionInputs = uniq([
+    art?.motionDirection ? 'motionDirection' : '',
+    art?.density ? 'density' : '',
+    art?.sectionRhythmDirection ? 'sectionRhythmDirection' : '',
+    art?.heroDirection ? 'heroDirection' : '',
+  ]);
+  const usedStrategyInputs = uniq([
+    (strategy?.aboveTheFoldMustProve || []).length ? 'aboveTheFoldMustProve' : '',
+    (strategy?.contentHierarchy || []).length ? 'contentHierarchy' : '',
+    strategy?.ctaHierarchy ? 'ctaHierarchy' : '',
+    (strategy?.sectionIntent || []).length ? 'sectionIntent' : '',
+  ]);
 
   return {
     architecture: plan.pageArchitecture,
@@ -1264,16 +1372,17 @@ export function deriveLayoutArchitect(
       layout: `${plan.visualSystem.headingAlign}-aligned · ${plan.contentDensity}`,
       visualModule: plan.primaryVisualModule,
       ctaPlacement: plan.ctaPlacement,
-      proofPlacement: plan.trustPlacement,
+      proofPlacement: heroProof,
       density: plan.contentDensity,
     },
     sections: blueSections,
     sectionRhythm: plan.rhythm,
-    trustPlacement: plan.trustPlacement,
+    trustPlacement: strategy?.trustStrategy || plan.trustPlacement,
     motionPattern: plan.motionPattern,
-    responsiveBehavior: L(lang,
-      'Single column on mobile; multi-column grids collapse; the hero visual stacks under the copy.',
-      'Mobilde tek sütun; grid\'ler tek sütuna iner; hero görseli metnin altına yığılır.'),
+    responsiveBehavior,
+    usedResearchInputs: usedResearchInputs.length ? usedResearchInputs : undefined,
+    usedArtDirectionInputs: usedArtDirectionInputs.length ? usedArtDirectionInputs : undefined,
+    usedStrategyInputs: usedStrategyInputs.length ? usedStrategyInputs : undefined,
     summary: L(lang,
       `${heroVariant.replace(/_/g, ' ')} hero · ${plan.rhythm} rhythm · ${blueSections.length} sections · ${plan.visualSystem.background} backdrop.`,
       `${heroVariant.replace(/_/g, ' ')} hero · ${plan.rhythm} ritim · ${blueSections.length} bölüm · ${plan.visualSystem.background} arka plan.`),
@@ -1352,8 +1461,30 @@ function agentRow(id: AgentId, lang: Lang, artifact: (AgentArtifact & { summary?
  * continues, so no single agent can block the build. Returns the enriched brief
  * that the design system / preview / files consume.
  */
+/** A minimal, HONEST research artifact used when the Research Agent derivation
+ *  itself throws — status fallback_strategy, no sources, never fabricated — so
+ *  the downstream pipeline still receives a valid (if empty) brief. */
+function fallbackResearchArtifact(lang: Lang): ResearchAgentArtifact {
+  return {
+    didResearch: false,
+    status: 'fallback_strategy',
+    researchAngles: [],
+    sourceBackedInsights: [],
+    categoryLanguage: [],
+    audienceExpectations: [],
+    conversionPatterns: [],
+    trustSignals: [],
+    visualPatterns: [],
+    competitorOrAdjacentPatterns: [],
+    risksToAvoid: [],
+    differentiationOpportunities: [],
+    fallbackReason: 'research derivation failed — using strategy inference',
+    summary: L(lang, 'Using strategy inference (research unavailable).', 'Strateji çıkarımı kullanılıyor (araştırma yok).'),
+  };
+}
+
 export function runUpstreamAgents(
-  _prompt: string,
+  prompt: string,
   brief: WebBuildBrief,
   research: WebBuildResearch | undefined,
   inferred: InferredBrief,
@@ -1361,18 +1492,39 @@ export function runUpstreamAgents(
   lang: Lang = 'en',
 ): UpstreamAgentsResult {
   const artifacts: WebBuildArtifacts = {};
+  const fallbacks: string[] = [];
 
+  // 1) Research Agent — the first source of truth. On failure fall back to a
+  //    safe (honest, source-less) artifact so the pipeline keeps a valid brief.
   let researchArtifact: ResearchAgentArtifact | undefined;
-  try { researchArtifact = deriveResearchAgent(brief, research, inferred, lang); } catch { researchArtifact = undefined; }
+  try { researchArtifact = deriveResearchAgent(brief, research, inferred, lang); }
+  catch { researchArtifact = fallbackResearchArtifact(lang); fallbacks.push('research'); }
   artifacts.research = researchArtifact;
 
+  // 2) UI / Art Director — consumes the Research artifact.
   let art: ArtDirectionArtifact | undefined;
-  try { art = deriveArtDirection(brief, researchArtifact, inferred, lang); } catch { art = undefined; }
+  try { art = deriveArtDirection(brief, researchArtifact, inferred, lang); }
+  catch { art = undefined; fallbacks.push('ui_art_director'); }
   artifacts.artDirection = art;
 
+  // 3) Strategy Agent — consumes Research + Art Direction.
   let strategy: StrategyAgentArtifact | undefined;
-  try { strategy = deriveStrategyAgent(brief, researchArtifact, inferred, sections, lang); } catch { strategy = undefined; }
+  try { strategy = deriveStrategyAgent(brief, researchArtifact, inferred, sections, art, lang); }
+  catch { strategy = undefined; fallbacks.push('strategy'); }
   artifacts.strategy = strategy;
+
+  // The shared context threaded through the pipeline (Layout Architect + the
+  // final build read the connected artifacts from here). Backward compatible.
+  artifacts.context = {
+    prompt,
+    brief,
+    research: researchArtifact || null,
+    artDirection: art || null,
+    strategy: strategy || null,
+    layoutBlueprint: null, // filled by runLayoutArchitect after the plan resolves
+    sources: research?.sources || [],
+    fallbacks,
+  };
 
   const agents: WebBuildAgent[] = [
     agentRow('research', lang, researchArtifact),
@@ -1391,12 +1543,14 @@ export function runUpstreamAgents(
 export function runLayoutArchitect(
   sections: Array<{ id: string; name: string }>,
   plan: WebBuildLayoutPlan,
+  research: ResearchAgentArtifact | undefined,
   art: ArtDirectionArtifact | undefined,
   strategy: StrategyAgentArtifact | undefined,
   lang: Lang = 'en',
 ): { agent: WebBuildAgent; blueprint?: PageBlueprint } {
   try {
-    const blueprint = deriveLayoutArchitect(sections, plan, art, strategy, lang);
+    // Layout Architect consumes ALL upstream artifacts (Research + Art + Strategy).
+    const blueprint = deriveLayoutArchitect(sections, plan, research, art, strategy, lang);
     return { agent: agentRow('layout_architect', lang, blueprint), blueprint };
   } catch {
     return { agent: agentRow('layout_architect', lang, undefined) };
