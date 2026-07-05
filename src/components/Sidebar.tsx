@@ -8,7 +8,7 @@ import {
   PanelLeftClose, PanelLeftOpen,
   Crown, Search, X,
   LogIn, Sparkles, FolderOpen,
-  Bot, Plug, FileText, ChevronDown, Code2, Briefcase,
+  Bot, Plug, FileText, ChevronDown, Code2, Briefcase, MoreHorizontal,
 } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
 import type { ChatSession, ChatFolder } from '@/types';
@@ -103,6 +103,10 @@ export default function Sidebar({
   const navigate = useNavigate();
 
   const displaySessions = filteredSessions;
+
+  // Shared Kimi-style nav row styles — larger, readable, comfortable spacing.
+  const navRow = 'group w-full flex items-center gap-3 px-3 h-10 rounded-xl text-[13px] font-medium text-white/70 hover:text-white hover:bg-white/[0.05] transition-colors';
+  const navSub = 'w-full flex items-center gap-2.5 pl-3 pr-3 h-9 rounded-lg text-[12.5px] text-white/55 hover:text-white/90 hover:bg-white/[0.04] transition-colors';
 
   /* ─── Session row ─── */
   const SessionRow = ({ session }: { session: ChatSession }) => {
@@ -254,132 +258,60 @@ export default function Sidebar({
         <ScrollArea className="flex-1 min-h-0 min-w-0">
           <div className="px-3 py-3 space-y-3 min-w-0">
 
-            {/* ═══ 1. PROJECTS NAVIGATION ═══ */}
+            {/* ═══ 1. NEW CHAT — prominent, top (Kimi-style) ═══ */}
             <motion.button
               whileTap={{ scale: 0.98 }}
-              onClick={() => navigate('/projects')}
-              className="w-full flex items-center gap-2.5 px-3 h-9 rounded-lg transition-all duration-200 group"
+              onClick={onNewChat}
+              className="w-full h-10 gap-2 flex items-center justify-center rounded-xl text-[13px] font-semibold text-white transition-all"
               style={{
-                background: 'rgba(255,255,255,0.03)',
-                border: '1px solid rgba(255,255,255,0.06)',
-              }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)';
-                (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.1)';
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.03)';
-                (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.06)';
+                background: 'linear-gradient(135deg, rgba(59,130,246,0.22) 0%, rgba(59,130,246,0.10) 100%)',
+                border: '1px solid rgba(59,130,246,0.30)',
+                boxShadow: '0 0 18px -8px rgba(59,130,246,0.45), inset 0 1px 0 rgba(255,255,255,0.06)',
               }}
             >
-              <div
-                className="flex h-6 w-6 items-center justify-center rounded-md shrink-0"
-                style={{
-                  background: 'linear-gradient(135deg, rgba(59, 130, 246,0.15) 0%, rgba(156, 187, 209,0.15) 100%)',
-                  boxShadow: '0 0 8px rgba(59, 130, 246,0.08), inset 0 1px 0 rgba(255,255,255,0.06)',
-                }}
-              >
-                <FolderOpen className="h-3 w-3 text-[#CBD5E1]" />
-              </div>
-              <span className="text-[12px] font-medium text-white/60 group-hover:text-white/90 transition-colors">Projects</span>
-              <div className="ml-auto flex items-center gap-0.5 text-white/15 group-hover:text-white/30 transition-colors">
-                <span className="text-[9px]">Workspaces</span>
-              </div>
+              <Plus className="h-4 w-4" /> {t('newChat')}
             </motion.button>
 
-            {/* ═══ 1.5. AGENTS — owner-only (normal users reach nothing here;
-                 owners access Agents via the top-nav Labs menu too) ═══ */}
-            {isOwner && (
-            <motion.button
-              whileTap={{ scale: 0.98 }}
-              onClick={() => navigate('/agents')}
-              className="w-full flex items-center gap-2.5 px-3 h-9 rounded-lg transition-all duration-200 group"
-              style={{
-                background: 'rgba(255,255,255,0.03)',
-                border: '1px solid rgba(255,255,255,0.06)',
-              }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)';
-                (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.1)';
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.03)';
-                (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.06)';
-              }}
-            >
-              <div
-                className="flex h-6 w-6 items-center justify-center rounded-md shrink-0"
-                style={{
-                  background: 'linear-gradient(135deg, rgba(59, 130, 246,0.15) 0%, rgba(156, 187, 209,0.15) 100%)',
-                  boxShadow: '0 0 8px rgba(59, 130, 246,0.08), inset 0 1px 0 rgba(255,255,255,0.06)',
-                }}
-              >
-                <Bot className="h-3 w-3 text-[#60A5FA]" />
-              </div>
-              <span className="text-[12px] font-medium text-white/60 group-hover:text-white/90 transition-colors">{t('agents')}</span>
-            </motion.button>
-            )}
-
-            {/* ═══ 1.6. PLUGINS · SKILLS · MORE ═══
-                 Compact nav group. Plugins / Skills / the More children
-                 (Korvix Code, Korvix Work) are UI placeholders for now —
-                 they intentionally do not navigate to any route yet. */}
+            {/* ═══ 2. PRIMARY NAV — Projects · Plugins · Skills · More ═══
+                 Larger, cleaner rows. Plugins / Skills / the More children
+                 (Korvix Code, Korvix Work) are UI placeholders for now. */}
             <div className="space-y-0.5">
-              <button
-                type="button"
-                className="w-full flex items-center gap-2.5 px-3 h-8 rounded-lg text-[12px] text-white/55 hover:text-white/90 hover:bg-white/[0.04] transition-colors"
-              >
-                <Plug className="h-3.5 w-3.5 shrink-0 text-white/40" />
-                <span className="font-medium">Plugins</span>
+              <button type="button" onClick={() => navigate('/projects')} className={navRow}>
+                <FolderOpen className="h-4 w-4 shrink-0 text-white/50 group-hover:text-white/85 transition-colors" />
+                <span>{t('projects') || 'Projects'}</span>
               </button>
-              <button
-                type="button"
-                className="w-full flex items-center gap-2.5 px-3 h-8 rounded-lg text-[12px] text-white/55 hover:text-white/90 hover:bg-white/[0.04] transition-colors"
-              >
-                <FileText className="h-3.5 w-3.5 shrink-0 text-white/40" />
-                <span className="font-medium">Skills</span>
+              {isOwner && (
+                <button type="button" onClick={() => navigate('/agents')} className={navRow}>
+                  <Bot className="h-4 w-4 shrink-0 text-[#60A5FA]" />
+                  <span>{t('agents')}</span>
+                </button>
+              )}
+              <button type="button" className={navRow}>
+                <Plug className="h-4 w-4 shrink-0 text-white/50 group-hover:text-white/85 transition-colors" />
+                <span>Plugins</span>
               </button>
-              <button
-                type="button"
-                onClick={() => setMoreOpen((v) => !v)}
-                aria-expanded={moreOpen}
-                className="w-full flex items-center gap-2.5 px-3 h-8 rounded-lg text-[12px] text-white/55 hover:text-white/90 hover:bg-white/[0.04] transition-colors"
-              >
-                <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-white/40 transition-transform ${moreOpen ? 'rotate-180' : ''}`} />
-                <span className="font-medium">More</span>
+              <button type="button" className={navRow}>
+                <FileText className="h-4 w-4 shrink-0 text-white/50 group-hover:text-white/85 transition-colors" />
+                <span>Skills</span>
+              </button>
+              <button type="button" onClick={() => setMoreOpen((v) => !v)} aria-expanded={moreOpen} className={navRow}>
+                <MoreHorizontal className="h-4 w-4 shrink-0 text-white/50 group-hover:text-white/85 transition-colors" />
+                <span>More</span>
+                <ChevronDown className={`ml-auto h-3.5 w-3.5 text-white/35 transition-transform ${moreOpen ? 'rotate-180' : ''}`} />
               </button>
               {moreOpen && (
-                <div className="ml-3 space-y-0.5" style={{ borderLeft: '1px solid rgba(255,255,255,0.04)' }}>
-                  <button
-                    type="button"
-                    className="w-full flex items-center gap-2.5 pl-3 pr-3 h-7 rounded-lg text-[11.5px] text-white/45 hover:text-white/80 hover:bg-white/[0.03] transition-colors"
-                  >
-                    <Code2 className="h-3 w-3 shrink-0 text-white/35" />
+                <div className="ml-4 space-y-0.5" style={{ borderLeft: '1px solid rgba(255,255,255,0.05)' }}>
+                  <button type="button" className={navSub}>
+                    <Code2 className="h-3.5 w-3.5 shrink-0 text-white/40" />
                     <span>Korvix Code</span>
                   </button>
-                  <button
-                    type="button"
-                    className="w-full flex items-center gap-2.5 pl-3 pr-3 h-7 rounded-lg text-[11.5px] text-white/45 hover:text-white/80 hover:bg-white/[0.03] transition-colors"
-                  >
-                    <Briefcase className="h-3 w-3 shrink-0 text-white/35" />
+                  <button type="button" className={navSub}>
+                    <Briefcase className="h-3.5 w-3.5 shrink-0 text-white/40" />
                     <span>Korvix Work</span>
                   </button>
                 </div>
               )}
             </div>
-
-            {/* ═══ 2. NEW CHAT ═══ */}
-            <motion.button
-              whileTap={{ scale: 0.98 }}
-              onClick={onNewChat}
-              className="w-full h-8 gap-1.5 flex items-center justify-center text-white/50 hover:text-white/80 rounded-lg transition-all text-[12px]"
-              style={{
-                background: 'rgba(255,255,255,0.03)',
-                border: '1px dashed rgba(255,255,255,0.08)',
-              }}
-            >
-              <Plus className="h-3.5 w-3.5" /> {t('newChat')}
-            </motion.button>
 
             {/* ═══ 3. SEARCH ═══ */}
             <div className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-all" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>

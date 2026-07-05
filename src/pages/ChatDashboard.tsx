@@ -133,7 +133,7 @@ export default function ChatDashboard() {
   const {
     activeSession, activeSessionId, error, isLoading,
     aiMode, searchQuery, filteredSessions, pinnedMessages, inputText, currentTab,
-    createNewChat, selectSession, deleteSession, upsertWebBuildSession,
+    createNewChat, selectSession, deleteSession, markSessionWebBuild,
     toolActivity,
     sendMessage, retry, togglePin,
     setAiMode, setSearchQuery, setInputText, switchTab,
@@ -161,7 +161,7 @@ export default function ChatDashboard() {
   // the Chat home, or when a web_build sidebar session is reopened. When set,
   // the content area renders <ChatWebBuild> in place of the normal chat.
   const [embeddedBuild, setEmbeddedBuild] = useState<
-    { prompt?: string; mode?: BuilderMode | null; runId?: string; key: string } | null
+    { prompt?: string; mode?: BuilderMode | null; runId?: string; sessionId?: string; key: string } | null
   >(null);
 
   // Phase 7 — real job state feeds the AI Activity badge. When /v2/jobs
@@ -343,18 +343,20 @@ export default function ChatDashboard() {
     addToast(t('saved') === 'Kaydedildi' ? 'Yeni sohbet baslatildi' : 'New conversation started', 'success');
   }, [createNewChat, addToast, t, currentTab]);
 
-  /** Start an embedded Web Build in the current Chat surface (Website/App from
-   *  the Chat home) — no navigation to /tools/website-builder. */
+  /** Start an embedded Web Build that OWNS the current chat session (Website/App
+   *  from the Chat home) — no navigation, no duplicate sibling session. The
+   *  active session is converted to web_build once the build persists. */
   const handleStartWebBuild = useCallback((prompt: string, mode: BuilderMode) => {
-    setEmbeddedBuild({ prompt, mode, key: `wb-new-${Date.now().toString(36)}` });
-  }, []);
+    setEmbeddedBuild({ prompt, mode, sessionId: activeSessionId, key: `wb-new-${Date.now().toString(36)}` });
+  }, [activeSessionId]);
 
   const handleSelectSession = useCallback((id: string) => {
     // Web Build sessions reopen the EMBEDDED build surface inside Chat (no
     // longer route away to the standalone /tools/website-builder page).
     const picked = filteredSessions.find((s) => s.id === id);
     if (picked?.mode === 'web_build') {
-      setEmbeddedBuild({ runId: picked.webBuildRunId || id, key: `wb-open-${id}` });
+      selectSession(picked.id); // make it the active session (sidebar highlight + revision target)
+      setEmbeddedBuild({ runId: picked.webBuildRunId || id, sessionId: picked.id, key: `wb-open-${id}` });
       return;
     }
     setEmbeddedBuild(null);
@@ -583,7 +585,8 @@ export default function ChatDashboard() {
                 initialPrompt={embeddedBuild.prompt}
                 initialMode={embeddedBuild.mode ?? null}
                 restoreRunId={embeddedBuild.runId}
-                onPersistSession={upsertWebBuildSession}
+                sessionId={embeddedBuild.sessionId}
+                onPersistSession={markSessionWebBuild}
               />
             ) : renderWorkspace()}
           </div>
