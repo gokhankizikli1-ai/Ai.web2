@@ -382,6 +382,8 @@ export const en: Record<string, string> = {
   wbAgentStrategy: "Strategy Agent",
   wbAgentLayout: "Layout Architect Agent",
   wbAgentComponent: "Component Engineer Agent",
+  wbThinkLabel: "Think",
+  wbAgentCompleted: "completed",
   wbOpArtNote: "Art Direction guides the visual system, palette and typography; later agents build from it.",
   wbOpStrategyAgentNote: "Strategy sets positioning, the conversion path, trust and CTA hierarchy.",
   wbOpLayoutNote: "The Page Blueprint chooses the hero + section composition the preview and files use.",

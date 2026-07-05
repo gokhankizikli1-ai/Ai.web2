@@ -7,6 +7,7 @@ import KorvixAvatar from '@/components/builder/KorvixAvatar';
 import WebBuildFileView from '@/components/builder/WebBuildFileView';
 import WebBuildPreviewPanel from '@/components/builder/WebBuildPreviewPanel';
 import WebBuildAgentRun from '@/components/builder/WebBuildAgentRun';
+import WebBuildLiveProgress from '@/components/builder/WebBuildLiveProgress';
 import { stepToEvents, eventsToRows } from '@/lib/webBuildRun';
 import type {
   WebBuildStep, WebBuildFile, WebBuildSectionItem,
@@ -22,13 +23,17 @@ import type { WebBuildResearch } from '@/lib/webBuildApi';
  */
 
 /* ── Live run shown WHILE the backend call is in flight ──────────────────
- * The build runs the agents internally, but the chat stays clean: only the
- * user's prompt bubble is shown while building. No visible agent timeline / list,
- * no card, no rows, no reserved blank area. A subtle busy state on the composer /
- * send button already signals progress. When the build finishes the normal result
- * (Preview / All Files / Save) renders in place. */
-function LivePhases({ prompt }: { prompt: string; kind: 'build' | 'revision' }) {
-  return <UserMessage text={prompt} />;
+ * Under the prompt bubble, a COMPACT inline progress: completed agents settle as
+ * ✓ lines, and the one active agent shows a small pulsing orb + "Think" with its
+ * current action beneath. No card, no bordered panel, no static list of future
+ * agents, no reserved blank area. */
+function LivePhases({ prompt, kind }: { prompt: string; kind: 'build' | 'revision' }) {
+  return (
+    <div className="space-y-2">
+      <UserMessage text={prompt} />
+      <WebBuildLiveProgress kind={kind} />
+    </div>
+  );
 }
 
 /* ── Attachment / artifact card ──────────────────────────────────────── */
