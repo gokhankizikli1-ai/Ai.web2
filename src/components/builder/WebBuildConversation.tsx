@@ -28,12 +28,14 @@ function LivePhases({ prompt, kind }: { prompt: string; kind: 'build' | 'revisio
     <div className="space-y-3">
       <UserMessage text={prompt} />
       <AssistantMessage active>
-        {/* The agent timeline below IS the loading surface. No generic
-            "Designing your website…" paragraph above it — that only duplicated
-            the timeline and made the run look messy. The timeline always
-            renders the agent rows (Research → … → Preview), so it stands
-            alone; the calm, premium progress lives inside the active row. */}
-        <WebBuildLiveProgress kind={kind} />
+        {/* The agent timeline sits in ONE compact card directly under the prompt —
+            a normal build-response card, not agent rows floating in a tall empty
+            column. Subtle border/background, reasonable width and padding keep it
+            calm and premium. No loading paragraph, no scratch text — the named
+            agent rows (Research → … → Preview) are the whole content. */}
+        <div className="w-full max-w-md rounded-2xl border border-white/[0.07] bg-white/[0.02] px-4 py-3.5">
+          <WebBuildLiveProgress kind={kind} />
+        </div>
       </AssistantMessage>
     </div>
   );

@@ -349,7 +349,10 @@ export default function WebsiteBuilder() {
           onNewBuild={startNewBuild}
           onOpenSession={openSession}
         />
-        <div className="flex min-w-0 flex-1 flex-col min-h-[calc(100vh-220px)] lg:mx-auto lg:max-w-3xl">
+        {/* The tall min-height only exists to vertically center the IDLE mascot.
+            During a build/conversation it would just push the compact agent card to
+            the top of a giant empty column, so drop it once there's content. */}
+        <div className={`flex min-w-0 flex-1 flex-col lg:mx-auto lg:max-w-3xl ${hasConversation ? '' : 'min-h-[calc(100vh-220px)]'}`}>
         {/* ── Conversation feed / idle state ─────────────────────────── */}
         <div className="flex flex-1 flex-col">
           {/* Mobile New Build (desktop uses the left rail). */}
