@@ -394,7 +394,6 @@ export const en: Record<string, string> = {
   wbStageBlueprint: "Creating the page blueprint",
   wbStageHero: "Selecting hero structure",
   wbStageRhythm: "Mapping section rhythm",
-  wbStagePreview: "Preparing the preview package",
   wbOpToggleDetails: "Toggle details",
   wbActPlan: "Planning page structure",
   wbActCreatingFile: "Creating {file}",
