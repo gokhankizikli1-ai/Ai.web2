@@ -185,33 +185,44 @@ export function stepToEvents(
   return out;
 }
 
+/** Defensive: always treat an artifact list field as a string array (malformed
+ *  or partial artifacts must never crash the feed render). */
+const asArr = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
+
 /** Real, data-tied expandable detail for the Research Agent row. Shows source
  *  URLs ONLY when live research actually ran. */
 function researchAgentDetails(r: ResearchAgentArtifact): string[] {
+  const angles = asArr(r.researchAngles);
+  const insights = asArr(r.sourceBackedInsights);
+  const category = asArr(r.categoryLanguage);
+  const conversion = asArr(r.conversionPatterns);
+  const trust = asArr(r.trustSignals);
+  const risks = asArr(r.risksToAvoid);
+  const sources = Array.isArray(r.sources) ? r.sources : [];
   const d: string[] = [];
-  d.push(r.didResearch
-    ? `${r.sourceCount ?? 0} sources · ${r.researchAngles.length} angles`
-    : 'Strategy inference (no live sources)');
-  if (r.researchAngles.length) d.push(`Angles: ${r.researchAngles.join(' · ')}`);
-  if (r.sourceBackedInsights.length) d.push(`Insights: ${r.sourceBackedInsights.join(' · ')}`);
-  if (r.categoryLanguage.length) d.push(`Category language: ${r.categoryLanguage.slice(0, 5).join(', ')}`);
-  if (r.conversionPatterns.length) d.push(`Conversion: ${r.conversionPatterns.join(' · ')}`);
-  if (r.trustSignals.length) d.push(`Trust signals: ${r.trustSignals.join(' · ')}`);
-  if (r.risksToAvoid.length) d.push(`Risks to avoid: ${r.risksToAvoid.slice(0, 2).join(' · ')}`);
-  if (r.didResearch && r.sources?.length) d.push(...r.sources.slice(0, 6).map((s) => `${s.title} — ${s.url}`));
+  d.push(r.didResearch ? `${r.sourceCount ?? 0} sources · ${angles.length} angles` : 'Strategy inference (no live sources)');
+  if (angles.length) d.push(`Angles: ${angles.join(' · ')}`);
+  if (insights.length) d.push(`Insights: ${insights.join(' · ')}`);
+  if (category.length) d.push(`Category language: ${category.slice(0, 5).join(', ')}`);
+  if (conversion.length) d.push(`Conversion: ${conversion.join(' · ')}`);
+  if (trust.length) d.push(`Trust signals: ${trust.join(' · ')}`);
+  if (risks.length) d.push(`Risks to avoid: ${risks.slice(0, 2).join(' · ')}`);
+  if (r.didResearch && sources.length) d.push(...sources.slice(0, 6).map((s) => `${s.title} — ${s.url}`));
   return d;
 }
 
 /** Real, data-tied expandable detail for the UI / Art Director Agent row. */
 function artDirectorDetails(a: ArtDirectionArtifact): string[] {
+  const c = a.colorSystem || ({} as ArtDirectionArtifact['colorSystem']);
+  const avoid = asArr(a.avoid);
   return [
-    `Visual mood: ${a.visualMood}`,
-    `Typography: ${a.typographyDirection}`,
-    `Color system: bg ${a.colorSystem.background} · accent ${a.colorSystem.accent} · accent2 ${a.colorSystem.accent2}`,
-    `Visual metaphor: ${a.visualMetaphor}`,
-    `Motion: ${a.motionDirection}`,
-    `Density: ${a.density}`,
-    a.avoid.length ? `Avoid: ${a.avoid.slice(0, 3).join(' · ')}` : '',
+    a.visualMood ? `Visual mood: ${a.visualMood}` : '',
+    a.typographyDirection ? `Typography: ${a.typographyDirection}` : '',
+    c.accent ? `Color system: bg ${c.background} · accent ${c.accent} · accent2 ${c.accent2}` : '',
+    a.visualMetaphor ? `Visual metaphor: ${a.visualMetaphor}` : '',
+    a.motionDirection ? `Motion: ${a.motionDirection}` : '',
+    a.density ? `Density: ${a.density}` : '',
+    avoid.length ? `Avoid: ${avoid.slice(0, 3).join(' · ')}` : '',
   ].filter(Boolean);
 }
 
