@@ -303,27 +303,43 @@ export function buildWebBuildPayload(
   const research: WebBuildResearch | undefined = result.research || prev?.research || undefined;
 
   // PHASE 1 — upstream agents run in order (Research → UI / Art Director) BEFORE
-  // preview/files, and produce structured artifacts the design system consumes.
-  const agentPipeline = deriveWebBuildAgents(prompt, mergedBrief, research, inferred, effLang);
-  const art = agentPipeline.artifacts.artDirection;
-
-  // Feed the Art Direction into the brief so the design system / preview / files
-  // are driven by it (Part 4): explicit palette + heading style win, and any
-  // missing strategy fields are filled from the art direction. All optional →
-  // backward compatible.
-  const artBrief: WebBuildBrief = art ? {
-    ...mergedBrief,
-    artAccent: mergedBrief.artAccent || art.colorSystem.accent,
-    artAccent2: mergedBrief.artAccent2 || art.colorSystem.accent2,
-    artBg: mergedBrief.artBg || art.colorSystem.background,
-    artHeadingSerif: mergedBrief.artHeadingSerif ?? /serif/i.test(art.typographyDirection),
-    visualMood: mergedBrief.visualMood || art.visualMood,
-    colorDirection: mergedBrief.colorDirection || art.visualMood,
-    motionDirection: mergedBrief.motionDirection || art.motionDirection,
-    visualMetaphor: mergedBrief.visualMetaphor || art.visualMetaphor,
-    typographyDirection: mergedBrief.typographyDirection || art.typographyDirection,
-    layoutLogic: mergedBrief.layoutLogic || art.layoutFeeling,
-  } : mergedBrief;
+  // preview/files. They are an OPTIONAL ENHANCEMENT: agent artifacts feed the
+  // design system when they succeed, but they must NEVER be able to break the
+  // build. Any failure here is swallowed and the build proceeds on the plain
+  // brief (the known-good path), so a normal build always completes (Part 3/7).
+  let agents: WebBuildAgent[] | undefined;
+  let artifacts: { research?: ResearchAgentArtifact; artDirection?: ArtDirectionArtifact } | undefined;
+  let artBrief: WebBuildBrief = mergedBrief;
+  try {
+    const pipeline = deriveWebBuildAgents(prompt, mergedBrief, research, inferred, effLang);
+    agents = pipeline.agents;
+    artifacts = pipeline.artifacts;
+    const art = pipeline.artifacts.artDirection;
+    if (art && art.colorSystem) {
+      // Feed the Art Direction into the brief so the design system / preview /
+      // files are driven by it (Part 4): explicit palette + heading style win,
+      // and any missing strategy fields are filled. All optional → backward compat.
+      artBrief = {
+        ...mergedBrief,
+        artAccent: mergedBrief.artAccent || art.colorSystem.accent,
+        artAccent2: mergedBrief.artAccent2 || art.colorSystem.accent2,
+        artBg: mergedBrief.artBg || art.colorSystem.background,
+        artHeadingSerif: mergedBrief.artHeadingSerif ?? /serif/i.test(art.typographyDirection || ''),
+        visualMood: mergedBrief.visualMood || art.visualMood,
+        colorDirection: mergedBrief.colorDirection || art.visualMood,
+        motionDirection: mergedBrief.motionDirection || art.motionDirection,
+        visualMetaphor: mergedBrief.visualMetaphor || art.visualMetaphor,
+        typographyDirection: mergedBrief.typographyDirection || art.typographyDirection,
+        layoutLogic: mergedBrief.layoutLogic || art.layoutFeeling,
+      };
+    }
+  } catch {
+    // Agents are additive — on any failure, fall back to the plain brief so the
+    // core Web Build package is still produced.
+    agents = undefined;
+    artifacts = undefined;
+    artBrief = mergedBrief;
+  }
 
   let sectionItems = parseSectionItems(result);
   let files = resolveFiles(result, prev?.files, artBrief);
@@ -334,8 +350,19 @@ export function buildWebBuildPayload(
   if (!prev && !checkQuality(sectionItems, files.length, effLang).ok) {
     sectionItems = fallbackSectionItems(inferred, effLang);
     const plan = deriveLayoutPlan(artBrief, sectionItems.map((s) => ({ id: s.id, name: s.name })));
-    files = diffFiles(undefined, synthesizeFromCopies(itemsToCopies(sectionItems), artBrief, plan));
+    files = diffFiles(prev?.files, synthesizeFromCopies(itemsToCopies(sectionItems), artBrief, plan));
   }
+
+  // FILES MUST ALWAYS EXIST (Part 4). If — for any reason — the build produced no
+  // files (e.g. the model returned only agent/design prose with no Page Sections),
+  // synthesize a real project from the inferred brief so Preview / All Files /
+  // Open Preview always work. Never return an empty file list.
+  if (files.length === 0) {
+    if (sectionItems.length === 0) sectionItems = fallbackSectionItems(inferred, effLang);
+    const plan = deriveLayoutPlan(artBrief, sectionItems.map((s) => ({ id: s.id, name: s.name })));
+    files = diffFiles(prev?.files, synthesizeFromCopies(itemsToCopies(sectionItems), artBrief, plan));
+  }
+
   const layoutPlan = deriveLayoutPlan(artBrief, sectionItems.map((s) => ({ id: s.id, name: s.name })));
 
   const changed = files.filter((f) => f.status !== 'unchanged');
@@ -362,8 +389,8 @@ export function buildWebBuildPayload(
     reply: result.reply,
     // Only a fresh build actually ran research; a revision step has none.
     research: prev ? undefined : result.research,
-    agents: agentPipeline.agents,
-    artifacts: agentPipeline.artifacts,
+    agents,
+    artifacts,
     layoutPlan,
   };
   return {
@@ -379,8 +406,8 @@ export function buildWebBuildPayload(
     sources,
     research,
     layoutPlan,
-    agents: agentPipeline.agents,
-    artifacts: agentPipeline.artifacts,
+    agents,
+    artifacts,
     activity,
     steps: prev ? [...prev.steps, step] : [step],
     createdAt: prev?.createdAt || now,
