@@ -271,9 +271,40 @@ export interface PageBlueprint {
   summary: string;
 }
 
-export type AgentId = 'research' | 'ui_art_director' | 'strategy' | 'layout_architect';
+/* ── Component Engineer artifact — the concrete component/file plan ─────── */
+export interface EngineeredComponent {
+  name: string;
+  type: string;
+  purpose: string;
+  sourceAgentReason: string;
+  usedBlueprintSection: string;
+  variant: string;
+  visualModule: string;
+  filePath: string;
+}
+export interface EngineeredFile {
+  path: string;
+  purpose: string;
+  componentType: string;
+  dependsOn: string[];
+}
+export interface ComponentEngineerArtifact {
+  componentPlan: EngineeredComponent[];
+  fileManifest: EngineeredFile[];
+  appComposition: string[];
+  contentModel: Record<string, unknown>;
+  reusablePrimitives: string[];
+  usedResearchInputs?: string[];
+  usedArtDirectionInputs?: string[];
+  usedStrategyInputs?: string[];
+  usedBlueprintInputs?: string[];
+  summary: string;
+}
+
+export type AgentId = 'research' | 'ui_art_director' | 'strategy' | 'layout_architect' | 'component_engineer';
 export type AgentArtifact =
-  ResearchAgentArtifact | ArtDirectionArtifact | StrategyAgentArtifact | PageBlueprint | Record<string, unknown>;
+  ResearchAgentArtifact | ArtDirectionArtifact | StrategyAgentArtifact | PageBlueprint
+  | ComponentEngineerArtifact | Record<string, unknown>;
 
 export interface WebBuildAgent {
   id: AgentId;
@@ -285,13 +316,29 @@ export interface WebBuildAgent {
   artifact: AgentArtifact;
 }
 
+/** Enforcement diagnostics — did the final build actually consume each agent's
+ *  output? Lets the pipeline PROVE the agents are not decorative (Part 6). */
+export interface WebBuildEnforcement {
+  didUseResearchAgent: boolean;
+  didUseArtDirection: boolean;
+  didUseStrategy: boolean;
+  didUseLayoutBlueprint: boolean;
+  didUseComponentPlan: boolean;
+  /** True when the resolved layout plan followed the agent-decided archetype. */
+  didPlanFollowAgents: boolean;
+  fallbackReason?: string;
+}
+
 export interface WebBuildArtifacts {
   research?: ResearchAgentArtifact;
   artDirection?: ArtDirectionArtifact;
   strategy?: StrategyAgentArtifact;
   blueprint?: PageBlueprint;
+  componentEngineer?: ComponentEngineerArtifact;
   /** The shared context the agents were run against (pipeline trace). */
   context?: WebBuildAgentContext;
+  /** Enforcement diagnostics proving the agents drove the build. */
+  enforcement?: WebBuildEnforcement;
 }
 
 export interface WebBuildAgents {
@@ -1392,16 +1439,86 @@ export function deriveLayoutArchitect(
 /* ── Brief enrichment (agents → design system / preview / files) ──────── */
 
 /**
+ * Decide the STRUCTURE the layout plan should use, FROM the agent artifacts — so
+ * the plan (and therefore both the preview and the generated files) obeys the
+ * agents instead of re-detecting an archetype from prose. Returns plain-string
+ * hints (validated at the plan layer). Signal-driven from the Research brief's
+ * recommended pages/components + visual style + target user — never a fixed
+ * per-example template. Returns {} when signals are too weak, so the existing
+ * detection + diversity guard still applies (never forced to 'standard').
+ */
+export function deriveLayoutSteering(
+  research: ResearchAgentArtifact | undefined,
+  art: ArtDirectionArtifact | undefined,
+  _strategy: StrategyAgentArtifact | undefined,
+): { agentArchetype?: string; agentHero?: string; agentModule?: string } {
+  if (!research) return {};
+  const pages = (research.recommendedPages || []).map((p) => (p.name || '').toLowerCase());
+  const comps = (research.recommendedComponents || []).map((c) => (c.name || '').toLowerCase());
+  const hay = [...pages, ...comps].join(' | ');
+  const has = (...w: string[]) => w.some((x) => hay.includes(x));
+  const premium = research.visualStyleRecommendation?.premiumLevel;
+  const style = (research.visualStyleRecommendation?.styleType || '').toLowerCase();
+  const device = (research.targetUser?.devicePreference || '').toLowerCase();
+
+  // Archetype — most specific business model first, then style, then device.
+  let archetype: string | undefined;
+  if (premium === 'luxury') archetype = 'luxury-service';
+  else if (has('booking', 'reservation', 'reserve')) archetype = 'hospitality';
+  else if (has('application', 'apply', 'enroll', 'membership')) archetype = 'membership';
+  else if (has('dashboard preview', 'dashboard') || /data|scientific|precise/.test(style)) {
+    archetype = /data|scientific|precise|technical/.test(style + ' ' + device) ? 'data-platform' : 'dashboard';
+  } else if (has('product cards', 'product detail', 'product ')) archetype = 'marketplace';
+  else if (has('case studies', 'gallery') && /editorial|expressive|bold/.test(style)) archetype = 'portfolio';
+  else if (has('blog') && /editorial/.test(style)) archetype = 'editorial';
+
+  // Primary visual module — from the strongest recommended component, so the
+  // hero/first section carry a module that reflects what the site actually needs.
+  let module: string | undefined;
+  if (has('dashboard preview', 'dashboard')) module = 'data-dashboard';
+  else if (has('booking form', 'reservation')) module = 'reservation-form';
+  else if (has('application flow')) module = 'membership-pass';
+  else if (has('beforeafter', 'before/after')) module = 'comparison';
+  else if (has('product cards')) module = 'catalog-archive';
+  else if (has('case study', 'gallery')) module = 'catalog-archive';
+
+  // Hero — only pin it for the strongest premium/experimental cues that imply a
+  // distinct opening; otherwise let the archetype's blueprint choose the hero.
+  let hero: string | undefined;
+  if (premium === 'luxury') hero = 'luxury-service';
+  else if (premium === 'experimental' || /experimental|cinematic|immersive/.test(style)) hero = 'immersive-full-bleed';
+  else if (art?.density === 'immersive') hero = 'immersive-full-bleed';
+
+  const out: { agentArchetype?: string; agentHero?: string; agentModule?: string } = {};
+  if (archetype) out.agentArchetype = archetype;
+  if (hero) out.agentHero = hero;
+  if (module) out.agentModule = module;
+  return out;
+}
+
+/**
  * Fold the Art Direction + Strategy into the brief so the existing design system,
  * preview and file synthesizer are driven by them. Fills GAPS only (the model's
- * own values always win), so it is additive and backward compatible.
+ * own values always win), so it is additive and backward compatible. Also injects
+ * the agent-decided STRUCTURE (archetype / hero / module) so the layout plan obeys
+ * the pipeline.
  */
 export function enrichBriefWithAgents(
   brief: WebBuildBrief,
+  research: ResearchAgentArtifact | undefined,
   art: ArtDirectionArtifact | undefined,
   strategy: StrategyAgentArtifact | undefined,
 ): WebBuildBrief {
   let b: WebBuildBrief = { ...brief };
+  // Structure steering — the plan (preview + files) obeys the agents. Model's own
+  // explicit values (if ever present on the brief) still win via `||`.
+  const steer = deriveLayoutSteering(research, art, strategy);
+  b = {
+    ...b,
+    agentArchetype: b.agentArchetype || steer.agentArchetype,
+    agentHero: b.agentHero || steer.agentHero,
+    agentModule: b.agentModule || steer.agentModule,
+  };
   if (art && art.colorSystem) {
     b = {
       ...b,
@@ -1445,6 +1562,7 @@ const AGENT_NAME: Record<AgentId, [string, string]> = {
   ui_art_director: ['UI / Art Director Agent', 'UI / Sanat Yönetmeni Ajanı'],
   strategy: ['Strategy Agent', 'Strateji Ajanı'],
   layout_architect: ['Layout Architect Agent', 'Yerleşim Mimarı Ajanı'],
+  component_engineer: ['Component Engineer Agent', 'Bileşen Mühendisi Ajanı'],
 };
 
 function agentRow(id: AgentId, lang: Lang, artifact: (AgentArtifact & { summary?: string }) | undefined): WebBuildAgent {
@@ -1532,7 +1650,7 @@ export function runUpstreamAgents(
     agentRow('strategy', lang, strategy),
   ];
 
-  return { agents, artifacts, enrichedBrief: enrichBriefWithAgents(brief, art, strategy) };
+  return { agents, artifacts, enrichedBrief: enrichBriefWithAgents(brief, researchArtifact, art, strategy) };
 }
 
 /**
@@ -1554,5 +1672,139 @@ export function runLayoutArchitect(
     return { agent: agentRow('layout_architect', lang, blueprint), blueprint };
   } catch {
     return { agent: agentRow('layout_architect', lang, undefined) };
+  }
+}
+
+/* ── Component Engineer Agent ─────────────────────────────────────────────
+ * The final upstream agent. It consumes Research + Art + Strategy + the Page
+ * Blueprint and the resolved layout plan, and produces the CONCRETE component /
+ * file plan the synthesizer emits. It does not invent files: every entry is
+ * derived from the plan the file synthesizer already builds from, so the manifest
+ * is an accurate, connected description of what is generated — and the enforcement
+ * layer can verify the generated files match it. */
+
+const cePascal = (id: string): string => {
+  const p = id.replace(/(^|[-_ ]+)(\w)/g, (_m, _s, c: string) => c.toUpperCase()).replace(/[^a-zA-Z0-9]/g, '');
+  return /^[a-z]/.test(p) ? p.charAt(0).toUpperCase() + p.slice(1) : (p || 'Section');
+};
+
+function fileMeta(path: string, componentNames: string[], lang: Lang): { purpose: string; componentType: string; dependsOn: string[] } {
+  if (/main\.tsx$/.test(path)) return { purpose: L(lang, 'React entrypoint', 'React giriş noktası'), componentType: 'bootstrap', dependsOn: ['src/App.tsx'] };
+  if (/App\.tsx$/.test(path)) return { purpose: L(lang, 'Composes the section sequence from the Page Blueprint', 'Bölüm dizisini Sayfa Planından oluşturur'), componentType: 'composition', dependsOn: componentNames.map((n) => `src/components/${n}.tsx`) };
+  if (/VisualModule\.tsx$/.test(path)) return { purpose: L(lang, 'Reusable visual modules (dashboard/catalog/map/…)', 'Yeniden kullanılabilir görsel modüller'), componentType: 'visual', dependsOn: ['src/lib/designSystem.ts'] };
+  if (/designSystem\.ts$/.test(path)) return { purpose: L(lang, 'Design tokens from the UI / Art Director Agent', 'UI / Sanat Yönetmeni Ajanından tasarım token\'ları'), componentType: 'tokens', dependsOn: [] };
+  if (/layoutPlan\.ts$/.test(path)) return { purpose: L(lang, 'The structural layout plan record', 'Yapısal yerleşim planı kaydı'), componentType: 'plan', dependsOn: [] };
+  if (/siteContent\.ts$/.test(path)) return { purpose: L(lang, 'Content model (Research + Strategy copy)', 'İçerik modeli (Araştırma + Strateji metni)'), componentType: 'content', dependsOn: [] };
+  if (/styles\.css$/.test(path)) return { purpose: L(lang, 'Global styles + visual-system tokens', 'Global stiller + görsel sistem token\'ları'), componentType: 'styles', dependsOn: [] };
+  return { purpose: L(lang, 'Section component', 'Bölüm bileşeni'), componentType: 'section', dependsOn: ['src/components/VisualModule.tsx', 'src/lib/designSystem.ts'] };
+}
+
+export function deriveComponentEngineer(
+  plan: WebBuildLayoutPlan,
+  blueprint: PageBlueprint | undefined,
+  research: ResearchAgentArtifact | undefined,
+  art: ArtDirectionArtifact | undefined,
+  strategy: StrategyAgentArtifact | undefined,
+  lang: Lang = 'en',
+): ComponentEngineerArtifact {
+  const bpById = new Map((blueprint?.sections || []).map((s) => [s.id, s]));
+  const intentByName = new Map((strategy?.sectionIntent || []).map((si) => [si.section.toLowerCase(), si]));
+
+  const componentPlan: EngineeredComponent[] = plan.sections.map((s, i) => {
+    const name = plan.componentPlan[i] || cePascal(s.id);
+    const isHero = s.kind === 'hero';
+    const bpS = bpById.get(s.id);
+    const si = intentByName.get((s.name || '').toLowerCase());
+    const visualModule = isHero
+      ? plan.primaryVisualModule
+      : (s.hostsPrimaryModule ? plan.primaryVisualModule : (plan.secondaryVisualModules[0] || '—'));
+    const variant = isHero ? plan.heroComposition : s.variant;
+    return {
+      name,
+      type: s.kind,
+      purpose: bpS?.purpose || si?.purpose
+        || L(lang, `Advance the visitor toward the primary action.`, `Ziyaretçiyi ana eyleme yaklaştır.`),
+      // WHY this component exists — traces the decision back to the agents.
+      sourceAgentReason: isHero
+        ? L(lang, `Layout Architect chose a ${variant} hero; carries the ${visualModule} module.`,
+            `Yerleşim Mimarı ${variant} hero seçti; ${visualModule} modülünü taşır.`)
+        : L(lang, `Layout Architect variant "${variant}"${si ? ` · Strategy: ${si.visitorQuestion}` : ''}.`,
+            `Yerleşim Mimarı varyantı "${variant}"${si ? ` · Strateji: ${si.visitorQuestion}` : ''}.`),
+      usedBlueprintSection: bpS?.title || s.name,
+      variant,
+      visualModule,
+      filePath: `src/components/${name}.tsx`,
+    };
+  });
+
+  const componentNames = plan.sections.map((s, i) => plan.componentPlan[i] || cePascal(s.id));
+  const fileManifest: EngineeredFile[] = (plan.filePlan.length ? plan.filePlan : []).map((path) => {
+    const m = fileMeta(path, componentNames, lang);
+    return { path, purpose: m.purpose, componentType: m.componentType, dependsOn: m.dependsOn };
+  });
+
+  const contentModel: Record<string, unknown> = {
+    source: 'src/data/siteContent.ts',
+    sections: plan.sections.length,
+    drivenBy: uniq([
+      research ? 'Research categoryLanguage + audienceExpectations' : '',
+      strategy ? 'Strategy contentHierarchy + sectionIntent' : '',
+      art ? 'Art Direction tone' : '',
+    ]),
+  };
+  const reusablePrimitives = uniq([
+    'VisualModule', 'designSystem tokens', 'layoutPlan record',
+    ...componentPlan.map((c) => c.variant),
+  ]);
+
+  const usedResearchInputs = uniq([
+    (research?.recommendedComponents || []).length ? 'recommendedComponents' : '',
+    (research?.recommendedPages || []).length ? 'recommendedPages' : '',
+  ]);
+  const usedArtDirectionInputs = uniq([art?.componentStyleHints?.length ? 'componentStyleHints' : '', art?.density ? 'density' : '']);
+  const usedStrategyInputs = uniq([(strategy?.sectionIntent || []).length ? 'sectionIntent' : '', (strategy?.contentHierarchy || []).length ? 'contentHierarchy' : '']);
+  const usedBlueprintInputs = uniq([
+    blueprint?.hero ? 'hero.variant' : '',
+    (blueprint?.sections || []).length ? 'sections' : '',
+    blueprint?.sectionRhythm ? 'sectionRhythm' : '',
+  ]);
+
+  const modules = uniq(componentPlan.map((c) => c.visualModule).filter((m) => m && m !== '—'));
+  const summary = L(lang,
+    `${componentPlan.length} components across ${fileManifest.length} files — ${plan.heroComposition.replace(/-/g, ' ')} hero, modules: ${modules.slice(0, 3).join(', ') || '—'}. Composed from the Page Blueprint.`,
+    `${fileManifest.length} dosyada ${componentPlan.length} bileşen — ${plan.heroComposition.replace(/-/g, ' ')} hero, modüller: ${modules.slice(0, 3).join(', ') || '—'}. Sayfa Planından oluşturuldu.`);
+
+  return {
+    componentPlan,
+    fileManifest,
+    appComposition: componentNames,
+    contentModel,
+    reusablePrimitives,
+    usedResearchInputs: usedResearchInputs.length ? usedResearchInputs : undefined,
+    usedArtDirectionInputs: usedArtDirectionInputs.length ? usedArtDirectionInputs : undefined,
+    usedStrategyInputs: usedStrategyInputs.length ? usedStrategyInputs : undefined,
+    usedBlueprintInputs: usedBlueprintInputs.length ? usedBlueprintInputs : undefined,
+    summary,
+  };
+}
+
+/**
+ * Run the Component Engineer after the plan + blueprint resolve. Guarded — on any
+ * failure it returns a skipped row and no artifact, and the build continues on the
+ * files the synthesizer already produced from the plan.
+ */
+export function runComponentEngineer(
+  plan: WebBuildLayoutPlan,
+  blueprint: PageBlueprint | undefined,
+  research: ResearchAgentArtifact | undefined,
+  art: ArtDirectionArtifact | undefined,
+  strategy: StrategyAgentArtifact | undefined,
+  lang: Lang = 'en',
+): { agent: WebBuildAgent; artifact?: ComponentEngineerArtifact } {
+  try {
+    const artifact = deriveComponentEngineer(plan, blueprint, research, art, strategy, lang);
+    return { agent: agentRow('component_engineer', lang, artifact), artifact };
+  } catch {
+    return { agent: agentRow('component_engineer', lang, undefined) };
   }
 }

@@ -24,6 +24,7 @@ const BUILD_GROUPS: Group[] = [
   { id: 'ui_art_director', nameKey: 'wbAgentArt', stages: ['wbStageVisualMood', 'wbStageTypography'] },
   { id: 'strategy', nameKey: 'wbAgentStrategy', stages: ['wbStageCta'] },
   { id: 'layout_architect', nameKey: 'wbAgentLayout', stages: ['wbStageBlueprint', 'wbStageHero', 'wbStageRhythm'] },
+  { id: 'component_engineer', nameKey: 'wbAgentComponent', stages: ['wbStageComponents'] },
   { id: 'preview', nameKey: 'wbStagePreview', stages: ['wbStagePreview'] },
 ];
 

@@ -24,7 +24,7 @@ import type { WebBuildStep, WebBuildFile } from '@/lib/webBuildPayload';
 import {
   WEB_BUILD_AGENTS_ENABLED,
   type WebBuildAgent, type AgentId, type ResearchAgentArtifact, type ArtDirectionArtifact,
-  type StrategyAgentArtifact, type PageBlueprint,
+  type StrategyAgentArtifact, type PageBlueprint, type ComponentEngineerArtifact,
 } from '@/lib/webBuildAgents';
 
 export type WebBuildRunStatus = 'queued' | 'running' | 'completed' | 'failed';
@@ -314,17 +314,38 @@ function layoutArchitectDetails(b: PageBlueprint): string[] {
   ].filter(Boolean);
 }
 
+/** Real, data-tied expandable detail for the Component Engineer row — shows the
+ *  concrete components + file manifest it derived from the Page Blueprint. */
+function componentEngineerDetails(c: ComponentEngineerArtifact): string[] {
+  const comps = Array.isArray(c.componentPlan) ? c.componentPlan : [];
+  const files = Array.isArray(c.fileManifest) ? c.fileManifest : [];
+  const app = asArr(c.appComposition);
+  const modules = Array.from(new Set(comps.map((x) => x.visualModule).filter((m) => m && m !== '—')));
+  return [
+    usedInputsLine('Used Research inputs', c.usedResearchInputs),
+    usedInputsLine('Used Art Direction inputs', c.usedArtDirectionInputs),
+    usedInputsLine('Used Strategy inputs', c.usedStrategyInputs),
+    usedInputsLine('Used Blueprint inputs', c.usedBlueprintInputs),
+    comps.length ? `Components: ${comps.slice(0, 8).map((x) => `${x.name} (${x.variant})`).join(' · ')}` : '',
+    modules.length ? `Visual modules: ${modules.slice(0, 4).join(', ')}` : '',
+    app.length ? `App composition: ${app.slice(0, 10).join(' → ')}` : '',
+    files.length ? `File manifest: ${files.slice(0, 10).map((f) => f.path.replace(/^src\//, '')).join(', ')}` : '',
+  ].filter(Boolean);
+}
+
 const AGENT_TITLE_KEY: Record<AgentId, string> = {
   research: 'wbAgentResearch',
   ui_art_director: 'wbAgentArt',
   strategy: 'wbAgentStrategy',
   layout_architect: 'wbAgentLayout',
+  component_engineer: 'wbAgentComponent',
 };
 const AGENT_NOTE_KEY: Record<AgentId, string> = {
   research: 'wbOpResearchNote',
   ui_art_director: 'wbOpArtNote',
   strategy: 'wbOpStrategyAgentNote',
   layout_architect: 'wbOpLayoutNote',
+  component_engineer: 'wbOpComponentNote',
 };
 
 /** Build the expandable detail lines for any agent row from its artifact. */
@@ -336,6 +357,7 @@ function agentDetails(agent: WebBuildAgent): string[] {
       case 'ui_art_director': return artDirectorDetails(agent.artifact as ArtDirectionArtifact);
       case 'strategy': return strategyAgentDetails(agent.artifact as StrategyAgentArtifact);
       case 'layout_architect': return layoutArchitectDetails(agent.artifact as PageBlueprint);
+      case 'component_engineer': return componentEngineerDetails(agent.artifact as ComponentEngineerArtifact);
       default: return [];
     }
   } catch {
