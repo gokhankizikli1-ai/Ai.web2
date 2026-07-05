@@ -15,7 +15,7 @@ import type { BuildSection } from '@/lib/gameBuilderApi';
 import { extractBrief, type WebBuildResult, type WebBuildBrief } from '@/lib/webBuildApi';
 import { deriveDesignSystemFromStrategy, designSystemFileContent, type WebBuildDesignSystem } from '@/lib/webBuildDesignSystem';
 import {
-  deriveLayoutPlan, layoutPlanFileContent, sectionKind,
+  deriveLayoutPlan, layoutPlanFileContent, visualSystemTokens, sectionKind,
   type WebBuildLayoutPlan, type SectionKind, type SectionVariant, type VisualModule,
 } from '@/lib/webBuildLayoutPlan';
 
@@ -139,7 +139,7 @@ function extractCopyPieces(body: string, purpose?: string): { headline?: string;
 
 function cardsComponent(name: string, c: SectionCopy): string {
   const items = (c.bullets.length ? c.bullets : [c.sub || c.purpose || '']).filter(Boolean).slice(0, 6);
-  const cards = items.map((b, i) => `          <div key={${i}} className="group relative rounded-2xl border border-white/10 bg-white/[0.03] p-6 transition duration-300 hover:-translate-y-1 hover:border-white/20 hover:bg-white/[0.05]">
+  const cards = items.map((b, i) => `          <div key={${i}} className="group relative rounded-[var(--kx-radius)] border border-[color:var(--kx-border)] bg-[var(--kx-card)] p-6 transition duration-300 hover:-translate-y-1 hover:border-white/20 hover:bg-[var(--kx-card-hover)]">
             <div className="mb-4 h-11 w-11 rounded-xl bg-[linear-gradient(135deg,color-mix(in_srgb,var(--kx-accent)_40%,transparent),color-mix(in_srgb,var(--kx-accent-2)_20%,transparent))] ring-1 ring-white/10" />
             <p className="text-[15px] font-semibold leading-snug text-white">{\`${esc(b)}\`}</p>
           </div>`).join('\n');
@@ -166,7 +166,7 @@ function ctaComponent(name: string, c: SectionCopy): string {
   return (
     <section id="contact" className="relative isolate overflow-hidden px-6 py-24">
       <div className="kx-aurora -z-10" style={{ bottom: '-8rem', left: '50%', width: '32rem', height: '20rem', transform: 'translateX(-50%)', background: 'radial-gradient(circle, var(--kx-accent), transparent 60%)' }} aria-hidden="true" />
-      <div className="kx-reveal mx-auto max-w-2xl rounded-3xl border border-white/10 bg-white/[0.03] p-10 text-center backdrop-blur">
+      <div className="kx-reveal mx-auto max-w-2xl rounded-3xl border border-[color:var(--kx-border)] bg-[var(--kx-card)] p-10 text-center backdrop-blur">
         <h2 className="text-3xl font-semibold tracking-tight text-white">{\`${esc(headline)}\`}</h2>
         ${c.sub ? `<p className="mt-3 text-slate-300">{\`${esc(c.sub)}\`}</p>` : ''}
         <a href="#" className="mt-7 inline-block rounded-xl bg-[var(--kx-accent)] px-7 py-3 text-sm font-semibold text-white shadow-lg shadow-black/40 transition hover:bg-[var(--kx-accent)]">
@@ -182,7 +182,7 @@ function ctaComponent(name: string, c: SectionCopy): string {
 function footerComponent(name: string, c: SectionCopy): string {
   return `export default function ${name}() {
   return (
-    <footer className="border-t border-white/10 px-6 py-12">
+    <footer className="border-t border-[color:var(--kx-border)] px-6 py-12">
       <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 sm:flex-row">
         <p className="text-sm text-slate-400">{\`${esc(c.headline || '© Your Company')}\`}</p>
         <nav className="flex gap-6 text-sm text-slate-400">
@@ -219,7 +219,7 @@ ${list}
 
 function galleryComponent(name: string, c: SectionCopy): string {
   const tiles = (c.bullets.length ? c.bullets : [c.name]).slice(0, 6);
-  const cells = tiles.map((b, i) => `          <figure key={${i}} className="group relative overflow-hidden rounded-2xl border border-white/10 ${i % 5 === 0 ? 'sm:col-span-2' : ''}">
+  const cells = tiles.map((b, i) => `          <figure key={${i}} className="group relative overflow-hidden rounded-[var(--kx-radius)] border border-[color:var(--kx-border)] ${i % 5 === 0 ? 'sm:col-span-2' : ''}">
             <div className="aspect-[4/3] w-full bg-gradient-to-br from-white/[0.06] to-white/[0.01] transition duration-500 group-hover:scale-[1.03]" />
             <figcaption className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-4 text-sm font-medium text-white">{\`${esc(b)}\`}</figcaption>
           </figure>`).join('\n');
@@ -245,11 +245,11 @@ function beforeAfterComponent(name: string, c: SectionCopy): string {
       <div className="mx-auto max-w-5xl">
         ${c.headline ? `<h2 className="text-center text-3xl font-semibold tracking-tight text-white sm:text-4xl">{\`${esc(c.headline)}\`}</h2>` : ''}
         <div className="mt-10 grid gap-5 sm:grid-cols-2">
-          <div className="relative overflow-hidden rounded-2xl border border-white/10">
+          <div className="relative overflow-hidden rounded-[var(--kx-radius)] border border-[color:var(--kx-border)]">
             <span className="absolute left-3 top-3 rounded-full bg-black/50 px-2.5 py-1 text-xs text-slate-300">Öncesi</span>
-            <div className="aspect-[4/3] bg-white/[0.03]" />
+            <div className="aspect-[4/3] bg-[var(--kx-card)]" />
           </div>
-          <div className="relative overflow-hidden rounded-2xl border border-[color-mix(in_srgb,var(--kx-accent)_30%,transparent)] ring-1 ring-[color-mix(in_srgb,var(--kx-accent)_20%,transparent)]">
+          <div className="relative overflow-hidden rounded-[var(--kx-radius)] border border-[color-mix(in_srgb,var(--kx-accent)_30%,transparent)] ring-1 ring-[color-mix(in_srgb,var(--kx-accent)_20%,transparent)]">
             <span className="absolute left-3 top-3 rounded-full bg-[var(--kx-accent)] px-2.5 py-1 text-xs text-white">Sonrası</span>
             <div className="aspect-[4/3] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--kx-accent)_20%,transparent),color-mix(in_srgb,var(--kx-accent-2)_10%,transparent))]" />
           </div>
@@ -263,7 +263,7 @@ function beforeAfterComponent(name: string, c: SectionCopy): string {
 
 function productDemoComponent(name: string, c: SectionCopy): string {
   const lines = (c.bullets.length ? c.bullets : ['Merhaba, nasıl yardımcı olabilirim?', 'Siparişimi takip etmek istiyorum.', 'Tabii, sipariş numaranı paylaşır mısın?']).slice(0, 4);
-  const bubbles = lines.map((b, i) => `            <div key={${i}} className="max-w-[80%] ${i % 2 ? 'ml-auto bg-[var(--kx-accent)] text-white' : 'bg-white/[0.06] text-slate-200'} rounded-2xl px-3.5 py-2 text-[13px]">{\`${esc(b)}\`}</div>`).join('\n');
+  const bubbles = lines.map((b, i) => `            <div key={${i}} className="max-w-[80%] ${i % 2 ? 'ml-auto bg-[var(--kx-accent)] text-white' : 'bg-white/[0.06] text-slate-200'} rounded-[var(--kx-radius)] px-3.5 py-2 text-[13px]">{\`${esc(b)}\`}</div>`).join('\n');
   return `export default function ${name}() {
   return (
     <section id="demo" className="relative isolate overflow-hidden px-6 py-20">
@@ -274,7 +274,7 @@ function productDemoComponent(name: string, c: SectionCopy): string {
           ${c.sub ? `<p className="mt-4 text-slate-300">{\`${esc(c.sub)}\`}</p>` : ''}
           ${c.cta ? `<a href="#contact" className="mt-6 inline-block rounded-xl bg-[var(--kx-accent)] px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-black/40">{\`${esc(c.cta)}\`}</a>` : ''}
         </div>
-        <div className="kx-float rounded-2xl border border-white/10 bg-white/[0.03] p-4 shadow-2xl shadow-black/40">
+        <div className="kx-float rounded-[var(--kx-radius)] border border-[color:var(--kx-border)] bg-[var(--kx-card)] p-4 shadow-2xl shadow-black/40">
           <div className="mb-3 flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-white/20" /><span className="h-2.5 w-2.5 rounded-full bg-white/20" /><span className="h-2.5 w-2.5 rounded-full bg-white/20" /></div>
           <div className="space-y-2">
 ${bubbles}
@@ -289,7 +289,7 @@ ${bubbles}
 
 function workflowComponent(name: string, c: SectionCopy): string {
   const steps = (c.bullets.length ? c.bullets : [c.name]).slice(0, 4);
-  const cells = steps.map((b, i) => `          <li key={${i}} className="relative rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+  const cells = steps.map((b, i) => `          <li key={${i}} className="relative rounded-[var(--kx-radius)] border border-[color:var(--kx-border)] bg-[var(--kx-card)] p-6">
             <span className="text-sm font-semibold text-[var(--kx-accent)]">0${i + 1}</span>
             <p className="mt-2 text-[15px] font-medium text-white">{\`${esc(b)}\`}</p>
           </li>`).join('\n');
@@ -311,7 +311,7 @@ ${cells}
 function metricsComponent(name: string, c: SectionCopy): string {
   const stats = ['98%', '2.5x', '24/7', '<1dk'];
   const labels = (c.bullets.length ? c.bullets : [c.name]).slice(0, 4);
-  const cells = labels.map((b, i) => `          <div key={${i}} className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 text-center">
+  const cells = labels.map((b, i) => `          <div key={${i}} className="rounded-[var(--kx-radius)] border border-[color:var(--kx-border)] bg-[var(--kx-card)] p-6 text-center">
             <div className="text-4xl font-semibold tracking-tight text-white">${stats[i % stats.length]}</div>
             <p className="mt-2 text-sm text-slate-400">{\`${esc(b)}\`}</p>
           </div>`).join('\n');
@@ -332,7 +332,7 @@ ${cells}
 
 function integrationsComponent(name: string, c: SectionCopy): string {
   const chips = (c.bullets.length ? c.bullets : ['Slack', 'Zendesk', 'Shopify', 'WhatsApp', 'HubSpot', 'Notion']).slice(0, 8);
-  const cells = chips.map((b, i) => `          <div key={${i}} className="flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-slate-300">
+  const cells = chips.map((b, i) => `          <div key={${i}} className="flex items-center justify-center gap-2 rounded-xl border border-[color:var(--kx-border)] bg-[var(--kx-card)] px-4 py-3 text-sm text-slate-300">
             <span className="h-4 w-4 rounded bg-[linear-gradient(135deg,color-mix(in_srgb,var(--kx-accent)_50%,transparent),color-mix(in_srgb,var(--kx-accent-2)_30%,transparent))]" />{\`${esc(b)}\`}
           </div>`).join('\n');
   return `export default function ${name}() {
@@ -352,7 +352,7 @@ ${cells}
 
 function inventoryComponent(name: string, c: SectionCopy): string {
   const cars = (c.bullets.length ? c.bullets : [c.name]).slice(0, 6);
-  const cells = cars.map((b, i) => `          <div key={${i}} className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
+  const cells = cars.map((b, i) => `          <div key={${i}} className="overflow-hidden rounded-[var(--kx-radius)] border border-[color:var(--kx-border)] bg-[var(--kx-card)]">
             <div className="aspect-[16/10] bg-gradient-to-br from-white/[0.08] to-white/[0.01]" />
             <div className="p-5">
               <p className="text-[15px] font-semibold text-white">{\`${esc(b)}\`}</p>
@@ -377,14 +377,14 @@ ${cells}
 
 function financingComponent(name: string, c: SectionCopy): string {
   const badges = (c.bullets.length ? c.bullets : ['Garanti', 'Ekspertiz', 'Takas', 'Finansman']).slice(0, 4);
-  const cells = badges.map((b, i) => `          <div key={${i}} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
+  const cells = badges.map((b, i) => `          <div key={${i}} className="flex items-center gap-3 rounded-xl border border-[color:var(--kx-border)] bg-[var(--kx-card)] px-4 py-3">
             <span className="h-9 w-9 rounded-lg bg-[linear-gradient(135deg,color-mix(in_srgb,var(--kx-accent)_40%,transparent),color-mix(in_srgb,var(--kx-accent-2)_20%,transparent))]" />
             <span className="text-sm font-medium text-slate-200">{\`${esc(b)}\`}</span>
           </div>`).join('\n');
   return `export default function ${name}() {
   return (
     <section className="px-6 py-16">
-      <div className="mx-auto max-w-5xl rounded-3xl border border-white/10 bg-white/[0.02] p-8">
+      <div className="mx-auto max-w-5xl rounded-3xl border border-[color:var(--kx-border)] bg-[var(--kx-card)] p-8">
         ${c.headline ? `<h2 className="text-center text-2xl font-semibold tracking-tight text-white sm:text-3xl">{\`${esc(c.headline)}\`}</h2>` : ''}
         <div className="mt-8 grid grid-cols-2 gap-3 lg:grid-cols-4">
 ${cells}
@@ -400,9 +400,9 @@ function pricingComponent(name: string, c: SectionCopy): string {
   const tiers = (c.bullets.length ? c.bullets : ['Başlangıç', 'Pro', 'Kurumsal']).slice(0, 3);
   const cells = tiers.map((b, i) => {
     const featured = i === 1;
-    const cardCls = featured ? 'border-[color-mix(in_srgb,var(--kx-accent)_40%,transparent)] bg-[color-mix(in_srgb,var(--kx-accent)_7%,transparent)]' : 'border-white/10 bg-white/[0.03]';
+    const cardCls = featured ? 'border-[color-mix(in_srgb,var(--kx-accent)_40%,transparent)] bg-[color-mix(in_srgb,var(--kx-accent)_7%,transparent)]' : 'border-[color:var(--kx-border)] bg-[var(--kx-card)]';
     const btnCls = featured ? 'bg-[var(--kx-accent)] text-white' : 'border border-white/15 text-slate-200';
-    return `          <div key={${i}} className="rounded-2xl border p-6 ${cardCls}">
+    return `          <div key={${i}} className="rounded-[var(--kx-radius)] border p-6 ${cardCls}">
             <p className="text-sm font-medium text-slate-300">{\`${esc(b)}\`}</p>
             <div className="mt-3 text-3xl font-semibold text-white">₺${199 + i * 200}<span className="text-sm text-slate-400">/ay</span></div>
             <button className="mt-5 w-full rounded-lg ${btnCls} py-2 text-sm font-semibold">Seç</button>
@@ -447,7 +447,7 @@ ${cells}
 
 function testimonialComponent(name: string, c: SectionCopy): string {
   const quotes = (c.bullets.length ? c.bullets : [c.sub || c.name]).slice(0, 3);
-  const cells = quotes.map((b, i) => `          <blockquote key={${i}} className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+  const cells = quotes.map((b, i) => `          <blockquote key={${i}} className="rounded-[var(--kx-radius)] border border-[color:var(--kx-border)] bg-[var(--kx-card)] p-6">
             <p className="text-[15px] leading-relaxed text-slate-200">&ldquo;{\`${esc(b)}\`}&rdquo;</p>
             <div className="mt-4 flex items-center gap-3"><span className="h-8 w-8 rounded-full bg-[linear-gradient(135deg,color-mix(in_srgb,var(--kx-accent)_50%,transparent),color-mix(in_srgb,var(--kx-accent-2)_30%,transparent))]" /><span className="text-sm text-slate-400">Müşteri</span></div>
           </blockquote>`).join('\n');
@@ -468,7 +468,7 @@ ${cells}
 
 function faqComponent(name: string, c: SectionCopy): string {
   const qs = (c.bullets.length ? c.bullets : [c.name]).slice(0, 6);
-  const cells = qs.map((b, i) => `          <details key={${i}} className="group rounded-xl border border-white/10 bg-white/[0.03] p-4">
+  const cells = qs.map((b, i) => `          <details key={${i}} className="group rounded-xl border border-[color:var(--kx-border)] bg-[var(--kx-card)] p-4">
             <summary className="cursor-pointer text-[15px] font-medium text-white marker:content-['']">{\`${esc(b)}\`}</summary>
             <p className="mt-2 text-sm text-slate-400">Detaylı yanıt burada yer alır.</p>
           </details>`).join('\n');
@@ -521,7 +521,7 @@ function heroComponentFor(
 ): string {
   const b = heroCopyBits(c, brief);
   const mod = plan.primaryVisualModule;
-  const eyebrow = b.eyebrow ? `<span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-medium text-[var(--kx-accent)]"><span className="h-1.5 w-1.5 rounded-full bg-[var(--kx-accent)]" /> {\`${esc(b.eyebrow)}\`}</span>` : '';
+  const eyebrow = b.eyebrow ? `<span className="inline-flex items-center gap-2 rounded-full border border-[color:var(--kx-border)] bg-white/[0.04] px-3 py-1 text-xs font-medium text-[var(--kx-accent)]"><span className="h-1.5 w-1.5 rounded-full bg-[var(--kx-accent)]" /> {\`${esc(b.eyebrow)}\`}</span>` : '';
   const sub = (cls: string) => (b.sub ? `<p className="${cls}">{\`${esc(b.sub)}\`}</p>` : '');
   const composition = plan.heroComposition;
 
@@ -692,7 +692,7 @@ function proofStripComponent(name: string, c: SectionCopy): string {
     <section className="px-6 py-16">
       <div className="mx-auto max-w-5xl">
         ${c.headline ? `<h2 className="text-center text-2xl font-semibold tracking-tight text-white sm:text-3xl">{\`${esc(c.headline)}\`}</h2>` : ''}
-        <div className="mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/5 lg:grid-cols-4">
+        <div className="mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-[var(--kx-radius)] border border-[color:var(--kx-border)] bg-white/5 lg:grid-cols-4">
 ${cells}
         </div>
       </div>
@@ -704,7 +704,7 @@ ${cells}
 
 function dashboardDataComponent(name: string, c: SectionCopy): string {
   const items = (c.bullets.length ? c.bullets : [c.name]).slice(0, 4);
-  const cells = items.map((b, i) => `            <li key={${i}} className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-[13px] text-slate-200">{\`${esc(b)}\`}</li>`).join('\n');
+  const cells = items.map((b, i) => `            <li key={${i}} className="rounded-xl border border-[color:var(--kx-border)] bg-[var(--kx-card)] px-4 py-3 text-[13px] text-slate-200">{\`${esc(b)}\`}</li>`).join('\n');
   return `import VisualModule from './VisualModule';
 
 export default function ${name}() {
@@ -730,7 +730,7 @@ function collectionArchiveComponent(name: string, c: SectionCopy): string {
   const rows = (c.bullets.length ? c.bullets : [c.name]).slice(0, 6);
   const cells = rows.map((b, i) => `          <div key={${i}} className="group flex items-center gap-5 py-5">
             <span className="w-8 text-sm tabular-nums text-slate-500">${String(i + 1).padStart(2, '0')}</span>
-            <span className="h-12 w-16 shrink-0 rounded-md border border-white/10 bg-[linear-gradient(135deg,color-mix(in_srgb,var(--kx-accent)_22%,transparent),transparent)]" />
+            <span className="h-12 w-16 shrink-0 rounded-md border border-[color:var(--kx-border)] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--kx-accent)_22%,transparent),transparent)]" />
             <span className="flex-1 text-[15px] font-medium text-white">{\`${esc(b)}\`}</span>
             <span className="text-slate-500 transition group-hover:translate-x-1">&rarr;</span>
           </div>`).join('\n');
@@ -739,7 +739,7 @@ function collectionArchiveComponent(name: string, c: SectionCopy): string {
     <section className="px-6 py-20">
       <div className="mx-auto max-w-4xl">
         ${c.headline ? `<h2 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">{\`${esc(c.headline)}\`}</h2>` : ''}
-        <div className="mt-8 divide-y divide-white/10 border-y border-white/10">
+        <div className="mt-8 divide-y divide-white/10 border-y border-[color:var(--kx-border)]">
 ${cells}
         </div>
       </div>
@@ -850,7 +850,7 @@ type ModuleKind =
   | 'product-showcase' | 'editorial-story' | 'reservation-form' | 'timeline-process'
   | 'comparison' | 'contour-terrain';
 
-const frame = 'relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]';
+const frame = 'relative overflow-hidden rounded-[var(--kx-radius)] border border-[color:var(--kx-border)] bg-[var(--kx-card)]';
 
 function DataDashboard() {
   const bars = [58, 82, 46, 94, 70, 88];
@@ -858,13 +858,13 @@ function DataDashboard() {
     <div className={frame + ' p-4 shadow-2xl shadow-black/40'}>
       <div className="mb-3 grid grid-cols-3 gap-3">
         {['2.4k', '98%', '+37%'].map((s, i) => (
-          <div key={i} className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+          <div key={i} className="rounded-xl border border-[color:var(--kx-border)] bg-[var(--kx-card)] p-3">
             <div className="text-lg font-semibold text-white">{s}</div>
             <div className="mt-0.5 h-2 w-12 rounded-full bg-white/10" />
           </div>
         ))}
       </div>
-      <div className="flex h-24 items-end gap-2 rounded-xl border border-white/10 bg-black/20 p-3">
+      <div className="flex h-24 items-end gap-2 rounded-xl border border-[color:var(--kx-border)] bg-black/20 p-3">
         {bars.map((h, i) => (
           <span key={i} className="flex-1 rounded-t" style={{ height: h + '%', background: i % 2 ? 'var(--kx-accent-2)' : 'var(--kx-accent)', opacity: 0.9 }} />
         ))}
@@ -876,7 +876,7 @@ function DataDashboard() {
 function MembershipPass() {
   return (
     <div className={frame + ' p-5'}>
-      <div className="rounded-2xl border border-white/10 p-5" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--kx-accent) 24%, transparent), color-mix(in srgb, var(--kx-accent-2) 12%, transparent))' }}>
+      <div className="rounded-[var(--kx-radius)] border border-[color:var(--kx-border)] p-5" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--kx-accent) 24%, transparent), color-mix(in srgb, var(--kx-accent-2) 12%, transparent))' }}>
         <div className="text-[11px] uppercase tracking-widest text-white/70">Member</div>
         <div className="mt-1 text-lg font-semibold text-white">Access Pass</div>
         <div className="mt-8 flex items-end gap-[3px]">
@@ -892,7 +892,7 @@ function CatalogArchive() {
     <div className={frame + ' p-4'}>
       <div className="grid grid-cols-3 gap-2.5">
         {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="aspect-square rounded-lg border border-white/10" style={{ background: i % 3 === 0 ? 'linear-gradient(135deg, color-mix(in srgb, var(--kx-accent) 26%, transparent), transparent)' : 'linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01))' }} />
+          <div key={i} className="aspect-square rounded-lg border border-[color:var(--kx-border)]" style={{ background: i % 3 === 0 ? 'linear-gradient(135deg, color-mix(in srgb, var(--kx-accent) 26%, transparent), transparent)' : 'linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01))' }} />
         ))}
       </div>
     </div>
@@ -960,7 +960,7 @@ function TimelineProcess() {
 function Comparison() {
   return (
     <div className={frame + ' grid grid-cols-2'}>
-      <div className="aspect-[3/4] border-r border-white/10" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.01))' }} />
+      <div className="aspect-[3/4] border-r border-[color:var(--kx-border)]" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.01))' }} />
       <div className="aspect-[3/4]" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--kx-accent) 26%, transparent), color-mix(in srgb, var(--kx-accent-2) 14%, transparent))' }} />
     </div>
   );
@@ -1161,18 +1161,21 @@ ${usage}
   files.push({ path: 'src/lib/designSystem.ts', language: 'ts', content: designSystemFileContent(ds), summary: 'Strategy-derived design tokens (palette, type, radius, motion)' });
   files.push({ path: 'src/lib/layoutPlan.ts', language: 'ts', content: layoutPlanFileContent(plan), summary: `Layout plan (${plan.heroComposition} hero · ${plan.archetype})` });
   files.push(siteContentFile(items));
-  files.push(stylesFile(ds));
+  files.push(stylesFile(ds, plan));
 
   return files;
 }
 
 /** The theme + motion stylesheet — CSS custom properties come from the derived
- *  design system so a different strategy yields a different palette in code too. */
-function stylesFile(ds: WebBuildDesignSystem): SynthFile {
+ *  design system AND the visual system (surface/border/shape), so a different
+ *  strategy yields a different palette AND surface language in code too. The
+ *  `.kx-panel` utility lets generated components share the strategy's surface. */
+function stylesFile(ds: WebBuildDesignSystem, plan: WebBuildLayoutPlan): SynthFile {
+  const vt = visualSystemTokens(plan.visualSystem);
   return {
     path: 'src/styles.css',
     language: 'css',
-    summary: 'Design-system theme + subtle motion (aurora, float, reveal, grid)',
+    summary: `Design + visual system (${plan.visualSystem.background} · ${plan.visualSystem.surface} surface)`,
     content: `@tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -1181,15 +1184,24 @@ function stylesFile(ds: WebBuildDesignSystem): SynthFile {
   color-scheme: dark;
   --kx-bg: ${ds.bg};
   --kx-accent: ${ds.accent};
-  --kx-accent-2: ${ds.accent2};
-  --kx-radius: ${ds.radius};
-  /* Neutral surface tokens that read on any accent/background. */
+  --kx-accent-2: ${plan.visualSystem.accentMode === 'mono' ? ds.accent : ds.accent2};
+  /* Surface language from the strategy's visual system (panel shape + treatment). */
+  --kx-radius: ${vt.radius};
   --kx-fg: #f1f5f9;
   --kx-muted: #94a3b8;
-  --kx-border: rgba(255, 255, 255, 0.10);
-  --kx-card: rgba(255, 255, 255, 0.03);
+  --kx-border: ${vt.border};
+  --kx-card: ${vt.surfaceBg};
+  --kx-card-hover: ${vt.surfaceHover};
   --kx-glow: color-mix(in srgb, var(--kx-accent) 45%, transparent);
 }
+
+/* Shared strategy surface — components use this so the whole site is coherent. */
+.kx-panel {
+  background: var(--kx-card);
+  border: 1px solid var(--kx-border);
+  border-radius: var(--kx-radius);
+}
+.kx-panel:hover { background: var(--kx-card-hover); }
 
 html { scroll-behavior: smooth; }
 body {
@@ -1244,14 +1256,17 @@ body {
 }
 
 /**
- * The authoritative file set for a build: prefer real backend code when it
- * returned ≥2 non-trivial files, otherwise synthesize deterministically. Never
- * returns an empty list when there are sections/copy to build from.
+ * The authoritative file set for a build. The BLUEPRINT-driven synthesizer is
+ * authoritative so the All Files panel always matches what the preview renders
+ * (same Page Blueprint — hero composition, section variants, visual module,
+ * sequence, visual system): preview and files cannot disagree (Part 7). Backend
+ * `Frontend Code` is only used as a fallback if synthesis yields nothing (e.g.
+ * no parsable sections) — otherwise a uniform backend template would reintroduce
+ * the very sameness this system removes.
  */
 export function resolveBuildFiles(result: WebBuildResult): SynthFile[] {
+  const synth = synthesizeFiles(result);
+  if (synth.length > 0) return synth;
   const backend = extractFileEntries(result.sections).filter((f) => f.content && f.content.trim().length > 20);
-  if (backend.length >= 2) {
-    return backend.map((f) => ({ ...f, summary: undefined }));
-  }
-  return synthesizeFiles(result);
+  return backend.map((f) => ({ ...f, summary: undefined }));
 }

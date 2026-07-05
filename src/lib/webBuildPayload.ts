@@ -197,6 +197,7 @@ export function deriveBuildActivity(result: WebBuildResult, files?: WebBuildFile
   const readDetail = [brief.coreIdea || briefBits, brief.strategyInsight].filter(Boolean).join(' — ') || undefined;
   const planDetail = [
     layoutPlan.pageArchitecture,
+    layoutPlan.visualSystem.motif,
     brief.layoutLogic || brief.visualMetaphor,
     items.length ? items.map((s) => s.name).join(', ') : '',
   ].filter(Boolean).join(' · ') || undefined;
