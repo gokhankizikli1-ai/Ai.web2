@@ -5,7 +5,7 @@
  * real build data — we never claim files/sections that aren't in the reply.
  */
 import type { BuildSection } from '@/lib/gameBuilderApi';
-import { extractBrief, type WebBuildResult, type WebBuildBrief } from '@/lib/webBuildApi';
+import { extractBrief, type WebBuildResult, type WebBuildBrief, type WebBuildSource } from '@/lib/webBuildApi';
 import { resolveBuildFiles, parseSectionCopy, synthesizeFromCopies, type SynthFile, type SectionCopy as SynthCopy } from '@/lib/webBuildFiles';
 import { inferWebsiteBrief, fallbackSectionItems, checkQuality } from '@/lib/webBuildBrief';
 import { detectMessageLanguage } from '@/lib/locale';
@@ -82,6 +82,9 @@ export interface WebBuildPayload {
   files: WebBuildFile[];
   /** Full markdown reply of the latest build — source of truth. */
   reply: string;
+  /** Real research sources from the backend web_research pre-pass. Present only
+   *  when tools actually ran; optional so old saved builds still load. */
+  sources?: WebBuildSource[];
   activity: WebBuildActivityRow[];
   /** Conversation history — one entry per build/revision. */
   steps: WebBuildStep[];
@@ -165,7 +168,7 @@ export function summarize(result: WebBuildResult, files: WebBuildFile[]): WebBui
  * All 'done' except the save row (flipped once saved). Never claims a file
  * that isn't in `files`.
  */
-export function deriveBuildActivity(result: WebBuildResult, files?: WebBuildFile[]): WebBuildActivityRow[] {
+export function deriveBuildActivity(result: WebBuildResult, files?: WebBuildFile[], sources?: WebBuildSource[]): WebBuildActivityRow[] {
   const brief = extractBrief(result.sections);
   const items = parseSectionItems(result);
   const fileList = files || resolveFiles(result);
@@ -179,8 +182,16 @@ export function deriveBuildActivity(result: WebBuildResult, files?: WebBuildFile
 
   const rows: WebBuildActivityRow[] = [
     { id: 'read', labelKey: 'wbActRead', status: 'done', detail: readDetail },
-    { id: 'plan', labelKey: 'wbActPlan', status: 'done', detail: planDetail },
   ];
+  // HONEST research row — only when the backend actually returned real sources.
+  // Otherwise no research is claimed (the 'plan' row reads as strategy analysis).
+  if (sources && sources.length) {
+    rows.push({
+      id: 'research', labelKey: 'wbActResearch', status: 'done',
+      detail: sources.slice(0, 4).map((s) => s.title).join(' · '),
+    });
+  }
+  rows.push({ id: 'plan', labelKey: 'wbActPlan', status: 'done', detail: planDetail });
 
   // One row per file actually produced (changed files first; unchanged noted).
   const changed = fileList.filter((f) => f.status !== 'unchanged');
@@ -268,7 +279,11 @@ export function buildWebBuildPayload(
     added: changed.reduce((n, f) => n + f.added, 0),
     removed: changed.reduce((n, f) => n + f.removed, 0),
   };
-  const activity = deriveBuildActivity(result, files);
+  // Real research sources (backend web_research). Keep the first build's
+  // sources on later revisions unless a new pass returned some.
+  const sources: WebBuildSource[] | undefined =
+    (result.sources && result.sources.length ? result.sources : prev?.sources) || undefined;
+  const activity = deriveBuildActivity(result, files, sources);
   const step: WebBuildStep = {
     id: `step-${uid()}`,
     at: now,
@@ -287,6 +302,7 @@ export function buildWebBuildPayload(
     sections: result.sections,
     files,
     reply: result.reply,
+    sources,
     activity,
     steps: prev ? [...prev.steps, step] : [step],
     createdAt: prev?.createdAt || now,

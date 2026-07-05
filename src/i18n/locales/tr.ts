@@ -363,6 +363,7 @@ export const tr: Record<string, string> = {
   wbClosePanel: "Kapat",
   /* web build — real file artifacts */
   wbActRead: "İsteğiniz okunuyor",
+  wbActResearch: "Web kaynaklarıyla araştırılıyor",
   wbActPlan: "Sayfa yapısı planlanıyor",
   wbActCreatingFile: "{file} oluşturuluyor",
   wbActModifyingFile: "{file} değiştiriliyor",
