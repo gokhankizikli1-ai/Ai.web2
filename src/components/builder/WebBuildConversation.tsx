@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Monitor, FolderTree, ArrowRight, X } from 'lucide-react';
+import { Monitor, FolderTree, ArrowRight, X, Check } from 'lucide-react';
 import { useLanguageStore } from '@/stores/languageStore';
 import { useOwnerMode } from '@/hooks/useOwnerMode';
 import KorvixAvatar from '@/components/builder/KorvixAvatar';
@@ -10,6 +10,7 @@ import type {
   WebBuildStep, WebBuildFile, WebBuildSectionItem,
 } from '@/lib/webBuildPayload';
 import type { WebBuildResearch } from '@/lib/webBuildApi';
+import { deriveAgentActivity, type AgentActivityStatus } from '@/lib/webBuildAgents';
 
 /**
  * The Web Build conversation — a Kimi/Claude-style agent run per turn: the
@@ -203,11 +204,59 @@ function ResearchDebug({ research }: { research?: WebBuildResearch }) {
   );
 }
 
+/* ── Completed agent activity recap ──────────────────────────────────────
+ * After a build finishes, show one compact ✓ line per agent describing WHAT IT
+ * COMPLETED — derived from the real agent artifacts on the step (deriveAgentActivity),
+ * never fabricated. This is NOT a card/panel and NOT a static future checklist:
+ * only agents that actually ran appear, each as a single quiet line. Honest on
+ * fallback (research via strategy inference) and skip/fail. Renders nothing for
+ * old builds / kill-switched agents, so it never leaves an empty surface. */
+const ACTIVITY_ICON_COLOR: Record<AgentActivityStatus, string> = {
+  completed: '#86A08F',
+  fallback: '#94A3B8',
+  skipped: '#64748B',
+  failed: '#64748B',
+};
+
+function AgentActivityRecap({ agents }: { agents: WebBuildStep['agents'] }) {
+  const { t, lang } = useLanguageStore();
+  const activity = useMemo(() => deriveAgentActivity(agents, lang), [agents, lang]);
+  if (!activity.completed.length) return null;
+  return (
+    <div className="flex flex-col gap-1">
+      {activity.completed.map((line, idx) => {
+        const done = line.status === 'completed' || line.status === 'fallback';
+        return (
+          <motion.div
+            key={line.id}
+            initial={{ opacity: 0, y: 2 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.24, delay: Math.min(idx * 0.06, 0.4) }}
+            className="flex items-start gap-1.5 text-[12px] leading-relaxed"
+          >
+            <Check
+              className="mt-[2px] h-3.5 w-3.5 shrink-0"
+              style={{ color: ACTIVITY_ICON_COLOR[line.status], opacity: done ? 1 : 0.7 }}
+              strokeWidth={done ? 2.5 : 2}
+            />
+            <span className="min-w-0">
+              <span className="text-slate-200">{line.name}</span>
+              {done && <span className="text-[#64748B]"> {t('wbAgentCompleted')}:</span>}
+              <span className="text-[#94A3B8]">{done ? ' ' : ': '}{line.summary}</span>
+            </span>
+          </motion.div>
+        );
+      })}
+    </div>
+  );
+}
+
 /* ── One finished build/revision turn ────────────────────────────────────
- * A completed turn is a normal assistant response: the user's prompt, then the
- * result cards (Preview / All Files / Save). NO agent-run timeline / progress
- * reveal is rendered — that was a second running-state UI and is removed. The
- * owner-only research debug (after completion) is kept. */
+ * A completed turn is a normal assistant response: the user's prompt, the compact
+ * agent-activity recap (what each agent completed, from real artifacts), then the
+ * result cards (Preview / All Files / Save). The recap + cards render only on the
+ * last (current) turn — kept compact, never a giant panel. The owner-only research
+ * debug (after completion) is kept. */
 function RunTurn({ step, children }: { step: WebBuildStep; children?: ReactNode }) {
   return (
     <div className="space-y-3">
@@ -254,11 +303,14 @@ export default function WebBuildConversation({
         return (
           <RunTurn key={step.id} step={step}>
             {isLast && (
-              <div className="flex flex-col gap-2 pt-0.5">
-                <AttachmentCard icon={Monitor} title={t('wbCardPreview')} subtitle={t('wbCardPreviewSub')} actionLabel={t('wbCardOpen')} tone="accent" onClick={() => setPanel('preview')} />
-                <AttachmentCard icon={FolderTree} title={t('wbCardAllFiles')} subtitle={t('wbCardAllFilesSub')} actionLabel={t('wbCardOpen')} onClick={() => openFile(undefined)} />
-                {extraCards}
-              </div>
+              <>
+                <AgentActivityRecap agents={step.agents} />
+                <div className="flex flex-col gap-2 pt-0.5">
+                  <AttachmentCard icon={Monitor} title={t('wbCardPreview')} subtitle={t('wbCardPreviewSub')} actionLabel={t('wbCardOpen')} tone="accent" onClick={() => setPanel('preview')} />
+                  <AttachmentCard icon={FolderTree} title={t('wbCardAllFiles')} subtitle={t('wbCardAllFilesSub')} actionLabel={t('wbCardOpen')} onClick={() => openFile(undefined)} />
+                  {extraCards}
+                </div>
+              </>
             )}
           </RunTurn>
         );

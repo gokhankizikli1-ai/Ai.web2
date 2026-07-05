@@ -1941,3 +1941,161 @@ export function runComponentEngineer(
     return { agent: agentRow('component_engineer', lang, undefined) };
   }
 }
+
+/* ── Chat agent-activity model ─────────────────────────────────────────────
+ * A single, normalized model of WHAT EACH AGENT COMPLETED, derived from the REAL
+ * agent artifacts on a finished build step (step.agents). The chat renders these
+ * as compact ✓ lines. Every summary is built from real artifact FIELDS (source
+ * count, target user, pages, palette, CTA hierarchy, hero variant, component
+ * plan, …); when a field is absent the summary honestly degrades to a generic
+ * completion and never claims work that did not happen. Backward compatible: an
+ * old build with no agents yields an empty list, so nothing renders. */
+
+export type AgentActivityStatus = 'completed' | 'fallback' | 'skipped' | 'failed';
+
+export interface AgentActivityLine {
+  id: AgentId;
+  name: string;
+  /** Compact, real, human line — e.g. "used 5 sources, identified target users…". */
+  summary: string;
+  status: AgentActivityStatus;
+}
+
+export interface AgentActivity {
+  completed: AgentActivityLine[];
+}
+
+/** Oxford-style list join, localized ("a, b, and c" / "a, b ve c"). Empties dropped. */
+function joinList(lang: Lang, items: string[]): string {
+  const xs = uniq(items).filter(Boolean);
+  if (xs.length <= 1) return xs.join('');
+  const head = xs.slice(0, -1).join(', ');
+  const tail = xs[xs.length - 1];
+  return `${head}${lang === 'tr' ? ' ve ' : ', and '}${tail}`;
+}
+
+const nonEmpty = (v: unknown): boolean => Array.isArray(v) ? v.length > 0 : !!v;
+
+/** Research Agent → honest completion line from its real artifact fields. */
+function researchActivity(r: ResearchAgentArtifact, lang: Lang): string {
+  const parts = uniq([
+    r.targetUser ? L(lang, 'target users', 'hedef kullanıcılar') : '',
+    nonEmpty(r.recommendedPages) ? L(lang, 'required pages', 'gerekli sayfalar') : '',
+    nonEmpty(r.recommendedComponents) ? L(lang, 'components', 'bileşenler') : '',
+    nonEmpty(r.trustSignals) ? L(lang, 'trust signals', 'güven sinyalleri') : '',
+    nonEmpty(r.uxPriorities) ? L(lang, 'UX priorities', 'UX öncelikleri') : '',
+    (nonEmpty(r.sourceBackedInsights) || nonEmpty(r.categoryLanguage)) ? L(lang, 'research signals', 'araştırma sinyalleri') : '',
+  ]).slice(0, 4);
+  const list = joinList(lang, parts.length ? parts : [L(lang, 'a research brief', 'bir araştırma özeti')]);
+  // Source count is shown ONLY when live research really returned usable sources.
+  const didResearch = !!r.didResearch && (r.sourceCount ?? 0) > 0;
+  if (didResearch) {
+    const n = r.sourceCount ?? 0;
+    return L(lang, `used ${n} source${n === 1 ? '' : 's'}, identified ${list}`, `${n} kaynak kullanarak ${list} belirledi`);
+  }
+  return L(lang, `used strategy inference, identified ${list}`, `strateji çıkarımı kullanarak ${list} belirledi`);
+}
+
+/** UI / Art Director → completion line from its real visual-identity fields. */
+function artActivity(a: ArtDirectionArtifact, lang: Lang): string {
+  const parts = uniq([
+    a.colorSystem?.accent ? L(lang, 'palette', 'palet') : '',
+    a.typographyDirection ? L(lang, 'typography', 'tipografi') : '',
+    a.visualMood ? L(lang, 'visual mood', 'görsel atmosfer') : '',
+    a.colorPsychologyReasoning ? L(lang, 'color psychology', 'renk psikolojisi') : '',
+    nonEmpty(a.componentStyleHints) ? L(lang, 'component style rules', 'bileşen stil kuralları') : '',
+    a.responsiveDesignDirection ? L(lang, 'responsive direction', 'duyarlı yön') : '',
+  ]).slice(0, 4);
+  const list = joinList(lang, parts.length ? parts : [L(lang, 'a visual direction', 'bir görsel yön')]);
+  return L(lang, `defined ${list}`, `${list} tanımladı`);
+}
+
+/** Strategy Agent → completion line from its real conversion/trust fields. */
+function strategyActivity(s: StrategyAgentArtifact, lang: Lang): string {
+  const parts = uniq([
+    s.ctaHierarchy?.primary ? L(lang, 'CTA hierarchy', 'CTA hiyerarşisi') : '',
+    s.conversionStrategy ? L(lang, 'conversion path', 'dönüşüm yolu') : '',
+    s.trustStrategy ? L(lang, 'trust strategy', 'güven stratejisi') : '',
+    nonEmpty(s.sectionIntent) ? L(lang, 'section intent', 'bölüm amacı') : '',
+    s.positioning ? L(lang, 'positioning', 'konumlandırma') : '',
+  ]).slice(0, 4);
+  const list = joinList(lang, parts.length ? parts : [L(lang, 'the conversion strategy', 'dönüşüm stratejisi')]);
+  return L(lang, `mapped ${list}`, `${list} planladı`);
+}
+
+/** Layout Architect → completion line from its real Page Blueprint fields. */
+function layoutActivity(b: PageBlueprint, lang: Lang): string {
+  const moduleCount = uniq((b.sections || []).map((x) => x.visualModule).filter((m) => !!m && m !== '—')).length;
+  const parts = uniq([
+    b.hero?.variant ? L(lang, 'hero structure', 'hero yapısı') : '',
+    b.sectionRhythm ? L(lang, 'section rhythm', 'bölüm ritmi') : '',
+    nonEmpty(b.sections) ? L(lang, 'section order', 'bölüm sırası') : '',
+    moduleCount > 0 ? L(lang, 'visual modules', 'görsel modüller') : '',
+  ]).slice(0, 4);
+  const list = joinList(lang, parts.length ? parts : [L(lang, 'the page blueprint', 'sayfa planı')]);
+  return L(lang, `selected ${list}`, `${list} seçti`);
+}
+
+/** Component Engineer → completion line from its real component/file plan. */
+function componentActivity(c: ComponentEngineerArtifact, lang: Lang): string {
+  const comps = Array.isArray(c.componentPlan) ? c.componentPlan.length : 0;
+  const files = Array.isArray(c.fileManifest) ? c.fileManifest.length : 0;
+  const parts = uniq([
+    comps > 0 ? L(lang, `component plan (${comps} components)`, `bileşen planı (${comps} bileşen)`) : (nonEmpty(c.componentPlan) ? L(lang, 'component plan', 'bileşen planı') : ''),
+    files > 0 ? L(lang, `file manifest (${files} files)`, `dosya listesi (${files} dosya)`) : (nonEmpty(c.fileManifest) ? L(lang, 'file manifest', 'dosya listesi') : ''),
+    nonEmpty(c.appComposition) ? L(lang, 'app composition', 'uygulama kompozisyonu') : '',
+    nonEmpty(c.reusablePrimitives) ? L(lang, 'reusable primitives', 'yeniden kullanılabilir öğeler') : '',
+  ]).slice(0, 4);
+  const list = joinList(lang, parts.length ? parts : [L(lang, 'the component plan', 'bileşen planı')]);
+  return L(lang, `prepared ${list}`, `${list} hazırladı`);
+}
+
+/** Compose the real per-agent completion summary from its artifact. */
+function activitySummary(agent: WebBuildAgent, lang: Lang): string {
+  try {
+    switch (agent.id) {
+      case 'research': return researchActivity(agent.artifact as ResearchAgentArtifact, lang);
+      case 'ui_art_director': return artActivity(agent.artifact as ArtDirectionArtifact, lang);
+      case 'strategy': return strategyActivity(agent.artifact as StrategyAgentArtifact, lang);
+      case 'layout_architect': return layoutActivity(agent.artifact as PageBlueprint, lang);
+      case 'component_engineer': return componentActivity(agent.artifact as ComponentEngineerArtifact, lang);
+      default: return '';
+    }
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Normalize a finished step's real agents into the chat activity model. Every
+ * line is derived from the agent's real artifact — no fabricated claims, honest
+ * "strategy inference" / "safe defaults" wording on fallback/skip. Returns an
+ * empty list for a build with no agents (old builds, or the kill-switch), so the
+ * chat simply renders nothing rather than an empty/dead surface.
+ */
+export function deriveAgentActivity(agents: WebBuildAgent[] | undefined, lang: Lang = 'en'): AgentActivity {
+  if (!Array.isArray(agents) || !agents.length) return { completed: [] };
+  const completed: AgentActivityLine[] = [];
+  for (const agent of agents) {
+    if (!agent || !agent.id) continue;
+    let status: AgentActivityStatus;
+    let summary: string;
+    if (agent.status === 'failed') {
+      status = 'failed';
+      summary = L(lang, 'did not complete — safe defaults used', 'tamamlanamadı — güvenli varsayılanlar kullanıldı');
+    } else if (agent.status === 'skipped' || agent.status === 'pending') {
+      status = 'skipped';
+      summary = L(lang, 'skipped — safe defaults used', 'atlandı — güvenli varsayılanlar kullanıldı');
+    } else {
+      // done — real artifact-derived summary.
+      const real = activitySummary(agent, lang);
+      summary = real || (agent.summary || L(lang, 'completed', 'tamamlandı'));
+      // Research that completed via inference (no live sources) is a legitimate
+      // completion but flagged 'fallback' so its honest wording is preserved.
+      const r = agent.id === 'research' ? (agent.artifact as ResearchAgentArtifact) : undefined;
+      status = (r && !(r.didResearch && (r.sourceCount ?? 0) > 0)) ? 'fallback' : 'completed';
+    }
+    completed.push({ id: agent.id, name: agent.name, summary, status });
+  }
+  return { completed };
+}
