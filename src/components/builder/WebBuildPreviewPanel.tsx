@@ -4,6 +4,7 @@ import WebBuildPreviewDocument from '@/components/builder/WebBuildPreviewDocumen
 import { useLanguageStore } from '@/stores/languageStore';
 import { openPreviewInNewTab } from '@/lib/webBuildPreviewStash';
 import type { WebBuildSectionItem } from '@/lib/webBuildPayload';
+import type { WebBuildBrief } from '@/lib/webBuildApi';
 
 /**
  * The in-app preview drawer. Renders the REAL generated page (headline, copy,
@@ -17,7 +18,7 @@ export default function WebBuildPreviewPanel({
   sectionItems, brief, slug, runId,
 }: {
   sectionItems: WebBuildSectionItem[];
-  brief: { type?: string; audience?: string; goal?: string; style?: string };
+  brief: WebBuildBrief;
   slug?: string;
   runId?: string;
 }) {
