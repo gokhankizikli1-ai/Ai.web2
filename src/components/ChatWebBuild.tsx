@@ -46,12 +46,15 @@ interface ChatWebBuildProps {
   initialMode?: BuilderMode | null;
   /** Reopen an existing persisted Web Build session by id (sidebar click). */
   restoreRunId?: string;
-  /** Upsert this build into the REAL chat sessions list (so it survives New
-   *  Chat and lists in the sidebar). Provided by ChatDashboard's useChat. */
-  onPersistSession?: (runId: string, title: string, prompt: string) => void;
+  /** The chat session this build OWNS — converted to web_build in place so a
+   *  Website prompt keeps the chat it was written in (no duplicate session). */
+  sessionId?: string;
+  /** Convert `sessionId` into a web_build session pointing at `runId`. Provided
+   *  by ChatDashboard's useChat (markSessionWebBuild). */
+  onPersistSession?: (sessionId: string, runId: string, title: string) => void;
 }
 
-export default function ChatWebBuild({ initialPrompt, initialMode = null, restoreRunId, onPersistSession }: ChatWebBuildProps) {
+export default function ChatWebBuild({ initialPrompt, initialMode = null, restoreRunId, sessionId, onPersistSession }: ChatWebBuildProps) {
   const { t, lang } = useLanguageStore();
 
   const [input, setInput] = useState('');
@@ -75,15 +78,15 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
   useEffect(() => () => { abortRef.current?.abort(); }, []);
 
   const persist = useCallback((p: WebBuildPayload) => {
-    const id = saveWebBuildSession(p, lang);
-    if (!id) return;
-    setActiveWebBuildSession(id);
-    // Title like "Website: Peyzaj Mimarlığı". Persist into the REAL sessions
-    // list (via useChat) so it survives New Chat and lists in the sidebar.
+    const runId = saveWebBuildSession(p, lang);
+    if (!runId) return;
+    setActiveWebBuildSession(runId);
+    // Title like "Website: Peyzaj Mimarlığı". Convert the CURRENT chat session
+    // (sessionId) into this web_build in place — never a duplicate sibling.
     const label = lang === 'tr' ? 'Web Sitesi' : 'Website';
     const title = `${label}: ${deriveWebBuildTitle(p.prompt, lang)}`;
-    onPersistSession?.(id, title, p.prompt);
-  }, [lang, onPersistSession]);
+    onPersistSession?.(sessionId ?? runId, runId, title);
+  }, [lang, onPersistSession, sessionId]);
 
   const startLive = useCallback((prompt: string, kind: 'build' | 'revision') => {
     setLive({ prompt, kind });

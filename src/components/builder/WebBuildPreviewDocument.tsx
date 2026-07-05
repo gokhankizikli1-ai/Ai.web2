@@ -200,7 +200,16 @@ function Inventory({ s }: { s: S }) {
           {cars.map((b, i) => (
             <Reveal key={i} i={i}>
               <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
-                <div className="relative aspect-[16/10]"><Contours tone={i % 2 === 0 ? 'accent' : 'muted'} /></div>
+                <div className="relative aspect-[16/10]">
+                  <Contours tone={i % 2 === 0 ? 'accent' : 'muted'} />
+                  {/* Vehicle silhouette so an inventory tile clearly reads as a car */}
+                  <svg aria-hidden viewBox="0 0 220 90" className="absolute inset-0 m-auto h-[62%] w-[82%]" style={{ opacity: 0.9 }}>
+                    <path d="M12 62 L34 40 Q42 32 56 31 L128 31 Q150 31 168 46 L196 52 Q208 54 208 64 L208 66 Q208 70 202 70 L18 70 Q12 70 12 66 Z" fill="rgba(255,255,255,0.10)" stroke="var(--acc)" strokeWidth="1.5" />
+                    <circle cx="62" cy="70" r="11" fill="#0b0d12" stroke="var(--acc)" strokeWidth="2.5" />
+                    <circle cx="164" cy="70" r="11" fill="#0b0d12" stroke="var(--acc)" strokeWidth="2.5" />
+                    <path d="M56 33 L120 33 L150 45 L60 45 Z" fill="rgba(255,255,255,0.06)" />
+                  </svg>
+                </div>
                 <div className="p-5">
                   <p className="text-[15px] font-semibold text-white">{b}</p>
                   <div className="mt-2 flex items-center justify-between text-xs text-slate-400"><span>2023 · Otomatik · Benzin</span><span className="font-semibold text-white">₺{850 + i * 120}.000</span></div>

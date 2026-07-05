@@ -609,33 +609,26 @@ export function useChat() {
   }, [currentTab]);
 
   /**
-   * Upsert an embedded Web Build session into the REAL sessions list (React
-   * state → persisted via saveSessions). This is the fix for the "old build
-   * disappears after New Chat" bug: a prior version wrote the web_build entry
-   * straight to localStorage, which the next saveSessions(sessions) clobbered.
-   * Keeping it in `sessions` means it survives New Chat, shows in the sidebar
-   * (even with no chat messages), and bumps updatedAt for correct ordering.
-   * The actual build payload/preview/files live in the separate webBuild store,
-   * keyed by `runId` (this entry just points at it via webBuildRunId).
+   * Convert an EXISTING chat session into a Web Build session in place — so a
+   * "Website" prompt started from the current chat OWNS that chat instead of
+   * spawning a duplicate. Sets mode/webBuildRunId/title and bumps updatedAt.
+   * The build payload/preview/files live in the separate webBuild store keyed
+   * by `runId`; this session just points at it via webBuildRunId. If the target
+   * session vanished (edge), it's recreated keyed by sessionId so nothing is
+   * lost. Survives New Chat + lists in the sidebar (persisted via saveSessions).
    */
-  const upsertWebBuildSession = useCallback((runId: string, title: string, prompt: string) => {
-    if (!runId) return;
+  const markSessionWebBuild = useCallback((sessionId: string, runId: string, title: string) => {
+    if (!sessionId || !runId) return;
     const now = new Date();
     setSessions((prev) => {
-      const existing = prev.find((s) => s.id === runId);
-      if (existing) {
-        return prev.map((s) => s.id === runId
+      if (prev.some((s) => s.id === sessionId)) {
+        return prev.map((s) => s.id === sessionId
           ? { ...s, title: title || s.title, mode: 'web_build' as const, webBuildRunId: runId, updatedAt: now }
           : s);
       }
       const entry: ChatSession = {
-        id: runId,
-        title: title || 'Website',
-        messages: prompt ? [{ id: `${runId}-u`, role: 'user' as const, content: prompt, timestamp: now }] : [],
-        updatedAt: now,
-        folder: 'none',
-        mode: 'web_build',
-        webBuildRunId: runId,
+        id: sessionId, title: title || 'Website', messages: [], updatedAt: now,
+        folder: 'none', mode: 'web_build', webBuildRunId: runId,
       };
       return [entry, ...prev];
     });
@@ -1302,7 +1295,7 @@ export function useChat() {
     toolActivity,            // Phase 10 fix — current tool run, null when idle
     createNewChat,
     selectSession,
-    upsertWebBuildSession,
+    markSessionWebBuild,
     deleteSession,
     insertSystemMessage,
     sendMessage,
