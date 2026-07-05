@@ -24,19 +24,12 @@ import type { WebBuildResearch } from '@/lib/webBuildApi';
 
 /* ── Live run shown WHILE the backend call is in flight (agents running) ─ */
 function LivePhases({ prompt, kind }: { prompt: string; kind: 'build' | 'revision' }) {
+  // The agent rows render INLINE directly under the prompt — no card, no border,
+  // no rounded panel, no avatar orb. Just lightweight rows in the conversation.
   return (
-    <div className="space-y-3">
+    <div className="space-y-2.5">
       <UserMessage text={prompt} />
-      <AssistantMessage active>
-        {/* The agent timeline sits in ONE compact card directly under the prompt —
-            a normal build-response card, not agent rows floating in a tall empty
-            column. Subtle border/background, reasonable width and padding keep it
-            calm and premium. No loading paragraph, no scratch text — the named
-            agent rows (Research → … → Preview) are the whole content. */}
-        <div className="w-full max-w-md rounded-2xl border border-white/[0.07] bg-white/[0.02] px-4 py-3.5">
-          <WebBuildLiveProgress kind={kind} />
-        </div>
-      </AssistantMessage>
+      <WebBuildLiveProgress kind={kind} />
     </div>
   );
 }
