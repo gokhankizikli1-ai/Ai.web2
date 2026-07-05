@@ -523,6 +523,9 @@ export function useChat() {
     .filter((s) => {
       // Always include the active session
       if (s.id === activeSessionId) return true;
+      // Web Build sessions are real history even with no chat messages —
+      // their build lives in the webBuild store, keyed by webBuildRunId.
+      if (s.mode === 'web_build' && s.webBuildRunId) return true;
       // Include sessions with actual messages (real conversations)
       if (s.messages.length > 0) return true;
       // Exclude empty "New X" auto-created sessions
@@ -604,6 +607,39 @@ export function useChat() {
     setError(null);
     setIsLoading(false);
   }, [currentTab]);
+
+  /**
+   * Upsert an embedded Web Build session into the REAL sessions list (React
+   * state → persisted via saveSessions). This is the fix for the "old build
+   * disappears after New Chat" bug: a prior version wrote the web_build entry
+   * straight to localStorage, which the next saveSessions(sessions) clobbered.
+   * Keeping it in `sessions` means it survives New Chat, shows in the sidebar
+   * (even with no chat messages), and bumps updatedAt for correct ordering.
+   * The actual build payload/preview/files live in the separate webBuild store,
+   * keyed by `runId` (this entry just points at it via webBuildRunId).
+   */
+  const upsertWebBuildSession = useCallback((runId: string, title: string, prompt: string) => {
+    if (!runId) return;
+    const now = new Date();
+    setSessions((prev) => {
+      const existing = prev.find((s) => s.id === runId);
+      if (existing) {
+        return prev.map((s) => s.id === runId
+          ? { ...s, title: title || s.title, mode: 'web_build' as const, webBuildRunId: runId, updatedAt: now }
+          : s);
+      }
+      const entry: ChatSession = {
+        id: runId,
+        title: title || 'Website',
+        messages: prompt ? [{ id: `${runId}-u`, role: 'user' as const, content: prompt, timestamp: now }] : [],
+        updatedAt: now,
+        folder: 'none',
+        mode: 'web_build',
+        webBuildRunId: runId,
+      };
+      return [entry, ...prev];
+    });
+  }, []);
 
   /**
    * Append an assistant-role message to the active session. Used by
@@ -1266,6 +1302,7 @@ export function useChat() {
     toolActivity,            // Phase 10 fix — current tool run, null when idle
     createNewChat,
     selectSession,
+    upsertWebBuildSession,
     deleteSession,
     insertSystemMessage,
     sendMessage,

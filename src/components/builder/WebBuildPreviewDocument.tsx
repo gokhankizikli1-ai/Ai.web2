@@ -1,6 +1,7 @@
-import { type ReactElement } from 'react';
+import { type ReactElement, type CSSProperties } from 'react';
 import { motion } from 'framer-motion';
 import { sectionKind, type SectionKind } from '@/lib/webBuildFiles';
+import { designTokensForBrief } from '@/lib/webBuildBrief';
 import type { WebBuildSectionItem } from '@/lib/webBuildPayload';
 
 /**
@@ -35,7 +36,7 @@ const Reveal = ({ children, i = 0 }: { children: React.ReactNode; i?: number }) 
 );
 
 const H2 = ({ children }: { children: React.ReactNode }) => (
-  <h2 className="text-center text-2xl font-semibold tracking-tight text-white sm:text-3xl">{children}</h2>
+  <h2 className="text-center text-2xl font-semibold text-white sm:text-3xl" style={{ fontFamily: 'var(--hf)', letterSpacing: 'var(--tr)' }}>{children}</h2>
 );
 
 function Hero({ s, brief }: { s: S; brief: Brief }) {
@@ -44,19 +45,19 @@ function Hero({ s, brief }: { s: S; brief: Brief }) {
   return (
     <section className="relative isolate overflow-hidden">
       <div aria-hidden className="absolute inset-0" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.045) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.045) 1px,transparent 1px)', backgroundSize: '44px 44px', WebkitMaskImage: 'radial-gradient(ellipse at center,#000 40%,transparent 75%)', maskImage: 'radial-gradient(ellipse at center,#000 40%,transparent 75%)' }} />
-      {/* Soft spotlight behind the headline for depth */}
-      <div aria-hidden className="pointer-events-none absolute left-1/2 top-0 h-[36rem] w-[52rem] -translate-x-1/2" style={{ background: 'radial-gradient(ellipse at center, rgba(99,102,241,0.16), transparent 68%)' }} />
-      <Orb color="#6366f1" style={{ top: '-6rem', left: '-4rem', width: '28rem', height: '28rem' }} />
-      <Orb color="#22d3ee" style={{ top: '3rem', right: '-6rem', width: '24rem', height: '24rem' }} delay={-6} />
-      <Orb color="#a855f7" style={{ bottom: '-10rem', left: '30%', width: '22rem', height: '22rem' }} delay={-11} />
+      {/* Soft spotlight behind the headline for depth (industry accent) */}
+      <div aria-hidden className="pointer-events-none absolute left-1/2 top-0 h-[36rem] w-[52rem] -translate-x-1/2" style={{ background: 'radial-gradient(ellipse at center, color-mix(in srgb, var(--acc) 22%, transparent), transparent 68%)' }} />
+      <Orb color="var(--acc)" style={{ top: '-6rem', left: '-4rem', width: '28rem', height: '28rem' }} />
+      <Orb color="var(--acc2)" style={{ top: '3rem', right: '-6rem', width: '24rem', height: '24rem' }} delay={-6} />
+      <Orb color="var(--acc)" style={{ bottom: '-10rem', left: '30%', width: '22rem', height: '22rem' }} delay={-11} />
       {/* Seam that blends the hero into the first content section */}
-      <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-b from-transparent to-[#05070d]" />
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-b from-transparent to-black/50" />
       <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }} className="relative mx-auto max-w-3xl px-6 py-24 text-center sm:py-28">
-        {eyebrow && <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] font-medium text-indigo-200"><span className="h-1.5 w-1.5 rounded-full bg-indigo-400" />{eyebrow}</span>}
-        <h1 className="mt-5 text-3xl font-semibold tracking-tight text-white sm:text-5xl">{title}</h1>
+        {eyebrow && <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] font-medium text-white/80"><span className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--acc)' }} />{eyebrow}</span>}
+        <h1 className="mt-5 text-3xl font-semibold text-white sm:text-5xl" style={{ fontFamily: 'var(--hf)', letterSpacing: 'var(--tr)' }}>{title}</h1>
         {(s.sub || brief.goal) && <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-slate-300 sm:text-lg">{s.sub || brief.goal}</p>}
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          {s.cta && <span className="rounded-xl bg-indigo-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30">{s.cta}</span>}
+          {s.cta && <span className="rounded-xl px-6 py-3 text-sm font-semibold text-white shadow-lg" style={{ background: 'var(--acc)', boxShadow: '0 10px 30px -10px var(--acc)' }}>{s.cta}</span>}
           {s.bullets?.[1] && <span className="rounded-xl border border-white/15 px-6 py-3 text-sm font-medium text-slate-200">{s.bullets[1]}</span>}
         </div>
         {s.bullets?.[2] && <p className="mt-6 text-xs text-slate-400">{s.bullets[2]}</p>}
@@ -75,8 +76,8 @@ function Gallery({ s }: { s: S }) {
           {tiles.map((b, i) => (
             <Reveal key={i} i={i}>
               <figure className={`group relative overflow-hidden rounded-2xl border border-white/10 ${i % 5 === 0 ? 'sm:col-span-2' : ''}`}>
-                <div className="aspect-[4/3] w-full bg-gradient-to-br from-white/[0.07] to-white/[0.01] transition duration-500 group-hover:scale-[1.03]" />
-                <figcaption className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-3 text-sm font-medium text-white">{b}</figcaption>
+                <div className="relative aspect-[4/3] w-full transition duration-500 group-hover:scale-[1.04]"><Contours tone={i % 3 === 0 ? 'accent' : 'muted'} /></div>
+                <figcaption className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/70 to-transparent p-3 text-sm font-medium text-white">{b}</figcaption>
               </figure>
             </Reveal>
           ))}
@@ -86,14 +87,32 @@ function Gallery({ s }: { s: S }) {
   );
 }
 
+/** A reusable, intentional visual composition (never an empty block) —
+ *  layered topographic contour lines + a soft accent wash. */
+function Contours({ tone = 'muted' }: { tone?: 'muted' | 'accent' }) {
+  const stroke = tone === 'accent' ? 'var(--acc)' : 'rgba(255,255,255,0.14)';
+  const wash = tone === 'accent'
+    ? 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 26%, transparent), color-mix(in srgb, var(--acc2) 14%, transparent))'
+    : 'linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.01))';
+  return (
+    <div className="absolute inset-0" style={{ background: wash }}>
+      <svg aria-hidden viewBox="0 0 400 300" preserveAspectRatio="none" className="h-full w-full" style={{ opacity: 0.5 }}>
+        {Array.from({ length: 7 }).map((_, i) => (
+          <path key={i} d={`M0 ${40 + i * 34} C 110 ${10 + i * 34}, 290 ${90 + i * 34}, 400 ${44 + i * 34}`} fill="none" stroke={stroke} strokeWidth="1" />
+        ))}
+      </svg>
+    </div>
+  );
+}
+
 function BeforeAfter({ s }: { s: S }) {
   return (
     <section className="px-6 py-16">
       <div className="mx-auto max-w-5xl">
         <H2>{heading(s)}</H2>
         <div className="mt-8 grid gap-5 sm:grid-cols-2">
-          <div className="relative overflow-hidden rounded-2xl border border-white/10"><span className="absolute left-3 top-3 rounded-full bg-black/50 px-2.5 py-1 text-xs text-slate-300">Öncesi</span><div className="aspect-[4/3] bg-white/[0.03]" /></div>
-          <div className="relative overflow-hidden rounded-2xl border border-indigo-400/30 ring-1 ring-indigo-400/20"><span className="absolute left-3 top-3 rounded-full bg-indigo-500 px-2.5 py-1 text-xs text-white">Sonrası</span><div className="aspect-[4/3] bg-gradient-to-br from-indigo-500/20 to-cyan-400/10" /></div>
+          <div className="relative overflow-hidden rounded-2xl border border-white/10"><span className="absolute left-3 top-3 z-10 rounded-full bg-black/50 px-2.5 py-1 text-xs text-slate-300">Öncesi</span><div className="relative aspect-[4/3]"><Contours tone="muted" /></div></div>
+          <div className="relative overflow-hidden rounded-2xl border ring-1" style={{ borderColor: 'color-mix(in srgb, var(--acc) 40%, transparent)' }}><span className="absolute left-3 top-3 z-10 rounded-full px-2.5 py-1 text-xs text-white" style={{ background: 'var(--acc)' }}>Sonrası</span><div className="relative aspect-[4/3]"><Contours tone="accent" /></div></div>
         </div>
       </div>
     </section>
@@ -181,7 +200,7 @@ function Inventory({ s }: { s: S }) {
           {cars.map((b, i) => (
             <Reveal key={i} i={i}>
               <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]">
-                <div className="aspect-[16/10] bg-gradient-to-br from-white/[0.08] to-white/[0.01]" />
+                <div className="relative aspect-[16/10]"><Contours tone={i % 2 === 0 ? 'accent' : 'muted'} /></div>
                 <div className="p-5">
                   <p className="text-[15px] font-semibold text-white">{b}</p>
                   <div className="mt-2 flex items-center justify-between text-xs text-slate-400"><span>2023 · Otomatik · Benzin</span><span className="font-semibold text-white">₺{850 + i * 120}.000</span></div>
@@ -299,18 +318,18 @@ function Cta({ s }: { s: S }) {
   const appt = /contact|book|appointment|randevu|form|reservation|rezervasyon/.test(`${s.id} ${s.name}`.toLowerCase());
   return (
     <section id="contact" className="relative isolate overflow-hidden px-6 py-20">
-      <Orb color="#6366f1" style={{ bottom: '-8rem', left: '50%', width: '32rem', height: '18rem', transform: 'translateX(-50%)' }} />
+      <Orb color="var(--acc)" style={{ bottom: '-8rem', left: '50%', width: '32rem', height: '18rem', transform: 'translateX(-50%)' }} />
       <div className="mx-auto max-w-2xl rounded-3xl border border-white/10 bg-white/[0.03] p-10 text-center backdrop-blur">
-        <h2 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">{heading(s)}</h2>
+        <h2 className="text-2xl font-semibold text-white sm:text-3xl" style={{ fontFamily: 'var(--hf)', letterSpacing: 'var(--tr)' }}>{heading(s)}</h2>
         {s.sub && <p className="mt-3 text-slate-300">{s.sub}</p>}
         {appt ? (
           <div className="mx-auto mt-7 max-w-sm space-y-3 text-left">
             <div className="h-11 rounded-lg border border-white/10 bg-white/[0.02]" />
             <div className="h-11 rounded-lg border border-white/10 bg-white/[0.02]" />
-            <div className="flex h-11 items-center justify-center rounded-lg bg-indigo-500 text-sm font-semibold text-white">{s.cta || heading(s)}</div>
+            <div className="flex h-11 items-center justify-center rounded-lg text-sm font-semibold text-white" style={{ background: 'var(--acc)' }}>{s.cta || heading(s)}</div>
           </div>
         ) : (
-          s.cta && <span className="mt-6 inline-block rounded-xl bg-indigo-500 px-7 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30">{s.cta}</span>
+          s.cta && <span className="mt-6 inline-block rounded-xl px-7 py-3 text-sm font-semibold text-white shadow-lg" style={{ background: 'var(--acc)', boxShadow: '0 10px 30px -10px var(--acc)' }}>{s.cta}</span>
         )}
       </div>
     </section>
@@ -354,8 +373,21 @@ export default function WebBuildPreviewDocument({
   sectionItems: WebBuildSectionItem[];
   brief: Brief;
 }) {
+  // Industry design system → CSS vars consumed by the sections below, so a
+  // landscaping studio, a SaaS product and a dealership read differently
+  // (typography personality, palette, rhythm) — not one universal template.
+  const ds = designTokensForBrief(brief);
+  const rootStyle = {
+    background: ds.bg,
+    fontFamily: ds.bodyFont,
+    '--acc': ds.accent,
+    '--acc2': ds.accent2,
+    '--hf': ds.headingFont,
+    '--tr': ds.tracking,
+    '--rad': ds.radius,
+  } as CSSProperties;
   return (
-    <div className="bg-[#05070d] font-sans text-slate-200 antialiased">
+    <div className="text-slate-200 antialiased" style={rootStyle}>
       {sectionItems.map((s) => {
         const Render = RENDERERS[sectionKind(s.id, s.name)] || RENDERERS.generic;
         return <Render key={s.id} s={s} brief={brief} />;

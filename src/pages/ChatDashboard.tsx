@@ -133,7 +133,7 @@ export default function ChatDashboard() {
   const {
     activeSession, activeSessionId, error, isLoading,
     aiMode, searchQuery, filteredSessions, pinnedMessages, inputText, currentTab,
-    createNewChat, selectSession, deleteSession,
+    createNewChat, selectSession, deleteSession, upsertWebBuildSession,
     toolActivity,
     sendMessage, retry, togglePin,
     setAiMode, setSearchQuery, setInputText, switchTab,
@@ -583,6 +583,7 @@ export default function ChatDashboard() {
                 initialPrompt={embeddedBuild.prompt}
                 initialMode={embeddedBuild.mode ?? null}
                 restoreRunId={embeddedBuild.runId}
+                onPersistSession={upsertWebBuildSession}
               />
             ) : renderWorkspace()}
           </div>
