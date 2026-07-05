@@ -205,11 +205,40 @@ function researchAgentDetails(r: ResearchAgentArtifact): string[] {
     d.push(`Fallback: ${r.fallbackReason}`);
   }
   if (angles.length) d.push(`Angles: ${angles.join(' · ')}`);
-  if (insights.length) d.push(`Insights: ${insights.join(' · ')}`);
+
+  // ── Website Research Brief — the practical build intelligence sections ──
+  const tu = r.targetUser;
+  if (tu) {
+    const tuBits = [tu.role, tu.devicePreference, tu.knowledgeLevel, tu.buyingMotivation].filter(Boolean);
+    if (tuBits.length) d.push(`Target user: ${tuBits.join(' · ')}`);
+    const pains = asArr(tu.mainPainPoints);
+    if (pains.length) d.push(`Pain points: ${pains.slice(0, 3).join(' · ')}`);
+  }
+  const pages = Array.isArray(r.recommendedPages) ? r.recommendedPages : [];
+  if (pages.length) {
+    d.push(`Required pages: ${pages.slice(0, 8).map((p) => `${p.name}${p.priority === 'must-have' ? '*' : ''}`).join(', ')}`);
+  }
+  const comps = Array.isArray(r.recommendedComponents) ? r.recommendedComponents : [];
+  if (comps.length) {
+    d.push(`Required components: ${comps.slice(0, 10).map((c) => `${c.name}${c.priority === 'must-have' ? '*' : ''}`).join(', ')}`);
+  }
+  const vs = r.visualStyleRecommendation;
+  if (vs) d.push(`Visual style: ${[vs.styleType, vs.imageryType].filter(Boolean).join(' · ')} (${vs.premiumLevel})`);
+  const cp = r.colorPsychology;
+  if (cp) {
+    d.push(`Color psychology: ${cp.primaryMood} — ${asArr(cp.recommendedPalette).slice(0, 5).join(', ')}`);
+    const avoidC = asArr(cp.avoidColors);
+    if (avoidC.length) d.push(`Avoid colors: ${avoidC.slice(0, 3).join(', ')}`);
+  }
+  const ux = Array.isArray(r.uxPriorities) ? r.uxPriorities : [];
+  if (ux.length) d.push(`UX priorities: ${ux.slice(0, 4).map((u) => u.priority).join(' · ')}`);
+
+  if (insights.length) d.push(`Key insights: ${insights.join(' · ')}`);
   if (category.length) d.push(`Category language: ${category.slice(0, 5).join(', ')}`);
   if (conversion.length) d.push(`Conversion: ${conversion.join(' · ')}`);
   if (trust.length) d.push(`Trust signals: ${trust.join(' · ')}`);
   if (risks.length) d.push(`Risks to avoid: ${risks.slice(0, 2).join(' · ')}`);
+  // Real sources only — never shown when research did not actually run.
   if (r.didResearch && sources.length) d.push(...sources.slice(0, 6).map((s) => `${s.title} — ${s.url}`));
   return d;
 }
