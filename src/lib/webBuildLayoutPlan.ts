@@ -80,6 +80,40 @@ export type TrustPlacement = 'hero-proof' | 'strip-below-hero' | 'inline-section
 export type RhythmPattern = 'even' | 'alternating' | 'editorial' | 'staggered';
 export type MotionPattern = 'minimal' | 'reveal' | 'parallax' | 'kinetic';
 
+/* ── Visual system (the missing layer) ────────────────────────────────────
+ * Composition (hero/section variants) already varied, but every build shared
+ * ONE visual language: aurora+grid background, glass cards, centered headings.
+ * The visual system makes the *look* strategy-driven too, so different ideas no
+ * longer just rearrange the same dark panels. All values are dark-safe so no
+ * contrast regressions; the difference is in construction, surface and rhythm. */
+
+/** How the page/hero backdrop is constructed (not decoration — it sets the
+ *  whole first impression). */
+export type BackgroundMotif =
+  | 'aurora-grid' | 'blueprint' | 'mesh-duotone' | 'spotlight' | 'editorial-rules'
+  | 'dot-matrix' | 'diagonal-split' | 'flat-void' | 'gradient-veil' | 'terrain-lines';
+
+/** The dominant surface treatment for every card/panel/module frame. */
+export type SurfaceStyle = 'glass' | 'solid' | 'outline' | 'elevated' | 'flat';
+
+/** Corner language for panels. */
+export type PanelShape = 'rounded' | 'soft' | 'sharp';
+
+/** How hard the accent is used (glows vs mono line-work). */
+export type AccentMode = 'vivid' | 'duotone' | 'mono';
+
+export type HeadingAlign = 'left' | 'center';
+
+export interface VisualSystem {
+  background: BackgroundMotif;
+  surface: SurfaceStyle;
+  panelShape: PanelShape;
+  accentMode: AccentMode;
+  headingAlign: HeadingAlign;
+  /** Human, real description of the visual metaphor for the timeline. */
+  motif: string;
+}
+
 export interface PlanSection {
   id: string;
   name: string;
@@ -108,6 +142,8 @@ export interface WebBuildLayoutPlan {
   ctaPlacement: CTAPlacement;
   trustPlacement: TrustPlacement;
   motionPattern: MotionPattern;
+  /** The strategy-driven visual language (backdrop, surface, accent, heading). */
+  visualSystem: VisualSystem;
   /** Component names planned for the generated project. */
   componentPlan: string[];
   /** File paths planned for the generated project. */
@@ -146,6 +182,34 @@ const BLUEPRINT: Record<LayoutArchetype, Blueprint> = {
   technical:        { hero: 'dashboard-product',       module: 'data-dashboard',   nav: 'split',         cta: 'hero-inline',      trust: 'strip-below-hero', rhythm: 'staggered' },
   standard:         { hero: 'split-editorial',         module: 'product-showcase', nav: 'standard',      cta: 'hero-inline',      trust: 'strip-below-hero', rhythm: 'alternating' },
 };
+
+/** Archetype → visual language. Driven by the same strategy-derived archetype,
+ *  so a dashboard reads as a technical blueprint, an editorial brand as ruled
+ *  paper, a membership as a spotlit elevated pass — not all as glass-on-aurora. */
+const VISUAL_BLUEPRINT: Record<LayoutArchetype, VisualSystem> = {
+  editorial:        { background: 'editorial-rules', surface: 'flat',     panelShape: 'sharp',   accentMode: 'mono',    headingAlign: 'left',   motif: 'ruled editorial paper' },
+  dashboard:        { background: 'blueprint',       surface: 'outline',  panelShape: 'soft',    accentMode: 'vivid',   headingAlign: 'left',   motif: 'technical blueprint grid' },
+  marketplace:      { background: 'gradient-veil',   surface: 'solid',    panelShape: 'rounded', accentMode: 'duotone', headingAlign: 'center', motif: 'retail gradient veil' },
+  membership:       { background: 'spotlight',       surface: 'elevated', panelShape: 'rounded', accentMode: 'vivid',   headingAlign: 'center', motif: 'spotlit membership stage' },
+  hospitality:      { background: 'gradient-veil',   surface: 'glass',    panelShape: 'soft',    accentMode: 'duotone', headingAlign: 'center', motif: 'warm ambient veil' },
+  'data-platform':  { background: 'dot-matrix',      surface: 'outline',  panelShape: 'sharp',   accentMode: 'vivid',   headingAlign: 'left',   motif: 'data dot-matrix field' },
+  archive:          { background: 'editorial-rules', surface: 'outline',  panelShape: 'sharp',   accentMode: 'mono',    headingAlign: 'left',   motif: 'museum archive index' },
+  'luxury-service': { background: 'spotlight',       surface: 'flat',     panelShape: 'soft',    accentMode: 'mono',    headingAlign: 'center', motif: 'quiet luxury spotlight' },
+  community:        { background: 'mesh-duotone',    surface: 'solid',    panelShape: 'rounded', accentMode: 'duotone', headingAlign: 'left',   motif: 'connected duotone mesh' },
+  event:            { background: 'diagonal-split',  surface: 'elevated', panelShape: 'soft',    accentMode: 'vivid',   headingAlign: 'center', motif: 'kinetic diagonal energy' },
+  portfolio:        { background: 'flat-void',       surface: 'flat',     panelShape: 'sharp',   accentMode: 'mono',    headingAlign: 'left',   motif: 'gallery negative space' },
+  technical:        { background: 'blueprint',       surface: 'outline',  panelShape: 'sharp',   accentMode: 'vivid',   headingAlign: 'left',   motif: 'engineering schematic' },
+  standard:         { background: 'aurora-grid',     surface: 'glass',    panelShape: 'rounded', accentMode: 'duotone', headingAlign: 'center', motif: 'soft aurora grid' },
+};
+
+/** Rotations for the anti-sameness guard — deliberately EXCLUDE the generic
+ *  aurora-grid / glass defaults so a corrected plan never reads as the template. */
+const BG_ROTATION: BackgroundMotif[] = [
+  'blueprint', 'mesh-duotone', 'spotlight', 'editorial-rules', 'dot-matrix', 'diagonal-split', 'gradient-veil',
+];
+const SURFACE_ROTATION: SurfaceStyle[] = ['outline', 'solid', 'elevated', 'flat'];
+const SHAPE_ROTATION: PanelShape[] = ['soft', 'sharp', 'rounded'];
+const ACCENT_ROTATION: AccentMode[] = ['vivid', 'mono', 'duotone'];
 
 /** The primary visual module a specific section KIND naturally hosts, used to
  *  populate secondary modules from what the site actually contains. */
@@ -291,6 +355,7 @@ export function deriveLayoutPlan(
     ctaPlacement: bp.cta,
     trustPlacement: bp.trust,
     motionPattern,
+    visualSystem: VISUAL_BLUEPRINT[arch] || VISUAL_BLUEPRINT.standard,
     componentPlan: resolved.map((s) => pascal(s.id)),
     filePlan: [],
     diversityCorrected: false,
@@ -314,13 +379,21 @@ function enforceDiversity(plan: WebBuildLayoutPlan, brief: WebBuildBrief): WebBu
     .map((s) => s.variant);
   const distinctContent = new Set(contentVariants).size;
 
+  // Distinct section variants across the WHOLE page (Part 8: force ≥3 when the
+  // page is large enough to carry them).
+  const nonHero = plan.sections.filter((s) => s.kind !== 'hero');
+  const distinctAll = new Set(nonHero.map((s) => s.variant)).size;
+  const vs = plan.visualSystem;
+
   const tooGeneric =
     // A weak strategy resolves to the neutral 'standard' archetype — without a
-    // correction every such idea would share one hero + module, which is just a
-    // new flavor of sameness. Diversify these by a hash of the idea instead.
+    // correction every such idea would share one hero + module + visual system,
+    // which is just a new flavor of sameness. Diversify by a hash of the idea.
     (plan.archetype === 'standard')
     || (plan.heroComposition === 'centered')
     || (plan.primaryVisualModule === 'contour-terrain')
+    || (vs.background === 'aurora-grid' && vs.surface === 'glass')
+    || (nonHero.length >= 4 && distinctAll < 3)
     || (plan.rhythm === 'even' && distinctContent <= 1)
     || (contentVariants.length >= 2 && distinctContent === 1 && contentVariants[0] === 'feature-grid');
 
@@ -334,8 +407,19 @@ function enforceDiversity(plan: WebBuildLayoutPlan, brief: WebBuildBrief): WebBu
   const module = MODULE_ROTATION[(seed >> 3) % MODULE_ROTATION.length];
   const rhythm: RhythmPattern = (seed >> 5) % 2 === 0 ? 'alternating' : 'staggered';
 
-  // Re-vary content sections so the same content is not one repeated block.
-  const wheel: SectionVariant[] = ['editorial-split', 'proof-strip', 'showcase', 'feature-grid'];
+  // Force a strategy-specific, non-default visual system so the LOOK differs too.
+  const visualSystem: VisualSystem = {
+    background: BG_ROTATION[(seed >> 2) % BG_ROTATION.length],
+    surface: SURFACE_ROTATION[(seed >> 6) % SURFACE_ROTATION.length],
+    panelShape: SHAPE_ROTATION[(seed >> 9) % SHAPE_ROTATION.length],
+    accentMode: ACCENT_ROTATION[(seed >> 11) % ACCENT_ROTATION.length],
+    headingAlign: (seed >> 13) % 2 === 0 ? 'left' : 'center',
+    motif: vs.motif,
+  };
+
+  // Re-vary content sections so the same content is not one repeated block, and
+  // rotate through ≥3 distinct variants (Part 8).
+  const wheel: SectionVariant[] = ['editorial-split', 'proof-strip', 'showcase', 'feature-grid', 'dashboard-data'];
   let ci = 0;
   const sections = plan.sections.map((s) => {
     if (s.kind !== 'features' && s.kind !== 'generic') return s;
@@ -348,10 +432,48 @@ function enforceDiversity(plan: WebBuildLayoutPlan, brief: WebBuildBrief): WebBu
     heroComposition: hero,
     primaryVisualModule: module,
     rhythm,
+    visualSystem,
     sections,
     sectionVariants: Object.fromEntries(sections.map((s) => [s.id, s.variant])),
     pageArchitecture: describeArchitecture(hero, plan.archetype, sections),
     diversityCorrected: true,
+  };
+}
+
+/* ── Visual system → concrete tokens (shared by preview + generated CSS) ── */
+
+/** Surface treatment → CSS values (dark-safe). */
+const SURFACE_TOKENS: Record<SurfaceStyle, { bg: string; bgHover: string; border: string }> = {
+  glass:    { bg: 'rgba(255,255,255,0.03)', bgHover: 'rgba(255,255,255,0.06)', border: 'rgba(255,255,255,0.10)' },
+  solid:    { bg: 'rgba(255,255,255,0.06)', bgHover: 'rgba(255,255,255,0.09)', border: 'rgba(255,255,255,0.08)' },
+  outline:  { bg: 'rgba(255,255,255,0.00)', bgHover: 'rgba(255,255,255,0.03)', border: 'rgba(255,255,255,0.18)' },
+  elevated: { bg: 'rgba(255,255,255,0.04)', bgHover: 'rgba(255,255,255,0.07)', border: 'rgba(255,255,255,0.10)' },
+  flat:     { bg: 'rgba(255,255,255,0.02)', bgHover: 'rgba(255,255,255,0.035)', border: 'rgba(255,255,255,0.06)' },
+};
+
+const SHAPE_RADIUS: Record<PanelShape, string> = { rounded: '1rem', soft: '0.65rem', sharp: '0.15rem' };
+
+export interface VisualSystemTokens {
+  surfaceBg: string;
+  surfaceHover: string;
+  border: string;
+  radius: string;
+  /** 0..1 multiplier for accent glow intensity (drives orbs/shadows). */
+  glow: number;
+  /** Whether the second accent is used (duotone) or a single accent (mono/vivid). */
+  duotone: boolean;
+}
+
+/** Resolve the visual system into concrete tokens for rendering. */
+export function visualSystemTokens(vs: VisualSystem): VisualSystemTokens {
+  const t = SURFACE_TOKENS[vs.surface] || SURFACE_TOKENS.glass;
+  return {
+    surfaceBg: t.bg,
+    surfaceHover: t.bgHover,
+    border: t.border,
+    radius: SHAPE_RADIUS[vs.panelShape] || '1rem',
+    glow: vs.accentMode === 'vivid' ? 1 : vs.accentMode === 'duotone' ? 0.6 : 0.22,
+    duotone: vs.accentMode === 'duotone',
   };
 }
 
@@ -389,6 +511,7 @@ export function layoutPlanFileContent(plan: WebBuildLayoutPlan): string {
     ctaPlacement: plan.ctaPlacement,
     trustPlacement: plan.trustPlacement,
     motionPattern: plan.motionPattern,
+    visualSystem: plan.visualSystem,
     sectionSequence: plan.sectionSequence,
     sectionVariants: plan.sectionVariants,
   };

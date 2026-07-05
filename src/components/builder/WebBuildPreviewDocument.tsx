@@ -2,7 +2,8 @@ import { type ReactElement, type CSSProperties } from 'react';
 import { motion } from 'framer-motion';
 import { designTokensForBrief } from '@/lib/webBuildBrief';
 import {
-  deriveLayoutPlan, type WebBuildLayoutPlan, type HeroComposition, type SectionVariant,
+  deriveLayoutPlan, visualSystemTokens,
+  type WebBuildLayoutPlan, type HeroComposition, type SectionVariant,
 } from '@/lib/webBuildLayoutPlan';
 import VisualModule from '@/components/builder/WebBuildVisualModules';
 import type { WebBuildBrief } from '@/lib/webBuildApi';
@@ -46,7 +47,7 @@ const H2 = ({ children, align = 'center' }: { children: React.ReactNode; align?:
 );
 
 const Eyebrow = ({ children }: { children: React.ReactNode }) => (
-  <span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-[11px] font-medium text-white/80">
+  <span className="inline-flex items-center gap-2 rounded-full border border-[color:var(--bd)] bg-white/[0.04] px-3 py-1 text-[11px] font-medium text-white/80">
     <span className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--acc)' }} />{children}
   </span>
 );
@@ -58,17 +59,48 @@ const GhostCta = ({ children }: { children: React.ReactNode }) => (
   <span className="rounded-xl border border-white/15 px-6 py-3 text-sm font-medium text-slate-200">{children}</span>
 );
 
-/* ── Hero background shell (shared by every composition) ──────────────── */
-function HeroBg({ full = false }: { full?: boolean }) {
-  return (
-    <>
-      <div aria-hidden className="absolute inset-0" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,0.045) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.045) 1px,transparent 1px)', backgroundSize: '44px 44px', WebkitMaskImage: 'radial-gradient(ellipse at center,#000 40%,transparent 75%)', maskImage: 'radial-gradient(ellipse at center,#000 40%,transparent 75%)' }} />
-      {full && <div aria-hidden className="pointer-events-none absolute left-1/2 top-0 h-[36rem] w-[52rem] -translate-x-1/2" style={{ background: 'radial-gradient(ellipse at center, color-mix(in srgb, var(--acc) 22%, transparent), transparent 68%)' }} />}
-      <Orb color="var(--acc)" style={{ top: '-6rem', left: '-4rem', width: '28rem', height: '28rem' }} />
-      <Orb color="var(--acc2)" style={{ top: '3rem', right: '-6rem', width: '24rem', height: '24rem' }} delay={-6} />
-      <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-b from-transparent to-black/50" />
-    </>
+/* ── Backdrop construction (strategy-driven, not one universal grid) ─────
+ * The single biggest sameness driver was that every hero used the same
+ * aurora+grid. Backdrop renders a genuinely different construction per visual
+ * system, so the first impression changes with the strategy. All motifs are
+ * dark-safe (no contrast regressions). */
+type BgMotif = WebBuildLayoutPlan['visualSystem']['background'];
+type AccMode = WebBuildLayoutPlan['visualSystem']['accentMode'];
+
+function Backdrop({ motif, accent, full = false }: { motif: BgMotif; accent: AccMode; full?: boolean }) {
+  const glow = accent === 'vivid' ? 0.55 : accent === 'duotone' ? 0.4 : 0.16;
+  const seam = <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-b from-transparent to-black/50" />;
+  const grid = (size: number, op: number) => (
+    <div aria-hidden className="absolute inset-0" style={{ backgroundImage: `linear-gradient(rgba(255,255,255,${op}) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,${op}) 1px,transparent 1px)`, backgroundSize: `${size}px ${size}px`, WebkitMaskImage: 'radial-gradient(ellipse at center,#000 40%,transparent 75%)', maskImage: 'radial-gradient(ellipse at center,#000 40%,transparent 75%)' }} />
   );
+  switch (motif) {
+    case 'blueprint':
+      return (<>{grid(26, 0.06)}<div aria-hidden className="absolute inset-0" style={{ backgroundImage: 'linear-gradient(var(--acc) 1px,transparent 1px),linear-gradient(90deg,var(--acc) 1px,transparent 1px)', backgroundSize: '130px 130px', opacity: 0.12 }} /><svg aria-hidden className="absolute right-8 top-8 h-16 w-16" style={{ opacity: 0.5 }} viewBox="0 0 40 40"><path d="M0 8 H40 M0 8 V0 M32 8 V0 M0 32 H40" stroke="var(--acc)" strokeWidth="1" fill="none" /></svg>{seam}</>);
+    case 'mesh-duotone':
+      return (<><Orb color="var(--acc)" style={{ top: '-8rem', left: '-6rem', width: '34rem', height: '34rem', opacity: glow }} /><Orb color="var(--acc2)" style={{ bottom: '-10rem', right: '-6rem', width: '30rem', height: '30rem', opacity: glow }} delay={-8} />{seam}</>);
+    case 'spotlight':
+      return (<><div aria-hidden className="pointer-events-none absolute left-1/2 top-[-8rem] h-[42rem] w-[46rem] -translate-x-1/2" style={{ background: `radial-gradient(ellipse at center, color-mix(in srgb, var(--acc) ${Math.round(glow * 60)}%, transparent), transparent 70%)` }} /><div aria-hidden className="absolute inset-0" style={{ background: 'radial-gradient(ellipse at 50% 30%, transparent 40%, rgba(0,0,0,0.55) 100%)' }} />{seam}</>);
+    case 'editorial-rules':
+      return (<><div aria-hidden className="absolute inset-y-0 left-[12%] w-px bg-white/10" /><div aria-hidden className="absolute inset-y-0 right-[12%] w-px bg-white/10" /><div aria-hidden className="absolute inset-x-0 top-24 h-px bg-white/10" /><div aria-hidden className="absolute inset-x-0 bottom-24 h-px" style={{ background: 'var(--acc)', opacity: 0.25 }} /></>);
+    case 'dot-matrix':
+      return (<><div aria-hidden className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.14) 1px, transparent 1px)', backgroundSize: '22px 22px', WebkitMaskImage: 'radial-gradient(ellipse at center,#000 45%,transparent 80%)', maskImage: 'radial-gradient(ellipse at center,#000 45%,transparent 80%)' }} /><Orb color="var(--acc)" style={{ top: '-4rem', right: '-4rem', width: '22rem', height: '22rem', opacity: glow }} />{seam}</>);
+    case 'diagonal-split':
+      return (<><div aria-hidden className="absolute inset-0 overflow-hidden"><div className="absolute -inset-x-1/4 top-1/3 h-[60%] -rotate-6" style={{ background: `linear-gradient(90deg, transparent, color-mix(in srgb, var(--acc) ${Math.round(glow * 34)}%, transparent), transparent)` }} /></div>{grid(40, 0.03)}{seam}</>);
+    case 'flat-void':
+      return (<><div aria-hidden className="absolute inset-0" style={{ background: 'radial-gradient(ellipse at 50% 40%, transparent 55%, rgba(0,0,0,0.5) 100%)' }} /><Orb color="var(--acc)" style={{ bottom: '-10rem', left: '20%', width: '24rem', height: '20rem', opacity: glow * 0.7 }} />{seam}</>);
+    case 'gradient-veil':
+      return (<><div aria-hidden className="absolute inset-0" style={{ background: `linear-gradient(180deg, color-mix(in srgb, var(--acc) ${Math.round(glow * 20)}%, transparent), transparent 55%)` }} />{grid(48, 0.035)}<Orb color="var(--acc2)" style={{ top: '2rem', right: '-6rem', width: '22rem', height: '22rem', opacity: glow * 0.8 }} delay={-6} />{seam}</>);
+    case 'terrain-lines':
+      return (<><svg aria-hidden viewBox="0 0 1200 400" preserveAspectRatio="none" className="absolute inset-0 h-full w-full" style={{ opacity: 0.4 }}>{Array.from({ length: 9 }).map((_, i) => <path key={i} d={`M0 ${40 + i * 40} C 300 ${i * 40}, 900 ${100 + i * 40}, 1200 ${40 + i * 40}`} fill="none" stroke={i % 3 === 0 ? 'var(--acc)' : 'rgba(255,255,255,0.14)'} strokeWidth="1" />)}</svg>{seam}</>);
+    case 'aurora-grid':
+    default:
+      return (<>{grid(44, 0.045)}{full && <div aria-hidden className="pointer-events-none absolute left-1/2 top-0 h-[36rem] w-[52rem] -translate-x-1/2" style={{ background: 'radial-gradient(ellipse at center, color-mix(in srgb, var(--acc) 22%, transparent), transparent 68%)' }} />}<Orb color="var(--acc)" style={{ top: '-6rem', left: '-4rem', width: '28rem', height: '28rem', opacity: glow }} /><Orb color="var(--acc2)" style={{ top: '3rem', right: '-6rem', width: '24rem', height: '24rem', opacity: glow }} delay={-6} />{seam}</>);
+  }
+}
+
+/* ── Hero background shell — delegates to the strategy's Backdrop motif ─── */
+function HeroBg({ full = false, plan }: { full?: boolean; plan: WebBuildLayoutPlan }) {
+  return <Backdrop motif={plan.visualSystem.background} accent={plan.visualSystem.accentMode} full={full} />;
 }
 
 const HeroTitle = ({ children, className = '' }: { children: React.ReactNode; className?: string }) => (
@@ -95,7 +127,7 @@ function HeroCentered({ s, brief, plan }: HeroProps) {
   const t = heroTexts(s, brief);
   return (
     <section className="relative isolate overflow-hidden">
-      <HeroBg full />
+      <HeroBg full plan={plan} />
       <div className="relative mx-auto max-w-3xl px-6 py-24 text-center sm:py-28">
         {t.eyebrow && <Eyebrow>{t.eyebrow}</Eyebrow>}
         <HeroTitle className="mt-5 text-3xl sm:text-5xl">{t.title}</HeroTitle>
@@ -115,7 +147,7 @@ function HeroSplit({ s, brief, plan }: HeroProps) {
   const t = heroTexts(s, brief);
   return (
     <section className="relative isolate overflow-hidden">
-      <HeroBg />
+      <HeroBg plan={plan} />
       <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-6 py-20 sm:py-24 lg:grid-cols-2">
         <div>
           {t.eyebrow && <Eyebrow>{t.eyebrow}</Eyebrow>}
@@ -138,10 +170,10 @@ function HeroAsymmetric({ s, brief, plan }: HeroProps) {
   const t = heroTexts(s, brief);
   return (
     <section className="relative isolate overflow-hidden">
-      <HeroBg />
+      <HeroBg plan={plan} />
       <div className="relative mx-auto max-w-6xl px-6 py-20 sm:py-28">
         <div className="ml-auto w-full max-w-3xl opacity-95 lg:w-[62%]"><VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} /></div>
-        <div className="relative -mt-24 max-w-xl rounded-3xl border border-white/10 bg-black/50 p-8 backdrop-blur-md lg:-mt-40">
+        <div className="relative -mt-24 max-w-xl rounded-3xl border border-[color:var(--bd)] bg-black/50 p-8 backdrop-blur-md lg:-mt-40">
           {t.eyebrow && <Eyebrow>{t.eyebrow}</Eyebrow>}
           <HeroTitle className="mt-4 text-3xl sm:text-5xl">{t.title}</HeroTitle>
           {t.sub && <p className="mt-4 text-base leading-relaxed text-slate-300">{t.sub}</p>}
@@ -160,7 +192,7 @@ function HeroDashboard({ s, brief, plan }: HeroProps) {
   const t = heroTexts(s, brief);
   return (
     <section className="relative isolate overflow-hidden">
-      <HeroBg full />
+      <HeroBg full plan={plan} />
       <div className="relative mx-auto max-w-5xl px-6 py-20 text-center sm:py-24">
         {t.eyebrow && <Eyebrow>{t.eyebrow}</Eyebrow>}
         <HeroTitle className="mx-auto mt-5 max-w-3xl text-3xl sm:text-5xl">{t.title}</HeroTitle>
@@ -180,7 +212,7 @@ function HeroImmersive({ s, brief, plan }: HeroProps) {
   const t = heroTexts(s, brief);
   return (
     <section className="relative isolate flex min-h-[34rem] items-end overflow-hidden">
-      <HeroBg />
+      <HeroBg plan={plan} />
       <div aria-hidden className="pointer-events-none absolute inset-0 scale-110 opacity-40 blur-[1px]"><VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} className="h-full [&>div]:h-full" /></div>
       <div aria-hidden className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent" />
       <div className="relative mx-auto w-full max-w-6xl px-6 py-16">
@@ -203,7 +235,7 @@ function HeroMembership({ s, brief, plan }: HeroProps) {
   const t = heroTexts(s, brief);
   return (
     <section className="relative isolate overflow-hidden">
-      <HeroBg />
+      <HeroBg plan={plan} />
       <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-6 py-20 sm:py-24 lg:grid-cols-[1.1fr_0.9fr]">
         <div>
           {t.eyebrow && <Eyebrow>{t.eyebrow}</Eyebrow>}
@@ -214,7 +246,7 @@ function HeroMembership({ s, brief, plan }: HeroProps) {
             {t.secondary && <GhostCta>{t.secondary}</GhostCta>}
           </div>
         </div>
-        <motion.div animate={{ y: [0, -10, 0] }} transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }} className="rounded-3xl border border-white/10 bg-white/[0.02] p-3 shadow-2xl shadow-black/40">
+        <motion.div animate={{ y: [0, -10, 0] }} transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }} className="rounded-3xl border border-[color:var(--bd)] bg-[var(--sf)] p-3 shadow-2xl shadow-black/40">
           <VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} />
         </motion.div>
       </div>
@@ -227,7 +259,7 @@ function HeroCatalog({ s, brief, plan }: HeroProps) {
   const t = heroTexts(s, brief);
   return (
     <section className="relative isolate overflow-hidden">
-      <HeroBg />
+      <HeroBg plan={plan} />
       <div className="relative mx-auto max-w-6xl px-6 py-18 sm:py-20">
         <div className="flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-end">
           <div className="max-w-2xl">
@@ -248,7 +280,7 @@ function HeroData({ s, brief, plan }: HeroProps) {
   const t = heroTexts(s, brief);
   return (
     <section className="relative isolate overflow-hidden">
-      <HeroBg />
+      <HeroBg plan={plan} />
       <div className="relative mx-auto grid max-w-6xl items-center gap-10 px-6 py-18 sm:py-20 lg:grid-cols-[0.9fr_1.1fr]">
         <div>
           {t.eyebrow && <Eyebrow>{t.eyebrow}</Eyebrow>}
@@ -270,7 +302,7 @@ function HeroLuxury({ s, brief, plan }: HeroProps) {
   const t = heroTexts(s, brief);
   return (
     <section className="relative isolate overflow-hidden">
-      <HeroBg full />
+      <HeroBg full plan={plan} />
       <div className="relative mx-auto max-w-3xl px-6 py-28 text-center sm:py-36">
         {t.eyebrow && <span className="text-[11px] uppercase tracking-[0.35em] text-white/60">{t.eyebrow}</span>}
         <HeroTitle className="mt-6 text-4xl leading-[1.1] sm:text-6xl">{t.title}</HeroTitle>
@@ -289,7 +321,7 @@ function HeroStory({ s, brief, plan }: HeroProps) {
   const t = heroTexts(s, brief);
   return (
     <section className="relative isolate overflow-hidden">
-      <HeroBg />
+      <HeroBg plan={plan} />
       <div className="relative mx-auto grid max-w-6xl gap-10 px-6 py-20 sm:py-24 lg:grid-cols-12">
         <div className="lg:col-span-7">
           {t.eyebrow && <Eyebrow>{t.eyebrow}</Eyebrow>}
@@ -314,7 +346,7 @@ function HeroEvent({ s, brief, plan }: HeroProps) {
   const meta = (s.bullets || []).slice(0, 3);
   return (
     <section className="relative isolate overflow-hidden">
-      <HeroBg full />
+      <HeroBg full plan={plan} />
       <div className="relative mx-auto max-w-5xl px-6 py-20 text-center sm:py-24">
         <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-[12px] uppercase tracking-[0.25em] text-white/70">
           {(meta.length ? meta : [brief.type].filter(Boolean)).map((m, i) => <span key={i} className="flex items-center gap-2">{i > 0 && <span className="h-1 w-1 rounded-full" style={{ background: 'var(--acc)' }} />}{m}</span>)}
@@ -354,7 +386,7 @@ function FeatureGrid({ s }: VarProps) {
       <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {items.map((b, i) => (
           <Reveal key={i} i={i}>
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6 transition hover:-translate-y-1 hover:border-white/20"><div className="mb-4 h-11 w-11 rounded-xl ring-1 ring-white/10" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 45%, transparent), color-mix(in srgb, var(--acc2) 22%, transparent))' }} /><p className="text-[15px] font-semibold leading-snug text-white">{b}</p></div>
+            <div className="rounded-[var(--pr)] border border-[color:var(--bd)] bg-[var(--sf)] p-6 transition hover:-translate-y-1 hover:border-white/20"><div className="mb-4 h-11 w-11 rounded-xl ring-1 ring-white/10" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 45%, transparent), color-mix(in srgb, var(--acc2) 22%, transparent))' }} /><p className="text-[15px] font-semibold leading-snug text-white">{b}</p></div>
           </Reveal>
         ))}
       </div>
@@ -387,7 +419,7 @@ function ProofStrip({ s }: VarProps) {
   return (
     <div className="mx-auto max-w-5xl px-6">
       <H2>{heading(s)}</H2>
-      <div className="mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/5 lg:grid-cols-4">
+      <div className="mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)] bg-white/5 lg:grid-cols-4">
         {items.map((b, i) => (
           <div key={i} className="bg-[#0b0d12] p-6 text-center">
             <div className="text-3xl font-semibold tracking-tight text-white">{stats[i % stats.length]}</div>
@@ -408,7 +440,7 @@ function DashboardData({ s }: VarProps) {
         {s.sub && <p className="mt-4 max-w-md text-base leading-relaxed text-slate-300">{s.sub}</p>}
         <ul className="mt-6 grid grid-cols-2 gap-3">
           {labels.map((b, i) => (
-            <li key={i} className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-[13px] text-slate-200">{b}</li>
+            <li key={i} className="rounded-xl border border-[color:var(--bd)] bg-[var(--sf)] px-4 py-3 text-[13px] text-slate-200">{b}</li>
           ))}
         </ul>
       </div>
@@ -425,7 +457,7 @@ function CatalogGrid({ s }: VarProps) {
       <div className="mt-10 grid grid-cols-2 gap-4 sm:grid-cols-3">
         {tiles.map((b, i) => (
           <Reveal key={i} i={i}>
-            <figure className={`group relative overflow-hidden rounded-2xl border border-white/10 ${i % 5 === 0 ? 'sm:col-span-2' : ''}`}>
+            <figure className={`group relative overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)] ${i % 5 === 0 ? 'sm:col-span-2' : ''}`}>
               <div className="relative aspect-[4/3] w-full transition duration-500 group-hover:scale-[1.04]" style={{ background: i % 3 === 0 ? 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 26%, transparent), color-mix(in srgb, var(--acc2) 14%, transparent))' : 'linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01))' }} />
               <figcaption className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/70 to-transparent p-3 text-sm font-medium text-white">{b}</figcaption>
             </figure>
@@ -441,12 +473,12 @@ function CollectionArchive({ s }: VarProps) {
   return (
     <div className="mx-auto max-w-4xl px-6">
       <H2 align="left">{heading(s)}</H2>
-      <div className="mt-8 divide-y divide-white/10 border-y border-white/10">
+      <div className="mt-8 divide-y divide-white/10 border-y border-[color:var(--bd)]">
         {rows.map((b, i) => (
           <Reveal key={i} i={i}>
             <div className="group flex items-center gap-5 py-5">
               <span className="w-8 text-sm tabular-nums text-slate-500">{String(i + 1).padStart(2, '0')}</span>
-              <span className="h-12 w-16 shrink-0 rounded-md border border-white/10" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 22%, transparent), transparent)' }} />
+              <span className="h-12 w-16 shrink-0 rounded-md border border-[color:var(--bd)]" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 22%, transparent), transparent)' }} />
               <span className="flex-1 text-[15px] font-medium text-white">{b}</span>
               <span className="text-slate-500 transition group-hover:translate-x-1">→</span>
             </div>
@@ -465,7 +497,7 @@ function ProcessTimeline({ s }: VarProps) {
       <ol className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {steps.map((b, i) => (
           <Reveal key={i} i={i}>
-            <li className="relative rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+            <li className="relative rounded-[var(--pr)] border border-[color:var(--bd)] bg-[var(--sf)] p-5">
               <span className="text-sm font-semibold" style={{ color: 'var(--acc)' }}>0{i + 1}</span>
               <p className="mt-2 text-[15px] font-medium text-white">{b}</p>
             </li>
@@ -529,7 +561,7 @@ function PricingMembership({ s }: VarProps) {
       <H2>{heading(s)}</H2>
       <div className="mt-10 grid gap-5 sm:grid-cols-3">
         {tiers.map((b, i) => (
-          <div key={i} className="rounded-2xl border p-6" style={i === 1 ? { borderColor: 'color-mix(in srgb, var(--acc) 40%, transparent)', background: 'color-mix(in srgb, var(--acc) 7%, transparent)' } : { borderColor: 'rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.03)' }}>
+          <div key={i} className="rounded-[var(--pr)] border p-6" style={i === 1 ? { borderColor: 'color-mix(in srgb, var(--acc) 40%, transparent)', background: 'color-mix(in srgb, var(--acc) 7%, transparent)' } : { borderColor: 'rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.03)' }}>
             <p className="text-sm font-medium text-slate-300">{b}</p>
             <div className="mt-3 text-3xl font-semibold text-white">₺{199 + i * 200}<span className="text-sm text-slate-400">/ay</span></div>
             <div className={`mt-5 rounded-lg py-2 text-center text-sm font-semibold ${i === 1 ? 'text-white' : 'border border-white/15 text-slate-200'}`} style={i === 1 ? { background: 'var(--acc)' } : undefined}>{s.cta || 'Seç'}</div>
@@ -561,20 +593,20 @@ function FaqCta({ s }: VarProps) {
       <div className="mx-auto max-w-3xl px-6">
         <H2 align="left">{heading(s)}</H2>
         <div className="mt-6 space-y-3">
-          {s.bullets.slice(0, 6).map((b, i) => <div key={i} className="rounded-xl border border-white/10 bg-white/[0.03] p-4 text-[15px] font-medium text-white">{b}</div>)}
+          {s.bullets.slice(0, 6).map((b, i) => <div key={i} className="rounded-xl border border-[color:var(--bd)] bg-[var(--sf)] p-4 text-[15px] font-medium text-white">{b}</div>)}
         </div>
       </div>
     );
   }
   return (
     <div className="relative isolate mx-auto max-w-2xl px-6" id="contact">
-      <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-10 text-center backdrop-blur">
+      <div className="rounded-3xl border border-[color:var(--bd)] bg-[var(--sf)] p-10 text-center backdrop-blur">
         <H2>{heading(s)}</H2>
         {s.sub && <p className="mt-3 text-slate-300">{s.sub}</p>}
         {appt ? (
           <div className="mx-auto mt-7 max-w-sm space-y-3 text-left">
-            <div className="h-11 rounded-lg border border-white/10 bg-white/[0.02]" />
-            <div className="h-11 rounded-lg border border-white/10 bg-white/[0.02]" />
+            <div className="h-11 rounded-lg border border-[color:var(--bd)] bg-[var(--sf)]" />
+            <div className="h-11 rounded-lg border border-[color:var(--bd)] bg-[var(--sf)]" />
             <div className="flex h-11 items-center justify-center rounded-lg text-sm font-semibold text-white" style={{ background: 'var(--acc)' }}>{s.cta || heading(s)}</div>
           </div>
         ) : (s.cta && <div className="mt-7"><PrimaryCta>{s.cta}</PrimaryCta></div>)}
@@ -588,8 +620,8 @@ function Comparison({ s }: VarProps) {
     <div className="mx-auto max-w-5xl px-6">
       <H2>{heading(s)}</H2>
       <div className="mt-10 grid gap-5 sm:grid-cols-2">
-        <div className="relative overflow-hidden rounded-2xl border border-white/10"><span className="absolute left-3 top-3 z-10 rounded-full bg-black/50 px-2.5 py-1 text-xs text-slate-300">Öncesi</span><div className="aspect-[4/3]" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.01))' }} /></div>
-        <div className="relative overflow-hidden rounded-2xl border ring-1" style={{ borderColor: 'color-mix(in srgb, var(--acc) 40%, transparent)' }}><span className="absolute left-3 top-3 z-10 rounded-full px-2.5 py-1 text-xs text-white" style={{ background: 'var(--acc)' }}>Sonrası</span><div className="aspect-[4/3]" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 22%, transparent), color-mix(in srgb, var(--acc2) 12%, transparent))' }} /></div>
+        <div className="relative overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)]"><span className="absolute left-3 top-3 z-10 rounded-full bg-black/50 px-2.5 py-1 text-xs text-slate-300">Öncesi</span><div className="aspect-[4/3]" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.01))' }} /></div>
+        <div className="relative overflow-hidden rounded-[var(--pr)] border ring-1" style={{ borderColor: 'color-mix(in srgb, var(--acc) 40%, transparent)' }}><span className="absolute left-3 top-3 z-10 rounded-full px-2.5 py-1 text-xs text-white" style={{ background: 'var(--acc)' }}>Sonrası</span><div className="aspect-[4/3]" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 22%, transparent), color-mix(in srgb, var(--acc2) 12%, transparent))' }} /></div>
       </div>
     </div>
   );
@@ -597,7 +629,7 @@ function Comparison({ s }: VarProps) {
 
 function Footer({ s }: { s: S }) {
   return (
-    <footer className="border-t border-white/10 px-6 py-10">
+    <footer className="border-t border-[color:var(--bd)] px-6 py-10">
       <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-4 sm:flex-row">
         <p className="text-sm text-slate-400">{s.headline || s.copyPreview || s.name}</p>
         <nav className="flex gap-6 text-sm text-slate-400">{(s.bullets?.length ? s.bullets.slice(0, 4) : [s.name]).map((b, i) => <span key={i}>{b}</span>)}</nav>
@@ -638,18 +670,25 @@ export default function WebBuildPreviewDocument({
 }) {
   const ds = designTokensForBrief(brief);
   // The Layout Plan — the SAME pure derivation the file synthesizer uses — drives
-  // hero composition, per-section variant, visual module and rhythm.
+  // hero composition, per-section variant, visual module, rhythm AND the visual
+  // system (backdrop construction, surface treatment, panel shape, accent mode).
   const plan = deriveLayoutPlan(brief, sectionItems.map((s) => ({ id: s.id, name: s.name })));
   const variantOf = (id: string): SectionVariant => plan.sectionVariants[id] || 'feature-grid';
+  const vt = visualSystemTokens(plan.visualSystem);
 
   const rootStyle = {
     background: ds.bg,
     fontFamily: ds.bodyFont,
     '--acc': ds.accent,
-    '--acc2': ds.accent2,
+    '--acc2': plan.visualSystem.accentMode === 'mono' ? ds.accent : ds.accent2,
     '--hf': ds.headingFont,
     '--tr': ds.tracking,
     '--rad': ds.radius,
+    // Visual-system surface tokens consumed by every card/panel/module.
+    '--sf': vt.surfaceBg,
+    '--sfh': vt.surfaceHover,
+    '--bd': vt.border,
+    '--pr': vt.radius,
   } as CSSProperties;
 
   const banded = plan.rhythm === 'alternating' || plan.rhythm === 'editorial';

@@ -24,7 +24,7 @@ export interface VisualModuleProps {
 }
 
 const Frame = ({ children, className = '' }: { children: React.ReactNode; className?: string }) => (
-  <div className={`relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03] ${className}`}>{children}</div>
+  <div className={`relative overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)] bg-[var(--sf)] ${className}`}>{children}</div>
 );
 
 const take = (labels: string[] | undefined, n: number, fallback: string[]): string[] => {
@@ -44,13 +44,13 @@ function DataDashboard({ labels, compact }: { labels?: string[]; compact?: boole
       </div>
       <div className={`grid gap-3 ${compact ? '' : 'sm:grid-cols-3'}`}>
         {tiles.map((tl, i) => (
-          <div key={i} className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+          <div key={i} className="rounded-xl border border-[color:var(--bd)] bg-[var(--sf)] p-3">
             <div className="text-lg font-semibold text-white">{stats[i]}</div>
             <div className="mt-0.5 truncate text-[11px] text-slate-400">{tl}</div>
           </div>
         ))}
       </div>
-      <div className="mt-3 flex h-24 items-end gap-2 rounded-xl border border-white/10 bg-black/20 p-3">
+      <div className="mt-3 flex h-24 items-end gap-2 rounded-xl border border-[color:var(--bd)] bg-black/20 p-3">
         {bars.map((h, i) => (
           <motion.span
             key={i} className="flex-1 rounded-t"
@@ -72,7 +72,7 @@ function MembershipPass({ labels }: { labels?: string[] }) {
   const holder = (labels && labels[1]) || 'Access · 2026';
   return (
     <Frame className="p-5">
-      <div className="rounded-2xl border border-white/10 p-5" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 24%, transparent), color-mix(in srgb, var(--acc2) 12%, transparent))' }}>
+      <div className="rounded-[var(--pr)] border border-[color:var(--bd)] p-5" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 24%, transparent), color-mix(in srgb, var(--acc2) 12%, transparent))' }}>
         <div className="flex items-start justify-between">
           <div>
             <div className="text-[11px] uppercase tracking-widest text-white/70">Member</div>
@@ -97,7 +97,7 @@ function CatalogArchive({ labels, compact }: { labels?: string[]; compact?: bool
     <Frame className="p-4">
       <div className={`grid gap-2.5 ${compact ? 'grid-cols-2' : 'grid-cols-3'}`}>
         {tiles.map((tl, i) => (
-          <figure key={i} className="group relative overflow-hidden rounded-lg border border-white/10">
+          <figure key={i} className="group relative overflow-hidden rounded-lg border border-[color:var(--bd)]">
             <div className="aspect-square w-full transition duration-500 group-hover:scale-[1.05]" style={{ background: i % 3 === 0 ? 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 26%, transparent), transparent)' : 'linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01))' }} />
             <figcaption className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/70 to-transparent px-2 py-1 text-[10px] font-medium text-white">{tl}</figcaption>
           </figure>
@@ -197,7 +197,7 @@ function TimelineProcess({ labels }: { labels?: string[] }) {
 function Comparison() {
   return (
     <Frame className="grid grid-cols-2">
-      <div className="relative border-r border-white/10">
+      <div className="relative border-r border-[color:var(--bd)]">
         <span className="absolute left-2 top-2 z-10 rounded-full bg-black/50 px-2 py-0.5 text-[10px] text-slate-300">Önce</span>
         <div className="aspect-[3/4]" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.01))' }} />
       </div>
