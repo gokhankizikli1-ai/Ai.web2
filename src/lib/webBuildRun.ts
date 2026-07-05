@@ -21,7 +21,11 @@
  * row model + components below stay unchanged.
  */
 import type { WebBuildStep, WebBuildFile } from '@/lib/webBuildPayload';
-import { WEB_BUILD_AGENTS_ENABLED, type ResearchAgentArtifact, type ArtDirectionArtifact } from '@/lib/webBuildAgents';
+import {
+  WEB_BUILD_AGENTS_ENABLED,
+  type WebBuildAgent, type AgentId, type ResearchAgentArtifact, type ArtDirectionArtifact,
+  type StrategyAgentArtifact, type PageBlueprint,
+} from '@/lib/webBuildAgents';
 
 export type WebBuildRunStatus = 'queued' | 'running' | 'completed' | 'failed';
 
@@ -226,41 +230,102 @@ function artDirectorDetails(a: ArtDirectionArtifact): string[] {
   ].filter(Boolean);
 }
 
+/** Real, data-tied expandable detail for the Strategy Agent row. */
+function strategyAgentDetails(s: StrategyAgentArtifact): string[] {
+  const proof = asArr(s.aboveTheFoldMustProve);
+  const cta = s.ctaHierarchy;
+  return [
+    s.positioning ? `Positioning: ${s.positioning}` : '',
+    s.mainPromise ? `Main promise: ${s.mainPromise}` : '',
+    s.conversionStrategy ? `Conversion strategy: ${s.conversionStrategy}` : '',
+    s.trustStrategy ? `Trust strategy: ${s.trustStrategy}` : '',
+    cta && cta.primary ? `CTA hierarchy: ${cta.primary}${cta.secondary ? ` / ${cta.secondary}` : ''}` : '',
+    proof.length ? `Above the fold must prove: ${proof.join(' · ')}` : '',
+  ].filter(Boolean);
+}
+
+/** Real, data-tied expandable detail for the Layout Architect (Page Blueprint) row. */
+function layoutArchitectDetails(b: PageBlueprint): string[] {
+  const hero = b.hero || ({} as PageBlueprint['hero']);
+  const sections = Array.isArray(b.sections) ? b.sections : [];
+  return [
+    b.architecture ? `Architecture: ${b.architecture}` : '',
+    hero.variant ? `Hero variant: ${hero.variant} · module ${hero.visualModule}` : '',
+    b.navigationStyle ? `Navigation: ${b.navigationStyle}` : '',
+    sections.length ? `Section variants: ${sections.map((x) => x.variant).slice(0, 6).join(' · ')}` : '',
+    hero.ctaPlacement || b.trustPlacement ? `CTA / trust: ${hero.ctaPlacement} / ${b.trustPlacement}` : '',
+    b.sectionRhythm ? `Rhythm: ${b.sectionRhythm}` : '',
+    b.motionPattern ? `Motion: ${b.motionPattern}` : '',
+  ].filter(Boolean);
+}
+
+const AGENT_TITLE_KEY: Record<AgentId, string> = {
+  research: 'wbAgentResearch',
+  ui_art_director: 'wbAgentArt',
+  strategy: 'wbAgentStrategy',
+  layout_architect: 'wbAgentLayout',
+};
+const AGENT_NOTE_KEY: Record<AgentId, string> = {
+  research: 'wbOpResearchNote',
+  ui_art_director: 'wbOpArtNote',
+  strategy: 'wbOpStrategyAgentNote',
+  layout_architect: 'wbOpLayoutNote',
+};
+
+/** Build the expandable detail lines for any agent row from its artifact. */
+function agentDetails(agent: WebBuildAgent): string[] {
+  if (agent.status !== 'done') return [];
+  try {
+    switch (agent.id) {
+      case 'research': return researchAgentDetails(agent.artifact as ResearchAgentArtifact);
+      case 'ui_art_director': return artDirectorDetails(agent.artifact as ArtDirectionArtifact);
+      case 'strategy': return strategyAgentDetails(agent.artifact as StrategyAgentArtifact);
+      case 'layout_architect': return layoutArchitectDetails(agent.artifact as PageBlueprint);
+      default: return [];
+    }
+  } catch {
+    return [];
+  }
+}
+
 /**
  * Emit the two Phase-1 upstream agent rows (Research Agent → UI / Art Director
  * Agent) as clean, expandable feed lines with real artifact detail. Falls back to
  * the honest single research line for old steps that have no agent artifacts.
  */
 function pushAgents(out: WebBuildRunEvent[], step: WebBuildStep): void {
-  // Agents are OFF by default — render the stable research line, not agent rows.
-  if (!WEB_BUILD_AGENTS_ENABLED) { pushResearch(out, step); return; }
-  const research = step.artifacts?.research;
-  const art = step.artifacts?.artDirection;
-  if (!research && !art) { pushResearch(out, step); return; }
+  // When agents are disabled (kill-switch) or an old build has none, render the
+  // stable single research line instead of agent rows.
+  const agents = Array.isArray(step.agents) ? step.agents : [];
+  if (!WEB_BUILD_AGENTS_ENABLED || !agents.length) { pushResearch(out, step); return; }
 
-  if (research) {
-    pushTool(out, 'agent-research', 'research', 'wbAgentResearch', {
-      summary: research.summary,
-      details: researchAgentDetails(research),
-      noteKey: research.didResearch ? 'wbOpResearchNote' : 'wbOpStrategyNote',
+  for (const agent of agents) {
+    if (!agent || !agent.id) continue;
+    const titleKey = AGENT_TITLE_KEY[agent.id] || 'wbAgentResearch';
+    // Research note is honest about whether live sources actually informed it.
+    const noteKey = agent.id === 'research'
+      ? ((agent.artifact as ResearchAgentArtifact)?.didResearch ? 'wbOpResearchNote' : 'wbOpStrategyNote')
+      : (AGENT_NOTE_KEY[agent.id] || undefined);
+    const details = agentDetails(agent);
+    pushTool(out, `agent-${agent.id}`, 'research', titleKey, {
+      summary: agent.summary || undefined,
+      details: details.length ? details : undefined,
+      noteKey,
     });
-    // Honest source count message ONLY when live research actually ran.
-    if (research.didResearch && (research.sourceCount ?? 0) > 0) {
-      const count = research.sourceCount ?? 0;
-      const angleCount = research.researchAngles.length;
-      out.push({
-        id: eid(), type: 'assistant_message', status: 'completed',
-        messageKey: angleCount > 1 ? 'wbFeedResearchDeep' : 'wbFeedResearchDone',
-        params: angleCount > 1 ? { count, angles: angleCount } : { count },
-      });
+
+    // Honest source-count message ONLY when live research actually ran.
+    if (agent.id === 'research' && agent.status === 'done') {
+      const r = agent.artifact as ResearchAgentArtifact;
+      if (r?.didResearch && (r.sourceCount ?? 0) > 0) {
+        const count = r.sourceCount ?? 0;
+        const angleCount = asArr(r.researchAngles).length;
+        out.push({
+          id: eid(), type: 'assistant_message', status: 'completed',
+          messageKey: angleCount > 1 ? 'wbFeedResearchDeep' : 'wbFeedResearchDone',
+          params: angleCount > 1 ? { count, angles: angleCount } : { count },
+        });
+      }
     }
-  }
-  if (art) {
-    pushTool(out, 'agent-art', 'research', 'wbAgentArt', {
-      summary: art.summary,
-      details: artDirectorDetails(art),
-      noteKey: 'wbOpArtNote',
-    });
   }
 }
 
