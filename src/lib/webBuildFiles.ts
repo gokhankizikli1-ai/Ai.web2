@@ -144,15 +144,15 @@ function heroComponent(name: string, c: SectionCopy, brief: { goal?: string; typ
       <div className="kx-aurora -z-10" style={{ top: '3rem', right: '-6rem', width: '24rem', height: '24rem', background: 'radial-gradient(circle, var(--kx-accent-2), transparent 60%)', animationDelay: '-6s' }} aria-hidden="true" />
       <div className="mx-auto max-w-6xl px-6 py-28 sm:py-36">
         <div className="kx-reveal mx-auto max-w-3xl text-center">
-          ${eyebrow ? `<span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-medium text-indigo-200">
-            <span className="h-1.5 w-1.5 rounded-full bg-indigo-400" /> {\`${esc(eyebrow)}\`}
+          ${eyebrow ? `<span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-medium text-[var(--kx-accent)]">
+            <span className="h-1.5 w-1.5 rounded-full bg-[var(--kx-accent)]" /> {\`${esc(eyebrow)}\`}
           </span>` : ''}
           <h1 className="mt-6 text-4xl font-semibold tracking-tight text-white sm:text-6xl">
             {\`${esc(headline)}\`}
           </h1>
           ${sub ? `<p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-slate-300">{\`${esc(sub)}\`}</p>` : ''}
           <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <a href="#contact" className="rounded-xl bg-indigo-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-400">
+            <a href="#contact" className="rounded-xl bg-[var(--kx-accent)] px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-black/40 transition hover:bg-[var(--kx-accent)]">
               {\`${esc(cta)}\`}
             </a>
             ${secondary ? `<a href="#features" className="rounded-xl border border-white/15 px-6 py-3 text-sm font-medium text-slate-200 transition hover:bg-white/[0.05]">{\`${esc(secondary)}\`}</a>` : ''}
@@ -169,7 +169,7 @@ function heroComponent(name: string, c: SectionCopy, brief: { goal?: string; typ
 function cardsComponent(name: string, c: SectionCopy): string {
   const items = (c.bullets.length ? c.bullets : [c.sub || c.purpose || '']).filter(Boolean).slice(0, 6);
   const cards = items.map((b, i) => `          <div key={${i}} className="group relative rounded-2xl border border-white/10 bg-white/[0.03] p-6 transition duration-300 hover:-translate-y-1 hover:border-white/20 hover:bg-white/[0.05]">
-            <div className="mb-4 h-11 w-11 rounded-xl bg-gradient-to-br from-indigo-500/40 to-cyan-400/20 ring-1 ring-white/10" />
+            <div className="mb-4 h-11 w-11 rounded-xl bg-[linear-gradient(135deg,color-mix(in_srgb,var(--kx-accent)_40%,transparent),color-mix(in_srgb,var(--kx-accent-2)_20%,transparent))] ring-1 ring-white/10" />
             <p className="text-[15px] font-semibold leading-snug text-white">{\`${esc(b)}\`}</p>
           </div>`).join('\n');
   return `export default function ${name}() {
@@ -198,7 +198,7 @@ function ctaComponent(name: string, c: SectionCopy): string {
       <div className="kx-reveal mx-auto max-w-2xl rounded-3xl border border-white/10 bg-white/[0.03] p-10 text-center backdrop-blur">
         <h2 className="text-3xl font-semibold tracking-tight text-white">{\`${esc(headline)}\`}</h2>
         ${c.sub ? `<p className="mt-3 text-slate-300">{\`${esc(c.sub)}\`}</p>` : ''}
-        <a href="#" className="mt-7 inline-block rounded-xl bg-indigo-500 px-7 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition hover:bg-indigo-400">
+        <a href="#" className="mt-7 inline-block rounded-xl bg-[var(--kx-accent)] px-7 py-3 text-sm font-semibold text-white shadow-lg shadow-black/40 transition hover:bg-[var(--kx-accent)]">
           {\`${esc(cta)}\`}
         </a>
       </div>
@@ -229,7 +229,7 @@ function genericComponent(name: string, c: SectionCopy): string {
   const headline = c.headline || c.name;
   const bullets = c.bullets.slice(0, 6);
   const list = bullets.length
-    ? `        <ul className="mt-6 space-y-3 text-slate-300">\n${bullets.map((b, i) => `          <li key={${i}} className="flex gap-3"><span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-indigo-400" />{\`${esc(b)}\`}</li>`).join('\n')}\n        </ul>`
+    ? `        <ul className="mt-6 space-y-3 text-slate-300">\n${bullets.map((b, i) => `          <li key={${i}} className="flex gap-3"><span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--kx-accent)]" />{\`${esc(b)}\`}</li>`).join('\n')}\n        </ul>`
     : (c.sub ? `        <p className="mt-4 leading-relaxed text-slate-300">{\`${esc(c.sub)}\`}</p>` : '');
   return `export default function ${name}() {
   return (
@@ -278,9 +278,9 @@ function beforeAfterComponent(name: string, c: SectionCopy): string {
             <span className="absolute left-3 top-3 rounded-full bg-black/50 px-2.5 py-1 text-xs text-slate-300">Öncesi</span>
             <div className="aspect-[4/3] bg-white/[0.03]" />
           </div>
-          <div className="relative overflow-hidden rounded-2xl border border-indigo-400/30 ring-1 ring-indigo-400/20">
-            <span className="absolute left-3 top-3 rounded-full bg-indigo-500 px-2.5 py-1 text-xs text-white">Sonrası</span>
-            <div className="aspect-[4/3] bg-gradient-to-br from-indigo-500/20 to-cyan-400/10" />
+          <div className="relative overflow-hidden rounded-2xl border border-[color-mix(in_srgb,var(--kx-accent)_30%,transparent)] ring-1 ring-[color-mix(in_srgb,var(--kx-accent)_20%,transparent)]">
+            <span className="absolute left-3 top-3 rounded-full bg-[var(--kx-accent)] px-2.5 py-1 text-xs text-white">Sonrası</span>
+            <div className="aspect-[4/3] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--kx-accent)_20%,transparent),color-mix(in_srgb,var(--kx-accent-2)_10%,transparent))]" />
           </div>
         </div>
       </div>
@@ -292,7 +292,7 @@ function beforeAfterComponent(name: string, c: SectionCopy): string {
 
 function productDemoComponent(name: string, c: SectionCopy): string {
   const lines = (c.bullets.length ? c.bullets : ['Merhaba, nasıl yardımcı olabilirim?', 'Siparişimi takip etmek istiyorum.', 'Tabii, sipariş numaranı paylaşır mısın?']).slice(0, 4);
-  const bubbles = lines.map((b, i) => `            <div key={${i}} className="max-w-[80%] ${i % 2 ? 'ml-auto bg-indigo-500 text-white' : 'bg-white/[0.06] text-slate-200'} rounded-2xl px-3.5 py-2 text-[13px]">{\`${esc(b)}\`}</div>`).join('\n');
+  const bubbles = lines.map((b, i) => `            <div key={${i}} className="max-w-[80%] ${i % 2 ? 'ml-auto bg-[var(--kx-accent)] text-white' : 'bg-white/[0.06] text-slate-200'} rounded-2xl px-3.5 py-2 text-[13px]">{\`${esc(b)}\`}</div>`).join('\n');
   return `export default function ${name}() {
   return (
     <section id="demo" className="relative isolate overflow-hidden px-6 py-20">
@@ -301,7 +301,7 @@ function productDemoComponent(name: string, c: SectionCopy): string {
         <div>
           ${c.headline ? `<h2 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">{\`${esc(c.headline)}\`}</h2>` : ''}
           ${c.sub ? `<p className="mt-4 text-slate-300">{\`${esc(c.sub)}\`}</p>` : ''}
-          ${c.cta ? `<a href="#contact" className="mt-6 inline-block rounded-xl bg-indigo-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30">{\`${esc(c.cta)}\`}</a>` : ''}
+          ${c.cta ? `<a href="#contact" className="mt-6 inline-block rounded-xl bg-[var(--kx-accent)] px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-black/40">{\`${esc(c.cta)}\`}</a>` : ''}
         </div>
         <div className="kx-float rounded-2xl border border-white/10 bg-white/[0.03] p-4 shadow-2xl shadow-black/40">
           <div className="mb-3 flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-white/20" /><span className="h-2.5 w-2.5 rounded-full bg-white/20" /><span className="h-2.5 w-2.5 rounded-full bg-white/20" /></div>
@@ -319,7 +319,7 @@ ${bubbles}
 function workflowComponent(name: string, c: SectionCopy): string {
   const steps = (c.bullets.length ? c.bullets : [c.name]).slice(0, 4);
   const cells = steps.map((b, i) => `          <li key={${i}} className="relative rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-            <span className="text-sm font-semibold text-indigo-300">0${i + 1}</span>
+            <span className="text-sm font-semibold text-[var(--kx-accent)]">0${i + 1}</span>
             <p className="mt-2 text-[15px] font-medium text-white">{\`${esc(b)}\`}</p>
           </li>`).join('\n');
   return `export default function ${name}() {
@@ -362,7 +362,7 @@ ${cells}
 function integrationsComponent(name: string, c: SectionCopy): string {
   const chips = (c.bullets.length ? c.bullets : ['Slack', 'Zendesk', 'Shopify', 'WhatsApp', 'HubSpot', 'Notion']).slice(0, 8);
   const cells = chips.map((b, i) => `          <div key={${i}} className="flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-slate-300">
-            <span className="h-4 w-4 rounded bg-gradient-to-br from-indigo-500/50 to-cyan-400/30" />{\`${esc(b)}\`}
+            <span className="h-4 w-4 rounded bg-[linear-gradient(135deg,color-mix(in_srgb,var(--kx-accent)_50%,transparent),color-mix(in_srgb,var(--kx-accent-2)_30%,transparent))]" />{\`${esc(b)}\`}
           </div>`).join('\n');
   return `export default function ${name}() {
   return (
@@ -386,7 +386,7 @@ function inventoryComponent(name: string, c: SectionCopy): string {
             <div className="p-5">
               <p className="text-[15px] font-semibold text-white">{\`${esc(b)}\`}</p>
               <div className="mt-2 flex items-center justify-between text-xs text-slate-400"><span>2023 · Otomatik · Benzin</span><span className="font-semibold text-white">₺${(850 + i * 120).toLocaleString?.() || 850}.000</span></div>
-              <button className="mt-4 w-full rounded-lg bg-indigo-500 py-2 text-sm font-semibold text-white">İncele</button>
+              <button className="mt-4 w-full rounded-lg bg-[var(--kx-accent)] py-2 text-sm font-semibold text-white">İncele</button>
             </div>
           </div>`).join('\n');
   return `export default function ${name}() {
@@ -407,7 +407,7 @@ ${cells}
 function financingComponent(name: string, c: SectionCopy): string {
   const badges = (c.bullets.length ? c.bullets : ['Garanti', 'Ekspertiz', 'Takas', 'Finansman']).slice(0, 4);
   const cells = badges.map((b, i) => `          <div key={${i}} className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3">
-            <span className="h-9 w-9 rounded-lg bg-gradient-to-br from-indigo-500/40 to-cyan-400/20" />
+            <span className="h-9 w-9 rounded-lg bg-[linear-gradient(135deg,color-mix(in_srgb,var(--kx-accent)_40%,transparent),color-mix(in_srgb,var(--kx-accent-2)_20%,transparent))]" />
             <span className="text-sm font-medium text-slate-200">{\`${esc(b)}\`}</span>
           </div>`).join('\n');
   return `export default function ${name}() {
@@ -429,8 +429,8 @@ function pricingComponent(name: string, c: SectionCopy): string {
   const tiers = (c.bullets.length ? c.bullets : ['Başlangıç', 'Pro', 'Kurumsal']).slice(0, 3);
   const cells = tiers.map((b, i) => {
     const featured = i === 1;
-    const cardCls = featured ? 'border-indigo-400/40 bg-indigo-500/[0.06]' : 'border-white/10 bg-white/[0.03]';
-    const btnCls = featured ? 'bg-indigo-500 text-white' : 'border border-white/15 text-slate-200';
+    const cardCls = featured ? 'border-[color-mix(in_srgb,var(--kx-accent)_40%,transparent)] bg-[color-mix(in_srgb,var(--kx-accent)_7%,transparent)]' : 'border-white/10 bg-white/[0.03]';
+    const btnCls = featured ? 'bg-[var(--kx-accent)] text-white' : 'border border-white/15 text-slate-200';
     return `          <div key={${i}} className="rounded-2xl border p-6 ${cardCls}">
             <p className="text-sm font-medium text-slate-300">{\`${esc(b)}\`}</p>
             <div className="mt-3 text-3xl font-semibold text-white">₺${199 + i * 200}<span className="text-sm text-slate-400">/ay</span></div>
@@ -478,7 +478,7 @@ function testimonialComponent(name: string, c: SectionCopy): string {
   const quotes = (c.bullets.length ? c.bullets : [c.sub || c.name]).slice(0, 3);
   const cells = quotes.map((b, i) => `          <blockquote key={${i}} className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
             <p className="text-[15px] leading-relaxed text-slate-200">&ldquo;{\`${esc(b)}\`}&rdquo;</p>
-            <div className="mt-4 flex items-center gap-3"><span className="h-8 w-8 rounded-full bg-gradient-to-br from-indigo-500/50 to-cyan-400/30" /><span className="text-sm text-slate-400">Müşteri</span></div>
+            <div className="mt-4 flex items-center gap-3"><span className="h-8 w-8 rounded-full bg-[linear-gradient(135deg,color-mix(in_srgb,var(--kx-accent)_50%,transparent),color-mix(in_srgb,var(--kx-accent-2)_30%,transparent))]" /><span className="text-sm text-slate-400">Müşteri</span></div>
           </blockquote>`).join('\n');
   return `export default function ${name}() {
   return (
@@ -689,6 +689,12 @@ function stylesFile(ds: WebBuildDesignSystem): SynthFile {
   --kx-accent: ${ds.accent};
   --kx-accent-2: ${ds.accent2};
   --kx-radius: ${ds.radius};
+  /* Neutral surface tokens that read on any accent/background. */
+  --kx-fg: #f1f5f9;
+  --kx-muted: #94a3b8;
+  --kx-border: rgba(255, 255, 255, 0.10);
+  --kx-card: rgba(255, 255, 255, 0.03);
+  --kx-glow: color-mix(in srgb, var(--kx-accent) 45%, transparent);
 }
 
 html { scroll-behavior: smooth; }

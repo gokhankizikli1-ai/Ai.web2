@@ -366,6 +366,7 @@ export const fr: Record<string, string> = {
   wbActResearch: "Recherche avec des sources web",
   wbToolStrategy: "Utilisation de l'inférence stratégique",
   wbFeedResearchDone: "J'ai étudié {count} source(s) en direct et intégré les résultats à la stratégie.",
+  wbFeedResearchDeep: "J'ai étudié {count} sources en direct sous {angles} angles et intégré les résultats à la stratégie.",
   wbOpFileNote: "Fichier de projet généré dans ce Web Build — pas une modification du code de Korvix.",
   wbOpResearchNote: "Sources web réelles consultées pendant la recherche.",
   wbOpStrategyNote: "Aucune source en direct — stratégie déduite du brief.",

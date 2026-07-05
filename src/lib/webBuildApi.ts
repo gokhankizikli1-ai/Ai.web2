@@ -69,6 +69,8 @@ export interface WebBuildResearch {
   provider?: string;
   attemptedProviders?: string[];
   queryCount?: number;
+  /** Distinct research angles covered (category, audience, conversion, …). */
+  angles?: string[];
   sourceCount?: number;
   fallbackReason?: string;
   sources?: WebBuildSource[];
@@ -423,6 +425,7 @@ export async function generateWebBuild(
         provider: typeof research.provider === 'string' ? research.provider : undefined,
         attemptedProviders: asStrList(research.attempted_providers),
         queryCount: typeof research.query_count === 'number' ? research.query_count : undefined,
+        angles: asStrList(research.angles),
         sourceCount: typeof research.source_count === 'number' ? research.source_count : sources.length,
         fallbackReason: typeof research.fallback_reason === 'string' ? research.fallback_reason : undefined,
         sources: sources.length ? sources : undefined,

@@ -366,6 +366,7 @@ export const it: Record<string, string> = {
   wbActResearch: "Ricerca con fonti web",
   wbToolStrategy: "Uso dell'inferenza strategica",
   wbFeedResearchDone: "Ho analizzato {count} fonte/i dal vivo e integrato i risultati nella strategia.",
+  wbFeedResearchDeep: "Ho analizzato {count} fonti dal vivo da {angles} angolazioni e integrato i risultati nella strategia.",
   wbOpFileNote: "File di progetto generato in questo Web Build — non una modifica al codice di Korvix.",
   wbOpResearchNote: "Fonti web reali lette durante la ricerca.",
   wbOpStrategyNote: "Nessuna fonte dal vivo — strategia dedotta dal brief.",

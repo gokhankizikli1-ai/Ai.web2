@@ -194,14 +194,20 @@ function pushResearch(out: WebBuildRunEvent[], step: WebBuildStep): void {
   const count = r.sourceCount ?? (r.sources ? r.sources.length : 0);
   if (r.didResearch && count > 0) {
     const titles = (r.sources || []).slice(0, 3).map((s) => s.title).filter(Boolean).join(' · ');
-    // Expandable detail: the real source titles + URLs that were read.
-    const details = (r.sources || []).slice(0, 6).map((s) => `${s.title} — ${s.url}`);
+    const angleCount = r.angles?.length || 0;
+    // Expandable detail: how deep the research went + the real sources read.
+    const meta: string[] = [];
+    if (angleCount) meta.push(`${angleCount} angles · ${count} sources`);
+    if (r.angles?.length) meta.push(r.angles.join(' · '));
+    const sourceLines = (r.sources || []).slice(0, 6).map((s) => `${s.title} — ${s.url}`);
+    const details = [...meta, ...sourceLines];
     pushTool(out, 'research', 'research', 'wbActResearch', {
       summary: titles || undefined, details: details.length ? details : undefined, noteKey: 'wbOpResearchNote',
     });
     out.push({
       id: eid(), type: 'assistant_message', status: 'completed',
-      messageKey: 'wbFeedResearchDone', params: { count },
+      messageKey: angleCount > 1 ? 'wbFeedResearchDeep' : 'wbFeedResearchDone',
+      params: angleCount > 1 ? { count, angles: angleCount } : { count },
     });
   } else {
     pushTool(out, 'research', 'research', 'wbToolStrategy', { noteKey: 'wbOpStrategyNote' });
