@@ -247,13 +247,30 @@ function researchAgentDetails(r: ResearchAgentArtifact): string[] {
 function artDirectorDetails(a: ArtDirectionArtifact): string[] {
   const c = a.colorSystem || ({} as ArtDirectionArtifact['colorSystem']);
   const avoid = asArr(a.avoid);
+  const principles = asArr(a.uiPrinciples);
+  const premium = asArr(a.premiumDetails);
+  const colorLine = c.accent
+    ? `Color system: bg ${c.background} · accent ${c.accent} · accent2 ${c.accent2}`
+      + `${c.successOrTrust ? ` · trust ${c.successOrTrust}` : ''}${c.dangerOrWarning ? ` · warn ${c.dangerOrWarning}` : ''}`
+    : '';
   return [
     a.visualMood ? `Visual mood: ${a.visualMood}` : '',
+    a.brandPersonality ? `Brand personality: ${a.brandPersonality}` : '',
     a.typographyDirection ? `Typography: ${a.typographyDirection}` : '',
-    c.accent ? `Color system: bg ${c.background} · accent ${c.accent} · accent2 ${c.accent2}` : '',
+    colorLine,
+    a.colorPsychologyReasoning ? `Color psychology: ${a.colorPsychologyReasoning}` : '',
     a.visualMetaphor ? `Visual metaphor: ${a.visualMetaphor}` : '',
+    a.imageryDirection ? `Imagery: ${a.imageryDirection}` : '',
+    a.iconographyDirection ? `Iconography: ${a.iconographyDirection}` : '',
     a.motionDirection ? `Motion: ${a.motionDirection}` : '',
     a.density ? `Density: ${a.density}` : '',
+    a.ctaStyleDirection ? `CTA style: ${a.ctaStyleDirection}` : '',
+    a.trustVisualDirection ? `Trust visuals: ${a.trustVisualDirection}` : '',
+    a.responsiveDesignDirection ? `Responsive: ${a.responsiveDesignDirection}` : '',
+    premium.length ? `Premium details: ${premium.slice(0, 3).join(' · ')}` : '',
+    principles.length ? `UI principles: ${principles.slice(0, 3).join(' · ')}` : '',
+    a.heroDirection ? `Hero: ${a.heroDirection}` : '',
+    a.sectionRhythmDirection ? `Section rhythm: ${a.sectionRhythmDirection}` : '',
     avoid.length ? `Avoid: ${avoid.slice(0, 3).join(' · ')}` : '',
   ].filter(Boolean);
 }
