@@ -25,6 +25,24 @@ type Lang = 'en' | 'tr' | string;
 const L = (lang: Lang, en: string, tr: string) => (lang === 'tr' ? tr : en);
 const uniq = (xs: string[]): string[] => Array.from(new Set(xs.map((x) => x.trim()).filter(Boolean)));
 
+/**
+ * FEATURE FLAG — the Phase-1 upstream agents (Research + UI/Art Director) are
+ * EXPERIMENTAL and OFF by default. When false (the default, including when the
+ * env var is unset or invalid), Web Build behaves EXACTLY like the stable
+ * non-agent path: no agent derivation runs, the plain brief drives preview/files,
+ * and agent artifacts are never produced or required. Never required in prod.
+ *
+ * Enable only by explicitly setting VITE_WEB_BUILD_AGENTS_ENABLED=true.
+ */
+export const WEB_BUILD_AGENTS_ENABLED: boolean = (() => {
+  try {
+    const v = (import.meta.env?.VITE_WEB_BUILD_AGENTS_ENABLED as string | undefined) || '';
+    return v.toLowerCase() === 'true' || v === '1';
+  } catch {
+    return false;
+  }
+})();
+
 export type AgentStatus = 'pending' | 'running' | 'done' | 'failed' | 'skipped';
 
 /* ── Research Agent artifact ──────────────────────────────────────────── */
