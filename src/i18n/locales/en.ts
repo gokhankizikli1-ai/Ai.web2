@@ -370,6 +370,7 @@ export const en: Record<string, string> = {
   wbClosePanel: "Close",
   /* web build — real file artifacts */
   wbActRead: "Reading your request",
+  wbActResearch: "Researching with web sources",
   wbActPlan: "Planning page structure",
   wbActCreatingFile: "Creating {file}",
   wbActModifyingFile: "Modifying {file}",

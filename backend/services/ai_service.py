@@ -456,6 +456,38 @@ async def process_chat(
                             _ws_err,
                         )
 
+                # ── Web Build research pre-pass ──────────────────────────
+                # For a FRESH website build, run a REAL web-research pass and
+                # inject the sources into the system prompt so the design
+                # strategy is grounded in live data. Reuses the existing
+                # credit-counted web_research cascade. Revisions skip it. On
+                # unavailable/empty research we inject an honest status and fall
+                # back to strategy inference — never fabricated sources.
+                _wb_research_meta = None
+                if canonical == "website_builder" and "REVISION" not in message:
+                    try:
+                        from backend.services.website_builder_research import run_web_build_research
+                        _wb_block, _wb_research_meta = await run_web_build_research(
+                            user_id=str(user_id), idea=message,
+                        )
+                        if _wb_block:
+                            sys_p += "\n\n" + _wb_block
+                        elif _wb_research_meta and not _wb_research_meta.get("did_research"):
+                            sys_p += (
+                                "\n\n[RESEARCH_STATUS]\n"
+                                "Live web research returned no usable sources. Rely on internal "
+                                "strategy inference, label it 'Strategy insight' (not 'Research "
+                                "found'), and do NOT invent URLs, sources, competitors, or citations."
+                            )
+                        logger.info(
+                            "process_chat | website_builder research | did_research=%s | sources=%d",
+                            bool((_wb_research_meta or {}).get("did_research")),
+                            int((_wb_research_meta or {}).get("source_count") or 0),
+                        )
+                    except Exception as _wberr:
+                        logger.warning("process_chat | website_builder research error: %s — continuing", _wberr)
+                        _wb_research_meta = {"did_research": False}
+
                 reply = await ask_ai(
                     message, sys_p, history,
                     model=cfg["model"],
@@ -467,6 +499,17 @@ async def process_chat(
                 )
 
                 _metadata: dict = {}
+                # Surface REAL research metadata (sources + did_research) so the
+                # frontend can honestly show sources ONLY when tools actually ran.
+                if canonical == "website_builder" and _wb_research_meta:
+                    _metadata["research"] = {
+                        "did_research": bool(_wb_research_meta.get("did_research")),
+                        "queries":      _wb_research_meta.get("queries") or [],
+                        "source_count": int(_wb_research_meta.get("source_count") or 0),
+                    }
+                    _srcs = _wb_research_meta.get("sources") or []
+                    if _srcs:
+                        _metadata["sources"] = _srcs
                 if canonical == "trading_analyst":
                     signal, reply = _extract_trading_signal(reply)
                     if signal is not None:

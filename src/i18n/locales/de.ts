@@ -363,6 +363,7 @@ export const de: Record<string, string> = {
   wbClosePanel: "Schließen",
   /* web build — real file artifacts */
   wbActRead: "Deine Anfrage wird gelesen",
+  wbActResearch: "Recherche mit Web-Quellen",
   wbActPlan: "Seitenstruktur wird geplant",
   wbActCreatingFile: "{file} wird erstellt",
   wbActModifyingFile: "{file} wird geändert",

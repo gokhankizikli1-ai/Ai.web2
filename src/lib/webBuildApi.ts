@@ -49,6 +49,10 @@ export const WEB_BUILD_SECTIONS = [
   'Generated Copy', 'Frontend Code', 'Next Steps',
 ] as const;
 
+/** A real research source returned by the backend web_research pre-pass. Only
+ *  present when a tool actually ran and returned a URL. */
+export interface WebBuildSource { title: string; url: string; snippet?: string }
+
 export interface WebBuildResult {
   reply: string;
   sections: BuildSection[];
@@ -58,6 +62,11 @@ export interface WebBuildResult {
   /** True when the reply parsed but was incomplete (fallback/partial output
    *  is being shown rather than throwing the whole result away). */
   partial: boolean;
+  /** Real research sources (backend web_research). Empty/undefined when no
+   *  live research ran — the UI must NOT claim research in that case. */
+  sources?: WebBuildSource[];
+  /** True only when the backend actually ran research tools. */
+  didResearch?: boolean;
 }
 
 /**
@@ -354,6 +363,18 @@ export async function generateWebBuild(
     }
   }
 
+  // Real research metadata — sources are surfaced ONLY when the backend
+  // actually ran web_research and returned URLs. Never synthesized here.
+  const meta = (data.metadata && typeof data.metadata === 'object') ? data.metadata as Record<string, unknown> : {};
+  const research = (meta.research && typeof meta.research === 'object') ? meta.research as Record<string, unknown> : {};
+  const rawSources = Array.isArray(meta.sources) ? meta.sources : [];
+  const sources: WebBuildSource[] = rawSources
+    .map((s) => (s && typeof s === 'object') ? s as Record<string, unknown> : null)
+    .filter((s): s is Record<string, unknown> => !!s && typeof s.url === 'string' && /^https?:\/\//i.test(s.url as string))
+    .map((s) => ({ title: String(s.title || s.url), url: String(s.url), snippet: typeof s.snippet === 'string' ? s.snippet : undefined }))
+    .slice(0, 8);
+  const didResearch = research.did_research === true && sources.length > 0;
+
   return {
     reply,
     sections,
@@ -361,5 +382,7 @@ export async function generateWebBuild(
     model: typeof data.model === 'string' ? data.model : 'unknown',
     mode: reportedMode || WEBSITE_BUILDER_MODE,
     requestId: typeof data.request_id === 'string' ? data.request_id : '',
+    sources: sources.length ? sources : undefined,
+    didResearch: didResearch || undefined,
   };
 }
