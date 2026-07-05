@@ -350,7 +350,9 @@ export function buildWebBuildPayload(
   if (!prev && !checkQuality(sectionItems, files.length, effLang).ok) {
     sectionItems = fallbackSectionItems(inferred, effLang);
     const plan = deriveLayoutPlan(artBrief, sectionItems.map((s) => ({ id: s.id, name: s.name })));
-    files = diffFiles(prev?.files, synthesizeFromCopies(itemsToCopies(sectionItems), artBrief, plan));
+    // `prev` is `undefined` in this branch (guarded by `!prev`), so pass it
+    // explicitly — `prev?.files` would narrow `.files` to `never` here.
+    files = diffFiles(undefined, synthesizeFromCopies(itemsToCopies(sectionItems), artBrief, plan));
   }
 
   // FILES MUST ALWAYS EXIST (Part 4). If — for any reason — the build produced no
