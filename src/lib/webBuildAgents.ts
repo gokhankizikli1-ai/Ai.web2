@@ -49,6 +49,88 @@ export const WEB_BUILD_AGENTS_ENABLED: boolean = (() => {
 
 export type AgentStatus = 'pending' | 'running' | 'done' | 'failed' | 'skipped';
 
+/* ── Research Agent — Website Research Brief structures ───────────────────
+ * The Research Agent now behaves like a website strategy researcher: before the
+ * site is designed it produces a practical Website Research Brief that downstream
+ * agents (UI/Art Director, Strategy, Layout Architect) and the build consume.
+ * Every field is INFERRED DYNAMICALLY from the idea + brief + inferred playbook +
+ * real research signals — never a fixed per-example template. All optional, so old
+ * saved builds stay valid. */
+
+export type PagePriority = 'must-have' | 'should-have' | 'optional';
+
+/** Who the visitor probably is — inferred from audience, business model, tone. */
+export interface TargetUserAnalysis {
+  ageRange?: string;
+  role?: string;
+  devicePreference?: string;
+  knowledgeLevel?: string;
+  buyingMotivation?: string;
+  mainPainPoints?: string[];
+  decisionFactors?: string[];
+  trustNeeds?: string[];
+  behaviorNotes?: string[];
+  accessibilityNeeds?: string[];
+}
+
+export interface RecommendedPage {
+  name: string;
+  purpose: string;
+  priority: PagePriority;
+  reason: string;
+}
+
+export interface RecommendedComponent {
+  name: string;
+  purpose: string;
+  priority: PagePriority;
+  usedOn?: string;
+  reason: string;
+}
+
+export interface VisualStyleRecommendation {
+  styleType: string;
+  imageryType: string;
+  mockupType?: string;
+  illustrationDirection?: string;
+  photographyDirection?: string;
+  iconStyle?: string;
+  backgroundStyle?: string;
+  premiumLevel: 'simple' | 'polished' | 'premium' | 'luxury' | 'experimental';
+  reason: string;
+}
+
+export interface ColorPsychology {
+  primaryMood: string;
+  recommendedPalette: string[];
+  avoidColors: string[];
+  reasoning: string;
+  emotionalEffect: string;
+  trustEffect?: string;
+  conversionEffect?: string;
+}
+
+export type UxImpact = 'conversion' | 'trust' | 'clarity' | 'engagement' | 'retention';
+export interface UxPriority {
+  priority: string;
+  reason: string;
+  impact: UxImpact;
+}
+
+/** Explicit hand-off the Research Agent passes to the UI / Art Director Agent so
+ *  it never starts from zero. */
+export interface UiAgentInstructions {
+  mustEmphasize: string[];
+  mustAvoid: string[];
+  recommendedVisualDirection: string;
+  recommendedTypography: string;
+  recommendedComponents: string[];
+  recommendedPages: string[];
+  recommendedPalette: string[];
+  targetUserSummary: string;
+  conversionFocus: string;
+}
+
 /* ── Research Agent artifact ──────────────────────────────────────────── */
 export interface ResearchAgentArtifact {
   didResearch: boolean;
@@ -74,6 +156,14 @@ export interface ResearchAgentArtifact {
   /** Why research did not produce live sources (present when didResearch is
    *  false). Shown in the expandable details / owner debug — never fabricated. */
   fallbackReason?: string;
+  /* ── Website Research Brief (all inferred dynamically, all optional) ── */
+  targetUser?: TargetUserAnalysis;
+  recommendedPages?: RecommendedPage[];
+  recommendedComponents?: RecommendedComponent[];
+  visualStyleRecommendation?: VisualStyleRecommendation;
+  colorPsychology?: ColorPsychology;
+  uxPriorities?: UxPriority[];
+  uiAgentInstructions?: UiAgentInstructions;
 }
 
 /* ── UI / Art Director artifact ───────────────────────────────────────── */
@@ -194,6 +284,385 @@ const ANGLE_LABELS = (lang: Lang): Record<string, string> => ({
   visual: L(lang, 'Visual & UI patterns', 'Görsel ve arayüz kalıpları'),
 });
 
+/* ── Website Research Brief — dynamic signal inference ────────────────────
+ * Everything below is DERIVED from real signals in the idea/brief/inferred
+ * playbook (keyword presence, business model, audience, conversion goal, tone,
+ * design system), NOT from a fixed per-example template. Two different ideas
+ * light up different signals → different pages, components, style and palette. */
+
+interface ResearchSignals {
+  // business model
+  booking: boolean; subscription: boolean; purchase: boolean; saas: boolean;
+  application: boolean; leadgen: boolean; content: boolean;
+  // audience / domain
+  b2b: boolean; kids: boolean; luxury: boolean; technical: boolean;
+  health: boolean; finance: boolean; creative: boolean; minimal: boolean;
+  // device lean
+  desktopFirst: boolean; mobileFirst: boolean;
+}
+
+const has = (text: string, ...words: string[]): boolean =>
+  words.some((w) => text.includes(w));
+
+/** Scan the combined idea/brief/inferred text for real model + audience signals. */
+function researchSignals(brief: WebBuildBrief, inferred: InferredBrief): ResearchSignals {
+  const t = [
+    brief.type, brief.audience, brief.goal, brief.coreIdea, brief.visitorIntent,
+    brief.conversionStrategy, brief.style, brief.visualMood,
+    inferred.businessType, inferred.targetAudience, inferred.conversionGoal,
+    inferred.tone, inferred.visualStyle, inferred.industry, inferred.layoutArchetype,
+    (inferred.items || []).join(' '),
+  ].filter(Boolean).join(' ').toLowerCase();
+
+  const booking = has(t, 'book', 'reserv', 'appointment', 'randevu', 'rezerv', 'schedul', 'consult', 'keşif', 'danışman');
+  const subscription = has(t, 'subscription', 'membership', 'üyelik', 'abonel', 'recurring', 'plan', 'pricing', 'fiyat', 'paket');
+  const purchase = has(t, 'shop', 'buy', 'cart', 'checkout', 'satın', 'mağaza', 'store', 'ürün', 'e-ticaret', 'ecommerce', 'commerce');
+  const saas = has(t, 'saas', 'dashboard', 'platform', 'software', 'yazılım', 'api', 'analytics', 'analitik', 'panel', 'app', 'uygulama', 'automation', 'otomasyon');
+  const application = has(t, 'apply', 'application', 'enroll', 'admission', 'başvuru', 'kayıt', 'aday');
+  const leadgen = has(t, 'quote', 'lead', 'teklif', 'contact', 'iletişim', 'estimate', 'proposal');
+  const content = has(t, 'blog', 'magazine', 'news', 'article', 'içerik', 'yayın', 'haber', 'dergi', 'guide', 'rehber');
+
+  const b2b = has(t, 'b2b', 'enterprise', 'business', 'team', 'company', 'kurumsal', 'işletme', 'şirket', 'agency', 'ajans', 'professional');
+  const kids = has(t, 'kid', 'child', 'çocuk', 'family', 'aile', 'parent', 'ebeveyn', 'playful', 'oyun', 'toy');
+  const luxury = has(t, 'luxury', 'premium', 'exclusive', 'high-end', 'bespoke', 'lüks', 'prestij', 'butik', 'couture');
+  const technical = has(t, 'developer', 'engineer', 'data', 'scientific', 'technical', 'geliştirici', 'bilim', 'mühendis', 'research', 'lab');
+  const health = has(t, 'health', 'medical', 'clinic', 'patient', 'sağlık', 'klinik', 'hasta', 'therapy', 'wellness', 'diyet', 'nutrition');
+  const finance = has(t, 'finance', 'bank', 'invest', 'trading', 'insurance', 'finans', 'banka', 'yatırım', 'sigorta', 'fintech', 'accounting', 'muhasebe');
+  const creative = has(t, 'portfolio', 'design', 'creative', 'art', 'photo', 'tasarım', 'sanat', 'fotoğraf', 'studio', 'stüdyo', 'film');
+  const minimal = has(t, 'minimal', 'simple', 'clean', 'sade', 'temiz', 'basit');
+
+  const desktopFirst = saas || b2b || technical || finance || has(t, 'dashboard', 'admin', 'workspace');
+  const mobileFirst = inferred.industry === 'fitness' || has(t, 'mobile', 'app', 'delivery', 'sosyal', 'social', 'on the go', 'teslimat', 'yemek', 'food');
+
+  return {
+    booking, subscription, purchase, saas, application, leadgen, content,
+    b2b, kids, luxury, technical, health, finance, creative, minimal,
+    desktopFirst, mobileFirst,
+  };
+}
+
+/** Infer who the visitor probably is from audience + model + tone signals. */
+function deriveTargetUser(
+  brief: WebBuildBrief, inferred: InferredBrief, sig: ResearchSignals, lang: Lang,
+): TargetUserAnalysis {
+  const audience = brief.audience || inferred.targetAudience;
+  const device = sig.desktopFirst
+    ? L(lang, 'Desktop-first (research/compare, longer sessions)', 'Masaüstü öncelikli (araştırma/karşılaştırma, uzun oturumlar)')
+    : sig.mobileFirst
+      ? L(lang, 'Mobile-first (quick, on-the-go, thumb-reach)', 'Mobil öncelikli (hızlı, hareket halinde, başparmak erişimi)')
+      : L(lang, 'Responsive — meaningful desktop and mobile traffic', 'Duyarlı — anlamlı masaüstü ve mobil trafik');
+  const knowledge = sig.technical || sig.b2b
+    ? L(lang, 'Informed / evaluative — compares options before deciding', 'Bilgili / değerlendirici — karar öncesi seçenekleri karşılaştırır')
+    : sig.kids
+      ? L(lang, 'Parent decides for the child — needs reassurance fast', 'Ebeveyn çocuk adına karar verir — hızlı güven ister')
+      : L(lang, 'General audience — must understand the offer in seconds', 'Genel kitle — teklifi saniyeler içinde anlamalı');
+  const motivation = brief.visitorIntent
+    || (sig.finance ? L(lang, 'Wants security and confidence before committing', 'Bağlanmadan önce güven ve emniyet ister')
+      : sig.luxury ? L(lang, 'Seeks status, quality and a refined experience', 'Statü, kalite ve rafine bir deneyim arar')
+      : sig.saas ? L(lang, 'Wants to solve a concrete problem quickly', 'Somut bir sorunu hızla çözmek ister')
+      : L(lang, `Wants to reach: ${inferred.conversionGoal}`, `Hedefe ulaşmak ister: ${inferred.conversionGoal}`));
+
+  const painPoints = uniq([
+    sig.finance || sig.b2b ? L(lang, 'Distrust of vague or hype-y claims', 'Belirsiz veya abartılı iddialara güvensizlik') : '',
+    sig.saas ? L(lang, 'Unclear what the product actually does', 'Ürünün gerçekte ne yaptığının belirsizliği') : '',
+    sig.purchase || sig.booking ? L(lang, 'Friction and uncertainty before committing', 'Bağlanmadan önce sürtünme ve belirsizlik') : '',
+    L(lang, 'Generic pages that don\'t answer "is this for me?"', '"Bu bana uygun mu?" sorusuna cevap vermeyen genel sayfalar'),
+  ]);
+  const decisionFactors = uniq([
+    sig.luxury ? L(lang, 'Perceived quality and taste', 'Algılanan kalite ve zevk') : '',
+    sig.finance || sig.health ? L(lang, 'Credibility, proof and compliance cues', 'İtibar, kanıt ve uyum işaretleri') : '',
+    sig.saas || sig.b2b ? L(lang, 'Concrete outcomes, integrations and pricing clarity', 'Somut sonuçlar, entegrasyonlar ve net fiyatlandırma') : '',
+    L(lang, `A clear path to: ${brief.primaryCTA || inferred.primaryCTA}`, `Şuraya net bir yol: ${brief.primaryCTA || inferred.primaryCTA}`),
+  ]);
+  const trustNeeds = uniq([
+    (brief.trustSignals || inferred.trustSignals || '').split(/[,·|]/).map((s) => s.trim())[0] || '',
+    sig.finance || sig.health ? L(lang, 'Real proof, credentials, no over-claiming', 'Gerçek kanıt, referanslar, abartısız') : '',
+    sig.purchase ? L(lang, 'Reviews, guarantees, secure checkout cues', 'Yorumlar, garantiler, güvenli ödeme işaretleri') : '',
+  ]);
+  const behaviorNotes = uniq([
+    sig.desktopFirst ? L(lang, 'Scans, compares, opens multiple tabs', 'Tarar, karşılaştırır, birden çok sekme açar')
+      : L(lang, 'Skims fast, decides above the fold', 'Hızlı göz gezdirir, ilk ekranda karar verir'),
+    sig.content ? L(lang, 'Reads before converting — values depth', 'Dönüşmeden önce okur — derinliğe değer verir') : '',
+  ]);
+  const accessibilityNeeds = uniq([
+    L(lang, 'Legible contrast and type scale', 'Okunaklı kontrast ve tipografi ölçeği'),
+    sig.mobileFirst ? L(lang, 'Large tap targets, thumb-friendly layout', 'Büyük dokunma hedefleri, başparmağa uygun düzen') : '',
+    sig.finance || sig.health || sig.b2b ? L(lang, 'Clear focus states and keyboard navigation', 'Net odak durumları ve klavye navigasyonu') : '',
+  ]);
+
+  return {
+    ageRange: sig.kids ? L(lang, 'Parents 28–45 (deciding for a child)', 'Ebeveynler 28–45 (çocuk için karar verir)')
+      : sig.b2b ? L(lang, 'Working professionals 28–55', 'Çalışan profesyoneller 28–55')
+      : sig.luxury ? L(lang, 'Established buyers 30–60', 'Yerleşik alıcılar 30–60')
+      : L(lang, 'Broad adult range, skews to the offer', 'Geniş yetişkin aralığı, teklife göre değişir'),
+    role: audience,
+    devicePreference: device,
+    knowledgeLevel: knowledge,
+    buyingMotivation: motivation,
+    mainPainPoints: painPoints,
+    decisionFactors,
+    trustNeeds,
+    behaviorNotes,
+    accessibilityNeeds,
+  };
+}
+
+/** Decide the pages/views this specific concept needs (not a fixed list). */
+function deriveRecommendedPages(
+  inferred: InferredBrief, sig: ResearchSignals, lang: Lang,
+): RecommendedPage[] {
+  const P = (name: string, purpose: string, priority: PagePriority, reason: string): RecommendedPage =>
+    ({ name, purpose, priority, reason });
+  const pages: RecommendedPage[] = [
+    P('Home', L(lang, 'Explain the offer and drive the primary action', 'Teklifi anlat ve ana eylemi yönlendir'), 'must-have',
+      L(lang, 'Every visitor lands here first', 'Her ziyaretçi önce buraya gelir')),
+  ];
+  if (sig.subscription || sig.saas || sig.purchase) {
+    pages.push(P('Pricing', L(lang, 'Show plans/cost clearly', 'Planları/maliyeti net göster'), 'must-have',
+      L(lang, 'The model is subscription/purchase-based', 'Model abonelik/satın alma temelli')));
+  }
+  if (sig.saas) {
+    pages.push(P('Dashboard', L(lang, 'The core product surface after signup', 'Kayıttan sonra çekirdek ürün yüzeyi'), 'should-have',
+      L(lang, 'Product value lives in the app itself', 'Ürün değeri uygulamanın içinde')));
+  }
+  if (sig.purchase) {
+    pages.push(P('Product Detail', L(lang, 'Sell a single item with proof', 'Tek ürünü kanıtla sat'), 'must-have',
+      L(lang, 'Commerce needs a decision page per product', 'Ticaret her ürün için karar sayfası ister')));
+  }
+  if (sig.booking) {
+    pages.push(P('Booking', L(lang, 'Let the visitor reserve/schedule', 'Ziyaretçi rezervasyon/randevu alsın'), 'must-have',
+      L(lang, 'Conversion is a booking, not a purchase', 'Dönüşüm satın alma değil, rezervasyon')));
+  }
+  if (sig.application) {
+    pages.push(P('Application', L(lang, 'Structured apply/enroll flow', 'Yapılandırılmış başvuru/kayıt akışı'), 'must-have',
+      L(lang, 'The primary action is an application', 'Ana eylem bir başvuru')));
+  }
+  if (sig.creative || inferred.industry === 'portfolio' || inferred.industry === 'agency') {
+    pages.push(P('Case Studies', L(lang, 'Prove quality with real work', 'Gerçek işlerle kaliteyi kanıtla'), 'should-have',
+      L(lang, 'Credibility is earned through shown work', 'İtibar gösterilen işle kazanılır')));
+  }
+  if (inferred.industry === 'landscaping' || inferred.industry === 'furniture' || sig.creative || sig.luxury) {
+    pages.push(P('Gallery', L(lang, 'Let the visuals carry the value', 'Görseller değeri taşısın'), 'should-have',
+      L(lang, 'A visual concept sells on imagery', 'Görsel bir konsept imgelerle satılır')));
+  }
+  if (sig.b2b || sig.leadgen || inferred.industry === 'local_service') {
+    pages.push(P('Services', L(lang, 'Lay out what is offered', 'Sunulanları düzenle'), 'should-have',
+      L(lang, 'Buyers compare service scope first', 'Alıcılar önce hizmet kapsamını karşılaştırır')));
+  }
+  if (sig.content) {
+    pages.push(P('Blog', L(lang, 'Build authority and organic reach', 'Otorite ve organik erişim kur'), 'optional',
+      L(lang, 'Content is part of the strategy', 'İçerik stratejinin parçası')));
+  }
+  pages.push(P('About', L(lang, 'Build trust in who is behind it', 'Arkasındaki ekibe güven kur'),
+    sig.finance || sig.health || sig.luxury ? 'should-have' : 'optional',
+    L(lang, 'Higher-trust concepts need a human story', 'Yüksek güven gerektiren konseptler insani hikâye ister')));
+  pages.push(P('Contact', L(lang, 'Give a direct line for questions', 'Sorular için doğrudan hat ver'),
+    sig.leadgen || sig.b2b ? 'must-have' : 'should-have',
+    L(lang, 'Reduces friction for undecided visitors', 'Kararsız ziyaretçiler için sürtünmeyi azaltır')));
+  return pages;
+}
+
+/** Decide the components the concept + target user need (not a fixed list). */
+function deriveRecommendedComponents(
+  inferred: InferredBrief, sig: ResearchSignals, lang: Lang,
+): RecommendedComponent[] {
+  const C = (name: string, purpose: string, priority: PagePriority, usedOn: string, reason: string): RecommendedComponent =>
+    ({ name, purpose, priority, usedOn, reason });
+  const list: RecommendedComponent[] = [
+    C('Hero', L(lang, 'State the promise + primary CTA', 'Vaadi + ana CTA\'yı belirt'), 'must-have', 'Home',
+      L(lang, 'First screen decides whether they stay', 'İlk ekran kalıp kalmayacaklarını belirler')),
+  ];
+  if (sig.saas || sig.b2b) list.push(C('Feature Grid', L(lang, 'Explain capabilities concretely', 'Yetenekleri somut anlat'), 'must-have', 'Home', L(lang, 'Buyers need to see what it does', 'Alıcılar ne yaptığını görmeli')));
+  if (sig.saas) list.push(C('Dashboard Preview', L(lang, 'Show the real product surface', 'Gerçek ürün yüzeyini göster'), 'should-have', 'Home', L(lang, 'Seeing the app builds confidence', 'Uygulamayı görmek güven verir')));
+  if (sig.subscription || sig.saas || sig.purchase) list.push(C('Pricing', L(lang, 'Make cost and value legible', 'Maliyet ve değeri okunur kıl'), 'must-have', 'Pricing', L(lang, 'Price clarity drives the decision', 'Fiyat netliği kararı yönlendirir')));
+  list.push(C('Testimonials', L(lang, 'Prove others succeeded', 'Başkalarının başardığını kanıtla'), sig.finance || sig.health || sig.b2b ? 'must-have' : 'should-have', 'Home', L(lang, 'Social proof lowers perceived risk', 'Sosyal kanıt algılanan riski düşürür')));
+  if (sig.finance || sig.health || sig.b2b || sig.luxury) list.push(C('Trust Badges', L(lang, 'Signal credibility/compliance', 'İtibar/uyum işareti ver'), 'should-have', 'Home', L(lang, 'High-trust concepts need proof cues', 'Yüksek güven konseptleri kanıt işareti ister')));
+  if (inferred.industry === 'landscaping' || sig.creative) list.push(C('BeforeAfter', L(lang, 'Show transformation', 'Dönüşümü göster'), 'should-have', 'Gallery', L(lang, 'Outcome is visual and comparable', 'Sonuç görsel ve karşılaştırılabilir')));
+  if (sig.booking) list.push(C('Booking Form', L(lang, 'Capture the reservation', 'Rezervasyonu al'), 'must-have', 'Booking', L(lang, 'The conversion is a booking', 'Dönüşüm bir rezervasyon')));
+  if (sig.application) list.push(C('Application Flow', L(lang, 'Guide a multi-step apply', 'Çok adımlı başvuruyu yönet'), 'must-have', 'Application', L(lang, 'The action is an application', 'Eylem bir başvuru')));
+  if (sig.purchase) list.push(C('Product Cards', L(lang, 'Browse items with proof', 'Ürünleri kanıtla göz at'), 'must-have', 'Home', L(lang, 'Commerce needs scannable products', 'Ticaret taranabilir ürün ister')));
+  if (sig.technical || sig.saas) list.push(C('Integration Logos', L(lang, 'Show it fits the stack', 'Yığına uyduğunu göster'), 'optional', 'Home', L(lang, 'Technical buyers check compatibility', 'Teknik alıcılar uyumluluğa bakar')));
+  list.push(C('FAQ', L(lang, 'Remove last-mile doubts', 'Son tereddütleri gider'), 'should-have', 'Home', L(lang, 'Answers objections before they bounce', 'İtirazları ayrılmadan önce yanıtlar')));
+  list.push(C('CTA', L(lang, 'Repeat the single action', 'Tek eylemi tekrarla'), 'must-have', 'Home', L(lang, 'A closing push toward conversion', 'Dönüşüme kapanış itişi')));
+  list.push(C('Footer', L(lang, 'Wayfinding + trust + contact', 'Yönlendirme + güven + iletişim'), 'must-have', 'All', L(lang, 'Baseline structure and credibility', 'Temel yapı ve itibar')));
+  return list;
+}
+
+/** Recommend a visual style from prompt + audience + research — not industry alone. */
+function deriveVisualStyle(
+  brief: WebBuildBrief, inferred: InferredBrief, sig: ResearchSignals, lang: Lang,
+): VisualStyleRecommendation {
+  const premiumLevel: VisualStyleRecommendation['premiumLevel'] =
+    sig.luxury ? 'luxury'
+    : sig.creative && !sig.minimal ? 'experimental'
+    : sig.saas || sig.b2b || sig.finance ? 'premium'
+    : sig.minimal ? 'simple' : 'polished';
+  const styleType = sig.luxury ? L(lang, 'Luxury minimal — restrained, editorial', 'Lüks minimal — ölçülü, editoryal')
+    : sig.kids ? L(lang, 'Playful, colorful, rounded and friendly', 'Eğlenceli, renkli, yuvarlak ve samimi')
+    : sig.technical || sig.finance ? L(lang, 'Precise, data-driven, high-contrast', 'Hassas, veri odaklı, yüksek kontrast')
+    : sig.creative ? L(lang, 'Editorial and expressive with strong type', 'Editoryal ve ifade dolu, güçlü tipografi')
+    : sig.saas ? L(lang, 'Modern product UI — clean, confident', 'Modern ürün arayüzü — temiz, kendinden emin')
+    : L(lang, 'Clean, modern and trustworthy', 'Temiz, modern ve güvenilir');
+  const imageryType = sig.saas ? L(lang, 'Product/dashboard mockups (composed CSS/SVG)', 'Ürün/panel maketleri (kompoze CSS/SVG)')
+    : sig.kids ? L(lang, 'SVG illustration and characters', 'SVG illüstrasyon ve karakterler')
+    : sig.luxury || sig.creative ? L(lang, 'Editorial, cinematic composition', 'Editoryal, sinematik kompozisyon')
+    : sig.finance || sig.technical ? L(lang, 'Data visualization and diagrams', 'Veri görselleştirme ve diyagramlar')
+    : L(lang, 'Composed CSS/SVG visuals — no stock, no blank boxes', 'Kompoze CSS/SVG görseller — stok yok, boş kutu yok');
+  return {
+    styleType,
+    imageryType,
+    mockupType: sig.saas ? L(lang, 'App/dashboard UI mockup', 'Uygulama/panel arayüz maketi') : undefined,
+    illustrationDirection: sig.kids || (!sig.saas && !sig.finance)
+      ? L(lang, 'Geometric SVG shapes tied to the concept', 'Konsepte bağlı geometrik SVG şekiller') : undefined,
+    photographyDirection: sig.luxury || sig.creative
+      ? L(lang, 'Editorial, high-contrast, generous negative space', 'Editoryal, yüksek kontrast, cömert negatif alan') : undefined,
+    iconStyle: sig.technical || sig.finance ? L(lang, 'Sharp line icons', 'Keskin çizgi ikonlar')
+      : sig.kids ? L(lang, 'Rounded, friendly icons', 'Yuvarlak, samimi ikonlar')
+      : L(lang, 'Consistent line/duotone icons', 'Tutarlı çizgi/duoton ikonlar'),
+    backgroundStyle: sig.finance || sig.technical ? L(lang, 'Deep, calm gradient with subtle grid', 'Derin, sakin gradyan, ince ızgara')
+      : sig.kids ? L(lang, 'Bright, layered color blocks', 'Parlak, katmanlı renk blokları')
+      : L(lang, 'Refined gradient/surface system', 'Rafine gradyan/yüzey sistemi'),
+    premiumLevel,
+    reason: L(lang,
+      `Chosen from the audience (${brief.audience || inferred.targetAudience}), model and tone — not the industry alone.`,
+      `Kitle (${brief.audience || inferred.targetAudience}), model ve tondan seçildi — yalnızca sektörden değil.`),
+  };
+}
+
+/** Color psychology guidance — never defaults to blue/purple/indigo. */
+function deriveColorPsychology(
+  brief: WebBuildBrief, inferred: InferredBrief, sig: ResearchSignals, lang: Lang,
+): ColorPsychology {
+  let primaryMood: string; let palette: string[]; let avoid: string[]; let emotional: string;
+  if (sig.finance) {
+    primaryMood = L(lang, 'Trust, stability, competence', 'Güven, istikrar, yetkinlik');
+    palette = ['deep navy', 'slate', 'clean white', 'muted gold accent'];
+    avoid = ['neon', 'candy pink', 'loud gradients'];
+    emotional = L(lang, 'Calm authority and reliability', 'Sakin otorite ve güvenilirlik');
+  } else if (sig.luxury) {
+    primaryMood = L(lang, 'Prestige, refinement, exclusivity', 'Prestij, incelik, ayrıcalık');
+    palette = ['near-black charcoal', 'ivory', 'warm champagne/bronze accent'];
+    avoid = ['bright primary colors', 'busy multi-color', 'default indigo'];
+    emotional = L(lang, 'Understated confidence and taste', 'Gösterişsiz özgüven ve zevk');
+  } else if (sig.kids) {
+    primaryMood = L(lang, 'Playful, safe, energetic', 'Eğlenceli, güvenli, enerjik');
+    palette = ['sky blue', 'sunshine yellow', 'coral', 'mint'];
+    avoid = ['dark/heavy tones', 'muddy neutrals', 'aggressive red'];
+    emotional = L(lang, 'Joy for the child, reassurance for the parent', 'Çocuk için neşe, ebeveyn için güven');
+  } else if (sig.health) {
+    primaryMood = L(lang, 'Calm, clean, caring', 'Sakin, temiz, şefkatli');
+    palette = ['soft teal', 'clean white', 'gentle green', 'warm neutral'];
+    avoid = ['alarming red', 'harsh neon', 'clinical gray only'];
+    emotional = L(lang, 'Reassurance and clarity', 'Güven ve netlik');
+  } else if (inferred.industry === 'restaurant') {
+    primaryMood = L(lang, 'Warm, appetizing, inviting', 'Sıcak, iştah açıcı, davetkâr');
+    palette = ['warm amber', 'terracotta', 'cream', 'deep espresso'];
+    avoid = ['cold blue', 'clinical gray', 'neon'];
+    emotional = L(lang, 'Appetite and hospitality', 'İştah ve misafirperverlik');
+  } else if (inferred.industry === 'landscaping' || has((inferred.visualStyle || '').toLowerCase(), 'eco', 'green', 'nature')) {
+    primaryMood = L(lang, 'Natural, grounded, fresh', 'Doğal, köklü, ferah');
+    palette = ['botanical green', 'earth brown', 'stone', 'soft sky'];
+    avoid = ['artificial neon', 'cold corporate blue only'];
+    emotional = L(lang, 'Growth and calm', 'Büyüme ve dinginlik');
+  } else if (sig.technical) {
+    primaryMood = L(lang, 'Precise, modern, high-signal', 'Hassas, modern, yüksek sinyal');
+    palette = ['cool slate', 'high-contrast cyan accent', 'near-black', 'clean white'];
+    avoid = ['pastels', 'low-contrast grays'];
+    emotional = L(lang, 'Confidence in precision', 'Hassasiyete güven');
+  } else if (sig.creative) {
+    primaryMood = L(lang, 'Expressive, editorial, bold', 'İfade dolu, editoryal, cesur');
+    palette = ['monochrome base', 'one bold accent from the concept', 'off-white'];
+    avoid = ['generic corporate blue', 'over-busy palettes'];
+    emotional = L(lang, 'Memorability and taste', 'Akılda kalıcılık ve zevk');
+  } else {
+    primaryMood = L(lang, 'Confident, modern, approachable', 'Kendinden emin, modern, ulaşılabilir');
+    palette = ['a concept-tied accent', 'deep neutral base', 'clean off-white'];
+    avoid = ['default indigo/purple when the concept implies warmth', 'flat gray placeholders'];
+    emotional = L(lang, 'Clarity and momentum', 'Netlik ve ivme');
+  }
+  // Respect an explicit model color direction when present.
+  if (brief.colorDirection) palette = uniq([brief.colorDirection, ...palette]);
+  return {
+    primaryMood,
+    recommendedPalette: palette,
+    avoidColors: avoid,
+    reasoning: L(lang,
+      `Palette chosen for how ${brief.audience || inferred.targetAudience} should feel — not a default theme.`,
+      `Palet, ${brief.audience || inferred.targetAudience} nasıl hissetmeli diye seçildi — varsayılan tema değil.`),
+    emotionalEffect: emotional,
+    trustEffect: sig.finance || sig.health || sig.b2b
+      ? L(lang, 'Reinforces credibility and safety', 'İtibarı ve emniyeti pekiştirir') : undefined,
+    conversionEffect: L(lang, 'A single accent focuses the eye on the primary action',
+      'Tek bir vurgu gözü ana eyleme odaklar'),
+  };
+}
+
+/** Define UX priorities from model + audience + device lean. */
+function deriveUxPriorities(
+  inferred: InferredBrief, sig: ResearchSignals, lang: Lang,
+): UxPriority[] {
+  const U = (priority: string, reason: string, impact: UxImpact): UxPriority => ({ priority, reason, impact });
+  const out: UxPriority[] = [];
+  out.push(U(
+    L(lang, 'Primary CTA visible above the fold', 'Ana CTA ilk ekranda görünür'),
+    L(lang, `The single action is ${inferred.primaryCTA}`, `Tek eylem: ${inferred.primaryCTA}`), 'conversion'));
+  if (sig.finance || sig.health || sig.b2b || sig.luxury) {
+    out.push(U(L(lang, 'Trust proof above the fold', 'Güven kanıtı ilk ekranda'),
+      L(lang, 'Higher-trust concept — credibility must come early', 'Yüksek güven konsepti — itibar erken gelmeli'), 'trust'));
+  }
+  if (sig.subscription || sig.saas || sig.purchase) {
+    out.push(U(L(lang, 'Readable, honest pricing', 'Okunur, dürüst fiyatlandırma'),
+      L(lang, 'Price clarity is the main decision blocker', 'Fiyat netliği ana karar engeli'), 'clarity'));
+  }
+  if (sig.booking || sig.application) {
+    out.push(U(L(lang, 'Reduce form/booking friction', 'Form/rezervasyon sürtünmesini azalt'),
+      L(lang, 'The conversion is a multi-step flow', 'Dönüşüm çok adımlı bir akış'), 'conversion'));
+  }
+  if (sig.saas) {
+    out.push(U(L(lang, 'Show the product before signup', 'Kayıttan önce ürünü göster'),
+      L(lang, 'Seeing it beats describing it', 'Görmek anlatmaktan iyi'), 'engagement'));
+  }
+  out.push(U(
+    sig.desktopFirst ? L(lang, 'Dense, scannable desktop layout', 'Yoğun, taranabilir masaüstü düzeni')
+      : L(lang, 'Fast, thumb-friendly mobile flow', 'Hızlı, başparmağa uygun mobil akış'),
+    sig.desktopFirst ? L(lang, 'Audience researches on desktop', 'Kitle masaüstünde araştırır')
+      : L(lang, 'Audience arrives on mobile', 'Kitle mobil ile gelir'),
+    'clarity'));
+  return out;
+}
+
+/** Compose the explicit hand-off for the UI / Art Director Agent. */
+function deriveUiAgentInstructions(
+  brief: WebBuildBrief, inferred: InferredBrief, sig: ResearchSignals,
+  target: TargetUserAnalysis, pages: RecommendedPage[], comps: RecommendedComponent[],
+  style: VisualStyleRecommendation, color: ColorPsychology, lang: Lang,
+): UiAgentInstructions {
+  return {
+    mustEmphasize: uniq([
+      style.styleType,
+      color.primaryMood,
+      L(lang, `A single obvious path to ${brief.primaryCTA || inferred.primaryCTA}`,
+        `${brief.primaryCTA || inferred.primaryCTA} için tek net yol`),
+      sig.finance || sig.health || sig.b2b ? L(lang, 'Credibility and proof early', 'İtibar ve kanıt erken') : '',
+    ]),
+    mustAvoid: uniq([
+      ...color.avoidColors,
+      L(lang, 'Generic centered hero + three-card grid', 'Jenerik ortalı hero + üç kart grid'),
+      L(lang, 'Stock imagery and blank placeholder boxes', 'Stok görsel ve boş yer tutucu kutular'),
+    ]),
+    recommendedVisualDirection: `${style.styleType} · ${style.imageryType} (${style.premiumLevel})`,
+    recommendedTypography: sig.luxury || sig.creative
+      ? L(lang, 'Editorial serif headlines + clean sans body', 'Editoryal serif başlıklar + temiz sans gövde')
+      : L(lang, 'Modern geometric sans headlines + neutral sans body', 'Modern geometrik sans başlıklar + nötr sans gövde'),
+    recommendedComponents: comps.filter((c) => c.priority === 'must-have').map((c) => c.name),
+    recommendedPages: pages.filter((p) => p.priority !== 'optional').map((p) => p.name),
+    recommendedPalette: color.recommendedPalette,
+    targetUserSummary: [target.role, target.devicePreference, target.buyingMotivation].filter(Boolean).join(' · '),
+    conversionFocus: brief.conversionStrategy
+      || L(lang, `Drive to ${brief.primaryCTA || inferred.primaryCTA}`, `Şuna yönlendir: ${brief.primaryCTA || inferred.primaryCTA}`),
+  };
+}
+
 /**
  * Build the Research Agent artifact. Consumes the real backend research metadata
  * (when present) plus the inferred category playbook, and SYNTHESIZES why it
@@ -262,13 +731,48 @@ export function deriveResearchAgent(
           'Canlı kaynak yok — yukarıdakiler fikir + kategori bilgisinden çıkarılan stratejidir.'),
       ]);
 
-  const summary = didResearch
+  // ── Website Research Brief — dynamic, signal-driven (never a fixed template).
+  // Each block is guarded so a malformed derivation can never break the agent.
+  const sig = researchSignals(brief, inferred);
+  let targetUser: TargetUserAnalysis | undefined;
+  let recommendedPages: RecommendedPage[] | undefined;
+  let recommendedComponents: RecommendedComponent[] | undefined;
+  let visualStyleRecommendation: VisualStyleRecommendation | undefined;
+  let colorPsychology: ColorPsychology | undefined;
+  let uxPriorities: UxPriority[] | undefined;
+  let uiAgentInstructions: UiAgentInstructions | undefined;
+  try { targetUser = deriveTargetUser(brief, inferred, sig, lang); } catch { targetUser = undefined; }
+  try { recommendedPages = deriveRecommendedPages(inferred, sig, lang); } catch { recommendedPages = undefined; }
+  try { recommendedComponents = deriveRecommendedComponents(inferred, sig, lang); } catch { recommendedComponents = undefined; }
+  try { visualStyleRecommendation = deriveVisualStyle(brief, inferred, sig, lang); } catch { visualStyleRecommendation = undefined; }
+  try { colorPsychology = deriveColorPsychology(brief, inferred, sig, lang); } catch { colorPsychology = undefined; }
+  try { uxPriorities = deriveUxPriorities(inferred, sig, lang); } catch { uxPriorities = undefined; }
+  try {
+    if (targetUser && recommendedPages && recommendedComponents && visualStyleRecommendation && colorPsychology) {
+      uiAgentInstructions = deriveUiAgentInstructions(
+        brief, inferred, sig, targetUser, recommendedPages, recommendedComponents,
+        visualStyleRecommendation, colorPsychology, lang,
+      );
+    }
+  } catch { uiAgentInstructions = undefined; }
+
+  // Collapsed-row summary — describe the Research Brief, not a generic line.
+  const briefBits = [
+    targetUser ? L(lang, 'target users', 'hedef kullanıcılar') : '',
+    recommendedPages ? L(lang, 'required pages', 'gerekli sayfalar') : '',
+    visualStyleRecommendation ? L(lang, 'visual style', 'görsel stil') : '',
+    uxPriorities ? L(lang, 'conversion priorities', 'dönüşüm öncelikleri') : '',
+  ].filter(Boolean);
+  const briefSummary = briefBits.length
+    ? L(lang, `Identified ${briefBits.join(', ')}.`, `${briefBits.join(', ')} belirlendi.`)
+    : '';
+  const summary = (didResearch
     ? L(lang,
-        `Researched ${sourceCount} source(s) across ${researchAngles.length} angles; synthesized category language, audience expectations, conversion patterns, trust signals and risks to avoid.`,
-        `${researchAngles.length} açıdan ${sourceCount} kaynak araştırıldı; kategori dili, kitle beklentileri, dönüşüm kalıpları, güven sinyalleri ve kaçınılacak riskler sentezlendi.`)
+        `Researched ${sourceCount} source(s) across ${researchAngles.length} angles. ${briefSummary}`,
+        `${researchAngles.length} açıdan ${sourceCount} kaynak araştırıldı. ${briefSummary}`)
     : L(lang,
-        `No live sources available — inferred category language, audience expectations, conversion patterns and risks from the idea (strategy inference).`,
-        `Canlı kaynak yok — fikirden kategori dili, kitle beklentileri, dönüşüm kalıpları ve riskler çıkarıldı (strateji çıkarımı).`);
+        `Using strategy inference (no live sources). ${briefSummary}`,
+        `Strateji çıkarımı kullanılıyor (canlı kaynak yok). ${briefSummary}`)).trim();
 
   return {
     didResearch,
@@ -292,6 +796,14 @@ export function deriveResearchAgent(
     // Only meaningful when research did NOT run — carried through for the
     // expandable details / owner debug so a failure/disabled state is visible.
     fallbackReason: didResearch ? undefined : research?.fallbackReason,
+    // ── Website Research Brief (all optional, all dynamically inferred) ──
+    targetUser,
+    recommendedPages,
+    recommendedComponents,
+    visualStyleRecommendation,
+    colorPsychology,
+    uxPriorities,
+    uiAgentInstructions,
   };
 }
 
@@ -320,13 +832,17 @@ export function deriveArtDirection(
   lang: Lang = 'en',
 ): ArtDirectionArtifact {
   const ds = deriveDesignSystemFromStrategy(brief);
+  // Research color psychology feeds the design system: when the model gave no
+  // explicit color direction, the researched palette words drive the tokens so
+  // the concept's mood (not a default indigo) shapes the actual colors.
+  const researchPalette = (research?.colorPsychology?.recommendedPalette || []).join(' ');
   // Resolve the palette from a brief whose mood/color words are populated, so the
   // color system reflects the intended direction (not a bare indigo default when
   // the backend returned no explicit color).
   const moodBrief = {
     ...brief,
-    visualMood: brief.visualMood || brief.style || inferred.visualStyle,
-    colorDirection: brief.colorDirection || brief.visualMood || brief.style || inferred.visualStyle,
+    visualMood: brief.visualMood || brief.style || research?.visualStyleRecommendation?.styleType || inferred.visualStyle,
+    colorDirection: brief.colorDirection || researchPalette || brief.visualMood || brief.style || inferred.visualStyle,
   };
   const tokens = designTokensForBrief(moodBrief);
 
@@ -340,10 +856,12 @@ export function deriveArtDirection(
     border: 'rgba(255,255,255,0.10)',
   };
 
-  const visualMood = brief.visualMood || brief.style || inferred.visualStyle;
+  const visualMood = brief.visualMood || brief.style
+    || research?.visualStyleRecommendation?.styleType || inferred.visualStyle;
   const brandPersonality = uniq([inferred.tone, brief.audience || inferred.targetAudience]).join(' · ')
     || L(lang, 'confident, modern, premium', 'kendinden emin, modern, premium');
   const typographyDirection = brief.typographyDirection
+    || research?.uiAgentInstructions?.recommendedTypography
     || (isSerif(tokens.headingFont)
       ? L(lang, 'Editorial serif headlines with a clean sans body — refined, premium.',
           'Editoryal serif başlıklar, temiz sans gövde — zarif, premium.')
@@ -373,6 +891,9 @@ export function deriveArtDirection(
     L(lang, 'Tasteful reveal-on-scroll, never childish', 'Zevkli scroll-belirme, asla çocuksu değil'),
   ]);
   const avoid = uniq([
+    // Research color psychology + explicit UI-agent hand-off drive what to avoid.
+    ...(research?.colorPsychology?.avoidColors || []).slice(0, 3),
+    ...(research?.uiAgentInstructions?.mustAvoid || []).slice(0, 2),
     ...(research?.risksToAvoid || []).slice(0, 2),
     L(lang, 'Default indigo/cyan when the concept implies another palette',
       'Konsept başka bir palet ima ederken varsayılan indigo/camgöbeği'),
@@ -380,6 +901,9 @@ export function deriveArtDirection(
       'Jenerik stok görseller ve düz gri yer tutucular'),
   ]);
   const uiPrinciples = uniq([
+    // Lead with the researched UX priorities (audience/model-specific), then the
+    // durable premium principles.
+    ...(research?.uxPriorities || []).slice(0, 2).map((p) => p.priority),
     L(lang, 'One obvious conversion path per screen', 'Ekran başına tek net dönüşüm yolu'),
     L(lang, 'Strong typographic hierarchy over decoration', 'Dekorasyon yerine güçlü tipografik hiyerarşi'),
     L(lang, 'Generous, intentional whitespace', 'Cömert, amaçlı boşluk'),
@@ -460,7 +984,7 @@ export function deriveStrategyAgent(
     || uniq(research?.conversionPatterns || []).join(' · ')
     || L(lang, `Lead the visitor to one action: ${primary}.`, `Ziyaretçiyi tek eyleme yönlendir: ${primary}.`);
   const trustStrategy = brief.trustSignals
-    || uniq(research?.trustSignals || []).join(' · ')
+    || uniq([...(research?.targetUser?.trustNeeds || []), ...(research?.trustSignals || [])]).join(' · ')
     || inferred.trustSignals;
   const differentiation = (research?.differentiationOpportunities || [])[0]
     || inferred.previewVisualIdea;
@@ -491,8 +1015,16 @@ export function deriveStrategyAgent(
   return {
     positioning,
     mainPromise,
-    audiencePsychology: uniq([audience, ...(research?.audienceExpectations || [])]).join(' · '),
-    visitorIntent: brief.visitorIntent || (research?.audienceExpectations || [])[0]
+    // Fold the researched target-user profile (motivation + pain points) into the
+    // audience psychology so strategy speaks to the real visitor, not a label.
+    audiencePsychology: uniq([
+      audience,
+      research?.targetUser?.buyingMotivation || '',
+      ...(research?.targetUser?.mainPainPoints || []).slice(0, 2),
+      ...(research?.audienceExpectations || []),
+    ]).join(' · '),
+    visitorIntent: brief.visitorIntent || research?.targetUser?.buyingMotivation
+      || (research?.audienceExpectations || [])[0]
       || L(lang, `Decide quickly whether this fits, then ${primary}.`, `Bunun uygun olup olmadığına hızlıca karar ver, sonra ${primary}.`),
     conversionStrategy,
     trustStrategy,
