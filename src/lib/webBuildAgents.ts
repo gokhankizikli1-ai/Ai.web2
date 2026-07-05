@@ -756,11 +756,127 @@ function deriveUiAgentInstructions(
   };
 }
 
+/* ── Real research signal mining ──────────────────────────────────────────
+ * Turn the REAL sources the backend actually fetched (titles + snippets) into
+ * concrete, source-backed signal language, so live research genuinely SHAPES the
+ * brief (category vocabulary, audience/conversion/trust/visual patterns, adjacent
+ * references) instead of only contributing source titles. This is pure text
+ * analysis over the provided sources — it never fabricates a source, and it
+ * extracts salient TERMS + real domains rather than copying source prose. It runs
+ * ONLY when real usable sources exist; otherwise the inference path is unchanged. */
+interface MinedSignals {
+  categoryLanguage: string[];
+  audienceExpectations: string[];
+  conversionPatterns: string[];
+  trustSignals: string[];
+  visualPatterns: string[];
+  competitorOrAdjacentPatterns: string[];
+  sourceBackedInsights: string[];
+}
+
+/** Neutral stopwords dropped from category-term extraction (no niche words). */
+const MINE_STOP = new Set((
+  'the a an and or of to for in on at is are be with your you our we how what why best top ' +
+  'guide vs from this that these those it its as by will can do does more most into out up ' +
+  'down over under new get see all about pricing home page website site online free how-to'
+).split(/\s+/));
+
+/** Signal vocab per research dimension — presence in real source text is a HONEST
+ *  observation about what the live category emphasizes (not a fixed template). */
+const MINE_SIGNALS: Record<'conversion' | 'trust' | 'visual' | 'audience', string[]> = {
+  conversion: ['pricing', 'price', 'plan', 'signup', 'sign up', 'subscribe', 'subscription',
+    'checkout', 'cart', 'buy', 'trial', 'free trial', 'demo', 'book', 'booking', 'reserve',
+    'reservation', 'quote', 'lead', 'call to action', 'onboarding', 'waitlist', 'apply', 'application'],
+  trust: ['review', 'reviews', 'testimonial', 'rating', 'trusted', 'trust', 'secure', 'security',
+    'guarantee', 'warranty', 'certified', 'accredited', 'verified', 'case study', 'proof',
+    'results', 'award', 'compliance', 'privacy'],
+  visual: ['design', 'layout', 'hero', 'landing', 'typography', 'palette', 'color', 'colour',
+    'minimal', 'modern', 'animation', 'aesthetic', 'brand', 'visual', 'gallery', 'showcase',
+    'template', 'inspiration'],
+  audience: ['audience', 'customer', 'customers', 'user', 'users', 'buyer', 'beginner', 'professional',
+    'enterprise', 'team', 'small business', 'freelancer', 'parent', 'student', 'patient', 'client', 'member'],
+};
+
+function mineDomainOf(url: string): string {
+  try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; }
+}
+
+/** Frequency-rank salient terms across the given texts (>=2 occurrences). */
+function mineTopTerms(texts: string[], n: number): string[] {
+  const freq = new Map<string, number>();
+  for (const t of texts) {
+    for (const w of (t.toLowerCase().match(/[a-zçğıöşü0-9]{3,}/gi) || [])) {
+      if (MINE_STOP.has(w)) continue;
+      freq.set(w, (freq.get(w) || 0) + 1);
+    }
+  }
+  return [...freq.entries()].filter(([, c]) => c >= 2).sort((a, b) => b[1] - a[1]).slice(0, n).map(([w]) => w);
+}
+
+/** Which of a signal group's terms actually appear across the source text. */
+function minePresent(text: string, group: string[]): string[] {
+  const low = ` ${text.toLowerCase()} `;
+  return uniq(group.filter((w) => low.includes(w)));
+}
+
+function mineSourceSignals(sources: WebBuildSource[], lang: Lang): MinedSignals {
+  const texts = sources.map((s) => `${s.title || ''} ${s.snippet || ''}`);
+  const allText = texts.join(' ');
+  const join = (xs: string[]) => xs.join(', ');
+
+  const category = mineTopTerms(sources.map((s) => s.title || ''), 8);
+  const conv = minePresent(allText, MINE_SIGNALS.conversion).slice(0, 6);
+  const trust = minePresent(allText, MINE_SIGNALS.trust).slice(0, 6);
+  const vis = minePresent(allText, MINE_SIGNALS.visual).slice(0, 6);
+  const aud = minePresent(allText, MINE_SIGNALS.audience).slice(0, 6);
+  const domains = uniq(sources.map((s) => mineDomainOf(s.url)).filter(Boolean)).slice(0, 5);
+
+  // Per-source insight: real title + domain + which dimensions its text touches.
+  // References the source, never reproduces its prose.
+  const themeWord = (t: string, en: string, tr: string) => (t ? L(lang, en, tr) : '');
+  const insights = sources.slice(0, 4).map((s) => {
+    const txt = `${s.title || ''} ${s.snippet || ''}`;
+    const themes = uniq([
+      themeWord(minePresent(txt, MINE_SIGNALS.conversion)[0] || '', 'conversion', 'dönüşüm'),
+      themeWord(minePresent(txt, MINE_SIGNALS.trust)[0] || '', 'trust', 'güven'),
+      themeWord(minePresent(txt, MINE_SIGNALS.visual)[0] || '', 'design', 'tasarım'),
+      themeWord(minePresent(txt, MINE_SIGNALS.audience)[0] || '', 'audience', 'kitle'),
+    ]);
+    const dom = mineDomainOf(s.url);
+    const tail = themes.length
+      ? L(lang, ` — covers ${join(themes)}`, ` — şu konulara değiniyor: ${join(themes)}`)
+      : '';
+    return `${s.title || dom}${dom ? ` (${dom})` : ''}${tail}`;
+  }).filter(Boolean);
+
+  return {
+    categoryLanguage: category,
+    audienceExpectations: aud.length
+      ? [L(lang, `Live sources frame the audience around: ${join(aud)}.`, `Canlı kaynaklar hedef kitleyi şu çerçevede ele alıyor: ${join(aud)}.`)]
+      : [],
+    conversionPatterns: conv.length
+      ? [L(lang, `Real sources emphasize conversion levers: ${join(conv)}.`, `Gerçek kaynaklar dönüşüm kaldıraçlarını vurguluyor: ${join(conv)}.`)]
+      : [],
+    trustSignals: trust.length
+      ? [L(lang, `Trust cues recurring across sources: ${join(trust)}.`, `Kaynaklarda tekrarlayan güven işaretleri: ${join(trust)}.`)]
+      : [],
+    visualPatterns: vis.length
+      ? [L(lang, `Design language recurring in sources: ${join(vis)}.`, `Kaynaklarda tekrarlayan tasarım dili: ${join(vis)}.`)]
+      : [],
+    competitorOrAdjacentPatterns: domains.length
+      ? [L(lang, `Adjacent/live references studied: ${join(domains)}.`, `İncelenen komşu/canlı referanslar: ${join(domains)}.`)]
+      : [],
+    sourceBackedInsights: insights,
+  };
+}
+
 /**
  * Build the Research Agent artifact. Consumes the real backend research metadata
  * (when present) plus the inferred category playbook, and SYNTHESIZES why it
- * matters for the website — it never just passes URLs through. Honest about
- * whether live sources actually informed it.
+ * matters for the website — it never just passes URLs through. When live sources
+ * exist their real titles/snippets are MINED into the category/audience/conversion/
+ * trust/visual/adjacent signal language so research actually shapes the brief.
+ * Honest about whether live sources actually informed it.
  */
 export function deriveResearchAgent(
   brief: WebBuildBrief,
@@ -779,21 +895,35 @@ export function deriveResearchAgent(
     ? research.angles
     : [labels.category, labels.audience, labels.conversion, labels.trust, labels.visual];
 
+  // Mine the REAL sources (when live research ran) into source-backed signal
+  // language, then LEAD each dimension with those findings so research shapes the
+  // brief. Guarded — a malformed source set can never break the artifact. When no
+  // live sources exist, `mined` is empty and every dimension is pure inference.
+  let mined: MinedSignals | undefined;
+  if (didResearch && sources.length) {
+    try { mined = mineSourceSignals(sources, lang); } catch { mined = undefined; }
+  }
+
   const items = (inferred.items || []).slice(0, 6);
-  const categoryLanguage = uniq([brief.type || inferred.businessType, ...items]);
+  const categoryLanguage = uniq([...(mined?.categoryLanguage || []), brief.type || inferred.businessType, ...items]);
   const audienceExpectations = uniq([
+    ...(mined?.audienceExpectations || []),
     brief.audience || inferred.targetAudience,
     L(lang, `Understand the offer fast, then a clear next step (${inferred.conversionGoal}).`,
       `Teklifi hızla anlamak, sonra net bir adım (${inferred.conversionGoal}).`),
   ]);
   const conversionPatterns = uniq([
+    ...(mined?.conversionPatterns || []),
     L(lang, `Single primary action: ${inferred.primaryCTA}.`, `Tek ana eylem: ${inferred.primaryCTA}.`),
     L(lang, `Secondary path: ${inferred.secondaryCTA}.`, `İkincil yol: ${inferred.secondaryCTA}.`),
     inferred.conversionGoal,
   ]);
-  const trustSignals = uniq((brief.trustSignals || inferred.trustSignals || '').split(/[,·|]/).map((s) => s.trim()));
-  const visualPatterns = uniq([inferred.visualStyle, inferred.previewVisualIdea, inferred.recommendedMotion]);
-  const competitorOrAdjacentPatterns = uniq([inferred.strategyNote]);
+  const trustSignals = uniq([
+    ...(mined?.trustSignals || []),
+    ...(brief.trustSignals || inferred.trustSignals || '').split(/[,·|]/).map((s) => s.trim()),
+  ]);
+  const visualPatterns = uniq([...(mined?.visualPatterns || []), inferred.visualStyle, inferred.previewVisualIdea, inferred.recommendedMotion]);
+  const competitorOrAdjacentPatterns = uniq([...(mined?.competitorOrAdjacentPatterns || []), inferred.strategyNote]);
   const risksToAvoid = uniq([
     L(lang, 'Generic centered hero + three-card grid (reads as a template).',
       'Jenerik ortalanmış hero + üç kart grid (şablon gibi görünür).'),
@@ -812,12 +942,15 @@ export function deriveResearchAgent(
       `Konsepte bağlı bir görsel metafor; stok bir hero değil.`),
   ]);
 
-  // Insights: phrased as source-backed ONLY when real sources exist.
+  // Insights: phrased as source-backed ONLY when real sources exist. Lead with the
+  // MINED per-source insights (real title + domain + which dimensions it covers)
+  // so the insight reflects the actual findings, not just a source count.
   const sourceBackedInsights = didResearch
     ? uniq([
-        L(lang, `${sourceCount} live source(s) confirm the category conventions above.`,
-          `${sourceCount} canlı kaynak yukarıdaki kategori kurallarını doğruluyor.`),
-        ...sources.slice(0, 3).map((s) => s.title).filter(Boolean),
+        L(lang, `${sourceCount} live source(s) inform the strategy below.`,
+          `${sourceCount} canlı kaynak aşağıdaki stratejiyi besliyor.`),
+        ...(mined?.sourceBackedInsights || []),
+        ...(mined?.sourceBackedInsights?.length ? [] : sources.slice(0, 3).map((s) => s.title).filter(Boolean)),
       ])
     : uniq([
         L(lang, 'No live sources — the above is strategy inference from the idea + category knowledge.',
