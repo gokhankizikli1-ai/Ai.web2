@@ -363,10 +363,15 @@ export function buildWebBuildPayload(
     try {
       const la = runLayoutArchitect(
         sectionItems.map((s) => ({ id: s.id, name: s.name })),
-        layoutPlan, artifacts?.artDirection, artifacts?.strategy, effLang,
+        layoutPlan, artifacts?.research, artifacts?.artDirection, artifacts?.strategy, effLang,
       );
       agents = [...agents, la.agent];
-      artifacts = { ...(artifacts || {}), blueprint: la.blueprint };
+      // Thread the blueprint back into the shared pipeline context so the final
+      // build package carries the fully-connected artifact chain.
+      const ctx = artifacts?.context
+        ? { ...artifacts.context, layoutBlueprint: la.blueprint || null }
+        : artifacts?.context;
+      artifacts = { ...(artifacts || {}), blueprint: la.blueprint, context: ctx };
     } catch {
       /* non-blocking — keep the upstream agents as-is */
     }
