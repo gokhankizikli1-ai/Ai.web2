@@ -36,23 +36,20 @@ const REVISE_GROUPS: Group[] = [
 
 const STEP_MS = 1100;
 
-function Spinner() {
-  return (
-    <motion.span
-      aria-hidden
-      className="inline-block h-3.5 w-3.5 rounded-full border-[1.5px] border-white/15"
-      style={{ borderTopColor: 'var(--kx-accent, #6366f1)' }}
-      animate={{ rotate: 360 }}
-      transition={{ duration: 0.8, repeat: Infinity, ease: 'linear' }}
-    />
-  );
-}
-
-const Check = () => (
-  <svg aria-hidden viewBox="0 0 16 16" className="h-3.5 w-3.5 text-emerald-400/80"><path d="M13 4.5 6.5 11 3 7.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+/** A small pulsing orb that sits right next to the "Think" label. */
+const PulseOrb = () => (
+  <motion.span
+    aria-hidden
+    className="inline-block h-2 w-2 shrink-0 rounded-full"
+    style={{ background: 'var(--kx-accent, #6366f1)' }}
+    animate={{ scale: [1, 1.35, 1], opacity: [0.55, 1, 0.55] }}
+    transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
+  />
 );
 
-const Dot = () => <span aria-hidden className="inline-block h-1.5 w-1.5 rounded-full bg-white/20" />;
+const Check = () => (
+  <svg aria-hidden viewBox="0 0 16 16" className="h-3.5 w-3.5 shrink-0 text-emerald-400/80"><path d="M13 4.5 6.5 11 3 7.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
+);
 
 export default function WebBuildLiveProgress({ kind = 'build' }: { kind?: 'build' | 'revision' }) {
   const { t } = useLanguageStore();
@@ -75,25 +72,37 @@ export default function WebBuildLiveProgress({ kind = 'build' }: { kind?: 'build
   const currentGroup = flat[Math.min(k, flat.length - 1)]?.gi ?? 0;
   const currentStage = flat[Math.min(k, flat.length - 1)]?.stage;
 
+  // Compact, sequential progress: completed agents settle as ✓ lines; the ONE
+  // active agent shows a pulsing orb + "Think" and its current action. Future
+  // agents are NOT listed (no static checklist, no reserved blank area).
   return (
-    <div className="space-y-2">
+    <div className="space-y-1.5">
       {groups.map((g, gi) => {
-        const state = gi < currentGroup ? 'done' : gi === currentGroup ? 'running' : 'pending';
+        if (gi > currentGroup) return null; // future agents stay hidden
+        if (gi < currentGroup) {
+          return (
+            <div key={g.id} className="flex items-center gap-2 text-[12.5px] text-[#64748B]">
+              <Check />
+              <span>{t(g.nameKey)} {t('wbAgentCompleted')}</span>
+            </div>
+          );
+        }
+        // Active agent — pulsing orb + "Think", then the current action beneath it.
         return (
-          <div key={g.id} className={`flex items-center gap-2.5 text-[13px] ${state === 'pending' ? 'opacity-45' : ''}`}>
-            <span className="flex h-4 w-4 items-center justify-center">
-              {state === 'done' ? <Check /> : state === 'running' ? <Spinner /> : <Dot />}
-            </span>
-            <span className={state === 'pending' ? 'text-[#64748B]' : 'text-[#CBD5E1]'}>{t(g.nameKey)}</span>
-            {state === 'running' && currentStage && currentStage !== g.nameKey && (
-              <motion.span
+          <div key={g.id} className="space-y-0.5">
+            <div className="flex items-center gap-2 text-[13px]">
+              <PulseOrb />
+              <span className="font-medium text-[#CBD5E1]">{t('wbThinkLabel')}</span>
+            </div>
+            {currentStage && (
+              <motion.div
                 key={currentStage}
-                initial={{ opacity: 0, x: -4 }}
-                animate={{ opacity: 1, x: 0 }}
-                className="text-[#64748B]"
+                initial={{ opacity: 0, y: 2 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="pl-4 text-[12.5px] leading-relaxed text-[#64748B]"
               >
-                · {t(currentStage)}
-              </motion.span>
+                {t(g.nameKey)} · {t(currentStage)}
+              </motion.div>
             )}
           </div>
         );
