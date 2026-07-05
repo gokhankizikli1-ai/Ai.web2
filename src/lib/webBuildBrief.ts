@@ -329,6 +329,44 @@ export function inferWebsiteBrief(prompt: string, lang: Lang = 'en'): InferredBr
 /** Alias — the strategy IS the brief (industry, sections, layout, motion, copy). */
 export const inferWebsiteStrategy = inferWebsiteBrief;
 
+/* ── Design system per industry ───────────────────────────────────────────
+ * A different typographic personality + palette + rhythm per niche, so a
+ * landscaping studio doesn't look like a SaaS dashboard. Uses only CSS font
+ * stacks (no network fonts). The preview document reads these via CSS vars. */
+export interface DesignTokens {
+  /** Page background. */ bg: string;
+  /** Heading font stack. */ headingFont: string;
+  /** Body font stack. */ bodyFont: string;
+  /** Primary accent (CTAs, glows). */ accent: string;
+  /** Secondary accent. */ accent2: string;
+  /** Heading letter-spacing. */ tracking: string;
+  /** Corner radius for cards. */ radius: string;
+}
+
+const SANS = 'ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+const SERIF = 'ui-serif, Georgia, Cambria, "Times New Roman", Times, serif';
+
+const TOKENS: Record<IndustryKey, DesignTokens> = {
+  ai_saas:      { bg: '#05070d', headingFont: SANS,  bodyFont: SANS, accent: '#6366f1', accent2: '#22d3ee', tracking: '-0.025em', radius: '0.9rem' },
+  fitness:      { bg: '#0a0710', headingFont: SANS,  bodyFont: SANS, accent: '#f97316', accent2: '#22d3ee', tracking: '-0.02em',  radius: '1rem' },
+  landscaping:  { bg: '#071009', headingFont: SERIF, bodyFont: SANS, accent: '#34d399', accent2: '#a3e635', tracking: '-0.005em', radius: '1.25rem' },
+  furniture:    { bg: '#0d0b08', headingFont: SERIF, bodyFont: SANS, accent: '#d6a35c', accent2: '#8b5e34', tracking: '0em',       radius: '1rem' },
+  automotive:   { bg: '#05060a', headingFont: SANS,  bodyFont: SANS, accent: '#e11d48', accent2: '#f59e0b', tracking: '-0.03em',  radius: '0.75rem' },
+  restaurant:   { bg: '#0e0a07', headingFont: SERIF, bodyFont: SANS, accent: '#e0a35b', accent2: '#b45309', tracking: '0.01em',   radius: '1.1rem' },
+  portfolio:    { bg: '#08080a', headingFont: SANS,  bodyFont: SANS, accent: '#e5e7eb', accent2: '#94a3b8', tracking: '-0.04em',  radius: '0.75rem' },
+  agency:       { bg: '#07070e', headingFont: SANS,  bodyFont: SANS, accent: '#8b5cf6', accent2: '#ec4899', tracking: '-0.03em',  radius: '1rem' },
+  ecommerce:    { bg: '#0a0a0c', headingFont: SANS,  bodyFont: SANS, accent: '#ec4899', accent2: '#f59e0b', tracking: '-0.02em',  radius: '1.1rem' },
+  local_service:{ bg: '#060a12', headingFont: SANS,  bodyFont: SANS, accent: '#0ea5e9', accent2: '#22c55e', tracking: '-0.015em', radius: '1rem' },
+  generic:      { bg: '#05070d', headingFont: SANS,  bodyFont: SANS, accent: '#6366f1', accent2: '#22d3ee', tracking: '-0.02em',  radius: '1rem' },
+};
+
+/** Resolve the design tokens for a preview brief (industry inferred from its
+ *  type/style/goal text). Falls back to a clean generic system. */
+export function designTokensForBrief(brief: { type?: string; style?: string; goal?: string } | undefined): DesignTokens {
+  const industry = detectIndustry(`${brief?.type || ''} ${brief?.style || ''} ${brief?.goal || ''}`);
+  return TOKENS[industry] || TOKENS.generic;
+}
+
 const humanize = (id: string, lang: Lang): string => {
   const map: Record<string, { en: string; tr: string }> = {
     hero: { en: 'Hero', tr: 'Hero' },

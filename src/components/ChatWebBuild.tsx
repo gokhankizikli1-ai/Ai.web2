@@ -10,7 +10,6 @@ import {
   saveWebBuildSession, getWebBuildSession,
   setActiveWebBuildSession, deriveWebBuildTitle,
 } from '@/lib/webBuildSession';
-import { upsertWebBuildChatSession } from '@/lib/webBuildChatSession';
 import {
   generateWebBuild, WebBuildError, webBuildErrorKeyFor,
 } from '@/lib/webBuildApi';
@@ -47,9 +46,12 @@ interface ChatWebBuildProps {
   initialMode?: BuilderMode | null;
   /** Reopen an existing persisted Web Build session by id (sidebar click). */
   restoreRunId?: string;
+  /** Upsert this build into the REAL chat sessions list (so it survives New
+   *  Chat and lists in the sidebar). Provided by ChatDashboard's useChat. */
+  onPersistSession?: (runId: string, title: string, prompt: string) => void;
 }
 
-export default function ChatWebBuild({ initialPrompt, initialMode = null, restoreRunId }: ChatWebBuildProps) {
+export default function ChatWebBuild({ initialPrompt, initialMode = null, restoreRunId, onPersistSession }: ChatWebBuildProps) {
   const { t, lang } = useLanguageStore();
 
   const [input, setInput] = useState('');
@@ -76,8 +78,12 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
     const id = saveWebBuildSession(p, lang);
     if (!id) return;
     setActiveWebBuildSession(id);
-    upsertWebBuildChatSession(id, deriveWebBuildTitle(p.prompt, lang), p.prompt);
-  }, [lang]);
+    // Title like "Website: Peyzaj Mimarlığı". Persist into the REAL sessions
+    // list (via useChat) so it survives New Chat and lists in the sidebar.
+    const label = lang === 'tr' ? 'Web Sitesi' : 'Website';
+    const title = `${label}: ${deriveWebBuildTitle(p.prompt, lang)}`;
+    onPersistSession?.(id, title, p.prompt);
+  }, [lang, onPersistSession]);
 
   const startLive = useCallback((prompt: string, kind: 'build' | 'revision') => {
     setLive({ prompt, kind });
