@@ -14,6 +14,15 @@
 import type { BuildSection } from '@/lib/gameBuilderApi';
 import { extractBrief, type WebBuildResult, type WebBuildBrief } from '@/lib/webBuildApi';
 import { deriveDesignSystemFromStrategy, designSystemFileContent, type WebBuildDesignSystem } from '@/lib/webBuildDesignSystem';
+import {
+  deriveLayoutPlan, layoutPlanFileContent, sectionKind,
+  type WebBuildLayoutPlan, type SectionKind, type SectionVariant, type VisualModule,
+} from '@/lib/webBuildLayoutPlan';
+
+// Re-export the section classifier so existing importers keep working while the
+// plan layer owns section semantics.
+export { sectionKind };
+export type { SectionKind };
 
 export interface SynthFile { path: string; content: string; language?: string; summary?: string }
 
@@ -127,44 +136,6 @@ function extractCopyPieces(body: string, purpose?: string): { headline?: string;
 }
 
 /* ── Component templates ─────────────────────────────────────────────── */
-
-function heroComponent(name: string, c: SectionCopy, brief: { goal?: string; type?: string }): string {
-  const headline = c.headline || 'Your headline here';
-  const sub = c.sub || brief.goal || '';
-  const cta = c.cta || 'Get started';
-  const eyebrow = brief.type || c.bullets?.[0] || '';
-  const secondary = c.bullets?.[1] || '';
-  const proof = c.bullets?.[2] || '';
-  return `export default function ${name}() {
-  return (
-    <section className="relative isolate overflow-hidden">
-      {/* Animated premium background: soft grid + drifting aurora orbs */}
-      <div className="kx-grid absolute inset-0 -z-10" aria-hidden="true" />
-      <div className="kx-aurora -z-10" style={{ top: '-6rem', left: '-4rem', width: '28rem', height: '28rem', background: 'radial-gradient(circle, var(--kx-accent), transparent 60%)' }} aria-hidden="true" />
-      <div className="kx-aurora -z-10" style={{ top: '3rem', right: '-6rem', width: '24rem', height: '24rem', background: 'radial-gradient(circle, var(--kx-accent-2), transparent 60%)', animationDelay: '-6s' }} aria-hidden="true" />
-      <div className="mx-auto max-w-6xl px-6 py-28 sm:py-36">
-        <div className="kx-reveal mx-auto max-w-3xl text-center">
-          ${eyebrow ? `<span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-medium text-[var(--kx-accent)]">
-            <span className="h-1.5 w-1.5 rounded-full bg-[var(--kx-accent)]" /> {\`${esc(eyebrow)}\`}
-          </span>` : ''}
-          <h1 className="mt-6 text-4xl font-semibold tracking-tight text-white sm:text-6xl">
-            {\`${esc(headline)}\`}
-          </h1>
-          ${sub ? `<p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-slate-300">{\`${esc(sub)}\`}</p>` : ''}
-          <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <a href="#contact" className="rounded-xl bg-[var(--kx-accent)] px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-black/40 transition hover:bg-[var(--kx-accent)]">
-              {\`${esc(cta)}\`}
-            </a>
-            ${secondary ? `<a href="#features" className="rounded-xl border border-white/15 px-6 py-3 text-sm font-medium text-slate-200 transition hover:bg-white/[0.05]">{\`${esc(secondary)}\`}</a>` : ''}
-          </div>
-          ${proof ? `<p className="mt-6 text-xs text-slate-400">{\`${esc(proof)}\`}</p>` : ''}
-        </div>
-      </div>
-    </section>
-  );
-}
-`;
-}
 
 function cardsComponent(name: string, c: SectionCopy): string {
   const items = (c.bullets.length ? c.bullets : [c.sub || c.purpose || '']).filter(Boolean).slice(0, 6);
@@ -516,52 +487,568 @@ ${cells}
 `;
 }
 
-/** Map a section id/name to a distinct visual template kind. */
-export type SectionKind =
-  | 'hero' | 'gallery' | 'beforeAfter' | 'productDemo' | 'workflow' | 'metrics'
-  | 'integrations' | 'inventory' | 'financing' | 'pricing' | 'menu'
-  | 'features' | 'testimonial' | 'faq' | 'cta' | 'footer' | 'generic';
+/* ── Plan-driven templates (hero compositions + section variants) ─────── */
 
-export function sectionKind(id: string, sectionName: string): SectionKind {
-  const k = `${id} ${sectionName}`.toLowerCase();
-  if (/hero/.test(k)) return 'hero';
-  if (/footer/.test(k)) return 'footer';
-  if (/before.?after|önce.?sonra/.test(k)) return 'beforeAfter';
-  if (/product.?demo|chatbot|chat|dashboard|demo/.test(k)) return 'productDemo';
-  if (/workflow|how.?it.?works|process|süreç|adım|nasıl/.test(k)) return 'workflow';
-  if (/metric|result|stat|sonuç|rakam/.test(k)) return 'metrics';
-  if (/integration|entegrasyon/.test(k)) return 'integrations';
-  if (/inventory|vehicle|featured.?(car|vehicle)|araç|araba|envanter/.test(k)) return 'inventory';
-  if (/financ|finans|kredi/.test(k)) return 'financing';
-  if (/pricing|price|plan|program|fiyat|paket/.test(k)) return 'pricing';
-  if (/menu|menü/.test(k)) return 'menu';
-  if (/gallery|galeri|collection|koleksiyon|material|malzeme|portfolio|portfolyo|proje|project|work|iş/.test(k)) return 'gallery';
-  if (/testimonial|social|proof|review|yorum|referans/.test(k)) return 'testimonial';
-  if (/faq|sıkça|soru/.test(k)) return 'faq';
-  if (/cta|final|contact|book|appointment|randevu|form|reservation|rezervasyon|iletişim/.test(k)) return 'cta';
-  if (/feature|service|benefit|hizmet|özellik/.test(k)) return 'features';
-  return 'generic';
+/** Shared premium hero background (grid + drifting aurora orbs). */
+const HERO_BG = `      <div className="kx-grid absolute inset-0 -z-10" aria-hidden="true" />
+      <div className="kx-aurora -z-10" style={{ top: '-6rem', left: '-4rem', width: '28rem', height: '28rem', background: 'radial-gradient(circle, var(--kx-accent), transparent 60%)' }} aria-hidden="true" />
+      <div className="kx-aurora -z-10" style={{ top: '3rem', right: '-6rem', width: '24rem', height: '24rem', background: 'radial-gradient(circle, var(--kx-accent-2), transparent 60%)', animationDelay: '-6s' }} aria-hidden="true" />`;
+
+function heroCopyBits(c: SectionCopy, brief: { goal?: string; type?: string }) {
+  return {
+    headline: c.headline || 'Your headline here',
+    sub: c.sub || brief.goal || '',
+    cta: c.cta || 'Get started',
+    eyebrow: brief.type || c.bullets?.[0] || '',
+    secondary: c.bullets?.[1] || '',
+    proof: c.bullets?.[2] || '',
+  };
 }
 
-function componentFor(name: string, c: SectionCopy, brief: { goal?: string; type?: string }): string {
-  switch (sectionKind(c.id, c.name)) {
-    case 'hero': return heroComponent(name, c, brief);
-    case 'footer': return footerComponent(name, c);
-    case 'cta': return ctaComponent(name, c);
-    case 'gallery': return galleryComponent(name, c);
-    case 'beforeAfter': return beforeAfterComponent(name, c);
-    case 'productDemo': return productDemoComponent(name, c);
-    case 'workflow': return workflowComponent(name, c);
-    case 'metrics': return metricsComponent(name, c);
-    case 'integrations': return integrationsComponent(name, c);
-    case 'inventory': return inventoryComponent(name, c);
-    case 'financing': return financingComponent(name, c);
-    case 'pricing': return pricingComponent(name, c);
-    case 'menu': return menuComponent(name, c);
-    case 'testimonial': return testimonialComponent(name, c);
-    case 'faq': return faqComponent(name, c);
-    case 'features': return cardsComponent(name, c);
-    default: return genericComponent(name, c);
+const ctaBlock = (cta: string, secondary: string) => `          <div className="mt-9 flex flex-col gap-3 sm:flex-row">
+            <a href="#contact" className="rounded-xl bg-[var(--kx-accent)] px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-black/40">{\`${esc(cta)}\`}</a>
+            ${secondary ? `<a href="#features" className="rounded-xl border border-white/15 px-6 py-3 text-sm font-medium text-slate-200">{\`${esc(secondary)}\`}</a>` : ''}
+          </div>`;
+
+/**
+ * Hero component code that DIFFERS by heroComposition. Split/data/membership are
+ * two-column; dashboard/catalog/event stack a wide module; immersive is
+ * full-bleed; story is a 12-col editorial; centered/luxury are centered. Every
+ * variant embeds the strategy's <VisualModule /> and the premium background.
+ */
+function heroComponentFor(
+  name: string, c: SectionCopy, brief: { goal?: string; type?: string }, plan: WebBuildLayoutPlan,
+): string {
+  const b = heroCopyBits(c, brief);
+  const mod = plan.primaryVisualModule;
+  const eyebrow = b.eyebrow ? `<span className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-medium text-[var(--kx-accent)]"><span className="h-1.5 w-1.5 rounded-full bg-[var(--kx-accent)]" /> {\`${esc(b.eyebrow)}\`}</span>` : '';
+  const sub = (cls: string) => (b.sub ? `<p className="${cls}">{\`${esc(b.sub)}\`}</p>` : '');
+  const composition = plan.heroComposition;
+
+  const twoCol = (): string => `import VisualModule from './VisualModule';
+
+export default function ${name}() {
+  return (
+    <section className="relative isolate overflow-hidden">
+${HERO_BG}
+      <div className="mx-auto grid max-w-6xl items-center gap-12 px-6 py-20 sm:py-24 lg:grid-cols-2">
+        <div className="kx-reveal">
+          ${eyebrow}
+          <h1 className="mt-5 text-4xl font-semibold tracking-tight text-white sm:text-5xl">{\`${esc(b.headline)}\`}</h1>
+          ${sub('mt-5 max-w-xl text-lg leading-relaxed text-slate-300')}
+${ctaBlock(b.cta, b.secondary)}
+          ${b.proof ? `<p className="mt-6 text-xs text-slate-400">{\`${esc(b.proof)}\`}</p>` : ''}
+        </div>
+        <VisualModule kind="${mod}" />
+      </div>
+    </section>
+  );
+}
+`;
+
+  const stacked = (): string => `import VisualModule from './VisualModule';
+
+export default function ${name}() {
+  return (
+    <section className="relative isolate overflow-hidden">
+${HERO_BG}
+      <div className="mx-auto max-w-5xl px-6 py-20 text-center sm:py-24">
+        <div className="kx-reveal">
+          ${eyebrow}
+          <h1 className="mx-auto mt-5 max-w-3xl text-4xl font-semibold tracking-tight text-white sm:text-6xl">{\`${esc(b.headline)}\`}</h1>
+          ${sub('mx-auto mt-5 max-w-2xl text-lg leading-relaxed text-slate-300')}
+          <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <a href="#contact" className="rounded-xl bg-[var(--kx-accent)] px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-black/40">{\`${esc(b.cta)}\`}</a>
+            ${b.secondary ? `<a href="#features" className="rounded-xl border border-white/15 px-6 py-3 text-sm font-medium text-slate-200">{\`${esc(b.secondary)}\`}</a>` : ''}
+          </div>
+        </div>
+        <div className="mt-14"><VisualModule kind="${mod}" /></div>
+      </div>
+    </section>
+  );
+}
+`;
+
+  const immersive = (): string => `import VisualModule from './VisualModule';
+
+export default function ${name}() {
+  return (
+    <section className="relative isolate flex min-h-[34rem] items-end overflow-hidden">
+${HERO_BG}
+      <div className="pointer-events-none absolute inset-0 scale-110 opacity-40" aria-hidden="true"><VisualModule kind="${mod}" /></div>
+      <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent" aria-hidden="true" />
+      <div className="relative mx-auto w-full max-w-6xl px-6 py-16">
+        <div className="kx-reveal max-w-2xl">
+          ${eyebrow}
+          <h1 className="mt-5 text-4xl font-semibold tracking-tight text-white sm:text-6xl">{\`${esc(b.headline)}\`}</h1>
+          ${sub('mt-5 max-w-xl text-lg leading-relaxed text-slate-200')}
+${ctaBlock(b.cta, b.secondary)}
+        </div>
+      </div>
+    </section>
+  );
+}
+`;
+
+  const centered = (): string => `import VisualModule from './VisualModule';
+
+export default function ${name}() {
+  return (
+    <section className="relative isolate overflow-hidden">
+${HERO_BG}
+      <div className="mx-auto max-w-3xl px-6 py-28 text-center sm:py-32">
+        <div className="kx-reveal">
+          ${eyebrow}
+          <h1 className="mt-6 text-4xl font-semibold tracking-tight text-white sm:text-6xl">{\`${esc(b.headline)}\`}</h1>
+          ${sub('mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-slate-300')}
+          <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            <a href="#contact" className="rounded-xl bg-[var(--kx-accent)] px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-black/40">{\`${esc(b.cta)}\`}</a>
+            ${b.secondary ? `<a href="#features" className="rounded-xl border border-white/15 px-6 py-3 text-sm font-medium text-slate-200">{\`${esc(b.secondary)}\`}</a>` : ''}
+          </div>
+        </div>
+        <div className="mx-auto mt-12 max-w-md"><VisualModule kind="${mod}" /></div>
+      </div>
+    </section>
+  );
+}
+`;
+
+  const story = (): string => `import VisualModule from './VisualModule';
+
+export default function ${name}() {
+  return (
+    <section className="relative isolate overflow-hidden">
+${HERO_BG}
+      <div className="mx-auto grid max-w-6xl gap-10 px-6 py-20 sm:py-24 lg:grid-cols-12">
+        <div className="kx-reveal lg:col-span-7">
+          ${eyebrow}
+          <h1 className="mt-5 text-5xl font-semibold leading-[1.05] tracking-tight text-white sm:text-6xl">{\`${esc(b.headline)}\`}</h1>
+${ctaBlock(b.cta, b.secondary)}
+        </div>
+        <div className="lg:col-span-5">
+          ${b.sub ? `<p className="border-l-2 border-[var(--kx-accent)] pl-5 text-lg leading-relaxed text-slate-300">{\`${esc(b.sub)}\`}</p>` : ''}
+          <div className="mt-6"><VisualModule kind="${mod}" /></div>
+        </div>
+      </div>
+    </section>
+  );
+}
+`;
+
+  switch (composition) {
+    case 'split-editorial':
+    case 'membership-application':
+    case 'data-map':
+    case 'asymmetric-visual':
+      return twoCol();
+    case 'dashboard-product':
+    case 'catalog-collection':
+    case 'event-experience':
+      return stacked();
+    case 'immersive-full-bleed':
+      return immersive();
+    case 'story-editorial':
+      return story();
+    case 'luxury-service':
+    case 'centered':
+    default:
+      return centered();
+  }
+}
+
+function editorialSplitComponent(name: string, c: SectionCopy, plan: WebBuildLayoutPlan): string {
+  const items = (c.bullets.length ? c.bullets : [c.sub || c.name]).filter(Boolean).slice(0, 4);
+  const list = items.map((b, i) => `          <li key={${i}} className="flex gap-3 text-[15px] text-slate-200"><span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--kx-accent)]" />{\`${esc(b)}\`}</li>`).join('\n');
+  return `import VisualModule from './VisualModule';
+
+export default function ${name}() {
+  return (
+    <section className="px-6 py-20 sm:py-24">
+      <div className="mx-auto grid max-w-6xl items-center gap-12 lg:grid-cols-2">
+        <div>
+          ${c.headline ? `<h2 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">{\`${esc(c.headline)}\`}</h2>` : ''}
+          ${c.sub ? `<p className="mt-4 max-w-lg leading-relaxed text-slate-300">{\`${esc(c.sub)}\`}</p>` : ''}
+          <ul className="mt-6 space-y-3">
+${list}
+          </ul>
+        </div>
+        <VisualModule kind="${plan.primaryVisualModule}" />
+      </div>
+    </section>
+  );
+}
+`;
+}
+
+function proofStripComponent(name: string, c: SectionCopy): string {
+  const items = (c.bullets.length ? c.bullets : [c.name]).slice(0, 4);
+  const stats = ['4.9★', '12k+', '98%', '24/7'];
+  const cells = items.map((b, i) => `          <div key={${i}} className="bg-[#0b0d12] p-6 text-center">
+            <div className="text-3xl font-semibold tracking-tight text-white">${stats[i % stats.length]}</div>
+            <p className="mt-2 text-sm text-slate-400">{\`${esc(b)}\`}</p>
+          </div>`).join('\n');
+  return `export default function ${name}() {
+  return (
+    <section className="px-6 py-16">
+      <div className="mx-auto max-w-5xl">
+        ${c.headline ? `<h2 className="text-center text-2xl font-semibold tracking-tight text-white sm:text-3xl">{\`${esc(c.headline)}\`}</h2>` : ''}
+        <div className="mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-white/10 bg-white/5 lg:grid-cols-4">
+${cells}
+        </div>
+      </div>
+    </section>
+  );
+}
+`;
+}
+
+function dashboardDataComponent(name: string, c: SectionCopy): string {
+  const items = (c.bullets.length ? c.bullets : [c.name]).slice(0, 4);
+  const cells = items.map((b, i) => `            <li key={${i}} className="rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-[13px] text-slate-200">{\`${esc(b)}\`}</li>`).join('\n');
+  return `import VisualModule from './VisualModule';
+
+export default function ${name}() {
+  return (
+    <section className="px-6 py-20">
+      <div className="mx-auto grid max-w-6xl items-center gap-10 lg:grid-cols-[1fr_1.15fr]">
+        <div>
+          ${c.headline ? `<h2 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">{\`${esc(c.headline)}\`}</h2>` : ''}
+          ${c.sub ? `<p className="mt-4 max-w-md leading-relaxed text-slate-300">{\`${esc(c.sub)}\`}</p>` : ''}
+          <ul className="mt-6 grid grid-cols-2 gap-3">
+${cells}
+          </ul>
+        </div>
+        <VisualModule kind="data-dashboard" />
+      </div>
+    </section>
+  );
+}
+`;
+}
+
+function collectionArchiveComponent(name: string, c: SectionCopy): string {
+  const rows = (c.bullets.length ? c.bullets : [c.name]).slice(0, 6);
+  const cells = rows.map((b, i) => `          <div key={${i}} className="group flex items-center gap-5 py-5">
+            <span className="w-8 text-sm tabular-nums text-slate-500">${String(i + 1).padStart(2, '0')}</span>
+            <span className="h-12 w-16 shrink-0 rounded-md border border-white/10 bg-[linear-gradient(135deg,color-mix(in_srgb,var(--kx-accent)_22%,transparent),transparent)]" />
+            <span className="flex-1 text-[15px] font-medium text-white">{\`${esc(b)}\`}</span>
+            <span className="text-slate-500 transition group-hover:translate-x-1">&rarr;</span>
+          </div>`).join('\n');
+  return `export default function ${name}() {
+  return (
+    <section className="px-6 py-20">
+      <div className="mx-auto max-w-4xl">
+        ${c.headline ? `<h2 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">{\`${esc(c.headline)}\`}</h2>` : ''}
+        <div className="mt-8 divide-y divide-white/10 border-y border-white/10">
+${cells}
+        </div>
+      </div>
+    </section>
+  );
+}
+`;
+}
+
+function quoteStoryComponent(name: string, c: SectionCopy): string {
+  const quotes = (c.bullets.length ? c.bullets : [c.sub || c.name]).slice(0, 2);
+  const cells = quotes.map((b, i) => `          <blockquote key={${i}} className="border-l-2 border-[var(--kx-accent)] pl-6">
+            <p className="text-xl font-medium leading-relaxed text-white sm:text-2xl">&ldquo;{\`${esc(b)}\`}&rdquo;</p>
+            <footer className="mt-4 flex items-center gap-3 text-sm text-slate-400"><span className="h-8 w-8 rounded-full bg-[linear-gradient(135deg,color-mix(in_srgb,var(--kx-accent)_55%,transparent),color-mix(in_srgb,var(--kx-accent-2)_30%,transparent))]" />{\`${esc(c.headline || c.name)}\`}</footer>
+          </blockquote>`).join('\n');
+  return `export default function ${name}() {
+  return (
+    <section className="px-6 py-20">
+      <div className="mx-auto max-w-4xl space-y-10">
+${cells}
+      </div>
+    </section>
+  );
+}
+`;
+}
+
+function showcaseComponent(name: string, c: SectionCopy, plan: WebBuildLayoutPlan): string {
+  const mod = plan.primaryVisualModule === 'contour-terrain' ? 'product-showcase' : plan.primaryVisualModule;
+  return `import VisualModule from './VisualModule';
+
+export default function ${name}() {
+  return (
+    <section className="px-6 py-20 sm:py-24">
+      <div className="mx-auto grid max-w-6xl items-center gap-12 lg:grid-cols-2">
+        <VisualModule kind="${mod}" />
+        <div>
+          ${c.headline ? `<h2 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">{\`${esc(c.headline)}\`}</h2>` : ''}
+          ${c.sub ? `<p className="mt-4 max-w-lg leading-relaxed text-slate-300">{\`${esc(c.sub)}\`}</p>` : ''}
+          ${c.cta ? `<a href="#contact" className="mt-7 inline-block rounded-xl bg-[var(--kx-accent)] px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-black/40">{\`${esc(c.cta)}\`}</a>` : ''}
+        </div>
+      </div>
+    </section>
+  );
+}
+`;
+}
+
+function applicationFormComponent(name: string, c: SectionCopy, plan: WebBuildLayoutPlan): string {
+  const mod = plan.primaryVisualModule === 'membership-pass' ? 'membership-pass' : 'reservation-form';
+  const bits = (c.bullets || []).slice(0, 3).map((b, i) => `          <p key={${i}} className="mt-3 flex gap-2 text-sm text-slate-300"><span className="text-[var(--kx-accent)]">&#10003;</span>{\`${esc(b)}\`}</p>`).join('\n');
+  return `import VisualModule from './VisualModule';
+
+export default function ${name}() {
+  return (
+    <section id="contact" className="px-6 py-20 sm:py-24">
+      <div className="mx-auto grid max-w-6xl items-center gap-12 lg:grid-cols-2">
+        <div>
+          ${c.headline ? `<h2 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">{\`${esc(c.headline)}\`}</h2>` : ''}
+          ${c.sub ? `<p className="mt-4 max-w-md leading-relaxed text-slate-300">{\`${esc(c.sub)}\`}</p>` : ''}
+${bits}
+        </div>
+        <VisualModule kind="${mod}" />
+      </div>
+    </section>
+  );
+}
+`;
+}
+
+function spatialComponent(name: string, c: SectionCopy): string {
+  const items = (c.bullets.length ? c.bullets : [c.name]).slice(0, 4);
+  const list = items.map((b, i) => `          <li key={${i}} className="flex gap-3 text-[15px] text-slate-200"><span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--kx-accent)]" />{\`${esc(b)}\`}</li>`).join('\n');
+  return `import VisualModule from './VisualModule';
+
+export default function ${name}() {
+  return (
+    <section className="px-6 py-20 sm:py-24">
+      <div className="mx-auto grid max-w-6xl items-center gap-12 lg:grid-cols-2">
+        <VisualModule kind="spatial-floorplan" />
+        <div>
+          ${c.headline ? `<h2 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">{\`${esc(c.headline)}\`}</h2>` : ''}
+          <ul className="mt-6 space-y-3">
+${list}
+          </ul>
+        </div>
+      </div>
+    </section>
+  );
+}
+`;
+}
+
+/**
+ * A real, self-contained <VisualModule /> component for the generated project —
+ * renders the strategy's structural visual (dashboard, pass, catalog, floorplan,
+ * showcase, editorial, reservation, timeline, comparison, terrain) with CSS/SVG
+ * only. Imported by the hero + key sections so visuals are structural, not
+ * decorative. Defaults to the plan's primary module.
+ */
+function visualModuleFileContent(primary: VisualModule): string {
+  return `/**
+ * Structural visual modules — real metaphors (not blank panels), CSS/SVG only.
+ * The layout plan selects one as the primary module; hero + key sections embed it.
+ */
+type ModuleKind =
+  | 'data-dashboard' | 'membership-pass' | 'catalog-archive' | 'spatial-floorplan'
+  | 'product-showcase' | 'editorial-story' | 'reservation-form' | 'timeline-process'
+  | 'comparison' | 'contour-terrain';
+
+const frame = 'relative overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]';
+
+function DataDashboard() {
+  const bars = [58, 82, 46, 94, 70, 88];
+  return (
+    <div className={frame + ' p-4 shadow-2xl shadow-black/40'}>
+      <div className="mb-3 grid grid-cols-3 gap-3">
+        {['2.4k', '98%', '+37%'].map((s, i) => (
+          <div key={i} className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+            <div className="text-lg font-semibold text-white">{s}</div>
+            <div className="mt-0.5 h-2 w-12 rounded-full bg-white/10" />
+          </div>
+        ))}
+      </div>
+      <div className="flex h-24 items-end gap-2 rounded-xl border border-white/10 bg-black/20 p-3">
+        {bars.map((h, i) => (
+          <span key={i} className="flex-1 rounded-t" style={{ height: h + '%', background: i % 2 ? 'var(--kx-accent-2)' : 'var(--kx-accent)', opacity: 0.9 }} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MembershipPass() {
+  return (
+    <div className={frame + ' p-5'}>
+      <div className="rounded-2xl border border-white/10 p-5" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--kx-accent) 24%, transparent), color-mix(in srgb, var(--kx-accent-2) 12%, transparent))' }}>
+        <div className="text-[11px] uppercase tracking-widest text-white/70">Member</div>
+        <div className="mt-1 text-lg font-semibold text-white">Access Pass</div>
+        <div className="mt-8 flex items-end gap-[3px]">
+          {[3, 6, 2, 7, 4, 6, 2, 5, 3, 7].map((h, i) => <span key={i} className="w-[3px] bg-white/80" style={{ height: h * 3 + 'px' }} />)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CatalogArchive() {
+  return (
+    <div className={frame + ' p-4'}>
+      <div className="grid grid-cols-3 gap-2.5">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="aspect-square rounded-lg border border-white/10" style={{ background: i % 3 === 0 ? 'linear-gradient(135deg, color-mix(in srgb, var(--kx-accent) 26%, transparent), transparent)' : 'linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01))' }} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SpatialFloorplan() {
+  return (
+    <div className={frame + ' p-4'}>
+      <svg viewBox="0 0 320 220" className="h-full w-full" style={{ minHeight: 200 }} aria-hidden="true">
+        <rect x="8" y="8" width="304" height="204" rx="8" fill="none" stroke="rgba(255,255,255,0.16)" strokeWidth="2" />
+        <line x1="150" y1="8" x2="150" y2="130" stroke="rgba(255,255,255,0.16)" strokeWidth="2" />
+        <line x1="8" y1="130" x2="312" y2="130" stroke="rgba(255,255,255,0.16)" strokeWidth="2" />
+        <rect x="26" y="150" width="60" height="40" rx="4" fill="color-mix(in srgb, var(--kx-accent) 22%, transparent)" stroke="var(--kx-accent)" />
+        <circle cx="220" cy="66" r="26" fill="none" stroke="var(--kx-accent-2)" strokeWidth="2" />
+      </svg>
+    </div>
+  );
+}
+
+function ProductShowcase() {
+  return (
+    <div className={frame + ' flex items-center justify-center p-8'}>
+      <div className="kx-float h-40 w-40 rounded-3xl border border-white/15 shadow-2xl shadow-black/50" style={{ background: 'linear-gradient(150deg, color-mix(in srgb, var(--kx-accent) 40%, #0b0d12), color-mix(in srgb, var(--kx-accent-2) 24%, #0b0d12))' }} />
+    </div>
+  );
+}
+
+function EditorialStory() {
+  return (
+    <div className={frame + ' p-3'}>
+      <div className="aspect-[4/5] w-full rounded-xl" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--kx-accent) 22%, transparent), color-mix(in srgb, var(--kx-accent-2) 12%, transparent))' }} />
+    </div>
+  );
+}
+
+function ReservationForm() {
+  return (
+    <div className={frame + ' p-5'}>
+      <div className="grid grid-cols-4 gap-1">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <span key={i} className="flex h-7 items-center justify-center rounded text-[11px] text-slate-300" style={{ background: i === 3 ? 'var(--kx-accent)' : 'rgba(255,255,255,0.04)', color: i === 3 ? '#fff' : undefined }}>{i + 12}</span>
+        ))}
+      </div>
+      <div className="mt-4 flex h-10 items-center justify-center rounded-lg text-sm font-semibold text-white" style={{ background: 'var(--kx-accent)' }}>Book</div>
+    </div>
+  );
+}
+
+function TimelineProcess() {
+  return (
+    <div className={frame + ' p-5'}>
+      <ol className="relative space-y-4 pl-6">
+        {['Discover', 'Design', 'Build', 'Deliver'].map((s, i) => (
+          <li key={i} className="relative">
+            <span className="absolute -left-6 top-0.5 flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold text-black" style={{ background: 'var(--kx-accent)' }}>{i + 1}</span>
+            <p className="text-[13px] font-medium text-white">{s}</p>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+function Comparison() {
+  return (
+    <div className={frame + ' grid grid-cols-2'}>
+      <div className="aspect-[3/4] border-r border-white/10" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.01))' }} />
+      <div className="aspect-[3/4]" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--kx-accent) 26%, transparent), color-mix(in srgb, var(--kx-accent-2) 14%, transparent))' }} />
+    </div>
+  );
+}
+
+function ContourTerrain() {
+  return (
+    <div className={frame}>
+      <div className="aspect-[4/3] w-full" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--kx-accent) 20%, transparent), color-mix(in srgb, var(--kx-accent-2) 10%, transparent))' }}>
+        <svg viewBox="0 0 400 300" preserveAspectRatio="none" className="h-full w-full" style={{ opacity: 0.55 }} aria-hidden="true">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <path key={i} d={\`M0 \${34 + i * 32} C 110 \${6 + i * 32}, 290 \${86 + i * 32}, 400 \${40 + i * 32}\`} fill="none" stroke={i % 3 === 0 ? 'var(--kx-accent)' : 'rgba(255,255,255,0.14)'} strokeWidth="1" />
+          ))}
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+const MODULES: Record<ModuleKind, () => JSX.Element> = {
+  'data-dashboard': DataDashboard,
+  'membership-pass': MembershipPass,
+  'catalog-archive': CatalogArchive,
+  'spatial-floorplan': SpatialFloorplan,
+  'product-showcase': ProductShowcase,
+  'editorial-story': EditorialStory,
+  'reservation-form': ReservationForm,
+  'timeline-process': TimelineProcess,
+  comparison: Comparison,
+  'contour-terrain': ContourTerrain,
+};
+
+export default function VisualModule({ kind = '${primary}' }: { kind?: ModuleKind }) {
+  const Render = MODULES[kind] || MODULES['${primary}'];
+  return <Render />;
+}
+`;
+}
+
+/**
+ * Choose the component template for a section from the LAYOUT PLAN, not just its
+ * kind — so the generated code matches the preview's composition. The hero code
+ * differs by heroComposition; content sections differ by their assigned variant.
+ * The same "Page Sections" content therefore yields different component code for
+ * a different strategy (Part 5).
+ */
+function componentFor(
+  name: string, c: SectionCopy, brief: { goal?: string; type?: string }, plan: WebBuildLayoutPlan,
+): string {
+  const kind = sectionKind(c.id, c.name);
+  if (kind === 'hero') return heroComponentFor(name, c, brief, plan);
+  if (kind === 'footer') return footerComponent(name, c);
+  const variant = plan.sectionVariants[c.id] || 'feature-grid';
+  return variantComponentFor(name, c, plan, variant, kind);
+}
+
+/** Content-section template by composition variant. Falls back to the closest
+ *  kind-specific template so nothing renders as a blank block. */
+function variantComponentFor(
+  name: string, c: SectionCopy, plan: WebBuildLayoutPlan, variant: SectionVariant, kind: SectionKind,
+): string {
+  switch (variant) {
+    case 'editorial-split':    return editorialSplitComponent(name, c, plan);
+    case 'proof-strip':        return proofStripComponent(name, c);
+    case 'dashboard-data':     return kind === 'productDemo' ? productDemoComponent(name, c) : dashboardDataComponent(name, c);
+    case 'catalog-grid':       return kind === 'menu' ? menuComponent(name, c) : galleryComponent(name, c);
+    case 'collection-archive': return collectionArchiveComponent(name, c);
+    case 'process-timeline':   return workflowComponent(name, c);
+    case 'quote-story':        return quoteStoryComponent(name, c);
+    case 'showcase':           return showcaseComponent(name, c, plan);
+    case 'application-form':   return applicationFormComponent(name, c, plan);
+    case 'spatial-floorplan':  return spatialComponent(name, c);
+    case 'pricing-membership': return pricingComponent(name, c);
+    case 'comparison':         return beforeAfterComponent(name, c);
+    case 'faq-cta':            return kind === 'faq' ? faqComponent(name, c) : ctaComponent(name, c);
+    case 'feature-grid':
+    default:
+      // Preserve a couple of kind-specific rich templates when the plan lands on
+      // a plain grid but the content is clearly integrations/metrics/inventory.
+      if (kind === 'integrations') return integrationsComponent(name, c);
+      if (kind === 'metrics') return metricsComponent(name, c);
+      if (kind === 'inventory') return inventoryComponent(name, c);
+      if (kind === 'financing') return financingComponent(name, c);
+      if (kind === 'testimonial') return testimonialComponent(name, c);
+      // A section with no card bullets reads better as a heading + prose block
+      // than as empty cards.
+      if (!c.bullets.length) return genericComponent(name, c);
+      return cardsComponent(name, c);
   }
 }
 
@@ -627,11 +1114,16 @@ createRoot(document.getElementById('root')!).render(
  * fallback so an inferred brief produces the same premium project.
  */
 export function synthesizeFromCopies(
-  items: SectionCopy[], brief: WebBuildBrief,
+  items: SectionCopy[], brief: WebBuildBrief, planArg?: WebBuildLayoutPlan,
 ): SynthFile[] {
   if (items.length === 0) return [];
 
   const ds = deriveDesignSystemFromStrategy(brief);
+  // The SAME layout plan the preview derives — hero composition + per-section
+  // variant + primary visual module drive the generated component code, so the
+  // All Files output matches the preview exactly (Part 7). App composes the plan
+  // sequence; each component's shape follows its assigned variant.
+  const plan = planArg || deriveLayoutPlan(brief, items.map((c) => ({ id: c.id, name: c.name })));
   const compNames = items.map((c) => pascal(c.id));
   const files: SynthFile[] = [];
 
@@ -641,7 +1133,7 @@ export function synthesizeFromCopies(
     files.push({
       path: `src/components/${name}.tsx`,
       language: 'tsx',
-      content: componentFor(name, c, brief),
+      content: componentFor(name, c, brief, plan),
       summary: fileSummary(c),
     });
   });
@@ -665,7 +1157,9 @@ ${usage}
   // Base project files (entry, shell, styles, tokens, content) — then sections.
   files.unshift({ path: 'src/App.tsx', language: 'tsx', content: app, summary: 'Page shell composing all generated sections' });
   files.unshift(mainFile());
+  files.push({ path: 'src/components/VisualModule.tsx', language: 'tsx', content: visualModuleFileContent(plan.primaryVisualModule), summary: `Structural visual module (${plan.primaryVisualModule})` });
   files.push({ path: 'src/lib/designSystem.ts', language: 'ts', content: designSystemFileContent(ds), summary: 'Strategy-derived design tokens (palette, type, radius, motion)' });
+  files.push({ path: 'src/lib/layoutPlan.ts', language: 'ts', content: layoutPlanFileContent(plan), summary: `Layout plan (${plan.heroComposition} hero · ${plan.archetype})` });
   files.push(siteContentFile(items));
   files.push(stylesFile(ds));
 

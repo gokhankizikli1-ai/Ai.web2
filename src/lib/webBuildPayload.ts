@@ -8,6 +8,7 @@ import type { BuildSection } from '@/lib/gameBuilderApi';
 import { extractBrief, type WebBuildResult, type WebBuildBrief, type WebBuildSource, type WebBuildResearch } from '@/lib/webBuildApi';
 import { resolveBuildFiles, parseSectionCopy, synthesizeFromCopies, type SynthFile, type SectionCopy as SynthCopy } from '@/lib/webBuildFiles';
 import { inferWebsiteBrief, fallbackSectionItems, checkQuality } from '@/lib/webBuildBrief';
+import { deriveLayoutPlan, type WebBuildLayoutPlan } from '@/lib/webBuildLayoutPlan';
 import { detectMessageLanguage } from '@/lib/locale';
 
 export type ActivityStatus = 'waiting' | 'running' | 'done' | 'failed';
@@ -70,6 +71,11 @@ export interface WebBuildStep {
    *  the research pre-pass on the backend). Drives the feed's research line +
    *  the owner/admin debug panel. Optional → old saved steps still load. */
   research?: WebBuildResearch;
+  /** The strategy-derived layout plan for this turn (hero composition, section
+   *  variants, visual module, rhythm). Recomputed deterministically from
+   *  brief + sections, so it's a record — not the source of truth. Optional →
+   *  old saved steps still load. */
+  layoutPlan?: WebBuildLayoutPlan;
 }
 
 export interface WebBuildPayload {
@@ -92,6 +98,9 @@ export interface WebBuildPayload {
   /** Honest research status for the latest fresh build (mirrors the build
    *  step's research). Optional so old saved builds still load. */
   research?: WebBuildResearch;
+  /** The strategy-derived layout plan for the latest build (record; recomputed
+   *  deterministically from brief + sections). Optional → old builds still load. */
+  layoutPlan?: WebBuildLayoutPlan;
   activity: WebBuildActivityRow[];
   /** Conversation history — one entry per build/revision. */
   steps: WebBuildStep[];
@@ -175,17 +184,22 @@ export function summarize(result: WebBuildResult, files: WebBuildFile[]): WebBui
  * All 'done' except the save row (flipped once saved). Never claims a file
  * that isn't in `files`.
  */
-export function deriveBuildActivity(result: WebBuildResult, files?: WebBuildFile[], sources?: WebBuildSource[]): WebBuildActivityRow[] {
+export function deriveBuildActivity(result: WebBuildResult, files?: WebBuildFile[], sources?: WebBuildSource[], plan?: WebBuildLayoutPlan): WebBuildActivityRow[] {
   const brief = extractBrief(result.sections);
   const items = parseSectionItems(result);
   const fileList = files || resolveFiles(result);
   const briefBits = [brief.type, brief.audience, brief.goal].filter(Boolean).join(' · ');
   // Surface the model's ACTUAL strategy in the activity detail (not template
-  // text): what the site is + the insight that shaped it, then the layout logic
-  // / visual metaphor behind the section plan. Free text — no i18n keys needed.
+  // text): what the site is + the insight that shaped it, then the CHOSEN layout
+  // architecture (hero composition + visual module) behind the section plan, so
+  // the timeline reflects the same plan that drives preview + files (Part 7).
+  const layoutPlan = plan || deriveLayoutPlan(brief, items.map((s) => ({ id: s.id, name: s.name })));
   const readDetail = [brief.coreIdea || briefBits, brief.strategyInsight].filter(Boolean).join(' — ') || undefined;
-  const planDetail = [brief.layoutLogic || brief.visualMetaphor, items.length ? items.map((s) => s.name).join(', ') : '']
-    .filter(Boolean).join(' · ') || undefined;
+  const planDetail = [
+    layoutPlan.pageArchitecture,
+    brief.layoutLogic || brief.visualMetaphor,
+    items.length ? items.map((s) => s.name).join(', ') : '',
+  ].filter(Boolean).join(' · ') || undefined;
 
   const rows: WebBuildActivityRow[] = [
     { id: 'read', labelKey: 'wbActRead', status: 'done', detail: readDetail },
@@ -273,10 +287,14 @@ export function buildWebBuildPayload(
   let files = resolveFiles(result, prev?.files);
 
   // Quality gate — repair a weak FRESH build with the inferred industry brief.
+  // The layout plan is derived from the FINAL section set so preview, files and
+  // timeline all share one strategy-driven composition.
   if (!prev && !checkQuality(sectionItems, files.length, effLang).ok) {
     sectionItems = fallbackSectionItems(inferred, effLang);
-    files = diffFiles(undefined, synthesizeFromCopies(itemsToCopies(sectionItems), mergedBrief));
+    const plan = deriveLayoutPlan(mergedBrief, sectionItems.map((s) => ({ id: s.id, name: s.name })));
+    files = diffFiles(undefined, synthesizeFromCopies(itemsToCopies(sectionItems), mergedBrief, plan));
   }
+  const layoutPlan = deriveLayoutPlan(mergedBrief, sectionItems.map((s) => ({ id: s.id, name: s.name })));
 
   const changed = files.filter((f) => f.status !== 'unchanged');
   const summary: WebBuildSummary = {
@@ -294,7 +312,7 @@ export function buildWebBuildPayload(
   // the pre-pass on the backend, so keep the original build's research so the
   // debug panel still explains what happened.
   const research: WebBuildResearch | undefined = result.research || prev?.research || undefined;
-  const activity = deriveBuildActivity(result, files, sources);
+  const activity = deriveBuildActivity(result, files, sources, layoutPlan);
   const step: WebBuildStep = {
     id: `step-${uid()}`,
     at: now,
@@ -306,6 +324,7 @@ export function buildWebBuildPayload(
     reply: result.reply,
     // Only a fresh build actually ran research; a revision step has none.
     research: prev ? undefined : result.research,
+    layoutPlan,
   };
   return {
     source: 'web_build',
@@ -317,6 +336,7 @@ export function buildWebBuildPayload(
     reply: result.reply,
     sources,
     research,
+    layoutPlan,
     activity,
     steps: prev ? [...prev.steps, step] : [step],
     createdAt: prev?.createdAt || now,

@@ -1,0 +1,405 @@
+/**
+ * Web Build LAYOUT PLAN layer.
+ *
+ * The sameness problem was NOT research or color — it was composition. Every
+ * build rendered one centered hero and one card grid because structure was
+ * chosen by section *kind*, never by the *strategy*. This module fixes that at
+ * the architecture level.
+ *
+ * `deriveLayoutPlan(brief, sections)` turns the strategy (via the already
+ * strategy-driven design system + archetype) into a concrete, structural plan:
+ * which hero composition to use, which visual module is primary, how each
+ * section is composed, the page rhythm, and where CTAs/trust land. It is a PURE,
+ * DETERMINISTIC function of its inputs — so the preview renderer and the file
+ * synthesizer can each derive it independently and always agree (Part 7). No
+ * persistence or prop-threading is required, and old saved builds recompute the
+ * exact same plan (backward compatible).
+ *
+ * Nothing here is a fixed industry template or tied to a specific prompt: the
+ * primary signal is the model's own strategy words (through the archetype), with
+ * deterministic, hash-based fallbacks only when the strategy is weak.
+ */
+import { deriveDesignSystemFromStrategy, type Density, type LayoutArchetype } from '@/lib/webBuildDesignSystem';
+import type { WebBuildBrief } from '@/lib/webBuildApi';
+
+/* ── Section kind classifier (single source of truth) ─────────────────────
+ * Lives here (not in webBuildFiles) so the plan layer owns section semantics
+ * and neither module imports the other in a cycle. Re-exported by webBuildFiles
+ * for existing callers. */
+export type SectionKind =
+  | 'hero' | 'gallery' | 'beforeAfter' | 'productDemo' | 'workflow' | 'metrics'
+  | 'integrations' | 'inventory' | 'financing' | 'pricing' | 'menu'
+  | 'features' | 'testimonial' | 'faq' | 'cta' | 'footer' | 'generic';
+
+export function sectionKind(id: string, sectionName: string): SectionKind {
+  const k = `${id} ${sectionName}`.toLowerCase();
+  if (/hero/.test(k)) return 'hero';
+  if (/footer/.test(k)) return 'footer';
+  if (/before.?after|önce.?sonra/.test(k)) return 'beforeAfter';
+  if (/product.?demo|chatbot|chat|dashboard|demo/.test(k)) return 'productDemo';
+  if (/workflow|how.?it.?works|process|süreç|adım|nasıl/.test(k)) return 'workflow';
+  if (/metric|result|stat|sonuç|rakam/.test(k)) return 'metrics';
+  if (/integration|entegrasyon/.test(k)) return 'integrations';
+  if (/inventory|vehicle|featured.?(car|vehicle)|araç|araba|envanter/.test(k)) return 'inventory';
+  if (/financ|finans|kredi/.test(k)) return 'financing';
+  if (/pricing|price|plan|program|fiyat|paket/.test(k)) return 'pricing';
+  if (/menu|menü/.test(k)) return 'menu';
+  if (/gallery|galeri|collection|koleksiyon|material|malzeme|portfolio|portfolyo|proje|project|work|iş/.test(k)) return 'gallery';
+  if (/testimonial|social|proof|review|yorum|referans/.test(k)) return 'testimonial';
+  if (/faq|sıkça|soru/.test(k)) return 'faq';
+  if (/cta|final|contact|book|appointment|randevu|form|reservation|rezervasyon|iletişim/.test(k)) return 'cta';
+  if (/feature|service|benefit|hizmet|özellik/.test(k)) return 'features';
+  return 'generic';
+}
+
+/* ── Plan vocabulary ──────────────────────────────────────────────────── */
+
+/** A reusable hero LAYOUT primitive, selected by strategy — not a demo site. */
+export type HeroComposition =
+  | 'split-editorial' | 'asymmetric-visual' | 'dashboard-product' | 'immersive-full-bleed'
+  | 'membership-application' | 'catalog-collection' | 'data-map' | 'luxury-service'
+  | 'story-editorial' | 'event-experience' | 'centered';
+
+/** A structural visual module embedded in hero/key sections (never decoration). */
+export type VisualModule =
+  | 'data-dashboard' | 'membership-pass' | 'catalog-archive' | 'spatial-floorplan'
+  | 'product-showcase' | 'editorial-story' | 'reservation-form' | 'timeline-process'
+  | 'comparison' | 'contour-terrain';
+
+/** How a content section is composed — the same "Page Sections" content can be
+ *  shown as any of these depending on the strategy. */
+export type SectionVariant =
+  | 'feature-grid' | 'editorial-split' | 'process-timeline' | 'proof-strip'
+  | 'catalog-grid' | 'comparison' | 'application-form' | 'dashboard-data'
+  | 'quote-story' | 'collection-archive' | 'spatial-floorplan' | 'pricing-membership'
+  | 'faq-cta' | 'showcase';
+
+export type NavigationStyle = 'minimal' | 'standard' | 'sidebar' | 'centered-pill' | 'split';
+export type CTAPlacement = 'hero-inline' | 'sticky' | 'section-embedded' | 'final-focus' | 'floating-card';
+export type TrustPlacement = 'hero-proof' | 'strip-below-hero' | 'inline-sections' | 'pre-footer';
+export type RhythmPattern = 'even' | 'alternating' | 'editorial' | 'staggered';
+export type MotionPattern = 'minimal' | 'reveal' | 'parallax' | 'kinetic';
+
+export interface PlanSection {
+  id: string;
+  name: string;
+  kind: SectionKind;
+  variant: SectionVariant;
+  /** True for the one content section that hosts the primary visual module. */
+  hostsPrimaryModule?: boolean;
+}
+
+export interface WebBuildLayoutPlan {
+  archetype: LayoutArchetype;
+  /** Human, real description of how the page is organized (activity/plan copy). */
+  pageArchitecture: string;
+  heroComposition: HeroComposition;
+  navigationStyle: NavigationStyle;
+  /** Ordered section ids (the composition order for App.tsx / preview). */
+  sectionSequence: string[];
+  /** id → chosen composition variant. */
+  sectionVariants: Record<string, SectionVariant>;
+  /** Fully-resolved sections (kind + variant), in sequence. */
+  sections: PlanSection[];
+  primaryVisualModule: VisualModule;
+  secondaryVisualModules: VisualModule[];
+  contentDensity: Density;
+  rhythm: RhythmPattern;
+  ctaPlacement: CTAPlacement;
+  trustPlacement: TrustPlacement;
+  motionPattern: MotionPattern;
+  /** Component names planned for the generated project. */
+  componentPlan: string[];
+  /** File paths planned for the generated project. */
+  filePlan: string[];
+  /** True when the anti-sameness guard nudged a weak plan to a distinct one. */
+  diversityCorrected: boolean;
+}
+
+interface Blueprint {
+  hero: HeroComposition;
+  module: VisualModule;
+  nav: NavigationStyle;
+  cta: CTAPlacement;
+  trust: TrustPlacement;
+  rhythm: RhythmPattern;
+}
+
+/**
+ * Archetype → structural blueprint. The archetype itself is derived from the
+ * model's strategy words (webBuildDesignSystem), so this table is strategy-driven,
+ * not a per-industry template. Note `standard` deliberately does NOT default to a
+ * centered hero + card grid — the old generic outcome is gone.
+ */
+const BLUEPRINT: Record<LayoutArchetype, Blueprint> = {
+  editorial:        { hero: 'story-editorial',       module: 'editorial-story',  nav: 'minimal',       cta: 'section-embedded', trust: 'inline-sections',  rhythm: 'editorial' },
+  dashboard:        { hero: 'dashboard-product',      module: 'data-dashboard',   nav: 'split',         cta: 'hero-inline',      trust: 'strip-below-hero', rhythm: 'staggered' },
+  marketplace:      { hero: 'catalog-collection',     module: 'catalog-archive',  nav: 'standard',      cta: 'sticky',           trust: 'strip-below-hero', rhythm: 'even' },
+  membership:       { hero: 'membership-application',  module: 'membership-pass',  nav: 'centered-pill', cta: 'floating-card',    trust: 'pre-footer',       rhythm: 'alternating' },
+  hospitality:      { hero: 'luxury-service',          module: 'reservation-form', nav: 'centered-pill', cta: 'final-focus',      trust: 'inline-sections',  rhythm: 'editorial' },
+  'data-platform':  { hero: 'data-map',                module: 'data-dashboard',   nav: 'split',         cta: 'hero-inline',      trust: 'strip-below-hero', rhythm: 'staggered' },
+  archive:          { hero: 'catalog-collection',     module: 'catalog-archive',  nav: 'sidebar',       cta: 'section-embedded', trust: 'inline-sections',  rhythm: 'even' },
+  'luxury-service': { hero: 'luxury-service',          module: 'editorial-story',  nav: 'minimal',       cta: 'final-focus',      trust: 'pre-footer',       rhythm: 'editorial' },
+  community:        { hero: 'split-editorial',         module: 'membership-pass',  nav: 'standard',      cta: 'floating-card',    trust: 'inline-sections',  rhythm: 'alternating' },
+  event:            { hero: 'event-experience',        module: 'timeline-process', nav: 'centered-pill', cta: 'sticky',           trust: 'strip-below-hero', rhythm: 'staggered' },
+  portfolio:        { hero: 'asymmetric-visual',       module: 'editorial-story',  nav: 'minimal',       cta: 'section-embedded', trust: 'inline-sections',  rhythm: 'alternating' },
+  technical:        { hero: 'dashboard-product',       module: 'data-dashboard',   nav: 'split',         cta: 'hero-inline',      trust: 'strip-below-hero', rhythm: 'staggered' },
+  standard:         { hero: 'split-editorial',         module: 'product-showcase', nav: 'standard',      cta: 'hero-inline',      trust: 'strip-below-hero', rhythm: 'alternating' },
+};
+
+/** The primary visual module a specific section KIND naturally hosts, used to
+ *  populate secondary modules from what the site actually contains. */
+const MODULE_FOR_KIND: Partial<Record<SectionKind, VisualModule>> = {
+  metrics: 'data-dashboard',
+  productDemo: 'data-dashboard',
+  gallery: 'catalog-archive',
+  inventory: 'catalog-archive',
+  menu: 'catalog-archive',
+  beforeAfter: 'comparison',
+  workflow: 'timeline-process',
+  pricing: 'membership-pass',
+  testimonial: 'editorial-story',
+};
+
+/** Deterministic 32-bit hash (FNV-1a) — no Date/Math.random, so plans are
+ *  stable and reproducible for the same idea. */
+function hashText(s: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return Math.abs(h | 0);
+}
+
+const pascal = (id: string) => {
+  const p = id.replace(/(^|[-_ ]+)(\w)/g, (_, __, c) => c.toUpperCase()).replace(/[^a-zA-Z0-9]/g, '');
+  return /^[a-z]/.test(p) ? p.charAt(0).toUpperCase() + p.slice(1) : (p || 'Section');
+};
+
+/** How a *content* section (features/services/generic) is composed for a given
+ *  archetype. This is the main lever against "everything is a card grid": the
+ *  identical Page-Sections content renders as an editorial split for an editorial
+ *  brand, a data panel for a dashboard, a catalog for a marketplace, etc. */
+function contentVariantFor(arch: LayoutArchetype, index: number): SectionVariant {
+  switch (arch) {
+    case 'editorial':
+    case 'luxury-service':
+    case 'hospitality':
+      return index % 2 === 0 ? 'editorial-split' : 'quote-story';
+    case 'portfolio':
+      return index % 2 === 0 ? 'editorial-split' : 'showcase';
+    case 'dashboard':
+    case 'data-platform':
+    case 'technical':
+      return index % 2 === 0 ? 'dashboard-data' : 'feature-grid';
+    case 'marketplace':
+    case 'archive':
+      return 'catalog-grid';
+    case 'membership':
+    case 'community':
+      return index % 2 === 0 ? 'proof-strip' : 'editorial-split';
+    case 'event':
+      return index % 2 === 0 ? 'showcase' : 'feature-grid';
+    case 'standard':
+    default:
+      return index % 2 === 0 ? 'editorial-split' : 'feature-grid';
+  }
+}
+
+/** Resolve a section's composition variant from its kind + the archetype. */
+function variantForSection(kind: SectionKind, arch: LayoutArchetype, contentIndex: number): SectionVariant {
+  switch (kind) {
+    case 'footer':      return 'faq-cta';
+    case 'cta':         return (arch === 'membership' || arch === 'hospitality' || arch === 'community') ? 'application-form' : 'faq-cta';
+    case 'faq':         return 'faq-cta';
+    case 'pricing':     return 'pricing-membership';
+    case 'workflow':    return 'process-timeline';
+    case 'metrics':     return 'dashboard-data';
+    case 'productDemo': return 'dashboard-data';
+    case 'beforeAfter': return 'comparison';
+    case 'inventory':   return 'catalog-grid';
+    case 'menu':        return 'catalog-grid';
+    case 'integrations':return 'proof-strip';
+    case 'gallery':     return (arch === 'marketplace' || arch === 'archive') ? 'catalog-grid' : 'collection-archive';
+    case 'testimonial': return (arch === 'editorial' || arch === 'luxury-service' || arch === 'hospitality') ? 'quote-story' : 'proof-strip';
+    case 'features':
+    case 'generic':
+    default:            return contentVariantFor(arch, contentIndex);
+  }
+}
+
+const HERO_ROTATION: HeroComposition[] = [
+  'split-editorial', 'asymmetric-visual', 'immersive-full-bleed',
+  'catalog-collection', 'dashboard-product', 'story-editorial',
+];
+const MODULE_ROTATION: VisualModule[] = [
+  'product-showcase', 'editorial-story', 'catalog-archive', 'data-dashboard', 'spatial-floorplan',
+];
+
+/**
+ * Derive the full, deterministic layout plan from the strategy brief + the
+ * resolved section list ({ id, name }). Same inputs → same plan, everywhere.
+ */
+export function deriveLayoutPlan(
+  brief: WebBuildBrief | undefined,
+  sections: Array<{ id: string; name: string }>,
+): WebBuildLayoutPlan {
+  const ds = deriveDesignSystemFromStrategy(brief);
+  const arch = ds.archetype;
+  const bp = BLUEPRINT[arch] || BLUEPRINT.standard;
+  const b = brief || {};
+
+  // Resolve every section to a kind + composition variant.
+  let contentIndex = 0;
+  const resolved: PlanSection[] = sections.map((s) => {
+    const kind = sectionKind(s.id, s.name);
+    const isContent = kind === 'features' || kind === 'generic';
+    const variant = variantForSection(kind, arch, isContent ? contentIndex++ : 0);
+    return { id: s.id, name: s.name, kind, variant };
+  });
+
+  // The primary visual module lives in the hero AND in the first content/gallery
+  // section that can host it — so it is structural, not a decorative panel.
+  const primaryVisualModule = bp.module;
+  const hostIdx = resolved.findIndex((s) =>
+    s.kind === 'features' || s.kind === 'generic' || s.kind === 'gallery' || s.kind === 'productDemo' || s.kind === 'metrics');
+  if (hostIdx >= 0) resolved[hostIdx].hostsPrimaryModule = true;
+
+  // Secondary modules come from what the site actually contains.
+  const secondaryVisualModules = Array.from(
+    new Set(resolved.map((s) => MODULE_FOR_KIND[s.kind]).filter((m): m is VisualModule => !!m && m !== primaryVisualModule)),
+  ).slice(0, 3);
+
+  const motionPattern: MotionPattern =
+    ds.motion === 'minimal' ? 'minimal'
+    : ds.motion === 'expressive' ? (arch === 'dashboard' || arch === 'data-platform' || arch === 'technical' ? 'kinetic' : 'parallax')
+    : 'reveal';
+
+  let plan: WebBuildLayoutPlan = {
+    archetype: arch,
+    pageArchitecture: describeArchitecture(bp.hero, arch, resolved),
+    heroComposition: bp.hero,
+    navigationStyle: bp.nav,
+    sectionSequence: resolved.map((s) => s.id),
+    sectionVariants: Object.fromEntries(resolved.map((s) => [s.id, s.variant])),
+    sections: resolved,
+    primaryVisualModule,
+    secondaryVisualModules,
+    contentDensity: ds.density,
+    rhythm: bp.rhythm,
+    ctaPlacement: bp.cta,
+    trustPlacement: bp.trust,
+    motionPattern,
+    componentPlan: resolved.map((s) => pascal(s.id)),
+    filePlan: [],
+    diversityCorrected: false,
+  };
+
+  plan = enforceDiversity(plan, b);
+  plan.filePlan = planFiles(plan);
+  return plan;
+}
+
+/**
+ * Anti-sameness guard (Part 6). If the strategy was weak and the plan collapsed
+ * toward the generic default (centered hero, contour-only module, every content
+ * section a plain card grid, flat rhythm), apply a DETERMINISTIC diversity
+ * correction keyed on a hash of the idea — so two different weak ideas still get
+ * distinct heroes, modules, rhythm and section variants. Never loops; one pass.
+ */
+function enforceDiversity(plan: WebBuildLayoutPlan, brief: WebBuildBrief): WebBuildLayoutPlan {
+  const contentVariants = plan.sections
+    .filter((s) => s.kind === 'features' || s.kind === 'generic')
+    .map((s) => s.variant);
+  const distinctContent = new Set(contentVariants).size;
+
+  const tooGeneric =
+    // A weak strategy resolves to the neutral 'standard' archetype — without a
+    // correction every such idea would share one hero + module, which is just a
+    // new flavor of sameness. Diversify these by a hash of the idea instead.
+    (plan.archetype === 'standard')
+    || (plan.heroComposition === 'centered')
+    || (plan.primaryVisualModule === 'contour-terrain')
+    || (plan.rhythm === 'even' && distinctContent <= 1)
+    || (contentVariants.length >= 2 && distinctContent === 1 && contentVariants[0] === 'feature-grid');
+
+  if (!tooGeneric) return plan;
+
+  const seed = hashText([
+    brief.type, brief.coreIdea, brief.goal, brief.audience, brief.visualMetaphor, brief.style,
+  ].filter(Boolean).join(' ') || 'korvix');
+
+  const hero = HERO_ROTATION[seed % HERO_ROTATION.length];
+  const module = MODULE_ROTATION[(seed >> 3) % MODULE_ROTATION.length];
+  const rhythm: RhythmPattern = (seed >> 5) % 2 === 0 ? 'alternating' : 'staggered';
+
+  // Re-vary content sections so the same content is not one repeated block.
+  const wheel: SectionVariant[] = ['editorial-split', 'proof-strip', 'showcase', 'feature-grid'];
+  let ci = 0;
+  const sections = plan.sections.map((s) => {
+    if (s.kind !== 'features' && s.kind !== 'generic') return s;
+    const variant = wheel[(seed + ci++) % wheel.length];
+    return { ...s, variant };
+  });
+
+  return {
+    ...plan,
+    heroComposition: hero,
+    primaryVisualModule: module,
+    rhythm,
+    sections,
+    sectionVariants: Object.fromEntries(sections.map((s) => [s.id, s.variant])),
+    pageArchitecture: describeArchitecture(hero, plan.archetype, sections),
+    diversityCorrected: true,
+  };
+}
+
+function describeArchitecture(hero: HeroComposition, arch: LayoutArchetype, sections: PlanSection[]): string {
+  const heroLabel = hero.replace(/-/g, ' ');
+  const flow = sections.slice(0, 6).map((s) => s.variant.replace(/-/g, ' ')).join(' → ');
+  return `${arch} architecture · ${heroLabel} hero · ${flow}`;
+}
+
+function planFiles(plan: WebBuildLayoutPlan): string[] {
+  const comps = plan.componentPlan.map((n) => `src/components/${n}.tsx`);
+  return [
+    'src/main.tsx',
+    'src/App.tsx',
+    ...comps,
+    'src/components/VisualModule.tsx',
+    'src/lib/designSystem.ts',
+    'src/lib/layoutPlan.ts',
+    'src/data/siteContent.ts',
+    'src/styles.css',
+  ];
+}
+
+/** Serialize the plan to a real `src/lib/layoutPlan.ts` module in the generated
+ *  project — so the generated code openly reflects the chosen composition. */
+export function layoutPlanFileContent(plan: WebBuildLayoutPlan): string {
+  const obj = {
+    archetype: plan.archetype,
+    heroComposition: plan.heroComposition,
+    navigationStyle: plan.navigationStyle,
+    primaryVisualModule: plan.primaryVisualModule,
+    secondaryVisualModules: plan.secondaryVisualModules,
+    contentDensity: plan.contentDensity,
+    rhythm: plan.rhythm,
+    ctaPlacement: plan.ctaPlacement,
+    trustPlacement: plan.trustPlacement,
+    motionPattern: plan.motionPattern,
+    sectionSequence: plan.sectionSequence,
+    sectionVariants: plan.sectionVariants,
+  };
+  return `/**
+ * Layout plan for this site — the structural composition derived from the build
+ * strategy (archetype, hero composition, per-section variants, visual modules,
+ * rhythm). The hero and every section are composed to match this plan, so a
+ * different strategy produces a genuinely different STRUCTURE, not just colors.
+ */
+export const layoutPlan = ${JSON.stringify(obj, null, 2)} as const;
+
+export type LayoutPlan = typeof layoutPlan;
+`;
+}

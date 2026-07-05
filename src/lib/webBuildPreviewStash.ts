@@ -1,4 +1,5 @@
 import type { WebBuildSectionItem } from '@/lib/webBuildPayload';
+import type { WebBuildBrief } from '@/lib/webBuildApi';
 import { scopedKey } from '@/lib/userScope';
 
 /**
@@ -11,7 +12,10 @@ import { scopedKey } from '@/lib/userScope';
 export interface WebBuildPreviewData {
   runId: string;
   sectionItems: WebBuildSectionItem[];
-  brief: { type?: string; audience?: string; goal?: string; style?: string };
+  /** Full strategy brief — the layout plan reads the richer strategy fields
+   *  (visual mood, layout logic, visual metaphor), so the standalone preview
+   *  composes the SAME structure as the in-app preview and generated files. */
+  brief: WebBuildBrief;
   slug?: string;
   prompt?: string;
 }
