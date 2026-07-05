@@ -5,7 +5,7 @@
  * real build data — we never claim files/sections that aren't in the reply.
  */
 import type { BuildSection } from '@/lib/gameBuilderApi';
-import { extractBrief, type WebBuildResult } from '@/lib/webBuildApi';
+import { extractBrief, type WebBuildResult, type WebBuildBrief } from '@/lib/webBuildApi';
 import { resolveBuildFiles, parseSectionCopy, synthesizeFromCopies, type SynthFile, type SectionCopy as SynthCopy } from '@/lib/webBuildFiles';
 import { inferWebsiteBrief, fallbackSectionItems, checkQuality } from '@/lib/webBuildBrief';
 import { detectMessageLanguage } from '@/lib/locale';
@@ -71,7 +71,10 @@ export interface WebBuildStep {
 export interface WebBuildPayload {
   source: 'web_build';
   prompt: string;
-  brief: { type?: string; audience?: string; goal?: string; style?: string };
+  /** Strategy brief. Core fields + optional richer strategy from the model's
+   *  Build Plan / Design Direction (see WebBuildBrief). All optional → old
+   *  saved builds still load. */
+  brief: WebBuildBrief;
   sectionItems: WebBuildSectionItem[];
   /** Raw parsed markdown sections (Build Plan, Design Direction, …). */
   sections: BuildSection[];
@@ -167,10 +170,16 @@ export function deriveBuildActivity(result: WebBuildResult, files?: WebBuildFile
   const items = parseSectionItems(result);
   const fileList = files || resolveFiles(result);
   const briefBits = [brief.type, brief.audience, brief.goal].filter(Boolean).join(' · ');
+  // Surface the model's ACTUAL strategy in the activity detail (not template
+  // text): what the site is + the insight that shaped it, then the layout logic
+  // / visual metaphor behind the section plan. Free text — no i18n keys needed.
+  const readDetail = [brief.coreIdea || briefBits, brief.strategyInsight].filter(Boolean).join(' — ') || undefined;
+  const planDetail = [brief.layoutLogic || brief.visualMetaphor, items.length ? items.map((s) => s.name).join(', ') : '']
+    .filter(Boolean).join(' · ') || undefined;
 
   const rows: WebBuildActivityRow[] = [
-    { id: 'read', labelKey: 'wbActRead', status: 'done', detail: briefBits || undefined },
-    { id: 'plan', labelKey: 'wbActPlan', status: 'done', detail: items.length ? items.map((s) => s.name).join(', ') : undefined },
+    { id: 'read', labelKey: 'wbActRead', status: 'done', detail: readDetail },
+    { id: 'plan', labelKey: 'wbActPlan', status: 'done', detail: planDetail },
   ];
 
   // One row per file actually produced (changed files first; unchanged noted).
@@ -221,12 +230,26 @@ export function buildWebBuildPayload(
   const inferred = inferWebsiteBrief(prompt, effLang);
 
   const backendBrief = extractBrief(result.sections);
-  const brief = {
+  // Prefer the model's own strategy fields; fall back to inference only for the
+  // core four. The richer strategy fields (coreIdea, strategyInsight, visual
+  // metaphor, motion direction, …) flow straight through so downstream activity
+  // detail, preview and file synthesis are driven by the ACTUAL strategy.
+  const brief: WebBuildBrief = {
+    ...backendBrief,
     type: backendBrief.type || inferred.businessType,
     audience: backendBrief.audience || inferred.targetAudience,
     goal: backendBrief.goal || inferred.conversionGoal,
-    style: backendBrief.style || inferred.visualStyle,
+    style: backendBrief.style || backendBrief.visualMood || inferred.visualStyle,
+    primaryCTA: backendBrief.primaryCTA || inferred.primaryCTA,
+    secondaryCTA: backendBrief.secondaryCTA || inferred.secondaryCTA,
   };
+  // Revisions keep the first build's strategy fields unless the model restated
+  // them (only defined values override), so a small revision never loses the
+  // original insight.
+  const definedBrief = Object.fromEntries(
+    Object.entries(brief).filter(([, v]) => v != null && v !== ''),
+  ) as WebBuildBrief;
+  const mergedBrief: WebBuildBrief = prev ? { ...prev.brief, ...definedBrief } : brief;
 
   let sectionItems = parseSectionItems(result);
   let files = resolveFiles(result, prev?.files);
@@ -234,12 +257,12 @@ export function buildWebBuildPayload(
   // Quality gate — repair a weak FRESH build with the inferred industry brief.
   if (!prev && !checkQuality(sectionItems, files.length, effLang).ok) {
     sectionItems = fallbackSectionItems(inferred, effLang);
-    files = diffFiles(undefined, synthesizeFromCopies(itemsToCopies(sectionItems), { goal: brief.goal, type: brief.type }));
+    files = diffFiles(undefined, synthesizeFromCopies(itemsToCopies(sectionItems), { goal: mergedBrief.goal, type: mergedBrief.type }));
   }
 
   const changed = files.filter((f) => f.status !== 'unchanged');
   const summary: WebBuildSummary = {
-    type: brief.type,
+    type: mergedBrief.type,
     sectionNames: sectionItems.map((s) => s.name),
     fileCount: files.length,
     added: changed.reduce((n, f) => n + f.added, 0),
@@ -259,7 +282,7 @@ export function buildWebBuildPayload(
   return {
     source: 'web_build',
     prompt: prev?.prompt || prompt,
-    brief,
+    brief: mergedBrief,
     sectionItems,
     sections: result.sections,
     files,

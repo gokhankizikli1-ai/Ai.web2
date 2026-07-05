@@ -360,11 +360,34 @@ const TOKENS: Record<IndustryKey, DesignTokens> = {
   generic:      { bg: '#05070d', headingFont: SANS,  bodyFont: SANS, accent: '#6366f1', accent2: '#22d3ee', tracking: '-0.02em',  radius: '1rem' },
 };
 
-/** Resolve the design tokens for a preview brief (industry inferred from its
- *  type/style/goal text). Falls back to a clean generic system. */
-export function designTokensForBrief(brief: { type?: string; style?: string; goal?: string } | undefined): DesignTokens {
-  const industry = detectIndustry(`${brief?.type || ''} ${brief?.style || ''} ${brief?.goal || ''}`);
-  return TOKENS[industry] || TOKENS.generic;
+/** Palette hints derived from the model's stated color/mood direction — used
+ *  for ideas that don't map to a known industry, so unusual/sophisticated
+ *  concepts still get a distinct, fitting palette instead of default indigo. */
+const COLOR_HINTS: { re: RegExp; accent: string; accent2: string; bg: string }[] = [
+  { re: /(green|emerald|botanic|garden|nature|forest|peyzaj|yeşil|organic|\beco)/i, accent: '#34d399', accent2: '#a3e635', bg: '#071009' },
+  { re: /(amber|gold|warm|dining|wood|ahşap|sıcak|terracotta|earth|honey)/i,        accent: '#e0a35b', accent2: '#b45309', bg: '#0e0a07' },
+  { re: /(crimson|scarlet|luxur|bold|kırmızı|metallic|racing|noir gold)/i,           accent: '#e11d48', accent2: '#f59e0b', bg: '#05060a' },
+  { re: /(sky|\bblue|cyan|tech|trust|clinical|medical|mavi|clean|glacial)/i,          accent: '#0ea5e9', accent2: '#22d3ee', bg: '#060a12' },
+  { re: /(violet|purple|indigo|creative|mor|neon|electric)/i,                         accent: '#8b5cf6', accent2: '#ec4899', bg: '#07070e' },
+  { re: /(pink|rose|magenta|pembe|coral)/i,                                           accent: '#ec4899', accent2: '#f59e0b', bg: '#0a0a0c' },
+  { re: /(mono|black|minimal|monochrome|noir|siyah|stark|brutalist)/i,                accent: '#e5e7eb', accent2: '#94a3b8', bg: '#08080a' },
+];
+
+/** Resolve the design tokens for a preview brief. Industry inference is only a
+ *  starting point; when the concept is generic, the palette is driven by the
+ *  model's own color/mood/metaphor direction so different ideas look different. */
+export function designTokensForBrief(
+  brief: { type?: string; style?: string; goal?: string; colorDirection?: string; visualMood?: string; visualMetaphor?: string } | undefined,
+): DesignTokens {
+  const text = `${brief?.type || ''} ${brief?.style || ''} ${brief?.goal || ''} ${brief?.colorDirection || ''} ${brief?.visualMood || ''} ${brief?.visualMetaphor || ''}`;
+  const industry = detectIndustry(text);
+  const base = TOKENS[industry] || TOKENS.generic;
+  if (industry === 'generic') {
+    const hintSource = `${brief?.colorDirection || ''} ${brief?.visualMood || ''} ${brief?.visualMetaphor || ''} ${brief?.style || ''} ${brief?.type || ''}`;
+    const hint = COLOR_HINTS.find((h) => h.re.test(hintSource));
+    if (hint) return { ...base, accent: hint.accent, accent2: hint.accent2, bg: hint.bg };
+  }
+  return base;
 }
 
 const humanize = (id: string, lang: Lang): string => {
