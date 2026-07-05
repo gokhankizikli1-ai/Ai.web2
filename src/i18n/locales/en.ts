@@ -383,6 +383,15 @@ export const en: Record<string, string> = {
   wbAgentLayout: "Layout Architect Agent",
   wbAgentComponent: "Component Engineer Agent",
   wbThinkLabel: "Think",
+  /* web build — compact running "Think" indicator (single running-state UI).
+   * One line at a time, cycled while the build is in flight. No checklist. */
+  wbRunThinkResearch: "Research Agent is analyzing the brief",
+  wbRunThinkArt: "UI / Art Director Agent is defining visual direction",
+  wbRunThinkStrategy: "Strategy Agent is planning CTA hierarchy",
+  wbRunThinkLayout: "Layout Architect Agent is mapping section rhythm",
+  wbRunThinkComponent: "Component Engineer Agent is preparing files",
+  wbRunThinkPreview: "Preparing preview",
+  wbRunThinkRevise: "Applying your change",
   wbAgentCompleted: "completed",
   wbOpArtNote: "Art Direction guides the visual system, palette and typography; later agents build from it.",
   wbOpStrategyAgentNote: "Strategy sets positioning, the conversion path, trust and CTA hierarchy.",

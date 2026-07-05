@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Monitor, FolderTree, ArrowRight, X } from 'lucide-react';
 import { useLanguageStore } from '@/stores/languageStore';
@@ -20,11 +20,82 @@ import type { WebBuildResearch } from '@/lib/webBuildApi';
  */
 
 /* ── Live run shown WHILE the backend call is in flight ──────────────────
- * The agents run internally, but NO progress/timeline UI renders in the chat
- * while building — only the user's prompt bubble stays. When the build finishes,
- * the normal result (Preview / All Files / Save) appears in place. */
-function LivePhases({ prompt }: { prompt: string; kind?: 'build' | 'revision' }) {
-  return <UserMessage text={prompt} />;
+ * The agents run internally. The ONLY running-state UI in the chat is a single
+ * compact "Think" indicator: the user's prompt bubble, then a small pulsing dot
+ * next to a "Think" label with one live action line under it. No checklist, no
+ * card/panel, no full agent list, no reserved blank area. The action line
+ * advances through safe, honest phase labels while the call is in flight (the
+ * backend is a single request, so there is no per-agent stream to read). When
+ * the build finishes, this disappears and the normal result cards render. */
+
+/** Ordered, honest phase labels for the compact Think line. Derived from the
+ *  build step (no fake progress); holds on the last label until completion. */
+const BUILD_THINK_KEYS = [
+  'wbRunThinkResearch',
+  'wbRunThinkArt',
+  'wbRunThinkStrategy',
+  'wbRunThinkLayout',
+  'wbRunThinkComponent',
+  'wbRunThinkPreview',
+] as const;
+
+function ThinkRunning({ kind }: { kind: 'build' | 'revision' }) {
+  const { t } = useLanguageStore();
+  const keys = useMemo<readonly string[]>(
+    () => (kind === 'revision'
+      ? ['wbRunThinkRevise', 'wbRunThinkComponent', 'wbRunThinkPreview']
+      : [...BUILD_THINK_KEYS]),
+    [kind],
+  );
+  const [i, setI] = useState(0);
+
+  useEffect(() => {
+    setI(0);
+    // Advance through the phase labels, then hold on the final one (Preparing
+    // preview) until the parent removes this component on completion.
+    const id = setInterval(() => {
+      setI((prev) => (prev >= keys.length - 1 ? prev : prev + 1));
+    }, 2200);
+    return () => clearInterval(id);
+  }, [keys]);
+
+  return (
+    <div className="flex items-start gap-2.5">
+      <div className="mt-[3px]">
+        <KorvixAvatar size={15} active />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="relative flex h-1.5 w-1.5 shrink-0">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#60A5FA] opacity-75" />
+            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[#60A5FA]" />
+          </span>
+          <span className="text-[12.5px] font-medium text-slate-200">{t('wbThinkLabel')}</span>
+        </div>
+        <AnimatePresence mode="wait">
+          <motion.p
+            key={keys[i]}
+            initial={{ opacity: 0, y: 2 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -2 }}
+            transition={{ duration: 0.25 }}
+            className="mt-1 pl-[13px] text-[12px] leading-relaxed text-[#94A3B8]"
+          >
+            {t(keys[i])}
+          </motion.p>
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+}
+
+function LivePhases({ prompt, kind = 'build' }: { prompt: string; kind?: 'build' | 'revision' }) {
+  return (
+    <div className="space-y-3">
+      <UserMessage text={prompt} />
+      <ThinkRunning kind={kind} />
+    </div>
+  );
 }
 
 /* ── Attachment / artifact card ──────────────────────────────────────── */
