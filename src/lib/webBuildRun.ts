@@ -35,7 +35,7 @@ export type WebBuildRunEventType =
   | 'error';
 
 /** The tool-call block kinds shown in the feed. */
-export type ToolType = 'think' | 'read_file' | 'create_file' | 'edit_file' | 'preview';
+export type ToolType = 'think' | 'read_file' | 'create_file' | 'edit_file' | 'preview' | 'research';
 export type RunArtifact = 'preview' | 'files' | 'save';
 
 /** One real event in a coding-agent run. File events carry the real path +
@@ -149,6 +149,11 @@ export function stepToEvents(
     params: brief.goal ? { goal: brief.goal } : undefined,
   });
   pushTool(out, 'think', 'think', 'wbToolThink');
+  // HONEST research/analysis line — driven by the backend's real research
+  // status. When real providers ran and returned URLs we show a research line
+  // + the source count; otherwise we show a plain "strategy inference" line and
+  // never claim research or name a provider. Silent on old steps with no meta.
+  pushResearch(out, step);
   // A natural transition line before writing files (names the real sections
   // when we have them, otherwise a plain "now turning it into components").
   out.push(step.summary.sectionNames.length
@@ -166,6 +171,26 @@ export function stepToEvents(
   });
   pushArtifacts(out);
   return out;
+}
+
+/** Emit the honest research/analysis line for a fresh build. Reads the real
+ *  backend research status on the step — shows a "web sources" line ONLY when
+ *  providers actually ran and returned URLs; otherwise a neutral "strategy
+ *  inference" line. Never names a provider in the feed and never fabricates. */
+function pushResearch(out: WebBuildRunEvent[], step: WebBuildStep): void {
+  const r = step.research;
+  if (!r) return; // old steps / no meta — stay silent rather than guess.
+  const count = r.sourceCount ?? (r.sources ? r.sources.length : 0);
+  if (r.didResearch && count > 0) {
+    const titles = (r.sources || []).slice(0, 3).map((s) => s.title).filter(Boolean).join(' · ');
+    pushTool(out, 'research', 'research', 'wbActResearch', { summary: titles || undefined });
+    out.push({
+      id: eid(), type: 'assistant_message', status: 'completed',
+      messageKey: 'wbFeedResearchDone', params: { count },
+    });
+  } else {
+    pushTool(out, 'research', 'research', 'wbToolStrategy');
+  }
 }
 
 function pushArtifacts(out: WebBuildRunEvent[]): void {

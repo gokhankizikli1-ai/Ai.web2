@@ -473,20 +473,32 @@ async def process_chat(
                         if _wb_block:
                             sys_p += "\n\n" + _wb_block
                         elif _wb_research_meta and not _wb_research_meta.get("did_research"):
+                            # Honest fallback instruction — reason is included so
+                            # the model knows WHY it has no sources, and is told
+                            # to label its reasoning "Strategy insight" (never
+                            # "Research found") and never invent citations.
+                            _why = (_wb_research_meta or {}).get("fallback_reason") or "no live sources available"
                             sys_p += (
                                 "\n\n[RESEARCH_STATUS]\n"
-                                "Live web research returned no usable sources. Rely on internal "
-                                "strategy inference, label it 'Strategy insight' (not 'Research "
-                                "found'), and do NOT invent URLs, sources, competitors, or citations."
+                                f"Live web research did not return usable sources ({_why}). "
+                                "Rely on internal strategy inference, label it 'Strategy insight' "
+                                "(not 'Research found'), and do NOT invent URLs, sources, "
+                                "competitors, statistics, or citations."
                             )
                         logger.info(
-                            "process_chat | website_builder research | did_research=%s | sources=%d",
+                            "process_chat | website_builder research | status=%s | did_research=%s | sources=%d | reason=%s",
+                            (_wb_research_meta or {}).get("status") or "-",
                             bool((_wb_research_meta or {}).get("did_research")),
                             int((_wb_research_meta or {}).get("source_count") or 0),
+                            (_wb_research_meta or {}).get("fallback_reason") or "-",
                         )
                     except Exception as _wberr:
                         logger.warning("process_chat | website_builder research error: %s — continuing", _wberr)
-                        _wb_research_meta = {"did_research": False}
+                        _wb_research_meta = {
+                            "did_research": False,
+                            "status": "failed",
+                            "fallback_reason": f"research pre-pass raised: {type(_wberr).__name__}",
+                        }
 
                 reply = await ask_ai(
                     message, sys_p, history,
@@ -502,10 +514,20 @@ async def process_chat(
                 # Surface REAL research metadata (sources + did_research) so the
                 # frontend can honestly show sources ONLY when tools actually ran.
                 if canonical == "website_builder" and _wb_research_meta:
+                    # ALWAYS surface the full research status for a fresh build —
+                    # so the frontend can honestly distinguish ran / disabled /
+                    # failed / no-sources and (owner/admin) show a debug reason.
                     _metadata["research"] = {
-                        "did_research": bool(_wb_research_meta.get("did_research")),
-                        "queries":      _wb_research_meta.get("queries") or [],
-                        "source_count": int(_wb_research_meta.get("source_count") or 0),
+                        "did_research":        bool(_wb_research_meta.get("did_research")),
+                        "status":              _wb_research_meta.get("status") or (
+                            "used_sources" if _wb_research_meta.get("did_research") else "no_sources"
+                        ),
+                        "provider":            _wb_research_meta.get("provider"),
+                        "attempted_providers": _wb_research_meta.get("attempted_providers") or [],
+                        "queries":             _wb_research_meta.get("queries") or [],
+                        "query_count":         int(_wb_research_meta.get("query_count") or 0),
+                        "source_count":        int(_wb_research_meta.get("source_count") or 0),
+                        "fallback_reason":     _wb_research_meta.get("fallback_reason"),
                     }
                     _srcs = _wb_research_meta.get("sources") or []
                     if _srcs:

@@ -19,7 +19,7 @@ type Brief = { type?: string; audience?: string; goal?: string; style?: string }
 
 /** How long each tool block dwells in the running state before completing. */
 const RUN_MS: Record<ToolType, number> = {
-  think: 520, create_file: 560, edit_file: 600, read_file: 360, preview: 460,
+  think: 520, create_file: 560, edit_file: 600, read_file: 360, preview: 460, research: 700,
 };
 const GAP_MS = 90;   // pause between a block completing and the next appearing
 const MSG_MS = 240;  // pause after an assistant message before the next block

@@ -364,6 +364,8 @@ export const de: Record<string, string> = {
   /* web build — real file artifacts */
   wbActRead: "Deine Anfrage wird gelesen",
   wbActResearch: "Recherche mit Web-Quellen",
+  wbToolStrategy: "Strategie-Inferenz wird verwendet",
+  wbFeedResearchDone: "Ich habe {count} Live-Quelle(n) recherchiert und die Erkenntnisse in die Strategie einfließen lassen.",
   wbActPlan: "Seitenstruktur wird geplant",
   wbActCreatingFile: "{file} wird erstellt",
   wbActModifyingFile: "{file} wird geändert",

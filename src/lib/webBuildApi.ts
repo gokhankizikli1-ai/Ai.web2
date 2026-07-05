@@ -53,6 +53,27 @@ export const WEB_BUILD_SECTIONS = [
  *  present when a tool actually ran and returned a URL. */
 export interface WebBuildSource { title: string; url: string; snippet?: string }
 
+/** Honest research status for a fresh build. Backend always sends this for a
+ *  website_builder build so research can never silently fail:
+ *    used_sources — real providers ran and returned real URLs
+ *    disabled     — research is off / no provider configured
+ *    failed       — a provider was attempted but errored
+ *    no_sources   — a provider ran but returned nothing usable
+ *  When `didResearch` is false, `fallbackReason` explains why (owner/admin). */
+export type WebBuildResearchStatus =
+  | 'used_sources' | 'disabled' | 'failed' | 'no_sources' | 'fallback_strategy';
+
+export interface WebBuildResearch {
+  didResearch: boolean;
+  status: WebBuildResearchStatus;
+  provider?: string;
+  attemptedProviders?: string[];
+  queryCount?: number;
+  sourceCount?: number;
+  fallbackReason?: string;
+  sources?: WebBuildSource[];
+}
+
 export interface WebBuildResult {
   reply: string;
   sections: BuildSection[];
@@ -67,6 +88,8 @@ export interface WebBuildResult {
   sources?: WebBuildSource[];
   /** True only when the backend actually ran research tools. */
   didResearch?: boolean;
+  /** Full, honest research status (present for a fresh website_builder build). */
+  research?: WebBuildResearch;
 }
 
 /**
@@ -373,7 +396,33 @@ export async function generateWebBuild(
     .filter((s): s is Record<string, unknown> => !!s && typeof s.url === 'string' && /^https?:\/\//i.test(s.url as string))
     .map((s) => ({ title: String(s.title || s.url), url: String(s.url), snippet: typeof s.snippet === 'string' ? s.snippet : undefined }))
     .slice(0, 8);
+  // did_research is honoured ONLY when it lines up with real URLs — the UI can
+  // never claim research ran unless we actually hold sources.
   const didResearch = research.did_research === true && sources.length > 0;
+
+  // Build the full, honest research object when the backend reported one (it
+  // always does for a fresh website_builder build). Status is normalized: a
+  // claimed did_research with zero real sources is downgraded to no_sources so
+  // the UI never over-claims.
+  const hasResearchMeta = meta.research && typeof meta.research === 'object';
+  const rawStatus = typeof research.status === 'string' ? research.status : undefined;
+  const status: WebBuildResearchStatus = didResearch
+    ? 'used_sources'
+    : (rawStatus as WebBuildResearchStatus) || (sources.length ? 'no_sources' : 'fallback_strategy');
+  const asStrList = (v: unknown): string[] | undefined =>
+    Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : undefined;
+  const researchObj: WebBuildResearch | undefined = hasResearchMeta
+    ? {
+        didResearch,
+        status,
+        provider: typeof research.provider === 'string' ? research.provider : undefined,
+        attemptedProviders: asStrList(research.attempted_providers),
+        queryCount: typeof research.query_count === 'number' ? research.query_count : undefined,
+        sourceCount: typeof research.source_count === 'number' ? research.source_count : sources.length,
+        fallbackReason: typeof research.fallback_reason === 'string' ? research.fallback_reason : undefined,
+        sources: sources.length ? sources : undefined,
+      }
+    : undefined;
 
   return {
     reply,
@@ -384,5 +433,6 @@ export async function generateWebBuild(
     requestId: typeof data.request_id === 'string' ? data.request_id : '',
     sources: sources.length ? sources : undefined,
     didResearch: didResearch || undefined,
+    research: researchObj,
   };
 }

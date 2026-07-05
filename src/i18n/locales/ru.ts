@@ -364,6 +364,8 @@ export const ru: Record<string, string> = {
   /* web build — real file artifacts */
   wbActRead: "Чтение вашего запроса",
   wbActResearch: "Исследование по веб-источникам",
+  wbToolStrategy: "Используется стратегический вывод",
+  wbFeedResearchDone: "Я изучил {count} актуальны(х) источник(ов) и учёл выводы в стратегии.",
   wbActPlan: "Планирование структуры страниц",
   wbActCreatingFile: "Создание {file}",
   wbActModifyingFile: "Изменение {file}",

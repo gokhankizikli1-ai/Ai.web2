@@ -630,13 +630,16 @@ def _route_research_via_celery() -> bool:
     """True when the env flag is on AND the job queue is enabled.
 
     Read dynamically so a Railway env flip is live on the next request.
+    All three flags accept any common truthy spelling (true/1/yes/on) so a
+    value like `WEB_RESEARCH_VIA_CELERY=1` behaves the same as `=true`.
     """
     import os
-    if os.getenv("WEB_RESEARCH_VIA_CELERY", "false").strip().lower() != "true":
+    from backend.services.tools.tool_registry import env_truthy
+    if not env_truthy(os.getenv("WEB_RESEARCH_VIA_CELERY")):
         return False
-    if os.getenv("ENABLE_JOB_QUEUE", "false").strip().lower() != "true":
+    if not env_truthy(os.getenv("ENABLE_JOB_QUEUE")):
         return False
-    if os.getenv("JOB_QUEUE_RESEARCH", "false").strip().lower() != "true":
+    if not env_truthy(os.getenv("JOB_QUEUE_RESEARCH")):
         return False
     return True
 
