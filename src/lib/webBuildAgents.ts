@@ -248,6 +248,11 @@ export interface ArtResearchSignalsUsed {
   uxPriorities: boolean;
   trustSignals: boolean;
   conversionPatterns: boolean;
+  /* ── Richer Research Agent signals (optional → backward compatible). ── */
+  conceptProfile?: boolean;
+  trustFocus?: boolean;
+  imageryDirection?: boolean;
+  layoutWarning?: boolean;
 }
 export interface VisualMoodProfile {
   primaryMood: string;
@@ -2067,6 +2072,10 @@ export function deriveArtDirection(
   // Read the Research brief signals so every direction is specific, not generic.
   const tu = research?.targetUser;
   const vsr = research?.visualStyleRecommendation;
+  // Richer Research Agent hand-off (concept profile + UI instructions). All
+  // optional — every use below falls back safely when they are absent.
+  const cpf = research?.conceptProfile;
+  const uia = research?.uiAgentInstructions;
   const audience = brief.audience || inferred.targetAudience;
   const desktopLean = /desktop/i.test(tu?.devicePreference || '');
   const mobileLean = /mobile/i.test(tu?.devicePreference || '');
@@ -2109,13 +2118,15 @@ export function deriveArtDirection(
     || L(lang, `A ${ds.sectionRhythm} rhythm with ${ds.density} spacing that fits the concept.`,
         `Konsepte uygun ${ds.density} boşluklu ${ds.sectionRhythm} bir ritim.`);
   const visualMetaphor = brief.visualMetaphor || inferred.previewVisualIdea;
-  // imageryDirection — prefer the researched imagery type when present.
-  const imageryDirection = vsr?.imageryType
-    ? L(lang, `${vsr.imageryType} — composed, never stock or blank boxes.`,
-        `${vsr.imageryType} — kompoze, asla stok veya boş kutu değil.`)
-    : L(lang,
-        `Composed CSS/SVG visuals (${inferred.previewVisualIdea}) — no stock photos, no blank boxes.`,
-        `Kompoze CSS/SVG görseller (${inferred.previewVisualIdea}) — stok fotoğraf yok, boş kutu yok.`);
+  // imageryDirection — prefer the Research Agent's explicit imagery hand-off, then
+  // the researched imagery type, then a composed-visuals default.
+  const imageryDirection = uia?.imageryDirection
+    || (vsr?.imageryType
+      ? L(lang, `${vsr.imageryType} — composed, never stock or blank boxes.`,
+          `${vsr.imageryType} — kompoze, asla stok veya boş kutu değil.`)
+      : L(lang,
+          `Composed CSS/SVG visuals (${inferred.previewVisualIdea}) — no stock photos, no blank boxes.`,
+          `Kompoze CSS/SVG görseller (${inferred.previewVisualIdea}) — stok fotoğraf yok, boş kutu yok.`));
   const iconographyDirection = vsr?.iconStyle
     || L(lang, 'Consistent line/duotone icons, one weight, tied to the accent.',
         'Tutarlı çizgi/duoton ikonlar, tek ağırlık, vurguya bağlı.');
@@ -2142,9 +2153,12 @@ export function deriveArtDirection(
     L(lang, 'Tasteful reveal-on-scroll, never childish', 'Zevkli scroll-belirme, asla çocuksu değil'),
   ]);
   const avoid = uniq([
+    // Lead with the Research Agent's concept-specific anti-template warning so the
+    // strongest "don't make it generic" signal is first.
+    uia?.layoutWarning || '',
     // Research color psychology + explicit UI-agent hand-off drive what to avoid.
     ...(research?.colorPsychology?.avoidColors || []).slice(0, 3),
-    ...(research?.uiAgentInstructions?.mustAvoid || []).slice(0, 2),
+    ...(uia?.mustAvoid || []).slice(0, 2),
     ...(research?.risksToAvoid || []).slice(0, 2),
     L(lang, 'Default indigo/cyan when the concept implies another palette',
       'Konsept başka bir palet ima ederken varsayılan indigo/camgöbeği'),
@@ -2182,7 +2196,11 @@ export function deriveArtDirection(
   const ctaStyleDirection = L(lang,
     `Solid ${premiumLevel === 'luxury' ? 'understated' : 'high-contrast'} primary button on the accent for "${primaryCTA}", with a soft glow; a quiet ghost/secondary for the alternate path. One primary per screen.`,
     `"${primaryCTA}" için vurguda ${premiumLevel === 'luxury' ? 'gösterişsiz' : 'yüksek kontrastlı'} dolu ana buton, yumuşak parıltıyla; alternatif yol için sessiz hayalet/ikincil. Ekran başına tek ana buton.`);
-  const trustNeed = (tu?.trustNeeds || [])[0] || (research?.trustSignals || [])[0];
+  // trustNeed feeds the trust visual direction (→ componentStyleRules.trustBlocks
+  // + downstreamInstructions). Lead with the Research Agent's explicit trustFocus,
+  // then the concept's proof needs, then generic trust signals.
+  const trustNeed = uia?.trustFocus || (cpf?.proofNeeded || [])[0]
+    || (tu?.trustNeeds || [])[0] || (research?.trustSignals || [])[0];
   const trustVisualDirection = L(lang,
     `Present proof (${trustNeed || 'credibility'}) as calm, real modules — logos, metrics, testimonials on quiet surfaces near the primary CTA, never loud badges.`,
     `Kanıtı (${trustNeed || 'itibar'}) sakin, gerçek modüller olarak sun — ana CTA yakınında sessiz yüzeylerde logolar, metrikler, yorumlar; asla gürültülü rozetler değil.`);
@@ -2205,6 +2223,11 @@ export function deriveArtDirection(
     research?.uiAgentInstructions ? 'uiAgentInstructions' : '',
     (research?.risksToAvoid || []).length ? 'risksToAvoid' : '',
     (research?.trustSignals || []).length ? 'trustSignals' : '',
+    // Richer Research signals — recorded ONLY when actually consumed above.
+    cpf ? 'conceptProfile' : '',
+    uia?.trustFocus ? 'trustFocus' : '',
+    uia?.imageryDirection ? 'imageryDirection' : '',
+    uia?.layoutWarning ? 'layoutWarning' : '',
   ]);
 
   // ── STRUCTURED ART DIRECTION (archetype-driven, research-informed) ──────
@@ -2231,13 +2254,18 @@ export function deriveArtDirection(
     uxPriorities: !!(research?.uxPriorities || []).length,
     trustSignals: !!(research?.trustSignals || []).length,
     conversionPatterns: !!(research?.conversionPatterns || []).length,
+    conceptProfile: !!cpf,
+    trustFocus: !!uia?.trustFocus,
+    imageryDirection: !!uia?.imageryDirection,
+    layoutWarning: !!uia?.layoutWarning,
   };
   const visualMoodProfile: VisualMoodProfile = {
     primaryMood: cp?.primaryMood || visualMood,
     secondaryMood: vsr?.styleType || archName,
     emotionalGoal: cp?.emotionalEffect || L(lang, `Make ${audience} feel this is made for them and trustworthy.`, `${audience} bunun kendisi için yapıldığını ve güvenilir olduğunu hissetsin.`),
     brandPersonality: uniq([inferred.tone, ...archetype.tags]).slice(0, 5),
-    userPerceptionGoal: tu?.buyingMotivation
+    // Perception goal follows the concept's real visitor intent when known.
+    userPerceptionGoal: tu?.buyingMotivation || cpf?.visitorIntent
       || L(lang, `Perceive a distinct ${archName.toLowerCase()} identity, not a generic template.`, `Jenerik bir şablon değil, belirgin bir ${archName.toLowerCase()} kimliği algılasın.`),
   };
   const typographyProfile: TypographyProfile = {
@@ -2267,7 +2295,10 @@ export function deriveArtDirection(
       ? L(lang, 'Multi-column scannable grids', 'Çok sütunlu taranabilir gridler')
       : L(lang, 'Asymmetric, varied grids over uniform 3-cards', 'Tek tip 3 kart yerine asimetrik, çeşitli gridler'),
     sectionSeparators: L(lang, 'Tonal surface shifts and hairlines, not heavy boxes', 'Ağır kutular değil, tonal yüzey geçişleri ve ince çizgiler'),
+    // Above-the-fold priority leads with a researched UX priority, then the
+    // concept's key decision, then a safe default.
     aboveFoldPriority: (research?.uxPriorities || [])[0]?.priority
+      || (cpf ? L(lang, `Answer "${cpf.keyDecision}" + one path to "${primaryCTAName}"`, `"${cpf.keyDecision}" + "${primaryCTAName}" için tek yol`) : '')
       || L(lang, `Promise + one path to "${primaryCTAName}"`, `Vaat + "${primaryCTAName}" için tek yol`),
   };
   const heroTreatment: HeroTreatment = {
@@ -2276,12 +2307,17 @@ export function deriveArtDirection(
     visualAnchor: visualMetaphor || L(lang, archetype.imageType, archetype.imageType),
     headlineStyle: typographyProfile.headingStyle,
     ctaStyle: ctaStyleDirection,
-    trustPlacement: (research?.trustSignals || [])[0] || (tu?.trustNeeds || [])[0]
+    // Trust placement leads with the concept's proof focus (trustFocus / proofNeeded).
+    trustPlacement: uia?.trustFocus || (cpf?.proofNeeded || [])[0]
+      || (research?.trustSignals || [])[0] || (tu?.trustNeeds || [])[0]
       || L(lang, 'A quiet proof band directly under the hero CTA', 'Hero CTA\'nın hemen altında sessiz bir kanıt bandı'),
     backgroundTreatment: archetype.layoutDensity === 'immersive'
       ? L(lang, 'Full-bleed image/gradient with a legible overlay', 'Okunaklı kaplamalı tam-taşma görsel/gradyan')
       : L(lang, 'Refined gradient/surface tied to the palette', 'Palete bağlı rafine gradyan/yüzey'),
-    reason: archReason,
+    // Reason names the concept decision the hero must resolve, when known.
+    reason: cpf
+      ? L(lang, `${archReason} Answer "${cpf.keyDecision}" above the fold.`, `${archReason} "${cpf.keyDecision}" sorusunu ilk ekranda yanıtla.`)
+      : archReason,
   };
   const componentStyleRules: ComponentStyleRules = {
     cards: L(lang, `${archetype.cardStyle} (${ds.cardStyle})`, `${archetype.cardStyle} (${ds.cardStyle})`),
@@ -2297,7 +2333,11 @@ export function deriveArtDirection(
     trustBlocks: trustVisualDirection,
   };
   const imagerySystem: ImagerySystem = {
-    imageType: L(lang, archetype.imageType, archetype.imageType),
+    // imageType names the archetype's structural imagery + the concept content type
+    // (catalog/editorial/product/service…) so the module reflects the concept read.
+    imageType: cpf?.contentType
+      ? L(lang, `${archetype.imageType} · ${cpf.contentType}`, `${archetype.imageType} · ${cpf.contentType}`)
+      : L(lang, archetype.imageType, archetype.imageType),
     photographyStyle: /photograph|editorial|cinematic|image/.test(archetype.imageType)
       ? L(lang, 'Editorial, high-contrast, generous negative space', 'Editoryal, yüksek kontrast, cömert negatif alan')
       : L(lang, 'Only where it adds proof — otherwise composed visuals', 'Yalnızca kanıt kattığında — aksi halde kompoze görseller'),
@@ -2359,16 +2399,19 @@ export function deriveArtDirection(
       L(lang, `Keep the conversion path consistent with a ${archName.toLowerCase()} tone`, `Dönüşüm yolunu ${archName.toLowerCase()} tonuyla tutarlı tut`),
       L(lang, `CTA style: ${ctaStyleDirection}`, `CTA stili: ${ctaStyleDirection}`),
       L(lang, `Trust proof as: ${trustVisualDirection}`, `Güven kanıtı: ${trustVisualDirection}`),
+      cpf ? L(lang, `Prove ${(cpf.proofNeeded || []).slice(0, 2).join(', ')} for a ${cpf.category} visitor deciding "${cpf.keyDecision}".`, `${cpf.category} ziyaretçisi "${cpf.keyDecision}" kararını verirken ${(cpf.proofNeeded || []).slice(0, 2).join(', ')} kanıtla.`) : '',
     ]),
     layoutArchitectAgent: uniq([
       L(lang, `Hero: ${heroTreatment.heroType} — ${heroTreatment.composition}`, `Hero: ${heroTreatment.heroType} — ${heroTreatment.composition}`),
       L(lang, `Density: ${layoutFeel.density}; ${layoutFeel.gridStyle}`, `Yoğunluk: ${layoutFeel.density}; ${layoutFeel.gridStyle}`),
       L(lang, `Section rhythm: ${sectionRhythmDirection}`, `Bölüm ritmi: ${sectionRhythmDirection}`),
+      uia?.layoutWarning ? L(lang, `Avoid: ${uia.layoutWarning}`, `Kaçın: ${uia.layoutWarning}`) : '',
     ]),
     componentEngineerAgent: uniq([
       L(lang, `Cards: ${componentStyleRules.cards}`, `Kartlar: ${componentStyleRules.cards}`),
       L(lang, `Buttons: ${componentStyleRules.buttons}`, `Butonlar: ${componentStyleRules.buttons}`),
       L(lang, `Icons: ${iconographySystem.style}, ${iconographySystem.shapeLanguage}`, `İkonlar: ${iconographySystem.style}, ${iconographySystem.shapeLanguage}`),
+      uia?.imageryDirection ? L(lang, `Imagery: ${uia.imageryDirection}`, `Görsel: ${uia.imageryDirection}`) : '',
     ]),
     previewRenderer: uniq([
       L(lang, `Palette "${paletteName}": bg ${colorSystem.background}, accent ${colorSystem.accent}`, `Palet "${paletteName}": arka ${colorSystem.background}, vurgu ${colorSystem.accent}`),
@@ -2381,7 +2424,8 @@ export function deriveArtDirection(
   };
   const mustEmphasize = uniq([
     archName,
-    ...(research?.uiAgentInstructions?.mustEmphasize || []).slice(0, 2),
+    ...(uia?.mustEmphasize || []).slice(0, 2),
+    cpf ? L(lang, `Answer "${cpf.keyDecision}"`, `"${cpf.keyDecision}" sorusunu yanıtla`) : '',
     visualMoodProfile.emotionalGoal,
     L(lang, `A single obvious path to "${primaryCTAName}"`, `"${primaryCTAName}" için tek net yol`),
   ]).slice(0, 5);
@@ -2488,15 +2532,22 @@ export function deriveStrategyAgent(
   const audience = brief.audience || inferred.targetAudience;
   const primary = brief.primaryCTA || inferred.primaryCTA;
   const secondary = brief.secondaryCTA || inferred.secondaryCTA;
-  const positioning = brief.coreIdea || `${inferred.businessType} ${L(lang, 'for', 'için')} ${audience}`;
+  // Richer Research hand-off (concept profile + UI instructions). Optional; every
+  // use fills a gap only and never overrides an explicit brief value.
+  const cpf = research?.conceptProfile;
+  const uia = research?.uiAgentInstructions;
+  const positioning = brief.coreIdea || cpf?.whatItIs || `${inferred.businessType} ${L(lang, 'for', 'için')} ${audience}`;
   const mainPromise = brief.strategyInsight || inferred.heroHeadline;
   const conversionStrategy = brief.conversionStrategy
-    || uniq(research?.conversionPatterns || []).join(' · ')
+    || uniq([cpf?.mainConversion || '', ...(research?.conversionPatterns || [])]).join(' · ')
     || L(lang, `Lead the visitor to one action: ${primary}.`, `Ziyaretçiyi tek eyleme yönlendir: ${primary}.`);
-  // Trust strategy consumes Research trust needs AND the UI Agent's trust visual
-  // direction, so the two agents agree on how proof is presented.
+  // Trust strategy consumes the concept's proof needs + the UI Agent's trust focus
+  // AND the Research trust needs + the Art Direction's trust visual direction, so
+  // every agent agrees on how proof is presented.
   const trustStrategy = brief.trustSignals
     || uniq([
+        uia?.trustFocus || '',
+        ...(cpf?.proofNeeded || []),
         ...(research?.targetUser?.trustNeeds || []),
         ...(research?.trustSignals || []),
         art?.trustVisualDirection || '',
@@ -2505,15 +2556,17 @@ export function deriveStrategyAgent(
   const differentiation = (research?.differentiationOpportunities || [])[0]
     || inferred.previewVisualIdea;
 
-  const contentHierarchy = [
+  const contentHierarchy = uniq([
     L(lang, `Promise: ${mainPromise}`, `Vaat: ${mainPromise}`),
+    // The concept's key decision is what the page must resolve for the visitor.
+    cpf ? L(lang, `Resolve the decision: ${cpf.keyDecision}`, `Kararı çöz: ${cpf.keyDecision}`) : '',
     L(lang, 'Proof it is real (trust signals)', 'Gerçek olduğunun kanıtı (güven sinyalleri)'),
     L(lang, 'How it works / what you get', 'Nasıl çalışır / ne elde edersin'),
     L(lang, `The offer and single action: ${primary}`, `Teklif ve tek eylem: ${primary}`),
-  ];
+  ]);
   const aboveTheFoldMustProve = uniq([
     mainPromise,
-    (research?.trustSignals || [])[0] || inferred.trustSignals,
+    (cpf?.proofNeeded || [])[0] || (research?.trustSignals || [])[0] || inferred.trustSignals,
     differentiation,
   ]).slice(0, 3);
 
@@ -2536,6 +2589,10 @@ export function deriveStrategyAgent(
     (research?.audienceExpectations || []).length ? 'audienceExpectations' : '',
     (research?.differentiationOpportunities || []).length ? 'differentiationOpportunities' : '',
     (research?.risksToAvoid || []).length ? 'risksToAvoid' : '',
+    // Richer signals — recorded ONLY when actually consumed above.
+    cpf ? 'conceptProfile' : '',
+    uia?.trustFocus ? 'trustFocus' : '',
+    uia?.layoutWarning ? 'layoutWarning' : '',
   ]);
   const usedArtDirectionInputs = uniq([
     art?.visualMood ? 'visualMood' : '',
@@ -2552,12 +2609,13 @@ export function deriveStrategyAgent(
     // the real visitor and stays aligned with the art direction's tone.
     audiencePsychology: uniq([
       audience,
+      cpf?.whoFor || '',
       research?.targetUser?.buyingMotivation || '',
       ...(research?.targetUser?.mainPainPoints || []).slice(0, 2),
       art?.brandPersonality || '',
       ...(research?.audienceExpectations || []),
     ]).join(' · '),
-    visitorIntent: brief.visitorIntent || research?.targetUser?.buyingMotivation
+    visitorIntent: brief.visitorIntent || cpf?.visitorIntent || research?.targetUser?.buyingMotivation
       || (research?.audienceExpectations || [])[0]
       || L(lang, `Decide quickly whether this fits, then ${primary}.`, `Bunun uygun olup olmadığına hızlıca karar ver, sonra ${primary}.`),
     conversionStrategy,
@@ -2566,7 +2624,8 @@ export function deriveStrategyAgent(
     contentHierarchy,
     aboveTheFoldMustProve,
     sectionIntent,
-    risksToAvoid: research?.risksToAvoid || [],
+    // Lead the risks with the concept anti-template warning when present.
+    risksToAvoid: uniq([uia?.layoutWarning || '', ...(research?.risksToAvoid || [])]),
     differentiation,
     usedResearchInputs: usedResearchInputs.length ? usedResearchInputs : undefined,
     usedArtDirectionInputs: usedArtDirectionInputs.length ? usedArtDirectionInputs : undefined,
@@ -2645,10 +2704,11 @@ export function deriveLayoutArchitect(
       };
     });
 
-  // Hero proof placement is shaped by the Strategy Agent's above-the-fold proof
-  // and the Research target-user trust needs — the plan already positions it, this
-  // records WHY.
+  // Hero proof placement is shaped by the Strategy Agent's above-the-fold proof,
+  // the concept's proof needs, and the Research target-user trust needs — the plan
+  // already positions it, this records WHY.
   const heroProof = (strategy?.aboveTheFoldMustProve || [])[0]
+    || (research?.conceptProfile?.proofNeeded || [])[0]
     || (research?.targetUser?.trustNeeds || [])[0]
     || plan.trustPlacement;
   // Responsive behavior follows the Art Direction (which read the Research
@@ -2660,11 +2720,17 @@ export function deriveLayoutArchitect(
       : L(lang, 'Single column on mobile; multi-column grids collapse; the hero visual stacks under the copy.',
           'Mobilde tek sütun; grid\'ler tek sütuna iner; hero görseli metnin altına yığılır.'));
 
+  // conceptProfile is recorded ONLY when its proof need actually shaped the hero
+  // proof placement above — an honest, verifiable consumption claim.
+  const usedConceptProof = !!(research?.conceptProfile?.proofNeeded || []).length
+    && !(strategy?.aboveTheFoldMustProve || []).length
+    && heroProof === (research?.conceptProfile?.proofNeeded || [])[0];
   const usedResearchInputs = uniq([
     (research?.recommendedPages || []).length ? 'recommendedPages' : '',
     (research?.recommendedComponents || []).length ? 'recommendedComponents' : '',
     research?.targetUser ? 'targetUser' : '',
     (research?.trustSignals || []).length ? 'trustSignals' : '',
+    usedConceptProof ? 'conceptProfile' : '',
   ]);
   // designArchetype is recorded ONLY when the resolved plan actually followed the
   // art archetype's mapped structure — an honest, verifiable handoff claim rather
@@ -2756,6 +2822,33 @@ const ART_ARCHETYPE_TO_LAYOUT: Record<string, ArtLayoutSteer> = {
 };
 
 /**
+ * Fallback map from the Research Agent's concept CATEGORY to the layout vocabulary.
+ * Used only to GAP-FILL layout steering when the Art Direction did not pin a
+ * structure and the recommended-pages/components heuristic came up empty — so a
+ * clearly-typed concept (archive, hospitality, legal…) still avoids the generic
+ * 'standard' fallback. Every value is a real member of the plan vocabulary
+ * (validated by the plan whitelists downstream). `general` is intentionally absent.
+ */
+const CONCEPT_TO_LAYOUT: Record<string, ArtLayoutSteer> = {
+  archive:       { archetype: 'archive',        hero: 'catalog-collection',     module: 'catalog-archive' },
+  hospitality:   { archetype: 'hospitality',     hero: 'luxury-service',         module: 'reservation-form' },
+  landscaping:   { archetype: 'portfolio',       hero: 'asymmetric-visual',      module: 'catalog-archive' },
+  local_service: { archetype: 'hospitality',     hero: 'luxury-service',         module: 'reservation-form' },
+  legal:         { archetype: 'luxury-service',  hero: 'luxury-service',         module: 'editorial-story' },
+  medical:       { archetype: 'luxury-service',  hero: 'luxury-service',         module: 'editorial-story' },
+  ai:            { archetype: 'technical',       hero: 'dashboard-product',      module: 'data-dashboard' },
+  saas:          { archetype: 'dashboard',       hero: 'dashboard-product',      module: 'data-dashboard' },
+  marketplace:   { archetype: 'marketplace',     hero: 'catalog-collection',     module: 'catalog-archive' },
+  education:     { archetype: 'membership',      hero: 'membership-application', module: 'membership-pass' },
+  nonprofit:     { archetype: 'community',       hero: 'split-editorial',        module: 'membership-pass' },
+  portfolio:     { archetype: 'portfolio',       hero: 'asymmetric-visual',      module: 'editorial-story' },
+  industrial:    { archetype: 'technical',       hero: 'dashboard-product',      module: 'data-dashboard' },
+  event:         { archetype: 'event',           hero: 'event-experience',       module: 'timeline-process' },
+  real_estate:   { archetype: 'archive',         hero: 'catalog-collection',     module: 'catalog-archive' },
+  finance:       { archetype: 'data-platform',   hero: 'data-map',               module: 'data-dashboard' },
+};
+
+/**
  * Decide the STRUCTURE the layout plan should use, FROM the agent artifacts — so
  * the plan (and therefore both the preview and the generated files) obeys the
  * agents instead of re-detecting an archetype from prose. The PRIMARY signal is
@@ -2835,6 +2928,18 @@ function deriveLayoutSteeringFromResearch(
   if (premium === 'luxury') hero = 'luxury-service';
   else if (premium === 'experimental' || /experimental|cinematic|immersive/.test(style)) hero = 'immersive-full-bleed';
   else if (art?.density === 'immersive') hero = 'immersive-full-bleed';
+
+  // GAP-FILL from the concept category — a clearly-typed concept steers the plan
+  // away from the generic 'standard' fallback when the heuristic above was silent.
+  // Only fills; never overrides a value the pages/components heuristic already set.
+  const conceptSteer = research.conceptProfile?.category
+    ? CONCEPT_TO_LAYOUT[research.conceptProfile.category]
+    : undefined;
+  if (conceptSteer) {
+    archetype = archetype || conceptSteer.archetype;
+    module = module || conceptSteer.module;
+    hero = hero || conceptSteer.hero;
+  }
 
   const out: { agentArchetype?: string; agentHero?: string; agentModule?: string } = {};
   if (archetype) out.agentArchetype = archetype;
@@ -3094,11 +3199,15 @@ export function deriveComponentEngineer(
     return { path, purpose: m.purpose, componentType: m.componentType, dependsOn: m.dependsOn };
   });
 
+  const cpf = research?.conceptProfile;
   const contentModel: Record<string, unknown> = {
     source: 'src/data/siteContent.ts',
     sections: plan.sections.length,
+    // Name the concept read so the content model is honestly traceable to it.
+    concept: cpf ? `${cpf.category} · ${cpf.contentType}` : undefined,
     drivenBy: uniq([
       research ? 'Research categoryLanguage + audienceExpectations' : '',
+      cpf ? 'Research conceptProfile (content type + proof)' : '',
       strategy ? 'Strategy contentHierarchy + sectionIntent' : '',
       art ? 'Art Direction tone' : '',
     ]),
@@ -3111,6 +3220,8 @@ export function deriveComponentEngineer(
   const usedResearchInputs = uniq([
     (research?.recommendedComponents || []).length ? 'recommendedComponents' : '',
     (research?.recommendedPages || []).length ? 'recommendedPages' : '',
+    // Recorded ONLY because the content model above reads the concept profile.
+    cpf ? 'conceptProfile' : '',
   ]);
   const usedArtDirectionInputs = uniq([art?.componentStyleHints?.length ? 'componentStyleHints' : '', art?.density ? 'density' : '']);
   const usedStrategyInputs = uniq([(strategy?.sectionIntent || []).length ? 'sectionIntent' : '', (strategy?.contentHierarchy || []).length ? 'contentHierarchy' : '']);
