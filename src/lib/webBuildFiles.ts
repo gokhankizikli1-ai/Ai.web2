@@ -22,6 +22,10 @@ import {
   deriveWebBuildArtIdentity, deriveMotionFit, motionAmbientAllowed,
   type WebBuildArtIdentity, type ArtRenderMode,
 } from '@/lib/webBuildArtIdentity';
+import {
+  anchorId, deriveInteraction, ctaTargetForSection, pickNavSections,
+  type InteractionContext, type NavItem,
+} from '@/lib/webBuildInteraction';
 
 // Re-export the section classifier so existing importers keep working while the
 // plan layer owns section semantics.
@@ -71,6 +75,20 @@ function pascal(id: string) {
 }
 const stripMd = (s: string) => s.replace(/[*_`#>]/g, '').replace(/^\s*[-*]\s+/, '').trim();
 const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
+
+/**
+ * Give a generated component's outermost <section> a STABLE anchor id derived
+ * from the real section id (replacing any hardcoded id like `gallery`/`demo`),
+ * plus scroll-margin so a sticky nav never covers the heading. Non-section roots
+ * (footer) are returned unchanged. Deterministic string transform.
+ */
+function withSectionId(code: string, sectionId: string): string {
+  const sid = anchorId(sectionId);
+  return code.replace(/<section\b([^>]*)>/, (_m, attrs: string) => {
+    const cleaned = attrs.replace(/\sid="[^"]*"/, '');
+    return `<section id="${sid}" style={{ scrollMarginTop: '84px' }}${cleaned}>`;
+  });
+}
 
 /* ── Honest data guards ───────────────────────────────────────────────────
  * The generated components must never invent facts. These helpers extract only
@@ -209,7 +227,7 @@ function cardsComponent(name: string, c: SectionCopy): string {
           </div>`).join('\n');
   return `export default function ${name}() {
   return (
-    <section id="features" className="relative px-6 py-20 sm:py-24">
+    <section className="relative px-6 py-20 sm:py-24">
       <div className="mx-auto max-w-6xl">
         ${c.headline ? `<h2 className="mx-auto max-w-2xl text-center text-3xl font-semibold tracking-tight text-white sm:text-4xl">{\`${esc(c.headline)}\`}</h2>` : ''}
         ${c.sub ? `<p className="mx-auto mt-4 max-w-2xl text-center text-slate-400">{\`${esc(c.sub)}\`}</p>` : ''}
@@ -223,17 +241,17 @@ ${cards}
 `;
 }
 
-function ctaComponent(name: string, c: SectionCopy): string {
+function ctaComponent(name: string, c: SectionCopy, ctaHref = '#top'): string {
   const headline = c.headline || 'Ready to start?';
   const cta = c.cta || 'Book now';
   return `export default function ${name}() {
   return (
-    <section id="contact" className="relative isolate overflow-hidden px-6 py-24">
+    <section className="relative isolate overflow-hidden px-6 py-24">
       <div className="kx-aurora -z-10" style={{ bottom: '-8rem', left: '50%', width: '32rem', height: '20rem', transform: 'translateX(-50%)', background: 'radial-gradient(circle, var(--kx-accent), transparent 60%)' }} aria-hidden="true" />
       <div className="kx-reveal mx-auto max-w-2xl rounded-3xl border border-[color:var(--kx-border)] bg-[var(--kx-card)] p-10 text-center backdrop-blur">
         <h2 className="text-3xl font-semibold tracking-tight text-white">{\`${esc(headline)}\`}</h2>
         ${c.sub ? `<p className="mt-3 text-slate-300">{\`${esc(c.sub)}\`}</p>` : ''}
-        <a href="#" className="mt-7 inline-block rounded-xl bg-[var(--kx-accent)] px-7 py-3 text-sm font-semibold text-white shadow-lg shadow-black/40 transition hover:bg-[var(--kx-accent)]">
+        <a href="${ctaHref}" className="mt-7 inline-block rounded-xl bg-[var(--kx-accent)] px-7 py-3 text-sm font-semibold text-white shadow-lg shadow-black/40 transition hover:bg-[var(--kx-accent)]">
           {\`${esc(cta)}\`}
         </a>
       </div>
@@ -243,15 +261,18 @@ function ctaComponent(name: string, c: SectionCopy): string {
 `;
 }
 
-function footerComponent(name: string, c: SectionCopy): string {
+function footerComponent(name: string, c: SectionCopy, nav: NavItem[] = []): string {
+  // Footer nav points at the real page sections (never dead #features/#contact).
+  const links = (nav.length ? nav : [{ href: '#top', name: 'Top' } as NavItem])
+    .map((n) => `          <a href="${n.href}" className="transition hover:text-white">{\`${esc(n.name)}\`}</a>`)
+    .join('\n');
   return `export default function ${name}() {
   return (
     <footer className="border-t border-[color:var(--kx-border)] px-6 py-12">
       <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-4 sm:flex-row">
         <p className="text-sm text-slate-400">{\`${esc(c.headline || '© Your Company')}\`}</p>
-        <nav className="flex gap-6 text-sm text-slate-400">
-          <a href="#features" className="transition hover:text-white">Features</a>
-          <a href="#contact" className="transition hover:text-white">Contact</a>
+        <nav className="flex flex-wrap gap-6 text-sm text-slate-400">
+${links}
         </nav>
       </div>
     </footer>
@@ -290,7 +311,7 @@ function galleryComponent(name: string, c: SectionCopy, mode: ArtRenderMode = 'm
           </figure>`).join('\n');
   return `export default function ${name}() {
   return (
-    <section id="gallery" className="px-6 py-20">
+    <section className="px-6 py-20">
       <div className="mx-auto max-w-6xl">
         ${c.headline ? `<h2 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">{\`${esc(c.headline)}\`}</h2>` : ''}
         <div className="mt-10 grid grid-cols-2 gap-4 sm:grid-cols-3">
@@ -328,18 +349,18 @@ function beforeAfterComponent(name: string, c: SectionCopy, mode: ArtRenderMode 
 `;
 }
 
-function productDemoComponent(name: string, c: SectionCopy): string {
+function productDemoComponent(name: string, c: SectionCopy, ctaHref = '#top'): string {
   const lines = (c.bullets.length ? c.bullets : ['Merhaba, nasıl yardımcı olabilirim?', 'Siparişimi takip etmek istiyorum.', 'Tabii, sipariş numaranı paylaşır mısın?']).slice(0, 4);
   const bubbles = lines.map((b, i) => `            <div key={${i}} className="max-w-[80%] ${i % 2 ? 'ml-auto bg-[var(--kx-accent)] text-white' : 'bg-white/[0.06] text-slate-200'} rounded-[var(--kx-radius)] px-3.5 py-2 text-[13px]">{\`${esc(b)}\`}</div>`).join('\n');
   return `export default function ${name}() {
   return (
-    <section id="demo" className="relative isolate overflow-hidden px-6 py-20">
+    <section className="relative isolate overflow-hidden px-6 py-20">
       <div className="kx-aurora -z-10" style={{ top: '-4rem', right: '-4rem', width: '22rem', height: '22rem', background: 'radial-gradient(circle, var(--kx-accent), transparent 60%)' }} aria-hidden="true" />
       <div className="mx-auto grid max-w-6xl items-center gap-10 lg:grid-cols-2">
         <div>
           ${c.headline ? `<h2 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">{\`${esc(c.headline)}\`}</h2>` : ''}
           ${c.sub ? `<p className="mt-4 text-slate-300">{\`${esc(c.sub)}\`}</p>` : ''}
-          ${c.cta ? `<a href="#contact" className="mt-6 inline-block rounded-xl bg-[var(--kx-accent)] px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-black/40">{\`${esc(c.cta)}\`}</a>` : ''}
+          ${c.cta ? `<a href="${ctaHref}" className="mt-6 inline-block rounded-xl bg-[var(--kx-accent)] px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-black/40">{\`${esc(c.cta)}\`}</a>` : ''}
         </div>
         <div className="kx-float rounded-[var(--kx-radius)] border border-[color:var(--kx-border)] bg-[var(--kx-card)] p-4 shadow-2xl shadow-black/40">
           <div className="mb-3 flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-white/20" /><span className="h-2.5 w-2.5 rounded-full bg-white/20" /><span className="h-2.5 w-2.5 rounded-full bg-white/20" /></div>
@@ -362,7 +383,7 @@ function workflowComponent(name: string, c: SectionCopy): string {
           </li>`).join('\n');
   return `export default function ${name}() {
   return (
-    <section id="process" className="px-6 py-20">
+    <section className="px-6 py-20">
       <div className="mx-auto max-w-6xl">
         ${c.headline ? `<h2 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">{\`${esc(c.headline)}\`}</h2>` : ''}
         <ol className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -440,7 +461,7 @@ function inventoryComponent(name: string, c: SectionCopy): string {
   }).join('\n');
   return `export default function ${name}() {
   return (
-    <section id="inventory" className="px-6 py-20">
+    <section className="px-6 py-20">
       <div className="mx-auto max-w-6xl">
         ${c.headline ? `<h2 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">{\`${esc(c.headline)}\`}</h2>` : ''}
         <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -495,7 +516,7 @@ function pricingComponent(name: string, c: SectionCopy): string {
   }).join('\n');
   return `export default function ${name}() {
   return (
-    <section id="pricing" className="px-6 py-20">
+    <section className="px-6 py-20">
       <div className="mx-auto max-w-5xl">
         ${c.headline ? `<h2 className="text-center text-3xl font-semibold tracking-tight text-white sm:text-4xl">{\`${esc(c.headline)}\`}</h2>` : ''}
         <div className="mt-10 grid gap-5 sm:grid-cols-3">
@@ -522,7 +543,7 @@ function menuComponent(name: string, c: SectionCopy): string {
   }).join('\n');
   return `export default function ${name}() {
   return (
-    <section id="menu" className="px-6 py-20">
+    <section className="px-6 py-20">
       <div className="mx-auto max-w-3xl">
         ${c.headline ? `<h2 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">{\`${esc(c.headline)}\`}</h2>` : ''}
         <ul className="mt-8 space-y-4">
@@ -566,7 +587,7 @@ function faqComponent(name: string, c: SectionCopy): string {
           </details>`).join('\n');
   return `export default function ${name}() {
   return (
-    <section id="faq" className="px-6 py-20">
+    <section className="px-6 py-20">
       <div className="mx-auto max-w-3xl">
         ${c.headline ? `<h2 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">{\`${esc(c.headline)}\`}</h2>` : ''}
         <div className="mt-8 space-y-3">
@@ -649,9 +670,9 @@ function heroCopyBits(c: SectionCopy, brief: { goal?: string; type?: string }) {
   };
 }
 
-const ctaBlock = (cta: string, secondary: string) => `          <div className="mt-9 flex flex-col gap-3 sm:flex-row">
-            <a href="#contact" className="rounded-xl bg-[var(--kx-accent)] px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-black/40">{\`${esc(cta)}\`}</a>
-            ${secondary ? `<a href="#features" className="rounded-xl border border-white/15 px-6 py-3 text-sm font-medium text-slate-200">{\`${esc(secondary)}\`}</a>` : ''}
+const ctaBlock = (cta: string, secondary: string, primaryHref = '#top', secondaryHref = '#top') => `          <div className="mt-9 flex flex-col gap-3 sm:flex-row">
+            <a href="${primaryHref}" className="rounded-xl bg-[var(--kx-accent)] px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-black/40">{\`${esc(cta)}\`}</a>
+            ${secondary ? `<a href="${secondaryHref}" className="rounded-xl border border-white/15 px-6 py-3 text-sm font-medium text-slate-200">{\`${esc(secondary)}\`}</a>` : ''}
           </div>`;
 
 /**
@@ -662,9 +683,12 @@ const ctaBlock = (cta: string, secondary: string) => `          <div className="
  */
 function heroComponentFor(
   name: string, c: SectionCopy, brief: { goal?: string; type?: string }, plan: WebBuildLayoutPlan,
-  art: WebBuildArtIdentity, ambient: boolean,
+  art: WebBuildArtIdentity, ambient: boolean, ctx: InteractionContext,
 ): string {
   const b = heroCopyBits(c, brief);
+  // Hero CTAs scroll to real, concept-relevant sections (never a dead #contact).
+  const primaryHref = ctx.primaryTarget;
+  const secondaryHref = ctx.secondaryTarget;
   const mod = plan.primaryVisualModule;
   const eyebrow = b.eyebrow ? `<span className="inline-flex items-center gap-2 rounded-full border border-[color:var(--kx-border)] bg-white/[0.04] px-3 py-1 text-xs font-medium text-[var(--kx-accent)]"><span className="h-1.5 w-1.5 rounded-full bg-[var(--kx-accent)]" /> {\`${esc(b.eyebrow)}\`}</span>` : '';
   const sub = (cls: string) => (b.sub ? `<p className="${cls}">{\`${esc(b.sub)}\`}</p>` : '');
@@ -685,7 +709,7 @@ ${bg}
           ${eyebrow}
           <h1 className="mt-5 text-4xl font-semibold tracking-tight text-white sm:text-5xl">{\`${esc(b.headline)}\`}</h1>
           ${sub('mt-5 max-w-xl text-lg leading-relaxed text-slate-300')}
-${ctaBlock(b.cta, b.secondary)}
+${ctaBlock(b.cta, b.secondary, primaryHref, secondaryHref)}
 ${proof}
           ${b.proof ? `<p className="mt-6 text-xs text-slate-400">{\`${esc(b.proof)}\`}</p>` : ''}
         </div>
@@ -708,8 +732,8 @@ ${bg}
           <h1 className="mx-auto mt-5 max-w-3xl text-4xl font-semibold tracking-tight text-white sm:text-6xl">{\`${esc(b.headline)}\`}</h1>
           ${sub('mx-auto mt-5 max-w-2xl text-lg leading-relaxed text-slate-300')}
           <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <a href="#contact" className="rounded-xl bg-[var(--kx-accent)] px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-black/40">{\`${esc(b.cta)}\`}</a>
-            ${b.secondary ? `<a href="#features" className="rounded-xl border border-white/15 px-6 py-3 text-sm font-medium text-slate-200">{\`${esc(b.secondary)}\`}</a>` : ''}
+            <a href="${primaryHref}" className="rounded-xl bg-[var(--kx-accent)] px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-black/40">{\`${esc(b.cta)}\`}</a>
+            ${b.secondary ? `<a href="${secondaryHref}" className="rounded-xl border border-white/15 px-6 py-3 text-sm font-medium text-slate-200">{\`${esc(b.secondary)}\`}</a>` : ''}
           </div>
 ${proof}
         </div>
@@ -733,7 +757,7 @@ ${bg}
           ${eyebrow}
           <h1 className="mt-5 text-4xl font-semibold tracking-tight text-white sm:text-6xl">{\`${esc(b.headline)}\`}</h1>
           ${sub('mt-5 max-w-xl text-lg leading-relaxed text-slate-200')}
-${ctaBlock(b.cta, b.secondary)}
+${ctaBlock(b.cta, b.secondary, primaryHref, secondaryHref)}
 ${proof}
         </div>
       </div>
@@ -754,8 +778,8 @@ ${bg}
           <h1 className="mt-6 text-4xl font-semibold tracking-tight text-white sm:text-6xl">{\`${esc(b.headline)}\`}</h1>
           ${sub('mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-slate-300')}
           <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <a href="#contact" className="rounded-xl bg-[var(--kx-accent)] px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-black/40">{\`${esc(b.cta)}\`}</a>
-            ${b.secondary ? `<a href="#features" className="rounded-xl border border-white/15 px-6 py-3 text-sm font-medium text-slate-200">{\`${esc(b.secondary)}\`}</a>` : ''}
+            <a href="${primaryHref}" className="rounded-xl bg-[var(--kx-accent)] px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-black/40">{\`${esc(b.cta)}\`}</a>
+            ${b.secondary ? `<a href="${secondaryHref}" className="rounded-xl border border-white/15 px-6 py-3 text-sm font-medium text-slate-200">{\`${esc(b.secondary)}\`}</a>` : ''}
           </div>
 ${proof}
         </div>
@@ -776,7 +800,7 @@ ${bg}
         <div className="kx-reveal lg:col-span-7">
           ${eyebrow}
           <h1 className="mt-5 text-5xl font-semibold leading-[1.05] tracking-tight text-white sm:text-6xl">{\`${esc(b.headline)}\`}</h1>
-${ctaBlock(b.cta, b.secondary)}
+${ctaBlock(b.cta, b.secondary, primaryHref, secondaryHref)}
 ${proof}
         </div>
         <div className="lg:col-span-5">
@@ -961,7 +985,7 @@ ${cells}
 `;
 }
 
-function showcaseComponent(name: string, c: SectionCopy, plan: WebBuildLayoutPlan): string {
+function showcaseComponent(name: string, c: SectionCopy, plan: WebBuildLayoutPlan, ctaHref = '#top'): string {
   const mod = plan.primaryVisualModule === 'contour-terrain' ? 'product-showcase' : plan.primaryVisualModule;
   return `import VisualModule from './VisualModule';
 
@@ -973,7 +997,7 @@ export default function ${name}() {
         <div>
           ${c.headline ? `<h2 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">{\`${esc(c.headline)}\`}</h2>` : ''}
           ${c.sub ? `<p className="mt-4 max-w-lg leading-relaxed text-slate-300">{\`${esc(c.sub)}\`}</p>` : ''}
-          ${c.cta ? `<a href="#contact" className="mt-7 inline-block rounded-xl bg-[var(--kx-accent)] px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-black/40">{\`${esc(c.cta)}\`}</a>` : ''}
+          ${c.cta ? `<a href="${ctaHref}" className="mt-7 inline-block rounded-xl bg-[var(--kx-accent)] px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-black/40">{\`${esc(c.cta)}\`}</a>` : ''}
         </div>
       </div>
     </section>
@@ -989,7 +1013,7 @@ function applicationFormComponent(name: string, c: SectionCopy, plan: WebBuildLa
 
 export default function ${name}() {
   return (
-    <section id="contact" className="px-6 py-20 sm:py-24">
+    <section className="px-6 py-20 sm:py-24">
       <div className="mx-auto grid max-w-6xl items-center gap-12 lg:grid-cols-2">
         <div>
           ${c.headline ? `<h2 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">{\`${esc(c.headline)}\`}</h2>` : ''}
@@ -1225,36 +1249,39 @@ export default function VisualModule({ kind = '${primary}' }: { kind?: ModuleKin
  */
 function componentFor(
   name: string, c: SectionCopy, brief: { goal?: string; type?: string }, plan: WebBuildLayoutPlan,
-  art: WebBuildArtIdentity, ambient: boolean,
+  art: WebBuildArtIdentity, ambient: boolean, ctx: InteractionContext, nav: NavItem[],
 ): string {
   const kind = sectionKind(c.id, c.name);
-  if (kind === 'hero') return heroComponentFor(name, c, brief, plan, art, ambient);
-  if (kind === 'footer') return footerComponent(name, c);
+  if (kind === 'hero') return withSectionId(heroComponentFor(name, c, brief, plan, art, ambient, ctx), c.id);
+  if (kind === 'footer') return footerComponent(name, c, nav);
   const variant = plan.sectionVariants[c.id] || 'feature-grid';
-  return variantComponentFor(name, c, plan, variant, kind, art);
+  // Every content section gets a STABLE anchor id (from its real section id) so
+  // nav/CTAs can scroll to it, and its own CTA points at a real target.
+  return withSectionId(variantComponentFor(name, c, plan, variant, kind, art, ctx), c.id);
 }
 
 /** Content-section template by composition variant. Falls back to the closest
  *  kind-specific template so nothing renders as a blank block. */
 function variantComponentFor(
   name: string, c: SectionCopy, plan: WebBuildLayoutPlan, variant: SectionVariant, kind: SectionKind,
-  art: WebBuildArtIdentity,
+  art: WebBuildArtIdentity, ctx: InteractionContext,
 ): string {
+  const ctaHref = ctaTargetForSection(c.id, ctx);
   switch (variant) {
     case 'editorial-split':    return editorialSplitComponent(name, c, plan);
     case 'proof-strip':        return proofStripComponent(name, c, art);
-    case 'dashboard-data':     return kind === 'productDemo' ? productDemoComponent(name, c) : dashboardDataComponent(name, c);
+    case 'dashboard-data':     return kind === 'productDemo' ? productDemoComponent(name, c, ctaHref) : dashboardDataComponent(name, c);
     case 'catalog-grid':       return kind === 'menu' ? menuComponent(name, c) : galleryComponent(name, c, art.mode);
     case 'collection-archive': return collectionArchiveComponent(name, c, art.mode);
     case 'process-timeline':   return workflowComponent(name, c);
     case 'quote-story':        return quoteStoryComponent(name, c);
-    case 'showcase':           return showcaseComponent(name, c, plan);
+    case 'showcase':           return showcaseComponent(name, c, plan, ctaHref);
     case 'application-form':   return applicationFormComponent(name, c, plan);
     case 'spatial-floorplan':  return spatialComponent(name, c);
     case 'pricing-membership': return pricingComponent(name, c);
     case 'comparison':         return beforeAfterComponent(name, c, art.mode);
     case 'filter-search':      return filterSearchComponent(name, c);
-    case 'faq-cta':            return kind === 'faq' ? faqComponent(name, c) : ctaComponent(name, c);
+    case 'faq-cta':            return kind === 'faq' ? faqComponent(name, c) : ctaComponent(name, c, ctaHref);
     case 'feature-grid':
     default:
       // Preserve a couple of kind-specific rich templates when the plan lands on
@@ -1351,6 +1378,10 @@ export function synthesizeFromCopies(
   // Concept-gated motion (the SAME decision the preview uses): a restrained site
   // mounts with `kx-still`, which stops every ambient/background animation.
   const ambient = motionAmbientAllowed(deriveMotionFit(brief, art, plan));
+  // Shared interaction routing (SAME as the preview): real anchors for every nav
+  // item and CTA, derived from the actual final section ids + the concept.
+  const ctx = deriveInteraction(items.map((c) => c.id), art.mode);
+  const nav = pickNavSections(items, 6);
   const compNames = items.map((c) => pascal(c.id));
   const files: SynthFile[] = [];
 
@@ -1360,21 +1391,36 @@ export function synthesizeFromCopies(
     files.push({
       path: `src/components/${name}.tsx`,
       language: 'tsx',
-      content: componentFor(name, c, brief, plan, art, ambient),
+      content: componentFor(name, c, brief, plan, art, ambient, ctx, nav),
       summary: fileSummary(c),
     });
   });
 
   const imports = items.map((_, i) => `import ${compNames[i]} from './components/${compNames[i]}';`).join('\n');
   const usage = items.map((_, i) => `      <${compNames[i]} />`).join('\n');
+  const brand = brief.type || 'Home';
+  const navLinks = nav.map((n) => `          <a href="${n.href}" className="text-slate-300 transition hover:text-white">{\`${esc(n.name)}\`}</a>`).join('\n');
+  // Sticky in-page nav — links scroll to the real section anchors (native smooth
+  // scroll from styles.css; sections carry scroll-margin so headings stay clear).
+  const header = nav.length ? `
+      <header className="sticky top-0 z-50 border-b border-[color:var(--kx-border)] bg-black/40 backdrop-blur">
+        <nav className="mx-auto flex max-w-6xl items-center justify-between gap-6 px-6 py-3" aria-label="Primary">
+          <a href="#top" className="text-sm font-semibold text-white">{\`${esc(brand)}\`}</a>
+          <div className="hidden flex-wrap items-center gap-5 text-sm sm:flex">
+${navLinks}
+          </div>
+        </nav>
+      </header>` : '';
   const app = `${imports}
 
 export default function App() {
   return (
     <main
+      id="top"
       className="min-h-screen text-slate-200 antialiased${ambient ? '' : ' kx-still'}"
       style={{ background: 'var(--kx-bg)' }}
     >
+${header}
 ${usage}
     </main>
   );

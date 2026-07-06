@@ -12,6 +12,10 @@ import {
   deriveWebBuildArtIdentity, deriveMotionFit, motionAmbientAllowed,
   type WebBuildArtIdentity, type ArtRenderMode,
 } from '@/lib/webBuildArtIdentity';
+import {
+  anchorId, deriveInteraction, ctaTargetForSection, pickNavSections,
+  type InteractionContext,
+} from '@/lib/webBuildInteraction';
 
 /**
  * A REAL, premium rendered approximation of the generated site whose STRUCTURE is
@@ -200,12 +204,17 @@ const Eyebrow = ({ children }: { children: React.ReactNode }) => (
   </span>
 );
 
-const PrimaryCta = ({ children }: { children: React.ReactNode }) => (
-  <span className="rounded-xl px-6 py-3 text-sm font-semibold text-white shadow-lg" style={{ background: 'var(--acc)', boxShadow: '0 10px 30px -10px var(--acc)' }}>{children}</span>
-);
-const GhostCta = ({ children }: { children: React.ReactNode }) => (
-  <span className="rounded-xl border border-white/15 px-6 py-3 text-sm font-medium text-slate-200">{children}</span>
-);
+/* CTAs render as real anchors when a target is supplied, so preview buttons
+ *  actually scroll (native smooth scroll) — mirroring the generated files. */
+const PrimaryCta = ({ children, href }: { children: React.ReactNode; href?: string }) => {
+  const cls = 'rounded-xl px-6 py-3 text-sm font-semibold text-white shadow-lg';
+  const style = { background: 'var(--acc)', boxShadow: '0 10px 30px -10px var(--acc)' };
+  return href ? <a href={href} className={cls} style={style}>{children}</a> : <span className={cls} style={style}>{children}</span>;
+};
+const GhostCta = ({ children, href }: { children: React.ReactNode; href?: string }) => {
+  const cls = 'rounded-xl border border-white/15 px-6 py-3 text-sm font-medium text-slate-200';
+  return href ? <a href={href} className={cls}>{children}</a> : <span className={cls}>{children}</span>;
+};
 
 /* ── Backdrop construction (strategy-driven, not one universal grid) ─────
  * The single biggest sameness driver was that every hero used the same
@@ -265,7 +274,7 @@ const HeroTitle = ({ children, className = '' }: { children: React.ReactNode; cl
     className={`font-semibold text-white ${className}`} style={{ fontFamily: 'var(--hf)', letterSpacing: 'var(--tr)' }}>{children}</motion.h1>
 );
 
-interface HeroProps { s: S; brief: WebBuildBrief; plan: WebBuildLayoutPlan }
+interface HeroProps { s: S; brief: WebBuildBrief; plan: WebBuildLayoutPlan; ctx: InteractionContext }
 
 /* ── Art-identity hero proof rail — concept-specific proof chips under the hero
  * CTA, plus a subtle identity eyebrow. Derives the shared art identity from the
@@ -294,7 +303,7 @@ function HeroProof({ brief }: { brief: WebBuildBrief }) {
   );
 }
 
-function heroTexts(s: S, brief: WebBuildBrief) {
+function heroTexts(s: S, brief: WebBuildBrief, ctx: InteractionContext) {
   return {
     title: s.headline || s.copyPreview?.split(/[.!?\n]/)[0] || brief.type || '',
     eyebrow: brief.type || s.bullets?.[0],
@@ -303,12 +312,15 @@ function heroTexts(s: S, brief: WebBuildBrief) {
     secondary: s.bullets?.[1],
     proof: s.bullets?.[2],
     moduleLabels: s.bullets,
+    // Concept-relevant scroll targets for the hero CTAs (never dead).
+    ctaHref: ctx.primaryTarget,
+    secondaryHref: ctx.secondaryTarget,
   };
 }
 
 /* — Centered (kept as a fallback; the plan rarely selects it) — */
-function HeroCentered({ s, brief, plan }: HeroProps) {
-  const t = heroTexts(s, brief);
+function HeroCentered({ s, brief, plan, ctx }: HeroProps) {
+  const t = heroTexts(s, brief, ctx);
   return (
     <section className="relative isolate overflow-hidden">
       <HeroBg full plan={plan} brief={brief} />
@@ -317,8 +329,8 @@ function HeroCentered({ s, brief, plan }: HeroProps) {
         <HeroTitle className="mt-5 text-3xl sm:text-5xl">{t.title}</HeroTitle>
         {t.sub && <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-slate-300 sm:text-lg">{t.sub}</p>}
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          {t.cta && <PrimaryCta>{t.cta}</PrimaryCta>}
-          {t.secondary && <GhostCta>{t.secondary}</GhostCta>}
+          {t.cta && <PrimaryCta href={t.ctaHref}>{t.cta}</PrimaryCta>}
+          {t.secondary && <GhostCta href={t.secondaryHref}>{t.secondary}</GhostCta>}
         </div>
         <div className="mx-auto mt-12 max-w-lg"><VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} compact /></div>
       </div>
@@ -327,8 +339,8 @@ function HeroCentered({ s, brief, plan }: HeroProps) {
 }
 
 /* — Split editorial: left copy, right module — */
-function HeroSplit({ s, brief, plan }: HeroProps) {
-  const t = heroTexts(s, brief);
+function HeroSplit({ s, brief, plan, ctx }: HeroProps) {
+  const t = heroTexts(s, brief, ctx);
   return (
     <section className="relative isolate overflow-hidden">
       <HeroBg plan={plan} brief={brief} />
@@ -338,8 +350,8 @@ function HeroSplit({ s, brief, plan }: HeroProps) {
           <HeroTitle className="mt-5 text-3xl sm:text-5xl">{t.title}</HeroTitle>
           {t.sub && <p className="mt-5 max-w-xl text-base leading-relaxed text-slate-300 sm:text-lg">{t.sub}</p>}
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            {t.cta && <PrimaryCta>{t.cta}</PrimaryCta>}
-            {t.secondary && <GhostCta>{t.secondary}</GhostCta>}
+            {t.cta && <PrimaryCta href={t.ctaHref}>{t.cta}</PrimaryCta>}
+            {t.secondary && <GhostCta href={t.secondaryHref}>{t.secondary}</GhostCta>}
           </div>
           {t.proof && <p className="mt-6 text-xs text-slate-400">{t.proof}</p>}
         </div>
@@ -350,8 +362,8 @@ function HeroSplit({ s, brief, plan }: HeroProps) {
 }
 
 /* — Asymmetric visual: oversized offset module, overlapping copy — */
-function HeroAsymmetric({ s, brief, plan }: HeroProps) {
-  const t = heroTexts(s, brief);
+function HeroAsymmetric({ s, brief, plan, ctx }: HeroProps) {
+  const t = heroTexts(s, brief, ctx);
   return (
     <section className="relative isolate overflow-hidden">
       <HeroBg plan={plan} brief={brief} />
@@ -362,8 +374,8 @@ function HeroAsymmetric({ s, brief, plan }: HeroProps) {
           <HeroTitle className="mt-4 text-3xl sm:text-5xl">{t.title}</HeroTitle>
           {t.sub && <p className="mt-4 text-base leading-relaxed text-slate-300">{t.sub}</p>}
           <div className="mt-7 flex flex-col gap-3 sm:flex-row">
-            {t.cta && <PrimaryCta>{t.cta}</PrimaryCta>}
-            {t.secondary && <GhostCta>{t.secondary}</GhostCta>}
+            {t.cta && <PrimaryCta href={t.ctaHref}>{t.cta}</PrimaryCta>}
+            {t.secondary && <GhostCta href={t.secondaryHref}>{t.secondary}</GhostCta>}
           </div>
         </div>
       </div>
@@ -372,8 +384,8 @@ function HeroAsymmetric({ s, brief, plan }: HeroProps) {
 }
 
 /* — Dashboard/product: centered copy, then a wide product panel — */
-function HeroDashboard({ s, brief, plan }: HeroProps) {
-  const t = heroTexts(s, brief);
+function HeroDashboard({ s, brief, plan, ctx }: HeroProps) {
+  const t = heroTexts(s, brief, ctx);
   return (
     <section className="relative isolate overflow-hidden">
       <HeroBg full plan={plan} brief={brief} />
@@ -382,8 +394,8 @@ function HeroDashboard({ s, brief, plan }: HeroProps) {
         <HeroTitle className="mx-auto mt-5 max-w-3xl text-3xl sm:text-5xl">{t.title}</HeroTitle>
         {t.sub && <p className="mx-auto mt-5 max-w-2xl text-base leading-relaxed text-slate-300 sm:text-lg">{t.sub}</p>}
         <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          {t.cta && <PrimaryCta>{t.cta}</PrimaryCta>}
-          {t.secondary && <GhostCta>{t.secondary}</GhostCta>}
+          {t.cta && <PrimaryCta href={t.ctaHref}>{t.cta}</PrimaryCta>}
+          {t.secondary && <GhostCta href={t.secondaryHref}>{t.secondary}</GhostCta>}
         </div>
         <div className="mt-14"><VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} /></div>
       </div>
@@ -392,8 +404,8 @@ function HeroDashboard({ s, brief, plan }: HeroProps) {
 }
 
 /* — Immersive full-bleed: module as backdrop, copy bottom-left — */
-function HeroImmersive({ s, brief, plan }: HeroProps) {
-  const t = heroTexts(s, brief);
+function HeroImmersive({ s, brief, plan, ctx }: HeroProps) {
+  const t = heroTexts(s, brief, ctx);
   return (
     <section className="relative isolate flex min-h-[34rem] items-end overflow-hidden">
       <HeroBg plan={plan} brief={brief} />
@@ -405,8 +417,8 @@ function HeroImmersive({ s, brief, plan }: HeroProps) {
           <HeroTitle className="mt-5 text-4xl sm:text-6xl">{t.title}</HeroTitle>
           {t.sub && <p className="mt-5 max-w-xl text-base leading-relaxed text-slate-200 sm:text-lg">{t.sub}</p>}
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            {t.cta && <PrimaryCta>{t.cta}</PrimaryCta>}
-            {t.secondary && <GhostCta>{t.secondary}</GhostCta>}
+            {t.cta && <PrimaryCta href={t.ctaHref}>{t.cta}</PrimaryCta>}
+            {t.secondary && <GhostCta href={t.secondaryHref}>{t.secondary}</GhostCta>}
           </div>
         </div>
       </div>
@@ -415,8 +427,8 @@ function HeroImmersive({ s, brief, plan }: HeroProps) {
 }
 
 /* — Membership/application: copy left, elevated pass/access card right — */
-function HeroMembership({ s, brief, plan }: HeroProps) {
-  const t = heroTexts(s, brief);
+function HeroMembership({ s, brief, plan, ctx }: HeroProps) {
+  const t = heroTexts(s, brief, ctx);
   return (
     <section className="relative isolate overflow-hidden">
       <HeroBg plan={plan} brief={brief} />
@@ -426,8 +438,8 @@ function HeroMembership({ s, brief, plan }: HeroProps) {
           <HeroTitle className="mt-5 text-3xl sm:text-5xl">{t.title}</HeroTitle>
           {t.sub && <p className="mt-5 max-w-xl text-base leading-relaxed text-slate-300 sm:text-lg">{t.sub}</p>}
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            {t.cta && <PrimaryCta>{t.cta}</PrimaryCta>}
-            {t.secondary && <GhostCta>{t.secondary}</GhostCta>}
+            {t.cta && <PrimaryCta href={t.ctaHref}>{t.cta}</PrimaryCta>}
+            {t.secondary && <GhostCta href={t.secondaryHref}>{t.secondary}</GhostCta>}
           </div>
         </div>
         <motion.div animate={{ y: [0, -10, 0] }} transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }} className="rounded-3xl border border-[color:var(--bd)] bg-[var(--sf)] p-3 shadow-2xl shadow-black/40">
@@ -439,8 +451,8 @@ function HeroMembership({ s, brief, plan }: HeroProps) {
 }
 
 /* — Catalog/collection: headline + CTA left, catalog strip beneath — */
-function HeroCatalog({ s, brief, plan }: HeroProps) {
-  const t = heroTexts(s, brief);
+function HeroCatalog({ s, brief, plan, ctx }: HeroProps) {
+  const t = heroTexts(s, brief, ctx);
   return (
     <section className="relative isolate overflow-hidden">
       <HeroBg plan={plan} brief={brief} />
@@ -451,7 +463,7 @@ function HeroCatalog({ s, brief, plan }: HeroProps) {
             <HeroTitle className="mt-4 text-3xl sm:text-5xl">{t.title}</HeroTitle>
             {t.sub && <p className="mt-4 max-w-xl text-base leading-relaxed text-slate-300">{t.sub}</p>}
           </div>
-          <div className="flex shrink-0 gap-3">{t.cta && <PrimaryCta>{t.cta}</PrimaryCta>}{t.secondary && <GhostCta>{t.secondary}</GhostCta>}</div>
+          <div className="flex shrink-0 gap-3">{t.cta && <PrimaryCta href={t.ctaHref}>{t.cta}</PrimaryCta>}{t.secondary && <GhostCta href={t.secondaryHref}>{t.secondary}</GhostCta>}</div>
         </div>
         <div className="mt-10"><VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} /></div>
       </div>
@@ -460,8 +472,8 @@ function HeroCatalog({ s, brief, plan }: HeroProps) {
 }
 
 /* — Data/map: copy left, data module right (utility density) — */
-function HeroData({ s, brief, plan }: HeroProps) {
-  const t = heroTexts(s, brief);
+function HeroData({ s, brief, plan, ctx }: HeroProps) {
+  const t = heroTexts(s, brief, ctx);
   return (
     <section className="relative isolate overflow-hidden">
       <HeroBg plan={plan} brief={brief} />
@@ -471,8 +483,8 @@ function HeroData({ s, brief, plan }: HeroProps) {
           <HeroTitle className="mt-5 text-3xl sm:text-5xl">{t.title}</HeroTitle>
           {t.sub && <p className="mt-5 max-w-xl text-base leading-relaxed text-slate-300">{t.sub}</p>}
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            {t.cta && <PrimaryCta>{t.cta}</PrimaryCta>}
-            {t.secondary && <GhostCta>{t.secondary}</GhostCta>}
+            {t.cta && <PrimaryCta href={t.ctaHref}>{t.cta}</PrimaryCta>}
+            {t.secondary && <GhostCta href={t.secondaryHref}>{t.secondary}</GhostCta>}
           </div>
         </div>
         <VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} />
@@ -482,8 +494,8 @@ function HeroData({ s, brief, plan }: HeroProps) {
 }
 
 /* — Luxury service: spacious, serif, minimal, thin editorial band — */
-function HeroLuxury({ s, brief, plan }: HeroProps) {
-  const t = heroTexts(s, brief);
+function HeroLuxury({ s, brief, plan, ctx }: HeroProps) {
+  const t = heroTexts(s, brief, ctx);
   return (
     <section className="relative isolate overflow-hidden">
       <HeroBg full plan={plan} brief={brief} />
@@ -492,7 +504,7 @@ function HeroLuxury({ s, brief, plan }: HeroProps) {
         <HeroTitle className="mt-6 text-4xl leading-[1.1] sm:text-6xl">{t.title}</HeroTitle>
         {t.sub && <p className="mx-auto mt-7 max-w-xl text-base leading-relaxed text-slate-300 sm:text-lg">{t.sub}</p>}
         <div className="mt-10 flex items-center justify-center gap-4">
-          {t.cta && <span className="border-b border-white/40 pb-1 text-sm font-medium tracking-wide text-white">{t.cta} →</span>}
+          {t.cta && <a href={t.ctaHref} className="border-b border-white/40 pb-1 text-sm font-medium tracking-wide text-white">{t.cta} →</a>}
         </div>
         <div className="mx-auto mt-14 max-w-md"><VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} compact /></div>
       </div>
@@ -501,8 +513,8 @@ function HeroLuxury({ s, brief, plan }: HeroProps) {
 }
 
 /* — Story editorial: oversized headline left, meta + small module right — */
-function HeroStory({ s, brief, plan }: HeroProps) {
-  const t = heroTexts(s, brief);
+function HeroStory({ s, brief, plan, ctx }: HeroProps) {
+  const t = heroTexts(s, brief, ctx);
   return (
     <section className="relative isolate overflow-hidden">
       <HeroBg plan={plan} brief={brief} />
@@ -511,8 +523,8 @@ function HeroStory({ s, brief, plan }: HeroProps) {
           {t.eyebrow && <Eyebrow>{t.eyebrow}</Eyebrow>}
           <HeroTitle className="mt-5 text-4xl leading-[1.05] sm:text-6xl">{t.title}</HeroTitle>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            {t.cta && <PrimaryCta>{t.cta}</PrimaryCta>}
-            {t.secondary && <GhostCta>{t.secondary}</GhostCta>}
+            {t.cta && <PrimaryCta href={t.ctaHref}>{t.cta}</PrimaryCta>}
+            {t.secondary && <GhostCta href={t.secondaryHref}>{t.secondary}</GhostCta>}
           </div>
         </div>
         <div className="lg:col-span-5">
@@ -525,8 +537,8 @@ function HeroStory({ s, brief, plan }: HeroProps) {
 }
 
 /* — Event/experience: meta row, huge title, module below — */
-function HeroEvent({ s, brief, plan }: HeroProps) {
-  const t = heroTexts(s, brief);
+function HeroEvent({ s, brief, plan, ctx }: HeroProps) {
+  const t = heroTexts(s, brief, ctx);
   const meta = (s.bullets || []).slice(0, 3);
   return (
     <section className="relative isolate overflow-hidden">
@@ -537,7 +549,7 @@ function HeroEvent({ s, brief, plan }: HeroProps) {
         </div>
         <HeroTitle className="mx-auto mt-6 max-w-3xl text-5xl sm:text-7xl">{t.title}</HeroTitle>
         {t.sub && <p className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-slate-300 sm:text-lg">{t.sub}</p>}
-        <div className="mt-9 flex items-center justify-center gap-3">{t.cta && <PrimaryCta>{t.cta}</PrimaryCta>}{t.secondary && <GhostCta>{t.secondary}</GhostCta>}</div>
+        <div className="mt-9 flex items-center justify-center gap-3">{t.cta && <PrimaryCta href={t.ctaHref}>{t.cta}</PrimaryCta>}{t.secondary && <GhostCta href={t.secondaryHref}>{t.secondary}</GhostCta>}</div>
         <div className="mx-auto mt-12 max-w-lg"><VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} compact /></div>
       </div>
     </section>
@@ -559,7 +571,7 @@ const HEROES: Record<HeroComposition, (p: HeroProps) => ReactElement> = {
 };
 
 /* ── Section composition variants ─────────────────────────────────────── */
-interface VarProps { s: S; plan: WebBuildLayoutPlan; index: number; art: WebBuildArtIdentity }
+interface VarProps { s: S; plan: WebBuildLayoutPlan; index: number; art: WebBuildArtIdentity; ctx: InteractionContext }
 
 function FeatureGrid({ s, art }: VarProps) {
   const items = bulletsOf(s).slice(0, 6);
@@ -727,14 +739,14 @@ function QuoteStory({ s, art }: VarProps) {
   );
 }
 
-function Showcase({ s, plan }: VarProps) {
+function Showcase({ s, plan, ctx }: VarProps) {
   return (
     <div className="mx-auto grid max-w-6xl items-center gap-12 px-6 lg:grid-cols-2">
       <VisualModule kind={plan.primaryVisualModule === 'contour-terrain' ? 'product-showcase' : plan.primaryVisualModule} labels={s.bullets} />
       <div>
         <H2 align="left">{heading(s)}</H2>
         {s.sub && <p className="mt-4 max-w-lg text-base leading-relaxed text-slate-300">{s.sub}</p>}
-        {s.cta && <div className="mt-7"><PrimaryCta>{s.cta}</PrimaryCta></div>}
+        {s.cta && <div className="mt-7"><PrimaryCta href={ctaTargetForSection(s.id, ctx)}>{s.cta}</PrimaryCta></div>}
       </div>
     </div>
   );
@@ -832,7 +844,7 @@ function ApplicationForm({ s, plan }: VarProps) {
   );
 }
 
-function FaqCta({ s, art }: VarProps) {
+function FaqCta({ s, art, ctx }: VarProps) {
   const appt = /contact|book|appointment|randevu|form|reservation|rezervasyon|apply|başvuru/.test(`${s.id} ${s.name}`.toLowerCase());
   const isFaq = /faq|sıkça|soru/.test(`${s.id} ${s.name}`.toLowerCase());
   if (isFaq && s.bullets?.length) {
@@ -846,7 +858,7 @@ function FaqCta({ s, art }: VarProps) {
     );
   }
   return (
-    <div className="relative isolate mx-auto max-w-2xl px-6" id="contact">
+    <div className="relative isolate mx-auto max-w-2xl px-6">
       <div className="rounded-3xl border border-[color:var(--bd)] bg-[var(--sf)] p-10 text-center backdrop-blur">
         <H2>{heading(s)}</H2>
         {s.sub && <p className="mt-3 text-slate-300">{s.sub}</p>}
@@ -856,7 +868,7 @@ function FaqCta({ s, art }: VarProps) {
             <div className="h-11 rounded-lg border border-[color:var(--bd)] bg-[var(--sf)]" />
             <div className="flex h-11 items-center justify-center rounded-lg text-sm font-semibold text-white" style={{ background: 'var(--acc)' }}>{s.cta || heading(s)}</div>
           </div>
-        ) : (s.cta && <div className="mt-7"><PrimaryCta>{s.cta}</PrimaryCta></div>)}
+        ) : (s.cta && <div className="mt-7"><PrimaryCta href={ctaTargetForSection(s.id, ctx)}>{s.cta}</PrimaryCta></div>)}
       </div>
     </div>
   );
@@ -932,6 +944,10 @@ export default function WebBuildPreviewDocument({
   // The SAME art render identity the file synthesizer uses — so preview and
   // generated files apply the same concept-specific surface / proof language.
   const art = deriveWebBuildArtIdentity(brief);
+  // Shared interaction routing (SAME as the generated files): real scroll anchors
+  // for nav + CTAs, derived from the actual section ids + concept.
+  const ctx = deriveInteraction(sectionItems.map((s) => s.id), art.mode);
+  const nav = pickNavSections(sectionItems.map((s) => ({ id: s.id, name: s.name })), 6);
   const variantOf = (id: string): SectionVariant => plan.sectionVariants[id] || 'feature-grid';
   const vt = visualSystemTokens(plan.visualSystem);
 
@@ -954,14 +970,25 @@ export default function WebBuildPreviewDocument({
   let contentIdx = 0;
 
   return (
-    <div className="text-slate-200 antialiased" style={rootStyle}>
+    <div id="top" className="text-slate-200 antialiased" style={{ ...rootStyle, scrollBehavior: 'smooth' }}>
+      {nav.length > 0 && (
+        <header className="sticky top-0 z-50 border-b border-[color:var(--bd)] bg-black/40 backdrop-blur">
+          <nav className="mx-auto flex max-w-6xl items-center justify-between gap-6 px-6 py-3" aria-label="Primary">
+            <a href="#top" className="text-sm font-semibold text-white">{brief.type || 'Home'}</a>
+            <div className="hidden flex-wrap items-center gap-5 text-sm sm:flex">
+              {nav.map((n) => <a key={n.id} href={n.href} className="text-slate-300 transition hover:text-white">{n.name}</a>)}
+            </div>
+          </nav>
+        </header>
+      )}
       {sectionItems.map((s) => {
         const kind = plan.sections.find((p) => p.id === s.id)?.kind;
+        const sid = anchorId(s.id);
         if (kind === 'hero') {
           const Hero = HEROES[plan.heroComposition] || HEROES['split-editorial'];
           return (
-            <div key={s.id}>
-              <Hero s={s} brief={brief} plan={plan} />
+            <div key={s.id} id={sid} style={{ scrollMarginTop: 72 }}>
+              <Hero s={s} brief={brief} plan={plan} ctx={ctx} />
               {/* Concept-specific proof rail, directly under the hero. */}
               <div className="relative z-10 mx-auto max-w-6xl px-6 pb-6">
                 <HeroProof brief={brief} />
@@ -975,8 +1002,8 @@ export default function WebBuildPreviewDocument({
         const i = contentIdx++;
         const band = banded && i % 2 === 1;
         return (
-          <section key={s.id} className={`relative ${PAD[plan.contentDensity]}`} style={band ? { background: 'rgba(255,255,255,0.015)' } : undefined}>
-            {Render({ s, plan, index: i, art })}
+          <section key={s.id} id={sid} style={{ scrollMarginTop: 72, ...(band ? { background: 'rgba(255,255,255,0.015)' } : {}) }} className={`relative ${PAD[plan.contentDensity]}`}>
+            {Render({ s, plan, index: i, art, ctx })}
           </section>
         );
       })}
