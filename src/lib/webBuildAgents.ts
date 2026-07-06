@@ -391,6 +391,21 @@ export interface ArtDirectionArtifact {
   mustAvoid?: string[];
   handoffSummary?: string;
   fallbackReason?: string;
+  /* ── Visual identity system + anti-template diagnosis (all optional, backward
+   *  compatible). Populated by deriveArtDirection and surfaced to downstream
+   *  agents via downstreamInstructions; safe to ignore on old saved builds. ── */
+  /** A one-line design thesis / visual signature for the chosen identity. */
+  visualSignature?: string;
+  /** Why this direction is NOT a generic SaaS template (concept + archetype). */
+  antiTemplateDiagnosis?: string;
+  /** Concrete, visible differentiators (palette, hero, imagery, card language). */
+  visualDifferentiators?: string[];
+  /** Section-rhythm / composition grammar rules for the Layout Architect. */
+  compositionRules?: string[];
+  /** Surface / material rules for the Component Engineer + preview. */
+  surfaceRules?: string[];
+  /** How proof/trust must be presented for this concept. */
+  proofRules?: string[];
 }
 
 /* ── Strategy Agent artifact (Phase 2) ────────────────────────────────── */
@@ -1985,8 +2000,214 @@ const INDUSTRY_ARCHETYPE: Record<string, string> = {
 };
 
 /**
+ * The Research Agent's concept CATEGORY is the strongest STRUCTURED signal for the
+ * design identity — a clearly-typed concept picks its archetype directly, before
+ * any prose/keyword scan, and it protects against wrong overrides (archive + luxury
+ * stays archive, legal/finance stay trust-first, marketplace stays catalog-first).
+ * Plain string keys so `conceptProfile.category` (a string) indexes it safely.
+ */
+const CATEGORY_TO_ARCHETYPE: Record<string, string> = {
+  archive: 'editorial-archive',
+  hospitality: 'restaurant-hospitality',
+  landscaping: 'landscaping-nature',
+  local_service: 'local-service-premium',
+  legal: 'legal-medical-trust',
+  medical: 'legal-medical-trust',
+  ai: 'ai-tool',
+  saas: 'high-conversion-saas',
+  marketplace: 'marketplace-catalog',
+  education: 'education-platform',
+  nonprofit: 'nonprofit-campaign',
+  portfolio: 'portfolio-showcase',
+  industrial: 'industrial-b2b',
+  event: 'event-conference',
+  real_estate: 'real-estate',
+  finance: 'fintech-trust',
+};
+
+/* ── Concept design language (per category) ───────────────────────────────
+ * The senior-art-director payload: for each concept category, the specific
+ * section rhythm, card language, imagery and the generic pattern to AVOID. Keyed
+ * by concept category (reusable, deterministic — never a per-prompt template).
+ * English design descriptors, consistent with the archetype spec fields, since
+ * these are internal direction hints interpolated into downstream instructions. */
+interface ConceptArtLang { rhythm: string; cards: string; imagery: string; antiPattern: string }
+const CONCEPT_ART_LANGUAGE: Record<string, ConceptArtLang> = {
+  archive: {
+    rhythm: 'collection index → item detail → provenance → filters/metadata; dense catalog surfaces, no marketing hero',
+    cards: 'catalog plates with metadata captions (title, era, source) — not marketing cards',
+    imagery: 'archival plates and catalog scans on paper surfaces, high-detail, never stock',
+    antiPattern: 'a centered startup hero, glass feature grid or dashboard chrome',
+  },
+  hospitality: {
+    rhythm: 'atmosphere hero → menu highlights → ambience gallery → location/hours → reservation',
+    cards: 'warm, image-led menu/ambience cards with short appetizing descriptors',
+    imagery: 'appetizing food and warm interior photography, editorial crops',
+    antiPattern: 'a cold SaaS/product hero or a dashboard mockup',
+  },
+  landscaping: {
+    rhythm: 'image-first project hero → before/after → process → materials → quote CTA',
+    cards: 'image-first project cards — full-bleed photo, minimal caption, before/after',
+    imagery: 'real outdoor project photography and before/after pairs',
+    antiPattern: 'corporate SaaS glass cards or a generic product hero',
+  },
+  local_service: {
+    rhythm: 'proof + contact hero → services → process → reviews → quote/booking CTA',
+    cards: 'solid, tactile service cards with real proof and clear pricing',
+    imagery: 'real team and finished-work photography, local proof',
+    antiPattern: 'a corporate SaaS template or abstract stock imagery',
+  },
+  legal: {
+    rhythm: 'credibility hero → practice areas → credentials/proof → process → FAQ → consult CTA',
+    cards: 'calm credential/proof panels (name, credential, outcome) — low radius, no gloss',
+    imagery: 'credentials, calm real photography and document/seal motifs',
+    antiPattern: 'flashy gradients, hype copy or a product-dashboard hero',
+  },
+  medical: {
+    rhythm: 'credibility hero → treatments → credentials → process → FAQ → appointment CTA',
+    cards: 'calm care/credential panels — reassuring, low radius, no gloss',
+    imagery: 'calm real care photography and credential cues',
+    antiPattern: 'alarming color, hype copy or a flashy SaaS hero',
+  },
+  ai: {
+    rhythm: 'interactive product hero → capability/flow → proof/metrics → integrations/security → try CTA',
+    cards: 'product/use-case modules with a real UI or flow mockup — not generic feature icons',
+    imagery: 'live UI, prompt/response and flow diagrams',
+    antiPattern: 'vague AI hype and a repeated three-card feature grid',
+  },
+  saas: {
+    rhythm: 'product hero → use cases → feature/proof modules → security → pricing → demo CTA',
+    cards: 'use-case/product modules showing a real UI mockup, not generic feature cards',
+    imagery: 'composed product/dashboard mockups and real screens',
+    antiPattern: 'a vague hero and a repeated three-card feature grid',
+  },
+  marketplace: {
+    rhythm: 'catalog hero → product grid → trust/shipping → reviews → checkout CTA',
+    cards: 'dense product cards — image, price, rating, quick-add; scannable grid',
+    imagery: 'product photography grids with price/proof clarity',
+    antiPattern: 'a single centered hero that replaces product browsing',
+  },
+  education: {
+    rhythm: 'outcome hero → curriculum → instructor proof → results → enroll CTA',
+    cards: 'lesson/module cards — outcome, duration, progress',
+    imagery: 'curriculum, progress and instructor visuals',
+    antiPattern: 'a vague SaaS hero with no visible outcome or curriculum',
+  },
+  nonprofit: {
+    rhythm: 'human story hero → impact stats → programs → donate/act CTA',
+    cards: 'impact/story cards — real photo, stat, short story',
+    imagery: 'authentic human and impact photography',
+    antiPattern: 'a corporate SaaS look or abstract stock imagery',
+  },
+  portfolio: {
+    rhythm: 'quiet intro → selected-work grid → case detail → contact CTA; minimal chrome',
+    cards: 'quiet framed case cards — image-led, strong type, little chrome',
+    imagery: 'case-study imagery and expressive type',
+    antiPattern: 'busy chrome, gradients or a product-dashboard hero',
+  },
+  industrial: {
+    rhythm: 'capability hero → specifications → certifications → reference clients → quote CTA',
+    cards: 'precise hairline spec cards with real numbers',
+    imagery: 'technical diagrams and real equipment photography',
+    antiPattern: 'decorative gradients or a consumer-app hero',
+  },
+  event: {
+    rhythm: 'date/lineup hero → speakers → agenda → venue → register CTA',
+    cards: 'bold speaker/agenda cards — photo, name, session time',
+    imagery: 'speaker and venue photography with strong date typography',
+    antiPattern: 'a generic product hero with no date or lineup',
+  },
+  real_estate: {
+    rhythm: 'property showcase hero → listings → property detail → enquire CTA',
+    cards: 'refined listing cards — image, key specs, price, enquire',
+    imagery: 'architectural and interior photography',
+    antiPattern: 'a SaaS product hero or glass feature grid',
+  },
+  finance: {
+    rhythm: 'data-confidence hero + live metric → proof band → security → product → start CTA',
+    cards: 'sharp, low-radius data/proof cards with real numbers',
+    imagery: 'charts, metrics and security cues',
+    antiPattern: 'hype, neon or generic luxury styling',
+  },
+};
+
+/** The concept design language for the profile's category, when known. */
+function conceptArtLang(cpf: ConceptProfile | undefined): ConceptArtLang | undefined {
+  return cpf?.category ? CONCEPT_ART_LANGUAGE[cpf.category] : undefined;
+}
+
+/* ── Identity builders — pure, deterministic composers that turn the chosen
+ * archetype's specific fields + the concept language into opinionated, non-generic
+ * direction. They never throw (plain string ops, safe fallbacks) and read only
+ * present data, so a missing concept profile simply yields archetype-only output. */
+
+/** A one-line visual signature / design thesis for the chosen identity. */
+function buildVisualSignature(a: DesignArchetypeSpec, cpf: ConceptProfile | undefined, lang: Lang): string {
+  const name = L(lang, a.name[0], a.name[1]);
+  const base = `${name} — ${a.palette.name.toLowerCase()}, ${a.heroComposition}, ${a.cardStyle}, ${a.motionMood}`;
+  return cpf?.contentType
+    ? L(lang, `${base}, built around ${cpf.contentType}.`, `${base}, ${cpf.contentType} etrafında.`)
+    : `${base}.`;
+}
+
+/** Section-rhythm / composition grammar rules (Layout Architect + layoutFeel). */
+function buildCompositionRules(a: DesignArchetypeSpec, cal: ConceptArtLang | undefined, uia: UiAgentInstructions | undefined, lang: Lang): string[] {
+  return uniq([
+    cal ? L(lang, `Section rhythm: ${cal.rhythm}.`, `Bölüm ritmi: ${cal.rhythm}.`) : '',
+    L(lang, `Vary composition (${a.layoutDensity}) — no repeated card grid down the page.`, `Kompozisyonu değiştir (${a.layoutDensity}) — sayfa boyunca tekrarlı kart gridi yok.`),
+    uia?.layoutWarning ? L(lang, `Structure to avoid: ${uia.layoutWarning}`, `Kaçınılacak yapı: ${uia.layoutWarning}`) : '',
+  ]);
+}
+
+/** Surface / material rules (Component Engineer + preview). */
+function buildSurfaceRules(a: DesignArchetypeSpec, dsCardStyle: string, lang: Lang): string[] {
+  return uniq([
+    L(lang, `Surfaces: ${a.cardStyle} (${dsCardStyle}).`, `Yüzeyler: ${a.cardStyle} (${dsCardStyle}).`),
+    L(lang, `Palette "${a.palette.name}" at ${a.layoutDensity} density; one accent for the focal action.`, `${a.layoutDensity} yoğunlukta "${a.palette.name}" paleti; odak eylemi için tek vurgu.`),
+    L(lang, 'A single coherent surface + border language across every section.', 'Her bölümde tek tutarlı yüzey + kenarlık dili.'),
+  ]);
+}
+
+/** How proof/trust must be presented for this concept. */
+function buildProofRules(cpf: ConceptProfile | undefined, uia: UiAgentInstructions | undefined, lang: Lang): string[] {
+  const needs = (cpf?.proofNeeded || []).slice(0, 3);
+  return uniq([
+    uia?.trustFocus ? L(lang, `Foreground: ${uia.trustFocus}.`, `Öne çıkar: ${uia.trustFocus}.`) : '',
+    ...needs.map((p) => L(lang, `Show ${p} as a calm, real module near the primary CTA.`, `${p} kanıtını ana CTA yakınında sakin, gerçek bir modül olarak göster.`)),
+    L(lang, 'Proof as real modules (logos/metrics/quotes), never loud badges.', 'Kanıt gerçek modüller olarak (logo/metrik/alıntı), asla gürültülü rozet değil.'),
+  ]);
+}
+
+/** Why this direction is NOT a generic SaaS template. */
+function buildAntiTemplateDiagnosis(a: DesignArchetypeSpec, cal: ConceptArtLang | undefined, cpf: ConceptProfile | undefined, uia: UiAgentInstructions | undefined, lang: Lang): string {
+  const name = L(lang, a.name[0], a.name[1]);
+  const cat = cpf?.category && cpf.category !== 'general' ? cpf.category : '';
+  const avoid = uia?.layoutWarning || (cal
+    ? L(lang, `avoid ${cal.antiPattern}`, `${cal.antiPattern} kullanma`)
+    : L(lang, 'avoid a centered SaaS hero and a repeated three-card grid', 'ortalı SaaS hero ve tekrarlı üç kart gridinden kaçın'));
+  const use = cal
+    ? L(lang, `use a ${cal.rhythm.split('→')[0].trim()} opening and ${cal.cards}`, `${cal.rhythm.split('→')[0].trim()} açılışı ve ${cal.cards} kullan`)
+    : L(lang, `commit to the ${name} identity`, `${name} kimliğine bağlı kal`);
+  return L(lang,
+    `${cat ? `${cat} concept — ` : ''}${name}: ${use}; ${avoid}.`,
+    `${cat ? `${cat} konsepti — ` : ''}${name}: ${use}; ${avoid}.`);
+}
+
+/** Concrete, visible differentiators — palette, hero, imagery, card language. */
+function buildVisualDifferentiators(a: DesignArchetypeSpec, cal: ConceptArtLang | undefined, cpf: ConceptProfile | undefined, lang: Lang): string[] {
+  return uniq([
+    L(lang, `Palette: ${a.palette.name}`, `Palet: ${a.palette.name}`),
+    L(lang, `Hero: ${a.heroType} (${a.heroComposition})`, `Hero: ${a.heroType} (${a.heroComposition})`),
+    L(lang, `Imagery: ${cal?.imagery || a.imageType}`, `Görsel: ${cal?.imagery || a.imageType}`),
+    L(lang, `Cards: ${cal?.cards || a.cardStyle}`, `Kartlar: ${cal?.cards || a.cardStyle}`),
+    cpf ? L(lang, `Answers "${cpf.keyDecision}" above the fold`, `"${cpf.keyDecision}" sorusunu ilk ekranda yanıtlar`) : '',
+  ]);
+}
+
+/**
  * Pick the design archetype from the concept + Research Agent signals. Priority:
- *   1. an explicit luxury/experimental premium level (strong identity signal)
+ *   0. the Research concept CATEGORY (strongest structured signal, protects overrides)
+ *   1. an explicit luxury premium level (only when it does not contradict a category)
  *   2. a keyword match over the concept haystack (most specific)
  *   3. the inferred industry map
  *   4. a considered modern-brand default (still distinct, never generic indigo)
@@ -1994,6 +2215,13 @@ const INDUSTRY_ARCHETYPE: Record<string, string> = {
 function pickDesignArchetype(
   brief: WebBuildBrief, research: ResearchAgentArtifact | undefined, inferred: InferredBrief,
 ): DesignArchetypeSpec {
+  // 0) Concept category — the strongest STRUCTURED signal. When present and mapped
+  //    it wins outright, so a clearly-typed concept never gets a contradicting
+  //    override (archive+luxury stays archive; legal/finance stay trust-first).
+  const cat = research?.conceptProfile?.category;
+  if (cat && CATEGORY_TO_ARCHETYPE[cat] && DESIGN_ARCHETYPES[CATEGORY_TO_ARCHETYPE[cat]]) {
+    return DESIGN_ARCHETYPES[CATEGORY_TO_ARCHETYPE[cat]];
+  }
   const hay = [
     brief.type, brief.audience, brief.coreIdea, brief.goal, brief.style, brief.visualMood, brief.visualMetaphor,
     inferred.businessType, inferred.industry, inferred.targetAudience, inferred.visualStyle,
@@ -2076,6 +2304,9 @@ export function deriveArtDirection(
   // optional — every use below falls back safely when they are absent.
   const cpf = research?.conceptProfile;
   const uia = research?.uiAgentInstructions;
+  // Concept design language for the chosen category (rhythm/cards/imagery/anti-
+  // pattern) — the payload that makes each identity visibly different downstream.
+  const cal = conceptArtLang(cpf);
   const audience = brief.audience || inferred.targetAudience;
   const desktopLean = /desktop/i.test(tu?.devicePreference || '');
   const mobileLean = /mobile/i.test(tu?.devicePreference || '');
@@ -2285,7 +2516,11 @@ export function deriveArtDirection(
   };
   const layoutFeel: LayoutFeelProfile = {
     density: archetype.layoutDensity,
-    spacingRhythm: L(lang, `${ds.sectionRhythm} rhythm — vary section shapes, no repeated card grid`, `${ds.sectionRhythm} ritim — bölüm şekillerini değiştir, tekrarlı kart gridi yok`),
+    // Section rhythm follows the concept's composition grammar when known, so the
+    // page ORDER (not just the look) is concept-specific.
+    spacingRhythm: cal
+      ? L(lang, `${cal.rhythm} — ${ds.sectionRhythm} spacing, no repeated card grid`, `${cal.rhythm} — ${ds.sectionRhythm} boşluk, tekrarlı kart gridi yok`)
+      : L(lang, `${ds.sectionRhythm} rhythm — vary section shapes, no repeated card grid`, `${ds.sectionRhythm} ritim — bölüm şekillerini değiştir, tekrarlı kart gridi yok`),
     containerStyle: archetype.layoutDensity === 'immersive' || archetype.layoutDensity === 'editorial'
       ? L(lang, 'Wide, editorial containers with full-bleed moments', 'Geniş, editoryal konteynerler ve tam-taşma anları')
       : archetype.layoutDensity === 'dense'
@@ -2314,35 +2549,45 @@ export function deriveArtDirection(
     backgroundTreatment: archetype.layoutDensity === 'immersive'
       ? L(lang, 'Full-bleed image/gradient with a legible overlay', 'Okunaklı kaplamalı tam-taşma görsel/gradyan')
       : L(lang, 'Refined gradient/surface tied to the palette', 'Palete bağlı rafine gradyan/yüzey'),
-    // Reason names the concept decision the hero must resolve, when known.
-    reason: cpf
-      ? L(lang, `${archReason} Answer "${cpf.keyDecision}" above the fold.`, `${archReason} "${cpf.keyDecision}" sorusunu ilk ekranda yanıtla.`)
-      : archReason,
+    // Reason names the concept decision the hero must resolve + the generic hero
+    // to avoid for this concept (e.g. a product-dashboard hero for a non-SaaS site).
+    reason: uniq([
+      archReason,
+      cpf ? L(lang, `Answer "${cpf.keyDecision}" above the fold.`, `"${cpf.keyDecision}" sorusunu ilk ekranda yanıtla.`) : '',
+      cal ? L(lang, `Do not use ${cal.antiPattern}.`, `${cal.antiPattern} kullanma.`) : '',
+    ]).join(' '),
   };
   const componentStyleRules: ComponentStyleRules = {
-    cards: L(lang, `${archetype.cardStyle} (${ds.cardStyle})`, `${archetype.cardStyle} (${ds.cardStyle})`),
+    // Cards follow the concept's card language (catalog plates, image-first project
+    // cards, calm credential panels, dense product cards…) not a generic card.
+    cards: cal
+      ? L(lang, `${cal.cards} (${ds.cardStyle})`, `${cal.cards} (${ds.cardStyle})`)
+      : L(lang, `${archetype.cardStyle} (${ds.cardStyle})`, `${archetype.cardStyle} (${ds.cardStyle})`),
     buttons: ctaStyleDirection,
     forms: L(lang, 'Calm, low-friction fields with clear labels and one primary action', 'Sakin, düşük sürtünmeli alanlar; net etiketler ve tek ana eylem'),
     navigation: archetype.layoutDensity === 'immersive'
       ? L(lang, 'Minimal transparent nav that solidifies on scroll', 'Kaydırınca katılaşan minimal şeffaf navigasyon')
       : L(lang, 'Clear, compact nav with a single highlighted CTA', 'Net, kompakt navigasyon; tek vurgulu CTA'),
     badges: L(lang, 'Quiet, tonal badges — never loud neon pills', 'Sessiz, tonal rozetler — asla gürültülü neon haplar'),
-    gallery: L(lang, archetype.imageType, archetype.imageType),
+    gallery: L(lang, cal?.imagery || archetype.imageType, cal?.imagery || archetype.imageType),
     testimonials: L(lang, 'Real quotes on quiet surfaces with name/role, no stock faces', 'Sessiz yüzeylerde gerçek alıntılar; isim/rol, stok yüz yok'),
-    pricingOrCatalog: L(lang, 'Legible, honest pricing/catalog cards with one clear default', 'Okunur, dürüst fiyat/katalog kartları; tek net varsayılan'),
+    pricingOrCatalog: (cpf?.category === 'marketplace' || cpf?.category === 'archive' || cpf?.category === 'real_estate')
+      ? L(lang, 'Dense, scannable catalog/listing cards with price/spec clarity and one clear action', 'Yoğun, taranabilir katalog/ilan kartları; net fiyat/özellik ve tek net eylem')
+      : L(lang, 'Legible, honest pricing/catalog cards with one clear default', 'Okunur, dürüst fiyat/katalog kartları; tek net varsayılan'),
     trustBlocks: trustVisualDirection,
   };
   const imagerySystem: ImagerySystem = {
-    // imageType names the archetype's structural imagery + the concept content type
-    // (catalog/editorial/product/service…) so the module reflects the concept read.
-    imageType: cpf?.contentType
-      ? L(lang, `${archetype.imageType} · ${cpf.contentType}`, `${archetype.imageType} · ${cpf.contentType}`)
-      : L(lang, archetype.imageType, archetype.imageType),
+    // imageType leads with the Research imagery hand-off / concept imagery language,
+    // then the archetype's structural imagery + the concept content type.
+    imageType: uia?.imageryDirection || cal?.imagery
+      || (cpf?.contentType
+        ? L(lang, `${archetype.imageType} · ${cpf.contentType}`, `${archetype.imageType} · ${cpf.contentType}`)
+        : L(lang, archetype.imageType, archetype.imageType)),
     photographyStyle: /photograph|editorial|cinematic|image/.test(archetype.imageType)
       ? L(lang, 'Editorial, high-contrast, generous negative space', 'Editoryal, yüksek kontrast, cömert negatif alan')
       : L(lang, 'Only where it adds proof — otherwise composed visuals', 'Yalnızca kanıt kattığında — aksi halde kompoze görseller'),
     illustrationStyle: L(lang, 'Geometric SVG tied to the concept, never clip-art', 'Konsepte bağlı geometrik SVG; asla clip-art değil'),
-    mockupStyle: vsr?.mockupType || L(lang, 'Composed CSS/SVG product/module mockups', 'Kompoze CSS/SVG ürün/modül maketleri'),
+    mockupStyle: vsr?.mockupType || (cal ? L(lang, cal.imagery, cal.imagery) : L(lang, 'Composed CSS/SVG product/module mockups', 'Kompoze CSS/SVG ürün/modül maketleri')),
     textureOrPattern: L(lang, 'Subtle grain/gradient tied to the palette', 'Palete bağlı ince tane/gradyan'),
     emptyStateStyle: L(lang, 'Composed placeholder visuals — never blank gray boxes', 'Kompoze yer tutucu görseller — asla boş gri kutular'),
     avoidImagery: uniq([
@@ -2394,9 +2639,18 @@ export function deriveArtDirection(
     motionSafetyRule: L(lang, 'Respect prefers-reduced-motion; no essential info in motion only', 'prefers-reduced-motion\'a saygı; yalnızca harekette kritik bilgi yok'),
   };
   const paletteName = colorSystem.paletteName || archetype.palette.name;
+
+  // ── Visual identity system + anti-template diagnosis (concept + archetype). ──
+  const visualSignature = buildVisualSignature(archetype, cpf, lang);
+  const compositionRules = buildCompositionRules(archetype, cal, uia, lang);
+  const surfaceRules = buildSurfaceRules(archetype, ds.cardStyle, lang);
+  const proofRules = buildProofRules(cpf, uia, lang);
+  const visualDifferentiators = buildVisualDifferentiators(archetype, cal, cpf, lang);
+  const antiTemplateDiagnosis = buildAntiTemplateDiagnosis(archetype, cal, cpf, uia, lang);
+
   const downstreamInstructions: DownstreamInstructions = {
     strategyAgent: uniq([
-      L(lang, `Keep the conversion path consistent with a ${archName.toLowerCase()} tone`, `Dönüşüm yolunu ${archName.toLowerCase()} tonuyla tutarlı tut`),
+      L(lang, `Preserve the ${archName} identity and keep the conversion tone consistent with it`, `${archName} kimliğini koru ve dönüşüm tonunu bununla tutarlı tut`),
       L(lang, `CTA style: ${ctaStyleDirection}`, `CTA stili: ${ctaStyleDirection}`),
       L(lang, `Trust proof as: ${trustVisualDirection}`, `Güven kanıtı: ${trustVisualDirection}`),
       cpf ? L(lang, `Prove ${(cpf.proofNeeded || []).slice(0, 2).join(', ')} for a ${cpf.category} visitor deciding "${cpf.keyDecision}".`, `${cpf.category} ziyaretçisi "${cpf.keyDecision}" kararını verirken ${(cpf.proofNeeded || []).slice(0, 2).join(', ')} kanıtla.`) : '',
@@ -2404,22 +2658,26 @@ export function deriveArtDirection(
     layoutArchitectAgent: uniq([
       L(lang, `Hero: ${heroTreatment.heroType} — ${heroTreatment.composition}`, `Hero: ${heroTreatment.heroType} — ${heroTreatment.composition}`),
       L(lang, `Density: ${layoutFeel.density}; ${layoutFeel.gridStyle}`, `Yoğunluk: ${layoutFeel.density}; ${layoutFeel.gridStyle}`),
-      L(lang, `Section rhythm: ${sectionRhythmDirection}`, `Bölüm ritmi: ${sectionRhythmDirection}`),
-      uia?.layoutWarning ? L(lang, `Avoid: ${uia.layoutWarning}`, `Kaçın: ${uia.layoutWarning}`) : '',
+      // Actionable: the concept's real section-rhythm grammar, not a generic line.
+      ...compositionRules,
     ]),
     componentEngineerAgent: uniq([
       L(lang, `Cards: ${componentStyleRules.cards}`, `Kartlar: ${componentStyleRules.cards}`),
       L(lang, `Buttons: ${componentStyleRules.buttons}`, `Butonlar: ${componentStyleRules.buttons}`),
       L(lang, `Icons: ${iconographySystem.style}, ${iconographySystem.shapeLanguage}`, `İkonlar: ${iconographySystem.style}, ${iconographySystem.shapeLanguage}`),
-      uia?.imageryDirection ? L(lang, `Imagery: ${uia.imageryDirection}`, `Görsel: ${uia.imageryDirection}`) : '',
+      L(lang, `Imagery: ${imagerySystem.imageType}`, `Görsel: ${imagerySystem.imageType}`),
+      ...proofRules.slice(0, 2),
     ]),
     previewRenderer: uniq([
       L(lang, `Palette "${paletteName}": bg ${colorSystem.background}, accent ${colorSystem.accent}`, `Palet "${paletteName}": arka ${colorSystem.background}, vurgu ${colorSystem.accent}`),
       L(lang, `Headings: ${headingSerif ? 'serif' : 'sans'}`, `Başlıklar: ${headingSerif ? 'serif' : 'sans'}`),
+      ...surfaceRules.slice(0, 1),
     ]),
     fileSynthesis: uniq([
       L(lang, 'Emit design tokens from this palette + type; no generic default indigo', 'Bu palet + tipografiden tasarım token\'ları üret; jenerik varsayılan indigo yok'),
       L(lang, 'Compose visuals with CSS/SVG; never blank placeholder boxes', 'Görselleri CSS/SVG ile oluştur; asla boş yer tutucu kutular değil'),
+      // The single strongest "don't generate a generic template" instruction.
+      L(lang, `Do not generate: ${antiTemplateDiagnosis}`, `Şunu üretme: ${antiTemplateDiagnosis}`),
     ]),
   };
   const mustEmphasize = uniq([
@@ -2443,12 +2701,11 @@ export function deriveArtDirection(
         'Sanat yönü konsept + arketipten türetildi (Araştırma Ajanı strateji çıkarımı kullandı).')
     : undefined;
 
-  // Summary — specific: names the archetype, palette intent and target user,
-  // not a generic "modern and premium".
-  const paletteWord = (cp?.recommendedPalette || [])[0] || archetype.palette.name;
+  // Summary — the design thesis first (concept + archetype), then the palette/
+  // type/density read, so it reads like a senior art director's one-liner.
   const summary = L(lang,
-    `${archName} for ${audience}${paletteWord ? `, built on ${paletteWord}` : ''} — ${headingSerif ? 'editorial' : 'modern'} type, ${density} density, ${ds.motion} motion.`,
-    `${audience} için ${archName}${paletteWord ? `, ${paletteWord} üzerine` : ''} — ${headingSerif ? 'editoryal' : 'modern'} tipografi, ${density} yoğunluk, ${ds.motion} hareket.`);
+    `${visualSignature} For ${audience} — ${headingSerif ? 'editorial' : 'modern'} type, ${density} density, ${ds.motion} motion.`,
+    `${visualSignature} ${audience} için — ${headingSerif ? 'editoryal' : 'modern'} tipografi, ${density} yoğunluk, ${ds.motion} hareket.`);
   const usedList = usedResearchInputs.length ? usedResearchInputs : [];
   const handoffSummary = L(lang,
     `Chose a ${archName} identity${usedList.length ? ` from ${usedList.join(', ')}` : ''}; passing palette, typography, visual mood and component rules downstream.`,
@@ -2496,6 +2753,13 @@ export function deriveArtDirection(
     mustAvoid,
     handoffSummary,
     fallbackReason,
+    // ── Visual identity system + anti-template diagnosis ──
+    visualSignature,
+    antiTemplateDiagnosis,
+    visualDifferentiators,
+    compositionRules,
+    surfaceRules,
+    proofRules,
   };
 }
 
