@@ -1,4 +1,4 @@
-import { type ReactElement, type CSSProperties } from 'react';
+import { useRef, type ReactElement, type CSSProperties, type MouseEvent } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { designTokensForBrief } from '@/lib/webBuildBrief';
 import {
@@ -92,6 +92,52 @@ function explicitPrice(text: string | undefined): string | undefined {
   if (!text) return undefined;
   const m = text.match(/([$€₺]\s?\d[\d.,]*|\d[\d.,]*\s?(?:tl|usd|eur|₺))/i);
   return m ? m[0].replace(/\s+/g, ' ').trim() : undefined;
+}
+
+/* ── Preview host-app isolation ──────────────────────────────────────────
+ * The preview renders INSIDE the Korvix app. A raw <a href="/pricing"> (or a
+ * route-like "how-it-works") would navigate the host app out of the builder.
+ * resolvePreviewTargetId maps any internal/route-like href to an existing
+ * preview section id so a delegated root handler can scroll to it and never let
+ * the click reach the host router. Returns 'top' for top, or null when there is
+ * no matching section (the handler then does nothing — it never navigates). */
+const PREVIEW_LABEL_TARGETS: Record<string, string[]> = {
+  pricing: ['pricing', 'pricing-enroll', 'pricing-cart-cta', 'quote-cta', 'request-quote'],
+  contact: ['contact', 'quote-cta', 'request-quote', 'researcher-access', 'reservation'],
+  'how-it-works': ['process', 'workflow', 'agenda', 'curriculum', 'research-filters'],
+  process: ['process', 'workflow', 'agenda', 'curriculum', 'research-filters'],
+  demo: ['product-demo'],
+  projects: ['project-gallery', 'selected-work'],
+  collection: ['collection-index'],
+  collections: ['collection-index'],
+  research: ['research-filters', 'researcher-access'],
+  menu: ['menu'],
+  reservation: ['reservation'],
+};
+
+function resolvePreviewTargetId(href: string, sectionItems: S[], ctx: InteractionContext): string | null {
+  const ids = sectionItems.map((s) => anchorId(s.id));
+  const findByFragment = (frag: string) =>
+    ids.find((id) => id === frag || id.startsWith(`${frag}-`) || id.endsWith(`-${frag}`) || id.includes(frag)) || '';
+
+  const key = anchorId((href || '').trim().replace(/^#/, '').replace(/^\/+/, '').replace(/[/?#].*$/, ''));
+  if (!key || key === 'top') return 'top';
+  if (ids.includes(key)) return key;
+
+  const token = findByFragment(key);
+  if (token) return token;
+
+  for (const pref of PREVIEW_LABEL_TARGETS[key] || []) {
+    const hit = findByFragment(pref);
+    if (hit) return hit;
+  }
+
+  const strip = (h?: string) => (h || '').replace(/^#/, '');
+  const primary = strip(ctx.primaryTarget);
+  if (primary && ids.includes(primary)) return primary;
+  const conversion = strip(ctx.conversionTarget);
+  if (conversion && ids.includes(conversion)) return conversion;
+  return null;
 }
 
 /* ── Concept-specific internal card detail ───────────────────────────────
@@ -950,6 +996,34 @@ export default function WebBuildPreviewDocument({
   const nav = pickNavSections(sectionItems.map((s) => ({ id: s.id, name: s.name })), 6);
   const variantOf = (id: string): SectionVariant => plan.sectionVariants[id] || 'feature-grid';
   const vt = visualSystemTokens(plan.visualSystem);
+  const reduce = useReducedMotion();
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // Host-app isolation: the preview lives inside the Korvix app, so every internal
+  // link click is intercepted here and resolved to a preview section scroll. It
+  // NEVER reaches the host router — only genuine external URLs pass through.
+  function handlePreviewLinkClick(event: MouseEvent<HTMLDivElement>) {
+    const link = (event.target as HTMLElement).closest('a');
+    if (!link) return;
+    const raw = link.getAttribute('href') || '';
+    if (!raw) return;
+    // Let real external destinations behave normally; isolate everything else.
+    if (/^(https?:|mailto:|tel:)/i.test(raw)) return;
+    event.preventDefault();
+    const targetId = resolvePreviewTargetId(raw, sectionItems, ctx);
+    if (!targetId) return; // no matching section → do nothing (never navigate host)
+    const root = rootRef.current;
+    if (targetId === 'top') {
+      root?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+      return;
+    }
+    let el: HTMLElement | null = null;
+    if (root && typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+      try { el = root.querySelector(`#${CSS.escape(targetId)}`); } catch { el = null; }
+    }
+    if (!el) el = document.getElementById(targetId);
+    el?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+  }
 
   const rootStyle = {
     background: ds.bg,
@@ -970,7 +1044,7 @@ export default function WebBuildPreviewDocument({
   let contentIdx = 0;
 
   return (
-    <div id="top" className="text-slate-200 antialiased" style={{ ...rootStyle, scrollBehavior: 'smooth' }}>
+    <div ref={rootRef} id="top" onClick={handlePreviewLinkClick} className="text-slate-200 antialiased" style={{ ...rootStyle, scrollBehavior: 'smooth' }}>
       {nav.length > 0 && (
         <header className="sticky top-0 z-50 border-b border-[color:var(--bd)] bg-black/40 backdrop-blur">
           <nav className="mx-auto flex max-w-6xl items-center justify-between gap-6 px-6 py-3" aria-label="Primary">
