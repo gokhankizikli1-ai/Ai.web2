@@ -1334,6 +1334,137 @@ export type SiteContent = typeof siteContent;
   };
 }
 
+interface PageModel { id: string; label: string; sectionIds: string[] }
+
+/**
+ * Build the generated `App.tsx` as a lightweight, router-free multi-page app: a
+ * Home view plus focused section "pages" derived from the real nav sections. Nav
+ * items become page TABS (buttons) that switch an in-App active view — no reload,
+ * no React Router, no new dependencies. Section components keep their stable
+ * anchor ids, and an <main>-level click handler intercepts internal `#anchor`
+ * clicks so a CTA switches to the page that owns its target section, then scrolls
+ * to it. Every page always renders real, non-empty section components.
+ */
+function generatedAppFile(args: {
+  items: SectionCopy[]; compNames: string[]; brand: string; ambient: boolean;
+  ctx: InteractionContext; nav: NavItem[];
+}): string {
+  const { items, compNames, brand, ambient, ctx, nav } = args;
+  const meta = items.map((c, i) => ({ id: anchorId(c.id), comp: compNames[i], kind: sectionKind(c.id, c.name) }));
+  const heroMeta = meta.find((m) => m.kind === 'hero');
+  const footerMeta = meta.find((m) => m.kind === 'footer');
+  const content = meta.filter((m) => m.kind !== 'hero' && m.kind !== 'footer');
+  const exists = (id: string) => meta.some((m) => m.id === id);
+  const convId = (ctx.conversionTarget || '').replace(/^#/, '');
+
+  const push = (arr: string[], v?: string) => { if (v && exists(v) && !arr.includes(v)) arr.push(v); };
+
+  // Home: hero + first 2–3 content sections + conversion section + footer.
+  const homeIds: string[] = [];
+  push(homeIds, heroMeta?.id);
+  content.slice(0, 3).forEach((m) => push(homeIds, m.id));
+  push(homeIds, convId);
+  push(homeIds, footerMeta?.id);
+
+  // One focused page per nav section: the leader + the next up-to-2 content
+  // sections (adjacency) + footer, so a tab shows related, non-empty content.
+  const pages: PageModel[] = [{ id: 'home', label: 'Home', sectionIds: homeIds }];
+  nav.forEach((n) => {
+    const lid = anchorId(n.id);
+    const idx = content.findIndex((m) => m.id === lid);
+    if (idx < 0) return;
+    const group = content.slice(idx, idx + 3).map((m) => m.id);
+    if (footerMeta) group.push(footerMeta.id);
+    if (group.some((id) => content.some((m) => m.id === id))) {
+      pages.push({ id: lid, label: n.name || lid, sectionIds: group });
+    }
+  });
+
+  const imports = compNames.map((n) => `import ${n} from './components/${n}';`).join('\n');
+  const registry = meta.map((m) => `  '${m.id}': ${m.comp},`).join('\n');
+  const pagesJson = JSON.stringify(pages);
+  const rootCls = `min-h-screen text-slate-200 antialiased${ambient ? '' : ' kx-still'}`;
+
+  return `import { useState, type MouseEvent } from 'react';
+${imports}
+
+/** Section component registry — real generated components keyed by stable id. */
+const SECTIONS: Record<string, () => JSX.Element> = {
+${registry}
+};
+
+/** Router-free page model: Home + focused section pages. Ids are the real anchor
+ *  ids, so an internal CTA anchor resolves to the page that owns its section. */
+const PAGES: { id: string; label: string; sectionIds: string[] }[] = ${pagesJson};
+
+export default function App() {
+  const [activePage, setActivePage] = useState('home');
+  const current = PAGES.find((p) => p.id === activePage) || PAGES[0];
+  const chosen = current.sectionIds.filter((id) => SECTIONS[id]);
+  const renderIds = chosen.length ? chosen : PAGES[0].sectionIds.filter((id) => SECTIONS[id]);
+
+  // Intercept internal #anchor clicks (CTAs / in-page links): switch to the page
+  // that owns the target section, then scroll to it. External links pass through.
+  function handleAnchorClick(event: MouseEvent<HTMLElement>) {
+    const link = (event.target as HTMLElement).closest('a');
+    if (!link) return;
+    const href = link.getAttribute('href') || '';
+    if (!href.startsWith('#')) return;
+    event.preventDefault();
+    const reduce = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const targetId = href.slice(1);
+    if (!targetId || targetId === 'top') {
+      setActivePage('home');
+      window.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' });
+      return;
+    }
+    const owner = PAGES.find((p) => p.sectionIds.includes(targetId));
+    setActivePage(owner ? owner.id : 'home');
+    requestAnimationFrame(() => {
+      const el = document.getElementById(targetId);
+      if (el) el.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+    });
+  }
+
+  return (
+    <main id="top" onClick={handleAnchorClick} className="${rootCls}" style={{ background: 'var(--kx-bg)' }}>
+      <header className="sticky top-0 z-50 border-b border-[color:var(--kx-border)] bg-black/40 backdrop-blur">
+        <nav className="mx-auto flex max-w-6xl items-center justify-between gap-6 px-6 py-3" aria-label="Primary">
+          <button type="button" onClick={() => setActivePage('home')} className="text-sm font-semibold text-white">{\`${esc(brand)}\`}</button>
+          <div className="hidden flex-wrap items-center gap-5 text-sm sm:flex">
+            {PAGES.filter((p) => p.id !== 'home').map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => setActivePage(p.id)}
+                aria-current={activePage === p.id ? 'page' : undefined}
+                className={activePage === p.id ? 'font-medium text-white' : 'text-slate-300 transition hover:text-white'}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </nav>
+      </header>
+
+      <div key={current.id} className="kx-reveal">
+        {current.id !== 'home' && (
+          <div className="mx-auto max-w-6xl px-6 pt-10">
+            <button type="button" onClick={() => setActivePage('home')} className="text-sm text-slate-400 transition hover:text-white">&larr; Home</button>
+            <p className="mt-3 text-xs font-medium uppercase tracking-widest text-[var(--kx-accent)]">{current.label}</p>
+          </div>
+        )}
+        {renderIds.map((id) => {
+          const Section = SECTIONS[id];
+          return Section ? <Section key={id} /> : null;
+        })}
+      </div>
+    </main>
+  );
+}
+`;
+}
+
 /** The Vite-style entry file — real, not a placeholder. */
 function mainFile(): SynthFile {
   return {
@@ -1396,39 +1527,11 @@ export function synthesizeFromCopies(
     });
   });
 
-  const imports = items.map((_, i) => `import ${compNames[i]} from './components/${compNames[i]}';`).join('\n');
-  const usage = items.map((_, i) => `      <${compNames[i]} />`).join('\n');
   const brand = brief.type || 'Home';
-  const navLinks = nav.map((n) => `          <a href="${n.href}" className="text-slate-300 transition hover:text-white">{\`${esc(n.name)}\`}</a>`).join('\n');
-  // Sticky in-page nav — links scroll to the real section anchors (native smooth
-  // scroll from styles.css; sections carry scroll-margin so headings stay clear).
-  const header = nav.length ? `
-      <header className="sticky top-0 z-50 border-b border-[color:var(--kx-border)] bg-black/40 backdrop-blur">
-        <nav className="mx-auto flex max-w-6xl items-center justify-between gap-6 px-6 py-3" aria-label="Primary">
-          <a href="#top" className="text-sm font-semibold text-white">{\`${esc(brand)}\`}</a>
-          <div className="hidden flex-wrap items-center gap-5 text-sm sm:flex">
-${navLinks}
-          </div>
-        </nav>
-      </header>` : '';
-  const app = `${imports}
-
-export default function App() {
-  return (
-    <main
-      id="top"
-      className="min-h-screen text-slate-200 antialiased${ambient ? '' : ' kx-still'}"
-      style={{ background: 'var(--kx-bg)' }}
-    >
-${header}
-${usage}
-    </main>
-  );
-}
-`;
+  const app = generatedAppFile({ items, compNames, brand, ambient, ctx, nav });
 
   // Base project files (entry, shell, styles, tokens, content) — then sections.
-  files.unshift({ path: 'src/App.tsx', language: 'tsx', content: app, summary: 'Page shell composing all generated sections' });
+  files.unshift({ path: 'src/App.tsx', language: 'tsx', content: app, summary: 'App shell — router-free page tabs (Home + focused section pages) with CTA anchor routing' });
   files.unshift(mainFile());
   files.push({ path: 'src/components/VisualModule.tsx', language: 'tsx', content: visualModuleFileContent(plan.primaryVisualModule), summary: `Structural visual module (${plan.primaryVisualModule})` });
   files.push({ path: 'src/lib/designSystem.ts', language: 'ts', content: designSystemFileContent(ds), summary: 'Strategy-derived design tokens (palette, type, radius, motion)' });
