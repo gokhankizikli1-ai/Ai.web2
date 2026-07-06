@@ -361,6 +361,23 @@ export const tr: Record<string, string> = {
   wbNoBuilds: "Henüz yapı yok",
   wbFeedYou: "Siz",
   wbClosePanel: "Kapat",
+  /* web build — agent names + live running plan (frontend-only, honest; no
+   * completion claims). Shown while the single backend request is in flight. */
+  wbThinkLabel: "Düşünme",
+  wbAgentResearch: "Araştırma Ajanı",
+  wbAgentArt: "UI / Sanat Yönetmeni Ajanı",
+  wbAgentStrategy: "Strateji Ajanı",
+  wbAgentLayout: "Yerleşim Mimarı Ajanı",
+  wbAgentComponent: "Bileşen Mühendisi Ajanı",
+  wbLiveThinkScope: "Site türü, hedef kitle, amaç ve stil belirleniyor",
+  wbLiveThinkPipeline: "Akış planlanıyor: araştırma → sanat yönü → strateji → yerleşim → bileşenler",
+  wbLiveThinkPackage: "Önizleme ve Tüm Dosyalar paketi hazırlanıyor",
+  wbLiveThinkReviseRead: "Güncelleme isteğiniz okunuyor",
+  wbLiveThinkRevisePlan: "Hedefli değişiklikler planlanıyor",
+  wbLiveThinkRevisePackage: "Güncellenen Önizleme ve Tüm Dosyalar hazırlanıyor",
+  wbLivePipelineLabel: "Akış",
+  wbLiveStatusQueued: "Sırada",
+  wbLiveStatusRunning: "Çalışıyor",
   /* web build — real file artifacts */
   wbActRead: "İsteğiniz okunuyor",
   wbActResearch: "Web kaynaklarıyla araştırılıyor",
