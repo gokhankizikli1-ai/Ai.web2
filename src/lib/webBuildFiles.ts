@@ -18,6 +18,7 @@ import {
   deriveLayoutPlan, layoutPlanFileContent, visualSystemTokens, sectionKind,
   type WebBuildLayoutPlan, type SectionKind, type SectionVariant, type VisualModule,
 } from '@/lib/webBuildLayoutPlan';
+import { deriveWebBuildArtIdentity, type WebBuildArtIdentity, type ArtRenderMode } from '@/lib/webBuildArtIdentity';
 
 // Re-export the section classifier so existing importers keep working while the
 // plan layer owns section semantics.
@@ -139,7 +140,7 @@ function extractCopyPieces(body: string, purpose?: string): { headline?: string;
 
 function cardsComponent(name: string, c: SectionCopy): string {
   const items = (c.bullets.length ? c.bullets : [c.sub || c.purpose || '']).filter(Boolean).slice(0, 6);
-  const cards = items.map((b, i) => `          <div key={${i}} className="group relative rounded-[var(--kx-radius)] border border-[color:var(--kx-border)] bg-[var(--kx-card)] p-6 transition duration-300 hover:-translate-y-1 hover:border-white/20 hover:bg-[var(--kx-card-hover)]">
+  const cards = items.map((b, i) => `          <div key={${i}} className="kx-art-card group relative rounded-[var(--kx-radius)] border border-[color:var(--kx-border)] bg-[var(--kx-card)] p-6 transition duration-300 hover:-translate-y-1 hover:border-white/20 hover:bg-[var(--kx-card-hover)]">
             <div className="mb-4 h-11 w-11 rounded-xl bg-[linear-gradient(135deg,color-mix(in_srgb,var(--kx-accent)_40%,transparent),color-mix(in_srgb,var(--kx-accent-2)_20%,transparent))] ring-1 ring-white/10" />
             <p className="text-[15px] font-semibold leading-snug text-white">{\`${esc(b)}\`}</p>
           </div>`).join('\n');
@@ -219,8 +220,8 @@ ${list}
 
 function galleryComponent(name: string, c: SectionCopy): string {
   const tiles = (c.bullets.length ? c.bullets : [c.name]).slice(0, 6);
-  const cells = tiles.map((b, i) => `          <figure key={${i}} className="group relative overflow-hidden rounded-[var(--kx-radius)] border border-[color:var(--kx-border)] ${i % 5 === 0 ? 'sm:col-span-2' : ''}">
-            <div className="aspect-[4/3] w-full bg-gradient-to-br from-white/[0.06] to-white/[0.01] transition duration-500 group-hover:scale-[1.03]" />
+  const cells = tiles.map((b, i) => `          <figure key={${i}} className="kx-art-card group relative overflow-hidden rounded-[var(--kx-radius)] border border-[color:var(--kx-border)] ${i % 5 === 0 ? 'sm:col-span-2' : ''}">
+            <div className="kx-art-media w-full bg-gradient-to-br from-white/[0.06] to-white/[0.01] transition duration-500 group-hover:scale-[1.03]" />
             <figcaption className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-4 text-sm font-medium text-white">{\`${esc(b)}\`}</figcaption>
           </figure>`).join('\n');
   return `export default function ${name}() {
@@ -289,7 +290,7 @@ ${bubbles}
 
 function workflowComponent(name: string, c: SectionCopy): string {
   const steps = (c.bullets.length ? c.bullets : [c.name]).slice(0, 4);
-  const cells = steps.map((b, i) => `          <li key={${i}} className="relative rounded-[var(--kx-radius)] border border-[color:var(--kx-border)] bg-[var(--kx-card)] p-6">
+  const cells = steps.map((b, i) => `          <li key={${i}} className="kx-art-card relative rounded-[var(--kx-radius)] border border-[color:var(--kx-border)] bg-[var(--kx-card)] p-6">
             <span className="text-sm font-semibold text-[var(--kx-accent)]">0${i + 1}</span>
             <p className="mt-2 text-[15px] font-medium text-white">{\`${esc(b)}\`}</p>
           </li>`).join('\n');
@@ -402,7 +403,7 @@ function pricingComponent(name: string, c: SectionCopy): string {
     const featured = i === 1;
     const cardCls = featured ? 'border-[color-mix(in_srgb,var(--kx-accent)_40%,transparent)] bg-[color-mix(in_srgb,var(--kx-accent)_7%,transparent)]' : 'border-[color:var(--kx-border)] bg-[var(--kx-card)]';
     const btnCls = featured ? 'bg-[var(--kx-accent)] text-white' : 'border border-white/15 text-slate-200';
-    return `          <div key={${i}} className="rounded-[var(--kx-radius)] border p-6 ${cardCls}">
+    return `          <div key={${i}} className="kx-art-card rounded-[var(--kx-radius)] border p-6 ${cardCls}">
             <p className="text-sm font-medium text-slate-300">{\`${esc(b)}\`}</p>
             <div className="mt-3 text-3xl font-semibold text-white">₺${199 + i * 200}<span className="text-sm text-slate-400">/ay</span></div>
             <button className="mt-5 w-full rounded-lg ${btnCls} py-2 text-sm font-semibold">Seç</button>
@@ -468,7 +469,7 @@ ${cells}
 
 function faqComponent(name: string, c: SectionCopy): string {
   const qs = (c.bullets.length ? c.bullets : [c.name]).slice(0, 6);
-  const cells = qs.map((b, i) => `          <details key={${i}} className="group rounded-xl border border-[color:var(--kx-border)] bg-[var(--kx-card)] p-4">
+  const cells = qs.map((b, i) => `          <details key={${i}} className="kx-art-card group rounded-xl border border-[color:var(--kx-border)] bg-[var(--kx-card)] p-4">
             <summary className="cursor-pointer text-[15px] font-medium text-white marker:content-['']">{\`${esc(b)}\`}</summary>
             <p className="mt-2 text-sm text-slate-400">Detaylı yanıt burada yer alır.</p>
           </details>`).join('\n');
@@ -489,10 +490,55 @@ ${cells}
 
 /* ── Plan-driven templates (hero compositions + section variants) ─────── */
 
-/** Shared premium hero background (grid + drifting aurora orbs). */
-const HERO_BG = `      <div className="kx-grid absolute inset-0 -z-10" aria-hidden="true" />
-      <div className="kx-aurora -z-10" style={{ top: '-6rem', left: '-4rem', width: '28rem', height: '28rem', background: 'radial-gradient(circle, var(--kx-accent), transparent 60%)' }} aria-hidden="true" />
-      <div className="kx-aurora -z-10" style={{ top: '3rem', right: '-6rem', width: '24rem', height: '24rem', background: 'radial-gradient(circle, var(--kx-accent-2), transparent 60%)', animationDelay: '-6s' }} aria-hidden="true" />`;
+/**
+ * Generated hero background that FOLLOWS the strategy's visual-system motif — so
+ * the generated code no longer always uses the same grid+aurora shell. Each motif
+ * is a genuinely different, dark-safe construction (mirrors the preview Backdrop):
+ * blueprint/dot-matrix for technical, editorial rules for archive/portfolio,
+ * spotlight for luxury/trust, terrain for landscaping, diagonal for events, warm
+ * veil for hospitality/community. Uses existing visual-system vocabulary only. */
+function generatedHeroBg(plan: WebBuildLayoutPlan): string {
+  const bg = plan.visualSystem.background;
+  const orb = (pos: string, size: string, color: string, delay = '') =>
+    `      <div className="kx-aurora -z-10" style={{ ${pos}, ${size}, background: 'radial-gradient(circle, ${color}, transparent 60%)'${delay ? `, animationDelay: '${delay}'` : ''} }} aria-hidden="true" />`;
+  const grid = (op: number, size = 44) =>
+    `      <div className="absolute inset-0 -z-10" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,${op}) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,${op}) 1px,transparent 1px)', backgroundSize: '${size}px ${size}px', WebkitMaskImage: 'radial-gradient(ellipse at center,#000 40%,transparent 75%)', maskImage: 'radial-gradient(ellipse at center,#000 40%,transparent 75%)' }} aria-hidden="true" />`;
+  switch (bg) {
+    case 'blueprint':
+      return `      <div className="absolute inset-0 -z-10" style={{ backgroundImage: 'linear-gradient(var(--kx-accent) 1px,transparent 1px),linear-gradient(90deg,var(--kx-accent) 1px,transparent 1px)', backgroundSize: '130px 130px', opacity: 0.12 }} aria-hidden="true" />\n${grid(0.06, 26)}`;
+    case 'dot-matrix':
+      return `      <div className="absolute inset-0 -z-10" style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.14) 1px, transparent 1px)', backgroundSize: '22px 22px', WebkitMaskImage: 'radial-gradient(ellipse at center,#000 45%,transparent 80%)', maskImage: 'radial-gradient(ellipse at center,#000 45%,transparent 80%)' }} aria-hidden="true" />\n${orb("top: '-4rem'", "right: '-4rem', width: '22rem', height: '22rem'", 'var(--kx-accent)')}`;
+    case 'editorial-rules':
+      return `      <div className="absolute inset-y-0 left-[12%] -z-10 w-px bg-white/10" aria-hidden="true" />\n      <div className="absolute inset-y-0 right-[12%] -z-10 w-px bg-white/10" aria-hidden="true" />\n      <div className="absolute inset-x-0 top-24 -z-10 h-px bg-white/10" aria-hidden="true" />`;
+    case 'spotlight':
+      return `      <div className="absolute left-1/2 top-[-8rem] -z-10 h-[42rem] w-[46rem] -translate-x-1/2" style={{ background: 'radial-gradient(ellipse at center, color-mix(in srgb, var(--kx-accent) 34%, transparent), transparent 70%)' }} aria-hidden="true" />`;
+    case 'terrain-lines':
+      return `      <svg viewBox="0 0 1200 400" preserveAspectRatio="none" className="absolute inset-0 -z-10 h-full w-full" style={{ opacity: 0.4 }} aria-hidden="true">{Array.from({ length: 9 }).map((_, i) => <path key={i} d={\`M0 \${40 + i * 40} C 300 \${i * 40}, 900 \${100 + i * 40}, 1200 \${40 + i * 40}\`} fill="none" stroke={i % 3 === 0 ? 'var(--kx-accent)' : 'rgba(255,255,255,0.14)'} strokeWidth="1" />)}</svg>`;
+    case 'diagonal-split':
+      return `      <div className="absolute inset-0 -z-10 overflow-hidden" aria-hidden="true"><div className="absolute -inset-x-1/4 top-1/3 h-[60%] -rotate-6" style={{ background: 'linear-gradient(90deg, transparent, color-mix(in srgb, var(--kx-accent) 20%, transparent), transparent)' }} /></div>\n${grid(0.03, 40)}`;
+    case 'gradient-veil':
+      return `      <div className="absolute inset-0 -z-10" style={{ background: 'linear-gradient(180deg, color-mix(in srgb, var(--kx-accent) 14%, transparent), transparent 55%)' }} aria-hidden="true" />\n${orb("top: '2rem'", "right: '-6rem', width: '22rem', height: '22rem'", 'var(--kx-accent-2)', '-6s')}`;
+    case 'flat-void':
+      return `      <div className="absolute inset-0 -z-10" style={{ background: 'radial-gradient(ellipse at 50% 40%, transparent 55%, rgba(0,0,0,0.5) 100%)' }} aria-hidden="true" />\n${orb("bottom: '-10rem'", "left: '20%', width: '24rem', height: '20rem'", 'var(--kx-accent)')}`;
+    case 'mesh-duotone':
+      return `${orb("top: '-8rem'", "left: '-6rem', width: '34rem', height: '34rem'", 'var(--kx-accent)')}\n${orb("bottom: '-10rem'", "right: '-6rem', width: '30rem', height: '30rem'", 'var(--kx-accent-2)', '-8s')}`;
+    case 'aurora-grid':
+    default:
+      return `      <div className="kx-grid absolute inset-0 -z-10" aria-hidden="true" />\n${orb("top: '-6rem'", "left: '-4rem', width: '28rem', height: '28rem'", 'var(--kx-accent)')}\n${orb("top: '3rem'", "right: '-6rem', width: '24rem', height: '24rem'", 'var(--kx-accent-2)', '-6s')}`;
+  }
+}
+
+/** Generated hero proof rail — concept-specific proof chips under the CTA, using
+ *  the `.kx-art-proof` utility. Mirrors the preview's HeroProof. Empty when there
+ *  is no proof (old builds stay clean). Chips are concise structural labels. */
+function generatedHeroProof(art: WebBuildArtIdentity): string {
+  const chips = art.proofRules.slice(0, 4);
+  if (!chips.length) return '';
+  const cells = chips.map((c) => `            <li className="kx-art-proof inline-flex items-center gap-1.5 border border-[color:var(--kx-border)] bg-white/[0.03] px-2.5 py-1 text-[11px] text-slate-300"><span className="h-1 w-1 rounded-full bg-[var(--kx-accent)]" />{\`${esc(c)}\`}</li>`).join('\n');
+  return `          <ul className="mt-7 flex flex-wrap items-center gap-2">
+${cells}
+          </ul>`;
+}
 
 function heroCopyBits(c: SectionCopy, brief: { goal?: string; type?: string }) {
   return {
@@ -518,25 +564,30 @@ const ctaBlock = (cta: string, secondary: string) => `          <div className="
  */
 function heroComponentFor(
   name: string, c: SectionCopy, brief: { goal?: string; type?: string }, plan: WebBuildLayoutPlan,
+  art: WebBuildArtIdentity,
 ): string {
   const b = heroCopyBits(c, brief);
   const mod = plan.primaryVisualModule;
   const eyebrow = b.eyebrow ? `<span className="inline-flex items-center gap-2 rounded-full border border-[color:var(--kx-border)] bg-white/[0.04] px-3 py-1 text-xs font-medium text-[var(--kx-accent)]"><span className="h-1.5 w-1.5 rounded-full bg-[var(--kx-accent)]" /> {\`${esc(b.eyebrow)}\`}</span>` : '';
   const sub = (cls: string) => (b.sub ? `<p className="${cls}">{\`${esc(b.sub)}\`}</p>` : '');
   const composition = plan.heroComposition;
+  // Strategy-specific background (not the fixed aurora shell) + concept proof rail.
+  const bg = generatedHeroBg(plan);
+  const proof = generatedHeroProof(art);
 
   const twoCol = (): string => `import VisualModule from './VisualModule';
 
 export default function ${name}() {
   return (
     <section className="relative isolate overflow-hidden">
-${HERO_BG}
+${bg}
       <div className="mx-auto grid max-w-6xl items-center gap-12 px-6 py-20 sm:py-24 lg:grid-cols-2">
         <div className="kx-reveal">
           ${eyebrow}
           <h1 className="mt-5 text-4xl font-semibold tracking-tight text-white sm:text-5xl">{\`${esc(b.headline)}\`}</h1>
           ${sub('mt-5 max-w-xl text-lg leading-relaxed text-slate-300')}
 ${ctaBlock(b.cta, b.secondary)}
+${proof}
           ${b.proof ? `<p className="mt-6 text-xs text-slate-400">{\`${esc(b.proof)}\`}</p>` : ''}
         </div>
         <VisualModule kind="${mod}" />
@@ -551,7 +602,7 @@ ${ctaBlock(b.cta, b.secondary)}
 export default function ${name}() {
   return (
     <section className="relative isolate overflow-hidden">
-${HERO_BG}
+${bg}
       <div className="mx-auto max-w-5xl px-6 py-20 text-center sm:py-24">
         <div className="kx-reveal">
           ${eyebrow}
@@ -561,6 +612,7 @@ ${HERO_BG}
             <a href="#contact" className="rounded-xl bg-[var(--kx-accent)] px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-black/40">{\`${esc(b.cta)}\`}</a>
             ${b.secondary ? `<a href="#features" className="rounded-xl border border-white/15 px-6 py-3 text-sm font-medium text-slate-200">{\`${esc(b.secondary)}\`}</a>` : ''}
           </div>
+${proof}
         </div>
         <div className="mt-14"><VisualModule kind="${mod}" /></div>
       </div>
@@ -574,7 +626,7 @@ ${HERO_BG}
 export default function ${name}() {
   return (
     <section className="relative isolate flex min-h-[34rem] items-end overflow-hidden">
-${HERO_BG}
+${bg}
       <div className="pointer-events-none absolute inset-0 scale-110 opacity-40" aria-hidden="true"><VisualModule kind="${mod}" /></div>
       <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent" aria-hidden="true" />
       <div className="relative mx-auto w-full max-w-6xl px-6 py-16">
@@ -583,6 +635,7 @@ ${HERO_BG}
           <h1 className="mt-5 text-4xl font-semibold tracking-tight text-white sm:text-6xl">{\`${esc(b.headline)}\`}</h1>
           ${sub('mt-5 max-w-xl text-lg leading-relaxed text-slate-200')}
 ${ctaBlock(b.cta, b.secondary)}
+${proof}
         </div>
       </div>
     </section>
@@ -595,7 +648,7 @@ ${ctaBlock(b.cta, b.secondary)}
 export default function ${name}() {
   return (
     <section className="relative isolate overflow-hidden">
-${HERO_BG}
+${bg}
       <div className="mx-auto max-w-3xl px-6 py-28 text-center sm:py-32">
         <div className="kx-reveal">
           ${eyebrow}
@@ -605,6 +658,7 @@ ${HERO_BG}
             <a href="#contact" className="rounded-xl bg-[var(--kx-accent)] px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-black/40">{\`${esc(b.cta)}\`}</a>
             ${b.secondary ? `<a href="#features" className="rounded-xl border border-white/15 px-6 py-3 text-sm font-medium text-slate-200">{\`${esc(b.secondary)}\`}</a>` : ''}
           </div>
+${proof}
         </div>
         <div className="mx-auto mt-12 max-w-md"><VisualModule kind="${mod}" /></div>
       </div>
@@ -618,12 +672,13 @@ ${HERO_BG}
 export default function ${name}() {
   return (
     <section className="relative isolate overflow-hidden">
-${HERO_BG}
+${bg}
       <div className="mx-auto grid max-w-6xl gap-10 px-6 py-20 sm:py-24 lg:grid-cols-12">
         <div className="kx-reveal lg:col-span-7">
           ${eyebrow}
           <h1 className="mt-5 text-5xl font-semibold leading-[1.05] tracking-tight text-white sm:text-6xl">{\`${esc(b.headline)}\`}</h1>
 ${ctaBlock(b.cta, b.secondary)}
+${proof}
         </div>
         <div className="lg:col-span-5">
           ${b.sub ? `<p className="border-l-2 border-[var(--kx-accent)] pl-5 text-lg leading-relaxed text-slate-300">{\`${esc(b.sub)}\`}</p>` : ''}
@@ -730,7 +785,7 @@ function collectionArchiveComponent(name: string, c: SectionCopy): string {
   const rows = (c.bullets.length ? c.bullets : [c.name]).slice(0, 6);
   const cells = rows.map((b, i) => `          <div key={${i}} className="group flex items-center gap-5 py-5">
             <span className="w-8 text-sm tabular-nums text-slate-500">${String(i + 1).padStart(2, '0')}</span>
-            <span className="h-12 w-16 shrink-0 rounded-md border border-[color:var(--kx-border)] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--kx-accent)_22%,transparent),transparent)]" />
+            <span className="kx-art-card h-12 w-16 shrink-0 rounded-md border border-[color:var(--kx-border)] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--kx-accent)_22%,transparent),transparent)]" />
             <span className="flex-1 text-[15px] font-medium text-white">{\`${esc(b)}\`}</span>
             <span className="text-slate-500 transition group-hover:translate-x-1">&rarr;</span>
           </div>`).join('\n');
@@ -1009,9 +1064,10 @@ export default function VisualModule({ kind = '${primary}' }: { kind?: ModuleKin
  */
 function componentFor(
   name: string, c: SectionCopy, brief: { goal?: string; type?: string }, plan: WebBuildLayoutPlan,
+  art: WebBuildArtIdentity,
 ): string {
   const kind = sectionKind(c.id, c.name);
-  if (kind === 'hero') return heroComponentFor(name, c, brief, plan);
+  if (kind === 'hero') return heroComponentFor(name, c, brief, plan, art);
   if (kind === 'footer') return footerComponent(name, c);
   const variant = plan.sectionVariants[c.id] || 'feature-grid';
   return variantComponentFor(name, c, plan, variant, kind);
@@ -1126,6 +1182,9 @@ export function synthesizeFromCopies(
   // All Files output matches the preview exactly (Part 7). App composes the plan
   // sequence; each component's shape follows its assigned variant.
   const plan = planArg || deriveLayoutPlan(brief, items.map((c) => ({ id: c.id, name: c.name })));
+  // The SAME art render identity the preview uses — so the generated hero
+  // background, proof rail and card surface language match the preview exactly.
+  const art = deriveWebBuildArtIdentity(brief);
   const compNames = items.map((c) => pascal(c.id));
   const files: SynthFile[] = [];
 
@@ -1135,7 +1194,7 @@ export function synthesizeFromCopies(
     files.push({
       path: `src/components/${name}.tsx`,
       language: 'tsx',
-      content: componentFor(name, c, brief, plan),
+      content: componentFor(name, c, brief, plan, art),
       summary: fileSummary(c),
     });
   });
@@ -1163,21 +1222,55 @@ ${usage}
   files.push({ path: 'src/lib/designSystem.ts', language: 'ts', content: designSystemFileContent(ds), summary: 'Strategy-derived design tokens (palette, type, radius, motion)' });
   files.push({ path: 'src/lib/layoutPlan.ts', language: 'ts', content: layoutPlanFileContent(plan), summary: `Layout plan (${plan.heroComposition} hero · ${plan.archetype})` });
   files.push(siteContentFile(items));
-  files.push(stylesFile(ds, plan));
+  files.push(stylesFile(ds, plan, art));
 
   return files;
+}
+
+/** Mode-specific CSS for the shared `.kx-art-*` utilities — the surface/media/
+ *  proof language for the concept, emitted so the generated components (which use
+ *  these classes) render the same identity as the preview. Additive over the
+ *  visual-system radius; dark-safe; no light mode. */
+function artUtilitiesCss(mode: ArtRenderMode): string {
+  const card: Partial<Record<ArtRenderMode, string>> = {
+    archive: 'border-radius: 0.25rem; border-left: 2px solid var(--kx-accent);',
+    landscaping: 'border-radius: 1rem; overflow: hidden;',
+    'trust-service': 'border-radius: 0.6rem; box-shadow: none;',
+    hospitality: 'border-radius: 1rem;',
+    marketplace: 'border-radius: 0.5rem;',
+    industrial: 'border-radius: 0;',
+    portfolio: 'border-radius: 0;',
+  };
+  const media: Partial<Record<ArtRenderMode, string>> = {
+    archive: 'aspect-ratio: 3 / 4;',
+    landscaping: 'aspect-ratio: 3 / 2;',
+    marketplace: 'aspect-ratio: 1 / 1;',
+    portfolio: 'aspect-ratio: 4 / 5;',
+    'product-saas': 'aspect-ratio: 16 / 9;',
+  };
+  const proof: Partial<Record<ArtRenderMode, string>> = {
+    archive: 'border-radius: 0.125rem;',
+    industrial: 'border-radius: 0;',
+    portfolio: 'border-radius: 0;',
+    'trust-service': 'border-radius: 0.375rem;',
+  };
+  return `/* ── Art identity utilities (mode: ${mode}) — concept-specific surfaces. ── */
+.kx-art-card { ${card[mode] || ''} }
+.kx-art-media { aspect-ratio: 4 / 3; width: 100%; ${media[mode] || ''} }
+.kx-art-proof { border-radius: 9999px; ${proof[mode] || ''} }
+`;
 }
 
 /** The theme + motion stylesheet — CSS custom properties come from the derived
  *  design system AND the visual system (surface/border/shape), so a different
  *  strategy yields a different palette AND surface language in code too. The
  *  `.kx-panel` utility lets generated components share the strategy's surface. */
-function stylesFile(ds: WebBuildDesignSystem, plan: WebBuildLayoutPlan): SynthFile {
+function stylesFile(ds: WebBuildDesignSystem, plan: WebBuildLayoutPlan, art: WebBuildArtIdentity): SynthFile {
   const vt = visualSystemTokens(plan.visualSystem);
   return {
     path: 'src/styles.css',
     language: 'css',
-    summary: `Design + visual system (${plan.visualSystem.background} · ${plan.visualSystem.surface} surface)`,
+    summary: `Design + visual system (${plan.visualSystem.background} · ${plan.visualSystem.surface} surface · ${art.mode} identity)`,
     content: `@tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -1205,6 +1298,7 @@ function stylesFile(ds: WebBuildDesignSystem, plan: WebBuildLayoutPlan): SynthFi
 }
 .kx-panel:hover { background: var(--kx-card-hover); }
 
+${artUtilitiesCss(art.mode)}
 html { scroll-behavior: smooth; }
 body {
   background: var(--kx-bg);
