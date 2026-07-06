@@ -96,7 +96,7 @@ function explicitPrice(text: string | undefined): string | undefined {
  * curves + swatches, marketplace product structure, industrial spec grid,
  * portfolio crop frame, SaaS data surface). It is pure geometry — no fake text,
  * IDs, names, prices or metrics. */
-function CardDetail({ mode, i = 0 }: { mode: ArtRenderMode; i?: number }): ReactElement {
+function CardDetail({ mode }: { mode: ArtRenderMode }): ReactElement {
   const line = 'rgba(255,255,255,0.22)';
   switch (mode) {
     case 'archive':
@@ -640,7 +640,7 @@ function CatalogGrid({ s, art }: VarProps) {
           <Reveal key={i} i={i}>
             <figure className={`group relative overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)] ${art.cardTone} ${i % 5 === 0 ? 'sm:col-span-2' : ''}`}>
               <div className={`relative w-full transition duration-500 group-hover:scale-[1.04] ${art.mediaTone}`} style={{ background: i % 3 === 0 ? 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 26%, transparent), color-mix(in srgb, var(--acc2) 14%, transparent))' : 'linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01))' }}>
-                <CardDetail mode={art.mode} i={i} />
+                <CardDetail mode={art.mode} />
               </div>
               <figcaption className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/70 to-transparent p-3 text-sm font-medium text-white">{b}</figcaption>
             </figure>
@@ -662,7 +662,7 @@ function CollectionArchive({ s, art }: VarProps) {
             <div className="group flex items-center gap-5 py-5">
               <span className="w-8 text-sm tabular-nums text-slate-500">{String(i + 1).padStart(2, '0')}</span>
               <span className={`relative h-12 w-16 shrink-0 overflow-hidden rounded-md border border-[color:var(--bd)] ${art.cardTone}`} style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 22%, transparent), transparent)' }}>
-                <CardDetail mode={art.mode} i={i} />
+                <CardDetail mode={art.mode} />
               </span>
               <span className="flex-1 text-[15px] font-medium text-white">{b}</span>
               <span className="text-slate-500 transition group-hover:translate-x-1">→</span>
@@ -868,8 +868,8 @@ function Comparison({ s, art }: VarProps) {
     <div className="mx-auto max-w-5xl px-6">
       <H2>{heading(s)}</H2>
       <div className="relative mt-10 grid gap-5 sm:grid-cols-2">
-        <div className={`relative overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)] ${art.cardTone}`}><span className="absolute left-3 top-3 z-10 rounded-full bg-black/50 px-2.5 py-1 text-xs text-slate-300">Öncesi</span><div className={`relative ${art.mediaTone}`} style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.01))' }}><CardDetail mode={art.mode} i={0} /></div></div>
-        <div className={`relative overflow-hidden rounded-[var(--pr)] border ring-1 ${art.cardTone}`} style={{ borderColor: 'color-mix(in srgb, var(--acc) 40%, transparent)' }}><span className="absolute left-3 top-3 z-10 rounded-full px-2.5 py-1 text-xs text-white" style={{ background: 'var(--acc)' }}>Sonrası</span><div className={`relative ${art.mediaTone}`} style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 22%, transparent), color-mix(in srgb, var(--acc2) 12%, transparent))' }}><CardDetail mode={art.mode} i={1} /></div></div>
+        <div className={`relative overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)] ${art.cardTone}`}><span className="absolute left-3 top-3 z-10 rounded-full bg-black/50 px-2.5 py-1 text-xs text-slate-300">Öncesi</span><div className={`relative ${art.mediaTone}`} style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.01))' }}><CardDetail mode={art.mode} /></div></div>
+        <div className={`relative overflow-hidden rounded-[var(--pr)] border ring-1 ${art.cardTone}`} style={{ borderColor: 'color-mix(in srgb, var(--acc) 40%, transparent)' }}><span className="absolute left-3 top-3 z-10 rounded-full px-2.5 py-1 text-xs text-white" style={{ background: 'var(--acc)' }}>Sonrası</span><div className={`relative ${art.mediaTone}`} style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 22%, transparent), color-mix(in srgb, var(--acc2) 12%, transparent))' }}><CardDetail mode={art.mode} /></div></div>
         {!reduce && (
           <motion.div
             aria-hidden className="pointer-events-none absolute inset-y-0 left-1/2 hidden w-px -translate-x-1/2 sm:block"
