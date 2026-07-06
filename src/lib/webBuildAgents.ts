@@ -2273,7 +2273,13 @@ export function deriveLayoutArchitect(
     research?.targetUser ? 'targetUser' : '',
     (research?.trustSignals || []).length ? 'trustSignals' : '',
   ]);
+  // designArchetype is recorded ONLY when the resolved plan actually followed the
+  // art archetype's mapped structure — an honest, verifiable handoff claim rather
+  // than "art existed".
+  const artArch = art?.designArchetype?.key ? ART_ARCHETYPE_TO_LAYOUT[art.designArchetype.key] : undefined;
+  const planFollowedArt = !!artArch && artArch.archetype === plan.archetype;
   const usedArtDirectionInputs = uniq([
+    planFollowedArt ? 'designArchetype' : '',
     art?.motionDirection ? 'motionDirection' : '',
     art?.density ? 'density' : '',
     art?.sectionRhythmDirection ? 'sectionRhythmDirection' : '',
@@ -2314,15 +2320,88 @@ export function deriveLayoutArchitect(
 /* ── Brief enrichment (agents → design system / preview / files) ──────── */
 
 /**
+ * Deterministic map from the UI / Art Director's chosen DESIGN ARCHETYPE to the
+ * layout plan's structural vocabulary (archetype + optional hero composition +
+ * primary visual module). This is the connection that makes the Layout Architect
+ * actually OBEY the Art Director's anti-sameness decision: each of the ~20
+ * concept-specific art identities resolves to a genuinely different page STRUCTURE
+ * (hero + visual system + section rhythm), not just a different palette. Without
+ * this, the strong archetype the Art Director picks only tints the colors while
+ * the plan re-detects a coarse archetype from prose and often collapses to the
+ * generic default — the exact "same SaaS template every time" failure.
+ *
+ * Every value is a real member of the plan vocabulary (LayoutArchetype /
+ * HeroComposition / VisualModule) and is re-validated against the plan whitelists
+ * downstream, so an unknown or stale key is ignored safely. `modern-brand` is
+ * intentionally omitted: it is the neutral fallback identity, so it is left to the
+ * layout diversity guard, which derives a distinct structure from a hash of the
+ * idea instead of pinning the generic default look.
+ */
+interface ArtLayoutSteer { archetype: string; hero?: string; module?: string }
+const ART_ARCHETYPE_TO_LAYOUT: Record<string, ArtLayoutSteer> = {
+  'editorial-archive':      { archetype: 'archive',        hero: 'catalog-collection',     module: 'catalog-archive' },
+  'luxury-boutique':        { archetype: 'luxury-service',  hero: 'luxury-service',         module: 'editorial-story' },
+  'high-conversion-saas':   { archetype: 'dashboard',       hero: 'dashboard-product',      module: 'data-dashboard' },
+  'ai-tool':                { archetype: 'technical',       hero: 'dashboard-product',      module: 'data-dashboard' },
+  'fintech-trust':          { archetype: 'data-platform',   hero: 'data-map',               module: 'data-dashboard' },
+  'wellness-retreat':       { archetype: 'hospitality',     hero: 'luxury-service',         module: 'reservation-form' },
+  'restaurant-hospitality': { archetype: 'hospitality',     hero: 'luxury-service',         module: 'reservation-form' },
+  'landscaping-nature':     { archetype: 'portfolio',       hero: 'asymmetric-visual',      module: 'catalog-archive' },
+  'cinematic-studio':       { archetype: 'event',           hero: 'immersive-full-bleed',   module: 'editorial-story' },
+  'creative-agency':        { archetype: 'portfolio',       hero: 'asymmetric-visual',      module: 'editorial-story' },
+  'portfolio-showcase':     { archetype: 'portfolio',       hero: 'asymmetric-visual',      module: 'editorial-story' },
+  'marketplace-catalog':    { archetype: 'marketplace',     hero: 'catalog-collection',     module: 'catalog-archive' },
+  'education-platform':     { archetype: 'membership',      hero: 'membership-application', module: 'membership-pass' },
+  'community-membership':   { archetype: 'community',       hero: 'split-editorial',        module: 'membership-pass' },
+  'legal-medical-trust':    { archetype: 'luxury-service',  hero: 'luxury-service',         module: 'editorial-story' },
+  'local-service-premium':  { archetype: 'hospitality',     hero: 'luxury-service',         module: 'reservation-form' },
+  'industrial-b2b':         { archetype: 'technical',       hero: 'dashboard-product',      module: 'data-dashboard' },
+  'event-conference':       { archetype: 'event',           hero: 'event-experience',       module: 'timeline-process' },
+  'real-estate':            { archetype: 'archive',         hero: 'catalog-collection',     module: 'catalog-archive' },
+  'nonprofit-campaign':     { archetype: 'community',       hero: 'split-editorial',        module: 'membership-pass' },
+  'founder-startup':        { archetype: 'dashboard',       hero: 'split-editorial',        module: 'product-showcase' },
+};
+
+/**
  * Decide the STRUCTURE the layout plan should use, FROM the agent artifacts — so
  * the plan (and therefore both the preview and the generated files) obeys the
- * agents instead of re-detecting an archetype from prose. Returns plain-string
- * hints (validated at the plan layer). Signal-driven from the Research brief's
- * recommended pages/components + visual style + target user — never a fixed
- * per-example template. Returns {} when signals are too weak, so the existing
- * detection + diversity guard still applies (never forced to 'standard').
+ * agents instead of re-detecting an archetype from prose. The PRIMARY signal is
+ * the Art Director's design archetype (mapped above): it is chosen from the
+ * concept + the FULL Research brief (visual style, recommended components/pages,
+ * target user, category language), so it is strictly more informed than re-reading
+ * a few research fields here. The Research-signal derivation is kept as the
+ * FALLBACK — it fills any field the art archetype did not pin, and drives the
+ * whole result when there is no art archetype (e.g. the neutral modern-brand
+ * identity). Returns {} when every signal is too weak, so the existing detection +
+ * diversity guard still applies (never forced to 'standard').
  */
 export function deriveLayoutSteering(
+  research: ResearchAgentArtifact | undefined,
+  art: ArtDirectionArtifact | undefined,
+  strategy: StrategyAgentArtifact | undefined,
+): { agentArchetype?: string; agentHero?: string; agentModule?: string } {
+  const artKey = art?.designArchetype?.key;
+  const artSteer = artKey ? ART_ARCHETYPE_TO_LAYOUT[artKey] : undefined;
+  // Fallback (previously the whole of this function) — never regresses when the
+  // art archetype is absent or does not pin a hero/module.
+  const res = deriveLayoutSteeringFromResearch(research, art, strategy);
+  const agentArchetype = artSteer?.archetype || res.agentArchetype;
+  const agentHero = artSteer?.hero || res.agentHero;
+  const agentModule = artSteer?.module || res.agentModule;
+  const out: { agentArchetype?: string; agentHero?: string; agentModule?: string } = {};
+  if (agentArchetype) out.agentArchetype = agentArchetype;
+  if (agentHero) out.agentHero = agentHero;
+  if (agentModule) out.agentModule = agentModule;
+  return out;
+}
+
+/**
+ * Research-signal fallback for layout steering. Signal-driven from the Research
+ * brief's recommended pages/components + visual style + target user — never a
+ * fixed per-example template. Returns {} when signals are too weak, so the
+ * existing detection + diversity guard still applies.
+ */
+function deriveLayoutSteeringFromResearch(
   research: ResearchAgentArtifact | undefined,
   art: ArtDirectionArtifact | undefined,
   _strategy: StrategyAgentArtifact | undefined,
@@ -2762,6 +2841,7 @@ const USED_LABEL: Record<string, [string, string]> = {
   audienceExpectations: ['audience expectations', 'kitle beklentileri'],
   conversionPatterns: ['conversion patterns', 'dönüşüm kalıpları'],
   differentiationOpportunities: ['differentiation', 'farklılaşma'],
+  designArchetype: ['design archetype', 'tasarım arketipi'],
   visualMood: ['visual mood', 'görsel atmosfer'],
   brandPersonality: ['brand personality', 'marka kişiliği'],
   ctaStyleDirection: ['CTA style', 'CTA stili'],
@@ -2803,6 +2883,9 @@ function producedFields(agent: WebBuildAgent, lang: Lang): string[] {
       case 'ui_art_director': {
         const a = agent.artifact as ArtDirectionArtifact;
         return uniq([
+          // The design archetype is the anti-sameness decision the Layout
+          // Architect consumes — surface it first as the headline handoff field.
+          a.designArchetype?.key ? L(lang, 'design archetype', 'tasarım arketipi') : '',
           a.colorSystem?.accent ? L(lang, 'palette', 'palet') : '',
           a.typographyDirection ? L(lang, 'typography', 'tipografi') : '',
           a.visualMood ? L(lang, 'visual mood', 'görsel atmosfer') : '',
