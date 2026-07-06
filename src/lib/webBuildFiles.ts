@@ -18,7 +18,10 @@ import {
   deriveLayoutPlan, layoutPlanFileContent, visualSystemTokens, sectionKind,
   type WebBuildLayoutPlan, type SectionKind, type SectionVariant, type VisualModule,
 } from '@/lib/webBuildLayoutPlan';
-import { deriveWebBuildArtIdentity, type WebBuildArtIdentity, type ArtRenderMode } from '@/lib/webBuildArtIdentity';
+import {
+  deriveWebBuildArtIdentity, deriveMotionFit, motionAmbientAllowed,
+  type WebBuildArtIdentity, type ArtRenderMode,
+} from '@/lib/webBuildArtIdentity';
 
 // Re-export the section classifier so existing importers keep working while the
 // plan layer owns section semantics.
@@ -99,6 +102,34 @@ function genProofItems(c: SectionCopy, art: WebBuildArtIdentity, n = 4): string[
   if (bullets.length) return bullets.slice(0, n);
   if (art.proofRules?.length) return art.proofRules.slice(0, n);
   return (GEN_PROOF_LABELS[art.mode] || ['Clear process', 'What to expect', 'How to start']).slice(0, Math.min(n, 3));
+}
+
+/**
+ * Concept-specific internal card detail (SVG string) for generated media/cards so
+ * they are never empty rectangles — mirrors the preview `CardDetail`. Pure
+ * geometry: archive metadata rules + seal, landscaping terrain curves + swatches,
+ * marketplace product structure, industrial spec grid, portfolio crop, SaaS data
+ * surface. No fake text, IDs, names, prices or metrics.
+ */
+function generatedCardDetail(mode: ArtRenderMode): string {
+  const svg = (inner: string, vb = '0 0 120 120', op = 0.5) =>
+    `<svg viewBox="${vb}" preserveAspectRatio="none" className="absolute inset-0 h-full w-full" style={{ opacity: ${op} }} aria-hidden="true">${inner}</svg>`;
+  switch (mode) {
+    case 'archive':
+      return svg(`${[30, 44, 58, 72].map((y, k) => `<line x1="16" y1="${y}" x2="${k % 2 ? 88 : 100}" y2="${y}" stroke="rgba(255,255,255,0.24)" strokeWidth="1.6" />`).join('')}<circle cx="94" cy="26" r="9" fill="none" stroke="var(--kx-accent)" strokeWidth="1.6" />`);
+    case 'landscaping':
+      return svg(`${[20, 34, 48, 62].map((y, k) => `<path d="M0 ${y} C 30 ${y - 12}, 90 ${y + 12}, 120 ${y}" fill="none" stroke="${k % 2 ? 'var(--kx-accent)' : 'rgba(255,255,255,0.2)'}" strokeWidth="1.4" />`).join('')}${[18, 34, 50].map((x) => `<circle cx="${x}" cy="78" r="4.5" fill="var(--kx-accent-2)" opacity="0.55" />`).join('')}`, '0 0 120 90', 0.55);
+    case 'marketplace':
+      return svg(`<rect x="34" y="26" width="52" height="46" rx="6" fill="none" stroke="rgba(255,255,255,0.22)" strokeWidth="1.6" /><line x1="34" y1="88" x2="74" y2="88" stroke="rgba(255,255,255,0.22)" strokeWidth="2" /><line x1="34" y1="98" x2="60" y2="98" stroke="var(--kx-accent)" strokeWidth="2" />`, '0 0 120 120', 0.4);
+    case 'industrial':
+      return svg(`${[24, 48, 72, 96].map((x) => `<line x1="${x}" y1="12" x2="${x}" y2="108" stroke="rgba(255,255,255,0.2)" strokeWidth="1" />`).join('')}${[36, 60, 84].map((y) => `<line x1="12" y1="${y}" x2="108" y2="${y}" stroke="rgba(255,255,255,0.2)" strokeWidth="1" />`).join('')}<rect x="24" y="36" width="24" height="24" fill="var(--kx-accent)" opacity="0.4" />`, '0 0 120 120', 0.4);
+    case 'portfolio':
+      return svg(`<rect x="16" y="16" width="88" height="88" fill="none" stroke="rgba(255,255,255,0.22)" strokeWidth="1.6" /><line x1="16" y1="80" x2="104" y2="40" stroke="var(--kx-accent)" strokeWidth="1.6" />`, '0 0 120 120', 0.45);
+    case 'product-saas':
+      return svg(`<polyline points="6,66 30,44 54,54 78,24 108,36" fill="none" stroke="var(--kx-accent)" strokeWidth="2" />${[6, 30, 54, 78].map((x, k) => `<rect x="${x}" y="70" width="14" height="${8 + (k % 3) * 6}" rx="2" fill="${k % 2 ? 'var(--kx-accent-2)' : 'var(--kx-accent)'}" opacity="0.5" />`).join('')}`, '0 0 120 90', 0.5);
+    default:
+      return svg(`${[0, 1, 2].map((k) => `<line x1="${-20 + k * 40}" y1="120" x2="${40 + k * 40}" y2="0" stroke="rgba(255,255,255,0.2)" strokeWidth="1" />`).join('')}`, '0 0 120 120', 0.35);
+  }
 }
 
 /** Parse the "Page Sections" list + "Generated Copy" blocks into rich copy. */
@@ -250,10 +281,11 @@ ${list}
 
 /* ── Archetype-specific templates (genuinely different layouts) ───────── */
 
-function galleryComponent(name: string, c: SectionCopy): string {
+function galleryComponent(name: string, c: SectionCopy, mode: ArtRenderMode = 'modern'): string {
   const tiles = (c.bullets.length ? c.bullets : [c.name]).slice(0, 6);
+  const detail = generatedCardDetail(mode);
   const cells = tiles.map((b, i) => `          <figure key={${i}} className="kx-art-card group relative overflow-hidden rounded-[var(--kx-radius)] border border-[color:var(--kx-border)] ${i % 5 === 0 ? 'sm:col-span-2' : ''}">
-            <div className="kx-art-media w-full bg-gradient-to-br from-white/[0.06] to-white/[0.01] transition duration-500 group-hover:scale-[1.03]" />
+            <div className="kx-art-media relative w-full bg-gradient-to-br from-white/[0.06] to-white/[0.01] transition duration-500 group-hover:scale-[1.03]">${detail}</div>
             <figcaption className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent p-4 text-sm font-medium text-white">{\`${esc(b)}\`}</figcaption>
           </figure>`).join('\n');
   return `export default function ${name}() {
@@ -271,21 +303,23 @@ ${cells}
 `;
 }
 
-function beforeAfterComponent(name: string, c: SectionCopy): string {
+function beforeAfterComponent(name: string, c: SectionCopy, mode: ArtRenderMode = 'modern'): string {
+  const detail = generatedCardDetail(mode);
   return `export default function ${name}() {
   return (
     <section className="px-6 py-20">
       <div className="mx-auto max-w-5xl">
         ${c.headline ? `<h2 className="text-center text-3xl font-semibold tracking-tight text-white sm:text-4xl">{\`${esc(c.headline)}\`}</h2>` : ''}
-        <div className="mt-10 grid gap-5 sm:grid-cols-2">
+        <div className="relative mt-10 grid gap-5 sm:grid-cols-2">
           <div className="relative overflow-hidden rounded-[var(--kx-radius)] border border-[color:var(--kx-border)]">
-            <span className="absolute left-3 top-3 rounded-full bg-black/50 px-2.5 py-1 text-xs text-slate-300">Öncesi</span>
-            <div className="aspect-[4/3] bg-[var(--kx-card)]" />
+            <span className="absolute left-3 top-3 z-10 rounded-full bg-black/50 px-2.5 py-1 text-xs text-slate-300">Öncesi</span>
+            <div className="relative aspect-[4/3] bg-[var(--kx-card)]">${detail}</div>
           </div>
           <div className="relative overflow-hidden rounded-[var(--kx-radius)] border border-[color-mix(in_srgb,var(--kx-accent)_30%,transparent)] ring-1 ring-[color-mix(in_srgb,var(--kx-accent)_20%,transparent)]">
-            <span className="absolute left-3 top-3 rounded-full bg-[var(--kx-accent)] px-2.5 py-1 text-xs text-white">Sonrası</span>
-            <div className="aspect-[4/3] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--kx-accent)_20%,transparent),color-mix(in_srgb,var(--kx-accent-2)_10%,transparent))]" />
+            <span className="absolute left-3 top-3 z-10 rounded-full bg-[var(--kx-accent)] px-2.5 py-1 text-xs text-white">Sonrası</span>
+            <div className="relative aspect-[4/3] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--kx-accent)_20%,transparent),color-mix(in_srgb,var(--kx-accent-2)_10%,transparent))]">${detail}</div>
           </div>
+          <span className="kx-divider-sweep pointer-events-none absolute inset-y-0 left-1/2 hidden w-px -translate-x-1/2 sm:block" style={{ background: 'linear-gradient(180deg, transparent, var(--kx-accent), transparent)' }} aria-hidden="true" />
         </div>
       </div>
     </section>
@@ -554,10 +588,17 @@ ${cells}
  * blueprint/dot-matrix for technical, editorial rules for archive/portfolio,
  * spotlight for luxury/trust, terrain for landscaping, diagonal for events, warm
  * veil for hospitality/community. Uses existing visual-system vocabulary only. */
-function generatedHeroBg(plan: WebBuildLayoutPlan): string {
+function generatedHeroBg(plan: WebBuildLayoutPlan, ambient = true): string {
   const bg = plan.visualSystem.background;
+  // Restrained concepts keep the glow but drop the drift (kx-orb-still); the root
+  // also carries `kx-still`, so this is belt-and-suspenders for calm sites.
+  const orbCls = ambient ? 'kx-aurora' : 'kx-orb-still';
   const orb = (pos: string, size: string, color: string, delay = '') =>
-    `      <div className="kx-aurora -z-10" style={{ ${pos}, ${size}, background: 'radial-gradient(circle, ${color}, transparent 60%)'${delay ? `, animationDelay: '${delay}'` : ''} }} aria-hidden="true" />`;
+    `      <div className="${orbCls} -z-10" style={{ ${pos}, ${size}, background: 'radial-gradient(circle, ${color}, transparent 60%)'${ambient && delay ? `, animationDelay: '${delay}'` : ''} }} aria-hidden="true" />`;
+  // A slow archive/editorial rule-scan when the concept allows subtle motion.
+  const scan = ambient
+    ? `\n      <div className="kx-scan absolute inset-x-[12%] top-0 -z-10 h-px" style={{ background: 'linear-gradient(90deg, transparent, var(--kx-accent), transparent)', opacity: 0.4 }} aria-hidden="true" />`
+    : '';
   const grid = (op: number, size = 44) =>
     `      <div className="absolute inset-0 -z-10" style={{ backgroundImage: 'linear-gradient(rgba(255,255,255,${op}) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,${op}) 1px,transparent 1px)', backgroundSize: '${size}px ${size}px', WebkitMaskImage: 'radial-gradient(ellipse at center,#000 40%,transparent 75%)', maskImage: 'radial-gradient(ellipse at center,#000 40%,transparent 75%)' }} aria-hidden="true" />`;
   switch (bg) {
@@ -566,7 +607,7 @@ function generatedHeroBg(plan: WebBuildLayoutPlan): string {
     case 'dot-matrix':
       return `      <div className="absolute inset-0 -z-10" style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.14) 1px, transparent 1px)', backgroundSize: '22px 22px', WebkitMaskImage: 'radial-gradient(ellipse at center,#000 45%,transparent 80%)', maskImage: 'radial-gradient(ellipse at center,#000 45%,transparent 80%)' }} aria-hidden="true" />\n${orb("top: '-4rem'", "right: '-4rem', width: '22rem', height: '22rem'", 'var(--kx-accent)')}`;
     case 'editorial-rules':
-      return `      <div className="absolute inset-y-0 left-[12%] -z-10 w-px bg-white/10" aria-hidden="true" />\n      <div className="absolute inset-y-0 right-[12%] -z-10 w-px bg-white/10" aria-hidden="true" />\n      <div className="absolute inset-x-0 top-24 -z-10 h-px bg-white/10" aria-hidden="true" />`;
+      return `      <div className="absolute inset-y-0 left-[12%] -z-10 w-px bg-white/10" aria-hidden="true" />\n      <div className="absolute inset-y-0 right-[12%] -z-10 w-px bg-white/10" aria-hidden="true" />\n      <div className="absolute inset-x-0 top-24 -z-10 h-px bg-white/10" aria-hidden="true" />${scan}`;
     case 'spotlight':
       return `      <div className="absolute left-1/2 top-[-8rem] -z-10 h-[42rem] w-[46rem] -translate-x-1/2" style={{ background: 'radial-gradient(ellipse at center, color-mix(in srgb, var(--kx-accent) 34%, transparent), transparent 70%)' }} aria-hidden="true" />`;
     case 'terrain-lines':
@@ -621,7 +662,7 @@ const ctaBlock = (cta: string, secondary: string) => `          <div className="
  */
 function heroComponentFor(
   name: string, c: SectionCopy, brief: { goal?: string; type?: string }, plan: WebBuildLayoutPlan,
-  art: WebBuildArtIdentity,
+  art: WebBuildArtIdentity, ambient: boolean,
 ): string {
   const b = heroCopyBits(c, brief);
   const mod = plan.primaryVisualModule;
@@ -629,7 +670,8 @@ function heroComponentFor(
   const sub = (cls: string) => (b.sub ? `<p className="${cls}">{\`${esc(b.sub)}\`}</p>` : '');
   const composition = plan.heroComposition;
   // Strategy-specific background (not the fixed aurora shell) + concept proof rail.
-  const bg = generatedHeroBg(plan);
+  // Ambient background motion is gated by the concept's Motion Fit.
+  const bg = generatedHeroBg(plan, ambient);
   const proof = generatedHeroProof(art);
 
   const twoCol = (): string => `import VisualModule from './VisualModule';
@@ -839,11 +881,12 @@ ${cells}
 `;
 }
 
-function collectionArchiveComponent(name: string, c: SectionCopy): string {
+function collectionArchiveComponent(name: string, c: SectionCopy, mode: ArtRenderMode = 'modern'): string {
   const rows = (c.bullets.length ? c.bullets : [c.name]).slice(0, 6);
+  const detail = generatedCardDetail(mode);
   const cells = rows.map((b, i) => `          <div key={${i}} className="group flex items-center gap-5 py-5">
             <span className="w-8 text-sm tabular-nums text-slate-500">${String(i + 1).padStart(2, '0')}</span>
-            <span className="kx-art-card h-12 w-16 shrink-0 rounded-md border border-[color:var(--kx-border)] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--kx-accent)_22%,transparent),transparent)]" />
+            <span className="kx-art-card relative h-12 w-16 shrink-0 overflow-hidden rounded-md border border-[color:var(--kx-border)] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--kx-accent)_22%,transparent),transparent)]">${detail}</span>
             <span className="flex-1 text-[15px] font-medium text-white">{\`${esc(b)}\`}</span>
             <span className="text-slate-500 transition group-hover:translate-x-1">&rarr;</span>
           </div>`).join('\n');
@@ -1021,6 +1064,9 @@ function DataDashboard() {
           <span key={i} className="flex-1 rounded-t" style={{ height: h + '%', background: i % 2 ? 'var(--kx-accent-2)' : 'var(--kx-accent)', opacity: 0.9 }} />
         ))}
       </div>
+      <svg viewBox="0 0 300 60" className="mt-3 h-10 w-full" preserveAspectRatio="none" aria-hidden="true">
+        <polyline className="kx-pulse-soft" points="0,48 50,30 100,38 150,16 200,26 250,8 300,18" fill="none" stroke="var(--kx-accent)" strokeWidth="2" />
+      </svg>
     </div>
   );
 }
@@ -1041,12 +1087,18 @@ function MembershipPass() {
 
 function CatalogArchive() {
   return (
-    <div className={frame + ' p-4'}>
+    <div className={frame + ' relative p-4'}>
       <div className="grid grid-cols-3 gap-2.5">
         {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="aspect-square rounded-lg border border-[color:var(--kx-border)]" style={{ background: i % 3 === 0 ? 'linear-gradient(135deg, color-mix(in srgb, var(--kx-accent) 26%, transparent), transparent)' : 'linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01))' }} />
+          <div key={i} className="relative aspect-square overflow-hidden rounded-lg border border-[color:var(--kx-border)]" style={{ background: i % 3 === 0 ? 'linear-gradient(135deg, color-mix(in srgb, var(--kx-accent) 26%, transparent), transparent)' : 'linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01))' }}>
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="absolute inset-0 h-full w-full" style={{ opacity: 0.55 }} aria-hidden="true">
+              {[30, 44, 58, 72].map((y, k) => <line key={k} x1="16" y1={y} x2={k % 2 ? 66 : 84} y2={y} stroke="rgba(255,255,255,0.26)" strokeWidth="2" />)}
+              <circle cx="78" cy="24" r="8" fill="none" stroke="var(--kx-accent)" strokeWidth="2" />
+            </svg>
+          </div>
         ))}
       </div>
+      <div className="kx-scan pointer-events-none absolute inset-x-4 top-0 h-px" style={{ background: 'linear-gradient(90deg, transparent, var(--kx-accent), transparent)', opacity: 0.4 }} aria-hidden="true" />
     </div>
   );
 }
@@ -1086,7 +1138,7 @@ function ReservationForm() {
     <div className={frame + ' p-5'}>
       <div className="grid grid-cols-4 gap-1">
         {Array.from({ length: 8 }).map((_, i) => (
-          <span key={i} className="flex h-7 items-center justify-center rounded text-[11px] text-slate-300" style={{ background: i === 3 ? 'var(--kx-accent)' : 'rgba(255,255,255,0.04)', color: i === 3 ? '#fff' : undefined }}>{i + 12}</span>
+          <span key={i} className={'flex h-7 items-center justify-center rounded text-[11px] text-slate-300' + (i === 3 ? ' kx-pulse-soft' : '')} style={{ background: i === 3 ? 'var(--kx-accent)' : 'rgba(255,255,255,0.04)', color: i === 3 ? '#fff' : undefined }}>{i + 12}</span>
         ))}
       </div>
       <div className="mt-4 flex h-10 items-center justify-center rounded-lg text-sm font-semibold text-white" style={{ background: 'var(--kx-accent)' }}>Book</div>
@@ -1098,6 +1150,8 @@ function TimelineProcess() {
   return (
     <div className={frame + ' p-5'}>
       <ol className="relative space-y-4 pl-6">
+        <span className="absolute left-[9px] top-1 w-px bg-white/12" style={{ height: 'calc(100% - 0.5rem)' }} aria-hidden="true" />
+        <span className="kx-line-draw absolute left-[9px] top-1 w-px" style={{ height: 'calc(100% - 0.5rem)', background: 'var(--kx-accent)' }} aria-hidden="true" />
         {['Discover', 'Design', 'Build', 'Deliver'].map((s, i) => (
           <li key={i} className="relative">
             <span className="absolute -left-6 top-0.5 flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold text-black" style={{ background: 'var(--kx-accent)' }}>{i + 1}</span>
@@ -1111,9 +1165,14 @@ function TimelineProcess() {
 
 function Comparison() {
   return (
-    <div className={frame + ' grid grid-cols-2'}>
-      <div className="aspect-[3/4] border-r border-[color:var(--kx-border)]" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.01))' }} />
-      <div className="aspect-[3/4]" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--kx-accent) 26%, transparent), color-mix(in srgb, var(--kx-accent-2) 14%, transparent))' }} />
+    <div className={frame + ' relative grid grid-cols-2'}>
+      <div className="relative aspect-[3/4] border-r border-[color:var(--kx-border)]" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.01))' }}>
+        <svg viewBox="0 0 100 130" preserveAspectRatio="none" className="absolute inset-0 h-full w-full" style={{ opacity: 0.4 }} aria-hidden="true">{[30, 60, 90].map((y, k) => <line key={k} x1="14" y1={y} x2="86" y2={y} stroke="rgba(255,255,255,0.22)" strokeWidth="2" />)}</svg>
+      </div>
+      <div className="relative aspect-[3/4]" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--kx-accent) 26%, transparent), color-mix(in srgb, var(--kx-accent-2) 14%, transparent))' }}>
+        <svg viewBox="0 0 100 130" preserveAspectRatio="none" className="absolute inset-0 h-full w-full" style={{ opacity: 0.55 }} aria-hidden="true">{[24, 48, 72, 96].map((y, k) => <path key={k} d={\`M6 \${y} C 34 \${y - 10}, 66 \${y + 10}, 94 \${y}\`} fill="none" stroke={k % 2 ? 'var(--kx-accent)' : 'rgba(255,255,255,0.2)'} strokeWidth="2" />)}</svg>
+      </div>
+      <span className="kx-divider-sweep pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2" style={{ background: 'linear-gradient(180deg, transparent, var(--kx-accent), transparent)' }} aria-hidden="true" />
     </div>
   );
 }
@@ -1121,12 +1180,17 @@ function Comparison() {
 function ContourTerrain() {
   return (
     <div className={frame}>
-      <div className="aspect-[4/3] w-full" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--kx-accent) 20%, transparent), color-mix(in srgb, var(--kx-accent-2) 10%, transparent))' }}>
-        <svg viewBox="0 0 400 300" preserveAspectRatio="none" className="h-full w-full" style={{ opacity: 0.55 }} aria-hidden="true">
+      <div className="kx-drift relative aspect-[4/3] w-full" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--kx-accent) 20%, transparent), color-mix(in srgb, var(--kx-accent-2) 10%, transparent))' }}>
+        <svg viewBox="0 0 400 300" preserveAspectRatio="none" className="h-full w-full" style={{ opacity: 0.6 }} aria-hidden="true">
           {Array.from({ length: 8 }).map((_, i) => (
-            <path key={i} d={\`M0 \${34 + i * 32} C 110 \${6 + i * 32}, 290 \${86 + i * 32}, 400 \${40 + i * 32}\`} fill="none" stroke={i % 3 === 0 ? 'var(--kx-accent)' : 'rgba(255,255,255,0.14)'} strokeWidth="1" />
+            <path key={i} className="kx-terrain-drift" d={\`M0 \${34 + i * 32} C 110 \${6 + i * 32}, 290 \${86 + i * 32}, 400 \${40 + i * 32}\`} fill="none" stroke={i % 3 === 0 ? 'var(--kx-accent)' : 'rgba(255,255,255,0.16)'} strokeWidth="1" style={{ animationDelay: (i * 0.25) + 's' }} />
           ))}
+          <path d="M60 250 C 90 200, 120 200, 150 250" fill="none" stroke="var(--kx-accent-2)" strokeWidth="1.4" style={{ opacity: 0.5 }} />
+          <path d="M250 260 C 280 210, 310 210, 340 260" fill="none" stroke="var(--kx-accent-2)" strokeWidth="1.4" style={{ opacity: 0.5 }} />
         </svg>
+        <div className="absolute bottom-2 left-2 flex gap-1.5">
+          {['var(--kx-accent)', 'var(--kx-accent-2)', 'rgba(255,255,255,0.35)'].map((c, k) => <span key={k} className="h-4 w-4 rounded-full border border-white/20" style={{ background: c }} />)}
+        </div>
       </div>
     </div>
   );
@@ -1161,10 +1225,10 @@ export default function VisualModule({ kind = '${primary}' }: { kind?: ModuleKin
  */
 function componentFor(
   name: string, c: SectionCopy, brief: { goal?: string; type?: string }, plan: WebBuildLayoutPlan,
-  art: WebBuildArtIdentity,
+  art: WebBuildArtIdentity, ambient: boolean,
 ): string {
   const kind = sectionKind(c.id, c.name);
-  if (kind === 'hero') return heroComponentFor(name, c, brief, plan, art);
+  if (kind === 'hero') return heroComponentFor(name, c, brief, plan, art, ambient);
   if (kind === 'footer') return footerComponent(name, c);
   const variant = plan.sectionVariants[c.id] || 'feature-grid';
   return variantComponentFor(name, c, plan, variant, kind, art);
@@ -1180,15 +1244,15 @@ function variantComponentFor(
     case 'editorial-split':    return editorialSplitComponent(name, c, plan);
     case 'proof-strip':        return proofStripComponent(name, c, art);
     case 'dashboard-data':     return kind === 'productDemo' ? productDemoComponent(name, c) : dashboardDataComponent(name, c);
-    case 'catalog-grid':       return kind === 'menu' ? menuComponent(name, c) : galleryComponent(name, c);
-    case 'collection-archive': return collectionArchiveComponent(name, c);
+    case 'catalog-grid':       return kind === 'menu' ? menuComponent(name, c) : galleryComponent(name, c, art.mode);
+    case 'collection-archive': return collectionArchiveComponent(name, c, art.mode);
     case 'process-timeline':   return workflowComponent(name, c);
     case 'quote-story':        return quoteStoryComponent(name, c);
     case 'showcase':           return showcaseComponent(name, c, plan);
     case 'application-form':   return applicationFormComponent(name, c, plan);
     case 'spatial-floorplan':  return spatialComponent(name, c);
     case 'pricing-membership': return pricingComponent(name, c);
-    case 'comparison':         return beforeAfterComponent(name, c);
+    case 'comparison':         return beforeAfterComponent(name, c, art.mode);
     case 'filter-search':      return filterSearchComponent(name, c);
     case 'faq-cta':            return kind === 'faq' ? faqComponent(name, c) : ctaComponent(name, c);
     case 'feature-grid':
@@ -1284,6 +1348,9 @@ export function synthesizeFromCopies(
   // The SAME art render identity the preview uses — so the generated hero
   // background, proof rail and card surface language match the preview exactly.
   const art = deriveWebBuildArtIdentity(brief);
+  // Concept-gated motion (the SAME decision the preview uses): a restrained site
+  // mounts with `kx-still`, which stops every ambient/background animation.
+  const ambient = motionAmbientAllowed(deriveMotionFit(brief, art, plan));
   const compNames = items.map((c) => pascal(c.id));
   const files: SynthFile[] = [];
 
@@ -1293,7 +1360,7 @@ export function synthesizeFromCopies(
     files.push({
       path: `src/components/${name}.tsx`,
       language: 'tsx',
-      content: componentFor(name, c, brief, plan, art),
+      content: componentFor(name, c, brief, plan, art, ambient),
       summary: fileSummary(c),
     });
   });
@@ -1305,7 +1372,7 @@ export function synthesizeFromCopies(
 export default function App() {
   return (
     <main
-      className="min-h-screen text-slate-200 antialiased"
+      className="min-h-screen text-slate-200 antialiased${ambient ? '' : ' kx-still'}"
       style={{ background: 'var(--kx-bg)' }}
     >
 ${usage}
@@ -1433,6 +1500,36 @@ body {
 .kx-float  { animation: kx-float 7s ease-in-out infinite; }
 .kx-reveal { animation: kx-reveal 0.8s cubic-bezier(0.22, 1, 0.36, 1) both; }
 
+/* A completely still orb (concept-gated: restrained sites keep the glow, drop the drift). */
+.kx-orb-still { position: absolute; border-radius: 9999px; filter: blur(70px); opacity: 0.5; pointer-events: none; }
+
+/* ── Concept-gated motion utilities (transform/opacity/background-position only,
+ *    all disabled under .kx-still and prefers-reduced-motion) ──────────────── */
+@keyframes kx-scan          { 0% { transform: translateY(-120%); } 100% { transform: translateY(120%); } }
+@keyframes kx-pulse-soft    { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
+@keyframes kx-line-draw     { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes kx-terrain-drift { 0%, 100% { opacity: 0.45; } 50% { opacity: 0.85; } }
+@keyframes kx-divider-sweep { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+@keyframes kx-drift         { 0% { background-position: 0% 50%; } 100% { background-position: 100% 50%; } }
+
+.kx-scan          { animation: kx-scan 11s ease-in-out infinite; }
+.kx-pulse-soft    { animation: kx-pulse-soft 2.6s ease-in-out infinite; }
+.kx-line-draw     { transform-origin: top; animation: kx-line-draw 1.2s ease-in-out both; }
+.kx-terrain-drift { animation: kx-terrain-drift 8s ease-in-out infinite; }
+.kx-divider-sweep { animation: kx-divider-sweep 4s ease-in-out infinite; }
+.kx-drift         { background-size: 200% 200%; animation: kx-drift 18s linear infinite alternate; }
+
+/* Concept gate: a restrained site (archive/legal/medical/marketplace) mounts with
+ *  .kx-still, which stops every ambient/background animation while keeping the
+ *  static composition intact. Motion is never universal. */
+.kx-still .kx-aurora,
+.kx-still .kx-scan,
+.kx-still .kx-pulse-soft,
+.kx-still .kx-terrain-drift,
+.kx-still .kx-divider-sweep,
+.kx-still .kx-drift,
+.kx-still .kx-float { animation: none; }
+
 /* Soft blueprint grid, faded toward the edges. */
 .kx-grid {
   background-image:
@@ -1444,7 +1541,8 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .kx-aurora, .kx-float, .kx-reveal { animation: none; }
+  .kx-aurora, .kx-float, .kx-reveal,
+  .kx-scan, .kx-pulse-soft, .kx-line-draw, .kx-terrain-drift, .kx-divider-sweep, .kx-drift { animation: none; }
 }
 `,
   };

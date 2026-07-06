@@ -1,5 +1,5 @@
 import { type ReactElement, type CSSProperties } from 'react';
-import { motion } from 'framer-motion';
+import { motion, useReducedMotion } from 'framer-motion';
 import { designTokensForBrief } from '@/lib/webBuildBrief';
 import {
   deriveLayoutPlan, visualSystemTokens,
@@ -8,7 +8,10 @@ import {
 import VisualModule from '@/components/builder/WebBuildVisualModules';
 import type { WebBuildBrief } from '@/lib/webBuildApi';
 import type { WebBuildSectionItem } from '@/lib/webBuildPayload';
-import { deriveWebBuildArtIdentity, type WebBuildArtIdentity, type ArtRenderMode } from '@/lib/webBuildArtIdentity';
+import {
+  deriveWebBuildArtIdentity, deriveMotionFit, motionAmbientAllowed,
+  type WebBuildArtIdentity, type ArtRenderMode,
+} from '@/lib/webBuildArtIdentity';
 
 /**
  * A REAL, premium rendered approximation of the generated site whose STRUCTURE is
@@ -87,13 +90,96 @@ function explicitPrice(text: string | undefined): string | undefined {
   return m ? m[0].replace(/\s+/g, ' ').trim() : undefined;
 }
 
-function Orb({ color, style, delay = 0 }: { color: string; style: React.CSSProperties; delay?: number }) {
+/* ── Concept-specific internal card detail ───────────────────────────────
+ * Cards/media must never be blank rectangles. CardDetail overlays abstract,
+ * concept-specific linework (archive metadata rules + stamp, landscaping terrain
+ * curves + swatches, marketplace product structure, industrial spec grid,
+ * portfolio crop frame, SaaS data surface). It is pure geometry — no fake text,
+ * IDs, names, prices or metrics. */
+function CardDetail({ mode, i = 0 }: { mode: ArtRenderMode; i?: number }): ReactElement {
+  const line = 'rgba(255,255,255,0.22)';
+  switch (mode) {
+    case 'archive':
+      return (
+        <svg aria-hidden viewBox="0 0 120 120" preserveAspectRatio="none" className="absolute inset-0 h-full w-full" style={{ opacity: 0.5 }}>
+          {[30, 44, 58, 72].map((y, k) => <line key={k} x1="14" y1={y} x2={k % 2 ? 88 : 100} y2={y} stroke={line} strokeWidth="1.5" />)}
+          <circle cx="94" cy="26" r="9" fill="none" stroke="var(--acc)" strokeWidth="1.5" />
+          <rect x="14" y="90" width="40" height="6" rx="2" fill="var(--acc)" opacity="0.5" />
+        </svg>
+      );
+    case 'landscaping':
+      return (
+        <svg aria-hidden viewBox="0 0 120 90" preserveAspectRatio="none" className="absolute inset-0 h-full w-full" style={{ opacity: 0.55 }}>
+          {[20, 34, 48, 62].map((y, k) => <path key={k} d={`M0 ${y} C 30 ${y - 12}, 90 ${y + 12}, 120 ${y}`} fill="none" stroke={k % 2 ? 'var(--acc)' : line} strokeWidth="1.4" />)}
+          {[18, 34, 50].map((x, k) => <circle key={k} cx={x} cy="78" r="4.5" fill="var(--acc2)" opacity="0.55" />)}
+        </svg>
+      );
+    case 'marketplace':
+      return (
+        <svg aria-hidden viewBox="0 0 120 120" preserveAspectRatio="none" className="absolute inset-0 h-full w-full" style={{ opacity: 0.4 }}>
+          <rect x="34" y="26" width="52" height="46" rx="6" fill="none" stroke={line} strokeWidth="1.5" />
+          <line x1="34" y1="88" x2="74" y2="88" stroke={line} strokeWidth="2" />
+          <line x1="34" y1="98" x2="60" y2="98" stroke="var(--acc)" strokeWidth="2" />
+        </svg>
+      );
+    case 'industrial':
+      return (
+        <svg aria-hidden viewBox="0 0 120 120" preserveAspectRatio="none" className="absolute inset-0 h-full w-full" style={{ opacity: 0.4 }}>
+          {[24, 48, 72, 96].map((x, k) => <line key={`v${k}`} x1={x} y1="12" x2={x} y2="108" stroke={line} strokeWidth="1" />)}
+          {[36, 60, 84].map((y, k) => <line key={`h${k}`} x1="12" y1={y} x2="108" y2={y} stroke={line} strokeWidth="1" />)}
+          <rect x="24" y="36" width="24" height="24" fill="var(--acc)" opacity="0.4" />
+        </svg>
+      );
+    case 'portfolio':
+      return (
+        <svg aria-hidden viewBox="0 0 120 120" preserveAspectRatio="none" className="absolute inset-0 h-full w-full" style={{ opacity: 0.45 }}>
+          <rect x="16" y="16" width="88" height="88" fill="none" stroke={line} strokeWidth="1.5" />
+          <line x1="16" y1="80" x2="104" y2="40" stroke="var(--acc)" strokeWidth="1.5" />
+        </svg>
+      );
+    case 'product-saas':
+      return (
+        <svg aria-hidden viewBox="0 0 120 90" preserveAspectRatio="none" className="absolute inset-0 h-full w-full" style={{ opacity: 0.5 }}>
+          <polyline points="6,66 30,44 54,54 78,24 108,36" fill="none" stroke="var(--acc)" strokeWidth="2" />
+          {[6, 30, 54, 78].map((x, k) => <rect key={k} x={x} y={70} width="14" height={8 + (k % 3) * 6} rx="2" fill={k % 2 ? 'var(--acc2)' : 'var(--acc)'} opacity="0.5" />)}
+        </svg>
+      );
+    default:
+      return (
+        <svg aria-hidden viewBox="0 0 120 120" preserveAspectRatio="none" className="absolute inset-0 h-full w-full" style={{ opacity: 0.35 }}>
+          {[0, 1, 2].map((k) => <line key={k} x1={-20 + k * 40} y1="120" x2={40 + k * 40} y2="0" stroke={line} strokeWidth="1" />)}
+        </svg>
+      );
+  }
+}
+
+function Orb({ color, style, delay = 0, still = false }: { color: string; style: React.CSSProperties; delay?: number; still?: boolean }) {
+  const base = { filter: 'blur(70px)', opacity: 0.5, background: `radial-gradient(circle, ${color}, transparent 60%)`, ...style };
+  // A restrained concept keeps the orb but does not drift it — calm, not flashy.
+  if (still) return <div aria-hidden className="pointer-events-none absolute rounded-full" style={base} />;
   return (
     <motion.div
       aria-hidden className="pointer-events-none absolute rounded-full"
-      style={{ filter: 'blur(70px)', opacity: 0.5, background: `radial-gradient(circle, ${color}, transparent 60%)`, ...style }}
+      style={base}
       animate={{ x: [0, 26, 0], y: [0, 18, 0], scale: [1, 1.18, 1] }}
       transition={{ duration: 16, repeat: Infinity, ease: 'easeInOut', delay }}
+    />
+  );
+}
+
+/** A slow, subtle sweeping line — the ambient motion for calm concepts (archive
+ *  rule-scan, blueprint scan). Renders a static line when motion is not allowed. */
+function ScanLine({ vertical = false, still = false, color = 'var(--acc)' }: { vertical?: boolean; still?: boolean; color?: string }) {
+  const common = vertical
+    ? { top: 0, bottom: 0, width: '2px', left: '18%' }
+    : { left: 0, right: 0, height: '2px', top: '30%' };
+  const style: React.CSSProperties = { position: 'absolute', background: `linear-gradient(${vertical ? '180deg' : '90deg'}, transparent, ${color}, transparent)`, opacity: 0.35, ...common };
+  if (still) return <div aria-hidden style={{ ...style, opacity: 0.18 }} />;
+  return (
+    <motion.div
+      aria-hidden style={style}
+      animate={vertical ? { y: ['-20%', '120%'] } : { x: ['-20%', '120%'] }}
+      transition={{ duration: 9, repeat: Infinity, ease: 'easeInOut' }}
     />
   );
 }
@@ -129,7 +215,12 @@ const GhostCta = ({ children }: { children: React.ReactNode }) => (
 type BgMotif = WebBuildLayoutPlan['visualSystem']['background'];
 type AccMode = WebBuildLayoutPlan['visualSystem']['accentMode'];
 
-function Backdrop({ motif, accent, full = false }: { motif: BgMotif; accent: AccMode; full?: boolean }) {
+function Backdrop({ motif, accent, full = false, animate = true }: { motif: BgMotif; accent: AccMode; full?: boolean; animate?: boolean }) {
+  // `animate` is the concept-gated Motion Fit: when false (archive / legal /
+  // medical / marketplace) the ambient background is completely still — no drift,
+  // no scan — so serious concepts read as calm and credible.
+  const reduce = useReducedMotion();
+  const still = !animate || !!reduce;
   const glow = accent === 'vivid' ? 0.55 : accent === 'duotone' ? 0.4 : 0.16;
   const seam = <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-b from-transparent to-black/50" />;
   const grid = (size: number, op: number) => (
@@ -137,32 +228,36 @@ function Backdrop({ motif, accent, full = false }: { motif: BgMotif; accent: Acc
   );
   switch (motif) {
     case 'blueprint':
-      return (<>{grid(26, 0.06)}<div aria-hidden className="absolute inset-0" style={{ backgroundImage: 'linear-gradient(var(--acc) 1px,transparent 1px),linear-gradient(90deg,var(--acc) 1px,transparent 1px)', backgroundSize: '130px 130px', opacity: 0.12 }} /><svg aria-hidden className="absolute right-8 top-8 h-16 w-16" style={{ opacity: 0.5 }} viewBox="0 0 40 40"><path d="M0 8 H40 M0 8 V0 M32 8 V0 M0 32 H40" stroke="var(--acc)" strokeWidth="1" fill="none" /></svg>{seam}</>);
+      return (<>{grid(26, 0.06)}<div aria-hidden className="absolute inset-0" style={{ backgroundImage: 'linear-gradient(var(--acc) 1px,transparent 1px),linear-gradient(90deg,var(--acc) 1px,transparent 1px)', backgroundSize: '130px 130px', opacity: 0.12 }} /><svg aria-hidden className="absolute right-8 top-8 h-16 w-16" style={{ opacity: 0.5 }} viewBox="0 0 40 40"><path d="M0 8 H40 M0 8 V0 M32 8 V0 M0 32 H40" stroke="var(--acc)" strokeWidth="1" fill="none" /></svg><ScanLine vertical still={still} />{seam}</>);
     case 'mesh-duotone':
-      return (<><Orb color="var(--acc)" style={{ top: '-8rem', left: '-6rem', width: '34rem', height: '34rem', opacity: glow }} /><Orb color="var(--acc2)" style={{ bottom: '-10rem', right: '-6rem', width: '30rem', height: '30rem', opacity: glow }} delay={-8} />{seam}</>);
+      return (<><Orb color="var(--acc)" style={{ top: '-8rem', left: '-6rem', width: '34rem', height: '34rem', opacity: glow }} still={still} /><Orb color="var(--acc2)" style={{ bottom: '-10rem', right: '-6rem', width: '30rem', height: '30rem', opacity: glow }} delay={-8} still={still} />{seam}</>);
     case 'spotlight':
-      return (<><div aria-hidden className="pointer-events-none absolute left-1/2 top-[-8rem] h-[42rem] w-[46rem] -translate-x-1/2" style={{ background: `radial-gradient(ellipse at center, color-mix(in srgb, var(--acc) ${Math.round(glow * 60)}%, transparent), transparent 70%)` }} /><div aria-hidden className="absolute inset-0" style={{ background: 'radial-gradient(ellipse at 50% 30%, transparent 40%, rgba(0,0,0,0.55) 100%)' }} />{seam}</>);
+      return (<><div aria-hidden className="pointer-events-none absolute left-1/2 top-[-8rem] h-[42rem] w-[46rem] -translate-x-1/2" style={{ background: `radial-gradient(ellipse at center, color-mix(in srgb, var(--acc) ${Math.round(glow * 60)}%, transparent), transparent 70%)` }} /><div aria-hidden className="absolute inset-0" style={{ background: 'radial-gradient(ellipse at 50% 30%, transparent 40%, rgba(0,0,0,0.55) 100%)' }} />{!still && <motion.div aria-hidden className="pointer-events-none absolute left-1/2 top-[-8rem] h-[42rem] w-[46rem] -translate-x-1/2" style={{ background: 'radial-gradient(ellipse at center, color-mix(in srgb, var(--acc) 22%, transparent), transparent 70%)' }} animate={{ opacity: [0.4, 0.75, 0.4] }} transition={{ duration: 7, repeat: Infinity, ease: 'easeInOut' }} />}{seam}</>);
     case 'editorial-rules':
-      return (<><div aria-hidden className="absolute inset-y-0 left-[12%] w-px bg-white/10" /><div aria-hidden className="absolute inset-y-0 right-[12%] w-px bg-white/10" /><div aria-hidden className="absolute inset-x-0 top-24 h-px bg-white/10" /><div aria-hidden className="absolute inset-x-0 bottom-24 h-px" style={{ background: 'var(--acc)', opacity: 0.25 }} /></>);
+      return (<><div aria-hidden className="absolute inset-y-0 left-[12%] w-px bg-white/10" /><div aria-hidden className="absolute inset-y-0 right-[12%] w-px bg-white/10" /><div aria-hidden className="absolute inset-x-0 top-24 h-px bg-white/10" /><div aria-hidden className="absolute inset-x-0 bottom-24 h-px" style={{ background: 'var(--acc)', opacity: 0.25 }} /><ScanLine still={still} />{seam}</>);
     case 'dot-matrix':
-      return (<><div aria-hidden className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.14) 1px, transparent 1px)', backgroundSize: '22px 22px', WebkitMaskImage: 'radial-gradient(ellipse at center,#000 45%,transparent 80%)', maskImage: 'radial-gradient(ellipse at center,#000 45%,transparent 80%)' }} /><Orb color="var(--acc)" style={{ top: '-4rem', right: '-4rem', width: '22rem', height: '22rem', opacity: glow }} />{seam}</>);
+      return (<><div aria-hidden className="absolute inset-0" style={{ backgroundImage: 'radial-gradient(rgba(255,255,255,0.14) 1px, transparent 1px)', backgroundSize: '22px 22px', WebkitMaskImage: 'radial-gradient(ellipse at center,#000 45%,transparent 80%)', maskImage: 'radial-gradient(ellipse at center,#000 45%,transparent 80%)' }} /><Orb color="var(--acc)" style={{ top: '-4rem', right: '-4rem', width: '22rem', height: '22rem', opacity: glow }} still={still} />{seam}</>);
     case 'diagonal-split':
-      return (<><div aria-hidden className="absolute inset-0 overflow-hidden"><div className="absolute -inset-x-1/4 top-1/3 h-[60%] -rotate-6" style={{ background: `linear-gradient(90deg, transparent, color-mix(in srgb, var(--acc) ${Math.round(glow * 34)}%, transparent), transparent)` }} /></div>{grid(40, 0.03)}{seam}</>);
+      return (<><div aria-hidden className="absolute inset-0 overflow-hidden">{still ? <div className="absolute -inset-x-1/4 top-1/3 h-[60%] -rotate-6" style={{ background: `linear-gradient(90deg, transparent, color-mix(in srgb, var(--acc) ${Math.round(glow * 34)}%, transparent), transparent)` }} /> : <motion.div className="absolute -inset-x-1/4 top-1/3 h-[60%] -rotate-6" style={{ background: `linear-gradient(90deg, transparent, color-mix(in srgb, var(--acc) ${Math.round(glow * 34)}%, transparent), transparent)` }} animate={{ x: ['-8%', '8%', '-8%'] }} transition={{ duration: 10, repeat: Infinity, ease: 'easeInOut' }} />}</div>{grid(40, 0.03)}{seam}</>);
     case 'flat-void':
-      return (<><div aria-hidden className="absolute inset-0" style={{ background: 'radial-gradient(ellipse at 50% 40%, transparent 55%, rgba(0,0,0,0.5) 100%)' }} /><Orb color="var(--acc)" style={{ bottom: '-10rem', left: '20%', width: '24rem', height: '20rem', opacity: glow * 0.7 }} />{seam}</>);
+      return (<><div aria-hidden className="absolute inset-0" style={{ background: 'radial-gradient(ellipse at 50% 40%, transparent 55%, rgba(0,0,0,0.5) 100%)' }} /><Orb color="var(--acc)" style={{ bottom: '-10rem', left: '20%', width: '24rem', height: '20rem', opacity: glow * 0.7 }} still={still} />{seam}</>);
     case 'gradient-veil':
-      return (<><div aria-hidden className="absolute inset-0" style={{ background: `linear-gradient(180deg, color-mix(in srgb, var(--acc) ${Math.round(glow * 20)}%, transparent), transparent 55%)` }} />{grid(48, 0.035)}<Orb color="var(--acc2)" style={{ top: '2rem', right: '-6rem', width: '22rem', height: '22rem', opacity: glow * 0.8 }} delay={-6} />{seam}</>);
+      return (<><div aria-hidden className="absolute inset-0" style={{ background: `linear-gradient(180deg, color-mix(in srgb, var(--acc) ${Math.round(glow * 20)}%, transparent), transparent 55%)` }} />{grid(48, 0.035)}<Orb color="var(--acc2)" style={{ top: '2rem', right: '-6rem', width: '22rem', height: '22rem', opacity: glow * 0.8 }} delay={-6} still={still} />{seam}</>);
     case 'terrain-lines':
-      return (<><svg aria-hidden viewBox="0 0 1200 400" preserveAspectRatio="none" className="absolute inset-0 h-full w-full" style={{ opacity: 0.4 }}>{Array.from({ length: 9 }).map((_, i) => <path key={i} d={`M0 ${40 + i * 40} C 300 ${i * 40}, 900 ${100 + i * 40}, 1200 ${40 + i * 40}`} fill="none" stroke={i % 3 === 0 ? 'var(--acc)' : 'rgba(255,255,255,0.14)'} strokeWidth="1" />)}</svg>{seam}</>);
+      return (<><svg aria-hidden viewBox="0 0 1200 400" preserveAspectRatio="none" className="absolute inset-0 h-full w-full" style={{ opacity: 0.4 }}>{Array.from({ length: 9 }).map((_, i) => (still
+        ? <path key={i} d={`M0 ${40 + i * 40} C 300 ${i * 40}, 900 ${100 + i * 40}, 1200 ${40 + i * 40}`} fill="none" stroke={i % 3 === 0 ? 'var(--acc)' : 'rgba(255,255,255,0.14)'} strokeWidth="1" />
+        : <motion.path key={i} d={`M0 ${40 + i * 40} C 300 ${i * 40}, 900 ${100 + i * 40}, 1200 ${40 + i * 40}`} fill="none" stroke={i % 3 === 0 ? 'var(--acc)' : 'rgba(255,255,255,0.14)'} strokeWidth="1" animate={{ opacity: [0.4, 0.85, 0.4] }} transition={{ duration: 6 + i * 0.4, repeat: Infinity, ease: 'easeInOut', delay: i * 0.2 }} />))}</svg>{seam}</>);
     case 'aurora-grid':
     default:
-      return (<>{grid(44, 0.045)}{full && <div aria-hidden className="pointer-events-none absolute left-1/2 top-0 h-[36rem] w-[52rem] -translate-x-1/2" style={{ background: 'radial-gradient(ellipse at center, color-mix(in srgb, var(--acc) 22%, transparent), transparent 68%)' }} />}<Orb color="var(--acc)" style={{ top: '-6rem', left: '-4rem', width: '28rem', height: '28rem', opacity: glow }} /><Orb color="var(--acc2)" style={{ top: '3rem', right: '-6rem', width: '24rem', height: '24rem', opacity: glow }} delay={-6} />{seam}</>);
+      return (<>{grid(44, 0.045)}{full && <div aria-hidden className="pointer-events-none absolute left-1/2 top-0 h-[36rem] w-[52rem] -translate-x-1/2" style={{ background: 'radial-gradient(ellipse at center, color-mix(in srgb, var(--acc) 22%, transparent), transparent 68%)' }} />}<Orb color="var(--acc)" style={{ top: '-6rem', left: '-4rem', width: '28rem', height: '28rem', opacity: glow }} still={still} /><Orb color="var(--acc2)" style={{ top: '3rem', right: '-6rem', width: '24rem', height: '24rem', opacity: glow }} delay={-6} still={still} />{seam}</>);
   }
 }
 
-/* ── Hero background shell — delegates to the strategy's Backdrop motif ─── */
-function HeroBg({ full = false, plan }: { full?: boolean; plan: WebBuildLayoutPlan }) {
-  return <Backdrop motif={plan.visualSystem.background} accent={plan.visualSystem.accentMode} full={full} />;
+/* ── Hero background shell — delegates to the strategy's Backdrop motif, with
+ *  ambient motion gated by the concept's Motion Fit (never universal). ─── */
+function HeroBg({ full = false, plan, brief }: { full?: boolean; plan: WebBuildLayoutPlan; brief: WebBuildBrief }) {
+  const animate = motionAmbientAllowed(deriveMotionFit(brief, deriveWebBuildArtIdentity(brief), plan));
+  return <Backdrop motif={plan.visualSystem.background} accent={plan.visualSystem.accentMode} full={full} animate={animate} />;
 }
 
 const HeroTitle = ({ children, className = '' }: { children: React.ReactNode; className?: string }) => (
@@ -216,7 +311,7 @@ function HeroCentered({ s, brief, plan }: HeroProps) {
   const t = heroTexts(s, brief);
   return (
     <section className="relative isolate overflow-hidden">
-      <HeroBg full plan={plan} />
+      <HeroBg full plan={plan} brief={brief} />
       <div className="relative mx-auto max-w-3xl px-6 py-24 text-center sm:py-28">
         {t.eyebrow && <Eyebrow>{t.eyebrow}</Eyebrow>}
         <HeroTitle className="mt-5 text-3xl sm:text-5xl">{t.title}</HeroTitle>
@@ -236,7 +331,7 @@ function HeroSplit({ s, brief, plan }: HeroProps) {
   const t = heroTexts(s, brief);
   return (
     <section className="relative isolate overflow-hidden">
-      <HeroBg plan={plan} />
+      <HeroBg plan={plan} brief={brief} />
       <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-6 py-20 sm:py-24 lg:grid-cols-2">
         <div>
           {t.eyebrow && <Eyebrow>{t.eyebrow}</Eyebrow>}
@@ -259,7 +354,7 @@ function HeroAsymmetric({ s, brief, plan }: HeroProps) {
   const t = heroTexts(s, brief);
   return (
     <section className="relative isolate overflow-hidden">
-      <HeroBg plan={plan} />
+      <HeroBg plan={plan} brief={brief} />
       <div className="relative mx-auto max-w-6xl px-6 py-20 sm:py-28">
         <div className="ml-auto w-full max-w-3xl opacity-95 lg:w-[62%]"><VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} /></div>
         <div className="relative -mt-24 max-w-xl rounded-3xl border border-[color:var(--bd)] bg-black/50 p-8 backdrop-blur-md lg:-mt-40">
@@ -281,7 +376,7 @@ function HeroDashboard({ s, brief, plan }: HeroProps) {
   const t = heroTexts(s, brief);
   return (
     <section className="relative isolate overflow-hidden">
-      <HeroBg full plan={plan} />
+      <HeroBg full plan={plan} brief={brief} />
       <div className="relative mx-auto max-w-5xl px-6 py-20 text-center sm:py-24">
         {t.eyebrow && <Eyebrow>{t.eyebrow}</Eyebrow>}
         <HeroTitle className="mx-auto mt-5 max-w-3xl text-3xl sm:text-5xl">{t.title}</HeroTitle>
@@ -301,7 +396,7 @@ function HeroImmersive({ s, brief, plan }: HeroProps) {
   const t = heroTexts(s, brief);
   return (
     <section className="relative isolate flex min-h-[34rem] items-end overflow-hidden">
-      <HeroBg plan={plan} />
+      <HeroBg plan={plan} brief={brief} />
       <div aria-hidden className="pointer-events-none absolute inset-0 scale-110 opacity-40 blur-[1px]"><VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} className="h-full [&>div]:h-full" /></div>
       <div aria-hidden className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent" />
       <div className="relative mx-auto w-full max-w-6xl px-6 py-16">
@@ -324,7 +419,7 @@ function HeroMembership({ s, brief, plan }: HeroProps) {
   const t = heroTexts(s, brief);
   return (
     <section className="relative isolate overflow-hidden">
-      <HeroBg plan={plan} />
+      <HeroBg plan={plan} brief={brief} />
       <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-6 py-20 sm:py-24 lg:grid-cols-[1.1fr_0.9fr]">
         <div>
           {t.eyebrow && <Eyebrow>{t.eyebrow}</Eyebrow>}
@@ -348,7 +443,7 @@ function HeroCatalog({ s, brief, plan }: HeroProps) {
   const t = heroTexts(s, brief);
   return (
     <section className="relative isolate overflow-hidden">
-      <HeroBg plan={plan} />
+      <HeroBg plan={plan} brief={brief} />
       <div className="relative mx-auto max-w-6xl px-6 py-18 sm:py-20">
         <div className="flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-end">
           <div className="max-w-2xl">
@@ -369,7 +464,7 @@ function HeroData({ s, brief, plan }: HeroProps) {
   const t = heroTexts(s, brief);
   return (
     <section className="relative isolate overflow-hidden">
-      <HeroBg plan={plan} />
+      <HeroBg plan={plan} brief={brief} />
       <div className="relative mx-auto grid max-w-6xl items-center gap-10 px-6 py-18 sm:py-20 lg:grid-cols-[0.9fr_1.1fr]">
         <div>
           {t.eyebrow && <Eyebrow>{t.eyebrow}</Eyebrow>}
@@ -391,7 +486,7 @@ function HeroLuxury({ s, brief, plan }: HeroProps) {
   const t = heroTexts(s, brief);
   return (
     <section className="relative isolate overflow-hidden">
-      <HeroBg full plan={plan} />
+      <HeroBg full plan={plan} brief={brief} />
       <div className="relative mx-auto max-w-3xl px-6 py-28 text-center sm:py-36">
         {t.eyebrow && <span className="text-[11px] uppercase tracking-[0.35em] text-white/60">{t.eyebrow}</span>}
         <HeroTitle className="mt-6 text-4xl leading-[1.1] sm:text-6xl">{t.title}</HeroTitle>
@@ -410,7 +505,7 @@ function HeroStory({ s, brief, plan }: HeroProps) {
   const t = heroTexts(s, brief);
   return (
     <section className="relative isolate overflow-hidden">
-      <HeroBg plan={plan} />
+      <HeroBg plan={plan} brief={brief} />
       <div className="relative mx-auto grid max-w-6xl gap-10 px-6 py-20 sm:py-24 lg:grid-cols-12">
         <div className="lg:col-span-7">
           {t.eyebrow && <Eyebrow>{t.eyebrow}</Eyebrow>}
@@ -435,7 +530,7 @@ function HeroEvent({ s, brief, plan }: HeroProps) {
   const meta = (s.bullets || []).slice(0, 3);
   return (
     <section className="relative isolate overflow-hidden">
-      <HeroBg full plan={plan} />
+      <HeroBg full plan={plan} brief={brief} />
       <div className="relative mx-auto max-w-5xl px-6 py-20 text-center sm:py-24">
         <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-[12px] uppercase tracking-[0.25em] text-white/70">
           {(meta.length ? meta : [brief.type].filter(Boolean)).map((m, i) => <span key={i} className="flex items-center gap-2">{i > 0 && <span className="h-1 w-1 rounded-full" style={{ background: 'var(--acc)' }} />}{m}</span>)}
@@ -544,7 +639,9 @@ function CatalogGrid({ s, art }: VarProps) {
         {tiles.map((b, i) => (
           <Reveal key={i} i={i}>
             <figure className={`group relative overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)] ${art.cardTone} ${i % 5 === 0 ? 'sm:col-span-2' : ''}`}>
-              <div className={`relative w-full transition duration-500 group-hover:scale-[1.04] ${art.mediaTone}`} style={{ background: i % 3 === 0 ? 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 26%, transparent), color-mix(in srgb, var(--acc2) 14%, transparent))' : 'linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01))' }} />
+              <div className={`relative w-full transition duration-500 group-hover:scale-[1.04] ${art.mediaTone}`} style={{ background: i % 3 === 0 ? 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 26%, transparent), color-mix(in srgb, var(--acc2) 14%, transparent))' : 'linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01))' }}>
+                <CardDetail mode={art.mode} i={i} />
+              </div>
               <figcaption className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/70 to-transparent p-3 text-sm font-medium text-white">{b}</figcaption>
             </figure>
           </Reveal>
@@ -564,7 +661,9 @@ function CollectionArchive({ s, art }: VarProps) {
           <Reveal key={i} i={i}>
             <div className="group flex items-center gap-5 py-5">
               <span className="w-8 text-sm tabular-nums text-slate-500">{String(i + 1).padStart(2, '0')}</span>
-              <span className={`h-12 w-16 shrink-0 rounded-md border border-[color:var(--bd)] ${art.cardTone}`} style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 22%, transparent), transparent)' }} />
+              <span className={`relative h-12 w-16 shrink-0 overflow-hidden rounded-md border border-[color:var(--bd)] ${art.cardTone}`} style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 22%, transparent), transparent)' }}>
+                <CardDetail mode={art.mode} i={i} />
+              </span>
               <span className="flex-1 text-[15px] font-medium text-white">{b}</span>
               <span className="text-slate-500 transition group-hover:translate-x-1">→</span>
             </div>
@@ -764,12 +863,20 @@ function FaqCta({ s, art }: VarProps) {
 }
 
 function Comparison({ s, art }: VarProps) {
+  const reduce = useReducedMotion();
   return (
     <div className="mx-auto max-w-5xl px-6">
       <H2>{heading(s)}</H2>
-      <div className="mt-10 grid gap-5 sm:grid-cols-2">
-        <div className={`relative overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)] ${art.cardTone}`}><span className="absolute left-3 top-3 z-10 rounded-full bg-black/50 px-2.5 py-1 text-xs text-slate-300">Öncesi</span><div className={art.mediaTone} style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.01))' }} /></div>
-        <div className={`relative overflow-hidden rounded-[var(--pr)] border ring-1 ${art.cardTone}`} style={{ borderColor: 'color-mix(in srgb, var(--acc) 40%, transparent)' }}><span className="absolute left-3 top-3 z-10 rounded-full px-2.5 py-1 text-xs text-white" style={{ background: 'var(--acc)' }}>Sonrası</span><div className={art.mediaTone} style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 22%, transparent), color-mix(in srgb, var(--acc2) 12%, transparent))' }} /></div>
+      <div className="relative mt-10 grid gap-5 sm:grid-cols-2">
+        <div className={`relative overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)] ${art.cardTone}`}><span className="absolute left-3 top-3 z-10 rounded-full bg-black/50 px-2.5 py-1 text-xs text-slate-300">Öncesi</span><div className={`relative ${art.mediaTone}`} style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.01))' }}><CardDetail mode={art.mode} i={0} /></div></div>
+        <div className={`relative overflow-hidden rounded-[var(--pr)] border ring-1 ${art.cardTone}`} style={{ borderColor: 'color-mix(in srgb, var(--acc) 40%, transparent)' }}><span className="absolute left-3 top-3 z-10 rounded-full px-2.5 py-1 text-xs text-white" style={{ background: 'var(--acc)' }}>Sonrası</span><div className={`relative ${art.mediaTone}`} style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 22%, transparent), color-mix(in srgb, var(--acc2) 12%, transparent))' }}><CardDetail mode={art.mode} i={1} /></div></div>
+        {!reduce && (
+          <motion.div
+            aria-hidden className="pointer-events-none absolute inset-y-0 left-1/2 hidden w-px -translate-x-1/2 sm:block"
+            style={{ background: 'linear-gradient(180deg, transparent, var(--acc), transparent)' }}
+            animate={{ opacity: [0.3, 0.9, 0.3] }} transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
+          />
+        )}
       </div>
     </div>
   );

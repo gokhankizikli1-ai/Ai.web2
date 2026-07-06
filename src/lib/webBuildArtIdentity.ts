@@ -18,6 +18,7 @@
  * Type-only import from webBuildApi → no runtime dependency, no import cycle.
  */
 import type { WebBuildBrief } from '@/lib/webBuildApi';
+import type { WebBuildLayoutPlan } from '@/lib/webBuildLayoutPlan';
 
 /** The rendered identity mode — a small, stable set that both render layers switch
  *  on. Broader than the ~20 art archetypes on purpose: it groups them into the
@@ -286,4 +287,96 @@ export function deriveWebBuildArtIdentity(brief: WebBuildBrief | undefined): Web
     mediaTone: tok.mediaTone,
     eyebrowTone: tok.eyebrowTone,
   };
+}
+
+/* ── Concept-gated Motion Fit ───────────────────────────────────────────────
+ * Motion must NEVER be universal. This deterministic decision says how much
+ * ambient/UI motion a concept can carry before it stops improving perceived
+ * quality: a data/SaaS product can pulse and scan; an archive, a law firm or a
+ * clinic must stay restrained (credibility first); landscaping/hospitality get
+ * only slow, organic, warm motion. Both render layers read the SAME decision so
+ * Preview and generated files gate motion identically. Pure, no randomness, no
+ * network, safe on missing fields. */
+
+export type MotionIntensity = 'none' | 'subtle' | 'medium' | 'expressive';
+export interface MotionFit {
+  intensity: MotionIntensity;
+  /** Internal (non-UI) explanation of the decision. */
+  reason: string;
+  /** Named motifs the renderers may use. Only motifs in AMBIENT_MOTIFS animate a
+   *  background; others (reveal / hover-micro / proof-emphasis) are calm. */
+  allowedMotifs: string[];
+}
+
+/** Motifs that move a BACKGROUND. If none of these is allowed, the ambient
+ *  backdrop stays completely still (archive / legal / medical / marketplace). */
+const AMBIENT_MOTIFS = new Set([
+  'rule-scan', 'paper-drift', 'contour-drift', 'botanical', 'data-pulse', 'dot-drift',
+  'blueprint-scan', 'float', 'veil', 'spotlight-drift', 'diagonal-sweep', 'frame-drift', 'mesh-drift',
+]);
+
+const MODE_MOTION: Record<ArtRenderMode, { intensity: MotionIntensity; motifs: string[] }> = {
+  archive: { intensity: 'subtle', motifs: ['reveal', 'rule-scan', 'paper-drift'] },
+  landscaping: { intensity: 'subtle', motifs: ['reveal', 'contour-drift', 'botanical'] },
+  'trust-service': { intensity: 'subtle', motifs: ['reveal', 'proof-emphasis'] },
+  hospitality: { intensity: 'subtle', motifs: ['reveal', 'veil', 'spotlight-drift'] },
+  'product-saas': { intensity: 'medium', motifs: ['reveal', 'data-pulse', 'dot-drift', 'blueprint-scan', 'float'] },
+  marketplace: { intensity: 'subtle', motifs: ['reveal', 'hover-micro'] },
+  event: { intensity: 'medium', motifs: ['reveal', 'diagonal-sweep', 'frame-drift'] },
+  education: { intensity: 'subtle', motifs: ['reveal', 'line-draw'] },
+  community: { intensity: 'subtle', motifs: ['reveal', 'mesh-drift'] },
+  industrial: { intensity: 'medium', motifs: ['reveal', 'blueprint-scan', 'line-draw'] },
+  portfolio: { intensity: 'subtle', motifs: ['reveal', 'frame-drift'] },
+  modern: { intensity: 'subtle', motifs: ['reveal'] },
+};
+
+const ORDER: MotionIntensity[] = ['none', 'subtle', 'medium', 'expressive'];
+const capAt = (v: MotionIntensity, max: MotionIntensity): MotionIntensity =>
+  ORDER.indexOf(v) > ORDER.indexOf(max) ? max : v;
+const bumpUp = (v: MotionIntensity): MotionIntensity => ORDER[Math.min(ORDER.length - 1, ORDER.indexOf(v) + 1)];
+
+/**
+ * Derive the concept-gated Motion Fit from the brief, the shared art identity and
+ * (optionally) the resolved layout plan. Deterministic and total.
+ */
+export function deriveMotionFit(
+  brief: WebBuildBrief | undefined,
+  art: WebBuildArtIdentity,
+  plan?: WebBuildLayoutPlan,
+): MotionFit {
+  const b: WebBuildBrief = brief || {};
+  const mode = art.mode;
+  const base = MODE_MOTION[mode] || MODE_MOTION.modern;
+  const hay = [b.type, b.style, b.visualMood, b.artVisualSignature, b.artAntiTemplateDiagnosis]
+    .filter(Boolean).join(' ').toLowerCase();
+  const calm = /minimal|calm|restrained|serious|academic|sober|quiet|elegant|classic|formal|clinical|legal|medical|finance|trust|historic|heritage|museum|archive/.test(hay);
+  const energetic = /expressive|bold|energetic|kinetic|dynamic|vibrant|playful|immersive|animated|lively/.test(hay);
+
+  // Credibility-first concepts can never go past subtle; organic concepts stay
+  // slow and soft — energy must not override either.
+  const restrained = mode === 'archive' || mode === 'trust-service';
+  const organic = mode === 'landscaping' || mode === 'hospitality';
+
+  let intensity = base.intensity;
+  if (energetic && !restrained && !organic) intensity = bumpUp(intensity);
+  if (plan?.motionPattern === 'kinetic' && !restrained && !organic) intensity = bumpUp(intensity);
+  if (calm) intensity = capAt(intensity, 'subtle');
+  if (restrained) intensity = capAt(intensity, 'subtle');
+  if (organic) intensity = capAt(intensity, 'subtle');
+  if (plan?.motionPattern === 'minimal') intensity = capAt(intensity, 'subtle');
+
+  const reason = `motion:${intensity}:${mode}${restrained ? ':restrained' : organic ? ':organic' : ''}${calm ? ':calm' : ''}`;
+  return { intensity, reason, allowedMotifs: base.motifs.slice() };
+}
+
+/** True when the concept permits an ANIMATED ambient background (as opposed to a
+ *  completely still backdrop). Restrained / functional concepts return false. */
+export function motionAmbientAllowed(fit: MotionFit): boolean {
+  return fit.intensity !== 'none' && fit.allowedMotifs.some((m) => AMBIENT_MOTIFS.has(m));
+}
+
+/** The primary ambient motif for the concept (drives which backdrop animation is
+ *  used), or '' when the backdrop must stay still. */
+export function ambientMotif(fit: MotionFit): string {
+  return fit.allowedMotifs.find((m) => AMBIENT_MOTIFS.has(m)) || '';
 }
