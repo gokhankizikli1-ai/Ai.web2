@@ -1062,6 +1062,14 @@ export default function WebBuildPreviewDocument({
     event.preventDefault();
     const targetId = resolvePreviewTargetId(raw, sectionItems, ctx);
     if (!targetId) return; // no matching section → do nothing (never navigate host)
+    navigateToTarget(targetId);
+  }
+
+  // Single place that switches to the page owning a section, then scrolls to it —
+  // used by CTA links, page tabs' chips, the page index and the conversion rail.
+  // Never touches the host router or the URL. (Hoisted, so the handler above can
+  // call it.)
+  function navigateToTarget(targetId: string) {
     const behavior: ScrollBehavior = reduce ? 'auto' : 'smooth';
     if (targetId === 'top') {
       setActivePage('home');
@@ -1098,11 +1106,13 @@ export default function WebBuildPreviewDocument({
   } as CSSProperties;
 
   const banded = plan.rhythm === 'alternating' || plan.rhythm === 'editorial';
-  // Render ONLY the active page's sections (each keeps its real anchor id +
-  // scroll-margin), so nav tabs and CTA routing behave like a small multi-page site.
+  const kindOf = (rawId: string) => plan.sections.find((p) => p.id === rawId)?.kind;
+
+  // Render one section (hero / footer / content variant) — shared by Home and the
+  // focused page shell, so section ids, scroll-margin and variants stay identical.
   let contentIdx = 0;
-  const rendered = renderItems.map((s) => {
-    const kind = plan.sections.find((p) => p.id === s.id)?.kind;
+  const renderSection = (s: WebBuildSectionItem): ReactElement => {
+    const kind = kindOf(s.id);
     const sid = anchorId(s.id);
     if (kind === 'hero') {
       const Hero = HEROES[plan.heroComposition] || HEROES['split-editorial'];
@@ -1126,14 +1136,26 @@ export default function WebBuildPreviewDocument({
         {Render({ s, plan, index: i, art, ctx })}
       </section>
     );
-  });
+  };
+
+  // Focused-page composition (non-home): a real page shell — header + summary +
+  // page index + conversion rail + main content — from REAL section copy only.
+  const isHome = current.id === 'home';
+  const contentSections = renderItems.filter((s) => { const k = kindOf(s.id); return k !== 'hero' && k !== 'footer'; });
+  const footerSection = renderItems.find((s) => kindOf(s.id) === 'footer');
+  const lead = contentSections[0];
+  const subtitle = ((lead && (lead.sub || lead.purpose || lead.copyPreview)) || '').trim();
+  const brand = (brief.type || '').trim();
+  const convId = (ctx.conversionTarget || '').replace(/^#/, '');
+  const convItem = convId ? byAnchor.get(convId) : undefined;
+  const convCta = (convItem?.cta || '').trim();
 
   return (
     <div ref={rootRef} id="top" onClick={handlePreviewLinkClick} className="text-slate-200 antialiased" style={{ ...rootStyle, scrollBehavior: 'smooth' }}>
       {pages.length > 1 && (
         <header className="sticky top-0 z-50 border-b border-[color:var(--bd)] bg-black/40 backdrop-blur">
           <nav className="mx-auto flex max-w-6xl items-center justify-between gap-6 px-6 py-3" aria-label="Primary">
-            <button type="button" onClick={() => setActivePage('home')} className="text-sm font-semibold text-white">{brief.type || 'Home'}</button>
+            <button type="button" onClick={() => setActivePage('home')} className="text-sm font-semibold text-white">{brand || 'Home'}</button>
             <div className="hidden flex-wrap items-center gap-5 text-sm sm:flex">
               {pages.filter((p) => p.id !== 'home').map((p) => (
                 <button
@@ -1150,15 +1172,63 @@ export default function WebBuildPreviewDocument({
           </nav>
         </header>
       )}
-      <div key={current.id}>
-        {current.id !== 'home' && (
+
+      {isHome ? (
+        <div key={current.id}>{renderItems.map(renderSection)}</div>
+      ) : (
+        <div key={current.id}>
+          {/* Page header (real copy only — no fabricated descriptions). */}
           <div className="mx-auto max-w-6xl px-6 pt-10">
             <button type="button" onClick={() => setActivePage('home')} className="text-sm text-slate-400 transition hover:text-white">&larr; Home</button>
-            <p className="mt-3 text-xs font-medium uppercase tracking-widest" style={{ color: 'var(--acc)' }}>{current.label}</p>
+            {brand && <p className="mt-4 text-[11px] font-medium uppercase tracking-[0.25em] text-white/45">{brand}</p>}
+            <h1 className="mt-2 text-3xl font-semibold text-white sm:text-4xl" style={{ fontFamily: 'var(--hf)', letterSpacing: 'var(--tr)' }}>{current.label}</h1>
+            {subtitle && <p className="mt-3 max-w-2xl text-base leading-relaxed text-slate-300">{subtitle}</p>}
+            {contentSections.length > 1 && (
+              <div className="mt-5 flex flex-wrap gap-2">
+                {contentSections.map((s) => (
+                  <button key={s.id} type="button" onClick={() => navigateToTarget(anchorId(s.id))}
+                    className="rounded-full border border-[color:var(--bd)] bg-white/[0.03] px-3 py-1 text-xs text-slate-300 transition hover:text-white">
+                    {s.name || heading(s)}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-        )}
-        {rendered}
-      </div>
+
+          {/* Content grid: main column = sections, side column = index + action rail. */}
+          <div className="mx-auto mt-6 grid max-w-6xl gap-8 px-6 lg:grid-cols-[1fr_16rem]">
+            <div className="min-w-0 space-y-2">
+              {contentSections.map(renderSection)}
+            </div>
+            <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
+              {contentSections.length > 0 && (
+                <nav className="rounded-[var(--pr)] border border-[color:var(--bd)] bg-[var(--sf)] p-4" aria-label="On this page">
+                  <p className="text-[11px] font-medium uppercase tracking-widest text-white/45">On this page</p>
+                  <ul className="mt-3 space-y-1.5">
+                    {contentSections.map((s) => (
+                      <li key={s.id}>
+                        <button type="button" onClick={() => navigateToTarget(anchorId(s.id))} className="text-left text-sm text-slate-300 transition hover:text-white">
+                          {s.name || heading(s)}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </nav>
+              )}
+              {convItem && (
+                <div className="rounded-[var(--pr)] border p-5" style={{ borderColor: 'color-mix(in srgb, var(--acc) 40%, transparent)', background: 'color-mix(in srgb, var(--acc) 7%, transparent)' }}>
+                  <p className="text-sm font-semibold leading-snug text-white">{heading(convItem)}</p>
+                  <button type="button" onClick={() => navigateToTarget(convId)} className="mt-3 w-full rounded-lg py-2 text-center text-sm font-semibold text-white" style={{ background: 'var(--acc)' }}>
+                    {convCta || 'View'}
+                  </button>
+                </div>
+              )}
+            </aside>
+          </div>
+
+          {footerSection && renderSection(footerSection)}
+        </div>
+      )}
     </div>
   );
 }
