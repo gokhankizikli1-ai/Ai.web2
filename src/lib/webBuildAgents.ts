@@ -495,10 +495,62 @@ export interface ComponentEngineerArtifact {
   summary: string;
 }
 
-export type AgentId = 'research' | 'ui_art_director' | 'strategy' | 'layout_architect' | 'component_engineer';
+/* ── Reviewer Agent artifact — a real quality gate (Phase 5) ─────────────
+ * A structured, ADVISORY review of the finished build. It inspects the real
+ * upstream artifacts + the final section list / layout plan / generated files and
+ * records honest findings + fix instructions for a future Fixer Agent. It never
+ * rewrites the site, never fabricates claims, and never blocks Preview/All Files. */
+export type ReviewSeverity = 'info' | 'warning' | 'critical';
+export type ReviewStatus = 'passed' | 'needs-fixes' | 'failed-open';
+
+export interface ReviewerFinding {
+  id: string;
+  severity: ReviewSeverity;
+  category: string;
+  title: string;
+  /** What in the real artifacts/data triggered this (honest, no fabrication). */
+  evidence: string;
+  /** Actionable recommendation for the future Fixer Agent. */
+  recommendation: string;
+  /** Optional target (section id, file path, artifact field). */
+  target?: string;
+}
+
+export interface ReviewerChecklist {
+  conceptFit: boolean;
+  antiTemplate: boolean;
+  visualIdentity: boolean;
+  sectionArchitecture: boolean;
+  contentHonesty: boolean;
+  fakeDataGuard: boolean;
+  interactionReadiness: boolean;
+  motionFit: boolean;
+  accessibilityBasics: boolean;
+  responsiveBasics: boolean;
+  /** Only true when the agent actually had both sections AND files to compare. */
+  previewFilesParity: boolean;
+}
+
+export interface ReviewerAgentArtifact {
+  status: ReviewStatus;
+  checklist: ReviewerChecklist;
+  findings: ReviewerFinding[];
+  passed: string[];
+  risks: string[];
+  fixInstructions: string[];
+  futureFixerScope: string[];
+  usedResearchInputs?: string[];
+  usedArtDirectionInputs?: string[];
+  usedStrategyInputs?: string[];
+  usedBlueprintInputs?: string[];
+  usedComponentInputs?: string[];
+  summary: string;
+}
+
+export type AgentId = 'research' | 'ui_art_director' | 'strategy' | 'layout_architect' | 'component_engineer' | 'reviewer';
 export type AgentArtifact =
   ResearchAgentArtifact | ArtDirectionArtifact | StrategyAgentArtifact | PageBlueprint
-  | ComponentEngineerArtifact | Record<string, unknown>;
+  | ComponentEngineerArtifact | ReviewerAgentArtifact | Record<string, unknown>;
 
 export interface WebBuildAgent {
   id: AgentId;
@@ -531,6 +583,10 @@ export interface WebBuildEnforcement {
   didPassArtDirectionToLayout?: boolean;
   didPassArtDirectionToComponents?: boolean;
   didIncludeArtDirectionInFinalPayload?: boolean;
+  /* ── Reviewer gate trace (Phase 5, optional, backward compatible) ── */
+  didRunReviewer?: boolean;
+  didReviewerFindCriticalIssues?: boolean;
+  didIncludeReviewerInFinalPayload?: boolean;
   fallbackReason?: string;
 }
 
@@ -540,6 +596,8 @@ export interface WebBuildArtifacts {
   strategy?: StrategyAgentArtifact;
   blueprint?: PageBlueprint;
   componentEngineer?: ComponentEngineerArtifact;
+  /** Advisory quality-gate review (Phase 5). Optional → old builds still load. */
+  reviewer?: ReviewerAgentArtifact;
   /** The shared context the agents were run against (pipeline trace). */
   context?: WebBuildAgentContext;
   /** Enforcement diagnostics proving the agents drove the build. */
@@ -3304,6 +3362,7 @@ const AGENT_NAME: Record<AgentId, [string, string]> = {
   strategy: ['Strategy Agent', 'Strateji Ajanı'],
   layout_architect: ['Layout Architect Agent', 'Yerleşim Mimarı Ajanı'],
   component_engineer: ['Component Engineer Agent', 'Bileşen Mühendisi Ajanı'],
+  reviewer: ['Reviewer Agent', 'Gözden Geçirme Ajanı'],
 };
 
 function agentRow(id: AgentId, lang: Lang, artifact: (AgentArtifact & { summary?: string }) | undefined): WebBuildAgent {
@@ -3556,6 +3615,282 @@ export function runComponentEngineer(
   }
 }
 
+/* ── Reviewer Agent (Phase 5) — advisory quality gate ─────────────────────
+ * Inspects the REAL upstream artifacts + the final section list / layout plan /
+ * generated files and records honest findings + fix instructions for a future
+ * Fixer Agent. Pure, deterministic, never fabricates, never rewrites the site,
+ * never blocks Preview/All Files. */
+export interface ReviewerInput {
+  prompt: string;
+  brief: WebBuildBrief;
+  research?: ResearchAgentArtifact;
+  artDirection?: ArtDirectionArtifact;
+  strategy?: StrategyAgentArtifact;
+  blueprint?: PageBlueprint;
+  componentEngineer?: ComponentEngineerArtifact;
+  /** Final section list actually rendered/generated (id + name). */
+  sectionItems?: Array<{ id: string; name: string }>;
+  layoutPlan?: WebBuildLayoutPlan;
+  /** Final generated files (path + content) — enables the fake-data + parity checks. */
+  files?: Array<{ path: string; content?: string }>;
+  lang?: Lang;
+}
+
+/** Unambiguous fabricated-fact fingerprints (the exact tokens the fake-data guard
+ *  removes). Matched against generated FILE CONTENT + component summaries + section
+ *  names only — never the reviewer's own source — so no self-flagging. */
+const REVIEW_HARD_FAKE: Array<[string, RegExp]> = [
+  ['a "₺199" price', /₺\s?199/], ['a "₺120" price', /₺\s?120/],
+  ['a "4.9★" rating', /4\.9\s*★/], ['a "12k+" count', /12\s?k\s?\+/i],
+  ['a "2.4k" metric', /\b2\.4k\b/i], ['a "+37%" delta', /\+\s?37\s?%/],
+  ['a "SOC2" compliance claim', /\bsoc\s?2\b/i],
+];
+/** Ambiguous proof-like tokens — flagged as a warning to VERIFY, not asserted. */
+const REVIEW_SOFT_FAKE: Array<[string, RegExp]> = [
+  ['a "98%" stat', /\b98\s?%/], ['a "24/7" claim', /\b24\s?\/\s?7\b/],
+  ['an "uptime" claim', /\buptime\b/i], ['a "Müşteri" testimonial label', /\bmüşteri\b/i],
+];
+
+function failedOpenReviewer(lang: Lang): ReviewerAgentArtifact {
+  const checklist: ReviewerChecklist = {
+    conceptFit: false, antiTemplate: false, visualIdentity: false, sectionArchitecture: false,
+    contentHonesty: false, fakeDataGuard: false, interactionReadiness: false, motionFit: false,
+    accessibilityBasics: false, responsiveBasics: false, previewFilesParity: false,
+  };
+  return {
+    status: 'failed-open', checklist, findings: [], passed: [], risks: [],
+    fixInstructions: [], futureFixerScope: [],
+    summary: L(lang, 'Reviewer failed open; build continued without blocking Preview or All Files.',
+      'Gözden geçirme başarısız oldu; yapı Önizleme veya Tüm Dosyaları engellemeden devam etti.'),
+  };
+}
+
+/**
+ * Derive the advisory Reviewer artifact from the real, available data only. If a
+ * signal is not inspectable at this phase it is recorded as such (never a fake pass).
+ */
+export function deriveReviewerAgent(input: ReviewerInput): ReviewerAgentArtifact {
+  const lang = input.lang || 'en';
+  const findings: ReviewerFinding[] = [];
+  const passed: string[] = [];
+  let fid = 0;
+  const add = (severity: ReviewSeverity, category: string, title: string, evidence: string, recommendation: string, target?: string) => {
+    findings.push({ id: `rv-${fid += 1}`, severity, category, title, evidence, recommendation, target });
+  };
+
+  const category = (input.research?.conceptProfile?.category || input.brief.type || '').toLowerCase();
+  const hay = `${category} ${input.prompt || ''}`.toLowerCase();
+  const isStrongConcept = /archive|museum|catalog|collection|landscap|legal|law|attorney|medical|clinic|health|dental|finance|bank|insurance|restaurant|hospitality|cafe|hotel|gallery|portfolio|industrial|event|education|academy|marketplace|nonprofit|real.?estate|heritage/.test(hay);
+  const isRestrained = /archive|museum|legal|law|attorney|medical|clinic|health|dental|finance|bank|insurance|hospitality|restaurant|cafe|hotel|landscap|heritage|trust/.test(hay);
+
+  const sections = input.sectionItems || [];
+  const contentSections = sections.filter((s) => !/hero|footer/i.test(s.id));
+  const GENERIC = /^(features?|services?|about|benefits?|overview|content|section|home|final|testimonials?)$/;
+  const firstTok = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ')[0] || '';
+  const isGenericSection = (s: { id: string; name: string }) => {
+    const id = s.id.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    return GENERIC.test(id) || GENERIC.test(firstTok(s.id)) || GENERIC.test(firstTok(s.name));
+  };
+  const genericCount = contentSections.filter(isGenericSection).length;
+  const nonGenericCount = contentSections.length - genericCount;
+  const hasConversion = contentSections.some((s) => /cta|quote|contact|reserv|ticket|pricing|enroll|donation|volunteer|request|start-project|researcher-access|checkout|cart/i.test(`${s.id} ${s.name}`));
+  const hasProof = contentSections.some((s) => /proof|provenance|credential|trust|review|testimonial|curation|certif|security-proof/i.test(`${s.id} ${s.name}`));
+
+  /* 1 — Concept fit */
+  const conceptMismatch = isStrongConcept && (nonGenericCount < 2 || genericCount >= Math.max(1, nonGenericCount));
+  const conceptFit = !!category && !conceptMismatch;
+  if (conceptMismatch) {
+    add('critical', 'concept-fit', 'Concept/section mismatch',
+      `Concept "${category || 'unknown'}" reads as a strong concept but ${genericCount}/${contentSections.length} content sections are generic (About/Services/Features).`,
+      'Replace generic Services/About/Features sections with concept-specific sections for this category (e.g. archive → collection-index/document-types/provenance).',
+      'sectionItems');
+  } else if (conceptFit) passed.push(L(lang, 'Concept fit', 'Konsept uyumu'));
+
+  /* 2 — Anti-template */
+  const hasAntiTemplate = !!input.artDirection?.antiTemplateDiagnosis && !!input.artDirection?.designArchetype;
+  const genericArchetype = input.layoutPlan?.archetype === 'standard';
+  const templateRisk = isStrongConcept && (!hasAntiTemplate || genericArchetype);
+  const antiTemplate = !templateRisk;
+  if (templateRisk) {
+    add('warning', 'anti-template', 'Template-sameness risk',
+      genericArchetype ? `Layout archetype resolved to generic "standard" for a strong concept.` : 'Art Direction has no anti-template diagnosis / design archetype for a strong concept.',
+      'Ensure the Art Director sets a concept-specific designArchetype + antiTemplateDiagnosis and the Layout Architect avoids the generic SaaS archetype.',
+      'artDirection.antiTemplateDiagnosis');
+  } else if (isStrongConcept) passed.push(L(lang, 'Anti-template', 'Şablon karşıtı'));
+
+  /* 3 — Visual identity */
+  const visualIdentity = !!input.artDirection?.designArchetype
+    && !!(input.artDirection?.visualSignature || input.artDirection?.visualDifferentiators?.length || input.artDirection?.surfaceRules?.length);
+  if (!visualIdentity) {
+    add('warning', 'visual-identity', 'Weak visual identity signals',
+      'Art Direction is missing a designArchetype and/or visualSignature/visualDifferentiators/surfaceRules.',
+      'Populate designArchetype, visualSignature and at least one of visualDifferentiators/surfaceRules so the identity survives into components.',
+      'artDirection');
+  } else passed.push(L(lang, 'Visual identity', 'Görsel kimlik'));
+
+  /* 4 — Section architecture */
+  const sectionArchitecture = contentSections.length >= 4 && hasConversion;
+  if (!sectionArchitecture) {
+    add('warning', 'section-architecture', 'Thin or conversion-less architecture',
+      `${contentSections.length} content section(s); conversion section ${hasConversion ? 'present' : 'MISSING'}, proof section ${hasProof ? 'present' : 'missing'}.`,
+      'Ensure at least ~4 concept sections plus a conversion (CTA/quote/contact/reservation) section and a proof/credibility section.',
+      'sectionItems');
+  } else passed.push(L(lang, 'Section architecture', 'Bölüm mimarisi'));
+
+  /* 5 — Content honesty / fake-data guard */
+  const filesArr = input.files || [];
+  const filesProvided = filesArr.length > 0;
+  const haystack = `${filesArr.map((f) => f.content || '').join('\n')}\n${input.componentEngineer?.summary || ''}\n${sections.map((s) => s.name).join('\n')}`;
+  const hardHits = REVIEW_HARD_FAKE.filter(([, re]) => re.test(haystack)).map(([label]) => label);
+  const softHits = REVIEW_SOFT_FAKE.filter(([, re]) => re.test(haystack)).map(([label]) => label);
+  const fakeDataGuard = filesProvided ? hardHits.length === 0 && softHits.length === 0 : true;
+  const contentHonesty = fakeDataGuard;
+  if (hardHits.length) {
+    add('critical', 'fake-data', 'Fabricated proof/metric tokens present',
+      `Generated output contains ${uniq(hardHits).join(', ')}.`,
+      'Remove unsupported ratings/prices/compliance claims; use honest structural labels or real user-provided values only.',
+      'files');
+  }
+  if (softHits.length) {
+    add('warning', 'fake-data', 'Possible unsupported proof tokens (verify)',
+      `Generated output contains ${uniq(softHits).join(', ')} — verify these are honest, user-provided values, not fabricated proof.`,
+      'Confirm these tokens are real user/backend content; otherwise remove or replace with structural labels.',
+      'files');
+  }
+  if (filesProvided && !hardHits.length && !softHits.length) passed.push(L(lang, 'Fake-data guard', 'Sahte veri koruması'));
+
+  /* 6 — Interaction readiness */
+  const interactionReadiness = hasConversion && contentSections.length >= 3;
+  if (!interactionReadiness) {
+    add('warning', 'interaction', 'Weak interaction/CTA readiness',
+      hasConversion ? 'Too few content sections to carry a nav + conversion path.' : 'No conversion/CTA section detected for nav + CTA routing.',
+      'Add a clear conversion section and route the primary CTA to it (e.g. quote-cta / reservation / pricing) instead of a generic contact.',
+      'sectionItems');
+  } else passed.push(L(lang, 'Interaction readiness', 'Etkileşim hazırlığı'));
+
+  /* 7 — Motion fit */
+  const motionMood = `${input.artDirection?.motionSystem?.animationMood || ''} ${input.artDirection?.motionDirection || ''}`.toLowerCase();
+  const noisyMotion = input.layoutPlan?.motionPattern === 'kinetic' || /expressive|energetic|kinetic|bold|pulse|vibrant|lively/.test(motionMood);
+  const motionRisk = isRestrained && noisyMotion;
+  const motionFit = !motionRisk;
+  if (motionRisk) {
+    add('warning', 'motion-fit', 'Motion too expressive for a trust/restrained concept',
+      `Concept is restraint-first but motion reads as "${input.layoutPlan?.motionPattern || motionMood.trim() || 'expressive'}".`,
+      'Keep archive/legal/medical/finance/hospitality motion subtle (calm reveal / slow rule-scan); avoid dashboard/data-pulse motifs.',
+      'artDirection.motionSystem');
+  } else passed.push(L(lang, 'Motion fit', 'Hareket uyumu'));
+
+  /* 8 — Accessibility basics */
+  const accessibilityBasics = !!(input.artDirection?.accessibilityDirection?.contrastRule || input.artDirection?.accessibilityDirection?.readabilityRule);
+  if (!accessibilityBasics) {
+    add('warning', 'accessibility', 'No accessibility direction',
+      'Art Direction has no accessibilityDirection (contrast/readability/motion-safety).',
+      'Add accessibilityDirection with contrast, readability and motion-safety rules.',
+      'artDirection.accessibilityDirection');
+  } else passed.push(L(lang, 'Accessibility basics', 'Erişilebilirlik temelleri'));
+
+  /* 9 — Responsive basics */
+  const responsiveBasics = !!(input.artDirection?.responsiveDirection || input.artDirection?.responsiveDesignDirection || input.blueprint?.responsiveBehavior);
+  if (!responsiveBasics) {
+    add('warning', 'responsive', 'No responsive direction',
+      'No responsiveDirection / responsiveBehavior recorded by Art Direction or the blueprint.',
+      'Add responsive direction (mobile/desktop priority, nav + hero mobile behavior, stacking rules).',
+      'artDirection.responsiveDirection');
+  } else passed.push(L(lang, 'Responsive basics', 'Duyarlı tasarım temelleri'));
+
+  /* 10 — Preview / All Files parity (only claimed when actually inspectable) */
+  const parityInspectable = filesProvided && sections.length > 0;
+  const previewFilesParity = parityInspectable;
+  if (!parityInspectable) {
+    add('info', 'parity', 'Preview/All Files parity not inspectable at this phase',
+      'The reviewer did not receive both the final section list and the generated files, so parity was not verified.',
+      'Run the reviewer where both the resolved sections and generated files are available to verify parity.',
+      'files');
+  } else {
+    passed.push(L(lang, 'Preview/All Files parity (by construction)', 'Önizleme/Tüm Dosyalar uyumu'));
+  }
+
+  const checklist: ReviewerChecklist = {
+    conceptFit, antiTemplate, visualIdentity, sectionArchitecture, contentHonesty, fakeDataGuard,
+    interactionReadiness, motionFit, accessibilityBasics, responsiveBasics, previewFilesParity,
+  };
+
+  const criticalCount = findings.filter((f) => f.severity === 'critical').length;
+  const warningCount = findings.filter((f) => f.severity === 'warning').length;
+  const status: ReviewStatus = criticalCount > 0 ? 'needs-fixes' : 'passed';
+  const risks = findings.filter((f) => f.severity !== 'info').map((f) => f.title);
+  const fixInstructions = uniq(findings.map((f) => f.recommendation));
+  const futureFixerScope = uniq(findings.map((f) => f.category));
+  const parityNote = parityInspectable
+    ? L(lang, 'preview/files parity aligned by construction', 'önizleme/dosya uyumu yapısal olarak sağlandı')
+    : L(lang, 'preview/files parity was not inspectable at this phase', 'önizleme/dosya uyumu bu aşamada denetlenemedi');
+  const topTitles = findings.filter((f) => f.severity !== 'info').slice(0, 3).map((f) => f.title).join('; ');
+
+  let summary: string;
+  if (criticalCount > 0) {
+    summary = L(lang,
+      `Reviewer found ${findings.length} issue(s) (${criticalCount} critical): ${topTitles}. ${parityNote}. See fixInstructions for the Fixer.`,
+      `Gözden geçirme ${findings.length} sorun buldu (${criticalCount} kritik): ${topTitles}. ${parityNote}.`);
+  } else if (warningCount > 0) {
+    summary = L(lang,
+      `Reviewer passed with ${warningCount} warning(s): ${topTitles}; ${parityNote}.`,
+      `Gözden geçirme ${warningCount} uyarı ile geçti: ${topTitles}; ${parityNote}.`);
+  } else {
+    summary = L(lang,
+      `Reviewer passed: concept fit, visual identity and CTA path are coherent; ${parityNote}.`,
+      `Gözden geçirme geçti: konsept uyumu, görsel kimlik ve CTA yolu tutarlı; ${parityNote}.`);
+  }
+
+  const present = (v: unknown): boolean => Array.isArray(v) ? v.length > 0 : !!v;
+  const usedResearchInputs = [
+    input.research?.conceptProfile?.category ? 'conceptProfile.category' : '',
+    present(input.research?.conceptProfile?.proofNeeded) ? 'conceptProfile.proofNeeded' : '',
+  ].filter(Boolean);
+  const usedArtDirectionInputs = [
+    input.artDirection?.designArchetype ? 'designArchetype' : '',
+    input.artDirection?.antiTemplateDiagnosis ? 'antiTemplateDiagnosis' : '',
+    input.artDirection?.motionSystem ? 'motionSystem' : '',
+    input.artDirection?.accessibilityDirection ? 'accessibilityDirection' : '',
+    input.artDirection?.responsiveDirection ? 'responsiveDirection' : '',
+  ].filter(Boolean);
+  const usedStrategyInputs = [
+    input.strategy?.ctaHierarchy ? 'ctaHierarchy' : '',
+    present(input.strategy?.contentHierarchy) ? 'contentHierarchy' : '',
+  ].filter(Boolean);
+  const usedBlueprintInputs = [
+    present(input.blueprint?.sections) ? 'sections' : '',
+    input.blueprint?.architecture ? 'architecture' : '',
+  ].filter(Boolean);
+  const usedComponentInputs = [
+    present(input.componentEngineer?.componentPlan) ? 'componentPlan' : '',
+    present(input.componentEngineer?.fileManifest) ? 'fileManifest' : '',
+  ].filter(Boolean);
+
+  return {
+    status, checklist, findings, passed, risks, fixInstructions, futureFixerScope,
+    usedResearchInputs, usedArtDirectionInputs, usedStrategyInputs, usedBlueprintInputs, usedComponentInputs,
+    summary,
+  };
+}
+
+/**
+ * Run the Reviewer Agent. Fully guarded: on any error it fails OPEN — a reviewer
+ * row with status 'failed' + a safe 'failed-open' artifact — and the build
+ * continues. Never required for Preview / All Files.
+ */
+export function runReviewer(input: ReviewerInput): { agent: WebBuildAgent; artifact: ReviewerAgentArtifact } {
+  const lang = input.lang || 'en';
+  const name = L(lang, 'Reviewer Agent', 'Gözden Geçirme Ajanı');
+  const activity = L(lang, 'Reviewing concept fit, fake-data risk, CTA readiness', 'Konsept uyumu, sahte veri riski ve CTA hazırlığı inceleniyor');
+  try {
+    const artifact = deriveReviewerAgent(input);
+    return { agent: { id: 'reviewer', name, status: 'done', summary: artifact.summary, currentActivity: activity, artifact }, artifact };
+  } catch {
+    const artifact = failedOpenReviewer(lang);
+    return { agent: { id: 'reviewer', name, status: 'failed', summary: artifact.summary, currentActivity: activity, artifact }, artifact };
+  }
+}
+
 /* ── Chat agent WORKSTREAM (work-log) model ────────────────────────────────
  * A single, normalized log of the real agent pipeline for a finished build step:
  * WHAT each agent did, WHICH fields it passed to the next agent, and (for the
@@ -3608,7 +3943,7 @@ function joinList(lang: Lang, items: string[]): string {
 const nonEmpty = (v: unknown): boolean => Array.isArray(v) ? v.length > 0 : !!v;
 
 /** Canonical pipeline order + who each agent hands off to. */
-const WORKLOG_ORDER: AgentId[] = ['research', 'ui_art_director', 'strategy', 'layout_architect', 'component_engineer'];
+const WORKLOG_ORDER: AgentId[] = ['research', 'ui_art_director', 'strategy', 'layout_architect', 'component_engineer', 'reviewer'];
 const WORKLOG_NEXT: Partial<Record<AgentId, AgentId>> = {
   research: 'ui_art_director',
   ui_art_director: 'strategy',
@@ -3779,6 +4114,16 @@ function didMessage(agent: WebBuildAgent, lang: Lang): { message: string; type: 
           message: comps > 0
             ? L(lang, `planned ${comps} components`, `${comps} bileşen planladı`)
             : L(lang, 'planned components', 'bileşenleri planladı'),
+          type: 'completed',
+        };
+      }
+      case 'reviewer': {
+        const rv = agent.artifact as ReviewerAgentArtifact;
+        const n = Array.isArray(rv.findings) ? rv.findings.length : 0;
+        return {
+          message: rv.status === 'needs-fixes'
+            ? L(lang, `flagged ${n} quality issue${n === 1 ? '' : 's'} for the Fixer`, `Düzeltici için ${n} kalite sorunu işaretledi`)
+            : L(lang, 'reviewed quality — no blocking issues', 'kaliteyi inceledi — engelleyici sorun yok'),
           type: 'completed',
         };
       }

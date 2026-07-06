@@ -10,7 +10,7 @@ import { resolveBuildFiles, parseSectionCopy, synthesizeFromCopies, type SynthFi
 import { inferWebsiteBrief, fallbackSectionItems, checkQuality } from '@/lib/webBuildBrief';
 import { deriveLayoutPlan, type WebBuildLayoutPlan } from '@/lib/webBuildLayoutPlan';
 import {
-  runUpstreamAgents, runLayoutArchitect, runComponentEngineer, WEB_BUILD_AGENTS_ENABLED,
+  runUpstreamAgents, runLayoutArchitect, runComponentEngineer, runReviewer, WEB_BUILD_AGENTS_ENABLED,
   type WebBuildAgent, type WebBuildArtifacts, type WebBuildEnforcement,
 } from '@/lib/webBuildAgents';
 import { deriveAgentSectionArchitecture } from '@/lib/webBuildSectionArchitecture';
@@ -413,6 +413,22 @@ export function buildWebBuildPayload(
       agents = [...agents, ce.agent];
       artifacts = { ...(artifacts || {}), componentEngineer: ce.artifact };
 
+      // REVIEWER AGENT — an ADVISORY quality gate over the FINAL section list,
+      // layout plan and generated files + upstream artifacts. It records honest
+      // findings + fix instructions for a future Fixer Agent; it never rewrites the
+      // site and fails OPEN, so it can never block Preview / All Files.
+      const rv = runReviewer({
+        prompt, brief: artBrief,
+        research: artifacts?.research, artDirection: artifacts?.artDirection, strategy: artifacts?.strategy,
+        blueprint: artifacts?.blueprint, componentEngineer: ce.artifact,
+        sectionItems: sectionItems.map((s) => ({ id: s.id, name: s.name })),
+        layoutPlan,
+        files: files.map((f) => ({ path: f.path, content: f.content })),
+        lang: effLang,
+      });
+      agents = [...agents, rv.agent];
+      artifacts = { ...(artifacts || {}), reviewer: rv.artifact };
+
       // ENFORCEMENT — prove the agents drove the build (Part 6). The layout plan is
       // derived from the enriched (agent-steered) brief, so the archetype following
       // the agent decision is verifiable; the generated files come from that same
@@ -432,6 +448,10 @@ export function buildWebBuildPayload(
         didPassArtDirectionToLayout: !!artifacts?.blueprint?.usedArtDirectionInputs?.length,
         didPassArtDirectionToComponents: !!artifacts?.componentEngineer?.usedArtDirectionInputs?.length,
         didIncludeArtDirectionInFinalPayload: !!artifacts?.artDirection,
+        // Reviewer gate trace (Phase 5) — real artifact presence only.
+        didRunReviewer: !!artifacts?.reviewer,
+        didReviewerFindCriticalIssues: (artifacts?.reviewer?.findings || []).some((f) => f.severity === 'critical'),
+        didIncludeReviewerInFinalPayload: !!artifacts?.reviewer,
         fallbackReason: (artifacts?.context?.fallbacks?.length
           ? `agents degraded: ${artifacts.context.fallbacks.join(', ')}`
           : undefined),
