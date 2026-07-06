@@ -1,4 +1,4 @@
-import { useRef, type ReactElement, type CSSProperties, type MouseEvent } from 'react';
+import { useMemo, useRef, useState, type ReactElement, type CSSProperties, type MouseEvent } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { designTokensForBrief } from '@/lib/webBuildBrief';
 import {
@@ -138,6 +138,46 @@ function resolvePreviewTargetId(href: string, sectionItems: S[], ctx: Interactio
   const conversion = strip(ctx.conversionTarget);
   if (conversion && ids.includes(conversion)) return conversion;
   return null;
+}
+
+/* ── Preview page model (router-free, host-URL never changes) ────────────
+ * Mirrors the generated App's page illusion but stays entirely local to the
+ * preview (no import from generated code): Home + one focused page per nav
+ * section. Ids/labels come from the real sections, so no fake/empty pages. */
+interface PreviewPage { id: string; label: string; sectionIds: string[] }
+
+function buildPreviewPages(
+  sectionItems: S[], plan: WebBuildLayoutPlan, nav: Array<{ id: string; name: string }>, ctx: InteractionContext,
+): PreviewPage[] {
+  const kindOf = (rawId: string) => plan.sections.find((p) => p.id === rawId)?.kind;
+  const meta = sectionItems.map((s) => ({ id: anchorId(s.id), kind: kindOf(s.id) }));
+  const heroM = meta.find((m) => m.kind === 'hero');
+  const footerM = meta.find((m) => m.kind === 'footer');
+  const content = meta.filter((m) => m.kind !== 'hero' && m.kind !== 'footer');
+  const exists = (id: string) => meta.some((m) => m.id === id);
+  const conv = (ctx.conversionTarget || '').replace(/^#/, '');
+  const push = (arr: string[], v?: string) => { if (v && exists(v) && !arr.includes(v)) arr.push(v); };
+
+  // Home: hero + first 2–3 content sections + conversion section + footer.
+  const homeIds: string[] = [];
+  push(homeIds, heroM?.id);
+  content.slice(0, 3).forEach((m) => push(homeIds, m.id));
+  push(homeIds, conv);
+  push(homeIds, footerM?.id);
+
+  // One focused page per nav section: leader + up-to-2 adjacent content + footer.
+  const pages: PreviewPage[] = [{ id: 'home', label: 'Home', sectionIds: homeIds }];
+  nav.forEach((n) => {
+    const lid = anchorId(n.id);
+    const idx = content.findIndex((m) => m.id === lid);
+    if (idx < 0) return;
+    const group = content.slice(idx, idx + 3).map((m) => m.id);
+    if (footerM) group.push(footerM.id);
+    if (group.some((id) => content.some((m) => m.id === id))) {
+      pages.push({ id: lid, label: n.name || lid, sectionIds: group });
+    }
+  });
+  return pages;
 }
 
 /* ── Concept-specific internal card detail ───────────────────────────────
@@ -998,31 +1038,48 @@ export default function WebBuildPreviewDocument({
   const vt = visualSystemTokens(plan.visualSystem);
   const reduce = useReducedMotion();
   const rootRef = useRef<HTMLDivElement>(null);
+  const [activePage, setActivePage] = useState('home');
+  // Router-free page model + the sections the ACTIVE page renders (never empty).
+  const pages = useMemo(() => buildPreviewPages(sectionItems, plan, nav, ctx), [sectionItems, plan, nav, ctx]);
+  const byAnchor = useMemo(() => {
+    const m = new Map<string, WebBuildSectionItem>();
+    sectionItems.forEach((s) => m.set(anchorId(s.id), s));
+    return m;
+  }, [sectionItems]);
+  const current = pages.find((p) => p.id === activePage) || pages[0];
+  const activeItems = current.sectionIds.map((id) => byAnchor.get(id)).filter(Boolean) as WebBuildSectionItem[];
+  const renderItems = activeItems.length ? activeItems : (pages[0].sectionIds.map((id) => byAnchor.get(id)).filter(Boolean) as WebBuildSectionItem[]);
 
-  // Host-app isolation: the preview lives inside the Korvix app, so every internal
-  // link click is intercepted here and resolved to a preview section scroll. It
-  // NEVER reaches the host router — only genuine external URLs pass through.
+  // Host-app isolation + page routing: an internal link click NEVER reaches the
+  // host router or changes the URL. A resolved target switches to the page that
+  // owns it, then scrolls to it once that page has rendered. Externals pass through.
   function handlePreviewLinkClick(event: MouseEvent<HTMLDivElement>) {
     const link = (event.target as HTMLElement).closest('a');
     if (!link) return;
     const raw = link.getAttribute('href') || '';
     if (!raw) return;
-    // Let real external destinations behave normally; isolate everything else.
-    if (/^(https?:|mailto:|tel:)/i.test(raw)) return;
+    if (/^(https?:|mailto:|tel:)/i.test(raw)) return; // real external links pass through
     event.preventDefault();
     const targetId = resolvePreviewTargetId(raw, sectionItems, ctx);
     if (!targetId) return; // no matching section → do nothing (never navigate host)
-    const root = rootRef.current;
+    const behavior: ScrollBehavior = reduce ? 'auto' : 'smooth';
     if (targetId === 'top') {
-      root?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+      setActivePage('home');
+      window.setTimeout(() => rootRef.current?.scrollIntoView({ behavior, block: 'start' }), 0);
       return;
     }
-    let el: HTMLElement | null = null;
-    if (root && typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
-      try { el = root.querySelector(`#${CSS.escape(targetId)}`); } catch { el = null; }
-    }
-    if (!el) el = document.getElementById(targetId);
-    el?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+    const owner = pages.find((p) => p.sectionIds.includes(targetId));
+    setActivePage(owner ? owner.id : 'home');
+    // Scroll after the (possibly new) active page has committed the target section.
+    window.setTimeout(() => {
+      const root = rootRef.current;
+      let el: HTMLElement | null = null;
+      if (root && typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+        try { el = root.querySelector(`#${CSS.escape(targetId)}`); } catch { el = null; }
+      }
+      if (!el) el = document.getElementById(targetId);
+      el?.scrollIntoView({ behavior, block: 'start' });
+    }, 0);
   }
 
   const rootStyle = {
@@ -1041,46 +1098,67 @@ export default function WebBuildPreviewDocument({
   } as CSSProperties;
 
   const banded = plan.rhythm === 'alternating' || plan.rhythm === 'editorial';
+  // Render ONLY the active page's sections (each keeps its real anchor id +
+  // scroll-margin), so nav tabs and CTA routing behave like a small multi-page site.
   let contentIdx = 0;
+  const rendered = renderItems.map((s) => {
+    const kind = plan.sections.find((p) => p.id === s.id)?.kind;
+    const sid = anchorId(s.id);
+    if (kind === 'hero') {
+      const Hero = HEROES[plan.heroComposition] || HEROES['split-editorial'];
+      return (
+        <div key={s.id} id={sid} style={{ scrollMarginTop: 72 }}>
+          <Hero s={s} brief={brief} plan={plan} ctx={ctx} />
+          {/* Concept-specific proof rail, directly under the hero. */}
+          <div className="relative z-10 mx-auto max-w-6xl px-6 pb-6">
+            <HeroProof brief={brief} />
+          </div>
+        </div>
+      );
+    }
+    if (kind === 'footer') return <Footer key={s.id} s={s} />;
+    const variant = variantOf(s.id);
+    const Render = VARIANTS[variant] || VARIANTS['feature-grid'];
+    const i = contentIdx++;
+    const band = banded && i % 2 === 1;
+    return (
+      <section key={s.id} id={sid} style={{ scrollMarginTop: 72, ...(band ? { background: 'rgba(255,255,255,0.015)' } : {}) }} className={`relative ${PAD[plan.contentDensity]}`}>
+        {Render({ s, plan, index: i, art, ctx })}
+      </section>
+    );
+  });
 
   return (
     <div ref={rootRef} id="top" onClick={handlePreviewLinkClick} className="text-slate-200 antialiased" style={{ ...rootStyle, scrollBehavior: 'smooth' }}>
-      {nav.length > 0 && (
+      {pages.length > 1 && (
         <header className="sticky top-0 z-50 border-b border-[color:var(--bd)] bg-black/40 backdrop-blur">
           <nav className="mx-auto flex max-w-6xl items-center justify-between gap-6 px-6 py-3" aria-label="Primary">
-            <a href="#top" className="text-sm font-semibold text-white">{brief.type || 'Home'}</a>
+            <button type="button" onClick={() => setActivePage('home')} className="text-sm font-semibold text-white">{brief.type || 'Home'}</button>
             <div className="hidden flex-wrap items-center gap-5 text-sm sm:flex">
-              {nav.map((n) => <a key={n.id} href={n.href} className="text-slate-300 transition hover:text-white">{n.name}</a>)}
+              {pages.filter((p) => p.id !== 'home').map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => setActivePage(p.id)}
+                  aria-current={activePage === p.id ? 'page' : undefined}
+                  className={activePage === p.id ? 'font-medium text-white' : 'text-slate-300 transition hover:text-white'}
+                >
+                  {p.label}
+                </button>
+              ))}
             </div>
           </nav>
         </header>
       )}
-      {sectionItems.map((s) => {
-        const kind = plan.sections.find((p) => p.id === s.id)?.kind;
-        const sid = anchorId(s.id);
-        if (kind === 'hero') {
-          const Hero = HEROES[plan.heroComposition] || HEROES['split-editorial'];
-          return (
-            <div key={s.id} id={sid} style={{ scrollMarginTop: 72 }}>
-              <Hero s={s} brief={brief} plan={plan} ctx={ctx} />
-              {/* Concept-specific proof rail, directly under the hero. */}
-              <div className="relative z-10 mx-auto max-w-6xl px-6 pb-6">
-                <HeroProof brief={brief} />
-              </div>
-            </div>
-          );
-        }
-        if (kind === 'footer') return <Footer key={s.id} s={s} />;
-        const variant = variantOf(s.id);
-        const Render = VARIANTS[variant] || VARIANTS['feature-grid'];
-        const i = contentIdx++;
-        const band = banded && i % 2 === 1;
-        return (
-          <section key={s.id} id={sid} style={{ scrollMarginTop: 72, ...(band ? { background: 'rgba(255,255,255,0.015)' } : {}) }} className={`relative ${PAD[plan.contentDensity]}`}>
-            {Render({ s, plan, index: i, art, ctx })}
-          </section>
-        );
-      })}
+      <div key={current.id}>
+        {current.id !== 'home' && (
+          <div className="mx-auto max-w-6xl px-6 pt-10">
+            <button type="button" onClick={() => setActivePage('home')} className="text-sm text-slate-400 transition hover:text-white">&larr; Home</button>
+            <p className="mt-3 text-xs font-medium uppercase tracking-widest" style={{ color: 'var(--acc)' }}>{current.label}</p>
+          </div>
+        )}
+        {rendered}
+      </div>
     </div>
   );
 }
