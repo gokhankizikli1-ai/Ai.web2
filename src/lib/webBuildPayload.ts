@@ -392,6 +392,14 @@ export function buildWebBuildPayload(
         didUseLayoutBlueprint: !!artifacts?.blueprint,
         didUseComponentPlan: !!artifacts?.componentEngineer,
         didPlanFollowAgents: !!artBrief.agentArchetype && layoutPlan.archetype === artBrief.agentArchetype,
+        // UI / Art Director handoff trace — verifiable from real artifact metadata
+        // (each downstream artifact records the art-direction inputs it consumed).
+        didUseResearchInputs: !!artifacts?.artDirection?.usedResearchInputs?.length,
+        didCreateArtDirection: !!artifacts?.artDirection && artifacts.artDirection.status !== 'failed',
+        didPassArtDirectionToStrategy: !!artifacts?.strategy?.usedArtDirectionInputs?.length,
+        didPassArtDirectionToLayout: !!artifacts?.blueprint?.usedArtDirectionInputs?.length,
+        didPassArtDirectionToComponents: !!artifacts?.componentEngineer?.usedArtDirectionInputs?.length,
+        didIncludeArtDirectionInFinalPayload: !!artifacts?.artDirection,
         fallbackReason: (artifacts?.context?.fallbacks?.length
           ? `agents degraded: ${artifacts.context.fallbacks.join(', ')}`
           : undefined),

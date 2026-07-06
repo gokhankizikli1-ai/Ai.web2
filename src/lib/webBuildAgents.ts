@@ -179,9 +179,127 @@ export interface ArtDirectionColorSystem {
    *  instead of an ad-hoc red/green. Optional for backward compatibility. */
   dangerOrWarning?: string;
   successOrTrust?: string;
+  /* ── Structured palette (art-director vocabulary, all optional) ──────── */
+  paletteName?: string;
+  /** Primary/secondary alias the accents so downstream reads a clear palette. */
+  primary?: string;
+  secondary?: string;
+  text?: string;
+  mutedText?: string;
+  gradient?: string;
+  colorPsychologyReasoning?: string;
+  avoidColors?: string[];
 }
 
 export type ArtDensity = 'minimal' | 'balanced' | 'rich' | 'immersive';
+
+/* ── UI / Art Director — structured direction sub-artifacts (all optional so old
+ *  saved builds still load; new builds populate as much as possible). ── */
+export interface DesignArchetype {
+  name: string;
+  key: string;
+  reason: string;
+  avoidGenericSaas: boolean;
+  archetypeTags: string[];
+}
+export interface ArtResearchSignalsUsed {
+  targetUser: boolean;
+  recommendedPages: boolean;
+  recommendedComponents: boolean;
+  visualStyleRecommendation: boolean;
+  colorPsychology: boolean;
+  uxPriorities: boolean;
+  trustSignals: boolean;
+  conversionPatterns: boolean;
+}
+export interface VisualMoodProfile {
+  primaryMood: string;
+  secondaryMood: string;
+  emotionalGoal: string;
+  brandPersonality: string[];
+  userPerceptionGoal: string;
+}
+export type ArtTypeScale = 'compact' | 'balanced' | 'editorial' | 'dramatic';
+export interface TypographyProfile {
+  headingStyle: string;
+  bodyStyle: string;
+  fontPairingIntent: string;
+  scale: ArtTypeScale;
+  weightStrategy: string;
+  letterSpacing: string;
+  reason: string;
+}
+export type ArtLayoutDensity = 'airy' | 'balanced' | 'dense' | 'editorial' | 'immersive';
+export interface LayoutFeelProfile {
+  density: ArtLayoutDensity;
+  spacingRhythm: string;
+  containerStyle: string;
+  gridStyle: string;
+  sectionSeparators: string;
+  aboveFoldPriority: string;
+}
+export interface HeroTreatment {
+  heroType: string;
+  composition: string;
+  visualAnchor: string;
+  headlineStyle: string;
+  ctaStyle: string;
+  trustPlacement: string;
+  backgroundTreatment: string;
+  reason: string;
+}
+export interface ComponentStyleRules {
+  cards: string;
+  buttons: string;
+  forms: string;
+  navigation: string;
+  badges: string;
+  gallery: string;
+  testimonials: string;
+  pricingOrCatalog: string;
+  trustBlocks: string;
+}
+export interface ImagerySystem {
+  imageType: string;
+  photographyStyle: string;
+  illustrationStyle: string;
+  mockupStyle: string;
+  textureOrPattern: string;
+  emptyStateStyle: string;
+  avoidImagery: string[];
+}
+export interface IconographySystem {
+  style: string;
+  stroke: string;
+  shapeLanguage: string;
+  usageRules: string;
+}
+export interface MotionSystem {
+  animationMood: string;
+  microInteractions: string[];
+  scrollFeel: string;
+  avoidMotion: string[];
+}
+export interface ResponsiveDirection {
+  mobilePriority: string;
+  desktopPriority: string;
+  navigationBehavior: string;
+  heroMobileBehavior: string;
+  componentStackingRules: string;
+}
+export interface AccessibilityDirection {
+  contrastRule: string;
+  readabilityRule: string;
+  touchTargetRule: string;
+  motionSafetyRule: string;
+}
+export interface DownstreamInstructions {
+  strategyAgent: string[];
+  layoutArchitectAgent: string[];
+  componentEngineerAgent: string[];
+  previewRenderer: string[];
+  fileSynthesis: string[];
+}
 
 export interface ArtDirectionArtifact {
   visualMood: string;
@@ -212,6 +330,25 @@ export interface ArtDirectionArtifact {
   /** Which Research Agent inputs this art direction consumed (pipeline trace). */
   usedResearchInputs?: string[];
   summary: string;
+  /* ── Strong, structured art direction (all optional, backward compatible) ── */
+  status?: 'completed' | 'fallback' | 'failed';
+  researchSignalsUsed?: ArtResearchSignalsUsed;
+  designArchetype?: DesignArchetype;
+  visualMoodProfile?: VisualMoodProfile;
+  typographyProfile?: TypographyProfile;
+  layoutFeel?: LayoutFeelProfile;
+  heroTreatment?: HeroTreatment;
+  componentStyleRules?: ComponentStyleRules;
+  imagerySystem?: ImagerySystem;
+  iconographySystem?: IconographySystem;
+  motionSystem?: MotionSystem;
+  responsiveDirection?: ResponsiveDirection;
+  accessibilityDirection?: AccessibilityDirection;
+  downstreamInstructions?: DownstreamInstructions;
+  mustEmphasize?: string[];
+  mustAvoid?: string[];
+  handoffSummary?: string;
+  fallbackReason?: string;
 }
 
 /* ── Strategy Agent artifact (Phase 2) ────────────────────────────────── */
@@ -326,6 +463,17 @@ export interface WebBuildEnforcement {
   didUseComponentPlan: boolean;
   /** True when the resolved layout plan followed the agent-decided archetype. */
   didPlanFollowAgents: boolean;
+  /* ── UI / Art Director handoff trace (optional, backward compatible) ──
+   *  Verifiable from real artifact metadata: whether the art direction consumed
+   *  research, was created, and was actually consumed by each downstream agent
+   *  (recorded via each downstream artifact's usedArtDirectionInputs) + the final
+   *  payload. */
+  didUseResearchInputs?: boolean;
+  didCreateArtDirection?: boolean;
+  didPassArtDirectionToStrategy?: boolean;
+  didPassArtDirectionToLayout?: boolean;
+  didPassArtDirectionToComponents?: boolean;
+  didIncludeArtDirectionInFinalPayload?: boolean;
   fallbackReason?: string;
 }
 
@@ -1076,14 +1224,20 @@ function psychCategory(cp: ColorPsychology | undefined): string | undefined {
 }
 
 /**
- * Resolve the Art Director color system. When the MODEL gave an explicit color
- * direction we honor the strategy-driven tokens (never overriding the model).
- * Otherwise the Research Agent's color psychology drives a coherent hex palette
- * (background/accent/accent2 + semantic success/danger) so the colors match the
- * audience psychology instead of a generic default. Falls back to tokens.
+ * Resolve the Art Director color system with a clear ORDER OF TRUTH so websites
+ * stop looking the same:
+ *   1. the MODEL's explicit color direction (strategy-driven tokens) — always wins
+ *   2. the Research Agent's color psychology (audience-psychology palette)
+ *   3. the chosen DESIGN ARCHETYPE's distinct palette (anti-sameness) — used when
+ *      research gave no clear psychology, so a fresh/fallback build gets a coherent
+ *      identity palette instead of the generic default SaaS indigo
+ *   4. the plain design tokens (last resort)
  */
 function resolveArtColorSystem(
-  cp: ColorPsychology | undefined, tokens: DesignTokens, modelChoseColor: boolean,
+  cp: ColorPsychology | undefined,
+  tokens: DesignTokens,
+  modelChoseColor: boolean,
+  archetype: DesignArchetypeSpec,
 ): ArtDirectionColorSystem {
   const base: ArtDirectionColorSystem = {
     background: tokens.bg,
@@ -1096,17 +1250,374 @@ function resolveArtColorSystem(
     successOrTrust: '#22c55e',
     dangerOrWarning: '#f59e0b',
   };
-  const cat = modelChoseColor ? undefined : psychCategory(cp);
+  // 1) Model color → keep tokens (the model's own direction already shaped them).
+  if (modelChoseColor) return withPaletteMeta(base, archetype);
+  // 2) Research color psychology → coherent psychology palette.
+  const cat = psychCategory(cp);
   const p = cat ? PSYCH_PALETTES[cat] : undefined;
-  if (!p) return base;
-  return {
+  if (p) {
+    return withPaletteMeta({
+      ...base,
+      background: p.bg,
+      accent: p.accent,
+      accent2: p.accent2,
+      successOrTrust: p.success,
+      dangerOrWarning: p.danger,
+    }, archetype);
+  }
+  // 3) Design archetype palette → a DISTINCT identity, never the generic default.
+  const ap = archetype.palette;
+  return withPaletteMeta({
     ...base,
-    background: p.bg,
-    accent: p.accent,
-    accent2: p.accent2,
-    successOrTrust: p.success,
-    dangerOrWarning: p.danger,
+    background: ap.bg,
+    foreground: ap.text,
+    accent: ap.primary,
+    accent2: ap.secondary,
+    muted: ap.mutedText,
+    surface: ap.surface,
+    border: ap.border,
+    successOrTrust: ap.success,
+    dangerOrWarning: ap.danger,
+  }, archetype);
+}
+
+/** Attach the structured palette metadata (paletteName / primary / secondary /
+ *  text / mutedText / gradient) so the colorSystem always exposes the richer
+ *  art-director vocabulary alongside the legacy fields. */
+function withPaletteMeta(cs: ArtDirectionColorSystem, archetype: DesignArchetypeSpec): ArtDirectionColorSystem {
+  return {
+    ...cs,
+    paletteName: archetype.palette.name,
+    primary: cs.accent,
+    secondary: cs.accent2,
+    text: cs.foreground,
+    mutedText: cs.muted,
+    gradient: `linear-gradient(135deg, ${cs.accent} 0%, ${cs.accent2} 100%)`,
   };
+}
+
+/* ── DESIGN ARCHETYPE ENGINE (anti-sameness core) ─────────────────────────
+ * A senior art director does not paint every site the same "modern premium SaaS
+ * dark-blue gradient". It first picks a DESIGN ARCHETYPE from the concept +
+ * research signals, and that archetype drives a DISTINCT palette, typography,
+ * density, hero treatment, component rules and imagery. These are general design
+ * archetypes (NOT per-prompt templates and NOT hardcoded example outputs) — the
+ * selection is signal-driven, so two different ideas resolve to different
+ * identities. Every archetype is a coherent premium dark-mode system. */
+interface ArchetypePalette {
+  name: string;
+  bg: string; primary: string; secondary: string;
+  surface: string; text: string; mutedText: string; border: string;
+  success: string; danger: string;
+}
+interface DesignArchetypeSpec {
+  key: string;
+  name: [string, string];
+  reason: [string, string];
+  tags: string[];
+  avoidGenericSaas: boolean;
+  serif: boolean;
+  scale: ArtTypeScale;
+  density: ArtDensity;
+  layoutDensity: ArtLayoutDensity;
+  palette: ArchetypePalette;
+  /** Short English design descriptors the structured direction interpolates. */
+  heroType: string;
+  heroComposition: string;
+  imageType: string;
+  cardStyle: string;
+  motionMood: string;
+}
+
+/** Fill the shared palette defaults so each archetype only declares its identity. */
+function pal(name: string, bg: string, primary: string, secondary: string, opts?: Partial<ArchetypePalette>): ArchetypePalette {
+  return {
+    name,
+    bg,
+    primary,
+    secondary,
+    surface: opts?.surface || 'rgba(255,255,255,0.04)',
+    text: opts?.text || '#f1f5f9',
+    mutedText: opts?.mutedText || '#94a3b8',
+    border: opts?.border || 'rgba(255,255,255,0.09)',
+    success: opts?.success || '#34d399',
+    danger: opts?.danger || '#f43f5e',
+  };
+}
+
+const DESIGN_ARCHETYPES: Record<string, DesignArchetypeSpec> = {
+  'editorial-archive': {
+    key: 'editorial-archive', name: ['Editorial archive / museum catalog', 'Editoryal arşiv / müze kataloğu'],
+    reason: ['A content-forward concept reads best as a curated catalog, not a SaaS landing.', 'İçerik öncelikli konsept SaaS iniş sayfası değil, küratörlü katalog olarak okunur.'],
+    tags: ['editorial', 'archival', 'catalog', 'typographic'], avoidGenericSaas: true,
+    serif: true, scale: 'editorial', density: 'immersive', layoutDensity: 'editorial',
+    palette: pal('Warm paper & ink', '#0f0d0a', '#d6c3a3', '#8a7a5c', { text: '#f4efe6', mutedText: '#a99f8c', border: 'rgba(214,195,163,0.14)' }),
+    heroType: 'editorial masthead', heroComposition: 'large serif masthead over a plate grid', imageType: 'archival plates / catalog imagery',
+    cardStyle: 'framed catalog plates with captions', motionMood: 'slow, print-like reveals',
+  },
+  'luxury-boutique': {
+    key: 'luxury-boutique', name: ['Luxury boutique / heritage commerce', 'Lüks butik / miras ticaret'],
+    reason: ['A premium audience expects restraint, space and metallic warmth — not bright SaaS accents.', 'Premium kitle abartısızlık, boşluk ve metalik sıcaklık bekler — parlak SaaS vurguları değil.'],
+    tags: ['luxury', 'heritage', 'refined', 'editorial'], avoidGenericSaas: true,
+    serif: true, scale: 'dramatic', density: 'immersive', layoutDensity: 'immersive',
+    palette: pal('Charcoal & champagne', '#0c0a08', '#c9a24b', '#8b6b3d', { text: '#f4efe6', mutedText: '#b0a48c', success: '#9caf88', danger: '#b4534b' }),
+    heroType: 'cinematic full-bleed', heroComposition: 'full-bleed hero, product/space as the anchor, minimal copy', imageType: 'editorial, high-contrast photography',
+    cardStyle: 'borderless, generous whitespace, hairline dividers', motionMood: 'unhurried, elegant fades',
+  },
+  'high-conversion-saas': {
+    key: 'high-conversion-saas', name: ['High-conversion SaaS', 'Yüksek dönüşümlü SaaS'],
+    reason: ['A product with a signup/trial goal needs a crisp, confident conversion layout.', 'Kayıt/deneme hedefli ürün net, kendinden emin bir dönüşüm düzeni ister.'],
+    tags: ['product', 'conversion', 'modern'], avoidGenericSaas: false,
+    serif: false, scale: 'balanced', density: 'rich', layoutDensity: 'balanced',
+    palette: pal('Ink & electric blue', '#070b16', '#4f7cff', '#22d3ee'),
+    heroType: 'product hero', heroComposition: 'split hero: promise + product/dashboard mockup', imageType: 'composed product/dashboard mockups',
+    cardStyle: 'soft glass cards with a single accent', motionMood: 'crisp, confident micro-motion',
+  },
+  'ai-tool': {
+    key: 'ai-tool', name: ['AI tool / productivity', 'AI aracı / üretkenlik'],
+    reason: ['An AI/automation product signals intelligence with cool signal-color accents and depth.', 'AI/otomasyon ürünü, serin sinyal renkleri ve derinlikle zekâ hissi verir.'],
+    tags: ['ai', 'productivity', 'technical', 'modern'], avoidGenericSaas: true,
+    serif: false, scale: 'balanced', density: 'rich', layoutDensity: 'balanced',
+    palette: pal('Deep space & signal cyan', '#060810', '#22d3ee', '#818cf8'),
+    heroType: 'interactive product hero', heroComposition: 'prompt/response or flow module beside the promise', imageType: 'live UI / flow diagrams',
+    cardStyle: 'glass cards with glow edges', motionMood: 'responsive, intelligent micro-interactions',
+  },
+  'fintech-trust': {
+    key: 'fintech-trust', name: ['Fintech trust dashboard', 'Fintech güven paneli'],
+    reason: ['Money concepts must feel secure and precise — calm authority, dense proof, no hype.', 'Para konseptleri güvenli ve hassas hissetmeli — sakin otorite, yoğun kanıt, abartı yok.'],
+    tags: ['fintech', 'trust', 'data', 'precise'], avoidGenericSaas: true,
+    serif: false, scale: 'balanced', density: 'rich', layoutDensity: 'dense',
+    palette: pal('Navy & gold trust', '#060c18', '#2f6fed', '#c9a227', { success: '#2ea36b', danger: '#d1495b' }),
+    heroType: 'data-confidence hero', heroComposition: 'headline + live metric/chart module, proof band under', imageType: 'charts, metrics, security cues',
+    cardStyle: 'sharp, low-radius data cards', motionMood: 'minimal, precise number reveals',
+  },
+  'wellness-retreat': {
+    key: 'wellness-retreat', name: ['Wellness retreat / calm organic', 'Wellness inziva / sakin organik'],
+    reason: ['A wellness concept needs calm, air and soft organic color — never clinical or loud.', 'Wellness konsepti dinginlik, hava ve yumuşak organik renk ister — asla klinik ya da gürültülü.'],
+    tags: ['wellness', 'calm', 'organic', 'soft'], avoidGenericSaas: true,
+    serif: false, scale: 'editorial', density: 'minimal', layoutDensity: 'airy',
+    palette: pal('Soft teal & sand', '#08130f', '#3ec9a7', '#9fe0c0', { text: '#eef7f2', mutedText: '#9fb6ab', danger: '#fb923c' }),
+    heroType: 'calm atmospheric hero', heroComposition: 'airy hero, one soft image/gradient, breathing space', imageType: 'soft organic photography / gentle gradients',
+    cardStyle: 'rounded, soft-shadow cards', motionMood: 'slow, breathing motion',
+  },
+  'restaurant-hospitality': {
+    key: 'restaurant-hospitality', name: ['Restaurant / hospitality', 'Restoran / ağırlama'],
+    reason: ['Food & hospitality sell atmosphere and appetite — warm, editorial, image-led.', 'Yeme-içme ve ağırlama atmosfer ve iştah satar — sıcak, editoryal, görsel öncelikli.'],
+    tags: ['restaurant', 'hospitality', 'warm', 'editorial'], avoidGenericSaas: true,
+    serif: true, scale: 'editorial', density: 'balanced', layoutDensity: 'editorial',
+    palette: pal('Ember & cream', '#0f0a07', '#e0a35b', '#b45309', { text: '#f6ede1', mutedText: '#b5a591', success: '#a3b18a', danger: '#c1440e' }),
+    heroType: 'atmospheric hero', heroComposition: 'full-bleed ambiance image, menu highlights beneath', imageType: 'appetizing food & ambiance photography',
+    cardStyle: 'warm menu/ambiance cards', motionMood: 'warm, inviting reveals',
+  },
+  'landscaping-nature': {
+    key: 'landscaping-nature', name: ['Landscaping / outdoor nature-first', 'Peyzaj / doğa öncelikli'],
+    reason: ['Outdoor/landscape work is proven by imagery — organic greens and image-heavy proof.', 'Dış mekan/peyzaj işi görselle kanıtlanır — organik yeşiller ve görsel ağırlıklı kanıt.'],
+    tags: ['landscaping', 'nature', 'organic', 'image-first'], avoidGenericSaas: true,
+    serif: false, scale: 'editorial', density: 'minimal', layoutDensity: 'airy',
+    palette: pal('Botanical green & earth', '#08110a', '#4ea36a', '#a3c96a', { text: '#eef6ea', mutedText: '#9db39a', danger: '#d97706' }),
+    heroType: 'image-first hero', heroComposition: 'large outdoor transformation image, gallery-forward', imageType: 'before/after outdoor project galleries',
+    cardStyle: 'soft rounded image cards', motionMood: 'natural, gentle parallax',
+  },
+  'cinematic-studio': {
+    key: 'cinematic-studio', name: ['Cinematic game / creative studio', 'Sinematik oyun / yaratıcı stüdyo'],
+    reason: ['An entertainment/studio concept wants drama, depth and bold contrast.', 'Eğlence/stüdyo konsepti dram, derinlik ve cesur kontrast ister.'],
+    tags: ['cinematic', 'studio', 'bold', 'immersive'], avoidGenericSaas: true,
+    serif: false, scale: 'dramatic', density: 'immersive', layoutDensity: 'immersive',
+    palette: pal('Void & ember red', '#05060a', '#ff4d4d', '#7c3aed', { text: '#f5f5f7', mutedText: '#8b8b96' }),
+    heroType: 'cinematic full-bleed', heroComposition: 'full-bleed dramatic key art, minimal overlay copy', imageType: 'cinematic key art / trailers',
+    cardStyle: 'dark immersive panels with glow', motionMood: 'bold, kinetic reveals',
+  },
+  'creative-agency': {
+    key: 'creative-agency', name: ['Creative agency (experimental)', 'Yaratıcı ajans (deneysel)'],
+    reason: ['An agency proves taste through expressive, high-contrast, typographic work.', 'Ajans zevkini ifade dolu, yüksek kontrastlı, tipografik işle kanıtlar.'],
+    tags: ['agency', 'expressive', 'typographic', 'experimental'], avoidGenericSaas: true,
+    serif: false, scale: 'dramatic', density: 'immersive', layoutDensity: 'editorial',
+    palette: pal('Mono & hot accent', '#0a0a0c', '#f5f5f5', '#f43f5e', { mutedText: '#a1a1aa' }),
+    heroType: 'typographic statement hero', heroComposition: 'oversized type statement, work grid reveal', imageType: 'case-study visuals / expressive type',
+    cardStyle: 'bold outline / oversized number cards', motionMood: 'expressive, kinetic',
+  },
+  'portfolio-showcase': {
+    key: 'portfolio-showcase', name: ['Portfolio / showcase', 'Portfolyo / vitrin'],
+    reason: ['A personal/showcase site sells the work — minimal chrome, strong type, quiet palette.', 'Kişisel/vitrin site işi satar — minimal çerçeve, güçlü tipografi, sakin palet.'],
+    tags: ['portfolio', 'minimal', 'typographic'], avoidGenericSaas: true,
+    serif: true, scale: 'editorial', density: 'minimal', layoutDensity: 'airy',
+    palette: pal('Off-black & bone', '#08080a', '#e5e7eb', '#a1a1aa', { mutedText: '#8b8b93' }),
+    heroType: 'intro + work grid', heroComposition: 'quiet intro statement, case-study grid', imageType: 'case-study imagery',
+    cardStyle: 'quiet framed case cards', motionMood: 'restrained, refined reveals',
+  },
+  'marketplace-catalog': {
+    key: 'marketplace-catalog', name: ['Marketplace / catalog commerce', 'Pazar yeri / katalog ticaret'],
+    reason: ['Commerce needs scannable, dense product browsing with a decisive accent.', 'Ticaret taranabilir, yoğun ürün gezinme ve kararlı bir vurgu ister.'],
+    tags: ['ecommerce', 'catalog', 'dense', 'product-first'], avoidGenericSaas: true,
+    serif: false, scale: 'compact', density: 'rich', layoutDensity: 'dense',
+    palette: pal('Slate & retail orange', '#0b0c10', '#ff7a45', '#3b82f6'),
+    heroType: 'product-forward hero', heroComposition: 'featured products + category entry, decisive CTA', imageType: 'product photography grids',
+    cardStyle: 'crisp product cards with price/CTA', motionMood: 'quick, responsive hovers',
+  },
+  'education-platform': {
+    key: 'education-platform', name: ['Education / course platform', 'Eğitim / kurs platformu'],
+    reason: ['A learning concept balances trust and approachability — clear structure, friendly accent.', 'Öğrenme konsepti güven ve ulaşılabilirliği dengeler — net yapı, samimi vurgu.'],
+    tags: ['education', 'course', 'structured', 'approachable'], avoidGenericSaas: true,
+    serif: false, scale: 'balanced', density: 'balanced', layoutDensity: 'balanced',
+    palette: pal('Indigo & warm amber', '#0a0e18', '#4d8cff', '#ffb020'),
+    heroType: 'outcome hero', heroComposition: 'promise of outcome + curriculum preview', imageType: 'curriculum / progress visuals',
+    cardStyle: 'friendly module/lesson cards', motionMood: 'encouraging, gentle motion',
+  },
+  'community-membership': {
+    key: 'community-membership', name: ['Community / membership', 'Topluluk / üyelik'],
+    reason: ['A community sells belonging — warm, human, vibrant but not corporate.', 'Topluluk aidiyet satar — sıcak, insani, canlı ama kurumsal değil.'],
+    tags: ['community', 'membership', 'human', 'vibrant'], avoidGenericSaas: true,
+    serif: false, scale: 'balanced', density: 'balanced', layoutDensity: 'balanced',
+    palette: pal('Violet & rose', '#0c0a14', '#a855f7', '#f472b6'),
+    heroType: 'people-first hero', heroComposition: 'community proof + join CTA', imageType: 'member/community imagery',
+    cardStyle: 'warm rounded member cards', motionMood: 'lively, welcoming',
+  },
+  'legal-medical-trust': {
+    key: 'legal-medical-trust', name: ['Legal / medical trust-first', 'Hukuk / tıp güven öncelikli'],
+    reason: ['High-stakes services must feel credible and calm — trust-blue, real proof, no flash.', 'Yüksek riskli hizmetler güvenilir ve sakin hissetmeli — güven mavisi, gerçek kanıt, gösteriş yok.'],
+    tags: ['legal', 'medical', 'trust', 'credible'], avoidGenericSaas: true,
+    serif: true, scale: 'balanced', density: 'balanced', layoutDensity: 'balanced',
+    palette: pal('Deep trust blue & clean green', '#070d16', '#2e6fd6', '#3fae7f', { success: '#2ea36b', danger: '#d1495b' }),
+    heroType: 'credibility hero', heroComposition: 'clear promise + credentials/proof band above the fold', imageType: 'credentials, calm real photography',
+    cardStyle: 'calm, low-radius trust cards', motionMood: 'minimal, reassuring',
+  },
+  'local-service-premium': {
+    key: 'local-service-premium', name: ['Local service (premium)', 'Yerel hizmet (premium)'],
+    reason: ['A local service earns trust with proof, clear pricing and an easy contact path.', 'Yerel hizmet kanıt, net fiyat ve kolay iletişimle güven kazanır.'],
+    tags: ['local', 'service', 'trust', 'practical'], avoidGenericSaas: true,
+    serif: false, scale: 'balanced', density: 'balanced', layoutDensity: 'balanced',
+    palette: pal('Forest & warm brass', '#0d0f0c', '#6fae57', '#d19a4a'),
+    heroType: 'proof + contact hero', heroComposition: 'promise + rating/proof + quote/contact CTA', imageType: 'real work / team photography',
+    cardStyle: 'solid, tactile service cards', motionMood: 'subtle, trustworthy',
+  },
+  'industrial-b2b': {
+    key: 'industrial-b2b', name: ['Industrial / B2B technical', 'Endüstriyel / B2B teknik'],
+    reason: ['A technical B2B concept values precision and density over decoration.', 'Teknik B2B konsepti süsleme yerine hassasiyet ve yoğunluğa değer verir.'],
+    tags: ['b2b', 'industrial', 'technical', 'dense'], avoidGenericSaas: true,
+    serif: false, scale: 'compact', density: 'rich', layoutDensity: 'dense',
+    palette: pal('Graphite & steel blue', '#0a0c0f', '#5b8def', '#94a3b8', { mutedText: '#8a97a8' }),
+    heroType: 'capability hero', heroComposition: 'capability statement + spec/proof grid', imageType: 'technical diagrams / real equipment',
+    cardStyle: 'precise hairline spec cards', motionMood: 'minimal, engineered',
+  },
+  'event-conference': {
+    key: 'event-conference', name: ['Event / conference', 'Etkinlik / konferans'],
+    reason: ['An event builds momentum — bold, energetic, date/CTA-forward.', 'Etkinlik ivme kurar — cesur, enerjik, tarih/CTA öncelikli.'],
+    tags: ['event', 'conference', 'bold', 'energetic'], avoidGenericSaas: true,
+    serif: false, scale: 'dramatic', density: 'immersive', layoutDensity: 'immersive',
+    palette: pal('Violet & signal cyan', '#0a0812', '#8b5cf6', '#22d3ee'),
+    heroType: 'countdown/lineup hero', heroComposition: 'big date/lineup + register CTA', imageType: 'speaker/venue imagery',
+    cardStyle: 'bold speaker/agenda cards', motionMood: 'high-energy reveals',
+  },
+  'real-estate': {
+    key: 'real-estate', name: ['Real estate / property', 'Emlak / gayrimenkul'],
+    reason: ['Property sells on space and aspiration — editorial, image-led, refined neutrals.', 'Gayrimenkul mekan ve özlemle satar — editoryal, görsel öncelikli, rafine nötrler.'],
+    tags: ['real-estate', 'property', 'editorial', 'refined'], avoidGenericSaas: true,
+    serif: true, scale: 'editorial', density: 'balanced', layoutDensity: 'editorial',
+    palette: pal('Slate & brass', '#0c0d10', '#c0a267', '#5b7d9a', { text: '#f1efe9', mutedText: '#a7a595' }),
+    heroType: 'property showcase hero', heroComposition: 'full-bleed property image + search/enquire CTA', imageType: 'architectural / interior photography',
+    cardStyle: 'refined listing cards', motionMood: 'smooth, aspirational',
+  },
+  'nonprofit-campaign': {
+    key: 'nonprofit-campaign', name: ['Nonprofit / campaign', 'STK / kampanya'],
+    reason: ['A cause needs emotion and momentum — human warmth with a decisive donate/act CTA.', 'Bir dava duygu ve ivme ister — insani sıcaklık ve kararlı bir bağış/eylem CTA.'],
+    tags: ['nonprofit', 'campaign', 'human', 'urgent'], avoidGenericSaas: true,
+    serif: false, scale: 'balanced', density: 'balanced', layoutDensity: 'balanced',
+    palette: pal('Deep green & hopeful gold', '#08110d', '#34d399', '#fbbf24'),
+    heroType: 'story hero', heroComposition: 'human story image + impact stat + act CTA', imageType: 'authentic human/impact photography',
+    cardStyle: 'warm impact/story cards', motionMood: 'sincere, momentum-building',
+  },
+  'founder-startup': {
+    key: 'founder-startup', name: ['Founder-led startup landing', 'Kurucu odaklı startup'],
+    reason: ['An early product sells vision with confidence and a single clear action.', 'Erken bir ürün vizyonu özgüven ve tek net eylemle satar.'],
+    tags: ['startup', 'founder', 'confident', 'modern'], avoidGenericSaas: true,
+    serif: false, scale: 'balanced', density: 'rich', layoutDensity: 'balanced',
+    palette: pal('Ink & violet', '#0a0c12', '#7c5cff', '#f0a020'),
+    heroType: 'vision hero', heroComposition: 'bold promise + single CTA + early proof', imageType: 'product/vision visuals',
+    cardStyle: 'confident soft cards', motionMood: 'crisp, momentum-forward',
+  },
+  'modern-brand': {
+    key: 'modern-brand', name: ['Modern brand', 'Modern marka'],
+    reason: ['A considered, distinct modern identity — coherent and premium, never generic default.', 'Düşünülmüş, ayırt edici modern kimlik — tutarlı ve premium, asla jenerik varsayılan.'],
+    tags: ['modern', 'brand', 'considered'], avoidGenericSaas: true,
+    serif: false, scale: 'balanced', density: 'balanced', layoutDensity: 'balanced',
+    palette: pal('Ink & considered blue-violet', '#0a0b0f', '#5b8def', '#c084fc'),
+    heroType: 'brand hero', heroComposition: 'clear promise + focused visual anchor', imageType: 'composed CSS/SVG brand visuals',
+    cardStyle: 'coherent soft cards', motionMood: 'subtle, premium',
+  },
+};
+
+/** Ordered (regex → archetype key) rules scanned over the concept haystack. Most
+ *  specific first. Signal-driven, general logic — never a per-prompt template. */
+const ARCHETYPE_RULES: Array<[RegExp, string]> = [
+  [/museum|archive|library|catalog|catalogue|collection|exhibit|editorial|magazine|journal|gazette/, 'editorial-archive'],
+  [/luxur|bespoke|couture|heritage|prestige|boutique|atelier|haute|fine\s?jewel|watchmaker/, 'luxury-boutique'],
+  [/game|gaming|studio|film|cinema|movie|entertainment|animation|vfx/, 'cinematic-studio'],
+  [/wellness|retreat|spa|yoga|meditation|mindful|therapy|holistic|calm|organic\s?care/, 'wellness-retreat'],
+  [/fintech|bank|banking|invest|trading|finance|insurance|payment|payroll|lending|crypto/, 'fintech-trust'],
+  [/course|education|learn|academy|school|tutorial|bootcamp|curriculum|lms|teaching/, 'education-platform'],
+  [/legal|law\b|lawyer|attorney|solicitor|medical|clinic|health|doctor|dental|hospital|therapist/, 'legal-medical-trust'],
+  [/real\s?estate|property|realty|realtor|apartment|listing|housing|broker/, 'real-estate'],
+  [/event|conference|summit|meetup|festival|expo|webinar|hackathon/, 'event-conference'],
+  [/nonprofit|non-profit|charity|donate|donation|campaign|foundation|\bngo\b|volunteer|fundrais/, 'nonprofit-campaign'],
+  [/community|membership|forum|club\b|network|society|guild|cohort/, 'community-membership'],
+  [/marketplace|e-?commerce|online\s?store|shop\b|storefront|catalog\s?store|retail|product\s?page/, 'marketplace-catalog'],
+  [/restaurant|cafe|coffee|dining|menu|bakery|bistro|bar\b|food\s?truck|catering|hospitality|hotel/, 'restaurant-hospitality'],
+  [/landscap|garden|lawn|outdoor|nursery|horticultur|nature\b/, 'landscaping-nature'],
+  [/portfolio|showcase|personal\s?site|resume|\bcv\b/, 'portfolio-showcase'],
+  [/creative\s?agency|design\s?studio|branding\s?agency|ad\s?agency|marketing\s?agency/, 'creative-agency'],
+  [/\bai\b|artificial\s?intelligence|machine\s?learning|\bllm\b|copilot|automation|assistant|agentic|neural/, 'ai-tool'],
+  [/industrial|manufactur|logistics|hardware|machinery|engineering\s?firm|construction|supply\s?chain|b2b/, 'industrial-b2b'],
+  [/startup|founder|launch|\bmvp\b|seed\s?round|pre-?seed|indie\s?hacker/, 'founder-startup'],
+  [/saas|dashboard|platform|software|api\b|analytics|productivity\s?tool|workflow\s?tool/, 'high-conversion-saas'],
+];
+
+/** Map the inferred industry to a distinct archetype (used when keyword scan is weak). */
+const INDUSTRY_ARCHETYPE: Record<string, string> = {
+  ai_saas: 'high-conversion-saas',
+  fitness: 'wellness-retreat',
+  landscaping: 'landscaping-nature',
+  furniture: 'editorial-archive',
+  automotive: 'cinematic-studio',
+  restaurant: 'restaurant-hospitality',
+  portfolio: 'portfolio-showcase',
+  agency: 'creative-agency',
+  ecommerce: 'marketplace-catalog',
+  local_service: 'local-service-premium',
+  generic: 'modern-brand',
+};
+
+/**
+ * Pick the design archetype from the concept + Research Agent signals. Priority:
+ *   1. an explicit luxury/experimental premium level (strong identity signal)
+ *   2. a keyword match over the concept haystack (most specific)
+ *   3. the inferred industry map
+ *   4. a considered modern-brand default (still distinct, never generic indigo)
+ */
+function pickDesignArchetype(
+  brief: WebBuildBrief, research: ResearchAgentArtifact | undefined, inferred: InferredBrief,
+): DesignArchetypeSpec {
+  const hay = [
+    brief.type, brief.audience, brief.coreIdea, brief.goal, brief.style, brief.visualMood, brief.visualMetaphor,
+    inferred.businessType, inferred.industry, inferred.targetAudience, inferred.visualStyle,
+    research?.visualStyleRecommendation?.styleType,
+    ...(research?.recommendedComponents || []).map((c) => c.name),
+    ...(research?.recommendedPages || []).map((p) => p.name),
+    research?.targetUser?.role,
+    ...(research?.categoryLanguage || []),
+  ].filter(Boolean).join(' ').toLowerCase();
+
+  const premium = research?.visualStyleRecommendation?.premiumLevel;
+  // 1) Strong premium identity signals.
+  if (premium === 'luxury' && !/fintech|bank|saas|dashboard/.test(hay)) return DESIGN_ARCHETYPES['luxury-boutique'];
+  // 2) Keyword scan (most specific general design signal wins).
+  for (const [re, key] of ARCHETYPE_RULES) {
+    if (re.test(hay) && DESIGN_ARCHETYPES[key]) return DESIGN_ARCHETYPES[key];
+  }
+  // 3) Inferred industry map.
+  const byIndustry = INDUSTRY_ARCHETYPE[inferred.industry];
+  if (byIndustry && DESIGN_ARCHETYPES[byIndustry]) return DESIGN_ARCHETYPES[byIndustry];
+  // 4) Considered default.
+  return DESIGN_ARCHETYPES['modern-brand'];
 }
 
 /**
@@ -1139,11 +1650,26 @@ export function deriveArtDirection(
   };
   const tokens = designTokensForBrief(moodBrief);
 
-  // Color system follows the Research Agent's color psychology (never a default
-  // SaaS indigo) — unless the MODEL chose an explicit color, which always wins.
+  // DESIGN ARCHETYPE — the anti-sameness decision. Picked from the concept +
+  // Research signals; drives the distinct palette, typography, density, hero and
+  // component rules so two different ideas resolve to different identities.
+  const archetype = pickDesignArchetype(brief, research, inferred);
+
+  // Color system follows the ORDER OF TRUTH: model color → research color
+  // psychology → the archetype's distinct palette → tokens. So a fresh/fallback
+  // build gets a coherent identity palette, never the generic default indigo.
   const cp = research?.colorPsychology;
   const modelChoseColor = !!(brief.colorDirection || brief.artAccent || brief.artBg);
-  const colorSystem = resolveArtColorSystem(cp, tokens, modelChoseColor);
+  const colorSystemBase = resolveArtColorSystem(cp, tokens, modelChoseColor, archetype);
+  // Fold the researched color-psychology reasoning + colors-to-avoid onto the
+  // structured colorSystem (honest: only when research provided them).
+  const colorSystem: ArtDirectionColorSystem = {
+    ...colorSystemBase,
+    colorPsychologyReasoning: cp
+      ? uniq([cp.reasoning, cp.emotionalEffect, cp.trustEffect || '']).filter(Boolean).join(' · ') || undefined
+      : undefined,
+    avoidColors: (cp?.avoidColors || []).length ? cp!.avoidColors.slice(0, 4) : undefined,
+  };
 
   // Read the Research brief signals so every direction is specific, not generic.
   const tu = research?.targetUser;
@@ -1206,12 +1732,13 @@ export function deriveArtDirection(
       ? L(lang, 'Expressive, kinetic motion — bold reveals and depth, still tasteful.', 'İfade dolu, kinetik hareket — cesur belirişler ve derinlik, yine de zevkli.')
       : L(lang, 'Subtle premium motion — gentle reveals and hover states.', 'İnce premium hareket — yumuşak belirişler ve hover durumları.');
   const motionDirection = brief.motionDirection || motionByLevel || inferred.recommendedMotion;
-  // density — driven by premium level + device lean on top of the design system.
+  // density — premium level + device lean, then the ARCHETYPE's density (so an
+  // editorial archive breathes and a marketplace packs) instead of a flat default.
   const density: ArtDensity = premiumLevel === 'luxury' ? 'immersive'
     : premiumLevel === 'experimental' ? 'immersive'
     : premiumLevel === 'simple' ? 'minimal'
-    : desktopLean ? 'rich'
-    : artDensity(ds.density, ds.motion);
+    : desktopLean && archetype.density === 'balanced' ? 'rich'
+    : archetype.density || artDensity(ds.density, ds.motion);
 
   const premiumDetails = uniq([
     L(lang, 'Soft accent glow on primary actions', 'Ana eylemlerde yumuşak vurgu parıltısı'),
@@ -1287,12 +1814,208 @@ export function deriveArtDirection(
     (research?.trustSignals || []).length ? 'trustSignals' : '',
   ]);
 
-  // Summary — specific: names the style, the palette intent and the target user,
+  // ── STRUCTURED ART DIRECTION (archetype-driven, research-informed) ──────
+  // Every block is a plain object literal (cannot throw) so the artifact is
+  // always well-formed; the whole agent is additionally guarded by the pipeline.
+  const archName = L(lang, archetype.name[0], archetype.name[1]);
+  const archReason = L(lang, archetype.reason[0], archetype.reason[1]);
+  const headingSerif = archetype.serif || isSerif(tokens.headingFont) || /serif/i.test(typographyDirection);
+  const primaryCTAName = brief.primaryCTA || inferred.primaryCTA;
+
+  const designArchetype: DesignArchetype = {
+    name: archName,
+    key: archetype.key,
+    reason: archReason,
+    avoidGenericSaas: archetype.avoidGenericSaas,
+    archetypeTags: archetype.tags,
+  };
+  const researchSignalsUsed: ArtResearchSignalsUsed = {
+    targetUser: !!tu,
+    recommendedPages: !!(research?.recommendedPages || []).length,
+    recommendedComponents: !!(research?.recommendedComponents || []).length,
+    visualStyleRecommendation: !!vsr,
+    colorPsychology: !!cp,
+    uxPriorities: !!(research?.uxPriorities || []).length,
+    trustSignals: !!(research?.trustSignals || []).length,
+    conversionPatterns: !!(research?.conversionPatterns || []).length,
+  };
+  const visualMoodProfile: VisualMoodProfile = {
+    primaryMood: cp?.primaryMood || visualMood,
+    secondaryMood: vsr?.styleType || archName,
+    emotionalGoal: cp?.emotionalEffect || L(lang, `Make ${audience} feel this is made for them and trustworthy.`, `${audience} bunun kendisi için yapıldığını ve güvenilir olduğunu hissetsin.`),
+    brandPersonality: uniq([inferred.tone, ...archetype.tags]).slice(0, 5),
+    userPerceptionGoal: tu?.buyingMotivation
+      || L(lang, `Perceive a distinct ${archName.toLowerCase()} identity, not a generic template.`, `Jenerik bir şablon değil, belirgin bir ${archName.toLowerCase()} kimliği algılasın.`),
+  };
+  const typographyProfile: TypographyProfile = {
+    headingStyle: headingSerif
+      ? L(lang, 'Serif display headings — editorial, characterful', 'Serif display başlıklar — editoryal, karakterli')
+      : L(lang, 'Modern sans/grotesk headings — crisp, confident', 'Modern sans/grotesk başlıklar — net, kendinden emin'),
+    bodyStyle: L(lang, 'Clean, highly readable sans body', 'Temiz, yüksek okunabilirlikli sans gövde'),
+    fontPairingIntent: typographyDirection,
+    scale: archetype.scale,
+    weightStrategy: archetype.scale === 'dramatic'
+      ? L(lang, 'High weight contrast — heavy display vs light body', 'Yüksek ağırlık kontrastı — ağır display, hafif gövde')
+      : L(lang, 'Clear hierarchy: semibold headings, regular body', 'Net hiyerarşi: yarı kalın başlık, normal gövde'),
+    letterSpacing: headingSerif
+      ? L(lang, 'Neutral heading tracking, comfortable body leading', 'Nötr başlık aralığı, rahat gövde satır aralığı')
+      : L(lang, 'Slightly tight headings, comfortable body', 'Hafif sıkı başlıklar, rahat gövde'),
+    reason: L(lang, `${archName} reads best with ${headingSerif ? 'editorial serif' : 'modern sans'} headings.`, `${archName}, ${headingSerif ? 'editoryal serif' : 'modern sans'} başlıklarla en iyi okunur.`),
+  };
+  const layoutFeel: LayoutFeelProfile = {
+    density: archetype.layoutDensity,
+    spacingRhythm: L(lang, `${ds.sectionRhythm} rhythm — vary section shapes, no repeated card grid`, `${ds.sectionRhythm} ritim — bölüm şekillerini değiştir, tekrarlı kart gridi yok`),
+    containerStyle: archetype.layoutDensity === 'immersive' || archetype.layoutDensity === 'editorial'
+      ? L(lang, 'Wide, editorial containers with full-bleed moments', 'Geniş, editoryal konteynerler ve tam-taşma anları')
+      : archetype.layoutDensity === 'dense'
+        ? L(lang, 'Contained, information-dense columns', 'Kapsanmış, bilgi yoğun sütunlar')
+        : L(lang, 'Balanced centered container with generous gutters', 'Dengeli ortalanmış konteyner, cömert boşluklar'),
+    gridStyle: archetype.layoutDensity === 'dense'
+      ? L(lang, 'Multi-column scannable grids', 'Çok sütunlu taranabilir gridler')
+      : L(lang, 'Asymmetric, varied grids over uniform 3-cards', 'Tek tip 3 kart yerine asimetrik, çeşitli gridler'),
+    sectionSeparators: L(lang, 'Tonal surface shifts and hairlines, not heavy boxes', 'Ağır kutular değil, tonal yüzey geçişleri ve ince çizgiler'),
+    aboveFoldPriority: (research?.uxPriorities || [])[0]?.priority
+      || L(lang, `Promise + one path to "${primaryCTAName}"`, `Vaat + "${primaryCTAName}" için tek yol`),
+  };
+  const heroTreatment: HeroTreatment = {
+    heroType: L(lang, archetype.heroType, archetype.heroType),
+    composition: L(lang, archetype.heroComposition, archetype.heroComposition),
+    visualAnchor: visualMetaphor || L(lang, archetype.imageType, archetype.imageType),
+    headlineStyle: typographyProfile.headingStyle,
+    ctaStyle: ctaStyleDirection,
+    trustPlacement: (research?.trustSignals || [])[0] || (tu?.trustNeeds || [])[0]
+      || L(lang, 'A quiet proof band directly under the hero CTA', 'Hero CTA\'nın hemen altında sessiz bir kanıt bandı'),
+    backgroundTreatment: archetype.layoutDensity === 'immersive'
+      ? L(lang, 'Full-bleed image/gradient with a legible overlay', 'Okunaklı kaplamalı tam-taşma görsel/gradyan')
+      : L(lang, 'Refined gradient/surface tied to the palette', 'Palete bağlı rafine gradyan/yüzey'),
+    reason: archReason,
+  };
+  const componentStyleRules: ComponentStyleRules = {
+    cards: L(lang, `${archetype.cardStyle} (${ds.cardStyle})`, `${archetype.cardStyle} (${ds.cardStyle})`),
+    buttons: ctaStyleDirection,
+    forms: L(lang, 'Calm, low-friction fields with clear labels and one primary action', 'Sakin, düşük sürtünmeli alanlar; net etiketler ve tek ana eylem'),
+    navigation: archetype.layoutDensity === 'immersive'
+      ? L(lang, 'Minimal transparent nav that solidifies on scroll', 'Kaydırınca katılaşan minimal şeffaf navigasyon')
+      : L(lang, 'Clear, compact nav with a single highlighted CTA', 'Net, kompakt navigasyon; tek vurgulu CTA'),
+    badges: L(lang, 'Quiet, tonal badges — never loud neon pills', 'Sessiz, tonal rozetler — asla gürültülü neon haplar'),
+    gallery: L(lang, archetype.imageType, archetype.imageType),
+    testimonials: L(lang, 'Real quotes on quiet surfaces with name/role, no stock faces', 'Sessiz yüzeylerde gerçek alıntılar; isim/rol, stok yüz yok'),
+    pricingOrCatalog: L(lang, 'Legible, honest pricing/catalog cards with one clear default', 'Okunur, dürüst fiyat/katalog kartları; tek net varsayılan'),
+    trustBlocks: trustVisualDirection,
+  };
+  const imagerySystem: ImagerySystem = {
+    imageType: L(lang, archetype.imageType, archetype.imageType),
+    photographyStyle: /photograph|editorial|cinematic|image/.test(archetype.imageType)
+      ? L(lang, 'Editorial, high-contrast, generous negative space', 'Editoryal, yüksek kontrast, cömert negatif alan')
+      : L(lang, 'Only where it adds proof — otherwise composed visuals', 'Yalnızca kanıt kattığında — aksi halde kompoze görseller'),
+    illustrationStyle: L(lang, 'Geometric SVG tied to the concept, never clip-art', 'Konsepte bağlı geometrik SVG; asla clip-art değil'),
+    mockupStyle: vsr?.mockupType || L(lang, 'Composed CSS/SVG product/module mockups', 'Kompoze CSS/SVG ürün/modül maketleri'),
+    textureOrPattern: L(lang, 'Subtle grain/gradient tied to the palette', 'Palete bağlı ince tane/gradyan'),
+    emptyStateStyle: L(lang, 'Composed placeholder visuals — never blank gray boxes', 'Kompoze yer tutucu görseller — asla boş gri kutular'),
+    avoidImagery: uniq([
+      L(lang, 'Generic stock photos', 'Jenerik stok fotoğraflar'),
+      L(lang, 'Blank placeholder boxes', 'Boş yer tutucu kutular'),
+      L(lang, 'Faux dashboard screenshots that misrepresent the product', 'Ürünü yanlış temsil eden sahte panel ekran görüntüleri'),
+    ]),
+  };
+  const iconographySystem: IconographySystem = {
+    style: vsr?.iconStyle || iconographyDirection,
+    stroke: L(lang, 'One consistent stroke weight across all icons', 'Tüm ikonlarda tek tutarlı çizgi ağırlığı'),
+    shapeLanguage: /playful|kid|community|nonprofit/.test(archetype.tags.join(' '))
+      ? L(lang, 'Rounded, friendly shapes', 'Yuvarlak, samimi şekiller')
+      : /luxury|editorial|heritage|fintech|industrial|legal/.test(archetype.tags.join(' '))
+        ? L(lang, 'Precise, geometric shapes', 'Hassas, geometrik şekiller')
+        : L(lang, 'Clean line/duotone shapes', 'Temiz çizgi/duoton şekiller'),
+    usageRules: L(lang, 'Icons support labels, never replace them; tied to the accent', 'İkonlar etiketleri destekler, yerini almaz; vurguya bağlı'),
+  };
+  const motionSystem: MotionSystem = {
+    animationMood: L(lang, archetype.motionMood, archetype.motionMood),
+    microInteractions: uniq([
+      L(lang, 'Accent glow + lift on primary actions', 'Ana eylemlerde vurgu parıltısı + yükselme'),
+      L(lang, 'Gentle hover states on cards/links', 'Kartlarda/bağlantılarda yumuşak hover durumları'),
+      density === 'immersive' ? L(lang, 'Subtle depth/parallax on the hero', 'Hero\'da ince derinlik/parallax') : '',
+    ]),
+    scrollFeel: density === 'immersive'
+      ? L(lang, 'Cinematic reveal-on-scroll with staged depth', 'Aşamalı derinlikle sinematik scroll-belirme')
+      : L(lang, 'Tasteful reveal-on-scroll, one element at a time', 'Zevkli scroll-belirme, tek seferde bir öğe'),
+    avoidMotion: uniq([
+      L(lang, 'Childish bounces / spinning decor', 'Çocuksu zıplamalar / dönen dekor'),
+      L(lang, 'Motion that blocks reading or the CTA', 'Okumayı veya CTA\'yı engelleyen hareket'),
+    ]),
+  };
+  const responsiveDirection: ResponsiveDirection = {
+    mobilePriority: mobileLean
+      ? L(lang, 'Mobile-first: single column, thumb-reachable CTAs, large tap targets', 'Mobil öncelikli: tek sütun, başparmakla erişilir CTA, büyük dokunma hedefleri')
+      : L(lang, 'A strong single-column mobile story that never feels like a shrunk desktop', 'Küçültülmüş masaüstü gibi hissettirmeyen güçlü tek sütun mobil anlatı'),
+    desktopPriority: desktopLean
+      ? L(lang, 'Desktop-first: composed multi-column density and comparison layouts', 'Masaüstü öncelikli: kompoze çok sütunlu yoğunluk ve karşılaştırma düzenleri')
+      : L(lang, 'Expand the mobile story into a composed, spacious desktop layout', 'Mobil anlatıyı kompoze, ferah bir masaüstü düzene genişlet'),
+    navigationBehavior: L(lang, 'Collapse to a clean menu on mobile; keep the primary CTA reachable', 'Mobilde temiz menüye indir; ana CTA erişilebilir kalsın'),
+    heroMobileBehavior: L(lang, 'Hero visual stacks under the headline; CTA stays above the fold', 'Hero görseli başlığın altına yığılır; CTA ilk ekranda kalır'),
+    componentStackingRules: L(lang, 'Multi-column grids collapse to one column; preserve reading order', 'Çok sütunlu gridler tek sütuna iner; okuma sırası korunur'),
+  };
+  const accessibilityDirection: AccessibilityDirection = {
+    contrastRule: L(lang, 'Text/background contrast ≥ WCAG AA (4.5:1 body, 3:1 large)', 'Metin/arka plan kontrastı ≥ WCAG AA (gövde 4.5:1, büyük 3:1)'),
+    readabilityRule: L(lang, 'Body ≥ 16px, comfortable line length and leading', 'Gövde ≥ 16px, rahat satır uzunluğu ve aralığı'),
+    touchTargetRule: L(lang, 'Interactive targets ≥ 44px with clear focus states', 'Etkileşimli hedefler ≥ 44px, net odak durumları'),
+    motionSafetyRule: L(lang, 'Respect prefers-reduced-motion; no essential info in motion only', 'prefers-reduced-motion\'a saygı; yalnızca harekette kritik bilgi yok'),
+  };
+  const paletteName = colorSystem.paletteName || archetype.palette.name;
+  const downstreamInstructions: DownstreamInstructions = {
+    strategyAgent: uniq([
+      L(lang, `Keep the conversion path consistent with a ${archName.toLowerCase()} tone`, `Dönüşüm yolunu ${archName.toLowerCase()} tonuyla tutarlı tut`),
+      L(lang, `CTA style: ${ctaStyleDirection}`, `CTA stili: ${ctaStyleDirection}`),
+      L(lang, `Trust proof as: ${trustVisualDirection}`, `Güven kanıtı: ${trustVisualDirection}`),
+    ]),
+    layoutArchitectAgent: uniq([
+      L(lang, `Hero: ${heroTreatment.heroType} — ${heroTreatment.composition}`, `Hero: ${heroTreatment.heroType} — ${heroTreatment.composition}`),
+      L(lang, `Density: ${layoutFeel.density}; ${layoutFeel.gridStyle}`, `Yoğunluk: ${layoutFeel.density}; ${layoutFeel.gridStyle}`),
+      L(lang, `Section rhythm: ${sectionRhythmDirection}`, `Bölüm ritmi: ${sectionRhythmDirection}`),
+    ]),
+    componentEngineerAgent: uniq([
+      L(lang, `Cards: ${componentStyleRules.cards}`, `Kartlar: ${componentStyleRules.cards}`),
+      L(lang, `Buttons: ${componentStyleRules.buttons}`, `Butonlar: ${componentStyleRules.buttons}`),
+      L(lang, `Icons: ${iconographySystem.style}, ${iconographySystem.shapeLanguage}`, `İkonlar: ${iconographySystem.style}, ${iconographySystem.shapeLanguage}`),
+    ]),
+    previewRenderer: uniq([
+      L(lang, `Palette "${paletteName}": bg ${colorSystem.background}, accent ${colorSystem.accent}`, `Palet "${paletteName}": arka ${colorSystem.background}, vurgu ${colorSystem.accent}`),
+      L(lang, `Headings: ${headingSerif ? 'serif' : 'sans'}`, `Başlıklar: ${headingSerif ? 'serif' : 'sans'}`),
+    ]),
+    fileSynthesis: uniq([
+      L(lang, 'Emit design tokens from this palette + type; no generic default indigo', 'Bu palet + tipografiden tasarım token\'ları üret; jenerik varsayılan indigo yok'),
+      L(lang, 'Compose visuals with CSS/SVG; never blank placeholder boxes', 'Görselleri CSS/SVG ile oluştur; asla boş yer tutucu kutular değil'),
+    ]),
+  };
+  const mustEmphasize = uniq([
+    archName,
+    ...(research?.uiAgentInstructions?.mustEmphasize || []).slice(0, 2),
+    visualMoodProfile.emotionalGoal,
+    L(lang, `A single obvious path to "${primaryCTAName}"`, `"${primaryCTAName}" için tek net yol`),
+  ]).slice(0, 5);
+  const mustAvoid = uniq([
+    L(lang, 'The generic "modern premium SaaS dark-blue gradient" for every site', 'Her site için jenerik "modern premium SaaS koyu-mavi gradyan"'),
+    ...avoid.slice(0, 3),
+  ]).slice(0, 5);
+
+  // Honest status: art direction always completes (archetype-driven even without
+  // research), but flag when research itself was a fallback so the handoff is truthful.
+  const researchWasFallback = !research || (!tu && !(research?.recommendedPages || []).length);
+  const status: 'completed' | 'fallback' = researchWasFallback ? 'fallback' : 'completed';
+  const fallbackReason = researchWasFallback
+    ? L(lang, 'Art direction derived from the concept + archetype (Research Agent used strategy inference).',
+        'Sanat yönü konsept + arketipten türetildi (Araştırma Ajanı strateji çıkarımı kullandı).')
+    : undefined;
+
+  // Summary — specific: names the archetype, palette intent and target user,
   // not a generic "modern and premium".
-  const paletteWord = (cp?.recommendedPalette || [])[0];
+  const paletteWord = (cp?.recommendedPalette || [])[0] || archetype.palette.name;
   const summary = L(lang,
-    `${visualMood} for ${audience}${paletteWord ? `, built on ${paletteWord}` : ''} — ${isSerif(tokens.headingFont) ? 'editorial' : 'modern'} type, ${density} density, ${ds.motion} motion, metaphor "${visualMetaphor}".`,
-    `${audience} için ${visualMood}${paletteWord ? `, ${paletteWord} üzerine` : ''} — ${isSerif(tokens.headingFont) ? 'editoryal' : 'modern'} tipografi, ${density} yoğunluk, ${ds.motion} hareket, metafor "${visualMetaphor}".`);
+    `${archName} for ${audience}${paletteWord ? `, built on ${paletteWord}` : ''} — ${headingSerif ? 'editorial' : 'modern'} type, ${density} density, ${ds.motion} motion.`,
+    `${audience} için ${archName}${paletteWord ? `, ${paletteWord} üzerine` : ''} — ${headingSerif ? 'editoryal' : 'modern'} tipografi, ${density} yoğunluk, ${ds.motion} hareket.`);
+  const usedList = usedResearchInputs.length ? usedResearchInputs : [];
+  const handoffSummary = L(lang,
+    `Chose a ${archName} identity${usedList.length ? ` from ${usedList.join(', ')}` : ''}; passing palette, typography, visual mood and component rules downstream.`,
+    `${archName} kimliği seçildi${usedList.length ? ` (${usedList.join(', ')})` : ''}; palet, tipografi, görsel atmosfer ve bileşen kuralları aktarılıyor.`);
 
   return {
     visualMood,
@@ -1317,6 +2040,25 @@ export function deriveArtDirection(
     responsiveDesignDirection,
     usedResearchInputs: usedResearchInputs.length ? usedResearchInputs : undefined,
     summary,
+    // ── Strong, structured art direction ──
+    status,
+    researchSignalsUsed,
+    designArchetype,
+    visualMoodProfile,
+    typographyProfile,
+    layoutFeel,
+    heroTreatment,
+    componentStyleRules,
+    imagerySystem,
+    iconographySystem,
+    motionSystem,
+    responsiveDirection,
+    accessibilityDirection,
+    downstreamInstructions,
+    mustEmphasize,
+    mustAvoid,
+    handoffSummary,
+    fallbackReason,
   };
 }
 
@@ -1653,12 +2395,16 @@ export function enrichBriefWithAgents(
     agentModule: b.agentModule || steer.agentModule,
   };
   if (art && art.colorSystem) {
+    // Heading serif follows the Art Director's typography decision (archetype +
+    // typographyProfile.headingStyle), so an editorial/luxury/heritage archetype
+    // actually renders serif headings instead of the default sans.
+    const artSerif = /serif/i.test(art.typographyProfile?.headingStyle || '') || /serif/i.test(art.typographyDirection || '');
     b = {
       ...b,
       artAccent: b.artAccent || art.colorSystem.accent,
       artAccent2: b.artAccent2 || art.colorSystem.accent2,
       artBg: b.artBg || art.colorSystem.background,
-      artHeadingSerif: b.artHeadingSerif ?? /serif/i.test(art.typographyDirection || ''),
+      artHeadingSerif: b.artHeadingSerif ?? artSerif,
       visualMood: b.visualMood || art.visualMood,
       colorDirection: b.colorDirection || art.visualMood,
       motionDirection: b.motionDirection || art.motionDirection,
@@ -2115,6 +2861,12 @@ function didMessage(agent: WebBuildAgent, lang: Lang): { message: string; type: 
       }
       case 'ui_art_director': {
         const a = agent.artifact as ArtDirectionArtifact;
+        // Prefer naming the real design archetype it chose (anti-sameness signal);
+        // fall back to the research inputs it used, then a generic honest line.
+        const arch = a.designArchetype?.name;
+        if (arch) {
+          return { message: L(lang, `created ${arch} art direction`, `${arch} sanat yönü oluşturdu`), type: 'completed' };
+        }
         const used = humanizeUsed(a.usedResearchInputs, lang);
         return {
           message: used.length
