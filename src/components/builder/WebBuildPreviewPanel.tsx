@@ -2,7 +2,7 @@ import { ExternalLink } from 'lucide-react';
 import BrowserFrame from '@/components/builder/BrowserFrame';
 import WebBuildPreviewDocument from '@/components/builder/WebBuildPreviewDocument';
 import { useLanguageStore } from '@/stores/languageStore';
-import { openPreviewInNewTab } from '@/lib/webBuildPreviewStash';
+import { openPreviewInNewTab, currentReturnTo } from '@/lib/webBuildPreviewStash';
 import type { WebBuildSectionItem } from '@/lib/webBuildPayload';
 import type { WebBuildBrief } from '@/lib/webBuildApi';
 
@@ -33,7 +33,7 @@ export default function WebBuildPreviewPanel({
     <div>
       <div className="mb-3 flex justify-end">
         <button
-          onClick={() => openPreviewInNewTab({ runId: runId || `preview-${Date.now().toString(36)}`, sectionItems, brief, slug: url })}
+          onClick={() => openPreviewInNewTab({ runId: runId || `preview-${Date.now().toString(36)}`, sectionItems, brief, slug: url, returnTo: currentReturnTo() })}
           className="inline-flex items-center gap-1.5 rounded-lg border border-[#3B82F6]/30 bg-[#3B82F6]/[0.08] px-3 py-1.5 text-[12px] font-medium text-[#93C5FD] transition-colors hover:bg-[#3B82F6]/[0.14]"
         >
           <ExternalLink className="h-3.5 w-3.5" /> {t('wbOpenPreview')}
