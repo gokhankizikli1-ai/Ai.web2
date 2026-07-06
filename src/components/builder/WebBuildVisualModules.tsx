@@ -35,7 +35,9 @@ const take = (labels: string[] | undefined, n: number, fallback: string[]): stri
 function DataDashboard({ labels, compact }: { labels?: string[]; compact?: boolean }) {
   const bars = [58, 82, 46, 94, 70, 88];
   const tiles = take(labels, 3, ['Aktif', 'Dönüşüm', 'Büyüme']);
-  const stats = ['2.4k', '98%', '+37%'];
+  // No fabricated KPIs — each tile shows a real (or structural) label above a
+  // neutral, non-numeric indicator bar, so the dashboard reads as a data surface
+  // without inventing metrics.
   return (
     <Frame className="p-4 shadow-2xl shadow-black/40">
       <div className="mb-3 flex items-center gap-1.5">
@@ -45,8 +47,10 @@ function DataDashboard({ labels, compact }: { labels?: string[]; compact?: boole
       <div className={`grid gap-3 ${compact ? '' : 'sm:grid-cols-3'}`}>
         {tiles.map((tl, i) => (
           <div key={i} className="rounded-xl border border-[color:var(--bd)] bg-[var(--sf)] p-3">
-            <div className="text-lg font-semibold text-white">{stats[i]}</div>
-            <div className="mt-0.5 truncate text-[11px] text-slate-400">{tl}</div>
+            <div className="truncate text-[11px] font-medium text-slate-200">{tl}</div>
+            <div className="mt-2 h-1.5 w-full rounded-full bg-white/10">
+              <div className="h-full rounded-full" style={{ width: `${52 + (i * 17) % 40}%`, background: i % 2 ? 'var(--acc2)' : 'var(--acc)', opacity: 0.85 }} />
+            </div>
           </div>
         ))}
       </div>

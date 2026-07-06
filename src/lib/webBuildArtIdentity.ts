@@ -226,13 +226,21 @@ function shortProof(raw: string): string {
   return s;
 }
 
-/** Split a free-text trust-signals string into concise chips. */
+/** A proof chip we must NOT assert on the user's behalf — an unverifiable
+ *  compliance/metric/rating/award claim (SOC2, uptime, %, ★, "customer metrics",
+ *  awards…). Structural words (logos, process, credentials) pass through. */
+const isUnsafeProofClaim = (s: string): boolean =>
+  /soc\s?2|iso\s?27001|\buptime\b|\bawards?\b|\bmetrics?\b|%|★|\b\d+(?:\.\d+)?\s*(?:stars?|k\+|\/\s?7|\/\s?24)\b/i.test(s);
+
+/** Split a free-text trust-signals string into concise chips, dropping any that
+ *  read as an unsubstantiated metric/compliance claim (kept honest — a build with
+ *  only fabricated-metric trust signals falls back to structural mode labels). */
 function proofFromTrust(trust: string | undefined): string[] {
   if (!trust) return [];
   return trust
     .split(/[,·|/]|\band\b|\bve\b/i)
     .map((x) => clean(x).replace(/[.;:]+$/, ''))
-    .filter((x) => x.length >= 2 && x.length <= 40)
+    .filter((x) => x.length >= 2 && x.length <= 40 && !isUnsafeProofClaim(x))
     .slice(0, 4);
 }
 

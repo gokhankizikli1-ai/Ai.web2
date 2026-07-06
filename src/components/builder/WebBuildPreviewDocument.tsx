@@ -8,7 +8,7 @@ import {
 import VisualModule from '@/components/builder/WebBuildVisualModules';
 import type { WebBuildBrief } from '@/lib/webBuildApi';
 import type { WebBuildSectionItem } from '@/lib/webBuildPayload';
-import { deriveWebBuildArtIdentity, type WebBuildArtIdentity } from '@/lib/webBuildArtIdentity';
+import { deriveWebBuildArtIdentity, type WebBuildArtIdentity, type ArtRenderMode } from '@/lib/webBuildArtIdentity';
 
 /**
  * A REAL, premium rendered approximation of the generated site whose STRUCTURE is
@@ -25,6 +25,67 @@ type S = WebBuildSectionItem;
 
 const bulletsOf = (s: S) => (s.bullets?.length ? s.bullets : [s.sub || s.purpose || s.name].filter(Boolean));
 const heading = (s: S) => s.headline || s.name;
+
+/* ── Honest proof / price primitives ─────────────────────────────────────
+ * The old ProofStrip/PricingMembership hardcoded fabricated ratings, counts and
+ * prices (4.9★ / 12k+ / 98% / 24/7, ₺199…). These helpers keep proof and pricing
+ * HONEST: they surface only real section copy (bullets / art proof rules / trust
+ * signals) or clearly-structural, non-factual module labels — never an invented
+ * metric, rating, price or compliance claim. */
+
+/** True when a string reads like a factual metric/rating/price/compliance claim.
+ *  Used to keep structural fallbacks free of numbers we cannot substantiate. */
+const isFactualMetricLike = (t: string): boolean =>
+  /\d/.test(t) && /(%|★|\/\s?7|\/\s?24|\bk\+|\buptime\b|\bsoc\s?2\b|\biso\b|[$€₺]|\bmüşteri\b|\bcustomers?\b|\bclients?\b|\brating\b|\breview|\byorum\b)/i.test(t);
+
+/** Structural, non-factual proof labels per render mode — used only when a section
+ *  carries no real proof copy. These are module/section labels, not claims. */
+const PROOF_LABELS: Partial<Record<ArtRenderMode, string[]>> = {
+  archive: ['Curation workflow', 'Metadata clarity', 'Research access'],
+  landscaping: ['Project process', 'Material clarity', 'Consultation path'],
+  'trust-service': ['Credentials', 'Clear process', 'Contact path'],
+  'product-saas': ['Demo flow', 'Security review', 'Integration path'],
+  hospitality: ['Menu clarity', 'Reservation path', 'Location details'],
+  marketplace: ['Catalog clarity', 'Shipping & returns', 'Support path'],
+  industrial: ['Capabilities', 'Specifications', 'Request path'],
+  portfolio: ['Selected work', 'Process', 'Start a project'],
+};
+const proofLabelForMode = (mode: ArtRenderMode, index: number): string => {
+  const set = (PROOF_LABELS[mode] || ['Clear process', 'What to expect', 'How to start']).filter((l) => !isFactualMetricLike(l));
+  return set[index % set.length];
+};
+
+/** Real proof items for a section: prefer the section's own bullets, then the art
+ *  identity proof rules, then structural mode labels. Never fabricates. */
+function safeProofItems(s: S, art: WebBuildArtIdentity, n = 4): string[] {
+  const bullets = (s.bullets || []).map((b) => (b || '').trim()).filter(Boolean);
+  if (bullets.length) return bullets.slice(0, n);
+  if (art.proofRules?.length) return art.proofRules.slice(0, n);
+  return Array.from({ length: Math.min(n, 3) }, (_, i) => proofLabelForMode(art.mode, i));
+}
+
+/** An honest proof card — a structural label with a check glyph, never a metric. */
+function renderProofCard(label: string, i: number, art: WebBuildArtIdentity): ReactElement {
+  return (
+    <Reveal key={i} i={i}>
+      <div className={`h-full rounded-[var(--pr)] border border-[color:var(--bd)] bg-[var(--sf)] p-5 ${art.cardTone}`}>
+        <span className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg text-sm font-semibold" style={{ background: 'color-mix(in srgb, var(--acc) 16%, transparent)', color: 'var(--acc)' }} aria-hidden>✓</span>
+        <p className="text-[14px] font-medium leading-snug text-white">{label}</p>
+      </div>
+    </Reveal>
+  );
+}
+
+const isProofSection = (s: S) => /proof|provenance|menşe|credential|referans|trust|güven|kanıt|curation|küratör/i.test(`${s.id} ${s.name}`);
+const isTestimonialSection = (s: S) => /testimonial|review|yorum|müşteri|client|referans/i.test(`${s.id} ${s.name}`);
+
+/** Extract an explicit price already present in section copy (₺/$/€ or "TL/USD").
+ *  Returns undefined when there is no real price — we never invent one. */
+function explicitPrice(text: string | undefined): string | undefined {
+  if (!text) return undefined;
+  const m = text.match(/([$€₺]\s?\d[\d.,]*|\d[\d.,]*\s?(?:tl|usd|eur|₺))/i);
+  return m ? m[0].replace(/\s+/g, ' ').trim() : undefined;
+}
 
 function Orb({ color, style, delay = 0 }: { color: string; style: React.CSSProperties; delay?: number }) {
   return (
@@ -442,18 +503,15 @@ function EditorialSplit({ s, plan, index }: VarProps) {
 }
 
 function ProofStrip({ s, art }: VarProps) {
-  const items = bulletsOf(s).slice(0, 4);
-  const stats = ['4.9★', '12k+', '98%', '24/7'];
+  // Honest proof: real section copy or structural labels — never fabricated
+  // ratings / counts / uptime. Rendered as labelled proof cards, not big numbers.
+  const items = safeProofItems(s, art, 4);
   return (
     <div className="mx-auto max-w-5xl px-6">
       <H2>{heading(s)}</H2>
-      <div className={`mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)] bg-white/5 lg:grid-cols-4 ${art.cardTone}`}>
-        {items.map((b, i) => (
-          <div key={i} className="bg-[#0b0d12] p-6 text-center">
-            <div className="text-3xl font-semibold tracking-tight text-white">{stats[i % stats.length]}</div>
-            <p className="mt-2 text-sm text-slate-400">{b}</p>
-          </div>
-        ))}
+      {s.sub && <p className="mx-auto mt-3 max-w-2xl text-center text-slate-400">{s.sub}</p>}
+      <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {items.map((b, i) => renderProofCard(b, i, art))}
       </div>
     </div>
   );
@@ -536,7 +594,23 @@ function ProcessTimeline({ s, art }: VarProps) {
   );
 }
 
-function QuoteStory({ s }: VarProps) {
+function QuoteStory({ s, art }: VarProps) {
+  // A proof/local-proof/trust-proof section is NOT a testimonial wall — render
+  // honest proof cards instead of fake customer quotes.
+  if (isProofSection(s) && !isTestimonialSection(s)) {
+    const items = safeProofItems(s, art, 4);
+    return (
+      <div className="mx-auto max-w-5xl px-6">
+        <H2>{heading(s)}</H2>
+        <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {items.map((b, i) => renderProofCard(b, i, art))}
+        </div>
+      </div>
+    );
+  }
+  // Otherwise render the section's own copy as an editorial statement. No fake
+  // avatar/person is attached — attribution is the section label only, so a
+  // generic content bullet is never presented as a real customer testimonial.
   const quotes = (s.bullets?.length ? s.bullets : [s.sub || s.name]).slice(0, 2);
   return (
     <div className="mx-auto max-w-4xl px-6">
@@ -545,7 +619,7 @@ function QuoteStory({ s }: VarProps) {
           <Reveal key={i} i={i}>
             <blockquote className="border-l-2 pl-6" style={{ borderColor: 'var(--acc)' }}>
               <p className="text-xl font-medium leading-relaxed text-white sm:text-2xl" style={{ fontFamily: 'var(--hf)' }}>“{b}”</p>
-              <footer className="mt-4 flex items-center gap-3 text-sm text-slate-400"><span className="h-8 w-8 rounded-full" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 55%, transparent), color-mix(in srgb, var(--acc2) 30%, transparent))' }} />{heading(s)}</footer>
+              <footer className="mt-4 text-sm text-slate-400">{heading(s)}</footer>
             </blockquote>
           </Reveal>
         ))}
@@ -588,13 +662,59 @@ function PricingMembership({ s, art }: VarProps) {
     <div className="mx-auto max-w-5xl px-6">
       <H2>{heading(s)}</H2>
       <div className="mt-10 grid gap-5 sm:grid-cols-3">
-        {tiers.map((b, i) => (
-          <div key={i} className={`rounded-[var(--pr)] border p-6 ${art.cardTone}`} style={i === 1 ? { borderColor: 'color-mix(in srgb, var(--acc) 40%, transparent)', background: 'color-mix(in srgb, var(--acc) 7%, transparent)' } : { borderColor: 'rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.03)' }}>
-            <p className="text-sm font-medium text-slate-300">{b}</p>
-            <div className="mt-3 text-3xl font-semibold text-white">₺{199 + i * 200}<span className="text-sm text-slate-400">/ay</span></div>
-            <div className={`mt-5 rounded-lg py-2 text-center text-sm font-semibold ${i === 1 ? 'text-white' : 'border border-white/15 text-slate-200'}`} style={i === 1 ? { background: 'var(--acc)' } : undefined}>{s.cta || 'Seç'}</div>
+        {tiers.map((b, i) => {
+          // Show a price ONLY when the section copy actually contains one — never
+          // a fabricated monthly figure. Otherwise the card leads with its CTA.
+          const price = explicitPrice(b) || explicitPrice(s.headline);
+          return (
+            <div key={i} className={`rounded-[var(--pr)] border p-6 ${art.cardTone}`} style={i === 1 ? { borderColor: 'color-mix(in srgb, var(--acc) 40%, transparent)', background: 'color-mix(in srgb, var(--acc) 7%, transparent)' } : { borderColor: 'rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.03)' }}>
+              <p className="text-sm font-medium text-slate-300">{b}</p>
+              {price
+                ? <div className="mt-3 text-3xl font-semibold text-white">{price}</div>
+                : <div className="mt-3 text-lg font-medium text-slate-200">{s.cta || 'Detaylı bilgi'}</div>}
+              <div className={`mt-5 rounded-lg py-2 text-center text-sm font-semibold ${i === 1 ? 'text-white' : 'border border-white/15 text-slate-200'}`} style={i === 1 ? { background: 'var(--acc)' } : undefined}>{s.cta || 'İletişime geç'}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* — Filter/search surface: a real search bar + filter chips + result rows built
+ *  from the section's own facet copy. No fabricated result counts. — */
+function FilterSearch({ s, art }: VarProps) {
+  const facets = bulletsOf(s).slice(0, 6);
+  const rows = facets.slice(0, 4);
+  return (
+    <div className="mx-auto max-w-5xl px-6">
+      <H2 align="left">{heading(s)}</H2>
+      <div className={`mt-8 rounded-[var(--pr)] border border-[color:var(--bd)] bg-[var(--sf)] p-4 sm:p-5 ${art.cardTone}`}>
+        <div className="flex items-center gap-3 rounded-lg border border-[color:var(--bd)] bg-black/20 px-3.5 py-2.5">
+          <span className="text-slate-400" aria-hidden>⌕</span>
+          <span className="text-sm text-slate-500">{s.sub || heading(s)}</span>
+          <span className="ml-auto rounded-md px-2.5 py-1 text-xs font-medium text-white" style={{ background: 'var(--acc)' }}>{s.cta || 'Ara'}</span>
+        </div>
+        {facets.length > 0 && (
+          <div className="mt-4 flex flex-wrap gap-2">
+            {facets.map((f, i) => (
+              <span key={i} className="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--bd)] bg-white/[0.03] px-3 py-1 text-xs text-slate-300">
+                <span className="h-1 w-1 rounded-full" style={{ background: 'var(--acc)' }} />{f}
+              </span>
+            ))}
           </div>
-        ))}
+        )}
+        {rows.length > 0 && (
+          <div className="mt-5 space-y-2">
+            {rows.map((f, i) => (
+              <div key={i} className="flex items-center gap-3 rounded-lg border border-[color:var(--bd)] bg-[var(--sf)] px-3 py-2.5">
+                <span className="h-8 w-8 shrink-0 rounded-md border border-[color:var(--bd)]" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 20%, transparent), transparent)' }} />
+                <span className="flex-1 text-sm text-slate-200">{f}</span>
+                <span className="text-slate-500">→</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -681,6 +801,7 @@ const VARIANTS: Record<SectionVariant, (p: VarProps) => ReactElement> = {
   'pricing-membership': (p) => <PricingMembership {...p} />,
   'faq-cta': (p) => <FaqCta {...p} />,
   showcase: (p) => <Showcase {...p} />,
+  'filter-search': (p) => <FilterSearch {...p} />,
 };
 
 /** Vertical padding by content density (spacious/comfortable/compact). */
