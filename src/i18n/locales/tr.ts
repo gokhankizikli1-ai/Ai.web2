@@ -369,6 +369,8 @@ export const tr: Record<string, string> = {
   wbAgentStrategy: "Strateji Ajanı",
   wbAgentLayout: "Yerleşim Mimarı Ajanı",
   wbAgentComponent: "Bileşen Mühendisi Ajanı",
+  wbAgentReviewer: "Reviewer",
+  wbOpReviewerNote: "Konsept uyumu, sahte veri riski, etkileşim hazır oluşu ve düzeltme talimatlarını denetler.",
   wbLiveThinkScope: "Site türü, hedef kitle, amaç ve stil belirleniyor",
   wbLiveThinkPipeline: "Akış planlanıyor: araştırma → sanat yönü → strateji → yerleşim → bileşenler",
   wbLiveThinkPackage: "Önizleme ve Tüm Dosyalar paketi hazırlanıyor",
