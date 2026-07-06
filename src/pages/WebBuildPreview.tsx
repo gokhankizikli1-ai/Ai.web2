@@ -42,10 +42,17 @@ export default function WebBuildPreview() {
   const navigate = useNavigate();
   const data = useMemo(() => readPreview(runId) || fromSession(runId) || fromProject(runId), [runId]);
 
-  // Return to where the preview was opened from — the stashed same-origin path,
-  // else browser history when the user navigated here in-tab, else a modern route
-  // (never the old /tools/website-builder). Same-origin only; no open redirect.
+  // Return to where the preview was opened from. Prefer the structured restore
+  // context (owning chat session + persisted Web Build session id) so Chat can
+  // reopen the exact embedded conversation; else the stashed same-origin path;
+  // else in-tab history; else '/chat' — never the old /tools/website-builder.
   function handleBack() {
+    const wbRun = typeof data?.returnWebBuildRunId === 'string' ? data.returnWebBuildRunId.trim() : '';
+    if (wbRun) {
+      const chatSess = typeof data?.returnChatSessionId === 'string' ? data.returnChatSessionId.trim() : '';
+      navigate(`/chat?webBuildRunId=${encodeURIComponent(wbRun)}&chatSessionId=${encodeURIComponent(chatSess)}`);
+      return;
+    }
     const rt = sanitizeReturnTo(data?.returnTo);
     if (rt) {
       navigate(rt.startsWith('#') ? rt.slice(1) || '/' : rt);

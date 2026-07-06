@@ -7,7 +7,7 @@ import WebBuildConversation from '@/components/builder/WebBuildConversation';
 import type { BuilderMode } from '@/lib/builderMode';
 import { useLanguageStore } from '@/stores/languageStore';
 import {
-  saveWebBuildSession, getWebBuildSession,
+  saveWebBuildSession, getWebBuildSession, sessionIdOf,
   setActiveWebBuildSession, deriveWebBuildTitle,
 } from '@/lib/webBuildSession';
 import {
@@ -34,9 +34,20 @@ function slugFromIdea(idea: string): string {
   return `${base || 'yoursite'}.korvix.build`;
 }
 
-function stashLatestPreview(p: WebBuildPayload, slug: string): void {
-  const runId = p.steps[p.steps.length - 1]?.id;
-  if (runId) stashPreview({ runId, sectionItems: p.sectionItems, brief: p.brief, slug, prompt: p.prompt });
+function stashLatestPreview(p: WebBuildPayload, slug: string, sessionId?: string): void {
+  // The preview route is keyed by the LATEST step id; but restore needs the
+  // PERSISTED Web Build session id (sessionIdOf = first step id, what
+  // getWebBuildSession / restoreRunId use) and the owning chat session id — so
+  // Back Build can reopen the exact embedded conversation, not a new chat.
+  const previewRunId = p.steps[p.steps.length - 1]?.id;
+  if (!previewRunId) return;
+  const webBuildRunId = sessionIdOf(p);
+  const chatSessionId = (sessionId && sessionId.trim()) || webBuildRunId;
+  const returnTo = `#/chat?webBuildRunId=${encodeURIComponent(webBuildRunId)}&chatSessionId=${encodeURIComponent(chatSessionId)}`;
+  stashPreview({
+    runId: previewRunId, sectionItems: p.sectionItems, brief: p.brief, slug, prompt: p.prompt,
+    returnTo, returnChatSessionId: chatSessionId, returnWebBuildRunId: webBuildRunId,
+  });
 }
 
 interface ChatWebBuildProps {
@@ -121,7 +132,7 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
       const next = buildWebBuildPayload(trimmed, res, undefined, lang);
       setPayload(next);
       persist(next);
-      stashLatestPreview(next, slugFromIdea(next.prompt));
+      stashLatestPreview(next, slugFromIdea(next.prompt), sessionId);
       setAnimateStepId(next.steps[next.steps.length - 1]?.id);
       setLive(null);
     } catch (err) {
@@ -158,7 +169,7 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
       const next = buildWebBuildPayload(trimmed, res, payload, lang);
       setPayload(next);
       persist(next);
-      stashLatestPreview(next, slugFromIdea(next.prompt));
+      stashLatestPreview(next, slugFromIdea(next.prompt), sessionId);
       setAnimateStepId(next.steps[next.steps.length - 1]?.id);
       setLive(null);
     } catch (err) {
