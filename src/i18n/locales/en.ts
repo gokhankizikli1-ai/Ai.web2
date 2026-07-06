@@ -382,6 +382,7 @@ export const en: Record<string, string> = {
   wbAgentStrategy: "Strategy Agent",
   wbAgentLayout: "Layout Architect Agent",
   wbAgentComponent: "Component Engineer Agent",
+  wbAgentReviewer: "Reviewer",
   wbThinkLabel: "Think",
   /* web build — compact running "Think" indicator (single running-state UI).
    * One line at a time, cycled while the build is in flight. No checklist. */
@@ -409,6 +410,7 @@ export const en: Record<string, string> = {
   wbOpStrategyAgentNote: "Strategy sets positioning, the conversion path, trust and CTA hierarchy.",
   wbOpLayoutNote: "The Page Blueprint chooses the hero + section composition the preview and files use.",
   wbOpComponentNote: "The Component Engineer maps the blueprint into the concrete components and files that are generated.",
+  wbOpReviewerNote: "Audits concept fit, fake-data risk, interaction readiness and fix instructions.",
   wbAgentThinking: "Working…",
   wbStageReadBrief: "Reading your brief",
   wbStageExtractGoal: "Extracting audience and conversion goal",

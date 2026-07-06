@@ -25,6 +25,7 @@ import {
   WEB_BUILD_AGENTS_ENABLED,
   type WebBuildAgent, type AgentId, type ResearchAgentArtifact, type ArtDirectionArtifact,
   type StrategyAgentArtifact, type PageBlueprint, type ComponentEngineerArtifact,
+  type ReviewerAgentArtifact,
 } from '@/lib/webBuildAgents';
 
 export type WebBuildRunStatus = 'queued' | 'running' | 'completed' | 'failed';
@@ -339,6 +340,7 @@ const AGENT_TITLE_KEY: Record<AgentId, string> = {
   strategy: 'wbAgentStrategy',
   layout_architect: 'wbAgentLayout',
   component_engineer: 'wbAgentComponent',
+  reviewer: 'wbAgentReviewer',
 };
 const AGENT_NOTE_KEY: Record<AgentId, string> = {
   research: 'wbOpResearchNote',
@@ -346,7 +348,22 @@ const AGENT_NOTE_KEY: Record<AgentId, string> = {
   strategy: 'wbOpStrategyAgentNote',
   layout_architect: 'wbOpLayoutNote',
   component_engineer: 'wbOpComponentNote',
+  reviewer: 'wbOpReviewerNote',
 };
+
+/** Concise reviewer detail lines from the real artifact (no fabrication). */
+function reviewerAgentDetails(a: ReviewerAgentArtifact): string[] {
+  const findings = Array.isArray(a.findings) ? a.findings : [];
+  const critical = findings.filter((f) => f.severity === 'critical').length;
+  const warning = findings.filter((f) => f.severity === 'warning').length;
+  const lines = [
+    `Status: ${a.status}`,
+    `Findings: ${findings.length} (${critical} critical, ${warning} warning)`,
+    ...(Array.isArray(a.fixInstructions) ? a.fixInstructions.slice(0, 3) : []),
+  ];
+  if (a.summary) lines.push(a.summary);
+  return lines.filter(Boolean);
+}
 
 /** Build the expandable detail lines for any agent row from its artifact. */
 function agentDetails(agent: WebBuildAgent): string[] {
@@ -358,6 +375,7 @@ function agentDetails(agent: WebBuildAgent): string[] {
       case 'strategy': return strategyAgentDetails(agent.artifact as StrategyAgentArtifact);
       case 'layout_architect': return layoutArchitectDetails(agent.artifact as PageBlueprint);
       case 'component_engineer': return componentEngineerDetails(agent.artifact as ComponentEngineerArtifact);
+      case 'reviewer': return reviewerAgentDetails(agent.artifact as ReviewerAgentArtifact);
       default: return [];
     }
   } catch {
