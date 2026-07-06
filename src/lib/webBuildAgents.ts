@@ -3253,6 +3253,26 @@ export function enrichBriefWithAgents(
       typographyDirection: b.typographyDirection || art.typographyDirection,
       layoutLogic: b.layoutLogic || art.layoutFeeling,
     };
+    // RENDERABLE identity — gap-fill so the preview + files render the same
+    // concept-specific surface/proof/hero language. Arrays copied defensively;
+    // component style summarized into one concise string. Missing art fields are
+    // simply skipped (never crash).
+    const csr = art.componentStyleRules;
+    const componentStyleSummary = csr
+      ? [csr.cards, csr.gallery, csr.trustBlocks].filter(Boolean).join(' · ') || undefined
+      : undefined;
+    b = {
+      ...b,
+      artDesignArchetype: b.artDesignArchetype || art.designArchetype?.key,
+      artVisualSignature: b.artVisualSignature || art.visualSignature,
+      artAntiTemplateDiagnosis: b.artAntiTemplateDiagnosis || art.antiTemplateDiagnosis,
+      artCompositionRules: b.artCompositionRules || (art.compositionRules ? [...art.compositionRules] : undefined),
+      artSurfaceRules: b.artSurfaceRules || (art.surfaceRules ? [...art.surfaceRules] : undefined),
+      artProofRules: b.artProofRules || (art.proofRules ? [...art.proofRules] : undefined),
+      artImageryDirection: b.artImageryDirection || art.imagerySystem?.imageType || art.imageryDirection,
+      artHeroTreatment: b.artHeroTreatment || art.heroTreatment?.composition || art.heroDirection,
+      artComponentStyle: b.artComponentStyle || componentStyleSummary,
+    };
   }
   if (strategy) {
     b = {

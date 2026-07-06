@@ -8,6 +8,7 @@ import {
 import VisualModule from '@/components/builder/WebBuildVisualModules';
 import type { WebBuildBrief } from '@/lib/webBuildApi';
 import type { WebBuildSectionItem } from '@/lib/webBuildPayload';
+import { deriveWebBuildArtIdentity, type WebBuildArtIdentity } from '@/lib/webBuildArtIdentity';
 
 /**
  * A REAL, premium rendered approximation of the generated site whose STRUCTURE is
@@ -109,6 +110,33 @@ const HeroTitle = ({ children, className = '' }: { children: React.ReactNode; cl
 );
 
 interface HeroProps { s: S; brief: WebBuildBrief; plan: WebBuildLayoutPlan }
+
+/* ── Art-identity hero proof rail — concept-specific proof chips under the hero
+ * CTA, plus a subtle identity eyebrow. Derives the shared art identity from the
+ * brief, so it reads the SAME decision the generated files use. Renders nothing
+ * when there is no proof to show (old builds stay clean). No debug labels. */
+function HeroProof({ brief }: { brief: WebBuildBrief }) {
+  const art = deriveWebBuildArtIdentity(brief);
+  const chips = art.proofRules.slice(0, 4);
+  const identity = art.signature ? art.signature.split(/[—–]/)[0].trim() : '';
+  if (!chips.length && !identity) return null;
+  return (
+    <div>
+      {identity && (
+        <div className={`mb-2.5 text-[10px] font-medium text-white/45 ${art.eyebrowTone || 'tracking-wide'}`}>{identity}</div>
+      )}
+      {chips.length > 0 && (
+        <ul className="flex flex-wrap items-center gap-2">
+          {chips.map((c, i) => (
+            <li key={i} className={`inline-flex items-center gap-1.5 border border-[color:var(--bd)] bg-white/[0.03] px-2.5 py-1 text-[11px] text-slate-300 ${art.proofTone}`}>
+              <span className="h-1 w-1 rounded-full" style={{ background: 'var(--acc)' }} />{c}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 function heroTexts(s: S, brief: WebBuildBrief) {
   return {
@@ -375,9 +403,9 @@ const HEROES: Record<HeroComposition, (p: HeroProps) => ReactElement> = {
 };
 
 /* ── Section composition variants ─────────────────────────────────────── */
-interface VarProps { s: S; plan: WebBuildLayoutPlan; index: number }
+interface VarProps { s: S; plan: WebBuildLayoutPlan; index: number; art: WebBuildArtIdentity }
 
-function FeatureGrid({ s }: VarProps) {
+function FeatureGrid({ s, art }: VarProps) {
   const items = bulletsOf(s).slice(0, 6);
   return (
     <div className="mx-auto max-w-6xl px-6">
@@ -386,7 +414,7 @@ function FeatureGrid({ s }: VarProps) {
       <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {items.map((b, i) => (
           <Reveal key={i} i={i}>
-            <div className="rounded-[var(--pr)] border border-[color:var(--bd)] bg-[var(--sf)] p-6 transition hover:-translate-y-1 hover:border-white/20"><div className="mb-4 h-11 w-11 rounded-xl ring-1 ring-white/10" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 45%, transparent), color-mix(in srgb, var(--acc2) 22%, transparent))' }} /><p className="text-[15px] font-semibold leading-snug text-white">{b}</p></div>
+            <div className={`rounded-[var(--pr)] border border-[color:var(--bd)] bg-[var(--sf)] p-6 transition hover:-translate-y-1 hover:border-white/20 ${art.cardTone}`} style={art.mode === 'archive' ? { borderLeftColor: 'var(--acc)' } : undefined}><div className="mb-4 h-11 w-11 rounded-xl ring-1 ring-white/10" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 45%, transparent), color-mix(in srgb, var(--acc2) 22%, transparent))' }} /><p className="text-[15px] font-semibold leading-snug text-white">{b}</p></div>
           </Reveal>
         ))}
       </div>
@@ -413,13 +441,13 @@ function EditorialSplit({ s, plan, index }: VarProps) {
   );
 }
 
-function ProofStrip({ s }: VarProps) {
+function ProofStrip({ s, art }: VarProps) {
   const items = bulletsOf(s).slice(0, 4);
   const stats = ['4.9★', '12k+', '98%', '24/7'];
   return (
     <div className="mx-auto max-w-5xl px-6">
       <H2>{heading(s)}</H2>
-      <div className="mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)] bg-white/5 lg:grid-cols-4">
+      <div className={`mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)] bg-white/5 lg:grid-cols-4 ${art.cardTone}`}>
         {items.map((b, i) => (
           <div key={i} className="bg-[#0b0d12] p-6 text-center">
             <div className="text-3xl font-semibold tracking-tight text-white">{stats[i % stats.length]}</div>
@@ -431,7 +459,7 @@ function ProofStrip({ s }: VarProps) {
   );
 }
 
-function DashboardData({ s }: VarProps) {
+function DashboardData({ s, art }: VarProps) {
   const labels = bulletsOf(s).slice(0, 4);
   return (
     <div className="mx-auto grid max-w-6xl items-center gap-10 px-6 lg:grid-cols-[1fr_1.15fr]">
@@ -440,7 +468,7 @@ function DashboardData({ s }: VarProps) {
         {s.sub && <p className="mt-4 max-w-md text-base leading-relaxed text-slate-300">{s.sub}</p>}
         <ul className="mt-6 grid grid-cols-2 gap-3">
           {labels.map((b, i) => (
-            <li key={i} className="rounded-xl border border-[color:var(--bd)] bg-[var(--sf)] px-4 py-3 text-[13px] text-slate-200">{b}</li>
+            <li key={i} className={`rounded-xl border border-[color:var(--bd)] bg-[var(--sf)] px-4 py-3 text-[13px] text-slate-200 ${art.cardTone}`}>{b}</li>
           ))}
         </ul>
       </div>
@@ -449,7 +477,7 @@ function DashboardData({ s }: VarProps) {
   );
 }
 
-function CatalogGrid({ s }: VarProps) {
+function CatalogGrid({ s, art }: VarProps) {
   const tiles = bulletsOf(s).slice(0, 6);
   return (
     <div className="mx-auto max-w-6xl px-6">
@@ -457,8 +485,8 @@ function CatalogGrid({ s }: VarProps) {
       <div className="mt-10 grid grid-cols-2 gap-4 sm:grid-cols-3">
         {tiles.map((b, i) => (
           <Reveal key={i} i={i}>
-            <figure className={`group relative overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)] ${i % 5 === 0 ? 'sm:col-span-2' : ''}`}>
-              <div className="relative aspect-[4/3] w-full transition duration-500 group-hover:scale-[1.04]" style={{ background: i % 3 === 0 ? 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 26%, transparent), color-mix(in srgb, var(--acc2) 14%, transparent))' : 'linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01))' }} />
+            <figure className={`group relative overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)] ${art.cardTone} ${i % 5 === 0 ? 'sm:col-span-2' : ''}`}>
+              <div className={`relative w-full transition duration-500 group-hover:scale-[1.04] ${art.mediaTone}`} style={{ background: i % 3 === 0 ? 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 26%, transparent), color-mix(in srgb, var(--acc2) 14%, transparent))' : 'linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01))' }} />
               <figcaption className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/70 to-transparent p-3 text-sm font-medium text-white">{b}</figcaption>
             </figure>
           </Reveal>
@@ -468,7 +496,7 @@ function CatalogGrid({ s }: VarProps) {
   );
 }
 
-function CollectionArchive({ s }: VarProps) {
+function CollectionArchive({ s, art }: VarProps) {
   const rows = bulletsOf(s).slice(0, 6);
   return (
     <div className="mx-auto max-w-4xl px-6">
@@ -478,7 +506,7 @@ function CollectionArchive({ s }: VarProps) {
           <Reveal key={i} i={i}>
             <div className="group flex items-center gap-5 py-5">
               <span className="w-8 text-sm tabular-nums text-slate-500">{String(i + 1).padStart(2, '0')}</span>
-              <span className="h-12 w-16 shrink-0 rounded-md border border-[color:var(--bd)]" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 22%, transparent), transparent)' }} />
+              <span className={`h-12 w-16 shrink-0 rounded-md border border-[color:var(--bd)] ${art.cardTone}`} style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 22%, transparent), transparent)' }} />
               <span className="flex-1 text-[15px] font-medium text-white">{b}</span>
               <span className="text-slate-500 transition group-hover:translate-x-1">→</span>
             </div>
@@ -489,7 +517,7 @@ function CollectionArchive({ s }: VarProps) {
   );
 }
 
-function ProcessTimeline({ s }: VarProps) {
+function ProcessTimeline({ s, art }: VarProps) {
   const steps = bulletsOf(s).slice(0, 4);
   return (
     <div className="mx-auto max-w-6xl px-6">
@@ -497,7 +525,7 @@ function ProcessTimeline({ s }: VarProps) {
       <ol className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {steps.map((b, i) => (
           <Reveal key={i} i={i}>
-            <li className="relative rounded-[var(--pr)] border border-[color:var(--bd)] bg-[var(--sf)] p-5">
+            <li className={`relative rounded-[var(--pr)] border border-[color:var(--bd)] bg-[var(--sf)] p-5 ${art.cardTone}`}>
               <span className="text-sm font-semibold" style={{ color: 'var(--acc)' }}>0{i + 1}</span>
               <p className="mt-2 text-[15px] font-medium text-white">{b}</p>
             </li>
@@ -554,14 +582,14 @@ function SpatialFloorplanSection({ s }: VarProps) {
   );
 }
 
-function PricingMembership({ s }: VarProps) {
+function PricingMembership({ s, art }: VarProps) {
   const tiers = (s.bullets?.length ? s.bullets : ['Başlangıç', 'Pro', 'Kurumsal']).slice(0, 3);
   return (
     <div className="mx-auto max-w-5xl px-6">
       <H2>{heading(s)}</H2>
       <div className="mt-10 grid gap-5 sm:grid-cols-3">
         {tiers.map((b, i) => (
-          <div key={i} className="rounded-[var(--pr)] border p-6" style={i === 1 ? { borderColor: 'color-mix(in srgb, var(--acc) 40%, transparent)', background: 'color-mix(in srgb, var(--acc) 7%, transparent)' } : { borderColor: 'rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.03)' }}>
+          <div key={i} className={`rounded-[var(--pr)] border p-6 ${art.cardTone}`} style={i === 1 ? { borderColor: 'color-mix(in srgb, var(--acc) 40%, transparent)', background: 'color-mix(in srgb, var(--acc) 7%, transparent)' } : { borderColor: 'rgba(255,255,255,0.1)', background: 'rgba(255,255,255,0.03)' }}>
             <p className="text-sm font-medium text-slate-300">{b}</p>
             <div className="mt-3 text-3xl font-semibold text-white">₺{199 + i * 200}<span className="text-sm text-slate-400">/ay</span></div>
             <div className={`mt-5 rounded-lg py-2 text-center text-sm font-semibold ${i === 1 ? 'text-white' : 'border border-white/15 text-slate-200'}`} style={i === 1 ? { background: 'var(--acc)' } : undefined}>{s.cta || 'Seç'}</div>
@@ -585,7 +613,7 @@ function ApplicationForm({ s, plan }: VarProps) {
   );
 }
 
-function FaqCta({ s }: VarProps) {
+function FaqCta({ s, art }: VarProps) {
   const appt = /contact|book|appointment|randevu|form|reservation|rezervasyon|apply|başvuru/.test(`${s.id} ${s.name}`.toLowerCase());
   const isFaq = /faq|sıkça|soru/.test(`${s.id} ${s.name}`.toLowerCase());
   if (isFaq && s.bullets?.length) {
@@ -593,7 +621,7 @@ function FaqCta({ s }: VarProps) {
       <div className="mx-auto max-w-3xl px-6">
         <H2 align="left">{heading(s)}</H2>
         <div className="mt-6 space-y-3">
-          {s.bullets.slice(0, 6).map((b, i) => <div key={i} className="rounded-xl border border-[color:var(--bd)] bg-[var(--sf)] p-4 text-[15px] font-medium text-white">{b}</div>)}
+          {s.bullets.slice(0, 6).map((b, i) => <div key={i} className={`rounded-xl border border-[color:var(--bd)] bg-[var(--sf)] p-4 text-[15px] font-medium text-white ${art.cardTone}`}>{b}</div>)}
         </div>
       </div>
     );
@@ -615,13 +643,13 @@ function FaqCta({ s }: VarProps) {
   );
 }
 
-function Comparison({ s }: VarProps) {
+function Comparison({ s, art }: VarProps) {
   return (
     <div className="mx-auto max-w-5xl px-6">
       <H2>{heading(s)}</H2>
       <div className="mt-10 grid gap-5 sm:grid-cols-2">
-        <div className="relative overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)]"><span className="absolute left-3 top-3 z-10 rounded-full bg-black/50 px-2.5 py-1 text-xs text-slate-300">Öncesi</span><div className="aspect-[4/3]" style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.01))' }} /></div>
-        <div className="relative overflow-hidden rounded-[var(--pr)] border ring-1" style={{ borderColor: 'color-mix(in srgb, var(--acc) 40%, transparent)' }}><span className="absolute left-3 top-3 z-10 rounded-full px-2.5 py-1 text-xs text-white" style={{ background: 'var(--acc)' }}>Sonrası</span><div className="aspect-[4/3]" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 22%, transparent), color-mix(in srgb, var(--acc2) 12%, transparent))' }} /></div>
+        <div className={`relative overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)] ${art.cardTone}`}><span className="absolute left-3 top-3 z-10 rounded-full bg-black/50 px-2.5 py-1 text-xs text-slate-300">Öncesi</span><div className={art.mediaTone} style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.01))' }} /></div>
+        <div className={`relative overflow-hidden rounded-[var(--pr)] border ring-1 ${art.cardTone}`} style={{ borderColor: 'color-mix(in srgb, var(--acc) 40%, transparent)' }}><span className="absolute left-3 top-3 z-10 rounded-full px-2.5 py-1 text-xs text-white" style={{ background: 'var(--acc)' }}>Sonrası</span><div className={art.mediaTone} style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 22%, transparent), color-mix(in srgb, var(--acc2) 12%, transparent))' }} /></div>
       </div>
     </div>
   );
@@ -673,6 +701,9 @@ export default function WebBuildPreviewDocument({
   // hero composition, per-section variant, visual module, rhythm AND the visual
   // system (backdrop construction, surface treatment, panel shape, accent mode).
   const plan = deriveLayoutPlan(brief, sectionItems.map((s) => ({ id: s.id, name: s.name })));
+  // The SAME art render identity the file synthesizer uses — so preview and
+  // generated files apply the same concept-specific surface / proof language.
+  const art = deriveWebBuildArtIdentity(brief);
   const variantOf = (id: string): SectionVariant => plan.sectionVariants[id] || 'feature-grid';
   const vt = visualSystemTokens(plan.visualSystem);
 
@@ -700,7 +731,15 @@ export default function WebBuildPreviewDocument({
         const kind = plan.sections.find((p) => p.id === s.id)?.kind;
         if (kind === 'hero') {
           const Hero = HEROES[plan.heroComposition] || HEROES['split-editorial'];
-          return <Hero key={s.id} s={s} brief={brief} plan={plan} />;
+          return (
+            <div key={s.id}>
+              <Hero s={s} brief={brief} plan={plan} />
+              {/* Concept-specific proof rail, directly under the hero. */}
+              <div className="relative z-10 mx-auto max-w-6xl px-6 pb-6">
+                <HeroProof brief={brief} />
+              </div>
+            </div>
+          );
         }
         if (kind === 'footer') return <Footer key={s.id} s={s} />;
         const variant = variantOf(s.id);
@@ -709,7 +748,7 @@ export default function WebBuildPreviewDocument({
         const band = banded && i % 2 === 1;
         return (
           <section key={s.id} className={`relative ${PAD[plan.contentDensity]}`} style={band ? { background: 'rgba(255,255,255,0.015)' } : undefined}>
-            {Render({ s, plan, index: i })}
+            {Render({ s, plan, index: i, art })}
           </section>
         );
       })}

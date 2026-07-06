@@ -120,6 +120,20 @@ export interface WebBuildBrief {
   // instead of re-detecting the archetype from prose. Plain strings (validated at
   // the plan layer) to avoid an import cycle; all optional and backward compatible.
   agentArchetype?: string; agentHero?: string; agentModule?: string;
+  // RENDERABLE Art Direction identity — the UI / Art Director's chosen identity,
+  // persisted onto the brief so BOTH the preview and the generated files can render
+  // the same concept-specific surface/proof/hero language (not just palette). All
+  // optional & backward compatible; populated in enrichBriefWithAgents from the
+  // ArtDirectionArtifact and consumed via deriveWebBuildArtIdentity().
+  artDesignArchetype?: string;
+  artVisualSignature?: string;
+  artAntiTemplateDiagnosis?: string;
+  artCompositionRules?: string[];
+  artSurfaceRules?: string[];
+  artProofRules?: string[];
+  artImageryDirection?: string;
+  artHeroTreatment?: string;
+  artComponentStyle?: string;
 }
 
 /** Pull the labeled strategy lines out of the Build Plan / Design Direction. */
