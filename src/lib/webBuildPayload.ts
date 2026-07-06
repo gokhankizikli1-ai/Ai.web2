@@ -13,6 +13,7 @@ import {
   runUpstreamAgents, runLayoutArchitect, runComponentEngineer, WEB_BUILD_AGENTS_ENABLED,
   type WebBuildAgent, type WebBuildArtifacts, type WebBuildEnforcement,
 } from '@/lib/webBuildAgents';
+import { deriveAgentSectionArchitecture } from '@/lib/webBuildSectionArchitecture';
 import { detectMessageLanguage } from '@/lib/locale';
 
 export type ActivityStatus = 'waiting' | 'running' | 'done' | 'failed';
@@ -333,7 +334,38 @@ export function buildWebBuildPayload(
     }
   }
 
-  let files = resolveFiles(result, prevFiles, artBrief);
+  // SECTION ARCHITECTURE ENFORCEMENT — for a FRESH build whose section list is weak
+  // or mismatched, replace it with a concept-specific architecture derived from the
+  // agent artifacts, BEFORE files + the layout plan are built, so Preview AND All
+  // Files render the new structure. Fully guarded (non-blocking). Revisions and
+  // already concept-specific backend architectures are preserved by the helper.
+  let didRewriteArchitecture = false;
+  if (WEB_BUILD_AGENTS_ENABLED && !prev) {
+    try {
+      const arch = deriveAgentSectionArchitecture({
+        prompt, sectionItems, brief: artBrief, inferred,
+        research: artifacts?.research, artDirection: artifacts?.artDirection, strategy: artifacts?.strategy,
+        lang: effLang, isRevision: false,
+      });
+      if (arch.didRewrite && arch.sectionItems.length >= 5) {
+        sectionItems = arch.sectionItems;
+        didRewriteArchitecture = true;
+      }
+    } catch {
+      /* non-blocking — keep the original sectionItems */
+    }
+  }
+
+  // Files: when the architecture was rewritten, synthesize from the REWRITTEN
+  // sections (NOT the original backend result) so preview and files match. When it
+  // was not rewritten, keep the backend-parsed resolveFiles behavior unchanged.
+  let files: WebBuildFile[];
+  if (didRewriteArchitecture) {
+    const plan = deriveLayoutPlan(artBrief, sectionItems.map((s) => ({ id: s.id, name: s.name })));
+    files = diffFiles(prevFiles, synthesizeFromCopies(itemsToCopies(sectionItems), artBrief, plan));
+  } else {
+    files = resolveFiles(result, prevFiles, artBrief);
+  }
 
   // Quality gate — repair a weak FRESH build with the inferred industry brief.
   // The layout plan is derived from the FINAL section set so preview, files and

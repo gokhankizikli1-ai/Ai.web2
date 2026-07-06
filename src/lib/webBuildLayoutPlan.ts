@@ -35,20 +35,25 @@ export function sectionKind(id: string, sectionName: string): SectionKind {
   const k = `${id} ${sectionName}`.toLowerCase();
   if (/hero/.test(k)) return 'hero';
   if (/footer/.test(k)) return 'footer';
+  // Concept CTA sections (explicit ids) — checked early so e.g. "start-project" is
+  // a CTA, not a gallery from the word "project".
+  if (/researcher-access|quote-cta|request-quote|start-project|donation|volunteers|tickets|pricing-cart-cta/.test(k)) return 'cta';
+  // "programs" is a card grid, never a priced plan (avoids fabricated prices).
+  if (/\bprograms?\b|programlar/.test(k)) return 'features';
   if (/before.?after|önce.?sonra/.test(k)) return 'beforeAfter';
   if (/product.?demo|chatbot|chat|dashboard|demo/.test(k)) return 'productDemo';
-  if (/workflow|how.?it.?works|process|süreç|adım|nasıl/.test(k)) return 'workflow';
+  if (/workflow|how.?it.?works|process|süreç|adım|nasıl|agenda|ajanda|curriculum|müfredat/.test(k)) return 'workflow';
   if (/metric|result|stat|sonuç|rakam/.test(k)) return 'metrics';
   if (/integration|entegrasyon/.test(k)) return 'integrations';
   if (/inventory|vehicle|featured.?(car|vehicle)|araç|araba|envanter/.test(k)) return 'inventory';
   if (/financ|finans|kredi/.test(k)) return 'financing';
-  if (/pricing|price|plan|program|fiyat|paket/.test(k)) return 'pricing';
+  if (/pricing|price|plan|fiyat|paket|enroll/.test(k)) return 'pricing';
   if (/menu|menü/.test(k)) return 'menu';
-  if (/gallery|galeri|collection|koleksiyon|material|malzeme|portfolio|portfolyo|proje|project|work|iş/.test(k)) return 'gallery';
-  if (/testimonial|social|proof|review|yorum|referans/.test(k)) return 'testimonial';
+  if (/gallery|galeri|collection|koleksiyon|material|malzeme|portfolio|portfolyo|proje|project|work|iş|document|belge|filter|filtre|ambien|ambiyans|venue|mekan|speaker|konuşmacı|case.?stud|vaka|featured|öne çıkan/.test(k)) return 'gallery';
+  if (/testimonial|social|proof|review|yorum|referans|provenance|menşe|credential|lisans|certif|sertifika|akredit|sponsor|impact|etki|curation|küratör|shipping|kargo|iade/.test(k)) return 'testimonial';
   if (/faq|sıkça|soru/.test(k)) return 'faq';
   if (/cta|final|contact|book|appointment|randevu|form|reservation|rezervasyon|iletişim/.test(k)) return 'cta';
-  if (/feature|service|benefit|hizmet|özellik/.test(k)) return 'features';
+  if (/feature|service|benefit|hizmet|özellik|capabilit|yetenek|yetkinlik|use.?case|senaryo|specification|teknik özellik|outcome|kazanım/.test(k)) return 'features';
   return 'generic';
 }
 
