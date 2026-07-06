@@ -129,6 +129,40 @@ export interface UiAgentInstructions {
   recommendedPalette: string[];
   targetUserSummary: string;
   conversionFocus: string;
+  /* ── Stronger, category-aware hand-off (all optional → backward compatible). ── */
+  /** What proof/trust the Art Director must foreground for this concept. */
+  trustFocus?: string;
+  /** How imagery/visuals should be composed for this concept. */
+  imageryDirection?: string;
+  /** A concrete anti-template warning tied to the detected concept category. */
+  layoutWarning?: string;
+}
+
+/** The Research Agent's precise concept understanding — a compact, structured
+ *  read of WHAT the site is, WHO it's for, and the visitor's decision/conversion/
+ *  proof model. Consumed by the UI / Art Director and Strategy agents. All fields
+ *  are plain strings so it persists safely; the whole field is optional so old
+ *  saved builds still load. Inferred deterministically from prompt + brief +
+ *  category signals — never a fixed per-example template. */
+export interface ConceptProfile {
+  /** Detected concept category key (e.g. 'archive', 'hospitality', 'saas'). */
+  category: string;
+  /** A precise one-line statement of what the site is. */
+  whatItIs: string;
+  /** The primary audience this concept serves. */
+  whoFor: string;
+  /** What the visitor is actually trying to do on this site. */
+  visitorIntent: string;
+  /** The business/content model (service, catalog, product, editorial, event…). */
+  businessModel: string;
+  /** The decision the visitor must make before converting. */
+  keyDecision: string;
+  /** The single primary conversion the site drives toward. */
+  mainConversion: string;
+  /** The proof/trust this specific concept must show to earn the conversion. */
+  proofNeeded: string[];
+  /** The dominant content type (catalog, editorial, product, service, event…). */
+  contentType: string;
 }
 
 /* ── Research Agent artifact ──────────────────────────────────────────── */
@@ -164,6 +198,9 @@ export interface ResearchAgentArtifact {
   colorPsychology?: ColorPsychology;
   uxPriorities?: UxPriority[];
   uiAgentInstructions?: UiAgentInstructions;
+  /** Precise concept understanding — the strongest single signal downstream
+   *  agents can read to avoid a generic build. Optional → backward compatible. */
+  conceptProfile?: ConceptProfile;
 }
 
 /* ── UI / Art Director artifact ───────────────────────────────────────── */
@@ -531,6 +568,50 @@ const ANGLE_LABELS = (lang: Lang): Record<string, string> => ({
  * design system), NOT from a fixed per-example template. Two different ideas
  * light up different signals → different pages, components, style and palette. */
 
+/** The precise concept category the site belongs to. Detected deterministically
+ *  by weighted keyword scoring over the prompt + brief + inferred text, so two
+ *  different ideas resolve to different categories — the anchor for concept-
+ *  specific pages, components, trust proof and the anti-generic guard. */
+export type ConceptCategory =
+  | 'archive' | 'hospitality' | 'landscaping' | 'local_service' | 'legal'
+  | 'medical' | 'ai' | 'saas' | 'marketplace' | 'education' | 'nonprofit'
+  | 'portfolio' | 'industrial' | 'event' | 'real_estate' | 'finance' | 'general';
+
+/** Weighted keyword table (EN + TR). Ordered so the most specific categories are
+ *  scanned first; ties break toward the earlier (more specific) entry. Reusable
+ *  and deterministic — never a per-prompt hack. */
+const CONCEPT_KEYWORDS: Array<{ cat: ConceptCategory; weight: number; words: string[] }> = [
+  { cat: 'archive', weight: 3, words: ['archive', 'museum', 'catalogue', 'catalog', 'collection', 'library', 'exhibit', 'manuscript', 'heritage', 'provenance', 'artifact', 'ottoman', 'historical', 'digital archive', 'arşiv', 'müze', 'koleksiyon', 'kütüphane', 'elyazma', 'osmanlı', 'tarihî', 'tarihi eser'] },
+  { cat: 'hospitality', weight: 3, words: ['restaurant', 'restoran', 'cafe', 'kafe', 'menu', 'menü', 'reservation', 'rezervasyon', 'dining', 'bistro', 'brasserie', 'bakery', 'fırın', 'catering', 'hotel', 'otel', 'coffee shop', 'lokanta', 'brunch', 'patisserie'] },
+  { cat: 'landscaping', weight: 3, words: ['landscap', 'peyzaj', 'garden', 'bahçe', 'lawn', 'nursery', 'horticultur', 'terrace', 'teras', 'hardscape', 'çevre düzenleme', 'yeşil alan'] },
+  { cat: 'legal', weight: 3, words: ['law firm', 'lawyer', 'attorney', 'legal', 'solicitor', 'notary', 'litigation', 'avukat', 'hukuk', 'noter', 'dava', 'hukuki'] },
+  { cat: 'medical', weight: 3, words: ['medical', 'clinic', 'doctor', 'dental', 'dentist', 'health', 'therapy', 'patient', 'klinik', 'doktor', 'diş', 'sağlık', 'hasta', 'terapi', 'psikolog', 'fizyoterapi', 'poliklinik'] },
+  { cat: 'ai', weight: 3, words: ['artificial intelligence', 'machine learning', 'llm', 'copilot', 'neural', 'chatbot', 'agentic', 'yapay zeka', 'makine öğren', 'yapay zekâ'] },
+  { cat: 'saas', weight: 2, words: ['saas', 'dashboard', 'platform', 'software', 'api', 'analytics', 'automation', 'workflow', 'crm', 'yazılım', 'panel', 'otomasyon', 'analitik'] },
+  { cat: 'marketplace', weight: 3, words: ['ecommerce', 'e-commerce', 'e-ticaret', 'marketplace', 'online store', 'storefront', 'checkout', 'add to cart', 'mağaza', 'online satış', 'ürün kataloğu'] },
+  { cat: 'education', weight: 3, words: ['course', 'education', 'academy', 'curriculum', 'bootcamp', 'lms', 'e-learning', 'eğitim', 'kurs', 'okul', 'akademi', 'müfredat', 'online ders'] },
+  { cat: 'nonprofit', weight: 3, words: ['nonprofit', 'non-profit', 'charity', 'donate', 'donation', 'foundation', 'volunteer', 'fundrais', 'bağış', 'vakıf', 'dernek', 'gönüllü', 'kampanya', 'yardım kuruluşu'] },
+  { cat: 'portfolio', weight: 2, words: ['portfolio', 'portfolyo', 'showcase', 'photographer', 'fotoğraf', 'designer', 'tasarımcı', 'creative studio', 'stüdyo', 'freelance', 'case study', 'vaka çalışması'] },
+  { cat: 'industrial', weight: 3, words: ['industrial', 'manufactur', 'logistics', 'machinery', 'factory', 'engineering firm', 'construction', 'supply chain', 'fabrika', 'üretim', 'lojistik', 'makine', 'inşaat', 'sanayi', 'endüstri'] },
+  { cat: 'event', weight: 3, words: ['conference', 'summit', 'festival', 'expo', 'webinar', 'meetup', 'hackathon', 'symposium', 'etkinlik', 'konferans', 'zirve', 'fuar', 'lansman'] },
+  { cat: 'real_estate', weight: 3, words: ['real estate', 'property', 'realtor', 'listing', 'apartment', 'emlak', 'gayrimenkul', 'konut', 'daire', 'satılık', 'kiralık'] },
+  { cat: 'finance', weight: 3, words: ['fintech', 'bank', 'invest', 'trading', 'insurance', 'accounting', 'finans', 'banka', 'yatırım', 'sigorta', 'muhasebe'] },
+];
+
+/** Score every category over the text and return the strongest match (or
+ *  'general' when nothing clears the bar). Pure and deterministic. */
+export function detectConceptCategory(text: string): ConceptCategory {
+  const low = ` ${(text || '').toLowerCase()} `;
+  let best: ConceptCategory = 'general';
+  let bestScore = 0;
+  for (const { cat, weight, words } of CONCEPT_KEYWORDS) {
+    let score = 0;
+    for (const w of words) if (low.includes(w)) score += weight;
+    if (score > bestScore) { bestScore = score; best = cat; }
+  }
+  return best;
+}
+
 interface ResearchSignals {
   // business model
   booking: boolean; subscription: boolean; purchase: boolean; saas: boolean;
@@ -540,20 +621,30 @@ interface ResearchSignals {
   health: boolean; finance: boolean; creative: boolean; minimal: boolean;
   // device lean
   desktopFirst: boolean; mobileFirst: boolean;
+  // ── precise concept category + category booleans (from detectConceptCategory) ──
+  category: ConceptCategory;
+  archive: boolean; hospitality: boolean; landscaping: boolean; localService: boolean;
+  legal: boolean; medical: boolean; ai: boolean; marketplace: boolean;
+  education: boolean; nonprofit: boolean; portfolio: boolean; industrial: boolean;
+  event: boolean; realEstate: boolean;
 }
 
 const has = (text: string, ...words: string[]): boolean =>
   words.some((w) => text.includes(w));
 
-/** Scan the combined idea/brief/inferred text for real model + audience signals. */
-function researchSignals(brief: WebBuildBrief, inferred: InferredBrief): ResearchSignals {
+/** Scan the combined idea/brief/inferred text (+ the raw prompt, the richest
+ *  concept signal) for real model + audience signals and the concept category. */
+function researchSignals(brief: WebBuildBrief, inferred: InferredBrief, prompt = ''): ResearchSignals {
   const t = [
+    prompt,
     brief.type, brief.audience, brief.goal, brief.coreIdea, brief.visitorIntent,
     brief.conversionStrategy, brief.style, brief.visualMood,
     inferred.businessType, inferred.targetAudience, inferred.conversionGoal,
     inferred.tone, inferred.visualStyle, inferred.industry, inferred.layoutArchetype,
     (inferred.items || []).join(' '),
   ].filter(Boolean).join(' ').toLowerCase();
+
+  const category = detectConceptCategory(t);
 
   const booking = has(t, 'book', 'reserv', 'appointment', 'randevu', 'rezerv', 'schedul', 'consult', 'keşif', 'danışman');
   const subscription = has(t, 'subscription', 'membership', 'üyelik', 'abonel', 'recurring', 'plan', 'pricing', 'fiyat', 'paket');
@@ -575,10 +666,32 @@ function researchSignals(brief: WebBuildBrief, inferred: InferredBrief): Researc
   const desktopFirst = saas || b2b || technical || finance || has(t, 'dashboard', 'admin', 'workspace');
   const mobileFirst = inferred.industry === 'fitness' || has(t, 'mobile', 'app', 'delivery', 'sosyal', 'social', 'on the go', 'teslimat', 'yemek', 'food');
 
+  // Category booleans — the concept category is exclusive (best single match),
+  // so downstream derivations can branch on a specific, confident concept.
+  const archive = category === 'archive';
+  const hospitality = category === 'hospitality' || inferred.industry === 'restaurant';
+  const landscaping = category === 'landscaping' || inferred.industry === 'landscaping';
+  const legal = category === 'legal';
+  const medical = category === 'medical';
+  const ai = category === 'ai';
+  const marketplace = category === 'marketplace' || inferred.industry === 'ecommerce';
+  const education = category === 'education';
+  const nonprofit = category === 'nonprofit';
+  const portfolio = category === 'portfolio' || inferred.industry === 'portfolio' || inferred.industry === 'agency';
+  const industrial = category === 'industrial';
+  const event = category === 'event';
+  const realEstate = category === 'real_estate';
+  // Local service = an at-a-place trade booking concept (not a product/SaaS).
+  const localService = inferred.industry === 'local_service' || landscaping
+    || has(t, 'plumb', 'electric', 'cleaning', 'repair', 'barber', 'salon', 'kuaför', 'berber', 'tesisat', 'temizlik', 'tamir', 'nakliyat', 'locksmith', 'çilingir', 'boya');
+
   return {
     booking, subscription, purchase, saas, application, leadgen, content,
     b2b, kids, luxury, technical, health, finance, creative, minimal,
     desktopFirst, mobileFirst,
+    category,
+    archive, hospitality, landscaping, localService, legal, medical, ai,
+    marketplace, education, nonprofit, portfolio, industrial, event, realEstate,
   };
 }
 
@@ -694,13 +807,69 @@ function deriveRecommendedPages(
     pages.push(P('Blog', L(lang, 'Build authority and organic reach', 'Otorite ve organik erişim kur'), 'optional',
       L(lang, 'Content is part of the strategy', 'İçerik stratejinin parçası')));
   }
+
+  // ── Concept-specific pages — the strongest lever against a generic build. ──
+  if (sig.archive) {
+    pages.push(P('Collection Index', L(lang, 'Browse the whole collection', 'Tüm koleksiyonu gez'), 'must-have', L(lang, 'The catalog IS the product', 'Katalog ürünün kendisi')));
+    pages.push(P('Item Detail', L(lang, 'Show one item with full provenance', 'Bir öğeyi tam menşeiyle göster'), 'must-have', L(lang, 'Researchers need per-item depth', 'Araştırmacılar öğe başına derinlik ister')));
+    pages.push(P('Search & Filters', L(lang, 'Find items by era/type/tag', 'Öğeleri dönem/tür/etikete göre bul'), 'must-have', L(lang, 'A collection is useless without retrieval', 'Erişim olmadan koleksiyon işe yaramaz')));
+    pages.push(P('Provenance & Curation', L(lang, 'Prove authenticity and curation', 'Özgünlük ve küratörlüğü kanıtla'), 'should-have', L(lang, 'Trust is authenticity here', 'Burada güven, özgünlüktür')));
+  }
+  if (sig.hospitality) {
+    pages.push(P('Menu', L(lang, 'Show the offering that sells', 'Satışı yapan teklifi göster'), 'must-have', L(lang, 'The menu is the decision', 'Menü kararın kendisi')));
+    pages.push(P('Reservations', L(lang, 'Let guests book a table', 'Misafir masa ayırtsın'), 'must-have', L(lang, 'The conversion is a reservation', 'Dönüşüm bir rezervasyon')));
+    pages.push(P('Gallery & Ambience', L(lang, 'Sell the atmosphere', 'Atmosferi sat'), 'should-have', L(lang, 'Hospitality sells on feel', 'Ağırlama his üzerinden satar')));
+    pages.push(P('Location & Hours', L(lang, 'Make visiting effortless', 'Ziyareti kolaylaştır'), 'should-have', L(lang, 'Local intent needs the practicals', 'Yerel niyet pratikleri ister')));
+  }
+  if (sig.landscaping) {
+    pages.push(P('Projects', L(lang, 'Prove quality with real outdoor work', 'Gerçek dış mekan işleriyle kaliteyi kanıtla'), 'must-have', L(lang, 'Outdoor work is proven visually', 'Dış mekan işi görselle kanıtlanır')));
+    pages.push(P('Before & After', L(lang, 'Show the transformation', 'Dönüşümü göster'), 'should-have', L(lang, 'Outcome is comparable', 'Sonuç karşılaştırılabilir')));
+    pages.push(P('Process', L(lang, 'Explain concept-to-planting', 'Konseptten uygulamaya anlat'), 'should-have', L(lang, 'A premium service reassures on process', 'Premium hizmet süreçle güven verir')));
+  }
+  if (sig.legal || sig.medical) {
+    pages.push(P(sig.legal ? 'Practice Areas' : 'Treatments', L(lang, 'Lay out exactly what is offered', 'Sunulanı tam olarak düzenle'), 'must-have', L(lang, 'Visitors match need to service', 'Ziyaretçi ihtiyacı hizmetle eşler')));
+    pages.push(P('Credentials', L(lang, 'Show licenses, team and experience', 'Lisans, ekip ve deneyimi göster'), 'must-have', L(lang, 'High-stakes trust needs proof', 'Yüksek riskli güven kanıt ister')));
+    pages.push(P('Consultation', L(lang, 'Make the first step easy', 'İlk adımı kolaylaştır'), 'must-have', L(lang, 'The conversion is a consult', 'Dönüşüm bir danışma')));
+  }
+  if (sig.education) {
+    pages.push(P('Curriculum', L(lang, 'Show what is taught', 'Neyin öğretildiğini göster'), 'must-have', L(lang, 'Learners judge the syllabus', 'Öğrenenler müfredatı değerlendirir')));
+    pages.push(P('Outcomes', L(lang, 'Prove the result learners get', 'Öğrenenlerin elde ettiği sonucu kanıtla'), 'must-have', L(lang, 'Education is sold on outcomes', 'Eğitim kazanımla satılır')));
+    pages.push(P('Instructors', L(lang, 'Prove who teaches', 'Kimin öğrettiğini kanıtla'), 'should-have', L(lang, 'Credibility is the teacher', 'İtibar öğretmendir')));
+    pages.push(P('Enroll', L(lang, 'Convert to enrollment', 'Kayda dönüştür'), 'must-have', L(lang, 'The action is enrolling', 'Eylem kayıt olmak')));
+  }
+  if (sig.nonprofit) {
+    pages.push(P('Our Cause', L(lang, 'Explain the mission clearly', 'Misyonu net anlat'), 'must-have', L(lang, 'People give to a clear cause', 'İnsanlar net bir davaya bağış yapar')));
+    pages.push(P('Impact', L(lang, 'Show measurable impact', 'Ölçülebilir etkiyi göster'), 'must-have', L(lang, 'Proof of impact drives giving', 'Etki kanıtı bağışı yönlendirir')));
+    pages.push(P('Ways to Give', L(lang, 'Make donating effortless', 'Bağışı kolaylaştır'), 'must-have', L(lang, 'The conversion is a donation', 'Dönüşüm bir bağış')));
+  }
+  if (sig.event) {
+    pages.push(P('Speakers', L(lang, 'Sell the lineup', 'Kadroyu sat'), 'must-have', L(lang, 'Speakers justify the ticket', 'Konuşmacılar bileti haklı çıkarır')));
+    pages.push(P('Agenda', L(lang, 'Show the schedule', 'Programı göster'), 'must-have', L(lang, 'Attendees plan around the agenda', 'Katılımcılar programa göre planlar')));
+    pages.push(P('Venue', L(lang, 'Make attending practical', 'Katılımı pratik kıl'), 'should-have', L(lang, 'Location/logistics matter', 'Konum/lojistik önemli')));
+    pages.push(P('Register', L(lang, 'Convert to a ticket', 'Bilete dönüştür'), 'must-have', L(lang, 'The action is registering', 'Eylem kayıt olmak')));
+  }
+  if (sig.industrial) {
+    pages.push(P('Capabilities', L(lang, 'Lay out what you can build/supply', 'Ne üretip tedarik edebileceğini düzenle'), 'must-have', L(lang, 'Technical buyers scan capability', 'Teknik alıcılar yetkinliği tarar')));
+    pages.push(P('Specifications', L(lang, 'Give precise specs', 'Kesin teknik özellikler ver'), 'should-have', L(lang, 'B2B decides on detail', 'B2B detayla karar verir')));
+    pages.push(P('Certifications', L(lang, 'Show standards/compliance', 'Standart/uyum göster'), 'should-have', L(lang, 'Compliance is a gate', 'Uyum bir eşiktir')));
+  }
+  if (sig.realEstate) {
+    pages.push(P('Listings', L(lang, 'Browse available properties', 'Mevcut gayrimenkulleri gez'), 'must-have', L(lang, 'The listing IS the product', 'İlan ürünün kendisi')));
+    pages.push(P('Property Detail', L(lang, 'Show one property fully', 'Bir gayrimenkulü tam göster'), 'must-have', L(lang, 'Buyers decide per property', 'Alıcılar gayrimenkul başına karar verir')));
+  }
+
   pages.push(P('About', L(lang, 'Build trust in who is behind it', 'Arkasındaki ekibe güven kur'),
-    sig.finance || sig.health || sig.luxury ? 'should-have' : 'optional',
+    sig.finance || sig.health || sig.luxury || sig.legal || sig.medical || sig.nonprofit ? 'should-have' : 'optional',
     L(lang, 'Higher-trust concepts need a human story', 'Yüksek güven gerektiren konseptler insani hikâye ister')));
   pages.push(P('Contact', L(lang, 'Give a direct line for questions', 'Sorular için doğrudan hat ver'),
-    sig.leadgen || sig.b2b ? 'must-have' : 'should-have',
+    sig.leadgen || sig.b2b || sig.industrial ? 'must-have' : 'should-have',
     L(lang, 'Reduces friction for undecided visitors', 'Kararsız ziyaretçiler için sürtünmeyi azaltır')));
-  return pages;
+  // Dedupe by page name (concept blocks can overlap with the general set); keep
+  // the first (highest-intent) occurrence.
+  const seen = new Set<string>();
+  const out: RecommendedPage[] = [];
+  for (const p of pages) if (!seen.has(p.name)) { seen.add(p.name); out.push(p); }
+  return out;
 }
 
 /** Decide the components the concept + target user need (not a fixed list). */
@@ -723,10 +892,43 @@ function deriveRecommendedComponents(
   if (sig.application) list.push(C('Application Flow', L(lang, 'Guide a multi-step apply', 'Çok adımlı başvuruyu yönet'), 'must-have', 'Application', L(lang, 'The action is an application', 'Eylem bir başvuru')));
   if (sig.purchase) list.push(C('Product Cards', L(lang, 'Browse items with proof', 'Ürünleri kanıtla göz at'), 'must-have', 'Home', L(lang, 'Commerce needs scannable products', 'Ticaret taranabilir ürün ister')));
   if (sig.technical || sig.saas) list.push(C('Integration Logos', L(lang, 'Show it fits the stack', 'Yığına uyduğunu göster'), 'optional', 'Home', L(lang, 'Technical buyers check compatibility', 'Teknik alıcılar uyumluluğa bakar')));
+
+  // ── Concept-specific components — concrete, downstream-buildable modules. ──
+  if (sig.archive) {
+    list.push(C('Searchable Archive Grid', L(lang, 'Browse the collection at scale', 'Koleksiyonu ölçekli gez'), 'must-have', 'Collection Index', L(lang, 'The catalog is the core surface', 'Katalog çekirdek yüzeydir')));
+    list.push(C('Filter Sidebar', L(lang, 'Narrow by era/type/tag', 'Dönem/tür/etikete göre daralt'), 'must-have', 'Collection Index', L(lang, 'Retrieval makes an archive usable', 'Erişim arşivi kullanılır kılar')));
+    list.push(C('Provenance Panel', L(lang, 'Show source/authenticity per item', 'Öğe başına kaynak/özgünlük göster'), 'should-have', 'Item Detail', L(lang, 'Authenticity is the trust here', 'Buradaki güven özgünlüktür')));
+  }
+  if (sig.hospitality) {
+    list.push(C('Menu Board', L(lang, 'Present dishes appetizingly', 'Yemekleri iştah açıcı sun'), 'must-have', 'Menu', L(lang, 'The menu drives the visit', 'Menü ziyareti yönlendirir')));
+    list.push(C('Reservation Module', L(lang, 'Capture the booking', 'Rezervasyonu al'), 'must-have', 'Reservations', L(lang, 'The conversion is a reservation', 'Dönüşüm bir rezervasyon')));
+  }
+  if (sig.landscaping || sig.localService || sig.creative) list.push(C('BeforeAfter', L(lang, 'Show transformation', 'Dönüşümü göster'), 'should-have', 'Gallery', L(lang, 'Outcome is visual and comparable', 'Sonuç görsel ve karşılaştırılabilir')));
+  if (sig.landscaping || sig.localService || sig.legal || sig.medical || sig.industrial) list.push(C('Process Timeline', L(lang, 'Explain how it works step by step', 'Nasıl işlediğini adım adım anlat'), 'should-have', 'Process', L(lang, 'A service reassures on process', 'Hizmet süreçle güven verir')));
+  if (sig.legal || sig.medical) list.push(C('Credential Cards', L(lang, 'Surface licenses/experience', 'Lisans/deneyimi öne çıkar'), 'must-have', 'Credentials', L(lang, 'High-stakes trust needs proof', 'Yüksek riskli güven kanıt ister')));
+  if (sig.education) {
+    list.push(C('Curriculum Outline', L(lang, 'Lay out the syllabus', 'Müfredatı düzenle'), 'must-have', 'Curriculum', L(lang, 'Learners judge the syllabus', 'Öğrenenler müfredatı değerlendirir')));
+    list.push(C('Outcome Metrics', L(lang, 'Prove the result', 'Sonucu kanıtla'), 'should-have', 'Outcomes', L(lang, 'Outcomes drive enrollment', 'Kazanımlar kaydı yönlendirir')));
+  }
+  if (sig.nonprofit) {
+    list.push(C('Impact Metrics', L(lang, 'Show measurable impact', 'Ölçülebilir etkiyi göster'), 'must-have', 'Impact', L(lang, 'Impact proof drives giving', 'Etki kanıtı bağışı yönlendirir')));
+    list.push(C('Donation Module', L(lang, 'Make giving effortless', 'Bağışı kolaylaştır'), 'must-have', 'Ways to Give', L(lang, 'The conversion is a donation', 'Dönüşüm bir bağış')));
+  }
+  if (sig.event) {
+    list.push(C('Speaker Cards', L(lang, 'Sell the lineup', 'Kadroyu sat'), 'must-have', 'Speakers', L(lang, 'Speakers justify the ticket', 'Konuşmacılar bileti haklı çıkarır')));
+    list.push(C('Agenda Timeline', L(lang, 'Show the schedule', 'Programı göster'), 'must-have', 'Agenda', L(lang, 'Attendees plan around the agenda', 'Katılımcılar programa göre planlar')));
+  }
+  if (sig.industrial) list.push(C('Spec Table', L(lang, 'Give precise specifications', 'Kesin teknik özellikler ver'), 'should-have', 'Specifications', L(lang, 'B2B decides on detail', 'B2B detayla karar verir')));
+  if (sig.marketplace || sig.realEstate) list.push(C('Catalog Cards', L(lang, 'Browse items/listings with proof', 'Öğeleri/ilanları kanıtla gez'), 'must-have', 'Listings', L(lang, 'Browsing is the core action', 'Gezinme çekirdek eylemdir')));
+
   list.push(C('FAQ', L(lang, 'Remove last-mile doubts', 'Son tereddütleri gider'), 'should-have', 'Home', L(lang, 'Answers objections before they bounce', 'İtirazları ayrılmadan önce yanıtlar')));
   list.push(C('CTA', L(lang, 'Repeat the single action', 'Tek eylemi tekrarla'), 'must-have', 'Home', L(lang, 'A closing push toward conversion', 'Dönüşüme kapanış itişi')));
   list.push(C('Footer', L(lang, 'Wayfinding + trust + contact', 'Yönlendirme + güven + iletişim'), 'must-have', 'All', L(lang, 'Baseline structure and credibility', 'Temel yapı ve itibar')));
-  return list;
+  // Dedupe by component name (concept blocks can overlap with the general set).
+  const seen = new Set<string>();
+  const out: RecommendedComponent[] = [];
+  for (const c of list) if (!seen.has(c.name)) { seen.add(c.name); out.push(c); }
+  return out;
 }
 
 /** Recommend a visual style from prompt + audience + research — not industry alone. */
@@ -872,11 +1074,15 @@ function deriveUxPriorities(
   return out;
 }
 
-/** Compose the explicit hand-off for the UI / Art Director Agent. */
+/** Compose the explicit hand-off for the UI / Art Director Agent. Consumes the
+ *  concept category (via sig) + the derived trust barriers so the hand-off is
+ *  specific: what to emphasize/avoid, the trust proof to foreground, the imagery
+ *  direction, and a concrete anti-template warning for this exact concept. */
 function deriveUiAgentInstructions(
   brief: WebBuildBrief, inferred: InferredBrief, sig: ResearchSignals,
   target: TargetUserAnalysis, pages: RecommendedPage[], comps: RecommendedComponent[],
   style: VisualStyleRecommendation, color: ColorPsychology, lang: Lang,
+  trustBarriers: string[] = [],
 ): UiAgentInstructions {
   return {
     mustEmphasize: uniq([
@@ -884,15 +1090,16 @@ function deriveUiAgentInstructions(
       color.primaryMood,
       L(lang, `A single obvious path to ${brief.primaryCTA || inferred.primaryCTA}`,
         `${brief.primaryCTA || inferred.primaryCTA} için tek net yol`),
-      sig.finance || sig.health || sig.b2b ? L(lang, 'Credibility and proof early', 'İtibar ve kanıt erken') : '',
+      trustBarriers[0] || (sig.finance || sig.health || sig.b2b ? L(lang, 'Credibility and proof early', 'İtibar ve kanıt erken') : ''),
     ]),
     mustAvoid: uniq([
       ...color.avoidColors,
+      antiTemplateWarning(sig, lang),
       L(lang, 'Generic centered hero + three-card grid', 'Jenerik ortalı hero + üç kart grid'),
       L(lang, 'Stock imagery and blank placeholder boxes', 'Stok görsel ve boş yer tutucu kutular'),
     ]),
     recommendedVisualDirection: `${style.styleType} · ${style.imageryType} (${style.premiumLevel})`,
-    recommendedTypography: sig.luxury || sig.creative
+    recommendedTypography: sig.luxury || sig.creative || sig.archive
       ? L(lang, 'Editorial serif headlines + clean sans body', 'Editoryal serif başlıklar + temiz sans gövde')
       : L(lang, 'Modern geometric sans headlines + neutral sans body', 'Modern geometrik sans başlıklar + nötr sans gövde'),
     recommendedComponents: comps.filter((c) => c.priority === 'must-have').map((c) => c.name),
@@ -901,6 +1108,158 @@ function deriveUiAgentInstructions(
     targetUserSummary: [target.role, target.devicePreference, target.buyingMotivation].filter(Boolean).join(' · '),
     conversionFocus: brief.conversionStrategy
       || L(lang, `Drive to ${brief.primaryCTA || inferred.primaryCTA}`, `Şuna yönlendir: ${brief.primaryCTA || inferred.primaryCTA}`),
+    // ── Stronger, category-aware hand-off fields. ──
+    trustFocus: trustBarriers.slice(0, 2).join(' · ') || undefined,
+    imageryDirection: L(lang,
+      `${style.imageryType} — composed, concept-specific, never stock or blank boxes.`,
+      `${style.imageryType} — kompoze, konsepte özgü, asla stok veya boş kutu değil.`),
+    layoutWarning: antiTemplateWarning(sig, lang),
+  };
+}
+
+/* ── Concept understanding + trust/conversion helpers (Research Phase 1) ────
+ * Small, pure, deterministic mappings from the detected concept category to the
+ * specific content model, decision, conversion and proof a real site in that
+ * category needs. They power the ConceptProfile hand-off and the anti-generic
+ * guard. None throw; every lookup falls back to a sensible default. */
+
+/** Category → (content type, business model) descriptor pair (EN, TR). */
+const CATEGORY_CONTENT: Partial<Record<ConceptCategory, { content: [string, string]; model: [string, string] }>> = {
+  archive:       { content: ['catalog / editorial archive', 'katalog / editoryal arşiv'], model: ['a curated collection people browse and research', 'insanların gezip araştırdığı küratörlü bir koleksiyon'] },
+  hospitality:   { content: ['menu + atmosphere', 'menü + atmosfer'], model: ['a place people reserve and visit', 'insanların rezerve edip ziyaret ettiği bir mekân'] },
+  landscaping:   { content: ['project gallery + service', 'proje galerisi + hizmet'], model: ['a premium outdoor design service', 'premium bir dış mekan tasarım hizmeti'] },
+  local_service: { content: ['service + local proof', 'hizmet + yerel kanıt'], model: ['a local service booked by appointment', 'randevu ile alınan yerel bir hizmet'] },
+  legal:         { content: ['service + credentials', 'hizmet + referanslar'], model: ['a high-trust professional service', 'yüksek güven gerektiren profesyonel bir hizmet'] },
+  medical:       { content: ['service + credentials', 'hizmet + referanslar'], model: ['a care service booked by appointment', 'randevu ile alınan bir bakım hizmeti'] },
+  ai:            { content: ['product demo + capability', 'ürün demosu + yetenek'], model: ['an AI product with a demo/trial goal', 'demo/deneme hedefli bir AI ürünü'] },
+  saas:          { content: ['product demo + capability', 'ürün demosu + yetenek'], model: ['a software product with a signup/demo goal', 'kayıt/demo hedefli bir yazılım ürünü'] },
+  marketplace:   { content: ['product catalog', 'ürün kataloğu'], model: ['a store where people browse and buy', 'insanların gezip satın aldığı bir mağaza'] },
+  education:     { content: ['curriculum + outcomes', 'müfredat + kazanımlar'], model: ['a learning program people enroll in', 'insanların kayıt olduğu bir öğrenme programı'] },
+  nonprofit:     { content: ['story + impact', 'hikâye + etki'], model: ['a cause people support and donate to', 'insanların desteklediği ve bağış yaptığı bir dava'] },
+  portfolio:     { content: ['selected work', 'seçili işler'], model: ['a body of work that earns an inquiry', 'bir iş talebi kazandıran işler bütünü'] },
+  industrial:    { content: ['capabilities + specs', 'yetenekler + teknik özellikler'], model: ['a technical supplier evaluated on capability', 'yetkinlik üzerinden değerlendirilen teknik bir tedarikçi'] },
+  event:         { content: ['schedule + speakers', 'program + konuşmacılar'], model: ['an event people register or buy tickets for', 'insanların kayıt olduğu ya da bilet aldığı bir etkinlik'] },
+  real_estate:   { content: ['listings + detail', 'ilanlar + detay'], model: ['properties people browse and enquire about', 'insanların gezip bilgi aldığı gayrimenkuller'] },
+  finance:       { content: ['proof + product', 'kanıt + ürün'], model: ['a financial product evaluated on trust', 'güven üzerinden değerlendirilen bir finansal ürün'] },
+};
+
+/** Category → the decision the visitor must make (EN, TR). */
+const CATEGORY_DECISION: Partial<Record<ConceptCategory, [string, string]>> = {
+  archive: ['Is this collection authentic, well-curated and worth exploring?', 'Bu koleksiyon özgün, iyi küratörlü ve keşfetmeye değer mi?'],
+  hospitality: ['Is this the right place — and can I get a table?', 'Doğru mekân mı — ve masa bulabilir miyim?'],
+  landscaping: ['Can they deliver this quality outdoors for me?', 'Bu kaliteyi benim dış mekanımda sağlayabilirler mi?'],
+  local_service: ['Are they reliable, fairly priced and available?', 'Güvenilir, adil fiyatlı ve müsait mi?'],
+  legal: ['Can I trust them with something high-stakes?', 'Yüksek riskli bir konuda onlara güvenebilir miyim?'],
+  medical: ['Are they credible and will they care for me well?', 'Güvenilir mi ve bana iyi bakacaklar mı?'],
+  ai: ['Does it actually work and is it worth trying?', 'Gerçekten işe yarıyor mu ve denemeye değer mi?'],
+  saas: ['Does it solve my problem and is it worth a demo?', 'Sorunumu çözüyor mu ve demoyu hak ediyor mu?'],
+  marketplace: ['Is this worth buying and safe to check out?', 'Satın almaya değer mi ve ödeme güvenli mi?'],
+  education: ['Will this get me the outcome I want?', 'İstediğim sonuca ulaştıracak mı?'],
+  nonprofit: ['Is this cause real and worth supporting?', 'Bu dava gerçek ve desteklemeye değer mi?'],
+  portfolio: ['Is this the right talent for my project?', 'Projem için doğru yetenek bu mu?'],
+  industrial: ['Can they meet my specs and scale?', 'Teknik gereksinimlerimi ve ölçeğimi karşılayabilir mi?'],
+  event: ['Is this worth my time and my ticket?', 'Zamanıma ve biletime değer mi?'],
+  real_estate: ['Is this the right property — and can I enquire?', 'Doğru gayrimenkul mü — ve bilgi alabilir miyim?'],
+  finance: ['Can I trust them with my money?', 'Paramı onlara emanet edebilir miyim?'],
+};
+
+/** Category → what the visitor is trying to do (EN, TR). */
+const CATEGORY_INTENT: Partial<Record<ConceptCategory, [string, string]>> = {
+  archive: ['Research, browse and verify items in a collection', 'Bir koleksiyondaki öğeleri araştırmak, gezmek ve doğrulamak'],
+  hospitality: ['Check the menu and atmosphere, then book a table', 'Menü ve atmosfere bakıp masa ayırtmak'],
+  landscaping: ['See real projects, then request a design or quote', 'Gerçek projeleri görüp tasarım veya teklif istemek'],
+  local_service: ['Confirm trust, then book the service', 'Güveni doğrulayıp hizmeti almak'],
+  legal: ['Assess credibility, then request a consultation', 'İtibarı değerlendirip danışmanlık istemek'],
+  medical: ['Assess credibility, then book an appointment', 'İtibarı değerlendirip randevu almak'],
+  ai: ['Understand what it does, then try or watch a demo', 'Ne yaptığını anlayıp demo denemek ya da izlemek'],
+  saas: ['Evaluate the product, then start or book a demo', 'Ürünü değerlendirip demo başlatmak ya da planlamak'],
+  marketplace: ['Browse products, then buy with confidence', 'Ürünlere göz atıp güvenle satın almak'],
+  education: ['Judge the outcome, then enroll', 'Kazanımı değerlendirip kayıt olmak'],
+  nonprofit: ['Understand the impact, then give or act', 'Etkiyi anlayıp bağış yapmak ya da harekete geçmek'],
+  portfolio: ['Judge the work, then start a project', 'İşleri değerlendirip projeye başlamak'],
+  industrial: ['Evaluate capability, then request a quote', 'Yetkinliği değerlendirip teklif istemek'],
+  event: ['Check speakers and agenda, then register', 'Konuşmacı ve programa bakıp kayıt olmak'],
+  real_estate: ['Browse listings, then enquire', 'İlanlara göz atıp bilgi almak'],
+  finance: ['Assess trust, then start or apply', 'Güveni değerlendirip başlamak ya da başvurmak'],
+};
+
+/** A concrete anti-template warning tied to the concept category — the strongest
+ *  single line the Art Director can act on to avoid a generic build. */
+function antiTemplateWarning(sig: ResearchSignals, lang: Lang): string {
+  if (sig.archive) return L(lang, 'Not a SaaS dashboard — this is an editorial archive; lead with a catalog/collection index, filters and provenance, not a centered hero + card grid.', 'SaaS panel değil — bu bir editoryal arşiv; ortalı hero + kart grid değil, katalog/koleksiyon indeksi, filtreler ve menşe ile aç.');
+  if (sig.hospitality) return L(lang, 'A restaurant sells atmosphere — lead with menu, ambiance imagery and a reservation CTA, not a SaaS hero.', 'Restoran atmosfer satar — SaaS hero değil, menü, ambiyans görselleri ve rezervasyon CTA ile aç.');
+  if (sig.landscaping || sig.localService) return L(lang, 'A service is proven by real work — lead with a project gallery / before-after and a quote CTA, not a corporate SaaS template.', 'Hizmet gerçek işle kanıtlanır — kurumsal SaaS şablonu değil, proje galerisi / önce-sonra ve teklif CTA ile aç.');
+  if (sig.legal || sig.medical) return L(lang, 'A high-trust service needs credentials and proof above the fold — calm, credible layout, not a flashy SaaS hero.', 'Yüksek güven gerektiren hizmet ilk ekranda referans ve kanıt ister — gösterişli SaaS hero değil, sakin, güvenilir düzen.');
+  if (sig.marketplace) return L(lang, 'Commerce needs scannable product browsing — lead with a catalog and product cards, not a single centered hero.', 'Ticaret taranabilir ürün gezinme ister — tek ortalı hero değil, katalog ve ürün kartları ile aç.');
+  if (sig.event) return L(lang, 'An event sells momentum — lead with date, speakers/agenda and a register CTA, not a generic product hero.', 'Etkinlik ivme satar — jenerik ürün hero değil, tarih, konuşmacı/program ve kayıt CTA ile aç.');
+  if (sig.nonprofit) return L(lang, 'A cause needs a human story and impact — lead with real people and a give/act CTA, not a corporate SaaS look.', 'Bir dava insani hikâye ve etki ister — kurumsal SaaS görünüm değil, gerçek insanlar ve bağış/eylem CTA ile aç.');
+  if (sig.education) return L(lang, 'Learning is sold on outcomes — lead with the result, curriculum and enroll CTA, not a vague SaaS hero.', 'Öğrenme kazanımla satılır — muğlak SaaS hero değil, sonuç, müfredat ve kayıt CTA ile aç.');
+  if (sig.saas || sig.ai) return L(lang, 'Avoid a vague hero and a three-card grid repeated down the page — show the real product and vary section composition.', 'Muğlak hero ve sayfa boyunca tekrarlanan üç kart grid\'inden kaçın — gerçek ürünü göster ve bölüm kompozisyonunu çeşitlendir.');
+  return L(lang, `Do not use a generic centered SaaS hero + three-card grid — it is wrong for a ${sig.category} concept.`, `Jenerik ortalı SaaS hero + üç kart grid kullanma — bu bir ${sig.category} konsepti için yanlış.`);
+}
+
+/** The single primary conversion the concept drives toward. */
+function deriveConversionModel(sig: ResearchSignals, inferred: InferredBrief, lang: Lang): string {
+  if (sig.hospitality || sig.landscaping || sig.localService || sig.medical || sig.booking) return L(lang, 'Booking / appointment request', 'Rezervasyon / randevu talebi');
+  if (sig.education || sig.application) return L(lang, 'Application / enrollment', 'Başvuru / kayıt');
+  if (sig.marketplace || sig.purchase) return L(lang, 'Purchase / add to cart', 'Satın alma / sepete ekleme');
+  if (sig.saas || sig.ai || sig.subscription) return L(lang, 'Signup / demo / trial', 'Kayıt / demo / deneme');
+  if (sig.nonprofit) return L(lang, 'Donate / get involved', 'Bağış / katılım');
+  if (sig.event) return L(lang, 'Register / buy tickets', 'Kayıt / bilet alma');
+  if (sig.legal || sig.industrial || sig.leadgen || sig.b2b) return L(lang, 'Consultation / quote request', 'Danışmanlık / teklif talebi');
+  if (sig.archive || sig.portfolio || sig.realEstate) return L(lang, 'Explore / enquire', 'Keşfet / iletişime geç');
+  return L(lang, `Reach: ${inferred.conversionGoal}`, `Hedef: ${inferred.conversionGoal}`);
+}
+
+/** The proof/trust barriers this specific concept must clear to convert. */
+function deriveTrustBarriers(sig: ResearchSignals, brief: WebBuildBrief, inferred: InferredBrief, lang: Lang): string[] {
+  const out: string[] = [];
+  if (sig.archive) out.push(L(lang, 'Authenticity, provenance and curation credibility', 'Özgünlük, menşe ve küratörlük güvenilirliği'));
+  if (sig.legal || sig.medical) out.push(L(lang, 'Real credentials, licenses and case/patient outcomes', 'Gerçek referanslar, lisanslar ve dava/hasta sonuçları'));
+  if (sig.landscaping || sig.localService) out.push(L(lang, 'Real completed projects, materials and local reviews', 'Gerçek tamamlanmış projeler, malzemeler ve yerel yorumlar'));
+  if (sig.hospitality) out.push(L(lang, 'Real photos, reviews, hours and location', 'Gerçek fotoğraflar, yorumlar, saatler ve konum'));
+  if (sig.saas || sig.ai) out.push(L(lang, 'Product proof (demo/screens), metrics and security', 'Ürün kanıtı (demo/ekran), metrikler ve güvenlik'));
+  if (sig.marketplace) out.push(L(lang, 'Reviews, returns, secure checkout and shipping clarity', 'Yorumlar, iade, güvenli ödeme ve kargo netliği'));
+  if (sig.education) out.push(L(lang, 'Instructor proof, outcomes and student results', 'Eğitmen kanıtı, kazanımlar ve öğrenci sonuçları'));
+  if (sig.nonprofit) out.push(L(lang, 'Transparent impact, financials and real stories', 'Şeffaf etki, mali durum ve gerçek hikâyeler'));
+  if (sig.event) out.push(L(lang, 'Named speakers, agenda and past-edition proof', 'İsimli konuşmacılar, program ve geçmiş edisyon kanıtı'));
+  if (sig.industrial || sig.b2b) out.push(L(lang, 'Certifications, specs and reference clients', 'Sertifikalar, teknik özellikler ve referans müşteriler'));
+  if (sig.finance) out.push(L(lang, 'Regulatory trust, security and clear terms', 'Regülasyon güveni, güvenlik ve net koşullar'));
+  if (sig.realEstate) out.push(L(lang, 'Real listings, accurate detail and agent credibility', 'Gerçek ilanlar, doğru detay ve danışman güvenilirliği'));
+  const explicit = (brief.trustSignals || inferred.trustSignals || '').split(/[,·|]/).map((s) => s.trim()).filter(Boolean);
+  if (!out.length) out.push(L(lang, 'Concrete proof the offer is real (reviews, results, credentials)', 'Teklifin gerçek olduğuna dair somut kanıt (yorumlar, sonuçlar, referanslar)'));
+  return uniq([...out, ...explicit]).slice(0, 5);
+}
+
+/** Build the precise ConceptProfile from the prompt + brief + category signals. */
+function deriveConceptProfile(
+  prompt: string, brief: WebBuildBrief, inferred: InferredBrief, sig: ResearchSignals, lang: Lang,
+): ConceptProfile {
+  const cc = CATEGORY_CONTENT[sig.category];
+  const whoFor = brief.audience || inferred.targetAudience;
+  const model = cc ? L(lang, cc.model[0], cc.model[1]) : '';
+  // Prefer the model's own core idea, then the user's own (concise) prompt words,
+  // then a category-derived statement — so `whatItIs` is as specific as possible.
+  const promptConcept = (prompt || '').trim().replace(/\s+/g, ' ');
+  const whatItIs = brief.coreIdea
+    || (promptConcept && promptConcept.length <= 120 ? promptConcept : '')
+    || (model ? `${inferred.businessType} — ${model}` : `${inferred.businessType} ${L(lang, 'for', 'için')} ${whoFor}`);
+  const intentPair = CATEGORY_INTENT[sig.category];
+  const visitorIntent = brief.visitorIntent
+    || (intentPair ? L(lang, intentPair[0], intentPair[1]) : L(lang, `Decide quickly whether this fits, then ${inferred.primaryCTA}.`, `Bunun uygun olup olmadığına hızla karar ver, sonra ${inferred.primaryCTA}.`));
+  const decisionPair = CATEGORY_DECISION[sig.category];
+  const keyDecision = decisionPair ? L(lang, decisionPair[0], decisionPair[1]) : L(lang, 'Is this credible and right for me?', 'Bu güvenilir ve bana uygun mu?');
+  const contentType = cc ? L(lang, cc.content[0], cc.content[1]) : L(lang, 'service / offer', 'hizmet / teklif');
+  return {
+    category: sig.category,
+    whatItIs,
+    whoFor,
+    visitorIntent,
+    businessModel: model || L(lang, `${inferred.businessType} model`, `${inferred.businessType} modeli`),
+    keyDecision,
+    mainConversion: deriveConversionModel(sig, inferred, lang),
+    proofNeeded: deriveTrustBarriers(sig, brief, inferred, lang),
+    contentType,
   };
 }
 
@@ -1031,6 +1390,9 @@ export function deriveResearchAgent(
   research: WebBuildResearch | undefined,
   inferred: InferredBrief,
   lang: Lang = 'en',
+  /** The raw user prompt — the richest concept signal. Optional & backward
+   *  compatible: omitted callers still get the brief/inferred-driven analysis. */
+  prompt = '',
 ): ResearchAgentArtifact {
   const sources = research?.sources || [];
   const sourceCount = research?.sourceCount ?? sources.length;
@@ -1052,6 +1414,15 @@ export function deriveResearchAgent(
     try { mined = mineSourceSignals(sources, lang); } catch { mined = undefined; }
   }
 
+  // Concept signals FIRST (the raw prompt is the richest signal) so every
+  // dimension below — conversion, trust, risks, differentiation — is concept-
+  // specific. Guarded: a malformed derivation falls back to safe defaults.
+  const sig = researchSignals(brief, inferred, prompt);
+  let conceptProfile: ConceptProfile | undefined;
+  try { conceptProfile = deriveConceptProfile(prompt, brief, inferred, sig, lang); } catch { conceptProfile = undefined; }
+  let trustBarriers: string[] = [];
+  try { trustBarriers = deriveTrustBarriers(sig, brief, inferred, lang); } catch { trustBarriers = []; }
+
   const items = (inferred.items || []).slice(0, 6);
   const categoryLanguage = uniq([...(mined?.categoryLanguage || []), brief.type || inferred.businessType, ...items]);
   const audienceExpectations = uniq([
@@ -1062,19 +1433,32 @@ export function deriveResearchAgent(
   ]);
   const conversionPatterns = uniq([
     ...(mined?.conversionPatterns || []),
+    // Lead with the concept's real conversion model, then the CTA specifics.
+    L(lang, `Conversion model: ${deriveConversionModel(sig, inferred, lang)}.`, `Dönüşüm modeli: ${deriveConversionModel(sig, inferred, lang)}.`),
     L(lang, `Single primary action: ${inferred.primaryCTA}.`, `Tek ana eylem: ${inferred.primaryCTA}.`),
     L(lang, `Secondary path: ${inferred.secondaryCTA}.`, `İkincil yol: ${inferred.secondaryCTA}.`),
     inferred.conversionGoal,
   ]);
   const trustSignals = uniq([
     ...(mined?.trustSignals || []),
+    // Concept-specific trust barriers lead, then any explicit brief trust signals.
+    ...trustBarriers,
     ...(brief.trustSignals || inferred.trustSignals || '').split(/[,·|]/).map((s) => s.trim()),
   ]);
   const visualPatterns = uniq([...(mined?.visualPatterns || []), inferred.visualStyle, inferred.previewVisualIdea, inferred.recommendedMotion]);
   const competitorOrAdjacentPatterns = uniq([...(mined?.competitorOrAdjacentPatterns || []), inferred.strategyNote]);
+  // Anti-generic guard — LEAD with the concept-specific anti-template warning so
+  // the strongest risk is tied to what would make THIS category look generic.
   const risksToAvoid = uniq([
+    antiTemplateWarning(sig, lang),
     L(lang, 'Generic centered hero + three-card grid (reads as a template).',
       'Jenerik ortalanmış hero + üç kart grid (şablon gibi görünür).'),
+    !(sig.saas || sig.ai) ? L(lang, 'A SaaS-style dashboard/product hero for a non-SaaS concept.',
+      'SaaS olmayan bir konsept için SaaS tarzı panel/ürün hero\'su.') : '',
+    trustBarriers.length ? L(lang, `Missing the trust proof this category needs (${trustBarriers[0]}).`,
+      `Bu kategorinin ihtiyaç duyduğu güven kanıtının eksikliği (${trustBarriers[0]}).`) : '',
+    L(lang, 'Wrong palette/imagery for the category (default indigo, stock photos).',
+      'Kategori için yanlış palet/görsel (varsayılan indigo, stok fotoğraf).'),
     L(lang, 'Vague hype copy with no concrete offer or outcome.',
       'Somut teklif/sonuç içermeyen muğlak abartılı metin.'),
     L(lang, 'No single obvious conversion; competing CTAs.',
@@ -1084,8 +1468,10 @@ export function deriveResearchAgent(
   ]);
   const differentiationOpportunities = uniq([
     inferred.previewVisualIdea,
-    L(lang, `Lead with the strongest proof this category needs (${inferred.trustSignals}).`,
-      `Bu kategorinin ihtiyaç duyduğu en güçlü kanıtla aç (${inferred.trustSignals}).`),
+    conceptProfile ? L(lang, `Lead into "${conceptProfile.keyDecision}" faster than competitors do.`,
+      `"${conceptProfile.keyDecision}" sorusuna rakiplerden daha hızlı gir.`) : '',
+    L(lang, `Lead with the strongest proof this category needs (${trustBarriers[0] || inferred.trustSignals}).`,
+      `Bu kategorinin ihtiyaç duyduğu en güçlü kanıtla aç (${trustBarriers[0] || inferred.trustSignals}).`),
     L(lang, `A visual metaphor tied to the concept, not a stock hero.`,
       `Konsepte bağlı bir görsel metafor; stok bir hero değil.`),
   ]);
@@ -1107,7 +1493,7 @@ export function deriveResearchAgent(
 
   // ── Website Research Brief — dynamic, signal-driven (never a fixed template).
   // Each block is guarded so a malformed derivation can never break the agent.
-  const sig = researchSignals(brief, inferred);
+  // (`sig`, `conceptProfile`, `trustBarriers` were computed above.)
   let targetUser: TargetUserAnalysis | undefined;
   let recommendedPages: RecommendedPage[] | undefined;
   let recommendedComponents: RecommendedComponent[] | undefined;
@@ -1125,7 +1511,7 @@ export function deriveResearchAgent(
     if (targetUser && recommendedPages && recommendedComponents && visualStyleRecommendation && colorPsychology) {
       uiAgentInstructions = deriveUiAgentInstructions(
         brief, inferred, sig, targetUser, recommendedPages, recommendedComponents,
-        visualStyleRecommendation, colorPsychology, lang,
+        visualStyleRecommendation, colorPsychology, lang, trustBarriers,
       );
     }
   } catch { uiAgentInstructions = undefined; }
@@ -1137,9 +1523,15 @@ export function deriveResearchAgent(
     visualStyleRecommendation ? L(lang, 'visual style', 'görsel stil') : '',
     uxPriorities ? L(lang, 'conversion priorities', 'dönüşüm öncelikleri') : '',
   ].filter(Boolean);
-  const briefSummary = briefBits.length
-    ? L(lang, `Identified ${briefBits.join(', ')}.`, `${briefBits.join(', ')} belirlendi.`)
+  // Lead with the concept read (category + conversion) so the summary is specific
+  // to THIS site, then the brief dimensions it produced.
+  const conceptLead = conceptProfile && conceptProfile.category !== 'general'
+    ? L(lang, `Read the concept as ${conceptProfile.category} (${conceptProfile.mainConversion}). `,
+        `Konsept ${conceptProfile.category} olarak okundu (${conceptProfile.mainConversion}). `)
     : '';
+  const briefSummary = briefBits.length
+    ? L(lang, `${conceptLead}Identified ${briefBits.join(', ')}.`, `${conceptLead}${briefBits.join(', ')} belirlendi.`)
+    : conceptLead.trim();
   const summary = (didResearch
     ? L(lang,
         `Researched ${sourceCount} source(s) across ${researchAngles.length} angles. ${briefSummary}`,
@@ -1178,6 +1570,7 @@ export function deriveResearchAgent(
     colorPsychology,
     uxPriorities,
     uiAgentInstructions,
+    conceptProfile,
   };
 }
 
@@ -2573,7 +2966,7 @@ export function runUpstreamAgents(
   // 1) Research Agent — the first source of truth. On failure fall back to a
   //    safe (honest, source-less) artifact so the pipeline keeps a valid brief.
   let researchArtifact: ResearchAgentArtifact | undefined;
-  try { researchArtifact = deriveResearchAgent(brief, research, inferred, lang); }
+  try { researchArtifact = deriveResearchAgent(brief, research, inferred, lang, prompt); }
   catch { researchArtifact = fallbackResearchArtifact(lang); fallbacks.push('research'); }
   artifacts.research = researchArtifact;
 
