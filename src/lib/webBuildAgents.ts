@@ -2929,6 +2929,7 @@ const SECTION_DISPLAY: Record<SectionVariant, string> = {
   'pricing-membership': 'pricing_membership',
   'faq-cta': 'faq_final_cta',
   showcase: 'immersive_visual_break',
+  'filter-search': 'filter_search',
 };
 
 /**
