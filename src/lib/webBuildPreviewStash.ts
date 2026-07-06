@@ -21,6 +21,17 @@ export interface WebBuildPreviewData {
   /** Same-origin internal app path to return to when the standalone preview's
    *  Back is pressed (e.g. '#/chat?tab=web-build'). Sanitized on write. */
   returnTo?: string;
+  /** The chat sidebar session id that owns the embedded Web Build (so Back can
+   *  reselect it). Plain id string, never a URL. */
+  returnChatSessionId?: string;
+  /** The PERSISTED Web Build session id (getWebBuildSession / ChatWebBuild
+   *  restoreRunId) — NOT the latest preview step id. Plain id string. */
+  returnWebBuildRunId?: string;
+}
+
+/** A stash id must be a plain, non-empty string (never a URL). */
+function safeId(v?: string): string | undefined {
+  return typeof v === 'string' && v.trim() ? v.trim() : undefined;
 }
 
 const key = (runId: string) => scopedKey('webbuild', `preview:${runId}`);
@@ -72,10 +83,15 @@ export function readPreview(runId: string): WebBuildPreviewData | null {
  * production. We therefore build a proper hash URL against the current
  * origin + path so the route resolves inside the app. */
 export function openPreviewInNewTab(data: WebBuildPreviewData): void {
-  // Preserve a safe return path (caller-provided, else the current app location)
-  // so the standalone preview's Back returns to where it was opened from.
-  const returnTo = sanitizeReturnTo(data.returnTo) || currentReturnTo();
-  stashPreview({ ...data, returnTo });
+  // Preserve a safe return path + restore context. The embedded ChatWebBuild
+  // pre-stashes the owning chat session / Web Build session ids (keyed by the same
+  // preview runId); the panel's "Open preview" must NOT drop them, so we merge
+  // with any existing stash for this runId. Caller-provided values win.
+  const prev = readPreview(data.runId);
+  const returnTo = sanitizeReturnTo(data.returnTo) || sanitizeReturnTo(prev?.returnTo) || currentReturnTo();
+  const returnChatSessionId = safeId(data.returnChatSessionId) || safeId(prev?.returnChatSessionId);
+  const returnWebBuildRunId = safeId(data.returnWebBuildRunId) || safeId(prev?.returnWebBuildRunId);
+  stashPreview({ ...data, returnTo, returnChatSessionId, returnWebBuildRunId });
   try {
     const base = window.location.href.split('#')[0];
     const url = `${base}#/preview/web-build/${encodeURIComponent(data.runId)}`;

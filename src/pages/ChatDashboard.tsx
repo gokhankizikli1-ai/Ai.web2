@@ -12,6 +12,7 @@ import Sidebar from '@/components/Sidebar';
 import RightSidebar from '@/components/RightSidebar';
 import ChatView from '@/components/ChatView';
 import ChatWebBuild from '@/components/ChatWebBuild';
+import { getWebBuildSession } from '@/lib/webBuildSession';
 import type { BuilderMode } from '@/lib/builderMode';
 import TradingPanel from '@/components/TradingPanel';
 import BusinessPanel from '@/components/BusinessPanel';
@@ -235,6 +236,39 @@ export default function ChatDashboard() {
     navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.state]);
+
+  // Return from the standalone preview — /chat?webBuildRunId=<id>&chatSessionId=<id>
+  // (set by WebBuildPreview's Back) reopens the EXACT embedded Web Build: reselect
+  // the owning chat session (sidebar highlight) and mount ChatWebBuild with
+  // restoreRunId, mirroring handleSelectSession. Only runs when the param is
+  // present; clears the params (replace) so refresh doesn't re-trigger.
+  const wbRestoreRef = useRef(false);
+  useEffect(() => {
+    const webBuildRunId = searchParams.get('webBuildRunId');
+    if (!webBuildRunId) { wbRestoreRef.current = false; return; }
+    if (wbRestoreRef.current) return;
+    wbRestoreRef.current = true;
+
+    const chatSessionId = searchParams.get('chatSessionId') || '';
+    const clearParams = () => {
+      const next = new URLSearchParams(searchParams);
+      next.delete('webBuildRunId');
+      next.delete('chatSessionId');
+      setSearchParams(next, { replace: true });
+    };
+
+    // No persisted build for this id → don't hang on a blank build; drop params
+    // quietly and let normal chat render.
+    if (!getWebBuildSession(webBuildRunId)) { clearParams(); return; }
+
+    if (chatSessionId) selectSession(chatSessionId); // sidebar highlight + revision target
+    setEmbeddedBuild({
+      runId: webBuildRunId,
+      sessionId: chatSessionId || undefined,
+      key: `wb-return-${chatSessionId || webBuildRunId}-${Date.now().toString(36)}`,
+    });
+    clearParams();
+  }, [searchParams, setSearchParams, selectSession]);
 
   // Responsive sidebar — close on tablet/mobile, open on desktop
   useEffect(() => {
