@@ -21,70 +21,114 @@ import { deriveAgentWorkLog, type WebBuildAgentWorkLogEntry } from '@/lib/webBui
  */
 
 /* ── Live run shown WHILE the backend call is in flight ──────────────────
- * The agents run internally. The ONLY running-state UI in the chat is a single
- * compact "Think" indicator: the user's prompt bubble, then a small pulsing dot
- * next to a "Think" label with one live action line under it. No checklist, no
- * card/panel, no full agent list, no reserved blank area. The action line
- * advances through safe, honest phase labels while the call is in flight (the
- * backend is a single request, so there is no per-agent stream to read). When
- * the build finishes, this disappears and the normal result cards render. */
+ * The whole build is a SINGLE backend request, so there is no per-agent stream to
+ * read. This live view is therefore a deterministic, frontend-only PLAN — never a
+ * claim of completed work: a compact "Think" block with short planning rows,
+ * followed by the known agent pipeline rendered as queued rows (one "running"
+ * highlight cycles for a progress feel). It never shows source counts, file diffs
+ * or agent completion — those only appear in the completed workstream once real
+ * artifacts exist. When the build finishes the parent swaps this for the result
+ * turn (with the real workstream + Preview / All Files cards). */
 
-/** Ordered, honest phase labels for the compact Think line. Derived from the
- *  build step (no fake progress); holds on the last label until completion. */
-const BUILD_THINK_KEYS = [
-  'wbRunThinkResearch',
-  'wbRunThinkArt',
-  'wbRunThinkStrategy',
-  'wbRunThinkLayout',
-  'wbRunThinkComponent',
-  'wbRunThinkPreview',
-] as const;
+/** Short, honest planning rows for the Think block (no completion claims). The
+ *  first build row reuses the existing "Reading your request" label. */
+const BUILD_THINK_KEYS = ['wbActRead', 'wbLiveThinkScope', 'wbLiveThinkPipeline', 'wbLiveThinkPackage'] as const;
+const REVISE_THINK_KEYS = ['wbLiveThinkReviseRead', 'wbLiveThinkRevisePlan', 'wbLiveThinkRevisePackage'] as const;
+/** The known pipeline order, shown as queued rows. Revisions skip the fresh
+ *  research pre-pass on the backend, so the Research row is omitted — the live
+ *  view never implies a new research pass for a revision. */
+const BUILD_PIPELINE_KEYS = ['wbAgentResearch', 'wbAgentArt', 'wbAgentStrategy', 'wbAgentLayout', 'wbAgentComponent'] as const;
+const REVISE_PIPELINE_KEYS = ['wbAgentArt', 'wbAgentStrategy', 'wbAgentLayout', 'wbAgentComponent'] as const;
 
-function ThinkRunning({ kind }: { kind: 'build' | 'revision' }) {
-  const { t } = useLanguageStore();
-  const keys = useMemo<readonly string[]>(
-    () => (kind === 'revision'
-      ? ['wbRunThinkRevise', 'wbRunThinkComponent', 'wbRunThinkPreview']
-      : [...BUILD_THINK_KEYS]),
-    [kind],
+/** A small pulsing dot marking the currently-active (running) row. */
+function PulseDot() {
+  return (
+    <span className="relative flex h-1.5 w-1.5 shrink-0">
+      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#60A5FA] opacity-75" />
+      <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[#60A5FA]" />
+    </span>
   );
-  const [i, setI] = useState(0);
+}
+
+/**
+ * The live Think block + queued agent pipeline. Purely presentational and
+ * deterministic: it reveals the planning rows one at a time, then cycles a single
+ * "running" highlight through the queued pipeline. It NEVER marks a row complete
+ * or shows any real metric — honesty during the in-flight phase.
+ */
+function LiveThink({ kind }: { kind: 'build' | 'revision' }) {
+  const { t } = useLanguageStore();
+  const isRevision = kind === 'revision';
+  const thinkKeys = useMemo<readonly string[]>(
+    () => (isRevision ? REVISE_THINK_KEYS : BUILD_THINK_KEYS).slice(),
+    [isRevision],
+  );
+  const pipeKeys = useMemo<readonly string[]>(
+    () => (isRevision ? REVISE_PIPELINE_KEYS : BUILD_PIPELINE_KEYS).slice(),
+    [isRevision],
+  );
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
-    setI(0);
-    // Advance through the phase labels, then hold on the final one (Preparing
-    // preview) until the parent removes this component on completion.
-    const id = setInterval(() => {
-      setI((prev) => (prev >= keys.length - 1 ? prev : prev + 1));
-    }, 2200);
+    setTick(0);
+    const id = setInterval(() => setTick((x) => x + 1), 1400);
     return () => clearInterval(id);
-  }, [keys]);
+  }, [kind]);
+
+  // Reveal the planning rows one by one; once they are all shown, cycle a single
+  // "running" highlight through the queued pipeline. No row is ever marked done.
+  const revealedThink = Math.min(tick + 1, thinkKeys.length);
+  const activePipe = tick < thinkKeys.length
+    ? -1
+    : (tick - thinkKeys.length) % Math.max(pipeKeys.length, 1);
 
   return (
-    <div className="flex items-start gap-2.5">
-      <div className="mt-[3px]">
-        <KorvixAvatar size={15} active />
-      </div>
-      <div className="min-w-0 flex-1">
+    <div className="min-w-0 flex-1 space-y-3">
+      <div>
         <div className="flex items-center gap-2">
-          <span className="relative flex h-1.5 w-1.5 shrink-0">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#60A5FA] opacity-75" />
-            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-[#60A5FA]" />
-          </span>
+          <PulseDot />
           <span className="text-[12.5px] font-medium text-slate-200">{t('wbThinkLabel')}</span>
         </div>
-        <AnimatePresence mode="wait">
-          <motion.p
-            key={keys[i]}
-            initial={{ opacity: 0, y: 2 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -2 }}
-            transition={{ duration: 0.25 }}
-            className="mt-1 pl-[13px] text-[12px] leading-relaxed text-[#94A3B8]"
-          >
-            {t(keys[i])}
-          </motion.p>
-        </AnimatePresence>
+        <div className="mt-1.5 space-y-1 pl-[13px]">
+          {thinkKeys.slice(0, revealedThink).map((k) => (
+            <motion.div
+              key={k}
+              initial={{ opacity: 0, y: 2 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.25 }}
+              className="flex items-start gap-2 text-[12px] leading-relaxed text-[#94A3B8]"
+            >
+              <span className="mt-[6px] h-1 w-1 shrink-0 rounded-full bg-[#475569]" />
+              <span className="min-w-0">{t(k)}</span>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+
+      <div className="space-y-1">
+        <div className="pl-[13px] text-[10.5px] font-medium uppercase tracking-wide text-[#64748B]">
+          {t('wbLivePipelineLabel')}
+        </div>
+        {pipeKeys.map((k, idx) => {
+          const running = idx === activePipe;
+          return (
+            <motion.div
+              key={k}
+              initial={{ opacity: 0, y: 2 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.22, delay: Math.min(idx * 0.05, 0.3) }}
+              className="flex items-center gap-2 pl-[13px] text-[12px] leading-relaxed"
+            >
+              {running
+                ? <PulseDot />
+                : <span className="h-1.5 w-1.5 shrink-0 rounded-full border border-[#475569]" />}
+              <span className={`min-w-0 truncate ${running ? 'text-slate-200' : 'text-[#94A3B8]'}`}>{t(k)}</span>
+              <span className="ml-auto shrink-0 text-[10.5px] text-[#64748B]">
+                {running ? t('wbLiveStatusRunning') : t('wbLiveStatusQueued')}
+              </span>
+            </motion.div>
+          );
+        })}
       </div>
     </div>
   );
@@ -94,7 +138,10 @@ function LivePhases({ prompt, kind = 'build' }: { prompt: string; kind?: 'build'
   return (
     <div className="space-y-3">
       <UserMessage text={prompt} />
-      <ThinkRunning kind={kind} />
+      <div className="flex items-start gap-2.5">
+        <div className="mt-[3px]"><KorvixAvatar size={15} active /></div>
+        <LiveThink kind={kind} />
+      </div>
     </div>
   );
 }
@@ -241,7 +288,12 @@ function WorkLogLine({ entry }: { entry: WebBuildAgentWorkLogEntry }) {
 
 function AgentWorkLog({ agents, files }: { agents: WebBuildStep['agents']; files: WebBuildStep['files'] }) {
   const { lang } = useLanguageStore();
-  const entries = useMemo(() => deriveAgentWorkLog(agents, files, lang), [agents, files, lang]);
+  // Guarded — a workstream derivation failure must NEVER take down the sibling
+  // Preview / All Files cards. On any error the workstream simply omits itself.
+  const entries = useMemo(() => {
+    try { return deriveAgentWorkLog(agents, files, lang); }
+    catch { return []; }
+  }, [agents, files, lang]);
   if (!entries.length) return null;
   return (
     <div className="flex flex-col gap-[3px]">

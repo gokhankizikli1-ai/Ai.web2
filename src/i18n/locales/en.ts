@@ -393,6 +393,18 @@ export const en: Record<string, string> = {
   wbRunThinkPreview: "Preparing preview",
   wbRunThinkRevise: "Applying your change",
   wbAgentCompleted: "completed",
+  /* web build — live running plan (frontend-only, honest; no completion claims).
+   * Shown while the single backend request is in flight: a Think block + the
+   * known agent pipeline as queued/running rows. Never claims real sources/files. */
+  wbLiveThinkScope: "Identifying site type, audience, goal and style",
+  wbLiveThinkPipeline: "Planning the pipeline: research → art direction → strategy → layout → components",
+  wbLiveThinkPackage: "Preparing the Preview and All Files package",
+  wbLiveThinkReviseRead: "Reading your update request",
+  wbLiveThinkRevisePlan: "Planning the targeted changes",
+  wbLiveThinkRevisePackage: "Preparing the updated Preview and All Files",
+  wbLivePipelineLabel: "Pipeline",
+  wbLiveStatusQueued: "Queued",
+  wbLiveStatusRunning: "Running",
   wbOpArtNote: "Art Direction guides the visual system, palette and typography; later agents build from it.",
   wbOpStrategyAgentNote: "Strategy sets positioning, the conversion path, trust and CTA hierarchy.",
   wbOpLayoutNote: "The Page Blueprint chooses the hero + section composition the preview and files use.",
