@@ -69,6 +69,38 @@ function pascal(id: string) {
 const stripMd = (s: string) => s.replace(/[*_`#>]/g, '').replace(/^\s*[-*]\s+/, '').trim();
 const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
 
+/* ── Honest data guards ───────────────────────────────────────────────────
+ * The generated components must never invent facts. These helpers extract only
+ * a price that already exists in the section copy, and provide clearly-structural
+ * (non-factual) proof labels for a mode when no real proof copy is present. No
+ * fabricated ratings, counts, uptime, compliance, prices or customer names. */
+
+/** Return an explicit price already present in the copy, else '' (never invents). */
+function priceLiteral(text: string | undefined): string {
+  if (!text) return '';
+  const m = text.match(/([$€₺]\s?\d[\d.,]*|\d[\d.,]*\s?(?:tl|usd|eur|₺))/i);
+  return m ? m[0].replace(/\s+/g, ' ').trim() : '';
+}
+
+/** Structural, non-factual proof labels per render mode (module/section labels,
+ *  not claims). Used only when a proof section has no real bullets. */
+const GEN_PROOF_LABELS: Partial<Record<ArtRenderMode, string[]>> = {
+  archive: ['Curation workflow', 'Metadata clarity', 'Research access'],
+  landscaping: ['Project process', 'Material clarity', 'Consultation path'],
+  'trust-service': ['Credentials', 'Clear process', 'Contact path'],
+  'product-saas': ['Demo flow', 'Security review', 'Integration path'],
+  hospitality: ['Menu clarity', 'Reservation path', 'Location details'],
+  marketplace: ['Catalog clarity', 'Shipping & returns', 'Support path'],
+  industrial: ['Capabilities', 'Specifications', 'Request path'],
+  portfolio: ['Selected work', 'Process', 'Start a project'],
+};
+function genProofItems(c: SectionCopy, art: WebBuildArtIdentity, n = 4): string[] {
+  const bullets = (c.bullets || []).map((b) => (b || '').trim()).filter(Boolean);
+  if (bullets.length) return bullets.slice(0, n);
+  if (art.proofRules?.length) return art.proofRules.slice(0, n);
+  return (GEN_PROOF_LABELS[art.mode] || ['Clear process', 'What to expect', 'How to start']).slice(0, Math.min(n, 3));
+}
+
 /** Parse the "Page Sections" list + "Generated Copy" blocks into rich copy. */
 export function parseSectionCopy(result: WebBuildResult): SectionCopy[] {
   const pageBody = sectionBody(result.sections, /page\s*sections/i);
@@ -310,11 +342,12 @@ ${cells}
 }
 
 function metricsComponent(name: string, c: SectionCopy): string {
-  const stats = ['98%', '2.5x', '24/7', '<1dk'];
+  // No fabricated KPI numbers — each cell leads with the real label above a
+  // neutral, non-numeric indicator bar.
   const labels = (c.bullets.length ? c.bullets : [c.name]).slice(0, 4);
-  const cells = labels.map((b, i) => `          <div key={${i}} className="rounded-[var(--kx-radius)] border border-[color:var(--kx-border)] bg-[var(--kx-card)] p-6 text-center">
-            <div className="text-4xl font-semibold tracking-tight text-white">${stats[i % stats.length]}</div>
-            <p className="mt-2 text-sm text-slate-400">{\`${esc(b)}\`}</p>
+  const cells = labels.map((b, i) => `          <div key={${i}} className="rounded-[var(--kx-radius)] border border-[color:var(--kx-border)] bg-[var(--kx-card)] p-6">
+            <p className="text-[15px] font-semibold leading-snug text-white">{\`${esc(b)}\`}</p>
+            <div className="mt-3 h-1.5 w-full rounded-full bg-white/10"><div className="h-full rounded-full" style={{ width: '${55 + (i * 13) % 35}%', background: '${i % 2 ? 'var(--kx-accent-2)' : 'var(--kx-accent)'}' }} /></div>
           </div>`).join('\n');
   return `export default function ${name}() {
   return (
@@ -332,7 +365,9 @@ ${cells}
 }
 
 function integrationsComponent(name: string, c: SectionCopy): string {
-  const chips = (c.bullets.length ? c.bullets : ['Slack', 'Zendesk', 'Shopify', 'WhatsApp', 'HubSpot', 'Notion']).slice(0, 8);
+  // Use only real integration names from the section copy — never fabricate
+  // partner brands. Fall back to neutral, structural slots.
+  const chips = (c.bullets.length ? c.bullets : ['Entegrasyon', 'Bağlantı', 'API', 'Webhook', 'Otomasyon', 'Senkron']).slice(0, 8);
   const cells = chips.map((b, i) => `          <div key={${i}} className="flex items-center justify-center gap-2 rounded-xl border border-[color:var(--kx-border)] bg-[var(--kx-card)] px-4 py-3 text-sm text-slate-300">
             <span className="h-4 w-4 rounded bg-[linear-gradient(135deg,color-mix(in_srgb,var(--kx-accent)_50%,transparent),color-mix(in_srgb,var(--kx-accent-2)_30%,transparent))]" />{\`${esc(b)}\`}
           </div>`).join('\n');
@@ -353,14 +388,22 @@ ${cells}
 
 function inventoryComponent(name: string, c: SectionCopy): string {
   const cars = (c.bullets.length ? c.bullets : [c.name]).slice(0, 6);
-  const cells = cars.map((b, i) => `          <div key={${i}} className="overflow-hidden rounded-[var(--kx-radius)] border border-[color:var(--kx-border)] bg-[var(--kx-card)]">
+  // Structural listing cards only — no fabricated year / fuel / price. A price is
+  // shown solely when the section copy already contains one.
+  const cells = cars.map((b, i) => {
+    const price = priceLiteral(b);
+    const metaRight = price
+      ? `<span className="font-semibold text-white">${esc(price)}</span>`
+      : `<span>Uygunluk</span>`;
+    return `          <div key={${i}} className="overflow-hidden rounded-[var(--kx-radius)] border border-[color:var(--kx-border)] bg-[var(--kx-card)]">
             <div className="aspect-[16/10] bg-gradient-to-br from-white/[0.08] to-white/[0.01]" />
             <div className="p-5">
               <p className="text-[15px] font-semibold text-white">{\`${esc(b)}\`}</p>
-              <div className="mt-2 flex items-center justify-between text-xs text-slate-400"><span>2023 · Otomatik · Benzin</span><span className="font-semibold text-white">₺${(850 + i * 120).toLocaleString?.() || 850}.000</span></div>
-              <button className="mt-4 w-full rounded-lg bg-[var(--kx-accent)] py-2 text-sm font-semibold text-white">İncele</button>
+              <div className="mt-2 flex items-center justify-between text-xs text-slate-400"><span>Araç detayları</span>${metaRight}</div>
+              <button className="mt-4 w-full rounded-lg bg-[var(--kx-accent)] py-2 text-sm font-semibold text-white">Bilgi iste</button>
             </div>
-          </div>`).join('\n');
+          </div>`;
+  }).join('\n');
   return `export default function ${name}() {
   return (
     <section id="inventory" className="px-6 py-20">
@@ -399,14 +442,21 @@ ${cells}
 
 function pricingComponent(name: string, c: SectionCopy): string {
   const tiers = (c.bullets.length ? c.bullets : ['Başlangıç', 'Pro', 'Kurumsal']).slice(0, 3);
+  const cta = c.cta || 'İletişime geç';
   const cells = tiers.map((b, i) => {
     const featured = i === 1;
     const cardCls = featured ? 'border-[color-mix(in_srgb,var(--kx-accent)_40%,transparent)] bg-[color-mix(in_srgb,var(--kx-accent)_7%,transparent)]' : 'border-[color:var(--kx-border)] bg-[var(--kx-card)]';
     const btnCls = featured ? 'bg-[var(--kx-accent)] text-white' : 'border border-white/15 text-slate-200';
+    // Only render a price the section copy actually contains — never a made-up
+    // monthly figure. Otherwise the tier leads with a neutral, honest line.
+    const price = priceLiteral(b) || priceLiteral(c.headline);
+    const priceEl = price
+      ? `<div className="mt-3 text-3xl font-semibold text-white">${esc(price)}</div>`
+      : `<div className="mt-3 text-lg font-medium text-slate-200">{\`${esc(cta)}\`}</div>`;
     return `          <div key={${i}} className="kx-art-card rounded-[var(--kx-radius)] border p-6 ${cardCls}">
             <p className="text-sm font-medium text-slate-300">{\`${esc(b)}\`}</p>
-            <div className="mt-3 text-3xl font-semibold text-white">₺${199 + i * 200}<span className="text-sm text-slate-400">/ay</span></div>
-            <button className="mt-5 w-full rounded-lg ${btnCls} py-2 text-sm font-semibold">Seç</button>
+            ${priceEl}
+            <button className="mt-5 w-full rounded-lg ${btnCls} py-2 text-sm font-semibold">{\`${esc(cta)}\`}</button>
           </div>`;
   }).join('\n');
   return `export default function ${name}() {
@@ -426,11 +476,16 @@ ${cells}
 
 function menuComponent(name: string, c: SectionCopy): string {
   const dishes = (c.bullets.length ? c.bullets : [c.name]).slice(0, 6);
-  const cells = dishes.map((b, i) => `          <li key={${i}} className="flex items-baseline gap-3">
+  // Show a price only when the dish copy already includes one — no invented prices.
+  const cells = dishes.map((b, i) => {
+    const price = priceLiteral(b);
+    const priceEl = price ? `<span className="text-sm text-slate-400">${esc(price)}</span>` : '';
+    return `          <li key={${i}} className="flex items-baseline gap-3">
             <span className="font-medium text-white">{\`${esc(b)}\`}</span>
             <span className="flex-1 border-b border-dashed border-white/15" />
-            <span className="text-sm text-slate-400">₺${120 + i * 30}</span>
-          </li>`).join('\n');
+            ${priceEl}
+          </li>`;
+  }).join('\n');
   return `export default function ${name}() {
   return (
     <section id="menu" className="px-6 py-20">
@@ -446,12 +501,14 @@ ${cells}
 `;
 }
 
-function testimonialComponent(name: string, c: SectionCopy): string {
-  const quotes = (c.bullets.length ? c.bullets : [c.sub || c.name]).slice(0, 3);
-  const cells = quotes.map((b, i) => `          <blockquote key={${i}} className="rounded-[var(--kx-radius)] border border-[color:var(--kx-border)] bg-[var(--kx-card)] p-6">
-            <p className="text-[15px] leading-relaxed text-slate-200">&ldquo;{\`${esc(b)}\`}&rdquo;</p>
-            <div className="mt-4 flex items-center gap-3"><span className="h-8 w-8 rounded-full bg-[linear-gradient(135deg,color-mix(in_srgb,var(--kx-accent)_50%,transparent),color-mix(in_srgb,var(--kx-accent-2)_30%,transparent))]" /><span className="text-sm text-slate-400">Müşteri</span></div>
-          </blockquote>`).join('\n');
+function testimonialComponent(name: string, c: SectionCopy, art: WebBuildArtIdentity): string {
+  // Honest proof cards — the section's own copy, no fabricated avatar or generic
+  // "customer" label implying reviews that were never provided.
+  const items = genProofItems(c, art, 3);
+  const cells = items.map((b, i) => `          <div key={${i}} className="rounded-[var(--kx-radius)] border border-[color:var(--kx-border)] bg-[var(--kx-card)] p-6">
+            <span className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg text-sm font-semibold text-[var(--kx-accent)]" style={{ background: 'color-mix(in srgb, var(--kx-accent) 16%, transparent)' }} aria-hidden="true">&#10003;</span>
+            <p className="text-[15px] font-medium leading-snug text-white">{\`${esc(b)}\`}</p>
+          </div>`).join('\n');
   return `export default function ${name}() {
   return (
     <section className="px-6 py-20">
@@ -735,19 +792,20 @@ ${list}
 `;
 }
 
-function proofStripComponent(name: string, c: SectionCopy): string {
-  const items = (c.bullets.length ? c.bullets : [c.name]).slice(0, 4);
-  const stats = ['4.9★', '12k+', '98%', '24/7'];
-  const cells = items.map((b, i) => `          <div key={${i}} className="bg-[#0b0d12] p-6 text-center">
-            <div className="text-3xl font-semibold tracking-tight text-white">${stats[i % stats.length]}</div>
-            <p className="mt-2 text-sm text-slate-400">{\`${esc(b)}\`}</p>
+function proofStripComponent(name: string, c: SectionCopy, art: WebBuildArtIdentity): string {
+  // Honest proof cards — real section copy or structural labels, never fabricated
+  // ratings / counts / uptime.
+  const items = genProofItems(c, art, 4);
+  const cells = items.map((b, i) => `          <div key={${i}} className="rounded-[var(--kx-radius)] border border-[color:var(--kx-border)] bg-[var(--kx-card)] p-5">
+            <span className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg text-sm font-semibold text-[var(--kx-accent)]" style={{ background: 'color-mix(in srgb, var(--kx-accent) 16%, transparent)' }} aria-hidden="true">&#10003;</span>
+            <p className="text-[14px] font-medium leading-snug text-white">{\`${esc(b)}\`}</p>
           </div>`).join('\n');
   return `export default function ${name}() {
   return (
     <section className="px-6 py-16">
       <div className="mx-auto max-w-5xl">
         ${c.headline ? `<h2 className="text-center text-2xl font-semibold tracking-tight text-white sm:text-3xl">{\`${esc(c.headline)}\`}</h2>` : ''}
-        <div className="mt-8 grid grid-cols-2 gap-px overflow-hidden rounded-[var(--kx-radius)] border border-[color:var(--kx-border)] bg-white/5 lg:grid-cols-4">
+        <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
 ${cells}
         </div>
       </div>
@@ -804,11 +862,49 @@ ${cells}
 `;
 }
 
+/** Filter/search surface — a real search bar + filter chips + result rows built
+ *  from the section's own facet copy. Mirrors the preview FilterSearch. No
+ *  fabricated result counts. */
+function filterSearchComponent(name: string, c: SectionCopy): string {
+  const facets = (c.bullets.length ? c.bullets : [c.name]).slice(0, 6);
+  const chips = facets.map((b, i) => `            <span key={${i}} className="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--kx-border)] bg-white/[0.03] px-3 py-1 text-xs text-slate-300"><span className="h-1 w-1 rounded-full bg-[var(--kx-accent)]" />{\`${esc(b)}\`}</span>`).join('\n');
+  const rows = facets.slice(0, 4).map((b, i) => `            <div key={${i}} className="flex items-center gap-3 rounded-lg border border-[color:var(--kx-border)] bg-[var(--kx-card)] px-3 py-2.5">
+              <span className="h-8 w-8 shrink-0 rounded-md border border-[color:var(--kx-border)] bg-[linear-gradient(135deg,color-mix(in_srgb,var(--kx-accent)_20%,transparent),transparent)]" />
+              <span className="flex-1 text-sm text-slate-200">{\`${esc(b)}\`}</span>
+              <span className="text-slate-500">&rarr;</span>
+            </div>`).join('\n');
+  return `export default function ${name}() {
+  return (
+    <section className="px-6 py-20">
+      <div className="mx-auto max-w-5xl">
+        ${c.headline ? `<h2 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">{\`${esc(c.headline)}\`}</h2>` : ''}
+        <div className="mt-8 rounded-[var(--kx-radius)] border border-[color:var(--kx-border)] bg-[var(--kx-card)] p-4 sm:p-5">
+          <div className="flex items-center gap-3 rounded-lg border border-[color:var(--kx-border)] bg-black/20 px-3.5 py-2.5">
+            <span className="text-slate-400" aria-hidden="true">&#8981;</span>
+            <span className="text-sm text-slate-500">${c.sub ? `{\`${esc(c.sub)}\`}` : `{\`${esc(c.headline || c.name)}\`}`}</span>
+            <span className="ml-auto rounded-md bg-[var(--kx-accent)] px-2.5 py-1 text-xs font-medium text-white">${c.cta ? `{\`${esc(c.cta)}\`}` : 'Ara'}</span>
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+${chips}
+          </div>
+          <div className="mt-5 space-y-2">
+${rows}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+`;
+}
+
 function quoteStoryComponent(name: string, c: SectionCopy): string {
   const quotes = (c.bullets.length ? c.bullets : [c.sub || c.name]).slice(0, 2);
+  // The section's own copy as an editorial statement — no fabricated avatar or
+  // person, so a content bullet is never presented as a real customer quote.
   const cells = quotes.map((b, i) => `          <blockquote key={${i}} className="border-l-2 border-[var(--kx-accent)] pl-6">
             <p className="text-xl font-medium leading-relaxed text-white sm:text-2xl">&ldquo;{\`${esc(b)}\`}&rdquo;</p>
-            <footer className="mt-4 flex items-center gap-3 text-sm text-slate-400"><span className="h-8 w-8 rounded-full bg-[linear-gradient(135deg,color-mix(in_srgb,var(--kx-accent)_55%,transparent),color-mix(in_srgb,var(--kx-accent-2)_30%,transparent))]" />{\`${esc(c.headline || c.name)}\`}</footer>
+            <footer className="mt-4 text-sm text-slate-400">{\`${esc(c.headline || c.name)}\`}</footer>
           </blockquote>`).join('\n');
   return `export default function ${name}() {
   return (
@@ -909,13 +1005,14 @@ const frame = 'relative overflow-hidden rounded-[var(--kx-radius)] border border
 
 function DataDashboard() {
   const bars = [58, 82, 46, 94, 70, 88];
+  // Neutral indicator tiles — no fabricated KPI figures.
   return (
     <div className={frame + ' p-4 shadow-2xl shadow-black/40'}>
       <div className="mb-3 grid grid-cols-3 gap-3">
-        {['2.4k', '98%', '+37%'].map((s, i) => (
+        {[0, 1, 2].map((i) => (
           <div key={i} className="rounded-xl border border-[color:var(--kx-border)] bg-[var(--kx-card)] p-3">
-            <div className="text-lg font-semibold text-white">{s}</div>
-            <div className="mt-0.5 h-2 w-12 rounded-full bg-white/10" />
+            <div className="h-2 w-10 rounded-full bg-white/15" />
+            <div className="mt-2 h-1.5 w-full rounded-full bg-white/10"><div className="h-full rounded-full" style={{ width: (52 + i * 16) + '%', background: i % 2 ? 'var(--kx-accent-2)' : 'var(--kx-accent)', opacity: 0.85 }} /></div>
           </div>
         ))}
       </div>
@@ -1070,17 +1167,18 @@ function componentFor(
   if (kind === 'hero') return heroComponentFor(name, c, brief, plan, art);
   if (kind === 'footer') return footerComponent(name, c);
   const variant = plan.sectionVariants[c.id] || 'feature-grid';
-  return variantComponentFor(name, c, plan, variant, kind);
+  return variantComponentFor(name, c, plan, variant, kind, art);
 }
 
 /** Content-section template by composition variant. Falls back to the closest
  *  kind-specific template so nothing renders as a blank block. */
 function variantComponentFor(
   name: string, c: SectionCopy, plan: WebBuildLayoutPlan, variant: SectionVariant, kind: SectionKind,
+  art: WebBuildArtIdentity,
 ): string {
   switch (variant) {
     case 'editorial-split':    return editorialSplitComponent(name, c, plan);
-    case 'proof-strip':        return proofStripComponent(name, c);
+    case 'proof-strip':        return proofStripComponent(name, c, art);
     case 'dashboard-data':     return kind === 'productDemo' ? productDemoComponent(name, c) : dashboardDataComponent(name, c);
     case 'catalog-grid':       return kind === 'menu' ? menuComponent(name, c) : galleryComponent(name, c);
     case 'collection-archive': return collectionArchiveComponent(name, c);
@@ -1091,6 +1189,7 @@ function variantComponentFor(
     case 'spatial-floorplan':  return spatialComponent(name, c);
     case 'pricing-membership': return pricingComponent(name, c);
     case 'comparison':         return beforeAfterComponent(name, c);
+    case 'filter-search':      return filterSearchComponent(name, c);
     case 'faq-cta':            return kind === 'faq' ? faqComponent(name, c) : ctaComponent(name, c);
     case 'feature-grid':
     default:
@@ -1100,7 +1199,7 @@ function variantComponentFor(
       if (kind === 'metrics') return metricsComponent(name, c);
       if (kind === 'inventory') return inventoryComponent(name, c);
       if (kind === 'financing') return financingComponent(name, c);
-      if (kind === 'testimonial') return testimonialComponent(name, c);
+      if (kind === 'testimonial') return testimonialComponent(name, c, art);
       // A section with no card bullets reads better as a heading + prose block
       // than as empty cards.
       if (!c.bullets.length) return genericComponent(name, c);

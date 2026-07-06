@@ -77,7 +77,7 @@ export type SectionVariant =
   | 'feature-grid' | 'editorial-split' | 'process-timeline' | 'proof-strip'
   | 'catalog-grid' | 'comparison' | 'application-form' | 'dashboard-data'
   | 'quote-story' | 'collection-archive' | 'spatial-floorplan' | 'pricing-membership'
-  | 'faq-cta' | 'showcase';
+  | 'faq-cta' | 'showcase' | 'filter-search';
 
 export type NavigationStyle = 'minimal' | 'standard' | 'sidebar' | 'centered-pill' | 'split';
 export type CTAPlacement = 'hero-inline' | 'sticky' | 'section-embedded' | 'final-focus' | 'floating-card';
@@ -276,6 +276,24 @@ function contentVariantFor(arch: LayoutArchetype, index: number): SectionVariant
   }
 }
 
+/**
+ * Refine a resolved variant using the section's concrete ID/name so concept
+ * sections render a richer, more accurate surface than their kind alone implies.
+ * Only remaps to EXISTING variants (no new invalid kinds) and is applied to both
+ * the preview and the file synthesizer (they share this plan), so they stay in
+ * lockstep. Never fabricates content — it only picks a better layout shell.
+ */
+function refineVariantById(id: string, name: string, variant: SectionVariant): SectionVariant {
+  const k = `${id} ${name}`.toLowerCase();
+  // Search / filter surfaces → a real filter+search UI, not a card grid.
+  if (/research.?filter|\bfilters?\b|\bsearch\b|arama|filtre/.test(k)) return 'filter-search';
+  // Image-first catalog / gallery surfaces (projects, materials, collections).
+  if (/project.?gallery|collection.?index|document.?types|\bmaterials?\b|malzeme|featured.?product|selected.?work|proje.?galeri/.test(k)) return 'catalog-grid';
+  // Quote / consultation / request surfaces → a form-like request panel.
+  if (/quote.?cta|request.?quote|consultation|danış|teklif.?al|reservation|rezervasyon/.test(k)) return 'application-form';
+  return variant;
+}
+
 /** Resolve a section's composition variant from its kind + the archetype. */
 function variantForSection(kind: SectionKind, arch: LayoutArchetype, contentIndex: number): SectionVariant {
   switch (kind) {
@@ -351,7 +369,8 @@ export function deriveLayoutPlan(
   const resolved: PlanSection[] = sections.map((s) => {
     const kind = sectionKind(s.id, s.name);
     const isContent = kind === 'features' || kind === 'generic';
-    const variant = variantForSection(kind, arch, isContent ? contentIndex++ : 0);
+    const base = variantForSection(kind, arch, isContent ? contentIndex++ : 0);
+    const variant = refineVariantById(s.id, s.name, base);
     return { id: s.id, name: s.name, kind, variant };
   });
 
