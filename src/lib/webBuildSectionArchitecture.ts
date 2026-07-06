@@ -231,21 +231,139 @@ const isGeneric = (s: WebBuildSectionItem) => GENERIC.has(norm(s.id)) || GENERIC
 function findHero(items: WebBuildSectionItem[]): WebBuildSectionItem | undefined {
   return items.find((s) => /hero/i.test(s.id) || /hero|intro/i.test(s.name || ''));
 }
-function hasSpecificSection(items: WebBuildSectionItem[], keywords: string[]): boolean {
-  const hay = items.map((s) => norm(`${s.id} ${s.name}`)).join(' | ');
-  return keywords.some((k) => hay.includes(k));
+
+/* ── Concept-coverage measurement against the mode's playbook ───────────────
+ *
+ * The soft check below (short / mostly-generic / one keyword hit) let weak
+ * backend sets through: a few non-generic labels plus a single concept keyword
+ * were enough to "preserve", so generic sets like Academic / About / Services /
+ * Final leaked past for clear concepts. Instead we compare the current sections
+ * against the REQUIRED playbook for the mode and only preserve when they cover a
+ * meaningful portion of it (and clear the mode's must-have gate). */
+
+/** Required content ids for a mode = its playbook minus hero/footer. */
+function requiredContentIds(mode: ArchMode): string[] {
+  const pb = PLAYBOOKS[mode as Exclude<ArchMode, 'generic'>];
+  return pb ? pb.filter((id) => id !== 'hero' && id !== 'footer') : [];
 }
 
-/** A section architecture is WEAK when it is too short, mostly generic, or has no
- *  concept-specific section despite a clear (non-generic) mode. */
-function weakSectionArchitecture(items: WebBuildSectionItem[], mode: ArchMode): boolean {
+/** Match tokens that mean "this required section is present": the id, its tokens,
+ *  its localized names, and any mode synonym that belongs to this id. */
+function synonymsForRequired(id: string, mode: ArchMode): string[] {
+  const meta = SECTIONS[id];
+  const toks = [
+    norm(id),
+    ...norm(id).split(' '),
+    ...(meta ? norm(meta.name[0]).split(' ') : []),
+    ...(meta ? norm(meta.name[1]).split(' ') : []),
+  ].filter((t) => t.length >= 3);
+  const nameHay = norm(`${id} ${meta ? `${meta.name[0]} ${meta.name[1]}` : ''}`);
+  for (const k of MODE_KEYWORDS[mode] || []) if (nameHay.includes(k)) toks.push(k);
+  return uniq(toks);
+}
+
+/** True when a single current section satisfies at least one required id. */
+function itemCoversRequired(s: WebBuildSectionItem, mode: ArchMode): boolean {
+  const hay = norm(`${s.id} ${s.name}`);
+  return requiredContentIds(mode).some((id) => synonymsForRequired(id, mode).some((t) => hay.includes(t)));
+}
+
+/** Fraction of the mode's required sections that the current set covers (0..1). */
+function conceptCoverageRatio(items: WebBuildSectionItem[], mode: ArchMode): number {
+  const req = requiredContentIds(mode);
+  if (!req.length) return 1;
+  const hay = items.map((s) => norm(`${s.id} ${s.name}`)).join(' | ');
+  const covered = req.filter((id) => synonymsForRequired(id, mode).some((t) => hay.includes(t))).length;
+  return covered / req.length;
+}
+
+/** Concept-specific content sections = non-hero/footer sections that are either a
+ *  concept label or a legit playbook-required section (so shared required labels
+ *  like services / process / faq / contact are not under-counted). */
+function conceptSectionCount(items: WebBuildSectionItem[], mode: ArchMode): number {
+  return items
+    .filter((s) => !/hero|footer/i.test(s.id))
+    .filter((s) => !isGeneric(s) || itemCoversRequired(s, mode)).length;
+}
+
+/** Generic leakage = generic content sections that the mode's playbook does NOT
+ *  require (so playbook-required shared sections are never counted as leak). */
+function genericLeakRatio(items: WebBuildSectionItem[], mode: ArchMode): number {
   const content = items.filter((s) => !/hero|footer/i.test(s.id));
-  if (content.length < 4) return true; // fewer than ~5 real sections
-  const nonGeneric = content.filter((s) => !isGeneric(s));
-  if (nonGeneric.length < 2) return true; // mostly generic labels
-  const kws = MODE_KEYWORDS[mode];
-  if (kws && kws.length && !hasSpecificSection(content, kws)) return true; // concept mismatch
-  return false;
+  if (!content.length) return 1;
+  const reqTokens = new Set<string>();
+  for (const id of requiredContentIds(mode)) {
+    reqTokens.add(norm(id));
+    for (const t of norm(id).split(' ')) reqTokens.add(t);
+  }
+  const leaks = content.filter((s) => {
+    if (!isGeneric(s)) return false;
+    return !(reqTokens.has(norm(s.id)) || reqTokens.has(firstToken(s.id)) || reqTokens.has(firstToken(s.name)));
+  });
+  return leaks.length / content.length;
+}
+
+/** Exact generic labels that must never survive for the strict concept modes. */
+const HARD_LEAK = /^(academic|about|services?|features?|final)$/i;
+function hasHardLeak(items: WebBuildSectionItem[]): boolean {
+  return items
+    .filter((s) => !/hero|footer/i.test(s.id))
+    .some((s) => HARD_LEAK.test((s.id || '').trim()) || HARD_LEAK.test((s.name || '').trim()));
+}
+
+/** Mode must-have gates: each entry is a group of interchangeable keywords; the
+ *  mode is satisfied only when at least `MUST_HAVE_MIN[mode]` groups are present.
+ *  Archive & landscaping are deliberately strict. */
+const MUST_HAVES: Partial<Record<ArchMode, string[][]>> = {
+  archive: [['collection-index', 'collection', 'catalog'], ['document-types', 'document'], ['research-filters', 'search', 'filter'], ['provenance', 'curation', 'authenticity'], ['researcher-access', 'access']],
+  landscaping: [['project-gallery', 'projects', 'gallery'], ['before-after', 'before', 'after'], ['materials'], ['process'], ['local-proof', 'proof', 'reviews'], ['quote-cta', 'quote', 'consultation']],
+  hospitality: [['menu'], ['ambience', 'gallery'], ['reservation'], ['location-hours', 'location', 'hours'], ['reviews']],
+  productSaas: [['product-demo', 'demo'], ['use-cases', 'use case'], ['workflow'], ['integrations', 'integration'], ['security-proof', 'security'], ['pricing']],
+  trustService: [['credentials', 'credential'], ['services', 'service'], ['process'], ['trust-proof', 'trust'], ['faq'], ['contact']],
+};
+const MUST_HAVE_MIN: Partial<Record<ArchMode, number>> = {
+  archive: 3, landscaping: 3, hospitality: 3, productSaas: 4, trustService: 3,
+};
+
+function mustHaveGateFails(items: WebBuildSectionItem[], mode: ArchMode): boolean {
+  const groups = MUST_HAVES[mode];
+  const min = MUST_HAVE_MIN[mode];
+  if (!groups || !min) return false; // no gate for this mode
+  const hay = items.map((s) => norm(`${s.id} ${s.name}`)).join(' | ');
+  const satisfied = groups.filter((g) => g.some((k) => hay.includes(k))).length;
+  return satisfied < min;
+}
+
+/**
+ * Decide whether the current backend architecture is strong enough to preserve
+ * for a clear (non-generic) mode, or should be rewritten from the playbook.
+ * Returns a rewrite flag + an informative (internal, non-UI) reason.
+ */
+function sectionArchitectureDecision(
+  items: WebBuildSectionItem[],
+  mode: ArchMode,
+): { rewrite: boolean; reason: string } {
+  const content = items.filter((s) => !/hero|footer/i.test(s.id));
+  if (content.length < 4) return { rewrite: true, reason: 'too-short' };
+
+  // Mode's essential sections absent — the clearest reason to rewrite.
+  if (mustHaveGateFails(items, mode)) return { rewrite: true, reason: 'missing-must-haves' };
+
+  const coverage = conceptCoverageRatio(items, mode);
+  const concept = conceptSectionCount(items, mode);
+  const isLocal = mode === 'localService';
+  const minCoverage = isLocal ? 0.5 : 0.6;
+  const minSections = isLocal ? 3 : 4;
+  if (coverage < minCoverage || concept < minSections) return { rewrite: true, reason: 'low-coverage' };
+
+  // Generic labels dominate and coverage is not strong → rewrite.
+  if (genericLeakRatio(items, mode) > 0.35 && coverage < 0.7) return { rewrite: true, reason: 'generic-leak' };
+  // Exact generic leaks (Academic/About/Services/Features/Final) in the strict modes.
+  if ((mode === 'archive' || mode === 'landscaping') && hasHardLeak(items) && coverage < 0.7) {
+    return { rewrite: true, reason: 'generic-leak' };
+  }
+
+  return { rewrite: false, reason: 'covered' };
 }
 
 /* ── Honest, concept-specific bullet sources ────────────────────────────── */
@@ -366,9 +484,11 @@ export function deriveAgentSectionArchitecture(input: SectionArchInput): Section
     if (mode === 'generic' || !PLAYBOOKS[mode as Exclude<ArchMode, 'generic'>]) {
       return { sectionItems: current, didRewrite: false, reason: 'generic-mode', mode };
     }
-    // Preserve an already concept-specific backend architecture.
-    if (current.length && !weakSectionArchitecture(current, mode)) {
-      return { sectionItems: current, didRewrite: false, reason: 'backend-specific', mode };
+    // Preserve an already concept-specific backend architecture that covers a
+    // meaningful portion of the mode's playbook and clears its must-have gate.
+    const decision = current.length ? sectionArchitectureDecision(current, mode) : { rewrite: true, reason: 'empty' };
+    if (current.length && !decision.rewrite) {
+      return { sectionItems: current, didRewrite: false, reason: `backend-specific-covered-${mode}`, mode };
     }
     // Rewrite from the concept playbook, keeping the best backend hero copy + CTAs.
     const hero = findHero(current);
@@ -377,7 +497,7 @@ export function deriveAgentSectionArchitecture(input: SectionArchInput): Section
         : id === 'footer' ? footerItem(input)
           : sectionFromPlaybook(id, input));
     if (built.length < 5) return { sectionItems: current, didRewrite: false, reason: 'too-few', mode };
-    return { sectionItems: built, didRewrite: true, reason: `rewrote-to-${mode}`, mode };
+    return { sectionItems: built, didRewrite: true, reason: `rewrote-to-${mode}-${decision.reason}`, mode };
   } catch {
     return { sectionItems: current, didRewrite: false, reason: 'error' };
   }
