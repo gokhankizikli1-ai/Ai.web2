@@ -1,9 +1,9 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { ArrowLeft, Lock } from 'lucide-react';
 import { useLanguageStore } from '@/stores/languageStore';
 import WebBuildPreviewDocument from '@/components/builder/WebBuildPreviewDocument';
-import { readPreview, sanitizeReturnTo, type WebBuildPreviewData } from '@/lib/webBuildPreviewStash';
+import { readPreview, sanitizeReturnTo, requestPreviewForRun, subscribePreviewResponses, type WebBuildPreviewData } from '@/lib/webBuildPreviewStash';
 import { listWebBuildSessions, getWebBuildSession } from '@/lib/webBuildSession';
 import { getProjects } from '@/stores/projectStore';
 
@@ -49,24 +49,54 @@ function fromSession(runId: string): WebBuildPreviewData | null {
   return null;
 }
 
+/** Resolve preview data from the on-device sources, taking the FIRST USABLE one
+ *  (non-empty sectionItems). The old `readPreview || fromSession || fromProject`
+ *  chain short-circuited on a truthy-but-EMPTY stash (readPreview returns an
+ *  object whenever sectionItems is an array, even []), so a stale/empty stash
+ *  masked a healthy saved session/project. Skipping unusable candidates fixes it. */
+function resolveLocalPreview(runId: string): WebBuildPreviewData | null {
+  for (const get of [() => readPreview(runId), () => fromSession(runId), () => fromProject(runId)]) {
+    const d = get();
+    if (usablePreview(d)) return d;
+  }
+  return null;
+}
+
 export default function WebBuildPreview() {
-  const { t } = useLanguageStore();
+  const { t, lang } = useLanguageStore();
   const { runId = '' } = useParams();
   const navigate = useNavigate();
-  // Resolve preview data by trying each source in order and taking the FIRST
-  // USABLE one (non-empty sectionItems). The old `readPreview || fromSession ||
-  // fromProject` chain short-circuited on a truthy-but-EMPTY stash (readPreview
-  // returns an object whenever sectionItems is an array, even []), so a stale/
-  // empty stash masked a healthy saved session/project and the route wrongly
-  // showed "No preview available yet". Skipping unusable candidates fixes that.
-  const data = useMemo(() => {
-    const sources = [() => readPreview(runId), () => fromSession(runId), () => fromProject(runId)];
-    for (const get of sources) {
-      const d = get();
-      if (usablePreview(d)) return d;
-    }
-    return null;
-  }, [runId]);
+  // On-device resolution first (stash → saved session → saved project).
+  const local = useMemo(() => resolveLocalPreview(runId), [runId]);
+  const [data, setData] = useState<WebBuildPreviewData | null>(local);
+  // When nothing is on device, the opener tab may be handing the payload over a
+  // storage-free BroadcastChannel (used when localStorage was full). Wait briefly
+  // for it instead of instantly showing the empty state.
+  const [waiting, setWaiting] = useState<boolean>(!local && !!runId);
+
+  useEffect(() => {
+    if (data || !runId) return; // already have usable data, or nothing to ask for
+    let settled = false;
+    let unsubscribe = () => {};
+    let retry: ReturnType<typeof setInterval> | undefined;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const finish = (incoming: WebBuildPreviewData | null) => {
+      if (settled) return;
+      settled = true;
+      if (incoming) setData(incoming);
+      setWaiting(false);
+      unsubscribe();
+      if (retry !== undefined) clearInterval(retry);
+      if (timer !== undefined) clearTimeout(timer);
+    };
+    // Listen for the opener tab's response, then ask it (repeatedly, to cover the
+    // race where our request lands before the opener's responder is armed).
+    unsubscribe = subscribePreviewResponses(runId, finish);
+    requestPreviewForRun(runId);
+    retry = setInterval(() => requestPreviewForRun(runId), 700);
+    timer = setTimeout(() => finish(null), 10000); // give up → empty state
+    return () => { settled = true; unsubscribe(); if (retry !== undefined) clearInterval(retry); if (timer !== undefined) clearTimeout(timer); };
+  }, [runId, data]);
 
   // Return to where the preview was opened from. Prefer the structured restore
   // context (owning chat session + persisted Web Build session id) so Chat can
@@ -92,6 +122,16 @@ export default function WebBuildPreview() {
   }
 
   if (!data || data.sectionItems.length === 0) {
+    // Still waiting for a BroadcastChannel handoff from the opener tab — show a
+    // brief loading state instead of prematurely declaring the preview missing.
+    if (waiting) {
+      return (
+        <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-[#0D1117] px-6 text-center">
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/20 border-t-[#93C5FD]" aria-hidden />
+          <p className="text-sm text-[#94A3B8]">{lang === 'tr' ? 'Önizleme yükleniyor…' : 'Loading preview…'}</p>
+        </div>
+      );
+    }
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-[#0D1117] px-6 text-center">
         <p className="text-sm text-[#94A3B8]">{t('wbPreviewEmpty')}</p>
