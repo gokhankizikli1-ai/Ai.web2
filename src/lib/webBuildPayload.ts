@@ -10,7 +10,7 @@ import { resolveBuildFiles, parseSectionCopy, synthesizeFromCopies, type SynthFi
 import { inferWebsiteBrief, fallbackSectionItems, checkQuality } from '@/lib/webBuildBrief';
 import { deriveLayoutPlan, type WebBuildLayoutPlan } from '@/lib/webBuildLayoutPlan';
 import {
-  runUpstreamAgents, runLayoutArchitect, runComponentEngineer, runReviewer, WEB_BUILD_AGENTS_ENABLED,
+  runUpstreamAgents, runLayoutArchitect, runComponentEngineer, runReviewer, runFixer, WEB_BUILD_AGENTS_ENABLED,
   type WebBuildAgent, type WebBuildArtifacts, type WebBuildEnforcement,
 } from '@/lib/webBuildAgents';
 import { deriveAgentSectionArchitecture } from '@/lib/webBuildSectionArchitecture';
@@ -429,6 +429,37 @@ export function buildWebBuildPayload(
       agents = [...agents, rv.agent];
       artifacts = { ...(artifacts || {}), reviewer: rv.artifact };
 
+      // FIXER AGENT (Phase 6) — runs AFTER the Reviewer. It consumes the reviewer
+      // artifact and applies a NARROW set of SAFE, deterministic repairs to the
+      // FINAL files (fake-metric cleanup, placeholder cleanup, dead CTA-anchor
+      // sanity). It never redesigns and fails OPEN, so it can never block Preview /
+      // All Files. When it sanitizes file content we recompute the diffs against
+      // the previous build so the diff metadata stays honest (no stale/fake stats).
+      const fx = runFixer({
+        prompt, brief: artBrief, reviewer: rv.artifact,
+        sectionItems: sectionItems.map((s) => ({ id: s.id, name: s.name, headline: s.headline, sub: s.sub, cta: s.cta, bullets: s.bullets })),
+        files: files.map((f) => ({ path: f.path, content: f.content })),
+        lang: effLang,
+      });
+      agents = [...agents, fx.agent];
+      artifacts = { ...(artifacts || {}), fixer: fx.artifact };
+
+      // Apply the Fixer's sanitized file CONTENT back onto the real WebBuildFile
+      // objects (preserving summary/language) and recompute the diff so Preview
+      // and All Files consume the same final, honestly-diffed data. Section items
+      // are unchanged by the v1 Fixer, so the layout plan stays valid as-is.
+      if (fx.artifact.status === 'applied') {
+        const fixedByPath = new Map(fx.files.map((f) => [f.path, f.content]));
+        const anyContentChanged = files.some((f) => {
+          const c = fixedByPath.get(f.path);
+          return c !== undefined && c !== f.content;
+        });
+        if (anyContentChanged) {
+          const merged = files.map((f) => ({ ...f, content: fixedByPath.get(f.path) ?? f.content }));
+          files = diffFiles(prevFiles, merged);
+        }
+      }
+
       // ENFORCEMENT — prove the agents drove the build (Part 6). The layout plan is
       // derived from the enriched (agent-steered) brief, so the archetype following
       // the agent decision is verifiable; the generated files come from that same
@@ -452,6 +483,10 @@ export function buildWebBuildPayload(
         didRunReviewer: !!artifacts?.reviewer,
         didReviewerFindCriticalIssues: (artifacts?.reviewer?.findings || []).some((f) => f.severity === 'critical'),
         didIncludeReviewerInFinalPayload: !!artifacts?.reviewer,
+        // Fixer trace (Phase 6) — real artifact presence + real applied-change count.
+        didRunFixer: !!artifacts?.fixer,
+        didFixerApplyChanges: (artifacts?.fixer?.appliedChanges || []).length > 0,
+        didIncludeFixerInFinalPayload: !!artifacts?.fixer,
         fallbackReason: (artifacts?.context?.fallbacks?.length
           ? `agents degraded: ${artifacts.context.fallbacks.join(', ')}`
           : undefined),

@@ -547,10 +547,52 @@ export interface ReviewerAgentArtifact {
   summary: string;
 }
 
-export type AgentId = 'research' | 'ui_art_director' | 'strategy' | 'layout_architect' | 'component_engineer' | 'reviewer';
+/* ── Fixer Agent (Phase 6) ─────────────────────────────────────────────────
+ * The first Fixer runs AFTER the Reviewer. It consumes the Reviewer artifact
+ * and applies a NARROW set of SAFE, deterministic repairs to the FINAL build
+ * data (generated files + section items). It never redesigns, never invents
+ * content/metrics/proof/sources, and always fails OPEN — so Preview / All Files
+ * always render, unchanged if the Fixer cannot safely help. */
+export type FixerStatus = 'applied' | 'no-op' | 'failed-open';
+
+/** One safe repair the Fixer actually performed (before/after are real). */
+export interface FixerAppliedChange {
+  id: string;
+  category: string;
+  /** File path or section id the change touched. */
+  target: string;
+  before?: string;
+  after?: string;
+  reason: string;
+}
+
+/** A repair the Fixer deliberately did NOT perform (out of safe v1 scope). */
+export interface FixerSkippedChange {
+  id: string;
+  category: string;
+  target?: string;
+  reason: string;
+}
+
+export interface FixerAgentArtifact {
+  status: FixerStatus;
+  appliedChanges: FixerAppliedChange[];
+  skippedChanges: FixerSkippedChange[];
+  /** Reviewer finding ids/titles the Fixer actually consumed. */
+  consumedReviewerFindings: string[];
+  /** Reviewer fixInstructions the Fixer actually acted on. */
+  consumedFixInstructions: string[];
+  /** The categories of repair this v1 Fixer is allowed to perform. */
+  safeRepairScope: string[];
+  /** The categories of repair the Fixer refused (reserved for future phases). */
+  refusedScope: string[];
+  summary: string;
+}
+
+export type AgentId = 'research' | 'ui_art_director' | 'strategy' | 'layout_architect' | 'component_engineer' | 'reviewer' | 'fixer';
 export type AgentArtifact =
   ResearchAgentArtifact | ArtDirectionArtifact | StrategyAgentArtifact | PageBlueprint
-  | ComponentEngineerArtifact | ReviewerAgentArtifact | Record<string, unknown>;
+  | ComponentEngineerArtifact | ReviewerAgentArtifact | FixerAgentArtifact | Record<string, unknown>;
 
 export interface WebBuildAgent {
   id: AgentId;
@@ -587,6 +629,10 @@ export interface WebBuildEnforcement {
   didRunReviewer?: boolean;
   didReviewerFindCriticalIssues?: boolean;
   didIncludeReviewerInFinalPayload?: boolean;
+  /* ── Fixer trace (Phase 6, optional, backward compatible) ── */
+  didRunFixer?: boolean;
+  didFixerApplyChanges?: boolean;
+  didIncludeFixerInFinalPayload?: boolean;
   fallbackReason?: string;
 }
 
@@ -598,6 +644,8 @@ export interface WebBuildArtifacts {
   componentEngineer?: ComponentEngineerArtifact;
   /** Advisory quality-gate review (Phase 5). Optional → old builds still load. */
   reviewer?: ReviewerAgentArtifact;
+  /** Safe reviewer-driven repairs (Phase 6). Optional → old builds still load. */
+  fixer?: FixerAgentArtifact;
   /** The shared context the agents were run against (pipeline trace). */
   context?: WebBuildAgentContext;
   /** Enforcement diagnostics proving the agents drove the build. */
@@ -3363,6 +3411,7 @@ const AGENT_NAME: Record<AgentId, [string, string]> = {
   layout_architect: ['Layout Architect Agent', 'Yerleşim Mimarı Ajanı'],
   component_engineer: ['Component Engineer Agent', 'Bileşen Mühendisi Ajanı'],
   reviewer: ['Reviewer Agent', 'Gözden Geçirme Ajanı'],
+  fixer: ['Fixer Agent', 'Düzeltici Ajan'],
 };
 
 function agentRow(id: AgentId, lang: Lang, artifact: (AgentArtifact & { summary?: string }) | undefined): WebBuildAgent {
@@ -3891,6 +3940,280 @@ export function runReviewer(input: ReviewerInput): { agent: WebBuildAgent; artif
   }
 }
 
+/* ── Fixer Agent (Phase 6) — safe reviewer-driven repairs ───────────────────
+ * The first Fixer runs AFTER the Reviewer. It consumes the Reviewer artifact and
+ * applies a NARROW set of SAFE, deterministic repairs to the FINAL build data
+ * (generated files + section items). It NEVER redesigns, NEVER invents
+ * content/metrics/proof/sources, records every applied AND refused change, and
+ * fails OPEN — so Preview / All Files always render (unchanged when it can't
+ * safely help). It is intentionally conservative "v1": only the three safe
+ * repair categories below; everything broader is recorded as refused. */
+
+/** The section/file shape the Fixer reads and returns (structurally compatible
+ *  with the payload's WebBuildSectionItem — avoids importing the payload module). */
+export interface FixerSectionItem {
+  id: string;
+  name: string;
+  headline?: string;
+  sub?: string;
+  cta?: string;
+  bullets?: string[];
+}
+
+export interface FixerInput {
+  prompt: string;
+  brief: WebBuildBrief;
+  reviewer: ReviewerAgentArtifact | undefined;
+  /** Final section list actually rendered/generated. */
+  sectionItems: FixerSectionItem[];
+  /** Final generated files (path + content) the Fixer may sanitize. */
+  files: Array<{ path: string; content: string }>;
+  lang?: Lang;
+}
+
+export interface FixerResult {
+  agent: WebBuildAgent;
+  artifact: FixerAgentArtifact;
+  /** Possibly-updated section list (usually unchanged in v1). */
+  sectionItems: FixerSectionItem[];
+  /** Possibly-sanitized files (same shape in → out). */
+  files: Array<{ path: string; content: string }>;
+}
+
+/** The safe repair categories this v1 Fixer is allowed to perform. */
+const FIXER_SAFE_SCOPE = ['fake-data', 'placeholder-cleanup', 'cta-anchor'];
+
+/** Broad changes the Fixer explicitly REFUSES (reserved for later phases). */
+function fixerRefusedScope(lang: Lang): string[] {
+  return [
+    L(lang, 'section-architecture rewrite', 'bölüm mimarisi yeniden yazımı'),
+    L(lang, 'full redesign / new visual system', 'tam yeniden tasarım / yeni görsel sistem'),
+    L(lang, 'new pages or routing illusion', 'yeni sayfalar veya yönlendirme yanılsaması'),
+    L(lang, 'new motion system', 'yeni hareket sistemi'),
+    L(lang, 'fabricated testimonials / prices / ratings / logos / sources', 'uydurma referanslar / fiyatlar / puanlar / logolar / kaynaklar'),
+    L(lang, 'preview renderer / All Files architecture changes', 'önizleme oluşturucu / Tüm Dosyalar mimarisi değişiklikleri'),
+  ];
+}
+
+interface FixerToken { id: string; re: RegExp; label: [string, string] }
+
+/** Unsupported proof/metric fingerprints → neutral STRUCTURAL labels (never
+ *  another fake metric). Mirrors the Reviewer's fake-data guard so a re-review
+ *  would pass. Applied to generated FILE CONTENT only. */
+const FIXER_FAKE_TOKENS: FixerToken[] = [
+  { id: '₺199 price', re: /₺\s?199/g, label: ['Clear comparison', 'Net karşılaştırma'] },
+  { id: '₺120 price', re: /₺\s?120/g, label: ['Clear comparison', 'Net karşılaştırma'] },
+  { id: '4.9★ rating', re: /4\.9\s*★/g, label: ['Verified proof', 'Doğrulanmış kanıt'] },
+  { id: '12k+ count', re: /12\s?k\s?\+/gi, label: ['Verified proof', 'Doğrulanmış kanıt'] },
+  { id: '2.4k metric', re: /\b2\.4k\b/gi, label: ['Verified proof', 'Doğrulanmış kanıt'] },
+  { id: '+37% delta', re: /\+\s?37\s?%/g, label: ['Verified proof', 'Doğrulanmış kanıt'] },
+  { id: 'SOC2 claim', re: /\bsoc\s?2\b/gi, label: ['Security review', 'Güvenlik incelemesi'] },
+  { id: '98% stat', re: /\b98\s?%/g, label: ['Verified proof', 'Doğrulanmış kanıt'] },
+  { id: '24/7 claim', re: /\b24\s?\/\s?7\b/g, label: ['Documented process', 'Belgelenmiş süreç'] },
+  { id: 'uptime claim', re: /\buptime\b/gi, label: ['Security review', 'Güvenlik incelemesi'] },
+];
+
+/** Entity-count fabrications — ONLY when a fabricated count precedes the entity
+ *  word, so honest copy that merely mentions "customers/clients" is never
+ *  garbled (never remove clearly user-provided content). */
+const FIXER_ENTITY_COUNT: FixerToken[] = [
+  { id: 'customer count', re: /\b\d[\d.,]*\s?k?\+?\s+customers\b/gi, label: ['Project evidence', 'Proje kanıtı'] },
+  { id: 'client count', re: /\b\d[\d.,]*\s?k?\+?\s+clients\b/gi, label: ['Project evidence', 'Proje kanıtı'] },
+  { id: 'müşteri count', re: /\b\d[\d.,]*\s?k?\+?\s+müşteri\b/gi, label: ['Project evidence', 'Proje kanıtı'] },
+];
+
+/** Empty/placeholder visual-module fingerprints → concept-neutral labels. */
+const FIXER_PLACEHOLDER_STR: FixerToken[] = [
+  { id: 'lorem ipsum', re: /lorem ipsum[^<>"'\n]*/gi, label: ['Concept detail', 'Konsept ayrıntısı'] },
+  { id: 'placeholder testimonial', re: /\b(?:Customer|Müşteri)\s*(?:Name|Ad[ıi]|#?\s?\d+)\b/gi, label: ['Project reference', 'Proje referansı'] },
+];
+
+/** Apply one deterministic repair; capture the first before/after sample. The
+ *  replacement may be a string or a function (regex must be global). */
+function applyRepair(
+  content: string,
+  re: RegExp,
+  rep: string | ((m: string, ...g: string[]) => string),
+): { content: string; hit: boolean; before?: string; after?: string } {
+  let before: string | undefined;
+  let after: string | undefined;
+  const next = content.replace(re, (m: string, ...g: string[]) => {
+    const out = typeof rep === 'function' ? rep(m, ...g) : rep;
+    if (before === undefined) { before = m; after = out; }
+    return out;
+  });
+  return { content: next, hit: next !== content, before, after };
+}
+
+/** HONEST failed-open Fixer artifact — nothing changed, build continues. */
+function failedOpenFixer(lang: Lang): FixerAgentArtifact {
+  return {
+    status: 'failed-open', appliedChanges: [], skippedChanges: [],
+    consumedReviewerFindings: [], consumedFixInstructions: [],
+    safeRepairScope: FIXER_SAFE_SCOPE, refusedScope: fixerRefusedScope(lang),
+    summary: L(lang,
+      'Fixer failed open; build continued unchanged (Preview and All Files intact).',
+      'Düzeltici güvenli şekilde durdu; yapı değişmeden devam etti (Önizleme ve Tüm Dosyalar korundu).'),
+  };
+}
+
+/**
+ * Derive the Fixer artifact + possibly-sanitized files/sections from the real
+ * reviewer findings and generated data only. Pure and deterministic. Applies
+ * ONLY the three safe repair categories; records everything broader as refused.
+ */
+export function deriveFixer(input: FixerInput): { artifact: FixerAgentArtifact; sectionItems: FixerSectionItem[]; files: Array<{ path: string; content: string }> } {
+  const lang = input.lang || 'en';
+  const applied: FixerAppliedChange[] = [];
+  const skipped: FixerSkippedChange[] = [];
+  let aid = 0;
+  let skid = 0;
+  const addApplied = (category: string, target: string, before: string | undefined, after: string | undefined, reason: string) => {
+    applied.push({ id: `fx-${aid += 1}`, category, target, before, after, reason });
+  };
+  const addSkipped = (category: string, reason: string, target?: string) => {
+    skipped.push({ id: `fs-${skid += 1}`, category, target, reason });
+  };
+
+  const reviewer = input.reviewer;
+  const findings = Array.isArray(reviewer?.findings) ? reviewer!.findings : [];
+  const criticalFakeData = findings.some((f) => f.severity === 'critical' && f.category === 'fake-data');
+  const flaggedArchitecture = findings.some((f) => f.category === 'concept-fit' || f.category === 'section-architecture');
+  const consumedReviewerFindings = uniq(findings.map((f) => f.title)).slice(0, 12);
+  const consumedFixInstructions = Array.isArray(reviewer?.fixInstructions) ? reviewer!.fixInstructions.slice(0, 6) : [];
+
+  // Guard: a token the user literally wrote is user-provided → never touch it.
+  const promptLc = (input.prompt || '').toLowerCase();
+  const userProvided = (re: RegExp): boolean => new RegExp(re.source, re.flags.replace('g', '')).test(promptLc);
+
+  // Operate on copies so the caller's arrays are never mutated in place.
+  const files = input.files.map((f) => ({ path: f.path, content: f.content || '' }));
+  const sectionItems = input.sectionItems.map((s) => ({ ...s }));
+
+  const runTokenPass = (tokens: FixerToken[], category: string, reason: string) => {
+    for (const tok of tokens) {
+      if (userProvided(tok.re)) {
+        addSkipped(category, L(lang,
+          `"${tok.id}" appears in the user prompt — treated as user-provided and left untouched.`,
+          `"${tok.id}" kullanıcı isteminde geçiyor — kullanıcı içeriği kabul edilip değiştirilmedi.`), tok.id);
+        continue;
+      }
+      const label = L(lang, tok.label[0], tok.label[1]);
+      for (const f of files) {
+        const res = applyRepair(f.content, tok.re, label);
+        if (res.hit) { addApplied(category, f.path, res.before, res.after, reason); f.content = res.content; }
+      }
+    }
+  };
+
+  // 1 — Fake metric/proof token cleanup (always in scope). Prioritized when the
+  //     Reviewer raised a CRITICAL fake-data finding.
+  runTokenPass(FIXER_FAKE_TOKENS, 'fake-data',
+    L(lang, 'Replaced an unsupported proof/metric token with a neutral structural label.',
+      'Desteklenmeyen kanıt/metrik ifadesini nötr yapısal bir etiketle değiştirdi.'));
+  runTokenPass(FIXER_ENTITY_COUNT, 'fake-data',
+    L(lang, 'Replaced a fabricated entity-count claim with a neutral structural label.',
+      'Uydurma müşteri/istemci sayısı ifadesini nötr yapısal bir etiketle değiştirdi.'));
+
+  if (criticalFakeData) {
+    // A critical fake-data finding → limit THIS pass to fake-data only (no broad
+    // redesign or other repairs mixed in). Record the deferrals honestly.
+    addSkipped('placeholder-cleanup', L(lang,
+      'Reviewer raised a critical fake-data issue; limited this pass to fake-data cleanup only.',
+      'Reviewer kritik bir sahte veri sorunu bildirdi; bu geçiş yalnızca sahte veri temizliği ile sınırlandı.'));
+    addSkipped('cta-anchor', L(lang,
+      'Deferred CTA-anchor repair while prioritizing the critical fake-data cleanup.',
+      'Kritik sahte veri temizliğine öncelik verilirken CTA bağlantı düzeltmesi ertelendi.'));
+  } else {
+    // 2 — Empty/placeholder visual-module cleanup.
+    const placeholderReason = L(lang,
+      'Replaced a placeholder/filler label with a concept-neutral label (no invented entities).',
+      'Yer tutucu/dolgu etiketini konsept-nötr bir etiketle değiştirdi (uydurma varlık yok).');
+    runTokenPass(FIXER_PLACEHOLDER_STR, 'placeholder-cleanup', placeholderReason);
+    // Repeated "Item/Feature/Card/Metric N" → keep the index, drop the generic
+    // noun so cards stop reading as scaffolding (function replacer keeps N).
+    const highlight = L(lang, 'Highlight', 'Öne çıkan');
+    for (const f of files) {
+      const res = applyRepair(f.content, /\b(?:Item|Feature|Card|Metric)\s+(\d+)\b/g, (_m: string, n: string) => `${highlight} ${n}`);
+      if (res.hit) { addApplied('placeholder-cleanup', f.path, res.before, res.after, placeholderReason); f.content = res.content; }
+    }
+
+    // 3 — CTA anchor sanity. Dead host-like paths → in-page hash anchors, ONLY
+    //     when a matching section id exists. External URLs are never touched; no
+    //     window.location / router is introduced.
+    const sectionIds = sectionItems.map((s) => s.id).filter(Boolean);
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '');
+    const matchSection = (seg: string): string | undefined => {
+      const t = norm(seg);
+      if (!t) return undefined;
+      return sectionIds.find((id) => { const nid = norm(id); return nid === t || nid.includes(t) || t.includes(nid); });
+    };
+    const DEAD_SEG = /^(pricing|price|contact|how-it-works|about|features|services)$/i;
+    const anchorReason = L(lang,
+      'Rewrote a dead host-like link to an in-page section anchor (matching section id found).',
+      'Ölü/ana-uygulama benzeri bağlantıyı eşleşen bölüm kimliğine sahip sayfa içi çapaya dönüştürdü.');
+    for (const f of files) {
+      const res = applyRepair(f.content, /href=(["'])([^"']*)\1/gi, (m: string, q: string, val: string) => {
+        if (/^(https?:|mailto:|tel:|#|\/\/)/i.test(val) || val.includes('://')) return m;
+        const seg = val.replace(/^\/+/, '').split(/[/?#]/).filter(Boolean).pop() || '';
+        if (!DEAD_SEG.test(seg)) return m;
+        const sec = matchSection(seg);
+        if (!sec) return m;
+        return `href=${q}#${sec}${q}`;
+      });
+      if (res.hit) { addApplied('cta-anchor', f.path, res.before, res.after, anchorReason); f.content = res.content; }
+    }
+  }
+
+  // REFUSALS — always record the broad scope the Fixer will not touch, plus a
+  // concrete refusal when the Reviewer flagged a structural/concept issue.
+  if (flaggedArchitecture) {
+    addSkipped('section-architecture', L(lang,
+      'Skipped broad architecture rewrite; reserved for a future architecture-fixer phase.',
+      'Geniş mimari yeniden yazımı atlandı; gelecekteki bir mimari düzeltme aşamasına bırakıldı.'), 'sectionItems');
+  }
+
+  const status: FixerStatus = applied.length > 0 ? 'applied' : 'no-op';
+  let summary: string;
+  if (applied.length > 0) {
+    const cats = uniq(applied.map((c) => c.category)).join(', ');
+    summary = L(lang,
+      `Fixer applied ${applied.length} safe repair${applied.length === 1 ? '' : 's'} (${cats}); no redesign or invented content.`,
+      `Düzeltici ${applied.length} güvenli düzeltme uyguladı (${cats}); yeniden tasarım veya uydurma içerik yok.`);
+  } else {
+    summary = L(lang,
+      'Fixer no-op: reviewer found no safe v1 repair scope in this build.',
+      'Düzeltici işlem yapmadı: reviewer bu yapıda güvenli v1 düzeltme kapsamı bulmadı.');
+  }
+
+  const artifact: FixerAgentArtifact = {
+    status, appliedChanges: applied, skippedChanges: skipped,
+    consumedReviewerFindings, consumedFixInstructions,
+    safeRepairScope: FIXER_SAFE_SCOPE, refusedScope: fixerRefusedScope(lang),
+    summary,
+  };
+  return { artifact, sectionItems, files };
+}
+
+/**
+ * Run the Fixer Agent. Fully guarded: on any error it fails OPEN — a fixer row
+ * with status 'failed' + a safe 'failed-open' artifact, and the ORIGINAL
+ * sections/files are returned unchanged. Never required for Preview / All Files.
+ */
+export function runFixer(input: FixerInput): FixerResult {
+  const lang = input.lang || 'en';
+  const name = L(lang, 'Fixer Agent', 'Düzeltici Ajan');
+  const activity = L(lang, 'Applying safe reviewer-driven repairs', 'Reviewer kaynaklı güvenli düzeltmeler uygulanıyor');
+  try {
+    const { artifact, sectionItems, files } = deriveFixer(input);
+    // 'applied' and 'no-op' both ran cleanly → 'done'; only fail-open is 'failed'.
+    return { agent: { id: 'fixer', name, status: 'done', summary: artifact.summary, currentActivity: activity, artifact }, artifact, sectionItems, files };
+  } catch {
+    const artifact = failedOpenFixer(lang);
+    return { agent: { id: 'fixer', name, status: 'failed', summary: artifact.summary, currentActivity: activity, artifact }, artifact, sectionItems: input.sectionItems, files: input.files };
+  }
+}
+
 /* ── Chat agent WORKSTREAM (work-log) model ────────────────────────────────
  * A single, normalized log of the real agent pipeline for a finished build step:
  * WHAT each agent did, WHICH fields it passed to the next agent, and (for the
@@ -3943,7 +4266,7 @@ function joinList(lang: Lang, items: string[]): string {
 const nonEmpty = (v: unknown): boolean => Array.isArray(v) ? v.length > 0 : !!v;
 
 /** Canonical pipeline order + who each agent hands off to. */
-const WORKLOG_ORDER: AgentId[] = ['research', 'ui_art_director', 'strategy', 'layout_architect', 'component_engineer', 'reviewer'];
+const WORKLOG_ORDER: AgentId[] = ['research', 'ui_art_director', 'strategy', 'layout_architect', 'component_engineer', 'reviewer', 'fixer'];
 const WORKLOG_NEXT: Partial<Record<AgentId, AgentId>> = {
   research: 'ui_art_director',
   ui_art_director: 'strategy',
@@ -4124,6 +4447,19 @@ function didMessage(agent: WebBuildAgent, lang: Lang): { message: string; type: 
           message: rv.status === 'needs-fixes'
             ? L(lang, `flagged ${n} quality issue${n === 1 ? '' : 's'} for the Fixer`, `Düzeltici için ${n} kalite sorunu işaretledi`)
             : L(lang, 'reviewed quality — no blocking issues', 'kaliteyi inceledi — engelleyici sorun yok'),
+          type: 'completed',
+        };
+      }
+      case 'fixer': {
+        const fx = agent.artifact as FixerAgentArtifact;
+        const n = Array.isArray(fx.appliedChanges) ? fx.appliedChanges.length : 0;
+        if (fx.status === 'failed-open') {
+          return { message: L(lang, 'failed open — build kept unchanged', 'güvenli şekilde durdu — yapı değişmeden korundu'), type: 'fallback' };
+        }
+        return {
+          message: n > 0
+            ? L(lang, `applied ${n} safe repair${n === 1 ? '' : 's'}`, `${n} güvenli düzeltme uyguladı`)
+            : L(lang, 'no-op — no safe repair in scope', 'işlem yok — kapsamda güvenli düzeltme yok'),
           type: 'completed',
         };
       }

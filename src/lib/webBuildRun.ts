@@ -25,7 +25,7 @@ import {
   WEB_BUILD_AGENTS_ENABLED,
   type WebBuildAgent, type AgentId, type ResearchAgentArtifact, type ArtDirectionArtifact,
   type StrategyAgentArtifact, type PageBlueprint, type ComponentEngineerArtifact,
-  type ReviewerAgentArtifact,
+  type ReviewerAgentArtifact, type FixerAgentArtifact,
 } from '@/lib/webBuildAgents';
 
 export type WebBuildRunStatus = 'queued' | 'running' | 'completed' | 'failed';
@@ -341,6 +341,7 @@ const AGENT_TITLE_KEY: Record<AgentId, string> = {
   layout_architect: 'wbAgentLayout',
   component_engineer: 'wbAgentComponent',
   reviewer: 'wbAgentReviewer',
+  fixer: 'wbAgentFixer',
 };
 const AGENT_NOTE_KEY: Record<AgentId, string> = {
   research: 'wbOpResearchNote',
@@ -349,6 +350,7 @@ const AGENT_NOTE_KEY: Record<AgentId, string> = {
   layout_architect: 'wbOpLayoutNote',
   component_engineer: 'wbOpComponentNote',
   reviewer: 'wbOpReviewerNote',
+  fixer: 'wbOpFixerNote',
 };
 
 /** Concise reviewer detail lines from the real artifact (no fabrication). */
@@ -365,6 +367,19 @@ function reviewerAgentDetails(a: ReviewerAgentArtifact): string[] {
   return lines.filter(Boolean);
 }
 
+/** Concise fixer detail lines from the real artifact (no fabrication). */
+function fixerAgentDetails(a: FixerAgentArtifact): string[] {
+  const applied = Array.isArray(a.appliedChanges) ? a.appliedChanges : [];
+  const skipped = Array.isArray(a.skippedChanges) ? a.skippedChanges : [];
+  const lines = [
+    `Status: ${a.status}`,
+    `Applied: ${applied.length}, Skipped: ${skipped.length}`,
+    ...applied.slice(0, 3).map((c) => `${c.category}: ${c.target}`),
+  ];
+  if (a.summary) lines.push(a.summary);
+  return lines.filter(Boolean);
+}
+
 /** Build the expandable detail lines for any agent row from its artifact. */
 function agentDetails(agent: WebBuildAgent): string[] {
   if (agent.status !== 'done') return [];
@@ -376,6 +391,7 @@ function agentDetails(agent: WebBuildAgent): string[] {
       case 'layout_architect': return layoutArchitectDetails(agent.artifact as PageBlueprint);
       case 'component_engineer': return componentEngineerDetails(agent.artifact as ComponentEngineerArtifact);
       case 'reviewer': return reviewerAgentDetails(agent.artifact as ReviewerAgentArtifact);
+      case 'fixer': return fixerAgentDetails(agent.artifact as FixerAgentArtifact);
       default: return [];
     }
   } catch {
