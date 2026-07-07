@@ -53,6 +53,12 @@ export interface InteractionAction {
   reason: string;
 }
 
+/** How the primary website/demo experience should be presented — a DATA hint for a
+ *  later Preview/Files phase (front-end only; never a real product surface). */
+export type ExperienceMode =
+  | 'scroll' | 'inline' | 'modal' | 'drawer' | 'dedicated-page'
+  | 'multi-page-tabs' | 'dashboard-shell' | 'catalog-detail-shell';
+
 export interface InteractionContract {
   /** The concept category the contract was derived for (echoes the input). */
   conceptCategory: string;
@@ -65,7 +71,30 @@ export interface InteractionContract {
    *  FRONT-END, client-side demo surfaces only — never a real backend/AI/database
    *  feature, and never a claim about an existing/running product. */
   requiredStatefulComponents: string[];
+  /* ── Model-native Website Experience Plan (Phase 3), carried as DATA for a later
+   *  Preview/Files phase. All optional; present only when the model decided them. */
+  websiteExperienceModel?: string;
+  pageScreenModel?: string;
+  primaryWebsiteExperience?: string;
+  navigationModel?: string;
+  /** How to present the primary experience (dedicated page / drawer / modal / …). */
+  experienceMode?: ExperienceMode;
+  /** Website pages/screens the model implied — front-end demo screens only. */
+  suggestedScreens?: Array<{ id: string; name: string; purpose: string; demoOnly: true }>;
   notes: string[];
+}
+
+/** The model's Website Experience Plan as consumed by the contract (structurally a
+ *  subset of the Strategy artifact's WebsiteExperiencePlan; kept local so this leaf
+ *  module never imports webBuildAgents → no import cycle). */
+export interface ExperiencePlanInput {
+  websiteExperienceModel?: string;
+  pageScreenModel?: string;
+  primaryWebsiteExperience?: string;
+  demoSurfaces?: string[];
+  statefulDemoComponents?: string[];
+  navigationModel?: string;
+  mediaMotionPlan?: string;
 }
 
 export interface InteractionContractInput {
@@ -78,6 +107,8 @@ export interface InteractionContractInput {
   recommendedPages?: string[];
   /** The Strategy Agent's CTA hierarchy — real CTA copy for the primary action. */
   ctaHierarchy?: { primary?: string; secondary?: string };
+  /** The MODEL's own Website Experience Plan — PREFERRED over the keyword fallback. */
+  experiencePlan?: ExperiencePlanInput;
   /** The FINAL section list the contract reasons about. */
   sections: Array<{ id: string; name: string }>;
   /** Art render mode / concept hint, when available. */
@@ -136,6 +167,75 @@ const RE = {
   quote: /(quote|teklif|estimate|consultation|danış|request-?quote|quote-?cta)/i,
   contact: /(contact|iletişim|reservation|rezervasyon|\bbook\b|randevu|başvuru|final-?cta|get-?started|başla)/i,
   cta: /(cta|contact|quote|request|reservation|book|iletişim|teklif|randevu|başvuru|\blead\b|final-?cta|start|enroll|access|checkout|cart|sepet)/i,
+};
+
+/* ── Model-native Website Experience Plan → contract data (Phase 3) ───────────
+ * These read the MODEL's own decisions (primaryWebsiteExperience / statefulDemo
+ * components / navigation model) and map them to the contract's action + presentation
+ * vocabulary. They are DATA-only; a later Preview/Files phase decides how to render.
+ * Everything stays website/front-end demo — never a real product surface. */
+
+/** The primary action TYPE the model asked for, from its own words. Undefined when
+ *  the plan is silent (then the deterministic concept family decides). */
+function planPrimaryActionType(plan?: ExperiencePlanInput): InteractionActionType | undefined {
+  if (!plan) return undefined;
+  const hay = `${plan.primaryWebsiteExperience || ''} ${(plan.statefulDemoComponents || []).join(' ')} ${plan.websiteExperienceModel || ''} ${(plan.demoSurfaces || []).join(' ')}`.toLowerCase();
+  if (!hay.trim()) return undefined;
+  if (/chat|assistant|conversation|copilot|\bbot\b/.test(hay)) return 'open-chat-demo';
+  if (/quote/.test(hay)) return 'open-quote-form';
+  if (/access|researcher/.test(hay)) return 'request-access';
+  if (/reservation|booking|contact/.test(hay)) return 'open-contact-form';
+  if (/record[- ]?detail/.test(hay)) return 'open-record-detail';
+  if (/detail[- ]?(preview|modal|page)|listing[- ]?detail|product[- ]?detail/.test(hay)) return 'open-detail-modal';
+  if (/\blead\b|request[- ]?info|enquir|inquir/.test(hay)) return 'request-info';
+  if (/filter|search|catalog|listing|browse/.test(hay)) return 'filter-list';
+  return undefined;
+}
+
+/** How the model wants the primary experience presented (data hint for Phase 4). */
+function planExperienceMode(plan?: ExperiencePlanInput): ExperienceMode | undefined {
+  if (!plan) return undefined;
+  const nav = (plan.navigationModel || '').toLowerCase();
+  const model = (plan.websiteExperienceModel || '').toLowerCase();
+  const prim = (plan.primaryWebsiteExperience || '').toLowerCase();
+  const hay = `${nav} ${model} ${prim}`;
+  if (/dashboard/.test(hay)) return 'dashboard-shell';
+  if (/catalog|listing|detail[- ]?shell/.test(hay)) return 'catalog-detail-shell';
+  if (/multi-?page|internal page tab|page tab/.test(hay)) return 'multi-page-tabs';
+  if (/dedicated (demo )?page|demo page|demo screen|product demo site/.test(hay)) return 'dedicated-page';
+  if (/drawer/.test(prim)) return 'drawer';
+  if (/modal|pop-?up/.test(prim)) return 'modal';
+  if (/inline/.test(prim)) return 'inline';
+  if (/single-?page|anchors?|\blanding\b/.test(hay)) return 'scroll';
+  return undefined;
+}
+
+/** Front-end demo SCREENS the model implied, parsed from its page/screen model.
+ *  demoOnly is always true — these are website demo screens, never real app pages. */
+function planScreens(plan?: ExperiencePlanInput): InteractionContract['suggestedScreens'] {
+  const raw = clean(plan?.pageScreenModel);
+  if (!raw) return undefined;
+  const parts = raw.split(/[,;、|]|\band\b|\bve\b|\+|→|>/i).map((x) => clean(x)).filter((x) => x.length >= 2).slice(0, 8);
+  if (!parts.length) return undefined;
+  return parts.map((name) => ({
+    id: name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'screen',
+    name,
+    purpose: name,
+    demoOnly: true as const,
+  }));
+}
+
+/** The front-end demo component a given action implies (to-build list for Phase 4). */
+const COMPONENT_FOR_TYPE: Partial<Record<InteractionActionType, string>> = {
+  'open-chat-demo': 'chat-demo-panel',
+  'open-quote-form': 'quote-form',
+  'open-contact-form': 'contact-form',
+  'request-access': 'access-request-form',
+  'open-record-detail': 'record-detail-modal',
+  'open-detail-modal': 'detail-modal',
+  'filter-list': 'filter-controls',
+  'request-info': 'lead-form',
+  'submit-lead': 'lead-form',
 };
 
 const ACTION_LABELS: Record<InteractionActionType, [string, string]> = {
@@ -293,8 +393,46 @@ function build(input: InteractionContractInput): InteractionContract {
     }
   }
 
+  // ── Decision order A: PREFER the model's Website Experience Plan for the PRIMARY
+  // action over the deterministic concept family (C). Only when the model actually
+  // stated a primary experience; otherwise the family choice stands. Website/demo
+  // only — every mapped action is a front-end surface, never a real product.
+  const plan = input.experiencePlan;
+  const planType = planPrimaryActionType(plan);
+  if (planType) {
+    const targetForType = (t: InteractionActionType): { id: string; name: string } | undefined => {
+      switch (t) {
+        case 'open-chat-demo': return find(RE.demo);
+        case 'open-quote-form': return find(RE.quote);
+        case 'open-contact-form': return find(RE.contact);
+        case 'request-access': return find(RE.access);
+        case 'open-record-detail': return find(RE.collection) || find(RE.gallery);
+        case 'open-detail-modal': return find(RE.listing) || find(RE.gallery) || find(RE.catalog);
+        case 'filter-list': return find(RE.research) || find(RE.catalog) || find(RE.collection);
+        case 'request-info':
+        case 'submit-lead': return find(RE.cta);
+        default: return undefined;
+      }
+    };
+    const host = targetForType(planType)
+      || (primary?.targetSectionId ? sections.find((s) => s.id === primary!.targetSectionId) : undefined)
+      || firstContent();
+    primary = mk(planType, primaryLabel, { targetSectionId: host?.id, priority: 'primary', reason: 'Model Website Experience Plan — the primary website/demo experience the model chose.' });
+    if (host && !(sectionActions[host.id] || []).some((a) => a.type === planType)) {
+      addSection(host.id, mk(planType, clean(host.name), { sourceSectionId: host.id, targetSectionId: host.id, priority: 'primary', reason: 'Model Website Experience Plan — primary experience host.' }));
+    }
+    const comp = COMPONENT_FOR_TYPE[planType];
+    if (comp) required.add(comp);
+  }
+  // Record the model's own front-end demo components as a to-build hint (normalized
+  // slugs only; still website/demo — never a backend/AI/db feature).
+  for (const c of (plan?.statefulDemoComponents || [])) {
+    const slug = clean(c).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    if (slug && slug.length >= 2 && slug.length <= 40) required.add(slug);
+  }
+
   // Safe default primary: scroll to the conversion section (or first content) when
-  // the concept did not resolve to a richer, section-backed primary action.
+  // neither the model plan (A) nor the concept family (C) produced a primary action.
   if (!primary) {
     const target = find(RE.cta) || firstContent();
     primary = mk('scroll-to-section', primaryLabel, { targetSectionId: target?.id, priority: 'primary', reason: 'Safe default — scroll to the primary conversion section.' });
@@ -307,12 +445,26 @@ function build(input: InteractionContractInput): InteractionContract {
     ? L(lang, 'General concept — scroll-only interactions by default.', 'Genel konsept — varsayılan olarak yalnızca kaydırma etkileşimleri.')
     : L(lang, `Concept family: ${family}.`, `Konsept ailesi: ${family}.`));
 
+  const experienceMode = planExperienceMode(plan);
+  const suggestedScreens = planScreens(plan);
+  if (plan && (planType || plan.websiteExperienceModel || plan.navigationModel || plan.primaryWebsiteExperience)) {
+    notes.push(L(lang,
+      `Model Website Experience Plan applied${experienceMode ? ` (${experienceMode})` : ''} — website / front-end demo only.`,
+      `Model Web Sitesi Deneyim Planı uygulandı${experienceMode ? ` (${experienceMode})` : ''} — yalnızca web sitesi / ön yüz demosu.`));
+  }
+
   return {
     conceptCategory: clean(input.conceptCategory) || family,
     primaryAction: primary,
     secondaryActions,
     sectionActions,
     requiredStatefulComponents: Array.from(required),
+    websiteExperienceModel: clean(plan?.websiteExperienceModel) || undefined,
+    pageScreenModel: clean(plan?.pageScreenModel) || undefined,
+    primaryWebsiteExperience: clean(plan?.primaryWebsiteExperience) || undefined,
+    navigationModel: clean(plan?.navigationModel) || undefined,
+    experienceMode,
+    suggestedScreens,
     notes,
   };
 }

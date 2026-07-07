@@ -110,6 +110,17 @@ export interface WebBuildBrief {
   // Design Direction
   visualMood?: string; layoutLogic?: string; typographyDirection?: string;
   colorDirection?: string; visualMetaphor?: string; motionDirection?: string;
+  // AI-native WEBSITE EXPERIENCE PLAN (Phase 3) — the MODEL's own decision about
+  // the website + FRONT-END DEMO architecture (never a real product/backend). All
+  // optional & backward compatible; parsed by extractBrief and PREFERRED by the
+  // Strategy Agent + Interaction Contract over deterministic keyword fallbacks.
+  websiteExperienceModel?: string;
+  pageScreenModel?: string;
+  primaryWebsiteExperience?: string;
+  demoSurfaces?: string;
+  statefulDemoComponents?: string;
+  navigationModel?: string;
+  mediaMotionPlan?: string;
   // UI / Art Director agent palette override (Phase 1). All optional →
   // backward compatible. When set, these drive the design tokens directly so the
   // Art Direction actually controls the preview/files palette + heading style.
@@ -165,6 +176,14 @@ export function extractBrief(sections: BuildSection[]): WebBuildBrief {
     colorDirection: grab(/(?:color\s*direction|colou?r)\s*[:\-–]\s*(.+)/i),
     visualMetaphor: grab(/(?:visual\s*metaphor)\s*[:\-–]\s*(.+)/i),
     motionDirection: grab(/(?:motion\s*direction|motion\s*system|motion)\s*[:\-–]\s*(.+)/i),
+    // AI-native Website Experience Plan (Phase 3) — exact labels, all optional.
+    websiteExperienceModel: grab(/(?:website\s*experience\s*model|experience\s*model)\s*[:\-–]\s*(.+)/i),
+    pageScreenModel: grab(/(?:page\s*\/?\s*screen\s*model|page\s*model|screen\s*model)\s*[:\-–]\s*(.+)/i),
+    primaryWebsiteExperience: grab(/(?:primary\s*website\s*experience|primary\s*experience)\s*[:\-–]\s*(.+)/i),
+    demoSurfaces: grab(/(?:demo\s*surfaces?)\s*[:\-–]\s*(.+)/i),
+    statefulDemoComponents: grab(/(?:stateful\s*demo\s*components?|demo\s*components?)\s*[:\-–]\s*(.+)/i),
+    navigationModel: grab(/(?:navigation\s*model|nav\s*model)\s*[:\-–]\s*(.+)/i),
+    mediaMotionPlan: grab(/(?:media\s*\/?\s*motion\s*plan|media\s*plan)\s*[:\-–]\s*(.+)/i),
   };
 }
 
@@ -226,7 +245,9 @@ export function buildWebBuildRequest(
       'conversion path, tasteful motion — never downgrade a section to generic filler.',
       'SCOPE stays WEBSITE + FRONT-END DEMO ONLY: never add a real backend, AI runtime,',
       'database, payments, auth, CRM, real search or real AI logic — demo surfaces are',
-      'local, static illustrations only.',
+      'local, static illustrations only. Preserve the Website Experience Plan fields',
+      '(experience model, page/screen model, navigation model, demo surfaces, stateful',
+      'demo components) unless the requested change explicitly alters them.',
     );
     if (opts.previousReply) {
       lines.push('', 'PREVIOUS BUILD (preserve unless the change touches it):', opts.previousReply);
@@ -290,6 +311,20 @@ export function buildWebBuildRequest(
       'Visual metaphor: <the core visual idea, e.g. topographic garden plan / live dashboard>',
       'Motion direction: <what animates and why>',
       'Responsive behavior: <…>',
+      '— WEBSITE EXPERIENCE PLAN — DECIDE these from THIS idea (they drive the site',
+      '  architecture). Website + front-end demo ONLY; never a real backend/AI/db/',
+      '  payments/search. Use these EXACT labels, one per line:',
+      'Website experience model: <single-page landing | multi-page marketing site | product demo site | catalog/listing site | editorial/archive site | dashboard-style demo site | service lead-gen site>',
+      'Page/screen model: <one line: the website pages/screens/demo surfaces this idea needs>',
+      'Primary website experience: <what the main CTA opens/does INSIDE the website/demo, and why>',
+      'Demo surfaces: <comma-separated front-end demo surfaces, if any (else "none")>',
+      'Stateful demo components: <comma-separated LOCAL/front-end demo components only, e.g. chat-demo-page, listing-filter, detail-preview, quote-form-shell, record-detail-preview>',
+      'Navigation model: <single-page anchors | internal page tabs | multi-page-style tabs | dashboard/demo shell | catalog/detail shell>',
+      'Media/motion plan: <image/video/animated-background direction tied to the concept — compose with CSS/SVG when there is no real asset; no fake assets>',
+      'DECIDE, do not default: pick chat ONLY if the website/demo genuinely needs it (not just',
+      'because "AI" appears); a focused landing over multi-page when that fits; a dedicated demo',
+      'PAGE/SCREEN over a modal when that reads better. Never claim a surface is connected to real',
+      'AI/database/payment/search, and never fabricate products, prices, metrics, sources or logos.',
       '',
       '## Page Sections — a section architecture DERIVED from the strategy above (not',
       '   a fixed list). Choose the sections this specific concept needs.',
