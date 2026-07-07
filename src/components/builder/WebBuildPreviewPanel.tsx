@@ -6,6 +6,7 @@ import { useLanguageStore } from '@/stores/languageStore';
 import { openPreviewInNewTab, currentReturnTo } from '@/lib/webBuildPreviewStash';
 import type { WebBuildSectionItem } from '@/lib/webBuildPayload';
 import type { WebBuildBrief } from '@/lib/webBuildApi';
+import type { InteractionContract } from '@/lib/webBuildInteractionContract';
 
 /**
  * The in-app preview drawer. Renders the REAL generated page (headline, copy,
@@ -41,12 +42,15 @@ class PreviewErrorBoundary extends Component<{ fallback: ReactNode; children: Re
 }
 
 export default function WebBuildPreviewPanel({
-  sectionItems, brief, slug, runId,
+  sectionItems, brief, slug, runId, interactionContract,
 }: {
   sectionItems: WebBuildSectionItem[];
   brief: WebBuildBrief;
   slug?: string;
   runId?: string;
+  /** Phase 2 — the strategy's Interaction Contract (optional). Passed straight to
+   *  the preview document so its actions become real in-app behaviour. */
+  interactionContract?: InteractionContract;
 }) {
   const { t, lang } = useLanguageStore();
   const url = slug || 'preview.korvix.build';
@@ -122,7 +126,7 @@ export default function WebBuildPreviewPanel({
       <BrowserFrame url={url} accentColor={ACCENT}>
         <div className="max-h-[70vh] overflow-y-auto scrollbar-thin">
           <PreviewErrorBoundary key={previewKey} fallback={previewFallback}>
-            <WebBuildPreviewDocument sectionItems={items} brief={safeBrief} />
+            <WebBuildPreviewDocument sectionItems={items} brief={safeBrief} interactionContract={interactionContract} />
           </PreviewErrorBoundary>
         </div>
       </BrowserFrame>
