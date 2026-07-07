@@ -703,6 +703,8 @@ const HEROES: Record<HeroComposition, (p: HeroProps) => ReactElement> = {
 interface PreviewRuntime {
   /** Run a contract action (opens the matching overlay or scrolls). Never throws. */
   run: (action: InteractionAction, section?: S, payload?: { title?: string; lines?: string[] }) => void;
+  /** Convenience: open an overlay by action type (used by the Phase 4 demo shells). */
+  open: (type: InteractionActionType, section?: S, payload?: { title?: string; lines?: string[] }) => void;
   /** The declared actions for a section id (empty when none / malformed). */
   actionsFor: (rawId: string) => InteractionAction[];
   /** True when a section declares an action of the given type. */
@@ -1252,6 +1254,264 @@ function LeadFormPanel({ type, section, onClose }: { type: LeadFormType; section
   );
 }
 
+/* ── Phase 4: model-native Preview shells ────────────────────────────────
+ * The model's Website Experience Plan (carried on the Interaction Contract as
+ * experienceMode / navigationModel / websiteExperienceModel / suggestedScreens)
+ * can ask for a richer preview than one scrolling page: a dedicated demo page, a
+ * dashboard-style demo, a catalog/detail shell, an archive/record shell, or a
+ * service lead shell. These are LOCAL, front-end, STATIC demo screens built ONLY
+ * from the real section copy — no backend, no real AI/DB/payments/search, no
+ * fabricated data. When the model asks for single-page/scroll (or says nothing)
+ * the shell is 'single-page' and the existing preview renders unchanged. */
+type ShellMode =
+  | 'single-page' | 'internal-tabs' | 'dedicated-demo-page'
+  | 'dashboard-demo-shell' | 'catalog-detail-shell'
+  | 'archive-record-shell' | 'service-lead-shell';
+
+interface PreviewShellScreen { id: string; label: string; purpose: string; sectionIds: string[]; demoOnly: true }
+interface PreviewShell { shellMode: ShellMode; screens: PreviewShellScreen[]; primaryScreenId?: string }
+
+const DEMO_SCREEN_ID = '__demo__';
+
+const SHELL_RE = {
+  demo: /(product-?demo|\bdemo\b|chatbot|\bchat\b|playground|assistant|use-?case)/i,
+  catalog: /(catalog|collection-?grid|inventory|envanter|featured|listings?|products?|vehicles?|araç|araba|\bcars?\b|shop|store|mağaza)/i,
+  collection: /(collection|koleksiyon|\bindex\b|archive|arşiv|records?|belge|document|manuscript|research|filter)/i,
+  gallery: /(gallery|galeri|project|proje|portfolio|selected-?work|showcase|before-?after|materials?)/i,
+  quote: /(quote|teklif|estimate|consultation|request-?quote|quote-?cta)/i,
+  contact: /(contact|iletişim|reservation|rezervasyon|book|randevu|başvuru)/i,
+  access: /(access|erişim|researcher|araştırmacı)/i,
+};
+
+function defaultScreenLabel(mode: ShellMode, chat: boolean): string {
+  switch (mode) {
+    case 'dedicated-demo-page': return chat ? 'Chat Demo' : 'Product Demo';
+    case 'dashboard-demo-shell': return 'Dashboard';
+    case 'catalog-detail-shell': return 'Catalog';
+    case 'archive-record-shell': return 'Collection';
+    case 'service-lead-shell': return 'Get a quote';
+    default: return 'Demo';
+  }
+}
+
+/** Resolve the Preview shell: A) model-native plan → B) rich shell only when the
+ *  matching sections exist → C) single-page (existing behaviour). Pure; never throws. */
+function resolvePreviewShell(
+  contract: InteractionContract | undefined,
+  brief: WebBuildBrief,
+  sectionItems: S[],
+): PreviewShell {
+  try {
+    const has = (re: RegExp) => sectionItems.some((s) => re.test(`${s.id} ${s.name || ''}`));
+    const mode = (contract?.experienceMode || '').toLowerCase();
+    const hay = [
+      contract?.experienceMode, contract?.navigationModel, contract?.websiteExperienceModel,
+      contract?.primaryWebsiteExperience, brief.navigationModel, brief.websiteExperienceModel,
+      brief.primaryWebsiteExperience,
+    ].filter(Boolean).join(' ').toLowerCase();
+    const chat = /chat|assistant|\bbot\b|conversational/.test(hay)
+      || (contract?.requiredStatefulComponents || []).some((c) => /chat/.test(c));
+
+    let shellMode: ShellMode = 'single-page';
+    if (mode === 'dashboard-shell' || /dashboard/.test(hay)) shellMode = 'dashboard-demo-shell';
+    else if (mode === 'catalog-detail-shell' || /catalog|listing|marketplace|storefront|inventory/.test(hay)) shellMode = has(SHELL_RE.catalog) ? 'catalog-detail-shell' : 'single-page';
+    else if (/archive|\brecord\b|museum|provenance|research/.test(hay)) shellMode = has(SHELL_RE.collection) ? 'archive-record-shell' : 'single-page';
+    else if (/service|quote|lead-?gen/.test(hay)) shellMode = (has(SHELL_RE.quote) || has(SHELL_RE.contact) || has(SHELL_RE.gallery)) ? 'service-lead-shell' : 'single-page';
+    else if (mode === 'dedicated-page' || /dedicated (demo )?page|demo page|demo screen|product demo/.test(hay)) shellMode = 'dedicated-demo-page';
+    else if (mode === 'multi-page-tabs' || /multi-?page|internal page tab|\bpage tabs?\b/.test(hay)) shellMode = 'internal-tabs';
+
+    if (shellMode === 'single-page' || shellMode === 'internal-tabs') return { shellMode, screens: [] };
+
+    const sn = contract?.suggestedScreens?.[0];
+    const label = (sn?.name || '').trim() || defaultScreenLabel(shellMode, chat);
+    const purpose = (sn?.purpose || '').trim() || (contract?.primaryWebsiteExperience || '').trim() || label;
+    const screen: PreviewShellScreen = { id: DEMO_SCREEN_ID, label, purpose, sectionIds: sectionItems.map((s) => s.id), demoOnly: true };
+    return { shellMode, screens: [screen], primaryScreenId: DEMO_SCREEN_ID };
+  } catch {
+    return { shellMode: 'single-page', screens: [] };
+  }
+}
+
+/** One compact, mode-aware demo screen (front-end/static only). Reuses the section
+ *  copy + the Phase 2 overlays (via rt.open) for real interactivity. */
+function DemoShellScreen({ mode, label, purpose, sections, brief, art, rt, onHome }: {
+  mode: ShellMode; label: string; purpose: string; sections: S[]; brief: WebBuildBrief; art: WebBuildArtIdentity; rt: PreviewRuntime; onHome: () => void;
+}) {
+  const [query, setQuery] = useState('');
+  const content = sections.filter((s) => !/hero|footer/i.test(s.id));
+  const pick = (re: RegExp) => content.find((s) => re.test(`${s.id} ${s.name || ''}`));
+  const q = query.trim().toLowerCase();
+  const cardsFrom = (re: RegExp, n: number) => {
+    const secs = content.filter((s) => re.test(`${s.id} ${s.name || ''}`));
+    return (secs.length ? secs : content).flatMap((s) => bulletsOf(s).map((b) => ({ b, s }))).slice(0, n);
+  };
+
+  const shellHeader = (
+    <div className="mx-auto max-w-6xl px-6 pt-8">
+      <button type="button" onClick={onHome} className="text-sm text-slate-400 transition hover:text-white">&larr; Home</button>
+      <div className="mt-3 flex flex-wrap items-center gap-2.5">
+        <h1 className="text-2xl font-semibold text-white sm:text-3xl" style={{ fontFamily: 'var(--hf)', letterSpacing: 'var(--tr)' }}>{label}</h1>
+        <span className="rounded-full border border-[color:var(--bd)] bg-white/[0.04] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-slate-400">Front-end demo</span>
+      </div>
+      {purpose && purpose !== label && <p className="mt-2 max-w-2xl text-sm text-slate-400">{purpose}</p>}
+    </div>
+  );
+
+  if (mode === 'catalog-detail-shell') {
+    const all = cardsFrom(SHELL_RE.catalog, 12);
+    const visible = q ? all.filter((c) => c.b.toLowerCase().includes(q)) : all;
+    const cta = pick(SHELL_RE.contact) || pick(SHELL_RE.quote) || content[content.length - 1];
+    return (
+      <div className="pb-16">{shellHeader}
+        <div className="mx-auto mt-6 max-w-6xl px-6">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex min-w-[16rem] flex-1 items-center gap-2 rounded-[var(--pr)] border border-[color:var(--bd)] bg-[var(--sf)] px-3.5 py-2">
+              <span className="text-slate-400" aria-hidden>⌕</span>
+              <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Filter listings" className="w-full bg-transparent text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none" />
+            </div>
+            {cta && <button type="button" onClick={() => rt.open('request-info', cta)} className="rounded-lg px-4 py-2 text-sm font-semibold text-white" style={{ background: 'var(--acc)' }}>{cta.cta || 'Request info'}</button>}
+          </div>
+          <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3">
+            {visible.map(({ b, s }, i) => (
+              <button key={i} type="button" onClick={() => rt.open('open-detail-modal', s, { title: b, lines: cleanLines([s.sub, ...bulletsOf(s).filter((x) => x !== b)]) })} className={`group block overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)] text-left ${art.cardTone}`}>
+                <div className={`relative ${art.mediaTone}`} style={{ background: i % 3 === 0 ? 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 24%, transparent), color-mix(in srgb, var(--acc2) 12%, transparent))' : 'linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01))' }}><CardDetail mode={art.mode} /></div>
+                <div className="p-3"><p className="text-sm font-medium text-white">{b}</p><p className="mt-1 text-[11px] text-slate-500">View details →</p></div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (mode === 'archive-record-shell') {
+    const all = cardsFrom(SHELL_RE.collection, 12);
+    const visible = q ? all.filter((c) => c.b.toLowerCase().includes(q)) : all;
+    const access = pick(SHELL_RE.access) || pick(SHELL_RE.contact);
+    return (
+      <div className="pb-16">{shellHeader}
+        <div className="mx-auto mt-6 max-w-4xl px-6">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex min-w-[16rem] flex-1 items-center gap-2 rounded-[var(--pr)] border border-[color:var(--bd)] bg-[var(--sf)] px-3.5 py-2">
+              <span className="text-slate-400" aria-hidden>⌕</span>
+              <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search the collection" className="w-full bg-transparent text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none" />
+            </div>
+            {access && <button type="button" onClick={() => rt.open('request-access', access)} className="rounded-lg px-4 py-2 text-sm font-semibold text-white" style={{ background: 'var(--acc)' }}>{access.cta || 'Request access'}</button>}
+          </div>
+          <div className="mt-6 divide-y divide-white/10 border-y border-[color:var(--bd)]">
+            {visible.map(({ b, s }, i) => (
+              <button key={i} type="button" onClick={() => rt.open('open-record-detail', s, { title: b, lines: cleanLines([s.sub, ...bulletsOf(s).filter((x) => x !== b)]) })} className="flex w-full items-center gap-5 py-4 text-left">
+                <span className="w-8 text-sm tabular-nums text-slate-500">{String(i + 1).padStart(2, '0')}</span>
+                <span className={`relative h-11 w-14 shrink-0 overflow-hidden rounded-md border border-[color:var(--bd)] ${art.cardTone}`} style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 20%, transparent), transparent)' }}><CardDetail mode={art.mode} /></span>
+                <span className="flex-1 text-[15px] font-medium text-white">{b}</span>
+                <span className="text-slate-500">→</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (mode === 'service-lead-shell') {
+    const gallery = cardsFrom(SHELL_RE.gallery, 6);
+    const quote = pick(SHELL_RE.quote) || pick(SHELL_RE.contact) || content[content.length - 1];
+    const overview = content[0];
+    return (
+      <div className="pb-16">{shellHeader}
+        <div className="mx-auto mt-6 grid max-w-6xl gap-8 px-6 lg:grid-cols-[1.4fr_1fr]">
+          <div>
+            {overview && <p className="max-w-xl text-base leading-relaxed text-slate-300">{overview.sub || overview.headline || overview.name}</p>}
+            {gallery.length > 0 && (
+              <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3">
+                {gallery.map(({ b, s }, i) => (
+                  <button key={i} type="button" onClick={() => rt.open('open-detail-modal', s, { title: b, lines: cleanLines([s.sub, ...bulletsOf(s).filter((x) => x !== b)]) })} className={`group block overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)] text-left ${art.cardTone}`}>
+                    <div className={`relative ${art.mediaTone}`} style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 20%, transparent), transparent)' }}><CardDetail mode={art.mode} /></div>
+                    <div className="p-3"><p className="text-sm font-medium text-white">{b}</p></div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <aside className="rounded-[var(--pr)] border p-5 lg:sticky lg:top-24 lg:self-start" style={{ borderColor: 'color-mix(in srgb, var(--acc) 40%, transparent)', background: 'color-mix(in srgb, var(--acc) 7%, transparent)' }}>
+            <p className="text-sm font-semibold text-white">{(quote && heading(quote)) || 'Request a quote'}</p>
+            {quote?.sub && <p className="mt-2 text-sm text-slate-300">{quote.sub}</p>}
+            <button type="button" onClick={() => rt.open('open-quote-form', quote)} className="mt-4 w-full rounded-lg py-2.5 text-center text-sm font-semibold text-white" style={{ background: 'var(--acc)' }}>{(quote && quote.cta) || 'Request a quote'}</button>
+            <p className="mt-2 text-center text-[11px] text-slate-500">Preview form — nothing is sent.</p>
+          </aside>
+        </div>
+      </div>
+    );
+  }
+
+  if (mode === 'dashboard-demo-shell') {
+    const panels = content.slice(0, 6);
+    return (
+      <div className="pb-16">{shellHeader}
+        <div className="mx-auto mt-6 max-w-6xl px-6">
+          <div className="grid gap-4 lg:grid-cols-[14rem_1fr]">
+            <aside className="hidden rounded-[var(--pr)] border border-[color:var(--bd)] bg-[var(--sf)] p-3 lg:block">
+              <p className="px-2 pb-2 text-[11px] font-medium uppercase tracking-widest text-white/45">{brief.type || 'Overview'}</p>
+              <ul className="space-y-1">
+                {content.slice(0, 6).map((s) => <li key={s.id} className="rounded-lg px-2 py-1.5 text-sm text-slate-300">{s.name || heading(s)}</li>)}
+              </ul>
+            </aside>
+            <div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                {panels.map((s) => (
+                  <div key={s.id} className={`rounded-[var(--pr)] border border-[color:var(--bd)] bg-[var(--sf)] p-4 ${art.cardTone}`}>
+                    <p className="text-sm font-semibold text-white">{s.name || heading(s)}</p>
+                    <ul className="mt-3 space-y-1.5">
+                      {bulletsOf(s).slice(0, 3).map((b, i) => <li key={i} className="flex gap-2 text-[13px] text-slate-300"><span className="mt-1.5 h-1 w-1 shrink-0 rounded-full" style={{ background: 'var(--acc)' }} />{b}</li>)}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4"><VisualModule kind="data-dashboard" labels={content[0] ? bulletsOf(content[0]) : undefined} /></div>
+            </div>
+          </div>
+          <p className="mt-3 text-[11px] text-slate-500">Front-end demo — structural layout only, no live data.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // dedicated-demo-page (product / chat demo)
+  const demoSec = pick(SHELL_RE.demo) || content[0];
+  const features = content.filter((s) => s !== demoSec);
+  const bubbles = cleanLines([demoSec?.sub || demoSec?.headline || brief.type, ...(demoSec ? bulletsOf(demoSec) : [])]).slice(0, 4);
+  const isChat = /chat|assistant|\bbot\b/.test(`${label} ${demoSec?.id || ''} ${demoSec?.name || ''}`.toLowerCase());
+  return (
+    <div className="pb-16">{shellHeader}
+      <div className="mx-auto mt-6 grid max-w-6xl gap-8 px-6 lg:grid-cols-2">
+        <div>
+          {demoSec && <p className="max-w-xl text-base leading-relaxed text-slate-300">{demoSec.sub || demoSec.headline || demoSec.name}</p>}
+          <ul className="mt-5 space-y-3">
+            {features.flatMap((s) => bulletsOf(s).slice(0, 1)).slice(0, 4).map((b, i) => (
+              <li key={i} className="flex gap-3 text-[15px] text-slate-200"><span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: 'var(--acc)' }} />{b}</li>
+            ))}
+          </ul>
+          {demoSec && <button type="button" onClick={() => rt.open('open-chat-demo', demoSec)} className="mt-7 rounded-xl px-6 py-3 text-sm font-semibold text-white" style={{ background: 'var(--acc)', boxShadow: '0 10px 30px -10px var(--acc)' }}>{demoSec.cta || (isChat ? 'Open chat demo' : 'Open demo')}</button>}
+        </div>
+        <div className="rounded-[var(--pr)] border border-[color:var(--bd)] bg-[#0b0e14] p-4">
+          <div className="flex items-center justify-between border-b border-[color:var(--bd)] pb-3">
+            <span className="flex items-center gap-2 text-sm font-semibold text-white"><span className="h-2 w-2 rounded-full" style={{ background: 'var(--acc)' }} />{isChat ? 'Chat demo' : 'Demo'}</span>
+            <span className="rounded-full border border-[color:var(--bd)] px-2 py-0.5 text-[10px] uppercase tracking-wider text-slate-400">Preview</span>
+          </div>
+          <div className="space-y-2.5 py-4">
+            {bubbles.map((m, i) => <div key={i} className="max-w-[85%] rounded-2xl rounded-tl-sm border border-[color:var(--bd)] bg-[var(--sf)] px-3.5 py-2.5 text-[13px] leading-relaxed text-slate-200">{m}</div>)}
+            {demoSec?.cta && <div className="ml-auto max-w-[85%] rounded-2xl rounded-tr-sm px-3.5 py-2.5 text-[13px] font-medium text-white" style={{ background: 'var(--acc)' }}>{demoSec.cta}</div>}
+          </div>
+          <div className="flex items-center gap-2 rounded-xl border border-[color:var(--bd)] bg-[var(--sf)] px-3 py-2">
+            <span className="flex-1 text-[13px] text-slate-500">Preview simulation — no messages are sent.</span>
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg text-white" style={{ background: 'var(--acc)' }} aria-hidden>→</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function WebBuildPreviewDocument({
   sectionItems: rawSectionItems, brief, interactionContract,
 }: {
@@ -1375,6 +1635,7 @@ export default function WebBuildPreviewDocument({
 
   const rt: PreviewRuntime = {
     run: runContractAction,
+    open: (type, section, payload) => runContractAction({ id: `${type}:open`, label: '', type, priority: 'primary', reason: '' }, section, payload),
     actionsFor,
     hasType: (id, type) => actionsFor(id).some((a) => a.type === type),
   };
@@ -1398,6 +1659,16 @@ export default function WebBuildPreviewDocument({
     Object.values(contract.sectionActions || {}).forEach((arr) => (arr || []).forEach(consider));
     return m;
   }, [contract]);
+
+  // ── Phase 4: resolve the model-native Preview shell from the PERSISTED contract
+  // (which carries experienceMode / navigationModel / suggestedScreens from the
+  // Website Experience Plan). Guarded; falls back to 'single-page' (existing
+  // behaviour) when there is no rich plan or no matching sections. The demo screens
+  // become extra internal tabs — no routes, no URL change.
+  const shell = useMemo(() => resolvePreviewShell(interactionContract, brief, sectionItems), [interactionContract, brief, sectionItems]);
+  const demoScreens = shell.screens;
+  const activeDemoScreen = demoScreens.find((s) => s.id === activePage);
+
   // `current`/`pages[0]` must never be assumed present: buildPreviewPages always
   // returns a Home page today, but a defensive Home fallback (synthesized from the
   // real section anchors) guarantees the preview never throws on an empty model.
@@ -1543,7 +1814,7 @@ export default function WebBuildPreviewDocument({
 
   return (
     <div ref={rootRef} id="top" onClick={handlePreviewLinkClick} className="text-slate-200 antialiased" style={{ ...rootStyle, scrollBehavior: 'smooth' }}>
-      {pages.length > 1 && (
+      {(pages.length > 1 || demoScreens.length > 0) && (
         <header className="sticky top-0 z-50 border-b border-[color:var(--bd)] bg-black/40 backdrop-blur">
           <nav className="mx-auto flex max-w-6xl items-center justify-between gap-6 px-6 py-3" aria-label="Primary">
             <button type="button" onClick={() => setActivePage('home')} className="text-sm font-semibold text-white">{brand || 'Home'}</button>
@@ -1559,12 +1830,36 @@ export default function WebBuildPreviewDocument({
                   {p.label}
                 </button>
               ))}
+              {/* Phase 4: model-native demo screen(s) as extra internal tabs. */}
+              {demoScreens.map((sc) => (
+                <button
+                  key={sc.id}
+                  type="button"
+                  onClick={() => setActivePage(sc.id)}
+                  aria-current={activePage === sc.id ? 'page' : undefined}
+                  className={activePage === sc.id ? 'font-medium text-white' : 'text-slate-300 transition hover:text-white'}
+                >
+                  {sc.label}
+                </button>
+              ))}
             </div>
           </nav>
         </header>
       )}
 
-      {isHome ? (
+      {activeDemoScreen ? (
+        <DemoShellScreen
+          key={activeDemoScreen.id}
+          mode={shell.shellMode}
+          label={activeDemoScreen.label}
+          purpose={activeDemoScreen.purpose}
+          sections={sectionItems}
+          brief={brief}
+          art={art}
+          rt={rt}
+          onHome={() => setActivePage('home')}
+        />
+      ) : isHome ? (
         <div key={current.id}>{renderItems.map(renderSection)}</div>
       ) : (
         <div key={current.id}>
