@@ -93,6 +93,11 @@ export interface WebBuildParseDiagnostics {
   hasFrontendCodeSection: boolean;
   hasPageSectionsSection: boolean;
   replyCharCount: number;
+  /** Set on a result that was produced by the strict repair retry (Phase: gate). */
+  repairedFromPartial?: boolean;
+  /** The quality of the FIRST attempt when a repair retry ran ('frontend-fallback'
+   *  / 'model-partial'). Diagnostic only. */
+  firstAttemptQuality?: string;
 }
 
 export interface WebBuildResult {
@@ -219,7 +224,7 @@ export function extractFiles(sections: BuildSection[]): string[] {
 /** Where a Web Build failed — drives the friendly, specific error message. */
 export type WebBuildErrorKind =
   | 'empty_prompt' | 'network' | 'http' | 'unreadable'
-  | 'empty' | 'invalid' | 'timeout' | 'cancelled';
+  | 'empty' | 'invalid' | 'timeout' | 'cancelled' | 'contract_failed';
 
 export class WebBuildError extends Error {
   readonly kind: WebBuildErrorKind;
@@ -379,77 +384,71 @@ export function buildWebBuildRequest(
 const norm = (s: string) => s.toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim();
 
 /**
- * Generate (or revise) a website build. Throws WebBuildError (with a `kind`)
- * only when there is genuinely nothing usable: network failure, HTTP error,
- * timeout, an empty reply, or a shortcut/one-liner with no build content.
- *
- * TOLERANT PARSING: a reply that parsed but is missing some canonical sections
- * is NOT thrown away — it's returned with `partial: true` so the UI can render
- * what came back. A reply with substantial prose but no `##` sections becomes
- * a single fallback "Overview" section rather than an error. This keeps
- * partial output visible instead of failing the whole flow.
+ * Build the STRICT REPAIR prompt for a fresh build whose first reply did not
+ * satisfy the Web Build contract (frontend-fallback / model-partial). It names
+ * the exact missing pieces and demands a complete canonical re-output — no
+ * explanation, no summary. Used for the single automatic repair retry in the
+ * fresh-build gate (never for a revision).
  */
-export async function generateWebBuild(
+export function buildWebBuildRepairRequest(
   idea: string,
-  opts?: { signal?: AbortSignal; revise?: boolean; previousReply?: string; mode?: BuilderMode | null },
-): Promise<WebBuildResult> {
-  const trimmed = idea.trim();
-  if (!trimmed) throw new WebBuildError('empty_prompt', 'Describe the website you want before generating.');
+  previousReply: string,
+  parse?: WebBuildParseDiagnostics,
+): string {
+  const missing = parse?.canonicalSectionsMissing?.length
+    ? parse.canonicalSectionsMissing.join(', ')
+    : 'Frontend Code and the Website Experience Plan fields';
+  const prev = (previousReply || '').trim().slice(0, 4000);
+  return [
+    '[WEB BUILD REQUEST]',
+    'Your previous response did not satisfy the Web Build contract. Re-output the',
+    'complete canonical package now. Do not explain. Do not summarize. Do not',
+    'apologize. Output ONLY the build, using EXACTLY these H2 sections in order:',
+    '',
+    '## Build Plan',
+    '## Design Direction',
+    '## Page Sections',
+    '## Generated Copy',
+    '## Frontend Code',
+    '## Next Steps',
+    '',
+    'Inside ## Build Plan and ## Design Direction include the EXACT labeled fields,',
+    'one per line, including the Website Experience Plan labels with these EXACT',
+    'labels: "Website experience model:", "Page/screen model:", "Primary website',
+    'experience:", "Demo surfaces:", "Stateful demo components:", "Navigation',
+    'model:", "Media/motion plan:".',
+    '',
+    '## Frontend Code MUST contain real React + Tailwind with, at minimum, these',
+    'files as "### <path>" headings: "### src/main.tsx", "### src/App.tsx",',
+    '"### src/styles.css", "### src/data/siteContent.ts", plus one',
+    '"### src/components/<Name>.tsx" per page section. No placeholder comments, no',
+    'empty blocks, no broken imports.',
+    '',
+    `The previous reply was missing / invalid for: ${missing}.`,
+    '',
+    'SCOPE stays WEBSITE + FRONT-END DEMO ONLY: no real backend, AI runtime,',
+    'database, payments, auth, CRM, real search or real AI logic — any interactive',
+    'surface is a local, client-side simulation built from static/sample copy.',
+    'Write ALL copy in the same language as the idea.',
+    '',
+    `Idea: ${idea}`,
+    '',
+    'PREVIOUS INVALID REPLY (do not repeat its mistakes — output the full package):',
+    prev,
+  ].join('\n');
+}
 
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  try {
-    const tok = localStorage.getItem('korvix_access_token');
-    if (tok) headers['Authorization'] = `Bearer ${tok}`;
-  } catch { /* ignore */ }
-
-  // Own timeout, combined with the caller's abort signal.
-  const timer = new AbortController();
-  const timeoutId = setTimeout(() => timer.abort(), BUILD_TIMEOUT_MS);
-  let timedOut = false;
-  const onTimeout = () => { timedOut = true; };
-  timer.signal.addEventListener('abort', onTimeout);
-  if (opts?.signal) {
-    if (opts.signal.aborted) timer.abort();
-    else opts.signal.addEventListener('abort', () => timer.abort(), { once: true });
-  }
-
-  let response: Response;
-  try {
-    response = await fetch(`${apiBase()}/chat`, {
-      method: 'POST',
-      headers,
-      signal: timer.signal,
-      body: JSON.stringify({
-        user_id: getUserId(),
-        message: buildWebBuildRequest(trimmed, { revise: opts?.revise, previousReply: opts?.previousReply, mode: opts?.mode }),
-        platform: 'web',
-        mode: WEBSITE_BUILDER_MODE,
-        // Language — resolved app locale so the build is generated in the
-        // user's selected language (backend answer-language policy).
-        ...getRequestLocale(trimmed),
-      }),
-    });
-  } catch (err) {
-    if ((err as { name?: string })?.name === 'AbortError') {
-      if (timedOut) throw new WebBuildError('timeout', 'The build timed out.', err);
-      throw new WebBuildError('cancelled', 'Generation cancelled.', err);
-    }
-    throw new WebBuildError('network', 'Could not reach the Korvix backend.', err);
-  } finally {
-    clearTimeout(timeoutId);
-  }
-
-  if (!response.ok) {
-    throw new WebBuildError('http', `The backend returned HTTP ${response.status}.`);
-  }
-
-  let data: Record<string, unknown>;
-  try {
-    data = await response.json();
-  } catch (err) {
-    throw new WebBuildError('unreadable', 'The backend sent an unreadable response.', err);
-  }
-
+/**
+ * Parse a raw backend `/chat` payload into a WebBuildResult. TOLERANT: a reply
+ * missing some canonical sections is returned with `partial: true` (not thrown);
+ * substantial prose with no `##` sections becomes a single fallback "Overview".
+ * Throws WebBuildError('empty'|'invalid') only when there is nothing to build.
+ * The fresh-build QUALITY gate lives in generateWebBuild — this only parses.
+ */
+function parseWebBuildResult(
+  data: Record<string, unknown>,
+  opts?: { revise?: boolean },
+): WebBuildResult {
   const reply = typeof data.reply === 'string' ? data.reply : '';
   if (!reply.trim()) throw new WebBuildError('empty', 'The backend returned an empty result.');
 
@@ -588,4 +587,174 @@ export async function generateWebBuild(
     research: researchObj,
     parseDiagnostics,
   };
+}
+
+/**
+ * TRUE only when the reply is a genuine, complete model-planned build package:
+ * real diagnostics, no Overview fallback, the Website Experience Plan fields,
+ * both Page Sections and Frontend Code present (and not in the missing list),
+ * and enough substance (>800 chars). This is the bar a FRESH build must clear
+ * before Preview/All Files are shown — a frontend-fallback can never pass it.
+ */
+export function isModelPlannedEnough(result: WebBuildResult): boolean {
+  const d = result.parseDiagnostics;
+  if (!d) return false;
+  return (
+    !d.usedOverviewFallback &&
+    d.hasWebsiteExperiencePlanFields &&
+    d.hasPageSectionsSection &&
+    d.hasFrontendCodeSection &&
+    !d.canonicalSectionsMissing.includes('Page Sections') &&
+    !d.canonicalSectionsMissing.includes('Frontend Code') &&
+    d.replyCharCount > 800
+  );
+}
+
+/**
+ * TRUE when the first reply is a MODEL-PARTIAL that a strict repair can plausibly
+ * complete: it already carries the Website Experience Plan fields OR a Page
+ * Sections section, and did not fall back to Overview — just missing Frontend
+ * Code / some optional sections. Distinguishes a repairable partial from a bare
+ * frontend-fallback (used only to label the first attempt's quality).
+ */
+export function isRepairableModelPartial(result: WebBuildResult): boolean {
+  const d = result.parseDiagnostics;
+  if (!d) return false;
+  return (d.hasWebsiteExperiencePlanFields || d.hasPageSectionsSection) && !d.usedOverviewFallback;
+}
+
+/**
+ * Generate (or revise) a website build.
+ *
+ * FRESH BUILDS are gated on real model-planned quality: if the first reply is a
+ * frontend-fallback / model-partial (not `isModelPlannedEnough`), we do NOT
+ * accept it — we make exactly ONE strict repair request to the backend
+ * (buildWebBuildRepairRequest). If the repaired reply is model-planned (or at
+ * least a non-fallback partial with the WEP fields + Page Sections), we return
+ * it; otherwise we throw WebBuildError('contract_failed') so the UI shows an
+ * honest error instead of a fake-success synthesized site. REVISIONS keep the
+ * old tolerant behavior (they build on an existing, already-validated site).
+ *
+ * TOLERANT PARSING for what IS accepted lives in parseWebBuildResult: a reply
+ * missing some canonical sections is returned `partial: true` rather than thrown.
+ */
+export async function generateWebBuild(
+  idea: string,
+  opts?: { signal?: AbortSignal; revise?: boolean; previousReply?: string; mode?: BuilderMode | null },
+): Promise<WebBuildResult> {
+  const trimmed = idea.trim();
+  if (!trimmed) throw new WebBuildError('empty_prompt', 'Describe the website you want before generating.');
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  try {
+    const tok = localStorage.getItem('korvix_access_token');
+    if (tok) headers['Authorization'] = `Bearer ${tok}`;
+  } catch { /* ignore */ }
+
+  // Own timeout, combined with the caller's abort signal. The SAME 90s budget
+  // covers BOTH the first attempt and the strict repair retry.
+  const timer = new AbortController();
+  const timeoutId = setTimeout(() => timer.abort(), BUILD_TIMEOUT_MS);
+  let timedOut = false;
+  const onTimeout = () => { timedOut = true; };
+  timer.signal.addEventListener('abort', onTimeout);
+  if (opts?.signal) {
+    if (opts.signal.aborted) timer.abort();
+    else opts.signal.addEventListener('abort', () => timer.abort(), { once: true });
+  }
+
+  // One backend round-trip → parsed JSON. Throws typed WebBuildError for
+  // network / abort(timeout|cancelled) / http / unreadable.
+  const callBackend = async (message: string): Promise<Record<string, unknown>> => {
+    let response: Response;
+    try {
+      response = await fetch(`${apiBase()}/chat`, {
+        method: 'POST',
+        headers,
+        signal: timer.signal,
+        body: JSON.stringify({
+          user_id: getUserId(),
+          message,
+          platform: 'web',
+          mode: WEBSITE_BUILDER_MODE,
+          // Language — resolved app locale so the build is generated in the
+          // user's selected language (backend answer-language policy).
+          ...getRequestLocale(trimmed),
+        }),
+      });
+    } catch (err) {
+      if ((err as { name?: string })?.name === 'AbortError') {
+        if (timedOut) throw new WebBuildError('timeout', 'The build timed out.', err);
+        throw new WebBuildError('cancelled', 'Generation cancelled.', err);
+      }
+      throw new WebBuildError('network', 'Could not reach the Korvix backend.', err);
+    }
+    if (!response.ok) throw new WebBuildError('http', `The backend returned HTTP ${response.status}.`);
+    try {
+      return await response.json();
+    } catch (err) {
+      throw new WebBuildError('unreadable', 'The backend sent an unreadable response.', err);
+    }
+  };
+
+  try {
+    const first = parseWebBuildResult(
+      await callBackend(buildWebBuildRequest(trimmed, {
+        revise: opts?.revise,
+        previousReply: opts?.previousReply,
+        mode: opts?.mode,
+      })),
+      { revise: opts?.revise },
+    );
+
+    // Revisions build on an already-validated site → keep tolerant behavior.
+    // A fresh build that already cleared the model-planned bar is done.
+    if (opts?.revise || isModelPlannedEnough(first)) return first;
+
+    // Fresh build fell short. Log WHY (owner/dev), then attempt ONE strict repair.
+    const fd = first.parseDiagnostics;
+    // eslint-disable-next-line no-console
+    console.warn(
+      `[WebBuild] fresh build below model-planned bar — missing [${fd?.canonicalSectionsMissing.join(', ') || '?'}]` +
+        `, overviewFallback=${!!fd?.usedOverviewFallback}, wepFields=${!!fd?.hasWebsiteExperiencePlanFields}` +
+        ' — attempting one strict repair retry.',
+    );
+
+    let repaired: WebBuildResult;
+    try {
+      repaired = parseWebBuildResult(
+        await callBackend(buildWebBuildRepairRequest(trimmed, first.reply, first.parseDiagnostics)),
+        { revise: false },
+      );
+    } catch (err) {
+      // Transport-level failures keep their own honest kind; a parse/empty/invalid
+      // failure on the repair is a contract failure.
+      if (err instanceof WebBuildError && ['network', 'timeout', 'cancelled', 'http'].includes(err.kind)) throw err;
+      // eslint-disable-next-line no-console
+      console.warn('[WebBuild] strict repair retry failed to parse — contract_failed.', err);
+      throw new WebBuildError('contract_failed', 'The backend did not return a complete model-planned build package.', err);
+    }
+
+    const rd = repaired.parseDiagnostics;
+    const repairOk =
+      isModelPlannedEnough(repaired) ||
+      (!!rd && !rd.usedOverviewFallback && rd.hasPageSectionsSection && rd.hasWebsiteExperiencePlanFields);
+    if (!repairOk) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[WebBuild] strict repair still below bar — missing [${rd?.canonicalSectionsMissing.join(', ') || '?'}]` +
+          `, overviewFallback=${!!rd?.usedOverviewFallback} — contract_failed.`,
+      );
+      throw new WebBuildError('contract_failed', 'The backend did not return a complete model-planned build package.');
+    }
+
+    // eslint-disable-next-line no-console
+    console.warn('[WebBuild] strict repair retry succeeded — build recovered from a partial first attempt.');
+    const firstQuality = isRepairableModelPartial(first) ? 'model-partial' : 'frontend-fallback';
+    return rd
+      ? { ...repaired, parseDiagnostics: { ...rd, repairedFromPartial: true, firstAttemptQuality: firstQuality } }
+      : repaired;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
