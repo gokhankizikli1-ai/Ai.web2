@@ -7,6 +7,7 @@ import { openPreviewInNewTab, currentReturnTo } from '@/lib/webBuildPreviewStash
 import type { WebBuildSectionItem } from '@/lib/webBuildPayload';
 import type { WebBuildBrief } from '@/lib/webBuildApi';
 import type { InteractionContract } from '@/lib/webBuildInteractionContract';
+import type { VisualAssetPlan } from '@/lib/webBuildAgents';
 
 /**
  * The in-app preview drawer. Renders the REAL generated page (headline, copy,
@@ -42,7 +43,7 @@ class PreviewErrorBoundary extends Component<{ fallback: ReactNode; children: Re
 }
 
 export default function WebBuildPreviewPanel({
-  sectionItems, brief, slug, runId, interactionContract,
+  sectionItems, brief, slug, runId, interactionContract, visualAssetPlan,
 }: {
   sectionItems: WebBuildSectionItem[];
   brief: WebBuildBrief;
@@ -51,6 +52,9 @@ export default function WebBuildPreviewPanel({
   /** Phase 2 — the strategy's Interaction Contract (optional). Passed straight to
    *  the preview document so its actions become real in-app behaviour. */
   interactionContract?: InteractionContract;
+  /** Phase 5 Visual Asset Plan (data only) — passed to the preview so its premium
+   *  visual layer can render concept-specific CSS/SVG. Optional. */
+  visualAssetPlan?: VisualAssetPlan;
 }) {
   const { t, lang } = useLanguageStore();
   const url = slug || 'preview.korvix.build';
@@ -126,7 +130,7 @@ export default function WebBuildPreviewPanel({
       <BrowserFrame url={url} accentColor={ACCENT}>
         <div className="max-h-[70vh] overflow-y-auto scrollbar-thin">
           <PreviewErrorBoundary key={previewKey} fallback={previewFallback}>
-            <WebBuildPreviewDocument sectionItems={items} brief={safeBrief} interactionContract={interactionContract} />
+            <WebBuildPreviewDocument sectionItems={items} brief={safeBrief} interactionContract={interactionContract} visualAssetPlan={visualAssetPlan} />
           </PreviewErrorBoundary>
         </div>
       </BrowserFrame>

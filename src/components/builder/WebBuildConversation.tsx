@@ -324,6 +324,16 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
     else if (ca) ownerRows.push(['conceptDrift', art?.correctedConceptDrift ? 'guarded' : 'none']);
     if (art?.visualAssetPlan?.heroVisualType) ownerRows.push(['visualAssetPlan', art.visualAssetPlan.heroVisualType]);
 
+    // Phase 6A: is the Preview using the model-native Interaction Contract (its own
+    // Website Experience Plan), not just a re-derived fallback? Real fields only.
+    const modelNativeContract = !!(contract?.experienceMode || contract?.navigationModel
+      || contract?.websiteExperienceModel || contract?.pageScreenModel || (contract?.suggestedScreens?.length));
+    if (contract) {
+      ownerRows.push(['previewContract', modelNativeContract ? 'model-native' : 're-derived']);
+      const scr = (contract.suggestedScreens || []).map((s) => s?.name).filter(Boolean);
+      if (scr.length) ownerRows.push(['suggestedScreens', scr.join(', ')]);
+    }
+
     // Planning-quality diagnostics (the honesty gate — model-planned vs fallback).
     if (pd) {
       const parse = pd.parse;
@@ -562,7 +572,7 @@ export default function WebBuildConversation({
                 </button>
               </div>
               {panel === 'preview'
-                ? <WebBuildPreviewPanel sectionItems={sectionItems} brief={brief} slug={slug} runId={runId} interactionContract={steps[lastIdx]?.artifacts?.strategy?.interactionContract} />
+                ? <WebBuildPreviewPanel sectionItems={sectionItems} brief={brief} slug={slug} runId={runId} interactionContract={steps[lastIdx]?.artifacts?.strategy?.interactionContract} visualAssetPlan={steps[lastIdx]?.artifacts?.artDirection?.visualAssetPlan} />
                 : <WebBuildFileView files={files} initialPath={filePath} />}
             </motion.div>
           </motion.div>
