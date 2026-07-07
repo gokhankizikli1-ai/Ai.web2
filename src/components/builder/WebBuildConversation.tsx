@@ -371,7 +371,7 @@ function CompletedPlanSummary({ step }: { step: WebBuildStep }) {
           // so a fallback/repaired build is never mistaken for a real model-planned one.
           const color = q === 'model-planned' ? '#86A08F' : q === 'model-partial' ? '#D9A441' : '#E0A35B';
           const text = q === 'model-planned' ? L('Model plan detected', 'Model planı algılandı')
-            : q === 'model-partial' ? L('Partial model output; frontend repaired missing pieces', 'Kısmi model çıktısı; ön yüz eksikleri tamamladı')
+            : q === 'model-partial' ? L('Partial model output; inspect canonical gaps before trusting', 'Kısmi model çıktısı; güvenmeden önce standart boşlukları inceleyin')
               : q === 'frontend-repaired' ? L('Frontend repaired weak output; inspect before trusting', 'Ön yüz zayıf çıktıyı onardı; güvenmeden önce inceleyin')
                 : L('Fallback build; backend did not return a full model-planned package', 'Yedek yapı; arka uç tam model-planlı bir paket döndürmedi');
           return (
