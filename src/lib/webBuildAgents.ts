@@ -21,6 +21,7 @@ import type { WebBuildBrief, WebBuildResearch, WebBuildResearchStatus, WebBuildS
 import { designTokensForBrief, type InferredBrief, type DesignTokens } from '@/lib/webBuildBrief';
 import { deriveDesignSystemFromStrategy } from '@/lib/webBuildDesignSystem';
 import type { WebBuildLayoutPlan, HeroComposition, SectionVariant } from '@/lib/webBuildLayoutPlan';
+import { deriveInteractionContract, type InteractionContract } from '@/lib/webBuildInteractionContract';
 
 type Lang = 'en' | 'tr' | string;
 const L = (lang: Lang, en: string, tr: string) => (lang === 'tr' ? tr : en);
@@ -428,6 +429,11 @@ export interface StrategyAgentArtifact {
   /** Which Research / Art Direction inputs this strategy consumed (pipeline trace). */
   usedResearchInputs?: string[];
   usedArtDirectionInputs?: string[];
+  /** Phase 1 Interaction Contract — the structured, concept-specific declaration
+   *  of which actions each section should support (open-chat-demo, filter-list,
+   *  open-record-detail …). Optional → old saved builds still load. Downstream
+   *  Preview/Files DO NOT consume it yet (contract-only phase). */
+  interactionContract?: InteractionContract;
   summary: string;
 }
 
@@ -2971,6 +2977,27 @@ export function deriveStrategyAgent(
     art?.trustVisualDirection ? 'trustVisualDirection' : '',
   ]);
 
+  // Phase 1 Interaction Contract — a structured, concept-specific declaration of
+  // the richer actions each section should support (chat demo, filter, detail
+  // modal, quote/access forms …). Derived from the SAME signals the strategy just
+  // reasoned over (concept category, CTA hierarchy, final sections). Fully guarded
+  // and never throws; Preview/Files do not consume it yet.
+  let interactionContract: InteractionContract | undefined;
+  try {
+    interactionContract = deriveInteractionContract({
+      brief,
+      conceptCategory: cpf?.category,
+      recommendedComponents: (research?.recommendedComponents || []).map((c) => c.name),
+      recommendedPages: (research?.recommendedPages || []).map((p) => p.name),
+      ctaHierarchy: { primary, secondary },
+      sections,
+      artMode: art?.designArchetype?.key,
+      lang,
+    });
+  } catch {
+    interactionContract = undefined;
+  }
+
   return {
     positioning,
     mainPromise,
@@ -2999,6 +3026,7 @@ export function deriveStrategyAgent(
     differentiation,
     usedResearchInputs: usedResearchInputs.length ? usedResearchInputs : undefined,
     usedArtDirectionInputs: usedArtDirectionInputs.length ? usedArtDirectionInputs : undefined,
+    interactionContract,
     summary,
   };
 }
@@ -4349,6 +4377,7 @@ function producedFields(agent: WebBuildAgent, lang: Lang): string[] {
           s.conversionStrategy ? L(lang, 'conversion path', 'dönüşüm yolu') : '',
           s.positioning ? L(lang, 'positioning', 'konumlandırma') : '',
           nonEmpty(s.sectionIntent) ? L(lang, 'section intent', 'bölüm amacı') : '',
+          s.interactionContract ? L(lang, 'interaction contract', 'etkileşim sözleşmesi') : '',
         ]);
       }
       case 'layout_architect': {
