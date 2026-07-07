@@ -81,6 +81,25 @@ export interface InteractionContract {
   experienceMode?: ExperienceMode;
   /** Website pages/screens the model implied — front-end demo screens only. */
   suggestedScreens?: Array<{ id: string; name: string; purpose: string; demoOnly: true }>;
+  /* ── Entry Flow (Phase 6B) — how the visitor ENTERS the experience. Derived
+   *  deterministically from the model's entry fields → WEP/suggestedScreens →
+   *  concept family → single-page fallback. All optional & backward compatible.
+   *  Front-end demo only — the "entry" is a local screen transition, never a route
+   *  change, auth gate, or real product surface. */
+  entryFlowModel?: string;
+  landingRequired?: boolean;
+  entryScreen?: string;
+  postEntryScreen?: string;
+  primaryEntryCTA?: string;
+  secondaryEntryCTA?: string;
+  navigationBehavior?: string;
+  /** Semantic hint the Preview maps to a real internal screen: 'home' or a screen
+   *  KIND token (product-demo | chat | catalog | collection | projects | quote …). */
+  initialScreenId?: string;
+  /** The screen KIND opened after the primary entry CTA (same token vocabulary). */
+  postEntryScreenId?: string;
+  /** The action the primary entry CTA runs (usually the primary action). */
+  entryAction?: InteractionAction;
   notes: string[];
 }
 
@@ -95,6 +114,15 @@ export interface ExperiencePlanInput {
   statefulDemoComponents?: string[];
   navigationModel?: string;
   mediaMotionPlan?: string;
+  /* ── Entry Flow (Phase 6B) — how the visitor ENTERS the experience. All
+   *  optional; front-end demo only (no real backend/AI/db/payments). */
+  entryFlowModel?: string;
+  landingRequired?: string;
+  entryScreen?: string;
+  postEntryScreen?: string;
+  primaryEntryCTA?: string;
+  secondaryEntryCTA?: string;
+  navigationBehavior?: string;
 }
 
 export interface InteractionContractInput {
@@ -223,6 +251,137 @@ function planScreens(plan?: ExperiencePlanInput): InteractionContract['suggested
     purpose: name,
     demoOnly: true as const,
   }));
+}
+
+/* ── Entry Flow (Phase 6B) — how the visitor ENTERS the experience ───────────
+ * A DATA-only decision (landing → demo/catalog/collection/quote, or straight in).
+ * Derived deterministically: A) the model's own entry fields, B) the WEP /
+ * suggestedScreens, C) the concept family, D) single-page fallback. The Preview
+ * maps `initialScreenId`/`postEntryScreenId` (screen KIND tokens) to real internal
+ * screens — a local transition, never a route change, auth gate or real product. */
+const ENTRY_MODELS = [
+  'single-page', 'landing-gated-experience', 'direct-demo', 'dashboard-first',
+  'catalog-first', 'service-lead-flow', 'archive-exploration',
+] as const;
+
+function normalizeEntryModel(raw?: string): string | undefined {
+  const s = (raw || '').toLowerCase();
+  if (!s.trim()) return undefined;
+  const exact = ENTRY_MODELS.find((m) => s.includes(m));
+  if (exact) return exact;
+  if (/landing.*gat|gat.*experience|landing.*demo/.test(s)) return 'landing-gated-experience';
+  if (/direct.*demo|straight.*demo/.test(s)) return 'direct-demo';
+  if (/dashboard/.test(s)) return 'dashboard-first';
+  if (/catalog|listing|inventory|storefront/.test(s)) return 'catalog-first';
+  if (/service.*lead|lead.*flow|quote.*flow/.test(s)) return 'service-lead-flow';
+  if (/archive|exploration|collection/.test(s)) return 'archive-exploration';
+  if (/single.*page|scroll|one-?page/.test(s)) return 'single-page';
+  return undefined;
+}
+
+/** The post-entry screen KIND token for a concept family (Preview maps it to a
+ *  real internal screen). Undefined when the family has no distinct experience. */
+function familyPostEntryKind(family: Family, chat: boolean): string | undefined {
+  switch (family) {
+    case 'ai':
+    case 'saas': return chat ? 'chat' : 'product-demo';
+    case 'marketplace': return 'catalog';
+    case 'archive': return 'collection';
+    case 'local-service': return 'projects';
+    default: return undefined;
+  }
+}
+
+/** Default entry-flow model for a concept family (used when the model is silent). */
+function familyEntryModel(family: Family): string {
+  switch (family) {
+    case 'ai':
+    case 'saas': return 'landing-gated-experience';
+    case 'marketplace': return 'catalog-first';
+    case 'archive': return 'archive-exploration';
+    case 'local-service': return 'service-lead-flow';
+    default: return 'single-page';
+  }
+}
+
+function navBehaviorFor(model: string): string {
+  switch (model) {
+    case 'landing-gated-experience': return 'landing-to-demo';
+    case 'catalog-first': return 'catalog shell';
+    case 'archive-exploration': return 'archive shell';
+    case 'service-lead-flow': return 'service flow';
+    case 'dashboard-first': return 'dashboard shell';
+    case 'direct-demo': return 'internal screen tabs';
+    default: return 'scroll anchors';
+  }
+}
+
+function entryCtaLabels(family: Family, chat: boolean, lang?: string): { primary: string; secondary: string } {
+  switch (family) {
+    case 'ai':
+    case 'saas': return {
+      primary: chat ? L(lang, 'Launch chat experience', 'Sohbet deneyimini başlat') : L(lang, 'Open product demo', 'Ürün demosunu aç'),
+      secondary: L(lang, 'See how it works', 'Nasıl çalıştığını gör'),
+    };
+    case 'marketplace': return { primary: L(lang, 'Browse inventory', 'Envantere göz at'), secondary: L(lang, 'Request info', 'Bilgi iste') };
+    case 'archive': return { primary: L(lang, 'Explore the collection', 'Koleksiyonu keşfet'), secondary: L(lang, 'Request access', 'Erişim iste') };
+    case 'local-service': return { primary: L(lang, 'View projects', 'Projeleri gör'), secondary: L(lang, 'Request a quote', 'Teklif iste') };
+    default: return { primary: L(lang, 'Get started', 'Başla'), secondary: L(lang, 'Learn more', 'Daha fazla') };
+  }
+}
+
+interface EntryFlowResult {
+  entryFlowModel: string;
+  landingRequired: boolean;
+  entryScreen: string;
+  postEntryScreen?: string;
+  primaryEntryCTA: string;
+  secondaryEntryCTA: string;
+  navigationBehavior: string;
+  initialScreenId: string;
+  postEntryScreenId?: string;
+}
+
+function deriveEntryFlow(
+  plan: ExperiencePlanInput | undefined,
+  family: Family,
+  chat: boolean,
+  primaryLabel: string,
+  secondaryLabel: string,
+  lang?: string,
+): EntryFlowResult {
+  // A) the model's own entry model → B/C) family fallback → D) single-page.
+  const model = normalizeEntryModel(plan?.entryFlowModel) || familyEntryModel(family);
+  const postEntryScreenId = familyPostEntryKind(family, chat);
+
+  // landingRequired: honour an explicit model yes/no, else infer from the model.
+  const rawLanding = (plan?.landingRequired || '').toLowerCase().trim();
+  const landingRequired = /^(yes|true|evet|gerek|required|zorunlu)/.test(rawLanding) ? true
+    : /^(no|false|hay[ıi]r|gerekmez|gerekmiyor|not\s)/.test(rawLanding) ? false
+    : (model === 'landing-gated-experience' || model === 'service-lead-flow' || model === 'single-page');
+
+  // initialScreenId: start on Home when a landing is required / single-page / there
+  // is no distinct post-entry screen; otherwise start directly inside the screen.
+  const initialScreenId = (landingRequired || model === 'single-page' || !postEntryScreenId) ? 'home' : postEntryScreenId;
+
+  const labels = entryCtaLabels(family, chat, lang);
+  const primaryEntryCTA = clean(plan?.primaryEntryCTA) || clean(primaryLabel) || labels.primary;
+  const secondaryEntryCTA = clean(plan?.secondaryEntryCTA) || clean(secondaryLabel) || labels.secondary;
+  const navigationBehavior = clean(plan?.navigationBehavior) || navBehaviorFor(model);
+  const entryScreen = clean(plan?.entryScreen) || (initialScreenId === 'home' ? 'Home / Landing' : initialScreenId);
+  const postEntryScreen = clean(plan?.postEntryScreen) || postEntryScreenId;
+
+  return {
+    entryFlowModel: model,
+    landingRequired,
+    entryScreen,
+    postEntryScreen,
+    primaryEntryCTA,
+    secondaryEntryCTA,
+    navigationBehavior,
+    initialScreenId,
+    postEntryScreenId,
+  };
 }
 
 /** The front-end demo component a given action implies (to-build list for Phase 4). */
@@ -453,6 +612,14 @@ function build(input: InteractionContractInput): InteractionContract {
       `Model Web Sitesi Deneyim Planı uygulandı${experienceMode ? ` (${experienceMode})` : ''} — yalnızca web sitesi / ön yüz demosu.`));
   }
 
+  // ── Entry Flow (Phase 6B) — decide how the visitor ENTERS (landing → experience
+  // or straight in). Deterministic; front-end demo only. entryAction reuses the
+  // primary action so the hero CTA can transition to the post-entry screen.
+  const secondaryLabel = clean(input.ctaHierarchy?.secondary) || clean(input.brief?.secondaryCTA);
+  const entry = deriveEntryFlow(plan, family, chat, primary.label, secondaryLabel, lang);
+  const entryAction = (entry.initialScreenId === 'home' && !!entry.postEntryScreenId && primary.type !== 'scroll-to-section')
+    ? primary : undefined;
+
   return {
     conceptCategory: clean(input.conceptCategory) || family,
     primaryAction: primary,
@@ -465,6 +632,17 @@ function build(input: InteractionContractInput): InteractionContract {
     navigationModel: clean(plan?.navigationModel) || undefined,
     experienceMode,
     suggestedScreens,
+    // Entry Flow fields (all deterministic; consumed by the Preview resolver).
+    entryFlowModel: entry.entryFlowModel,
+    landingRequired: entry.landingRequired,
+    entryScreen: entry.entryScreen,
+    postEntryScreen: entry.postEntryScreen,
+    primaryEntryCTA: entry.primaryEntryCTA,
+    secondaryEntryCTA: entry.secondaryEntryCTA,
+    navigationBehavior: entry.navigationBehavior,
+    initialScreenId: entry.initialScreenId,
+    postEntryScreenId: entry.postEntryScreenId,
+    entryAction,
     notes,
   };
 }

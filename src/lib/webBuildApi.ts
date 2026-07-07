@@ -147,6 +147,18 @@ export interface WebBuildBrief {
   statefulDemoComponents?: string;
   navigationModel?: string;
   mediaMotionPlan?: string;
+  // ENTRY FLOW (Phase 6B) — the MODEL's decision about how the visitor ENTERS the
+  // experience (landing → demo/catalog/collection/quote, or straight into it). All
+  // optional & backward compatible; parsed by extractBrief and consumed by the
+  // Strategy Agent → Interaction Contract → Preview entry-flow resolver. Front-end
+  // demo only — never a real backend/AI/db/payments/auth.
+  entryFlowModel?: string;
+  landingRequired?: string;
+  entryScreen?: string;
+  postEntryScreen?: string;
+  primaryEntryCTA?: string;
+  secondaryEntryCTA?: string;
+  navigationBehavior?: string;
   // UI / Art Director agent palette override (Phase 1). All optional →
   // backward compatible. When set, these drive the design tokens directly so the
   // Art Direction actually controls the preview/files palette + heading style.
@@ -210,6 +222,14 @@ export function extractBrief(sections: BuildSection[]): WebBuildBrief {
     statefulDemoComponents: grab(/(?:stateful\s*demo\s*components?|demo\s*components?)\s*[:\-–]\s*(.+)/i),
     navigationModel: grab(/(?:navigation\s*model|nav\s*model)\s*[:\-–]\s*(.+)/i),
     mediaMotionPlan: grab(/(?:media\s*\/?\s*motion\s*plan|media\s*plan)\s*[:\-–]\s*(.+)/i),
+    // Entry Flow (Phase 6B) — exact labels, all optional.
+    entryFlowModel: grab(/(?:entry\s*flow\s*model|entry\s*flow)\s*[:\-–]\s*(.+)/i),
+    landingRequired: grab(/(?:landing\s*required)\s*[:\-–]\s*(.+)/i),
+    entryScreen: grab(/(?:entry\s*screen)\s*[:\-–]\s*(.+)/i),
+    postEntryScreen: grab(/(?:post-?entry\s*screen)\s*[:\-–]\s*(.+)/i),
+    primaryEntryCTA: grab(/(?:primary\s*entry\s*cta)\s*[:\-–]\s*(.+)/i),
+    secondaryEntryCTA: grab(/(?:secondary\s*entry\s*cta)\s*[:\-–]\s*(.+)/i),
+    navigationBehavior: grab(/(?:navigation\s*behavior|navigation\s*behaviour|nav\s*behavior)\s*[:\-–]\s*(.+)/i),
   };
 }
 
@@ -347,6 +367,21 @@ export function buildWebBuildRequest(
       'Stateful demo components: <comma-separated LOCAL/front-end demo components only, e.g. chat-demo-page, listing-filter, detail-preview, quote-form-shell, record-detail-preview>',
       'Navigation model: <single-page anchors | internal page tabs | multi-page-style tabs | dashboard/demo shell | catalog/detail shell>',
       'Media/motion plan: <image/video/animated-background direction tied to the concept — compose with CSS/SVG when there is no real asset; no fake assets>',
+      '— ENTRY FLOW — DECIDE how the visitor ENTERS the experience (front-end demo',
+      '  only; no real backend/AI/db/payments). Use these EXACT labels, one per line:',
+      'Entry flow model: <single-page | landing-gated-experience | direct-demo | dashboard-first | catalog-first | service-lead-flow | archive-exploration>',
+      'Landing required: <yes/no + short reason>',
+      'Entry screen: <the first screen the visitor sees, e.g. Home/Landing, Product Demo, Catalog>',
+      'Post-entry screen: <the screen opened after the primary entry CTA, e.g. Product Demo, Chat Experience, Catalog, Collection, Quote>',
+      'Primary entry CTA: <label + action, e.g. "Start demo → opens Product Demo">',
+      'Secondary entry CTA: <label + action, e.g. "See pricing → scroll to Pricing">',
+      'Navigation behavior: <scroll anchors | internal screen tabs | landing-to-demo | dashboard shell | catalog shell | archive shell | service flow>',
+      'ENTRY FLOW RULES: decide from the idea. For SaaS / product-demo / chatbot /',
+      'productized tools, prefer landing-gated-experience when the visitor needs marketing',
+      'context before entering the demo. For internal tools / dashboard prompts, direct-demo',
+      'or dashboard-first may fit. For marketplace/catalog, catalog-first. For archive/research,',
+      'archive-exploration. For local service, service-lead-flow. Do NOT force multi-screen if',
+      'a simple single-page landing is enough. No real product/backend functionality.',
       'DECIDE, do not default: pick chat ONLY if the website/demo genuinely needs it (not just',
       'because "AI" appears); a focused landing over multi-page when that fits; a dedicated demo',
       'PAGE/SCREEN over a modal when that reads better. Never claim a surface is connected to real',
@@ -417,6 +452,11 @@ export function buildWebBuildRepairRequest(
     'labels: "Website experience model:", "Page/screen model:", "Primary website',
     'experience:", "Demo surfaces:", "Stateful demo components:", "Navigation',
     'model:", "Media/motion plan:".',
+    'Also include the EXACT Entry Flow labels, one per line: "Entry flow model:"',
+    '(single-page | landing-gated-experience | direct-demo | dashboard-first |',
+    'catalog-first | service-lead-flow | archive-exploration), "Landing required:",',
+    '"Entry screen:", "Post-entry screen:", "Primary entry CTA:", "Secondary entry',
+    'CTA:", "Navigation behavior:".',
     '',
     '## Frontend Code MUST contain real React + Tailwind with, at minimum, these',
     'files as "### <path>" headings: "### src/main.tsx", "### src/App.tsx",',
