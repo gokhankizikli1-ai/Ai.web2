@@ -314,6 +314,16 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
     const fixer = step.artifacts?.fixer;
     if (fixer) ownerRows.push(['fixer', `${fixer.status} · ${(fixer.appliedChanges || []).length} applied`]);
 
+    // Concept Authority + Visual Quality gate (Phase 5) — real artifact data only.
+    const ca = step.artifacts?.research?.conceptAuthority;
+    if (ca) {
+      ownerRows.push(['primaryConcept', `${ca.primaryConcept}${ca.targetVertical ? ` · vertical: ${ca.targetVertical}` : ''} · ${ca.confidence}`]);
+    }
+    const enf = step.artifacts?.enforcement;
+    if (enf?.didDetectConceptDrift) ownerRows.push(['conceptDrift', `detected${enf.didFixConceptDrift ? ' · fixed' : ''}`]);
+    else if (ca) ownerRows.push(['conceptDrift', art?.correctedConceptDrift ? 'guarded' : 'none']);
+    if (art?.visualAssetPlan?.heroVisualType) ownerRows.push(['visualAssetPlan', art.visualAssetPlan.heroVisualType]);
+
     // Planning-quality diagnostics (the honesty gate — model-planned vs fallback).
     if (pd) {
       const parse = pd.parse;

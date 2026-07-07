@@ -587,10 +587,20 @@ function assembleWebBuildPayload(
         prompt, brief: artBrief, reviewer: rv.artifact,
         sectionItems: sectionItems.map((s) => ({ id: s.id, name: s.name, headline: s.headline, sub: s.sub, cta: s.cta, bullets: s.bullets })),
         files: files.map((f) => ({ path: f.path, content: f.content })),
+        // Concept Authority + art direction let the Fixer safely re-assert the
+        // primary-concept archetype and add a missing Visual Asset Plan (data only).
+        artDirection: artifacts?.artDirection,
+        conceptAuthority: artifacts?.research?.conceptAuthority,
         lang: effLang,
       });
       agents = [...agents, fx.agent];
       artifacts = { ...(artifacts || {}), fixer: fx.artifact };
+      // Apply the Fixer's concept-drift-corrected art direction back onto the
+      // artifacts so the final package + Plan Summary reflect the corrected
+      // archetype / Visual Asset Plan. Additive only; never touches Preview/files.
+      if (fx.artDirection) {
+        artifacts = { ...(artifacts || {}), artDirection: fx.artDirection };
+      }
 
       // Apply the Fixer's sanitized file CONTENT back onto the real WebBuildFile
       // objects (preserving summary/language) and recompute the diff so Preview
@@ -635,6 +645,15 @@ function assembleWebBuildPayload(
         didRunFixer: !!artifacts?.fixer,
         didFixerApplyChanges: (artifacts?.fixer?.appliedChanges || []).length > 0,
         didIncludeFixerInFinalPayload: !!artifacts?.fixer,
+        // Concept Authority + Visual Quality gate (Phase 5) — real artifact data only.
+        primaryConcept: artifacts?.research?.conceptAuthority?.primaryConcept,
+        targetVertical: artifacts?.research?.conceptAuthority?.targetVertical
+          || artifacts?.research?.conceptAuthority?.audienceVertical,
+        conceptAuthorityConfidence: artifacts?.research?.conceptAuthority?.confidence,
+        didDetectConceptDrift: (artifacts?.reviewer?.findings || []).some((f) => f.category === 'concept-drift'),
+        didFixConceptDrift: (artifacts?.fixer?.appliedChanges || []).some((c) => c.category === 'concept-drift')
+          || !!artifacts?.artDirection?.correctedConceptDrift,
+        didCreateVisualAssetPlan: !!artifacts?.artDirection?.visualAssetPlan?.assetSlots?.length,
         fallbackReason: (artifacts?.context?.fallbacks?.length
           ? `agents degraded: ${artifacts.context.fallbacks.join(', ')}`
           : undefined),
