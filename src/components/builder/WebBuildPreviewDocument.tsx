@@ -1046,9 +1046,13 @@ export default function WebBuildPreviewDocument({
     sectionItems.forEach((s) => m.set(anchorId(s.id), s));
     return m;
   }, [sectionItems]);
-  const current = pages.find((p) => p.id === activePage) || pages[0];
+  // `current`/`pages[0]` must never be assumed present: buildPreviewPages always
+  // returns a Home page today, but a defensive Home fallback (synthesized from the
+  // real section anchors) guarantees the preview never throws on an empty model.
+  const homeFallback: PreviewPage = { id: 'home', label: 'Home', sectionIds: sectionItems.map((s) => anchorId(s.id)) };
+  const current = pages.find((p) => p.id === activePage) || pages[0] || homeFallback;
   const activeItems = current.sectionIds.map((id) => byAnchor.get(id)).filter(Boolean) as WebBuildSectionItem[];
-  const renderItems = activeItems.length ? activeItems : (pages[0].sectionIds.map((id) => byAnchor.get(id)).filter(Boolean) as WebBuildSectionItem[]);
+  const renderItems = activeItems.length ? activeItems : ((pages[0]?.sectionIds || homeFallback.sectionIds).map((id) => byAnchor.get(id)).filter(Boolean) as WebBuildSectionItem[]);
 
   // Host-app isolation + page routing: an internal link click NEVER reaches the
   // host router or changes the URL. A resolved target switches to the page that
@@ -1104,6 +1108,22 @@ export default function WebBuildPreviewDocument({
     '--bd': vt.border,
     '--pr': vt.radius,
   } as CSSProperties;
+
+  // If — for any reason — the active page resolves to no renderable sections,
+  // show a safe, non-blank preview built from the real section names instead of
+  // rendering an empty (black) document. No fabricated copy.
+  if (!renderItems.length) {
+    const names = sectionItems.map((s) => s?.name).filter(Boolean).slice(0, 4) as string[];
+    return (
+      <div ref={rootRef} id="top" className="text-slate-200 antialiased" style={rootStyle}>
+        <div className="mx-auto max-w-lg px-6 py-20 text-center">
+          {brief.type && <p className="text-[11px] font-medium uppercase tracking-[0.25em] text-white/45">{brief.type}</p>}
+          <p className="mt-3 text-lg font-semibold text-white" style={{ fontFamily: 'var(--hf)' }}>{names[0] || brief.type || 'Preview'}</p>
+          {names.length > 1 && <p className="mt-3 text-sm text-slate-400">{names.slice(1).join(' · ')}</p>}
+        </div>
+      </div>
+    );
+  }
 
   const banded = plan.rhythm === 'alternating' || plan.rhythm === 'editorial';
   const kindOf = (rawId: string) => plan.sections.find((p) => p.id === rawId)?.kind;
