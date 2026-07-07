@@ -7,7 +7,7 @@ import KorvixAvatar from '@/components/builder/KorvixAvatar';
 import WebBuildFileView from '@/components/builder/WebBuildFileView';
 import WebBuildPreviewPanel from '@/components/builder/WebBuildPreviewPanel';
 import type {
-  WebBuildStep, WebBuildFile, WebBuildSectionItem,
+  WebBuildStep, WebBuildFile, WebBuildSectionItem, PlanningQuality,
 } from '@/lib/webBuildPayload';
 import type { WebBuildResearch } from '@/lib/webBuildApi';
 import { deriveAgentWorkLog, type WebBuildAgentWorkLogEntry } from '@/lib/webBuildAgents';
@@ -274,6 +274,7 @@ interface PlanSummaryData {
   demoSurfaces: string;
   visual: string;
   shellFromModel: boolean;
+  planningQuality?: PlanningQuality;
   ownerRows: Array<[string, string]>;
 }
 
@@ -287,8 +288,9 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
     const art = step.artifacts?.artDirection;
     const plan = step.layoutPlan;
     const research = step.research;
+    const pd = step.planningDiagnostics;
     const names = step.summary?.sectionNames || [];
-    if (!strategy && !plan && !art && !names.length) return null;
+    if (!strategy && !plan && !art && !pd && !names.length) return null;
 
     const experienceModel = firstStr(wep?.websiteExperienceModel, contract?.websiteExperienceModel, plan ? `${plan.archetype} site` : '', 'Single-page site');
     const pageScreen = firstStr(wep?.pageScreenModel, contract?.pageScreenModel, contract?.experienceMode ? `${contract.experienceMode} shell` : '', names.length ? `${names.length} sections` : '');
@@ -312,7 +314,20 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
     const fixer = step.artifacts?.fixer;
     if (fixer) ownerRows.push(['fixer', `${fixer.status} · ${(fixer.appliedChanges || []).length} applied`]);
 
-    return { experienceModel, pageScreen, primaryExp, demoSurfaces, visual, shellFromModel, ownerRows };
+    // Planning-quality diagnostics (the honesty gate — model-planned vs fallback).
+    if (pd) {
+      const parse = pd.parse;
+      if (parse?.canonicalSectionsMissing?.length) ownerRows.push(['canonicalSectionsMissing', parse.canonicalSectionsMissing.join(', ')]);
+      ownerRows.push(['usedOverviewFallback', String(!!parse?.usedOverviewFallback)]);
+      ownerRows.push(['hasWebsiteExperiencePlanFields', String(!!parse?.hasWebsiteExperiencePlanFields)]);
+      ownerRows.push(['usedArchitectureRewrite', String(!!pd.usedArchitectureRewrite)]);
+      ownerRows.push(['usedQualityFallbackSections', String(!!pd.usedQualityFallbackSections)]);
+      ownerRows.push(['usedFileSynthesisFallback', String(!!pd.usedFileSynthesisFallback)]);
+      ownerRows.push(['usedSafePayloadFallback', String(!!pd.usedSafePayloadFallback)]);
+      if (pd.warnings?.length) ownerRows.push(['warnings', pd.warnings.join(' · ')]);
+    }
+
+    return { experienceModel, pageScreen, primaryExp, demoSurfaces, visual, shellFromModel, planningQuality: pd?.planningQuality, ownerRows };
   } catch {
     return null;
   }
@@ -350,6 +365,22 @@ function CompletedPlanSummary({ step }: { step: WebBuildStep }) {
             <span className="min-w-0 break-words text-[#CBD5E1]">{v}</span>
           </div>
         ))}
+        {data.planningQuality && (() => {
+          const q = data.planningQuality;
+          // model-planned reads as calm success; everything else is an amber warning
+          // so a fallback/repaired build is never mistaken for a real model-planned one.
+          const color = q === 'model-planned' ? '#86A08F' : q === 'model-partial' ? '#D9A441' : '#E0A35B';
+          const text = q === 'model-planned' ? L('Model plan detected', 'Model planı algılandı')
+            : q === 'model-partial' ? L('Partial model output; frontend repaired missing pieces', 'Kısmi model çıktısı; ön yüz eksikleri tamamladı')
+              : q === 'frontend-repaired' ? L('Frontend repaired weak output; inspect before trusting', 'Ön yüz zayıf çıktıyı onardı; güvenmeden önce inceleyin')
+                : L('Fallback build; backend did not return a full model-planned package', 'Yedek yapı; arka uç tam model-planlı bir paket döndürmedi');
+          return (
+            <div className="flex gap-2">
+              <span className="w-32 shrink-0 text-[#64748B]">{L('Planning quality', 'Planlama kalitesi')}</span>
+              <span className="min-w-0 break-words font-medium" style={{ color }}>{q} — {text}</span>
+            </div>
+          );
+        })()}
       </div>
       <p className="text-[11px] leading-relaxed text-[#64748B]">{quality}</p>
       {isOwner && data.ownerRows.length > 0 && (

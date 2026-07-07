@@ -76,6 +76,25 @@ export interface WebBuildResearch {
   sources?: WebBuildSource[];
 }
 
+/**
+ * Honest, real-data diagnostics about WHAT the backend actually returned (vs what
+ * the frontend had to synthesize). Used by the planning-quality gate so a
+ * fallback/partial build is never mistaken for a real model-planned one. Derived
+ * from the parsed reply only — never fabricated. Optional → old builds still load.
+ */
+export interface WebBuildParseDiagnostics {
+  canonicalSectionsPresent: string[];
+  canonicalSectionsMissing: string[];
+  /** True ONLY when the reply had zero `##` sections and Overview was synthesized. */
+  usedOverviewFallback: boolean;
+  isPartial: boolean;
+  /** True when the reply carries the model's Website Experience Plan labels. */
+  hasWebsiteExperiencePlanFields: boolean;
+  hasFrontendCodeSection: boolean;
+  hasPageSectionsSection: boolean;
+  replyCharCount: number;
+}
+
 export interface WebBuildResult {
   reply: string;
   sections: BuildSection[];
@@ -92,6 +111,8 @@ export interface WebBuildResult {
   didResearch?: boolean;
   /** Full, honest research status (present for a fresh website_builder build). */
   research?: WebBuildResearch;
+  /** Real diagnostics about the parsed reply (planning-quality gate). Optional. */
+  parseDiagnostics?: WebBuildParseDiagnostics;
 }
 
 /**
@@ -434,9 +455,12 @@ export async function generateWebBuild(
 
   const reportedMode = typeof data.mode === 'string' ? data.mode : '';
   let sections = parseBuildSections(reply);
+  // Canonical presence is measured against the ORIGINAL parse (before any Overview
+  // synthesis below), so the diagnostics reflect what the MODEL actually returned.
   const present = new Set(sections.map((s) => norm(s.title)));
 
   let partial = false;
+  let usedOverviewFallback = false;
 
   // A different reported mode usually means the request was routed to another
   // handler (e.g. a style/settings shortcut). This used to be a HARD failure —
@@ -470,6 +494,7 @@ export async function generateWebBuild(
     console.warn('[WebBuild] no sections parsed — showing raw reply as a fallback Overview.');
     sections = [{ title: 'Overview', body: reply.trim() }];
     partial = true;
+    usedOverviewFallback = true;
   } else if (!opts?.revise) {
     // Fresh build should ideally have these; if some are missing we still
     // show what we got and flag it partial (don't throw the rest away).
@@ -521,6 +546,36 @@ export async function generateWebBuild(
       }
     : undefined;
 
+  // ── Planning-quality parse diagnostics — real parsed data only. `present`
+  // reflects the ORIGINAL parse (canonical section presence as the model returned
+  // it); the WEP labels are the EXACT Website Experience Plan field labels.
+  const CANONICAL = ['Build Plan', 'Design Direction', 'Page Sections', 'Generated Copy', 'Frontend Code', 'Next Steps'];
+  // A canonical section is present when a parsed heading equals it OR starts with it
+  // (the model often keeps the prompt's descriptive suffix, e.g. "Page Sections — …").
+  const canonTitles = [...present];
+  const hasCanonical = (name: string): boolean => {
+    const n = norm(name);
+    return canonTitles.some((t) => t === n || t.startsWith(`${n} `));
+  };
+  const lowerReply = reply.toLowerCase();
+  const WEP_LABELS = [
+    'website experience model:', 'page/screen model:', 'primary website experience:',
+    'demo surfaces:', 'stateful demo components:', 'navigation model:', 'media/motion plan:',
+  ];
+  const wepMatched = WEP_LABELS.filter((l) => lowerReply.includes(l)).length;
+  const parseDiagnostics: WebBuildParseDiagnostics = {
+    canonicalSectionsPresent: CANONICAL.filter((c) => hasCanonical(c)),
+    canonicalSectionsMissing: CANONICAL.filter((c) => !hasCanonical(c)),
+    usedOverviewFallback,
+    isPartial: partial,
+    // A genuine plan block emits several exact labels; require ≥4 of 7 so one
+    // dropped label doesn't defeat detection, but stray prose can't fake it.
+    hasWebsiteExperiencePlanFields: wepMatched >= 4,
+    hasFrontendCodeSection: hasCanonical('Frontend Code'),
+    hasPageSectionsSection: hasCanonical('Page Sections'),
+    replyCharCount: reply.trim().length,
+  };
+
   return {
     reply,
     sections,
@@ -531,5 +586,6 @@ export async function generateWebBuild(
     sources: sources.length ? sources : undefined,
     didResearch: didResearch || undefined,
     research: researchObj,
+    parseDiagnostics,
   };
 }

@@ -5,7 +5,7 @@
  * real build data — we never claim files/sections that aren't in the reply.
  */
 import type { BuildSection } from '@/lib/gameBuilderApi';
-import { extractBrief, type WebBuildResult, type WebBuildBrief, type WebBuildSource, type WebBuildResearch } from '@/lib/webBuildApi';
+import { extractBrief, type WebBuildResult, type WebBuildBrief, type WebBuildSource, type WebBuildResearch, type WebBuildParseDiagnostics } from '@/lib/webBuildApi';
 import { resolveBuildFiles, parseSectionCopy, synthesizeFromCopies, type SynthFile, type SectionCopy as SynthCopy } from '@/lib/webBuildFiles';
 import { inferWebsiteBrief, fallbackSectionItems, checkQuality } from '@/lib/webBuildBrief';
 import { deriveLayoutPlan, type WebBuildLayoutPlan } from '@/lib/webBuildLayoutPlan';
@@ -62,6 +62,26 @@ export interface WebBuildSummary {
   removed: number;
 }
 
+/** How much of the build was actually MODEL-planned vs frontend-synthesized —
+ *  the honesty gate so a fallback build is never mistaken for a real one. */
+export type PlanningQuality = 'model-planned' | 'model-partial' | 'frontend-repaired' | 'frontend-fallback';
+
+/** Real diagnostics about how the final package was assembled (parse + which
+ *  frontend fallbacks ran). Optional → old saved builds still load. */
+export interface WebBuildPlanningDiagnostics {
+  parse?: WebBuildParseDiagnostics;
+  usedArchitectureRewrite?: boolean;
+  usedQualityFallbackSections?: boolean;
+  usedFileSynthesisFallback?: boolean;
+  usedSafePayloadFallback?: boolean;
+  /** The backend brief carried real Website Experience Plan fields (not inferred). */
+  hasModelWebsiteExperiencePlan?: boolean;
+  hasStrategyWebsiteExperiencePlan?: boolean;
+  hasInteractionContract?: boolean;
+  planningQuality: PlanningQuality;
+  warnings: string[];
+}
+
 /** One build (or revision) turn in the conversation. */
 export interface WebBuildStep {
   id: string;
@@ -85,6 +105,9 @@ export interface WebBuildStep {
    *  their artifacts. Optional → old saved steps still load. */
   agents?: WebBuildAgent[];
   artifacts?: WebBuildArtifacts;
+  /** Planning-quality diagnostics for THIS turn (model-planned vs fallback).
+   *  Optional → old saved steps render without a quality row. */
+  planningDiagnostics?: WebBuildPlanningDiagnostics;
 }
 
 export interface WebBuildPayload {
@@ -115,6 +138,8 @@ export interface WebBuildPayload {
   agents?: WebBuildAgent[];
   artifacts?: WebBuildArtifacts;
   activity: WebBuildActivityRow[];
+  /** Planning-quality diagnostics for the latest build. Optional → old builds load. */
+  planningDiagnostics?: WebBuildPlanningDiagnostics;
   /** Conversation history — one entry per build/revision. */
   steps: WebBuildStep[];
   createdAt: string;
@@ -281,6 +306,74 @@ function normalizeSectionItems(items: unknown): WebBuildSectionItem[] {
     });
 }
 
+/**
+ * Classify how much of the build was actually MODEL-planned vs frontend-synthesized,
+ * from real parse diagnostics + which frontend fallbacks ran. Pure. This is the
+ * honesty gate: it never blocks a build, it just labels it so a fallback build is
+ * not mistaken for a real model-planned one.
+ */
+function computePlanningDiagnostics(args: {
+  parse?: WebBuildParseDiagnostics;
+  hasModelWEP: boolean;
+  hasStrategyWEP: boolean;
+  hasContract: boolean;
+  usedArchitectureRewrite: boolean;
+  usedQualityFallbackSections: boolean;
+  usedFileSynthesisFallback: boolean;
+  usedSafePayloadFallback: boolean;
+}): WebBuildPlanningDiagnostics {
+  const {
+    parse, hasModelWEP, hasStrategyWEP, hasContract,
+    usedArchitectureRewrite, usedQualityFallbackSections, usedFileSynthesisFallback, usedSafePayloadFallback,
+  } = args;
+  // Any real signal that the MODEL planned the site: WEP fields in the reply, or a
+  // backend brief that already carried the Website Experience Plan.
+  const modelWEPSignal = !!(hasModelWEP || parse?.hasWebsiteExperiencePlanFields);
+
+  let planningQuality: PlanningQuality;
+  if (usedSafePayloadFallback) {
+    planningQuality = 'frontend-fallback';
+  } else if (
+    parse?.hasWebsiteExperiencePlanFields && !parse.usedOverviewFallback
+    && parse.hasPageSectionsSection && parse.hasFrontendCodeSection && hasStrategyWEP
+  ) {
+    planningQuality = 'model-planned';
+  } else if (parse?.usedOverviewFallback || !modelWEPSignal) {
+    // Overview fallback, or no model-native website-experience signal at all.
+    planningQuality = 'frontend-fallback';
+  } else if (usedArchitectureRewrite || usedQualityFallbackSections || usedFileSynthesisFallback) {
+    // The model gave some signal, but the frontend restructured/synthesized content.
+    planningQuality = 'frontend-repaired';
+  } else {
+    // Model signal present, no frontend synthesis, but not a full canonical package.
+    planningQuality = 'model-partial';
+  }
+
+  const warnings: string[] = [];
+  if (usedSafePayloadFallback) warnings.push('Package synthesized after assembly failure — not a model-planned build.');
+  if (parse?.usedOverviewFallback) warnings.push('Backend returned no ## sections — used Overview fallback.');
+  if (parse && !parse.hasPageSectionsSection && !usedSafePayloadFallback) warnings.push('No "Page Sections" section in the backend reply.');
+  if (parse && !parse.hasFrontendCodeSection && !usedSafePayloadFallback) warnings.push('No "Frontend Code" section in the backend reply.');
+  if (parse && !parse.hasWebsiteExperiencePlanFields) warnings.push('No Website Experience Plan labels in the backend reply.');
+  if (usedArchitectureRewrite) warnings.push('Frontend rewrote the section architecture.');
+  if (usedQualityFallbackSections) warnings.push('Frontend replaced weak sections with inferred fallback sections.');
+  if (usedFileSynthesisFallback) warnings.push('Frontend synthesized files (backend produced none).');
+  if (parse?.isPartial && !usedSafePayloadFallback) warnings.push('Backend result flagged partial.');
+
+  return {
+    parse,
+    usedArchitectureRewrite,
+    usedQualityFallbackSections,
+    usedFileSynthesisFallback,
+    usedSafePayloadFallback,
+    hasModelWebsiteExperiencePlan: hasModelWEP,
+    hasStrategyWebsiteExperiencePlan: hasStrategyWEP,
+    hasInteractionContract: hasContract,
+    planningQuality,
+    warnings,
+  };
+}
+
 /** WebBuildSectionItem → SectionCopy (for synthesizing files from a brief). */
 function itemsToCopies(items: WebBuildSectionItem[]): SynthCopy[] {
   return items.map((s) => ({
@@ -421,20 +514,24 @@ function assembleWebBuildPayload(
   // Quality gate — repair a weak FRESH build with the inferred industry brief.
   // The layout plan is derived from the FINAL section set so preview, files and
   // timeline all share one strategy-driven composition.
+  let usedQualityFallbackSections = false;
   if (!prev && !checkQuality(sectionItems, files.length, effLang).ok) {
     sectionItems = normalizeSectionItems(fallbackSectionItems(inferred, effLang));
     const plan = deriveLayoutPlan(artBrief, sectionItems.map((s) => ({ id: s.id, name: s.name })));
     files = diffFiles(prevFiles, synthesizeFromCopies(itemsToCopies(sectionItems), artBrief, plan));
+    usedQualityFallbackSections = true;
   }
 
   // FILES MUST ALWAYS EXIST (Part 4). If — for any reason — the build produced no
   // files (e.g. the model returned only agent/design prose with no Page Sections),
   // synthesize a real project from the inferred brief so Preview / All Files /
   // Open Preview always work. Never return an empty file list.
+  let usedFileSynthesisFallback = false;
   if (files.length === 0) {
     if (sectionItems.length === 0) sectionItems = normalizeSectionItems(fallbackSectionItems(inferred, effLang));
     const plan = deriveLayoutPlan(artBrief, sectionItems.map((s) => ({ id: s.id, name: s.name })));
     files = diffFiles(prevFiles, synthesizeFromCopies(itemsToCopies(sectionItems), artBrief, plan));
+    usedFileSynthesisFallback = true;
   }
 
   const layoutPlan = deriveLayoutPlan(artBrief, sectionItems.map((s) => ({ id: s.id, name: s.name })));
@@ -561,6 +658,21 @@ function assembleWebBuildPayload(
   const sources: WebBuildSource[] | undefined =
     (result.sources && result.sources.length ? result.sources : prev?.sources) || undefined;
   const activity = deriveBuildActivity(result, files, sources, layoutPlan);
+
+  // Planning-quality gate — honest label of model-planned vs frontend-synthesized.
+  // `hasModelWEP` reads the BACKEND brief (not the inferred fallback), so an inferred
+  // industry brief never counts as a model-returned Website Experience Plan.
+  const planningDiagnostics = computePlanningDiagnostics({
+    parse: result.parseDiagnostics,
+    hasModelWEP: !!(backendBrief.websiteExperienceModel || backendBrief.pageScreenModel || backendBrief.primaryWebsiteExperience),
+    hasStrategyWEP: !!artifacts?.strategy?.websiteExperiencePlan,
+    hasContract: !!artifacts?.strategy?.interactionContract,
+    usedArchitectureRewrite: didRewriteArchitecture,
+    usedQualityFallbackSections,
+    usedFileSynthesisFallback,
+    usedSafePayloadFallback: false,
+  });
+
   const step: WebBuildStep = {
     id: `step-${uid()}`,
     at: now,
@@ -575,6 +687,7 @@ function assembleWebBuildPayload(
     agents,
     artifacts,
     layoutPlan,
+    planningDiagnostics,
   };
   return {
     source: 'web_build',
@@ -592,6 +705,7 @@ function assembleWebBuildPayload(
     agents,
     artifacts,
     activity,
+    planningDiagnostics,
     steps: prev ? [...prev.steps, step] : [step],
     createdAt: prev?.createdAt || now,
     updatedAt: now,
@@ -700,11 +814,25 @@ function synthesizeSafePayload(
     added: changed.reduce((n, f) => n + f.added, 0),
     removed: changed.reduce((n, f) => n + f.removed, 0),
   };
+  // This path only runs after the normal assembly THREW — force a frontend-fallback
+  // planning label so a synthesized package is never mistaken for a model-planned one.
+  const planningDiagnostics = computePlanningDiagnostics({
+    parse: result.parseDiagnostics,
+    hasModelWEP: false,
+    hasStrategyWEP: false,
+    hasContract: false,
+    usedArchitectureRewrite: false,
+    usedQualityFallbackSections: false,
+    usedFileSynthesisFallback: false,
+    usedSafePayloadFallback: true,
+  });
+
   const step: WebBuildStep = {
     id: `step-${uid()}`, at: now, kind: prev ? 'revision' : 'build', prompt,
     summary, files, activity, reply: result.reply,
     research: prev ? undefined : result.research,
     layoutPlan,
+    planningDiagnostics,
   };
   return {
     source: 'web_build',
@@ -718,6 +846,7 @@ function synthesizeSafePayload(
     research: result.research || prev?.research || undefined,
     layoutPlan,
     activity,
+    planningDiagnostics,
     steps: prev ? [...prev.steps, step] : [step],
     createdAt: prev?.createdAt || now,
     updatedAt: now,
