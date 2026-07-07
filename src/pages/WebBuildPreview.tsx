@@ -15,22 +15,35 @@ import { getProjects } from '@/stores/projectStore';
  * working. Client-side only — no hosting yet, but a real openable URL that
  * renders the real generated page.
  */
+/** A preview candidate is USABLE only when it actually has sections to render.
+ *  This is the gate that lets the resolver skip an empty/stale stash and keep
+ *  trying the healthier saved-session / project fallbacks. */
+function usablePreview(d: WebBuildPreviewData | null): d is WebBuildPreviewData {
+  return !!d && Array.isArray(d.sectionItems) && d.sectionItems.length > 0;
+}
+
+/** Fallback: a saved project whose Web Build contains this run/step id. Returns
+ *  data ONLY when it is usable (non-empty sectionItems); a matched-but-empty
+ *  build keeps scanning so it can never mask a usable source. */
 function fromProject(runId: string): WebBuildPreviewData | null {
   for (const p of getProjects()) {
     const wb = p.webBuild;
     if (wb && (wb.steps || []).some((s) => s.id === runId)) {
-      return { runId, sectionItems: wb.sectionItems || [], brief: wb.brief || {}, slug: undefined, prompt: wb.prompt };
+      const candidate = { runId, sectionItems: wb.sectionItems || [], brief: wb.brief || {}, slug: undefined, prompt: wb.prompt };
+      if (usablePreview(candidate)) return candidate;
     }
   }
   return null;
 }
 
-/** Fallback: a persisted Web Build session containing this run/step id. */
+/** Fallback: a persisted Web Build session containing this run/step id. Same
+ *  usable-data rule as fromProject. */
 function fromSession(runId: string): WebBuildPreviewData | null {
   for (const meta of listWebBuildSessions()) {
     const wb = getWebBuildSession(meta.id);
     if (wb && (wb.steps || []).some((s) => s.id === runId)) {
-      return { runId, sectionItems: wb.sectionItems || [], brief: wb.brief || {}, slug: undefined, prompt: wb.prompt };
+      const candidate = { runId, sectionItems: wb.sectionItems || [], brief: wb.brief || {}, slug: undefined, prompt: wb.prompt };
+      if (usablePreview(candidate)) return candidate;
     }
   }
   return null;
@@ -40,7 +53,20 @@ export default function WebBuildPreview() {
   const { t } = useLanguageStore();
   const { runId = '' } = useParams();
   const navigate = useNavigate();
-  const data = useMemo(() => readPreview(runId) || fromSession(runId) || fromProject(runId), [runId]);
+  // Resolve preview data by trying each source in order and taking the FIRST
+  // USABLE one (non-empty sectionItems). The old `readPreview || fromSession ||
+  // fromProject` chain short-circuited on a truthy-but-EMPTY stash (readPreview
+  // returns an object whenever sectionItems is an array, even []), so a stale/
+  // empty stash masked a healthy saved session/project and the route wrongly
+  // showed "No preview available yet". Skipping unusable candidates fixes that.
+  const data = useMemo(() => {
+    const sources = [() => readPreview(runId), () => fromSession(runId), () => fromProject(runId)];
+    for (const get of sources) {
+      const d = get();
+      if (usablePreview(d)) return d;
+    }
+    return null;
+  }, [runId]);
 
   // Return to where the preview was opened from. Prefer the structured restore
   // context (owning chat session + persisted Web Build session id) so Chat can

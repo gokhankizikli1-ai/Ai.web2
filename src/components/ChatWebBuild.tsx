@@ -41,6 +41,10 @@ function stashLatestPreview(p: WebBuildPayload, slug: string, sessionId?: string
   // Back Build can reopen the exact embedded conversation, not a new chat.
   const previewRunId = p.steps[p.steps.length - 1]?.id;
   if (!previewRunId) return;
+  // Never plant an EMPTY stash: it would out-rank (mask) the saved-session
+  // fallback the standalone preview route uses. The session is already persisted
+  // (persist() runs before this), so fromSession(runId) can resolve the route.
+  if (!Array.isArray(p.sectionItems) || p.sectionItems.length === 0) return;
   const webBuildRunId = sessionIdOf(p);
   const chatSessionId = (sessionId && sessionId.trim()) || webBuildRunId;
   const returnTo = `#/chat?webBuildRunId=${encodeURIComponent(webBuildRunId)}&chatSessionId=${encodeURIComponent(chatSessionId)}`;
