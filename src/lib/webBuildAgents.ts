@@ -166,6 +166,37 @@ export interface ConceptProfile {
   contentType: string;
 }
 
+/* ── Concept Authority (Phase 5) ──────────────────────────────────────────
+ * Separates the THREE things the pipeline used to conflate:
+ *   1. primaryConcept  — the product/concept category that OWNS the visual
+ *      archetype/layout/hero/component style (e.g. an "AI chatbot product").
+ *   2. targetVertical  — the industry/customer the product SERVES; it may only
+ *      influence copy / proof / examples, NEVER the visual identity (e.g. the
+ *      "ecommerce stores" in "AI chatbot for ecommerce stores").
+ *   3. contentModel    — the dominant content/domain the site presents.
+ * The general grammar rule is "<product/concept> for <industry/customer>": the
+ * product/concept has authority; the industry/customer is the target vertical —
+ * UNLESS the whole concept is itself a store/marketplace. All optional &
+ * backward compatible: when authority cannot be determined it is simply omitted
+ * and the pipeline keeps its previous behavior. */
+export interface ConceptAuthority {
+  /** The concept category that CONTROLS the visual archetype/layout/hero. */
+  primaryConcept: ConceptCategory | string;
+  /** The industry/customer the product serves (informs copy/proof only). */
+  targetVertical?: ConceptCategory | string;
+  /** A human-readable phrase for the target vertical when it isn't a category. */
+  audienceVertical?: string;
+  /** The product/business model (e.g. "SaaS/product demo", "catalog/listing site"). */
+  productModel?: string;
+  /** The dominant content model (e.g. "product marketing + front-end demo"). */
+  contentModel?: string;
+  confidence: 'high' | 'medium' | 'low';
+  /** Honest one-line explanation of the read (owner/dev diagnostic). */
+  reason: string;
+  /** Archetype keys the visual identity must NOT drift to (guard the art dir). */
+  mustNotDriftTo?: string[];
+}
+
 /* ── Research Agent artifact ──────────────────────────────────────────── */
 export interface ResearchAgentArtifact {
   didResearch: boolean;
@@ -202,6 +233,43 @@ export interface ResearchAgentArtifact {
   /** Precise concept understanding — the strongest single signal downstream
    *  agents can read to avoid a generic build. Optional → backward compatible. */
   conceptProfile?: ConceptProfile;
+  /** Concept Authority (Phase 5) — separates the primary concept (owns the
+   *  visual archetype) from the target vertical (informs copy/proof only), so a
+   *  "<product> for <vertical>" prompt never drifts the identity to the vertical.
+   *  Optional → backward compatible. */
+  conceptAuthority?: ConceptAuthority;
+}
+
+/* ── Visual Asset & Motion Plan (Phase 5) — DATA ONLY ─────────────────────
+ * A concept-specific, prompt-ready description of the visual assets the site
+ * needs. THIS PHASE NEVER CALLS AN IMAGE/VIDEO API — it only produces CSS/SVG/
+ * motion direction plus prompt-ready asset slots that a LATER phase can either
+ * compose (css-svg-now) or hand to an external image/video generator. All fields
+ * are plain data; consumed by the preview/file layers in a future phase. */
+export type HeroVisualType =
+  | 'css-abstract' | 'svg-illustration' | 'product-mockup' | 'dashboard-mockup'
+  | 'photo-direction' | 'pattern-system' | 'canvas-motion';
+
+export interface VisualAssetSlot {
+  id: string;
+  purpose: string;
+  type: 'hero' | 'section' | 'card' | 'background' | 'mockup';
+  /** Whether the asset is composed now (CSS/SVG) or reserved for a later external
+   *  image/video generation phase. */
+  generationMode: 'css-svg-now' | 'external-image-later' | 'external-video-later';
+  /** A prompt-ready description of the asset (for CSS/SVG now or an image model later). */
+  prompt: string;
+}
+
+export interface VisualAssetPlan {
+  heroVisualType: HeroVisualType;
+  animatedBackground?: string;
+  /** Prompt-ready text for a future external image generator (never called now). */
+  imageGenerationPrompt?: string;
+  /** Prompt-ready text for a future external video/motion generator (never called now). */
+  videoMotionPrompt?: string;
+  assetSlots: VisualAssetSlot[];
+  constraints: string[];
 }
 
 /* ── UI / Art Director artifact ───────────────────────────────────────── */
@@ -407,6 +475,16 @@ export interface ArtDirectionArtifact {
   surfaceRules?: string[];
   /** How proof/trust must be presented for this concept. */
   proofRules?: string[];
+  /* ── Phase 5: Concept Authority + Visual Asset Plan (all optional) ── */
+  /** The Concept Authority this art direction obeyed — the primary concept
+   *  controls the archetype; the target vertical only informs copy/proof. Echoed
+   *  here so downstream + the Reviewer can detect concept drift. */
+  conceptAuthority?: ConceptAuthority;
+  /** Set true when the archetype was re-asserted after a target-vertical drift
+   *  (e.g. an AI/SaaS product that was resolving to a marketplace identity). */
+  correctedConceptDrift?: boolean;
+  /** Data-only visual asset & motion plan (CSS/SVG now, external gen later). */
+  visualAssetPlan?: VisualAssetPlan;
 }
 
 /* ── Strategy Agent artifact (Phase 2) ────────────────────────────────── */
@@ -657,6 +735,18 @@ export interface WebBuildEnforcement {
   didRunFixer?: boolean;
   didFixerApplyChanges?: boolean;
   didIncludeFixerInFinalPayload?: boolean;
+  /* ── Concept Authority + Visual Quality gate (Phase 5, optional) ── */
+  /** The resolved primary concept (owns the visual archetype). */
+  primaryConcept?: string;
+  /** The resolved target vertical (informs copy/proof only). */
+  targetVertical?: string;
+  conceptAuthorityConfidence?: 'high' | 'medium' | 'low';
+  /** True when the Reviewer flagged concept/visual drift (art ≠ primary concept). */
+  didDetectConceptDrift?: boolean;
+  /** True when the Fixer safely corrected concept/visual drift in the artifacts. */
+  didFixConceptDrift?: boolean;
+  /** True when a concept-specific Visual Asset Plan was produced (data only). */
+  didCreateVisualAssetPlan?: boolean;
   fallbackReason?: string;
 }
 
@@ -762,6 +852,177 @@ export function detectConceptCategory(text: string): ConceptCategory {
   return best;
 }
 
+/* ── Concept Authority resolution (Phase 5) ───────────────────────────────
+ * The single most important fix for concept drift: derive the PRIMARY concept
+ * from the product noun in the prompt — NOT from the blended full text, which is
+ * often saturated with target-vertical / content-domain language (an "AI chatbot
+ * FOR ecommerce stores" prompt mentions store/cart/checkout many times, which
+ * used to over-weight the marketplace category and flip the visual identity). */
+
+/** Product/concept nouns that, when present in the PRODUCT part of a
+ *  "<product> for <vertical>" prompt, keep the primary concept as commerce
+ *  (the product itself IS a store/marketplace). */
+const COMMERCE_PRODUCT_RE = /\b(marketplace|market\s?place|storefront|store|shop|e-?commerce|e-?ticaret|online\s?store|catalog\s?store|mağaza)\b/;
+
+interface ConceptAuthoritySplit {
+  primary: ConceptCategory;
+  vertical: ConceptCategory | 'general';
+  verticalPhrase: string;
+  hadForSplit: boolean;
+  productIsCommerce: boolean;
+}
+
+/** Split a prompt into its product/concept part and its target-vertical part on a
+ *  "<product> for <vertical>" (EN) / "<vertical> için <product>" (TR) grammar,
+ *  and resolve which concept has authority. Pure and deterministic. */
+function splitConceptAuthority(prompt: string, fullText: string): ConceptAuthoritySplit {
+  const p = ` ${(prompt || '').toLowerCase().replace(/\s+/g, ' ').trim()} `;
+  const fullCat = detectConceptCategory(fullText || prompt || '');
+  if (!p.trim()) {
+    return { primary: fullCat, vertical: 'general', verticalPhrase: '', hadForSplit: false, productIsCommerce: false };
+  }
+
+  // Identify a product-vs-vertical split. English: "<product> for <vertical>".
+  // Turkish: "<vertical> için <product>" (the vertical comes first).
+  let productPart = '';
+  let verticalPart = '';
+  const trIdx = p.indexOf(' için ');
+  if (trIdx >= 0) {
+    verticalPart = p.slice(0, trIdx);
+    productPart = p.slice(trIdx + 6);
+  } else {
+    const m = p.match(/^(.*?)\bfor\b(.*)$/);
+    if (m && m[2].trim().length > 1) { productPart = m[1]; verticalPart = m[2]; }
+  }
+  const hadForSplit = !!(productPart.trim() && verticalPart.trim());
+
+  if (hadForSplit) {
+    const productCat = detectConceptCategory(productPart);
+    const productIsCommerce = COMMERCE_PRODUCT_RE.test(` ${productPart} `) || productCat === 'marketplace';
+    if (!productIsCommerce && productCat !== 'general') {
+      // "<product/concept> for <industry/customer>" → the product has authority.
+      const verticalCat = detectConceptCategory(verticalPart);
+      return { primary: productCat, vertical: verticalCat, verticalPhrase: verticalPart.trim(), hadForSplit, productIsCommerce };
+    }
+    // Product part is itself a store/marketplace, or too generic ("a website
+    // for restaurants") → fall through to the whole-prompt read below.
+  }
+
+  // No decisive split → prefer the PROMPT-only category (the product noun) over
+  // the blended full text, which can over-weight the vertical/content domain.
+  const promptCat = detectConceptCategory(p);
+  const primary = promptCat !== 'general' ? promptCat : fullCat;
+  return { primary, vertical: 'general', verticalPhrase: '', hadForSplit, productIsCommerce: primary === 'marketplace' };
+}
+
+/** Human-readable label for a target vertical category (owner/dev diagnostic). */
+const VERTICAL_LABEL: Record<string, [string, string]> = {
+  marketplace: ['ecommerce/marketplace', 'e-ticaret/pazaryeri'],
+  hospitality: ['restaurants/hospitality', 'restoran/konaklama'],
+  medical: ['healthcare', 'sağlık'],
+  legal: ['legal', 'hukuk'],
+  finance: ['finance', 'finans'],
+  real_estate: ['real estate', 'gayrimenkul'],
+  education: ['education', 'eğitim'],
+  industrial: ['industrial/B2B', 'sanayi/B2B'],
+  event: ['events', 'etkinlik'],
+  nonprofit: ['nonprofit', 'sivil toplum'],
+  landscaping: ['landscaping', 'peyzaj'],
+  archive: ['archive/heritage', 'arşiv/miras'],
+};
+
+/** The product/business model per primary concept (Concept Authority hand-off). */
+const PRODUCT_MODEL_BY_CONCEPT: Record<string, [string, string]> = {
+  ai: ['SaaS/product demo', 'SaaS/ürün demosu'],
+  saas: ['SaaS/product demo', 'SaaS/ürün demosu'],
+  marketplace: ['catalog/listing site', 'katalog/liste sitesi'],
+  archive: ['editorial archive / collection', 'editoryal arşiv / koleksiyon'],
+  portfolio: ['portfolio / case-study site', 'portfolyo / vaka sitesi'],
+  landscaping: ['portfolio / service lead-gen', 'portfolyo / hizmet talep'],
+  local_service: ['service lead-gen site', 'hizmet talep sitesi'],
+  legal: ['credibility lead-gen site', 'itibar/talep sitesi'],
+  medical: ['credibility lead-gen site', 'itibar/talep sitesi'],
+  hospitality: ['atmosphere + reservation site', 'atmosfer + rezervasyon sitesi'],
+  education: ['course / enrollment site', 'kurs / kayıt sitesi'],
+  real_estate: ['listing / detail site', 'ilan / detay sitesi'],
+  event: ['event / registration site', 'etkinlik / kayıt sitesi'],
+  finance: ['product / trust site', 'ürün / güven sitesi'],
+  industrial: ['capability / quote site', 'yetkinlik / teklif sitesi'],
+  nonprofit: ['cause / donation site', 'amaç / bağış sitesi'],
+};
+
+/** The dominant content model per primary concept. */
+const CONTENT_MODEL_BY_CONCEPT: Record<string, [string, string]> = {
+  ai: ['product marketing + front-end demo', 'ürün pazarlama + ön-yüz demo'],
+  saas: ['product marketing + front-end demo', 'ürün pazarlama + ön-yüz demo'],
+  marketplace: ['inventory/listing/detail preview', 'envanter/liste/detay önizleme'],
+  archive: ['editorial archive / collection browsing', 'editoryal arşiv / koleksiyon gezinme'],
+  landscaping: ['portfolio / before-after / service', 'portfolyo / önce-sonra / hizmet'],
+  portfolio: ['selected work / case detail', 'seçili işler / vaka detayı'],
+};
+
+/** Archetype keys an AI/SaaS product must NEVER drift toward (target-vertical
+ *  commerce language must not flip the visual identity). */
+const AI_SAAS_DRIFT_GUARD = ['marketplace-catalog', 'storefront', 'catalog commerce'];
+
+/**
+ * Derive the Concept Authority for a build. Separates the primary concept (owns
+ * the visual archetype) from the target vertical (informs copy/proof only). Pure
+ * and deterministic; returns undefined only when there is genuinely no signal.
+ */
+export function deriveConceptAuthority(
+  prompt: string, brief: WebBuildBrief, inferred: InferredBrief, lang: Lang = 'en',
+): ConceptAuthority | undefined {
+  const promptText = (prompt || brief.coreIdea || brief.type || inferred.businessType || '').trim();
+  if (!promptText) return undefined;
+  const fullText = [prompt, brief.coreIdea, brief.type, brief.audience, inferred.businessType, inferred.targetAudience]
+    .filter(Boolean).join(' ');
+  const split = splitConceptAuthority(promptText, fullText);
+
+  const primaryConcept = split.primary;
+  const hasVertical = split.hadForSplit && split.vertical !== 'general' && !split.productIsCommerce && split.vertical !== primaryConcept;
+  const targetVertical = hasVertical ? split.vertical : undefined;
+  const audienceVertical = split.verticalPhrase && !split.productIsCommerce ? split.verticalPhrase.slice(0, 60) : undefined;
+
+  const productModel = PRODUCT_MODEL_BY_CONCEPT[primaryConcept]
+    ? L(lang, PRODUCT_MODEL_BY_CONCEPT[primaryConcept][0], PRODUCT_MODEL_BY_CONCEPT[primaryConcept][1]) : undefined;
+  const contentModel = CONTENT_MODEL_BY_CONCEPT[primaryConcept]
+    ? L(lang, CONTENT_MODEL_BY_CONCEPT[primaryConcept][0], CONTENT_MODEL_BY_CONCEPT[primaryConcept][1]) : undefined;
+
+  const mustNotDriftTo = (primaryConcept === 'ai' || primaryConcept === 'saas')
+    ? AI_SAAS_DRIFT_GUARD : undefined;
+
+  // Confidence: a clean "<product> for <vertical>" split with a concrete product
+  // concept is HIGH; a decisive whole-prompt concept is MEDIUM; a general read LOW.
+  const confidence: ConceptAuthority['confidence'] = (split.hadForSplit && !!targetVertical)
+    ? 'high'
+    : (primaryConcept !== 'general' ? 'medium' : 'low');
+
+  const vLabel = targetVertical && VERTICAL_LABEL[targetVertical]
+    ? L(lang, VERTICAL_LABEL[targetVertical][0], VERTICAL_LABEL[targetVertical][1])
+    : audienceVertical;
+  const reason = targetVertical
+    ? L(lang,
+        `Reads as a "${primaryConcept}" product for the ${vLabel} vertical; the primary concept controls the visual archetype/layout, the vertical only informs copy/proof/examples.`,
+        `"${primaryConcept}" ürünü, ${vLabel} dikeyi için okunuyor; görsel arketip/düzeni birincil konsept belirler, dikey yalnızca metin/kanıt/örnekleri etkiler.`)
+    : split.productIsCommerce
+      ? L(lang, `Reads as a "${primaryConcept}" concept (a store/marketplace itself) — commerce IS the primary concept.`,
+          `"${primaryConcept}" konsepti (mağaza/pazaryerinin kendisi) — ticaret birincil konsept.`)
+      : L(lang, `Reads as a "${primaryConcept}" concept; no separate target vertical detected.`,
+          `"${primaryConcept}" konsepti; ayrı bir hedef dikey tespit edilmedi.`);
+
+  return {
+    primaryConcept,
+    targetVertical,
+    audienceVertical,
+    productModel,
+    contentModel,
+    confidence,
+    reason,
+    mustNotDriftTo,
+  };
+}
+
 interface ResearchSignals {
   // business model
   booking: boolean; subscription: boolean; purchase: boolean; saas: boolean;
@@ -794,7 +1055,11 @@ function researchSignals(brief: WebBuildBrief, inferred: InferredBrief, prompt =
     (inferred.items || []).join(' '),
   ].filter(Boolean).join(' ').toLowerCase();
 
-  const category = detectConceptCategory(t);
+  // CONCEPT AUTHORITY (Phase 5): the primary concept is derived from the product
+  // noun in the PROMPT, not the blended full text — so a "<product> for <vertical>"
+  // prompt (e.g. "AI chatbot for ecommerce stores") never lets the target
+  // vertical's commerce language over-weight and flip the concept to marketplace.
+  const category = splitConceptAuthority(prompt, t).primary;
 
   const booking = has(t, 'book', 'reserv', 'appointment', 'randevu', 'rezerv', 'schedul', 'consult', 'keşif', 'danışman');
   const subscription = has(t, 'subscription', 'membership', 'üyelik', 'abonel', 'recurring', 'plan', 'pricing', 'fiyat', 'paket');
@@ -1570,6 +1835,10 @@ export function deriveResearchAgent(
   const sig = researchSignals(brief, inferred, prompt);
   let conceptProfile: ConceptProfile | undefined;
   try { conceptProfile = deriveConceptProfile(prompt, brief, inferred, sig, lang); } catch { conceptProfile = undefined; }
+  // Concept Authority — the primary-concept-vs-target-vertical separation the
+  // downstream art director/reviewer read to prevent visual drift. Guarded.
+  let conceptAuthority: ConceptAuthority | undefined;
+  try { conceptAuthority = deriveConceptAuthority(prompt, brief, inferred, lang); } catch { conceptAuthority = undefined; }
   let trustBarriers: string[] = [];
   try { trustBarriers = deriveTrustBarriers(sig, brief, inferred, lang); } catch { trustBarriers = []; }
 
@@ -1721,6 +1990,7 @@ export function deriveResearchAgent(
     uxPriorities,
     uiAgentInstructions,
     conceptProfile,
+    conceptAuthority,
   };
 }
 
@@ -2377,6 +2647,147 @@ function pickDesignArchetype(
 }
 
 /**
+ * Concept Authority guard (Phase 5). The PRIMARY concept controls the visual
+ * archetype; a target vertical must NEVER flip the identity (an AI/SaaS product
+ * "for ecommerce" must stay an AI/product-demo identity, not a marketplace/
+ * catalog one). Re-asserts the primary-concept archetype ONLY when a commerce/
+ * catalog drift is detected AND the primary concept is not itself commerce.
+ * Returns the corrected spec, or undefined when no correction is warranted.
+ */
+function guardArchetypeAgainstDrift(
+  current: DesignArchetypeSpec, authority: ConceptAuthority | undefined,
+): DesignArchetypeSpec | undefined {
+  if (!authority) return undefined;
+  const primary = authority.primaryConcept;
+  if (primary === 'marketplace') return undefined; // commerce IS the concept — no guard
+  const target = CATEGORY_TO_ARCHETYPE[primary];
+  if (!target || !DESIGN_ARCHETYPES[target] || target === current.key) return undefined;
+  const drift = new Set([...(authority.mustNotDriftTo || []), 'marketplace-catalog']);
+  if (drift.has(current.key)) return DESIGN_ARCHETYPES[target];
+  return undefined;
+}
+
+/** Per-concept hero visual type for the (data-only) Visual Asset Plan. */
+const HERO_VISUAL_BY_CONCEPT: Record<string, HeroVisualType> = {
+  ai: 'dashboard-mockup',
+  saas: 'dashboard-mockup',
+  marketplace: 'product-mockup',
+  real_estate: 'photo-direction',
+  archive: 'pattern-system',
+  portfolio: 'svg-illustration',
+  landscaping: 'photo-direction',
+  hospitality: 'photo-direction',
+  event: 'svg-illustration',
+  industrial: 'svg-illustration',
+  finance: 'dashboard-mockup',
+};
+
+/**
+ * Derive a concept-specific Visual Asset & Motion Plan — DATA ONLY. Never calls
+ * an image/video API: it produces CSS/SVG/motion direction plus prompt-ready
+ * asset slots (css-svg-now vs external-*-later) for a future generation phase.
+ */
+function deriveVisualAssetPlan(
+  archetype: DesignArchetypeSpec,
+  authority: ConceptAuthority | undefined,
+  cpf: ConceptProfile | undefined,
+  colorSystem: ArtDirectionColorSystem,
+  lang: Lang,
+): VisualAssetPlan {
+  const concept = authority?.primaryConcept || cpf?.category || 'general';
+  const heroVisualType = HERO_VISUAL_BY_CONCEPT[concept] || 'css-abstract';
+  const accent = colorSystem.accent;
+  const bg = colorSystem.background;
+  const vertical = authority?.targetVertical || authority?.audienceVertical;
+
+  // Concept-specific hero direction (kept as prompt-ready text, composed now with
+  // CSS/SVG). The target vertical only colors the EXAMPLE, never the identity.
+  const heroPrompt = (() => {
+    switch (concept) {
+      case 'ai':
+      case 'saas':
+        return L(lang,
+          `Abstract neural/product-UI mockup: a glowing interface mesh + a chat/dashboard product panel over a ${bg} surface, ${accent} accent glow${vertical ? ` (sample content themed for ${vertical})` : ''}. No stock photos.`,
+          `Soyut nöral/ürün-arayüz mockup: ${bg} yüzey üzerinde parlayan arayüz ağı + sohbet/panel ürün paneli, ${accent} vurgu parıltısı${vertical ? ` (örnek içerik ${vertical} temalı)` : ''}. Stok fotoğraf yok.`);
+      case 'archive':
+        return L(lang, 'Editorial manuscript texture: a document/plate grid with provenance map lines on a paper surface. No stock photos.',
+          'Editoryal elyazma dokusu: kağıt yüzeyde köken harita çizgileriyle belge/levha gridi. Stok fotoğraf yok.');
+      case 'landscaping':
+        return L(lang, 'Organic contour lines and garden-plan texture with a before/after visual slot. Real project photography direction only.',
+          'Organik kontur çizgileri ve bahçe-planı dokusu, önce/sonra görsel alanı. Yalnızca gerçek proje fotoğrafı yönü.');
+      case 'marketplace':
+        return L(lang, 'Premium product-card grid with showroom lighting and a listing/detail visual. Clear price/proof clarity.',
+          'Showroom aydınlatmalı premium ürün-kart gridi ve liste/detay görseli. Net fiyat/kanıt.');
+      default:
+        return L(lang, `Composed CSS/SVG hero visual tied to the concept on a ${bg} surface with a single ${accent} focal accent. No stock photos, no blank boxes.`,
+          `Konsepte bağlı, ${bg} yüzeyde tek ${accent} odak vurgulu, CSS/SVG ile kompoze hero görseli. Stok fotoğraf yok, boş kutu yok.`);
+    }
+  })();
+
+  const isProductConcept = concept === 'ai' || concept === 'saas';
+  const assetSlots: VisualAssetSlot[] = [
+    {
+      id: 'hero',
+      purpose: L(lang, 'Primary hero visual', 'Ana hero görseli'),
+      type: 'hero',
+      generationMode: 'css-svg-now',
+      prompt: heroPrompt,
+    },
+    {
+      id: 'section-primary',
+      purpose: isProductConcept
+        ? L(lang, 'Product/flow demo mockup', 'Ürün/akış demo mockup')
+        : L(lang, 'Concept proof visual', 'Konsept kanıt görseli'),
+      type: 'mockup',
+      generationMode: 'css-svg-now',
+      prompt: isProductConcept
+        ? L(lang, `A local, static product/flow mockup (chat or dashboard) using sample copy${vertical ? ` themed for ${vertical}` : ''} — no real AI/backend.`,
+            `Örnek metinle yerel, statik ürün/akış mockup'ı (sohbet veya panel)${vertical ? `, ${vertical} temalı` : ''} — gerçek AI/backend yok.`)
+        : L(lang, 'A composed CSS/SVG proof visual (metrics band, gallery plate or credential panel) fit to the concept.',
+            'Konsepte uygun, CSS/SVG ile kompoze kanıt görseli (metrik bandı, galeri levhası veya kimlik paneli).'),
+    },
+    {
+      id: 'background',
+      purpose: L(lang, 'Section background system', 'Bölüm arka plan sistemi'),
+      type: 'background',
+      generationMode: 'css-svg-now',
+      prompt: L(lang, `Tonal ${bg} surface shifts with hairline separators and a restrained ${accent} accent — no heavy boxes.`,
+        `İnce ayırıcılar ve ölçülü ${accent} vurgu ile tonal ${bg} yüzey geçişleri — ağır kutu yok.`),
+    },
+  ];
+
+  // A single richer hero visual is reserved for a LATER external image phase
+  // (product concepts benefit most from a real generated mockup).
+  const imageGenerationPrompt = isProductConcept
+    ? L(lang, `[reserved for a later phase] Premium abstract AI product hero: glowing interface mesh + chat/dashboard mockup, ${accent} accent, dark ${bg} background, cinematic depth.`,
+        `[sonraki aşamaya ayrılmış] Premium soyut AI ürün hero: parlayan arayüz ağı + sohbet/panel mockup, ${accent} vurgu, koyu ${bg} arka plan, sinematik derinlik.`)
+    : undefined;
+
+  const animatedBackground = L(lang,
+    `${archetype.layoutDensity === 'immersive' ? 'Slow gradient/mesh drift' : 'Subtle hairline/tonal drift'} tied to the ${accent} accent; respects reduced-motion.`,
+    `${accent} vurgusuna bağlı ${archetype.layoutDensity === 'immersive' ? 'yavaş gradyan/ağ kayması' : 'ince çizgi/tonal kayma'}; reduced-motion'a saygılı.`);
+  const videoMotionPrompt = isProductConcept
+    ? L(lang, '[reserved for a later phase] Looping product-UI motion: a chat/dashboard filling in with sample data, calm and premium.',
+        '[sonraki aşamaya ayrılmış] Döngüsel ürün-arayüz hareketi: örnek verilerle dolan sohbet/panel, sakin ve premium.')
+    : undefined;
+
+  const constraints = uniq([
+    L(lang, 'No image/video API is called in this phase — CSS/SVG/motion + prompt-ready slots only.',
+      'Bu aşamada görsel/video API çağrılmaz — yalnızca CSS/SVG/hareket + hazır slotlar.'),
+    L(lang, 'Compose visuals with CSS/SVG; never blank placeholder boxes or stock photos.',
+      'Görselleri CSS/SVG ile oluştur; asla boş yer tutucu kutu veya stok fotoğraf.'),
+    isProductConcept
+      ? L(lang, 'Any product/chat demo is a LOCAL, static illustration from sample copy — no real AI/backend.',
+          'Her ürün/sohbet demosu örnek metinden YEREL, statik bir illüstrasyondur — gerçek AI/backend yok.')
+      : '',
+    L(lang, 'Respect prefers-reduced-motion for all animated assets.',
+      'Tüm animasyonlu varlıklar için prefers-reduced-motion\'a saygı göster.'),
+  ]);
+
+  return { heroVisualType, animatedBackground, imageGenerationPrompt, videoMotionPrompt, assetSlots, constraints };
+}
+
+/**
  * Build the UI / Art Director artifact — a senior art director that CONSUMES the
  * Research Agent brief (target user, color psychology, visual style, UX
  * priorities, UI-agent instructions) and turns it into a specific, non-generic
@@ -2409,7 +2820,18 @@ export function deriveArtDirection(
   // DESIGN ARCHETYPE — the anti-sameness decision. Picked from the concept +
   // Research signals; drives the distinct palette, typography, density, hero and
   // component rules so two different ideas resolve to different identities.
-  const archetype = pickDesignArchetype(brief, research, inferred);
+  let archetype = pickDesignArchetype(brief, research, inferred);
+  // CONCEPT AUTHORITY GUARD (Phase 5): the primary concept controls the archetype;
+  // a target vertical (e.g. "for ecommerce") must never flip an AI/SaaS product to
+  // a marketplace/catalog identity. Re-assert the primary-concept archetype on drift.
+  const conceptAuthority = research?.conceptAuthority;
+  const guarded = guardArchetypeAgainstDrift(archetype, conceptAuthority);
+  const correctedConceptDrift = !!guarded;
+  if (guarded) {
+    // eslint-disable-next-line no-console
+    console.warn(`[WebBuild] concept-authority guard: re-asserted "${guarded.key}" over drifted "${archetype.key}" (primary=${conceptAuthority?.primaryConcept}, vertical=${conceptAuthority?.targetVertical || '-'}).`);
+    archetype = guarded;
+  }
 
   // Color system follows the ORDER OF TRUTH: model color → research color
   // psychology → the archetype's distinct palette → tokens. So a fresh/fallback
@@ -2586,10 +3008,16 @@ export function deriveArtDirection(
     (research?.trustSignals || []).length ? 'trustSignals' : '',
     // Richer Research signals — recorded ONLY when actually consumed above.
     cpf ? 'conceptProfile' : '',
+    conceptAuthority ? 'conceptAuthority' : '',
     uia?.trustFocus ? 'trustFocus' : '',
     uia?.imageryDirection ? 'imageryDirection' : '',
     uia?.layoutWarning ? 'layoutWarning' : '',
   ]);
+
+  // Visual Asset & Motion Plan (Phase 5) — DATA ONLY (no image/video API call).
+  let visualAssetPlan: VisualAssetPlan | undefined;
+  try { visualAssetPlan = deriveVisualAssetPlan(archetype, conceptAuthority, cpf, colorSystem, lang); }
+  catch { visualAssetPlan = undefined; }
 
   // ── STRUCTURED ART DIRECTION (archetype-driven, research-informed) ──────
   // Every block is a plain object literal (cannot throw) so the artifact is
@@ -2890,6 +3318,10 @@ export function deriveArtDirection(
     compositionRules,
     surfaceRules,
     proofRules,
+    // ── Phase 5: Concept Authority + Visual Asset Plan ──
+    conceptAuthority,
+    correctedConceptDrift,
+    visualAssetPlan,
   };
 }
 
@@ -3847,6 +4279,60 @@ export function deriveReviewerAgent(input: ReviewerInput): ReviewerAgentArtifact
       'artDirection.antiTemplateDiagnosis');
   } else if (isStrongConcept) passed.push(L(lang, 'Anti-template', 'Şablon karşıtı'));
 
+  /* 2.5 — Concept drift (Phase 5): the target vertical must NOT override the
+   *        primary concept's visual archetype/layout (e.g. an "AI chatbot for
+   *        ecommerce" rendered as a marketplace/catalog instead of an AI product). */
+  const authority = input.research?.conceptAuthority;
+  const primaryConcept = authority?.primaryConcept;
+  const artKey = input.artDirection?.designArchetype?.key;
+  const driftGuardApplied = !!input.artDirection?.correctedConceptDrift;
+  const driftKeys = new Set([...(authority?.mustNotDriftTo || []), 'marketplace-catalog']);
+  const expectedArch = primaryConcept ? CATEGORY_TO_ARCHETYPE[primaryConcept] : undefined;
+  const artDrift = !!authority && primaryConcept !== 'marketplace' && !!artKey
+    && driftKeys.has(artKey) && !!expectedArch && expectedArch !== artKey;
+  const layoutCommerceDrift = (primaryConcept === 'ai' || primaryConcept === 'saas')
+    && input.layoutPlan?.archetype === 'marketplace';
+  const conceptDrift = !driftGuardApplied && (artDrift || layoutCommerceDrift);
+  if (conceptDrift) {
+    add('critical', 'concept-drift', 'Target vertical overrode the primary concept',
+      `Primary concept "${primaryConcept}" must control the visual identity, but the ${artDrift ? `art archetype resolved to "${artKey}"` : 'layout archetype resolved to "marketplace"'} — a ${authority?.targetVertical || 'target-vertical'} (catalog/commerce) identity.`,
+      `Re-assert the primary-concept archetype (${expectedArch || 'ai-tool / high-conversion-saas'}); the target vertical may only inform copy/proof/examples, never the visual archetype/layout/hero.`,
+      'artDirection.designArchetype');
+  } else if (authority && primaryConcept && primaryConcept !== 'general') {
+    passed.push(L(lang, 'Concept authority respected', 'Konsept otoritesi korundu'));
+  }
+
+  /* 2.6 — Visual drift: a generic SaaS/modern look for a distinctive concept. */
+  const genericSaasArt = artKey === 'high-conversion-saas' || artKey === 'modern-brand';
+  const distinctiveConcept = !!primaryConcept && !['saas', 'ai', 'general'].includes(primaryConcept);
+  if (!conceptDrift && genericSaasArt && distinctiveConcept) {
+    add('warning', 'visual-drift', 'Generic SaaS visual direction for a distinctive concept',
+      `Concept "${primaryConcept}" resolved to a generic "${artKey}" art archetype.`,
+      'Give the concept its own archetype + visual signature instead of the default SaaS/modern-brand look.',
+      'artDirection.designArchetype');
+  }
+
+  /* 2.7 — Missing visual asset plan (Phase 5, data-only). */
+  const hasAssetPlan = !!input.artDirection?.visualAssetPlan?.assetSlots?.length;
+  if (input.artDirection && !hasAssetPlan) {
+    add('warning', 'missing-asset-plan', 'No visual asset/motion plan',
+      'Art Direction produced no visualAssetPlan (hero visual type + asset slots + constraints).',
+      'Produce a concept-specific Visual Asset Plan (CSS/SVG now, external image/video later) so preview/files have concrete visual direction.',
+      'artDirection.visualAssetPlan');
+  } else if (hasAssetPlan) passed.push(L(lang, 'Visual asset plan', 'Görsel varlık planı'));
+
+  /* 2.8 — Weak premium UI signals. */
+  const weakPremium = !!input.artDirection
+    && !(input.artDirection.premiumDetails || []).length
+    && !(input.artDirection.visualDifferentiators || []).length
+    && !(input.artDirection.surfaceRules || []).length;
+  if (weakPremium) {
+    add('warning', 'weak-premium-ui', 'Weak premium UI signals',
+      'Art Direction has no premiumDetails / visualDifferentiators / surfaceRules to carry a premium finish into components.',
+      'Add premium detail rules (surface language, focal accent, differentiators) so the build reads as a real premium product.',
+      'artDirection');
+  }
+
   /* 3 — Visual identity */
   const visualIdentity = !!input.artDirection?.designArchetype
     && !!(input.artDirection?.visualSignature || input.artDirection?.visualDifferentiators?.length || input.artDirection?.surfaceRules?.length);
@@ -3974,6 +4460,7 @@ export function deriveReviewerAgent(input: ReviewerInput): ReviewerAgentArtifact
   const usedResearchInputs = [
     input.research?.conceptProfile?.category ? 'conceptProfile.category' : '',
     present(input.research?.conceptProfile?.proofNeeded) ? 'conceptProfile.proofNeeded' : '',
+    input.research?.conceptAuthority ? 'conceptAuthority' : '',
   ].filter(Boolean);
   const usedArtDirectionInputs = [
     input.artDirection?.designArchetype ? 'designArchetype' : '',
@@ -4048,6 +4535,10 @@ export interface FixerInput {
   sectionItems: FixerSectionItem[];
   /** Final generated files (path + content) the Fixer may sanitize. */
   files: Array<{ path: string; content: string }>;
+  /** Art direction the Fixer may safely re-assert on concept drift (Phase 5). */
+  artDirection?: ArtDirectionArtifact;
+  /** Concept Authority used to pick the correct archetype / asset plan on drift. */
+  conceptAuthority?: ConceptAuthority;
   lang?: Lang;
 }
 
@@ -4058,10 +4549,12 @@ export interface FixerResult {
   sectionItems: FixerSectionItem[];
   /** Possibly-sanitized files (same shape in → out). */
   files: Array<{ path: string; content: string }>;
+  /** Concept-drift-corrected art direction (undefined when unchanged). */
+  artDirection?: ArtDirectionArtifact;
 }
 
 /** The safe repair categories this v1 Fixer is allowed to perform. */
-const FIXER_SAFE_SCOPE = ['fake-data', 'placeholder-cleanup', 'cta-anchor'];
+const FIXER_SAFE_SCOPE = ['fake-data', 'placeholder-cleanup', 'cta-anchor', 'concept-drift', 'visual-asset-plan'];
 
 /** Broad changes the Fixer explicitly REFUSES (reserved for later phases). */
 function fixerRefusedScope(lang: Lang): string[] {
@@ -4142,7 +4635,7 @@ function failedOpenFixer(lang: Lang): FixerAgentArtifact {
  * reviewer findings and generated data only. Pure and deterministic. Applies
  * ONLY the three safe repair categories; records everything broader as refused.
  */
-export function deriveFixer(input: FixerInput): { artifact: FixerAgentArtifact; sectionItems: FixerSectionItem[]; files: Array<{ path: string; content: string }> } {
+export function deriveFixer(input: FixerInput): { artifact: FixerAgentArtifact; sectionItems: FixerSectionItem[]; files: Array<{ path: string; content: string }>; artDirection?: ArtDirectionArtifact } {
   const lang = input.lang || 'en';
   const applied: FixerAppliedChange[] = [];
   const skipped: FixerSkippedChange[] = [];
@@ -4245,6 +4738,56 @@ export function deriveFixer(input: FixerInput): { artifact: FixerAgentArtifact; 
     }
   }
 
+  // 4 — Concept-drift + visual-asset-plan repair (Phase 5). SAFE, artifact-level:
+  //     re-assert the primary-concept archetype when the target vertical overrode
+  //     it, and add a missing Visual Asset Plan. Never invents copy/metrics/assets,
+  //     never rewrites the site — it only corrects design DATA in the artifacts.
+  let artDirection: ArtDirectionArtifact | undefined;
+  const authority = input.conceptAuthority || input.artDirection?.conceptAuthority;
+  const driftFinding = findings.find((f) => f.category === 'concept-drift');
+  const assetMissing = findings.some((f) => f.category === 'missing-asset-plan');
+  if (input.artDirection && (driftFinding || assetMissing)) {
+    let art = input.artDirection;
+    let artChanged = false;
+
+    // 4a — Re-assert the primary-concept archetype on a flagged concept drift.
+    if (driftFinding && authority && authority.primaryConcept !== 'marketplace') {
+      const expected = CATEGORY_TO_ARCHETYPE[authority.primaryConcept];
+      const spec = expected ? DESIGN_ARCHETYPES[expected] : undefined;
+      const currentKey = art.designArchetype?.key;
+      if (spec && currentKey && currentKey !== spec.key) {
+        const corrected: DesignArchetype = {
+          name: L(lang, spec.name[0], spec.name[1]),
+          key: spec.key,
+          reason: L(lang, spec.reason[0], spec.reason[1]),
+          avoidGenericSaas: spec.avoidGenericSaas,
+          archetypeTags: spec.tags,
+        };
+        art = { ...art, designArchetype: corrected, correctedConceptDrift: true, conceptAuthority: authority };
+        artChanged = true;
+        addApplied('concept-drift', 'artDirection.designArchetype', currentKey, spec.key,
+          L(lang, `Re-asserted the "${authority.primaryConcept}" primary-concept archetype after a target-vertical drift (no redesign, no invented content).`,
+            `Hedef-dikey kaymasından sonra "${authority.primaryConcept}" birincil-konsept arketipi yeniden uygulandı (yeniden tasarım yok, uydurma içerik yok).`));
+      }
+    }
+
+    // 4b — Add a missing Visual Asset Plan (DATA ONLY; no image/video API call).
+    if (!art.visualAssetPlan?.assetSlots?.length) {
+      try {
+        const specKey = (authority && CATEGORY_TO_ARCHETYPE[authority.primaryConcept]) || art.designArchetype?.key || 'modern-brand';
+        const spec = DESIGN_ARCHETYPES[specKey] || DESIGN_ARCHETYPES['modern-brand'];
+        const plan = deriveVisualAssetPlan(spec, authority, undefined, art.colorSystem, lang);
+        art = { ...art, visualAssetPlan: plan };
+        artChanged = true;
+        addApplied('visual-asset-plan', 'artDirection.visualAssetPlan', undefined, plan.heroVisualType,
+          L(lang, 'Added a concept-specific Visual Asset Plan (CSS/SVG now, external image/video reserved for a later phase).',
+            'Konsepte özgü bir Görsel Varlık Planı eklendi (şimdi CSS/SVG, harici görsel/video sonraki aşamaya ayrıldı).'));
+      } catch { /* non-blocking */ }
+    }
+
+    if (artChanged) artDirection = art;
+  }
+
   // REFUSALS — always record the broad scope the Fixer will not touch, plus a
   // concrete refusal when the Reviewer flagged a structural/concept issue.
   if (flaggedArchitecture) {
@@ -4272,7 +4815,7 @@ export function deriveFixer(input: FixerInput): { artifact: FixerAgentArtifact; 
     safeRepairScope: FIXER_SAFE_SCOPE, refusedScope: fixerRefusedScope(lang),
     summary,
   };
-  return { artifact, sectionItems, files };
+  return { artifact, sectionItems, files, artDirection };
 }
 
 /**
@@ -4285,9 +4828,9 @@ export function runFixer(input: FixerInput): FixerResult {
   const name = L(lang, 'Fixer Agent', 'Düzeltici Ajan');
   const activity = L(lang, 'Applying safe reviewer-driven repairs', 'Reviewer kaynaklı güvenli düzeltmeler uygulanıyor');
   try {
-    const { artifact, sectionItems, files } = deriveFixer(input);
+    const { artifact, sectionItems, files, artDirection } = deriveFixer(input);
     // 'applied' and 'no-op' both ran cleanly → 'done'; only fail-open is 'failed'.
-    return { agent: { id: 'fixer', name, status: 'done', summary: artifact.summary, currentActivity: activity, artifact }, artifact, sectionItems, files };
+    return { agent: { id: 'fixer', name, status: 'done', summary: artifact.summary, currentActivity: activity, artifact }, artifact, sectionItems, files, artDirection };
   } catch {
     const artifact = failedOpenFixer(lang);
     return { agent: { id: 'fixer', name, status: 'failed', summary: artifact.summary, currentActivity: activity, artifact }, artifact, sectionItems: input.sectionItems, files: input.files };
