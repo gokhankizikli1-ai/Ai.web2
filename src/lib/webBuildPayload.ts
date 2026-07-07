@@ -253,6 +253,34 @@ function uid(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/**
+ * Guarantee the section-item invariant the ENTIRE package assembly relies on: an
+ * array of plain objects, each with a stable, non-empty string `id` and `name`.
+ *
+ * Every downstream consumer — deriveLayoutPlan (which calls `pascal(id)` →
+ * `id.replace(...)`), itemsToCopies, synthesizeFromCopies, deriveBuildActivity,
+ * summarize — maps `s.id` / `s.name`. A section item whose `id` is missing or not
+ * a string (a thin/partial backend reply, an old persisted build, or a malformed
+ * entry) makes `String.prototype.replace` throw a TypeError MID-ASSEMBLY. Because
+ * the core derivations below are not individually guarded, that throw propagates
+ * out of buildWebBuildPayload, so the caller never receives a payload and shows
+ * the generic "incomplete build package" banner — Preview and All Files never
+ * mount. Normalizing here (drop non-objects, synthesize `section-<i>` ids/names)
+ * makes the source-of-truth safe without fabricating any real content.
+ */
+function normalizeSectionItems(items: unknown): WebBuildSectionItem[] {
+  if (!Array.isArray(items)) return [];
+  return items
+    .filter((s): s is WebBuildSectionItem => !!s && typeof s === 'object')
+    .map((s, i) => {
+      const id = typeof s.id === 'string' && s.id.trim() ? s.id : `section-${i}`;
+      const name = typeof s.name === 'string' && s.name.trim()
+        ? s.name
+        : (typeof s.id === 'string' && s.id.trim() ? s.id : `Section ${i + 1}`);
+      return id === s.id && name === s.name ? s : { ...s, id, name };
+    });
+}
+
 /** WebBuildSectionItem → SectionCopy (for synthesizing files from a brief). */
 function itemsToCopies(items: WebBuildSectionItem[]): SynthCopy[] {
   return items.map((s) => ({
@@ -263,6 +291,29 @@ function itemsToCopies(items: WebBuildSectionItem[]): SynthCopy[] {
 }
 
 /**
+ * Assemble (or extend) the persisted Web Build package. PUBLIC ENTRY POINT — it
+ * is self-healing: the normal assembly runs inside a guard so that if any core
+ * derivation throws unexpectedly, we still return a COMPLETE, usable package
+ * synthesized from concept-appropriate fallback sections instead of propagating
+ * the throw (which the callers surface as the "incomplete build package" banner,
+ * blocking Preview AND All Files). The banner validation is NOT removed — this
+ * guarantees the package it validates is always well-formed at the source.
+ */
+export function buildWebBuildPayload(
+  prompt: string, result: WebBuildResult, prev?: WebBuildPayload, lang?: string,
+): WebBuildPayload {
+  try {
+    return assembleWebBuildPayload(prompt, result, prev, lang);
+  } catch (err) {
+    if (typeof console !== 'undefined') {
+      // eslint-disable-next-line no-console
+      console.error('[WebBuild] package assembly failed — synthesizing a safe package', err);
+    }
+    return synthesizeSafePayload(prompt, result, prev, lang);
+  }
+}
+
+/**
  * Build (or extend) the persisted payload from a result — with BRIEF
  * INTELLIGENCE. Low-detail prompts ("mobilyacı için site yap") often come back
  * with a thin/generic reply; we infer the industry (`inferWebsiteBrief`), fill
@@ -270,7 +321,7 @@ function itemsToCopies(items: WebBuildSectionItem[]): SynthCopy[] {
  * synthesize an industry-appropriate section set + premium files so the user
  * still gets a real, specific site. Revisions never overwrite a good build.
  */
-export function buildWebBuildPayload(
+function assembleWebBuildPayload(
   prompt: string, result: WebBuildResult, prev?: WebBuildPayload, lang?: string,
 ): WebBuildPayload {
   const now = new Date().toISOString();
@@ -307,7 +358,7 @@ export function buildWebBuildPayload(
   // `!prev` narrowing (avoids `prev?.files` narrowing to `never` inside `!prev`).
   const prevFiles: WebBuildFile[] | undefined = prev?.files;
 
-  let sectionItems = parseSectionItems(result);
+  let sectionItems = normalizeSectionItems(parseSectionItems(result));
 
   // UPSTREAM AGENTS (Research → UI/Art Director → Strategy). Gated by
   // WEB_BUILD_AGENTS_ENABLED (ON by default; kill-switch via env). They are
@@ -348,7 +399,7 @@ export function buildWebBuildPayload(
         lang: effLang, isRevision: false,
       });
       if (arch.didRewrite && arch.sectionItems.length >= 5) {
-        sectionItems = arch.sectionItems;
+        sectionItems = normalizeSectionItems(arch.sectionItems);
         didRewriteArchitecture = true;
       }
     } catch {
@@ -371,7 +422,7 @@ export function buildWebBuildPayload(
   // The layout plan is derived from the FINAL section set so preview, files and
   // timeline all share one strategy-driven composition.
   if (!prev && !checkQuality(sectionItems, files.length, effLang).ok) {
-    sectionItems = fallbackSectionItems(inferred, effLang);
+    sectionItems = normalizeSectionItems(fallbackSectionItems(inferred, effLang));
     const plan = deriveLayoutPlan(artBrief, sectionItems.map((s) => ({ id: s.id, name: s.name })));
     files = diffFiles(prevFiles, synthesizeFromCopies(itemsToCopies(sectionItems), artBrief, plan));
   }
@@ -381,7 +432,7 @@ export function buildWebBuildPayload(
   // synthesize a real project from the inferred brief so Preview / All Files /
   // Open Preview always work. Never return an empty file list.
   if (files.length === 0) {
-    if (sectionItems.length === 0) sectionItems = fallbackSectionItems(inferred, effLang);
+    if (sectionItems.length === 0) sectionItems = normalizeSectionItems(fallbackSectionItems(inferred, effLang));
     const plan = deriveLayoutPlan(artBrief, sectionItems.map((s) => ({ id: s.id, name: s.name })));
     files = diffFiles(prevFiles, synthesizeFromCopies(itemsToCopies(sectionItems), artBrief, plan));
   }
@@ -540,6 +591,132 @@ export function buildWebBuildPayload(
     layoutPlan,
     agents,
     artifacts,
+    activity,
+    steps: prev ? [...prev.steps, step] : [step],
+    createdAt: prev?.createdAt || now,
+    updatedAt: now,
+  };
+}
+
+/**
+ * Absolute last-resort real file set — used ONLY when both concept synthesis and
+ * backend file resolution fail or return nothing, so All Files is never empty. It
+ * serializes the REAL section copy (no fabricated metrics, prices, sources or
+ * institutions), which keeps the package honest and openable.
+ */
+function minimalProjectFiles(items: WebBuildSectionItem[], brief: WebBuildBrief): SynthFile[] {
+  const data = {
+    type: brief.type || '',
+    sections: items.map((s) => ({
+      id: s.id, name: s.name,
+      headline: s.headline || '', sub: s.sub || '', cta: s.cta || '',
+      bullets: Array.isArray(s.bullets) ? s.bullets : [],
+    })),
+  };
+  return [{
+    path: 'src/data/siteContent.ts',
+    language: 'ts',
+    summary: 'Structured site content (section copy)',
+    content: `export const siteContent = ${JSON.stringify(data, null, 2)} as const;\n`,
+  }];
+}
+
+/**
+ * Self-healing fallback assembly. Runs only when the normal assembly threw. It
+ * rebuilds a COMPLETE package (non-empty sectionItems / files / steps / activity
+ * + a usable brief) from concept-appropriate sections — reusing the deterministic
+ * section-architecture playbook (archive → archive structure, etc.) so the result
+ * is never generic SaaS filler. Every step is independently guarded so this path
+ * itself can never throw. No fabricated data — only real inferred/structural copy.
+ */
+function synthesizeSafePayload(
+  prompt: string, result: WebBuildResult, prev?: WebBuildPayload, lang?: string,
+): WebBuildPayload {
+  const now = new Date().toISOString();
+  const effLang = lang || detectMessageLanguage(prompt);
+  const inferred = inferWebsiteBrief(prompt, effLang);
+
+  let brief: WebBuildBrief;
+  try {
+    const backendBrief = extractBrief(result.sections);
+    brief = {
+      ...backendBrief,
+      type: backendBrief.type || inferred.businessType,
+      audience: backendBrief.audience || inferred.targetAudience,
+      goal: backendBrief.goal || inferred.conversionGoal,
+      style: backendBrief.style || backendBrief.visualMood || inferred.visualStyle,
+      primaryCTA: backendBrief.primaryCTA || inferred.primaryCTA,
+      secondaryCTA: backendBrief.secondaryCTA || inferred.secondaryCTA,
+    };
+  } catch {
+    brief = { type: inferred.businessType };
+  }
+  const mergedBrief: WebBuildBrief = prev ? { ...prev.brief, ...brief } : brief;
+
+  // Concept-appropriate sections: prefer the (normalized) parsed set, upgrade to
+  // the deterministic architecture playbook when it yields a real structure, and
+  // finally fall back to the inferred industry section set. Always normalized.
+  let sectionItems: WebBuildSectionItem[] = [];
+  try { sectionItems = normalizeSectionItems(parseSectionItems(result)); } catch { sectionItems = []; }
+  try {
+    const arch = deriveAgentSectionArchitecture({
+      prompt, sectionItems, brief: mergedBrief, inferred, lang: effLang, isRevision: !!prev,
+    });
+    if (arch.sectionItems.length >= 5) sectionItems = normalizeSectionItems(arch.sectionItems);
+  } catch { /* keep parsed items */ }
+  if (sectionItems.length === 0) {
+    try { sectionItems = normalizeSectionItems(fallbackSectionItems(inferred, effLang)); } catch { sectionItems = []; }
+  }
+
+  const prevFiles: WebBuildFile[] | undefined = prev?.files;
+  let files: WebBuildFile[] = [];
+  try {
+    const plan = deriveLayoutPlan(mergedBrief, sectionItems.map((s) => ({ id: s.id, name: s.name })));
+    files = diffFiles(prevFiles, synthesizeFromCopies(itemsToCopies(sectionItems), mergedBrief, plan));
+  } catch {
+    try { files = resolveFiles(result, prevFiles, mergedBrief); } catch { files = []; }
+  }
+  if (files.length === 0) files = diffFiles(prevFiles, minimalProjectFiles(sectionItems, mergedBrief));
+
+  let layoutPlan: WebBuildLayoutPlan | undefined;
+  try { layoutPlan = deriveLayoutPlan(mergedBrief, sectionItems.map((s) => ({ id: s.id, name: s.name }))); }
+  catch { layoutPlan = undefined; }
+
+  let activity: WebBuildActivityRow[];
+  try { activity = deriveBuildActivity(result, files, result.sources, layoutPlan); }
+  catch {
+    activity = [
+      { id: 'plan', labelKey: 'wbActPlan', status: 'done' },
+      { id: 'package', labelKey: 'wbActPackage', params: { count: files.length }, status: 'done' },
+      { id: 'save', labelKey: 'wbActSave', status: 'waiting' },
+    ];
+  }
+
+  const changed = files.filter((f) => f.status !== 'unchanged');
+  const summary: WebBuildSummary = {
+    type: mergedBrief.type,
+    sectionNames: sectionItems.map((s) => s.name),
+    fileCount: files.length,
+    added: changed.reduce((n, f) => n + f.added, 0),
+    removed: changed.reduce((n, f) => n + f.removed, 0),
+  };
+  const step: WebBuildStep = {
+    id: `step-${uid()}`, at: now, kind: prev ? 'revision' : 'build', prompt,
+    summary, files, activity, reply: result.reply,
+    research: prev ? undefined : result.research,
+    layoutPlan,
+  };
+  return {
+    source: 'web_build',
+    prompt: prev?.prompt || prompt,
+    brief: mergedBrief,
+    sectionItems,
+    sections: result.sections,
+    files,
+    reply: result.reply,
+    sources: (result.sources && result.sources.length ? result.sources : prev?.sources) || undefined,
+    research: result.research || prev?.research || undefined,
+    layoutPlan,
     activity,
     steps: prev ? [...prev.steps, step] : [step],
     createdAt: prev?.createdAt || now,
