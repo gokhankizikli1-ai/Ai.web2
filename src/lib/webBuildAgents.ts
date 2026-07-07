@@ -413,6 +413,20 @@ export interface ArtDirectionArtifact {
 export interface StrategyCTAHierarchy { primary: string; secondary: string }
 export interface StrategySectionIntent { section: string; purpose: string; visitorQuestion: string }
 
+/** The MODEL's AI-native Website Experience Plan (Phase 3) — its own decision about
+ *  the website + FRONT-END DEMO architecture, carried from the parsed brief. Never a
+ *  real product/backend; all fields optional. Consumed by the Interaction Contract. */
+export interface WebsiteExperiencePlan {
+  websiteExperienceModel?: string;
+  pageScreenModel?: string;
+  primaryWebsiteExperience?: string;
+  demoSurfaces?: string[];
+  statefulDemoComponents?: string[];
+  navigationModel?: string;
+  mediaMotionPlan?: string;
+  summary: string;
+}
+
 export interface StrategyAgentArtifact {
   positioning: string;
   mainPromise: string;
@@ -434,6 +448,10 @@ export interface StrategyAgentArtifact {
    *  open-record-detail …). Optional → old saved builds still load. Downstream
    *  Preview/Files DO NOT consume it yet (contract-only phase). */
   interactionContract?: InteractionContract;
+  /** Phase 3 — the model's own Website Experience Plan (experience model, page/
+   *  screen model, navigation model, demo surfaces…). Optional → old builds load.
+   *  The Interaction Contract PREFERS this over deterministic keyword fallbacks. */
+  websiteExperiencePlan?: WebsiteExperiencePlan;
   summary: string;
 }
 
@@ -2977,11 +2995,43 @@ export function deriveStrategyAgent(
     art?.trustVisualDirection ? 'trustVisualDirection' : '',
   ]);
 
+  // Phase 3 — the model's AI-native Website Experience Plan, carried from the parsed
+  // brief. Present only when the model actually returned a field (else undefined so
+  // old builds stay clean). Website + front-end demo decisions only — never a real
+  // product/backend. The Interaction Contract PREFERS this over keyword fallbacks.
+  const cl = (s?: string) => (s || '').trim();
+  const splitList = (s?: string): string[] =>
+    (s || '').split(/[,;、·|]/).map((x) => x.trim()).filter((x) => x && !/^none$/i.test(x));
+  let websiteExperiencePlan: WebsiteExperiencePlan | undefined;
+  {
+    const wem = cl(brief.websiteExperienceModel);
+    const psm = cl(brief.pageScreenModel);
+    const pwe = cl(brief.primaryWebsiteExperience);
+    const nav = cl(brief.navigationModel);
+    const mmp = cl(brief.mediaMotionPlan);
+    const surfaces = splitList(brief.demoSurfaces);
+    const comps = splitList(brief.statefulDemoComponents);
+    if (wem || psm || pwe || nav || mmp || surfaces.length || comps.length) {
+      websiteExperiencePlan = {
+        websiteExperienceModel: wem || undefined,
+        pageScreenModel: psm || undefined,
+        primaryWebsiteExperience: pwe || undefined,
+        demoSurfaces: surfaces.length ? surfaces : undefined,
+        statefulDemoComponents: comps.length ? comps : undefined,
+        navigationModel: nav || undefined,
+        mediaMotionPlan: mmp || undefined,
+        summary: L(lang,
+          `Website experience: ${wem || 'focused site'}${nav ? ` · nav: ${nav}` : ''}${pwe ? ` · primary: ${pwe}` : ''} (front-end demo only).`,
+          `Web sitesi deneyimi: ${wem || 'odaklı site'}${nav ? ` · gezinme: ${nav}` : ''}${pwe ? ` · birincil: ${pwe}` : ''} (yalnızca ön yüz demosu).`),
+      };
+    }
+  }
+
   // Phase 1 Interaction Contract — a structured, concept-specific declaration of
   // the richer actions each section should support (chat demo, filter, detail
   // modal, quote/access forms …). Derived from the SAME signals the strategy just
-  // reasoned over (concept category, CTA hierarchy, final sections). Fully guarded
-  // and never throws; Preview/Files do not consume it yet.
+  // reasoned over (concept category, CTA hierarchy, final sections) and now PREFERS
+  // the model's Website Experience Plan. Fully guarded; Preview/Files consume it.
   let interactionContract: InteractionContract | undefined;
   try {
     interactionContract = deriveInteractionContract({
@@ -2992,6 +3042,7 @@ export function deriveStrategyAgent(
       ctaHierarchy: { primary, secondary },
       sections,
       artMode: art?.designArchetype?.key,
+      experiencePlan: websiteExperiencePlan,
       lang,
     });
   } catch {
@@ -3027,6 +3078,7 @@ export function deriveStrategyAgent(
     usedResearchInputs: usedResearchInputs.length ? usedResearchInputs : undefined,
     usedArtDirectionInputs: usedArtDirectionInputs.length ? usedArtDirectionInputs : undefined,
     interactionContract,
+    websiteExperiencePlan,
     summary,
   };
 }
@@ -4377,6 +4429,7 @@ function producedFields(agent: WebBuildAgent, lang: Lang): string[] {
           s.conversionStrategy ? L(lang, 'conversion path', 'dönüşüm yolu') : '',
           s.positioning ? L(lang, 'positioning', 'konumlandırma') : '',
           nonEmpty(s.sectionIntent) ? L(lang, 'section intent', 'bölüm amacı') : '',
+          s.websiteExperiencePlan ? L(lang, 'website experience plan', 'web deneyim planı') : '',
           s.interactionContract ? L(lang, 'interaction contract', 'etkileşim sözleşmesi') : '',
         ]);
       }
