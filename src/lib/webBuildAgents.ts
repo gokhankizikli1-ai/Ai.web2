@@ -3461,7 +3461,7 @@ export function deriveStrategyAgent(
     const pcta = cl(brief.primaryEntryCTA);
     const scta = cl(brief.secondaryEntryCTA);
     const navb = cl(brief.navigationBehavior);
-    if (wem || psm || pwe || nav || mmp || surfaces.length || comps.length || efm || escr || pescr || navb) {
+    if (wem || psm || pwe || nav || mmp || surfaces.length || comps.length || efm || lreq || escr || pescr || pcta || scta || navb) {
       websiteExperiencePlan = {
         websiteExperienceModel: wem || undefined,
         pageScreenModel: psm || undefined,

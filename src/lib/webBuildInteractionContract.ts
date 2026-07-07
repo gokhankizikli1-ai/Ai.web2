@@ -292,6 +292,32 @@ function familyPostEntryKind(family: Family, chat: boolean): string | undefined 
   }
 }
 
+/** Map a model-authored post-entry label to the Preview's screen-kind token. */
+function postEntryKindFromPlan(raw?: string): string | undefined {
+  const s = clean(raw).toLowerCase();
+  if (!s) return undefined;
+  const slug = s.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  if (/^(product-demo|chat|use-cases|integrations|security|pricing|catalog|detail|financing|collection|record|access|projects|before-after|quote)$/.test(slug)) return slug;
+  if (/chat|assistant|conversation|copilot|\bbot\b/.test(s)) return 'chat';
+  if (/product[- ]?demo|demo (screen|page|experience)|playground|sandbox/.test(s)) return 'product-demo';
+  if (/quote|teklif|estimate|consultation|danış|request[- ]?quote/.test(s)) return 'quote';
+  if (/before[- ]?after|önce[- ]?sonra|transformation|dönüşüm/.test(s)) return 'before-after';
+  if (/access|erişim|researcher|araştırmacı/.test(s)) return 'access';
+  if (/pricing|\bplans?\b|\bprice\b|fiyat|abonelik|paket/.test(s)) return 'pricing';
+  if (/financ|payment|loan|kredi|ödeme|installment|taksit/.test(s)) return 'financing';
+  if (/record|belge|document|manuscript|elyazma/.test(s)) return 'record';
+  if (/collection|koleksiyon|\bindex\b|archive|arşiv|research|filter/.test(s)) return 'collection';
+  if (/catalog|inventory|envanter|listing|products?|vehicles?|shop|store|mağaza/.test(s)) return 'catalog';
+  if (/detail|preview/.test(s)) return 'detail';
+  if (/gallery|galeri|project|proje|portfolio|showcase/.test(s)) return 'projects';
+  if (/use[- ]?case|scenario|workflow|solution|senaryo|kullanım/.test(s)) return 'use-cases';
+  if (/integration|connect|\bapi\b|plugin|webhook|entegrasyon/.test(s)) return 'integrations';
+  if (/security|trust|compliance|privacy|güven|güvenlik/.test(s)) return 'security';
+  if (/dashboard/.test(s)) return 'dashboard';
+  if (/demo|product|playground|sandbox/.test(s)) return 'product-demo';
+  return undefined;
+}
+
 /** Default entry-flow model for a concept family (used when the model is silent). */
 function familyEntryModel(family: Family): string {
   switch (family) {
@@ -352,7 +378,7 @@ function deriveEntryFlow(
 ): EntryFlowResult {
   // A) the model's own entry model → B/C) family fallback → D) single-page.
   const model = normalizeEntryModel(plan?.entryFlowModel) || familyEntryModel(family);
-  const postEntryScreenId = familyPostEntryKind(family, chat);
+  const postEntryScreenId = postEntryKindFromPlan(plan?.postEntryScreen) || familyPostEntryKind(family, chat);
 
   // landingRequired: honour an explicit model yes/no, else infer from the model.
   const rawLanding = (plan?.landingRequired || '').toLowerCase().trim();
