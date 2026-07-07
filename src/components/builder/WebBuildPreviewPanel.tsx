@@ -1,4 +1,4 @@
-import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { Component, useState, type ErrorInfo, type ReactNode } from 'react';
 import { ExternalLink } from 'lucide-react';
 import BrowserFrame from '@/components/builder/BrowserFrame';
 import WebBuildPreviewDocument from '@/components/builder/WebBuildPreviewDocument';
@@ -50,6 +50,9 @@ export default function WebBuildPreviewPanel({
 }) {
   const { t, lang } = useLanguageStore();
   const url = slug || 'preview.korvix.build';
+  // Set when "Open preview" could not write/verify the localStorage stash (full
+  // storage) — we surface it inline instead of opening a broken standalone route.
+  const [openFailed, setOpenFailed] = useState(false);
 
   // Never trust the inputs to be well-formed: an undefined/null section list or
   // brief must not crash the drawer. Treat sections as an array and the brief as
@@ -98,13 +101,23 @@ export default function WebBuildPreviewPanel({
 
   return (
     <div>
-      <div className="mb-3 flex justify-end">
+      <div className="mb-3 flex flex-col items-end gap-2">
         <button
-          onClick={() => openPreviewInNewTab({ runId: runId || `preview-${Date.now().toString(36)}`, sectionItems: items, brief: safeBrief, slug: url, returnTo: currentReturnTo() })}
+          onClick={() => {
+            const opened = openPreviewInNewTab({ runId: runId || `preview-${Date.now().toString(36)}`, sectionItems: items, brief: safeBrief, slug: url, returnTo: currentReturnTo() });
+            setOpenFailed(!opened);
+          }}
           className="inline-flex items-center gap-1.5 rounded-lg border border-[#3B82F6]/30 bg-[#3B82F6]/[0.08] px-3 py-1.5 text-[12px] font-medium text-[#93C5FD] transition-colors hover:bg-[#3B82F6]/[0.14]"
         >
           <ExternalLink className="h-3.5 w-3.5" /> {t('wbOpenPreview')}
         </button>
+        {openFailed && (
+          <p className="max-w-sm text-right text-[11px] leading-relaxed text-[#F59E0B]">
+            {lang === 'tr'
+              ? 'Tarayıcı depolama alanı dolu olduğu için tam ekran önizleme açılamadı. Uygulama içi önizleme hâlâ kullanılabilir.'
+              : 'Could not open full preview because browser storage is full. The in-app preview is still available.'}
+          </p>
+        )}
       </div>
       <BrowserFrame url={url} accentColor={ACCENT}>
         <div className="max-h-[70vh] overflow-y-auto scrollbar-thin">
