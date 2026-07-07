@@ -251,6 +251,126 @@ function ResearchDebug({ research }: { research?: WebBuildResearch }) {
   );
 }
 
+/* ── Completed-run Plan Summary (Phase 4.5) ──────────────────────────────
+ * After a build completes the user should SEE what the AI planned — not a live
+ * "Think" stream (that only runs in-flight), and not chain-of-thought. This is a
+ * compact, honest product/design plan summary derived ONLY from already-persisted
+ * artifacts (the Website Experience Plan, the Interaction Contract, Art Direction,
+ * the layout plan, research status, section names). It never fabricates and never
+ * claims real backend/product functionality — the build is website + front-end
+ * demo only. Fully guarded: missing/old artifacts → a tiny safe summary or nothing. */
+const firstStr = (...xs: Array<string | undefined | null>): string => {
+  for (const x of xs) { const v = (x || '').trim(); if (v) return v; }
+  return '';
+};
+const shortStr = (s: string, n = 90): string => (s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s);
+const listStr = (xs: unknown, n = 3): string =>
+  Array.isArray(xs) ? xs.map((x) => String(x ?? '').trim()).filter(Boolean).slice(0, n).join(', ') : '';
+
+interface PlanSummaryData {
+  experienceModel: string;
+  pageScreen: string;
+  primaryExp: string;
+  demoSurfaces: string;
+  visual: string;
+  shellFromModel: boolean;
+  ownerRows: Array<[string, string]>;
+}
+
+/** Pure, guarded derivation — real persisted artifacts only. Returns null when
+ *  there is nothing meaningful to show (so old/empty builds render nothing). */
+function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
+  try {
+    const strategy = step.artifacts?.strategy;
+    const wep = strategy?.websiteExperiencePlan;
+    const contract = strategy?.interactionContract;
+    const art = step.artifacts?.artDirection;
+    const plan = step.layoutPlan;
+    const research = step.research;
+    const names = step.summary?.sectionNames || [];
+    if (!strategy && !plan && !art && !names.length) return null;
+
+    const experienceModel = firstStr(wep?.websiteExperienceModel, contract?.websiteExperienceModel, plan ? `${plan.archetype} site` : '', 'Single-page site');
+    const pageScreen = firstStr(wep?.pageScreenModel, contract?.pageScreenModel, contract?.experienceMode ? `${contract.experienceMode} shell` : '', names.length ? `${names.length} sections` : '');
+    const primaryExp = firstStr(wep?.primaryWebsiteExperience, contract?.primaryWebsiteExperience, contract?.primaryAction?.label, contract?.primaryAction?.type);
+    const demoSurfaces = firstStr(listStr(wep?.demoSurfaces), listStr((contract?.suggestedScreens || []).map((s) => s?.name)), listStr(contract?.requiredStatefulComponents));
+    const visual = firstStr(art?.designArchetype?.name, art?.visualSignature, listStr(art?.visualDifferentiators, 2), plan?.visualSystem?.motif, art?.visualMood);
+    const shellFromModel = !!(contract?.experienceMode || wep?.websiteExperienceModel || wep?.navigationModel || contract?.navigationModel);
+
+    const ownerRows: Array<[string, string]> = [];
+    if (research?.status) ownerRows.push(['research', `${research.status}${research.provider ? ` · ${research.provider}` : ''}${typeof research.sourceCount === 'number' ? ` · ${research.sourceCount} src` : ''}`]);
+    if (contract?.experienceMode) ownerRows.push(['experienceMode', contract.experienceMode]);
+    const navM = firstStr(contract?.navigationModel, wep?.navigationModel);
+    if (navM) ownerRows.push(['navigationModel', navM]);
+    const reqComps = listStr(contract?.requiredStatefulComponents, 8);
+    if (reqComps) ownerRows.push(['requiredStatefulComponents', reqComps]);
+    if (plan?.heroComposition) ownerRows.push(['heroComposition', plan.heroComposition]);
+    if (plan?.primaryVisualModule) ownerRows.push(['primaryVisualModule', plan.primaryVisualModule]);
+    if (plan?.visualSystem?.motif) ownerRows.push(['visualSystem.motif', plan.visualSystem.motif]);
+    const reviewer = step.artifacts?.reviewer;
+    if (reviewer?.status) ownerRows.push(['reviewer', reviewer.status]);
+    const fixer = step.artifacts?.fixer;
+    if (fixer) ownerRows.push(['fixer', `${fixer.status} · ${(fixer.appliedChanges || []).length} applied`]);
+
+    return { experienceModel, pageScreen, primaryExp, demoSurfaces, visual, shellFromModel, ownerRows };
+  } catch {
+    return null;
+  }
+}
+
+/** Compact, subtle plan summary shown ABOVE the Preview / All Files cards for the
+ *  latest completed run. User-visible; owner mode can expand raw diagnostics. */
+function CompletedPlanSummary({ step }: { step: WebBuildStep }) {
+  const { lang } = useLanguageStore();
+  const { isOwner } = useOwnerMode();
+  const data = useMemo(() => computePlanSummary(step), [step]);
+  if (!data) return null;
+  const L = (en: string, tr: string) => (lang === 'tr' ? tr : en);
+
+  const rows: Array<[string, string]> = [];
+  if (data.experienceModel) rows.push([L('Experience model', 'Deneyim modeli'), shortStr(data.experienceModel, 70)]);
+  if (data.pageScreen) rows.push([L('Page plan', 'Sayfa planı'), shortStr(data.pageScreen, 90)]);
+  if (data.primaryExp) rows.push([L('Primary experience', 'Birincil deneyim'), shortStr(data.primaryExp, 100)]);
+  if (data.demoSurfaces) rows.push([L('Demo surfaces', 'Demo yüzeyleri'), shortStr(data.demoSurfaces, 90)]);
+  if (data.visual) rows.push([L('Visual direction', 'Görsel yön'), shortStr(data.visual, 90)]);
+  if (!rows.length) return null;
+
+  const quality = L(
+    `Front-end demo only — no real backend, AI, database or payments; no fake metrics, logos or testimonials. Preview shell: ${data.shellFromModel ? 'from model plan' : 'fallback'}. All Files parity: pending.`,
+    `Yalnızca ön yüz demosu — gerçek arka uç, yapay zekâ, veritabanı veya ödeme yok; sahte metrik, logo veya yorum yok. Önizleme kabuğu: ${data.shellFromModel ? 'model planından' : 'yedek'}. Tüm Dosyalar eşleşmesi: bekliyor.`,
+  );
+
+  return (
+    <div className="space-y-1 pt-0.5">
+      <div className="text-[10.5px] font-medium uppercase tracking-wide text-[#64748B]">{L('Plan summary', 'Plan özeti')}</div>
+      <div className="space-y-1 text-[12px] leading-relaxed">
+        {rows.map(([k, v]) => (
+          <div key={k} className="flex gap-2">
+            <span className="w-32 shrink-0 text-[#64748B]">{k}</span>
+            <span className="min-w-0 break-words text-[#CBD5E1]">{v}</span>
+          </div>
+        ))}
+      </div>
+      <p className="text-[11px] leading-relaxed text-[#64748B]">{quality}</p>
+      {isOwner && data.ownerRows.length > 0 && (
+        <details className="mt-1 rounded-lg border border-white/[0.07] bg-white/[0.015] px-2.5 py-1.5 text-[11px] text-[#94A3B8]">
+          <summary className="cursor-pointer select-none text-[10.5px] uppercase tracking-wide text-[#64748B] hover:text-[#94A3B8]">
+            {L('Plan diagnostics', 'Plan tanılama')} · owner
+          </summary>
+          <div className="mt-1.5 space-y-1">
+            {data.ownerRows.map(([k, v]) => (
+              <div key={k} className="flex gap-2">
+                <span className="w-40 shrink-0 text-[#64748B]">{k}</span>
+                <span className="min-w-0 break-words text-[#CBD5E1]">{v}</span>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+    </div>
+  );
+}
+
 /* ── Agent workstream (work log) ─────────────────────────────────────────
  * The single running-activity surface for a finished turn: a compact work log
  * of the REAL agent pipeline — what each agent did, which fields it passed to the
@@ -365,6 +485,7 @@ export default function WebBuildConversation({
             {isLast && (
               <>
                 <AgentWorkLog agents={step.agents} files={step.files} />
+                <CompletedPlanSummary step={step} />
                 <div className="flex flex-col gap-2 pt-0.5">
                   <AttachmentCard icon={Monitor} title={t('wbCardPreview')} subtitle={t('wbCardPreviewSub')} actionLabel={t('wbCardOpen')} tone="accent" onClick={() => setPanel('preview')} />
                   <AttachmentCard icon={FolderTree} title={t('wbCardAllFiles')} subtitle={t('wbCardAllFilesSub')} actionLabel={t('wbCardOpen')} onClick={() => openFile(undefined)} />
