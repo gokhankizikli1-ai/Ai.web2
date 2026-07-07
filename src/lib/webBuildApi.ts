@@ -383,15 +383,27 @@ export async function generateWebBuild(
   let sections = parseBuildSections(reply);
   const present = new Set(sections.map((s) => norm(s.title)));
 
-  // A different reported mode means the request was routed to the wrong
-  // handler (e.g. a style/settings shortcut) — that IS a hard failure.
-  if (reportedMode && reportedMode !== WEBSITE_BUILDER_MODE && !opts?.revise) {
-    // eslint-disable-next-line no-console
-    console.warn(`[WebBuild] wrong mode="${reportedMode}" (expected ${WEBSITE_BUILDER_MODE})`);
-    throw new WebBuildError('invalid', `Routed to "${reportedMode}", not the website builder.`);
-  }
-
   let partial = false;
+
+  // A different reported mode usually means the request was routed to another
+  // handler (e.g. a style/settings shortcut). This used to be a HARD failure —
+  // but the backend sometimes MISLABELS the mode on an otherwise genuine build,
+  // and throwing here discarded a fully buildable reply before the tolerant
+  // parser + self-healing payload layer (buildWebBuildPayload) ever saw it, so the
+  // user got the generic "incomplete build package" banner for a valid build.
+  // Now we only hard-fail when the reply ALSO has nothing to build from (no parsed
+  // sections AND too tiny to be an Overview fallback); otherwise we treat the
+  // wrong mode as DEGRADED (partial) and let parsing/synthesis proceed. The warn
+  // log is preserved for owner/dev visibility either way.
+  if (reportedMode && reportedMode !== WEBSITE_BUILDER_MODE && !opts?.revise) {
+    const buildable = sections.length > 0 || reply.trim().length >= 40;
+    // eslint-disable-next-line no-console
+    console.warn(`[WebBuild] wrong mode="${reportedMode}" (expected ${WEBSITE_BUILDER_MODE})${buildable ? ' — degraded, building from reply' : ''}`);
+    if (!buildable) {
+      throw new WebBuildError('invalid', `Routed to "${reportedMode}", not the website builder.`);
+    }
+    partial = true; // reported mode was wrong but the reply is buildable → degraded
+  }
 
   if (sections.length === 0) {
     // No `##` headings. If it's a tiny one-liner it's a shortcut/garbage →
