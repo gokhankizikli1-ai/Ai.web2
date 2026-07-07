@@ -109,9 +109,18 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
 
   const failLive = useCallback((err: unknown) => {
     setLive(null);
+    // The strict fresh-build gate rejects a frontend-fallback/partial reply rather
+    // than showing a fake-success synthesized site. Surface an honest, specific
+    // message inline (no locale key needed) so Preview/All Files stay hidden.
+    if (err instanceof WebBuildError && err.kind === 'contract_failed') {
+      setErrorMsg(lang === 'tr'
+        ? "Korvix backend'den tam model-planlı bir build alamadı. Birazdan tekrar dene."
+        : 'Korvix could not get a complete model-planned build from the backend. Try again in a moment.');
+      return;
+    }
     const key = err instanceof WebBuildError ? webBuildErrorKeyFor(err.kind) : 'wbErrGeneric';
     setErrorMsg(t(key) || t('wbErrGeneric'));
-  }, [t]);
+  }, [t, lang]);
 
   /* ── Fresh generation ─────────────────────────────────────────────── */
   const runFresh = useCallback(async (idea: string, mode: BuilderMode | null) => {
