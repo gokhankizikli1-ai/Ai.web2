@@ -332,6 +332,16 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       ownerRows.push(['previewContract', modelNativeContract ? 'model-native' : 're-derived']);
       const scr = (contract.suggestedScreens || []).map((s) => s?.name).filter(Boolean);
       if (scr.length) ownerRows.push(['suggestedScreens', scr.join(', ')]);
+      // Phase 6B: Entry Flow diagnostics (real contract fields only).
+      if (contract.entryFlowModel) ownerRows.push(['entryFlowModel', contract.entryFlowModel]);
+      if (typeof contract.landingRequired === 'boolean') ownerRows.push(['landingRequired', String(contract.landingRequired)]);
+      if (contract.entryScreen) ownerRows.push(['entryScreen', contract.entryScreen]);
+      if (contract.postEntryScreen) ownerRows.push(['postEntryScreen', contract.postEntryScreen]);
+      if (contract.primaryEntryCTA) ownerRows.push(['primaryEntryCTA', contract.primaryEntryCTA]);
+      if (contract.secondaryEntryCTA) ownerRows.push(['secondaryEntryCTA', contract.secondaryEntryCTA]);
+      if (contract.navigationBehavior) ownerRows.push(['navigationBehavior', contract.navigationBehavior]);
+      if (contract.initialScreenId) ownerRows.push(['initialScreenId', contract.initialScreenId]);
+      if (contract.postEntryScreenId) ownerRows.push(['postEntryScreenId', contract.postEntryScreenId]);
     }
 
     // Planning-quality diagnostics (the honesty gate — model-planned vs fallback).

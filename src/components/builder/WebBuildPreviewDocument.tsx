@@ -1519,6 +1519,80 @@ function resolvePreviewShell(
   }
 }
 
+/* ── Phase 6B: Entry Flow resolution ─────────────────────────────────────────
+ * Maps the contract's entry-flow decision (initialScreenId / postEntryScreenId as
+ * screen KIND tokens) onto the REAL internal shell screens. A local screen
+ * transition only — never a route change, auth gate or real product surface. */
+interface EntryFlowResolved {
+  initialActivePage: string;      // 'home' or a real shell screen id
+  postEntryScreenId?: string;     // a real shell screen id (or undefined)
+  primaryEntryCTA?: string;
+  secondaryEntryCTA?: string;
+  shouldGateWithLanding: boolean;
+}
+
+/** Kind aliases — a requested token falls back to a compatible screen kind. */
+const ENTRY_KIND_ALIASES: Record<string, ScreenKind[]> = {
+  'product-demo': ['product-demo', 'chat'],
+  chat: ['chat', 'product-demo'],
+  dashboard: ['product-demo', 'chat'],
+  catalog: ['catalog', 'detail'],
+  detail: ['detail', 'catalog'],
+  collection: ['collection', 'record'],
+  record: ['record', 'collection'],
+  projects: ['projects', 'before-after', 'quote'],
+  quote: ['quote', 'projects'],
+};
+
+function resolveEntryFlow(
+  contract: InteractionContract | null | undefined,
+  shell: PreviewShell,
+  pages: PreviewPage[],
+): EntryFlowResolved {
+  try {
+    const screens = shell.screens || [];
+    const homeId = pages.find((p) => p.id === 'home')?.id || 'home';
+    // Map a kind token → a real shell screen id (compatible kind, else any screen).
+    const findScreen = (token?: string): string | undefined => {
+      if (!token) return undefined;
+      const t = token.toLowerCase();
+      if (t === 'home') return homeId;
+      const wanted = ENTRY_KIND_ALIASES[t] || [t as ScreenKind];
+      for (const k of wanted) { const sc = screens.find((s) => s.kind === k); if (sc) return sc.id; }
+      return screens[0]?.id;
+    };
+
+    const model = (contract?.entryFlowModel || '').toLowerCase();
+    const landingRequired = contract?.landingRequired;
+    const postEntryScreenId = findScreen(contract?.postEntryScreenId) || findScreen(contract?.initialScreenId);
+
+    // Decide the initial active page. Landing-gated / single-page / no screens →
+    // start on Home; direct-demo / dashboard-first / catalog-first / archive-
+    // exploration → start INSIDE the matching screen when it actually exists.
+    let initialActivePage = homeId;
+    let shouldGate = landingRequired !== false;
+    const startsInside = landingRequired === false
+      && (model === 'direct-demo' || model === 'dashboard-first' || model === 'catalog-first' || model === 'archive-exploration');
+    if (startsInside && screens.length) {
+      const inside = findScreen(contract?.initialScreenId) || findScreen(contract?.postEntryScreenId);
+      if (inside && screens.some((s) => s.id === inside)) { initialActivePage = inside; shouldGate = false; }
+    }
+    if (!screens.length) { initialActivePage = homeId; shouldGate = false; }
+    // Validate — never point at a screen that isn't present.
+    if (initialActivePage !== homeId && !screens.some((s) => s.id === initialActivePage)) initialActivePage = homeId;
+
+    return {
+      initialActivePage,
+      postEntryScreenId: postEntryScreenId && screens.some((s) => s.id === postEntryScreenId) ? postEntryScreenId : undefined,
+      primaryEntryCTA: contract?.primaryEntryCTA,
+      secondaryEntryCTA: contract?.secondaryEntryCTA,
+      shouldGateWithLanding: shouldGate,
+    };
+  } catch {
+    return { initialActivePage: 'home', shouldGateWithLanding: true };
+  }
+}
+
 /* ── Premium screen building blocks ──────────────────────────────────────── */
 
 function ScreenHeader({ label, purpose, onHome }: { label: string; purpose: string; onHome: () => void }) {
@@ -1826,6 +1900,16 @@ export default function WebBuildPreviewDocument({
           primaryWebsiteExperience: interactionContract.primaryWebsiteExperience,
           navigationModel: interactionContract.navigationModel,
           statefulDemoComponents: interactionContract.requiredStatefulComponents,
+          // Phase 6B: carry the model's ENTRY FLOW decision so re-derivation honours
+          // it (landing → demo/catalog/collection/quote, or straight in).
+          entryFlowModel: interactionContract.entryFlowModel,
+          landingRequired: typeof interactionContract.landingRequired === 'boolean'
+            ? (interactionContract.landingRequired ? 'yes' : 'no') : undefined,
+          entryScreen: interactionContract.entryScreen,
+          postEntryScreen: interactionContract.postEntryScreen,
+          primaryEntryCTA: interactionContract.primaryEntryCTA,
+          secondaryEntryCTA: interactionContract.secondaryEntryCTA,
+          navigationBehavior: interactionContract.navigationBehavior,
         } : undefined,
       });
       if (!interactionContract) return derived;
@@ -1841,6 +1925,18 @@ export default function WebBuildPreviewDocument({
         suggestedScreens: (interactionContract.suggestedScreens?.length ? interactionContract.suggestedScreens : derived.suggestedScreens),
         requiredStatefulComponents: uniqStr([...(interactionContract.requiredStatefulComponents || []), ...(derived.requiredStatefulComponents || [])]),
         conceptCategory: interactionContract.conceptCategory || derived.conceptCategory,
+        // Phase 6B: prefer the model's own entry-flow decision; keep re-derived
+        // screen tokens (initialScreenId/postEntryScreenId) so the Preview can map them.
+        entryFlowModel: interactionContract.entryFlowModel || derived.entryFlowModel,
+        landingRequired: typeof interactionContract.landingRequired === 'boolean' ? interactionContract.landingRequired : derived.landingRequired,
+        entryScreen: interactionContract.entryScreen || derived.entryScreen,
+        postEntryScreen: interactionContract.postEntryScreen || derived.postEntryScreen,
+        primaryEntryCTA: interactionContract.primaryEntryCTA || derived.primaryEntryCTA,
+        secondaryEntryCTA: interactionContract.secondaryEntryCTA || derived.secondaryEntryCTA,
+        navigationBehavior: interactionContract.navigationBehavior || derived.navigationBehavior,
+        initialScreenId: derived.initialScreenId || interactionContract.initialScreenId,
+        postEntryScreenId: derived.postEntryScreenId || interactionContract.postEntryScreenId,
+        entryAction: derived.entryAction || interactionContract.entryAction,
       };
     } catch { return interactionContract || null; }
   }, [interactionContract, sectionItems, brief, art.mode]);
@@ -1868,6 +1964,17 @@ export default function WebBuildPreviewDocument({
   function runContractAction(action: InteractionAction, section?: WebBuildSectionItem, payload?: { title?: string; lines?: string[] }) {
     try {
       if (!action || typeof action !== 'object') return;
+      // Phase 6B: landing-gated entry. When the PRIMARY entry CTA is clicked from the
+      // landing (Home) and the entry flow has a real post-entry screen, transition
+      // INTO that internal screen (Product Demo / Chat / Catalog / Collection /
+      // Projects) instead of only opening an overlay or scrolling. Local screen
+      // switch only — no route, no backend. Secondary/supporting CTAs are untouched.
+      const entryPrimary = contract?.entryAction || contract?.primaryAction;
+      if (entryFlow.postEntryScreenId && activePage === 'home' && entryPrimary
+        && (action.id === entryPrimary.id || (action.priority === 'primary' && action.type === entryPrimary.type))) {
+        setActivePage(entryFlow.postEntryScreenId);
+        return;
+      }
       const owner = section
         || (action.sourceSectionId ? byAnchor.get(anchorId(action.sourceSectionId)) : undefined)
         || (action.targetSectionId ? byAnchor.get(anchorId(action.targetSectionId)) : undefined);
@@ -1932,6 +2039,20 @@ export default function WebBuildPreviewDocument({
   // when plumbed, else a safe per-mode fallback) + whether ambient motion may run.
   const heroVisual = resolveHeroVisual(visualAssetPlan, art.mode);
   const ambientAllowed = !reduce && motionAmbientAllowed(deriveMotionFit(brief, art, plan));
+
+  // ── Phase 6B: resolve the Entry Flow (landing → experience, or straight in) and
+  // map it onto the real internal screens. Then initialize/repair activePage from
+  // it: on first settle start where the model decided; on later shell/contract
+  // changes keep the current page if still valid, else reset to the entry page.
+  const entryFlow = useMemo(() => resolveEntryFlow(contract, shell, pages), [contract, shell, pages]);
+  const didInitEntry = useRef(false);
+  useEffect(() => {
+    setActivePage((cur) => {
+      const valid = cur === 'home' || pages.some((p) => p.id === cur) || demoScreens.some((s) => s.id === cur);
+      if (!didInitEntry.current) { didInitEntry.current = true; return entryFlow.initialActivePage; }
+      return valid ? cur : entryFlow.initialActivePage;
+    });
+  }, [entryFlow.initialActivePage, demoScreens, pages]);
 
   // `current`/`pages[0]` must never be assumed present: buildPreviewPages always
   // returns a Home page today, but a defensive Home fallback (synthesized from the

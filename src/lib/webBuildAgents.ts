@@ -502,6 +502,16 @@ export interface WebsiteExperiencePlan {
   statefulDemoComponents?: string[];
   navigationModel?: string;
   mediaMotionPlan?: string;
+  /* ── Entry Flow (Phase 6B) — how the visitor ENTERS the experience. All
+   *  optional & backward compatible; populated from the model's brief fields and
+   *  consumed by the Interaction Contract → Preview entry-flow resolver. */
+  entryFlowModel?: string;
+  landingRequired?: string;
+  entryScreen?: string;
+  postEntryScreen?: string;
+  primaryEntryCTA?: string;
+  secondaryEntryCTA?: string;
+  navigationBehavior?: string;
   summary: string;
 }
 
@@ -3443,7 +3453,15 @@ export function deriveStrategyAgent(
     const mmp = cl(brief.mediaMotionPlan);
     const surfaces = splitList(brief.demoSurfaces);
     const comps = splitList(brief.statefulDemoComponents);
-    if (wem || psm || pwe || nav || mmp || surfaces.length || comps.length) {
+    // Entry Flow (Phase 6B) — the model's decision about landing → experience.
+    const efm = cl(brief.entryFlowModel);
+    const lreq = cl(brief.landingRequired);
+    const escr = cl(brief.entryScreen);
+    const pescr = cl(brief.postEntryScreen);
+    const pcta = cl(brief.primaryEntryCTA);
+    const scta = cl(brief.secondaryEntryCTA);
+    const navb = cl(brief.navigationBehavior);
+    if (wem || psm || pwe || nav || mmp || surfaces.length || comps.length || efm || escr || pescr || navb) {
       websiteExperiencePlan = {
         websiteExperienceModel: wem || undefined,
         pageScreenModel: psm || undefined,
@@ -3452,6 +3470,13 @@ export function deriveStrategyAgent(
         statefulDemoComponents: comps.length ? comps : undefined,
         navigationModel: nav || undefined,
         mediaMotionPlan: mmp || undefined,
+        entryFlowModel: efm || undefined,
+        landingRequired: lreq || undefined,
+        entryScreen: escr || undefined,
+        postEntryScreen: pescr || undefined,
+        primaryEntryCTA: pcta || undefined,
+        secondaryEntryCTA: scta || undefined,
+        navigationBehavior: navb || undefined,
         summary: L(lang,
           `Website experience: ${wem || 'focused site'}${nav ? ` · nav: ${nav}` : ''}${pwe ? ` · primary: ${pwe}` : ''} (front-end demo only).`,
           `Web sitesi deneyimi: ${wem || 'odaklı site'}${nav ? ` · gezinme: ${nav}` : ''}${pwe ? ` · birincil: ${pwe}` : ''} (yalnızca ön yüz demosu).`),
