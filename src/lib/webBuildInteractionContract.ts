@@ -2,12 +2,21 @@
  * Web Build INTERACTION CONTRACT layer (Phase 1 — contract only).
  *
  * `webBuildInteraction.ts` routes CTAs to scroll anchors, which prevents dead
- * links but cannot express the richer, app-like behaviour a real concept needs
- * (open a chat demo, open a detail modal, filter a catalog, open a quote form,
- * request archive access …). This module derives a small, STRUCTURED and
- * DETERMINISTIC "Interaction Contract" — a declaration of which actions each
- * section SHOULD support and which stateful components they imply — so a later
- * phase (Preview + generated files) can implement the real behaviour safely.
+ * links but cannot express the richer, demo-like behaviour a marketing site needs
+ * (open a chat DEMO, open a detail modal, filter a catalog, open a quote FORM
+ * SHELL, request archive access …). This module derives a small, STRUCTURED and
+ * DETERMINISTIC "Interaction Contract" — a declaration of which FRONT-END /
+ * WEBSITE-DEMO actions each section should support and which preview/demo UI
+ * components they imply — so a later phase (Preview + generated files) can
+ * implement them as local, client-side illustrations.
+ *
+ * SCOPE — WEBSITE + FRONT-END DEMO ONLY. Korvix Web Build is a WEBSITE builder,
+ * not a product/backend builder. Every declared action is a front-end experience
+ * that COMMUNICATES/DEMONSTRATES the product (sample chat bubbles, listing cards,
+ * a record preview, a request-form shell) — never the real thing. Nothing here
+ * implies a backend, database, payments, auth, a real search engine, or real AI
+ * conversation logic, and Preview/Files must keep it local + honest (no fake AI
+ * output, no fake successful submissions, no claim the product is running).
  *
  * PHASE 1 SCOPE: this is the contract only. Nothing here renders UI, changes the
  * preview, or changes generated files. It is a pure function of its inputs, is
@@ -51,9 +60,10 @@ export interface InteractionContract {
   secondaryActions: InteractionAction[];
   /** sectionId → the actions that section should support. */
   sectionActions: Record<string, InteractionAction[]>;
-  /** Stateful components a later phase must build to honour the contract (e.g.
-   *  "chat-demo-panel", "filter-controls", "record-detail-modal"). Never a claim
-   *  about existing features — a to-build list for Phase 2. */
+  /** Preview/DEMO UI components a later phase should build to honour the contract
+   *  (e.g. "chat-demo-panel", "filter-controls", "record-detail-modal"). These are
+   *  FRONT-END, client-side demo surfaces only — never a real backend/AI/database
+   *  feature, and never a claim about an existing/running product. */
   requiredStatefulComponents: string[];
   notes: string[];
 }
@@ -290,7 +300,9 @@ function build(input: InteractionContractInput): InteractionContract {
     primary = mk('scroll-to-section', primaryLabel, { targetSectionId: target?.id, priority: 'primary', reason: 'Safe default — scroll to the primary conversion section.' });
   }
 
-  notes.push(L(lang, 'Phase 1 contract only — no interaction UI is implemented yet.', 'Yalnızca Faz 1 sözleşmesi — henüz etkileşim arayüzü uygulanmadı.'));
+  notes.push(L(lang,
+    'Website + front-end demo only — actions are local, client-side illustrations (no backend, AI, database, payments or real submissions).',
+    'Yalnızca web sitesi + ön yüz demosu — eylemler yerel, istemci tarafı örneklerdir (arka uç, yapay zekâ, veritabanı, ödeme veya gerçek gönderim yok).'));
   notes.push(family === 'general'
     ? L(lang, 'General concept — scroll-only interactions by default.', 'Genel konsept — varsayılan olarak yalnızca kaydırma etkileşimleri.')
     : L(lang, `Concept family: ${family}.`, `Konsept ailesi: ${family}.`));
