@@ -61,6 +61,12 @@ export default function WebBuildPreviewPanel({
     return <div className="rounded-xl border border-dashed border-white/[0.08] px-4 py-8 text-center text-[12px] text-[#64748B]">{t('wbPreviewEmpty')}</div>;
   }
 
+  // Stable signature for the current preview instance. Keying the boundary by it
+  // forces a remount (and clears any stuck error state) whenever the preview
+  // input actually changes — so a fixed/changed build is never permanently
+  // hidden behind a boundary that caught an earlier, unrelated failure.
+  const previewKey = `${runId || ''}|${url}|${items.map((s) => s?.id || '').join(',')}`;
+
   // Compact, honest fallback shown INSIDE the browser frame if the preview
   // document cannot render. No fake claims — real section names only, and a
   // reminder that All Files is still reachable from the conversation.
@@ -102,7 +108,7 @@ export default function WebBuildPreviewPanel({
       </div>
       <BrowserFrame url={url} accentColor={ACCENT}>
         <div className="max-h-[70vh] overflow-y-auto scrollbar-thin">
-          <PreviewErrorBoundary fallback={previewFallback}>
+          <PreviewErrorBoundary key={previewKey} fallback={previewFallback}>
             <WebBuildPreviewDocument sectionItems={items} brief={safeBrief} />
           </PreviewErrorBoundary>
         </div>
