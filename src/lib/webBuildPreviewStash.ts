@@ -58,10 +58,76 @@ export function currentReturnTo(): string | undefined {
   return sanitizeReturnTo(window.location.hash || `${window.location.pathname}${window.location.search}`);
 }
 
-export function stashPreview(data: WebBuildPreviewData): void {
+/** Reduce any candidate to the MINIMAL preview payload the standalone route needs
+ *  — never the full generated files/steps, so the stash stays small and is far
+ *  less likely to hit the localStorage quota. */
+function toMinimalPreview(data: WebBuildPreviewData): WebBuildPreviewData {
+  return {
+    runId: data.runId,
+    sectionItems: Array.isArray(data.sectionItems) ? data.sectionItems : [],
+    brief: data.brief || ({} as WebBuildBrief),
+    slug: data.slug,
+    prompt: data.prompt,
+    returnTo: data.returnTo,
+    returnChatSessionId: data.returnChatSessionId,
+    returnWebBuildRunId: data.returnWebBuildRunId,
+  };
+}
+
+/** True when the persisted stash for `runId` round-trips to USABLE preview data
+ *  (same runId, a non-empty sectionItems array). This is what makes the write
+ *  verifiable — a silently-dropped/quota-failed write reads back as unusable. */
+function verifyStash(runId: string): boolean {
+  const back = readPreview(runId);
+  return !!back && back.runId === runId && Array.isArray(back.sectionItems) && back.sectionItems.length > 0;
+}
+
+/**
+ * Remove preview stashes for the current user scope (optionally keeping one run),
+ * to free localStorage before a retry. Only ever touches `…:preview:*` keys —
+ * NEVER session/active keys — so saved builds are untouched. Returns how many
+ * stale stashes were removed. Never throws.
+ */
+export function prunePreviewStashes(keepRunId?: string): number {
+  let removed = 0;
   try {
-    localStorage.setItem(key(data.runId), JSON.stringify(data));
-  } catch { /* ignore quota/serialization errors */ }
+    const prefix = key(''); // korvix:webbuild:<scope>:preview:
+    const keepKey = keepRunId ? key(keepRunId) : '';
+    const stale: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(prefix) && k !== keepKey) stale.push(k);
+    }
+    for (const k of stale) {
+      try { localStorage.removeItem(k); removed++; } catch { /* ignore */ }
+    }
+  } catch { /* ignore */ }
+  return removed;
+}
+
+/**
+ * Persist minimal preview data for the standalone route and VERIFY it round-trips.
+ * Returns `true` only when the stash was written AND reads back as usable preview
+ * data — the old void version dropped quota/serialization failures silently, so
+ * "Open preview" opened a route with no data ("No preview available yet"). On a
+ * failed write we prune older preview stashes (keeping this run) to free space and
+ * retry once. Never throws.
+ */
+export function stashPreview(data: WebBuildPreviewData): boolean {
+  const minimal = toMinimalPreview(data);
+  const write = (): boolean => {
+    try {
+      localStorage.setItem(key(minimal.runId), JSON.stringify(minimal));
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  if (write() && verifyStash(minimal.runId)) return true;
+  // Quota/serialization failure (or a truncated write) — free space and retry once.
+  prunePreviewStashes(minimal.runId);
+  if (write() && verifyStash(minimal.runId)) return true;
+  return false;
 }
 
 export function readPreview(runId: string): WebBuildPreviewData | null {
@@ -82,7 +148,7 @@ export function readPreview(runId: string): WebBuildPreviewData | null {
  * hits the server, bypasses the SPA and renders a blank white page in
  * production. We therefore build a proper hash URL against the current
  * origin + path so the route resolves inside the app. */
-export function openPreviewInNewTab(data: WebBuildPreviewData): void {
+export function openPreviewInNewTab(data: WebBuildPreviewData): boolean {
   // Preserve a safe return path + restore context. The embedded ChatWebBuild
   // pre-stashes the owning chat session / Web Build session ids (keyed by the same
   // preview runId); the panel's "Open preview" must NOT drop them, so we merge
@@ -91,10 +157,16 @@ export function openPreviewInNewTab(data: WebBuildPreviewData): void {
   const returnTo = sanitizeReturnTo(data.returnTo) || sanitizeReturnTo(prev?.returnTo) || currentReturnTo();
   const returnChatSessionId = safeId(data.returnChatSessionId) || safeId(prev?.returnChatSessionId);
   const returnWebBuildRunId = safeId(data.returnWebBuildRunId) || safeId(prev?.returnWebBuildRunId);
-  stashPreview({ ...data, returnTo, returnChatSessionId, returnWebBuildRunId });
+  // Only open the standalone route once the stash is written AND verified — never
+  // open a route that would render "No preview available yet". The caller surfaces
+  // the failure to the user; the in-app drawer keeps rendering from React state.
+  if (!stashPreview({ ...data, returnTo, returnChatSessionId, returnWebBuildRunId })) return false;
   try {
     const base = window.location.href.split('#')[0];
     const url = `${base}#/preview/web-build/${encodeURIComponent(data.runId)}`;
     window.open(url, '_blank', 'noopener');
-  } catch { /* ignore */ }
+    return true;
+  } catch {
+    return false;
+  }
 }
