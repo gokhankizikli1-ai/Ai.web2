@@ -1,4 +1,4 @@
-import { Component, useMemo, useRef, useState, type ReactElement, type ReactNode, type ErrorInfo, type CSSProperties, type MouseEvent } from 'react';
+import { Component, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode, type ErrorInfo, type CSSProperties, type MouseEvent } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { designTokensForBrief } from '@/lib/webBuildBrief';
 import {
@@ -16,6 +16,10 @@ import {
   anchorId, deriveInteraction, ctaTargetForSection, pickNavSections,
   type InteractionContext,
 } from '@/lib/webBuildInteraction';
+import {
+  deriveInteractionContract,
+  type InteractionContract, type InteractionAction, type InteractionActionType,
+} from '@/lib/webBuildInteractionContract';
 
 /**
  * A REAL, premium rendered approximation of the generated site whose STRUCTURE is
@@ -63,6 +67,9 @@ class PreviewSectionErrorBoundary extends Component<{ label?: string; children: 
 
 const bulletsOf = (s: S) => (s.bullets?.length ? s.bullets : [s.sub || s.purpose || s.name].filter(Boolean));
 const heading = (s: S) => s.headline || s.name;
+/** Trim + de-dupe a set of copy lines (drops blanks). Used to build honest modal /
+ *  chat-demo content from a section's OWN real copy — never fabricated. */
+const cleanLines = (xs: (string | undefined)[]): string[] => Array.from(new Set(xs.map((x) => (x || '').trim()).filter(Boolean)));
 
 /* ── Honest proof / price primitives ─────────────────────────────────────
  * The old ProofStrip/PricingMembership hardcoded fabricated ratings, counts and
@@ -687,8 +694,23 @@ const HEROES: Record<HeroComposition, (p: HeroProps) => ReactElement> = {
   'event-experience': (p) => <HeroEvent {...p} />,
 };
 
+/* ── Preview interaction runtime (Phase 2) ───────────────────────────────
+ * The strategy's Interaction Contract is turned into REAL in-app behaviour here.
+ * Section variants receive an optional runtime so a card / row / chip / CTA can
+ * open a chat demo, a detail modal, a lead form, or drive an inline filter —
+ * instead of only scrolling. Everything is optional and guarded, so a section
+ * renders exactly as before when no contract action applies to it. */
+interface PreviewRuntime {
+  /** Run a contract action (opens the matching overlay or scrolls). Never throws. */
+  run: (action: InteractionAction, section?: S, payload?: { title?: string; lines?: string[] }) => void;
+  /** The declared actions for a section id (empty when none / malformed). */
+  actionsFor: (rawId: string) => InteractionAction[];
+  /** True when a section declares an action of the given type. */
+  hasType: (rawId: string, type: InteractionActionType) => boolean;
+}
+
 /* ── Section composition variants ─────────────────────────────────────── */
-interface VarProps { s: S; plan: WebBuildLayoutPlan; index: number; art: WebBuildArtIdentity; ctx: InteractionContext }
+interface VarProps { s: S; plan: WebBuildLayoutPlan; index: number; art: WebBuildArtIdentity; ctx: InteractionContext; rt?: PreviewRuntime }
 
 function FeatureGrid({ s, art }: VarProps) {
   const items = bulletsOf(s).slice(0, 6);
@@ -759,36 +781,65 @@ function DashboardData({ s, art }: VarProps) {
   );
 }
 
-function CatalogGrid({ s, art }: VarProps) {
+function CatalogGrid({ s, art, rt }: VarProps) {
   const tiles = bulletsOf(s).slice(0, 6);
+  // Contract-driven: cards open a detail modal; catalog/inventory can filter inline.
+  const detail = rt?.actionsFor(s.id).find((a) => a.type === 'open-detail-modal' || a.type === 'open-record-detail');
+  const canFilter = !!rt?.hasType(s.id, 'filter-list');
+  const [query, setQuery] = useState('');
+  const visible = canFilter && query.trim() ? tiles.filter((t) => t.toLowerCase().includes(query.trim().toLowerCase())) : tiles;
   return (
     <div className="mx-auto max-w-6xl px-6">
       <H2>{heading(s)}</H2>
+      {canFilter && (
+        <div className="mx-auto mt-6 flex max-w-md items-center gap-2 rounded-[var(--pr)] border border-[color:var(--bd)] bg-[var(--sf)] px-3.5 py-2">
+          <span className="text-slate-400" aria-hidden>⌕</span>
+          <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={s.sub || 'Filter'} className="w-full bg-transparent text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none" />
+        </div>
+      )}
       <div className="mt-10 grid grid-cols-2 gap-4 sm:grid-cols-3">
-        {tiles.map((b, i) => (
-          <Reveal key={i} i={i}>
-            <figure className={`group relative overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)] ${art.cardTone} ${i % 5 === 0 ? 'sm:col-span-2' : ''}`}>
+        {visible.map((b, i) => {
+          const tile = (
+            <figure className={`group relative h-full overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)] ${art.cardTone} ${i % 5 === 0 ? 'sm:col-span-2' : ''}`}>
               <div className={`relative w-full transition duration-500 group-hover:scale-[1.04] ${art.mediaTone}`} style={{ background: i % 3 === 0 ? 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 26%, transparent), color-mix(in srgb, var(--acc2) 14%, transparent))' : 'linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01))' }}>
                 <CardDetail mode={art.mode} />
               </div>
               <figcaption className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/70 to-transparent p-3 text-sm font-medium text-white">{b}</figcaption>
             </figure>
-          </Reveal>
-        ))}
+          );
+          return (
+            <Reveal key={i} i={i}>
+              {detail && rt
+                ? <button type="button" onClick={() => rt.run(detail, s, { title: b, lines: cleanLines([s.sub, ...tiles.filter((x) => x !== b)]) })} className="block w-full text-left">{tile}</button>
+                : tile}
+            </Reveal>
+          );
+        })}
       </div>
     </div>
   );
 }
 
-function CollectionArchive({ s, art }: VarProps) {
+function CollectionArchive({ s, art, rt }: VarProps) {
   const rows = bulletsOf(s).slice(0, 6);
+  // Contract-driven: rows open a record detail; collections can filter inline.
+  const detail = rt?.actionsFor(s.id).find((a) => a.type === 'open-record-detail' || a.type === 'open-detail-modal');
+  const canFilter = !!rt?.hasType(s.id, 'filter-list');
+  const [query, setQuery] = useState('');
+  const visible = canFilter && query.trim() ? rows.filter((r) => r.toLowerCase().includes(query.trim().toLowerCase())) : rows;
   return (
     <div className="mx-auto max-w-4xl px-6">
       <H2 align="left">{heading(s)}</H2>
+      {canFilter && (
+        <div className="mt-6 flex max-w-md items-center gap-2 rounded-[var(--pr)] border border-[color:var(--bd)] bg-[var(--sf)] px-3.5 py-2">
+          <span className="text-slate-400" aria-hidden>⌕</span>
+          <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={s.sub || 'Search records'} className="w-full bg-transparent text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none" />
+        </div>
+      )}
       <div className="mt-8 divide-y divide-white/10 border-y border-[color:var(--bd)]">
-        {rows.map((b, i) => (
-          <Reveal key={i} i={i}>
-            <div className="group flex items-center gap-5 py-5">
+        {visible.map((b, i) => {
+          const inner = (
+            <div className="group flex w-full items-center gap-5 py-5 text-left">
               <span className="w-8 text-sm tabular-nums text-slate-500">{String(i + 1).padStart(2, '0')}</span>
               <span className={`relative h-12 w-16 shrink-0 overflow-hidden rounded-md border border-[color:var(--bd)] ${art.cardTone}`} style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 22%, transparent), transparent)' }}>
                 <CardDetail mode={art.mode} />
@@ -796,8 +847,15 @@ function CollectionArchive({ s, art }: VarProps) {
               <span className="flex-1 text-[15px] font-medium text-white">{b}</span>
               <span className="text-slate-500 transition group-hover:translate-x-1">→</span>
             </div>
-          </Reveal>
-        ))}
+          );
+          return (
+            <Reveal key={i} i={i}>
+              {detail && rt
+                ? <button type="button" onClick={() => rt.run(detail, s, { title: b, lines: cleanLines([s.sub, ...rows.filter((x) => x !== b)]) })} className="block w-full">{inner}</button>
+                : inner}
+            </Reveal>
+          );
+        })}
       </div>
     </div>
   );
@@ -911,25 +969,46 @@ function PricingMembership({ s, art }: VarProps) {
 
 /* — Filter/search surface: a real search bar + filter chips + result rows built
  *  from the section's own facet copy. No fabricated result counts. — */
-function FilterSearch({ s, art }: VarProps) {
+function FilterSearch({ s, art, rt }: VarProps) {
   const facets = bulletsOf(s).slice(0, 6);
-  const rows = facets.slice(0, 4);
+  // When the preview runtime is present the search bar + chips become LIVE: typing
+  // and chip toggles actually filter the result rows (built from real facet copy).
+  const interactive = !!rt;
+  const [query, setQuery] = useState('');
+  const [active, setActive] = useState<string | null>(null);
+  const filtered = facets.filter((f) => {
+    const q = query.trim().toLowerCase();
+    if (q && !f.toLowerCase().includes(q)) return false;
+    if (active && f !== active) return false;
+    return true;
+  });
+  const rows = (interactive ? filtered : facets).slice(0, 4);
   return (
     <div className="mx-auto max-w-5xl px-6">
       <H2 align="left">{heading(s)}</H2>
       <div className={`mt-8 rounded-[var(--pr)] border border-[color:var(--bd)] bg-[var(--sf)] p-4 sm:p-5 ${art.cardTone}`}>
         <div className="flex items-center gap-3 rounded-lg border border-[color:var(--bd)] bg-black/20 px-3.5 py-2.5">
           <span className="text-slate-400" aria-hidden>⌕</span>
-          <span className="text-sm text-slate-500">{s.sub || heading(s)}</span>
-          <span className="ml-auto rounded-md px-2.5 py-1 text-xs font-medium text-white" style={{ background: 'var(--acc)' }}>{s.cta || 'Ara'}</span>
+          {interactive
+            ? <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={s.sub || heading(s)} className="w-full bg-transparent text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none" />
+            : <span className="text-sm text-slate-500">{s.sub || heading(s)}</span>}
+          {interactive && (query || active)
+            ? <button type="button" onClick={() => { setQuery(''); setActive(null); }} className="ml-auto rounded-md px-2.5 py-1 text-xs font-medium text-slate-300 transition hover:text-white">Clear</button>
+            : <span className="ml-auto rounded-md px-2.5 py-1 text-xs font-medium text-white" style={{ background: 'var(--acc)' }}>{s.cta || 'Ara'}</span>}
         </div>
         {facets.length > 0 && (
           <div className="mt-4 flex flex-wrap gap-2">
-            {facets.map((f, i) => (
-              <span key={i} className="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--bd)] bg-white/[0.03] px-3 py-1 text-xs text-slate-300">
-                <span className="h-1 w-1 rounded-full" style={{ background: 'var(--acc)' }} />{f}
-              </span>
-            ))}
+            {facets.map((f, i) => {
+              const on = active === f;
+              const cls = `inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition ${on ? 'text-white' : 'text-slate-300'}`;
+              const style: CSSProperties = on
+                ? { borderColor: 'color-mix(in srgb, var(--acc) 55%, transparent)', background: 'color-mix(in srgb, var(--acc) 14%, transparent)' }
+                : { borderColor: 'var(--bd)', background: 'rgba(255,255,255,0.03)' };
+              const dot = <span className="h-1 w-1 rounded-full" style={{ background: 'var(--acc)' }} />;
+              return interactive
+                ? <button key={i} type="button" aria-pressed={on} onClick={() => setActive(on ? null : f)} className={cls} style={style}>{dot}{f}</button>
+                : <span key={i} className={cls} style={style}>{dot}{f}</span>;
+            })}
           </div>
         )}
         {rows.length > 0 && (
@@ -991,15 +1070,26 @@ function FaqCta({ s, art, ctx }: VarProps) {
   );
 }
 
-function Comparison({ s, art }: VarProps) {
+function Comparison({ s, art, rt }: VarProps) {
   const reduce = useReducedMotion();
+  // Contract-driven: an interactive before/after toggle that emphasises one side.
+  const canToggle = !!rt?.hasType(s.id, 'toggle-before-after');
+  const [after, setAfter] = useState(false);
+  const beforeOn = !canToggle || !after;
+  const afterOn = !canToggle || after;
   return (
     <div className="mx-auto max-w-5xl px-6">
       <H2>{heading(s)}</H2>
-      <div className="relative mt-10 grid gap-5 sm:grid-cols-2">
-        <div className={`relative overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)] ${art.cardTone}`}><span className="absolute left-3 top-3 z-10 rounded-full bg-black/50 px-2.5 py-1 text-xs text-slate-300">Öncesi</span><div className={`relative ${art.mediaTone}`} style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.01))' }}><CardDetail mode={art.mode} /></div></div>
-        <div className={`relative overflow-hidden rounded-[var(--pr)] border ring-1 ${art.cardTone}`} style={{ borderColor: 'color-mix(in srgb, var(--acc) 40%, transparent)' }}><span className="absolute left-3 top-3 z-10 rounded-full px-2.5 py-1 text-xs text-white" style={{ background: 'var(--acc)' }}>Sonrası</span><div className={`relative ${art.mediaTone}`} style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 22%, transparent), color-mix(in srgb, var(--acc2) 12%, transparent))' }}><CardDetail mode={art.mode} /></div></div>
-        {!reduce && (
+      {canToggle && (
+        <div className="mx-auto mt-6 flex w-fit items-center gap-1 rounded-full border border-[color:var(--bd)] bg-[var(--sf)] p-1 text-xs">
+          <button type="button" aria-pressed={!after} onClick={() => setAfter(false)} className={`rounded-full px-3 py-1 font-medium transition ${!after ? 'text-white' : 'text-slate-400'}`} style={!after ? { background: 'var(--acc)' } : undefined}>Öncesi</button>
+          <button type="button" aria-pressed={after} onClick={() => setAfter(true)} className={`rounded-full px-3 py-1 font-medium transition ${after ? 'text-white' : 'text-slate-400'}`} style={after ? { background: 'var(--acc)' } : undefined}>Sonrası</button>
+        </div>
+      )}
+      <div className="relative mt-8 grid gap-5 sm:grid-cols-2">
+        <div className={`relative overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)] transition ${art.cardTone} ${beforeOn ? '' : 'opacity-40'}`}><span className="absolute left-3 top-3 z-10 rounded-full bg-black/50 px-2.5 py-1 text-xs text-slate-300">Öncesi</span><div className={`relative ${art.mediaTone}`} style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.01))' }}><CardDetail mode={art.mode} /></div></div>
+        <div className={`relative overflow-hidden rounded-[var(--pr)] border ring-1 transition ${art.cardTone} ${afterOn ? '' : 'opacity-40'}`} style={{ borderColor: 'color-mix(in srgb, var(--acc) 40%, transparent)' }}><span className="absolute left-3 top-3 z-10 rounded-full px-2.5 py-1 text-xs text-white" style={{ background: 'var(--acc)' }}>Sonrası</span><div className={`relative ${art.mediaTone}`} style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 22%, transparent), color-mix(in srgb, var(--acc2) 12%, transparent))' }}><CardDetail mode={art.mode} /></div></div>
+        {!reduce && !canToggle && (
           <motion.div
             aria-hidden className="pointer-events-none absolute inset-y-0 left-1/2 hidden w-px -translate-x-1/2 sm:block"
             style={{ background: 'linear-gradient(180deg, transparent, var(--acc), transparent)' }}
@@ -1047,11 +1137,129 @@ const PAD: Record<WebBuildLayoutPlan['contentDensity'], string> = {
   spacious: 'py-24 sm:py-28',
 };
 
+/* ── Phase 2 interaction overlays (preview-only) ─────────────────────────
+ * Small, premium overlays that make the declared contract actions feel real in
+ * the in-app preview. They call NO backend, fabricate NO data (only the section's
+ * own real copy is shown), and honestly label themselves as previews. They use
+ * the existing CSS variables (--acc/--acc2/--sf/--bd/--pr/--hf) so they inherit
+ * the generated site's theme. */
+function OverlayShell({ children, onClose, align = 'center' }: { children: ReactNode; onClose: () => void; align?: 'center' | 'right' }) {
+  return (
+    <div className="fixed inset-0 z-[80] flex" style={{ justifyContent: align === 'right' ? 'flex-end' : 'center', alignItems: align === 'right' ? 'stretch' : 'center' }}>
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} aria-hidden />
+      {children}
+    </div>
+  );
+}
+
+const OverlayClose = ({ onClose }: { onClose: () => void }) => (
+  <button type="button" onClick={onClose} aria-label="Close" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white/10 hover:text-white">✕</button>
+);
+
+const PreviewTag = ({ text }: { text: string }) => (
+  <span className="rounded-full border border-[color:var(--bd)] bg-white/[0.04] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-slate-400">{text}</span>
+);
+
+/** A mini chat/demo panel — sample bubbles are the section's OWN real copy. It is a
+ *  preview simulation: no backend, no fabricated AI answers or metrics. */
+function ChatDemoPanel({ section, brief, onClose }: { section: S; brief: WebBuildBrief; onClose: () => void }) {
+  const msgs = cleanLines([section.sub || section.headline || brief.type, ...bulletsOf(section)]).slice(0, 5);
+  return (
+    <OverlayShell onClose={onClose} align="right">
+      <div className="relative z-10 flex h-full w-full max-w-md flex-col border-l border-[color:var(--bd)] bg-[#0b0e14]" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-[color:var(--bd)] px-4 py-3">
+          <div className="flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full" style={{ background: 'var(--acc)' }} />
+            <span className="text-sm font-semibold text-white" style={{ fontFamily: 'var(--hf)' }}>{heading(section)}</span>
+          </div>
+          <div className="flex items-center gap-2"><PreviewTag text="Preview" /><OverlayClose onClose={onClose} /></div>
+        </div>
+        <div className="flex-1 space-y-3 overflow-y-auto p-4">
+          {msgs.map((m, i) => (
+            <div key={i} className="max-w-[85%] rounded-2xl rounded-tl-sm border border-[color:var(--bd)] bg-[var(--sf)] px-3.5 py-2.5 text-[13px] leading-relaxed text-slate-200">{m}</div>
+          ))}
+          {section.cta && <div className="ml-auto max-w-[85%] rounded-2xl rounded-tr-sm px-3.5 py-2.5 text-[13px] font-medium text-white" style={{ background: 'var(--acc)' }}>{section.cta}</div>}
+        </div>
+        <div className="border-t border-[color:var(--bd)] p-3">
+          <div className="flex items-center gap-2 rounded-xl border border-[color:var(--bd)] bg-[var(--sf)] px-3 py-2">
+            <span className="flex-1 text-[13px] text-slate-500">Preview simulation — no messages are sent.</span>
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg text-white" style={{ background: 'var(--acc)' }} aria-hidden>→</span>
+          </div>
+        </div>
+      </div>
+    </OverlayShell>
+  );
+}
+
+/** A detail/record modal — shows the source section/card's REAL copy lines only. */
+function DetailModal({ title, lines, onClose }: { title: string; lines: string[]; onClose: () => void }) {
+  return (
+    <OverlayShell onClose={onClose}>
+      <div className="relative z-10 m-4 w-full max-w-lg rounded-[var(--pr)] border border-[color:var(--bd)] bg-[#0b0e14] p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-4 flex items-start justify-between gap-4">
+          <h3 className="text-lg font-semibold text-white" style={{ fontFamily: 'var(--hf)' }}>{title}</h3>
+          <OverlayClose onClose={onClose} />
+        </div>
+        <div className="mb-4 h-40 overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)]" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 22%, transparent), color-mix(in srgb, var(--acc2) 12%, transparent))' }} aria-hidden />
+        {lines.length > 0 ? (
+          <ul className="space-y-2">
+            {lines.slice(0, 8).map((l, i) => (
+              <li key={i} className="flex gap-2.5 text-sm text-slate-300"><span className="mt-2 h-1 w-1 shrink-0 rounded-full" style={{ background: 'var(--acc)' }} />{l}</li>
+            ))}
+          </ul>
+        ) : <p className="text-sm text-slate-400">{title}</p>}
+        <div className="mt-6 flex justify-end"><PreviewTag text="Preview detail" /></div>
+      </div>
+    </OverlayShell>
+  );
+}
+
+type LeadFormType = 'quote' | 'contact' | 'access' | 'lead';
+const LEAD_FORM: Record<LeadFormType, { title: string; fields: string[]; cta: string }> = {
+  quote: { title: 'Request a quote', fields: ['Name', 'Email or phone', 'Project details'], cta: 'Request preview' },
+  contact: { title: 'Contact', fields: ['Name', 'Email or phone', 'Message'], cta: 'Send (preview)' },
+  access: { title: 'Request access', fields: ['Name', 'Affiliation', 'Research purpose'], cta: 'Request access (preview)' },
+  lead: { title: 'Request info', fields: ['Name', 'Email or phone', 'Message'], cta: 'Request preview' },
+};
+
+/** A quote/contact/access/lead form shell — structural placeholder fields only.
+ *  It never submits anywhere and never claims a fake "sent / success" state. */
+function LeadFormPanel({ type, section, onClose }: { type: LeadFormType; section?: S; onClose: () => void }) {
+  const [done, setDone] = useState(false);
+  const cfg = LEAD_FORM[type] || LEAD_FORM.lead;
+  const title = (section && heading(section)) || cfg.title;
+  return (
+    <OverlayShell onClose={onClose}>
+      <div className="relative z-10 m-4 w-full max-w-md rounded-[var(--pr)] border border-[color:var(--bd)] bg-[#0b0e14] p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-1 flex items-start justify-between gap-4">
+          <h3 className="text-lg font-semibold text-white" style={{ fontFamily: 'var(--hf)' }}>{title}</h3>
+          <OverlayClose onClose={onClose} />
+        </div>
+        {section?.sub && <p className="mb-4 text-sm text-slate-400">{section.sub}</p>}
+        <div className="mt-3 space-y-3">
+          {cfg.fields.map((f, i) => (
+            /details|message|purpose/i.test(f)
+              ? <textarea key={i} rows={3} disabled placeholder={f} className="w-full resize-none rounded-lg border border-[color:var(--bd)] bg-[var(--sf)] px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500" />
+              : <input key={i} type="text" disabled placeholder={f} className="w-full rounded-lg border border-[color:var(--bd)] bg-[var(--sf)] px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500" />
+          ))}
+        </div>
+        <button type="button" onClick={() => setDone(true)} className="mt-4 w-full rounded-lg py-2.5 text-center text-sm font-semibold text-white" style={{ background: 'var(--acc)' }}>{cfg.cta}</button>
+        <p className="mt-3 text-center text-[11px] text-slate-500">
+          {done ? 'Preview only — nothing was submitted.' : 'This is a preview form — fields are inactive and nothing is sent.'}
+        </p>
+      </div>
+    </OverlayShell>
+  );
+}
+
 export default function WebBuildPreviewDocument({
-  sectionItems: rawSectionItems, brief,
+  sectionItems: rawSectionItems, brief, interactionContract,
 }: {
   sectionItems: WebBuildSectionItem[];
   brief: WebBuildBrief;
+  /** Phase 2: the strategy's Interaction Contract (optional → old builds render
+   *  unchanged). Preview turns its actions into real in-app behaviour. */
+  interactionContract?: InteractionContract;
 }) {
   // Normalize every section item to a well-formed shape BEFORE any derived helper
   // runs. The section-level boundaries only cover their own renderers; the plan/
@@ -1099,6 +1307,97 @@ export default function WebBuildPreviewDocument({
     sectionItems.forEach((s) => m.set(anchorId(s.id), s));
     return m;
   }, [sectionItems]);
+
+  // ── Phase 2: turn the strategy's Interaction Contract into real preview
+  // behaviour. Re-derived against the FINAL rendered sections (so section-action
+  // keys always match what we render) but SEEDED by the persisted contract's
+  // concept category when the drawer passes it. Fully guarded — a malformed or
+  // absent contract simply yields scroll-only behaviour (preview unchanged).
+  const contract = useMemo<InteractionContract | null>(() => {
+    try {
+      return deriveInteractionContract({
+        brief,
+        conceptCategory: interactionContract?.conceptCategory,
+        ctaHierarchy: { primary: brief.primaryCTA, secondary: brief.secondaryCTA },
+        sections: sectionItems.map((s) => ({ id: s.id, name: s.name })),
+        artMode: art.mode,
+      });
+    } catch { return null; }
+  }, [interactionContract, sectionItems, brief, art.mode]);
+
+  // Overlay state for the three preview surfaces. Guarded; never blocks render.
+  const [chatDemo, setChatDemo] = useState<WebBuildSectionItem | null>(null);
+  const [detail, setDetail] = useState<{ title: string; lines: string[] } | null>(null);
+  const [form, setForm] = useState<{ type: LeadFormType; section?: WebBuildSectionItem } | null>(null);
+
+  // Close overlays on Escape (accessibility). Self-cleaning; only bound when open.
+  useEffect(() => {
+    if (!chatDemo && !detail && !form) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { setChatDemo(null); setDetail(null); setForm(null); } };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [chatDemo, detail, form]);
+
+  const actionsFor = (rawId: string): InteractionAction[] => {
+    const arr = contract?.sectionActions?.[rawId];
+    return Array.isArray(arr) ? arr.filter((a): a is InteractionAction => !!a && typeof a === 'object') : [];
+  };
+
+  // Execute one contract action → open the matching overlay or scroll. Never throws,
+  // never calls a backend, never fabricates data (uses only the section's real copy).
+  function runContractAction(action: InteractionAction, section?: WebBuildSectionItem, payload?: { title?: string; lines?: string[] }) {
+    try {
+      if (!action || typeof action !== 'object') return;
+      const owner = section
+        || (action.sourceSectionId ? byAnchor.get(anchorId(action.sourceSectionId)) : undefined)
+        || (action.targetSectionId ? byAnchor.get(anchorId(action.targetSectionId)) : undefined);
+      switch (action.type) {
+        case 'open-chat-demo': setChatDemo(owner || null); return;
+        case 'open-detail-modal':
+        case 'open-record-detail': {
+          const title = (payload?.title || (owner ? heading(owner) : action.label) || 'Details').trim();
+          const lines = (payload?.lines && payload.lines.length ? payload.lines : (owner ? bulletsOf(owner) : [])).slice(0, 8);
+          setDetail({ title, lines });
+          return;
+        }
+        case 'open-quote-form': setForm({ type: 'quote', section: owner }); return;
+        case 'open-contact-form': setForm({ type: 'contact', section: owner }); return;
+        case 'request-access': setForm({ type: 'access', section: owner }); return;
+        case 'request-info':
+        case 'submit-lead': setForm({ type: 'lead', section: owner }); return;
+        default: {
+          const target = action.targetSectionId ? anchorId(action.targetSectionId) : (owner ? anchorId(owner.id) : 'top');
+          navigateToTarget(target || 'top');
+        }
+      }
+    } catch { /* never break the preview over an interaction */ }
+  }
+
+  const rt: PreviewRuntime = {
+    run: runContractAction,
+    actionsFor,
+    hasType: (id, type) => actionsFor(id).some((a) => a.type === type),
+  };
+
+  // Map every non-scroll contract action to its target ANCHOR, so a delegated CTA/
+  // anchor click (hero primary, section CTA, conversion rail) runs the real action
+  // instead of only scrolling. Highest-priority action wins per anchor.
+  const actionByAnchor = useMemo(() => {
+    const m = new Map<string, InteractionAction>();
+    if (!contract) return m;
+    const rank = (p: InteractionAction['priority']) => (p === 'primary' ? 3 : p === 'secondary' ? 2 : 1);
+    const consider = (a?: InteractionAction) => {
+      if (!a || typeof a !== 'object' || a.type === 'scroll-to-section') return;
+      const key = anchorId(a.targetSectionId || a.sourceSectionId || '');
+      if (!key || key === 'section') return;
+      const prev = m.get(key);
+      if (!prev || rank(a.priority) > rank(prev.priority)) m.set(key, a);
+    };
+    consider(contract.primaryAction);
+    (contract.secondaryActions || []).forEach(consider);
+    Object.values(contract.sectionActions || {}).forEach((arr) => (arr || []).forEach(consider));
+    return m;
+  }, [contract]);
   // `current`/`pages[0]` must never be assumed present: buildPreviewPages always
   // returns a Home page today, but a defensive Home fallback (synthesized from the
   // real section anchors) guarantees the preview never throws on an empty model.
@@ -1119,6 +1418,11 @@ export default function WebBuildPreviewDocument({
     event.preventDefault();
     const targetId = resolvePreviewTargetId(raw, sectionItems, ctx);
     if (!targetId) return; // no matching section → do nothing (never navigate host)
+    // Phase 2: if the resolved target has a real contract action (open chat demo /
+    // form / detail …), run it instead of only scrolling. Anchor scroll is the
+    // fallback whenever there is no non-scroll action for the target.
+    const contractAction = targetId !== 'top' ? actionByAnchor.get(targetId) : undefined;
+    if (contractAction) { runContractAction(contractAction, byAnchor.get(targetId)); return; }
     navigateToTarget(targetId);
   }
 
@@ -1216,7 +1520,7 @@ export default function WebBuildPreviewDocument({
       const pad = PAD[plan.contentDensity] || PAD.comfortable;
       inner = (
         <section id={sid} style={{ scrollMarginTop: 72, ...(band ? { background: 'rgba(255,255,255,0.015)' } : {}) }} className={`relative ${pad}`}>
-          {Render({ s, plan, index: i, art, ctx })}
+          {Render({ s, plan, index: i, art, ctx, rt })}
         </section>
       );
     }
@@ -1316,6 +1620,13 @@ export default function WebBuildPreviewDocument({
           {footerSection && renderSection(footerSection)}
         </div>
       )}
+
+      {/* Phase 2 interaction overlays — rendered inside the themed root so they
+          inherit --acc/--sf/--bd/etc. Guarded by their own state; the section
+          error boundaries and page shell above are untouched. */}
+      {chatDemo && <ChatDemoPanel section={chatDemo} brief={brief} onClose={() => setChatDemo(null)} />}
+      {detail && <DetailModal title={detail.title} lines={detail.lines} onClose={() => setDetail(null)} />}
+      {form && <LeadFormPanel type={form.type} section={form.section} onClose={() => setForm(null)} />}
     </div>
   );
 }
