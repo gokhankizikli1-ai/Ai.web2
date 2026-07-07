@@ -1048,11 +1048,33 @@ const PAD: Record<WebBuildLayoutPlan['contentDensity'], string> = {
 };
 
 export default function WebBuildPreviewDocument({
-  sectionItems, brief,
+  sectionItems: rawSectionItems, brief,
 }: {
   sectionItems: WebBuildSectionItem[];
   brief: WebBuildBrief;
 }) {
+  // Normalize every section item to a well-formed shape BEFORE any derived helper
+  // runs. The section-level boundaries only cover their own renderers; the plan/
+  // interaction/page derivations below run at ROOT render, before any boundary
+  // mounts. A section persisted (old/malformed build) or opened full-screen
+  // (WebBuildPreview.tsx renders this document with no boundary) without a string
+  // `id` would reach deriveLayoutPlan, whose component-name step calls
+  // String.prototype.replace on the id — throwing a TypeError at root render and
+  // collapsing the ENTIRE preview to the drawer fallback. Synthesizing a stable
+  // id/name here keeps every derived plan/anchor/page valid without masking any
+  // real section-level error (those still surface in their own boundary).
+  const sectionItems = useMemo<WebBuildSectionItem[]>(
+    () => (Array.isArray(rawSectionItems) ? rawSectionItems : [])
+      .filter((s): s is WebBuildSectionItem => !!s && typeof s === 'object')
+      .map((s, i) => {
+        const id = typeof s.id === 'string' && s.id.trim() ? s.id : `section-${i}`;
+        const name = typeof s.name === 'string' && s.name.trim()
+          ? s.name
+          : (typeof s.id === 'string' && s.id.trim() ? s.id : `Section ${i + 1}`);
+        return id === s.id && name === s.name ? s : { ...s, id, name };
+      }),
+    [rawSectionItems],
+  );
   const ds = designTokensForBrief(brief);
   // The Layout Plan — the SAME pure derivation the file synthesizer uses — drives
   // hero composition, per-section variant, visual module, rhythm AND the visual
