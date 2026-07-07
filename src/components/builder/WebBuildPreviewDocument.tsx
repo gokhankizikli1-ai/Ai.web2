@@ -1491,10 +1491,12 @@ function resolvePreviewShell(
       // Use Cases page from the remaining real sections (real copy, no fabrication).
       if (screens.length < 2 && content.length >= 2) add('use-cases', 'Use Cases', null);
     } else if (family === 'marketplace') {
+      if (!(has(SHELL_RE.catalog) || richSignal)) return { shellMode: 'single-page', screens: [] };
       add('catalog', 'Catalog', SHELL_RE.catalog, contract?.primaryWebsiteExperience);
       add('detail', 'Detail', SHELL_RE.catalog);
       if (has(SHELL_RE.financing) || has(SHELL_RE.contact)) add('financing', 'Request info', has(SHELL_RE.financing) ? SHELL_RE.financing : SHELL_RE.contact);
     } else if (family === 'archive') {
+      if (!(has(SHELL_RE.collection) || richSignal)) return { shellMode: 'single-page', screens: [] };
       add('collection', 'Collection', SHELL_RE.collection, contract?.primaryWebsiteExperience);
       add('record', 'Record', SHELL_RE.collection);
       if (has(SHELL_RE.access) || has(SHELL_RE.contact)) add('access', 'Research access', has(SHELL_RE.access) ? SHELL_RE.access : SHELL_RE.contact);
