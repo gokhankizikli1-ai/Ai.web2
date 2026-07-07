@@ -915,6 +915,10 @@ function splitConceptAuthority(prompt: string, fullText: string): ConceptAuthori
   return { primary, vertical: 'general', verticalPhrase: '', hadForSplit, productIsCommerce: primary === 'marketplace' };
 }
 
+function conceptAuthorityPromptText(prompt: string, brief: WebBuildBrief, inferred: InferredBrief): string {
+  return (prompt || brief.coreIdea || brief.type || inferred.businessType || '').trim();
+}
+
 /** Human-readable label for a target vertical category (owner/dev diagnostic). */
 const VERTICAL_LABEL: Record<string, [string, string]> = {
   marketplace: ['ecommerce/marketplace', 'e-ticaret/pazaryeri'],
@@ -973,7 +977,7 @@ const AI_SAAS_DRIFT_GUARD = ['marketplace-catalog', 'storefront', 'catalog comme
 export function deriveConceptAuthority(
   prompt: string, brief: WebBuildBrief, inferred: InferredBrief, lang: Lang = 'en',
 ): ConceptAuthority | undefined {
-  const promptText = (prompt || brief.coreIdea || brief.type || inferred.businessType || '').trim();
+  const promptText = conceptAuthorityPromptText(prompt, brief, inferred);
   if (!promptText) return undefined;
   const fullText = [prompt, brief.coreIdea, brief.type, brief.audience, inferred.businessType, inferred.targetAudience]
     .filter(Boolean).join(' ');
@@ -1056,10 +1060,13 @@ function researchSignals(brief: WebBuildBrief, inferred: InferredBrief, prompt =
   ].filter(Boolean).join(' ').toLowerCase();
 
   // CONCEPT AUTHORITY (Phase 5): the primary concept is derived from the product
-  // noun in the PROMPT, not the blended full text — so a "<product> for <vertical>"
+  // noun in the authority prompt, not the blended full text — so a "<product> for <vertical>"
   // prompt (e.g. "AI chatbot for ecommerce stores") never lets the target
   // vertical's commerce language over-weight and flip the concept to marketplace.
-  const category = splitConceptAuthority(prompt, t).primary;
+  const authorityPrimary = deriveConceptAuthority(prompt, brief, inferred)?.primaryConcept;
+  const category = authorityPrimary && authorityPrimary !== 'general'
+    ? authorityPrimary
+    : splitConceptAuthority(conceptAuthorityPromptText(prompt, brief, inferred), t).primary;
 
   const booking = has(t, 'book', 'reserv', 'appointment', 'randevu', 'rezerv', 'schedul', 'consult', 'keşif', 'danışman');
   const subscription = has(t, 'subscription', 'membership', 'üyelik', 'abonel', 'recurring', 'plan', 'pricing', 'fiyat', 'paket');
@@ -4292,10 +4299,11 @@ export function deriveReviewerAgent(input: ReviewerInput): ReviewerAgentArtifact
     && driftKeys.has(artKey) && !!expectedArch && expectedArch !== artKey;
   const layoutCommerceDrift = (primaryConcept === 'ai' || primaryConcept === 'saas')
     && input.layoutPlan?.archetype === 'marketplace';
-  const conceptDrift = !driftGuardApplied && (artDrift || layoutCommerceDrift);
+  const guardedArtDrift = !driftGuardApplied && artDrift;
+  const conceptDrift = guardedArtDrift || layoutCommerceDrift;
   if (conceptDrift) {
     add('critical', 'concept-drift', 'Target vertical overrode the primary concept',
-      `Primary concept "${primaryConcept}" must control the visual identity, but the ${artDrift ? `art archetype resolved to "${artKey}"` : 'layout archetype resolved to "marketplace"'} — a ${authority?.targetVertical || 'target-vertical'} (catalog/commerce) identity.`,
+      `Primary concept "${primaryConcept}" must control the visual identity, but the ${guardedArtDrift ? `art archetype resolved to "${artKey}"` : 'layout archetype resolved to "marketplace"'} — a ${authority?.targetVertical || 'target-vertical'} (catalog/commerce) identity.`,
       `Re-assert the primary-concept archetype (${expectedArch || 'ai-tool / high-conversion-saas'}); the target vertical may only inform copy/proof/examples, never the visual archetype/layout/hero.`,
       'artDirection.designArchetype');
   } else if (authority && primaryConcept && primaryConcept !== 'general') {
