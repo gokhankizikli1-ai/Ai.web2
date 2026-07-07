@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type ReactElement, type CSSProperties, type MouseEvent } from 'react';
+import { Component, useMemo, useRef, useState, type ReactElement, type ReactNode, type ErrorInfo, type CSSProperties, type MouseEvent } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { designTokensForBrief } from '@/lib/webBuildBrief';
 import {
@@ -29,6 +29,37 @@ import {
  * visual language — not the same centered hero + card grid with new colors.
  */
 type S = WebBuildSectionItem;
+
+/* ── Per-section render isolation ─────────────────────────────────────────
+ * A single failing section renderer must NEVER take down the whole preview.
+ * This boundary contains a section-level render throw to a compact, honest card
+ * (no fake data) while the page shell, nav and every OTHER section stay usable.
+ * With every section wrapped, the global drawer boundary only ever catches
+ * unexpected root-level failures — not the normal outcome. It renders its
+ * children with no extra DOM wrapper, so section `id` anchors/scroll are intact. */
+class PreviewSectionErrorBoundary extends Component<{ label?: string; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+
+  static getDerivedStateFromError(): { failed: boolean } {
+    return { failed: true };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    if (typeof console !== 'undefined') console.error('WebBuildPreview section failed', this.props.label, error, info);
+  }
+
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <div className="mx-auto max-w-3xl px-6 py-8">
+        <div className="rounded-[var(--pr)] border border-[color:var(--bd)] bg-[var(--sf)] px-4 py-6 text-center">
+          <p className="text-[13px] font-medium text-white">Section preview unavailable</p>
+          {this.props.label && <p className="mt-1 text-[12px] text-slate-400">{this.props.label}</p>}
+        </div>
+      </div>
+    );
+  }
+}
 
 const bulletsOf = (s: S) => (s.bullets?.length ? s.bullets : [s.sub || s.purpose || s.name].filter(Boolean));
 const heading = (s: S) => s.headline || s.name;
@@ -1131,13 +1162,22 @@ export default function WebBuildPreviewDocument({
   // Render one section (hero / footer / content variant) — shared by Home and the
   // focused page shell, so section ids, scroll-margin and variants stay identical.
   let contentIdx = 0;
-  const renderSection = (s: WebBuildSectionItem): ReactElement => {
-    const kind = kindOf(s.id);
-    const sid = anchorId(s.id);
-    if (kind === 'hero') {
+  const renderSection = (s: WebBuildSectionItem, idx = 0): ReactElement => {
+    // Never assume the section item is well-formed: guard id/name/kind and fall
+    // back to safe hero/variant renderers + default padding so a malformed
+    // section can't throw before it even reaches its own error boundary.
+    const rawId = (s && s.id) || '';
+    const sid = anchorId(rawId);
+    const key = rawId || `section-${idx}`;
+    const label = (s && (s.name || s.headline)) || sid;
+    const kind = s ? kindOf(rawId) : undefined;
+    let inner: ReactElement;
+    if (!s) {
+      inner = <div />;
+    } else if (kind === 'hero') {
       const Hero = HEROES[plan.heroComposition] || HEROES['split-editorial'];
-      return (
-        <div key={s.id} id={sid} style={{ scrollMarginTop: 72 }}>
+      inner = (
+        <div id={sid} style={{ scrollMarginTop: 72 }}>
           <Hero s={s} brief={brief} plan={plan} ctx={ctx} />
           {/* Concept-specific proof rail, directly under the hero. */}
           <div className="relative z-10 mx-auto max-w-6xl px-6 pb-6">
@@ -1145,17 +1185,22 @@ export default function WebBuildPreviewDocument({
           </div>
         </div>
       );
+    } else if (kind === 'footer') {
+      inner = <Footer s={s} />;
+    } else {
+      const Render = VARIANTS[variantOf(rawId)] || VARIANTS['feature-grid'];
+      const i = contentIdx++;
+      const band = banded && i % 2 === 1;
+      const pad = PAD[plan.contentDensity] || PAD.comfortable;
+      inner = (
+        <section id={sid} style={{ scrollMarginTop: 72, ...(band ? { background: 'rgba(255,255,255,0.015)' } : {}) }} className={`relative ${pad}`}>
+          {Render({ s, plan, index: i, art, ctx })}
+        </section>
+      );
     }
-    if (kind === 'footer') return <Footer key={s.id} s={s} />;
-    const variant = variantOf(s.id);
-    const Render = VARIANTS[variant] || VARIANTS['feature-grid'];
-    const i = contentIdx++;
-    const band = banded && i % 2 === 1;
-    return (
-      <section key={s.id} id={sid} style={{ scrollMarginTop: 72, ...(band ? { background: 'rgba(255,255,255,0.015)' } : {}) }} className={`relative ${PAD[plan.contentDensity]}`}>
-        {Render({ s, plan, index: i, art, ctx })}
-      </section>
-    );
+    // Isolate EVERY section (hero / footer / content variant) so one bad
+    // renderer only shows its own compact fallback — the rest stays usable.
+    return <PreviewSectionErrorBoundary key={key} label={label}>{inner}</PreviewSectionErrorBoundary>;
   };
 
   // Focused-page composition (non-home): a real page shell — header + summary +
