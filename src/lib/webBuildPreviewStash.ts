@@ -141,6 +141,92 @@ export function readPreview(runId: string): WebBuildPreviewData | null {
   }
 }
 
+/* ── Storage-free handoff (BroadcastChannel) ─────────────────────────────────
+ * localStorage is not the only handoff: when it is full/unavailable the opener
+ * tab hands the MINIMAL preview payload to the standalone route directly, in
+ * memory, over a same-origin BroadcastChannel. This never touches disk, so a full
+ * localStorage can't block the full preview. Everything here is fully guarded:
+ * when BroadcastChannel is unavailable it fails safely (no throw, no-op). */
+export const PREVIEW_CHANNEL = 'korvix:webbuild:preview';
+
+type PreviewChannelMessage =
+  | { kind: 'request'; runId: string }
+  | { kind: 'response'; runId: string; data: WebBuildPreviewData };
+
+/** Open the preview BroadcastChannel, or null when the API is unavailable. */
+function openPreviewChannel(): BroadcastChannel | null {
+  try {
+    if (typeof BroadcastChannel === 'undefined') return null;
+    return new BroadcastChannel(PREVIEW_CHANNEL);
+  } catch {
+    return null;
+  }
+}
+
+const usablePayload = (d: unknown): d is WebBuildPreviewData =>
+  !!d && typeof d === 'object' && Array.isArray((d as WebBuildPreviewData).sectionItems)
+  && (d as WebBuildPreviewData).sectionItems.length > 0;
+
+/**
+ * Opener side: keep answering preview-data requests for this run over the
+ * BroadcastChannel for a short TTL, and publish once immediately (in case the
+ * route is already listening). Minimal payload only — never files/steps. Returns
+ * true when the channel is available and the responder was armed. Never throws.
+ */
+export function publishPreviewForRun(data: WebBuildPreviewData, ttlMs = 15000): boolean {
+  const channel = openPreviewChannel();
+  if (!channel) return false;
+  const minimal = toMinimalPreview(data);
+  const respond = () => {
+    try {
+      const msg: PreviewChannelMessage = { kind: 'response', runId: minimal.runId, data: minimal };
+      channel.postMessage(msg);
+    } catch { /* ignore */ }
+  };
+  channel.onmessage = (ev: MessageEvent) => {
+    const msg = ev?.data as PreviewChannelMessage | undefined;
+    if (msg && msg.kind === 'request' && msg.runId === minimal.runId) respond();
+  };
+  respond(); // publish once now; then answer requests until the TTL elapses
+  try {
+    setTimeout(() => { try { channel.close(); } catch { /* ignore */ } }, Math.max(1000, ttlMs));
+  } catch {
+    try { channel.close(); } catch { /* ignore */ }
+  }
+  return true;
+}
+
+/** Route side: ask any opener tab to (re)broadcast preview data for this run.
+ *  No-op when BroadcastChannel is unavailable. Never throws. */
+export function requestPreviewForRun(runId: string): void {
+  const channel = openPreviewChannel();
+  if (!channel) return;
+  try {
+    const msg: PreviewChannelMessage = { kind: 'request', runId };
+    channel.postMessage(msg);
+  } catch { /* ignore */ }
+  // The response arrives on the subscriber channel (a channel never receives its
+  // own posts), so close this short-lived request channel after the message flushes.
+  try {
+    setTimeout(() => { try { channel.close(); } catch { /* ignore */ } }, 1000);
+  } catch {
+    try { channel.close(); } catch { /* ignore */ }
+  }
+}
+
+/** Route side: listen for a matching, USABLE preview-data response for `runId`.
+ *  Returns an unsubscribe fn (also closes the channel). No-op unsubscribe when
+ *  BroadcastChannel is unavailable. Never throws. */
+export function subscribePreviewResponses(runId: string, callback: (data: WebBuildPreviewData) => void): () => void {
+  const channel = openPreviewChannel();
+  if (!channel) return () => {};
+  channel.onmessage = (ev: MessageEvent) => {
+    const msg = ev?.data as PreviewChannelMessage | undefined;
+    if (msg && msg.kind === 'response' && msg.runId === runId && usablePayload(msg.data)) callback(msg.data);
+  };
+  return () => { try { channel.close(); } catch { /* ignore */ } };
+}
+
 /** Stash the build data and open the standalone preview in a new tab.
  *
  * The app runs under <HashRouter>, so the SPA route lives AFTER the `#`
@@ -157,10 +243,17 @@ export function openPreviewInNewTab(data: WebBuildPreviewData): boolean {
   const returnTo = sanitizeReturnTo(data.returnTo) || sanitizeReturnTo(prev?.returnTo) || currentReturnTo();
   const returnChatSessionId = safeId(data.returnChatSessionId) || safeId(prev?.returnChatSessionId);
   const returnWebBuildRunId = safeId(data.returnWebBuildRunId) || safeId(prev?.returnWebBuildRunId);
-  // Only open the standalone route once the stash is written AND verified — never
-  // open a route that would render "No preview available yet". The caller surfaces
-  // the failure to the user; the in-app drawer keeps rendering from React state.
-  if (!stashPreview({ ...data, returnTo, returnChatSessionId, returnWebBuildRunId })) return false;
+  const enriched: WebBuildPreviewData = { ...data, returnTo, returnChatSessionId, returnWebBuildRunId };
+
+  // Primary handoff: a verified localStorage stash (survives a full page reload of
+  // the standalone tab). If storage is full/unavailable, fall back to a
+  // storage-free BroadcastChannel handoff so the full preview can STILL open — the
+  // opener tab streams the minimal payload to the route on request for a short TTL.
+  const stashed = stashPreview(enriched);
+  const broadcasting = stashed ? false : publishPreviewForRun(enriched);
+  // Open a route only when at least one handoff can deliver the data. When neither
+  // is possible the caller surfaces the failure; the in-app drawer stays usable.
+  if (!stashed && !broadcasting) return false;
   try {
     const base = window.location.href.split('#')[0];
     const url = `${base}#/preview/web-build/${encodeURIComponent(data.runId)}`;
