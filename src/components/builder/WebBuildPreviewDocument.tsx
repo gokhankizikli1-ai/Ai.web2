@@ -20,6 +20,9 @@ import {
   deriveInteractionContract,
   type InteractionContract, type InteractionAction, type InteractionActionType,
 } from '@/lib/webBuildInteractionContract';
+// Type-only import (erased at build) — Phase 5's data-only Visual Asset Plan the
+// Preview consumes with CSS/SVG. Never pulls agent logic into the preview bundle.
+import type { VisualAssetPlan, HeroVisualType } from '@/lib/webBuildAgents';
 
 /**
  * A REAL, premium rendered approximation of the generated site whose STRUCTURE is
@@ -1254,100 +1257,273 @@ function LeadFormPanel({ type, section, onClose }: { type: LeadFormType; section
   );
 }
 
-/* ── Phase 4: model-native Preview shells ────────────────────────────────
+/* ── Phase 6A: premium multi-screen Preview experience ───────────────────
  * The model's Website Experience Plan (carried on the Interaction Contract as
- * experienceMode / navigationModel / websiteExperienceModel / suggestedScreens)
- * can ask for a richer preview than one scrolling page: a dedicated demo page, a
- * dashboard-style demo, a catalog/detail shell, an archive/record shell, or a
- * service lead shell. These are LOCAL, front-end, STATIC demo screens built ONLY
- * from the real section copy — no backend, no real AI/DB/payments/search, no
- * fabricated data. When the model asks for single-page/scroll (or says nothing)
- * the shell is 'single-page' and the existing preview renders unchanged. */
+ * experienceMode / navigationModel / websiteExperienceModel / pageScreenModel /
+ * primaryWebsiteExperience / suggestedScreens / requiredStatefulComponents) can
+ * ask for a real multi-SCREEN website/demo — not one scrolling page with a small
+ * widget. resolvePreviewShell now builds a set of internal SCREENS (no routes —
+ * local activePage only): for AI/SaaS a premium Product Demo / Chat Experience
+ * plus Use Cases / Integrations / Security / Pricing; for marketplace a catalog /
+ * detail / financing; for archive a collection / record / access; for service
+ * projects / before-after / quote. Every screen is a LOCAL, front-end, STATIC
+ * illustration built ONLY from real section copy — no backend, no real AI/DB/
+ * payments/search, no fabricated data. Simple landing pages stay single-page. */
 type ShellMode =
   | 'single-page' | 'internal-tabs' | 'dedicated-demo-page'
   | 'dashboard-demo-shell' | 'catalog-detail-shell'
   | 'archive-record-shell' | 'service-lead-shell';
 
-interface PreviewShellScreen { id: string; label: string; purpose: string; sectionIds: string[]; demoOnly: true }
+/** The kind of premium screen to render (drives the composition, not a route). */
+type ScreenKind =
+  | 'product-demo' | 'chat' | 'use-cases' | 'integrations' | 'security' | 'pricing'
+  | 'catalog' | 'detail' | 'financing'
+  | 'collection' | 'record' | 'access'
+  | 'projects' | 'before-after' | 'quote'
+  | 'generic';
+
+interface PreviewShellScreen { id: string; label: string; purpose: string; kind: ScreenKind; sectionIds: string[]; demoOnly: true }
 interface PreviewShell { shellMode: ShellMode; screens: PreviewShellScreen[]; primaryScreenId?: string }
 
-const DEMO_SCREEN_ID = '__demo__';
+type ShellFamily = 'ai' | 'marketplace' | 'archive' | 'service' | 'none';
 
 const SHELL_RE = {
   demo: /(product-?demo|\bdemo\b|chatbot|\bchat\b|playground|assistant|use-?case)/i,
+  chat: /(chat|assistant|\bbot\b|conversation|message|prompt)/i,
+  useCase: /(use-?case|scenario|workflow|solution|senaryo|kullanım)/i,
+  integrations: /(integration|connect|\bapi\b|plugin|webhook|entegrasyon|bağlan)/i,
+  security: /(security|trust|compliance|privacy|güven|güvenlik|gizlilik|uyumluluk)/i,
+  pricing: /(pricing|\bplans?\b|\bprice\b|fiyat|abonelik|paket)/i,
   catalog: /(catalog|collection-?grid|inventory|envanter|featured|listings?|products?|vehicles?|araç|araba|\bcars?\b|shop|store|mağaza)/i,
   collection: /(collection|koleksiyon|\bindex\b|archive|arşiv|records?|belge|document|manuscript|research|filter)/i,
   gallery: /(gallery|galeri|project|proje|portfolio|selected-?work|showcase|before-?after|materials?)/i,
+  beforeAfter: /(before-?after|önce-?sonra|transformation|dönüşüm)/i,
   quote: /(quote|teklif|estimate|consultation|request-?quote|quote-?cta)/i,
   contact: /(contact|iletişim|reservation|rezervasyon|book|randevu|başvuru)/i,
   access: /(access|erişim|researcher|araştırmacı)/i,
+  financing: /(financ|payment|loan|kredi|ödeme|installment|taksit|request-?info)/i,
 };
 
-function defaultScreenLabel(mode: ShellMode, chat: boolean): string {
-  switch (mode) {
-    case 'dedicated-demo-page': return chat ? 'Chat Demo' : 'Product Demo';
-    case 'dashboard-demo-shell': return 'Dashboard';
-    case 'catalog-detail-shell': return 'Catalog';
-    case 'archive-record-shell': return 'Collection';
-    case 'service-lead-shell': return 'Get a quote';
-    default: return 'Demo';
-  }
+/* Fallback hero-visual type per art render mode, used when the Phase-5
+ * VisualAssetPlan is not plumbed through (e.g. the standalone /preview route). */
+const FALLBACK_HERO_VISUAL: Record<string, HeroVisualType> = {
+  'product-saas': 'dashboard-mockup',
+  marketplace: 'product-mockup',
+  archive: 'pattern-system',
+  landscaping: 'photo-direction',
+  portfolio: 'svg-illustration',
+  industrial: 'svg-illustration',
+};
+
+function resolveHeroVisual(plan: VisualAssetPlan | undefined, artMode: string): HeroVisualType {
+  return plan?.heroVisualType || FALLBACK_HERO_VISUAL[artMode] || 'css-abstract';
 }
 
-/** Resolve the Preview shell: A) model-native plan → B) rich shell only when the
- *  matching sections exist → C) single-page (existing behaviour). Pure; never throws. */
+/* ── Premium visual asset layer (CSS/SVG ONLY — no external image/video) ───
+ * Consumes the resolved heroVisualType to render a concept-specific ambient
+ * behind the hero / demo screens: gradient orbs + an animated mesh / product
+ * grid / dashboard mockup lines / archival pattern / organic contours. Respects
+ * reduced-motion. Never fetches or generates a real asset. */
+function PremiumVisualLayer({ type, animate, className = '' }: { type: HeroVisualType; animate: boolean; className?: string }) {
+  const still = !animate;
+  const line = 'rgba(255,255,255,0.16)';
+  const motif = (() => {
+    switch (type) {
+      case 'dashboard-mockup':
+        return (
+          <svg aria-hidden viewBox="0 0 400 240" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 h-full w-full" style={{ opacity: 0.5 }}>
+            {[40, 80, 120, 160, 200].map((y, k) => <line key={`g${k}`} x1="20" y1={y} x2="380" y2={y} stroke={line} strokeWidth="1" />)}
+            <polyline points="20,180 80,140 140,155 200,96 260,120 320,70 380,92" fill="none" stroke="var(--acc)" strokeWidth="2.5" />
+            <polyline points="20,200 80,186 140,192 200,150 260,168 320,132 380,150" fill="none" stroke="var(--acc2)" strokeWidth="1.5" opacity="0.7" />
+            {[60, 120, 180, 240, 300].map((x, k) => <rect key={`b${k}`} x={x} y={200 - (k % 3) * 16 - 10} width="16" height={(k % 3) * 16 + 10} rx="2" fill="var(--acc)" opacity="0.28" />)}
+          </svg>
+        );
+      case 'product-mockup':
+        return (
+          <svg aria-hidden viewBox="0 0 400 240" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 h-full w-full" style={{ opacity: 0.45 }}>
+            {[0, 1, 2].map((r) => [0, 1, 2, 3].map((c) => (
+              <rect key={`${r}-${c}`} x={30 + c * 92} y={30 + r * 70} width="76" height="54" rx="8" fill="none" stroke={(r + c) % 3 === 0 ? 'var(--acc)' : line} strokeWidth="1.4" />
+            )))}
+          </svg>
+        );
+      case 'pattern-system':
+        return (
+          <svg aria-hidden viewBox="0 0 400 240" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 h-full w-full" style={{ opacity: 0.4 }}>
+            {Array.from({ length: 9 }).map((_, k) => <line key={`v${k}`} x1={20 + k * 45} y1="10" x2={20 + k * 45} y2="230" stroke={line} strokeWidth="1" />)}
+            {[50, 100, 150, 200].map((y, k) => <line key={`h${k}`} x1="10" y1={y} x2="390" y2={y} stroke={k % 2 ? 'var(--acc)' : line} strokeWidth="1" opacity={k % 2 ? 0.5 : 1} />)}
+          </svg>
+        );
+      case 'photo-direction':
+        return (
+          <svg aria-hidden viewBox="0 0 400 240" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 h-full w-full" style={{ opacity: 0.5 }}>
+            {[40, 80, 120, 160, 200].map((y, k) => <path key={k} d={`M0 ${y} C 100 ${y - 24}, 300 ${y + 24}, 400 ${y}`} fill="none" stroke={k % 2 ? 'var(--acc)' : line} strokeWidth="1.4" />)}
+          </svg>
+        );
+      default: // css-abstract / svg-illustration / canvas-motion → soft mesh
+        return (
+          <svg aria-hidden viewBox="0 0 400 240" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 h-full w-full" style={{ opacity: 0.4 }}>
+            {Array.from({ length: 6 }).map((_, k) => <line key={`d${k}`} x1={-40 + k * 90} y1="240" x2={120 + k * 90} y2="0" stroke={line} strokeWidth="1" />)}
+            <circle cx="320" cy="70" r="40" fill="none" stroke="var(--acc)" strokeWidth="1.4" opacity="0.6" />
+          </svg>
+        );
+    }
+  })();
+  return (
+    <div aria-hidden className={`pointer-events-none absolute inset-0 overflow-hidden ${className}`}>
+      <Orb color="var(--acc)" style={{ top: '-12%', right: '-8%', width: 440, height: 440, opacity: 0.26 }} still={still} />
+      <Orb color="var(--acc2)" style={{ bottom: '-16%', left: '-10%', width: 380, height: 380, opacity: 0.18 }} delay={2} still={still} />
+      {motif}
+    </div>
+  );
+}
+
+const uniqStr = (xs: (string | undefined)[]): string[] => Array.from(new Set(xs.map((x) => (x || '').trim()).filter(Boolean)));
+
+/** Map a suggested-screen name to a screen kind (best-effort, never throws). */
+function kindFromName(name: string): ScreenKind | undefined {
+  const n = (name || '').toLowerCase();
+  if (SHELL_RE.chat.test(n)) return 'chat';
+  if (SHELL_RE.useCase.test(n)) return 'use-cases';
+  if (SHELL_RE.integrations.test(n)) return 'integrations';
+  if (SHELL_RE.security.test(n)) return 'security';
+  if (SHELL_RE.pricing.test(n)) return 'pricing';
+  if (SHELL_RE.beforeAfter.test(n)) return 'before-after';
+  if (SHELL_RE.quote.test(n)) return 'quote';
+  if (SHELL_RE.access.test(n)) return 'access';
+  if (SHELL_RE.financing.test(n)) return 'financing';
+  if (/detail|record|preview/.test(n)) return 'detail';
+  if (SHELL_RE.catalog.test(n)) return 'catalog';
+  if (SHELL_RE.collection.test(n)) return 'collection';
+  if (SHELL_RE.gallery.test(n)) return 'projects';
+  if (/demo|product/.test(n)) return 'product-demo';
+  return undefined;
+}
+
+/**
+ * Resolve the Preview shell into a set of premium internal SCREENS. Pure; never
+ * throws. Returns { screens: [] } for a single-page/landing experience so the
+ * existing scrolling preview renders unchanged.
+ */
 function resolvePreviewShell(
   contract: InteractionContract | undefined,
   brief: WebBuildBrief,
   sectionItems: S[],
 ): PreviewShell {
   try {
-    const has = (re: RegExp) => sectionItems.some((s) => re.test(`${s.id} ${s.name || ''}`));
+    const content = sectionItems.filter((s) => !/hero|footer/i.test(s.id));
+    const secText = (s: S) => `${s.id} ${s.name || ''}`.toLowerCase();
+    const matches = (re: RegExp) => content.filter((s) => re.test(secText(s)));
+    const idsOf = (secs: S[]) => secs.map((s) => s.id);
+    const has = (re: RegExp) => content.some((s) => re.test(secText(s)));
+
+    const concept = (contract?.conceptCategory || '').toLowerCase();
     const mode = (contract?.experienceMode || '').toLowerCase();
+    const stateful = (contract?.requiredStatefulComponents || []).join(' ').toLowerCase();
     const hay = [
       contract?.experienceMode, contract?.navigationModel, contract?.websiteExperienceModel,
-      contract?.primaryWebsiteExperience, brief.navigationModel, brief.websiteExperienceModel,
-      brief.primaryWebsiteExperience,
+      contract?.pageScreenModel, contract?.primaryWebsiteExperience,
+      brief.navigationModel, brief.websiteExperienceModel, brief.primaryWebsiteExperience,
+      brief.pageScreenModel, brief.artDesignArchetype, brief.type,
     ].filter(Boolean).join(' ').toLowerCase();
-    const chat = /chat|assistant|\bbot\b|conversational/.test(hay)
-      || (contract?.requiredStatefulComponents || []).some((c) => /chat/.test(c));
+    const chatImplied = /chat|assistant|\bbot\b|conversational/.test(`${hay} ${stateful} ${concept}`)
+      || has(SHELL_RE.chat);
 
-    let shellMode: ShellMode = 'single-page';
-    if (mode === 'dashboard-shell' || /dashboard/.test(hay)) shellMode = 'dashboard-demo-shell';
-    else if (mode === 'catalog-detail-shell' || /catalog|listing|marketplace|storefront|inventory/.test(hay)) shellMode = has(SHELL_RE.catalog) ? 'catalog-detail-shell' : 'single-page';
-    else if (/archive|\brecord\b|museum|provenance|research/.test(hay)) shellMode = has(SHELL_RE.collection) ? 'archive-record-shell' : 'single-page';
-    else if (/service|quote|lead-?gen/.test(hay)) shellMode = (has(SHELL_RE.quote) || has(SHELL_RE.contact) || has(SHELL_RE.gallery)) ? 'service-lead-shell' : 'single-page';
-    else if (mode === 'dedicated-page' || /dedicated (demo )?page|demo page|demo screen|product demo/.test(hay)) shellMode = 'dedicated-demo-page';
-    else if (mode === 'multi-page-tabs' || /multi-?page|internal page tab|\bpage tabs?\b/.test(hay)) shellMode = 'internal-tabs';
+    // Family — the primary concept controls the screen architecture.
+    let family: ShellFamily = 'none';
+    if (concept === 'ai' || concept === 'saas'
+      || /\bai\b|assistant|chatbot|dashboard|\bsaas\b|platform|product\s?demo/.test(hay)
+      || /chat|product-?demo|assistant/.test(stateful)) family = 'ai';
+    else if (concept === 'marketplace' || concept === 'real_estate'
+      || /catalog|marketplace|inventory|listing|storefront/.test(hay)) family = 'marketplace';
+    else if (concept === 'archive'
+      || /archive|\brecord\b|museum|provenance|collection/.test(hay)) family = 'archive';
+    else if (['landscaping', 'local_service', 'legal', 'medical', 'finance', 'hospitality'].includes(concept)
+      || /service|quote|lead-?gen|before-?after|\bproject/.test(hay)) family = 'service';
 
-    if (shellMode === 'single-page' || shellMode === 'internal-tabs') return { shellMode, screens: [] };
+    // Rich-plan gate — only build multi-screen when the model plan calls for it or
+    // the concept + real sections clearly support it. Simple landings stay single.
+    const richSignal = (!!mode && !['scroll', 'inline'].includes(mode))
+      || (contract?.suggestedScreens?.length || 0) >= 1
+      || (contract?.requiredStatefulComponents?.length || 0) >= 1
+      || /multi-?page|dedicated|dashboard|catalog|internal page tab|demo page|demo screen|product demo/.test(hay);
 
-    const sn = contract?.suggestedScreens?.[0];
-    const label = (sn?.name || '').trim() || defaultScreenLabel(shellMode, chat);
-    const purpose = (sn?.purpose || '').trim() || (contract?.primaryWebsiteExperience || '').trim() || label;
-    const screen: PreviewShellScreen = { id: DEMO_SCREEN_ID, label, purpose, sectionIds: sectionItems.map((s) => s.id), demoOnly: true };
-    return { shellMode, screens: [screen], primaryScreenId: DEMO_SCREEN_ID };
+    if (family === 'none') return { shellMode: 'single-page', screens: [] };
+
+    // Map the model's suggested screens to kinds first (its plan wins).
+    type SuggestedScreen = NonNullable<InteractionContract['suggestedScreens']>[number];
+    type SuggestedMap = { sn: SuggestedScreen; kind: ScreenKind };
+    const suggested: SuggestedMap[] = (contract?.suggestedScreens || [])
+      .map((sn) => ({ sn, kind: kindFromName(sn?.name || '') }))
+      .filter((x): x is SuggestedMap => !!x.sn && !!x.kind);
+
+    const screens: PreviewShellScreen[] = [];
+    const used = new Set<ScreenKind>();
+    const add = (kind: ScreenKind, label: string, re: RegExp | null, purpose?: string) => {
+      if (used.has(kind) || screens.length >= 5) return;
+      const secs = re ? matches(re) : [];
+      const sectionIds = idsOf(secs.length ? secs : content);
+      const sn = suggested.find((x) => x.kind === kind)?.sn;
+      screens.push({
+        id: `__scr_${kind}`,
+        label: (sn?.name || '').trim() || label,
+        purpose: (sn?.purpose || purpose || contract?.primaryWebsiteExperience || label).trim(),
+        kind,
+        sectionIds,
+        demoOnly: true,
+      });
+      used.add(kind);
+    };
+
+    if (family === 'ai') {
+      // Landing gate: an AI product with no demo intent AND no rich plan stays a
+      // scrolling landing page (don't over-complicate a plain one-pager).
+      const demoIntent = chatImplied || richSignal || has(SHELL_RE.demo) || content.length >= 3;
+      if (!demoIntent) return { shellMode: 'single-page', screens: [] };
+      // Flagship — a real Product Demo / Chat Experience screen.
+      if (chatImplied) add('chat', 'Chat Experience', SHELL_RE.demo, contract?.primaryWebsiteExperience);
+      else add('product-demo', 'Product Demo', SHELL_RE.demo, contract?.primaryWebsiteExperience);
+      // Optional model-native screens, only when there is real content for them.
+      if (has(SHELL_RE.useCase)) add('use-cases', 'Use Cases', SHELL_RE.useCase);
+      if (has(SHELL_RE.integrations)) add('integrations', 'Integrations', SHELL_RE.integrations);
+      if (has(SHELL_RE.security)) add('security', 'Security', SHELL_RE.security);
+      if (has(SHELL_RE.pricing)) add('pricing', 'Pricing', SHELL_RE.pricing);
+      // Guarantee at least a second screen so it reads multi-screen — synthesize a
+      // Use Cases page from the remaining real sections (real copy, no fabrication).
+      if (screens.length < 2 && content.length >= 2) add('use-cases', 'Use Cases', null);
+    } else if (family === 'marketplace') {
+      add('catalog', 'Catalog', SHELL_RE.catalog, contract?.primaryWebsiteExperience);
+      add('detail', 'Detail', SHELL_RE.catalog);
+      if (has(SHELL_RE.financing) || has(SHELL_RE.contact)) add('financing', 'Request info', has(SHELL_RE.financing) ? SHELL_RE.financing : SHELL_RE.contact);
+    } else if (family === 'archive') {
+      add('collection', 'Collection', SHELL_RE.collection, contract?.primaryWebsiteExperience);
+      add('record', 'Record', SHELL_RE.collection);
+      if (has(SHELL_RE.access) || has(SHELL_RE.contact)) add('access', 'Research access', has(SHELL_RE.access) ? SHELL_RE.access : SHELL_RE.contact);
+    } else if (family === 'service') {
+      // Only escalate to a multi-screen service site when there is real gallery/
+      // quote content; otherwise a service landing scrolls fine.
+      if (!(has(SHELL_RE.gallery) || has(SHELL_RE.quote) || has(SHELL_RE.beforeAfter) || richSignal)) {
+        return { shellMode: 'single-page', screens: [] };
+      }
+      add('projects', 'Projects', SHELL_RE.gallery, contract?.primaryWebsiteExperience);
+      if (has(SHELL_RE.beforeAfter)) add('before-after', 'Before / After', SHELL_RE.beforeAfter);
+      add('quote', 'Get a quote', has(SHELL_RE.quote) ? SHELL_RE.quote : SHELL_RE.contact);
+    }
+
+    if (!screens.length) return { shellMode: 'single-page', screens: [] };
+    const shellMode: ShellMode = family === 'ai' ? 'dedicated-demo-page'
+      : family === 'marketplace' ? 'catalog-detail-shell'
+      : family === 'archive' ? 'archive-record-shell' : 'service-lead-shell';
+    return { shellMode, screens, primaryScreenId: screens[0].id };
   } catch {
     return { shellMode: 'single-page', screens: [] };
   }
 }
 
-/** One compact, mode-aware demo screen (front-end/static only). Reuses the section
- *  copy + the Phase 2 overlays (via rt.open) for real interactivity. */
-function DemoShellScreen({ mode, label, purpose, sections, brief, art, rt, onHome }: {
-  mode: ShellMode; label: string; purpose: string; sections: S[]; brief: WebBuildBrief; art: WebBuildArtIdentity; rt: PreviewRuntime; onHome: () => void;
-}) {
-  const [query, setQuery] = useState('');
-  const content = sections.filter((s) => !/hero|footer/i.test(s.id));
-  const pick = (re: RegExp) => content.find((s) => re.test(`${s.id} ${s.name || ''}`));
-  const q = query.trim().toLowerCase();
-  const cardsFrom = (re: RegExp, n: number) => {
-    const secs = content.filter((s) => re.test(`${s.id} ${s.name || ''}`));
-    return (secs.length ? secs : content).flatMap((s) => bulletsOf(s).map((b) => ({ b, s }))).slice(0, n);
-  };
+/* ── Premium screen building blocks ──────────────────────────────────────── */
 
-  const shellHeader = (
-    <div className="mx-auto max-w-6xl px-6 pt-8">
+function ScreenHeader({ label, purpose, onHome }: { label: string; purpose: string; onHome: () => void }) {
+  return (
+    <div className="relative z-10 mx-auto max-w-6xl px-6 pt-8">
       <button type="button" onClick={onHome} className="text-sm text-slate-400 transition hover:text-white">&larr; Home</button>
       <div className="mt-3 flex flex-wrap items-center gap-2.5">
         <h1 className="text-2xl font-semibold text-white sm:text-3xl" style={{ fontFamily: 'var(--hf)', letterSpacing: 'var(--tr)' }}>{label}</h1>
@@ -1356,51 +1532,129 @@ function DemoShellScreen({ mode, label, purpose, sections, brief, art, rt, onHom
       {purpose && purpose !== label && <p className="mt-2 max-w-2xl text-sm text-slate-400">{purpose}</p>}
     </div>
   );
+}
 
-  if (mode === 'catalog-detail-shell') {
-    const all = cardsFrom(SHELL_RE.catalog, 12);
-    const visible = q ? all.filter((c) => c.b.toLowerCase().includes(q)) : all;
-    const cta = pick(SHELL_RE.contact) || pick(SHELL_RE.quote) || content[content.length - 1];
-    return (
-      <div className="pb-16">{shellHeader}
-        <div className="mx-auto mt-6 max-w-6xl px-6">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex min-w-[16rem] flex-1 items-center gap-2 rounded-[var(--pr)] border border-[color:var(--bd)] bg-[var(--sf)] px-3.5 py-2">
-              <span className="text-slate-400" aria-hidden>⌕</span>
-              <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Filter listings" className="w-full bg-transparent text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none" />
-            </div>
-            {cta && <button type="button" onClick={() => rt.open('request-info', cta)} className="rounded-lg px-4 py-2 text-sm font-semibold text-white" style={{ background: 'var(--acc)' }}>{cta.cta || 'Request info'}</button>}
+/**
+ * Premium AI/SaaS Product Demo / Chat Experience screen — a real front-end demo
+ * surface (browser mockup frame + left step rail + central chat/product panel +
+ * right inspector) built ONLY from real section copy. Local & static: no backend,
+ * no real AI, no sent/success state. CTAs open the existing preview overlays.
+ */
+function ProductDemoScreen({ label, purpose, screenSections, allSections, brief, art, rt, onHome, heroVisual, animate, chat }: {
+  label: string; purpose: string; screenSections: S[]; allSections: S[]; brief: WebBuildBrief; art: WebBuildArtIdentity; rt: PreviewRuntime; onHome: () => void; heroVisual: HeroVisualType; animate: boolean; chat: boolean;
+}) {
+  const content = (screenSections.length ? screenSections : allSections).filter((s) => !/hero|footer/i.test(s.id));
+  const pick = (re: RegExp) => content.find((s) => re.test(`${s.id} ${s.name || ''}`));
+  const demoSec = pick(SHELL_RE.demo) || content[0];
+  const steps = content.slice(0, 5);
+  // Sample conversation built from REAL copy only — clearly a preview simulation.
+  const answers = uniqStr([demoSec?.sub || demoSec?.headline, ...(demoSec ? bulletsOf(demoSec) : []), ...content.flatMap((s) => bulletsOf(s).slice(0, 1))]).slice(0, 4);
+  const questions = uniqStr(steps.map((s) => s.name || heading(s))).slice(0, answers.length || 3);
+  const inspector = content.find((s) => SHELL_RE.integrations.test(`${s.id} ${s.name}`)) || content.find((s) => SHELL_RE.security.test(`${s.id} ${s.name}`));
+  const inspectorItems = uniqStr(inspector ? bulletsOf(inspector) : content.flatMap((s) => bulletsOf(s)).slice(0, 4)).slice(0, 5);
+
+  return (
+    <div className="relative pb-16">
+      <PremiumVisualLayer type={heroVisual} animate={animate} className="opacity-70" />
+      <ScreenHeader label={label} purpose={purpose} onHome={onHome} />
+      <div className="relative z-10 mx-auto mt-6 max-w-6xl px-6">
+        {/* Browser / product mockup frame. */}
+        <div className="overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)] shadow-2xl" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0.25))' }}>
+          <div className="flex items-center gap-2 border-b border-[color:var(--bd)] bg-black/30 px-4 py-2.5">
+            <span className="h-3 w-3 rounded-full bg-white/20" /><span className="h-3 w-3 rounded-full bg-white/15" /><span className="h-3 w-3 rounded-full bg-white/10" />
+            <span className="ml-3 flex-1 truncate rounded-md border border-[color:var(--bd)] bg-black/30 px-3 py-1 text-[11px] text-slate-400">{(brief.type || 'preview').toLowerCase().replace(/\s+/g, '')}.app / {chat ? 'assistant' : 'demo'}</span>
+            <span className="rounded-full border border-[color:var(--bd)] px-2 py-0.5 text-[10px] uppercase tracking-wider text-slate-400">Preview</span>
           </div>
-          <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3">
-            {visible.map(({ b, s }, i) => (
-              <button key={i} type="button" onClick={() => rt.open('open-detail-modal', s, { title: b, lines: cleanLines([s.sub, ...bulletsOf(s).filter((x) => x !== b)]) })} className={`group block overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)] text-left ${art.cardTone}`}>
-                <div className={`relative ${art.mediaTone}`} style={{ background: i % 3 === 0 ? 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 24%, transparent), color-mix(in srgb, var(--acc2) 12%, transparent))' : 'linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01))' }}><CardDetail mode={art.mode} /></div>
-                <div className="p-3"><p className="text-sm font-medium text-white">{b}</p><p className="mt-1 text-[11px] text-slate-500">View details →</p></div>
-              </button>
-            ))}
+          <div className="grid gap-0 lg:grid-cols-[13rem_1fr_14rem]">
+            {/* Left: demo steps / use cases. */}
+            <aside className="hidden border-r border-[color:var(--bd)] bg-black/20 p-3 lg:block">
+              <p className="px-2 pb-2 text-[11px] font-medium uppercase tracking-widest text-white/45">{chat ? 'Prompts' : 'Steps'}</p>
+              <ul className="space-y-1">
+                {steps.map((s, i) => (
+                  <li key={s.id}>
+                    <button type="button" onClick={() => rt.open('open-chat-demo', s)} className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] transition ${i === 0 ? 'text-white' : 'text-slate-400 hover:text-white'}`} style={i === 0 ? { background: 'color-mix(in srgb, var(--acc) 14%, transparent)' } : undefined}>
+                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[10px] font-semibold text-white" style={{ background: 'color-mix(in srgb, var(--acc) 55%, transparent)' }}>{i + 1}</span>
+                      <span className="truncate">{s.name || heading(s)}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </aside>
+            {/* Center: chat / product experience. */}
+            <div className="min-h-[22rem] bg-[#0b0e14]/60 p-4">
+              <div className="space-y-3">
+                {questions.map((qn, i) => (
+                  <div key={`x${i}`} className="space-y-2">
+                    <div className="ml-auto max-w-[80%] rounded-2xl rounded-tr-sm px-3.5 py-2.5 text-[13px] font-medium text-white" style={{ background: 'var(--acc)' }}>{qn}</div>
+                    {answers[i] && <div className="max-w-[85%] rounded-2xl rounded-tl-sm border border-[color:var(--bd)] bg-[var(--sf)] px-3.5 py-2.5 text-[13px] leading-relaxed text-slate-200">{answers[i]}</div>}
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 flex items-center gap-2 rounded-xl border border-[color:var(--bd)] bg-[var(--sf)] px-3 py-2">
+                <span className="flex-1 text-[13px] text-slate-500">{chat ? 'Ask the assistant…' : 'Try the demo…'} — preview only, nothing is sent.</span>
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg text-white" style={{ background: 'var(--acc)' }} aria-hidden>→</span>
+              </div>
+            </div>
+            {/* Right: inspector / integrations / security. */}
+            <aside className="hidden border-l border-[color:var(--bd)] bg-black/20 p-3 lg:block">
+              <p className="px-1 pb-2 text-[11px] font-medium uppercase tracking-widest text-white/45">{inspector ? (inspector.name || 'Details') : 'Highlights'}</p>
+              <ul className="space-y-2">
+                {inspectorItems.map((b, i) => (
+                  <li key={i} className="rounded-lg border border-[color:var(--bd)] bg-white/[0.02] px-2.5 py-2 text-[12px] leading-snug text-slate-300">{b}</li>
+                ))}
+              </ul>
+            </aside>
           </div>
         </div>
-      </div>
-    );
-  }
-
-  if (mode === 'archive-record-shell') {
-    const all = cardsFrom(SHELL_RE.collection, 12);
-    const visible = q ? all.filter((c) => c.b.toLowerCase().includes(q)) : all;
-    const access = pick(SHELL_RE.access) || pick(SHELL_RE.contact);
-    return (
-      <div className="pb-16">{shellHeader}
-        <div className="mx-auto mt-6 max-w-4xl px-6">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex min-w-[16rem] flex-1 items-center gap-2 rounded-[var(--pr)] border border-[color:var(--bd)] bg-[var(--sf)] px-3.5 py-2">
-              <span className="text-slate-400" aria-hidden>⌕</span>
-              <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search the collection" className="w-full bg-transparent text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none" />
+        {/* Feature strip + primary CTA (opens the existing chat/demo overlay). */}
+        <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {content.filter((s) => s !== demoSec).slice(0, 3).map((s) => (
+            <div key={s.id} className={`rounded-[var(--pr)] border border-[color:var(--bd)] p-4 ${art.cardTone}`}>
+              <p className="text-sm font-semibold text-white">{s.name || heading(s)}</p>
+              <ul className="mt-2.5 space-y-1.5">
+                {bulletsOf(s).slice(0, 2).map((b, i) => <li key={i} className="flex gap-2 text-[13px] text-slate-300"><span className="mt-1.5 h-1 w-1 shrink-0 rounded-full" style={{ background: 'var(--acc)' }} />{b}</li>)}
+              </ul>
             </div>
-            {access && <button type="button" onClick={() => rt.open('request-access', access)} className="rounded-lg px-4 py-2 text-sm font-semibold text-white" style={{ background: 'var(--acc)' }}>{access.cta || 'Request access'}</button>}
+          ))}
+        </div>
+        {demoSec && (
+          <div className="mt-6 flex flex-wrap items-center gap-3">
+            <button type="button" onClick={() => rt.open('open-chat-demo', demoSec)} className="rounded-xl px-6 py-3 text-sm font-semibold text-white" style={{ background: 'var(--acc)', boxShadow: '0 10px 30px -10px var(--acc)' }}>{demoSec.cta || (chat ? 'Open chat demo' : 'Open the demo')}</button>
+            <span className="text-[12px] text-slate-500">Front-end demo surface — no real AI, backend or data.</span>
           </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Premium catalog / collection / gallery grid screen (marketplace/archive/service). */
+function GridScreen({ label, purpose, screenSections, allSections, brief, art, rt, onHome, kind }: {
+  label: string; purpose: string; screenSections: S[]; allSections: S[]; brief: WebBuildBrief; art: WebBuildArtIdentity; rt: PreviewRuntime; onHome: () => void; kind: ScreenKind;
+}) {
+  const [query, setQuery] = useState('');
+  const content = (screenSections.length ? screenSections : allSections).filter((s) => !/hero|footer/i.test(s.id));
+  const all = (content.length ? content : allSections).flatMap((s) => bulletsOf(s).map((b) => ({ b, s }))).slice(0, 12);
+  const q = query.trim().toLowerCase();
+  const visible = q ? all.filter((c) => c.b.toLowerCase().includes(q)) : all;
+  const detailType: InteractionActionType = kind === 'collection' || kind === 'record' ? 'open-record-detail' : 'open-detail-modal';
+  const ctaType: InteractionActionType = kind === 'access' ? 'request-access' : kind === 'quote' ? 'open-quote-form' : 'request-info';
+  const cta = allSections.find((s) => SHELL_RE.contact.test(`${s.id} ${s.name}`)) || allSections.find((s) => SHELL_RE.quote.test(`${s.id} ${s.name}`));
+  const listy = kind === 'collection' || kind === 'record';
+  return (
+    <div className="pb-16"><ScreenHeader label={label} purpose={purpose} onHome={onHome} />
+      <div className={`mx-auto mt-6 px-6 ${listy ? 'max-w-4xl' : 'max-w-6xl'}`}>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex min-w-[16rem] flex-1 items-center gap-2 rounded-[var(--pr)] border border-[color:var(--bd)] bg-[var(--sf)] px-3.5 py-2">
+            <span className="text-slate-400" aria-hidden>⌕</span>
+            <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={listy ? 'Search the collection' : 'Filter listings'} className="w-full bg-transparent text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none" />
+          </div>
+          {cta && <button type="button" onClick={() => rt.open(ctaType, cta)} className="rounded-lg px-4 py-2 text-sm font-semibold text-white" style={{ background: 'var(--acc)' }}>{cta.cta || (ctaType === 'open-quote-form' ? 'Request a quote' : ctaType === 'request-access' ? 'Request access' : 'Request info')}</button>}
+        </div>
+        {listy ? (
           <div className="mt-6 divide-y divide-white/10 border-y border-[color:var(--bd)]">
             {visible.map(({ b, s }, i) => (
-              <button key={i} type="button" onClick={() => rt.open('open-record-detail', s, { title: b, lines: cleanLines([s.sub, ...bulletsOf(s).filter((x) => x !== b)]) })} className="flex w-full items-center gap-5 py-4 text-left">
+              <button key={i} type="button" onClick={() => rt.open(detailType, s, { title: b, lines: cleanLines([s.sub, ...bulletsOf(s).filter((x) => x !== b)]) })} className="flex w-full items-center gap-5 py-4 text-left">
                 <span className="w-8 text-sm tabular-nums text-slate-500">{String(i + 1).padStart(2, '0')}</span>
                 <span className={`relative h-11 w-14 shrink-0 overflow-hidden rounded-md border border-[color:var(--bd)] ${art.cardTone}`} style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 20%, transparent), transparent)' }}><CardDetail mode={art.mode} /></span>
                 <span className="flex-1 text-[15px] font-medium text-white">{b}</span>
@@ -1408,118 +1662,101 @@ function DemoShellScreen({ mode, label, purpose, sections, brief, art, rt, onHom
               </button>
             ))}
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (mode === 'service-lead-shell') {
-    const gallery = cardsFrom(SHELL_RE.gallery, 6);
-    const quote = pick(SHELL_RE.quote) || pick(SHELL_RE.contact) || content[content.length - 1];
-    const overview = content[0];
-    return (
-      <div className="pb-16">{shellHeader}
-        <div className="mx-auto mt-6 grid max-w-6xl gap-8 px-6 lg:grid-cols-[1.4fr_1fr]">
-          <div>
-            {overview && <p className="max-w-xl text-base leading-relaxed text-slate-300">{overview.sub || overview.headline || overview.name}</p>}
-            {gallery.length > 0 && (
-              <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3">
-                {gallery.map(({ b, s }, i) => (
-                  <button key={i} type="button" onClick={() => rt.open('open-detail-modal', s, { title: b, lines: cleanLines([s.sub, ...bulletsOf(s).filter((x) => x !== b)]) })} className={`group block overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)] text-left ${art.cardTone}`}>
-                    <div className={`relative ${art.mediaTone}`} style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 20%, transparent), transparent)' }}><CardDetail mode={art.mode} /></div>
-                    <div className="p-3"><p className="text-sm font-medium text-white">{b}</p></div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          <aside className="rounded-[var(--pr)] border p-5 lg:sticky lg:top-24 lg:self-start" style={{ borderColor: 'color-mix(in srgb, var(--acc) 40%, transparent)', background: 'color-mix(in srgb, var(--acc) 7%, transparent)' }}>
-            <p className="text-sm font-semibold text-white">{(quote && heading(quote)) || 'Request a quote'}</p>
-            {quote?.sub && <p className="mt-2 text-sm text-slate-300">{quote.sub}</p>}
-            <button type="button" onClick={() => rt.open('open-quote-form', quote)} className="mt-4 w-full rounded-lg py-2.5 text-center text-sm font-semibold text-white" style={{ background: 'var(--acc)' }}>{(quote && quote.cta) || 'Request a quote'}</button>
-            <p className="mt-2 text-center text-[11px] text-slate-500">Preview form — nothing is sent.</p>
-          </aside>
-        </div>
-      </div>
-    );
-  }
-
-  if (mode === 'dashboard-demo-shell') {
-    const panels = content.slice(0, 6);
-    return (
-      <div className="pb-16">{shellHeader}
-        <div className="mx-auto mt-6 max-w-6xl px-6">
-          <div className="grid gap-4 lg:grid-cols-[14rem_1fr]">
-            <aside className="hidden rounded-[var(--pr)] border border-[color:var(--bd)] bg-[var(--sf)] p-3 lg:block">
-              <p className="px-2 pb-2 text-[11px] font-medium uppercase tracking-widest text-white/45">{brief.type || 'Overview'}</p>
-              <ul className="space-y-1">
-                {content.slice(0, 6).map((s) => <li key={s.id} className="rounded-lg px-2 py-1.5 text-sm text-slate-300">{s.name || heading(s)}</li>)}
-              </ul>
-            </aside>
-            <div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                {panels.map((s) => (
-                  <div key={s.id} className={`rounded-[var(--pr)] border border-[color:var(--bd)] bg-[var(--sf)] p-4 ${art.cardTone}`}>
-                    <p className="text-sm font-semibold text-white">{s.name || heading(s)}</p>
-                    <ul className="mt-3 space-y-1.5">
-                      {bulletsOf(s).slice(0, 3).map((b, i) => <li key={i} className="flex gap-2 text-[13px] text-slate-300"><span className="mt-1.5 h-1 w-1 shrink-0 rounded-full" style={{ background: 'var(--acc)' }} />{b}</li>)}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-4"><VisualModule kind="data-dashboard" labels={content[0] ? bulletsOf(content[0]) : undefined} /></div>
-            </div>
-          </div>
-          <p className="mt-3 text-[11px] text-slate-500">Front-end demo — structural layout only, no live data.</p>
-        </div>
-      </div>
-    );
-  }
-
-  // dedicated-demo-page (product / chat demo)
-  const demoSec = pick(SHELL_RE.demo) || content[0];
-  const features = content.filter((s) => s !== demoSec);
-  const bubbles = cleanLines([demoSec?.sub || demoSec?.headline || brief.type, ...(demoSec ? bulletsOf(demoSec) : [])]).slice(0, 4);
-  const isChat = /chat|assistant|\bbot\b/.test(`${label} ${demoSec?.id || ''} ${demoSec?.name || ''}`.toLowerCase());
-  return (
-    <div className="pb-16">{shellHeader}
-      <div className="mx-auto mt-6 grid max-w-6xl gap-8 px-6 lg:grid-cols-2">
-        <div>
-          {demoSec && <p className="max-w-xl text-base leading-relaxed text-slate-300">{demoSec.sub || demoSec.headline || demoSec.name}</p>}
-          <ul className="mt-5 space-y-3">
-            {features.flatMap((s) => bulletsOf(s).slice(0, 1)).slice(0, 4).map((b, i) => (
-              <li key={i} className="flex gap-3 text-[15px] text-slate-200"><span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: 'var(--acc)' }} />{b}</li>
+        ) : (
+          <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3">
+            {visible.map(({ b, s }, i) => (
+              <button key={i} type="button" onClick={() => rt.open(detailType, s, { title: b, lines: cleanLines([s.sub, ...bulletsOf(s).filter((x) => x !== b)]) })} className={`group block overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)] text-left ${art.cardTone}`}>
+                <div className={`relative ${art.mediaTone}`} style={{ background: i % 3 === 0 ? 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 24%, transparent), color-mix(in srgb, var(--acc2) 12%, transparent))' : 'linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01))' }}><CardDetail mode={art.mode} /></div>
+                <div className="p-3"><p className="text-sm font-medium text-white">{b}</p><p className="mt-1 text-[11px] text-slate-500">View details →</p></div>
+              </button>
             ))}
-          </ul>
-          {demoSec && <button type="button" onClick={() => rt.open('open-chat-demo', demoSec)} className="mt-7 rounded-xl px-6 py-3 text-sm font-semibold text-white" style={{ background: 'var(--acc)', boxShadow: '0 10px 30px -10px var(--acc)' }}>{demoSec.cta || (isChat ? 'Open chat demo' : 'Open demo')}</button>}
-        </div>
-        <div className="rounded-[var(--pr)] border border-[color:var(--bd)] bg-[#0b0e14] p-4">
-          <div className="flex items-center justify-between border-b border-[color:var(--bd)] pb-3">
-            <span className="flex items-center gap-2 text-sm font-semibold text-white"><span className="h-2 w-2 rounded-full" style={{ background: 'var(--acc)' }} />{isChat ? 'Chat demo' : 'Demo'}</span>
-            <span className="rounded-full border border-[color:var(--bd)] px-2 py-0.5 text-[10px] uppercase tracking-wider text-slate-400">Preview</span>
           </div>
-          <div className="space-y-2.5 py-4">
-            {bubbles.map((m, i) => <div key={i} className="max-w-[85%] rounded-2xl rounded-tl-sm border border-[color:var(--bd)] bg-[var(--sf)] px-3.5 py-2.5 text-[13px] leading-relaxed text-slate-200">{m}</div>)}
-            {demoSec?.cta && <div className="ml-auto max-w-[85%] rounded-2xl rounded-tr-sm px-3.5 py-2.5 text-[13px] font-medium text-white" style={{ background: 'var(--acc)' }}>{demoSec.cta}</div>}
-          </div>
-          <div className="flex items-center gap-2 rounded-xl border border-[color:var(--bd)] bg-[var(--sf)] px-3 py-2">
-            <span className="flex-1 text-[13px] text-slate-500">Preview simulation — no messages are sent.</span>
-            <span className="flex h-7 w-7 items-center justify-center rounded-lg text-white" style={{ background: 'var(--acc)' }} aria-hidden>→</span>
-          </div>
-        </div>
+        )}
+        <p className="mt-4 text-[11px] text-slate-500">Front-end demo — {brief.type || 'sample'} content only, nothing is sent.</p>
       </div>
     </div>
   );
 }
 
+/** Premium content screen (use-cases / integrations / security / pricing / detail /
+ *  financing / projects / before-after / quote) — cards + sticky action rail. */
+function ContentScreen({ label, purpose, screenSections, allSections, brief, art, rt, onHome, kind }: {
+  label: string; purpose: string; screenSections: S[]; allSections: S[]; brief: WebBuildBrief; art: WebBuildArtIdentity; rt: PreviewRuntime; onHome: () => void; kind: ScreenKind;
+}) {
+  const content = (screenSections.length ? screenSections : allSections).filter((s) => !/hero|footer/i.test(s.id));
+  const lead = content[0];
+  const cards = (content.length ? content : allSections).filter((s) => !/hero|footer/i.test(s.id)).slice(0, 6);
+  const ctaType: InteractionActionType = kind === 'quote' ? 'open-quote-form' : kind === 'financing' ? 'request-info' : kind === 'pricing' ? 'open-contact-form' : 'open-detail-modal';
+  const cta = allSections.find((s) => SHELL_RE.quote.test(`${s.id} ${s.name}`)) || allSections.find((s) => SHELL_RE.contact.test(`${s.id} ${s.name}`)) || cards[cards.length - 1];
+  return (
+    <div className="pb-16"><ScreenHeader label={label} purpose={purpose} onHome={onHome} />
+      <div className="mx-auto mt-6 grid max-w-6xl gap-8 px-6 lg:grid-cols-[1fr_16rem]">
+        <div className="min-w-0">
+          {lead && <p className="max-w-2xl text-base leading-relaxed text-slate-300">{lead.sub || lead.headline || lead.name}</p>}
+          <div className="mt-6 grid gap-4 sm:grid-cols-2">
+            {cards.map((s) => (
+              <div key={s.id} className={`rounded-[var(--pr)] border border-[color:var(--bd)] p-5 ${art.cardTone}`}>
+                <div className="flex items-center gap-3">
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg text-sm font-semibold text-white" style={{ background: 'color-mix(in srgb, var(--acc) 45%, transparent)' }}>{(s.name || 'S').slice(0, 1).toUpperCase()}</span>
+                  <p className="text-sm font-semibold text-white">{s.name || heading(s)}</p>
+                </div>
+                <ul className="mt-3 space-y-1.5">
+                  {bulletsOf(s).slice(0, 3).map((b, i) => <li key={i} className="flex gap-2 text-[13px] text-slate-300"><span className="mt-1.5 h-1 w-1 shrink-0 rounded-full" style={{ background: 'var(--acc)' }} />{b}</li>)}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </div>
+        <aside className="space-y-4 lg:sticky lg:top-24 lg:self-start">
+          {cta && (
+            <div className="rounded-[var(--pr)] border p-5" style={{ borderColor: 'color-mix(in srgb, var(--acc) 40%, transparent)', background: 'color-mix(in srgb, var(--acc) 7%, transparent)' }}>
+              <p className="text-sm font-semibold leading-snug text-white">{heading(cta)}</p>
+              {cta.sub && <p className="mt-2 text-sm text-slate-300">{cta.sub}</p>}
+              <button type="button" onClick={() => rt.open(ctaType, cta)} className="mt-4 w-full rounded-lg py-2.5 text-center text-sm font-semibold text-white" style={{ background: 'var(--acc)' }}>{cta.cta || 'Continue'}</button>
+              <p className="mt-2 text-center text-[11px] text-slate-500">Preview — nothing is sent.</p>
+            </div>
+          )}
+        </aside>
+      </div>
+      <p className="mx-auto mt-6 max-w-6xl px-6 text-[11px] text-slate-500">Front-end demo — {brief.type || 'sample'} content only, nothing is sent.</p>
+    </div>
+  );
+}
+
+/** Dispatch a resolved screen to its premium composition. Never throws. */
+function DemoShellScreen({ screen, allSections, brief, art, rt, onHome, heroVisual, animate }: {
+  screen: PreviewShellScreen; allSections: S[]; brief: WebBuildBrief; art: WebBuildArtIdentity; rt: PreviewRuntime; onHome: () => void; heroVisual: HeroVisualType; animate: boolean;
+}) {
+  const screenSections = screen.sectionIds
+    .map((id) => allSections.find((s) => s.id === id))
+    .filter((s): s is S => !!s);
+  const common = { label: screen.label, purpose: screen.purpose, screenSections, allSections, brief, art, rt, onHome };
+  switch (screen.kind) {
+    case 'product-demo':
+    case 'chat':
+      return <ProductDemoScreen {...common} heroVisual={heroVisual} animate={animate} chat={screen.kind === 'chat'} />;
+    case 'catalog':
+    case 'detail':
+    case 'collection':
+    case 'record':
+    case 'access':
+      return <GridScreen {...common} kind={screen.kind} />;
+    default:
+      return <ContentScreen {...common} kind={screen.kind} />;
+  }
+}
+
 export default function WebBuildPreviewDocument({
-  sectionItems: rawSectionItems, brief, interactionContract,
+  sectionItems: rawSectionItems, brief, interactionContract, visualAssetPlan,
 }: {
   sectionItems: WebBuildSectionItem[];
   brief: WebBuildBrief;
   /** Phase 2: the strategy's Interaction Contract (optional → old builds render
    *  unchanged). Preview turns its actions into real in-app behaviour. */
   interactionContract?: InteractionContract;
+  /** Phase 5 Visual Asset Plan (data only). Consumed by the premium visual layer
+   *  with CSS/SVG. Optional → the standalone route / old builds fall back safely. */
+  visualAssetPlan?: VisualAssetPlan;
 }) {
   // Normalize every section item to a well-formed shape BEFORE any derived helper
   // runs. The section-level boundaries only cover their own renderers; the plan/
@@ -1575,14 +1812,37 @@ export default function WebBuildPreviewDocument({
   // absent contract simply yields scroll-only behaviour (preview unchanged).
   const contract = useMemo<InteractionContract | null>(() => {
     try {
-      return deriveInteractionContract({
+      const derived = deriveInteractionContract({
         brief,
         conceptCategory: interactionContract?.conceptCategory,
         ctaHierarchy: { primary: brief.primaryCTA, secondary: brief.secondaryCTA },
         sections: sectionItems.map((s) => ({ id: s.id, name: s.name })),
         artMode: art.mode,
+        // Phase 6A: PRESERVE the model's own Website Experience Plan so re-deriving
+        // the section-action map (for the final section ids) never discards it.
+        experiencePlan: interactionContract ? {
+          websiteExperienceModel: interactionContract.websiteExperienceModel,
+          pageScreenModel: interactionContract.pageScreenModel,
+          primaryWebsiteExperience: interactionContract.primaryWebsiteExperience,
+          navigationModel: interactionContract.navigationModel,
+          statefulDemoComponents: interactionContract.requiredStatefulComponents,
+        } : undefined,
       });
-    } catch { return null; }
+      if (!interactionContract) return derived;
+      // Merge the model-native fields back over the re-derived contract (the model's
+      // own plan wins; the re-derivation only fills section-action keys + fallbacks).
+      return {
+        ...derived,
+        websiteExperienceModel: interactionContract.websiteExperienceModel || derived.websiteExperienceModel,
+        pageScreenModel: interactionContract.pageScreenModel || derived.pageScreenModel,
+        primaryWebsiteExperience: interactionContract.primaryWebsiteExperience || derived.primaryWebsiteExperience,
+        navigationModel: interactionContract.navigationModel || derived.navigationModel,
+        experienceMode: interactionContract.experienceMode || derived.experienceMode,
+        suggestedScreens: (interactionContract.suggestedScreens?.length ? interactionContract.suggestedScreens : derived.suggestedScreens),
+        requiredStatefulComponents: uniqStr([...(interactionContract.requiredStatefulComponents || []), ...(derived.requiredStatefulComponents || [])]),
+        conceptCategory: interactionContract.conceptCategory || derived.conceptCategory,
+      };
+    } catch { return interactionContract || null; }
   }, [interactionContract, sectionItems, brief, art.mode]);
 
   // Overlay state for the three preview surfaces. Guarded; never blocks render.
@@ -1665,9 +1925,13 @@ export default function WebBuildPreviewDocument({
   // Website Experience Plan). Guarded; falls back to 'single-page' (existing
   // behaviour) when there is no rich plan or no matching sections. The demo screens
   // become extra internal tabs — no routes, no URL change.
-  const shell = useMemo(() => resolvePreviewShell(interactionContract, brief, sectionItems), [interactionContract, brief, sectionItems]);
+  const shell = useMemo(() => resolvePreviewShell(contract || interactionContract, brief, sectionItems), [contract, interactionContract, brief, sectionItems]);
   const demoScreens = shell.screens;
   const activeDemoScreen = demoScreens.find((s) => s.id === activePage);
+  // Phase 6A: the concept-specific hero visual (from the Phase-5 Visual Asset Plan
+  // when plumbed, else a safe per-mode fallback) + whether ambient motion may run.
+  const heroVisual = resolveHeroVisual(visualAssetPlan, art.mode);
+  const ambientAllowed = !reduce && motionAmbientAllowed(deriveMotionFit(brief, art, plan));
 
   // `current`/`pages[0]` must never be assumed present: buildPreviewPages always
   // returns a Home page today, but a defensive Home fallback (synthesized from the
@@ -1848,19 +2112,25 @@ export default function WebBuildPreviewDocument({
       )}
 
       {activeDemoScreen ? (
-        <DemoShellScreen
-          key={activeDemoScreen.id}
-          mode={shell.shellMode}
-          label={activeDemoScreen.label}
-          purpose={activeDemoScreen.purpose}
-          sections={sectionItems}
-          brief={brief}
-          art={art}
-          rt={rt}
-          onHome={() => setActivePage('home')}
-        />
+        <PreviewSectionErrorBoundary key={activeDemoScreen.id} label={activeDemoScreen.label}>
+          <DemoShellScreen
+            screen={activeDemoScreen}
+            allSections={sectionItems}
+            brief={brief}
+            art={art}
+            rt={rt}
+            onHome={() => setActivePage('home')}
+            heroVisual={heroVisual}
+            animate={ambientAllowed}
+          />
+        </PreviewSectionErrorBoundary>
       ) : isHome ? (
-        <div key={current.id}>{renderItems.map(renderSection)}</div>
+        <div key={current.id} className="relative">
+          {/* Phase 6A: concept-specific ambient visual (CSS/SVG) behind the home
+              content — adds depth without covering the heroes' own backdrops. */}
+          <PremiumVisualLayer type={heroVisual} animate={ambientAllowed} className="opacity-40" />
+          <div className="relative z-10">{renderItems.map(renderSection)}</div>
+        </div>
       ) : (
         <div key={current.id}>
           {/* Page header (real copy only — no fabricated descriptions). */}

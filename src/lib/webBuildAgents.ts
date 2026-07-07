@@ -4333,6 +4333,23 @@ export function deriveReviewerAgent(input: ReviewerInput): ReviewerAgentArtifact
       'artDirection');
   }
 
+  /* 2.9 — Weak demo/page architecture (Phase 6A): an AI/SaaS concept with no
+   *        chat/product-demo surface reads as a shallow single page in Preview. */
+  const ic = input.strategy?.interactionContract;
+  const isAiSaas = primaryConcept === 'ai' || primaryConcept === 'saas'
+    || /\bai\b|assistant|chatbot|\bsaas\b/.test(hay);
+  if (isAiSaas) {
+    const statefulHay = (ic?.requiredStatefulComponents || []).join(' ').toLowerCase();
+    const screenHay = (ic?.suggestedScreens || []).map((s) => s?.name || '').join(' ').toLowerCase();
+    const hasDemoSurface = /chat|assistant|product-?demo|\bdemo\b|playground/.test(`${statefulHay} ${screenHay}`);
+    if (!hasDemoSurface) {
+      add('warning', 'weak-demo-architecture', 'Weak demo/page architecture for an AI/SaaS product',
+        'No chat / product-demo stateful component or demo screen is declared for an AI/SaaS concept.',
+        'Declare a chat/product-demo surface (requiredStatefulComponents or a suggestedScreen) so the Preview builds a real Product Demo / Chat Experience screen.',
+        'strategy.interactionContract');
+    } else passed.push(L(lang, 'Demo/page architecture', 'Demo/sayfa mimarisi'));
+  }
+
   /* 3 — Visual identity */
   const visualIdentity = !!input.artDirection?.designArchetype
     && !!(input.artDirection?.visualSignature || input.artDirection?.visualDifferentiators?.length || input.artDirection?.surfaceRules?.length);
