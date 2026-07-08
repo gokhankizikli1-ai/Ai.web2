@@ -93,6 +93,17 @@ export interface WebBuildParseDiagnostics {
   hasFrontendCodeSection: boolean;
   hasPageSectionsSection: boolean;
   replyCharCount: number;
+  /* ── Phase 6D: split the PLANNING contract from the full CODE contract. The
+   *  Preview is driven by the planning/copy sections, so a fresh build is
+   *  model-planned WITHOUT backend React code. All optional → old builds load. */
+  hasBuildPlanSection?: boolean;
+  hasDesignDirectionSection?: boolean;
+  hasGeneratedCopySection?: boolean;
+  /** The Preview bar: Build Plan + Design Direction + WEP + Page Sections + copy,
+   *  no Overview fallback, substantial reply. Frontend Code NOT required. */
+  planningContractPresent?: boolean;
+  /** The stricter All-Files bar: planning contract + a real Frontend Code section. */
+  fullCodeContractPresent?: boolean;
   /** Set on a result that was produced by the strict repair retry (Phase: gate). */
   repairedFromPartial?: boolean;
   /** The quality of the FIRST attempt when a repair retry ran ('frontend-fallback'
@@ -436,16 +447,22 @@ export function buildWebBuildRepairRequest(
   const prev = (previousReply || '').trim().slice(0, 4000);
   return [
     '[WEB BUILD REQUEST]',
-    'Your previous response did not satisfy the Web Build contract. Re-output the',
-    'complete canonical package now. Do not explain. Do not summarize. Do not',
-    'apologize. Output ONLY the build, using EXACTLY these H2 sections in order:',
+    'Your previous response did not satisfy the Web Build PLANNING contract. Re-output',
+    'the complete model-planned package now. Do not explain. Do not summarize. Do not',
+    'apologize. Output ONLY the build. These H2 sections are REQUIRED, in this order:',
     '',
     '## Build Plan',
     '## Design Direction',
     '## Page Sections',
     '## Generated Copy',
-    '## Frontend Code',
     '## Next Steps',
+    '',
+    'REQUIRED above all: a real ## Page Sections architecture AND real ## Generated',
+    'Copy for every section (specific, benefit-led — never generic filler). ## Frontend',
+    'Code is OPTIONAL/bonus: if you can include real React + Tailwind, add it as a',
+    '## Frontend Code section — but do NOT omit or shorten the planning/copy sections',
+    'to make room for it. If you cannot produce complete code, STILL return the full',
+    'planning + copy contract above (that alone is a valid model-planned build).',
     '',
     'Inside ## Build Plan and ## Design Direction include the EXACT labeled fields,',
     'one per line, including the Website Experience Plan labels with these EXACT',
@@ -458,13 +475,15 @@ export function buildWebBuildRepairRequest(
     '"Entry screen:", "Post-entry screen:", "Primary entry CTA:", "Secondary entry',
     'CTA:", "Navigation behavior:".',
     '',
-    '## Frontend Code MUST contain real React + Tailwind with, at minimum, these',
-    'files as "### <path>" headings: "### src/main.tsx", "### src/App.tsx",',
+    'IF (and only if) you include ## Frontend Code, it should be real React + Tailwind',
+    'with files as "### <path>" headings: "### src/main.tsx", "### src/App.tsx",',
     '"### src/styles.css", "### src/data/siteContent.ts", plus one',
-    '"### src/components/<Name>.tsx" per page section. No placeholder comments, no',
-    'empty blocks, no broken imports.',
+    '"### src/components/<Name>.tsx" per page section — no placeholder comments, no',
+    'broken imports. This section is OPTIONAL and must never replace the planning/copy',
+    'sections above.',
     '',
-    `The previous reply was missing / invalid for: ${missing}.`,
+    `The previous reply was missing / invalid for: ${missing}. Prioritize the planning`,
+    'and copy sections; Frontend Code is a bonus, not a pass condition.',
     '',
     'SCOPE stays WEBSITE + FRONT-END DEMO ONLY: no real backend, AI runtime,',
     'database, payments, auth, CRM, real search or real AI logic — any interactive',
@@ -602,17 +621,46 @@ function parseWebBuildResult(
     'demo surfaces:', 'stateful demo components:', 'navigation model:', 'media/motion plan:',
   ];
   const wepMatched = WEP_LABELS.filter((l) => lowerReply.includes(l)).length;
+  // A genuine plan block emits several exact labels; require ≥4 of 7 so one
+  // dropped label doesn't defeat detection, but stray prose can't fake it.
+  const hasWebsiteExperiencePlanFields = wepMatched >= 4;
+  const hasFrontendCodeSection = hasCanonical('Frontend Code');
+  const hasPageSectionsSection = hasCanonical('Page Sections');
+  const hasBuildPlanSection = hasCanonical('Build Plan');
+  const hasDesignDirectionSection = hasCanonical('Design Direction');
+  const hasGeneratedCopySection = hasCanonical('Generated Copy');
+  const replyCharCount = reply.trim().length;
+  // "Enough section copy" — real body text across parsed content sections, so a
+  // Generated Copy heading isn't strictly required when the sections carry copy.
+  const contentBodyChars = sections
+    .filter((s) => !/frontend\s*code|overview/i.test(s.title))
+    .reduce((n, s) => n + (s.body || '').trim().length, 0);
+  const copyPresent = hasGeneratedCopySection || contentBodyChars >= 400;
+  // Phase 6D — the PLANNING contract (what the Preview actually needs). Frontend
+  // Code is NOT required here; it is a bonus captured by the full CODE contract.
+  const planningContractPresent =
+    !usedOverviewFallback &&
+    hasWebsiteExperiencePlanFields &&
+    hasPageSectionsSection &&
+    hasBuildPlanSection &&
+    hasDesignDirectionSection &&
+    copyPresent &&
+    replyCharCount > 800;
+  const fullCodeContractPresent = planningContractPresent && hasFrontendCodeSection;
   const parseDiagnostics: WebBuildParseDiagnostics = {
     canonicalSectionsPresent: CANONICAL.filter((c) => hasCanonical(c)),
     canonicalSectionsMissing: CANONICAL.filter((c) => !hasCanonical(c)),
     usedOverviewFallback,
     isPartial: partial,
-    // A genuine plan block emits several exact labels; require ≥4 of 7 so one
-    // dropped label doesn't defeat detection, but stray prose can't fake it.
-    hasWebsiteExperiencePlanFields: wepMatched >= 4,
-    hasFrontendCodeSection: hasCanonical('Frontend Code'),
-    hasPageSectionsSection: hasCanonical('Page Sections'),
-    replyCharCount: reply.trim().length,
+    hasWebsiteExperiencePlanFields,
+    hasFrontendCodeSection,
+    hasPageSectionsSection,
+    hasBuildPlanSection,
+    hasDesignDirectionSection,
+    hasGeneratedCopySection,
+    planningContractPresent,
+    fullCodeContractPresent,
+    replyCharCount,
   };
 
   return {
@@ -630,24 +678,47 @@ function parseWebBuildResult(
 }
 
 /**
- * TRUE only when the reply is a genuine, complete model-planned build package:
- * real diagnostics, no Overview fallback, the Website Experience Plan fields,
- * both Page Sections and Frontend Code present (and not in the missing list),
- * and enough substance (>800 chars). This is the bar a FRESH build must clear
- * before Preview/All Files are shown — a frontend-fallback can never pass it.
+ * Phase 6D — the PLANNING contract (what the Preview actually needs). TRUE when
+ * the reply is a genuine model-planned PLAN: no Overview fallback, the Website
+ * Experience Plan fields, Build Plan + Design Direction + Page Sections, real
+ * copy (Generated Copy section or enough section body), and substance (>800
+ * chars). Frontend Code is NOT required — the Preview renders from the planning/
+ * copy sections + the internal renderer. A frontend-fallback can never pass it.
  */
-export function isModelPlannedEnough(result: WebBuildResult): boolean {
+export function isModelPlanningContractEnough(result: WebBuildResult): boolean {
   const d = result.parseDiagnostics;
   if (!d) return false;
+  // Prefer the stored flag (fresh parse); recompute defensively for old objects.
+  if (typeof d.planningContractPresent === 'boolean') return d.planningContractPresent;
   return (
     !d.usedOverviewFallback &&
     d.hasWebsiteExperiencePlanFields &&
     d.hasPageSectionsSection &&
-    d.hasFrontendCodeSection &&
-    !d.canonicalSectionsMissing.includes('Page Sections') &&
-    !d.canonicalSectionsMissing.includes('Frontend Code') &&
+    (d.hasBuildPlanSection !== false) &&
+    (d.hasDesignDirectionSection !== false) &&
     d.replyCharCount > 800
   );
+}
+
+/**
+ * Phase 6D — the stricter FULL CODE contract (what All-Files parity will require
+ * or repair for later). The planning contract PLUS a real Frontend Code section.
+ * This is the old `isModelPlannedEnough` bar; kept for the All-Files phase.
+ */
+export function isFullCodeContractEnough(result: WebBuildResult): boolean {
+  const d = result.parseDiagnostics;
+  if (!d) return false;
+  if (typeof d.fullCodeContractPresent === 'boolean') return d.fullCodeContractPresent;
+  return isModelPlanningContractEnough(result) && d.hasFrontendCodeSection
+    && !d.canonicalSectionsMissing.includes('Frontend Code');
+}
+
+/**
+ * Backward-compatible alias — the historical "model-planned enough" bar was the
+ * full CODE contract. Retained so any external caller keeps working.
+ */
+export function isModelPlannedEnough(result: WebBuildResult): boolean {
+  return isFullCodeContractEnough(result);
 }
 
 /**
@@ -748,15 +819,18 @@ export async function generateWebBuild(
     );
 
     // Revisions build on an already-validated site → keep tolerant behavior.
-    // A fresh build that already cleared the model-planned bar is done.
-    if (opts?.revise || isModelPlannedEnough(first)) return first;
+    // A fresh build that already cleared the PLANNING contract is done — the
+    // Preview renders from the planning/copy sections; Frontend Code is a bonus,
+    // NOT required for a model-planned Preview (Phase 6D).
+    if (opts?.revise || isModelPlanningContractEnough(first)) return first;
 
     // Fresh build fell short. Log WHY (owner/dev), then attempt ONE strict repair.
     const fd = first.parseDiagnostics;
     // eslint-disable-next-line no-console
     console.warn(
-      `[WebBuild] fresh build below model-planned bar — missing [${fd?.canonicalSectionsMissing.join(', ') || '?'}]` +
+      `[WebBuild] fresh build below the PLANNING contract — missing [${fd?.canonicalSectionsMissing.join(', ') || '?'}]` +
         `, overviewFallback=${!!fd?.usedOverviewFallback}, wepFields=${!!fd?.hasWebsiteExperiencePlanFields}` +
+        `, buildPlan=${!!fd?.hasBuildPlanSection}, designDir=${!!fd?.hasDesignDirectionSection}` +
         ' — attempting one strict repair retry.',
     );
 
@@ -776,20 +850,22 @@ export async function generateWebBuild(
     }
 
     const rd = repaired.parseDiagnostics;
-    const repairOk =
-      isModelPlannedEnough(repaired) ||
-      (!!rd && !rd.usedOverviewFallback && rd.hasPageSectionsSection && rd.hasWebsiteExperiencePlanFields);
+    // Phase 6D — accept the repair on the PLANNING contract. Do NOT fail just
+    // because Frontend Code is missing; only fail when the planning/copy contract
+    // itself is still absent (Overview-only, no Page Sections, no WEP, too thin).
+    const repairOk = isModelPlanningContractEnough(repaired);
     if (!repairOk) {
       // eslint-disable-next-line no-console
       console.warn(
-        `[WebBuild] strict repair still below bar — missing [${rd?.canonicalSectionsMissing.join(', ') || '?'}]` +
-          `, overviewFallback=${!!rd?.usedOverviewFallback} — contract_failed.`,
+        `[WebBuild] strict repair still below the PLANNING contract — missing [${rd?.canonicalSectionsMissing.join(', ') || '?'}]` +
+          `, overviewFallback=${!!rd?.usedOverviewFallback}, wepFields=${!!rd?.hasWebsiteExperiencePlanFields}` +
+          `, pageSections=${!!rd?.hasPageSectionsSection} — contract_failed.`,
       );
       throw new WebBuildError('contract_failed', 'The backend did not return a complete model-planned build package.');
     }
 
     // eslint-disable-next-line no-console
-    console.warn('[WebBuild] strict repair retry succeeded — build recovered from a partial first attempt.');
+    console.warn(`[WebBuild] strict repair retry succeeded — planning contract met (fullCode=${!!rd?.fullCodeContractPresent}).`);
     const firstQuality = isRepairableModelPartial(first) ? 'model-partial' : 'frontend-fallback';
     return rd
       ? { ...repaired, parseDiagnostics: { ...rd, repairedFromPartial: true, firstAttemptQuality: firstQuality } }

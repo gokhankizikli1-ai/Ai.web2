@@ -79,6 +79,9 @@ export interface WebBuildPlanningDiagnostics {
   hasStrategyWebsiteExperiencePlan?: boolean;
   hasInteractionContract?: boolean;
   planningQuality: PlanningQuality;
+  /** Phase 6D — model-planned Preview but the full Frontend Code contract is
+   *  missing/pending (All-Files code parity to follow). Optional → old builds load. */
+  codeContractPending?: boolean;
   warnings: string[];
 }
 
@@ -330,14 +333,28 @@ function computePlanningDiagnostics(args: {
   // backend brief that already carried the Website Experience Plan.
   const modelWEPSignal = !!(hasModelWEP || parse?.hasWebsiteExperiencePlanFields);
 
+  // Phase 6D — the Preview is driven by the PLANNING contract, so a model-planned
+  // build no longer requires a backend Frontend Code section. Prefer the stored
+  // planning/full-code flags; fall back to the field checks for old builds.
+  const planningContractPresent = typeof parse?.planningContractPresent === 'boolean'
+    ? parse.planningContractPresent
+    : !!(parse?.hasWebsiteExperiencePlanFields && !parse.usedOverviewFallback && parse.hasPageSectionsSection);
+  const fullCodeContractPresent = typeof parse?.fullCodeContractPresent === 'boolean'
+    ? parse.fullCodeContractPresent
+    : !!(planningContractPresent && parse?.hasFrontendCodeSection);
   let planningQuality: PlanningQuality;
+  let codeContractPending = false;
   if (usedSafePayloadFallback) {
     planningQuality = 'frontend-fallback';
-  } else if (
-    parse?.hasWebsiteExperiencePlanFields && !parse.usedOverviewFallback
-    && parse.hasPageSectionsSection && parse.hasFrontendCodeSection && hasStrategyWEP
-  ) {
+  } else if (fullCodeContractPresent && hasStrategyWEP) {
+    // Full model-planned package: planning contract + real Frontend Code.
     planningQuality = 'model-planned';
+  } else if (planningContractPresent) {
+    // Phase 6D — a complete PLANNING contract (Build Plan + Design Direction + WEP +
+    // Page Sections + Generated Copy) is a real model-planned Preview even when the
+    // full React code contract is missing/pending. NOT a frontend-fallback.
+    planningQuality = 'model-planned';
+    codeContractPending = !fullCodeContractPresent;
   } else if (parse?.usedOverviewFallback || !modelWEPSignal) {
     // Overview fallback, or no model-native website-experience signal at all.
     planningQuality = 'frontend-fallback';
@@ -354,6 +371,7 @@ function computePlanningDiagnostics(args: {
   if (parse?.usedOverviewFallback) warnings.push('Backend returned no ## sections — used Overview fallback.');
   if (parse && !parse.hasPageSectionsSection && !usedSafePayloadFallback) warnings.push('No "Page Sections" section in the backend reply.');
   if (parse && !parse.hasFrontendCodeSection && !usedSafePayloadFallback) warnings.push('No "Frontend Code" section in the backend reply.');
+  if (codeContractPending) warnings.push('Model-planned Preview — Frontend Code contract missing; All Files uses internal synthesis (code parity pending).');
   if (parse && !parse.hasWebsiteExperiencePlanFields) warnings.push('No Website Experience Plan labels in the backend reply.');
   if (usedArchitectureRewrite) warnings.push('Frontend rewrote the section architecture.');
   if (usedQualityFallbackSections) warnings.push('Frontend replaced weak sections with inferred fallback sections.');
@@ -370,6 +388,9 @@ function computePlanningDiagnostics(args: {
     hasStrategyWebsiteExperiencePlan: hasStrategyWEP,
     hasInteractionContract: hasContract,
     planningQuality,
+    // Phase 6D — true when the Preview is model-planned but the full React code
+    // contract is missing (All-Files parity pending). Never means frontend-fallback.
+    codeContractPending,
     warnings,
   };
 }

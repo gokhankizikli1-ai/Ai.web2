@@ -361,6 +361,10 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       if (parse?.canonicalSectionsMissing?.length) ownerRows.push(['canonicalSectionsMissing', parse.canonicalSectionsMissing.join(', ')]);
       ownerRows.push(['usedOverviewFallback', String(!!parse?.usedOverviewFallback)]);
       ownerRows.push(['hasWebsiteExperiencePlanFields', String(!!parse?.hasWebsiteExperiencePlanFields)]);
+      // Phase 6D — planning contract (Preview bar) vs full code contract (All-Files bar).
+      if (typeof parse?.planningContractPresent === 'boolean') ownerRows.push(['planningContractPresent', String(parse.planningContractPresent)]);
+      if (typeof parse?.fullCodeContractPresent === 'boolean') ownerRows.push(['fullCodeContractPresent', String(parse.fullCodeContractPresent)]);
+      if (pd.codeContractPending) ownerRows.push(['codeContractPending', 'true (All Files parity pending)']);
       ownerRows.push(['usedArchitectureRewrite', String(!!pd.usedArchitectureRewrite)]);
       ownerRows.push(['usedQualityFallbackSections', String(!!pd.usedQualityFallbackSections)]);
       ownerRows.push(['usedFileSynthesisFallback', String(!!pd.usedFileSynthesisFallback)]);
