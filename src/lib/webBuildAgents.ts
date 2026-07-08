@@ -512,6 +512,15 @@ export interface WebsiteExperiencePlan {
   primaryEntryCTA?: string;
   secondaryEntryCTA?: string;
   navigationBehavior?: string;
+  /* ── Conversion Journey (Phase 6F) — the single primary conversion path
+   *  (Landing → optional Lead Capture → Demo/Catalog/…). All optional; the lead
+   *  step is a LOCAL static form shell only (never a real signup/auth/backend). */
+  conversionJourneyModel?: string;
+  primaryConversionIntent?: string;
+  leadCaptureRequired?: string;
+  leadCaptureFields?: string;
+  afterLeadCaptureScreen?: string;
+  ctaConsistencyRule?: string;
   summary: string;
 }
 
@@ -3461,7 +3470,14 @@ export function deriveStrategyAgent(
     const pcta = cl(brief.primaryEntryCTA);
     const scta = cl(brief.secondaryEntryCTA);
     const navb = cl(brief.navigationBehavior);
-    if (wem || psm || pwe || nav || mmp || surfaces.length || comps.length || efm || escr || pescr || navb) {
+    // Conversion Journey (Phase 6F) — the model's primary conversion path.
+    const cjm = cl(brief.conversionJourneyModel);
+    const pci = cl(brief.primaryConversionIntent);
+    const lcr = cl(brief.leadCaptureRequired);
+    const lcf = cl(brief.leadCaptureFields);
+    const alcs = cl(brief.afterLeadCaptureScreen);
+    const ccr = cl(brief.ctaConsistencyRule);
+    if (wem || psm || pwe || nav || mmp || surfaces.length || comps.length || efm || escr || pescr || navb || cjm || pci || lcr) {
       websiteExperiencePlan = {
         websiteExperienceModel: wem || undefined,
         pageScreenModel: psm || undefined,
@@ -3477,6 +3493,12 @@ export function deriveStrategyAgent(
         primaryEntryCTA: pcta || undefined,
         secondaryEntryCTA: scta || undefined,
         navigationBehavior: navb || undefined,
+        conversionJourneyModel: cjm || undefined,
+        primaryConversionIntent: pci || undefined,
+        leadCaptureRequired: lcr || undefined,
+        leadCaptureFields: lcf || undefined,
+        afterLeadCaptureScreen: alcs || undefined,
+        ctaConsistencyRule: ccr || undefined,
         summary: L(lang,
           `Website experience: ${wem || 'focused site'}${nav ? ` · nav: ${nav}` : ''}${pwe ? ` · primary: ${pwe}` : ''} (front-end demo only).`,
           `Web sitesi deneyimi: ${wem || 'odaklı site'}${nav ? ` · gezinme: ${nav}` : ''}${pwe ? ` · birincil: ${pwe}` : ''} (yalnızca ön yüz demosu).`),
@@ -4400,6 +4422,37 @@ export function deriveReviewerAgent(input: ReviewerInput): ReviewerAgentArtifact
         'The contract has no entryFlowModel / postEntryScreenId, so the Preview cannot transition the hero CTA into an internal experience.',
         'Ensure the strategy derives an entry flow (landing → demo/catalog/collection/quote) so the primary CTA has a destination.',
         'strategy.interactionContract');
+    }
+  }
+
+  /* 2.11 — Conversion journey advisories (Phase 6F, ADVISORY only — 'info'). */
+  const cj = input.strategy?.interactionContract;
+  if (cj) {
+    const cjAiSaas = /^(ai|saas)$/.test((cj.conceptCategory || '').toLowerCase())
+      || (cj.requiredStatefulComponents || []).some((c) => /chat|product-?demo|assistant/i.test(c));
+    if (cjAiSaas && cj.leadCaptureRequired !== true && cj.conversionJourneyModel !== 'direct-cta' && cj.conversionJourneyModel !== 'book-demo') {
+      add('info', 'missing-lead-gate', 'AI/SaaS product without a lead-capture gate',
+        `Conversion journey is "${cj.conversionJourneyModel || 'unset'}" with no lead capture, so the primary CTA drops the visitor straight into the demo.`,
+        'For a "try/free/get started" product, prefer lead-capture-gated-demo (Landing → Lead Capture → Demo) unless the idea asks for a direct demo.',
+        'strategy.interactionContract.conversionJourneyModel');
+    }
+    if (!cj.primaryConversionIntent && !cj.conversionJourneyModel) {
+      add('info', 'confusing-primary-conversion', 'No single primary conversion declared',
+        'The contract has no conversion journey model or primary conversion intent, so the site may show competing CTAs.',
+        'Declare one primary conversion intent (free trial / book demo / request quote / browse catalog …) and keep other CTAs secondary.',
+        'strategy.interactionContract.primaryConversionIntent');
+    }
+    if (!cj.ctaConsistencyRule) {
+      add('info', 'cta-inconsistency', 'No CTA consistency rule',
+        'No CTA consistency rule is set, so primary vs secondary CTA labels may drift (e.g. "Book demo" + "Try it free" + a metrics/security label competing).',
+        'Set one primary CTA label and keep secondary CTAs supporting (See how it works / See pricing / View security).',
+        'strategy.interactionContract.ctaConsistencyRule');
+    }
+    if (cjAiSaas && cj.leadCaptureRequired === true && !cj.afterLeadCaptureScreenId && !cj.postEntryScreenId) {
+      add('info', 'demo-before-context', 'Lead gate has no destination experience',
+        'A lead-capture gate is required but no post-lead demo/experience screen is resolvable, so the gate would lead nowhere.',
+        'Ensure a Product Demo / Chat Experience screen exists for the gate to open after lead capture.',
+        'strategy.interactionContract.afterLeadCaptureScreenId');
     }
   }
 

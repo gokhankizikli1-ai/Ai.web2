@@ -359,6 +359,22 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       ownerRows.push(['accentUsage', 'restrained']);
       ownerRows.push(['demoDensity', demoDensity]);
       ownerRows.push(['teaserDensity', 'compact']);
+      // Phase 6F: conversion journey / lead-capture gate diagnostics.
+      if (contract.conversionJourneyModel) ownerRows.push(['conversionJourneyModel', contract.conversionJourneyModel]);
+      if (contract.primaryConversionIntent) ownerRows.push(['primaryConversionIntent', contract.primaryConversionIntent]);
+      if (typeof contract.leadCaptureRequired === 'boolean') ownerRows.push(['leadCaptureRequired', String(contract.leadCaptureRequired)]);
+      if (contract.leadCaptureFields) ownerRows.push(['leadCaptureFields', contract.leadCaptureFields]);
+      if (contract.leadCaptureScreenId) ownerRows.push(['leadCaptureScreenId', contract.leadCaptureScreenId]);
+      if (contract.afterLeadCaptureScreenId) ownerRows.push(['afterLeadCaptureScreenId', contract.afterLeadCaptureScreenId]);
+      if (contract.ctaConsistencyRule) ownerRows.push(['ctaConsistencyRule', contract.ctaConsistencyRule]);
+      // primaryCtaNormalized — the clean CTA label the Preview shows for the intent.
+      const ci = (contract.primaryConversionIntent || '').toLowerCase();
+      const primaryCtaNormalized = /free|try|get\s*started/.test(ci) ? 'Get started free'
+        : /book/.test(ci) ? 'Book a demo' : /contact/.test(ci) ? 'Contact sales'
+        : /quote/.test(ci) ? 'Request a quote' : /browse|catalog/.test(ci) ? 'Browse catalog'
+        : /access/.test(ci) ? 'Request access' : /learn|how/.test(ci) ? 'See how it works'
+        : (contract.primaryEntryCTA || '—');
+      ownerRows.push(['primaryCtaNormalized', primaryCtaNormalized]);
     }
 
     // Planning-quality diagnostics (the honesty gate — model-planned vs fallback).
