@@ -100,6 +100,20 @@ export interface InteractionContract {
   postEntryScreenId?: string;
   /** The action the primary entry CTA runs (usually the primary action). */
   entryAction?: InteractionAction;
+  /* ── Conversion Journey (Phase 6F) — the single primary conversion path. The
+   *  lead/email step is a LOCAL static form shell only (never a real signup/auth/
+   *  backend/submission). All optional & backward compatible. */
+  conversionJourneyModel?: string;
+  primaryConversionIntent?: string;
+  leadCaptureRequired?: boolean;
+  leadCaptureFields?: string;
+  afterLeadCaptureScreen?: string;
+  ctaConsistencyRule?: string;
+  /** Screen KIND tokens the Preview maps to real internal screens. */
+  leadCaptureScreenId?: string;
+  afterLeadCaptureScreenId?: string;
+  /** The action the primary conversion CTA runs (opens the lead gate or the demo). */
+  leadCaptureAction?: InteractionAction;
   notes: string[];
 }
 
@@ -123,6 +137,13 @@ export interface ExperiencePlanInput {
   primaryEntryCTA?: string;
   secondaryEntryCTA?: string;
   navigationBehavior?: string;
+  /* ── Conversion Journey (Phase 6F). All optional; lead step is a local shell. */
+  conversionJourneyModel?: string;
+  primaryConversionIntent?: string;
+  leadCaptureRequired?: string;
+  leadCaptureFields?: string;
+  afterLeadCaptureScreen?: string;
+  ctaConsistencyRule?: string;
 }
 
 export interface InteractionContractInput {
@@ -384,6 +405,131 @@ function deriveEntryFlow(
   };
 }
 
+/* ── Conversion Journey (Phase 6F) — the single primary conversion path ───────
+ * Decides whether the landing gates the experience behind a LOCAL lead-capture
+ * form shell (Landing → Lead Capture → Demo/Catalog/…) or converts directly.
+ * Deterministic: A) the model's own conversion fields, B) the entry flow, C) the
+ * concept family, D) no-gate. The lead step is a front-end static shell only —
+ * never a real signup/auth/backend/submission. */
+const CONVERSION_MODELS = [
+  'direct-cta', 'lead-capture-gated-demo', 'book-demo', 'contact-request',
+  'catalog-request', 'archive-access', 'quote-request', 'no-gate',
+] as const;
+
+function normalizeConversionModel(raw?: string): string | undefined {
+  const s = (raw || '').toLowerCase();
+  if (!s.trim()) return undefined;
+  const exact = CONVERSION_MODELS.find((m) => s.includes(m));
+  if (exact) return exact;
+  if (/lead.*captur|email.*gat|gat.*demo|sign.?up.*gate/.test(s)) return 'lead-capture-gated-demo';
+  if (/book.*demo|schedule.*demo/.test(s)) return 'book-demo';
+  if (/contact.*(sales|request)|talk.*sales/.test(s)) return 'contact-request';
+  if (/quote/.test(s)) return 'quote-request';
+  if (/catalog|browse|inventory/.test(s)) return 'catalog-request';
+  if (/archive|access|research/.test(s)) return 'archive-access';
+  if (/direct/.test(s)) return 'direct-cta';
+  if (/no.?gate|none/.test(s)) return 'no-gate';
+  return undefined;
+}
+
+/** Default conversion model for a concept family (used when the model is silent).
+ *  AI/SaaS default to a lead-capture-gated demo (Landing → Lead Capture → Demo). */
+function familyConversionModel(family: Family): string {
+  switch (family) {
+    case 'ai':
+    case 'saas': return 'lead-capture-gated-demo';
+    case 'marketplace': return 'catalog-request';
+    case 'archive': return 'archive-access';
+    case 'local-service': return 'quote-request';
+    default: return 'no-gate';
+  }
+}
+
+/** Normalized, human CTA label per conversion intent — kills awkward auto-labels. */
+function conversionCtaLabel(intent: string, family: Family, chat: boolean, lang?: string): string {
+  const s = (intent || '').toLowerCase();
+  if (/free\s*trial|try|get\s*started|start\s*free|free/.test(s)) return L(lang, 'Get started free', 'Ücretsiz başla');
+  if (/book\s*demo|schedule/.test(s)) return L(lang, 'Book a demo', 'Demo ayarla');
+  if (/contact\s*sales|talk\s*to\s*sales|contact/.test(s)) return L(lang, 'Contact sales', 'Satışla iletişime geç');
+  if (/quote/.test(s)) return L(lang, 'Request a quote', 'Teklif iste');
+  if (/browse|catalog|inventory/.test(s)) return L(lang, 'Browse catalog', 'Kataloğa göz at');
+  if (/access|research/.test(s)) return L(lang, 'Request access', 'Erişim iste');
+  if (/learn\s*more|how\s*it\s*works/.test(s)) return L(lang, 'See how it works', 'Nasıl çalıştığını gör');
+  // No explicit intent → family default.
+  switch (family) {
+    case 'ai':
+    case 'saas': return chat ? L(lang, 'Try it free', 'Ücretsiz dene') : L(lang, 'Get started free', 'Ücretsiz başla');
+    case 'marketplace': return L(lang, 'Browse catalog', 'Kataloğa göz at');
+    case 'archive': return L(lang, 'Explore the collection', 'Koleksiyonu keşfet');
+    case 'local-service': return L(lang, 'Request a quote', 'Teklif iste');
+    default: return L(lang, 'Get started', 'Başla');
+  }
+}
+
+interface ConversionJourneyResult {
+  conversionJourneyModel: string;
+  primaryConversionIntent: string;
+  leadCaptureRequired: boolean;
+  leadCaptureFields: string;
+  afterLeadCaptureScreen?: string;
+  ctaConsistencyRule: string;
+  primaryConversionCTA: string;
+  leadCaptureScreenId?: string;
+  afterLeadCaptureScreenId?: string;
+}
+
+function deriveConversionJourney(
+  plan: ExperiencePlanInput | undefined,
+  family: Family,
+  chat: boolean,
+  entry: EntryFlowResult,
+  lang?: string,
+): ConversionJourneyResult {
+  // A) model conversion fields → B) entry flow → C) family → D) no-gate.
+  const model = normalizeConversionModel(plan?.conversionJourneyModel) || familyConversionModel(family);
+  const intent = clean(plan?.primaryConversionIntent)
+    || (model === 'book-demo' ? 'book demo' : model === 'quote-request' ? 'request quote'
+      : model === 'catalog-request' ? 'browse catalog' : model === 'archive-access' ? 'request access'
+      : model === 'contact-request' ? 'contact sales'
+      : (family === 'ai' || family === 'saas') ? 'free trial' : 'learn more');
+
+  // leadCaptureRequired: explicit model yes/no, else true only for the gated model.
+  const rawLead = (plan?.leadCaptureRequired || '').toLowerCase().trim();
+  const leadCaptureRequired = /^(yes|true|evet|gerek|required|zorunlu)/.test(rawLead) ? true
+    : /^(no|false|hay[ıi]r|gerekmez|gerekmiyor|not\s)/.test(rawLead) ? false
+    : model === 'lead-capture-gated-demo';
+
+  const leadCaptureFields = clean(plan?.leadCaptureFields)
+    || ((family === 'ai' || family === 'saas') ? 'email only' : 'none');
+  // Where the lead gate leads (a screen KIND token). Prefer the model's own screen,
+  // else the entry flow's post-entry screen (the demo/catalog/collection).
+  const afterTokenRaw = (plan?.afterLeadCaptureScreen || '').toLowerCase();
+  const afterLeadCaptureScreenId = /chat|assistant/.test(afterTokenRaw) ? 'chat'
+    : /product|demo/.test(afterTokenRaw) ? 'product-demo'
+    : /catalog|inventory/.test(afterTokenRaw) ? 'catalog'
+    : /collection|record/.test(afterTokenRaw) ? 'collection'
+    : /quote/.test(afterTokenRaw) ? 'quote'
+    : /project/.test(afterTokenRaw) ? 'projects'
+    : entry.postEntryScreenId;
+  const leadCaptureScreenId = leadCaptureRequired ? 'lead-capture' : undefined;
+  const primaryConversionCTA = conversionCtaLabel(intent, family, chat, lang);
+  const ctaConsistencyRule = clean(plan?.ctaConsistencyRule)
+    || L(lang, `Primary CTA "${primaryConversionCTA}"; secondary CTAs stay supporting (See how it works / See pricing / View security).`,
+        `Birincil CTA "${primaryConversionCTA}"; ikincil CTA'lar destekleyici kalır (Nasıl çalışır / Fiyatlandırma / Güvenlik).`);
+
+  return {
+    conversionJourneyModel: model,
+    primaryConversionIntent: intent,
+    leadCaptureRequired,
+    leadCaptureFields,
+    afterLeadCaptureScreen: clean(plan?.afterLeadCaptureScreen) || afterLeadCaptureScreenId,
+    ctaConsistencyRule,
+    primaryConversionCTA,
+    leadCaptureScreenId,
+    afterLeadCaptureScreenId,
+  };
+}
+
 /** The front-end demo component a given action implies (to-build list for Phase 4). */
 const COMPONENT_FOR_TYPE: Partial<Record<InteractionActionType, string>> = {
   'open-chat-demo': 'chat-demo-panel',
@@ -620,6 +766,14 @@ function build(input: InteractionContractInput): InteractionContract {
   const entryAction = (entry.initialScreenId === 'home' && !!entry.postEntryScreenId && primary.type !== 'scroll-to-section')
     ? primary : undefined;
 
+  // ── Conversion Journey (Phase 6F) — the single primary conversion path. When a
+  // lead gate is required, the primary CTA opens a LOCAL lead-capture screen that
+  // then opens the demo/catalog; otherwise it converts directly. Static shell only.
+  const journey = deriveConversionJourney(plan, family, chat, entry, lang);
+  // leadCaptureAction reuses the primary action; the Preview routes it through the
+  // lead-capture screen when leadCaptureRequired, else straight to the experience.
+  const leadCaptureAction = journey.leadCaptureRequired && entryAction ? entryAction : undefined;
+
   return {
     conceptCategory: clean(input.conceptCategory) || family,
     primaryAction: primary,
@@ -643,6 +797,16 @@ function build(input: InteractionContractInput): InteractionContract {
     initialScreenId: entry.initialScreenId,
     postEntryScreenId: entry.postEntryScreenId,
     entryAction,
+    // Conversion Journey fields (deterministic; consumed by the Preview lead gate).
+    conversionJourneyModel: journey.conversionJourneyModel,
+    primaryConversionIntent: journey.primaryConversionIntent,
+    leadCaptureRequired: journey.leadCaptureRequired,
+    leadCaptureFields: journey.leadCaptureFields,
+    afterLeadCaptureScreen: journey.afterLeadCaptureScreen,
+    ctaConsistencyRule: journey.ctaConsistencyRule,
+    leadCaptureScreenId: journey.leadCaptureScreenId,
+    afterLeadCaptureScreenId: journey.afterLeadCaptureScreenId,
+    leadCaptureAction,
     notes,
   };
 }

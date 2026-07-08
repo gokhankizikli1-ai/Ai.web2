@@ -170,6 +170,16 @@ export interface WebBuildBrief {
   primaryEntryCTA?: string;
   secondaryEntryCTA?: string;
   navigationBehavior?: string;
+  // CONVERSION JOURNEY (Phase 6F) — the MODEL's decision about the single primary
+  // conversion path (Landing → optional Lead Capture → Demo/Catalog/…). All
+  // optional & backward compatible. The lead/email step is a LOCAL static form
+  // shell only — never a real signup/auth/backend/submission.
+  conversionJourneyModel?: string;
+  primaryConversionIntent?: string;
+  leadCaptureRequired?: string;
+  leadCaptureFields?: string;
+  afterLeadCaptureScreen?: string;
+  ctaConsistencyRule?: string;
   // UI / Art Director agent palette override (Phase 1). All optional →
   // backward compatible. When set, these drive the design tokens directly so the
   // Art Direction actually controls the preview/files palette + heading style.
@@ -241,6 +251,13 @@ export function extractBrief(sections: BuildSection[]): WebBuildBrief {
     primaryEntryCTA: grab(/(?:primary\s*entry\s*cta)\s*[:\-–]\s*(.+)/i),
     secondaryEntryCTA: grab(/(?:secondary\s*entry\s*cta)\s*[:\-–]\s*(.+)/i),
     navigationBehavior: grab(/(?:navigation\s*behavior|navigation\s*behaviour|nav\s*behavior)\s*[:\-–]\s*(.+)/i),
+    // Conversion Journey (Phase 6F) — exact labels, all optional.
+    conversionJourneyModel: grab(/(?:conversion\s*journey\s*model|conversion\s*journey)\s*[:\-–]\s*(.+)/i),
+    primaryConversionIntent: grab(/(?:primary\s*conversion\s*intent|conversion\s*intent)\s*[:\-–]\s*(.+)/i),
+    leadCaptureRequired: grab(/(?:lead\s*capture\s*required)\s*[:\-–]\s*(.+)/i),
+    leadCaptureFields: grab(/(?:lead\s*capture\s*fields)\s*[:\-–]\s*(.+)/i),
+    afterLeadCaptureScreen: grab(/(?:after\s*lead\s*capture\s*screen|after\s*lead\s*capture)\s*[:\-–]\s*(.+)/i),
+    ctaConsistencyRule: grab(/(?:cta\s*consistency\s*rule|cta\s*consistency)\s*[:\-–]\s*(.+)/i),
   };
 }
 
@@ -393,6 +410,21 @@ export function buildWebBuildRequest(
       'or dashboard-first may fit. For marketplace/catalog, catalog-first. For archive/research,',
       'archive-exploration. For local service, service-lead-flow. Do NOT force multi-screen if',
       'a simple single-page landing is enough. No real product/backend functionality.',
+      '— CONVERSION JOURNEY — DECIDE the single primary conversion path (front-end',
+      '  demo only; the lead/email step is a LOCAL static form shell — never a real',
+      '  signup/auth/backend/submission). Use these EXACT labels, one per line:',
+      'Conversion journey model: <direct-cta | lead-capture-gated-demo | book-demo | contact-request | catalog-request | archive-access | quote-request | no-gate>',
+      'Primary conversion intent: <free trial | book demo | contact sales | request quote | browse catalog | request access | learn more>',
+      'Lead capture required: <yes/no + short reason>',
+      'Lead capture fields: <email only | name + email | company + email | project details | none>',
+      'After lead capture screen: <Product Demo | Chat Experience | Catalog | Collection | Quote | Contact>',
+      'CTA consistency rule: <one sentence: which CTA label is PRIMARY vs which are secondary>',
+      'CONVERSION RULES: for AI/SaaS/chatbot/productized tools with "try/free/get',
+      'started/demo", prefer lead-capture-gated-demo (Landing → Lead Capture → Product',
+      'Demo/Chat) UNLESS the idea asks for a direct demo. For "book demo" use book-demo/',
+      'contact style — NOT a fake free signup. For local service use quote-request; for',
+      'archive/research use archive-access; for marketplace/catalog use catalog-request/',
+      'browse catalog. Keep ONE clear primary CTA; do NOT force a gate on a simple landing.',
       'DECIDE, do not default: pick chat ONLY if the website/demo genuinely needs it (not just',
       'because "AI" appears); a focused landing over multi-page when that fits; a dedicated demo',
       'PAGE/SCREEN over a modal when that reads better. Never claim a surface is connected to real',
@@ -474,6 +506,12 @@ export function buildWebBuildRepairRequest(
     'catalog-first | service-lead-flow | archive-exploration), "Landing required:",',
     '"Entry screen:", "Post-entry screen:", "Primary entry CTA:", "Secondary entry',
     'CTA:", "Navigation behavior:".',
+    'Also include the EXACT Conversion Journey labels, one per line: "Conversion',
+    'journey model:" (direct-cta | lead-capture-gated-demo | book-demo | contact-request |',
+    'catalog-request | archive-access | quote-request | no-gate), "Primary conversion',
+    'intent:", "Lead capture required:", "Lead capture fields:", "After lead capture',
+    'screen:", "CTA consistency rule:". The lead/email step is a LOCAL static form',
+    'shell only — never a real signup/auth/backend/submission.',
     '',
     'IF (and only if) you include ## Frontend Code, it should be real React + Tailwind',
     'with files as "### <path>" headings: "### src/main.tsx", "### src/App.tsx",',

@@ -1633,6 +1633,75 @@ function resolveEntryFlow(
   }
 }
 
+/* ── Phase 6F: conversion journey / lead-capture gate ─────────────────────────
+ * The primary CTA can route Landing → LOCAL lead-capture form shell → Demo/
+ * Catalog/… . The lead screen is flow-only (never a nav tab, never a route, never
+ * a real signup/auth/backend). No data is stored or sent. */
+const LEAD_CAPTURE_PAGE = '__scr_lead-capture';
+
+/** Normalize an awkward auto-CTA into a clean, human label per conversion intent.
+ *  Prefers the clean intent mapping; only falls back to the model's raw label. */
+function normalizeCtaLabel(intent: string | undefined, fallback?: string): string {
+  const s = (intent || '').toLowerCase();
+  if (/free\s*trial|try|get\s*started|start\s*free|\bfree\b/.test(s)) return 'Get started free';
+  if (/book\s*demo|schedule/.test(s)) return 'Book a demo';
+  if (/contact\s*sales|talk\s*to\s*sales|contact/.test(s)) return 'Contact sales';
+  if (/quote/.test(s)) return 'Request a quote';
+  if (/browse|catalog|inventory/.test(s)) return 'Browse catalog';
+  if (/access|research/.test(s)) return 'Request access';
+  if (/learn\s*more|how\s*it\s*works/.test(s)) return 'See how it works';
+  const fb = (fallback || '').trim();
+  // A raw model CTA that is short and clean passes through; an awkward long one is
+  // replaced with a safe default.
+  return fb && fb.length <= 28 ? fb : 'Get started';
+}
+
+interface ConversionResolved {
+  leadCaptureRequired: boolean;
+  leadCapturePageId?: string;   // LEAD_CAPTURE_PAGE when a gate is used with a real after-screen
+  afterLeadPageId?: string;     // the real shell screen id opened after the gate
+  fields: string;
+  primaryCtaLabel: string;
+  afterLabel: string;           // label of the after screen (e.g. "Chat Experience")
+}
+
+/** Resolve the conversion journey onto real internal screens. Pure; never throws. */
+function resolveConversionJourney(
+  contract: InteractionContract | null | undefined,
+  shell: PreviewShell,
+  pages: PreviewPage[],
+  entryFlow: EntryFlowResolved,
+): ConversionResolved {
+  const fallbackCta = normalizeCtaLabel(contract?.primaryConversionIntent, entryFlow.primaryEntryCTA);
+  try {
+    const screens = shell.screens || [];
+    const homeId = pages.find((p) => p.id === 'home')?.id || 'home';
+    const findScreen = (token?: string): string | undefined => {
+      if (!token) return undefined;
+      const t = token.toLowerCase();
+      if (t === 'home') return homeId;
+      const wanted = ENTRY_KIND_ALIASES[t] || [t as ScreenKind];
+      for (const k of wanted) { const sc = screens.find((s) => s.kind === k); if (sc) return sc.id; }
+      return undefined;
+    };
+    const required = contract?.leadCaptureRequired === true;
+    const afterLeadPageId = findScreen(contract?.afterLeadCaptureScreenId) || entryFlow.postEntryScreenId;
+    const hasAfter = !!afterLeadPageId && screens.some((s) => s.id === afterLeadPageId);
+    const gated = required && hasAfter;
+    const afterScreen = screens.find((s) => s.id === afterLeadPageId);
+    return {
+      leadCaptureRequired: gated,
+      leadCapturePageId: gated ? LEAD_CAPTURE_PAGE : undefined,
+      afterLeadPageId: hasAfter ? afterLeadPageId : undefined,
+      fields: (contract?.leadCaptureFields || 'email only').trim() || 'email only',
+      primaryCtaLabel: fallbackCta,
+      afterLabel: afterScreen?.label || 'the demo',
+    };
+  } catch {
+    return { leadCaptureRequired: false, fields: 'email only', primaryCtaLabel: fallbackCta, afterLabel: 'the demo' };
+  }
+}
+
 /* ── Phase 6C: disciplined preview navigation ────────────────────────────────
  * The old header dumped BOTH content pages AND every demo screen into one nav —
  * so an AI/SaaS build looked like an 8–10 tab admin panel. This caps the visible
@@ -1749,6 +1818,51 @@ function LandingDemoTeaser({ sections, brief, chat, ctaLabel, onEnter }: {
             <button type="button" onClick={onEnter} className="rounded-xl px-5 py-2.5 text-sm font-semibold text-white" style={{ background: 'var(--acc)', boxShadow: '0 8px 24px -12px var(--acc)' }}>{ctaLabel}</button>
             <span className={`text-center text-[11px] ${CALM.faint}`}>Front-end demo — no real AI or backend.</span>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Parse the model's lead-capture fields spec into concrete input rows. */
+function leadFieldRows(fields: string): Array<{ label: string; placeholder: string; type: string }> {
+  const f = (fields || '').toLowerCase();
+  const email = { label: 'Work email', placeholder: 'you@company.com', type: 'email' };
+  if (/none/.test(f)) return [email];
+  if (/project\s*details/.test(f)) return [{ label: 'Name', placeholder: 'Your name', type: 'text' }, email, { label: 'Project details', placeholder: 'A few words about your project', type: 'text' }];
+  if (/company/.test(f)) return [{ label: 'Company', placeholder: 'Company name', type: 'text' }, email];
+  if (/name/.test(f)) return [{ label: 'Name', placeholder: 'Your name', type: 'text' }, email];
+  return [email]; // "email only" / default
+}
+
+/**
+ * Phase 6F: a LOCAL lead-capture / email gate (flow-only, never a nav tab or a
+ * route). The primary CTA opens it; "Continue" opens the demo/catalog screen. It
+ * is a STATIC form shell — no data is stored or sent, no real signup/auth/backend.
+ */
+function LeadCaptureScreen({ brief, fields, ctaLabel, afterLabel, onContinue, onBack }: {
+  brief: WebBuildBrief; fields: string; ctaLabel: string; afterLabel: string; onContinue: () => void; onBack: () => void;
+}) {
+  const rows = leadFieldRows(fields);
+  const brand = (brief.type || 'the product').trim();
+  return (
+    <div className="relative pb-16">
+      <div className="relative z-10 mx-auto max-w-md px-6 pt-14">
+        <button type="button" onClick={onBack} className="text-sm text-slate-400 transition hover:text-white">&larr; Back</button>
+        <div className={`mt-4 ${CALM.surface} p-6`}>
+          <PreviewPill>Preview only — no real signup</PreviewPill>
+          <h1 className="mt-4 text-2xl font-semibold text-white" style={{ fontFamily: 'var(--hf)', letterSpacing: 'var(--tr)' }}>Start with {brand}</h1>
+          <p className={`mt-2 text-sm ${CALM.muted}`}>Enter your details to continue to {afterLabel}. This is a front-end preview — nothing is submitted.</p>
+          <div className="mt-5 space-y-3">
+            {rows.map((r) => (
+              <label key={r.label} className="block">
+                <span className={`text-[12px] ${CALM.faint}`}>{r.label}</span>
+                <input type={r.type} placeholder={r.placeholder} className={`mt-1 w-full rounded-xl border ${CALM.hairline} bg-white/[0.02] px-3.5 py-2.5 text-sm text-slate-200 placeholder:text-slate-600 focus:outline-none`} />
+              </label>
+            ))}
+          </div>
+          <button type="button" onClick={onContinue} className="mt-5 w-full rounded-xl px-5 py-3 text-sm font-semibold text-white" style={{ background: 'var(--acc)', boxShadow: '0 8px 24px -12px var(--acc)' }}>{ctaLabel}</button>
+          <p className={`mt-3 text-center text-[11px] ${CALM.faint}`}>No account is created. No email is sent. Front-end demo only.</p>
         </div>
       </div>
     </div>
@@ -2075,6 +2189,14 @@ export default function WebBuildPreviewDocument({
           primaryEntryCTA: interactionContract.primaryEntryCTA,
           secondaryEntryCTA: interactionContract.secondaryEntryCTA,
           navigationBehavior: interactionContract.navigationBehavior,
+          // Phase 6F: carry the model's CONVERSION JOURNEY so re-derivation keeps it.
+          conversionJourneyModel: interactionContract.conversionJourneyModel,
+          primaryConversionIntent: interactionContract.primaryConversionIntent,
+          leadCaptureRequired: typeof interactionContract.leadCaptureRequired === 'boolean'
+            ? (interactionContract.leadCaptureRequired ? 'yes' : 'no') : undefined,
+          leadCaptureFields: interactionContract.leadCaptureFields,
+          afterLeadCaptureScreen: interactionContract.afterLeadCaptureScreen,
+          ctaConsistencyRule: interactionContract.ctaConsistencyRule,
         } : undefined,
       });
       if (!interactionContract) return derived;
@@ -2102,6 +2224,17 @@ export default function WebBuildPreviewDocument({
         initialScreenId: derived.initialScreenId || interactionContract.initialScreenId,
         postEntryScreenId: derived.postEntryScreenId || interactionContract.postEntryScreenId,
         entryAction: derived.entryAction || interactionContract.entryAction,
+        // Phase 6F: prefer the model's conversion decision; keep re-derived screen
+        // tokens (leadCaptureScreenId/afterLeadCaptureScreenId) so the Preview maps them.
+        conversionJourneyModel: interactionContract.conversionJourneyModel || derived.conversionJourneyModel,
+        primaryConversionIntent: interactionContract.primaryConversionIntent || derived.primaryConversionIntent,
+        leadCaptureRequired: typeof interactionContract.leadCaptureRequired === 'boolean' ? interactionContract.leadCaptureRequired : derived.leadCaptureRequired,
+        leadCaptureFields: interactionContract.leadCaptureFields || derived.leadCaptureFields,
+        afterLeadCaptureScreen: interactionContract.afterLeadCaptureScreen || derived.afterLeadCaptureScreen,
+        ctaConsistencyRule: interactionContract.ctaConsistencyRule || derived.ctaConsistencyRule,
+        leadCaptureScreenId: derived.leadCaptureScreenId || interactionContract.leadCaptureScreenId,
+        afterLeadCaptureScreenId: derived.afterLeadCaptureScreenId || interactionContract.afterLeadCaptureScreenId,
+        leadCaptureAction: derived.leadCaptureAction || interactionContract.leadCaptureAction,
       };
     } catch { return interactionContract || null; }
   }, [interactionContract, sectionItems, brief, art.mode]);
@@ -2137,7 +2270,11 @@ export default function WebBuildPreviewDocument({
       const entryPrimary = contract?.entryAction || contract?.primaryAction;
       if (entryFlow.postEntryScreenId && activePage === 'home' && entryPrimary
         && (action.id === entryPrimary.id || (action.priority === 'primary' && action.type === entryPrimary.type))) {
-        setActivePage(entryFlow.postEntryScreenId);
+        // Phase 6F: route the primary CTA through the LOCAL lead-capture gate when
+        // the conversion journey requires it; otherwise straight into the experience.
+        setActivePage(conversion.leadCaptureRequired && conversion.leadCapturePageId
+          ? conversion.leadCapturePageId
+          : entryFlow.postEntryScreenId);
         return;
       }
       const owner = section
@@ -2210,10 +2347,13 @@ export default function WebBuildPreviewDocument({
   // it: on first settle start where the model decided; on later shell/contract
   // changes keep the current page if still valid, else reset to the entry page.
   const entryFlow = useMemo(() => resolveEntryFlow(contract, shell, pages), [contract, shell, pages]);
+  // ── Phase 6F: resolve the conversion journey (does the primary CTA route through
+  // a LOCAL lead-capture gate before the demo?). The lead screen is flow-only.
+  const conversion = useMemo(() => resolveConversionJourney(contract, shell, pages, entryFlow), [contract, shell, pages, entryFlow]);
   const didInitEntry = useRef(false);
   useEffect(() => {
     setActivePage((cur) => {
-      const valid = cur === 'home' || pages.some((p) => p.id === cur) || demoScreens.some((s) => s.id === cur);
+      const valid = cur === 'home' || cur === LEAD_CAPTURE_PAGE || pages.some((p) => p.id === cur) || demoScreens.some((s) => s.id === cur);
       if (!didInitEntry.current) { didInitEntry.current = true; return entryFlow.initialActivePage; }
       return valid ? cur : entryFlow.initialActivePage;
     });
@@ -2266,8 +2406,11 @@ export default function WebBuildPreviewDocument({
     // primary CTA / conversion target / hero demo anchor enters the post-entry
     // screen — even when no matching contract action exists. Only entry intent is
     // hijacked (entryAnchors), never every link; a local screen switch, no route.
+    // Phase 6F: route through the LOCAL lead-capture gate first when required.
     if (activePage === 'home' && entryFlow.postEntryScreenId && targetId !== 'top' && entryAnchors.has(targetId)) {
-      setActivePage(entryFlow.postEntryScreenId);
+      setActivePage(conversion.leadCaptureRequired && conversion.leadCapturePageId
+        ? conversion.leadCapturePageId
+        : entryFlow.postEntryScreenId);
       return;
     }
     // Phase 2: if the resolved target has a real contract action (open chat demo /
@@ -2437,7 +2580,19 @@ export default function WebBuildPreviewDocument({
         </header>
       )}
 
-      {activeDemoScreen ? (
+      {activePage === LEAD_CAPTURE_PAGE ? (
+        <PreviewSectionErrorBoundary key="lead-capture" label="Lead capture">
+          {/* Phase 6F: LOCAL lead-capture gate — flow-only, never a nav tab. */}
+          <LeadCaptureScreen
+            brief={brief}
+            fields={conversion.fields}
+            ctaLabel={`Continue to ${conversion.afterLabel}`}
+            afterLabel={conversion.afterLabel}
+            onContinue={() => setActivePage(conversion.afterLeadPageId || 'home')}
+            onBack={() => setActivePage('home')}
+          />
+        </PreviewSectionErrorBoundary>
+      ) : activeDemoScreen ? (
         <PreviewSectionErrorBoundary key={activeDemoScreen.id} label={activeDemoScreen.label}>
           <DemoShellScreen
             screen={activeDemoScreen}
@@ -2466,8 +2621,10 @@ export default function WebBuildPreviewDocument({
                     sections={sectionItems}
                     brief={brief}
                     chat={teaserChat}
-                    ctaLabel={entryFlow.primaryEntryCTA || (teaserChat ? 'Open chat experience' : 'Open product demo')}
-                    onEnter={() => setActivePage(teaserScreen.id)}
+                    ctaLabel={conversion.primaryCtaLabel}
+                    onEnter={() => setActivePage(conversion.leadCaptureRequired && conversion.leadCapturePageId
+                      ? conversion.leadCapturePageId
+                      : teaserScreen.id)}
                   />
                 )}
               </Fragment>
