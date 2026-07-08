@@ -4032,6 +4032,7 @@ const AGENT_NAME: Record<AgentId, [string, string]> = {
   layout_architect: ['Layout Architect Agent', 'Yerleşim Mimarı Ajanı'],
   component_engineer: ['Component Engineer Agent', 'Bileşen Mühendisi Ajanı'],
   reviewer: ['Reviewer Agent', 'Gözden Geçirme Ajanı'],
+  quality_director: ['Quality Director', 'Kalite Direktörü'],
   fixer: ['Fixer Agent', 'Düzeltici Ajan'],
 };
 
