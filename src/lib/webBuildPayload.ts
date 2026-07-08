@@ -10,7 +10,7 @@ import { resolveBuildFiles, parseSectionCopy, synthesizeFromCopies, type SynthFi
 import { inferWebsiteBrief, fallbackSectionItems, checkQuality } from '@/lib/webBuildBrief';
 import { deriveLayoutPlan, type WebBuildLayoutPlan } from '@/lib/webBuildLayoutPlan';
 import {
-  runUpstreamAgents, runLayoutArchitect, runComponentEngineer, runReviewer, runFixer, WEB_BUILD_AGENTS_ENABLED,
+  runUpstreamAgents, runLayoutArchitect, runComponentEngineer, runReviewer, runQualityDirector, runFixer, WEB_BUILD_AGENTS_ENABLED,
   type WebBuildAgent, type WebBuildArtifacts, type WebBuildEnforcement,
 } from '@/lib/webBuildAgents';
 import { deriveAgentSectionArchitecture } from '@/lib/webBuildSectionArchitecture';
@@ -598,12 +598,30 @@ function assembleWebBuildPayload(
       agents = [...agents, rv.agent];
       artifacts = { ...(artifacts || {}), reviewer: rv.artifact };
 
-      // FIXER AGENT (Phase 6) — runs AFTER the Reviewer. It consumes the reviewer
-      // artifact and applies a NARROW set of SAFE, deterministic repairs to the
-      // FINAL files (fake-metric cleanup, placeholder cleanup, dead CTA-anchor
-      // sanity). It never redesigns and fails OPEN, so it can never block Preview /
-      // All Files. When it sanitizes file content we recompute the diffs against
-      // the previous build so the diff metadata stays honest (no stale/fake stats).
+      // QUALITY DIRECTOR (Phase 7A) — runs AFTER the Reviewer and BEFORE the Fixer.
+      // An ADVISORY premium-quality judge over the real artifacts: it scores the
+      // build (copy clarity, CTA consistency, flow coherence, concept specificity,
+      // honesty …) and records copy/label/CTA/flow issues + safe rewrite guidance
+      // for the Fixer. It never rewrites the site and fails OPEN, so it can never
+      // block Preview / All Files.
+      const qd = runQualityDirector({
+        prompt, brief: artBrief,
+        sectionItems: sectionItems.map((s) => ({ id: s.id, name: s.name, cta: s.cta, sub: s.sub, bullets: s.bullets })),
+        strategy: artifacts?.strategy, artDirection: artifacts?.artDirection,
+        reviewer: rv.artifact, research: artifacts?.research, layoutPlan,
+        lang: effLang,
+      });
+      agents = [...agents, qd.agent];
+      artifacts = { ...(artifacts || {}), qualityDirector: qd.artifact };
+
+      // FIXER AGENT (Phase 6 + 7A) — runs AFTER the Reviewer + Quality Director. It
+      // consumes the reviewer artifact AND the quality director's issues / rewrite
+      // instructions, and applies a NARROW set of SAFE, deterministic repairs to the
+      // FINAL data (fake-metric cleanup, placeholder cleanup, dead CTA-anchor sanity,
+      // plus public-facing copy/label/CTA/flow-label cleanup). It never redesigns and
+      // fails OPEN, so it can never block Preview / All Files. When it sanitizes file
+      // content we recompute the diffs against the previous build so the diff metadata
+      // stays honest (no stale/fake stats).
       const fx = runFixer({
         prompt, brief: artBrief, reviewer: rv.artifact,
         sectionItems: sectionItems.map((s) => ({ id: s.id, name: s.name, headline: s.headline, sub: s.sub, cta: s.cta, bullets: s.bullets })),
@@ -612,6 +630,10 @@ function assembleWebBuildPayload(
         // primary-concept archetype and add a missing Visual Asset Plan (data only).
         artDirection: artifacts?.artDirection,
         conceptAuthority: artifacts?.research?.conceptAuthority,
+        // Quality Director issues + rewrite guidance drive the safe copy/label/CTA
+        // repairs; the primary conversion intent normalizes awkward CTA labels.
+        qualityDirector: qd.artifact,
+        primaryConversionIntent: artifacts?.strategy?.interactionContract?.primaryConversionIntent,
         lang: effLang,
       });
       agents = [...agents, fx.agent];
@@ -637,6 +659,20 @@ function assembleWebBuildPayload(
           const merged = files.map((f) => ({ ...f, content: fixedByPath.get(f.path) ?? f.content }));
           files = diffFiles(prevFiles, merged);
         }
+        // Apply the Fixer's safe, DISPLAY-ONLY copy/label/CTA repairs (Phase 7A) back
+        // onto the final section items by id, so Preview + All Files + Plan Summary all
+        // consume the same cleaned public-facing labels. Only name/cta are display
+        // fields; ids are untouched, so the layout plan stays valid as-is.
+        const fixedById = new Map(fx.sectionItems.map((s) => [s.id, s]));
+        sectionItems = sectionItems.map((s) => {
+          const f = fixedById.get(s.id);
+          if (!f) return s;
+          return {
+            ...s,
+            name: f.name || s.name,
+            cta: f.cta !== undefined ? f.cta : s.cta,
+          };
+        });
       }
 
       // ENFORCEMENT — prove the agents drove the build (Part 6). The layout plan is
@@ -675,6 +711,15 @@ function assembleWebBuildPayload(
         didFixConceptDrift: (artifacts?.fixer?.appliedChanges || []).some((c) => c.category === 'concept-drift')
           || !!artifacts?.artDirection?.correctedConceptDrift,
         didCreateVisualAssetPlan: !!artifacts?.artDirection?.visualAssetPlan?.assetSlots?.length,
+        // Quality Director + Copy/CTA Fixer (Phase 7A) — real artifact data only.
+        didRunQualityDirector: !!artifacts?.qualityDirector,
+        qualityScore: artifacts?.qualityDirector?.score,
+        qualityStatus: artifacts?.qualityDirector?.status,
+        qualityCriticalCount: (artifacts?.qualityDirector?.issues || []).filter((i) => i.severity === 'critical').length,
+        qualityWarningCount: (artifacts?.qualityDirector?.issues || []).filter((i) => i.severity === 'warning').length,
+        didFixCopyLabels: (artifacts?.fixer?.qualityAppliedChanges || []).some((c) => c.category === 'copy-label'),
+        didFixCtaConsistency: (artifacts?.fixer?.qualityAppliedChanges || []).some((c) => c.category === 'cta-consistency'),
+        didFixFlowLabels: (artifacts?.fixer?.qualityAppliedChanges || []).some((c) => c.category === 'flow-label'),
         fallbackReason: (artifacts?.context?.fallbacks?.length
           ? `agents degraded: ${artifacts.context.fallbacks.join(', ')}`
           : undefined),

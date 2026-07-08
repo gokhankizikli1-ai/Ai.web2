@@ -707,13 +707,64 @@ export interface FixerAgentArtifact {
   safeRepairScope: string[];
   /** The categories of repair the Fixer refused (reserved for future phases). */
   refusedScope: string[];
+  /* ── Quality Director consumption (Phase 7A, optional) ── */
+  /** Quality Director issue ids/categories the Fixer actually consumed. */
+  consumedQualityIssues?: string[];
+  /** Public-facing copy/label/CTA repairs applied from the Quality Director. */
+  qualityAppliedChanges?: FixerAppliedChange[];
+  /** Quality repairs deliberately NOT performed (out of safe scope). */
+  qualitySkippedChanges?: FixerSkippedChange[];
   summary: string;
 }
 
-export type AgentId = 'research' | 'ui_art_director' | 'strategy' | 'layout_architect' | 'component_engineer' | 'reviewer' | 'fixer';
+/* ── Quality Director (Phase 7A) ───────────────────────────────────────────
+ * A senior quality judge that runs AFTER the Reviewer and BEFORE the Fixer. It
+ * scores the finished build across premium-quality dimensions and records honest,
+ * actionable issues (raw/model-internal labels, CTA inconsistency, generic copy,
+ * flow confusion, concept drift, honesty risk). It inspects REAL artifacts only,
+ * never fabricates facts, never blocks the build, and fails OPEN. The Fixer
+ * consumes its issues to safely repair public-facing copy/label/CTA language. */
+export type QualityIssueCategory =
+  | 'raw-label' | 'cta-inconsistency' | 'generic-copy' | 'weak-hero'
+  | 'flow-confusion' | 'demo-unclear' | 'visual-density' | 'concept-drift' | 'honesty-risk';
+
+export interface QualityIssue {
+  id: string;
+  severity: ReviewSeverity;
+  category: QualityIssueCategory;
+  /** Optional target (section id, artifact field, label). */
+  target?: string;
+  /** What in the real artifacts/data triggered this (honest, no fabrication). */
+  evidence: string;
+  recommendation: string;
+}
+
+export interface QualityDimensions {
+  copyClarity: number;
+  ctaConsistency: number;
+  flowCoherence: number;
+  visualPremiumFit: number;
+  conceptSpecificity: number;
+  demoUsefulness: number;
+  honesty: number;
+}
+
+export interface QualityDirectorArtifact {
+  status: 'passed' | 'needs-fixes' | 'failed-open';
+  /** 0–100 overall premium-quality score. */
+  score: number;
+  dimensions: QualityDimensions;
+  issues: QualityIssue[];
+  approvedPrinciples: string[];
+  /** Safe, public-facing rewrite guidance for the Fixer (labels/CTA/flow only). */
+  rewriteInstructions: string[];
+  summary: string;
+}
+
+export type AgentId = 'research' | 'ui_art_director' | 'strategy' | 'layout_architect' | 'component_engineer' | 'reviewer' | 'quality_director' | 'fixer';
 export type AgentArtifact =
   ResearchAgentArtifact | ArtDirectionArtifact | StrategyAgentArtifact | PageBlueprint
-  | ComponentEngineerArtifact | ReviewerAgentArtifact | FixerAgentArtifact | Record<string, unknown>;
+  | ComponentEngineerArtifact | ReviewerAgentArtifact | QualityDirectorArtifact | FixerAgentArtifact | Record<string, unknown>;
 
 export interface WebBuildAgent {
   id: AgentId;
@@ -766,6 +817,15 @@ export interface WebBuildEnforcement {
   didFixConceptDrift?: boolean;
   /** True when a concept-specific Visual Asset Plan was produced (data only). */
   didCreateVisualAssetPlan?: boolean;
+  /* ── Quality Director + Copy/CTA Fixer (Phase 7A, optional) ── */
+  didRunQualityDirector?: boolean;
+  qualityScore?: number;
+  qualityStatus?: 'passed' | 'needs-fixes' | 'failed-open';
+  qualityCriticalCount?: number;
+  qualityWarningCount?: number;
+  didFixCopyLabels?: boolean;
+  didFixCtaConsistency?: boolean;
+  didFixFlowLabels?: boolean;
   fallbackReason?: string;
 }
 
@@ -777,6 +837,8 @@ export interface WebBuildArtifacts {
   componentEngineer?: ComponentEngineerArtifact;
   /** Advisory quality-gate review (Phase 5). Optional → old builds still load. */
   reviewer?: ReviewerAgentArtifact;
+  /** Premium-quality judge (Phase 7A). Optional → old builds still load. */
+  qualityDirector?: QualityDirectorArtifact;
   /** Safe reviewer-driven repairs (Phase 6). Optional → old builds still load. */
   fixer?: FixerAgentArtifact;
   /** The shared context the agents were run against (pipeline trace). */
@@ -3970,6 +4032,7 @@ const AGENT_NAME: Record<AgentId, [string, string]> = {
   layout_architect: ['Layout Architect Agent', 'Yerleşim Mimarı Ajanı'],
   component_engineer: ['Component Engineer Agent', 'Bileşen Mühendisi Ajanı'],
   reviewer: ['Reviewer Agent', 'Gözden Geçirme Ajanı'],
+  quality_director: ['Quality Director', 'Kalite Direktörü'],
   fixer: ['Fixer Agent', 'Düzeltici Ajan'],
 };
 
@@ -4630,6 +4693,203 @@ export function runReviewer(input: ReviewerInput): { agent: WebBuildAgent; artif
   }
 }
 
+/* ── Public-label hygiene (Phase 7A) — shared by the Quality Director (detect)
+ *  and the Fixer (repair). SAFE, display-only transforms: strip parentheticals,
+ *  drop an unsupported "metrics" claim, collapse "demo/screens", shorten an
+ *  over-long nav/pill label to its first clause. Never invents content. */
+const AWKWARD_LABEL_RE = /\([^)]*\)|demo\s*\/\s*screens?|metrics?\s+and\s+security|screens?\s*\/\s*demo/i;
+const MAX_LABEL_LEN = 28;
+
+/** True when a public label reads raw / model-internal / too long. */
+function isAwkwardLabel(s?: string, maxLen = MAX_LABEL_LEN): boolean {
+  const t = (s || '').trim();
+  if (!t) return false;
+  return AWKWARD_LABEL_RE.test(t) || t.length > maxLen || /\bproduct\s*proof\b/i.test(t);
+}
+
+/** Clean a public-facing label/CTA to a short, human form. Display-only. */
+function cleanPublicLabel(raw?: string, maxLen = MAX_LABEL_LEN): string {
+  let s = (raw || '').trim();
+  if (!s) return s;
+  s = s.replace(/\s*\([^)]*\)/g, ' ');                     // drop parentheticals
+  s = s.replace(/\bdemo\s*\/\s*screens?\b/gi, 'demo').replace(/\bscreens?\s*\/\s*demo\b/gi, 'demo');
+  s = s.replace(/\bmetrics?\s+and\s+security\b/gi, 'Security'); // drop unsupported "metrics"
+  s = s.replace(/\s{2,}/g, ' ').replace(/\s*[,;:–—-]\s*$/, '').trim();
+  // A list-y or over-long label collapses to its first clause (nav/pill hygiene).
+  if (s.length > maxLen || /,/.test(s)) {
+    const head = s.split(/\s*[,–—]\s*|\s\/\s/)[0].trim();
+    if (head && head.length >= 3) s = head;
+  }
+  if (s.length > maxLen) s = s.slice(0, maxLen).replace(/\s*[,;:–—-]$/, '').trim();
+  return s || (raw || '').trim();
+}
+
+/* ── Quality Director (Phase 7A) — premium-quality judge ────────────────────
+ * Scores the finished build across premium dimensions from REAL artifacts only
+ * and records honest issues + safe rewrite guidance. Advisory: never blocks the
+ * build, always fails OPEN. */
+export interface QualityDirectorInput {
+  prompt: string;
+  brief: WebBuildBrief;
+  sectionItems: Array<{ id: string; name: string; cta?: string; sub?: string; bullets?: string[] }>;
+  strategy?: StrategyAgentArtifact;
+  artDirection?: ArtDirectionArtifact;
+  reviewer?: ReviewerAgentArtifact;
+  research?: ResearchAgentArtifact;
+  layoutPlan?: WebBuildLayoutPlan;
+  lang?: Lang;
+}
+
+function failedOpenQualityDirector(lang: Lang): QualityDirectorArtifact {
+  return {
+    status: 'failed-open',
+    score: 0,
+    dimensions: { copyClarity: 0, ctaConsistency: 0, flowCoherence: 0, visualPremiumFit: 0, conceptSpecificity: 0, demoUsefulness: 0, honesty: 0 },
+    issues: [],
+    approvedPrinciples: [],
+    rewriteInstructions: [],
+    summary: L(lang, 'Quality Director failed open; build continued without blocking Preview or All Files.',
+      'Kalite Direktörü güvenli şekilde durdu; yapı Önizleme veya Tüm Dosyaları engellemeden devam etti.'),
+  };
+}
+
+/**
+ * Derive the Quality Director artifact from the real, available artifacts only.
+ * Pure and deterministic; never fabricates facts, never blocks the build.
+ */
+export function deriveQualityDirector(input: QualityDirectorInput): QualityDirectorArtifact {
+  const lang = input.lang || 'en';
+  const issues: QualityIssue[] = [];
+  let iid = 0;
+  const add = (severity: ReviewSeverity, category: QualityIssueCategory, evidence: string, recommendation: string, target?: string) => {
+    issues.push({ id: `qd-${iid += 1}`, severity, category, target, evidence, recommendation });
+  };
+
+  const ic = input.strategy?.interactionContract;
+  const authority = input.research?.conceptAuthority;
+  const primaryConcept = (authority?.primaryConcept || '').toLowerCase();
+  const isAiSaas = primaryConcept === 'ai' || primaryConcept === 'saas'
+    || /\bai\b|assistant|chatbot|\bsaas\b/.test(`${(ic?.conceptCategory || '')} ${input.prompt}`.toLowerCase())
+    || (ic?.requiredStatefulComponents || []).some((c) => /chat|product-?demo|assistant/i.test(c));
+  const sections = (input.sectionItems || []).filter((s) => !/hero|footer/i.test(s.id));
+
+  /* 1 — Copy/label clarity: raw / model-internal / over-long public labels. */
+  const rawLabels: string[] = [];
+  for (const s of sections) {
+    if (isAwkwardLabel(s.name)) { rawLabels.push(s.name); add('warning', 'raw-label', `Section label reads raw/model-internal: "${s.name}".`, `Rewrite as a short, human label (e.g. "${cleanPublicLabel(s.name)}").`, s.id); }
+    if (s.cta && isAwkwardLabel(s.cta)) add('info', 'raw-label', `CTA label is awkward/long: "${s.cta}".`, `Shorten to a clean action (e.g. "${cleanPublicLabel(s.cta)}").`, s.id);
+  }
+  // Repeated "Product demo" style labels across sections read as scaffolding.
+  const demoNamed = sections.filter((s) => /^product\s*demo$/i.test((s.name || '').trim()));
+  if (demoNamed.length > 1) add('warning', 'generic-copy', `"${demoNamed.length}× "Product demo" section labels — repetitive/generic.`, 'Differentiate repeated demo labels (Chat experience / How it works / Use cases / Integrations / Security / Pricing).', 'sectionItems');
+
+  /* 2 — CTA consistency: one clear primary, matching the conversion intent. */
+  const intent = (ic?.primaryConversionIntent || '').toLowerCase();
+  const hasConsistencyRule = !!ic?.ctaConsistencyRule;
+  if (ic && !hasConsistencyRule) add('info', 'cta-inconsistency', 'No CTA consistency rule on the contract — primary vs secondary CTA labels may drift.', 'Set one primary CTA and keep secondary CTAs supporting (See how it works / See pricing / View security).', 'strategy.interactionContract');
+  // Conflicting "book demo" + "free trial" signals unless one is clearly secondary.
+  const ctaHay = `${intent} ${ic?.primaryEntryCTA || ''} ${sections.map((s) => s.cta || '').join(' ')}`.toLowerCase();
+  if (/book\s*(a\s*)?demo/.test(ctaHay) && /free\s*trial|get\s*started\s*free|try\s*it\s*free/.test(ctaHay)) {
+    add('warning', 'cta-inconsistency', 'Both "book a demo" and "free trial" CTAs present — competing primary conversions.', 'Pick ONE primary conversion (book demo OR free trial) and demote the other to a secondary CTA.', 'strategy.interactionContract');
+  }
+
+  /* 3 — Flow coherence (AI/SaaS): landing → (lead gate) → demo/chat. */
+  const leadRequired = ic?.leadCaptureRequired === true;
+  const hasDemoScreenToken = /chat|product-demo/.test(`${ic?.postEntryScreenId || ''} ${ic?.afterLeadCaptureScreenId || ''}`);
+  if (isAiSaas) {
+    if (leadRequired && !ic?.afterLeadCaptureScreenId && !ic?.postEntryScreenId) {
+      add('warning', 'flow-confusion', 'Lead capture is required but no post-lead demo/experience is resolvable — the gate leads nowhere.', 'Ensure a Product Demo / Chat Experience screen exists for the lead gate to open into.', 'strategy.interactionContract.afterLeadCaptureScreenId');
+    }
+    if (!hasDemoScreenToken && !(ic?.requiredStatefulComponents || []).some((c) => /chat|product-?demo/i.test(c))) {
+      add('warning', 'demo-unclear', 'AI/SaaS product with no clear chat/product-demo entry.', 'Declare a chat/product-demo surface so the primary CTA opens a clear demo experience.', 'strategy.interactionContract');
+    }
+  }
+  // Too many top-level suggested screens read as an admin panel (nav discipline).
+  if ((ic?.suggestedScreens?.length || 0) > 6) add('info', 'flow-confusion', `${ic!.suggestedScreens!.length} suggested screens — nav may feel like an admin panel.`, 'Keep one clear experience + a few marketing screens; overflow the rest.', 'strategy.interactionContract.suggestedScreens');
+
+  /* 4 — Concept specificity: hero + copy reflect the actual concept/vertical. */
+  const heroSec = (input.sectionItems || []).find((s) => /hero/i.test(s.id));
+  const heroText = `${heroSec?.name || ''} ${heroSec?.sub || ''} ${input.brief.coreIdea || ''}`.toLowerCase();
+  const conceptWords = `${primaryConcept} ${(input.brief.type || '')} ${(authority?.targetVertical || '')}`.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 4);
+  const heroMentionsConcept = conceptWords.some((w) => heroText.includes(w));
+  if (authority && !heroMentionsConcept && heroText.trim().length > 0) {
+    add('warning', 'weak-hero', 'Hero copy does not clearly name the product concept or target vertical.', 'Reference the actual concept/vertical in the hero so the copy is not generic-SaaS.', heroSec?.id || 'hero');
+  }
+  if (input.reviewer?.findings?.some((f) => f.category === 'concept-drift')) {
+    add('warning', 'concept-drift', 'Reviewer flagged concept drift (visual/archetype ≠ primary concept).', 'Re-assert the primary-concept archetype; the target vertical only informs copy/proof.', 'artDirection.designArchetype');
+  }
+
+  /* 5 — Honesty: no fabricated proof/metrics. */
+  const fakeFinding = input.reviewer?.findings?.find((f) => f.category === 'fake-data');
+  if (fakeFinding) add(fakeFinding.severity, 'honesty-risk', `Reviewer flagged possible fabricated proof: ${fakeFinding.evidence}`, 'Remove unsupported ratings/prices/compliance/metrics; keep honest structural labels only.', 'files');
+
+  /* 6 — Visual density (Phase 6E is applied, but flag if art direction is thin). */
+  const weakVisual = !!input.artDirection && !(input.artDirection.premiumDetails || []).length
+    && !(input.artDirection.visualDifferentiators || []).length;
+  if (weakVisual) add('info', 'visual-density', 'Art direction has no premium detail / differentiator signals.', 'Add premium surface/accent/differentiator rules so the build reads premium, not a UI kit.', 'artDirection');
+
+  // ── Dimension scores (0–100) from the issues + real signals. Deterministic. ──
+  const critical = issues.filter((i) => i.severity === 'critical').length;
+  const warnings = issues.filter((i) => i.severity === 'warning').length;
+  const catCount = (c: QualityIssueCategory) => issues.filter((i) => i.category === c).length;
+  const dim = (base: number, penaltyEach: number, ...cats: QualityIssueCategory[]) =>
+    Math.max(0, Math.min(100, base - penaltyEach * cats.reduce((n, c) => n + catCount(c), 0)));
+  const dimensions: QualityDimensions = {
+    copyClarity: dim(100, 14, 'raw-label', 'generic-copy'),
+    ctaConsistency: dim(100, 18, 'cta-inconsistency'),
+    flowCoherence: dim(100, 16, 'flow-confusion', 'demo-unclear'),
+    visualPremiumFit: dim(95, 15, 'visual-density'),
+    conceptSpecificity: dim(100, 16, 'weak-hero', 'concept-drift'),
+    demoUsefulness: isAiSaas ? dim(100, 20, 'demo-unclear') : 90,
+    honesty: critical ? 40 : (catCount('honesty-risk') ? 70 : 100),
+  };
+  const score = Math.round(
+    (dimensions.copyClarity + dimensions.ctaConsistency + dimensions.flowCoherence
+      + dimensions.visualPremiumFit + dimensions.conceptSpecificity + dimensions.demoUsefulness + dimensions.honesty) / 7,
+  );
+  const status: QualityDirectorArtifact['status'] = (score >= 80 && critical === 0) ? 'passed' : 'needs-fixes';
+
+  const approvedPrinciples = uniq([
+    hasConsistencyRule ? L(lang, 'One clear primary conversion', 'Tek net birincil dönüşüm') : '',
+    !rawLabels.length ? L(lang, 'Clean public labels', 'Temiz herkese açık etiketler') : '',
+    (authority && heroMentionsConcept) ? L(lang, 'Concept-specific hero', 'Konsepte özgü hero') : '',
+    !fakeFinding ? L(lang, 'Honest proof (no fabricated metrics)', 'Dürüst kanıt (uydurma metrik yok)') : '',
+  ].filter(Boolean));
+  const rewriteInstructions = uniq([
+    rawLabels.length ? L(lang, 'Rewrite raw/model-internal section labels into short human labels (strip parentheticals, drop unsupported "metrics").',
+      'Ham/model-içi bölüm etiketlerini kısa, insan-okur etiketlere çevir (parantezleri sil, desteklenmeyen "metrik" ifadesini kaldır).') : '',
+    (catCount('cta-inconsistency')) ? L(lang, 'Normalize CTAs to one clear primary + supporting secondary.', 'CTA\'ları tek net birincil + destekleyici ikincil olacak şekilde normalize et.') : '',
+    (catCount('flow-confusion') || catCount('demo-unclear')) ? L(lang, 'Clarify the landing → (lead gate) → demo flow labels.', 'İniş → (kayıt) → demo akış etiketlerini netleştir.') : '',
+  ].filter(Boolean));
+
+  const topCats = uniq(issues.filter((i) => i.severity !== 'info').map((i) => i.category)).slice(0, 3).join(', ');
+  const summary = status === 'passed'
+    ? L(lang, `Quality score ${score}/100 — passed. Clean labels, consistent CTA, coherent flow.`,
+        `Kalite skoru ${score}/100 — geçti. Temiz etiketler, tutarlı CTA, tutarlı akış.`)
+    : L(lang, `Quality score ${score}/100 — needs fixes (${critical} critical, ${warnings} warning): ${topCats || 'copy/label polish'}.`,
+        `Kalite skoru ${score}/100 — düzeltme gerek (${critical} kritik, ${warnings} uyarı): ${topCats || 'metin/etiket cilası'}.`);
+
+  return { status, score, dimensions, issues, approvedPrinciples, rewriteInstructions, summary };
+}
+
+/**
+ * Run the Quality Director. Fully guarded: on any error it fails OPEN — a row with
+ * status 'failed' + a safe 'failed-open' artifact — and the build continues. Never
+ * required for Preview / All Files.
+ */
+export function runQualityDirector(input: QualityDirectorInput): { agent: WebBuildAgent; artifact: QualityDirectorArtifact } {
+  const lang = input.lang || 'en';
+  const name = L(lang, 'Quality Director', 'Kalite Direktörü');
+  const activity = L(lang, 'Judging copy clarity, CTA consistency and flow', 'Metin netliği, CTA tutarlılığı ve akış değerlendiriliyor');
+  try {
+    const artifact = deriveQualityDirector(input);
+    return { agent: { id: 'quality_director', name, status: 'done', summary: artifact.summary, currentActivity: activity, artifact }, artifact };
+  } catch {
+    const artifact = failedOpenQualityDirector(lang);
+    return { agent: { id: 'quality_director', name, status: 'failed', summary: artifact.summary, currentActivity: activity, artifact }, artifact };
+  }
+}
+
 /* ── Fixer Agent (Phase 6) — safe reviewer-driven repairs ───────────────────
  * The first Fixer runs AFTER the Reviewer. It consumes the Reviewer artifact and
  * applies a NARROW set of SAFE, deterministic repairs to the FINAL build data
@@ -4662,6 +4922,10 @@ export interface FixerInput {
   artDirection?: ArtDirectionArtifact;
   /** Concept Authority used to pick the correct archetype / asset plan on drift. */
   conceptAuthority?: ConceptAuthority;
+  /** Quality Director issues + rewrite guidance the Fixer consumes (Phase 7A). */
+  qualityDirector?: QualityDirectorArtifact;
+  /** The primary conversion intent (for normalizing awkward CTA labels). */
+  primaryConversionIntent?: string;
   lang?: Lang;
 }
 
@@ -4677,7 +4941,20 @@ export interface FixerResult {
 }
 
 /** The safe repair categories this v1 Fixer is allowed to perform. */
-const FIXER_SAFE_SCOPE = ['fake-data', 'placeholder-cleanup', 'cta-anchor', 'concept-drift', 'visual-asset-plan'];
+const FIXER_SAFE_SCOPE = ['fake-data', 'placeholder-cleanup', 'cta-anchor', 'concept-drift', 'visual-asset-plan', 'copy-label', 'cta-consistency', 'flow-label'];
+
+/** Intent → clean CTA label (Phase 7A) — mirrors the Preview's normalizeCtaLabel. */
+function ctaFromIntent(intent: string | undefined, lang: Lang): string | undefined {
+  const s = (intent || '').toLowerCase();
+  if (/free\s*trial|try|get\s*started|start\s*free|\bfree\b/.test(s)) return L(lang, 'Get started free', 'Ücretsiz başla');
+  if (/book\s*demo|schedule/.test(s)) return L(lang, 'Book a demo', 'Demo ayarla');
+  if (/contact\s*sales|talk|contact/.test(s)) return L(lang, 'Contact sales', 'Satışla iletişime geç');
+  if (/quote/.test(s)) return L(lang, 'Request a quote', 'Teklif iste');
+  if (/browse|catalog|inventory/.test(s)) return L(lang, 'Browse catalog', 'Kataloğa göz at');
+  if (/access|research/.test(s)) return L(lang, 'Request access', 'Erişim iste');
+  if (/learn\s*more|how\s*it\s*works/.test(s)) return L(lang, 'See how it works', 'Nasıl çalıştığını gör');
+  return undefined;
+}
 
 /** Broad changes the Fixer explicitly REFUSES (reserved for later phases). */
 function fixerRefusedScope(lang: Lang): string[] {
@@ -4911,6 +5188,65 @@ export function deriveFixer(input: FixerInput): { artifact: FixerAgentArtifact; 
     if (artChanged) artDirection = art;
   }
 
+  // 5 — Quality Director copy/label/CTA repairs (Phase 7A). SAFE, DISPLAY-ONLY:
+  //     clean raw/model-internal section labels + awkward CTAs, and differentiate
+  //     repeated "Product demo" labels. Never invents content, never touches
+  //     factual claims, generated React architecture, or network behaviour.
+  const qd = input.qualityDirector;
+  const qualityApplied: FixerAppliedChange[] = [];
+  const qualitySkipped: FixerSkippedChange[] = [];
+  let qaid = 0;
+  const addQuality = (category: string, target: string, before: string, after: string, reason: string) => {
+    qualityApplied.push({ id: `qx-${qaid += 1}`, category, target, before, after, reason });
+  };
+  const intentCta = ctaFromIntent(input.primaryConversionIntent, lang);
+  for (const s of sectionItems) {
+    if (isAwkwardLabel(s.name)) {
+      const cleaned = cleanPublicLabel(s.name);
+      if (cleaned && cleaned !== s.name) {
+        addQuality('copy-label', s.id, s.name, cleaned,
+          L(lang, 'Rewrote a raw/model-internal section label into a short human label (display only).',
+            'Ham/model-içi bölüm etiketini kısa insan-okur etikete çevirdi (yalnızca görünüm).'));
+        s.name = cleaned;
+      }
+    }
+    if (s.cta && isAwkwardLabel(s.cta)) {
+      const cleanedCta = (intentCta && intentCta.length <= MAX_LABEL_LEN) ? intentCta : cleanPublicLabel(s.cta);
+      if (cleanedCta && cleanedCta !== s.cta) {
+        addQuality('cta-consistency', s.id, s.cta, cleanedCta,
+          L(lang, 'Normalized an awkward CTA label to a clean, consistent action (display only).',
+            'Beceriksiz bir CTA etiketini temiz, tutarlı bir eyleme normalize etti (yalnızca görünüm).'));
+        s.cta = cleanedCta;
+      }
+    }
+  }
+  // Differentiate repeated "Product demo" labels (2nd+ → neutral flow labels that
+  // don't fabricate a specific content type).
+  const FLOW_RENAMES = [L(lang, 'How it works', 'Nasıl çalışır'), L(lang, 'Use cases', 'Kullanım senaryoları'), L(lang, 'Product tour', 'Ürün turu')];
+  let demoSeen = 0; let flowIdx = 0;
+  for (const s of sectionItems) {
+    if (/^product\s*demo$/i.test((s.name || '').trim())) {
+      demoSeen += 1;
+      if (demoSeen > 1 && flowIdx < FLOW_RENAMES.length) {
+        const before = s.name;
+        const label = FLOW_RENAMES[flowIdx];
+        flowIdx += 1;
+        addQuality('flow-label', s.id, before, label,
+          L(lang, 'Renamed a repeated "Product demo" label to a clearer flow label.',
+            'Tekrar eden "Product demo" etiketini daha net bir akış etiketine dönüştürdü.'));
+        s.name = label;
+      }
+    }
+  }
+  const consumedQualityIssues = uniq((qd?.issues || [])
+    .filter((i) => ['raw-label', 'cta-inconsistency', 'generic-copy', 'flow-confusion', 'demo-unclear'].includes(i.category))
+    .map((i) => `${i.id}:${i.category}`)).slice(0, 16);
+  if (qd && !qualityApplied.length && (qd.issues || []).some((i) => i.category === 'raw-label' || i.category === 'cta-inconsistency')) {
+    qualitySkipped.push({ id: 'qs-1', category: 'copy-label', reason: L(lang,
+      'Quality Director flagged label/CTA issues, but no awkward public label/CTA was safely repairable on the section items.',
+      'Kalite Direktörü etiket/CTA sorunları bildirdi, ancak bölüm öğelerinde güvenle düzeltilebilir beceriksiz etiket/CTA bulunamadı.') });
+  }
+
   // REFUSALS — always record the broad scope the Fixer will not touch, plus a
   // concrete refusal when the Reviewer flagged a structural/concept issue.
   if (flaggedArchitecture) {
@@ -4919,23 +5255,27 @@ export function deriveFixer(input: FixerInput): { artifact: FixerAgentArtifact; 
       'Geniş mimari yeniden yazımı atlandı; gelecekteki bir mimari düzeltme aşamasına bırakıldı.'), 'sectionItems');
   }
 
-  const status: FixerStatus = applied.length > 0 ? 'applied' : 'no-op';
+  const totalApplied = applied.length + qualityApplied.length;
+  const status: FixerStatus = totalApplied > 0 ? 'applied' : 'no-op';
   let summary: string;
-  if (applied.length > 0) {
-    const cats = uniq(applied.map((c) => c.category)).join(', ');
+  if (totalApplied > 0) {
+    const cats = uniq([...applied, ...qualityApplied].map((c) => c.category)).join(', ');
     summary = L(lang,
-      `Fixer applied ${applied.length} safe repair${applied.length === 1 ? '' : 's'} (${cats}); no redesign or invented content.`,
-      `Düzeltici ${applied.length} güvenli düzeltme uyguladı (${cats}); yeniden tasarım veya uydurma içerik yok.`);
+      `Fixer applied ${totalApplied} safe repair${totalApplied === 1 ? '' : 's'} (${cats}); no redesign or invented content.`,
+      `Düzeltici ${totalApplied} güvenli düzeltme uyguladı (${cats}); yeniden tasarım veya uydurma içerik yok.`);
   } else {
     summary = L(lang,
-      'Fixer no-op: reviewer found no safe v1 repair scope in this build.',
-      'Düzeltici işlem yapmadı: reviewer bu yapıda güvenli v1 düzeltme kapsamı bulmadı.');
+      'Fixer no-op: reviewer/quality director found no safe v1 repair scope in this build.',
+      'Düzeltici işlem yapmadı: reviewer/kalite direktörü bu yapıda güvenli v1 düzeltme kapsamı bulmadı.');
   }
 
   const artifact: FixerAgentArtifact = {
     status, appliedChanges: applied, skippedChanges: skipped,
     consumedReviewerFindings, consumedFixInstructions,
     safeRepairScope: FIXER_SAFE_SCOPE, refusedScope: fixerRefusedScope(lang),
+    consumedQualityIssues,
+    qualityAppliedChanges: qualityApplied,
+    qualitySkippedChanges: qualitySkipped,
     summary,
   };
   return { artifact, sectionItems, files, artDirection };

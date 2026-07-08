@@ -341,6 +341,7 @@ const AGENT_TITLE_KEY: Record<AgentId, string> = {
   layout_architect: 'wbAgentLayout',
   component_engineer: 'wbAgentComponent',
   reviewer: 'wbAgentReviewer',
+  quality_director: 'wbAgentQualityDirector',
   fixer: 'wbAgentFixer',
 };
 const AGENT_NOTE_KEY: Record<AgentId, string> = {
@@ -350,6 +351,7 @@ const AGENT_NOTE_KEY: Record<AgentId, string> = {
   layout_architect: 'wbOpLayoutNote',
   component_engineer: 'wbOpComponentNote',
   reviewer: 'wbOpReviewerNote',
+  quality_director: 'wbOpQualityDirectorNote',
   fixer: 'wbOpFixerNote',
 };
 
