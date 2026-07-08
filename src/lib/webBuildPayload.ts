@@ -720,6 +720,17 @@ function assembleWebBuildPayload(
         didFixCopyLabels: (artifacts?.fixer?.qualityAppliedChanges || []).some((c) => c.category === 'copy-label'),
         didFixCtaConsistency: (artifacts?.fixer?.qualityAppliedChanges || []).some((c) => c.category === 'cta-consistency'),
         didFixFlowLabels: (artifacts?.fixer?.qualityAppliedChanges || []).some((c) => c.category === 'flow-label'),
+        // Visual Exploration + anti-template gate (Phase 7B) — real artifact data only.
+        visualCandidateCount: (artifacts?.artDirection?.visualExploration?.candidates || []).length,
+        selectedVisualCandidate: artifacts?.artDirection?.visualExploration?.selectedCandidateId,
+        rejectedVisualCandidates: artifacts?.artDirection?.visualExploration?.rejectedCandidateIds,
+        selectionReason: artifacts?.artDirection?.visualExploration?.selectionReason,
+        paletteFamily: artifacts?.artDirection?.paletteFamily
+          || artifacts?.artDirection?.visualExploration?.candidates.find((c) => c.id === artifacts?.artDirection?.visualExploration?.selectedCandidateId)?.paletteFamily,
+        antiTemplateWarnings: (artifacts?.qualityDirector?.issues || []).filter((i) => ['same-template-risk', 'accent-overuse', 'dashboard-overuse', 'palette-mismatch', 'visual-monotony', 'weak-visual-exploration'].includes(i.category)).length,
+        correctedAntiTemplateDrift: !!artifacts?.artDirection?.correctedAntiTemplateDrift
+          || (artifacts?.fixer?.appliedChanges || []).some((c) => ['visual-direction', 'palette-family', 'accent-strategy', 'anti-template-copy'].includes(c.category)),
+        qualitySameTemplateIssues: (artifacts?.qualityDirector?.issues || []).filter((i) => i.category === 'same-template-risk').length,
         fallbackReason: (artifacts?.context?.fallbacks?.length
           ? `agents degraded: ${artifacts.context.fallbacks.join(', ')}`
           : undefined),
