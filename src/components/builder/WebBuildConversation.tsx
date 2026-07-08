@@ -353,6 +353,12 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       // Planned nav breadth (Home + experience + screens), capped like the Preview.
       const plannedScreens = (contract.suggestedScreens || []).length;
       ownerRows.push(['navPlanned', `${Math.min(6, 1 + (contract.postEntryScreenId ? 1 : 0) + plannedScreens)} (cap 6)`]);
+      // Phase 6E: visual-calm posture (the Preview applies these unconditionally).
+      const demoDensity = /chat|product-demo/.test(contract.postEntryScreenId || '') ? 'compact' : 'balanced';
+      ownerRows.push(['visualCalmApplied', 'true']);
+      ownerRows.push(['accentUsage', 'restrained']);
+      ownerRows.push(['demoDensity', demoDensity]);
+      ownerRows.push(['teaserDensity', 'compact']);
     }
 
     // Planning-quality diagnostics (the honesty gate — model-planned vs fallback).
