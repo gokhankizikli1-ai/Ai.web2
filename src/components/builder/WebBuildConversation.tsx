@@ -311,8 +311,14 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
     if (plan?.visualSystem?.motif) ownerRows.push(['visualSystem.motif', plan.visualSystem.motif]);
     const reviewer = step.artifacts?.reviewer;
     if (reviewer?.status) ownerRows.push(['reviewer', reviewer.status]);
+    // Quality Director (Phase 7A) — premium-quality judge over the real artifacts.
+    const qd = step.artifacts?.qualityDirector;
+    if (qd) ownerRows.push(['qualityDirector', `${qd.status} · ${qd.score}/100`]);
     const fixer = step.artifacts?.fixer;
-    if (fixer) ownerRows.push(['fixer', `${fixer.status} · ${(fixer.appliedChanges || []).length} applied`]);
+    if (fixer) {
+      const qc = (fixer.qualityAppliedChanges || []).length;
+      ownerRows.push(['fixer', `${fixer.status} · ${(fixer.appliedChanges || []).length + qc} applied`]);
+    }
 
     // Concept Authority + Visual Quality gate (Phase 5) — real artifact data only.
     const ca = step.artifacts?.research?.conceptAuthority;
@@ -323,6 +329,17 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
     if (enf?.didDetectConceptDrift) ownerRows.push(['conceptDrift', `detected${enf.didFixConceptDrift ? ' · fixed' : ''}`]);
     else if (ca) ownerRows.push(['conceptDrift', art?.correctedConceptDrift ? 'guarded' : 'none']);
     if (art?.visualAssetPlan?.heroVisualType) ownerRows.push(['visualAssetPlan', art.visualAssetPlan.heroVisualType]);
+
+    // Quality Director + Copy/CTA Fixer enforcement (Phase 7A) — real artifact data.
+    if (enf?.didRunQualityDirector) {
+      ownerRows.push(['qualityGate', `${enf.qualityStatus || 'n/a'} · score ${enf.qualityScore ?? 'n/a'} · ${enf.qualityCriticalCount ?? 0} critical · ${enf.qualityWarningCount ?? 0} warning`]);
+      const fixed = [
+        enf.didFixCopyLabels ? 'copy-labels' : '',
+        enf.didFixCtaConsistency ? 'cta' : '',
+        enf.didFixFlowLabels ? 'flow-labels' : '',
+      ].filter(Boolean);
+      ownerRows.push(['qualityFixesApplied', fixed.length ? fixed.join(' · ') : 'none']);
+    }
 
     // Phase 6A: is the Preview using the model-native Interaction Contract (its own
     // Website Experience Plan), not just a re-derived fallback? Real fields only.
