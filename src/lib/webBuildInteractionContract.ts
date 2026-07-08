@@ -105,6 +105,8 @@ export interface InteractionContract {
    *  backend/submission). All optional & backward compatible. */
   conversionJourneyModel?: string;
   primaryConversionIntent?: string;
+  /** Normalized, locale-aware primary CTA label derived from the conversion intent. */
+  primaryConversionCTA?: string;
   leadCaptureRequired?: boolean;
   leadCaptureFields?: string;
   afterLeadCaptureScreen?: string;
@@ -800,6 +802,7 @@ function build(input: InteractionContractInput): InteractionContract {
     // Conversion Journey fields (deterministic; consumed by the Preview lead gate).
     conversionJourneyModel: journey.conversionJourneyModel,
     primaryConversionIntent: journey.primaryConversionIntent,
+    primaryConversionCTA: journey.primaryConversionCTA,
     leadCaptureRequired: journey.leadCaptureRequired,
     leadCaptureFields: journey.leadCaptureFields,
     afterLeadCaptureScreen: journey.afterLeadCaptureScreen,
