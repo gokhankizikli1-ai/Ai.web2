@@ -1326,53 +1326,93 @@ function resolveHeroVisual(plan: VisualAssetPlan | undefined, artMode: string): 
  * reduced-motion. Never fetches or generates a real asset. */
 function PremiumVisualLayer({ type, animate, className = '' }: { type: HeroVisualType; animate: boolean; className?: string }) {
   const still = !animate;
-  const line = 'rgba(255,255,255,0.16)';
+  // Phase 6E — calmer ambient: hairline-faint lines, a single restrained accent
+  // stroke, low opacity so it never competes with the text.
+  const line = 'rgba(255,255,255,0.06)';
   const motif = (() => {
     switch (type) {
       case 'dashboard-mockup':
         return (
-          <svg aria-hidden viewBox="0 0 400 240" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 h-full w-full" style={{ opacity: 0.5 }}>
-            {[40, 80, 120, 160, 200].map((y, k) => <line key={`g${k}`} x1="20" y1={y} x2="380" y2={y} stroke={line} strokeWidth="1" />)}
-            <polyline points="20,180 80,140 140,155 200,96 260,120 320,70 380,92" fill="none" stroke="var(--acc)" strokeWidth="2.5" />
-            <polyline points="20,200 80,186 140,192 200,150 260,168 320,132 380,150" fill="none" stroke="var(--acc2)" strokeWidth="1.5" opacity="0.7" />
-            {[60, 120, 180, 240, 300].map((x, k) => <rect key={`b${k}`} x={x} y={200 - (k % 3) * 16 - 10} width="16" height={(k % 3) * 16 + 10} rx="2" fill="var(--acc)" opacity="0.28" />)}
+          <svg aria-hidden viewBox="0 0 400 240" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 h-full w-full" style={{ opacity: 0.35 }}>
+            {[60, 120, 180].map((y, k) => <line key={`g${k}`} x1="20" y1={y} x2="380" y2={y} stroke={line} strokeWidth="1" />)}
+            <polyline points="20,180 90,150 160,162 230,110 300,132 380,96" fill="none" stroke="var(--acc)" strokeWidth="1.6" opacity="0.55" />
           </svg>
         );
       case 'product-mockup':
         return (
-          <svg aria-hidden viewBox="0 0 400 240" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 h-full w-full" style={{ opacity: 0.45 }}>
-            {[0, 1, 2].map((r) => [0, 1, 2, 3].map((c) => (
-              <rect key={`${r}-${c}`} x={30 + c * 92} y={30 + r * 70} width="76" height="54" rx="8" fill="none" stroke={(r + c) % 3 === 0 ? 'var(--acc)' : line} strokeWidth="1.4" />
+          <svg aria-hidden viewBox="0 0 400 240" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 h-full w-full" style={{ opacity: 0.3 }}>
+            {[0, 1].map((r) => [0, 1, 2, 3].map((c) => (
+              <rect key={`${r}-${c}`} x={30 + c * 92} y={50 + r * 80} width="76" height="54" rx="8" fill="none" stroke={r === 0 && c === 0 ? 'var(--acc)' : line} strokeWidth="1.2" opacity={r === 0 && c === 0 ? 0.5 : 1} />
             )))}
           </svg>
         );
       case 'pattern-system':
         return (
-          <svg aria-hidden viewBox="0 0 400 240" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 h-full w-full" style={{ opacity: 0.4 }}>
-            {Array.from({ length: 9 }).map((_, k) => <line key={`v${k}`} x1={20 + k * 45} y1="10" x2={20 + k * 45} y2="230" stroke={line} strokeWidth="1" />)}
-            {[50, 100, 150, 200].map((y, k) => <line key={`h${k}`} x1="10" y1={y} x2="390" y2={y} stroke={k % 2 ? 'var(--acc)' : line} strokeWidth="1" opacity={k % 2 ? 0.5 : 1} />)}
+          <svg aria-hidden viewBox="0 0 400 240" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 h-full w-full" style={{ opacity: 0.28 }}>
+            {Array.from({ length: 6 }).map((_, k) => <line key={`v${k}`} x1={30 + k * 68} y1="10" x2={30 + k * 68} y2="230" stroke={line} strokeWidth="1" />)}
+            {[80, 160].map((y, k) => <line key={`h${k}`} x1="10" y1={y} x2="390" y2={y} stroke={line} strokeWidth="1" />)}
           </svg>
         );
       case 'photo-direction':
         return (
-          <svg aria-hidden viewBox="0 0 400 240" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 h-full w-full" style={{ opacity: 0.5 }}>
-            {[40, 80, 120, 160, 200].map((y, k) => <path key={k} d={`M0 ${y} C 100 ${y - 24}, 300 ${y + 24}, 400 ${y}`} fill="none" stroke={k % 2 ? 'var(--acc)' : line} strokeWidth="1.4" />)}
+          <svg aria-hidden viewBox="0 0 400 240" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 h-full w-full" style={{ opacity: 0.3 }}>
+            {[70, 130, 190].map((y, k) => <path key={k} d={`M0 ${y} C 100 ${y - 24}, 300 ${y + 24}, 400 ${y}`} fill="none" stroke={k === 1 ? 'var(--acc)' : line} strokeWidth="1.2" opacity={k === 1 ? 0.45 : 1} />)}
           </svg>
         );
       default: // css-abstract / svg-illustration / canvas-motion → soft mesh
         return (
-          <svg aria-hidden viewBox="0 0 400 240" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 h-full w-full" style={{ opacity: 0.4 }}>
-            {Array.from({ length: 6 }).map((_, k) => <line key={`d${k}`} x1={-40 + k * 90} y1="240" x2={120 + k * 90} y2="0" stroke={line} strokeWidth="1" />)}
-            <circle cx="320" cy="70" r="40" fill="none" stroke="var(--acc)" strokeWidth="1.4" opacity="0.6" />
+          <svg aria-hidden viewBox="0 0 400 240" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 h-full w-full" style={{ opacity: 0.28 }}>
+            {Array.from({ length: 4 }).map((_, k) => <line key={`d${k}`} x1={-40 + k * 130} y1="240" x2={140 + k * 130} y2="0" stroke={line} strokeWidth="1" />)}
+            <circle cx="330" cy="64" r="36" fill="none" stroke="var(--acc)" strokeWidth="1.2" opacity="0.35" />
           </svg>
         );
     }
   })();
   return (
     <div aria-hidden className={`pointer-events-none absolute inset-0 overflow-hidden ${className}`}>
-      <Orb color="var(--acc)" style={{ top: '-12%', right: '-8%', width: 440, height: 440, opacity: 0.26 }} still={still} />
-      <Orb color="var(--acc2)" style={{ bottom: '-16%', left: '-10%', width: 380, height: 380, opacity: 0.18 }} delay={2} still={still} />
+      <Orb color="var(--acc)" style={{ top: '-14%', right: '-10%', width: 420, height: 420, opacity: 0.16 }} still={still} />
+      <Orb color="var(--acc2)" style={{ bottom: '-18%', left: '-12%', width: 360, height: 360, opacity: 0.1 }} delay={2} still={still} />
       {motif}
+    </div>
+  );
+}
+
+/* ── Phase 6E: local visual-calm helpers ─────────────────────────────────────
+ * A tiny, LOCAL hierarchy system (not a component library): softer surfaces, one
+ * hairline instead of stacked borders, muted secondary text, and accent reserved
+ * for the primary CTA / active nav / one key highlight. Used by the teaser and
+ * the demo screens so the Preview reads as a calm premium site, not a UI kit. */
+const CALM = {
+  /** A calm surface: near-transparent fill + a single hairline (no heavy border). */
+  surface: 'rounded-[var(--pr)] border border-white/[0.07] bg-white/[0.02]',
+  /** An even quieter panel (side rails, secondary blocks). */
+  panel: 'rounded-[var(--pr)] border border-white/[0.05] bg-white/[0.015]',
+  hairline: 'border-white/[0.06]',
+  muted: 'text-slate-400',
+  faint: 'text-slate-500',
+};
+/** Soft accent tint (for the ONE key highlight, never a loud filled block). */
+const accentTint = (pct = 12) => ({ background: `color-mix(in srgb, var(--acc) ${pct}%, transparent)` });
+
+function PreviewPill({ children, tone = 'muted' }: { children: ReactNode; tone?: 'muted' | 'accent' }) {
+  const base = 'inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-wider';
+  return tone === 'accent'
+    ? <span className={`${base} text-white/90`} style={accentTint(16)}>{children}</span>
+    : <span className={`${base} border border-white/[0.08] ${CALM.faint}`}>{children}</span>;
+}
+
+function PreviewSectionLabel({ children }: { children: ReactNode }) {
+  return <p className="text-[11px] font-medium uppercase tracking-widest text-white/40">{children}</p>;
+}
+
+/** A calm mockup frame (browser dots + url pill + one status pill) reused by the
+ *  teaser and the demo screen so both share one restrained surface language. */
+function MockFrameHeader({ url, status }: { url: string; status: string }) {
+  return (
+    <div className={`flex items-center gap-2 border-b ${CALM.hairline} px-4 py-2.5`}>
+      <span className="h-2.5 w-2.5 rounded-full bg-white/12" /><span className="h-2.5 w-2.5 rounded-full bg-white/10" /><span className="h-2.5 w-2.5 rounded-full bg-white/[0.07]" />
+      <span className={`ml-3 flex-1 truncate rounded-md px-3 py-1 text-[11px] ${CALM.faint}`} style={{ background: 'rgba(255,255,255,0.03)' }}>{url}</span>
+      <PreviewPill>{status}</PreviewPill>
     </div>
   );
 }
@@ -1689,24 +1729,25 @@ function LandingDemoTeaser({ sections, brief, chat, ctaLabel, onEnter }: {
 }) {
   const content = sections.filter((s) => !/hero|footer/i.test(s.id));
   const demoSec = content.find((s) => /demo|chat|assistant|playground|product/i.test(`${s.id} ${s.name || ''}`)) || content[0];
-  const bubbles = cleanLines([demoSec?.sub || demoSec?.headline || brief.type, ...(demoSec ? bulletsOf(demoSec) : [])]).slice(0, 3);
+  // Phase 6E — a COMPACT preview card: one refined title, ≤2 bubbles, accent only
+  // on the CTA + a single subtle user-bubble tint. Calm surface, one hairline.
+  const bubbles = cleanLines([demoSec?.sub || demoSec?.headline || brief.type, ...(demoSec ? bulletsOf(demoSec) : [])]).slice(0, 2);
   const q = (demoSec && (demoSec.name || heading(demoSec))) || '';
+  const title = chat ? 'Preview the assistant' : 'Preview the experience';
+  const url = `${(brief.type || 'preview').toLowerCase().replace(/\s+/g, '')}.app / ${chat ? 'assistant' : 'demo'}`;
   return (
-    <div className="relative z-10 mx-auto -mt-2 max-w-6xl px-6">
-      <div className="overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)] shadow-2xl" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0.28))' }}>
-        <div className="flex items-center gap-2 border-b border-[color:var(--bd)] bg-black/30 px-4 py-2.5">
-          <span className="h-2.5 w-2.5 rounded-full bg-white/20" /><span className="h-2.5 w-2.5 rounded-full bg-white/15" /><span className="h-2.5 w-2.5 rounded-full bg-white/10" />
-          <span className="ml-3 flex-1 truncate rounded-md border border-[color:var(--bd)] bg-black/30 px-3 py-1 text-[11px] text-slate-400">{(brief.type || 'preview').toLowerCase().replace(/\s+/g, '')}.app / {chat ? 'assistant' : 'demo'}</span>
-          <span className="rounded-full border border-[color:var(--bd)] px-2 py-0.5 text-[10px] uppercase tracking-wider text-slate-400">Preview only</span>
-        </div>
-        <div className="grid gap-0 md:grid-cols-[1fr_15rem]">
-          <div className="space-y-2.5 p-4">
-            {q && <div className="ml-auto max-w-[80%] rounded-2xl rounded-tr-sm px-3.5 py-2 text-[13px] font-medium text-white" style={{ background: 'var(--acc)' }}>{q}</div>}
-            {bubbles.map((m, i) => <div key={i} className="max-w-[85%] rounded-2xl rounded-tl-sm border border-[color:var(--bd)] bg-[var(--sf)] px-3.5 py-2 text-[13px] leading-relaxed text-slate-200">{m}</div>)}
+    <div className="relative z-10 mx-auto mt-2 max-w-4xl px-6">
+      <div className={`overflow-hidden ${CALM.surface}`}>
+        <MockFrameHeader url={url} status="Preview only" />
+        <div className="grid gap-0 md:grid-cols-[1fr_13rem]">
+          <div className="space-y-2 p-4">
+            <PreviewSectionLabel>{title}</PreviewSectionLabel>
+            {q && <div className="ml-auto max-w-[78%] rounded-2xl rounded-tr-sm px-3.5 py-2 text-[13px] font-medium text-white/90" style={accentTint(14)}>{q}</div>}
+            {bubbles.map((m, i) => <div key={i} className={`max-w-[86%] rounded-2xl rounded-tl-sm px-3.5 py-2 text-[13px] leading-relaxed text-slate-300`} style={{ background: 'rgba(255,255,255,0.03)' }}>{m}</div>)}
           </div>
-          <div className="flex flex-col justify-center gap-2 border-t border-[color:var(--bd)] p-4 md:border-l md:border-t-0">
-            <button type="button" onClick={onEnter} className="rounded-xl px-5 py-2.5 text-sm font-semibold text-white" style={{ background: 'var(--acc)', boxShadow: '0 10px 30px -10px var(--acc)' }}>{ctaLabel}</button>
-            <span className="text-center text-[11px] text-slate-500">Front-end demo — no real AI or backend.</span>
+          <div className={`flex flex-col justify-center gap-2 border-t ${CALM.hairline} p-4 md:border-l md:border-t-0`}>
+            <button type="button" onClick={onEnter} className="rounded-xl px-5 py-2.5 text-sm font-semibold text-white" style={{ background: 'var(--acc)', boxShadow: '0 8px 24px -12px var(--acc)' }}>{ctaLabel}</button>
+            <span className={`text-center text-[11px] ${CALM.faint}`}>Front-end demo — no real AI or backend.</span>
           </div>
         </div>
       </div>
@@ -1720,7 +1761,7 @@ function ScreenHeader({ label, purpose, onHome }: { label: string; purpose: stri
       <button type="button" onClick={onHome} className="text-sm text-slate-400 transition hover:text-white">&larr; Home</button>
       <div className="mt-3 flex flex-wrap items-center gap-2.5">
         <h1 className="text-2xl font-semibold text-white sm:text-3xl" style={{ fontFamily: 'var(--hf)', letterSpacing: 'var(--tr)' }}>{label}</h1>
-        <span className="rounded-full border border-[color:var(--bd)] bg-white/[0.04] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-slate-400">Front-end demo</span>
+        <PreviewPill>Front-end demo</PreviewPill>
       </div>
       {purpose && purpose !== label && <p className="mt-2 max-w-2xl text-sm text-slate-400">{purpose}</p>}
     </div>
@@ -1733,87 +1774,92 @@ function ScreenHeader({ label, purpose, onHome }: { label: string; purpose: stri
  * right inspector) built ONLY from real section copy. Local & static: no backend,
  * no real AI, no sent/success state. CTAs open the existing preview overlays.
  */
-function ProductDemoScreen({ label, purpose, screenSections, allSections, brief, art, rt, onHome, heroVisual, animate, chat }: {
-  label: string; purpose: string; screenSections: S[]; allSections: S[]; brief: WebBuildBrief; art: WebBuildArtIdentity; rt: PreviewRuntime; onHome: () => void; heroVisual: HeroVisualType; animate: boolean; chat: boolean;
+function ProductDemoScreen({ label, purpose, screenSections, allSections, brief, rt, onHome, heroVisual, animate, chat }: {
+  label: string; purpose: string; screenSections: S[]; allSections: S[]; brief: WebBuildBrief; rt: PreviewRuntime; onHome: () => void; heroVisual: HeroVisualType; animate: boolean; chat: boolean;
 }) {
   const content = (screenSections.length ? screenSections : allSections).filter((s) => !/hero|footer/i.test(s.id));
   const pick = (re: RegExp) => content.find((s) => re.test(`${s.id} ${s.name || ''}`));
   const demoSec = pick(SHELL_RE.demo) || content[0];
-  const steps = content.slice(0, 5);
-  // Sample conversation built from REAL copy only — clearly a preview simulation.
-  const answers = uniqStr([demoSec?.sub || demoSec?.headline, ...(demoSec ? bulletsOf(demoSec) : []), ...content.flatMap((s) => bulletsOf(s).slice(0, 1))]).slice(0, 4);
-  const questions = uniqStr(steps.map((s) => s.name || heading(s))).slice(0, answers.length || 3);
+  // Phase 6E — calmer density: left rail ≤3 steps (rest as a muted "+N more"),
+  // right inspector ≤3 items, the central panel is the visual hero. Accent is
+  // reserved for the active step, the CTA and one subtle user-bubble tint.
+  const allSteps = content;
+  const steps = allSteps.slice(0, 3);
+  const moreSteps = Math.max(0, allSteps.length - steps.length);
+  const answers = uniqStr([demoSec?.sub || demoSec?.headline, ...(demoSec ? bulletsOf(demoSec) : []), ...content.flatMap((s) => bulletsOf(s).slice(0, 1))]).slice(0, 3);
+  const questions = uniqStr(steps.map((s) => s.name || heading(s))).slice(0, answers.length || 2);
   const inspector = content.find((s) => SHELL_RE.integrations.test(`${s.id} ${s.name}`)) || content.find((s) => SHELL_RE.security.test(`${s.id} ${s.name}`));
-  const inspectorItems = uniqStr(inspector ? bulletsOf(inspector) : content.flatMap((s) => bulletsOf(s)).slice(0, 4)).slice(0, 5);
+  const inspectorItems = uniqStr(inspector ? bulletsOf(inspector) : content.flatMap((s) => bulletsOf(s)).slice(0, 3)).slice(0, 3);
+  const url = `${(brief.type || 'preview').toLowerCase().replace(/\s+/g, '')}.app / ${chat ? 'assistant' : 'demo'}`;
 
   return (
     <div className="relative pb-16">
-      <PremiumVisualLayer type={heroVisual} animate={animate} className="opacity-70" />
+      <PremiumVisualLayer type={heroVisual} animate={animate} className="opacity-30" />
       <ScreenHeader label={label} purpose={purpose} onHome={onHome} />
       <div className="relative z-10 mx-auto mt-6 max-w-6xl px-6">
-        {/* Browser / product mockup frame. */}
-        <div className="overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)] shadow-2xl" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0.25))' }}>
-          <div className="flex items-center gap-2 border-b border-[color:var(--bd)] bg-black/30 px-4 py-2.5">
-            <span className="h-3 w-3 rounded-full bg-white/20" /><span className="h-3 w-3 rounded-full bg-white/15" /><span className="h-3 w-3 rounded-full bg-white/10" />
-            <span className="ml-3 flex-1 truncate rounded-md border border-[color:var(--bd)] bg-black/30 px-3 py-1 text-[11px] text-slate-400">{(brief.type || 'preview').toLowerCase().replace(/\s+/g, '')}.app / {chat ? 'assistant' : 'demo'}</span>
-            <span className="rounded-full border border-[color:var(--bd)] px-2 py-0.5 text-[10px] uppercase tracking-wider text-slate-400">Preview</span>
-          </div>
-          <div className="grid gap-0 lg:grid-cols-[13rem_1fr_14rem]">
-            {/* Left: demo steps / use cases. */}
-            <aside className="hidden border-r border-[color:var(--bd)] bg-black/20 p-3 lg:block">
-              <p className="px-2 pb-2 text-[11px] font-medium uppercase tracking-widest text-white/45">{chat ? 'Prompts' : 'Steps'}</p>
-              <ul className="space-y-1">
+        {/* Browser / product mockup frame — one hairline, calm surface. */}
+        <div className={`overflow-hidden ${CALM.surface}`}>
+          <MockFrameHeader url={url} status="Preview" />
+          <div className="grid gap-0 lg:grid-cols-[12rem_1fr_13rem]">
+            {/* Left: demo steps / use cases (≤3 + muted more). */}
+            <aside className={`hidden border-r ${CALM.hairline} p-3.5 lg:block`}>
+              <PreviewSectionLabel>{chat ? 'Prompts' : 'Steps'}</PreviewSectionLabel>
+              <ul className="mt-3 space-y-1">
                 {steps.map((s, i) => (
                   <li key={s.id}>
-                    <button type="button" onClick={() => rt.open('open-chat-demo', s)} className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[13px] transition ${i === 0 ? 'text-white' : 'text-slate-400 hover:text-white'}`} style={i === 0 ? { background: 'color-mix(in srgb, var(--acc) 14%, transparent)' } : undefined}>
-                      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[10px] font-semibold text-white" style={{ background: 'color-mix(in srgb, var(--acc) 55%, transparent)' }}>{i + 1}</span>
+                    <button type="button" onClick={() => rt.open('open-chat-demo', s)} className={`flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[13px] transition ${i === 0 ? 'text-white' : `${CALM.muted} hover:text-white`}`} style={i === 0 ? accentTint(12) : undefined}>
+                      <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[10px] font-semibold ${i === 0 ? 'text-white' : 'text-slate-400'}`} style={i === 0 ? accentTint(40) : { background: 'rgba(255,255,255,0.05)' }}>{i + 1}</span>
                       <span className="truncate">{s.name || heading(s)}</span>
                     </button>
                   </li>
                 ))}
+                {moreSteps > 0 && <li className={`px-2 pt-1 text-[11px] ${CALM.faint}`}>+{moreSteps} more</li>}
               </ul>
             </aside>
-            {/* Center: chat / product experience. */}
-            <div className="min-h-[22rem] bg-[#0b0e14]/60 p-4">
-              <div className="space-y-3">
+            {/* Center: chat / product experience — the visual hero, generous spacing. */}
+            <div className="min-h-[22rem] p-5" style={{ background: 'rgba(0,0,0,0.18)' }}>
+              <div className="space-y-4">
                 {questions.map((qn, i) => (
                   <div key={`x${i}`} className="space-y-2">
-                    <div className="ml-auto max-w-[80%] rounded-2xl rounded-tr-sm px-3.5 py-2.5 text-[13px] font-medium text-white" style={{ background: 'var(--acc)' }}>{qn}</div>
-                    {answers[i] && <div className="max-w-[85%] rounded-2xl rounded-tl-sm border border-[color:var(--bd)] bg-[var(--sf)] px-3.5 py-2.5 text-[13px] leading-relaxed text-slate-200">{answers[i]}</div>}
+                    <div className="ml-auto max-w-[78%] rounded-2xl rounded-tr-sm px-3.5 py-2.5 text-[13px] font-medium text-white/90" style={accentTint(14)}>{qn}</div>
+                    {answers[i] && <div className="max-w-[86%] rounded-2xl rounded-tl-sm px-3.5 py-2.5 text-[13px] leading-relaxed text-slate-300" style={{ background: 'rgba(255,255,255,0.03)' }}>{answers[i]}</div>}
                   </div>
                 ))}
               </div>
-              <div className="mt-4 flex items-center gap-2 rounded-xl border border-[color:var(--bd)] bg-[var(--sf)] px-3 py-2">
-                <span className="flex-1 text-[13px] text-slate-500">{chat ? 'Ask the assistant…' : 'Try the demo…'} — preview only, nothing is sent.</span>
-                <span className="flex h-7 w-7 items-center justify-center rounded-lg text-white" style={{ background: 'var(--acc)' }} aria-hidden>→</span>
+              {/* Preview-only input — deliberately inert (not a working AI input). */}
+              <div className={`mt-5 flex items-center gap-2 rounded-xl border ${CALM.hairline} px-3.5 py-2.5`} style={{ background: 'rgba(255,255,255,0.02)' }}>
+                <span className={`flex-1 text-[13px] ${CALM.faint}`}>{chat ? 'Ask the assistant…' : 'Try the demo…'}</span>
+                <PreviewPill>Preview only</PreviewPill>
               </div>
             </div>
-            {/* Right: inspector / integrations / security. */}
-            <aside className="hidden border-l border-[color:var(--bd)] bg-black/20 p-3 lg:block">
-              <p className="px-1 pb-2 text-[11px] font-medium uppercase tracking-widest text-white/45">{inspector ? (inspector.name || 'Details') : 'Highlights'}</p>
-              <ul className="space-y-2">
+            {/* Right: inspector / integrations / security (≤3, borderless rows). */}
+            <aside className={`hidden border-l ${CALM.hairline} p-3.5 lg:block`}>
+              <PreviewSectionLabel>{inspector ? (inspector.name || 'Details') : 'Highlights'}</PreviewSectionLabel>
+              <ul className="mt-3 space-y-2.5">
                 {inspectorItems.map((b, i) => (
-                  <li key={i} className="rounded-lg border border-[color:var(--bd)] bg-white/[0.02] px-2.5 py-2 text-[12px] leading-snug text-slate-300">{b}</li>
+                  <li key={i} className={`flex gap-2 text-[12px] leading-snug ${CALM.muted}`}><span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-white/25" />{b}</li>
                 ))}
               </ul>
             </aside>
           </div>
         </div>
-        {/* Feature strip + primary CTA (opens the existing chat/demo overlay). */}
+        {/* Feature strip — calm surfaces, muted dots (no accent bullets everywhere). */}
         <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {content.filter((s) => s !== demoSec).slice(0, 3).map((s) => (
-            <div key={s.id} className={`rounded-[var(--pr)] border border-[color:var(--bd)] p-4 ${art.cardTone}`}>
+            <div key={s.id} className={`${CALM.panel} p-4`}>
               <p className="text-sm font-semibold text-white">{s.name || heading(s)}</p>
               <ul className="mt-2.5 space-y-1.5">
-                {bulletsOf(s).slice(0, 2).map((b, i) => <li key={i} className="flex gap-2 text-[13px] text-slate-300"><span className="mt-1.5 h-1 w-1 shrink-0 rounded-full" style={{ background: 'var(--acc)' }} />{b}</li>)}
+                {bulletsOf(s).slice(0, 2).map((b, i) => <li key={i} className={`flex gap-2 text-[13px] ${CALM.muted}`}><span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-white/25" />{b}</li>)}
               </ul>
             </div>
           ))}
         </div>
+        {/* One primary CTA (accent) + a quiet ghost secondary. */}
         {demoSec && (
           <div className="mt-6 flex flex-wrap items-center gap-3">
-            <button type="button" onClick={() => rt.open('open-chat-demo', demoSec)} className="rounded-xl px-6 py-3 text-sm font-semibold text-white" style={{ background: 'var(--acc)', boxShadow: '0 10px 30px -10px var(--acc)' }}>{demoSec.cta || (chat ? 'Open chat demo' : 'Open the demo')}</button>
-            <span className="text-[12px] text-slate-500">Front-end demo surface — no real AI, backend or data.</span>
+            <button type="button" onClick={() => rt.open('open-chat-demo', demoSec)} className="rounded-xl px-6 py-3 text-sm font-semibold text-white" style={{ background: 'var(--acc)', boxShadow: '0 8px 24px -12px var(--acc)' }}>{demoSec.cta || (chat ? 'Open chat demo' : 'Open the demo')}</button>
+            <button type="button" onClick={onHome} className={`rounded-xl border ${CALM.hairline} px-5 py-3 text-sm font-medium text-slate-300 transition hover:text-white`}>Back to overview</button>
+            <span className={`text-[12px] ${CALM.faint}`}>Front-end demo — no real AI, backend or data.</span>
           </div>
         )}
       </div>
@@ -1838,18 +1884,18 @@ function GridScreen({ label, purpose, screenSections, allSections, brief, art, r
     <div className="pb-16"><ScreenHeader label={label} purpose={purpose} onHome={onHome} />
       <div className={`mx-auto mt-6 px-6 ${listy ? 'max-w-4xl' : 'max-w-6xl'}`}>
         <div className="flex flex-wrap items-center gap-3">
-          <div className="flex min-w-[16rem] flex-1 items-center gap-2 rounded-[var(--pr)] border border-[color:var(--bd)] bg-[var(--sf)] px-3.5 py-2">
-            <span className="text-slate-400" aria-hidden>⌕</span>
+          <div className={`flex min-w-[16rem] flex-1 items-center gap-2 ${CALM.surface} px-3.5 py-2`}>
+            <span className="text-slate-500" aria-hidden>⌕</span>
             <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={listy ? 'Search the collection' : 'Filter listings'} className="w-full bg-transparent text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none" />
           </div>
           {cta && <button type="button" onClick={() => rt.open(ctaType, cta)} className="rounded-lg px-4 py-2 text-sm font-semibold text-white" style={{ background: 'var(--acc)' }}>{cta.cta || (ctaType === 'open-quote-form' ? 'Request a quote' : ctaType === 'request-access' ? 'Request access' : 'Request info')}</button>}
         </div>
         {listy ? (
-          <div className="mt-6 divide-y divide-white/10 border-y border-[color:var(--bd)]">
+          <div className={`mt-6 divide-y divide-white/[0.06] border-y ${CALM.hairline}`}>
             {visible.map(({ b, s }, i) => (
               <button key={i} type="button" onClick={() => rt.open(detailType, s, { title: b, lines: cleanLines([s.sub, ...bulletsOf(s).filter((x) => x !== b)]) })} className="flex w-full items-center gap-5 py-4 text-left">
                 <span className="w-8 text-sm tabular-nums text-slate-500">{String(i + 1).padStart(2, '0')}</span>
-                <span className={`relative h-11 w-14 shrink-0 overflow-hidden rounded-md border border-[color:var(--bd)] ${art.cardTone}`} style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 20%, transparent), transparent)' }}><CardDetail mode={art.mode} /></span>
+                <span className={`relative h-11 w-14 shrink-0 overflow-hidden rounded-md border ${CALM.hairline} ${art.cardTone}`} style={accentTint(10)}><CardDetail mode={art.mode} /></span>
                 <span className="flex-1 text-[15px] font-medium text-white">{b}</span>
                 <span className="text-slate-500">→</span>
               </button>
@@ -1858,8 +1904,8 @@ function GridScreen({ label, purpose, screenSections, allSections, brief, art, r
         ) : (
           <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3">
             {visible.map(({ b, s }, i) => (
-              <button key={i} type="button" onClick={() => rt.open(detailType, s, { title: b, lines: cleanLines([s.sub, ...bulletsOf(s).filter((x) => x !== b)]) })} className={`group block overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)] text-left ${art.cardTone}`}>
-                <div className={`relative ${art.mediaTone}`} style={{ background: i % 3 === 0 ? 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 24%, transparent), color-mix(in srgb, var(--acc2) 12%, transparent))' : 'linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.01))' }}><CardDetail mode={art.mode} /></div>
+              <button key={i} type="button" onClick={() => rt.open(detailType, s, { title: b, lines: cleanLines([s.sub, ...bulletsOf(s).filter((x) => x !== b)]) })} className={`group block overflow-hidden ${CALM.surface} text-left`}>
+                <div className={`relative ${art.mediaTone}`} style={{ background: i % 3 === 0 ? 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 12%, transparent), transparent)' : 'linear-gradient(135deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01))' }}><CardDetail mode={art.mode} /></div>
                 <div className="p-3"><p className="text-sm font-medium text-white">{b}</p><p className="mt-1 text-[11px] text-slate-500">View details →</p></div>
               </button>
             ))}
@@ -1873,8 +1919,8 @@ function GridScreen({ label, purpose, screenSections, allSections, brief, art, r
 
 /** Premium content screen (use-cases / integrations / security / pricing / detail /
  *  financing / projects / before-after / quote) — cards + sticky action rail. */
-function ContentScreen({ label, purpose, screenSections, allSections, brief, art, rt, onHome, kind }: {
-  label: string; purpose: string; screenSections: S[]; allSections: S[]; brief: WebBuildBrief; art: WebBuildArtIdentity; rt: PreviewRuntime; onHome: () => void; kind: ScreenKind;
+function ContentScreen({ label, purpose, screenSections, allSections, brief, rt, onHome, kind }: {
+  label: string; purpose: string; screenSections: S[]; allSections: S[]; brief: WebBuildBrief; rt: PreviewRuntime; onHome: () => void; kind: ScreenKind;
 }) {
   const content = (screenSections.length ? screenSections : allSections).filter((s) => !/hero|footer/i.test(s.id));
   const lead = content[0];
@@ -1888,13 +1934,13 @@ function ContentScreen({ label, purpose, screenSections, allSections, brief, art
           {lead && <p className="max-w-2xl text-base leading-relaxed text-slate-300">{lead.sub || lead.headline || lead.name}</p>}
           <div className="mt-6 grid gap-4 sm:grid-cols-2">
             {cards.map((s) => (
-              <div key={s.id} className={`rounded-[var(--pr)] border border-[color:var(--bd)] p-5 ${art.cardTone}`}>
+              <div key={s.id} className={`${CALM.panel} p-5`}>
                 <div className="flex items-center gap-3">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-lg text-sm font-semibold text-white" style={{ background: 'color-mix(in srgb, var(--acc) 45%, transparent)' }}>{(s.name || 'S').slice(0, 1).toUpperCase()}</span>
+                  <span className="flex h-8 w-8 items-center justify-center rounded-lg text-sm font-semibold text-white/90" style={accentTint(18)}>{(s.name || 'S').slice(0, 1).toUpperCase()}</span>
                   <p className="text-sm font-semibold text-white">{s.name || heading(s)}</p>
                 </div>
                 <ul className="mt-3 space-y-1.5">
-                  {bulletsOf(s).slice(0, 3).map((b, i) => <li key={i} className="flex gap-2 text-[13px] text-slate-300"><span className="mt-1.5 h-1 w-1 shrink-0 rounded-full" style={{ background: 'var(--acc)' }} />{b}</li>)}
+                  {bulletsOf(s).slice(0, 3).map((b, i) => <li key={i} className={`flex gap-2 text-[13px] ${CALM.muted}`}><span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-white/25" />{b}</li>)}
                 </ul>
               </div>
             ))}
@@ -2350,25 +2396,29 @@ export default function WebBuildPreviewDocument({
   return (
     <div ref={rootRef} id="top" onClick={handlePreviewLinkClick} className="text-slate-200 antialiased" style={{ ...rootStyle, scrollBehavior: 'smooth' }}>
       {previewNav.primaryNavItems.length > 0 && (
-        <header className="sticky top-0 z-50 border-b border-[color:var(--bd)] bg-black/40 backdrop-blur">
-          {/* Phase 6C: disciplined nav — Home + one clear experience item + a few
-              screens, capped; the rest (if any) sit in a muted overflow group. */}
+        <header className="sticky top-0 z-50 border-b border-white/[0.06] bg-black/30 backdrop-blur">
+          {/* Phase 6C nav behaviour; Phase 6E polish — active item gets a subtle
+              accent underline (not bold+loud), overflow is a muted hairline group. */}
           <nav className="mx-auto flex max-w-6xl items-center justify-between gap-6 px-6 py-3" aria-label="Primary">
             <button type="button" onClick={() => setActivePage('home')} className="text-sm font-semibold text-white">{brand || 'Home'}</button>
             <div className="hidden flex-wrap items-center gap-5 text-sm sm:flex">
-              {previewNav.primaryNavItems.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setActivePage(item.targetPageId)}
-                  aria-current={activePage === item.targetPageId ? 'page' : undefined}
-                  className={activePage === item.targetPageId ? 'font-medium text-white' : 'text-slate-300 transition hover:text-white'}
-                >
-                  {item.label}
-                </button>
-              ))}
+              {previewNav.primaryNavItems.map((item) => {
+                const active = activePage === item.targetPageId;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setActivePage(item.targetPageId)}
+                    aria-current={active ? 'page' : undefined}
+                    className={active ? 'pb-0.5 text-white' : 'pb-0.5 text-slate-400 transition hover:text-white'}
+                    style={active ? { boxShadow: 'inset 0 -2px 0 var(--acc)' } : undefined}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
               {previewNav.overflowItems.length > 0 && (
-                <span className="flex flex-wrap items-center gap-4 border-l border-[color:var(--bd)] pl-4 text-[13px] text-slate-400">
+                <span className="flex flex-wrap items-center gap-4 border-l border-white/[0.06] pl-4 text-[13px] text-slate-500">
                   {previewNav.overflowItems.map((item) => (
                     <button
                       key={item.id}
@@ -2403,8 +2453,8 @@ export default function WebBuildPreviewDocument({
       ) : isHome ? (
         <div key={current.id} className="relative">
           {/* Phase 6A: concept-specific ambient visual (CSS/SVG) behind the home
-              content — adds depth without covering the heroes' own backdrops. */}
-          <PremiumVisualLayer type={heroVisual} animate={ambientAllowed} className="opacity-40" />
+              content. Phase 6E: kept subtle so the headline always dominates. */}
+          <PremiumVisualLayer type={heroVisual} animate={ambientAllowed} className="opacity-25" />
           <div className="relative z-10">
             {renderItems.map((s, i) => (
               <Fragment key={(s && s.id) || `home-${i}`}>
