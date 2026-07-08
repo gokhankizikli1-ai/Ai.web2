@@ -1,4 +1,4 @@
-import { Component, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode, type ErrorInfo, type CSSProperties, type MouseEvent } from 'react';
+import { Component, Fragment, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode, type ErrorInfo, type CSSProperties, type MouseEvent } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { designTokensForBrief } from '@/lib/webBuildBrief';
 import {
@@ -1593,7 +1593,126 @@ function resolveEntryFlow(
   }
 }
 
+/* ── Phase 6C: disciplined preview navigation ────────────────────────────────
+ * The old header dumped BOTH content pages AND every demo screen into one nav —
+ * so an AI/SaaS build looked like an 8–10 tab admin panel. This caps the visible
+ * nav (Home + ≤5), promotes ONE clear experience item (Product Demo / Chat /
+ * Catalog / Collection / Projects), removes duplicate demo/chat tabs, and pushes
+ * lower-priority screens into an overflow row. No routes — local activePage only. */
+interface PreviewNavItem { id: string; label: string; type: 'page' | 'demo'; targetPageId: string }
+interface PreviewNav {
+  primaryNavItems: PreviewNavItem[];
+  overflowItems: PreviewNavItem[];
+  entryItem?: PreviewNavItem;
+  demoItem?: PreviewNavItem;
+  shouldShowExperienceNav: boolean;
+}
+
+/** Nav priority per screen kind — the experience screen leads, marketing/proof
+ *  screens follow, content pages last. */
+const NAV_KIND_ORDER: Record<string, number> = {
+  'product-demo': 0, chat: 0, catalog: 0, collection: 0, projects: 0,
+  detail: 1, record: 1, financing: 2, access: 2, 'before-after': 2,
+  'use-cases': 2, quote: 3, integrations: 3, security: 4, pricing: 5, generic: 6,
+};
+const NAV_EXPERIENCE_KINDS = new Set<ScreenKind>(['product-demo', 'chat', 'catalog', 'collection', 'projects']);
+const NAV_DUP_DEMO_KINDS = new Set<ScreenKind>(['product-demo', 'chat']);
+const NAV_PRIMARY_CAP = 5; // non-home items (Home is the brand button → ≤6 total)
+
+/** Resolve a clean, capped nav model. Pure; on any error falls back to the old
+ *  (uncapped) pages + demoScreens behaviour so nothing breaks. */
+function resolvePreviewNavigation(
+  pages: PreviewPage[],
+  demoScreens: PreviewShellScreen[],
+  entryFlow: EntryFlowResolved,
+): PreviewNav {
+  try {
+    type Item = PreviewNavItem & { kind?: ScreenKind; order: number };
+    const items: Item[] = [];
+    for (const s of demoScreens) {
+      items.push({ id: s.id, label: s.label, type: 'demo', targetPageId: s.id, kind: s.kind, order: NAV_KIND_ORDER[s.kind] ?? 6 });
+    }
+    for (const p of pages) {
+      if (p.id === 'home') continue;
+      items.push({ id: p.id, label: p.label, type: 'page', targetPageId: p.id, order: 7 });
+    }
+
+    // The ONE clear experience item: the screen the entry flow enters, else the
+    // lowest-priority experience-kind demo screen.
+    const flagship = items.find((i) => i.type === 'demo' && i.targetPageId === entryFlow.postEntryScreenId)
+      || items.find((i) => !!i.kind && NAV_EXPERIENCE_KINDS.has(i.kind));
+
+    // Dedupe: never show two Product Demo / Chat tabs; drop duplicate labels.
+    const norm = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+    const seen = new Set<string>();
+    const filtered = items.filter((i) => {
+      if (flagship && i !== flagship && !!i.kind && NAV_DUP_DEMO_KINDS.has(i.kind)) return false;
+      const key = norm(i.label);
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    filtered.sort((a, b) => {
+      if (flagship) { if (a === flagship) return -1; if (b === flagship) return 1; }
+      return a.order - b.order;
+    });
+
+    const strip = (i: Item): PreviewNavItem => ({ id: i.id, label: i.label, type: i.type, targetPageId: i.targetPageId });
+    const flag = flagship ? strip(flagship) : undefined;
+    return {
+      primaryNavItems: filtered.slice(0, NAV_PRIMARY_CAP).map(strip),
+      overflowItems: filtered.slice(NAV_PRIMARY_CAP).map(strip),
+      entryItem: flag,
+      demoItem: flag && flagship!.type === 'demo' ? flag : undefined,
+      shouldShowExperienceNav: !!flag,
+    };
+  } catch {
+    const primaryNavItems: PreviewNavItem[] = [
+      ...pages.filter((p) => p.id !== 'home').map((p) => ({ id: p.id, label: p.label, type: 'page' as const, targetPageId: p.id })),
+      ...demoScreens.map((s) => ({ id: s.id, label: s.label, type: 'demo' as const, targetPageId: s.id })),
+    ];
+    return { primaryNavItems, overflowItems: [], shouldShowExperienceNav: demoScreens.length > 0 };
+  }
+}
+
 /* ── Premium screen building blocks ──────────────────────────────────────── */
+
+/**
+ * Phase 6C: a compact premium LANDING demo teaser (AI/SaaS/product-demo only). A
+ * small browser/chat mockup built ONLY from real section copy, clearly labelled
+ * "Preview only", with ONE CTA that enters the full Product Demo / Chat Experience
+ * screen. Local & static — no backend, no real AI, no claim the product is running.
+ */
+function LandingDemoTeaser({ sections, brief, chat, ctaLabel, onEnter }: {
+  sections: S[]; brief: WebBuildBrief; chat: boolean; ctaLabel: string; onEnter: () => void;
+}) {
+  const content = sections.filter((s) => !/hero|footer/i.test(s.id));
+  const demoSec = content.find((s) => /demo|chat|assistant|playground|product/i.test(`${s.id} ${s.name || ''}`)) || content[0];
+  const bubbles = cleanLines([demoSec?.sub || demoSec?.headline || brief.type, ...(demoSec ? bulletsOf(demoSec) : [])]).slice(0, 3);
+  const q = (demoSec && (demoSec.name || heading(demoSec))) || '';
+  return (
+    <div className="relative z-10 mx-auto -mt-2 max-w-6xl px-6">
+      <div className="overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)] shadow-2xl" style={{ background: 'linear-gradient(180deg, rgba(255,255,255,0.03), rgba(0,0,0,0.28))' }}>
+        <div className="flex items-center gap-2 border-b border-[color:var(--bd)] bg-black/30 px-4 py-2.5">
+          <span className="h-2.5 w-2.5 rounded-full bg-white/20" /><span className="h-2.5 w-2.5 rounded-full bg-white/15" /><span className="h-2.5 w-2.5 rounded-full bg-white/10" />
+          <span className="ml-3 flex-1 truncate rounded-md border border-[color:var(--bd)] bg-black/30 px-3 py-1 text-[11px] text-slate-400">{(brief.type || 'preview').toLowerCase().replace(/\s+/g, '')}.app / {chat ? 'assistant' : 'demo'}</span>
+          <span className="rounded-full border border-[color:var(--bd)] px-2 py-0.5 text-[10px] uppercase tracking-wider text-slate-400">Preview only</span>
+        </div>
+        <div className="grid gap-0 md:grid-cols-[1fr_15rem]">
+          <div className="space-y-2.5 p-4">
+            {q && <div className="ml-auto max-w-[80%] rounded-2xl rounded-tr-sm px-3.5 py-2 text-[13px] font-medium text-white" style={{ background: 'var(--acc)' }}>{q}</div>}
+            {bubbles.map((m, i) => <div key={i} className="max-w-[85%] rounded-2xl rounded-tl-sm border border-[color:var(--bd)] bg-[var(--sf)] px-3.5 py-2 text-[13px] leading-relaxed text-slate-200">{m}</div>)}
+          </div>
+          <div className="flex flex-col justify-center gap-2 border-t border-[color:var(--bd)] p-4 md:border-l md:border-t-0">
+            <button type="button" onClick={onEnter} className="rounded-xl px-5 py-2.5 text-sm font-semibold text-white" style={{ background: 'var(--acc)', boxShadow: '0 10px 30px -10px var(--acc)' }}>{ctaLabel}</button>
+            <span className="text-center text-[11px] text-slate-500">Front-end demo — no real AI or backend.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function ScreenHeader({ label, purpose, onHome }: { label: string; purpose: string; onHome: () => void }) {
   return (
@@ -2054,6 +2173,29 @@ export default function WebBuildPreviewDocument({
     });
   }, [entryFlow.initialActivePage, demoScreens, pages]);
 
+  // ── Phase 6C: disciplined nav (Home + ≤5, one clear experience item, overflow
+  // for the rest) + the landing demo teaser eligibility (AI/SaaS product-demo/chat
+  // only). Both pure/guarded — malformed input falls back to safe defaults.
+  const previewNav = useMemo(() => resolvePreviewNavigation(pages, demoScreens, entryFlow), [pages, demoScreens, entryFlow]);
+  const teaserScreen = demoScreens.find((s) => s.id === entryFlow.postEntryScreenId)
+    || demoScreens.find((s) => s.kind === 'chat' || s.kind === 'product-demo');
+  const teaserChat = teaserScreen?.kind === 'chat';
+  const showLandingTeaser = !!teaserScreen && (teaserScreen.kind === 'chat' || teaserScreen.kind === 'product-demo');
+  // Anchors that represent "enter the experience" intent from the landing — the
+  // conversion target, the primary/entry action target, and the demo section.
+  const entryAnchors = useMemo(() => {
+    const set = new Set<string>();
+    try {
+      const add = (id?: string) => { const a = anchorId((id || '').replace(/^#/, '')); if (a && a !== 'section') set.add(a); };
+      add(ctx.conversionTarget);
+      const pa = contract?.entryAction || contract?.primaryAction;
+      add(pa?.targetSectionId);
+      const demoSec = sectionItems.find((s) => /demo|chat|assistant|playground|product/i.test(`${s.id} ${s.name || ''}`));
+      add(demoSec?.id);
+    } catch { /* ignore — empty set → no fallback entry */ }
+    return set;
+  }, [ctx, contract, sectionItems]);
+
   // `current`/`pages[0]` must never be assumed present: buildPreviewPages always
   // returns a Home page today, but a defensive Home fallback (synthesized from the
   // real section anchors) guarantees the preview never throws on an empty model.
@@ -2074,6 +2216,14 @@ export default function WebBuildPreviewDocument({
     event.preventDefault();
     const targetId = resolvePreviewTargetId(raw, sectionItems, ctx);
     if (!targetId) return; // no matching section → do nothing (never navigate host)
+    // Phase 6C: reliable landing → experience. On Home, a click whose target is the
+    // primary CTA / conversion target / hero demo anchor enters the post-entry
+    // screen — even when no matching contract action exists. Only entry intent is
+    // hijacked (entryAnchors), never every link; a local screen switch, no route.
+    if (activePage === 'home' && entryFlow.postEntryScreenId && targetId !== 'top' && entryAnchors.has(targetId)) {
+      setActivePage(entryFlow.postEntryScreenId);
+      return;
+    }
     // Phase 2: if the resolved target has a real contract action (open chat demo /
     // form / detail …), run it instead of only scrolling. Anchor scroll is the
     // fallback whenever there is no non-scroll action for the target.
@@ -2199,34 +2349,39 @@ export default function WebBuildPreviewDocument({
 
   return (
     <div ref={rootRef} id="top" onClick={handlePreviewLinkClick} className="text-slate-200 antialiased" style={{ ...rootStyle, scrollBehavior: 'smooth' }}>
-      {(pages.length > 1 || demoScreens.length > 0) && (
+      {previewNav.primaryNavItems.length > 0 && (
         <header className="sticky top-0 z-50 border-b border-[color:var(--bd)] bg-black/40 backdrop-blur">
+          {/* Phase 6C: disciplined nav — Home + one clear experience item + a few
+              screens, capped; the rest (if any) sit in a muted overflow group. */}
           <nav className="mx-auto flex max-w-6xl items-center justify-between gap-6 px-6 py-3" aria-label="Primary">
             <button type="button" onClick={() => setActivePage('home')} className="text-sm font-semibold text-white">{brand || 'Home'}</button>
             <div className="hidden flex-wrap items-center gap-5 text-sm sm:flex">
-              {pages.filter((p) => p.id !== 'home').map((p) => (
+              {previewNav.primaryNavItems.map((item) => (
                 <button
-                  key={p.id}
+                  key={item.id}
                   type="button"
-                  onClick={() => setActivePage(p.id)}
-                  aria-current={activePage === p.id ? 'page' : undefined}
-                  className={activePage === p.id ? 'font-medium text-white' : 'text-slate-300 transition hover:text-white'}
+                  onClick={() => setActivePage(item.targetPageId)}
+                  aria-current={activePage === item.targetPageId ? 'page' : undefined}
+                  className={activePage === item.targetPageId ? 'font-medium text-white' : 'text-slate-300 transition hover:text-white'}
                 >
-                  {p.label}
+                  {item.label}
                 </button>
               ))}
-              {/* Phase 4: model-native demo screen(s) as extra internal tabs. */}
-              {demoScreens.map((sc) => (
-                <button
-                  key={sc.id}
-                  type="button"
-                  onClick={() => setActivePage(sc.id)}
-                  aria-current={activePage === sc.id ? 'page' : undefined}
-                  className={activePage === sc.id ? 'font-medium text-white' : 'text-slate-300 transition hover:text-white'}
-                >
-                  {sc.label}
-                </button>
-              ))}
+              {previewNav.overflowItems.length > 0 && (
+                <span className="flex flex-wrap items-center gap-4 border-l border-[color:var(--bd)] pl-4 text-[13px] text-slate-400">
+                  {previewNav.overflowItems.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setActivePage(item.targetPageId)}
+                      aria-current={activePage === item.targetPageId ? 'page' : undefined}
+                      className={activePage === item.targetPageId ? 'text-white' : 'transition hover:text-white'}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </span>
+              )}
             </div>
           </nav>
         </header>
@@ -2250,7 +2405,24 @@ export default function WebBuildPreviewDocument({
           {/* Phase 6A: concept-specific ambient visual (CSS/SVG) behind the home
               content — adds depth without covering the heroes' own backdrops. */}
           <PremiumVisualLayer type={heroVisual} animate={ambientAllowed} className="opacity-40" />
-          <div className="relative z-10">{renderItems.map(renderSection)}</div>
+          <div className="relative z-10">
+            {renderItems.map((s, i) => (
+              <Fragment key={(s && s.id) || `home-${i}`}>
+                {renderSection(s, i)}
+                {/* Phase 6C: compact landing demo teaser right after the hero (AI/SaaS
+                    product-demo/chat only). Its CTA enters the full demo screen. */}
+                {i === 0 && showLandingTeaser && teaserScreen && (
+                  <LandingDemoTeaser
+                    sections={sectionItems}
+                    brief={brief}
+                    chat={teaserChat}
+                    ctaLabel={entryFlow.primaryEntryCTA || (teaserChat ? 'Open chat experience' : 'Open product demo')}
+                    onEnter={() => setActivePage(teaserScreen.id)}
+                  />
+                )}
+              </Fragment>
+            ))}
+          </div>
         </div>
       ) : (
         <div key={current.id}>

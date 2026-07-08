@@ -4375,6 +4375,34 @@ export function deriveReviewerAgent(input: ReviewerInput): ReviewerAgentArtifact
     } else passed.push(L(lang, 'Demo/page architecture', 'Demo/sayfa mimarisi'));
   }
 
+  /* 2.10 — Nav discipline + entry-flow visibility (Phase 6C, ADVISORY only —
+   *         severity 'info', never blocks the build). */
+  const ic6c = input.strategy?.interactionContract;
+  if (ic6c) {
+    const screenCount = (ic6c.suggestedScreens || []).length;
+    if (screenCount > 6) {
+      add('info', 'nav-overexposure', 'Many suggested screens may over-expose the nav',
+        `The plan suggests ${screenCount} screens; the Preview caps the top nav at ~6 and moves the rest to an overflow group.`,
+        'Prefer one clear experience screen + a few marketing screens so the top nav stays ≤6.',
+        'strategy.interactionContract.suggestedScreens');
+    }
+    const aiSaas6c = /^(ai|saas)$/.test((ic6c.conceptCategory || '').toLowerCase())
+      || (ic6c.requiredStatefulComponents || []).some((c) => /chat|product-?demo|assistant/i.test(c))
+      || isAiSaas;
+    if (aiSaas6c && !(ic6c.requiredStatefulComponents || []).some((c) => /chat|product-?demo/i.test(c))) {
+      add('info', 'missing-landing-demo-teaser', 'No chat/product-demo surface for the landing teaser',
+        'No chat/product-demo stateful component is declared, so the landing demo teaser + Product Demo screen may not render for this AI/SaaS build.',
+        'Declare a chat/product-demo surface so the landing shows a compact demo teaser and the entry CTA opens the full demo.',
+        'strategy.interactionContract.requiredStatefulComponents');
+    }
+    if (!ic6c.entryFlowModel && !ic6c.postEntryScreenId) {
+      add('info', 'entry-flow-not-visible', 'Entry flow is not surfaced on the contract',
+        'The contract has no entryFlowModel / postEntryScreenId, so the Preview cannot transition the hero CTA into an internal experience.',
+        'Ensure the strategy derives an entry flow (landing → demo/catalog/collection/quote) so the primary CTA has a destination.',
+        'strategy.interactionContract');
+    }
+  }
+
   /* 3 — Visual identity */
   const visualIdentity = !!input.artDirection?.designArchetype
     && !!(input.artDirection?.visualSignature || input.artDirection?.visualDifferentiators?.length || input.artDirection?.surfaceRules?.length);

@@ -342,6 +342,17 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       if (contract.navigationBehavior) ownerRows.push(['navigationBehavior', contract.navigationBehavior]);
       if (contract.initialScreenId) ownerRows.push(['initialScreenId', contract.initialScreenId]);
       if (contract.postEntryScreenId) ownerRows.push(['postEntryScreenId', contract.postEntryScreenId]);
+      // Phase 6C: nav discipline + entry transition diagnostics (contract-derived).
+      const entryMode = contract.entryAction ? 'contract-action' : contract.postEntryScreenId ? 'fallback-entry-link' : 'none';
+      ownerRows.push(['entryTransitionMode', entryMode]);
+      const conceptAiSaas = /^(ai|saas)$/.test((contract.conceptCategory || '').toLowerCase())
+        || (contract.requiredStatefulComponents || []).some((c) => /chat|product-?demo|assistant/i.test(c));
+      const teaserExpected = conceptAiSaas
+        && /chat|product-demo/.test(`${contract.postEntryScreenId || ''} ${(contract.requiredStatefulComponents || []).join(' ')}`);
+      ownerRows.push(['demoTeaserExpected', String(!!teaserExpected)]);
+      // Planned nav breadth (Home + experience + screens), capped like the Preview.
+      const plannedScreens = (contract.suggestedScreens || []).length;
+      ownerRows.push(['navPlanned', `${Math.min(6, 1 + (contract.postEntryScreenId ? 1 : 0) + plannedScreens)} (cap 6)`]);
     }
 
     // Planning-quality diagnostics (the honesty gate — model-planned vs fallback).
