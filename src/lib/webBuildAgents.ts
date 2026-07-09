@@ -856,7 +856,9 @@ export type QualityIssueCategory =
   /* ── Phase 9A: model-native design plan quality ── */
   | 'weak-design-plan'
   /* ── Phase 9C-1: public-facing copy/label quality ── */
-  | 'public-copy-smell';
+  | 'public-copy-smell'
+  /* ── Phase 9C-2: generic content-depth quality ── */
+  | 'generic-content-depth';
 
 export interface QualityIssue {
   id: string;
@@ -5479,6 +5481,62 @@ export function detectPublicCopySmells(
   return out;
 }
 
+/* ── Generic content-depth guard (Phase 9C-2) — deeper than 9C-1: catches generic
+ *  business-template FILLER, generic demo copy, and unsupported proof/credibility
+ *  placeholders that still read like any-SaaS boilerplate even after the obvious
+ *  internal labels are cleaned. Shared by the Quality Director (detect) and the
+ *  Fixer (repair). Deterministic, cheap, honest — never invents proof. */
+
+/** Generic filler used as a WHOLE section name / CTA / bullet (normalized). */
+const GENERIC_FILLER_LABELS = new Set([
+  'fast & reliable', 'fast and reliable', 'made for your goals', 'simple to start',
+  'premium quality', 'built for everyone', 'everything you need', 'all-in-one', 'all in one',
+  'seamless experience', 'powerful features', 'process', 'case studies', 'testimonials',
+  'certifications', 'reference clients', 'certifications, specs and reference clients',
+]);
+/** Generic filler phrases that appear WITHIN a longer headline / sub / bullet. */
+const GENERIC_FILLER_CONTAINED_RE = /\b(streamline your workflow|scale with confidence|unlock the power(?:\s+of)?|everything you need|seamless experience|all[-\s]?in[-\s]?one|powerful features|premium quality|cutting[-\s]?edge|state[-\s]?of[-\s]?the[-\s]?art|best[-\s]?in[-\s]?class|world[-\s]?class)\b/i;
+/** Deep generic hero formulas 9C-1's HERO_FORMULA_RE does not catch. */
+const DEEP_HERO_RE = /\bexperience the future\b|\bthe future of\b|\breimagine\b|\bempower(?:ing)?\s+your\b|\bsupercharge\b|\btake\s+your\b.*\bto the next level\b/i;
+/** Generic demo copy (says "interactive demo" instead of what the demo does). */
+const GENERIC_DEMO_RE = /\binteractive demos?\b|\breal[-\s]?world applications?\b|\bsee it in action\b|\blive demo\b|\bproduct in action\b/i;
+/** Unsupported proof / credibility placeholders (never invented). */
+const UNSUPPORTED_PROOF_RE = /\bcertifications?\b|\breference clients?\b|\btrusted by\b|\bcase stud(?:y|ies)\b|\btestimonials?\b|\bsoc\s?2\b|\biso\s?\d{3,}\b|\b99\.9\s?%|\b\d+\s?%\s*(?:uptime|satisfaction)\b/i;
+
+export type GenericContentSmellKind = 'generic-filler' | 'generic-demo' | 'hero-formula' | 'unsupported-proof';
+export interface GenericContentSmell { sectionId?: string; field: string; text: string; kind: GenericContentSmellKind }
+
+/**
+ * Detect generic business-template content-depth smells across section DISPLAY
+ * fields (name / headline / sub / cta / bullets). Pure + cheap; the Quality
+ * Director flags, the Fixer repairs. Never mutates, never fabricates proof.
+ */
+export function detectGenericContentDepthSmells(
+  items: Array<{ id?: string; name?: string; headline?: string; sub?: string; cta?: string; bullets?: string[] }>,
+): GenericContentSmell[] {
+  const out: GenericContentSmell[] = [];
+  const push = (sectionId: string | undefined, field: string, text: string, kind: GenericContentSmellKind) => {
+    const t = (text || '').trim();
+    if (t) out.push({ sectionId, field, text: t, kind });
+  };
+  const scan = (sectionId: string | undefined, field: string, v0?: string) => {
+    const v = (v0 || '').trim();
+    if (!v) return;
+    if (GENERIC_FILLER_LABELS.has(normLabel(v)) || GENERIC_FILLER_CONTAINED_RE.test(v)) push(sectionId, field, v, 'generic-filler');
+    if (DEEP_HERO_RE.test(v)) push(sectionId, field, v, 'hero-formula');
+    if (GENERIC_DEMO_RE.test(v)) push(sectionId, field, v, 'generic-demo');
+    if (UNSUPPORTED_PROOF_RE.test(v)) push(sectionId, field, v, 'unsupported-proof');
+  };
+  for (const s of items || []) {
+    scan(s.id, 'name', s.name);
+    scan(s.id, 'headline', s.headline);
+    scan(s.id, 'sub', s.sub);
+    scan(s.id, 'cta', s.cta);
+    for (const b of s.bullets || []) scan(s.id, 'bullet', b);
+  }
+  return out;
+}
+
 /**
  * Derive the Quality Director artifact from the real, available artifacts only.
  * Pure and deterministic; never fabricates facts, never blocks the build.
@@ -5586,6 +5644,25 @@ export function deriveQualityDirector(input: QualityDirectorInput): QualityDirec
     if (fake.length) add('warning', 'honesty-risk', `Unsupported proof language in public copy: "${fake[0].text}".`, 'Remove fabricated metrics/logos/testimonials/compliance; keep honest structural proof only.', fake[0].sectionId || 'sectionItems');
   }
 
+  /* 4d — Generic content-depth smells (Phase 9C-2): copy that reads like any-SaaS
+   *      boilerplate — generic benefits/CTAs, generic demo copy, "future/AI" hero
+   *      formulas, and unsupported proof placeholders. Advisory; the Fixer repairs. */
+  const depthSmells = detectGenericContentDepthSmells(input.sectionItems || []);
+  if (depthSmells.length) {
+    const jobs = isAiSaas
+      ? 'concrete jobs-to-be-done: shopper asks a product question → assistant understands intent → suggests a relevant product → answers shipping/returns/policy from sample knowledge → routes hard cases to human support (store integrations are front-end-only; trust stays honest, no fabricated proof)'
+      : 'concrete, concept-specific jobs-to-be-done (what the visitor actually does), not generic benefits';
+    const dKind = (k: GenericContentSmellKind) => depthSmells.filter((d) => d.kind === k);
+    const filler = dKind('generic-filler');
+    const hero = dKind('hero-formula');
+    const demo = dKind('generic-demo');
+    const proof = dKind('unsupported-proof');
+    if (filler.length) add('warning', 'generic-content-depth', `Generic business-template filler in public copy: ${uniq(filler.map((d) => `"${d.text}"`)).slice(0, 3).join(', ')}.`, `Rewrite as ${jobs}.`, filler[0].sectionId || 'sectionItems');
+    if (hero.length) add('warning', 'generic-content-depth', `Hero uses a generic "future/AI" formula: "${hero[0].text}".`, 'Say what the product does for the visitor in one concrete sentence, not "experience the future".', hero[0].sectionId || 'hero');
+    if (demo.length) add('warning', 'generic-content-depth', `Demo copy is generic ("interactive demo / real-world applications"): "${demo[0].text}".`, 'Describe the ACTUAL sample flow the demo shows (e.g. product question → recommendation → policy answer → human handoff).', demo[0].sectionId || 'sectionItems');
+    if (proof.length) add('warning', 'honesty-risk', `Unsupported proof/credibility copy: ${uniq(proof.map((d) => `"${d.text}"`)).slice(0, 3).join(', ')}.`, 'Neutralize to honest structural trust (e.g. "Security & Store Trust") unless the user/source actually provided real certifications/clients/metrics.', proof[0].sectionId || 'sectionItems');
+  }
+
   /* 5 — Honesty: no fabricated proof/metrics. */
   const fakeFinding = input.reviewer?.findings?.find((f) => f.category === 'fake-data');
   if (fakeFinding) add(fakeFinding.severity, 'honesty-risk', `Reviewer flagged possible fabricated proof: ${fakeFinding.evidence}`, 'Remove unsupported ratings/prices/compliance/metrics; keep honest structural labels only.', 'files');
@@ -5669,7 +5746,7 @@ export function deriveQualityDirector(input: QualityDirectorInput): QualityDirec
     ctaConsistency: dim(100, 18, 'cta-inconsistency'),
     flowCoherence: dim(100, 16, 'flow-confusion', 'demo-unclear'),
     visualPremiumFit: dim(95, 12, 'visual-density', 'same-template-risk', 'accent-overuse', 'dashboard-overuse', 'palette-mismatch', 'visual-monotony', 'weak-visual-exploration'),
-    conceptSpecificity: dim(100, 16, 'weak-hero', 'concept-drift'),
+    conceptSpecificity: dim(100, 16, 'weak-hero', 'concept-drift', 'generic-content-depth'),
     demoUsefulness: isAiSaas ? dim(100, 20, 'demo-unclear') : 90,
     honesty: critical ? 40 : (catCount('honesty-risk') ? 70 : 100),
   };
@@ -5694,6 +5771,8 @@ export function deriveQualityDirector(input: QualityDirectorInput): QualityDirec
     (catCount('flow-confusion') || catCount('demo-unclear')) ? L(lang, 'Clarify the landing → (lead gate) → demo flow labels.', 'İniş → (kayıt) → demo akış etiketlerini netleştir.') : '',
     (catCount('public-copy-smell')) ? L(lang, 'Replace internal/planning language and generic SaaS labels with concept-specific public copy (section names, hero headline, CTAs) — keep it honest (no fabricated metrics/logos/testimonials/compliance).',
       'İç/planlama dilini ve genel SaaS etiketlerini konsepte özgü herkese açık metinle değiştir (bölüm adları, hero başlığı, CTA\'lar) — dürüst tut (uydurma metrik/logo/referans/uyumluluk yok).') : '',
+    (catCount('generic-content-depth')) ? L(lang, 'Rewrite generic template filler, "future/AI" hero formulas and "interactive demo" copy into concrete, concept-specific jobs-to-be-done; neutralize unsupported proof (certifications/clients/metrics) to honest structural trust.',
+      'Genel şablon dolgusunu, "geleceği deneyimle/AI" hero kalıplarını ve "interaktif demo" metnini somut, konsepte özgü işlere dönüştür; desteklenmeyen kanıtı (sertifika/müşteri/metrik) dürüst yapısal güvene indir.') : '',
     (catCount('same-template-risk') || catCount('accent-overuse') || catCount('dashboard-overuse') || catCount('palette-mismatch')) ? L(lang,
       'Switch to a more differentiated visual direction: vary the palette family, demote gold/loud accent, prefer a lighter or concept-fitting background, and make the hero/mockup concept-specific (not a chart dashboard).',
       'Daha farklılaşmış bir görsel yöne geç: palet ailesini değiştir, altın/gürültülü vurguyu geri çek, daha açık veya konsepte uygun bir zemin tercih et ve hero/mockup\'ı konsepte özgü yap (grafik paneli değil).') : '',
@@ -5781,7 +5860,7 @@ export interface FixerResult {
 }
 
 /** The safe repair categories this v1 Fixer is allowed to perform. */
-const FIXER_SAFE_SCOPE = ['fake-data', 'placeholder-cleanup', 'cta-anchor', 'concept-drift', 'visual-asset-plan', 'copy-label', 'cta-consistency', 'flow-label', 'concept-label', 'public-copy', 'visual-direction', 'palette-family', 'accent-strategy', 'anti-template-copy'];
+const FIXER_SAFE_SCOPE = ['fake-data', 'placeholder-cleanup', 'cta-anchor', 'concept-drift', 'visual-asset-plan', 'copy-label', 'cta-consistency', 'flow-label', 'concept-label', 'public-copy', 'content-depth', 'visual-direction', 'palette-family', 'accent-strategy', 'anti-template-copy'];
 
 /** Intent → clean CTA label (Phase 7A) — mirrors the Preview's normalizeCtaLabel. */
 function ctaFromIntent(intent: string | undefined, lang: Lang): string | undefined {
@@ -6263,6 +6342,91 @@ export function deriveFixer(input: FixerInput): { artifact: FixerAgentArtifact; 
       const nb = s.bullets.map((b) => nameMap[normLabel(b)] || b);
       if (nb.some((b, i) => b !== s.bullets![i])) {
         addQuality('public-copy', s.id, s.bullets.join(' · ').slice(0, 48), nb.join(' · ').slice(0, 48), pcReason);
+        s.bullets = nb;
+      }
+    }
+  }
+
+  // 5d — Content-depth repair (Phase 9C-2). Generic business-template FILLER,
+  //      "future/AI" hero formulas, generic demo copy and unsupported proof must
+  //      not survive as final copy. DISPLAY-ONLY (name/headline/sub/cta/bullets);
+  //      concept-specific for AI-commerce. Honest: never invents metrics/logos/
+  //      testimonials/certifications; preserves user-provided brand/product wording.
+  // Distinctive user terms (brand/product/domain words the user actually wrote) are
+  // preserved: a field carrying one is never wholesale-replaced.
+  const CD_STOP = new Set(['with', 'your', 'the', 'and', 'for', 'from', 'that', 'this', 'into', 'using', 'built', 'make', 'made', 'more', 'get', 'all', 'you', 'our', 'are', 'ai', 'chatbot', 'chat', 'bot', 'assistant', 'agent', 'ecommerce', 'commerce', 'store', 'stores', 'shop', 'shops', 'shopping', 'shopper', 'shoppers', 'product', 'products', 'saas', 'platform', 'tool', 'tools', 'website', 'site', 'app', 'apps', 'integration', 'integrations', 'customer', 'customers', 'support', 'demo', 'demos', 'online', 'premium', 'modern', 'clean', 'simple', 'fast', 'reliable', 'quality', 'experience', 'solution', 'solutions', 'service', 'services', 'business', 'team', 'teams', 'sales', 'pricing', 'contact', 'security', 'trust', 'feature', 'features', 'learn', 'start', 'create', 'build', 'company', 'brand', 'answer', 'answers', 'question', 'questions', 'için', 'mağaza', 'ürün', 'müşteri', 'sohbet', 'asistan']);
+  const cdUserTerms = uniq(promptLc.split(/[^a-zA-Z0-9ğüşöçıİ]+/).map((w) => w.toLowerCase()).filter((w) => w.length >= 4 && !CD_STOP.has(w)));
+  const cdHasUserTerm = (v: string): boolean => { const lv = v.toLowerCase(); return cdUserTerms.some((t) => lv.includes(t)); };
+  const cdReason = L(lang, 'Replaced generic template copy with concept-specific, honest copy (display only; no invented proof).',
+    'Genel şablon metnini konsepte özgü, dürüst metinle değiştirdi (yalnızca görünüm; uydurma kanıt yok).');
+  const nameDepthMap: Record<string, string> = aiCommerce ? {
+    'process': L(lang, 'Shopper Flow', 'Alışverişçi Akışı'),
+    'discovery': L(lang, 'Understands the Question', 'Soruyu Anlar'),
+    'plan': L(lang, 'Finds the Right Product', 'Doğru Ürünü Bulur'),
+    'delivery': L(lang, 'Guides the Next Step', 'Sonraki Adıma Yönlendirir'),
+    'support': L(lang, 'Hands Off to Your Team', 'Ekibinize Devreder'),
+    'case studies': L(lang, 'Use Cases', 'Kullanım Senaryoları'),
+    'testimonials': L(lang, 'Customer Questions', 'Müşteri Soruları'),
+    'certifications': L(lang, 'Security & Store Trust', 'Güvenlik ve Mağaza Güveni'),
+    'reference clients': L(lang, 'Security & Store Trust', 'Güvenlik ve Mağaza Güveni'),
+    'certifications, specs and reference clients': L(lang, 'Security & Store Trust', 'Güvenlik ve Mağaza Güveni'),
+    'interactive demo': L(lang, 'Sample Chat Flow', 'Örnek Sohbet Akışı'),
+  } : {};
+  const ctaDepthMap: Record<string, string> = aiCommerce ? {
+    'learn more': L(lang, 'See Chat Flow', 'Sohbet Akışını Gör'),
+    'get started': L(lang, 'Try the Demo', 'Demoyu Dene'),
+    'experience the chatbot': L(lang, 'Try the Demo', 'Demoyu Dene'),
+  } : {};
+  const bulletDepthMap: Record<string, string> = aiCommerce ? {
+    'fast & reliable': L(lang, 'Answers common product and policy questions instantly with sample storefront knowledge', 'Yaygın ürün ve politika sorularını örnek mağaza bilgisiyle anında yanıtlar'),
+    'fast and reliable': L(lang, 'Answers common product and policy questions instantly with sample storefront knowledge', 'Yaygın ürün ve politika sorularını örnek mağaza bilgisiyle anında yanıtlar'),
+    'made for your goals': L(lang, 'Guides shoppers from question to product recommendation without leaving the page', 'Alışverişçileri sayfadan ayrılmadan sorudan ürün önerisine yönlendirir'),
+    'simple to start': L(lang, 'Connects to the idea of store catalog, policy and support flows as a front-end demo', 'Mağaza kataloğu, politika ve destek akışlarına ön-yüz demosu olarak bağlanır'),
+    'premium quality': L(lang, 'Keeps the experience calm, branded and conversion-focused', 'Deneyimi sakin, markalı ve dönüşüm odaklı tutar'),
+    'built for everyone': L(lang, 'Works across product, shipping, returns and support questions', 'Ürün, kargo, iade ve destek sorularında çalışır'),
+    'everything you need': L(lang, 'Covers product discovery, policy answers and human handoff', 'Ürün keşfi, politika yanıtları ve insana devri kapsar'),
+    'powerful features': L(lang, 'Understands intent, recommends products and hands off to your team', 'Niyeti anlar, ürün önerir ve ekibinize devreder'),
+    'all-in-one': L(lang, 'Product questions, recommendations and support handoff in one chat', 'Tek sohbette ürün soruları, öneriler ve destek devri'),
+  } : {};
+  const cdHeroRepair = (v: string): string | undefined => {
+    if (!aiCommerce || cdHasUserTerm(v)) return undefined;
+    if (!DEEP_HERO_RE.test(v) && !HERO_FORMULA_RE.test(v)) return undefined;
+    if (/future of ai|future of\b.*integration|experience the future/i.test(v))
+      return L(lang, 'Help shoppers choose faster with an AI storefront assistant', 'Alışverişçilerin daha hızlı seçim yapmasına AI mağaza asistanıyla yardım edin');
+    return L(lang, 'Answer product questions and guide shoppers in chat', 'Ürün sorularını yanıtlayın ve alışverişçileri sohbette yönlendirin');
+  };
+  const cdSubRepair = (v: string): string | undefined => {
+    if (!aiCommerce || cdHasUserTerm(v) || !GENERIC_DEMO_RE.test(v)) return undefined;
+    return L(lang, 'Preview a sample storefront chat flow: product questions, recommendations, policy answers and human handoff.',
+      'Örnek bir mağaza sohbet akışını önizleyin: ürün soruları, öneriler, politika yanıtları ve insana devir.');
+  };
+  const cdProofNeutral = L(lang, 'Security controls and honest store trust — no fabricated metrics or logos', 'Güvenlik kontrolleri ve dürüst mağaza güveni — uydurma metrik veya logo yok');
+  for (const s of sectionItems) {
+    if (s.name && !promptLc.includes(normLabel(s.name))) {
+      const r = nameDepthMap[normLabel(s.name)];
+      if (r && r !== s.name) { addQuality('content-depth', s.id, s.name, r, cdReason); s.name = r; }
+    }
+    if (s.headline) {
+      const hr = cdHeroRepair(s.headline);
+      if (hr && hr !== s.headline) { addQuality('content-depth', s.id, s.headline, hr, cdReason); s.headline = hr; }
+    }
+    if (s.sub) {
+      const sr = cdHeroRepair(s.sub) || cdSubRepair(s.sub);
+      if (sr && sr !== s.sub) { addQuality('content-depth', s.id, s.sub, sr, cdReason); s.sub = sr; }
+    }
+    if (s.cta && !promptLc.includes(normLabel(s.cta))) {
+      const cr = ctaDepthMap[normLabel(s.cta)];
+      if (cr && cr !== s.cta) { addQuality('content-depth', s.id, s.cta, cr, cdReason); s.cta = cr; }
+    }
+    if (aiCommerce && s.bullets?.length) {
+      const nb = s.bullets.map((b) => {
+        const mapped = bulletDepthMap[normLabel(b)];
+        if (mapped) return mapped;
+        if (UNSUPPORTED_PROOF_RE.test(b) && !cdHasUserTerm(b)) return cdProofNeutral;
+        return b;
+      });
+      if (nb.some((b, i) => b !== s.bullets![i])) {
+        addQuality('content-depth', s.id, s.bullets.join(' · ').slice(0, 48), nb.join(' · ').slice(0, 48), cdReason);
         s.bullets = nb;
       }
     }
