@@ -434,6 +434,14 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       // Phase 6D — planning contract (Preview bar) vs full code contract (All-Files bar).
       if (typeof parse?.planningContractPresent === 'boolean') ownerRows.push(['planningContractPresent', String(parse.planningContractPresent)]);
       if (typeof parse?.fullCodeContractPresent === 'boolean') ownerRows.push(['fullCodeContractPresent', String(parse.fullCodeContractPresent)]);
+      // Phase 9B-1 — Design Thinking Plan quality + the one-shot repair outcome.
+      if (typeof parse?.designPlanSpecificityScore === 'number') {
+        ownerRows.push(['designPlanScore', `${parse.designPlanSpecificityScore}/100${parse.hasDesignThinkingPlanSection ? '' : ' · no section'}`]);
+      }
+      if (parse?.weakDesignPlanWarnings?.length) ownerRows.push(['designPlanWeak', parse.weakDesignPlanWarnings.slice(0, 3).join('; ')]);
+      if (parse?.designPlanRepairAttempted) {
+        ownerRows.push(['designPlanRepair', `${parse.designPlanRepairSucceeded ? 'succeeded' : 'kept-first'}${parse.designPlanRepairReason ? ` · ${parse.designPlanRepairReason}` : ''}`]);
+      }
       if (pd.codeContractPending) ownerRows.push(['codeContractPending', 'true (All Files parity pending)']);
       ownerRows.push(['usedArchitectureRewrite', String(!!pd.usedArchitectureRewrite)]);
       ownerRows.push(['usedQualityFallbackSections', String(!!pd.usedQualityFallbackSections)]);
