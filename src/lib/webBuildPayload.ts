@@ -11,7 +11,7 @@ import { inferWebsiteBrief, fallbackSectionItems, checkQuality } from '@/lib/web
 import { deriveLayoutPlan, type WebBuildLayoutPlan } from '@/lib/webBuildLayoutPlan';
 import {
   runUpstreamAgents, runLayoutArchitect, runComponentEngineer, runReviewer, runQualityDirector, runFixer, WEB_BUILD_AGENTS_ENABLED,
-  type WebBuildAgent, type WebBuildArtifacts, type WebBuildEnforcement,
+  type ArtDirectionArtifact, type WebBuildAgent, type WebBuildArtifacts, type WebBuildEnforcement,
 } from '@/lib/webBuildAgents';
 import { deriveAgentSectionArchitecture } from '@/lib/webBuildSectionArchitecture';
 import { detectMessageLanguage } from '@/lib/locale';
@@ -404,6 +404,29 @@ function itemsToCopies(items: WebBuildSectionItem[]): SynthCopy[] {
   }));
 }
 
+/** Force the post-Fixer art palette back onto the persisted brief. */
+function syncBriefWithFixedArtDirection(brief: WebBuildBrief, art: ArtDirectionArtifact | undefined): WebBuildBrief {
+  if (!art?.colorSystem) return brief;
+  const selected = art.visualExploration?.candidates.find((c) => c.id === art.visualExploration?.selectedCandidateId);
+  const next: WebBuildBrief = {
+    ...brief,
+    artAccent: art.colorSystem.accent || brief.artAccent,
+    artAccent2: art.colorSystem.accent2 || brief.artAccent2,
+    artBg: art.colorSystem.background || brief.artBg,
+    paletteFamily: art.paletteFamily || selected?.paletteFamily || brief.paletteFamily,
+    selectedVisualCandidate: art.visualExploration?.selectedCandidateId || brief.selectedVisualCandidate,
+    accentStrategy: selected?.accentStrategy || brief.accentStrategy,
+  };
+  return next.artAccent === brief.artAccent
+    && next.artAccent2 === brief.artAccent2
+    && next.artBg === brief.artBg
+    && next.paletteFamily === brief.paletteFamily
+    && next.selectedVisualCandidate === brief.selectedVisualCandidate
+    && next.accentStrategy === brief.accentStrategy
+    ? brief
+    : next;
+}
+
 /**
  * Assemble (or extend) the persisted Web Build package. PUBLIC ENTRY POINT — it
  * is self-healing: the normal assembly runs inside a guard so that if any core
@@ -622,6 +645,7 @@ function assembleWebBuildPayload(
       // fails OPEN, so it can never block Preview / All Files. When it sanitizes file
       // content we recompute the diffs against the previous build so the diff metadata
       // stays honest (no stale/fake stats).
+      const preFixFiles = files;
       const fx = runFixer({
         prompt, brief: artBrief, reviewer: rv.artifact,
         sectionItems: sectionItems.map((s) => ({ id: s.id, name: s.name, headline: s.headline, sub: s.sub, cta: s.cta, bullets: s.bullets })),
@@ -638,11 +662,19 @@ function assembleWebBuildPayload(
       });
       agents = [...agents, fx.agent];
       artifacts = { ...(artifacts || {}), fixer: fx.artifact };
-      // Apply the Fixer's concept-drift-corrected art direction back onto the
-      // artifacts so the final package + Plan Summary reflect the corrected
-      // archetype / Visual Asset Plan. Additive only; never touches Preview/files.
+      // Apply the Fixer's corrected art direction back onto the artifacts AND
+      // sync its palette fields into the persisted brief so Preview / All Files
+      // render the same anti-template palette reported in diagnostics.
       if (fx.artDirection) {
         artifacts = { ...(artifacts || {}), artDirection: fx.artDirection };
+        const syncedBrief = syncBriefWithFixedArtDirection(artBrief, fx.artDirection);
+        if (syncedBrief !== artBrief) {
+          artBrief = syncedBrief;
+          const regenerated = (didRewriteArchitecture || usedQualityFallbackSections || usedFileSynthesisFallback)
+            ? synthesizeFromCopies(itemsToCopies(sectionItems), artBrief, layoutPlan)
+            : resolveBuildFiles(result, artBrief);
+          files = diffFiles(prevFiles, regenerated);
+        }
       }
 
       // Apply the Fixer's sanitized file CONTENT back onto the real WebBuildFile
@@ -650,11 +682,13 @@ function assembleWebBuildPayload(
       // and All Files consume the same final, honestly-diffed data. Section items
       // are unchanged by the v1 Fixer, so the layout plan stays valid as-is.
       if (fx.artifact.status === 'applied') {
-        const fixedByPath = new Map(fx.files.map((f) => [f.path, f.content]));
-        const anyContentChanged = files.some((f) => {
-          const c = fixedByPath.get(f.path);
-          return c !== undefined && c !== f.content;
-        });
+        const preFixByPath = new Map(preFixFiles.map((f) => [f.path, f.content]));
+        const fixedByPath = new Map(
+          fx.files
+            .filter((f) => preFixByPath.has(f.path) && preFixByPath.get(f.path) !== f.content)
+            .map((f) => [f.path, f.content]),
+        );
+        const anyContentChanged = fixedByPath.size > 0;
         if (anyContentChanged) {
           const merged = files.map((f) => ({ ...f, content: fixedByPath.get(f.path) ?? f.content }));
           files = diffFiles(prevFiles, merged);
