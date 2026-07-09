@@ -373,6 +373,9 @@ export function webBuildErrorKeyFor(kind: WebBuildErrorKind): string {
 }
 
 const BUILD_TIMEOUT_MS = 90_000;
+/** The Design Thinking Plan specificity a fresh build must reach to skip / pass the
+ *  one-shot design-plan repair nudge (Phase 9B-1/9B-2). Shared by both gates. */
+const GOOD_DESIGN_PLAN_SCORE = 65;
 
 /**
  * Wrap the raw idea in the [WEB BUILD REQUEST] block the website_builder mode
@@ -582,11 +585,23 @@ export function buildWebBuildRepairRequest(
     'the complete model-planned package now. Do not explain. Do not summarize. Do not',
     'apologize. Output ONLY the build. These H2 sections are REQUIRED, in this order:',
     '',
+    '## Design Thinking Plan',
     '## Build Plan',
     '## Design Direction',
     '## Page Sections',
     '## Generated Copy',
     '## Next Steps',
+    '',
+    'The `## Design Thinking Plan` MUST come FIRST and use these EXACT labels, one per',
+    'line: "Design thesis:", "Audience decision:", "First impression:", "Selected',
+    'visual direction:", "Rejected directions:", "Hero composition decision:", "Section',
+    'rhythm decision:", "Primary demo surface:", "Palette decision:", "Typography',
+    'decision:", "Template traps to avoid:", "Differentiation move:", "Quality bar:".',
+    'It is a VISIBLE structured design plan, NOT hidden chain-of-thought. Do NOT use',
+    'vague final decisions like "modern premium", "clean", "sleek", "professional",',
+    '"polished". Reject AT LEAST TWO concrete directions (incl. the default template',
+    'trap — dark grid + gold accent + generic dashboard — when relevant), and name',
+    'CONCRETE hero, palette, typography and differentiation decisions.',
     '',
     'REQUIRED above all: a real ## Page Sections architecture AND real ## Generated',
     'Copy for every section (specific, benefit-led — never generic filler). ## Frontend',
@@ -1067,8 +1082,7 @@ export async function generateWebBuild(
     // result is already viable, so any repair problem safely keeps the first build.
     if (isModelPlanningContractEnough(first)) {
       const firstScore = first.parseDiagnostics?.designPlanSpecificityScore ?? 0;
-      const GOOD_DESIGN_PLAN = 65;
-      if (firstScore >= GOOD_DESIGN_PLAN) return first;
+      if (firstScore >= GOOD_DESIGN_PLAN_SCORE) return first;
 
       let dpRepaired: WebBuildResult | undefined;
       try {
@@ -1089,14 +1103,14 @@ export async function generateWebBuild(
       const stillPlanned = isModelPlanningContractEnough(dpRepaired);
       // Accept the repair ONLY if it stays preview-viable, actually improves, and
       // clears the quality bar — otherwise keep the original first build.
-      if (stillPlanned && repScore > firstScore && repScore >= GOOD_DESIGN_PLAN) {
+      if (stillPlanned && repScore > firstScore && repScore >= GOOD_DESIGN_PLAN_SCORE) {
         // eslint-disable-next-line no-console
         console.warn(`[WebBuild] weak design plan repaired (${firstScore} → ${repScore}).`);
         return annotateDesignPlanRepair(dpRepaired, { attempted: true, succeeded: true, reason: 'weak design plan repaired' });
       }
       const reason = !stillPlanned ? 'repair lost the planning contract'
         : repScore <= firstScore ? `repair did not improve score (${firstScore} → ${repScore})`
-        : `repair below threshold (${repScore} < ${GOOD_DESIGN_PLAN})`;
+        : `repair below threshold (${repScore} < ${GOOD_DESIGN_PLAN_SCORE})`;
       // eslint-disable-next-line no-console
       console.warn(`[WebBuild] design-plan repair not accepted — keeping the viable first build (${reason}).`);
       return annotateDesignPlanRepair(first, { attempted: true, succeeded: false, reason });
@@ -1145,9 +1159,56 @@ export async function generateWebBuild(
     // eslint-disable-next-line no-console
     console.warn(`[WebBuild] strict repair retry succeeded — planning contract met (fullCode=${!!rd?.fullCodeContractPresent}).`);
     const firstQuality = isRepairableModelPartial(first) ? 'model-partial' : 'frontend-fallback';
-    return rd
+    const repairedPlanned: WebBuildResult = rd
       ? { ...repaired, parseDiagnostics: { ...rd, repairedFromPartial: true, firstAttemptQuality: firstQuality } }
       : repaired;
+
+    // Phase 9B-2: strict repair is now REQUIRED to carry a Design Thinking Plan, but
+    // the model can still return a weak/absent one. When the strict-repaired result
+    // is preview-viable yet its design plan is weak, run EXACTLY ONE targeted
+    // design-plan repair on the repaired reply. This is a quality nudge — the strict
+    // repaired result is already viable, so any repair problem safely keeps it and
+    // never throws contract_failed.
+    const repairedScore = repairedPlanned.parseDiagnostics?.designPlanSpecificityScore ?? 0;
+    if (repairedScore >= GOOD_DESIGN_PLAN_SCORE) return repairedPlanned;
+
+    let dpRepaired2: WebBuildResult | undefined;
+    try {
+      dpRepaired2 = parseWebBuildResult(
+        await callBackend(buildWebBuildDesignPlanRepairRequest(trimmed, repairedPlanned.reply, repairedPlanned.parseDiagnostics)),
+        { revise: false },
+      );
+    } catch (err) {
+      const reason = (err instanceof WebBuildError) ? `design-plan repair ${err.kind}` : 'design-plan repair failed to parse';
+      // eslint-disable-next-line no-console
+      console.warn(`[WebBuild] post-strict design-plan repair did not complete — keeping the viable strict-repaired build (${reason}).`);
+      return annotateDesignPlanRepair(repairedPlanned, { attempted: true, succeeded: false, reason });
+    }
+
+    const rep2Score = dpRepaired2.parseDiagnostics?.designPlanSpecificityScore ?? 0;
+    const stillPlanned2 = isModelPlanningContractEnough(dpRepaired2);
+    if (stillPlanned2 && rep2Score > repairedScore && rep2Score >= GOOD_DESIGN_PLAN_SCORE) {
+      // eslint-disable-next-line no-console
+      console.warn(`[WebBuild] weak design plan repaired after strict repair (${repairedScore} → ${rep2Score}).`);
+      const d2 = dpRepaired2.parseDiagnostics as WebBuildParseDiagnostics;
+      return {
+        ...dpRepaired2,
+        parseDiagnostics: {
+          ...d2,
+          repairedFromPartial: true,
+          firstAttemptQuality: firstQuality,
+          designPlanRepairAttempted: true,
+          designPlanRepairSucceeded: true,
+          designPlanRepairReason: 'weak design plan repaired after strict repair',
+        },
+      };
+    }
+    const reason2 = !stillPlanned2 ? 'repair lost the planning contract'
+      : rep2Score <= repairedScore ? `repair did not improve score (${repairedScore} → ${rep2Score})`
+      : `repair below threshold (${rep2Score} < ${GOOD_DESIGN_PLAN_SCORE})`;
+    // eslint-disable-next-line no-console
+    console.warn(`[WebBuild] post-strict design-plan repair not accepted — keeping the viable strict-repaired build (${reason2}).`);
+    return annotateDesignPlanRepair(repairedPlanned, { attempted: true, succeeded: false, reason: reason2 });
   } finally {
     clearTimeout(timeoutId);
   }
