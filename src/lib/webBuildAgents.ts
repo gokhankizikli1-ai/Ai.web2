@@ -6252,7 +6252,7 @@ export function deriveFixer(input: FixerInput): { artifact: FixerAgentArtifact; 
       if (hr && hr !== s.headline) { addQuality('public-copy', s.id, s.headline, hr, pcReason); s.headline = hr; }
     }
     if (s.sub) {
-      const sr = heroRepair(s.sub);
+      const sr = heroRepair(s.sub) || repairPublicLabel(s.sub);
       if (sr && sr !== s.sub) { addQuality('public-copy', s.id, s.sub, sr, pcReason); s.sub = sr; }
     }
     if (s.cta && !promptLc.includes(normLabel(s.cta))) {
@@ -6269,7 +6269,7 @@ export function deriveFixer(input: FixerInput): { artifact: FixerAgentArtifact; 
   }
 
   const consumedQualityIssues = uniq((qd?.issues || [])
-    .filter((i) => ['raw-label', 'cta-inconsistency', 'generic-copy', 'flow-confusion', 'demo-unclear'].includes(i.category))
+    .filter((i) => ['raw-label', 'cta-inconsistency', 'generic-copy', 'flow-confusion', 'demo-unclear', 'public-copy-smell'].includes(i.category))
     .map((i) => `${i.id}:${i.category}`)).slice(0, 16);
   if (qd && !qualityApplied.length && (qd.issues || []).some((i) => i.category === 'raw-label' || i.category === 'cta-inconsistency')) {
     qualitySkipped.push({ id: 'qs-1', category: 'copy-label', reason: L(lang,
