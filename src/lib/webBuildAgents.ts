@@ -5487,8 +5487,10 @@ export function detectPublicCopySmells(
  *  internal labels are cleaned. Shared by the Quality Director (detect) and the
  *  Fixer (repair). Deterministic, cheap, honest — never invents proof. */
 
-/** Generic filler used as a WHOLE section name / CTA / bullet (normalized). */
-const GENERIC_FILLER_LABELS = new Set([
+/** Generic filler used as a WHOLE section name / CTA / bullet (normalized). Phase
+ *  9C-2 — uniquely named to avoid colliding with the Phase 8A GENERIC_FILLER_LABELS
+ *  array (a different concept). */
+const GENERIC_CONTENT_DEPTH_FILLER = new Set([
   'fast & reliable', 'fast and reliable', 'made for your goals', 'simple to start',
   'premium quality', 'built for everyone', 'everything you need', 'all-in-one', 'all in one',
   'seamless experience', 'powerful features', 'process', 'case studies', 'testimonials',
@@ -5522,7 +5524,7 @@ export function detectGenericContentDepthSmells(
   const scan = (sectionId: string | undefined, field: string, v0?: string) => {
     const v = (v0 || '').trim();
     if (!v) return;
-    if (GENERIC_FILLER_LABELS.has(normLabel(v)) || GENERIC_FILLER_CONTAINED_RE.test(v)) push(sectionId, field, v, 'generic-filler');
+    if (GENERIC_CONTENT_DEPTH_FILLER.has(normLabel(v)) || GENERIC_FILLER_CONTAINED_RE.test(v)) push(sectionId, field, v, 'generic-filler');
     if (DEEP_HERO_RE.test(v)) push(sectionId, field, v, 'hero-formula');
     if (GENERIC_DEMO_RE.test(v)) push(sectionId, field, v, 'generic-demo');
     if (UNSUPPORTED_PROOF_RE.test(v)) push(sectionId, field, v, 'unsupported-proof');
