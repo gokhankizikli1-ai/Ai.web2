@@ -11,6 +11,7 @@ import { inferWebsiteBrief, fallbackSectionItems, checkQuality } from '@/lib/web
 import { deriveLayoutPlan, type WebBuildLayoutPlan } from '@/lib/webBuildLayoutPlan';
 import {
   runUpstreamAgents, runLayoutArchitect, runComponentEngineer, runReviewer, runQualityDirector, runFixer, WEB_BUILD_AGENTS_ENABLED,
+  derivePageArchitectureDecision,
   type WebBuildAgent, type WebBuildArtifacts, type WebBuildEnforcement,
 } from '@/lib/webBuildAgents';
 import { deriveAgentSectionArchitecture } from '@/lib/webBuildSectionArchitecture';
@@ -518,6 +519,74 @@ function assembleWebBuildPayload(
       }
     } catch {
       /* non-blocking — keep the original sectionItems */
+    }
+  }
+
+  // INTENT-AWARE PAGE ARCHITECTURE (Phase 9D-1) — after the section architecture
+  // enforcement, apply a SAFE display/selection pass so the page carries only the
+  // sections THIS concept actually supports: rename generic flow labels to the
+  // concept-specific one (e.g. "Process" → "Shopper Flow"), drop unsupported proof
+  // (Testimonials / Case Studies with no real source) and irrelevant pricing, and
+  // reorder into a deliberate product-page flow (hero first, footer last). Section
+  // IDs are PRESERVED so anchors + the layout plan stay intact; renderer, layout
+  // vocabulary and backend are untouched, and nothing is fabricated. When the set
+  // actually changes, files re-synthesize from it so Preview and All Files match.
+  // Fully guarded + non-blocking; a >= 5 floor keeps the quality gate satisfied.
+  if (WEB_BUILD_AGENTS_ENABLED && !prev) {
+    try {
+      const decision = derivePageArchitectureDecision(
+        prompt, artBrief,
+        sectionItems.map((s) => ({ id: s.id, name: s.name })),
+        artifacts?.research?.conceptAuthority, artifacts?.strategy, artifacts?.thinkingLedger,
+        effLang,
+      );
+      let next = sectionItems.slice();
+
+      // 1) REMOVE unsupported proof / irrelevant pricing by id, keeping a >= 5 floor
+      //    (the planner never targets hero/footer/demo/contact for removal).
+      const removeIds = new Set(
+        decision.removedSections.map((r) => r.id).filter((id): id is string => !!id),
+      );
+      if (removeIds.size) {
+        const filtered = next.filter((s) => !removeIds.has(s.id));
+        if (filtered.length >= 5) next = filtered;
+      }
+
+      // 2) RENAME a generic flow label to the concept-specific one. Display text
+      //    only; the section id (and therefore its anchor) never changes.
+      const flowLabel = decision.recommendedSections.find((l) =>
+        /shopper\s*flow|how\s*it\s*works|nasıl|akış/i.test(l));
+      if (flowLabel) {
+        const GENERIC_FLOW = /^(process|our\s*process|the\s*process|workflow|steps?|how\s*it\s*works|süreç|nasıl\s*çalışır)$/i;
+        next = next.map((s) =>
+          GENERIC_FLOW.test((s.name || '').trim()) && (s.name || '').trim().toLowerCase() !== flowLabel.toLowerCase()
+            ? { ...s, name: flowLabel } : s);
+      }
+
+      // 3) REORDER into a deliberate product-page flow: hero first, footer last,
+      //    otherwise preserve the current relative order (stable sort).
+      const rankOf = (s: WebBuildSectionItem): number => {
+        const key = `${s.id} ${s.name}`.toLowerCase();
+        if (/hero|banner|masthead/.test(key)) return 0;
+        if (/footer|colophon/.test(key)) return 100;
+        return 50;
+      };
+      next = next
+        .map((s, i) => ({ s, i, r: rankOf(s) }))
+        .sort((a, b) => (a.r - b.r) || (a.i - b.i))
+        .map((x) => x.s);
+
+      // Only adopt the reshaped set when it actually differs, and force files to
+      // re-synthesize from it so Preview / All Files / timeline stay one strategy.
+      const before = sectionItems.map((s) => `${s.id}::${s.name}`).join('|');
+      const after = next.map((s) => `${s.id}::${s.name}`).join('|');
+      if (before !== after && next.length >= 5) {
+        sectionItems = normalizeSectionItems(next);
+        didRewriteArchitecture = true;
+      }
+      artifacts = { ...(artifacts || {}), pageArchitecture: decision };
+    } catch {
+      /* non-blocking — keep the enforced sectionItems, no decision recorded */
     }
   }
 
