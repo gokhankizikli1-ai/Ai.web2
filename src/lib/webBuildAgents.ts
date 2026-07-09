@@ -1763,12 +1763,13 @@ export function deriveVisualSignaturePlan(
   const isLocalOrEditorial = /restaurant|cafe|salon|clinic|dental|landscap|portfolio|photograph|studio|gallery|hotel|event|wedding|restoran|kuaför|klinik|portföy/.test(vhay)
     || ['landscaping', 'localservice', 'hospitality', 'portfolio', 'medical', 'legal', 'event', 'realestate'].includes(concept);
   const wantsChat = isAi || demoIntent === 'chat-demo' || /chat|assistant|support|conversation|sohbet/.test(hay);
-  const aiCommerce = isAi && isCommerce;
+  const wantsChatVisuals = wantsChat && !isLocalOrEditorial;
+  const aiCommerce = isAi && isCommerce && !isLocalOrEditorial;
 
   // ── Hero visual signature — the single strongest identity choice. ──
   const heroVisualType: VisualSignatureHeroType = (() => {
-    if (isLocalOrEditorial && !isAi) return 'editorial-collage';
-    if (aiCommerce || (isAi && wantsChat)) return 'chat-flow';
+    if (isLocalOrEditorial) return 'editorial-collage';
+    if (aiCommerce || (isAi && wantsChatVisuals)) return 'chat-flow';
     if (isDev) return 'code-rain';
     if (isMarketplace || (isCommerce && !isAi)) return 'editorial-collage';
     if (demoIntent === 'dashboard-demo') return 'dashboard-glass';
@@ -1779,12 +1780,16 @@ export function deriveVisualSignaturePlan(
 
   // ── Named signature + motif (concept-specific, honest). ──
   const { visualSignature, primaryMotif } = (() => {
+    if (isLocalOrEditorial) return {
+      visualSignature: L(lang, 'Editorial service journey', 'Editoryal hizmet yolculuğu'),
+      primaryMotif: L(lang, 'discover → experience → book', 'keşfet → deneyimle → rezerve et'),
+    };
     if (aiCommerce) return {
       visualSignature: L(lang, 'Storefront chat flow rail', 'Mağaza sohbet akış rayı'),
       primaryMotif: L(lang, 'shopper question → product recommendation → policy answer → human handoff',
         'alışverişçi sorusu → ürün önerisi → politika yanıtı → insana devir'),
     };
-    if (isAi && wantsChat) return {
+    if (isAi && wantsChatVisuals) return {
       visualSignature: L(lang, 'Conversation orbit', 'Sohbet yörüngesi'),
       primaryMotif: L(lang, 'question → assistant reasoning → grounded answer → next best action',
         'soru → asistan muhakemesi → temellendirilmiş yanıt → sonraki en iyi eylem'),
@@ -1796,10 +1801,6 @@ export function deriveVisualSignaturePlan(
     if (isMarketplace || (isCommerce && !isAi)) return {
       visualSignature: L(lang, 'Product recommendation path', 'Ürün öneri yolu'),
       primaryMotif: L(lang, 'browse → filter → compare → checkout', 'gözat → filtrele → karşılaştır → öde'),
-    };
-    if (isLocalOrEditorial) return {
-      visualSignature: L(lang, 'Editorial service journey', 'Editoryal hizmet yolculuğu'),
-      primaryMotif: L(lang, 'discover → experience → book', 'keşfet → deneyimle → rezerve et'),
     };
     return {
       visualSignature: L(lang, 'Abstract system diagram', 'Soyut sistem diyagramı'),
@@ -1821,9 +1822,11 @@ export function deriveVisualSignaturePlan(
       push(s, heroVisualType, L(lang, 'Primary hero signature visual', 'Ana hero imza görseli'),
         L(lang, 'slow glow + staged reveal', 'yavaş parıltı + aşamalı ortaya çıkış'));
     } else if (SECTION_ROLE_RE.demo.test(key)) {
-      push(s, wantsChat ? 'chat-flow-rail' : 'product-card-rail',
+      push(s, wantsChatVisuals ? 'chat-flow-rail' : 'product-card-rail',
         L(lang, 'Front-end-only demo of the concept from sample copy', 'Konseptin örnek metinden yalnızca ön-yüz demosu'),
-        L(lang, 'floating chat bubbles + rail movement', 'yüzen sohbet balonları + ray hareketi'));
+        wantsChatVisuals
+          ? L(lang, 'floating chat bubbles + rail movement', 'yüzen sohbet balonları + ray hareketi')
+          : L(lang, 'card rail movement', 'kart ray hareketi'));
     } else if (SECTION_ROLE_RE.integrations.test(key)) {
       push(s, 'integration-orbit',
         L(lang, 'Abstract integration nodes (Store, Catalog, Helpdesk, Email) — no real logos', 'Soyut entegrasyon düğümleri (Mağaza, Katalog, Yardım, E-posta) — gerçek logo yok'),
@@ -1843,7 +1846,7 @@ export function deriveVisualSignaturePlan(
     }
   }
 
-  const backgroundMotif = aiCommerce || (isAi && wantsChat)
+  const backgroundMotif = aiCommerce || (isAi && wantsChatVisuals)
     ? L(lang, 'Subtle conversation path / orbit lines — not a generic dashboard grid.', 'İnce sohbet yolu / yörünge çizgileri — genel bir panel gridi değil.')
     : isDev ? L(lang, 'Faint code-rain / grid-terminal shimmer, low opacity.', 'Soluk kod-yağmuru / grid-terminal parıltısı, düşük opaklık.')
     : isLocalOrEditorial ? L(lang, 'Editorial contour / collage seams, warm and calm.', 'Editoryal kontur / kolaj dikişleri, sıcak ve sakin.')
@@ -1853,14 +1856,14 @@ export function deriveVisualSignaturePlan(
     L(lang, 'floating cards drift (very subtle)', 'yüzen kartlar kayması (çok ince)'),
     L(lang, 'pulsing connection dot on active node', 'aktif düğümde nabız atan bağlantı noktası'),
     L(lang, 'slow glow trail on the primary path', 'birincil yolda yavaş parıltı izi'),
-    ...(wantsChat ? [L(lang, 'staged handoff pulse between bubbles', 'balonlar arası aşamalı devir nabzı')] : []),
+    ...(wantsChatVisuals ? [L(lang, 'staged handoff pulse between bubbles', 'balonlar arası aşamalı devir nabzı')] : []),
     ...(pageArchitecture?.integrationsNeeded ? [L(lang, 'orbit line rotation (reduced-motion safe)', 'yörünge çizgisi dönüşü (reduced-motion güvenli)')] : []),
     L(lang, 'hover lift on interactive cards', 'etkileşimli kartlarda hover yükselmesi'),
   ]);
 
   const svgAssetsRaw: VisualSignaturePlan['svgAssets'] = [
     { name: L(lang, 'Path rail', 'Yol rayı'), role: 'background', description: L(lang, 'A thin staged rail connecting the motif steps.', 'Motif adımlarını bağlayan ince aşamalı bir ray.') },
-    ...(wantsChat ? [{ name: L(lang, 'Chat bubbles', 'Sohbet balonları'), role: 'hero/demo', description: L(lang, 'Shopper + assistant bubbles with a recommendation card.', 'Alışverişçi + asistan balonları ve bir öneri kartı.') }] : []),
+    ...(wantsChatVisuals ? [{ name: L(lang, 'Chat bubbles', 'Sohbet balonları'), role: 'hero/demo', description: L(lang, 'Shopper + assistant bubbles with a recommendation card.', 'Alışverişçi + asistan balonları ve bir öneri kartı.') }] : []),
     ...((pageArchitecture?.integrationsNeeded || isCommerce) ? [{ name: L(lang, 'Integration nodes', 'Entegrasyon düğümleri'), role: 'integrations', description: L(lang, 'Abstract labelled nodes on an orbit — generic labels, no brand logos.', 'Bir yörüngede soyut etiketli düğümler — genel etiketler, marka logosu yok.') }] : []),
     ...(pageArchitecture?.securityNeeded ? [{ name: L(lang, 'Trust glyphs', 'Güven glifleri'), role: 'security', description: L(lang, 'Shield / key / checklist glyphs — illustrative, not certifications.', 'Kalkan / anahtar / kontrol listesi glifleri — açıklayıcı, sertifika değil.') }] : []),
     ...(isDev ? [{ name: L(lang, 'Code rain', 'Kod yağmuru'), role: 'hero', description: L(lang, 'Faint falling monospace glyph columns.', 'Soluk düşen tek aralıklı glif sütunları.') }] : []),

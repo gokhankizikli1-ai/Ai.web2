@@ -765,6 +765,7 @@ const SIGNATURE_VISUALS: Record<string, (p: { labels?: string[]; compact?: boole
   'code-rain': (p) => <CodeRainVisual {...p} />,
   'timeline-rail': (p) => <TimelineRailVisual {...p} />,
   'handoff-timeline': (p) => <TimelineRailVisual {...p} />,
+  'handoff-form': (p) => <ReservationForm labels={p.labels} />,
 };
 
 /** True when a signature module exists for this visual type. */

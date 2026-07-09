@@ -590,30 +590,6 @@ function assembleWebBuildPayload(
     }
   }
 
-  // VISUAL SIGNATURE PLAN (Phase 9E-1) — after the page architecture is settled,
-  // derive a concept-specific CSS/SVG visual signature (hero motif + per-section
-  // visuals + honest motion hints) so the Preview renders a recognizable identity
-  // instead of generic dark SaaS cards. DATA ONLY: never calls an image/video API,
-  // never fabricates logos/metrics/proof; the preview consumes it with composed
-  // CSS/SVG modules and falls back to the existing generic visual module. Fully
-  // guarded + non-blocking; does not change section ids, files, or the layout plan.
-  if (WEB_BUILD_AGENTS_ENABLED) {
-    try {
-      const visualSignaturePlan = deriveVisualSignaturePlan(
-        artBrief,
-        sectionItems.map((s) => ({ id: s.id, name: s.name })),
-        artifacts?.research?.conceptAuthority,
-        artifacts?.pageArchitecture,
-        artifacts?.artDirection,
-        artifacts?.thinkingLedger,
-        effLang,
-      );
-      artifacts = { ...(artifacts || {}), visualSignaturePlan };
-    } catch {
-      /* non-blocking — the preview falls back to the generic visual module */
-    }
-  }
-
   // Files: when the architecture was rewritten, synthesize from the REWRITTEN
   // sections (NOT the original backend result) so preview and files match. When it
   // was not rewritten, keep the backend-parsed resolveFiles behavior unchanged.
@@ -646,6 +622,31 @@ function assembleWebBuildPayload(
     const plan = deriveLayoutPlan(artBrief, sectionItems.map((s) => ({ id: s.id, name: s.name })));
     files = diffFiles(prevFiles, synthesizeFromCopies(itemsToCopies(sectionItems), artBrief, plan));
     usedFileSynthesisFallback = true;
+  }
+
+  // VISUAL SIGNATURE PLAN (Phase 9E-1) — after fallbacks have settled the final
+  // section list, derive a concept-specific CSS/SVG visual signature (hero motif
+  // + per-section visuals + honest motion hints) so the Preview renders a
+  // recognizable identity instead of generic dark SaaS cards. DATA ONLY: never
+  // calls an image/video API, never fabricates logos/metrics/proof; the preview
+  // consumes it with composed CSS/SVG modules and falls back to the existing
+  // generic visual module. Fully guarded + non-blocking; does not change section
+  // ids, files, or the layout plan.
+  if (WEB_BUILD_AGENTS_ENABLED) {
+    try {
+      const visualSignaturePlan = deriveVisualSignaturePlan(
+        artBrief,
+        sectionItems.map((s) => ({ id: s.id, name: s.name })),
+        artifacts?.research?.conceptAuthority,
+        artifacts?.pageArchitecture,
+        artifacts?.artDirection,
+        artifacts?.thinkingLedger,
+        effLang,
+      );
+      artifacts = { ...(artifacts || {}), visualSignaturePlan };
+    } catch {
+      /* non-blocking — the preview falls back to the generic visual module */
+    }
   }
 
   const layoutPlan = deriveLayoutPlan(artBrief, sectionItems.map((s) => ({ id: s.id, name: s.name })));
