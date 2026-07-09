@@ -6,7 +6,7 @@ import {
   deriveLayoutPlan, visualSystemTokens,
   type WebBuildLayoutPlan, type HeroComposition, type SectionVariant,
 } from '@/lib/webBuildLayoutPlan';
-import VisualModule from '@/components/builder/WebBuildVisualModules';
+import VisualModule, { SignatureVisual, hasSignatureVisual } from '@/components/builder/WebBuildVisualModules';
 import type { WebBuildBrief } from '@/lib/webBuildApi';
 import type { WebBuildSectionItem } from '@/lib/webBuildPayload';
 import {
@@ -23,7 +23,7 @@ import {
 } from '@/lib/webBuildInteractionContract';
 // Type-only import (erased at build) — Phase 5's data-only Visual Asset Plan the
 // Preview consumes with CSS/SVG. Never pulls agent logic into the preview bundle.
-import type { VisualAssetPlan, HeroVisualType } from '@/lib/webBuildAgents';
+import type { VisualAssetPlan, HeroVisualType, VisualSignaturePlan } from '@/lib/webBuildAgents';
 
 /**
  * A REAL, premium rendered approximation of the generated site whose STRUCTURE is
@@ -549,6 +549,19 @@ function heroTexts(s: S, brief: WebBuildBrief, ctx: InteractionContext) {
   };
 }
 
+/* Phase 9E-1: the hero's concept signature visual type (or undefined). Passed via
+ * context so the many hero compositions don't each need a new prop threaded in. */
+const HeroSigContext = createContext<string | undefined>(undefined);
+const useHeroSig = (): string | undefined => useContext(HeroSigContext);
+
+/** Prefer the concept signature visual for the hero foreground; fall back to the
+ *  generic layout-plan visual module when no signature module matches. */
+function HeroModuleVisual({ plan, labels, compact = false, className = '' }: { plan: WebBuildLayoutPlan; labels?: string[]; compact?: boolean; className?: string }) {
+  const sig = useHeroSig();
+  if (sig && hasSignatureVisual(sig)) return <SignatureVisual visualType={sig} labels={labels} compact={compact} className={className} />;
+  return <VisualModule kind={plan.primaryVisualModule} labels={labels} compact={compact} className={className} />;
+}
+
 /* — Centered (kept as a fallback; the plan rarely selects it) — */
 function HeroCentered({ s, brief, plan, ctx }: HeroProps) {
   const t = heroTexts(s, brief, ctx);
@@ -563,7 +576,7 @@ function HeroCentered({ s, brief, plan, ctx }: HeroProps) {
           {t.cta && <PrimaryCta href={t.ctaHref}>{t.cta}</PrimaryCta>}
           {t.secondary && <GhostCta href={t.secondaryHref}>{t.secondary}</GhostCta>}
         </div>
-        <div className="mx-auto mt-12 max-w-lg"><VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} compact /></div>
+        <div className="mx-auto mt-12 max-w-lg"><HeroModuleVisual plan={plan} labels={t.moduleLabels} compact /></div>
       </div>
     </section>
   );
@@ -590,7 +603,7 @@ function HeroSplit({ s, brief, plan, ctx }: HeroProps) {
           </div>
           {t.proof && <p className={`text-xs text-slate-400 ${premium ? 'mt-7' : 'mt-6'}`}>{t.proof}</p>}
         </div>
-        <VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} />
+        <HeroModuleVisual plan={plan} labels={t.moduleLabels} />
       </div>
     </section>
   );
@@ -603,7 +616,7 @@ function HeroAsymmetric({ s, brief, plan, ctx }: HeroProps) {
     <section className="relative isolate overflow-hidden">
       <HeroBg plan={plan} brief={brief} />
       <div className="relative mx-auto max-w-6xl px-6 py-20 sm:py-28">
-        <div className="ml-auto w-full max-w-3xl opacity-95 lg:w-[62%]"><VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} /></div>
+        <div className="ml-auto w-full max-w-3xl opacity-95 lg:w-[62%]"><HeroModuleVisual plan={plan} labels={t.moduleLabels} /></div>
         <div className="relative -mt-24 max-w-xl rounded-3xl border border-[color:var(--bd)] bg-black/50 p-8 backdrop-blur-md lg:-mt-40">
           {t.eyebrow && <Eyebrow>{t.eyebrow}</Eyebrow>}
           <HeroTitle className="mt-4 text-3xl sm:text-5xl">{t.title}</HeroTitle>
@@ -632,7 +645,7 @@ function HeroDashboard({ s, brief, plan, ctx }: HeroProps) {
           {t.cta && <PrimaryCta href={t.ctaHref}>{t.cta}</PrimaryCta>}
           {t.secondary && <GhostCta href={t.secondaryHref}>{t.secondary}</GhostCta>}
         </div>
-        <div className="mt-14"><VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} /></div>
+        <div className="mt-14"><HeroModuleVisual plan={plan} labels={t.moduleLabels} /></div>
       </div>
     </section>
   );
@@ -678,7 +691,7 @@ function HeroMembership({ s, brief, plan, ctx }: HeroProps) {
           </div>
         </div>
         <motion.div animate={{ y: [0, -10, 0] }} transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }} className="rounded-3xl border border-[color:var(--bd)] bg-[var(--sf)] p-3 shadow-2xl shadow-black/40">
-          <VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} />
+          <HeroModuleVisual plan={plan} labels={t.moduleLabels} />
         </motion.div>
       </div>
     </section>
@@ -700,7 +713,7 @@ function HeroCatalog({ s, brief, plan, ctx }: HeroProps) {
           </div>
           <div className="flex shrink-0 gap-3">{t.cta && <PrimaryCta href={t.ctaHref}>{t.cta}</PrimaryCta>}{t.secondary && <GhostCta href={t.secondaryHref}>{t.secondary}</GhostCta>}</div>
         </div>
-        <div className="mt-10"><VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} /></div>
+        <div className="mt-10"><HeroModuleVisual plan={plan} labels={t.moduleLabels} /></div>
       </div>
     </section>
   );
@@ -722,7 +735,7 @@ function HeroData({ s, brief, plan, ctx }: HeroProps) {
             {t.secondary && <GhostCta href={t.secondaryHref}>{t.secondary}</GhostCta>}
           </div>
         </div>
-        <VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} />
+        <HeroModuleVisual plan={plan} labels={t.moduleLabels} />
       </div>
     </section>
   );
@@ -741,7 +754,7 @@ function HeroLuxury({ s, brief, plan, ctx }: HeroProps) {
         <div className="mt-10 flex items-center justify-center gap-4">
           {t.cta && <a href={t.ctaHref} className="border-b border-white/40 pb-1 text-sm font-medium tracking-wide text-white">{t.cta} →</a>}
         </div>
-        <div className="mx-auto mt-14 max-w-md"><VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} compact /></div>
+        <div className="mx-auto mt-14 max-w-md"><HeroModuleVisual plan={plan} labels={t.moduleLabels} compact /></div>
       </div>
     </section>
   );
@@ -764,7 +777,7 @@ function HeroStory({ s, brief, plan, ctx }: HeroProps) {
         </div>
         <div className="lg:col-span-5">
           {t.sub && <p className="border-l-2 pl-5 text-base leading-relaxed text-slate-300" style={{ borderColor: 'var(--acc)' }}>{t.sub}</p>}
-          <div className="mt-6"><VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} compact /></div>
+          <div className="mt-6"><HeroModuleVisual plan={plan} labels={t.moduleLabels} compact /></div>
         </div>
       </div>
     </section>
@@ -785,7 +798,7 @@ function HeroEvent({ s, brief, plan, ctx }: HeroProps) {
         <HeroTitle className="mx-auto mt-6 max-w-3xl text-5xl sm:text-7xl">{t.title}</HeroTitle>
         {t.sub && <p className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-slate-300 sm:text-lg">{t.sub}</p>}
         <div className="mt-9 flex items-center justify-center gap-3">{t.cta && <PrimaryCta href={t.ctaHref}>{t.cta}</PrimaryCta>}{t.secondary && <GhostCta href={t.secondaryHref}>{t.secondary}</GhostCta>}</div>
-        <div className="mx-auto mt-12 max-w-lg"><VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} compact /></div>
+        <div className="mx-auto mt-12 max-w-lg"><HeroModuleVisual plan={plan} labels={t.moduleLabels} compact /></div>
       </div>
     </section>
   );
@@ -2222,7 +2235,7 @@ function DemoShellScreen({ screen, allSections, brief, art, rt, onHome, heroVisu
 }
 
 export default function WebBuildPreviewDocument({
-  sectionItems: rawSectionItems, brief, interactionContract, visualAssetPlan,
+  sectionItems: rawSectionItems, brief, interactionContract, visualAssetPlan, visualSignaturePlan,
 }: {
   sectionItems: WebBuildSectionItem[];
   brief: WebBuildBrief;
@@ -2232,6 +2245,10 @@ export default function WebBuildPreviewDocument({
   /** Phase 5 Visual Asset Plan (data only). Consumed by the premium visual layer
    *  with CSS/SVG. Optional → the standalone route / old builds fall back safely. */
   visualAssetPlan?: VisualAssetPlan;
+  /** Phase 9E-1 Visual Signature Plan (data only). Drives concept-specific
+   *  signature visuals (chat-flow rail, integration orbit, trust stack, …) in the
+   *  hero + matching sections. Optional → old builds fall back to VisualModule. */
+  visualSignaturePlan?: VisualSignaturePlan;
 }) {
   // Normalize every section item to a well-formed shape BEFORE any derived helper
   // runs. The section-level boundaries only cover their own renderers; the plan/
@@ -2288,6 +2305,18 @@ export default function WebBuildPreviewDocument({
   const variantOf = (id: string): SectionVariant => plan.sectionVariants[id] || 'feature-grid';
   const vt = visualSystemTokens(plan.visualSystem);
   const reduce = useReducedMotion();
+  // Phase 9E-1: resolve the concept-specific signature visuals. The hero uses the
+  // plan's hero visual type (only when a signature module exists — else it falls
+  // back to the generic module), and matching content sections (chat/product demo,
+  // integrations, security, flow, contact) render their own signature visual.
+  const heroSigType = hasSignatureVisual(visualSignaturePlan?.heroVisualType) ? visualSignaturePlan?.heroVisualType : undefined;
+  const sigBySectionId = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const v of visualSignaturePlan?.sectionVisuals || []) {
+      if (v.sectionId && hasSignatureVisual(v.visualType) && !m.has(v.sectionId)) m.set(v.sectionId, v.visualType);
+    }
+    return m;
+  }, [visualSignaturePlan]);
   const rootRef = useRef<HTMLDivElement>(null);
   const [activePage, setActivePage] = useState('home');
   // Router-free page model + the sections the ACTIVE page renders (never empty).
@@ -2645,7 +2674,9 @@ export default function WebBuildPreviewDocument({
       const Hero = HEROES[heroComposition] || HEROES['split-editorial'];
       inner = (
         <div id={sid} style={{ scrollMarginTop: 72 }}>
-          <Hero s={s} brief={brief} plan={plan} ctx={ctx} />
+          <HeroSigContext.Provider value={heroSigType}>
+            <Hero s={s} brief={brief} plan={plan} ctx={ctx} />
+          </HeroSigContext.Provider>
           {/* Concept-specific proof rail, directly under the hero. */}
           <div className="relative z-10 mx-auto max-w-6xl px-6 pb-6">
             <HeroProof brief={brief} />
@@ -2659,8 +2690,18 @@ export default function WebBuildPreviewDocument({
       const i = contentIdx++;
       const band = banded && i % 2 === 1;
       const pad = PAD[premiumDensity] || PAD.comfortable;
+      // Phase 9E-1: a concept signature visual leads the section (integration orbit,
+      // trust-control stack, chat-flow rail, timeline rail …) when the plan assigns
+      // one for this section id; the existing variant content renders below it.
+      const sigType = sigBySectionId.get(rawId);
+      const sigLabels = (s.bullets && s.bullets.length ? s.bullets : [s.name].filter(Boolean)) as string[];
       inner = (
         <section id={sid} style={{ scrollMarginTop: 72, ...(band ? { background: 'rgba(255,255,255,0.015)' } : {}) }} className={`relative ${pad}`}>
+          {sigType && (
+            <div className="mx-auto mb-10 max-w-4xl px-6">
+              <SignatureVisual visualType={sigType} labels={sigLabels} />
+            </div>
+          )}
           {Render({ s, plan, index: i, art, ctx, rt, lang: previewLang })}
         </section>
       );

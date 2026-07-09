@@ -360,6 +360,19 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       (pa.architectureWarnings || []).slice(0, 2).forEach((w, i) => ownerRows.push([`architectureWarning${i + 1}`, w]));
     }
 
+    // Phase 9E-1 — concept-specific Visual Signature Plan (CSS/SVG, front-end-only).
+    const vsp = step.artifacts?.visualSignaturePlan;
+    if (vsp) {
+      ownerRows.push(['visualSignature', `${vsp.visualSignature} · hero: ${vsp.heroVisualType}`]);
+      if (vsp.primaryMotif) ownerRows.push(['primaryMotif', vsp.primaryMotif]);
+      if (vsp.sectionVisuals?.length) {
+        const ex = vsp.sectionVisuals.slice(0, 3).map((v) => `${v.sectionName || v.sectionId || '?'}→${v.visualType}`).join(', ');
+        ownerRows.push(['sectionVisuals', `${vsp.sectionVisuals.length}${ex ? ` · ${ex}` : ''}`]);
+      }
+      if (vsp.motionHints?.length) ownerRows.push(['motionHints', vsp.motionHints.slice(0, 2).join(' · ')]);
+      (vsp.visualAssetWarnings || []).slice(0, 2).forEach((w, i) => ownerRows.push([`visualAssetWarning${i + 1}`, w]));
+    }
+
     // Concept Authority + Visual Quality gate (Phase 5) — real artifact data only.
     const ca = step.artifacts?.research?.conceptAuthority;
     if (ca) {
@@ -719,7 +732,7 @@ export default function WebBuildConversation({
                 </button>
               </div>
               {panel === 'preview'
-                ? <WebBuildPreviewPanel sectionItems={sectionItems} brief={brief} slug={slug} runId={runId} interactionContract={steps[lastIdx]?.artifacts?.strategy?.interactionContract} visualAssetPlan={steps[lastIdx]?.artifacts?.artDirection?.visualAssetPlan} />
+                ? <WebBuildPreviewPanel sectionItems={sectionItems} brief={brief} slug={slug} runId={runId} interactionContract={steps[lastIdx]?.artifacts?.strategy?.interactionContract} visualAssetPlan={steps[lastIdx]?.artifacts?.artDirection?.visualAssetPlan} visualSignaturePlan={steps[lastIdx]?.artifacts?.visualSignaturePlan} />
                 : <WebBuildFileView files={files} initialPath={filePath} />}
             </motion.div>
           </motion.div>

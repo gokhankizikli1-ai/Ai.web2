@@ -987,6 +987,10 @@ export interface WebBuildArtifacts {
   fixer?: FixerAgentArtifact;
   /** Intent-aware page architecture decision (Phase 9D-1). Optional → old builds load. */
   pageArchitecture?: PageArchitectureDecision;
+  /** Concept-specific visual signature plan (Phase 9E-1) — CSS/SVG-only visual
+   *  direction (hero motif, per-section visuals, motion hints). Optional → old
+   *  builds load. Never an image/video API; consumed by the preview visual layer. */
+  visualSignaturePlan?: VisualSignaturePlan;
   /** The shared context the agents were run against (pipeline trace). */
   context?: WebBuildAgentContext;
   /** Enforcement diagnostics proving the agents drove the build. */
@@ -1698,6 +1702,208 @@ export function derivePageArchitectureDecision(
     primaryCTA,
     secondaryCTA,
     architectureWarnings,
+  };
+}
+
+/* ── Visual Signature Plan (Phase 9E-1) — CSS/SVG/front-end-only ───────────────
+ * A concept-specific visual signature so the build reads as art-directed, not a
+ * generic stack of dark SaaS cards. THIS IS NOT image/video generation and NEVER
+ * calls an external API — it only chooses which composed CSS/SVG visual modules
+ * the preview should render (chat-flow rail, integration orbit, trust stack, …)
+ * plus honest motion hints. Distinct from the Phase-5 art-direction VisualAssetPlan
+ * (which stays as-is); this drives the preview's foreground signature visuals. */
+export type VisualSignatureHeroType =
+  | 'chat-flow' | 'product-flow' | 'integration-orbit' | 'dashboard-glass'
+  | 'editorial-collage' | 'code-rain' | 'timeline-rail' | 'abstract-system';
+
+export interface VisualSignaturePlan {
+  /** A short, memorable name for the page's visual identity (e.g. "Storefront chat flow rail"). */
+  visualSignature: string;
+  /** The narrative the visuals explain (e.g. "shopper question → recommendation → policy → handoff"). */
+  primaryMotif: string;
+  heroVisualType: VisualSignatureHeroType;
+  /** Per-section visual direction, matched to real section ids/names where possible. */
+  sectionVisuals: Array<{ sectionId?: string; sectionName?: string; visualType: string; purpose: string; motionHint?: string }>;
+  backgroundMotif: string;
+  motionHints: string[];
+  /** Named abstract CSS/SVG assets (never real logos/photos). */
+  svgAssets: Array<{ name: string; role: string; description: string }>;
+  avoidVisuals: string[];
+  assetHonestyRules: string[];
+  visualAssetWarnings: string[];
+}
+
+/**
+ * Derive the concept-specific Visual Signature Plan. Pure + deterministic. Reads
+ * the brief/concept/ledger + the page architecture so the preview renders a
+ * recognizable motif instead of generic cards. Front-end-only: every visual is a
+ * composed CSS/SVG illustration from sample copy — no image/video API, no real
+ * logos/metrics/testimonials/compliance.
+ */
+export function deriveVisualSignaturePlan(
+  brief: WebBuildBrief,
+  sectionItems: Array<{ id: string; name: string }>,
+  conceptAuthority: ConceptAuthority | undefined,
+  pageArchitecture: PageArchitectureDecision | undefined,
+  artDirection: ArtDirectionArtifact | undefined,
+  ledger: StrategicThinkingLedger | undefined,
+  lang: Lang = 'en',
+): VisualSignaturePlan {
+  const hay = [brief.coreIdea, brief.type, brief.goal, brief.audience, brief.style, brief.visualMood]
+    .filter(Boolean).join(' ').toLowerCase();
+  const concept = (ledger?.primaryConcept || conceptAuthority?.primaryConcept || '').toLowerCase();
+  const vertical = conceptAuthority?.targetVertical || conceptAuthority?.audienceVertical || ledger?.targetVertical || '';
+  const vhay = `${hay} ${vertical}`.toLowerCase();
+  const demoIntent = ledger?.demoSurfaceIntent;
+
+  const isAi = concept === 'ai' || concept === 'saas' || /\bai\b|artificial|chatbot|chat\s*bot|assistant|agentic|\bllm\b|asistan/.test(hay);
+  const isCommerce = /ecommerce|e-?commerce|storefront|\bstore\b|\bshop\b|retail|catalog|mağaza|e-?ticaret/.test(vhay);
+  const isMarketplace = concept === 'marketplace' || /marketplace|listings?|classifieds?|multi-?vendor|pazaryeri/.test(vhay);
+  const isDev = /developer|\bdev\b|\bcode\b|\bcli\b|\bapi\b|sdk|terminal|deploy|programming|engineer|kod|yazılımcı/.test(hay);
+  const isLocalOrEditorial = /restaurant|cafe|salon|clinic|dental|landscap|portfolio|photograph|studio|gallery|hotel|event|wedding|restoran|kuaför|klinik|portföy/.test(vhay)
+    || ['landscaping', 'localservice', 'hospitality', 'portfolio', 'medical', 'legal', 'event', 'realestate'].includes(concept);
+  const wantsChat = isAi || demoIntent === 'chat-demo' || /chat|assistant|support|conversation|sohbet/.test(hay);
+  const aiCommerce = isAi && isCommerce;
+
+  // ── Hero visual signature — the single strongest identity choice. ──
+  const heroVisualType: VisualSignatureHeroType = (() => {
+    if (isLocalOrEditorial && !isAi) return 'editorial-collage';
+    if (aiCommerce || (isAi && wantsChat)) return 'chat-flow';
+    if (isDev) return 'code-rain';
+    if (isMarketplace || (isCommerce && !isAi)) return 'editorial-collage';
+    if (demoIntent === 'dashboard-demo') return 'dashboard-glass';
+    if (isAi) return 'product-flow';
+    if (pageArchitecture?.integrationsNeeded) return 'integration-orbit';
+    return 'abstract-system';
+  })();
+
+  // ── Named signature + motif (concept-specific, honest). ──
+  const { visualSignature, primaryMotif } = (() => {
+    if (aiCommerce) return {
+      visualSignature: L(lang, 'Storefront chat flow rail', 'Mağaza sohbet akış rayı'),
+      primaryMotif: L(lang, 'shopper question → product recommendation → policy answer → human handoff',
+        'alışverişçi sorusu → ürün önerisi → politika yanıtı → insana devir'),
+    };
+    if (isAi && wantsChat) return {
+      visualSignature: L(lang, 'Conversation orbit', 'Sohbet yörüngesi'),
+      primaryMotif: L(lang, 'question → assistant reasoning → grounded answer → next best action',
+        'soru → asistan muhakemesi → temellendirilmiş yanıt → sonraki en iyi eylem'),
+    };
+    if (isDev) return {
+      visualSignature: L(lang, 'Command & deploy rail', 'Komut ve dağıtım rayı'),
+      primaryMotif: L(lang, 'write → run → build → deploy', 'yaz → çalıştır → derle → dağıt'),
+    };
+    if (isMarketplace || (isCommerce && !isAi)) return {
+      visualSignature: L(lang, 'Product recommendation path', 'Ürün öneri yolu'),
+      primaryMotif: L(lang, 'browse → filter → compare → checkout', 'gözat → filtrele → karşılaştır → öde'),
+    };
+    if (isLocalOrEditorial) return {
+      visualSignature: L(lang, 'Editorial service journey', 'Editoryal hizmet yolculuğu'),
+      primaryMotif: L(lang, 'discover → experience → book', 'keşfet → deneyimle → rezerve et'),
+    };
+    return {
+      visualSignature: L(lang, 'Abstract system diagram', 'Soyut sistem diyagramı'),
+      primaryMotif: L(lang, 'input → process → outcome', 'girdi → süreç → sonuç'),
+    };
+  })();
+
+  // ── Per-section visuals matched to real sections by role. IDs are read-only. ──
+  const sectionVisuals: VisualSignaturePlan['sectionVisuals'] = [];
+  const seenRole = new Set<string>();
+  const push = (s: { id: string; name: string }, visualType: string, purpose: string, motionHint?: string) => {
+    if (seenRole.has(visualType)) return;
+    seenRole.add(visualType);
+    sectionVisuals.push({ sectionId: s.id, sectionName: s.name, visualType, purpose, motionHint });
+  };
+  for (const s of sectionItems || []) {
+    const key = `${s.id} ${s.name}`;
+    if (SECTION_ROLE_RE.hero.test(key)) {
+      push(s, heroVisualType, L(lang, 'Primary hero signature visual', 'Ana hero imza görseli'),
+        L(lang, 'slow glow + staged reveal', 'yavaş parıltı + aşamalı ortaya çıkış'));
+    } else if (SECTION_ROLE_RE.demo.test(key)) {
+      push(s, wantsChat ? 'chat-flow-rail' : 'product-card-rail',
+        L(lang, 'Front-end-only demo of the concept from sample copy', 'Konseptin örnek metinden yalnızca ön-yüz demosu'),
+        L(lang, 'floating chat bubbles + rail movement', 'yüzen sohbet balonları + ray hareketi'));
+    } else if (SECTION_ROLE_RE.integrations.test(key)) {
+      push(s, 'integration-orbit',
+        L(lang, 'Abstract integration nodes (Store, Catalog, Helpdesk, Email) — no real logos', 'Soyut entegrasyon düğümleri (Mağaza, Katalog, Yardım, E-posta) — gerçek logo yok'),
+        L(lang, 'orbit line drift + pulsing connection dots', 'yörünge çizgisi kayması + nabız atan bağlantı noktaları'));
+    } else if (SECTION_ROLE_RE.security.test(key)) {
+      push(s, 'trust-control-stack',
+        L(lang, 'Honest trust controls (shield / key / checklist) — no fake SOC2/ISO', 'Dürüst güven kontrolleri (kalkan / anahtar / kontrol listesi) — sahte SOC2/ISO yok'),
+        L(lang, 'staged check pulse', 'aşamalı onay nabzı'));
+    } else if (SECTION_ROLE_RE.flow.test(key)) {
+      push(s, 'timeline-rail',
+        L(lang, 'The concept flow as a staged rail', 'Konsept akışı aşamalı bir ray olarak'),
+        L(lang, 'staged rail highlight', 'aşamalı ray vurgusu'));
+    } else if (SECTION_ROLE_RE.contact.test(key)) {
+      push(s, 'handoff-form',
+        L(lang, 'Simple contact/booking form + handoff chip', 'Basit iletişim/rezervasyon formu + devir çipi'),
+        L(lang, 'handoff pulse', 'devir nabzı'));
+    }
+  }
+
+  const backgroundMotif = aiCommerce || (isAi && wantsChat)
+    ? L(lang, 'Subtle conversation path / orbit lines — not a generic dashboard grid.', 'İnce sohbet yolu / yörünge çizgileri — genel bir panel gridi değil.')
+    : isDev ? L(lang, 'Faint code-rain / grid-terminal shimmer, low opacity.', 'Soluk kod-yağmuru / grid-terminal parıltısı, düşük opaklık.')
+    : isLocalOrEditorial ? L(lang, 'Editorial contour / collage seams, warm and calm.', 'Editoryal kontur / kolaj dikişleri, sıcak ve sakin.')
+    : L(lang, 'Restrained accent path lines on a tonal surface — no boxed cards.', 'Tonal bir yüzeyde ölçülü vurgu yol çizgileri — kutulanmış kart yok.');
+
+  const motionHints = uniq([
+    L(lang, 'floating cards drift (very subtle)', 'yüzen kartlar kayması (çok ince)'),
+    L(lang, 'pulsing connection dot on active node', 'aktif düğümde nabız atan bağlantı noktası'),
+    L(lang, 'slow glow trail on the primary path', 'birincil yolda yavaş parıltı izi'),
+    ...(wantsChat ? [L(lang, 'staged handoff pulse between bubbles', 'balonlar arası aşamalı devir nabzı')] : []),
+    ...(pageArchitecture?.integrationsNeeded ? [L(lang, 'orbit line rotation (reduced-motion safe)', 'yörünge çizgisi dönüşü (reduced-motion güvenli)')] : []),
+    L(lang, 'hover lift on interactive cards', 'etkileşimli kartlarda hover yükselmesi'),
+  ]);
+
+  const svgAssetsRaw: VisualSignaturePlan['svgAssets'] = [
+    { name: L(lang, 'Path rail', 'Yol rayı'), role: 'background', description: L(lang, 'A thin staged rail connecting the motif steps.', 'Motif adımlarını bağlayan ince aşamalı bir ray.') },
+    ...(wantsChat ? [{ name: L(lang, 'Chat bubbles', 'Sohbet balonları'), role: 'hero/demo', description: L(lang, 'Shopper + assistant bubbles with a recommendation card.', 'Alışverişçi + asistan balonları ve bir öneri kartı.') }] : []),
+    ...((pageArchitecture?.integrationsNeeded || isCommerce) ? [{ name: L(lang, 'Integration nodes', 'Entegrasyon düğümleri'), role: 'integrations', description: L(lang, 'Abstract labelled nodes on an orbit — generic labels, no brand logos.', 'Bir yörüngede soyut etiketli düğümler — genel etiketler, marka logosu yok.') }] : []),
+    ...(pageArchitecture?.securityNeeded ? [{ name: L(lang, 'Trust glyphs', 'Güven glifleri'), role: 'security', description: L(lang, 'Shield / key / checklist glyphs — illustrative, not certifications.', 'Kalkan / anahtar / kontrol listesi glifleri — açıklayıcı, sertifika değil.') }] : []),
+    ...(isDev ? [{ name: L(lang, 'Code rain', 'Kod yağmuru'), role: 'hero', description: L(lang, 'Faint falling monospace glyph columns.', 'Soluk düşen tek aralıklı glif sütunları.') }] : []),
+  ];
+  const svgSeen = new Set<string>();
+  const svgAssets = svgAssetsRaw.filter((a) => (svgSeen.has(a.name) ? false : (svgSeen.add(a.name), true)));
+
+  const avoidVisuals = uniq([
+    L(lang, 'generic dark SaaS card grid as the only visual', 'tek görsel olarak genel koyu SaaS kart gridi'),
+    L(lang, 'stock-photo-style hero or blank placeholder boxes', 'stok-fotoğraf tarzı hero veya boş yer tutucu kutular'),
+    ...(!isLocalOrEditorial ? [] : [L(lang, 'forced dashboard/chat visuals on a service/portfolio concept', 'hizmet/portföy konseptinde zorlanmış panel/sohbet görselleri')]),
+    ...((!(demoIntent === 'dashboard-demo')) ? [L(lang, 'a dashboard mockup when no dashboard was requested', 'panel istenmediğinde bir panel mockup\'ı')] : []),
+    L(lang, 'real brand logos in the integration visual', 'entegrasyon görselinde gerçek marka logoları'),
+  ]);
+
+  const assetHonestyRules = uniq([
+    L(lang, 'All visuals are illustrative, front-end-only, sample/static — concept explanation, not real data.', 'Tüm görseller açıklayıcı, yalnızca ön-yüz, örnek/statik — gerçek veri değil, konsept açıklaması.'),
+    L(lang, 'No fake logos, customer names, testimonials, metrics or SOC2/ISO/certifications.', 'Sahte logo, müşteri adı, referans, metrik veya SOC2/ISO/sertifika yok.'),
+    L(lang, 'No claim of real AI/backend/catalog/policy lookup — any demo is a local sample.', 'Gerçek AI/backend/katalog/politika sorgusu iddiası yok — her demo yerel bir örnektir.'),
+    L(lang, 'Decorative SVG is aria-hidden; motion respects prefers-reduced-motion.', 'Dekoratif SVG aria-hidden\'dır; hareket prefers-reduced-motion\'a saygı gösterir.'),
+    // Inherit the Phase-5 art-direction visual constraints so both plans agree.
+    ...((artDirection?.visualAssetPlan?.constraints || []).slice(0, 2)),
+  ]);
+
+  const visualAssetWarnings: string[] = [];
+  if (isLocalOrEditorial && (heroVisualType === 'chat-flow' || heroVisualType === 'dashboard-glass')) {
+    visualAssetWarnings.push(L(lang, 'Service/portfolio concept should not use a dashboard/chat hero — using an editorial visual instead.', 'Hizmet/portföy konsepti panel/sohbet hero kullanmamalı — bunun yerine editoryal görsel kullanılıyor.'));
+  }
+  if (aiCommerce && !sectionVisuals.some((v) => v.visualType === 'trust-control-stack') && pageArchitecture?.securityNeeded) {
+    visualAssetWarnings.push(L(lang, 'AI/ecommerce build has no trust-control visual — add an honest Security & Store Trust section to host it.', 'AI/e-ticaret yapısında güven-kontrol görseli yok — barındırmak için dürüst bir Güvenlik ve Mağaza Güveni bölümü ekleyin.'));
+  }
+
+  return {
+    visualSignature,
+    primaryMotif,
+    heroVisualType,
+    sectionVisuals,
+    backgroundMotif,
+    motionHints,
+    svgAssets,
+    avoidVisuals,
+    assetHonestyRules,
+    visualAssetWarnings,
   };
 }
 

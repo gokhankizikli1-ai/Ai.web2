@@ -11,7 +11,7 @@ import { inferWebsiteBrief, fallbackSectionItems, checkQuality } from '@/lib/web
 import { deriveLayoutPlan, type WebBuildLayoutPlan } from '@/lib/webBuildLayoutPlan';
 import {
   runUpstreamAgents, runLayoutArchitect, runComponentEngineer, runReviewer, runQualityDirector, runFixer, WEB_BUILD_AGENTS_ENABLED,
-  derivePageArchitectureDecision,
+  derivePageArchitectureDecision, deriveVisualSignaturePlan,
   type WebBuildAgent, type WebBuildArtifacts, type WebBuildEnforcement,
 } from '@/lib/webBuildAgents';
 import { deriveAgentSectionArchitecture } from '@/lib/webBuildSectionArchitecture';
@@ -587,6 +587,30 @@ function assembleWebBuildPayload(
       artifacts = { ...(artifacts || {}), pageArchitecture: decision };
     } catch {
       /* non-blocking — keep the enforced sectionItems, no decision recorded */
+    }
+  }
+
+  // VISUAL SIGNATURE PLAN (Phase 9E-1) — after the page architecture is settled,
+  // derive a concept-specific CSS/SVG visual signature (hero motif + per-section
+  // visuals + honest motion hints) so the Preview renders a recognizable identity
+  // instead of generic dark SaaS cards. DATA ONLY: never calls an image/video API,
+  // never fabricates logos/metrics/proof; the preview consumes it with composed
+  // CSS/SVG modules and falls back to the existing generic visual module. Fully
+  // guarded + non-blocking; does not change section ids, files, or the layout plan.
+  if (WEB_BUILD_AGENTS_ENABLED) {
+    try {
+      const visualSignaturePlan = deriveVisualSignaturePlan(
+        artBrief,
+        sectionItems.map((s) => ({ id: s.id, name: s.name })),
+        artifacts?.research?.conceptAuthority,
+        artifacts?.pageArchitecture,
+        artifacts?.artDirection,
+        artifacts?.thinkingLedger,
+        effLang,
+      );
+      artifacts = { ...(artifacts || {}), visualSignaturePlan };
+    } catch {
+      /* non-blocking — the preview falls back to the generic visual module */
     }
   }
 

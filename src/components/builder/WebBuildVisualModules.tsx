@@ -484,6 +484,304 @@ function ContourTerrain() {
   );
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+ * SIGNATURE VISUALS (Phase 9E-1) — concept-specific, CSS/SVG/React-only visual
+ * modules the Visual Signature Plan can select so a build reads as art-directed
+ * instead of a stack of generic cards. HARD RULES for every module below:
+ *   • no external images, no image/video API, no network calls
+ *   • no real logos, no fake metrics, no fake customer names/testimonials
+ *   • decorative SVG is aria-hidden; motion is gated on prefers-reduced-motion
+ *   • all copy is illustrative/sample — never a real backend/catalog/policy claim
+ * They inherit the strategy palette via --acc/--acc2/--sf/--bd/--pr. ══════════ */
+
+/** Small trust glyphs (shield / key / checklist) — illustrative, not certifications. */
+const ShieldGlyph = () => (
+  <svg aria-hidden viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="var(--acc)" strokeWidth="1.4">
+    <path d="M8 1.6 13 3.4v4.2c0 3.2-2.2 5.6-5 6.8-2.8-1.2-5-3.6-5-6.8V3.4z" /><path d="M5.7 8 7.4 9.7 10.6 6.3" />
+  </svg>
+);
+const KeyGlyph = () => (
+  <svg aria-hidden viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="var(--acc)" strokeWidth="1.4">
+    <circle cx="5" cy="6" r="3" /><path d="M7.2 8.2 13 14M11 12l1.6-1.6M12.4 13.4 14 11.8" />
+  </svg>
+);
+const CheckGlyph = () => (
+  <svg aria-hidden viewBox="0 0 16 16" className="h-4 w-4" fill="none" stroke="var(--acc)" strokeWidth="1.4">
+    <rect x="2.2" y="2.2" width="11.6" height="11.6" rx="2.4" /><path d="M5.4 8.2 7.2 10l3.4-3.6" />
+  </svg>
+);
+
+/** A pulsing connection dot (motion-gated). */
+function PulseDot({ reduce, color = 'var(--acc)', delay = 0 }: { reduce: boolean; color?: string; delay?: number }) {
+  return reduce
+    ? <span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: color }} />
+    : <motion.span className="inline-block h-1.5 w-1.5 rounded-full" style={{ background: color }} animate={{ opacity: [0.35, 1, 0.35], scale: [0.85, 1.15, 0.85] }} transition={{ duration: 1.8, repeat: Infinity, ease: 'easeInOut', delay }} />;
+}
+
+/* ── ChatFlowRailVisual — shopper → assistant → recommendation → policy →
+ * handoff, as a legible staged rail. Uses the same honest storefront sample flow
+ * as ProductShowcase (front-end-only; no real AI/catalog/policy lookup). ── */
+function ChatFlowRailVisual({ labels, compact, lang }: { labels?: string[]; compact?: boolean; lang?: PLang }) {
+  const reduce = useReducedMotion();
+  const lg = lang || inferLang(labels);
+  const flow = STOREFRONT_SAMPLE_FLOW(lg).slice(0, compact ? 2 : 4);
+  const recTitle = ML(lg, 'Recommended for you', 'Sizin için önerilen');
+  const policyTitle = ML(lg, 'Policy answer', 'Politika yanıtı');
+  const handoff = ML(lg, 'Handoff to a human', 'İnsana devir');
+  return (
+    <Frame className="shadow-2xl shadow-black/40">
+      <div className="flex items-center gap-1.5 border-b border-[color:var(--bd)] px-3 py-2.5">
+        <span className="h-2.5 w-2.5 rounded-full bg-white/20" /><span className="h-2.5 w-2.5 rounded-full bg-white/20" /><span className="h-2.5 w-2.5 rounded-full bg-white/20" />
+        <span className="ml-2 text-[10px] uppercase tracking-wider text-white/45">{ML(lg, 'Storefront chat flow', 'Mağaza sohbet akışı')}</span>
+        <span className="ml-auto rounded-full border border-[color:var(--bd)] px-2 py-0.5 text-[9px] uppercase tracking-wider text-white/50">{ML(lg, 'Demo', 'Demo')}</span>
+      </div>
+      <div className="relative space-y-2.5 p-3.5">
+        <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-20" style={{ background: 'radial-gradient(120% 80% at 70% 0%, color-mix(in srgb, var(--acc) 14%, transparent), transparent 70%)' }} />
+        {flow.map((b, i) => {
+          const body = (
+            <div className={`flex items-end ${b.assistant ? 'justify-start' : 'justify-end'}`}>
+              {b.assistant && <span aria-hidden className="mr-1.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white" style={{ background: 'var(--acc)' }}>◆</span>}
+              <div className={`max-w-[82%] px-3 py-2 text-[12px] leading-snug ${b.assistant ? 'rounded-2xl rounded-bl-sm text-slate-100' : 'rounded-2xl rounded-br-sm text-white'}`}
+                style={b.assistant ? { background: 'rgba(255,255,255,0.05)', border: '1px solid var(--bd)' } : { background: 'var(--acc)' }}>{b.text}</div>
+            </div>
+          );
+          return reduce ? <div key={i} className="relative z-10">{body}</div>
+            : <motion.div key={i} className="relative z-10" initial={{ opacity: 0, y: 8 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.4, delay: i * 0.1, ease: [0.22, 1, 0.36, 1] }}>{body}</motion.div>;
+        })}
+        {!compact && (
+          <div className="relative z-10 grid grid-cols-2 gap-2.5 pt-1">
+            {/* Product recommendation card — abstract media + title/price BARS (no fake numbers). */}
+            <div className="rounded-xl border border-[color:var(--bd)] bg-white/[0.02] p-2.5">
+              <div className="mb-2 flex items-center gap-1.5 text-[11px] font-medium text-slate-200"><span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--acc)' }} /><span className="truncate">{recTitle}</span></div>
+              <div className="flex gap-2">
+                <span aria-hidden className="h-10 w-10 shrink-0 rounded-lg" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 40%, transparent), color-mix(in srgb, var(--acc2) 22%, transparent))' }} />
+                <div className="min-w-0 flex-1 space-y-1.5 pt-1"><span className="block h-1.5 w-3/4 rounded-full bg-white/12" /><span className="block h-1.5 w-1/3 rounded-full" style={{ background: 'var(--acc)' }} /></div>
+              </div>
+            </div>
+            {/* Policy answer card — sourced from a sample policy, honest bars. */}
+            <div className="rounded-xl border border-[color:var(--bd)] bg-white/[0.02] p-2.5">
+              <div className="mb-2 flex items-center gap-1.5 text-[11px] font-medium text-slate-200"><KbGlyph /><span className="truncate">{policyTitle}</span></div>
+              <div className="space-y-1.5"><span className="block h-1.5 w-full rounded-full bg-white/10" /><span className="block h-1.5 w-2/3 rounded-full bg-white/10" /></div>
+            </div>
+          </div>
+        )}
+        {/* Handoff chip */}
+        <div className="relative z-10 flex items-center gap-1.5">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--bd)] bg-white/[0.03] px-2.5 py-1 text-[10px] text-slate-300"><HandoffGlyph /><span className="truncate">{handoff}</span><PulseDot reduce={reduce} color="var(--acc2)" /></span>
+        </div>
+      </div>
+    </Frame>
+  );
+}
+
+/* ── ProductCardRailVisual — a rail of recommendation cards (abstract media +
+ * title/price BARS, never fabricated numbers/logos). For catalog/marketplace. ── */
+function ProductCardRailVisual({ labels, compact, lang }: { labels?: string[]; compact?: boolean; lang?: PLang }) {
+  const reduce = useReducedMotion();
+  const lg = lang || inferLang(labels);
+  const names = take(labels, compact ? 3 : 5, [
+    ML(lg, 'Featured', 'Öne çıkan'), ML(lg, 'New arrival', 'Yeni gelen'), ML(lg, 'Best match', 'En iyi eşleşme'),
+    ML(lg, 'On sale', 'İndirimde'), ML(lg, 'Editor’s pick', 'Editör seçimi'),
+  ]);
+  return (
+    <Frame className="p-3.5">
+      <div className="mb-2.5 flex items-center gap-2 text-[11px] uppercase tracking-wider text-white/45">
+        <span>{ML(lg, 'Product rail', 'Ürün rayı')}</span>
+        <span aria-hidden className="h-px flex-1" style={{ background: 'var(--bd)' }} />
+      </div>
+      <div className="flex gap-2.5 overflow-hidden">
+        {names.map((n, i) => {
+          const card = (
+            <div className="w-1/3 shrink-0 rounded-xl border border-[color:var(--bd)] bg-white/[0.02] p-2" style={i === 0 ? { borderColor: 'color-mix(in srgb, var(--acc) 45%, transparent)' } : undefined}>
+              <span aria-hidden className="mb-2 block h-16 w-full rounded-lg" style={{ background: i === 0 ? 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 42%, transparent), color-mix(in srgb, var(--acc2) 22%, transparent))' : 'rgba(255,255,255,0.04)' }} />
+              <p className="truncate text-[11px] font-medium text-slate-200">{n}</p>
+              <div className="mt-1.5 flex items-center gap-1.5"><span className="h-1.5 w-8 rounded-full" style={{ background: 'var(--acc)' }} /><span className="h-1.5 w-5 rounded-full bg-white/12" /></div>
+            </div>
+          );
+          return reduce ? <div key={i} className="w-1/3 shrink-0">{card}</div>
+            : <motion.div key={i} className="w-1/3 shrink-0" initial={{ opacity: 0, y: 10 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.4, delay: i * 0.08, ease: [0.22, 1, 0.36, 1] }}>{card}</motion.div>;
+        })}
+      </div>
+    </Frame>
+  );
+}
+
+/* ── IntegrationOrbitVisual — a central hub with abstract labelled nodes on an
+ * orbit (generic labels like Store / Catalog / Helpdesk / Email — NEVER real
+ * brand logos). Orbit ring + pulsing connection dots. ── */
+function IntegrationOrbitVisual({ labels, compact, lang }: { labels?: string[]; compact?: boolean; lang?: PLang }) {
+  const reduce = useReducedMotion();
+  const lg = lang || inferLang(labels);
+  const nodes = take(labels, compact ? 4 : 5, [
+    ML(lg, 'Store', 'Mağaza'), ML(lg, 'Catalog', 'Katalog'), ML(lg, 'Helpdesk', 'Yardım Masası'),
+    ML(lg, 'Email', 'E-posta'), ML(lg, 'Payments', 'Ödemeler'),
+  ]).slice(0, compact ? 4 : 5);
+  const R = 78; const cx = 130; const cy = 108;
+  const ring = (
+    <svg aria-hidden viewBox="0 0 260 216" className="h-full w-full" style={{ opacity: 0.9 }}>
+      <circle cx={cx} cy={cy} r={R} fill="none" stroke="var(--bd)" strokeWidth="1" strokeDasharray="3 5" />
+      <circle cx={cx} cy={cy} r={R * 0.62} fill="none" stroke="var(--bd)" strokeWidth="1" />
+      {nodes.map((_, i) => {
+        const a = (i / nodes.length) * Math.PI * 2 - Math.PI / 2;
+        const x = cx + Math.cos(a) * R; const y = cy + Math.sin(a) * R;
+        return <line key={i} x1={cx} y1={cy} x2={x} y2={y} stroke="var(--bd)" strokeWidth="1" />;
+      })}
+    </svg>
+  );
+  return (
+    <Frame className="p-0">
+      <div className="relative aspect-[6/5] w-full">
+        {reduce ? <div className="absolute inset-0">{ring}</div>
+          : <motion.div className="absolute inset-0" animate={{ rotate: 360 }} transition={{ duration: 60, repeat: Infinity, ease: 'linear' }}>{ring}</motion.div>}
+        {/* Central hub */}
+        <div className="absolute left-1/2 top-1/2 flex h-12 w-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-2xl border text-white" style={{ borderColor: 'color-mix(in srgb, var(--acc) 50%, transparent)', background: 'color-mix(in srgb, var(--acc) 16%, transparent)' }}>
+          <span aria-hidden className="text-lg">◆</span>
+        </div>
+        {/* Nodes (counter-rotate not needed; labels stay upright since only ring rotates) */}
+        {nodes.map((n, i) => {
+          const a = (i / nodes.length) * Math.PI * 2 - Math.PI / 2;
+          const leftPct = 50 + (Math.cos(a) * R / 260) * 100;
+          const topPct = 50 + (Math.sin(a) * R / 216) * 100;
+          return (
+            <div key={i} className="absolute flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 rounded-full border border-[color:var(--bd)] bg-[var(--sf)] px-2 py-1 text-[10px] text-slate-200 shadow-lg shadow-black/30" style={{ left: `${leftPct}%`, top: `${topPct}%` }}>
+              <PulseDot reduce={reduce} color={i % 2 ? 'var(--acc2)' : 'var(--acc)'} delay={i * 0.25} />
+              <span className="truncate">{n}</span>
+            </div>
+          );
+        })}
+      </div>
+    </Frame>
+  );
+}
+
+/* ── TrustControlStackVisual — honest trust controls (data handling / access /
+ * content safety) as a control stack. Illustrative only — NO SOC2/ISO/fake
+ * compliance badges. ── */
+function TrustControlStackVisual({ labels, compact, lang }: { labels?: string[]; compact?: boolean; lang?: PLang }) {
+  const reduce = useReducedMotion();
+  const lg = lang || inferLang(labels);
+  const rows: Array<{ glyph: ReactElement; title: string; note: string }> = [
+    { glyph: <ShieldGlyph />, title: ML(lg, 'Data handling', 'Veri işleme'), note: ML(lg, 'Sample data stays on the front-end demo.', 'Örnek veri ön-yüz demosunda kalır.') },
+    { glyph: <KeyGlyph />, title: ML(lg, 'Access control', 'Erişim kontrolü'), note: ML(lg, 'Role-based access is illustrated, not enforced.', 'Rol tabanlı erişim gösterilir, uygulanmaz.') },
+    { glyph: <CheckGlyph />, title: ML(lg, 'Content safety', 'İçerik güvenliği'), note: ML(lg, 'Answers are grounded in the sample policy.', 'Yanıtlar örnek politikaya dayandırılır.') },
+  ].slice(0, compact ? 2 : 3);
+  const custom = (labels || []).filter(Boolean);
+  return (
+    <Frame className="p-3.5">
+      <div className="mb-2.5 flex items-center gap-2 text-[11px] uppercase tracking-wider text-white/45">
+        <span>{ML(lg, 'Trust controls', 'Güven kontrolleri')}</span>
+        <span aria-hidden className="h-px flex-1" style={{ background: 'var(--bd)' }} />
+      </div>
+      <div className="space-y-2">
+        {rows.map((r, i) => {
+          const row = (
+            <div className="flex items-start gap-2.5 rounded-xl border border-[color:var(--bd)] bg-white/[0.02] p-2.5">
+              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ background: 'color-mix(in srgb, var(--acc) 12%, transparent)' }}>{r.glyph}</span>
+              <div className="min-w-0">
+                <p className="flex items-center gap-1.5 text-[12px] font-medium text-slate-100">{custom[i] || r.title}<PulseDot reduce={reduce} delay={i * 0.3} /></p>
+                <p className="mt-0.5 text-[10px] leading-snug text-slate-500">{r.note}</p>
+              </div>
+            </div>
+          );
+          return reduce ? <div key={i}>{row}</div>
+            : <motion.div key={i} initial={{ opacity: 0, x: -8 }} whileInView={{ opacity: 1, x: 0 }} viewport={{ once: true }} transition={{ duration: 0.4, delay: i * 0.1, ease: [0.22, 1, 0.36, 1] }}>{row}</motion.div>;
+        })}
+      </div>
+      <p className="mt-2.5 text-[10px] leading-snug text-slate-500">{ML(lg, 'Illustrative front-end controls — not a compliance certification.', 'Açıklayıcı ön-yüz kontrolleri — bir uyumluluk sertifikası değil.')}</p>
+    </Frame>
+  );
+}
+
+/* ── CodeRainVisual — faint falling monospace columns behind a small terminal
+ * panel. For developer/tools/code concepts. ── */
+function CodeRainVisual({ labels, compact, lang }: { labels?: string[]; compact?: boolean; lang?: PLang }) {
+  const reduce = useReducedMotion();
+  const lg = lang || inferLang(labels);
+  const cmds = take(labels, compact ? 2 : 4, ['build', 'test', 'deploy', 'run']).map((s) => s.toLowerCase().replace(/[^a-z0-9\-_. ]/gi, '').trim() || 'run');
+  const cols = compact ? 6 : 10;
+  return (
+    <Frame className="p-0">
+      <div className="relative aspect-[16/10] w-full overflow-hidden">
+        <svg aria-hidden viewBox="0 0 320 200" className="absolute inset-0 h-full w-full" style={{ opacity: 0.22 }}>
+          {Array.from({ length: cols }).map((_, c) => {
+            const x = 12 + c * (296 / cols);
+            const glyphs = Array.from({ length: 8 }).map((_, r) => (
+              <text key={r} x={x} y={18 + r * 22} fontFamily="monospace" fontSize="12" fill={c % 3 === 0 ? 'var(--acc)' : 'rgba(255,255,255,0.5)'}>{['0', '1', '{', '}', '<', '/', '>', ';'][(c + r) % 8]}</text>
+            ));
+            return reduce ? <g key={c}>{glyphs}</g>
+              : <motion.g key={c} animate={{ y: [-22, 22] }} transition={{ duration: 3 + (c % 4), repeat: Infinity, ease: 'linear', delay: c * 0.2 }}>{glyphs}</motion.g>;
+          })}
+        </svg>
+        {/* Terminal panel */}
+        <div className="absolute inset-x-4 bottom-4 rounded-xl border border-[color:var(--bd)] bg-black/50 p-2.5 backdrop-blur-sm">
+          <div className="mb-1.5 flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-white/20" /><span className="h-2 w-2 rounded-full bg-white/20" /><span className="h-2 w-2 rounded-full bg-white/20" /></div>
+          {cmds.map((c, i) => (
+            <p key={i} className="font-mono text-[11px] leading-relaxed"><span style={{ color: 'var(--acc)' }}>$</span> <span className="text-slate-300">{c}</span>{i === cmds.length - 1 && !reduce && <motion.span className="ml-0.5 inline-block h-3 w-1.5 align-middle" style={{ background: 'var(--acc)' }} animate={{ opacity: [1, 0, 1] }} transition={{ duration: 1, repeat: Infinity }} />}</p>
+          ))}
+        </div>
+      </div>
+    </Frame>
+  );
+}
+
+/* ── TimelineRailVisual — a staged rail of steps (concept flow / shopper flow /
+ * support handoff timeline). Steps from real labels, else the motif. ── */
+function TimelineRailVisual({ labels, compact, lang }: { labels?: string[]; compact?: boolean; lang?: PLang }) {
+  const reduce = useReducedMotion();
+  const lg = lang || inferLang(labels);
+  const steps = take(labels, compact ? 3 : 4, [
+    ML(lg, 'Ask', 'Sor'), ML(lg, 'Recommend', 'Öner'), ML(lg, 'Answer', 'Yanıtla'), ML(lg, 'Handoff', 'Devret'),
+  ]).slice(0, compact ? 3 : 4);
+  return (
+    <Frame className="p-4">
+      <div className="relative">
+        <span aria-hidden className="absolute left-3 top-3 h-[calc(100%-1.5rem)] w-px" style={{ background: 'var(--bd)' }} />
+        {!reduce && <motion.span aria-hidden className="absolute left-3 top-3 w-px" style={{ background: 'var(--acc)' }} initial={{ height: 0 }} whileInView={{ height: 'calc(100% - 1.5rem)' }} viewport={{ once: true }} transition={{ duration: 1.1, ease: 'easeInOut' }} />}
+        <ol className="space-y-3.5">
+          {steps.map((s, i) => (
+            <li key={i} className="relative flex items-center gap-3 pl-8">
+              <span className="absolute left-0 flex h-6 w-6 items-center justify-center rounded-full border text-[10px] font-semibold" style={i === 0 ? { borderColor: 'var(--acc)', background: 'color-mix(in srgb, var(--acc) 18%, transparent)', color: '#fff' } : { borderColor: 'var(--bd)', color: 'rgba(255,255,255,0.6)' }}>{i + 1}</span>
+              <span className="truncate text-[13px] text-slate-200">{s}</span>
+              {i === 0 && <PulseDot reduce={reduce} />}
+            </li>
+          ))}
+        </ol>
+      </div>
+    </Frame>
+  );
+}
+
+/** Dispatch a Visual Signature Plan visual type → a signature module. Returns
+ *  null for an unknown/opt-out type so callers fall back to the generic module. */
+export type SignatureVisualType = string;
+const SIGNATURE_VISUALS: Record<string, (p: { labels?: string[]; compact?: boolean; lang?: PLang }) => ReactElement> = {
+  'chat-flow': (p) => <ChatFlowRailVisual {...p} />,
+  'chat-flow-rail': (p) => <ChatFlowRailVisual {...p} />,
+  'product-flow': (p) => <ProductCardRailVisual {...p} />,
+  'product-card-rail': (p) => <ProductCardRailVisual {...p} />,
+  'integration-orbit': (p) => <IntegrationOrbitVisual {...p} />,
+  'integration-constellation': (p) => <IntegrationOrbitVisual {...p} />,
+  'trust-control-stack': (p) => <TrustControlStackVisual {...p} />,
+  'code-rain': (p) => <CodeRainVisual {...p} />,
+  'timeline-rail': (p) => <TimelineRailVisual {...p} />,
+  'handoff-timeline': (p) => <TimelineRailVisual {...p} />,
+};
+
+/** True when a signature module exists for this visual type. */
+export function hasSignatureVisual(visualType?: string): boolean {
+  return !!visualType && !!SIGNATURE_VISUALS[visualType];
+}
+
+/** Render a signature visual by type, or null when none matches (caller falls
+ *  back to the generic VisualModule). Isolated: never throws on a bad type. */
+export function SignatureVisual({ visualType, labels, className = '', compact = false, lang }: {
+  visualType?: string; labels?: string[]; className?: string; compact?: boolean; lang?: PLang;
+}) {
+  const Render = visualType ? SIGNATURE_VISUALS[visualType] : undefined;
+  if (!Render) return null;
+  return <div className={className}>{Render({ labels, compact, lang })}</div>;
+}
+
 const MODULES: Record<VisualModule, (p: { labels?: string[]; compact?: boolean; lang?: PLang }) => ReactElement> = {
   'data-dashboard': (p) => <DataDashboard {...p} />,
   'membership-pass': (p) => <MembershipPass labels={p.labels} />,
