@@ -1,6 +1,6 @@
 import { Component, Fragment, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode, type ErrorInfo, type CSSProperties, type MouseEvent } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
-import { designTokensForBrief } from '@/lib/webBuildBrief';
+import { deriveDesignSystemFromStrategy } from '@/lib/webBuildDesignSystem';
 import {
   deriveLayoutPlan, visualSystemTokens,
   type WebBuildLayoutPlan, type HeroComposition, type SectionVariant,
@@ -2133,7 +2133,15 @@ export default function WebBuildPreviewDocument({
       }),
     [rawSectionItems],
   );
-  const ds = designTokensForBrief(brief);
+  // Phase 7C: consume the SAME strategy-derived design system the file synthesizer
+  // uses (webBuildFiles → deriveDesignSystemFromStrategy), NOT the raw
+  // designTokensForBrief engine. This is the fix for the Preview bypassing Phase 7B:
+  // deriveDesignSystemFromStrategy applies the selected `paletteFamily` (bg / accent /
+  // accent2 / serif heading) unless the model pinned an explicit palette (artAccent/
+  // artBg still win). WebBuildDesignSystem extends DesignTokens, so every existing
+  // ds.bg / ds.accent / ds.accent2 / ds.headingFont / ds.tracking / ds.radius read
+  // below is unchanged — the values now simply reflect the chosen palette family.
+  const ds = deriveDesignSystemFromStrategy(brief);
   // The Layout Plan — the SAME pure derivation the file synthesizer uses — drives
   // hero composition, per-section variant, visual module, rhythm AND the visual
   // system (backdrop construction, surface treatment, panel shape, accent mode).
@@ -2467,7 +2475,7 @@ export default function WebBuildPreviewDocument({
   if (!renderItems.length) {
     const names = sectionItems.map((s) => s?.name).filter(Boolean).slice(0, 4) as string[];
     return (
-      <div ref={rootRef} id="top" className="text-slate-200 antialiased" style={rootStyle}>
+      <div ref={rootRef} id="top" data-palette-family={ds.paletteFamily} className="text-slate-200 antialiased" style={rootStyle}>
         <div className="mx-auto max-w-lg px-6 py-20 text-center">
           {brief.type && <p className="text-[11px] font-medium uppercase tracking-[0.25em] text-white/45">{brief.type}</p>}
           <p className="mt-3 text-lg font-semibold text-white" style={{ fontFamily: 'var(--hf)' }}>{names[0] || brief.type || 'Preview'}</p>
@@ -2537,7 +2545,7 @@ export default function WebBuildPreviewDocument({
   const convCta = (convItem?.cta || '').trim();
 
   return (
-    <div ref={rootRef} id="top" onClick={handlePreviewLinkClick} className="text-slate-200 antialiased" style={{ ...rootStyle, scrollBehavior: 'smooth' }}>
+    <div ref={rootRef} id="top" data-palette-family={ds.paletteFamily} onClick={handlePreviewLinkClick} className="text-slate-200 antialiased" style={{ ...rootStyle, scrollBehavior: 'smooth' }}>
       {previewNav.primaryNavItems.length > 0 && (
         <header className="sticky top-0 z-50 border-b border-white/[0.06] bg-black/30 backdrop-blur">
           {/* Phase 6C nav behaviour; Phase 6E polish — active item gets a subtle
