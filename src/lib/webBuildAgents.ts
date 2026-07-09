@@ -854,7 +854,9 @@ export type QualityIssueCategory =
   | 'same-template-risk' | 'accent-overuse' | 'dashboard-overuse' | 'palette-mismatch'
   | 'visual-monotony' | 'weak-visual-exploration'
   /* ── Phase 9A: model-native design plan quality ── */
-  | 'weak-design-plan';
+  | 'weak-design-plan'
+  /* ── Phase 9C-1: public-facing copy/label quality ── */
+  | 'public-copy-smell';
 
 export interface QualityIssue {
   id: string;
@@ -5399,7 +5401,7 @@ function cleanPublicLabel(raw?: string, maxLen = MAX_LABEL_LEN): string {
 export interface QualityDirectorInput {
   prompt: string;
   brief: WebBuildBrief;
-  sectionItems: Array<{ id: string; name: string; cta?: string; sub?: string; bullets?: string[] }>;
+  sectionItems: Array<{ id: string; name: string; headline?: string; cta?: string; sub?: string; bullets?: string[] }>;
   strategy?: StrategyAgentArtifact;
   artDirection?: ArtDirectionArtifact;
   reviewer?: ReviewerAgentArtifact;
@@ -5421,6 +5423,60 @@ function failedOpenQualityDirector(lang: Lang): QualityDirectorArtifact {
     summary: L(lang, 'Quality Director failed open; build continued without blocking Preview or All Files.',
       'Kalite Direktörü güvenli şekilde durdu; yapı Önizleme veya Tüm Dosyaları engellemeden devam etti.'),
   };
+}
+
+/* ── Public-copy quality guard (Phase 9C-1) — shared by the Quality Director
+ *  (detect) and the Fixer (repair). Deterministic, cheap, honest. Internal
+ *  planning/category language and generic SaaS filler must never surface as
+ *  visible website copy; unsupported proof language is flagged, never invented. */
+
+/** Internal category / planning language that must NEVER appear as public copy. */
+const INTERNAL_COPY_RE = /\bai\s*product\s*\/\s*saas\b|\bai\s*tool\s*\/\s*productivity\b|\bproduct\s*proof\b|\bdemo\s*\/\s*screens?\b|\bmetrics?\s+and\s+security\b|\bconcept\s*authority\b|\bvisual\s*direction\b|\bplanning\s*contract\b|\bwebsite\s*experience\s*model\b|\bdesign\s*thinking\s*plan\b/i;
+/** Generic SaaS hero formulas. */
+const HERO_FORMULA_RE = /\btransform\s+your\b.*\bwith\b.*\bai\b|\brevolutioni[sz]e\s+your\b|\bunlock\s+the\s+power\s+of\b|\ball[-\s]?in[-\s]?one\s+solution\b|\bnext[-\s]?generation\s+platform\b/i;
+/** Unsupported / fake proof language (never invented; flagged only). */
+const FAKE_PROOF_RE = /\btrusted\s+by\s+(thousands|millions|\d)|\bsoc\s?2\b|\biso\s?\d{3,}\b|\b\d[\d.,]*\+?\s*(customers|clients|users|companies|stores|brands)\b|\b\d+\s?%\s*(uptime|satisfaction)\b|\baward[-\s]?winning\b|\bindustry[-\s]?leading\b/i;
+/** Generic public labels used as a WHOLE section name / CTA (lowercased). */
+const GENERIC_PUBLIC_LABELS = new Set(['discovery', 'plan', 'delivery', 'support', 'how it works', 'features', 'benefits', 'overview', 'product demo', 'get started', 'learn more', 'explore features', 'experience the chatbot']);
+
+export type PublicCopySmellKind = 'internal-category' | 'generic-label' | 'hero-formula' | 'fake-proof';
+export interface PublicCopySmell { sectionId?: string; field: string; text: string; kind: PublicCopySmellKind }
+
+/** Normalize a display string for whole-label matching. */
+const normLabel = (s?: string): string => (s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+
+/**
+ * Detect public-facing copy smells across section DISPLAY fields (name / headline /
+ * sub / cta / bullets). Pure + cheap; used by the Quality Director to flag and by
+ * the Fixer to know what to repair. Never mutates, never fabricates.
+ */
+export function detectPublicCopySmells(
+  items: Array<{ id?: string; name?: string; headline?: string; sub?: string; cta?: string; bullets?: string[] }>,
+): PublicCopySmell[] {
+  const out: PublicCopySmell[] = [];
+  const push = (sectionId: string | undefined, field: string, text: string, kind: PublicCopySmellKind) => {
+    const t = (text || '').trim();
+    if (t) out.push({ sectionId, field, text: t, kind });
+  };
+  for (const s of items || []) {
+    const fields: Array<[string, string | undefined]> = [['name', s.name], ['headline', s.headline], ['sub', s.sub], ['cta', s.cta]];
+    for (const [field, val] of fields) {
+      const v = (val || '').trim();
+      if (!v) continue;
+      if (INTERNAL_COPY_RE.test(v)) push(s.id, field, v, 'internal-category');
+      else if ((field === 'name' || field === 'cta') && GENERIC_PUBLIC_LABELS.has(normLabel(v))) push(s.id, field, v, 'generic-label');
+      if ((field === 'name' || field === 'headline' || field === 'sub') && HERO_FORMULA_RE.test(v)) push(s.id, field, v, 'hero-formula');
+      if (FAKE_PROOF_RE.test(v)) push(s.id, field, v, 'fake-proof');
+    }
+    for (const b of s.bullets || []) {
+      const v = (b || '').trim();
+      if (!v) continue;
+      if (INTERNAL_COPY_RE.test(v)) push(s.id, 'bullet', v, 'internal-category');
+      else if (GENERIC_PUBLIC_LABELS.has(normLabel(v))) push(s.id, 'bullet', v, 'generic-label');
+      if (FAKE_PROOF_RE.test(v)) push(s.id, 'bullet', v, 'fake-proof');
+    }
+  }
+  return out;
 }
 
 /**
@@ -5511,6 +5567,25 @@ export function deriveQualityDirector(input: QualityDirectorInput): QualityDirec
     }
   }
 
+  /* 4c — Public-copy smells (Phase 9C-1): internal category/planning language and
+   *      generic SaaS filler must NOT surface as visible website copy. Advisory —
+   *      the Fixer applies the safe display-only repairs. */
+  const copySmells = detectPublicCopySmells(input.sectionItems || []);
+  if (copySmells.length) {
+    const conceptSuggest = isAiSaas
+      ? 'Chat Experience / Answer Routing / Store Integrations / Support Handoff / Knowledge Base / Security Controls; CTAs: Try the Demo / See Chat Flow / Book a Demo / Contact Sales'
+      : (ledger?.preferredSectionLabels || []).slice(0, 4).join(' / ') || 'concept-specific public labels';
+    const byKind = (k: PublicCopySmellKind) => copySmells.filter((c) => c.kind === k);
+    const internal = byKind('internal-category');
+    const generic = byKind('generic-label');
+    const formula = byKind('hero-formula');
+    const fake = byKind('fake-proof');
+    if (internal.length) add('warning', 'public-copy-smell', `Internal/planning language shown as public copy: ${uniq(internal.map((c) => `"${c.text}"`)).slice(0, 3).join(', ')}.`, `Replace with concept-specific public labels (${conceptSuggest}).`, internal[0].sectionId || 'sectionItems');
+    if (generic.length) add('warning', 'public-copy-smell', `Generic SaaS labels used as public copy: ${uniq(generic.map((c) => c.text)).slice(0, 4).join(', ')}.`, `Rename to concept-specific labels (${conceptSuggest}).`, generic[0].sectionId || 'sectionItems');
+    if (formula.length) add('warning', 'public-copy-smell', `Hero reads as a generic SaaS formula: "${formula[0].text}".`, 'Rewrite the hero as specific, natural copy about what the product does for the visitor (no "transform/revolutionize/unlock the power of").', formula[0].sectionId || 'hero');
+    if (fake.length) add('warning', 'honesty-risk', `Unsupported proof language in public copy: "${fake[0].text}".`, 'Remove fabricated metrics/logos/testimonials/compliance; keep honest structural proof only.', fake[0].sectionId || 'sectionItems');
+  }
+
   /* 5 — Honesty: no fabricated proof/metrics. */
   const fakeFinding = input.reviewer?.findings?.find((f) => f.category === 'fake-data');
   if (fakeFinding) add(fakeFinding.severity, 'honesty-risk', `Reviewer flagged possible fabricated proof: ${fakeFinding.evidence}`, 'Remove unsupported ratings/prices/compliance/metrics; keep honest structural labels only.', 'files');
@@ -5590,7 +5665,7 @@ export function deriveQualityDirector(input: QualityDirectorInput): QualityDirec
   const dim = (base: number, penaltyEach: number, ...cats: QualityIssueCategory[]) =>
     Math.max(0, Math.min(100, base - penaltyEach * cats.reduce((n, c) => n + catCount(c), 0)));
   const dimensions: QualityDimensions = {
-    copyClarity: dim(100, 14, 'raw-label', 'generic-copy'),
+    copyClarity: dim(100, 14, 'raw-label', 'generic-copy', 'public-copy-smell'),
     ctaConsistency: dim(100, 18, 'cta-inconsistency'),
     flowCoherence: dim(100, 16, 'flow-confusion', 'demo-unclear'),
     visualPremiumFit: dim(95, 12, 'visual-density', 'same-template-risk', 'accent-overuse', 'dashboard-overuse', 'palette-mismatch', 'visual-monotony', 'weak-visual-exploration'),
@@ -5617,6 +5692,8 @@ export function deriveQualityDirector(input: QualityDirectorInput): QualityDirec
       'Ham/model-içi bölüm etiketlerini kısa, insan-okur etiketlere çevir (parantezleri sil, desteklenmeyen "metrik" ifadesini kaldır).') : '',
     (catCount('cta-inconsistency')) ? L(lang, 'Normalize CTAs to one clear primary + supporting secondary.', 'CTA\'ları tek net birincil + destekleyici ikincil olacak şekilde normalize et.') : '',
     (catCount('flow-confusion') || catCount('demo-unclear')) ? L(lang, 'Clarify the landing → (lead gate) → demo flow labels.', 'İniş → (kayıt) → demo akış etiketlerini netleştir.') : '',
+    (catCount('public-copy-smell')) ? L(lang, 'Replace internal/planning language and generic SaaS labels with concept-specific public copy (section names, hero headline, CTAs) — keep it honest (no fabricated metrics/logos/testimonials/compliance).',
+      'İç/planlama dilini ve genel SaaS etiketlerini konsepte özgü herkese açık metinle değiştir (bölüm adları, hero başlığı, CTA\'lar) — dürüst tut (uydurma metrik/logo/referans/uyumluluk yok).') : '',
     (catCount('same-template-risk') || catCount('accent-overuse') || catCount('dashboard-overuse') || catCount('palette-mismatch')) ? L(lang,
       'Switch to a more differentiated visual direction: vary the palette family, demote gold/loud accent, prefer a lighter or concept-fitting background, and make the hero/mockup concept-specific (not a chart dashboard).',
       'Daha farklılaşmış bir görsel yöne geç: palet ailesini değiştir, altın/gürültülü vurguyu geri çek, daha açık veya konsepte uygun bir zemin tercih et ve hero/mockup\'ı konsepte özgü yap (grafik paneli değil).') : '',
@@ -5704,7 +5781,7 @@ export interface FixerResult {
 }
 
 /** The safe repair categories this v1 Fixer is allowed to perform. */
-const FIXER_SAFE_SCOPE = ['fake-data', 'placeholder-cleanup', 'cta-anchor', 'concept-drift', 'visual-asset-plan', 'copy-label', 'cta-consistency', 'flow-label', 'concept-label', 'visual-direction', 'palette-family', 'accent-strategy', 'anti-template-copy'];
+const FIXER_SAFE_SCOPE = ['fake-data', 'placeholder-cleanup', 'cta-anchor', 'concept-drift', 'visual-asset-plan', 'copy-label', 'cta-consistency', 'flow-label', 'concept-label', 'public-copy', 'visual-direction', 'palette-family', 'accent-strategy', 'anti-template-copy'];
 
 /** Intent → clean CTA label (Phase 7A) — mirrors the Preview's normalizeCtaLabel. */
 function ctaFromIntent(intent: string | undefined, lang: Lang): string | undefined {
@@ -6106,6 +6183,88 @@ export function deriveFixer(input: FixerInput): { artifact: FixerAgentArtifact; 
         L(lang, 'Replaced a generic service-agency filler label with a concept-specific label (display only; no invented content).',
           'Genel ajans-hizmet dolgu etiketini konsepte özgü bir etiketle değiştirdi (yalnızca görünüm; uydurma içerik yok).'));
       s.name = label;
+    }
+  }
+
+  // 5c — Public-copy quality repair (Phase 9C-1). Internal category/planning
+  //      language and generic SaaS filler must NEVER surface as visible copy.
+  //      Repairs DISPLAY fields only (name/headline/sub/cta/bullets), honestly (no
+  //      invented metrics/logos/claims). Concept-specific maps apply for AI-chatbot
+  //      /ecommerce; a universal internal-category cleanup applies to any concept.
+  const pcConcept = (ledger?.primaryConcept || authority?.primaryConcept || '').toLowerCase();
+  const pcVertical = `${ledger?.targetVertical || authority?.targetVertical || authority?.audienceVertical || ''} ${promptLc}`.toLowerCase();
+  const pcIsAi = pcConcept === 'ai' || pcConcept === 'saas' || /\bai\b|chatbot|chat\s*bot|assistant|agentic|\bllm\b|sohbet|asistan/.test(promptLc);
+  const pcIsCommerce = /ecommerce|e-?commerce|commerce|storefront|\bstore\b|\bshop\b|retail|marketplace|mağaza|e-?ticaret/.test(pcVertical);
+  const aiCommerce = pcIsAi && pcIsCommerce;
+  const nameMap: Record<string, string> = aiCommerce ? {
+    'ai product / saas': L(lang, 'AI Shopping Assistant', 'AI Alışveriş Asistanı'),
+    'ai tool / productivity': L(lang, 'Storefront Chat Automation', 'Mağaza Sohbet Otomasyonu'),
+    'product proof (demo/screens), metrics and security': L(lang, 'Demo, Integrations & Trust', 'Demo, Entegrasyon ve Güven'),
+    'product demo': L(lang, 'Chat Experience', 'Sohbet Deneyimi'),
+    'how it works': L(lang, 'How the Assistant Handles a Shopper', 'Asistan Bir Müşteriyi Nasıl Karşılar'),
+    'discovery': L(lang, 'Understands the Question', 'Soruyu Anlar'),
+    'plan': L(lang, 'Finds the Right Product', 'Doğru Ürünü Bulur'),
+    'delivery': L(lang, 'Guides the Next Step', 'Sonraki Adıma Yönlendirir'),
+    'support': L(lang, 'Hands Off to Your Team', 'Ekibinize Devreder'),
+    'features': L(lang, 'What the Assistant Can Do', 'Asistan Neler Yapabilir'),
+    'integrations': L(lang, 'Store Integrations', 'Mağaza Entegrasyonları'),
+    'security': L(lang, 'Security Controls', 'Güvenlik Kontrolleri'),
+    'contact': L(lang, 'Contact Sales', 'Satışla İletişim'),
+  } : {};
+  const ctaMap: Record<string, string> = aiCommerce ? {
+    'experience the chatbot': L(lang, 'Try the Demo', 'Demoyu Dene'),
+    'get started': L(lang, 'Try the Demo', 'Demoyu Dene'),
+    'learn more': L(lang, 'See How It Works', 'Nasıl Çalıştığını Gör'),
+    'explore features': L(lang, 'See Chat Flow', 'Sohbet Akışını Gör'),
+  } : {};
+  // Universal internal-category → neutral (ANY concept) so planning language never
+  // leaks even when the concept isn't AI-commerce.
+  const internalNeutral: Array<[RegExp, string]> = [
+    [/product\s*proof\s*\(demo\/screens?\)\s*,?\s*metrics?\s+and\s+security/i, L(lang, 'Demo & Trust', 'Demo ve Güven')],
+    [/\bai\s*product\s*\/\s*saas\b/i, L(lang, 'Product overview', 'Ürüne genel bakış')],
+    [/\bai\s*tool\s*\/\s*productivity\b/i, L(lang, 'Product overview', 'Ürüne genel bakış')],
+    [/\bproduct\s*proof\b/i, L(lang, 'Proof', 'Kanıt')],
+    [/\bmetrics?\s+and\s+security\b/i, L(lang, 'Security', 'Güvenlik')],
+  ];
+  const heroRepair = (v: string): string | undefined => {
+    if (!aiCommerce || !HERO_FORMULA_RE.test(v)) return undefined;
+    if (/transform\s+your\b.*\bwith\b.*\b(ai\s*chatbot|chatbot|assistant|ai)\b/i.test(v))
+      return L(lang, 'Help shoppers choose faster with an AI storefront assistant', 'Alışverişçilerin daha hızlı seçim yapmasına AI mağaza asistanıyla yardım edin');
+    if (/revolutioni[sz]e\b.*(support|customer)/i.test(v))
+      return L(lang, 'Answer product questions before shoppers leave', 'Alışverişçiler ayrılmadan önce ürün sorularını yanıtlayın');
+    return L(lang, 'Answer product questions and guide shoppers in chat', 'Ürün sorularını yanıtlayın ve alışverişçileri sohbette yönlendirin');
+  };
+  const pcReason = L(lang, 'Replaced internal/generic public copy with concept-specific, honest copy (display only).',
+    'İç/genel herkese açık metni konsepte özgü, dürüst metinle değiştirdi (yalnızca görünüm).');
+  const repairPublicLabel = (val: string): string | undefined => {
+    const key = normLabel(val);
+    if (nameMap[key]) return nameMap[key];
+    for (const [re, rep] of internalNeutral) if (re.test(val)) return rep;
+    return undefined;
+  };
+  for (const s of sectionItems) {
+    if (s.name && !promptLc.includes(normLabel(s.name))) {
+      const r = repairPublicLabel(s.name);
+      if (r && r !== s.name) { addQuality('public-copy', s.id, s.name, r, pcReason); s.name = r; }
+    }
+    if (s.headline) {
+      const hr = heroRepair(s.headline) || repairPublicLabel(s.headline);
+      if (hr && hr !== s.headline) { addQuality('public-copy', s.id, s.headline, hr, pcReason); s.headline = hr; }
+    }
+    if (s.sub) {
+      const sr = heroRepair(s.sub);
+      if (sr && sr !== s.sub) { addQuality('public-copy', s.id, s.sub, sr, pcReason); s.sub = sr; }
+    }
+    if (s.cta && !promptLc.includes(normLabel(s.cta))) {
+      const cr = ctaMap[normLabel(s.cta)];
+      if (cr && cr !== s.cta) { addQuality('public-copy', s.id, s.cta, cr, pcReason); s.cta = cr; }
+    }
+    if (aiCommerce && s.bullets?.length) {
+      const nb = s.bullets.map((b) => nameMap[normLabel(b)] || b);
+      if (nb.some((b, i) => b !== s.bullets![i])) {
+        addQuality('public-copy', s.id, s.bullets.join(' · ').slice(0, 48), nb.join(' · ').slice(0, 48), pcReason);
+        s.bullets = nb;
+      }
     }
   }
 
