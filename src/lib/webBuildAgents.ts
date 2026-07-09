@@ -1229,6 +1229,36 @@ const AI_CHATBOT_SECTION_LABELS = (lang: Lang): string[] => [
   L(lang, 'Product demo', 'Ürün demosu'),
 ];
 
+const DASHBOARD_SURFACE_PATTERN = [
+  String.raw`\bdashboard\b`,
+  String.raw`\badmin\s*panel\b`,
+  String.raw`\bcontrol\s*panel\b`,
+  String.raw`\b(?:analytics|reporting|kpi|kpis)\s+(?:dashboard|panel)\b`,
+  String.raw`\b(?:dashboard|panel)(?:\s+(?:for|with))?\s+(?:analytics|reporting|kpi|kpis)\b`,
+  String.raw`gösterge\s*panel(?:i)?`,
+  String.raw`yönetim\s*panel(?:i)?`,
+].join('|');
+const DASHBOARD_NEGATION_PATTERN = String.raw`\b(?:${[
+  'no', 'not', 'without', 'avoid', 'avoiding', 'exclude', 'excluding', 'skip', 'skipping',
+  String.raw`don't`, String.raw`do\s+not`, String.raw`doesn't`, String.raw`does\s+not`,
+  String.raw`isn't`, String.raw`is\s+not`, String.raw`rather\s+than`, String.raw`instead\s+of`,
+  'istemiyorum', 'istemiyoruz', 'olmasın', 'olmayacak',
+].join('|')})\b`;
+const DASHBOARD_NEGATED_AFTER_PATTERN = String.raw`\b(?:${[
+  'değil', 'istemiyorum', 'istemiyoruz', 'olmasın', 'olmayacak', 'yok',
+].join('|')})\b`;
+const EXPLICIT_DASHBOARD_REQUEST_RE = new RegExp(`(?:${DASHBOARD_SURFACE_PATTERN})`);
+const NEGATED_DASHBOARD_REQUEST_RE = new RegExp(`${DASHBOARD_NEGATION_PATTERN}.{0,64}(?:${DASHBOARD_SURFACE_PATTERN})`, 'g');
+const DASHBOARD_REQUEST_NEGATED_AFTER_RE = new RegExp(`(?:${DASHBOARD_SURFACE_PATTERN}).{0,48}${DASHBOARD_NEGATED_AFTER_PATTERN}`, 'g');
+
+function hasExplicitDashboardRequest(text: string): boolean {
+  const normalized = ` ${(text || '').toLowerCase().replace(/\s+/g, ' ')} `;
+  const withoutNegated = normalized
+    .replace(NEGATED_DASHBOARD_REQUEST_RE, ' ')
+    .replace(DASHBOARD_REQUEST_NEGATED_AFTER_RE, ' ');
+  return EXPLICIT_DASHBOARD_REQUEST_RE.test(withoutNegated);
+}
+
 /**
  * Derive the Strategic Thinking Ledger — the deterministic strategic decision the
  * downstream agents obey. Pure and deterministic (no model call, no Date/random);
@@ -1257,7 +1287,8 @@ export function deriveThinkingLedger(
   const isChatbot = /chatbot|chat\s*bot|assistant|conversation|sohbet|asistan/.test(hay);
   const isAiSaas = primaryLc === 'ai' || primaryLc === 'saas' || /\bai\b|artificial|chatbot|assistant|agentic|llm|\bsaas\b|yapay\s*zek/.test(hay);
   // Dashboard is ONLY the demo surface when the prompt EXPLICITLY asks for it.
-  const dashboardRequested = /\bdashboard\b|analytics|admin\s*panel|control\s*panel|\bkpi\b|reporting|gösterge\s*panel|yönetim\s*panel/.test(hay);
+  const dashboardIntentHay = (prompt || [brief.coreIdea, brief.type, brief.goal, brief.audience].filter(Boolean).join(' ')).toLowerCase();
+  const dashboardRequested = hasExplicitDashboardRequest(dashboardIntentHay);
 
   const languageIntent = L(lang, lang === 'tr' ? 'Turkish' : 'English', lang === 'tr' ? 'Türkçe' : 'İngilizce');
 
@@ -4279,8 +4310,8 @@ function guardLayoutAgainstDashboard(
   const out = { ...steer };
   if (ledger.demoSurfaceIntent === 'dashboard-demo') {
     // Dashboard explicitly requested → allow the dashboard surface back.
-    if (!out.agentHero || out.agentHero === 'split-editorial') out.agentHero = DASHBOARD_HERO;
-    if (!out.agentModule || out.agentModule === 'product-showcase') out.agentModule = DASHBOARD_MODULE;
+    out.agentHero = DASHBOARD_HERO;
+    out.agentModule = DASHBOARD_MODULE;
     return out;
   }
   const avoidsDashboard = ledger.demoSurfaceIntent === 'chat-demo' || ledger.demoSurfaceIntent === 'product-flow-demo';
