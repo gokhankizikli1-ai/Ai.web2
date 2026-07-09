@@ -109,6 +109,14 @@ export interface WebBuildParseDiagnostics {
   /** The quality of the FIRST attempt when a repair retry ran ('frontend-fallback'
    *  / 'model-partial'). Diagnostic only. */
   firstAttemptQuality?: string;
+  /* ── Phase 9B-1: Design Thinking Plan quality (advisory) — drives the one-shot
+   *  design-plan repair nudge. All optional → old builds still load. */
+  hasDesignThinkingPlanSection?: boolean;
+  designPlanSpecificityScore?: number;
+  weakDesignPlanWarnings?: string[];
+  designPlanRepairAttempted?: boolean;
+  designPlanRepairSucceeded?: boolean;
+  designPlanRepairReason?: string;
 }
 
 export interface WebBuildResult {
@@ -300,6 +308,34 @@ export function extractBrief(sections: BuildSection[]): WebBuildBrief {
     differentiationMove: grab(/(?:differentiation\s*move)\s*[:\-–]\s*(.+)/i),
     designQualityBar: grab(/(?:quality\s*bar)\s*[:\-–]\s*(.+)/i),
   };
+}
+
+/**
+ * Lightweight, deterministic Design Thinking Plan quality score (Phase 9B-1).
+ * Intentionally LOCAL to webBuildApi (never imports webBuildAgents → no cycle) and
+ * aligned with the agent-layer scoreDesignPlan: a concrete, anti-generic plan
+ * scores high; a vague "modern premium" plan with no rejected directions / hero /
+ * palette / traps / differentiation scores low. Pure and cheap.
+ */
+export function scoreParsedDesignThinkingPlan(brief: WebBuildBrief): { score: number; warnings: string[] } {
+  const warnings: string[] = [];
+  // A single generic word used as the WHOLE decision is not a real design choice.
+  const vague = /^(modern|premium|clean|sleek|minimal|elegant|nice|beautiful|professional|polished|user[-\s]?friendly|modern\s*premium|premium\s*modern|clean\s*layout|clean\s*and\s*modern)\.?$/i;
+  const concrete = (s?: string): boolean => !!s && s.trim().length > 8 && !vague.test(s.trim());
+  const rejected = (brief.rejectedDirections || '')
+    .split(/[;,•·]|\s\/\s|\s—\s|\s-\s(?=[A-ZÇĞİÖŞÜ])/)
+    .map((x) => x.trim()).filter((x) => x.length > 2);
+  const meaningfulRejected = rejected.length >= 2;
+  let score = 0;
+  if (concrete(brief.designThesis)) score += 12; else warnings.push('vague/absent design thesis');
+  if (concrete(brief.selectedVisualDirection)) score += 14; else warnings.push('vague/absent visual direction ("modern premium" is not a direction)');
+  if (meaningfulRejected) score += 18; else warnings.push('fewer than 2 rejected directions');
+  if (concrete(brief.heroCompositionDecision)) score += 14; else warnings.push('no concrete hero composition decision');
+  if (concrete(brief.paletteDecision)) score += 12; else warnings.push('no concrete palette decision');
+  if (concrete(brief.typographyDecision)) score += 8; else warnings.push('no concrete typography decision');
+  if ((brief.templateTrapsToAvoid || '').trim().length > 6) score += 12; else warnings.push('no template traps named');
+  if (concrete(brief.differentiationMove)) score += 10; else warnings.push('no differentiation move');
+  return { score: Math.min(100, score), warnings };
 }
 
 /** Best-effort file list from the Frontend Code section's `### <path>` heads. */
@@ -599,6 +635,80 @@ export function buildWebBuildRepairRequest(
 }
 
 /**
+ * Build the TARGETED Design-Thinking-Plan repair prompt (Phase 9B-1). Used ONLY
+ * for a fresh build that already PASSED the planning contract but whose `## Design
+ * Thinking Plan` is weak/generic. It is a quality nudge — it re-asks for the full
+ * canonical package while forcing the design plan to be CONCRETE (specific visual
+ * direction, ≥2 rejected directions, exact template traps, concrete hero/palette/
+ * typography/differentiation). Never asks for a real backend/AI/db/payments/auth,
+ * never fake metrics/logos/testimonials/compliance, never requires Frontend Code.
+ */
+export function buildWebBuildDesignPlanRepairRequest(
+  idea: string,
+  firstReply: string,
+  diagnostics?: WebBuildParseDiagnostics,
+): string {
+  const weak = (diagnostics?.weakDesignPlanWarnings || []).slice(0, 6);
+  const prev = (firstReply || '').trim().slice(0, 3500);
+  return [
+    '[WEB BUILD REQUEST]',
+    'Your previous response met the basic PLANNING contract, but its `## Design',
+    'Thinking Plan` did not meet the DESIGN-QUALITY bar: it is too vague/generic to',
+    'produce a distinctive, designer-made result. Re-output the COMPLETE build',
+    'package again for the SAME idea, in the SAME language, with the SAME scope and',
+    'honesty rules — but make the Design Thinking Plan genuinely CONCRETE this time.',
+    '',
+    weak.length ? `Weaknesses detected: ${weak.join('; ')}.` : 'The plan read as a generic template plan.',
+    '',
+    'Keep these EXACT H2 sections in this order (the parser depends on them):',
+    '## Design Thinking Plan',
+    '## Build Plan',
+    '## Design Direction',
+    '## Page Sections',
+    '## Generated Copy',
+    '## Next Steps',
+    '',
+    'The `## Design Thinking Plan` MUST use these EXACT labels, one per line, and',
+    'every value MUST be a CONCRETE choice — NOT a vague phrase:',
+    'Design thesis:', 'Audience decision:', 'First impression:',
+    'Selected visual direction:', 'Rejected directions:', 'Hero composition decision:',
+    'Section rhythm decision:', 'Primary demo surface:', 'Palette decision:',
+    'Typography decision:', 'Template traps to avoid:', 'Differentiation move:',
+    'Quality bar:',
+    '',
+    'HARD REQUIREMENTS for the Design Thinking Plan:',
+    '- Rejected directions: name AT LEAST 2 specific directions you are NOT taking,',
+    '  and WHY — include the default template trap (e.g. "dark grid + gold accent +',
+    '  generic dashboard").',
+    '- Template traps to avoid: name the EXACT traps (e.g. dark grid background, gold/',
+    '  amber accent as the default, generic centered SaaS hero, equal-weight 3-card grid).',
+    '- Hero composition decision: a specific structure (e.g. editorial split with a',
+    '  product/chat mockup, asymmetric visual, story editorial) — not "hero section".',
+    '- Palette decision: a specific palette family/intent and why (e.g. graphite-cyan /',
+    '  porcelain-blue / monochrome with one accent — no gold) — not "nice colors".',
+    '- Typography decision: a specific type mood + hierarchy — not "clean fonts".',
+    '- Differentiation move: the ONE concrete thing that makes this not feel templated.',
+    '',
+    'BANNED as a FINAL decision (only allowed if EXPANDED into concrete visual choices):',
+    '"modern premium", "clean", "sleek", "user friendly", "professional", "polished".',
+    'Writing one of these alone as a decision is a FAILURE — replace it with specifics.',
+    '',
+    'Keep the real ## Page Sections architecture and specific ## Generated Copy for',
+    'every section (benefit-led, never generic filler). ## Frontend Code is OPTIONAL',
+    'and must never replace or shorten the planning/copy sections.',
+    '',
+    'SCOPE stays WEBSITE + FRONT-END DEMO ONLY: no real backend, AI runtime, database,',
+    'payments, auth, CRM, real search or real AI logic. Never fabricate metrics, logos,',
+    'testimonials, prices, sources or SOC2/ISO/compliance claims.',
+    '',
+    `Idea: ${idea}`,
+    '',
+    'PREVIOUS REPLY (keep what is good; strengthen the Design Thinking Plan):',
+    prev,
+  ].join('\n');
+}
+
+/**
  * Parse a raw backend `/chat` payload into a WebBuildResult. TOLERANT: a reply
  * missing some canonical sections is returned with `partial: true` (not thrown);
  * substantial prose with no `##` sections becomes a single fallback "Overview".
@@ -748,6 +858,14 @@ function parseWebBuildResult(
     copyPresent &&
     replyCharCount > 800;
   const fullCodeContractPresent = planningContractPresent && hasFrontendCodeSection;
+  // Phase 9B-1 — Design Thinking Plan quality (advisory; drives the one-shot
+  // design-plan repair nudge in generateWebBuild). Deterministic + local.
+  const hasDesignThinkingPlanSection = sections.some((s) => /design\s*thinking\s*plan|thinking\s*plan/i.test(s.title));
+  const dtp = scoreParsedDesignThinkingPlan(extractBrief(sections));
+  const designPlanSpecificityScore = hasDesignThinkingPlanSection ? dtp.score : 0;
+  const weakDesignPlanWarnings = hasDesignThinkingPlanSection
+    ? dtp.warnings
+    : ['missing Design Thinking Plan section', ...dtp.warnings];
   const parseDiagnostics: WebBuildParseDiagnostics = {
     canonicalSectionsPresent: CANONICAL.filter((c) => hasCanonical(c)),
     canonicalSectionsMissing: CANONICAL.filter((c) => !hasCanonical(c)),
@@ -762,6 +880,9 @@ function parseWebBuildResult(
     planningContractPresent,
     fullCodeContractPresent,
     replyCharCount,
+    hasDesignThinkingPlanSection,
+    designPlanSpecificityScore,
+    weakDesignPlanWarnings,
   };
 
   return {
@@ -833,6 +954,23 @@ export function isRepairableModelPartial(result: WebBuildResult): boolean {
   const d = result.parseDiagnostics;
   if (!d) return false;
   return (d.hasWebsiteExperiencePlanFields || d.hasPageSectionsSection) && !d.usedOverviewFallback;
+}
+
+/** Annotate a result's parse diagnostics with the design-plan repair outcome
+ *  (Phase 9B-1) without mutating the original. Never changes anything else. */
+function annotateDesignPlanRepair(
+  result: WebBuildResult,
+  patch: { attempted: boolean; succeeded: boolean; reason: string },
+): WebBuildResult {
+  return {
+    ...result,
+    parseDiagnostics: {
+      ...(result.parseDiagnostics as WebBuildParseDiagnostics),
+      designPlanRepairAttempted: patch.attempted,
+      designPlanRepairSucceeded: patch.succeeded,
+      designPlanRepairReason: patch.reason,
+    },
+  };
 }
 
 /**
@@ -920,10 +1058,49 @@ export async function generateWebBuild(
     );
 
     // Revisions build on an already-validated site → keep tolerant behavior.
-    // A fresh build that already cleared the PLANNING contract is done — the
-    // Preview renders from the planning/copy sections; Frontend Code is a bonus,
-    // NOT required for a model-planned Preview (Phase 6D).
-    if (opts?.revise || isModelPlanningContractEnough(first)) return first;
+    if (opts?.revise) return first;
+
+    // A fresh build that already cleared the PLANNING contract is preview-viable —
+    // the Preview renders from the planning/copy sections; Frontend Code is a bonus
+    // (Phase 6D). Phase 9B-1: nudge a WEAK Design Thinking Plan with EXACTLY ONE
+    // targeted repair. This is a quality improvement, never a failure — the first
+    // result is already viable, so any repair problem safely keeps the first build.
+    if (isModelPlanningContractEnough(first)) {
+      const firstScore = first.parseDiagnostics?.designPlanSpecificityScore ?? 0;
+      const GOOD_DESIGN_PLAN = 65;
+      if (firstScore >= GOOD_DESIGN_PLAN) return first;
+
+      let dpRepaired: WebBuildResult | undefined;
+      try {
+        dpRepaired = parseWebBuildResult(
+          await callBackend(buildWebBuildDesignPlanRepairRequest(trimmed, first.reply, first.parseDiagnostics)),
+          { revise: false },
+        );
+      } catch (err) {
+        // NEVER fail a preview-viable build because the quality nudge failed —
+        // including transport/timeout errors. Keep the first build, annotated.
+        const reason = (err instanceof WebBuildError) ? `design-plan repair ${err.kind}` : 'design-plan repair failed to parse';
+        // eslint-disable-next-line no-console
+        console.warn(`[WebBuild] design-plan repair did not complete — keeping the viable first build (${reason}).`);
+        return annotateDesignPlanRepair(first, { attempted: true, succeeded: false, reason });
+      }
+
+      const repScore = dpRepaired.parseDiagnostics?.designPlanSpecificityScore ?? 0;
+      const stillPlanned = isModelPlanningContractEnough(dpRepaired);
+      // Accept the repair ONLY if it stays preview-viable, actually improves, and
+      // clears the quality bar — otherwise keep the original first build.
+      if (stillPlanned && repScore > firstScore && repScore >= GOOD_DESIGN_PLAN) {
+        // eslint-disable-next-line no-console
+        console.warn(`[WebBuild] weak design plan repaired (${firstScore} → ${repScore}).`);
+        return annotateDesignPlanRepair(dpRepaired, { attempted: true, succeeded: true, reason: 'weak design plan repaired' });
+      }
+      const reason = !stillPlanned ? 'repair lost the planning contract'
+        : repScore <= firstScore ? `repair did not improve score (${firstScore} → ${repScore})`
+        : `repair below threshold (${repScore} < ${GOOD_DESIGN_PLAN})`;
+      // eslint-disable-next-line no-console
+      console.warn(`[WebBuild] design-plan repair not accepted — keeping the viable first build (${reason}).`);
+      return annotateDesignPlanRepair(first, { attempted: true, succeeded: false, reason });
+    }
 
     // Fresh build fell short. Log WHY (owner/dev), then attempt ONE strict repair.
     const fd = first.parseDiagnostics;
