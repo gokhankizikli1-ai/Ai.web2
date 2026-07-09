@@ -985,6 +985,8 @@ export interface WebBuildArtifacts {
   qualityDirector?: QualityDirectorArtifact;
   /** Safe reviewer-driven repairs (Phase 6). Optional → old builds still load. */
   fixer?: FixerAgentArtifact;
+  /** Intent-aware page architecture decision (Phase 9D-1). Optional → old builds load. */
+  pageArchitecture?: PageArchitectureDecision;
   /** The shared context the agents were run against (pipeline trace). */
   context?: WebBuildAgentContext;
   /** Enforcement diagnostics proving the agents drove the build. */
@@ -1520,6 +1522,182 @@ export function deriveThinkingLedger(
     qualityBar,
     reason,
     modelDesignPlan,
+  };
+}
+
+/* ── Intent-Aware Page Architecture Planner (Phase 9D-1) ───────────────────
+ * A small, DETERMINISTIC decision about which sections THIS concept actually
+ * needs — so the page stops including default SaaS sections (testimonials, case
+ * studies, generic process, fake proof) the specific prompt never asked for. It
+ * only decides section SELECTION + display labels + order; it never touches
+ * section ids/anchors, the layout plan vocabulary, the renderer, or backend, and
+ * it never fabricates proof. Applied as a safe selection pass before files/layout.
+ * Every field is optional-friendly and backward compatible. */
+export type DemoPlacement = 'hero' | 'dedicated-section' | 'gated' | 'none';
+
+export interface PageArchitectureDecision {
+  recommendedSections: string[];
+  /** Sections to drop, with an honest reason (+ the matched section id when known). */
+  removedSections: Array<{ section: string; reason: string; id?: string }>;
+  requiredSections: string[];
+  optionalSections: string[];
+  entryModel: string;
+  demoPlacement: DemoPlacement;
+  pricingNeeded: boolean;
+  pricingReason: string;
+  proofNeeded: boolean;
+  proofReason: string;
+  securityNeeded: boolean;
+  securityReason: string;
+  integrationsNeeded: boolean;
+  integrationsReason: string;
+  primaryCTA: string;
+  secondaryCTA: string;
+  architectureWarnings: string[];
+}
+
+/** Section id/name → coarse role, used to decide selection/removal/order. */
+const SECTION_ROLE_RE = {
+  hero: /hero|banner|masthead/i,
+  footer: /footer|colophon/i,
+  demo: /demo|chat|assistant|playground|product-?demo|conversation|sohbet/i,
+  flow: /how[-\s]?it[-\s]?works|process|workflow|steps?|journey|shopper\s*flow|discovery|plan\b|delivery|süreç|nasıl/i,
+  integrations: /integration|connect|shopify|\bapi\b|plugin|webhook|catalog|store\s*integrat|entegrasyon/i,
+  security: /security|trust|privacy|compliance|safety|güven|gizlilik/i,
+  pricing: /pricing|price|plans?|subscription|tier|packages?|fiyat|abonelik|paket/i,
+  testimonials: /testimonial|review|quote|müşteri\s*yorum|yorumlar|referans/i,
+  caseStudies: /case[-\s]?stud|success\s*stor|vaka/i,
+  certifications: /certificat|accreditat|soc\s?2|\biso\b|compliance\s*badge|sertifika/i,
+  contact: /contact|get\s*in\s*touch|book\s*a?\s*demo|contact\s*sales|iletişim|demo\s*ayarla/i,
+  features: /^features?$|^benefits?$|^overview$|özellikler/i,
+} as const;
+
+/**
+ * Derive the intent-aware Page Architecture Decision. Pure + deterministic; reads
+ * the prompt/brief/concept + the strategic ledger. Never fabricates proof. Front-
+ * end-only: any demo is a sample/static surface, never a real backend claim.
+ */
+export function derivePageArchitectureDecision(
+  prompt: string,
+  brief: WebBuildBrief,
+  sectionItems: Array<{ id: string; name: string }>,
+  conceptAuthority: ConceptAuthority | undefined,
+  strategy: StrategyAgentArtifact | undefined,
+  ledger: StrategicThinkingLedger | undefined,
+  lang: Lang = 'en',
+): PageArchitectureDecision {
+  const hay = [prompt, brief.coreIdea, brief.type, brief.goal, brief.audience, brief.style].filter(Boolean).join(' ').toLowerCase();
+  const vhay = `${hay} ${conceptAuthority?.targetVertical || ''} ${conceptAuthority?.audienceVertical || ''} ${ledger?.targetVertical || ''}`.toLowerCase();
+  const concept = (ledger?.primaryConcept || conceptAuthority?.primaryConcept || '').toLowerCase();
+  const ic = strategy?.interactionContract;
+
+  const isAi = concept === 'ai' || concept === 'saas' || /\bai\b|artificial|chatbot|chat\s*bot|assistant|agentic|\bllm\b|sohbet|asistan/.test(hay);
+  const isCommerce = /ecommerce|e-?commerce|storefront|\bstore\b|\bshop\b|retail|marketplace|catalog|mağaza|e-?ticaret/.test(vhay);
+  const isB2B = /b2b|enterprise|sales\s*team|\bteams?\b|\bsaas\b|platform|merchant|business|kurumsal/.test(hay);
+  const isInteractive = isAi || isCommerce || /dashboard|\btool\b|onboarding|marketplace|catalog|\bsupport\b|assistant/.test(hay);
+  const wantsChat = isAi || /chat|assistant|\bsupport\b|conversation|sohbet/.test(hay);
+  const aiCommerce = isAi && isCommerce;
+
+  // Prompt-driven inclusion signals (only include when the prompt genuinely asks).
+  const asksPricing = /pricing|\bprice\b|plans?|subscription|tier|packages?|paywall|fiyat|abonelik|paket/.test(hay);
+  const asksTestimonials = /testimonial|customer\s*review|reviews?|referans|yorum/.test(hay);
+  const asksCaseStudies = /case[-\s]?stud|success\s*stor|vaka/.test(hay);
+  const asksBookDemo = /book\s*a?\s*demo|contact\s*sales|talk\s*to\s*sales|schedule\s*a?\s*(call|demo)|demo\s*ayarla|satış/.test(hay);
+  // Honest proof gate: proof sections are only kept when the USER asked for them
+  // (we have no way to verify external logos/metrics/testimonials otherwise).
+  const proofNeeded = asksTestimonials || asksCaseStudies;
+
+  const pricingNeeded = asksPricing || (isB2B && /\bsaas\b|subscription|plans?|self-?serve/.test(hay));
+  const securityNeeded = isCommerce || wantsChat || /security|trust|privacy|customer\s*data|compliance|gdpr|kvkk|güven/.test(hay);
+  const integrationsNeeded = isCommerce || /integration|shopify|woocommerce|\bcrm\b|helpdesk|catalog|\bapi\b|connect|entegrasyon/.test(hay);
+
+  // Demo placement: only when the concept benefits from interaction.
+  const leadGated = ic?.leadCaptureRequired === true || /landing-gated|lead-capture-gated/.test(`${ic?.entryFlowModel || ''} ${ic?.conversionJourneyModel || ''} ${ledger?.primaryConversionPath || ''}`.toLowerCase());
+  const demoSurface = ledger?.demoSurfaceIntent;
+  let demoPlacement: DemoPlacement = 'none';
+  if ((wantsChat || isInteractive) && demoSurface !== 'none') {
+    demoPlacement = leadGated ? 'gated' : 'dedicated-section';
+  }
+
+  const entryModel = ledger?.demoSurfaceIntent === 'dashboard-demo' ? 'dashboard-first'
+    : (brief.entryFlowModel || ic?.entryFlowModel || (leadGated ? 'landing-gated-experience' : (isCommerce ? 'catalog-first' : 'single-page')));
+
+  // CTAs — B2B product → Book Demo / Contact Sales; consumer/simple → Try Demo.
+  const primaryCTA = demoPlacement !== 'none'
+    ? (isB2B && asksBookDemo ? L(lang, 'Book a Demo', 'Demo Ayarla') : L(lang, 'Try the Demo', 'Demoyu Dene'))
+    : (isB2B ? L(lang, 'Contact Sales', 'Satışla İletişim') : L(lang, 'Get in touch', 'İletişime geç'));
+  const secondaryCTA = pricingNeeded ? L(lang, 'See Pricing', 'Fiyatları Gör')
+    : (isB2B ? L(lang, 'Contact Sales', 'Satışla İletişim') : L(lang, 'See how it works', 'Nasıl çalıştığını gör'));
+
+  // Recommended concept-specific section spine (labels only; ids stay original).
+  const flowLabel = isCommerce ? L(lang, 'Shopper Flow', 'Alışverişçi Akışı') : L(lang, 'How it works', 'Nasıl çalışır');
+  const demoLabel = isCommerce ? L(lang, 'Chat Experience', 'Sohbet Deneyimi') : L(lang, 'Product Demo', 'Ürün Demosu');
+  const recommendedSections: string[] = [L(lang, 'Hero', 'Hero')];
+  if (demoPlacement !== 'none' && wantsChat) recommendedSections.push(demoLabel);
+  recommendedSections.push(flowLabel);
+  if (integrationsNeeded) recommendedSections.push(isCommerce ? L(lang, 'Store Integrations', 'Mağaza Entegrasyonları') : L(lang, 'Integrations', 'Entegrasyonlar'));
+  if (securityNeeded) recommendedSections.push(isCommerce ? L(lang, 'Security & Store Trust', 'Güvenlik ve Mağaza Güveni') : L(lang, 'Security & Trust', 'Güvenlik ve Güven'));
+  recommendedSections.push(pricingNeeded ? L(lang, 'Pricing', 'Fiyatlandırma') : (isB2B ? L(lang, 'Book a Demo', 'Demo Ayarla') : L(lang, 'Try the Demo', 'Demoyu Dene')));
+  recommendedSections.push(isB2B ? L(lang, 'Contact Sales', 'Satışla İletişim') : L(lang, 'Contact', 'İletişim'));
+
+  // Removals — scan the REAL sections and drop the ones this concept should not
+  // carry (unsupported proof + pricing when irrelevant). Never removes hero/footer/
+  // demo/contact. Honest reasons.
+  const removedSections: PageArchitectureDecision['removedSections'] = [];
+  const architectureWarnings: string[] = [];
+  const isRole = (name: string, id: string, re: RegExp) => re.test(`${id} ${name}`);
+  for (const s of sectionItems || []) {
+    const key = `${s.id} ${s.name}`;
+    if (!proofNeeded && SECTION_ROLE_RE.testimonials.test(key) && !SECTION_ROLE_RE.hero.test(key)) {
+      removedSections.push({ id: s.id, section: s.name, reason: L(lang, 'Testimonials removed — no user/source proof provided (avoids fabricated proof).', 'Referanslar kaldırıldı — kullanıcı/kaynak kanıtı yok (uydurma kanıttan kaçınır).') });
+    } else if (!proofNeeded && (SECTION_ROLE_RE.caseStudies.test(key)) && !SECTION_ROLE_RE.hero.test(key)) {
+      removedSections.push({ id: s.id, section: s.name, reason: L(lang, 'Case Studies removed — none provided by user/source (avoids fabricated proof).', 'Vaka çalışmaları kaldırıldı — kullanıcı/kaynak tarafından sağlanmadı (uydurma kanıttan kaçınır).') });
+    } else if (SECTION_ROLE_RE.certifications.test(key) && !securityNeeded) {
+      removedSections.push({ id: s.id, section: s.name, reason: L(lang, 'Certifications removed — no real compliance provided (no fake SOC2/ISO).', 'Sertifikalar kaldırıldı — gerçek uyumluluk sağlanmadı (sahte SOC2/ISO yok).') });
+    } else if (!pricingNeeded && SECTION_ROLE_RE.pricing.test(key) && !SECTION_ROLE_RE.hero.test(key)) {
+      removedSections.push({ id: s.id, section: s.name, reason: L(lang, `Pricing removed — not requested for this concept; prefer ${isB2B ? 'Book a Demo / Contact Sales' : 'Try the Demo'}.`, `Fiyatlandırma kaldırıldı — bu konsept için istenmedi; ${isB2B ? 'Demo Ayarla / Satışla İletişim' : 'Demoyu Dene'} tercih edilir.`) });
+    }
+  }
+  if (removedSections.some((r) => SECTION_ROLE_RE.testimonials.test(r.section) || SECTION_ROLE_RE.caseStudies.test(r.section))) {
+    architectureWarnings.push(L(lang, 'Unsupported proof sections (testimonials/case studies) were dropped — add them only with real user/source proof.', 'Desteklenmeyen kanıt bölümleri (referans/vaka) düşürüldü — yalnızca gerçek kullanıcı/kaynak kanıtıyla ekleyin.'));
+  }
+  if (aiCommerce && !sectionItems.some((s) => isRole(s.name, s.id, SECTION_ROLE_RE.security)) && securityNeeded) {
+    architectureWarnings.push(L(lang, 'No Security & Store Trust section — an AI/ecommerce site should reassure on data/trust (honest, no fake compliance).', 'Güvenlik ve Mağaza Güveni bölümü yok — AI/e-ticaret sitesi veri/güven konusunda güven vermeli (dürüst, sahte uyumluluk yok).'));
+  }
+
+  const requiredSections = uniq([L(lang, 'Hero', 'Hero'), ...(demoPlacement !== 'none' && wantsChat ? [demoLabel] : []), flowLabel, (isB2B ? L(lang, 'Contact Sales', 'Satışla İletişim') : L(lang, 'Contact', 'İletişim'))]);
+  const optionalSections = uniq([
+    ...(pricingNeeded ? [L(lang, 'Pricing', 'Fiyatlandırma')] : []),
+    ...(integrationsNeeded ? [isCommerce ? L(lang, 'Store Integrations', 'Mağaza Entegrasyonları') : L(lang, 'Integrations', 'Entegrasyonlar')] : []),
+    ...(securityNeeded ? [isCommerce ? L(lang, 'Security & Store Trust', 'Güvenlik ve Mağaza Güveni') : L(lang, 'Security & Trust', 'Güvenlik ve Güven')] : []),
+  ]);
+
+  return {
+    recommendedSections: uniq(recommendedSections),
+    removedSections,
+    requiredSections,
+    optionalSections,
+    entryModel,
+    demoPlacement,
+    pricingNeeded,
+    pricingReason: pricingNeeded
+      ? L(lang, 'Prompt/concept calls for plans or a conversion page.', 'İstem/konsept planları veya bir dönüşüm sayfasını gerektiriyor.')
+      : L(lang, 'Not requested; prefer a demo/contact conversion instead of a price table.', 'İstenmedi; fiyat tablosu yerine demo/iletişim dönüşümü tercih edilir.'),
+    proofNeeded,
+    proofReason: proofNeeded
+      ? L(lang, 'User asked for testimonials/case studies — keep only with real content.', 'Kullanıcı referans/vaka istedi — yalnızca gerçek içerikle tut.')
+      : L(lang, 'No user/source proof — use honest Trust & Safety, not logos/testimonials/metrics.', 'Kullanıcı/kaynak kanıtı yok — logo/referans/metrik yerine dürüst Güven ve Emniyet kullan.'),
+    securityNeeded,
+    securityReason: securityNeeded
+      ? L(lang, 'Handles customer data / chat — reassure honestly (no fake SOC2/ISO).', 'Müşteri verisi / sohbet işliyor — dürüstçe güven ver (sahte SOC2/ISO yok).')
+      : L(lang, 'No sensitive-data surface — a security section is optional.', 'Hassas veri yüzeyi yok — güvenlik bölümü isteğe bağlı.'),
+    integrationsNeeded,
+    integrationsReason: integrationsNeeded
+      ? L(lang, 'Ecommerce/store/app concept — show simulated, front-end-only integrations.', 'E-ticaret/mağaza/uygulama konsepti — simüle, yalnızca ön-yüz entegrasyonları göster.')
+      : L(lang, 'No integration surface implied by the concept.', 'Konseptin ima ettiği bir entegrasyon yüzeyi yok.'),
+    primaryCTA,
+    secondaryCTA,
+    architectureWarnings,
   };
 }
 

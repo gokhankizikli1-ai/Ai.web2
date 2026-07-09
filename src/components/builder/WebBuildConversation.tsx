@@ -342,6 +342,24 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       ownerRows.push(['demoSurfaceCopyRepairs', `${dsRepairs.length}${ex ? ` · ${ex}` : ''}`]);
     }
 
+    // Phase 9D-1 — intent-aware Page Architecture Decision (concept-specific spine).
+    const pa = step.artifacts?.pageArchitecture;
+    if (pa) {
+      const flags = [
+        pa.demoPlacement && pa.demoPlacement !== 'none' ? `demo: ${pa.demoPlacement}` : '',
+        `pricing: ${pa.pricingNeeded ? 'yes' : 'no'}`,
+        `security: ${pa.securityNeeded ? 'yes' : 'no'}`,
+        `integrations: ${pa.integrationsNeeded ? 'yes' : 'no'}`,
+      ].filter(Boolean).join(' · ');
+      ownerRows.push(['pageArchitectureDecision', flags]);
+      if (pa.recommendedSections?.length) ownerRows.push(['recommendedSections', pa.recommendedSections.slice(0, 8).join(', ')]);
+      if (pa.removedSections?.length) {
+        const ex = pa.removedSections.slice(0, 3).map((r) => r.section).join(', ');
+        ownerRows.push(['removedSections', `${pa.removedSections.length}${ex ? ` · ${ex}` : ''}`]);
+      }
+      (pa.architectureWarnings || []).slice(0, 2).forEach((w, i) => ownerRows.push([`architectureWarning${i + 1}`, w]));
+    }
+
     // Concept Authority + Visual Quality gate (Phase 5) — real artifact data only.
     const ca = step.artifacts?.research?.conceptAuthority;
     if (ca) {
