@@ -168,6 +168,38 @@ const CHAT_FALLBACK_LABELS = (lang: PLang): string[] => [
   ML(lang, 'Security controls', 'Güvenlik kontrolleri'),
 ];
 
+/* ── Demo-surface copy guard (Phase 9C-3) — a tiny, self-contained display-only
+ *  cleanup for the few generic labels that can reach the module's own surfaces.
+ *  The real repair happens on the section items (Fixer sanitizeDemoSurfaceCopy);
+ *  this is a last-line guard so tabs/chips never show template filler. Honest. */
+const DEMO_LABEL_MAP = (lang: PLang): Record<string, string> => ({
+  'fast & reliable': ML(lang, 'Product & policy answers', 'Ürün ve politika yanıtları'),
+  'fast and reliable': ML(lang, 'Product & policy answers', 'Ürün ve politika yanıtları'),
+  'made for your goals': ML(lang, 'Question to recommendation', 'Sorudan öneriye'),
+  'simple to start': ML(lang, 'Catalog & support flows', 'Katalog ve destek akışları'),
+  'premium quality': ML(lang, 'Calm, branded experience', 'Sakin, markalı deneyim'),
+  'learn more': ML(lang, 'See chat flow', 'Sohbet akışını gör'),
+  'get started': ML(lang, 'Try the demo', 'Demoyu dene'),
+  'process': ML(lang, 'Shopper flow', 'Alışverişçi akışı'),
+  'discovery': ML(lang, 'Understands the question', 'Soruyu anlar'),
+  'plan': ML(lang, 'Finds the right product', 'Doğru ürünü bulur'),
+  'case studies': ML(lang, 'Use cases', 'Kullanım senaryoları'),
+  'testimonials': ML(lang, 'Customer questions', 'Müşteri soruları'),
+});
+const cleanDemoLabel = (label: string, lang: PLang): string => {
+  const map = DEMO_LABEL_MAP(lang);
+  return map[(label || '').trim().toLowerCase().replace(/\s+/g, ' ')] || label;
+};
+
+/** A concept sample conversation for an AI storefront assistant demo (Phase 9C-3).
+ *  Sample / front-end-only — no real AI/catalog/policy lookup, no fabricated proof. */
+const STOREFRONT_SAMPLE_FLOW = (lang: PLang): Array<{ assistant: boolean; text: string }> => [
+  { assistant: false, text: ML(lang, 'Do you have a lightweight jacket for rainy commutes?', 'Yağmurlu işe gidişler için hafif bir ceketiniz var mı?') },
+  { assistant: true, text: ML(lang, 'I can suggest a water-resistant option and compare sizes from the sample catalog.', 'Su geçirmez bir seçenek önerip örnek katalogdan bedenleri karşılaştırabilirim.') },
+  { assistant: false, text: ML(lang, 'What about returns?', 'Peki ya iadeler?') },
+  { assistant: true, text: ML(lang, 'The sample policy says returns are accepted within the store’s stated window.', 'Örnek politika, iadelerin mağazanın belirttiği süre içinde kabul edildiğini söylüyor.') },
+];
+
 /** Real labels first, then concept fallbacks — de-duped — so the mockup always has
  *  enough distinct surfaces to compose without ever repeating or fabricating. */
 function chatLabels(labels: string[] | undefined, lang: PLang): string[] {
@@ -205,18 +237,26 @@ const HandoffGlyph = () => (
 function ProductShowcase({ labels, compact, lang }: { labels?: string[]; compact?: boolean; lang?: PLang }) {
   const reduce = useReducedMotion();
   const lg = lang || inferLang(labels);
-  const items = chatLabels(labels, lg);
+  // Phase 9C-3: clean any generic template labels that reached this module before
+  // composing the surfaces (last-line display guard; real fix is on section items).
+  const items = chatLabels(labels, lg).map((x) => cleanDemoLabel(x, lg));
   const tabs = items.slice(0, compact ? 3 : 4);
   const kbLabel = items[2] || ML(lg, 'Knowledge base', 'Bilgi tabanı');
   const handoffLabel = items[3] || ML(lg, 'Support handoff', 'Destek devri');
   const chips = items.slice(4, 4 + (compact ? 2 : 3));
-  // Bubbles are the section's OWN structural labels, alternating sides so the
-  // column reads as a conversation without inventing a fake transcript.
-  const bubbles = [
-    { assistant: true, text: items[0] },
-    { assistant: false, text: items[1] },
-    { assistant: true, text: items[2] },
-  ].filter((b) => b.text).slice(0, compact ? 2 : 3);
+  // Phase 9C-3: an ecommerce/storefront chat demo shows a real sample shopper↔
+  // assistant flow (front-end-only, honest) instead of bubbles built from structural
+  // labels. Requires an actual COMMERCE signal so a non-ecommerce assistant does not
+  // get the storefront/returns flow.
+  const isChatCommerceDemo = /shop|store|storefront|product|order|return|catalog|shopper|checkout|\bcart\b|retail|mağaza|ürün|sipariş|iade|e-?ticaret|e-?commerce|ecommerce/i.test((labels || []).join(' '));
+  const bubbles = (isChatCommerceDemo
+    ? STOREFRONT_SAMPLE_FLOW(lg)
+    : [
+        { assistant: true, text: items[0] },
+        { assistant: false, text: items[1] },
+        { assistant: true, text: items[2] },
+      ]
+  ).filter((b) => b.text).slice(0, compact ? 2 : (isChatCommerceDemo ? 4 : 3));
 
   const renderBubble = (assistant: boolean, text: string, i: number): ReactElement => {
     const body = (
@@ -268,6 +308,11 @@ function ProductShowcase({ labels, compact, lang }: { labels?: string[]; compact
         {/* Chat / product-flow column */}
         <div className="relative z-10 min-w-0 space-y-2.5">
           {bubbles.map((b, i) => renderBubble(b.assistant, b.text, i))}
+
+          {/* Honest handoff note for the sample storefront flow (front-end-only). */}
+          {isChatCommerceDemo && !compact && (
+            <p className="pl-8 text-[10px] leading-snug text-slate-500">{ML(lg, 'Complex requests can be handed to your support team.', 'Karmaşık talepler destek ekibinize devredilebilir.')}</p>
+          )}
 
           {/* Typing indicator — three pulsing dots, structural, motion-gated. */}
           <div className="flex items-center gap-1 pl-8">
