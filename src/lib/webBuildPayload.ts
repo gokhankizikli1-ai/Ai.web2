@@ -609,6 +609,8 @@ function assembleWebBuildPayload(
         sectionItems: sectionItems.map((s) => ({ id: s.id, name: s.name, cta: s.cta, sub: s.sub, bullets: s.bullets })),
         strategy: artifacts?.strategy, artDirection: artifacts?.artDirection,
         reviewer: rv.artifact, research: artifacts?.research, layoutPlan,
+        // Phase 8A — judge the build against the committed strategic ledger.
+        ledger: artifacts?.thinkingLedger,
         lang: effLang,
       });
       agents = [...agents, qd.agent];
@@ -634,6 +636,8 @@ function assembleWebBuildPayload(
         // repairs; the primary conversion intent normalizes awkward CTA labels.
         qualityDirector: qd.artifact,
         primaryConversionIntent: artifacts?.strategy?.interactionContract?.primaryConversionIntent,
+        // Phase 8A — repair generic filler labels to the ledger's concept-specific ones.
+        ledger: artifacts?.thinkingLedger,
         lang: effLang,
       });
       agents = [...agents, fx.agent];

@@ -325,6 +325,12 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
     if (ca) {
       ownerRows.push(['primaryConcept', `${ca.primaryConcept}${ca.targetVertical ? ` · vertical: ${ca.targetVertical}` : ''} · ${ca.confidence}`]);
     }
+    // Strategic Thinking Ledger (Phase 8A) — the decision downstream agents obeyed.
+    const tl = step.artifacts?.thinkingLedger;
+    if (tl) {
+      ownerRows.push(['thinkingLedger', `${tl.primaryConcept}${tl.targetVertical ? ` · vertical: ${tl.targetVertical}` : ''} · demo: ${tl.demoSurfaceIntent} · lang: ${tl.languageIntent}`]);
+      if (tl.mustNotBecome?.length) ownerRows.push(['ledger.mustNotBecome', tl.mustNotBecome.join(', ')]);
+    }
     const enf = step.artifacts?.enforcement;
     if (enf?.didDetectConceptDrift) ownerRows.push(['conceptDrift', `detected${enf.didFixConceptDrift ? ' · fixed' : ''}`]);
     else if (ca) ownerRows.push(['conceptDrift', art?.correctedConceptDrift ? 'guarded' : 'none']);

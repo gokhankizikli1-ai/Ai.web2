@@ -197,6 +197,54 @@ export interface ConceptAuthority {
   mustNotDriftTo?: string[];
 }
 
+/* ── Strategic Thinking Ledger (Phase 8A) ─────────────────────────────────
+ * The single, structured "Think" decision the pipeline COMMITS to before it
+ * builds — deterministic, derived from the prompt + brief + Research (Concept
+ * Authority) + inferred playbook, NEVER a model call. It is the strategic contract
+ * the downstream agents (Art Direction, Strategy, Layout Steering, Quality
+ * Director, Fixer) READ and obey, so the build stops drifting into a generic
+ * SaaS/dashboard/agency template and keeps all copy in ONE language. Every field
+ * is plain data; the whole artifact is optional and backward compatible (absent →
+ * the pipeline keeps its previous behaviour). */
+export type DemoSurfaceIntent =
+  | 'chat-demo' | 'product-flow-demo' | 'dashboard-demo' | 'catalog-demo'
+  | 'booking-demo' | 'content-demo' | 'none';
+
+export interface StrategicThinkingLedger {
+  /** Detected output language for ALL website copy (mixed-language is forbidden). */
+  languageIntent: string;
+  /** One precise sentence: what this site IS. */
+  conceptThesis: string;
+  /** The primary concept category that OWNS the visual identity. */
+  primaryConcept: string;
+  /** The industry/customer the product serves (informs copy/proof only). */
+  targetVertical?: string;
+  /** Identities this site must NOT drift into (e.g. dashboard/marketplace/agency). */
+  mustNotBecome: string[];
+  /** What the visitor must be able to decide above the fold. */
+  visitorDecision: string;
+  /** The primary conversion path (e.g. Landing → Lead Capture → Chat/Product Demo). */
+  primaryConversionPath: string;
+  /** The kind of front-end-only demo surface this concept needs. */
+  demoSurfaceIntent: DemoSurfaceIntent;
+  /** What the front-end-only demo must make clear. */
+  demoSurfaceMustShow: string[];
+  /** What the demo must avoid (fake metrics/logos/AI claims/unrelated dashboards). */
+  demoSurfaceMustAvoid: string[];
+  /** What EVERY section must prove to avoid generic filler. */
+  sectionSpecificityBar: string;
+  /** Generic labels (lowercased tokens) that must be repaired for this concept. */
+  forbiddenGenericLabels: string[];
+  /** Honest, concept-specific labels the Fixer can swap generic filler for. */
+  preferredSectionLabels: string[];
+  /** No mixed-language fallback labels; copy follows the prompt language. */
+  languageRules: string;
+  /** What "premium enough" means for this concept. */
+  qualityBar: string;
+  /** Honest one-line explanation of the read (owner/dev diagnostic). */
+  reason: string;
+}
+
 /* ── Research Agent artifact ──────────────────────────────────────────── */
 export interface ResearchAgentArtifact {
   didResearch: boolean;
@@ -879,6 +927,9 @@ export interface WebBuildEnforcement {
 
 export interface WebBuildArtifacts {
   research?: ResearchAgentArtifact;
+  /** The strategic decision the downstream agents obey (Phase 8A). Optional →
+   *  old builds still load; absent = previous behaviour. */
+  thinkingLedger?: StrategicThinkingLedger;
   artDirection?: ArtDirectionArtifact;
   strategy?: StrategyAgentArtifact;
   blueprint?: PageBlueprint;
@@ -919,6 +970,8 @@ export interface WebBuildAgentContext {
   sources: WebBuildSource[];
   /** Names of agents that fell back to safe defaults (e.g. "research", "strategy"). */
   fallbacks: string[];
+  /** The strategic decision the downstream agents obeyed (Phase 8A). Optional. */
+  thinkingLedger?: StrategicThinkingLedger | null;
 }
 
 /* ── Research Agent ───────────────────────────────────────────────────── */
@@ -1149,6 +1202,157 @@ export function deriveConceptAuthority(
     confidence,
     reason,
     mustNotDriftTo,
+  };
+}
+
+/* ── Strategic Thinking Ledger derivation (Phase 8A) ──────────────────────── */
+
+/** Generic service-agency / filler section labels that read as template
+ *  scaffolding on an AI/product site (EN + TR, lowercased). Detected by the
+ *  Quality Director and repaired by the Fixer to concept-specific labels. */
+const GENERIC_FILLER_LABELS = [
+  'discovery', 'plan', 'delivery', 'support', 'quality service', 'detailed information',
+  'saas landing page', 'our process', 'what we do',
+  'keşif', 'teslim', 'destek', 'kaliteli hizmet', 'detaylı bilgi', 'süreçlerimiz', 'ne yapıyoruz',
+];
+
+/** Honest, concept-specific section labels for an AI-chatbot / SaaS product demo
+ *  site (display-only; no metrics/logos/claims). Used to replace generic filler. */
+const AI_CHATBOT_SECTION_LABELS = (lang: Lang): string[] => [
+  L(lang, 'Chat experience', 'Sohbet deneyimi'),
+  L(lang, 'Answer routing', 'Yanıt yönlendirme'),
+  L(lang, 'Support handoff', 'Destek devri'),
+  L(lang, 'Knowledge base preview', 'Bilgi tabanı önizleme'),
+  L(lang, 'Channel integrations', 'Kanal entegrasyonları'),
+  L(lang, 'Security controls', 'Güvenlik kontrolleri'),
+  L(lang, 'Conversation overview', 'Konuşma özeti'),
+  L(lang, 'Product demo', 'Ürün demosu'),
+];
+
+/**
+ * Derive the Strategic Thinking Ledger — the deterministic strategic decision the
+ * downstream agents obey. Pure and deterministic (no model call, no Date/random);
+ * returns undefined only when there is genuinely no prompt/brief signal.
+ */
+export function deriveThinkingLedger(
+  prompt: string,
+  brief: WebBuildBrief,
+  research: ResearchAgentArtifact | undefined,
+  inferred: InferredBrief,
+  lang: Lang = 'en',
+): StrategicThinkingLedger | undefined {
+  const promptText = (prompt || brief.coreIdea || brief.type || inferred.businessType || '').trim();
+  if (!promptText) return undefined;
+
+  // Reuse the already-resolved Concept Authority when present, else derive it — so
+  // the ledger's primary concept ALWAYS matches the concept-authority read.
+  let authority = research?.conceptAuthority;
+  if (!authority) { try { authority = deriveConceptAuthority(prompt, brief, inferred, lang); } catch { authority = undefined; } }
+  const primaryConcept = String(authority?.primaryConcept || detectConceptCategory(promptText) || 'general');
+  const primaryLc = primaryConcept.toLowerCase();
+  const targetVertical = authority?.targetVertical ? String(authority.targetVertical) : (authority?.audienceVertical || undefined);
+  const verticalLabel = targetVertical || '';
+
+  const hay = [prompt, brief.coreIdea, brief.type, brief.goal, brief.audience].filter(Boolean).join(' ').toLowerCase();
+  const isChatbot = /chatbot|chat\s*bot|assistant|conversation|sohbet|asistan/.test(hay);
+  const isAiSaas = primaryLc === 'ai' || primaryLc === 'saas' || /\bai\b|artificial|chatbot|assistant|agentic|llm|\bsaas\b|yapay\s*zek/.test(hay);
+  // Dashboard is ONLY the demo surface when the prompt EXPLICITLY asks for it.
+  const dashboardRequested = /\bdashboard\b|analytics|admin\s*panel|control\s*panel|\bkpi\b|reporting|gösterge\s*panel|yönetim\s*panel/.test(hay);
+
+  const languageIntent = L(lang, lang === 'tr' ? 'Turkish' : 'English', lang === 'tr' ? 'Türkçe' : 'İngilizce');
+
+  let demoSurfaceIntent: DemoSurfaceIntent = 'none';
+  if (isChatbot) demoSurfaceIntent = 'chat-demo';
+  else if (isAiSaas) demoSurfaceIntent = dashboardRequested ? 'dashboard-demo' : 'product-flow-demo';
+  else if (primaryLc === 'marketplace') demoSurfaceIntent = 'catalog-demo';
+  else if (primaryLc === 'hospitality' || /reservation|booking|randevu|rezervasyon/.test(hay)) demoSurfaceIntent = 'booking-demo';
+  else if (primaryLc === 'archive' || primaryLc === 'portfolio' || primaryLc === 'education') demoSurfaceIntent = 'content-demo';
+
+  const mustNotBecome: string[] = [];
+  if (isAiSaas) {
+    if (!dashboardRequested) mustNotBecome.push(L(lang, 'analytics/admin dashboard', 'analitik/yönetim paneli'));
+    mustNotBecome.push(L(lang, 'marketplace/catalog storefront', 'pazaryeri/katalog mağazası'));
+    mustNotBecome.push(L(lang, 'generic agency-service site', 'genel ajans-hizmet sitesi'));
+  } else if (primaryLc === 'marketplace') {
+    mustNotBecome.push(L(lang, 'AI analytics dashboard', 'AI analitik paneli'));
+  }
+
+  const conceptThesis = isChatbot
+    ? L(lang, `A premium marketing site for an AI chatbot product${verticalLabel ? ` for ${verticalLabel}` : ''}, with a front-end-only chat demo.`,
+        `Bir AI sohbet botu ürünü${verticalLabel ? ` (${verticalLabel} için)` : ''} için, yalnızca ön-yüz sohbet demolu premium bir tanıtım sitesi.`)
+    : isAiSaas
+      ? L(lang, `A premium product-marketing site for a ${primaryConcept} product${verticalLabel ? ` for ${verticalLabel}` : ''}, with a focused front-end-only product demo.`,
+          `Bir ${primaryConcept} ürünü${verticalLabel ? ` (${verticalLabel} için)` : ''} için, odaklı ve yalnızca ön-yüz ürün demolu premium bir ürün-pazarlama sitesi.`)
+      : L(lang, `A premium ${primaryConcept} site${verticalLabel ? ` for ${verticalLabel}` : ''}.`,
+          `${verticalLabel ? `${verticalLabel} için ` : ''}premium bir ${primaryConcept} sitesi.`);
+
+  const visitorDecision = isAiSaas
+    ? L(lang, 'Is this product right for me, and can I try the experience now?',
+        'Bu ürün bana uygun mu ve deneyimi hemen deneyebilir miyim?')
+    : L(lang, 'Is this the right choice, and what is the next step?',
+        'Doğru seçim bu mu ve sonraki adım ne?');
+
+  const primaryConversionPath = isAiSaas
+    ? L(lang, 'Landing → preview-only lead capture → Chat / Product demo',
+        'İniş → yalnızca-önizleme kayıt → Sohbet / Ürün demosu')
+    : L(lang, 'Landing → primary action', 'İniş → birincil eylem');
+
+  const demoSurfaceMustShow = isChatbot
+    ? [L(lang, 'A real conversation flow (question → routed answer)', 'Gerçek bir konuşma akışı (soru → yönlendirilmiş yanıt)'),
+       L(lang, 'A clear support handoff moment', 'Net bir destek devri anı'),
+       L(lang, 'Channel / integration context', 'Kanal / entegrasyon bağlamı')]
+    : isAiSaas
+      ? [L(lang, 'The core product flow, end to end', 'Çekirdek ürün akışı, baştan sona'),
+         L(lang, 'What the product actually does', 'Ürünün gerçekte ne yaptığı')]
+      : [L(lang, 'The core experience this concept promises', 'Bu konseptin vaat ettiği çekirdek deneyim')];
+
+  const demoSurfaceMustAvoid = [
+    L(lang, 'fake metrics / counts', 'sahte metrik / sayı'),
+    L(lang, 'fake logos or testimonials', 'sahte logo veya referans'),
+    L(lang, 'fake AI / compliance (SOC2/ISO) claims', 'sahte AI / uyumluluk (SOC2/ISO) iddiaları'),
+    ...(isAiSaas && !dashboardRequested ? [L(lang, 'unrelated analytics dashboards', 'ilgisiz analitik panelleri')] : []),
+  ];
+
+  const sectionSpecificityBar = isAiSaas
+    ? L(lang, 'Every section must speak to the actual product (chat, routing, integrations, security, pricing, demo) — not generic agency filler.',
+        'Her bölüm gerçek ürüne (sohbet, yönlendirme, entegrasyon, güvenlik, fiyat, demo) hitap etmeli — genel ajans dolgusu değil.')
+    : L(lang, 'Every section must prove something concept-specific, not generic filler.',
+        'Her bölüm konsepte özgü bir şey kanıtlamalı, genel dolgu değil.');
+
+  const forbiddenGenericLabels = GENERIC_FILLER_LABELS.slice();
+  const preferredSectionLabels = isAiSaas ? AI_CHATBOT_SECTION_LABELS(lang) : [];
+
+  const languageRules = L(lang,
+    `Write ALL website copy and fallback labels in ${lang === 'tr' ? 'Turkish' : 'English'}; never mix a fallback label from another language.`,
+    `TÜM site metnini ve yedek etiketleri ${lang === 'tr' ? 'Türkçe' : 'İngilizce'} yaz; başka bir dilden yedek etiket karıştırma.`);
+
+  const qualityBar = isAiSaas
+    ? L(lang, 'Feels like a real, premium AI product site: focused demo, honest proof, restrained modern visuals — not a generic dark/gold dashboard template.',
+        'Gerçek, premium bir AI ürün sitesi gibi hissettirir: odaklı demo, dürüst kanıt, ölçülü modern görseller — genel koyu/altın panel şablonu değil.')
+    : L(lang, 'Feels like a real, premium product — concept-specific, honest, and modern.',
+        'Gerçek, premium bir ürün gibi hissettirir — konsepte özgü, dürüst ve modern.');
+
+  const reason = L(lang,
+    `Committed a "${primaryConcept}" thesis${verticalLabel ? ` for the ${verticalLabel} vertical` : ''}: demo surface = ${demoSurfaceIntent}${dashboardRequested ? ' (dashboard explicitly requested)' : ''}; language = ${lang}.`,
+    `"${primaryConcept}" tezi${verticalLabel ? ` (${verticalLabel} dikeyi için)` : ''} sabitlendi: demo yüzeyi = ${demoSurfaceIntent}${dashboardRequested ? ' (panel açıkça istendi)' : ''}; dil = ${lang}.`);
+
+  return {
+    languageIntent,
+    conceptThesis,
+    primaryConcept,
+    targetVertical,
+    mustNotBecome,
+    visitorDecision,
+    primaryConversionPath,
+    demoSurfaceIntent,
+    demoSurfaceMustShow,
+    demoSurfaceMustAvoid,
+    sectionSpecificityBar,
+    forbiddenGenericLabels,
+    preferredSectionLabels,
+    languageRules,
+    qualityBar,
+    reason,
   };
 }
 
@@ -2796,10 +3000,13 @@ function guardArchetypeAgainstDrift(
   return undefined;
 }
 
-/** Per-concept hero visual type for the (data-only) Visual Asset Plan. */
+/** Per-concept hero visual type for the (data-only) Visual Asset Plan. Phase 8A:
+ *  AI/SaaS default to a PRODUCT mockup (chat/product surface), not a data
+ *  dashboard — the dashboard visual is only used when the ledger's demo-surface
+ *  intent is 'dashboard-demo' (an explicit dashboard request). */
 const HERO_VISUAL_BY_CONCEPT: Record<string, HeroVisualType> = {
-  ai: 'dashboard-mockup',
-  saas: 'dashboard-mockup',
+  ai: 'product-mockup',
+  saas: 'product-mockup',
   marketplace: 'product-mockup',
   real_estate: 'photo-direction',
   archive: 'pattern-system',
@@ -2822,9 +3029,16 @@ function deriveVisualAssetPlan(
   cpf: ConceptProfile | undefined,
   colorSystem: ArtDirectionColorSystem,
   lang: Lang,
+  demoIntent?: DemoSurfaceIntent,
 ): VisualAssetPlan {
   const concept = authority?.primaryConcept || cpf?.category || 'general';
-  const heroVisualType = HERO_VISUAL_BY_CONCEPT[concept] || 'css-abstract';
+  // Phase 8A: the Thinking Ledger's demo-surface intent wins for the hero visual —
+  // a dashboard mockup ONLY when a dashboard was explicitly requested; a
+  // chat/product surface for chat/product-flow demos.
+  const heroVisualType: HeroVisualType =
+    demoIntent === 'dashboard-demo' ? 'dashboard-mockup'
+    : (demoIntent === 'chat-demo' || demoIntent === 'product-flow-demo') ? 'product-mockup'
+    : (HERO_VISUAL_BY_CONCEPT[concept] || 'css-abstract');
   const accent = colorSystem.accent;
   const bg = colorSystem.background;
   const vertical = authority?.targetVertical || authority?.audienceVertical;
@@ -3039,6 +3253,7 @@ export function deriveArtDirection(
   research: ResearchAgentArtifact | undefined,
   inferred: InferredBrief,
   lang: Lang = 'en',
+  ledger?: StrategicThinkingLedger,
 ): ArtDirectionArtifact {
   const ds = deriveDesignSystemFromStrategy(brief);
   // Research color psychology feeds the design system: when the model gave no
@@ -3275,8 +3490,10 @@ export function deriveArtDirection(
   ]);
 
   // Visual Asset & Motion Plan (Phase 5) — DATA ONLY (no image/video API call).
+  // Phase 8A: the Thinking Ledger's demo-surface intent steers the hero visual so
+  // an AI/chatbot product opens on a product/chat mockup, not a data dashboard.
   let visualAssetPlan: VisualAssetPlan | undefined;
-  try { visualAssetPlan = deriveVisualAssetPlan(archetype, conceptAuthority, cpf, colorSystem, lang); }
+  try { visualAssetPlan = deriveVisualAssetPlan(archetype, conceptAuthority, cpf, colorSystem, lang, ledger?.demoSurfaceIntent); }
   catch { visualAssetPlan = undefined; }
 
   // ── STRUCTURED ART DIRECTION (archetype-driven, research-informed) ──────
@@ -3617,6 +3834,7 @@ export function deriveStrategyAgent(
   sections: Array<{ id: string; name: string }>,
   art: ArtDirectionArtifact | undefined,
   lang: Lang = 'en',
+  ledger?: StrategicThinkingLedger,
 ): StrategyAgentArtifact {
   const audience = brief.audience || inferred.targetAudience;
   const primary = brief.primaryCTA || inferred.primaryCTA;
@@ -3629,6 +3847,8 @@ export function deriveStrategyAgent(
   const mainPromise = brief.strategyInsight || inferred.heroHeadline;
   const conversionStrategy = brief.conversionStrategy
     || uniq([cpf?.mainConversion || '', ...(research?.conversionPatterns || [])]).join(' · ')
+    // Phase 8A: gap-fill from the Thinking Ledger's committed conversion path.
+    || ledger?.primaryConversionPath
     || L(lang, `Lead the visitor to one action: ${primary}.`, `Ziyaretçiyi tek eyleme yönlendir: ${primary}.`);
   // Trust strategy consumes the concept's proof needs + the UI Agent's trust focus
   // AND the Research trust needs + the Art Direction's trust visual direction, so
@@ -3649,6 +3869,9 @@ export function deriveStrategyAgent(
     L(lang, `Promise: ${mainPromise}`, `Vaat: ${mainPromise}`),
     // The concept's key decision is what the page must resolve for the visitor.
     cpf ? L(lang, `Resolve the decision: ${cpf.keyDecision}`, `Kararı çöz: ${cpf.keyDecision}`) : '',
+    // Phase 8A: surface the ledger's front-end-only demo surface in the hierarchy.
+    (ledger && ledger.demoSurfaceIntent !== 'none')
+      ? L(lang, `Demo surface: ${ledger.demoSurfaceIntent} (front-end only)`, `Demo yüzeyi: ${ledger.demoSurfaceIntent} (yalnızca ön-yüz)`) : '',
     L(lang, 'Proof it is real (trust signals)', 'Gerçek olduğunun kanıtı (güven sinyalleri)'),
     L(lang, 'How it works / what you get', 'Nasıl çalışır / ne elde edersin'),
     L(lang, `The offer and single action: ${primary}`, `Teklif ve tek eylem: ${primary}`),
@@ -3975,7 +4198,7 @@ const ART_ARCHETYPE_TO_LAYOUT: Record<string, ArtLayoutSteer> = {
   'editorial-archive':      { archetype: 'archive',        hero: 'catalog-collection',     module: 'catalog-archive' },
   'luxury-boutique':        { archetype: 'luxury-service',  hero: 'luxury-service',         module: 'editorial-story' },
   'high-conversion-saas':   { archetype: 'dashboard',       hero: 'dashboard-product',      module: 'data-dashboard' },
-  'ai-tool':                { archetype: 'technical',       hero: 'dashboard-product',      module: 'data-dashboard' },
+  'ai-tool':                { archetype: 'technical',       hero: 'split-editorial',        module: 'product-showcase' },
   'fintech-trust':          { archetype: 'data-platform',   hero: 'data-map',               module: 'data-dashboard' },
   'wellness-retreat':       { archetype: 'hospitality',     hero: 'luxury-service',         module: 'reservation-form' },
   'restaurant-hospitality': { archetype: 'hospitality',     hero: 'luxury-service',         module: 'reservation-form' },
@@ -4010,8 +4233,10 @@ const CONCEPT_TO_LAYOUT: Record<string, ArtLayoutSteer> = {
   local_service: { archetype: 'hospitality',     hero: 'luxury-service',         module: 'reservation-form' },
   legal:         { archetype: 'luxury-service',  hero: 'luxury-service',         module: 'editorial-story' },
   medical:       { archetype: 'luxury-service',  hero: 'luxury-service',         module: 'editorial-story' },
-  ai:            { archetype: 'technical',       hero: 'dashboard-product',      module: 'data-dashboard' },
-  saas:          { archetype: 'dashboard',       hero: 'dashboard-product',      module: 'data-dashboard' },
+  // Phase 8A: AI/SaaS default to a focused product/chat surface, NOT a dashboard.
+  // The ledger re-promotes a dashboard surface only on an explicit dashboard request.
+  ai:            { archetype: 'technical',       hero: 'split-editorial',        module: 'product-showcase' },
+  saas:          { archetype: 'technical',       hero: 'split-editorial',        module: 'product-showcase' },
   marketplace:   { archetype: 'marketplace',     hero: 'catalog-collection',     module: 'catalog-archive' },
   education:     { archetype: 'membership',      hero: 'membership-application', module: 'membership-pass' },
   nonprofit:     { archetype: 'community',       hero: 'split-editorial',        module: 'membership-pass' },
@@ -4035,10 +4260,42 @@ const CONCEPT_TO_LAYOUT: Record<string, ArtLayoutSteer> = {
  * identity). Returns {} when every signal is too weak, so the existing detection +
  * diversity guard still applies (never forced to 'standard').
  */
+/** The dashboard-demo structure an AI/SaaS product must not DEFAULT into. */
+const DASHBOARD_HERO = 'dashboard-product';
+const DASHBOARD_MODULE = 'data-dashboard';
+
+/**
+ * Ledger-driven dashboard guard (Phase 8A). The Thinking Ledger decides whether
+ * this concept's demo surface is a dashboard or a focused product/chat flow. When
+ * the intent is chat/product-flow, any dashboard hero/module the art archetype
+ * pinned is DEMOTED to a product surface; when a dashboard was explicitly
+ * requested, the product default is PROMOTED back to the dashboard surface. Pure.
+ */
+function guardLayoutAgainstDashboard(
+  steer: { agentArchetype?: string; agentHero?: string; agentModule?: string },
+  ledger: StrategicThinkingLedger | undefined,
+): { agentArchetype?: string; agentHero?: string; agentModule?: string } {
+  if (!ledger) return steer;
+  const out = { ...steer };
+  if (ledger.demoSurfaceIntent === 'dashboard-demo') {
+    // Dashboard explicitly requested → allow the dashboard surface back.
+    if (!out.agentHero || out.agentHero === 'split-editorial') out.agentHero = DASHBOARD_HERO;
+    if (!out.agentModule || out.agentModule === 'product-showcase') out.agentModule = DASHBOARD_MODULE;
+    return out;
+  }
+  const avoidsDashboard = ledger.demoSurfaceIntent === 'chat-demo' || ledger.demoSurfaceIntent === 'product-flow-demo';
+  if (!avoidsDashboard) return out;
+  if (out.agentHero === DASHBOARD_HERO) out.agentHero = 'split-editorial';
+  if (out.agentModule === DASHBOARD_MODULE) out.agentModule = 'product-showcase';
+  if (out.agentArchetype === 'dashboard') out.agentArchetype = 'technical';
+  return out;
+}
+
 export function deriveLayoutSteering(
   research: ResearchAgentArtifact | undefined,
   art: ArtDirectionArtifact | undefined,
   strategy: StrategyAgentArtifact | undefined,
+  ledger?: StrategicThinkingLedger,
 ): { agentArchetype?: string; agentHero?: string; agentModule?: string } {
   const artKey = art?.designArchetype?.key;
   const artSteer = artKey ? ART_ARCHETYPE_TO_LAYOUT[artKey] : undefined;
@@ -4052,7 +4309,8 @@ export function deriveLayoutSteering(
   if (agentArchetype) out.agentArchetype = agentArchetype;
   if (agentHero) out.agentHero = agentHero;
   if (agentModule) out.agentModule = agentModule;
-  return out;
+  // Phase 8A: the ledger has final say over the dashboard-vs-product demo surface.
+  return guardLayoutAgainstDashboard(out, ledger);
 }
 
 /**
@@ -4134,11 +4392,13 @@ export function enrichBriefWithAgents(
   research: ResearchAgentArtifact | undefined,
   art: ArtDirectionArtifact | undefined,
   strategy: StrategyAgentArtifact | undefined,
+  ledger?: StrategicThinkingLedger,
 ): WebBuildBrief {
   let b: WebBuildBrief = { ...brief };
   // Structure steering — the plan (preview + files) obeys the agents. Model's own
-  // explicit values (if ever present on the brief) still win via `||`.
-  const steer = deriveLayoutSteering(research, art, strategy);
+  // explicit values (if ever present on the brief) still win via `||`. Phase 8A:
+  // the Thinking Ledger gets final say over the dashboard-vs-product demo surface.
+  const steer = deriveLayoutSteering(research, art, strategy, ledger);
   b = {
     ...b,
     agentArchetype: b.agentArchetype || steer.agentArchetype,
@@ -4282,15 +4542,25 @@ export function runUpstreamAgents(
   catch { researchArtifact = fallbackResearchArtifact(lang); fallbacks.push('research'); }
   artifacts.research = researchArtifact;
 
-  // 2) UI / Art Director — consumes the Research artifact.
+  // 1.5) STRATEGIC THINKING LEDGER (Phase 8A) — the deterministic strategic
+  //      decision the rest of the pipeline OBEYS. Derived from Research (Concept
+  //      Authority) + brief + prompt; guarded, non-blocking.
+  let thinkingLedger: StrategicThinkingLedger | undefined;
+  try { thinkingLedger = deriveThinkingLedger(prompt, brief, researchArtifact, inferred, lang); }
+  catch { thinkingLedger = undefined; }
+  artifacts.thinkingLedger = thinkingLedger;
+
+  // 2) UI / Art Director — consumes the Research artifact + the Thinking Ledger
+  //    (demo-surface intent steers the concept-specific hero visual).
   let art: ArtDirectionArtifact | undefined;
-  try { art = deriveArtDirection(brief, researchArtifact, inferred, lang); }
+  try { art = deriveArtDirection(brief, researchArtifact, inferred, lang, thinkingLedger); }
   catch { art = undefined; fallbacks.push('ui_art_director'); }
   artifacts.artDirection = art;
 
-  // 3) Strategy Agent — consumes Research + Art Direction.
+  // 3) Strategy Agent — consumes Research + Art Direction + the Thinking Ledger
+  //    (conversion path + demo-surface intent).
   let strategy: StrategyAgentArtifact | undefined;
-  try { strategy = deriveStrategyAgent(brief, researchArtifact, inferred, sections, art, lang); }
+  try { strategy = deriveStrategyAgent(brief, researchArtifact, inferred, sections, art, lang, thinkingLedger); }
   catch { strategy = undefined; fallbacks.push('strategy'); }
   artifacts.strategy = strategy;
 
@@ -4305,6 +4575,7 @@ export function runUpstreamAgents(
     layoutBlueprint: null, // filled by runLayoutArchitect after the plan resolves
     sources: research?.sources || [],
     fallbacks,
+    thinkingLedger: thinkingLedger || null,
   };
 
   const agents: WebBuildAgent[] = [
@@ -4313,7 +4584,7 @@ export function runUpstreamAgents(
     agentRow('strategy', lang, strategy),
   ];
 
-  return { agents, artifacts, enrichedBrief: enrichBriefWithAgents(brief, researchArtifact, art, strategy) };
+  return { agents, artifacts, enrichedBrief: enrichBriefWithAgents(brief, researchArtifact, art, strategy, thinkingLedger) };
 }
 
 /**
@@ -4950,6 +5221,8 @@ export interface QualityDirectorInput {
   reviewer?: ReviewerAgentArtifact;
   research?: ResearchAgentArtifact;
   layoutPlan?: WebBuildLayoutPlan;
+  /** The strategic decision to judge against (Phase 8A). */
+  ledger?: StrategicThinkingLedger;
   lang?: Lang;
 }
 
@@ -5030,6 +5303,28 @@ export function deriveQualityDirector(input: QualityDirectorInput): QualityDirec
   }
   if (input.reviewer?.findings?.some((f) => f.category === 'concept-drift')) {
     add('warning', 'concept-drift', 'Reviewer flagged concept drift (visual/archetype ≠ primary concept).', 'Re-assert the primary-concept archetype; the target vertical only informs copy/proof.', 'artDirection.designArchetype');
+  }
+
+  /* 4b — Generic service-agency filler (Phase 8A). The Thinking Ledger names the
+   *      labels that read as template scaffolding for THIS concept; flag any
+   *      section using one so the Fixer repairs it to a concept-specific label. */
+  const ledger = input.ledger;
+  if (ledger && ledger.forbiddenGenericLabels.length) {
+    const forbidden = new Set(ledger.forbiddenGenericLabels.map((x) => x.toLowerCase()));
+    const suggest = ledger.preferredSectionLabels.slice(0, 3).join(' / ')
+      || 'Chat experience / Integrations / Security';
+    for (const s of sections) {
+      const nm = (s.name || '').trim().toLowerCase();
+      if (nm && forbidden.has(nm)) {
+        add('warning', 'generic-copy', `Section label "${s.name}" is generic service-agency filler for a "${ledger.primaryConcept}" product.`, `Rename to a concept-specific label (e.g. ${suggest}).`, s.id);
+      }
+    }
+    // The site must not become an identity the ledger forbade (e.g. a dashboard
+    // when the product is an AI chatbot). Inline check over the real labels.
+    const labelHay = sections.map((s) => (s.name || '').toLowerCase()).join(' ');
+    if (isAiSaas && ledger.mustNotBecome.some((m) => /dashboard/i.test(m)) && /\bdashboard\b|analytics\s*panel|\bkpi\b/.test(labelHay)) {
+      add('warning', 'dashboard-overuse', 'Build leans on a dashboard identity the strategic ledger explicitly forbade for this AI product.', 'Return to a focused product/chat demo surface, not an analytics dashboard.', 'artDirection.heroTreatment');
+    }
   }
 
   /* 5 — Honesty: no fabricated proof/metrics. */
@@ -5192,6 +5487,9 @@ export interface FixerInput {
   qualityDirector?: QualityDirectorArtifact;
   /** The primary conversion intent (for normalizing awkward CTA labels). */
   primaryConversionIntent?: string;
+  /** The strategic decision (Phase 8A) — names forbidden generic labels + the
+   *  concept-specific labels the Fixer may safely swap them for. */
+  ledger?: StrategicThinkingLedger;
   lang?: Lang;
 }
 
@@ -5207,7 +5505,7 @@ export interface FixerResult {
 }
 
 /** The safe repair categories this v1 Fixer is allowed to perform. */
-const FIXER_SAFE_SCOPE = ['fake-data', 'placeholder-cleanup', 'cta-anchor', 'concept-drift', 'visual-asset-plan', 'copy-label', 'cta-consistency', 'flow-label', 'visual-direction', 'palette-family', 'accent-strategy', 'anti-template-copy'];
+const FIXER_SAFE_SCOPE = ['fake-data', 'placeholder-cleanup', 'cta-anchor', 'concept-drift', 'visual-asset-plan', 'copy-label', 'cta-consistency', 'flow-label', 'concept-label', 'visual-direction', 'palette-family', 'accent-strategy', 'anti-template-copy'];
 
 /** Intent → clean CTA label (Phase 7A) — mirrors the Preview's normalizeCtaLabel. */
 function ctaFromIntent(intent: string | undefined, lang: Lang): string | undefined {
@@ -5578,6 +5876,40 @@ export function deriveFixer(input: FixerInput): { artifact: FixerAgentArtifact; 
       }
     }
   }
+  // 5b — Concept-specific label repair (Phase 8A). Replace generic service-agency
+  //      filler section labels the Thinking Ledger forbids with the ledger's
+  //      honest, concept-specific labels. SAFE + DISPLAY-ONLY: never invents
+  //      metrics/logos/claims, never touches user-written labels, never changes ids.
+  const ledger = input.ledger;
+  if (ledger && ledger.forbiddenGenericLabels.length && ledger.preferredSectionLabels.length) {
+    const forbidden = new Set(ledger.forbiddenGenericLabels.map((x) => x.toLowerCase()));
+    const used = new Set(sectionItems.map((s) => (s.name || '').trim().toLowerCase()));
+    let pick = 0;
+    const nextLabel = (): string | undefined => {
+      while (pick < ledger.preferredSectionLabels.length) {
+        const cand = ledger.preferredSectionLabels[pick]; pick += 1;
+        if (cand && !used.has(cand.toLowerCase())) { used.add(cand.toLowerCase()); return cand; }
+      }
+      return undefined;
+    };
+    for (const s of sectionItems) {
+      const nm = (s.name || '').trim().toLowerCase();
+      if (!nm || !forbidden.has(nm)) continue;
+      if (promptLc.includes(nm)) {
+        qualitySkipped.push({ id: `qs-cl-${s.id}`, category: 'concept-label', target: s.id, reason: L(lang,
+          `"${s.name}" appears in the user prompt — treated as user-provided and left untouched.`,
+          `"${s.name}" kullanıcı isteminde geçiyor — kullanıcı içeriği kabul edilip değiştirilmedi.`) });
+        continue;
+      }
+      const label = nextLabel();
+      if (!label) break;
+      addQuality('concept-label', s.id, s.name, label,
+        L(lang, 'Replaced a generic service-agency filler label with a concept-specific label (display only; no invented content).',
+          'Genel ajans-hizmet dolgu etiketini konsepte özgü bir etiketle değiştirdi (yalnızca görünüm; uydurma içerik yok).'));
+      s.name = label;
+    }
+  }
+
   const consumedQualityIssues = uniq((qd?.issues || [])
     .filter((i) => ['raw-label', 'cta-inconsistency', 'generic-copy', 'flow-confusion', 'demo-unclear'].includes(i.category))
     .map((i) => `${i.id}:${i.category}`)).slice(0, 16);

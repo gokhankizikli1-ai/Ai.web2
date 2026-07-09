@@ -1,6 +1,7 @@
 import { Component, Fragment, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode, type ErrorInfo, type CSSProperties, type MouseEvent } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { deriveDesignSystemFromStrategy } from '@/lib/webBuildDesignSystem';
+import { detectMessageLanguage } from '@/lib/locale';
 import {
   deriveLayoutPlan, visualSystemTokens,
   type WebBuildLayoutPlan, type HeroComposition, type SectionVariant,
@@ -36,6 +37,23 @@ import type { VisualAssetPlan, HeroVisualType } from '@/lib/webBuildAgents';
  * visual language — not the same centered hero + card grid with new colors.
  */
 type S = WebBuildSectionItem;
+
+/* ── Preview language-aware fallback labels (Phase 8A) ────────────────────
+ * Website copy ALWAYS comes from the real section data. These are ONLY neutral
+ * fallbacks for structural controls (a pricing CTA with no copy, a before/after
+ * toggle, a search action) and must match the BUILD's language — an English build
+ * must never show a Turkish fallback label, and vice-versa. `previewLanguage`
+ * infers the build language from the real copy; `PT` picks the matching string. */
+type PLang = 'en' | 'tr';
+const PT = (lang: PLang, en: string, tr: string): string => (lang === 'tr' ? tr : en);
+/** Infer the build's copy language from the brief + section copy (tr vs en). */
+function previewLanguage(brief: WebBuildBrief, sectionItems: S[]): PLang {
+  const sample = [
+    brief.type, brief.goal, brief.coreIdea, brief.audience,
+    ...sectionItems.slice(0, 8).flatMap((s) => [s.name, s.headline, s.sub, s.cta, ...(s.bullets || [])]),
+  ].filter(Boolean).join(' ');
+  return detectMessageLanguage(sample) === 'tr' ? 'tr' : 'en';
+}
 
 /* ── Per-section render isolation ─────────────────────────────────────────
  * A single failing section renderer must NEVER take down the whole preview.
@@ -715,7 +733,7 @@ interface PreviewRuntime {
 }
 
 /* ── Section composition variants ─────────────────────────────────────── */
-interface VarProps { s: S; plan: WebBuildLayoutPlan; index: number; art: WebBuildArtIdentity; ctx: InteractionContext; rt?: PreviewRuntime }
+interface VarProps { s: S; plan: WebBuildLayoutPlan; index: number; art: WebBuildArtIdentity; ctx: InteractionContext; rt?: PreviewRuntime; lang?: PLang }
 
 function FeatureGrid({ s, art }: VarProps) {
   const items = bulletsOf(s).slice(0, 6);
@@ -947,8 +965,8 @@ function SpatialFloorplanSection({ s }: VarProps) {
   );
 }
 
-function PricingMembership({ s, art }: VarProps) {
-  const tiers = (s.bullets?.length ? s.bullets : ['Başlangıç', 'Pro', 'Kurumsal']).slice(0, 3);
+function PricingMembership({ s, art, lang = 'en' }: VarProps) {
+  const tiers = (s.bullets?.length ? s.bullets : [PT(lang, 'Starter', 'Başlangıç'), 'Pro', PT(lang, 'Enterprise', 'Kurumsal')]).slice(0, 3);
   return (
     <div className="mx-auto max-w-5xl px-6">
       <H2>{heading(s)}</H2>
@@ -962,8 +980,8 @@ function PricingMembership({ s, art }: VarProps) {
               <p className="text-sm font-medium text-slate-300">{b}</p>
               {price
                 ? <div className="mt-3 text-3xl font-semibold text-white">{price}</div>
-                : <div className="mt-3 text-lg font-medium text-slate-200">{s.cta || 'Detaylı bilgi'}</div>}
-              <div className={`mt-5 rounded-lg py-2 text-center text-sm font-semibold ${i === 1 ? 'text-white' : 'border border-white/15 text-slate-200'}`} style={i === 1 ? { background: 'var(--acc)' } : undefined}>{s.cta || 'İletişime geç'}</div>
+                : <div className="mt-3 text-lg font-medium text-slate-200">{s.cta || PT(lang, 'Learn more', 'Detaylı bilgi')}</div>}
+              <div className={`mt-5 rounded-lg py-2 text-center text-sm font-semibold ${i === 1 ? 'text-white' : 'border border-white/15 text-slate-200'}`} style={i === 1 ? { background: 'var(--acc)' } : undefined}>{s.cta || PT(lang, 'Contact us', 'İletişime geç')}</div>
             </div>
           );
         })}
@@ -974,7 +992,7 @@ function PricingMembership({ s, art }: VarProps) {
 
 /* — Filter/search surface: a real search bar + filter chips + result rows built
  *  from the section's own facet copy. No fabricated result counts. — */
-function FilterSearch({ s, art, rt }: VarProps) {
+function FilterSearch({ s, art, rt, lang = 'en' }: VarProps) {
   const facets = bulletsOf(s).slice(0, 6);
   // When the preview runtime is present the search bar + chips become LIVE: typing
   // and chip toggles actually filter the result rows (built from real facet copy).
@@ -998,8 +1016,8 @@ function FilterSearch({ s, art, rt }: VarProps) {
             ? <input type="text" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={s.sub || heading(s)} className="w-full bg-transparent text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none" />
             : <span className="text-sm text-slate-500">{s.sub || heading(s)}</span>}
           {interactive && (query || active)
-            ? <button type="button" onClick={() => { setQuery(''); setActive(null); }} className="ml-auto rounded-md px-2.5 py-1 text-xs font-medium text-slate-300 transition hover:text-white">Clear</button>
-            : <span className="ml-auto rounded-md px-2.5 py-1 text-xs font-medium text-white" style={{ background: 'var(--acc)' }}>{s.cta || 'Ara'}</span>}
+            ? <button type="button" onClick={() => { setQuery(''); setActive(null); }} className="ml-auto rounded-md px-2.5 py-1 text-xs font-medium text-slate-300 transition hover:text-white">{PT(lang, 'Clear', 'Temizle')}</button>
+            : <span className="ml-auto rounded-md px-2.5 py-1 text-xs font-medium text-white" style={{ background: 'var(--acc)' }}>{s.cta || PT(lang, 'Search', 'Ara')}</span>}
         </div>
         {facets.length > 0 && (
           <div className="mt-4 flex flex-wrap gap-2">
@@ -1075,7 +1093,9 @@ function FaqCta({ s, art, ctx }: VarProps) {
   );
 }
 
-function Comparison({ s, art, rt }: VarProps) {
+function Comparison({ s, art, rt, lang = 'en' }: VarProps) {
+  const beforeLabel = PT(lang, 'Before', 'Öncesi');
+  const afterLabel = PT(lang, 'After', 'Sonrası');
   const reduce = useReducedMotion();
   // Contract-driven: an interactive before/after toggle that emphasises one side.
   const canToggle = !!rt?.hasType(s.id, 'toggle-before-after');
@@ -1087,13 +1107,13 @@ function Comparison({ s, art, rt }: VarProps) {
       <H2>{heading(s)}</H2>
       {canToggle && (
         <div className="mx-auto mt-6 flex w-fit items-center gap-1 rounded-full border border-[color:var(--bd)] bg-[var(--sf)] p-1 text-xs">
-          <button type="button" aria-pressed={!after} onClick={() => setAfter(false)} className={`rounded-full px-3 py-1 font-medium transition ${!after ? 'text-white' : 'text-slate-400'}`} style={!after ? { background: 'var(--acc)' } : undefined}>Öncesi</button>
-          <button type="button" aria-pressed={after} onClick={() => setAfter(true)} className={`rounded-full px-3 py-1 font-medium transition ${after ? 'text-white' : 'text-slate-400'}`} style={after ? { background: 'var(--acc)' } : undefined}>Sonrası</button>
+          <button type="button" aria-pressed={!after} onClick={() => setAfter(false)} className={`rounded-full px-3 py-1 font-medium transition ${!after ? 'text-white' : 'text-slate-400'}`} style={!after ? { background: 'var(--acc)' } : undefined}>{beforeLabel}</button>
+          <button type="button" aria-pressed={after} onClick={() => setAfter(true)} className={`rounded-full px-3 py-1 font-medium transition ${after ? 'text-white' : 'text-slate-400'}`} style={after ? { background: 'var(--acc)' } : undefined}>{afterLabel}</button>
         </div>
       )}
       <div className="relative mt-8 grid gap-5 sm:grid-cols-2">
-        <div className={`relative overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)] transition ${art.cardTone} ${beforeOn ? '' : 'opacity-40'}`}><span className="absolute left-3 top-3 z-10 rounded-full bg-black/50 px-2.5 py-1 text-xs text-slate-300">Öncesi</span><div className={`relative ${art.mediaTone}`} style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.01))' }}><CardDetail mode={art.mode} /></div></div>
-        <div className={`relative overflow-hidden rounded-[var(--pr)] border ring-1 transition ${art.cardTone} ${afterOn ? '' : 'opacity-40'}`} style={{ borderColor: 'color-mix(in srgb, var(--acc) 40%, transparent)' }}><span className="absolute left-3 top-3 z-10 rounded-full px-2.5 py-1 text-xs text-white" style={{ background: 'var(--acc)' }}>Sonrası</span><div className={`relative ${art.mediaTone}`} style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 22%, transparent), color-mix(in srgb, var(--acc2) 12%, transparent))' }}><CardDetail mode={art.mode} /></div></div>
+        <div className={`relative overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)] transition ${art.cardTone} ${beforeOn ? '' : 'opacity-40'}`}><span className="absolute left-3 top-3 z-10 rounded-full bg-black/50 px-2.5 py-1 text-xs text-slate-300">{beforeLabel}</span><div className={`relative ${art.mediaTone}`} style={{ background: 'linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.01))' }}><CardDetail mode={art.mode} /></div></div>
+        <div className={`relative overflow-hidden rounded-[var(--pr)] border ring-1 transition ${art.cardTone} ${afterOn ? '' : 'opacity-40'}`} style={{ borderColor: 'color-mix(in srgb, var(--acc) 40%, transparent)' }}><span className="absolute left-3 top-3 z-10 rounded-full px-2.5 py-1 text-xs text-white" style={{ background: 'var(--acc)' }}>{afterLabel}</span><div className={`relative ${art.mediaTone}`} style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 22%, transparent), color-mix(in srgb, var(--acc2) 12%, transparent))' }}><CardDetail mode={art.mode} /></div></div>
         {!reduce && !canToggle && (
           <motion.div
             aria-hidden className="pointer-events-none absolute inset-y-0 left-1/2 hidden w-px -translate-x-1/2 sm:block"
@@ -2153,6 +2173,9 @@ export default function WebBuildPreviewDocument({
   // for nav + CTAs, derived from the actual section ids + concept.
   const ctx = deriveInteraction(sectionItems.map((s) => s.id), art.mode);
   const nav = pickNavSections(sectionItems.map((s) => ({ id: s.id, name: s.name })), 6);
+  // Phase 8A: the build's copy language, so structural FALLBACK labels (pricing CTA,
+  // before/after toggle, search action) never appear in the wrong language.
+  const previewLang = useMemo(() => previewLanguage(brief, sectionItems), [brief, sectionItems]);
   const variantOf = (id: string): SectionVariant => plan.sectionVariants[id] || 'feature-grid';
   const vt = visualSystemTokens(plan.visualSystem);
   const reduce = useReducedMotion();
@@ -2523,7 +2546,7 @@ export default function WebBuildPreviewDocument({
       const pad = PAD[plan.contentDensity] || PAD.comfortable;
       inner = (
         <section id={sid} style={{ scrollMarginTop: 72, ...(band ? { background: 'rgba(255,255,255,0.015)' } : {}) }} className={`relative ${pad}`}>
-          {Render({ s, plan, index: i, art, ctx, rt })}
+          {Render({ s, plan, index: i, art, ctx, rt, lang: previewLang })}
         </section>
       );
     }
