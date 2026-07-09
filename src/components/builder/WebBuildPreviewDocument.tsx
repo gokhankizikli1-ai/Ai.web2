@@ -54,6 +54,25 @@ function previewLanguage(brief: WebBuildBrief, sectionItems: S[]): PLang {
   ].filter(Boolean).join(' ');
   return detectMessageLanguage(sample) === 'tr' ? 'tr' : 'en';
 }
+/** Language inferred from the brief alone (used where section context is absent). */
+const briefLang = (brief: WebBuildBrief): PLang =>
+  detectMessageLanguage([brief.type, brief.coreIdea, brief.goal, brief.audience, brief.style, brief.visualMood].filter(Boolean).join(' ')) === 'tr' ? 'tr' : 'en';
+/** Concept-specific STRUCTURAL labels for a product/chat demo module (Phase 8B) —
+ *  used only when a hero's own copy is thin. Names surfaces, never claims. */
+const CHAT_MODULE_LABELS = (lang: PLang): string[] => [
+  PT(lang, 'Chat experience', 'Sohbet deneyimi'),
+  PT(lang, 'Answer routing', 'Yanıt yönlendirme'),
+  PT(lang, 'Knowledge base', 'Bilgi tabanı'),
+  PT(lang, 'Support handoff', 'Destek devri'),
+  PT(lang, 'Channel integrations', 'Kanal entegrasyonları'),
+  PT(lang, 'Security controls', 'Güvenlik kontrolleri'),
+];
+/** True when the build concept is an AI / chatbot / SaaS product-demo surface. */
+function isProductChatConcept(brief: WebBuildBrief): boolean {
+  const t = [brief.type, brief.coreIdea, brief.goal, brief.style, brief.visualMood, brief.audience]
+    .filter(Boolean).join(' ').toLowerCase();
+  return /\bai\b|artificial|chatbot|chat bot|assistant|agentic|\bllm\b|\bsaas\b|product demo|conversation|sohbet|asistan|yapay zek/.test(t);
+}
 
 /* ── Per-section render isolation ─────────────────────────────────────────
  * A single failing section renderer must NEVER take down the whole preview.
@@ -449,6 +468,13 @@ function HeroProof({ brief }: { brief: WebBuildBrief }) {
 }
 
 function heroTexts(s: S, brief: WebBuildBrief, ctx: InteractionContext) {
+  const realBullets = (s.bullets || []).filter(Boolean);
+  // Phase 8B: when a product/chat hero's own copy is thin, hand the visual module
+  // concept-specific STRUCTURAL labels (language-aware) so the demo surface reads
+  // like a real product — never claims, just surface names. Real copy always wins.
+  const moduleLabels = (realBullets.length >= 3 || !isProductChatConcept(brief))
+    ? s.bullets
+    : [...realBullets, ...CHAT_MODULE_LABELS(briefLang(brief))].slice(0, 6);
   return {
     title: s.headline || s.copyPreview?.split(/[.!?\n]/)[0] || brief.type || '',
     eyebrow: brief.type || s.bullets?.[0],
@@ -456,7 +482,7 @@ function heroTexts(s: S, brief: WebBuildBrief, ctx: InteractionContext) {
     cta: s.cta,
     secondary: s.bullets?.[1],
     proof: s.bullets?.[2],
-    moduleLabels: s.bullets,
+    moduleLabels,
     // Concept-relevant scroll targets for the hero CTAs (never dead).
     ctaHref: ctx.primaryTarget,
     secondaryHref: ctx.secondaryTarget,

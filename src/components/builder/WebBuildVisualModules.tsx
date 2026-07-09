@@ -1,6 +1,7 @@
 import { type ReactElement } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import type { VisualModule } from '@/lib/webBuildLayoutPlan';
+import { detectMessageLanguage } from '@/lib/locale';
 
 /**
  * Reusable STRUCTURAL visual modules for Web Build.
@@ -15,12 +16,22 @@ import type { VisualModule } from '@/lib/webBuildLayoutPlan';
  * Colors come from the preview root CSS vars (--acc / --acc2), so a module reads
  * correctly against any strategy palette.
  */
+/** Build language for the module's few STRUCTURAL fallback words (never real
+ *  copy). Inferred from the passed labels when the caller does not pin one, so a
+ *  Turkish build never shows an English structural fallback and vice-versa. */
+type PLang = 'en' | 'tr';
+const ML = (lang: PLang, en: string, tr: string): string => (lang === 'tr' ? tr : en);
+const inferLang = (labels?: string[]): PLang =>
+  detectMessageLanguage((labels || []).filter(Boolean).join(' ')) === 'tr' ? 'tr' : 'en';
+
 export interface VisualModuleProps {
   kind: VisualModule;
   labels?: string[];
   className?: string;
   /** Compact variant for tight hero columns / section insets. */
   compact?: boolean;
+  /** Build language for structural fallback words (inferred from labels if absent). */
+  lang?: PLang;
 }
 
 const Frame = ({ children, className = '' }: { children: React.ReactNode; className?: string }) => (
@@ -145,14 +156,162 @@ function SpatialFloorplan() {
   );
 }
 
-function ProductShowcase() {
+/** Concept-specific STRUCTURAL fallback labels for a product/chat demo surface —
+ *  used only when the section's own copy is thin. Not claims: they name surfaces
+ *  (chat, routing, knowledge base, handoff, integrations, security), never metrics. */
+const CHAT_FALLBACK_LABELS = (lang: PLang): string[] => [
+  ML(lang, 'Chat experience', 'Sohbet deneyimi'),
+  ML(lang, 'Answer routing', 'Yanıt yönlendirme'),
+  ML(lang, 'Knowledge base', 'Bilgi tabanı'),
+  ML(lang, 'Support handoff', 'Destek devri'),
+  ML(lang, 'Channel integrations', 'Kanal entegrasyonları'),
+  ML(lang, 'Security controls', 'Güvenlik kontrolleri'),
+];
+
+/** Real labels first, then concept fallbacks — de-duped — so the mockup always has
+ *  enough distinct surfaces to compose without ever repeating or fabricating. */
+function chatLabels(labels: string[] | undefined, lang: PLang): string[] {
+  const real = (labels || []).map((x) => (x || '').trim()).filter(Boolean);
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const x of [...real, ...CHAT_FALLBACK_LABELS(lang)]) {
+    const k = x.toLowerCase();
+    if (!seen.has(k)) { seen.add(k); out.push(x); }
+  }
+  return out;
+}
+
+/** A small book/knowledge glyph (structural, no text/counts). */
+const KbGlyph = () => (
+  <svg aria-hidden viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="var(--acc)" strokeWidth="1.4">
+    <path d="M2.5 3.2c1.8-.8 3.5-.8 5 0v9c-1.5-.8-3.2-.8-5 0zM13.5 3.2c-1.8-.8-3.5-.8-5 0v9c1.5-.8 3.2-.8 5 0z" />
+  </svg>
+);
+/** A handoff/route glyph (arrow into a person). */
+const HandoffGlyph = () => (
+  <svg aria-hidden viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="var(--acc)" strokeWidth="1.4">
+    <path d="M1.5 8h6M5 5.5 7.8 8 5 10.5" /><circle cx="11.5" cy="5.5" r="2" /><path d="M8.6 13c.3-1.8 1.5-3 2.9-3s2.6 1.2 2.9 3" />
+  </svg>
+);
+
+/* ── ProductShowcase — a REAL, premium, front-end-only product / chat-flow demo
+ * surface (Phase 8B). Replaces the old floating gradient square. Composed purely
+ * from CSS/SVG/React: a soft app-window frame + step rail + a live-looking chat
+ * column (message bubbles from the section's own labels), a knowledge-base source
+ * card, a support-handoff/routing card, integration chips and a preview-only input
+ * row. Everything is STRUCTURAL — no fabricated numbers, metrics, logos or
+ * testimonials — and it inherits the strategy palette via --acc/--acc2/--sf/--bd/
+ * --pr, with a proper compact variant for tight hero columns. */
+function ProductShowcase({ labels, compact, lang }: { labels?: string[]; compact?: boolean; lang?: PLang }) {
+  const reduce = useReducedMotion();
+  const lg = lang || inferLang(labels);
+  const items = chatLabels(labels, lg);
+  const tabs = items.slice(0, compact ? 3 : 4);
+  const kbLabel = items[2] || ML(lg, 'Knowledge base', 'Bilgi tabanı');
+  const handoffLabel = items[3] || ML(lg, 'Support handoff', 'Destek devri');
+  const chips = items.slice(4, 4 + (compact ? 2 : 3));
+  // Bubbles are the section's OWN structural labels, alternating sides so the
+  // column reads as a conversation without inventing a fake transcript.
+  const bubbles = [
+    { assistant: true, text: items[0] },
+    { assistant: false, text: items[1] },
+    { assistant: true, text: items[2] },
+  ].filter((b) => b.text).slice(0, compact ? 2 : 3);
+
+  const renderBubble = (assistant: boolean, text: string, i: number): ReactElement => {
+    const body = (
+      <div className={`flex items-end ${assistant ? 'justify-start' : 'justify-end'}`}>
+        {assistant && <span aria-hidden className="mr-1.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white" style={{ background: 'var(--acc)' }}>◆</span>}
+        <div
+          className={`max-w-[80%] px-3 py-2 text-[12px] leading-snug ${assistant ? 'rounded-2xl rounded-bl-sm text-slate-100' : 'rounded-2xl rounded-br-sm text-white'}`}
+          style={assistant ? { background: 'rgba(255,255,255,0.05)', border: '1px solid var(--bd)' } : { background: 'var(--acc)' }}
+        >{text}</div>
+      </div>
+    );
+    return reduce ? <div key={i}>{body}</div> : (
+      <motion.div key={i} initial={{ opacity: 0, y: 8 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.4, delay: i * 0.12, ease: [0.22, 1, 0.36, 1] }}>{body}</motion.div>
+    );
+  };
+
   return (
-    <Frame className="flex items-center justify-center p-8">
-      <div aria-hidden className="pointer-events-none absolute left-1/2 top-6 h-40 w-40 -translate-x-1/2 rounded-full" style={{ background: 'radial-gradient(circle, color-mix(in srgb, var(--acc) 40%, transparent), transparent 70%)', filter: 'blur(30px)' }} />
-      <motion.div animate={{ y: [0, -12, 0] }} transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }} className="relative">
-        <div className="h-40 w-40 rounded-3xl border border-white/15 shadow-2xl shadow-black/50" style={{ background: 'linear-gradient(150deg, color-mix(in srgb, var(--acc) 40%, #0b0d12), color-mix(in srgb, var(--acc2) 24%, #0b0d12))' }} />
-        <div className="mx-auto mt-4 h-2 w-32 rounded-full bg-black/40 blur-[2px]" />
-      </motion.div>
+    <Frame className="shadow-2xl shadow-black/40">
+      {/* App-window chrome */}
+      <div className="flex items-center gap-1.5 border-b border-[color:var(--bd)] px-3 py-2.5">
+        <span className="h-2.5 w-2.5 rounded-full bg-white/20" /><span className="h-2.5 w-2.5 rounded-full bg-white/20" /><span className="h-2.5 w-2.5 rounded-full bg-white/20" />
+        <div className="ml-2 flex h-6 flex-1 items-center rounded-md border border-[color:var(--bd)] bg-black/20 px-2.5 text-[10px] text-slate-400">
+          <span className="mr-1.5 h-1.5 w-1.5 rounded-full" style={{ background: 'var(--acc)' }} />
+          {ML(lg, 'Preview', 'Önizleme')}
+        </div>
+        <span className="rounded-full border border-[color:var(--bd)] px-2 py-0.5 text-[9px] uppercase tracking-wider text-white/50">{ML(lg, 'Demo', 'Demo')}</span>
+      </div>
+
+      <div className={`relative grid gap-3 p-3 ${compact ? '' : 'sm:grid-cols-[8.5rem_1fr]'}`}>
+        {/* Soft top glow inside the surface (structural, not a placeholder blob). */}
+        <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-24" style={{ background: 'radial-gradient(120% 80% at 70% 0%, color-mix(in srgb, var(--acc) 16%, transparent), transparent 70%)' }} />
+
+        {/* Step rail (hidden in compact) */}
+        {!compact && (
+          <aside className="relative z-10 hidden flex-col gap-1.5 sm:flex">
+            {tabs.map((t, i) => (
+              <div
+                key={i}
+                className={`flex items-center gap-2 rounded-lg border px-2.5 py-2 text-[11px] ${i === 0 ? 'text-white' : 'text-slate-400'}`}
+                style={i === 0 ? { borderColor: 'color-mix(in srgb, var(--acc) 45%, transparent)', background: 'color-mix(in srgb, var(--acc) 12%, transparent)' } : { borderColor: 'var(--bd)', background: 'rgba(255,255,255,0.02)' }}
+              >
+                <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: i === 0 ? 'var(--acc)' : 'rgba(255,255,255,0.3)' }} />
+                <span className="truncate">{t}</span>
+              </div>
+            ))}
+          </aside>
+        )}
+
+        {/* Chat / product-flow column */}
+        <div className="relative z-10 min-w-0 space-y-2.5">
+          {bubbles.map((b, i) => renderBubble(b.assistant, b.text, i))}
+
+          {/* Typing indicator — three pulsing dots, structural, motion-gated. */}
+          <div className="flex items-center gap-1 pl-8">
+            {[0, 1, 2].map((i) => (reduce
+              ? <span key={i} className="h-1.5 w-1.5 rounded-full bg-white/25" />
+              : <motion.span key={i} className="h-1.5 w-1.5 rounded-full bg-white/40" animate={{ opacity: [0.25, 1, 0.25], y: [0, -2, 0] }} transition={{ duration: 1.1, repeat: Infinity, ease: 'easeInOut', delay: i * 0.18 }} />))}
+          </div>
+
+          {/* Knowledge-base source card + support-handoff card */}
+          {!compact && (
+            <div className="grid grid-cols-2 gap-2.5">
+              <div className="rounded-xl border border-[color:var(--bd)] bg-white/[0.02] p-2.5">
+                <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-200"><KbGlyph /><span className="truncate">{kbLabel}</span></div>
+                <div className="mt-2 space-y-1"><span className="block h-1.5 w-full rounded-full bg-white/10" /><span className="block h-1.5 w-3/4 rounded-full bg-white/10" /></div>
+              </div>
+              <div className="rounded-xl border border-[color:var(--bd)] bg-white/[0.02] p-2.5">
+                <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-200"><HandoffGlyph /><span className="truncate">{handoffLabel}</span></div>
+                <div className="mt-2 flex items-center gap-1">
+                  {[0, 1].map((k) => <span key={k} className="h-5 w-5 rounded-full border border-white/15 bg-white/5" />)}
+                  <span className="ml-1 h-1.5 flex-1 rounded-full bg-white/10" />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Integration chips (dot + label — no logos) */}
+          {chips.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              {chips.map((c, i) => (
+                <span key={i} className="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--bd)] bg-white/[0.03] px-2.5 py-1 text-[10px] text-slate-300">
+                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: i % 2 ? 'var(--acc2)' : 'var(--acc)' }} />
+                  <span className="truncate">{c}</span>
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Preview-only input row (non-interactive; no submission) */}
+          <div className="mt-0.5 flex items-center gap-2 rounded-full border border-[color:var(--bd)] bg-black/20 px-3 py-2">
+            <span className="truncate text-[12px] text-slate-500">{ML(lg, 'Ask anything', 'Bir şey sorun')}…</span>
+            <span aria-hidden className="ml-auto flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white" style={{ background: 'var(--acc)', boxShadow: '0 6px 16px -8px var(--acc)' }}>↑</span>
+          </div>
+        </div>
+      </div>
     </Frame>
   );
 }
@@ -280,12 +439,12 @@ function ContourTerrain() {
   );
 }
 
-const MODULES: Record<VisualModule, (p: { labels?: string[]; compact?: boolean }) => ReactElement> = {
+const MODULES: Record<VisualModule, (p: { labels?: string[]; compact?: boolean; lang?: PLang }) => ReactElement> = {
   'data-dashboard': (p) => <DataDashboard {...p} />,
   'membership-pass': (p) => <MembershipPass labels={p.labels} />,
   'catalog-archive': (p) => <CatalogArchive {...p} />,
   'spatial-floorplan': () => <SpatialFloorplan />,
-  'product-showcase': () => <ProductShowcase />,
+  'product-showcase': (p) => <ProductShowcase {...p} />,
   'editorial-story': (p) => <EditorialStory labels={p.labels} />,
   'reservation-form': (p) => <ReservationForm labels={p.labels} />,
   'timeline-process': (p) => <TimelineProcess labels={p.labels} />,
@@ -293,7 +452,7 @@ const MODULES: Record<VisualModule, (p: { labels?: string[]; compact?: boolean }
   'contour-terrain': () => <ContourTerrain />,
 };
 
-export default function VisualModule({ kind, labels, className = '', compact = false }: VisualModuleProps) {
+export default function VisualModule({ kind, labels, className = '', compact = false, lang }: VisualModuleProps) {
   const Render = MODULES[kind] || MODULES['contour-terrain'];
-  return <div className={className}>{Render({ labels, compact })}</div>;
+  return <div className={className}>{Render({ labels, compact, lang })}</div>;
 }
