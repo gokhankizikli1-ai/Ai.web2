@@ -117,6 +117,11 @@ export interface WebBuildParseDiagnostics {
   designPlanRepairAttempted?: boolean;
   designPlanRepairSucceeded?: boolean;
   designPlanRepairReason?: string;
+  /* ── Phase 9B-2A: strict-repair regression guard. Set when a strict repair fell
+   *  short of the FULL planning contract but returned enough real plan/copy/
+   *  sections to render an honest Preview. planningContractPresent STAYS false. */
+  strictRepairAcceptedAsPreviewViable?: boolean;
+  strictRepairContractGapReason?: string;
 }
 
 export interface WebBuildResult {
@@ -578,13 +583,14 @@ export function buildWebBuildRepairRequest(
   const missing = parse?.canonicalSectionsMissing?.length
     ? parse.canonicalSectionsMissing.join(', ')
     : 'Frontend Code and the Website Experience Plan fields';
-  const prev = (previousReply || '').trim().slice(0, 4000);
+  // Phase 9B-2A: a focused, compressed repair prompt (smaller than a full second
+  // generation) — it targets the missing contract, not a whole re-explanation.
+  const prev = (previousReply || '').trim().slice(0, 2000);
   return [
     '[WEB BUILD REQUEST]',
     'Your previous response did not satisfy the Web Build PLANNING contract. Re-output',
-    'the complete model-planned package now. Do not explain. Do not summarize. Do not',
-    'apologize. Output ONLY the build. These H2 sections are REQUIRED, in this order:',
-    '',
+    'the complete model-planned package now — no explanation, no summary, no apology.',
+    'REQUIRED H2 sections, in this order:',
     '## Design Thinking Plan',
     '## Build Plan',
     '## Design Direction',
@@ -592,55 +598,37 @@ export function buildWebBuildRepairRequest(
     '## Generated Copy',
     '## Next Steps',
     '',
-    'The `## Design Thinking Plan` MUST come FIRST and use these EXACT labels, one per',
-    'line: "Design thesis:", "Audience decision:", "First impression:", "Selected',
-    'visual direction:", "Rejected directions:", "Hero composition decision:", "Section',
+    '## Design Thinking Plan comes FIRST — a VISIBLE structured plan (NOT hidden',
+    'reasoning) with these EXACT labels, one per line, each a CONCRETE choice:',
+    '"Design thesis:", "Audience decision:", "First impression:", "Selected visual',
+    'direction:", "Rejected directions:", "Hero composition decision:", "Section',
     'rhythm decision:", "Primary demo surface:", "Palette decision:", "Typography',
     'decision:", "Template traps to avoid:", "Differentiation move:", "Quality bar:".',
-    'It is a VISIBLE structured design plan, NOT hidden chain-of-thought. Do NOT use',
-    'vague final decisions like "modern premium", "clean", "sleek", "professional",',
-    '"polished". Reject AT LEAST TWO concrete directions (incl. the default template',
-    'trap — dark grid + gold accent + generic dashboard — when relevant), and name',
-    'CONCRETE hero, palette, typography and differentiation decisions.',
+    'No vague final decisions ("modern premium", "clean", "sleek", "professional",',
+    '"polished"). Reject ≥2 concrete directions (incl. the default template trap —',
+    'dark grid + gold + generic dashboard — when relevant); name concrete hero,',
+    'palette, typography and differentiation.',
     '',
-    'REQUIRED above all: a real ## Page Sections architecture AND real ## Generated',
-    'Copy for every section (specific, benefit-led — never generic filler). ## Frontend',
-    'Code is OPTIONAL/bonus: if you can include real React + Tailwind, add it as a',
-    '## Frontend Code section — but do NOT omit or shorten the planning/copy sections',
-    'to make room for it. If you cannot produce complete code, STILL return the full',
-    'planning + copy contract above (that alone is a valid model-planned build).',
+    'Inside ## Build Plan / ## Design Direction include the EXACT labels, one per line:',
+    'Website Experience Plan — "Website experience model:", "Page/screen model:",',
+    '"Primary website experience:", "Demo surfaces:", "Stateful demo components:",',
+    '"Navigation model:", "Media/motion plan:".',
+    'Entry Flow — "Entry flow model:", "Landing required:", "Entry screen:",',
+    '"Post-entry screen:", "Primary entry CTA:", "Secondary entry CTA:",',
+    '"Navigation behavior:".',
+    'Conversion Journey — "Conversion journey model:", "Primary conversion intent:",',
+    '"Lead capture required:", "Lead capture fields:", "After lead capture screen:",',
+    '"CTA consistency rule:". The lead/email step is a LOCAL static form shell only.',
     '',
-    'Inside ## Build Plan and ## Design Direction include the EXACT labeled fields,',
-    'one per line, including the Website Experience Plan labels with these EXACT',
-    'labels: "Website experience model:", "Page/screen model:", "Primary website',
-    'experience:", "Demo surfaces:", "Stateful demo components:", "Navigation',
-    'model:", "Media/motion plan:".',
-    'Also include the EXACT Entry Flow labels, one per line: "Entry flow model:"',
-    '(single-page | landing-gated-experience | direct-demo | dashboard-first |',
-    'catalog-first | service-lead-flow | archive-exploration), "Landing required:",',
-    '"Entry screen:", "Post-entry screen:", "Primary entry CTA:", "Secondary entry',
-    'CTA:", "Navigation behavior:".',
-    'Also include the EXACT Conversion Journey labels, one per line: "Conversion',
-    'journey model:" (direct-cta | lead-capture-gated-demo | book-demo | contact-request |',
-    'catalog-request | archive-access | quote-request | no-gate), "Primary conversion',
-    'intent:", "Lead capture required:", "Lead capture fields:", "After lead capture',
-    'screen:", "CTA consistency rule:". The lead/email step is a LOCAL static form',
-    'shell only — never a real signup/auth/backend/submission.',
+    'MOST IMPORTANT: a real ## Page Sections architecture + specific ## Generated Copy',
+    'for every section (benefit-led, never generic filler). Frontend Code is optional',
+    'and must never replace planning/copy sections.',
     '',
-    'IF (and only if) you include ## Frontend Code, it should be real React + Tailwind',
-    'with files as "### <path>" headings: "### src/main.tsx", "### src/App.tsx",',
-    '"### src/styles.css", "### src/data/siteContent.ts", plus one',
-    '"### src/components/<Name>.tsx" per page section — no placeholder comments, no',
-    'broken imports. This section is OPTIONAL and must never replace the planning/copy',
-    'sections above.',
-    '',
-    `The previous reply was missing / invalid for: ${missing}. Prioritize the planning`,
-    'and copy sections; Frontend Code is a bonus, not a pass condition.',
-    '',
-    'SCOPE stays WEBSITE + FRONT-END DEMO ONLY: no real backend, AI runtime,',
-    'database, payments, auth, CRM, real search or real AI logic — any interactive',
-    'surface is a local, client-side simulation built from static/sample copy.',
-    'Write ALL copy in the same language as the idea.',
+    `Previously missing/invalid: ${missing}.`,
+    'SCOPE: WEBSITE + FRONT-END DEMO ONLY — no real backend, AI runtime, database,',
+    'payments, auth, CRM, real search or real AI; interactive surfaces are local,',
+    'client-side simulations from sample copy. Never fabricate metrics/logos/',
+    'testimonials/prices/sources/compliance. Write ALL copy in the idea\'s language.',
     '',
     `Idea: ${idea}`,
     '',
@@ -971,6 +959,34 @@ export function isRepairableModelPartial(result: WebBuildResult): boolean {
   return (d.hasWebsiteExperiencePlanFields || d.hasPageSectionsSection) && !d.usedOverviewFallback;
 }
 
+/**
+ * Phase 9B-2A — a strict-repair result that is PREVIEW-VIABLE even though it did
+ * not clear the FULL planning contract (commonly just missing the Website
+ * Experience Plan labels). Stricter than any fallback, more tolerant than
+ * isModelPlanningContractEnough: it requires the real planning + copy sections and
+ * substantial content, but NOT the WEP fields. It never asserts the full contract
+ * passed — the caller keeps planningContractPresent as-is and records the gap.
+ */
+export function isPreviewViableStrictRepair(result: WebBuildResult): boolean {
+  const d = result.parseDiagnostics;
+  if (!d) return false;
+  // Enough real copy: a Generated Copy section OR substantial section body text
+  // (mirrors parseWebBuildResult's copyPresent, computed from the parsed sections).
+  const contentBodyChars = (result.sections || [])
+    .filter((s) => !/frontend\s*code|overview/i.test(s.title))
+    .reduce((n, s) => n + (s.body || '').trim().length, 0);
+  const copyOk = d.hasGeneratedCopySection === true || contentBodyChars >= 400;
+  return (
+    !d.usedOverviewFallback &&
+    d.hasBuildPlanSection === true &&
+    d.hasDesignDirectionSection === true &&
+    d.hasPageSectionsSection === true &&
+    copyOk &&
+    (d.replyCharCount ?? 0) > 1200 &&
+    (result.sections?.length ?? 0) >= 4
+  );
+}
+
 /** Annotate a result's parse diagnostics with the design-plan repair outcome
  *  (Phase 9B-1) without mutating the original. Never changes anything else. */
 function annotateDesignPlanRepair(
@@ -1147,6 +1163,30 @@ export async function generateWebBuild(
     // itself is still absent (Overview-only, no Page Sections, no WEP, too thin).
     const repairOk = isModelPlanningContractEnough(repaired);
     if (!repairOk) {
+      // Phase 9B-2A regression guard: a stricter repair prompt (now also requiring
+      // the Design Thinking Plan) can miss ONE planning-contract field — commonly
+      // the WEP labels — yet still return enough real plan/copy/sections to render
+      // a safe, HONEST Preview. Rather than block the user with contract_failed,
+      // accept a PREVIEW-VIABLE strict repair WITHOUT pretending the full contract
+      // passed: planningContractPresent stays false and the gap is recorded.
+      if (isPreviewViableStrictRepair(repaired)) {
+        const firstQuality = isRepairableModelPartial(first) ? 'model-partial' : 'frontend-fallback';
+        const gap = !rd?.hasWebsiteExperiencePlanFields
+          ? 'missing Website Experience Plan labels'
+          : `planning contract incomplete (missing ${rd?.canonicalSectionsMissing.join(', ') || 'fields'})`;
+        // eslint-disable-next-line no-console
+        console.warn(`[WebBuild] strict repair below the full planning contract but PREVIEW-VIABLE — accepting honestly (${gap}).`);
+        return {
+          ...repaired,
+          parseDiagnostics: {
+            ...(rd as WebBuildParseDiagnostics),
+            repairedFromPartial: true,
+            firstAttemptQuality: firstQuality,
+            strictRepairAcceptedAsPreviewViable: true,
+            strictRepairContractGapReason: gap,
+          },
+        };
+      }
       // eslint-disable-next-line no-console
       console.warn(
         `[WebBuild] strict repair still below the PLANNING contract — missing [${rd?.canonicalSectionsMissing.join(', ') || '?'}]` +

@@ -442,6 +442,10 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       if (parse?.designPlanRepairAttempted) {
         ownerRows.push(['designPlanRepair', `${parse.designPlanRepairSucceeded ? 'succeeded' : 'kept-first'}${parse.designPlanRepairReason ? ` · ${parse.designPlanRepairReason}` : ''}`]);
       }
+      // Phase 9B-2A — strict repair accepted as preview-viable (full contract NOT met).
+      if (parse?.strictRepairAcceptedAsPreviewViable) {
+        ownerRows.push(['strictRepairPreviewViable', `true${parse.strictRepairContractGapReason ? ` · ${parse.strictRepairContractGapReason}` : ''}`]);
+      }
       if (pd.codeContractPending) ownerRows.push(['codeContractPending', 'true (All Files parity pending)']);
       ownerRows.push(['usedArchitectureRewrite', String(!!pd.usedArchitectureRewrite)]);
       ownerRows.push(['usedQualityFallbackSections', String(!!pd.usedQualityFallbackSections)]);
