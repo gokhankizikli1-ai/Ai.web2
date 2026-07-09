@@ -1305,9 +1305,12 @@ function demoModuleFromDecision(text?: string): string | undefined {
 
 /** Map the model's palette decision to a PaletteFamily + an explicit avoid-gold flag. */
 function paletteFromDecision(text?: string, rejected?: string, traps?: string): { family?: string; avoidGold: boolean } {
-  const t = `${text || ''} ${rejected || ''} ${traps || ''}`.toLowerCase();
-  const avoidGold = /no\s*gold|not\s*gold|avoid\s*gold|without\s*gold|no\s*amber|anti[-\s]?gold|monochrome|graphite|cyan|slate|porcelain|no\s*warm|drop\s*the\s*gold|dark\s*grid\s*\+\s*gold|gold\s*accent/.test(t);
   const named = (text || '').toLowerCase();
+  const combined = `${text || ''} ${rejected || ''} ${traps || ''}`.toLowerCase();
+  const rejectedLooks = `${rejected || ''} ${traps || ''}`.toLowerCase();
+  const explicitGoldRejection = /no\s*gold|not\s*gold|avoid\s*gold|without\s*gold|no\s*amber|anti[-\s]?gold|no\s*warm|drop\s*the\s*gold/;
+  const paletteChoosesGold = /amber|gold|warm\s*hospitality/.test(named) && !explicitGoldRejection.test(named);
+  const avoidGold = (explicitGoldRejection.test(combined) || /dark\s*grid\s*\+\s*gold/.test(rejectedLooks)) && !paletteChoosesGold;
   let family: string | undefined;
   if (/graphite|cyan/.test(named)) family = 'graphite-cyan';
   else if (/porcelain/.test(named)) family = 'porcelain-blue';
