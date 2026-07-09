@@ -1,4 +1,4 @@
-import { Component, Fragment, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode, type ErrorInfo, type CSSProperties, type MouseEvent } from 'react';
+import { Component, Fragment, createContext, useContext, useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode, type ErrorInfo, type CSSProperties, type MouseEvent } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { deriveDesignSystemFromStrategy } from '@/lib/webBuildDesignSystem';
 import { detectMessageLanguage } from '@/lib/locale';
@@ -72,6 +72,28 @@ function isProductChatConcept(brief: WebBuildBrief): boolean {
   const t = [brief.type, brief.coreIdea, brief.goal, brief.style, brief.visualMood, brief.audience]
     .filter(Boolean).join(' ').toLowerCase();
   return /\bai\b|artificial|chatbot|chat bot|assistant|agentic|\bllm\b|\bsaas\b|product demo|conversation|sohbet|asistan|yapay zek/.test(t);
+}
+
+/* ── Premium composition mode (Phase 8C) ──────────────────────────────────
+ * A RENDER-ONLY taste layer (no backend, no API). When on, the preview leans
+ * into a calmer, more art-directed composition: larger whitespace, hairline
+ * surfaces instead of heavy cards, quieter accent, and stronger, cleaner
+ * typography — so the first preview reads like a premium designer-made site
+ * instead of a boxed dark SaaS template. Fully backward-compatible: when off,
+ * every primitive renders exactly as before. */
+const PremiumContext = createContext(false);
+const usePremium = (): boolean => useContext(PremiumContext);
+
+/** Derive premium composition from the brief + design system. Premium when the
+ *  style reads premium/editorial/calm (Kimi/Linear/OpenAI-like), OR the concept is
+ *  an AI/SaaS/product-demo that is NOT explicitly a dashboard/admin/data-heavy app. */
+function isPremiumComposition(brief: WebBuildBrief): boolean {
+  const words = [brief.style, brief.visualMood, brief.colorDirection, brief.typographyDirection, brief.layoutLogic, brief.artDesignArchetype]
+    .filter(Boolean).join(' ').toLowerCase();
+  const premiumWords = /premium|polished|refined|modern|kimi|linear|openai|minimal|calm|editorial|elegant|understated|sophisticated|high[-\s]?end|luxe|luxur|clean|monochrome|restrained/.test(words);
+  const dashboardHeavy = /dashboard|admin|analytics|control\s*panel|data[-\s]?heavy|\bkpi\b|reporting|data\s*platform/
+    .test([brief.type, brief.coreIdea, brief.goal, words].filter(Boolean).join(' ').toLowerCase());
+  return premiumWords || (isProductChatConcept(brief) && !dashboardHeavy);
 }
 
 /* ── Per-section render isolation ─────────────────────────────────────────
@@ -358,24 +380,52 @@ const Reveal = ({ children, i = 0 }: { children: React.ReactNode; i?: number }) 
   </motion.div>
 );
 
-const H2 = ({ children, align = 'center' }: { children: React.ReactNode; align?: 'center' | 'left' }) => (
-  <h2 className={`text-2xl font-semibold text-white sm:text-3xl ${align === 'center' ? 'text-center' : ''}`} style={{ fontFamily: 'var(--hf)', letterSpacing: 'var(--tr)' }}>{children}</h2>
-);
+const H2 = ({ children, align = 'center' }: { children: React.ReactNode; align?: 'center' | 'left' }) => {
+  const premium = usePremium();
+  // Premium: a stronger, cleaner heading (larger scale, tighter tracking, tight
+  // leading) so section headings carry real hierarchy instead of reading flat.
+  const size = premium ? 'text-3xl sm:text-4xl' : 'text-2xl sm:text-3xl';
+  return (
+    <h2 className={`${size} font-semibold text-white ${premium ? 'leading-[1.1]' : ''} ${align === 'center' ? 'text-center' : ''}`} style={{ fontFamily: 'var(--hf)', letterSpacing: premium ? '-0.02em' : 'var(--tr)' }}>{children}</h2>
+  );
+};
 
-const Eyebrow = ({ children }: { children: React.ReactNode }) => (
-  <span className="inline-flex items-center gap-2 rounded-full border border-[color:var(--bd)] bg-white/[0.04] px-3 py-1 text-[11px] font-medium text-white/80">
-    <span className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--acc)' }} />{children}
-  </span>
-);
+const Eyebrow = ({ children }: { children: React.ReactNode }) => {
+  const premium = usePremium();
+  // Premium: drop the boxed pill for a quiet, refined uppercase label with a
+  // hairline accent tick — far less "UI kit", far more editorial.
+  if (premium) {
+    return (
+      <span className="inline-flex items-center gap-2.5 text-[11px] font-medium uppercase tracking-[0.22em] text-white/55">
+        <span className="h-px w-6" style={{ background: 'var(--acc)', opacity: 0.7 }} />{children}
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-2 rounded-full border border-[color:var(--bd)] bg-white/[0.04] px-3 py-1 text-[11px] font-medium text-white/80">
+      <span className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--acc)' }} />{children}
+    </span>
+  );
+};
 
 /* CTAs render as real anchors when a target is supplied, so preview buttons
  *  actually scroll (native smooth scroll) — mirroring the generated files. */
 const PrimaryCta = ({ children, href }: { children: React.ReactNode; href?: string }) => {
-  const cls = 'rounded-xl px-6 py-3 text-sm font-semibold text-white shadow-lg';
-  const style = { background: 'var(--acc)', boxShadow: '0 10px 30px -10px var(--acc)' };
+  const premium = usePremium();
+  // Premium: a confident flat accent button (no loud accent glow shadow).
+  const cls = `rounded-xl px-6 py-3 text-sm font-semibold text-white ${premium ? '' : 'shadow-lg'}`;
+  const style = premium ? { background: 'var(--acc)' } : { background: 'var(--acc)', boxShadow: '0 10px 30px -10px var(--acc)' };
   return href ? <a href={href} className={cls} style={style}>{children}</a> : <span className={cls} style={style}>{children}</span>;
 };
 const GhostCta = ({ children, href }: { children: React.ReactNode; href?: string }) => {
+  const premium = usePremium();
+  // Premium: the secondary action is a quiet text link, not a second heavy
+  // button — so the CTA area reads calm and confident, not button-heavy.
+  if (premium) {
+    const cls = 'inline-flex items-center gap-1.5 px-1 py-3 text-sm font-medium text-white/75 transition hover:text-white';
+    const inner = <>{children} <span aria-hidden>→</span></>;
+    return href ? <a href={href} className={cls}>{inner}</a> : <span className={cls}>{inner}</span>;
+  }
   const cls = 'rounded-xl border border-white/15 px-6 py-3 text-sm font-medium text-slate-200';
   return href ? <a href={href} className={cls}>{children}</a> : <span className={cls}>{children}</span>;
 };
@@ -393,8 +443,12 @@ function Backdrop({ motif, accent, full = false, animate = true }: { motif: BgMo
   // medical / marketplace) the ambient background is completely still — no drift,
   // no scan — so serious concepts read as calm and credible.
   const reduce = useReducedMotion();
+  const premium = usePremium();
   const still = !animate || !!reduce;
-  const glow = accent === 'vivid' ? 0.55 : accent === 'duotone' ? 0.4 : 0.16;
+  // Premium keeps the accent quiet: the ambient glow is pulled back so the accent
+  // reads as an intentional focal detail, not a wash over the whole hero.
+  const glowMul = premium ? 0.6 : 1;
+  const glow = (accent === 'vivid' ? 0.55 : accent === 'duotone' ? 0.4 : 0.16) * glowMul;
   const seam = <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-b from-transparent to-black/50" />;
   const grid = (size: number, op: number) => (
     <div aria-hidden className="absolute inset-0" style={{ backgroundImage: `linear-gradient(rgba(255,255,255,${op}) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,${op}) 1px,transparent 1px)`, backgroundSize: `${size}px ${size}px`, WebkitMaskImage: 'radial-gradient(ellipse at center,#000 40%,transparent 75%)', maskImage: 'radial-gradient(ellipse at center,#000 40%,transparent 75%)' }} />
@@ -433,10 +487,16 @@ function HeroBg({ full = false, plan, brief }: { full?: boolean; plan: WebBuildL
   return <Backdrop motif={plan.visualSystem.background} accent={plan.visualSystem.accentMode} full={full} animate={animate} />;
 }
 
-const HeroTitle = ({ children, className = '' }: { children: React.ReactNode; className?: string }) => (
-  <motion.h1 initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
-    className={`font-semibold text-white ${className}`} style={{ fontFamily: 'var(--hf)', letterSpacing: 'var(--tr)' }}>{children}</motion.h1>
-);
+const HeroTitle = ({ children, className = '' }: { children: React.ReactNode; className?: string }) => {
+  const premium = usePremium();
+  // Tight modern leading everywhere; premium adds balanced wrapping + tighter
+  // tracking so the headline reads editorial/premium, not default-SaaS.
+  return (
+    <motion.h1 initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+      className={`font-semibold text-white leading-[1.06] ${premium ? '[text-wrap:balance]' : ''} ${className}`}
+      style={{ fontFamily: 'var(--hf)', letterSpacing: premium ? '-0.025em' : 'var(--tr)' }}>{children}</motion.h1>
+  );
+};
 
 interface HeroProps { s: S; brief: WebBuildBrief; plan: WebBuildLayoutPlan; ctx: InteractionContext }
 
@@ -512,19 +572,23 @@ function HeroCentered({ s, brief, plan, ctx }: HeroProps) {
 /* — Split editorial: left copy, right module — */
 function HeroSplit({ s, brief, plan, ctx }: HeroProps) {
   const t = heroTexts(s, brief, ctx);
+  const premium = usePremium();
+  // Premium: a larger, cleaner headline, a slightly asymmetric column balance and
+  // more breathing room — the copy leads and the module reads as part of the
+  // composition, not a box pasted beside the text.
   return (
     <section className="relative isolate overflow-hidden">
       <HeroBg plan={plan} brief={brief} />
-      <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-6 py-20 sm:py-24 lg:grid-cols-2">
+      <div className={`relative mx-auto grid items-center px-6 ${premium ? 'max-w-6xl gap-14 py-24 sm:py-32 lg:grid-cols-[1.05fr_0.95fr] lg:gap-20' : 'max-w-6xl gap-12 py-20 sm:py-24 lg:grid-cols-2'}`}>
         <div>
           {t.eyebrow && <Eyebrow>{t.eyebrow}</Eyebrow>}
-          <HeroTitle className="mt-5 text-3xl sm:text-5xl">{t.title}</HeroTitle>
-          {t.sub && <p className="mt-5 max-w-xl text-base leading-relaxed text-slate-300 sm:text-lg">{t.sub}</p>}
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+          <HeroTitle className={premium ? 'mt-6 text-4xl sm:text-5xl lg:text-6xl' : 'mt-5 text-3xl sm:text-5xl'}>{t.title}</HeroTitle>
+          {t.sub && <p className={`mt-6 max-w-xl text-base leading-relaxed sm:text-lg ${premium ? 'text-white/70' : 'text-slate-300'}`}>{t.sub}</p>}
+          <div className={`flex flex-col gap-3 sm:flex-row sm:items-center ${premium ? 'mt-9' : 'mt-8'}`}>
             {t.cta && <PrimaryCta href={t.ctaHref}>{t.cta}</PrimaryCta>}
             {t.secondary && <GhostCta href={t.secondaryHref}>{t.secondary}</GhostCta>}
           </div>
-          {t.proof && <p className="mt-6 text-xs text-slate-400">{t.proof}</p>}
+          {t.proof && <p className={`text-xs text-slate-400 ${premium ? 'mt-7' : 'mt-6'}`}>{t.proof}</p>}
         </div>
         <VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} />
       </div>
@@ -762,15 +826,27 @@ interface PreviewRuntime {
 interface VarProps { s: S; plan: WebBuildLayoutPlan; index: number; art: WebBuildArtIdentity; ctx: InteractionContext; rt?: PreviewRuntime; lang?: PLang }
 
 function FeatureGrid({ s, art }: VarProps) {
+  const premium = usePremium();
   const items = bulletsOf(s).slice(0, 6);
+  // Premium: drop the boxed card for an open, borderless cell separated only by a
+  // hairline accent tick — whitespace and type carry the structure, not borders.
+  // A restrained monochrome icon keeps the accent from repeating on every card.
+  const cardCls = premium
+    ? `pr-4 pt-1 ${art.cardTone}`
+    : `rounded-[var(--pr)] border border-[color:var(--bd)] bg-[var(--sf)] p-6 transition hover:-translate-y-1 hover:border-white/20 ${art.cardTone}`;
   return (
     <div className="mx-auto max-w-6xl px-6">
       <H2>{heading(s)}</H2>
-      {s.sub && <p className="mx-auto mt-3 max-w-2xl text-center text-slate-400">{s.sub}</p>}
-      <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+      {s.sub && <p className={`mx-auto mt-3 max-w-2xl text-center ${premium ? 'text-white/55' : 'text-slate-400'}`}>{s.sub}</p>}
+      <div className={`grid gap-5 sm:grid-cols-2 lg:grid-cols-3 ${premium ? 'mt-12 gap-x-10 gap-y-10' : 'mt-10'}`}>
         {items.map((b, i) => (
           <Reveal key={i} i={i}>
-            <div className={`rounded-[var(--pr)] border border-[color:var(--bd)] bg-[var(--sf)] p-6 transition hover:-translate-y-1 hover:border-white/20 ${art.cardTone}`} style={art.mode === 'archive' ? { borderLeftColor: 'var(--acc)' } : undefined}><div className="mb-4 h-11 w-11 rounded-xl ring-1 ring-white/10" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 45%, transparent), color-mix(in srgb, var(--acc2) 22%, transparent))' }} /><p className="text-[15px] font-semibold leading-snug text-white">{b}</p></div>
+            <div className={cardCls} style={!premium && art.mode === 'archive' ? { borderLeftColor: 'var(--acc)' } : undefined}>
+              {premium
+                ? <div className="mb-3.5 h-px w-8" style={{ background: 'var(--acc)', opacity: 0.85 }} />
+                : <div className="mb-4 h-11 w-11 rounded-xl ring-1 ring-white/10" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 45%, transparent), color-mix(in srgb, var(--acc2) 22%, transparent))' }} />}
+              <p className={`font-semibold leading-snug text-white ${premium ? 'text-base' : 'text-[15px]'}`}>{b}</p>
+            </div>
           </Reveal>
         ))}
       </div>
@@ -2202,6 +2278,13 @@ export default function WebBuildPreviewDocument({
   // Phase 8A: the build's copy language, so structural FALLBACK labels (pricing CTA,
   // before/after toggle, search action) never appear in the wrong language.
   const previewLang = useMemo(() => previewLanguage(brief, sectionItems), [brief, sectionItems]);
+  // Phase 8C: premium composition mode — a render-only taste layer (calmer spacing,
+  // hairline surfaces, quieter accent, stronger type). Derived from the brief only.
+  const premium = useMemo(() => isPremiumComposition(brief), [brief]);
+  // Premium prefers a split/asymmetric hero over a generic centered / dashboard
+  // opening, so a product build does not read as a boxed SaaS template.
+  const heroComposition: HeroComposition = (premium && (plan.heroComposition === 'centered' || plan.heroComposition === 'dashboard-product'))
+    ? 'split-editorial' : plan.heroComposition;
   const variantOf = (id: string): SectionVariant => plan.sectionVariants[id] || 'feature-grid';
   const vt = visualSystemTokens(plan.visualSystem);
   const reduce = useReducedMotion();
@@ -2511,10 +2594,13 @@ export default function WebBuildPreviewDocument({
     '--hf': ds.headingFont,
     '--tr': ds.tracking,
     '--rad': ds.radius,
-    // Visual-system surface tokens consumed by every card/panel/module.
-    '--sf': vt.surfaceBg,
-    '--sfh': vt.surfaceHover,
-    '--bd': vt.border,
+    // Visual-system surface tokens consumed by every card/panel/module. Phase 8C:
+    // premium softens the border + surface to hairline/near-flat so the whole page
+    // stops reading as boxed cards — every `var(--bd)`/`var(--sf)` surface recedes
+    // at once, with no per-renderer edits.
+    '--sf': premium ? 'rgba(255,255,255,0.022)' : vt.surfaceBg,
+    '--sfh': premium ? 'rgba(255,255,255,0.045)' : vt.surfaceHover,
+    '--bd': premium ? 'rgba(255,255,255,0.07)' : vt.border,
     '--pr': vt.radius,
   } as CSSProperties;
 
@@ -2534,7 +2620,10 @@ export default function WebBuildPreviewDocument({
     );
   }
 
-  const banded = plan.rhythm === 'alternating' || plan.rhythm === 'editorial';
+  // Premium leans on whitespace, not banded stripes, for section rhythm.
+  const banded = !premium && (plan.rhythm === 'alternating' || plan.rhythm === 'editorial');
+  // Premium bumps a comfortable page to spacious so sections breathe.
+  const premiumDensity: WebBuildLayoutPlan['contentDensity'] = (premium && plan.contentDensity === 'comfortable') ? 'spacious' : plan.contentDensity;
   const kindOf = (rawId: string) => plan.sections.find((p) => p.id === rawId)?.kind;
 
   // Render one section (hero / footer / content variant) — shared by Home and the
@@ -2553,7 +2642,7 @@ export default function WebBuildPreviewDocument({
     if (!s) {
       inner = <div />;
     } else if (kind === 'hero') {
-      const Hero = HEROES[plan.heroComposition] || HEROES['split-editorial'];
+      const Hero = HEROES[heroComposition] || HEROES['split-editorial'];
       inner = (
         <div id={sid} style={{ scrollMarginTop: 72 }}>
           <Hero s={s} brief={brief} plan={plan} ctx={ctx} />
@@ -2569,7 +2658,7 @@ export default function WebBuildPreviewDocument({
       const Render = VARIANTS[variantOf(rawId)] || VARIANTS['feature-grid'];
       const i = contentIdx++;
       const band = banded && i % 2 === 1;
-      const pad = PAD[plan.contentDensity] || PAD.comfortable;
+      const pad = PAD[premiumDensity] || PAD.comfortable;
       inner = (
         <section id={sid} style={{ scrollMarginTop: 72, ...(band ? { background: 'rgba(255,255,255,0.015)' } : {}) }} className={`relative ${pad}`}>
           {Render({ s, plan, index: i, art, ctx, rt, lang: previewLang })}
@@ -2594,7 +2683,8 @@ export default function WebBuildPreviewDocument({
   const convCta = (convItem?.cta || '').trim();
 
   return (
-    <div ref={rootRef} id="top" data-palette-family={ds.paletteFamily} onClick={handlePreviewLinkClick} className="text-slate-200 antialiased" style={{ ...rootStyle, scrollBehavior: 'smooth' }}>
+    <PremiumContext.Provider value={premium}>
+    <div ref={rootRef} id="top" data-palette-family={ds.paletteFamily} data-premium={premium ? 'true' : undefined} onClick={handlePreviewLinkClick} className="text-slate-200 antialiased" style={{ ...rootStyle, scrollBehavior: 'smooth' }}>
       {previewNav.primaryNavItems.length > 0 && (
         <header className="sticky top-0 z-50 border-b border-white/[0.06] bg-black/30 backdrop-blur">
           {/* Phase 6C nav behaviour; Phase 6E polish — active item gets a subtle
@@ -2750,5 +2840,6 @@ export default function WebBuildPreviewDocument({
       {detail && <DetailModal title={detail.title} lines={detail.lines} onClose={() => setDetail(null)} />}
       {form && <LeadFormPanel type={form.type} section={form.section} onClose={() => setForm(null)} />}
     </div>
+    </PremiumContext.Provider>
   );
 }
