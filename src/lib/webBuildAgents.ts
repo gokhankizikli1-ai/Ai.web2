@@ -6499,11 +6499,11 @@ export function deriveFixer(input: FixerInput): { artifact: FixerAgentArtifact; 
       const r = sanitizeDemoSurfaceCopy(s.name, { aiCommerce, lang });
       if (r && r !== s.name) { addQuality('demo-copy', s.id, s.name, r, dsReason); s.name = r; }
     }
-    if (s.headline) {
+    if (s.headline && !cdHasUserTerm(s.headline)) {
       const r = sanitizeDemoSurfaceCopy(s.headline, { aiCommerce, lang });
       if (r && r !== s.headline) { addQuality('demo-copy', s.id, s.headline, r, dsReason); s.headline = r; }
     }
-    if (s.sub) {
+    if (s.sub && !cdHasUserTerm(s.sub)) {
       const r = sanitizeDemoSurfaceCopy(s.sub, { aiCommerce, lang });
       if (r && r !== s.sub) { addQuality('demo-copy', s.id, s.sub, r, dsReason); s.sub = r; }
     }

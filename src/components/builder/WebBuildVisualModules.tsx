@@ -199,6 +199,12 @@ const STOREFRONT_SAMPLE_FLOW = (lang: PLang): Array<{ assistant: boolean; text: 
   { assistant: false, text: ML(lang, 'What about returns?', 'Peki ya iadeler?') },
   { assistant: true, text: ML(lang, 'The sample policy says returns are accepted within the store’s stated window.', 'Örnek politika, iadelerin mağazanın belirttiği süre içinde kabul edildiğini söylüyor.') },
 ];
+const CHAT_COMMERCE_SIGNAL_RE =
+  /\b(?:storefront|shop(?:per|ping)?|checkout|cart|catalog|retail|marketplace|e-?commerce|ecommerce)\b|\b(?:online\s+store|store\s+(?:catalog|policy|trust|integrations?|orders?|returns?)|order\s+(?:status|tracking|history|lookup|flow))\b|\b(?:mağaza|sipariş|iade|e-?ticaret)\b/i;
+
+function hasChatCommerceSignal(labels: string[] | undefined): boolean {
+  return CHAT_COMMERCE_SIGNAL_RE.test((labels || []).join(' '));
+}
 
 /** Real labels first, then concept fallbacks — de-duped — so the mockup always has
  *  enough distinct surfaces to compose without ever repeating or fabricating. */
@@ -248,7 +254,7 @@ function ProductShowcase({ labels, compact, lang }: { labels?: string[]; compact
   // assistant flow (front-end-only, honest) instead of bubbles built from structural
   // labels. Requires an actual COMMERCE signal so a non-ecommerce assistant does not
   // get the storefront/returns flow.
-  const isChatCommerceDemo = /shop|store|storefront|product|order|return|catalog|shopper|checkout|\bcart\b|retail|mağaza|ürün|sipariş|iade|e-?ticaret|e-?commerce|ecommerce/i.test((labels || []).join(' '));
+  const isChatCommerceDemo = hasChatCommerceSignal(labels);
   const bubbles = (isChatCommerceDemo
     ? STOREFRONT_SAMPLE_FLOW(lg)
     : [
