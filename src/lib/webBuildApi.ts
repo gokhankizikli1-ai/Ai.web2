@@ -211,13 +211,33 @@ export interface WebBuildBrief {
   paletteFamily?: string;
   selectedVisualCandidate?: string;
   accentStrategy?: string;
+  // DESIGN THINKING PLAN (Phase 9A) — the MODEL's own, user/dev-visible design
+  // decision artifact (NOT hidden chain-of-thought). Parsed from the `## Design
+  // Thinking Plan` section. All optional & backward compatible: old builds without
+  // the section simply carry none, and the deterministic ledger still applies.
+  designThesis?: string;
+  audienceDecision?: string;
+  firstImpression?: string;
+  selectedVisualDirection?: string;
+  rejectedDirections?: string;
+  heroCompositionDecision?: string;
+  sectionRhythmDecision?: string;
+  primaryDemoSurface?: string;
+  paletteDecision?: string;
+  typographyDecision?: string;
+  templateTrapsToAvoid?: string;
+  differentiationMove?: string;
+  designQualityBar?: string;
 }
 
 /** Pull the labeled strategy lines out of the Build Plan / Design Direction. */
 export function extractBrief(sections: BuildSection[]): WebBuildBrief {
   const plan = sections.find((s) => /build\s*plan/i.test(s.title));
   const design = sections.find((s) => /design\s*direction/i.test(s.title));
-  const body = `${plan?.body || ''}\n${design?.body || ''}`;
+  // Phase 9A: the model-native Design Thinking Plan is a separate H2 section; fold
+  // its body into the label-grab corpus so its fields parse alongside the others.
+  const think = sections.find((s) => /design\s*thinking\s*plan|thinking\s*plan/i.test(s.title));
+  const body = `${plan?.body || ''}\n${design?.body || ''}\n${think?.body || ''}`;
   const grab = (re: RegExp): string | undefined => {
     const m = body.match(re);
     if (!m) return undefined;
@@ -265,6 +285,20 @@ export function extractBrief(sections: BuildSection[]): WebBuildBrief {
     leadCaptureFields: grab(/(?:lead\s*capture\s*fields)\s*[:\-–]\s*(.+)/i),
     afterLeadCaptureScreen: grab(/(?:after\s*lead\s*capture\s*screen|after\s*lead\s*capture)\s*[:\-–]\s*(.+)/i),
     ctaConsistencyRule: grab(/(?:cta\s*consistency\s*rule|cta\s*consistency)\s*[:\-–]\s*(.+)/i),
+    // Design Thinking Plan (Phase 9A) — exact labels, all optional/backward-compatible.
+    designThesis: grab(/(?:design\s*thesis)\s*[:\-–]\s*(.+)/i),
+    audienceDecision: grab(/(?:audience\s*decision)\s*[:\-–]\s*(.+)/i),
+    firstImpression: grab(/(?:first\s*impression)\s*[:\-–]\s*(.+)/i),
+    selectedVisualDirection: grab(/(?:selected\s*visual\s*direction)\s*[:\-–]\s*(.+)/i),
+    rejectedDirections: grab(/(?:rejected\s*directions?)\s*[:\-–]\s*(.+)/i),
+    heroCompositionDecision: grab(/(?:hero\s*composition\s*decision|hero\s*composition)\s*[:\-–]\s*(.+)/i),
+    sectionRhythmDecision: grab(/(?:section\s*rhythm\s*decision|section\s*rhythm)\s*[:\-–]\s*(.+)/i),
+    primaryDemoSurface: grab(/(?:primary\s*demo\s*surface)\s*[:\-–]\s*(.+)/i),
+    paletteDecision: grab(/(?:palette\s*decision)\s*[:\-–]\s*(.+)/i),
+    typographyDecision: grab(/(?:typography\s*decision)\s*[:\-–]\s*(.+)/i),
+    templateTrapsToAvoid: grab(/(?:template\s*traps?\s*to\s*avoid|template\s*traps?)\s*[:\-–]\s*(.+)/i),
+    differentiationMove: grab(/(?:differentiation\s*move)\s*[:\-–]\s*(.+)/i),
+    designQualityBar: grab(/(?:quality\s*bar)\s*[:\-–]\s*(.+)/i),
   };
 }
 
@@ -370,7 +404,29 @@ export function buildWebBuildRequest(
       'statistics, or claim you browsed/researched anything you did not fetch.',
       '',
       'STEP 2 — OUTPUT. Keep these EXACT H2 sections (the parser depends on them),',
-      'and inside the first two use these EXACT labeled fields, one per line:',
+      'and inside them use these EXACT labeled fields, one per line:',
+      '',
+      '## Design Thinking Plan',
+      'Make a REAL design decision BEFORE building — this is a visible, structured',
+      'design plan (NOT hidden chain-of-thought, NOT private reasoning). Name CONCRETE',
+      'choices. Do NOT write vague lines like "modern premium", "clean layout", "user',
+      'friendly", "sleek" — those are banned. You MUST reject at least two plausible but',
+      'wrong directions (including the default template trap), and you MUST explicitly',
+      'avoid repeating the same generic SaaS template. Keep it ~12–16 short lines. Use',
+      'these EXACT labels, one per line:',
+      'Design thesis: <one sentence: the site\'s real identity>',
+      'Audience decision: <what the visitor must decide above the fold>',
+      'First impression: <what the first screen should feel like — concrete, not "premium">',
+      'Selected visual direction: <a SPECIFIC visual direction, not "modern premium">',
+      'Rejected directions: <2-3 directions you rejected and WHY, incl. the default template trap (e.g. dark grid + gold accent + generic dashboard)>',
+      'Hero composition decision: <specific hero structure and why, e.g. editorial split with product mockup / asymmetric visual / story editorial>',
+      'Section rhythm decision: <how sections vary down the page so it does not feel templated>',
+      'Primary demo surface: <chat / product-flow / dashboard / catalog / etc. and why>',
+      'Palette decision: <specific palette family/intent and why, e.g. graphite-cyan / porcelain-blue / monochrome, no gold>',
+      'Typography decision: <specific type mood and hierarchy>',
+      'Template traps to avoid: <exact traps, e.g. dark grid + gold accent + generic dashboard + equal-weight card grid>',
+      'Differentiation move: <the ONE thing that makes this result not feel templated>',
+      'Quality bar: <what would make this feel Kimi / Linear / OpenAI-level>',
       '',
       '## Build Plan',
       'Website type: <…>',

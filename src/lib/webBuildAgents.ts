@@ -210,6 +210,43 @@ export type DemoSurfaceIntent =
   | 'chat-demo' | 'product-flow-demo' | 'dashboard-demo' | 'catalog-demo'
   | 'booking-demo' | 'content-demo' | 'none';
 
+/* ── Model-native Design Plan (Phase 9A) ──────────────────────────────────
+ * The model's OWN design decisions (from the visible `## Design Thinking Plan`),
+ * normalized to the layout/palette vocabulary the downstream agents obey. When
+ * present it CONTROLS taste/composition (hero, palette, demo surface); the
+ * deterministic Concept Authority still protects correctness. Entirely optional —
+ * old builds simply carry no modelDesignPlan and the deterministic ledger applies. */
+export interface ModelDesignPlan {
+  designThesis?: string;
+  firstImpression?: string;
+  selectedVisualDirection?: string;
+  /** Raw rejected-directions line + the split, meaningful items. */
+  rejectedDirections?: string;
+  rejectedLooks: string[];
+  heroCompositionDecision?: string;
+  sectionRhythmDecision?: string;
+  paletteDecision?: string;
+  typographyDecision?: string;
+  templateTrapsToAvoid?: string;
+  templateTraps: string[];
+  differentiationMove?: string;
+  qualityBar?: string;
+  /** Normalized to the layout plan's hero vocabulary (validated downstream). */
+  heroComposition?: string;
+  /** Normalized to a visual-module key (product-showcase / data-dashboard / …). */
+  demoModule?: string;
+  /** Normalized palette family the art direction should apply, if the model named one. */
+  paletteFamily?: string;
+  /** True when the model explicitly rejected gold/amber (or a dark-grid+gold look). */
+  avoidGold: boolean;
+  /** 0–100 — how concrete/meaningful the model's plan is (anti-generic gate). */
+  planSpecificityScore: number;
+  /** Honest warnings when the plan is vague/generic (used by Quality Director). */
+  weakDesignPlanWarnings: string[];
+  /** True when the model rejected ≥2 specific directions. */
+  hasMeaningfulRejectedDirections: boolean;
+}
+
 export interface StrategicThinkingLedger {
   /** Detected output language for ALL website copy (mixed-language is forbidden). */
   languageIntent: string;
@@ -243,6 +280,8 @@ export interface StrategicThinkingLedger {
   qualityBar: string;
   /** Honest one-line explanation of the read (owner/dev diagnostic). */
   reason: string;
+  /** The model's OWN design plan (Phase 9A) — controls taste/composition when present. */
+  modelDesignPlan?: ModelDesignPlan;
 }
 
 /* ── Research Agent artifact ──────────────────────────────────────────── */
@@ -813,7 +852,9 @@ export type QualityIssueCategory =
   | 'flow-confusion' | 'demo-unclear' | 'visual-density' | 'concept-drift' | 'honesty-risk'
   /* ── Phase 7B: anti-template visual checks ── */
   | 'same-template-risk' | 'accent-overuse' | 'dashboard-overuse' | 'palette-mismatch'
-  | 'visual-monotony' | 'weak-visual-exploration';
+  | 'visual-monotony' | 'weak-visual-exploration'
+  /* ── Phase 9A: model-native design plan quality ── */
+  | 'weak-design-plan';
 
 export interface QualityIssue {
   id: string;
@@ -1229,9 +1270,119 @@ const AI_CHATBOT_SECTION_LABELS = (lang: Lang): string[] => [
   L(lang, 'Product demo', 'Ürün demosu'),
 ];
 
+/* ── Model-native Design Plan normalization (Phase 9A) ────────────────────── */
+
+/** Split a comma/semicolon/• list line into trimmed, non-empty items. */
+function splitPlanList(s?: string): string[] {
+  return (s || '').split(/[;,•·]|\s\/\s|\s—\s|\s-\s(?=[A-ZÇĞİÖŞÜ])/).map((x) => x.trim()).filter((x) => x.length > 2);
+}
+
+/** Map the model's hero-composition sentence to the layout plan's hero vocabulary. */
+function heroFromDecision(text?: string): string | undefined {
+  const t = (text || '').toLowerCase();
+  if (!t) return undefined;
+  if (/asymmetr/.test(t)) return 'asymmetric-visual';
+  if (/split|editorial\s*split|two[-\s]?column|side[-\s]?by[-\s]?side|left\s*copy/.test(t)) return 'split-editorial';
+  if (/story|narrative|editorial/.test(t)) return 'story-editorial';
+  if (/immersive|full[-\s]?bleed|cinematic/.test(t)) return 'immersive-full-bleed';
+  if (/catalog|collection|gallery\s*grid/.test(t)) return 'catalog-collection';
+  if (/dashboard|product\s*panel|control\s*panel/.test(t)) return 'dashboard-product';
+  if (/centered|center/.test(t)) return 'centered';
+  return undefined;
+}
+
+/** Map the model's demo-surface sentence to a visual-module key. */
+function demoModuleFromDecision(text?: string): string | undefined {
+  const t = (text || '').toLowerCase();
+  if (!t) return undefined;
+  if (/chat|conversation|product[-\s]?flow|assistant|sohbet/.test(t)) return 'product-showcase';
+  if (/dashboard|analytics|metrics/.test(t)) return 'data-dashboard';
+  if (/catalog|listing|storefront|collection/.test(t)) return 'catalog-archive';
+  if (/timeline|process|steps?/.test(t)) return 'timeline-process';
+  if (/product/.test(t)) return 'product-showcase';
+  return undefined;
+}
+
+/** Map the model's palette decision to a PaletteFamily + an explicit avoid-gold flag. */
+function paletteFromDecision(text?: string, rejected?: string, traps?: string): { family?: string; avoidGold: boolean } {
+  const t = `${text || ''} ${rejected || ''} ${traps || ''}`.toLowerCase();
+  const avoidGold = /no\s*gold|not\s*gold|avoid\s*gold|without\s*gold|no\s*amber|anti[-\s]?gold|monochrome|graphite|cyan|slate|porcelain|no\s*warm|drop\s*the\s*gold|dark\s*grid\s*\+\s*gold|gold\s*accent/.test(t);
+  const named = (text || '').toLowerCase();
+  let family: string | undefined;
+  if (/graphite|cyan/.test(named)) family = 'graphite-cyan';
+  else if (/porcelain/.test(named)) family = 'porcelain-blue';
+  else if (/slate|violet|purple/.test(named)) family = 'slate-violet';
+  else if (/midnight|deep\s*blue|navy/.test(named)) family = 'midnight-blue';
+  else if (/black.*white.*red|monochrome.*red|red\s*accent/.test(named)) family = 'black-white-red';
+  else if (/ink|lime/.test(named)) family = 'ink-lime';
+  else if (/sage|botanical/.test(named)) family = 'botanical-sage';
+  else if (/warm.*green|neutral.*green/.test(named)) family = 'warm-neutral-green';
+  else if (/cream|editorial\s*ink/.test(named)) family = 'editorial-cream';
+  else if (/sepia|archive/.test(named)) family = 'archive-sepia';
+  else if (/silver|automotive/.test(named)) family = 'automotive-silver';
+  else if (/amber|gold|warm\s*hospitality/.test(named) && !avoidGold) family = 'hospitality-amber';
+  // Named a cool/blue palette without a specific family → a restrained cool default.
+  if (!family && avoidGold) family = 'graphite-cyan';
+  return { family, avoidGold };
+}
+
+/** Score the model's Design Thinking Plan for concreteness (anti-generic gate). */
+function scoreDesignPlan(b: WebBuildBrief): { score: number; warnings: string[]; rejectedLooks: string[]; meaningfulRejected: boolean } {
+  const warnings: string[] = [];
+  const vague = /^(modern|premium|clean|sleek|minimal|elegant|nice|beautiful|professional|user[-\s]?friendly|modern\s*premium|clean\s*layout|premium\s*modern)\.?$/i;
+  const concrete = (s?: string): boolean => !!s && s.trim().length > 8 && !vague.test(s.trim());
+  const rejectedLooks = splitPlanList(b.rejectedDirections);
+  const meaningfulRejected = rejectedLooks.length >= 2;
+  let score = 0;
+  if (concrete(b.designThesis)) score += 12; else warnings.push('vague/absent design thesis');
+  if (concrete(b.selectedVisualDirection)) score += 14; else warnings.push('vague/absent visual direction ("modern premium" is not a direction)');
+  if (meaningfulRejected) score += 18; else warnings.push('fewer than 2 meaningful rejected directions');
+  if (concrete(b.heroCompositionDecision)) score += 14; else warnings.push('no concrete hero composition decision');
+  if (concrete(b.paletteDecision)) score += 12; else warnings.push('no concrete palette decision');
+  if (concrete(b.typographyDecision)) score += 8; else warnings.push('no concrete typography decision');
+  if ((b.templateTrapsToAvoid || '').trim().length > 6) score += 12; else warnings.push('no template traps named');
+  if (concrete(b.differentiationMove)) score += 10; else warnings.push('no differentiation move');
+  return { score: Math.min(100, score), warnings, rejectedLooks, meaningfulRejected };
+}
+
+/** Build the normalized Model Design Plan from the parsed brief fields. Returns
+ *  undefined when the model produced no Design Thinking Plan at all (old builds). */
+function deriveModelDesignPlan(b: WebBuildBrief): ModelDesignPlan | undefined {
+  const has = b.designThesis || b.selectedVisualDirection || b.heroCompositionDecision
+    || b.paletteDecision || b.rejectedDirections || b.templateTrapsToAvoid
+    || b.differentiationMove || b.firstImpression || b.primaryDemoSurface || b.typographyDecision;
+  if (!has) return undefined;
+  const { family, avoidGold } = paletteFromDecision(b.paletteDecision, b.rejectedDirections, b.templateTrapsToAvoid);
+  const { score, warnings, rejectedLooks, meaningfulRejected } = scoreDesignPlan(b);
+  return {
+    designThesis: b.designThesis,
+    firstImpression: b.firstImpression,
+    selectedVisualDirection: b.selectedVisualDirection,
+    rejectedDirections: b.rejectedDirections,
+    rejectedLooks,
+    heroCompositionDecision: b.heroCompositionDecision,
+    sectionRhythmDecision: b.sectionRhythmDecision,
+    paletteDecision: b.paletteDecision,
+    typographyDecision: b.typographyDecision,
+    templateTrapsToAvoid: b.templateTrapsToAvoid,
+    templateTraps: splitPlanList(b.templateTrapsToAvoid),
+    differentiationMove: b.differentiationMove,
+    qualityBar: b.designQualityBar,
+    heroComposition: heroFromDecision(b.heroCompositionDecision),
+    demoModule: demoModuleFromDecision(b.primaryDemoSurface || b.heroCompositionDecision),
+    paletteFamily: family,
+    avoidGold,
+    planSpecificityScore: score,
+    weakDesignPlanWarnings: warnings,
+    hasMeaningfulRejectedDirections: meaningfulRejected,
+  };
+}
+
 /**
- * Derive the Strategic Thinking Ledger — the deterministic strategic decision the
- * downstream agents obey. Pure and deterministic (no model call, no Date/random);
+ * Derive the Strategic Thinking Ledger — a deterministic strategic decision MERGED
+ * with the model-native Design Thinking Plan (Phase 9A). Concept Authority still
+ * protects correctness; when the model plan is present it controls taste (hero,
+ * palette, demo surface). Pure and deterministic (no model call, no Date/random);
  * returns undefined only when there is genuinely no prompt/brief signal.
  */
 export function deriveThinkingLedger(
@@ -1261,12 +1412,23 @@ export function deriveThinkingLedger(
 
   const languageIntent = L(lang, lang === 'tr' ? 'Turkish' : 'English', lang === 'tr' ? 'Türkçe' : 'İngilizce');
 
+  // Phase 9A: the model's OWN Design Thinking Plan (visible, structured) — normalized
+  // to the layout/palette vocabulary. When present it controls taste/composition.
+  const modelDesignPlan = deriveModelDesignPlan(brief);
+
   let demoSurfaceIntent: DemoSurfaceIntent = 'none';
   if (isChatbot) demoSurfaceIntent = 'chat-demo';
   else if (isAiSaas) demoSurfaceIntent = dashboardRequested ? 'dashboard-demo' : 'product-flow-demo';
   else if (primaryLc === 'marketplace') demoSurfaceIntent = 'catalog-demo';
   else if (primaryLc === 'hospitality' || /reservation|booking|randevu|rezervasyon/.test(hay)) demoSurfaceIntent = 'booking-demo';
   else if (primaryLc === 'archive' || primaryLc === 'portfolio' || primaryLc === 'education') demoSurfaceIntent = 'content-demo';
+  // The model's explicit demo-surface decision refines the intent (dashboard only
+  // when the model actually chose it) — but never flips a chatbot away from chat.
+  if (modelDesignPlan?.demoModule && !isChatbot) {
+    if (modelDesignPlan.demoModule === 'data-dashboard') demoSurfaceIntent = 'dashboard-demo';
+    else if (modelDesignPlan.demoModule === 'product-showcase') demoSurfaceIntent = 'product-flow-demo';
+    else if (modelDesignPlan.demoModule === 'catalog-archive') demoSurfaceIntent = 'catalog-demo';
+  }
 
   const mustNotBecome: string[] = [];
   if (isAiSaas) {
@@ -1353,6 +1515,7 @@ export function deriveThinkingLedger(
     languageRules,
     qualityBar,
     reason,
+    modelDesignPlan,
   };
 }
 
@@ -3307,11 +3470,23 @@ export function deriveArtDirection(
   // Apply the selected candidate's palette family to the color system UNLESS the
   // model / research explicitly pinned a color (their choice always wins). This
   // is what makes AI/SaaS no longer always dark+gold and light options possible.
-  const famSpec = paletteFamily && !modelChoseColor && !(cp?.recommendedPalette || []).length
-    ? PALETTE_FAMILIES[paletteFamily as PaletteFamily]
-    : undefined;
+  // Phase 9A: the MODEL's Design Thinking Plan palette decision has the highest taste
+  // authority — it overrides research/exploration (never an explicit pinned hex).
+  // "avoid gold" (or a rejected dark-grid+gold look) forces a restrained cool family.
+  const mpPlan = ledger?.modelDesignPlan;
+  const explicitHex = !!(brief.artAccent || brief.artBg);
+  const mpFamily: PaletteFamily | undefined = (!explicitHex && mpPlan?.paletteFamily && PALETTE_FAMILIES[mpPlan.paletteFamily as PaletteFamily])
+    ? (mpPlan.paletteFamily as PaletteFamily) : undefined;
+  const exploFamily: PaletteFamily | undefined = (paletteFamily && !modelChoseColor && !(cp?.recommendedPalette || []).length)
+    ? (paletteFamily as PaletteFamily) : undefined;
+  let famKey: PaletteFamily | undefined = mpFamily || exploFamily;
+  if (!explicitHex && mpPlan?.avoidGold && (!famKey || isGoldish(PALETTE_FAMILIES[famKey]?.accent))) {
+    famKey = 'graphite-cyan';
+  }
+  const famSpec = famKey ? PALETTE_FAMILIES[famKey] : undefined;
+  if (famKey) paletteFamily = famKey; // reflect the final palette decision in diagnostics
   const colorSystemFromFamily: ArtDirectionColorSystem = famSpec
-    ? { ...colorSystemBase, background: famSpec.bg, accent: famSpec.accent, accent2: famSpec.accent2, primary: famSpec.accent, secondary: famSpec.accent2, paletteName: paletteFamily }
+    ? { ...colorSystemBase, background: famSpec.bg, accent: famSpec.accent, accent2: famSpec.accent2, primary: famSpec.accent, secondary: famSpec.accent2, paletteName: famKey }
     : colorSystemBase;
 
   // Fold the researched color-psychology reasoning + colors-to-avoid onto the
@@ -3339,8 +3514,9 @@ export function deriveArtDirection(
   const mobileLean = /mobile/i.test(tu?.devicePreference || '');
   const premiumLevel = vsr?.premiumLevel;
 
-  // visualMood — a specific style statement (prefer the researched style type).
-  const visualMood = brief.visualMood || vsr?.styleType || brief.style || inferred.visualStyle;
+  // visualMood — a specific style statement (prefer the model's own Design Thinking
+  // Plan direction, then the researched style type). Phase 9A.
+  const visualMood = brief.visualMood || mpPlan?.selectedVisualDirection || mpPlan?.firstImpression || vsr?.styleType || brief.style || inferred.visualStyle;
   // brandPersonality — composed from the real target user + tone + premium level,
   // never a bare "confident, modern, premium".
   const brandPersonality = uniq([
@@ -3354,6 +3530,7 @@ export function deriveArtDirection(
   // typography — dynamic on audience + product (editorial vs product UI, luxury
   // vs playful, data-heavy vs visual-heavy, older-trust vs younger-exploratory).
   const typographyDirection = brief.typographyDirection
+    || mpPlan?.typographyDecision
     || research?.uiAgentInstructions?.recommendedTypography
     || (premiumLevel === 'luxury' || (!!vsr?.styleType && /editorial|luxur/i.test(vsr.styleType))
       ? L(lang, 'Editorial serif headlines with generous leading + a clean sans body — refined, unhurried.',
@@ -4310,7 +4487,14 @@ export function deriveLayoutSteering(
   if (agentHero) out.agentHero = agentHero;
   if (agentModule) out.agentModule = agentModule;
   // Phase 8A: the ledger has final say over the dashboard-vs-product demo surface.
-  return guardLayoutAgainstDashboard(out, ledger);
+  const guarded = guardLayoutAgainstDashboard(out, ledger);
+  // Phase 9A: the MODEL's own hero/demo decision (from the Design Thinking Plan) has
+  // the HIGHEST authority — applied AFTER the dashboard guard so an explicit model
+  // choice is never demoted. Values are validated against the plan whitelist later.
+  const mp = ledger?.modelDesignPlan;
+  if (mp?.heroComposition) guarded.agentHero = mp.heroComposition;
+  if (mp?.demoModule) guarded.agentModule = mp.demoModule;
+  return guarded;
 }
 
 /**
@@ -5366,6 +5550,21 @@ export function deriveQualityDirector(input: QualityDirectorInput): QualityDirec
   }
   if (isAiSaas && goldAccent) {
     add('info', 'accent-overuse', 'Gold/amber accent on an AI/SaaS build reads as the same template and can strain the eyes.', 'Prefer a restrained cool accent; reserve warm gold for hospitality/heritage concepts.', 'artDirection.colorSystem.accent');
+  }
+  // Phase 9A: the model's OWN Design Thinking Plan is authoritative — flag when the
+  // rendered result still matches a direction the model explicitly REJECTED, and
+  // surface a weak/generic plan so the plan itself can be strengthened next time.
+  const mdp = ledger?.modelDesignPlan;
+  if (mdp) {
+    if (mdp.avoidGold && goldAccent) {
+      add('warning', 'same-template-risk', 'The model design plan rejected gold/amber, but the rendered accent is still gold.', 'Apply the model\'s palette decision (a restrained cool family); do not fall back to the gold default.', 'artDirection.colorSystem.accent');
+    }
+    if (mdp.rejectedLooks.some((r) => /dark\s*grid|gold|dashboard|generic|template/i.test(r)) && isAiSaas && !bgLight && (goldAccent || hasDashboardLang)) {
+      add('warning', 'same-template-risk', 'The rendered look still matches a direction the model design plan explicitly rejected.', 'Honor the model\'s Selected/Rejected directions: change the palette/hero away from the rejected template.', 'artDirection');
+    }
+    if (mdp.planSpecificityScore < 45) {
+      add('info', 'weak-design-plan', `Design Thinking Plan is thin (specificity ${mdp.planSpecificityScore}/100): ${mdp.weakDesignPlanWarnings.slice(0, 3).join('; ') || 'not concrete enough'}.`, 'Ask the model for a more specific plan: name the visual direction, reject 2+ concrete directions, and pick a hero/palette/differentiation move.', 'designThinkingPlan');
+    }
   }
   if (isAiSaas && hasDashboardLang && !/conversation|answer[-\s]?routing|\bflow\b|hand[-\s]?off|no charts|not a metrics dashboard/i.test(dashHay)) {
     add('warning', 'dashboard-overuse', 'Hero/mockup leans on a generic dashboard/chart with no concept-specific twist.', 'Demo the actual concept (conversation / workflow), not a chart dashboard.', 'artDirection.heroTreatment');

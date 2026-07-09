@@ -330,6 +330,19 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
     if (tl) {
       ownerRows.push(['thinkingLedger', `${tl.primaryConcept}${tl.targetVertical ? ` · vertical: ${tl.targetVertical}` : ''} · demo: ${tl.demoSurfaceIntent} · lang: ${tl.languageIntent}`]);
       if (tl.mustNotBecome?.length) ownerRows.push(['ledger.mustNotBecome', tl.mustNotBecome.join(', ')]);
+      // Model-native Design Thinking Plan (Phase 9A) — the model's OWN design decision.
+      const mdp = tl.modelDesignPlan;
+      if (mdp) {
+        ownerRows.push(['designPlan', `specificity ${mdp.planSpecificityScore}/100${mdp.hasMeaningfulRejectedDirections ? ' · rejected ✓' : ' · no rejects'}${mdp.avoidGold ? ' · avoid-gold' : ''}`]);
+        if (mdp.designThesis) ownerRows.push(['plan.thesis', mdp.designThesis]);
+        if (mdp.selectedVisualDirection) ownerRows.push(['plan.visualDirection', mdp.selectedVisualDirection]);
+        if (mdp.rejectedDirections) ownerRows.push(['plan.rejected', mdp.rejectedDirections]);
+        if (mdp.heroCompositionDecision) ownerRows.push(['plan.hero', `${mdp.heroCompositionDecision}${mdp.heroComposition ? ` → ${mdp.heroComposition}` : ''}`]);
+        if (mdp.paletteDecision) ownerRows.push(['plan.palette', `${mdp.paletteDecision}${mdp.paletteFamily ? ` → ${mdp.paletteFamily}` : ''}`]);
+        if (mdp.differentiationMove) ownerRows.push(['plan.differentiation', mdp.differentiationMove]);
+        if (mdp.templateTrapsToAvoid) ownerRows.push(['plan.trapsAvoided', mdp.templateTrapsToAvoid]);
+        if (mdp.weakDesignPlanWarnings.length) ownerRows.push(['plan.weakWarnings', mdp.weakDesignPlanWarnings.slice(0, 3).join('; ')]);
+      }
     }
     const enf = step.artifacts?.enforcement;
     if (enf?.didDetectConceptDrift) ownerRows.push(['conceptDrift', `detected${enf.didFixConceptDrift ? ' · fixed' : ''}`]);
