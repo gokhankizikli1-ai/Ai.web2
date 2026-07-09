@@ -467,14 +467,15 @@ function HeroProof({ brief }: { brief: WebBuildBrief }) {
   );
 }
 
-function heroTexts(s: S, brief: WebBuildBrief, ctx: InteractionContext) {
+function heroTexts(s: S, brief: WebBuildBrief, plan: WebBuildLayoutPlan, ctx: InteractionContext) {
   const realBullets = (s.bullets || []).filter(Boolean);
+  const moduleLang = briefLang(brief);
   // Phase 8B: when a product/chat hero's own copy is thin, hand the visual module
   // concept-specific STRUCTURAL labels (language-aware) so the demo surface reads
   // like a real product — never claims, just surface names. Real copy always wins.
-  const moduleLabels = (realBullets.length >= 3 || !isProductChatConcept(brief))
-    ? s.bullets
-    : [...realBullets, ...CHAT_MODULE_LABELS(briefLang(brief))].slice(0, 6);
+  const moduleLabels = (plan.primaryVisualModule === 'product-showcase' && realBullets.length < 3 && isProductChatConcept(brief))
+    ? [...realBullets, ...CHAT_MODULE_LABELS(moduleLang)].slice(0, 6)
+    : s.bullets;
   return {
     title: s.headline || s.copyPreview?.split(/[.!?\n]/)[0] || brief.type || '',
     eyebrow: brief.type || s.bullets?.[0],
@@ -483,6 +484,7 @@ function heroTexts(s: S, brief: WebBuildBrief, ctx: InteractionContext) {
     secondary: s.bullets?.[1],
     proof: s.bullets?.[2],
     moduleLabels,
+    moduleLang,
     // Concept-relevant scroll targets for the hero CTAs (never dead).
     ctaHref: ctx.primaryTarget,
     secondaryHref: ctx.secondaryTarget,
@@ -491,7 +493,7 @@ function heroTexts(s: S, brief: WebBuildBrief, ctx: InteractionContext) {
 
 /* — Centered (kept as a fallback; the plan rarely selects it) — */
 function HeroCentered({ s, brief, plan, ctx }: HeroProps) {
-  const t = heroTexts(s, brief, ctx);
+  const t = heroTexts(s, brief, plan, ctx);
   return (
     <section className="relative isolate overflow-hidden">
       <HeroBg full plan={plan} brief={brief} />
@@ -503,7 +505,7 @@ function HeroCentered({ s, brief, plan, ctx }: HeroProps) {
           {t.cta && <PrimaryCta href={t.ctaHref}>{t.cta}</PrimaryCta>}
           {t.secondary && <GhostCta href={t.secondaryHref}>{t.secondary}</GhostCta>}
         </div>
-        <div className="mx-auto mt-12 max-w-lg"><VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} compact /></div>
+        <div className="mx-auto mt-12 max-w-lg"><VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} lang={t.moduleLang} compact /></div>
       </div>
     </section>
   );
@@ -511,7 +513,7 @@ function HeroCentered({ s, brief, plan, ctx }: HeroProps) {
 
 /* — Split editorial: left copy, right module — */
 function HeroSplit({ s, brief, plan, ctx }: HeroProps) {
-  const t = heroTexts(s, brief, ctx);
+  const t = heroTexts(s, brief, plan, ctx);
   return (
     <section className="relative isolate overflow-hidden">
       <HeroBg plan={plan} brief={brief} />
@@ -526,7 +528,7 @@ function HeroSplit({ s, brief, plan, ctx }: HeroProps) {
           </div>
           {t.proof && <p className="mt-6 text-xs text-slate-400">{t.proof}</p>}
         </div>
-        <VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} />
+        <VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} lang={t.moduleLang} />
       </div>
     </section>
   );
@@ -534,12 +536,12 @@ function HeroSplit({ s, brief, plan, ctx }: HeroProps) {
 
 /* — Asymmetric visual: oversized offset module, overlapping copy — */
 function HeroAsymmetric({ s, brief, plan, ctx }: HeroProps) {
-  const t = heroTexts(s, brief, ctx);
+  const t = heroTexts(s, brief, plan, ctx);
   return (
     <section className="relative isolate overflow-hidden">
       <HeroBg plan={plan} brief={brief} />
       <div className="relative mx-auto max-w-6xl px-6 py-20 sm:py-28">
-        <div className="ml-auto w-full max-w-3xl opacity-95 lg:w-[62%]"><VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} /></div>
+        <div className="ml-auto w-full max-w-3xl opacity-95 lg:w-[62%]"><VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} lang={t.moduleLang} /></div>
         <div className="relative -mt-24 max-w-xl rounded-3xl border border-[color:var(--bd)] bg-black/50 p-8 backdrop-blur-md lg:-mt-40">
           {t.eyebrow && <Eyebrow>{t.eyebrow}</Eyebrow>}
           <HeroTitle className="mt-4 text-3xl sm:text-5xl">{t.title}</HeroTitle>
@@ -556,7 +558,7 @@ function HeroAsymmetric({ s, brief, plan, ctx }: HeroProps) {
 
 /* — Dashboard/product: centered copy, then a wide product panel — */
 function HeroDashboard({ s, brief, plan, ctx }: HeroProps) {
-  const t = heroTexts(s, brief, ctx);
+  const t = heroTexts(s, brief, plan, ctx);
   return (
     <section className="relative isolate overflow-hidden">
       <HeroBg full plan={plan} brief={brief} />
@@ -568,7 +570,7 @@ function HeroDashboard({ s, brief, plan, ctx }: HeroProps) {
           {t.cta && <PrimaryCta href={t.ctaHref}>{t.cta}</PrimaryCta>}
           {t.secondary && <GhostCta href={t.secondaryHref}>{t.secondary}</GhostCta>}
         </div>
-        <div className="mt-14"><VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} /></div>
+        <div className="mt-14"><VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} lang={t.moduleLang} /></div>
       </div>
     </section>
   );
@@ -576,11 +578,11 @@ function HeroDashboard({ s, brief, plan, ctx }: HeroProps) {
 
 /* — Immersive full-bleed: module as backdrop, copy bottom-left — */
 function HeroImmersive({ s, brief, plan, ctx }: HeroProps) {
-  const t = heroTexts(s, brief, ctx);
+  const t = heroTexts(s, brief, plan, ctx);
   return (
     <section className="relative isolate flex min-h-[34rem] items-end overflow-hidden">
       <HeroBg plan={plan} brief={brief} />
-      <div aria-hidden className="pointer-events-none absolute inset-0 scale-110 opacity-40 blur-[1px]"><VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} className="h-full [&>div]:h-full" /></div>
+      <div aria-hidden className="pointer-events-none absolute inset-0 scale-110 opacity-40 blur-[1px]"><VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} lang={t.moduleLang} className="h-full [&>div]:h-full" /></div>
       <div aria-hidden className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent" />
       <div className="relative mx-auto w-full max-w-6xl px-6 py-16">
         <div className="max-w-2xl">
@@ -599,7 +601,7 @@ function HeroImmersive({ s, brief, plan, ctx }: HeroProps) {
 
 /* — Membership/application: copy left, elevated pass/access card right — */
 function HeroMembership({ s, brief, plan, ctx }: HeroProps) {
-  const t = heroTexts(s, brief, ctx);
+  const t = heroTexts(s, brief, plan, ctx);
   return (
     <section className="relative isolate overflow-hidden">
       <HeroBg plan={plan} brief={brief} />
@@ -614,7 +616,7 @@ function HeroMembership({ s, brief, plan, ctx }: HeroProps) {
           </div>
         </div>
         <motion.div animate={{ y: [0, -10, 0] }} transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }} className="rounded-3xl border border-[color:var(--bd)] bg-[var(--sf)] p-3 shadow-2xl shadow-black/40">
-          <VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} />
+          <VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} lang={t.moduleLang} />
         </motion.div>
       </div>
     </section>
@@ -623,7 +625,7 @@ function HeroMembership({ s, brief, plan, ctx }: HeroProps) {
 
 /* — Catalog/collection: headline + CTA left, catalog strip beneath — */
 function HeroCatalog({ s, brief, plan, ctx }: HeroProps) {
-  const t = heroTexts(s, brief, ctx);
+  const t = heroTexts(s, brief, plan, ctx);
   return (
     <section className="relative isolate overflow-hidden">
       <HeroBg plan={plan} brief={brief} />
@@ -636,7 +638,7 @@ function HeroCatalog({ s, brief, plan, ctx }: HeroProps) {
           </div>
           <div className="flex shrink-0 gap-3">{t.cta && <PrimaryCta href={t.ctaHref}>{t.cta}</PrimaryCta>}{t.secondary && <GhostCta href={t.secondaryHref}>{t.secondary}</GhostCta>}</div>
         </div>
-        <div className="mt-10"><VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} /></div>
+        <div className="mt-10"><VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} lang={t.moduleLang} /></div>
       </div>
     </section>
   );
@@ -644,7 +646,7 @@ function HeroCatalog({ s, brief, plan, ctx }: HeroProps) {
 
 /* — Data/map: copy left, data module right (utility density) — */
 function HeroData({ s, brief, plan, ctx }: HeroProps) {
-  const t = heroTexts(s, brief, ctx);
+  const t = heroTexts(s, brief, plan, ctx);
   return (
     <section className="relative isolate overflow-hidden">
       <HeroBg plan={plan} brief={brief} />
@@ -658,7 +660,7 @@ function HeroData({ s, brief, plan, ctx }: HeroProps) {
             {t.secondary && <GhostCta href={t.secondaryHref}>{t.secondary}</GhostCta>}
           </div>
         </div>
-        <VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} />
+        <VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} lang={t.moduleLang} />
       </div>
     </section>
   );
@@ -666,7 +668,7 @@ function HeroData({ s, brief, plan, ctx }: HeroProps) {
 
 /* — Luxury service: spacious, serif, minimal, thin editorial band — */
 function HeroLuxury({ s, brief, plan, ctx }: HeroProps) {
-  const t = heroTexts(s, brief, ctx);
+  const t = heroTexts(s, brief, plan, ctx);
   return (
     <section className="relative isolate overflow-hidden">
       <HeroBg full plan={plan} brief={brief} />
@@ -677,7 +679,7 @@ function HeroLuxury({ s, brief, plan, ctx }: HeroProps) {
         <div className="mt-10 flex items-center justify-center gap-4">
           {t.cta && <a href={t.ctaHref} className="border-b border-white/40 pb-1 text-sm font-medium tracking-wide text-white">{t.cta} →</a>}
         </div>
-        <div className="mx-auto mt-14 max-w-md"><VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} compact /></div>
+        <div className="mx-auto mt-14 max-w-md"><VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} lang={t.moduleLang} compact /></div>
       </div>
     </section>
   );
@@ -685,7 +687,7 @@ function HeroLuxury({ s, brief, plan, ctx }: HeroProps) {
 
 /* — Story editorial: oversized headline left, meta + small module right — */
 function HeroStory({ s, brief, plan, ctx }: HeroProps) {
-  const t = heroTexts(s, brief, ctx);
+  const t = heroTexts(s, brief, plan, ctx);
   return (
     <section className="relative isolate overflow-hidden">
       <HeroBg plan={plan} brief={brief} />
@@ -700,7 +702,7 @@ function HeroStory({ s, brief, plan, ctx }: HeroProps) {
         </div>
         <div className="lg:col-span-5">
           {t.sub && <p className="border-l-2 pl-5 text-base leading-relaxed text-slate-300" style={{ borderColor: 'var(--acc)' }}>{t.sub}</p>}
-          <div className="mt-6"><VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} compact /></div>
+          <div className="mt-6"><VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} lang={t.moduleLang} compact /></div>
         </div>
       </div>
     </section>
@@ -709,7 +711,7 @@ function HeroStory({ s, brief, plan, ctx }: HeroProps) {
 
 /* — Event/experience: meta row, huge title, module below — */
 function HeroEvent({ s, brief, plan, ctx }: HeroProps) {
-  const t = heroTexts(s, brief, ctx);
+  const t = heroTexts(s, brief, plan, ctx);
   const meta = (s.bullets || []).slice(0, 3);
   return (
     <section className="relative isolate overflow-hidden">
@@ -721,7 +723,7 @@ function HeroEvent({ s, brief, plan, ctx }: HeroProps) {
         <HeroTitle className="mx-auto mt-6 max-w-3xl text-5xl sm:text-7xl">{t.title}</HeroTitle>
         {t.sub && <p className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-slate-300 sm:text-lg">{t.sub}</p>}
         <div className="mt-9 flex items-center justify-center gap-3">{t.cta && <PrimaryCta href={t.ctaHref}>{t.cta}</PrimaryCta>}{t.secondary && <GhostCta href={t.secondaryHref}>{t.secondary}</GhostCta>}</div>
-        <div className="mx-auto mt-12 max-w-lg"><VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} compact /></div>
+        <div className="mx-auto mt-12 max-w-lg"><VisualModule kind={plan.primaryVisualModule} labels={t.moduleLabels} lang={t.moduleLang} compact /></div>
       </div>
     </section>
   );
