@@ -1079,6 +1079,7 @@ export async function generateWebBuild(
       } catch (err) {
         // NEVER fail a preview-viable build because the quality nudge failed —
         // including transport/timeout errors. Keep the first build, annotated.
+        if (err instanceof WebBuildError && err.kind === 'cancelled') throw err;
         const reason = (err instanceof WebBuildError) ? `design-plan repair ${err.kind}` : 'design-plan repair failed to parse';
         // eslint-disable-next-line no-console
         console.warn(`[WebBuild] design-plan repair did not complete — keeping the viable first build (${reason}).`);
