@@ -335,6 +335,12 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       const ex = cdRepairs.slice(0, 2).map((c) => `${c.before} → ${c.after}`).join('; ');
       ownerRows.push(['contentDepthRepairs', `${cdRepairs.length}${ex ? ` · ${ex}` : ''}`]);
     }
+    // Phase 9C-3 — demo-surface copy repairs (Fixer) consumed by preview demo/nav.
+    const dsRepairs = (fixer?.qualityAppliedChanges || []).filter((c) => c.category === 'demo-copy');
+    if (dsRepairs.length) {
+      const ex = dsRepairs.slice(0, 2).map((c) => `${c.before} → ${c.after}`).join('; ');
+      ownerRows.push(['demoSurfaceCopyRepairs', `${dsRepairs.length}${ex ? ` · ${ex}` : ''}`]);
+    }
 
     // Concept Authority + Visual Quality gate (Phase 5) — real artifact data only.
     const ca = step.artifacts?.research?.conceptAuthority;

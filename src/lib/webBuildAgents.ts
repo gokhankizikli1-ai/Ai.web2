@@ -5540,6 +5540,58 @@ export function detectGenericContentDepthSmells(
 }
 
 /**
+ * Final DISPLAY-ONLY demo-surface copy guard (Phase 9C-3). Deterministic + honest:
+ * rewrites the generic demo/marketing phrases that still leak into rendered demo
+ * surfaces (hero/demo headline, sub, CTA, highlight bullets, nav/process labels)
+ * into concept-specific copy for AI-chatbot/ecommerce, and neutralizes unsupported
+ * proof. Never fabricates metrics/logos/testimonials. Returns the input UNCHANGED
+ * for non-AI-commerce concepts or when nothing matches. Used by the Fixer on the
+ * section items every demo surface consumes (teaser, demo screen, hero, nav).
+ */
+export function sanitizeDemoSurfaceCopy(text: string | undefined, opts: { aiCommerce: boolean; lang?: Lang }): string {
+  const v = text || '';
+  const t = v.trim();
+  if (!t || !opts.aiCommerce) return v;
+  const lang = opts.lang || 'en';
+  const key = t.toLowerCase().replace(/\s+/g, ' ');
+  // Whole-label rewrites (name / cta / bullet).
+  const WHOLE: Record<string, string> = {
+    'process': L(lang, 'Shopper Flow', 'Alışverişçi Akışı'),
+    'discovery': L(lang, 'Understands the Question', 'Soruyu Anlar'),
+    'plan': L(lang, 'Finds the Right Product', 'Doğru Ürünü Bulur'),
+    'delivery': L(lang, 'Guides the Next Step', 'Sonraki Adıma Yönlendirir'),
+    'support': L(lang, 'Hands Off to Your Team', 'Ekibinize Devreder'),
+    'case studies': L(lang, 'Use Cases', 'Kullanım Senaryoları'),
+    'testimonials': L(lang, 'Customer Questions', 'Müşteri Soruları'),
+    'certifications': L(lang, 'Security & Store Trust', 'Güvenlik ve Mağaza Güveni'),
+    'reference clients': L(lang, 'Security & Store Trust', 'Güvenlik ve Mağaza Güveni'),
+    'certifications, specs and reference clients': L(lang, 'Security & Store Trust', 'Güvenlik ve Mağaza Güveni'),
+    'product demo': L(lang, 'Sample Chat Flow', 'Örnek Sohbet Akışı'),
+    'interactive demo': L(lang, 'Sample Chat Flow', 'Örnek Sohbet Akışı'),
+    'experience the demo': L(lang, 'Try the Demo', 'Demoyu Dene'),
+    'experience the chatbot': L(lang, 'Try the Demo', 'Demoyu Dene'),
+    'get started': L(lang, 'Try the Demo', 'Demoyu Dene'),
+    'learn more': L(lang, 'See Chat Flow', 'Sohbet Akışını Gör'),
+    'explore features': L(lang, 'See Chat Flow', 'Sohbet Akışını Gör'),
+    'fast & reliable': L(lang, 'Answers common product and policy questions with sample storefront knowledge', 'Yaygın ürün ve politika sorularını örnek mağaza bilgisiyle yanıtlar'),
+    'fast and reliable': L(lang, 'Answers common product and policy questions with sample storefront knowledge', 'Yaygın ürün ve politika sorularını örnek mağaza bilgisiyle yanıtlar'),
+    'made for your goals': L(lang, 'Guides shoppers from question to recommendation without leaving the page', 'Alışverişçileri sayfadan ayrılmadan sorudan öneriye yönlendirir'),
+    'simple to start': L(lang, 'Shows catalog, policy and support flows as a front-end demo', 'Katalog, politika ve destek akışlarını ön-yüz demosu olarak gösterir'),
+    'premium quality': L(lang, 'Keeps the experience calm, branded and conversion-focused', 'Deneyimi sakin, markalı ve dönüşüm odaklı tutar'),
+    'responsive support': L(lang, 'Hands complex requests to your support team', 'Karmaşık talepleri destek ekibinize devreder'),
+    'clear pricing': L(lang, 'Shows plans and what each includes', 'Planları ve her birinin içeriğini gösterir'),
+  };
+  if (WHOLE[key]) return WHOLE[key];
+  // Generic demo HEADLINE ("Experience Seamless Integration with Our Interactive Demo").
+  if (/experience\s+seamless\s+integration|our\s+interactive\s+demo|seamless\s+integration\b.*\bdemo\b|experience\s+seamless\b/i.test(t))
+    return L(lang, 'Preview a storefront chat flow from question to handoff', 'Sorudan devire bir mağaza sohbet akışını önizleyin');
+  // Generic demo SUB ("Explore features and integrations in real-time…").
+  if (/explore\s+features.*(real[-\s]?time|integrations)|features\s+and\s+integrations\s+in\s+real[-\s]?time|interactive demos?\s+that\s+showcase|explore\b.*\bin\s+real[-\s]?time/i.test(t))
+    return L(lang, 'See a sample shopper ask about a product, get a recommendation, check policy details and escalate to a human.', 'Örnek bir alışverişçinin ürün sorduğu, öneri aldığı, politika detaylarını kontrol ettiği ve bir insana yönlendirildiği akışı görün.');
+  return v;
+}
+
+/**
  * Derive the Quality Director artifact from the real, available artifacts only.
  * Pure and deterministic; never fabricates facts, never blocks the build.
  */
@@ -5862,7 +5914,7 @@ export interface FixerResult {
 }
 
 /** The safe repair categories this v1 Fixer is allowed to perform. */
-const FIXER_SAFE_SCOPE = ['fake-data', 'placeholder-cleanup', 'cta-anchor', 'concept-drift', 'visual-asset-plan', 'copy-label', 'cta-consistency', 'flow-label', 'concept-label', 'public-copy', 'content-depth', 'visual-direction', 'palette-family', 'accent-strategy', 'anti-template-copy'];
+const FIXER_SAFE_SCOPE = ['fake-data', 'placeholder-cleanup', 'cta-anchor', 'concept-drift', 'visual-asset-plan', 'copy-label', 'cta-consistency', 'flow-label', 'concept-label', 'public-copy', 'content-depth', 'demo-copy', 'visual-direction', 'palette-family', 'accent-strategy', 'anti-template-copy'];
 
 /** Intent → clean CTA label (Phase 7A) — mirrors the Preview's normalizeCtaLabel. */
 function ctaFromIntent(intent: string | undefined, lang: Lang): string | undefined {
@@ -6429,6 +6481,40 @@ export function deriveFixer(input: FixerInput): { artifact: FixerAgentArtifact; 
       });
       if (nb.some((b, i) => b !== s.bullets![i])) {
         addQuality('content-depth', s.id, s.bullets.join(' · ').slice(0, 48), nb.join(' · ').slice(0, 48), cdReason);
+        s.bullets = nb;
+      }
+    }
+  }
+
+  // 5e — Demo-surface copy consumption guard (Phase 9C-3). The preview demo teaser,
+  //      Product Demo screen, hero and nav all CONSUME the section items — so a final
+  //      display-only sanitize here fixes every surface at once. Catches the generic
+  //      demo phrases 5d missed ("Experience Seamless Integration with Our Interactive
+  //      Demo", "Explore features…in real-time", "Experience the Demo", plus residual
+  //      generic bullets). DISPLAY-ONLY; honest; preserves user-verbatim labels.
+  const dsReason = L(lang, 'Sanitized generic demo-surface copy into concept-specific, honest copy (display only; no invented proof).',
+    'Genel demo yüzeyi metnini konsepte özgü, dürüst metinle temizledi (yalnızca görünüm; uydurma kanıt yok).');
+  for (const s of sectionItems) {
+    if (s.name && !promptLc.includes(normLabel(s.name))) {
+      const r = sanitizeDemoSurfaceCopy(s.name, { aiCommerce, lang });
+      if (r && r !== s.name) { addQuality('demo-copy', s.id, s.name, r, dsReason); s.name = r; }
+    }
+    if (s.headline) {
+      const r = sanitizeDemoSurfaceCopy(s.headline, { aiCommerce, lang });
+      if (r && r !== s.headline) { addQuality('demo-copy', s.id, s.headline, r, dsReason); s.headline = r; }
+    }
+    if (s.sub) {
+      const r = sanitizeDemoSurfaceCopy(s.sub, { aiCommerce, lang });
+      if (r && r !== s.sub) { addQuality('demo-copy', s.id, s.sub, r, dsReason); s.sub = r; }
+    }
+    if (s.cta && !promptLc.includes(normLabel(s.cta))) {
+      const r = sanitizeDemoSurfaceCopy(s.cta, { aiCommerce, lang });
+      if (r && r !== s.cta) { addQuality('demo-copy', s.id, s.cta, r, dsReason); s.cta = r; }
+    }
+    if (aiCommerce && s.bullets?.length) {
+      const nb = s.bullets.map((b) => sanitizeDemoSurfaceCopy(b, { aiCommerce, lang }) || b);
+      if (nb.some((b, i) => b !== s.bullets![i])) {
+        addQuality('demo-copy', s.id, s.bullets.join(' · ').slice(0, 48), nb.join(' · ').slice(0, 48), dsReason);
         s.bullets = nb;
       }
     }
