@@ -319,6 +319,14 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       const qc = (fixer.qualityAppliedChanges || []).length;
       ownerRows.push(['fixer', `${fixer.status} · ${(fixer.appliedChanges || []).length + qc} applied`]);
     }
+    // Phase 9C-1 — public-facing copy smells (Quality Director) + repairs (Fixer).
+    const pcSmells = (qd?.issues || []).filter((i) => i.category === 'public-copy-smell').length;
+    if (pcSmells) ownerRows.push(['publicCopySmells', String(pcSmells)]);
+    const pcRepairs = (fixer?.qualityAppliedChanges || []).filter((c) => c.category === 'public-copy');
+    if (pcRepairs.length) {
+      const ex = pcRepairs.slice(0, 2).map((c) => `${c.before} → ${c.after}`).join('; ');
+      ownerRows.push(['publicCopyRepairs', `${pcRepairs.length}${ex ? ` · ${ex}` : ''}`]);
+    }
 
     // Concept Authority + Visual Quality gate (Phase 5) — real artifact data only.
     const ca = step.artifacts?.research?.conceptAuthority;

@@ -606,7 +606,7 @@ function assembleWebBuildPayload(
       // block Preview / All Files.
       const qd = runQualityDirector({
         prompt, brief: artBrief,
-        sectionItems: sectionItems.map((s) => ({ id: s.id, name: s.name, cta: s.cta, sub: s.sub, bullets: s.bullets })),
+        sectionItems: sectionItems.map((s) => ({ id: s.id, name: s.name, headline: s.headline, cta: s.cta, sub: s.sub, bullets: s.bullets })),
         strategy: artifacts?.strategy, artDirection: artifacts?.artDirection,
         reviewer: rv.artifact, research: artifacts?.research, layoutPlan,
         // Phase 8A — judge the build against the committed strategic ledger.
@@ -663,10 +663,11 @@ function assembleWebBuildPayload(
           const merged = files.map((f) => ({ ...f, content: fixedByPath.get(f.path) ?? f.content }));
           files = diffFiles(prevFiles, merged);
         }
-        // Apply the Fixer's safe, DISPLAY-ONLY copy/label/CTA repairs (Phase 7A) back
-        // onto the final section items by id, so Preview + All Files + Plan Summary all
-        // consume the same cleaned public-facing labels. Only name/cta are display
-        // fields; ids are untouched, so the layout plan stays valid as-is.
+        // Apply the Fixer's safe, DISPLAY-ONLY copy/label/CTA repairs (Phase 7A/9C-1)
+        // back onto the final section items by id, so Preview + All Files + Plan
+        // Summary all consume the same cleaned public-facing copy. Phase 9C-1 also
+        // repairs headline/sub/bullets (public copy) — all DISPLAY fields; ids are
+        // untouched, so the layout plan stays valid as-is (no architecture rewrite).
         const fixedById = new Map(fx.sectionItems.map((s) => [s.id, s]));
         sectionItems = sectionItems.map((s) => {
           const f = fixedById.get(s.id);
@@ -675,6 +676,9 @@ function assembleWebBuildPayload(
             ...s,
             name: f.name || s.name,
             cta: f.cta !== undefined ? f.cta : s.cta,
+            headline: f.headline !== undefined ? f.headline : s.headline,
+            sub: f.sub !== undefined ? f.sub : s.sub,
+            bullets: f.bullets !== undefined ? f.bullets : s.bullets,
           };
         });
       }
