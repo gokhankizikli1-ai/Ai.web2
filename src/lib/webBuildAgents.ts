@@ -19,7 +19,7 @@
  */
 import type { WebBuildBrief, WebBuildResearch, WebBuildResearchStatus, WebBuildSource } from '@/lib/webBuildApi';
 import { designTokensForBrief, type InferredBrief, type DesignTokens } from '@/lib/webBuildBrief';
-import { deriveDesignSystemFromStrategy } from '@/lib/webBuildDesignSystem';
+import { deriveDesignSystemFromStrategy, selectPaletteFamily, PALETTE_FAMILIES, type PaletteFamily } from '@/lib/webBuildDesignSystem';
 import type { WebBuildLayoutPlan, HeroComposition, SectionVariant } from '@/lib/webBuildLayoutPlan';
 import { deriveInteractionContract, type InteractionContract } from '@/lib/webBuildInteractionContract';
 
@@ -412,6 +412,35 @@ export interface DownstreamInstructions {
   fileSynthesis: string[];
 }
 
+/* ── Visual Exploration (Phase 7B) — explore multiple directions, choose one ──
+ * The Art Director produces 3 candidate visual directions (safe / premium-
+ * differentiated / unexpected-but-appropriate), then selects one and records why
+ * — so the build stops defaulting to the same dark/gold/dashboard template. All
+ * optional & backward compatible. */
+export interface VisualDirectionCandidate {
+  id: string;
+  name: string;
+  paletteIntent: string;
+  accentStrategy: string;
+  backgroundStrategy: string;
+  heroComposition: string;
+  mockupStrategy: string;
+  motionMood: string;
+  typographyMood: string;
+  whyItFits: string;
+  risks: string[];
+  /** The palette family this candidate maps to (drives the concrete tokens). */
+  paletteFamily?: string;
+}
+
+export interface VisualExplorationArtifact {
+  candidates: VisualDirectionCandidate[];
+  selectedCandidateId: string;
+  rejectedCandidateIds: string[];
+  selectionReason: string;
+  antiTemplateNotes: string[];
+}
+
 export interface ArtDirectionArtifact {
   visualMood: string;
   brandPersonality: string;
@@ -485,6 +514,13 @@ export interface ArtDirectionArtifact {
   correctedConceptDrift?: boolean;
   /** Data-only visual asset & motion plan (CSS/SVG now, external gen later). */
   visualAssetPlan?: VisualAssetPlan;
+  /* ── Phase 7B: Visual Exploration + anti-template (all optional) ── */
+  /** 3 explored visual directions + the selected one (anti-sameness). */
+  visualExploration?: VisualExplorationArtifact;
+  /** The concrete palette family chosen for this build (anti-sameness color). */
+  paletteFamily?: string;
+  /** Set true when the Fixer corrected a same-template (dark/gold/dashboard) drift. */
+  correctedAntiTemplateDrift?: boolean;
 }
 
 /* ── Strategy Agent artifact (Phase 2) ────────────────────────────────── */
@@ -726,7 +762,10 @@ export interface FixerAgentArtifact {
  * consumes its issues to safely repair public-facing copy/label/CTA language. */
 export type QualityIssueCategory =
   | 'raw-label' | 'cta-inconsistency' | 'generic-copy' | 'weak-hero'
-  | 'flow-confusion' | 'demo-unclear' | 'visual-density' | 'concept-drift' | 'honesty-risk';
+  | 'flow-confusion' | 'demo-unclear' | 'visual-density' | 'concept-drift' | 'honesty-risk'
+  /* ── Phase 7B: anti-template visual checks ── */
+  | 'same-template-risk' | 'accent-overuse' | 'dashboard-overuse' | 'palette-mismatch'
+  | 'visual-monotony' | 'weak-visual-exploration';
 
 export interface QualityIssue {
   id: string;
@@ -826,6 +865,15 @@ export interface WebBuildEnforcement {
   didFixCopyLabels?: boolean;
   didFixCtaConsistency?: boolean;
   didFixFlowLabels?: boolean;
+  /* ── Visual Exploration + anti-template gate (Phase 7B, optional) ── */
+  visualCandidateCount?: number;
+  selectedVisualCandidate?: string;
+  rejectedVisualCandidates?: string[];
+  selectionReason?: string;
+  paletteFamily?: string;
+  antiTemplateWarnings?: number;
+  correctedAntiTemplateDrift?: boolean;
+  qualitySameTemplateIssues?: number;
   fallbackReason?: string;
 }
 
@@ -2868,6 +2916,115 @@ function deriveVisualAssetPlan(
   return { heroVisualType, animatedBackground, imageGenerationPrompt, videoMotionPrompt, assetSlots, constraints };
 }
 
+/* ── Visual Exploration (Phase 7B) ──────────────────────────────────────────
+ * Produce 3 candidate visual directions and choose one so the build stops
+ * defaulting to the same dark/gold/dashboard look. Deterministic (resume-safe):
+ * a small stable hash rotates among equally-appropriate palette families, but a
+ * given idea is always stable. Fails open — the caller ignores it on error. */
+
+/** The conventional "safe" family a concept would default to (the look we want
+ *  to be able to move AWAY from unless it is clearly justified). */
+function conventionalFamily(hay: string): PaletteFamily {
+  if (/(archive|library|museum|collection|editorial|magazine|journal)/.test(hay)) return 'archive-sepia';
+  if (/(landscap|garden|botanic|nature|forest|peyzaj|organic|plant)/.test(hay)) return 'botanical-sage';
+  if (/(car|auto|automotive|vehicle|racing|dealership)/.test(hay)) return 'automotive-silver';
+  if (/(restaurant|hotel|cafe|dining|hospitality|menu|reservation|resort)/.test(hay)) return 'hospitality-amber';
+  if (/(marketplace|catalog|inventory|listings|storefront|shop|ecommerce)/.test(hay)) return 'porcelain-blue';
+  // The AI/SaaS default look is dark cool — that is the sameness we break.
+  return 'midnight-blue';
+}
+
+function candidateFromFamily(
+  id: string, role: string, fam: PaletteFamily, isProductConcept: boolean, lang: Lang,
+): VisualDirectionCandidate {
+  const spec = PALETTE_FAMILIES[fam];
+  const name = L(lang, role, role);
+  const paletteIntent = L(lang, `${fam} — ${spec.mood}`, `${fam} — ${spec.mood}`);
+  const backgroundStrategy = spec.light
+    ? L(lang, 'Light background — airy, easy on the eyes', 'Açık zemin — ferah, göze rahat')
+    : L(lang, 'Deep background with restrained contrast', 'Ölçülü kontrastlı koyu zemin');
+  const accentStrategy = L(lang, `Single restrained accent (${spec.accent}); never high-saturation overuse`,
+    `Tek ölçülü vurgu (${spec.accent}); asla yüksek doygunlukta aşırı kullanım`);
+  const heroComposition = isProductConcept
+    ? L(lang, 'A focused product/chat demo surface — not a metrics dashboard', 'Odaklı bir ürün/sohbet demo yüzeyi — metrik paneli değil')
+    : L(lang, 'A composed editorial hero tied to the concept', 'Konsepte bağlı kompoze editoryal hero');
+  const mockupStrategy = isProductConcept
+    ? L(lang, 'Conversation / answer-routing preview from sample copy (no charts, no fake metrics)', 'Örnek metinden görüşme / yanıt-yönlendirme önizlemesi (grafik yok, uydurma metrik yok)')
+    : L(lang, 'Concept-specific composed CSS/SVG visual (no stock, no blank boxes)', 'Konsepte özgü kompoze CSS/SVG görsel (stok yok, boş kutu yok)');
+  const typographyMood = spec.headingSerif
+    ? L(lang, 'Editorial serif headings', 'Editoryal serif başlıklar')
+    : L(lang, 'Modern sans headings', 'Modern sans başlıklar');
+  return {
+    id,
+    name,
+    paletteIntent,
+    accentStrategy,
+    backgroundStrategy,
+    heroComposition,
+    mockupStrategy,
+    motionMood: L(lang, 'Restrained, tasteful motion', 'Ölçülü, zevkli hareket'),
+    typographyMood,
+    whyItFits: L(lang, `Fits the concept via ${spec.mood}`, `Konsepte ${spec.mood} ile uyar`),
+    risks: spec.light ? [] : [L(lang, 'Dark can feel same-y if accent is overused', 'Koyu, vurgu aşırı kullanılırsa tekdüze hissettirebilir')],
+    paletteFamily: fam,
+  };
+}
+
+function deriveVisualExploration(
+  brief: WebBuildBrief,
+  conceptAuthority: ConceptAuthority | undefined,
+  inferred: InferredBrief,
+  lang: Lang,
+): VisualExplorationArtifact {
+  const concept = (conceptAuthority?.primaryConcept || '').toLowerCase();
+  const vertical = (conceptAuthority?.targetVertical || conceptAuthority?.audienceVertical || '').toLowerCase();
+  const mood = [brief.visualMood, brief.style, brief.colorDirection].filter(Boolean).join(' ');
+  const promptText = [brief.coreIdea, brief.type, brief.goal, inferred.businessType].filter(Boolean).join(' ');
+  const hay = `${promptText} ${concept} ${vertical} ${mood}`.toLowerCase();
+  const isProductConcept = concept === 'ai' || concept === 'saas'
+    || /\bai\b|assistant|chatbot|\bsaas\b|dashboard|platform|automation/.test(hay);
+
+  const safeFamily = conventionalFamily(hay);
+  // The differentiated pick is the deterministic anti-template selection.
+  let premiumFamily = selectPaletteFamily({
+    explicit: brief.paletteFamily, prompt: promptText, concept, vertical, visualMood: mood,
+  });
+  // An unexpected-but-appropriate third direction, distinct from the other two.
+  const boldPool: PaletteFamily[] = ['slate-violet', 'ink-lime', 'black-white-red', 'editorial-cream', 'porcelain-blue', 'graphite-cyan'];
+  let unexpectedFamily = boldPool.find((f) => f !== safeFamily && f !== premiumFamily) || 'slate-violet';
+  // If the rotation happened to land the differentiated pick ON the conventional
+  // one, move it to the unexpected pick so "selected" is genuinely not the default.
+  if (premiumFamily === safeFamily) {
+    premiumFamily = unexpectedFamily;
+    unexpectedFamily = boldPool.find((f) => f !== safeFamily && f !== premiumFamily) || 'graphite-cyan';
+  }
+
+  const safe = candidateFromFamily('safe', L(lang, 'Safe / conventional', 'Güvenli / geleneksel'), safeFamily, isProductConcept, lang);
+  const premium = candidateFromFamily('premium', L(lang, 'Premium differentiated', 'Premium farklılaşmış'), premiumFamily, isProductConcept, lang);
+  const unexpected = candidateFromFamily('unexpected', L(lang, 'Unexpected but appropriate', 'Beklenmedik ama uygun'), unexpectedFamily, isProductConcept, lang);
+  const candidates = [safe, premium, unexpected];
+
+  // Select the differentiated premium direction by default — that is the whole
+  // point of exploration: not to fall back to the conventional look.
+  const selectedCandidateId = 'premium';
+  const selectionReason = L(lang,
+    `Chose the differentiated "${premiumFamily}" direction over the conventional "${safeFamily}" default — restrained accent, ${PALETTE_FAMILIES[premiumFamily].light ? 'lighter, calmer background' : 'deep but non-generic background'}, concept-specific hero.`,
+    `Geleneksel "${safeFamily}" varsayılanı yerine farklılaşmış "${premiumFamily}" yönü seçildi — ölçülü vurgu, ${PALETTE_FAMILIES[premiumFamily].light ? 'daha açık, sakin zemin' : 'derin ama jenerik olmayan zemin'}, konsepte özgü hero.`);
+  const antiTemplateNotes = uniq([
+    L(lang, 'Avoid the default dark + gold/indigo + chart-dashboard template', 'Varsayılan koyu + altın/indigo + grafik-panel şablonundan kaçın'),
+    isProductConcept ? L(lang, 'AI/SaaS: demo the conversation/flow, not fabricated metrics or logos', 'AI/SaaS: uydurma metrik/logo değil, görüşme/akışı göster') : '',
+    PALETTE_FAMILIES[premiumFamily].light ? L(lang, 'Light palette selected to relieve eye-strain', 'Göz yorgunluğunu azaltmak için açık palet seçildi') : '',
+  ].filter(Boolean));
+
+  return {
+    candidates,
+    selectedCandidateId,
+    rejectedCandidateIds: candidates.filter((c) => c.id !== selectedCandidateId).map((c) => c.id),
+    selectionReason,
+    antiTemplateNotes,
+  };
+}
+
 /**
  * Build the UI / Art Director artifact — a senior art director that CONSUMES the
  * Research Agent brief (target user, color psychology, visual style, UX
@@ -2920,10 +3077,32 @@ export function deriveArtDirection(
   const cp = research?.colorPsychology;
   const modelChoseColor = !!(brief.colorDirection || brief.artAccent || brief.artBg);
   const colorSystemBase = resolveArtColorSystem(cp, tokens, modelChoseColor, archetype);
+
+  // VISUAL EXPLORATION (Phase 7B) — explore 3 directions and choose one, so the
+  // build stops defaulting to the same dark/gold/dashboard template. Guarded:
+  // any failure falls open to the existing color system.
+  let visualExploration: VisualExplorationArtifact | undefined;
+  let paletteFamily: string | undefined;
+  try {
+    visualExploration = deriveVisualExploration(brief, conceptAuthority, inferred, lang);
+    const selected = visualExploration.candidates.find((c) => c.id === visualExploration!.selectedCandidateId);
+    paletteFamily = selected?.paletteFamily;
+  } catch { visualExploration = undefined; }
+
+  // Apply the selected candidate's palette family to the color system UNLESS the
+  // model / research explicitly pinned a color (their choice always wins). This
+  // is what makes AI/SaaS no longer always dark+gold and light options possible.
+  const famSpec = paletteFamily && !modelChoseColor && !(cp?.recommendedPalette || []).length
+    ? PALETTE_FAMILIES[paletteFamily as PaletteFamily]
+    : undefined;
+  const colorSystemFromFamily: ArtDirectionColorSystem = famSpec
+    ? { ...colorSystemBase, background: famSpec.bg, accent: famSpec.accent, accent2: famSpec.accent2, primary: famSpec.accent, secondary: famSpec.accent2, paletteName: paletteFamily }
+    : colorSystemBase;
+
   // Fold the researched color-psychology reasoning + colors-to-avoid onto the
   // structured colorSystem (honest: only when research provided them).
   const colorSystem: ArtDirectionColorSystem = {
-    ...colorSystemBase,
+    ...colorSystemFromFamily,
     colorPsychologyReasoning: cp
       ? uniq([cp.reasoning, cp.emotionalEffect, cp.trustEffect || '']).filter(Boolean).join(' · ') || undefined
       : undefined,
@@ -3403,6 +3582,9 @@ export function deriveArtDirection(
     conceptAuthority,
     correctedConceptDrift,
     visualAssetPlan,
+    // ── Phase 7B: Visual Exploration + anti-template ──
+    visualExploration,
+    paletteFamily,
   };
 }
 
@@ -4000,6 +4182,16 @@ export function enrichBriefWithAgents(
       artImageryDirection: b.artImageryDirection || art.imagerySystem?.imageType || art.imageryDirection,
       artHeroTreatment: b.artHeroTreatment || art.heroTreatment?.composition || art.heroDirection,
       artComponentStyle: b.artComponentStyle || componentStyleSummary,
+    };
+    // Visual Exploration decision (Phase 7B) — persist the chosen palette family +
+    // selected visual candidate so the design system (preview + files) and owner
+    // diagnostics read the same anti-template decision.
+    const selCand = art.visualExploration?.candidates.find((c) => c.id === art.visualExploration?.selectedCandidateId);
+    b = {
+      ...b,
+      paletteFamily: b.paletteFamily || art.paletteFamily || selCand?.paletteFamily,
+      selectedVisualCandidate: b.selectedVisualCandidate || art.visualExploration?.selectedCandidateId,
+      accentStrategy: b.accentStrategy || selCand?.accentStrategy,
     };
   }
   if (strategy) {
@@ -4700,6 +4892,27 @@ export function runReviewer(input: ReviewerInput): { agent: WebBuildAgent; artif
 const AWKWARD_LABEL_RE = /\([^)]*\)|demo\s*\/\s*screens?|metrics?\s+and\s+security|screens?\s*\/\s*demo/i;
 const MAX_LABEL_LEN = 28;
 
+/* ── Palette/anti-template helpers (Phase 7B) — shared by the Quality Director
+ *  (detect) and the Fixer (repair). Pure, no side effects. */
+/** Rough relative luminance of a #rrggbb color (0 dark … 1 light). */
+function hexLuma(hex?: string): number {
+  const m = /^#?([0-9a-f]{6})$/i.exec((hex || '').trim());
+  if (!m) return 0.5;
+  const n = parseInt(m[1], 16);
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+}
+/** True when the background reads as a light surface (relieves eye-strain). */
+function isLightBg(hex?: string): boolean { return hexLuma(hex) >= 0.6; }
+/** True when an accent reads as gold/amber/warm-yellow (the AI-sameness accent). */
+function isGoldish(hex?: string): boolean {
+  const m = /^#?([0-9a-f]{6})$/i.exec((hex || '').trim());
+  if (!m) return /gold|amber|yellow/i.test(hex || '');
+  const n = parseInt(m[1], 16);
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  return r > 170 && g > 120 && b < 120 && r >= g;
+}
+
 /** True when a public label reads raw / model-internal / too long. */
 function isAwkwardLabel(s?: string, maxLen = MAX_LABEL_LEN): boolean {
   const t = (s || '').trim();
@@ -4828,6 +5041,54 @@ export function deriveQualityDirector(input: QualityDirectorInput): QualityDirec
     && !(input.artDirection.visualDifferentiators || []).length;
   if (weakVisual) add('info', 'visual-density', 'Art direction has no premium detail / differentiator signals.', 'Add premium surface/accent/differentiator rules so the build reads premium, not a UI kit.', 'artDirection');
 
+  /* 7 — Anti-template visual checks (Phase 7B). Penalize the default dark/gold/
+   *     dashboard sameness, accent overuse, palette-vs-vertical mismatch and weak
+   *     visual exploration. Reads REAL art-direction artifacts only. */
+  const ad = input.artDirection;
+  const explo = ad?.visualExploration;
+  const selCand = explo?.candidates.find((c) => c.id === explo.selectedCandidateId);
+  const safeCand = explo?.candidates.find((c) => c.id === 'safe');
+  const fam = (ad?.paletteFamily || selCand?.paletteFamily || '').toLowerCase();
+  const bg = ad?.colorSystem?.background || '';
+  const accent = ad?.colorSystem?.accent || '';
+  const bgLight = isLightBg(bg);
+  const goldAccent = isGoldish(accent);
+  const promptLc = (input.prompt || '').toLowerCase();
+  const forbidsFakeProof = /no\s+(fake\s+)?(metric|logo|testimonial|social\s*proof)|without\s+(metric|logo|testimonial)|don'?t\s+(add|invent|use|include)\s+(metric|logo|testimonial|fake)|sahte\s+(metrik|logo|referans|veri)|metrik\s+yok|logo\s+yok|uydurma\s+(metrik|logo|referans)/.test(promptLc);
+  const dashHay = `${selCand?.mockupStrategy || ''} ${selCand?.heroComposition || ''} ${ad?.imageryDirection || ''} ${ad?.heroDirection || ''}`.toLowerCase();
+  const sectionNames = (input.sectionItems || []).map((s) => (s.name || '').toLowerCase()).join(' ');
+  const hasDashboardLang = /dashboard|chart|graph|analytics|\bkpi\b|by the numbers/.test(`${dashHay} ${sectionNames} ${promptLc}`);
+
+  if (!explo || (explo.candidates || []).length < 3) {
+    add('warning', 'weak-visual-exploration', 'Visual exploration produced fewer than 3 candidates (or none).', 'Explore 3 directions (safe / premium / unexpected) and select one with a reason.', 'artDirection.visualExploration');
+  }
+  if (explo && selCand?.paletteFamily && safeCand?.paletteFamily && selCand.paletteFamily === safeCand.paletteFamily) {
+    add('warning', 'same-template-risk', 'Selected visual direction is effectively the conventional/safe default.', 'Move to a differentiated candidate unless the conventional look is clearly justified.', 'artDirection.visualExploration');
+  }
+  if (isAiSaas && !bgLight && goldAccent && hasDashboardLang) {
+    const justified = !!(explo?.selectionReason && /light|differentiat|not the conventional|non-generic|restrained/i.test(explo.selectionReason));
+    add(justified ? 'info' : 'warning', 'same-template-risk', 'AI/SaaS build uses the default dark + gold + dashboard look.', 'Vary the palette (cooler/lighter), demote gold, and make the hero concept-specific — or justify the default.', 'artDirection.colorSystem');
+  }
+  if (isAiSaas && goldAccent) {
+    add('info', 'accent-overuse', 'Gold/amber accent on an AI/SaaS build reads as the same template and can strain the eyes.', 'Prefer a restrained cool accent; reserve warm gold for hospitality/heritage concepts.', 'artDirection.colorSystem.accent');
+  }
+  if (isAiSaas && hasDashboardLang && !/conversation|answer[-\s]?routing|\bflow\b|hand[-\s]?off|no charts|not a metrics dashboard/i.test(dashHay)) {
+    add('warning', 'dashboard-overuse', 'Hero/mockup leans on a generic dashboard/chart with no concept-specific twist.', 'Demo the actual concept (conversation / workflow), not a chart dashboard.', 'artDirection.heroTreatment');
+  }
+  const vtext = `${authority?.targetVertical || ''} ${authority?.audienceVertical || ''} ${promptLc}`.toLowerCase();
+  const wantsEditorial = /archive|library|museum|collection|editorial|magazine|journal/.test(vtext);
+  const wantsBotanical = /landscap|garden|botanic|nature|forest|peyzaj|organic|plant/.test(vtext);
+  const coolAiFam = /midnight-blue|graphite-cyan|slate-violet/.test(fam);
+  if ((wantsEditorial || wantsBotanical) && (coolAiFam || (isAiSaas && !fam))) {
+    add('warning', 'palette-mismatch', `Palette reads like an AI dashboard, not the ${wantsEditorial ? 'editorial/archive' : 'botanical/organic'} concept.`, 'Select a family that matches the concept (archive-sepia/editorial-cream or botanical-sage/warm-neutral-green).', 'artDirection.paletteFamily');
+  }
+  if (isAiSaas && !bgLight && !explo && !(ad?.visualDifferentiators || []).length) {
+    add('info', 'visual-monotony', 'Dark background with no visual exploration or differentiators — risks visual monotony.', 'Introduce a lighter option or a distinct accent + concept-specific composition.', 'artDirection');
+  }
+  if (forbidsFakeProof && /metrics|testimonial|logos?|logo wall|social proof|by the numbers|rated|reviews|müşteri metrik|referans/.test(`${sectionNames} ${dashHay}`)) {
+    add('warning', 'honesty-risk', 'User forbade fake metrics/logos/testimonials, but copy/visuals still imply metrics/logos/social proof.', 'Remove implied metrics/logos/testimonials; keep honest structural sections only.', 'files');
+  }
+
   // ── Dimension scores (0–100) from the issues + real signals. Deterministic. ──
   const critical = issues.filter((i) => i.severity === 'critical').length;
   const warnings = issues.filter((i) => i.severity === 'warning').length;
@@ -4838,7 +5099,7 @@ export function deriveQualityDirector(input: QualityDirectorInput): QualityDirec
     copyClarity: dim(100, 14, 'raw-label', 'generic-copy'),
     ctaConsistency: dim(100, 18, 'cta-inconsistency'),
     flowCoherence: dim(100, 16, 'flow-confusion', 'demo-unclear'),
-    visualPremiumFit: dim(95, 15, 'visual-density'),
+    visualPremiumFit: dim(95, 12, 'visual-density', 'same-template-risk', 'accent-overuse', 'dashboard-overuse', 'palette-mismatch', 'visual-monotony', 'weak-visual-exploration'),
     conceptSpecificity: dim(100, 16, 'weak-hero', 'concept-drift'),
     demoUsefulness: isAiSaas ? dim(100, 20, 'demo-unclear') : 90,
     honesty: critical ? 40 : (catCount('honesty-risk') ? 70 : 100),
@@ -4849,17 +5110,22 @@ export function deriveQualityDirector(input: QualityDirectorInput): QualityDirec
   );
   const status: QualityDirectorArtifact['status'] = (score >= 80 && critical === 0) ? 'passed' : 'needs-fixes';
 
+  const antiTemplateClean = !catCount('same-template-risk') && !catCount('accent-overuse') && !catCount('dashboard-overuse') && !catCount('palette-mismatch');
   const approvedPrinciples = uniq([
     hasConsistencyRule ? L(lang, 'One clear primary conversion', 'Tek net birincil dönüşüm') : '',
     !rawLabels.length ? L(lang, 'Clean public labels', 'Temiz herkese açık etiketler') : '',
     (authority && heroMentionsConcept) ? L(lang, 'Concept-specific hero', 'Konsepte özgü hero') : '',
     !fakeFinding ? L(lang, 'Honest proof (no fabricated metrics)', 'Dürüst kanıt (uydurma metrik yok)') : '',
+    (explo && antiTemplateClean) ? L(lang, `Distinct visual direction (${fam || 'explored'}), not the default template`, `Belirgin görsel yön (${fam || 'keşfedildi'}), varsayılan şablon değil`) : '',
   ].filter(Boolean));
   const rewriteInstructions = uniq([
     rawLabels.length ? L(lang, 'Rewrite raw/model-internal section labels into short human labels (strip parentheticals, drop unsupported "metrics").',
       'Ham/model-içi bölüm etiketlerini kısa, insan-okur etiketlere çevir (parantezleri sil, desteklenmeyen "metrik" ifadesini kaldır).') : '',
     (catCount('cta-inconsistency')) ? L(lang, 'Normalize CTAs to one clear primary + supporting secondary.', 'CTA\'ları tek net birincil + destekleyici ikincil olacak şekilde normalize et.') : '',
     (catCount('flow-confusion') || catCount('demo-unclear')) ? L(lang, 'Clarify the landing → (lead gate) → demo flow labels.', 'İniş → (kayıt) → demo akış etiketlerini netleştir.') : '',
+    (catCount('same-template-risk') || catCount('accent-overuse') || catCount('dashboard-overuse') || catCount('palette-mismatch')) ? L(lang,
+      'Switch to a more differentiated visual direction: vary the palette family, demote gold/loud accent, prefer a lighter or concept-fitting background, and make the hero/mockup concept-specific (not a chart dashboard).',
+      'Daha farklılaşmış bir görsel yöne geç: palet ailesini değiştir, altın/gürültülü vurguyu geri çek, daha açık veya konsepte uygun bir zemin tercih et ve hero/mockup\'ı konsepte özgü yap (grafik paneli değil).') : '',
   ].filter(Boolean));
 
   const topCats = uniq(issues.filter((i) => i.severity !== 'info').map((i) => i.category)).slice(0, 3).join(', ');
@@ -4941,7 +5207,7 @@ export interface FixerResult {
 }
 
 /** The safe repair categories this v1 Fixer is allowed to perform. */
-const FIXER_SAFE_SCOPE = ['fake-data', 'placeholder-cleanup', 'cta-anchor', 'concept-drift', 'visual-asset-plan', 'copy-label', 'cta-consistency', 'flow-label'];
+const FIXER_SAFE_SCOPE = ['fake-data', 'placeholder-cleanup', 'cta-anchor', 'concept-drift', 'visual-asset-plan', 'copy-label', 'cta-consistency', 'flow-label', 'visual-direction', 'palette-family', 'accent-strategy', 'anti-template-copy'];
 
 /** Intent → clean CTA label (Phase 7A) — mirrors the Preview's normalizeCtaLabel. */
 function ctaFromIntent(intent: string | undefined, lang: Lang): string | undefined {
@@ -5183,6 +5449,80 @@ export function deriveFixer(input: FixerInput): { artifact: FixerAgentArtifact; 
           L(lang, 'Added a concept-specific Visual Asset Plan (CSS/SVG now, external image/video reserved for a later phase).',
             'Konsepte özgü bir Görsel Varlık Planı eklendi (şimdi CSS/SVG, harici görsel/video sonraki aşamaya ayrıldı).'));
       } catch { /* non-blocking */ }
+    }
+
+    if (artChanged) artDirection = art;
+  }
+
+  // 4c — Anti-template visual repair (Phase 7B). SAFE, ARTIFACT-LEVEL ONLY: when
+  //      the Quality Director flags same-template / accent-overuse / dashboard /
+  //      palette-mismatch, switch the SELECTED visual direction + palette family +
+  //      accent to a more differentiated one. Never touches component architecture,
+  //      never fabricates data/logos/metrics, never invents images.
+  const qdIssues = input.qualityDirector?.issues || [];
+  const antiFlags = qdIssues.filter((i) => ['same-template-risk', 'accent-overuse', 'dashboard-overuse', 'palette-mismatch', 'visual-monotony'].includes(i.category));
+  const forbidsFakeProof = /no\s+(fake\s+)?(metric|logo|testimonial|social\s*proof)|without\s+(metric|logo|testimonial)|don'?t\s+(add|invent|use|include)\s+(metric|logo|testimonial|fake)|sahte\s+(metrik|logo|referans|veri)|metrik\s+yok|logo\s+yok|uydurma\s+(metrik|logo|referans)/.test(promptLc);
+  const honestyImplied = qdIssues.some((i) => i.category === 'honesty-risk');
+  if (input.artDirection && (antiFlags.length || (forbidsFakeProof && honestyImplied))) {
+    let art = artDirection || input.artDirection;
+    let artChanged = false;
+    const explo = art.visualExploration;
+    const currentFam = (art.paletteFamily || art.colorSystem?.paletteName || '').toLowerCase();
+
+    if (antiFlags.length) {
+      // Prefer a candidate that is genuinely different — a LIGHT one first (breaks
+      // the always-dark complaint), then the "unexpected" direction, then any
+      // other candidate; finally a deterministic differentiated family.
+      const better = explo?.candidates.find((c) => c.paletteFamily && PALETTE_FAMILIES[c.paletteFamily as PaletteFamily]?.light && c.paletteFamily.toLowerCase() !== currentFam)
+        || explo?.candidates.find((c) => c.id === 'unexpected' && (c.paletteFamily || '').toLowerCase() !== currentFam)
+        || explo?.candidates.find((c) => c.paletteFamily && c.paletteFamily.toLowerCase() !== currentFam);
+      let newFam = better?.paletteFamily as PaletteFamily | undefined;
+      if (!newFam) {
+        newFam = selectPaletteFamily({ prompt: input.prompt, concept: authority?.primaryConcept, vertical: authority?.targetVertical, visualMood: 'restrained differentiated calmer' });
+        if (newFam.toLowerCase() === currentFam) newFam = 'porcelain-blue';
+      }
+      if (newFam && newFam.toLowerCase() !== currentFam) {
+        const spec = PALETTE_FAMILIES[newFam];
+        const beforeFam = art.paletteFamily || art.colorSystem?.paletteName || 'default';
+        const beforeAccent = art.colorSystem?.accent || '';
+        const newColor = { ...art.colorSystem, background: spec.bg, accent: spec.accent, accent2: spec.accent2, primary: spec.accent, secondary: spec.accent2, paletteName: newFam };
+        const newExplo = (explo && better)
+          ? { ...explo, selectedCandidateId: better.id, rejectedCandidateIds: explo.candidates.filter((c) => c.id !== better.id).map((c) => c.id), selectionReason: L(lang, `Fixer switched to the more differentiated "${newFam}" direction after an anti-template flag.`, `Düzeltici, anti-şablon işaretinden sonra daha farklılaşmış "${newFam}" yönüne geçti.`) }
+          : explo;
+        art = { ...art, colorSystem: newColor, paletteFamily: newFam, visualExploration: newExplo, correctedAntiTemplateDrift: true };
+        artChanged = true;
+        addApplied('palette-family', 'artDirection.paletteFamily', String(beforeFam), newFam,
+          L(lang, `Switched to a more differentiated palette family "${newFam}" (${spec.light ? 'lighter, calmer' : 'distinct'}, restrained accent) to break the default dark/gold/dashboard look.`,
+            `Varsayılan koyu/altın/panel görünümünü kırmak için daha farklılaşmış "${newFam}" palet ailesine geçildi (${spec.light ? 'daha açık, sakin' : 'belirgin'}, ölçülü vurgu).`));
+        if (better) addApplied('visual-direction', 'artDirection.visualExploration.selectedCandidateId', explo?.selectedCandidateId || '', better.id,
+          L(lang, 'Selected a more differentiated explored visual direction.', 'Daha farklılaşmış, keşfedilmiş bir görsel yön seçildi.'));
+        if (beforeAccent && beforeAccent.toLowerCase() !== spec.accent.toLowerCase()) addApplied('accent-strategy', 'artDirection.colorSystem.accent', beforeAccent, spec.accent,
+          L(lang, 'Demoted a loud/gold accent to a restrained one.', 'Gürültülü/altın vurgu, ölçülü bir vurguya çekildi.'));
+      }
+    }
+
+    // Strip metrics/logos/SOC2 visual+copy bias from the artifacts when the user
+    // forbids fake proof (artifact strings only — never rewrites the whole site).
+    if (forbidsFakeProof) {
+      const safeTrust = L(lang, 'Security posture, integration clarity and workflow transparency — no fabricated metrics, logos or testimonials.',
+        'Güvenlik duruşu, entegrasyon netliği ve iş akışı şeffaflığı — uydurma metrik, logo veya referans yok.');
+      const biasRe = /logos?|soc\s*2|soc2|uptime|customer metrics|müşteri metrik|testimonial|referans/i;
+      if (art.trustVisualDirection && biasRe.test(art.trustVisualDirection)) {
+        const before = art.trustVisualDirection;
+        art = { ...art, trustVisualDirection: safeTrust, correctedAntiTemplateDrift: true };
+        artChanged = true;
+        addApplied('anti-template-copy', 'artDirection.trustVisualDirection', before, safeTrust,
+          L(lang, 'Removed fabricated logos/SOC2/metrics trust bias because the user forbade fake proof.',
+            'Kullanıcı sahte kanıtı yasakladığı için uydurma logo/SOC2/metrik güven yanlılığı kaldırıldı.'));
+      }
+      if ((art.proofRules || []).some((r) => biasRe.test(r))) {
+        const cleaned = (art.proofRules || []).map((r) => biasRe.test(r) ? safeTrust : r);
+        art = { ...art, proofRules: uniq(cleaned), correctedAntiTemplateDrift: true };
+        artChanged = true;
+        addApplied('anti-template-copy', 'artDirection.proofRules', 'metrics/logos/SOC2', 'security/integration/workflow',
+          L(lang, 'Replaced fabricated proof rules (logos/SOC2/metrics) with honest, structural proof language.',
+            'Uydurma kanıt kuralları (logo/SOC2/metrik) dürüst, yapısal kanıt diliyle değiştirildi.'));
+      }
     }
 
     if (artChanged) artDirection = art;

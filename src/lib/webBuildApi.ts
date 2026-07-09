@@ -204,6 +204,13 @@ export interface WebBuildBrief {
   artImageryDirection?: string;
   artHeroTreatment?: string;
   artComponentStyle?: string;
+  // Visual Exploration + anti-template (Phase 7B). All optional & backward
+  // compatible: the chosen palette family and selected visual direction are
+  // persisted so the design system (preview + files) and owner diagnostics read
+  // the same anti-template decision. `paletteFamily` is a PaletteFamily string.
+  paletteFamily?: string;
+  selectedVisualCandidate?: string;
+  accentStrategy?: string;
 }
 
 /** Pull the labeled strategy lines out of the Build Plan / Design Direction. */

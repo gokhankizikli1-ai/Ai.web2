@@ -42,6 +42,111 @@ export interface WebBuildDesignSystem extends DesignTokens {
   archetype: LayoutArchetype;
   /** Section vertical padding class, derived from density. */
   sectionPad: string;
+  /** The chosen palette family (Phase 7B) — the anti-sameness color decision. */
+  paletteFamily: PaletteFamily;
+}
+
+/* ── Palette families (Phase 7B) — deliberate visual variety ────────────────
+ * A curated set of DISTINCT palette families so different ideas (and even the
+ * SAME idea across builds) resolve to genuinely different looks — instead of the
+ * default dark + gold/indigo + dashboard template every time. Backgrounds are
+ * kept dark-SAFE (the current preview is a dark surface — a true light theme is a
+ * later phase) but deliberately CALMER than the old near-black, and accents are
+ * restrained (never high-saturation gold/neon) to relieve the "same color, hurts
+ * my eyes" problem. The `light` flag is reserved for a future light-mode preview;
+ * every family currently resolves to a readable dark surface. Nothing here is
+ * tied to one example prompt. */
+export type PaletteFamily =
+  | 'midnight-blue' | 'graphite-cyan' | 'slate-violet' | 'porcelain-blue'
+  | 'warm-neutral-green' | 'ink-lime' | 'black-white-red' | 'editorial-cream'
+  | 'archive-sepia' | 'botanical-sage' | 'automotive-silver' | 'hospitality-amber';
+
+export interface PaletteFamilySpec {
+  /** Page background. */ bg: string;
+  /** Restrained primary accent. */ accent: string;
+  /** Secondary accent. */ accent2: string;
+  /** Prefer serif headings for this family. */ headingSerif: boolean;
+  /** True when the background is light (relieves eye-strain / breaks dark-only). */
+  light: boolean;
+  /** One-line mood label for diagnostics + candidate descriptions. */ mood: string;
+}
+
+export const PALETTE_FAMILIES: Record<PaletteFamily, PaletteFamilySpec> = {
+  'midnight-blue':     { bg: '#0a1122', accent: '#3b82f6', accent2: '#38bdf8', headingSerif: false, light: false, mood: 'calm, trustworthy deep blue' },
+  'graphite-cyan':     { bg: '#0d1117', accent: '#22d3ee', accent2: '#7dd3fc', headingSerif: false, light: false, mood: 'restrained graphite with a cool cyan edge' },
+  'slate-violet':      { bg: '#12111f', accent: '#8b5cf6', accent2: '#a78bfa', headingSerif: false, light: false, mood: 'quiet, considered violet' },
+  'porcelain-blue':    { bg: '#0e1420', accent: '#60a5fa', accent2: '#38bdf8', headingSerif: false, light: false, mood: 'cool, clean, calm porcelain-blue' },
+  'warm-neutral-green':{ bg: '#0f1512', accent: '#10b981', accent2: '#84cc16', headingSerif: false, light: false, mood: 'warm neutral with a natural green' },
+  'ink-lime':          { bg: '#0b0d0a', accent: '#a3e635', accent2: '#65a30d', headingSerif: false, light: false, mood: 'ink black with a sharp lime signal' },
+  'black-white-red':   { bg: '#0a0a0a', accent: '#ef4444', accent2: '#e5e5e5', headingSerif: false, light: false, mood: 'stark black-and-white with one red' },
+  'editorial-cream':   { bg: '#14110c', accent: '#d8c9a8', accent2: '#b45309', headingSerif: true,  light: false, mood: 'editorial ink with a warm cream accent' },
+  'archive-sepia':     { bg: '#1a140d', accent: '#c9a875', accent2: '#8a6d4b', headingSerif: true,  light: false, mood: 'document/archive sepia, collection feel' },
+  'botanical-sage':    { bg: '#111710', accent: '#6b9e78', accent2: '#a3b18a', headingSerif: true,  light: false, mood: 'organic botanical sage' },
+  'automotive-silver': { bg: '#0b0d10', accent: '#cbd5e1', accent2: '#ef4444', headingSerif: false, light: false, mood: 'brushed silver with a performance red' },
+  'hospitality-amber': { bg: '#150f09', accent: '#e0a35b', accent2: '#b45309', headingSerif: true,  light: false, mood: 'warm hospitality amber, inviting' },
+};
+
+/** Deterministic small hash (no Date/Math.random — resume-safe). Used only to
+ *  rotate among equally-appropriate families so the SAME idea is not always
+ *  identical, while a given prompt is always stable. */
+function stableHash(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i += 1) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+const pickRotating = (list: PaletteFamily[], seed: string): PaletteFamily =>
+  list[stableHash(seed) % list.length] || list[0];
+
+/**
+ * Select a palette family from the concept/vertical/mood — NOT a fixed default.
+ * AI/SaaS deliberately rotates across restrained cool families (never always
+ * gold/indigo). Verticals (archive, landscaping, hospitality, automotive,
+ * marketplace) trend to their own families so nothing looks like an AI dashboard.
+ * An explicit family (from the model / a chosen visual candidate) always wins.
+ */
+export function selectPaletteFamily(input: {
+  explicit?: string;
+  prompt?: string;
+  concept?: string;
+  vertical?: string;
+  visualMood?: string;
+}): PaletteFamily {
+  const explicit = (input.explicit || '').trim().toLowerCase();
+  if (explicit && explicit in PALETTE_FAMILIES) return explicit as PaletteFamily;
+
+  const seed = `${input.prompt || ''} ${input.concept || ''} ${input.vertical || ''}`.trim() || 'seed';
+  const hay = `${input.prompt || ''} ${input.concept || ''} ${input.vertical || ''} ${input.visualMood || ''}`.toLowerCase();
+
+  // Explicit mood/keyword signals first (most specific).
+  if (/(kimi|restrained|monochrome|minimal|calm|clinical|quiet|understated)/.test(hay)) {
+    return pickRotating(['graphite-cyan', 'slate-violet', 'porcelain-blue', 'midnight-blue'], seed);
+  }
+  if (/(archive|library|museum|collection|document|catalog of works|index of|editorial|magazine|journal)/.test(hay)) {
+    return pickRotating(['archive-sepia', 'editorial-cream'], seed);
+  }
+  if (/(landscap|garden|botanic|nature|forest|peyzaj|organic|\beco|plant|green)/.test(hay)) {
+    return pickRotating(['botanical-sage', 'warm-neutral-green'], seed);
+  }
+  if (/(car|auto|automotive|vehicle|motor|racing|dealership|garage)/.test(hay)) {
+    return pickRotating(['automotive-silver', 'black-white-red'], seed);
+  }
+  if (/(restaurant|hotel|cafe|dining|hospitality|menu|reservation|stay|resort)/.test(hay)) {
+    return pickRotating(['hospitality-amber', 'editorial-cream'], seed);
+  }
+  if (/(marketplace|catalog|catalogue|inventory|listings|storefront|shop|ecommerce|store)/.test(hay)) {
+    return pickRotating(['porcelain-blue', 'warm-neutral-green', 'editorial-cream'], seed);
+  }
+  if (/(luxur|premium|bespoke|boutique|atelier|heritage|high-end)/.test(hay)) {
+    return pickRotating(['editorial-cream', 'archive-sepia', 'slate-violet'], seed);
+  }
+  // AI / SaaS / dashboard / platform → restrained COOL families, rotating.
+  // Deliberately excludes gold/amber so AI is not always gold/dark.
+  if (/(\bai\b|artificial|assistant|chatbot|chat bot|\bsaas\b|dashboard|analytics|platform|automation|software|api|\bml\b|machine learning)/.test(hay)) {
+    return pickRotating(['midnight-blue', 'graphite-cyan', 'slate-violet', 'porcelain-blue'], seed);
+  }
+  // Generic fallback — still varied, still restrained.
+  return pickRotating(['midnight-blue', 'graphite-cyan', 'porcelain-blue', 'slate-violet', 'warm-neutral-green'], seed);
 }
 
 /** Keyword → archetype, most specific first. Driven by the strategy words, not
@@ -113,16 +218,42 @@ export function deriveDesignSystemFromStrategy(brief: WebBuildBrief | undefined)
     words, b.type, b.goal, b.audience, b.conversionStrategy, b.coreIdea,
   ].filter(Boolean).join(' ').toLowerCase();
 
-  return {
+  // Palette family (Phase 7B) — the anti-sameness color decision. An explicit
+  // family (from a chosen visual candidate) wins; otherwise it is selected from
+  // the concept/vertical/mood so AI/SaaS is NOT always the same dark/gold look.
+  const paletteFamily = selectPaletteFamily({
+    explicit: b.paletteFamily,
+    prompt: [b.coreIdea, b.type, b.goal].filter(Boolean).join(' '),
+    concept: b.artDesignArchetype,
+    vertical: b.audience,
+    visualMood: [b.visualMood, b.style, b.colorDirection].filter(Boolean).join(' '),
+  });
+  const fam = PALETTE_FAMILIES[paletteFamily];
+  // The family sets bg/accents ONLY when the model / Art Director did not already
+  // pin an explicit palette (artAccent/artBg win — Art Direction stays in control).
+  const modelPinnedColor = !!(b.artAccent || b.artBg);
+  const familyTokens: DesignTokens = modelPinnedColor ? tokens : {
     ...tokens,
+    bg: fam.bg,
+    accent: fam.accent,
+    accent2: fam.accent2,
+    headingFont: fam.headingSerif ? SERIF_STACK : tokens.headingFont,
+  };
+
+  return {
+    ...familyTokens,
     density,
     motion,
     cardStyle,
     sectionRhythm,
     archetype: deriveArchetype(archetypeWords),
     sectionPad: PAD[density],
+    paletteFamily,
   };
 }
+
+/** Serif stack mirror (kept local to avoid importing brief internals). */
+const SERIF_STACK = 'ui-serif, Georgia, Cambria, "Times New Roman", Times, serif';
 
 /** Serialize the design system to a reusable `designSystem.ts` token module — a
  *  real file in the generated project (not a placeholder). */
@@ -145,6 +276,7 @@ export function designSystemFileContent(ds: WebBuildDesignSystem): string {
     cardStyle: ds.cardStyle,
     sectionRhythm: ds.sectionRhythm,
     archetype: ds.archetype,
+    paletteFamily: ds.paletteFamily,
   };
   return `/**
  * Design system tokens for this site — derived from the build strategy

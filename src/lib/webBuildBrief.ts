@@ -112,16 +112,22 @@ function playbook(industry: IndustryKey, lang: Lang): Playbook {
         primaryCTA: L(lang, 'Book a demo', 'Demo planla'),
         secondaryCTA: L(lang, 'Try it free', 'Ücretsiz dene'),
         tone: L(lang, 'modern, technical, trustworthy', 'modern, teknik, güven veren'),
-        visualStyle: L(lang, 'clean modern SaaS, dark premium', 'temiz modern SaaS, koyu premium'),
-        recommendedSections: ['hero', 'product-demo', 'features', 'workflow', 'metrics', 'integrations', 'pricing', 'faq', 'final-cta', 'footer'],
-        recommendedMotion: L(lang, 'animated product/chat demo card, moving gradient grid', 'animasyonlu ürün/sohbet demo kartı, hareketli gradient grid'),
-        trustSignals: L(lang, 'logos, uptime, SOC2, customer metrics', 'logolar, uptime, SOC2, müşteri metrikleri'),
-        previewVisualIdea: L(lang, 'floating chat/dashboard preview with metrics', 'metrikli, havada duran sohbet/dashboard önizlemesi'),
+        // Phase 7B: no longer hardcodes "dark premium". The palette family +
+        // visual exploration decide the actual look, so AI/SaaS is not always the
+        // same dark/gold/dashboard template.
+        visualStyle: L(lang, 'clean, modern, adaptable — palette chosen by visual exploration', 'temiz, modern, uyarlanabilir — görsel keşifle seçilen palet'),
+        recommendedSections: ['hero', 'product-demo', 'features', 'workflow', 'security', 'integrations', 'pricing', 'faq', 'final-cta', 'footer'],
+        recommendedMotion: L(lang, 'a calm product/chat demo surface; restrained, tasteful motion', 'sakin bir ürün/sohbet demo yüzeyi; ölçülü, zevkli hareket'),
+        // Phase 7B: safer trust language — no fabricated logos/SOC2/customer metrics.
+        trustSignals: L(lang, 'security posture, integration clarity, workflow transparency, support handoff clarity', 'güvenlik duruşu, entegrasyon netliği, iş akışı şeffaflığı, destek devri netliği'),
+        previewVisualIdea: L(lang, 'a focused product/chat demo surface (no fabricated metrics or logos)', 'odaklı bir ürün/sohbet demo yüzeyi (uydurma metrik veya logo yok)'),
         heroHeadline: L(lang, 'Automate customer support with an AI that actually resolves tickets', 'Talepleri gerçekten çözen bir yapay zekâ ile müşteri desteğini otomatikleştir'),
         heroSub: L(lang, 'Deploy an AI support agent in minutes — it answers instantly, escalates smartly, and learns from every conversation.', 'Dakikalar içinde bir AI destek asistanı devreye al — anında yanıtlar, akıllıca yönlendirir ve her görüşmeden öğrenir.'),
+        // Phase 7B: website-demo-safe wording — describes previewable flows, not
+        // fabricated product metrics/claims.
         items: L(lang,
-          'Instant AI replies|Smart escalation to humans|Trained on your docs|Multichannel (web, email, WhatsApp)|Analytics & CSAT tracking|One-click integrations',
-          'Anında AI yanıtları|İnsana akıllı yönlendirme|Dökümanlarınla eğitim|Çok kanallı (web, e-posta, WhatsApp)|Analitik ve CSAT takibi|Tek tıkla entegrasyonlar').split('|'),
+          'Answer routing preview|Support handoff flow|Knowledge base preview|Channel integration map|Conversation overview|Security controls',
+          'Yanıt yönlendirme önizlemesi|Destek devir akışı|Bilgi tabanı önizlemesi|Kanal entegrasyon haritası|Görüşme genel görünümü|Güvenlik kontrolleri').split('|'),
       };
     case 'fitness':
       return {
@@ -418,6 +424,7 @@ const humanize = (id: string, lang: Lang): string => {
     'product-demo': { en: 'Product demo', tr: 'Ürün demosu' },
     workflow: { en: 'How it works', tr: 'Nasıl çalışır' },
     integrations: { en: 'Integrations', tr: 'Entegrasyonlar' },
+    security: { en: 'Security', tr: 'Güvenlik' },
     metrics: { en: 'By the numbers', tr: 'Rakamlarla' },
     results: { en: 'Results', tr: 'Sonuçlar' },
     programs: { en: 'Programs', tr: 'Programlar' },

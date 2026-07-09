@@ -341,6 +341,18 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       ownerRows.push(['qualityFixesApplied', fixed.length ? fixed.join(' · ') : 'none']);
     }
 
+    // Visual Exploration + anti-template gate (Phase 7B) — real artifact data.
+    const explo = art?.visualExploration;
+    if (explo || enf?.paletteFamily) {
+      ownerRows.push(['paletteFamily', enf?.paletteFamily || art?.paletteFamily || 'default']);
+      if (explo) {
+        ownerRows.push(['visualCandidates', `${(explo.candidates || []).length} · selected: ${explo.selectedCandidateId}${explo.rejectedCandidateIds?.length ? ` · rejected: ${explo.rejectedCandidateIds.join(', ')}` : ''}`]);
+        if (explo.selectionReason) ownerRows.push(['visualSelectionReason', explo.selectionReason]);
+      }
+      const atWarn = enf?.antiTemplateWarnings ?? 0;
+      ownerRows.push(['antiTemplate', `${atWarn} warning${atWarn === 1 ? '' : 's'}${enf?.qualitySameTemplateIssues ? ` · ${enf.qualitySameTemplateIssues} same-template` : ''}${enf?.correctedAntiTemplateDrift ? ' · corrected' : ''}`]);
+    }
+
     // Phase 6A: is the Preview using the model-native Interaction Contract (its own
     // Website Experience Plan), not just a re-derived fallback? Real fields only.
     const modelNativeContract = !!(contract?.experienceMode || contract?.navigationModel
