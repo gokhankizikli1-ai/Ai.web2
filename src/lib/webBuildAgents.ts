@@ -1648,13 +1648,17 @@ export function derivePageArchitectureDecision(
   const isRole = (name: string, id: string, re: RegExp) => re.test(`${id} ${name}`);
   for (const s of sectionItems || []) {
     const key = `${s.id} ${s.name}`;
-    if (!proofNeeded && SECTION_ROLE_RE.testimonials.test(key) && !SECTION_ROLE_RE.hero.test(key)) {
+    const isProtectedSection = SECTION_ROLE_RE.hero.test(key)
+      || SECTION_ROLE_RE.footer.test(key)
+      || SECTION_ROLE_RE.demo.test(key)
+      || SECTION_ROLE_RE.contact.test(key);
+    if (!proofNeeded && SECTION_ROLE_RE.testimonials.test(key) && !isProtectedSection) {
       removedSections.push({ id: s.id, section: s.name, reason: L(lang, 'Testimonials removed — no user/source proof provided (avoids fabricated proof).', 'Referanslar kaldırıldı — kullanıcı/kaynak kanıtı yok (uydurma kanıttan kaçınır).') });
-    } else if (!proofNeeded && (SECTION_ROLE_RE.caseStudies.test(key)) && !SECTION_ROLE_RE.hero.test(key)) {
+    } else if (!proofNeeded && (SECTION_ROLE_RE.caseStudies.test(key)) && !isProtectedSection) {
       removedSections.push({ id: s.id, section: s.name, reason: L(lang, 'Case Studies removed — none provided by user/source (avoids fabricated proof).', 'Vaka çalışmaları kaldırıldı — kullanıcı/kaynak tarafından sağlanmadı (uydurma kanıttan kaçınır).') });
-    } else if (SECTION_ROLE_RE.certifications.test(key) && !securityNeeded) {
+    } else if (SECTION_ROLE_RE.certifications.test(key) && !securityNeeded && !isProtectedSection) {
       removedSections.push({ id: s.id, section: s.name, reason: L(lang, 'Certifications removed — no real compliance provided (no fake SOC2/ISO).', 'Sertifikalar kaldırıldı — gerçek uyumluluk sağlanmadı (sahte SOC2/ISO yok).') });
-    } else if (!pricingNeeded && SECTION_ROLE_RE.pricing.test(key) && !SECTION_ROLE_RE.hero.test(key)) {
+    } else if (!pricingNeeded && SECTION_ROLE_RE.pricing.test(key) && !isProtectedSection) {
       removedSections.push({ id: s.id, section: s.name, reason: L(lang, `Pricing removed — not requested for this concept; prefer ${isB2B ? 'Book a Demo / Contact Sales' : 'Try the Demo'}.`, `Fiyatlandırma kaldırıldı — bu konsept için istenmedi; ${isB2B ? 'Demo Ayarla / Satışla İletişim' : 'Demoyu Dene'} tercih edilir.`) });
     }
   }

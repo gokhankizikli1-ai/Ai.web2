@@ -541,15 +541,20 @@ function assembleWebBuildPayload(
         effLang,
       );
       let next = sectionItems.slice();
+      let appliedRemovedSections = decision.removedSections;
 
       // 1) REMOVE unsupported proof / irrelevant pricing by id, keeping a >= 5 floor
       //    (the planner never targets hero/footer/demo/contact for removal).
-      const removeIds = new Set(
-        decision.removedSections.map((r) => r.id).filter((id): id is string => !!id),
-      );
-      if (removeIds.size) {
-        const filtered = next.filter((s) => !removeIds.has(s.id));
-        if (filtered.length >= 5) next = filtered;
+      if (decision.removedSections.length) {
+        appliedRemovedSections = [];
+        for (const removal of decision.removedSections) {
+          if (!removal.id || !next.some((s) => s.id === removal.id)) continue;
+          const filtered = next.filter((s) => s.id !== removal.id);
+          if (filtered.length >= 5) {
+            next = filtered;
+            appliedRemovedSections.push(removal);
+          }
+        }
       }
 
       // 2) RENAME a generic flow label to the concept-specific one. Display text
@@ -584,7 +589,14 @@ function assembleWebBuildPayload(
         sectionItems = normalizeSectionItems(next);
         didRewriteArchitecture = true;
       }
-      artifacts = { ...(artifacts || {}), pageArchitecture: decision };
+      const hasAppliedProofRemoval = appliedRemovedSections.some((r) =>
+        /testimonial|review|case[-\s]?stud|success\s*stor|referans|yorum|vaka/i.test(`${r.section} ${r.reason}`));
+      const architectureWarnings = decision.architectureWarnings.filter((w) =>
+        hasAppliedProofRemoval || !/unsupported proof sections|testimonial|case[-\s]?stud|referans|vaka/i.test(w));
+      artifacts = {
+        ...(artifacts || {}),
+        pageArchitecture: { ...decision, removedSections: appliedRemovedSections, architectureWarnings },
+      };
     } catch {
       /* non-blocking — keep the enforced sectionItems, no decision recorded */
     }
@@ -609,6 +621,7 @@ function assembleWebBuildPayload(
     sectionItems = normalizeSectionItems(fallbackSectionItems(inferred, effLang));
     const plan = deriveLayoutPlan(artBrief, sectionItems.map((s) => ({ id: s.id, name: s.name })));
     files = diffFiles(prevFiles, synthesizeFromCopies(itemsToCopies(sectionItems), artBrief, plan));
+    if (artifacts?.pageArchitecture) artifacts = { ...artifacts, pageArchitecture: undefined };
     usedQualityFallbackSections = true;
   }
 
