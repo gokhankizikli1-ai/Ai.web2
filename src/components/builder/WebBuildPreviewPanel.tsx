@@ -7,7 +7,7 @@ import { openPreviewInNewTab, currentReturnTo } from '@/lib/webBuildPreviewStash
 import type { WebBuildSectionItem } from '@/lib/webBuildPayload';
 import type { WebBuildBrief } from '@/lib/webBuildApi';
 import type { InteractionContract } from '@/lib/webBuildInteractionContract';
-import type { VisualAssetPlan } from '@/lib/webBuildAgents';
+import type { VisualAssetPlan, VisualSignaturePlan } from '@/lib/webBuildAgents';
 
 /**
  * The in-app preview drawer. Renders the REAL generated page (headline, copy,
@@ -43,7 +43,7 @@ class PreviewErrorBoundary extends Component<{ fallback: ReactNode; children: Re
 }
 
 export default function WebBuildPreviewPanel({
-  sectionItems, brief, slug, runId, interactionContract, visualAssetPlan,
+  sectionItems, brief, slug, runId, interactionContract, visualAssetPlan, visualSignaturePlan,
 }: {
   sectionItems: WebBuildSectionItem[];
   brief: WebBuildBrief;
@@ -55,6 +55,9 @@ export default function WebBuildPreviewPanel({
   /** Phase 5 Visual Asset Plan (data only) — passed to the preview so its premium
    *  visual layer can render concept-specific CSS/SVG. Optional. */
   visualAssetPlan?: VisualAssetPlan;
+  /** Phase 9E-1 Visual Signature Plan (data only) — drives the preview's
+   *  concept-specific signature visuals (chat-flow rail, integration orbit, …). */
+  visualSignaturePlan?: VisualSignaturePlan;
 }) {
   const { t, lang } = useLanguageStore();
   const url = slug || 'preview.korvix.build';
@@ -130,7 +133,7 @@ export default function WebBuildPreviewPanel({
       <BrowserFrame url={url} accentColor={ACCENT}>
         <div className="max-h-[70vh] overflow-y-auto scrollbar-thin">
           <PreviewErrorBoundary key={previewKey} fallback={previewFallback}>
-            <WebBuildPreviewDocument sectionItems={items} brief={safeBrief} interactionContract={interactionContract} visualAssetPlan={visualAssetPlan} />
+            <WebBuildPreviewDocument sectionItems={items} brief={safeBrief} interactionContract={interactionContract} visualAssetPlan={visualAssetPlan} visualSignaturePlan={visualSignaturePlan} />
           </PreviewErrorBoundary>
         </div>
       </BrowserFrame>
