@@ -6293,7 +6293,6 @@ export function deriveFixer(input: FixerInput): { artifact: FixerAgentArtifact; 
   const ctaMap: Record<string, string> = aiCommerce ? {
     'experience the chatbot': L(lang, 'Try the Demo', 'Demoyu Dene'),
     'get started': L(lang, 'Try the Demo', 'Demoyu Dene'),
-    'learn more': L(lang, 'See How It Works', 'Nasıl Çalıştığını Gör'),
     'explore features': L(lang, 'See Chat Flow', 'Sohbet Akışını Gör'),
   } : {};
   // Universal internal-category → neutral (ANY concept) so planning language never
@@ -6387,6 +6386,7 @@ export function deriveFixer(input: FixerInput): { artifact: FixerAgentArtifact; 
     'everything you need': L(lang, 'Covers product discovery, policy answers and human handoff', 'Ürün keşfi, politika yanıtları ve insana devri kapsar'),
     'powerful features': L(lang, 'Understands intent, recommends products and hands off to your team', 'Niyeti anlar, ürün önerir ve ekibinize devreder'),
     'all-in-one': L(lang, 'Product questions, recommendations and support handoff in one chat', 'Tek sohbette ürün soruları, öneriler ve destek devri'),
+    'all in one': L(lang, 'Product questions, recommendations and support handoff in one chat', 'Tek sohbette ürün soruları, öneriler ve destek devri'),
   } : {};
   const cdHeroRepair = (v: string): string | undefined => {
     if (!aiCommerce || cdHasUserTerm(v)) return undefined;
