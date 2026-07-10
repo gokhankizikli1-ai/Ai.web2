@@ -344,6 +344,7 @@ const AGENT_TITLE_KEY: Record<AgentId, string> = {
   quality_director: 'wbAgentQualityDirector',
   asset_director: 'wbAgentAssetDirector',
   motion_composer: 'wbAgentMotionComposer',
+  image_pipeline: 'wbAgentImagePipeline',
   fixer: 'wbAgentFixer',
 };
 const AGENT_NOTE_KEY: Record<AgentId, string> = {
@@ -356,6 +357,7 @@ const AGENT_NOTE_KEY: Record<AgentId, string> = {
   quality_director: 'wbOpQualityDirectorNote',
   asset_director: 'wbOpAssetDirectorNote',
   motion_composer: 'wbOpMotionComposerNote',
+  image_pipeline: 'wbOpImagePipelineNote',
   fixer: 'wbOpFixerNote',
 };
 
