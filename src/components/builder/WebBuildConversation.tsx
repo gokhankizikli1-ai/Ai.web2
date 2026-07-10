@@ -324,6 +324,16 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       if (pr) ownerRows.push(['assetProviders', `image: ${pr.imageProviderNeeded ? 'later' : 'no'} · motion/video: ${pr.motionProviderNeeded ? 'later' : 'no (out of scope)'} · manualUpload: ${pr.manualUploadUseful}`]);
       if (adr.forbiddenAssets?.length) ownerRows.push(['assetHonesty', adr.forbiddenAssets.slice(0, 2).join(' · ')]);
     }
+    // Phase 10B — Motion Composer (subtle CSS motion; no video / image / backend).
+    const mco = step.artifacts?.motionComposer;
+    if (mco) {
+      ownerRows.push(['motionComposer', `${mco.status} · ${(mco.layers || []).length} layers`]);
+      if (mco.motionStrategy) ownerRows.push(['motionStrategy', mco.motionStrategy]);
+      ownerRows.push(['motionLayers', `hero ${(mco.heroMotion || []).length} · global ${(mco.globalMotion || []).length} · section ${(mco.sectionMotion || []).length} · consumed ${(mco.consumedAssetSlots || []).length} slot(s)`]);
+      const pats = Array.from(new Set((mco.layers || []).map((l) => l.pattern))).filter((p) => p !== 'none').slice(0, 4);
+      if (pats.length) ownerRows.push(['motionPatterns', pats.join(', ')]);
+      ownerRows.push(['reducedMotionReady', String(!!mco.reducedMotionPolicy)]);
+    }
     const fixer = step.artifacts?.fixer;
     if (fixer) {
       const qc = (fixer.qualityAppliedChanges || []).length;
@@ -812,7 +822,7 @@ export default function WebBuildConversation({
                 </button>
               </div>
               {panel === 'preview'
-                ? <WebBuildPreviewPanel sectionItems={sectionItems} brief={brief} slug={slug} runId={runId} interactionContract={steps[lastIdx]?.artifacts?.strategy?.interactionContract} visualAssetPlan={steps[lastIdx]?.artifacts?.artDirection?.visualAssetPlan} visualSignaturePlan={steps[lastIdx]?.artifacts?.visualSignaturePlan} />
+                ? <WebBuildPreviewPanel sectionItems={sectionItems} brief={brief} slug={slug} runId={runId} interactionContract={steps[lastIdx]?.artifacts?.strategy?.interactionContract} visualAssetPlan={steps[lastIdx]?.artifacts?.artDirection?.visualAssetPlan} visualSignaturePlan={steps[lastIdx]?.artifacts?.visualSignaturePlan} motionComposer={steps[lastIdx]?.artifacts?.motionComposer} />
                 : <WebBuildFileView files={files} initialPath={filePath} />}
             </motion.div>
           </motion.div>

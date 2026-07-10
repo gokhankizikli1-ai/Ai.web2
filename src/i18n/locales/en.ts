@@ -385,6 +385,7 @@ export const en: Record<string, string> = {
   wbAgentReviewer: "Reviewer",
   wbAgentQualityDirector: "Quality Director",
   wbAgentAssetDirector: "Asset Director",
+  wbAgentMotionComposer: "Motion Composer",
   wbAgentFixer: "Fixer",
   wbThinkLabel: "Think",
   /* web build — compact running "Think" indicator (single running-state UI).
@@ -416,6 +417,7 @@ export const en: Record<string, string> = {
   wbOpReviewerNote: "Audits concept fit, fake-data risk, interaction readiness and fix instructions.",
   wbOpQualityDirectorNote: "Scores premium quality and flags copy, CTA and flow issues for safe repair.",
   wbOpAssetDirectorNote: "Plans the site's visual assets (CSS/SVG now, image slots later) with honesty constraints — generates no images.",
+  wbOpMotionComposerNote: "Composes subtle CSS/SVG motion layers from the asset plan (reduced-motion safe) — no video, no fake backend work.",
   wbOpFixerNote: "Applies safe reviewer-driven repairs without redesigning the build.",
   wbAgentThinking: "Working…",
   wbStageReadBrief: "Reading your brief",

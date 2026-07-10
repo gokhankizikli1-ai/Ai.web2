@@ -973,10 +973,57 @@ export interface AssetDirectorArtifact {
   summary: string;
 }
 
-export type AgentId = 'research' | 'ui_art_director' | 'strategy' | 'layout_architect' | 'component_engineer' | 'reviewer' | 'quality_director' | 'asset_director' | 'fixer';
+/* ── Motion Composer (Phase 10B) — composes SUBTLE CSS/SVG motion ──────────────
+ * Consumes the Asset Director's `motion-css-now` slots and decides concept-specific
+ * motion LAYERS (pattern + intensity + target) the Preview renders with framer-
+ * motion / CSS only. THIS IS NOT VIDEO, not image generation, not a provider, and
+ * touches no backend. Motion is subtle by default, respects prefers-reduced-motion,
+ * and never fakes real backend work (no fake loading/progress/inventory). */
+export type MotionPattern =
+  | 'ambient-gradient'
+  | 'floating-cards'
+  | 'chat-typing'
+  | 'integration-orbit'
+  | 'before-after-reveal'
+  | 'organic-drift'
+  | 'document-scan'
+  | 'catalog-filter-shift'
+  | 'menu-reveal'
+  | 'timeline-progress'
+  | 'trust-pulse'
+  | 'none';
+
+export interface MotionLayer {
+  id: string;
+  /** hero, global, a section id ('section:<id>'), or a screen id. */
+  target: string;
+  pattern: MotionPattern;
+  intensity: 'minimal' | 'subtle' | 'expressive';
+  purpose: string;
+  /** Loop/transition duration in seconds. */
+  duration: number;
+  delay?: number;
+  reducedMotionFallback: string;
+  safetyNotes: string[];
+}
+
+export interface MotionComposerArtifact {
+  status: 'composed' | 'partial' | 'failed-open';
+  motionStrategy: string;
+  layers: MotionLayer[];
+  globalMotion: MotionLayer[];
+  heroMotion: MotionLayer[];
+  sectionMotion: MotionLayer[];
+  consumedAssetSlots: string[];
+  reducedMotionPolicy: string;
+  forbiddenMotion: string[];
+  summary: string;
+}
+
+export type AgentId = 'research' | 'ui_art_director' | 'strategy' | 'layout_architect' | 'component_engineer' | 'reviewer' | 'quality_director' | 'asset_director' | 'motion_composer' | 'fixer';
 export type AgentArtifact =
   ResearchAgentArtifact | ArtDirectionArtifact | StrategyAgentArtifact | PageBlueprint
-  | ComponentEngineerArtifact | ReviewerAgentArtifact | QualityDirectorArtifact | AssetDirectorArtifact | FixerAgentArtifact | Record<string, unknown>;
+  | ComponentEngineerArtifact | ReviewerAgentArtifact | QualityDirectorArtifact | AssetDirectorArtifact | MotionComposerArtifact | FixerAgentArtifact | Record<string, unknown>;
 
 export interface WebBuildAgent {
   id: AgentId;
@@ -1056,6 +1103,14 @@ export interface WebBuildEnforcement {
   manualUploadAssetSlotCount?: number;
   imageProviderNeeded?: boolean;
   motionProviderNeeded?: boolean;
+  /* ── Motion Composer trace (Phase 10B, optional, backward compatible) ── */
+  didRunMotionComposer?: boolean;
+  motionLayerCount?: number;
+  globalMotionLayerCount?: number;
+  heroMotionLayerCount?: number;
+  sectionMotionLayerCount?: number;
+  consumedMotionAssetSlotCount?: number;
+  reducedMotionReady?: boolean;
   fallbackReason?: string;
 }
 
@@ -1076,6 +1131,10 @@ export interface WebBuildArtifacts {
    *  now, motion-CSS now, image-later slots) + honesty constraints. PLANNING/DATA
    *  ONLY: never generates images or calls a provider. Optional → old builds load. */
   assetDirector?: AssetDirectorArtifact;
+  /** Motion plan (Phase 10B) — composes SUBTLE CSS/SVG motion layers from the Asset
+   *  Director's motion-css-now slots. Consumed by the Preview only (framer-motion/
+   *  CSS). Never video/image/provider/backend. Optional → old builds load. */
+  motionComposer?: MotionComposerArtifact;
   /** Safe reviewer-driven repairs (Phase 6). Optional → old builds still load. */
   fixer?: FixerAgentArtifact;
   /** Intent-aware page architecture decision (Phase 9D-1). Optional → old builds load. */
@@ -5533,6 +5592,7 @@ const AGENT_NAME: Record<AgentId, [string, string]> = {
   reviewer: ['Reviewer Agent', 'Gözden Geçirme Ajanı'],
   quality_director: ['Quality Director', 'Kalite Direktörü'],
   asset_director: ['Asset Director', 'Varlık Direktörü'],
+  motion_composer: ['Motion Composer', 'Hareket Tasarımcısı'],
   fixer: ['Fixer Agent', 'Düzeltici Ajan'],
 };
 
@@ -7063,6 +7123,179 @@ export function runAssetDirector(input: AssetDirectorInput): { agent: WebBuildAg
   }
 }
 
+/* ── Motion Composer Agent (Phase 10B) — composes subtle CSS/SVG motion ─────────
+ * Runs AFTER the Asset Director and BEFORE the Fixer. Pure + deterministic + fails
+ * open. Consumes the Asset Director's `motion-css-now` slots and decides concept-
+ * specific motion LAYERS the Preview renders with framer-motion / CSS only. NEVER
+ * video, image generation, a provider, or a backend. Subtle by default, reduced-
+ * motion respected, no fake loading/progress/inventory. */
+export interface MotionComposerInput {
+  brief: WebBuildBrief;
+  sectionItems: Array<{ id: string; name: string }>;
+  artDirection?: ArtDirectionArtifact;
+  blueprint?: PageBlueprint;
+  experienceBlueprint?: ExperienceBlueprint;
+  visualSignaturePlan?: VisualSignaturePlan;
+  assetDirector?: AssetDirectorArtifact;
+  lang?: Lang;
+}
+
+/** Section-role regexes reused to target motion at the right sections. */
+const MOTION_ROLE_RE = {
+  demo: /demo|chat|assistant|playground|product-?demo|conversation|sohbet/i,
+  integrations: /integration|connect|shopify|\bapi\b|plugin|webhook|catalog|store\s*integrat|entegrasyon/i,
+  security: /security|trust|privacy|compliance|safety|güven|gizlilik/i,
+  flow: /how[-\s]?it[-\s]?works|process|workflow|steps?|journey|shopper\s*flow|materials?|malzeme|süreç|nasıl/i,
+  beforeAfter: /before\s*[\/&-]?\s*after|önce\s*[\/&-]?\s*sonra|transformation|projects?|gallery|work|dönüşüm|proje|galeri/i,
+  menu: /\bmenu\b|dishes?|cuisine|menü|yemek/i,
+  reservation: /reservation|reserve|booking|contact|rezervasyon|randevu|iletişim/i,
+  catalog: /catalog|filter|listings?|product\s*grid|shop|browse|katalog|filtre|ürün/i,
+  archive: /archive|document|collection|provenance|record|arşiv|belge|koleksiyon/i,
+} as const;
+
+/**
+ * Derive the Motion Composer artifact. Pure + deterministic. Reads the Asset
+ * Director's motion-css-now slots + the experience type + real sections, and
+ * composes concept-specific SUBTLE motion layers (hero / global / per-section).
+ * Always reduced-motion safe; never fakes backend work. Renders nothing itself.
+ */
+export function deriveMotionComposer(input: MotionComposerInput): MotionComposerArtifact {
+  const lang = input.lang || 'en';
+  const siteType = input.experienceBlueprint?.siteExperienceType || 'unknown';
+  const sections = input.sectionItems || [];
+  const motionSlots = (input.assetDirector?.slots || []).filter((s) => s.generationMode === 'motion-css-now');
+  const consumedAssetSlots = motionSlots.map((s) => s.id);
+
+  const isSaaS = siteType === 'b2b-product-landing' || siteType === 'consumer-product-landing' || siteType === 'dashboard-preview';
+  const isLocal = siteType === 'restaurant' || siteType === 'local-business';
+  const isCommerce = siteType === 'marketplace' || siteType === 'ecommerce-store';
+  const isArchive = siteType === 'content-publication';
+  const isPortfolioAgency = siteType === 'portfolio' || siteType === 'agency-service';
+
+  const layers: MotionLayer[] = [];
+  let mid = 0;
+  const reducedFallback = L(lang, 'Static layer — loops stop, no transform movement.', 'Statik katman — döngüler durur, dönüşüm hareketi yok.');
+  const noFakeWork = L(lang, 'Illustrative only — never implies real backend work, loading or live data.', 'Yalnızca açıklayıcı — gerçek backend işi, yükleme veya canlı veri ima etmez.');
+  const add = (target: string, pattern: MotionPattern, intensity: MotionLayer['intensity'], purpose: string, duration: number, safety: string[] = [noFakeWork], delay?: number) => {
+    layers.push({ id: `motion-${mid += 1}`, target, pattern, intensity, purpose, duration, delay, reducedMotionFallback: reducedFallback, safetyNotes: safety });
+  };
+  // Match a section by role → 'section:<id>' target (first match wins).
+  const sectionFor = (re: RegExp): string | undefined => {
+    const s = sections.find((x) => re.test(`${x.id} ${x.name}`) && !/hero|footer/i.test(`${x.id} ${x.name}`));
+    return s ? `section:${s.id}` : undefined;
+  };
+
+  // ── Hero + global ambient (concept-specific, minimal/subtle only). ──
+  if (isLocal) {
+    add('hero', 'organic-drift', 'subtle', L(lang, 'Calm organic hero atmosphere', 'Sakin organik hero atmosferi'), 14);
+    add('global', 'organic-drift', 'minimal', L(lang, 'Very subtle organic background drift', 'Çok ince organik arka plan kayması'), 18);
+  } else if (isArchive) {
+    add('hero', 'ambient-gradient', 'minimal', L(lang, 'Restrained editorial hero ambience', 'Ölçülü editoryal hero atmosferi'), 16);
+  } else if (isCommerce) {
+    add('hero', 'ambient-gradient', 'subtle', L(lang, 'Product ambience behind the catalog hero', 'Katalog hero arkasında ürün atmosferi'), 14);
+  } else if (isPortfolioAgency) {
+    add('hero', 'floating-cards', 'subtle', L(lang, 'Editorial floating brand shapes', 'Editoryal yüzen marka şekilleri'), 12);
+  } else if (isSaaS) {
+    add('hero', 'floating-cards', 'subtle', L(lang, 'Gently floating hero/product cards', 'Nazikçe yüzen hero/ürün kartları'), 12);
+    add('global', 'ambient-gradient', 'minimal', L(lang, 'Minimal ambient product glow', 'Minimal atmosferik ürün parıltısı'), 18);
+  } else {
+    add('hero', 'ambient-gradient', 'minimal', L(lang, 'Minimal ambient hero glow', 'Minimal atmosferik hero parıltısı'), 16);
+  }
+
+  // ── Section-role motion (concept-specific). No dashboard/chart motion for local. ──
+  if (isSaaS) {
+    const demo = sectionFor(MOTION_ROLE_RE.demo); if (demo) add(demo, 'chat-typing', 'subtle', L(lang, 'Sample chat typing on the product demo', 'Ürün demosunda örnek sohbet yazımı'), 1.6, [noFakeWork, L(lang, 'Front-end sample — no real AI/backend.', 'Ön-yüz örneği — gerçek AI/backend yok.')]);
+    const integ = sectionFor(MOTION_ROLE_RE.integrations); if (integ) add(integ, 'integration-orbit', 'subtle', L(lang, 'Slow integration orbit (generic nodes, no logos)', 'Yavaş entegrasyon yörüngesi (genel düğümler, logo yok)'), 60, [noFakeWork, L(lang, 'No real brand logos.', 'Gerçek marka logosu yok.')]);
+    const sec = sectionFor(MOTION_ROLE_RE.security); if (sec) add(sec, 'trust-pulse', 'subtle', L(lang, 'Staged trust-control pulse', 'Aşamalı güven-kontrol nabzı'), 1.8, [noFakeWork, L(lang, 'No fake compliance/certification.', 'Sahte uyumluluk/sertifika yok.')]);
+    const flow = sectionFor(MOTION_ROLE_RE.flow); if (flow) add(flow, 'timeline-progress', 'subtle', L(lang, 'Staged flow/timeline progress', 'Aşamalı akış/zaman çizelgesi ilerlemesi'), 1.1);
+  } else if (isLocal) {
+    const ba = sectionFor(MOTION_ROLE_RE.beforeAfter); if (ba) add(ba, 'before-after-reveal', 'subtle', L(lang, 'Illustrative before/after reveal', 'Açıklayıcı önce/sonra ortaya çıkışı'), 1.4, [noFakeWork, L(lang, 'Illustrative only — real before/after needs user-provided material.', 'Yalnızca açıklayıcı — gerçek önce/sonra kullanıcı materyali gerektirir.')]);
+    const proc = sectionFor(MOTION_ROLE_RE.flow); if (proc) add(proc, 'timeline-progress', 'subtle', L(lang, 'Materials/process staged progress', 'Malzeme/süreç aşamalı ilerlemesi'), 1.1);
+    if (siteType === 'restaurant') {
+      const menu = sectionFor(MOTION_ROLE_RE.menu); if (menu) add(menu, 'menu-reveal', 'subtle', L(lang, 'Soft menu reveal', 'Yumuşak menü ortaya çıkışı'), 0.9);
+      const resv = sectionFor(MOTION_ROLE_RE.reservation); if (resv) add(resv, 'menu-reveal', 'minimal', L(lang, 'Gentle reservation card reveal', 'Nazik rezervasyon kartı ortaya çıkışı'), 0.9, [noFakeWork, L(lang, 'No fake live booking/order backend.', 'Sahte canlı rezervasyon/sipariş backend\'i yok.')]);
+    }
+  } else if (isArchive) {
+    const arch = sectionFor(MOTION_ROLE_RE.archive); if (arch) add(arch, 'document-scan', 'subtle', L(lang, 'Slow document scan line', 'Yavaş belge tarama çizgisi'), 11, [noFakeWork, L(lang, 'No fake institution/source claim.', 'Sahte kurum/kaynak iddiası yok.')]);
+    const prov = sectionFor(MOTION_ROLE_RE.flow); if (prov) add(prov, 'timeline-progress', 'minimal', L(lang, 'Provenance/process progress', 'Köken/süreç ilerlemesi'), 1.2);
+  } else if (isCommerce) {
+    const cat = sectionFor(MOTION_ROLE_RE.catalog); if (cat) add(cat, 'catalog-filter-shift', 'subtle', L(lang, 'Subtle filter/list transition', 'İnce filtre/liste geçişi'), 0.8, [noFakeWork, L(lang, 'No fake live inventory/counter.', 'Sahte canlı envanter/sayaç yok.')]);
+    add('hero', 'floating-cards', 'subtle', L(lang, 'Gently floating product cards', 'Nazikçe yüzen ürün kartları'), 12);
+  } else if (isPortfolioAgency) {
+    const proc = sectionFor(MOTION_ROLE_RE.flow); if (proc) add(proc, 'timeline-progress', 'subtle', L(lang, 'Process staged progress', 'Süreç aşamalı ilerlemesi'), 1.1);
+  }
+
+  const globalMotion = layers.filter((l) => l.target === 'global');
+  const heroMotion = layers.filter((l) => l.target === 'hero');
+  const sectionMotion = layers.filter((l) => l.target.startsWith('section:'));
+
+  const motionStrategy = isLocal
+    ? L(lang, 'Calm organic ambient + illustrative reveals; no dashboard/chart motion.', 'Sakin organik atmosfer + açıklayıcı ortaya çıkışlar; panel/grafik hareketi yok.')
+    : isSaaS
+      ? L(lang, 'Subtle product motion: floating cards, sample chat typing, integration orbit, trust pulse.', 'İnce ürün hareketi: yüzen kartlar, örnek sohbet yazımı, entegrasyon yörüngesi, güven nabzı.')
+      : isArchive
+        ? L(lang, 'Very restrained editorial motion: document scan + provenance progress.', 'Çok ölçülü editoryal hareket: belge tarama + köken ilerlemesi.')
+        : isCommerce
+          ? L(lang, 'Subtle catalog/filter transitions + floating product cards; no live counters.', 'İnce katalog/filtre geçişleri + yüzen ürün kartları; canlı sayaç yok.')
+          : L(lang, 'Minimal ambient motion, subtle by default.', 'Minimal atmosferik hareket, varsayılan olarak ince.');
+
+  const forbiddenMotion = uniq([
+    L(lang, 'No video, autoplay media or heavy canvas/WebGL.', 'Video, otomatik oynatma medya veya ağır canvas/WebGL yok.'),
+    L(lang, 'No fake loading/progress bars implying real backend work.', 'Gerçek backend işi ima eden sahte yükleme/ilerleme çubuğu yok.'),
+    L(lang, 'No fake live counters, inventory, prices or metrics.', 'Sahte canlı sayaç, envanter, fiyat veya metrik yok.'),
+    L(lang, 'No loud/flashy motion; nothing seizure-inducing (no rapid flashing).', 'Gürültülü/gösterişli hareket yok; nöbet tetikleyici hiçbir şey yok (hızlı yanıp sönme yok).'),
+    ...(isLocal ? [L(lang, 'No dashboard/chart/data motion on a local/service site.', 'Yerel/hizmet sitesinde panel/grafik/veri hareketi yok.')] : []),
+  ]);
+
+  const reducedMotionPolicy = L(lang,
+    'All motion is gated on prefers-reduced-motion: loops stop, infinite animations disable, only a static layer remains — no large transforms.',
+    'Tüm hareket prefers-reduced-motion ile kapılanır: döngüler durur, sonsuz animasyonlar devre dışı kalır, yalnızca statik bir katman kalır — büyük dönüşüm yok.');
+
+  return {
+    status: layers.length ? 'composed' : 'partial',
+    motionStrategy,
+    layers,
+    globalMotion,
+    heroMotion,
+    sectionMotion,
+    consumedAssetSlots,
+    reducedMotionPolicy,
+    forbiddenMotion,
+    summary: L(lang,
+      `Composed ${layers.length} subtle motion layer(s) for a ${siteType} site (${heroMotion.length} hero · ${globalMotion.length} global · ${sectionMotion.length} section), consuming ${consumedAssetSlots.length} motion asset slot(s). Reduced-motion safe; no video, no image/provider, no fake backend.`,
+      `${siteType} sitesi için ${layers.length} ince hareket katmanı oluşturuldu (${heroMotion.length} hero · ${globalMotion.length} global · ${sectionMotion.length} bölüm), ${consumedAssetSlots.length} hareket varlık alanı kullanıldı. Reduced-motion güvenli; video yok, görsel/sağlayıcı yok, sahte backend yok.`),
+  };
+}
+
+/** Fail-open Motion Composer artifact — a valid, empty-but-safe plan. */
+function failedOpenMotionComposer(lang: Lang): MotionComposerArtifact {
+  return {
+    status: 'failed-open',
+    motionStrategy: L(lang, 'Motion planning failed open — the Preview keeps its existing subtle motion.', 'Hareket planlaması açık başarısız oldu — Önizleme mevcut ince hareketini korur.'),
+    layers: [], globalMotion: [], heroMotion: [], sectionMotion: [], consumedAssetSlots: [],
+    reducedMotionPolicy: L(lang, 'prefers-reduced-motion respected (static fallback).', 'prefers-reduced-motion\'a saygı gösterilir (statik yedek).'),
+    forbiddenMotion: [L(lang, 'No video, no fake backend work.', 'Video yok, sahte backend işi yok.')],
+    summary: L(lang, 'Motion Composer failed open; no motion layers composed; Preview unaffected.', 'Hareket Tasarımcısı açık başarısız oldu; hareket katmanı oluşturulmadı; Önizleme etkilenmedi.'),
+  };
+}
+
+/**
+ * Run the Motion Composer. Fully guarded: on any error it fails OPEN — a valid,
+ * safe, empty plan — so it can never block Preview / All Files.
+ */
+export function runMotionComposer(input: MotionComposerInput): { agent: WebBuildAgent; artifact: MotionComposerArtifact } {
+  const lang = input.lang || 'en';
+  const name = L(lang, 'Motion Composer', 'Hareket Tasarımcısı');
+  const activity = L(lang, 'Composing subtle CSS motion (reduced-motion safe; no video)', 'İnce CSS hareketi oluşturuluyor (reduced-motion güvenli; video yok)');
+  try {
+    const artifact = deriveMotionComposer(input);
+    return { agent: { id: 'motion_composer', name, status: 'done', summary: artifact.summary, currentActivity: activity, artifact }, artifact };
+  } catch {
+    const artifact = failedOpenMotionComposer(lang);
+    return { agent: { id: 'motion_composer', name, status: 'failed', summary: artifact.summary, currentActivity: activity, artifact }, artifact };
+  }
+}
+
 /* ── Fixer Agent (Phase 6) — safe reviewer-driven repairs ───────────────────
  * The first Fixer runs AFTER the Reviewer. It consumes the Reviewer artifact and
  * applies a NARROW set of SAFE, deterministic repairs to the FINAL build data
@@ -8151,6 +8384,19 @@ function didMessage(agent: WebBuildAgent, lang: Lang): { message: string; type: 
           message: n > 0
             ? L(lang, `planned ${n} visual asset slot${n === 1 ? '' : 's'} (no images generated)`, `${n} görsel varlık alanı planladı (görsel üretilmedi)`)
             : L(lang, 'planned visual assets', 'görsel varlıkları planladı'),
+          type: 'completed',
+        };
+      }
+      case 'motion_composer': {
+        const m = agent.artifact as MotionComposerArtifact;
+        const n = Array.isArray(m.layers) ? m.layers.length : 0;
+        if (m.status === 'failed-open') {
+          return { message: L(lang, 'failed open — no motion composed', 'güvenli şekilde durdu — hareket oluşturulmadı'), type: 'fallback' };
+        }
+        return {
+          message: n > 0
+            ? L(lang, `composed ${n} subtle motion layer${n === 1 ? '' : 's'} (reduced-motion safe, no video)`, `${n} ince hareket katmanı oluşturdu (reduced-motion güvenli, video yok)`)
+            : L(lang, 'composed subtle motion', 'ince hareket oluşturdu'),
           type: 'completed',
         };
       }
