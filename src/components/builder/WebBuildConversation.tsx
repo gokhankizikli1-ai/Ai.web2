@@ -314,6 +314,16 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
     // Quality Director (Phase 7A) — premium-quality judge over the real artifacts.
     const qd = step.artifacts?.qualityDirector;
     if (qd) ownerRows.push(['qualityDirector', `${qd.status} · ${qd.score}/100`]);
+    // Phase 10A — Asset Director (plans visual assets; generates nothing this phase).
+    const adr = step.artifacts?.assetDirector;
+    if (adr) {
+      ownerRows.push(['assetDirector', `${adr.status} · ${(adr.slots || []).length} slots`]);
+      if (adr.assetStrategy) ownerRows.push(['assetStrategy', adr.assetStrategy]);
+      ownerRows.push(['assetSlots', `css/svg ${(adr.cssSvgNowSlots || []).length} · motion ${(adr.motionNowSlots || []).length} · image-later ${(adr.imageLaterSlots || []).length}`]);
+      const pr = adr.providerReadiness;
+      if (pr) ownerRows.push(['assetProviders', `image: ${pr.imageProviderNeeded ? 'later' : 'no'} · motion/video: ${pr.motionProviderNeeded ? 'later' : 'no (out of scope)'} · manualUpload: ${pr.manualUploadUseful}`]);
+      if (adr.forbiddenAssets?.length) ownerRows.push(['assetHonesty', adr.forbiddenAssets.slice(0, 2).join(' · ')]);
+    }
     const fixer = step.artifacts?.fixer;
     if (fixer) {
       const qc = (fixer.qualityAppliedChanges || []).length;

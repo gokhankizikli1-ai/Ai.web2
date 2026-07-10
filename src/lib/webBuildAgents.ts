@@ -893,10 +893,90 @@ export interface QualityDirectorArtifact {
   summary: string;
 }
 
-export type AgentId = 'research' | 'ui_art_director' | 'strategy' | 'layout_architect' | 'component_engineer' | 'reviewer' | 'quality_director' | 'fixer';
+/* ── Asset Director (Phase 10A) — PLANS visual assets before rendering ─────────
+ * Decides WHAT visual assets the site needs (hero/section visuals, motion needs,
+ * image needs, CSS/SVG slots, future image-generation slots) + honesty/safety
+ * constraints. THIS PHASE NEVER GENERATES IMAGES, calls an image/video API, adds
+ * video, or touches the backend — it is planning/data + diagnostics only. Slots
+ * are consumed by a LATER phase (10B motion / 10C image pipeline). */
+export type AssetGenerationMode =
+  | 'css-svg-now'
+  | 'motion-css-now'
+  | 'image-prompt-later'
+  | 'image-provider-later'
+  | 'manual-upload-later'
+  | 'none';
+
+export type AssetSlotType =
+  | 'hero-visual'
+  | 'hero-background'
+  | 'product-mockup'
+  | 'section-illustration'
+  | 'motion-background'
+  | 'gallery-image'
+  | 'before-after'
+  | 'icon-system'
+  | 'trust-visual'
+  | 'integration-map'
+  | 'catalog-preview'
+  | 'archive-document'
+  | 'local-project-photo'
+  | 'abstract-brand-shape';
+
+export interface AssetSlot {
+  id: string;
+  type: AssetSlotType;
+  /** hero, a section id, a screen id, or 'global'. */
+  target: string;
+  purpose: string;
+  generationMode: AssetGenerationMode;
+  /** Prompt-ready description (for CSS/SVG now or an image model later). Never a
+   *  real person/brand/institution; illustrative only. */
+  prompt: string;
+  negativePrompt?: string;
+  styleNotes: string;
+  motionNotes?: string;
+  safetyNotes: string[];
+  required: boolean;
+  priority: 'high' | 'medium' | 'low';
+}
+
+export interface AssetStyleSystem {
+  visualLanguage: string;
+  paletteFamily?: string;
+  materialStyle: string;
+  cameraOrComposition?: string;
+  lighting?: string;
+  texture?: string;
+  shapeLanguage?: string;
+  iconStyle?: string;
+  motionMood?: string;
+  consistencyRules: string[];
+}
+
+export interface AssetDirectorArtifact {
+  status: 'planned' | 'partial' | 'failed-open';
+  assetStrategy: string;
+  styleSystem: AssetStyleSystem;
+  slots: AssetSlot[];
+  cssSvgNowSlots: string[];
+  motionNowSlots: string[];
+  imageLaterSlots: string[];
+  forbiddenAssets: string[];
+  honestyConstraints: string[];
+  providerReadiness: {
+    imageProviderNeeded: boolean;
+    motionProviderNeeded: boolean;
+    manualUploadUseful: boolean;
+    reason: string;
+  };
+  summary: string;
+}
+
+export type AgentId = 'research' | 'ui_art_director' | 'strategy' | 'layout_architect' | 'component_engineer' | 'reviewer' | 'quality_director' | 'asset_director' | 'fixer';
 export type AgentArtifact =
   ResearchAgentArtifact | ArtDirectionArtifact | StrategyAgentArtifact | PageBlueprint
-  | ComponentEngineerArtifact | ReviewerAgentArtifact | QualityDirectorArtifact | FixerAgentArtifact | Record<string, unknown>;
+  | ComponentEngineerArtifact | ReviewerAgentArtifact | QualityDirectorArtifact | AssetDirectorArtifact | FixerAgentArtifact | Record<string, unknown>;
 
 export interface WebBuildAgent {
   id: AgentId;
@@ -967,6 +1047,15 @@ export interface WebBuildEnforcement {
   antiTemplateWarnings?: number;
   correctedAntiTemplateDrift?: boolean;
   qualitySameTemplateIssues?: number;
+  /* ── Asset Director trace (Phase 10A, optional, backward compatible) ── */
+  didRunAssetDirector?: boolean;
+  assetSlotCount?: number;
+  cssSvgAssetSlotCount?: number;
+  motionAssetSlotCount?: number;
+  imageLaterAssetSlotCount?: number;
+  manualUploadAssetSlotCount?: number;
+  imageProviderNeeded?: boolean;
+  motionProviderNeeded?: boolean;
   fallbackReason?: string;
 }
 
@@ -983,6 +1072,10 @@ export interface WebBuildArtifacts {
   reviewer?: ReviewerAgentArtifact;
   /** Premium-quality judge (Phase 7A). Optional → old builds still load. */
   qualityDirector?: QualityDirectorArtifact;
+  /** Asset plan (Phase 10A) — decides the visual assets the site needs (CSS/SVG
+   *  now, motion-CSS now, image-later slots) + honesty constraints. PLANNING/DATA
+   *  ONLY: never generates images or calls a provider. Optional → old builds load. */
+  assetDirector?: AssetDirectorArtifact;
   /** Safe reviewer-driven repairs (Phase 6). Optional → old builds still load. */
   fixer?: FixerAgentArtifact;
   /** Intent-aware page architecture decision (Phase 9D-1). Optional → old builds load. */
@@ -5439,6 +5532,7 @@ const AGENT_NAME: Record<AgentId, [string, string]> = {
   component_engineer: ['Component Engineer Agent', 'Bileşen Mühendisi Ajanı'],
   reviewer: ['Reviewer Agent', 'Gözden Geçirme Ajanı'],
   quality_director: ['Quality Director', 'Kalite Direktörü'],
+  asset_director: ['Asset Director', 'Varlık Direktörü'],
   fixer: ['Fixer Agent', 'Düzeltici Ajan'],
 };
 
@@ -6694,6 +6788,281 @@ export function runQualityDirector(input: QualityDirectorInput): { agent: WebBui
   }
 }
 
+/* ── Asset Director Agent (Phase 10A) — plans visual assets ─────────────────
+ * Runs AFTER the Quality Director and BEFORE the Fixer. Pure + deterministic +
+ * fails open. Decides which visual assets the site needs and HOW each should be
+ * produced (composed CSS/SVG now, subtle CSS motion now, or a prompt-ready image
+ * slot reserved for a LATER provider phase / manual upload). It NEVER generates an
+ * image, calls an image/video API, adds video, or touches the backend. Honest by
+ * construction: it forbids fabricated proof and marks any asset that would need
+ * real material as manual-upload-later (or image-prompt-later, illustrative-only). */
+export interface AssetDirectorInput {
+  prompt: string;
+  brief: WebBuildBrief;
+  sectionItems: Array<{ id: string; name: string }>;
+  conceptAuthority?: ConceptAuthority;
+  artDirection?: ArtDirectionArtifact;
+  strategy?: StrategyAgentArtifact;
+  experienceBlueprint?: ExperienceBlueprint;
+  visualSignaturePlan?: VisualSignaturePlan;
+  ledger?: StrategicThinkingLedger;
+  lang?: Lang;
+}
+
+/** Universal honesty/safety constraints — every Asset Director plan carries these. */
+function assetHonestyConstraints(lang: Lang): { forbidden: string[]; honesty: string[] } {
+  return {
+    forbidden: [
+      L(lang, 'No fake company/customer logos or logo strips.', 'Sahte şirket/müşteri logoları veya logo şeritleri yok.'),
+      L(lang, 'No fake testimonials, customer names or quotes.', 'Sahte referans, müşteri adı veya alıntı yok.'),
+      L(lang, 'No fabricated metrics, stats or "trusted by N" claims.', 'Uydurma metrik, istatistik veya "N kişi güveniyor" iddiası yok.'),
+      L(lang, 'No fake certifications, compliance badges (SOC2/ISO) or awards.', 'Sahte sertifika, uyumluluk rozeti (SOC2/ISO) veya ödül yok.'),
+      L(lang, 'No fake product screenshots presented as real UI.', 'Gerçek arayüz gibi sunulan sahte ürün ekran görüntüsü yok.'),
+      L(lang, 'No copyrighted/real brand imagery or real institutions.', 'Telifli/gerçek marka görseli veya gerçek kurum yok.'),
+      L(lang, 'No before/after claims unless the user provides real material.', 'Kullanıcı gerçek materyal sağlamadıkça önce/sonra iddiası yok.'),
+      L(lang, 'No fabricated medical/legal/financial proof.', 'Uydurma tıbbi/hukuki/finansal kanıt yok.'),
+    ],
+    honesty: [
+      L(lang, 'All CSS/SVG visuals are illustrative, front-end-only samples.', 'Tüm CSS/SVG görselleri açıklayıcı, yalnızca ön-yüz örnekleridir.'),
+      L(lang, 'Image-later prompts describe illustrative scenes only — never real people, brands or places.', 'Görsel-sonrası istemleri yalnızca açıklayıcı sahneleri tanımlar — gerçek kişi, marka veya yer asla.'),
+      L(lang, 'Assets needing real proof/photos are marked manual-upload-later (the user provides them).', 'Gerçek kanıt/fotoğraf gerektiren varlıklar manuel-yükleme-sonrası işaretlenir (kullanıcı sağlar).'),
+      L(lang, 'Motion is subtle CSS only and respects prefers-reduced-motion — no video, no autoplay media.', 'Hareket yalnızca ince CSS\'tir ve prefers-reduced-motion\'a saygı gösterir — video yok, otomatik oynatma yok.'),
+    ],
+  };
+}
+
+/**
+ * Derive the Asset Director artifact. Pure + deterministic. Chooses a per-site-type
+ * set of 3–8 asset slots and a shared style system, categorizes each as composed
+ * now (CSS/SVG or CSS motion) vs reserved for a later image provider / manual
+ * upload, and records honest safety constraints + provider readiness. Never renders
+ * or generates anything.
+ */
+export function deriveAssetDirector(input: AssetDirectorInput): AssetDirectorArtifact {
+  const lang = input.lang || 'en';
+  const brief = input.brief || {};
+  const hay = [input.prompt, brief.coreIdea, brief.type, brief.goal, brief.audience, brief.style]
+    .filter(Boolean).join(' ').toLowerCase();
+  const siteType = input.experienceBlueprint?.siteExperienceType || 'unknown';
+  const vsp = input.visualSignaturePlan;
+  const askedBeforeAfter = /before\s*[\/&-]?\s*after|önce\s*[\/&-]?\s*sonra|transformation|dönüşüm/.test(hay);
+
+  // ── Shared style system (real art-direction data when present, else defaults). ──
+  const paletteFamily = input.artDirection?.paletteFamily || input.artDirection?.colorSystem?.paletteName;
+  const isLocalLike = siteType === 'restaurant' || siteType === 'local-business';
+  const isEditorial = siteType === 'portfolio' || siteType === 'content-publication' || siteType === 'agency-service' || siteType === 'event-landing';
+  const styleSystem: AssetStyleSystem = {
+    visualLanguage: vsp?.visualSignature
+      || (isLocalLike ? L(lang, 'Warm editorial imagery + calm CSS/SVG accents', 'Sıcak editoryal görseller + sakin CSS/SVG vurguları')
+        : isEditorial ? L(lang, 'Editorial, image-led with restrained type', 'Editoryal, görsel öncelikli, ölçülü tipografi')
+          : L(lang, 'Composed CSS/SVG product visuals, no stock photos', 'CSS/SVG ile kompoze ürün görselleri, stok fotoğraf yok')),
+    paletteFamily,
+    materialStyle: isLocalLike ? L(lang, 'Natural, tactile, photographic', 'Doğal, dokunsal, fotoğrafik')
+      : L(lang, 'Flat + soft-glass, hairline strokes', 'Düz + yumuşak-cam, ince çizgiler'),
+    cameraOrComposition: isLocalLike ? L(lang, 'Real on-site photography direction (user-provided)', 'Gerçek sahada fotoğraf yönü (kullanıcı sağlar)') : undefined,
+    lighting: isLocalLike ? L(lang, 'Golden-hour / natural daylight', 'Altın saat / doğal gün ışığı') : undefined,
+    texture: isLocalLike ? L(lang, 'Organic (foliage, stone, wood)', 'Organik (yaprak, taş, ahşap)') : L(lang, 'Subtle grain / mesh', 'İnce gren / ağ'),
+    shapeLanguage: vsp?.primaryMotif || L(lang, 'Calm geometric with one accent path', 'Sakin geometrik, tek vurgu yolu'),
+    iconStyle: L(lang, 'Line icons, consistent stroke weight', 'Çizgi ikonlar, tutarlı çizgi kalınlığı'),
+    motionMood: (vsp?.motionHints && vsp.motionHints[0]) || L(lang, 'Very subtle, staged, reduced-motion safe', 'Çok ince, aşamalı, reduced-motion güvenli'),
+    consistencyRules: uniq([
+      L(lang, 'One shared palette + accent across all assets.', 'Tüm varlıklarda tek ortak palet + vurgu.'),
+      L(lang, 'Same corner radius, stroke weight and spacing rhythm.', 'Aynı köşe yarıçapı, çizgi kalınlığı ve boşluk ritmi.'),
+      L(lang, 'Decorative SVG is aria-hidden; motion is reduced-motion safe.', 'Dekoratif SVG aria-hidden\'dır; hareket reduced-motion güvenlidir.'),
+    ]),
+  };
+
+  // ── Slot builder. ──
+  const slots: AssetSlot[] = [];
+  let sid = 0;
+  const illustrativeOnly = L(lang, 'Illustrative only — not a real person/brand/place.', 'Yalnızca açıklayıcı — gerçek kişi/marka/yer değil.');
+  const add = (
+    type: AssetSlotType, target: string, purpose: string, mode: AssetGenerationMode,
+    prompt: string, styleNotes: string,
+    opts: { motionNotes?: string; negativePrompt?: string; required?: boolean; priority?: AssetSlot['priority']; safetyNotes?: string[] } = {},
+  ) => {
+    slots.push({
+      id: `asset-${sid += 1}`, type, target, purpose, generationMode: mode, prompt,
+      negativePrompt: opts.negativePrompt || L(lang, 'no logos, no real brands, no fabricated metrics, no stock-photo watermark', 'logo yok, gerçek marka yok, uydurma metrik yok, stok-fotoğraf filigranı yok'),
+      styleNotes, motionNotes: opts.motionNotes,
+      safetyNotes: opts.safetyNotes || [illustrativeOnly],
+      required: opts.required ?? true,
+      priority: opts.priority || 'medium',
+    });
+  };
+
+  switch (siteType) {
+    case 'b2b-product-landing':
+    case 'consumer-product-landing':
+    case 'dashboard-preview':
+      add('product-mockup', 'hero', L(lang, 'Hero product/chat mockup', 'Hero ürün/sohbet mockup\'ı'), 'css-svg-now',
+        L(lang, 'A composed chat/product-flow surface built from sample copy (question → recommendation → answer → handoff).', 'Örnek metinden kompoze sohbet/ürün-akış yüzeyi (soru → öneri → yanıt → devir).'),
+        styleSystem.materialStyle, { priority: 'high', safetyNotes: [L(lang, 'Front-end demo only — no real AI/backend.', 'Yalnızca ön-yüz demo — gerçek AI/backend yok.')] });
+      add('motion-background', 'hero', L(lang, 'Product demo motion surface', 'Ürün demo hareket yüzeyi'), 'motion-css-now',
+        L(lang, 'Subtle staged motion: floating cards, pulsing connection dot, slow glow.', 'İnce aşamalı hareket: yüzen kartlar, nabız atan bağlantı noktası, yavaş parıltı.'),
+        styleSystem.materialStyle, { motionNotes: styleSystem.motionMood, priority: 'medium' });
+      add('integration-map', 'section:integrations', L(lang, 'Integration orbit / nodes', 'Entegrasyon yörüngesi / düğümleri'), 'css-svg-now',
+        L(lang, 'Abstract labelled nodes (Store, Catalog, Helpdesk, Email) on an orbit — generic labels, no brand logos.', 'Bir yörüngede soyut etiketli düğümler (Mağaza, Katalog, Yardım, E-posta) — genel etiket, marka logosu yok.'),
+        styleSystem.materialStyle, { priority: 'medium', required: false });
+      add('trust-visual', 'section:security', L(lang, 'Trust control stack', 'Güven kontrol yığını'), 'css-svg-now',
+        L(lang, 'Shield / key / checklist controls — illustrative, no SOC2/ISO or fabricated compliance.', 'Kalkan / anahtar / kontrol listesi — açıklayıcı, SOC2/ISO veya uydurma uyumluluk yok.'),
+        styleSystem.materialStyle, { priority: 'medium', required: false });
+      add('hero-visual', 'hero', L(lang, 'Future premium hero image (reserved)', 'Gelecek premium hero görseli (ayrılmış)'), 'image-prompt-later',
+        L(lang, 'Abstract premium product ambience — glowing interface mesh, depth, brand accent. No real UI, no people.', 'Soyut premium ürün atmosferi — parlayan arayüz ağı, derinlik, marka vurgusu. Gerçek arayüz yok, insan yok.'),
+        styleSystem.visualLanguage, { priority: 'low', required: false, safetyNotes: [illustrativeOnly, L(lang, 'Reserved for a later image phase — not generated now.', 'Sonraki bir görsel aşaması için ayrıldı — şimdi üretilmiyor.')] });
+      break;
+    case 'local-business':
+      add('local-project-photo', 'hero', L(lang, 'Hero local-project photography', 'Hero yerel-proje fotoğrafçılığı'), 'manual-upload-later',
+        L(lang, 'A real completed project (garden/outdoor space) — the user uploads their own photo.', 'Tamamlanmış gerçek bir proje (bahçe/dış mekan) — kullanıcı kendi fotoğrafını yükler.'),
+        styleSystem.materialStyle, { priority: 'high', safetyNotes: [L(lang, 'Real project photo is the user\'s to provide — never fabricated.', 'Gerçek proje fotoğrafını kullanıcı sağlar — asla uydurulmaz.')] });
+      add('before-after', 'section:projects', L(lang, 'Before / After structure', 'Önce / Sonra yapısı'), askedBeforeAfter ? 'manual-upload-later' : 'css-svg-now',
+        L(lang, 'A before/after comparison frame; real photos are user-provided, otherwise show an illustrative split.', 'Önce/sonra karşılaştırma çerçevesi; gerçek fotoğraflar kullanıcı sağlar, aksi halde açıklayıcı bölünme gösterilir.'),
+        styleSystem.materialStyle, { priority: 'medium', safetyNotes: [L(lang, 'No fabricated before/after — needs real user material.', 'Uydurma önce/sonra yok — gerçek kullanıcı materyali gerekir.')] });
+      add('section-illustration', 'section:materials', L(lang, 'Materials & process illustration', 'Malzeme ve süreç illüstrasyonu'), 'css-svg-now',
+        L(lang, 'A staged materials/process rail (survey → plan → build → care) in composed CSS/SVG.', 'Kompoze CSS/SVG ile aşamalı malzeme/süreç rayı (keşif → plan → yapım → bakım).'),
+        styleSystem.materialStyle, { priority: 'medium' });
+      add('gallery-image', 'section:gallery', L(lang, 'Project gallery images', 'Proje galerisi görselleri'), 'manual-upload-later',
+        L(lang, 'A grid of the user\'s real project photos (uploaded); illustrative placeholders until then.', 'Kullanıcının gerçek proje fotoğraflarından (yüklenen) bir grid; o zamana dek açıklayıcı yer tutucular.'),
+        styleSystem.materialStyle, { priority: 'medium', required: false });
+      add('motion-background', 'global', L(lang, 'Subtle organic motion', 'İnce organik hareket'), 'motion-css-now',
+        L(lang, 'Very subtle organic drift (contour lines / leaf sway), reduced-motion safe.', 'Çok ince organik kayma (kontur çizgileri / yaprak salınımı), reduced-motion güvenli.'),
+        styleSystem.materialStyle, { motionNotes: styleSystem.motionMood, priority: 'low', required: false });
+      break;
+    case 'restaurant':
+      add('hero-visual', 'hero', L(lang, 'Hero food / space photography', 'Hero yemek / mekan fotoğrafçılığı'), 'manual-upload-later',
+        L(lang, 'Real dish/interior photography — the restaurant provides their own images.', 'Gerçek yemek/iç mekan fotoğrafçılığı — restoran kendi görsellerini sağlar.'),
+        styleSystem.materialStyle, { priority: 'high', safetyNotes: [L(lang, 'Real food/space photos are the owner\'s to provide.', 'Gerçek yemek/mekan fotoğraflarını işletme sağlar.')] });
+      add('section-illustration', 'section:menu', L(lang, 'Menu visual', 'Menü görseli'), 'css-svg-now',
+        L(lang, 'A clean menu layout with category rails — composed CSS/SVG, no fabricated prices.', 'Kategori raylarıyla temiz menü düzeni — kompoze CSS/SVG, uydurma fiyat yok.'),
+        styleSystem.materialStyle, { priority: 'medium' });
+      add('section-illustration', 'section:reservation', L(lang, 'Reservation flow', 'Rezervasyon akışı'), 'css-svg-now',
+        L(lang, 'A simple reservation form shell (date/party/contact) — front-end only, no real booking.', 'Basit rezervasyon formu kabuğu (tarih/kişi/iletişim) — yalnızca ön-yüz, gerçek rezervasyon yok.'),
+        styleSystem.materialStyle, { priority: 'medium' });
+      add('motion-background', 'global', L(lang, 'Ambient motion', 'Atmosfer hareketi'), 'motion-css-now',
+        L(lang, 'Warm ambient drift / steam-like glow, very subtle and reduced-motion safe.', 'Sıcak atmosfer kayması / buhar benzeri parıltı, çok ince ve reduced-motion güvenli.'),
+        styleSystem.materialStyle, { motionNotes: styleSystem.motionMood, priority: 'low', required: false });
+      break;
+    case 'content-publication':
+      add('archive-document', 'hero', L(lang, 'Editorial masthead visual', 'Editoryal başlık görseli'), 'css-svg-now',
+        L(lang, 'An editorial masthead / featured-article composition in composed CSS/SVG.', 'Kompoze CSS/SVG ile editoryal başlık / öne çıkan makale kompozisyonu.'),
+        styleSystem.materialStyle, { priority: 'high' });
+      add('archive-document', 'section:archive', L(lang, 'Article/cover image slots', 'Makale/kapak görseli alanları'), 'image-prompt-later',
+        L(lang, 'Illustrative article cover imagery — abstract scenes only, no real photos of real events/people.', 'Açıklayıcı makale kapak görselleri — yalnızca soyut sahneler, gerçek olay/kişi fotoğrafı yok.'),
+        styleSystem.materialStyle, { priority: 'medium', required: false, safetyNotes: [illustrativeOnly] });
+      add('section-illustration', 'section:categories', L(lang, 'Category browsing map', 'Kategori gezinme haritası'), 'css-svg-now',
+        L(lang, 'A category index / browsing map — composed CSS/SVG.', 'Kategori dizini / gezinme haritası — kompoze CSS/SVG.'),
+        styleSystem.materialStyle, { priority: 'medium' });
+      break;
+    case 'marketplace':
+    case 'ecommerce-store':
+      add('catalog-preview', 'hero', L(lang, 'Catalog / product-grid preview', 'Katalog / ürün-grid önizlemesi'), 'css-svg-now',
+        L(lang, 'A product grid with filter rail — abstract product cards (media block + title/price bars), no fabricated prices/logos.', 'Filtre raylı ürün gridi — soyut ürün kartları (medya bloğu + başlık/fiyat çubukları), uydurma fiyat/logo yok.'),
+        styleSystem.materialStyle, { priority: 'high' });
+      add('gallery-image', 'section:listings', L(lang, 'Listing card image slots', 'İlan kartı görsel alanları'), 'image-prompt-later',
+        L(lang, 'Illustrative product/listing imagery — generic objects, no real brands or copyrighted products.', 'Açıklayıcı ürün/ilan görselleri — genel nesneler, gerçek marka veya telifli ürün yok.'),
+        styleSystem.materialStyle, { priority: 'medium', required: false, safetyNotes: [illustrativeOnly] });
+      add('motion-background', 'section:filters', L(lang, 'Filter motion', 'Filtre hareketi'), 'motion-css-now',
+        L(lang, 'Subtle filter/sort transition motion, reduced-motion safe.', 'İnce filtre/sıralama geçiş hareketi, reduced-motion güvenli.'),
+        styleSystem.materialStyle, { motionNotes: styleSystem.motionMood, priority: 'low', required: false });
+      break;
+    case 'portfolio':
+    case 'agency-service':
+      add('abstract-brand-shape', 'hero', L(lang, 'Hero brand shape', 'Hero marka şekli'), 'css-svg-now',
+        L(lang, 'An editorial abstract brand shape / type-led hero — composed CSS/SVG, no stock photos.', 'Editoryal soyut marka şekli / tipografi öncelikli hero — kompoze CSS/SVG, stok fotoğraf yok.'),
+        styleSystem.visualLanguage, { priority: 'high' });
+      add('gallery-image', 'section:work', L(lang, 'Work / project images', 'Çalışma / proje görselleri'), 'manual-upload-later',
+        L(lang, 'The creator\'s real work images (uploaded); illustrative placeholders until then. No fake client logos.', 'Yaratıcının gerçek çalışma görselleri (yüklenen); o zamana dek açıklayıcı yer tutucular. Sahte müşteri logosu yok.'),
+        styleSystem.materialStyle, { priority: 'high', safetyNotes: [L(lang, 'Real work images are the creator\'s to provide.', 'Gerçek çalışma görsellerini yaratıcı sağlar.')] });
+      add('section-illustration', 'section:process', L(lang, 'Process / skills illustration', 'Süreç / yetenek illüstrasyonu'), 'css-svg-now',
+        L(lang, 'A staged process rail — composed CSS/SVG.', 'Aşamalı süreç rayı — kompoze CSS/SVG.'),
+        styleSystem.materialStyle, { priority: 'medium', required: false });
+      break;
+    default:
+      add('hero-visual', 'hero', L(lang, 'Hero signature visual', 'Hero imza görseli'), 'css-svg-now',
+        L(lang, 'A concept-specific composed CSS/SVG hero visual, no stock photos or blank boxes.', 'Konsepte özgü, kompoze CSS/SVG hero görseli, stok fotoğraf veya boş kutu yok.'),
+        styleSystem.visualLanguage, { priority: 'high' });
+      add('hero-background', 'hero', L(lang, 'Ambient hero background', 'Atmosferik hero arka planı'), 'css-svg-now',
+        L(lang, 'A restrained tonal background with a single accent path.', 'Tek vurgu yollu ölçülü tonal arka plan.'),
+        styleSystem.materialStyle, { priority: 'medium', required: false });
+      add('abstract-brand-shape', 'global', L(lang, 'Abstract brand shape', 'Soyut marka şekli'), 'css-svg-now',
+        L(lang, 'A reusable abstract brand shape / motif for section accents.', 'Bölüm vurguları için yeniden kullanılabilir soyut marka şekli / motif.'),
+        styleSystem.shapeLanguage || styleSystem.materialStyle, { priority: 'low', required: false });
+      break;
+  }
+
+  const cssSvgNowSlots = slots.filter((s) => s.generationMode === 'css-svg-now').map((s) => s.id);
+  const motionNowSlots = slots.filter((s) => s.generationMode === 'motion-css-now').map((s) => s.id);
+  const imageLaterSlots = slots.filter((s) => s.generationMode === 'image-prompt-later' || s.generationMode === 'image-provider-later').map((s) => s.id);
+  const manualUploadSlots = slots.filter((s) => s.generationMode === 'manual-upload-later').map((s) => s.id);
+
+  const { forbidden, honesty } = assetHonestyConstraints(lang);
+  const imageProviderNeeded = imageLaterSlots.length > 0;
+  const manualUploadUseful = manualUploadSlots.length > 0;
+
+  const assetStrategy = isLocalLike
+    ? L(lang, 'Real photography (user-provided / image-later) for proof surfaces, composed CSS/SVG for structure + subtle organic motion.', 'Kanıt yüzeyleri için gerçek fotoğraf (kullanıcı/görsel-sonrası), yapı için kompoze CSS/SVG + ince organik hareket.')
+    : (siteType === 'marketplace' || siteType === 'ecommerce-store')
+      ? L(lang, 'Composed catalog/product CSS/SVG now; illustrative listing image slots reserved for a later provider.', 'Şimdi kompoze katalog/ürün CSS/SVG; açıklayıcı ilan görsel alanları sonraki bir sağlayıcıya ayrıldı.')
+      : L(lang, 'Composed CSS/SVG product visuals + subtle CSS motion now; one premium hero image reserved for later.', 'Şimdi kompoze CSS/SVG ürün görselleri + ince CSS hareketi; bir premium hero görseli sonraya ayrıldı.');
+
+  return {
+    status: slots.length ? 'planned' : 'partial',
+    assetStrategy,
+    styleSystem,
+    slots,
+    cssSvgNowSlots,
+    motionNowSlots,
+    imageLaterSlots,
+    forbiddenAssets: forbidden,
+    honestyConstraints: honesty,
+    providerReadiness: {
+      imageProviderNeeded,
+      // Phase 10A: motion is composed CSS only — NO video/motion provider is needed
+      // now (video generation is explicitly out of scope until a later phase).
+      motionProviderNeeded: false,
+      manualUploadUseful,
+      reason: L(lang,
+        `${imageProviderNeeded ? `${imageLaterSlots.length} image slot(s) reserved for a later provider phase (10C). ` : ''}${manualUploadUseful ? `${manualUploadSlots.length} slot(s) prefer user-uploaded real material. ` : ''}Motion is CSS-only now; video generation is out of scope.`,
+        `${imageProviderNeeded ? `${imageLaterSlots.length} görsel alanı sonraki sağlayıcı aşamasına (10C) ayrıldı. ` : ''}${manualUploadUseful ? `${manualUploadSlots.length} alan kullanıcı yüklemeli gerçek materyali tercih ediyor. ` : ''}Hareket şimdilik yalnızca CSS; video üretimi kapsam dışı.`),
+    },
+    summary: L(lang,
+      `Planned ${slots.length} asset slot(s) for a ${siteType} site (${cssSvgNowSlots.length} CSS/SVG now · ${motionNowSlots.length} motion · ${imageLaterSlots.length} image-later · ${manualUploadSlots.length} upload). Honest: no fabricated proof; no images generated in this phase.`,
+      `${siteType} sitesi için ${slots.length} varlık alanı planlandı (${cssSvgNowSlots.length} CSS/SVG · ${motionNowSlots.length} hareket · ${imageLaterSlots.length} görsel-sonrası · ${manualUploadSlots.length} yükleme). Dürüst: uydurma kanıt yok; bu aşamada görsel üretilmedi.`),
+  };
+}
+
+/** Fail-open Asset Director artifact — a valid, empty-but-honest plan. */
+function failedOpenAssetDirector(lang: Lang): AssetDirectorArtifact {
+  const { forbidden, honesty } = assetHonestyConstraints(lang);
+  return {
+    status: 'failed-open',
+    assetStrategy: L(lang, 'Asset planning failed open — the build continues with the existing CSS/SVG signature visuals.', 'Varlık planlaması açık başarısız oldu — yapı mevcut CSS/SVG imza görselleriyle devam ediyor.'),
+    styleSystem: { visualLanguage: L(lang, 'Composed CSS/SVG', 'Kompoze CSS/SVG'), materialStyle: L(lang, 'Flat + hairline', 'Düz + ince çizgi'), consistencyRules: [] },
+    slots: [],
+    cssSvgNowSlots: [], motionNowSlots: [], imageLaterSlots: [],
+    forbiddenAssets: forbidden, honestyConstraints: honesty,
+    providerReadiness: { imageProviderNeeded: false, motionProviderNeeded: false, manualUploadUseful: false, reason: L(lang, 'No asset plan produced (failed open).', 'Varlık planı üretilmedi (açık başarısız).') },
+    summary: L(lang, 'Asset Director failed open; no assets generated; Preview/All Files unaffected.', 'Varlık Direktörü açık başarısız oldu; varlık üretilmedi; Önizleme/Tüm Dosyalar etkilenmedi.'),
+  };
+}
+
+/**
+ * Run the Asset Director. Fully guarded: on any error it fails OPEN — a valid,
+ * honest, empty plan — so it can never block Preview / All Files.
+ */
+export function runAssetDirector(input: AssetDirectorInput): { agent: WebBuildAgent; artifact: AssetDirectorArtifact } {
+  const lang = input.lang || 'en';
+  const name = L(lang, 'Asset Director', 'Varlık Direktörü');
+  const activity = L(lang, 'Planning hero/section visual assets (CSS/SVG now, image later)', 'Hero/bölüm görsel varlıkları planlanıyor (CSS/SVG şimdi, görsel sonra)');
+  try {
+    const artifact = deriveAssetDirector(input);
+    return { agent: { id: 'asset_director', name, status: 'done', summary: artifact.summary, currentActivity: activity, artifact }, artifact };
+  } catch {
+    const artifact = failedOpenAssetDirector(lang);
+    return { agent: { id: 'asset_director', name, status: 'failed', summary: artifact.summary, currentActivity: activity, artifact }, artifact };
+  }
+}
+
 /* ── Fixer Agent (Phase 6) — safe reviewer-driven repairs ───────────────────
  * The first Fixer runs AFTER the Reviewer. It consumes the Reviewer artifact and
  * applies a NARROW set of SAFE, deterministic repairs to the FINAL build data
@@ -7769,6 +8138,19 @@ function didMessage(agent: WebBuildAgent, lang: Lang): { message: string; type: 
           message: rv.status === 'needs-fixes'
             ? L(lang, `flagged ${n} quality issue${n === 1 ? '' : 's'} for the Fixer`, `Düzeltici için ${n} kalite sorunu işaretledi`)
             : L(lang, 'reviewed quality — no blocking issues', 'kaliteyi inceledi — engelleyici sorun yok'),
+          type: 'completed',
+        };
+      }
+      case 'asset_director': {
+        const a = agent.artifact as AssetDirectorArtifact;
+        const n = Array.isArray(a.slots) ? a.slots.length : 0;
+        if (a.status === 'failed-open') {
+          return { message: L(lang, 'failed open — no assets planned', 'güvenli şekilde durdu — varlık planlanmadı'), type: 'fallback' };
+        }
+        return {
+          message: n > 0
+            ? L(lang, `planned ${n} visual asset slot${n === 1 ? '' : 's'} (no images generated)`, `${n} görsel varlık alanı planladı (görsel üretilmedi)`)
+            : L(lang, 'planned visual assets', 'görsel varlıkları planladı'),
           type: 'completed',
         };
       }
