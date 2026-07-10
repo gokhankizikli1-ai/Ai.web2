@@ -7003,7 +7003,9 @@ export function deriveAssetDirector(input: AssetDirectorInput): AssetDirectorArt
     ? L(lang, 'Real photography (user-provided / image-later) for proof surfaces, composed CSS/SVG for structure + subtle organic motion.', 'Kanıt yüzeyleri için gerçek fotoğraf (kullanıcı/görsel-sonrası), yapı için kompoze CSS/SVG + ince organik hareket.')
     : (siteType === 'marketplace' || siteType === 'ecommerce-store')
       ? L(lang, 'Composed catalog/product CSS/SVG now; illustrative listing image slots reserved for a later provider.', 'Şimdi kompoze katalog/ürün CSS/SVG; açıklayıcı ilan görsel alanları sonraki bir sağlayıcıya ayrıldı.')
-      : L(lang, 'Composed CSS/SVG product visuals + subtle CSS motion now; one premium hero image reserved for later.', 'Şimdi kompoze CSS/SVG ürün görselleri + ince CSS hareketi; bir premium hero görseli sonraya ayrıldı.');
+      : imageProviderNeeded
+        ? L(lang, 'Composed CSS/SVG product visuals + subtle CSS motion now; planned image slots are reserved for a later provider.', 'Şimdi kompoze CSS/SVG ürün görselleri + ince CSS hareketi; planlanan görsel alanları sonraki bir sağlayıcıya ayrıldı.')
+        : L(lang, 'Composed CSS/SVG signature visuals now; no image provider slots are reserved for this plan.', 'Şimdi kompoze CSS/SVG imza görselleri; bu plan için görsel sağlayıcı alanı ayrılmadı.');
 
   return {
     status: slots.length ? 'planned' : 'partial',
