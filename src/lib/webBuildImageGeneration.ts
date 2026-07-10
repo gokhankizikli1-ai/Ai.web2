@@ -190,8 +190,13 @@ export async function generateImageForSlot(slot: ImageAssetSlot): Promise<Genera
 
   try {
     const asset = (await resp.json()) as GeneratedImageAsset;
-    // Always keep an honest label even if the server omitted one.
-    return { honestyLabel: slot.honestyLabel, promptSummary: '', ...asset };
+    // Always keep an honest label even if the server omitted one. Spread first,
+    // then default the two fields so keys are never specified twice.
+    return {
+      ...asset,
+      honestyLabel: asset.honestyLabel || slot.honestyLabel,
+      promptSummary: asset.promptSummary || '',
+    };
   } catch {
     return disabledAsset(slot, 'invalid response from server', 'failed');
   }
