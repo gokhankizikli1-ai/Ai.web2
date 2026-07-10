@@ -1895,11 +1895,12 @@ const NAV_PRIMARY_CAP = 5; // non-home items (Home is the brand button → ≤6 
  *  (those are only deduped by exact text, never by role). Display-only. */
 function navRoleKey(label: string, kind?: ScreenKind): string | undefined {
   const l = (label || '').toLowerCase();
-  if ((kind && NAV_EXPERIENCE_KINDS.has(kind)) || /chat|assistant|\bdemo\b|conversation|playground|product\s*tour/.test(l)) return 'experience';
-  if (/security|trust|privacy|compliance|safety|güven|gizlilik/.test(l)) return 'security';
-  if (/integration|connect|store\s*integrat|catalog|entegrasyon|\bapi\b|webhook/.test(l)) return 'integrations';
-  if (/how\s*it\s*works|shopper\s*flow|\bprocess\b|workflow|journey|\bsteps?\b|nasıl|akış/.test(l)) return 'flow';
+  if (kind && NAV_EXPERIENCE_KINDS.has(kind)) return 'experience';
   if (/pricing|\bplans?\b|book\s*a?\s*demo|contact\s*sales|\bfiyat|paket|abonelik/.test(l)) return 'pricing';
+  if (/chat|assistant|\bdemo\b|conversation|playground|product\s*tour/.test(l)) return 'experience';
+  if (/security|trust|privacy|compliance|safety|güven|gizlilik/.test(l)) return 'security';
+  if (/integration|connect|store\s*integrat|entegrasyon|\bapi\b|webhook/.test(l)) return 'integrations';
+  if (/how\s*it\s*works|shopper\s*flow|\bprocess\b|workflow|journey|\bsteps?\b|nasıl|akış/.test(l)) return 'flow';
   if (/^contact$|get\s*in\s*touch|iletişim/.test(l)) return 'contact';
   return undefined;
 }
