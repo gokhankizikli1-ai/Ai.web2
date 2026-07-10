@@ -24,6 +24,12 @@ import {
 // Type-only import (erased at build) — Phase 5's data-only Visual Asset Plan the
 // Preview consumes with CSS/SVG. Never pulls agent logic into the preview bundle.
 import type { VisualAssetPlan, HeroVisualType, VisualSignaturePlan, MotionComposerArtifact, MotionPattern, MotionLayer, ImagePipelineArtifact, ImageAssetSlot } from '@/lib/webBuildAgents';
+// Phase 10D: Real Image Generation V1 — backend-only client + session store.
+// The Preview only ever calls the backend; it never touches an image provider
+// or an API key directly, and generation is opt-in (explicit click) only.
+import {
+  shouldAllowGeneration, generateImageForSlot, setGeneratedAsset, useGeneratedAsset,
+} from '@/lib/webBuildImageGeneration';
 
 /**
  * A REAL, premium rendered approximation of the generated site whose STRUCTURE is
@@ -1777,6 +1783,92 @@ function ImageSlotPlaceholder({ slot, className = '' }: { slot: ImageAssetSlot; 
   }
 }
 
+/* ── Phase 10D: Real Image Generation V1 ──────────────────────────────────────
+ * Wraps an image slot with an OPT-IN "Generate image" control. It renders the
+ * honest CSS/SVG placeholder until the user explicitly clicks Generate, then
+ * calls the BACKEND ONLY (never a provider / API key in the browser). On success
+ * the placeholder surface is replaced by the returned image while the honesty
+ * chip stays visible ("AI-generated illustrative image"). Proof-heavy slots are
+ * never generatable — they show "Manual upload recommended". Nothing is auto-
+ * generated on load; failures fail open (Preview stays intact). */
+function GeneratedImageFrame({ slot, src }: { slot: ImageAssetSlot; src: string }) {
+  const ar = IMG_ASPECT[slot.prompt.aspectRatio] || 'aspect-[16/9]';
+  return (
+    <figure className="group relative overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)] bg-[var(--sf)] shadow-2xl shadow-black/40">
+      <div className={`relative w-full ${ar}`}>
+        {/* Honest, illustrative image — never presented as real proof. */}
+        <img src={src} alt={slot.title} loading="lazy" className="absolute inset-0 h-full w-full object-cover" />
+        <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/70 to-transparent p-2.5">
+          <figcaption className="truncate text-[11px] font-medium text-white/90">{slot.title}</figcaption>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.10] bg-black/45 px-2.5 py-1 text-[10px] font-medium text-white/85 backdrop-blur-sm">
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--acc)' }} />
+            AI-generated illustrative image
+          </span>
+        </div>
+      </div>
+    </figure>
+  );
+}
+
+function GeneratableImageSlot({ slot }: { slot: ImageAssetSlot }) {
+  const asset = useGeneratedAsset(slot.id);
+  const [busy, setBusy] = useState(false);
+  // Ambient slots have no visible frame → nothing to overlay a control on.
+  if (slot.previewTreatment === 'ambient-background') return null;
+
+  const gate = shouldAllowGeneration(slot);
+  const src = asset?.status === 'ready' ? (asset.dataUrl || asset.url || '') : '';
+  const status = busy ? 'generating' : (asset?.status || 'idle');
+
+  const onGenerate = async () => {
+    if (busy) return;
+    setBusy(true);
+    setGeneratedAsset({ slotId: slot.id, status: 'generating', honestyLabel: slot.honestyLabel, promptSummary: '' });
+    try {
+      const result = await generateImageForSlot(slot);
+      setGeneratedAsset(result);
+    } catch {
+      setGeneratedAsset({ slotId: slot.id, status: 'failed', honestyLabel: slot.honestyLabel, promptSummary: '', reason: 'unexpected error' });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const btn = 'rounded-full border border-white/[0.12] bg-white/[0.06] px-3 py-1 text-[11px] font-medium text-white/85 transition hover:bg-white/[0.12] disabled:opacity-60';
+  const note = 'text-[11px] text-white/50';
+
+  return (
+    <div className="relative">
+      {src ? <GeneratedImageFrame slot={slot} src={src} /> : <ImageSlotPlaceholder slot={slot} />}
+      <div className="mt-2 flex items-center gap-2">
+        {!gate.allowed ? (
+          <span className={note}>
+            {slot.manualUploadRecommended || slot.source === 'manual-upload'
+              ? '↑ Manual upload recommended (real photo required)'
+              : 'CSS/SVG placeholder'}
+          </span>
+        ) : status === 'generating' ? (
+          <span className={note}>Generating…</span>
+        ) : status === 'ready' ? (
+          <>
+            <span className={note}>✓ Image ready</span>
+            <button type="button" onClick={onGenerate} className={btn} disabled={busy}>Regenerate</button>
+          </>
+        ) : status === 'disabled' ? (
+          <span className={note}>Provider disabled{asset?.reason ? ` — ${asset.reason}` : ''}</span>
+        ) : status === 'failed' ? (
+          <>
+            <button type="button" onClick={onGenerate} className={btn} disabled={busy}>Retry</button>
+            {asset?.reason && <span className={note}>{asset.reason}</span>}
+          </>
+        ) : (
+          <button type="button" onClick={onGenerate} className={btn} disabled={busy}>Generate image</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 /* ── Phase 6E: local visual-calm helpers ─────────────────────────────────────
  * A tiny, LOCAL hierarchy system (not a component library): softer surfaces, one
  * hairline instead of stacked borders, muted secondary text, and accent reserved
@@ -3108,7 +3200,7 @@ export default function WebBuildPreviewDocument({
           )}
           {sectionImageSlot && (
             <div className="mx-auto mb-10 max-w-5xl px-6">
-              <ImageSlotPlaceholder slot={sectionImageSlot} />
+              <GeneratableImageSlot slot={sectionImageSlot} />
             </div>
           )}
           {Render({ s, plan, index: i, art, ctx, rt, lang: previewLang })}
@@ -3222,7 +3314,7 @@ export default function WebBuildPreviewDocument({
                     which keeps its CSS/SVG mockup). Honest placeholder, no real image. */}
                 {i === 0 && showHeroImage && heroImageSlot && (
                   <div className="mx-auto -mt-2 mb-4 max-w-6xl px-6">
-                    <ImageSlotPlaceholder slot={heroImageSlot} />
+                    <GeneratableImageSlot slot={heroImageSlot} />
                   </div>
                 )}
                 {/* Phase 6C: compact landing demo teaser right after the hero (AI/SaaS

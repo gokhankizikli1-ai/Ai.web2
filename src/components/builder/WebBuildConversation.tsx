@@ -11,6 +11,12 @@ import type {
 } from '@/lib/webBuildPayload';
 import type { WebBuildResearch } from '@/lib/webBuildApi';
 import { deriveAgentWorkLog, type WebBuildAgentWorkLogEntry } from '@/lib/webBuildAgents';
+// Phase 10D: Real Image Generation V1 — owner diagnostics read live provider
+// health + the session-local generated-image count. Safety gate is pure.
+import {
+  shouldAllowGeneration, fetchImageGenHealth, useGeneratedImageCount,
+  type ImageGenHealth,
+} from '@/lib/webBuildImageGeneration';
 
 /**
  * The Web Build conversation — a Kimi/Claude-style agent run per turn: the
@@ -345,6 +351,17 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       if (ipr) ownerRows.push(['imageProvider', `${ipr.readyForProvider ? 'ready' : 'not-ready'} · ${ipr.recommendedProviderType}`]);
       if (imp.generatedImagePolicy) ownerRows.push(['imagePolicy', imp.generatedImagePolicy]);
       if (imp.forbiddenImageContent?.length) ownerRows.push(['imageHonesty', imp.forbiddenImageContent.slice(0, 2).join(' · ')]);
+      // Phase 10D — safety-gate-derived counts (deterministic from the slots):
+      // how many are generatable vs refused-to-manual-upload vs CSS placeholder.
+      const gslots = imp.slots || [];
+      let genable = 0, manualReq = 0, cssOnly = 0;
+      for (const s of gslots) {
+        const g = shouldAllowGeneration(s);
+        if (g.allowed) genable += 1;
+        else if (s.manualUploadRecommended || s.source === 'manual-upload' || g.reason.includes('manual upload')) manualReq += 1;
+        else cssOnly += 1;
+      }
+      ownerRows.push(['imageGenGate', `generatable ${genable} · manual-upload-required ${manualReq} · css-only ${cssOnly}`]);
     }
     const fixer = step.artifacts?.fixer;
     if (fixer) {
@@ -621,6 +638,18 @@ function CompletedPlanSummary({ step }: { step: WebBuildStep }) {
   const { lang } = useLanguageStore();
   const { isOwner } = useOwnerMode();
   const data = useMemo(() => computePlanSummary(step), [step]);
+  // Phase 10D — live image-generation diagnostics (owner-only surface). Health
+  // is fetched once when this step has an Image Pipeline; the generated count is
+  // session-local (in-memory) and updates live as slots are generated.
+  const hasImagePipeline = !!step.artifacts?.imagePipeline;
+  const [imgHealth, setImgHealth] = useState<ImageGenHealth | null>(null);
+  const generatedImageCount = useGeneratedImageCount();
+  useEffect(() => {
+    if (!hasImagePipeline || !isOwner) return;
+    let alive = true;
+    fetchImageGenHealth().then((h) => { if (alive) setImgHealth(h); });
+    return () => { alive = false; };
+  }, [hasImagePipeline, isOwner]);
   if (!data) return null;
   const L = (en: string, tr: string) => (lang === 'tr' ? tr : en);
 
@@ -672,6 +701,18 @@ function CompletedPlanSummary({ step }: { step: WebBuildStep }) {
           </summary>
           <div className="mt-1.5 space-y-1">
             {data.ownerRows.map(([k, v]) => (
+              <div key={k} className="flex gap-2">
+                <span className="w-40 shrink-0 text-[#64748B]">{k}</span>
+                <span className="min-w-0 break-words text-[#CBD5E1]">{v}</span>
+              </div>
+            ))}
+            {/* Phase 10D — live image generation status (owner-only). */}
+            {hasImagePipeline && ([
+              ['imageGenerationEnabled', imgHealth ? String(imgHealth.enabled) : 'checking…'],
+              ['imageGenerationProvider', imgHealth ? `${imgHealth.provider}${imgHealth.configured ? ' · configured' : ' · not-configured'}${imgHealth.ownerOnly ? ' · owner-only' : ''}` : '—'],
+              ['generatedImageCount', String(generatedImageCount)],
+              ...(imgHealth?.missingReason ? [['providerMissingReason', imgHealth.missingReason]] as Array<[string, string]> : []),
+            ] as Array<[string, string]>).map(([k, v]) => (
               <div key={k} className="flex gap-2">
                 <span className="w-40 shrink-0 text-[#64748B]">{k}</span>
                 <span className="min-w-0 break-words text-[#CBD5E1]">{v}</span>
