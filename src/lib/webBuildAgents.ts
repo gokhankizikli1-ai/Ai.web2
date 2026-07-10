@@ -1840,14 +1840,17 @@ export function deriveExperienceBlueprint(
   }
 
   // ── Cross-cutting need decisions (blueprint reasons; honest). ──
-  const demoNeeded = isSaaSLike || T === 'consumer-product-landing' || T === 'marketplace' || T === 'ecommerce-store';
+  // Note: isSaaSLike already covers consumer-product-landing and isLocalLike
+  // already covers restaurant, so those members are omitted from the OR chains
+  // (TypeScript narrows them out and flags the redundant comparison as TS2367).
+  const demoNeeded = isSaaSLike || T === 'marketplace' || T === 'ecommerce-store';
   const pricingNeeded = asksPricing || (T === 'b2b-product-landing' && /\bsaas\b|subscription|self-?serve|plans?/.test(hay));
   const leadCaptureNeeded = T === 'startup-waitlist' || asksWaitlist || (T === 'b2b-product-landing' && (pageMode === 'contact-sales-funnel' || asksBookDemo));
   const contactNeeded = T !== 'content-publication';
   const proofAllowed = providedProof;
   // Image/motion HINTS only — never implemented here (prep for 9E-3 / 9E-4).
-  const imageVisualNeeded = isLocalLike || T === 'portfolio' || T === 'mobile-app' || T === 'restaurant' || T === 'event-landing' || T === 'agency-service' || T === 'content-publication';
-  const motionVisualNeeded = isSaaSLike || T === 'consumer-product-landing' || T === 'startup-waitlist';
+  const imageVisualNeeded = isLocalLike || T === 'portfolio' || T === 'mobile-app' || T === 'event-landing' || T === 'agency-service' || T === 'content-publication';
+  const motionVisualNeeded = isSaaSLike || T === 'startup-waitlist';
   const recommendedVisualDirection = visualSignaturePlan?.visualSignature
     || (T === 'developer-tool' ? L(lang, 'Command & deploy rail (code rain / terminal)', 'Komut ve dağıtım rayı (kod yağmuru / terminal)')
       : T === 'b2b-product-landing' ? L(lang, 'Storefront chat flow rail + integration orbit', 'Mağaza sohbet akış rayı + entegrasyon yörüngesi')
