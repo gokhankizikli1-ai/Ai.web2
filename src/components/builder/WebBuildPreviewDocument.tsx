@@ -578,6 +578,7 @@ type LocalKind = 'landscaping' | 'restaurant' | 'portfolio' | 'agency' | 'local'
 /** Coarse local-business kind from the brief (display normalization only). */
 function localBusinessKind(b: WebBuildBrief): LocalKind | undefined {
   const hay = [b.type, b.coreIdea, b.goal, b.audience, b.visitorIntent, b.style].filter(Boolean).join(' ').toLowerCase();
+  if (isProductChatConcept(b) || /\bcopilot\b|automation|otomasyon/.test(hay)) return undefined;
   if (/landscap|peyzaj|garden|outdoor\s*(design|space|living)|lawn|\byard\b|patio|hardscap|bah[çc]e/.test(hay)) return 'landscaping';
   if (/restaurant|\bcafe\b|caf[ée]|bistro|diner|eatery|\bmenu\b|dining|cuisine|restoran|kafe|lokanta/.test(hay)) return 'restaurant';
   if (/portfolio|personal\s*(site|website)|\bdesigner\b|photographer|\bartist\b|freelanc|resume|\bcv\b|showreel|portf[öo]y/.test(hay)) return 'portfolio';
