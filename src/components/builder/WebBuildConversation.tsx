@@ -351,6 +351,14 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
     }
     const hqRepairs = (fixer?.qualityAppliedChanges || []).filter((c) => c.category === 'hero-quote');
     if (hqRepairs.length) ownerRows.push(['heroQuoteStripped', `true · ${hqRepairs.length}`]);
+    // Phase 9D-2C — the Preview applies a final display-only local-hero cleanup
+    // (wrapping-quote strip, brand/eyebrow + CTA normalization) for local site types.
+    const ebLocal = step.artifacts?.experienceBlueprint?.siteExperienceType;
+    if (ebLocal && ['local-business', 'restaurant', 'portfolio', 'agency-service'].includes(ebLocal)) {
+      ownerRows.push(['finalHeroQuoteStripped', 'active (display)']);
+      ownerRows.push(['localHeroBrandNormalized', 'active (display)']);
+      ownerRows.push(['finalLocalCtaNormalized', 'active (display)']);
+    }
 
     // Phase 9D-2 — high-level Experience Blueprint (whole-site decision).
     const eb = step.artifacts?.experienceBlueprint;
