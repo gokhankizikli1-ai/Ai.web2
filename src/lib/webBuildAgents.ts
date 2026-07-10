@@ -7251,7 +7251,8 @@ export function deriveFixer(input: FixerInput): { artifact: FixerAgentArtifact; 
     const isRestaurant = bpType === 'restaurant';
     const isPortfolio = bpType === 'portfolio';
     const isAgency = bpType === 'agency-service';
-    const providedProof = /testimonial|case\s*stud|customer\s*review|reference\s*(client|customer)|client\s*logo/.test(promptLc);
+    const providedProof = input.experienceBlueprint?.proofAllowed
+      ?? /testimonial|case\s*stud|success\s*stor|customer\s*review|reviews?|reference\s*(client|customer)|client\s*logo/.test(promptLc);
     const asksIntegrations = /integration|\bapi\b|connect|webhook|zapier|entegrasyon/.test(promptLc);
     const nsReason = L(lang, 'Neutralized SaaS/product-proof language for a non-SaaS site — honest project/service copy (display only, no fabricated proof).',
       'SaaS/ürün-kanıt dilini SaaS olmayan bir site için nötrleştirdi — dürüst proje/hizmet metni (yalnızca görünüm, uydurma kanıt yok).');
@@ -7319,12 +7320,12 @@ export function deriveFixer(input: FixerInput): { artifact: FixerAgentArtifact; 
       if (!s) continue;
       const rep = repairWholeLeak(leak.text);
       if (!rep) continue;
-      if (leak.field === 'name' && s.name === leak.text && !promptLc.includes(normLabel(s.name))) { addQuality('non-saas-copy', s.id, s.name, rep, nsReason); s.name = rep; }
-      else if (leak.field === 'headline' && s.headline === leak.text) { addQuality('non-saas-copy', s.id, s.headline, rep, nsReason); s.headline = rep; }
-      else if (leak.field === 'sub' && s.sub === leak.text) { addQuality('non-saas-copy', s.id, s.sub, rep, nsReason); s.sub = rep; }
-      else if (leak.field === 'cta' && s.cta === leak.text) { addQuality('non-saas-copy', s.id, s.cta, rep, nsReason); s.cta = rep; }
+      if (leak.field === 'name' && s.name?.trim() === leak.text && !promptLc.includes(normLabel(s.name))) { addQuality('non-saas-copy', s.id, s.name, rep, nsReason); s.name = rep; }
+      else if (leak.field === 'headline' && s.headline?.trim() === leak.text) { addQuality('non-saas-copy', s.id, s.headline, rep, nsReason); s.headline = rep; }
+      else if (leak.field === 'sub' && s.sub?.trim() === leak.text) { addQuality('non-saas-copy', s.id, s.sub, rep, nsReason); s.sub = rep; }
+      else if (leak.field === 'cta' && s.cta?.trim() === leak.text) { addQuality('non-saas-copy', s.id, s.cta, rep, nsReason); s.cta = rep; }
       else if (leak.field === 'bullet' && s.bullets) {
-        const i = s.bullets.indexOf(leak.text);
+        const i = s.bullets.findIndex((b) => b.trim() === leak.text);
         if (i >= 0) { const before = s.bullets.join(' · ').slice(0, 48); s.bullets[i] = rep; addQuality('non-saas-copy', s.id, before, s.bullets.join(' · ').slice(0, 48), nsReason); }
       }
     }
