@@ -522,7 +522,7 @@ function PulseDot({ reduce, color = 'var(--acc)', delay = 0 }: { reduce: boolean
  * handoff, as a legible staged rail. Uses the same honest storefront sample flow
  * as ProductShowcase (front-end-only; no real AI/catalog/policy lookup). ── */
 function ChatFlowRailVisual({ labels, compact, lang }: { labels?: string[]; compact?: boolean; lang?: PLang }) {
-  const reduce = useReducedMotion();
+  const reduce = !!useReducedMotion();
   const lg = lang || inferLang(labels);
   const flow = STOREFRONT_SAMPLE_FLOW(lg).slice(0, compact ? 2 : 4);
   const recTitle = ML(lg, 'Recommended for you', 'Sizin için önerilen');
@@ -610,7 +610,7 @@ function ProductCardRailVisual({ labels, compact, lang }: { labels?: string[]; c
  * orbit (generic labels like Store / Catalog / Helpdesk / Email — NEVER real
  * brand logos). Orbit ring + pulsing connection dots. ── */
 function IntegrationOrbitVisual({ labels, compact, lang }: { labels?: string[]; compact?: boolean; lang?: PLang }) {
-  const reduce = useReducedMotion();
+  const reduce = !!useReducedMotion();
   const lg = lang || inferLang(labels);
   const nodes = take(labels, compact ? 4 : 5, [
     ML(lg, 'Store', 'Mağaza'), ML(lg, 'Catalog', 'Katalog'), ML(lg, 'Helpdesk', 'Yardım Masası'),
@@ -658,7 +658,7 @@ function IntegrationOrbitVisual({ labels, compact, lang }: { labels?: string[]; 
  * content safety) as a control stack. Illustrative only — NO SOC2/ISO/fake
  * compliance badges. ── */
 function TrustControlStackVisual({ labels, compact, lang }: { labels?: string[]; compact?: boolean; lang?: PLang }) {
-  const reduce = useReducedMotion();
+  const reduce = !!useReducedMotion();
   const lg = lang || inferLang(labels);
   const rows: Array<{ glyph: ReactElement; title: string; note: string }> = [
     { glyph: <ShieldGlyph />, title: ML(lg, 'Data handling', 'Veri işleme'), note: ML(lg, 'Sample data stays on the front-end demo.', 'Örnek veri ön-yüz demosunda kalır.') },
@@ -694,9 +694,8 @@ function TrustControlStackVisual({ labels, compact, lang }: { labels?: string[];
 
 /* ── CodeRainVisual — faint falling monospace columns behind a small terminal
  * panel. For developer/tools/code concepts. ── */
-function CodeRainVisual({ labels, compact, lang }: { labels?: string[]; compact?: boolean; lang?: PLang }) {
+function CodeRainVisual({ labels, compact }: { labels?: string[]; compact?: boolean; lang?: PLang }) {
   const reduce = useReducedMotion();
-  const lg = lang || inferLang(labels);
   const cmds = take(labels, compact ? 2 : 4, ['build', 'test', 'deploy', 'run']).map((s) => s.toLowerCase().replace(/[^a-z0-9\-_. ]/gi, '').trim() || 'run');
   const cols = compact ? 6 : 10;
   return (
@@ -727,7 +726,7 @@ function CodeRainVisual({ labels, compact, lang }: { labels?: string[]; compact?
 /* ── TimelineRailVisual — a staged rail of steps (concept flow / shopper flow /
  * support handoff timeline). Steps from real labels, else the motif. ── */
 function TimelineRailVisual({ labels, compact, lang }: { labels?: string[]; compact?: boolean; lang?: PLang }) {
-  const reduce = useReducedMotion();
+  const reduce = !!useReducedMotion();
   const lg = lang || inferLang(labels);
   const steps = take(labels, compact ? 3 : 4, [
     ML(lg, 'Ask', 'Sor'), ML(lg, 'Recommend', 'Öner'), ML(lg, 'Answer', 'Yanıtla'), ML(lg, 'Handoff', 'Devret'),
