@@ -11,7 +11,7 @@ import { inferWebsiteBrief, fallbackSectionItems, checkQuality } from '@/lib/web
 import { deriveLayoutPlan, type WebBuildLayoutPlan } from '@/lib/webBuildLayoutPlan';
 import {
   runUpstreamAgents, runLayoutArchitect, runComponentEngineer, runReviewer, runQualityDirector, runFixer, WEB_BUILD_AGENTS_ENABLED,
-  derivePageArchitectureDecision, deriveVisualSignaturePlan,
+  derivePageArchitectureDecision, deriveVisualSignaturePlan, deriveExperienceBlueprint,
   type WebBuildAgent, type WebBuildArtifacts, type WebBuildEnforcement,
 } from '@/lib/webBuildAgents';
 import { deriveAgentSectionArchitecture } from '@/lib/webBuildSectionArchitecture';
@@ -522,6 +522,28 @@ function assembleWebBuildPayload(
     }
   }
 
+  // EXPERIENCE BLUEPRINT (Phase 9D-2) — high-level, whole-site experience decision
+  // (site type, page mode, conversion path, required/forbidden page groups, CTA
+  // strategy, need flags) derived BEFORE the section-level page architecture so it
+  // can guide it. Data/planning only: no routing, no image/video/motion, no
+  // backend, no fabricated proof. Fully guarded + non-blocking.
+  if (WEB_BUILD_AGENTS_ENABLED) {
+    try {
+      const experienceBlueprint = deriveExperienceBlueprint(
+        artBrief,
+        sectionItems.map((s) => ({ id: s.id, name: s.name })),
+        artifacts?.research?.conceptAuthority,
+        artifacts?.pageArchitecture,
+        artifacts?.visualSignaturePlan,
+        artifacts?.thinkingLedger,
+        effLang,
+      );
+      artifacts = { ...(artifacts || {}), experienceBlueprint };
+    } catch {
+      /* non-blocking — the page architecture falls back to its 9D-1 rules */
+    }
+  }
+
   // INTENT-AWARE PAGE ARCHITECTURE (Phase 9D-1) — after the section architecture
   // enforcement, apply a SAFE display/selection pass so the page carries only the
   // sections THIS concept actually supports: rename generic flow labels to the
@@ -532,13 +554,14 @@ function assembleWebBuildPayload(
   // vocabulary and backend are untouched, and nothing is fabricated. When the set
   // actually changes, files re-synthesize from it so Preview and All Files match.
   // Fully guarded + non-blocking; a >= 5 floor keeps the quality gate satisfied.
+  // Phase 9D-2: the Experience Blueprint guides removals + CTA strategy.
   if (WEB_BUILD_AGENTS_ENABLED && !prev) {
     try {
       const decision = derivePageArchitectureDecision(
         prompt, artBrief,
         sectionItems.map((s) => ({ id: s.id, name: s.name })),
         artifacts?.research?.conceptAuthority, artifacts?.strategy, artifacts?.thinkingLedger,
-        effLang,
+        effLang, artifacts?.experienceBlueprint,
       );
       let next = sectionItems.slice();
 
