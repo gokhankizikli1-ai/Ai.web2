@@ -557,7 +557,7 @@ function assembleWebBuildPayload(
   // Phase 9D-2: the Experience Blueprint guides removals + CTA strategy.
   if (WEB_BUILD_AGENTS_ENABLED && !prev) {
     try {
-      const decision = derivePageArchitectureDecision(
+      let decision = derivePageArchitectureDecision(
         prompt, artBrief,
         sectionItems.map((s) => ({ id: s.id, name: s.name })),
         artifacts?.research?.conceptAuthority, artifacts?.strategy, artifacts?.thinkingLedger,
@@ -607,7 +607,31 @@ function assembleWebBuildPayload(
         sectionItems = normalizeSectionItems(next);
         didRewriteArchitecture = true;
       }
-      artifacts = { ...(artifacts || {}), pageArchitecture: decision };
+      try {
+        const experienceBlueprint = deriveExperienceBlueprint(
+          artBrief,
+          sectionItems.map((s) => ({ id: s.id, name: s.name })),
+          artifacts?.research?.conceptAuthority,
+          decision,
+          artifacts?.visualSignaturePlan,
+          artifacts?.thinkingLedger,
+          effLang,
+        );
+        const extraWarnings = experienceBlueprint.blueprintWarnings.filter((w) =>
+          !decision.architectureWarnings.includes(w));
+        if (extraWarnings.length) {
+          decision = {
+            ...decision,
+            architectureWarnings: [
+              ...decision.architectureWarnings,
+              ...extraWarnings.slice(0, 2),
+            ],
+          };
+        }
+        artifacts = { ...(artifacts || {}), experienceBlueprint, pageArchitecture: decision };
+      } catch {
+        artifacts = { ...(artifacts || {}), pageArchitecture: decision };
+      }
     } catch {
       /* non-blocking — keep the enforced sectionItems, no decision recorded */
     }

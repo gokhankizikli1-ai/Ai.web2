@@ -1664,13 +1664,13 @@ export function deriveExperienceBlueprint(
 
   // Keyword buckets for non-software concepts (checked only when not an AI/SaaS product).
   const kw = {
-    restaurant: /restaurant|\bcafe\b|café|bistro|diner|eatery|\bmenu\b|dining|cuisine|restoran|kafe|lokanta/,
-    localBiz: /\bsalon\b|barber|\bspa\b|clinic|dental|dentist|plumb|electrician|landscap|cleaning\s*service|\brepair\b|local\s*business|kuaför|klinik|tamir/,
+    restaurant: /restaurant|\bcoffee\s*shop\b|\bcafe\b|café|bistro|diner|eatery|\bmenu\b|dining|cuisine|restoran|kafe|lokanta/,
+    localBiz: /\bflower\s*shop\b|\bsalon\b|barber|\bspa\b|clinic|dental|dentist|plumb|electrician|landscap|cleaning\s*service|\brepair\b|local\s*business|kuaför|klinik|tamir/,
     portfolio: /portfolio|personal\s*(site|website)|\bdesigner\b|photographer|\bartist\b|freelanc|resume|\bcv\b|showreel|portföy/,
     devTool: /developer|\bdev\s*tool|\bcli\b|\bapi\b|\bsdk\b|library|framework|terminal|command\s*line|open\s*source|programming|deploy|devops|yazılımcı/,
     mobileApp: /mobile\s*app|ios\s*app|android\s*app|app\s*store|play\s*store|download\s*the\s*app|app\s*launch|uygulama\s*indir/,
     marketplace: /marketplace|multi-?vendor|classifieds?|listings?|buyers?\s*and\s*sellers|two-?sided|pazaryeri/,
-    ecommerce: /ecommerce|e-?commerce|storefront|online\s*store|\bshop\b|retail|dropship|e-?ticaret|mağaza/,
+    ecommerce: /ecommerce|e-?commerce|storefront|online\s*(store|shop)|web\s*shop|shopping\s*(cart|site|experience)?|retail|dropship|e-?ticaret|mağaza/,
     waitlist: /waitlist|early\s*access|coming\s*soon|beta\s*access|pre-?launch|bekleme\s*listesi/,
     agency: /\bagency\b|consultanc|marketing\s*firm|creative\s*studio|services\s*firm|\bajans\b/,
     publication: /\bblog\b|magazine|publication|newsletter|news\s*site|editorial|articles|yayın|dergi/,
@@ -1840,14 +1840,14 @@ export function deriveExperienceBlueprint(
   }
 
   // ── Cross-cutting need decisions (blueprint reasons; honest). ──
-  const demoNeeded = isSaaSLike || T === 'consumer-product-landing' || T === 'marketplace' || T === 'ecommerce-store';
+  const demoNeeded = isSaaSLike || T === 'marketplace' || T === 'ecommerce-store';
   const pricingNeeded = asksPricing || (T === 'b2b-product-landing' && /\bsaas\b|subscription|self-?serve|plans?/.test(hay));
   const leadCaptureNeeded = T === 'startup-waitlist' || asksWaitlist || (T === 'b2b-product-landing' && (pageMode === 'contact-sales-funnel' || asksBookDemo));
   const contactNeeded = T !== 'content-publication';
   const proofAllowed = providedProof;
   // Image/motion HINTS only — never implemented here (prep for 9E-3 / 9E-4).
-  const imageVisualNeeded = isLocalLike || T === 'portfolio' || T === 'mobile-app' || T === 'restaurant' || T === 'event-landing' || T === 'agency-service' || T === 'content-publication';
-  const motionVisualNeeded = isSaaSLike || T === 'consumer-product-landing' || T === 'startup-waitlist';
+  const imageVisualNeeded = isLocalLike || T === 'portfolio' || T === 'mobile-app' || T === 'event-landing' || T === 'agency-service' || T === 'content-publication';
+  const motionVisualNeeded = isSaaSLike || T === 'startup-waitlist';
   const recommendedVisualDirection = visualSignaturePlan?.visualSignature
     || (T === 'developer-tool' ? L(lang, 'Command & deploy rail (code rain / terminal)', 'Komut ve dağıtım rayı (kod yağmuru / terminal)')
       : T === 'b2b-product-landing' ? L(lang, 'Storefront chat flow rail + integration orbit', 'Mağaza sohbet akış rayı + entegrasyon yörüngesi')
@@ -2011,19 +2011,23 @@ export function derivePageArchitectureDecision(
   const bpNonSaaS = bpType === 'restaurant' || bpType === 'local-business' || bpType === 'portfolio';
   if (bpNonSaaS) {
     const already = new Set(removedSections.map((r) => r.id));
+    const isSaaSIntegration = (key: string) => /integrations?|shopify|woocommerce|\bapi\b|plugin|webhook|store\s*integrat|entegrasyon/i.test(key);
+    const isProductDemo = (key: string) => /\b(product[-\s]?demo|chat[-\s]?demo|dashboard[-\s]?demo|demo|playground)\b|sohbet\s*demo/i.test(key);
+    const asksProductDemo = /\bdemo\b|\bchatbot\b|\bdashboard\b/.test(hay);
+    let spineGuardRemoved = false;
     for (const s of sectionItems || []) {
       if (already.has(s.id)) continue;
       const key = `${s.id} ${s.name}`;
       if (SECTION_ROLE_RE.hero.test(key) || SECTION_ROLE_RE.footer.test(key) || SECTION_ROLE_RE.contact.test(key)) continue;
       let reason = '';
       if (!asksPricing && SECTION_ROLE_RE.pricing.test(key)) reason = L(lang, `SaaS pricing does not fit a ${bpType} site (not requested).`, `SaaS fiyatlandırması bir ${bpType} sitesine uymuyor (istenmedi).`);
-      else if (SECTION_ROLE_RE.integrations.test(key)) reason = L(lang, `SaaS integrations do not fit a ${bpType} site.`, `SaaS entegrasyonları bir ${bpType} sitesine uymuyor.`);
+      else if (isSaaSIntegration(key)) reason = L(lang, `SaaS integrations do not fit a ${bpType} site.`, `SaaS entegrasyonları bir ${bpType} sitesine uymuyor.`);
       else if (SECTION_ROLE_RE.certifications.test(key)) reason = L(lang, `A compliance/certification section does not fit a ${bpType} site.`, `Uyumluluk/sertifika bölümü bir ${bpType} sitesine uymuyor.`);
       else if (SECTION_ROLE_RE.security.test(key)) reason = L(lang, `SaaS security/compliance does not fit a ${bpType} site.`, `SaaS güvenlik/uyumluluk bir ${bpType} sitesine uymuyor.`);
-      else if (SECTION_ROLE_RE.demo.test(key) && !/\bdemo\b|\bchat\b|assistant|chatbot|dashboard/.test(hay)) reason = L(lang, `A product/chat demo does not fit a ${bpType} site (not requested).`, `Ürün/sohbet demosu bir ${bpType} sitesine uymuyor (istenmedi).`);
-      if (reason) { removedSections.push({ id: s.id, section: s.name, reason }); already.add(s.id); }
+      else if (isProductDemo(key) && !asksProductDemo) reason = L(lang, `A product/chat demo does not fit a ${bpType} site (not requested).`, `Ürün/sohbet demosu bir ${bpType} sitesine uymuyor (istenmedi).`);
+      if (reason) { removedSections.push({ id: s.id, section: s.name, reason }); already.add(s.id); spineGuardRemoved = true; }
     }
-    if (removedSections.length) architectureWarnings.push(L(lang, `Site classified as "${bpType}" — SaaS/product sections that don't fit were dropped (kept only what the prompt requested).`, `Site "${bpType}" olarak sınıflandırıldı — uymayan SaaS/ürün bölümleri düşürüldü (yalnızca istemin istediği tutuldu).`));
+    if (spineGuardRemoved) architectureWarnings.push(L(lang, `Site classified as "${bpType}" — SaaS/product sections that don't fit were dropped (kept only what the prompt requested).`, `Site "${bpType}" olarak sınıflandırıldı — uymayan SaaS/ürün bölümleri düşürüldü (yalnızca istemin istediği tutuldu).`));
   }
 
   if (removedSections.some((r) => SECTION_ROLE_RE.testimonials.test(r.section) || SECTION_ROLE_RE.caseStudies.test(r.section))) {
