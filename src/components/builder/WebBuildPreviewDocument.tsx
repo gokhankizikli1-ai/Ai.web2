@@ -554,6 +554,75 @@ function normalizePublicLabel(raw: string | undefined, b: WebBuildBrief): string
   return generic.test(v) ? 'AI Shopping Assistant' : v;
 }
 
+/* ── Phase 9D-2C: final local-hero DISPLAY cleanup (never mutates artifacts) ── */
+
+/** Strip wrapping quotation marks for DISPLAY only, when the WHOLE string is
+ *  wrapped in a matching pair. Never removes interior quotes or apostrophes;
+ *  returns the input unchanged otherwise. */
+function stripWrappingDisplayQuotes(text: string | undefined): string {
+  const v = text || '';
+  const t = v.trim();
+  if (t.length < 2) return v;
+  const pairs: Array<[string, string]> = [['"', '"'], ['“', '”'], ["'", "'"], ['‘', '’']];
+  for (const [open, close] of pairs) {
+    if (t.startsWith(open) && t.endsWith(close) && t.length > open.length + close.length) {
+      const inner = t.slice(open.length, t.length - close.length);
+      // Keep it if an interior quote of the same kind remains (a real quotation).
+      if (!inner.includes(open) && !inner.includes(close)) return inner.trim();
+    }
+  }
+  return v;
+}
+
+type LocalKind = 'landscaping' | 'restaurant' | 'portfolio' | 'agency' | 'local';
+/** Coarse local-business kind from the brief (display normalization only). */
+function localBusinessKind(b: WebBuildBrief): LocalKind | undefined {
+  const hay = [b.type, b.coreIdea, b.goal, b.audience, b.visitorIntent, b.style].filter(Boolean).join(' ').toLowerCase();
+  if (/landscap|peyzaj|garden|outdoor\s*(design|space|living)|lawn|\byard\b|patio|hardscap|bah[çc]e/.test(hay)) return 'landscaping';
+  if (/restaurant|\bcafe\b|caf[ée]|bistro|diner|eatery|\bmenu\b|dining|cuisine|restoran|kafe|lokanta/.test(hay)) return 'restaurant';
+  if (/portfolio|personal\s*(site|website)|\bdesigner\b|photographer|\bartist\b|freelanc|resume|\bcv\b|showreel|portf[öo]y/.test(hay)) return 'portfolio';
+  if (/\bagency\b|consultanc|marketing\s*firm|creative\s*studio|services\s*firm|\bajans\b/.test(hay)) return 'agency';
+  if (/\bsalon\b|barber|\bspa\b|clinic|dental|plumb|electrician|cleaning\s*service|\brepair\b|local\s*business|kuaf[öo]r|klinik|tamir/.test(hay)) return 'local';
+  return undefined;
+}
+
+const GENERIC_BRAND_RE = /^(business|company|service|services|website|web\s*site|landing(\s*page)?|the\s*product|your\s*brand|brand|startup)$/i;
+/** Display-normalize a generic brand/eyebrow word for a local-business site. */
+function normalizeLocalBrand(raw: string | undefined, kind: LocalKind | undefined, lang: PLang): string {
+  const v = (raw || '').trim();
+  if (!v || !kind || !GENERIC_BRAND_RE.test(v)) return v;
+  const tr = lang === 'tr';
+  switch (kind) {
+    case 'landscaping': return tr ? 'Peyzaj Studio' : 'Landscape Studio';
+    case 'restaurant': return tr ? 'Restoran' : 'Restaurant';
+    case 'portfolio': return tr ? 'Portföy' : 'Portfolio';
+    case 'agency': return 'Studio';
+    default: return tr ? 'Yerel Hizmet' : 'Local Service';
+  }
+}
+
+/** Display-normalize an awkward/SaaS CTA to a local-service CTA. Only known CTA
+ *  strings are changed; any other value (a real, specific CTA) is returned as-is. */
+function normalizeLocalCta(raw: string | undefined, kind: LocalKind | undefined, lang: PLang, askedSiteVisit: boolean): string {
+  const v = (raw || '').trim();
+  if (!v || !kind) return v;
+  const key = v.toLowerCase().replace(/\s+/g, ' ');
+  const tr = lang === 'tr';
+  const primary = kind === 'restaurant' ? (tr ? 'Masa Ayırt' : 'Reserve a Table')
+    : kind === 'portfolio' ? (tr ? 'Çalışmaları Gör' : 'View Work')
+    : kind === 'agency' ? (tr ? 'Projeye Başla' : 'Start a Project')
+    : (tr ? 'Teklif Al' : 'Get a Quote');
+  const secondary = kind === 'restaurant' ? (tr ? 'Menüyü Gör' : 'View Menu')
+    : kind === 'portfolio' ? (tr ? 'İletişim' : 'Contact')
+    : kind === 'agency' ? (tr ? 'Çalışmaları Gör' : 'See Work')
+    : (tr ? 'Projeleri Gör' : 'View Projects');
+  if (/^(learn more|read more|discover|find out( more)?)$/.test(key)) return secondary;
+  if (/^(continue|sign up|start free trial|try it free|book a demo)$/.test(key)) return primary;
+  if (/^get started$/.test(key)) return (kind === 'landscaping' || kind === 'local' || kind === 'agency') ? (tr ? 'Danışmanlık İste' : 'Request a Consultation') : primary;
+  if (/^request a site visit$/.test(key)) return askedSiteVisit ? v : primary;
+  return v;
+}
+
 function heroTexts(s: S, brief: WebBuildBrief, ctx: InteractionContext) {
   const realBullets = (s.bullets || []).filter(Boolean);
   // Phase 8B: when a product/chat hero's own copy is thin, hand the visual module
@@ -562,12 +631,21 @@ function heroTexts(s: S, brief: WebBuildBrief, ctx: InteractionContext) {
   const moduleLabels = (realBullets.length >= 3 || !isProductChatConcept(brief))
     ? s.bullets
     : [...realBullets, ...CHAT_MODULE_LABELS(briefLang(brief))].slice(0, 6);
+  // Phase 9D-2C: final DISPLAY cleanup for a local-business hero — strip wrapping
+  // quotes from title/sub/eyebrow, normalize a generic brand word (business →
+  // Landscape Studio), and normalize an awkward CTA (Request a Site Visit → Get a
+  // Quote). Display-only; the section item / brief are never mutated.
+  const lang = briefLang(brief);
+  const kind = localBusinessKind(brief);
+  const askedSiteVisit = /site\s*visit/i.test([brief.coreIdea, brief.goal, brief.type, brief.visitorIntent, brief.conversionStrategy].filter(Boolean).join(' '));
+  const rawTitle = s.headline || s.copyPreview?.split(/[.!?\n]/)[0] || brief.type || '';
+  const rawEyebrow = normalizePublicLabel(brief.type || s.bullets?.[0], brief);
   return {
-    title: s.headline || s.copyPreview?.split(/[.!?\n]/)[0] || brief.type || '',
-    eyebrow: normalizePublicLabel(brief.type || s.bullets?.[0], brief),
-    sub: s.sub || brief.goal,
-    cta: s.cta,
-    secondary: s.bullets?.[1],
+    title: stripWrappingDisplayQuotes(rawTitle),
+    eyebrow: normalizeLocalBrand(stripWrappingDisplayQuotes(rawEyebrow), kind, lang),
+    sub: stripWrappingDisplayQuotes(s.sub || brief.goal || ''),
+    cta: normalizeLocalCta(s.cta, kind, lang, askedSiteVisit),
+    secondary: normalizeLocalCta(s.bullets?.[1], kind, lang, askedSiteVisit),
     proof: s.bullets?.[2],
     moduleLabels,
     // Concept-relevant scroll targets for the hero CTAs (never dead).
@@ -2834,8 +2912,10 @@ export default function WebBuildPreviewDocument({
   const contentSections = renderItems.filter((s) => { const k = kindOf(s.id); return k !== 'hero' && k !== 'footer'; });
   const footerSection = renderItems.find((s) => kindOf(s.id) === 'footer');
   const lead = contentSections[0];
-  const subtitle = ((lead && (lead.sub || lead.purpose || lead.copyPreview)) || '').trim();
-  const brand = normalizePublicLabel(brief.type, brief);
+  const subtitle = stripWrappingDisplayQuotes(((lead && (lead.sub || lead.purpose || lead.copyPreview)) || '').trim());
+  // Phase 9D-2C: normalize a generic nav brand word (business → Landscape Studio) for
+  // a local-business site — display-only, mirrors the hero eyebrow normalization.
+  const brand = normalizeLocalBrand(normalizePublicLabel(brief.type, brief), localBusinessKind(brief), briefLang(brief));
   const convId = (ctx.conversionTarget || '').replace(/^#/, '');
   const convItem = convId ? byAnchor.get(convId) : undefined;
   const convCta = (convItem?.cta || '').trim();
