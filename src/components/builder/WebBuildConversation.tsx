@@ -360,18 +360,42 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       (pa.architectureWarnings || []).slice(0, 2).forEach((w, i) => ownerRows.push([`architectureWarning${i + 1}`, w]));
     }
 
-    // Phase 9E-1 — concept-specific Visual Signature Plan (CSS/SVG, front-end-only).
+    // Phase 9E-1 / 9E-1B — concept-specific Visual Signature Plan (CSS/SVG, front-
+    // end-only). Always surface a compact block so its presence/absence is obvious
+    // when debugging why the Preview does or doesn't show a signature visual.
     const vsp = step.artifacts?.visualSignaturePlan;
+    // Only assert "missing" once the pipeline actually ran (agents present) so an
+    // early/empty step isn't mislabelled.
+    const ranAgents = !!step.artifacts?.research || !!step.artifacts?.thinkingLedger || !!step.artifacts?.pageArchitecture;
     if (vsp) {
-      ownerRows.push(['visualSignature', `${vsp.visualSignature} · hero: ${vsp.heroVisualType}`]);
+      ownerRows.push(['visualSignature', vsp.visualSignature || '(unnamed)']);
+      ownerRows.push(['heroVisualType', vsp.heroVisualType || '(none)']);
       if (vsp.primaryMotif) ownerRows.push(['primaryMotif', vsp.primaryMotif]);
       if (vsp.sectionVisuals?.length) {
-        const ex = vsp.sectionVisuals.slice(0, 3).map((v) => `${v.sectionName || v.sectionId || '?'}→${v.visualType}`).join(', ');
+        const ex = vsp.sectionVisuals.slice(0, 3).map((v) => `${v.sectionName || v.sectionId || '?'} → ${v.visualType}`).join(', ');
         ownerRows.push(['sectionVisuals', `${vsp.sectionVisuals.length}${ex ? ` · ${ex}` : ''}`]);
+      } else {
+        ownerRows.push(['sectionVisuals', '0']);
       }
       if (vsp.motionHints?.length) ownerRows.push(['motionHints', vsp.motionHints.slice(0, 2).join(' · ')]);
       (vsp.visualAssetWarnings || []).slice(0, 2).forEach((w, i) => ownerRows.push([`visualAssetWarning${i + 1}`, w]));
+    } else if (ranAgents) {
+      ownerRows.push(['visualSignaturePlan', 'missing']);
     }
+
+    // Phase 9E-1B: display-only normalization of a couple of generic plan/entry
+    // labels for AI-ecommerce chatbot concepts. Diagnostics/public-facing TEXT only
+    // — never mutates the planning contract, the artifact, or any section/route.
+    const isAiCommerce = (() => {
+      if (vsp && /chat|storefront|shop|store|commerce|conversation|sohbet|mağaza/i.test(`${vsp.visualSignature || ''} ${vsp.primaryMotif || ''} ${vsp.heroVisualType || ''}`)) return true;
+      const cc = step.artifacts?.research?.conceptAuthority;
+      const pga = step.artifacts?.pageArchitecture;
+      return !!cc && String(cc.primaryConcept).toLowerCase() === 'ai' && !!pga?.integrationsNeeded;
+    })();
+    const normVisualDirection = (v: string): string =>
+      (isAiCommerce && /^(ai tool|ai\b.*productivity|productivity|generic)/i.test((v || '').trim())) ? 'Storefront chat automation' : v;
+    const normEntryCta = (v: string): string =>
+      (isAiCommerce && /^(learn more|read more|discover|find out)/i.test((v || '').trim())) ? 'See Chat Flow' : v;
 
     // Concept Authority + Visual Quality gate (Phase 5) — real artifact data only.
     const ca = step.artifacts?.research?.conceptAuthority;
@@ -388,7 +412,7 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       if (mdp) {
         ownerRows.push(['designPlan', `specificity ${mdp.planSpecificityScore}/100${mdp.hasMeaningfulRejectedDirections ? ' · rejected ✓' : ' · no rejects'}${mdp.avoidGold ? ' · avoid-gold' : ''}`]);
         if (mdp.designThesis) ownerRows.push(['plan.thesis', mdp.designThesis]);
-        if (mdp.selectedVisualDirection) ownerRows.push(['plan.visualDirection', mdp.selectedVisualDirection]);
+        if (mdp.selectedVisualDirection) ownerRows.push(['plan.visualDirection', normVisualDirection(mdp.selectedVisualDirection)]);
         if (mdp.rejectedDirections) ownerRows.push(['plan.rejected', mdp.rejectedDirections]);
         if (mdp.heroCompositionDecision) ownerRows.push(['plan.hero', `${mdp.heroCompositionDecision}${mdp.heroComposition ? ` → ${mdp.heroComposition}` : ''}`]);
         if (mdp.paletteDecision) ownerRows.push(['plan.palette', `${mdp.paletteDecision}${mdp.paletteFamily ? ` → ${mdp.paletteFamily}` : ''}`]);
@@ -439,7 +463,7 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       if (contract.entryScreen) ownerRows.push(['entryScreen', contract.entryScreen]);
       if (contract.postEntryScreen) ownerRows.push(['postEntryScreen', contract.postEntryScreen]);
       if (contract.primaryEntryCTA) ownerRows.push(['primaryEntryCTA', contract.primaryEntryCTA]);
-      if (contract.secondaryEntryCTA) ownerRows.push(['secondaryEntryCTA', contract.secondaryEntryCTA]);
+      if (contract.secondaryEntryCTA) ownerRows.push(['secondaryEntryCTA', normEntryCta(contract.secondaryEntryCTA)]);
       if (contract.navigationBehavior) ownerRows.push(['navigationBehavior', contract.navigationBehavior]);
       if (contract.initialScreenId) ownerRows.push(['initialScreenId', contract.initialScreenId]);
       if (contract.postEntryScreenId) ownerRows.push(['postEntryScreenId', contract.postEntryScreenId]);
