@@ -2305,11 +2305,37 @@ export default function WebBuildPreviewDocument({
   const variantOf = (id: string): SectionVariant => plan.sectionVariants[id] || 'feature-grid';
   const vt = visualSystemTokens(plan.visualSystem);
   const reduce = useReducedMotion();
-  // Phase 9E-1: resolve the concept-specific signature visuals. The hero uses the
-  // plan's hero visual type (only when a signature module exists — else it falls
-  // back to the generic module), and matching content sections (chat/product demo,
-  // integrations, security, flow, contact) render their own signature visual.
-  const heroSigType = hasSignatureVisual(visualSignaturePlan?.heroVisualType) ? visualSignaturePlan?.heroVisualType : undefined;
+  // Phase 9E-1 / 9E-1B: resolve the concept-specific signature visuals so the
+  // Preview reads as art-directed instead of a generic card stack. The hero prefers
+  // the plan's hero visual; matching content sections (chat/product demo,
+  // integrations, security, flow) render their own signature visual. Resolution is
+  // robust: exact section id → section name from the plan → role/name heuristic
+  // (only when a plan exists so opted-out concepts stay generic). Deduped by the
+  // rendered visual so the same one never repeats, and the hero's own visual is not
+  // repeated in a section. Everything is display-only; no artifact is mutated.
+  const planExists = !!visualSignaturePlan;
+  // Canonical key so aliases ('chat-flow' vs 'chat-flow-rail', …) dedupe as one.
+  const sigCanon = (t?: string): string => {
+    const s = (t || '').toLowerCase();
+    if (s.includes('chat')) return 'chat';
+    if (s.includes('product')) return 'product';
+    if (s.includes('integration') || s.includes('orbit') || s.includes('constellation')) return 'integration';
+    if (s.includes('trust') || s.includes('security')) return 'trust';
+    if (s.includes('timeline') || s.includes('handoff') || s.includes('rail')) return 'timeline';
+    if (s.includes('code')) return 'code';
+    return s;
+  };
+  // Task 4: for an AI-ecommerce / chat concept, if the plan is present but the hero
+  // visual type is missing/unsupported, use a safe DISPLAY-ONLY 'chat-flow' fallback
+  // so the hero never silently drops to a generic card.
+  const conceptChatCommerce = planExists && (
+    /chat|storefront|shop|store|commerce|conversation|sohbet|mağaza/i.test(`${visualSignaturePlan?.visualSignature || ''} ${visualSignaturePlan?.primaryMotif || ''}`)
+    || (visualSignaturePlan?.sectionVisuals || []).some((v) => /chat|product/.test(v.visualType))
+  );
+  const heroSigType = hasSignatureVisual(visualSignaturePlan?.heroVisualType)
+    ? visualSignaturePlan?.heroVisualType
+    : (conceptChatCommerce ? 'chat-flow' : undefined);
+  // Plan lookups: by exact section id, and by (lowercased) section name.
   const sigBySectionId = useMemo(() => {
     const m = new Map<string, string>();
     for (const v of visualSignaturePlan?.sectionVisuals || []) {
@@ -2317,6 +2343,46 @@ export default function WebBuildPreviewDocument({
     }
     return m;
   }, [visualSignaturePlan]);
+  const sigBySectionName = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const v of visualSignaturePlan?.sectionVisuals || []) {
+      const nm = (v.sectionName || '').trim().toLowerCase();
+      if (nm && hasSignatureVisual(v.visualType) && !m.has(nm)) m.set(nm, v.visualType);
+    }
+    return m;
+  }, [visualSignaturePlan]);
+  // Role/name heuristic (only used when a plan exists). Picks chat vs product for a
+  // demo section from the plan's hero type.
+  const sectionSigByRole = (name: string, id: string): string | undefined => {
+    const n = `${id} ${name}`.toLowerCase();
+    if (/integration|connect|shopify|woocommerce|catalog|store\s*integrat|entegrasyon|\bapi\b|plugin|webhook|helpdesk/.test(n)) return 'integration-orbit';
+    if (/security|trust|privacy|compliance|safety|güven|gizlilik/.test(n)) return 'trust-control-stack';
+    if (/how[-\s]?it[-\s]?works|process|workflow|steps?|journey|shopper\s*flow|nasıl|akış|delivery/.test(n)) return 'timeline-rail';
+    if (/demo|chat|assistant|playground|product|conversation|sohbet/.test(n)) return visualSignaturePlan?.heroVisualType === 'product-flow' ? 'product-card-rail' : 'chat-flow-rail';
+    if (/developer|\bdev\b|\bcode\b|\bcli\b|terminal|deploy|\bsdk\b/.test(n)) return 'code-rain';
+    return undefined;
+  };
+  // One deterministic pass over ALL sections: assign each a signature visual (id →
+  // name → role), deduped by canonical visual, never repeating the hero's visual.
+  const sectionSignatureMap = useMemo(() => {
+    const out = new Map<string, string>();
+    if (!visualSignaturePlan) return out;
+    const usedCanon = new Set<string>();
+    if (heroSigType) usedCanon.add(sigCanon(heroSigType));
+    for (const s of sectionItems) {
+      const rawId = s.id;
+      const nm = (s.name || '').trim().toLowerCase();
+      if (/hero|banner|masthead|footer|colophon/i.test(`${s.id} ${s.name || ''}`)) continue;
+      const t = sigBySectionId.get(rawId) || sigBySectionName.get(nm) || sectionSigByRole(s.name || '', s.id);
+      if (!t || !hasSignatureVisual(t)) continue;
+      const c = sigCanon(t);
+      if (usedCanon.has(c)) continue;
+      usedCanon.add(c);
+      out.set(rawId, t);
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visualSignaturePlan, sectionItems, sigBySectionId, sigBySectionName, heroSigType]);
   const rootRef = useRef<HTMLDivElement>(null);
   const [activePage, setActivePage] = useState('home');
   // Router-free page model + the sections the ACTIVE page renders (never empty).
@@ -2690,10 +2756,11 @@ export default function WebBuildPreviewDocument({
       const i = contentIdx++;
       const band = banded && i % 2 === 1;
       const pad = PAD[premiumDensity] || PAD.comfortable;
-      // Phase 9E-1: a concept signature visual leads the section (integration orbit,
-      // trust-control stack, chat-flow rail, timeline rail …) when the plan assigns
-      // one for this section id; the existing variant content renders below it.
-      const sigType = sigBySectionId.get(rawId);
+      // Phase 9E-1 / 9E-1B: a concept signature visual leads the section (integration
+      // orbit, trust-control stack, chat-flow rail, timeline rail …) when the plan
+      // assigns one for this section (by id, name, or role); the existing variant
+      // content renders below it. Deduped in sectionSignatureMap so it never repeats.
+      const sigType = sectionSignatureMap.get(rawId);
       const sigLabels = (s.bullets && s.bullets.length ? s.bullets : [s.name].filter(Boolean)) as string[];
       inner = (
         <section id={sid} style={{ scrollMarginTop: 72, ...(band ? { background: 'rgba(255,255,255,0.015)' } : {}) }} className={`relative ${pad}`}>
