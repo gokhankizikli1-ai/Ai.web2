@@ -23,7 +23,7 @@ import {
 } from '@/lib/webBuildInteractionContract';
 // Type-only import (erased at build) — Phase 5's data-only Visual Asset Plan the
 // Preview consumes with CSS/SVG. Never pulls agent logic into the preview bundle.
-import type { VisualAssetPlan, HeroVisualType, VisualSignaturePlan, MotionComposerArtifact, MotionPattern, MotionLayer } from '@/lib/webBuildAgents';
+import type { VisualAssetPlan, HeroVisualType, VisualSignaturePlan, MotionComposerArtifact, MotionPattern, MotionLayer, ImagePipelineArtifact, ImageAssetSlot } from '@/lib/webBuildAgents';
 
 /**
  * A REAL, premium rendered approximation of the generated site whose STRUCTURE is
@@ -1687,6 +1687,96 @@ function MotionAmbientLayer({ pattern, intensity = 'subtle', reduce, className =
   return <div aria-hidden className={`pointer-events-none absolute inset-0 overflow-hidden ${className}`}>{body}</div>;
 }
 
+/* ── Phase 10C: Image Pipeline placeholders ──────────────────────────────────
+ * HONEST, premium placeholder frames for the Image Pipeline's image slots. They
+ * render a composed gradient/SVG surface + the slot title + an honesty label
+ * (e.g. "Manual upload recommended" / "Illustrative image slot"). They NEVER show
+ * a real generated image, a real photo, or fake logos/metrics/testimonials. Uses
+ * the preview CSS vars (--acc/--acc2/--sf/--bd/--pr) so it reads on any palette. */
+const IMG_ASPECT: Record<ImageAssetSlot['prompt']['aspectRatio'], string> = {
+  '16:9': 'aspect-[16/9]', '4:3': 'aspect-[4/3]', '3:2': 'aspect-[3/2]', '1:1': 'aspect-square', '9:16': 'aspect-[9/16]', '21:9': 'aspect-[21/9]',
+};
+/** A small honesty chip (source-aware). */
+function ImageHonestyChip({ slot }: { slot: ImageAssetSlot }) {
+  const tone = slot.manualUploadRecommended ? 'var(--acc2)' : 'var(--acc)';
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.10] bg-black/40 px-2.5 py-1 text-[10px] font-medium text-white/85 backdrop-blur-sm">
+      <span className="h-1.5 w-1.5 rounded-full" style={{ background: tone }} />
+      <span className="truncate">{slot.honestyLabel}</span>
+    </span>
+  );
+}
+/** The base frame: gradient/hatch surface + a picture glyph + title + honesty chip. */
+function ImageAssetFrame({ slot, className = '', showTitle = true }: { slot: ImageAssetSlot; className?: string; showTitle?: boolean }) {
+  const ar = IMG_ASPECT[slot.prompt.aspectRatio] || 'aspect-[16/9]';
+  return (
+    <figure className={`group relative overflow-hidden rounded-[var(--pr)] border border-[color:var(--bd)] bg-[var(--sf)] ${className}`}>
+      <div className={`relative w-full ${ar}`} style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 20%, transparent), color-mix(in srgb, var(--acc2) 12%, transparent))' }}>
+        {/* Decorative hatch — composed, never a real image. */}
+        <svg aria-hidden viewBox="0 0 120 80" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 h-full w-full" style={{ opacity: 0.22 }}>
+          {Array.from({ length: 7 }).map((_, k) => <line key={k} x1={-20 + k * 24} y1="80" x2={40 + k * 24} y2="0" stroke="rgba(255,255,255,0.5)" strokeWidth="1" />)}
+        </svg>
+        {/* Picture glyph */}
+        <svg aria-hidden viewBox="0 0 24 24" className="absolute left-1/2 top-1/2 h-9 w-9 -translate-x-1/2 -translate-y-1/2" fill="none" stroke="var(--acc)" strokeWidth="1.3" style={{ opacity: 0.85 }}>
+          <rect x="3" y="4" width="18" height="16" rx="2.5" /><circle cx="8.5" cy="9.5" r="1.6" /><path d="M4 17l5-5 4 4 3-3 4 4" />
+        </svg>
+        <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-2 bg-gradient-to-t from-black/70 to-transparent p-2.5">
+          {showTitle && <figcaption className="truncate text-[11px] font-medium text-white/90">{slot.title}</figcaption>}
+          <ImageHonestyChip slot={slot} />
+        </div>
+      </div>
+    </figure>
+  );
+}
+/** Large hero image placeholder. */
+function HeroImagePlaceholder({ slot, className = '' }: { slot: ImageAssetSlot; className?: string }) {
+  return <ImageAssetFrame slot={slot} className={`shadow-2xl shadow-black/40 ${className}`} />;
+}
+/** A grid of gallery image placeholders (illustrative — same slot repeated). */
+function GalleryImagePlaceholder({ slot, count = 6, className = '' }: { slot: ImageAssetSlot; count?: number; className?: string }) {
+  return (
+    <div className={`grid grid-cols-2 gap-3 sm:grid-cols-3 ${className}`}>
+      {Array.from({ length: count }).map((_, i) => <ImageAssetFrame key={i} slot={slot} showTitle={i === 0} />)}
+    </div>
+  );
+}
+/** A before / after split placeholder (illustrative — no fabricated proof). */
+function BeforeAfterImagePlaceholder({ slot, className = '' }: { slot: ImageAssetSlot; className?: string }) {
+  return (
+    <div className={`grid grid-cols-2 gap-3 ${className}`}>
+      {[0, 1].map((k) => (
+        <div key={k} className="relative">
+          <span className="absolute left-2 top-2 z-10 rounded-full bg-black/50 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-white/85 backdrop-blur-sm">{k === 0 ? 'Before' : 'After'}</span>
+          <ImageAssetFrame slot={slot} showTitle={false} />
+        </div>
+      ))}
+    </div>
+  );
+}
+/** An archival document frame (paper texture + rule lines). */
+function ArchiveDocumentPlaceholder({ slot, className = '' }: { slot: ImageAssetSlot; className?: string }) {
+  return <ImageAssetFrame slot={slot} className={className} />;
+}
+/** A catalog/listing card placeholder. */
+function CatalogImagePlaceholder({ slot, count = 4, className = '' }: { slot: ImageAssetSlot; count?: number; className?: string }) {
+  return (
+    <div className={`grid grid-cols-2 gap-3 sm:grid-cols-4 ${className}`}>
+      {Array.from({ length: count }).map((_, i) => <ImageAssetFrame key={i} slot={slot} showTitle={i === 0} />)}
+    </div>
+  );
+}
+/** Dispatch a slot to its treatment-appropriate placeholder. */
+function ImageSlotPlaceholder({ slot, className = '' }: { slot: ImageAssetSlot; className?: string }) {
+  switch (slot.previewTreatment) {
+    case 'gallery-grid': return <GalleryImagePlaceholder slot={slot} className={className} />;
+    case 'before-after-frame': return <BeforeAfterImagePlaceholder slot={slot} className={className} />;
+    case 'archive-document-frame': return <ArchiveDocumentPlaceholder slot={slot} className={className} />;
+    case 'catalog-card': return <CatalogImagePlaceholder slot={slot} className={className} />;
+    case 'ambient-background': return null; // ambient handled by the motion/premium layer, not a frame
+    default: return <HeroImagePlaceholder slot={slot} className={className} />;
+  }
+}
+
 /* ── Phase 6E: local visual-calm helpers ─────────────────────────────────────
  * A tiny, LOCAL hierarchy system (not a component library): softer surfaces, one
  * hairline instead of stacked borders, muted secondary text, and accent reserved
@@ -2433,7 +2523,7 @@ function DemoShellScreen({ screen, allSections, brief, art, rt, onHome, heroVisu
 }
 
 export default function WebBuildPreviewDocument({
-  sectionItems: rawSectionItems, brief, interactionContract, visualAssetPlan, visualSignaturePlan, motionComposer,
+  sectionItems: rawSectionItems, brief, interactionContract, visualAssetPlan, visualSignaturePlan, motionComposer, imagePipeline,
 }: {
   sectionItems: WebBuildSectionItem[];
   brief: WebBuildBrief;
@@ -2450,6 +2540,9 @@ export default function WebBuildPreviewDocument({
   /** Phase 10B Motion Composer plan (data only). Drives a subtle, reduced-motion-
    *  safe ambient motion layer behind the hero / sections. Optional → no motion. */
   motionComposer?: MotionComposerArtifact;
+  /** Phase 10C Image Pipeline plan (data only). Drives HONEST image placeholders
+   *  (manual-upload / provider-ready / illustrative) — no real images. Optional. */
+  imagePipeline?: ImagePipelineArtifact;
 }) {
   // Normalize every section item to a well-formed shape BEFORE any derived helper
   // runs. The section-level boundaries only cover their own renderers; the plan/
@@ -2796,6 +2889,26 @@ export default function WebBuildPreviewDocument({
   })();
   const heroMotionIntensity = motionIntensityFor('hero');
 
+  // Phase 10C: Image Pipeline consumption helpers. All display-only; when there's
+  // no plan the preview is unchanged. Image placeholders render only for site types
+  // that genuinely benefit from photography (local/restaurant/portfolio/archive/
+  // catalog) — an AI/SaaS product keeps its CSS/SVG mockup and only gets an abstract
+  // hero image slot at most.
+  const imageSlots = imagePipeline?.slots || [];
+  const imagePipelineEnabled = (): boolean => imageSlots.length > 0;
+  const imageSlotsForTarget = (target: string): ImageAssetSlot[] => imageSlots.filter((s) => s.target === target);
+  const imageSlotForTarget = (target: string): ImageAssetSlot | undefined => imageSlotsForTarget(target)[0];
+  // The primary hero image slot — a foreground frame (skips ambient-background slots
+  // and, for AI/SaaS, only a non-mockup abstract brand image).
+  const primaryHeroImageSlot = (): ImageAssetSlot | undefined =>
+    imageSlotsForTarget('hero').find((s) => s.previewTreatment !== 'ambient-background');
+  const heroImageSlot = imagePipelineEnabled() ? primaryHeroImageSlot() : undefined;
+  // Only site types that genuinely benefit from photography get a hero image frame;
+  // an AI/SaaS product's hero image slot is 'abstract-brand-image' → skip it so the
+  // CSS/SVG product mockup stays the hero (never a fake screenshot).
+  const HERO_PHOTO_KINDS = new Set(['project-photo', 'food-photo', 'restaurant-space', 'gallery-photo', 'portfolio-work-image', 'archive-scan', 'product-listing-image', 'catalog-cover', 'before-after-pair']);
+  const showHeroImage = !!heroImageSlot && HERO_PHOTO_KINDS.has(heroImageSlot.kind);
+
   // ── Phase 6B: resolve the Entry Flow (landing → experience, or straight in) and
   // map it onto the real internal screens. Then initialize/repair activePage from
   // it: on first settle start where the model decided; on later shell/contract
@@ -2981,11 +3094,21 @@ export default function WebBuildPreviewDocument({
       // content renders below it. Deduped in sectionSignatureMap so it never repeats.
       const sigType = sectionSignatureMap.get(rawId);
       const sigLabels = (s.bullets && s.bullets.length ? s.bullets : [s.name].filter(Boolean)) as string[];
+      // Phase 10C: a section-level image placeholder (gallery / before-after /
+      // archive scan / catalog cover …) leads the section content when the Image
+      // Pipeline assigned an image slot to this section. Honest placeholder only —
+      // no real image is fetched or rendered. Ambient-background slots return null.
+      const sectionImageSlot = imagePipelineEnabled() ? imageSlotForTarget(`section:${rawId}`) : undefined;
       inner = (
         <section id={sid} style={{ scrollMarginTop: 72, ...(band ? { background: 'rgba(255,255,255,0.015)' } : {}) }} className={`relative ${pad}`}>
           {sigType && (
             <div className="mx-auto mb-10 max-w-4xl px-6">
               <SignatureVisual visualType={sigType} labels={sigLabels} />
+            </div>
+          )}
+          {sectionImageSlot && (
+            <div className="mx-auto mb-10 max-w-5xl px-6">
+              <ImageSlotPlaceholder slot={sectionImageSlot} />
             </div>
           )}
           {Render({ s, plan, index: i, art, ctx, rt, lang: previewLang })}
@@ -3094,6 +3217,14 @@ export default function WebBuildPreviewDocument({
             {renderItems.map((s, i) => (
               <Fragment key={(s && s.id) || `home-${i}`}>
                 {renderSection(s, i)}
+                {/* Phase 10C: hero image placeholder band right under the hero — only
+                    for site types that benefit from real photography (never AI/SaaS,
+                    which keeps its CSS/SVG mockup). Honest placeholder, no real image. */}
+                {i === 0 && showHeroImage && heroImageSlot && (
+                  <div className="mx-auto -mt-2 mb-4 max-w-6xl px-6">
+                    <ImageSlotPlaceholder slot={heroImageSlot} />
+                  </div>
+                )}
                 {/* Phase 6C: compact landing demo teaser right after the hero (AI/SaaS
                     product-demo/chat only). Its CTA enters the full demo screen. */}
                 {i === 0 && showLandingTeaser && teaserScreen && (

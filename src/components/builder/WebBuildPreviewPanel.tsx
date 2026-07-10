@@ -7,7 +7,7 @@ import { openPreviewInNewTab, currentReturnTo } from '@/lib/webBuildPreviewStash
 import type { WebBuildSectionItem } from '@/lib/webBuildPayload';
 import type { WebBuildBrief } from '@/lib/webBuildApi';
 import type { InteractionContract } from '@/lib/webBuildInteractionContract';
-import type { VisualAssetPlan, VisualSignaturePlan, MotionComposerArtifact } from '@/lib/webBuildAgents';
+import type { VisualAssetPlan, VisualSignaturePlan, MotionComposerArtifact, ImagePipelineArtifact } from '@/lib/webBuildAgents';
 
 /**
  * The in-app preview drawer. Renders the REAL generated page (headline, copy,
@@ -43,7 +43,7 @@ class PreviewErrorBoundary extends Component<{ fallback: ReactNode; children: Re
 }
 
 export default function WebBuildPreviewPanel({
-  sectionItems, brief, slug, runId, interactionContract, visualAssetPlan, visualSignaturePlan, motionComposer,
+  sectionItems, brief, slug, runId, interactionContract, visualAssetPlan, visualSignaturePlan, motionComposer, imagePipeline,
 }: {
   sectionItems: WebBuildSectionItem[];
   brief: WebBuildBrief;
@@ -61,6 +61,9 @@ export default function WebBuildPreviewPanel({
   /** Phase 10B Motion Composer plan (data only) — subtle CSS motion layers the
    *  preview renders (reduced-motion safe; no video). Optional. */
   motionComposer?: MotionComposerArtifact;
+  /** Phase 10C Image Pipeline plan (data only) — honest image placeholders the
+   *  preview renders (manual-upload / provider-ready / illustrative). Optional. */
+  imagePipeline?: ImagePipelineArtifact;
 }) {
   const { t, lang } = useLanguageStore();
   const url = slug || 'preview.korvix.build';
@@ -136,7 +139,7 @@ export default function WebBuildPreviewPanel({
       <BrowserFrame url={url} accentColor={ACCENT}>
         <div className="max-h-[70vh] overflow-y-auto scrollbar-thin">
           <PreviewErrorBoundary key={previewKey} fallback={previewFallback}>
-            <WebBuildPreviewDocument sectionItems={items} brief={safeBrief} interactionContract={interactionContract} visualAssetPlan={visualAssetPlan} visualSignaturePlan={visualSignaturePlan} motionComposer={motionComposer} />
+            <WebBuildPreviewDocument sectionItems={items} brief={safeBrief} interactionContract={interactionContract} visualAssetPlan={visualAssetPlan} visualSignaturePlan={visualSignaturePlan} motionComposer={motionComposer} imagePipeline={imagePipeline} />
           </PreviewErrorBoundary>
         </div>
       </BrowserFrame>

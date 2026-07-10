@@ -1020,10 +1020,94 @@ export interface MotionComposerArtifact {
   summary: string;
 }
 
-export type AgentId = 'research' | 'ui_art_director' | 'strategy' | 'layout_architect' | 'component_engineer' | 'reviewer' | 'quality_director' | 'asset_director' | 'motion_composer' | 'fixer';
+/* ── Image Pipeline (Phase 10C) — turns Asset Director image slots into a ─────────
+ * structured, provider-READY plan + honest Preview placeholders. THIS PHASE DOES
+ * NOT call any image API, generate real images, upload to a backend, or add video.
+ * It consumes the Asset Director's image-prompt-later / image-provider-later /
+ * manual-upload-later slots and produces prompt-ready / provider-ready / manual-
+ * upload / CSS-placeholder image slots. Any generated imagery is illustrative-only;
+ * proof-heavy visuals are marked manual-upload-recommended. */
+export type ImageAssetSource =
+  | 'manual-upload'
+  | 'provider-ready'
+  | 'prompt-ready'
+  | 'css-placeholder'
+  | 'none';
+
+export type ImageAssetKind =
+  | 'hero-image'
+  | 'hero-background'
+  | 'project-photo'
+  | 'gallery-photo'
+  | 'before-after-pair'
+  | 'food-photo'
+  | 'restaurant-space'
+  | 'product-listing-image'
+  | 'catalog-cover'
+  | 'archive-scan'
+  | 'portfolio-work-image'
+  | 'team-or-studio-photo'
+  | 'abstract-brand-image'
+  | 'illustrative-product-scene';
+
+export interface ImageAssetPrompt {
+  positive: string;
+  negative: string;
+  style: string;
+  aspectRatio: '16:9' | '4:3' | '3:2' | '1:1' | '9:16' | '21:9';
+  consistencySeedHint?: string;
+  safetyNotes: string[];
+}
+
+export interface ImageAssetSlot {
+  id: string;
+  sourceAssetSlotId?: string;
+  kind: ImageAssetKind;
+  /** hero, a section id ('section:<id>'), a screen id, or 'global'. */
+  target: string;
+  source: ImageAssetSource;
+  title: string;
+  purpose: string;
+  prompt: ImageAssetPrompt;
+  placeholderLabel: string;
+  previewTreatment:
+    | 'large-hero-frame'
+    | 'gallery-grid'
+    | 'before-after-frame'
+    | 'catalog-card'
+    | 'archive-document-frame'
+    | 'ambient-background'
+    | 'small-inline-frame';
+  required: boolean;
+  priority: 'high' | 'medium' | 'low';
+  manualUploadRecommended: boolean;
+  providerReady: boolean;
+  honestyLabel: string;
+}
+
+export interface ImagePipelineArtifact {
+  status: 'planned' | 'partial' | 'failed-open';
+  imageStrategy: string;
+  styleConsistencyRules: string[];
+  slots: ImageAssetSlot[];
+  manualUploadSlots: string[];
+  providerReadySlots: string[];
+  promptReadySlots: string[];
+  cssPlaceholderSlots: string[];
+  forbiddenImageContent: string[];
+  generatedImagePolicy: string;
+  providerReadiness: {
+    readyForProvider: boolean;
+    recommendedProviderType: 'image-generation' | 'stock-search' | 'manual-upload' | 'none';
+    reason: string;
+  };
+  summary: string;
+}
+
+export type AgentId = 'research' | 'ui_art_director' | 'strategy' | 'layout_architect' | 'component_engineer' | 'reviewer' | 'quality_director' | 'asset_director' | 'motion_composer' | 'image_pipeline' | 'fixer';
 export type AgentArtifact =
   ResearchAgentArtifact | ArtDirectionArtifact | StrategyAgentArtifact | PageBlueprint
-  | ComponentEngineerArtifact | ReviewerAgentArtifact | QualityDirectorArtifact | AssetDirectorArtifact | MotionComposerArtifact | FixerAgentArtifact | Record<string, unknown>;
+  | ComponentEngineerArtifact | ReviewerAgentArtifact | QualityDirectorArtifact | AssetDirectorArtifact | MotionComposerArtifact | ImagePipelineArtifact | FixerAgentArtifact | Record<string, unknown>;
 
 export interface WebBuildAgent {
   id: AgentId;
@@ -1111,6 +1195,15 @@ export interface WebBuildEnforcement {
   sectionMotionLayerCount?: number;
   consumedMotionAssetSlotCount?: number;
   reducedMotionReady?: boolean;
+  /* ── Image Pipeline trace (Phase 10C, optional, backward compatible) ── */
+  didRunImagePipeline?: boolean;
+  imageAssetSlotCount?: number;
+  manualUploadImageSlotCount?: number;
+  providerReadyImageSlotCount?: number;
+  promptReadyImageSlotCount?: number;
+  cssPlaceholderImageSlotCount?: number;
+  imageProviderReady?: boolean;
+  generatedImagePolicy?: string;
   fallbackReason?: string;
 }
 
@@ -1135,6 +1228,11 @@ export interface WebBuildArtifacts {
    *  Director's motion-css-now slots. Consumed by the Preview only (framer-motion/
    *  CSS). Never video/image/provider/backend. Optional → old builds load. */
   motionComposer?: MotionComposerArtifact;
+  /** Image plan (Phase 10C) — turns the Asset Director's image-*-later / manual-
+   *  upload-later slots into a provider-READY plan + honest Preview placeholders.
+   *  NEVER calls an image API, generates real images, or uploads. Optional → old
+   *  builds load. */
+  imagePipeline?: ImagePipelineArtifact;
   /** Safe reviewer-driven repairs (Phase 6). Optional → old builds still load. */
   fixer?: FixerAgentArtifact;
   /** Intent-aware page architecture decision (Phase 9D-1). Optional → old builds load. */
@@ -5593,6 +5691,7 @@ const AGENT_NAME: Record<AgentId, [string, string]> = {
   quality_director: ['Quality Director', 'Kalite Direktörü'],
   asset_director: ['Asset Director', 'Varlık Direktörü'],
   motion_composer: ['Motion Composer', 'Hareket Tasarımcısı'],
+  image_pipeline: ['Image Pipeline', 'Görsel Pipeline'],
   fixer: ['Fixer Agent', 'Düzeltici Ajan'],
 };
 
@@ -7296,6 +7395,229 @@ export function runMotionComposer(input: MotionComposerInput): { agent: WebBuild
   }
 }
 
+/* ── Image Pipeline Agent (Phase 10C) — provider-ready image plan ────────────────
+ * Runs AFTER the Motion Composer and BEFORE the Fixer. Pure + deterministic + fails
+ * open. Consumes the Asset Director's image-prompt-later / image-provider-later /
+ * manual-upload-later slots and produces a structured, provider-READY plan the
+ * Preview renders as HONEST placeholders. It NEVER calls an image API, generates a
+ * real image, uploads to a backend, or adds video. Proof-heavy visuals are marked
+ * manual-upload-recommended; generated imagery is always illustrative-only. */
+export interface ImagePipelineInput {
+  brief: WebBuildBrief;
+  sectionItems: Array<{ id: string; name: string }>;
+  artDirection?: ArtDirectionArtifact;
+  experienceBlueprint?: ExperienceBlueprint;
+  assetDirector?: AssetDirectorArtifact;
+  motionComposer?: MotionComposerArtifact;
+  lang?: Lang;
+}
+
+/** The negative-prompt safety line every image prompt carries (Phase 10C). */
+function imageNegativePrompt(lang: Lang): string {
+  return L(lang,
+    'no logos, no brand names, no real company marks, no fake testimonials, no fake metrics/stats, no fake certificates/compliance badges, no real identifiable people, no copyrighted characters/styles, no UI screenshots implying real production data, no medical/legal/financial proof imagery',
+    'logo yok, marka adı yok, gerçek şirket işareti yok, sahte referans yok, sahte metrik/istatistik yok, sahte sertifika/uyumluluk rozeti yok, gerçek tanınabilir kişi yok, telifli karakter/stil yok, gerçek üretim verisi ima eden arayüz ekran görüntüsü yok, tıbbi/hukuki/finansal kanıt görseli yok');
+}
+
+/**
+ * Derive the Image Pipeline artifact. Pure + deterministic. Maps the Asset
+ * Director's image-*-later / manual-upload-later slots to structured image slots
+ * (manual-upload / provider-ready / prompt-ready / css-placeholder), each with an
+ * honest label + a safe prompt (illustrative-only). Never generates or uploads.
+ */
+export function deriveImagePipeline(input: ImagePipelineInput): ImagePipelineArtifact {
+  const lang = input.lang || 'en';
+  const siteType = input.experienceBlueprint?.siteExperienceType || 'unknown';
+  const paletteFamily = input.artDirection?.paletteFamily || input.artDirection?.colorSystem?.paletteName;
+  const negative = imageNegativePrompt(lang);
+  const isLocal = siteType === 'restaurant' || siteType === 'local-business';
+  const isSaaS = siteType === 'b2b-product-landing' || siteType === 'consumer-product-landing' || siteType === 'dashboard-preview';
+  const isCommerce = siteType === 'marketplace' || siteType === 'ecommerce-store';
+  const isArchive = siteType === 'content-publication';
+  const isPortfolioAgency = siteType === 'portfolio' || siteType === 'agency-service';
+
+  const illustrative = L(lang, 'Illustrative image slot — not a real photo.', 'Açıklayıcı görsel alanı — gerçek fotoğraf değil.');
+  const manualLabel = L(lang, 'Manual upload recommended — provide your own real photo.', 'Manuel yükleme önerilir — kendi gerçek fotoğrafınızı sağlayın.');
+  const providerLabel = L(lang, 'Provider-ready (illustrative) — a later phase can generate/search it.', 'Sağlayıcıya hazır (açıklayıcı) — sonraki bir aşama üretebilir/arayabilir.');
+
+  const styleBase = L(lang, `Premium, calm, editorial; consistent with the site palette${paletteFamily ? ` (${paletteFamily})` : ''}; no text overlays.`, `Premium, sakin, editoryal; site paletiyle tutarlı${paletteFamily ? ` (${paletteFamily})` : ''}; metin bindirmesi yok.`);
+
+  const slots: ImageAssetSlot[] = [];
+  let iid = 0;
+  const add = (
+    kind: ImageAssetKind, target: string, source: ImageAssetSource, title: string, purpose: string,
+    positive: string, treatment: ImageAssetSlot['previewTreatment'], aspect: ImageAssetPrompt['aspectRatio'],
+    opts: { placeholderLabel?: string; honestyLabel?: string; required?: boolean; priority?: ImageAssetSlot['priority']; manualUpload?: boolean; providerReady?: boolean; sourceSlotId?: string; extraSafety?: string[] } = {},
+  ) => {
+    const manualUpload = opts.manualUpload ?? (source === 'manual-upload');
+    const providerReady = opts.providerReady ?? (source === 'provider-ready');
+    slots.push({
+      id: `img-${iid += 1}`, sourceAssetSlotId: opts.sourceSlotId, kind, target, source, title, purpose,
+      prompt: { positive, negative, style: styleBase, aspectRatio: aspect, consistencySeedHint: paletteFamily || undefined, safetyNotes: [illustrative, ...(opts.extraSafety || [])] },
+      placeholderLabel: opts.placeholderLabel || (manualUpload ? manualLabel : source === 'css-placeholder' ? illustrative : providerLabel),
+      previewTreatment: treatment,
+      required: opts.required ?? false,
+      priority: opts.priority || 'medium',
+      manualUploadRecommended: manualUpload,
+      providerReady,
+      honestyLabel: opts.honestyLabel || (manualUpload ? manualLabel : source === 'css-placeholder' ? illustrative : providerLabel),
+    });
+  };
+  // Match a section by keyword → 'section:<id>' (skips hero/footer).
+  const sectionFor = (re: RegExp): string | undefined => {
+    const s = (input.sectionItems || []).find((x) => re.test(`${x.id} ${x.name}`) && !/hero|footer/i.test(`${x.id} ${x.name}`));
+    return s ? `section:${s.id}` : undefined;
+  };
+
+  // Map the Asset Director's image-worthy slots (provenance) so slots trace back.
+  const adImageSlots = (input.assetDirector?.slots || []).filter((s) =>
+    s.generationMode === 'image-prompt-later' || s.generationMode === 'image-provider-later' || s.generationMode === 'manual-upload-later');
+  const firstAdSlotFor = (kinds: string[]): string | undefined =>
+    adImageSlots.find((s) => kinds.some((k) => s.type.includes(k) || s.target.includes(k)))?.id;
+
+  // ── Per-site-type image slots (honest source per the concept). ──
+  if (isLocal && siteType === 'local-business') {
+    add('project-photo', 'hero', 'manual-upload', L(lang, 'Hero project photo', 'Hero proje fotoğrafı'), L(lang, 'A completed real project (garden/outdoor space).', 'Tamamlanmış gerçek bir proje (bahçe/dış mekan).'),
+      L(lang, 'A finished landscaping/outdoor project, natural daylight, wide establishing shot.', 'Tamamlanmış peyzaj/dış mekan projesi, doğal gün ışığı, geniş açı.'), 'large-hero-frame', '16:9',
+      { required: true, priority: 'high', sourceSlotId: firstAdSlotFor(['local-project-photo', 'hero']) });
+    const ba = sectionFor(/before\s*[\/&-]?\s*after|önce|sonra|project|proje|gallery|galeri|work/i);
+    if (ba) add('before-after-pair', ba, 'manual-upload', L(lang, 'Before / after pair', 'Önce / sonra çifti'), L(lang, 'A real before & after of one project.', 'Bir projenin gerçek önce & sonrası.'),
+      L(lang, 'Two matched frames of the same space before and after (user-provided).', 'Aynı mekanın önce ve sonrası eşleşen iki kare (kullanıcı sağlar).'), 'before-after-frame', '4:3',
+      { priority: 'high', extraSafety: [L(lang, 'No fabricated before/after — needs real user material.', 'Uydurma önce/sonra yok — gerçek kullanıcı materyali gerekir.')] });
+    const gal = sectionFor(/gallery|galeri|projects?|work/i);
+    if (gal) add('gallery-photo', gal, 'manual-upload', L(lang, 'Project gallery', 'Proje galerisi'), L(lang, 'The studio\'s real project photos.', 'Stüdyonun gerçek proje fotoğrafları.'),
+      L(lang, 'A grid of finished outdoor projects (user-provided).', 'Tamamlanmış dış mekan projelerinden bir grid (kullanıcı sağlar).'), 'gallery-grid', '1:1', { priority: 'medium' });
+    add('hero-background', 'global', 'provider-ready', L(lang, 'Outdoor mood background', 'Dış mekan atmosfer arka planı'), L(lang, 'An illustrative outdoor-design mood image.', 'Açıklayıcı bir dış mekan tasarım atmosfer görseli.'),
+      L(lang, 'Soft illustrative outdoor greenery/texture, abstract, no identifiable place.', 'Yumuşak açıklayıcı dış mekan yeşilliği/dokusu, soyut, tanınabilir yer yok.'), 'ambient-background', '21:9', { priority: 'low', providerReady: true });
+  } else if (siteType === 'restaurant') {
+    add('food-photo', 'hero', 'manual-upload', L(lang, 'Hero food photo', 'Hero yemek fotoğrafı'), L(lang, 'A signature dish (real).', 'Bir imza yemek (gerçek).'),
+      L(lang, 'A plated signature dish, natural light, shallow depth of field.', 'Tabakta imza yemek, doğal ışık, sığ alan derinliği.'), 'large-hero-frame', '3:2', { required: true, priority: 'high', sourceSlotId: firstAdSlotFor(['hero-visual', 'hero']) });
+    const space = sectionFor(/space|interior|about|gallery|dining|mekan|iç|hakkında|galeri/i);
+    add('restaurant-space', space || 'section:about', 'manual-upload', L(lang, 'Restaurant space', 'Restoran mekanı'), L(lang, 'The real interior/atmosphere.', 'Gerçek iç mekan/atmosfer.'),
+      L(lang, 'The restaurant interior/ambience (user-provided).', 'Restoranın iç mekanı/atmosferi (kullanıcı sağlar).'), 'gallery-grid', '4:3', { priority: 'medium', extraSafety: [L(lang, 'No fake awards/reviews/real-location claims.', 'Sahte ödül/yorum/gerçek-konum iddiası yok.')] });
+    const menu = sectionFor(/\bmenu\b|dishes?|menü|yemek/i);
+    if (menu) add('food-photo', menu, 'provider-ready', L(lang, 'Menu dish images', 'Menü yemek görselleri'), L(lang, 'Illustrative dish imagery.', 'Açıklayıcı yemek görselleri.'),
+      L(lang, 'Illustrative plated dishes, generic cuisine, no brand.', 'Açıklayıcı tabaklanmış yemekler, genel mutfak, marka yok.'), 'catalog-card', '1:1', { priority: 'low', providerReady: true });
+  } else if (isArchive) {
+    const arch = sectionFor(/archive|document|collection|provenance|record|arşiv|belge|koleksiyon/i);
+    add('archive-scan', arch || 'hero', 'manual-upload', L(lang, 'Archive document scan', 'Arşiv belge taraması'), L(lang, 'A real scanned document/plate (user/source provided).', 'Gerçek taranmış belge/levha (kullanıcı/kaynak sağlar).'),
+      L(lang, 'An illustrative document/manuscript texture — never implies real provenance.', 'Açıklayıcı belge/elyazması dokusu — gerçek köken asla ima etmez.'), 'archive-document-frame', '3:2',
+      { required: true, priority: 'high', extraSafety: [L(lang, 'No fake provenance/institution/source claim.', 'Sahte köken/kurum/kaynak iddiası yok.')] });
+    add('hero-background', 'global', 'css-placeholder', L(lang, 'Paper texture background', 'Kağıt doku arka planı'), L(lang, 'A composed CSS/SVG paper texture.', 'Kompoze CSS/SVG kağıt dokusu.'),
+      L(lang, 'A subtle paper/plate texture composed in CSS/SVG.', 'CSS/SVG ile oluşturulmuş ince kağıt/levha dokusu.'), 'ambient-background', '21:9', { priority: 'low' });
+  } else if (isCommerce) {
+    const cat = sectionFor(/catalog|listings?|product\s*grid|shop|browse|katalog|ürün/i);
+    add('product-listing-image', cat || 'hero', 'manual-upload', L(lang, 'Product listing images', 'Ürün ilan görselleri'), L(lang, 'Real product photos (seller-provided).', 'Gerçek ürün fotoğrafları (satıcı sağlar).'),
+      L(lang, 'Clean product-on-neutral photography — generic objects, no brand.', 'Nötr zeminde temiz ürün fotoğrafı — genel nesneler, marka yok.'), 'catalog-card', '1:1', { required: true, priority: 'high', extraSafety: [L(lang, 'No fake exact specs/prices/brand imagery.', 'Sahte kesin özellik/fiyat/marka görseli yok.')], sourceSlotId: firstAdSlotFor(['gallery-image', 'catalog']) });
+    add('catalog-cover', 'hero', 'provider-ready', L(lang, 'Catalog cover image', 'Katalog kapak görseli'), L(lang, 'An illustrative catalog hero.', 'Açıklayıcı bir katalog hero.'),
+      L(lang, 'An illustrative editorial product-collection scene, abstract, no brand.', 'Açıklayıcı editoryal ürün-koleksiyon sahnesi, soyut, marka yok.'), 'large-hero-frame', '16:9', { priority: 'medium', providerReady: true });
+  } else if (isPortfolioAgency) {
+    const work = sectionFor(/work|projects?|portfolio|case|çalışma|proje|portföy/i);
+    add('portfolio-work-image', work || 'hero', 'manual-upload', L(lang, 'Work / project images', 'Çalışma / proje görselleri'), L(lang, 'The creator\'s real work (user-provided).', 'Yaratıcının gerçek çalışması (kullanıcı sağlar).'),
+      L(lang, 'The creator\'s real project imagery (user-provided). No fake client work.', 'Yaratıcının gerçek proje görselleri (kullanıcı sağlar). Sahte müşteri işi yok.'), 'gallery-grid', '4:3', { required: true, priority: 'high', sourceSlotId: firstAdSlotFor(['gallery-image', 'work']) });
+    add('abstract-brand-image', 'hero', 'provider-ready', L(lang, 'Abstract brand image', 'Soyut marka görseli'), L(lang, 'An illustrative abstract brand visual.', 'Açıklayıcı soyut marka görseli.'),
+      L(lang, 'An abstract editorial brand shape/gradient scene, no text, no logo.', 'Soyut editoryal marka şekli/gradyan sahnesi, metin yok, logo yok.'), 'large-hero-frame', '3:2', { priority: 'medium', providerReady: true });
+  } else if (isSaaS) {
+    // AI/SaaS: never fake screenshots — prefer abstract/ambient/product-scene only.
+    add('abstract-brand-image', 'hero', 'provider-ready', L(lang, 'Abstract brand hero image', 'Soyut marka hero görseli'), L(lang, 'An illustrative abstract product ambience (not a real UI).', 'Açıklayıcı soyut ürün atmosferi (gerçek arayüz değil).'),
+      L(lang, 'Abstract premium product ambience — glowing mesh/depth, brand accent, NO real UI, no people.', 'Soyut premium ürün atmosferi — parlayan ağ/derinlik, marka vurgusu, gerçek arayüz YOK, insan yok.'), 'large-hero-frame', '16:9',
+      { priority: 'medium', providerReady: true, extraSafety: [L(lang, 'No fake product screenshot/dashboard/metrics — the real UI stays a CSS/SVG mockup.', 'Sahte ürün ekran görüntüsü/panel/metrik yok — gerçek arayüz CSS/SVG mockup olarak kalır.')], sourceSlotId: firstAdSlotFor(['hero-visual']) });
+    add('illustrative-product-scene', 'global', 'css-placeholder', L(lang, 'Ambient product background', 'Atmosferik ürün arka planı'), L(lang, 'A composed CSS/SVG ambient background.', 'Kompoze CSS/SVG atmosferik arka plan.'),
+      L(lang, 'A restrained ambient gradient/mesh background composed in CSS/SVG.', 'CSS/SVG ile oluşturulmuş ölçülü atmosferik gradyan/ağ arka planı.'), 'ambient-background', '21:9', { priority: 'low' });
+  } else {
+    add('abstract-brand-image', 'hero', 'css-placeholder', L(lang, 'Hero brand image', 'Hero marka görseli'), L(lang, 'A composed CSS/SVG hero visual.', 'Kompoze CSS/SVG hero görseli.'),
+      L(lang, 'A concept-specific abstract brand image composed in CSS/SVG, no stock photos.', 'CSS/SVG ile oluşturulmuş konsepte özgü soyut marka görseli, stok fotoğraf yok.'), 'large-hero-frame', '16:9', { priority: 'medium' });
+  }
+
+  const manualUploadSlots = slots.filter((s) => s.source === 'manual-upload').map((s) => s.id);
+  const providerReadySlots = slots.filter((s) => s.source === 'provider-ready').map((s) => s.id);
+  const promptReadySlots = slots.filter((s) => s.source === 'prompt-ready').map((s) => s.id);
+  const cssPlaceholderSlots = slots.filter((s) => s.source === 'css-placeholder').map((s) => s.id);
+
+  const readyForProvider = providerReadySlots.length > 0 || promptReadySlots.length > 0;
+  const recommendedProviderType: ImagePipelineArtifact['providerReadiness']['recommendedProviderType'] =
+    manualUploadSlots.length && manualUploadSlots.length >= providerReadySlots.length ? 'manual-upload'
+      : readyForProvider ? (isLocal || isCommerce ? 'stock-search' : 'image-generation')
+        : manualUploadSlots.length ? 'manual-upload' : 'none';
+
+  const imageStrategy = isLocal || isPortfolioAgency
+    ? L(lang, 'Real photos are the user\'s to provide (manual-upload); illustrative provider images only for mood/background.', 'Gerçek fotoğrafları kullanıcı sağlar (manuel-yükleme); açıklayıcı sağlayıcı görselleri yalnızca atmosfer/arka plan için.')
+    : isSaaS
+      ? L(lang, 'No fake screenshots: real UI stays a CSS/SVG mockup; only abstract/ambient illustrative image slots.', 'Sahte ekran görüntüsü yok: gerçek arayüz CSS/SVG mockup kalır; yalnızca soyut/atmosferik açıklayıcı görsel alanları.')
+      : isArchive
+        ? L(lang, 'Documents are manual-upload or CSS placeholder — never implied real provenance.', 'Belgeler manuel-yükleme veya CSS yer tutucu — gerçek köken asla ima edilmez.')
+        : L(lang, 'Real proof photos manual-upload; illustrative provider images clearly labelled.', 'Gerçek kanıt fotoğrafları manuel-yükleme; açıklayıcı sağlayıcı görselleri net etiketli.');
+
+  const forbiddenImageContent = uniq([
+    L(lang, 'Logos, brand names, real company marks.', 'Logolar, marka adları, gerçek şirket işaretleri.'),
+    L(lang, 'Fake testimonials, metrics, certificates or compliance badges.', 'Sahte referans, metrik, sertifika veya uyumluluk rozeti.'),
+    L(lang, 'Real identifiable people or copyrighted characters/styles.', 'Gerçek tanınabilir kişiler veya telifli karakter/stil.'),
+    L(lang, 'UI screenshots implying real production data.', 'Gerçek üretim verisi ima eden arayüz ekran görüntüleri.'),
+    L(lang, 'Medical/legal/financial proof imagery unless user-provided.', 'Kullanıcı sağlamadıkça tıbbi/hukuki/finansal kanıt görseli.'),
+    ...(isLocal ? [L(lang, 'Fabricated before/after or fake awards/reviews.', 'Uydurma önce/sonra veya sahte ödül/yorum.')] : []),
+  ]);
+
+  return {
+    status: slots.length ? 'planned' : 'partial',
+    imageStrategy,
+    styleConsistencyRules: uniq([
+      styleBase,
+      L(lang, 'One palette + light direction across all images.', 'Tüm görsellerde tek palet + ışık yönü.'),
+      L(lang, 'Consistent aspect ratios per role; no text baked into images.', 'Rol başına tutarlı en-boy oranı; görsele gömülü metin yok.'),
+      L(lang, 'Generated imagery is illustrative-only unless the user supplies real assets.', 'Kullanıcı gerçek varlık sağlamadıkça üretilen görsel yalnızca açıklayıcıdır.'),
+    ]),
+    slots,
+    manualUploadSlots,
+    providerReadySlots,
+    promptReadySlots,
+    cssPlaceholderSlots,
+    forbiddenImageContent,
+    generatedImagePolicy: L(lang,
+      'No image is generated or uploaded in this phase. Slots are provider-ready plans + honest placeholders; any future generated image is illustrative-only; real proof photos are manual-upload.',
+      'Bu aşamada görsel üretilmez veya yüklenmez. Alanlar sağlayıcıya hazır planlar + dürüst yer tutuculardır; gelecekte üretilen görsel yalnızca açıklayıcıdır; gerçek kanıt fotoğrafları manuel-yüklemedir.'),
+    providerReadiness: {
+      readyForProvider,
+      recommendedProviderType,
+      reason: L(lang,
+        `${manualUploadSlots.length} manual-upload · ${providerReadySlots.length} provider-ready · ${cssPlaceholderSlots.length} CSS placeholder. No provider is called in this phase; video is out of scope.`,
+        `${manualUploadSlots.length} manuel-yükleme · ${providerReadySlots.length} sağlayıcıya-hazır · ${cssPlaceholderSlots.length} CSS yer tutucu. Bu aşamada sağlayıcı çağrılmaz; video kapsam dışı.`),
+    },
+    summary: L(lang,
+      `Planned ${slots.length} image slot(s) for a ${siteType} site (${manualUploadSlots.length} upload · ${providerReadySlots.length} provider · ${cssPlaceholderSlots.length} CSS). No images generated/uploaded; honest, illustrative-only.`,
+      `${siteType} sitesi için ${slots.length} görsel alanı planlandı (${manualUploadSlots.length} yükleme · ${providerReadySlots.length} sağlayıcı · ${cssPlaceholderSlots.length} CSS). Görsel üretilmedi/yüklenmedi; dürüst, yalnızca açıklayıcı.`),
+  };
+}
+
+/** Fail-open Image Pipeline artifact — a valid, empty-but-honest plan. */
+function failedOpenImagePipeline(lang: Lang): ImagePipelineArtifact {
+  return {
+    status: 'failed-open',
+    imageStrategy: L(lang, 'Image planning failed open — the Preview keeps its existing CSS/SVG visuals.', 'Görsel planlaması açık başarısız oldu — Önizleme mevcut CSS/SVG görsellerini korur.'),
+    styleConsistencyRules: [], slots: [], manualUploadSlots: [], providerReadySlots: [], promptReadySlots: [], cssPlaceholderSlots: [],
+    forbiddenImageContent: [L(lang, 'No fake logos/metrics/testimonials/proof.', 'Sahte logo/metrik/referans/kanıt yok.')],
+    generatedImagePolicy: L(lang, 'No image generated or uploaded (failed open).', 'Görsel üretilmedi veya yüklenmedi (açık başarısız).'),
+    providerReadiness: { readyForProvider: false, recommendedProviderType: 'none', reason: L(lang, 'No image plan produced (failed open).', 'Görsel planı üretilmedi (açık başarısız).') },
+    summary: L(lang, 'Image Pipeline failed open; no image slots; Preview unaffected.', 'Görsel Pipeline açık başarısız oldu; görsel alanı yok; Önizleme etkilenmedi.'),
+  };
+}
+
+/**
+ * Run the Image Pipeline. Fully guarded: on any error it fails OPEN — a valid,
+ * honest, empty plan — so it can never block Preview / All Files.
+ */
+export function runImagePipeline(input: ImagePipelineInput): { agent: WebBuildAgent; artifact: ImagePipelineArtifact } {
+  const lang = input.lang || 'en';
+  const name = L(lang, 'Image Pipeline', 'Görsel Pipeline');
+  const activity = L(lang, 'Planning image slots (manual-upload / provider-ready; no images generated)', 'Görsel alanları planlanıyor (manuel-yükleme / sağlayıcıya-hazır; görsel üretilmedi)');
+  try {
+    const artifact = deriveImagePipeline(input);
+    return { agent: { id: 'image_pipeline', name, status: 'done', summary: artifact.summary, currentActivity: activity, artifact }, artifact };
+  } catch {
+    const artifact = failedOpenImagePipeline(lang);
+    return { agent: { id: 'image_pipeline', name, status: 'failed', summary: artifact.summary, currentActivity: activity, artifact }, artifact };
+  }
+}
+
 /* ── Fixer Agent (Phase 6) — safe reviewer-driven repairs ───────────────────
  * The first Fixer runs AFTER the Reviewer. It consumes the Reviewer artifact and
  * applies a NARROW set of SAFE, deterministic repairs to the FINAL build data
@@ -8397,6 +8719,19 @@ function didMessage(agent: WebBuildAgent, lang: Lang): { message: string; type: 
           message: n > 0
             ? L(lang, `composed ${n} subtle motion layer${n === 1 ? '' : 's'} (reduced-motion safe, no video)`, `${n} ince hareket katmanı oluşturdu (reduced-motion güvenli, video yok)`)
             : L(lang, 'composed subtle motion', 'ince hareket oluşturdu'),
+          type: 'completed',
+        };
+      }
+      case 'image_pipeline': {
+        const ip = agent.artifact as ImagePipelineArtifact;
+        const n = Array.isArray(ip.slots) ? ip.slots.length : 0;
+        if (ip.status === 'failed-open') {
+          return { message: L(lang, 'failed open — no image slots planned', 'güvenli şekilde durdu — görsel alanı planlanmadı'), type: 'fallback' };
+        }
+        return {
+          message: n > 0
+            ? L(lang, `planned ${n} image slot${n === 1 ? '' : 's'} (no images generated/uploaded)`, `${n} görsel alanı planladı (görsel üretilmedi/yüklenmedi)`)
+            : L(lang, 'planned image slots', 'görsel alanları planladı'),
           type: 'completed',
         };
       }

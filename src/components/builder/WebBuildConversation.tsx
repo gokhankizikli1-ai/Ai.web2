@@ -334,6 +334,18 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       if (pats.length) ownerRows.push(['motionPatterns', pats.join(', ')]);
       ownerRows.push(['reducedMotionReady', String(!!mco.reducedMotionPolicy)]);
     }
+    // Phase 10C — Image Pipeline (provider-ready plan + honest placeholders; no
+    // real image API, no upload, no video). All counts are plan-only.
+    const imp = step.artifacts?.imagePipeline;
+    if (imp) {
+      ownerRows.push(['imagePipeline', `${imp.status} · ${(imp.slots || []).length} slot(s)`]);
+      if (imp.imageStrategy) ownerRows.push(['imageStrategy', imp.imageStrategy]);
+      ownerRows.push(['imageSlots', `manual ${(imp.manualUploadSlots || []).length} · provider ${(imp.providerReadySlots || []).length} · prompt ${(imp.promptReadySlots || []).length} · css ${(imp.cssPlaceholderSlots || []).length}`]);
+      const ipr = imp.providerReadiness;
+      if (ipr) ownerRows.push(['imageProvider', `${ipr.readyForProvider ? 'ready' : 'not-ready'} · ${ipr.recommendedProviderType}`]);
+      if (imp.generatedImagePolicy) ownerRows.push(['imagePolicy', imp.generatedImagePolicy]);
+      if (imp.forbiddenImageContent?.length) ownerRows.push(['imageHonesty', imp.forbiddenImageContent.slice(0, 2).join(' · ')]);
+    }
     const fixer = step.artifacts?.fixer;
     if (fixer) {
       const qc = (fixer.qualityAppliedChanges || []).length;
@@ -822,7 +834,7 @@ export default function WebBuildConversation({
                 </button>
               </div>
               {panel === 'preview'
-                ? <WebBuildPreviewPanel sectionItems={sectionItems} brief={brief} slug={slug} runId={runId} interactionContract={steps[lastIdx]?.artifacts?.strategy?.interactionContract} visualAssetPlan={steps[lastIdx]?.artifacts?.artDirection?.visualAssetPlan} visualSignaturePlan={steps[lastIdx]?.artifacts?.visualSignaturePlan} motionComposer={steps[lastIdx]?.artifacts?.motionComposer} />
+                ? <WebBuildPreviewPanel sectionItems={sectionItems} brief={brief} slug={slug} runId={runId} interactionContract={steps[lastIdx]?.artifacts?.strategy?.interactionContract} visualAssetPlan={steps[lastIdx]?.artifacts?.artDirection?.visualAssetPlan} visualSignaturePlan={steps[lastIdx]?.artifacts?.visualSignaturePlan} motionComposer={steps[lastIdx]?.artifacts?.motionComposer} imagePipeline={steps[lastIdx]?.artifacts?.imagePipeline} />
                 : <WebBuildFileView files={files} initialPath={filePath} />}
             </motion.div>
           </motion.div>

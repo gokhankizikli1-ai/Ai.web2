@@ -10,7 +10,7 @@ import { resolveBuildFiles, parseSectionCopy, synthesizeFromCopies, type SynthFi
 import { inferWebsiteBrief, fallbackSectionItems, checkQuality } from '@/lib/webBuildBrief';
 import { deriveLayoutPlan, type WebBuildLayoutPlan } from '@/lib/webBuildLayoutPlan';
 import {
-  runUpstreamAgents, runLayoutArchitect, runComponentEngineer, runReviewer, runQualityDirector, runAssetDirector, runMotionComposer, runFixer, WEB_BUILD_AGENTS_ENABLED,
+  runUpstreamAgents, runLayoutArchitect, runComponentEngineer, runReviewer, runQualityDirector, runAssetDirector, runMotionComposer, runImagePipeline, runFixer, WEB_BUILD_AGENTS_ENABLED,
   derivePageArchitectureDecision, deriveVisualSignaturePlan, deriveExperienceBlueprint,
   type WebBuildAgent, type WebBuildArtifacts, type WebBuildEnforcement,
 } from '@/lib/webBuildAgents';
@@ -773,6 +773,23 @@ function assembleWebBuildPayload(
       agents = [...agents, mc.agent];
       artifacts = { ...(artifacts || {}), motionComposer: mc.artifact };
 
+      // IMAGE PIPELINE (Phase 10C) — runs AFTER the Motion Composer and BEFORE the
+      // Fixer. It turns the Asset Director's image-prompt-later / image-provider-
+      // later / manual-upload-later slots into a structured, provider-READY plan the
+      // Preview renders as HONEST placeholders. It NEVER calls an image API,
+      // generates a real image, uploads to a backend, or adds video, and fails OPEN.
+      const ip = runImagePipeline({
+        brief: artBrief,
+        sectionItems: sectionItems.map((s) => ({ id: s.id, name: s.name })),
+        artDirection: artifacts?.artDirection,
+        experienceBlueprint: artifacts?.experienceBlueprint,
+        assetDirector: ad.artifact,
+        motionComposer: mc.artifact,
+        lang: effLang,
+      });
+      agents = [...agents, ip.agent];
+      artifacts = { ...(artifacts || {}), imagePipeline: ip.artifact };
+
       // FIXER AGENT (Phase 6 + 7A) — runs AFTER the Reviewer + Quality Director. It
       // consumes the reviewer artifact AND the quality director's issues / rewrite
       // instructions, and applies a NARROW set of SAFE, deterministic repairs to the
@@ -904,6 +921,15 @@ function assembleWebBuildPayload(
         sectionMotionLayerCount: (artifacts?.motionComposer?.sectionMotion || []).length,
         consumedMotionAssetSlotCount: (artifacts?.motionComposer?.consumedAssetSlots || []).length,
         reducedMotionReady: !!artifacts?.motionComposer && !!artifacts.motionComposer.reducedMotionPolicy,
+        // Image Pipeline (Phase 10C) — real artifact data only (no images generated/uploaded).
+        didRunImagePipeline: !!artifacts?.imagePipeline,
+        imageAssetSlotCount: (artifacts?.imagePipeline?.slots || []).length,
+        manualUploadImageSlotCount: (artifacts?.imagePipeline?.manualUploadSlots || []).length,
+        providerReadyImageSlotCount: (artifacts?.imagePipeline?.providerReadySlots || []).length,
+        promptReadyImageSlotCount: (artifacts?.imagePipeline?.promptReadySlots || []).length,
+        cssPlaceholderImageSlotCount: (artifacts?.imagePipeline?.cssPlaceholderSlots || []).length,
+        imageProviderReady: !!artifacts?.imagePipeline?.providerReadiness?.readyForProvider,
+        generatedImagePolicy: artifacts?.imagePipeline?.generatedImagePolicy,
         // Visual Exploration + anti-template gate (Phase 7B) — real artifact data only.
         visualCandidateCount: (artifacts?.artDirection?.visualExploration?.candidates || []).length,
         selectedVisualCandidate: artifacts?.artDirection?.visualExploration?.selectedCandidateId,
