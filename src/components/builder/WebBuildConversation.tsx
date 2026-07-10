@@ -341,6 +341,16 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       const ex = dsRepairs.slice(0, 2).map((c) => `${c.before} → ${c.after}`).join('; ');
       ownerRows.push(['demoSurfaceCopyRepairs', `${dsRepairs.length}${ex ? ` · ${ex}` : ''}`]);
     }
+    // Phase 9D-2B — non-SaaS proof / local-business copy repairs + hero-quote strip.
+    const nsRepairs = (fixer?.qualityAppliedChanges || []).filter((c) => c.category === 'non-saas-copy');
+    if (nsRepairs.length) {
+      const ex = nsRepairs.slice(0, 2).map((c) => `${c.before} → ${c.after}`).join('; ');
+      ownerRows.push(['nonSaaSProofRepairs', `${nsRepairs.length}${ex ? ` · ${ex}` : ''}`]);
+      const ctaFixed = nsRepairs.some((c) => /continue|learn more|get started|sign up/i.test(c.before || ''));
+      ownerRows.push(['localBusinessCtaNormalized', String(ctaFixed)]);
+    }
+    const hqRepairs = (fixer?.qualityAppliedChanges || []).filter((c) => c.category === 'hero-quote');
+    if (hqRepairs.length) ownerRows.push(['heroQuoteStripped', `true · ${hqRepairs.length}`]);
 
     // Phase 9D-2 — high-level Experience Blueprint (whole-site decision).
     const eb = step.artifacts?.experienceBlueprint;

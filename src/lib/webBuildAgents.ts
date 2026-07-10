@@ -1656,6 +1656,7 @@ export function deriveExperienceBlueprint(
   const asksBookDemo = /book\s*a?\s*demo|contact\s*sales|talk\s*to\s*sales|schedule\s*a?\s*(call|demo)|demo\s*ayarla|satış/.test(hay);
   const asksWaitlist = /waitlist|early\s*access|coming\s*soon|beta\s*access|join\s*the\s*list|bekleme\s*listesi/.test(hay);
   const asksDownload = /download|app\s*store|play\s*store|get\s*the\s*app|install/.test(hay);
+  const asksIntegrationsHint = /integration|\bapi\b|connect|webhook|zapier|entegrasyon/.test(hay);
   const providedProof = asksTestimonials || asksCaseStudies;
 
   // Concept signals (concept authority separates PRODUCT from VERTICAL).
@@ -1785,13 +1786,22 @@ export function deriveExperienceBlueprint(
       forbid('Integrations', notThisType(L(lang, 'SaaS integrations', 'SaaS entegrasyonları')));
       forbid('Security & Compliance', notThisType(L(lang, 'SaaS security', 'SaaS güvenliği')));
       forbid('Chat / Dashboard Demo', notThisType(L(lang, 'A product demo', 'Bir ürün demosu')));
+      forbid('Dashboard Preview', notThisType(L(lang, 'A SaaS dashboard', 'Bir SaaS paneli')));
+      forbid('Fake metrics / certifications', L(lang, 'No verified metrics or SOC2/ISO to claim.', 'İddia edilecek doğrulanmış metrik veya SOC2/ISO yok.'));
+      if (!providedProof) { forbid('Testimonials', noSourceProof); forbid('Case Studies', noSourceProof); }
       break;
     case 'local-business':
-      requiredPageGroups = ['Hero', 'Services', 'Location', 'Hours', 'Contact', 'Gallery'];
+      // Covers landscaping / garden / outdoor / local service (Task 6).
+      requiredPageGroups = ['Hero', 'Services', 'Projects / Before & After', 'Materials / Process', 'Location / Service Area', 'Get a Quote / Contact', 'Gallery'];
       optionalPageGroups = ['About', 'Reviews (only if provided)'];
       forbid('Pricing Plans', notThisType(L(lang, 'SaaS pricing', 'SaaS fiyatlandırması')));
-      forbid('Integrations', notThisType(L(lang, 'SaaS integrations', 'SaaS entegrasyonları')));
-      forbid('Chat / Dashboard Demo', notThisType(L(lang, 'A product demo', 'Bir ürün demosu')));
+      forbid('Product Demo', notThisType(L(lang, 'A product demo', 'Bir ürün demosu')));
+      forbid('Dashboard Preview', notThisType(L(lang, 'A SaaS dashboard', 'Bir SaaS paneli')));
+      forbid('Security Compliance', notThisType(L(lang, 'SaaS security/compliance', 'SaaS güvenlik/uyumluluk')));
+      if (!asksIntegrationsHint) forbid('Integrations', notThisType(L(lang, 'SaaS integrations', 'SaaS entegrasyonları')));
+      forbid('Fake metrics', L(lang, 'No verified metrics to claim.', 'İddia edilecek doğrulanmış metrik yok.'));
+      forbid('Fake certifications', L(lang, 'No real SOC2/ISO/certifications to claim.', 'İddia edilecek gerçek SOC2/ISO/sertifika yok.'));
+      if (!providedProof) { forbid('Testimonials', noSourceProof); forbid('Case Studies', noSourceProof); }
       break;
     case 'portfolio':
       requiredPageGroups = ['Hero', 'Work / Projects', 'About', 'Skills / Process', 'Contact'];
@@ -1822,7 +1832,10 @@ export function deriveExperienceBlueprint(
     case 'agency-service':
       requiredPageGroups = ['Hero', 'Services', 'Work / Portfolio', 'Process', 'Contact'];
       optionalPageGroups = ['About', 'Pricing'];
-      if (!providedProof) { forbid('Client logos', noSourceProof); forbid('Testimonials', noSourceProof); }
+      forbid('Product Demo', notThisType(L(lang, 'A product demo', 'Bir ürün demosu')));
+      forbid('Fake metrics', L(lang, 'No verified metrics to claim.', 'İddia edilecek doğrulanmış metrik yok.'));
+      forbid('Fake awards / certifications', L(lang, 'No real awards/certifications to claim.', 'İddia edilecek gerçek ödül/sertifika yok.'));
+      if (!providedProof) { forbid('Fake client logos', noSourceProof); forbid('Testimonials', noSourceProof); forbid('Case Studies', noSourceProof); }
       break;
     case 'event-landing':
       requiredPageGroups = ['Hero', 'Schedule / Agenda', 'Speakers (only if provided)', 'Location', 'Register'];
@@ -6344,6 +6357,74 @@ export function sanitizeDemoSurfaceCopy(text: string | undefined, opts: { aiComm
   return v;
 }
 
+/* ── Non-SaaS proof / local-business copy leaks (Phase 9D-2B) ─────────────────
+ * SaaS/product-proof language ("Product proof (demo/screens), metrics and
+ * security", "Certifications, specs and reference clients", SOC2/ISO, "trusted by
+ * thousands", dashboard preview, SaaS pricing/integrations/product-demo) that
+ * leaks into a NON-SaaS site type (landscaping/restaurant/portfolio/agency/…).
+ * Pure regexes over the DISPLAY copy — no fabrication, no side effects. */
+export const NON_SAAS_LEAK_RE: Array<{ re: RegExp; kind: string }> = [
+  { re: /product\s*proof\s*\(\s*demo\s*\/\s*screens?\s*\)\s*,?\s*metrics?\s+and\s+security/i, kind: 'product-proof' },
+  { re: /\bproduct\s*proof\b/i, kind: 'product-proof' },
+  { re: /certifications?\s*,?\s*specs?\s+and\s+reference\s+clients?/i, kind: 'certifications' },
+  { re: /\breference\s+clients?\b/i, kind: 'reference-clients' },
+  { re: /\bsoc\s?-?\s?2\b|\biso\s?\d{3,}\b|\bcompliance\b|\bcertified\b|\baccreditat/i, kind: 'compliance' },
+  { re: /\btrusted\s+by\s+(thousands|millions|\d)/i, kind: 'fake-metrics' },
+  { re: /\bmetrics?\s+and\s+security\b/i, kind: 'metrics-security' },
+  { re: /\bdashboard\s+preview\b/i, kind: 'dashboard-preview' },
+  { re: /\bproduct\s+demo\b|demo\s*\/\s*screens?/i, kind: 'product-demo' },
+  { re: /\bcase\s*stud(y|ies)\b/i, kind: 'case-studies' },
+  { re: /\btestimonials?\b/i, kind: 'testimonials' },
+];
+
+export interface NonSaaSLeak { sectionId: string; field: 'name' | 'headline' | 'sub' | 'cta' | 'bullet'; text: string; kind: string }
+
+/**
+ * Detect SaaS/product-proof copy that leaked into a non-SaaS site. Scans the
+ * DISPLAY fields only. `providedProof` (user/source actually supplied testimonials
+ * or case studies) suppresses the proof flags so real proof is never stripped.
+ */
+export function detectNonSaaSProofLeaks(
+  sectionItems: Array<{ id: string; name?: string; headline?: string; sub?: string; cta?: string; bullets?: string[] }>,
+  opts: { providedProof?: boolean } = {},
+): NonSaaSLeak[] {
+  const leaks: NonSaaSLeak[] = [];
+  const softProof = new Set(['testimonials', 'case-studies', 'reference-clients']);
+  const scan = (id: string, field: NonSaaSLeak['field'], text?: string) => {
+    const v = (text || '').trim();
+    if (!v) return;
+    for (const { re, kind } of NON_SAAS_LEAK_RE) {
+      if (opts.providedProof && softProof.has(kind)) continue; // real proof — keep
+      if (re.test(v)) { leaks.push({ sectionId: id, field, text: v, kind }); break; }
+    }
+  };
+  for (const s of sectionItems || []) {
+    scan(s.id, 'name', s.name);
+    scan(s.id, 'headline', s.headline);
+    scan(s.id, 'sub', s.sub);
+    scan(s.id, 'cta', s.cta);
+    (s.bullets || []).forEach((b) => scan(s.id, 'bullet', b));
+  }
+  return leaks;
+}
+
+/** Strip wrapping quotation marks from a hero-style title (Phase 9D-2B). Only when
+ *  the WHOLE value is quoted; never touches quotes inside a sentence. Returns the
+ *  input unchanged when it isn't fully wrapped. */
+export function stripWrappingQuotes(text: string | undefined): string {
+  const v = (text || '');
+  const t = v.trim();
+  // Matches "...", “...”, '...', «...», „...“ wrapping the entire string with no
+  // interior closing quote of the same kind.
+  const m = t.match(/^(["'“”«»„])([\s\S]+)(["'“”«»„])$/);
+  if (!m) return v;
+  const inner = m[2].trim();
+  // Guard: don't unwrap if the inner text itself contains a matching quote pair
+  // (that would be a real interior quotation, not a wrapper).
+  if (/["“”«»„]/.test(inner)) return v;
+  return inner || v;
+}
+
 /**
  * Derive the Quality Director artifact from the real, available artifacts only.
  * Pure and deterministic; never fabricates facts, never blocks the build.
@@ -6652,6 +6733,9 @@ export interface FixerInput {
   /** The strategic decision (Phase 8A) — names forbidden generic labels + the
    *  concept-specific labels the Fixer may safely swap them for. */
   ledger?: StrategicThinkingLedger;
+  /** Experience Blueprint (Phase 9D-2) — its site type drives the non-SaaS proof/
+   *  local-business copy guard (Phase 9D-2B). Optional → old builds behave as before. */
+  experienceBlueprint?: ExperienceBlueprint;
   lang?: Lang;
 }
 
@@ -6667,7 +6751,7 @@ export interface FixerResult {
 }
 
 /** The safe repair categories this v1 Fixer is allowed to perform. */
-const FIXER_SAFE_SCOPE = ['fake-data', 'placeholder-cleanup', 'cta-anchor', 'concept-drift', 'visual-asset-plan', 'copy-label', 'cta-consistency', 'flow-label', 'concept-label', 'public-copy', 'content-depth', 'demo-copy', 'visual-direction', 'palette-family', 'accent-strategy', 'anti-template-copy'];
+const FIXER_SAFE_SCOPE = ['fake-data', 'placeholder-cleanup', 'cta-anchor', 'concept-drift', 'visual-asset-plan', 'copy-label', 'cta-consistency', 'flow-label', 'concept-label', 'public-copy', 'content-depth', 'demo-copy', 'non-saas-copy', 'hero-quote', 'visual-direction', 'palette-family', 'accent-strategy', 'anti-template-copy'];
 
 /** Intent → clean CTA label (Phase 7A) — mirrors the Preview's normalizeCtaLabel. */
 function ctaFromIntent(intent: string | undefined, lang: Lang): string | undefined {
@@ -7150,6 +7234,121 @@ export function deriveFixer(input: FixerInput): { artifact: FixerAgentArtifact; 
       if (nb.some((b, i) => b !== s.bullets![i])) {
         addQuality('public-copy', s.id, s.bullets.join(' · ').slice(0, 48), nb.join(' · ').slice(0, 48), pcReason);
         s.bullets = nb;
+      }
+    }
+  }
+
+  // 5c-2 — NON-SAAS PROOF & LOCAL-BUSINESS COPY GUARD (Phase 9D-2B). For a NON-SaaS
+  //        site type (landscaping/local-business, restaurant, portfolio, agency,
+  //        event, publication, store/marketplace) SaaS/product-proof language must
+  //        not leak into public copy. DISPLAY-ONLY (name/headline/sub/cta/bullets);
+  //        ids/routes/files untouched. Honest: unsupported proof is neutralized to
+  //        project/process/service copy, never fabricated. Only replaces a field
+  //        that IS (nearly) the leak — never rewrites a legitimate sentence.
+  const bpType = input.experienceBlueprint?.siteExperienceType;
+  const NON_SAAS_TYPES = new Set(['local-business', 'restaurant', 'portfolio', 'agency-service', 'event-landing', 'content-publication', 'ecommerce-store', 'marketplace']);
+  if (bpType && NON_SAAS_TYPES.has(bpType)) {
+    const isRestaurant = bpType === 'restaurant';
+    const isPortfolio = bpType === 'portfolio';
+    const isAgency = bpType === 'agency-service';
+    const providedProof = /testimonial|case\s*stud|customer\s*review|reference\s*(client|customer)|client\s*logo/.test(promptLc);
+    const asksIntegrations = /integration|\bapi\b|connect|webhook|zapier|entegrasyon/.test(promptLc);
+    const nsReason = L(lang, 'Neutralized SaaS/product-proof language for a non-SaaS site — honest project/service copy (display only, no fabricated proof).',
+      'SaaS/ürün-kanıt dilini SaaS olmayan bir site için nötrleştirdi — dürüst proje/hizmet metni (yalnızca görünüm, uydurma kanıt yok).');
+
+    // Local/service CTAs — blueprint CTAs win; else per-type defaults.
+    const primaryLocalCta = input.experienceBlueprint?.primaryCTA
+      || (isRestaurant ? L(lang, 'Reserve a Table', 'Masa Ayırt') : isPortfolio ? L(lang, 'View Work', 'Çalışmaları Gör') : isAgency ? L(lang, 'Start a Project', 'Projeye Başla') : L(lang, 'Get a Quote', 'Teklif Al'));
+    const secondaryLocalCta = input.experienceBlueprint?.secondaryCTA
+      || (isRestaurant ? L(lang, 'View Menu', 'Menüyü Gör') : isPortfolio ? L(lang, 'Contact', 'İletişim') : isAgency ? L(lang, 'See Work', 'Çalışmaları Gör') : L(lang, 'View Projects', 'Projeleri Gör'));
+
+    // Whole-value PROOF-leak phrase → honest replacement (most-specific first).
+    const leakRepairs: Array<[RegExp, string]> = [
+      [/product\s*proof\s*\(\s*demo\s*\/\s*screens?\s*\)\s*,?\s*metrics?\s+and\s+security/i, L(lang, 'Project gallery, materials and service details', 'Proje galerisi, malzemeler ve hizmet detayları')],
+      [/certifications?\s*,?\s*specs?\s+and\s+reference\s+clients?/i, providedProof ? L(lang, 'Credentials, process and project details', 'Belgeler, süreç ve proje detayları') : L(lang, 'Credentials, process and local project details', 'Belgeler, süreç ve yerel proje detayları')],
+      [/\bproduct\s*proof\b/i, L(lang, 'Our work', 'Çalışmalarımız')],
+      [/\bmetrics?\s+and\s+security\b/i, L(lang, 'Materials and service details', 'Malzemeler ve hizmet detayları')],
+      [/\bdashboard\s+preview\b/i, L(lang, 'Project preview', 'Proje önizlemesi')],
+      [/\btrusted\s+by\s+(thousands|millions|\d[\d,.]*)\+?/i, L(lang, 'Local projects and referrals', 'Yerel projeler ve tavsiyeler')],
+    ];
+    // Whole-label proof map (case studies / testimonials / reference clients /
+    // product demo) — matched on the normalized value.
+    const proofLabelMap: Record<string, string> = {
+      'case studies': L(lang, 'Projects', 'Projeler'),
+      'case study': L(lang, 'Projects', 'Projeler'),
+      'testimonials': providedProof ? L(lang, 'Client Notes', 'Müşteri Notları') : L(lang, 'Project Notes', 'Proje Notları'),
+      'reference clients': L(lang, 'Recent Projects', 'Son Projeler'),
+      'product demo': isPortfolio ? L(lang, 'Project Preview', 'Proje Önizlemesi') : L(lang, 'Before / After', 'Önce / Sonra'),
+      'dashboard preview': L(lang, 'Project preview', 'Proje önizlemesi'),
+    };
+    // Replace ONLY when the field IS (nearly) the whole leak, so legitimate
+    // sentences are never rewritten. Whole-label map first, then whole-value regex.
+    const repairWholeLeak = (v: string): string | undefined => {
+      const key = normLabel(v);
+      if (proofLabelMap[key]) return proofLabelMap[key];
+      for (const [re, rep] of leakRepairs) {
+        const m = v.match(re);
+        if (m && m[0].trim().length >= v.trim().length - 3) return rep;
+      }
+      return undefined;
+    };
+    // Non-proof SaaS labels → local/service labels (name / bullet only).
+    const serviceLabelMap: Record<string, string> = {
+      'features': isRestaurant ? L(lang, 'Menu', 'Menü') : L(lang, 'Services', 'Hizmetler'),
+      'how it works': isRestaurant || isPortfolio || isAgency ? L(lang, 'How it works', 'Nasıl çalışır') : L(lang, 'How the project works', 'Proje nasıl ilerler'),
+      'integrations': asksIntegrations ? '' : L(lang, 'Materials & Planning', 'Malzemeler ve Planlama'),
+      'security': L(lang, 'What to Expect', 'Neler Beklemeli'),
+      'security & trust': L(lang, 'What to Expect', 'Neler Beklemeli'),
+    };
+    const ctaMapNS: Record<string, string> = {
+      'continue': primaryLocalCta,
+      'get started': primaryLocalCta,
+      'start free trial': primaryLocalCta,
+      'sign up': primaryLocalCta,
+      'try it free': primaryLocalCta,
+      'book a demo': primaryLocalCta,
+      'learn more': secondaryLocalCta,
+      'read more': secondaryLocalCta,
+    };
+    const byId = new Map(sectionItems.map((s) => [s.id, s] as const));
+
+    // (a) Repair DETECTED proof leaks in their own field (detector is the source of
+    //     truth for what counts as leaked proof; only whole-value leaks are repaired).
+    for (const leak of detectNonSaaSProofLeaks(sectionItems, { providedProof })) {
+      const s = byId.get(leak.sectionId);
+      if (!s) continue;
+      const rep = repairWholeLeak(leak.text);
+      if (!rep) continue;
+      if (leak.field === 'name' && s.name === leak.text && !promptLc.includes(normLabel(s.name))) { addQuality('non-saas-copy', s.id, s.name, rep, nsReason); s.name = rep; }
+      else if (leak.field === 'headline' && s.headline === leak.text) { addQuality('non-saas-copy', s.id, s.headline, rep, nsReason); s.headline = rep; }
+      else if (leak.field === 'sub' && s.sub === leak.text) { addQuality('non-saas-copy', s.id, s.sub, rep, nsReason); s.sub = rep; }
+      else if (leak.field === 'cta' && s.cta === leak.text) { addQuality('non-saas-copy', s.id, s.cta, rep, nsReason); s.cta = rep; }
+      else if (leak.field === 'bullet' && s.bullets) {
+        const i = s.bullets.indexOf(leak.text);
+        if (i >= 0) { const before = s.bullets.join(' · ').slice(0, 48); s.bullets[i] = rep; addQuality('non-saas-copy', s.id, before, s.bullets.join(' · ').slice(0, 48), nsReason); }
+      }
+    }
+
+    // (b) Strip hero quotes (Task 3) + normalize SaaS labels/CTAs to local/service.
+    for (const s of sectionItems) {
+      if (s.headline) {
+        const unq = stripWrappingQuotes(s.headline);
+        if (unq !== s.headline) { addQuality('hero-quote', s.id, s.headline, unq, L(lang, 'Stripped wrapping quotation marks from the hero headline (display only).', 'Hero başlığından saran tırnak işaretlerini kaldırdı (yalnızca görünüm).')); s.headline = unq; }
+      }
+      if (s.name && !promptLc.includes(normLabel(s.name))) {
+        const r = serviceLabelMap[normLabel(s.name)];
+        if (r && r !== s.name) { addQuality('non-saas-copy', s.id, s.name, r, nsReason); s.name = r; }
+      }
+      if (s.cta && !promptLc.includes(normLabel(s.cta))) {
+        const cr = ctaMapNS[normLabel(s.cta)];
+        if (cr && cr !== s.cta) { addQuality('non-saas-copy', s.id, s.cta, cr, nsReason); s.cta = cr; }
+      }
+      if (s.bullets?.length) {
+        const nb = s.bullets.map((b) => (promptLc.includes(normLabel(b)) ? b : (serviceLabelMap[normLabel(b)] || b)));
+        if (nb.some((b, i) => b !== s.bullets![i])) {
+          addQuality('non-saas-copy', s.id, s.bullets.join(' · ').slice(0, 48), nb.join(' · ').slice(0, 48), nsReason);
+          s.bullets = nb;
+        }
       }
     }
   }
