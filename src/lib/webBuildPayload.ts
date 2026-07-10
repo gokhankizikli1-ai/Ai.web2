@@ -754,6 +754,8 @@ function assembleWebBuildPayload(
         primaryConversionIntent: artifacts?.strategy?.interactionContract?.primaryConversionIntent,
         // Phase 8A — repair generic filler labels to the ledger's concept-specific ones.
         ledger: artifacts?.thinkingLedger,
+        // Phase 9D-2B — the blueprint's site type drives the non-SaaS proof/copy guard.
+        experienceBlueprint: artifacts?.experienceBlueprint,
         lang: effLang,
       });
       agents = [...agents, fx.agent];
