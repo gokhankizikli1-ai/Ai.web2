@@ -3088,8 +3088,8 @@ export default function WebBuildPreviewDocument({
           <PremiumVisualLayer type={heroVisual} animate={ambientAllowed} className="opacity-25" />
           {/* Phase 10B: Motion Composer ambient layer (concept-specific, reduced-
               motion safe). Additive + behind the content; never blocks the headline. */}
-          {heroMotionLayer && <MotionAmbientLayer pattern={heroMotionLayer.pattern} intensity={heroMotionIntensity} reduce={reduce} className="opacity-70" />}
-          {globalMotionLayer && <MotionAmbientLayer pattern={globalMotionLayer.pattern} intensity={globalMotionLayer.intensity} reduce={reduce} className="opacity-60" />}
+          {heroMotionLayer && <MotionAmbientLayer pattern={heroMotionLayer.pattern} intensity={heroMotionIntensity} reduce={!ambientAllowed} className="opacity-70" />}
+          {globalMotionLayer && <MotionAmbientLayer pattern={globalMotionLayer.pattern} intensity={globalMotionLayer.intensity} reduce={!ambientAllowed} className="opacity-60" />}
           <div className="relative z-10">
             {renderItems.map((s, i) => (
               <Fragment key={(s && s.id) || `home-${i}`}>

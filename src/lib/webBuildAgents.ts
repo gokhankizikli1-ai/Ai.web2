@@ -7192,7 +7192,7 @@ export function deriveMotionComposer(input: MotionComposerInput): MotionComposer
   } else if (isArchive) {
     add('hero', 'ambient-gradient', 'minimal', L(lang, 'Restrained editorial hero ambience', 'Ölçülü editoryal hero atmosferi'), 16);
   } else if (isCommerce) {
-    add('hero', 'ambient-gradient', 'subtle', L(lang, 'Product ambience behind the catalog hero', 'Katalog hero arkasında ürün atmosferi'), 14);
+    add('hero', 'floating-cards', 'subtle', L(lang, 'Gently floating product cards', 'Nazikçe yüzen ürün kartları'), 12);
   } else if (isPortfolioAgency) {
     add('hero', 'floating-cards', 'subtle', L(lang, 'Editorial floating brand shapes', 'Editoryal yüzen marka şekilleri'), 12);
   } else if (isSaaS) {
@@ -7220,7 +7220,6 @@ export function deriveMotionComposer(input: MotionComposerInput): MotionComposer
     const prov = sectionFor(MOTION_ROLE_RE.flow); if (prov) add(prov, 'timeline-progress', 'minimal', L(lang, 'Provenance/process progress', 'Köken/süreç ilerlemesi'), 1.2);
   } else if (isCommerce) {
     const cat = sectionFor(MOTION_ROLE_RE.catalog); if (cat) add(cat, 'catalog-filter-shift', 'subtle', L(lang, 'Subtle filter/list transition', 'İnce filtre/liste geçişi'), 0.8, [noFakeWork, L(lang, 'No fake live inventory/counter.', 'Sahte canlı envanter/sayaç yok.')]);
-    add('hero', 'floating-cards', 'subtle', L(lang, 'Gently floating product cards', 'Nazikçe yüzen ürün kartları'), 12);
   } else if (isPortfolioAgency) {
     const proc = sectionFor(MOTION_ROLE_RE.flow); if (proc) add(proc, 'timeline-progress', 'subtle', L(lang, 'Process staged progress', 'Süreç aşamalı ilerlemesi'), 1.1);
   }
