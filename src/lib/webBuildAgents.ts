@@ -987,6 +987,10 @@ export interface WebBuildArtifacts {
   fixer?: FixerAgentArtifact;
   /** Intent-aware page architecture decision (Phase 9D-1). Optional → old builds load. */
   pageArchitecture?: PageArchitectureDecision;
+  /** High-level website experience blueprint (Phase 9D-2) — decides the site
+   *  experience TYPE + page mode + required/forbidden page groups + CTA strategy
+   *  BEFORE section-level decisions. Optional → old builds load. Data/planning only. */
+  experienceBlueprint?: ExperienceBlueprint;
   /** Concept-specific visual signature plan (Phase 9E-1) — CSS/SVG-only visual
    *  direction (hero motif, per-section visuals, motion hints). Optional → old
    *  builds load. Never an image/video API; consumed by the preview visual layer. */
@@ -1576,6 +1580,332 @@ const SECTION_ROLE_RE = {
   features: /^features?$|^benefits?$|^overview$|özellikler/i,
 } as const;
 
+/* ── Experience Blueprint (Phase 9D-2) — high-level website experience planner ──
+ * Decides the WHOLE-SITE experience type, page mode, conversion path, required /
+ * optional / forbidden page groups and CTA strategy BEFORE section-level choices,
+ * so a restaurant never gets a SaaS pricing/security spine and a chatbot never
+ * gets a menu/gallery. Pure + deterministic + data-only: no routing, no image/
+ * video/motion, no backend, no fabricated proof. */
+export type SiteExperienceType =
+  | 'b2b-product-landing' | 'consumer-product-landing' | 'local-business' | 'restaurant'
+  | 'portfolio' | 'developer-tool' | 'mobile-app' | 'marketplace' | 'ecommerce-store'
+  | 'startup-waitlist' | 'agency-service' | 'content-publication' | 'event-landing'
+  | 'dashboard-preview' | 'unknown';
+export type PageMode =
+  | 'single-page' | 'multi-section-landing' | 'dashboard-first' | 'catalog-first'
+  | 'editorial-scroll' | 'waitlist-funnel' | 'contact-sales-funnel' | 'docs-first'
+  | 'portfolio-gallery';
+
+export interface ExperienceBlueprint {
+  siteExperienceType: SiteExperienceType;
+  pageMode: PageMode;
+  primaryUserIntent: string;
+  targetAudience: string;
+  conversionGoal: string;
+  primaryCTA: string;
+  secondaryCTA?: string;
+  requiredPageGroups: string[];
+  optionalPageGroups: string[];
+  forbiddenPageGroups: Array<{ group: string; reason: string }>;
+  demoNeeded: boolean;
+  demoReason: string;
+  pricingNeeded: boolean;
+  pricingReason: string;
+  leadCaptureNeeded: boolean;
+  leadCaptureReason: string;
+  contactNeeded: boolean;
+  contactReason: string;
+  proofAllowed: boolean;
+  proofReason: string;
+  imageVisualNeeded: boolean;
+  imageVisualReason: string;
+  motionVisualNeeded: boolean;
+  motionVisualReason: string;
+  recommendedVisualDirection: string;
+  blueprintWarnings: string[];
+}
+
+/**
+ * Derive the high-level Experience Blueprint. Pure + deterministic. Classifies the
+ * site experience from the concept authority (product concept wins over the target
+ * vertical, so "AI chatbot for ecommerce" is a B2B product landing, not a store),
+ * then sets the page mode, CTA strategy and required/forbidden page groups. Honest:
+ * proof is only allowed when the user/source actually provides it; any demo is a
+ * front-end-only sample. Image/motion needs are HINTS for future phases only.
+ */
+export function deriveExperienceBlueprint(
+  brief: WebBuildBrief,
+  sectionItems: Array<{ id: string; name: string }>,
+  conceptAuthority: ConceptAuthority | undefined,
+  pageArchitecture: PageArchitectureDecision | undefined,
+  visualSignaturePlan: VisualSignaturePlan | undefined,
+  ledger: StrategicThinkingLedger | undefined,
+  lang: Lang = 'en',
+): ExperienceBlueprint {
+  const secNames = (sectionItems || []).map((s) => s.name).filter(Boolean).join(' ');
+  const hay = [brief.coreIdea, brief.type, brief.goal, brief.audience, brief.style, brief.visitorIntent, secNames]
+    .filter(Boolean).join(' ').toLowerCase();
+  const concept = (ledger?.primaryConcept || conceptAuthority?.primaryConcept || '').toLowerCase();
+  const vertical = (conceptAuthority?.targetVertical || conceptAuthority?.audienceVertical || ledger?.targetVertical || '').toLowerCase();
+  const vhay = `${hay} ${vertical}`;
+
+  // Prompt-driven inclusion signals (only include when genuinely asked).
+  const asksPricing = /pricing|\bprice\b|plans?|subscription|tier|packages?|paywall|fiyat|abonelik|paket/.test(hay);
+  const asksTestimonials = /testimonial|customer\s*review|reviews?|referans|yorum/.test(hay);
+  const asksCaseStudies = /case[-\s]?stud|success\s*stor|vaka/.test(hay);
+  const asksBookDemo = /book\s*a?\s*demo|contact\s*sales|talk\s*to\s*sales|schedule\s*a?\s*(call|demo)|demo\s*ayarla|satış/.test(hay);
+  const asksWaitlist = /waitlist|early\s*access|coming\s*soon|beta\s*access|join\s*the\s*list|bekleme\s*listesi/.test(hay);
+  const asksDownload = /download|app\s*store|play\s*store|get\s*the\s*app|install/.test(hay);
+  const providedProof = asksTestimonials || asksCaseStudies;
+
+  // Concept signals (concept authority separates PRODUCT from VERTICAL).
+  const isAiProduct = concept === 'ai' || concept === 'saas' || /\bai\b|artificial|chatbot|chat\s*bot|assistant|agentic|\bllm\b|copilot|automation/.test(hay);
+  const isB2B = /b2b|enterprise|sales\s*team|\bteams?\b|\bsaas\b|platform|merchant|business|kurumsal|workflow|operations/.test(hay);
+
+  // Keyword buckets for non-software concepts (checked only when not an AI/SaaS product).
+  const kw = {
+    restaurant: /restaurant|\bcafe\b|café|bistro|diner|eatery|\bmenu\b|dining|cuisine|restoran|kafe|lokanta/,
+    localBiz: /\bsalon\b|barber|\bspa\b|clinic|dental|dentist|plumb|electrician|landscap|cleaning\s*service|\brepair\b|local\s*business|kuaför|klinik|tamir/,
+    portfolio: /portfolio|personal\s*(site|website)|\bdesigner\b|photographer|\bartist\b|freelanc|resume|\bcv\b|showreel|portföy/,
+    devTool: /developer|\bdev\s*tool|\bcli\b|\bapi\b|\bsdk\b|library|framework|terminal|command\s*line|open\s*source|programming|deploy|devops|yazılımcı/,
+    mobileApp: /mobile\s*app|ios\s*app|android\s*app|app\s*store|play\s*store|download\s*the\s*app|app\s*launch|uygulama\s*indir/,
+    marketplace: /marketplace|multi-?vendor|classifieds?|listings?|buyers?\s*and\s*sellers|two-?sided|pazaryeri/,
+    ecommerce: /ecommerce|e-?commerce|storefront|online\s*store|\bshop\b|retail|dropship|e-?ticaret|mağaza/,
+    waitlist: /waitlist|early\s*access|coming\s*soon|beta\s*access|pre-?launch|bekleme\s*listesi/,
+    agency: /\bagency\b|consultanc|marketing\s*firm|creative\s*studio|services\s*firm|\bajans\b/,
+    publication: /\bblog\b|magazine|publication|newsletter|news\s*site|editorial|articles|yayın|dergi/,
+    event: /\bevent\b|conference|summit|webinar|meetup|festival|expo|etkinlik|konferans/,
+    dashboard: /dashboard|analytics\s*(tool|platform)|admin\s*panel|\bbi\b\s*tool|reporting|panel/,
+  };
+  const hit = (re: RegExp) => re.test(vhay);
+
+  // ── Classify the site experience. Product concept (AI/SaaS) wins over the
+  // target vertical, so an "AI chatbot for ecommerce" is a B2B product landing. ──
+  let siteExperienceType: SiteExperienceType;
+  if (isAiProduct) {
+    // An AI product SOLD TO businesses (stores/merchants/teams) is a B2B landing —
+    // the ecommerce/store vertical is the CUSTOMER, not the site being a store.
+    const servesBusiness = isB2B || asksBookDemo
+      || /\bstore\b|stores|merchant|e-?commerce|ecommerce|retail|\bshop\b|\bteams?\b|compan|\bbrand\b|agenc|business|kurumsal/.test(vhay);
+    siteExperienceType = servesBusiness ? 'b2b-product-landing' : 'consumer-product-landing';
+  } else if (hit(kw.restaurant)) siteExperienceType = 'restaurant';
+  else if (hit(kw.portfolio)) siteExperienceType = 'portfolio';
+  else if (hit(kw.devTool)) siteExperienceType = 'developer-tool';
+  else if (hit(kw.mobileApp)) siteExperienceType = 'mobile-app';
+  else if (hit(kw.waitlist) || asksWaitlist) siteExperienceType = 'startup-waitlist';
+  else if (hit(kw.marketplace)) siteExperienceType = 'marketplace';
+  else if (hit(kw.ecommerce)) siteExperienceType = 'ecommerce-store';
+  else if (hit(kw.dashboard)) siteExperienceType = 'dashboard-preview';
+  else if (hit(kw.publication)) siteExperienceType = 'content-publication';
+  else if (hit(kw.event)) siteExperienceType = 'event-landing';
+  else if (hit(kw.agency)) siteExperienceType = 'agency-service';
+  else if (hit(kw.localBiz)) siteExperienceType = 'local-business';
+  else if (isB2B) siteExperienceType = 'b2b-product-landing';
+  else siteExperienceType = 'unknown';
+
+  const T = siteExperienceType;
+  const isSaaSLike = T === 'b2b-product-landing' || T === 'consumer-product-landing' || T === 'developer-tool' || T === 'dashboard-preview';
+  const isLocalLike = T === 'restaurant' || T === 'local-business';
+
+  // ── Page mode. ──
+  const pageMode: PageMode =
+    T === 'b2b-product-landing' ? (asksBookDemo ? 'contact-sales-funnel' : 'multi-section-landing')
+    : T === 'developer-tool' ? 'docs-first'
+    : T === 'portfolio' ? 'portfolio-gallery'
+    : T === 'startup-waitlist' ? 'waitlist-funnel'
+    : (T === 'marketplace' || T === 'ecommerce-store') ? 'catalog-first'
+    : T === 'dashboard-preview' ? 'dashboard-first'
+    : T === 'content-publication' ? 'editorial-scroll'
+    : T === 'unknown' ? 'single-page'
+    : 'multi-section-landing';
+
+  // ── CTA strategy (Task 5) — display/planning level. ──
+  const cta = ((): { primary: string; secondary?: string } => {
+    switch (T) {
+      case 'b2b-product-landing':
+        return { primary: L(lang, 'Book a Demo', 'Demo Ayarla'), secondary: L(lang, 'See Chat Flow', 'Sohbet Akışını Gör') };
+      case 'consumer-product-landing':
+      case 'mobile-app':
+        return { primary: asksDownload ? L(lang, 'Download', 'İndir') : (asksWaitlist ? L(lang, 'Join Waitlist', 'Listeye Katıl') : L(lang, 'Try the Demo', 'Demoyu Dene')), secondary: L(lang, 'See Features', 'Özellikleri Gör') };
+      case 'restaurant':
+        return { primary: L(lang, 'Reserve a Table', 'Masa Ayırt'), secondary: L(lang, 'View Menu', 'Menüyü Gör') };
+      case 'local-business':
+        return { primary: L(lang, 'Call Now', 'Hemen Ara'), secondary: L(lang, 'Get Directions', 'Yol Tarifi Al') };
+      case 'developer-tool':
+        return { primary: L(lang, 'View Docs', 'Dokümanları Gör'), secondary: L(lang, 'See Examples', 'Örnekleri Gör') };
+      case 'portfolio':
+        return { primary: L(lang, 'View Work', 'Çalışmaları Gör'), secondary: L(lang, 'Contact', 'İletişim') };
+      case 'startup-waitlist':
+        return { primary: L(lang, 'Join the Waitlist', 'Bekleme Listesine Katıl'), secondary: L(lang, 'How it works', 'Nasıl çalışır') };
+      case 'marketplace':
+      case 'ecommerce-store':
+        return { primary: L(lang, 'Browse', 'Göz At'), secondary: L(lang, 'How it works', 'Nasıl çalışır') };
+      case 'agency-service':
+        return { primary: L(lang, 'Start a Project', 'Projeye Başla'), secondary: L(lang, 'See Work', 'Çalışmaları Gör') };
+      case 'event-landing':
+        return { primary: L(lang, 'Register', 'Kayıt Ol'), secondary: L(lang, 'See Schedule', 'Programı Gör') };
+      case 'content-publication':
+        return { primary: L(lang, 'Read Now', 'Şimdi Oku'), secondary: L(lang, 'Subscribe', 'Abone Ol') };
+      case 'dashboard-preview':
+        return { primary: L(lang, 'Book a Demo', 'Demo Ayarla'), secondary: L(lang, 'See Features', 'Özellikleri Gör') };
+      default:
+        return { primary: L(lang, 'Get in touch', 'İletişime geç'), secondary: L(lang, 'See how it works', 'Nasıl çalıştığını gör') };
+    }
+  })();
+
+  // ── Required / optional / forbidden page groups per experience type. ──
+  let requiredPageGroups: string[] = [];
+  let optionalPageGroups: string[] = [];
+  const forbiddenPageGroups: Array<{ group: string; reason: string }> = [];
+  const forbid = (group: string, reason: string) => forbiddenPageGroups.push({ group, reason });
+  const noSourceProof = L(lang, 'No user/source proof provided — would be fabricated.', 'Kullanıcı/kaynak kanıtı yok — uydurma olur.');
+  const notThisType = (what: string) => L(lang, `${what} does not fit this site type.`, `${what} bu site türüne uymuyor.`);
+
+  switch (T) {
+    case 'b2b-product-landing':
+    case 'dashboard-preview':
+      requiredPageGroups = ['Hero', 'Product Demo', 'How it works', 'Integrations', 'Security & Trust', 'Contact Sales / Book Demo'];
+      optionalPageGroups = ['Pricing', 'FAQ', 'Use Cases'];
+      forbid('Menu / Gallery / Reservation', notThisType(L(lang, 'Restaurant/portfolio sections', 'Restoran/portföy bölümleri')));
+      if (!providedProof) { forbid('Testimonials', noSourceProof); forbid('Case Studies', noSourceProof); }
+      forbid('Fake logo strip', L(lang, 'No real customer logos to show.', 'Gösterilecek gerçek müşteri logosu yok.'));
+      forbid('Fake metrics / certifications', L(lang, 'No verified metrics or SOC2/ISO to claim.', 'Doğrulanmış metrik veya SOC2/ISO iddiası yok.'));
+      break;
+    case 'consumer-product-landing':
+    case 'mobile-app':
+      requiredPageGroups = ['Hero', 'Features', 'How it works', asksDownload ? 'Download' : (asksWaitlist ? 'Waitlist' : 'Product Demo'), 'FAQ'];
+      optionalPageGroups = ['Screenshots', 'Pricing'];
+      forbid('Contact Sales', notThisType(L(lang, 'B2B sales funnel', 'B2B satış hunisi')));
+      if (!providedProof) forbid('Testimonials', noSourceProof);
+      break;
+    case 'restaurant':
+      requiredPageGroups = ['Hero', 'Menu', 'Location', 'Hours', 'Reservation / Contact', 'Gallery'];
+      optionalPageGroups = ['About', 'Events'];
+      forbid('Pricing Plans', notThisType(L(lang, 'SaaS pricing', 'SaaS fiyatlandırması')));
+      forbid('Integrations', notThisType(L(lang, 'SaaS integrations', 'SaaS entegrasyonları')));
+      forbid('Security & Compliance', notThisType(L(lang, 'SaaS security', 'SaaS güvenliği')));
+      forbid('Chat / Dashboard Demo', notThisType(L(lang, 'A product demo', 'Bir ürün demosu')));
+      break;
+    case 'local-business':
+      requiredPageGroups = ['Hero', 'Services', 'Location', 'Hours', 'Contact', 'Gallery'];
+      optionalPageGroups = ['About', 'Reviews (only if provided)'];
+      forbid('Pricing Plans', notThisType(L(lang, 'SaaS pricing', 'SaaS fiyatlandırması')));
+      forbid('Integrations', notThisType(L(lang, 'SaaS integrations', 'SaaS entegrasyonları')));
+      forbid('Chat / Dashboard Demo', notThisType(L(lang, 'A product demo', 'Bir ürün demosu')));
+      break;
+    case 'portfolio':
+      requiredPageGroups = ['Hero', 'Work / Projects', 'About', 'Skills / Process', 'Contact'];
+      optionalPageGroups = ['Services', 'Resume'];
+      forbid('Pricing Plans', notThisType(L(lang, 'SaaS pricing', 'SaaS fiyatlandırması')));
+      forbid('Security & Compliance', notThisType(L(lang, 'SaaS security', 'SaaS güvenliği')));
+      forbid('Integrations', notThisType(L(lang, 'SaaS integrations', 'SaaS entegrasyonları')));
+      forbid('Product Demo', notThisType(L(lang, 'A product demo', 'Bir ürün demosu')));
+      break;
+    case 'developer-tool':
+      requiredPageGroups = ['Hero', 'Code Demo / CLI Flow', 'Features by job', 'Docs / Quickstart', 'Integrations / API'];
+      optionalPageGroups = ['Pricing', 'Changelog', 'GitHub / Download'];
+      forbid('Ecommerce / customer-support sections', notThisType(L(lang, 'A developer tool', 'Bir geliştirici aracı')));
+      if (!providedProof) forbid('Testimonials', noSourceProof);
+      break;
+    case 'startup-waitlist':
+      requiredPageGroups = ['Hero', 'Problem', 'Product Teaser', 'How it works', 'Waitlist Form', 'FAQ'];
+      optionalPageGroups = ['Team', 'Roadmap'];
+      forbid('Pricing', notThisType(L(lang, 'A pre-launch waitlist', 'Bir lansman öncesi bekleme listesi')));
+      if (!providedProof) { forbid('Testimonials', noSourceProof); forbid('Case Studies', noSourceProof); }
+      break;
+    case 'marketplace':
+    case 'ecommerce-store':
+      requiredPageGroups = ['Hero', 'Catalog / Product Grid', 'Filters', 'How it works', 'Trust & Safety'];
+      optionalPageGroups = ['Seller / Buyer value', 'Pricing (marketplace plans only)'];
+      if (!providedProof) forbid('Testimonials', noSourceProof);
+      break;
+    case 'agency-service':
+      requiredPageGroups = ['Hero', 'Services', 'Work / Portfolio', 'Process', 'Contact'];
+      optionalPageGroups = ['About', 'Pricing'];
+      if (!providedProof) { forbid('Client logos', noSourceProof); forbid('Testimonials', noSourceProof); }
+      break;
+    case 'event-landing':
+      requiredPageGroups = ['Hero', 'Schedule / Agenda', 'Speakers (only if provided)', 'Location', 'Register'];
+      optionalPageGroups = ['Sponsors (only if provided)', 'FAQ'];
+      break;
+    case 'content-publication':
+      requiredPageGroups = ['Hero', 'Featured Articles', 'Categories', 'Subscribe'];
+      optionalPageGroups = ['About', 'Archive'];
+      forbid('Pricing Plans', notThisType(L(lang, 'SaaS pricing', 'SaaS fiyatlandırması')));
+      break;
+    default:
+      requiredPageGroups = ['Hero', 'What it is', 'How it works', 'Contact'];
+      optionalPageGroups = ['Features', 'FAQ'];
+      break;
+  }
+
+  // ── Cross-cutting need decisions (blueprint reasons; honest). ──
+  const demoNeeded = isSaaSLike || T === 'consumer-product-landing' || T === 'marketplace' || T === 'ecommerce-store';
+  const pricingNeeded = asksPricing || (T === 'b2b-product-landing' && /\bsaas\b|subscription|self-?serve|plans?/.test(hay));
+  const leadCaptureNeeded = T === 'startup-waitlist' || asksWaitlist || (T === 'b2b-product-landing' && (pageMode === 'contact-sales-funnel' || asksBookDemo));
+  const contactNeeded = T !== 'content-publication';
+  const proofAllowed = providedProof;
+  // Image/motion HINTS only — never implemented here (prep for 9E-3 / 9E-4).
+  const imageVisualNeeded = isLocalLike || T === 'portfolio' || T === 'mobile-app' || T === 'restaurant' || T === 'event-landing' || T === 'agency-service' || T === 'content-publication';
+  const motionVisualNeeded = isSaaSLike || T === 'consumer-product-landing' || T === 'startup-waitlist';
+  const recommendedVisualDirection = visualSignaturePlan?.visualSignature
+    || (T === 'developer-tool' ? L(lang, 'Command & deploy rail (code rain / terminal)', 'Komut ve dağıtım rayı (kod yağmuru / terminal)')
+      : T === 'b2b-product-landing' ? L(lang, 'Storefront chat flow rail + integration orbit', 'Mağaza sohbet akış rayı + entegrasyon yörüngesi')
+      : isLocalLike || T === 'portfolio' ? L(lang, 'Editorial imagery / collage, warm and calm', 'Editoryal görsel / kolaj, sıcak ve sakin')
+      : (T === 'marketplace' || T === 'ecommerce-store') ? L(lang, 'Product grid / filter rail', 'Ürün gridi / filtre rayı')
+      : L(lang, 'Restrained accent path lines on a tonal surface', 'Tonal yüzeyde ölçülü vurgu çizgileri'));
+
+  // ── Warnings — surface obvious mismatches (guidance, never destructive here). ──
+  const blueprintWarnings: string[] = [];
+  if (T === 'unknown') blueprintWarnings.push(L(lang, 'Experience type could not be classified with confidence — using a safe single-page default; section guards stay conservative.', 'Deneyim türü güvenle sınıflandırılamadı — güvenli tek sayfa varsayılanı kullanılıyor; bölüm korumaları temkinli kalıyor.'));
+  if (isLocalLike && (asksPricing || pageArchitecture?.pricingNeeded)) blueprintWarnings.push(L(lang, 'A local business rarely needs SaaS pricing — keep it only if explicitly requested.', 'Yerel bir işletme nadiren SaaS fiyatlandırmasına ihtiyaç duyar — yalnızca açıkça istenirse tut.'));
+  if ((T === 'portfolio' || isLocalLike) && (pageArchitecture?.demoPlacement && pageArchitecture.demoPlacement !== 'none')) blueprintWarnings.push(L(lang, 'This site type should not carry a chat/dashboard product demo unless requested.', 'Bu site türü, istenmedikçe sohbet/panel ürün demosu taşımamalı.'));
+  if (!providedProof) blueprintWarnings.push(L(lang, 'Proof sections (testimonials/case studies/logos/metrics) are disallowed — no real source to avoid fabrication.', 'Kanıt bölümleri (referans/vaka/logo/metrik) devre dışı — uydurmayı önlemek için gerçek kaynak yok.'));
+
+  return {
+    siteExperienceType: T,
+    pageMode,
+    primaryUserIntent: brief.visitorIntent || conceptAuthority?.primaryConcept || (isSaaSLike ? 'evaluate a product' : 'find what they need'),
+    targetAudience: brief.audience || conceptAuthority?.audienceVertical || vertical || (isB2B ? 'business buyers' : 'general visitors'),
+    conversionGoal: brief.conversionStrategy || cta.primary,
+    primaryCTA: cta.primary,
+    secondaryCTA: cta.secondary,
+    requiredPageGroups: uniq(requiredPageGroups),
+    optionalPageGroups: uniq(optionalPageGroups),
+    forbiddenPageGroups,
+    demoNeeded,
+    demoReason: demoNeeded
+      ? L(lang, 'A product/interactive concept benefits from a front-end-only sample demo.', 'Ürün/etkileşimli bir konsept, yalnızca ön-yüz örnek demosundan fayda sağlar.')
+      : L(lang, 'This site type is explanatory/local — no product demo unless requested.', 'Bu site türü açıklayıcı/yerel — istenmedikçe ürün demosu yok.'),
+    pricingNeeded,
+    pricingReason: pricingNeeded
+      ? L(lang, 'Prompt/concept calls for plans or a conversion page.', 'İstem/konsept planları veya bir dönüşüm sayfasını gerektiriyor.')
+      : L(lang, 'Not requested for this experience type; prefer a demo/contact conversion.', 'Bu deneyim türü için istenmedi; demo/iletişim dönüşümü tercih edilir.'),
+    leadCaptureNeeded,
+    leadCaptureReason: leadCaptureNeeded
+      ? L(lang, 'A waitlist / book-a-demo / contact-sales funnel needs a local lead form (front-end only).', 'Bir bekleme listesi / demo-ayarla / satış-iletişim hunisi yerel bir lead formu gerektirir (yalnızca ön-yüz).')
+      : L(lang, 'No gated funnel — a simple contact suffices.', 'Kapılı huni yok — basit bir iletişim yeterli.'),
+    contactNeeded,
+    contactReason: contactNeeded
+      ? L(lang, 'Visitors need a clear way to get in touch / take the next step.', 'Ziyaretçilerin iletişime geçmek / sonraki adımı atmak için net bir yola ihtiyacı var.')
+      : L(lang, 'A publication leads with reading/subscribe rather than a contact form.', 'Bir yayın, iletişim formu yerine okuma/abone olma ile öncülük eder.'),
+    proofAllowed,
+    proofReason: proofAllowed
+      ? L(lang, 'User/source provided proof — keep only with the real content.', 'Kullanıcı/kaynak kanıt sağladı — yalnızca gerçek içerikle tut.')
+      : L(lang, 'No user/source proof — use honest Trust & Safety, never fabricated logos/testimonials/metrics.', 'Kullanıcı/kaynak kanıtı yok — logo/referans/metrik uydurmak yerine dürüst Güven ve Emniyet kullan.'),
+    imageVisualNeeded,
+    imageVisualReason: imageVisualNeeded
+      ? L(lang, 'HINT for a future image phase — this type reads better with real imagery/collage (not generated here).', 'Gelecekteki bir görsel aşaması için İPUCU — bu tür gerçek görsel/kolaj ile daha iyi okunur (burada üretilmez).')
+      : L(lang, 'HINT — CSS/SVG signature visuals are enough for this type.', 'İPUCU — bu tür için CSS/SVG imza görselleri yeterli.'),
+    motionVisualNeeded,
+    motionVisualReason: motionVisualNeeded
+      ? L(lang, 'HINT for a future motion phase — subtle staged motion suits a product/launch page (not composed here).', 'Gelecekteki bir hareket aşaması için İPUCU — ince aşamalı hareket bir ürün/lansman sayfasına uyar (burada oluşturulmaz).')
+      : L(lang, 'HINT — keep motion minimal for this type.', 'İPUCU — bu tür için hareketi minimum tut.'),
+    recommendedVisualDirection,
+    blueprintWarnings,
+  };
+}
+
 /**
  * Derive the intent-aware Page Architecture Decision. Pure + deterministic; reads
  * the prompt/brief/concept + the strategic ledger. Never fabricates proof. Front-
@@ -1589,6 +1919,7 @@ export function derivePageArchitectureDecision(
   strategy: StrategyAgentArtifact | undefined,
   ledger: StrategicThinkingLedger | undefined,
   lang: Lang = 'en',
+  blueprint?: ExperienceBlueprint,
 ): PageArchitectureDecision {
   const hay = [prompt, brief.coreIdea, brief.type, brief.goal, brief.audience, brief.style].filter(Boolean).join(' ').toLowerCase();
   const vhay = `${hay} ${conceptAuthority?.targetVertical || ''} ${conceptAuthority?.audienceVertical || ''} ${ledger?.targetVertical || ''}`.toLowerCase();
@@ -1627,11 +1958,19 @@ export function derivePageArchitectureDecision(
     : (brief.entryFlowModel || ic?.entryFlowModel || (leadGated ? 'landing-gated-experience' : (isCommerce ? 'catalog-first' : 'single-page')));
 
   // CTAs — B2B product → Book Demo / Contact Sales; consumer/simple → Try Demo.
-  const primaryCTA = demoPlacement !== 'none'
-    ? (isB2B && asksBookDemo ? L(lang, 'Book a Demo', 'Demo Ayarla') : L(lang, 'Try the Demo', 'Demoyu Dene'))
-    : (isB2B ? L(lang, 'Contact Sales', 'Satışla İletişim') : L(lang, 'Get in touch', 'İletişime geç'));
-  const secondaryCTA = pricingNeeded ? L(lang, 'See Pricing', 'Fiyatları Gör')
-    : (isB2B ? L(lang, 'Contact Sales', 'Satışla İletişim') : L(lang, 'See how it works', 'Nasıl çalıştığını gör'));
+  // Phase 9D-2: when the Experience Blueprint classified the site with confidence,
+  // prefer its whole-site CTA strategy so the CTAs match the site type (a
+  // restaurant gets Reserve/Call, a dev tool gets View Docs, etc.).
+  const bpConfident = !!blueprint && blueprint.siteExperienceType !== 'unknown';
+  const primaryCTA = (bpConfident && blueprint!.primaryCTA)
+    ? blueprint!.primaryCTA
+    : (demoPlacement !== 'none'
+      ? (isB2B && asksBookDemo ? L(lang, 'Book a Demo', 'Demo Ayarla') : L(lang, 'Try the Demo', 'Demoyu Dene'))
+      : (isB2B ? L(lang, 'Contact Sales', 'Satışla İletişim') : L(lang, 'Get in touch', 'İletişime geç')));
+  const secondaryCTA = (bpConfident && blueprint!.secondaryCTA)
+    ? blueprint!.secondaryCTA!
+    : (pricingNeeded ? L(lang, 'See Pricing', 'Fiyatları Gör')
+      : (isB2B ? L(lang, 'Contact Sales', 'Satışla İletişim') : L(lang, 'See how it works', 'Nasıl çalıştığını gör')));
 
   // Recommended concept-specific section spine (labels only; ids stay original).
   const flowLabel = isCommerce ? L(lang, 'Shopper Flow', 'Alışverişçi Akışı') : L(lang, 'How it works', 'Nasıl çalışır');
@@ -1662,9 +2001,36 @@ export function derivePageArchitectureDecision(
       removedSections.push({ id: s.id, section: s.name, reason: L(lang, `Pricing removed — not requested for this concept; prefer ${isB2B ? 'Book a Demo / Contact Sales' : 'Try the Demo'}.`, `Fiyatlandırma kaldırıldı — bu konsept için istenmedi; ${isB2B ? 'Demo Ayarla / Satışla İletişim' : 'Demoyu Dene'} tercih edilir.`) });
     }
   }
+  // Phase 9D-2 — BLUEPRINT SPINE GUARD: for a NON-SaaS experience type
+  // (restaurant / local-business / portfolio) drop SaaS-only sections the model may
+  // have added by default (pricing / integrations / security-compliance /
+  // certifications / product-demo) UNLESS the prompt explicitly asked. Guidance,
+  // not over-deletion: hero / footer / contact are never targeted, and the payload
+  // keeps a >= 5 section floor so nothing drops below the quality gate.
+  const bpType = blueprint?.siteExperienceType;
+  const bpNonSaaS = bpType === 'restaurant' || bpType === 'local-business' || bpType === 'portfolio';
+  if (bpNonSaaS) {
+    const already = new Set(removedSections.map((r) => r.id));
+    for (const s of sectionItems || []) {
+      if (already.has(s.id)) continue;
+      const key = `${s.id} ${s.name}`;
+      if (SECTION_ROLE_RE.hero.test(key) || SECTION_ROLE_RE.footer.test(key) || SECTION_ROLE_RE.contact.test(key)) continue;
+      let reason = '';
+      if (!asksPricing && SECTION_ROLE_RE.pricing.test(key)) reason = L(lang, `SaaS pricing does not fit a ${bpType} site (not requested).`, `SaaS fiyatlandırması bir ${bpType} sitesine uymuyor (istenmedi).`);
+      else if (SECTION_ROLE_RE.integrations.test(key)) reason = L(lang, `SaaS integrations do not fit a ${bpType} site.`, `SaaS entegrasyonları bir ${bpType} sitesine uymuyor.`);
+      else if (SECTION_ROLE_RE.certifications.test(key)) reason = L(lang, `A compliance/certification section does not fit a ${bpType} site.`, `Uyumluluk/sertifika bölümü bir ${bpType} sitesine uymuyor.`);
+      else if (SECTION_ROLE_RE.security.test(key)) reason = L(lang, `SaaS security/compliance does not fit a ${bpType} site.`, `SaaS güvenlik/uyumluluk bir ${bpType} sitesine uymuyor.`);
+      else if (SECTION_ROLE_RE.demo.test(key) && !/\bdemo\b|\bchat\b|assistant|chatbot|dashboard/.test(hay)) reason = L(lang, `A product/chat demo does not fit a ${bpType} site (not requested).`, `Ürün/sohbet demosu bir ${bpType} sitesine uymuyor (istenmedi).`);
+      if (reason) { removedSections.push({ id: s.id, section: s.name, reason }); already.add(s.id); }
+    }
+    if (removedSections.length) architectureWarnings.push(L(lang, `Site classified as "${bpType}" — SaaS/product sections that don't fit were dropped (kept only what the prompt requested).`, `Site "${bpType}" olarak sınıflandırıldı — uymayan SaaS/ürün bölümleri düşürüldü (yalnızca istemin istediği tutuldu).`));
+  }
+
   if (removedSections.some((r) => SECTION_ROLE_RE.testimonials.test(r.section) || SECTION_ROLE_RE.caseStudies.test(r.section))) {
     architectureWarnings.push(L(lang, 'Unsupported proof sections (testimonials/case studies) were dropped — add them only with real user/source proof.', 'Desteklenmeyen kanıt bölümleri (referans/vaka) düşürüldü — yalnızca gerçek kullanıcı/kaynak kanıtıyla ekleyin.'));
   }
+  // Phase 9D-2: carry the blueprint's own warnings into the architecture diagnostics.
+  if (blueprint?.blueprintWarnings?.length) architectureWarnings.push(...blueprint.blueprintWarnings.slice(0, 2));
   if (aiCommerce && !sectionItems.some((s) => isRole(s.name, s.id, SECTION_ROLE_RE.security)) && securityNeeded) {
     architectureWarnings.push(L(lang, 'No Security & Store Trust section — an AI/ecommerce site should reassure on data/trust (honest, no fake compliance).', 'Güvenlik ve Mağaza Güveni bölümü yok — AI/e-ticaret sitesi veri/güven konusunda güven vermeli (dürüst, sahte uyumluluk yok).'));
   }

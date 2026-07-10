@@ -342,6 +342,30 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       ownerRows.push(['demoSurfaceCopyRepairs', `${dsRepairs.length}${ex ? ` · ${ex}` : ''}`]);
     }
 
+    // Phase 9D-2 — high-level Experience Blueprint (whole-site decision).
+    const eb = step.artifacts?.experienceBlueprint;
+    if (eb) {
+      ownerRows.push(['experienceType', `${eb.siteExperienceType} · ${eb.pageMode}`]);
+      if (eb.conversionGoal) ownerRows.push(['conversionGoal', eb.conversionGoal]);
+      ownerRows.push(['blueprintCTA', `${eb.primaryCTA}${eb.secondaryCTA ? ` · ${eb.secondaryCTA}` : ''}`]);
+      if (eb.requiredPageGroups?.length) ownerRows.push(['requiredPageGroups', eb.requiredPageGroups.slice(0, 8).join(', ')]);
+      if (eb.optionalPageGroups?.length) ownerRows.push(['optionalPageGroups', eb.optionalPageGroups.slice(0, 6).join(', ')]);
+      if (eb.forbiddenPageGroups?.length) {
+        const ex = eb.forbiddenPageGroups.slice(0, 3).map((f) => f.group).join(', ');
+        ownerRows.push(['forbiddenPageGroups', `${eb.forbiddenPageGroups.length}${ex ? ` · ${ex}` : ''}`]);
+      }
+      const needs = [
+        `demo: ${eb.demoNeeded ? 'yes' : 'no'}`,
+        `pricing: ${eb.pricingNeeded ? 'yes' : 'no'}`,
+        `lead: ${eb.leadCaptureNeeded ? 'yes' : 'no'}`,
+        `contact: ${eb.contactNeeded ? 'yes' : 'no'}`,
+        `proof: ${eb.proofAllowed ? 'allowed' : 'no'}`,
+      ].join(' · ');
+      ownerRows.push(['blueprintNeeds', needs]);
+      ownerRows.push(['visualNeeds (hint)', `image: ${eb.imageVisualNeeded ? 'yes' : 'no'} · motion: ${eb.motionVisualNeeded ? 'yes' : 'no'}`]);
+      (eb.blueprintWarnings || []).slice(0, 2).forEach((w, i) => ownerRows.push([`blueprintWarning${i + 1}`, w]));
+    }
+
     // Phase 9D-1 — intent-aware Page Architecture Decision (concept-specific spine).
     const pa = step.artifacts?.pageArchitecture;
     if (pa) {
