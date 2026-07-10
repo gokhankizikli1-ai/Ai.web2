@@ -10,7 +10,7 @@ import { resolveBuildFiles, parseSectionCopy, synthesizeFromCopies, type SynthFi
 import { inferWebsiteBrief, fallbackSectionItems, checkQuality } from '@/lib/webBuildBrief';
 import { deriveLayoutPlan, type WebBuildLayoutPlan } from '@/lib/webBuildLayoutPlan';
 import {
-  runUpstreamAgents, runLayoutArchitect, runComponentEngineer, runReviewer, runQualityDirector, runFixer, WEB_BUILD_AGENTS_ENABLED,
+  runUpstreamAgents, runLayoutArchitect, runComponentEngineer, runReviewer, runQualityDirector, runAssetDirector, runFixer, WEB_BUILD_AGENTS_ENABLED,
   derivePageArchitectureDecision, deriveVisualSignaturePlan, deriveExperienceBlueprint,
   type WebBuildAgent, type WebBuildArtifacts, type WebBuildEnforcement,
 } from '@/lib/webBuildAgents';
@@ -732,6 +732,28 @@ function assembleWebBuildPayload(
       agents = [...agents, qd.agent];
       artifacts = { ...(artifacts || {}), qualityDirector: qd.artifact };
 
+      // ASSET DIRECTOR (Phase 10A) — runs AFTER the Quality Director and BEFORE the
+      // Fixer. PLANNING/DATA ONLY: it decides which visual assets the site needs and
+      // how each should be produced (composed CSS/SVG now, subtle CSS motion now, or
+      // a prompt-ready image slot reserved for a LATER provider phase / manual
+      // upload) + honest safety constraints. It NEVER generates an image, calls an
+      // image/video API, adds video, or touches the backend, and fails OPEN — so it
+      // can never block Preview / All Files. The Preview does NOT consume it yet
+      // (that arrives in Phase 10B motion / 10C image pipeline).
+      const ad = runAssetDirector({
+        prompt, brief: artBrief,
+        sectionItems: sectionItems.map((s) => ({ id: s.id, name: s.name })),
+        conceptAuthority: artifacts?.research?.conceptAuthority,
+        artDirection: artifacts?.artDirection,
+        strategy: artifacts?.strategy,
+        experienceBlueprint: artifacts?.experienceBlueprint,
+        visualSignaturePlan: artifacts?.visualSignaturePlan,
+        ledger: artifacts?.thinkingLedger,
+        lang: effLang,
+      });
+      agents = [...agents, ad.agent];
+      artifacts = { ...(artifacts || {}), assetDirector: ad.artifact };
+
       // FIXER AGENT (Phase 6 + 7A) — runs AFTER the Reviewer + Quality Director. It
       // consumes the reviewer artifact AND the quality director's issues / rewrite
       // instructions, and applies a NARROW set of SAFE, deterministic repairs to the
@@ -846,6 +868,15 @@ function assembleWebBuildPayload(
         didFixCopyLabels: (artifacts?.fixer?.qualityAppliedChanges || []).some((c) => c.category === 'copy-label'),
         didFixCtaConsistency: (artifacts?.fixer?.qualityAppliedChanges || []).some((c) => c.category === 'cta-consistency'),
         didFixFlowLabels: (artifacts?.fixer?.qualityAppliedChanges || []).some((c) => c.category === 'flow-label'),
+        // Asset Director (Phase 10A) — real artifact data only (planning; no assets generated).
+        didRunAssetDirector: !!artifacts?.assetDirector,
+        assetSlotCount: (artifacts?.assetDirector?.slots || []).length,
+        cssSvgAssetSlotCount: (artifacts?.assetDirector?.cssSvgNowSlots || []).length,
+        motionAssetSlotCount: (artifacts?.assetDirector?.motionNowSlots || []).length,
+        imageLaterAssetSlotCount: (artifacts?.assetDirector?.imageLaterSlots || []).length,
+        manualUploadAssetSlotCount: (artifacts?.assetDirector?.slots || []).filter((s) => s.generationMode === 'manual-upload-later').length,
+        imageProviderNeeded: !!artifacts?.assetDirector?.providerReadiness?.imageProviderNeeded,
+        motionProviderNeeded: !!artifacts?.assetDirector?.providerReadiness?.motionProviderNeeded,
         // Visual Exploration + anti-template gate (Phase 7B) — real artifact data only.
         visualCandidateCount: (artifacts?.artDirection?.visualExploration?.candidates || []).length,
         selectedVisualCandidate: artifacts?.artDirection?.visualExploration?.selectedCandidateId,
