@@ -387,7 +387,7 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
     // labels for AI-ecommerce chatbot concepts. Diagnostics/public-facing TEXT only
     // — never mutates the planning contract, the artifact, or any section/route.
     const isAiCommerce = (() => {
-      if (vsp && /chat|storefront|shop|store|commerce|conversation|sohbet|mağaza/i.test(`${vsp.visualSignature || ''} ${vsp.primaryMotif || ''} ${vsp.heroVisualType || ''}`)) return true;
+      if (vsp && /chat|storefront|\bshops?\b|\bstores?\b|commerce|conversation|sohbet|mağaza/i.test(`${vsp.visualSignature || ''} ${vsp.primaryMotif || ''} ${vsp.heroVisualType || ''}`)) return true;
       const cc = step.artifacts?.research?.conceptAuthority;
       const pga = step.artifacts?.pageArchitecture;
       return !!cc && String(cc.primaryConcept).toLowerCase() === 'ai' && !!pga?.integrationsNeeded;

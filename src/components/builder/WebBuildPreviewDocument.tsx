@@ -2329,7 +2329,7 @@ export default function WebBuildPreviewDocument({
   // visual type is missing/unsupported, use a safe DISPLAY-ONLY 'chat-flow' fallback
   // so the hero never silently drops to a generic card.
   const conceptChatCommerce = planExists && (
-    /chat|storefront|shop|store|commerce|conversation|sohbet|mağaza/i.test(`${visualSignaturePlan?.visualSignature || ''} ${visualSignaturePlan?.primaryMotif || ''}`)
+    /chat|storefront|\bshops?\b|\bstores?\b|commerce|conversation|sohbet|mağaza/i.test(`${visualSignaturePlan?.visualSignature || ''} ${visualSignaturePlan?.primaryMotif || ''}`)
     || (visualSignaturePlan?.sectionVisuals || []).some((v) => /chat|product/.test(v.visualType))
   );
   const heroSigType = hasSignatureVisual(visualSignaturePlan?.heroVisualType)
@@ -2355,11 +2355,11 @@ export default function WebBuildPreviewDocument({
   // demo section from the plan's hero type.
   const sectionSigByRole = (name: string, id: string): string | undefined => {
     const n = `${id} ${name}`.toLowerCase();
+    if (/developer|\bdev\b|\bcode\b|\bcli\b|terminal|deploy|\bsdk\b/.test(n)) return 'code-rain';
     if (/integration|connect|shopify|woocommerce|catalog|store\s*integrat|entegrasyon|\bapi\b|plugin|webhook|helpdesk/.test(n)) return 'integration-orbit';
     if (/security|trust|privacy|compliance|safety|güven|gizlilik/.test(n)) return 'trust-control-stack';
-    if (/how[-\s]?it[-\s]?works|process|workflow|steps?|journey|shopper\s*flow|nasıl|akış|delivery/.test(n)) return 'timeline-rail';
-    if (/demo|chat|assistant|playground|product|conversation|sohbet/.test(n)) return visualSignaturePlan?.heroVisualType === 'product-flow' ? 'product-card-rail' : 'chat-flow-rail';
-    if (/developer|\bdev\b|\bcode\b|\bcli\b|terminal|deploy|\bsdk\b/.test(n)) return 'code-rain';
+    if (/\bdemos?\b|\bchat\b|assistant|playground|\bproducts?\b|conversation|sohbet/.test(n)) return visualSignaturePlan?.heroVisualType === 'product-flow' ? 'product-card-rail' : 'chat-flow-rail';
+    if (/how[-\s]?it[-\s]?works|\bprocess(?:es)?\b|\bworkflows?\b|\bsteps?\b|\bjourney\b|shopper\s*flow|nasıl|akış|\bdeliver(?:y|ies)\b/.test(n)) return 'timeline-rail';
     return undefined;
   };
   // One deterministic pass over ALL sections: assign each a signature visual (id →
@@ -2372,7 +2372,8 @@ export default function WebBuildPreviewDocument({
     for (const s of sectionItems) {
       const rawId = s.id;
       const nm = (s.name || '').trim().toLowerCase();
-      if (/hero|banner|masthead|footer|colophon/i.test(`${s.id} ${s.name || ''}`)) continue;
+      const kind = plan.sections.find((p) => p.id === rawId)?.kind;
+      if (kind === 'hero' || kind === 'footer') continue;
       const t = sigBySectionId.get(rawId) || sigBySectionName.get(nm) || sectionSigByRole(s.name || '', s.id);
       if (!t || !hasSignatureVisual(t)) continue;
       const c = sigCanon(t);
@@ -2382,7 +2383,7 @@ export default function WebBuildPreviewDocument({
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visualSignaturePlan, sectionItems, sigBySectionId, sigBySectionName, heroSigType]);
+  }, [visualSignaturePlan, sectionItems, sigBySectionId, sigBySectionName, heroSigType, plan.sections]);
   const rootRef = useRef<HTMLDivElement>(null);
   const [activePage, setActivePage] = useState('home');
   // Router-free page model + the sections the ACTIVE page renders (never empty).
