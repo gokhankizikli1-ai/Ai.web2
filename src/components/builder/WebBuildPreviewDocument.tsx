@@ -23,7 +23,7 @@ import {
 } from '@/lib/webBuildInteractionContract';
 // Type-only import (erased at build) — Phase 5's data-only Visual Asset Plan the
 // Preview consumes with CSS/SVG. Never pulls agent logic into the preview bundle.
-import type { VisualAssetPlan, HeroVisualType, VisualSignaturePlan } from '@/lib/webBuildAgents';
+import type { VisualAssetPlan, HeroVisualType, VisualSignaturePlan, MotionComposerArtifact, MotionPattern, MotionLayer } from '@/lib/webBuildAgents';
 
 /**
  * A REAL, premium rendered approximation of the generated site whose STRUCTURE is
@@ -1617,6 +1617,76 @@ function PremiumVisualLayer({ type, animate, className = '' }: { type: HeroVisua
   );
 }
 
+/* ── Phase 10B: Motion Composer ambient layer ────────────────────────────────
+ * A single reusable, DECORATIVE, pointer-events-none ambient layer the preview
+ * renders behind the hero (and optionally globally) from a MotionLayer's pattern +
+ * intensity. framer-motion/CSS only — NO video, no image, no backend. Fully gated
+ * on prefers-reduced-motion: when reduced, loops stop and only a faint static layer
+ * remains (no large transforms). Uses --acc/--acc2 so it reads on any palette. */
+function MotionAmbientLayer({ pattern, intensity = 'subtle', reduce, className = '' }: {
+  pattern: MotionPattern; intensity?: MotionLayer['intensity']; reduce: boolean; className?: string;
+}) {
+  if (!pattern || pattern === 'none') return null;
+  const op = intensity === 'minimal' ? 0.10 : intensity === 'expressive' ? 0.22 : 0.15;
+  const amp = intensity === 'minimal' ? 0.5 : intensity === 'expressive' ? 1.4 : 1; // movement scale
+  const still = reduce;
+  const body = (() => {
+    switch (pattern) {
+      case 'organic-drift': // calm organic blobs/contours for local/landscaping
+        return (
+          <svg aria-hidden viewBox="0 0 400 240" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 h-full w-full" style={{ opacity: op }}>
+            {[70, 130, 190].map((y, k) => {
+              const d = `M0 ${y} C 100 ${y - 22}, 300 ${y + 22}, 400 ${y}`;
+              return still
+                ? <path key={k} d={d} fill="none" stroke={k === 1 ? 'var(--acc)' : 'rgba(255,255,255,0.10)'} strokeWidth="1.2" />
+                : <motion.path key={k} d={d} fill="none" stroke={k === 1 ? 'var(--acc)' : 'rgba(255,255,255,0.10)'} strokeWidth="1.2" animate={{ opacity: [0.5, 0.95, 0.5] }} transition={{ duration: 9 + k, repeat: Infinity, ease: 'easeInOut', delay: k * 0.6 }} />;
+            })}
+          </svg>
+        );
+      case 'floating-cards': // gently floating rounded shapes for hero/product
+        return (
+          <svg aria-hidden viewBox="0 0 400 240" preserveAspectRatio="xMidYMid slice" className="absolute inset-0 h-full w-full" style={{ opacity: op }}>
+            {[[60, 60], [280, 90], [180, 150]].map(([x, y], k) => still
+              ? <rect key={k} x={x} y={y} width="70" height="46" rx="10" fill="none" stroke={k === 0 ? 'var(--acc)' : 'rgba(255,255,255,0.12)'} strokeWidth="1.2" />
+              : <motion.rect key={k} x={x} y={y} width="70" height="46" rx="10" fill="none" stroke={k === 0 ? 'var(--acc)' : 'rgba(255,255,255,0.12)'} strokeWidth="1.2" animate={{ y: [y, y - 6 * amp, y] }} transition={{ duration: 6 + k, repeat: Infinity, ease: 'easeInOut', delay: k * 0.4 }} />)}
+          </svg>
+        );
+      case 'document-scan': // slow scan line for archive/documents
+        return (
+          <div className="absolute inset-0" style={{ opacity: op }}>
+            {still
+              ? <span className="absolute inset-x-6 top-1/2 h-px" style={{ background: 'linear-gradient(90deg, transparent, var(--acc), transparent)' }} />
+              : <motion.span aria-hidden className="absolute inset-x-6 h-px" style={{ background: 'linear-gradient(90deg, transparent, var(--acc), transparent)' }} animate={{ top: ['6%', '94%', '6%'] }} transition={{ duration: 11, repeat: Infinity, ease: 'easeInOut' }} />}
+          </div>
+        );
+      case 'integration-orbit': // slow orbit ring (generic, no logos)
+        return (
+          <div className="absolute inset-0 flex items-center justify-center" style={{ opacity: op }}>
+            {still
+              ? <span className="h-48 w-48 rounded-full border" style={{ borderColor: 'rgba(255,255,255,0.12)' }} />
+              : <motion.span aria-hidden className="h-48 w-48 rounded-full border" style={{ borderColor: 'rgba(255,255,255,0.12)', borderTopColor: 'var(--acc)' }} animate={{ rotate: 360 }} transition={{ duration: 60, repeat: Infinity, ease: 'linear' }} />}
+          </div>
+        );
+      case 'catalog-filter-shift': // subtle shifting bars for catalog/filter
+        return (
+          <div className="absolute inset-x-8 top-8 flex gap-2" style={{ opacity: op }}>
+            {[0, 1, 2, 3].map((k) => still
+              ? <span key={k} className="h-1.5 flex-1 rounded-full" style={{ background: k === 0 ? 'var(--acc)' : 'rgba(255,255,255,0.12)' }} />
+              : <motion.span key={k} className="h-1.5 flex-1 rounded-full" style={{ background: k === 0 ? 'var(--acc)' : 'rgba(255,255,255,0.12)' }} animate={{ opacity: [0.4, 1, 0.4] }} transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut', delay: k * 0.25 }} />)}
+          </div>
+        );
+      default: // ambient-gradient (and any other) → a soft radial aura
+        return (
+          <>
+            <Orb color="var(--acc)" style={{ top: '-16%', right: '-12%', width: 400, height: 400, opacity: op }} still={still} />
+            <Orb color="var(--acc2)" style={{ bottom: '-20%', left: '-14%', width: 320, height: 320, opacity: op * 0.7 }} delay={2} still={still} />
+          </>
+        );
+    }
+  })();
+  return <div aria-hidden className={`pointer-events-none absolute inset-0 overflow-hidden ${className}`}>{body}</div>;
+}
+
 /* ── Phase 6E: local visual-calm helpers ─────────────────────────────────────
  * A tiny, LOCAL hierarchy system (not a component library): softer surfaces, one
  * hairline instead of stacked borders, muted secondary text, and accent reserved
@@ -2363,7 +2433,7 @@ function DemoShellScreen({ screen, allSections, brief, art, rt, onHome, heroVisu
 }
 
 export default function WebBuildPreviewDocument({
-  sectionItems: rawSectionItems, brief, interactionContract, visualAssetPlan, visualSignaturePlan,
+  sectionItems: rawSectionItems, brief, interactionContract, visualAssetPlan, visualSignaturePlan, motionComposer,
 }: {
   sectionItems: WebBuildSectionItem[];
   brief: WebBuildBrief;
@@ -2377,6 +2447,9 @@ export default function WebBuildPreviewDocument({
    *  signature visuals (chat-flow rail, integration orbit, trust stack, …) in the
    *  hero + matching sections. Optional → old builds fall back to VisualModule. */
   visualSignaturePlan?: VisualSignaturePlan;
+  /** Phase 10B Motion Composer plan (data only). Drives a subtle, reduced-motion-
+   *  safe ambient motion layer behind the hero / sections. Optional → no motion. */
+  motionComposer?: MotionComposerArtifact;
 }) {
   // Normalize every section item to a well-formed shape BEFORE any derived helper
   // runs. The section-level boundaries only cover their own renderers; the plan/
@@ -2705,6 +2778,24 @@ export default function WebBuildPreviewDocument({
   const heroVisual = resolveHeroVisual(visualAssetPlan, art.mode);
   const ambientAllowed = !reduce && motionAmbientAllowed(deriveMotionFit(brief, art, plan));
 
+  // Phase 10B: Motion Composer consumption helpers. Read the composed layers and
+  // expose a small, safe lookup so the preview can render the concept-specific
+  // ambient motion. All display-only; when there's no plan the preview is unchanged.
+  const motionLayers = motionComposer?.layers || [];
+  const motionForTarget = (target: string): MotionLayer[] => motionLayers.filter((l) => l.target === target);
+  const hasMotionPattern = (target: string, pattern: MotionPattern): boolean => motionLayers.some((l) => l.target === target && l.pattern === pattern);
+  const motionIntensityFor = (target: string): MotionLayer['intensity'] => (motionForTarget(target)[0]?.intensity) || 'subtle';
+  // The concept-specific hero + global ambient motion (first layer of each target).
+  const heroMotionLayer = motionForTarget('hero')[0];
+  // A global ambient layer is only meaningful when it isn't a duplicate of the hero
+  // pattern (avoids stacking two identical auras behind the same fold).
+  const globalMotionLayer = (() => {
+    const g = motionForTarget('global')[0];
+    if (!g) return undefined;
+    return heroMotionLayer && hasMotionPattern('hero', g.pattern) ? undefined : g;
+  })();
+  const heroMotionIntensity = motionIntensityFor('hero');
+
   // ── Phase 6B: resolve the Entry Flow (landing → experience, or straight in) and
   // map it onto the real internal screens. Then initialize/repair activePage from
   // it: on first settle start where the model decided; on later shell/contract
@@ -2995,6 +3086,10 @@ export default function WebBuildPreviewDocument({
           {/* Phase 6A: concept-specific ambient visual (CSS/SVG) behind the home
               content. Phase 6E: kept subtle so the headline always dominates. */}
           <PremiumVisualLayer type={heroVisual} animate={ambientAllowed} className="opacity-25" />
+          {/* Phase 10B: Motion Composer ambient layer (concept-specific, reduced-
+              motion safe). Additive + behind the content; never blocks the headline. */}
+          {heroMotionLayer && <MotionAmbientLayer pattern={heroMotionLayer.pattern} intensity={heroMotionIntensity} reduce={reduce} className="opacity-70" />}
+          {globalMotionLayer && <MotionAmbientLayer pattern={globalMotionLayer.pattern} intensity={globalMotionLayer.intensity} reduce={reduce} className="opacity-60" />}
           <div className="relative z-10">
             {renderItems.map((s, i) => (
               <Fragment key={(s && s.id) || `home-${i}`}>

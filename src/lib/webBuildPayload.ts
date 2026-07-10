@@ -10,7 +10,7 @@ import { resolveBuildFiles, parseSectionCopy, synthesizeFromCopies, type SynthFi
 import { inferWebsiteBrief, fallbackSectionItems, checkQuality } from '@/lib/webBuildBrief';
 import { deriveLayoutPlan, type WebBuildLayoutPlan } from '@/lib/webBuildLayoutPlan';
 import {
-  runUpstreamAgents, runLayoutArchitect, runComponentEngineer, runReviewer, runQualityDirector, runAssetDirector, runFixer, WEB_BUILD_AGENTS_ENABLED,
+  runUpstreamAgents, runLayoutArchitect, runComponentEngineer, runReviewer, runQualityDirector, runAssetDirector, runMotionComposer, runFixer, WEB_BUILD_AGENTS_ENABLED,
   derivePageArchitectureDecision, deriveVisualSignaturePlan, deriveExperienceBlueprint,
   type WebBuildAgent, type WebBuildArtifacts, type WebBuildEnforcement,
 } from '@/lib/webBuildAgents';
@@ -754,6 +754,25 @@ function assembleWebBuildPayload(
       agents = [...agents, ad.agent];
       artifacts = { ...(artifacts || {}), assetDirector: ad.artifact };
 
+      // MOTION COMPOSER (Phase 10B) — runs AFTER the Asset Director and BEFORE the
+      // Fixer. It consumes the Asset Director's motion-css-now slots and composes
+      // concept-specific SUBTLE motion LAYERS the Preview renders with framer-motion
+      // / CSS only. It NEVER adds video, image generation, a provider, or a backend
+      // call, always respects prefers-reduced-motion, never fakes backend work, and
+      // fails OPEN — so it can never block Preview / All Files.
+      const mc = runMotionComposer({
+        brief: artBrief,
+        sectionItems: sectionItems.map((s) => ({ id: s.id, name: s.name })),
+        artDirection: artifacts?.artDirection,
+        blueprint: artifacts?.blueprint,
+        experienceBlueprint: artifacts?.experienceBlueprint,
+        visualSignaturePlan: artifacts?.visualSignaturePlan,
+        assetDirector: ad.artifact,
+        lang: effLang,
+      });
+      agents = [...agents, mc.agent];
+      artifacts = { ...(artifacts || {}), motionComposer: mc.artifact };
+
       // FIXER AGENT (Phase 6 + 7A) — runs AFTER the Reviewer + Quality Director. It
       // consumes the reviewer artifact AND the quality director's issues / rewrite
       // instructions, and applies a NARROW set of SAFE, deterministic repairs to the
@@ -877,6 +896,14 @@ function assembleWebBuildPayload(
         manualUploadAssetSlotCount: (artifacts?.assetDirector?.slots || []).filter((s) => s.generationMode === 'manual-upload-later').length,
         imageProviderNeeded: !!artifacts?.assetDirector?.providerReadiness?.imageProviderNeeded,
         motionProviderNeeded: !!artifacts?.assetDirector?.providerReadiness?.motionProviderNeeded,
+        // Motion Composer (Phase 10B) — real artifact data only (subtle CSS motion).
+        didRunMotionComposer: !!artifacts?.motionComposer,
+        motionLayerCount: (artifacts?.motionComposer?.layers || []).length,
+        globalMotionLayerCount: (artifacts?.motionComposer?.globalMotion || []).length,
+        heroMotionLayerCount: (artifacts?.motionComposer?.heroMotion || []).length,
+        sectionMotionLayerCount: (artifacts?.motionComposer?.sectionMotion || []).length,
+        consumedMotionAssetSlotCount: (artifacts?.motionComposer?.consumedAssetSlots || []).length,
+        reducedMotionReady: !!artifacts?.motionComposer && !!artifacts.motionComposer.reducedMotionPolicy,
         // Visual Exploration + anti-template gate (Phase 7B) — real artifact data only.
         visualCandidateCount: (artifacts?.artDirection?.visualExploration?.candidates || []).length,
         selectedVisualCandidate: artifacts?.artDirection?.visualExploration?.selectedCandidateId,
