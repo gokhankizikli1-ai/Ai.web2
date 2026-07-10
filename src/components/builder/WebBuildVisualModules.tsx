@@ -324,11 +324,11 @@ function ProductShowcase({ labels, compact, lang }: { labels?: string[]; compact
           {/* Knowledge-base source card + support-handoff card */}
           {!compact && (
             <div className="grid grid-cols-2 gap-2.5">
-              <div className="rounded-xl border border-[color:var(--bd)] bg-white/[0.02] p-2.5">
+              <div className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-2.5">
                 <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-200"><KbGlyph /><span className="truncate">{kbLabel}</span></div>
                 <div className="mt-2 space-y-1"><span className="block h-1.5 w-full rounded-full bg-white/10" /><span className="block h-1.5 w-3/4 rounded-full bg-white/10" /></div>
               </div>
-              <div className="rounded-xl border border-[color:var(--bd)] bg-white/[0.02] p-2.5">
+              <div className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-2.5">
                 <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-200"><HandoffGlyph /><span className="truncate">{handoffLabel}</span></div>
                 <div className="mt-2 flex items-center gap-1">
                   {[0, 1].map((k) => <span key={k} className="h-5 w-5 rounded-full border border-white/15 bg-white/5" />)}
@@ -511,6 +511,13 @@ const CheckGlyph = () => (
   </svg>
 );
 
+/* Phase 9E-2: signature visuals read premium via soft hairline borders + faint
+ * surfaces (composed and calm, not boxy). Accent stays the palette accent
+ * (--acc/--acc2), never a hard-coded red; a soft tint is preferred over a solid
+ * fill for large surfaces. */
+/** Soft accent tint (for glows / faint fills — never a loud solid block). */
+const sigTint = (pct: number): string => `color-mix(in srgb, var(--acc) ${pct}%, transparent)`;
+
 /** A pulsing connection dot (motion-gated). */
 function PulseDot({ reduce, color = 'var(--acc)', delay = 0 }: { reduce: boolean; color?: string; delay?: number }) {
   return reduce
@@ -530,10 +537,10 @@ function ChatFlowRailVisual({ labels, compact, lang }: { labels?: string[]; comp
   const handoff = ML(lg, 'Handoff to a human', 'İnsana devir');
   return (
     <Frame className="shadow-2xl shadow-black/40">
-      <div className="flex items-center gap-1.5 border-b border-[color:var(--bd)] px-3 py-2.5">
-        <span className="h-2.5 w-2.5 rounded-full bg-white/20" /><span className="h-2.5 w-2.5 rounded-full bg-white/20" /><span className="h-2.5 w-2.5 rounded-full bg-white/20" />
+      <div className="flex items-center gap-1.5 border-b border-white/[0.06] px-3.5 py-2.5">
+        <span className="h-2.5 w-2.5 rounded-full bg-white/15" /><span className="h-2.5 w-2.5 rounded-full bg-white/[0.12]" /><span className="h-2.5 w-2.5 rounded-full bg-white/[0.09]" />
         <span className="ml-2 text-[10px] uppercase tracking-wider text-white/45">{ML(lg, 'Storefront chat flow', 'Mağaza sohbet akışı')}</span>
-        <span className="ml-auto rounded-full border border-[color:var(--bd)] px-2 py-0.5 text-[9px] uppercase tracking-wider text-white/50">{ML(lg, 'Demo', 'Demo')}</span>
+        <span className="ml-auto rounded-full border border-white/[0.08] px-2 py-0.5 text-[9px] uppercase tracking-wider text-white/50">{ML(lg, 'Demo', 'Demo')}</span>
       </div>
       <div className="relative space-y-2.5 p-3.5">
         <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-20" style={{ background: 'radial-gradient(120% 80% at 70% 0%, color-mix(in srgb, var(--acc) 14%, transparent), transparent 70%)' }} />
@@ -541,8 +548,8 @@ function ChatFlowRailVisual({ labels, compact, lang }: { labels?: string[]; comp
           const body = (
             <div className={`flex items-end ${b.assistant ? 'justify-start' : 'justify-end'}`}>
               {b.assistant && <span aria-hidden className="mr-1.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold text-white" style={{ background: 'var(--acc)' }}>◆</span>}
-              <div className={`max-w-[82%] px-3 py-2 text-[12px] leading-snug ${b.assistant ? 'rounded-2xl rounded-bl-sm text-slate-100' : 'rounded-2xl rounded-br-sm text-white'}`}
-                style={b.assistant ? { background: 'rgba(255,255,255,0.05)', border: '1px solid var(--bd)' } : { background: 'var(--acc)' }}>{b.text}</div>
+              <div className={`max-w-[82%] px-3.5 py-2 text-[12px] leading-snug ${b.assistant ? 'rounded-2xl rounded-bl-md text-slate-100' : 'rounded-2xl rounded-br-md text-white'}`}
+                style={b.assistant ? { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' } : { background: sigTint(88), boxShadow: '0 6px 18px -10px var(--acc)' }}>{b.text}</div>
             </div>
           );
           return reduce ? <div key={i} className="relative z-10">{body}</div>
@@ -551,7 +558,7 @@ function ChatFlowRailVisual({ labels, compact, lang }: { labels?: string[]; comp
         {!compact && (
           <div className="relative z-10 grid grid-cols-2 gap-2.5 pt-1">
             {/* Product recommendation card — abstract media + title/price BARS (no fake numbers). */}
-            <div className="rounded-xl border border-[color:var(--bd)] bg-white/[0.02] p-2.5">
+            <div className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-2.5">
               <div className="mb-2 flex items-center gap-1.5 text-[11px] font-medium text-slate-200"><span aria-hidden className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--acc)' }} /><span className="truncate">{recTitle}</span></div>
               <div className="flex gap-2">
                 <span aria-hidden className="h-10 w-10 shrink-0 rounded-lg" style={{ background: 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 40%, transparent), color-mix(in srgb, var(--acc2) 22%, transparent))' }} />
@@ -559,7 +566,7 @@ function ChatFlowRailVisual({ labels, compact, lang }: { labels?: string[]; comp
               </div>
             </div>
             {/* Policy answer card — sourced from a sample policy, honest bars. */}
-            <div className="rounded-xl border border-[color:var(--bd)] bg-white/[0.02] p-2.5">
+            <div className="rounded-2xl border border-white/[0.07] bg-white/[0.025] p-2.5">
               <div className="mb-2 flex items-center gap-1.5 text-[11px] font-medium text-slate-200"><KbGlyph /><span className="truncate">{policyTitle}</span></div>
               <div className="space-y-1.5"><span className="block h-1.5 w-full rounded-full bg-white/10" /><span className="block h-1.5 w-2/3 rounded-full bg-white/10" /></div>
             </div>
@@ -567,7 +574,7 @@ function ChatFlowRailVisual({ labels, compact, lang }: { labels?: string[]; comp
         )}
         {/* Handoff chip */}
         <div className="relative z-10 flex items-center gap-1.5">
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--bd)] bg-white/[0.03] px-2.5 py-1 text-[10px] text-slate-300"><HandoffGlyph /><span className="truncate">{handoff}</span><PulseDot reduce={reduce} color="var(--acc2)" /></span>
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1 text-[10px] text-slate-300"><HandoffGlyph /><span className="truncate">{handoff}</span><PulseDot reduce={reduce} color="var(--acc2)" /></span>
         </div>
       </div>
     </Frame>
@@ -587,12 +594,12 @@ function ProductCardRailVisual({ labels, compact, lang }: { labels?: string[]; c
     <Frame className="p-3.5">
       <div className="mb-2.5 flex items-center gap-2 text-[11px] uppercase tracking-wider text-white/45">
         <span>{ML(lg, 'Product rail', 'Ürün rayı')}</span>
-        <span aria-hidden className="h-px flex-1" style={{ background: 'var(--bd)' }} />
+        <span aria-hidden className="h-px flex-1" style={{ background: 'linear-gradient(90deg, rgba(255,255,255,0.1), transparent)' }} />
       </div>
       <div className="flex gap-2.5 overflow-hidden">
         {names.map((n, i) => {
           const card = (
-            <div className="w-1/3 shrink-0 rounded-xl border border-[color:var(--bd)] bg-white/[0.02] p-2" style={i === 0 ? { borderColor: 'color-mix(in srgb, var(--acc) 45%, transparent)' } : undefined}>
+            <div className="w-1/3 shrink-0 rounded-2xl border border-white/[0.07] bg-white/[0.025] p-2" style={i === 0 ? { borderColor: 'color-mix(in srgb, var(--acc) 45%, transparent)' } : undefined}>
               <span aria-hidden className="mb-2 block h-16 w-full rounded-lg" style={{ background: i === 0 ? 'linear-gradient(135deg, color-mix(in srgb, var(--acc) 42%, transparent), color-mix(in srgb, var(--acc2) 22%, transparent))' : 'rgba(255,255,255,0.04)' }} />
               <p className="truncate text-[11px] font-medium text-slate-200">{n}</p>
               <div className="mt-1.5 flex items-center gap-1.5"><span className="h-1.5 w-8 rounded-full" style={{ background: 'var(--acc)' }} /><span className="h-1.5 w-5 rounded-full bg-white/12" /></div>
@@ -643,7 +650,7 @@ function IntegrationOrbitVisual({ labels, compact, lang }: { labels?: string[]; 
           const leftPct = 50 + (Math.cos(a) * R / 260) * 100;
           const topPct = 50 + (Math.sin(a) * R / 216) * 100;
           return (
-            <div key={i} className="absolute flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 rounded-full border border-[color:var(--bd)] bg-[var(--sf)] px-2 py-1 text-[10px] text-slate-200 shadow-lg shadow-black/30" style={{ left: `${leftPct}%`, top: `${topPct}%` }}>
+            <div key={i} className="absolute flex -translate-x-1/2 -translate-y-1/2 items-center gap-1.5 rounded-full border border-white/[0.08] bg-[var(--sf)]/90 px-2.5 py-1 text-[10px] text-slate-200 shadow-lg shadow-black/25 backdrop-blur-sm" style={{ left: `${leftPct}%`, top: `${topPct}%` }}>
               <PulseDot reduce={reduce} color={i % 2 ? 'var(--acc2)' : 'var(--acc)'} delay={i * 0.25} />
               <span className="truncate">{n}</span>
             </div>
@@ -670,12 +677,12 @@ function TrustControlStackVisual({ labels, compact, lang }: { labels?: string[];
     <Frame className="p-3.5">
       <div className="mb-2.5 flex items-center gap-2 text-[11px] uppercase tracking-wider text-white/45">
         <span>{ML(lg, 'Trust controls', 'Güven kontrolleri')}</span>
-        <span aria-hidden className="h-px flex-1" style={{ background: 'var(--bd)' }} />
+        <span aria-hidden className="h-px flex-1" style={{ background: 'linear-gradient(90deg, rgba(255,255,255,0.1), transparent)' }} />
       </div>
       <div className="space-y-2">
         {rows.map((r, i) => {
           const row = (
-            <div className="flex items-start gap-2.5 rounded-xl border border-[color:var(--bd)] bg-white/[0.02] p-2.5">
+            <div className="flex items-start gap-2.5 rounded-2xl border border-white/[0.07] bg-white/[0.025] p-2.5">
               <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg" style={{ background: 'color-mix(in srgb, var(--acc) 12%, transparent)' }}>{r.glyph}</span>
               <div className="min-w-0">
                 <p className="flex items-center gap-1.5 text-[12px] font-medium text-slate-100">{custom[i] || r.title}<PulseDot reduce={reduce} delay={i * 0.3} /></p>
@@ -701,7 +708,7 @@ function CodeRainVisual({ labels, compact }: { labels?: string[]; compact?: bool
   return (
     <Frame className="p-0">
       <div className="relative aspect-[16/10] w-full overflow-hidden">
-        <svg aria-hidden viewBox="0 0 320 200" className="absolute inset-0 h-full w-full" style={{ opacity: 0.22 }}>
+        <svg aria-hidden viewBox="0 0 320 200" className="absolute inset-0 h-full w-full" style={{ opacity: 0.16 }}>
           {Array.from({ length: cols }).map((_, c) => {
             const x = 12 + c * (296 / cols);
             const glyphs = Array.from({ length: 8 }).map((_, r) => (
@@ -712,7 +719,7 @@ function CodeRainVisual({ labels, compact }: { labels?: string[]; compact?: bool
           })}
         </svg>
         {/* Terminal panel */}
-        <div className="absolute inset-x-4 bottom-4 rounded-xl border border-[color:var(--bd)] bg-black/50 p-2.5 backdrop-blur-sm">
+        <div className="absolute inset-x-4 bottom-4 rounded-2xl border border-white/[0.08] bg-black/50 p-3 backdrop-blur-md">
           <div className="mb-1.5 flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-white/20" /><span className="h-2 w-2 rounded-full bg-white/20" /><span className="h-2 w-2 rounded-full bg-white/20" /></div>
           {cmds.map((c, i) => (
             <p key={i} className="font-mono text-[11px] leading-relaxed"><span style={{ color: 'var(--acc)' }}>$</span> <span className="text-slate-300">{c}</span>{i === cmds.length - 1 && !reduce && <motion.span className="ml-0.5 inline-block h-3 w-1.5 align-middle" style={{ background: 'var(--acc)' }} animate={{ opacity: [1, 0, 1] }} transition={{ duration: 1, repeat: Infinity }} />}</p>
@@ -734,12 +741,12 @@ function TimelineRailVisual({ labels, compact, lang }: { labels?: string[]; comp
   return (
     <Frame className="p-4">
       <div className="relative">
-        <span aria-hidden className="absolute left-3 top-3 h-[calc(100%-1.5rem)] w-px" style={{ background: 'var(--bd)' }} />
-        {!reduce && <motion.span aria-hidden className="absolute left-3 top-3 w-px" style={{ background: 'var(--acc)' }} initial={{ height: 0 }} whileInView={{ height: 'calc(100% - 1.5rem)' }} viewport={{ once: true }} transition={{ duration: 1.1, ease: 'easeInOut' }} />}
-        <ol className="space-y-3.5">
+        <span aria-hidden className="absolute left-3 top-3 h-[calc(100%-1.5rem)] w-px" style={{ background: 'rgba(255,255,255,0.09)' }} />
+        {!reduce && <motion.span aria-hidden className="absolute left-3 top-3 w-px" style={{ background: 'linear-gradient(180deg, var(--acc), transparent)' }} initial={{ height: 0 }} whileInView={{ height: 'calc(100% - 1.5rem)' }} viewport={{ once: true }} transition={{ duration: 1.1, ease: 'easeInOut' }} />}
+        <ol className="space-y-4">
           {steps.map((s, i) => (
             <li key={i} className="relative flex items-center gap-3 pl-8">
-              <span className="absolute left-0 flex h-6 w-6 items-center justify-center rounded-full border text-[10px] font-semibold" style={i === 0 ? { borderColor: 'var(--acc)', background: 'color-mix(in srgb, var(--acc) 18%, transparent)', color: '#fff' } : { borderColor: 'var(--bd)', color: 'rgba(255,255,255,0.6)' }}>{i + 1}</span>
+              <span className="absolute left-0 flex h-6 w-6 items-center justify-center rounded-full border text-[10px] font-semibold" style={i === 0 ? { borderColor: sigTint(55), background: sigTint(16), color: '#fff' } : { borderColor: 'rgba(255,255,255,0.14)', color: 'rgba(255,255,255,0.6)' }}>{i + 1}</span>
               <span className="truncate text-[13px] text-slate-200">{s}</span>
               {i === 0 && <PulseDot reduce={reduce} />}
             </li>
