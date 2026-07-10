@@ -379,6 +379,10 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       }
       if (vsp.motionHints?.length) ownerRows.push(['motionHints', vsp.motionHints.slice(0, 2).join(' · ')]);
       (vsp.visualAssetWarnings || []).slice(0, 2).forEach((w, i) => ownerRows.push([`visualAssetWarning${i + 1}`, w]));
+      // Phase 9E-2 — polish/composition status (render-time behaviours are active).
+      ownerRows.push(['signatureVisualPolish', 'applied']);
+      ownerRows.push(['heroHeadlineClamp', 'active (length-aware)']);
+      ownerRows.push(['navDisplayDeduped', 'true']);
     } else if (ranAgents) {
       ownerRows.push(['visualSignaturePlan', 'missing']);
     }

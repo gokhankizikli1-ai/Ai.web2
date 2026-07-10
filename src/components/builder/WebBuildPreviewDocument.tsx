@@ -489,12 +489,23 @@ function HeroBg({ full = false, plan, brief }: { full?: boolean; plan: WebBuildL
 
 const HeroTitle = ({ children, className = '' }: { children: React.ReactNode; className?: string }) => {
   const premium = usePremium();
+  // Phase 9E-2: length-aware clamp. Short headlines keep the large editorial size
+  // from the passed className; long headlines get a smaller, stable inline font-size
+  // + line-height (inline style wins over the text-* classes) so they never
+  // overwhelm the hero visual or clip at the fold. Copy is never changed.
+  const text = typeof children === 'string' ? children : '';
+  const len = text.trim().length;
+  const clamp = len > 90
+    ? { fontSize: 'clamp(1.55rem, 3.2vw + 0.5rem, 2.4rem)', lineHeight: 1.14 }
+    : len > 52
+      ? { fontSize: 'clamp(1.85rem, 3.8vw + 0.5rem, 3.15rem)', lineHeight: 1.1 }
+      : undefined;
   // Tight modern leading everywhere; premium adds balanced wrapping + tighter
   // tracking so the headline reads editorial/premium, not default-SaaS.
   return (
     <motion.h1 initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
       className={`font-semibold text-white leading-[1.06] ${premium ? '[text-wrap:balance]' : ''} ${className}`}
-      style={{ fontFamily: 'var(--hf)', letterSpacing: premium ? '-0.025em' : 'var(--tr)' }}>{children}</motion.h1>
+      style={{ fontFamily: 'var(--hf)', letterSpacing: premium ? '-0.025em' : 'var(--tr)', ...(clamp || {}) }}>{children}</motion.h1>
   );
 };
 
@@ -527,6 +538,22 @@ function HeroProof({ brief }: { brief: WebBuildBrief }) {
   );
 }
 
+/** Phase 9E-2: display-only normalization of generic public category labels for an
+ *  AI-ecommerce / chat concept, so the hero eyebrow + nav brand never read as a
+ *  generic "AI product / SaaS". Never mutates the brief or any artifact. */
+function isAiChatCommerceBrief(b: WebBuildBrief): boolean {
+  const hay = [b.type, b.coreIdea, b.goal, b.audience, b.visitorIntent].filter(Boolean).join(' ').toLowerCase();
+  const chat = /chat|assistant|conversational|chatbot|chat\s*bot|\bai\b/.test(hay);
+  const commerce = /e-?commerce|storefront|\bstore\b|\bshop\b|retail|catalog|\bproduct\b|mağaza|ürün|e-?ticaret/.test(hay);
+  return chat && commerce;
+}
+function normalizePublicLabel(raw: string | undefined, b: WebBuildBrief): string {
+  const v = (raw || '').trim();
+  if (!v || !isAiChatCommerceBrief(b)) return v;
+  const generic = /^(ai\s*product(\s*\/\s*saas)?|ai\s*tool(\s*\/\s*productivity)?|ai\s*saas|saas(\s*landing(\s*page)?)?|productivity(\s*(tool|app))?)$/i;
+  return generic.test(v) ? 'AI Shopping Assistant' : v;
+}
+
 function heroTexts(s: S, brief: WebBuildBrief, ctx: InteractionContext) {
   const realBullets = (s.bullets || []).filter(Boolean);
   // Phase 8B: when a product/chat hero's own copy is thin, hand the visual module
@@ -537,7 +564,7 @@ function heroTexts(s: S, brief: WebBuildBrief, ctx: InteractionContext) {
     : [...realBullets, ...CHAT_MODULE_LABELS(briefLang(brief))].slice(0, 6);
   return {
     title: s.headline || s.copyPreview?.split(/[.!?\n]/)[0] || brief.type || '',
-    eyebrow: brief.type || s.bullets?.[0],
+    eyebrow: normalizePublicLabel(brief.type || s.bullets?.[0], brief),
     sub: s.sub || brief.goal,
     cta: s.cta,
     secondary: s.bullets?.[1],
@@ -1863,6 +1890,20 @@ const NAV_EXPERIENCE_KINDS = new Set<ScreenKind>(['product-demo', 'chat', 'catal
 const NAV_DUP_DEMO_KINDS = new Set<ScreenKind>(['product-demo', 'chat']);
 const NAV_PRIMARY_CAP = 5; // non-home items (Home is the brand button → ≤6 total)
 
+/** Map a nav label (+ optional screen kind) to a coarse ROLE so near-duplicate
+ *  labels collapse to one tab. Returns undefined when the label has no known role
+ *  (those are only deduped by exact text, never by role). Display-only. */
+function navRoleKey(label: string, kind?: ScreenKind): string | undefined {
+  const l = (label || '').toLowerCase();
+  if ((kind && NAV_EXPERIENCE_KINDS.has(kind)) || /chat|assistant|\bdemo\b|conversation|playground|product\s*tour/.test(l)) return 'experience';
+  if (/security|trust|privacy|compliance|safety|güven|gizlilik/.test(l)) return 'security';
+  if (/integration|connect|store\s*integrat|catalog|entegrasyon|\bapi\b|webhook/.test(l)) return 'integrations';
+  if (/how\s*it\s*works|shopper\s*flow|\bprocess\b|workflow|journey|\bsteps?\b|nasıl|akış/.test(l)) return 'flow';
+  if (/pricing|\bplans?\b|book\s*a?\s*demo|contact\s*sales|\bfiyat|paket|abonelik/.test(l)) return 'pricing';
+  if (/^contact$|get\s*in\s*touch|iletişim/.test(l)) return 'contact';
+  return undefined;
+}
+
 /** Resolve a clean, capped nav model. Pure; on any error falls back to the old
  *  (uncapped) pages + demoScreens behaviour so nothing breaks. */
 function resolvePreviewNavigation(
@@ -1889,11 +1930,20 @@ function resolvePreviewNavigation(
     // Dedupe: never show two Product Demo / Chat tabs; drop duplicate labels.
     const norm = (s: string) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
     const seen = new Set<string>();
+    // Phase 9E-2: near-duplicate ROLE dedupe so the nav never crowds into a second
+    // row with overlapping items (Security vs Security & Trust, Shopper Flow vs How
+    // it works, Product Demo vs Chat Experience, Pricing vs Book a Demo). The
+    // flagship experience item is always kept; the first item of each other role
+    // wins (items are experience-first, then by kind order).
+    const roleSeen = new Set<string>();
     const filtered = items.filter((i) => {
       if (flagship && i !== flagship && !!i.kind && NAV_DUP_DEMO_KINDS.has(i.kind)) return false;
       const key = norm(i.label);
       if (!key || seen.has(key)) return false;
+      const role = navRoleKey(i.label, i.kind);
+      if (role && i !== flagship && roleSeen.has(role)) return false;
       seen.add(key);
+      if (role) roleSeen.add(role);
       return true;
     });
 
@@ -2785,7 +2835,7 @@ export default function WebBuildPreviewDocument({
   const footerSection = renderItems.find((s) => kindOf(s.id) === 'footer');
   const lead = contentSections[0];
   const subtitle = ((lead && (lead.sub || lead.purpose || lead.copyPreview)) || '').trim();
-  const brand = (brief.type || '').trim();
+  const brand = normalizePublicLabel(brief.type, brief);
   const convId = (ctx.conversionTarget || '').replace(/^#/, '');
   const convItem = convId ? byAnchor.get(convId) : undefined;
   const convCta = (convItem?.cta || '').trim();
