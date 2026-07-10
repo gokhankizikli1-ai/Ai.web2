@@ -1083,6 +1083,43 @@ export interface ImageAssetSlot {
   manualUploadRecommended: boolean;
   providerReady: boolean;
   honestyLabel: string;
+  /** Phase 10D-1: generic Visual Truth classification (site-type agnostic).
+   *  Optional so old builds render unchanged. */
+  visualTruth?: VisualTruthClassification;
+}
+
+/* ── Visual Truth Classifier (Phase 10D-1) ────────────────────────────────────
+ * A generic, site-type-agnostic decision for ANY image slot: is this visual
+ * something that must be a REAL user-provided asset (proof, product, location,
+ * person, document), something safe to AI-generate (illustrative / abstract /
+ * ambient mood), something that should stay a CSS/SVG mockup, or something that
+ * must be blocked (would imply fabricated proof)? Keyed off the slot's own
+ * wording + kind, not off hardcoded per-vertical rules, so it works the same for
+ * jewelry, restaurant, landscaping, SaaS, marketplace, portfolio, archive… */
+export type VisualTruthCategory =
+  | 'real-proof-required'
+  | 'real-product-required'
+  | 'real-location-required'
+  | 'real-person-required'
+  | 'real-document-required'
+  | 'illustrative-concept'
+  | 'abstract-brand'
+  | 'ambient-background'
+  | 'css-svg-only'
+  | 'blocked';
+
+export type VisualGenerationEligibility =
+  | 'manual-upload-required'
+  | 'ai-generation-allowed'
+  | 'css-svg-only'
+  | 'blocked';
+
+export interface VisualTruthClassification {
+  category: VisualTruthCategory;
+  eligibility: VisualGenerationEligibility;
+  reason: string;
+  userFacingLabel: string;
+  safetyNotes: string[];
 }
 
 export interface ImagePipelineArtifact {
@@ -7419,6 +7456,187 @@ function imageNegativePrompt(lang: Lang): string {
     'logo yok, marka adı yok, gerçek şirket işareti yok, sahte referans yok, sahte metrik/istatistik yok, sahte sertifika/uyumluluk rozeti yok, gerçek tanınabilir kişi yok, telifli karakter/stil yok, gerçek üretim verisi ima eden arayüz ekran görüntüsü yok, tıbbi/hukuki/finansal kanıt görseli yok');
 }
 
+/* ── Visual Truth Classifier signals (Phase 10D-1) ────────────────────────────
+ * Case-insensitive, bilingual (EN/TR). They test the slot's OWN descriptive text
+ * (kind + title + purpose + positive prompt + labels) — never the negative
+ * prompt or the user's brief — so a "no logos" safety line or a generic brief
+ * word can't produce a false positive. */
+const VT_BLOCK_RE = /\b(logo|brand ?marks?|trademark|wordmark|marka logosu|ticari marka)\b/i;
+const VT_PROOF_RE = /(before ?[/&-]? ?after|testimonial|reviews?|ratings?|case ?study|guarantee|verified result|önce ?[/&-]? ?sonra|referans|yorum|vaka ?çalışması|kanıt)/i;
+const VT_PRODUCT_RE = /(product (photo|image|shot)|listing|inventory|catalogue? item|\bsku\b|spec ?sheet|in ?stock|real product|actual product|ürün (foto|görsel|resmi)|stok|envanter|ilan görseli|gerçek ürün)/i;
+const VT_LOCATION_RE = /(real (location|place|interior|storefront|venue)|our (restaurant|store|shop|studio|office|venue|space)|storefront|street ?view|gerçek (mekan|konum|yer)|şubemiz|mağazamız|gerçek iç mekan)/i;
+const VT_PERSON_RE = /(team (photo|member)|\bstaff\b|our people|founder|headshot|portrait|client photo|real person|ekip (foto|üyesi)|kadro|kurucu|müşteri fotoğraf|gerçek kişi|portre)/i;
+const VT_DOCUMENT_RE = /(certificate|certification|compliance|licen[sc]e|accreditation|award|diploma|patent|document scan|provenance|archive (document|scan|record)|sertifika|belge|lisans|akreditasyon|ödül|köken|arşiv (belge|kayıt))/i;
+const VT_WORK_RE = /(project (photo|image)|portfolio (work|piece)|client work|our work|completed (project|build)|real project|proje (foto|görsel)|müşteri işi|tamamlanan proje|gerçek proje)/i;
+const VT_UI_RE = /(screenshot|dashboard|ui ?screen|interface|app ?screen|product ?screen|chat ?interface|mockup|wireframe|ekran görüntüsü|arayüz|uygulama ekranı)/i;
+const VT_DIAGRAM_RE = /(diagram|integration ?map|process ?(flow|map)|flow ?chart|icon ?system|trust ?control|node map|şema|diyagram|süreç (akışı|haritası)|entegrasyon haritası|ikon sistemi)/i;
+
+const VT_KIND_BASE: Record<string, VisualTruthCategory> = {
+  'project-photo': 'real-proof-required',
+  'gallery-photo': 'real-proof-required',
+  'before-after-pair': 'real-proof-required',
+  'restaurant-space': 'real-location-required',
+  'product-listing-image': 'real-product-required',
+  'archive-scan': 'real-document-required',
+  'portfolio-work-image': 'real-proof-required',
+  'team-or-studio-photo': 'real-person-required',
+  'food-photo': 'illustrative-concept',
+  'catalog-cover': 'illustrative-concept',
+  'illustrative-product-scene': 'illustrative-concept',
+  'hero-image': 'illustrative-concept',
+  'abstract-brand-image': 'abstract-brand',
+  'hero-background': 'ambient-background',
+};
+
+function vtEligibility(cat: VisualTruthCategory): VisualGenerationEligibility {
+  switch (cat) {
+    case 'real-proof-required':
+    case 'real-product-required':
+    case 'real-location-required':
+    case 'real-person-required':
+    case 'real-document-required':
+      return 'manual-upload-required';
+    case 'illustrative-concept':
+    case 'abstract-brand':
+    case 'ambient-background':
+      return 'ai-generation-allowed';
+    case 'css-svg-only':
+      return 'css-svg-only';
+    case 'blocked':
+    default:
+      return 'blocked';
+  }
+}
+
+function vtUserLabel(cat: VisualTruthCategory, lang: Lang): string {
+  switch (cat) {
+    case 'real-product-required': return L(lang, 'Manual upload required for real product photos', 'Gerçek ürün fotoğrafları için manuel yükleme gerekir');
+    case 'real-location-required': return L(lang, 'Manual upload required for real location photos', 'Gerçek mekan fotoğrafları için manuel yükleme gerekir');
+    case 'real-person-required': return L(lang, 'Manual upload required for real people/team photos', 'Gerçek kişi/ekip fotoğrafları için manuel yükleme gerekir');
+    case 'real-document-required': return L(lang, 'Manual upload required for real documents/certificates', 'Gerçek belgeler/sertifikalar için manuel yükleme gerekir');
+    case 'real-proof-required': return L(lang, 'Manual upload required for real proof photos', 'Gerçek kanıt fotoğrafları için manuel yükleme gerekir');
+    case 'abstract-brand': return L(lang, 'AI-generatable abstract brand image', 'Yapay zeka ile üretilebilir soyut marka görseli');
+    case 'ambient-background': return L(lang, 'AI-generatable ambient background', 'Yapay zeka ile üretilebilir atmosferik arka plan');
+    case 'illustrative-concept': return L(lang, 'AI-generatable mood image', 'Yapay zeka ile üretilebilir atmosfer görseli');
+    case 'css-svg-only': return L(lang, 'CSS/SVG mockup used instead of a fake screenshot', 'Sahte ekran görüntüsü yerine CSS/SVG mockup kullanılır');
+    case 'blocked':
+    default: return L(lang, 'Blocked: would imply fake proof', 'Engellendi: sahte kanıt ima ederdi');
+  }
+}
+
+function vtReason(cat: VisualTruthCategory, lang: Lang, siteType: string): string {
+  const ctx = siteType && siteType !== 'unknown' ? ` (${siteType})` : '';
+  switch (vtEligibility(cat)) {
+    case 'manual-upload-required': return L(lang, `Represents something real — user must upload it${ctx}.`, `Gerçek bir şeyi temsil eder — kullanıcı yüklemeli${ctx}.`);
+    case 'ai-generation-allowed': return L(lang, `Illustrative/mood only — safe to AI-generate${ctx}.`, `Yalnızca açıklayıcı/atmosfer — yapay zeka ile üretmek güvenli${ctx}.`);
+    case 'css-svg-only': return L(lang, `A UI/diagram surface — CSS/SVG is the honest representation${ctx}.`, `Arayüz/şema yüzeyi — dürüst temsil CSS/SVG'dir${ctx}.`);
+    case 'blocked':
+    default: return L(lang, `Would fabricate proof/brand — never generated${ctx}.`, `Kanıt/marka uydururdu — asla üretilmez${ctx}.`);
+  }
+}
+
+function vtSafety(cat: VisualTruthCategory, lang: Lang): string[] {
+  switch (vtEligibility(cat)) {
+    case 'manual-upload-required': return [L(lang, 'No fabricated real photos — real asset must be user-provided.', 'Uydurma gerçek fotoğraf yok — gerçek varlık kullanıcı tarafından sağlanmalı.')];
+    case 'ai-generation-allowed': return [L(lang, 'Illustrative only — never presented as real proof.', 'Yalnızca açıklayıcı — asla gerçek kanıt olarak sunulmaz.')];
+    case 'css-svg-only': return [L(lang, 'No fake screenshots/dashboards — CSS/SVG mockup only.', 'Sahte ekran görüntüsü/panel yok — yalnızca CSS/SVG mockup.')];
+    case 'blocked':
+    default: return [L(lang, 'No fake logos/certificates/metrics/testimonials.', 'Sahte logo/sertifika/metrik/referans yok.')];
+  }
+}
+
+/** A slot-like shape the classifier can read (compatible with ImageAssetSlot). */
+export interface VisualTruthInput {
+  kind: ImageAssetKind | string;
+  title?: string;
+  purpose?: string;
+  source?: ImageAssetSource | string;
+  previewTreatment?: string;
+  prompt?: { positive?: string };
+  placeholderLabel?: string;
+  honestyLabel?: string;
+}
+
+/**
+ * Classify the "visual truth" of an image slot — generic and deterministic, so
+ * it works for ANY site type (jewelry, restaurant, landscaping, SaaS, market-
+ * place, portfolio, archive…). Decides whether the visual must be a REAL user
+ * upload, can be AI-generated (illustrative/abstract/ambient), should stay a
+ * CSS/SVG mockup, or must be blocked. Never weakens safety: proof/product/
+ * location/person/document wording and real-photo kinds all force manual upload.
+ */
+export function classifyVisualTruth(
+  slot: VisualTruthInput,
+  brief?: WebBuildBrief,
+  blueprint?: ExperienceBlueprint,
+  lang?: Lang,
+): VisualTruthClassification {
+  const l: Lang = lang || (brief as { lang?: Lang } | undefined)?.lang || 'en';
+  const siteType = String(blueprint?.siteExperienceType || 'unknown');
+  const kind = String(slot?.kind || '');
+  const treatment = String(slot?.previewTreatment || '');
+  const source = String(slot?.source || '');
+  const text = [kind, slot?.title, slot?.purpose, slot?.prompt?.positive, slot?.placeholderLabel, slot?.honestyLabel]
+    .map((x) => String(x || '')).join(' ').toLowerCase();
+  const has = (re: RegExp) => re.test(text);
+
+  let category: VisualTruthCategory;
+  // 1) BLOCKED — anything that would fabricate a real brand mark.
+  if (has(VT_BLOCK_RE)) category = 'blocked';
+  // 2) REAL categories — proof-heavy wording OR a concrete real-photo kind.
+  else if (kind === 'before-after-pair' || has(VT_PROOF_RE)) category = 'real-proof-required';
+  else if (kind === 'product-listing-image' || has(VT_PRODUCT_RE)) category = 'real-product-required';
+  else if (kind === 'restaurant-space' || has(VT_LOCATION_RE)) category = 'real-location-required';
+  else if (kind === 'team-or-studio-photo' || has(VT_PERSON_RE)) category = 'real-person-required';
+  else if (kind === 'archive-scan' || has(VT_DOCUMENT_RE)) category = 'real-document-required';
+  else if (kind === 'project-photo' || kind === 'gallery-photo' || kind === 'portfolio-work-image' || has(VT_WORK_RE)) category = 'real-proof-required';
+  // 3) CSS/SVG — UI mockups + diagrams (and CSS-only ambient) are never AI photos.
+  else if (treatment === 'ambient-background' && source === 'css-placeholder') category = 'css-svg-only';
+  else if (has(VT_UI_RE) || has(VT_DIAGRAM_RE)) category = 'css-svg-only';
+  // 4) Illustrative / generatable — by kind, else safe mood default.
+  else category = VT_KIND_BASE[kind] || 'illustrative-concept';
+
+  // Honour an explicit upstream manual-upload: never downgrade a REAL asset to
+  // generatable (only ever tighten). Choose the best-fitting real subtype.
+  if (source === 'manual-upload' && category !== 'blocked' && vtEligibility(category) !== 'manual-upload-required') {
+    category = kind === 'restaurant-space' ? 'real-location-required'
+      : kind === 'product-listing-image' ? 'real-product-required'
+        : kind === 'team-or-studio-photo' ? 'real-person-required'
+          : kind === 'archive-scan' ? 'real-document-required'
+            : kind === 'food-photo' ? 'real-product-required'
+              : 'real-proof-required';
+  }
+
+  return {
+    category,
+    eligibility: vtEligibility(category),
+    reason: vtReason(category, l, siteType),
+    userFacingLabel: vtUserLabel(category, l),
+    safetyNotes: vtSafety(category, l),
+  };
+}
+
+/** Reconcile a slot's eligibility fields from its Visual Truth classification.
+ *  Only ever moves toward MORE honesty (manual/css/blocked can't become
+ *  generatable by accident). */
+function reconcileFromVisualTruth(
+  vt: VisualTruthClassification,
+  cur: { source: ImageAssetSource },
+): { source: ImageAssetSource; manualUpload: boolean; providerReady: boolean } {
+  switch (vt.eligibility) {
+    case 'ai-generation-allowed': {
+      const source: ImageAssetSource = cur.source === 'provider-ready' || cur.source === 'prompt-ready' ? cur.source : 'provider-ready';
+      return { source, manualUpload: false, providerReady: true };
+    }
+    case 'css-svg-only':
+      return { source: 'css-placeholder', manualUpload: false, providerReady: false };
+    case 'manual-upload-required':
+    case 'blocked':
+    default:
+      return { source: 'manual-upload', manualUpload: true, providerReady: false };
+  }
+}
+
 /**
  * Derive the Image Pipeline artifact. Pure + deterministic. Maps the Asset
  * Director's image-*-later / manual-upload-later slots to structured image slots
@@ -7449,18 +7667,28 @@ export function deriveImagePipeline(input: ImagePipelineInput): ImagePipelineArt
     positive: string, treatment: ImageAssetSlot['previewTreatment'], aspect: ImageAssetPrompt['aspectRatio'],
     opts: { placeholderLabel?: string; honestyLabel?: string; required?: boolean; priority?: ImageAssetSlot['priority']; manualUpload?: boolean; providerReady?: boolean; sourceSlotId?: string; extraSafety?: string[] } = {},
   ) => {
-    const manualUpload = opts.manualUpload ?? (source === 'manual-upload');
-    const providerReady = opts.providerReady ?? (source === 'provider-ready');
+    const manualUpload0 = opts.manualUpload ?? (source === 'manual-upload');
+    const placeholderLabel = opts.placeholderLabel || (manualUpload0 ? manualLabel : source === 'css-placeholder' ? illustrative : providerLabel);
+    const baseHonesty = opts.honestyLabel || (manualUpload0 ? manualLabel : source === 'css-placeholder' ? illustrative : providerLabel);
+    // Phase 10D-1: classify the slot's visual truth (generic, site-agnostic) and
+    // reconcile its eligibility fields from the classifier — this replaces the
+    // old per-vertical source guessing with one general rule.
+    const vt = classifyVisualTruth(
+      { kind, title, purpose, source, previewTreatment: treatment, prompt: { positive }, placeholderLabel, honestyLabel: baseHonesty },
+      input.brief, input.experienceBlueprint, lang,
+    );
+    const recon = reconcileFromVisualTruth(vt, { source });
     slots.push({
-      id: `img-${iid += 1}`, sourceAssetSlotId: opts.sourceSlotId, kind, target, source, title, purpose,
-      prompt: { positive, negative, style: styleBase, aspectRatio: aspect, consistencySeedHint: paletteFamily || undefined, safetyNotes: [illustrative, ...(opts.extraSafety || [])] },
-      placeholderLabel: opts.placeholderLabel || (manualUpload ? manualLabel : source === 'css-placeholder' ? illustrative : providerLabel),
+      id: `img-${iid += 1}`, sourceAssetSlotId: opts.sourceSlotId, kind, target, source: recon.source, title, purpose,
+      prompt: { positive, negative, style: styleBase, aspectRatio: aspect, consistencySeedHint: paletteFamily || undefined, safetyNotes: [illustrative, ...(opts.extraSafety || []), ...vt.safetyNotes] },
+      placeholderLabel,
       previewTreatment: treatment,
       required: opts.required ?? false,
       priority: opts.priority || 'medium',
-      manualUploadRecommended: manualUpload,
-      providerReady,
-      honestyLabel: opts.honestyLabel || (manualUpload ? manualLabel : source === 'css-placeholder' ? illustrative : providerLabel),
+      manualUploadRecommended: recon.manualUpload,
+      providerReady: recon.providerReady,
+      honestyLabel: vt.userFacingLabel || baseHonesty,
+      visualTruth: vt,
     });
   };
   // Match a section by keyword → 'section:<id>' (skips hero/footer).

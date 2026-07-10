@@ -1843,9 +1843,12 @@ function GeneratableImageSlot({ slot }: { slot: ImageAssetSlot }) {
       <div className="mt-2 flex items-center gap-2">
         {!gate.allowed ? (
           <span className={note}>
-            {slot.manualUploadRecommended || slot.source === 'manual-upload'
-              ? '↑ Manual upload recommended (real photo required)'
-              : 'CSS/SVG placeholder'}
+            {/* Phase 10D-1: the label matches the Visual Truth classification
+                (manual real proof / CSS-SVG mockup / blocked). */}
+            {slot.visualTruth?.userFacingLabel
+              || (slot.manualUploadRecommended || slot.source === 'manual-upload'
+                ? 'Manual upload required for real photos'
+                : 'CSS/SVG placeholder')}
           </span>
         ) : status === 'generating' ? (
           <span className={note}>Generating…</span>
@@ -1862,7 +1865,10 @@ function GeneratableImageSlot({ slot }: { slot: ImageAssetSlot }) {
             {asset?.reason && <span className={note}>{asset.reason}</span>}
           </>
         ) : (
-          <button type="button" onClick={onGenerate} className={btn} disabled={busy}>Generate image</button>
+          <>
+            <button type="button" onClick={onGenerate} className={btn} disabled={busy}>Generate image</button>
+            <span className={note}>{slot.visualTruth?.userFacingLabel || 'AI-generatable mood image'}</span>
+          </>
         )}
       </div>
     </div>
@@ -2990,16 +2996,22 @@ export default function WebBuildPreviewDocument({
   const imagePipelineEnabled = (): boolean => imageSlots.length > 0;
   const imageSlotsForTarget = (target: string): ImageAssetSlot[] => imageSlots.filter((s) => s.target === target);
   const imageSlotForTarget = (target: string): ImageAssetSlot | undefined => imageSlotsForTarget(target)[0];
-  // The primary hero image slot — a foreground frame (skips ambient-background slots
-  // and, for AI/SaaS, only a non-mockup abstract brand image).
-  const primaryHeroImageSlot = (): ImageAssetSlot | undefined =>
-    imageSlotsForTarget('hero').find((s) => s.previewTreatment !== 'ambient-background');
+  // Phase 10D-1: prefer an AI-GENERATABLE illustrative hero slot for the hero
+  // image area (jewelry gold mood, outdoor mood, abstract AI hero…) over a manual
+  // real-proof slot; ambient-background slots are skipped (handled by CSS/motion).
+  const heroImageCandidates = (): ImageAssetSlot[] =>
+    imageSlotsForTarget('hero').filter((s) => s.previewTreatment !== 'ambient-background');
+  const primaryHeroImageSlot = (): ImageAssetSlot | undefined => {
+    const c = heroImageCandidates();
+    return c.find((s) => s.visualTruth?.eligibility === 'ai-generation-allowed') || c[0];
+  };
   const heroImageSlot = imagePipelineEnabled() ? primaryHeroImageSlot() : undefined;
-  // Only site types that genuinely benefit from photography get a hero image frame;
-  // an AI/SaaS product's hero image slot is 'abstract-brand-image' → skip it so the
-  // CSS/SVG product mockup stays the hero (never a fake screenshot).
-  const HERO_PHOTO_KINDS = new Set(['project-photo', 'food-photo', 'restaurant-space', 'gallery-photo', 'portfolio-work-image', 'archive-scan', 'product-listing-image', 'catalog-cover', 'before-after-pair']);
-  const showHeroImage = !!heroImageSlot && HERO_PHOTO_KINDS.has(heroImageSlot.kind);
+  // A hero image band shows for photographic hero concepts AND for a generatable
+  // abstract/illustrative hero (SaaS abstract visual) — but the CSS/SVG product
+  // mockup always stays behind it (never a fake screenshot). Archive document
+  // treatment is gated to archive/document sites by the pipeline, not here.
+  const HERO_VISIBLE_KINDS = new Set(['project-photo', 'food-photo', 'restaurant-space', 'gallery-photo', 'portfolio-work-image', 'archive-scan', 'product-listing-image', 'catalog-cover', 'before-after-pair', 'abstract-brand-image', 'illustrative-product-scene', 'hero-image']);
+  const showHeroImage = !!heroImageSlot && heroImageSlot.previewTreatment !== 'ambient-background' && HERO_VISIBLE_KINDS.has(heroImageSlot.kind);
 
   // ── Phase 6B: resolve the Entry Flow (landing → experience, or straight in) and
   // map it onto the real internal screens. Then initialize/repair activePage from

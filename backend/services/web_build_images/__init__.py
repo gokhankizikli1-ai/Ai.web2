@@ -35,9 +35,50 @@ from __future__ import annotations
 import base64
 import logging
 import os
+import re
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
+
+# ── Visual Truth defensive mirror (Phase 10D-1) ──────────────────────────────
+# The backend is the FINAL authority. Even if the frontend claims a slot is
+# generatable, we re-classify from the slot's own wording; any proof/product/
+# location/person/document/brand signal forces manual-upload/blocked. These
+# mirror the frontend regexes in src/lib/webBuildAgents.ts (VT_*_RE).
+_VT_BLOCK_RE = re.compile(r"\b(logo|brand ?marks?|trademark|wordmark|marka logosu|ticari marka)\b", re.I)
+_VT_PROOF_RE = re.compile(r"(before ?[/&-]? ?after|testimonial|reviews?|ratings?|case ?study|guarantee|verified result|önce ?[/&-]? ?sonra|referans|yorum|vaka ?çalışması|kanıt)", re.I)
+_VT_PRODUCT_RE = re.compile(r"(product (photo|image|shot)|listing|inventory|catalogue? item|\bsku\b|spec ?sheet|in ?stock|real product|actual product|ürün (foto|görsel|resmi)|stok|envanter|ilan görseli|gerçek ürün)", re.I)
+_VT_LOCATION_RE = re.compile(r"(real (location|place|interior|storefront|venue)|our (restaurant|store|shop|studio|office|venue|space)|storefront|street ?view|gerçek (mekan|konum|yer)|şubemiz|mağazamız|gerçek iç mekan)", re.I)
+_VT_PERSON_RE = re.compile(r"(team (photo|member)|\bstaff\b|our people|founder|headshot|portrait|client photo|real person|ekip (foto|üyesi)|kadro|kurucu|müşteri fotoğraf|gerçek kişi|portre)", re.I)
+_VT_DOCUMENT_RE = re.compile(r"(certificate|certification|compliance|licen[sc]e|accreditation|award|diploma|patent|document scan|provenance|archive (document|scan|record)|sertifika|belge|lisans|akreditasyon|ödül|köken|arşiv (belge|kayıt))", re.I)
+_VT_WORK_RE = re.compile(r"(project (photo|image)|portfolio (work|piece)|client work|our work|completed (project|build)|real project|proje (foto|görsel)|müşteri işi|tamamlanan proje|gerçek proje)", re.I)
+_VT_UI_RE = re.compile(r"(screenshot|dashboard|ui ?screen|interface|app ?screen|product ?screen|chat ?interface|mockup|wireframe|ekran görüntüsü|arayüz|uygulama ekranı)", re.I)
+
+
+def classify_eligibility(kind: str, text: str, source: str = "") -> Dict[str, str]:
+    """Defensive server-side re-classification. Returns
+    {eligibility, reason}. Only ever more restrictive than the client."""
+    k = (kind or "").strip()
+    t = (text or "")
+    if _VT_BLOCK_RE.search(t):
+        return {"eligibility": "blocked", "reason": "would fabricate a real brand/logo"}
+    if k in _ALWAYS_MANUAL_KINDS:
+        return {"eligibility": "manual-upload-required", "reason": "real photo kind — manual upload required"}
+    for rx, why in (
+        (_VT_PROOF_RE, "proof wording"),
+        (_VT_PRODUCT_RE, "real product wording"),
+        (_VT_LOCATION_RE, "real location wording"),
+        (_VT_PERSON_RE, "real person wording"),
+        (_VT_DOCUMENT_RE, "real document/certificate wording"),
+        (_VT_WORK_RE, "real project/work wording"),
+    ):
+        if rx.search(t):
+            return {"eligibility": "manual-upload-required", "reason": f"manual upload required for real proof ({why})"}
+    if _VT_UI_RE.search(t):
+        return {"eligibility": "css-svg-only", "reason": "UI mockup — CSS/SVG is the honest representation"}
+    if source == "manual-upload":
+        return {"eligibility": "manual-upload-required", "reason": "manual upload required for real proof"}
+    return {"eligibility": "ai-generation-allowed", "reason": "illustrative — safe to generate"}
 
 # ── Kinds that ALWAYS represent something real → never generated ──────────────
 # (belt-and-suspenders: even if a slot is mislabelled provider-ready upstream,
@@ -171,6 +212,18 @@ def generate_image(request: Dict[str, Any]) -> Dict[str, Any]:
     gate = generation_allowed(kind, source, manual)
     if not gate["allowed"]:
         return _disabled_asset(slot_id, honesty, gate["reason"])
+
+    # Phase 10D-1 — DEFENSIVE Visual Truth re-classification. The backend is the
+    # final authority: even if the frontend said "generatable", refuse if the
+    # slot's OWN wording (kind/title/purpose/positive/honesty) implies real
+    # proof/product/location/person/document/brand. A crafted request can't
+    # bypass this.
+    _p = request.get("prompt") or {}
+    _text = " ".join(str(request.get(k) or "") for k in ("kind", "title", "purpose", "honestyLabel"))
+    _text += " " + str(_p.get("positive") or "")
+    verdict = classify_eligibility(kind, _text, source)
+    if verdict["eligibility"] != "ai-generation-allowed":
+        return _disabled_asset(slot_id, honesty, verdict["reason"])
 
     provider = active_provider()
     reason = missing_reason()
@@ -323,5 +376,6 @@ __all__ = [
     "provider_configured",
     "missing_reason",
     "generation_allowed",
+    "classify_eligibility",
     "generate_image",
 ]

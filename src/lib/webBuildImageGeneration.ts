@@ -61,6 +61,12 @@ export interface ImageGenerationRequest {
   kind: string;
   source?: string;
   manualUploadRecommended?: boolean;
+  /** Phase 10D-1: sent so the backend can DEFENSIVELY re-classify and refuse a
+   *  proof-heavy request even if the frontend claimed it was allowed. */
+  title?: string;
+  purpose?: string;
+  visualTruthCategory?: string;
+  visualTruthEligibility?: string;
   prompt: {
     positive: string;
     negative: string;
@@ -109,9 +115,35 @@ const ILLUSTRATIVE_KINDS = new Set([
 
 export interface GenerationGate { allowed: boolean; reason: string }
 
-/** Decide whether a slot may be generated. Pure + deterministic. */
+/**
+ * Decide whether a slot may be generated. Pure + deterministic.
+ * Phase 10D-1: prefer the generic Visual Truth classification when present;
+ * fall back to the original kind/source regex for OLD builds (no visualTruth).
+ */
 export function shouldAllowGeneration(slot: ImageAssetSlot): GenerationGate {
   if (!slot) return { allowed: false, reason: 'no slot' };
+
+  // Primary path — the site-agnostic Visual Truth classifier.
+  const vt = slot.visualTruth;
+  if (vt) {
+    switch (vt.eligibility) {
+      case 'ai-generation-allowed':
+        // Only actually generate when the source is a provider/prompt slot.
+        if (slot.source === 'provider-ready' || slot.source === 'prompt-ready') {
+          return { allowed: true, reason: vt.reason || 'illustrative image — safe to generate' };
+        }
+        return { allowed: false, reason: 'handled as a CSS/SVG placeholder (no generation)' };
+      case 'manual-upload-required':
+        return { allowed: false, reason: vt.reason || 'manual upload required for real proof' };
+      case 'css-svg-only':
+        return { allowed: false, reason: vt.reason || 'CSS/SVG is the correct representation (no generation)' };
+      case 'blocked':
+      default:
+        return { allowed: false, reason: vt.reason || 'blocked — would imply fake proof' };
+    }
+  }
+
+  // Fallback path — original safety logic for builds without a classification.
   if (slot.manualUploadRecommended || slot.source === 'manual-upload') {
     return { allowed: false, reason: 'manual upload required for real proof' };
   }
@@ -132,6 +164,10 @@ export function imageGenRequestFromSlot(slot: ImageAssetSlot): ImageGenerationRe
     kind: slot.kind,
     source: slot.source,
     manualUploadRecommended: slot.manualUploadRecommended,
+    title: slot.title,
+    purpose: slot.purpose,
+    visualTruthCategory: slot.visualTruth?.category,
+    visualTruthEligibility: slot.visualTruth?.eligibility,
     honestyLabel: slot.honestyLabel,
     prompt: {
       positive: slot.prompt?.positive || '',

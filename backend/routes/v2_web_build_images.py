@@ -64,6 +64,11 @@ class GenerateBody(BaseModel):
     kind: str = Field(default="", max_length=60)
     source: str = Field(default="", max_length=40)
     manualUploadRecommended: bool = Field(default=False)
+    # Phase 10D-1 — carried so the backend can defensively re-classify.
+    title: str = Field(default="", max_length=200)
+    purpose: str = Field(default="", max_length=400)
+    visualTruthCategory: Optional[str] = Field(default=None, max_length=40)
+    visualTruthEligibility: Optional[str] = Field(default=None, max_length=40)
     honestyLabel: str = Field(default="AI-generated illustrative image", max_length=200)
     prompt: ImagePromptBody = Field(default_factory=ImagePromptBody)
     provider: Optional[str] = Field(default=None, max_length=20)
@@ -116,6 +121,8 @@ def image_gen_generate(
         "kind": body.kind,
         "source": body.source,
         "manualUploadRecommended": body.manualUploadRecommended,
+        "title": body.title,
+        "purpose": body.purpose,
         "honestyLabel": honesty,
         "prompt": {
             "positive": body.prompt.positive,

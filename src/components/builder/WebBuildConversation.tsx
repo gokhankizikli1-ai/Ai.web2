@@ -362,6 +362,27 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
         else cssOnly += 1;
       }
       ownerRows.push(['imageGenGate', `generatable ${genable} · manual-upload-required ${manualReq} · css-only ${cssOnly}`]);
+      // Phase 10D-1 — Visual Truth Classifier breakdown (site-agnostic).
+      const vtSlots = gslots.filter((s) => !!s.visualTruth);
+      if (vtSlots.length) {
+        let vtAi = 0, vtManual = 0, vtCss = 0, vtBlocked = 0;
+        for (const s of vtSlots) {
+          switch (s.visualTruth?.eligibility) {
+            case 'ai-generation-allowed': vtAi += 1; break;
+            case 'css-svg-only': vtCss += 1; break;
+            case 'blocked': vtBlocked += 1; break;
+            default: vtManual += 1; break;
+          }
+        }
+        ownerRows.push(['visualTruthEnabled', 'true']);
+        ownerRows.push(['aiGeneratableVisualCount', String(vtAi)]);
+        ownerRows.push(['manualUploadRequiredVisualCount', String(vtManual)]);
+        ownerRows.push(['cssSvgOnlyVisualCount', String(vtCss)]);
+        ownerRows.push(['blockedVisualCount', String(vtBlocked)]);
+        ownerRows.push(['visualTruthPolicySummary', `Real proof/product/location/person/document → manual upload · illustrative/abstract/ambient → AI-generatable · UI/diagram → CSS/SVG · fake brand/proof → blocked (${vtSlots.length} classified)`]);
+      } else {
+        ownerRows.push(['visualTruthEnabled', 'false (old build)']);
+      }
     }
     const fixer = step.artifacts?.fixer;
     if (fixer) {
