@@ -390,8 +390,9 @@ function fixerAgentDetails(a: FixerAgentArtifact): string[] {
   return lines.filter(Boolean);
 }
 
-/** Concise Vertical Intelligence detail lines from the real artifact (Phase 11A).
- *  No fabrication and no research claim — research status is always 'not-run'. */
+/** Concise Vertical Intelligence detail lines from the real artifact (Phase 11A/11B).
+ *  No fabrication: research is shown source-backed ONLY when real URLs exist, else
+ *  the honest actual status with no source-backed findings. */
 function verticalIntelligenceDetails(a: VerticalIntelligenceArtifact): string[] {
   const sec = a.sector + (a.subsector && a.subsector !== 'unknown' ? ` / ${a.subsector}` : '');
   const req = Array.isArray(a.sectionPolicy?.required) ? a.sectionPolicy.required : [];
@@ -412,6 +413,14 @@ function verticalIntelligenceDetails(a: VerticalIntelligenceArtifact): string[] 
     realVis.length ? `Real-source visuals (${realVis.length}): ${realVis.slice(0, 3).join(', ')}` : '',
     aiVis.length ? `AI-illustrative allowed (${aiVis.length}): ${aiVis.slice(0, 3).join(', ')}` : '',
     `Future research: ${a.researchPlan?.recommended ? 'recommended' : 'not recommended'} · status: ${a.researchPlan?.status || 'not-run'}`,
+    ((): string => {
+      const ev = a.researchPlan?.evidence;
+      if (ev && ev.didResearch && ev.sourceCount > 0) {
+        return `Vertical research: ${ev.sourceCount} real source(s)${ev.provider ? ` · provider ${ev.provider}` : ''}`;
+      }
+      if (ev) return `Vertical research: ${a.researchPlan?.status || 'not-run'} · no source-backed findings`;
+      return '';
+    })(),
     conflict.length ? `Conflict: ${conflict[0]}` : '',
     warn.length ? warn[0] : '',
   ];

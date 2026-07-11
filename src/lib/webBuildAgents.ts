@@ -1204,9 +1204,10 @@ export interface WebBuildEnforcement {
   cssPlaceholderImageSlotCount?: number;
   imageProviderReady?: boolean;
   generatedImagePolicy?: string;
-  /* ── Vertical Intelligence trace (Phase 11A, optional, backward compatible) ──
-   *  Deterministic sector classification diagnostics — planning/data only. No live
-   *  research is run in this phase; researchStatus is always 'not-run'. */
+  /* ── Vertical Intelligence trace (Phase 11A/11B, optional, backward compatible) ──
+   *  Deterministic sector classification diagnostics — planning/data only. The
+   *  frontend runs no network request; Phase 11B surfaces the EXISTING Web Build
+   *  research result (source-backed only when real URLs exist). */
   didDeriveVerticalIntelligence?: boolean;
   verticalSector?: VerticalSector;
   verticalSubsector?: string;
@@ -1222,7 +1223,14 @@ export interface WebBuildEnforcement {
   verticalCssSvgVisualCount?: number;
   verticalMotionSuitableCount?: number;
   verticalResearchRecommended?: boolean;
-  verticalResearchStatus?: 'not-run';
+  /** Real research status (Phase 11B) or 'not-run' when no research artifact. */
+  verticalResearchStatus?: WebBuildResearchStatus | 'not-run';
+  /** Whether genuine, source-backed vertical research evidence exists (real URLs). */
+  verticalResearchDidUseSources?: boolean;
+  /** Count of validated, deduped real sources backing the vertical read. */
+  verticalResearchSourceCount?: number;
+  /** The research provider that returned sources, when present. */
+  verticalResearchProvider?: string;
   fallbackReason?: string;
 }
 
@@ -2205,9 +2213,12 @@ export function deriveExperienceBlueprint(
  * model, conversion model, trust model, section policy and — most importantly —
  * the VISUAL TRUTH POLICY (what must be real user material, what may be AI-
  * illustrative, what should be CSS/SVG, what motion is honest, what must never be
- * fabricated). Pure + deterministic + network-free + fail-open. NO live research
- * is run here (Phase 11B adds research-backed scanning); researchPlan.status is
- * always 'not-run'. PLANNING/DATA ONLY: this artifact never alters the renderer,
+ * fabricated). Pure + deterministic + fail-open. The frontend derivation performs
+ * NO network request. Phase 11B connects the EXISTING Web Build research result
+ * (via the Research Agent artifact): researchPlan carries source-backed evidence
+ * ONLY when real source URLs were returned, and remains explicitly 'not-run' /
+ * honest no-source otherwise; deterministic profile angles stay recommendations,
+ * never findings. PLANNING/DATA ONLY: this artifact never alters the renderer,
  * image pipeline, motion or asset behaviour in this phase — it is persisted and
  * diagnosed for downstream phases. */
 
@@ -2294,15 +2305,49 @@ export interface VerticalVisualPolicy {
   heroRecommendation: string;
 }
 
+/** Source-backed vertical research evidence (Phase 11B). Present only when the
+ *  EXISTING Web Build research pass (surfaced via the Research Agent artifact)
+ *  actually returned real, non-empty source URLs. The frontend derivation performs
+ *  NO network request — it only consumes what the backend/Research Agent already
+ *  produced. Source-backed findings arrays are populated ONLY in the genuine mode;
+ *  in every no-source mode they stay empty (never labelled as findings). */
+export interface VerticalResearchEvidence {
+  didResearch: boolean;
+  provider?: string;
+  attemptedProviders?: string[];
+
+  sourceCount: number;
+  sources: WebBuildSource[];
+  coveredAngles: string[];
+
+  sourceBackedInsights: string[];
+  categoryLanguage: string[];
+  audienceExpectations: string[];
+  conversionPatterns: string[];
+  trustSignals: string[];
+  visualPatterns: string[];
+  competitorOrAdjacentPatterns: string[];
+  risksToAvoid: string[];
+  differentiationOpportunities: string[];
+
+  fallbackReason?: string;
+  summary: string;
+}
+
 export interface VerticalResearchPlan {
-  /** Always 'not-run' in Phase 11A — deterministic only, no live research. */
-  status: 'not-run';
-  /** Whether a future (Phase 11B) live sector scan is recommended. */
+  /** The REAL research status when a Research Agent artifact exists, else 'not-run'.
+   *  The frontend derivation still runs no network request (Phase 11B consumes the
+   *  existing backend/Research Agent result). */
+  status: WebBuildResearchStatus | 'not-run';
+  /** Whether a future live sector scan is (still) recommended. */
   recommended: boolean;
-  /** Deterministic future-research angle suggestions (never claimed as results). */
+  /** Deterministic profile angle suggestions — recommendations, never findings. */
   angles: string[];
-  /** Honest one-line explanation (never claims research happened). */
+  /** Honest one-line explanation (never claims research that did not happen). */
   reason: string;
+  /** Source-backed / honest no-source evidence when a Research Agent artifact was
+   *  threaded in. Absent for old builds and when no research artifact exists. */
+  evidence?: VerticalResearchEvidence;
 }
 
 export interface VerticalIntelligenceArtifact {
@@ -2339,6 +2384,10 @@ export interface VerticalIntelligenceInput {
   conceptAuthority?: ConceptAuthority;
   experienceBlueprint?: ExperienceBlueprint;
   ledger?: StrategicThinkingLedger;
+  /** The already-normalized Research Agent artifact (Phase 11B). Optional →
+   *  backward compatible; when present with real sources it backs the research
+   *  evidence block. The frontend derivation never issues a network request. */
+  research?: ResearchAgentArtifact;
   lang?: Lang;
 }
 
@@ -3123,16 +3172,159 @@ const INDUSTRY_ONLY_SECTORS: readonly IndustrySector[] = [
   'restaurant-hospitality', 'real-estate', 'clinic-healthcare', 'portfolio-agency', 'local-service',
 ];
 
-/** Assemble the research plan honestly — status is ALWAYS 'not-run' in Phase 11A. */
-function vBuildResearchPlan(profile: VerticalProfileDefinition, forceRecommend: boolean, lang: Lang): VerticalResearchPlan {
-  return {
+/* ── Vertical research evidence (Phase 11B) ───────────────────────────────────
+ * Connects the EXISTING Web Build research result (via the already-normalized
+ * Research Agent artifact) to the Vertical Intelligence contract. NO new network
+ * request, no scraping, no re-fetch: it only validates + copies what the backend
+ * already returned. Source-backed findings appear ONLY when real, non-empty URLs
+ * exist; every no-source state stays honest and empty. Fully fail-open. */
+const V_RESEARCH_SOURCE_CAP = 8;
+const V_RESEARCH_ARRAY_CAP = 6;
+
+/** Normalize a URL for dedupe: protocol + lowercased host + path (trailing slash
+ *  stripped) + query. Falls back to the trimmed lowercased string if unparseable. */
+function vNormalizeUrl(url: string): string {
+  const t = (url || '').trim();
+  if (!t) return '';
+  try {
+    const u = new URL(t);
+    return `${u.protocol}//${u.host.toLowerCase()}${u.pathname.replace(/\/+$/, '')}${u.search}`;
+  } catch {
+    return t.toLowerCase();
+  }
+}
+
+/** Validate + dedupe real sources: require a non-empty URL, dedupe by normalized
+ *  URL, trim fields, derive an honest hostname title only when a title is missing.
+ *  Never fabricates URLs/titles/snippets; skips malformed entries. Deterministic. */
+function vValidateSources(sources: readonly WebBuildSource[] | undefined, cap: number): WebBuildSource[] {
+  if (!Array.isArray(sources)) return [];
+  const seen = new Set<string>();
+  const out: WebBuildSource[] = [];
+  for (const s of sources) {
+    if (!s) continue;
+    const url = (s.url || '').trim();
+    if (!url) continue;
+    const key = vNormalizeUrl(url);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    let title = (s.title || '').trim();
+    if (!title) {
+      try { title = new URL(url).hostname; } catch { title = url; }
+    }
+    const snippet = (s.snippet || '').trim();
+    out.push(snippet ? { title, url, snippet } : { title, url });
+    if (out.length >= cap) break;
+  }
+  return out;
+}
+
+/**
+ * Assemble the vertical research plan (Phase 11B). Pure + deterministic + fail-open.
+ *  • No research artifact          → status 'not-run', no evidence.
+ *  • Real sources (didResearch +   → source-backed evidence mirroring the real
+ *    validated URLs)                 status/provider/angles/findings.
+ *  • Research ran/attempted but no  → honest no-source evidence (empty findings),
+ *    usable URLs / disabled / failed   real status preserved (used_sources with no
+ *    / no_sources                      valid URLs degrades to 'no_sources').
+ * The frontend performs NO network request; deterministic profile angles remain
+ * recommendations, never findings.
+ */
+function vBuildResearchPlan(
+  profile: VerticalProfileDefinition,
+  research: ResearchAgentArtifact | undefined,
+  forceRecommend: boolean,
+  lang: Lang,
+): VerticalResearchPlan {
+  const angles = [...profile.research.angles];
+  const baseRecommended = profile.research.recommended || forceRecommend;
+  const notRun: VerticalResearchPlan = {
     status: 'not-run',
-    recommended: profile.research.recommended || forceRecommend,
-    angles: [...profile.research.angles],
+    recommended: baseRecommended,
+    angles,
     reason: L(lang,
-      `No live research was run. ${profile.research.reason} Phase 11B can validate this assumption with live sources.`,
-      `Canlı araştırma yapılmadı. ${profile.research.reason} Faz 11B bu varsayımı canlı kaynaklarla doğrulayabilir.`),
+      `No live research was run. ${profile.research.reason} A future sector scan can validate this with live sources.`,
+      `Canlı araştırma yapılmadı. ${profile.research.reason} Gelecekteki bir sektör taraması bunu canlı kaynaklarla doğrulayabilir.`),
   };
+  try {
+    if (!research) return notRun;
+
+    const validSources = vValidateSources(research.sources, V_RESEARCH_SOURCE_CAP);
+    const genuine = research.didResearch === true && validSources.length > 0;
+    const attempted = Array.isArray(research.attemptedProviders) && research.attemptedProviders.length
+      ? uniq(research.attemptedProviders).slice(0, V_RESEARCH_ARRAY_CAP) : undefined;
+    const capArr = (xs: string[] | undefined): string[] =>
+      uniq(Array.isArray(xs) ? xs : []).slice(0, V_RESEARCH_ARRAY_CAP);
+
+    if (genuine) {
+      const evidence: VerticalResearchEvidence = {
+        didResearch: true,
+        provider: research.provider,
+        attemptedProviders: attempted,
+        sourceCount: validSources.length,
+        sources: validSources,
+        coveredAngles: capArr(research.researchAngles),
+        sourceBackedInsights: capArr(research.sourceBackedInsights),
+        categoryLanguage: capArr(research.categoryLanguage),
+        audienceExpectations: capArr(research.audienceExpectations),
+        conversionPatterns: capArr(research.conversionPatterns),
+        trustSignals: capArr(research.trustSignals),
+        visualPatterns: capArr(research.visualPatterns),
+        competitorOrAdjacentPatterns: capArr(research.competitorOrAdjacentPatterns),
+        risksToAvoid: capArr(research.risksToAvoid),
+        differentiationOpportunities: capArr(research.differentiationOpportunities),
+        summary: L(lang,
+          `Source-backed: ${validSources.length} real source(s)${research.provider ? ` via ${research.provider}` : ''} inform this sector read.`,
+          `Kaynak destekli: ${validSources.length} gerçek kaynak${research.provider ? ` (${research.provider})` : ''} bu sektör okumasını bilgilendiriyor.`),
+      };
+      return {
+        status: research.status,
+        recommended: baseRecommended,
+        angles,
+        reason: L(lang,
+          `Source-backed by ${validSources.length} real source(s) from the Web Build research pass. Deterministic profile angles remain recommendations.`,
+          `Web Build araştırma geçişinden ${validSources.length} gerçek kaynakla desteklendi. Deterministik profil açıları öneri olarak kalır.`),
+        evidence,
+      };
+    }
+
+    // No genuine sources — honest, non-source-backed. A 'used_sources' status with
+    // no valid URLs degrades to 'no_sources'; other real statuses are preserved.
+    const degradedStatus: WebBuildResearchStatus =
+      research.didResearch === true ? 'no_sources' : research.status;
+    const evidence: VerticalResearchEvidence = {
+      didResearch: false,
+      provider: research.provider,
+      attemptedProviders: attempted,
+      sourceCount: 0,
+      sources: [],
+      coveredAngles: [],
+      sourceBackedInsights: [],
+      categoryLanguage: [],
+      audienceExpectations: [],
+      conversionPatterns: [],
+      trustSignals: [],
+      visualPatterns: [],
+      competitorOrAdjacentPatterns: [],
+      risksToAvoid: [],
+      differentiationOpportunities: [],
+      fallbackReason: research.fallbackReason,
+      summary: L(lang,
+        `No source-backed sector scan (${degradedStatus}) — deterministic profile angles remain future recommendations.`,
+        `Kaynak destekli sektör taraması yok (${degradedStatus}) — deterministik profil açıları gelecekteki öneriler olarak kalır.`),
+    };
+    return {
+      status: degradedStatus,
+      recommended: baseRecommended,
+      angles,
+      reason: L(lang,
+        `No source-backed research (${degradedStatus})${research.fallbackReason ? `: ${research.fallbackReason}` : ''}. ${profile.research.reason} Deterministic profile angles remain recommendations.`,
+        `Kaynak destekli araştırma yok (${degradedStatus})${research.fallbackReason ? `: ${research.fallbackReason}` : ''}. ${profile.research.reason} Deterministik profil açıları öneri olarak kalır.`),
+      evidence,
+    };
+  } catch {
+    return notRun;
+  }
 }
 
 /** The honest fail-open artifact — a conservative, contact-led, anti-fabrication
@@ -3153,18 +3345,20 @@ function failedOpenVerticalIntelligence(lang: Lang): VerticalIntelligenceArtifac
     trustModel: { drivers: [...p.trust.drivers], sourceRequiredProof: [...p.trust.sourceRequiredProof], forbiddenClaims: [...p.trust.forbiddenClaims] },
     sectionPolicy: { required: [...p.sections.required], recommended: [...p.sections.recommended], forbidden: p.sections.forbidden.map((f) => ({ section: f.section, reason: f.reason })) },
     visualPolicy: { realSourceRequired: [...p.visual.realSourceRequired], aiIllustrativeAllowed: [...p.visual.aiIllustrativeAllowed], cssSvgPreferred: [...p.visual.cssSvgPreferred], motionSuitable: [...p.visual.motionSuitable], forbiddenGenerated: [...p.visual.forbiddenGenerated], heroRecommendation: p.visual.heroRecommendation },
-    researchPlan: vBuildResearchPlan(p, true, lang),
+    researchPlan: vBuildResearchPlan(p, undefined, true, lang),
     warnings: [L(lang, 'Vertical classification failed open — using a conservative, contact-led, anti-fabrication fallback.', 'Sektör sınıflandırması güvenli-açık moda düştü — temkinli, iletişim odaklı, uydurma-karşıtı bir yedek kullanılıyor.')],
     summary: L(lang, 'Vertical Intelligence failed open: general sector, low confidence, deterministic (no live research).', 'Sektör Zekâsı güvenli-açık moda düştü: genel sektör, düşük güven, deterministik (canlı araştırma yok).'),
   };
 }
 
 /**
- * Derive the deterministic Vertical Intelligence sector contract (Phase 11A). Pure,
- * deterministic, network-free, fail-open, EN/TR-aware. Refines the concept/experience
+ * Derive the deterministic Vertical Intelligence sector contract (Phase 11A/11B).
+ * Pure, deterministic, fail-open, EN/TR-aware. Refines the concept/experience
  * understanding into a sector/subsector-specific contract WITHOUT contradicting the
- * Experience Blueprint. Never throws; never runs or claims live research; never
- * fabricates proof. All important arrays are always present.
+ * Experience Blueprint. The derivation itself issues NO network request; when a
+ * Research Agent artifact is threaded in (Phase 11B) it consumes that already-run
+ * result to build honest, source-backed research evidence (real URLs only). Never
+ * throws; never fetches or fabricates sources. All important arrays are always present.
  */
 export function deriveVerticalIntelligence(input: VerticalIntelligenceInput): VerticalIntelligenceArtifact {
   const lang: Lang = input.lang || 'en';
@@ -3427,7 +3621,7 @@ export function deriveVerticalIntelligence(input: VerticalIntelligenceInput): Ve
         forbiddenGenerated: [...profile.visual.forbiddenGenerated],
         heroRecommendation: profile.visual.heroRecommendation,
       },
-      researchPlan: vBuildResearchPlan(profile, confidence === 'low' || status !== 'classified', lang),
+      researchPlan: vBuildResearchPlan(profile, input.research, confidence === 'low' || status !== 'classified', lang),
       warnings: uniq(warnings),
       summary,
     };
