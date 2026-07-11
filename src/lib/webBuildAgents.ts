@@ -1240,6 +1240,17 @@ export interface WebBuildEnforcement {
   frontendBuildSpecRequiredFileCount?: number;
   frontendBuildSpecResearchSourceCount?: number;
   frontendGenerationStatus?: FrontendGenerationStatus;
+  /* ── Dedicated Frontend Builder trace (Phase 12B, optional, backward compatible) ──
+   *  Diagnostics for the raw `frontend_builder` model call. didRunFrontendBuilder is
+   *  true ONLY when a real network request was attempted (a 'skipped' artifact is
+   *  false). validationStatus is always 'not-run' in this phase. */
+  didRunFrontendBuilder?: boolean;
+  frontendBuilderRawStatus?: FrontendBuilderRawStatus;
+  frontendBuilderResponseCharCount?: number;
+  frontendBuilderValidationStatus?: FrontendBuilderValidationStatus;
+  frontendBuilderMode?: string;
+  frontendBuilderModel?: string;
+  frontendBuilderProvider?: string;
   fallbackReason?: string;
 }
 
@@ -1430,6 +1441,37 @@ export interface FrontendBuildSpecification {
   summary: string;
 }
 
+/* ── Dedicated Frontend Builder raw response (Phase 12B) ───────────────────────
+ * The RAW result of the dedicated `frontend_builder` model call that consumes the
+ * Phase 12A FrontendBuildSpecification. Phase 12B persists the raw response ONLY —
+ * it does NOT parse the file envelope, validate imports/code, or feed the current
+ * Preview / All Files (those are Phase 12C+). The honest distinction is kept:
+ * a raw response received ≠ a validated frontend project ≠ Preview consuming
+ * model-native code. Additive + optional + backward compatible. */
+export type FrontendBuilderRawStatus = 'completed' | 'failed' | 'skipped';
+export type FrontendBuilderValidationStatus = 'not-run' | 'valid' | 'invalid';
+
+export interface FrontendBuilderRawArtifact {
+  version: 'frontend-builder-raw-v1';
+  status: FrontendBuilderRawStatus;
+  requestedFormat: 'frontend-files-v1';
+  mode: 'frontend_builder';
+
+  provider?: string;
+  model?: string;
+  requestId?: string;
+
+  /** The raw (possibly bounded) builder response. Absent for skipped calls. */
+  rawResponse?: string;
+  responseCharCount: number;
+  truncatedForStorage: boolean;
+
+  /** Always 'not-run' in Phase 12B — parsing/validation belongs to Phase 12C. */
+  validationStatus: FrontendBuilderValidationStatus;
+  reason: string;
+  warnings: string[];
+}
+
 export interface WebBuildArtifacts {
   research?: ResearchAgentArtifact;
   /** The strategic decision the downstream agents obey (Phase 8A). Optional →
@@ -1482,6 +1524,11 @@ export interface WebBuildArtifacts {
    *  no model/backend/network runs here; generation.status is always 'not-run', and
    *  it never alters files/Preview/synthesis. Optional → old builds load. */
   frontendBuildSpec?: FrontendBuildSpecification;
+  /** Raw dedicated Frontend Builder response (Phase 12B) — the raw output of the
+   *  `frontend_builder` model call that consumed the spec. PERSISTED ONLY: not
+   *  parsed/validated, and never feeds the current Preview / All Files (Phase 12C+).
+   *  Optional → old builds load. */
+  frontendBuilderRaw?: FrontendBuilderRawArtifact;
   /** The shared context the agents were run against (pipeline trace). */
   context?: WebBuildAgentContext;
   /** Enforcement diagnostics proving the agents drove the build. */

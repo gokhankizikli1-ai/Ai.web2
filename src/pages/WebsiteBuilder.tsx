@@ -17,10 +17,10 @@ import {
 } from '@/lib/webBuildSession';
 import { upsertWebBuildChatSession } from '@/lib/webBuildChatSession';
 import {
-  generateWebBuild, WebBuildError, webBuildErrorKeyFor,
+  generateWebBuild, WebBuildError, webBuildErrorKeyFor, generateFrontendBuilderRaw,
 } from '@/lib/webBuildApi';
 import {
-  buildWebBuildPayload, type WebBuildPayload,
+  buildWebBuildPayload, attachFrontendBuilderRaw, type WebBuildPayload,
 } from '@/lib/webBuildPayload';
 import { saveWebBuildPayloadToProject } from '@/lib/webBuildProject';
 import { stashPreview } from '@/lib/webBuildPreviewStash';
@@ -176,7 +176,12 @@ export default function WebsiteBuilder() {
     try {
       const res = await generateWebBuild(trimmed, { signal: controller.signal, mode });
       if (abortRef.current !== controller) return; // superseded
-      const next = buildWebBuildPayload(trimmed, res, undefined, lang);
+      const planned = buildWebBuildPayload(trimmed, res, undefined, lang);
+      // Phase 12B — one dedicated Frontend Builder call from the final spec. Fails
+      // open (returns a failed/skipped artifact); only caller cancellation throws.
+      const raw = await generateFrontendBuilderRaw(planned.artifacts?.frontendBuildSpec, { signal: controller.signal });
+      if (abortRef.current !== controller) return; // superseded
+      const next = attachFrontendBuilderRaw(planned, raw);
       setPayload(next);
       persistSession(next);
       stashLatestPreview(next, slugFromIdea(next.prompt));
@@ -212,7 +217,12 @@ export default function WebsiteBuilder() {
         mode: selectedMode,
       });
       if (abortRef.current !== controller) return; // superseded
-      const next = buildWebBuildPayload(trimmed, res, payload, lang);
+      const planned = buildWebBuildPayload(trimmed, res, payload, lang);
+      // Phase 12B — one dedicated Frontend Builder call for the REVISED spec (the
+      // revised spec is authoritative; the previous raw response is never reused).
+      const raw = await generateFrontendBuilderRaw(planned.artifacts?.frontendBuildSpec, { signal: controller.signal });
+      if (abortRef.current !== controller) return; // superseded
+      const next = attachFrontendBuilderRaw(planned, raw);
       setPayload(next);
       persistSession(next);
       stashLatestPreview(next, slugFromIdea(next.prompt));
