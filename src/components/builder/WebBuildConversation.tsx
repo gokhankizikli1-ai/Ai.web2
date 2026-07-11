@@ -469,6 +469,20 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       if (vi.conflictingSignals?.length) ownerRows.push(['verticalConflict', vi.conflictingSignals[0]]);
     }
 
+    // Phase 12A — model-native Frontend Build Specification (contract only; the
+    // dedicated Frontend Builder model is not connected yet → generation not-run).
+    const fbs = step.artifacts?.frontendBuildSpec;
+    if (fbs) {
+      ownerRows.push(['frontendBuildSpec', fbs.status]);
+      ownerRows.push(['frontendSpecSections', String(fbs.architecture?.sections?.length ?? 0)]);
+      ownerRows.push(['frontendSpecRequiredFiles', String(fbs.outputContract?.requiredFiles?.length ?? 0)]);
+      ownerRows.push(['frontendSpecResearchSources', String(fbs.researchEvidence?.sources?.length ?? 0)]);
+      ownerRows.push(['frontendGeneration', fbs.generation?.status || 'not-run']);
+      if (fbs.status === 'partial' && fbs.missingInputs?.length) {
+        ownerRows.push(['frontendSpecMissing', fbs.missingInputs.slice(0, 3).join(', ')]);
+      }
+    }
+
     // Phase 9D-1 — intent-aware Page Architecture Decision (concept-specific spine).
     const pa = step.artifacts?.pageArchitecture;
     if (pa) {

@@ -15,6 +15,7 @@ import {
   type WebBuildAgent, type WebBuildArtifacts, type WebBuildEnforcement,
 } from '@/lib/webBuildAgents';
 import { deriveAgentSectionArchitecture } from '@/lib/webBuildSectionArchitecture';
+import { deriveFrontendBuildSpecification } from '@/lib/webBuildFrontendSpec';
 import { detectMessageLanguage } from '@/lib/locale';
 
 export type ActivityStatus = 'waiting' | 'running' | 'done' | 'failed';
@@ -904,6 +905,44 @@ function assembleWebBuildPayload(
         });
       }
 
+      // FRONTEND BUILD SPECIFICATION (Phase 12A) — derived AFTER all planning
+      // artifacts + the Fixer's final section-copy repairs, and BEFORE enforcement +
+      // payload return. Consolidates identity / design / architecture / FINAL copy /
+      // interactions / assets / motion / research evidence / honesty rules into ONE
+      // authoritative, typed CONTRACT for a FUTURE dedicated Frontend Builder model
+      // (Phase 12B). CONTRACT ONLY: it never calls a model/backend/network, never
+      // generates code, and is built from planning + the FINAL sectionItems — NEVER
+      // from the current synthesized files. It does NOT alter files / sectionItems /
+      // layoutPlan / planning diagnostics / reply. Fully guarded + fail-open.
+      try {
+        const frontendBuildSpec = deriveFrontendBuildSpecification({
+          prompt,
+          lang: effLang,
+          brief: artBrief,
+          sectionItems,
+          layoutPlan,
+          research: artifacts?.research,
+          thinkingLedger: artifacts?.thinkingLedger,
+          artDirection: artifacts?.artDirection,
+          strategy: artifacts?.strategy,
+          experienceBlueprint: artifacts?.experienceBlueprint,
+          verticalIntelligence: artifacts?.verticalIntelligence,
+          pageArchitecture: artifacts?.pageArchitecture,
+          visualSignaturePlan: artifacts?.visualSignaturePlan,
+          blueprint: artifacts?.blueprint,
+          componentEngineer: artifacts?.componentEngineer,
+          reviewer: artifacts?.reviewer,
+          qualityDirector: artifacts?.qualityDirector,
+          assetDirector: artifacts?.assetDirector,
+          motionComposer: artifacts?.motionComposer,
+          imagePipeline: artifacts?.imagePipeline,
+          fixer: artifacts?.fixer,
+        });
+        artifacts = { ...(artifacts || {}), frontendBuildSpec };
+      } catch {
+        // deriveFrontendBuildSpecification already fails open; never block the build.
+      }
+
       // ENFORCEMENT — prove the agents drove the build (Part 6). The layout plan is
       // derived from the enriched (agent-steered) brief, so the archetype following
       // the agent decision is verifiable; the generated files come from that same
@@ -1008,6 +1047,14 @@ function assembleWebBuildPayload(
         verticalResearchDidUseSources: !!artifacts?.verticalIntelligence?.researchPlan?.evidence?.didResearch,
         verticalResearchSourceCount: artifacts?.verticalIntelligence?.researchPlan?.evidence?.sourceCount,
         verticalResearchProvider: artifacts?.verticalIntelligence?.researchPlan?.evidence?.provider,
+        // Frontend Build Specification (Phase 12A) — diagnostics only; generation is
+        // always 'not-run' (no model-native code generation occurred).
+        didCreateFrontendBuildSpec: !!artifacts?.frontendBuildSpec,
+        frontendBuildSpecStatus: artifacts?.frontendBuildSpec?.status,
+        frontendBuildSpecSectionCount: artifacts?.frontendBuildSpec?.architecture.sections.length,
+        frontendBuildSpecRequiredFileCount: artifacts?.frontendBuildSpec?.outputContract.requiredFiles.length,
+        frontendBuildSpecResearchSourceCount: artifacts?.frontendBuildSpec?.researchEvidence.sources.length,
+        frontendGenerationStatus: artifacts?.frontendBuildSpec?.generation.status,
         fallbackReason: (artifacts?.context?.fallbacks?.length
           ? `agents degraded: ${artifacts.context.fallbacks.join(', ')}`
           : undefined),
