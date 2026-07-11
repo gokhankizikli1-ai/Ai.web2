@@ -500,27 +500,11 @@ function assembleWebBuildPayload(
     }
   }
 
-  // SECTION ARCHITECTURE ENFORCEMENT — for a FRESH build whose section list is weak
-  // or mismatched, replace it with a concept-specific architecture derived from the
-  // agent artifacts, BEFORE files + the layout plan are built, so Preview AND All
-  // Files render the new structure. Fully guarded (non-blocking). Revisions and
-  // already concept-specific backend architectures are preserved by the helper.
+  // Tracks whether a pass rewrote the section architecture (Section Architecture or
+  // the Page Architecture reshape below), so files re-synthesize and Preview + All
+  // Files stay aligned. The Section Architecture enforcement pass itself now runs
+  // AFTER Vertical Intelligence (Phase 11C) so the resolved sector drives it.
   let didRewriteArchitecture = false;
-  if (WEB_BUILD_AGENTS_ENABLED && !prev) {
-    try {
-      const arch = deriveAgentSectionArchitecture({
-        prompt, sectionItems, brief: artBrief, inferred,
-        research: artifacts?.research, artDirection: artifacts?.artDirection, strategy: artifacts?.strategy,
-        lang: effLang, isRevision: false,
-      });
-      if (arch.didRewrite && arch.sectionItems.length >= 5) {
-        sectionItems = normalizeSectionItems(arch.sectionItems);
-        didRewriteArchitecture = true;
-      }
-    } catch {
-      /* non-blocking — keep the original sectionItems */
-    }
-  }
 
   // EXPERIENCE BLUEPRINT (Phase 9D-2) — high-level, whole-site experience decision
   // (site type, page mode, conversion path, required/forbidden page groups, CTA
@@ -577,6 +561,31 @@ function assembleWebBuildPayload(
       artifacts = { ...(artifacts || {}), verticalIntelligence: vi.artifact };
     } catch {
       /* non-blocking — old behaviour continues without the sector contract */
+    }
+  }
+
+  // SECTION ARCHITECTURE ENFORCEMENT (relocated in Phase 11C to run AFTER Vertical
+  // Intelligence) — for a FRESH build whose section list is weak or mismatched,
+  // replace it with a SECTOR-specific architecture. The resolved Vertical
+  // Intelligence sector is now the highest mode authority, so the PRIMARY product
+  // sector (not the served audience sector) controls the page structure that both
+  // Preview AND All Files render. Runs BEFORE Page Architecture, the Visual
+  // Signature Plan, layout generation and file synthesis. Fully guarded + non-
+  // blocking + fail-open; fresh-build only; minimum five sections; revision-safe.
+  if (WEB_BUILD_AGENTS_ENABLED && !prev) {
+    try {
+      const arch = deriveAgentSectionArchitecture({
+        prompt, sectionItems, brief: artBrief, inferred,
+        research: artifacts?.research, artDirection: artifacts?.artDirection, strategy: artifacts?.strategy,
+        verticalIntelligence: artifacts?.verticalIntelligence,
+        lang: effLang, isRevision: false,
+      });
+      if (arch.didRewrite && arch.sectionItems.length >= 5) {
+        sectionItems = normalizeSectionItems(arch.sectionItems);
+        didRewriteArchitecture = true;
+      }
+    } catch {
+      /* non-blocking — keep the original sectionItems */
     }
   }
 

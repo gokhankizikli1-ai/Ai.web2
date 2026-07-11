@@ -22,7 +22,7 @@
 import type { WebBuildBrief } from '@/lib/webBuildApi';
 import type { WebBuildSectionItem } from '@/lib/webBuildPayload';
 import type { InferredBrief } from '@/lib/webBuildBrief';
-import type { ResearchAgentArtifact, ArtDirectionArtifact, StrategyAgentArtifact } from '@/lib/webBuildAgents';
+import type { ResearchAgentArtifact, ArtDirectionArtifact, StrategyAgentArtifact, VerticalIntelligenceArtifact } from '@/lib/webBuildAgents';
 
 type Lang = string;
 const L = (lang: Lang, en: string, tr: string) => (lang === 'tr' ? tr : en);
@@ -36,7 +36,10 @@ const humanize = (id: string) => id.replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) 
 export type ArchMode =
   | 'archive' | 'landscaping' | 'hospitality' | 'trustService' | 'productSaas'
   | 'marketplace' | 'education' | 'community' | 'event' | 'industrial'
-  | 'portfolio' | 'localService' | 'generic';
+  | 'portfolio' | 'localService'
+  // Phase 11C — sector-specific vertical modes (driven by Vertical Intelligence).
+  | 'healthcare' | 'automotive' | 'furniture' | 'jewelry' | 'realEstate'
+  | 'generic';
 
 export interface SectionArchInput {
   prompt: string;
@@ -46,6 +49,10 @@ export interface SectionArchInput {
   research?: ResearchAgentArtifact;
   artDirection?: ArtDirectionArtifact;
   strategy?: StrategyAgentArtifact;
+  /** Phase 11C — the resolved sector contract. When present with a usable
+   *  (classified, non-general) sector it is the HIGHEST mode authority. Optional →
+   *  old callers and old builds stay compatible. */
+  verticalIntelligence?: VerticalIntelligenceArtifact;
   lang?: Lang;
   isRevision?: boolean;
 }
@@ -98,7 +105,36 @@ const PROMPT_MODE_RULES: Array<[RegExp, ArchMode]> = [
   [/saas|dashboard|\bai\b|software|platform|api|analytics|automation|yazılım|otomasyon/, 'productSaas'],
 ];
 
+/** Phase 11C — the resolved Vertical Intelligence PRIMARY sector → architecture
+ *  mode. Only the primary `sector` is mapped, so a product/marketplace identity
+ *  (ai-saas / marketplace) always wins over the served audience sector. 'general'
+ *  is intentionally absent (no override → existing detection applies). */
+const VERTICAL_SECTOR_TO_MODE: Partial<Record<VerticalIntelligenceArtifact['sector'], ArchMode>> = {
+  'ai-saas': 'productSaas',
+  marketplace: 'marketplace',
+  jewelry: 'jewelry',
+  landscaping: 'landscaping',
+  'automotive-dealership': 'automotive',
+  'furniture-interiors': 'furniture',
+  'restaurant-hospitality': 'hospitality',
+  'real-estate': 'realEstate',
+  'clinic-healthcare': 'healthcare',
+  'portfolio-agency': 'portfolio',
+  'local-service': 'localService',
+};
+
 function detectMode(input: SectionArchInput): ArchMode {
+  // 1) Vertical Intelligence sector — the highest authority (Phase 11C). Only a
+  //    real, classified, non-general sector overrides; a low-confidence but
+  //    classified sector may still guide the architecture. The PRIMARY sector
+  //    selects the mode (audience sector never replaces the product identity).
+  const vi = input.verticalIntelligence;
+  if (vi && vi.sector !== 'general' && vi.status !== 'failed-open') {
+    const viMode = VERTICAL_SECTOR_TO_MODE[vi.sector];
+    if (viMode) return viMode;
+  }
+  // 2) Existing Research concept category → 3) Art Direction archetype →
+  //    4) layout key → 5) inferred industry → 6) prompt fallback (unchanged).
   const cat = input.research?.conceptProfile?.category;
   if (cat && CATEGORY_TO_MODE[cat]) return CATEGORY_TO_MODE[cat];
   const artKey = input.artDirection?.designArchetype?.key || input.brief.artDesignArchetype;
@@ -182,6 +218,41 @@ const SECTIONS: Record<string, SectionMeta> = {
   process: { name: ['Process', 'Süreç'], role: 'process' },
   testimonials: { name: ['Testimonials', 'Yorumlar'], role: 'proof' },
   'start-project': { name: ['Start a project', 'Projeye başla'], role: 'cta' },
+  // healthcare (Phase 11C)
+  treatments: { name: ['Treatments', 'Tedaviler'], role: 'offer' },
+  'medical-team': { name: ['Meet the Team', 'Ekibimiz'], role: 'info' },
+  'clinic-facility': { name: ['Clinic & Facility', 'Klinik & Tesis'], role: 'location' },
+  'safety-approach': { name: ['Safety & Approach', 'Güvenlik & Yaklaşım'], role: 'proof' },
+  appointment: { name: ['Book an Appointment', 'Randevu Al'], role: 'cta' },
+  // automotive dealership (Phase 11C)
+  'featured-inventory': { name: ['Featured Inventory', 'Öne Çıkan Araçlar'], role: 'browse' },
+  'vehicle-details': { name: ['Vehicle Details', 'Araç Detayları'], role: 'info' },
+  'financing-trust': { name: ['Financing & Trust', 'Finansman & Güven'], role: 'proof' },
+  'inspection-warranty': { name: ['Inspection & Warranty', 'Kontrol & Garanti'], role: 'info' },
+  'buying-process': { name: ['How Buying Works', 'Satın Alma Süreci'], role: 'process' },
+  'test-drive': { name: ['Book a Test Drive', 'Test Sürüşü Ayarla'], role: 'cta' },
+  'dealership-contact': { name: ['Dealership & Contact', 'Galeri & İletişim'], role: 'location' },
+  // furniture & interiors (Phase 11C)
+  'furniture-collections': { name: ['Collections', 'Koleksiyonlar'], role: 'browse' },
+  'craftsmanship-manufacturing': { name: ['Craftsmanship & Manufacturing', 'İşçilik & Üretim'], role: 'proof' },
+  'completed-projects': { name: ['Completed Projects', 'Tamamlanan Projeler'], role: 'info' },
+  'showroom-project': { name: ['Visit Showroom / Start a Project', 'Showroomu Ziyaret Et / Proje Başlat'], role: 'cta' },
+  'care-delivery': { name: ['Care & Delivery', 'Bakım & Teslimat'], role: 'info' },
+  // jewelry (Phase 11C)
+  'jewelry-collections': { name: ['Collections', 'Koleksiyonlar'], role: 'browse' },
+  'featured-pieces': { name: ['Featured Pieces', 'Öne Çıkan Parçalar'], role: 'browse' },
+  'craftsmanship-materials': { name: ['Craftsmanship & Materials', 'İşçilik & Malzeme'], role: 'proof' },
+  'care-warranty': { name: ['Care & Warranty', 'Bakım & Garanti'], role: 'info' },
+  consultation: { name: ['Book a Consultation', 'Danışma Randevusu'], role: 'cta' },
+  'store-contact': { name: ['Store & Contact', 'Mağaza & İletişim'], role: 'location' },
+  // real estate (Phase 11C)
+  'featured-listings': { name: ['Featured Listings', 'Öne Çıkan İlanlar'], role: 'browse' },
+  'property-details': { name: ['Property Details', 'İlan Detayları'], role: 'info' },
+  'agent-team': { name: ['Agents / Team', 'Danışmanlar / Ekip'], role: 'info' },
+  'areas-map': { name: ['Areas & Map', 'Bölgeler & Harita'], role: 'location' },
+  'buying-renting-process': { name: ['How It Works', 'Nasıl Çalışır'], role: 'process' },
+  'schedule-viewing': { name: ['Schedule a Viewing', 'Görüntüleme Planla'], role: 'cta' },
+  'valuation-request': { name: ['Request a Valuation', 'Değerleme İste'], role: 'cta' },
   // shared
   reviews: { name: ['Reviews', 'Yorumlar'], role: 'proof' },
   faq: { name: ['FAQ', 'Sıkça sorulanlar'], role: 'faq' },
@@ -201,6 +272,12 @@ const PLAYBOOKS: Record<Exclude<ArchMode, 'generic'>, string[]> = {
   industrial: ['hero', 'capabilities', 'specifications', 'process', 'certifications', 'case-studies', 'request-quote', 'footer'],
   portfolio: ['hero', 'selected-work', 'case-studies', 'process', 'testimonials', 'start-project', 'footer'],
   localService: ['hero', 'services', 'process', 'local-proof', 'reviews', 'faq', 'quote-cta', 'footer'],
+  // Phase 11C — sector-specific vertical playbooks.
+  healthcare: ['hero', 'treatments', 'medical-team', 'clinic-facility', 'safety-approach', 'appointment', 'faq', 'footer'],
+  automotive: ['hero', 'featured-inventory', 'vehicle-details', 'financing-trust', 'inspection-warranty', 'buying-process', 'test-drive', 'dealership-contact', 'footer'],
+  furniture: ['hero', 'furniture-collections', 'materials', 'craftsmanship-manufacturing', 'completed-projects', 'showroom-project', 'care-delivery', 'footer'],
+  jewelry: ['hero', 'jewelry-collections', 'featured-pieces', 'craftsmanship-materials', 'care-warranty', 'consultation', 'store-contact', 'footer'],
+  realEstate: ['hero', 'featured-listings', 'property-details', 'agent-team', 'areas-map', 'buying-renting-process', 'schedule-viewing', 'valuation-request', 'footer'],
 };
 
 /** Concept-specific keyword expectations per mode — used to detect a mismatch
@@ -218,6 +295,12 @@ const MODE_KEYWORDS: Partial<Record<ArchMode, string[]>> = {
   industrial: ['capabilit', 'specification', 'spec', 'certification', 'case', 'quote', 'yetenek', 'teknik', 'sertifika', 'teklif'],
   portfolio: ['work', 'case', 'project', 'process', 'testimonial', 'iş', 'vaka', 'proje', 'süreç', 'referans'],
   localService: ['service', 'process', 'proof', 'review', 'quote', 'faq', 'hizmet', 'süreç', 'kanıt', 'yorum', 'teklif'],
+  // Phase 11C — sector-specific vertical keyword expectations.
+  healthcare: ['treatment', 'team', 'clinic', 'facility', 'safety', 'approach', 'appointment', 'tedavi', 'ekip', 'klinik', 'tesis', 'güvenlik', 'yaklaşım', 'randevu'],
+  automotive: ['inventory', 'vehicle', 'financing', 'inspection', 'warranty', 'buying', 'test drive', 'dealership', 'contact', 'araç', 'envanter', 'finansman', 'kontrol', 'garanti', 'satın alma', 'test sürüşü', 'galeri'],
+  furniture: ['collection', 'material', 'craftsmanship', 'manufactur', 'project', 'showroom', 'care', 'delivery', 'koleksiyon', 'malzeme', 'işçilik', 'üretim', 'proje', 'bakım', 'teslimat'],
+  jewelry: ['collection', 'piece', 'craftsmanship', 'material', 'care', 'warranty', 'consultation', 'store', 'koleksiyon', 'parça', 'işçilik', 'malzeme', 'bakım', 'garanti', 'danışma', 'mağaza'],
+  realEstate: ['listing', 'property', 'agent', 'team', 'area', 'map', 'viewing', 'valuation', 'ilan', 'emlak', 'danışman', 'ekip', 'bölge', 'harita', 'görüntüleme', 'değerleme'],
 };
 
 /** Generic id tokens that do not express a concept. */
@@ -320,9 +403,16 @@ const MUST_HAVES: Partial<Record<ArchMode, string[][]>> = {
   hospitality: [['menu'], ['ambience', 'gallery'], ['reservation'], ['location-hours', 'location', 'hours'], ['reviews']],
   productSaas: [['product-demo', 'demo'], ['use-cases', 'use case'], ['workflow'], ['integrations', 'integration'], ['security-proof', 'security'], ['pricing']],
   trustService: [['credentials', 'credential'], ['services', 'service'], ['process'], ['trust-proof', 'trust'], ['faq'], ['contact']],
+  // Phase 11C — sector-specific must-have gates (plain keywords match normalized text).
+  healthcare: [['treatment', 'treatments'], ['team'], ['clinic', 'facility'], ['safety'], ['appointment']],
+  automotive: [['inventory'], ['vehicle'], ['financing'], ['inspection', 'warranty'], ['test drive'], ['dealership', 'contact']],
+  furniture: [['collection'], ['material'], ['craftsmanship', 'manufactur'], ['project', 'projects'], ['showroom']],
+  jewelry: [['collection'], ['piece', 'pieces'], ['craftsmanship', 'material'], ['warranty', 'care'], ['consultation']],
+  realEstate: [['listing', 'listings'], ['property'], ['agent'], ['area', 'areas', 'map'], ['viewing']],
 };
 const MUST_HAVE_MIN: Partial<Record<ArchMode, number>> = {
   archive: 3, landscaping: 3, hospitality: 3, productSaas: 4, trustService: 3,
+  healthcare: 3, automotive: 3, furniture: 3, jewelry: 3, realEstate: 3,
 };
 
 function mustHaveGateFails(items: WebBuildSectionItem[], mode: ArchMode): boolean {
@@ -382,12 +472,22 @@ function bulletsFor(role: Role, ctx: SectionArchInput): string[] {
     case 'browse':
       return pick(items, 4).length ? pick(items, 4) : (pick(compNames, 3).length ? pick(compNames, 3)
         : [L(lang, 'Browse everything', 'Tümüne göz at'), L(lang, 'By category', 'Kategoriye göre'), L(lang, 'Newest first', 'En yeniden')]);
-    case 'proof':
-      return uniq([...pick(proofNeeded, 3), ...trustBits(ctx.brief, ctx.inferred)]).slice(0, 3).length
-        ? uniq([...pick(proofNeeded, 3), ...trustBits(ctx.brief, ctx.inferred)]).slice(0, 3)
-        : [L(lang, 'Real, verifiable proof', 'Gerçek, doğrulanabilir kanıt'), L(lang, 'A clear track record', 'Net bir geçmiş'), L(lang, 'A transparent process', 'Şeffaf bir süreç')];
-    case 'process':
+    case 'proof': {
+      // Real research/brief proof first; then Vertical Intelligence trust DRIVERS
+      // (honest "what earns trust here" — NOT sourceRequiredProof, which only names
+      // material that WOULD be required, not verified proof); then a safe fallback.
+      const real = uniq([...pick(proofNeeded, 3), ...trustBits(ctx.brief, ctx.inferred)]).slice(0, 3);
+      if (real.length) return real;
+      const drivers = pick(ctx.verticalIntelligence?.trustModel?.drivers, 3);
+      if (drivers.length) return drivers;
+      return [L(lang, 'Real, verifiable proof', 'Gerçek, doğrulanabilir kanıt'), L(lang, 'A clear track record', 'Net bir geçmiş'), L(lang, 'A transparent process', 'Şeffaf bir süreç')];
+    }
+    case 'process': {
+      // Prefer the Vertical Intelligence conversion FUNNEL (capped to four), else generic.
+      const funnel = pick(ctx.verticalIntelligence?.conversionModel?.funnel, 4);
+      if (funnel.length) return funnel;
       return [L(lang, 'Discovery', 'Keşif'), L(lang, 'Plan', 'Planlama'), L(lang, 'Delivery', 'Uygulama'), L(lang, 'Support', 'Destek')];
+    }
     case 'filter':
       return [L(lang, 'Filter by category', 'Kategoriye göre filtrele'), L(lang, 'Filter by type', 'Türe göre filtrele'), L(lang, 'Search by keyword', 'Anahtar kelimeyle ara')];
     case 'materials':
@@ -408,7 +508,8 @@ function bulletsFor(role: Role, ctx: SectionArchInput): string[] {
     case 'faq':
       return [L(lang, 'How does it work?', 'Nasıl çalışır?'), L(lang, 'What does it cost?', 'Maliyeti nedir?'), L(lang, 'How do I get started?', 'Nasıl başlarım?')];
     case 'cta':
-      return uniq([ctx.strategy?.ctaHierarchy?.secondary || ctx.brief.secondaryCTA || ctx.inferred.secondaryCTA]);
+      return uniq([ctx.verticalIntelligence?.conversionModel?.secondaryCTA
+        || ctx.strategy?.ctaHierarchy?.secondary || ctx.brief.secondaryCTA || ctx.inferred.secondaryCTA]);
     case 'info':
     default:
       return pick(items, 3);
@@ -422,11 +523,17 @@ const specific = (s?: string) => !!s && s.trim().length >= 10 && !GENERIC_HEADLI
 /** Merge the best available hero copy — keep good backend copy, else strategy /
  *  inferred. Never discards a specific backend headline/sub/CTA. */
 function heroItem(hero: WebBuildSectionItem | undefined, ctx: SectionArchInput): WebBuildSectionItem {
-  const primary = (specific(hero?.cta) && hero?.cta) || ctx.strategy?.ctaHierarchy?.primary || ctx.brief.primaryCTA || ctx.inferred.primaryCTA;
-  const secondary = ctx.strategy?.ctaHierarchy?.secondary || ctx.brief.secondaryCTA || ctx.inferred.secondaryCTA;
+  // CTA priority (Phase 11C): specific backend CTA → Vertical Intelligence primary
+  // → Strategy → brief → inferred. Never discards a specific backend headline/sub/CTA.
+  const primary = (specific(hero?.cta) && hero?.cta) || ctx.verticalIntelligence?.conversionModel?.primaryCTA
+    || ctx.strategy?.ctaHierarchy?.primary || ctx.brief.primaryCTA || ctx.inferred.primaryCTA;
+  const secondary = ctx.verticalIntelligence?.conversionModel?.secondaryCTA
+    || ctx.strategy?.ctaHierarchy?.secondary || ctx.brief.secondaryCTA || ctx.inferred.secondaryCTA;
   const headline = (specific(hero?.headline) && hero?.headline) || ctx.strategy?.mainPromise || ctx.brief.strategyInsight || ctx.inferred.heroHeadline;
   const sub = (specific(hero?.sub) && hero?.sub) || ctx.brief.coreIdea || ctx.inferred.heroSub;
-  const proof0 = (ctx.research?.conceptProfile?.proofNeeded || [])[0] || (ctx.strategy?.aboveTheFoldMustProve || [])[0]
+  // Trust context prefers a Vertical Intelligence trust DRIVER (honest, never fabricated).
+  const proof0 = (ctx.verticalIntelligence?.trustModel?.drivers || [])[0]
+    || (ctx.research?.conceptProfile?.proofNeeded || [])[0] || (ctx.strategy?.aboveTheFoldMustProve || [])[0]
     || ctx.brief.trustSignals || ctx.inferred.trustSignals;
   return {
     id: 'hero', name: 'Hero', component: 'Hero.tsx',
@@ -437,8 +544,10 @@ function heroItem(hero: WebBuildSectionItem | undefined, ctx: SectionArchInput):
 }
 
 function footerItem(ctx: SectionArchInput): WebBuildSectionItem {
-  const primary = ctx.strategy?.ctaHierarchy?.primary || ctx.brief.primaryCTA || ctx.inferred.primaryCTA;
-  const secondary = ctx.strategy?.ctaHierarchy?.secondary || ctx.brief.secondaryCTA || ctx.inferred.secondaryCTA;
+  const primary = ctx.verticalIntelligence?.conversionModel?.primaryCTA
+    || ctx.strategy?.ctaHierarchy?.primary || ctx.brief.primaryCTA || ctx.inferred.primaryCTA;
+  const secondary = ctx.verticalIntelligence?.conversionModel?.secondaryCTA
+    || ctx.strategy?.ctaHierarchy?.secondary || ctx.brief.secondaryCTA || ctx.inferred.secondaryCTA;
   return {
     id: 'footer', name: L(ctx.lang || 'en', 'Footer', 'Alt bilgi'), component: 'Footer.tsx',
     headline: ctx.brief.type || ctx.inferred.businessType,
@@ -461,7 +570,8 @@ function sectionFromPlaybook(id: string, ctx: SectionArchInput): WebBuildSection
     copyPreview: name,
   };
   if (role === 'cta') {
-    item.cta = ctx.strategy?.ctaHierarchy?.primary || ctx.brief.primaryCTA || ctx.inferred.primaryCTA;
+    item.cta = ctx.verticalIntelligence?.conversionModel?.primaryCTA
+      || ctx.strategy?.ctaHierarchy?.primary || ctx.brief.primaryCTA || ctx.inferred.primaryCTA;
     item.sub = ctx.strategy?.mainPromise || ctx.inferred.heroSub;
   }
   return item;
