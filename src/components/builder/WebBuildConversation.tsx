@@ -483,6 +483,20 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       }
     }
 
+    // Phase 12B — dedicated Frontend Builder raw response (persisted only; not parsed
+    // or validated, and it does NOT feed the current Preview / All Files). Owner-only.
+    const fbr = step.artifacts?.frontendBuilderRaw;
+    if (fbr) {
+      ownerRows.push(['frontendBuilderRaw', fbr.status]);
+      ownerRows.push(['frontendBuilderMode', fbr.mode]);
+      ownerRows.push(['frontendBuilderModel', fbr.model || 'unknown']);
+      if (fbr.provider) ownerRows.push(['frontendBuilderProvider', fbr.provider]);
+      ownerRows.push(['frontendBuilderChars', String(fbr.responseCharCount ?? 0)]);
+      ownerRows.push(['frontendBuilderStoredFull', fbr.status === 'completed' && !fbr.truncatedForStorage ? 'yes' : 'no']);
+      ownerRows.push(['frontendValidation', fbr.validationStatus || 'not-run']);
+      if (fbr.status === 'failed' && fbr.reason) ownerRows.push(['frontendBuilderReason', fbr.reason.slice(0, 160)]);
+    }
+
     // Phase 9D-1 — intent-aware Page Architecture Decision (concept-specific spine).
     const pa = step.artifacts?.pageArchitecture;
     if (pa) {

@@ -13,6 +13,7 @@ import {
   runUpstreamAgents, runLayoutArchitect, runComponentEngineer, runReviewer, runQualityDirector, runAssetDirector, runMotionComposer, runImagePipeline, runFixer, runVerticalIntelligence, WEB_BUILD_AGENTS_ENABLED,
   derivePageArchitectureDecision, deriveVisualSignaturePlan, deriveExperienceBlueprint,
   type WebBuildAgent, type WebBuildArtifacts, type WebBuildEnforcement,
+  type FrontendBuildSpecification, type FrontendBuilderRawArtifact,
 } from '@/lib/webBuildAgents';
 import { deriveAgentSectionArchitecture } from '@/lib/webBuildSectionArchitecture';
 import { deriveFrontendBuildSpecification } from '@/lib/webBuildFrontendSpec';
@@ -149,6 +150,59 @@ export interface WebBuildPayload {
   steps: WebBuildStep[];
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * Attach the dedicated Frontend Builder raw response (Phase 12B) IMMUTABLY to a
+ * planning payload. Updates `artifacts.frontendBuilderRaw` and the matching Phase
+ * 12A `frontendBuildSpec.generation` metadata + the Phase 12B enforcement fields at
+ * BOTH the root and the latest step. It NEVER mutates the input and never alters
+ * files / sectionItems / sections / reply / layoutPlan / brief / sources /
+ * planningDiagnostics / other agent artifacts / timestamps. The raw builder result
+ * is not yet a file set — no parsing, validation or Preview consumption here.
+ */
+export function attachFrontendBuilderRaw(
+  payload: WebBuildPayload,
+  raw: FrontendBuilderRawArtifact,
+): WebBuildPayload {
+  try {
+    const REASON_GENERATED =
+      'Dedicated Frontend Builder returned a raw frontend-files-v1 response; parsing and validation have not run yet.';
+    // Update ONLY the Phase 12A generation metadata; the rest of the spec is preserved.
+    const applyGeneration = (spec: FrontendBuildSpecification | undefined): FrontendBuildSpecification | undefined => {
+      if (!spec) return spec;
+      if (raw.status === 'completed') {
+        return { ...spec, generation: { status: 'generated', provider: raw.provider, model: raw.model, reason: REASON_GENERATED } };
+      }
+      if (raw.status === 'failed') {
+        return { ...spec, generation: { status: 'failed', reason: raw.reason } };
+      }
+      return { ...spec, generation: { status: 'not-run', reason: raw.reason } };
+    };
+    // didRunFrontendBuilder is true whenever a real attempt was made (never 'skipped').
+    const enforcePatch: Partial<WebBuildEnforcement> = {
+      didRunFrontendBuilder: raw.status !== 'skipped',
+      frontendBuilderRawStatus: raw.status,
+      frontendBuilderResponseCharCount: raw.responseCharCount,
+      frontendBuilderValidationStatus: raw.validationStatus,
+      frontendBuilderMode: raw.mode,
+      frontendBuilderModel: raw.model,
+      frontendBuilderProvider: raw.provider,
+    };
+    const patch = (a: WebBuildArtifacts | undefined): WebBuildArtifacts => ({
+      ...(a || {}),
+      frontendBuilderRaw: raw,
+      frontendBuildSpec: applyGeneration(a?.frontendBuildSpec),
+      enforcement: a?.enforcement ? { ...a.enforcement, ...enforcePatch } : a?.enforcement,
+    });
+    const steps = Array.isArray(payload.steps) ? payload.steps : [];
+    const nextSteps = steps.length
+      ? steps.map((s, i) => (i === steps.length - 1 ? { ...s, artifacts: patch(s.artifacts) } : s))
+      : steps;
+    return { ...payload, artifacts: patch(payload.artifacts), steps: nextSteps };
+  } catch {
+    return payload;
+  }
 }
 
 function pascal(id: string): string {
