@@ -455,7 +455,16 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       if (vi.visualPolicy?.cssSvgPreferred?.length) ownerRows.push(['cssSvgPreferred', `${vi.visualPolicy.cssSvgPreferred.length} · ${vi.visualPolicy.cssSvgPreferred.slice(0, 2).join(', ')}`]);
       if (vi.visualPolicy?.motionSuitable?.length) ownerRows.push(['motionSuitable', `${vi.visualPolicy.motionSuitable.length} · ${vi.visualPolicy.motionSuitable.slice(0, 2).join(', ')}`]);
       ownerRows.push(['verticalResearch', vi.researchPlan?.recommended ? 'recommended' : 'not recommended']);
-      ownerRows.push(['researchStatus', vi.researchPlan?.status || 'not-run']);
+      ownerRows.push(['verticalResearchStatus', vi.researchPlan?.status || 'not-run']);
+      // Phase 11B — source-backed evidence rows (real Research Agent data only; no
+      // fabricated counts). Compact: count + provider only when sources truly exist.
+      const vev = vi.researchPlan?.evidence;
+      if (vev && vev.didResearch && vev.sourceCount > 0) {
+        ownerRows.push(['verticalResearchSources', String(vev.sourceCount)]);
+        if (vev.provider) ownerRows.push(['verticalResearchProvider', vev.provider]);
+      } else if (vev) {
+        ownerRows.push(['verticalResearchSources', '0 (no source-backed findings)']);
+      }
       if (vi.warnings?.length) ownerRows.push(['verticalWarning', vi.warnings[0]]);
       if (vi.conflictingSignals?.length) ownerRows.push(['verticalConflict', vi.conflictingSignals[0]]);
     }

@@ -562,6 +562,11 @@ function assembleWebBuildPayload(
         conceptAuthority: artifacts?.research?.conceptAuthority,
         experienceBlueprint: artifacts?.experienceBlueprint,
         ledger: artifacts?.thinkingLedger,
+        // Phase 11B — consume the EXISTING Research Agent artifact (no new request)
+        // to attach honest, source-backed vertical research evidence when real URLs
+        // exist. Revisions that preserve the same research artifact recompute the
+        // same evidence deterministically.
+        research: artifacts?.research,
         lang: effLang,
       });
       // Append the agent row in behavioral order (after Strategy, before Layout
@@ -990,6 +995,10 @@ function assembleWebBuildPayload(
         verticalMotionSuitableCount: (artifacts?.verticalIntelligence?.visualPolicy?.motionSuitable || []).length,
         verticalResearchRecommended: !!artifacts?.verticalIntelligence?.researchPlan?.recommended,
         verticalResearchStatus: artifacts?.verticalIntelligence?.researchPlan?.status,
+        // Phase 11B — source-backed evidence trace (real Research Agent data only).
+        verticalResearchDidUseSources: !!artifacts?.verticalIntelligence?.researchPlan?.evidence?.didResearch,
+        verticalResearchSourceCount: artifacts?.verticalIntelligence?.researchPlan?.evidence?.sourceCount,
+        verticalResearchProvider: artifacts?.verticalIntelligence?.researchPlan?.evidence?.provider,
         fallbackReason: (artifacts?.context?.fallbacks?.length
           ? `agents degraded: ${artifacts.context.fallbacks.join(', ')}`
           : undefined),
