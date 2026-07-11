@@ -1231,7 +1231,203 @@ export interface WebBuildEnforcement {
   verticalResearchSourceCount?: number;
   /** The research provider that returned sources, when present. */
   verticalResearchProvider?: string;
+  /* ── Frontend Build Specification trace (Phase 12A, optional, backward compatible) ──
+   *  Diagnostics for the model-native generation CONTRACT only. No model/backend/
+   *  network runs in this phase; frontendGenerationStatus is always 'not-run'. */
+  didCreateFrontendBuildSpec?: boolean;
+  frontendBuildSpecStatus?: FrontendBuildSpecStatus;
+  frontendBuildSpecSectionCount?: number;
+  frontendBuildSpecRequiredFileCount?: number;
+  frontendBuildSpecResearchSourceCount?: number;
+  frontendGenerationStatus?: FrontendGenerationStatus;
   fallbackReason?: string;
+}
+
+/* ── Frontend Build Specification (Phase 12A) ─────────────────────────────────
+ * The single, typed, implementation-ready CONTRACT that consolidates every planning
+ * artifact into one authoritative input for a FUTURE dedicated Frontend Builder
+ * model (Phase 12B). Additive + backward compatible + JSON-serializable (no
+ * functions/Maps/Sets); all arrays are bounded + deduped. Phase 12A only DERIVES
+ * this contract — it never calls a model/backend/network, never generates code, and
+ * never alters files/Preview/synthesis. `generation.status` is always 'not-run'. */
+export type FrontendBuildSpecStatus = 'ready' | 'partial' | 'failed-open';
+export type FrontendGenerationStatus = 'not-run' | 'generated' | 'failed';
+
+export interface FrontendSpecIdentity {
+  siteType: string;
+  primaryConcept?: string;
+  sector?: VerticalSector;
+  subsector?: string;
+  audienceSector?: VerticalSector;
+  classificationBasis?: VerticalClassificationBasis;
+  businessModel?: VerticalBusinessModel;
+  websiteExperienceModel?: string;
+  pageScreenModel?: string;
+  primaryWebsiteExperience?: string;
+  primaryConversionIntent?: string;
+}
+
+export interface FrontendSpecDesignSystem {
+  designThesis?: string;
+  selectedVisualDirection?: string;
+  rejectedDirections: string[];
+  firstImpression?: string;
+
+  paletteFamily?: string;
+  paletteDecision?: string;
+  colorTokens: Record<string, string>;
+
+  typographyDecision?: string;
+  typographyDirection?: string;
+
+  heroComposition?: string;
+  sectionRhythm?: string;
+  visualSignature?: string;
+  visualMetaphor?: string;
+
+  compositionRules: string[];
+  surfaceRules: string[];
+  componentStyleRules: string[];
+  proofRules: string[];
+  responsiveRules: string[];
+  accessibilityRules: string[];
+
+  templateTrapsToAvoid: string[];
+  mustAvoid: string[];
+  differentiationMoves: string[];
+}
+
+export interface FrontendSpecSection {
+  id: string;
+  name: string;
+  order: number;
+  purpose?: string;
+
+  headline?: string;
+  subheadline?: string;
+  primaryCTA?: string;
+  bullets: string[];
+
+  componentHint?: string;
+  layoutVariant?: string;
+  visualModule?: string;
+  density?: string;
+  interactionHints: string[];
+  assetSlotIds: string[];
+  motionLayerIds: string[];
+}
+
+export interface FrontendSpecArchitecture {
+  architecture?: string;
+  navigationModel?: string;
+  navigationBehavior?: string;
+  entryFlowModel?: string;
+  entryScreen?: string;
+  postEntryScreen?: string;
+
+  conversionJourneyModel?: string;
+  primaryCTA?: string;
+  secondaryCTA?: string;
+
+  demoSurfaces: string[];
+  statefulDemoComponents: string[];
+
+  sectionOrder: string[];
+  sections: FrontendSpecSection[];
+}
+
+export interface FrontendSpecImageSlot {
+  id: string;
+  target: string;
+  kind: string;
+  source: string;
+  purpose: string;
+  prompt?: string;
+  placeholderLabel?: string;
+  manualUploadRecommended: boolean;
+  providerReady: boolean;
+}
+
+export interface FrontendSpecMotionLayer {
+  id: string;
+  target: string;
+  pattern: string;
+  intensity: string;
+  purpose: string;
+  reducedMotionFallback: string;
+}
+
+export interface FrontendSpecAssetPlan {
+  strategy?: string;
+  visualLanguage?: string;
+
+  cssSvgSlots: string[];
+  imageSlots: FrontendSpecImageSlot[];
+  motionLayers: FrontendSpecMotionLayer[];
+
+  realSourceRequired: string[];
+  aiIllustrativeAllowed: string[];
+  forbiddenGenerated: string[];
+  honestyConstraints: string[];
+}
+
+export interface FrontendSpecResearchEvidence {
+  status: WebBuildResearchStatus | 'not-run';
+  didUseRealSources: boolean;
+  provider?: string;
+  sources: WebBuildSource[];
+  sourceBackedInsights: string[];
+  audienceExpectations: string[];
+  conversionPatterns: string[];
+  trustSignals: string[];
+  visualPatterns: string[];
+  risksToAvoid: string[];
+  differentiationOpportunities: string[];
+}
+
+export interface FrontendSpecOutputContract {
+  format: 'frontend-files-v1';
+  framework: 'react';
+  language: 'typescript';
+  styling: 'tailwind-css';
+
+  requiredFiles: string[];
+  recommendedFiles: string[];
+  requiredSectionComponentFiles: string[];
+
+  allowedExtensions: Array<'tsx' | 'ts' | 'css'>;
+
+  requirements: string[];
+  forbiddenPatterns: string[];
+  successCriteria: string[];
+}
+
+export interface FrontendBuildSpecification {
+  version: 'frontend-spec-v1';
+  status: FrontendBuildSpecStatus;
+  language: string;
+  prompt: string;
+
+  identity: FrontendSpecIdentity;
+  designSystem: FrontendSpecDesignSystem;
+  architecture: FrontendSpecArchitecture;
+  assets: FrontendSpecAssetPlan;
+  researchEvidence: FrontendSpecResearchEvidence;
+  outputContract: FrontendSpecOutputContract;
+
+  honestyRules: string[];
+  sourceTrace: string[];
+  missingInputs: string[];
+  warnings: string[];
+
+  generation: {
+    status: FrontendGenerationStatus;
+    provider?: string;
+    model?: string;
+    reason: string;
+  };
+
+  summary: string;
 }
 
 export interface WebBuildArtifacts {
@@ -1279,6 +1475,13 @@ export interface WebBuildArtifacts {
    *  direction (hero motif, per-section visuals, motion hints). Optional → old
    *  builds load. Never an image/video API; consumed by the preview visual layer. */
   visualSignaturePlan?: VisualSignaturePlan;
+  /** Model-native Frontend Build Specification (Phase 12A) — one authoritative,
+   *  implementation-ready CONTRACT consolidating identity, design, architecture,
+   *  final copy, interactions, assets, motion, research evidence and honesty rules
+   *  for a future dedicated Frontend Builder model (Phase 12B). PLANNING/DATA ONLY:
+   *  no model/backend/network runs here; generation.status is always 'not-run', and
+   *  it never alters files/Preview/synthesis. Optional → old builds load. */
+  frontendBuildSpec?: FrontendBuildSpecification;
   /** The shared context the agents were run against (pipeline trace). */
   context?: WebBuildAgentContext;
   /** Enforcement diagnostics proving the agents drove the build. */
