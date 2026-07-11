@@ -2390,8 +2390,18 @@ function vNormalize(s: string): string {
   return ` ${(s || '').toLowerCase().replace(/\s+/g, ' ').trim()} `;
 }
 function vWordRe(word: string): RegExp {
-  const esc = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // A trailing '*' marks an explicit Unicode-safe PREFIX/stem token (e.g.
+  // 'manufactur*' → manufacturer/manufacturers/manufacturing). The '*' itself is
+  // never matched. A stem needs a sensible minimum length (>= 4) so short,
+  // ambiguous words ('ai', 'gem', 'car') can never be turned into broad prefixes;
+  // a too-short stem falls back to an exact token match. Normal tokens stay exact.
+  const isStem = word.endsWith('*');
+  const base = isStem ? word.slice(0, -1) : word;
+  const esc = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   // Letter/number lookarounds keep Turkish letters inside the boundary.
+  if (isStem && base.length >= 4) {
+    return new RegExp(`(?<![\\p{L}\\p{N}])${esc}[\\p{L}\\p{N}]*(?![\\p{L}\\p{N}])`, 'iu');
+  }
   return new RegExp(`(?<![\\p{L}\\p{N}])${esc}(?![\\p{L}\\p{N}])`, 'iu');
 }
 /** Count how many of `words` appear in `text` (deterministic; no global regex). */
@@ -2410,17 +2420,20 @@ function vCountMatches(text: string, words: readonly string[]): { hits: number; 
  *  dedicated precedence below, but kept here for audience/operator scoring). ── */
 type IndustrySector = Exclude<VerticalSector, 'general'>;
 const VERTICAL_KEYWORDS: Record<IndustrySector, readonly string[]> = {
-  jewelry: ['jewelry', 'jewellery', 'jeweler', 'jeweller', 'jewellers', 'goldsmith', 'gold', 'diamond', 'diamonds', 'gemstone', 'gem', 'ring', 'rings', 'necklace', 'bracelet', 'earring', 'earrings', 'pendant', 'engagement ring', 'wedding ring', 'bridal jewelry', 'watch', 'watches', 'karat', 'carat', 'mücevher', 'kuyumcu', 'kuyumculuk', 'takı', 'altın', 'pırlanta', 'elmas', 'yüzük', 'kolye', 'bilezik', 'küpe', 'gümüş', 'alyans', 'saat'],
-  landscaping: ['landscaping', 'landscape', 'landscaper', 'garden', 'gardens', 'gardening', 'lawn', 'hardscape', 'hardscaping', 'patio', 'terrace', 'nursery', 'horticulture', 'irrigation', 'yard', 'outdoor', 'peyzaj', 'bahçe', 'bahçıvan', 'çim', 'çevre düzenleme', 'yeşil alan', 'sulama', 'teras'],
-  'automotive-dealership': ['dealership', 'dealer', 'car dealer', 'auto dealer', 'used car', 'used cars', 'second-hand car', 'pre-owned', 'vehicle', 'vehicles', 'automotive', 'test drive', 'showroom', 'motors', 'oto galeri', 'galeri', 'araba', 'araç', 'ikinci el araç', 'sıfır araç', 'otomotiv', 'test sürüşü', 'vasıta'],
-  'furniture-interiors': ['furniture', 'furnishings', 'sofa', 'couch', 'armchair', 'cabinet', 'wardrobe', 'kitchen', 'interior', 'interiors', 'interior design', 'interior designer', 'decor', 'decoration', 'upholstery', 'joinery', 'carpentry', 'mobilya', 'mobilyacı', 'koltuk', 'kanepe', 'dolap', 'mutfak', 'iç mimar', 'iç mimari', 'dekorasyon', 'ahşap', 'marangoz', 'döşeme'],
-  'restaurant-hospitality': ['restaurant', 'cafe', 'café', 'bistro', 'brasserie', 'diner', 'eatery', 'menu', 'dining', 'cuisine', 'bakery', 'patisserie', 'pastry', 'catering', 'coffee shop', 'chef', 'fine dining', 'restoran', 'lokanta', 'kafe', 'menü', 'mutfak', 'pastane', 'fırın', 'yemek', 'şef', 'kahve'],
-  'real-estate': ['real estate', 'real-estate', 'realtor', 'realty', 'property', 'properties', 'listing', 'listings', 'apartment', 'apartments', 'condo', 'housing', 'rental', 'rentals', 'lease', 'broker', 'estate agent', 'floor plan', 'emlak', 'gayrimenkul', 'konut', 'daire', 'satılık', 'kiralık', 'arsa', 'emlakçı', 'müteahhit', 'kat planı'],
-  'clinic-healthcare': ['clinic', 'dental', 'dentist', 'dentistry', 'orthodontic', 'doctor', 'physician', 'medical', 'healthcare', 'aesthetic', 'dermatology', 'dermatologist', 'physiotherapy', 'physio', 'therapy', 'therapist', 'psychology', 'psychologist', 'psychiatry', 'treatment', 'patient', 'polyclinic', 'klinik', 'diş', 'diş hekimi', 'doktor', 'tıp', 'sağlık', 'estetik', 'dermatoloji', 'fizyoterapi', 'terapi', 'psikolog', 'tedavi', 'hasta', 'poliklinik', 'muayenehane'],
+  // NOTE: tokens ending with '*' are Unicode-safe PREFIX/stem matches (plural /
+  // inflected forms). Short, ambiguous words ('gold', 'gem', 'ring', 'car', 'spa')
+  // are deliberately kept EXACT to avoid false positives.
+  jewelry: ['jewelry', 'jewellery', 'jeweler*', 'jeweller*', 'goldsmith', 'gold', 'diamond', 'diamonds', 'gemstone', 'gem', 'ring', 'rings', 'necklace', 'bracelet', 'earring', 'earrings', 'pendant', 'engagement ring', 'wedding ring', 'bridal jewelry', 'watch', 'watches', 'karat', 'carat', 'mücevher', 'kuyumcu*', 'takı', 'altın', 'pırlanta', 'elmas', 'yüzük', 'kolye', 'bilezik', 'küpe', 'gümüş', 'alyans', 'saat'],
+  landscaping: ['landscaping', 'landscape', 'landscaper*', 'garden', 'gardens', 'gardening', 'lawn', 'hardscape', 'hardscaping', 'patio', 'terrace', 'nursery', 'horticulture', 'irrigation', 'yard', 'outdoor', 'peyzaj', 'peyzajcı*', 'bahçe', 'bahçıvan*', 'çim', 'çevre düzenleme', 'yeşil alan', 'sulama', 'teras'],
+  'automotive-dealership': ['dealer*', 'car dealer*', 'auto dealer*', 'used car', 'used cars', 'second-hand car', 'pre-owned', 'vehicle', 'vehicles', 'automotive', 'test drive', 'showroom', 'motors', 'oto galeri', 'galeri', 'galerici*', 'araba', 'araç', 'ikinci el araç', 'sıfır araç', 'otomotiv', 'test sürüşü', 'vasıta'],
+  'furniture-interiors': ['furniture', 'furnishings', 'sofa', 'couch', 'armchair', 'cabinet', 'wardrobe', 'kitchen', 'interior', 'interiors', 'interior design', 'interior designer', 'decor', 'decoration', 'upholstery', 'joinery', 'carpentry', 'manufactur*', 'mobilya', 'mobilyacı*', 'üretici*', 'imalat*', 'koltuk', 'kanepe', 'dolap', 'mutfak', 'iç mimar', 'iç mimari', 'dekorasyon', 'ahşap', 'marangoz*', 'döşeme'],
+  'restaurant-hospitality': ['restaurant*', 'cafe*', 'café', 'bistro', 'brasserie', 'diner', 'eatery', 'menu', 'dining', 'cuisine', 'bakery', 'patisserie', 'pastry', 'catering', 'coffee shop', 'chef', 'fine dining', 'restoran*', 'lokanta', 'kafe*', 'menü', 'mutfak', 'pastane', 'fırın', 'yemek', 'şef', 'kahve'],
+  'real-estate': ['real estate', 'real-estate', 'realtor*', 'realty', 'property', 'properties', 'listing', 'listings', 'apartment', 'apartments', 'condo', 'housing', 'rental', 'rentals', 'lease', 'broker*', 'estate agent*', 'floor plan', 'emlak', 'emlakçı*', 'gayrimenkul', 'konut', 'daire', 'satılık', 'kiralık', 'arsa', 'müteahhit', 'kat planı'],
+  'clinic-healthcare': ['clinic*', 'dental', 'dentist*', 'dentistry', 'orthodontic', 'doctor*', 'physician*', 'medical', 'healthcare', 'aesthetic', 'dermatolog*', 'physiotherapy', 'physio', 'therapy', 'therapist*', 'psychology', 'psychologist*', 'psychiatry', 'treatment', 'patient', 'polyclinic', 'klinik*', 'diş', 'diş hekimi', 'doktor*', 'tıp', 'sağlık', 'estetik', 'dermatoloji', 'fizyoterapi', 'terapi', 'psikolog', 'tedavi', 'hasta', 'poliklinik', 'muayenehane'],
   'ai-saas': ['ai', 'artificial intelligence', 'machine learning', 'llm', 'gpt', 'chatbot', 'chat bot', 'copilot', 'saas', 'software', 'platform', 'dashboard', 'crm', 'erp', 'api', 'sdk', 'automation', 'workflow', 'no-code', 'low-code', 'yapay zeka', 'yapay zekâ', 'yazılım', 'otomasyon', 'analitik'],
   marketplace: ['marketplace', 'market place', 'multi-vendor', 'multivendor', 'two-sided', 'classifieds', 'classified', 'vendors', 'buyers and sellers', 'pazaryeri', 'çok satıcılı', 'ilan sitesi', 'alıcı ve satıcı'],
-  'portfolio-agency': ['portfolio', 'freelance', 'freelancer', 'designer', 'photographer', 'photography', 'illustrator', 'architect', 'architecture', 'creative studio', 'design studio', 'agency', 'marketing agency', 'advertising', 'branding', 'production studio', 'case study', 'showreel', 'portfolyo', 'tasarımcı', 'fotoğrafçı', 'mimar', 'mimarlık', 'stüdyo', 'ajans', 'reklam ajansı', 'markalaşma', 'prodüksiyon'],
-  'local-service': ['plumber', 'plumbing', 'electrician', 'electrical', 'cleaning', 'cleaner', 'barber', 'hairdresser', 'hair salon', 'beauty salon', 'salon', 'spa', 'repair', 'handyman', 'moving', 'movers', 'locksmith', 'painter', 'pest control', 'consulting', 'consultant', 'tesisatçı', 'elektrikçi', 'temizlik', 'berber', 'kuaför', 'güzellik salonu', 'tamir', 'tamirci', 'nakliyat', 'çilingir', 'boyacı', 'danışman', 'danışmanlık'],
+  'portfolio-agency': ['portfolio', 'freelance', 'freelancer*', 'designer*', 'photographer*', 'photography', 'illustrator*', 'architect*', 'architecture', 'creative studio', 'design studio', 'agenc*', 'marketing agenc*', 'advertising', 'branding', 'production studio', 'case study', 'showreel', 'portfolyo', 'tasarımcı*', 'fotoğrafçı*', 'mimar', 'mimarlık', 'stüdyo', 'ajans*', 'reklam ajans*', 'markalaşma', 'prodüksiyon'],
+  'local-service': ['plumber*', 'plumbing', 'electrician*', 'electrical', 'cleaning', 'cleaner*', 'barber*', 'hairdresser*', 'hair salon', 'beauty salon', 'salon', 'spa', 'repair', 'handyman', 'moving', 'movers', 'locksmith', 'painter', 'pest control', 'consulting', 'consultant*', 'tesisatçı*', 'elektrikçi*', 'temizlik', 'berber*', 'kuaför*', 'güzellik salonu', 'tamir', 'tamirci*', 'nakliyat*', 'çilingir', 'boyacı*', 'danışman*'],
 };
 
 /** Software/product signals — when present in the PRODUCT part of a "<product> for
@@ -2652,7 +2665,7 @@ const VERTICAL_PROFILES: Record<VerticalSector, VerticalProfileDefinition> = {
     businessModel: 'catalog-showroom',
     subsectorDefault: 'furniture-showroom',
     subsectors: [
-      { label: 'furniture-manufacturer', keywords: ['manufactur', 'factory', 'üretim', 'fabrika'] },
+      { label: 'furniture-manufacturer', keywords: ['manufactur*', 'factory', 'üretim', 'üretici*', 'imalat*', 'fabrika'] },
       { label: 'custom-furniture', keywords: ['custom', 'bespoke', 'özel'] },
       { label: 'interior-design-studio', keywords: ['interior design', 'iç mimar', 'iç mimari'] },
       { label: 'kitchen-manufacturer', keywords: ['kitchen', 'mutfak'] },
@@ -3152,7 +3165,14 @@ export function deriveVerticalIntelligence(input: VerticalIntelligenceInput): Ve
     const ledgerPrimary = (ledger?.primaryConcept || '').toString().toLowerCase();
 
     const split = vSplitProductVertical(prompt);
+    // Separate text CHANNELS so the two roles never contaminate each other:
+    //  • productText        → product/software/marketplace IDENTITY only.
+    //  • audiencePromptText → audience/operator SECTOR scoring only. For an explicit
+    //    "<product> for <vertical>" / "<vertical> için <product>" split this is JUST
+    //    the vertical side, so product-side industry words (e.g. "interior design" in
+    //    "AI interior design tool for real estate agencies") never become the audience.
     const productText = split.hadSplit ? split.product : [prompt, brief.coreIdea, brief.type].filter(Boolean).join(' ');
+    const audiencePromptText = split.hadSplit ? split.vertical : prompt;
     const coreText = split.hadSplit ? split.product : [prompt, briefText].filter(Boolean).join(' ');
     const fullText = [prompt, briefText, sectionNames, ca?.targetVertical, ca?.audienceVertical, ledger?.targetVertical].filter(Boolean).join(' ');
 
@@ -3162,10 +3182,16 @@ export function deriveVerticalIntelligence(input: VerticalIntelligenceInput): Ve
     for (const s of INDUSTRY_ONLY_SECTORS) { scores[s] = 0; matchedBySector[s] = []; }
 
     const industrySignals: Array<{ label: string; text: string; w: number }> = [
+      // The explicit grammatical target (split.vertical) is the STRONGEST audience
+      // signal — it must outrank product-side industry words, the inferred fallback,
+      // generic section names and broad brief content. Empty (→ skipped) when no split.
+      { label: 'explicitAudienceVertical', text: split.hadSplit ? split.vertical : '', w: 8 },
       { label: 'conceptAuthority.targetVertical', text: (ca?.targetVertical || '').toString(), w: 4 },
       { label: 'conceptAuthority.audienceVertical', text: ca?.audienceVertical || '', w: 4 },
       { label: 'ledger.targetVertical', text: ledger?.targetVertical || '', w: 3 },
-      { label: 'prompt', text: prompt, w: 4 },
+      // Audience CHANNEL only (the vertical side of a split, or the whole prompt when
+      // there is no split) — never the product side, so it can't self-contaminate.
+      { label: 'promptAudience', text: audiencePromptText, w: 4 },
       { label: 'brief', text: briefText, w: 3 },
       { label: 'sections', text: sectionNames, w: 1 },
     ];
@@ -3289,17 +3315,24 @@ export function deriveVerticalIntelligence(input: VerticalIntelligenceInput): Ve
       confidence = (industryTopScore >= 8 && margin >= 4) ? 'high' : industryTopScore >= 4 ? 'medium' : 'low';
     } else {
       const primaryEvidence = isSoftware ? softwareEvidence : marketplaceEvidence;
-      confidence = primaryEvidence >= 6 ? 'high' : primaryEvidence >= 3 ? 'medium' : 'low';
+      // An explicit, unambiguous grammatical audience target (strong split.vertical
+      // match, no close runner-up) supports a confident product/audience read even
+      // when the product-identity keyword evidence alone is light.
+      const explicitAudienceStrong = split.hadSplit && !!audienceSector
+        && industryTopScore >= 8 && (industryTopScore - industrySecondScore) >= 4;
+      confidence = (primaryEvidence >= 6 || (primaryEvidence >= 2 && explicitAudienceStrong)) ? 'high'
+        : (primaryEvidence >= 3 || explicitAudienceStrong) ? 'medium'
+        : 'low';
     }
 
-    // ── Conflicting signals (close industry runner-up + product-vs-audience tension). ──
+    // ── Conflicting signals — ONLY a genuine ambiguity: two different candidate
+    // audience/operator sectors are close. A strong audience sector for a software/
+    // marketplace product is EXPECTED product-vs-audience separation, not a conflict
+    // (the audienceSector warning below already explains it), so it is not flagged. ──
     const conflictingSignals: string[] = [];
     if (industrySecondScore > 0 && industrySecond && industrySecond.sec !== sector && industrySecond.sec !== audienceSector
       && (industryTopScore - industrySecondScore) < 3) {
       conflictingSignals.push(`${industrySecond.sec} signals are also present (close to ${industryTop.sec}).`);
-    }
-    if ((isSoftware || isMarketplace) && industryTopScore >= 6 && audienceSector) {
-      conflictingSignals.push(`strong ${audienceSector} (audience) signals vs the ${sector} product/model identity.`);
     }
 
     const status: VerticalIntelligenceArtifact['status'] =
