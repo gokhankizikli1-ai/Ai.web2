@@ -2426,7 +2426,12 @@ const VERTICAL_KEYWORDS: Record<IndustrySector, readonly string[]> = {
   jewelry: ['jewelry', 'jewellery', 'jeweler*', 'jeweller*', 'goldsmith', 'gold', 'diamond', 'diamonds', 'gemstone', 'gem', 'ring', 'rings', 'necklace', 'bracelet', 'earring', 'earrings', 'pendant', 'engagement ring', 'wedding ring', 'bridal jewelry', 'watch', 'watches', 'karat', 'carat', 'mücevher', 'kuyumcu*', 'takı', 'altın', 'pırlanta', 'elmas', 'yüzük', 'kolye', 'bilezik', 'küpe', 'gümüş', 'alyans', 'saat'],
   landscaping: ['landscaping', 'landscape', 'landscaper*', 'garden', 'gardens', 'gardening', 'lawn', 'hardscape', 'hardscaping', 'patio', 'terrace', 'nursery', 'horticulture', 'irrigation', 'yard', 'outdoor', 'peyzaj', 'peyzajcı*', 'bahçe', 'bahçıvan*', 'çim', 'çevre düzenleme', 'yeşil alan', 'sulama', 'teras'],
   'automotive-dealership': ['dealer*', 'car dealer*', 'auto dealer*', 'used car', 'used cars', 'second-hand car', 'pre-owned', 'vehicle', 'vehicles', 'automotive', 'test drive', 'showroom', 'motors', 'oto galeri', 'galeri', 'galerici*', 'araba', 'araç', 'ikinci el araç', 'sıfır araç', 'otomotiv', 'test sürüşü', 'vasıta'],
-  'furniture-interiors': ['furniture', 'furnishings', 'sofa', 'couch', 'armchair', 'cabinet', 'wardrobe', 'kitchen', 'interior', 'interiors', 'interior design', 'interior designer', 'decor', 'decoration', 'upholstery', 'joinery', 'carpentry', 'manufactur*', 'mobilya', 'mobilyacı*', 'üretici*', 'imalat*', 'koltuk', 'kanepe', 'dolap', 'mutfak', 'iç mimar', 'iç mimari', 'dekorasyon', 'ahşap', 'marangoz*', 'döşeme'],
+  // Generic manufacturing stems ('manufactur*', 'üretici*', 'imalat*') are NOT
+  // furniture-specific — they live ONLY in the furniture-manufacturer SUBSECTOR
+  // rule, so "Medical device manufacturer" never scores as furniture. The sector is
+  // identified by furniture-specific words; manufacturing words only refine the
+  // subsector once furniture is already the sector.
+  'furniture-interiors': ['furniture', 'furnishings', 'sofa', 'couch', 'armchair', 'cabinet', 'wardrobe', 'kitchen', 'interior', 'interiors', 'interior design', 'interior designer', 'decor', 'decoration', 'upholstery', 'joinery', 'carpentry', 'mobilya', 'mobilyacı*', 'koltuk', 'kanepe', 'dolap', 'mutfak', 'iç mimar', 'iç mimari', 'dekorasyon', 'ahşap', 'marangoz*', 'döşeme'],
   'restaurant-hospitality': ['restaurant*', 'cafe*', 'café', 'bistro', 'brasserie', 'diner', 'eatery', 'menu', 'dining', 'cuisine', 'bakery', 'patisserie', 'pastry', 'catering', 'coffee shop', 'chef', 'fine dining', 'restoran*', 'lokanta', 'kafe*', 'menü', 'mutfak', 'pastane', 'fırın', 'yemek', 'şef', 'kahve'],
   'real-estate': ['real estate', 'real-estate', 'realtor*', 'realty', 'property', 'properties', 'listing', 'listings', 'apartment', 'apartments', 'condo', 'housing', 'rental', 'rentals', 'lease', 'broker*', 'estate agent*', 'floor plan', 'emlak', 'emlakçı*', 'gayrimenkul', 'konut', 'daire', 'satılık', 'kiralık', 'arsa', 'müteahhit', 'kat planı'],
   'clinic-healthcare': ['clinic*', 'dental', 'dentist*', 'dentistry', 'orthodontic', 'doctor*', 'physician*', 'medical', 'healthcare', 'aesthetic', 'dermatolog*', 'physiotherapy', 'physio', 'therapy', 'therapist*', 'psychology', 'psychologist*', 'psychiatry', 'treatment', 'patient', 'polyclinic', 'klinik*', 'diş', 'diş hekimi', 'doktor*', 'tıp', 'sağlık', 'estetik', 'dermatoloji', 'fizyoterapi', 'terapi', 'psikolog', 'tedavi', 'hasta', 'poliklinik', 'muayenehane'],
@@ -2449,6 +2454,17 @@ const VERTICAL_MARKETPLACE_WORDS: readonly string[] = [
   'marketplace', 'market place', 'multi-vendor', 'multivendor', 'two-sided', 'two sided',
   'buyers and sellers', 'classifieds', 'classified listings', 'vendors list', 'pazaryeri',
   'çok satıcılı', 'ilan sitesi', 'alıcı ve satıcı',
+];
+/** Marketplace-MANAGEMENT software signals → software used to operate/manage a
+ *  marketplace (an `ai-saas` product), NOT the marketplace model itself. Kept
+ *  PHRASE-level and narrow: bare 'management' / 'software' / 'platform' / 'admin'
+ *  are deliberately NOT here, to avoid false positives. */
+const VERTICAL_MARKETPLACE_TOOL_WORDS: readonly string[] = [
+  'marketplace management', 'marketplace software', 'marketplace crm', 'marketplace analytics',
+  'marketplace automation', 'marketplace admin', 'marketplace builder', 'marketplace platform software',
+  'vendor management', 'seller management', 'multi-vendor management', 'multivendor management',
+  'management software', 'management platform', 'pazaryeri yönetim', 'pazaryeri yazılım',
+  'satıcı yönetim',
 ];
 
 /** Direct sector votes from the deterministic InferredBrief industry key. */
@@ -3263,13 +3279,27 @@ export function deriveVerticalIntelligence(input: VerticalIntelligenceInput): Ve
     // "<product> for <vertical>" split. A keyword-only, non-split prompt needs ≥2
     // software hits so a non-software operator that merely mentions "platform" /
     // "dashboard" is not misread as a SaaS product.
+    // Marketplace MODEL vs marketplace TOOL: software that operates/manages a
+    // marketplace (e.g. "marketplace management software", "pazaryeri yönetim
+    // yazılımı", "marketplace analytics platform") is a SaaS product, not the
+    // marketplace itself — detected from the PRODUCT side by narrow phrase signals.
+    const marketplaceToolKw = vCountMatches(productText, VERTICAL_MARKETPLACE_TOOL_WORDS);
+    const marketplaceLooksLikeTool = marketplaceToolKw.hits > 0;
+    if (marketplaceLooksLikeTool) { for (const kw of marketplaceToolKw.matched.slice(0, 3)) softwareSignals.push(`product: ${kw}`); }
+
     const softwareByStructured = conceptIsSoftware || ledgerIsSoftware || inferredIsSoftware || experienceIsSoftware;
     const softwareByKeyword = split.hadSplit ? softwareKw.hits > 0 : softwareKw.hits >= 2;
-    const isSoftware = softwareByStructured || softwareByKeyword;
+    // A marketplace-management tool is itself a software product identity.
+    const isSoftware = softwareByStructured || softwareByKeyword || marketplaceLooksLikeTool;
     // A genuinely two-sided model needs a real marketplace signal (concept /
     // experience / an explicit marketplace keyword) — a single-brand ecommerce
     // mention alone never forces the marketplace model.
     const isMarketplace = conceptIsMarketplace || experienceIsMarketplace || marketplaceKw.hits > 0;
+    // A STRONG marketplace model takes precedence over simultaneous software
+    // wording (an "AI marketplace" is a marketplace) — BUT a marketplace-management
+    // TOOL keeps its software identity. Structured marketplace signals stay strong.
+    const strongMarketplaceModel = conceptIsMarketplace || experienceIsMarketplace
+      || (marketplaceKw.hits > 0 && !marketplaceLooksLikeTool);
 
     // ── Resolve the primary sector + classification basis + audience sector. ──
     let sector: VerticalSector;
@@ -3279,17 +3309,20 @@ export function deriveVerticalIntelligence(input: VerticalIntelligenceInput): Ve
     let audienceSector: IndustrySector | undefined;
     const matchedSignals: string[] = [];
 
-    if (isSoftware) {
-      sector = 'ai-saas';
-      basis = 'product-concept';
-      audienceSector = industryTopScore > 0 ? industryTop.sec : undefined;
-      matchedSignals.push(...softwareSignals);
-      if (audienceSector) matchedSignals.push(...matchedBySector[audienceSector].slice(0, 3));
-    } else if (isMarketplace) {
+    // A strong marketplace MODEL is resolved before software; a plain (non-strong)
+    // marketplace signal only wins when the product is not clearly software.
+    const resolveMarketplace = strongMarketplaceModel || (isMarketplace && !isSoftware);
+    if (resolveMarketplace) {
       sector = 'marketplace';
       basis = 'marketplace-model';
       audienceSector = industryTopScore > 0 ? industryTop.sec : undefined;
       matchedSignals.push(...marketplaceSignals);
+      if (audienceSector) matchedSignals.push(...matchedBySector[audienceSector].slice(0, 3));
+    } else if (isSoftware) {
+      sector = 'ai-saas';
+      basis = 'product-concept';
+      audienceSector = industryTopScore > 0 ? industryTop.sec : undefined;
+      matchedSignals.push(...softwareSignals);
       if (audienceSector) matchedSignals.push(...matchedBySector[audienceSector].slice(0, 3));
     } else if (industryTopScore > 0) {
       sector = industryTop.sec;
@@ -3314,7 +3347,9 @@ export function deriveVerticalIntelligence(input: VerticalIntelligenceInput): Ve
       const margin = industryTopScore - industrySecondScore;
       confidence = (industryTopScore >= 8 && margin >= 4) ? 'high' : industryTopScore >= 4 ? 'medium' : 'low';
     } else {
-      const primaryEvidence = isSoftware ? softwareEvidence : marketplaceEvidence;
+      // Use the evidence for the sector that was ACTUALLY selected — both isSoftware
+      // and isMarketplace can be true, but the resolved sector decides confidence.
+      const primaryEvidence = sector === 'marketplace' ? marketplaceEvidence : softwareEvidence;
       // An explicit, unambiguous grammatical audience target (strong split.vertical
       // match, no close runner-up) supports a confident product/audience read even
       // when the product-identity keyword evidence alone is light.
