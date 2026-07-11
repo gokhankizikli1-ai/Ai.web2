@@ -25,7 +25,7 @@ import {
   WEB_BUILD_AGENTS_ENABLED,
   type WebBuildAgent, type AgentId, type ResearchAgentArtifact, type ArtDirectionArtifact,
   type StrategyAgentArtifact, type PageBlueprint, type ComponentEngineerArtifact,
-  type ReviewerAgentArtifact, type FixerAgentArtifact,
+  type ReviewerAgentArtifact, type FixerAgentArtifact, type VerticalIntelligenceArtifact,
 } from '@/lib/webBuildAgents';
 
 export type WebBuildRunStatus = 'queued' | 'running' | 'completed' | 'failed';
@@ -338,6 +338,7 @@ const AGENT_TITLE_KEY: Record<AgentId, string> = {
   research: 'wbAgentResearch',
   ui_art_director: 'wbAgentArt',
   strategy: 'wbAgentStrategy',
+  vertical_intelligence: 'wbAgentVerticalIntelligence',
   layout_architect: 'wbAgentLayout',
   component_engineer: 'wbAgentComponent',
   reviewer: 'wbAgentReviewer',
@@ -351,6 +352,7 @@ const AGENT_NOTE_KEY: Record<AgentId, string> = {
   research: 'wbOpResearchNote',
   ui_art_director: 'wbOpArtNote',
   strategy: 'wbOpStrategyAgentNote',
+  vertical_intelligence: 'wbOpVerticalIntelligenceNote',
   layout_architect: 'wbOpLayoutNote',
   component_engineer: 'wbOpComponentNote',
   reviewer: 'wbOpReviewerNote',
@@ -388,6 +390,34 @@ function fixerAgentDetails(a: FixerAgentArtifact): string[] {
   return lines.filter(Boolean);
 }
 
+/** Concise Vertical Intelligence detail lines from the real artifact (Phase 11A).
+ *  No fabrication and no research claim — research status is always 'not-run'. */
+function verticalIntelligenceDetails(a: VerticalIntelligenceArtifact): string[] {
+  const sec = a.sector + (a.subsector && a.subsector !== 'unknown' ? ` / ${a.subsector}` : '');
+  const req = Array.isArray(a.sectionPolicy?.required) ? a.sectionPolicy.required : [];
+  const forb = Array.isArray(a.sectionPolicy?.forbidden) ? a.sectionPolicy.forbidden : [];
+  const realVis = Array.isArray(a.visualPolicy?.realSourceRequired) ? a.visualPolicy.realSourceRequired : [];
+  const aiVis = Array.isArray(a.visualPolicy?.aiIllustrativeAllowed) ? a.visualPolicy.aiIllustrativeAllowed : [];
+  const conflict = Array.isArray(a.conflictingSignals) ? a.conflictingSignals : [];
+  const warn = Array.isArray(a.warnings) ? a.warnings : [];
+  const lines = [
+    `Sector: ${sec}`,
+    a.audienceSector ? `Audience sector: ${a.audienceSector}` : '',
+    `Classification: ${a.classificationBasis} · confidence ${a.confidence} · status ${a.status}`,
+    `Business model: ${a.businessModel}`,
+    `Primary conversion: ${a.conversionModel?.goal || ''}`,
+    `CTA: ${a.conversionModel?.primaryCTA || ''}${a.conversionModel?.secondaryCTA ? ` · ${a.conversionModel.secondaryCTA}` : ''}`,
+    req.length ? `Required sections (${req.length}): ${req.slice(0, 6).join(', ')}` : '',
+    forb.length ? `Forbidden sections (${forb.length}): ${forb.slice(0, 3).map((f) => f.section).join(', ')}` : '',
+    realVis.length ? `Real-source visuals (${realVis.length}): ${realVis.slice(0, 3).join(', ')}` : '',
+    aiVis.length ? `AI-illustrative allowed (${aiVis.length}): ${aiVis.slice(0, 3).join(', ')}` : '',
+    `Future research: ${a.researchPlan?.recommended ? 'recommended' : 'not recommended'} · status: ${a.researchPlan?.status || 'not-run'}`,
+    conflict.length ? `Conflict: ${conflict[0]}` : '',
+    warn.length ? warn[0] : '',
+  ];
+  return lines.filter(Boolean);
+}
+
 /** Build the expandable detail lines for any agent row from its artifact. */
 function agentDetails(agent: WebBuildAgent): string[] {
   if (agent.status !== 'done') return [];
@@ -396,6 +426,7 @@ function agentDetails(agent: WebBuildAgent): string[] {
       case 'research': return researchAgentDetails(agent.artifact as ResearchAgentArtifact);
       case 'ui_art_director': return artDirectorDetails(agent.artifact as ArtDirectionArtifact);
       case 'strategy': return strategyAgentDetails(agent.artifact as StrategyAgentArtifact);
+      case 'vertical_intelligence': return verticalIntelligenceDetails(agent.artifact as VerticalIntelligenceArtifact);
       case 'layout_architect': return layoutArchitectDetails(agent.artifact as PageBlueprint);
       case 'component_engineer': return componentEngineerDetails(agent.artifact as ComponentEngineerArtifact);
       case 'reviewer': return reviewerAgentDetails(agent.artifact as ReviewerAgentArtifact);

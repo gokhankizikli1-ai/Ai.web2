@@ -10,7 +10,7 @@ import { resolveBuildFiles, parseSectionCopy, synthesizeFromCopies, type SynthFi
 import { inferWebsiteBrief, fallbackSectionItems, checkQuality } from '@/lib/webBuildBrief';
 import { deriveLayoutPlan, type WebBuildLayoutPlan } from '@/lib/webBuildLayoutPlan';
 import {
-  runUpstreamAgents, runLayoutArchitect, runComponentEngineer, runReviewer, runQualityDirector, runAssetDirector, runMotionComposer, runImagePipeline, runFixer, WEB_BUILD_AGENTS_ENABLED,
+  runUpstreamAgents, runLayoutArchitect, runComponentEngineer, runReviewer, runQualityDirector, runAssetDirector, runMotionComposer, runImagePipeline, runFixer, runVerticalIntelligence, WEB_BUILD_AGENTS_ENABLED,
   derivePageArchitectureDecision, deriveVisualSignaturePlan, deriveExperienceBlueprint,
   type WebBuildAgent, type WebBuildArtifacts, type WebBuildEnforcement,
 } from '@/lib/webBuildAgents';
@@ -544,6 +544,37 @@ function assembleWebBuildPayload(
     }
   }
 
+  // VERTICAL INTELLIGENCE (Phase 11A) — deterministic sector engine. Derived AFTER
+  // the Experience Blueprint and BEFORE the intent-aware Page Architecture, refining
+  // the concept/experience understanding into a sector/subsector-specific decision
+  // contract (business model, conversion model, trust model, section policy, VISUAL
+  // TRUTH policy, future-research readiness). PLANNING/DATA ONLY: no live research is
+  // run here, and the artifact is persisted + diagnosed only — it does NOT alter the
+  // renderer, image pipeline, motion or asset behaviour in this phase (Phase 11B+
+  // consumes it). A real agent stage; fully guarded + non-blocking + fail-open.
+  if (WEB_BUILD_AGENTS_ENABLED) {
+    try {
+      const vi = runVerticalIntelligence({
+        prompt,
+        brief: artBrief,
+        inferred,
+        sectionItems: sectionItems.map((s) => ({ id: s.id, name: s.name })),
+        conceptAuthority: artifacts?.research?.conceptAuthority,
+        experienceBlueprint: artifacts?.experienceBlueprint,
+        ledger: artifacts?.thinkingLedger,
+        lang: effLang,
+      });
+      // Append the agent row in behavioral order (after Strategy, before Layout
+      // Architect) without duplicating it, and persist the real artifact.
+      if (agents && !agents.some((a) => a.id === 'vertical_intelligence')) {
+        agents = [...agents, vi.agent];
+      }
+      artifacts = { ...(artifacts || {}), verticalIntelligence: vi.artifact };
+    } catch {
+      /* non-blocking — old behaviour continues without the sector contract */
+    }
+  }
+
   // INTENT-AWARE PAGE ARCHITECTURE (Phase 9D-1) — after the section architecture
   // enforcement, apply a SAFE display/selection pass so the page carries only the
   // sections THIS concept actually supports: rename generic flow labels to the
@@ -941,6 +972,24 @@ function assembleWebBuildPayload(
         correctedAntiTemplateDrift: !!artifacts?.artDirection?.correctedAntiTemplateDrift
           || (artifacts?.fixer?.appliedChanges || []).some((c) => ['visual-direction', 'palette-family', 'accent-strategy', 'anti-template-copy'].includes(c.category)),
         qualitySameTemplateIssues: (artifacts?.qualityDirector?.issues || []).filter((i) => i.category === 'same-template-risk').length,
+        // Vertical Intelligence (Phase 11A) — real artifact data only (deterministic
+        // sector classification; no live research is ever run in this phase).
+        didDeriveVerticalIntelligence: !!artifacts?.verticalIntelligence,
+        verticalSector: artifacts?.verticalIntelligence?.sector,
+        verticalSubsector: artifacts?.verticalIntelligence?.subsector,
+        verticalAudienceSector: artifacts?.verticalIntelligence?.audienceSector,
+        verticalClassificationBasis: artifacts?.verticalIntelligence?.classificationBasis,
+        verticalBusinessModel: artifacts?.verticalIntelligence?.businessModel,
+        verticalConfidence: artifacts?.verticalIntelligence?.confidence,
+        verticalRequiredSectionCount: (artifacts?.verticalIntelligence?.sectionPolicy?.required || []).length,
+        verticalRecommendedSectionCount: (artifacts?.verticalIntelligence?.sectionPolicy?.recommended || []).length,
+        verticalForbiddenSectionCount: (artifacts?.verticalIntelligence?.sectionPolicy?.forbidden || []).length,
+        verticalRealSourceVisualCount: (artifacts?.verticalIntelligence?.visualPolicy?.realSourceRequired || []).length,
+        verticalAiIllustrativeVisualCount: (artifacts?.verticalIntelligence?.visualPolicy?.aiIllustrativeAllowed || []).length,
+        verticalCssSvgVisualCount: (artifacts?.verticalIntelligence?.visualPolicy?.cssSvgPreferred || []).length,
+        verticalMotionSuitableCount: (artifacts?.verticalIntelligence?.visualPolicy?.motionSuitable || []).length,
+        verticalResearchRecommended: !!artifacts?.verticalIntelligence?.researchPlan?.recommended,
+        verticalResearchStatus: artifacts?.verticalIntelligence?.researchPlan?.status,
         fallbackReason: (artifacts?.context?.fallbacks?.length
           ? `agents degraded: ${artifacts.context.fallbacks.join(', ')}`
           : undefined),
