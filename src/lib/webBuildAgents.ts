@@ -3489,11 +3489,32 @@ export function deriveVerticalIntelligence(input: VerticalIntelligenceInput): Ve
     // experience / an explicit marketplace keyword) — a single-brand ecommerce
     // mention alone never forces the marketplace model.
     const isMarketplace = conceptIsMarketplace || experienceIsMarketplace || marketplaceKw.hits > 0;
-    // A STRONG marketplace model takes precedence over simultaneous software
-    // wording (an "AI marketplace" is a marketplace) — BUT a marketplace-management
-    // TOOL keeps its software identity. Structured marketplace signals stay strong.
-    const strongMarketplaceModel = conceptIsMarketplace || experienceIsMarketplace
-      || (marketplaceKw.hits > 0 && !marketplaceLooksLikeTool);
+
+    // ── Product-side identity precedence (Phase 11C.1) ──────────────────────────
+    // For an explicit "<product> for <audience>" / "<audience> için <product>"
+    // split, the PRODUCT side controls the primary software-vs-marketplace identity;
+    // the audience side — ecommerce/marketplace wording included — only influences
+    // `audienceSector`, never the product identity. `marketplaceKw`/`marketplaceToolKw`
+    // already scan the PRODUCT side (coreText/productText) for a split, so "AI …
+    // assistant for ecommerce stores" / "AI platform for marketplace sellers" keep
+    // `marketplaceKw.hits === 0` on the product side and stay software.
+    //   • explicitProductMarketplaceModel — the PRODUCT itself is a genuine
+    //     marketplace ("AI marketplace …"), and is NOT a marketplace-management tool.
+    //   • explicitSplitSoftwareProduct — an explicit split whose product is software
+    //     (or a marketplace-management tool) and is NOT a genuine product-side
+    //     marketplace; structured marketplace signals must not override it.
+    // Genuine product-side marketplaces still win; marketplace-management tools stay
+    // software (SaaS). Non-split prompts keep their existing conservative behavior.
+    const explicitProductMarketplaceModel = marketplaceKw.hits > 0 && !marketplaceLooksLikeTool;
+    const explicitSplitSoftwareProduct = split.hadSplit
+      && (softwareKw.hits > 0 || marketplaceLooksLikeTool)
+      && !explicitProductMarketplaceModel;
+    // Structured (Concept Authority / Experience Blueprint) marketplace signals are
+    // suppressed ONLY for an explicit split software product; otherwise they remain
+    // strong. A STRONG marketplace model is resolved before software identity.
+    const structuredMarketplaceModel = (conceptIsMarketplace || experienceIsMarketplace)
+      && !explicitSplitSoftwareProduct;
+    const strongMarketplaceModel = explicitProductMarketplaceModel || structuredMarketplaceModel;
 
     // ── Resolve the primary sector + classification basis + audience sector. ──
     let sector: VerticalSector;
