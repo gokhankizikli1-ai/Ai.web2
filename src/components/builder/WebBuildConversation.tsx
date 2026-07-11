@@ -433,6 +433,33 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       (eb.blueprintWarnings || []).slice(0, 2).forEach((w, i) => ownerRows.push([`blueprintWarning${i + 1}`, w]));
     }
 
+    // Phase 11A — deterministic Vertical Intelligence sector contract (planning/
+    // diagnostics only; no live research is run and no renderer behaviour changes).
+    const vi = step.artifacts?.verticalIntelligence;
+    if (vi) {
+      ownerRows.push(['verticalIntelligence', `${vi.status} · ${vi.confidence}`]);
+      ownerRows.push(['verticalSector', `${vi.sector}${vi.subsector && vi.subsector !== 'unknown' ? ` · ${vi.subsector}` : ''}`]);
+      if (vi.audienceSector) ownerRows.push(['verticalAudienceSector', vi.audienceSector]);
+      ownerRows.push(['classificationBasis', vi.classificationBasis]);
+      ownerRows.push(['businessModel', vi.businessModel]);
+      if (vi.conversionModel?.goal) ownerRows.push(['conversionGoal', vi.conversionModel.goal]);
+      ownerRows.push(['verticalCTA', `${vi.conversionModel?.primaryCTA || ''}${vi.conversionModel?.secondaryCTA ? ` · ${vi.conversionModel.secondaryCTA}` : ''}`]);
+      if (vi.conversionModel?.funnel?.length) ownerRows.push(['verticalFunnel', vi.conversionModel.funnel.slice(0, 4).join(' → ')]);
+      if (vi.trustModel?.drivers?.length) ownerRows.push(['trustDrivers', vi.trustModel.drivers.slice(0, 3).join(', ')]);
+      if (vi.trustModel?.sourceRequiredProof?.length) ownerRows.push(['sourceRequiredProof', `${vi.trustModel.sourceRequiredProof.length} · ${vi.trustModel.sourceRequiredProof.slice(0, 2).join(', ')}`]);
+      if (vi.sectionPolicy?.required?.length) ownerRows.push(['requiredSections', `${vi.sectionPolicy.required.length} · ${vi.sectionPolicy.required.slice(0, 4).join(', ')}`]);
+      if (vi.sectionPolicy?.recommended?.length) ownerRows.push(['recommendedSections', `${vi.sectionPolicy.recommended.length} · ${vi.sectionPolicy.recommended.slice(0, 3).join(', ')}`]);
+      if (vi.sectionPolicy?.forbidden?.length) ownerRows.push(['forbiddenSections', `${vi.sectionPolicy.forbidden.length} · ${vi.sectionPolicy.forbidden.slice(0, 3).map((f) => f.section).join(', ')}`]);
+      if (vi.visualPolicy?.realSourceRequired?.length) ownerRows.push(['realSourceVisuals', `${vi.visualPolicy.realSourceRequired.length} · ${vi.visualPolicy.realSourceRequired.slice(0, 2).join(', ')}`]);
+      if (vi.visualPolicy?.aiIllustrativeAllowed?.length) ownerRows.push(['aiIllustrativeVisuals', `${vi.visualPolicy.aiIllustrativeAllowed.length} · ${vi.visualPolicy.aiIllustrativeAllowed.slice(0, 2).join(', ')}`]);
+      if (vi.visualPolicy?.cssSvgPreferred?.length) ownerRows.push(['cssSvgPreferred', `${vi.visualPolicy.cssSvgPreferred.length} · ${vi.visualPolicy.cssSvgPreferred.slice(0, 2).join(', ')}`]);
+      if (vi.visualPolicy?.motionSuitable?.length) ownerRows.push(['motionSuitable', `${vi.visualPolicy.motionSuitable.length} · ${vi.visualPolicy.motionSuitable.slice(0, 2).join(', ')}`]);
+      ownerRows.push(['verticalResearch', vi.researchPlan?.recommended ? 'recommended' : 'not recommended']);
+      ownerRows.push(['researchStatus', vi.researchPlan?.status || 'not-run']);
+      if (vi.warnings?.length) ownerRows.push(['verticalWarning', vi.warnings[0]]);
+      if (vi.conflictingSignals?.length) ownerRows.push(['verticalConflict', vi.conflictingSignals[0]]);
+    }
+
     // Phase 9D-1 — intent-aware Page Architecture Decision (concept-specific spine).
     const pa = step.artifacts?.pageArchitecture;
     if (pa) {

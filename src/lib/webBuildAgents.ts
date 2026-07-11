@@ -1104,10 +1104,10 @@ export interface ImagePipelineArtifact {
   summary: string;
 }
 
-export type AgentId = 'research' | 'ui_art_director' | 'strategy' | 'layout_architect' | 'component_engineer' | 'reviewer' | 'quality_director' | 'asset_director' | 'motion_composer' | 'image_pipeline' | 'fixer';
+export type AgentId = 'research' | 'ui_art_director' | 'strategy' | 'vertical_intelligence' | 'layout_architect' | 'component_engineer' | 'reviewer' | 'quality_director' | 'asset_director' | 'motion_composer' | 'image_pipeline' | 'fixer';
 export type AgentArtifact =
   ResearchAgentArtifact | ArtDirectionArtifact | StrategyAgentArtifact | PageBlueprint
-  | ComponentEngineerArtifact | ReviewerAgentArtifact | QualityDirectorArtifact | AssetDirectorArtifact | MotionComposerArtifact | ImagePipelineArtifact | FixerAgentArtifact | Record<string, unknown>;
+  | ComponentEngineerArtifact | ReviewerAgentArtifact | QualityDirectorArtifact | AssetDirectorArtifact | MotionComposerArtifact | ImagePipelineArtifact | VerticalIntelligenceArtifact | FixerAgentArtifact | Record<string, unknown>;
 
 export interface WebBuildAgent {
   id: AgentId;
@@ -1204,6 +1204,25 @@ export interface WebBuildEnforcement {
   cssPlaceholderImageSlotCount?: number;
   imageProviderReady?: boolean;
   generatedImagePolicy?: string;
+  /* ── Vertical Intelligence trace (Phase 11A, optional, backward compatible) ──
+   *  Deterministic sector classification diagnostics — planning/data only. No live
+   *  research is run in this phase; researchStatus is always 'not-run'. */
+  didDeriveVerticalIntelligence?: boolean;
+  verticalSector?: VerticalSector;
+  verticalSubsector?: string;
+  verticalAudienceSector?: VerticalSector;
+  verticalClassificationBasis?: VerticalClassificationBasis;
+  verticalBusinessModel?: VerticalBusinessModel;
+  verticalConfidence?: 'high' | 'medium' | 'low';
+  verticalRequiredSectionCount?: number;
+  verticalRecommendedSectionCount?: number;
+  verticalForbiddenSectionCount?: number;
+  verticalRealSourceVisualCount?: number;
+  verticalAiIllustrativeVisualCount?: number;
+  verticalCssSvgVisualCount?: number;
+  verticalMotionSuitableCount?: number;
+  verticalResearchRecommended?: boolean;
+  verticalResearchStatus?: 'not-run';
   fallbackReason?: string;
 }
 
@@ -1241,6 +1260,13 @@ export interface WebBuildArtifacts {
    *  experience TYPE + page mode + required/forbidden page groups + CTA strategy
    *  BEFORE section-level decisions. Optional → old builds load. Data/planning only. */
   experienceBlueprint?: ExperienceBlueprint;
+  /** Deterministic sector contract (Phase 11A) — refines the Experience Blueprint
+   *  into a sector/subsector-specific decision contract (business model, conversion
+   *  model, trust model, section policy, visual truth policy, future-research
+   *  readiness). PLANNING/DATA ONLY: derived BEFORE the intent-aware Page
+   *  Architecture; never runs live research, never alters the renderer/image/motion
+   *  behaviour in this phase. Optional → old builds load. Consumed by Phase 11B+. */
+  verticalIntelligence?: VerticalIntelligenceArtifact;
   /** Concept-specific visual signature plan (Phase 9E-1) — CSS/SVG-only visual
    *  direction (hero motif, per-section visuals, motion hints). Optional → old
    *  builds load. Never an image/video API; consumed by the preview visual layer. */
@@ -2172,11 +2198,1199 @@ export function deriveExperienceBlueprint(
   };
 }
 
+/* ── Vertical Intelligence (Phase 11A) — deterministic sector engine ───────────
+ * Refines the Concept Authority + Experience Blueprint understanding into a
+ * DEEPER, sector-specific decision contract the later phases can consume. It
+ * decides the primary sector, subsector, product-vs-audience separation, business
+ * model, conversion model, trust model, section policy and — most importantly —
+ * the VISUAL TRUTH POLICY (what must be real user material, what may be AI-
+ * illustrative, what should be CSS/SVG, what motion is honest, what must never be
+ * fabricated). Pure + deterministic + network-free + fail-open. NO live research
+ * is run here (Phase 11B adds research-backed scanning); researchPlan.status is
+ * always 'not-run'. PLANNING/DATA ONLY: this artifact never alters the renderer,
+ * image pipeline, motion or asset behaviour in this phase — it is persisted and
+ * diagnosed for downstream phases. */
+
+/** Stable machine-readable sector slugs. */
+export type VerticalSector =
+  | 'jewelry'
+  | 'landscaping'
+  | 'automotive-dealership'
+  | 'furniture-interiors'
+  | 'restaurant-hospitality'
+  | 'real-estate'
+  | 'clinic-healthcare'
+  | 'ai-saas'
+  | 'marketplace'
+  | 'portfolio-agency'
+  | 'local-service'
+  | 'general';
+
+export type VerticalBusinessModel =
+  | 'catalog-consultation'
+  | 'quote-led-service'
+  | 'inventory-led-sales'
+  | 'catalog-showroom'
+  | 'reservation-led'
+  | 'listing-lead-generation'
+  | 'appointment-led'
+  | 'subscription-product'
+  | 'contact-sales-product'
+  | 'two-sided-marketplace'
+  | 'project-inquiry'
+  | 'service-booking'
+  | 'unknown';
+
+/** WHY the primary sector was chosen — distinguishes an AI/SaaS product serving a
+ *  vertical (product-concept) from the operator business itself (operator-business)
+ *  from a genuinely two-sided model (marketplace-model). */
+export type VerticalClassificationBasis =
+  | 'product-concept'
+  | 'operator-business'
+  | 'marketplace-model'
+  | 'fallback';
+
+export type VerticalConfidence = 'high' | 'medium' | 'low';
+
+export interface VerticalConversionModel {
+  goal: string;
+  primaryAction: string;
+  primaryCTA: string;
+  secondaryCTA?: string;
+  funnel: string[];
+}
+
+export interface VerticalTrustModel {
+  drivers: string[];
+  /** Proof that requires real user/source material — never fabricated. */
+  sourceRequiredProof: string[];
+  /** Claims this sector must never invent (fake metrics/awards/certifications/…). */
+  forbiddenClaims: string[];
+}
+
+export interface VerticalForbiddenSection {
+  section: string;
+  reason: string;
+}
+
+export interface VerticalSectionPolicy {
+  required: string[];
+  recommended: string[];
+  forbidden: VerticalForbiddenSection[];
+}
+
+export interface VerticalVisualPolicy {
+  /** Visuals that require real user-provided/source material (never generated). */
+  realSourceRequired: string[];
+  /** Visuals AI may generate ILLUSTRATIVELY (mood/atmosphere/texture, non-literal). */
+  aiIllustrativeAllowed: string[];
+  /** Visuals best expressed as CSS/SVG mockups (product UI, flows, diagrams). */
+  cssSvgPreferred: string[];
+  /** Where subtle, honest motion is appropriate. */
+  motionSuitable: string[];
+  /** Imagery/claims that must NEVER be generated/fabricated for this sector. */
+  forbiddenGenerated: string[];
+  /** A one-line hero visual recommendation (honest, non-fabricating). */
+  heroRecommendation: string;
+}
+
+export interface VerticalResearchPlan {
+  /** Always 'not-run' in Phase 11A — deterministic only, no live research. */
+  status: 'not-run';
+  /** Whether a future (Phase 11B) live sector scan is recommended. */
+  recommended: boolean;
+  /** Deterministic future-research angle suggestions (never claimed as results). */
+  angles: string[];
+  /** Honest one-line explanation (never claims research happened). */
+  reason: string;
+}
+
+export interface VerticalIntelligenceArtifact {
+  status: 'classified' | 'partial' | 'unknown' | 'failed-open';
+  version: 'deterministic-v1';
+
+  sector: VerticalSector;
+  subsector: string;
+  /** The served industry when the site is a product/marketplace serving it. */
+  audienceSector?: VerticalSector;
+  classificationBasis: VerticalClassificationBasis;
+  confidence: VerticalConfidence;
+
+  matchedSignals: string[];
+  conflictingSignals: string[];
+
+  businessModel: VerticalBusinessModel;
+
+  conversionModel: VerticalConversionModel;
+  trustModel: VerticalTrustModel;
+  sectionPolicy: VerticalSectionPolicy;
+  visualPolicy: VerticalVisualPolicy;
+  researchPlan: VerticalResearchPlan;
+
+  warnings: string[];
+  summary: string;
+}
+
+export interface VerticalIntelligenceInput {
+  prompt: string;
+  brief: WebBuildBrief;
+  inferred?: InferredBrief;
+  sectionItems: Array<{ id: string; name: string }>;
+  conceptAuthority?: ConceptAuthority;
+  experienceBlueprint?: ExperienceBlueprint;
+  ledger?: StrategicThinkingLedger;
+  lang?: Lang;
+}
+
+/** The static sector-profile shape — a COMPLETE deterministic contract per sector.
+ *  Immutable planning data (readonly) so a profile is never mutated at runtime. */
+interface VerticalSubsectorRule {
+  label: string;
+  keywords: readonly string[];
+}
+interface VerticalProfileDefinition {
+  businessModel: VerticalBusinessModel;
+  subsectorDefault: string;
+  subsectors: readonly VerticalSubsectorRule[];
+  conversion: {
+    goal: string;
+    primaryAction: string;
+    primaryCTA: string;
+    secondaryCTA?: string;
+    funnel: readonly string[];
+  };
+  trust: {
+    drivers: readonly string[];
+    sourceRequiredProof: readonly string[];
+    forbiddenClaims: readonly string[];
+  };
+  sections: {
+    required: readonly string[];
+    recommended: readonly string[];
+    forbidden: readonly VerticalForbiddenSection[];
+  };
+  visual: {
+    realSourceRequired: readonly string[];
+    aiIllustrativeAllowed: readonly string[];
+    cssSvgPreferred: readonly string[];
+    motionSuitable: readonly string[];
+    forbiddenGenerated: readonly string[];
+    heroRecommendation: string;
+  };
+  research: {
+    recommended: boolean;
+    angles: readonly string[];
+    reason: string;
+  };
+  warnings: readonly string[];
+}
+
+/* ── Unicode-safe matching (Turkish letters aren't \w, so plain \b fails). ─── */
+function vNormalize(s: string): string {
+  return ` ${(s || '').toLowerCase().replace(/\s+/g, ' ').trim()} `;
+}
+function vWordRe(word: string): RegExp {
+  const esc = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // Letter/number lookarounds keep Turkish letters inside the boundary.
+  return new RegExp(`(?<![\\p{L}\\p{N}])${esc}(?![\\p{L}\\p{N}])`, 'iu');
+}
+/** Count how many of `words` appear in `text` (deterministic; no global regex). */
+function vCountMatches(text: string, words: readonly string[]): { hits: number; matched: string[] } {
+  const low = vNormalize(text);
+  let hits = 0;
+  const matched: string[] = [];
+  for (const w of words) {
+    if (!w) continue;
+    if (vWordRe(w).test(low)) { hits += 1; matched.push(w); }
+  }
+  return { hits, matched };
+}
+
+/* ── Signal keyword tables per INDUSTRY sector (software/marketplace handled by
+ *  dedicated precedence below, but kept here for audience/operator scoring). ── */
+type IndustrySector = Exclude<VerticalSector, 'general'>;
+const VERTICAL_KEYWORDS: Record<IndustrySector, readonly string[]> = {
+  jewelry: ['jewelry', 'jewellery', 'jeweler', 'jeweller', 'jewellers', 'goldsmith', 'gold', 'diamond', 'diamonds', 'gemstone', 'gem', 'ring', 'rings', 'necklace', 'bracelet', 'earring', 'earrings', 'pendant', 'engagement ring', 'wedding ring', 'bridal jewelry', 'watch', 'watches', 'karat', 'carat', 'mücevher', 'kuyumcu', 'kuyumculuk', 'takı', 'altın', 'pırlanta', 'elmas', 'yüzük', 'kolye', 'bilezik', 'küpe', 'gümüş', 'alyans', 'saat'],
+  landscaping: ['landscaping', 'landscape', 'landscaper', 'garden', 'gardens', 'gardening', 'lawn', 'hardscape', 'hardscaping', 'patio', 'terrace', 'nursery', 'horticulture', 'irrigation', 'yard', 'outdoor', 'peyzaj', 'bahçe', 'bahçıvan', 'çim', 'çevre düzenleme', 'yeşil alan', 'sulama', 'teras'],
+  'automotive-dealership': ['dealership', 'dealer', 'car dealer', 'auto dealer', 'used car', 'used cars', 'second-hand car', 'pre-owned', 'vehicle', 'vehicles', 'automotive', 'test drive', 'showroom', 'motors', 'oto galeri', 'galeri', 'araba', 'araç', 'ikinci el araç', 'sıfır araç', 'otomotiv', 'test sürüşü', 'vasıta'],
+  'furniture-interiors': ['furniture', 'furnishings', 'sofa', 'couch', 'armchair', 'cabinet', 'wardrobe', 'kitchen', 'interior', 'interiors', 'interior design', 'interior designer', 'decor', 'decoration', 'upholstery', 'joinery', 'carpentry', 'mobilya', 'mobilyacı', 'koltuk', 'kanepe', 'dolap', 'mutfak', 'iç mimar', 'iç mimari', 'dekorasyon', 'ahşap', 'marangoz', 'döşeme'],
+  'restaurant-hospitality': ['restaurant', 'cafe', 'café', 'bistro', 'brasserie', 'diner', 'eatery', 'menu', 'dining', 'cuisine', 'bakery', 'patisserie', 'pastry', 'catering', 'coffee shop', 'chef', 'fine dining', 'restoran', 'lokanta', 'kafe', 'menü', 'mutfak', 'pastane', 'fırın', 'yemek', 'şef', 'kahve'],
+  'real-estate': ['real estate', 'real-estate', 'realtor', 'realty', 'property', 'properties', 'listing', 'listings', 'apartment', 'apartments', 'condo', 'housing', 'rental', 'rentals', 'lease', 'broker', 'estate agent', 'floor plan', 'emlak', 'gayrimenkul', 'konut', 'daire', 'satılık', 'kiralık', 'arsa', 'emlakçı', 'müteahhit', 'kat planı'],
+  'clinic-healthcare': ['clinic', 'dental', 'dentist', 'dentistry', 'orthodontic', 'doctor', 'physician', 'medical', 'healthcare', 'aesthetic', 'dermatology', 'dermatologist', 'physiotherapy', 'physio', 'therapy', 'therapist', 'psychology', 'psychologist', 'psychiatry', 'treatment', 'patient', 'polyclinic', 'klinik', 'diş', 'diş hekimi', 'doktor', 'tıp', 'sağlık', 'estetik', 'dermatoloji', 'fizyoterapi', 'terapi', 'psikolog', 'tedavi', 'hasta', 'poliklinik', 'muayenehane'],
+  'ai-saas': ['ai', 'artificial intelligence', 'machine learning', 'llm', 'gpt', 'chatbot', 'chat bot', 'copilot', 'saas', 'software', 'platform', 'dashboard', 'crm', 'erp', 'api', 'sdk', 'automation', 'workflow', 'no-code', 'low-code', 'yapay zeka', 'yapay zekâ', 'yazılım', 'otomasyon', 'analitik'],
+  marketplace: ['marketplace', 'market place', 'multi-vendor', 'multivendor', 'two-sided', 'classifieds', 'classified', 'vendors', 'buyers and sellers', 'pazaryeri', 'çok satıcılı', 'ilan sitesi', 'alıcı ve satıcı'],
+  'portfolio-agency': ['portfolio', 'freelance', 'freelancer', 'designer', 'photographer', 'photography', 'illustrator', 'architect', 'architecture', 'creative studio', 'design studio', 'agency', 'marketing agency', 'advertising', 'branding', 'production studio', 'case study', 'showreel', 'portfolyo', 'tasarımcı', 'fotoğrafçı', 'mimar', 'mimarlık', 'stüdyo', 'ajans', 'reklam ajansı', 'markalaşma', 'prodüksiyon'],
+  'local-service': ['plumber', 'plumbing', 'electrician', 'electrical', 'cleaning', 'cleaner', 'barber', 'hairdresser', 'hair salon', 'beauty salon', 'salon', 'spa', 'repair', 'handyman', 'moving', 'movers', 'locksmith', 'painter', 'pest control', 'consulting', 'consultant', 'tesisatçı', 'elektrikçi', 'temizlik', 'berber', 'kuaför', 'güzellik salonu', 'tamir', 'tamirci', 'nakliyat', 'çilingir', 'boyacı', 'danışman', 'danışmanlık'],
+};
+
+/** Software/product signals — when present in the PRODUCT part of a "<product> for
+ *  <vertical>" prompt, the software identity controls the primary sector. */
+const VERTICAL_SOFTWARE_WORDS: readonly string[] = [
+  'ai', 'a.i', 'artificial intelligence', 'machine learning', 'llm', 'gpt', 'chatbot', 'chat bot',
+  'copilot', 'saas', 'software', 'platform', 'dashboard', 'analytics', 'crm', 'erp', 'api', 'sdk',
+  'automation', 'automate', 'workflow', 'no-code', 'low-code', 'developer tool', 'dev tool', 'cli',
+  'yapay zeka', 'yapay zekâ', 'yazılım', 'otomasyon', 'uygulama yazılımı',
+];
+/** Genuine two-sided / multi-vendor signals → the concept itself IS a marketplace. */
+const VERTICAL_MARKETPLACE_WORDS: readonly string[] = [
+  'marketplace', 'market place', 'multi-vendor', 'multivendor', 'two-sided', 'two sided',
+  'buyers and sellers', 'classifieds', 'classified listings', 'vendors list', 'pazaryeri',
+  'çok satıcılı', 'ilan sitesi', 'alıcı ve satıcı',
+];
+
+/** Direct sector votes from the deterministic InferredBrief industry key. */
+const SECTOR_FROM_INFERRED: Record<string, VerticalSector> = {
+  ai_saas: 'ai-saas',
+  landscaping: 'landscaping',
+  furniture: 'furniture-interiors',
+  automotive: 'automotive-dealership',
+  restaurant: 'restaurant-hospitality',
+  portfolio: 'portfolio-agency',
+  agency: 'portfolio-agency',
+  fitness: 'local-service',
+  local_service: 'local-service',
+  ecommerce: 'marketplace',
+  generic: 'general',
+};
+/** Direct sector votes from the Experience Blueprint site experience type. */
+const SECTOR_FROM_EXPERIENCE: Partial<Record<SiteExperienceType, VerticalSector>> = {
+  restaurant: 'restaurant-hospitality',
+  'local-business': 'local-service',
+  portfolio: 'portfolio-agency',
+  'agency-service': 'portfolio-agency',
+  marketplace: 'marketplace',
+  'developer-tool': 'ai-saas',
+  'dashboard-preview': 'ai-saas',
+  'b2b-product-landing': 'ai-saas',
+  'consumer-product-landing': 'ai-saas',
+};
+/** Map the Concept Authority / ledger primary concept category → a sector vote. */
+const SECTOR_FROM_CONCEPT: Record<string, VerticalSector> = {
+  ai: 'ai-saas',
+  saas: 'ai-saas',
+  marketplace: 'marketplace',
+  hospitality: 'restaurant-hospitality',
+  landscaping: 'landscaping',
+  medical: 'clinic-healthcare',
+  real_estate: 'real-estate',
+  portfolio: 'portfolio-agency',
+  local_service: 'local-service',
+};
+
+/** Split a prompt into product vs target-vertical on the "<product> for <vertical>"
+ *  (EN) / "<vertical> için <product>" (TR) grammar. Pure + deterministic. */
+function vSplitProductVertical(prompt: string): { product: string; vertical: string; hadSplit: boolean } {
+  const p = ` ${(prompt || '').toLowerCase().replace(/\s+/g, ' ').trim()} `;
+  const trIdx = p.indexOf(' için ');
+  if (trIdx >= 0) return { product: p.slice(trIdx + 6).trim(), vertical: p.slice(0, trIdx).trim(), hadSplit: true };
+  const enIdx = p.indexOf(' for ');
+  if (enIdx >= 0) return { product: p.slice(0, enIdx).trim(), vertical: p.slice(enIdx + 5).trim(), hadSplit: true };
+  return { product: p.trim(), vertical: '', hadSplit: false };
+}
+
+/** Detect the sector's subsector from the winning-sector profile over the text. */
+function vDetectSubsector(profile: VerticalProfileDefinition, text: string): string {
+  for (const rule of profile.subsectors) {
+    if (vCountMatches(text, rule.keywords).hits > 0) return rule.label;
+  }
+  return profile.subsectorDefault;
+}
+
+/* ── Complete, immutable sector profiles ──────────────────────────────────────
+ * Each sector carries a FULL contract (business/conversion/trust/section/visual/
+ * research). Content is English-canonical planning data (a machine-readable
+ * contract for Phase 11B + owner diagnostics); the artifact's narrative summary /
+ * warnings / research reason are localized at derive time. Nothing here fabricates
+ * proof: every "real-source" item requires genuine user/source material and every
+ * "forbidden" item is an anti-fabrication guard. */
+const VERTICAL_PROFILES: Record<VerticalSector, VerticalProfileDefinition> = {
+  jewelry: {
+    businessModel: 'catalog-consultation',
+    subsectorDefault: 'jewelry-retail',
+    subsectors: [
+      { label: 'luxury-jewelry', keywords: ['luxury', 'fine jewelry', 'haute', 'high-end', 'lüks'] },
+      { label: 'custom-jewelry', keywords: ['custom', 'bespoke', 'handmade', 'özel tasarım', 'el yapımı'] },
+      { label: 'bridal-jewelry', keywords: ['bridal', 'engagement', 'wedding', 'nişan', 'alyans', 'gelin'] },
+      { label: 'watch-showroom', keywords: ['watch', 'watches', 'saat'] },
+      { label: 'gold-jewelry', keywords: ['gold', 'altın', 'goldsmith', 'kuyumcu'] },
+    ],
+    conversion: {
+      goal: 'Drive collection browsing and showroom/consultation requests for real pieces',
+      primaryAction: 'Browse the collection or book a consultation',
+      primaryCTA: 'Browse Collections', secondaryCTA: 'Book a Consultation',
+      funnel: ['Land on collection story', 'Browse collections', 'View a piece', 'Ask about it / book a consultation', 'Visit showroom'],
+    },
+    trust: {
+      drivers: ['Material authenticity', 'Craftsmanship', 'Warranty & care', 'Real store & showroom identity', 'Certification when provided'],
+      sourceRequiredProof: ['Actual product photography', 'Actual inventory', 'Authenticity certificates', 'Material/hallmark documentation', 'Store/showroom photography', 'Real craftsmanship/production imagery'],
+      forbiddenClaims: ['Fabricated authenticity certificates', 'Invented material purity/karat', 'Fake prices or live stock', 'Generated jewelry presented as real inventory'],
+    },
+    sections: {
+      required: ['Hero', 'Collections', 'Featured Pieces', 'Craftsmanship & Materials', 'Care & Warranty', 'Visit / Consultation', 'Store & Contact'],
+      recommended: ['About / Heritage', 'Bespoke / Custom', 'Certifications (only if provided)'],
+      forbidden: [
+        { section: 'SaaS Pricing Plans', reason: 'A jewelry catalog is not a subscription product.' },
+        { section: 'Dashboard / Analytics', reason: 'No software surface belongs on a jewelry site.' },
+        { section: 'Software Integrations', reason: 'Not relevant to a jewelry retailer.' },
+        { section: 'Fake logo strip', reason: 'No real partner/customer logos to show.' },
+        { section: 'Fake stock / sales counters', reason: 'Live counts would be fabricated.' },
+      ],
+    },
+    visual: {
+      realSourceRequired: ['Sellable product photography', 'Actual inventory', 'Authenticity certificates', 'Store/showroom photography', 'Craftsmanship/production imagery'],
+      aiIllustrativeAllowed: ['Luxury metallic textures', 'Light reflections', 'Abstract metallic forms', 'Atmospheric editorial backgrounds', 'Brand mood imagery'],
+      cssSvgPreferred: ['Collection grid layout', 'Care/warranty iconography', 'Editorial dividers'],
+      motionSuitable: ['Subtle hero light shimmer', 'Soft collection card reveals', 'Calm ambient background drift'],
+      forbiddenGenerated: ['Generated sellable jewelry as inventory', 'Fabricated authenticity certificates', 'Fabricated material purity/prices/stock'],
+      heroRecommendation: 'Editorial hero with real product photography (or an abstract luxury metallic/light treatment when no product photos are provided) — never generated jewelry presented as real stock.',
+    },
+    research: {
+      recommended: true,
+      angles: ['Category expectations for fine jewelry', 'Trust & authenticity requirements', 'Sector-specific visual conventions', 'Common CTA language', 'Proof-sensitive claims (materials/certification)'],
+      reason: 'A live sector scan would validate authenticity/craftsmanship conventions and category CTA language.',
+    },
+    warnings: ['Never present AI-generated jewelry as real, sellable inventory.'],
+  },
+
+  landscaping: {
+    businessModel: 'quote-led-service',
+    subsectorDefault: 'landscape-services',
+    subsectors: [
+      { label: 'landscape-design', keywords: ['design', 'tasarım'] },
+      { label: 'garden-maintenance', keywords: ['maintenance', 'upkeep', 'bakım'] },
+      { label: 'hardscape', keywords: ['hardscape', 'patio', 'paving', 'taş'] },
+      { label: 'commercial-landscaping', keywords: ['commercial', 'ticari'] },
+      { label: 'residential-landscaping', keywords: ['residential', 'home garden', 'konut', 'ev bahçe'] },
+    ],
+    conversion: {
+      goal: 'Turn interest into consultation/quote requests backed by real project work',
+      primaryAction: 'Request a quote or consultation',
+      primaryCTA: 'Get a Quote', secondaryCTA: 'View Projects',
+      funnel: ['Land on transformation story', 'View real projects', 'Understand process/materials', 'Request a consultation', 'Book a site visit'],
+    },
+    trust: {
+      drivers: ['Real completed projects', 'Service area', 'Materials & process', 'Genuine before/after', 'Real team/business identity'],
+      sourceRequiredProof: ['Project photos', 'Completed gardens', 'Before/after images', 'Client property photos', 'Real team', 'Real materials/workmanship'],
+      forbiddenClaims: ['Fabricated completed projects', 'Fabricated customer properties', 'Fake before/after evidence', 'Invented awards or certifications'],
+    },
+    sections: {
+      required: ['Hero', 'Services', 'Projects / Before & After', 'Materials & Process', 'Service Area', 'Get a Quote / Contact'],
+      recommended: ['About / Team', 'Gallery', 'Reviews (only if provided)'],
+      forbidden: [
+        { section: 'SaaS Pricing Plans', reason: 'A landscaping service is quote-led, not subscription-priced.' },
+        { section: 'Product Dashboard', reason: 'No software surface belongs on a landscaping site.' },
+        { section: 'Software Integrations', reason: 'Not relevant to a landscaping business.' },
+        { section: 'Security & Compliance', reason: 'A SaaS security section does not fit this business.' },
+        { section: 'Fake project counts', reason: 'Project totals would be fabricated without real data.' },
+        { section: 'Fake before/after results', reason: 'Before/after needs genuine user-provided material.' },
+      ],
+    },
+    visual: {
+      realSourceRequired: ['Project photos', 'Completed gardens', 'Before/after images', 'Client properties', 'Real team', 'Real materials/workmanship'],
+      aiIllustrativeAllowed: ['Botanical atmosphere', 'Abstract natural texture', 'Mood backgrounds', 'Non-literal landscape concepts'],
+      cssSvgPreferred: ['Service/process diagram', 'Service-area map motif', 'Step-by-step process rail'],
+      motionSuitable: ['Calm organic hero drift', 'Illustrative before/after reveal (labelled)', 'Process step progression'],
+      forbiddenGenerated: ['Fabricated completed projects', 'Fabricated customer properties', 'Fake before/after evidence', 'Invented awards/certifications'],
+      heroRecommendation: 'Warm hero with a real completed-project photo (or a botanical/atmospheric AI-illustrative background when none is provided) — before/after only with genuine material.',
+    },
+    research: {
+      recommended: true,
+      angles: ['Common conversion patterns for local services', 'Trust & credibility requirements', 'Sector-specific visual conventions', 'Local/regional buying concerns', 'Common CTA language'],
+      reason: 'A live sector scan would validate quote-led conversion patterns and regional expectations.',
+    },
+    warnings: ['Before/after and completed projects require genuine user-provided material — never fabricate them.'],
+  },
+
+  'automotive-dealership': {
+    businessModel: 'inventory-led-sales',
+    subsectorDefault: 'car-dealership',
+    subsectors: [
+      { label: 'used-car-dealership', keywords: ['used', 'second-hand', 'pre-owned', 'ikinci el'] },
+      { label: 'new-vehicle-dealership', keywords: ['new', 'brand new', 'sıfır'] },
+      { label: 'premium-dealership', keywords: ['premium', 'luxury', 'prestige', 'lüks'] },
+      { label: 'commercial-vehicle-dealer', keywords: ['commercial', 'truck', 'van', 'ticari', 'kamyon'] },
+    ],
+    conversion: {
+      goal: 'Drive vehicle inquiries and test-drive bookings against real inventory',
+      primaryAction: 'View inventory and enquire about a vehicle',
+      primaryCTA: 'View Inventory', secondaryCTA: 'Book a Test Drive',
+      funnel: ['Land on featured inventory', 'Browse vehicles', 'View a listing', 'Ask about this vehicle', 'Book a test drive / contact dealer'],
+    },
+    trust: {
+      drivers: ['Real vehicle inventory', 'Mileage & model year', 'Condition & inspection', 'Service history', 'Financing/warranty when supplied', 'Dealership location & identity'],
+      sourceRequiredProof: ['Real listing images', 'Real inventory fields', 'Inspection reports', 'Warranty details when supplied', 'Vehicle documents where appropriate'],
+      forbiddenClaims: ['Generated vehicles as inventory', 'Fabricated availability', 'Fabricated mileage/history', 'Fabricated financing offers', 'Fake live stock/sold/reserved states'],
+    },
+    sections: {
+      required: ['Hero', 'Featured Inventory', 'Vehicle Details', 'Financing & Trust', 'Inspection / Warranty (when supplied)', 'Dealership & Contact'],
+      recommended: ['About', 'How Buying Works', 'Trade-in / Enquiry'],
+      forbidden: [
+        { section: 'SaaS Pricing Cards', reason: 'A dealership sells vehicles, not subscriptions.' },
+        { section: 'Generic Product Dashboard', reason: 'No software dashboard belongs here.' },
+        { section: 'Unrelated Case Studies', reason: 'Software-style case studies do not fit a dealership.' },
+        { section: 'Fake live inventory numbers', reason: 'Live stock counts would be fabricated.' },
+        { section: 'Fake reviews or awards', reason: 'No verified reviews/awards to claim.' },
+      ],
+    },
+    visual: {
+      realSourceRequired: ['Listing images', 'Real vehicles', 'Real inventory fields', 'Inspection reports', 'Warranty/vehicle documents'],
+      aiIllustrativeAllowed: ['Ambient showroom atmosphere', 'Abstract motion/road texture backgrounds', 'Brand mood imagery'],
+      cssSvgPreferred: ['Inventory grid + filters', 'Financing calculator mockup (illustrative)', 'Vehicle spec/detail layout'],
+      motionSuitable: ['Subtle inventory filter transitions', 'Calm hero ambience', 'Soft listing card reveals'],
+      forbiddenGenerated: ['Generated vehicles as inventory', 'Fabricated mileage/history', 'Fabricated financing offers', 'Fake live stock/sold states'],
+      heroRecommendation: 'Hero anchored on real featured-vehicle photography (or an ambient automotive atmosphere when no photos are provided) — never generated cars presented as available stock.',
+    },
+    research: {
+      recommended: true,
+      angles: ['Expected listing fields for vehicles', 'Trust & credibility requirements', 'Common conversion patterns (test drive/enquiry)', 'Local/regional buying concerns', 'Regulated-content risks (financing)'],
+      reason: 'A live sector scan would validate expected listing fields and financing/trust conventions.',
+    },
+    warnings: ['Inventory, mileage, history and financing must come from real data — never generate cars as stock.'],
+  },
+
+  'furniture-interiors': {
+    businessModel: 'catalog-showroom',
+    subsectorDefault: 'furniture-showroom',
+    subsectors: [
+      { label: 'furniture-manufacturer', keywords: ['manufactur', 'factory', 'üretim', 'fabrika'] },
+      { label: 'custom-furniture', keywords: ['custom', 'bespoke', 'özel'] },
+      { label: 'interior-design-studio', keywords: ['interior design', 'iç mimar', 'iç mimari'] },
+      { label: 'kitchen-manufacturer', keywords: ['kitchen', 'mutfak'] },
+      { label: 'office-furniture', keywords: ['office', 'ofis'] },
+      { label: 'luxury-furniture', keywords: ['luxury', 'premium', 'lüks'] },
+    ],
+    conversion: {
+      goal: 'Drive collection browsing, showroom visits and project/quote inquiries',
+      primaryAction: 'Browse collections or start a project',
+      primaryCTA: 'Browse Collections', secondaryCTA: 'Request a Quote',
+      funnel: ['Land on collection story', 'Browse collections', 'Explore materials', 'Visit showroom / request a quote', 'Start a project'],
+    },
+    trust: {
+      drivers: ['Real products', 'Materials & dimensions', 'Craftsmanship & manufacturing', 'Completed installations', 'Showroom identity'],
+      sourceRequiredProof: ['Product photography', 'Catalog items', 'Completed projects', 'Materials', 'Showroom', 'Manufacturing', 'Real interiors'],
+      forbiddenClaims: ['Generated furniture as available inventory', 'Fabricated dimensions/materials/prices', 'Fabricated completed interiors'],
+    },
+    sections: {
+      required: ['Hero', 'Collections', 'Materials', 'Craftsmanship / Manufacturing', 'Completed Projects', 'Visit Showroom / Start a Project'],
+      recommended: ['About', 'Custom / Bespoke', 'Care & Delivery'],
+      forbidden: [
+        { section: 'SaaS Pricing Plans', reason: 'A furniture catalog is not a subscription product.' },
+        { section: 'Product Dashboard', reason: 'No software surface belongs on a furniture site.' },
+        { section: 'Software Integrations', reason: 'Not relevant to a furniture business.' },
+        { section: 'Fake stock counters', reason: 'Live inventory counts would be fabricated.' },
+      ],
+    },
+    visual: {
+      realSourceRequired: ['Product photography', 'Catalog items', 'Completed projects', 'Materials', 'Showroom', 'Manufacturing', 'Real interiors'],
+      aiIllustrativeAllowed: ['Material textures', 'Abstract interior compositions', 'Editorial lighting', 'Atmospheric backgrounds', 'Conceptual spatial mood'],
+      cssSvgPreferred: ['Collection/catalog grid', 'Material swatch system', 'Dimension/spec layout'],
+      motionSuitable: ['Soft collection card reveals', 'Calm editorial hero ambience', 'Gentle material swatch transitions'],
+      forbiddenGenerated: ['Generated furniture as available inventory', 'Fabricated dimensions/materials/prices', 'Fabricated completed interiors'],
+      heroRecommendation: 'Editorial hero with real product/interior photography (or material-texture/atmospheric AI-illustrative art when none is provided) — never generated furniture presented as real catalog stock.',
+    },
+    research: {
+      recommended: true,
+      angles: ['Expected product fields (materials/dimensions)', 'Category expectations', 'Sector-specific visual conventions', 'Common CTA language', 'User decision factors'],
+      reason: 'A live sector scan would validate catalog/showroom conventions and expected product fields.',
+    },
+    warnings: ['Catalog products, dimensions and completed interiors require real material — never fabricate them.'],
+  },
+
+  'restaurant-hospitality': {
+    businessModel: 'reservation-led',
+    subsectorDefault: 'restaurant',
+    subsectors: [
+      { label: 'cafe', keywords: ['cafe', 'café', 'coffee', 'kafe', 'kahve'] },
+      { label: 'bakery-patisserie', keywords: ['bakery', 'patisserie', 'pastry', 'pastane', 'fırın'] },
+      { label: 'fine-dining', keywords: ['fine dining', 'gourmet', 'michelin', 'gurme'] },
+      { label: 'bistro', keywords: ['bistro', 'brasserie'] },
+      { label: 'hotel-restaurant', keywords: ['hotel', 'otel'] },
+      { label: 'catering', keywords: ['catering'] },
+    ],
+    conversion: {
+      goal: 'Drive reservations and location visits around a real menu and venue',
+      primaryAction: 'Reserve a table or view the menu',
+      primaryCTA: 'Reserve a Table', secondaryCTA: 'View Menu',
+      funnel: ['Land on venue atmosphere', 'View menu', 'See location & hours', 'Reserve a table / get directions', 'Visit'],
+    },
+    trust: {
+      drivers: ['Real menu', 'Real location & hours', 'Real dishes', 'Venue atmosphere', 'Real booking/contact details'],
+      sourceRequiredProof: ['Food photography', 'Venue photography', 'Menu items', 'Chef/team when supplied', 'Location', 'Opening hours'],
+      forbiddenClaims: ['Fake menu dishes presented as served', 'Fabricated prices', 'Fabricated reservation availability', 'Fabricated reviews', 'Fabricated awards / Michelin recognition'],
+    },
+    sections: {
+      required: ['Hero', 'Menu', 'Location', 'Hours', 'Reservation / Contact', 'Gallery'],
+      recommended: ['About', 'Events', 'Chef / Team (only if provided)'],
+      forbidden: [
+        { section: 'SaaS Pricing', reason: 'A restaurant is not a subscription product.' },
+        { section: 'Software Integrations', reason: 'Not relevant to a restaurant.' },
+        { section: 'Security & Compliance', reason: 'A SaaS security section does not fit a restaurant.' },
+        { section: 'Chat / Dashboard Demo', reason: 'No product demo belongs on a restaurant site.' },
+        { section: 'Fake live booking status', reason: 'Live availability would be fabricated.' },
+      ],
+    },
+    visual: {
+      realSourceRequired: ['Food photography', 'Venue photography', 'Menu items', 'Chef/team', 'Location', 'Opening hours'],
+      aiIllustrativeAllowed: ['Ambient culinary mood', 'Warm texture backgrounds', 'Abstract atmosphere', 'Non-literal background art'],
+      cssSvgPreferred: ['Menu layout', 'Hours/location card', 'Reservation form (front-end)'],
+      motionSuitable: ['Soft menu reveal', 'Calm ambient hero drift', 'Gentle gallery transitions'],
+      forbiddenGenerated: ['Fake dishes presented as served', 'Fabricated prices', 'Fabricated reservation availability', 'Fabricated reviews/awards'],
+      heroRecommendation: 'Warm hero with real food/venue photography (or an ambient culinary AI-illustrative mood when none is provided) — never generated dishes presented as actually served.',
+    },
+    research: {
+      recommended: true,
+      angles: ['Category expectations for dining', 'Common conversion patterns (reservation)', 'Sector-specific visual conventions', 'Local buying concerns', 'Common CTA language'],
+      reason: 'A live sector scan would validate reservation conventions and menu presentation norms.',
+    },
+    warnings: ['Menu dishes, prices and availability require real material — never fabricate them.'],
+  },
+
+  'real-estate': {
+    businessModel: 'listing-lead-generation',
+    subsectorDefault: 'real-estate-agency',
+    subsectors: [
+      { label: 'residential-agency', keywords: ['residential', 'home', 'konut', 'ev'] },
+      { label: 'commercial-real-estate', keywords: ['commercial', 'office', 'ticari', 'ofis'] },
+      { label: 'property-developer', keywords: ['developer', 'development', 'müteahhit', 'proje'] },
+      { label: 'luxury-real-estate', keywords: ['luxury', 'premium', 'lüks'] },
+      { label: 'rental-agency', keywords: ['rental', 'rent', 'lease', 'kiralık', 'kiralama'] },
+      { label: 'property-valuation', keywords: ['valuation', 'appraisal', 'değerleme', 'ekspertiz'] },
+    ],
+    conversion: {
+      goal: 'Generate listing leads, viewings and valuation requests against real properties',
+      primaryAction: 'View listings or schedule a viewing',
+      primaryCTA: 'View Listings', secondaryCTA: 'Schedule a Viewing',
+      funnel: ['Land on featured listings', 'Browse listings', 'View a property', 'Schedule a viewing / contact agent', 'Request a valuation'],
+    },
+    trust: {
+      drivers: ['Real listings & locations', 'Agent identity & local expertise', 'Property details', 'Legal/property info when supplied', 'Real office details'],
+      sourceRequiredProof: ['Listing photos', 'Property information', 'Floor plans', 'Agent/team photos', 'Property location', 'Licenses/credentials when relevant'],
+      forbiddenClaims: ['Fake properties as available listings', 'Fabricated prices/availability', 'Fabricated floor plans', 'Fabricated agent awards', 'Fabricated transaction counts', 'Neighborhood data stated as fact without source'],
+    },
+    sections: {
+      required: ['Hero', 'Featured Listings', 'Property Details', 'Agent / Team', 'Locations / Areas', 'Schedule a Viewing / Contact'],
+      recommended: ['About', 'Valuation Request', 'How Buying/Renting Works'],
+      forbidden: [
+        { section: 'SaaS Pricing', reason: 'A real-estate agency is not a subscription product.' },
+        { section: 'Fake sold counts', reason: 'Transaction totals would be fabricated.' },
+        { section: 'Fake awards', reason: 'No verified awards to claim.' },
+        { section: 'Unsupported testimonials', reason: 'No real testimonials to show.' },
+        { section: 'Product Dashboard', reason: 'No software dashboard belongs here.' },
+      ],
+    },
+    visual: {
+      realSourceRequired: ['Listing photos', 'Property information', 'Floor plans', 'Agent/team photos', 'Property/project location', 'Licenses/credentials'],
+      aiIllustrativeAllowed: ['Ambient neighbourhood atmosphere', 'Abstract architectural texture', 'Brand mood backgrounds'],
+      cssSvgPreferred: ['Listing grid + filters', 'Map/area motif', 'Property detail layout', 'Floor-plan placeholder (illustrative)'],
+      motionSuitable: ['Subtle listing filter transitions', 'Calm hero ambience', 'Soft listing card reveals'],
+      forbiddenGenerated: ['Fake properties as available listings', 'Fabricated prices/availability', 'Fabricated floor plans', 'Fabricated transaction counts'],
+      heroRecommendation: 'Hero anchored on real featured-property photography (or an ambient architectural atmosphere when none is provided) — never generated properties presented as real listings.',
+    },
+    research: {
+      recommended: true,
+      angles: ['Expected listing fields for property', 'Trust & credibility requirements', 'Regulated-content risks', 'Local/regional buying concerns', 'Common CTA language'],
+      reason: 'A live sector scan would validate expected listing fields and regional trust conventions.',
+    },
+    warnings: ['Listings, prices, availability and floor plans require real data — never fabricate them.'],
+  },
+
+  'clinic-healthcare': {
+    businessModel: 'appointment-led',
+    subsectorDefault: 'medical-clinic',
+    subsectors: [
+      { label: 'dental-clinic', keywords: ['dental', 'dentist', 'dentistry', 'orthodontic', 'diş'] },
+      { label: 'aesthetic-clinic', keywords: ['aesthetic', 'cosmetic', 'estetik'] },
+      { label: 'physiotherapy', keywords: ['physiotherapy', 'physio', 'fizyoterapi'] },
+      { label: 'therapy', keywords: ['therapy', 'therapist', 'terapi'] },
+      { label: 'psychology', keywords: ['psychology', 'psychologist', 'psikolog', 'psikoloji'] },
+      { label: 'dermatology', keywords: ['dermatology', 'dermatolog', 'cilt'] },
+      { label: 'general-clinic', keywords: ['clinic', 'polyclinic', 'klinik', 'poliklinik'] },
+    ],
+    conversion: {
+      goal: 'Drive appointment and consultation requests with clear, honest treatment info',
+      primaryAction: 'Book an appointment or request a consultation',
+      primaryCTA: 'Book an Appointment', secondaryCTA: 'View Treatments',
+      funnel: ['Land on clinic overview', 'View treatments', 'Meet the team', 'Book an appointment / request a consultation', 'Visit the clinic'],
+    },
+    trust: {
+      drivers: ['Real practitioners & qualifications', 'Real clinic', 'Treatment clarity', 'Safety information', 'Genuine contact/location', 'Credentials when supplied'],
+      sourceRequiredProof: ['Practitioners', 'Team', 'Clinic/facility', 'Medical equipment where appropriate', 'Credentials/certificates', 'Real treatment info', 'Before/after only when genuinely provided and appropriate'],
+      forbiddenClaims: ['Fabricated patient results', 'Fabricated before/after outcomes', 'Fabricated doctors/credentials', 'Fabricated medical certificates', 'Guaranteed results', 'Fake patient testimonials', 'Unsupported medical claims'],
+    },
+    sections: {
+      required: ['Hero', 'Treatments / Services', 'Meet the Team', 'Clinic / Facility', 'Safety & Approach', 'Book an Appointment / Contact'],
+      recommended: ['About', 'FAQ', 'Credentials (only if supplied)'],
+      forbidden: [
+        { section: 'Ecommerce Catalog', reason: 'A clinic is appointment-led, not a store (unless explicitly relevant).' },
+        { section: 'SaaS Demo', reason: 'No product demo belongs on a clinic site.' },
+        { section: 'Software-style Pricing Tiers', reason: 'Treatments are not software subscriptions.' },
+        { section: 'Fake medical outcomes', reason: 'Patient results would be fabricated.' },
+        { section: 'Unsupported testimonial walls', reason: 'No real patient testimonials to show.' },
+        { section: 'Fake live appointment availability', reason: 'Live availability would be fabricated.' },
+      ],
+    },
+    visual: {
+      realSourceRequired: ['Practitioners', 'Team', 'Clinic/facility', 'Medical equipment', 'Credentials/certificates', 'Real treatment info', 'Before/after only when genuinely provided'],
+      aiIllustrativeAllowed: ['Calm clinical atmosphere', 'Abstract wellbeing texture', 'Soft brand mood backgrounds', 'Non-literal care imagery'],
+      cssSvgPreferred: ['Treatment list layout', 'Safety/approach iconography', 'Appointment form (front-end)'],
+      motionSuitable: ['Calm hero ambience', 'Soft treatment card reveals', 'Gentle section transitions'],
+      forbiddenGenerated: ['Fabricated patient results/before-after', 'Fabricated doctors/credentials/certificates', 'Guaranteed-result claims', 'Fake patient testimonials'],
+      heroRecommendation: 'Calm, reassuring hero with real clinic/team photography (or an abstract wellbeing AI-illustrative atmosphere when none is provided) — never generated patients, results or credentials.',
+    },
+    research: {
+      recommended: true,
+      angles: ['Category expectations for clinics', 'Trust & credibility requirements', 'Regulated-content risks', 'Proof-sensitive claims (results/credentials)', 'Common CTA language'],
+      reason: 'A live sector scan would validate appointment conventions and regulated medical-claim boundaries.',
+    },
+    warnings: ['Medical results, before/after, doctors and credentials must be genuine — never fabricate them or guarantee outcomes.'],
+  },
+
+  'ai-saas': {
+    businessModel: 'subscription-product',
+    subsectorDefault: 'b2b-saas',
+    subsectors: [
+      { label: 'chatbot', keywords: ['chatbot', 'chat bot', 'support bot', 'sohbet botu', 'destek botu'] },
+      { label: 'developer-tool', keywords: ['developer', 'dev tool', 'cli', 'sdk', 'geliştirici'] },
+      { label: 'ai-product', keywords: ['ai', 'artificial intelligence', 'llm', 'gpt', 'yapay zeka'] },
+      { label: 'analytics-product', keywords: ['analytics', 'dashboard', 'reporting', 'analitik'] },
+      { label: 'automation-platform', keywords: ['automation', 'workflow', 'automate', 'otomasyon'] },
+      { label: 'crm', keywords: ['crm', 'sales platform', 'müşteri ilişkileri'] },
+      { label: 'api-product', keywords: ['api', 'sdk'] },
+      { label: 'consumer-software', keywords: ['consumer', 'personal app'] },
+    ],
+    conversion: {
+      goal: 'Drive product evaluation toward a demo/trial/contact-sales conversion',
+      primaryAction: 'Try the demo or book a demo',
+      primaryCTA: 'Book a Demo', secondaryCTA: 'See How It Works',
+      funnel: ['Land on product value', 'See how it works', 'Explore the (front-end) demo', 'Start free / book a demo', 'Contact sales'],
+    },
+    trust: {
+      drivers: ['Product clarity', 'Workflow clarity', 'Integration clarity', 'Security posture', 'Support process', 'Transparent limits', 'Real compliance only when supplied'],
+      sourceRequiredProof: ['Real product screenshots', 'Real customer logos', 'Real metrics/user counts', 'Real compliance badges (SOC2/ISO)', 'Real testimonials', 'Real uptime/analytics'],
+      forbiddenClaims: ['Fake screenshots as real UI', 'Fake customer logos', 'Fake metrics/user counts', 'Fake SOC2/ISO/security badges', 'Fake testimonials', 'Fake uptime', 'Fake live activity/analytics'],
+    },
+    sections: {
+      required: ['Hero', 'How it works', 'Product Demo (front-end)', 'Features by job', 'Integrations', 'Security & Trust', 'Contact Sales / Book Demo'],
+      recommended: ['Pricing', 'FAQ', 'Use Cases', 'Docs / Quickstart'],
+      forbidden: [
+        { section: 'Fake customer logo strip', reason: 'No real customer logos to show.' },
+        { section: 'Fake metrics / certifications', reason: 'No verified metrics or SOC2/ISO to claim.' },
+        { section: 'Fake screenshots as real UI', reason: 'UI must be a labelled CSS/SVG mockup unless real material exists.' },
+        { section: 'Fake testimonials', reason: 'No real testimonials to show.' },
+      ],
+    },
+    visual: {
+      realSourceRequired: ['Real product screenshots', 'Real customer logos', 'Real compliance badges', 'Real metrics', 'Real testimonials'],
+      aiIllustrativeAllowed: ['Abstract AI visuals', 'Ambient product glow', 'Concept/atmosphere backgrounds', 'Visual metaphors'],
+      cssSvgPreferred: ['Product UI mockups', 'Workflow diagrams', 'Chat flows', 'Integration maps', 'Product architecture diagrams', 'State transitions'],
+      motionSuitable: ['Restrained ambient motion', 'Gently floating product cards', 'Sample chat typing (front-end)', 'Staged flow/timeline progress'],
+      forbiddenGenerated: ['Fake screenshots as real UI', 'Fake customer logos', 'Fake metrics/user counts', 'Fake SOC2/ISO/security badges', 'Fake live activity'],
+      heroRecommendation: 'Product hero with a CSS/SVG illustrative UI mockup (labelled as a front-end preview) + abstract AI ambience — never a fake screenshot presented as the real product.',
+    },
+    research: {
+      recommended: true,
+      angles: ['Competitor information architecture', 'Category-specific UX patterns', 'Common conversion patterns (demo/trial)', 'Market-specific terminology', 'Common CTA language'],
+      reason: 'A live sector scan would validate product-page IA and category conversion patterns.',
+    },
+    warnings: ['Product UI must be described as a CSS/SVG front-end mockup — never claim real screenshots, logos, metrics or compliance without real material.'],
+  },
+
+  marketplace: {
+    businessModel: 'two-sided-marketplace',
+    subsectorDefault: 'marketplace',
+    subsectors: [
+      { label: 'product-marketplace', keywords: ['product', 'goods', 'ürün'] },
+      { label: 'service-marketplace', keywords: ['service', 'services', 'hizmet'] },
+      { label: 'property-marketplace', keywords: ['property', 'real estate', 'emlak'] },
+      { label: 'automotive-marketplace', keywords: ['car', 'vehicle', 'araç', 'araba'] },
+      { label: 'freelancer-marketplace', keywords: ['freelancer', 'talent', 'freelance'] },
+      { label: 'classified-listings', keywords: ['classified', 'listings', 'ilan'] },
+    ],
+    conversion: {
+      goal: 'Drive browsing/listing and account signup across a two-sided model',
+      primaryAction: 'Browse listings or start selling',
+      primaryCTA: 'Browse Listings', secondaryCTA: 'Start Selling',
+      funnel: ['Land on value for both sides', 'Browse listings', 'Search/filter', 'Create an account', 'List an item / start a transaction'],
+    },
+    trust: {
+      drivers: ['Transaction clarity', 'Listing quality', 'Moderation & safety', 'Verification', 'Dispute/support process', 'Transparent fees when supplied'],
+      sourceRequiredProof: ['Real listings', 'Real listing media', 'Seller information', 'Inventory/data', 'Real transaction terms'],
+      forbiddenClaims: ['Fabricated listings', 'Fabricated sellers/buyers', 'Fake live listing counts', 'Fake transaction volume', 'Fabricated reviews', 'Fabricated inventory'],
+    },
+    sections: {
+      required: ['Hero', 'Catalog / Listings', 'Search & Filters', 'How it works', 'Trust & Safety', 'Sign up / List an Item'],
+      recommended: ['Seller / Buyer value', 'Categories', 'Fees (only if supplied)'],
+      forbidden: [
+        { section: 'Fake live listing counts', reason: 'Live listing/transaction counts would be fabricated.' },
+        { section: 'Fabricated reviews', reason: 'No real reviews to show.' },
+        { section: 'Fabricated inventory', reason: 'Listings require real seller data.' },
+        { section: 'SaaS security compliance badges (fake)', reason: 'No verified compliance to claim.' },
+      ],
+    },
+    visual: {
+      realSourceRequired: ['Real listings', 'Real listing media', 'Seller information', 'Inventory/data', 'Real transaction terms'],
+      aiIllustrativeAllowed: ['Abstract network/atmosphere backgrounds', 'Brand mood imagery', 'Non-literal category art'],
+      cssSvgPreferred: ['Marketplace flow diagram', 'Search/filter interaction', 'Seller onboarding flow', 'Transaction process', 'Listing card system', 'Category browsing'],
+      motionSuitable: ['Subtle filter/list transitions', 'Soft listing card reveals', 'Calm hero ambience'],
+      forbiddenGenerated: ['Fabricated listings/sellers/buyers', 'Fake live listing counts', 'Fake transaction volume', 'Fabricated reviews/inventory'],
+      heroRecommendation: 'Hero explaining both sides with a CSS/SVG listing-card/flow system (illustrative) — never fabricated listings, sellers or live counts.',
+    },
+    research: {
+      recommended: true,
+      angles: ['Expected listing fields', 'Competitor information architecture', 'Trust & safety requirements', 'Common conversion patterns (list/browse/signup)', 'Common CTA language'],
+      reason: 'A live sector scan would validate two-sided IA, expected listing fields and trust/safety norms.',
+    },
+    warnings: ['Listings, sellers, counts and reviews require real data — never fabricate the two-sided content.'],
+  },
+
+  'portfolio-agency': {
+    businessModel: 'project-inquiry',
+    subsectorDefault: 'portfolio',
+    subsectors: [
+      { label: 'creative-portfolio', keywords: ['creative', 'artist', 'sanatçı'] },
+      { label: 'developer-portfolio', keywords: ['developer', 'engineer', 'yazılımcı'] },
+      { label: 'photographer-portfolio', keywords: ['photograph', 'fotoğraf'] },
+      { label: 'architecture-portfolio', keywords: ['architect', 'mimar'] },
+      { label: 'design-studio', keywords: ['design studio', 'studio', 'stüdyo'] },
+      { label: 'marketing-agency', keywords: ['marketing', 'advertising', 'reklam', 'pazarlama'] },
+      { label: 'software-agency', keywords: ['software agency', 'dev agency', 'yazılım ajansı'] },
+      { label: 'production-studio', keywords: ['production', 'prodüksiyon'] },
+    ],
+    conversion: {
+      goal: 'Turn real work into project inquiries and contact',
+      primaryAction: 'View work and start a project',
+      primaryCTA: 'View Work', secondaryCTA: 'Start a Project',
+      funnel: ['Land on selected work', 'Explore projects/case studies', 'Understand services/process', 'Contact / start a project', 'Discuss the project'],
+    },
+    trust: {
+      drivers: ['Real work', 'Real case studies', 'Real services & process', 'Real team', 'Real client work', 'Results only when supplied'],
+      sourceRequiredProof: ['Portfolio projects', 'Screenshots', 'Photography', 'Campaign work', 'Client deliverables', 'Case-study data', 'Team photos'],
+      forbiddenClaims: ['Fake client work', 'Fabricated logos', 'Fabricated case studies', 'Fabricated project outcomes', 'Fabricated clients', 'Fabricated awards'],
+    },
+    sections: {
+      required: ['Hero', 'Work / Projects', 'Services / Process', 'About', 'Contact'],
+      recommended: ['Case Studies (only if provided)', 'Skills', 'Resume'],
+      forbidden: [
+        { section: 'SaaS Pricing Plans', reason: 'A portfolio/agency is project-led, not subscription-priced.' },
+        { section: 'Fake client logos', reason: 'No real client logos to show.' },
+        { section: 'Fabricated case studies', reason: 'Case studies require real client work.' },
+        { section: 'Product Demo', reason: 'No software product demo belongs here.' },
+      ],
+    },
+    visual: {
+      realSourceRequired: ['Portfolio projects', 'Screenshots', 'Photography', 'Campaign work', 'Client deliverables', 'Case-study data', 'Team photos'],
+      aiIllustrativeAllowed: ['Abstract brand identity', 'Brand texture', 'Atmospheric backgrounds', 'Graphic motifs', 'Editorial compositions'],
+      cssSvgPreferred: ['Work grid/gallery layout', 'Process/service diagram', 'Editorial dividers'],
+      motionSuitable: ['Editorial floating brand shapes', 'Soft work-card reveals', 'Calm hero ambience'],
+      forbiddenGenerated: ['Fake client work', 'Fabricated logos/clients', 'Fabricated case studies/outcomes', 'Fabricated awards'],
+      heroRecommendation: 'Editorial hero with real selected-work imagery (or abstract brand/atmospheric AI-illustrative art when none is provided) — never fabricated client work or logos.',
+    },
+    research: {
+      recommended: true,
+      angles: ['Category-specific UX patterns', 'Competitor information architecture', 'Common conversion patterns (inquiry)', 'Sector-specific visual conventions', 'Common CTA language'],
+      reason: 'A live sector scan would validate portfolio/agency IA and inquiry conversion patterns.',
+    },
+    warnings: ['Client work, logos, case studies and outcomes require real material — never fabricate them.'],
+  },
+
+  'local-service': {
+    businessModel: 'service-booking',
+    subsectorDefault: 'local-service',
+    subsectors: [
+      { label: 'plumbing', keywords: ['plumber', 'plumbing', 'tesisat'] },
+      { label: 'electrical', keywords: ['electrician', 'electrical', 'elektrik'] },
+      { label: 'cleaning-service', keywords: ['cleaning', 'cleaner', 'temizlik'] },
+      { label: 'barber-salon', keywords: ['barber', 'hairdresser', 'salon', 'berber', 'kuaför'] },
+      { label: 'beauty-salon', keywords: ['beauty', 'spa', 'güzellik'] },
+      { label: 'repair-service', keywords: ['repair', 'handyman', 'tamir'] },
+      { label: 'moving-company', keywords: ['moving', 'movers', 'nakliyat'] },
+      { label: 'consulting', keywords: ['consulting', 'consultant', 'danışman'] },
+    ],
+    conversion: {
+      goal: 'Turn interest into bookings, quotes and calls for a real local business',
+      primaryAction: 'Book a service, request a quote or call',
+      primaryCTA: 'Book Now', secondaryCTA: 'Get a Quote',
+      funnel: ['Land on services', 'Understand process/area', 'Request a quote / book', 'Call / contact', 'Confirm the service'],
+    },
+    trust: {
+      drivers: ['Real business & location', 'Service area', 'Services & process', 'Qualifications only when supplied', 'Real work when relevant'],
+      sourceRequiredProof: ['Real business identity', 'Real location/service area', 'Real work when relevant', 'Qualifications/licenses when supplied'],
+      forbiddenClaims: ['Fabricated reviews', 'Fabricated team', 'Fabricated licenses', 'Fabricated years in business', 'Fabricated service/customer counts', 'Fabricated prices/availability'],
+    },
+    sections: {
+      required: ['Hero', 'Services', 'Process', 'Service Area', 'Get a Quote / Book', 'Contact'],
+      recommended: ['About', 'Gallery (only if provided)', 'Reviews (only if provided)'],
+      forbidden: [
+        { section: 'SaaS Pricing Plans', reason: 'A local service is booking/quote-led, not subscription-priced.' },
+        { section: 'Product Dashboard', reason: 'No software surface belongs on a local-service site.' },
+        { section: 'Software Integrations', reason: 'Not relevant to a local service.' },
+        { section: 'Fake customer counts', reason: 'Customer/service totals would be fabricated.' },
+        { section: 'Fake reviews', reason: 'No real reviews to show.' },
+      ],
+    },
+    visual: {
+      realSourceRequired: ['Real business identity', 'Real location/service area', 'Real work when relevant', 'Qualifications/licenses when supplied'],
+      aiIllustrativeAllowed: ['Ambient service atmosphere', 'Abstract texture backgrounds', 'Brand mood imagery'],
+      cssSvgPreferred: ['Service list layout', 'Process/step diagram', 'Service-area map motif', 'Quote/booking form (front-end)'],
+      motionSuitable: ['Calm hero ambience', 'Soft service card reveals', 'Process step progression'],
+      forbiddenGenerated: ['Fabricated reviews/team/licenses', 'Fabricated years in business', 'Fabricated service/customer counts', 'Fabricated prices/availability'],
+      heroRecommendation: 'Clear service hero with real work photography when available (or an ambient AI-illustrative atmosphere when none is provided) — never fabricated reviews, team or licenses.',
+    },
+    research: {
+      recommended: true,
+      angles: ['Common conversion patterns for local services', 'Trust & credibility requirements', 'Local/regional buying concerns', 'Common CTA language', 'User decision factors'],
+      reason: 'A live sector scan would validate local-service conversion patterns and regional trust cues.',
+    },
+    warnings: ['Reviews, team, licenses and counts require real material — never fabricate them; avoid SaaS-style assumptions.'],
+  },
+
+  general: {
+    businessModel: 'unknown',
+    subsectorDefault: 'unknown',
+    subsectors: [],
+    conversion: {
+      goal: 'Guide visitors to understand the business and get in touch',
+      primaryAction: 'Get in touch',
+      primaryCTA: 'Get in Touch', secondaryCTA: 'See How It Works',
+      funnel: ['Land on what it is', 'Understand how it works', 'See what is offered', 'Get in touch', 'Take the next step'],
+    },
+    trust: {
+      drivers: ['Clear explanation of what the business is', 'Honest contact/location', 'Real services/offerings when provided'],
+      sourceRequiredProof: ['Any real proof (products/work/team/location) the user provides'],
+      forbiddenClaims: ['Fabricated proof of any kind', 'Fake logos/testimonials/metrics/certifications', 'Fabricated inventory/listings/results'],
+    },
+    sections: {
+      required: ['Hero', 'What it is', 'How it works', 'Offerings', 'Contact'],
+      recommended: ['About', 'FAQ'],
+      forbidden: [
+        { section: 'SaaS Pricing Plans', reason: 'The sector is unclear — do not assume a subscription product.' },
+        { section: 'Fake metrics / logos / testimonials', reason: 'No verified proof to show.' },
+        { section: 'Product Dashboard', reason: 'Do not assume a software surface when the sector is unknown.' },
+      ],
+    },
+    visual: {
+      realSourceRequired: ['Any real products/work/team/location the user provides'],
+      aiIllustrativeAllowed: ['Abstract brand mood', 'Atmospheric backgrounds', 'Non-literal texture'],
+      cssSvgPreferred: ['Simple section layouts', 'Generic process diagram', 'Contact form (front-end)'],
+      motionSuitable: ['Minimal ambient hero glow', 'Soft section reveals'],
+      forbiddenGenerated: ['Fabricated proof of any kind', 'Fake logos/testimonials/metrics/certifications', 'Fabricated inventory/listings/results'],
+      heroRecommendation: 'Conservative hero with an abstract brand-mood background — no fabricated proof, no assumed software UI until the sector is validated.',
+    },
+    research: {
+      recommended: true,
+      angles: ['Category expectations', 'Market-specific terminology', 'Common conversion patterns', 'Trust & credibility requirements', 'Sector-specific visual conventions'],
+      reason: 'Classification is uncertain — a future live sector scan is recommended to validate the sector before strong assumptions.',
+    },
+    warnings: ['Sector could not be determined with confidence — using a conservative, contact-led, anti-fabrication fallback.'],
+  },
+};
+
+/** Industry sectors that represent an OPERATOR business or served vertical — the
+ *  candidates for the primary (operator) sector and for `audienceSector`. Software
+ *  ('ai-saas') and 'marketplace' are decided by dedicated precedence, so they are
+ *  excluded from the industry-scoring candidate set. */
+const INDUSTRY_ONLY_SECTORS: readonly IndustrySector[] = [
+  'jewelry', 'landscaping', 'automotive-dealership', 'furniture-interiors',
+  'restaurant-hospitality', 'real-estate', 'clinic-healthcare', 'portfolio-agency', 'local-service',
+];
+
+/** Assemble the research plan honestly — status is ALWAYS 'not-run' in Phase 11A. */
+function vBuildResearchPlan(profile: VerticalProfileDefinition, forceRecommend: boolean, lang: Lang): VerticalResearchPlan {
+  return {
+    status: 'not-run',
+    recommended: profile.research.recommended || forceRecommend,
+    angles: [...profile.research.angles],
+    reason: L(lang,
+      `No live research was run. ${profile.research.reason} Phase 11B can validate this assumption with live sources.`,
+      `Canlı araştırma yapılmadı. ${profile.research.reason} Faz 11B bu varsayımı canlı kaynaklarla doğrulayabilir.`),
+  };
+}
+
+/** The honest fail-open artifact — a conservative, contact-led, anti-fabrication
+ *  general fallback. Never throws; used when derivation unexpectedly fails. */
+function failedOpenVerticalIntelligence(lang: Lang): VerticalIntelligenceArtifact {
+  const p = VERTICAL_PROFILES.general;
+  return {
+    status: 'failed-open',
+    version: 'deterministic-v1',
+    sector: 'general',
+    subsector: 'unknown',
+    classificationBasis: 'fallback',
+    confidence: 'low',
+    matchedSignals: [],
+    conflictingSignals: [],
+    businessModel: p.businessModel,
+    conversionModel: { goal: p.conversion.goal, primaryAction: p.conversion.primaryAction, primaryCTA: p.conversion.primaryCTA, secondaryCTA: p.conversion.secondaryCTA, funnel: [...p.conversion.funnel] },
+    trustModel: { drivers: [...p.trust.drivers], sourceRequiredProof: [...p.trust.sourceRequiredProof], forbiddenClaims: [...p.trust.forbiddenClaims] },
+    sectionPolicy: { required: [...p.sections.required], recommended: [...p.sections.recommended], forbidden: p.sections.forbidden.map((f) => ({ section: f.section, reason: f.reason })) },
+    visualPolicy: { realSourceRequired: [...p.visual.realSourceRequired], aiIllustrativeAllowed: [...p.visual.aiIllustrativeAllowed], cssSvgPreferred: [...p.visual.cssSvgPreferred], motionSuitable: [...p.visual.motionSuitable], forbiddenGenerated: [...p.visual.forbiddenGenerated], heroRecommendation: p.visual.heroRecommendation },
+    researchPlan: vBuildResearchPlan(p, true, lang),
+    warnings: [L(lang, 'Vertical classification failed open — using a conservative, contact-led, anti-fabrication fallback.', 'Sektör sınıflandırması güvenli-açık moda düştü — temkinli, iletişim odaklı, uydurma-karşıtı bir yedek kullanılıyor.')],
+    summary: L(lang, 'Vertical Intelligence failed open: general sector, low confidence, deterministic (no live research).', 'Sektör Zekâsı güvenli-açık moda düştü: genel sektör, düşük güven, deterministik (canlı araştırma yok).'),
+  };
+}
+
 /**
- * Derive the intent-aware Page Architecture Decision. Pure + deterministic; reads
- * the prompt/brief/concept + the strategic ledger. Never fabricates proof. Front-
- * end-only: any demo is a sample/static surface, never a real backend claim.
+ * Derive the deterministic Vertical Intelligence sector contract (Phase 11A). Pure,
+ * deterministic, network-free, fail-open, EN/TR-aware. Refines the concept/experience
+ * understanding into a sector/subsector-specific contract WITHOUT contradicting the
+ * Experience Blueprint. Never throws; never runs or claims live research; never
+ * fabricates proof. All important arrays are always present.
  */
+export function deriveVerticalIntelligence(input: VerticalIntelligenceInput): VerticalIntelligenceArtifact {
+  const lang: Lang = input.lang || 'en';
+  try {
+    const brief = input.brief || ({} as WebBuildBrief);
+    const ca = input.conceptAuthority;
+    const ledger = input.ledger;
+    const eb = input.experienceBlueprint;
+    const inferred = input.inferred;
+    const prompt = input.prompt || '';
+    const sectionNames = (input.sectionItems || []).map((s) => s.name).filter(Boolean).join(' ');
+    const briefText = [brief.coreIdea, brief.type, brief.goal, brief.audience, brief.style, brief.visitorIntent].filter(Boolean).join(' ');
+    const caPrimary = (ca?.primaryConcept || '').toString().toLowerCase();
+    const ledgerPrimary = (ledger?.primaryConcept || '').toString().toLowerCase();
+
+    const split = vSplitProductVertical(prompt);
+    const productText = split.hadSplit ? split.product : [prompt, brief.coreIdea, brief.type].filter(Boolean).join(' ');
+    const coreText = split.hadSplit ? split.product : [prompt, briefText].filter(Boolean).join(' ');
+    const fullText = [prompt, briefText, sectionNames, ca?.targetVertical, ca?.audienceVertical, ledger?.targetVertical].filter(Boolean).join(' ');
+
+    // ── Industry-sector scoring (operator business OR served vertical). ──
+    const scores = {} as Record<IndustrySector, number>;
+    const matchedBySector = {} as Record<IndustrySector, string[]>;
+    for (const s of INDUSTRY_ONLY_SECTORS) { scores[s] = 0; matchedBySector[s] = []; }
+
+    const industrySignals: Array<{ label: string; text: string; w: number }> = [
+      { label: 'conceptAuthority.targetVertical', text: (ca?.targetVertical || '').toString(), w: 4 },
+      { label: 'conceptAuthority.audienceVertical', text: ca?.audienceVertical || '', w: 4 },
+      { label: 'ledger.targetVertical', text: ledger?.targetVertical || '', w: 3 },
+      { label: 'prompt', text: prompt, w: 4 },
+      { label: 'brief', text: briefText, w: 3 },
+      { label: 'sections', text: sectionNames, w: 1 },
+    ];
+    for (const sec of INDUSTRY_ONLY_SECTORS) {
+      const words = VERTICAL_KEYWORDS[sec];
+      for (const sig of industrySignals) {
+        if (!sig.text) continue;
+        const m = vCountMatches(sig.text, words);
+        if (m.hits > 0) {
+          scores[sec] += m.hits * sig.w;
+          for (const kw of m.matched.slice(0, 3)) matchedBySector[sec].push(`${sig.label}: ${kw}`);
+        }
+      }
+    }
+    // Direct sector votes (only when they resolve to an INDUSTRY_ONLY sector).
+    const conceptVote = SECTOR_FROM_CONCEPT[caPrimary];
+    if (conceptVote && INDUSTRY_ONLY_SECTORS.includes(conceptVote as IndustrySector)) {
+      scores[conceptVote as IndustrySector] += 5;
+      matchedBySector[conceptVote as IndustrySector].push(`conceptAuthority.primaryConcept: ${caPrimary}`);
+    }
+    const inferredVote = inferred ? SECTOR_FROM_INFERRED[inferred.industry] : undefined;
+    if (inferredVote && INDUSTRY_ONLY_SECTORS.includes(inferredVote as IndustrySector)) {
+      scores[inferredVote as IndustrySector] += 3;
+      matchedBySector[inferredVote as IndustrySector].push(`inferred.industry: ${inferred?.industry}`);
+    }
+    const expVote = eb ? SECTOR_FROM_EXPERIENCE[eb.siteExperienceType] : undefined;
+    if (expVote && INDUSTRY_ONLY_SECTORS.includes(expVote as IndustrySector)) {
+      scores[expVote as IndustrySector] += 2;
+      matchedBySector[expVote as IndustrySector].push(`experienceBlueprint: ${eb?.siteExperienceType}`);
+    }
+
+    // Rank industry sectors deterministically (score desc, then declaration order).
+    const ranked = INDUSTRY_ONLY_SECTORS
+      .map((sec, i) => ({ sec, score: scores[sec], order: i }))
+      .sort((a, b) => (b.score - a.score) || (a.order - b.order));
+    const industryTop = ranked[0];
+    const industrySecond = ranked[1];
+    const industryTopScore = industryTop ? industryTop.score : 0;
+    const industrySecondScore = industrySecond ? industrySecond.score : 0;
+
+    // ── Software (product-concept) evidence. Product identity has precedence. ──
+    const conceptIsSoftware = SECTOR_FROM_CONCEPT[caPrimary] === 'ai-saas';
+    const ledgerIsSoftware = SECTOR_FROM_CONCEPT[ledgerPrimary] === 'ai-saas';
+    const inferredIsSoftware = inferred?.industry === 'ai_saas';
+    const experienceIsSoftware = !!expVote && expVote === 'ai-saas';
+    const softwareKw = vCountMatches(productText, VERTICAL_SOFTWARE_WORDS);
+    let softwareEvidence = 0;
+    const softwareSignals: string[] = [];
+    if (conceptIsSoftware) { softwareEvidence += 6; softwareSignals.push(`conceptAuthority.primaryConcept: ${caPrimary}`); }
+    if (ledgerIsSoftware) { softwareEvidence += 6; softwareSignals.push(`ledger.primaryConcept: ${ledgerPrimary}`); }
+    if (inferredIsSoftware) { softwareEvidence += 3; softwareSignals.push('inferred.industry: ai_saas'); }
+    if (experienceIsSoftware) { softwareEvidence += 2; softwareSignals.push(`experienceBlueprint: ${eb?.siteExperienceType}`); }
+    if (softwareKw.hits > 0) { softwareEvidence += softwareKw.hits * 2; for (const kw of softwareKw.matched.slice(0, 3)) softwareSignals.push(`product: ${kw}`); }
+
+    // ── Marketplace (two-sided) evidence. ──
+    const conceptIsMarketplace = caPrimary === 'marketplace';
+    const experienceIsMarketplace = eb?.siteExperienceType === 'marketplace';
+    const inferredIsEcommerce = inferred?.industry === 'ecommerce';
+    const marketplaceKw = vCountMatches(coreText, VERTICAL_MARKETPLACE_WORDS);
+    let marketplaceEvidence = 0;
+    const marketplaceSignals: string[] = [];
+    if (conceptIsMarketplace) { marketplaceEvidence += 6; marketplaceSignals.push('conceptAuthority.primaryConcept: marketplace'); }
+    if (experienceIsMarketplace) { marketplaceEvidence += 2; marketplaceSignals.push('experienceBlueprint: marketplace'); }
+    if (inferredIsEcommerce) { marketplaceEvidence += 2; marketplaceSignals.push('inferred.industry: ecommerce'); }
+    if (marketplaceKw.hits > 0) { marketplaceEvidence += marketplaceKw.hits * 3; for (const kw of marketplaceKw.matched.slice(0, 3)) marketplaceSignals.push(`core: ${kw}`); }
+
+    // Product/model identity is decisive from a STRUCTURED signal (Concept
+    // Authority / ledger / inferred / experience) or the product portion of a
+    // "<product> for <vertical>" split. A keyword-only, non-split prompt needs ≥2
+    // software hits so a non-software operator that merely mentions "platform" /
+    // "dashboard" is not misread as a SaaS product.
+    const softwareByStructured = conceptIsSoftware || ledgerIsSoftware || inferredIsSoftware || experienceIsSoftware;
+    const softwareByKeyword = split.hadSplit ? softwareKw.hits > 0 : softwareKw.hits >= 2;
+    const isSoftware = softwareByStructured || softwareByKeyword;
+    // A genuinely two-sided model needs a real marketplace signal (concept /
+    // experience / an explicit marketplace keyword) — a single-brand ecommerce
+    // mention alone never forces the marketplace model.
+    const isMarketplace = conceptIsMarketplace || experienceIsMarketplace || marketplaceKw.hits > 0;
+
+    // ── Resolve the primary sector + classification basis + audience sector. ──
+    let sector: VerticalSector;
+    let basis: VerticalClassificationBasis;
+    // Only ever an INDUSTRY_ONLY sector (industryTop.sec) or undefined — typed as
+    // IndustrySector so it can safely index the industry-only score/match maps.
+    let audienceSector: IndustrySector | undefined;
+    const matchedSignals: string[] = [];
+
+    if (isSoftware) {
+      sector = 'ai-saas';
+      basis = 'product-concept';
+      audienceSector = industryTopScore > 0 ? industryTop.sec : undefined;
+      matchedSignals.push(...softwareSignals);
+      if (audienceSector) matchedSignals.push(...matchedBySector[audienceSector].slice(0, 3));
+    } else if (isMarketplace) {
+      sector = 'marketplace';
+      basis = 'marketplace-model';
+      audienceSector = industryTopScore > 0 ? industryTop.sec : undefined;
+      matchedSignals.push(...marketplaceSignals);
+      if (audienceSector) matchedSignals.push(...matchedBySector[audienceSector].slice(0, 3));
+    } else if (industryTopScore > 0) {
+      sector = industryTop.sec;
+      basis = 'operator-business';
+      matchedSignals.push(...matchedBySector[industryTop.sec].slice(0, 5));
+    } else {
+      sector = 'general';
+      basis = 'fallback';
+    }
+
+    const profile = VERTICAL_PROFILES[sector];
+
+    // ── Subsector (from the winning-sector profile over the most relevant text). ──
+    const subText = sector === 'ai-saas' ? productText : sector === 'marketplace' ? coreText : fullText;
+    const subsector = vDetectSubsector(profile, subText);
+
+    // ── Confidence (deterministic thresholds; never random/time-based). ──
+    let confidence: VerticalConfidence;
+    if (basis === 'fallback') {
+      confidence = 'low';
+    } else if (basis === 'operator-business') {
+      const margin = industryTopScore - industrySecondScore;
+      confidence = (industryTopScore >= 8 && margin >= 4) ? 'high' : industryTopScore >= 4 ? 'medium' : 'low';
+    } else {
+      const primaryEvidence = isSoftware ? softwareEvidence : marketplaceEvidence;
+      confidence = primaryEvidence >= 6 ? 'high' : primaryEvidence >= 3 ? 'medium' : 'low';
+    }
+
+    // ── Conflicting signals (close industry runner-up + product-vs-audience tension). ──
+    const conflictingSignals: string[] = [];
+    if (industrySecondScore > 0 && industrySecond && industrySecond.sec !== sector && industrySecond.sec !== audienceSector
+      && (industryTopScore - industrySecondScore) < 3) {
+      conflictingSignals.push(`${industrySecond.sec} signals are also present (close to ${industryTop.sec}).`);
+    }
+    if ((isSoftware || isMarketplace) && industryTopScore >= 6 && audienceSector) {
+      conflictingSignals.push(`strong ${audienceSector} (audience) signals vs the ${sector} product/model identity.`);
+    }
+
+    const status: VerticalIntelligenceArtifact['status'] =
+      sector === 'general' ? 'unknown' : (confidence === 'low' ? 'partial' : 'classified');
+
+    // ── Warnings (profile guards + honest dynamic notes; localized narrative). ──
+    const warnings: string[] = [...profile.warnings];
+    if (status === 'unknown') {
+      warnings.push(L(lang, 'Sector could not be classified with confidence — the contract is a conservative, anti-fabrication fallback; a future sector scan is recommended.', 'Sektör güvenle sınıflandırılamadı — sözleşme temkinli, uydurma-karşıtı bir yedek; gelecekte bir sektör taraması önerilir.'));
+    } else if (confidence === 'low') {
+      warnings.push(L(lang, 'Low-confidence classification — treat this sector contract as provisional until validated.', 'Düşük güvenli sınıflandırma — doğrulanana kadar bu sektör sözleşmesini geçici kabul edin.'));
+    }
+    if (audienceSector) {
+      warnings.push(L(lang,
+        `Primary identity is ${sector} (${basis}); the served industry ${audienceSector} is stored as audienceSector, not the primary sector.`,
+        `Birincil kimlik ${sector} (${basis}); hizmet verilen sektör ${audienceSector} birincil sektör değil, audienceSector olarak saklanır.`));
+    }
+    for (const c of conflictingSignals) warnings.push(L(lang, `Conflict: ${c}`, `Çelişki: ${c}`));
+
+    const summary = L(lang,
+      `Sector: ${sector}${subsector && subsector !== 'unknown' ? ` / ${subsector}` : ''}${audienceSector ? ` · audience ${audienceSector}` : ''} · ${profile.businessModel} · ${basis} · confidence ${confidence}. Primary CTA: ${profile.conversion.primaryCTA}. Deterministic (no live research).`,
+      `Sektör: ${sector}${subsector && subsector !== 'unknown' ? ` / ${subsector}` : ''}${audienceSector ? ` · hedef ${audienceSector}` : ''} · ${profile.businessModel} · ${basis} · güven ${confidence}. Ana CTA: ${profile.conversion.primaryCTA}. Deterministik (canlı araştırma yok).`);
+
+    return {
+      status,
+      version: 'deterministic-v1',
+      sector,
+      subsector,
+      audienceSector,
+      classificationBasis: basis,
+      confidence,
+      matchedSignals: uniq(matchedSignals),
+      conflictingSignals: uniq(conflictingSignals),
+      businessModel: profile.businessModel,
+      conversionModel: {
+        goal: profile.conversion.goal,
+        primaryAction: profile.conversion.primaryAction,
+        primaryCTA: profile.conversion.primaryCTA,
+        secondaryCTA: profile.conversion.secondaryCTA,
+        funnel: [...profile.conversion.funnel],
+      },
+      trustModel: {
+        drivers: [...profile.trust.drivers],
+        sourceRequiredProof: [...profile.trust.sourceRequiredProof],
+        forbiddenClaims: [...profile.trust.forbiddenClaims],
+      },
+      sectionPolicy: {
+        required: [...profile.sections.required],
+        recommended: [...profile.sections.recommended],
+        forbidden: profile.sections.forbidden.map((f) => ({ section: f.section, reason: f.reason })),
+      },
+      visualPolicy: {
+        realSourceRequired: [...profile.visual.realSourceRequired],
+        aiIllustrativeAllowed: [...profile.visual.aiIllustrativeAllowed],
+        cssSvgPreferred: [...profile.visual.cssSvgPreferred],
+        motionSuitable: [...profile.visual.motionSuitable],
+        forbiddenGenerated: [...profile.visual.forbiddenGenerated],
+        heroRecommendation: profile.visual.heroRecommendation,
+      },
+      researchPlan: vBuildResearchPlan(profile, confidence === 'low' || status !== 'classified', lang),
+      warnings: uniq(warnings),
+      summary,
+    };
+  } catch {
+    return failedOpenVerticalIntelligence(lang);
+  }
+}
+
+/* ── Vertical Intelligence Agent (Phase 11A) ──────────────────────────────────
+ * A real pipeline agent stage. Runs AFTER the Experience Blueprint and BEFORE the
+ * intent-aware Page Architecture. Deterministic, typed, fail-open; produces a real
+ * artifact ready for Phase 11B consumption. Never calls a provider, never claims
+ * live research, never mutates inputs, never blocks the build. */
+export interface VerticalIntelligenceAgentInput extends VerticalIntelligenceInput {}
+
+export function runVerticalIntelligence(
+  input: VerticalIntelligenceAgentInput,
+): { agent: WebBuildAgent; artifact: VerticalIntelligenceArtifact } {
+  const lang: Lang = input.lang || 'en';
+  const name = L(lang, 'Vertical Intelligence', 'Sektör Zekâsı');
+  const activity = L(lang, 'Classifying sector, business model, conversion path, trust and visual truth rules', 'Sektör, iş modeli, dönüşüm yolu, güven ve görsel doğruluk kuralları sınıflandırılıyor');
+  try {
+    const artifact = deriveVerticalIntelligence(input);
+    const status: AgentStatus = artifact.status === 'failed-open' ? 'failed' : 'done';
+    return { agent: { id: 'vertical_intelligence', name, status, summary: artifact.summary, currentActivity: activity, artifact }, artifact };
+  } catch {
+    const artifact = failedOpenVerticalIntelligence(lang);
+    return { agent: { id: 'vertical_intelligence', name, status: 'failed', summary: artifact.summary, currentActivity: activity, artifact }, artifact };
+  }
+}
+
 export function derivePageArchitectureDecision(
   prompt: string,
   brief: WebBuildBrief,
@@ -5685,6 +6899,7 @@ const AGENT_NAME: Record<AgentId, [string, string]> = {
   research: ['Research Agent', 'Araştırma Ajanı'],
   ui_art_director: ['UI / Art Director Agent', 'UI / Sanat Yönetmeni Ajanı'],
   strategy: ['Strategy Agent', 'Strateji Ajanı'],
+  vertical_intelligence: ['Vertical Intelligence', 'Sektör Zekâsı'],
   layout_architect: ['Layout Architect Agent', 'Yerleşim Mimarı Ajanı'],
   component_engineer: ['Component Engineer Agent', 'Bileşen Mühendisi Ajanı'],
   reviewer: ['Reviewer Agent', 'Gözden Geçirme Ajanı'],
