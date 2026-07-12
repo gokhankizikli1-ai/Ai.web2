@@ -27,6 +27,9 @@
  * Type-only import of WebBuildBrief (leaf module → no import cycle).
  */
 import type { WebBuildBrief } from '@/lib/webBuildApi';
+// Phase 12F — the shared product-intent authority (a leaf, no cycle). Chat surfaces
+// require EXPLICIT conversational evidence; "AI"/"assistant"/"copilot"/"SaaS" do not.
+import { hasExplicitChatIntent } from '@/lib/webBuildProductIntent';
 
 export type InteractionActionType =
   | 'scroll-to-section'
@@ -230,7 +233,10 @@ function planPrimaryActionType(plan?: ExperiencePlanInput): InteractionActionTyp
   if (!plan) return undefined;
   const hay = `${plan.primaryWebsiteExperience || ''} ${(plan.statefulDemoComponents || []).join(' ')} ${plan.websiteExperienceModel || ''} ${(plan.demoSurfaces || []).join(' ')}`.toLowerCase();
   if (!hay.trim()) return undefined;
-  if (/chat|assistant|conversation|copilot|\bbot\b/.test(hay)) return 'open-chat-demo';
+  // Phase 12F — explicit conversational evidence only (chatbot/conversational/live chat),
+  // NOT bare assistant/copilot/bot. The build step additionally gates this against the
+  // authoritative PROMPT's explicit chat evidence.
+  if (hasExplicitChatIntent(hay)) return 'open-chat-demo';
   if (/quote/.test(hay)) return 'open-quote-form';
   if (/access|researcher/.test(hay)) return 'request-access';
   if (/reservation|booking|contact/.test(hay)) return 'open-contact-form';
@@ -238,6 +244,8 @@ function planPrimaryActionType(plan?: ExperiencePlanInput): InteractionActionTyp
   if (/detail[- ]?(preview|modal|page)|listing[- ]?detail|product[- ]?detail/.test(hay)) return 'open-detail-modal';
   if (/\blead\b|request[- ]?info|enquir|inquir/.test(hay)) return 'request-info';
   if (/filter|search|catalog|listing|browse/.test(hay)) return 'filter-list';
+  // Workflow / product-demo / dashboard language → a safe scroll-to-workflow action.
+  if (/workflow|process|product\s*demo|walkthrough|dashboard|preview|step[-\s]?by[-\s]?step/.test(hay)) return 'scroll-to-section';
   return undefined;
 }
 
@@ -561,7 +569,9 @@ const actionLabel = (type: InteractionActionType, lang?: string) => L(lang, ACTI
 function resolveFamily(input: InteractionContractInput): { family: Family; chat: boolean } {
   const cat = (input.conceptCategory || '').toLowerCase().trim();
   const text = `${input.prompt || ''} ${input.brief?.type || ''} ${input.brief?.coreIdea || ''} ${input.brief?.style || ''} ${input.artMode || ''}`.toLowerCase();
-  const chat = cat === 'ai' || /(chatbot|chat ?bot|\bassistant\b|copilot|conversational|sohbet|yapay ?zek)/i.test(text);
+  // Phase 12F — chat is true ONLY with explicit conversational evidence. `cat === 'ai'`
+  // (or a bare "assistant"/"copilot"/"yapay zeka") no longer forces a chat surface.
+  const chat = hasExplicitChatIntent(text);
   let family: Family | undefined = CATEGORY_FAMILY[cat];
   if (!family) {
     for (const [f, re] of FAMILY_KEYWORDS) { if (re.test(text)) { family = f; break; } }
@@ -619,9 +629,14 @@ function build(input: InteractionContractInput): InteractionContract {
   if (family === 'ai' || family === 'saas') {
     const demo = find(RE.demo);
     if (chat && demo) {
-      primary = mk('open-chat-demo', primaryLabel, { targetSectionId: demo.id, priority: 'primary', reason: 'AI/chat concept — the hero CTA opens a real chat/demo panel, not a scroll.' });
+      primary = mk('open-chat-demo', primaryLabel, { targetSectionId: demo.id, priority: 'primary', reason: 'Explicit chat concept — the hero CTA opens a real chat/demo panel, not a scroll.' });
       addSection(demo.id, mk('open-chat-demo', clean(demo.name), { sourceSectionId: demo.id, targetSectionId: demo.id, priority: 'primary', reason: 'The product-demo section becomes an interactive chat/demo panel.' }));
       required.add('chat-demo-panel');
+    } else if (demo) {
+      // Phase 12F — a NON-chat AI/SaaS product: the hero CTA scrolls to the product
+      // workflow/demo. No chat panel, no chat-demo-panel requirement.
+      primary = mk('scroll-to-section', primaryLabel, { targetSectionId: demo.id, priority: 'primary', reason: 'Non-chat AI/SaaS product — the hero CTA scrolls to the product workflow/demo.' });
+      addSection(demo.id, mk('scroll-to-section', clean(demo.name), { sourceSectionId: demo.id, targetSectionId: demo.id, priority: 'primary', reason: 'The product-demo section presents the product workflow.' }));
     }
     const pricing = find(RE.pricing);
     const security = find(RE.security);
@@ -703,7 +718,15 @@ function build(input: InteractionContractInput): InteractionContract {
   // stated a primary experience; otherwise the family choice stands. Website/demo
   // only — every mapped action is a front-end surface, never a real product.
   const plan = input.experiencePlan;
-  const planType = planPrimaryActionType(plan);
+  const planTypeRaw = planPrimaryActionType(plan);
+  // Phase 12F — deterministic concept correctness WINS: a plan-chosen chat action is
+  // rejected when the authoritative prompt/brief carries no explicit chat evidence. It
+  // falls back to a safe scroll-to-product-workflow action (never a chat panel).
+  const authoritativeText = `${input.prompt || ''} ${input.brief?.coreIdea || ''} ${input.brief?.type || ''}`;
+  const planType: InteractionActionType | undefined =
+    (planTypeRaw === 'open-chat-demo' && !hasExplicitChatIntent(authoritativeText))
+      ? (find(RE.demo) ? 'scroll-to-section' : undefined)
+      : planTypeRaw;
   if (planType) {
     const targetForType = (t: InteractionActionType): { id: string; name: string } | undefined => {
       switch (t) {

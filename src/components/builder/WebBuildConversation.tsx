@@ -540,6 +540,20 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
     // rendered visual test is done manually after Phase 12E. Never shows raw JSON.
     const issueLine = (i: { severity: string; category: string; files: string[]; evidence: string }): string =>
       shortStr(`${i.severity} · ${i.category} · ${i.files[0] || ''}${i.evidence ? ` · ${i.evidence}` : ''}`, 140);
+    // Phase 12F — STRUCTURAL contract-repair diagnostics (owner-only). SEPARATE from the
+    // Phase 12E design-quality repair. Runs when the initial project parsed but failed
+    // Phase 12C validation, before any fallback.
+    const fcr = step.artifacts?.frontendBuilderContractRepair;
+    if (fcr) {
+      ownerRows.push(['frontendContractRepair', fcr.status]);
+      ownerRows.push(['frontendContractRepairAttempted', String(fcr.attempted)]);
+      ownerRows.push(['frontendContractRepairAccepted', String(fcr.accepted)]);
+      ownerRows.push(['frontendContractRepairInitialErrors', String(fcr.initialErrorCount)]);
+      if (fcr.initialErrorCodes.length) ownerRows.push(['frontendContractRepairInitialErrorCodes', fcr.initialErrorCodes.slice(0, 8).join(', ')]);
+      ownerRows.push(['frontendContractRepairFinalValidation', fcr.finalValidationStatus]);
+      ownerRows.push(['frontendContractRepairFinalErrors', String(fcr.finalErrorCount)]);
+      ownerRows.push(['frontendContractRepairReason', shortStr(fcr.reason, 160)]);
+    }
     const fir = step.artifacts?.frontendBuilderInitialReview;
     if (fir) {
       ownerRows.push(['frontendInitialReview', fir.status]);
@@ -846,7 +860,22 @@ function CompletedPlanSummary({ step }: { step: WebBuildStep }) {
       'Ayrılmış ön yüz projesi tüketime uygun olmadığı için dahili oluşturucu ve dosyalar etkin kalıyor; Phase 12E tasarım incelemesi çalışmadı. Tüm Dosyalar eşleşmesi: bekliyor.',
     );
   }
-  const quality = `${disclaimer} ${parity}`;
+  // Phase 12F — honest structural contract-repair sentence (recovery of an invalid
+  // initial project). Never claims compilation / browser / runtime / visual approval.
+  const contractRepair = step.artifacts?.frontendBuilderContractRepair;
+  let contractSentence = '';
+  if (contractRepair?.status === 'accepted') {
+    contractSentence = L(
+      'The initial model-native project failed static contract validation. One bounded structural repair succeeded, and the repaired project continued to design-quality review.',
+      'İlk model-native proje statik sözleşme doğrulamasını geçemedi. Tek sınırlı yapısal düzeltme başarılı oldu ve düzeltilmiş proje tasarım kalitesi incelemesine devam etti.',
+    );
+  } else if (contractRepair && (contractRepair.status === 'rejected' || contractRepair.status === 'failed')) {
+    contractSentence = L(
+      'The initial model-native project and its single structural repair did not pass static validation, so the internal fallback remains active.',
+      'İlk model-native proje ve tek yapısal düzeltme statik doğrulamayı geçemedi; bu nedenle dahili yedek görünüm aktif kaldı.',
+    );
+  }
+  const quality = `${disclaimer} ${parity}${contractSentence ? ` ${contractSentence}` : ''}`;
 
   return (
     <div className="space-y-1 pt-0.5">

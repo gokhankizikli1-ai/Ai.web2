@@ -16,6 +16,7 @@ import {
   type FrontendBuildSpecification, type FrontendBuilderRawArtifact,
   type FrontendBuilderValidationArtifact, type FrontendBuilderValidationStatus,
   type FrontendBuilderConsumptionArtifact, type FrontendBuilderQualityPipelineResult,
+  type FrontendBuilderContractRepairArtifact,
 } from '@/lib/webBuildAgents';
 import { deriveAgentSectionArchitecture } from '@/lib/webBuildSectionArchitecture';
 import { deriveFrontendBuildSpecification } from '@/lib/webBuildFrontendSpec';
@@ -548,6 +549,127 @@ export function attachFrontendBuilderQualityResult(
     };
 
     const steps = Array.isArray(payload.steps) ? payload.steps : [];
+    const nextSteps = steps.length
+      ? steps.map((s, i) => {
+          if (i !== steps.length - 1) return s;
+          if (!accepted) return { ...s, artifacts: patch(s.artifacts) };
+          return {
+            ...s,
+            files: repairedFiles,
+            activity: rebuildActivityForConsumed(s.activity, repairedFiles),
+            summary: recomputeSummaryForConsumed(s.summary, repairedFiles),
+            planningDiagnostics: clearCodeContractPending(s.planningDiagnostics),
+            artifacts: patch(s.artifacts),
+          };
+        })
+      : steps;
+
+    const rootPatched: WebBuildPayload = { ...payload, artifacts: patch(payload.artifacts), steps: nextSteps };
+    if (!accepted) return rootPatched;
+    return {
+      ...rootPatched,
+      files: repairedFiles,
+      activity: rebuildActivityForConsumed(payload.activity, repairedFiles),
+      planningDiagnostics: clearCodeContractPending(payload.planningDiagnostics),
+    };
+  } catch {
+    return payload;
+  }
+}
+
+/**
+ * Attach the Phase 12F STRUCTURAL contract-repair outcome IMMUTABLY at the root + latest
+ * step (older steps never change; no new WebBuild step). When the repair is accepted, the
+ * repaired, re-validated project becomes the active model-native project — replacing the
+ * internal fallback that the invalid initial project produced: files, activity and summary
+ * are refreshed exactly as Phase 12D consumption does, the active validation + consumption
+ * artifacts switch to the repaired project (model-native / model-native-sandbox), and the
+ * obsolete fallback code-contract diagnostics are cleared. The original `frontendBuilderRaw`
+ * is preserved as evidence of the initial generation; the initial invalid-validation
+ * evidence is retained inside the contract-repair artifact. When rejected, the fallback is
+ * untouched and only the artifact + enforcement are attached. Never claims consumption when
+ * the repaired validation is not valid. Pure + fail-open: returns the input on any error.
+ *
+ * Shares the SAME consumption helpers (diffFiles / rebuildActivityForConsumed /
+ * recomputeSummaryForConsumed / clearCodeContractPending) as the initial Phase 12D
+ * consumption, so an accepted contract-repair project consumes with identical semantics.
+ * Repaired files are diffed against the PREVIOUS completed user turn — never this turn's
+ * temporary internal synthesis.
+ */
+export function attachFrontendBuilderContractRepairResult(
+  payload: WebBuildPayload,
+  contractRepair: FrontendBuilderContractRepairArtifact,
+  acceptedValidation: FrontendBuilderValidationArtifact | null,
+): WebBuildPayload {
+  try {
+    const accepted =
+      contractRepair.status === 'accepted' &&
+      !!acceptedValidation &&
+      acceptedValidation.status === 'valid' &&
+      acceptedValidation.readyForConsumption === true &&
+      acceptedValidation.files.length > 0;
+
+    const steps = Array.isArray(payload.steps) ? payload.steps : [];
+    const previousFiles: WebBuildFile[] | undefined =
+      steps.length >= 2 ? steps[steps.length - 2]?.files : undefined;
+
+    const repairedFiles: WebBuildFile[] = accepted
+      ? diffFiles(previousFiles, (acceptedValidation as FrontendBuilderValidationArtifact).files.map((f) => ({
+          path: f.path,
+          content: f.content,
+          language: f.language,
+          summary: 'Model-native file recovered by the Phase 12F structural contract repair',
+        })))
+      : [];
+
+    const consumption: FrontendBuilderConsumptionArtifact | undefined = accepted
+      ? {
+          version: 'frontend-builder-consumption-v1',
+          status: 'model-native',
+          fileSource: 'model-native',
+          allFilesSource: 'model-native',
+          previewSource: 'model-native-sandbox',
+          consumedFileCount: repairedFiles.length,
+          consumedCharCount: (acceptedValidation as FrontendBuilderValidationArtifact).totalCharCount,
+          validationStatus: 'valid',
+          readyForConsumption: true,
+          reason: 'The structurally repaired model-native project (Phase 12F contract repair) replaced the internal fallback and now drives All Files and the isolated runtime Preview.',
+        }
+      : undefined;
+
+    const enforcePatch: Partial<WebBuildEnforcement> = {
+      didAttemptFrontendBuilderContractRepair: contractRepair.attempted,
+      didAcceptFrontendBuilderContractRepair: contractRepair.accepted,
+      frontendBuilderContractRepairStatus: contractRepair.status,
+      frontendBuilderContractRepairInitialErrorCount: contractRepair.initialErrorCount,
+      frontendBuilderContractRepairInitialErrorCodes: contractRepair.initialErrorCodes,
+      frontendBuilderContractRepairFinalValidationStatus: contractRepair.finalValidationStatus,
+      frontendBuilderContractRepairFinalErrorCount: contractRepair.finalErrorCount,
+      ...(accepted
+        ? {
+            didConsumeFrontendBuilderFiles: true,
+            frontendBuilderConsumptionStatus: 'model-native' as const,
+            frontendBuilderFileSource: 'model-native' as const,
+            frontendBuilderAllFilesSource: 'model-native' as const,
+            frontendBuilderPreviewSource: 'model-native-sandbox' as const,
+            frontendBuilderConsumedFileCount: repairedFiles.length,
+            frontendBuilderConsumedCharCount: (acceptedValidation as FrontendBuilderValidationArtifact).totalCharCount,
+            frontendBuilderConsumptionReason: consumption?.reason,
+          }
+        : {}),
+    };
+
+    const patch = (a: WebBuildArtifacts | undefined): WebBuildArtifacts => {
+      const next: WebBuildArtifacts = { ...(a || {}) };
+      next.frontendBuilderContractRepair = contractRepair;
+      if (accepted && acceptedValidation && consumption) {
+        next.frontendBuilderValidation = acceptedValidation;
+        next.frontendBuilderConsumption = consumption;
+      }
+      next.enforcement = a?.enforcement ? { ...a.enforcement, ...enforcePatch } : a?.enforcement;
+      return next;
+    };
+
     const nextSteps = steps.length
       ? steps.map((s, i) => {
           if (i !== steps.length - 1) return s;

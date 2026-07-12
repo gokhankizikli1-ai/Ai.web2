@@ -22,6 +22,10 @@ import { designTokensForBrief, type InferredBrief, type DesignTokens } from '@/l
 import { deriveDesignSystemFromStrategy, selectPaletteFamily, PALETTE_FAMILIES, type PaletteFamily } from '@/lib/webBuildDesignSystem';
 import type { WebBuildLayoutPlan, HeroComposition, SectionVariant } from '@/lib/webBuildLayoutPlan';
 import { deriveInteractionContract, type InteractionContract } from '@/lib/webBuildInteractionContract';
+import {
+  resolveProductIntent, hasExplicitChatIntent,
+  type ProductIntent, type ProductLang,
+} from '@/lib/webBuildProductIntent';
 
 type Lang = 'en' | 'tr' | string;
 const L = (lang: Lang, en: string, tr: string) => (lang === 'tr' ? tr : en);
@@ -208,7 +212,9 @@ export interface ConceptAuthority {
  * the pipeline keeps its previous behaviour). */
 export type DemoSurfaceIntent =
   | 'chat-demo' | 'product-flow-demo' | 'dashboard-demo' | 'catalog-demo'
-  | 'booking-demo' | 'content-demo' | 'none';
+  | 'booking-demo' | 'content-demo' | 'none'
+  // Phase 12F — additive, backward-compatible families for non-chat products.
+  | 'workflow-demo' | 'calculator-demo' | 'assessment-demo';
 
 /* ── Model-native Design Plan (Phase 9A) ──────────────────────────────────
  * The model's OWN design decisions (from the visible `## Design Thinking Plan`),
@@ -1304,6 +1310,16 @@ export interface WebBuildEnforcement {
   frontendBuilderAcceptanceStatus?: string;
   frontendBuilderActiveProject?: string;
   frontendBuilderRenderedVisualTestStatus?: 'pending-manual-test';
+  /* ── Frontend Builder STRUCTURAL contract-repair trace (Phase 12F, optional) ────
+   *  SEPARATE from the Phase 12E design-quality repair flags — a structural repair
+   *  fixes machine-contract errors so a valid model-native project can exist. */
+  didAttemptFrontendBuilderContractRepair?: boolean;
+  didAcceptFrontendBuilderContractRepair?: boolean;
+  frontendBuilderContractRepairStatus?: string;
+  frontendBuilderContractRepairInitialErrorCount?: number;
+  frontendBuilderContractRepairInitialErrorCodes?: string[];
+  frontendBuilderContractRepairFinalValidationStatus?: string;
+  frontendBuilderContractRepairFinalErrorCount?: number;
 }
 
 /* ── Frontend Build Specification (Phase 12A) ─────────────────────────────────
@@ -1749,7 +1765,11 @@ export interface FrontendBuilderAcceptanceArtifact {
 
   status: 'approved' | 'repaired-approved' | 'manual-review-required' | 'skipped';
 
-  activeProject: 'initial-model-native' | 'repaired-model-native' | 'internal-fallback';
+  activeProject: 'initial-model-native' | 'repaired-model-native' | 'internal-fallback'
+    // Phase 12F — the active project after an accepted STRUCTURAL contract repair (before
+    // any Phase 12E design-quality repair). A structurally repaired project is NEVER
+    // described as internal-fallback.
+    | 'contract-repaired-model-native';
 
   initialReviewPassed: boolean;
   repairAttempted: boolean;
@@ -1761,6 +1781,42 @@ export interface FrontendBuilderAcceptanceArtifact {
   runtimeCompilationReviewed: false;
 
   reason: string;
+}
+
+/* ── Frontend Builder STRUCTURAL contract repair (Phase 12F) ───────────────────
+ * The bounded record of the single structural contract-repair attempt that runs when
+ * the INITIAL model-native project parsed but FAILED Phase 12C static validation, BEFORE
+ * falling back to internal synthesis. This is a SEPARATE fact from the Phase 12E
+ * design-quality repair: contract repair fixes machine-contract / structural errors so a
+ * valid model-native project can exist; quality repair fixes design-quality issues AFTER a
+ * valid project exists. Never collapse them into one artifact or status. Additive +
+ * optional + backward compatible; all arrays/strings bounded. */
+export interface FrontendBuilderContractRepairArtifact {
+  version: 'frontend-contract-repair-v1';
+
+  status: 'not-run' | 'completed' | 'failed' | 'rejected' | 'accepted';
+
+  attempted: boolean;
+  accepted: boolean;
+
+  initialValidationStatus: 'invalid' | 'not-run';
+  initialErrorCount: number;
+  initialWarningCount: number;
+  initialErrorCodes: string[];
+
+  finalValidationStatus: 'not-run' | 'valid' | 'invalid';
+  finalErrorCount: number;
+  finalWarningCount: number;
+
+  generatedFileCount: number;
+  generatedCharCount: number;
+
+  reason: string;
+
+  mode: 'frontend_builder';
+  model?: string;
+  provider?: string;
+  requestId?: string;
 }
 
 /* ── Transient Phase 12E raw review response (NOT persisted) ───────────────────
@@ -1865,6 +1921,11 @@ export interface WebBuildArtifacts {
    *  React project; 'fallback' → the deterministic section renderer + synthesized
    *  files remain active. Optional → old builds load. */
   frontendBuilderConsumption?: FrontendBuilderConsumptionArtifact;
+  /** Phase 12F — the single STRUCTURAL contract-repair record. Present only when the
+   *  initial model-native project parsed but failed Phase 12C validation and a bounded
+   *  contract repair was attempted before fallback. SEPARATE from the Phase 12E design-
+   *  quality repair. Optional → old builds load. */
+  frontendBuilderContractRepair?: FrontendBuilderContractRepairArtifact;
   /** Phase 12E — the STATIC model design-quality review of the active model-native
    *  project (initial stage). STATIC only: no screenshot/DOM/runtime/Sandpack. Present
    *  only when Phase 12E ran (consumption was model-native). Optional → old builds load. */
@@ -2155,19 +2216,6 @@ const GENERIC_FILLER_LABELS = [
   'keşif', 'teslim', 'destek', 'kaliteli hizmet', 'detaylı bilgi', 'süreçlerimiz', 'ne yapıyoruz',
 ];
 
-/** Honest, concept-specific section labels for an AI-chatbot / SaaS product demo
- *  site (display-only; no metrics/logos/claims). Used to replace generic filler. */
-const AI_CHATBOT_SECTION_LABELS = (lang: Lang): string[] => [
-  L(lang, 'Chat experience', 'Sohbet deneyimi'),
-  L(lang, 'Answer routing', 'Yanıt yönlendirme'),
-  L(lang, 'Support handoff', 'Destek devri'),
-  L(lang, 'Knowledge base preview', 'Bilgi tabanı önizleme'),
-  L(lang, 'Channel integrations', 'Kanal entegrasyonları'),
-  L(lang, 'Security controls', 'Güvenlik kontrolleri'),
-  L(lang, 'Conversation overview', 'Konuşma özeti'),
-  L(lang, 'Product demo', 'Ürün demosu'),
-];
-
 /* ── Model-native Design Plan normalization (Phase 9A) ────────────────────── */
 
 /** Split a comma/semicolon/• list line into trimmed, non-empty items. */
@@ -2303,41 +2351,46 @@ export function deriveThinkingLedger(
   const verticalLabel = targetVertical || '';
 
   const hay = [prompt, brief.coreIdea, brief.type, brief.goal, brief.audience].filter(Boolean).join(' ').toLowerCase();
-  const isChatbot = /chatbot|chat\s*bot|assistant|conversation|sohbet|asistan/.test(hay);
-  const isAiSaas = primaryLc === 'ai' || primaryLc === 'saas' || /\bai\b|artificial|chatbot|assistant|agentic|llm|\bsaas\b|yapay\s*zek/.test(hay);
-  // Dashboard is ONLY the demo surface when the prompt EXPLICITLY asks for it.
-  const dashboardRequested = /\bdashboard\b|analytics|admin\s*panel|control\s*panel|\bkpi\b|reporting|gösterge\s*panel|yönetim\s*panel/.test(hay);
-
-  const languageIntent = L(lang, lang === 'tr' ? 'Turkish' : 'English', lang === 'tr' ? 'Türkçe' : 'İngilizce');
 
   // Phase 9A: the model's OWN Design Thinking Plan (visible, structured) — normalized
   // to the layout/palette vocabulary. When present it controls taste/composition.
   const modelDesignPlan = deriveModelDesignPlan(brief);
 
-  let demoSurfaceIntent: DemoSurfaceIntent = 'none';
-  if (isChatbot) demoSurfaceIntent = 'chat-demo';
-  else if (isAiSaas) demoSurfaceIntent = dashboardRequested ? 'dashboard-demo' : 'product-flow-demo';
-  else if (primaryLc === 'marketplace') demoSurfaceIntent = 'catalog-demo';
-  else if (primaryLc === 'hospitality' || /reservation|booking|randevu|rezervasyon/.test(hay)) demoSurfaceIntent = 'booking-demo';
-  else if (primaryLc === 'archive' || primaryLc === 'portfolio' || primaryLc === 'education') demoSurfaceIntent = 'content-demo';
-  // The model's explicit demo-surface decision refines the intent (dashboard only
-  // when the model actually chose it) — but never flips a chatbot away from chat.
-  if (modelDesignPlan?.demoModule && !isChatbot) {
-    if (modelDesignPlan.demoModule === 'data-dashboard') demoSurfaceIntent = 'dashboard-demo';
-    else if (modelDesignPlan.demoModule === 'product-showcase') demoSurfaceIntent = 'product-flow-demo';
-    else if (modelDesignPlan.demoModule === 'catalog-archive') demoSurfaceIntent = 'catalog-demo';
-  }
+  // Phase 12F — the shared product-intent authority resolves the honest demo family,
+  // domain-native section labels and drift guards. Chat and store surfaces require
+  // EXPLICIT evidence; the original prompt + authoritative concept win over generic
+  // AI/SaaS/"assistant"/ecommerce-vertical defaults, and a model plan that drifts to
+  // "chat" is rejected when the prompt carries no explicit chat evidence.
+  const intent: ProductIntent = resolveProductIntent({
+    prompt,
+    briefText: [brief.coreIdea, brief.type, brief.goal, brief.audience].filter(Boolean).join(' '),
+    primaryConcept: primaryLc,
+    targetVertical,
+    modelDemoModule: modelDesignPlan?.demoModule,
+    lang: (lang === 'tr' ? 'tr' : 'en') as ProductLang,
+  });
+  const explicitChat = intent.explicitChat;
+  const isAiSaas = primaryLc === 'ai' || primaryLc === 'saas' || intent.softwareProduct;
+  // Dashboard is the demo surface ONLY when the prompt EXPLICITLY asks for it.
+  const dashboardRequested = intent.explicitDashboard;
+
+  const languageIntent = L(lang, lang === 'tr' ? 'Turkish' : 'English', lang === 'tr' ? 'Türkçe' : 'İngilizce');
+
+  // The demo surface IS the resolved product-intent family — never 'chat-demo' without
+  // explicit chat evidence, never a storefront without an actual store concept.
+  const demoSurfaceIntent: DemoSurfaceIntent = intent.demoFamily as DemoSurfaceIntent;
 
   const mustNotBecome: string[] = [];
+  if (!explicitChat) mustNotBecome.push(L(lang, 'a chatbot / conversational assistant surface', 'sohbet botu / konuşmalı asistan yüzeyi'));
+  if (!intent.catalogOriented) mustNotBecome.push(L(lang, 'a storefront / shopping assistant flow', 'mağaza / alışveriş asistanı akışı'));
   if (isAiSaas) {
     if (!dashboardRequested) mustNotBecome.push(L(lang, 'analytics/admin dashboard', 'analitik/yönetim paneli'));
-    mustNotBecome.push(L(lang, 'marketplace/catalog storefront', 'pazaryeri/katalog mağazası'));
     mustNotBecome.push(L(lang, 'generic agency-service site', 'genel ajans-hizmet sitesi'));
-  } else if (primaryLc === 'marketplace') {
+  } else if (intent.catalogOriented) {
     mustNotBecome.push(L(lang, 'AI analytics dashboard', 'AI analitik paneli'));
   }
 
-  const conceptThesis = isChatbot
+  const conceptThesis = explicitChat
     ? L(lang, `A premium marketing site for an AI chatbot product${verticalLabel ? ` for ${verticalLabel}` : ''}, with a front-end-only chat demo.`,
         `Bir AI sohbet botu ürünü${verticalLabel ? ` (${verticalLabel} için)` : ''} için, yalnızca ön-yüz sohbet demolu premium bir tanıtım sitesi.`)
     : isAiSaas
@@ -2352,35 +2405,35 @@ export function deriveThinkingLedger(
     : L(lang, 'Is this the right choice, and what is the next step?',
         'Doğru seçim bu mu ve sonraki adım ne?');
 
+  // The conversion path names the RESOLVED demo family, never a hardcoded "Chat / Product demo".
+  const demoLabelBare = intent.demoFamily.replace('-demo', '').replace('-', ' ');
   const primaryConversionPath = isAiSaas
-    ? L(lang, 'Landing → preview-only lead capture → Chat / Product demo',
-        'İniş → yalnızca-önizleme kayıt → Sohbet / Ürün demosu')
+    ? L(lang, `Landing → preview-only lead capture → ${demoLabelBare} demo`,
+        `İniş → yalnızca-önizleme kayıt → ${demoLabelBare} demosu`)
     : L(lang, 'Landing → primary action', 'İniş → birincil eylem');
 
-  const demoSurfaceMustShow = isChatbot
-    ? [L(lang, 'A real conversation flow (question → routed answer)', 'Gerçek bir konuşma akışı (soru → yönlendirilmiş yanıt)'),
-       L(lang, 'A clear support handoff moment', 'Net bir destek devri anı'),
-       L(lang, 'Channel / integration context', 'Kanal / entegrasyon bağlamı')]
-    : isAiSaas
-      ? [L(lang, 'The core product flow, end to end', 'Çekirdek ürün akışı, baştan sona'),
-         L(lang, 'What the product actually does', 'Ürünün gerçekte ne yaptığı')]
-      : [L(lang, 'The core experience this concept promises', 'Bu konseptin vaat ettiği çekirdek deneyim')];
+  const demoSurfaceMustShow = intent.demoMustShow.slice();
 
   const demoSurfaceMustAvoid = [
     L(lang, 'fake metrics / counts', 'sahte metrik / sayı'),
     L(lang, 'fake logos or testimonials', 'sahte logo veya referans'),
     L(lang, 'fake AI / compliance (SOC2/ISO) claims', 'sahte AI / uyumluluk (SOC2/ISO) iddiaları'),
+    ...intent.demoMustAvoid,
     ...(isAiSaas && !dashboardRequested ? [L(lang, 'unrelated analytics dashboards', 'ilgisiz analitik panelleri')] : []),
   ];
 
-  const sectionSpecificityBar = isAiSaas
-    ? L(lang, 'Every section must speak to the actual product (chat, routing, integrations, security, pricing, demo) — not generic agency filler.',
-        'Her bölüm gerçek ürüne (sohbet, yönlendirme, entegrasyon, güvenlik, fiyat, demo) hitap etmeli — genel ajans dolgusu değil.')
+  // A CONCEPT-SPECIFIC specificity bar — not the old hardcoded "chat, routing,
+  // integrations, security, pricing, demo" sentence that assumed every AI product is a chatbot.
+  const sectionSpecificityBar = intent.preferredSectionLabels.length
+    ? L(lang, `Every section must prove something concept-specific (e.g. ${intent.preferredSectionLabels.slice(0, 4).join(', ')}) — not generic agency filler.`,
+        `Her bölüm konsepte özgü bir şey kanıtlamalı (ör. ${intent.preferredSectionLabels.slice(0, 4).join(', ')}) — genel ajans dolgusu değil.`)
     : L(lang, 'Every section must prove something concept-specific, not generic filler.',
         'Her bölüm konsepte özgü bir şey kanıtlamalı, genel dolgu değil.');
 
-  const forbiddenGenericLabels = GENERIC_FILLER_LABELS.slice();
-  const preferredSectionLabels = isAiSaas ? AI_CHATBOT_SECTION_LABELS(lang) : [];
+  // Generic filler PLUS the intent's forbidden drift tokens (chat labels unless chat is
+  // explicit; store labels unless the concept is a store) so the Fixer repairs drift.
+  const forbiddenGenericLabels = GENERIC_FILLER_LABELS.concat(intent.forbiddenDriftLabels);
+  const preferredSectionLabels = intent.preferredSectionLabels.slice();
 
   const languageRules = L(lang,
     `Write ALL website copy and fallback labels in ${lang === 'tr' ? 'Turkish' : 'English'}; never mix a fallback label from another language.`,
@@ -2605,10 +2658,23 @@ export function deriveExperienceBlueprint(
     : 'multi-section-landing';
 
   // ── CTA strategy (Task 5) — display/planning level. ──
+  // Phase 12F — a B2B product landing's secondary CTA follows the RESOLVED demo family,
+  // never a universal "See Chat Flow". Chat is offered only when the ledger resolved an
+  // explicit chat demo.
+  const df = ledger?.demoSurfaceIntent;
+  // A store surface is legitimate ONLY when the store is the primary experience.
+  const storeExperience = siteExperienceType === 'ecommerce-store' || siteExperienceType === 'marketplace';
+  const b2bSecondaryCTA =
+      df === 'chat-demo' ? L(lang, 'See Chat Flow', 'Sohbet Akışını Gör')
+    : df === 'dashboard-demo' ? L(lang, 'Preview Dashboard', 'Paneli Önizle')
+    : df === 'assessment-demo' ? L(lang, 'Check Readiness', 'Hazırlığı Kontrol Et')
+    : df === 'calculator-demo' ? L(lang, 'Try Calculator', 'Hesaplayıcıyı Dene')
+    : df === 'workflow-demo' ? L(lang, 'See Product Workflow', 'Ürün Akışını Gör')
+    : L(lang, 'See Product Demo', 'Ürün Demosunu Gör');
   const cta = ((): { primary: string; secondary?: string } => {
     switch (T) {
       case 'b2b-product-landing':
-        return { primary: L(lang, 'Book a Demo', 'Demo Ayarla'), secondary: L(lang, 'See Chat Flow', 'Sohbet Akışını Gör') };
+        return { primary: L(lang, 'Book a Demo', 'Demo Ayarla'), secondary: b2bSecondaryCTA };
       case 'consumer-product-landing':
       case 'mobile-app':
         return { primary: asksDownload ? L(lang, 'Download', 'İndir') : (asksWaitlist ? L(lang, 'Join Waitlist', 'Listeye Katıl') : L(lang, 'Try the Demo', 'Demoyu Dene')), secondary: L(lang, 'See Features', 'Özellikleri Gör') };
@@ -2648,14 +2714,31 @@ export function deriveExperienceBlueprint(
 
   switch (T) {
     case 'b2b-product-landing':
-    case 'dashboard-preview':
-      requiredPageGroups = ['Hero', 'Product Demo', 'How it works', 'Integrations', 'Security & Trust', 'Contact Sales / Book Demo'];
-      optionalPageGroups = ['Pricing', 'FAQ', 'Use Cases'];
+    case 'dashboard-preview': {
+      // Phase 12F — concept-specific B2B spine. The demo group name follows the resolved
+      // family; Integrations is required only when genuinely signalled; the trust group
+      // is methodology-based for a compliance product (never confused with SOC2/ISO).
+      const isCompliance = df === 'workflow-demo' && /complian|regulat|cbam|emission|carbon|tax|audit|gdpr|kvkk|esg|uyumluluk|mevzuat|raporlama|karbon|emisyon|sertifika/.test(`${hay} ${vertical}`);
+      const demoGroup = df === 'chat-demo' ? 'Chat Experience'
+        : df === 'dashboard-demo' ? 'Dashboard Preview'
+        : df === 'workflow-demo' ? (isCompliance ? 'Data Collection Workflow' : 'Product Workflow')
+        : df === 'calculator-demo' ? 'Calculator'
+        : df === 'assessment-demo' ? 'Readiness Check'
+        : 'Product Demo';
+      const trustGroup = isCompliance ? 'Trust & Methodology' : 'Security & Trust';
+      requiredPageGroups = ['Hero', demoGroup, 'How it works', trustGroup, 'Contact Sales / Book Demo'];
+      if (isCompliance) requiredPageGroups.splice(2, 0, 'Scope & Eligibility', 'Report Readiness');
+      if (asksIntegrationsHint) requiredPageGroups.push('Integrations');
+      else optionalPageGroups = ['Integrations'];
+      optionalPageGroups = optionalPageGroups.concat(['Pricing', 'FAQ', 'Use Cases']);
       forbid('Menu / Gallery / Reservation', notThisType(L(lang, 'Restaurant/portfolio sections', 'Restoran/portföy bölümleri')));
+      if (df !== 'chat-demo') forbid('Chat Experience / Conversation Flow / Human Handoff', notThisType(L(lang, 'A chatbot surface (no explicit chat product)', 'Bir sohbet botu yüzeyi (açık sohbet ürünü yok)')));
+      if (!storeExperience) forbid('Shopper Flow / Store Integrations / Product Recommendations', notThisType(L(lang, 'A storefront (the customer vertical is not the product)', 'Bir mağaza (müşteri dikeyi ürün değildir)')));
       if (!providedProof) { forbid('Testimonials', noSourceProof); forbid('Case Studies', noSourceProof); }
       forbid('Fake logo strip', L(lang, 'No real customer logos to show.', 'Gösterilecek gerçek müşteri logosu yok.'));
       forbid('Fake metrics / certifications', L(lang, 'No verified metrics or SOC2/ISO to claim.', 'Doğrulanmış metrik veya SOC2/ISO iddiası yok.'));
       break;
+    }
     case 'consumer-product-landing':
     case 'mobile-app':
       requiredPageGroups = ['Hero', 'Features', 'How it works', asksDownload ? 'Download' : (asksWaitlist ? 'Waitlist' : 'Product Demo'), 'FAQ'];
@@ -2761,6 +2844,20 @@ export function deriveExperienceBlueprint(
   if (isLocalLike && (asksPricing || pageArchitecture?.pricingNeeded)) blueprintWarnings.push(L(lang, 'A local business rarely needs SaaS pricing — keep it only if explicitly requested.', 'Yerel bir işletme nadiren SaaS fiyatlandırmasına ihtiyaç duyar — yalnızca açıkça istenirse tut.'));
   if ((T === 'portfolio' || isLocalLike) && (pageArchitecture?.demoPlacement && pageArchitecture.demoPlacement !== 'none')) blueprintWarnings.push(L(lang, 'This site type should not carry a chat/dashboard product demo unless requested.', 'Bu site türü, istenmedikçe sohbet/panel ürün demosu taşımamalı.'));
   if (!providedProof) blueprintWarnings.push(L(lang, 'Proof sections (testimonials/case studies/logos/metrics) are disallowed — no real source to avoid fabrication.', 'Kanıt bölümleri (referans/vaka/logo/metrik) devre dışı — uydurmayı önlemek için gerçek kaynak yok.'));
+  // Phase 12F — product-intent contradiction warnings (non-chat concept with a chat
+  // surface, non-store product with a shopper/store surface, workflow product with a
+  // storefront/chat hero). Warn honestly; the deterministic architecture already
+  // corrects the labels upstream.
+  const secLc = secNames.toLowerCase();
+  if (df !== 'chat-demo' && /chat\s*experience|conversation\s*flow|human\s*handoff|chat\s*flow/.test(secLc)) {
+    blueprintWarnings.push(L(lang, 'Non-chat concept carries a Chat Experience section — the demo should follow the resolved product workflow, not a conversation.', 'Sohbet olmayan konsept bir Sohbet Deneyimi bölümü taşıyor — demo bir konuşma değil, çözümlenen ürün akışını izlemeli.'));
+  }
+  if (!storeExperience && /shopper\s*flow|store\s*integrat|product\s*recommendation|storefront\s*chat/.test(secLc)) {
+    blueprintWarnings.push(L(lang, 'Non-store product carries a Shopper Flow / Store Integrations section — the ecommerce vertical is the customer, not the product.', 'Mağaza olmayan ürün Alışverişçi Akışı / Mağaza Entegrasyonları taşıyor — e-ticaret dikeyi müşteridir, ürün değil.'));
+  }
+  if ((df === 'workflow-demo' || df === 'calculator-demo' || df === 'assessment-demo') && /storefront|shopper|chat\s*flow/.test(secLc)) {
+    blueprintWarnings.push(L(lang, 'Workflow/tool product uses a storefront/chat hero — use a process/workflow/checklist visual language instead.', 'İş akışı/araç ürünü mağaza/sohbet hero kullanıyor — bunun yerine süreç/iş akışı/kontrol listesi görsel dili kullanın.'));
+  }
 
   return {
     siteExperienceType: T,
@@ -4291,10 +4388,14 @@ export function derivePageArchitectureDecision(
 
   const isAi = concept === 'ai' || concept === 'saas' || /\bai\b|artificial|chatbot|chat\s*bot|assistant|agentic|\bllm\b|sohbet|asistan/.test(hay);
   const isCommerce = /ecommerce|e-?commerce|storefront|\bstore\b|\bshop\b|retail|marketplace|catalog|mağaza|e-?ticaret/.test(vhay);
+  // Phase 12F — the STORE must be the primary concept for storefront/shopper labels;
+  // a mere ecommerce/retail TARGET vertical never makes the product a store.
+  const storeConcept = concept === 'marketplace' || /\b(marketplace|storefront|online\s*store|e-?commerce\s*store)\b/.test(hay);
   const isB2B = /b2b|enterprise|sales\s*team|\bteams?\b|\bsaas\b|platform|merchant|business|kurumsal/.test(hay);
-  const isInteractive = isAi || isCommerce || /dashboard|\btool\b|onboarding|marketplace|catalog|\bsupport\b|assistant/.test(hay);
-  const wantsChat = isAi || /chat|assistant|\bsupport\b|conversation|sohbet/.test(hay);
-  const aiCommerce = isAi && isCommerce;
+  const isInteractive = isAi || isCommerce || /dashboard|\btool\b|onboarding|marketplace|catalog|workflow|process|\bsupport\b|assistant/.test(hay);
+  // Chat surfaces require EXPLICIT chat evidence — "AI"/"assistant"/"support" alone do not.
+  const wantsChat = hasExplicitChatIntent(hay);
+  const aiCommerce = wantsChat && isCommerce;
 
   // Prompt-driven inclusion signals (only include when the prompt genuinely asks).
   const asksPricing = /pricing|\bprice\b|plans?|subscription|tier|packages?|paywall|fiyat|abonelik|paket/.test(hay);
@@ -4336,13 +4437,13 @@ export function derivePageArchitectureDecision(
       : (isB2B ? L(lang, 'Contact Sales', 'Satışla İletişim') : L(lang, 'See how it works', 'Nasıl çalıştığını gör')));
 
   // Recommended concept-specific section spine (labels only; ids stay original).
-  const flowLabel = isCommerce ? L(lang, 'Shopper Flow', 'Alışverişçi Akışı') : L(lang, 'How it works', 'Nasıl çalışır');
-  const demoLabel = isCommerce ? L(lang, 'Chat Experience', 'Sohbet Deneyimi') : L(lang, 'Product Demo', 'Ürün Demosu');
+  const flowLabel = storeConcept ? L(lang, 'Shopper Flow', 'Alışverişçi Akışı') : L(lang, 'How it works', 'Nasıl çalışır');
+  const demoLabel = wantsChat ? L(lang, 'Chat Experience', 'Sohbet Deneyimi') : L(lang, 'Product Demo', 'Ürün Demosu');
   const recommendedSections: string[] = [L(lang, 'Hero', 'Hero')];
   if (demoPlacement !== 'none' && wantsChat) recommendedSections.push(demoLabel);
   recommendedSections.push(flowLabel);
-  if (integrationsNeeded) recommendedSections.push(isCommerce ? L(lang, 'Store Integrations', 'Mağaza Entegrasyonları') : L(lang, 'Integrations', 'Entegrasyonlar'));
-  if (securityNeeded) recommendedSections.push(isCommerce ? L(lang, 'Security & Store Trust', 'Güvenlik ve Mağaza Güveni') : L(lang, 'Security & Trust', 'Güvenlik ve Güven'));
+  if (integrationsNeeded) recommendedSections.push(storeConcept ? L(lang, 'Store Integrations', 'Mağaza Entegrasyonları') : L(lang, 'Integrations', 'Entegrasyonlar'));
+  if (securityNeeded) recommendedSections.push(storeConcept ? L(lang, 'Security & Store Trust', 'Güvenlik ve Mağaza Güveni') : L(lang, 'Security & Trust', 'Güvenlik ve Güven'));
   recommendedSections.push(pricingNeeded ? L(lang, 'Pricing', 'Fiyatlandırma') : (isB2B ? L(lang, 'Book a Demo', 'Demo Ayarla') : L(lang, 'Try the Demo', 'Demoyu Dene')));
   recommendedSections.push(isB2B ? L(lang, 'Contact Sales', 'Satışla İletişim') : L(lang, 'Contact', 'İletişim'));
 
@@ -4401,8 +4502,8 @@ export function derivePageArchitectureDecision(
   const requiredSections = uniq([L(lang, 'Hero', 'Hero'), ...(demoPlacement !== 'none' && wantsChat ? [demoLabel] : []), flowLabel, (isB2B ? L(lang, 'Contact Sales', 'Satışla İletişim') : L(lang, 'Contact', 'İletişim'))]);
   const optionalSections = uniq([
     ...(pricingNeeded ? [L(lang, 'Pricing', 'Fiyatlandırma')] : []),
-    ...(integrationsNeeded ? [isCommerce ? L(lang, 'Store Integrations', 'Mağaza Entegrasyonları') : L(lang, 'Integrations', 'Entegrasyonlar')] : []),
-    ...(securityNeeded ? [isCommerce ? L(lang, 'Security & Store Trust', 'Güvenlik ve Mağaza Güveni') : L(lang, 'Security & Trust', 'Güvenlik ve Güven')] : []),
+    ...(integrationsNeeded ? [storeConcept ? L(lang, 'Store Integrations', 'Mağaza Entegrasyonları') : L(lang, 'Integrations', 'Entegrasyonlar')] : []),
+    ...(securityNeeded ? [storeConcept ? L(lang, 'Security & Store Trust', 'Güvenlik ve Mağaza Güveni') : L(lang, 'Security & Trust', 'Güvenlik ve Güven')] : []),
   ]);
 
   return {
@@ -4491,8 +4592,11 @@ export function deriveVisualSignaturePlan(
   const isDev = /developer|\bdev\b|\bcode\b|\bcli\b|\bapi\b|sdk|terminal|deploy|programming|engineer|kod|yazılımcı/.test(hay);
   const isLocalOrEditorial = /restaurant|cafe|salon|clinic|dental|landscap|portfolio|photograph|studio|gallery|hotel|event|wedding|restoran|kuaför|klinik|portföy/.test(vhay)
     || ['landscaping', 'localservice', 'hospitality', 'portfolio', 'medical', 'legal', 'event', 'realestate'].includes(concept);
-  const wantsChat = isAi || demoIntent === 'chat-demo' || /chat|assistant|support|conversation|sohbet/.test(hay);
-  const aiCommerce = isAi && isCommerce;
+  // Phase 12F — chat-flow / conversation / shopper visuals require EXPLICIT chat evidence
+  // (or the ledger's already-corrected chat-demo family), never bare "AI"/"assistant".
+  const wantsChat = demoIntent === 'chat-demo' || hasExplicitChatIntent(hay);
+  // A storefront-chat visual needs a genuine shopping-assistant chatbot: explicit chat AND commerce.
+  const aiCommerce = wantsChat && isCommerce;
 
   // ── Hero visual signature — the single strongest identity choice. ──
   const heroVisualType: VisualSignatureHeroType = (() => {
@@ -8869,9 +8973,9 @@ export function deriveQualityDirector(input: QualityDirectorInput): QualityDirec
    *      the Fixer applies the safe display-only repairs. */
   const copySmells = detectPublicCopySmells(input.sectionItems || []);
   if (copySmells.length) {
-    const conceptSuggest = isAiSaas
-      ? 'Chat Experience / Answer Routing / Store Integrations / Support Handoff / Knowledge Base / Security Controls; CTAs: Try the Demo / See Chat Flow / Book a Demo / Contact Sales'
-      : (ledger?.preferredSectionLabels || []).slice(0, 4).join(' / ') || 'concept-specific public labels';
+    // Phase 12F — suggest the ledger's CONCEPT-NATIVE labels (product-intent-resolved),
+    // never a hardcoded chat/store label set for every AI/SaaS product.
+    const conceptSuggest = (ledger?.preferredSectionLabels || []).slice(0, 6).join(' / ') || 'concept-specific public labels';
     const byKind = (k: PublicCopySmellKind) => copySmells.filter((c) => c.kind === k);
     const internal = byKind('internal-category');
     const generic = byKind('generic-label');
@@ -10183,11 +10287,11 @@ export function deriveFixer(input: FixerInput): { artifact: FixerAgentArtifact; 
   //      Repairs DISPLAY fields only (name/headline/sub/cta/bullets), honestly (no
   //      invented metrics/logos/claims). Concept-specific maps apply for AI-chatbot
   //      /ecommerce; a universal internal-category cleanup applies to any concept.
-  const pcConcept = (ledger?.primaryConcept || authority?.primaryConcept || '').toLowerCase();
   const pcVertical = `${ledger?.targetVertical || authority?.targetVertical || authority?.audienceVertical || ''} ${promptLc}`.toLowerCase();
-  const pcIsAi = pcConcept === 'ai' || pcConcept === 'saas' || /\bai\b|chatbot|chat\s*bot|assistant|agentic|\bllm\b|sohbet|asistan/.test(promptLc);
   const pcIsCommerce = /ecommerce|e-?commerce|commerce|storefront|\bstore\b|\bshop\b|retail|marketplace|mağaza|e-?ticaret/.test(pcVertical);
-  const aiCommerce = pcIsAi && pcIsCommerce;
+  // Phase 12F — the shopping-assistant / storefront-chat copy repairs apply ONLY to a
+  // genuine explicit chat product for commerce, never to any AI/SaaS with a store vertical.
+  const aiCommerce = hasExplicitChatIntent(promptLc) && pcIsCommerce;
   const nameMap: Record<string, string> = aiCommerce ? {
     'ai product / saas': L(lang, 'AI Shopping Assistant', 'AI Alışveriş Asistanı'),
     'ai tool / productivity': L(lang, 'Storefront Chat Automation', 'Mağaza Sohbet Otomasyonu'),

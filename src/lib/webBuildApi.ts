@@ -20,6 +20,7 @@ import { type BuilderMode, buildModeContext } from '@/lib/builderMode';
 import type {
   FrontendBuildSpecification, FrontendBuilderRawArtifact,
   FrontendBuilderReviewRawArtifact, FrontendBuilderReviewStage, FrontendBuilderReviewArtifact,
+  FrontendBuilderValidationArtifact,
 } from '@/lib/webBuildAgents';
 import type { WebBuildFile } from '@/lib/webBuildPayload';
 
@@ -1725,6 +1726,133 @@ export async function generateFrontendBuilderRepairRaw(
     });
   }
   return frontendBuilderArtifact('completed', 'Phase 12E bounded repair returned a raw frontend-files-v1 response; validation has not run yet.', {
+    ...base,
+    rawResponse: reply,
+    responseCharCount: charCount,
+    truncatedForStorage: false,
+  });
+}
+
+/* ── Frontend Builder STRUCTURAL contract repair (Phase 12F) ───────────────────
+ * A single bounded `/chat` call in the SAME isolated `frontend_builder` mode that runs
+ * when the INITIAL model-native project PARSED but FAILED Phase 12C static validation —
+ * BEFORE falling back to internal synthesis. It reuses the existing transport, provider
+ * routing, request locale and fail-open discipline, and returns the existing
+ * frontend-files-v1 raw artifact shape so the UNCHANGED Phase 12C validator can validate
+ * it. This is a SEPARATE call from the Phase 12E design-quality repair.
+ *
+ * Transport rides the same guard envelope: `[FRONTEND BUILDER REQUEST]` +
+ * `[FRONTEND CONTRACT REPAIR REQUEST]` + one BEGIN/END_FRONTEND_BUILD_SPEC_JSON pair with
+ * the named contract-repair markers nested inside. The full request stays below the 125k
+ * guard cap (client cap 124k). */
+const FRONTEND_CONTRACT_REPAIR_TIMEOUT_MS = 120_000;
+const MAX_FRONTEND_CONTRACT_REPAIR_REQUEST_CHARS = 124_000;
+
+/** A COMPACT, allowlisted contract projection — only the fields a structural repair
+ *  needs. Never the whole payload / research objects / raw planning response / secrets. */
+function contractProjection(spec: FrontendBuildSpecification): Record<string, unknown> {
+  const ds = spec.designSystem;
+  const arch = spec.architecture;
+  return {
+    identity: spec.identity,
+    designSystem: {
+      selectedVisualDirection: ds.selectedVisualDirection,
+      paletteFamily: ds.paletteFamily,
+      colorTokens: ds.colorTokens,
+      typographyDirection: ds.typographyDirection,
+      heroComposition: ds.heroComposition,
+      sectionRhythm: ds.sectionRhythm,
+      surfaceRules: (ds.surfaceRules || []).slice(0, 8),
+      componentStyleRules: (ds.componentStyleRules || []).slice(0, 8),
+      templateTrapsToAvoid: (ds.templateTrapsToAvoid || []).slice(0, 8),
+    },
+    architecture: {
+      sectionOrder: arch.sectionOrder,
+      primaryCTA: arch.primaryCTA,
+      secondaryCTA: arch.secondaryCTA,
+      demoSurfaces: (arch.demoSurfaces || []).slice(0, 8),
+      statefulDemoComponents: (arch.statefulDemoComponents || []).slice(0, 8),
+      sections: (arch.sections || []).map((s) => ({
+        id: s.id, name: s.name, order: s.order,
+        headline: s.headline, subheadline: s.subheadline, primaryCTA: s.primaryCTA,
+        bullets: (s.bullets || []).slice(0, 8), componentHint: s.componentHint,
+      })),
+    },
+    outputContract: spec.outputContract,
+    honestyRules: (spec.honestyRules || []).slice(0, 16),
+  };
+}
+
+/** Serialize the structural contract-repair request. Sends ONLY the compact contract
+ *  projection, the parsed initial file path/language/content, the validation reason, up
+ *  to 12 errors and up to 8 warnings — never tokens/profile/memory/steps/activity/preview
+ *  stash/project list/provider secrets or unrelated raw planning/research objects. */
+export function buildFrontendBuilderContractRepairRequest(
+  spec: FrontendBuildSpecification,
+  validation: FrontendBuilderValidationArtifact,
+): string {
+  const input = {
+    task: 'frontend-contract-repair',
+    responseContract: 'frontend-files-v1',
+    contract: contractProjection(spec),
+    files: (validation.files || []).map((f) => ({ path: f.path, language: f.language, content: f.content })),
+    validationReason: (validation.reason || '').slice(0, 400),
+    errors: (validation.errors || []).slice(0, 12).map((e) => ({ code: e.code, message: (e.message || '').slice(0, 240), path: e.path })),
+    warnings: (validation.warnings || []).slice(0, 8).map((w) => ({ code: w.code, message: (w.message || '').slice(0, 240), path: w.path })),
+  };
+  return [
+    '[FRONTEND BUILDER REQUEST]',
+    '[FRONTEND CONTRACT REPAIR REQUEST]',
+    'Task: fix EVERY listed Phase 12C validation error and return the COMPLETE project.',
+    'This is a STRUCTURAL contract repair, not a design rewrite. Preserve the final public',
+    'copy, the section order and the corrected product/demo intent. Return ONLY a complete',
+    'frontend-files-v1 envelope — never a patch, prose or explanations.',
+    'BEGIN_FRONTEND_BUILD_SPEC_JSON',
+    'BEGIN_FRONTEND_CONTRACT_REPAIR_INPUT_JSON',
+    JSON.stringify(input),
+    'END_FRONTEND_CONTRACT_REPAIR_INPUT_JSON',
+    'END_FRONTEND_BUILD_SPEC_JSON',
+  ].join('\n');
+}
+
+/**
+ * Run the single bounded STRUCTURAL contract-repair call. Reuses the frontend-files-v1
+ * raw artifact shape so the UNCHANGED Phase 12C validator can validate the response.
+ * Fails open on every transport/mode/size problem; propagates only caller cancellation.
+ */
+export async function generateFrontendBuilderContractRepairRaw(
+  spec: FrontendBuildSpecification | undefined,
+  validation: FrontendBuilderValidationArtifact,
+  opts?: { signal?: AbortSignal },
+): Promise<FrontendBuilderRawArtifact> {
+  if (!spec) return frontendBuilderArtifact('skipped', 'No Phase 12A specification available for the contract repair.');
+  if (spec.status === 'failed-open') return frontendBuilderArtifact('skipped', 'The specification failed open; the contract repair was skipped.');
+  if (!validation.files || validation.files.length === 0) return frontendBuilderArtifact('skipped', 'No parsed initial files to contract-repair.');
+
+  const message = buildFrontendBuilderContractRepairRequest(spec, validation);
+  if (message.length > MAX_FRONTEND_CONTRACT_REPAIR_REQUEST_CHARS) {
+    return frontendBuilderArtifact('failed', `The contract-repair request (${message.length} chars) exceeds the safe request limit (${MAX_FRONTEND_CONTRACT_REPAIR_REQUEST_CHARS}).`);
+  }
+
+  const outcome = await callFrontendBuilderTask(message, FRONTEND_CONTRACT_REPAIR_TIMEOUT_MS, spec.prompt || '', opts);
+  if (!outcome.ok) return frontendBuilderArtifact('failed', outcome.reason);
+
+  const { reply, reportedMode, model, provider, requestId } = outcome.data;
+  const base: Partial<FrontendBuilderRawArtifact> = { model, provider, requestId };
+  if (reportedMode && reportedMode !== FRONTEND_BUILDER_MODE) {
+    return frontendBuilderArtifact('failed', 'Backend routed the contract-repair request to an unexpected mode.', base);
+  }
+  if (!reply.trim()) return frontendBuilderArtifact('failed', 'The contract repair returned an empty response.', base);
+  const charCount = reply.length;
+  if (charCount > MAX_FRONTEND_RAW_RESPONSE_CHARS) {
+    return frontendBuilderArtifact('failed', `The contract-repair response (${charCount} chars) exceeds the storage cap (${MAX_FRONTEND_RAW_RESPONSE_CHARS}) and cannot be validated safely.`, {
+      ...base,
+      rawResponse: reply.slice(0, MAX_FRONTEND_RAW_RESPONSE_CHARS),
+      responseCharCount: charCount,
+      truncatedForStorage: true,
+    });
+  }
+  return frontendBuilderArtifact('completed', 'Phase 12F structural contract repair returned a raw frontend-files-v1 response; validation has not run yet.', {
     ...base,
     rawResponse: reply,
     responseCharCount: charCount,
