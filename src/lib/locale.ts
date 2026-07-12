@@ -45,3 +45,70 @@ export function getRequestLocale(message?: string): RequestLocale {
   if (mode === 'auto' && message) out.message_language = detectMessageLanguage(message);
   return out;
 }
+
+/* ── Web Build website-output language authority (Phase 12F.2) ──────────────────
+ * The generated WEBSITE's content language is SEPARATE from the Chat/Korvix UI
+ * language. A Turkish website request must produce a Turkish site even when the app UI
+ * is English, and a revision preserves the existing website language unless the user
+ * explicitly asks to change it. This authority is used ONLY by Web Build — normal Chat /
+ * Research / other workspaces keep the global getRequestLocale behavior unchanged. */
+
+/** Fold to lower-case ASCII (strip diacritics) so `İngilizce`/`ingilizce`/`türkçe`
+ *  all match plain patterns regardless of Turkish casing. */
+function foldLocale(s: string): string {
+  return (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+// Explicit website-OUTPUT language requests (matched on folded text). "ingilizce" /
+// "turkce" are distinctive enough as substrings; the English words require site context.
+const REQUEST_ENGLISH_RE = /\bin english\b|\benglish (?:website|site|copy|content|version|language|text)\b|(?:website|site|copy|content|text)(?: in)? english\b|ingilizce/g;
+const REQUEST_TURKISH_RE = /\bin turkish\b|\bturkish (?:website|site|copy|content|version|language|text)\b|(?:website|site|copy|content|text)(?: in)? turkish\b|turkce/g;
+
+/** Index of the LAST match of `re` in `text`, or -1. `re` must be global. */
+function lastMatchIndex(text: string, re: RegExp): number {
+  re.lastIndex = 0;
+  let idx = -1;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    idx = m.index;
+    if (m.index === re.lastIndex) re.lastIndex += 1; // guard zero-width
+  }
+  return idx;
+}
+
+/**
+ * Resolve the website's OUTPUT language for a Web Build request. Pure, deterministic,
+ * fail-open. Precedence:
+ *   1. an explicit website-output language request in the CURRENT prompt (last wins);
+ *   2. the existing website language (a revision keeps its language);
+ *   3. the language of the current fresh-build prompt;
+ *   4. the UI language;
+ *   5. English as the final safe default.
+ */
+export function resolveWebsiteOutputLanguage(
+  prompt: string,
+  options?: { existingLanguage?: Language; uiLanguage?: Language },
+): Language {
+  try {
+    // 1. Explicit request in the current prompt — the last-mentioned language wins.
+    const folded = foldLocale(prompt);
+    const lastEng = lastMatchIndex(folded, REQUEST_ENGLISH_RE);
+    const lastTur = lastMatchIndex(folded, REQUEST_TURKISH_RE);
+    if (lastEng >= 0 || lastTur >= 0) return lastEng >= lastTur ? 'en' : 'tr';
+    // 2. Existing website language (revision) preserves its language.
+    if (options?.existingLanguage) return options.existingLanguage;
+    // 3. The language of the current (fresh) prompt.
+    if ((prompt || '').trim()) return detectMessageLanguage(prompt);
+    // 4. UI language fallback. 5. English default.
+    return options?.uiLanguage || 'en';
+  } catch {
+    return options?.existingLanguage || options?.uiLanguage || 'en';
+  }
+}
+
+/** The Web Build request locale block. Sets the resolved website language as the
+ *  authoritative answer language (auto mode + message_language), so it wins over the
+ *  app UI language. Web Build only — never used by normal Chat/Research. */
+export function getWebBuildRequestLocale(websiteLanguage: Language): RequestLocale {
+  return { locale: websiteLanguage, language_mode: 'auto', message_language: websiteLanguage };
+}

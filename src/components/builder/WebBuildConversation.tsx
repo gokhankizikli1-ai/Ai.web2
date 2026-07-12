@@ -473,6 +473,8 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
     // dedicated Frontend Builder model is not connected yet → generation not-run).
     const fbs = step.artifacts?.frontendBuildSpec;
     if (fbs) {
+      // Phase 12F.2 — the resolved WEBSITE-output language (separate from the app UI).
+      if (fbs.language) ownerRows.push(['websiteOutputLanguage', fbs.language]);
       ownerRows.push(['frontendBuildSpec', fbs.status]);
       ownerRows.push(['frontendSpecSections', String(fbs.architecture?.sections?.length ?? 0)]);
       ownerRows.push(['frontendSpecRequiredFiles', String(fbs.outputContract?.requiredFiles?.length ?? 0)]);
@@ -552,6 +554,15 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       if (fcr.initialErrorCodes.length) ownerRows.push(['frontendContractRepairInitialErrorCodes', fcr.initialErrorCodes.slice(0, 8).join(', ')]);
       ownerRows.push(['frontendContractRepairFinalValidation', fcr.finalValidationStatus]);
       ownerRows.push(['frontendContractRepairFinalErrors', String(fcr.finalErrorCount)]);
+      // Phase 12F.2 — exact missing-critical-copy diagnostics (bounded previews, ≤2/stage).
+      if (typeof fcr.initialMissingCriticalCopyCount === 'number') {
+        ownerRows.push(['frontendContractRepairInitialMissingCriticalCopy', String(fcr.initialMissingCriticalCopyCount)]);
+        (fcr.initialMissingCriticalCopy || []).slice(0, 2).forEach((v, i) => ownerRows.push([`frontendContractRepairInitialMissingCopy${i + 1}`, shortStr(v, 100)]));
+      }
+      if (typeof fcr.finalMissingCriticalCopyCount === 'number') {
+        ownerRows.push(['frontendContractRepairFinalMissingCriticalCopy', String(fcr.finalMissingCriticalCopyCount)]);
+        (fcr.finalMissingCriticalCopy || []).slice(0, 2).forEach((v, i) => ownerRows.push([`frontendContractRepairFinalMissingCopy${i + 1}`, shortStr(v, 100)]));
+      }
       ownerRows.push(['frontendContractRepairReason', shortStr(fcr.reason, 160)]);
     }
     const fir = step.artifacts?.frontendBuilderInitialReview;

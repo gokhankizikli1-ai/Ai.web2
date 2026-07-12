@@ -23,7 +23,7 @@ import { deriveDesignSystemFromStrategy, selectPaletteFamily, PALETTE_FAMILIES, 
 import type { WebBuildLayoutPlan, HeroComposition, SectionVariant } from '@/lib/webBuildLayoutPlan';
 import { deriveInteractionContract, type InteractionContract } from '@/lib/webBuildInteractionContract';
 import {
-  resolveProductIntent, hasExplicitChatIntent,
+  resolveProductIntent, hasExplicitChatIntent, keywordAffirmed, resolveIntentDecision,
   type ProductIntent, type ProductLang,
 } from '@/lib/webBuildProductIntent';
 
@@ -1811,6 +1811,13 @@ export interface FrontendBuilderContractRepairArtifact {
   generatedFileCount: number;
   generatedCharCount: number;
 
+  /* ── Phase 12F.2 — bounded missing-critical-copy diagnostics (optional, backward
+   *  compatible). Previews only (≤100 chars, ≤8 entries); never the full raw response. */
+  initialMissingCriticalCopyCount?: number;
+  initialMissingCriticalCopy?: string[];
+  finalMissingCriticalCopyCount?: number;
+  finalMissingCriticalCopy?: string[];
+
   reason: string;
 
   mode: 'frontend_builder';
@@ -2023,12 +2030,15 @@ const CONCEPT_KEYWORDS: Array<{ cat: ConceptCategory; weight: number; words: str
 /** Score every category over the text and return the strongest match (or
  *  'general' when nothing clears the bar). Pure and deterministic. */
 export function detectConceptCategory(text: string): ConceptCategory {
-  const low = ` ${(text || '').toLowerCase()} `;
+  // Phase 12F.2 — negation-aware scoring: a keyword that appears ONLY inside a negated
+  // clause ("bu bir mağaza değildir") contributes ZERO weight; an affirmed keyword still
+  // contributes its full weight. The weighted category table itself is unchanged.
+  const raw = text || '';
   let best: ConceptCategory = 'general';
   let bestScore = 0;
   for (const { cat, weight, words } of CONCEPT_KEYWORDS) {
     let score = 0;
-    for (const w of words) if (low.includes(w)) score += weight;
+    for (const w of words) if (keywordAffirmed(raw, w)) score += weight;
     if (score > bestScore) { bestScore = score; best = cat; }
   }
   return best;
@@ -2080,7 +2090,10 @@ function splitConceptAuthority(prompt: string, fullText: string): ConceptAuthori
 
   if (hadForSplit) {
     const productCat = detectConceptCategory(productPart);
-    const productIsCommerce = COMMERCE_PRODUCT_RE.test(` ${productPart} `) || productCat === 'marketplace';
+    // Phase 12F.2 — negated commerce language ("... mağaza değildir") must NOT make the
+    // product a store. Only an AFFIRMED store phrase (or a marketplace product category)
+    // counts.
+    const productIsCommerce = resolveIntentDecision(` ${productPart} `, COMMERCE_PRODUCT_RE) === 'affirmed' || productCat === 'marketplace';
     if (!productIsCommerce && productCat !== 'general') {
       // "<product/concept> for <industry/customer>" → the product has authority.
       const verticalCat = detectConceptCategory(verticalPart);

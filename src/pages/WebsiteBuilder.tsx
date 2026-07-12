@@ -10,7 +10,7 @@ import WebBuildWelcome from '@/components/builder/WebBuildWelcome';
 import { WebBuildModeChips, WebBuildModePill } from '@/components/builder/WebBuildModeSelector';
 import WebBuildSidebar from '@/components/builder/WebBuildSidebar';
 import type { BuilderMode } from '@/lib/builderMode';
-import { useLanguageStore } from '@/stores/languageStore';
+import { useLanguageStore, type Language } from '@/stores/languageStore';
 import {
   saveWebBuildSession, getWebBuildSession, getActiveWebBuildSession,
   setActiveWebBuildSession, clearActiveWebBuildSession, deriveWebBuildTitle,
@@ -216,6 +216,10 @@ export default function WebsiteBuilder() {
         previousReply: payload.reply,
         signal: controller.signal,
         mode: selectedMode,
+        // Phase 12F.2 — keep the existing WEBSITE language on a revision (the resolver
+        // still overrides it when THIS prompt explicitly requests a language change).
+        websiteLanguage: (payload.steps[payload.steps.length - 1]?.artifacts?.frontendBuildSpec?.language
+          || payload.artifacts?.frontendBuildSpec?.language) as Language | undefined,
       });
       if (abortRef.current !== controller) return; // superseded
       const planned = buildWebBuildPayload(trimmed, res, payload, lang);

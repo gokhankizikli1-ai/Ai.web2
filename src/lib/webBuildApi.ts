@@ -14,7 +14,8 @@
  *
  * Base URL resolution mirrors gameBuilderApi.ts / useChat.ts.
  */
-import { getRequestLocale } from '@/lib/locale';
+import { getRequestLocale, getWebBuildRequestLocale, resolveWebsiteOutputLanguage } from '@/lib/locale';
+import { useLanguageStore, type Language } from '@/stores/languageStore';
 import { parseBuildSections, type BuildSection } from '@/lib/gameBuilderApi';
 import { type BuilderMode, buildModeContext } from '@/lib/builderMode';
 import type {
@@ -1027,10 +1028,25 @@ function annotateDesignPlanRepair(
  */
 export async function generateWebBuild(
   idea: string,
-  opts?: { signal?: AbortSignal; revise?: boolean; previousReply?: string; mode?: BuilderMode | null },
+  opts?: { signal?: AbortSignal; revise?: boolean; previousReply?: string; mode?: BuilderMode | null; websiteLanguage?: Language },
 ): Promise<WebBuildResult> {
   const trimmed = idea.trim();
   if (!trimmed) throw new WebBuildError('empty_prompt', 'Describe the website you want before generating.');
+
+  // Phase 12F.2 — resolve the WEBSITE-output language ONCE, and use it for every backend
+  // round-trip of this build (initial + design-plan repair + strict planning repair). The
+  // website language is SEPARATE from the app UI language: a Turkish website request wins
+  // even under an English UI, and a revision keeps its language unless the prompt asks to
+  // change it. Never let the UI language override the resolved website language.
+  let uiLanguage: Language = 'en';
+  try { uiLanguage = useLanguageStore.getState().lang; } catch { /* non-React context fallback */ }
+  const websiteLanguage: Language = resolveWebsiteOutputLanguage(trimmed, {
+    existingLanguage: opts?.websiteLanguage,
+    uiLanguage,
+  });
+  const websiteLocale = getWebBuildRequestLocale(websiteLanguage);
+  const websiteLangDirective =
+    `WEBSITE OUTPUT LANGUAGE: ${websiteLanguage === 'tr' ? 'Turkish' : 'English'}. Write ALL planning and copy sections (Build Plan, Design Direction, Page Sections, Generated Copy, Next Steps) in this language.`;
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   try {
@@ -1053,6 +1069,11 @@ export async function generateWebBuild(
   // One backend round-trip → parsed JSON. Throws typed WebBuildError for
   // network / abort(timeout|cancelled) / http / unreadable.
   const callBackend = async (message: string): Promise<Record<string, unknown>> => {
+    // Inject the Korvix-generated (trusted, never research-derived) website-language
+    // directive right after the leading marker so the marker stays on line 1.
+    const withLang = message.includes('\n')
+      ? message.replace('\n', `\n${websiteLangDirective}\n`)
+      : `${message}\n${websiteLangDirective}`;
     let response: Response;
     try {
       response = await fetch(`${apiBase()}/chat`, {
@@ -1061,12 +1082,12 @@ export async function generateWebBuild(
         signal: timer.signal,
         body: JSON.stringify({
           user_id: getUserId(),
-          message,
+          message: withLang,
           platform: 'web',
           mode: WEBSITE_BUILDER_MODE,
-          // Language — resolved app locale so the build is generated in the
-          // user's selected language (backend answer-language policy).
-          ...getRequestLocale(trimmed),
+          // Phase 12F.2 — the WEBSITE-output language block (resolved once), so the
+          // resolved website language wins over the app UI language.
+          ...websiteLocale,
         }),
       });
     } catch (err) {
@@ -1783,29 +1804,84 @@ function contractProjection(spec: FrontendBuildSpecification): Record<string, un
   };
 }
 
-/** Serialize the structural contract-repair request. Sends ONLY the compact contract
- *  projection, the parsed initial file path/language/content, the validation reason, up
- *  to 12 errors and up to 8 warnings — never tokens/profile/memory/steps/activity/preview
- *  stash/project list/provider secrets or unrelated raw planning/research objects. */
+/** One exact critical-copy string the repaired project MUST contain verbatim. */
+export interface MissingCriticalCopyRequirement {
+  sectionId: string;
+  field: 'headline' | 'primaryCTA';
+  value: string;
+}
+
+const MAX_CRITICAL_COPY_ENTRIES = 24;
+const MAX_CRITICAL_COPY_VALUE = 600;
+const MAX_CRITICAL_SECTION_ID = 100;
+/** The validator's bounded copy-preview form (must mirror its `trunc(_, 60)`). */
+function copyPreview(s: string): string {
+  return s.length > 60 ? `${s.slice(0, 60)}…` : s;
+}
+
+/**
+ * Recover the EXACT full missing critical copy (headline / primary CTA) by matching the
+ * validator's bounded previews (`missingCriticalCopy`) back to the full values in
+ * `spec.architecture.sections[]`. Pure/deterministic/bounded — never sends supporting copy
+ * as critical. Handles the validator's trailing-ellipsis preview form.
+ */
+export function deriveMissingCriticalCopy(
+  spec: FrontendBuildSpecification,
+  validation: FrontendBuilderValidationArtifact,
+): MissingCriticalCopyRequirement[] {
+  const previews = new Set((validation.missingCriticalCopy || []).map((p) => p));
+  if (previews.size === 0) return [];
+  const out: MissingCriticalCopyRequirement[] = [];
+  const sections = Array.isArray(spec.architecture?.sections) ? spec.architecture.sections : [];
+  for (const s of sections) {
+    if (out.length >= MAX_CRITICAL_COPY_ENTRIES) break;
+    const id = String(s.id || '').slice(0, MAX_CRITICAL_SECTION_ID);
+    const h = (s.headline || '').trim();
+    if (h.length >= 2 && previews.has(copyPreview(h))) out.push({ sectionId: id, field: 'headline', value: h.slice(0, MAX_CRITICAL_COPY_VALUE) });
+    const c = (s.primaryCTA || '').trim();
+    if (out.length < MAX_CRITICAL_COPY_ENTRIES && c.length >= 2 && previews.has(copyPreview(c))) out.push({ sectionId: id, field: 'primaryCTA', value: c.slice(0, MAX_CRITICAL_COPY_VALUE) });
+  }
+  return out.slice(0, MAX_CRITICAL_COPY_ENTRIES);
+}
+
+/** ALL section headline/primary-CTA critical requirements (bounded) — a lower-priority
+ *  aid dropped first when the request approaches the cap. */
+function allCriticalCopyRequirements(spec: FrontendBuildSpecification): MissingCriticalCopyRequirement[] {
+  const out: MissingCriticalCopyRequirement[] = [];
+  const sections = Array.isArray(spec.architecture?.sections) ? spec.architecture.sections : [];
+  for (const s of sections) {
+    if (out.length >= MAX_CRITICAL_COPY_ENTRIES) break;
+    const id = String(s.id || '').slice(0, MAX_CRITICAL_SECTION_ID);
+    const h = (s.headline || '').trim();
+    if (h.length >= 2) out.push({ sectionId: id, field: 'headline', value: h.slice(0, MAX_CRITICAL_COPY_VALUE) });
+    const c = (s.primaryCTA || '').trim();
+    if (out.length < MAX_CRITICAL_COPY_ENTRIES && c.length >= 2) out.push({ sectionId: id, field: 'primaryCTA', value: c.slice(0, MAX_CRITICAL_COPY_VALUE) });
+  }
+  return out.slice(0, MAX_CRITICAL_COPY_ENTRIES);
+}
+
+/**
+ * Serialize the structural contract-repair request. Sends ONLY the compact contract
+ * projection, the parsed initial file path/language/content, the validation reason, up to
+ * 12 errors, the EXACT missing critical copy, an all-critical-copy aid and up to 8 warnings
+ * — never tokens/profile/memory/steps/activity/preview stash/project list/provider secrets
+ * or unrelated raw planning/research objects. When the request approaches the 124k cap, it
+ * sheds lowest-priority parts first (warnings → all-critical aid → full section copy →
+ * section architecture) and NEVER drops the exact missing critical strings or the errors.
+ */
 export function buildFrontendBuilderContractRepairRequest(
   spec: FrontendBuildSpecification,
   validation: FrontendBuilderValidationArtifact,
 ): string {
-  const input = {
-    task: 'frontend-contract-repair',
-    responseContract: 'frontend-files-v1',
-    contract: contractProjection(spec),
-    files: (validation.files || []).map((f) => ({ path: f.path, language: f.language, content: f.content })),
-    validationReason: (validation.reason || '').slice(0, 400),
-    errors: (validation.errors || []).slice(0, 12).map((e) => ({ code: e.code, message: (e.message || '').slice(0, 240), path: e.path })),
-    warnings: (validation.warnings || []).slice(0, 8).map((w) => ({ code: w.code, message: (w.message || '').slice(0, 240), path: w.path })),
-  };
-  return [
+  const missingCriticalCopyExact = deriveMissingCriticalCopy(spec, validation);
+  const render = (input: Record<string, unknown>): string => [
     '[FRONTEND BUILDER REQUEST]',
     '[FRONTEND CONTRACT REPAIR REQUEST]',
     'Task: fix EVERY listed Phase 12C validation error and return the COMPLETE project.',
     'This is a STRUCTURAL contract repair, not a design rewrite. Preserve the final public',
-    'copy, the section order and the corrected product/demo intent. Return ONLY a complete',
+    'copy, the section order and the corrected product/demo intent. Every value in',
+    'missingCriticalCopyExact MUST appear verbatim (no translation, no paraphrase) as one',
+    'contiguous visible string in a reachable rendered component. Return ONLY a complete',
     'frontend-files-v1 envelope — never a patch, prose or explanations.',
     'BEGIN_FRONTEND_BUILD_SPEC_JSON',
     'BEGIN_FRONTEND_CONTRACT_REPAIR_INPUT_JSON',
@@ -1813,6 +1889,45 @@ export function buildFrontendBuilderContractRepairRequest(
     'END_FRONTEND_CONTRACT_REPAIR_INPUT_JSON',
     'END_FRONTEND_BUILD_SPEC_JSON',
   ].join('\n');
+
+  // Priority (highest first): exact missing copy → errors → required files/output contract
+  // → full section architecture → lower-priority warnings + all-critical aid.
+  const input: Record<string, unknown> = {
+    task: 'frontend-contract-repair',
+    responseContract: 'frontend-files-v1',
+    missingCriticalCopyExact,
+    contract: contractProjection(spec),
+    files: (validation.files || []).map((f) => ({ path: f.path, language: f.language, content: f.content })),
+    validationReason: (validation.reason || '').slice(0, 400),
+    errors: (validation.errors || []).slice(0, 12).map((e) => ({ code: e.code, message: (e.message || '').slice(0, 240), path: e.path })),
+    allCriticalCopyRequirements: allCriticalCopyRequirements(spec),
+    warnings: (validation.warnings || []).slice(0, 8).map((w) => ({ code: w.code, message: (w.message || '').slice(0, 240), path: w.path })),
+  };
+
+  let message = render(input);
+  if (message.length <= MAX_FRONTEND_CONTRACT_REPAIR_REQUEST_CHARS) return message;
+
+  // Cap-aware shedding, lowest priority first. Exact missing copy + errors are never dropped.
+  const shed: Array<() => void> = [
+    () => { input.warnings = []; },
+    () => { delete input.allCriticalCopyRequirements; },
+    () => {
+      const c = input.contract as { architecture?: { sections?: Array<Record<string, unknown>> } };
+      if (c.architecture?.sections) {
+        c.architecture.sections = c.architecture.sections.map((s) => ({ id: s.id, name: s.name, order: s.order, headline: s.headline, primaryCTA: s.primaryCTA }));
+      }
+    },
+    () => {
+      const c = input.contract as { architecture?: { sections?: unknown[] } };
+      if (c.architecture) c.architecture.sections = [];
+    },
+  ];
+  for (const step of shed) {
+    step();
+    message = render(input);
+    if (message.length <= MAX_FRONTEND_CONTRACT_REPAIR_REQUEST_CHARS) break;
+  }
+  return message; // may still exceed → the caller's cap check fails open (no request sent).
 }
 
 /**
