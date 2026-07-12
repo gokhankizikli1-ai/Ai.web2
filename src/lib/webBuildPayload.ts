@@ -21,7 +21,8 @@ import {
 import { deriveAgentSectionArchitecture } from '@/lib/webBuildSectionArchitecture';
 import { deriveFrontendBuildSpecification } from '@/lib/webBuildFrontendSpec';
 import { parseAndValidateFrontendBuilderRaw } from '@/lib/webBuildFrontendValidation';
-import { detectMessageLanguage } from '@/lib/locale';
+import { detectMessageLanguage, resolveWebsiteOutputLanguage } from '@/lib/locale';
+import type { Language } from '@/stores/languageStore';
 
 export type ActivityStatus = 'waiting' | 'running' | 'done' | 'failed';
 
@@ -609,6 +610,23 @@ export function attachFrontendBuilderContractRepairResult(
       acceptedValidation.readyForConsumption === true &&
       acceptedValidation.files.length > 0;
 
+    // Phase 12F.2 — enrich the artifact with bounded missing-critical-copy diagnostics
+    // from the INITIAL (invalid) validation and, when accepted, the repaired validation.
+    // Previews only (≤100 chars, ≤8 entries); never the full raw response.
+    const initialVal = payload.artifacts?.frontendBuilderValidation;
+    const initialMissing = (initialVal?.missingCriticalCopy || []).slice(0, 8).map((s) => s.slice(0, 100));
+    const finalMissing = accepted && acceptedValidation
+      ? (acceptedValidation.missingCriticalCopy || []).slice(0, 8).map((s) => s.slice(0, 100))
+      : undefined;
+    const enrichedContractRepair: FrontendBuilderContractRepairArtifact = {
+      ...contractRepair,
+      initialMissingCriticalCopyCount: initialVal ? (initialVal.missingCriticalCopy || []).length : contractRepair.initialMissingCriticalCopyCount,
+      initialMissingCriticalCopy: initialMissing.length ? initialMissing : contractRepair.initialMissingCriticalCopy,
+      ...(finalMissing !== undefined
+        ? { finalMissingCriticalCopyCount: (acceptedValidation as FrontendBuilderValidationArtifact).missingCriticalCopy?.length ?? finalMissing.length, finalMissingCriticalCopy: finalMissing }
+        : {}),
+    };
+
     const steps = Array.isArray(payload.steps) ? payload.steps : [];
     const previousFiles: WebBuildFile[] | undefined =
       steps.length >= 2 ? steps[steps.length - 2]?.files : undefined;
@@ -661,7 +679,7 @@ export function attachFrontendBuilderContractRepairResult(
 
     const patch = (a: WebBuildArtifacts | undefined): WebBuildArtifacts => {
       const next: WebBuildArtifacts = { ...(a || {}) };
-      next.frontendBuilderContractRepair = contractRepair;
+      next.frontendBuilderContractRepair = enrichedContractRepair;
       if (accepted && acceptedValidation && consumption) {
         next.frontendBuilderValidation = acceptedValidation;
         next.frontendBuilderConsumption = consumption;
@@ -962,6 +980,24 @@ function itemsToCopies(items: WebBuildSectionItem[]): SynthCopy[] {
  * blocking Preview AND All Files). The banner validation is NOT removed — this
  * guarantees the package it validates is always well-formed at the source.
  */
+/**
+ * Phase 12F.2 — resolve the WEBSITE-output language for payload assembly. Separate from
+ * the app UI language: a fresh build follows an explicit request → the prompt language →
+ * the UI; a revision keeps the PREVIOUS website language (read from the persisted
+ * specification) unless the prompt explicitly asks to change it. Pure; fail-open.
+ */
+function resolveBuildWebsiteLanguage(prompt: string, prev: WebBuildPayload | undefined, uiLang?: string): string {
+  const prevSteps = prev && Array.isArray(prev.steps) ? prev.steps : [];
+  const prevSpecLang =
+    prevSteps[prevSteps.length - 1]?.artifacts?.frontendBuildSpec?.language
+    || prev?.artifacts?.frontendBuildSpec?.language
+    || (prev ? detectMessageLanguage(prev.prompt || '') : undefined);
+  return resolveWebsiteOutputLanguage(prompt, {
+    existingLanguage: prevSpecLang as Language | undefined,
+    uiLanguage: (uiLang as Language) || undefined,
+  });
+}
+
 export function buildWebBuildPayload(
   prompt: string, result: WebBuildResult, prev?: WebBuildPayload, lang?: string,
 ): WebBuildPayload {
@@ -988,7 +1024,7 @@ function assembleWebBuildPayload(
   prompt: string, result: WebBuildResult, prev?: WebBuildPayload, lang?: string,
 ): WebBuildPayload {
   const now = new Date().toISOString();
-  const effLang = lang || detectMessageLanguage(prompt);
+  const effLang = resolveBuildWebsiteLanguage(prompt, prev, lang);
   const inferred = inferWebsiteBrief(prompt, effLang);
 
   const backendBrief = extractBrief(result.sections);
@@ -1714,7 +1750,7 @@ function synthesizeSafePayload(
   prompt: string, result: WebBuildResult, prev?: WebBuildPayload, lang?: string,
 ): WebBuildPayload {
   const now = new Date().toISOString();
-  const effLang = lang || detectMessageLanguage(prompt);
+  const effLang = resolveBuildWebsiteLanguage(prompt, prev, lang);
   const inferred = inferWebsiteBrief(prompt, effLang);
 
   let brief: WebBuildBrief;

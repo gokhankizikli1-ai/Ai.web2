@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import WebBuildConversation from '@/components/builder/WebBuildConversation';
 import type { BuilderMode } from '@/lib/builderMode';
+import type { Language } from '@/stores/languageStore';
 import { useLanguageStore } from '@/stores/languageStore';
 import {
   saveWebBuildSession, getWebBuildSession, sessionIdOf,
@@ -184,6 +185,10 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
         previousReply: payload.reply,
         signal: controller.signal,
         mode: modeRef.current,
+        // Phase 12F.2 — keep the existing WEBSITE language on a revision (the resolver
+        // still overrides it when THIS prompt explicitly requests a language change).
+        websiteLanguage: (payload.steps[payload.steps.length - 1]?.artifacts?.frontendBuildSpec?.language
+          || payload.artifacts?.frontendBuildSpec?.language) as Language | undefined,
       });
       if (abortRef.current !== controller) return;
       const planned = buildWebBuildPayload(trimmed, res, payload, lang);

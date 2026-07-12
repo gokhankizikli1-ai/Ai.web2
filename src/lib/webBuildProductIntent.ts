@@ -90,7 +90,7 @@ const CHAT_EVIDENCE_RE = new RegExp(
     'customer[-\\s]*support\\s*bot', 'support\\s*chat\\s*bot', 'conversational\\s*assistant',
     'messaging\\s*assistant', 'chat\\s*widget', 'chat\\s*flow\\s*demo',
     'sohbet\\s*botu', 'canl[ıi]\\s*sohbet', 'konu[şs]mal[ıi]\\s*asistan',
-    'm[üu][şs]teri\\s*destek\\s*botu',
+    'm[üu][şs]teri\\s*destek\\s*botu', 'chat\\s*aray[üu]z', 'sohbet\\s*aray[üu]z',
   ].join('|'),
   'i',
 );
@@ -146,16 +146,117 @@ const CONTENT_CONCEPTS = new Set(['archive', 'portfolio', 'education', 'nonprofi
 const SOFTWARE_CONCEPTS = new Set(['ai', 'saas']);
 const SOFTWARE_TOKEN_RE = /\bai\b|artificial\s*intelligence|\bsaas\b|software|platform|automation|\bapi\b|\bsdk\b|tool\b|yaz[ıi]l[ıi]m|yapay\s*zek/i;
 
+/* ── Negation-aware, clause-local intent decisions (Phase 12F.2) ──────────────
+ * Terms inside a NEGATIVE constraint ("this is not a chatbot", "mağaza olmasın")
+ * must never become POSITIVE product intent. A bounded, clause-aware decision — not a
+ * natural-language parser — splits the text into natural clauses and, for the clause(s)
+ * that actually contain the concept, checks for a term-local negation cue. One negation
+ * somewhere in a long prompt never negates an unrelated positive instruction elsewhere;
+ * contrast markers ("but"/"ama"/"ancak"…) start a fresh clause; the LAST decisive clause
+ * wins when a concept is both affirmed and negated. Pure, deterministic, fail-open. */
+export type IntentDecision = 'affirmed' | 'negated' | 'absent';
+
+const MAX_CLAUSES = 40;
+
+/** Split into bounded natural clauses: sentence boundaries, semicolons, newlines and
+ *  contrast markers (each contrast marker begins a new clause). Commas are NOT split so a
+ *  single negation covers a comma-separated list ("not a chatbot, store or marketplace"). */
+function splitClauses(text: string): string[] {
+  return (text || '')
+    .replace(/\b(but|however|except|whereas|although|ama|ancak|fakat|yaln[ıi]z(?:ca)?|buna\s+kar[şs][ıi]n)\b/gi, '\n')
+    .split(/[.!?;\n]+/)
+    .map((c) => c.trim())
+    .filter(Boolean)
+    .slice(0, MAX_CLAUSES);
+}
+
+/** Bounded negation cues — English (usually PREFIX) + Turkish (usually POSTFIX). Presence
+ *  anywhere in the SAME bounded clause as the concept marks that occurrence negated. */
+const NEGATION_RE = new RegExp(
+  [
+    // English
+    'do not use', 'do not add', 'do not include', 'do\\s*not', "don'?t", 'does\\s*not', "doesn'?t",
+    'is\\s*not', "isn'?t", 'are\\s*not', "aren'?t", 'was\\s*not', 'must\\s*not', "mustn'?t",
+    'should\\s*not', "shouldn'?t", 'cannot', "can'?t", 'without', 'never', 'avoid', 'exclude',
+    'excluding', 'not\\s*wanted', 'not\\s*required', 'no\\s*need', 'rather\\s*than', 'instead\\s*of',
+    '\\bnot\\b', '\\bno\\b',
+    // Turkish
+    'de[ğg]ildir', 'de[ğg]il', 'olmas[ıi]n', 'olmamal[ıi](?:d[ıi]r)?', 'istemiyorum', 'istenmiyor',
+    'kullanma', 'kullanmay[ıi]n', 'kullan[ıi]lmas[ıi]n', 'ekleme', 'eklemeyin', 'eklenmesin',
+    'dahil\\s*etme', 'i[çc]ermesin', 'gerekmiyor', 'ka[çc][ıi]n', 'yerine', '\\byok\\b',
+  ].join('|'),
+  'i',
+);
+
+function clauseHasNegation(clause: string): boolean {
+  return NEGATION_RE.test(clause);
+}
+
+/**
+ * Resolve whether `evidence` is affirmed, negated or absent in `text`, clause-locally.
+ * The LAST clause that contains the evidence decides (so a later explicit instruction
+ * overrides an earlier one). Never throws; returns 'absent' on blank/malformed input.
+ */
+export function resolveIntentDecision(text: string, evidence: RegExp): IntentDecision {
+  try {
+    if (!text) return 'absent';
+    let decision: IntentDecision = 'absent';
+    for (const clause of splitClauses(text)) {
+      if (evidence.test(clause)) decision = clauseHasNegation(clause) ? 'negated' : 'affirmed';
+    }
+    return decision;
+  } catch {
+    return 'absent';
+  }
+}
+
+/** True when the evidence is affirmatively present (not negated) somewhere in the text. */
+export function hasAffirmedIntent(text: string, evidence: RegExp): boolean {
+  return resolveIntentDecision(text, evidence) === 'affirmed';
+}
+
+/** True when the evidence is explicitly negated (last decisive clause) in the text. */
+export function hasNegatedIntent(text: string, evidence: RegExp): boolean {
+  return resolveIntentDecision(text, evidence) === 'negated';
+}
+
+/** True when a plain keyword appears in at least one NON-negated clause. Used by the
+ *  concept-category scorer so a negated keyword contributes zero weight. */
+export function keywordAffirmed(text: string, keyword: string): boolean {
+  if (!text || !keyword) return false;
+  const kw = keyword.toLowerCase();
+  for (const clause of splitClauses(text)) {
+    if (clause.toLowerCase().includes(kw) && !clauseHasNegation(clause)) return true;
+  }
+  return false;
+}
+
 /* ── Public predicates (pure) ──────────────────────────────────────────────── */
 
-/** True ONLY with strong conversational evidence. "AI"/"assistant"/"copilot"/"SaaS"
- *  alone are NOT proof of chat intent. */
+/** True ONLY for an AFFIRMED strong conversational request. Negated chat ("not a
+ *  chatbot", "sohbet kullanma") is false; bare "AI"/"assistant"/"copilot"/"SaaS" is false. */
 export function hasExplicitChatIntent(text: string): boolean {
-  return CHAT_EVIDENCE_RE.test(text || '');
+  return resolveIntentDecision(text || '', CHAT_EVIDENCE_RE) === 'affirmed';
+}
+
+/** The clause-local chat decision (affirmed / negated / absent) for the prompt authority. */
+export function resolveChatDecision(text: string): IntentDecision {
+  return resolveIntentDecision(text || '', CHAT_EVIDENCE_RE);
 }
 
 export function hasExplicitDashboardIntent(text: string): boolean {
-  return DASHBOARD_EVIDENCE_RE.test(text || '');
+  return resolveIntentDecision(text || '', DASHBOARD_EVIDENCE_RE) === 'affirmed';
+}
+
+/** The clause-local dashboard decision. */
+export function resolveDashboardDecision(text: string): IntentDecision {
+  return resolveIntentDecision(text || '', DASHBOARD_EVIDENCE_RE);
+}
+
+/** The clause-local store/catalog decision over STORE-AS-PRODUCT phrases. A mere
+ *  ecommerce/retail TARGET vertical is not a store; negated store language is negated. */
+export function resolveStoreDecision(text: string): IntentDecision {
+  return resolveIntentDecision(text || '', COMMERCE_PRIMARY_RE);
 }
 
 export function isComplianceOriented(text: string): boolean {
@@ -388,43 +489,77 @@ function demoRequirements(family: ProductDemoFamily, lang: ProductLang, complian
 
 /* ── Demo-family resolution (strict deterministic precedence) ─────────────────── */
 
+interface IntentSignals {
+  explicitChat: boolean;
+  explicitDashboard: boolean;
+  calculatorOriented: boolean;
+  assessmentOriented: boolean;
+  complianceOriented: boolean;
+  workflowOriented: boolean;
+  catalogOriented: boolean;
+  bookingOriented: boolean;
+  contentOriented: boolean;
+  softwareProduct: boolean;
+}
+
+/**
+ * Resolve the negation-aware intent signals. DANGEROUS surfaces (chat / storefront /
+ * dashboard) are decided on the ORIGINAL PROMPT authority only — never introduced by
+ * model-generated secondary text — and a store is legitimate only when Concept Authority
+ * genuinely resolved the PRODUCT as a marketplace (a mere ecommerce TARGET vertical never
+ * creates a store). SAFE families (workflow / calculator / assessment / booking) may
+ * refine from the combined text, but an explicit negation still disables them.
+ */
+function resolveIntentSignals(input: ProductIntentInput): IntentSignals {
+  const prompt = input.prompt || '';
+  const combined = `${prompt} ${input.briefText || ''}`;
+  const concept = (input.primaryConcept || '').toLowerCase();
+
+  const explicitChat = resolveIntentDecision(prompt, CHAT_EVIDENCE_RE) === 'affirmed';
+  const explicitDashboard = resolveIntentDecision(prompt, DASHBOARD_EVIDENCE_RE) === 'affirmed';
+  const storeNegated = resolveIntentDecision(prompt, COMMERCE_PRIMARY_RE) === 'negated';
+  const catalogOriented = !storeNegated && concept === 'marketplace';
+
+  const complianceOriented = hasAffirmedIntent(combined, COMPLIANCE_EVIDENCE_RE);
+  return {
+    explicitChat,
+    explicitDashboard,
+    calculatorOriented: hasAffirmedIntent(combined, CALCULATOR_EVIDENCE_RE),
+    assessmentOriented: hasAffirmedIntent(combined, ASSESSMENT_EVIDENCE_RE),
+    complianceOriented,
+    workflowOriented: hasAffirmedIntent(combined, WORKFLOW_EVIDENCE_RE) || complianceOriented,
+    catalogOriented,
+    bookingOriented: (concept === 'hospitality' || hasAffirmedIntent(combined, BOOKING_EVIDENCE_RE)) && !SOFTWARE_CONCEPTS.has(concept),
+    contentOriented: CONTENT_CONCEPTS.has(concept),
+    softwareProduct: SOFTWARE_CONCEPTS.has(concept) || SOFTWARE_TOKEN_RE.test(combined),
+  };
+}
+
 /** Resolve the honest demo family. Explicit chat/dashboard/calculator/assessment win
  *  first; then compliance/workflow; then a store concept; then booking; then generic
  *  software; then content; else none. A model demo-module may refine WITHIN non-chat
  *  families but can NEVER introduce chat without explicit chat evidence. */
 export function resolveDemoFamily(input: ProductIntentInput): ProductDemoFamily {
-  const text = `${input.prompt || ''} ${input.briefText || ''}`;
-  const concept = (input.primaryConcept || '').toLowerCase();
-
-  const explicitChat = hasExplicitChatIntent(text);
-  const explicitDashboard = hasExplicitDashboardIntent(text);
-  const calculator = CALCULATOR_EVIDENCE_RE.test(text);
-  const assessment = ASSESSMENT_EVIDENCE_RE.test(text);
-  const compliance = COMPLIANCE_EVIDENCE_RE.test(text);
-  const workflow = WORKFLOW_EVIDENCE_RE.test(text) || compliance;
-  const catalog = concept === 'marketplace' || COMMERCE_PRIMARY_RE.test(input.prompt || '');
-  const booking = (concept === 'hospitality' || BOOKING_EVIDENCE_RE.test(text)) && !SOFTWARE_CONCEPTS.has(concept);
-  const software = SOFTWARE_CONCEPTS.has(concept) || SOFTWARE_TOKEN_RE.test(text);
-  const content = CONTENT_CONCEPTS.has(concept);
+  const s = resolveIntentSignals(input);
 
   let family: ProductDemoFamily;
-  if (explicitChat) family = 'chat-demo';
-  else if (explicitDashboard) family = 'dashboard-demo';
-  else if (calculator) family = 'calculator-demo';
-  else if (assessment) family = 'assessment-demo';
-  else if (workflow) family = 'workflow-demo';
-  else if (catalog) family = 'catalog-demo';
-  else if (booking) family = 'booking-demo';
-  else if (software) family = 'product-flow-demo';
-  else if (content) family = 'content-demo';
+  if (s.explicitChat) family = 'chat-demo';
+  else if (s.explicitDashboard) family = 'dashboard-demo';
+  else if (s.calculatorOriented) family = 'calculator-demo';
+  else if (s.assessmentOriented) family = 'assessment-demo';
+  else if (s.workflowOriented) family = 'workflow-demo';
+  else if (s.catalogOriented) family = 'catalog-demo';
+  else if (s.bookingOriented) family = 'booking-demo';
+  else if (s.softwareProduct) family = 'product-flow-demo';
+  else if (s.contentOriented) family = 'content-demo';
   else family = 'none';
 
   // A model demo-module may REFINE presentation but never override explicit correctness
   // and never introduce chat without explicit chat evidence.
   const dm = (input.modelDemoModule || '').toLowerCase();
-  if (dm && !explicitChat) {
+  if (dm && !s.explicitChat) {
     if (dm === 'data-dashboard' && (family === 'product-flow-demo' || family === 'workflow-demo')) family = 'dashboard-demo';
-    else if (dm === 'catalog-archive' && (family === 'product-flow-demo' || family === 'content-demo')) family = 'catalog-demo';
+    else if (dm === 'catalog-archive' && s.catalogOriented && (family === 'product-flow-demo' || family === 'content-demo')) family = 'catalog-demo';
     else if (dm === 'product-showcase' && family === 'none') family = 'product-flow-demo';
   }
   return family;
@@ -433,23 +568,16 @@ export function resolveDemoFamily(input: ProductIntentInput): ProductDemoFamily 
 /**
  * Resolve the full product intent. Pure/deterministic/fail-open. The original prompt +
  * authoritative concept take priority over generic category defaults; a model plan that
- * drifts to "chat" is rejected unless the prompt carries explicit chat evidence.
+ * drifts to "chat"/store is rejected unless the prompt carries affirmed (non-negated)
+ * evidence, and negated intent overrides brief/model/category contamination.
  */
 export function resolveProductIntent(input: ProductIntentInput): ProductIntent {
   const lang: ProductLang = input.lang === 'tr' ? 'tr' : 'en';
-  const text = `${input.prompt || ''} ${input.briefText || ''}`;
-  const concept = (input.primaryConcept || '').toLowerCase();
-
-  const explicitChat = hasExplicitChatIntent(text);
-  const explicitDashboard = hasExplicitDashboardIntent(text);
-  const calculatorOriented = CALCULATOR_EVIDENCE_RE.test(text);
-  const assessmentOriented = ASSESSMENT_EVIDENCE_RE.test(text);
-  const complianceOriented = COMPLIANCE_EVIDENCE_RE.test(text);
-  const workflowOriented = WORKFLOW_EVIDENCE_RE.test(text) || complianceOriented;
-  const catalogOriented = concept === 'marketplace' || COMMERCE_PRIMARY_RE.test(input.prompt || '');
-  const bookingOriented = (concept === 'hospitality' || BOOKING_EVIDENCE_RE.test(text)) && !SOFTWARE_CONCEPTS.has(concept);
-  const contentOriented = CONTENT_CONCEPTS.has(concept);
-  const softwareProduct = SOFTWARE_CONCEPTS.has(concept) || SOFTWARE_TOKEN_RE.test(text);
+  const {
+    explicitChat, explicitDashboard, calculatorOriented, assessmentOriented,
+    complianceOriented, workflowOriented, catalogOriented, bookingOriented,
+    contentOriented, softwareProduct,
+  } = resolveIntentSignals(input);
 
   const demoFamily = resolveDemoFamily(input);
   const compliance = complianceOriented && (demoFamily === 'workflow-demo');
