@@ -1,6 +1,7 @@
 import type { WebBuildSectionItem, WebBuildFile } from '@/lib/webBuildPayload';
 import type { WebBuildBrief } from '@/lib/webBuildApi';
 import type { FrontendBuilderPreviewSource } from '@/lib/webBuildAgents';
+import type { WebBuildPreviewMode } from '@/lib/webBuildRuntimePreview';
 import { scopedKey } from '@/lib/userScope';
 
 /**
@@ -34,6 +35,11 @@ export interface WebBuildPreviewData {
   files?: WebBuildFile[];
   /** Phase 12D — which renderer the standalone route should use for this run. */
   previewSource?: FrontendBuilderPreviewSource;
+  /** Phase 13A — the EXPLICIT preview mode this handoff represents. 'owner-candidate' is
+   *  the unapproved generated candidate and the standalone route renders it ONLY when the
+   *  viewer is an owner; 'approved-model-native' renders for everyone; 'safe-fallback'
+   *  carries section data only. Optional → old stashes without it keep loading. */
+  previewMode?: WebBuildPreviewMode;
 }
 
 /** Required entry files a model-native preview needs before it can run. */
@@ -103,10 +109,16 @@ function toMinimalPreview(data: WebBuildPreviewData): WebBuildPreviewData {
     returnChatSessionId: data.returnChatSessionId,
     returnWebBuildRunId: data.returnWebBuildRunId,
   };
+  // Phase 13A — carry the explicit preview mode so the standalone route renders EXACTLY the
+  // selected mode (and gates 'owner-candidate' behind owner status). Bounded string only.
+  if (data.previewMode === 'approved-model-native' || data.previewMode === 'owner-candidate' || data.previewMode === 'safe-fallback') {
+    minimal.previewMode = data.previewMode;
+  }
   // Phase 12D — for a model-native preview, carry ONLY the validated files + source
   // (already bounded by Phase 12C). Never the raw response, validation issues, full
-  // artifacts, spec, agents, research, tokens, steps or provider metadata.
-  if (data.previewSource === 'model-native-sandbox' && Array.isArray(data.files) && data.files.length > 0) {
+  // artifacts, spec, agents, research, tokens, steps or provider metadata. A safe-fallback
+  // handoff never carries candidate files.
+  if (data.previewSource === 'model-native-sandbox' && data.previewMode !== 'safe-fallback' && Array.isArray(data.files) && data.files.length > 0) {
     minimal.files = data.files;
     minimal.previewSource = 'model-native-sandbox';
   }

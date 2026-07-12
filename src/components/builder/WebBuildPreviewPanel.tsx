@@ -1,10 +1,12 @@
-import { Component, useState, type ErrorInfo, type ReactNode } from 'react';
+import { Component, useEffect, useState, type ErrorInfo, type ReactNode } from 'react';
 import { ExternalLink } from 'lucide-react';
 import BrowserFrame from '@/components/builder/BrowserFrame';
 import WebBuildPreviewDocument from '@/components/builder/WebBuildPreviewDocument';
-import WebBuildModelNativePreview from '@/components/builder/WebBuildModelNativePreview';
+import WebBuildModelNativePreview, { CandidateUnapprovedNotice, RuntimeDiagnosticsBlock } from '@/components/builder/WebBuildModelNativePreview';
+import { useOwnerMode } from '@/hooks/useOwnerMode';
 import { useLanguageStore } from '@/stores/languageStore';
 import { openPreviewInNewTab, currentReturnTo } from '@/lib/webBuildPreviewStash';
+import { resolvePreviewMode, type ModelNativeCandidate, type ModelNativeRuntimeSnapshot, type OwnerPreviewSelection, type WebBuildPreviewMode } from '@/lib/webBuildRuntimePreview';
 import type { WebBuildSectionItem, WebBuildFile } from '@/lib/webBuildPayload';
 import type { WebBuildBrief } from '@/lib/webBuildApi';
 import type { InteractionContract } from '@/lib/webBuildInteractionContract';
@@ -44,7 +46,7 @@ class PreviewErrorBoundary extends Component<{ fallback: ReactNode; children: Re
 }
 
 export default function WebBuildPreviewPanel({
-  sectionItems, brief, slug, runId, files, previewSource, blockedNeedsRegeneration, interactionContract, visualAssetPlan, visualSignaturePlan, motionComposer, imagePipeline,
+  sectionItems, brief, slug, runId, files, previewSource, blockedNeedsRegeneration, candidate, interactionContract, visualAssetPlan, visualSignaturePlan, motionComposer, imagePipeline,
 }: {
   sectionItems: WebBuildSectionItem[];
   brief: WebBuildBrief;
@@ -61,6 +63,10 @@ export default function WebBuildPreviewPanel({
    *  fallback plus an explicit "Build needs regeneration" notice; the unapproved
    *  model-native files remain reachable in All Files. Optional → old builds unaffected. */
   blockedNeedsRegeneration?: boolean;
+  /** Phase 13A — the derived model-native candidate (consumed or parsed-initial). Drives
+   *  the three explicit Preview modes and the owner Candidate/Safe selector. Optional →
+   *  old builds fall back to the legacy previewSource path. */
+  candidate?: ModelNativeCandidate;
   /** Phase 2 — the strategy's Interaction Contract (optional). Passed straight to
    *  the preview document so its actions become real in-app behaviour. */
   interactionContract?: InteractionContract;
@@ -78,6 +84,7 @@ export default function WebBuildPreviewPanel({
   imagePipeline?: ImagePipelineArtifact;
 }) {
   const { t, lang } = useLanguageStore();
+  const { isOwner } = useOwnerMode();
   const url = slug || 'preview.korvix.build';
   // Set when "Open preview" could not write/verify the localStorage stash (full
   // storage) — we surface it inline instead of opening a broken standalone route.
@@ -89,15 +96,29 @@ export default function WebBuildPreviewPanel({
   const items = Array.isArray(sectionItems) ? sectionItems.filter(Boolean) : [];
   const safeBrief = (brief || {}) as WebBuildBrief;
 
-  // Phase 12D — choose EXACTLY one preview source. When the dedicated Frontend Builder
-  // project was consumed, render its validated files in the isolated Sandpack runtime;
-  // otherwise the deterministic section renderer. Never render both.
-  const modelNativeFiles = Array.isArray(files) ? files.filter(Boolean) : [];
-  const useModelNative = previewSource === 'model-native-sandbox' && modelNativeFiles.length > 0;
+  // Phase 13A — the model-native candidate + three explicit Preview modes. The candidate's
+  // files drive the isolated Sandpack runtime; the mode decides whether a normal user sees
+  // the approved model-native site, an owner sees the unapproved candidate, or everyone
+  // sees the deterministic safe fallback. Never rewrites acceptance/payload/files.
+  const legacyFiles = Array.isArray(files) ? files.filter(Boolean) : [];
+  const candidateAvailable = !!candidate?.available;
+  const nativeFiles = candidate?.files?.length ? candidate.files : legacyFiles;
 
-  // The Open Preview handoff carries the model-native files + source so the standalone
-  // route opens the SAME project — it must not revert to the legacy renderer just
-  // because it opened in another tab.
+  // Owner's local Candidate/Safe choice (UI state only). Reset when the run/candidate
+  // changes so a previous selection never leaks onto a different build.
+  const [ownerSel, setOwnerSel] = useState<OwnerPreviewSelection | undefined>(undefined);
+  const [runtimeSnapshot, setRuntimeSnapshot] = useState<ModelNativeRuntimeSnapshot | null>(null);
+  const candidateKey = `${runId || ''}|${candidate?.source || 'none'}|${candidate?.files?.length ?? 0}`;
+  useEffect(() => { setOwnerSel(undefined); setRuntimeSnapshot(null); }, [candidateKey]);
+
+  const mode: WebBuildPreviewMode = candidate
+    ? resolvePreviewMode(candidate, isOwner, ownerSel)
+    : (previewSource === 'model-native-sandbox' && legacyFiles.length > 0 ? 'approved-model-native' : 'safe-fallback');
+  const showModelNative = mode === 'approved-model-native' || mode === 'owner-candidate';
+  const isCandidateMode = mode === 'owner-candidate';
+
+  // The Open Preview handoff carries EXACTLY the selected embedded mode + its files, so the
+  // full-screen route can never silently switch renderers.
   const openPreview = () => {
     const opened = openPreviewInNewTab({
       runId: runId || `preview-${Date.now().toString(36)}`,
@@ -105,7 +126,10 @@ export default function WebBuildPreviewPanel({
       brief: safeBrief,
       slug: url,
       returnTo: currentReturnTo(),
-      ...(useModelNative ? { files: modelNativeFiles, previewSource: 'model-native-sandbox' as const } : {}),
+      previewMode: mode,
+      ...(showModelNative && nativeFiles.length > 0
+        ? { files: nativeFiles, previewSource: 'model-native-sandbox' as const }
+        : {}),
     });
     setOpenFailed(!opened);
   };
@@ -118,27 +142,64 @@ export default function WebBuildPreviewPanel({
     </p>
   );
 
-  if (useModelNative) {
-    // Isolated model-native runtime Preview inside the existing browser frame.
+  // Owner-only segmented selector: Candidate Preview | Safe Preview. Hidden for normal
+  // users and when no candidate exists. Selecting a mode is component-local UI state only.
+  const ownerSelector = (isOwner && candidateAvailable) ? (
+    <div className="mb-3 inline-flex rounded-lg border border-white/[0.1] bg-white/[0.03] p-0.5 text-[11px]">
+      <button
+        onClick={() => setOwnerSel('model-native')}
+        className={`rounded-md px-2.5 py-1 font-medium transition-colors ${mode !== 'safe-fallback' ? 'bg-[#A855F7]/20 text-[#D8B4FE]' : 'text-[#94A3B8] hover:text-white'}`}
+      >
+        {lang === 'tr' ? 'Aday Önizleme' : 'Candidate Preview'}
+      </button>
+      <button
+        onClick={() => setOwnerSel('safe')}
+        className={`rounded-md px-2.5 py-1 font-medium transition-colors ${mode === 'safe-fallback' ? 'bg-white/[0.1] text-white' : 'text-[#94A3B8] hover:text-white'}`}
+      >
+        {lang === 'tr' ? 'Güvenli Önizleme' : 'Safe Preview'}
+      </button>
+    </div>
+  ) : null;
+
+  const openPreviewButton = (
+    <button
+      onClick={openPreview}
+      className="inline-flex items-center gap-1.5 rounded-lg border border-[#3B82F6]/30 bg-[#3B82F6]/[0.08] px-3 py-1.5 text-[12px] font-medium text-[#93C5FD] transition-colors hover:bg-[#3B82F6]/[0.14]"
+    >
+      <ExternalLink className="h-3.5 w-3.5" /> {t('wbOpenPreview')}
+    </button>
+  );
+
+  if (showModelNative && nativeFiles.length > 0) {
+    // Isolated model-native runtime Preview inside the existing browser frame. In
+    // owner-candidate mode the actual UNAPPROVED generated project runs, framed by an
+    // explicit warning + bounded runtime diagnostics. Approved mode stays clean.
     return (
       <div>
-        <div className="mb-3 flex flex-col items-end gap-2">
-          <button
-            onClick={openPreview}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-[#3B82F6]/30 bg-[#3B82F6]/[0.08] px-3 py-1.5 text-[12px] font-medium text-[#93C5FD] transition-colors hover:bg-[#3B82F6]/[0.14]"
-          >
-            <ExternalLink className="h-3.5 w-3.5" /> {t('wbOpenPreview')}
-          </button>
-          {openFailedNote}
+        {isCandidateMode && candidate ? <CandidateUnapprovedNotice candidate={candidate} /> : null}
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div>{ownerSelector}</div>
+          <div className="flex flex-col items-end gap-2">
+            {openPreviewButton}
+            {openFailedNote}
+          </div>
         </div>
         <BrowserFrame url={url} accentColor={ACCENT}>
-          <WebBuildModelNativePreview files={modelNativeFiles} mode="embedded" />
+          <WebBuildModelNativePreview
+            files={nativeFiles}
+            mode="embedded"
+            {...(isCandidateMode ? { candidate: true, showRuntimeDiagnostics: isOwner, onRuntimeSnapshot: setRuntimeSnapshot } : {})}
+          />
         </BrowserFrame>
-        <p className="mt-2 text-[11px] text-[#64748B]">
-          {lang === 'tr'
-            ? 'Doğrulanmış model-native proje izole bir çalıştırma ortamında önizleniyor.'
-            : 'The validated model-native project is previewed in an isolated runtime.'}
-        </p>
+        {isCandidateMode && candidate ? (
+          <RuntimeDiagnosticsBlock snapshot={runtimeSnapshot} candidate={candidate} />
+        ) : (
+          <p className="mt-2 text-[11px] text-[#64748B]">
+            {lang === 'tr'
+              ? 'Doğrulanmış model-native proje izole bir çalıştırma ortamında önizleniyor.'
+              : 'The validated model-native project is previewed in an isolated runtime.'}
+          </p>
+        )}
       </div>
     );
   }
@@ -162,6 +223,7 @@ export default function WebBuildPreviewPanel({
     return (
       <div>
         {blockedBanner}
+        {ownerSelector}
         <div className="rounded-xl border border-dashed border-white/[0.08] px-4 py-8 text-center text-[12px] text-[#64748B]">{t('wbPreviewEmpty')}</div>
       </div>
     );
@@ -205,14 +267,12 @@ export default function WebBuildPreviewPanel({
   return (
     <div>
       {blockedBanner}
-      <div className="mb-3 flex flex-col items-end gap-2">
-        <button
-          onClick={openPreview}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-[#3B82F6]/30 bg-[#3B82F6]/[0.08] px-3 py-1.5 text-[12px] font-medium text-[#93C5FD] transition-colors hover:bg-[#3B82F6]/[0.14]"
-        >
-          <ExternalLink className="h-3.5 w-3.5" /> {t('wbOpenPreview')}
-        </button>
-        {openFailedNote}
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>{ownerSelector}</div>
+        <div className="flex flex-col items-end gap-2">
+          {openPreviewButton}
+          {openFailedNote}
+        </div>
       </div>
       <BrowserFrame url={url} accentColor={ACCENT}>
         <div className="max-h-[70vh] overflow-y-auto scrollbar-thin">

@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 import { ArrowLeft, Lock } from 'lucide-react';
 import { useLanguageStore } from '@/stores/languageStore';
+import { useOwnerMode } from '@/hooks/useOwnerMode';
 import WebBuildPreviewDocument from '@/components/builder/WebBuildPreviewDocument';
-import WebBuildModelNativePreview from '@/components/builder/WebBuildModelNativePreview';
+import WebBuildModelNativePreview, { CandidateUnapprovedNotice, RuntimeDiagnosticsBlock } from '@/components/builder/WebBuildModelNativePreview';
 import { readPreview, sanitizeReturnTo, requestPreviewForRun, subscribePreviewResponses, isUsablePreviewData, hasModelNativeEntryFiles, type WebBuildPreviewData } from '@/lib/webBuildPreviewStash';
+import { deriveModelNativeCandidate, type ModelNativeCandidate, type ModelNativeRuntimeSnapshot } from '@/lib/webBuildRuntimePreview';
 import { listWebBuildSessions, getWebBuildSession } from '@/lib/webBuildSession';
 import { getProjects } from '@/stores/projectStore';
 import type { WebBuildStep } from '@/lib/webBuildPayload';
@@ -22,23 +24,27 @@ import type { WebBuildStep } from '@/lib/webBuildPayload';
  *  the resolver skip an empty/stale stash and keep trying healthier fallbacks. */
 const usablePreview = isUsablePreviewData;
 
-/** Build preview data from a saved Web Build step. When THAT step actually consumed
- *  model-native files (frontendBuilderConsumption.status === 'model-native'), restore
- *  the model-native project + source; otherwise use the section-based fallback.
- *  Model-native status is read from the artifact, never inferred from filenames. */
+/** Build preview data from a saved Web Build step. Phase 13A — AUTOMATIC cold restoration
+ *  must honor FRONTEND ACCEPTANCE, not consumption alone: a model-native project is
+ *  restored only when it is APPROVED for the user preview (acceptance approved /
+ *  repaired-approved, or a legacy build with no acceptance artifact that already consumed
+ *  model-native). An unapproved 'manual-review-required' / 'skipped' build restores the
+ *  deterministic safe fallback. An unapproved candidate is NEVER auto-exposed here — it is
+ *  reachable only through an explicit stashed owner-candidate handoff. Acceptance/source
+ *  are read from the derived candidate (artifact-driven), never inferred from filenames. */
 function stepToPreviewData(
   runId: string,
   wb: { sectionItems?: WebBuildPreviewData['sectionItems']; brief?: WebBuildPreviewData['brief']; prompt?: string; steps?: WebBuildStep[] },
 ): WebBuildPreviewData | null {
   const step = (wb.steps || []).find((s) => s.id === runId);
   if (!step) return null;
-  const consumption = step.artifacts?.frontendBuilderConsumption;
   const brief = wb.brief || {};
-  if (consumption?.status === 'model-native' && hasModelNativeEntryFiles(step.files)) {
-    return { runId, sectionItems: wb.sectionItems || [], brief, slug: undefined, prompt: wb.prompt, files: step.files, previewSource: 'model-native-sandbox' };
+  const candidate = deriveModelNativeCandidate(step, step.files);
+  if (candidate.approvedForUserPreview && candidate.source === 'consumed-model-native' && hasModelNativeEntryFiles(step.files)) {
+    return { runId, sectionItems: wb.sectionItems || [], brief, slug: undefined, prompt: wb.prompt, files: step.files, previewSource: 'model-native-sandbox', previewMode: 'approved-model-native' };
   }
-  const candidate: WebBuildPreviewData = { runId, sectionItems: wb.sectionItems || [], brief, slug: undefined, prompt: wb.prompt };
-  return usablePreview(candidate) ? candidate : null;
+  const fallback: WebBuildPreviewData = { runId, sectionItems: wb.sectionItems || [], brief, slug: undefined, prompt: wb.prompt, previewMode: 'safe-fallback' };
+  return usablePreview(fallback) ? fallback : null;
 }
 
 /** Fallback: a saved project whose Web Build contains this run/step id. Returns data
@@ -80,8 +86,11 @@ function resolveLocalPreview(runId: string): WebBuildPreviewData | null {
 
 export default function WebBuildPreview() {
   const { t, lang } = useLanguageStore();
+  const { isOwner } = useOwnerMode();
   const { runId = '' } = useParams();
   const navigate = useNavigate();
+  // Phase 13A — ephemeral runtime snapshot for an owner Candidate Preview (React state only).
+  const [snapshot, setSnapshot] = useState<ModelNativeRuntimeSnapshot | null>(null);
   // On-device resolution first (stash → saved session → saved project).
   const local = useMemo(() => resolveLocalPreview(runId), [runId]);
   const [data, setData] = useState<WebBuildPreviewData | null>(local);
@@ -137,7 +146,23 @@ export default function WebBuildPreview() {
     navigate('/chat');
   }
 
-  const modelNative = !!data && data.previewSource === 'model-native-sandbox' && hasModelNativeEntryFiles(data.files);
+  // Phase 13A — an owner-candidate handoff renders the UNAPPROVED generated project ONLY
+  // for an owner; a non-owner falls back safely. 'approved-model-native' (and legacy
+  // undefined-mode model-native stashes, i.e. pre-13A approved builds) render for everyone;
+  // 'safe-fallback' never renders model-native. Owner status is read from useOwnerMode —
+  // NEVER from a URL flag or a preview-authored localStorage field.
+  const wantsModelNative = !!data && data.previewSource === 'model-native-sandbox' && hasModelNativeEntryFiles(data.files);
+  const isOwnerCandidate = data?.previewMode === 'owner-candidate';
+  const modelNative = wantsModelNative && (
+    isOwnerCandidate ? isOwner
+      : data?.previewMode === 'safe-fallback' ? false
+        : true
+  );
+  // A display-only candidate for the owner Candidate Preview's warning + diagnostics. The
+  // stash carries only the mode + files, so acceptance is the honest "unapproved" reason.
+  const displayCandidate: ModelNativeCandidate | null = (modelNative && isOwnerCandidate && data)
+    ? { available: true, source: 'consumed-model-native', files: data.files || [], acceptance: 'manual-review-required', approvedForUserPreview: false, reason: 'Explicit owner-candidate handoff.' }
+    : null;
 
   if (!data || !isUsablePreviewData(data)) {
     // Still waiting for a BroadcastChannel handoff from the opener tab — show a
@@ -176,11 +201,32 @@ export default function WebBuildPreview() {
         <span className="w-4" />
       </div>
 
+      {/* Phase 13A — an owner Candidate Preview carries the same unapproved-candidate
+          warning + bounded runtime diagnostics as the embedded panel. */}
+      {displayCandidate ? (
+        <div className="mx-auto max-w-3xl px-4 pt-3">
+          <CandidateUnapprovedNotice candidate={displayCandidate} />
+        </div>
+      ) : null}
+
       {/* Real generated page. A model-native project runs in the isolated Sandpack
           runtime and controls its OWN full-width layout (never the max-w-5xl frame);
           the legacy section renderer keeps the centered document frame. */}
       {modelNative
-        ? <WebBuildModelNativePreview files={data.files || []} mode="standalone" />
+        ? (
+          <>
+            <WebBuildModelNativePreview
+              files={data.files || []}
+              mode="standalone"
+              {...(displayCandidate ? { candidate: true, showRuntimeDiagnostics: true, onRuntimeSnapshot: setSnapshot } : {})}
+            />
+            {displayCandidate ? (
+              <div className="mx-auto max-w-3xl px-4 pb-4">
+                <RuntimeDiagnosticsBlock snapshot={snapshot} candidate={displayCandidate} />
+              </div>
+            ) : null}
+          </>
+        )
         : (
           <div className="mx-auto max-w-5xl">
             <WebBuildPreviewDocument sectionItems={data.sectionItems} brief={data.brief} />

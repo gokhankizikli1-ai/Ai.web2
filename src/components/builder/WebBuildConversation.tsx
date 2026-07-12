@@ -6,6 +6,7 @@ import { useOwnerMode } from '@/hooks/useOwnerMode';
 import KorvixAvatar from '@/components/builder/KorvixAvatar';
 import WebBuildFileView from '@/components/builder/WebBuildFileView';
 import WebBuildPreviewPanel from '@/components/builder/WebBuildPreviewPanel';
+import { deriveModelNativeCandidate } from '@/lib/webBuildRuntimePreview';
 import type {
   WebBuildStep, WebBuildFile, WebBuildSectionItem, PlanningQuality,
 } from '@/lib/webBuildPayload';
@@ -1065,19 +1066,18 @@ export default function WebBuildConversation({
   const lastIdx = steps.length - 1;
   const openFile = (path?: string) => { setFilePath(path); setPanel('files'); };
 
-  // Phase 12F.3 — user-facing Preview selection. A model-native project is shown as the
-  // finished Preview ONLY when frontend acceptance is approved / repaired-approved. When
-  // acceptance is 'manual-review-required' (initial review failed, major issues remain,
-  // the quality repair was rejected, the post-repair review failed, or the score stayed
-  // below the acceptance threshold) the unapproved project must NOT be presented as a
-  // normal successful website: the USER-FACING Preview falls back to the deterministic
-  // safe renderer and shows an explicit "Build needs regeneration" notice. The rejected
-  // files stay accessible in All Files + owner diagnostics (payload.files is untouched).
-  const lastArtifacts = steps[lastIdx]?.artifacts;
-  const previewBlocked = lastArtifacts?.frontendBuilderAcceptance?.status === 'manual-review-required';
-  const effectivePreviewSource = previewBlocked
-    ? undefined
-    : lastArtifacts?.frontendBuilderConsumption?.previewSource;
+  // Phase 13A — derive the model-native candidate (consumed or parsed-initial) for the
+  // latest step. The panel turns it into one of three explicit Preview modes:
+  //   • approved-model-native — a normal user sees the approved Sandpack project;
+  //   • owner-candidate       — an owner may inspect the UNAPPROVED generated project;
+  //   • safe-fallback         — everyone else sees the deterministic safe renderer.
+  // Acceptance / payload / files are never rewritten here (Phase 12F.3 semantics intact):
+  // a 'manual-review-required' build still shows the "Build needs regeneration" notice and
+  // the safe fallback to normal users, while the real candidate becomes owner-inspectable.
+  const lastStep = steps[lastIdx];
+  const candidate = deriveModelNativeCandidate(lastStep, files);
+  const previewBlocked = lastStep?.artifacts?.frontendBuilderAcceptance?.status === 'manual-review-required';
+  const rawPreviewSource = lastStep?.artifacts?.frontendBuilderConsumption?.previewSource;
 
   return (
     <div className="space-y-5">
@@ -1124,7 +1124,7 @@ export default function WebBuildConversation({
                 </button>
               </div>
               {panel === 'preview'
-                ? <WebBuildPreviewPanel sectionItems={sectionItems} brief={brief} slug={slug} runId={runId} files={files} previewSource={effectivePreviewSource} blockedNeedsRegeneration={previewBlocked} interactionContract={steps[lastIdx]?.artifacts?.strategy?.interactionContract} visualAssetPlan={steps[lastIdx]?.artifacts?.artDirection?.visualAssetPlan} visualSignaturePlan={steps[lastIdx]?.artifacts?.visualSignaturePlan} motionComposer={steps[lastIdx]?.artifacts?.motionComposer} imagePipeline={steps[lastIdx]?.artifacts?.imagePipeline} />
+                ? <WebBuildPreviewPanel sectionItems={sectionItems} brief={brief} slug={slug} runId={runId} files={files} previewSource={rawPreviewSource} candidate={candidate} blockedNeedsRegeneration={previewBlocked} interactionContract={steps[lastIdx]?.artifacts?.strategy?.interactionContract} visualAssetPlan={steps[lastIdx]?.artifacts?.artDirection?.visualAssetPlan} visualSignaturePlan={steps[lastIdx]?.artifacts?.visualSignaturePlan} motionComposer={steps[lastIdx]?.artifacts?.motionComposer} imagePipeline={steps[lastIdx]?.artifacts?.imagePipeline} />
                 : <WebBuildFileView files={files} initialPath={filePath} />}
             </motion.div>
           </motion.div>
