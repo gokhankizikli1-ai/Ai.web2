@@ -31,16 +31,29 @@ const MAX_LIST_ENTRIES = 40;
 const MAX_COPY_PREVIEW_CHARS = 60;
 
 /* ── Runtime package allowlist (STATIC — never reads package.json at runtime) ──
- * Package ROOTS from the repository's current direct runtime dependencies that a
- * generated static frontend may legitimately import. Scoped packages match by
- * scope. Node built-ins are always rejected. */
+ * EXACT package ROOTS from the repository's current direct runtime dependencies that
+ * a generated static frontend may legitimately import. Scoped packages are matched by
+ * their EXACT `@scope/name` root (an entire npm scope is NEVER allowed — a scoped
+ * package that shares an allowed scope but is not installed must be rejected). Node
+ * built-ins are always rejected. */
 const ALLOWED_PACKAGE_ROOTS = new Set<string>([
+  // Unscoped direct runtime dependencies.
   'react', 'react-dom', 'framer-motion', 'lucide-react', 'clsx', 'tailwind-merge', 'recharts',
   'class-variance-authority', 'cmdk', 'date-fns', 'embla-carousel-react', 'input-otp', 'next-themes',
   'react-day-picker', 'react-hook-form', 'react-markdown', 'react-resizable-panels', 'react-router',
   'react-syntax-highlighter', 'remark-gfm', 'sonner', 'vaul', 'zod', 'zustand',
+  // Scoped direct runtime dependencies — EXACT `@scope/name` roots only.
+  '@hookform/resolvers',
+  '@radix-ui/react-accordion', '@radix-ui/react-alert-dialog', '@radix-ui/react-aspect-ratio',
+  '@radix-ui/react-avatar', '@radix-ui/react-checkbox', '@radix-ui/react-collapsible',
+  '@radix-ui/react-context-menu', '@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu',
+  '@radix-ui/react-hover-card', '@radix-ui/react-label', '@radix-ui/react-menubar',
+  '@radix-ui/react-navigation-menu', '@radix-ui/react-popover', '@radix-ui/react-progress',
+  '@radix-ui/react-radio-group', '@radix-ui/react-scroll-area', '@radix-ui/react-select',
+  '@radix-ui/react-separator', '@radix-ui/react-slider', '@radix-ui/react-slot',
+  '@radix-ui/react-switch', '@radix-ui/react-tabs', '@radix-ui/react-toggle',
+  '@radix-ui/react-toggle-group', '@radix-ui/react-tooltip',
 ]);
-const ALLOWED_PACKAGE_SCOPES = new Set<string>(['@radix-ui', '@hookform']);
 const NODE_BUILTINS = new Set<string>([
   'fs', 'path', 'child_process', 'http', 'https', 'crypto', 'net', 'os', 'url', 'stream',
   'util', 'events', 'zlib', 'tls', 'dns', 'dgram', 'cluster', 'readline', 'worker_threads',
@@ -60,12 +73,13 @@ const FORBIDDEN_PATTERNS: Array<{ re: RegExp; label: string }> = [
   { re: /\bWebSocket\b/, label: 'WebSocket' },
   { re: /\bEventSource\b/, label: 'EventSource' },
   { re: /navigator\.sendBeacon/, label: 'navigator.sendBeacon' },
-  { re: /\baxios\b/, label: 'axios' },
-  { re: /\bsupabase\b/i, label: 'supabase' },
-  { re: /\bfirebase\b/i, label: 'firebase' },
-  { re: /\bstripe\b/i, label: 'stripe' },
-  { re: /\bsocket\.io\b/i, label: 'socket.io' },
-  { re: /\bgraphql-request\b/, label: 'graphql-request' },
+  // Targeted EXECUTABLE usage of an HTTP-client SDK — an actual call
+  // (`axios(...)` / `axios.get(...)`), never the plain word. Visible copy such as
+  // <span>axios</span> or "axios (the HTTP client)" does NOT match. Package-level
+  // integration (axios, supabase, firebase, stripe, socket.io, graphql-request …)
+  // is already rejected as an unsupported-package IMPORT and via the network APIs
+  // above, so no plain service-name copy is ever flagged as SDK execution.
+  { re: /\baxios\.\w+\s*\(|\baxios\(/, label: 'axios runtime call' },
   { re: /process\.env/, label: 'process.env' },
   { re: /import\.meta\.env/, label: 'import.meta.env' },
 ];
@@ -73,6 +87,9 @@ const REMOTE_ASSET_PATTERNS: Array<{ re: RegExp; label: string }> = [
   { re: /<(?:img|video|source)\b[^>]*\bsrc\s*=\s*["'`]\s*https?:\/\//i, label: 'remote <img/video/source src' },
   { re: /url\(\s*["']?\s*https?:\/\//i, label: 'remote css url()' },
 ];
+/* Incomplete-output markers — matched against CODE COMMENT text only (see
+ * extractCommentText), never raw file content, so a visible "TODO"/"FIXME" headline
+ * or a "content omitted" paragraph in public copy is not flagged as a code stub. */
 const INCOMPLETE_PATTERNS: Array<{ re: RegExp; label: string }> = [
   { re: /\bTODO\b/, label: 'TODO placeholder' },
   { re: /\bFIXME\b/, label: 'FIXME placeholder' },
@@ -302,13 +319,15 @@ function extractSpecifiers(content: string): string[] {
   while ((m = SIDE_EFFECT_IMPORT_RE.exec(content)) !== null) out.push(m[1]);
   return out;
 }
-/** Package root for the allowlist: `@scope/name` for scoped, first segment otherwise. */
-function packageRoot(spec: string): { root: string; scope: string | null } {
+/** Exact package root for the allowlist: `@scope/name` for scoped, first segment
+ *  otherwise. An entire scope is never returned on its own, so a shared scope can
+ *  never grant access to an uninstalled scoped package. */
+function packageRoot(spec: string): { root: string } {
   if (spec.startsWith('@')) {
     const parts = spec.split('/');
-    return { root: parts.slice(0, 2).join('/'), scope: parts[0] };
+    return { root: parts.slice(0, 2).join('/') };
   }
-  return { root: spec.split('/')[0], scope: null };
+  return { root: spec.split('/')[0] };
 }
 
 /* ── Copy normalization (compare only; never rewrites generated code) ────────── */
@@ -319,6 +338,22 @@ function normCopy(s: string): string {
     .replace(/\\/g, '')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/** Extract ONLY comment text from a .ts/.tsx file — line `//…`, block `/*…*/` and
+ *  JSX `{/*…*/}` (which share the `/*…*/` delimiter). Used so placeholder /
+ *  incomplete-output detection scans code comments, NEVER visible copy: a `TODO`
+ *  headline or a "content omitted" paragraph is public text, not a code stub. Bounded,
+ *  string-only. A `//` preceded by `:` or `/` (e.g. `https://`) is not a comment. */
+function extractCommentText(content: string): string {
+  const parts: string[] = [];
+  const block = /\/\*[\s\S]*?\*\//g;
+  let mb: RegExpExecArray | null;
+  while ((mb = block.exec(content)) !== null) parts.push(mb[0]);
+  const line = /(?:^|[^:/])\/\/(.*)$/gm;
+  let ml: RegExpExecArray | null;
+  while ((ml = line.exec(content)) !== null) parts.push(ml[1]);
+  return parts.join('\n');
 }
 
 /* ── Main validation (given successfully parsed files + the spec) ───────────── */
@@ -389,16 +424,17 @@ function validateProject(rawFiles: RawFile[], spec: FrontendBuildSpecification, 
         acc.unresolvedRelativeImports.push(specifier);
         addError(acc, 'unsupported-alias', `path alias import is unsupported in the standalone project: ${specifier}`, f.path, specifier);
       } else {
-        const { root, scope } = packageRoot(specifier);
-        const bare = scope || root;
+        // EXACT package-root allowlisting: a scoped package must match its full
+        // `@scope/name` root — sharing an allowed scope is NOT sufficient.
+        const { root } = packageRoot(specifier);
         if (NODE_BUILTINS.has(root) || specifier.startsWith('node:')) {
           acc.unsupportedPackageImports.push(specifier);
           addError(acc, 'node-builtin', `Node built-in import is not allowed in browser code: ${specifier}`, f.path, specifier);
-        } else if ((scope && ALLOWED_PACKAGE_SCOPES.has(scope)) || ALLOWED_PACKAGE_ROOTS.has(root)) {
-          /* allowed */
+        } else if (ALLOWED_PACKAGE_ROOTS.has(root)) {
+          /* allowed — exact installed direct runtime dependency */
         } else {
           acc.unsupportedPackageImports.push(specifier);
-          addError(acc, 'unsupported-package', `unsupported package import (not in the runtime allowlist): ${bare}`, f.path, specifier);
+          addError(acc, 'unsupported-package', `unsupported package import (not in the runtime allowlist): ${root}`, f.path, specifier);
         }
       }
     }
@@ -464,7 +500,10 @@ function validateProject(rawFiles: RawFile[], spec: FrontendBuildSpecification, 
     }
   }
 
-  // 7) Incomplete-output / placeholder checks (narrow code patterns only).
+  // 7) Incomplete-output / placeholder checks. Exact standalone ellipsis lines stay
+  //    exact; TODO/FIXME + the incomplete-output phrases are scanned in CODE COMMENTS
+  //    ONLY, so visible public copy (a "TODO list" headline, a "content omitted"
+  //    paragraph) is never mistaken for an unfinished code stub.
   for (const f of files) {
     if (f.language === 'css') continue;
     for (const raw2 of f.content.split('\n')) {
@@ -473,8 +512,9 @@ function validateProject(rawFiles: RawFile[], spec: FrontendBuildSpecification, 
         addError(acc, 'placeholder-ellipsis', `code placeholder ("...") in ${f.path}`, f.path); break;
       }
     }
+    const comments = extractCommentText(f.content);
     for (const { re, label } of INCOMPLETE_PATTERNS) {
-      if (re.test(f.content)) { addError(acc, 'incomplete-code', `incomplete-output placeholder: ${label}`, f.path); break; }
+      if (re.test(comments)) { addError(acc, 'incomplete-code', `incomplete-output placeholder in a code comment: ${label}`, f.path); break; }
     }
   }
   // Required section components must not be empty stubs (return null / empty).
