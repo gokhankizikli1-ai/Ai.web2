@@ -1,7 +1,11 @@
-import { Component, useMemo, type CSSProperties, type ErrorInfo, type ReactNode } from 'react';
-import { SandpackProvider, SandpackLayout, SandpackPreview, type SandpackFiles, type SandpackSetup } from '@codesandbox/sandpack-react';
+import { Component, useEffect, useMemo, useRef, type CSSProperties, type ErrorInfo, type ReactNode } from 'react';
+import { SandpackProvider, SandpackLayout, SandpackPreview, useSandpack, type SandpackFiles, type SandpackSetup } from '@codesandbox/sandpack-react';
 import { useLanguageStore } from '@/stores/languageStore';
 import type { WebBuildFile } from '@/lib/webBuildPayload';
+import {
+  boundRuntimeMessages, emptyRuntimeSnapshot, runtimeSnapshotKey,
+  type ModelNativeCandidate, type ModelNativeRuntimePhase, type ModelNativeRuntimeSnapshot,
+} from '@/lib/webBuildRuntimePreview';
 
 /**
  * ISOLATED runtime Preview of the validated model-native React project (Phase 12D).
@@ -21,6 +25,14 @@ import type { WebBuildFile } from '@/lib/webBuildPayload';
 export interface WebBuildModelNativePreviewProps {
   files: WebBuildFile[];
   mode?: 'embedded' | 'standalone';
+  /** Phase 13A — receive bounded, ephemeral runtime snapshots observed via Sandpack's
+   *  PUBLIC API. Providing this callback mounts the observer; omit it for a clean preview.
+   *  Snapshots are React-state only: never persisted, never sent to a model/backend. */
+  onRuntimeSnapshot?: (snapshot: ModelNativeRuntimeSnapshot) => void;
+  /** Phase 13A — owner Candidate Preview flag. Presentational hint only (no behaviour). */
+  candidate?: boolean;
+  /** Phase 13A — reserved owner flag; the diagnostics UI lives outside this component. */
+  showRuntimeDiagnostics?: boolean;
 }
 
 /* Bounded static runtime dependency map — the packages Phase 12C accepts, pinned to
@@ -226,7 +238,160 @@ class SandpackErrorBoundary extends Component<{ fallback: ReactNode; children: R
   }
 }
 
-export default function WebBuildModelNativePreview({ files, mode = 'embedded' }: WebBuildModelNativePreviewProps) {
+/* ── Phase 13A — public-API-only Sandpack runtime observer ─────────────────────
+ * Rendered as a CHILD of SandpackProvider. It uses ONLY the public `useSandpack`
+ * hook + its `listen(...)` bundler-message subscription and the public `sandpack.status`
+ * string. It NEVER touches the iframe DOM, private internals, `postMessage` plumbing or
+ * `console`, and it invents nothing: an error/warning is reported only when a supported
+ * public message carries it. `running` is reported as "sandbox running" — NOT a compile
+ * or visual pass. Snapshots are bounded and emitted only when they meaningfully change. */
+
+/** A minimal, defensively-typed view of the public Sandpack bundler messages we read.
+ *  We narrow on `type` and read documented fields; unknown shapes are ignored. */
+interface RuntimeMessageLike {
+  type?: string;
+  status?: string;
+  action?: string;
+  title?: string;
+  message?: string;
+  /** Sandpack's historical (real) spelling for the compile-error flag on a `done` msg. */
+  compilatonError?: boolean;
+  compilationError?: boolean;
+  log?: Array<{ method?: string; data?: unknown[] }>;
+}
+
+const RUNTIME_SOFT_TIMEOUT_MS = 25000;
+
+interface ObserverAccum {
+  phase: ModelNativeRuntimePhase;
+  publicStatus?: string;
+  errorMessages: string[];
+  warningMessages: string[];
+  sawRuntimeSignal: boolean;
+}
+
+function toText(v: unknown): string {
+  if (typeof v === 'string') return v;
+  try { return JSON.stringify(v); } catch { return String(v); }
+}
+
+function RuntimeObserver({ onSnapshot }: { onSnapshot: (s: ModelNativeRuntimeSnapshot) => void }) {
+  const { sandpack, listen } = useSandpack();
+  const accRef = useRef<ObserverAccum>({ phase: 'not-started', errorMessages: [], warningMessages: [], sawRuntimeSignal: false });
+  const lastKeyRef = useRef<string>('');
+
+  const emit = useRef((reasonHint?: string) => {
+    const acc = accRef.current;
+    const messages = boundRuntimeMessages([...acc.errorMessages, ...acc.warningMessages]);
+    const snapshot: ModelNativeRuntimeSnapshot = {
+      ...emptyRuntimeSnapshot(),
+      phase: acc.phase,
+      publicStatus: acc.publicStatus,
+      errorCount: acc.errorMessages.length,
+      warningCount: acc.warningMessages.length,
+      messages,
+      sandboxRuntimeObserved: acc.sawRuntimeSignal,
+      reason:
+        reasonHint
+        || (acc.phase === 'error' ? 'A bundler/runtime error was reported by the sandbox.'
+          : acc.phase === 'timeout' ? 'No runtime signal was observed within the soft timeout (observation only).'
+          : acc.phase === 'running' ? 'Sandbox reports running. Visual quality NOT evaluated; manual inspection still required.'
+          : acc.phase === 'initializing' ? 'Sandbox is initializing (installing/transpiling).'
+          : 'No runtime signal observed yet.'),
+    };
+    const key = runtimeSnapshotKey(snapshot);
+    if (key === lastKeyRef.current) return;
+    lastKeyRef.current = key;
+    onSnapshot(snapshot);
+  }).current;
+
+  // Subscribe to public bundler messages. `listen` is a documented public API.
+  useEffect(() => {
+    const push = (arr: string[], msg: string) => { if (msg && !arr.includes(msg) && arr.length < 12) arr.push(msg); };
+    const stop = listen((raw) => {
+      const m = raw as unknown as RuntimeMessageLike;
+      const acc = accRef.current;
+      switch (m.type) {
+        case 'start':
+          acc.phase = 'initializing';
+          acc.errorMessages = [];
+          acc.warningMessages = [];
+          acc.sawRuntimeSignal = true;
+          break;
+        case 'status':
+          acc.publicStatus = typeof m.status === 'string' ? m.status : acc.publicStatus;
+          acc.sawRuntimeSignal = true;
+          if (m.status === 'installing-dependencies' || m.status === 'transpiling') {
+            if (acc.phase !== 'error') acc.phase = 'initializing';
+          } else if (m.status === 'evaluating') {
+            if (acc.phase !== 'error') acc.phase = 'running';
+          }
+          break;
+        case 'done': {
+          acc.sawRuntimeSignal = true;
+          const compileError = m.compilatonError === true || m.compilationError === true;
+          if (compileError) { acc.phase = 'error'; push(acc.errorMessages, 'Bundler reported a compile error.'); }
+          else if (acc.phase !== 'error') acc.phase = 'running';
+          break;
+        }
+        case 'action':
+          if (m.action === 'show-error') {
+            acc.phase = 'error';
+            push(acc.errorMessages, toText(m.title || m.message || 'Sandbox reported an error.'));
+          }
+          break;
+        case 'unhandled-rejection':
+          acc.phase = 'error';
+          push(acc.errorMessages, toText(m.message || 'Unhandled promise rejection in the sandbox.'));
+          break;
+        case 'timeout':
+          if (acc.phase !== 'error') acc.phase = 'timeout';
+          break;
+        case 'console':
+          if (Array.isArray(m.log)) {
+            for (const entry of m.log) {
+              if (!entry) continue;
+              if (entry.method === 'error') push(acc.errorMessages, toText((entry.data || []).map(toText).join(' ')));
+              else if (entry.method === 'warn') push(acc.warningMessages, toText((entry.data || []).map(toText).join(' ')));
+            }
+          }
+          break;
+        default:
+          break;
+      }
+      emit();
+    });
+    return () => { try { stop(); } catch { /* ignore */ } };
+  }, [listen, emit]);
+
+  // Mirror the public status string + a coarse phase hint from `sandpack.status`. The
+  // status is read as a plain string so this never depends on Sandpack's exact status union.
+  const publicStatus = String(sandpack.status ?? '');
+  useEffect(() => {
+    const acc = accRef.current;
+    acc.publicStatus = acc.publicStatus || (publicStatus || undefined);
+    if ((publicStatus === 'initial' || publicStatus === 'running') && acc.phase === 'not-started') acc.phase = 'initializing';
+    if ((publicStatus === 'running' || publicStatus === 'idle') && acc.sawRuntimeSignal && acc.phase === 'initializing') acc.phase = 'running';
+    emit();
+  }, [publicStatus, emit]);
+
+  // Soft timeout: honestly report "no runtime signal observed within Ns" (our observation),
+  // never a claim from Sandpack. Only fires while still not-started/initializing.
+  useEffect(() => {
+    const id = setTimeout(() => {
+      const acc = accRef.current;
+      if (acc.phase === 'not-started' || acc.phase === 'initializing') {
+        acc.phase = 'timeout';
+        emit();
+      }
+    }, RUNTIME_SOFT_TIMEOUT_MS);
+    return () => clearTimeout(id);
+  }, [emit]);
+
+  return null;
+}
+
+export default function WebBuildModelNativePreview({ files, mode = 'embedded', onRuntimeSnapshot, candidate = false, showRuntimeDiagnostics = false }: WebBuildModelNativePreviewProps) {
   const { lang } = useLanguageStore();
   const list = useMemo(() => (Array.isArray(files) ? files.filter((f): f is WebBuildFile => !!f && typeof f.path === 'string' && typeof f.content === 'string') : []), [files]);
 
@@ -265,6 +430,11 @@ export default function WebBuildModelNativePreview({ files, mode = 'embedded' }:
 
   const L = (en: string, tr: string) => (lang === 'tr' ? tr : en);
 
+  // Phase 13A — mount the public-API runtime observer only when a caller wants snapshots
+  // (owner Candidate Preview or explicit owner diagnostics). A clean user preview stays
+  // observer-free. `candidate` also tunes the honesty caption below.
+  const wantObserver = !!onRuntimeSnapshot && (candidate || showRuntimeDiagnostics);
+
   if (!hasEntryFiles) {
     return (
       <div className="flex min-h-[240px] flex-col items-center justify-center gap-2 px-6 py-12 text-center" style={mode === 'standalone' ? containerStyle : undefined}>
@@ -297,13 +467,14 @@ export default function WebBuildModelNativePreview({ files, mode = 'embedded' }:
 
   return (
     <SandpackErrorBoundary fallback={boundaryFallback}>
-      <div style={containerStyle}>
+      <div style={containerStyle} data-preview-candidate={candidate ? 'true' : 'false'}>
         <SandpackProvider
           theme="dark"
           template="react-ts"
           files={virtualFiles}
           customSetup={customSetup}
         >
+          {wantObserver && onRuntimeSnapshot ? <RuntimeObserver onSnapshot={onRuntimeSnapshot} /> : null}
           <SandpackLayout style={{ height: '100%', width: '100%', border: 'none', borderRadius: 0 }}>
             <SandpackPreview
               showNavigator={false}
@@ -317,5 +488,119 @@ export default function WebBuildModelNativePreview({ files, mode = 'embedded' }:
         </SandpackProvider>
       </div>
     </SandpackErrorBoundary>
+  );
+}
+
+/* ── Phase 13A — shared owner-only presentational blocks (reused by the embedded panel
+ * and the standalone route). Honest wording only: an unapproved candidate is never framed
+ * as a finished/approved/production site, and no visual/screenshot claim is ever made. ── */
+
+const ACCEPTANCE_LABEL: Record<string, [string, string]> = {
+  approved: ['approved', 'onaylı'],
+  'repaired-approved': ['repaired-approved', 'düzeltme sonrası onaylı'],
+  'manual-review-required': ['manual review required', 'manuel inceleme gerekli'],
+  skipped: ['skipped', 'atlandı'],
+  unknown: ['unknown', 'bilinmiyor'],
+};
+
+/** The prominent "unapproved model-native candidate" warning shown above a candidate run. */
+export function CandidateUnapprovedNotice({ candidate }: { candidate: ModelNativeCandidate }) {
+  const { lang } = useLanguageStore();
+  const L = (en: string, tr: string) => (lang === 'tr' ? tr : en);
+  const acc = ACCEPTANCE_LABEL[candidate.acceptance] || ACCEPTANCE_LABEL.unknown;
+  const srcLabel = candidate.source === 'consumed-model-native'
+    ? L('consumed model-native', 'tüketilen model-native')
+    : candidate.source === 'parsed-initial-candidate'
+      ? L('parsed initial candidate', 'ayrıştırılmış ilk aday')
+      : L('none', 'yok');
+  return (
+    <div className="mb-3 rounded-xl border border-[#A855F7]/30 bg-[#A855F7]/[0.08] px-3.5 py-2.5">
+      <p className="text-[12px] font-semibold text-[#D8B4FE]">
+        {L('Unapproved model-native candidate', 'Onaylanmamış model-native aday')}
+      </p>
+      <p className="mt-1 text-[11px] leading-relaxed text-[#E5D4F7]">
+        {L(
+          'Unapproved model-native candidate. This is the actual generated React project running in the isolated sandbox. It did not receive final frontend approval and is shown only for owner inspection.',
+          'Onaylanmamış model-native aday. Bu, izole çalışma ortamında çalışan gerçek üretilmiş React projesidir. Nihai ön yüz onayı almamıştır ve yalnızca owner incelemesi için gösterilmektedir.',
+        )}
+      </p>
+      <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[10.5px] text-[#C4B5D6]">
+        <span>{L('Candidate source', 'Aday kaynağı')}: {srcLabel}</span>
+        <span>{L('Frontend acceptance', 'Ön yüz kabulü')}: {L(acc[0], acc[1])}</span>
+        <span>{L('Visual quality not evaluated', 'Görsel kalite değerlendirilmedi')}</span>
+      </div>
+    </div>
+  );
+}
+
+const PHASE_TONE: Record<ModelNativeRuntimePhase, string> = {
+  'not-started': '#64748B',
+  initializing: '#94A3B8',
+  running: '#86A08F',
+  error: '#E0A35B',
+  timeout: '#E0A35B',
+  unknown: '#64748B',
+};
+
+/** The bounded owner runtime-diagnostics block, rendered OUTSIDE the iframe. */
+export function RuntimeDiagnosticsBlock({ snapshot, candidate }: { snapshot: ModelNativeRuntimeSnapshot | null; candidate: ModelNativeCandidate }) {
+  const { lang } = useLanguageStore();
+  const L = (en: string, tr: string) => (lang === 'tr' ? tr : en);
+  const s = snapshot || emptyRuntimeSnapshot();
+  const acc = ACCEPTANCE_LABEL[candidate.acceptance] || ACCEPTANCE_LABEL.unknown;
+  const phaseLabel: Record<ModelNativeRuntimePhase, [string, string]> = {
+    'not-started': ['not started', 'başlamadı'],
+    initializing: ['initializing', 'başlatılıyor'],
+    running: ['sandbox running', 'çalışma ortamı çalışıyor'],
+    error: ['runtime error observed', 'çalışma zamanı hatası gözlemlendi'],
+    timeout: ['no runtime signal (timeout)', 'çalışma sinyali yok (zaman aşımı)'],
+    unknown: ['unknown', 'bilinmiyor'],
+  };
+  const first = s.messages.slice(0, 3);
+  const rest = s.messages.slice(3);
+  const row = (k: string, v: string, tone?: string) => (
+    <div className="flex gap-2">
+      <span className="w-40 shrink-0 text-[#64748B]">{k}</span>
+      <span className="min-w-0 break-words" style={{ color: tone || '#CBD5E1' }}>{v}</span>
+    </div>
+  );
+  return (
+    <div className="mt-2 rounded-lg border border-white/[0.08] bg-black/20 px-3 py-2 text-[11px] leading-relaxed">
+      <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-[#64748B]">
+        {L('Candidate runtime diagnostics (owner)', 'Aday çalışma tanılaması (owner)')}
+      </div>
+      {row(L('Candidate source', 'Aday kaynağı'), candidate.source)}
+      {row(L('Frontend acceptance', 'Ön yüz kabulü'), L(acc[0], acc[1]))}
+      {row(L('Sandbox state', 'Çalışma durumu'), `${L(phaseLabel[s.phase][0], phaseLabel[s.phase][1])}${s.publicStatus ? ` · ${s.publicStatus}` : ''}`, PHASE_TONE[s.phase])}
+      {row(L('Observed runtime errors', 'Gözlemlenen çalışma hataları'), String(s.errorCount), s.errorCount ? '#E0A35B' : undefined)}
+      {row(L('Observed runtime warnings', 'Gözlemlenen çalışma uyarıları'), String(s.warningCount))}
+      {row(L('Visual quality observed', 'Görsel kalite gözlemi'), 'false')}
+      {row(L('Screenshot observed', 'Ekran görüntüsü gözlemi'), 'false')}
+      {first.length > 0 && (
+        <div className="mt-1.5 space-y-0.5">
+          {first.map((m, i) => (
+            <p key={i} className="break-words text-[10.5px] text-[#94A3B8]">• {m}</p>
+          ))}
+          {rest.length > 0 && (
+            <details className="mt-0.5">
+              <summary className="cursor-pointer text-[10.5px] text-[#64748B] hover:text-[#94A3B8]">
+                {L(`+${rest.length} more message(s)`, `+${rest.length} mesaj daha`)}
+              </summary>
+              <div className="mt-0.5 space-y-0.5">
+                {rest.map((m, i) => (
+                  <p key={i} className="break-words text-[10.5px] text-[#94A3B8]">• {m}</p>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+      )}
+      <p className="mt-1.5 text-[10px] text-[#64748B]">
+        {L(
+          'Runtime observation via Sandpack public API only. A running sandbox still requires manual visual inspection; no screenshot or visual-quality review was performed.',
+          'Çalışma gözlemi yalnızca Sandpack genel API’si üzerindendir. Çalışan bir ortam yine de manuel görsel inceleme gerektirir; ekran görüntüsü veya görsel kalite incelemesi yapılmadı.',
+        )}
+      </p>
+    </div>
   );
 }
