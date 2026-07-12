@@ -22,6 +22,9 @@
 import type { WebBuildBrief } from '@/lib/webBuildApi';
 import type { WebBuildSectionItem } from '@/lib/webBuildPayload';
 import type { WebBuildLayoutPlan } from '@/lib/webBuildLayoutPlan';
+// Phase 12F — the shared product-intent authority (a leaf; no runtime cycle) for the
+// final specification contradiction guard.
+import { resolveProductIntent } from '@/lib/webBuildProductIntent';
 import type {
   FrontendBuildSpecification, FrontendSpecSection, FrontendSpecImageSlot, FrontendSpecMotionLayer,
   FrontendSpecIdentity, FrontendSpecDesignSystem, FrontendSpecArchitecture, FrontendSpecAssetPlan,
@@ -505,21 +508,86 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
 
     const summary = `Frontend Build Specification (${status}): ${sections.length} sections · sector ${identity.sector || 'n/a'} · ${outputContract.requiredSectionComponentFiles.length} component files · research ${researchEvidence.didUseRealSources ? 'source-backed' : 'none'} · generation not-run.`;
 
+    // ── Phase 12F — final product-intent contradiction guard (pure, non-throwing). ──
+    // Correct ONLY deterministic architecture/demo LABELS that provably contradict the
+    // resolved product intent (a chat surface without explicit chat evidence; a
+    // storefront/shopper surface without an actual store concept). Real section copy,
+    // section order, research evidence, design direction, honesty rules and the output
+    // contract are preserved untouched. Never silently deletes public copy — it filters
+    // machine/demo labels + neutralizes drifting design labels, and records a warning.
+    const guardIntent = resolveProductIntent({
+      prompt: input.prompt,
+      briefText: `${identity.siteType || ''} ${identity.primaryWebsiteExperience || ''} ${identity.businessModel || ''}`,
+      primaryConcept: identity.primaryConcept || identity.sector,
+      targetVertical: identity.subsector,
+      lang: lang === 'tr' ? 'tr' : 'en',
+    });
+    const forbiddenDrift = guardIntent.forbiddenDriftLabels;
+    const hasDrift = (s: string | undefined): boolean => {
+      if (!s) return false;
+      const low = s.toLowerCase();
+      return forbiddenDrift.some((f) => low.includes(f));
+    };
+    const stripDrift = (xs: string[]): string[] => xs.filter((x) => !hasDrift(x));
+
+    const gDemoSurfaces = stripDrift(architecture.demoSurfaces);
+    const gStateful = stripDrift(architecture.statefulDemoComponents)
+      .filter((c) => guardIntent.explicitChat || !/chat-?demo-?panel|chat-?panel/i.test(c));
+    const gSections = sections.map((s) =>
+      (Array.isArray(s.interactionHints) && s.interactionHints.some(hasDrift))
+        ? { ...s, interactionHints: stripDrift(s.interactionHints) }
+        : s);
+    const neutralCTA = lang === 'tr' ? 'Ürün Demosunu Gör' : 'See Product Demo';
+    const gPrimaryCTA = hasDrift(architecture.primaryCTA) ? neutralCTA : architecture.primaryCTA;
+    const gSecondaryCTA = hasDrift(architecture.secondaryCTA) ? neutralCTA : architecture.secondaryCTA;
+
+    const archDrift =
+      gDemoSurfaces.length !== architecture.demoSurfaces.length ||
+      gStateful.length !== architecture.statefulDemoComponents.length ||
+      gPrimaryCTA !== architecture.primaryCTA ||
+      gSecondaryCTA !== architecture.secondaryCTA ||
+      gSections.some((s, i) => s !== sections[i]);
+    const guardedArchitecture: FrontendSpecArchitecture = archDrift
+      ? { ...architecture, demoSurfaces: gDemoSurfaces, statefulDemoComponents: gStateful, primaryCTA: gPrimaryCTA, secondaryCTA: gSecondaryCTA, sections: gSections }
+      : architecture;
+
+    // Drifting DESIGN labels (hero composition / visual metaphor / visual signature) are
+    // neutralized — they are deterministic design labels, not public copy.
+    const gHero = hasDrift(designSystem.heroComposition) ? undefined : designSystem.heroComposition;
+    const gMetaphor = hasDrift(designSystem.visualMetaphor) ? undefined : designSystem.visualMetaphor;
+    const gSignature = hasDrift(designSystem.visualSignature) ? undefined : designSystem.visualSignature;
+    const designDrift = gHero !== designSystem.heroComposition || gMetaphor !== designSystem.visualMetaphor || gSignature !== designSystem.visualSignature;
+    const guardedDesignSystem: FrontendSpecDesignSystem = designDrift
+      ? { ...designSystem, heroComposition: gHero, visualMetaphor: gMetaphor, visualSignature: gSignature }
+      : designSystem;
+
+    const guardWarnings: string[] = [];
+    if (archDrift || designDrift) {
+      if (!guardIntent.explicitChat) guardWarnings.push(lang === 'tr'
+        ? 'Sohbet olmayan ürün spesifikasyonundan çelişen sohbet-yüzeyi etiketleri kaldırıldı.'
+        : 'Removed contradictory chat-surface labels from a non-chat product specification.');
+      if (!guardIntent.catalogOriented) guardWarnings.push(lang === 'tr'
+        ? 'Mağaza olmayan ürün spesifikasyonundan çelişen mağaza/alışverişçi-yüzeyi etiketleri kaldırıldı.'
+        : 'Removed contradictory storefront/shopper-surface labels from a non-store product specification.');
+    }
+    const finalWarnings = merge(10, warnings, guardWarnings);
+    const finalSourceTrace = (archDrift || designDrift) ? clean(sourceTrace.concat(['productIntentGuard']), 26) : sourceTrace;
+
     return {
       version: 'frontend-spec-v1',
       status,
       language: lang,
       prompt: str(input.prompt),
       identity,
-      designSystem,
-      architecture,
+      designSystem: guardedDesignSystem,
+      architecture: guardedArchitecture,
       assets,
       researchEvidence,
       outputContract,
       honestyRules,
-      sourceTrace,
+      sourceTrace: finalSourceTrace,
       missingInputs,
-      warnings,
+      warnings: finalWarnings,
       generation: { ...NOT_RUN_GENERATION },
       summary,
     };
