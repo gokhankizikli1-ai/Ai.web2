@@ -132,6 +132,82 @@ def check_message(user_id: str, message: str) -> SafetyResult:
     return SafetyResult(allowed=True)
 
 
+# ── Structured builder safety path (Phase 12B.1) ───────────────────────────
+# The dedicated `frontend_builder` mode transports a serialized Phase 12A
+# FrontendBuildSpecification (up to ~120k chars) that INTENTIONALLY carries the
+# original user prompt, public copy and research snippets as untrusted JSON DATA.
+# The generic guard would (a) reject it on the 4k length cap and (b) mis-fire the
+# prompt-injection regex on quoted injection-like content. This dedicated path
+# validates the ENVELOPE structure + a hard structured size cap + the per-user
+# throttle, and deliberately SKIPS the generic injection regex over the payload —
+# the dedicated backend system prompt, not the transported strings, controls
+# execution. It applies ONLY to a valid explicit frontend_builder envelope; every
+# other mode keeps the generic cap / injection / throttle behavior unchanged.
+_STRUCTURED_MAX_LEN = 125_000
+
+
+def check_structured_builder_message(user_id: str, message: str) -> SafetyResult:
+    """
+    Safety path for the dedicated `frontend_builder` structured request. Validates
+    the frontend-files envelope structure + a 125k hard cap + the throttle. Never
+    raises; never runs the generic prompt-injection regex over the JSON payload.
+    """
+    with _STATS_LOCK:
+        _STATS["checks"] += 1
+
+    if not isinstance(message, str):
+        message = str(message or "")
+    msg_len = len(message)
+
+    # 1. Hard structured length cap.
+    if msg_len > _STRUCTURED_MAX_LEN:
+        _bump("rejections_length", f"structured length {msg_len} > {_STRUCTURED_MAX_LEN}")
+        return SafetyResult(
+            allowed=False, reason=f"structured builder message exceeds {_STRUCTURED_MAX_LEN} characters",
+            code="length",
+            message_for_user=(
+                "Yapılandırılmış istek çok büyük. Lütfen tekrar dene "
+                f"(maks {_STRUCTURED_MAX_LEN} karakter)."
+            ),
+        )
+
+    # 2. Envelope structure — must be the exact dedicated request, with exactly one
+    #    BEGIN marker preceding exactly one END marker. Malformed → honest reject.
+    begin_marker = "BEGIN_FRONTEND_BUILD_SPEC_JSON"
+    end_marker = "END_FRONTEND_BUILD_SPEC_JSON"
+    begin_count = message.count(begin_marker)
+    end_count = message.count(end_marker)
+    valid_envelope = (
+        message.startswith("[FRONTEND BUILDER REQUEST]")
+        and begin_count == 1
+        and end_count == 1
+        and message.index(begin_marker) < message.index(end_marker)
+    )
+    if not valid_envelope:
+        _bump("rejections_injection", "malformed_structured_builder_envelope")
+        return SafetyResult(
+            allowed=False, reason="malformed frontend builder envelope",
+            code="malformed_envelope",
+            message_for_user=(
+                "Yapılandırılmış istek biçimi geçersiz. Lütfen tekrar dene."
+            ),
+        )
+
+    # 3. Per-minute throttle (unchanged). The generic injection regex is
+    #    deliberately NOT run over the trusted-transport JSON payload.
+    if not _throttle_ok(str(user_id)):
+        _bump("rejections_throttle", "per_minute_limit")
+        return SafetyResult(
+            allowed=False, reason="per-minute rate limit",
+            code="throttle",
+            message_for_user=(
+                "Çok hızlı mesaj gönderiyorsun. Birkaç saniye bekleyip tekrar dene."
+            ),
+        )
+
+    return SafetyResult(allowed=True)
+
+
 def _throttle_ok(user_id: str) -> bool:
     """Sliding-window rate limit. Returns True if request can proceed."""
     if _PER_MIN_LIMIT <= 0:

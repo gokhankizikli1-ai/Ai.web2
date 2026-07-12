@@ -49,6 +49,22 @@ def get_config(
     if mode is None:
         mode = get_mode("fast")
 
+    # Phase 12B.1 — the dedicated Frontend Builder returns its REGISTERED config
+    # verbatim (MODEL_STRONG / temperature 0.25 / max_tokens 12000). The serialized
+    # specification legitimately contains words like "brief", "quick", "short",
+    # "detailed" or "professional tone" as DATA, so it must NEVER drive the model or
+    # token-budget keyword/depth mutation below.
+    if mode.name == "frontend_builder":
+        return {
+            "model":       mode.model,
+            "provider":    PROVIDER,
+            "use_gpt4":    mode.model == MODEL_STRONG,
+            "mode":        mode.name,
+            "temperature": mode.temperature,
+            "max_tokens":  mode.max_tokens,
+            "style":       mode.response_style,
+        }
+
     model       = mode.model
     temperature = mode.temperature
     max_tokens  = mode.max_tokens
