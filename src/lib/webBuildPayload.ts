@@ -15,7 +15,7 @@ import {
   type WebBuildAgent, type WebBuildArtifacts, type WebBuildEnforcement,
   type FrontendBuildSpecification, type FrontendBuilderRawArtifact,
   type FrontendBuilderValidationArtifact, type FrontendBuilderValidationStatus,
-  type FrontendBuilderConsumptionArtifact,
+  type FrontendBuilderConsumptionArtifact, type FrontendBuilderQualityPipelineResult,
 } from '@/lib/webBuildAgents';
 import { deriveAgentSectionArchitecture } from '@/lib/webBuildSectionArchitecture';
 import { deriveFrontendBuildSpecification } from '@/lib/webBuildFrontendSpec';
@@ -423,6 +423,152 @@ export function attachFrontendBuilderRaw(
       ...rootPatched,
       files: consumedFiles,
       activity: rebuildActivityForConsumed(payload.activity, consumedFiles),
+      planningDiagnostics: clearCodeContractPending(payload.planningDiagnostics),
+    };
+  } catch {
+    return payload;
+  }
+}
+
+/**
+ * Attach the Phase 12E quality-pipeline result (static initial review, optional single
+ * bounded repair, static post-repair review, final acceptance) IMMUTABLY to the
+ * already-consumed Phase 12D payload, at BOTH the root and the latest step. Older steps
+ * NEVER change; no new WebBuild step is created (the repair belongs to the same turn).
+ *
+ * When NO repaired project is accepted, the ACTIVE project is untouched: files,
+ * latest-step files, activity, summary, consumption artifact, Preview source, All Files
+ * source and the Phase 12C validation artifact are all preserved — only the Phase 12E
+ * artifacts + enforcement diagnostics are added.
+ *
+ * When a repaired project IS accepted (acceptance 'repaired-approved'), the repaired,
+ * re-validated files atomically REPLACE `payload.files` + `latestStep.files` — diffed
+ * against the currently active INITIAL model-native project from THIS turn (never a
+ * temporary synthesis, an older step, the raw repair output or a previous revision).
+ * Generated content is passed byte-for-byte (only a summary label is attached). The
+ * active validation artifact becomes the repaired project's validation and the
+ * consumption artifact is refreshed while preserving model-native / model-native-sandbox
+ * sources. The persisted initial `frontendBuilderRaw` is NEVER overwritten by the repair.
+ *
+ * Pure + fail-open: never mutates the input; returns the input unchanged on any error.
+ */
+export function attachFrontendBuilderQualityResult(
+  payload: WebBuildPayload,
+  result: FrontendBuilderQualityPipelineResult,
+): WebBuildPayload {
+  try {
+    const ir = result.initialReview;
+    const rp = result.repair;
+    const fr = result.finalReview;
+    const acc = result.acceptance;
+
+    const accepted =
+      acc.status === 'repaired-approved' &&
+      !!result.acceptedRepairedFiles &&
+      !!result.acceptedRepairedValidation;
+
+    // Repaired files → WebBuildFile[], diffed against the CURRENT active initial
+    // model-native project from this turn (payload.files). Content is byte-identical;
+    // only a summary label is attached. Computed once and reused at root + latest step.
+    const repairedFiles: WebBuildFile[] = accepted
+      ? diffFiles(payload.files, (result.acceptedRepairedFiles || []).map((f) => ({
+          path: f.path,
+          content: f.content,
+          language: f.language,
+          summary: 'Model-native file improved by the bounded Phase 12E repair',
+        })))
+      : [];
+
+    // Refreshed consumption artifact — preserves the model-native / model-native-sandbox
+    // sources; only the counts + honest reason change. Only used when accepted.
+    const updatedConsumption: FrontendBuilderConsumptionArtifact | undefined = accepted
+      ? {
+          version: 'frontend-builder-consumption-v1',
+          status: 'model-native',
+          fileSource: 'model-native',
+          allFilesSource: 'model-native',
+          previewSource: 'model-native-sandbox',
+          consumedFileCount: repairedFiles.length,
+          consumedCharCount: result.acceptedRepairedValidation?.totalCharCount ?? 0,
+          validationStatus: 'valid',
+          readyForConsumption: true,
+          reason: 'The accepted Phase 12E repaired model-native project now drives All Files and the isolated runtime Preview.',
+        }
+      : undefined;
+
+    // Phase 12E enforcement — separate facts, never reusing generation/validation/
+    // consumption flags. Consumption fields are refreshed ONLY on an accepted repair.
+    const enforcePatch: Partial<WebBuildEnforcement> = {
+      didRunFrontendBuilderInitialReview: !!ir && ir.status !== 'skipped',
+      frontendBuilderInitialReviewStatus: ir?.status,
+      frontendBuilderInitialReviewPassed: ir?.passed,
+      frontendBuilderInitialReviewScore: ir?.score,
+      frontendBuilderInitialBlockerCount: ir?.blockerCount,
+      frontendBuilderInitialMajorCount: ir?.majorCount,
+      frontendBuilderInitialMinorCount: ir?.minorCount,
+      didAttemptFrontendBuilderRepair: rp?.attempted ?? false,
+      didAcceptFrontendBuilderRepair: rp?.accepted ?? false,
+      frontendBuilderRepairStatus: rp?.status,
+      frontendBuilderRepairValidationStatus: rp?.validationStatus,
+      didRunFrontendBuilderFinalReview: !!fr && fr.status !== 'skipped',
+      frontendBuilderFinalReviewStatus: fr?.status,
+      frontendBuilderFinalReviewPassed: fr?.passed,
+      frontendBuilderFinalReviewScore: fr?.score,
+      frontendBuilderAcceptanceStatus: acc.status,
+      frontendBuilderActiveProject: acc.activeProject,
+      frontendBuilderRenderedVisualTestStatus: 'pending-manual-test',
+      ...(accepted
+        ? {
+            didConsumeFrontendBuilderFiles: true,
+            frontendBuilderConsumptionStatus: 'model-native' as const,
+            frontendBuilderFileSource: 'model-native' as const,
+            frontendBuilderAllFilesSource: 'model-native' as const,
+            frontendBuilderPreviewSource: 'model-native-sandbox' as const,
+            frontendBuilderConsumedFileCount: repairedFiles.length,
+            frontendBuilderConsumedCharCount: result.acceptedRepairedValidation?.totalCharCount ?? 0,
+            frontendBuilderConsumptionReason: updatedConsumption?.reason,
+          }
+        : {}),
+    };
+
+    // Immutable artifact patch. On accept, the ACTIVE validation + consumption switch to
+    // the repaired project; the persisted initial `frontendBuilderRaw` is left untouched.
+    const patch = (a: WebBuildArtifacts | undefined): WebBuildArtifacts => {
+      const next: WebBuildArtifacts = { ...(a || {}) };
+      if (ir) next.frontendBuilderInitialReview = ir;
+      if (rp) next.frontendBuilderRepair = rp;
+      if (fr) next.frontendBuilderFinalReview = fr;
+      next.frontendBuilderAcceptance = acc;
+      if (accepted) {
+        if (result.acceptedRepairedValidation) next.frontendBuilderValidation = result.acceptedRepairedValidation;
+        if (updatedConsumption) next.frontendBuilderConsumption = updatedConsumption;
+      }
+      next.enforcement = a?.enforcement ? { ...a.enforcement, ...enforcePatch } : a?.enforcement;
+      return next;
+    };
+
+    const steps = Array.isArray(payload.steps) ? payload.steps : [];
+    const nextSteps = steps.length
+      ? steps.map((s, i) => {
+          if (i !== steps.length - 1) return s;
+          if (!accepted) return { ...s, artifacts: patch(s.artifacts) };
+          return {
+            ...s,
+            files: repairedFiles,
+            activity: rebuildActivityForConsumed(s.activity, repairedFiles),
+            summary: recomputeSummaryForConsumed(s.summary, repairedFiles),
+            planningDiagnostics: clearCodeContractPending(s.planningDiagnostics),
+            artifacts: patch(s.artifacts),
+          };
+        })
+      : steps;
+
+    const rootPatched: WebBuildPayload = { ...payload, artifacts: patch(payload.artifacts), steps: nextSteps };
+    if (!accepted) return rootPatched;
+    return {
+      ...rootPatched,
+      files: repairedFiles,
+      activity: rebuildActivityForConsumed(payload.activity, repairedFiles),
       planningDiagnostics: clearCodeContractPending(payload.planningDiagnostics),
     };
   } catch {

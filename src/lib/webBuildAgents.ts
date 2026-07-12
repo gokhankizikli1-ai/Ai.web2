@@ -1278,6 +1278,32 @@ export interface WebBuildEnforcement {
   frontendBuilderConsumedCharCount?: number;
   frontendBuilderConsumptionReason?: string;
   fallbackReason?: string;
+  /* ── Frontend Builder quality review + repair trace (Phase 12E, optional) ──────
+   *  STATIC model design-quality review, one bounded repair, static post-repair
+   *  review and guarded acceptance. These are SEPARATE facts from generation,
+   *  validation and consumption — never reuse those flags. `renderedVisualTest`
+   *  stays 'pending-manual-test': no screenshot/DOM/runtime was observed. */
+  didRunFrontendBuilderInitialReview?: boolean;
+  frontendBuilderInitialReviewStatus?: string;
+  frontendBuilderInitialReviewPassed?: boolean;
+  frontendBuilderInitialReviewScore?: number;
+  frontendBuilderInitialBlockerCount?: number;
+  frontendBuilderInitialMajorCount?: number;
+  frontendBuilderInitialMinorCount?: number;
+
+  didAttemptFrontendBuilderRepair?: boolean;
+  didAcceptFrontendBuilderRepair?: boolean;
+  frontendBuilderRepairStatus?: string;
+  frontendBuilderRepairValidationStatus?: string;
+
+  didRunFrontendBuilderFinalReview?: boolean;
+  frontendBuilderFinalReviewStatus?: string;
+  frontendBuilderFinalReviewPassed?: boolean;
+  frontendBuilderFinalReviewScore?: number;
+
+  frontendBuilderAcceptanceStatus?: string;
+  frontendBuilderActiveProject?: string;
+  frontendBuilderRenderedVisualTestStatus?: 'pending-manual-test';
 }
 
 /* ── Frontend Build Specification (Phase 12A) ─────────────────────────────────
@@ -1591,6 +1617,188 @@ export interface FrontendBuilderConsumptionArtifact {
   fallbackReason?: string;
 }
 
+/* ── Frontend Builder quality review + repair (Phase 12E) ──────────────────────
+ * A bounded STATIC model design-quality review of the Phase 12D active model-native
+ * project (specification + generated SOURCE files only), an optional single bounded
+ * repair, an unchanged Phase 12C re-validation of that repair, a static post-repair
+ * review, and a guarded repaired-file acceptance record.
+ *
+ * This is NOT screenshot analysis, browser observation, runtime compilation, DOM
+ * inspection, Sandpack error detection, automated visual regression or human visual
+ * approval. Every artifact honestly records `renderedScreenshotReviewed: false`,
+ * `runtimeCompilationReviewed: false` and `renderedVisualTestStatus:
+ * 'pending-manual-test'`. A real rendered visual test is performed MANUALLY after
+ * Phase 12E merges.
+ *
+ * Generation, validation, consumption, static design review, repair, final acceptance,
+ * runtime rendering and manual visual testing remain SEPARATE facts — none is ever
+ * collapsed into another. All fields additive + optional + backward compatible;
+ * JSON-serializable; every string/array is bounded. Old saved builds still load. */
+export type FrontendBuilderReviewStage = 'initial' | 'post-repair';
+export type FrontendBuilderReviewVerdict = 'pass' | 'repair';
+export type FrontendBuilderReviewSeverity = 'blocker' | 'major' | 'minor';
+export type FrontendBuilderReviewCategory =
+  | 'concept-fidelity'
+  | 'concept-drift'
+  | 'generic-template'
+  | 'visual-hierarchy'
+  | 'layout-rhythm'
+  | 'typography'
+  | 'palette-and-surfaces'
+  | 'component-composition'
+  | 'motion-and-interaction'
+  | 'responsive-intent'
+  | 'accessibility-intent'
+  | 'copy-fidelity'
+  | 'contract-fidelity'
+  | 'honesty'
+  | 'maintainability';
+
+export interface FrontendBuilderReviewIssue {
+  id: string;
+  severity: FrontendBuilderReviewSeverity;
+  category: FrontendBuilderReviewCategory;
+  files: string[];
+  evidence: string;
+  repairInstruction: string;
+}
+
+export interface FrontendBuilderReviewDimensions {
+  conceptSpecificity: number;
+  visualHierarchy: number;
+  layoutRhythm: number;
+  typography: number;
+  paletteAndSurfaces: number;
+  componentComposition: number;
+  motionAndInteraction: number;
+  responsiveIntent: number;
+  accessibilityIntent: number;
+  copyAndContractFidelity: number;
+  honesty: number;
+  maintainability: number;
+}
+
+/** The persisted, parsed review artifact (initial or post-repair). `passed` is
+ *  computed INDEPENDENTLY of the model's own `verdict` (verdict==='pass' AND
+ *  score>=82 AND blockerCount===0 AND majorCount===0). A 'failed'/'skipped' status
+ *  means the reviewer call/parse did not yield a trustworthy review. */
+export interface FrontendBuilderReviewArtifact {
+  version: 'frontend-review-v1';
+  stage: FrontendBuilderReviewStage;
+
+  status: 'completed' | 'failed' | 'skipped';
+
+  reviewKind: 'model-static-design-review';
+  renderedScreenshotReviewed: false;
+  runtimeCompilationReviewed: false;
+
+  verdict?: FrontendBuilderReviewVerdict;
+  score?: number;
+  dimensions?: FrontendBuilderReviewDimensions;
+
+  strengths: string[];
+  issues: FrontendBuilderReviewIssue[];
+  resolvedIssueIds: string[];
+
+  blockerCount: number;
+  majorCount: number;
+  minorCount: number;
+
+  passed: boolean;
+  summary?: string;
+  reason: string;
+
+  mode: 'frontend_builder';
+  model?: string;
+  provider?: string;
+  requestId?: string;
+  responseCharCount: number;
+}
+
+/** The persisted, bounded record of the single Phase 12E repair attempt. Never
+ *  carries the full repair raw response twice — only bounded metadata + the score
+ *  deltas needed to prove the repaired project was validated and accepted. */
+export interface FrontendBuilderRepairArtifact {
+  version: 'frontend-repair-v1';
+
+  status: 'not-run' | 'completed' | 'failed' | 'rejected' | 'accepted';
+
+  attempted: boolean;
+  accepted: boolean;
+
+  validationStatus: 'not-run' | 'valid' | 'invalid';
+
+  generatedFileCount: number;
+  generatedCharCount: number;
+
+  initialScore?: number;
+  finalScore?: number;
+
+  reason: string;
+
+  mode: 'frontend_builder';
+  model?: string;
+  provider?: string;
+  requestId?: string;
+}
+
+/** The final Phase 12E acceptance record. `renderedVisualTestStatus` is ALWAYS
+ *  'pending-manual-test' — a static design review never certifies a rendered page. */
+export interface FrontendBuilderAcceptanceArtifact {
+  version: 'frontend-acceptance-v1';
+
+  status: 'approved' | 'repaired-approved' | 'manual-review-required' | 'skipped';
+
+  activeProject: 'initial-model-native' | 'repaired-model-native' | 'internal-fallback';
+
+  initialReviewPassed: boolean;
+  repairAttempted: boolean;
+  repairAccepted: boolean;
+  finalReviewPassed: boolean;
+
+  renderedVisualTestStatus: 'pending-manual-test';
+  renderedScreenshotReviewed: false;
+  runtimeCompilationReviewed: false;
+
+  reason: string;
+}
+
+/* ── Transient Phase 12E raw review response (NOT persisted) ───────────────────
+ * The raw reviewer `/chat` result, parsed EXACTLY ONCE by
+ * parseFrontendBuilderReview into a FrontendBuilderReviewArtifact. It lives only
+ * inside the quality pipeline; it is never stored on a step/payload. */
+export interface FrontendBuilderReviewRawArtifact {
+  version: 'frontend-review-raw-v1';
+  stage: FrontendBuilderReviewStage;
+  status: 'completed' | 'failed' | 'skipped';
+  mode: 'frontend_builder';
+  provider?: string;
+  model?: string;
+  requestId?: string;
+  /** The raw reviewer body. Absent for failed/skipped calls. */
+  rawResponse?: string;
+  responseCharCount: number;
+  reason: string;
+}
+
+/* ── Intermediate Phase 12E pipeline result (NOT persisted directly) ───────────
+ * The value returned by runFrontendBuilderQualityPipeline's internal computation and
+ * consumed by attachFrontendBuilderQualityResult. Persisted artifacts are the fields
+ * inside it (review/repair/acceptance). When a repaired project is accepted, it also
+ * carries the repaired validated files + their re-validation so the payload helper can
+ * atomically replace the active file set. */
+export interface FrontendBuilderQualityPipelineResult {
+  ran: boolean;
+  initialReview?: FrontendBuilderReviewArtifact;
+  repair?: FrontendBuilderRepairArtifact;
+  finalReview?: FrontendBuilderReviewArtifact;
+  acceptance: FrontendBuilderAcceptanceArtifact;
+  /** Present ONLY when acceptance.status === 'repaired-approved': the repaired,
+   *  re-validated project that must replace the active initial model-native files. */
+  acceptedRepairedFiles?: FrontendGeneratedFile[];
+  acceptedRepairedValidation?: FrontendBuilderValidationArtifact;
+}
+
 export interface WebBuildArtifacts {
   research?: ResearchAgentArtifact;
   /** The strategic decision the downstream agents obey (Phase 8A). Optional →
@@ -1657,6 +1865,20 @@ export interface WebBuildArtifacts {
    *  React project; 'fallback' → the deterministic section renderer + synthesized
    *  files remain active. Optional → old builds load. */
   frontendBuilderConsumption?: FrontendBuilderConsumptionArtifact;
+  /** Phase 12E — the STATIC model design-quality review of the active model-native
+   *  project (initial stage). STATIC only: no screenshot/DOM/runtime/Sandpack. Present
+   *  only when Phase 12E ran (consumption was model-native). Optional → old builds load. */
+  frontendBuilderInitialReview?: FrontendBuilderReviewArtifact;
+  /** Phase 12E — the single bounded repair record (at most one repair per turn).
+   *  Optional → old builds load. */
+  frontendBuilderRepair?: FrontendBuilderRepairArtifact;
+  /** Phase 12E — the STATIC post-repair review of the repaired project. Present only
+   *  when a repair was attempted and re-validated. Optional → old builds load. */
+  frontendBuilderFinalReview?: FrontendBuilderReviewArtifact;
+  /** Phase 12E — the final acceptance record (approved / repaired-approved /
+   *  manual-review-required / skipped). `renderedVisualTestStatus` is always
+   *  'pending-manual-test'. Optional → old builds load. */
+  frontendBuilderAcceptance?: FrontendBuilderAcceptanceArtifact;
   /** The shared context the agents were run against (pipeline trace). */
   context?: WebBuildAgentContext;
   /** Enforcement diagnostics proving the agents drove the build. */

@@ -17,7 +17,11 @@
 import { getRequestLocale } from '@/lib/locale';
 import { parseBuildSections, type BuildSection } from '@/lib/gameBuilderApi';
 import { type BuilderMode, buildModeContext } from '@/lib/builderMode';
-import type { FrontendBuildSpecification, FrontendBuilderRawArtifact } from '@/lib/webBuildAgents';
+import type {
+  FrontendBuildSpecification, FrontendBuilderRawArtifact,
+  FrontendBuilderReviewRawArtifact, FrontendBuilderReviewStage, FrontendBuilderReviewArtifact,
+} from '@/lib/webBuildAgents';
+import type { WebBuildFile } from '@/lib/webBuildPayload';
 
 /** The canonical backend AI mode for this workspace. Must match the mode
  *  registered in backend/services/ai/mode_manager.py. */
@@ -1420,4 +1424,310 @@ export async function generateFrontendBuilderRaw(
     clearTimeout(timeoutId);
     if (opts?.signal) opts.signal.removeEventListener('abort', onCallerAbort);
   }
+}
+
+/* ── Frontend Builder quality tasks: review + repair (Phase 12E) ───────────────
+ * TWO more dedicated `/chat` calls in the SAME isolated `frontend_builder` mode — a
+ * static design-quality REVIEW and a single bounded REPAIR. They reuse the existing
+ * authenticated `/chat` transport, provider routing, request locale and fail-open
+ * discipline (only explicit caller cancellation throws). Model choice, provider,
+ * temperature and token budget are unchanged — the backend still reports mode
+ * `frontend_builder`.
+ *
+ * TRANSPORT + SAFETY GUARD (critical): the backend safety guard
+ * (check_structured_builder_message) — which must NOT be modified — accepts a
+ * frontend_builder message ONLY when it starts with `[FRONTEND BUILDER REQUEST]` and
+ * carries exactly one BEGIN_FRONTEND_BUILD_SPEC_JSON / END_FRONTEND_BUILD_SPEC_JSON
+ * pair (≤125k). So review/repair are transported inside that guard envelope, with the
+ * task discriminator (`[FRONTEND REVIEW REQUEST]` / `[FRONTEND REPAIR REQUEST]`) and
+ * the named input markers (BEGIN_FRONTEND_REVIEW_INPUT_JSON / _REPAIR_INPUT_JSON)
+ * nested inside. The extended _FRONTEND_BUILDER_PROMPT branches on the discriminator.
+ * The 125k guard cap is the stricter practical bound; the client caps below are the
+ * hard client-side upper bounds — anything the guard rejects simply fails open. */
+const FRONTEND_REVIEW_TIMEOUT_MS = 75_000;
+const FRONTEND_REPAIR_TIMEOUT_MS = 120_000;
+const MAX_FRONTEND_TASK_REQUEST_CHARS = 240_000;
+const MAX_FRONTEND_REVIEW_RESPONSE_CHARS = 30_000;
+
+/** Privacy allowlist of file fields sent to review/repair — path/language/content
+ *  ONLY. Never diff status/added/removed/summary or any payload state. */
+function frontendFilesForRequest(files: WebBuildFile[]): Array<{ path: string; language: string; content: string }> {
+  return files.map((f) => ({
+    path: f.path,
+    language: f.language || (f.path.endsWith('.tsx') ? 'tsx' : f.path.endsWith('.css') ? 'css' : 'ts'),
+    content: f.content,
+  }));
+}
+
+interface FrontendTaskResponse {
+  reply: string;
+  reportedMode: string;
+  model?: string;
+  provider?: string;
+  requestId?: string;
+}
+type FrontendTaskOutcome =
+  | { ok: true; data: FrontendTaskResponse }
+  | { ok: false; reason: string; model?: string; provider?: string; requestId?: string };
+
+/**
+ * Shared private transport for a dedicated frontend_builder task (`review` / `repair`).
+ * Reuses the existing `/chat` POST + auth header + request locale, with an INDEPENDENT
+ * timeout budget and caller-cancellation propagation. Fails open (returns ok:false)
+ * for every transport/mode/read problem; throws WebBuildError('cancelled') ONLY on an
+ * explicit caller abort so a cancelled turn is never persisted as a success.
+ */
+async function callFrontendBuilderTask(
+  message: string,
+  timeoutMs: number,
+  localeSeed: string,
+  opts?: { signal?: AbortSignal },
+): Promise<FrontendTaskOutcome> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  try {
+    const tok = localStorage.getItem('korvix_access_token');
+    if (tok) headers['Authorization'] = `Bearer ${tok}`;
+  } catch { /* ignore */ }
+
+  const timer = new AbortController();
+  let timedOut = false;
+  let cancelledByCaller = false;
+  const timeoutId = setTimeout(() => { timedOut = true; timer.abort(); }, timeoutMs);
+  const onCallerAbort = () => { cancelledByCaller = true; timer.abort(); };
+  if (opts?.signal) {
+    if (opts.signal.aborted) { cancelledByCaller = true; timer.abort(); }
+    else opts.signal.addEventListener('abort', onCallerAbort, { once: true });
+  }
+
+  try {
+    let response: Response;
+    try {
+      response = await fetch(`${apiBase()}/chat`, {
+        method: 'POST',
+        headers,
+        signal: timer.signal,
+        body: JSON.stringify({
+          user_id: getUserId(),
+          message,
+          platform: 'web',
+          mode: FRONTEND_BUILDER_MODE,
+          ...getRequestLocale(localeSeed),
+        }),
+      });
+    } catch (err) {
+      if ((err as { name?: string })?.name === 'AbortError') {
+        if (cancelledByCaller) throw new WebBuildError('cancelled', 'Frontend quality task cancelled.', err);
+        if (timedOut) return { ok: false, reason: 'The dedicated frontend task timed out.' };
+        return { ok: false, reason: 'The dedicated frontend task was aborted.' };
+      }
+      return { ok: false, reason: 'Could not reach the Korvix backend for the dedicated frontend task.' };
+    }
+    if (!response.ok) return { ok: false, reason: `The backend returned HTTP ${response.status} for the dedicated frontend task.` };
+    let data: Record<string, unknown>;
+    try { data = await response.json(); }
+    catch { return { ok: false, reason: 'The backend sent an unreadable frontend task response.' }; }
+
+    return {
+      ok: true,
+      data: {
+        reply: typeof data.reply === 'string' ? data.reply : '',
+        reportedMode: typeof data.mode === 'string' ? data.mode : '',
+        model: typeof data.model === 'string' ? data.model : undefined,
+        provider: typeof data.provider === 'string' ? data.provider : undefined,
+        requestId: typeof data.request_id === 'string' ? data.request_id : undefined,
+      },
+    };
+  } finally {
+    clearTimeout(timeoutId);
+    if (opts?.signal) opts.signal.removeEventListener('abort', onCallerAbort);
+  }
+}
+
+/** A honest, bounded, transient review raw artifact (never persisted on a step). */
+function reviewRawArtifact(
+  stage: FrontendBuilderReviewStage,
+  status: FrontendBuilderReviewRawArtifact['status'],
+  reason: string,
+  extra?: Partial<FrontendBuilderReviewRawArtifact>,
+): FrontendBuilderReviewRawArtifact {
+  return {
+    version: 'frontend-review-raw-v1',
+    stage,
+    status,
+    mode: FRONTEND_BUILDER_MODE,
+    responseCharCount: 0,
+    reason,
+    ...extra,
+  };
+}
+
+/** Serialize the STATIC design-review request. Sends ONLY: stage, the authoritative
+ *  specification, and the active file paths/languages/content — plus, for post-repair,
+ *  a bounded list of the initial review's issue ids/categories/repair instructions.
+ *  Never the raw builder response, fallback files, planning reply, research outside the
+ *  spec, auth token (header only), profile, memory, full payload, steps or preview stash. */
+export function buildFrontendBuilderReviewRequest(
+  spec: FrontendBuildSpecification,
+  files: WebBuildFile[],
+  stage: FrontendBuilderReviewStage,
+  previousReview?: FrontendBuilderReviewArtifact,
+): string {
+  const input: Record<string, unknown> = {
+    task: 'frontend-design-review',
+    responseContract: 'frontend-review-v1',
+    stage,
+    specification: spec,
+    files: frontendFilesForRequest(files),
+  };
+  if (stage === 'post-repair' && previousReview) {
+    input.previousReviewIssues = (previousReview.issues || []).slice(0, 12).map((i) => ({
+      id: i.id, category: i.category, severity: i.severity, repairInstruction: i.repairInstruction,
+    }));
+  }
+  return [
+    '[FRONTEND BUILDER REQUEST]',
+    '[FRONTEND REVIEW REQUEST]',
+    `Task: static design-quality review of an ALREADY-VALIDATED model-native project (stage: ${stage}).`,
+    'Review ONLY the specification and the source files below. You did NOT see a rendered',
+    'page, a screenshot, a compiled bundle or a browser — never claim you did. Return ONLY',
+    'the strict frontend-review-v1 JSON object (no Markdown fence, no prose before/after).',
+    'BEGIN_FRONTEND_BUILD_SPEC_JSON',
+    'BEGIN_FRONTEND_REVIEW_INPUT_JSON',
+    JSON.stringify(input),
+    'END_FRONTEND_REVIEW_INPUT_JSON',
+    'END_FRONTEND_BUILD_SPEC_JSON',
+  ].join('\n');
+}
+
+/**
+ * Run the STATIC design-quality review call. Fails open (returns a failed/skipped raw
+ * artifact) on every transport/mode/size problem; propagates only caller cancellation.
+ * The result is parsed EXACTLY ONCE by parseFrontendBuilderReview in the orchestrator.
+ */
+export async function generateFrontendBuilderReviewRaw(
+  spec: FrontendBuildSpecification | undefined,
+  files: WebBuildFile[],
+  stage: FrontendBuilderReviewStage,
+  previousReview?: FrontendBuilderReviewArtifact,
+  opts?: { signal?: AbortSignal },
+): Promise<FrontendBuilderReviewRawArtifact> {
+  if (!spec) return reviewRawArtifact(stage, 'skipped', 'No Phase 12A specification available for the review.');
+  if (spec.status === 'failed-open') return reviewRawArtifact(stage, 'skipped', 'The specification failed open; the review was skipped.');
+  if (!files.length) return reviewRawArtifact(stage, 'skipped', 'No active model-native files to review.');
+
+  const message = buildFrontendBuilderReviewRequest(spec, files, stage, previousReview);
+  if (message.length > MAX_FRONTEND_TASK_REQUEST_CHARS) {
+    return reviewRawArtifact(stage, 'failed', `The review request (${message.length} chars) exceeds the safe request limit (${MAX_FRONTEND_TASK_REQUEST_CHARS}).`);
+  }
+
+  const outcome = await callFrontendBuilderTask(message, FRONTEND_REVIEW_TIMEOUT_MS, spec.prompt || '', opts);
+  if (!outcome.ok) return reviewRawArtifact(stage, 'failed', outcome.reason);
+
+  const { reply, reportedMode, model, provider, requestId } = outcome.data;
+  const base: Partial<FrontendBuilderReviewRawArtifact> = { model, provider, requestId };
+  if (reportedMode && reportedMode !== FRONTEND_BUILDER_MODE) {
+    return reviewRawArtifact(stage, 'failed', 'Backend routed the review request to an unexpected mode.', base);
+  }
+  if (!reply.trim()) return reviewRawArtifact(stage, 'failed', 'The reviewer returned an empty response.', base);
+  const charCount = reply.length;
+  if (charCount > MAX_FRONTEND_REVIEW_RESPONSE_CHARS) {
+    return reviewRawArtifact(stage, 'failed', `The reviewer response (${charCount} chars) exceeds the storage cap (${MAX_FRONTEND_REVIEW_RESPONSE_CHARS}).`, base);
+  }
+  return reviewRawArtifact(stage, 'completed', 'Reviewer returned a frontend-review-v1 response; parsing has not run yet.', {
+    ...base,
+    rawResponse: reply,
+    responseCharCount: charCount,
+  });
+}
+
+/** Serialize the bounded REPAIR request. Sends ONLY: the authoritative specification,
+ *  the active validated files, up to 8 highest-severity actionable review issues and up
+ *  to 6 strengths to preserve. Never unrelated payload state, the previous raw response,
+ *  fallback files, profile, memory or the preview stash. Returns the existing
+ *  frontend-files-v1 envelope so the UNCHANGED Phase 12C validator can validate it. */
+export function buildFrontendBuilderRepairRequest(
+  spec: FrontendBuildSpecification,
+  files: WebBuildFile[],
+  initialReview: FrontendBuilderReviewArtifact,
+): string {
+  // Highest-severity first (blocker > major > minor), capped at 8 actionable issues.
+  const rank: Record<string, number> = { blocker: 0, major: 1, minor: 2 };
+  const issuesToFix = [...(initialReview.issues || [])]
+    .sort((a, b) => (rank[a.severity] ?? 3) - (rank[b.severity] ?? 3))
+    .slice(0, 8)
+    .map((i) => ({
+      id: i.id, severity: i.severity, category: i.category,
+      files: i.files, evidence: i.evidence, repairInstruction: i.repairInstruction,
+    }));
+  const input = {
+    task: 'frontend-repair',
+    responseContract: 'frontend-files-v1',
+    specification: spec,
+    files: frontendFilesForRequest(files),
+    issuesToFix,
+    strengthsToPreserve: (initialReview.strengths || []).slice(0, 6),
+  };
+  return [
+    '[FRONTEND BUILDER REQUEST]',
+    '[FRONTEND REPAIR REQUEST]',
+    'Task: apply the bounded review fixes and return the COMPLETE repaired project.',
+    'Preserve required public copy, required section order, the primary concept identity',
+    'and the listed strengths. Fix ONLY the listed issues. Return ONLY a complete',
+    'frontend-files-v1 envelope (## FRONTEND_FILES_V1 … ## END_FRONTEND_FILES_V1) — never',
+    'a patch, only-changed files, prose or explanations.',
+    'BEGIN_FRONTEND_BUILD_SPEC_JSON',
+    'BEGIN_FRONTEND_REPAIR_INPUT_JSON',
+    JSON.stringify(input),
+    'END_FRONTEND_REPAIR_INPUT_JSON',
+    'END_FRONTEND_BUILD_SPEC_JSON',
+  ].join('\n');
+}
+
+/**
+ * Run the single bounded REPAIR call. Reuses the frontend-files-v1 raw artifact shape
+ * so the UNCHANGED Phase 12C validator can validate the response. Transient — the
+ * orchestrator never overwrites the persisted initial `frontendBuilderRaw` with it.
+ * Fails open on every transport/mode/size problem; propagates only caller cancellation.
+ */
+export async function generateFrontendBuilderRepairRaw(
+  spec: FrontendBuildSpecification | undefined,
+  files: WebBuildFile[],
+  initialReview: FrontendBuilderReviewArtifact,
+  opts?: { signal?: AbortSignal },
+): Promise<FrontendBuilderRawArtifact> {
+  if (!spec) return frontendBuilderArtifact('skipped', 'No Phase 12A specification available for the repair.');
+  if (spec.status === 'failed-open') return frontendBuilderArtifact('skipped', 'The specification failed open; the repair was skipped.');
+  if (!files.length) return frontendBuilderArtifact('skipped', 'No active model-native files to repair.');
+
+  const message = buildFrontendBuilderRepairRequest(spec, files, initialReview);
+  if (message.length > MAX_FRONTEND_TASK_REQUEST_CHARS) {
+    return frontendBuilderArtifact('failed', `The repair request (${message.length} chars) exceeds the safe request limit (${MAX_FRONTEND_TASK_REQUEST_CHARS}).`);
+  }
+
+  const outcome = await callFrontendBuilderTask(message, FRONTEND_REPAIR_TIMEOUT_MS, spec.prompt || '', opts);
+  if (!outcome.ok) return frontendBuilderArtifact('failed', outcome.reason);
+
+  const { reply, reportedMode, model, provider, requestId } = outcome.data;
+  // Only carry identity metadata in `base`; the per-case positional `reason` (which
+  // already names this a Phase 12E repair) must win over the spread, never be overridden.
+  const base: Partial<FrontendBuilderRawArtifact> = { model, provider, requestId };
+  if (reportedMode && reportedMode !== FRONTEND_BUILDER_MODE) {
+    return frontendBuilderArtifact('failed', 'Backend routed the repair request to an unexpected mode.', base);
+  }
+  if (!reply.trim()) return frontendBuilderArtifact('failed', 'The repair returned an empty response.', base);
+  const charCount = reply.length;
+  if (charCount > MAX_FRONTEND_RAW_RESPONSE_CHARS) {
+    return frontendBuilderArtifact('failed', `The repair response (${charCount} chars) exceeds the storage cap (${MAX_FRONTEND_RAW_RESPONSE_CHARS}) and cannot be validated safely.`, {
+      ...base,
+      rawResponse: reply.slice(0, MAX_FRONTEND_RAW_RESPONSE_CHARS),
+      responseCharCount: charCount,
+      truncatedForStorage: true,
+    });
+  }
+  return frontendBuilderArtifact('completed', 'Phase 12E bounded repair returned a raw frontend-files-v1 response; validation has not run yet.', {
+    ...base,
+    rawResponse: reply,
+    responseCharCount: charCount,
+    truncatedForStorage: false,
+  });
 }

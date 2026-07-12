@@ -533,6 +533,52 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       if (fbc.status === 'fallback' && fbc.fallbackReason) ownerRows.push(['frontendConsumptionFallback', fbc.fallbackReason.slice(0, 160)]);
     }
 
+    // Phase 12E — STATIC model design-quality review + at most one bounded repair +
+    // final acceptance. Owner-only. This is a static review of the SPECIFICATION +
+    // SOURCE files only: no screenshot, browser DOM, runtime compilation or Sandpack
+    // output was observed. renderedVisualTest stays pending-manual-test — a real
+    // rendered visual test is done manually after Phase 12E. Never shows raw JSON.
+    const issueLine = (i: { severity: string; category: string; files: string[]; evidence: string }): string =>
+      shortStr(`${i.severity} · ${i.category} · ${i.files[0] || ''}${i.evidence ? ` · ${i.evidence}` : ''}`, 140);
+    const fir = step.artifacts?.frontendBuilderInitialReview;
+    if (fir) {
+      ownerRows.push(['frontendInitialReview', fir.status]);
+      if (fir.status === 'completed') {
+        ownerRows.push(['frontendInitialReviewPassed', String(fir.passed)]);
+        ownerRows.push(['frontendInitialReviewScore', String(fir.score ?? 0)]);
+        ownerRows.push(['frontendInitialReviewIssues', `blockers=${fir.blockerCount}, major=${fir.majorCount}, minor=${fir.minorCount}`]);
+        fir.issues.slice(0, 3).forEach((i, idx) => ownerRows.push([`frontendInitialIssue${idx + 1}`, issueLine(i)]));
+      } else {
+        ownerRows.push(['frontendInitialReviewReason', shortStr(fir.reason, 140)]);
+      }
+    }
+    const frp = step.artifacts?.frontendBuilderRepair;
+    if (frp) {
+      ownerRows.push(['frontendRepair', frp.status]);
+      ownerRows.push(['frontendRepairValidation', frp.validationStatus]);
+      ownerRows.push(['frontendRepairAccepted', String(frp.accepted)]);
+      if (typeof frp.initialScore === 'number' || typeof frp.finalScore === 'number') {
+        ownerRows.push(['frontendRepairScore', `${frp.initialScore ?? '?'} → ${frp.finalScore ?? '?'}`]);
+      }
+      if (frp.status !== 'not-run') ownerRows.push(['frontendRepairReason', shortStr(frp.reason, 140)]);
+    }
+    const ffr = step.artifacts?.frontendBuilderFinalReview;
+    if (ffr) {
+      ownerRows.push(['frontendFinalReview', ffr.status]);
+      if (ffr.status === 'completed') {
+        ownerRows.push(['frontendFinalReviewPassed', String(ffr.passed)]);
+        ownerRows.push(['frontendFinalReviewScore', String(ffr.score ?? 0)]);
+        ffr.issues.slice(0, 2).forEach((i, idx) => ownerRows.push([`frontendFinalIssue${idx + 1}`, issueLine(i)]));
+      }
+    }
+    const fac = step.artifacts?.frontendBuilderAcceptance;
+    if (fac) {
+      ownerRows.push(['frontendAcceptance', fac.status]);
+      ownerRows.push(['frontendActiveProject', fac.activeProject]);
+      ownerRows.push(['renderedVisualTest', fac.renderedVisualTestStatus]);
+      ownerRows.push(['frontendAcceptanceReason', shortStr(fac.reason, 160)]);
+    }
+
     // Phase 9D-1 — intent-aware Page Architecture Decision (concept-specific spine).
     const pa = step.artifacts?.pageArchitecture;
     if (pa) {
@@ -761,24 +807,45 @@ function CompletedPlanSummary({ step }: { step: WebBuildStep }) {
   if (data.visual) rows.push([L('Visual direction', 'Görsel yön'), shortStr(data.visual, 90)]);
   if (!rows.length) return null;
 
-  // Phase 12D — source-aware parity messaging. When the validated model-native
-  // project was consumed, Preview + All Files use the generated React code (runtime
-  // isolated; visual review still pending — never a Phase 12E pass claim). Otherwise
-  // the internal renderer/files remain active and honestly report that.
+  // Phase 12E — acceptance-aware, honest quality sentence. The static design review
+  // NEVER claims a rendered/screenshot/browser/runtime/Sandpack pass — a real rendered
+  // visual test is always reported as still pending. Old builds (no acceptance artifact)
+  // fall back to the Phase 12D source-aware parity messaging.
+  const acceptance = step.artifacts?.frontendBuilderAcceptance;
   const modelNativeConsumed = step.artifacts?.frontendBuilderConsumption?.status === 'model-native';
   const disclaimer = L(
     `Front-end demo only — no real backend, AI, database or payments; no fake metrics, logos or testimonials. Preview shell: ${data.shellFromModel ? 'from model plan' : 'fallback'}.`,
     `Yalnızca ön yüz demosu — gerçek arka uç, yapay zekâ, veritabanı veya ödeme yok; sahte metrik, logo veya yorum yok. Önizleme kabuğu: ${data.shellFromModel ? 'model planından' : 'yedek'}.`,
   );
-  const parity = modelNativeConsumed
-    ? L(
-        'Preview and All Files now use the validated model-native frontend project. Runtime rendering is isolated; visual review is still pending.',
-        'Önizleme ve Tüm Dosyalar artık doğrulanmış model-native ön yüz projesini kullanıyor. Çalıştırma izole ortamda yapılıyor; görsel inceleme henüz bekliyor.',
-      )
-    : L(
-        'The internal renderer and files remain active because the dedicated frontend project was not eligible for consumption. All Files parity: pending.',
-        'Ayrılmış ön yüz projesi tüketime uygun olmadığı için dahili oluşturucu ve dosyalar etkin kalıyor. Tüm Dosyalar eşleşmesi: bekliyor.',
-      );
+  let parity: string;
+  if (acceptance?.status === 'approved') {
+    parity = L(
+      'The validated model-native project passed the static design-quality review. A rendered visual test is still pending.',
+      'Doğrulanmış model-native proje statik tasarım kalitesi incelemesini geçti. Gerçek render görsel testi hâlâ bekliyor.',
+    );
+  } else if (acceptance?.status === 'repaired-approved') {
+    parity = L(
+      'One bounded repair pass was accepted after static validation and final design review. A rendered visual test is still pending.',
+      'Tek sınırlı düzeltme turu, statik doğrulama ve son tasarım incelemesinden sonra kabul edildi. Gerçek render görsel testi hâlâ bekliyor.',
+    );
+  } else if (acceptance?.status === 'manual-review-required') {
+    parity = L(
+      'The current validated project remains active, but the static design review could not approve it. Manual rendered review is required.',
+      'Mevcut doğrulanmış proje aktif kalıyor ancak statik tasarım incelemesi projeyi onaylayamadı. Gerçek render üzerinden manuel inceleme gerekiyor.',
+    );
+  } else if (modelNativeConsumed) {
+    // Model-native consumed but no Phase 12E acceptance (old saved build): keep the
+    // honest Phase 12D language and note the review did not run.
+    parity = L(
+      'Preview and All Files use the validated model-native frontend project. Runtime rendering is isolated; the Phase 12E design review did not run and a visual review is still pending.',
+      'Önizleme ve Tüm Dosyalar doğrulanmış model-native ön yüz projesini kullanıyor. Çalıştırma izole; Phase 12E tasarım incelemesi çalışmadı ve görsel inceleme henüz bekliyor.',
+    );
+  } else {
+    parity = L(
+      'The internal renderer and files remain active because the dedicated frontend project was not eligible for consumption; the Phase 12E design review did not run. All Files parity: pending.',
+      'Ayrılmış ön yüz projesi tüketime uygun olmadığı için dahili oluşturucu ve dosyalar etkin kalıyor; Phase 12E tasarım incelemesi çalışmadı. Tüm Dosyalar eşleşmesi: bekliyor.',
+    );
+  }
   const quality = `${disclaimer} ${parity}`;
 
   return (

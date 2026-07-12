@@ -1,0 +1,284 @@
+/**
+ * Web Build FRONTEND QUALITY PIPELINE (Phase 12E) — the SINGLE shared frontend-builder
+ * sequence for BOTH build entry points (ChatWebBuild + WebsiteBuilder) and for both
+ * fresh builds and revisions. Neither entry point may duplicate this orchestration.
+ *
+ * Sequence:
+ *   generateFrontendBuilderRaw + attachFrontendBuilderRaw   (Phase 12B/12C/12D, unchanged)
+ *     → eligibility gate (consumption model-native + validation valid + ready + files>0)
+ *     → STATIC initial design review (parseFrontendBuilderReview)
+ *         PASS  → acceptance 'approved', keep the initial model-native files
+ *         FAIL  → (only when the review parsed AND lists actionable issues) exactly ONE
+ *                 bounded repair → UNCHANGED Phase 12C re-validation → STATIC post-repair
+ *                 review → guarded acceptance (valid + final pass + score improved).
+ *
+ * Model-call ceiling per turn: initial builder ×1, initial review ≤1, repair ≤1,
+ * post-repair review ≤1. Fallback (non-eligible) builds make ZERO Phase 12E calls.
+ *
+ * HONESTY BOUNDARY: this is a STATIC review of specification + source only. No
+ * screenshot, browser DOM, runtime compilation or Sandpack output is observed. Every
+ * artifact records renderedScreenshotReviewed:false, runtimeCompilationReviewed:false
+ * and renderedVisualTestStatus:'pending-manual-test'. A real rendered visual test is
+ * performed MANUALLY after Phase 12E merges.
+ *
+ * FAIL-OPEN: every Phase 12E problem (reviewer timeout/network/malformed JSON/oversize,
+ * repair timeout/network/malformed envelope, invalid repaired project, post-repair
+ * review failure, no score improvement) preserves the existing active Phase 12D project
+ * and its Preview / All Files. ONLY an explicit caller cancellation propagates.
+ */
+import {
+  generateFrontendBuilderRaw, generateFrontendBuilderReviewRaw, generateFrontendBuilderRepairRaw,
+  WebBuildError,
+} from '@/lib/webBuildApi';
+import {
+  attachFrontendBuilderRaw, attachFrontendBuilderQualityResult,
+  type WebBuildPayload, type WebBuildFile,
+} from '@/lib/webBuildPayload';
+import { parseAndValidateFrontendBuilderRaw } from '@/lib/webBuildFrontendValidation';
+import { parseFrontendBuilderReview } from '@/lib/webBuildFrontendReview';
+import type {
+  FrontendBuildSpecification, FrontendGeneratedFile,
+  FrontendBuilderRepairArtifact, FrontendBuilderAcceptanceArtifact,
+} from '@/lib/webBuildAgents';
+
+/** The minimum improvement gate: an accepted repair must beat the initial score. */
+const MIN_ACCEPT_SCORE = 82;
+
+/** Resolve the authoritative specification the validator used — latest step then root. */
+function authoritativeSpec(payload: WebBuildPayload): FrontendBuildSpecification | undefined {
+  const steps = Array.isArray(payload.steps) ? payload.steps : [];
+  const latest = steps.length ? steps[steps.length - 1] : undefined;
+  return latest?.artifacts?.frontendBuildSpec || payload.artifacts?.frontendBuildSpec;
+}
+
+/** Map validated generated files to the WebBuildFile shape for review input + parser
+ *  path validation ONLY (never persisted here). */
+function toActiveFiles(files: FrontendGeneratedFile[]): WebBuildFile[] {
+  return files.map((f) => ({
+    path: f.path,
+    content: f.content,
+    language: f.language,
+    status: 'unchanged' as const,
+    added: 0,
+    removed: 0,
+  }));
+}
+
+/** A repair artifact with honest, bounded defaults. */
+function repairArtifact(
+  status: FrontendBuilderRepairArtifact['status'],
+  reason: string,
+  extra?: Partial<FrontendBuilderRepairArtifact>,
+): FrontendBuilderRepairArtifact {
+  return {
+    version: 'frontend-repair-v1',
+    status,
+    attempted: status !== 'not-run',
+    accepted: status === 'accepted',
+    validationStatus: 'not-run',
+    generatedFileCount: 0,
+    generatedCharCount: 0,
+    reason: reason.slice(0, 300),
+    mode: 'frontend_builder',
+    ...extra,
+  };
+}
+
+/** The final acceptance record — renderedVisualTestStatus is ALWAYS pending-manual-test. */
+function acceptanceArtifact(
+  status: FrontendBuilderAcceptanceArtifact['status'],
+  activeProject: FrontendBuilderAcceptanceArtifact['activeProject'],
+  fields: {
+    initialReviewPassed: boolean;
+    repairAttempted: boolean;
+    repairAccepted: boolean;
+    finalReviewPassed: boolean;
+    reason: string;
+  },
+): FrontendBuilderAcceptanceArtifact {
+  return {
+    version: 'frontend-acceptance-v1',
+    status,
+    activeProject,
+    initialReviewPassed: fields.initialReviewPassed,
+    repairAttempted: fields.repairAttempted,
+    repairAccepted: fields.repairAccepted,
+    finalReviewPassed: fields.finalReviewPassed,
+    renderedVisualTestStatus: 'pending-manual-test',
+    renderedScreenshotReviewed: false,
+    runtimeCompilationReviewed: false,
+    reason: fields.reason.slice(0, 300),
+  };
+}
+
+/**
+ * Run the full Phase 12E pipeline on a planning payload and return the finished payload
+ * (artifacts + any accepted repaired-file consumption attached). This is the ONLY place
+ * that orchestrates review/repair; the entry points just call it and persist the result.
+ */
+export async function runFrontendBuilderQualityPipeline(
+  plannedPayload: WebBuildPayload,
+  opts?: { signal?: AbortSignal },
+): Promise<WebBuildPayload> {
+  // ── Step 1 — initial generation + Phase 12B/12C/12D consumption (unchanged) ──
+  const raw = await generateFrontendBuilderRaw(plannedPayload.artifacts?.frontendBuildSpec, { signal: opts?.signal });
+  const consumed = attachFrontendBuilderRaw(plannedPayload, raw);
+
+  try {
+    // ── Step 2 — review eligibility. Only a genuinely consumed model-native project
+    //    (valid + ready + files present) is reviewed; a fallback makes ZERO calls. ──
+    const consumption = consumed.artifacts?.frontendBuilderConsumption;
+    const validation = consumed.artifacts?.frontendBuilderValidation;
+    const activeFiles = Array.isArray(consumed.files) ? consumed.files : [];
+    const eligible =
+      consumption?.status === 'model-native' &&
+      validation?.status === 'valid' &&
+      validation?.readyForConsumption === true &&
+      activeFiles.length > 0;
+
+    if (!eligible) {
+      const skipped = acceptanceArtifact('skipped', 'internal-fallback', {
+        initialReviewPassed: false, repairAttempted: false, repairAccepted: false, finalReviewPassed: false,
+        reason: 'Phase 12E did not run: no consumed model-native project (the deterministic fallback stays active).',
+      });
+      return attachFrontendBuilderQualityResult(consumed, { ran: false, acceptance: skipped });
+    }
+
+    const spec = authoritativeSpec(consumed);
+
+    // ── Step 3 — STATIC initial design review (exactly one parse) ──
+    const initialReviewRaw = await generateFrontendBuilderReviewRaw(spec, activeFiles, 'initial', undefined, { signal: opts?.signal });
+    const initialReview = parseFrontendBuilderReview(initialReviewRaw, 'initial', activeFiles);
+
+    // Fast path — a passing initial review keeps the initial project; no repair/final call.
+    if (initialReview.passed) {
+      const acceptance = acceptanceArtifact('approved', 'initial-model-native', {
+        initialReviewPassed: true, repairAttempted: false, repairAccepted: false, finalReviewPassed: false,
+        reason: `Initial static design review passed (score ${initialReview.score ?? '?'}). Rendered visual test pending.`,
+      });
+      return attachFrontendBuilderQualityResult(consumed, {
+        ran: true, initialReview, repair: repairArtifact('not-run', 'No repair needed — the initial review passed.'), acceptance,
+      });
+    }
+
+    // ── Step 4 — repair eligibility. NEVER repair on an untrusted/failed/empty review. ──
+    const reviewTrustworthy = initialReview.status === 'completed';
+    const hasActionableIssue = initialReview.issues.length > 0;
+    if (!reviewTrustworthy || !hasActionableIssue) {
+      const reason = !reviewTrustworthy
+        ? 'The initial static design review did not complete (timeout / malformed / failed); no repair was attempted.'
+        : 'The initial review requested changes without actionable issues; no repair was attempted.';
+      const acceptance = acceptanceArtifact('manual-review-required', 'initial-model-native', {
+        initialReviewPassed: false, repairAttempted: false, repairAccepted: false, finalReviewPassed: false,
+        reason: `${reason} The validated project stays active; manual rendered review required.`,
+      });
+      return attachFrontendBuilderQualityResult(consumed, {
+        ran: true, initialReview, repair: repairArtifact('not-run', reason), acceptance,
+      });
+    }
+
+    // ── Step 5 — exactly ONE bounded repair call ──
+    const repairRaw = await generateFrontendBuilderRepairRaw(spec, activeFiles, initialReview, { signal: opts?.signal });
+    if (repairRaw.status !== 'completed') {
+      const repair = repairArtifact('failed', repairRaw.reason || 'The repair call did not complete.', {
+        model: repairRaw.model, provider: repairRaw.provider, requestId: repairRaw.requestId, initialScore: initialReview.score,
+      });
+      const acceptance = acceptanceArtifact('manual-review-required', 'initial-model-native', {
+        initialReviewPassed: false, repairAttempted: true, repairAccepted: false, finalReviewPassed: false,
+        reason: 'The bounded repair call did not complete; the initial validated project stays active. Manual rendered review required.',
+      });
+      return attachFrontendBuilderQualityResult(consumed, { ran: true, initialReview, repair, acceptance });
+    }
+
+    // ── Step 6 — UNCHANGED Phase 12C re-validation of the repair ──
+    const repairValidation = parseAndValidateFrontendBuilderRaw(repairRaw, spec);
+    const repairValid =
+      repairValidation.status === 'valid' &&
+      repairValidation.readyForConsumption === true &&
+      repairValidation.files.length > 0;
+    if (!repairValid) {
+      const repair = repairArtifact('rejected', `The repaired project failed Phase 12C validation: ${repairValidation.reason}`.slice(0, 300), {
+        model: repairRaw.model, provider: repairRaw.provider, requestId: repairRaw.requestId,
+        validationStatus: repairValidation.status === 'valid' ? 'valid' : 'invalid',
+        generatedFileCount: repairValidation.fileCount,
+        generatedCharCount: repairValidation.totalCharCount,
+        initialScore: initialReview.score,
+      });
+      const acceptance = acceptanceArtifact('manual-review-required', 'initial-model-native', {
+        initialReviewPassed: false, repairAttempted: true, repairAccepted: false, finalReviewPassed: false,
+        reason: 'The repaired project did not pass static validation; the initial validated project stays active. No post-repair review ran. Manual rendered review required.',
+      });
+      return attachFrontendBuilderQualityResult(consumed, { ran: true, initialReview, repair, acceptance });
+    }
+
+    // ── Step 7 — STATIC post-repair review of the repaired files (exactly one parse) ──
+    const repairedActiveFiles = toActiveFiles(repairValidation.files);
+    const finalReviewRaw = await generateFrontendBuilderReviewRaw(spec, repairedActiveFiles, 'post-repair', initialReview, { signal: opts?.signal });
+    const finalReview = parseFrontendBuilderReview(finalReviewRaw, 'post-repair', repairedActiveFiles);
+
+    // ── Step 8 — repair acceptance gate: valid + final pass + strict score improvement ──
+    const initialScore = initialReview.score ?? 0;
+    const finalScore = finalReview.score ?? 0;
+    const accept =
+      finalReview.status === 'completed' &&
+      finalReview.passed &&
+      finalScore >= MIN_ACCEPT_SCORE &&
+      finalReview.blockerCount === 0 &&
+      finalReview.majorCount === 0 &&
+      finalScore > initialScore;
+
+    if (accept) {
+      const repair = repairArtifact('accepted', `Repair accepted: score improved ${initialScore} → ${finalScore} and the post-repair review passed with no blocker/major issues.`, {
+        model: repairRaw.model, provider: repairRaw.provider, requestId: repairRaw.requestId,
+        validationStatus: 'valid',
+        generatedFileCount: repairValidation.fileCount,
+        generatedCharCount: repairValidation.totalCharCount,
+        initialScore, finalScore,
+      });
+      const acceptance = acceptanceArtifact('repaired-approved', 'repaired-model-native', {
+        initialReviewPassed: false, repairAttempted: true, repairAccepted: true, finalReviewPassed: true,
+        reason: `One bounded repair accepted after static validation and a passing post-repair review (score ${initialScore} → ${finalScore}). Rendered visual test pending.`,
+      });
+      return attachFrontendBuilderQualityResult(consumed, {
+        ran: true, initialReview, repair, finalReview, acceptance,
+        acceptedRepairedFiles: repairValidation.files,
+        acceptedRepairedValidation: repairValidation,
+      });
+    }
+
+    // Repair validated but was not accepted (final review failed / malformed / no improvement).
+    const rejectReason = finalReview.status !== 'completed'
+      ? 'The post-repair static review did not complete; the repair was not accepted.'
+      : !finalReview.passed
+        ? 'The post-repair review still reports blocker/major issues or a sub-82 score; the repair was not accepted.'
+        : `The repair did not improve the score (${initialScore} → ${finalScore}); it was not accepted.`;
+    const repair = repairArtifact('rejected', rejectReason, {
+      model: repairRaw.model, provider: repairRaw.provider, requestId: repairRaw.requestId,
+      validationStatus: 'valid',
+      generatedFileCount: repairValidation.fileCount,
+      generatedCharCount: repairValidation.totalCharCount,
+      initialScore, finalScore: finalReview.status === 'completed' ? finalScore : undefined,
+    });
+    const acceptance = acceptanceArtifact('manual-review-required', 'initial-model-native', {
+      initialReviewPassed: false, repairAttempted: true, repairAccepted: false,
+      finalReviewPassed: finalReview.passed,
+      reason: `${rejectReason} The initial validated project stays active. Manual rendered review required.`,
+    });
+    return attachFrontendBuilderQualityResult(consumed, { ran: true, initialReview, repair, finalReview, acceptance });
+  } catch (err) {
+    // Explicit caller cancellation must propagate so a cancelled turn is not persisted.
+    if (err instanceof WebBuildError && err.kind === 'cancelled') throw err;
+    if (opts?.signal?.aborted) throw err;
+    // Any other Phase 12E error fails open: return the already-consumed Phase 12D payload
+    // untouched (Preview + All Files + validated project remain usable) with a skipped record.
+    const skipped = acceptanceArtifact('skipped', 'internal-fallback', {
+      initialReviewPassed: false, repairAttempted: false, repairAccepted: false, finalReviewPassed: false,
+      reason: 'Phase 12E failed open on an unexpected error; the existing validated project stays active.',
+    });
+    try {
+      return attachFrontendBuilderQualityResult(consumed, { ran: false, acceptance: skipped });
+    } catch {
+      return consumed;
+    }
+  }
+}
