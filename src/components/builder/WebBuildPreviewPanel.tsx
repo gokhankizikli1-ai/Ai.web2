@@ -44,7 +44,7 @@ class PreviewErrorBoundary extends Component<{ fallback: ReactNode; children: Re
 }
 
 export default function WebBuildPreviewPanel({
-  sectionItems, brief, slug, runId, files, previewSource, interactionContract, visualAssetPlan, visualSignaturePlan, motionComposer, imagePipeline,
+  sectionItems, brief, slug, runId, files, previewSource, blockedNeedsRegeneration, interactionContract, visualAssetPlan, visualSignaturePlan, motionComposer, imagePipeline,
 }: {
   sectionItems: WebBuildSectionItem[];
   brief: WebBuildBrief;
@@ -56,6 +56,11 @@ export default function WebBuildPreviewPanel({
   /** Phase 12D — which renderer drives the Preview: the isolated Sandpack runtime for
    *  the model-native project, or the deterministic legacy section renderer. */
   previewSource?: FrontendBuilderPreviewSource;
+  /** Phase 12F.3 — the frontend build could not be approved (acceptance
+   *  'manual-review-required'). The user-facing Preview shows the deterministic safe
+   *  fallback plus an explicit "Build needs regeneration" notice; the unapproved
+   *  model-native files remain reachable in All Files. Optional → old builds unaffected. */
+  blockedNeedsRegeneration?: boolean;
   /** Phase 2 — the strategy's Interaction Contract (optional). Passed straight to
    *  the preview document so its actions become real in-app behaviour. */
   interactionContract?: InteractionContract;
@@ -138,8 +143,28 @@ export default function WebBuildPreviewPanel({
     );
   }
 
+  // Phase 12F.3 — explicit "Build needs regeneration" notice shown when the frontend build
+  // could not be approved. Honest: the shown preview is a safe fallback, not the finished site.
+  const blockedBanner = blockedNeedsRegeneration ? (
+    <div className="mb-3 rounded-xl border border-[#F59E0B]/30 bg-[#F59E0B]/[0.08] px-3.5 py-2.5">
+      <p className="text-[12px] font-semibold text-[#FBBF24]">
+        {lang === 'tr' ? 'Yapı yeniden oluşturulmalı' : 'Build needs regeneration'}
+      </p>
+      <p className="mt-1 text-[11px] leading-relaxed text-[#FCD9A6]">
+        {lang === 'tr'
+          ? 'Oluşturulan ön yüz projesi kalite incelemesini geçemedi; onaylanmamış proje bitmiş bir site olarak gösterilmiyor. Aşağıdaki güvenli önizleme geçicidir. Onaylanmamış dosyalar Tüm Dosyalar’dan incelenebilir.'
+          : 'The generated frontend project did not pass quality review, so the unapproved project is not shown as a finished site. The safe preview below is a fallback. The unapproved files remain inspectable in All Files.'}
+      </p>
+    </div>
+  ) : null;
+
   if (items.length === 0) {
-    return <div className="rounded-xl border border-dashed border-white/[0.08] px-4 py-8 text-center text-[12px] text-[#64748B]">{t('wbPreviewEmpty')}</div>;
+    return (
+      <div>
+        {blockedBanner}
+        <div className="rounded-xl border border-dashed border-white/[0.08] px-4 py-8 text-center text-[12px] text-[#64748B]">{t('wbPreviewEmpty')}</div>
+      </div>
+    );
   }
 
   // Stable signature for the current preview instance. Keying the boundary by it
@@ -179,6 +204,7 @@ export default function WebBuildPreviewPanel({
 
   return (
     <div>
+      {blockedBanner}
       <div className="mb-3 flex flex-col items-end gap-2">
         <button
           onClick={openPreview}

@@ -1818,6 +1818,22 @@ export interface FrontendBuilderContractRepairArtifact {
   finalMissingCriticalCopyCount?: number;
   finalMissingCriticalCopy?: string[];
 
+  /* ── Phase 12F.3 — deterministic PRESERVATION / degradation gate (optional, backward
+   *  compatible). A structurally valid repair is accepted ONLY when it also PRESERVED the
+   *  parsed initial project — never a technically-valid but collapsed skeleton. All bounded
+   *  metrics; no model call. */
+  initialFileCount?: number;
+  repairedFileCount?: number;
+  initialCharCount?: number;
+  repairedCharCount?: number;
+  retainedPathCount?: number;
+  removedPaths?: string[];
+  severelyShrunkFiles?: string[];
+  /** repairedCharCount / max(1, initialCharCount), rounded to 2 decimals. */
+  preservationRatio?: number;
+  preservationGatePassed?: boolean;
+  preservationRejectionReason?: string;
+
   reason: string;
 
   mode: 'frontend_builder';

@@ -110,6 +110,40 @@ const HONESTY_PATTERNS: Array<{ re: RegExp; label: string }> = [
   { re: /\b\d[\d,]{2,}\+/, label: 'N,NNN+ count' },
 ];
 
+/* ── Phase 12F.3 — Tailwind SEMANTIC-TOKEN contract (must agree with the Preview
+ * runtime). The generated project cannot ship its own tailwind.config (only tsx/ts/css
+ * files are allowed), and the spec labels its palette with semantic names
+ * (background/foreground/text/muted/surface/border/primary/secondary/accent/…), so the
+ * model naturally emits semantic utilities like `bg-background` / `text-text`. The
+ * isolated Sandpack Preview injects a stable Tailwind theme mapping EXACTLY these tokens
+ * (see WebBuildModelNativePreview.SEMANTIC_TOKEN_NAMES) with safe fallbacks, so every
+ * SUPPORTED token resolves at runtime. A semantic utility that names a token OUTSIDE this
+ * set — and that the project's own CSS never defines as a `--var` or `.class` — would
+ * render as an UNSTYLED native control, so it is surfaced as a bounded WARNING here (never
+ * a structural blocker: a warning must not trigger a full contract rewrite).
+ *
+ * KEEP IN SYNC with WebBuildModelNativePreview.tsx SEMANTIC_TOKEN_NAMES. */
+const SUPPORTED_SEMANTIC_TOKENS = new Set<string>([
+  'background', 'foreground', 'text',
+  'card', 'card-foreground', 'popover', 'popover-foreground',
+  'primary', 'primary-foreground', 'secondary', 'secondary-foreground',
+  'muted', 'muted-foreground', 'accent', 'accent-foreground', 'accent2',
+  'destructive', 'destructive-foreground', 'border', 'input', 'ring',
+  'surface', 'surface-foreground',
+]);
+/** Semantic alias WORDS that require the token contract to resolve (a bare
+ *  standard-palette utility such as `text-sm` / `bg-white` / `border-2` is NOT here, so
+ *  it is never flagged). A token is only checked when it is EXACTLY one of these words or
+ *  ends with `-foreground`, which keeps the scan free of false positives. */
+const SEMANTIC_ALIAS_WORDS = new Set<string>([
+  'background', 'foreground', 'text', 'card', 'popover', 'primary', 'secondary',
+  'muted', 'accent', 'accent2', 'destructive', 'border', 'input', 'ring', 'surface',
+  'brand', 'neutral', 'base', 'content', 'default', 'subtle',
+]);
+/** Utility prefixes whose value is a COLOR token (so a semantic alias there must resolve). */
+const COLOR_UTILITY_RE =
+  /\b(?:bg|text|border|ring|fill|stroke|from|via|to|divide|outline|placeholder|caret|decoration|ring-offset|shadow)-([a-z][a-z0-9]*(?:-[a-z0-9]+)*)/g;
+
 /* ── POSIX path helpers (local; never import Node's path in browser code) ────── */
 const EXT_CANDIDATES = ['', '.tsx', '.ts', '.css', '/index.tsx', '/index.ts', '/index.css'];
 const SAFE_PATH_RE = /^[A-Za-z0-9/_.-]+$/;
@@ -547,8 +581,44 @@ function validateProject(rawFiles: RawFile[], spec: FrontendBuildSpecification, 
       if (nb.length >= 2 && !haystack.includes(nb)) acc.missingSupportingCopy.push(trunc(b || '', MAX_COPY_PREVIEW_CHARS));
     }
   }
-  if (acc.missingCriticalCopy.length) addError(acc, 'missing-critical-copy', `missing critical public copy (${acc.missingCriticalCopy.length}): ${acc.missingCriticalCopy.slice(0, 3).join(' | ')}`);
+  // Phase 12F.3 — missing critical copy is a bounded COPY-QUALITY issue, NOT a
+  // machine-structure blocker. It must NEVER, on its own, make the project 'invalid'
+  // and trigger a full structural contract rewrite (that path collapsed rich projects
+  // into tiny skeletons). It is recorded as a WARNING + preserved verbatim in
+  // `missingCriticalCopy` for owner visibility, and Phase 12E's copy-fidelity review is
+  // the bounded place that addresses it. Genuine structural errors stay blocking.
+  if (acc.missingCriticalCopy.length) addWarning(acc, 'missing-critical-copy', `missing critical public copy (${acc.missingCriticalCopy.length}): ${acc.missingCriticalCopy.slice(0, 3).join(' | ')}`);
   if (acc.missingSupportingCopy.length) addWarning(acc, 'missing-supporting-copy', `missing supporting public copy (${acc.missingSupportingCopy.length}): ${acc.missingSupportingCopy.slice(0, 3).join(' | ')}`);
+
+  // 8b) Phase 12F.3 — Tailwind SEMANTIC-UTILITY contract. Flag color utilities that name
+  //     a semantic token the Preview runtime does NOT map and the project's own CSS never
+  //     defines. Bounded WARNING only (agrees with the runtime; never blocks consumption).
+  const cssDefined = new Set<string>();
+  for (const f of files) {
+    if (f.language !== 'css') continue;
+    let mv: RegExpExecArray | null;
+    const VAR_RE = /--([a-z0-9-]+)\s*:/gi;
+    while ((mv = VAR_RE.exec(f.content)) !== null) cssDefined.add(mv[1].toLowerCase());
+    let mc: RegExpExecArray | null;
+    const CLASS_RE = /\.([a-z0-9-]+)/gi;
+    while ((mc = CLASS_RE.exec(f.content)) !== null) cssDefined.add(mc[1].toLowerCase());
+  }
+  const unsupportedSemantic = new Set<string>();
+  for (const f of files) {
+    if (f.language === 'css') continue;
+    let mu: RegExpExecArray | null;
+    COLOR_UTILITY_RE.lastIndex = 0;
+    while ((mu = COLOR_UTILITY_RE.exec(f.content)) !== null) {
+      const token = mu[1].toLowerCase();
+      const isSemantic = SEMANTIC_ALIAS_WORDS.has(token) || token.endsWith('-foreground');
+      if (!isSemantic) continue;
+      if (SUPPORTED_SEMANTIC_TOKENS.has(token) || cssDefined.has(token)) continue;
+      unsupportedSemantic.add(token);
+    }
+  }
+  if (unsupportedSemantic.size) {
+    addWarning(acc, 'unsupported-semantic-utility', `unsupported semantic Tailwind token(s) with no runtime mapping or CSS definition (${unsupportedSemantic.size}): ${Array.from(unsupportedSemantic).slice(0, 5).join(', ')} — these render unstyled in Preview`);
+  }
 
   // 9) Section-order check (deterministic; error only when fully determinable).
   if (app && requiredSection.length >= 2) {
