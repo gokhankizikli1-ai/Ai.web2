@@ -340,11 +340,16 @@ function normCopy(s: string): string {
     .trim();
 }
 
-/** Extract ONLY comment text from a .ts/.tsx file — line `//…`, block `/*…*/` and
- *  JSX `{/*…*/}` (which share the `/*…*/` delimiter). Used so placeholder /
- *  incomplete-output detection scans code comments, NEVER visible copy: a `TODO`
- *  headline or a "content omitted" paragraph is public text, not a code stub. Bounded,
- *  string-only. A `//` preceded by `:` or `/` (e.g. `https://`) is not a comment. */
+/**
+ * Extract only comment text from TypeScript and TSX files: line comments, block
+ * comments and JSX comments (the latter two share the same delimiters).
+ *
+ * Placeholder and incomplete-output detection scans comment text only, never
+ * visible public copy, so a TODO headline or a "content omitted" paragraph is
+ * treated as public text rather than a code stub. Bounded and string-only. A
+ * double slash preceded by a colon or slash, such as in an HTTPS URL, is not
+ * treated as a line comment.
+ */
 function extractCommentText(content: string): string {
   const parts: string[] = [];
   const block = /\/\*[\s\S]*?\*\//g;
