@@ -2350,8 +2350,6 @@ export function deriveThinkingLedger(
   const targetVertical = authority?.targetVertical ? String(authority.targetVertical) : (authority?.audienceVertical || undefined);
   const verticalLabel = targetVertical || '';
 
-  const hay = [prompt, brief.coreIdea, brief.type, brief.goal, brief.audience].filter(Boolean).join(' ').toLowerCase();
-
   // Phase 9A: the model's OWN Design Thinking Plan (visible, structured) — normalized
   // to the layout/palette vocabulary. When present it controls taste/composition.
   const modelDesignPlan = deriveModelDesignPlan(brief);
