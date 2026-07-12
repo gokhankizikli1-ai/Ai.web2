@@ -497,6 +497,27 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       if (fbr.status === 'failed' && fbr.reason) ownerRows.push(['frontendBuilderReason', fbr.reason.slice(0, 160)]);
     }
 
+    // Phase 12C — STATIC parse + contract validation of the raw builder response.
+    // Owner-only. The parsed files live ONLY inside this artifact and NEVER replace
+    // payload.files (that is Phase 12D); a 'valid' result is structural only — NOT
+    // proof the project compiles or renders.
+    const fbv = step.artifacts?.frontendBuilderValidation;
+    if (fbv) {
+      ownerRows.push(['frontendValidationResult', `${fbv.status}${fbv.didParse ? ' · parsed' : ''}`]);
+      ownerRows.push(['frontendValidationReady', fbv.readyForConsumption ? 'yes (structural only)' : 'no']);
+      if (fbv.didParse) {
+        ownerRows.push(['frontendParsedFiles', `${fbv.fileCount} · ${fbv.totalCharCount} chars`]);
+        ownerRows.push(['frontendRequiredFiles', `${fbv.presentRequiredFileCount}/${fbv.requiredFileCount} present`]);
+        ownerRows.push(['frontendSectionFiles', `${fbv.presentRequiredSectionFileCount}/${fbv.requiredSectionFileCount} present`]);
+      }
+      ownerRows.push(['frontendValidationIssues', `${fbv.errors.length} error(s) · ${fbv.warnings.length} warning(s)`]);
+      if (fbv.missingRequiredFiles.length) ownerRows.push(['frontendMissingRequired', fbv.missingRequiredFiles.slice(0, 3).join(', ')]);
+      if (fbv.missingRequiredSectionFiles.length) ownerRows.push(['frontendMissingSections', fbv.missingRequiredSectionFiles.slice(0, 3).join(', ')]);
+      if (fbv.unresolvedRelativeImports.length) ownerRows.push(['frontendUnresolvedImports', `${fbv.unresolvedRelativeImports.length} · ${fbv.unresolvedRelativeImports.slice(0, 2).join(', ')}`]);
+      if (fbv.unsupportedPackageImports.length) ownerRows.push(['frontendUnsupportedPackages', `${fbv.unsupportedPackageImports.length} · ${fbv.unsupportedPackageImports.slice(0, 2).join(', ')}`]);
+      fbv.errors.slice(0, 2).forEach((e, i) => ownerRows.push([`frontendValidationError${i + 1}`, `${e.code}: ${e.message}`.slice(0, 160)]));
+    }
+
     // Phase 9D-1 — intent-aware Page Architecture Decision (concept-specific spine).
     const pa = step.artifacts?.pageArchitecture;
     if (pa) {

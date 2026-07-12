@@ -1251,6 +1251,19 @@ export interface WebBuildEnforcement {
   frontendBuilderMode?: string;
   frontendBuilderModel?: string;
   frontendBuilderProvider?: string;
+  /* ── Frontend Builder validation trace (Phase 12C, optional, backward compatible) ──
+   *  Static parse + contract validation diagnostics. STATIC only — a valid result is
+   *  NOT proven to compile or render, and it never replaces payload.files. */
+  didValidateFrontendBuilder?: boolean;
+  frontendBuilderParsedFileCount?: number;
+  frontendBuilderParsedCharCount?: number;
+  frontendBuilderValidationErrorCount?: number;
+  frontendBuilderValidationWarningCount?: number;
+  frontendBuilderMissingRequiredFileCount?: number;
+  frontendBuilderMissingSectionFileCount?: number;
+  frontendBuilderUnresolvedImportCount?: number;
+  frontendBuilderUnsupportedPackageCount?: number;
+  frontendBuilderReadyForConsumption?: boolean;
   fallbackReason?: string;
 }
 
@@ -1466,10 +1479,73 @@ export interface FrontendBuilderRawArtifact {
   responseCharCount: number;
   truncatedForStorage: boolean;
 
-  /** Always 'not-run' in Phase 12B — parsing/validation belongs to Phase 12C. */
+  /** The raw generation's validation status. 'not-run' until Phase 12C runs the
+   *  parser + static validator; then 'valid' or 'invalid'. It stays 'not-run' when
+   *  validation is skipped (no completed/usable raw response to validate). */
   validationStatus: FrontendBuilderValidationStatus;
   reason: string;
   warnings: string[];
+}
+
+/* ── Frontend Builder validation (Phase 12C) ──────────────────────────────────
+ * The result of statically PARSING the raw frontend-files-v1 envelope and
+ * VALIDATING the parsed project against the Phase 12A output contract. STATIC only:
+ * no compilation, execution, dynamic import, DOM/iframe, network or model call — a
+ * structurally-valid result is NOT proven to compile or render. Parsed files live
+ * ONLY inside this artifact (never `payload.files`) until Phase 12D. Additive +
+ * optional + backward compatible; all arrays bounded + deduped; JSON-serializable. */
+export type FrontendBuilderValidationArtifactStatus = 'valid' | 'invalid' | 'skipped';
+export type FrontendGeneratedFileLanguage = 'tsx' | 'ts' | 'css';
+export type FrontendBuilderIssueSeverity = 'error' | 'warning';
+
+export interface FrontendGeneratedFile {
+  path: string;
+  language: FrontendGeneratedFileLanguage;
+  content: string;
+  charCount: number;
+  lineCount: number;
+}
+
+export interface FrontendBuilderValidationIssue {
+  severity: FrontendBuilderIssueSeverity;
+  code: string;
+  message: string;
+  path?: string;
+  specifier?: string;
+}
+
+export interface FrontendBuilderValidationArtifact {
+  version: 'frontend-builder-validation-v1';
+  status: FrontendBuilderValidationArtifactStatus;
+  format: 'frontend-files-v1';
+
+  sourceRawStatus: FrontendBuilderRawStatus;
+  didParse: boolean;
+  readyForConsumption: boolean;
+
+  files: FrontendGeneratedFile[];
+  fileCount: number;
+  totalCharCount: number;
+
+  requiredFileCount: number;
+  requiredSectionFileCount: number;
+  presentRequiredFileCount: number;
+  presentRequiredSectionFileCount: number;
+
+  missingRequiredFiles: string[];
+  missingRequiredSectionFiles: string[];
+  duplicatePaths: string[];
+  unresolvedRelativeImports: string[];
+  unsupportedPackageImports: string[];
+  unreachableRequiredSectionFiles: string[];
+  missingCriticalCopy: string[];
+  missingSupportingCopy: string[];
+  forbiddenPatternMatches: string[];
+
+  errors: FrontendBuilderValidationIssue[];
+  warnings: FrontendBuilderValidationIssue[];
+
+  reason: string;
 }
 
 export interface WebBuildArtifacts {
@@ -1529,6 +1605,10 @@ export interface WebBuildArtifacts {
    *  parsed/validated, and never feeds the current Preview / All Files (Phase 12C+).
    *  Optional → old builds load. */
   frontendBuilderRaw?: FrontendBuilderRawArtifact;
+  /** Static parse + contract validation of the raw builder response (Phase 12C).
+   *  STATIC only (no compile/execute/consume); the parsed files live here, never in
+   *  `payload.files`, until Phase 12D. Optional → old builds load. */
+  frontendBuilderValidation?: FrontendBuilderValidationArtifact;
   /** The shared context the agents were run against (pipeline trace). */
   context?: WebBuildAgentContext;
   /** Enforcement diagnostics proving the agents drove the build. */
