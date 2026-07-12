@@ -317,9 +317,11 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
     if (plan?.visualSystem?.motif) ownerRows.push(['visualSystem.motif', plan.visualSystem.motif]);
     const reviewer = step.artifacts?.reviewer;
     if (reviewer?.status) ownerRows.push(['reviewer', reviewer.status]);
-    // Quality Director (Phase 7A) — premium-quality judge over the real artifacts.
+    // Quality Director (Phase 7A) — premium-quality judge over the PLANNING artifacts.
+    // Phase 12F.3 — labelled explicitly as a PLANNING estimate so it can never be read as
+    // the final website/frontend quality result (which is the frontend review score below).
     const qd = step.artifacts?.qualityDirector;
-    if (qd) ownerRows.push(['qualityDirector', `${qd.status} · ${qd.score}/100`]);
+    if (qd) ownerRows.push(['planningQualityEstimate', `${qd.status} · ${qd.score}/100 (planning only — NOT the frontend/website quality)`]);
     // Phase 10A — Asset Director (plans visual assets; generates nothing this phase).
     const adr = step.artifacts?.assetDirector;
     if (adr) {
@@ -513,6 +515,9 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
         ownerRows.push(['frontendSectionFiles', `${fbv.presentRequiredSectionFileCount}/${fbv.requiredSectionFileCount} present`]);
       }
       ownerRows.push(['frontendValidationIssues', `${fbv.errors.length} error(s) · ${fbv.warnings.length} warning(s)`]);
+      // Phase 12F.3 — missing critical copy is a bounded COPY-QUALITY warning (never a
+      // structural blocker), preserved verbatim here for owner visibility.
+      if (fbv.missingCriticalCopy.length) ownerRows.push(['frontendMissingCriticalCopy', `${fbv.missingCriticalCopy.length} · ${fbv.missingCriticalCopy.slice(0, 3).join(' | ')}`.slice(0, 160)]);
       if (fbv.missingRequiredFiles.length) ownerRows.push(['frontendMissingRequired', fbv.missingRequiredFiles.slice(0, 3).join(', ')]);
       if (fbv.missingRequiredSectionFiles.length) ownerRows.push(['frontendMissingSections', fbv.missingRequiredSectionFiles.slice(0, 3).join(', ')]);
       if (fbv.unresolvedRelativeImports.length) ownerRows.push(['frontendUnresolvedImports', `${fbv.unresolvedRelativeImports.length} · ${fbv.unresolvedRelativeImports.slice(0, 2).join(', ')}`]);
@@ -554,6 +559,14 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       if (fcr.initialErrorCodes.length) ownerRows.push(['frontendContractRepairInitialErrorCodes', fcr.initialErrorCodes.slice(0, 8).join(', ')]);
       ownerRows.push(['frontendContractRepairFinalValidation', fcr.finalValidationStatus]);
       ownerRows.push(['frontendContractRepairFinalErrors', String(fcr.finalErrorCount)]);
+      // Phase 12F.3 — deterministic preservation/degradation gate (rejects collapsed skeletons).
+      if (typeof fcr.preservationGatePassed === 'boolean') {
+        ownerRows.push(['contractRepairPreservationGate', fcr.preservationGatePassed ? 'passed' : 'FAILED (destructive collapse)']);
+        ownerRows.push(['contractRepairPreservation', `files ${fcr.initialFileCount ?? '?'}→${fcr.repairedFileCount ?? '?'} · chars ${fcr.initialCharCount ?? '?'}→${fcr.repairedCharCount ?? '?'} · retained ${fcr.retainedPathCount ?? '?'} · ratio ${fcr.preservationRatio ?? '?'}`]);
+        if (fcr.removedPaths?.length) ownerRows.push(['contractRepairRemovedPaths', fcr.removedPaths.slice(0, 4).join(', ')]);
+        if (fcr.severelyShrunkFiles?.length) ownerRows.push(['contractRepairShrunkFiles', fcr.severelyShrunkFiles.slice(0, 4).join(', ')]);
+        if (fcr.preservationRejectionReason) ownerRows.push(['contractRepairPreservationReject', shortStr(fcr.preservationRejectionReason, 160)]);
+      }
       // Phase 12F.2 — exact missing-critical-copy diagnostics (bounded previews, ≤2/stage).
       if (typeof fcr.initialMissingCriticalCopyCount === 'number') {
         ownerRows.push(['frontendContractRepairInitialMissingCriticalCopy', String(fcr.initialMissingCriticalCopyCount)]);
@@ -600,7 +613,7 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
     if (fac) {
       ownerRows.push(['frontendAcceptance', fac.status]);
       ownerRows.push(['frontendActiveProject', fac.activeProject]);
-      ownerRows.push(['renderedVisualTest', fac.renderedVisualTestStatus]);
+      ownerRows.push(['renderedVisualTestStatus', fac.renderedVisualTestStatus]);
       ownerRows.push(['frontendAcceptanceReason', shortStr(fac.reason, 160)]);
     }
 
@@ -694,7 +707,7 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
 
     // Quality Director + Copy/CTA Fixer enforcement (Phase 7A) — real artifact data.
     if (enf?.didRunQualityDirector) {
-      ownerRows.push(['qualityGate', `${enf.qualityStatus || 'n/a'} · score ${enf.qualityScore ?? 'n/a'} · ${enf.qualityCriticalCount ?? 0} critical · ${enf.qualityWarningCount ?? 0} warning`]);
+      ownerRows.push(['planningQualityGate', `${enf.qualityStatus || 'n/a'} · score ${enf.qualityScore ?? 'n/a'} · ${enf.qualityCriticalCount ?? 0} critical · ${enf.qualityWarningCount ?? 0} warning (planning only)`]);
       const fixed = [
         enf.didFixCopyLabels ? 'copy-labels' : '',
         enf.didFixCtaConsistency ? 'cta' : '',
@@ -855,8 +868,8 @@ function CompletedPlanSummary({ step }: { step: WebBuildStep }) {
     );
   } else if (acceptance?.status === 'manual-review-required') {
     parity = L(
-      'The current validated project remains active, but the static design review could not approve it. Manual rendered review is required.',
-      'Mevcut doğrulanmış proje aktif kalıyor ancak statik tasarım incelemesi projeyi onaylayamadı. Gerçek render üzerinden manuel inceleme gerekiyor.',
+      'The generated frontend project could not be approved by the static design review, so it is NOT shown as a finished site. The Preview falls back to the deterministic safe renderer and the build needs regeneration; the unapproved files stay available in All Files.',
+      'Oluşturulan ön yüz projesi statik tasarım incelemesince onaylanamadı; bu nedenle bitmiş bir site olarak gösterilmiyor. Önizleme deterministik güvenli oluşturucuya düşüyor ve yapı yeniden oluşturulmalı; onaylanmamış dosyalar Tüm Dosyalar’da kalıyor.',
     );
   } else if (modelNativeConsumed) {
     // Model-native consumed but no Phase 12E acceptance (old saved build): keep the
@@ -1052,6 +1065,20 @@ export default function WebBuildConversation({
   const lastIdx = steps.length - 1;
   const openFile = (path?: string) => { setFilePath(path); setPanel('files'); };
 
+  // Phase 12F.3 — user-facing Preview selection. A model-native project is shown as the
+  // finished Preview ONLY when frontend acceptance is approved / repaired-approved. When
+  // acceptance is 'manual-review-required' (initial review failed, major issues remain,
+  // the quality repair was rejected, the post-repair review failed, or the score stayed
+  // below the acceptance threshold) the unapproved project must NOT be presented as a
+  // normal successful website: the USER-FACING Preview falls back to the deterministic
+  // safe renderer and shows an explicit "Build needs regeneration" notice. The rejected
+  // files stay accessible in All Files + owner diagnostics (payload.files is untouched).
+  const lastArtifacts = steps[lastIdx]?.artifacts;
+  const previewBlocked = lastArtifacts?.frontendBuilderAcceptance?.status === 'manual-review-required';
+  const effectivePreviewSource = previewBlocked
+    ? undefined
+    : lastArtifacts?.frontendBuilderConsumption?.previewSource;
+
   return (
     <div className="space-y-5">
       {steps.map((step, i) => {
@@ -1097,7 +1124,7 @@ export default function WebBuildConversation({
                 </button>
               </div>
               {panel === 'preview'
-                ? <WebBuildPreviewPanel sectionItems={sectionItems} brief={brief} slug={slug} runId={runId} files={files} previewSource={steps[lastIdx]?.artifacts?.frontendBuilderConsumption?.previewSource} interactionContract={steps[lastIdx]?.artifacts?.strategy?.interactionContract} visualAssetPlan={steps[lastIdx]?.artifacts?.artDirection?.visualAssetPlan} visualSignaturePlan={steps[lastIdx]?.artifacts?.visualSignaturePlan} motionComposer={steps[lastIdx]?.artifacts?.motionComposer} imagePipeline={steps[lastIdx]?.artifacts?.imagePipeline} />
+                ? <WebBuildPreviewPanel sectionItems={sectionItems} brief={brief} slug={slug} runId={runId} files={files} previewSource={effectivePreviewSource} blockedNeedsRegeneration={previewBlocked} interactionContract={steps[lastIdx]?.artifacts?.strategy?.interactionContract} visualAssetPlan={steps[lastIdx]?.artifacts?.artDirection?.visualAssetPlan} visualSignaturePlan={steps[lastIdx]?.artifacts?.visualSignaturePlan} motionComposer={steps[lastIdx]?.artifacts?.motionComposer} imagePipeline={steps[lastIdx]?.artifacts?.imagePipeline} />
                 : <WebBuildFileView files={files} initialPath={filePath} />}
             </motion.div>
           </motion.div>

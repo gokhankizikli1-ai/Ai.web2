@@ -91,10 +91,95 @@ const SANDBOX_DEPENDENCIES: Record<string, string> = {
 
 /* Preview-only infrastructure files. They are added ONLY to the Sandpack virtual
  * project — never to payload.files / All Files — and never overwrite a model path. */
+
+/* Phase 12F.3 — STABLE Tailwind SEMANTIC-TOKEN contract for the Preview runtime.
+ *
+ * The generated project can only ship tsx/ts/css files (the validator rejects a .js
+ * tailwind.config), and the Phase 12A spec labels its palette with SEMANTIC names
+ * (background/foreground/text/muted/surface/border/primary/secondary/accent/…), so the
+ * model naturally emits utilities like `bg-background`, `text-text`, `border-border`.
+ * Tailwind's default palette has NO such colors, so with an empty `theme.extend` those
+ * utilities silently produced nothing and the Preview rendered UNSTYLED native controls.
+ *
+ * Each token below maps to `hsl(var(--<token>, <fallback-channels>) / <alpha-value>)`:
+ *   • if the generated styles.css defines the shadcn-style channel var, its theme WINS;
+ *   • otherwise the coherent fallback (neutral shadcn "light") renders — never unstyled.
+ * The `/ <alpha-value>` form keeps opacity modifiers (bg-muted/50, bg-primary/20) working.
+ * These are compiled INSIDE the sandbox by the pinned tailwindcss dep — never a CDN.
+ *
+ * KEEP IN SYNC with webBuildFrontendValidation.ts SUPPORTED_SEMANTIC_TOKENS. */
+const SEMANTIC_TOKEN_FALLBACKS: Record<string, string> = {
+  background: '0 0% 100%',
+  foreground: '222.2 84% 4.9%',
+  text: '222.2 84% 4.9%',
+  card: '0 0% 100%',
+  'card-foreground': '222.2 84% 4.9%',
+  popover: '0 0% 100%',
+  'popover-foreground': '222.2 84% 4.9%',
+  primary: '222.2 47.4% 11.2%',
+  'primary-foreground': '210 40% 98%',
+  secondary: '210 40% 96.1%',
+  'secondary-foreground': '222.2 47.4% 11.2%',
+  muted: '210 40% 96.1%',
+  'muted-foreground': '215.4 16.3% 46.9%',
+  accent: '210 40% 96.1%',
+  'accent-foreground': '222.2 47.4% 11.2%',
+  accent2: '199 89% 48%',
+  destructive: '0 84.2% 60.2%',
+  'destructive-foreground': '210 40% 98%',
+  border: '214.3 31.8% 91.4%',
+  input: '214.3 31.8% 91.4%',
+  ring: '222.2 84% 4.9%',
+  surface: '0 0% 100%',
+  'surface-foreground': '222.2 84% 4.9%',
+};
+
+/** Build the nested Tailwind `colors` object literal: `foreground`/`primary-foreground`
+ *  collapse into `{ primary: { DEFAULT, foreground } }`; standalone tokens stay flat. */
+function buildSemanticColorsLiteral(): string {
+  const colorExpr = (token: string): string =>
+    `'hsl(var(--${token}, ${SEMANTIC_TOKEN_FALLBACKS[token]}) / <alpha-value>)'`;
+  const flat: string[] = [];
+  const nested = new Map<string, string[]>();
+  for (const token of Object.keys(SEMANTIC_TOKEN_FALLBACKS)) {
+    const dash = token.indexOf('-');
+    if (dash > 0 && token.slice(dash + 1) === 'foreground') {
+      const base = token.slice(0, dash);
+      const entries = nested.get(base) || [];
+      entries.push(`foreground: ${colorExpr(token)}`);
+      nested.set(base, entries);
+    } else {
+      // A base that also has a *-foreground becomes a nested object with a DEFAULT.
+      flat.push(token);
+    }
+  }
+  const lines: string[] = [];
+  for (const token of flat) {
+    const fg = nested.get(token);
+    if (fg && fg.length) {
+      lines.push(`      '${token}': { DEFAULT: ${colorExpr(token)}, ${fg.join(', ')} },`);
+      nested.delete(token);
+    } else {
+      lines.push(`      '${token}': ${colorExpr(token)},`);
+    }
+  }
+  // Any *-foreground whose base was not a color token on its own (none today) stays flat.
+  for (const [base, fg] of nested) {
+    lines.push(`      '${base}': { ${fg.join(', ')} },`);
+  }
+  return lines.join('\n');
+}
+
 const TAILWIND_CONFIG_CODE = [
   'module.exports = {',
   "  content: ['./src/**/*.{js,jsx,ts,tsx}'],",
-  '  theme: { extend: {} },',
+  '  theme: {',
+  '    extend: {',
+  '      colors: {',
+  buildSemanticColorsLiteral(),
+  '      },',
+  '    },',
+  '  },',
   '  plugins: [],',
   '};',
   '',

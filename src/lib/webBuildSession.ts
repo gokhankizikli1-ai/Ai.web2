@@ -12,6 +12,7 @@
  */
 import type { WebBuildPayload } from '@/lib/webBuildPayload';
 import { inferWebsiteBrief, type IndustryKey } from '@/lib/webBuildBrief';
+import { hasExplicitChatIntent } from '@/lib/webBuildProductIntent';
 import { scopedKey } from '@/lib/userScope';
 
 // Per-user scoped keys (never global) — isolate Web Build data per account.
@@ -44,10 +45,13 @@ type SessionMap = Record<string, StoredSession>;
 
 const L = (lang: string, en: string, tr: string) => (lang === 'tr' ? tr : en);
 
-/** A short, language-matched title for a Web Build (Part 7). */
+/** A short, language-matched title for a Web Build (Part 7). NOTE: the ai_saas entry is
+ *  the truthful GENERIC AI/SaaS title — a chatbot title is used ONLY when the prompt shows
+ *  explicit conversational-chat intent (see deriveWebBuildTitle). A generic non-chat AI/SaaS
+ *  product must never be titled "chatbot". */
 const TITLE: Record<IndustryKey, [string, string]> = {
   landscaping: ['Landscaping Site', 'Peyzaj Mimarı Sitesi'],
-  ai_saas: ['AI Chatbot Landing', 'AI Chatbot Landing'],
+  ai_saas: ['AI SaaS Site', 'AI SaaS Sitesi'],
   furniture: ['Furniture Store Site', 'Mobilya Mağazası Sitesi'],
   automotive: ['Car Dealer Site', 'Araba Galerisi Sitesi'],
   fitness: ['Fitness Coaching Landing', 'Fitness Koçluğu Landing'],
@@ -62,6 +66,13 @@ const TITLE: Record<IndustryKey, [string, string]> = {
 export function deriveWebBuildTitle(prompt: string, lang = 'en'): string {
   try {
     const industry = inferWebsiteBrief(prompt || '', lang).industry;
+    // Phase 12F.3 — a chatbot title is truthful ONLY for an explicit conversational-chat
+    // request. A generic AI/SaaS product (compliance workflow, dashboard, calculator,
+    // platform, automation, …) must never be titled "chatbot". The product-intent authority
+    // requires STRONG conversational evidence, so bare "AI"/"SaaS"/"assistant" stays generic.
+    if (industry === 'ai_saas' && hasExplicitChatIntent(prompt || '')) {
+      return L(lang, 'AI Chatbot Landing', 'AI Chatbot Sitesi') || 'Web Build';
+    }
     const [en, tr] = TITLE[industry] || TITLE.generic;
     return L(lang, en, tr) || 'Web Build';
   } catch {
