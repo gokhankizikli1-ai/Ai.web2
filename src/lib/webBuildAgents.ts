@@ -1264,6 +1264,19 @@ export interface WebBuildEnforcement {
   frontendBuilderUnresolvedImportCount?: number;
   frontendBuilderUnsupportedPackageCount?: number;
   frontendBuilderReadyForConsumption?: boolean;
+  /* ── Frontend Builder consumption trace (Phase 12D, optional, backward compatible) ──
+   *  Whether validated model-native files replaced the active file set + drive All
+   *  Files and the isolated runtime Preview. `didConsumeFrontendBuilderFiles` is true
+   *  ONLY on a real model-native consumption; a fallback must never claim consumption.
+   *  Consumption ≠ runtime compilation ≠ visual review (Phase 12E). */
+  didConsumeFrontendBuilderFiles?: boolean;
+  frontendBuilderConsumptionStatus?: FrontendBuilderConsumptionStatus;
+  frontendBuilderFileSource?: FrontendBuilderFileSource;
+  frontendBuilderAllFilesSource?: FrontendBuilderFileSource;
+  frontendBuilderPreviewSource?: FrontendBuilderPreviewSource;
+  frontendBuilderConsumedFileCount?: number;
+  frontendBuilderConsumedCharCount?: number;
+  frontendBuilderConsumptionReason?: string;
   fallbackReason?: string;
 }
 
@@ -1548,6 +1561,36 @@ export interface FrontendBuilderValidationArtifact {
   reason: string;
 }
 
+/* ── Frontend Builder consumption (Phase 12D) ─────────────────────────────────
+ * Records whether the Phase 12C validated model-native files became the ACTIVE
+ * frontend project — replacing the temporary internal synthesis in `payload.files`
+ * / All Files and driving the isolated Sandpack runtime Preview. Consumption is a
+ * DISTINCT fact from generation (did the model reply), validation (did the static
+ * contract pass), runtime preview (did the sandbox compile), and visual review
+ * (Phase 12E). A fallback never claims consumption. Additive + optional + backward
+ * compatible; JSON-serializable. */
+export type FrontendBuilderConsumptionStatus = 'model-native' | 'fallback';
+export type FrontendBuilderFileSource = 'model-native' | 'internal-synthesis';
+export type FrontendBuilderPreviewSource = 'model-native-sandbox' | 'legacy-section-renderer';
+
+export interface FrontendBuilderConsumptionArtifact {
+  version: 'frontend-builder-consumption-v1';
+  status: FrontendBuilderConsumptionStatus;
+
+  fileSource: FrontendBuilderFileSource;
+  allFilesSource: FrontendBuilderFileSource;
+  previewSource: FrontendBuilderPreviewSource;
+
+  consumedFileCount: number;
+  consumedCharCount: number;
+
+  validationStatus: FrontendBuilderValidationArtifactStatus;
+  readyForConsumption: boolean;
+
+  reason: string;
+  fallbackReason?: string;
+}
+
 export interface WebBuildArtifacts {
   research?: ResearchAgentArtifact;
   /** The strategic decision the downstream agents obey (Phase 8A). Optional →
@@ -1609,6 +1652,11 @@ export interface WebBuildArtifacts {
    *  STATIC only (no compile/execute/consume); the parsed files live here, never in
    *  `payload.files`, until Phase 12D. Optional → old builds load. */
   frontendBuilderValidation?: FrontendBuilderValidationArtifact;
+  /** Whether the Phase 12C validated model-native files became the active project
+   *  (Phase 12D). 'model-native' → payload.files/All Files/Preview use the generated
+   *  React project; 'fallback' → the deterministic section renderer + synthesized
+   *  files remain active. Optional → old builds load. */
+  frontendBuilderConsumption?: FrontendBuilderConsumptionArtifact;
   /** The shared context the agents were run against (pipeline trace). */
   context?: WebBuildAgentContext;
   /** Enforcement diagnostics proving the agents drove the build. */

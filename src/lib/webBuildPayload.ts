@@ -15,6 +15,7 @@ import {
   type WebBuildAgent, type WebBuildArtifacts, type WebBuildEnforcement,
   type FrontendBuildSpecification, type FrontendBuilderRawArtifact,
   type FrontendBuilderValidationArtifact, type FrontendBuilderValidationStatus,
+  type FrontendBuilderConsumptionArtifact,
 } from '@/lib/webBuildAgents';
 import { deriveAgentSectionArchitecture } from '@/lib/webBuildSectionArchitecture';
 import { deriveFrontendBuildSpecification } from '@/lib/webBuildFrontendSpec';
@@ -154,6 +155,76 @@ export interface WebBuildPayload {
   updatedAt: string;
 }
 
+/* ── Phase 12D consumption helpers (pure; never mutate inputs) ───────────────── */
+
+/** The obsolete planning warnings a successful model-native consumption removes —
+ *  they describe the FIRST planning response's missing Frontend Code section, which
+ *  the dedicated Frontend Builder has now superseded with the active project. */
+const OBSOLETE_CODE_CONTRACT_WARNINGS = new Set<string>([
+  'No "Frontend Code" section in the backend reply.',
+  'Model-planned Preview — Frontend Code contract missing; All Files uses internal synthesis (code parity pending).',
+]);
+
+/** Clear the code-contract-pending flag + drop only the obsolete Frontend-Code
+ *  warnings when the model-native project is now the active code. Other warnings and
+ *  planning-quality fields are preserved. Never mutates. Old builds (no pd) pass through. */
+function clearCodeContractPending(pd: WebBuildPlanningDiagnostics | undefined): WebBuildPlanningDiagnostics | undefined {
+  if (!pd) return pd;
+  const warnings = Array.isArray(pd.warnings) ? pd.warnings.filter((w) => !OBSOLETE_CODE_CONTRACT_WARNINGS.has(w)) : pd.warnings;
+  return { ...pd, codeContractPending: false, warnings };
+}
+
+/** Recompute file-count/added/removed from the consumed model-native files while
+ *  preserving the model's own summary.type + summary.sectionNames. Never mutates. */
+function recomputeSummaryForConsumed(prev: WebBuildSummary | undefined, files: WebBuildFile[]): WebBuildSummary {
+  const base: WebBuildSummary = prev || { sectionNames: [], fileCount: 0, added: 0, removed: 0 };
+  const changed = files.filter((f) => f.status !== 'unchanged');
+  return {
+    ...base,
+    fileCount: files.length,
+    added: changed.reduce((n, f) => n + f.added, 0),
+    removed: changed.reduce((n, f) => n + f.removed, 0),
+  };
+}
+
+/**
+ * Rebuild a turn's activity for the consumed model-native project: drop the temporary
+ * synthesized `file-*` rows and the old `package` row, insert one honest row per
+ * consumed file (after `plan`), and one refreshed `package` row (before `save`). The
+ * real read/research/plan/preview/save rows + their details/statuses are preserved.
+ * Never mutates; never claims a file that is not in the consumed set.
+ */
+function rebuildActivityForConsumed(activity: WebBuildActivityRow[] | undefined, files: WebBuildFile[]): WebBuildActivityRow[] {
+  const base = (Array.isArray(activity) ? activity : []).filter(
+    (r) => r && typeof r.id === 'string' && !r.id.startsWith('file-') && r.id !== 'package',
+  );
+  const fileRows: WebBuildActivityRow[] = files.map((f) => ({
+    id: `file-${f.path}`,
+    labelKey: f.status === 'modified' ? 'wbActModifyingFile' : 'wbActCreatingFile',
+    params: { file: f.path },
+    status: 'done' as const,
+    detail: f.summary || (f.added ? `+${f.added} −${f.removed}` : undefined),
+  }));
+  const pkgRow: WebBuildActivityRow = { id: 'package', labelKey: 'wbActPackage', params: { count: files.length }, status: 'done' };
+  const out: WebBuildActivityRow[] = [];
+  let filesInserted = false;
+  let pkgInserted = false;
+  for (const r of base) {
+    if (r.id === 'save' && !pkgInserted) { out.push(pkgRow); pkgInserted = true; }
+    out.push(r);
+    if (r.id === 'plan' && !filesInserted) { out.push(...fileRows); filesInserted = true; }
+  }
+  // Robust fallbacks for atypical activity shapes (should not occur with the
+  // canonical read→plan→files→preview→package→save order): never silently drop rows.
+  if (!filesInserted) {
+    const previewAt = out.findIndex((r) => r.id === 'preview');
+    if (previewAt >= 0) out.splice(previewAt, 0, ...fileRows);
+    else out.push(...fileRows);
+  }
+  if (!pkgInserted) out.push(pkgRow);
+  return out;
+}
+
 /**
  * Attach the dedicated Frontend Builder raw response (Phase 12B) + its STATIC parse
  * and contract validation (Phase 12C) IMMUTABLY to a planning payload. Updates
@@ -165,11 +236,20 @@ export interface WebBuildPayload {
  *
  * Phase 12C runs `parseAndValidateFrontendBuilderRaw` EXACTLY ONCE against the
  * authoritative latest specification and records the result — STATIC only (no
- * compilation, execution or Preview consumption). The parsed files live ONLY inside
- * the validation artifact and NEVER replace `payload.files` (that is Phase 12D). The
- * honest distinction is preserved: GENERATION status ('generated'/'failed'/'not-run')
- * reflects whether the model returned a body and is NEVER downgraded because parsing
- * or validation failed; VALIDATION status ('valid'/'invalid'/'not-run') is separate.
+ * compilation, execution or Preview consumption). GENERATION status
+ * ('generated'/'failed'/'not-run') reflects whether the model returned a body and is
+ * NEVER downgraded because parsing or validation failed; VALIDATION status
+ * ('valid'/'invalid'/'not-run') is separate.
+ *
+ * Phase 12D CONSUMES the validated files when — and only when — the strict gate holds
+ * (raw completed + validation valid + readyForConsumption + files present). On
+ * consumption the model-native files atomically REPLACE `payload.files` +
+ * `latestStep.files` (diffed against the previous completed step, not this turn's
+ * temporary synthesis) and drive All Files + the isolated Sandpack runtime Preview;
+ * activity/summary/planning-diagnostics are refreshed honestly. When the gate fails,
+ * the deterministic section renderer + synthesized files remain the active fallback
+ * and nothing is claimed as consumed. Consumption ≠ runtime compilation ≠ visual
+ * review (Phase 12E). Generated file CONTENT is never rewritten.
  */
 export function attachFrontendBuilderRaw(
   payload: WebBuildPayload,
@@ -232,17 +312,119 @@ export function attachFrontendBuilderRaw(
       frontendBuilderUnsupportedPackageCount: validation.unsupportedPackageImports.length,
       frontendBuilderReadyForConsumption: validation.readyForConsumption,
     };
+
+    // ── Phase 12D consumption gate — STRICT. Never consume on a weaker signal. ──
+    const canConsume =
+      raw.status === 'completed' &&
+      validation.status === 'valid' &&
+      validation.readyForConsumption === true &&
+      validation.files.length > 0;
+
+    // Convert validated model-native files to WebBuildFile[] WITHOUT touching content,
+    // diffed against the PREVIOUS completed step (a revision) — never this turn's
+    // temporary synthesized fallback. A fresh build diffs against nothing.
+    const previousFiles: WebBuildFile[] | undefined =
+      steps.length >= 2 ? steps[steps.length - 2]?.files : undefined;
+    const consumedFiles: WebBuildFile[] = canConsume
+      ? diffFiles(previousFiles, validation.files.map((f) => ({
+          path: f.path,
+          content: f.content,
+          language: f.language,
+          summary: 'Model-native file generated by the dedicated Frontend Builder',
+        })))
+      : [];
+
+    const boundedFallbackReason = (
+      (validation.reason && validation.reason.trim())
+      || (raw.reason && raw.reason.trim())
+      || (validation.errors[0]?.message)
+      || 'Model-native files were not eligible for consumption.'
+    ).slice(0, 240);
+
+    const consumption: FrontendBuilderConsumptionArtifact = canConsume
+      ? {
+          version: 'frontend-builder-consumption-v1',
+          status: 'model-native',
+          fileSource: 'model-native',
+          allFilesSource: 'model-native',
+          previewSource: 'model-native-sandbox',
+          consumedFileCount: consumedFiles.length,
+          consumedCharCount: validation.totalCharCount,
+          validationStatus: validation.status,
+          readyForConsumption: true,
+          reason: 'Validated Frontend Builder files replaced the temporary internal synthesis and now drive All Files and the isolated runtime Preview.',
+        }
+      : {
+          version: 'frontend-builder-consumption-v1',
+          status: 'fallback',
+          fileSource: 'internal-synthesis',
+          allFilesSource: 'internal-synthesis',
+          previewSource: 'legacy-section-renderer',
+          consumedFileCount: 0,
+          consumedCharCount: 0,
+          validationStatus: validation.status,
+          readyForConsumption: false,
+          reason: 'Model-native files were not eligible for consumption; the existing deterministic fallback remains active.',
+          fallbackReason: boundedFallbackReason,
+        };
+
+    // Consumption enforcement — a fallback NEVER claims consumption.
+    const consumptionEnforce: Partial<WebBuildEnforcement> = canConsume
+      ? {
+          didConsumeFrontendBuilderFiles: true,
+          frontendBuilderConsumptionStatus: 'model-native',
+          frontendBuilderFileSource: 'model-native',
+          frontendBuilderAllFilesSource: 'model-native',
+          frontendBuilderPreviewSource: 'model-native-sandbox',
+          frontendBuilderConsumedFileCount: consumedFiles.length,
+          frontendBuilderConsumedCharCount: validation.totalCharCount,
+          frontendBuilderConsumptionReason: consumption.reason,
+        }
+      : {
+          didConsumeFrontendBuilderFiles: false,
+          frontendBuilderConsumptionStatus: 'fallback',
+          frontendBuilderFileSource: 'internal-synthesis',
+          frontendBuilderAllFilesSource: 'internal-synthesis',
+          frontendBuilderPreviewSource: 'legacy-section-renderer',
+          frontendBuilderConsumedFileCount: 0,
+          frontendBuilderConsumedCharCount: 0,
+          frontendBuilderConsumptionReason: consumption.reason,
+        };
+
     const patch = (a: WebBuildArtifacts | undefined): WebBuildArtifacts => ({
       ...(a || {}),
       frontendBuilderRaw: rawWithValidation,
       frontendBuilderValidation: validation,
+      frontendBuilderConsumption: consumption,
       frontendBuildSpec: applyGeneration(a?.frontendBuildSpec),
-      enforcement: a?.enforcement ? { ...a.enforcement, ...enforcePatch } : a?.enforcement,
+      enforcement: a?.enforcement ? { ...a.enforcement, ...enforcePatch, ...consumptionEnforce } : a?.enforcement,
     });
+
+    // Older steps NEVER change. Only the latest step (this turn) is replaced, and only
+    // when the strict gate held do its files/activity/summary/planning-diagnostics switch.
     const nextSteps = steps.length
-      ? steps.map((s, i) => (i === steps.length - 1 ? { ...s, artifacts: patch(s.artifacts) } : s))
+      ? steps.map((s, i) => {
+          if (i !== steps.length - 1) return s;
+          if (!canConsume) return { ...s, artifacts: patch(s.artifacts) };
+          return {
+            ...s,
+            files: consumedFiles,
+            activity: rebuildActivityForConsumed(s.activity, consumedFiles),
+            summary: recomputeSummaryForConsumed(s.summary, consumedFiles),
+            planningDiagnostics: clearCodeContractPending(s.planningDiagnostics),
+            artifacts: patch(s.artifacts),
+          };
+        })
       : steps;
-    return { ...payload, artifacts: patch(payload.artifacts), steps: nextSteps };
+
+    const rootPatched: WebBuildPayload = { ...payload, artifacts: patch(payload.artifacts), steps: nextSteps };
+    if (!canConsume) return rootPatched;
+    return {
+      ...rootPatched,
+      files: consumedFiles,
+      activity: rebuildActivityForConsumed(payload.activity, consumedFiles),
+      planningDiagnostics: clearCodeContractPending(payload.planningDiagnostics),
+    };
   } catch {
     return payload;
   }

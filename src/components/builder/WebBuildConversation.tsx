@@ -518,6 +518,21 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       fbv.errors.slice(0, 2).forEach((e, i) => ownerRows.push([`frontendValidationError${i + 1}`, `${e.code}: ${e.message}`.slice(0, 160)]));
     }
 
+    // Phase 12D — whether the validated model-native files became the active project
+    // (All Files + isolated runtime Preview) or the deterministic fallback stayed.
+    // Owner-only. Consumption ≠ runtime compilation ≠ visual review (Phase 12E).
+    const fbc = step.artifacts?.frontendBuilderConsumption;
+    if (fbc) {
+      ownerRows.push(['frontendConsumption', fbc.status]);
+      ownerRows.push(['frontendFileSource', fbc.fileSource]);
+      ownerRows.push(['frontendAllFilesSource', fbc.allFilesSource]);
+      ownerRows.push(['frontendPreviewSource', fbc.previewSource]);
+      ownerRows.push(['frontendConsumedFiles', String(fbc.consumedFileCount)]);
+      ownerRows.push(['frontendConsumedChars', String(fbc.consumedCharCount)]);
+      ownerRows.push(['frontendConsumptionReason', fbc.reason.slice(0, 160)]);
+      if (fbc.status === 'fallback' && fbc.fallbackReason) ownerRows.push(['frontendConsumptionFallback', fbc.fallbackReason.slice(0, 160)]);
+    }
+
     // Phase 9D-1 — intent-aware Page Architecture Decision (concept-specific spine).
     const pa = step.artifacts?.pageArchitecture;
     if (pa) {
@@ -746,10 +761,25 @@ function CompletedPlanSummary({ step }: { step: WebBuildStep }) {
   if (data.visual) rows.push([L('Visual direction', 'Görsel yön'), shortStr(data.visual, 90)]);
   if (!rows.length) return null;
 
-  const quality = L(
-    `Front-end demo only — no real backend, AI, database or payments; no fake metrics, logos or testimonials. Preview shell: ${data.shellFromModel ? 'from model plan' : 'fallback'}. All Files parity: pending.`,
-    `Yalnızca ön yüz demosu — gerçek arka uç, yapay zekâ, veritabanı veya ödeme yok; sahte metrik, logo veya yorum yok. Önizleme kabuğu: ${data.shellFromModel ? 'model planından' : 'yedek'}. Tüm Dosyalar eşleşmesi: bekliyor.`,
+  // Phase 12D — source-aware parity messaging. When the validated model-native
+  // project was consumed, Preview + All Files use the generated React code (runtime
+  // isolated; visual review still pending — never a Phase 12E pass claim). Otherwise
+  // the internal renderer/files remain active and honestly report that.
+  const modelNativeConsumed = step.artifacts?.frontendBuilderConsumption?.status === 'model-native';
+  const disclaimer = L(
+    `Front-end demo only — no real backend, AI, database or payments; no fake metrics, logos or testimonials. Preview shell: ${data.shellFromModel ? 'from model plan' : 'fallback'}.`,
+    `Yalnızca ön yüz demosu — gerçek arka uç, yapay zekâ, veritabanı veya ödeme yok; sahte metrik, logo veya yorum yok. Önizleme kabuğu: ${data.shellFromModel ? 'model planından' : 'yedek'}.`,
   );
+  const parity = modelNativeConsumed
+    ? L(
+        'Preview and All Files now use the validated model-native frontend project. Runtime rendering is isolated; visual review is still pending.',
+        'Önizleme ve Tüm Dosyalar artık doğrulanmış model-native ön yüz projesini kullanıyor. Çalıştırma izole ortamda yapılıyor; görsel inceleme henüz bekliyor.',
+      )
+    : L(
+        'The internal renderer and files remain active because the dedicated frontend project was not eligible for consumption. All Files parity: pending.',
+        'Ayrılmış ön yüz projesi tüketime uygun olmadığı için dahili oluşturucu ve dosyalar etkin kalıyor. Tüm Dosyalar eşleşmesi: bekliyor.',
+      );
+  const quality = `${disclaimer} ${parity}`;
 
   return (
     <div className="space-y-1 pt-0.5">
@@ -960,7 +990,7 @@ export default function WebBuildConversation({
                 </button>
               </div>
               {panel === 'preview'
-                ? <WebBuildPreviewPanel sectionItems={sectionItems} brief={brief} slug={slug} runId={runId} interactionContract={steps[lastIdx]?.artifacts?.strategy?.interactionContract} visualAssetPlan={steps[lastIdx]?.artifacts?.artDirection?.visualAssetPlan} visualSignaturePlan={steps[lastIdx]?.artifacts?.visualSignaturePlan} motionComposer={steps[lastIdx]?.artifacts?.motionComposer} imagePipeline={steps[lastIdx]?.artifacts?.imagePipeline} />
+                ? <WebBuildPreviewPanel sectionItems={sectionItems} brief={brief} slug={slug} runId={runId} files={files} previewSource={steps[lastIdx]?.artifacts?.frontendBuilderConsumption?.previewSource} interactionContract={steps[lastIdx]?.artifacts?.strategy?.interactionContract} visualAssetPlan={steps[lastIdx]?.artifacts?.artDirection?.visualAssetPlan} visualSignaturePlan={steps[lastIdx]?.artifacts?.visualSignaturePlan} motionComposer={steps[lastIdx]?.artifacts?.motionComposer} imagePipeline={steps[lastIdx]?.artifacts?.imagePipeline} />
                 : <WebBuildFileView files={files} initialPath={filePath} />}
             </motion.div>
           </motion.div>
