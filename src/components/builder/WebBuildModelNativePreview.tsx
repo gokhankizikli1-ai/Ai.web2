@@ -78,11 +78,11 @@ const SANDBOX_DEPENDENCIES: Record<string, string> = {
   '@radix-ui/react-toggle': '^1.1.10',
   '@radix-ui/react-toggle-group': '^1.1.11',
   '@radix-ui/react-tooltip': '^1.2.8',
-};
-
-/* Preview-only build toolchain — compatible with the repository's own devDependencies.
- * Tailwind is compiled inside the sandbox via these files; never via a CDN. */
-const SANDBOX_DEV_DEPENDENCIES: Record<string, string> = {
+  // Preview-only build toolchain. Sandpack 2.20.0 does NOT install
+  // customSetup.devDependencies inside the sandbox, so these must be RUNTIME
+  // dependencies for the generated project's Tailwind directives + PostCSS pipeline
+  // to be processed. Versions match the repository's own devDependency ranges;
+  // Tailwind is compiled inside the sandbox via the config files below, never a CDN.
   tailwindcss: '^3.4.19',
   postcss: '^8.5.6',
   autoprefixer: '^10.4.23',
@@ -169,7 +169,6 @@ export default function WebBuildModelNativePreview({ files, mode = 'embedded' }:
   const customSetup = useMemo<SandpackSetup>(() => ({
     entry: '/src/main.tsx',
     dependencies: SANDBOX_DEPENDENCIES,
-    devDependencies: SANDBOX_DEV_DEPENDENCIES,
   }), []);
 
   // Embedded: at least 560px, sized for the existing 70vh drawer. Standalone: fill the
