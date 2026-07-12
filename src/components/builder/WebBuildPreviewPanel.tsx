@@ -2,12 +2,13 @@ import { Component, useState, type ErrorInfo, type ReactNode } from 'react';
 import { ExternalLink } from 'lucide-react';
 import BrowserFrame from '@/components/builder/BrowserFrame';
 import WebBuildPreviewDocument from '@/components/builder/WebBuildPreviewDocument';
+import WebBuildModelNativePreview from '@/components/builder/WebBuildModelNativePreview';
 import { useLanguageStore } from '@/stores/languageStore';
 import { openPreviewInNewTab, currentReturnTo } from '@/lib/webBuildPreviewStash';
-import type { WebBuildSectionItem } from '@/lib/webBuildPayload';
+import type { WebBuildSectionItem, WebBuildFile } from '@/lib/webBuildPayload';
 import type { WebBuildBrief } from '@/lib/webBuildApi';
 import type { InteractionContract } from '@/lib/webBuildInteractionContract';
-import type { VisualAssetPlan, VisualSignaturePlan, MotionComposerArtifact, ImagePipelineArtifact } from '@/lib/webBuildAgents';
+import type { VisualAssetPlan, VisualSignaturePlan, MotionComposerArtifact, ImagePipelineArtifact, FrontendBuilderPreviewSource } from '@/lib/webBuildAgents';
 
 /**
  * The in-app preview drawer. Renders the REAL generated page (headline, copy,
@@ -43,12 +44,18 @@ class PreviewErrorBoundary extends Component<{ fallback: ReactNode; children: Re
 }
 
 export default function WebBuildPreviewPanel({
-  sectionItems, brief, slug, runId, interactionContract, visualAssetPlan, visualSignaturePlan, motionComposer, imagePipeline,
+  sectionItems, brief, slug, runId, files, previewSource, interactionContract, visualAssetPlan, visualSignaturePlan, motionComposer, imagePipeline,
 }: {
   sectionItems: WebBuildSectionItem[];
   brief: WebBuildBrief;
   slug?: string;
   runId?: string;
+  /** Phase 12D — the consumed model-native file set (present when the dedicated
+   *  Frontend Builder project became the active project). Optional → legacy builds. */
+  files?: WebBuildFile[];
+  /** Phase 12D — which renderer drives the Preview: the isolated Sandpack runtime for
+   *  the model-native project, or the deterministic legacy section renderer. */
+  previewSource?: FrontendBuilderPreviewSource;
   /** Phase 2 — the strategy's Interaction Contract (optional). Passed straight to
    *  the preview document so its actions become real in-app behaviour. */
   interactionContract?: InteractionContract;
@@ -76,6 +83,60 @@ export default function WebBuildPreviewPanel({
   // a safe object so the preview document always receives valid props.
   const items = Array.isArray(sectionItems) ? sectionItems.filter(Boolean) : [];
   const safeBrief = (brief || {}) as WebBuildBrief;
+
+  // Phase 12D — choose EXACTLY one preview source. When the dedicated Frontend Builder
+  // project was consumed, render its validated files in the isolated Sandpack runtime;
+  // otherwise the deterministic section renderer. Never render both.
+  const modelNativeFiles = Array.isArray(files) ? files.filter(Boolean) : [];
+  const useModelNative = previewSource === 'model-native-sandbox' && modelNativeFiles.length > 0;
+
+  // The Open Preview handoff carries the model-native files + source so the standalone
+  // route opens the SAME project — it must not revert to the legacy renderer just
+  // because it opened in another tab.
+  const openPreview = () => {
+    const opened = openPreviewInNewTab({
+      runId: runId || `preview-${Date.now().toString(36)}`,
+      sectionItems: items,
+      brief: safeBrief,
+      slug: url,
+      returnTo: currentReturnTo(),
+      ...(useModelNative ? { files: modelNativeFiles, previewSource: 'model-native-sandbox' as const } : {}),
+    });
+    setOpenFailed(!opened);
+  };
+
+  const openFailedNote = openFailed && (
+    <p className="max-w-sm text-right text-[11px] leading-relaxed text-[#F59E0B]">
+      {lang === 'tr'
+        ? 'Tarayıcı depolama alanı dolu olduğu için tam ekran önizleme açılamadı. Uygulama içi önizleme hâlâ kullanılabilir.'
+        : 'Could not open full preview because browser storage is full. The in-app preview is still available.'}
+    </p>
+  );
+
+  if (useModelNative) {
+    // Isolated model-native runtime Preview inside the existing browser frame.
+    return (
+      <div>
+        <div className="mb-3 flex flex-col items-end gap-2">
+          <button
+            onClick={openPreview}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-[#3B82F6]/30 bg-[#3B82F6]/[0.08] px-3 py-1.5 text-[12px] font-medium text-[#93C5FD] transition-colors hover:bg-[#3B82F6]/[0.14]"
+          >
+            <ExternalLink className="h-3.5 w-3.5" /> {t('wbOpenPreview')}
+          </button>
+          {openFailedNote}
+        </div>
+        <BrowserFrame url={url} accentColor={ACCENT}>
+          <WebBuildModelNativePreview files={modelNativeFiles} mode="embedded" />
+        </BrowserFrame>
+        <p className="mt-2 text-[11px] text-[#64748B]">
+          {lang === 'tr'
+            ? 'Doğrulanmış model-native proje izole bir çalıştırma ortamında önizleniyor.'
+            : 'The validated model-native project is previewed in an isolated runtime.'}
+        </p>
+      </div>
+    );
+  }
 
   if (items.length === 0) {
     return <div className="rounded-xl border border-dashed border-white/[0.08] px-4 py-8 text-center text-[12px] text-[#64748B]">{t('wbPreviewEmpty')}</div>;
@@ -120,21 +181,12 @@ export default function WebBuildPreviewPanel({
     <div>
       <div className="mb-3 flex flex-col items-end gap-2">
         <button
-          onClick={() => {
-            const opened = openPreviewInNewTab({ runId: runId || `preview-${Date.now().toString(36)}`, sectionItems: items, brief: safeBrief, slug: url, returnTo: currentReturnTo() });
-            setOpenFailed(!opened);
-          }}
+          onClick={openPreview}
           className="inline-flex items-center gap-1.5 rounded-lg border border-[#3B82F6]/30 bg-[#3B82F6]/[0.08] px-3 py-1.5 text-[12px] font-medium text-[#93C5FD] transition-colors hover:bg-[#3B82F6]/[0.14]"
         >
           <ExternalLink className="h-3.5 w-3.5" /> {t('wbOpenPreview')}
         </button>
-        {openFailed && (
-          <p className="max-w-sm text-right text-[11px] leading-relaxed text-[#F59E0B]">
-            {lang === 'tr'
-              ? 'Tarayıcı depolama alanı dolu olduğu için tam ekran önizleme açılamadı. Uygulama içi önizleme hâlâ kullanılabilir.'
-              : 'Could not open full preview because browser storage is full. The in-app preview is still available.'}
-          </p>
-        )}
+        {openFailedNote}
       </div>
       <BrowserFrame url={url} accentColor={ACCENT}>
         <div className="max-h-[70vh] overflow-y-auto scrollbar-thin">

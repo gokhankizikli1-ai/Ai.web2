@@ -1,5 +1,6 @@
-import type { WebBuildSectionItem } from '@/lib/webBuildPayload';
+import type { WebBuildSectionItem, WebBuildFile } from '@/lib/webBuildPayload';
 import type { WebBuildBrief } from '@/lib/webBuildApi';
+import type { FrontendBuilderPreviewSource } from '@/lib/webBuildAgents';
 import { scopedKey } from '@/lib/userScope';
 
 /**
@@ -27,6 +28,36 @@ export interface WebBuildPreviewData {
   /** The PERSISTED Web Build session id (getWebBuildSession / ChatWebBuild
    *  restoreRunId) — NOT the latest preview step id. Plain id string. */
   returnWebBuildRunId?: string;
+  /** Phase 12D — the consumed model-native file set. Present ONLY for a model-native
+   *  preview (previewSource === 'model-native-sandbox'); bounded by Phase 12C.
+   *  Optional → legacy previews omit it and stay small. */
+  files?: WebBuildFile[];
+  /** Phase 12D — which renderer the standalone route should use for this run. */
+  previewSource?: FrontendBuilderPreviewSource;
+}
+
+/** Required entry files a model-native preview needs before it can run. */
+const MODEL_NATIVE_ENTRY_PATHS = ['src/main.tsx', 'src/App.tsx', 'src/styles.css'];
+
+/** True when `files` carries all three non-empty model-native entry files. */
+export function hasModelNativeEntryFiles(files?: WebBuildFile[]): boolean {
+  if (!Array.isArray(files) || files.length === 0) return false;
+  const byPath = new Map(files.filter(Boolean).map((f) => [f.path, f]));
+  return MODEL_NATIVE_ENTRY_PATHS.every((p) => {
+    const f = byPath.get(p);
+    return !!f && typeof f.content === 'string' && f.content.trim().length > 0;
+  });
+}
+
+/**
+ * A preview payload is USABLE when EITHER it is a model-native project whose files
+ * include the required entry files, OR it has non-empty sectionItems for the legacy
+ * renderer. A model-native preview must NOT require sectionItems.
+ */
+export function isUsablePreviewData(d: WebBuildPreviewData | null | undefined): d is WebBuildPreviewData {
+  if (!d || typeof d !== 'object') return false;
+  if (d.previewSource === 'model-native-sandbox' && hasModelNativeEntryFiles(d.files)) return true;
+  return Array.isArray(d.sectionItems) && d.sectionItems.length > 0;
 }
 
 /** A stash id must be a plain, non-empty string (never a URL). */
@@ -62,7 +93,7 @@ export function currentReturnTo(): string | undefined {
  *  — never the full generated files/steps, so the stash stays small and is far
  *  less likely to hit the localStorage quota. */
 function toMinimalPreview(data: WebBuildPreviewData): WebBuildPreviewData {
-  return {
+  const minimal: WebBuildPreviewData = {
     runId: data.runId,
     sectionItems: Array.isArray(data.sectionItems) ? data.sectionItems : [],
     brief: data.brief || ({} as WebBuildBrief),
@@ -72,6 +103,14 @@ function toMinimalPreview(data: WebBuildPreviewData): WebBuildPreviewData {
     returnChatSessionId: data.returnChatSessionId,
     returnWebBuildRunId: data.returnWebBuildRunId,
   };
+  // Phase 12D — for a model-native preview, carry ONLY the validated files + source
+  // (already bounded by Phase 12C). Never the raw response, validation issues, full
+  // artifacts, spec, agents, research, tokens, steps or provider metadata.
+  if (data.previewSource === 'model-native-sandbox' && Array.isArray(data.files) && data.files.length > 0) {
+    minimal.files = data.files;
+    minimal.previewSource = 'model-native-sandbox';
+  }
+  return minimal;
 }
 
 /** True when the persisted stash for `runId` round-trips to USABLE preview data
@@ -79,7 +118,7 @@ function toMinimalPreview(data: WebBuildPreviewData): WebBuildPreviewData {
  *  verifiable — a silently-dropped/quota-failed write reads back as unusable. */
 function verifyStash(runId: string): boolean {
   const back = readPreview(runId);
-  return !!back && back.runId === runId && Array.isArray(back.sectionItems) && back.sectionItems.length > 0;
+  return !!back && back.runId === runId && isUsablePreviewData(back);
 }
 
 /**
@@ -135,7 +174,9 @@ export function readPreview(runId: string): WebBuildPreviewData | null {
     const raw = localStorage.getItem(key(runId));
     if (!raw) return null;
     const data = JSON.parse(raw) as WebBuildPreviewData;
-    return Array.isArray(data.sectionItems) ? data : null;
+    // A legacy stash carries sectionItems; a model-native stash may carry files
+    // instead — accept either shape (usability is judged by isUsablePreviewData).
+    return (Array.isArray(data.sectionItems) || Array.isArray(data.files)) ? data : null;
   } catch {
     return null;
   }
@@ -164,8 +205,7 @@ function openPreviewChannel(): BroadcastChannel | null {
 }
 
 const usablePayload = (d: unknown): d is WebBuildPreviewData =>
-  !!d && typeof d === 'object' && Array.isArray((d as WebBuildPreviewData).sectionItems)
-  && (d as WebBuildPreviewData).sectionItems.length > 0;
+  isUsablePreviewData(d as WebBuildPreviewData | null);
 
 /**
  * Opener side: keep answering preview-data requests for this run over the

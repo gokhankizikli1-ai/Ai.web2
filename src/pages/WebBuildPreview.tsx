@@ -3,9 +3,11 @@ import { useNavigate, useParams } from 'react-router';
 import { ArrowLeft, Lock } from 'lucide-react';
 import { useLanguageStore } from '@/stores/languageStore';
 import WebBuildPreviewDocument from '@/components/builder/WebBuildPreviewDocument';
-import { readPreview, sanitizeReturnTo, requestPreviewForRun, subscribePreviewResponses, type WebBuildPreviewData } from '@/lib/webBuildPreviewStash';
+import WebBuildModelNativePreview from '@/components/builder/WebBuildModelNativePreview';
+import { readPreview, sanitizeReturnTo, requestPreviewForRun, subscribePreviewResponses, isUsablePreviewData, hasModelNativeEntryFiles, type WebBuildPreviewData } from '@/lib/webBuildPreviewStash';
 import { listWebBuildSessions, getWebBuildSession } from '@/lib/webBuildSession';
 import { getProjects } from '@/stores/projectStore';
+import type { WebBuildStep } from '@/lib/webBuildPayload';
 
 /**
  * Standalone, openable preview of a generated Web Build
@@ -15,35 +17,49 @@ import { getProjects } from '@/stores/projectStore';
  * working. Client-side only — no hosting yet, but a real openable URL that
  * renders the real generated page.
  */
-/** A preview candidate is USABLE only when it actually has sections to render.
- *  This is the gate that lets the resolver skip an empty/stale stash and keep
- *  trying the healthier saved-session / project fallbacks. */
-function usablePreview(d: WebBuildPreviewData | null): d is WebBuildPreviewData {
-  return !!d && Array.isArray(d.sectionItems) && d.sectionItems.length > 0;
+/** A preview candidate is USABLE when it is a model-native project with entry files
+ *  OR it has non-empty sections for the legacy renderer (Phase 12D gate). This lets
+ *  the resolver skip an empty/stale stash and keep trying healthier fallbacks. */
+const usablePreview = isUsablePreviewData;
+
+/** Build preview data from a saved Web Build step. When THAT step actually consumed
+ *  model-native files (frontendBuilderConsumption.status === 'model-native'), restore
+ *  the model-native project + source; otherwise use the section-based fallback.
+ *  Model-native status is read from the artifact, never inferred from filenames. */
+function stepToPreviewData(
+  runId: string,
+  wb: { sectionItems?: WebBuildPreviewData['sectionItems']; brief?: WebBuildPreviewData['brief']; prompt?: string; steps?: WebBuildStep[] },
+): WebBuildPreviewData | null {
+  const step = (wb.steps || []).find((s) => s.id === runId);
+  if (!step) return null;
+  const consumption = step.artifacts?.frontendBuilderConsumption;
+  const brief = wb.brief || {};
+  if (consumption?.status === 'model-native' && hasModelNativeEntryFiles(step.files)) {
+    return { runId, sectionItems: wb.sectionItems || [], brief, slug: undefined, prompt: wb.prompt, files: step.files, previewSource: 'model-native-sandbox' };
+  }
+  const candidate: WebBuildPreviewData = { runId, sectionItems: wb.sectionItems || [], brief, slug: undefined, prompt: wb.prompt };
+  return usablePreview(candidate) ? candidate : null;
 }
 
-/** Fallback: a saved project whose Web Build contains this run/step id. Returns
- *  data ONLY when it is usable (non-empty sectionItems); a matched-but-empty
- *  build keeps scanning so it can never mask a usable source. */
+/** Fallback: a saved project whose Web Build contains this run/step id. Returns data
+ *  ONLY when it is usable; a matched-but-empty build keeps scanning. */
 function fromProject(runId: string): WebBuildPreviewData | null {
   for (const p of getProjects()) {
-    const wb = p.webBuild;
-    if (wb && (wb.steps || []).some((s) => s.id === runId)) {
-      const candidate = { runId, sectionItems: wb.sectionItems || [], brief: wb.brief || {}, slug: undefined, prompt: wb.prompt };
-      if (usablePreview(candidate)) return candidate;
+    if (p.webBuild) {
+      const d = stepToPreviewData(runId, p.webBuild);
+      if (d) return d;
     }
   }
   return null;
 }
 
-/** Fallback: a persisted Web Build session containing this run/step id. Same
- *  usable-data rule as fromProject. */
+/** Fallback: a persisted Web Build session containing this run/step id. Same rule. */
 function fromSession(runId: string): WebBuildPreviewData | null {
   for (const meta of listWebBuildSessions()) {
     const wb = getWebBuildSession(meta.id);
-    if (wb && (wb.steps || []).some((s) => s.id === runId)) {
-      const candidate = { runId, sectionItems: wb.sectionItems || [], brief: wb.brief || {}, slug: undefined, prompt: wb.prompt };
-      if (usablePreview(candidate)) return candidate;
+    if (wb) {
+      const d = stepToPreviewData(runId, wb);
+      if (d) return d;
     }
   }
   return null;
@@ -121,7 +137,9 @@ export default function WebBuildPreview() {
     navigate('/chat');
   }
 
-  if (!data || data.sectionItems.length === 0) {
+  const modelNative = !!data && data.previewSource === 'model-native-sandbox' && hasModelNativeEntryFiles(data.files);
+
+  if (!data || !isUsablePreviewData(data)) {
     // Still waiting for a BroadcastChannel handoff from the opener tab — show a
     // brief loading state instead of prematurely declaring the preview missing.
     if (waiting) {
@@ -158,10 +176,16 @@ export default function WebBuildPreview() {
         <span className="w-4" />
       </div>
 
-      {/* Real generated page */}
-      <div className="mx-auto max-w-5xl">
-        <WebBuildPreviewDocument sectionItems={data.sectionItems} brief={data.brief} />
-      </div>
+      {/* Real generated page. A model-native project runs in the isolated Sandpack
+          runtime and controls its OWN full-width layout (never the max-w-5xl frame);
+          the legacy section renderer keeps the centered document frame. */}
+      {modelNative
+        ? <WebBuildModelNativePreview files={data.files || []} mode="standalone" />
+        : (
+          <div className="mx-auto max-w-5xl">
+            <WebBuildPreviewDocument sectionItems={data.sectionItems} brief={data.brief} />
+          </div>
+        )}
     </div>
   );
 }
