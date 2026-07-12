@@ -215,7 +215,7 @@ export default function WebBuildModelNativePreview({ files, mode = 'embedded' }:
       <div style={containerStyle}>
         <SandpackProvider
           theme="dark"
-          template="create-react-app-typescript"
+          template="react-ts"
           files={virtualFiles}
           customSetup={customSetup}
         >
