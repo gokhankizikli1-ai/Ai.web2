@@ -262,7 +262,7 @@ async def process_chat(
     # Falls back to legacy routing below if mode is None or unrecognised.
     if mode:
         try:
-            from backend.services.ai.mode_manager  import resolve_mode_name
+            from backend.services.ai.mode_manager  import resolve_mode_name, get_mode
             from backend.services.ai.prompt_manager import build_system_prompt
             from backend.services.ai.model_manager  import get_config as mode_get_config
 
@@ -270,6 +270,19 @@ async def process_chat(
             if canonical:
                 cfg   = mode_get_config(canonical, depth_label, message)
                 sys_p = build_system_prompt(canonical, mem_summary, style_prompt, profile)
+
+                # Phase 12B.1 — the dedicated Frontend Builder runs FULLY ISOLATED:
+                # its model input is ONLY its own system prompt + the current
+                # structured FrontendBuildSpecification request. No profile, memory,
+                # response-style, project/tool/research context or previous chat
+                # history may contaminate the code generation. Rebuild sys_p from the
+                # raw mode prompt (dropping the mem/style/profile that build_system_
+                # prompt folds in) and use an EMPTY history for the ask_ai call below.
+                _fb_isolated = canonical == "frontend_builder"
+                if _fb_isolated:
+                    _fb_mode = get_mode(canonical)
+                    if _fb_mode is not None:
+                        sys_p = _fb_mode.system_prompt
 
                 # Game Builder — adaptive output budget. The build size varies
                 # a lot (a Fast Prototype vs a Production-Style Roblox tycoon
@@ -505,7 +518,7 @@ async def process_chat(
                         }
 
                 reply = await ask_ai(
-                    message, sys_p, history,
+                    message, sys_p, [] if _fb_isolated else history,
                     model=cfg["model"],
                     temperature=cfg["temperature"],
                     max_tokens=cfg["max_tokens"],

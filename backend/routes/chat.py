@@ -143,23 +143,29 @@ async def chat(req: ChatRequest, request: Request):
     platform = req.platform or "web"
 
     # ── Specialized builder modes bypass ALL chat shortcuts ───────────────
-    # Modes like game_developer / website_builder / startup_advisor carry
-    # rich structured prompts (e.g. a "[GAME BUILD REQUEST]" block). The
-    # lightweight memory/style shortcuts below exist for NORMAL chat only.
-    # If one of them fires on a builder request it HIJACKS the whole request
-    # and returns a one-liner instead of the build — the live bug where a
-    # Game Build came back as "Stil guncellendi: Short" (the style shortcut
-    # matched a word in the idea and short-circuited the AI pipeline). For
-    # these modes we skip every shortcut and go straight to the mode
-    # pipeline, which resolves to the correct specialized persona.
+    # Modes like game_developer / website_builder / startup_advisor /
+    # frontend_builder carry rich structured prompts (e.g. a "[GAME BUILD
+    # REQUEST]" or "[FRONTEND BUILDER REQUEST]" block). The lightweight
+    # memory/style shortcuts below exist for NORMAL chat only. If one of them
+    # fires on a builder request it HIJACKS the whole request and returns a
+    # one-liner instead of the build — the live bug where a Game Build came
+    # back as "Stil guncellendi: Short" (the style shortcut matched a word in
+    # the idea and short-circuited the AI pipeline). For these modes we skip
+    # every shortcut and go straight to the mode pipeline, which resolves to the
+    # correct specialized persona.
+    normalized_mode = (req.mode or "").strip().lower()
     _SPECIALIZED_BUILDER_MODES = {
         "game_developer", "website_builder", "startup_advisor",
         "marketing_dropshipping", "trading_analyst", "coding",
+        "frontend_builder",
     }
     _is_specialized_builder = (
-        (req.mode or "").strip().lower() in _SPECIALIZED_BUILDER_MODES
+        normalized_mode in _SPECIALIZED_BUILDER_MODES
         or message.startswith("[GAME BUILD REQUEST]")
     )
+    # Phase 12B.1 — the dedicated Frontend Builder is fully isolated: a structured
+    # safety path, no memory extraction, and no chat-history persistence.
+    _is_frontend_builder = normalized_mode == "frontend_builder"
     if _is_specialized_builder:
         logger.info(
             "CHAT | rid=%s | uid=%s | specialized_builder | mode=%s | shortcuts_bypassed",
@@ -177,8 +183,14 @@ async def chat(req: ChatRequest, request: Request):
     # Returns a fast, branded rejection if length / injection / throttle hit.
     # Never crashes the request — failures here log and fall through.
     try:
-        from backend.services.safety.guard import check_message
-        _safety = check_message(str(user_id), message)
+        from backend.services.safety.guard import check_message, check_structured_builder_message
+        if _is_frontend_builder:
+            # Structured transport: validate the envelope + structured size cap +
+            # throttle, and DO NOT run the generic injection regex over the JSON spec
+            # (its quoted user/research content is intentionally untrusted data).
+            _safety = check_structured_builder_message(str(user_id), message)
+        else:
+            _safety = check_message(str(user_id), message)
         if not _safety.allowed:
             logger.info(
                 "CHAT | rid=%s | uid=%s | safety_reject | code=%s | reason=%s",
@@ -368,28 +380,31 @@ async def chat(req: ChatRequest, request: Request):
     timer.mark("limit_check")
 
     # ── Auto-learn ────────────────────────────────────────────────────────
-    try:
-        from backend.services.memory_service import maybe_auto_learn
-        maybe_auto_learn(user_id, message)
-    except Exception:
-        pass
-    # Phase 6 — Memory Plane auto-extraction. Runs the heuristic
-    # extractor on the user message and persists any candidates with
-    # importance-scored, project-scoped, dedup-folded semantics.
-    # No-op when ENABLE_MEMORY_PLANE is off. Never raises.
-    try:
-        from backend.services.memory_plane import chat_integration as _mp_chat
-        _mp_extracted = _mp_chat.auto_extract(
-            user_id=str(req.user_id), message=message, project_id=req.project_id,
-        )
-        if _mp_extracted:
-            logger.info(
-                "CHAT | rid=%s | uid=%s | mp_auto_extract | n=%d | kinds=%s",
-                request_id, user_id, len(_mp_extracted),
-                ",".join(sorted({m["kind"] for m in _mp_extracted})),
+    # Phase 12B.1 — skipped for frontend_builder: the serialized specification is
+    # implementation data, not a personal fact to memorize.
+    if not _is_frontend_builder:
+        try:
+            from backend.services.memory_service import maybe_auto_learn
+            maybe_auto_learn(user_id, message)
+        except Exception:
+            pass
+        # Phase 6 — Memory Plane auto-extraction. Runs the heuristic
+        # extractor on the user message and persists any candidates with
+        # importance-scored, project-scoped, dedup-folded semantics.
+        # No-op when ENABLE_MEMORY_PLANE is off. Never raises.
+        try:
+            from backend.services.memory_plane import chat_integration as _mp_chat
+            _mp_extracted = _mp_chat.auto_extract(
+                user_id=str(req.user_id), message=message, project_id=req.project_id,
             )
-    except Exception:
-        pass
+            if _mp_extracted:
+                logger.info(
+                    "CHAT | rid=%s | uid=%s | mp_auto_extract | n=%d | kinds=%s",
+                    request_id, user_id, len(_mp_extracted),
+                    ",".join(sorted({m["kind"] for m in _mp_extracted})),
+                )
+        except Exception:
+            pass
     timer.mark("auto_learn")
 
     # ── Build context ─────────────────────────────────────────────────────
@@ -531,10 +546,14 @@ async def chat(req: ChatRequest, request: Request):
         # independently best-effort; one failure doesn't skip the others.
         if not enqueue(record_usage, user_id, name="record_usage"):
             record_usage(user_id)
-        if not enqueue(save_message, "user", message, name="save_message_user"):
-            save_message("user", message)
-        if not enqueue(save_message, "assistant", reply, name="save_message_assistant"):
-            save_message("assistant", reply)
+        # Phase 12B.1 — usage still counts, but the frontend_builder structured
+        # request and its raw generated project are NOT persisted into ordinary chat
+        # history (they are implementation data, not conversation).
+        if not _is_frontend_builder:
+            if not enqueue(save_message, "user", message, name="save_message_user"):
+                save_message("user", message)
+            if not enqueue(save_message, "assistant", reply, name="save_message_assistant"):
+                save_message("assistant", reply)
     except Exception:
         pass
     timer.mark("usage_recorded")
