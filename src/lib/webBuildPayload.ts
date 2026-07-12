@@ -14,9 +14,11 @@ import {
   derivePageArchitectureDecision, deriveVisualSignaturePlan, deriveExperienceBlueprint,
   type WebBuildAgent, type WebBuildArtifacts, type WebBuildEnforcement,
   type FrontendBuildSpecification, type FrontendBuilderRawArtifact,
+  type FrontendBuilderValidationArtifact, type FrontendBuilderValidationStatus,
 } from '@/lib/webBuildAgents';
 import { deriveAgentSectionArchitecture } from '@/lib/webBuildSectionArchitecture';
 import { deriveFrontendBuildSpecification } from '@/lib/webBuildFrontendSpec';
+import { parseAndValidateFrontendBuilderRaw } from '@/lib/webBuildFrontendValidation';
 import { detectMessageLanguage } from '@/lib/locale';
 
 export type ActivityStatus = 'waiting' | 'running' | 'done' | 'failed';
@@ -153,13 +155,21 @@ export interface WebBuildPayload {
 }
 
 /**
- * Attach the dedicated Frontend Builder raw response (Phase 12B) IMMUTABLY to a
- * planning payload. Updates `artifacts.frontendBuilderRaw` and the matching Phase
- * 12A `frontendBuildSpec.generation` metadata + the Phase 12B enforcement fields at
- * BOTH the root and the latest step. It NEVER mutates the input and never alters
- * files / sectionItems / sections / reply / layoutPlan / brief / sources /
- * planningDiagnostics / other agent artifacts / timestamps. The raw builder result
- * is not yet a file set — no parsing, validation or Preview consumption here.
+ * Attach the dedicated Frontend Builder raw response (Phase 12B) + its STATIC parse
+ * and contract validation (Phase 12C) IMMUTABLY to a planning payload. Updates
+ * `artifacts.frontendBuilderRaw`, `artifacts.frontendBuilderValidation`, the matching
+ * Phase 12A `frontendBuildSpec.generation` metadata, and the Phase 12B + 12C
+ * enforcement fields at BOTH the root and the latest step. It NEVER mutates the input
+ * and never alters files / sectionItems / sections / reply / layoutPlan / brief /
+ * sources / planningDiagnostics / other agent artifacts / timestamps.
+ *
+ * Phase 12C runs `parseAndValidateFrontendBuilderRaw` EXACTLY ONCE against the
+ * authoritative latest specification and records the result — STATIC only (no
+ * compilation, execution or Preview consumption). The parsed files live ONLY inside
+ * the validation artifact and NEVER replace `payload.files` (that is Phase 12D). The
+ * honest distinction is preserved: GENERATION status ('generated'/'failed'/'not-run')
+ * reflects whether the model returned a body and is NEVER downgraded because parsing
+ * or validation failed; VALIDATION status ('valid'/'invalid'/'not-run') is separate.
  */
 export function attachFrontendBuilderRaw(
   payload: WebBuildPayload,
@@ -167,35 +177,68 @@ export function attachFrontendBuilderRaw(
 ): WebBuildPayload {
   try {
     const REASON_GENERATED =
-      'Dedicated Frontend Builder returned a raw frontend-files-v1 response; parsing and validation have not run yet.';
-    // Update ONLY the Phase 12A generation metadata; the rest of the spec is preserved.
-    const applyGeneration = (spec: FrontendBuildSpecification | undefined): FrontendBuildSpecification | undefined => {
-      if (!spec) return spec;
+      'Dedicated Frontend Builder returned a raw frontend-files-v1 response; static parse + validation ran without consuming the files.';
+
+    // The authoritative latest specification: prefer the latest step's spec, then the
+    // root spec. This is the single contract the validator checks the project against.
+    const steps = Array.isArray(payload.steps) ? payload.steps : [];
+    const latestStep = steps.length ? steps[steps.length - 1] : undefined;
+    const spec: FrontendBuildSpecification | undefined =
+      latestStep?.artifacts?.frontendBuildSpec || payload.artifacts?.frontendBuildSpec;
+
+    // Phase 12C — run the pure, fail-open, non-mutating validator EXACTLY ONCE.
+    const validation: FrontendBuilderValidationArtifact = parseAndValidateFrontendBuilderRaw(raw, spec);
+
+    // Map the validation status onto the raw artifact's validationStatus WITHOUT
+    // mutating the input: valid → 'valid', invalid → 'invalid', skipped → 'not-run'.
+    const nextValidationStatus: FrontendBuilderValidationStatus =
+      validation.status === 'valid' ? 'valid' : validation.status === 'invalid' ? 'invalid' : 'not-run';
+    const rawWithValidation: FrontendBuilderRawArtifact =
+      raw.validationStatus === nextValidationStatus ? raw : { ...raw, validationStatus: nextValidationStatus };
+
+    // GENERATION metadata reflects whether the model returned a body — it is NEVER
+    // changed to 'failed' solely because parsing or validation failed. Only the
+    // Phase 12A generation.status is touched; the rest of the spec is preserved.
+    const applyGeneration = (s: FrontendBuildSpecification | undefined): FrontendBuildSpecification | undefined => {
+      if (!s) return s;
       if (raw.status === 'completed') {
-        return { ...spec, generation: { status: 'generated', provider: raw.provider, model: raw.model, reason: REASON_GENERATED } };
+        return { ...s, generation: { status: 'generated', provider: raw.provider, model: raw.model, reason: REASON_GENERATED } };
       }
       if (raw.status === 'failed') {
-        return { ...spec, generation: { status: 'failed', reason: raw.reason } };
+        return { ...s, generation: { status: 'failed', reason: raw.reason } };
       }
-      return { ...spec, generation: { status: 'not-run', reason: raw.reason } };
+      return { ...s, generation: { status: 'not-run', reason: raw.reason } };
     };
+
     // didRunFrontendBuilder is true whenever a real attempt was made (never 'skipped').
+    // didValidateFrontendBuilder is true only when the validator actually parsed +
+    // checked a project (a 'skipped' validation → false).
     const enforcePatch: Partial<WebBuildEnforcement> = {
       didRunFrontendBuilder: raw.status !== 'skipped',
       frontendBuilderRawStatus: raw.status,
       frontendBuilderResponseCharCount: raw.responseCharCount,
-      frontendBuilderValidationStatus: raw.validationStatus,
+      frontendBuilderValidationStatus: nextValidationStatus,
       frontendBuilderMode: raw.mode,
       frontendBuilderModel: raw.model,
       frontendBuilderProvider: raw.provider,
+      didValidateFrontendBuilder: validation.status !== 'skipped',
+      frontendBuilderParsedFileCount: validation.fileCount,
+      frontendBuilderParsedCharCount: validation.totalCharCount,
+      frontendBuilderValidationErrorCount: validation.errors.length,
+      frontendBuilderValidationWarningCount: validation.warnings.length,
+      frontendBuilderMissingRequiredFileCount: validation.missingRequiredFiles.length,
+      frontendBuilderMissingSectionFileCount: validation.missingRequiredSectionFiles.length,
+      frontendBuilderUnresolvedImportCount: validation.unresolvedRelativeImports.length,
+      frontendBuilderUnsupportedPackageCount: validation.unsupportedPackageImports.length,
+      frontendBuilderReadyForConsumption: validation.readyForConsumption,
     };
     const patch = (a: WebBuildArtifacts | undefined): WebBuildArtifacts => ({
       ...(a || {}),
-      frontendBuilderRaw: raw,
+      frontendBuilderRaw: rawWithValidation,
+      frontendBuilderValidation: validation,
       frontendBuildSpec: applyGeneration(a?.frontendBuildSpec),
       enforcement: a?.enforcement ? { ...a.enforcement, ...enforcePatch } : a?.enforcement,
     });
-    const steps = Array.isArray(payload.steps) ? payload.steps : [];
     const nextSteps = steps.length
       ? steps.map((s, i) => (i === steps.length - 1 ? { ...s, artifacts: patch(s.artifacts) } : s))
       : steps;
