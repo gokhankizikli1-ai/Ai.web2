@@ -11,9 +11,10 @@ import {
   setActiveWebBuildSession, deriveWebBuildTitle,
 } from '@/lib/webBuildSession';
 import {
-  generateWebBuild, WebBuildError, webBuildErrorKeyFor, generateFrontendBuilderRaw,
+  generateWebBuild, WebBuildError, webBuildErrorKeyFor,
 } from '@/lib/webBuildApi';
-import { buildWebBuildPayload, attachFrontendBuilderRaw, type WebBuildPayload } from '@/lib/webBuildPayload';
+import { buildWebBuildPayload, type WebBuildPayload } from '@/lib/webBuildPayload';
+import { runFrontendBuilderQualityPipeline } from '@/lib/webBuildFrontendQuality';
 import { saveWebBuildPayloadToProject } from '@/lib/webBuildProject';
 import { stashPreview } from '@/lib/webBuildPreviewStash';
 import { getProjects } from '@/stores/projectStore';
@@ -143,11 +144,12 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
       const res = await generateWebBuild(trimmed, { signal: controller.signal, mode });
       if (abortRef.current !== controller) return;
       const planned = buildWebBuildPayload(trimmed, res, undefined, lang);
-      // Phase 12B — one dedicated Frontend Builder call from the final spec. Fails
-      // open (returns a failed/skipped artifact); only caller cancellation throws.
-      const raw = await generateFrontendBuilderRaw(planned.artifacts?.frontendBuildSpec, { signal: controller.signal });
+      // Phase 12E — one centralized frontend quality pipeline: the dedicated builder
+      // call + Phase 12C/12D consumption, then the static design review + at most one
+      // bounded repair + final acceptance. Fails open (keeps the validated project);
+      // only explicit caller cancellation throws.
+      const next = await runFrontendBuilderQualityPipeline(planned, { signal: controller.signal });
       if (abortRef.current !== controller) return;
-      const next = attachFrontendBuilderRaw(planned, raw);
       setPayload(next);
       persist(next);
       stashLatestPreview(next, slugFromIdea(next.prompt), sessionId);
@@ -185,11 +187,10 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
       });
       if (abortRef.current !== controller) return;
       const planned = buildWebBuildPayload(trimmed, res, payload, lang);
-      // Phase 12B — one dedicated Frontend Builder call for the REVISED spec (the
-      // revised spec is authoritative; the previous raw response is never reused).
-      const raw = await generateFrontendBuilderRaw(planned.artifacts?.frontendBuildSpec, { signal: controller.signal });
+      // Phase 12E — the SAME centralized quality pipeline for revisions (the revised
+      // spec is authoritative; a repaired revision updates only THIS newest step).
+      const next = await runFrontendBuilderQualityPipeline(planned, { signal: controller.signal });
       if (abortRef.current !== controller) return;
-      const next = attachFrontendBuilderRaw(planned, raw);
       setPayload(next);
       persist(next);
       stashLatestPreview(next, slugFromIdea(next.prompt), sessionId);
