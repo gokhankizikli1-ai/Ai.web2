@@ -270,6 +270,45 @@ export default function ChatDashboard() {
     clearParams();
   }, [searchParams, setSearchParams, selectSession]);
 
+  // Phase 13D.1 — ACTIVE-SESSION hydration. A persisted Web Build must restore as an
+  // embedded build (never normal Chat) after a refresh / deployment / navigation /
+  // sidebar reopen, WITHOUT the user clicking the row again. When the active session is
+  // a valid web_build (mode + resolvable webBuildRunId) and it is not already embedded,
+  // mount ChatWebBuild with a STABLE deterministic key (no Date.now → no remount loop).
+  // When the active session is a normal chat, clear any stale embedded build. A broken
+  // pointer (web_build session whose payload no longer resolves) never starts a fresh
+  // build — it clears the embed and shows ONE bounded notice (guarded against loops).
+  const wbBrokenNotifiedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const s = activeSession;
+    if (!s) return;
+    // Already showing THIS session's build (fresh build in progress OR restored) — leave
+    // it alone so we never remount repeatedly.
+    if (embeddedBuild && embeddedBuild.sessionId === s.id) return;
+
+    if (s.mode === 'web_build' && s.webBuildRunId) {
+      const runId = s.webBuildRunId;
+      if (getWebBuildSession(runId)) {
+        wbBrokenNotifiedRef.current = null;
+        setEmbeddedBuild({ runId, sessionId: s.id, key: `wb-active-${s.id}-${runId}` });
+      } else {
+        // Broken pointer — do NOT start a fresh build; clear + notify once.
+        if (embeddedBuild) setEmbeddedBuild(null);
+        if (wbBrokenNotifiedRef.current !== runId) {
+          wbBrokenNotifiedRef.current = runId;
+          const tr = t('saved') === 'Kaydedildi';
+          addToast(tr
+            ? 'Bu Web Build oturumunun kayıtlı proje verisi bulunamadı. Yeni bir build oluşturman gerekiyor.'
+            : 'This Web Build session has no saved project data. Please create a new build.', 'error');
+        }
+      }
+      return;
+    }
+    // Active session is a normal chat — drop any stale embedded build.
+    if (embeddedBuild) setEmbeddedBuild(null);
+    wbBrokenNotifiedRef.current = null;
+  }, [activeSession, embeddedBuild, addToast, t]);
+
   // Responsive sidebar — close on tablet/mobile, open on desktop
   useEffect(() => {
     const check = () => {
@@ -381,8 +420,19 @@ export default function ChatDashboard() {
    *  from the Chat home) — no navigation, no duplicate sibling session. The
    *  active session is converted to web_build once the build persists. */
   const handleStartWebBuild = useCallback((prompt: string, mode: BuilderMode) => {
+    // Phase 13D.1 — race safety net. If the active session is ALREADY a valid persisted
+    // Web Build, reopen it instead of starting a fresh build from the submitted text
+    // (which, during an unrestored session, would be a REVISION instruction wrongly
+    // treated as a new website idea → runFresh → contract_failed). The hydration effect
+    // is the primary mechanism; this guards the submit-before-hydrate race.
+    if (activeSession?.mode === 'web_build' && activeSession.webBuildRunId
+        && getWebBuildSession(activeSession.webBuildRunId)) {
+      const runId = activeSession.webBuildRunId;
+      setEmbeddedBuild({ runId, sessionId: activeSession.id, key: `wb-active-${activeSession.id}-${runId}` });
+      return;
+    }
     setEmbeddedBuild({ prompt, mode, sessionId: activeSessionId, key: `wb-new-${Date.now().toString(36)}` });
-  }, [activeSessionId]);
+  }, [activeSessionId, activeSession]);
 
   const handleSelectSession = useCallback((id: string) => {
     // Web Build sessions reopen the EMBEDDED build surface inside Chat (no
@@ -390,12 +440,24 @@ export default function ChatDashboard() {
     const picked = filteredSessions.find((s) => s.id === id);
     if (picked?.mode === 'web_build') {
       selectSession(picked.id); // make it the active session (sidebar highlight + revision target)
-      setEmbeddedBuild({ runId: picked.webBuildRunId || id, sessionId: picked.id, key: `wb-open-${id}` });
+      const runId = picked.webBuildRunId || id;
+      // Phase 13D.1 — validate the payload before mounting: never mount a blank build on
+      // a broken pointer. A missing payload shows a bounded notice instead (the hydration
+      // effect also clears the embed). Stable key based on session id + run id.
+      if (!getWebBuildSession(runId)) {
+        setEmbeddedBuild(null);
+        const tr = t('saved') === 'Kaydedildi';
+        addToast(tr
+          ? 'Bu Web Build oturumunun kayıtlı proje verisi bulunamadı. Yeni bir build oluşturman gerekiyor.'
+          : 'This Web Build session has no saved project data. Please create a new build.', 'error');
+        return;
+      }
+      setEmbeddedBuild({ runId, sessionId: picked.id, key: `wb-active-${picked.id}-${runId}` });
       return;
     }
     setEmbeddedBuild(null);
     selectSession(id);
-  }, [selectSession, filteredSessions]);
+  }, [selectSession, filteredSessions, addToast, t]);
 
   // No-op kept for API stability with ChatView's onHoverAction prop.
   // Production fix 2026-06-28: previous implementation called

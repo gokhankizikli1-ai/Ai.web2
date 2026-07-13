@@ -3,6 +3,7 @@ import type { ChatSession, Message, AIMode, WorkspaceTab, ChatFolder, AttachedAs
 import { deriveSessionTitle } from '@/lib/chatTitles';
 import { getRequestLocale } from '@/lib/locale';
 import { useLanguageStore } from '@/stores/languageStore';
+import { listWebBuildSessions, type WebBuildSessionMeta } from '@/lib/webBuildSession';
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
@@ -412,6 +413,56 @@ function pickInitialActiveId(sessions: ChatSession[]): string {
   return sorted[0]?.id || sessions[0].id;
 }
 
+/* ─── Phase 13D.1 — Web Build companion reconciliation ───
+ * A persisted Web Build (in the account-scoped webBuild store) must appear as a
+ * sidebar chat companion tagged `mode: 'web_build'` + `webBuildRunId` so it restores
+ * as an embedded build after refresh instead of falling through to normal Chat. The
+ * chat companion can go missing (never written, or wiped) even though the build
+ * payload still exists; this pure, per-user reconciliation heals that during initial
+ * hydration. The owning chat-session id and the Web Build RUN id are DISTINCT — a
+ * companion is matched by either, and a recovery companion (id = run id, since the
+ * original owning chat id is no longer recoverable) is created only when neither
+ * matches. Never removes normal chats; never duplicates a build already represented;
+ * deterministic; performs NO writes (the normal save effect persists the result). */
+export function reconcileWebBuildCompanions(
+  chatSessions: ChatSession[],
+  webBuildSessions: WebBuildSessionMeta[],
+): ChatSession[] {
+  if (!Array.isArray(webBuildSessions) || webBuildSessions.length === 0) return chatSessions;
+  const out: ChatSession[] = chatSessions.map((s) => ({ ...s }));
+  for (const build of webBuildSessions) {
+    if (!build || !build.id) continue;
+    const parsed = new Date(build.updatedAt);
+    const buildUpdatedAt = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+    const idx = out.findIndex((s) =>
+      s.webBuildRunId === build.id || (s.id === build.id && s.mode === 'web_build'));
+    if (idx >= 0) {
+      const s = out[idx];
+      const titleEmpty = !s.title || s.title.startsWith('New');
+      out[idx] = {
+        ...s,
+        mode: 'web_build',
+        webBuildRunId: build.id,
+        title: titleEmpty && build.title ? build.title : s.title,
+        updatedAt: buildUpdatedAt.getTime() > s.updatedAt.getTime() ? buildUpdatedAt : s.updatedAt,
+      };
+    } else {
+      // No companion — create a recovery row. `id` may equal the run id because the
+      // original owning chat id is no longer recoverable.
+      out.push({
+        id: build.id,
+        title: build.title || 'Website',
+        messages: [],
+        updatedAt: buildUpdatedAt,
+        folder: 'none',
+        mode: 'web_build',
+        webBuildRunId: build.id,
+      });
+    }
+  }
+  return out;
+}
+
 /* ═══════════════════════════════════════════
    MODE-ISOLATED SESSION STATE
    Each workspace tab maintains its own session.
@@ -440,7 +491,7 @@ export function useChat() {
   // real conversation.
   const persisted = loadSessions();
   const hadPersistedSessions = !!(persisted && persisted.length > 0);
-  const initialSessions = hadPersistedSessions
+  const baseSessions = hadPersistedSessions
     ? (persisted as ChatSession[])
     // Seed sessions only for reachable tabs — Research is gone from the
     // nav, Trading is owner-only, Agents redirects to /projects. Their
@@ -448,6 +499,11 @@ export function useChat() {
     // visited, so nothing breaks for owners/legacy links.
     : TAB_KEYS.filter((tab) => !['research', 'trading', 'agents'].includes(tab))
         .map((tab) => createEmptySession(`New ${tab.charAt(0).toUpperCase() + tab.slice(1)}`));
+  // Phase 13D.1 — heal any Web Build whose sidebar companion went missing so a
+  // persisted build restores as an embedded build (not normal Chat) after refresh.
+  // Pure + per-user scoped (listWebBuildSessions reads the current account bucket);
+  // a no-op when there are no persisted Web Builds, so normal chat stays byte-identical.
+  const initialSessions = reconcileWebBuildCompanions(baseSessions, listWebBuildSessions());
   const [sessions, setSessions] = useState<ChatSession[]>(initialSessions);
   // Restore the last-active session id so Home→back / refresh lands the
   // user on the SAME conversation they were viewing, not on the empty

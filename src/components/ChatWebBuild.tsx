@@ -17,6 +17,7 @@ import { buildWebBuildPayload, type WebBuildPayload } from '@/lib/webBuildPayloa
 import { runFrontendBuilderQualityPipeline } from '@/lib/webBuildFrontendQuality';
 import { runFrontendBuilderRevision } from '@/lib/webBuildFrontendRevision';
 import { saveWebBuildPayloadToProject } from '@/lib/webBuildProject';
+import { upsertWebBuildChatSession } from '@/lib/webBuildChatSession';
 import { stashPreview } from '@/lib/webBuildPreviewStash';
 import { getProjects } from '@/stores/projectStore';
 
@@ -102,7 +103,14 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
     // (sessionId) into this web_build in place — never a duplicate sibling.
     const label = lang === 'tr' ? 'Web Sitesi' : 'Website';
     const title = `${label}: ${deriveWebBuildTitle(p.prompt, lang)}`;
-    onPersistSession?.(sessionId ?? runId, runId, title);
+    // The owning chat session id and the Web Build run id are DISTINCT identities.
+    const owningChatSessionId = sessionId ?? runId;
+    // Phase 13D.1 — mirror the sidebar companion into durable localStorage IMMEDIATELY
+    // (before the React state callback), so a refresh right after a build still finds a
+    // web_build companion pointing at the real run id and restores the embedded build
+    // instead of falling through to normal Chat. Id-stable (no duplicate).
+    upsertWebBuildChatSession(owningChatSessionId, runId, title, p.prompt);
+    onPersistSession?.(owningChatSessionId, runId, title);
   }, [lang, onPersistSession, sessionId]);
 
   const startLive = useCallback((prompt: string, kind: 'build' | 'revision') => {
