@@ -5,7 +5,6 @@ import {
 } from 'lucide-react';
 import WebBuildConversation from '@/components/builder/WebBuildConversation';
 import type { BuilderMode } from '@/lib/builderMode';
-import type { Language } from '@/stores/languageStore';
 import { useLanguageStore } from '@/stores/languageStore';
 import {
   saveWebBuildSession, getWebBuildSession, sessionIdOf,
@@ -16,6 +15,7 @@ import {
 } from '@/lib/webBuildApi';
 import { buildWebBuildPayload, type WebBuildPayload } from '@/lib/webBuildPayload';
 import { runFrontendBuilderQualityPipeline } from '@/lib/webBuildFrontendQuality';
+import { runFrontendBuilderRevision } from '@/lib/webBuildFrontendRevision';
 import { saveWebBuildPayloadToProject } from '@/lib/webBuildProject';
 import { stashPreview } from '@/lib/webBuildPreviewStash';
 import { getProjects } from '@/stores/projectStore';
@@ -120,6 +120,12 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
         : 'Korvix could not get a complete model-planned build from the backend. Try again in a moment.');
       return;
     }
+    // Phase 13D — revision outcomes carry an already-localized, honest message (no fake
+    // success): a rejected/failed revision preserved the current project; retry is allowed.
+    if (err instanceof WebBuildError && (err.kind === 'revision_no_base' || err.kind === 'revision_failed' || err.kind === 'revision_rejected')) {
+      setErrorMsg(err.message);
+      return;
+    }
     const key = err instanceof WebBuildError ? webBuildErrorKeyFor(err.kind) : 'wbErrGeneric';
     setErrorMsg(t(key) || t('wbErrGeneric'));
   }, [t, lang]);
@@ -180,21 +186,12 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
     startLive(trimmed, 'revision');
 
     try {
-      const res = await generateWebBuild(trimmed, {
-        revise: true,
-        previousReply: payload.reply,
-        signal: controller.signal,
-        mode: modeRef.current,
-        // Phase 12F.2 — keep the existing WEBSITE language on a revision (the resolver
-        // still overrides it when THIS prompt explicitly requests a language change).
-        websiteLanguage: (payload.steps[payload.steps.length - 1]?.artifacts?.frontendBuildSpec?.language
-          || payload.artifacts?.frontendBuildSpec?.language) as Language | undefined,
-      });
-      if (abortRef.current !== controller) return;
-      const planned = buildWebBuildPayload(trimmed, res, payload, lang);
-      // Phase 12E — the SAME centralized quality pipeline for revisions (the revised
-      // spec is authoritative; a repaired revision updates only THIS newest step).
-      const next = await runFrontendBuilderQualityPipeline(planned, { signal: controller.signal });
+      // Phase 13D — a REAL source-to-source model-native revision: exactly ONE
+      // frontend_builder call edits the existing project's files. It reruns NO planning,
+      // research, upstream agents or the Phase 12E quality pipeline, and NEVER lets a
+      // deterministic fallback overwrite the good project. A failed/rejected/destructive
+      // revision throws a bounded WebBuildError and leaves the current payload untouched.
+      const next = await runFrontendBuilderRevision(payload, trimmed, { signal: controller.signal, uiLanguage: lang });
       if (abortRef.current !== controller) return;
       setPayload(next);
       persist(next);

@@ -17,6 +17,8 @@ import {
   type FrontendBuilderValidationArtifact, type FrontendBuilderValidationStatus,
   type FrontendBuilderConsumptionArtifact, type FrontendBuilderQualityPipelineResult,
   type FrontendBuilderContractRepairArtifact,
+  type FrontendBuilderAcceptanceArtifact, type FrontendBuilderRevisionArtifact,
+  type FrontendRevisionBaseSource,
 } from '@/lib/webBuildAgents';
 import { deriveAgentSectionArchitecture } from '@/lib/webBuildSectionArchitecture';
 import { deriveFrontendBuildSpecification } from '@/lib/webBuildFrontendSpec';
@@ -710,6 +712,128 @@ export function attachFrontendBuilderContractRepairResult(
       files: repairedFiles,
       activity: rebuildActivityForConsumed(payload.activity, repairedFiles),
       planningDiagnostics: clearCodeContractPending(payload.planningDiagnostics),
+    };
+  } catch {
+    return payload;
+  }
+}
+
+/**
+ * Phase 13D — attach an ACCEPTED model-native revision IMMUTABLY by APPENDING exactly one
+ * new `revision` step (unlike the Phase 12D/E/F attach helpers, which refresh the current
+ * turn in place). Older steps NEVER change. The revised, strictly-validated + preservation-
+ * gated files become the active model-native project at BOTH the root and the new step; the
+ * consumption artifact stays model-native / model-native-sandbox; acceptance is honestly
+ * `manual-review-required` / `revised-model-native` (no rendered visual review). The original
+ * brief / sectionItems / sections / research / layoutPlan / planning agents / planning reply /
+ * createdAt are preserved; only files / activity / artifacts / updatedAt move forward.
+ *
+ * NO planning rerun: this never calls inferWebsiteBrief / runUpstreamAgents / deriveLayoutPlan
+ * / synthesizeFromCopies / fallbackSectionItems / buildWebBuildPayload. Pure + fail-open:
+ * returns the input payload unchanged on any error (a failed attach never corrupts state).
+ */
+export function attachAcceptedFrontendRevision(
+  payload: WebBuildPayload,
+  input: {
+    baseFiles: WebBuildFile[];
+    baseSource: FrontendRevisionBaseSource;
+    baseStepId: string;
+    revisionPrompt: string;
+    revisedValidation: FrontendBuilderValidationArtifact;
+    revisionArtifact: FrontendBuilderRevisionArtifact;
+    effectiveSpecification: FrontendBuildSpecification;
+  },
+): WebBuildPayload {
+  try {
+    const now = new Date().toISOString();
+    const steps = Array.isArray(payload.steps) ? payload.steps : [];
+    const baseStep = steps.find((s) => s.id === input.baseStepId);
+    const baseArtifacts = baseStep?.artifacts || payload.artifacts;
+
+    // Revised model-native files, diffed against the SELECTED base files (never this turn's
+    // temporary synthesis). Content is byte-identical; only a summary label is attached.
+    const revisedFiles: WebBuildFile[] = diffFiles(
+      input.baseFiles,
+      input.revisedValidation.files.map((f) => ({
+        path: f.path,
+        content: f.content,
+        language: f.language,
+        summary: 'Model-native file updated by the Phase 13D revision',
+      })),
+    );
+
+    const consumption: FrontendBuilderConsumptionArtifact = {
+      version: 'frontend-builder-consumption-v1',
+      status: 'model-native',
+      fileSource: 'model-native',
+      allFilesSource: 'model-native',
+      previewSource: 'model-native-sandbox',
+      consumedFileCount: revisedFiles.length,
+      consumedCharCount: input.revisedValidation.totalCharCount,
+      validationStatus: 'valid',
+      readyForConsumption: true,
+      reason: 'The accepted model-native revision replaced the previous project and now drives All Files and the isolated runtime Preview.',
+    };
+
+    // Deterministically valid + preservation-gated, but NOT rendered/visual reviewed →
+    // honestly manual-review-required so the owner sees the revised Candidate Preview while
+    // normal users keep Safe Preview. Never claims production approval or visual success.
+    const acceptance: FrontendBuilderAcceptanceArtifact = {
+      version: 'frontend-acceptance-v1',
+      status: 'manual-review-required',
+      activeProject: 'revised-model-native',
+      initialReviewPassed: false,
+      repairAttempted: false,
+      repairAccepted: false,
+      finalReviewPassed: false,
+      renderedVisualTestStatus: 'pending-manual-test',
+      renderedScreenshotReviewed: false,
+      runtimeCompilationReviewed: false,
+      reason: 'Model-native revision accepted after strict validation and the deterministic preservation gate; rendered visual review pending (owner Candidate Preview).',
+    };
+
+    // Carry the planning artifacts forward; refresh the frontend spec/validation/consumption/
+    // acceptance/revision; DROP the base turn's per-turn frontend generation/review/repair
+    // artifacts (they described the base turn, not this revision).
+    const nextArtifacts: WebBuildArtifacts = {
+      ...(baseArtifacts || {}),
+      frontendBuildSpec: input.effectiveSpecification,
+      frontendBuilderValidation: input.revisedValidation,
+      frontendBuilderConsumption: consumption,
+      frontendBuilderAcceptance: acceptance,
+      frontendBuilderRevision: input.revisionArtifact,
+      frontendBuilderRaw: undefined,
+      frontendBuilderInitialReview: undefined,
+      frontendBuilderRepair: undefined,
+      frontendBuilderFinalReview: undefined,
+      frontendBuilderContractRepair: undefined,
+    };
+
+    const newStep: WebBuildStep = {
+      id: `step-${uid()}`,
+      at: now,
+      kind: 'revision',
+      prompt: input.revisionPrompt,
+      summary: recomputeSummaryForConsumed(baseStep?.summary, revisedFiles),
+      files: revisedFiles,
+      activity: rebuildActivityForConsumed(baseStep?.activity, revisedFiles),
+      reply: payload.reply,        // preserve the original planning reply (no new planning ran)
+      research: undefined,         // a revision runs no research
+      layoutPlan: baseStep?.layoutPlan ?? payload.layoutPlan,
+      agents: baseStep?.agents ?? payload.agents,
+      artifacts: nextArtifacts,
+      planningDiagnostics: clearCodeContractPending(baseStep?.planningDiagnostics ?? payload.planningDiagnostics),
+    };
+
+    return {
+      ...payload,
+      files: revisedFiles,
+      artifacts: nextArtifacts,
+      activity: rebuildActivityForConsumed(payload.activity, revisedFiles),
+      planningDiagnostics: clearCodeContractPending(payload.planningDiagnostics),
+      steps: [...steps, newStep],
+      createdAt: payload.createdAt,
+      updatedAt: now,
     };
   } catch {
     return payload;
