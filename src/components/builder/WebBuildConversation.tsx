@@ -667,6 +667,41 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       ownerRows.push(['frontendPreviewFacts', 'Safe Preview = deterministic renderer · Candidate Preview = real generated frontend · static/deterministic review + sandbox run are NOT visual approval']);
     }
 
+    // Phase 13D — model-native REVISION diagnostics (owner-only). Present only on an
+    // accepted source-to-source revision step. A revision reruns NO planning / research /
+    // quality repair, and is NOT a rendered visual review.
+    const frr = step.artifacts?.frontendBuilderRevision;
+    if (frr) {
+      ownerRows.push(['frontendRevisionStatus', frr.status]);
+      ownerRows.push(['frontendRevisionScope', frr.scope]);
+      ownerRows.push(['frontendRevisionBaseSource', frr.baseSource]);
+      if (frr.baseStepId) ownerRows.push(['frontendRevisionBaseStepId', frr.baseStepId]);
+      if (frr.websiteLanguage) ownerRows.push(['frontendRevisionLanguage', frr.websiteLanguage]);
+      if (frr.model) ownerRows.push(['frontendRevisionModel', frr.model]);
+      if (frr.provider) ownerRows.push(['frontendRevisionProvider', frr.provider]);
+      if (frr.executionStatus) ownerRows.push(['frontendRevisionExecutionStatus', frr.executionStatus]);
+      ownerRows.push(['frontendRevisionValidationStatus', frr.validationStatus]);
+      ownerRows.push(['frontendRevisionBaseFiles', String(frr.baseFileCount)]);
+      ownerRows.push(['frontendRevisionFiles', String(frr.revisedFileCount)]);
+      ownerRows.push(['frontendRevisionChangedFiles', String(frr.changedFileCount)]);
+      ownerRows.push(['frontendRevisionRetainedFiles', String(frr.retainedFileCount)]);
+      if (frr.addedPaths.length) ownerRows.push(['frontendRevisionAddedPaths', frr.addedPaths.slice(0, 6).join(', ')]);
+      if (frr.removedPaths.length) ownerRows.push(['frontendRevisionRemovedPaths', frr.removedPaths.slice(0, 6).join(', ')]);
+      ownerRows.push(['frontendRevisionBaseChars', String(frr.baseCharCount)]);
+      ownerRows.push(['frontendRevisionChars', String(frr.revisedCharCount)]);
+      if (typeof frr.preservationRatio === 'number') ownerRows.push(['frontendRevisionPreservationRatio', String(frr.preservationRatio)]);
+      if (frr.severelyShrunkPaths?.length) ownerRows.push(['frontendRevisionShrunkFiles', frr.severelyShrunkPaths.slice(0, 6).join(', ')]);
+      ownerRows.push(['frontendRevisionPreservationGate', frr.preservationGatePassed ? 'passed' : 'FAILED']);
+      if (typeof frr.backendLatencyMs === 'number') ownerRows.push(['frontendRevisionLatencyMs', String(frr.backendLatencyMs)]);
+      ownerRows.push(['frontendRevisionReason', shortStr(frr.reason, 160)]);
+      // Honesty rows — a revision never reruns planning/research/quality-repair and is
+      // never a rendered visual review.
+      ownerRows.push(['frontendRevisionPlanningRerun', 'false']);
+      ownerRows.push(['frontendRevisionResearchRerun', 'false']);
+      ownerRows.push(['frontendRevisionQualityRepairRun', 'false']);
+      ownerRows.push(['frontendRevisionRenderedVisualReview', 'false']);
+    }
+
     // Phase 9D-1 — intent-aware Page Architecture Decision (concept-specific spine).
     const pa = step.artifacts?.pageArchitecture;
     if (pa) {

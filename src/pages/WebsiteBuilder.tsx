@@ -10,7 +10,7 @@ import WebBuildWelcome from '@/components/builder/WebBuildWelcome';
 import { WebBuildModeChips, WebBuildModePill } from '@/components/builder/WebBuildModeSelector';
 import WebBuildSidebar from '@/components/builder/WebBuildSidebar';
 import type { BuilderMode } from '@/lib/builderMode';
-import { useLanguageStore, type Language } from '@/stores/languageStore';
+import { useLanguageStore } from '@/stores/languageStore';
 import {
   saveWebBuildSession, getWebBuildSession, getActiveWebBuildSession,
   setActiveWebBuildSession, clearActiveWebBuildSession, deriveWebBuildTitle,
@@ -23,6 +23,7 @@ import {
   buildWebBuildPayload, type WebBuildPayload,
 } from '@/lib/webBuildPayload';
 import { runFrontendBuilderQualityPipeline } from '@/lib/webBuildFrontendQuality';
+import { runFrontendBuilderRevision } from '@/lib/webBuildFrontendRevision';
 import { saveWebBuildPayloadToProject } from '@/lib/webBuildProject';
 import { stashPreview } from '@/lib/webBuildPreviewStash';
 import { getProjects } from '@/stores/projectStore';
@@ -153,6 +154,12 @@ export default function WebsiteBuilder() {
 
   const failLive = useCallback((err: unknown) => {
     setLive(null);
+    // Phase 13D — revision outcomes carry an already-localized, honest message; a
+    // rejected/failed revision preserved the current project and allows retry.
+    if (err instanceof WebBuildError && (err.kind === 'revision_no_base' || err.kind === 'revision_failed' || err.kind === 'revision_rejected')) {
+      setErrorMsg(err.message);
+      return;
+    }
     const key = err instanceof WebBuildError ? webBuildErrorKeyFor(err.kind) : 'wbErrGeneric';
     setErrorMsg(t(key) || t('wbErrGeneric'));
   }, [t]);
@@ -211,21 +218,12 @@ export default function WebsiteBuilder() {
     startLive(trimmed, 'revision');
 
     try {
-      const res = await generateWebBuild(trimmed, {
-        revise: true,
-        previousReply: payload.reply,
-        signal: controller.signal,
-        mode: selectedMode,
-        // Phase 12F.2 — keep the existing WEBSITE language on a revision (the resolver
-        // still overrides it when THIS prompt explicitly requests a language change).
-        websiteLanguage: (payload.steps[payload.steps.length - 1]?.artifacts?.frontendBuildSpec?.language
-          || payload.artifacts?.frontendBuildSpec?.language) as Language | undefined,
-      });
-      if (abortRef.current !== controller) return; // superseded
-      const planned = buildWebBuildPayload(trimmed, res, payload, lang);
-      // Phase 12E — the SAME centralized quality pipeline for revisions (the revised
-      // spec is authoritative; a repaired revision updates only THIS newest step).
-      const next = await runFrontendBuilderQualityPipeline(planned, { signal: controller.signal });
+      // Phase 13D — a REAL source-to-source model-native revision (shared with
+      // ChatWebBuild via the single runFrontendBuilderRevision orchestrator): exactly ONE
+      // frontend_builder call edits the existing project files. No planning/research/
+      // agents/quality-pipeline rerun, no deterministic fallback. A failed/rejected/
+      // destructive revision preserves the current payload and surfaces an honest error.
+      const next = await runFrontendBuilderRevision(payload, trimmed, { signal: controller.signal, uiLanguage: lang });
       if (abortRef.current !== controller) return; // superseded
       setPayload(next);
       persistSession(next);
@@ -238,7 +236,7 @@ export default function WebsiteBuilder() {
     } finally {
       if (abortRef.current === controller) setBusy(false);
     }
-  }, [payload, startLive, failLive, lang, selectedMode]);
+  }, [payload, startLive, failLive, lang]);
 
   /* ── Composer submit ──────────────────────────────────────────────── */
   const handleSubmit = useCallback(() => {

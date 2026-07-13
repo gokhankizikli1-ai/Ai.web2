@@ -1583,6 +1583,9 @@ export interface FrontendBuilderRawArtifact {
   /** Diagnostics-only shape of a SUCCESSFUL non-empty reply — derived without modifying
    *  the response. Never relaxes the strict Phase 12C parser. */
   responseShape?: 'frontend-envelope' | 'non-envelope' | 'empty' | 'not-inspected';
+  /** Phase 13D — true when this raw artifact came from a `[FRONTEND REVISION REQUEST]`
+   *  (source-to-source edit of an existing model-native project) rather than a fresh build. */
+  revisionRequest?: boolean;
 }
 
 /* ── Frontend Builder validation (Phase 12C) ──────────────────────────────────
@@ -1852,7 +1855,11 @@ export interface FrontendBuilderAcceptanceArtifact {
     // Phase 12F — the active project after an accepted STRUCTURAL contract repair (before
     // any Phase 12E design-quality repair). A structurally repaired project is NEVER
     // described as internal-fallback.
-    | 'contract-repaired-model-native';
+    | 'contract-repaired-model-native'
+    // Phase 13D — the active project after an accepted source-to-source model-native
+    // revision. Deterministically valid + preservation-gated, but NOT rendered/visual
+    // reviewed, so it is surfaced as manual-review-required (owner Candidate Preview).
+    | 'revised-model-native';
 
   initialReviewPassed: boolean;
   repairAttempted: boolean;
@@ -1872,6 +1879,58 @@ export interface FrontendBuilderAcceptanceArtifact {
   repairTriggeredByShallowQuality?: boolean;
   severeWarningsBeforeRepair?: string[];
   severeWarningsAfterRepair?: string[];
+
+  reason: string;
+}
+
+/* ── Frontend Builder model-native REVISION (Phase 13D) ────────────────────────
+ * A source-to-source edit of an EXISTING model-native project: the current files +
+ * authoritative specification + the user's revision instruction go to ONE dedicated
+ * frontend_builder Responses API call, which returns a complete frontend-files-v1
+ * project. It is strictly validated (unchanged Phase 12C validator) and passed through a
+ * deterministic preservation gate. This is a SEPARATE fact from fresh generation,
+ * contract repair and quality repair. NO planning / research / review / repair runs.
+ * A failed / rejected revision NEVER replaces the active project. Additive + optional +
+ * backward compatible; all arrays/strings bounded; JSON-serializable. */
+export type FrontendRevisionScope = 'narrow' | 'structural';
+export type FrontendRevisionBaseSource =
+  | 'active-root-model-native'
+  | 'latest-usable-model-native-step'
+  | 'none';
+export type FrontendBuilderRevisionStatus = 'not-run' | 'failed' | 'rejected' | 'accepted';
+
+export interface FrontendBuilderRevisionArtifact {
+  version: 'frontend-revision-v1';
+  status: FrontendBuilderRevisionStatus;
+  scope: FrontendRevisionScope;
+  baseSource: FrontendRevisionBaseSource;
+  baseStepId?: string;
+  /** ≤180-char preview of the user's revision instruction (never the full prompt). */
+  revisionPromptPreview: string;
+  websiteLanguage?: string;
+
+  model?: string;
+  provider?: string;
+  requestId?: string;
+  executionStatus?: string;
+  executionEndpoint?: string;
+  backendLatencyMs?: number;
+
+  validationStatus: 'not-run' | 'valid' | 'invalid';
+
+  baseFileCount: number;
+  revisedFileCount: number;
+  changedFileCount: number;
+  retainedFileCount: number;
+  addedPaths: string[];
+  removedPaths: string[];
+  changedPaths: string[];
+
+  baseCharCount: number;
+  revisedCharCount: number;
+  preservationRatio?: number;
+  severelyShrunkPaths?: string[];
+  preservationGatePassed: boolean;
 
   reason: string;
 }
@@ -2056,6 +2115,10 @@ export interface WebBuildArtifacts {
    *  manual-review-required / skipped). `renderedVisualTestStatus` is always
    *  'pending-manual-test'. Optional → old builds load. */
   frontendBuilderAcceptance?: FrontendBuilderAcceptanceArtifact;
+  /** Phase 13D — the single source-to-source model-native REVISION record for this turn.
+   *  Present only on an accepted revision step (or diagnostics for a run). SEPARATE from
+   *  fresh generation / contract repair / quality repair. Optional → old builds load. */
+  frontendBuilderRevision?: FrontendBuilderRevisionArtifact;
   /** The shared context the agents were run against (pipeline trace). */
   context?: WebBuildAgentContext;
   /** Enforcement diagnostics proving the agents drove the build. */

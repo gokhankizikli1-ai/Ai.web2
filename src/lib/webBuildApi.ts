@@ -21,8 +21,9 @@ import { type BuilderMode, buildModeContext } from '@/lib/builderMode';
 import type {
   FrontendBuildSpecification, FrontendBuilderRawArtifact,
   FrontendBuilderReviewRawArtifact, FrontendBuilderReviewStage, FrontendBuilderReviewArtifact,
-  FrontendBuilderValidationArtifact,
+  FrontendBuilderValidationArtifact, FrontendRevisionScope,
 } from '@/lib/webBuildAgents';
+import { hasAffirmedIntent } from '@/lib/webBuildProductIntent';
 import type { WebBuildFile } from '@/lib/webBuildPayload';
 
 /** The canonical backend AI mode for this workspace. Must match the mode
@@ -361,7 +362,9 @@ export function extractFiles(sections: BuildSection[]): string[] {
 /** Where a Web Build failed — drives the friendly, specific error message. */
 export type WebBuildErrorKind =
   | 'empty_prompt' | 'network' | 'http' | 'unreadable'
-  | 'empty' | 'invalid' | 'timeout' | 'cancelled' | 'contract_failed';
+  | 'empty' | 'invalid' | 'timeout' | 'cancelled' | 'contract_failed'
+  // Phase 13D — model-native revision outcomes surfaced honestly in the UI.
+  | 'revision_no_base' | 'revision_failed' | 'revision_rejected';
 
 export class WebBuildError extends Error {
   readonly kind: WebBuildErrorKind;
@@ -1716,6 +1719,9 @@ interface FrontendTaskResponse {
   model?: string;
   provider?: string;
   requestId?: string;
+  /** Phase 13D — the parsed backend execution truth (Phase 13C.1), so callers that
+   *  build a raw artifact (e.g. the revision transport) can record real telemetry. */
+  exec?: AiExecutionMeta;
 }
 type FrontendTaskOutcome =
   | { ok: true; data: FrontendTaskResponse }
@@ -1803,6 +1809,7 @@ async function callFrontendBuilderTask(
         model,
         provider,
         requestId,
+        exec,
       },
     };
   } finally {
@@ -2040,6 +2047,164 @@ export async function generateFrontendBuilderRepairRaw(
     rawResponse: reply,
     responseCharCount: charCount,
     truncatedForStorage: false,
+  });
+}
+
+/* ── Frontend Builder model-native REVISION (Phase 13D) ────────────────────────
+ * A source-to-source edit of an EXISTING model-native project. ONE dedicated
+ * `frontend_builder` Responses API call (Phase 13C.1 transport) receives the current
+ * project files + a compact spec projection + the user's instruction and returns the
+ * COMPLETE revised frontend-files-v1 project. It rides the SAME safety-guard envelope as
+ * every other frontend task (`[FRONTEND BUILDER REQUEST]` + exactly one
+ * BEGIN/END_FRONTEND_BUILD_SPEC_JSON pair, ≤125k), with the `[FRONTEND REVISION REQUEST]`
+ * discriminator + a nested BEGIN_FRONTEND_REVISION_INPUT_JSON block. No planning /
+ * research / review / repair. */
+const FRONTEND_REVISION_TIMEOUT_MS = 200_000; // exceeds the 180s backend read timeout
+// The effective request cap is bounded by the UNMODIFIABLE backend safety guard, which
+// rejects any frontend_builder message > 125k chars. We cap safely under it and FAIL
+// honestly (preserving the current project) rather than send a request the guard rejects
+// or a truncated/partial project.
+const MAX_FRONTEND_REVISION_REQUEST_CHARS = 124_000;
+
+/** The full whole-site redesign phrases that make a revision `structural`. Turkish verbs
+ *  use a negative lookahead so the NEGATED forms (tasarlama / değiştirme / yenileme / yapma)
+ *  never match; English negations are handled clause-locally by hasAffirmedIntent. */
+const STRUCTURAL_REDESIGN_RE = new RegExp([
+  // English — explicit whole-site redesign
+  'redesign the (?:entire|whole|complete) (?:website|site|frontend|layout)',
+  'rebuild the (?:whole|entire|complete) (?:frontend|website|site)',
+  'replace the (?:complete|whole|entire) layout',
+  'change the (?:whole|entire) visual identity',
+  // Turkish — NEGATIVE lookaheads exclude the -ma/-me negated forms
+  't[üu]m siteyi yeniden tasarla(?!ma)',
+  'siteyi ba[şs]tan (?:yap(?!ma)|tasarla(?!ma))',
+  'b[üu]t[üu]n d[üu]zeni de[ğg]i[şs]tir(?!me)',
+  't[üu]m sayfa yap[ıi]s[ıi]n[ıi] yenile(?!me)',
+  'b[üu]t[üu]n g[öo]rsel kimli[ğg]i de[ğg]i[şs]tir(?!me)',
+].join('|'), 'i');
+
+/** Classify a revision instruction as `narrow` (default) or `structural`. Clause-aware
+ *  + negation-aware: a redesign verb inside a negative constraint stays `narrow`. Pure. */
+export function classifyFrontendRevisionScope(revisionPrompt: string): FrontendRevisionScope {
+  return hasAffirmedIntent(revisionPrompt || '', STRUCTURAL_REDESIGN_RE) ? 'structural' : 'narrow';
+}
+
+/** The bounded preservation instructions sent with every revision request. */
+const FRONTEND_REVISION_PRESERVATION_RULES: string[] = [
+  'Edit the supplied project directly; do NOT regenerate it from a generic template.',
+  'Preserve the existing design identity, color palette and typography unless explicitly requested.',
+  'Preserve section order, motion and interaction behavior unless explicitly requested.',
+  'Preserve existing public copy except the requested copy changes.',
+  'Change the smallest reasonable set of files; for a narrow scope keep EVERY existing file path.',
+  'Do NOT simplify or collapse components; do NOT replace rich CSS/SVG composition with placeholders.',
+  'Do NOT introduce remote image URLs; do NOT invent proof, testimonials, metrics, certifications or logos.',
+  'Do NOT add backend / network / auth / database behavior; use ONLY packages already in the project.',
+  'Return the ENTIRE complete project as one frontend-files-v1 envelope — never a patch or diff.',
+];
+
+/** Serialize the dedicated frontend REVISION request. Sends ONLY: the instruction, the
+ *  target website language, a compact spec projection, the CURRENT complete project files
+ *  (path/language/exact content), the scope and the preservation rules. Never the full
+ *  payload / steps / research / agents / chat history / previous planning reply / profile /
+ *  memory / token / preview stash / Sandpack runtime state. */
+export function buildFrontendBuilderRevisionRequest(input: {
+  revisionPrompt: string;
+  websiteLanguage: Language;
+  specification: FrontendBuildSpecification;
+  files: WebBuildFile[];
+  revisionScope: FrontendRevisionScope;
+}): string {
+  const { revisionPrompt, websiteLanguage, specification, files, revisionScope } = input;
+  const payload = {
+    task: 'frontend-revision',
+    responseContract: 'frontend-files-v1',
+    revisionScope,
+    websiteLanguage,
+    revisionInstruction: (revisionPrompt || '').slice(0, 4000),
+    specification: contractProjection(specification),
+    files: frontendFilesForRequest(files),
+    preservationRules: FRONTEND_REVISION_PRESERVATION_RULES,
+  };
+  return [
+    '[FRONTEND BUILDER REQUEST]',
+    '[FRONTEND REVISION REQUEST]',
+    `Task: revise the EXISTING model-native project below (scope: ${revisionScope}; website language: ${websiteLanguage}).`,
+    'The supplied files ARE the source of truth. Apply ONLY the requested revision and, by',
+    'default, preserve the existing design, concept, palette, typography, section order,',
+    'motion and public copy. For a narrow scope keep every existing file path. Return the',
+    'COMPLETE project as ONE frontend-files-v1 envelope (## FRONTEND_FILES_V1 …',
+    '## END_FRONTEND_FILES_V1) — never a patch, only-changed files, diff, prose or Markdown',
+    'outside the envelope.',
+    'BEGIN_FRONTEND_BUILD_SPEC_JSON',
+    'BEGIN_FRONTEND_REVISION_INPUT_JSON',
+    JSON.stringify(payload),
+    'END_FRONTEND_REVISION_INPUT_JSON',
+    'END_FRONTEND_BUILD_SPEC_JSON',
+  ].join('\n');
+}
+
+/**
+ * Run the single dedicated REVISION call. Reuses the shared frontend_builder transport
+ * (Responses API + real execution metadata + caller cancellation). Returns the existing
+ * frontend-files-v1 raw artifact shape so the UNCHANGED Phase 12C validator can validate
+ * it. Fails open on every transport/mode/size problem; propagates only caller cancellation.
+ * The raw artifact is tagged `revisionRequest: true`.
+ */
+export async function generateFrontendBuilderRevisionRaw(
+  specification: FrontendBuildSpecification | undefined,
+  files: WebBuildFile[],
+  revisionPrompt: string,
+  options?: { signal?: AbortSignal; websiteLanguage?: Language; scope?: FrontendRevisionScope },
+): Promise<FrontendBuilderRawArtifact> {
+  const revisionMeta: Partial<FrontendBuilderRawArtifact> = { revisionRequest: true, executionEndpoint: 'responses' };
+  if (!specification) return frontendBuilderArtifact('skipped', 'No frontend build specification available for the revision.', revisionMeta);
+  if (specification.status === 'failed-open') return frontendBuilderArtifact('skipped', 'The specification failed open; the revision was skipped.', revisionMeta);
+  if (!Array.isArray(files) || files.length === 0) return frontendBuilderArtifact('skipped', 'No model-native files to revise.', revisionMeta);
+
+  const websiteLanguage: Language = options?.websiteLanguage || (specification.language === 'tr' ? 'tr' : 'en');
+  const scope: FrontendRevisionScope = options?.scope || 'narrow';
+  const message = buildFrontendBuilderRevisionRequest({ revisionPrompt, websiteLanguage, specification, files, revisionScope: scope });
+  if (message.length > MAX_FRONTEND_REVISION_REQUEST_CHARS) {
+    return frontendBuilderArtifact('failed', `The revision request (${message.length} chars) exceeds the safe request limit (${MAX_FRONTEND_REVISION_REQUEST_CHARS}); the current project was preserved and no partial project was sent.`, { ...revisionMeta, responseShape: 'not-inspected' });
+  }
+
+  const outcome = await callFrontendBuilderTask(message, FRONTEND_REVISION_TIMEOUT_MS, specification.prompt || revisionPrompt || '', { signal: options?.signal });
+  if (!outcome.ok) {
+    return frontendBuilderArtifact('failed', outcome.reason, { ...revisionMeta, model: outcome.model, provider: outcome.provider, requestId: outcome.requestId, executionStatus: 'failed' });
+  }
+
+  const { reply, reportedMode, model, provider, requestId, exec } = outcome.data;
+  const base: Partial<FrontendBuilderRawArtifact> = {
+    ...revisionMeta,
+    model: exec?.model || model,
+    provider: exec?.provider || provider,
+    requestId: exec?.requestId || requestId,
+    executionStatus: exec?.present ? exec.status : 'unknown',
+    executionEndpoint: exec?.present ? exec.endpoint : 'responses',
+    backendLatencyMs: exec?.latencyMs,
+    fallbackUsed: exec?.fallbackUsed,
+  };
+  if (reportedMode && reportedMode !== FRONTEND_BUILDER_MODE) {
+    return frontendBuilderArtifact('failed', 'Backend routed the revision request to an unexpected mode.', { ...base, responseShape: 'not-inspected' });
+  }
+  if (!reply.trim()) return frontendBuilderArtifact('failed', 'The revision returned an empty response.', { ...base, responseShape: 'empty' });
+  const charCount = reply.length;
+  if (charCount > MAX_FRONTEND_RAW_RESPONSE_CHARS) {
+    return frontendBuilderArtifact('failed', `The revision response (${charCount} chars) exceeds the storage cap (${MAX_FRONTEND_RAW_RESPONSE_CHARS}) and cannot be validated safely.`, {
+      ...base,
+      rawResponse: reply.slice(0, MAX_FRONTEND_RAW_RESPONSE_CHARS),
+      responseCharCount: charCount,
+      truncatedForStorage: true,
+      responseShape: deriveResponseShape(reply),
+    });
+  }
+  return frontendBuilderArtifact('completed', 'Frontend revision returned a raw frontend-files-v1 response; strict validation has not run yet.', {
+    ...base,
+    executionStatus: exec?.present ? 'succeeded' : 'unknown',
+    rawResponse: reply,
+    responseCharCount: charCount,
+    truncatedForStorage: false,
+    responseShape: deriveResponseShape(reply),
   });
 }
 
