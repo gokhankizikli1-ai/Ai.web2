@@ -49,12 +49,17 @@ def get_config(
     if mode is None:
         mode = get_mode("fast")
 
-    # Phase 12B.1 — the dedicated Frontend Builder returns its REGISTERED config
-    # verbatim (MODEL_STRONG / temperature 0.25 / max_tokens 12000). The serialized
-    # specification legitimately contains words like "brief", "quick", "short",
-    # "detailed" or "professional tone" as DATA, so it must NEVER drive the model or
-    # token-budget keyword/depth mutation below.
-    if mode.name == "frontend_builder":
+    # Phase 12B.1 / 13E — the dedicated STRUCTURED builder modes return their REGISTERED
+    # config VERBATIM (frontend_builder: gpt-5.6 / temp 0.25 / 12000; website_builder:
+    # gpt-5.6 / registered temp / 8000). These modes transport a MACHINE-GENERATED
+    # structured request whose JSON legitimately contains words like "brief", "quick",
+    # "short", "detailed" or "professional tone" as DATA — describing the desired WEBSITE,
+    # not a user asking for a short/long chat answer. The generic depth/keyword mutation
+    # below (which can drop max_tokens to 600 and raise temperature) must NEVER fire on a
+    # structured builder request; that starved website planning below its contract. Only
+    # these structured builder modes are protected — ordinary conversational Chat and other
+    # modes keep the existing keyword/depth behavior.
+    if mode.name in ("frontend_builder", "website_builder"):
         return {
             "model":       mode.model,
             "provider":    PROVIDER,

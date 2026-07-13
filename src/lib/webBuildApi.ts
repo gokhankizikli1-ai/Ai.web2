@@ -130,6 +130,34 @@ export interface WebBuildParseDiagnostics {
    *  sections to render an honest Preview. planningContractPresent STAYS false. */
   strictRepairAcceptedAsPreviewViable?: boolean;
   strictRepairContractGapReason?: string;
+  /* ── Phase 13E — truthful PLANNING transport telemetry (≤3 attempts). Records the
+   *  real provider execution for the initial planning call + any strict/design-plan
+   *  repair. Optional + backward compatible; no raw provider payload / tokens / headers. */
+  planningExecutions?: WebBuildPlanningExecutionAttempt[];
+}
+
+/* ── Phase 13E — Web Build PLANNING execution truth ────────────────────────────
+ * One bounded, JSON-serializable record per website_builder backend planning call
+ * (initial / strict-repair / design-plan-repair), parsed from `metadata.ai_execution`.
+ * A provider failure is recorded truthfully and never laundered into a malformed
+ * planning response. No API key / header / raw payload / stack trace is ever stored. */
+export type WebBuildPlanningStage = 'initial' | 'strict-repair' | 'design-plan-repair';
+
+export interface WebBuildPlanningExecutionAttempt {
+  version: 'web-build-planning-execution-v1';
+  stage: WebBuildPlanningStage;
+  status: 'succeeded' | 'failed' | 'timeout' | 'incomplete' | 'unknown';
+  endpoint: 'responses' | 'chat-completions' | 'unknown';
+  model?: string;
+  provider?: string;
+  requestId?: string;
+  latencyMs?: number;
+  fallbackUsed?: boolean;
+  errorKind?: string;
+  errorCode?: string;
+  errorMessage?: string;
+  responseCharCount?: number;
+  responseShape?: 'planning-contract' | 'planning-partial' | 'non-contract' | 'empty' | 'not-inspected';
 }
 
 export interface WebBuildResult {
@@ -364,7 +392,38 @@ export type WebBuildErrorKind =
   | 'empty_prompt' | 'network' | 'http' | 'unreadable'
   | 'empty' | 'invalid' | 'timeout' | 'cancelled' | 'contract_failed'
   // Phase 13D — model-native revision outcomes surfaced honestly in the UI.
-  | 'revision_no_base' | 'revision_failed' | 'revision_rejected';
+  | 'revision_no_base' | 'revision_failed' | 'revision_rejected'
+  // Phase 13E — website PLANNING provider-transport outcomes. Distinct from
+  // contract_failed, which stays for a SUCCESSFUL provider response that still misses
+  // the planning contract after the existing repair policy.
+  | 'planning_failed' | 'planning_timeout' | 'planning_incomplete' | 'planning_access';
+
+/** Phase 13E — bounded, already-localized message for a planning provider-transport
+ *  failure (shown directly in the UI, like the Phase 13D revision errors). */
+export function planningErrorMessage(
+  kind: 'planning_failed' | 'planning_timeout' | 'planning_incomplete' | 'planning_access',
+  lang: Language,
+): string {
+  const tr = lang === 'tr';
+  switch (kind) {
+    case 'planning_timeout':
+      return tr
+        ? 'Web Build planlama modeli zaman aşımına uğradı. Henüz site planı veya frontend projesi üretilmedi.'
+        : 'The Web Build planning model timed out. No site plan or frontend project was produced yet.';
+    case 'planning_access':
+      return tr
+        ? 'Web Build planlama modeline erişilemedi. Model/API erişimini kontrol et.'
+        : 'The Web Build planning model could not be accessed. Check model / API access.';
+    case 'planning_incomplete':
+      return tr
+        ? 'Planlama modeli cevabı tamamlayamadı. Eksik cevap site planı olarak kabul edilmedi.'
+        : 'The planning model did not finish its response. The incomplete answer was not accepted as a site plan.';
+    default:
+      return tr
+        ? 'Web Build planlama isteği tamamlanamadı. Sağlayıcı hatası plan çıktısı olarak işlenmedi.'
+        : 'The Web Build planning request did not complete. A provider error was not treated as plan output.';
+  }
+}
 
 export class WebBuildError extends Error {
   readonly kind: WebBuildErrorKind;
@@ -598,6 +657,9 @@ export function buildWebBuildRepairRequest(
   const prev = (previousReply || '').trim().slice(0, 2000);
   return [
     '[WEB BUILD REQUEST]',
+    // Phase 13E — marks a STRICT PLANNING REPAIR so the backend runs ZERO research passes
+    // (research runs only for the initial fresh planning request).
+    '[WEB BUILD PLANNING REPAIR REQUEST]',
     'Your previous response did not satisfy the Web Build PLANNING contract. Re-output',
     'the complete model-planned package now — no explanation, no summary, no apology.',
     'REQUIRED H2 sections, in this order:',
@@ -665,6 +727,8 @@ export function buildWebBuildDesignPlanRepairRequest(
   const prev = (firstReply || '').trim().slice(0, 3500);
   return [
     '[WEB BUILD REQUEST]',
+    // Phase 13E — marks a DESIGN-PLAN quality repair so the backend runs ZERO research passes.
+    '[WEB BUILD DESIGN PLAN REPAIR REQUEST]',
     'Your previous response met the basic PLANNING contract, but its `## Design',
     'Thinking Plan` did not meet the DESIGN-QUALITY bar: it is too vague/generic to',
     'produce a distinctive, designer-made result. Re-output the COMPLETE build',
@@ -1069,9 +1133,30 @@ export async function generateWebBuild(
     else opts.signal.addEventListener('abort', () => timer.abort(), { once: true });
   }
 
+  // Phase 13E — truthful planning-transport telemetry (≤3 attempts), threaded onto the
+  // accepted result's parse diagnostics via attachPlanningExecutions.
+  const planningAttempts: WebBuildPlanningExecutionAttempt[] = [];
+  const attachPlanningExecutions = (result: WebBuildResult): WebBuildResult => {
+    if (!planningAttempts.length) return result;
+    const pd = (result.parseDiagnostics || {}) as WebBuildParseDiagnostics;
+    return { ...result, parseDiagnostics: { ...pd, planningExecutions: planningAttempts.slice(0, 3) } };
+  };
+  // Refine the LAST attempt's diagnostics-only shape once the parsed contract is known.
+  const refineShape = (r: WebBuildResult): WebBuildResult => {
+    const a = planningAttempts[planningAttempts.length - 1];
+    if (a && a.status === 'succeeded') {
+      a.responseShape = isModelPlanningContractEnough(r) ? 'planning-contract'
+        : isRepairableModelPartial(r) ? 'planning-partial' : 'non-contract';
+    }
+    return r;
+  };
+
   // One backend round-trip → parsed JSON. Throws typed WebBuildError for
-  // network / abort(timeout|cancelled) / http / unreadable.
-  const callBackend = async (message: string): Promise<Record<string, unknown>> => {
+  // network / abort(timeout|cancelled) / http / unreadable. Phase 13E — records the
+  // truthful planning execution and STOPS an explicit provider failure BEFORE parsing:
+  // a provider timeout/incomplete/access/failure is a planning-transport error, never a
+  // malformed planning response, and the generic chat fallback never reaches the parser.
+  const callBackend = async (message: string, stage: WebBuildPlanningStage): Promise<Record<string, unknown>> => {
     // Inject the Korvix-generated (trusted, never research-derived) website-language
     // directive right after the leading marker so the marker stays on line 1.
     const withLang = message.includes('\n')
@@ -1101,22 +1186,61 @@ export async function generateWebBuild(
       throw new WebBuildError('network', 'Could not reach the Korvix backend.', err);
     }
     if (!response.ok) throw new WebBuildError('http', `The backend returned HTTP ${response.status}.`);
+    let data: Record<string, unknown>;
     try {
-      return await response.json();
+      data = await response.json();
     } catch (err) {
       throw new WebBuildError('unreadable', 'The backend sent an unreadable response.', err);
     }
+
+    // ── Phase 13E — record + gate on the truthful execution metadata. ──
+    const exec = parseAiExecutionMetadata(data);
+    const reply = typeof data.reply === 'string' ? data.reply : '';
+    if (planningAttempts.length < 3) {
+      planningAttempts.push({
+        version: 'web-build-planning-execution-v1',
+        stage,
+        status: exec.present ? exec.status : 'unknown',
+        endpoint: exec.present ? exec.endpoint : 'unknown',
+        model: exec.model || (typeof data.model === 'string' ? data.model : undefined),
+        provider: exec.provider || (typeof data.provider === 'string' ? data.provider : undefined),
+        requestId: exec.requestId || (typeof data.request_id === 'string' ? data.request_id : undefined),
+        latencyMs: exec.latencyMs,
+        fallbackUsed: exec.fallbackUsed,
+        errorKind: exec.errorKind,
+        errorCode: exec.errorCode,
+        errorMessage: exec.errorMessage,
+        responseCharCount: reply.length,
+        responseShape: reply.trim() ? 'not-inspected' : 'empty',
+      });
+    }
+    // Explicit provider failure → planning-specific error BEFORE any parsing. NEVER a
+    // strict repair after a transport failure (repair is for successful non-contract output).
+    if (exec.present && exec.status !== 'succeeded') {
+      const kind = exec.status === 'timeout' ? 'planning_timeout'
+        : exec.status === 'incomplete' ? 'planning_incomplete'
+        : (exec.errorKind === 'permission-or-model-access' || exec.errorKind === 'authentication-error') ? 'planning_access'
+        : 'planning_failed';
+      throw new WebBuildError(kind, planningErrorMessage(kind, uiLanguage));
+    }
+    // Rolling-deploy guard — reject the exact known generic chat fallback (older backend,
+    // no metadata) so a provider fallback sentence never enters the planning parser.
+    if (isKnownGenericFallback(reply)) {
+      throw new WebBuildError('planning_failed', planningErrorMessage('planning_failed', uiLanguage));
+    }
+    return data;
   };
 
   try {
-    const first = parseWebBuildResult(
+    return await (async (): Promise<WebBuildResult> => {
+    const first = refineShape(parseWebBuildResult(
       await callBackend(buildWebBuildRequest(trimmed, {
         revise: opts?.revise,
         previousReply: opts?.previousReply,
         mode: opts?.mode,
-      })),
+      }), 'initial'),
       { revise: opts?.revise },
-    );
+    ));
 
     // Revisions build on an already-validated site → keep tolerant behavior.
     if (opts?.revise) return first;
@@ -1132,10 +1256,10 @@ export async function generateWebBuild(
 
       let dpRepaired: WebBuildResult | undefined;
       try {
-        dpRepaired = parseWebBuildResult(
-          await callBackend(buildWebBuildDesignPlanRepairRequest(trimmed, first.reply, first.parseDiagnostics)),
+        dpRepaired = refineShape(parseWebBuildResult(
+          await callBackend(buildWebBuildDesignPlanRepairRequest(trimmed, first.reply, first.parseDiagnostics), 'design-plan-repair'),
           { revise: false },
-        );
+        ));
       } catch (err) {
         // NEVER fail a preview-viable build because the quality nudge failed —
         // including transport/timeout errors. Keep the first build, annotated.
@@ -1174,14 +1298,16 @@ export async function generateWebBuild(
 
     let repaired: WebBuildResult;
     try {
-      repaired = parseWebBuildResult(
-        await callBackend(buildWebBuildRepairRequest(trimmed, first.reply, first.parseDiagnostics)),
+      repaired = refineShape(parseWebBuildResult(
+        await callBackend(buildWebBuildRepairRequest(trimmed, first.reply, first.parseDiagnostics), 'strict-repair'),
         { revise: false },
-      );
+      ));
     } catch (err) {
       // Transport-level failures keep their own honest kind; a parse/empty/invalid
-      // failure on the repair is a contract failure.
-      if (err instanceof WebBuildError && ['network', 'timeout', 'cancelled', 'http'].includes(err.kind)) throw err;
+      // failure on the repair is a contract failure. Phase 13E — a PROVIDER failure on
+      // the strict repair (timeout/incomplete/access/failed) surfaces its precise
+      // planning-specific error, never the fresh-build contract_failed wording.
+      if (err instanceof WebBuildError && ['network', 'timeout', 'cancelled', 'http', 'planning_failed', 'planning_timeout', 'planning_incomplete', 'planning_access'].includes(err.kind)) throw err;
       // eslint-disable-next-line no-console
       console.warn('[WebBuild] strict repair retry failed to parse — contract_failed.', err);
       throw new WebBuildError('contract_failed', 'The backend did not return a complete model-planned build package.', err);
@@ -1244,10 +1370,10 @@ export async function generateWebBuild(
 
     let dpRepaired2: WebBuildResult | undefined;
     try {
-      dpRepaired2 = parseWebBuildResult(
-        await callBackend(buildWebBuildDesignPlanRepairRequest(trimmed, repairedPlanned.reply, repairedPlanned.parseDiagnostics)),
+      dpRepaired2 = refineShape(parseWebBuildResult(
+        await callBackend(buildWebBuildDesignPlanRepairRequest(trimmed, repairedPlanned.reply, repairedPlanned.parseDiagnostics), 'design-plan-repair'),
         { revise: false },
-      );
+      ));
     } catch (err) {
       const reason = (err instanceof WebBuildError) ? `design-plan repair ${err.kind}` : 'design-plan repair failed to parse';
       // eslint-disable-next-line no-console
@@ -1279,6 +1405,7 @@ export async function generateWebBuild(
     // eslint-disable-next-line no-console
     console.warn(`[WebBuild] post-strict design-plan repair not accepted — keeping the viable strict-repaired build (${reason2}).`);
     return annotateDesignPlanRepair(repairedPlanned, { attempted: true, succeeded: false, reason: reason2 });
+    })().then(attachPlanningExecutions);
   } finally {
     clearTimeout(timeoutId);
   }

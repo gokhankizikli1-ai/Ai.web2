@@ -893,6 +893,31 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       ownerRows.push(['usedFileSynthesisFallback', String(!!pd.usedFileSynthesisFallback)]);
       ownerRows.push(['usedSafePayloadFallback', String(!!pd.usedSafePayloadFallback)]);
       if (pd.warnings?.length) ownerRows.push(['warnings', pd.warnings.join(' · ')]);
+      // Phase 13E — planning transport truthfulness. These rows describe how the
+      // isolated website-planning model call actually executed (endpoint, model,
+      // latency, provider fallback). They are transport diagnostics only and do NOT
+      // represent the final visual quality of the generated product.
+      const planningExecutions = parse?.planningExecutions;
+      if (planningExecutions?.length) {
+        planningExecutions.slice(0, 3).forEach((a, i) => {
+          const n = i + 1;
+          ownerRows.push([`planningAttempt${n}Stage`, a.stage]);
+          ownerRows.push([`planningAttempt${n}Status`, a.status]);
+          ownerRows.push([`planningAttempt${n}Endpoint`, a.endpoint || '—']);
+          if (a.model) ownerRows.push([`planningAttempt${n}Model`, a.model]);
+          if (a.provider) ownerRows.push([`planningAttempt${n}Provider`, a.provider]);
+          if (typeof a.latencyMs === 'number') ownerRows.push([`planningAttempt${n}LatencyMs`, String(a.latencyMs)]);
+          ownerRows.push([`planningAttempt${n}FallbackUsed`, String(a.fallbackUsed === true)]);
+          if (typeof a.responseCharCount === 'number') ownerRows.push([`planningAttempt${n}ResponseChars`, String(a.responseCharCount)]);
+          if (a.responseShape) ownerRows.push([`planningAttempt${n}ResponseShape`, a.responseShape]);
+          if (a.errorKind) ownerRows.push([`planningAttempt${n}ErrorKind`, a.errorKind]);
+          if (a.errorCode) ownerRows.push([`planningAttempt${n}ErrorCode`, a.errorCode]);
+          if (a.errorMessage) ownerRows.push([`planningAttempt${n}ErrorMessage`, a.errorMessage]);
+        });
+        ownerRows.push(['planningRegisteredTokenBudget', '8000']);
+        ownerRows.push(['planningResearchPassCount', String(step.research ? 1 : 0)]);
+        ownerRows.push(['planningGenericFallbackUsed', String(planningExecutions.some((a) => a.fallbackUsed === true))]);
+      }
     }
 
     return { experienceModel, pageScreen, primaryExp, demoSurfaces, visual, shellFromModel, planningQuality: pd?.planningQuality, ownerRows };

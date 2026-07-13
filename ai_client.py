@@ -26,6 +26,11 @@ FALLBACK_MSG   = "Simdi yanit veremiyorum, biraz sonra tekrar dene."
 OPENAI_RESPONSES_URL       = "https://api.openai.com/v1/responses"
 FRONTEND_CONNECT_TIMEOUT_S = 15    # dedicated: connect no more than 15s
 FRONTEND_READ_TIMEOUT_S    = 180   # dedicated: large multi-file frontend responses
+# Phase 13E — dedicated website PLANNING timeouts (same Responses transport as the
+# frontend builder). Connect stays ≤15s; the read budget is large so a full plan +
+# design + copy contract can complete.
+WEBSITE_CONNECT_TIMEOUT_S  = 15
+WEBSITE_READ_TIMEOUT_S     = 180
 _MAX_ERR_KIND_CHARS        = 80
 _MAX_ERR_MSG_CHARS         = 300
 
@@ -323,18 +328,22 @@ def _extract_responses_output_text(data: dict) -> str:
     return "".join(parts)
 
 
-async def ask_openai_frontend_structured(
+async def ask_openai_responses_structured(
     prompt: str,
     system: str,
     model: str,
     max_output_tokens: int,
+    reasoning_effort: str,
+    connect_timeout_s: int,
+    read_timeout_s: int,
+    operation: str,
 ) -> StructuredAIResult:
-    """Dedicated, isolated OpenAI Responses API call for the frontend_builder mode.
-
-    Exactly one request. No streaming, tools, web search, conversation persistence or
-    previous-response state. No Gemini fallback and no retry. Returns a truthful
-    StructuredAIResult; a provider failure is NEVER reported as success and the generic
-    chat fallback sentence is never produced here."""
+    """Reusable, isolated OpenAI Responses API call for a STRUCTURED builder task
+    (website planning or frontend generation). Exactly one request. No streaming, tools,
+    web search, conversation persistence or previous-response state. No Gemini fallback
+    and no retry. Returns a truthful StructuredAIResult; a provider failure is NEVER
+    reported as success and the generic chat fallback sentence is never produced here.
+    `operation` only labels internal diagnostics (never a secret)."""
     started = time.monotonic()
 
     def _elapsed_ms() -> int:
@@ -375,17 +384,17 @@ async def ask_openai_frontend_structured(
         "instructions": system or "",
         "input": prompt,
         "max_output_tokens": max_output_tokens,
-        "reasoning": {"effort": _frontend_reasoning_effort(prompt)},
+        "reasoning": {"effort": reasoning_effort},
         "store": False,
         "stream": False,
     }
-    timeout = httpx.Timeout(FRONTEND_READ_TIMEOUT_S, connect=FRONTEND_CONNECT_TIMEOUT_S)
+    timeout = httpx.Timeout(read_timeout_s, connect=connect_timeout_s)
 
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.post(OPENAI_RESPONSES_URL, headers=headers, json=body)
     except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.WriteTimeout, httpx.PoolTimeout, httpx.TimeoutException):
-        return _fail("timeout", "timeout", error_message="The frontend Responses API request timed out.")
+        return _fail("timeout", "timeout", error_message="The " + operation + " Responses API request timed out.")
     except httpx.HTTPError as e:
         return _fail("failed", "connection-error", error_message=type(e).__name__)
     except Exception as e:
@@ -467,4 +476,46 @@ async def ask_openai_frontend_structured(
         execution_status="succeeded",
         latency_ms=_elapsed_ms(),
         fallback_used=False,
+    )
+
+
+async def ask_openai_frontend_structured(
+    prompt: str,
+    system: str,
+    model: str,
+    max_output_tokens: int,
+) -> StructuredAIResult:
+    """Dedicated, isolated OpenAI Responses API call for the frontend_builder mode
+    (Phase 13C.1). Thin, byte-equivalent wrapper over the reusable transport: same
+    frontend timeouts, same task-marker reasoning selection, same no-fallback rule."""
+    return await ask_openai_responses_structured(
+        prompt=prompt,
+        system=system,
+        model=model,
+        max_output_tokens=max_output_tokens,
+        reasoning_effort=_frontend_reasoning_effort(prompt),
+        connect_timeout_s=FRONTEND_CONNECT_TIMEOUT_S,
+        read_timeout_s=FRONTEND_READ_TIMEOUT_S,
+        operation="frontend",
+    )
+
+
+async def ask_openai_website_structured(
+    prompt: str,
+    system: str,
+    model: str,
+    max_output_tokens: int,
+) -> StructuredAIResult:
+    """Phase 13E — dedicated, isolated OpenAI Responses API call for website_builder
+    planning (initial planning + strict planning repair + design-plan repair). One
+    request; medium reasoning effort; no Gemini/other-model fallback; no retry."""
+    return await ask_openai_responses_structured(
+        prompt=prompt,
+        system=system,
+        model=model,
+        max_output_tokens=max_output_tokens,
+        reasoning_effort="medium",
+        connect_timeout_s=WEBSITE_CONNECT_TIMEOUT_S,
+        read_timeout_s=WEBSITE_READ_TIMEOUT_S,
+        operation="website planning",
     )

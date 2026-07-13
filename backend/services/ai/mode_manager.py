@@ -27,6 +27,14 @@ MODEL_STRONG = "gpt-4o"
 # isolated switch; ai_client applies a narrow token-parameter compatibility branch
 # for this model family without affecting any gpt-4o/gpt-4o-mini mode.
 MODEL_FRONTEND = "gpt-5.6"
+# Phase 13E — a DEDICATED modern model used ONLY by the `website_builder` planning
+# mode. Website planning must satisfy a large, exact section contract, so it runs on a
+# strong model at its full registered 8,000-token budget over the truthful Responses
+# API transport (see ai_client.ask_openai_website_structured). It deliberately does NOT
+# touch MODEL_STRONG or any other mode; get_config emits `mode.model` verbatim for
+# website_builder (protected from keyword/depth mutation), so setting it here is the
+# single, isolated switch.
+MODEL_WEBSITE_PLANNER = "gpt-5.6"
 PROVIDER     = "openai"
 
 # ── Phase 4 Integration Roadmap (NOT yet implemented) ─────────────────────
@@ -1319,7 +1327,10 @@ _MODES: dict = {
     "website_builder": AIMode(
         name="website_builder",
         display_name="Web Build",
-        model=MODEL_STRONG,
+        # Phase 13E — dedicated planning model (was MODEL_STRONG / gpt-4o). Only this
+        # mode changes model; get_config returns this config verbatim (protected from
+        # keyword/depth mutation) so the 8,000-token contract budget is never starved.
+        model=MODEL_WEBSITE_PLANNER,
         temperature=0.60,
         # Richer output now (plan + design + copy + real React/Tailwind code). The
         # Frontend Code section is large, so give it enough budget to avoid a
