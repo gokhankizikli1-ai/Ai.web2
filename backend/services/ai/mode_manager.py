@@ -19,6 +19,14 @@ from backend.services.ai.game_dev_modules import build_game_dev_knowledge_block
 # ── Model constants ────────────────────────────────────────────────────────
 MODEL_FAST   = "gpt-4o-mini"
 MODEL_STRONG = "gpt-4o"
+# Phase 13C — a DEDICATED modern model used ONLY by the `frontend_builder` mode
+# (initial generation, structural contract repair, static review, design-quality
+# repair, post-repair review). It deliberately does NOT touch MODEL_STRONG, which
+# unrelated modes (Coding, Trading, Research, etc.) still use. get_config emits
+# `mode.model` verbatim for frontend_builder, so setting it here is the single,
+# isolated switch; ai_client applies a narrow token-parameter compatibility branch
+# for this model family without affecting any gpt-4o/gpt-4o-mini mode.
+MODEL_FRONTEND = "gpt-5.6"
 PROVIDER     = "openai"
 
 # ── Phase 4 Integration Roadmap (NOT yet implemented) ─────────────────────
@@ -1117,7 +1125,10 @@ _FRONTEND_BUILDER_PROMPT = (
     "return the COMPLETE repaired project. The repair input JSON is between\n"
     "BEGIN_FRONTEND_REPAIR_INPUT_JSON and END_FRONTEND_REPAIR_INPUT_JSON and carries: the\n"
     "authoritative specification, the current validated files, the actionable issues to\n"
-    "fix, the strengths to preserve and an optional deterministicQualityWarnings list.\n"
+    "fix, the strengths to preserve, an optional deterministicQualityWarnings list and an\n"
+    "optional qualityEvidence object naming the EXACT real files behind severe warnings\n"
+    "(shallowSectionPaths, repetitiveSectionPaths, internalCopyLeakFiles, heroComponentPath\n"
+    "and boolean skeleton/style/hero flags). Target those exact files when present.\n"
     "\n"
     "Preserve ALL required public copy, the required section order, the primary concept\n"
     "identity and the listed strengths. Fix ONLY the listed issues. Keep every required\n"
@@ -1290,7 +1301,9 @@ _MODES: dict = {
     "frontend_builder": AIMode(
         name="frontend_builder",
         display_name="Frontend Builder",
-        model=MODEL_STRONG,
+        # Phase 13C — dedicated modern frontend model (was MODEL_STRONG / gpt-4o).
+        # Only this mode changes model; every other mode is untouched.
+        model=MODEL_FRONTEND,
         temperature=0.25,
         max_tokens=12000,
         response_style="code-only frontend-files-v1 project generation",

@@ -1779,11 +1779,23 @@ export async function generateFrontendBuilderReviewRaw(
  *  to 6 strengths to preserve. Never unrelated payload state, the previous raw response,
  *  fallback files, profile, memory or the preview stash. Returns the existing
  *  frontend-files-v1 envelope so the UNCHANGED Phase 12C validator can validate it. */
+export interface FrontendRepairQualityEvidence {
+  shallowProjectDetected: boolean;
+  minimalStylesDetected: boolean;
+  repetitiveSectionStructureDetected: boolean;
+  missingHeroVisualLayerDetected: boolean;
+  shallowSectionPaths: string[];
+  repetitiveSectionPaths: string[];
+  internalCopyLeakFiles: string[];
+  heroComponentPath?: string;
+}
+
 export function buildFrontendBuilderRepairRequest(
   spec: FrontendBuildSpecification,
   files: WebBuildFile[],
   initialReview: FrontendBuilderReviewArtifact,
   deterministicWarnings?: string[],
+  qualityEvidence?: FrontendRepairQualityEvidence,
 ): string {
   // Highest-severity first (blocker > major > minor), capped at 8 actionable issues.
   const rank: Record<string, number> = { blocker: 0, major: 1, minor: 2 };
@@ -1807,14 +1819,31 @@ export function buildFrontendBuilderRepairRequest(
   if (deterministicWarnings && deterministicWarnings.length) {
     input.deterministicQualityWarnings = deterministicWarnings.slice(0, 8);
   }
+  // Phase 13C — explicit REAL-FILE quality evidence so the single repair targets the exact
+  // shallow section files, the styles file, the repeated-structure files, the leak files and
+  // the hero. Bounded; still no chat history / profile / memory / tokens / preview state.
+  if (qualityEvidence) {
+    input.qualityEvidence = {
+      shallowProjectDetected: qualityEvidence.shallowProjectDetected,
+      minimalStylesDetected: qualityEvidence.minimalStylesDetected,
+      repetitiveSectionStructureDetected: qualityEvidence.repetitiveSectionStructureDetected,
+      missingHeroVisualLayerDetected: qualityEvidence.missingHeroVisualLayerDetected,
+      shallowSectionPaths: (qualityEvidence.shallowSectionPaths || []).slice(0, 12),
+      repetitiveSectionPaths: (qualityEvidence.repetitiveSectionPaths || []).slice(0, 12),
+      internalCopyLeakFiles: (qualityEvidence.internalCopyLeakFiles || []).slice(0, 12),
+      heroComponentPath: qualityEvidence.heroComponentPath,
+    };
+  }
   return [
     '[FRONTEND BUILDER REQUEST]',
     '[FRONTEND REPAIR REQUEST]',
     'Task: apply the bounded review fixes and return the COMPLETE repaired project.',
-    'Preserve required public copy, required section order, the primary concept identity',
-    'and the listed strengths. Fix ONLY the listed issues. Return ONLY a complete',
-    'frontend-files-v1 envelope (## FRONTEND_FILES_V1 … ## END_FRONTEND_FILES_V1) — never',
-    'a patch, only-changed files, prose or explanations.',
+    'Preserve required public copy, required section order, the primary concept identity,',
+    'the website language and the listed strengths. EXPAND shallow sections into fully',
+    'realized compositions (never collapse or replace them); deepen the exact files listed',
+    'in qualityEvidence. Return ONLY a complete frontend-files-v1 envelope',
+    '(## FRONTEND_FILES_V1 … ## END_FRONTEND_FILES_V1) — never a patch, only-changed files,',
+    'prose or explanations.',
     'BEGIN_FRONTEND_BUILD_SPEC_JSON',
     'BEGIN_FRONTEND_REPAIR_INPUT_JSON',
     JSON.stringify(input),
@@ -1833,13 +1862,13 @@ export async function generateFrontendBuilderRepairRaw(
   spec: FrontendBuildSpecification | undefined,
   files: WebBuildFile[],
   initialReview: FrontendBuilderReviewArtifact,
-  opts?: { signal?: AbortSignal; deterministicWarnings?: string[] },
+  opts?: { signal?: AbortSignal; deterministicWarnings?: string[]; qualityEvidence?: FrontendRepairQualityEvidence },
 ): Promise<FrontendBuilderRawArtifact> {
   if (!spec) return frontendBuilderArtifact('skipped', 'No Phase 12A specification available for the repair.');
   if (spec.status === 'failed-open') return frontendBuilderArtifact('skipped', 'The specification failed open; the repair was skipped.');
   if (!files.length) return frontendBuilderArtifact('skipped', 'No active model-native files to repair.');
 
-  const message = buildFrontendBuilderRepairRequest(spec, files, initialReview, opts?.deterministicWarnings);
+  const message = buildFrontendBuilderRepairRequest(spec, files, initialReview, opts?.deterministicWarnings, opts?.qualityEvidence);
   if (message.length > MAX_FRONTEND_TASK_REQUEST_CHARS) {
     return frontendBuilderArtifact('failed', `The repair request (${message.length} chars) exceeds the safe request limit (${MAX_FRONTEND_TASK_REQUEST_CHARS}).`);
   }
