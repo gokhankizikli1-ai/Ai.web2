@@ -1566,6 +1566,23 @@ export interface FrontendBuilderRawArtifact {
   validationStatus: FrontendBuilderValidationStatus;
   reason: string;
   warnings: string[];
+
+  /* ── Phase 13C.1 — truthful AI TRANSPORT diagnostics (optional, backward
+   *  compatible). They record the REAL provider execution, so a provider failure can
+   *  never masquerade as a completed frontend project and the strict envelope parser
+   *  never runs on a generic chat fallback. All strings are bounded; no API key,
+   *  authorization header, raw provider payload or stack trace is ever stored. Old
+   *  saved builds simply lack them. */
+  executionStatus?: 'succeeded' | 'failed' | 'timeout' | 'incomplete' | 'unknown';
+  executionEndpoint?: 'responses' | 'chat-completions' | 'unknown';
+  fallbackUsed?: boolean;
+  backendLatencyMs?: number;
+  backendErrorKind?: string;
+  backendErrorCode?: string;
+  backendErrorMessage?: string;
+  /** Diagnostics-only shape of a SUCCESSFUL non-empty reply — derived without modifying
+   *  the response. Never relaxes the strict Phase 12C parser. */
+  responseShape?: 'frontend-envelope' | 'non-envelope' | 'empty' | 'not-inspected';
 }
 
 /* ── Frontend Builder validation (Phase 12C) ──────────────────────────────────

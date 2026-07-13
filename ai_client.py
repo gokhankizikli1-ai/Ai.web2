@@ -6,7 +6,10 @@ import re
 import asyncio
 import time
 import openai
+import httpx
 import google.generativeai as genai
+from dataclasses import dataclass
+from typing import Optional
 from data_sources import CRYPTO_SYMBOLS, KNOWN_STOCKS
 
 logger = logging.getLogger(__name__)
@@ -15,6 +18,16 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 AI_TIMEOUT     = 30
 FALLBACK_MSG   = "Simdi yanit veremiyorum, biraz sonra tekrar dene."
+
+# ── Phase 13C.1 — dedicated, truthful Frontend Builder transport (OpenAI Responses
+# API). This is ISOLATED from the generic ask_ai/ask_openai path used by every other
+# mode: it never falls back to Gemini, never retries, and never launders a provider
+# failure into a "completed" frontend project. Only the frontend_builder mode uses it. ──
+OPENAI_RESPONSES_URL       = "https://api.openai.com/v1/responses"
+FRONTEND_CONNECT_TIMEOUT_S = 15    # dedicated: connect no more than 15s
+FRONTEND_READ_TIMEOUT_S    = 180   # dedicated: large multi-file frontend responses
+_MAX_ERR_KIND_CHARS        = 80
+_MAX_ERR_MSG_CHARS         = 300
 
 try:
     genai.configure(api_key=GEMINI_API_KEY)
@@ -241,3 +254,217 @@ async def detect_intent(message: str) -> dict:
     except Exception as e:
         logger.error("detect_intent error: " + str(e))
         return {"intent": "normal_chat", "symbol": None, "needs_clarification": False}
+
+
+# ── Phase 13C.1 — dedicated Frontend Builder Responses API transport ─────────────
+@dataclass
+class StructuredAIResult:
+    """Truthful, bounded execution result for the dedicated frontend_builder transport.
+
+    `ok` is unambiguous: True ONLY when the Responses API returned a completed result
+    with non-empty output text. `fallback_used` is ALWAYS False here (this transport
+    never calls Gemini). No API key, authorization header, raw exception repr or full
+    provider payload is ever stored — only bounded, sanitized diagnostics.
+    """
+    ok: bool
+    text: str
+    model: str
+    provider: str
+    endpoint: str
+    request_id: Optional[str]
+    execution_status: str          # succeeded | failed | timeout | incomplete
+    latency_ms: int
+    fallback_used: bool
+    error_kind: Optional[str] = None
+    error_code: Optional[str] = None
+    error_message: Optional[str] = None
+
+
+def _sanitize_error_text(msg, limit: int = _MAX_ERR_MSG_CHARS) -> Optional[str]:
+    """Bounded, single-line, key-free error string. Never a raw exception repr."""
+    if msg is None:
+        return None
+    s = str(msg).replace("\n", " ").replace("\r", " ").strip()
+    if not s:
+        return None
+    # Defensive: never leak an authorization header / bearer token if a provider ever
+    # echoed one back inside an error message.
+    s = re.sub(r"(?i)bearer\s+[A-Za-z0-9._\-]+", "Bearer [redacted]", s)
+    s = re.sub(r"sk-[A-Za-z0-9._\-]{6,}", "[redacted]", s)
+    return s[:limit]
+
+
+def _frontend_reasoning_effort(prompt: str) -> str:
+    """Deterministic reasoning effort from the leading task marker. The static review
+    is cheaper (low); every build/repair task uses medium. Bounded to documented values."""
+    return "low" if "[FRONTEND REVIEW REQUEST]" in (prompt or "") else "medium"
+
+
+def _extract_responses_output_text(data: dict) -> str:
+    """Concatenate ONLY documented message output_text parts from a Responses API result.
+
+    Reasoning items, tool items and any non-message output are ignored. The text is
+    preserved byte-for-byte (only concatenated) — no envelope markers, no repair, no
+    Markdown stripping."""
+    parts = []
+    output = data.get("output")
+    if isinstance(output, list):
+        for item in output:
+            if not isinstance(item, dict) or item.get("type") != "message":
+                continue
+            content = item.get("content")
+            if not isinstance(content, list):
+                continue
+            for c in content:
+                if isinstance(c, dict) and c.get("type") == "output_text":
+                    t = c.get("text")
+                    if isinstance(t, str):
+                        parts.append(t)
+    return "".join(parts)
+
+
+async def ask_openai_frontend_structured(
+    prompt: str,
+    system: str,
+    model: str,
+    max_output_tokens: int,
+) -> StructuredAIResult:
+    """Dedicated, isolated OpenAI Responses API call for the frontend_builder mode.
+
+    Exactly one request. No streaming, tools, web search, conversation persistence or
+    previous-response state. No Gemini fallback and no retry. Returns a truthful
+    StructuredAIResult; a provider failure is NEVER reported as success and the generic
+    chat fallback sentence is never produced here."""
+    started = time.monotonic()
+
+    def _elapsed_ms() -> int:
+        return int((time.monotonic() - started) * 1000)
+
+    def _fail(
+        execution_status: str,
+        error_kind: str,
+        error_code=None,
+        error_message=None,
+        request_id: Optional[str] = None,
+        result_model: Optional[str] = None,
+    ) -> StructuredAIResult:
+        return StructuredAIResult(
+            ok=False,
+            text="",
+            model=result_model or model,
+            provider="openai",
+            endpoint="responses",
+            request_id=request_id,
+            execution_status=execution_status,
+            latency_ms=_elapsed_ms(),
+            fallback_used=False,
+            error_kind=(str(error_kind)[:_MAX_ERR_KIND_CHARS] if error_kind else None),
+            error_code=(str(error_code)[:_MAX_ERR_KIND_CHARS] if error_code not in (None, "") else None),
+            error_message=_sanitize_error_text(error_message),
+        )
+
+    if not OPENAI_API_KEY:
+        return _fail("failed", "missing-api-key", error_message="OPENAI_API_KEY is not configured.")
+
+    headers = {
+        "Authorization": "Bearer " + OPENAI_API_KEY,
+        "Content-Type": "application/json",
+    }
+    body = {
+        "model": model,
+        "instructions": system or "",
+        "input": prompt,
+        "max_output_tokens": max_output_tokens,
+        "reasoning": {"effort": _frontend_reasoning_effort(prompt)},
+        "store": False,
+        "stream": False,
+    }
+    timeout = httpx.Timeout(FRONTEND_READ_TIMEOUT_S, connect=FRONTEND_CONNECT_TIMEOUT_S)
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(OPENAI_RESPONSES_URL, headers=headers, json=body)
+    except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.WriteTimeout, httpx.PoolTimeout, httpx.TimeoutException):
+        return _fail("timeout", "timeout", error_message="The frontend Responses API request timed out.")
+    except httpx.HTTPError as e:
+        return _fail("failed", "connection-error", error_message=type(e).__name__)
+    except Exception as e:
+        return _fail("failed", "internal-transport-error", error_message=type(e).__name__)
+
+    # ── HTTP-level failure classification (bounded provider code/message only). ──
+    if resp.status_code >= 400:
+        code = None
+        emsg = None
+        try:
+            j = resp.json()
+            err = j.get("error") if isinstance(j, dict) else None
+            if isinstance(err, dict):
+                code = err.get("code") or err.get("type")
+                emsg = err.get("message")
+        except Exception:
+            pass
+        sc = resp.status_code
+        kind = (
+            "authentication-error" if sc == 401
+            else "permission-or-model-access" if sc in (403, 404)
+            else "rate-limit" if sc == 429
+            else "invalid-request" if sc == 400
+            else "http-error"
+        )
+        return _fail("failed", kind, error_code=(code or sc), error_message=(emsg or ("HTTP " + str(sc))))
+
+    try:
+        data = resp.json()
+    except Exception:
+        return _fail("failed", "malformed-provider-response", error_message="Response body was not valid JSON.")
+    if not isinstance(data, dict):
+        return _fail("failed", "malformed-provider-response", error_message="Response body was not a JSON object.")
+
+    request_id = data.get("id") if isinstance(data.get("id"), str) else None
+    result_model = data.get("model") if isinstance(data.get("model"), str) else model
+    status = data.get("status")
+
+    # Incomplete because of output limits (or other incomplete reason) — NOT success.
+    if status == "incomplete":
+        reason = None
+        det = data.get("incomplete_details")
+        if isinstance(det, dict):
+            reason = det.get("reason")
+        return _fail(
+            "incomplete", "incomplete-response",
+            error_code=reason,
+            error_message="The Responses API returned an incomplete result (output limit or truncation).",
+            request_id=request_id, result_model=result_model,
+        )
+
+    # A documented terminal failure status.
+    if status not in ("completed", None):
+        err = data.get("error")
+        code = err.get("code") if isinstance(err, dict) else None
+        emsg = err.get("message") if isinstance(err, dict) else None
+        return _fail(
+            "failed", "malformed-provider-response",
+            error_code=(code or status),
+            error_message=(emsg or ("unexpected response status: " + str(status))),
+            request_id=request_id, result_model=result_model,
+        )
+
+    text = _extract_responses_output_text(data)
+    if not text or not text.strip():
+        return _fail(
+            "failed", "empty-output",
+            error_message="The Responses API returned no message output_text.",
+            request_id=request_id, result_model=result_model,
+        )
+
+    return StructuredAIResult(
+        ok=True,
+        text=text,
+        model=result_model,
+        provider="openai",
+        endpoint="responses",
+        request_id=request_id,
+        execution_status="succeeded",
+        latency_ms=_elapsed_ms(),
+        fallback_used=False,
+    )
