@@ -495,6 +495,8 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       ownerRows.push(['frontendBuilderRaw', fbr.status]);
       ownerRows.push(['frontendBuilderMode', fbr.mode]);
       ownerRows.push(['frontendBuilderModel', fbr.model || 'unknown']);
+      // Phase 13C — the dedicated frontend model (isolated to frontend_builder only).
+      ownerRows.push(['frontendModel', fbr.model || 'unknown']);
       if (fbr.provider) ownerRows.push(['frontendBuilderProvider', fbr.provider]);
       ownerRows.push(['frontendBuilderChars', String(fbr.responseCharCount ?? 0)]);
       ownerRows.push(['frontendBuilderStoredFull', fbr.status === 'completed' && !fbr.truncatedForStorage ? 'yes' : 'no']);
@@ -591,6 +593,15 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
     const fir = step.artifacts?.frontendBuilderInitialReview;
     if (fir) {
       ownerRows.push(['frontendInitialReview', fir.status]);
+      // Phase 13C — the review kind (model opinion vs deterministic quality fallback) and the
+      // tolerant issue-path sanitization diagnostics. A deterministic fallback is LOCAL code,
+      // never a model opinion and never a rendered/browser review.
+      ownerRows.push(['frontendReviewKind', fir.reviewKind]);
+      if (typeof fir.reviewIssuePathsSanitized === 'number') ownerRows.push(['frontendReviewIssuePathsSanitized', String(fir.reviewIssuePathsSanitized)]);
+      if (typeof fir.reviewIssuesDroppedForInvalidPaths === 'number') ownerRows.push(['frontendReviewIssuesDropped', String(fir.reviewIssuesDroppedForInvalidPaths)]);
+      if (fir.usedDeterministicFallback) ownerRows.push(['frontendReviewUsedDeterministicFallback', 'true (code-only, not a model opinion, not a rendered review)']);
+      if (typeof fir.deterministicIssueCount === 'number' && fir.deterministicIssueCount > 0) ownerRows.push(['frontendDeterministicIssueCount', String(fir.deterministicIssueCount)]);
+      (fir.reviewParserWarnings || []).slice(0, 3).forEach((w, idx) => ownerRows.push([`frontendReviewParserWarning${idx + 1}`, shortStr(w, 160)]));
       if (fir.status === 'completed') {
         ownerRows.push(['frontendInitialReviewPassed', String(fir.passed)]);
         ownerRows.push(['frontendInitialReviewScore', String(fir.score ?? 0)]);
@@ -625,10 +636,18 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       ownerRows.push(['frontendActiveProject', fac.activeProject]);
       ownerRows.push(['renderedVisualTestStatus', fac.renderedVisualTestStatus]);
       ownerRows.push(['frontendAcceptanceReason', shortStr(fac.reason, 160)]);
-      // Phase 13B — keep the four distinct quality facts unambiguous for the owner:
-      // planningQualityEstimate (planning only) ≠ frontendStaticReviewScore (source review) ≠
-      // frontendAcceptance (gate) ≠ renderedVisualTestStatus (still pending manual test).
-      ownerRows.push(['frontendQualityFacts', 'planningQualityEstimate ≠ staticReviewScore ≠ acceptance ≠ renderedVisualTest (pending-manual-test)']);
+      // Phase 13C — severe-warning acceptance-gate diagnostics: why the single quality repair
+      // ran and whether severe skeleton warnings existed before/after it.
+      if (typeof fac.repairTriggeredByShallowQuality === 'boolean') ownerRows.push(['frontendRepairTriggeredByShallowQuality', String(fac.repairTriggeredByShallowQuality)]);
+      if (fac.usedDeterministicFallback) ownerRows.push(['frontendReviewUsedDeterministicFallback', 'true']);
+      if (fac.severeWarningsBeforeRepair) ownerRows.push(['frontendSevereWarningsBeforeRepair', fac.severeWarningsBeforeRepair.length ? fac.severeWarningsBeforeRepair.slice(0, 6).join(', ') : 'none']);
+      if (fac.severeWarningsAfterRepair) ownerRows.push(['frontendSevereWarningsAfterRepair', fac.severeWarningsAfterRepair.length ? fac.severeWarningsAfterRepair.slice(0, 6).join(', ') : 'none']);
+      // Phase 13B/13C — keep the distinct quality facts unambiguous for the owner. NONE of
+      // these is a rendered visual review: model static review, the deterministic quality
+      // fallback and the Sandpack sandbox running are all NON-visual. Safe Preview is the
+      // deterministic renderer; Candidate Preview is the real generated frontend.
+      ownerRows.push(['frontendQualityFacts', 'planningQualityEstimate ≠ staticReviewScore ≠ deterministicWarningReview ≠ acceptance ≠ renderedVisualTest (pending-manual-test)']);
+      ownerRows.push(['frontendPreviewFacts', 'Safe Preview = deterministic renderer · Candidate Preview = real generated frontend · static/deterministic review + sandbox run are NOT visual approval']);
     }
 
     // Phase 9D-1 — intent-aware Page Architecture Decision (concept-specific spine).

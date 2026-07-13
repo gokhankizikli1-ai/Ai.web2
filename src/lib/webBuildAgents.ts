@@ -1639,6 +1639,15 @@ export interface FrontendBuilderValidationArtifact {
   internalCopyLeakCount?: number;
   missingHeroVisualLayerDetected?: boolean;
 
+  /* ── Phase 13C — bounded REAL project paths behind the severe quality warnings, so the
+   *  deterministic issue synthesis (and the single quality repair) can target the exact
+   *  affected files instead of guessing. All entries are real parsed project paths; each
+   *  list is capped. Optional + backward compatible. */
+  shallowSectionPaths?: string[];
+  repetitiveSectionPaths?: string[];
+  internalCopyLeakFiles?: string[];
+  heroComponentPath?: string;
+
   reason: string;
 }
 
@@ -1743,7 +1752,12 @@ export interface FrontendBuilderReviewArtifact {
 
   status: 'completed' | 'failed' | 'skipped';
 
-  reviewKind: 'model-static-design-review';
+  /* Phase 13C — 'deterministic-quality-fallback' is a LOCAL, code-only review synthesized
+   *  from the static validator's severe quality warnings when the model reviewer was
+   *  malformed/failed but validation proves severe skeleton defects. It is NEVER a model
+   *  opinion and NEVER a rendered/browser review — renderedScreenshotReviewed and
+   *  runtimeCompilationReviewed stay false. Old artifacts only ever hold the first value. */
+  reviewKind: 'model-static-design-review' | 'deterministic-quality-fallback';
   renderedScreenshotReviewed: false;
   runtimeCompilationReviewed: false;
 
@@ -1762,6 +1776,19 @@ export interface FrontendBuilderReviewArtifact {
   passed: boolean;
   summary?: string;
   reason: string;
+
+  /* ── Phase 13C — bounded, optional parser + fallback diagnostics (backward
+   *  compatible; old review artifacts simply lack them). */
+  /** How many reviewer issues had one or more invalid file paths sanitized (removed). */
+  reviewIssuePathsSanitized?: number;
+  /** How many reviewer issues were dropped because no valid path could be resolved. */
+  reviewIssuesDroppedForInvalidPaths?: number;
+  /** ≤6 bounded parser warnings (≤180 chars each) describing path sanitization/drops. */
+  reviewParserWarnings?: string[];
+  /** True when this review is (or was augmented by) the deterministic quality fallback. */
+  usedDeterministicFallback?: boolean;
+  /** How many deterministic severe-warning issues were synthesized into this review. */
+  deterministicIssueCount?: number;
 
   mode: 'frontend_builder';
   model?: string;
@@ -1818,6 +1845,16 @@ export interface FrontendBuilderAcceptanceArtifact {
   renderedVisualTestStatus: 'pending-manual-test';
   renderedScreenshotReviewed: false;
   runtimeCompilationReviewed: false;
+
+  /* ── Phase 13C — severe-warning acceptance-gate diagnostics (optional, backward
+   *  compatible). They record whether the single quality repair was driven by
+   *  deterministic skeleton evidence and which severe warnings existed before/after the
+   *  repair, so an owner can see why a candidate was (or was not) approved. Never a
+   *  rendered/browser signal. */
+  usedDeterministicFallback?: boolean;
+  repairTriggeredByShallowQuality?: boolean;
+  severeWarningsBeforeRepair?: string[];
+  severeWarningsAfterRepair?: string[];
 
   reason: string;
 }

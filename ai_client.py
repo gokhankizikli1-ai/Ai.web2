@@ -41,6 +41,22 @@ def _is_safety_sensitive(message: str) -> bool:
     return any(k in t for k in _SAFETY_KW)
 
 
+def _needs_completion_tokens_param(model: str) -> bool:
+    """Phase 13C — model-family compatibility. The modern reasoning-family models
+    (gpt-5.x and the o-series) reject the legacy Chat Completions `max_tokens`
+    parameter and only accept the default temperature; they require
+    `max_completion_tokens` instead. This is keyed on the model ID ONLY, so every
+    gpt-4o / gpt-4o-mini mode keeps the exact legacy request shape and is unaffected.
+    """
+    m = (model or "").lower()
+    return (
+        m.startswith("gpt-5")
+        or m.startswith("o1")
+        or m.startswith("o3")
+        or m.startswith("o4")
+    )
+
+
 async def ask_openai(
     prompt: str,
     system: str = "",
@@ -58,13 +74,17 @@ async def ask_openai(
             for role, content in history:
                 messages.append({"role": role, "content": content})
         messages.append({"role": "user", "content": prompt})
+        # Narrow, model-aware request shape. Legacy models keep max_tokens + custom
+        # temperature exactly as before; the modern frontend model family uses
+        # max_completion_tokens and the default temperature. No extra call, no retry.
+        create_kwargs = {"model": model, "messages": messages}
+        if _needs_completion_tokens_param(model):
+            create_kwargs["max_completion_tokens"] = max_tokens
+        else:
+            create_kwargs["max_tokens"] = max_tokens
+            create_kwargs["temperature"] = temperature
         resp = await asyncio.wait_for(
-            client.chat.completions.create(
-                model=model,
-                messages=messages,
-                max_tokens=max_tokens,
-                temperature=temperature,
-            ),
+            client.chat.completions.create(**create_kwargs),
             timeout=AI_TIMEOUT,
         )
         result = resp.choices[0].message.content

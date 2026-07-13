@@ -706,6 +706,7 @@ function validateProject(rawFiles: RawFile[], spec: FrontendBuildSpecification, 
   const isShallowFile = (f: FrontendGeneratedFile): boolean => f.lineCount <= 18 && f.charCount < 650;
   const shallowSections = componentFiles.filter(isShallowFile);
   const shallowSectionCount = shallowSections.length;
+  const shallowSectionPaths = shallowSections.map((f) => f.path).slice(0, 12);
   if (shallowSectionCount) {
     addWarning(acc, 'shallow-section', `shallow section component(s) (${shallowSectionCount}) render very little content: ${shallowSections.slice(0, 3).map((f) => f.path).join(', ')}`);
   }
@@ -725,22 +726,28 @@ function validateProject(rawFiles: RawFile[], spec: FrontendBuildSpecification, 
   }
   // repetitive-section-structure — many section components share one JSX skeleton.
   let repetitiveSectionStructureDetected = false;
+  let repetitiveSectionPaths: string[] = [];
   if (componentFiles.length >= 3) {
-    const sigCount = new Map<string, number>();
+    const sigToFiles = new Map<string, string[]>();
     for (const f of componentFiles) {
       const sig = structuralSignature(f.content);
       if (sig.split('>').filter(Boolean).length < 2) continue;
-      sigCount.set(sig, (sigCount.get(sig) || 0) + 1);
+      const list = sigToFiles.get(sig) || [];
+      list.push(f.path);
+      sigToFiles.set(sig, list);
     }
     let maxRepeat = 0;
-    for (const c of sigCount.values()) if (c > maxRepeat) maxRepeat = c;
+    let maxGroup: string[] = [];
+    for (const list of sigToFiles.values()) if (list.length > maxRepeat) { maxRepeat = list.length; maxGroup = list; }
     repetitiveSectionStructureDetected = maxRepeat >= 3;
     if (repetitiveSectionStructureDetected) {
+      repetitiveSectionPaths = maxGroup.slice(0, 12);
       addWarning(acc, 'repetitive-section-structure', `${maxRepeat} section components share one near-identical JSX structure — vary composition and rhythm between sections`);
     }
   }
   // internal-copy-leak — internal planning vocabulary appears in the rendered source.
   const internalCopyLeakCount = countInternalCopyLeaks(allContent);
+  const internalCopyLeakFiles = sourceFiles.filter((f) => countInternalCopyLeaks(f.content) > 0).map((f) => f.path).slice(0, 12);
   if (internalCopyLeakCount) {
     addWarning(acc, 'internal-copy-leak', `internal planning vocabulary (${internalCopyLeakCount}) appears in the rendered source — planning text may be leaking as visible public copy`);
   }
@@ -749,6 +756,7 @@ function validateProject(rawFiles: RawFile[], spec: FrontendBuildSpecification, 
   const heroId = Array.isArray(spec.architecture?.sectionOrder) ? spec.architecture.sectionOrder[0] : undefined;
   const heroPath = heroId ? `src/components/${pascalOf(heroId)}.tsx` : undefined;
   const heroFile = heroPath ? byPath.get(heroPath) : undefined;
+  const heroComponentPath = heroFile ? heroFile.path : undefined;
   if (heroFile) {
     const hasJsxText = /<[A-Za-z][\w.-]*[\s/>]/.test(heroFile.content);
     if (hasJsxText && !HERO_VISUAL_RE.test(heroFile.content)) {
@@ -798,6 +806,11 @@ function validateProject(rawFiles: RawFile[], spec: FrontendBuildSpecification, 
     repetitiveSectionStructureDetected,
     internalCopyLeakCount,
     missingHeroVisualLayerDetected,
+    // Phase 13C — real project paths behind the severe warnings (empty → omit-safe).
+    shallowSectionPaths: shallowSectionPaths.length ? shallowSectionPaths : undefined,
+    repetitiveSectionPaths: repetitiveSectionPaths.length ? repetitiveSectionPaths : undefined,
+    internalCopyLeakFiles: internalCopyLeakFiles.length ? internalCopyLeakFiles : undefined,
+    heroComponentPath,
     reason,
   };
 }
