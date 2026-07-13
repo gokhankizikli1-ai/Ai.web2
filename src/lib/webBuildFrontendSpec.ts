@@ -105,6 +105,46 @@ function sectionFilePath(id: string): string {
   return `src/components/${pascal(id)}.tsx`;
 }
 
+/* ── Phase 13B — internal-planning-copy detector (pure, deterministic, EN+TR) ───
+ * Some upstream sources hand a section a PLANNING description ("proof points,
+ * metrics and security" / "Ürün kanıtı (demo/ekran), metrikler ve güvenlik") where a
+ * real audience-facing headline belongs. Rendering such a string verbatim leaks the
+ * internal specification as public copy. This detector flags those strings so the
+ * public-copy sanitization guard can blank them (never rendered, never required by
+ * the validator; the builder then writes real copy). It is CONSERVATIVE (high
+ * precision): it fires only on a parenthetical slash-enumeration combined with a
+ * planning term, on two or more distinct planning meta-terms, or on a single
+ * unambiguous placeholder/meta term. It matches PLANNING VOCABULARY, never a product
+ * concept, so it is not vertical-specific. */
+const INTERNAL_PLANNING_META_TERMS: readonly string[] = [
+  // EN planning vocabulary
+  'proof points', 'proof point', 'value proposition', 'trust signals', 'trust signal',
+  'call to action', 'above the fold', 'target audience', 'pain points', 'use cases',
+  'key benefits', 'feature list', 'section header', 'placeholder text', 'lorem ipsum',
+  'conversion goal', 'primary cta', 'secondary cta', 'metrics and security',
+  // TR planning vocabulary
+  'ürün kanıtı', 'değer önerisi', 'güven sinyalleri', 'harekete geçirici',
+  'hedef kitle', 'kullanım senaryoları', 'referans müşteriler', 'teknik özellikler',
+  'yer tutucu', 'metrikler ve güvenlik', 'sertifikalar', 'metrikler',
+];
+const STRONG_PLANNING_TERMS: readonly string[] = [
+  'lorem ipsum', 'placeholder text', 'yer tutucu', 'ürün kanıtı', 'değer önerisi',
+  'proof points', 'proof point', 'trust signals',
+];
+const PAREN_SLASH_ENUM_RE = /\([^)]*\/[^)]*\)/; // e.g. "(demo/ekran)", "(a/b/c)"
+
+/** True when a PUBLIC copy string reads as internal planning metadata. Conservative. */
+function looksLikeInternalPlanningCopy(raw: string | undefined): boolean {
+  const s = (raw || '').trim().toLowerCase();
+  if (s.length < 3) return false;
+  if (STRONG_PLANNING_TERMS.some((t) => s.includes(t))) return true;
+  const parenSlash = PAREN_SLASH_ENUM_RE.test(s);
+  let metaHits = 0;
+  for (const t of INTERNAL_PLANNING_META_TERMS) { if (s.includes(t)) { metaHits += 1; if (metaHits >= 2) break; } }
+  if (parenSlash && metaHits >= 1) return true;
+  return metaHits >= 2;
+}
+
 /* ── Output file contract (Phase 12B target; declared, never generated here) ── */
 
 const REQUIRED_FILES = ['src/main.tsx', 'src/App.tsx', 'src/styles.css'];
@@ -570,8 +610,41 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
         ? 'Mağaza olmayan ürün spesifikasyonundan çelişen mağaza/alışverişçi-yüzeyi etiketleri kaldırıldı.'
         : 'Removed contradictory storefront/shopper-surface labels from a non-store product specification.');
     }
-    const finalWarnings = merge(10, warnings, guardWarnings);
-    const finalSourceTrace = (archDrift || designDrift) ? clean(sourceTrace.concat(['productIntentGuard']), 26) : sourceTrace;
+    // ── Phase 13B — PUBLIC-COPY sanitization guard. Blank any PUBLIC section copy
+    //    (headline / subheadline / primaryCTA / bullets) that reads as INTERNAL planning
+    //    metadata rather than real audience-facing copy, so the internal specification is
+    //    never leaked verbatim as visible page text. Pure/deterministic/bounded: it blanks
+    //    a leaked field (the builder then writes real copy) or drops a leaked bullet, and
+    //    records a bounded warning. It never touches purpose/interactionHints (already
+    //    internal) or copy that does not read as planning metadata.
+    let copyLeaksSanitized = 0;
+    const sanitizeSection = (s: FrontendSpecSection): FrontendSpecSection => {
+      const headline = looksLikeInternalPlanningCopy(s.headline) ? undefined : s.headline;
+      const subheadline = looksLikeInternalPlanningCopy(s.subheadline) ? undefined : s.subheadline;
+      const primaryCTA = looksLikeInternalPlanningCopy(s.primaryCTA) ? undefined : s.primaryCTA;
+      const srcBullets = Array.isArray(s.bullets) ? s.bullets : [];
+      const bullets = srcBullets.filter((b) => !looksLikeInternalPlanningCopy(b));
+      const changed =
+        headline !== s.headline || subheadline !== s.subheadline ||
+        primaryCTA !== s.primaryCTA || bullets.length !== srcBullets.length;
+      if (!changed) return s;
+      copyLeaksSanitized += 1;
+      return { ...s, headline, subheadline, primaryCTA, bullets };
+    };
+    const sanitizedSections = guardedArchitecture.sections.map(sanitizeSection);
+    const finalArchitecture: FrontendSpecArchitecture = copyLeaksSanitized
+      ? { ...guardedArchitecture, sections: sanitizedSections }
+      : guardedArchitecture;
+    const copyGuardWarnings: string[] = [];
+    if (copyLeaksSanitized) copyGuardWarnings.push(lang === 'tr'
+      ? `${copyLeaksSanitized} bölümde herkese açık metin yerine sızan iç planlama metni temizlendi.`
+      : `Sanitized leaked internal planning text from public copy in ${copyLeaksSanitized} section(s).`);
+
+    const finalWarnings = merge(10, warnings, guardWarnings, copyGuardWarnings);
+    const traceTags: string[] = [];
+    if (archDrift || designDrift) traceTags.push('productIntentGuard');
+    if (copyLeaksSanitized) traceTags.push('publicCopyGuard');
+    const finalSourceTrace = traceTags.length ? clean(sourceTrace.concat(traceTags), 26) : sourceTrace;
 
     return {
       version: 'frontend-spec-v1',
@@ -580,7 +653,7 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
       prompt: str(input.prompt),
       identity,
       designSystem: guardedDesignSystem,
-      architecture: guardedArchitecture,
+      architecture: finalArchitecture,
       assets,
       researchEvidence,
       outputContract,

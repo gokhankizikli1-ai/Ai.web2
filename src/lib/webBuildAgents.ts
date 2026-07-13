@@ -1396,6 +1396,32 @@ export interface FrontendSpecSection {
   motionLayerIds: string[];
 }
 
+/* ── Phase 13B — explicit PUBLIC vs INTERNAL section copy split ────────────────
+ * A section's fields fall into two honest buckets. PUBLIC copy is the real,
+ * audience-facing text that MAY be rendered verbatim as visible page content
+ * (headline / subheadline / primaryCTA / bullets). INTERNAL guidance is planning
+ * metadata that instructs HOW to build the section (purpose, component hint, layout
+ * variant, interaction hints) and must NEVER be rendered as visible page copy. The
+ * builder request projection (Phase 13B) sends these as two clearly-labelled
+ * sub-objects so the model can never mistake a planning enumeration for a headline.
+ * Additive + optional + backward compatible; no runtime behaviour depends on them. */
+export interface FrontendPublicSectionCopy {
+  sectionId: string;
+  headline?: string;
+  subheadline?: string;
+  primaryCTA?: string;
+  bullets: string[];
+}
+export interface FrontendInternalSectionGuidance {
+  sectionId: string;
+  purpose?: string;
+  componentHint?: string;
+  layoutVariant?: string;
+  visualModule?: string;
+  density?: string;
+  interactionHints: string[];
+}
+
 export interface FrontendSpecArchitecture {
   architecture?: string;
   navigationModel?: string;
@@ -1599,6 +1625,19 @@ export interface FrontendBuilderValidationArtifact {
 
   errors: FrontendBuilderValidationIssue[];
   warnings: FrontendBuilderValidationIssue[];
+
+  /* ── Phase 13B — deterministic non-error QUALITY diagnostics (optional, backward
+   *  compatible). These are WARNINGS by construction: they NEVER change `status`
+   *  (still errors.length === 0 ? 'valid' : 'invalid') and never gate consumption.
+   *  They surface skeleton/shallow output and internal-copy leaks so the bounded
+   *  Phase 12E review + repair (and owner diagnostics) can act on real signal. Old
+   *  saved builds simply lack them. */
+  shallowProjectDetected?: boolean;
+  shallowSectionCount?: number;
+  minimalStylesDetected?: boolean;
+  repetitiveSectionStructureDetected?: boolean;
+  internalCopyLeakCount?: number;
+  missingHeroVisualLayerDetected?: boolean;
 
   reason: string;
 }

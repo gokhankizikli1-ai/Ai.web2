@@ -395,6 +395,35 @@ function extractCommentText(content: string): string {
   return parts.join('\n');
 }
 
+/* ── Phase 13B — deterministic QUALITY-signal detectors (WARNINGS only; they NEVER
+ *  change `status` and never gate consumption). They flag skeleton/shallow output and
+ *  internal-copy leaks so the bounded Phase 12E review + repair can act on real signal.
+ *  Pure and bounded; NO minimum-line contract is imposed on the model — these are
+ *  advisory thresholds feeding a warning, not a hard length gate. */
+const HERO_VISUAL_RE = /<svg\b|<img\b|<canvas\b|<picture\b|bg-gradient|radial-gradient|linear-gradient|backgroundimage|\bbg-\[|aspect-\[|aspect-video|aspect-square|role=["']img["']|data-placeholder/i;
+const LEAK_STRONG_TERMS: readonly string[] = [
+  'lorem ipsum', 'placeholder text', 'proof points', 'value proposition',
+  'trust signals', 'ürün kanıtı', 'değer önerisi', 'güven sinyalleri',
+  'yer tutucu', 'metrics and security', 'metrikler ve güvenlik',
+];
+
+/** Count distinct internal-planning leak terms present in the rendered source. */
+function countInternalCopyLeaks(content: string): number {
+  const s = content.toLowerCase();
+  let n = 0;
+  for (const t of LEAK_STRONG_TERMS) if (s.includes(t)) n += 1;
+  return n;
+}
+
+/** A compact JSX-structure signature (ordered tag names) for repetition detection. */
+function structuralSignature(content: string): string {
+  const tags: string[] = [];
+  const re = /<([A-Za-z][\w.]*)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(content)) !== null) { tags.push(m[1].toLowerCase()); if (tags.length >= 60) break; }
+  return tags.join('>');
+}
+
 /* ── Main validation (given successfully parsed files + the spec) ───────────── */
 function validateProject(rawFiles: RawFile[], spec: FrontendBuildSpecification, raw: FrontendBuilderRawArtifact): FrontendBuilderValidationArtifact {
   const acc = newAcc();
@@ -668,6 +697,66 @@ function validateProject(rawFiles: RawFile[], spec: FrontendBuildSpecification, 
     if (m && !corpus.includes(normCopy(m[0]))) addWarning(acc, 'unverified-proof', `possible unverified proof claim not present in the spec copy: ${label} (${trunc(m[0], 40)})`);
   }
 
+  // 11) Phase 13B — deterministic QUALITY WARNINGS (never errors; never change status).
+  //     Advisory skeleton / shallow / leak signals for the bounded Phase 12E review +
+  //     repair and owner diagnostics. No minimum-line rule is enforced on the model.
+  const sourceFiles = files.filter((f) => f.language !== 'css');
+  const componentFiles = sourceFiles.filter((f) => f.path !== 'src/main.tsx' && f.path !== 'src/App.tsx');
+  const totalSourceChars = sourceFiles.reduce((n, f) => n + f.charCount, 0);
+  const isShallowFile = (f: FrontendGeneratedFile): boolean => f.lineCount <= 18 && f.charCount < 650;
+  const shallowSections = componentFiles.filter(isShallowFile);
+  const shallowSectionCount = shallowSections.length;
+  if (shallowSectionCount) {
+    addWarning(acc, 'shallow-section', `shallow section component(s) (${shallowSectionCount}) render very little content: ${shallowSections.slice(0, 3).map((f) => f.path).join(', ')}`);
+  }
+  const shallowProjectDetected =
+    (componentFiles.length >= 2 && shallowSectionCount >= Math.ceil(componentFiles.length / 2)) ||
+    (componentFiles.length > 0 && totalSourceChars < 2500);
+  if (shallowProjectDetected) {
+    addWarning(acc, 'shallow-project', `the model-native project is shallow overall (${componentFiles.length} component file(s), ${totalSourceChars} source chars, ${shallowSectionCount} shallow) — sections read as skeletons rather than realized compositions`);
+  }
+  // minimal-styles — the project's CSS is essentially only the Tailwind directives.
+  const cssBody = files.filter((f) => f.language === 'css')
+    .map((f) => f.content.split('\n').filter((ln) => !/@tailwind\b|@import\s+["']tailwindcss/.test(ln)).join('\n').trim())
+    .join('\n').trim();
+  const minimalStylesDetected = files.some((f) => f.language === 'css') && cssBody.length < 240;
+  if (minimalStylesDetected) {
+    addWarning(acc, 'minimal-styles', `the project CSS defines almost no custom design tokens/rules beyond the Tailwind directives (${cssBody.length} chars) — likely under-styled`);
+  }
+  // repetitive-section-structure — many section components share one JSX skeleton.
+  let repetitiveSectionStructureDetected = false;
+  if (componentFiles.length >= 3) {
+    const sigCount = new Map<string, number>();
+    for (const f of componentFiles) {
+      const sig = structuralSignature(f.content);
+      if (sig.split('>').filter(Boolean).length < 2) continue;
+      sigCount.set(sig, (sigCount.get(sig) || 0) + 1);
+    }
+    let maxRepeat = 0;
+    for (const c of sigCount.values()) if (c > maxRepeat) maxRepeat = c;
+    repetitiveSectionStructureDetected = maxRepeat >= 3;
+    if (repetitiveSectionStructureDetected) {
+      addWarning(acc, 'repetitive-section-structure', `${maxRepeat} section components share one near-identical JSX structure — vary composition and rhythm between sections`);
+    }
+  }
+  // internal-copy-leak — internal planning vocabulary appears in the rendered source.
+  const internalCopyLeakCount = countInternalCopyLeaks(allContent);
+  if (internalCopyLeakCount) {
+    addWarning(acc, 'internal-copy-leak', `internal planning vocabulary (${internalCopyLeakCount}) appears in the rendered source — planning text may be leaking as visible public copy`);
+  }
+  // missing-hero-visual-layer — the hero section renders copy but no composed visual layer.
+  let missingHeroVisualLayerDetected = false;
+  const heroId = Array.isArray(spec.architecture?.sectionOrder) ? spec.architecture.sectionOrder[0] : undefined;
+  const heroPath = heroId ? `src/components/${pascalOf(heroId)}.tsx` : undefined;
+  const heroFile = heroPath ? byPath.get(heroPath) : undefined;
+  if (heroFile) {
+    const hasJsxText = /<[A-Za-z][\w.-]*[\s/>]/.test(heroFile.content);
+    if (hasJsxText && !HERO_VISUAL_RE.test(heroFile.content)) {
+      missingHeroVisualLayerDetected = true;
+      addWarning(acc, 'missing-hero-visual-layer', `the hero (${heroFile.path}) renders text with no composed visual layer (no svg/image/gradient/placeholder) — add an honest hero visual`);
+    }
+  }
+
   // ── Assemble + decide status ────────────────────────────────────────────────
   const errors = acc.errors.slice(0, MAX_PERSISTED_ISSUES);
   const warnings = acc.warnings.slice(0, MAX_PERSISTED_ISSUES);
@@ -702,6 +791,13 @@ function validateProject(rawFiles: RawFile[], spec: FrontendBuildSpecification, 
     forbiddenPatternMatches: capUniq(acc.forbiddenPatternMatches),
     errors,
     warnings,
+    // Phase 13B — deterministic non-error quality diagnostics (do NOT affect status).
+    shallowProjectDetected,
+    shallowSectionCount,
+    minimalStylesDetected,
+    repetitiveSectionStructureDetected,
+    internalCopyLeakCount,
+    missingHeroVisualLayerDetected,
     reason,
   };
 }
