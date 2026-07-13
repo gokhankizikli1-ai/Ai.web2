@@ -1420,6 +1420,107 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
   ].join('\n');
 }
 
+/* ── Phase 13C.1 — truthful AI-transport execution metadata ─────────────────────
+ * The backend (Responses API path) reports the REAL provider execution under
+ * `data.metadata.ai_execution`. A provider failure/timeout/incomplete must never be
+ * accepted as a completed frontend project, and the strict envelope parser must never
+ * run on a generic chat fallback sentence. These helpers are pure + bounded + backward
+ * compatible: an older backend that omits the metadata is handled gracefully. */
+interface AiExecutionMeta {
+  present: boolean;
+  status: 'succeeded' | 'failed' | 'timeout' | 'incomplete' | 'unknown';
+  endpoint: 'responses' | 'chat-completions' | 'unknown';
+  model?: string;
+  provider?: string;
+  requestId?: string;
+  latencyMs?: number;
+  fallbackUsed?: boolean;
+  errorKind?: string;
+  errorCode?: string;
+  errorMessage?: string;
+}
+const MAX_EXEC_ERR_KIND_CHARS = 80;
+const MAX_EXEC_ERR_MSG_CHARS = 240;
+const MAX_EXEC_ID_CHARS = 200;
+function boundedStr(v: unknown, n: number): string | undefined {
+  return typeof v === 'string' && v.trim() ? v.trim().slice(0, n) : undefined;
+}
+
+/** Read + bound `data.metadata.ai_execution`. Absent/malformed → present:false. */
+function parseAiExecutionMetadata(data: Record<string, unknown>): AiExecutionMeta {
+  const meta = data && typeof data.metadata === 'object' && data.metadata
+    ? (data.metadata as Record<string, unknown>) : undefined;
+  const exec = meta && typeof meta.ai_execution === 'object' && meta.ai_execution
+    ? (meta.ai_execution as Record<string, unknown>) : undefined;
+  if (!exec) return { present: false, status: 'unknown', endpoint: 'unknown' };
+  const rawStatus = typeof exec.status === 'string' ? exec.status : '';
+  const status: AiExecutionMeta['status'] =
+    rawStatus === 'succeeded' ? 'succeeded'
+    : rawStatus === 'timeout' ? 'timeout'
+    : rawStatus === 'incomplete' ? 'incomplete'
+    : rawStatus === 'failed' ? 'failed'
+    : 'unknown';
+  const rawEndpoint = typeof exec.endpoint === 'string' ? exec.endpoint : '';
+  const endpoint: AiExecutionMeta['endpoint'] =
+    rawEndpoint === 'responses' ? 'responses'
+    : rawEndpoint === 'chat-completions' ? 'chat-completions'
+    : 'unknown';
+  const latency = typeof exec.latency_ms === 'number' && isFinite(exec.latency_ms)
+    ? Math.max(0, Math.round(exec.latency_ms)) : undefined;
+  return {
+    present: true,
+    status,
+    endpoint,
+    model: boundedStr(exec.model, 120),
+    provider: boundedStr(exec.provider, 60),
+    requestId: boundedStr(exec.request_id, MAX_EXEC_ID_CHARS),
+    latencyMs: latency,
+    fallbackUsed: typeof exec.fallback_used === 'boolean' ? exec.fallback_used : undefined,
+    errorKind: boundedStr(exec.error_kind, MAX_EXEC_ERR_KIND_CHARS),
+    errorCode: boundedStr(exec.error_code, MAX_EXEC_ERR_KIND_CHARS),
+    errorMessage: boundedStr(exec.error_message, MAX_EXEC_ERR_MSG_CHARS),
+  };
+}
+
+/** The bounded raw-artifact fields carrying the transport execution truth. */
+function execArtifactFields(exec: AiExecutionMeta, data: Record<string, unknown>): Partial<FrontendBuilderRawArtifact> {
+  return {
+    model: exec.model || (typeof data.model === 'string' ? data.model : undefined),
+    provider: exec.provider || (typeof data.provider === 'string' ? data.provider : undefined),
+    requestId: exec.requestId || (typeof data.request_id === 'string' ? data.request_id : undefined),
+    executionStatus: exec.present ? exec.status : 'unknown',
+    executionEndpoint: exec.present ? exec.endpoint : 'unknown',
+    fallbackUsed: exec.fallbackUsed,
+    backendLatencyMs: exec.latencyMs,
+    backendErrorKind: exec.errorKind,
+    backendErrorCode: exec.errorCode,
+    backendErrorMessage: exec.errorMessage,
+  };
+}
+
+/** Exact normalized generic chat-fallback sentences that must NEVER enter a code
+ *  parser. Matched normalized (trim + lowercase + collapse whitespace) — NOT by length.
+ *  This is the rolling-deploy guard for an older backend that omits execution metadata. */
+const KNOWN_GENERIC_FALLBACKS: ReadonlySet<string> = new Set([
+  'simdi yanit veremiyorum, biraz sonra tekrar dene.',      // ai_client.FALLBACK_MSG (dotless)
+  'şimdi yanıt veremiyorum, biraz sonra tekrar dene.',      // Turkish dotted variant
+  'bir hata olustu, lutfen tekrar dene.',                   // chat route generic error (dotless)
+  'bir hata oluştu, lütfen tekrar dene.',                   // dotted variant
+]);
+function isKnownGenericFallback(reply: string): boolean {
+  const n = (reply || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  return !!n && KNOWN_GENERIC_FALLBACKS.has(n);
+}
+
+/** Diagnostics-only shape of a non-empty reply. Mirrors the strict parser's marker
+ *  requirement WITHOUT modifying or relaxing it. */
+function deriveResponseShape(reply: string): NonNullable<FrontendBuilderRawArtifact['responseShape']> {
+  const t = (reply || '').replace(/^﻿/, '').trim();
+  if (!t) return 'empty';
+  if (t.startsWith('## FRONTEND_FILES_V1') && t.endsWith('## END_FRONTEND_FILES_V1')) return 'frontend-envelope';
+  return 'non-envelope';
+}
+
 /** Build a raw builder artifact with honest, bounded defaults. */
 function frontendBuilderArtifact(
   status: FrontendBuilderRawArtifact['status'],
@@ -1515,18 +1616,35 @@ export async function generateFrontendBuilderRaw(
 
     const reply = typeof data.reply === 'string' ? data.reply : '';
     const reportedMode = typeof data.mode === 'string' ? data.mode : '';
-    const base: Partial<FrontendBuilderRawArtifact> = {
-      model: typeof data.model === 'string' ? data.model : undefined,
-      provider: typeof data.provider === 'string' ? data.provider : undefined,
-      requestId: typeof data.request_id === 'string' ? data.request_id : undefined,
-    };
+    const exec = parseAiExecutionMetadata(data);
+    const base: Partial<FrontendBuilderRawArtifact> = execArtifactFields(exec, data);
 
     // Wrong mode — never accept it as a Frontend Builder completion.
     if (reportedMode && reportedMode !== FRONTEND_BUILDER_MODE) {
-      return frontendBuilderArtifact('failed', 'Backend routed the dedicated frontend request to an unexpected mode.', base);
+      return frontendBuilderArtifact('failed', 'Backend routed the dedicated frontend request to an unexpected mode.', { ...base, responseShape: 'not-inspected' });
     }
+
+    // Phase 13C.1 — EXECUTION-TRUTH gate. When the backend explicitly reports a provider
+    // failure/timeout/incomplete, this is a transport failure, NOT malformed generated
+    // code: fail without persisting a raw project so the strict parser never runs on it.
+    if (exec.present && exec.status !== 'succeeded') {
+      const detail = exec.errorKind ? ` (${exec.errorKind}${exec.errorCode ? `/${exec.errorCode}` : ''})` : '';
+      return frontendBuilderArtifact('failed', `The dedicated Frontend Builder provider execution did not succeed: ${exec.status}${detail}. No frontend project was produced — this is a provider transport failure, not malformed generated code.`, { ...base, responseShape: 'empty' });
+    }
+
+    // Rolling-deploy guard — reject the exact known generic chat fallback even when
+    // execution metadata is absent (older backend), so the fallback sentence never
+    // reaches the strict code parser. This is exact-message matching, never a length rule.
+    if (isKnownGenericFallback(reply)) {
+      return frontendBuilderArtifact('failed', 'The backend returned a generic chat fallback message instead of a frontend project (upstream provider execution failed); it was rejected before parsing.', {
+        ...base,
+        executionStatus: exec.present ? exec.status : 'failed',
+        responseShape: 'non-envelope',
+      });
+    }
+
     if (!reply.trim()) {
-      return frontendBuilderArtifact('failed', 'The dedicated Frontend Builder returned an empty response.', base);
+      return frontendBuilderArtifact('failed', 'The dedicated Frontend Builder returned an empty response.', { ...base, responseShape: 'empty' });
     }
 
     const charCount = reply.length;
@@ -1537,14 +1655,21 @@ export async function generateFrontendBuilderRaw(
         rawResponse: reply.slice(0, MAX_FRONTEND_RAW_RESPONSE_CHARS),
         responseCharCount: charCount,
         truncatedForStorage: true,
+        responseShape: deriveResponseShape(reply),
       });
     }
-    // Completed — raw response received, NOT yet parsed or validated.
-    return frontendBuilderArtifact('completed', 'Dedicated Frontend Builder returned a raw frontend-files-v1 response; parsing and validation have not run yet.', {
+    // Completed — accepted ONLY when the backend reports success, OR when execution
+    // metadata is absent (older backend) with a non-empty, non-fallback reply. The raw
+    // response is NOT yet parsed or validated.
+    return frontendBuilderArtifact('completed', exec.present
+      ? 'Dedicated Frontend Builder (Responses API) execution succeeded; parsing and validation have not run yet.'
+      : 'Dedicated Frontend Builder returned a raw response (no execution metadata — older backend); parsing and validation have not run yet.', {
       ...base,
+      executionStatus: exec.present ? 'succeeded' : 'unknown',
       rawResponse: reply,
       responseCharCount: charCount,
       truncatedForStorage: false,
+      responseShape: deriveResponseShape(reply),
     });
   } finally {
     clearTimeout(timeoutId);
@@ -1653,14 +1778,31 @@ async function callFrontendBuilderTask(
     try { data = await response.json(); }
     catch { return { ok: false, reason: 'The backend sent an unreadable frontend task response.' }; }
 
+    const exec = parseAiExecutionMetadata(data);
+    const reply = typeof data.reply === 'string' ? data.reply : '';
+    const model = exec.model || (typeof data.model === 'string' ? data.model : undefined);
+    const provider = exec.provider || (typeof data.provider === 'string' ? data.provider : undefined);
+    const requestId = exec.requestId || (typeof data.request_id === 'string' ? data.request_id : undefined);
+
+    // Phase 13C.1 — a provider failure/timeout/incomplete is ok:false, so no task parser
+    // (review / repair / contract repair) ever receives a generic chat fallback sentence.
+    if (exec.present && exec.status !== 'succeeded') {
+      const detail = exec.errorKind ? ` (${exec.errorKind}${exec.errorCode ? `/${exec.errorCode}` : ''})` : '';
+      return { ok: false, reason: `The dedicated frontend task provider execution did not succeed: ${exec.status}${detail}.`, model, provider, requestId };
+    }
+    // Rolling-deploy guard — reject the exact known generic chat fallback (older backend).
+    if (isKnownGenericFallback(reply)) {
+      return { ok: false, reason: 'The backend returned a generic chat fallback message instead of a frontend task response; it was rejected before parsing.', model, provider, requestId };
+    }
+
     return {
       ok: true,
       data: {
-        reply: typeof data.reply === 'string' ? data.reply : '',
+        reply,
         reportedMode: typeof data.mode === 'string' ? data.mode : '',
-        model: typeof data.model === 'string' ? data.model : undefined,
-        provider: typeof data.provider === 'string' ? data.provider : undefined,
-        requestId: typeof data.request_id === 'string' ? data.request_id : undefined,
+        model,
+        provider,
+        requestId,
       },
     };
   } finally {

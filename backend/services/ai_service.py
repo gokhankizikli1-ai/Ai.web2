@@ -7,7 +7,7 @@ import logging
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
-from ai_client import ask_ai, detect_intent
+from ai_client import ask_ai, detect_intent, ask_openai_frontend_structured
 from ai_router import get_model_config, detect_mode
 from agent import run_tools, build_context_for_ai, detect_research_depth, DEPTH_CONFIG, RESEARCH_INTENTS
 from prompts import (
@@ -283,6 +283,49 @@ async def process_chat(
                     _fb_mode = get_mode(canonical)
                     if _fb_mode is not None:
                         sys_p = _fb_mode.system_prompt
+
+                    # Phase 13C.1 — the dedicated Frontend Builder uses the OpenAI
+                    # Responses API through an ISOLATED, truthful transport. A provider
+                    # failure/timeout/incomplete is NEVER laundered into a completed
+                    # frontend project, NEVER falls back to Gemini/GPT-4o, and NEVER
+                    # falls through to legacy intent routing. Exactly ONE provider request
+                    # for each frontend task (initial generation / structural contract
+                    # repair / static review / quality repair / post-repair review); the
+                    # task marker inside `message` selects the reasoning effort. The real
+                    # execution truth is carried in metadata.ai_execution.
+                    _fb_res = await ask_openai_frontend_structured(
+                        prompt=message,
+                        system=sys_p,
+                        model=cfg["model"],
+                        max_output_tokens=cfg["max_tokens"],
+                    )
+                    _fb_exec = {
+                        "status":        "succeeded" if _fb_res.ok else _fb_res.execution_status,
+                        "endpoint":      _fb_res.endpoint,
+                        "model":         _fb_res.model,
+                        "provider":      _fb_res.provider,
+                        "request_id":    _fb_res.request_id,
+                        "latency_ms":    _fb_res.latency_ms,
+                        "fallback_used": _fb_res.fallback_used,
+                    }
+                    if not _fb_res.ok:
+                        _fb_exec["error_kind"]    = _fb_res.error_kind
+                        _fb_exec["error_code"]    = _fb_res.error_code
+                        _fb_exec["error_message"] = _fb_res.error_message
+                    logger.info(
+                        "process_chat | frontend_builder | ok=%s | status=%s | model=%s | endpoint=%s | ms=%d | kind=%s",
+                        _fb_res.ok, _fb_exec["status"], _fb_res.model,
+                        _fb_res.endpoint, _fb_res.latency_ms, _fb_res.error_kind,
+                    )
+                    return {
+                        "reply":      _fb_res.text if _fb_res.ok else "",
+                        "intent":     canonical,
+                        "model":      _fb_res.model,
+                        "provider":   _fb_res.provider,
+                        "request_id": _fb_res.request_id,
+                        "mode":       canonical,
+                        "metadata":   {"ai_execution": _fb_exec},
+                    }
 
                 # Game Builder — adaptive output budget. The build size varies
                 # a lot (a Fast Prototype vs a Production-Style Roblox tycoon

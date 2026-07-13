@@ -502,6 +502,23 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       ownerRows.push(['frontendBuilderStoredFull', fbr.status === 'completed' && !fbr.truncatedForStorage ? 'yes' : 'no']);
       ownerRows.push(['frontendValidation', fbr.validationStatus || 'not-run']);
       if (fbr.status === 'failed' && fbr.reason) ownerRows.push(['frontendBuilderReason', fbr.reason.slice(0, 160)]);
+      // Phase 13C.1 — truthful AI-transport diagnostics (owner-only). These describe the
+      // REAL provider execution, so a transport failure is never confused with malformed
+      // generated code. When the transport failed there is NO frontend envelope: the
+      // generation REQUEST failed and validation was not a meaningful design failure.
+      if (fbr.executionStatus) ownerRows.push(['frontendExecutionStatus', fbr.executionStatus]);
+      if (fbr.executionEndpoint) ownerRows.push(['frontendExecutionEndpoint', fbr.executionEndpoint]);
+      if (fbr.model) ownerRows.push(['frontendExecutionModel', fbr.model]);
+      if (fbr.provider) ownerRows.push(['frontendExecutionProvider', fbr.provider]);
+      if (typeof fbr.backendLatencyMs === 'number') ownerRows.push(['frontendExecutionLatencyMs', String(fbr.backendLatencyMs)]);
+      if (typeof fbr.fallbackUsed === 'boolean') ownerRows.push(['frontendExecutionFallbackUsed', String(fbr.fallbackUsed)]);
+      if (fbr.backendErrorKind) ownerRows.push(['frontendExecutionErrorKind', fbr.backendErrorKind.slice(0, 80)]);
+      if (fbr.backendErrorCode) ownerRows.push(['frontendExecutionErrorCode', fbr.backendErrorCode.slice(0, 80)]);
+      if (fbr.backendErrorMessage) ownerRows.push(['frontendExecutionErrorMessage', fbr.backendErrorMessage.slice(0, 240)]);
+      if (fbr.responseShape) ownerRows.push(['frontendResponseShape', fbr.responseShape]);
+      if (fbr.status === 'failed' && fbr.executionStatus && fbr.executionStatus !== 'succeeded' && fbr.executionStatus !== 'unknown') {
+        ownerRows.push(['frontendTransportNote', 'generation request failed — no frontend envelope was produced; this is NOT malformed generated code']);
+      }
     }
 
     // Phase 12C — STATIC parse + contract validation of the raw builder response.
