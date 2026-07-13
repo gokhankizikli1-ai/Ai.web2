@@ -524,6 +524,15 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       if (fbv.unresolvedRelativeImports.length) ownerRows.push(['frontendUnresolvedImports', `${fbv.unresolvedRelativeImports.length} · ${fbv.unresolvedRelativeImports.slice(0, 2).join(', ')}`]);
       if (fbv.unsupportedPackageImports.length) ownerRows.push(['frontendUnsupportedPackages', `${fbv.unsupportedPackageImports.length} · ${fbv.unsupportedPackageImports.slice(0, 2).join(', ')}`]);
       fbv.errors.slice(0, 2).forEach((e, i) => ownerRows.push([`frontendValidationError${i + 1}`, `${e.code}: ${e.message}`.slice(0, 160)]));
+      // Phase 13B — deterministic non-error QUALITY diagnostics (skeleton / shallow / leak
+      // signals). These NEVER change validation status; they feed the bounded Phase 12E
+      // review + repair. Owner-only.
+      if (fbv.shallowProjectDetected) ownerRows.push(['frontendShallowProject', 'yes (sections read as skeletons)']);
+      if (typeof fbv.shallowSectionCount === 'number' && fbv.shallowSectionCount > 0) ownerRows.push(['frontendShallowSections', String(fbv.shallowSectionCount)]);
+      if (fbv.minimalStylesDetected) ownerRows.push(['frontendMinimalStyles', 'yes (CSS ≈ Tailwind directives only)']);
+      if (fbv.repetitiveSectionStructureDetected) ownerRows.push(['frontendRepetitiveSections', 'yes (one repeated JSX template)']);
+      if (typeof fbv.internalCopyLeakCount === 'number' && fbv.internalCopyLeakCount > 0) ownerRows.push(['frontendInternalCopyLeaks', String(fbv.internalCopyLeakCount)]);
+      if (fbv.missingHeroVisualLayerDetected) ownerRows.push(['frontendMissingHeroVisualLayer', 'yes (hero has no composed visual)']);
     }
 
     // Phase 12D — whether the validated model-native files became the active project
@@ -616,6 +625,10 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       ownerRows.push(['frontendActiveProject', fac.activeProject]);
       ownerRows.push(['renderedVisualTestStatus', fac.renderedVisualTestStatus]);
       ownerRows.push(['frontendAcceptanceReason', shortStr(fac.reason, 160)]);
+      // Phase 13B — keep the four distinct quality facts unambiguous for the owner:
+      // planningQualityEstimate (planning only) ≠ frontendStaticReviewScore (source review) ≠
+      // frontendAcceptance (gate) ≠ renderedVisualTestStatus (still pending manual test).
+      ownerRows.push(['frontendQualityFacts', 'planningQualityEstimate ≠ staticReviewScore ≠ acceptance ≠ renderedVisualTest (pending-manual-test)']);
     }
 
     // Phase 9D-1 — intent-aware Page Architecture Decision (concept-specific spine).

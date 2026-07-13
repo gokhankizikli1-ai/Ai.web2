@@ -46,6 +46,18 @@ import type {
 /** The minimum improvement gate: an accepted repair must beat the initial score. */
 const MIN_ACCEPT_SCORE = 82;
 
+/* ── Phase 13B — thread the STATIC validator's deterministic quality WARNINGS into the
+ * bounded review + repair prompts WITHOUT any extra model call. These are advisory
+ * signals (shallow-project / shallow-section / minimal-styles / repetitive-section-
+ * structure / internal-copy-leak / missing-hero-visual-layer); the reviewer still judges
+ * independently and the repair still preserves public copy. Bounded to 8 summaries. */
+function warningSummaries(validation: FrontendBuilderValidationArtifact | undefined): string[] | undefined {
+  const ws = validation?.warnings;
+  if (!Array.isArray(ws) || ws.length === 0) return undefined;
+  const out = ws.slice(0, 8).map((w) => `${w.code}: ${w.message}`.slice(0, 240));
+  return out.length ? out : undefined;
+}
+
 /* ── Phase 12F.3 — deterministic preservation-gate thresholds (no model call). A genuine
  * structural contract repair may restructure, but it must not COLLAPSE the parsed initial
  * project into a technically-valid skeleton. These bounds reject the observed failure mode
@@ -349,7 +361,8 @@ export async function runFrontendBuilderQualityPipeline(
     const spec = authoritativeSpec(working);
 
     // ── Step 3 — STATIC initial design review (exactly one parse) ──
-    const initialReviewRaw = await generateFrontendBuilderReviewRaw(spec, activeFiles, 'initial', undefined, { signal: opts?.signal });
+    const activeWarnings = warningSummaries(validation);
+    const initialReviewRaw = await generateFrontendBuilderReviewRaw(spec, activeFiles, 'initial', undefined, { signal: opts?.signal, deterministicWarnings: activeWarnings });
     const initialReview = parseFrontendBuilderReview(initialReviewRaw, 'initial', activeFiles);
 
     // Fast path — a passing initial review keeps the initial project; no repair/final call.
@@ -380,7 +393,7 @@ export async function runFrontendBuilderQualityPipeline(
     }
 
     // ── Step 5 — exactly ONE bounded repair call ──
-    const repairRaw = await generateFrontendBuilderRepairRaw(spec, activeFiles, initialReview, { signal: opts?.signal });
+    const repairRaw = await generateFrontendBuilderRepairRaw(spec, activeFiles, initialReview, { signal: opts?.signal, deterministicWarnings: activeWarnings });
     if (repairRaw.status !== 'completed') {
       const repair = repairArtifact('failed', repairRaw.reason || 'The repair call did not complete.', {
         model: repairRaw.model, provider: repairRaw.provider, requestId: repairRaw.requestId, initialScore: initialReview.score,
@@ -415,7 +428,7 @@ export async function runFrontendBuilderQualityPipeline(
 
     // ── Step 7 — STATIC post-repair review of the repaired files (exactly one parse) ──
     const repairedActiveFiles = toActiveFiles(repairValidation.files);
-    const finalReviewRaw = await generateFrontendBuilderReviewRaw(spec, repairedActiveFiles, 'post-repair', initialReview, { signal: opts?.signal });
+    const finalReviewRaw = await generateFrontendBuilderReviewRaw(spec, repairedActiveFiles, 'post-repair', initialReview, { signal: opts?.signal, deterministicWarnings: warningSummaries(repairValidation) });
     const finalReview = parseFrontendBuilderReview(finalReviewRaw, 'post-repair', repairedActiveFiles);
 
     // ── Step 8 — repair acceptance gate: valid + final pass + strict score improvement ──
