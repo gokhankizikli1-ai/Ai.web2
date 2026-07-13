@@ -160,6 +160,11 @@ export default function WebsiteBuilder() {
       setErrorMsg(err.message);
       return;
     }
+    // Phase 13E — planning provider-transport failures carry an already-localized message.
+    if (err instanceof WebBuildError && (err.kind === 'planning_failed' || err.kind === 'planning_timeout' || err.kind === 'planning_incomplete' || err.kind === 'planning_access')) {
+      setErrorMsg(err.message);
+      return;
+    }
     const key = err instanceof WebBuildError ? webBuildErrorKeyFor(err.kind) : 'wbErrGeneric';
     setErrorMsg(t(key) || t('wbErrGeneric'));
   }, [t]);

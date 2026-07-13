@@ -7,7 +7,7 @@ import logging
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 
-from ai_client import ask_ai, detect_intent, ask_openai_frontend_structured
+from ai_client import ask_ai, detect_intent, ask_openai_frontend_structured, ask_openai_website_structured
 from ai_router import get_model_config, detect_mode
 from agent import run_tools, build_context_for_ai, detect_research_depth, DEPTH_CONFIG, RESEARCH_INTENTS
 from prompts import (
@@ -247,6 +247,7 @@ async def process_chat(
     # flows into EVERY branch's system prompt (both build_system_prompt and
     # _build_system append style_prompt). The user reported English replies
     # to Turkish users; this enforces the selected/detected language.
+    _lang_directive = ''  # Phase 13E — always bound (reused by the isolated website path).
     try:
         _lang_directive = _build_language_directive(locale, language_mode, message_language)
         if _lang_directive:
@@ -519,22 +520,33 @@ async def process_chat(
                 # credit-counted web_research cascade. Revisions skip it. On
                 # unavailable/empty research we inject an honest status and fall
                 # back to strategy inference — never fabricated sources.
+                # Phase 13E — the research pre-pass runs ONCE, for the INITIAL fresh
+                # planning request only. Strict planning repair + design-plan repair carry
+                # explicit markers and must NOT rerun research (that injected different
+                # context into each repair). Revisions already skip it. The result is kept
+                # as a bounded SUFFIX string appended to the ISOLATED website system prompt
+                # below (never to the contaminated build_system_prompt output).
                 _wb_research_meta = None
-                if canonical == "website_builder" and "REVISION" not in message:
+                _wb_research_suffix = ""
+                _wb_is_planning_repair = (
+                    "[WEB BUILD PLANNING REPAIR REQUEST]" in message
+                    or "[WEB BUILD DESIGN PLAN REPAIR REQUEST]" in message
+                )
+                if canonical == "website_builder" and "REVISION" not in message and not _wb_is_planning_repair:
                     try:
                         from backend.services.website_builder_research import run_web_build_research
                         _wb_block, _wb_research_meta = await run_web_build_research(
                             user_id=str(user_id), idea=message,
                         )
                         if _wb_block:
-                            sys_p += "\n\n" + _wb_block
+                            _wb_research_suffix = "\n\n" + _wb_block
                         elif _wb_research_meta and not _wb_research_meta.get("did_research"):
                             # Honest fallback instruction — reason is included so
                             # the model knows WHY it has no sources, and is told
                             # to label its reasoning "Strategy insight" (never
                             # "Research found") and never invent citations.
                             _why = (_wb_research_meta or {}).get("fallback_reason") or "no live sources available"
-                            sys_p += (
+                            _wb_research_suffix = (
                                 "\n\n[BUILD INTELLIGENCE — STRATEGY INFERENCE]\n"
                                 f"Live web research did not return usable sources ({_why}). Build a "
                                 "structured Build Intelligence brief from your own knowledge FIRST, "
@@ -559,6 +571,76 @@ async def process_chat(
                             "status": "failed",
                             "fallback_reason": f"research pre-pass raised: {type(_wberr).__name__}",
                         }
+
+                # Phase 13E — ISOLATED website planning transport. website_builder planning
+                # runs on the dedicated GPT-5.6 Responses API with a truthful execution
+                # result — NEVER the generic ask_ai (Chat Completions + 30s timeout + silent
+                # Gemini fallback). The system prompt is rebuilt from the RAW mode prompt so
+                # no chat history / profile / memory / project context / unrelated
+                # response-style contaminates planning; only the resolved language policy and
+                # the (once-only) research context are re-appended. A provider failure NEVER
+                # falls back to Gemini/GPT-4o, never enters legacy intent routing, and is
+                # surfaced truthfully via metadata.ai_execution. One provider request per
+                # planning task (initial / strict repair / design-plan repair).
+                if canonical == "website_builder":
+                    _wb_mode = get_mode(canonical)
+                    _wb_sys = _wb_mode.system_prompt if _wb_mode is not None else sys_p
+                    if _lang_directive:
+                        _wb_sys = _wb_sys + "\n\n" + _lang_directive
+                    if _wb_research_suffix:
+                        _wb_sys = _wb_sys + _wb_research_suffix
+                    _wb_res = await ask_openai_website_structured(
+                        prompt=message,
+                        system=_wb_sys,
+                        model=cfg["model"],
+                        max_output_tokens=cfg["max_tokens"],
+                    )
+                    _wb_exec = {
+                        "status":        "succeeded" if _wb_res.ok else _wb_res.execution_status,
+                        "endpoint":      _wb_res.endpoint,
+                        "model":         _wb_res.model,
+                        "provider":      _wb_res.provider,
+                        "request_id":    _wb_res.request_id,
+                        "latency_ms":    _wb_res.latency_ms,
+                        "fallback_used": _wb_res.fallback_used,
+                    }
+                    if not _wb_res.ok:
+                        _wb_exec["error_kind"]    = _wb_res.error_kind
+                        _wb_exec["error_code"]    = _wb_res.error_code
+                        _wb_exec["error_message"] = _wb_res.error_message
+                    logger.info(
+                        "process_chat | website_builder | ok=%s | status=%s | model=%s | endpoint=%s | ms=%d | repair=%s | kind=%s",
+                        _wb_res.ok, _wb_exec["status"], _wb_res.model, _wb_res.endpoint,
+                        _wb_res.latency_ms, _wb_is_planning_repair, _wb_res.error_kind,
+                    )
+                    _wb_md: dict = {}
+                    if _wb_research_meta:
+                        _wb_md["research"] = {
+                            "did_research":        bool(_wb_research_meta.get("did_research")),
+                            "status":              _wb_research_meta.get("status") or (
+                                "used_sources" if _wb_research_meta.get("did_research") else "no_sources"
+                            ),
+                            "provider":            _wb_research_meta.get("provider"),
+                            "attempted_providers": _wb_research_meta.get("attempted_providers") or [],
+                            "queries":             _wb_research_meta.get("queries") or [],
+                            "query_count":         int(_wb_research_meta.get("query_count") or 0),
+                            "angles":              _wb_research_meta.get("angles") or [],
+                            "source_count":        int(_wb_research_meta.get("source_count") or 0),
+                            "fallback_reason":     _wb_research_meta.get("fallback_reason"),
+                        }
+                        _wb_srcs = _wb_research_meta.get("sources") or []
+                        if _wb_srcs:
+                            _wb_md["sources"] = _wb_srcs
+                    _wb_md["ai_execution"] = _wb_exec
+                    return {
+                        "reply":      _wb_res.text if _wb_res.ok else "",
+                        "intent":     canonical,
+                        "model":      _wb_res.model,
+                        "provider":   _wb_res.provider,
+                        "request_id": _wb_res.request_id,
+                        "mode":       canonical,
+                        "metadata":   _wb_md or None,
+                    }
 
                 reply = await ask_ai(
                     message, sys_p, [] if _fb_isolated else history,
