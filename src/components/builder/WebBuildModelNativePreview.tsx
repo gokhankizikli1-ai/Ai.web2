@@ -1,4 +1,4 @@
-import { Component, useEffect, useMemo, useRef, type CSSProperties, type ErrorInfo, type ReactNode } from 'react';
+import { Component, useEffect, useMemo, useRef, type ErrorInfo, type ReactNode } from 'react';
 import { SandpackProvider, SandpackLayout, SandpackPreview, useSandpack, type SandpackFiles, type SandpackSetup } from '@codesandbox/sandpack-react';
 import { useLanguageStore } from '@/stores/languageStore';
 import type { WebBuildFile } from '@/lib/webBuildPayload';
@@ -206,6 +206,63 @@ const POSTCSS_CONFIG_CODE = [
   '};',
   '',
 ].join('\n');
+
+/* ── Phase 13G — shared HOST-SIDE viewport contract ────────────────────────────
+ *
+ * These rules style ONLY Korvix's own Sandpack HOST wrapper chain — never the
+ * generated iframe DOCUMENT (that stays byte-for-byte the model's own project and
+ * owns its own scroll/positioning). They fix two host-shell defects that made the
+ * candidate look "broken" independently of any generated CSS:
+ *
+ *   1. Vertical collapse / large empty areas — SandpackProvider renders a
+ *      `.sp-wrapper` whose default height is `auto`. Our explicit 70vh / dvh
+ *      container height therefore never reached SandpackLayout → the preview → the
+ *      iframe, so the iframe collapsed to its content height. Re-establishing
+ *      `height: 100%` down the wrapper chain lets the declared viewport propagate.
+ *   2. "Thin vertical strip" width collapse — the wrapper chain is flex-based; a
+ *      flex item without `min-width: 0` / `min-height: 0` cannot shrink below its
+ *      content's intrinsic size, so at narrow device widths it collapsed instead of
+ *      letting the iframe fill the frame. Adding those unblocks correct shrinking.
+ *
+ * Scoped under the unique `.korvix-mnp-viewport` class (never a global `.sp-*`
+ * rule), with NO `!important`, so nothing here can leak into other Sandpack usages
+ * or override the generated project's own layout decisions. Standalone height uses
+ * the modern dynamic viewport unit `dvh` with a plain `vh` fallback declared first
+ * (browsers that don't understand `dvh` keep the `vh` value), always reserving the
+ * ~44px standalone Korvix chrome so the preview never exceeds the available height. */
+const PREVIEW_VIEWPORT_STYLE = [
+  '.korvix-mnp-viewport { position: relative; width: 100%; min-width: 0; box-sizing: border-box; overflow: hidden; }',
+  '.korvix-mnp-embedded { height: 70vh; min-height: 560px; }',
+  '.korvix-mnp-standalone { height: calc(100vh - 44px); height: calc(100dvh - 44px); min-height: 480px; }',
+  '.korvix-mnp-viewport .sp-wrapper { width: 100%; height: 100%; min-width: 0; min-height: 0; }',
+  '.korvix-mnp-viewport .sp-layout { width: 100%; height: 100%; min-width: 0; min-height: 0; border: none; border-radius: 0; }',
+  '.korvix-mnp-viewport .sp-stack { width: 100%; height: 100%; min-width: 0; min-height: 0; }',
+  '.korvix-mnp-viewport .sp-preview-container { width: 100%; height: 100%; min-width: 0; min-height: 0; flex: 1 1 0%; }',
+  '.korvix-mnp-viewport .sp-preview-iframe { width: 100%; height: 100%; min-width: 0; min-height: 0; flex: 1 1 0%; border: 0; }',
+].join('\n');
+
+/**
+ * Host viewport shell shared by BOTH the embedded panel and the standalone route so
+ * the two surfaces resolve to the SAME sizing contract (only the height class differs:
+ * a 70vh drawer vs. the standalone viewport below Korvix chrome). The host shell owns
+ * the frame dimensions and clipping; the generated document keeps its own scroll inside
+ * the iframe. `data-preview-viewport` is a real host-owned diagnostic — it reports the
+ * host mode only and makes NO claim about the generated document's rendered layout.
+ */
+function PreviewViewportShell({ mode, candidate, children }: { mode: 'embedded' | 'standalone'; candidate?: boolean; children: ReactNode }) {
+  return (
+    <>
+      <style>{PREVIEW_VIEWPORT_STYLE}</style>
+      <div
+        className={`korvix-mnp-viewport korvix-mnp-${mode}`}
+        data-preview-viewport={mode}
+        data-preview-candidate={candidate ? 'true' : 'false'}
+      >
+        {children}
+      </div>
+    </>
+  );
+}
 
 /** Required entry files that must be present + non-empty before a sandbox can start. */
 const REQUIRED_ENTRY_PATHS = ['src/main.tsx', 'src/App.tsx', 'src/styles.css'];
@@ -421,13 +478,9 @@ export default function WebBuildModelNativePreview({ files, mode = 'embedded', o
     dependencies: SANDBOX_DEPENDENCIES,
   }), []);
 
-  // Embedded: at least 560px, sized for the existing 70vh drawer. Standalone: fill the
-  // viewport below the Korvix browser chrome. The generated site controls its own
-  // full-width layout inside the iframe.
-  const containerStyle: CSSProperties = mode === 'standalone'
-    ? { height: 'calc(100vh - 44px)', minHeight: 480, width: '100%' }
-    : { height: '70vh', minHeight: 560, width: '100%' };
-
+  // Embedded: sized for the existing 70vh drawer. Standalone: fill the viewport below
+  // the Korvix browser chrome. Both go through the shared PreviewViewportShell sizing
+  // contract; the generated site controls its own full-width layout inside the iframe.
   const L = (en: string, tr: string) => (lang === 'tr' ? tr : en);
 
   // Phase 13A — mount the public-API runtime observer only when a caller wants snapshots
@@ -437,37 +490,41 @@ export default function WebBuildModelNativePreview({ files, mode = 'embedded', o
 
   if (!hasEntryFiles) {
     return (
-      <div className="flex min-h-[240px] flex-col items-center justify-center gap-2 px-6 py-12 text-center" style={mode === 'standalone' ? containerStyle : undefined}>
-        <p className="text-[14px] font-semibold text-white">
-          {L('Model-native preview could not start', 'Model-native önizleme başlatılamadı')}
-        </p>
-        <p className="mx-auto max-w-sm text-[12px] leading-relaxed text-[#94A3B8]">
-          {L(
-            'The generated project is missing a required entry file (src/main.tsx, src/App.tsx or src/styles.css). The validated files remain available in All Files.',
-            'Oluşturulan projede gerekli bir giriş dosyası (src/main.tsx, src/App.tsx veya src/styles.css) eksik. Doğrulanmış dosyalar Tüm Dosyalar’da kullanılabilir.',
-          )}
-        </p>
-      </div>
+      <PreviewViewportShell mode={mode} candidate={candidate}>
+        <div className="flex h-full min-h-[240px] w-full flex-col items-center justify-center gap-2 px-6 py-12 text-center">
+          <p className="text-[14px] font-semibold text-white">
+            {L('Model-native preview could not start', 'Model-native önizleme başlatılamadı')}
+          </p>
+          <p className="mx-auto max-w-sm text-[12px] leading-relaxed text-[#94A3B8]">
+            {L(
+              'The generated project is missing a required entry file (src/main.tsx, src/App.tsx or src/styles.css). The validated files remain available in All Files.',
+              'Oluşturulan projede gerekli bir giriş dosyası (src/main.tsx, src/App.tsx veya src/styles.css) eksik. Doğrulanmış dosyalar Tüm Dosyalar’da kullanılabilir.',
+            )}
+          </p>
+        </div>
+      </PreviewViewportShell>
     );
   }
 
   const boundaryFallback = (
-    <div className="flex min-h-[240px] flex-col items-center justify-center gap-2 px-6 py-12 text-center" style={mode === 'standalone' ? containerStyle : undefined}>
-      <p className="text-[14px] font-semibold text-white">
-        {L('Model-native preview could not start.', 'Model-native önizleme başlatılamadı.')}
-      </p>
-      <p className="mx-auto max-w-sm text-[12px] leading-relaxed text-[#94A3B8]">
-        {L(
-          'The validated files remain available in All Files.',
-          'Doğrulanmış dosyalar Tüm Dosyalar’da kullanılabilir.',
-        )}
-      </p>
-    </div>
+    <PreviewViewportShell mode={mode} candidate={candidate}>
+      <div className="flex h-full min-h-[240px] w-full flex-col items-center justify-center gap-2 px-6 py-12 text-center">
+        <p className="text-[14px] font-semibold text-white">
+          {L('Model-native preview could not start.', 'Model-native önizleme başlatılamadı.')}
+        </p>
+        <p className="mx-auto max-w-sm text-[12px] leading-relaxed text-[#94A3B8]">
+          {L(
+            'The validated files remain available in All Files.',
+            'Doğrulanmış dosyalar Tüm Dosyalar’da kullanılabilir.',
+          )}
+        </p>
+      </div>
+    </PreviewViewportShell>
   );
 
   return (
     <SandpackErrorBoundary fallback={boundaryFallback}>
-      <div style={containerStyle} data-preview-candidate={candidate ? 'true' : 'false'}>
+      <PreviewViewportShell mode={mode} candidate={candidate}>
         <SandpackProvider
           theme="dark"
           template="react-ts"
@@ -486,7 +543,7 @@ export default function WebBuildModelNativePreview({ files, mode = 'embedded', o
             />
           </SandpackLayout>
         </SandpackProvider>
-      </div>
+      </PreviewViewportShell>
     </SandpackErrorBoundary>
   );
 }
