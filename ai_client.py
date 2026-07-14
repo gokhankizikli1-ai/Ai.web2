@@ -508,13 +508,20 @@ async def ask_openai_website_structured(
 ) -> StructuredAIResult:
     """Phase 13E — dedicated, isolated OpenAI Responses API call for website_builder
     planning (initial planning + strict planning repair + design-plan repair). One
-    request; medium reasoning effort; no Gemini/other-model fallback; no retry."""
+    request; no Gemini/other-model fallback; no retry.
+
+    Phase 13E.3 — reasoning effort is LOW (was medium): website_builder is now
+    PLANNING-ONLY (strategy / architecture / copy contract, no React source). The
+    contract is explicit and structured, so it does not need medium hidden reasoning —
+    lowering it reduces the work that was pushing GPT-5.6 past the 180s planning window.
+    This changes ONLY the website-planning wrapper; the frontend builder / review /
+    revision reasoning selection is untouched."""
     return await ask_openai_responses_structured(
         prompt=prompt,
         system=system,
         model=model,
         max_output_tokens=max_output_tokens,
-        reasoning_effort="medium",
+        reasoning_effort="low",
         connect_timeout_s=WEBSITE_CONNECT_TIMEOUT_S,
         read_timeout_s=WEBSITE_READ_TIMEOUT_S,
         operation="website planning",
