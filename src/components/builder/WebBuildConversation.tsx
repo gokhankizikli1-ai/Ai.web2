@@ -920,6 +920,12 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
           if (typeof a.requestLimitCharCount === 'number') ownerRows.push([`planningAttempt${n}RequestLimitChars`, String(a.requestLimitCharCount)]);
           if (typeof a.backendSafetyRejected === 'boolean') ownerRows.push([`planningAttempt${n}BackendSafetyRejected`, String(a.backendSafetyRejected)]);
           if (a.backendSafetyCode) ownerRows.push([`planningAttempt${n}BackendSafetyCode`, a.backendSafetyCode]);
+          // Phase 13E.2 — client per-attempt timing truth. These are client timers/elapsed
+          // milliseconds — NOT token usage and NOT provider latency.
+          if (typeof a.clientTimedOut === 'boolean') ownerRows.push([`planningAttempt${n}ClientTimedOut`, String(a.clientTimedOut)]);
+          if (typeof a.clientTimeoutMs === 'number') ownerRows.push([`planningAttempt${n}ClientTimeoutMs`, String(a.clientTimeoutMs)]);
+          if (typeof a.workflowElapsedMs === 'number') ownerRows.push([`planningAttempt${n}WorkflowElapsedMs`, String(a.workflowElapsedMs)]);
+          if (typeof a.workflowRemainingMs === 'number') ownerRows.push([`planningAttempt${n}WorkflowRemainingMs`, String(a.workflowRemainingMs)]);
         });
         ownerRows.push(['planningRegisteredTokenBudget', '8000']);
         ownerRows.push(['planningResearchPassCount', String(step.research ? 1 : 0)]);
@@ -928,6 +934,13 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
         // safety path (a request-size row is present ⇒ this build used the new transport).
         if (planningExecutions.some((a) => typeof a.requestCharCount === 'number')) {
           ownerRows.push(['planningSafetyPath', 'structured-website-builder']);
+        }
+        // Phase 13E.2 — the fixed client timing policy (per-attempt timers within a bounded
+        // workflow). Shown only when planning telemetry exists on this build.
+        if (planningExecutions.some((a) => typeof a.clientTimeoutMs === 'number' || a.clientTimedOut === true)) {
+          ownerRows.push(['planningAttemptTimeoutPolicy', 'per-attempt']);
+          ownerRows.push(['planningAttemptConfiguredTimeoutMs', '210000']);
+          ownerRows.push(['planningWorkflowConfiguredTimeoutMs', '480000']);
         }
       }
     }
