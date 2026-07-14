@@ -80,6 +80,10 @@ class SafetyResult:
     reason:  Optional[str] = None
     code:    Optional[str] = None
     message_for_user: Optional[str] = None
+    # Phase 13E.1 — additive, bounded telemetry for structured-builder rejections.
+    # Numbers only (never message contents). Old callers ignore these safely.
+    request_char_count: Optional[int] = None
+    limit_char_count:   Optional[int] = None
 
 
 def check_message(user_id: str, message: str) -> SafetyResult:
@@ -208,6 +212,145 @@ def check_structured_builder_message(user_id: str, message: str) -> SafetyResult
     return SafetyResult(allowed=True)
 
 
+# ── Structured website-builder safety path (Phase 13E.1) ───────────────────
+# The dedicated `website_builder` mode transports a MACHINE-GENERATED planning
+# envelope, NOT an ordinary chat message: the task marker + the Korvix-generated
+# website-language directive + the exact planning-section contract + the Design
+# Thinking / Website Experience / Entry Flow / Conversion Journey requirements +
+# the original idea (and, on a repair, a bounded slice of the previous reply).
+# That request is intentionally FAR larger than a human chat message (well above the
+# generic 4k cap that was rejecting every fresh Web Build with `safety_length`), yet
+# much smaller than a complete frontend SOURCE project (the 125k frontend cap).
+#
+# Measured generated request sizes (Phase 13E.1 vitest, buildWebBuild* output; the
+# injected website-language directive adds ~180 chars at send time):
+#   • normal fresh initial request      ~10.6k chars
+#   • very verbose fresh request        ~16k  chars (a ~5.6k-char idea)
+#   • strict planning repair request    ~4.5k chars (incl. up to a 2k previous-reply slice)
+#   • design-plan repair request        ~6.2k chars (incl. up to a 3.5k previous-reply slice)
+# The smallest hard cap that leaves legitimate requests generous headroom while still
+# bounding abuse is 50,000 — comfortably above the ~16k realistic maximum and far below
+# the 125k frontend-source cap. It is NOT reused from _STRUCTURED_MAX_LEN (which stays
+# specific to full frontend projects) and does NOT touch the generic 4k cap.
+_WEBSITE_STRUCTURED_MAX_LEN = 50_000
+
+_WEB_BUILD_MARKER            = "[WEB BUILD REQUEST]"
+_WEB_PLANNING_REPAIR_MARKER  = "[WEB BUILD PLANNING REPAIR REQUEST]"
+_WEB_DESIGN_REPAIR_MARKER    = "[WEB BUILD DESIGN PLAN REPAIR REQUEST]"
+
+
+def classify_website_builder_task(message: str) -> Optional[str]:
+    """Validate + classify a website_builder structured envelope WITHOUT executing or
+    parsing the embedded idea. Returns one of:
+
+        "initial"            — a fresh planning request (no repair marker)
+        "strict-repair"      — a strict planning repair
+        "design-plan-repair" — a design-thinking-plan quality repair
+        "revision"           — a section-level revision (carries `Requested change:`)
+
+    or None when the envelope is malformed/ambiguous. Pure; never raises.
+
+    A valid envelope must begin with exactly one `[WEB BUILD REQUEST]` marker and carry
+    exactly one primary content anchor line — either `Idea:` (fresh/repair) or
+    `Requested change:` (revision). A request may carry at most ONE repair marker KIND,
+    each at most once, and never both — a mixed/duplicated repair envelope is rejected.
+    """
+    if not isinstance(message, str):
+        message = str(message or "")
+    # Exactly one leading task marker.
+    if not message.startswith(_WEB_BUILD_MARKER):
+        return None
+    if message.count(_WEB_BUILD_MARKER) != 1:
+        return None
+    # Exactly one primary content anchor line (planning `Idea:` OR revision
+    # `Requested change:`). A planning request that DROPPED its `Idea:` line, or a
+    # request with two content anchors, is malformed.
+    lines = message.split("\n")
+    idea_lines   = sum(1 for ln in lines if ln.startswith("Idea:"))
+    change_lines = sum(1 for ln in lines if ln.startswith("Requested change:"))
+    if idea_lines + change_lines != 1:
+        return None
+    # Repair markers: at most one KIND, each at most once, never both.
+    strict = message.count(_WEB_PLANNING_REPAIR_MARKER)
+    design = message.count(_WEB_DESIGN_REPAIR_MARKER)
+    if strict > 1 or design > 1:
+        return None
+    if strict >= 1 and design >= 1:
+        return None
+    if change_lines == 1:
+        return "revision"
+    if strict == 1:
+        return "strict-repair"
+    if design == 1:
+        return "design-plan-repair"
+    return "initial"
+
+
+def check_structured_website_builder_message(user_id: str, message: str) -> SafetyResult:
+    """
+    Safety path for the dedicated `website_builder` structured planning/revision request.
+    Validates the website envelope structure + a bounded structured size cap + the
+    per-user throttle. Never raises; deliberately does NOT run the generic
+    prompt-injection regex over the machine-generated wrapper (the transported idea +
+    previous reply are untrusted DATA governed by the website_builder system prompt, not
+    executable instructions). Applies ONLY to a valid explicit website_builder envelope.
+    """
+    with _STATS_LOCK:
+        _STATS["checks"] += 1
+
+    if not isinstance(message, str):
+        message = str(message or "")
+    msg_len = len(message)
+
+    # 1. Website structured length cap (NOT the generic 4k, NOT the 125k frontend cap).
+    if msg_len > _WEBSITE_STRUCTURED_MAX_LEN:
+        _bump("rejections_length", f"website structured length {msg_len} > {_WEBSITE_STRUCTURED_MAX_LEN}")
+        return SafetyResult(
+            allowed=False,
+            reason=f"website structured message exceeds {_WEBSITE_STRUCTURED_MAX_LEN} characters",
+            code="structured_website_length",
+            message_for_user=(
+                "Web Build planlama isteği güvenli sınırı aştı. Site fikrin korunarak "
+                "istek daha küçük hazırlanmalı. — The generated Web Build planning request "
+                "exceeded the safe size limit; it must be prepared smaller while keeping your idea."
+            ),
+            request_char_count=msg_len,
+            limit_char_count=_WEBSITE_STRUCTURED_MAX_LEN,
+        )
+
+    # 2. Envelope structure — a valid, unambiguous website_builder transport.
+    if classify_website_builder_task(message) is None:
+        _bump("rejections_injection", "malformed_website_builder_envelope")
+        return SafetyResult(
+            allowed=False,
+            reason="malformed website builder envelope",
+            code="malformed_website_envelope",
+            message_for_user=(
+                "Web Build planlama isteği biçimi geçersiz. İstek modele gönderilmedi. — "
+                "The Web Build planning request format was invalid; it was not sent to the model."
+            ),
+            request_char_count=msg_len,
+            limit_char_count=_WEBSITE_STRUCTURED_MAX_LEN,
+        )
+
+    # 3. Per-user throttle (unchanged). The generic injection regex is deliberately NOT
+    #    run over the machine-generated wrapper.
+    if not _throttle_ok(str(user_id)):
+        _bump("rejections_throttle", "per_minute_limit")
+        return SafetyResult(
+            allowed=False, reason="per-minute rate limit",
+            code="throttle",
+            message_for_user=(
+                "Web Build istekleri çok hızlı gönderildi. Birkaç saniye bekleyip tekrar dene. — "
+                "Too many Web Build requests; wait a few seconds and try again."
+            ),
+            request_char_count=msg_len,
+            limit_char_count=_WEBSITE_STRUCTURED_MAX_LEN,
+        )
+
+    return SafetyResult(allowed=True, request_char_count=msg_len, limit_char_count=_WEBSITE_STRUCTURED_MAX_LEN)
+
+
 def _throttle_ok(user_id: str) -> bool:
     """Sliding-window rate limit. Returns True if request can proceed."""
     if _PER_MIN_LIMIT <= 0:
@@ -240,4 +383,9 @@ def stats() -> dict:
             "max_input_chars":  _MAX_LEN,
             "per_minute_limit": _PER_MIN_LIMIT,
             "tracked_users":    len(_USER_WINDOWS),
+            # Phase 13E.1 — additive per-path structured caps (numbers only, backward
+            # compatible; existing keys above are unchanged). No message contents.
+            "generic_max_input_chars":             _MAX_LEN,
+            "website_structured_max_input_chars":  _WEBSITE_STRUCTURED_MAX_LEN,
+            "frontend_structured_max_input_chars": _STRUCTURED_MAX_LEN,
         }
