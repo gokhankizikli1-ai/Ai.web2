@@ -6,6 +6,8 @@ import { useOwnerMode } from '@/hooks/useOwnerMode';
 import KorvixAvatar from '@/components/builder/KorvixAvatar';
 import WebBuildFileView from '@/components/builder/WebBuildFileView';
 import WebBuildPreviewPanel from '@/components/builder/WebBuildPreviewPanel';
+import WebBuildActivityTimeline from '@/components/builder/WebBuildActivityTimeline';
+import type { WebBuildActivityState } from '@/lib/webBuildActivity';
 import { deriveModelNativeCandidate } from '@/lib/webBuildRuntimePreview';
 import type {
   WebBuildStep, WebBuildFile, WebBuildSectionItem, PlanningQuality,
@@ -141,13 +143,44 @@ function LiveThink({ kind }: { kind: 'build' | 'revision' }) {
   );
 }
 
-function LivePhases({ prompt, kind = 'build' }: { prompt: string; kind?: 'build' | 'revision' }) {
+/**
+ * Phase 13H — the in-flight run. When the caller provides a real `activity` state (the
+ * embedded Chat Web Build surface, driven by real pipeline boundaries) the truthful
+ * expandable timeline is shown. Callers that do NOT provide activity (e.g. the standalone
+ * WebsiteBuilder page, out of scope for this phase) keep the legacy deterministic `LiveThink`
+ * so their behaviour is unchanged.
+ */
+function LivePhases({
+  prompt, kind = 'build', activity, startedAt,
+}: { prompt: string; kind?: 'build' | 'revision'; activity?: WebBuildActivityState; startedAt?: number }) {
   return (
     <div className="space-y-3">
       <UserMessage text={prompt} />
       <div className="flex items-start gap-2.5">
         <div className="mt-[3px]"><KorvixAvatar size={15} active /></div>
-        <LiveThink kind={kind} />
+        {activity
+          ? <WebBuildActivityTimeline state={activity} startedAt={startedAt ?? Date.now()} variant="live" />
+          : <LiveThink kind={kind} />}
+      </div>
+    </div>
+  );
+}
+
+/** Phase 13H — the compact completed/failed activity summary for the latest turn (session-
+ *  local UI state; never persisted). Collapsed by default, expandable to the full timeline.
+ *  On a fresh-build failure there is no result turn, so the user prompt is shown here too. */
+function ActivitySummaryBlock({
+  summary, hasSteps,
+}: {
+  summary: { prompt: string; startedAt: number; endedAt: number; state: WebBuildActivityState };
+  hasSteps: boolean;
+}) {
+  return (
+    <div className="space-y-3">
+      {!hasSteps && <UserMessage text={summary.prompt} />}
+      <div className="flex items-start gap-2.5">
+        <div className="mt-[3px]"><KorvixAvatar size={15} /></div>
+        <WebBuildActivityTimeline state={summary.state} startedAt={summary.startedAt} endedAt={summary.endedAt} variant="summary" />
       </div>
     </div>
   );
@@ -1247,8 +1280,13 @@ interface WebBuildConversationProps {
   files: WebBuildFile[];
   sectionItems: WebBuildSectionItem[];
   brief: { type?: string; audience?: string; goal?: string; style?: string };
-  /** A build in progress to append at the bottom (phases run during the call). */
-  live?: { prompt: string; kind?: 'build' | 'revision' } | null;
+  /** A build in progress to append at the bottom (phases run during the call). Phase 13H —
+   *  when `activity` is present the truthful expandable timeline is shown; otherwise the
+   *  legacy deterministic `LiveThink` renders (unchanged) for out-of-scope callers. */
+  live?: { prompt: string; kind?: 'build' | 'revision'; activity?: WebBuildActivityState; startedAt?: number } | null;
+  /** Phase 13H — the compact completed/failed activity summary for the latest turn (session-
+   *  local; never persisted). Shown only when no live run is in flight. Optional → unchanged. */
+  activitySummary?: { prompt: string; startedAt: number; endedAt: number; state: WebBuildActivityState } | null;
   /** Extra cards (e.g. Save to Project) appended after the last assistant msg. */
   extraCards?: ReactNode;
   slug?: string;
@@ -1259,7 +1297,7 @@ interface WebBuildConversationProps {
 }
 
 export default function WebBuildConversation({
-  steps, files, sectionItems, brief, live, extraCards, slug, runId,
+  steps, files, sectionItems, brief, live, activitySummary, extraCards, slug, runId,
 }: WebBuildConversationProps) {
   const { t } = useLanguageStore();
   const [panel, setPanel] = useState<'preview' | 'files' | null>(null);
@@ -1301,7 +1339,8 @@ export default function WebBuildConversation({
         );
       })}
 
-      {live && <LivePhases prompt={live.prompt} kind={live.kind || 'build'} />}
+      {live && <LivePhases prompt={live.prompt} kind={live.kind || 'build'} activity={live.activity} startedAt={live.startedAt} />}
+      {!live && activitySummary && <ActivitySummaryBlock summary={activitySummary} hasSteps={steps.length > 0} />}
 
       {/* Slide-in panel (Preview / All files) */}
       <AnimatePresence>

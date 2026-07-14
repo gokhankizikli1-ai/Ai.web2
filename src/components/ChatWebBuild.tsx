@@ -20,6 +20,10 @@ import { saveWebBuildPayloadToProject } from '@/lib/webBuildProject';
 import { upsertWebBuildChatSession } from '@/lib/webBuildChatSession';
 import { stashPreview } from '@/lib/webBuildPreviewStash';
 import { getProjects } from '@/stores/projectStore';
+import {
+  initBuildActivity, initRevisionActivity, applyActivityUpdate, completeActivity, failActiveActivity,
+  type WebBuildActivityState, type WebBuildActivityReporter, type WebBuildActivityDetailRow,
+} from '@/lib/webBuildActivity';
 
 /**
  * Embedded Web Build surface — the SAME generation pipeline as the standalone
@@ -78,7 +82,11 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
   const [input, setInput] = useState('');
   const [payload, setPayload] = useState<WebBuildPayload | null>(null);
   const [animateStepId, setAnimateStepId] = useState<string | undefined>(undefined);
-  const [live, setLive] = useState<{ prompt: string; kind: 'build' | 'revision' } | null>(null);
+  // Phase 13H — the in-flight run carries a truthful activity timeline (advanced ONLY by real
+  // pipeline boundaries). `summary` keeps the completed/failed timeline for the latest turn
+  // after the run ends (session-local UI state; never persisted into the saved payload).
+  const [live, setLive] = useState<{ prompt: string; kind: 'build' | 'revision'; startedAt: number; activity: WebBuildActivityState } | null>(null);
+  const [summary, setSummary] = useState<{ prompt: string; startedAt: number; endedAt: number; state: WebBuildActivityState } | null>(null);
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -92,6 +100,11 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
   const lastPromptRef = useRef('');
   const modeRef = useRef<BuilderMode | null>(initialMode);
   const bootedRef = useRef(false);
+  // Phase 13H — the authoritative activity state for the CURRENT run + its identity, kept in
+  // refs so the reporter and the finalizer always read/write the latest value synchronously
+  // (no stale closures) and a superseded/aborted run can never mutate a newer run's timeline.
+  const activityRef = useRef<WebBuildActivityState | null>(null);
+  const liveMetaRef = useRef<{ prompt: string; startedAt: number; controller: AbortController } | null>(null);
 
   useEffect(() => () => { abortRef.current?.abort(); }, []);
 
@@ -113,8 +126,41 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
     onPersistSession?.(owningChatSessionId, runId, title);
   }, [lang, onPersistSession, sessionId]);
 
-  const startLive = useCallback((prompt: string, kind: 'build' | 'revision') => {
-    setLive({ prompt, kind });
+  // Phase 13H — begin a truthful activity run: seed the expected timeline (first stage already
+  // active), record the run identity, and clear any prior completed summary.
+  const startLive = useCallback((prompt: string, kind: 'build' | 'revision', controller: AbortController) => {
+    const startedAt = Date.now();
+    const activity = kind === 'revision' ? initRevisionActivity() : initBuildActivity();
+    activityRef.current = activity;
+    liveMetaRef.current = { prompt, startedAt, controller };
+    setSummary(null);
+    setLive({ prompt, kind, startedAt, activity });
+  }, []);
+
+  // A reporter bound to ONE run. Stale/aborted-run events are dropped (identity guard), so a
+  // superseded run can never write into the current timeline (scenario N). Reporter errors are
+  // contained: activity is UI telemetry and must never affect generation.
+  const makeReporter = useCallback((controller: AbortController): WebBuildActivityReporter => (update) => {
+    if (abortRef.current !== controller) return;
+    const cur = activityRef.current;
+    if (!cur) return;
+    const next = applyActivityUpdate(cur, update);
+    if (next === cur) return;
+    activityRef.current = next;
+    setLive((prev) => (prev && abortRef.current === controller ? { ...prev, activity: next } : prev));
+  }, []);
+
+  // Finalize the run's timeline into the collapsed summary (success → completed, error →
+  // active stage failed) and end the live view. Reads the latest activity from the ref.
+  const finishActivity = useCallback((controller: AbortController, outcome: 'completed' | 'failed') => {
+    if (abortRef.current !== controller) return;
+    const st = activityRef.current;
+    const meta = liveMetaRef.current;
+    if (!st || !meta) return;
+    const finalState = outcome === 'completed' ? completeActivity(st) : failActiveActivity(st);
+    activityRef.current = finalState;
+    setSummary({ prompt: meta.prompt, startedAt: meta.startedAt, endedAt: Date.now(), state: finalState });
+    setLive(null);
   }, []);
 
   const failLive = useCallback((err: unknown) => {
@@ -181,30 +227,57 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
     setPayload(null);
     setSavedProjectId(undefined);
     setSaveStep('closed');
-    startLive(trimmed, 'build');
+    startLive(trimmed, 'build', controller);
+    const reporter = makeReporter(controller);
 
     try {
+      // Understanding is local (prompt validated + request prepared). Research + planning are a
+      // SINGLE backend planning call, so from here they resolve together: research is active
+      // during the call, then research + planning complete from the returned real result.
+      reporter({ phase: 'request-understanding', status: 'completed' });
+      reporter({ phase: 'research', status: 'active' });
       const res = await generateWebBuild(trimmed, { signal: controller.signal, mode });
       if (abortRef.current !== controller) return;
+      const r = res.research;
+      const researchRan = !!r && r.didResearch === true;
+      reporter({
+        phase: 'research', status: researchRan ? 'completed' : 'skipped',
+        detailRows: researchRan
+          ? [{ label: 'sources', value: String(r?.sourceCount ?? 0) }]
+          : [{ label: 'note', value: lang === 'tr' ? 'kaynak kullanılmadı' : 'no sources used' }],
+      });
+      reporter({ phase: 'planning', status: 'active' });
+      reporter({ phase: 'planning', status: 'completed', detailRows: [{ label: 'sections', value: String(res.sections?.length ?? 0) }] });
+
+      reporter({ phase: 'specification', status: 'active' });
       const planned = buildWebBuildPayload(trimmed, res, undefined, lang);
+      const spec = planned.steps[planned.steps.length - 1]?.artifacts?.frontendBuildSpec;
+      const specRows: WebBuildActivityDetailRow[] = [{ label: 'sections', value: String(planned.sectionItems?.length ?? spec?.architecture?.sections?.length ?? 0) }];
+      if (spec?.language) specRows.unshift({ label: 'language', value: spec.language });
+      if (spec?.outputContract?.requiredFiles?.length) specRows.push({ label: 'requiredFiles', value: String(spec.outputContract.requiredFiles.length) });
+      reporter({ phase: 'specification', status: 'completed', detailRows: specRows });
+
       // Phase 12E — one centralized frontend quality pipeline: the dedicated builder
       // call + Phase 12C/12D consumption, then the static design review + at most one
       // bounded repair + final acceptance. Fails open (keeps the validated project);
-      // only explicit caller cancellation throws.
-      const next = await runFrontendBuilderQualityPipeline(planned, { signal: controller.signal });
+      // only explicit caller cancellation throws. It reports the frontend-* stages itself.
+      const next = await runFrontendBuilderQualityPipeline(planned, { signal: controller.signal, reporter });
       if (abortRef.current !== controller) return;
+      reporter({ phase: 'preview', status: 'active' });
       setPayload(next);
       persist(next);
       stashLatestPreview(next, slugFromIdea(next.prompt), sessionId);
       setAnimateStepId(next.steps[next.steps.length - 1]?.id);
-      setLive(null);
+      reporter({ phase: 'preview', status: 'completed', detailRows: [{ label: 'files', value: String(next.files?.length ?? 0) }] });
+      finishActivity(controller, 'completed');
     } catch (err) {
       if (controller.signal.aborted) return;
+      finishActivity(controller, 'failed');
       failLive(err);
     } finally {
       if (abortRef.current === controller) setBusy(false);
     }
-  }, [startLive, failLive, lang, persist]);
+  }, [startLive, makeReporter, finishActivity, failLive, lang, persist, sessionId]);
   const runFreshRef = useRef(runFresh);
   runFreshRef.current = runFresh;
 
@@ -219,7 +292,8 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
 
     setBusy(true);
     setErrorMsg('');
-    startLive(trimmed, 'revision');
+    startLive(trimmed, 'revision', controller);
+    const reporter = makeReporter(controller);
 
     try {
       // Phase 13D — a REAL source-to-source model-native revision: exactly ONE
@@ -227,20 +301,49 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
       // research, upstream agents or the Phase 12E quality pipeline, and NEVER lets a
       // deterministic fallback overwrite the good project. A failed/rejected/destructive
       // revision throws a bounded WebBuildError and leaves the current payload untouched.
+      //
+      // Phase 13H — the revision path exposes no fine-grained reporter (kept out of scope to
+      // stay within the file budget and to leave the revision engine untouched). We drive a
+      // truthful COARSE timeline here: generation is active across the single model call; on
+      // success the validation + preservation rows complete from the REAL revision artifacts
+      // (never fabricated), then preview. A thrown revision leaves the active generation stage
+      // failed and the current project preserved.
+      reporter({ phase: 'revision-understanding', status: 'completed' });
+      reporter({ phase: 'revision-generation', status: 'active' });
       const next = await runFrontendBuilderRevision(payload, trimmed, { signal: controller.signal, uiLanguage: lang });
       if (abortRef.current !== controller) return;
+      reporter({ phase: 'revision-generation', status: 'completed' });
+      const step = next.steps[next.steps.length - 1];
+      const rev = step?.artifacts?.frontendBuilderRevision;
+      const val = step?.artifacts?.frontendBuilderValidation;
+      reporter({
+        phase: 'revision-validation', status: 'completed',
+        detailRows: val ? [{ label: 'files', value: String(val.fileCount ?? 0) }, { label: 'validation', value: val.status }] : undefined,
+      });
+      reporter({
+        phase: 'revision-preservation', status: 'completed',
+        detailRows: rev ? [
+          { label: 'scope', value: rev.scope },
+          { label: 'changed', value: String(rev.changedFileCount ?? 0) },
+          { label: 'retained', value: `${rev.retainedFileCount ?? 0}/${rev.baseFileCount ?? 0}` },
+          { label: 'preserved', value: `${Math.round((rev.preservationRatio ?? 0) * 100)}%` },
+        ] : undefined,
+      });
+      reporter({ phase: 'revision-preview', status: 'active' });
       setPayload(next);
       persist(next);
       stashLatestPreview(next, slugFromIdea(next.prompt), sessionId);
-      setAnimateStepId(next.steps[next.steps.length - 1]?.id);
-      setLive(null);
+      setAnimateStepId(step?.id);
+      reporter({ phase: 'revision-preview', status: 'completed', detailRows: [{ label: 'files', value: String(next.files?.length ?? 0) }] });
+      finishActivity(controller, 'completed');
     } catch (err) {
       if (controller.signal.aborted) return;
+      finishActivity(controller, 'failed');
       failLive(err);
     } finally {
       if (abortRef.current === controller) setBusy(false);
     }
-  }, [payload, startLive, failLive, lang, persist]);
+  }, [payload, startLive, makeReporter, finishActivity, failLive, lang, persist, sessionId]);
 
   // Boot once: restore an existing session, else kick off the initial build.
   useEffect(() => {
@@ -260,7 +363,7 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
   // Keep the newest message in view as the conversation grows.
   useEffect(() => {
     feedEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [payload, live]);
+  }, [payload, live, summary]);
 
   const handleSubmit = useCallback(() => {
     const text = input.trim();
@@ -362,8 +465,9 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
             sectionItems={payload?.sectionItems ?? []}
             brief={payload?.brief ?? {}}
             live={live}
+            activitySummary={summary}
             extraCards={payload ? saveCard : undefined}
-            slug={slugFromIdea(payload?.prompt ?? live?.prompt ?? '')}
+            slug={slugFromIdea(payload?.prompt ?? live?.prompt ?? summary?.prompt ?? '')}
             animateStepId={animateStepId}
             runId={payload?.steps[payload.steps.length - 1]?.id}
           />
