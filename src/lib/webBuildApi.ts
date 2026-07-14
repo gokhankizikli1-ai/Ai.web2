@@ -165,6 +165,13 @@ export interface WebBuildPlanningExecutionAttempt {
   requestLimitCharCount?: number;
   backendSafetyCode?: string;
   backendSafetyRejected?: boolean;
+  /* ── Phase 13E.2 — client per-attempt timing truth (bounded; numbers only). `clientTimedOut`
+   *  is true only when THIS client attempt aborted on its own deadline before any response.
+   *  All optional → old saved builds keep loading. */
+  clientTimeoutMs?: number;
+  clientTimedOut?: boolean;
+  workflowElapsedMs?: number;
+  workflowRemainingMs?: number;
 }
 
 export interface WebBuildResult {
@@ -408,7 +415,30 @@ export type WebBuildErrorKind =
   // repair. A safety rejection means the request never reached the model; a quota/rate
   // rejection means the provider refused it. None of these is a malformed planning reply.
   | 'planning_request_too_large' | 'planning_request_rejected' | 'planning_throttled'
-  | 'planning_quota' | 'planning_rate_limited';
+  | 'planning_quota' | 'planning_rate_limited'
+  // Phase 13E.2 — the CLIENT per-attempt planning deadline (210s) fired before any response.
+  // Distinct from generic `timeout` (caller/network), from `planning_timeout` (the backend's
+  // authoritative 180s Responses timeout), and from a caller `cancelled`.
+  | 'planning_client_timeout';
+
+/** Phase 13E.2 — bounded context attached to a thrown planning client-timeout error so the
+ *  UI + developer diagnostics can identify the stage/deadline/elapsed without a fake build
+ *  step. No raw request / prompt / headers / provider payload. */
+export interface PlanningClientTimeoutReason {
+  kind: 'planning_client_timeout';
+  stage: WebBuildPlanningStage;
+  clientTimeoutMs: number;
+  workflowElapsedMs: number;
+}
+
+/** Phase 13E.2 — localized message for the client per-attempt planning deadline. It never
+ *  blames prompt complexity (a short prompt like "bana bir peyzaj sitesi yap" reproduced it),
+ *  never says the plan contract failed, and never says the frontend was malformed. */
+export function planningClientTimeoutMessage(lang: Language): string {
+  return lang === 'tr'
+    ? 'Web Build planlama isteği istemci zaman sınırı içinde tamamlanmadı. İstek durduruldu; eksik cevap site planı olarak kabul edilmedi.'
+    : 'The Web Build planning request did not finish within the client time limit. The request was stopped and no partial response was accepted as a site plan.';
+}
 
 /** Phase 13E.1 — the subset of planning error kinds raised by a backend safety/quota
  *  rejection (as opposed to a provider transport failure). */
@@ -505,7 +535,57 @@ export function webBuildErrorKeyFor(kind: WebBuildErrorKind): string {
   }
 }
 
-const BUILD_TIMEOUT_MS = 90_000;
+/* ── Phase 13E.2 — Web Build PLANNING client timing ────────────────────────────
+ * The old single `BUILD_TIMEOUT_MS = 90_000` aborted the whole planning workflow at 90s —
+ * BEFORE the backend website-planning Responses read timeout (180s) could return a
+ * truthful result, and it forced later attempts (strict / design-plan repair) to inherit
+ * whatever tiny sliver of the 90s remained. It is replaced by a bounded PER-ATTEMPT client
+ * timeout plus a separate overall workflow budget.
+ *
+ *   • PLANNING_ATTEMPT_TIMEOUT_MS  — per backend planning call. 210s = the backend's 180s
+ *     read timeout + a 30s transport/JSON-processing margin, so the backend/provider
+ *     timeout normally wins and returns truthful diagnostics before the client aborts.
+ *   • PLANNING_WORKFLOW_TIMEOUT_MS — the whole planning workflow (initial + optional strict
+ *     repair + optional design-plan repair) stays finite; no attempt starts once it is spent.
+ *   • OPTIONAL_REPAIR_MIN_BUDGET_MS — the optional design-plan quality nudge must not begin
+ *     with an unrealistically small remaining budget; below this it is skipped (not failed).
+ * These are CLIENT timers only — the backend 180s planning read timeout is unchanged. */
+const PLANNING_ATTEMPT_TIMEOUT_MS   = 210_000;
+const PLANNING_WORKFLOW_TIMEOUT_MS  = 480_000;
+const OPTIONAL_REPAIR_MIN_BUDGET_MS = 60_000;
+
+/**
+ * Phase 13E.2 — one fresh abort signal per planning backend call. The returned signal
+ * aborts when EITHER the parent (explicit caller cancellation) aborts OR this attempt's
+ * own local timeout fires. `timedOut()` distinguishes the two so a client planning
+ * deadline is never misreported as a caller cancellation (and vice-versa). `cleanup()`
+ * clears the timer and removes the parent listener — no timer or listener leaks, and a
+ * signal aborted by one attempt is never reused by the next. Pure aside from timers.
+ */
+function createPlanningAttemptSignal(opts: { parentSignal?: AbortSignal; timeoutMs: number }): {
+  signal: AbortSignal;
+  timedOut: () => boolean;
+  cleanup: () => void;
+} {
+  const controller = new AbortController();
+  let didTimeout = false;
+  const timeoutId = setTimeout(() => { didTimeout = true; controller.abort(); }, opts.timeoutMs);
+  const parent = opts.parentSignal;
+  const onParentAbort = () => controller.abort();
+  if (parent) {
+    if (parent.aborted) controller.abort();                 // already cancelled → not a timeout
+    else parent.addEventListener('abort', onParentAbort, { once: true });
+  }
+  return {
+    signal: controller.signal,
+    timedOut: () => didTimeout,
+    cleanup: () => {
+      clearTimeout(timeoutId);
+      if (parent) parent.removeEventListener('abort', onParentAbort);
+    },
+  };
+}
+
 /** The Design Thinking Plan specificity a fresh build must reach to skip / pass the
  *  one-shot design-plan repair nudge (Phase 9B-1/9B-2). Shared by both gates. */
 const GOOD_DESIGN_PLAN_SCORE = 65;
@@ -1180,21 +1260,53 @@ export async function generateWebBuild(
     if (tok) headers['Authorization'] = `Bearer ${tok}`;
   } catch { /* ignore */ }
 
-  // Own timeout, combined with the caller's abort signal. The SAME 90s budget
-  // covers BOTH the first attempt and the strict repair retry.
-  const timer = new AbortController();
-  const timeoutId = setTimeout(() => timer.abort(), BUILD_TIMEOUT_MS);
-  let timedOut = false;
-  const onTimeout = () => { timedOut = true; };
-  timer.signal.addEventListener('abort', onTimeout);
-  if (opts?.signal) {
-    if (opts.signal.aborted) timer.abort();
-    else opts.signal.addEventListener('abort', () => timer.abort(), { once: true });
-  }
+  // Phase 13E.2 — bounded OVERALL planning-workflow budget. Each backend planning call gets
+  // its OWN fresh per-attempt timer (see callBackend) constrained by whatever budget remains;
+  // there is no shared workflow-wide abort that can starve a later attempt. Explicit caller
+  // cancellation (opts.signal) still aborts the in-flight attempt immediately.
+  const workflowStartedAt = Date.now();
+  const remainingPlanningWorkflowMs = (): number =>
+    PLANNING_WORKFLOW_TIMEOUT_MS - (Date.now() - workflowStartedAt);
+  // Each attempt waits at most min(per-attempt cap, remaining workflow budget) — never
+  // longer than the workflow allows, and never a zero/negative window (guarded by callers).
+  const effectiveAttemptTimeoutMs = (): number =>
+    Math.min(PLANNING_ATTEMPT_TIMEOUT_MS, remainingPlanningWorkflowMs());
 
   // Phase 13E — truthful planning-transport telemetry (≤3 attempts), threaded onto the
   // accepted result's parse diagnostics via attachPlanningExecutions.
   const planningAttempts: WebBuildPlanningExecutionAttempt[] = [];
+  // Phase 13E.2 — record a client per-attempt timeout truthfully (no fake request id /
+  // model / provider success; endpoint unknown; fallbackUsed false; 0 response chars).
+  const recordClientTimeoutAttempt = (
+    stage: WebBuildPlanningStage, requestChars: number, clientTimeoutMs: number,
+    elapsedMs: number, remainingMs: number,
+  ): void => {
+    if (planningAttempts.length < 3) {
+      planningAttempts.push({
+        version: 'web-build-planning-execution-v1',
+        stage,
+        status: 'timeout',
+        endpoint: 'unknown',
+        fallbackUsed: false,
+        errorKind: 'client-timeout',
+        responseCharCount: 0,
+        responseShape: 'empty',
+        requestCharCount: requestChars,
+        clientTimedOut: true,
+        clientTimeoutMs,
+        workflowElapsedMs: elapsedMs,
+        workflowRemainingMs: Math.max(0, remainingMs),
+      });
+    }
+  };
+  const planningClientTimeoutError = (
+    stage: WebBuildPlanningStage, clientTimeoutMs: number, elapsedMs: number,
+  ): WebBuildError => {
+    const reason: PlanningClientTimeoutReason = {
+      kind: 'planning_client_timeout', stage, clientTimeoutMs, workflowElapsedMs: elapsedMs,
+    };
+    return new WebBuildError('planning_client_timeout', planningClientTimeoutMessage(uiLanguage), reason);
+  };
   const attachPlanningExecutions = (result: WebBuildResult): WebBuildResult => {
     if (!planningAttempts.length) return result;
     const pd = (result.parseDiagnostics || {}) as WebBuildParseDiagnostics;
@@ -1221,37 +1333,69 @@ export async function generateWebBuild(
     const withLang = message.includes('\n')
       ? message.replace('\n', `\n${websiteLangDirective}\n`)
       : `${message}\n${websiteLangDirective}`;
-    let response: Response;
-    try {
-      response = await fetch(`${apiBase()}/chat`, {
-        method: 'POST',
-        headers,
-        signal: timer.signal,
-        body: JSON.stringify({
-          user_id: getUserId(),
-          message: withLang,
-          platform: 'web',
-          mode: WEBSITE_BUILDER_MODE,
-          // Phase 12F.2 — the WEBSITE-output language block (resolved once), so the
-          // resolved website language wins over the app UI language.
-          ...websiteLocale,
-        }),
-      });
-    } catch (err) {
-      if ((err as { name?: string })?.name === 'AbortError') {
-        if (timedOut) throw new WebBuildError('timeout', 'The build timed out.', err);
-        throw new WebBuildError('cancelled', 'Generation cancelled.', err);
-      }
-      throw new WebBuildError('network', 'Could not reach the Korvix backend.', err);
-    }
-    if (!response.ok) throw new WebBuildError('http', `The backend returned HTTP ${response.status}.`);
-    let data: Record<string, unknown>;
-    try {
-      data = await response.json();
-    } catch (err) {
-      throw new WebBuildError('unreadable', 'The backend sent an unreadable response.', err);
-    }
+    const outgoingChars = withLang.length;
 
+    // Phase 13E.2 — this call gets its OWN bounded attempt timer within the overall workflow
+    // budget. If the workflow budget is already spent, fail honestly with a client timeout
+    // (never start a zero/negative attempt, never a fake response).
+    const attemptTimeoutMs = effectiveAttemptTimeoutMs();
+    if (attemptTimeoutMs <= 0) {
+      const elapsed = Date.now() - workflowStartedAt;
+      recordClientTimeoutAttempt(stage, outgoingChars, Math.max(0, attemptTimeoutMs), elapsed, 0);
+      throw planningClientTimeoutError(stage, Math.max(0, attemptTimeoutMs), elapsed);
+    }
+    const attempt = createPlanningAttemptSignal({ parentSignal: opts?.signal, timeoutMs: attemptTimeoutMs });
+    try {
+      let response: Response;
+      try {
+        response = await fetch(`${apiBase()}/chat`, {
+          method: 'POST',
+          headers,
+          signal: attempt.signal,
+          body: JSON.stringify({
+            user_id: getUserId(),
+            message: withLang,
+            platform: 'web',
+            mode: WEBSITE_BUILDER_MODE,
+            // Phase 12F.2 — the WEBSITE-output language block (resolved once), so the
+            // resolved website language wins over the app UI language.
+            ...websiteLocale,
+          }),
+        });
+      } catch (err) {
+        if ((err as { name?: string })?.name === 'AbortError') {
+          // Distinguish this attempt's OWN client deadline from an explicit caller cancel.
+          if (attempt.timedOut()) {
+            const elapsed = Date.now() - workflowStartedAt;
+            recordClientTimeoutAttempt(stage, outgoingChars, attemptTimeoutMs, elapsed, remainingPlanningWorkflowMs());
+            throw planningClientTimeoutError(stage, attemptTimeoutMs, elapsed);
+          }
+          throw new WebBuildError('cancelled', 'Generation cancelled.', err);
+        }
+        throw new WebBuildError('network', 'Could not reach the Korvix backend.', err);
+      }
+      if (!response.ok) throw new WebBuildError('http', `The backend returned HTTP ${response.status}.`);
+      let data: Record<string, unknown>;
+      try {
+        data = await response.json();
+      } catch (err) {
+        throw new WebBuildError('unreadable', 'The backend sent an unreadable response.', err);
+      }
+
+      return gatePlanningResponse(data, stage, outgoingChars, attemptTimeoutMs);
+    } finally {
+      // Always clear this attempt's timer + parent listener — no leaks, and the aborted
+      // signal is never reused by the next attempt (each call creates a fresh one).
+      attempt.cleanup();
+    }
+  };
+
+  // Phase 13E — record + gate on the truthful backend outcome BEFORE any parse/repair.
+  // Extracted so callBackend's try/finally stays focused on transport + timer lifecycle.
+  const gatePlanningResponse = (
+    data: Record<string, unknown>, stage: WebBuildPlanningStage, outgoingChars: number,
+    attemptTimeoutMs: number,
+  ): Record<string, unknown> => {
     // ── Phase 13E / 13E.1 — record + gate on the truthful backend outcome BEFORE any
     // planning parse or repair. Order: (1) backend SAFETY/quota rejection (request never
     // reached the model, or the provider refused it), (2) provider transport failure,
@@ -1259,9 +1403,6 @@ export async function generateWebBuild(
     const exec = parseAiExecutionMetadata(data);
     const safetyRej = parseBackendSafetyRejection(data);
     const reply = typeof data.reply === 'string' ? data.reply : '';
-    // `withLang` is the exact message POSTed to the backend — the authoritative local
-    // outgoing request size, recorded for every attempt.
-    const outgoingChars = withLang.length;
     const cleanId = (v: unknown): string | undefined =>
       typeof v === 'string' && v && v !== 'none' ? v : undefined;
     if (planningAttempts.length < 3) {
@@ -1284,6 +1425,12 @@ export async function generateWebBuild(
         requestLimitCharCount: safetyRej.limitCharCount,
         backendSafetyCode: safetyRej.code,
         backendSafetyRejected: safetyRej.present,
+        // Phase 13E.2 — a JSON response arrived within the client deadline → this attempt did
+        // NOT client-timeout. Record the attempt's configured budget + workflow timing for truth.
+        clientTimedOut: false,
+        clientTimeoutMs: attemptTimeoutMs,
+        workflowElapsedMs: Date.now() - workflowStartedAt,
+        workflowRemainingMs: Math.max(0, remainingPlanningWorkflowMs()),
       });
     }
     // (1) Backend safety/quota rejection → planning-specific error, NO parser, NO repair.
@@ -1315,8 +1462,9 @@ export async function generateWebBuild(
     return data;
   };
 
-  try {
-    return await (async (): Promise<WebBuildResult> => {
+  // Phase 13E.2 — no shared workflow-wide timer to clean up: each callBackend attempt owns
+  // and cleans its own timer. The overall workflow stays bounded via the budget helpers above.
+  return await (async (): Promise<WebBuildResult> => {
     const first = refineShape(parseWebBuildResult(
       await callBackend(buildWebBuildRequest(trimmed, {
         revise: opts?.revise,
@@ -1337,6 +1485,15 @@ export async function generateWebBuild(
     if (isModelPlanningContractEnough(first)) {
       const firstScore = first.parseDiagnostics?.designPlanSpecificityScore ?? 0;
       if (firstScore >= GOOD_DESIGN_PLAN_SCORE) return first;
+
+      // Phase 13E.2 — the design-plan repair is an OPTIONAL quality nudge, NOT a build
+      // requirement. Do not begin it with an unrealistically small remaining workflow
+      // budget; keep the already-viable first build and annotate why (not a failure).
+      if (remainingPlanningWorkflowMs() < OPTIONAL_REPAIR_MIN_BUDGET_MS) {
+        // eslint-disable-next-line no-console
+        console.warn('[WebBuild] skipping optional design-plan repair — insufficient remaining planning workflow budget.');
+        return annotateDesignPlanRepair(first, { attempted: false, succeeded: false, reason: 'skipped: insufficient remaining planning workflow budget' });
+      }
 
       let dpRepaired: WebBuildResult | undefined;
       try {
@@ -1391,7 +1548,7 @@ export async function generateWebBuild(
       // failure on the repair is a contract failure. Phase 13E — a PROVIDER failure on
       // the strict repair (timeout/incomplete/access/failed) surfaces its precise
       // planning-specific error, never the fresh-build contract_failed wording.
-      if (err instanceof WebBuildError && ['network', 'timeout', 'cancelled', 'http', 'planning_failed', 'planning_timeout', 'planning_incomplete', 'planning_access', 'planning_request_too_large', 'planning_request_rejected', 'planning_throttled', 'planning_quota', 'planning_rate_limited'].includes(err.kind)) throw err;
+      if (err instanceof WebBuildError && ['network', 'timeout', 'cancelled', 'http', 'planning_failed', 'planning_timeout', 'planning_incomplete', 'planning_access', 'planning_request_too_large', 'planning_request_rejected', 'planning_throttled', 'planning_quota', 'planning_rate_limited', 'planning_client_timeout'].includes(err.kind)) throw err;
       // eslint-disable-next-line no-console
       console.warn('[WebBuild] strict repair retry failed to parse — contract_failed.', err);
       throw new WebBuildError('contract_failed', 'The backend did not return a complete model-planned build package.', err);
@@ -1452,6 +1609,14 @@ export async function generateWebBuild(
     const repairedScore = repairedPlanned.parseDiagnostics?.designPlanSpecificityScore ?? 0;
     if (repairedScore >= GOOD_DESIGN_PLAN_SCORE) return repairedPlanned;
 
+    // Phase 13E.2 — same optional-nudge budget guard after a strict repair: skip (do not
+    // fail) the design-plan repair when little planning workflow budget remains.
+    if (remainingPlanningWorkflowMs() < OPTIONAL_REPAIR_MIN_BUDGET_MS) {
+      // eslint-disable-next-line no-console
+      console.warn('[WebBuild] skipping optional post-strict design-plan repair — insufficient remaining planning workflow budget.');
+      return annotateDesignPlanRepair(repairedPlanned, { attempted: false, succeeded: false, reason: 'skipped: insufficient remaining planning workflow budget' });
+    }
+
     let dpRepaired2: WebBuildResult | undefined;
     try {
       dpRepaired2 = refineShape(parseWebBuildResult(
@@ -1489,10 +1654,7 @@ export async function generateWebBuild(
     // eslint-disable-next-line no-console
     console.warn(`[WebBuild] post-strict design-plan repair not accepted — keeping the viable strict-repaired build (${reason2}).`);
     return annotateDesignPlanRepair(repairedPlanned, { attempted: true, succeeded: false, reason: reason2 });
-    })().then(attachPlanningExecutions);
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  })().then(attachPlanningExecutions);
 }
 
 /* ── Dedicated Frontend Builder call (Phase 12B) ──────────────────────────────

@@ -168,7 +168,9 @@ export default function WebsiteBuilder() {
       err.kind === 'planning_incomplete' || err.kind === 'planning_access' ||
       err.kind === 'planning_request_too_large' || err.kind === 'planning_request_rejected' ||
       err.kind === 'planning_throttled' || err.kind === 'planning_quota' ||
-      err.kind === 'planning_rate_limited'
+      err.kind === 'planning_rate_limited' ||
+      // Phase 13E.2 — the client per-attempt planning deadline (distinct from a backend timeout).
+      err.kind === 'planning_client_timeout'
     )) {
       setErrorMsg(err.message);
       return;
