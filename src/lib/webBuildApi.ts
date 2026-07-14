@@ -508,8 +508,13 @@ export function frontendGenerationErrorMessage(kind: FrontendGenerationErrorKind
  *  over rate-limit; a client timeout (no response) is distinct from a backend execution timeout. */
 export function mapFrontendGenerationError(raw: FrontendBuilderRawArtifact): WebBuildError {
   const ek = raw.backendErrorKind;
+  // Phase 13F.1 — the background client workflow deadline is also a client timeout. A missing/
+  // expired background job, a store failure, an exhausted poll loop, or an unexpected provider
+  // cancellation all map to the generic frontend_generation_failed (the default) — they are
+  // never a completed fallback build. Queued/in_progress never reach here (the poller waits).
+  const clientTimedOut = ek === 'client-timeout' || ek === 'background-client-timeout';
   const kind: FrontendGenerationErrorKind =
-    ek === 'client-timeout' ? 'frontend_generation_client_timeout'
+    clientTimedOut ? 'frontend_generation_client_timeout'
     : raw.backendErrorCode === 'insufficient_quota' ? 'frontend_generation_quota'
     : ek === 'rate-limit' ? 'frontend_generation_rate_limited'
     : (ek === 'permission-or-model-access' || ek === 'authentication-error' || ek === 'missing-api-key') ? 'frontend_generation_access'
@@ -518,7 +523,7 @@ export function mapFrontendGenerationError(raw: FrontendBuilderRawArtifact): Web
     : 'frontend_generation_failed';
   const reason: FrontendGenerationErrorReason = {
     kind, rawStatus: raw.status, executionStatus: raw.executionStatus,
-    clientTimedOut: ek === 'client-timeout',
+    clientTimedOut,
     backendErrorKind: raw.backendErrorKind, backendErrorCode: raw.backendErrorCode,
   };
   return new WebBuildError(kind, frontendGenerationErrorMessage(kind, resolveUiLanguage()), reason);
@@ -527,6 +532,13 @@ export function mapFrontendGenerationError(raw: FrontendBuilderRawArtifact): Web
 /** Read the current UI language for a bounded, already-localized error message. Never throws. */
 function resolveUiLanguage(): Language {
   try { return useLanguageStore.getState().lang; } catch { return 'en'; }
+}
+
+/** Phase 13F.1 — narrow the (now background-aware) execution status to the synchronous
+ *  planning-attempt statuses. Planning never runs in background, so queued/in_progress/
+ *  cancelled collapse to 'unknown'. */
+function planningAttemptStatus(s: AiExecutionMeta['status']): WebBuildPlanningExecutionAttempt['status'] {
+  return (s === 'succeeded' || s === 'failed' || s === 'timeout' || s === 'incomplete') ? s : 'unknown';
 }
 
 /** Phase 13E.2 — bounded context attached to a thrown planning client-timeout error so the
@@ -1483,7 +1495,9 @@ export async function generateWebBuild(
       planningAttempts.push({
         version: 'web-build-planning-execution-v1',
         stage,
-        status: safetyRej.present ? 'failed' : (exec.present ? exec.status : 'unknown'),
+        // Planning is synchronous (never background), so narrow the wider exec union to the
+        // planning-attempt statuses; any background status would be 'unknown' here.
+        status: safetyRej.present ? 'failed' : (exec.present ? planningAttemptStatus(exec.status) : 'unknown'),
         endpoint: safetyRej.present ? 'unknown' : (exec.present ? exec.endpoint : 'unknown'),
         model: safetyRej.present ? undefined : (exec.model || cleanId(data.model)),
         provider: safetyRej.present ? undefined : (exec.provider || cleanId(data.provider)),
@@ -1886,7 +1900,9 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
  * compatible: an older backend that omits the metadata is handled gracefully. */
 interface AiExecutionMeta {
   present: boolean;
-  status: 'succeeded' | 'failed' | 'timeout' | 'incomplete' | 'unknown';
+  // Phase 13F.1 — `queued` / `in_progress` are BACKGROUND non-terminal states (not errors);
+  // `cancelled` is a background terminal state.
+  status: 'succeeded' | 'failed' | 'timeout' | 'incomplete' | 'unknown' | 'queued' | 'in_progress' | 'cancelled';
   endpoint: 'responses' | 'chat-completions' | 'unknown';
   model?: string;
   provider?: string;
@@ -1896,6 +1912,16 @@ interface AiExecutionMeta {
   errorKind?: string;
   errorCode?: string;
   errorMessage?: string;
+  /* ── Phase 13F.1 — OpenAI Background Responses (bounded; never a raw provider response id). */
+  backgroundMode?: boolean;
+  backgroundJobId?: string;
+  backgroundTaskKind?: string;
+  pollAfterMs?: number;
+  expiresInMs?: number;
+  backgroundPollCount?: number;
+  backgroundWaitMs?: number;
+  backgroundTerminalStatus?: string;
+  storeRequired?: boolean;
 }
 const MAX_EXEC_ERR_KIND_CHARS = 80;
 const MAX_EXEC_ERR_MSG_CHARS = 240;
@@ -1917,6 +1943,9 @@ function parseAiExecutionMetadata(data: Record<string, unknown>): AiExecutionMet
     : rawStatus === 'timeout' ? 'timeout'
     : rawStatus === 'incomplete' ? 'incomplete'
     : rawStatus === 'failed' ? 'failed'
+    : rawStatus === 'queued' ? 'queued'
+    : rawStatus === 'in_progress' ? 'in_progress'
+    : rawStatus === 'cancelled' ? 'cancelled'
     : 'unknown';
   const rawEndpoint = typeof exec.endpoint === 'string' ? exec.endpoint : '';
   const endpoint: AiExecutionMeta['endpoint'] =
@@ -1925,6 +1954,12 @@ function parseAiExecutionMetadata(data: Record<string, unknown>): AiExecutionMet
     : 'unknown';
   const latency = typeof exec.latency_ms === 'number' && isFinite(exec.latency_ms)
     ? Math.max(0, Math.round(exec.latency_ms)) : undefined;
+  // Phase 13F.1 — bounded background fields. Never surface a raw OpenAI response id (the
+  // backend already withholds it); poll/expiry values are clamped to safe ranges.
+  const clampMs = (v: unknown, lo: number, hi: number): number | undefined => {
+    const n = boundedInt(v);
+    return typeof n === 'number' ? Math.min(hi, Math.max(lo, n)) : undefined;
+  };
   return {
     present: true,
     status,
@@ -1937,6 +1972,15 @@ function parseAiExecutionMetadata(data: Record<string, unknown>): AiExecutionMet
     errorKind: boundedStr(exec.error_kind, MAX_EXEC_ERR_KIND_CHARS),
     errorCode: boundedStr(exec.error_code, MAX_EXEC_ERR_KIND_CHARS),
     errorMessage: boundedStr(exec.error_message, MAX_EXEC_ERR_MSG_CHARS),
+    backgroundMode: typeof exec.background_mode === 'boolean' ? exec.background_mode : undefined,
+    backgroundJobId: boundedStr(exec.background_job_id, MAX_EXEC_ID_CHARS),
+    backgroundTaskKind: boundedStr(exec.background_task_kind, MAX_EXEC_ERR_KIND_CHARS),
+    pollAfterMs: clampMs(exec.poll_after_ms, 1000, 10000),
+    expiresInMs: clampMs(exec.expires_in_ms, 0, 600000),
+    backgroundPollCount: boundedInt(exec.background_poll_count),
+    backgroundWaitMs: boundedInt(exec.background_wait_ms),
+    backgroundTerminalStatus: boundedStr(exec.background_terminal_status, MAX_EXEC_ERR_KIND_CHARS),
+    storeRequired: typeof exec.store_required === 'boolean' ? exec.store_required : undefined,
   };
 }
 
@@ -1992,6 +2036,13 @@ function execArtifactFields(exec: AiExecutionMeta, data: Record<string, unknown>
     backendErrorKind: exec.errorKind,
     backendErrorCode: exec.errorCode,
     backendErrorMessage: exec.errorMessage,
+    // Phase 13F.1 — background transport diagnostics (never the job id / raw response id).
+    backgroundMode: exec.backgroundMode,
+    backgroundTaskKind: exec.backgroundTaskKind,
+    backgroundPollCount: exec.backgroundPollCount,
+    backgroundWaitMs: exec.backgroundWaitMs,
+    backgroundTerminalStatus: exec.backgroundTerminalStatus,
+    backgroundStoreRequired: exec.storeRequired,
   };
 }
 
@@ -2036,6 +2087,127 @@ function frontendBuilderArtifact(
     warnings: [],
     ...extra,
   };
+}
+
+/* ── Phase 13F.1 — shared OpenAI Background Responses client polling ───────────────────
+ * Full-source frontend tasks (initial generation / contract-repair / quality-repair /
+ * revision) start as an OpenAI Background Response: the initial `/chat` POST returns quickly
+ * with a queued opaque job. This ONE poller drives every full-source task to a terminal
+ * result via GET /v2/ai/background/{jobId} — no per-task polling duplication. It NEVER
+ * creates another model Response (polling only retrieves the same one) and NEVER persists the
+ * opaque job id or a raw OpenAI response id. */
+const BACKGROUND_WORKFLOW_TIMEOUT_MS = 540_000;   // overall client budget (NOT one HTTP request)
+const BACKGROUND_POLL_HTTP_TIMEOUT_MS = 25_000;   // short per-poll GET timeout
+const BACKGROUND_MAX_TRANSIENT_POLL_FAILURES = 2; // consecutive network failures tolerated
+
+function clampPollMs(v: number | undefined, dflt: number): number {
+  return typeof v === 'number' && isFinite(v) ? Math.min(10_000, Math.max(1_000, Math.round(v))) : dflt;
+}
+
+/** A cancellable delay that rejects with WebBuildError('cancelled') the instant the signal aborts. */
+function backgroundDelay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) { reject(new WebBuildError('cancelled', 'Frontend Builder cancelled.')); return; }
+    const cleanup = () => { clearTimeout(id); if (signal) signal.removeEventListener('abort', onAbort); };
+    const onAbort = () => { cleanup(); reject(new WebBuildError('cancelled', 'Frontend Builder cancelled.')); };
+    const id = setTimeout(() => { cleanup(); resolve(); }, ms);
+    if (signal) signal.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+/** Best-effort, keepalive cancel of a background job (fire-and-forget; errors ignored). */
+async function cancelBackgroundJob(jobId: string): Promise<void> {
+  try {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    try { const tok = localStorage.getItem('korvix_access_token'); if (tok) headers['Authorization'] = `Bearer ${tok}`; } catch { /* ignore */ }
+    await fetch(`${apiBase()}/v2/ai/background/${encodeURIComponent(jobId)}/cancel`, { method: 'POST', headers, keepalive: true });
+  } catch { /* best-effort */ }
+}
+
+/** Synthetic terminal /chat-shaped data → the unchanged artifact builder maps it to `failed`. */
+function backgroundFailureData(errorKind: string, taskKind: string | undefined, pollCount: number, waitMs: number): Record<string, unknown> {
+  return { reply: '', mode: 'frontend_builder', metadata: { ai_execution: {
+    status: 'failed', endpoint: 'responses', background_mode: true, background_task_kind: taskKind,
+    error_kind: errorKind, background_poll_count: pollCount, background_wait_ms: waitMs,
+    background_terminal_status: 'failed',
+  } } };
+}
+
+/**
+ * Poll a queued background job to a terminal /chat-shaped result. Non-background data, or data
+ * that is already terminal (immediate completion / old synchronous backend), is returned
+ * unchanged so the existing parser path is byte-identical. Caller cancellation → best-effort
+ * cancel + throw 'cancelled'. The 540s overall budget → a synthetic `background-client-timeout`
+ * failure (Phase 13F maps it to frontend_generation_client_timeout). Never creates a Response.
+ */
+async function pollFrontendBackgroundTask(
+  initialData: Record<string, unknown>,
+  opts?: { signal?: AbortSignal },
+): Promise<Record<string, unknown>> {
+  const exec0 = parseAiExecutionMetadata(initialData);
+  const jobId = exec0.backgroundJobId;
+  if (!exec0.backgroundMode || !jobId) return initialData;                                // synchronous / old backend
+  if (exec0.status !== 'queued' && exec0.status !== 'in_progress') return initialData;    // already terminal (Case B)
+
+  const signal = opts?.signal;
+  const taskKind = exec0.backgroundTaskKind;
+  const started = Date.now();
+  let pollAfter = clampPollMs(exec0.pollAfterMs, 2500);
+  let pollCount = 0;
+  let transientFails = 0;
+
+  const annotate = (d: Record<string, unknown>, count: number): Record<string, unknown> => {
+    const meta = (d.metadata && typeof d.metadata === 'object') ? { ...(d.metadata as Record<string, unknown>) } : {};
+    const ex = (meta.ai_execution && typeof meta.ai_execution === 'object') ? { ...(meta.ai_execution as Record<string, unknown>) } : {};
+    ex.background_poll_count = count;
+    ex.background_wait_ms = Date.now() - started;
+    meta.ai_execution = ex;
+    return { ...d, metadata: meta };
+  };
+
+  for (;;) {
+    if (signal?.aborted) { await cancelBackgroundJob(jobId); throw new WebBuildError('cancelled', 'Frontend Builder cancelled.'); }
+    if (Date.now() - started > BACKGROUND_WORKFLOW_TIMEOUT_MS) {
+      await cancelBackgroundJob(jobId);
+      return backgroundFailureData('background-client-timeout', taskKind, pollCount, Date.now() - started);
+    }
+    await backgroundDelay(pollAfter, signal);   // throws 'cancelled' on abort
+
+    const pollTimer = new AbortController();
+    const to = setTimeout(() => pollTimer.abort(), BACKGROUND_POLL_HTTP_TIMEOUT_MS);
+    const onAbort = () => pollTimer.abort();
+    if (signal) { if (signal.aborted) pollTimer.abort(); else signal.addEventListener('abort', onAbort, { once: true }); }
+    let data: Record<string, unknown>;
+    try {
+      const headers: Record<string, string> = {};
+      try { const tok = localStorage.getItem('korvix_access_token'); if (tok) headers['Authorization'] = `Bearer ${tok}`; } catch { /* ignore */ }
+      const resp = await fetch(`${apiBase()}/v2/ai/background/${encodeURIComponent(jobId)}`, { method: 'GET', headers, signal: pollTimer.signal });
+      // 404 = missing / expired / not-owned → a TERMINAL failure (never transient, never retried).
+      if (resp.status === 404) return annotate(await resp.json().catch(() => ({ reply: '', mode: 'frontend_builder', metadata: { ai_execution: { status: 'failed', error_kind: 'background-job-missing', background_mode: true } } })), pollCount);
+      if (!resp.ok) throw new Error('poll http ' + resp.status);
+      data = await resp.json();
+    } catch (err) {
+      if (signal?.aborted) { await cancelBackgroundJob(jobId); throw new WebBuildError('cancelled', 'Frontend Builder cancelled.'); }
+      transientFails += 1;
+      if (transientFails > BACKGROUND_MAX_TRANSIENT_POLL_FAILURES) {
+        await cancelBackgroundJob(jobId);
+        return backgroundFailureData('background-poll-failed', taskKind, pollCount, Date.now() - started);
+      }
+      continue;
+    } finally {
+      clearTimeout(to);
+      if (signal) signal.removeEventListener('abort', onAbort);
+    }
+
+    transientFails = 0;
+    pollCount += 1;
+    const exec = parseAiExecutionMetadata(data);
+    pollAfter = clampPollMs(exec.pollAfterMs, pollAfter);
+    if (exec.status === 'queued' || exec.status === 'in_progress') continue;
+    // A background 'cancelled' terminal WITHOUT a user abort is unexpected → treat as failed.
+    if (exec.status === 'cancelled') return backgroundFailureData('background-cancelled-unexpectedly', taskKind, pollCount, Date.now() - started);
+    return annotate(data, pollCount);   // completed / incomplete / failed → unchanged parser path
+  }
 }
 
 /**
@@ -2115,6 +2287,11 @@ export async function generateFrontendBuilderRaw(
     let data: Record<string, unknown>;
     try { data = await response.json(); }
     catch { return frontendBuilderArtifact('failed', 'The backend sent an unreadable Frontend Builder response.'); }
+
+    // Phase 13F.1 — if the backend started an OpenAI Background Response, drive it to a
+    // terminal result via the shared poller. Synchronous / old-backend / immediate-completion
+    // data is returned unchanged, so everything below parses exactly as before.
+    data = await pollFrontendBackgroundTask(data, { signal: opts?.signal });
 
     const reply = typeof data.reply === 'string' ? data.reply : '';
     const reportedMode = typeof data.mode === 'string' ? data.mode : '';
@@ -2286,6 +2463,11 @@ async function callFrontendBuilderTask(
     let data: Record<string, unknown>;
     try { data = await response.json(); }
     catch { return { ok: false, reason: 'The backend sent an unreadable frontend task response.' }; }
+
+    // Phase 13F.1 — full-source quality/contract-repair/revision tasks run in Background mode
+    // and return queued; drive them to terminal via the shared poller. Static reviews are
+    // synchronous (no background job), so the poller returns their data unchanged.
+    data = await pollFrontendBackgroundTask(data, { signal: opts?.signal });
 
     const exec = parseAiExecutionMetadata(data);
     const reply = typeof data.reply === 'string' ? data.reply : '';

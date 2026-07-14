@@ -31,6 +31,14 @@ FRONTEND_READ_TIMEOUT_S    = 180   # dedicated: large multi-file frontend respon
 # design + copy contract can complete.
 WEBSITE_CONNECT_TIMEOUT_S  = 15
 WEBSITE_READ_TIMEOUT_S     = 180
+# Phase 13F.1 — OpenAI Background Responses timeouts. The CREATE call only enqueues the
+# task (it returns quickly with queued/in_progress), and each RETRIEVE poll fetches the
+# stored Response object — so both use SHORT read timeouts. No single request stays open
+# for the full multi-minute generation.
+BACKGROUND_CONNECT_TIMEOUT_S      = 15
+BACKGROUND_CREATE_READ_TIMEOUT_S  = 30
+BACKGROUND_POLL_READ_TIMEOUT_S    = 30
+BACKGROUND_CANCEL_READ_TIMEOUT_S  = 15
 _MAX_ERR_KIND_CHARS        = 80
 _MAX_ERR_MSG_CHARS         = 300
 
@@ -526,3 +534,269 @@ async def ask_openai_website_structured(
         read_timeout_s=WEBSITE_READ_TIMEOUT_S,
         operation="website planning",
     )
+
+
+# ── Phase 13F.1 — OpenAI Background Responses for long-running full-source tasks ─────
+# Full-source frontend generation (initial / contract-repair / quality-repair / revision)
+# genuinely runs longer than one synchronous 180s Responses request. Instead of holding a
+# request open, we CREATE the Response with background=true/store=true (returns quickly),
+# then RETRIEVE it via short polls until a terminal status. Static reviews stay synchronous.
+
+# The full-source frontend task kinds that use Background mode. Static reviews stay
+# synchronous; an unknown marker is NOT silently promoted to expensive background mode.
+_FRONTEND_BACKGROUND_TASK_KINDS = frozenset({
+    "initial-generation", "contract-repair", "quality-repair", "revision",
+})
+
+
+def _frontend_task_kind(prompt: str) -> str:
+    """Deterministically classify a frontend_builder request by its EXACT task markers
+    (never by response length). Returns one of: initial-generation, contract-repair,
+    quality-repair, revision, initial-review, final-review, unknown."""
+    p = prompt or ""
+    if "[FRONTEND BUILDER REQUEST]" not in p:
+        return "unknown"
+    if "[FRONTEND REVIEW REQUEST]" in p:
+        # The review request carries the stage in its `Task:` line.
+        return "final-review" if "stage: post-repair" in p else "initial-review"
+    if "[FRONTEND CONTRACT REPAIR REQUEST]" in p:
+        return "contract-repair"
+    if "[FRONTEND REPAIR REQUEST]" in p:
+        return "quality-repair"
+    if "[FRONTEND REVISION REQUEST]" in p:
+        return "revision"
+    # A [FRONTEND BUILDER REQUEST] with a build-spec pair and no sub-marker is the
+    # initial full-source generation.
+    return "initial-generation"
+
+
+def _frontend_task_is_background(kind: str) -> bool:
+    """True only for full-source tasks. Unknown → False (fail safe to synchronous)."""
+    return kind in _FRONTEND_BACKGROUND_TASK_KINDS
+
+
+_BG_NONTERMINAL = ("queued", "in_progress")
+
+
+def _classify_background_response(data: dict, fallback_model: str, elapsed_ms: int) -> StructuredAIResult:
+    """Map a Responses object (from a background CREATE or a RETRIEVE) to a truthful
+    StructuredAIResult. queued/in_progress are NOT errors (no error_kind). completed
+    requires non-empty output text. incomplete/failed/cancelled are truthful terminals.
+    Uses ONLY the documented output-text extractor — never a length heuristic."""
+    request_id = data.get("id") if isinstance(data.get("id"), str) else None
+    result_model = data.get("model") if isinstance(data.get("model"), str) else fallback_model
+    status = data.get("status")
+
+    def mk(ok: bool, execution_status: str, text: str = "",
+           error_kind=None, error_code=None, error_message=None) -> StructuredAIResult:
+        return StructuredAIResult(
+            ok=ok, text=text, model=result_model, provider="openai", endpoint="responses",
+            request_id=request_id, execution_status=execution_status, latency_ms=elapsed_ms,
+            fallback_used=False,
+            error_kind=(str(error_kind)[:_MAX_ERR_KIND_CHARS] if error_kind else None),
+            error_code=(str(error_code)[:_MAX_ERR_KIND_CHARS] if error_code not in (None, "") else None),
+            error_message=_sanitize_error_text(error_message),
+        )
+
+    if status in _BG_NONTERMINAL:
+        return mk(False, status)  # not an error — keep polling
+    if status == "completed":
+        text = _extract_responses_output_text(data)
+        if not text or not text.strip():
+            return mk(False, "failed", error_kind="empty-output",
+                      error_message="Background Responses completed with no message output_text.")
+        return mk(True, "succeeded", text=text)
+    if status == "incomplete":
+        reason = None
+        det = data.get("incomplete_details")
+        if isinstance(det, dict):
+            reason = det.get("reason")
+        return mk(False, "incomplete", error_kind="incomplete-response", error_code=reason,
+                  error_message="The background Responses result was incomplete (output limit or truncation).")
+    if status == "failed":
+        err = data.get("error")
+        code = err.get("code") if isinstance(err, dict) else None
+        emsg = err.get("message") if isinstance(err, dict) else None
+        # Preserve provider quota/rate/access classification via the code.
+        return mk(False, "failed", error_kind=(code or "provider-failed"), error_code=code,
+                  error_message=(emsg or "The background Responses task failed."))
+    if status == "cancelled":
+        return mk(False, "cancelled", error_kind="cancelled",
+                  error_message="The background Responses task was cancelled.")
+    return mk(False, "failed", error_kind="malformed-provider-response",
+              error_message="Unexpected background Responses status: " + str(status))
+
+
+def _bg_http_error_kind(sc: int) -> str:
+    return (
+        "authentication-error" if sc == 401
+        else "permission-or-model-access" if sc in (403, 404)
+        else "rate-limit" if sc == 429
+        else "invalid-request" if sc == 400
+        else "http-error"
+    )
+
+
+async def start_openai_background_structured(
+    prompt: str,
+    system: str,
+    model: str,
+    max_output_tokens: int,
+    reasoning_effort: str,
+    operation: str,
+) -> StructuredAIResult:
+    """Create ONE OpenAI Background Response (background=true, store=true). Returns quickly:
+    execution_status is normally queued/in_progress (ok=False, NO error_kind) with
+    request_id = the raw OpenAI response id (kept SERVER-SIDE; never sent to the browser).
+    A terminal status returned immediately is classified truthfully. No tools, no web
+    search, no previous response, no Gemini fallback, no provider retry."""
+    started = time.monotonic()
+
+    def _elapsed_ms() -> int:
+        return int((time.monotonic() - started) * 1000)
+
+    def _fail(kind: str, msg=None, code=None) -> StructuredAIResult:
+        return StructuredAIResult(
+            ok=False, text="", model=model, provider="openai", endpoint="responses",
+            request_id=None, execution_status="failed", latency_ms=_elapsed_ms(),
+            fallback_used=False, error_kind=kind,
+            error_code=(str(code)[:_MAX_ERR_KIND_CHARS] if code not in (None, "") else None),
+            error_message=_sanitize_error_text(msg),
+        )
+
+    if not OPENAI_API_KEY:
+        return _fail("missing-api-key", "OPENAI_API_KEY is not configured.")
+    headers = {"Authorization": "Bearer " + OPENAI_API_KEY, "Content-Type": "application/json"}
+    body = {
+        "model": model,
+        "instructions": system or "",
+        "input": prompt,
+        "max_output_tokens": max_output_tokens,
+        "reasoning": {"effort": reasoning_effort},
+        "background": True,
+        "store": True,
+        "stream": False,
+    }
+    timeout = httpx.Timeout(BACKGROUND_CREATE_READ_TIMEOUT_S, connect=BACKGROUND_CONNECT_TIMEOUT_S)
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(OPENAI_RESPONSES_URL, headers=headers, json=body)
+    except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.WriteTimeout, httpx.PoolTimeout, httpx.TimeoutException):
+        return _fail("timeout", "The " + operation + " background create request timed out.")
+    except httpx.HTTPError as e:
+        return _fail("connection-error", type(e).__name__)
+    except Exception as e:
+        return _fail("internal-transport-error", type(e).__name__)
+
+    if resp.status_code >= 400:
+        code = None
+        emsg = None
+        try:
+            j = resp.json()
+            err = j.get("error") if isinstance(j, dict) else None
+            if isinstance(err, dict):
+                code = err.get("code") or err.get("type")
+                emsg = err.get("message")
+        except Exception:
+            pass
+        return _fail(_bg_http_error_kind(resp.status_code), (emsg or ("HTTP " + str(resp.status_code))), code=(code or resp.status_code))
+
+    try:
+        data = resp.json()
+    except Exception:
+        return _fail("malformed-provider-response", "Background create body was not valid JSON.")
+    if not isinstance(data, dict):
+        return _fail("malformed-provider-response", "Background create body was not a JSON object.")
+    return _classify_background_response(data, model, _elapsed_ms())
+
+
+async def retrieve_openai_background_structured(response_id: str, operation: str) -> StructuredAIResult:
+    """Retrieve the SAME Response via GET /v1/responses/{id}. Never creates another Response.
+    queued/in_progress → keep polling; completed → extract text; terminal failure/incomplete/
+    cancelled → truthful. A missing/expired response (404) is a truthful failure."""
+    started = time.monotonic()
+
+    def _elapsed_ms() -> int:
+        return int((time.monotonic() - started) * 1000)
+
+    def _fail(kind: str, msg=None, code=None) -> StructuredAIResult:
+        return StructuredAIResult(
+            ok=False, text="", model="", provider="openai", endpoint="responses",
+            request_id=response_id if isinstance(response_id, str) else None,
+            execution_status="failed", latency_ms=_elapsed_ms(), fallback_used=False,
+            error_kind=kind,
+            error_code=(str(code)[:_MAX_ERR_KIND_CHARS] if code not in (None, "") else None),
+            error_message=_sanitize_error_text(msg),
+        )
+
+    if not OPENAI_API_KEY:
+        return _fail("missing-api-key", "OPENAI_API_KEY is not configured.")
+    if not response_id or not isinstance(response_id, str):
+        return _fail("invalid-request", "Missing background response id.")
+    headers = {"Authorization": "Bearer " + OPENAI_API_KEY}
+    url = OPENAI_RESPONSES_URL + "/" + response_id
+    timeout = httpx.Timeout(BACKGROUND_POLL_READ_TIMEOUT_S, connect=BACKGROUND_CONNECT_TIMEOUT_S)
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.get(url, headers=headers)
+    except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.WriteTimeout, httpx.PoolTimeout, httpx.TimeoutException):
+        return _fail("timeout", "The " + operation + " background poll timed out.")
+    except httpx.HTTPError as e:
+        return _fail("connection-error", type(e).__name__)
+    except Exception as e:
+        return _fail("internal-transport-error", type(e).__name__)
+
+    if resp.status_code == 404:
+        return _fail("background-job-missing", "The background response was not found or has expired.", code=404)
+    if resp.status_code >= 400:
+        code = None
+        emsg = None
+        try:
+            j = resp.json()
+            err = j.get("error") if isinstance(j, dict) else None
+            if isinstance(err, dict):
+                code = err.get("code") or err.get("type")
+                emsg = err.get("message")
+        except Exception:
+            pass
+        return _fail(_bg_http_error_kind(resp.status_code), (emsg or ("HTTP " + str(resp.status_code))), code=(code or resp.status_code))
+
+    try:
+        data = resp.json()
+    except Exception:
+        return _fail("malformed-provider-response", "Background poll body was not valid JSON.")
+    if not isinstance(data, dict):
+        return _fail("malformed-provider-response", "Background poll body was not a JSON object.")
+    return _classify_background_response(data, "", _elapsed_ms())
+
+
+async def cancel_openai_background_response(response_id: str) -> StructuredAIResult:
+    """Best-effort, idempotent cancel via POST /v1/responses/{id}/cancel. Cancellation
+    failure is NEVER turned into a successful generation. Never raises; never leaks the
+    API key or a raw exception. Callers ignore the result."""
+    started = time.monotonic()
+
+    def _elapsed_ms() -> int:
+        return int((time.monotonic() - started) * 1000)
+
+    def _res(ok: bool, status: str, kind=None, msg=None) -> StructuredAIResult:
+        return StructuredAIResult(
+            ok=ok, text="", model="", provider="openai", endpoint="responses",
+            request_id=response_id if isinstance(response_id, str) else None,
+            execution_status=status, latency_ms=_elapsed_ms(), fallback_used=False,
+            error_kind=kind, error_message=_sanitize_error_text(msg),
+        )
+
+    if not OPENAI_API_KEY or not response_id or not isinstance(response_id, str):
+        return _res(False, "cancelled", "invalid-request", "No cancellable background response.")
+    headers = {"Authorization": "Bearer " + OPENAI_API_KEY, "Content-Type": "application/json"}
+    url = OPENAI_RESPONSES_URL + "/" + response_id + "/cancel"
+    timeout = httpx.Timeout(BACKGROUND_CANCEL_READ_TIMEOUT_S, connect=BACKGROUND_CONNECT_TIMEOUT_S)
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(url, headers=headers)
+    except Exception as e:
+        # Best-effort: a cancel failure is not fatal (the job record still expires).
+        return _res(False, "cancelled", "cancel-failed", type(e).__name__)
+    # Idempotent: any 2xx (or an already-terminal 4xx) is acceptable.
+    return _res(resp.status_code < 400, "cancelled")

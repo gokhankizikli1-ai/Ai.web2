@@ -529,7 +529,7 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       ownerRows.push(['frontendClientTimedOut', String(fbr.backendErrorKind === 'client-timeout')]);
       if (fbr.status === 'failed') {
         const ek = fbr.backendErrorKind;
-        const cls = ek === 'client-timeout' ? 'client-timeout'
+        const cls = (ek === 'client-timeout' || ek === 'background-client-timeout') ? 'client-timeout'
           : fbr.backendErrorCode === 'insufficient_quota' ? 'quota'
           : ek === 'rate-limit' ? 'rate-limited'
           : (ek === 'permission-or-model-access' || ek === 'authentication-error' || ek === 'missing-api-key') ? 'access'
@@ -537,6 +537,23 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
           : fbr.executionStatus === 'incomplete' ? 'incomplete'
           : 'failed';
         ownerRows.push(['frontendFailureClassification', cls]);
+      }
+      // Phase 13F.1 — OpenAI Background Responses transport diagnostics. Full-source tasks
+      // (generation / contract-repair / quality-repair / revision) poll a background job; the
+      // opaque job id and raw OpenAI response id are never persisted or shown. Static reviews
+      // stay synchronous.
+      if (fbr.backgroundMode) {
+        ownerRows.push(['frontendBackgroundMode', 'true']);
+        ownerRows.push(['frontendLongRunningTransport', 'background-polling']);
+        ownerRows.push(['frontendBackgroundJobIdPersisted', 'false']);
+        if (fbr.backgroundTaskKind) ownerRows.push(['frontendBackgroundTaskKind', fbr.backgroundTaskKind]);
+        if (typeof fbr.backgroundPollCount === 'number') ownerRows.push(['frontendBackgroundPollCount', String(fbr.backgroundPollCount)]);
+        if (typeof fbr.backgroundWaitMs === 'number') ownerRows.push(['frontendBackgroundWaitMs', String(fbr.backgroundWaitMs)]);
+        if (fbr.backgroundTerminalStatus) ownerRows.push(['frontendBackgroundTerminalStatus', fbr.backgroundTerminalStatus]);
+        if (typeof fbr.backgroundStoreRequired === 'boolean') ownerRows.push(['frontendBackgroundStoreRequired', String(fbr.backgroundStoreRequired)]);
+      } else if (fbr.executionEndpoint === 'responses' || fbr.status === 'completed') {
+        // A synchronous frontend task (static review, or an old-backend synchronous build).
+        ownerRows.push(['frontendReviewTransport', 'synchronous']);
       }
     }
 

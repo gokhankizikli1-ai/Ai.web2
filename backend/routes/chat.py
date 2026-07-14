@@ -3,6 +3,7 @@ import time
 import logging
 import uuid
 from fastapi import APIRouter, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 
@@ -680,3 +681,103 @@ def _quick_response(
         suggested_followups=None,
         metadata=metadata,
     )
+
+
+# ── Phase 13F.1 — authenticated Background Responses poll + cancel ────────────────────
+# These endpoints let the browser drive a long-running full-source frontend generation that
+# runs as an OpenAI Background Response. They NEVER consume a message/credit, write chat
+# history, or run memory/research/planning/safety parsing — they only resolve the
+# authoritative user, verify opaque-job ownership, and retrieve/cancel the SAME OpenAI
+# Response. The raw OpenAI response id is never returned to the browser. A missing job or an
+# ownership mismatch both return 404 so another user's job existence is never revealed.
+
+def _bg_exec_response(reply: str, ai_execution: dict, *, status_code: int = 200) -> JSONResponse:
+    """A /chat-shaped JSON body the frontend background poller already understands."""
+    return JSONResponse(status_code=status_code, content={
+        "reply": reply,
+        "intent": "frontend_builder",
+        "mode": "frontend_builder",
+        "model": ai_execution.get("model") or "none",
+        "provider": ai_execution.get("provider") or "none",
+        "request_id": None,
+        "metadata": {"ai_execution": ai_execution},
+    })
+
+
+@router.get("/v2/ai/background/{job_id}")
+async def background_poll(job_id: str, request: Request):
+    """Retrieve the status/output of an opaque background frontend job for its owner."""
+    uid = str(_uid(_resolve_authoritative_uid(request, "")))
+    try:
+        from backend.services.ai_background_responses import load_job, owns_job, delete_job
+        from ai_client import retrieve_openai_background_structured
+    except Exception:
+        return _bg_exec_response("", {"status": "failed", "endpoint": "responses",
+                                      "background_mode": True, "error_kind": "background-unavailable"}, status_code=503)
+
+    record = await load_job(job_id)
+    if not owns_job(record, uid):
+        # Missing OR not owned → identical 404 (no existence disclosure); NO OpenAI retrieve.
+        logger.info("CHAT | bg_poll | job=%s | uid=%s | not_found_or_forbidden", (job_id or "")[:14], uid)
+        return _bg_exec_response("", {"status": "failed", "endpoint": "responses",
+                                      "background_mode": True, "background_job_id": job_id,
+                                      "error_kind": "background-job-missing"}, status_code=404)
+
+    resp_id = record.get("openai_response_id")
+    task_kind = record.get("task_kind")
+    res = await retrieve_openai_background_structured(resp_id, "frontend " + str(task_kind))
+    provider_rid_prefix = (res.request_id or "")[:10]
+    logger.info(
+        "CHAT | bg_poll | job=%s | uid=%s | kind=%s | status=%s | ms=%d | prid=%s",
+        (job_id or "")[:14], uid, task_kind, res.execution_status, res.latency_ms, provider_rid_prefix,
+    )
+
+    # Non-terminal — keep the job and tell the client to keep polling.
+    if (not res.ok) and res.execution_status in ("queued", "in_progress"):
+        return _bg_exec_response("", {
+            "status": res.execution_status, "endpoint": "responses", "model": res.model,
+            "provider": res.provider, "request_id": None, "fallback_used": False,
+            "background_mode": True, "background_job_id": job_id, "background_task_kind": task_kind,
+            "poll_after_ms": 2500, "store_required": True,
+        })
+
+    # Terminal — delete the job record after building the response (idempotent enough: a
+    # repeated poll returns 404 → the client already has the terminal result).
+    await delete_job(job_id)
+    _md = {
+        "status": "succeeded" if res.ok else res.execution_status,
+        "endpoint": res.endpoint, "model": res.model, "provider": res.provider,
+        "request_id": None, "latency_ms": res.latency_ms, "fallback_used": res.fallback_used,
+        "background_mode": True, "background_task_kind": task_kind,
+        "background_terminal_status": ("completed" if res.ok else res.execution_status),
+        "store_required": True,
+    }
+    if not res.ok:
+        _md["error_kind"]    = res.error_kind
+        _md["error_code"]    = res.error_code
+        _md["error_message"] = res.error_message
+    return _bg_exec_response(res.text if res.ok else "", _md)
+
+
+@router.post("/v2/ai/background/{job_id}/cancel")
+async def background_cancel(job_id: str, request: Request):
+    """Best-effort, idempotent cancel of an opaque background frontend job for its owner."""
+    uid = str(_uid(_resolve_authoritative_uid(request, "")))
+    try:
+        from backend.services.ai_background_responses import load_job, owns_job, delete_job
+        from ai_client import cancel_openai_background_response
+    except Exception:
+        return JSONResponse(status_code=200, content={"status": "cancelled"})
+
+    record = await load_job(job_id)
+    if owns_job(record, uid):
+        try:
+            await cancel_openai_background_response(record.get("openai_response_id"))
+        except Exception:
+            pass
+        await delete_job(job_id)
+        logger.info("CHAT | bg_cancel | job=%s | uid=%s | kind=%s | cancelled", (job_id or "")[:14], uid, record.get("task_kind"))
+    else:
+        # Idempotent + no disclosure: same response whether missing or not owned; NO OpenAI cancel.
+        logger.info("CHAT | bg_cancel | job=%s | uid=%s | not_found_or_forbidden", (job_id or "")[:14], uid)
+    return JSONResponse(status_code=200, content={"status": "cancelled"})

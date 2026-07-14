@@ -325,7 +325,13 @@ export async function runFrontendBuilderRevision(
   // 3) classify scope (narrow default; negation-aware).
   const scope: FrontendRevisionScope = classifyFrontendRevisionScope(trimmed);
 
-  // 4) ONE dedicated revision model call.
+  // 4) ONE dedicated revision model call. Phase 13F.1 — a revision is a FULL-SOURCE task, so
+  //    generateFrontendBuilderRevisionRaw now rides the SHARED OpenAI Background Responses
+  //    transport (the initial POST returns queued quickly and the client polls to a terminal
+  //    result). There is no standalone full-source timeout here that could kill a background
+  //    task — the shared poller owns the long wait, and only the caller `signal` cancels it.
+  //    Invariants are unchanged: exactly one background generation Response, zero planning,
+  //    zero research, and a failed revision preserves the existing project (preservation gate).
   const raw = await generateFrontendBuilderRevisionRaw(effectiveSpecification, base.files, trimmed, {
     signal: options?.signal,
     websiteLanguage,
