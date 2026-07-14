@@ -1573,7 +1573,7 @@ export interface FrontendBuilderRawArtifact {
    *  never runs on a generic chat fallback. All strings are bounded; no API key,
    *  authorization header, raw provider payload or stack trace is ever stored. Old
    *  saved builds simply lack them. */
-  executionStatus?: 'succeeded' | 'failed' | 'timeout' | 'incomplete' | 'unknown';
+  executionStatus?: 'succeeded' | 'failed' | 'timeout' | 'incomplete' | 'unknown' | 'queued' | 'in_progress' | 'cancelled';
   executionEndpoint?: 'responses' | 'chat-completions' | 'unknown';
   fallbackUsed?: boolean;
   backendLatencyMs?: number;
@@ -1586,6 +1586,15 @@ export interface FrontendBuilderRawArtifact {
   /** Phase 13D — true when this raw artifact came from a `[FRONTEND REVISION REQUEST]`
    *  (source-to-source edit of an existing model-native project) rather than a fresh build. */
   revisionRequest?: boolean;
+  /* ── Phase 13F.1 — OpenAI Background Responses transport diagnostics (optional, backward
+   *  compatible). NEVER persists the opaque background job id, the raw OpenAI response id, a
+   *  poll URL, or an auth token. Old saved builds simply lack these. */
+  backgroundMode?: boolean;
+  backgroundTaskKind?: string;
+  backgroundPollCount?: number;
+  backgroundWaitMs?: number;
+  backgroundTerminalStatus?: string;
+  backgroundStoreRequired?: boolean;
 }
 
 /* ── Frontend Builder validation (Phase 12C) ──────────────────────────────────
