@@ -913,10 +913,22 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
           if (a.errorKind) ownerRows.push([`planningAttempt${n}ErrorKind`, a.errorKind]);
           if (a.errorCode) ownerRows.push([`planningAttempt${n}ErrorCode`, a.errorCode]);
           if (a.errorMessage) ownerRows.push([`planningAttempt${n}ErrorMessage`, a.errorMessage]);
+          // Phase 13E.1 — request-size + backend-safety truth. `RequestChars` is the local
+          // outgoing request size (NOT token usage); `RequestLimitChars` is the authoritative
+          // backend cap when the backend rejected the request.
+          if (typeof a.requestCharCount === 'number') ownerRows.push([`planningAttempt${n}RequestChars`, String(a.requestCharCount)]);
+          if (typeof a.requestLimitCharCount === 'number') ownerRows.push([`planningAttempt${n}RequestLimitChars`, String(a.requestLimitCharCount)]);
+          if (typeof a.backendSafetyRejected === 'boolean') ownerRows.push([`planningAttempt${n}BackendSafetyRejected`, String(a.backendSafetyRejected)]);
+          if (a.backendSafetyCode) ownerRows.push([`planningAttempt${n}BackendSafetyCode`, a.backendSafetyCode]);
         });
         ownerRows.push(['planningRegisteredTokenBudget', '8000']);
         ownerRows.push(['planningResearchPassCount', String(step.research ? 1 : 0)]);
         ownerRows.push(['planningGenericFallbackUsed', String(planningExecutions.some((a) => a.fallbackUsed === true))]);
+        // Phase 13E.1 — the accepted result flowed through the dedicated structured-website
+        // safety path (a request-size row is present ⇒ this build used the new transport).
+        if (planningExecutions.some((a) => typeof a.requestCharCount === 'number')) {
+          ownerRows.push(['planningSafetyPath', 'structured-website-builder']);
+        }
       }
     }
 

@@ -165,7 +165,13 @@ async def chat(req: ChatRequest, request: Request):
     )
     # Phase 12B.1 — the dedicated Frontend Builder is fully isolated: a structured
     # safety path, no memory extraction, and no chat-history persistence.
+    # Phase 13E.1 — the website_builder mode is ALSO a structured builder: its /chat
+    # request is a machine-generated planning envelope, not ordinary chat. Both structured
+    # builders take a dedicated structured safety path and skip memory auto-learning; the
+    # website path is selected ONLY by the explicit canonical mode (never by content).
     _is_frontend_builder = normalized_mode == "frontend_builder"
+    _is_website_builder = normalized_mode == "website_builder"
+    _is_structured_builder = _is_frontend_builder or _is_website_builder
     if _is_specialized_builder:
         logger.info(
             "CHAT | rid=%s | uid=%s | specialized_builder | mode=%s | shortcuts_bypassed",
@@ -183,27 +189,57 @@ async def chat(req: ChatRequest, request: Request):
     # Returns a fast, branded rejection if length / injection / throttle hit.
     # Never crashes the request — failures here log and fall through.
     try:
-        from backend.services.safety.guard import check_message, check_structured_builder_message
+        from backend.services.safety.guard import (
+            check_message,
+            check_structured_builder_message,
+            check_structured_website_builder_message,
+        )
         if _is_frontend_builder:
             # Structured transport: validate the envelope + structured size cap +
             # throttle, and DO NOT run the generic injection regex over the JSON spec
             # (its quoted user/research content is intentionally untrusted data).
             _safety = check_structured_builder_message(str(user_id), message)
+        elif _is_website_builder:
+            # Phase 13E.1 — the website planning envelope gets its OWN structured safety
+            # path (bounded website cap + envelope validation + throttle), never the
+            # generic 4k cap that was rejecting every fresh Web Build with `safety_length`.
+            _safety = check_structured_website_builder_message(str(user_id), message)
         else:
             _safety = check_message(str(user_id), message)
         if not _safety.allowed:
             logger.info(
-                "CHAT | rid=%s | uid=%s | safety_reject | code=%s | reason=%s",
+                "CHAT | rid=%s | uid=%s | safety_reject | code=%s | reason=%s | req_chars=%s | limit=%s",
                 request_id, user_id, _safety.code, _safety.reason,
+                _safety.request_char_count, _safety.limit_char_count,
             )
             timer.mark("safety_reject")
             timer.flush()
+            # Phase 13E.1 — for a structured builder, attach bounded safety metadata so the
+            # frontend classifies the rejection BEFORE its planning parser (never parses the
+            # Turkish safety sentence as a site plan, never launches a strict repair). Numbers
+            # + codes only: no request body, no idea, no sources, no auth/token, no stack.
+            _safety_meta = None
+            if _is_structured_builder:
+                _safety_meta = {
+                    "safety": {
+                        "status": "rejected",
+                        "code": _safety.code or "blocked",
+                        "reason": (_safety.reason or "")[:160],
+                        "request_char_count": (
+                            _safety.request_char_count
+                            if _safety.request_char_count is not None else len(message)
+                        ),
+                        "limit_char_count": _safety.limit_char_count,
+                        "structured_mode": normalized_mode,
+                    }
+                }
             return _quick_response(
                 request_id, user_id,
                 _safety.message_for_user or "İstek reddedildi.",
                 "safety_" + (_safety.code or "blocked"),
                 t_start,
                 with_profile=False,    # rejections don't need a fresh profile lookup
+                metadata=_safety_meta,
             )
     except Exception as _serr:
         logger.debug("CHAT | rid=%s | safety guard import/eval error: %s", request_id, _serr)
@@ -380,9 +416,10 @@ async def chat(req: ChatRequest, request: Request):
     timer.mark("limit_check")
 
     # ── Auto-learn ────────────────────────────────────────────────────────
-    # Phase 12B.1 — skipped for frontend_builder: the serialized specification is
-    # implementation data, not a personal fact to memorize.
-    if not _is_frontend_builder:
+    # Phase 12B.1 / 13E.1 — skipped for BOTH structured builders: the serialized frontend
+    # specification and the generated website planning envelope are implementation
+    # transport, not personal facts to memorize. Normal chat memory is unchanged.
+    if not _is_structured_builder:
         try:
             from backend.services.memory_service import maybe_auto_learn
             maybe_auto_learn(user_id, message)
@@ -606,6 +643,7 @@ def _quick_response(
     premium: bool = False,
     *,
     with_profile: bool = True,
+    metadata: Optional[Dict[str, Any]] = None,
 ) -> ChatResponse:
     """Build a fast shortcut response without going through AI.
 
@@ -615,6 +653,9 @@ def _quick_response(
                     known (safety rejections, limit-exceeded) — saves
                     one DB read per request (5-15ms locally, more under
                     contention).
+      metadata:     optional additive response metadata (Phase 13E.1 — bounded
+                    structured-builder safety envelope). Default None → older
+                    callers are byte-identical.
     """
     elapsed_ms = int((time.monotonic() - t_start) * 1000)
     if with_profile:
@@ -637,4 +678,5 @@ def _quick_response(
         response_time_ms=elapsed_ms,
         request_id=request_id,
         suggested_followups=None,
+        metadata=metadata,
     )

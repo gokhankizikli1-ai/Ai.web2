@@ -160,8 +160,16 @@ export default function WebsiteBuilder() {
       setErrorMsg(err.message);
       return;
     }
-    // Phase 13E — planning provider-transport failures carry an already-localized message.
-    if (err instanceof WebBuildError && (err.kind === 'planning_failed' || err.kind === 'planning_timeout' || err.kind === 'planning_incomplete' || err.kind === 'planning_access')) {
+    // Phase 13E / 13E.1 — planning provider-transport failures AND backend safety/quota
+    // rejections carry an already-localized, honest message. None is a malformed planning
+    // reply; no fake planning step is created and the safety sentence is never persisted.
+    if (err instanceof WebBuildError && (
+      err.kind === 'planning_failed' || err.kind === 'planning_timeout' ||
+      err.kind === 'planning_incomplete' || err.kind === 'planning_access' ||
+      err.kind === 'planning_request_too_large' || err.kind === 'planning_request_rejected' ||
+      err.kind === 'planning_throttled' || err.kind === 'planning_quota' ||
+      err.kind === 'planning_rate_limited'
+    )) {
       setErrorMsg(err.message);
       return;
     }

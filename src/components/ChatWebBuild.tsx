@@ -134,10 +134,19 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
       setErrorMsg(err.message);
       return;
     }
-    // Phase 13E — planning provider-transport failures carry an already-localized message
-    // (timeout / access / incomplete / provider failure). These are NOT a malformed
-    // planning response; no frontend project was produced. Show the precise message.
-    if (err instanceof WebBuildError && (err.kind === 'planning_failed' || err.kind === 'planning_timeout' || err.kind === 'planning_incomplete' || err.kind === 'planning_access')) {
+    // Phase 13E / 13E.1 — planning provider-transport failures AND backend safety/quota
+    // rejections carry an already-localized, honest message. None of these is a malformed
+    // planning response: the request either never reached the model (safety), was refused
+    // by the provider (quota / rate limit), or the transport failed (timeout / access /
+    // incomplete). No fake planning step is created and the safety sentence is never
+    // persisted as a build reply; the current build (if any) is preserved and Retry stays.
+    if (err instanceof WebBuildError && (
+      err.kind === 'planning_failed' || err.kind === 'planning_timeout' ||
+      err.kind === 'planning_incomplete' || err.kind === 'planning_access' ||
+      err.kind === 'planning_request_too_large' || err.kind === 'planning_request_rejected' ||
+      err.kind === 'planning_throttled' || err.kind === 'planning_quota' ||
+      err.kind === 'planning_rate_limited'
+    )) {
       setErrorMsg(err.message);
       return;
     }
