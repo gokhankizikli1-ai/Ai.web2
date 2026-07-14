@@ -725,11 +725,13 @@ async def background_poll(job_id: str, request: Request):
 
     resp_id = record.get("openai_response_id")
     task_kind = record.get("task_kind")
+    configured_max = record.get("configured_max_output_tokens") or 0
     res = await retrieve_openai_background_structured(resp_id, "frontend " + str(task_kind))
     provider_rid_prefix = (res.request_id or "")[:10]
     logger.info(
-        "CHAT | bg_poll | job=%s | uid=%s | kind=%s | status=%s | ms=%d | prid=%s",
-        (job_id or "")[:14], uid, task_kind, res.execution_status, res.latency_ms, provider_rid_prefix,
+        "CHAT | bg_poll | job=%s | uid=%s | kind=%s | status=%s | ms=%d | in=%s | out=%s | reason=%s | partial=%s | prid=%s",
+        (job_id or "")[:14], uid, task_kind, res.execution_status, res.latency_ms,
+        res.input_tokens, res.output_tokens, res.error_code, res.partial_output_char_count, provider_rid_prefix,
     )
 
     # Non-terminal — keep the job and tell the client to keep polling.
@@ -739,10 +741,13 @@ async def background_poll(job_id: str, request: Request):
             "provider": res.provider, "request_id": None, "fallback_used": False,
             "background_mode": True, "background_job_id": job_id, "background_task_kind": task_kind,
             "poll_after_ms": 2500, "store_required": True,
+            "background_store_available": True, "background_store_status": "available",
+            "configured_max_output_tokens": int(configured_max),
         })
 
     # Terminal — delete the job record after building the response (idempotent enough: a
-    # repeated poll returns 404 → the client already has the terminal result).
+    # repeated poll returns 404 → the client already has the terminal result). RAW OpenAI
+    # response id is NEVER included (request_id stays null). Bounded numeric usage only.
     await delete_job(job_id)
     _md = {
         "status": "succeeded" if res.ok else res.execution_status,
@@ -751,7 +756,13 @@ async def background_poll(job_id: str, request: Request):
         "background_mode": True, "background_task_kind": task_kind,
         "background_terminal_status": ("completed" if res.ok else res.execution_status),
         "store_required": True,
+        "background_store_available": True, "background_store_status": "available",
+        "configured_max_output_tokens": int(configured_max),
     }
+    for _k in ("input_tokens", "output_tokens", "reasoning_tokens", "total_tokens", "partial_output_char_count"):
+        _v = getattr(res, _k, None)
+        if _v is not None:
+            _md[_k] = int(_v)
     if not res.ok:
         _md["error_kind"]    = res.error_kind
         _md["error_code"]    = res.error_code

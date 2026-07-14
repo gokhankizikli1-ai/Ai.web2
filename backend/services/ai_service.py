@@ -12,6 +12,8 @@ from ai_client import (
     # Phase 13F.1 — Background Responses primitives for long-running full-source frontend tasks.
     _frontend_task_kind, _frontend_task_is_background, _frontend_reasoning_effort,
     start_openai_background_structured, cancel_openai_background_response,
+    # Phase 13F.2 — task-specific full-source output budget resolver.
+    frontend_task_max_output_tokens,
 )
 from ai_router import get_model_config, detect_mode
 from agent import run_tools, build_context_for_ai, detect_research_depth, DEPTH_CONFIG, RESEARCH_INTENTS
@@ -302,7 +304,10 @@ async def process_chat(
                     # Build the /chat return dict from a StructuredAIResult. For BACKGROUND
                     # returns the raw OpenAI response id is NEVER exposed to the browser
                     # (request_id is nulled); the browser only sees the opaque job id.
-                    def _fb_return(res, *, background_mode=False, task_kind=None):
+                    def _fb_return(res, *, background_mode=False, task_kind=None, configured_max=None):
+                        # Phase 13F.2 — DEFENSIVE: a full-source (background) path NEVER exposes a
+                        # raw OpenAI response id to the browser. request_id is forced null here so a
+                        # future refactor cannot accidentally leak it.
                         _rid = None if background_mode else res.request_id
                         _md = {
                             "status":        "succeeded" if res.ok else res.execution_status,
@@ -317,6 +322,14 @@ async def process_chat(
                             _md["background_mode"] = True
                             if task_kind:
                                 _md["background_task_kind"] = task_kind
+                        if configured_max:
+                            _md["configured_max_output_tokens"] = int(configured_max)
+                        # Bounded numeric usage truth (never raw content).
+                        for _k in ("input_tokens", "output_tokens", "reasoning_tokens",
+                                   "total_tokens", "partial_output_char_count"):
+                            _v = getattr(res, _k, None)
+                            if _v is not None:
+                                _md[_k] = int(_v)
                         if not res.ok:
                             _md["error_kind"]    = res.error_kind
                             _md["error_code"]    = res.error_code
@@ -331,39 +344,62 @@ async def process_chat(
                             "metadata":   {"ai_execution": _md},
                         }
 
-                    # Phase 13F.1 — FULL-SOURCE frontend tasks (initial generation / contract-
-                    # repair / quality-repair / revision) run as OpenAI BACKGROUND Responses:
-                    # the create call returns queued quickly and the browser polls a dedicated
-                    # authenticated endpoint. STATIC reviews (and any unknown marker) stay on the
-                    # existing synchronous transport. Background needs the shared Redis job store;
-                    # when it is unavailable we fall back to synchronous rather than start an
-                    # orphaned/unusable background job.
+                    # Phase 13F.1 / 13F.2 — FULL-SOURCE frontend tasks (initial generation /
+                    # contract-repair / quality-repair / revision) run ONLY as OpenAI BACKGROUND
+                    # Responses (create returns queued quickly; the browser polls a dedicated
+                    # authenticated endpoint) with a dedicated 30,000-token budget. They MUST NOT
+                    # silently fall back to synchronous generation: if the shared Redis job store is
+                    # unavailable, we return a truthful typed failure and make ZERO OpenAI calls.
+                    # STATIC reviews (and unknown markers) stay synchronous with the registered budget.
                     _fb_kind = _frontend_task_kind(message)
                     _fb_use_bg = _frontend_task_is_background(_fb_kind)
-                    _fb_store_ok = False
-                    if _fb_use_bg:
-                        try:
-                            from backend.services.ai_background_responses import is_background_store_available
-                            _fb_store_ok = is_background_store_available()
-                        except Exception:
-                            _fb_store_ok = False
+                    _fb_max_tokens = frontend_task_max_output_tokens(_fb_kind, cfg["max_tokens"])
 
-                    if _fb_use_bg and _fb_store_ok:
+                    if _fb_use_bg:
+                        # Truthful async probe of the shared store BEFORE any OpenAI generation.
+                        try:
+                            from backend.services.ai_background_responses import probe_background_store
+                            _probe = await probe_background_store()
+                        except Exception:
+                            from backend.services.ai_background_responses import BackgroundStoreProbe
+                            _probe = BackgroundStoreProbe(False, "import-failed", "background-store-import-failed")
+
+                        if not _probe.available:
+                            # Store unavailable → NO OpenAI generation, NO synchronous fallback.
+                            logger.info(
+                                "process_chat | frontend_builder | bg store unavailable | kind=%s | store=%s",
+                                _fb_kind, _probe.status,
+                            )
+                            return {
+                                "reply": "", "intent": canonical, "model": cfg["model"],
+                                "provider": "openai", "request_id": None, "mode": canonical,
+                                "metadata": {"ai_execution": {
+                                    "status": "failed", "endpoint": "responses", "model": cfg["model"],
+                                    "provider": "openai", "request_id": None, "fallback_used": False,
+                                    "background_mode": True, "background_task_kind": _fb_kind,
+                                    "background_store_available": False,
+                                    "background_store_status": _probe.status,
+                                    "configured_max_output_tokens": _fb_max_tokens,
+                                    "error_kind": "background-store-unavailable",
+                                    "error_message": "The frontend background job store is unavailable.",
+                                }},
+                            }
+
                         _bg = await start_openai_background_structured(
                             prompt=message, system=sys_p, model=cfg["model"],
-                            max_output_tokens=cfg["max_tokens"],
+                            max_output_tokens=_fb_max_tokens,
                             reasoning_effort=_frontend_reasoning_effort(message),
                             operation="frontend " + _fb_kind,
                         )
                         # Started (queued/in_progress) → create the opaque per-user job record.
                         if (not _bg.ok) and _bg.execution_status in ("queued", "in_progress") and _bg.request_id:
                             from backend.services.ai_background_responses import create_job
-                            _job_id = await create_job(str(user_id), _bg.request_id, _fb_kind, _bg.model)
+                            _job_id = await create_job(str(user_id), _bg.request_id, _fb_kind, _bg.model, _fb_max_tokens)
                             if not _job_id:
-                                # Store failed AFTER the OpenAI task started: best-effort cancel,
+                                # Store WRITE failed after the OpenAI task started: best-effort cancel,
                                 # truthful failure, never leak the raw id, never poll an unusable job.
                                 await cancel_openai_background_response(_bg.request_id)
-                                logger.info("process_chat | frontend_builder | bg store failed | kind=%s", _fb_kind)
+                                logger.info("process_chat | frontend_builder | bg store write failed | kind=%s", _fb_kind)
                                 return {
                                     "reply": "", "intent": canonical, "model": _bg.model,
                                     "provider": _bg.provider, "request_id": None, "mode": canonical,
@@ -371,13 +407,15 @@ async def process_chat(
                                         "status": "failed", "endpoint": "responses", "model": _bg.model,
                                         "provider": _bg.provider, "fallback_used": False,
                                         "background_mode": True, "background_task_kind": _fb_kind,
-                                        "error_kind": "background-store-failed",
+                                        "background_store_available": True, "background_store_status": _probe.status,
+                                        "configured_max_output_tokens": _fb_max_tokens,
+                                        "error_kind": "background-store-unavailable",
                                         "error_message": "The background job could not be stored; the task was cancelled.",
                                     }},
                                 }
                             logger.info(
-                                "process_chat | frontend_builder | bg started | kind=%s | job=%s | ms=%d",
-                                _fb_kind, _job_id[:12], _bg.latency_ms,
+                                "process_chat | frontend_builder | bg started | kind=%s | job=%s | budget=%d | store=%s | ms=%d",
+                                _fb_kind, _job_id[:12], _fb_max_tokens, _probe.status, _bg.latency_ms,
                             )
                             return {
                                 "reply": "", "intent": canonical, "model": _bg.model,
@@ -388,29 +426,33 @@ async def process_chat(
                                     "background_mode": True, "background_job_id": _job_id,
                                     "background_task_kind": _fb_kind, "poll_after_ms": 2500,
                                     "expires_in_ms": 540000, "store_required": True,
+                                    "background_store_available": True, "background_store_status": _probe.status,
+                                    "configured_max_output_tokens": _fb_max_tokens,
                                 }},
                             }
                         # Completed immediately, OR the create failed at the provider (not started):
                         # return truthfully (no job, no poll). Raw id stays hidden (background_mode).
                         logger.info(
-                            "process_chat | frontend_builder | bg immediate | kind=%s | ok=%s | status=%s | ms=%d",
-                            _fb_kind, _bg.ok, _bg.execution_status, _bg.latency_ms,
+                            "process_chat | frontend_builder | bg immediate | kind=%s | ok=%s | status=%s | in=%s | out=%s | reason=%s | ms=%d",
+                            _fb_kind, _bg.ok, _bg.execution_status, _bg.input_tokens, _bg.output_tokens,
+                            _bg.error_code, _bg.latency_ms,
                         )
-                        return _fb_return(_bg, background_mode=True, task_kind=_fb_kind)
+                        return _fb_return(_bg, background_mode=True, task_kind=_fb_kind, configured_max=_fb_max_tokens)
 
-                    # Synchronous transport — static reviews, unknown markers, or Redis unavailable.
+                    # Synchronous transport — static reviews and unknown markers only (never
+                    # full-source). Uses the registered review budget (unchanged).
                     _fb_res = await ask_openai_frontend_structured(
                         prompt=message,
                         system=sys_p,
                         model=cfg["model"],
-                        max_output_tokens=cfg["max_tokens"],
+                        max_output_tokens=_fb_max_tokens,
                     )
                     logger.info(
-                        "process_chat | frontend_builder | sync | kind=%s | ok=%s | status=%s | model=%s | ms=%d | ekind=%s",
+                        "process_chat | frontend_builder | sync | kind=%s | ok=%s | status=%s | model=%s | budget=%d | ms=%d | ekind=%s",
                         _fb_kind, _fb_res.ok, _fb_res.execution_status, _fb_res.model,
-                        _fb_res.latency_ms, _fb_res.error_kind,
+                        _fb_max_tokens, _fb_res.latency_ms, _fb_res.error_kind,
                     )
-                    return _fb_return(_fb_res)
+                    return _fb_return(_fb_res, configured_max=_fb_max_tokens)
 
                 # Game Builder — adaptive output budget. The build size varies
                 # a lot (a Fast Prototype vs a Production-Style Roblox tycoon

@@ -551,10 +551,26 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
         if (typeof fbr.backgroundWaitMs === 'number') ownerRows.push(['frontendBackgroundWaitMs', String(fbr.backgroundWaitMs)]);
         if (fbr.backgroundTerminalStatus) ownerRows.push(['frontendBackgroundTerminalStatus', fbr.backgroundTerminalStatus]);
         if (typeof fbr.backgroundStoreRequired === 'boolean') ownerRows.push(['frontendBackgroundStoreRequired', String(fbr.backgroundStoreRequired)]);
+        // Phase 13F.2 — the full-source Background transport is now mandatory (no synchronous
+        // fallback); the raw OpenAI response id is never exposed to the browser.
+        ownerRows.push(['frontendBackgroundTransportRequired', 'true']);
+        ownerRows.push(['frontendRawProviderIdExposed', 'false']);
       } else if (fbr.executionEndpoint === 'responses' || fbr.status === 'completed') {
         // A synchronous frontend task (static review, or an old-backend synchronous build).
         ownerRows.push(['frontendReviewTransport', 'synchronous']);
       }
+      // Phase 13F.2 — background store health + token-usage truth. Token counts are usage
+      // (they INCLUDE hidden reasoning), NOT character counts; partial chars are the length of
+      // a rejected incomplete output, never the project itself.
+      if (typeof fbr.backgroundStoreAvailable === 'boolean') ownerRows.push(['frontendBackgroundStoreAvailable', String(fbr.backgroundStoreAvailable)]);
+      if (fbr.backgroundStoreStatus) ownerRows.push(['frontendBackgroundStoreStatus', fbr.backgroundStoreStatus]);
+      if (typeof fbr.configuredMaxOutputTokens === 'number') ownerRows.push(['frontendConfiguredMaxOutputTokens', String(fbr.configuredMaxOutputTokens)]);
+      if (typeof fbr.inputTokens === 'number') ownerRows.push(['frontendInputTokens', String(fbr.inputTokens)]);
+      if (typeof fbr.outputTokens === 'number') ownerRows.push(['frontendOutputTokens', String(fbr.outputTokens)]);
+      if (typeof fbr.reasoningTokens === 'number') ownerRows.push(['frontendReasoningTokens', String(fbr.reasoningTokens)]);
+      if (typeof fbr.totalTokens === 'number') ownerRows.push(['frontendTotalTokens', String(fbr.totalTokens)]);
+      if (typeof fbr.partialOutputCharCount === 'number') ownerRows.push(['frontendPartialOutputChars', String(fbr.partialOutputCharCount)]);
+      ownerRows.push(['frontendOutputLimitReached', String(fbr.executionStatus === 'incomplete' && fbr.backendErrorCode === 'max_output_tokens')]);
     }
 
     // Phase 12C — STATIC parse + contract validation of the raw builder response.

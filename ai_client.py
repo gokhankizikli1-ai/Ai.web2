@@ -285,12 +285,21 @@ class StructuredAIResult:
     provider: str
     endpoint: str
     request_id: Optional[str]
-    execution_status: str          # succeeded | failed | timeout | incomplete
+    execution_status: str          # succeeded | failed | timeout | incomplete | queued | in_progress | cancelled
     latency_ms: int
     fallback_used: bool
     error_kind: Optional[str] = None
     error_code: Optional[str] = None
     error_message: Optional[str] = None
+    # Phase 13F.2 — bounded numeric usage truth from the terminal Responses object. For a
+    # reasoning model, output_tokens INCLUDES hidden reasoning tokens; visible source is a
+    # subset. `partial_output_char_count` is the LOCAL length of the extracted (rejected)
+    # partial text on an incomplete response — never the partial project itself.
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
+    reasoning_tokens: Optional[int] = None
+    total_tokens: Optional[int] = None
+    partial_output_char_count: Optional[int] = None
 
 
 def _sanitize_error_text(msg, limit: int = _MAX_ERR_MSG_CHARS) -> Optional[str]:
@@ -575,6 +584,50 @@ def _frontend_task_is_background(kind: str) -> bool:
     return kind in _FRONTEND_BACKGROUND_TASK_KINDS
 
 
+# Phase 13F.2 — a full-source frontend task must budget for hidden reasoning + visible
+# multi-file source + formatting inside ONE Responses `max_output_tokens`. Production showed
+# 12,000 exhausting on `max_output_tokens` before the envelope completed, so full-source tasks
+# get a dedicated 30,000-token budget. Static reviews keep their registered budget; an unknown
+# task falls back to the registered budget (never silently promoted to the large budget).
+FRONTEND_FULL_SOURCE_MAX_OUTPUT_TOKENS = 30_000
+
+
+def frontend_task_max_output_tokens(task_kind: str, registered_max_tokens: int) -> int:
+    """Pure resolver: full-source frontend tasks → 30,000; reviews/unknown → the registered
+    budget. Never changes website planning or any other mode budget."""
+    if _frontend_task_is_background(task_kind):
+        return FRONTEND_FULL_SOURCE_MAX_OUTPUT_TOKENS
+    return registered_max_tokens
+
+
+def _extract_responses_usage(data: dict) -> dict:
+    """Bounded numeric usage from a Responses object. Numbers only — never raw content."""
+    out: dict = {}
+    usage = data.get("usage") if isinstance(data, dict) else None
+    if not isinstance(usage, dict):
+        return out
+
+    def _n(v):
+        return int(v) if isinstance(v, (int, float)) and v >= 0 else None
+
+    it = _n(usage.get("input_tokens"))
+    ot = _n(usage.get("output_tokens"))
+    tt = _n(usage.get("total_tokens"))
+    rt = None
+    det = usage.get("output_tokens_details")
+    if isinstance(det, dict):
+        rt = _n(det.get("reasoning_tokens"))
+    if it is not None:
+        out["input_tokens"] = it
+    if ot is not None:
+        out["output_tokens"] = ot
+    if rt is not None:
+        out["reasoning_tokens"] = rt
+    if tt is not None:
+        out["total_tokens"] = tt
+    return out
+
+
 _BG_NONTERMINAL = ("queued", "in_progress")
 
 
@@ -587,8 +640,11 @@ def _classify_background_response(data: dict, fallback_model: str, elapsed_ms: i
     result_model = data.get("model") if isinstance(data.get("model"), str) else fallback_model
     status = data.get("status")
 
+    usage = _extract_responses_usage(data)
+
     def mk(ok: bool, execution_status: str, text: str = "",
-           error_kind=None, error_code=None, error_message=None) -> StructuredAIResult:
+           error_kind=None, error_code=None, error_message=None,
+           partial_output_char_count=None) -> StructuredAIResult:
         return StructuredAIResult(
             ok=ok, text=text, model=result_model, provider="openai", endpoint="responses",
             request_id=request_id, execution_status=execution_status, latency_ms=elapsed_ms,
@@ -596,6 +652,11 @@ def _classify_background_response(data: dict, fallback_model: str, elapsed_ms: i
             error_kind=(str(error_kind)[:_MAX_ERR_KIND_CHARS] if error_kind else None),
             error_code=(str(error_code)[:_MAX_ERR_KIND_CHARS] if error_code not in (None, "") else None),
             error_message=_sanitize_error_text(error_message),
+            input_tokens=usage.get("input_tokens"),
+            output_tokens=usage.get("output_tokens"),
+            reasoning_tokens=usage.get("reasoning_tokens"),
+            total_tokens=usage.get("total_tokens"),
+            partial_output_char_count=partial_output_char_count,
         )
 
     if status in _BG_NONTERMINAL:
@@ -611,8 +672,11 @@ def _classify_background_response(data: dict, fallback_model: str, elapsed_ms: i
         det = data.get("incomplete_details")
         if isinstance(det, dict):
             reason = det.get("reason")
+        # Record ONLY the local length of the (rejected) partial text — never the partial project.
+        partial = _extract_responses_output_text(data)
         return mk(False, "incomplete", error_kind="incomplete-response", error_code=reason,
-                  error_message="The background Responses result was incomplete (output limit or truncation).")
+                  error_message="The background Responses result was incomplete (output limit or truncation).",
+                  partial_output_char_count=len(partial) if partial else 0)
     if status == "failed":
         err = data.get("error")
         code = err.get("code") if isinstance(err, dict) else None
