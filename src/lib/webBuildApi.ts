@@ -439,7 +439,95 @@ export type WebBuildErrorKind =
   // Phase 13E.2 — the CLIENT per-attempt planning deadline (210s) fired before any response.
   // Distinct from generic `timeout` (caller/network), from `planning_timeout` (the backend's
   // authoritative 180s Responses timeout), and from a caller `cancelled`.
-  | 'planning_client_timeout';
+  | 'planning_client_timeout'
+  // Phase 13F — dedicated FRONTEND generation transport/provider failures on a FRESH build.
+  // None of these is a valid generated website; a fresh build with zero model-native frontend
+  // output must never be presented as a successful deterministic-fallback site. Distinct from
+  // contract_failed (structural), which stays for a SUCCESSFUL response with invalid code.
+  | 'frontend_generation_client_timeout' | 'frontend_generation_timeout'
+  | 'frontend_generation_failed' | 'frontend_generation_incomplete'
+  | 'frontend_generation_access' | 'frontend_generation_quota' | 'frontend_generation_rate_limited';
+
+/** Phase 13F — the frontend generation transport/provider failure kinds (subset above). */
+export type FrontendGenerationErrorKind =
+  | 'frontend_generation_client_timeout' | 'frontend_generation_timeout'
+  | 'frontend_generation_failed' | 'frontend_generation_incomplete'
+  | 'frontend_generation_access' | 'frontend_generation_quota' | 'frontend_generation_rate_limited';
+
+/** Phase 13F — bounded context attached to a thrown frontend-generation error (no raw provider
+ *  payload / headers). Lets the UI + owner diagnostics identify the failure without a fake build. */
+export interface FrontendGenerationErrorReason {
+  kind: FrontendGenerationErrorKind;
+  rawStatus?: string;
+  executionStatus?: string;
+  clientTimedOut: boolean;
+  backendErrorKind?: string;
+  backendErrorCode?: string;
+}
+
+/** Phase 13F — bounded, already-localized message for a fresh-build FRONTEND generation
+ *  transport/provider failure. These are shown directly. They must NEVER claim planning failed,
+ *  the prompt was too complicated, the design review rejected the project, or the code was
+ *  malformed — because the request timed out / was refused before any usable output existed. */
+export function frontendGenerationErrorMessage(kind: FrontendGenerationErrorKind, lang: Language): string {
+  const tr = lang === 'tr';
+  switch (kind) {
+    case 'frontend_generation_client_timeout':
+      return tr
+        ? 'Ön yüz üretimi istemci zaman sınırı içinde tamamlanmadı. Eksik çıktı site olarak kabul edilmedi.'
+        : 'Frontend generation did not finish within the client time limit. The incomplete output was not accepted as a site.';
+    case 'frontend_generation_timeout':
+      return tr
+        ? 'GPT-5.6 ön yüz projesini sağlayıcı zaman sınırı içinde tamamlayamadı. Düşük kaliteli yedek görünüm sonuç olarak gösterilmedi.'
+        : 'GPT-5.6 could not finish the frontend project within the provider time limit. The lower-quality fallback view was not shown as the result.';
+    case 'frontend_generation_incomplete':
+      return tr
+        ? 'Ön yüz modeli cevabı tamamlayamadı. Eksik React projesi kullanılmadı.'
+        : 'The frontend model did not finish its response. The incomplete React project was not used.';
+    case 'frontend_generation_access':
+      return tr
+        ? 'GPT-5.6 ön yüz modeline erişilemedi. OpenAI proje ve model erişimini kontrol et.'
+        : 'The GPT-5.6 frontend model could not be accessed. Check OpenAI project and model access.';
+    case 'frontend_generation_quota':
+      return tr
+        ? 'OpenAI API bakiyesi veya proje kotası ön yüz üretimi için yetersiz. Kullanılan API anahtarının bağlı olduğu proje ve billing limitini kontrol et.'
+        : 'The OpenAI API balance or project quota is insufficient for frontend generation. Check the billing limit and project the API key belongs to.';
+    case 'frontend_generation_rate_limited':
+      return tr
+        ? 'OpenAI ön yüz üretim isteğini geçici olarak hız sınırına aldı. Biraz bekleyip tekrar dene.'
+        : 'OpenAI temporarily rate-limited the frontend generation request. Wait a moment and try again.';
+    default:
+      return tr
+        ? 'Ön yüz üretim isteği tamamlanamadı. Sağlayıcı hatası oluşturulmuş site olarak kabul edilmedi.'
+        : 'The frontend generation request did not complete. A provider error was not accepted as a generated site.';
+  }
+}
+
+/** Phase 13F — map a FAILED initial frontend raw artifact to a typed transport error using ONLY
+ *  the structured execution fields (never the human-readable reason). insufficient_quota wins
+ *  over rate-limit; a client timeout (no response) is distinct from a backend execution timeout. */
+export function mapFrontendGenerationError(raw: FrontendBuilderRawArtifact): WebBuildError {
+  const ek = raw.backendErrorKind;
+  const kind: FrontendGenerationErrorKind =
+    ek === 'client-timeout' ? 'frontend_generation_client_timeout'
+    : raw.backendErrorCode === 'insufficient_quota' ? 'frontend_generation_quota'
+    : ek === 'rate-limit' ? 'frontend_generation_rate_limited'
+    : (ek === 'permission-or-model-access' || ek === 'authentication-error' || ek === 'missing-api-key') ? 'frontend_generation_access'
+    : raw.executionStatus === 'timeout' ? 'frontend_generation_timeout'
+    : raw.executionStatus === 'incomplete' ? 'frontend_generation_incomplete'
+    : 'frontend_generation_failed';
+  const reason: FrontendGenerationErrorReason = {
+    kind, rawStatus: raw.status, executionStatus: raw.executionStatus,
+    clientTimedOut: ek === 'client-timeout',
+    backendErrorKind: raw.backendErrorKind, backendErrorCode: raw.backendErrorCode,
+  };
+  return new WebBuildError(kind, frontendGenerationErrorMessage(kind, resolveUiLanguage()), reason);
+}
+
+/** Read the current UI language for a bounded, already-localized error message. Never throws. */
+function resolveUiLanguage(): Language {
+  try { return useLanguageStore.getState().lang; } catch { return 'en'; }
+}
 
 /** Phase 13E.2 — bounded context attached to a thrown planning client-timeout error so the
  *  UI + developer diagnostics can identify the stage/deadline/elapsed without a fake build
@@ -1654,7 +1742,15 @@ export async function generateWebBuild(
  * explicit caller cancellation, which propagates. */
 export const FRONTEND_BUILDER_MODE = 'frontend_builder' as const;
 
-const FRONTEND_BUILDER_TIMEOUT_MS = 120_000;
+/* ── Phase 13F — dedicated FULL-SOURCE frontend attempt timeout. The old 120s client
+ * deadline could abort a valid GPT-5.6 generation up to 60s BEFORE the backend frontend
+ * Responses read timeout (180s) could return a truthful result — the browser then showed
+ * the deterministic fallback as if it were the model-native site. 210s = the backend's 180s
+ * read timeout + a 30s transport/JSON margin, so the backend/provider timeout normally wins
+ * and returns truthful execution metadata. Backend timeout / model / tokens / reasoning /
+ * request content are all UNCHANGED. Used for full-source generation (and the full-source
+ * repairs below); the lightweight static review keeps its own smaller bound. */
+const FRONTEND_BUILDER_ATTEMPT_TIMEOUT_MS = 210_000;
 const MAX_FRONTEND_SPEC_CHARS = 120_000;
 const MAX_FRONTEND_RAW_RESPONSE_CHARS = 180_000;
 
@@ -1970,11 +2066,13 @@ export async function generateFrontendBuilderRaw(
     if (tok) headers['Authorization'] = `Bearer ${tok}`;
   } catch { /* ignore */ }
 
-  // Dedicated timeout budget, separate from the planning request's 90s timer.
+  // Phase 13F — dedicated FULL-SOURCE timeout, separate from planning. 210s > the backend's
+  // 180s Responses read timeout, so a valid generation is no longer aborted early; the
+  // backend/provider timeout normally wins and returns truthful execution metadata.
   const timer = new AbortController();
   let timedOut = false;
   let cancelledByCaller = false;
-  const timeoutId = setTimeout(() => { timedOut = true; timer.abort(); }, FRONTEND_BUILDER_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => { timedOut = true; timer.abort(); }, FRONTEND_BUILDER_ATTEMPT_TIMEOUT_MS);
   const onCallerAbort = () => { cancelledByCaller = true; timer.abort(); };
   if (opts?.signal) {
     if (opts.signal.aborted) { cancelledByCaller = true; timer.abort(); }
@@ -2001,8 +2099,11 @@ export async function generateFrontendBuilderRaw(
         // Explicit CALLER cancellation must propagate so a cancelled build is never
         // persisted as a successful generation.
         if (cancelledByCaller) throw new WebBuildError('cancelled', 'Frontend Builder cancelled.', err);
-        // Our OWN timeout fails open — the planning build survives.
-        if (timedOut) return frontendBuilderArtifact('failed', 'The dedicated Frontend Builder request timed out.');
+        // Phase 13F — our OWN client timeout. Record a machine-readable discriminator
+        // (backendErrorKind='client-timeout') so the quality pipeline maps this to
+        // frontend_generation_client_timeout — distinct from a backend execution timeout.
+        // No response arrived, so executionStatus stays unknown (never a fake success).
+        if (timedOut) return frontendBuilderArtifact('failed', 'The dedicated Frontend Builder request timed out on the client before any response.', { backendErrorKind: 'client-timeout', executionEndpoint: 'unknown' });
         return frontendBuilderArtifact('failed', 'The dedicated Frontend Builder request was aborted.');
       }
       return frontendBuilderArtifact('failed', 'Could not reach the Korvix backend for the dedicated Frontend Builder.');
@@ -2096,8 +2197,12 @@ export async function generateFrontendBuilderRaw(
  * nested inside. The extended _FRONTEND_BUILDER_PROMPT branches on the discriminator.
  * The 125k guard cap is the stricter practical bound; the client caps below are the
  * hard client-side upper bounds — anything the guard rejects simply fails open. */
+// Phase 13F — the static review is a lightweight, bounded task (it does not generate a full
+// project), so it keeps its own smaller deadline; it never inherited the stale 120s full-source
+// value. The quality REPAIR regenerates full source, so it is aligned to the full-source 210s
+// (was 120s, which could abort a valid repair before the backend's 180s timeout).
 const FRONTEND_REVIEW_TIMEOUT_MS = 75_000;
-const FRONTEND_REPAIR_TIMEOUT_MS = 120_000;
+const FRONTEND_REPAIR_TIMEOUT_MS = FRONTEND_BUILDER_ATTEMPT_TIMEOUT_MS;
 const MAX_FRONTEND_TASK_REQUEST_CHARS = 240_000;
 const MAX_FRONTEND_REVIEW_RESPONSE_CHARS = 30_000;
 
@@ -2618,7 +2723,9 @@ export async function generateFrontendBuilderRevisionRaw(
  * `[FRONTEND CONTRACT REPAIR REQUEST]` + one BEGIN/END_FRONTEND_BUILD_SPEC_JSON pair with
  * the named contract-repair markers nested inside. The full request stays below the 125k
  * guard cap (client cap 124k). */
-const FRONTEND_CONTRACT_REPAIR_TIMEOUT_MS = 120_000;
+// Phase 13F — the structural contract repair regenerates full source, so it is aligned to
+// the full-source 210s (was 120s, which could abort a valid repair before the backend's 180s).
+const FRONTEND_CONTRACT_REPAIR_TIMEOUT_MS = FRONTEND_BUILDER_ATTEMPT_TIMEOUT_MS;
 const MAX_FRONTEND_CONTRACT_REPAIR_REQUEST_CHARS = 124_000;
 
 /** A COMPACT, allowlisted contract projection — only the fields a structural repair

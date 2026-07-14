@@ -519,6 +519,25 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       if (fbr.status === 'failed' && fbr.executionStatus && fbr.executionStatus !== 'succeeded' && fbr.executionStatus !== 'unknown') {
         ownerRows.push(['frontendTransportNote', 'generation request failed — no frontend envelope was produced; this is NOT malformed generated code']);
       }
+      // Phase 13F — frontend client-timing truth (backend-first policy). These are client
+      // timers, not token usage or provider latency. A fresh transport failure no longer
+      // persists a completed build, so these rows normally describe a SUCCESSFUL build or a
+      // legacy saved fallback build.
+      ownerRows.push(['frontendClientTimeoutPolicy', 'backend-first']);
+      ownerRows.push(['frontendClientConfiguredTimeoutMs', '210000']);
+      ownerRows.push(['frontendBackendTimeoutMs', '180000']);
+      ownerRows.push(['frontendClientTimedOut', String(fbr.backendErrorKind === 'client-timeout')]);
+      if (fbr.status === 'failed') {
+        const ek = fbr.backendErrorKind;
+        const cls = ek === 'client-timeout' ? 'client-timeout'
+          : fbr.backendErrorCode === 'insufficient_quota' ? 'quota'
+          : ek === 'rate-limit' ? 'rate-limited'
+          : (ek === 'permission-or-model-access' || ek === 'authentication-error' || ek === 'missing-api-key') ? 'access'
+          : fbr.executionStatus === 'timeout' ? 'backend-timeout'
+          : fbr.executionStatus === 'incomplete' ? 'incomplete'
+          : 'failed';
+        ownerRows.push(['frontendFailureClassification', cls]);
+      }
     }
 
     // Phase 12C — STATIC parse + contract validation of the raw builder response.
@@ -567,6 +586,12 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
       ownerRows.push(['frontendConsumedChars', String(fbc.consumedCharCount)]);
       ownerRows.push(['frontendConsumptionReason', fbc.reason.slice(0, 160)]);
       if (fbc.status === 'fallback' && fbc.fallbackReason) ownerRows.push(['frontendConsumptionFallback', fbc.fallbackReason.slice(0, 160)]);
+      // Phase 13F — a MODEL-NATIVE consumption is the real GPT-5.6 project (false). A saved
+      // FALLBACK build shows the deterministic renderer, not a model-native site: label it
+      // honestly. For a fresh transport failure no completed build is persisted, so this row
+      // is normally false on new builds and only true on legacy/internal-recovery fallbacks.
+      ownerRows.push(['frontendFallbackPresentedAsSuccess', String(fbc.status === 'fallback')]);
+      if (fbc.status === 'fallback') ownerRows.push(['frontendResultOrigin', 'deterministic-fallback-not-model-native']);
     }
 
     // Phase 12E — STATIC model design-quality review + at most one bounded repair +

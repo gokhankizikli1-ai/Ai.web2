@@ -170,7 +170,13 @@ export default function WebsiteBuilder() {
       err.kind === 'planning_throttled' || err.kind === 'planning_quota' ||
       err.kind === 'planning_rate_limited' ||
       // Phase 13E.2 — the client per-attempt planning deadline (distinct from a backend timeout).
-      err.kind === 'planning_client_timeout'
+      err.kind === 'planning_client_timeout' ||
+      // Phase 13F — dedicated FRONTEND generation transport/provider failures; a fresh build
+      // with zero model-native output is never shown as a deterministic-fallback success.
+      err.kind === 'frontend_generation_client_timeout' || err.kind === 'frontend_generation_timeout' ||
+      err.kind === 'frontend_generation_failed' || err.kind === 'frontend_generation_incomplete' ||
+      err.kind === 'frontend_generation_access' || err.kind === 'frontend_generation_quota' ||
+      err.kind === 'frontend_generation_rate_limited'
     )) {
       setErrorMsg(err.message);
       return;
