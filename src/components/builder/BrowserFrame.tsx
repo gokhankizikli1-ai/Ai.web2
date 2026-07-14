@@ -9,6 +9,8 @@ import { Lock, Monitor, Tablet, Smartphone } from 'lucide-react';
 
 export type Viewport = 'desktop' | 'tablet' | 'mobile';
 
+// Real device widths. Tablet/mobile are REAL CSS widths (never transform: scale) so
+// the previewed page's own responsive breakpoints evaluate honestly. Desktop is fluid.
 const VIEWPORT_WIDTH: Record<Viewport, string> = {
   desktop: '100%',
   tablet: '834px',
@@ -72,11 +74,22 @@ export default function BrowserFrame({
         )}
       </div>
 
-      {/* Viewport body */}
-      <div className="bg-black/20 flex justify-center overflow-x-auto">
+      {/* Viewport body. The host frame owns the width. Desktop is fluid (width: 100%).
+          Tablet/mobile use an EXPLICIT real CSS width — the previous `width: 100%` +
+          `max-width` collapsed the device viewport whenever the surrounding panel was
+          narrower than the device (max-width only caps, it can't force a minimum), so
+          the preview shrank to the panel instead of rendering at 834/390px. An explicit
+          width + auto margins keeps device modes at their true size and, when wider than
+          the panel, stays fully reachable via horizontal scroll (block + margin-auto,
+          not flex `justify-center`, so the leading edge is never clipped). No transform. */}
+      <div className="bg-black/20 overflow-x-auto">
         <div
-          className="w-full transition-all duration-300 ease-out"
-          style={{ maxWidth: VIEWPORT_WIDTH[viewport] }}
+          className="mx-auto transition-all duration-300 ease-out"
+          style={
+            viewport === 'desktop'
+              ? { width: '100%', minWidth: 0, boxSizing: 'border-box' }
+              : { width: VIEWPORT_WIDTH[viewport], minWidth: 0, boxSizing: 'border-box' }
+          }
         >
           {children}
         </div>
