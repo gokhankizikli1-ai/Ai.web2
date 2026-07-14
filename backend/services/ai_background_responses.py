@@ -18,10 +18,13 @@
 # Cross-process safe: backed by the shared Redis connection. When Redis is disabled/
 # unavailable there is NO in-memory fallback — the caller falls back to the SYNCHRONOUS
 # frontend transport instead of starting an unusable background job.
+import os
 import json
 import time
+import asyncio
 import secrets
 import logging
+from dataclasses import dataclass
 from typing import Optional, Dict, Any
 
 logger = logging.getLogger(__name__)
@@ -34,18 +37,60 @@ _JOB_ID_PREFIX = "job_"
 _MAX_FIELD = 200
 
 
-def is_background_store_available() -> bool:
-    """True only when the shared Redis KV store is enabled AND reachable. When False the
-    caller must NOT start a background job (no cross-process in-memory fallback exists)."""
+# Phase 13F.2 — a TRUTHFUL asynchronous probe of the shared background store. It replaces the
+# old opaque boolean that (a) hid WHY the store was unavailable and (b) ran a BLOCKING sync
+# ping inside the async request path — the defect that silently forced synchronous fallback in
+# production. The probe uses the SAME async Redis client factory that create/load/delete_job
+# use (`get_async_client`, which pings on connect), so all four operations share one client
+# model and URL resolution. It never surfaces a URL/host/password or an exception repr.
+_PROBE_TIMEOUT_S = 3.0
+
+
+@dataclass(frozen=True)
+class BackgroundStoreProbe:
+    available: bool
+    status: str                       # available | disabled | missing-configuration |
+    #                                   import-failed | connection-failed | ping-failed | unexpected-error
+    error_kind: Optional[str] = None  # bounded; never a secret / exception repr
+
+
+async def probe_background_store() -> BackgroundStoreProbe:
+    """Async, bounded probe of the shared Redis background store. No blocking sync ping, no
+    secret in the result. `available` is True only when the store is enabled, reachable and
+    responds to a ping within the bounded timeout."""
+    # Config gate first (pure env read; mirrors redis_client.is_enabled without importing privates).
+    enabled = os.getenv("ENABLE_REDIS", "false").strip().lower() == "true"
+    has_url = bool((os.getenv("REDIS_URL") or "").strip())
+    if not enabled:
+        return BackgroundStoreProbe(False, "disabled", "background-store-disabled")
+    if not has_url:
+        return BackgroundStoreProbe(False, "missing-configuration", "background-store-missing-config")
+
+    # Import the shared async client factory (a missing/wrong module → import-failed, not sync fallback).
     try:
-        from backend.services.redis_client import is_enabled
-        if not is_enabled():
-            return False
-        from backend.services.redis_client import get_client
-        get_client()  # eager PING; raises when unreachable/misconfigured
-        return True
+        from backend.services.redis_client import get_async_client
     except Exception:
-        return False
+        return BackgroundStoreProbe(False, "import-failed", "background-store-import-failed")
+
+    try:
+        async def _connect_and_ping() -> None:
+            client = await get_async_client()   # connects + pings on first call; raises on failure
+            await client.ping()                 # explicit re-ping for a live-degradation check
+        await asyncio.wait_for(_connect_and_ping(), timeout=_PROBE_TIMEOUT_S)
+        return BackgroundStoreProbe(True, "available")
+    except asyncio.TimeoutError:
+        return BackgroundStoreProbe(False, "connection-failed", "background-store-timeout")
+    except Exception as e:
+        # Distinguish a config/import raise from a connect/ping raise WITHOUT leaking details.
+        name = type(e).__name__
+        if name in ("RedisConfigError",):
+            return BackgroundStoreProbe(False, "import-failed", "background-store-config")
+        if "ping" in str(e).lower():
+            return BackgroundStoreProbe(False, "ping-failed", "background-store-ping-failed")
+        if name in ("RedisUnavailable", "ConnectionError", "TimeoutError", "OSError"):
+            return BackgroundStoreProbe(False, "connection-failed", "background-store-connection-failed")
+        logger.warning("ai_background_responses | probe unexpected error | %s", name)
+        return BackgroundStoreProbe(False, "unexpected-error", "background-store-error")
 
 
 def _key(job_id: str) -> str:
@@ -61,6 +106,7 @@ async def create_job(
     openai_response_id: str,
     task_kind: str,
     model: str,
+    configured_max_output_tokens: int = 0,
 ) -> Optional[str]:
     """Create an opaque, TTL-bounded ownership record. Returns the opaque job id, or None
     when the record could not be stored (the caller then best-effort cancels the started
@@ -75,6 +121,9 @@ async def create_job(
         "openai_response_id": str(openai_response_id)[:_MAX_FIELD],
         "task_kind": str(task_kind or "unknown")[:_MAX_FIELD],
         "model": str(model or "")[:_MAX_FIELD],
+        # Phase 13F.2 — bounded number so the poll endpoint can report the configured budget
+        # on the terminal result (owner diagnostics). Never source / prompt / provider output.
+        "configured_max_output_tokens": int(configured_max_output_tokens or 0),
         "created_at": now,
         "expires_at": now + JOB_TTL_S,
     }

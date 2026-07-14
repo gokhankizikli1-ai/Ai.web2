@@ -446,13 +446,17 @@ export type WebBuildErrorKind =
   // contract_failed (structural), which stays for a SUCCESSFUL response with invalid code.
   | 'frontend_generation_client_timeout' | 'frontend_generation_timeout'
   | 'frontend_generation_failed' | 'frontend_generation_incomplete'
-  | 'frontend_generation_access' | 'frontend_generation_quota' | 'frontend_generation_rate_limited';
+  | 'frontend_generation_access' | 'frontend_generation_quota' | 'frontend_generation_rate_limited'
+  // Phase 13F.2 — the model exhausted its output budget (incomplete + max_output_tokens), and
+  // the shared background job store was unavailable so no model request was started.
+  | 'frontend_generation_output_limit' | 'frontend_generation_background_unavailable';
 
 /** Phase 13F — the frontend generation transport/provider failure kinds (subset above). */
 export type FrontendGenerationErrorKind =
   | 'frontend_generation_client_timeout' | 'frontend_generation_timeout'
   | 'frontend_generation_failed' | 'frontend_generation_incomplete'
-  | 'frontend_generation_access' | 'frontend_generation_quota' | 'frontend_generation_rate_limited';
+  | 'frontend_generation_access' | 'frontend_generation_quota' | 'frontend_generation_rate_limited'
+  | 'frontend_generation_output_limit' | 'frontend_generation_background_unavailable';
 
 /** Phase 13F — bounded context attached to a thrown frontend-generation error (no raw provider
  *  payload / headers). Lets the UI + owner diagnostics identify the failure without a fake build. */
@@ -496,6 +500,14 @@ export function frontendGenerationErrorMessage(kind: FrontendGenerationErrorKind
       return tr
         ? 'OpenAI ön yüz üretim isteğini geçici olarak hız sınırına aldı. Biraz bekleyip tekrar dene.'
         : 'OpenAI temporarily rate-limited the frontend generation request. Wait a moment and try again.';
+    case 'frontend_generation_output_limit':
+      return tr
+        ? 'GPT-5.6 ön yüz projesi için ayrılan üretim sınırını doldurdu. Eksik React projesi kullanılmadı.'
+        : 'GPT-5.6 reached the generation budget for the frontend project. The incomplete React project was not used.';
+    case 'frontend_generation_background_unavailable':
+      return tr
+        ? 'Uzun süren ön yüz üretimi için gerekli arka plan görev deposuna erişilemedi. Model çağrısı başlatılmadı.'
+        : 'The background job store required for long-running frontend generation was unavailable. No model request was started.';
     default:
       return tr
         ? 'Ön yüz üretim isteği tamamlanamadı. Sağlayıcı hatası oluşturulmuş site olarak kabul edilmedi.'
@@ -514,10 +526,15 @@ export function mapFrontendGenerationError(raw: FrontendBuilderRawArtifact): Web
   // never a completed fallback build. Queued/in_progress never reach here (the poller waits).
   const clientTimedOut = ek === 'client-timeout' || ek === 'background-client-timeout';
   const kind: FrontendGenerationErrorKind =
-    clientTimedOut ? 'frontend_generation_client_timeout'
+    // Phase 13F.2 — the shared background store was unavailable (no model request was started).
+    ek === 'background-store-unavailable' ? 'frontend_generation_background_unavailable'
+    : clientTimedOut ? 'frontend_generation_client_timeout'
     : raw.backendErrorCode === 'insufficient_quota' ? 'frontend_generation_quota'
     : ek === 'rate-limit' ? 'frontend_generation_rate_limited'
     : (ek === 'permission-or-model-access' || ek === 'authentication-error' || ek === 'missing-api-key') ? 'frontend_generation_access'
+    // Phase 13F.2 — an OUTPUT-BUDGET exhaustion (incomplete + max_output_tokens) is distinct
+    // from a generic incomplete: it means the model ran out of tokens, not that it truncated.
+    : (raw.executionStatus === 'incomplete' && raw.backendErrorCode === 'max_output_tokens') ? 'frontend_generation_output_limit'
     : raw.executionStatus === 'timeout' ? 'frontend_generation_timeout'
     : raw.executionStatus === 'incomplete' ? 'frontend_generation_incomplete'
     : 'frontend_generation_failed';
@@ -1766,6 +1783,10 @@ export const FRONTEND_BUILDER_MODE = 'frontend_builder' as const;
  * repairs below); the lightweight static review keeps its own smaller bound. */
 const FRONTEND_BUILDER_ATTEMPT_TIMEOUT_MS = 210_000;
 const MAX_FRONTEND_SPEC_CHARS = 120_000;
+// Phase 13F.2 — a full-source task now configures a 30,000-token max_output_tokens, but that
+// budget INCLUDES hidden reasoning; the visible frontend-files-v1 source is a subset. Even the
+// worst case (all 30k tokens visible, ~4 chars/token ≈ 120k chars) fits comfortably under this
+// 180,000-char cap, so it is NOT raised. The 125k structured INPUT safety cap is also unchanged.
 const MAX_FRONTEND_RAW_RESPONSE_CHARS = 180_000;
 
 /** Phase 13B — a COMPACT, rebalanced builder projection with an EXPLICIT public/internal
@@ -1886,6 +1907,17 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
     'section.publicCopy as visible text; internalGuidance is build guidance, never page copy.',
     'Return ONLY the frontend-files-v1 envelope (## FRONTEND_FILES_V1 … ## END_FRONTEND_FILES_V1).',
     '',
+    // Phase 13F.2 — eliminate REDUNDANT tokens (not design quality). Fully implement the spec —
+    // required sections, motion/composition and the quality bar are UNCHANGED — but do not waste
+    // the output budget on non-source noise or duplicated copy.
+    'SOURCE OUTPUT DISCIPLINE:',
+    'Return only the exact frontend-files-v1 envelope. No explanation, implementation notes,',
+    'changelog, Markdown commentary or apologies. Do not emit unused files. Do not duplicate all',
+    'public copy in both a data file and component literals. Do not add large generated SVG paths,',
+    'base64 data, dependency lockfiles or boilerplate comments. Keep files concise, reusable and',
+    'production-minded while FULLY implementing the specification (do not reduce sections, flatten',
+    'the design, remove motion/composition or lower the quality bar).',
+    '',
     'BEGIN_FRONTEND_BUILD_SPEC_JSON',
     json,
     'END_FRONTEND_BUILD_SPEC_JSON',
@@ -1922,6 +1954,15 @@ interface AiExecutionMeta {
   backgroundWaitMs?: number;
   backgroundTerminalStatus?: string;
   storeRequired?: boolean;
+  /* ── Phase 13F.2 — background store health + bounded numeric usage truth (numbers only). */
+  backgroundStoreAvailable?: boolean;
+  backgroundStoreStatus?: string;
+  configuredMaxOutputTokens?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  reasoningTokens?: number;
+  totalTokens?: number;
+  partialOutputCharCount?: number;
 }
 const MAX_EXEC_ERR_KIND_CHARS = 80;
 const MAX_EXEC_ERR_MSG_CHARS = 240;
@@ -1981,6 +2022,14 @@ function parseAiExecutionMetadata(data: Record<string, unknown>): AiExecutionMet
     backgroundWaitMs: boundedInt(exec.background_wait_ms),
     backgroundTerminalStatus: boundedStr(exec.background_terminal_status, MAX_EXEC_ERR_KIND_CHARS),
     storeRequired: typeof exec.store_required === 'boolean' ? exec.store_required : undefined,
+    backgroundStoreAvailable: typeof exec.background_store_available === 'boolean' ? exec.background_store_available : undefined,
+    backgroundStoreStatus: boundedStr(exec.background_store_status, MAX_EXEC_ERR_KIND_CHARS),
+    configuredMaxOutputTokens: boundedInt(exec.configured_max_output_tokens),
+    inputTokens: boundedInt(exec.input_tokens),
+    outputTokens: boundedInt(exec.output_tokens),
+    reasoningTokens: boundedInt(exec.reasoning_tokens),
+    totalTokens: boundedInt(exec.total_tokens),
+    partialOutputCharCount: boundedInt(exec.partial_output_char_count),
   };
 }
 
@@ -2043,6 +2092,15 @@ function execArtifactFields(exec: AiExecutionMeta, data: Record<string, unknown>
     backgroundWaitMs: exec.backgroundWaitMs,
     backgroundTerminalStatus: exec.backgroundTerminalStatus,
     backgroundStoreRequired: exec.storeRequired,
+    // Phase 13F.2 — store health + bounded numeric usage truth (numbers only).
+    backgroundStoreAvailable: exec.backgroundStoreAvailable,
+    backgroundStoreStatus: exec.backgroundStoreStatus,
+    configuredMaxOutputTokens: exec.configuredMaxOutputTokens,
+    inputTokens: exec.inputTokens,
+    outputTokens: exec.outputTokens,
+    reasoningTokens: exec.reasoningTokens,
+    totalTokens: exec.totalTokens,
+    partialOutputCharCount: exec.partialOutputCharCount,
   };
 }
 

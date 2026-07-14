@@ -1595,6 +1595,16 @@ export interface FrontendBuilderRawArtifact {
   backgroundWaitMs?: number;
   backgroundTerminalStatus?: string;
   backgroundStoreRequired?: boolean;
+  /* ── Phase 13F.2 — background store health + bounded numeric usage truth (numbers/codes only;
+   *  never source, job id, raw OpenAI response id or reasoning content). Old builds lack these. */
+  backgroundStoreAvailable?: boolean;
+  backgroundStoreStatus?: string;
+  configuredMaxOutputTokens?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  reasoningTokens?: number;
+  totalTokens?: number;
+  partialOutputCharCount?: number;
 }
 
 /* ── Frontend Builder validation (Phase 12C) ──────────────────────────────────

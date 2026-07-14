@@ -154,7 +154,10 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
       err.kind === 'frontend_generation_client_timeout' || err.kind === 'frontend_generation_timeout' ||
       err.kind === 'frontend_generation_failed' || err.kind === 'frontend_generation_incomplete' ||
       err.kind === 'frontend_generation_access' || err.kind === 'frontend_generation_quota' ||
-      err.kind === 'frontend_generation_rate_limited'
+      err.kind === 'frontend_generation_rate_limited' ||
+      // Phase 13F.2 — output-budget exhaustion and background-store-unavailable (no model call).
+      err.kind === 'frontend_generation_output_limit' ||
+      err.kind === 'frontend_generation_background_unavailable'
     )) {
       setErrorMsg(err.message);
       return;
