@@ -28,7 +28,7 @@
  */
 import {
   generateFrontendBuilderRaw, generateFrontendBuilderReviewRaw, generateFrontendBuilderRepairRaw,
-  generateFrontendBuilderContractRepairRaw, WebBuildError,
+  generateFrontendBuilderContractRepairRaw, WebBuildError, mapFrontendGenerationError,
 } from '@/lib/webBuildApi';
 import {
   attachFrontendBuilderRaw, attachFrontendBuilderQualityResult,
@@ -346,8 +346,20 @@ export async function runFrontendBuilderQualityPipeline(
   plannedPayload: WebBuildPayload,
   opts?: { signal?: AbortSignal },
 ): Promise<WebBuildPayload> {
-  // ── Step 1 — initial generation + Phase 12B/12C/12D consumption (unchanged) ──
+  // ── Step 1 — initial generation + Phase 12B/12C/12D consumption ──
   const raw = await generateFrontendBuilderRaw(plannedPayload.artifacts?.frontendBuildSpec, { signal: opts?.signal });
+  // ── Phase 13F — an initial frontend TRANSPORT/PROVIDER failure (client timeout, backend
+  // timeout, incomplete, access, quota, rate-limit, or any other explicit failure with no
+  // usable output) is NOT a website. Throw the mapped typed error HERE, before
+  // attachFrontendBuilderRaw turns the planned payload into a deterministic-fallback
+  // consumption that would be persisted as a completed fresh build. Zero parser / contract
+  // repair / review / quality-repair calls follow. A completed-but-structurally-invalid
+  // response has raw.status === 'completed' and is handled by the existing contract-repair
+  // path below — it is NOT a transport failure. Caller cancellation already threw inside
+  // generateFrontendBuilderRaw. `skipped` (no spec) keeps its legacy behavior. ──
+  if (raw.status === 'failed') {
+    throw mapFrontendGenerationError(raw);
+  }
   const consumed = attachFrontendBuilderRaw(plannedPayload, raw);
 
   try {
