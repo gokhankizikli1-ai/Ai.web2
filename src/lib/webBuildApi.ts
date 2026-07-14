@@ -51,7 +51,22 @@ function getUserId(): string {
   }
 }
 
-/** The canonical H2 sections a full Web Build reply should contain. */
+/**
+ * Phase 13E.3 — the canonical PLANNING H2 sections a fresh Web Build reply must contain.
+ * website_builder is planning-only now: it produces strategy / architecture / copy, NOT
+ * React source. `## Frontend Code` is intentionally NOT here — the dedicated frontend_builder
+ * generates the real project afterward. Used for all fresh planning diagnostics.
+ */
+export const WEB_BUILD_PLANNING_SECTIONS = [
+  'Design Thinking Plan', 'Build Plan', 'Design Direction',
+  'Page Sections', 'Generated Copy', 'Next Steps',
+] as const;
+
+/**
+ * Legacy alias. Historically a full build reply also carried `## Frontend Code`; this symbol
+ * is kept ONLY for backward compatibility with old callers / saved builds and must not be
+ * used to require code from a fresh planning-only response. Prefer WEB_BUILD_PLANNING_SECTIONS.
+ */
 export const WEB_BUILD_SECTIONS = [
   'Build Plan', 'Design Direction', 'Page Sections',
   'Generated Copy', 'Frontend Code', 'Next Steps',
@@ -134,6 +149,11 @@ export interface WebBuildParseDiagnostics {
    *  real provider execution for the initial planning call + any strict/design-plan
    *  repair. Optional + backward compatible; no raw provider payload / tokens / headers. */
   planningExecutions?: WebBuildPlanningExecutionAttempt[];
+  /* ── Phase 13E.3 — did the planning reply still contain a code fence (```)? Derived from
+   *  the raw reply. website_builder is planning-only now; this is a diagnostic that the model
+   *  emitted code anyway (never a requirement). Optional → old builds omit it. `Frontend Code`
+   *  section presence is tracked by hasFrontendCodeSection. No source code is stored. */
+  codeFenceReturned?: boolean;
 }
 
 /* ── Phase 13E — Web Build PLANNING execution truth ────────────────────────────
@@ -622,150 +642,103 @@ export function buildWebBuildRequest(
     lines.push('', `Requested change: ${idea}`);
   } else {
     lines.push(
-      'You are a SENIOR product designer + front-end engineer. Build a real,',
-      'premium, production-grade website for the idea below by REASONING FROM THE',
-      'IDEA ITSELF — not from a fixed industry template. Two very different ideas',
-      'must produce genuinely different structure, visuals and copy because their',
-      'strategy is different. Interpret unusual, niche or sophisticated ideas on',
-      'their own terms.',
+      'You are a SENIOR Website Strategy, UX Architecture and Conversion Copy Director.',
+      'Produce the complete PLANNING package for the idea below by REASONING FROM THE IDEA',
+      'ITSELF, not from a fixed industry template. Two very different ideas must produce',
+      'genuinely different structure, copy and design decisions because their strategy differs.',
       '',
-      'SCOPE — WEBSITE + FRONT-END DEMO ONLY: Build the website and front-end demo',
-      'surfaces only. Do not implement the actual product\'s backend, AI runtime,',
-      'database, payments, authentication, CRM, real search engine, or real AI',
-      'conversation logic. When the idea is a product (AI chatbot, marketplace,',
-      'archive, SaaS, store, service…), the site must COMMUNICATE and DEMONSTRATE the',
-      'experience — not build it: e.g. a chat / product demo panel with sample',
-      'conversation bubbles + feature callouts, listing cards with filters and a',
-      'detail preview, a quote / contact / access request FORM SHELL. These are',
-      'local, client-side illustrations built from static/sample copy only — no',
-      'network or backend, no real AI output, no real submissions/payments/orders/',
-      'live inventory/search results, and never a claim that the product is running.',
+      'PLANNING ONLY: you are NOT writing code here. Do NOT output React, Tailwind, file paths',
+      '(src/..., .tsx), code fences, or any implementation source. A separate dedicated Frontend',
+      'Builder generates the real project afterward from THIS plan, so your job is to make every',
+      'decision it needs. Do NOT emit a "## Frontend Code" section.',
       '',
-      'STEP 1 — RESEARCH & STRATEGY (do this before writing any build):',
-      '- Interpret what the idea actually is (business / product / concept / model).',
-      '- Work out why someone visits, what they must understand fast, the emotional',
-      '  impression to create, the trust barriers, and the single primary conversion.',
-      '- Decide the layout logic, the visual metaphor, the sections that genuinely',
-      '  fit THIS concept, and the motion that supports it.',
-      'RESEARCH: If you have web search / browsing / research tools available, USE',
-      'them now to study adjacent sites, the product category, audience expectations',
-      'and conversion patterns — as inspiration, not copying — and fold real findings',
-      'into "Strategy insight". Include source URLs in Build Plan ONLY if a tool',
-      'actually returned them. If you have NO live tools, reason from knowledge and',
-      'label it "Strategy insight" — do NOT invent URLs, sources, competitors,',
-      'statistics, or claim you browsed/researched anything you did not fetch.',
+      'SCOPE, WEBSITE + FRONT-END DEMO ONLY: plan the website and front-end demo surfaces only.',
+      'Never a real backend, AI runtime, database, payments, authentication, CRM, real search or',
+      'real AI logic. When the idea is a product, the site COMMUNICATES and DEMONSTRATES the',
+      'experience (demo panels, sample cards, a form shell) as local static illustrations, never',
+      'a claim that the product is actually running.',
       '',
-      'STEP 2 — OUTPUT. Keep these EXACT H2 sections (the parser depends on them),',
-      'and inside them use these EXACT labeled fields, one per line:',
+      'RESEARCH: Use the trusted [BUILD INTELLIGENCE] context Korvix supplies when present, and',
+      'fold real findings into "Strategy insight". When it is absent, reason from your own',
+      'knowledge and label it "Strategy insight". Never invent URLs, sources, competitors,',
+      'statistics, prices, logos or testimonials, and never claim you browsed or researched.',
+      '',
+      'OUTPUT: use EXACTLY these six H2 sections, in THIS order, and NO other H2 sections. Inside',
+      'them use these EXACT labeled fields, ONE concise line each (the parser depends on the',
+      'labels). Be specific but compact; do not repeat the same decision across sections.',
       '',
       '## Design Thinking Plan',
-      'Make a REAL design decision BEFORE building — this is a visible, structured',
-      'design plan (NOT hidden chain-of-thought, NOT private reasoning). Name CONCRETE',
-      'choices. Do NOT write vague lines like "modern premium", "clean layout", "user',
-      'friendly", "sleek" — those are banned. You MUST reject at least two plausible but',
-      'wrong directions (including the default template trap), and you MUST explicitly',
-      'avoid repeating the same generic SaaS template. Keep it ~12–16 short lines. Use',
-      'these EXACT labels, one per line:',
-      'Design thesis: <one sentence: the site\'s real identity>',
+      'A VISIBLE structured design decision (NOT hidden reasoning). Name CONCRETE choices; banned',
+      'as a whole decision: "modern premium", "clean", "sleek", "user friendly". Reject at least',
+      'two plausible-but-wrong directions (incl. the default template trap). EXACT labels, one per line:',
+      'Design thesis: <one sentence: the real identity of the site>',
       'Audience decision: <what the visitor must decide above the fold>',
-      'First impression: <what the first screen should feel like — concrete, not "premium">',
+      'First impression: <what the first screen should feel like, concrete, not "premium">',
       'Selected visual direction: <a SPECIFIC visual direction, not "modern premium">',
-      'Rejected directions: <2-3 directions you rejected and WHY, incl. the default template trap (e.g. dark grid + gold accent + generic dashboard)>',
-      'Hero composition decision: <specific hero structure and why, e.g. editorial split with product mockup / asymmetric visual / story editorial>',
+      'Rejected directions: <2-3 directions you rejected and WHY, incl. the default template trap>',
+      'Hero composition decision: <specific hero structure and why>',
       'Section rhythm decision: <how sections vary down the page so it does not feel templated>',
       'Primary demo surface: <chat / product-flow / dashboard / catalog / etc. and why>',
-      'Palette decision: <specific palette family/intent and why, e.g. graphite-cyan / porcelain-blue / monochrome, no gold>',
+      'Palette decision: <specific palette family/intent and why>',
       'Typography decision: <specific type mood and hierarchy>',
-      'Template traps to avoid: <exact traps, e.g. dark grid + gold accent + generic dashboard + equal-weight card grid>',
+      'Template traps to avoid: <exact traps to avoid>',
       'Differentiation move: <the ONE thing that makes this result not feel templated>',
-      'Quality bar: <what would make this feel Kimi / Linear / OpenAI-level>',
+      'Quality bar: <what would make this feel Linear / OpenAI-level>',
       '',
       '## Build Plan',
-      'Website type: <…>',
+      'Website type: <...>',
       'Core idea: <one line: what this site is>',
-      'Audience: <…>',
+      'Audience: <...>',
       'Visitor intent: <what the visitor is trying to do>',
       'Primary goal: <the single conversion>',
-      'Strategy insight: <the key insight from research/analysis that shapes the site>',
+      'Strategy insight: <the key insight that shapes the site>',
       'Conversion strategy: <how the page drives the goal>',
       'Trust signals: <the proof this concept needs>',
       'Primary CTA: <specific action>',
       'Secondary CTA: <specific action>',
       '',
       '## Design Direction',
-      'Visual mood: <…>',
-      'Layout logic: <how sections are organized & why>',
+      'Visual mood: <...>',
+      'Layout logic: <how sections are organized and why>',
       'Typography direction: <headline/body personality>',
-      'Color direction: <palette intent, e.g. deep botanical greens / warm dining amber>',
-      'Visual metaphor: <the core visual idea, e.g. topographic garden plan / live dashboard>',
-      'Motion direction: <what animates and why>',
-      'Responsive behavior: <…>',
-      '— WEBSITE EXPERIENCE PLAN — DECIDE these from THIS idea (they drive the site',
-      '  architecture). Website + front-end demo ONLY; never a real backend/AI/db/',
-      '  payments/search. Use these EXACT labels, one per line:',
+      'Color direction: <palette intent>',
+      'Visual metaphor: <the core visual idea>',
+      'Motion direction: <what animates and why, conceptual, not code>',
+      'Responsive behavior: <...>',
+      '-- WEBSITE EXPERIENCE PLAN -- decide from THIS idea (website + front-end demo only, never a',
+      '   real backend/AI/db/payments/search). EXACT labels, one per line:',
       'Website experience model: <single-page landing | multi-page marketing site | product demo site | catalog/listing site | editorial/archive site | dashboard-style demo site | service lead-gen site>',
-      'Page/screen model: <one line: the website pages/screens/demo surfaces this idea needs>',
+      'Page/screen model: <the website pages/screens/demo surfaces this idea needs>',
       'Primary website experience: <what the main CTA opens/does INSIDE the website/demo, and why>',
       'Demo surfaces: <comma-separated front-end demo surfaces, if any (else "none")>',
-      'Stateful demo components: <comma-separated LOCAL/front-end demo components only, e.g. chat-demo-page, listing-filter, detail-preview, quote-form-shell, record-detail-preview>',
+      'Stateful demo components: <comma-separated LOCAL/front-end demo components only, e.g. chat-demo-page, listing-filter, detail-preview, quote-form-shell>',
       'Navigation model: <single-page anchors | internal page tabs | multi-page-style tabs | dashboard/demo shell | catalog/detail shell>',
-      'Media/motion plan: <image/video/animated-background direction tied to the concept — compose with CSS/SVG when there is no real asset; no fake assets>',
-      '— ENTRY FLOW — DECIDE how the visitor ENTERS the experience (front-end demo',
-      '  only; no real backend/AI/db/payments). Use these EXACT labels, one per line:',
+      'Media/motion plan: <image/video/animated-background direction tied to the concept, conceptual only, no fake assets>',
+      '-- ENTRY FLOW -- how the visitor ENTERS the experience (front-end demo only). EXACT labels, one per line:',
       'Entry flow model: <single-page | landing-gated-experience | direct-demo | dashboard-first | catalog-first | service-lead-flow | archive-exploration>',
       'Landing required: <yes/no + short reason>',
-      'Entry screen: <the first screen the visitor sees, e.g. Home/Landing, Product Demo, Catalog>',
-      'Post-entry screen: <the screen opened after the primary entry CTA, e.g. Product Demo, Chat Experience, Catalog, Collection, Quote>',
-      'Primary entry CTA: <label + action, e.g. "Start demo → opens Product Demo">',
-      'Secondary entry CTA: <label + action, e.g. "See pricing → scroll to Pricing">',
+      'Entry screen: <the first screen the visitor sees>',
+      'Post-entry screen: <the screen opened after the primary entry CTA>',
+      'Primary entry CTA: <label + action, e.g. "Start demo -> opens Product Demo">',
+      'Secondary entry CTA: <label + action>',
       'Navigation behavior: <scroll anchors | internal screen tabs | landing-to-demo | dashboard shell | catalog shell | archive shell | service flow>',
-      'ENTRY FLOW RULES: decide from the idea. For SaaS / product-demo / chatbot /',
-      'productized tools, prefer landing-gated-experience when the visitor needs marketing',
-      'context before entering the demo. For internal tools / dashboard prompts, direct-demo',
-      'or dashboard-first may fit. For marketplace/catalog, catalog-first. For archive/research,',
-      'archive-exploration. For local service, service-lead-flow. Do NOT force multi-screen if',
-      'a simple single-page landing is enough. No real product/backend functionality.',
-      '— CONVERSION JOURNEY — DECIDE the single primary conversion path (front-end',
-      '  demo only; the lead/email step is a LOCAL static form shell — never a real',
-      '  signup/auth/backend/submission). Use these EXACT labels, one per line:',
+      '-- CONVERSION JOURNEY -- the single primary conversion path (the lead/email step is a LOCAL',
+      '   static form shell, never a real signup/auth/backend). EXACT labels, one per line:',
       'Conversion journey model: <direct-cta | lead-capture-gated-demo | book-demo | contact-request | catalog-request | archive-access | quote-request | no-gate>',
       'Primary conversion intent: <free trial | book demo | contact sales | request quote | browse catalog | request access | learn more>',
       'Lead capture required: <yes/no + short reason>',
       'Lead capture fields: <email only | name + email | company + email | project details | none>',
       'After lead capture screen: <Product Demo | Chat Experience | Catalog | Collection | Quote | Contact>',
-      'CTA consistency rule: <one sentence: which CTA label is PRIMARY vs which are secondary>',
-      'CONVERSION RULES: for AI/SaaS/chatbot/productized tools with "try/free/get',
-      'started/demo", prefer lead-capture-gated-demo (Landing → Lead Capture → Product',
-      'Demo/Chat) UNLESS the idea asks for a direct demo. For "book demo" use book-demo/',
-      'contact style — NOT a fake free signup. For local service use quote-request; for',
-      'archive/research use archive-access; for marketplace/catalog use catalog-request/',
-      'browse catalog. Keep ONE clear primary CTA; do NOT force a gate on a simple landing.',
-      'DECIDE, do not default: pick chat ONLY if the website/demo genuinely needs it (not just',
-      'because "AI" appears); a focused landing over multi-page when that fits; a dedicated demo',
-      'PAGE/SCREEN over a modal when that reads better. Never claim a surface is connected to real',
-      'AI/database/payment/search, and never fabricate products, prices, metrics, sources or logos.',
+      'CTA consistency rule: <which CTA label is PRIMARY vs which are secondary>',
       '',
-      '## Page Sections — a section architecture DERIVED from the strategy above (not',
-      '   a fixed list). Choose the sections this specific concept needs.',
-      '## Generated Copy — specific, natural, benefit-led copy for every section,',
-      '   grounded in the Core idea and Strategy insight (never generic filler like',
-      '   "Hayallerinize ulaşın", "Kaliteli hizmet", "Get started", "Welcome").',
-      '## Frontend Code — real, usable React + Tailwind in a DYNAMIC src/ project whose',
-      '   file tree grows with the site: src/main.tsx, src/App.tsx, src/styles.css,',
-      '   src/lib/designSystem.ts (reusable tokens from the Color/Type/Motion direction),',
-      '   src/data/siteContent.ts (structured copy), and one src/components/<Name>.tsx per',
-      '   section (add cards/ visuals/ ui/ when the concept needs them). Clean PascalCase,',
-      '   no duplicate/invalid files, no broken imports, no placeholder comments, no empty',
-      '   blocks or blank image boxes — compose visuals with CSS/SVG when there is no image.',
-      '   Do NOT default to "centered hero + three cards + CTA": pick a distinct layout rhythm',
-      '   and section composition that fits THIS concept.',
-      '   FRONT-END DEMO ONLY: any interactive surface (chat / product demo, filters,',
-      '   detail modal, request/contact/access forms) is a LOCAL, client-side',
-      '   simulation using sample copy — no fetch/backend, no real AI, no real submit.',
-      '## Next Steps.',
+      '## Page Sections -- a section architecture DERIVED from the strategy above (normally 6-10',
+      '   sections, fewer or more when the concept needs it). Each as `- <section-id>: one or two',
+      '   short sentences on its job`. Choose the sections THIS concept needs, stable kebab-case ids.',
+      '## Generated Copy -- specific, benefit-led copy per section using `### <section-id>`',
+      '   subheadings: headline, subheadline, button labels, key bullets/FAQ. ONLY the copy the',
+      '   frontend actually needs. Never generic filler (e.g. "Hayallerinize ulasin", "Get started").',
+      '## Next Steps -- at most 4 concrete follow-ups the user can ask for.',
       '',
-      'MOTION (premium, restrained, accessible): animated hero, scroll reveal,',
-      'floating/tilting cards, hover states, subtle depth/parallax — never childish.',
       'Write ALL copy in the same language as the idea, natural and fluent.',
       '',
       `Idea: ${idea}`,
@@ -790,7 +763,7 @@ export function buildWebBuildRepairRequest(
 ): string {
   const missing = parse?.canonicalSectionsMissing?.length
     ? parse.canonicalSectionsMissing.join(', ')
-    : 'Frontend Code and the Website Experience Plan fields';
+    : 'the Website Experience Plan fields, Page Sections and Generated Copy';
   // Phase 9B-2A: a focused, compressed repair prompt (smaller than a full second
   // generation) — it targets the missing contract, not a whole re-explanation.
   const prev = (previousReply || '').trim().slice(0, 2000);
@@ -801,7 +774,10 @@ export function buildWebBuildRepairRequest(
     '[WEB BUILD PLANNING REPAIR REQUEST]',
     'Your previous response did not satisfy the Web Build PLANNING contract. Re-output',
     'the complete model-planned package now — no explanation, no summary, no apology.',
-    'REQUIRED H2 sections, in this order:',
+    // Phase 13E.3 — planning only: no React/Tailwind, no file paths, no code fences, no source.
+    'PLANNING ONLY: do NOT output React, Tailwind, file paths or code fences, and do NOT',
+    'emit a "## Frontend Code" section — the dedicated Frontend Builder generates code later.',
+    'REQUIRED H2 sections, in this order (exactly these six, no others):',
     '## Design Thinking Plan',
     '## Build Plan',
     '## Design Direction',
@@ -832,8 +808,7 @@ export function buildWebBuildRepairRequest(
     '"CTA consistency rule:". The lead/email step is a LOCAL static form shell only.',
     '',
     'MOST IMPORTANT: a real ## Page Sections architecture + specific ## Generated Copy',
-    'for every section (benefit-led, never generic filler). Frontend Code is optional',
-    'and must never replace planning/copy sections.',
+    'for every section (benefit-led, never generic filler). Output NO source code.',
     '',
     `Previously missing/invalid: ${missing}.`,
     'SCOPE: WEBSITE + FRONT-END DEMO ONLY — no real backend, AI runtime, database,',
@@ -910,8 +885,10 @@ export function buildWebBuildDesignPlanRepairRequest(
     'Writing one of these alone as a decision is a FAILURE — replace it with specifics.',
     '',
     'Keep the real ## Page Sections architecture and specific ## Generated Copy for',
-    'every section (benefit-led, never generic filler). ## Frontend Code is OPTIONAL',
-    'and must never replace or shorten the planning/copy sections.',
+    'every section (benefit-led, never generic filler).',
+    // Phase 13E.3 — planning only: no code/file instructions, no "## Frontend Code" section.
+    'PLANNING ONLY: do NOT output React, Tailwind, file paths or code fences, and do NOT',
+    'emit a "## Frontend Code" section — the dedicated Frontend Builder generates code later.',
     '',
     'SCOPE stays WEBSITE + FRONT-END DEMO ONLY: no real backend, AI runtime, database,',
     'payments, auth, CRM, real search or real AI logic. Never fabricate metrics, logos,',
@@ -981,9 +958,11 @@ function parseWebBuildResult(
     partial = true;
     usedOverviewFallback = true;
   } else if (!opts?.revise) {
-    // Fresh build should ideally have these; if some are missing we still
-    // show what we got and flag it partial (don't throw the rest away).
-    const required = ['Build Plan', 'Page Sections', 'Frontend Code'];
+    // Phase 13E.3 — fresh PLANNING partial detection uses PLANNING sections only. A
+    // planning-only reply must NOT be flagged partial merely because `Frontend Code` is
+    // absent (the dedicated frontend_builder produces code later). Substance/WEP/copy are
+    // enforced by the planning contract below, not here.
+    const required = ['Build Plan', 'Design Direction', 'Page Sections'];
     const missing = required.filter((r) => !present.has(norm(r)));
     if (missing.length > 0) {
       // eslint-disable-next-line no-console
@@ -1034,7 +1013,10 @@ function parseWebBuildResult(
   // ── Planning-quality parse diagnostics — real parsed data only. `present`
   // reflects the ORIGINAL parse (canonical section presence as the model returned
   // it); the WEP labels are the EXACT Website Experience Plan field labels.
-  const CANONICAL = ['Build Plan', 'Design Direction', 'Page Sections', 'Generated Copy', 'Frontend Code', 'Next Steps'];
+  // Phase 13E.3 — canonical PLANNING sections only. `Frontend Code` is NOT canonical for a
+  // fresh planning reply, so canonicalSectionsMissing never reports it as missing. Legacy
+  // code presence is still tracked separately via hasFrontendCodeSection / fullCodeContractPresent.
+  const CANONICAL = [...WEB_BUILD_PLANNING_SECTIONS];
   // A canonical section is present when a parsed heading equals it OR starts with it
   // (the model often keeps the prompt's descriptive suffix, e.g. "Page Sections — …").
   const canonTitles = [...present];
@@ -1074,6 +1056,9 @@ function parseWebBuildResult(
     copyPresent &&
     replyCharCount > 800;
   const fullCodeContractPresent = planningContractPresent && hasFrontendCodeSection;
+  // Phase 13E.3 — planning is code-free; record (do NOT require) whether the model still
+  // emitted a code fence, derived from the raw reply. Never stores the code itself.
+  const codeFenceReturned = reply.includes('```');
   // Phase 9B-1 — Design Thinking Plan quality (advisory; drives the one-shot
   // design-plan repair nudge in generateWebBuild). Deterministic + local.
   const hasDesignThinkingPlanSection = sections.some((s) => /design\s*thinking\s*plan|thinking\s*plan/i.test(s.title));
@@ -1095,6 +1080,7 @@ function parseWebBuildResult(
     hasGeneratedCopySection,
     planningContractPresent,
     fullCodeContractPresent,
+    codeFenceReturned,
     replyCharCount,
     hasDesignThinkingPlanSection,
     designPlanSpecificityScore,

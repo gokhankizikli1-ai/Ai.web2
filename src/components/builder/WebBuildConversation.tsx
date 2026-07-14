@@ -927,7 +927,16 @@ function computePlanSummary(step: WebBuildStep): PlanSummaryData | null {
           if (typeof a.workflowElapsedMs === 'number') ownerRows.push([`planningAttempt${n}WorkflowElapsedMs`, String(a.workflowElapsedMs)]);
           if (typeof a.workflowRemainingMs === 'number') ownerRows.push([`planningAttempt${n}WorkflowRemainingMs`, String(a.workflowRemainingMs)]);
         });
-        ownerRows.push(['planningRegisteredTokenBudget', '8000']);
+        // Phase 13E.3 — website_builder is planning-only: dedicated planner budget dropped
+        // from 8,000 to 5,000 output tokens and reasoning from medium to low (it no longer
+        // generates React source — the dedicated Frontend Builder does that afterward).
+        ownerRows.push(['planningRegisteredTokenBudget', '5000']);
+        ownerRows.push(['planningTask', 'planning-only']);
+        ownerRows.push(['planningReasoningEffort', 'low']);
+        ownerRows.push(['planningFrontendCodeRequested', 'false']);
+        // Truthful, derived locally from the real planning reply/sections (never a requirement):
+        ownerRows.push(['planningFrontendCodeReturned', String(!!parse?.hasFrontendCodeSection)]);
+        if (typeof parse?.codeFenceReturned === 'boolean') ownerRows.push(['planningCodeFenceReturned', String(parse.codeFenceReturned)]);
         ownerRows.push(['planningResearchPassCount', String(step.research ? 1 : 0)]);
         ownerRows.push(['planningGenericFallbackUsed', String(planningExecutions.some((a) => a.fallbackUsed === true))]);
         // Phase 13E.1 — the accepted result flowed through the dedicated structured-website
