@@ -514,7 +514,10 @@ export default function ChatDashboard() {
       return (
         <ChatView
           key={activeSessionId} // Forces remount ONLY when session actually changes
-          messages={activeSession.messages}
+          // Phase 14D.3 — defensive: never throw on a missing/malformed active
+          // session (there is no top-level error boundary, so an unguarded read
+          // would blank the whole app). Fall back to a safe empty chat.
+          messages={activeSession?.messages ?? []}
           isLoading={isLoading}
           error={error}
           inputText={inputText}
@@ -548,7 +551,8 @@ export default function ChatDashboard() {
       default:         return (
         <ChatView
           key={activeSessionId}
-          messages={activeSession.messages}
+          // Phase 14D.3 — same defensive fallback as the chat-tab branch above.
+          messages={activeSession?.messages ?? []}
           isLoading={isLoading}
           error={error}
           inputText={inputText}

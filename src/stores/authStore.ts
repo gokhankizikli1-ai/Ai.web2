@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { migrateGlobalToScope, IDENTITY_CHANGED_EVENT } from '@/lib/storageScope';
+import { migrateGlobalToScope, IDENTITY_CHANGED_EVENT, currentStorageScope } from '@/lib/storageScope';
 
 /* ═══════════════════════════════════════════
    AUTH TYPES
@@ -364,7 +364,7 @@ export const useAuthStore = create<AuthState>()(
         const { user, error } = await apiLogin(email, password);
         if (user) {
           set({ user, isAuthenticated: true, isLoading: false, error: null });
-          notifyAuthChanged(user);
+          notifyAuthChanged(user, 'login');
           return true;
         }
         set({ isLoading: false, error: error || 'Invalid email or password' });
@@ -378,7 +378,7 @@ export const useAuthStore = create<AuthState>()(
         const { user, error } = await apiSignup(email, password, name);
         if (user) {
           set({ user, isAuthenticated: true, isLoading: false, error: null });
-          notifyAuthChanged(user);
+          notifyAuthChanged(user, 'login');
           return true;
         }
         set({ isLoading: false, error: error || 'Could not create account. Try a different email.' });
@@ -391,7 +391,7 @@ export const useAuthStore = create<AuthState>()(
         const { user, error } = await apiGoogle(idToken);
         if (user) {
           set({ user, isAuthenticated: true, isLoading: false, error: null });
-          notifyAuthChanged(user);
+          notifyAuthChanged(user, 'login');
           return true;
         }
         set({ isLoading: false, error: error || 'Google sign-in failed.' });
@@ -407,7 +407,7 @@ export const useAuthStore = create<AuthState>()(
         // prompts) is per-identity namespaced and PRESERVED — this same user
         // gets it back on re-login, and other accounts never see it.
         clearAuthArtifacts();
-        notifyAuthChanged(null);
+        notifyAuthChanged(null, 'logout');
       },
 
       checkAuth: async () => {
@@ -436,17 +436,21 @@ export const useAuthStore = create<AuthState>()(
                 isLoading: false,
                 isHydrating: false,
               });
-              notifyAuthChanged(parsed.state.user);
+              notifyAuthChanged(parsed.state.user, 'boot');
               // Background validation — only when a bearer is present.
               if (readToken()) {
                 apiMe().then((fresh) => {
                   if (fresh) {
                     set({ user: fresh, isAuthenticated: true });
-                    notifyAuthChanged(fresh);
+                    notifyAuthChanged(fresh, 'refresh');
                   } else if (!readToken()) {
+                    // Definitive 401 only (apiMe cleared the token). Temporary
+                    // failures — timeout, network, 5xx, abort — keep the token
+                    // AND the cached user, so this branch does NOT run and the
+                    // user stays signed in.
                     set({ user: null, isAuthenticated: false });
                     try { localStorage.removeItem('korvix-auth'); } catch { /* ignore */ }
-                    notifyAuthChanged(null);
+                    notifyAuthChanged(null, 'logout');
                   }
                 });
               }
@@ -464,7 +468,7 @@ export const useAuthStore = create<AuthState>()(
         const user = await apiMe();
         if (user) {
           set({ user, isAuthenticated: true, isLoading: false, isHydrating: false });
-          notifyAuthChanged(user);
+          notifyAuthChanged(user, 'login');
         } else {
           set({ isLoading: false, isHydrating: false });
         }
@@ -526,7 +530,37 @@ function _clearStaleOwnerArtifactsOnAccountChange(newEmail: string | null): void
   }
 }
 
-function notifyAuthChanged(user?: AuthUser | null): void {
+/* ─── Identity-change event contract (Phase 14D.3) ───────────────────────────
+ *
+ * `korvix:identity-changed` must fire ONLY when the effective storage scope
+ * actually changes (login / logout / account switch) — never merely because
+ * /auth/me returned the SAME user, a profile/owner refresh ran, or an auth
+ * action re-notified with an unchanged identity. Firing it on a same-scope
+ * notify used to make the App remount boundary recompute needlessly. We compare
+ * the scope string (seeded once at module load from the persisted identity) and
+ * dispatch only on a real transition, carrying { previousScope, nextScope,
+ * reason } for listeners. Owner refresh (`korvix:owner-refresh`) stays a
+ * SEPARATE signal — it is not proof that identity changed. */
+type IdentityChangeReason = 'login' | 'logout' | 'refresh' | 'boot';
+let _lastNotifiedScope: string = (() => {
+  try { return currentStorageScope(); } catch { return 'guest_anon'; }
+})();
+
+function notifyIdentityChanged(reason: IdentityChangeReason): void {
+  try {
+    // Read AFTER localStorage settled (the caller has already run set()/persist
+    // and any auth-artifact removal), so this reflects the NEW identity.
+    const nextScope = currentStorageScope();
+    if (nextScope === _lastNotifiedScope) return; // scope unchanged — not an identity change
+    const previousScope = _lastNotifiedScope;
+    _lastNotifiedScope = nextScope;
+    window.dispatchEvent(new CustomEvent(IDENTITY_CHANGED_EVENT, {
+      detail: { previousScope, nextScope, reason },
+    }));
+  } catch { /* ignore — a failed dispatch must never break auth */ }
+}
+
+function notifyAuthChanged(user?: AuthUser | null, reason: IdentityChangeReason = 'refresh'): void {
   _clearStaleOwnerArtifactsOnAccountChange(user?.email || null);
   try {
     // Lazy import keeps this module a pure store at import time —
@@ -535,14 +569,11 @@ function notifyAuthChanged(user?: AuthUser | null): void {
       mod.seedOwnerFromLogin(user ?? null);
     }).catch(() => { /* ignore */ });
   } catch { /* ignore */ }
+  // Owner refresh is independent of identity change — keep it unconditional.
   try { window.dispatchEvent(new CustomEvent('korvix:owner-refresh')); }
   catch { /* ignore */ }
-  // Identity may have changed scope (login / logout / account switch). Fire the
-  // general identity-change signal AFTER localStorage is settled so mounted data
-  // trees rehydrate from the NEW scope. Listeners dedupe by comparing scope, so
-  // a same-identity re-notify (e.g. profile refresh) is a no-op remount.
-  try { window.dispatchEvent(new CustomEvent(IDENTITY_CHANGED_EVENT)); }
-  catch { /* ignore */ }
+  // Identity-change signal — dispatched only when the effective scope changed.
+  notifyIdentityChanged(reason);
 }
 
 /* ─── Exposed token reader for non-store callers ─────────────────────────

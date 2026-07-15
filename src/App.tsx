@@ -51,36 +51,63 @@ function AnimatedRoute({ children }: { children: React.ReactNode }) {
 
 /**
  * Phase 14D.1 — identity-change REHYDRATION boundary.
+ * Phase 14D.3 — hardened so it NEVER remounts on a logout / token-expiry.
  *
  * Data hooks read their scoped localStorage ONCE into React state (via
- * `useState(() => load())`), so an in-app identity change (login / logout /
- * account switch) that only re-points the storage scope would leave the
- * previous account's rows sitting in memory — visible to, and re-savable by,
- * the next identity. Keying this subtree by the live storage scope remounts
- * every data container the instant the identity changes, forcing each hook to
- * re-read from the NEW scope. No data is destroyed: each identity's rows stay
- * in their own keys, so the same user re-reads the same rows on re-login.
+ * `useState(() => load())`), so an in-app switch to a DIFFERENT authenticated
+ * account that only re-points the storage scope would leave the previous
+ * account's rows sitting in memory. Keying this subtree by the authenticated
+ * scope remounts every data container when the account actually changes,
+ * forcing each hook to re-read from the NEW scope. No data is destroyed: each
+ * identity's rows stay in their own keys, so the same user re-reads them on
+ * re-login.
+ *
+ * CRITICAL (14D.3): we key ONLY on a change to a different authenticated
+ * (`user_*`) scope. A transition to a GUEST scope — logout, or a background
+ * /auth/me 401 that removes `korvix-auth` — is deliberately IGNORED here: that
+ * case is already handled cleanly by ProtectedRoute redirecting the logged-out
+ * user to /signup, which unmounts the authenticated surfaces. Remounting the
+ * entire routed tree on top of that redirect is what produced the black-screen
+ * blank flash. Guests never render user-scoped data, so skipping the remount
+ * cannot leak the previous account's rows.
  *
  * The scope is seeded synchronously from localStorage, so the first mount uses
  * the persisted identity's key (no spurious remount on boot). We dedupe on the
- * scope STRING, so same-identity notifications (a profile refresh that re-fires
- * the event without changing accounts) never remount.
+ * scope STRING, so a same-identity notification (a profile refresh) never
+ * remounts.
  */
 function useIdentityScope(): string {
   const [scope, setScope] = useState(() => currentStorageScope());
   useEffect(() => {
     const sync = () => {
       const next = currentStorageScope();
+      // Only a switch to a DIFFERENT authenticated account remounts. Logout /
+      // token-expiry (→ a guest scope) is handled by ProtectedRoute's redirect;
+      // remounting here as well would flash a blank frame.
+      if (!next.startsWith('user_')) return;
       setScope((prev) => (prev === next ? prev : next));
     };
-    // Same-tab: authStore fires IDENTITY_CHANGED_EVENT after localStorage is
-    // settled. Cross-tab: the native 'storage' event covers a login/logout in
-    // another tab of the same browser.
-    window.addEventListener(IDENTITY_CHANGED_EVENT, sync);
-    window.addEventListener('storage', sync);
+    // Same-tab: authStore fires IDENTITY_CHANGED_EVENT ONLY when the effective
+    // scope actually changes (see notifyIdentityChanged).
+    const onIdentity = () => sync();
+    // Cross-tab: react ONLY to identity-owning keys. Chat/session/project/prompt
+    // writes in another tab must never recompute (let alone remount) identity.
+    const onStorage = (event: StorageEvent) => {
+      if (
+        event.key !== null &&
+        event.key !== 'korvix-auth' &&
+        event.key !== 'korvix_access_token' &&
+        event.key !== 'korvix_user_id'
+      ) {
+        return;
+      }
+      sync();
+    };
+    window.addEventListener(IDENTITY_CHANGED_EVENT, onIdentity);
+    window.addEventListener('storage', onStorage);
     return () => {
-      window.removeEventListener(IDENTITY_CHANGED_EVENT, sync);
-      window.removeEventListener('storage', sync);
+      window.removeEventListener(IDENTITY_CHANGED_EVENT, onIdentity);
+      window.removeEventListener('storage', onStorage);
     };
   }, []);
   return scope;
