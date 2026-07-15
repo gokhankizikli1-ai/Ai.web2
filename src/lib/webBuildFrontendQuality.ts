@@ -46,6 +46,47 @@ import type {
   FrontendBuilderContractRepairArtifact, FrontendBuilderValidationArtifact, FrontendBuilderRawArtifact,
   FrontendBuilderReviewArtifact, FrontendBuilderReviewIssue,
 } from '@/lib/webBuildAgents';
+import type { WebBuildActivityDetailRow, WebBuildActivityReporter, WebBuildActivityStatus } from '@/lib/webBuildActivity';
+
+/* ── Phase 13H — bounded, SAFE activity detail builders. These describe REAL pipeline
+ * results only (counts / statuses / durations); they never expose generated source, raw
+ * responses, provider request ids or background job ids. Activity reporting is pure UI
+ * telemetry: it adds ZERO model calls and can never change generation/acceptance. */
+function generationRows(raw: FrontendBuilderRawArtifact): WebBuildActivityDetailRow[] {
+  const rows: WebBuildActivityDetailRow[] = [
+    { label: 'transport', value: raw.backgroundMode ? 'background' : 'sync' },
+  ];
+  if (typeof raw.backgroundWaitMs === 'number') rows.push({ label: 'waited', value: `${Math.round(raw.backgroundWaitMs / 1000)}s` });
+  if (typeof raw.configuredMaxOutputTokens === 'number') rows.push({ label: 'outputBudget', value: `${raw.configuredMaxOutputTokens} tok` });
+  return rows;
+}
+function validationRows(v: FrontendBuilderValidationArtifact | undefined): WebBuildActivityDetailRow[] | undefined {
+  if (!v) return undefined;
+  const rows: WebBuildActivityDetailRow[] = [
+    { label: 'files', value: String(v.fileCount ?? 0) },
+    { label: 'validation', value: v.status },
+    { label: 'errors', value: String(v.errors?.length ?? 0) },
+    { label: 'warnings', value: String(v.warnings?.length ?? 0) },
+  ];
+  if (typeof v.presentRequiredFileCount === 'number') rows.push({ label: 'entryFiles', value: `${v.presentRequiredFileCount}/${v.requiredFileCount}` });
+  return rows;
+}
+function reviewRows(r: FrontendBuilderReviewArtifact): WebBuildActivityDetailRow[] {
+  const rows: WebBuildActivityDetailRow[] = [{ label: 'result', value: r.passed ? 'passed' : 'needs work' }];
+  if (typeof r.score === 'number') rows.push({ label: 'score', value: String(r.score) });
+  rows.push({ label: 'issues', value: String(r.issues?.length ?? 0) });
+  return rows;
+}
+function acceptanceRows(
+  status: FrontendBuilderAcceptanceArtifact['status'],
+  activeProject: FrontendBuilderAcceptanceArtifact['activeProject'],
+): WebBuildActivityDetailRow[] {
+  return [
+    { label: 'candidate', value: status },
+    { label: 'activeProject', value: activeProject },
+    { label: 'manualReview', value: status === 'manual-review-required' ? 'yes' : 'no' },
+  ];
+}
 
 /** The minimum improvement gate: an accepted repair must beat the initial score. */
 const MIN_ACCEPT_SCORE = 82;
@@ -344,9 +385,16 @@ function acceptanceArtifact(
  */
 export async function runFrontendBuilderQualityPipeline(
   plannedPayload: WebBuildPayload,
-  opts?: { signal?: AbortSignal },
+  opts?: { signal?: AbortSignal; reporter?: WebBuildActivityReporter },
 ): Promise<WebBuildPayload> {
+  // Phase 13H — emit REAL pipeline boundaries to the activity timeline. Wrapped so a
+  // reporter error can never affect the build; `emit` is a no-op when no reporter is given.
+  const emit = (phase: string, status: WebBuildActivityStatus, detailRows?: WebBuildActivityDetailRow[]): void => {
+    try { opts?.reporter?.({ phase, status, detailRows }); } catch { /* activity telemetry only */ }
+  };
+
   // ── Step 1 — initial generation + Phase 12B/12C/12D consumption ──
+  emit('frontend-generation', 'active');
   const raw = await generateFrontendBuilderRaw(plannedPayload.artifacts?.frontendBuildSpec, { signal: opts?.signal });
   // ── Phase 13F — an initial frontend TRANSPORT/PROVIDER failure (client timeout, backend
   // timeout, incomplete, access, quota, rate-limit, or any other explicit failure with no
@@ -358,9 +406,15 @@ export async function runFrontendBuilderQualityPipeline(
   // path below — it is NOT a transport failure. Caller cancellation already threw inside
   // generateFrontendBuilderRaw. `skipped` (no spec) keeps its legacy behavior. ──
   if (raw.status === 'failed') {
+    emit('frontend-generation', 'failed');
     throw mapFrontendGenerationError(raw);
   }
+  emit('frontend-generation', 'completed', generationRows(raw));
+
+  // ── Validation — the raw response is parsed + Phase 12C validated inside attach ──
+  emit('frontend-validation', 'active');
   const consumed = attachFrontendBuilderRaw(plannedPayload, raw);
+  emit('frontend-validation', 'completed', validationRows(consumed.artifacts?.frontendBuilderValidation));
 
   try {
     // ── Phase 12F — STRUCTURAL contract repair BEFORE Phase 12E eligibility. When the
@@ -386,6 +440,7 @@ export async function runFrontendBuilderQualityPipeline(
 
     if (contractEligible && spec0 && initialValidation) {
       // Exactly ONE contract-repair call (the request-cap pre-check + fail-open live inside).
+      emit('structural-repair', 'active');
       const crRaw = await generateFrontendBuilderContractRepairRaw(spec0, initialValidation, { signal: opts?.signal });
       const crValidation = crRaw.status === 'completed' ? parseAndValidateFrontendBuilderRaw(crRaw, spec0) : undefined;
       const crStructurallyValid =
@@ -399,6 +454,10 @@ export async function runFrontendBuilderQualityPipeline(
       const crAccepted = crStructurallyValid && (!gate || gate.passed);
       const contractArtifact = contractRepairArtifact(initialValidation, crRaw, crValidation, crAccepted, gate);
       working = attachFrontendBuilderContractRepairResult(consumed, contractArtifact, crAccepted ? (crValidation as FrontendBuilderValidationArtifact) : null);
+      emit('structural-repair', 'completed', [
+        { label: 'result', value: crAccepted ? 'accepted' : 'rejected' },
+        { label: 'errors', value: String((crValidation as FrontendBuilderValidationArtifact | undefined)?.errors?.length ?? initialValidation.errors.length) },
+      ]);
       if (!crAccepted) {
         // Rejected → fallback stays active; Phase 12E does NOT run; full diagnostics kept.
         // A structurally-valid-but-collapsed repair is rejected by the preservation gate:
@@ -410,10 +469,16 @@ export async function runFrontendBuilderQualityPipeline(
           initialReviewPassed: false, repairAttempted: false, repairAccepted: false, finalReviewPassed: false,
           reason: gateReason,
         });
+        emit('quality-review', 'skipped');
+        emit('quality-repair', 'skipped');
+        emit('acceptance', 'completed', acceptanceRows('skipped', 'internal-fallback'));
         return attachFrontendBuilderQualityResult(working, { ran: false, acceptance: skipped });
       }
       // Accepted → the structurally repaired project is now the active model-native project.
       initialProjectName = 'contract-repaired-model-native';
+    } else {
+      // No structural repair was needed/eligible (the common case for a valid project).
+      emit('structural-repair', 'skipped');
     }
 
     // ── Step 2 — Phase 12E review eligibility, evaluated over the (possibly contract-
@@ -433,12 +498,16 @@ export async function runFrontendBuilderQualityPipeline(
         initialReviewPassed: false, repairAttempted: false, repairAccepted: false, finalReviewPassed: false,
         reason: 'Phase 12E did not run: no consumed model-native project (the deterministic fallback stays active).',
       });
+      emit('quality-review', 'skipped');
+      emit('quality-repair', 'skipped');
+      emit('acceptance', 'completed', acceptanceRows('skipped', 'internal-fallback'));
       return attachFrontendBuilderQualityResult(working, { ran: false, acceptance: skipped });
     }
 
     const spec = authoritativeSpec(working);
 
     // ── Step 3 — STATIC initial design review (exactly one parse) ──
+    emit('quality-review', 'active');
     const activeWarnings = warningSummaries(validation);
     const heroComponentPath = validation?.heroComponentPath;
     const initialReviewRaw = await generateFrontendBuilderReviewRaw(spec, activeFiles, 'initial', undefined, { signal: opts?.signal, deterministicWarnings: activeWarnings });
@@ -467,6 +536,7 @@ export async function runFrontendBuilderQualityPipeline(
       repairTriggeredByShallowQuality = true;
     }
     const usedDeterministicFallback = !!initialReview.usedDeterministicFallback;
+    emit('quality-review', 'completed', reviewRows(initialReview));
 
     // Fast path — a passing initial review keeps the initial project; no repair/final call.
     // Phase 13C — a model "pass" can NEVER approve while severe deterministic warnings remain.
@@ -475,6 +545,8 @@ export async function runFrontendBuilderQualityPipeline(
         initialReviewPassed: true, repairAttempted: false, repairAccepted: false, finalReviewPassed: false,
         reason: `Initial static design review passed (score ${initialReview.score ?? '?'}); no severe quality warnings. Rendered visual test pending.`,
       }, { usedDeterministicFallback, repairTriggeredByShallowQuality: false, severeWarningsBeforeRepair });
+      emit('quality-repair', 'skipped');
+      emit('acceptance', 'completed', acceptanceRows('approved', initialProjectName));
       return attachFrontendBuilderQualityResult(working, {
         ran: true, initialReview, repair: repairArtifact('not-run', 'No repair needed — the initial review passed and no severe quality warnings remain.'), acceptance,
       });
@@ -493,6 +565,8 @@ export async function runFrontendBuilderQualityPipeline(
         initialReviewPassed: false, repairAttempted: false, repairAccepted: false, finalReviewPassed: false,
         reason: `${reason} The validated project stays active; manual rendered review required.`,
       }, { usedDeterministicFallback, repairTriggeredByShallowQuality: false, severeWarningsBeforeRepair });
+      emit('quality-repair', 'skipped');
+      emit('acceptance', 'completed', acceptanceRows('manual-review-required', initialProjectName));
       return attachFrontendBuilderQualityResult(working, {
         ran: true, initialReview, repair: repairArtifact('not-run', reason), acceptance,
       });
@@ -511,6 +585,7 @@ export async function runFrontendBuilderQualityPipeline(
       internalCopyLeakFiles: validation?.internalCopyLeakFiles || [],
       heroComponentPath: validation?.heroComponentPath,
     };
+    emit('quality-repair', 'active');
     const repairRaw = await generateFrontendBuilderRepairRaw(spec, activeFiles, initialReview, { signal: opts?.signal, deterministicWarnings: activeWarnings, qualityEvidence });
     if (repairRaw.status !== 'completed') {
       const repair = repairArtifact('failed', repairRaw.reason || 'The repair call did not complete.', {
@@ -520,6 +595,8 @@ export async function runFrontendBuilderQualityPipeline(
         initialReviewPassed: false, repairAttempted: true, repairAccepted: false, finalReviewPassed: false,
         reason: 'The bounded repair call did not complete; the initial validated project stays active. Manual rendered review required.',
       }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair });
+      emit('quality-repair', 'completed', [{ label: 'result', value: 'not applied' }]);
+      emit('acceptance', 'completed', acceptanceRows('manual-review-required', initialProjectName));
       return attachFrontendBuilderQualityResult(working, { ran: true, initialReview, repair, acceptance });
     }
 
@@ -541,6 +618,8 @@ export async function runFrontendBuilderQualityPipeline(
         initialReviewPassed: false, repairAttempted: true, repairAccepted: false, finalReviewPassed: false,
         reason: 'The repaired project did not pass static validation; the initial validated project stays active. No post-repair review ran. Manual rendered review required.',
       }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair });
+      emit('quality-repair', 'completed', [{ label: 'result', value: 'rejected' }]);
+      emit('acceptance', 'completed', acceptanceRows('manual-review-required', initialProjectName));
       return attachFrontendBuilderQualityResult(working, { ran: true, initialReview, repair, acceptance });
     }
 
@@ -578,6 +657,8 @@ export async function runFrontendBuilderQualityPipeline(
         initialReviewPassed: false, repairAttempted: true, repairAccepted: true, finalReviewPassed: true,
         reason: `One bounded repair accepted after static validation, a passing post-repair review (score ${initialScore} → ${finalScore}) and a clear severe-warning gate. Rendered visual test pending.`,
       }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, severeWarningsAfterRepair });
+      emit('quality-repair', 'completed', [{ label: 'result', value: 'accepted' }, { label: 'score', value: `${initialScore} → ${finalScore}` }]);
+      emit('acceptance', 'completed', acceptanceRows('repaired-approved', 'repaired-model-native'));
       return attachFrontendBuilderQualityResult(working, {
         ran: true, initialReview, repair, finalReview, acceptance,
         acceptedRepairedFiles: repairValidation.files,
@@ -607,6 +688,8 @@ export async function runFrontendBuilderQualityPipeline(
       finalReviewPassed: finalReview.passed,
       reason: `${rejectReason} The initial validated project stays active for owner inspection; normal users continue to see Safe Preview. Manual rendered review required.`,
     }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, severeWarningsAfterRepair });
+    emit('quality-repair', 'completed', [{ label: 'result', value: 'rejected' }]);
+    emit('acceptance', 'completed', acceptanceRows('manual-review-required', initialProjectName));
     return attachFrontendBuilderQualityResult(working, { ran: true, initialReview, repair, finalReview, acceptance });
   } catch (err) {
     // Explicit caller cancellation must propagate so a cancelled turn is not persisted.
@@ -614,6 +697,11 @@ export async function runFrontendBuilderQualityPipeline(
     if (opts?.signal?.aborted) throw err;
     // Any other Phase 12E error fails open: return the already-consumed Phase 12D payload
     // untouched (Preview + All Files + validated project remain usable) with a skipped record.
+    // Phase 13H — mark any still-active review/repair stage skipped (no-op if already terminal)
+    // so a fail-open success never leaves a stage stuck "active" in the summary timeline.
+    emit('quality-review', 'skipped');
+    emit('quality-repair', 'skipped');
+    emit('acceptance', 'completed', acceptanceRows('skipped', 'internal-fallback'));
     const skipped = acceptanceArtifact('skipped', 'internal-fallback', {
       initialReviewPassed: false, repairAttempted: false, repairAccepted: false, finalReviewPassed: false,
       reason: 'Phase 12E failed open on an unexpected error; the existing validated project stays active.',
