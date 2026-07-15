@@ -123,7 +123,6 @@ function IdentityScopeBoundary({ children }: { children: React.ReactNode }) {
 function AppLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const isLanding = location.pathname === '/';
-  const showBottomNav = !isLanding;
   const showParticles = !isLanding;
   // Public / unauthenticated marketing + auth surfaces. The owner
   // welcome toast must never render here — it would either leak the
@@ -148,6 +147,14 @@ function AppLayout({ children }: { children: React.ReactNode }) {
     location.pathname === '/' ||
     PUBLIC_ROUTE_PREFIXES.some((p) => p !== '/' && location.pathname.startsWith(p))
   );
+  // Phase 14I.1 — the mobile BottomNav is AUTHENTICATED app navigation (Chat /
+  // Web Build / Projects, all guest-blocked). It must never render on public
+  // routes — especially /login and /signup, where it showed a misleading
+  // "active" app tab that just bounced the visitor to sign-up. Gate it on the
+  // canonical public-route check (which already includes the auth routes), so
+  // authenticated app routes keep it exactly as before and no empty reserved
+  // bar is left on auth pages (the bottom padding below is tied to the same flag).
+  const showBottomNav = !isPublicRoute;
 
   // Kick auth hydration exactly once on app boot. authStore's checkAuth
   // reads the persisted session synchronously when present (no network),
