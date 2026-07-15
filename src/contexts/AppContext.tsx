@@ -1,5 +1,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import type { AIMode, WorkspaceTab } from '@/types';
+import { useLanguageStore } from '@/stores/languageStore';
+import { translate } from '@/i18n';
 
 // ─── Types ───
 export interface AppSettings {
@@ -220,12 +222,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     save(DEFAULTS);
   }, []);
 
+  // Phase 14H — ONE runtime language authority. `t` now resolves through the
+  // central i18n layer (en/tr/de), so components using `useApp().t` update on a
+  // language change exactly like `useLanguageStore().t` — no more German→English
+  // fallback via the local en/tr LABELS. The LABELS table is kept ONLY as a
+  // last-resort fallback for any legacy key not yet migrated into the central
+  // dictionaries (those stay en/tr, but every launch-critical key lives centrally).
+  const lang = useLanguageStore((s) => s.lang);
   const t = useCallback(
     (key: string) => {
-      const lang = settings.language;
-      return LABELS[lang]?.[key] || LABELS.English[key] || key;
+      const central = translate(lang, key);
+      if (central !== key) return central;          // central dict had it (en/tr/de)
+      const legacy = settings.language === 'Turkish' ? 'Turkish' : 'English';
+      return LABELS[legacy]?.[key] || LABELS.English[key] || key;
     },
-    [settings.language]
+    [lang, settings.language],
   );
 
   return (
