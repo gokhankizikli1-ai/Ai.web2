@@ -25,6 +25,11 @@ export interface AttachedAsset {
 export interface MessageSource {
   url: string;
   title?: string;
+  /** Bare hostname (Phase 14G) — supplied by the backend; the renderer still
+   *  derives its own as a fallback when absent. */
+  domain?: string;
+  /** ISO publication date when the provider supplied one — never fabricated. */
+  publishedAt?: string;
 }
 
 export interface Message {

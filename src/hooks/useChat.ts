@@ -9,6 +9,23 @@ import { currentStorageScope } from '@/lib/storageScope';
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
 /**
+ * Phase 14G — defence-in-depth scrub of internal orchestration markers from
+ * assistant text. The real fix is server-side (the injected tool-context blocks
+ * no longer carry these markers, and the stream boundary strips them); this is
+ * the last line so an internal label can never render in the chat even if a
+ * marker were split across SSE deltas. Operates on the ACCUMULATED text so
+ * cross-delta splits are caught. Never alters ordinary answer prose.
+ */
+const _INTERNAL_MARKER_RE =
+  /(?:═+|\[?INTERNAL (?:LIVE-SEARCH RESULTS|CAPABILITIES NOTE|NOTE —)[^\n]*|KORVIX (?:WEB SEARCH|TOOLS|BROWSER|GITHUB)[^\n]*|TOOL OUTPUT|TOOL_RESULT|FUNCTION RESULT|SEARCH CONTEXT|DO NOT REFUSE|TOOL ATTEMPTED, NO RESULTS|\[TOOL:[^\]]*\]?)/g;
+function stripInternalMarkers(text: string): string {
+  if (!text || (!text.includes('═') && !/KORVIX|TOOL OUTPUT|TOOL_RESULT|INTERNAL (?:LIVE-SEARCH|CAPABILITIES|NOTE —)|SEARCH CONTEXT|FUNCTION RESULT/.test(text))) {
+    return text;
+  }
+  return text.replace(_INTERNAL_MARKER_RE, '');
+}
+
+/**
  * Chat backend endpoint.
  *
  * ─── Why "Load failed" was happening ───────────────────────────────
@@ -797,10 +814,12 @@ export function useChat() {
     // duplicate assistant bubble appears if streaming fails partway.
     let assistantId: string | null = null;
     // Web sources the backend actually used this turn — collected from
-    // tool.completed (web_research / browser_fetch `urls`) and attached to
-    // the assistant message so the bubble can show a "Show sources" drawer.
-    // Deduped by url; never fabricated.
+    // tool.completed (web_research `sources`/`urls`, browser_fetch `urls`) and
+    // attached to the assistant message so the bubble can show a "Show sources"
+    // drawer. Deduped by url; never fabricated. Phase 14G: prefer the rich
+    // `sources` objects (title/domain/publishedAt) when present.
     const collectedSourceUrls: string[] = [];
+    const collectedSources: import('@/types').MessageSource[] = [];
 
     /* ── Streaming path (Phase 1.1, opt-in via VITE_CHAT_STREAMING) ──
        Phase 9 fix: when the turn carries attachments, FORCE streaming
@@ -885,7 +904,7 @@ export function useChat() {
                         ...s,
                         messages: [
                           ...s.messages,
-                          { id: newId, role: 'assistant', content: accumulated, timestamp: new Date() },
+                          { id: newId, role: 'assistant', content: stripInternalMarkers(accumulated), timestamp: new Date() },
                         ],
                         updatedAt: new Date(),
                       }
@@ -894,7 +913,7 @@ export function useChat() {
               );
             } else {
               const targetId = assistantId;
-              const live = accumulated;
+              const live = stripInternalMarkers(accumulated);
               setSessions((prev) =>
                 prev.map((s) =>
                   s.id === activeSessionId
@@ -978,9 +997,25 @@ export function useChat() {
               // "Show sources" drawer — dedup, cap generous. Only genuine
               // urls the tool reported; nothing invented.
               if (succeeded && (id === 'web_research' || id === 'browser_fetch')) {
+                // Phase 14G — prefer rich structured sources (title/domain/
+                // publishedAt) when the backend sent them; fall back to bare urls.
+                const richSources = Array.isArray(t?.sources) ? t.sources as Array<Record<string, unknown>> : [];
+                for (const s of richSources) {
+                  const u = typeof s?.url === 'string' ? s.url : '';
+                  if (/^https?:\/\//i.test(u) && !collectedSourceUrls.includes(u)) {
+                    collectedSourceUrls.push(u);
+                    collectedSources.push({
+                      url: u,
+                      ...(typeof s.title === 'string' && s.title ? { title: s.title } : {}),
+                      ...(typeof s.domain === 'string' && s.domain ? { domain: s.domain } : {}),
+                      ...(typeof s.publishedAt === 'string' && s.publishedAt ? { publishedAt: s.publishedAt } : {}),
+                    });
+                  }
+                }
                 for (const u of urls) {
                   if (typeof u === 'string' && /^https?:\/\//i.test(u) && !collectedSourceUrls.includes(u)) {
                     collectedSourceUrls.push(u);
+                    collectedSources.push({ url: u });
                   }
                 }
               }
@@ -1065,9 +1100,9 @@ export function useChat() {
         // Attach any web sources gathered this turn to the assistant
         // message so the bubble can render a collapsed "Show sources"
         // drawer (never inline in the answer text).
-        if (assistantId && collectedSourceUrls.length > 0) {
+        if (assistantId && collectedSources.length > 0) {
           const targetId = assistantId;
-          const sources = collectedSourceUrls.map((url) => ({ url }));
+          const sources = collectedSources;
           setSessions((prev) =>
             prev.map((s) =>
               s.id === activeSessionId

@@ -25,13 +25,58 @@ positives (burning Tavily credits on small talk).
 """
 from __future__ import annotations
 
+import datetime as _dt
 import logging
 import re
 from dataclasses import dataclass
 from typing import Optional
+from urllib.parse import urlparse
 
 
 logger = logging.getLogger(__name__)
+
+
+def _domain_of(url: str) -> str:
+    """Bare hostname (no www.) for a URL. Never raises."""
+    try:
+        host = urlparse(url).hostname or ""
+        return host[4:] if host.startswith("www.") else host
+    except Exception:
+        return ""
+
+
+def _usable_citations(envelope: dict) -> list:
+    """Citations from an envelope that carry a real URL (Phase 14G)."""
+    data = (envelope or {}).get("data") or {}
+    out: list = []
+    for c in data.get("citations") or []:
+        if isinstance(c, dict) and (c.get("url") or "").strip():
+            out.append(c)
+    return out
+
+
+def _recovery_query(query: str, triggers: tuple[str, ...]) -> str:
+    """Deterministically rewrite a query for ONE recovery search when the first
+    attempt found nothing (Phase 14G Part F). No model call — pure string work:
+    add the current date, and an intent-specific normalizer (current weather /
+    stock price / latest news). Returns a query distinct from the input, or the
+    input unchanged when no useful rewrite applies (caller then skips recovery).
+    """
+    today = _dt.date.today().isoformat()
+    trig = " ".join(triggers).lower()
+    base = " ".join(query.split())  # collapse whitespace
+    # Simplify an overlong request to its first ~12 words.
+    words = base.split()
+    if len(words) > 12:
+        base = " ".join(words[:12])
+    if "weather" in trig:
+        return f"{base} current weather forecast {today}"
+    if "finance" in trig:
+        # Prefer an already-resolved ticker token if present in the query.
+        return f"{base} current stock price quote {today}"
+    if "news" in trig or "haber" in trig:
+        return f"{base} latest news {today}"
+    return f"{base} {today}"
 
 
 # ── Intent signals ────────────────────────────────────────────────────────
@@ -214,6 +259,70 @@ _COMPANY_STOCK_NAMES: tuple[str, ...] = (
     "spotify", "roblox", "shopify", "airbnb", "disney",
 )
 
+# Company name → primary US ticker. Lets "NVIDIA hissesi kaç dolar" resolve to
+# NVDA even when the user never typed the symbol (Phase 14G finance reliability).
+_COMPANY_TICKER_MAP: dict[str, str] = {
+    "nvidia": "NVDA", "tesla": "TSLA", "apple": "AAPL", "microsoft": "MSFT",
+    "amazon": "AMZN", "google": "GOOGL", "alphabet": "GOOGL", "meta": "META",
+    "facebook": "META", "netflix": "NFLX", "intel": "INTC", "alibaba": "BABA",
+    "paypal": "PYPL", "coinbase": "COIN", "palantir": "PLTR", "oracle": "ORCL",
+    "salesforce": "CRM", "adobe": "ADBE", "qualcomm": "QCOM", "broadcom": "AVGO",
+    "spotify": "SPOT", "roblox": "RBLX", "shopify": "SHOP", "airbnb": "ABNB",
+    "disney": "DIS",
+}
+
+
+# ── Weather signals (mandatory live data — Phase 14G) ──────────────────────
+#
+# Weather is a current-data question that MUST hit the live layer, but the
+# generic scorer missed it: "hava durumu"/"weather" were only weak DOMAIN cues
+# (0.30, below the 0.4 gate) and "istanbulda hava nasıl" matched nothing at all
+# ("hava" alone is ambiguous — "hava atmak" = to show off). This dedicated,
+# high-confidence detector force-triggers like the finance one. There is no
+# dedicated weather PROVIDER in the backend, so weather routes through the same
+# web_research (Tavily/Exa/Brave) path with a weather-normalized query.
+
+# Weather keywords that fire on their own (unambiguous), EN + TR + DE.
+_WEATHER_STRONG: tuple[str, ...] = (
+    "hava durumu", "hava durum", "weather", "forecast", "wetter",
+    "temperature", "temperatur", "how hot", "how cold",
+    "is it raining", "will it rain", "gonna rain",
+)
+# Ambiguous "hava" needs a weather companion word to count.
+_WEATHER_HAVA_COMPANIONS: tuple[str, ...] = (
+    "nasıl", "nasil", "kaç derece", "kac derece", "derece", "sıcak", "sicak",
+    "sıcaklık", "sicaklik", "yağmur", "yagmur", "yağış", "yagis", "kar",
+    "rüzgar", "ruzgar", "nem", "bulut", "güneş", "gunes", "soğuk", "soguk",
+)
+# Other standalone weather-condition cues (TR/DE) that imply a weather query.
+_WEATHER_CONDITION: tuple[str, ...] = (
+    "yağmur var mı", "yagmur var mi", "kaç derece", "kac derece",
+    "regnet", "regen", "schnee", "sonnig",
+)
+
+
+def detect_weather_intent(text: str, lower: str) -> Optional[tuple[str, list[str]]]:
+    """Detect a live-weather query. Returns (query, hits) or None.
+
+    `query` is the user's message verbatim — location parsing/normalization is
+    left to the deterministic recovery step so the primary attempt keeps the
+    user's own phrasing. Never invents weather data — routing only.
+    """
+    hits: list[str] = []
+    strong = _contains_any(lower, _WEATHER_STRONG)
+    if strong:
+        hits.extend(strong[:2])
+        return text, (hits or ["weather"])
+    # Ambiguous TR "hava" only counts as a STANDALONE word (so "havaalanı"
+    # =airport, "havayolu" =airline, "havada" don't match) AND with a weather
+    # companion word present.
+    if re.search(r"\bhava\b", lower) and _contains_any(lower, _WEATHER_HAVA_COMPANIONS):
+        return text, ["weather:hava"]
+    cond = _contains_any(lower, _WEATHER_CONDITION)
+    if cond:
+        return text, [f"weather:{cond[0]}"]
+    return None
+
 
 def _levenshtein_le1(a: str, b: str) -> bool:
     """True if edit distance(a, b) <= 1. Cheap early-exit variant — enough for
@@ -297,6 +406,17 @@ def detect_finance_intent(text: str, lower: str) -> Optional[tuple[str, str, lis
 
     ticker = exact_ticker or fuzzy_ticker
 
+    # Company name → ticker (e.g. "nvidia" → NVDA) when the user named the
+    # company but not the symbol, and there's price/asset/strong context. The
+    # resolved symbol is prepended to the search query so the live lookup is
+    # well-formed ("NVIDIA hissesi kaç dolar" → "NVDA NVIDIA hissesi kaç dolar").
+    if not ticker and company and (price or asset or strong):
+        mapped = _COMPANY_TICKER_MAP.get(company[0])
+        if mapped:
+            ticker = mapped
+            if mapped.lower() not in lower:
+                corrected_query = f"{mapped} {corrected_query}"
+
     is_finance = bool(
         strong
         or (price and (asset or company or ticker))
@@ -315,14 +435,22 @@ def detect_finance_intent(text: str, lower: str) -> Optional[tuple[str, str, lis
     return corrected_query, ticker, (hits or ["finance"])
 
 
-# Phrases that NEGATE the intent — when present, even strong temporal
-# signals shouldn't fire (e.g. "tell me a joke about today's weather"
-# is small talk, not research).
-_NEGATIVE_PATTERNS: tuple[str, ...] = (
+# Creative-writing / coding requests that are NOT research even when they name a
+# live-data topic (e.g. "tell me a joke about today's weather", "write a poem
+# about bitcoin"). Checked FIRST — before the deterministic live-data detectors —
+# so they win over weather/finance (Phase 14G).
+_CREATIVE_NEGATIVE_PATTERNS: tuple[str, ...] = (
     r"\btell me a joke\b",
-    r"\bwrite (?:a |me )?(?:poem|story|haiku|essay)\b",
+    r"\bwrite (?:a |me )?(?:poem|story|haiku|essay|song|rap)\b",
     r"\bunit test\b",          # likely a coding question, not research
     r"\bbir şaka\b",           # TR "a joke"
+    r"\b(?:şiir|hikaye|masal) yaz\b",  # TR "write a poem/story/tale"
+)
+
+# Greeting openers that are chitchat. Checked ONLY as a gate on the fuzzy
+# scoring path (AFTER the deterministic detectors) — so "merhaba istanbulda
+# hava nasıl" still routes to weather while a bare "merhaba nasılsın" does not.
+_NEGATIVE_PATTERNS: tuple[str, ...] = (
     # Phase 11 final — after threshold dropped to 0.4, short
     # "Hello, how are you today?" started false-firing. Greetings
     # ending in a question mark with < 8 words are chitchat.
@@ -363,12 +491,20 @@ def detect_web_search_intent(user_message: str) -> WebSearchIntent:
     # restores the match.
     lower = text.lower().replace("i̇", "i")
 
-    # Negative patterns short-circuit — "tell me a joke about today" is
-    # not a research request.
-    for neg in _NEGATIVE_PATTERNS:
+    # Creative-writing / coding requests are never research, even when they name
+    # a live-data topic — short-circuit BEFORE the deterministic detectors so
+    # "tell me a joke about today's weather" doesn't fire a live search.
+    for neg in _CREATIVE_NEGATIVE_PATTERNS:
         if re.search(neg, lower, flags=re.IGNORECASE):
             return WebSearchIntent(False, 0.0, (), text,
-                                   f"negative pattern: {neg}")
+                                   f"creative/non-research pattern: {neg}")
+
+    # ── Deterministic live-data detectors run FIRST (Phase 14G) ──────────────
+    # Explicit-search, finance and weather are unambiguous current-data intents
+    # and must fire even when the message opens with a greeting ("merhaba
+    # istanbulda hava nasıl") — the greeting negative-pattern below would
+    # otherwise swallow them. They are ordered before the negative short-circuit
+    # on purpose.
 
     # Explicit search phrases are the strongest signal.
     explicit_hits = _contains_any(lower, _EXPLICIT_SEARCH_PHRASES)
@@ -399,6 +535,29 @@ def detect_web_search_intent(user_message: str) -> WebSearchIntent:
                 + (f"; corrected='{corrected_query}'" if corrected_query != text else "")
             ),
         )
+
+    # Weather queries — MANDATORY live data (no dedicated provider; routes
+    # through web_research with a weather-normalized query on recovery).
+    weather = detect_weather_intent(text, lower)
+    if weather is not None:
+        w_query, w_hits = weather
+        logger.info("[INTENT] weather | requires_live_data=True | hits=%s",
+                    ",".join(w_hits[:4]))
+        return WebSearchIntent(
+            triggered=  True,
+            confidence= 0.9,
+            triggers=   tuple(["weather", *w_hits][:6]),
+            query=      w_query,
+            reason=     "weather/current-conditions query — mandatory live data",
+        )
+
+    # Negative patterns short-circuit the FUZZY scoring path — "tell me a joke
+    # about today" / a bare greeting is not a research request. (Deterministic
+    # live-data detectors above already returned, so these only gate scoring.)
+    for neg in _NEGATIVE_PATTERNS:
+        if re.search(neg, lower, flags=re.IGNORECASE):
+            return WebSearchIntent(False, 0.0, (), text,
+                                   f"negative pattern: {neg}")
 
     # Score: temporal + research + domain signals each add weight.
     temporal = _contains_any(lower, _TEMPORAL_SIGNALS)
@@ -922,23 +1081,25 @@ async def build_web_search_context_block(
                         (envelope or {}).get("message") or "error",
                         provider=provider)
 
-    # 2) Single retry — same query, different depth — only when the
-    #    first call failed with a transient-looking error.
-    if envelope.get("status") not in ("available",):
-        first_message = (envelope or {}).get("message") or ""
-        is_transient = any(s in first_message.lower() for s in (
-            "timeout", "timed out", "network", "connection", "temporarily",
-        ))
-        if is_transient:
+    # 2) ONE deterministic recovery attempt (Phase 14G Part F). Fires whenever
+    #    the first call produced NO usable sources — provider error/unavailable,
+    #    OR available-but-empty / malformed / duplicate-only. The query is
+    #    rewritten deterministically (location/ticker/date/"latest") with NO
+    #    model call, then retried once on the advanced depth. STRICTLY one
+    #    retry; never a loop.
+    attempt = "initial"
+    if len(_usable_citations(envelope)) < 1:
+        recovery_query = _recovery_query(query, triggers)
+        if recovery_query and recovery_query != query:
             logger.info(
-                "web_search.retry | uid=%s | reason=transient: %s",
-                user_id, first_message[:120],
+                "web_search.recovery | uid=%s | rewritten=%s",
+                user_id, recovery_query[:120],
             )
             with exec_client.record_run(
                 user_id=        user_id or "anonymous",
                 tool_id=        "web_research",
-                input_summary=  f"retry: {query[:120]}",
-                input_payload=  {"query": query, "caller": "chat_auto_retry",
+                input_summary=  f"recovery: {recovery_query[:120]}",
+                input_payload=  {"query": recovery_query, "caller": "chat_auto_recovery",
                                  "triggers": list(triggers)},
                 caller=         "system",
                 panel_id=       panel_id,
@@ -946,40 +1107,47 @@ async def build_web_search_context_block(
                 correlation_id= correlation_id,
             ) as run:
                 try:
-                    envelope = await safe_run_with_timeout(
-                        tool, query, {
-                            "query": query,
+                    envelope2 = await safe_run_with_timeout(
+                        tool, recovery_query, {
+                            "query": recovery_query,
                             "max_results": _DEFAULT_MAX_RESULTS,
                             "depth": "advanced",
                         },
-                        # Retries pay extra latency budget on a known
-                        # slow path; still hard-capped so we can never
-                        # hang the SSE stream.
+                        # Recovery pays extra latency budget on the slow path;
+                        # still hard-capped so we can never hang the SSE stream.
                         override_timeout=15.0,
                     )
                 except Exception as exc:
-                    run.failure("TOOL_RAISED", str(exc) or "retry raised")
-                    envelope = {}
-                status = (envelope or {}).get("status") or "error"
-                provider = (envelope or {}).get("provider")
-                if status == "available":
-                    run.success(output=envelope, provider=provider)
-                elif status == "unavailable":
+                    run.failure("TOOL_RAISED", str(exc) or "recovery raised")
+                    envelope2 = {}
+                status2 = (envelope2 or {}).get("status") or "error"
+                provider2 = (envelope2 or {}).get("provider")
+                if status2 == "available":
+                    run.success(output=envelope2, provider=provider2)
+                elif status2 == "unavailable":
                     run.failure("TOOL_UNAVAILABLE",
-                                (envelope or {}).get("message") or "unavailable",
-                                provider=provider)
+                                (envelope2 or {}).get("message") or "unavailable",
+                                provider=provider2)
                 else:
                     run.failure("TOOL_ERROR",
-                                (envelope or {}).get("message") or "error",
-                                provider=provider)
+                                (envelope2 or {}).get("message") or "error",
+                                provider=provider2)
+                # Adopt the recovery result ONLY if it actually found sources.
+                if len(_usable_citations(envelope2)) >= 1:
+                    envelope = envelope2
+                    attempt = "recovery"
 
-    if envelope.get("status") != "available":
-        msg = envelope.get("message") or "web_research returned no data"
+    # Honest failure — no usable sources after the initial + one recovery. The
+    # route injects a truthful "search returned no usable sources" note; the
+    # model must not fabricate current data (Phase 14G Part G).
+    if len(_usable_citations(envelope)) < 1:
+        msg = (envelope or {}).get("message") or "no usable sources"
         return None, {
             "triggered": True,
             "fetched":   False,
             "query":     query,
             "triggers":  list(triggers),
+            "attempt":   attempt,
             "error":     msg,
         }
 
@@ -1001,10 +1169,13 @@ async def build_web_search_context_block(
         correlation_id= correlation_id,
     )
 
-    return _format_envelope_to_block(
+    block, payload = _format_envelope_to_block(
         envelope=envelope, query=query, triggers=triggers,
         owner_debug=owner_debug,
     )
+    if isinstance(payload, dict):
+        payload["attempt"] = attempt  # internal: which attempt produced sources
+    return block, payload
 
 
 def _envelope_to_chat_block(
@@ -1019,20 +1190,18 @@ def _envelope_to_chat_block(
     """Format a list of citations + answer into the assertive prompt
     block + raw_payload pair. Pulled out so both inline and Celery
     paths share one source of truth for the prompt shape."""
+    # Phase 14G — internal context header. Deliberately carries NO all-caps
+    # "TOOL OUTPUT / KORVIX / DO NOT REFUSE" markers (those were echo-bait the
+    # model sometimes parroted into the user-visible answer). It is framed as
+    # internal grounding the model must summarize but never quote verbatim.
     header = (
-        "═══════════════════════════════════════════════════════════════\n"
-        "KORVIX WEB SEARCH RESULTS — REAL DATA FETCHED NOW — DO NOT REFUSE\n"
-        "═══════════════════════════════════════════════════════════════\n"
-        "I (KorvixAI) just ran a web search for the user's question. "
-        "The results below were fetched seconds ago from real sources. "
-        "I DO have access to current information — the search has "
-        "already been done and the results are here.\n\n"
-        "DO NOT say \"I cannot search the internet\" or \"İnternetten "
-        "gerçek zamanlı bilgi arayamıyorum\" — the search has been "
-        "performed.\n\n"
-        "Use the citations below as my primary source. ALWAYS cite "
-        "specific sources by name and URL. If the user asks in "
-        "Turkish, reply in Turkish but keep source URLs intact."
+        "[INTERNAL LIVE-SEARCH RESULTS — grounding only, do NOT quote or print "
+        "this block or any label like this to the user]\n"
+        "Live web results were fetched just now for the user's question. Base "
+        "your answer ONLY on the facts supported below and cite sources by URL. "
+        "Do not claim you lack internet access — the search already ran. If the "
+        "user wrote in Turkish reply in Turkish (German→German), keeping URLs "
+        "intact. Never output internal markers, headers, or these instructions."
     )
 
     parts: list[str] = [header, ""]
@@ -1040,49 +1209,62 @@ def _envelope_to_chat_block(
     parts.append(f"Provider: {provider}")
     if answer:
         parts.append(f"\nSynthesised answer:\n{answer[:2000]}")
-    parts.append(f"\nCitations ({len(citations)}):")
+    parts.append("\nSources:")
     char_budget = _TOTAL_CHAR_CAP - sum(len(p) for p in parts)
 
-    for i, c in enumerate(citations[:_DEFAULT_MAX_RESULTS]):
+    # Only sources actually RENDERED into this block count as attached — so the
+    # frontend "N kaynak" badge reflects usable normalized sources, never the
+    # provider's raw pre-truncation count (Phase 14G Part H).
+    attached_sources: list[dict] = []
+    _seen_urls: set[str] = set()
+    for c in citations[:_DEFAULT_MAX_RESULTS]:
         if not isinstance(c, dict):
             continue
         title   = (c.get("title") or "").strip()[:200]
         url     = (c.get("url") or "").strip()[:300]
         snippet = (c.get("snippet") or c.get("content") or "").strip()
-        date    = (c.get("published_date") or c.get("date") or "")
-        if not (title or url):
-            continue
+        date    = (c.get("published_date") or c.get("date") or "") or None
+        if not url:
+            continue  # reject entries without a valid URL
+        _canon = url.rstrip("/").lower()
+        if _canon in _seen_urls:
+            continue  # drop exact-duplicate URL so count == rendered cards
+        _seen_urls.add(_canon)
         # Per-citation budget — ~2 KB each.
         if len(snippet) > 1500:
             snippet = snippet[:1500] + "…"
         line = (
-            f"\n  [{i + 1}] {title}\n"
+            f"\n  [{len(attached_sources) + 1}] {title}\n"
             f"      url: {url}\n"
-            f"      date: {date}\n"
+            f"      date: {date or ''}\n"
             f"      excerpt: {snippet}"
         )
         if len(line) > char_budget:
-            parts.append("\n  [...remaining citations truncated by context budget]")
             break
         parts.append(line)
         char_budget -= len(line)
+        attached_sources.append({
+            "url":         url,
+            "title":       title or None,
+            "domain":      _domain_of(url),
+            "publishedAt": date,   # never fabricated — None when the provider gave none
+        })
 
     block = "\n".join(parts)
 
     raw_payload = {
         "triggered": True,
-        "fetched":   True,
+        # `fetched` is truthful: True only when at least one usable source was
+        # normalized AND attached to the block the model will answer from.
+        "fetched":   bool(attached_sources),
         "query":     query,
         "triggers":  list(triggers),
         "provider":  provider,
         "answer":    answer if owner_debug else (answer[:200] + ("…" if len(answer) > 200 else "")),
-        "citations": (
-            citations if owner_debug
-            else [{"title": c.get("title"), "url": c.get("url"),
-                   "date":  c.get("published_date") or c.get("date")}
-                  for c in citations if isinstance(c, dict)]
-        ),
-        "count": len(citations),
+        # Structured sources for the frontend citation cards (Part I).
+        "sources":   attached_sources,
+        # Count == usable normalized sources attached to the final answer.
+        "count":     len(attached_sources),
     }
 
     logger.info(
