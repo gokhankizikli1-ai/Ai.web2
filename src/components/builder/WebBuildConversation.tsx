@@ -166,21 +166,36 @@ function LivePhases({
   );
 }
 
-/** Phase 13H — the compact completed/failed activity summary for the latest turn (session-
- *  local UI state; never persisted). Collapsed by default, expandable to the full timeline.
- *  On a fresh-build failure there is no result turn, so the user prompt is shown here too. */
+/** Phase 13H.1 — the natural ending line for the latest turn (session-local; never persisted):
+ *  one conversational summary that expands to the reached workstream lines. When a result turn
+ *  already rendered (success / preserved revision) it sits quietly beneath it WITHOUT a second
+ *  Korvix avatar. On a fresh-build failure or stop there is no result turn, so the user prompt
+ *  and an avatar are shown so the interrupted run still reads as a normal exchange. */
 function ActivitySummaryBlock({
   summary, hasSteps,
 }: {
-  summary: { prompt: string; startedAt: number; endedAt: number; state: WebBuildActivityState };
+  summary: { prompt: string; startedAt: number; endedAt: number; state: WebBuildActivityState; stopped?: boolean };
   hasSteps: boolean;
 }) {
+  const timeline = (
+    <WebBuildActivityTimeline
+      state={summary.state}
+      startedAt={summary.startedAt}
+      endedAt={summary.endedAt}
+      variant="summary"
+      stopped={summary.stopped}
+    />
+  );
+  if (hasSteps) {
+    // Aligned under the assistant column (no duplicate avatar) — reads as the run's quiet end.
+    return <div className="pl-[26px]">{timeline}</div>;
+  }
   return (
     <div className="space-y-3">
-      {!hasSteps && <UserMessage text={summary.prompt} />}
+      <UserMessage text={summary.prompt} />
       <div className="flex items-start gap-2.5">
         <div className="mt-[3px]"><KorvixAvatar size={15} /></div>
-        <WebBuildActivityTimeline state={summary.state} startedAt={summary.startedAt} endedAt={summary.endedAt} variant="summary" />
+        {timeline}
       </div>
     </div>
   );
@@ -1284,9 +1299,9 @@ interface WebBuildConversationProps {
    *  when `activity` is present the truthful expandable timeline is shown; otherwise the
    *  legacy deterministic `LiveThink` renders (unchanged) for out-of-scope callers. */
   live?: { prompt: string; kind?: 'build' | 'revision'; activity?: WebBuildActivityState; startedAt?: number } | null;
-  /** Phase 13H — the compact completed/failed activity summary for the latest turn (session-
-   *  local; never persisted). Shown only when no live run is in flight. Optional → unchanged. */
-  activitySummary?: { prompt: string; startedAt: number; endedAt: number; state: WebBuildActivityState } | null;
+  /** Phase 13H — the compact completed/failed/stopped activity summary for the latest turn
+   *  (session-local; never persisted). Shown only when no live run is in flight. Optional. */
+  activitySummary?: { prompt: string; startedAt: number; endedAt: number; state: WebBuildActivityState; stopped?: boolean } | null;
   /** Extra cards (e.g. Save to Project) appended after the last assistant msg. */
   extraCards?: ReactNode;
   slug?: string;
