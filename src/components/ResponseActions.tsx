@@ -5,11 +5,65 @@ import {
   Bookmark, BookmarkCheck,
 } from 'lucide-react';
 import { useLanguageStore } from '@/stores/languageStore';
-import { scopedKey, migrateGlobalToScope } from '@/lib/storageScope';
+import {
+  scopedKey, claimLegacyGlobal, quarantineLegacyGlobal, dropLegacyGlobal,
+} from '@/lib/storageScope';
 
-// Phase 14D — saved prompts are per identity; legacy global data is claimed into
-// the current scope once, and logout no longer wipes it (isolation is structural).
+// Phase 14D — saved prompts are per identity; logout no longer wipes them
+// (isolation is structural). Phase 14D.2 — legacy GLOBAL prompts are claimed by
+// at most one authenticated owner and UNIONED into that owner's scope.
 const SAVED_PROMPTS_KEY = 'korvix_saved_prompts';
+
+/** A saved-prompts value is an array of primitive string ids. */
+function isStringArray(v: unknown): v is string[] {
+  return Array.isArray(v) && v.every((x) => typeof x === 'string');
+}
+
+/**
+ * Claim + merge legacy GLOBAL saved prompts into the current owner's scope
+ * (Phase 14D.2). Union semantics: scoped order first, then unique legacy ids —
+ * never duplicated. Malformed legacy JSON is quarantined (not discarded);
+ * malformed scoped data is never overwritten. Only the marker owner runs; guests
+ * and other users no-op. Idempotent — the global key is removed only after a
+ * successful scoped write, so a repeat pass finds nothing to claim.
+ */
+function migrateSavedPrompts(): void {
+  const claim = claimLegacyGlobal(SAVED_PROMPTS_KEY);
+  if (!claim) return;
+
+  let legacy: unknown;
+  try { legacy = JSON.parse(claim.raw); } catch { legacy = undefined; }
+  if (!isStringArray(legacy)) {
+    // Unparseable / unknown-shape legacy → owner-scoped quarantine, then drop.
+    if (quarantineLegacyGlobal(SAVED_PROMPTS_KEY, claim.raw)) dropLegacyGlobal(SAVED_PROMPTS_KEY);
+    return;
+  }
+
+  let scoped: string[] = [];
+  const scopedRaw = localStorage.getItem(claim.scopedKey);
+  if (scopedRaw !== null) {
+    let parsed: unknown;
+    try { parsed = JSON.parse(scopedRaw); } catch { return; } // malformed scoped — never overwrite
+    if (!isStringArray(parsed)) return;                       // unknown scoped shape — never overwrite
+    scoped = parsed;
+  }
+
+  const seen = new Set(scoped);
+  const merged = [...scoped];
+  for (const id of legacy) if (!seen.has(id)) { seen.add(id); merged.push(id); }
+
+  try { localStorage.setItem(claim.scopedKey, JSON.stringify(merged)); }
+  catch { return; }                                           // quota — leave global for retry
+  dropLegacyGlobal(SAVED_PROMPTS_KEY);
+}
+
+// Browser-only, fire-and-forget: claim + union legacy GLOBAL saved prompts into
+// the boot identity's scope at module load, so the rightful owner's migration
+// completes at boot rather than only when a chat surface renders. Guests /
+// non-owners no-op; idempotent. Never blocks paint.
+if (typeof window !== 'undefined') {
+  try { migrateSavedPrompts(); } catch { /* private mode — skip */ }
+}
 
 export interface ResponseAction {
   id: string;
@@ -30,8 +84,9 @@ export const RESPONSE_ACTIONS: ResponseAction[] = [
 export function useSavedPrompts() {
   const [saved, setSaved] = useState<string[]>(() => {
     try {
-      migrateGlobalToScope(SAVED_PROMPTS_KEY);
-      return JSON.parse(localStorage.getItem(scopedKey(SAVED_PROMPTS_KEY)) || '[]');
+      migrateSavedPrompts();
+      const parsed: unknown = JSON.parse(localStorage.getItem(scopedKey(SAVED_PROMPTS_KEY)) || '[]');
+      return isStringArray(parsed) ? parsed : [];
     } catch { return []; }
   });
   const toggle = (id: string) => {
