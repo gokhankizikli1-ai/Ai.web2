@@ -1,38 +1,59 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, lazy, Suspense } from 'react';
 import { Routes, Route, useLocation, Navigate } from 'react-router';
 import { useAuthStore } from '@/stores/authStore';
 import { currentStorageScope, IDENTITY_CHANGED_EVENT } from '@/lib/storageScope';
+
+// ── Startup performance (Phase 14I.2) ───────────────────────────────────
+// CONCRETE bottleneck: every page module below used to be a STATIC import,
+// so the landing/first-paint bundle eagerly pulled in the entire
+// authenticated app — ChatDashboard, the Website/App/Game builders,
+// MultiAgentSwarm, the project workspaces, etc. — even though a logged-out
+// visitor on `/` never renders any of them. Those authenticated surfaces are
+// the heaviest modules in the tree.
+//
+// FIX (not speculative — this is the "lazy-load app routes from landing"
+// allowed by the sprint): keep every PUBLIC route eager (landing + marketing
+// + auth + ComingSoon) so the public experience has zero extra round-trips,
+// and code-split each AUTHENTICATED surface behind React.lazy so it downloads
+// only when that route is actually visited (all of them sit behind
+// ProtectedRoute, so a logged-out landing visitor never fetches them). This
+// removes ~two dozen heavy modules from the initial bundle without changing
+// any routing or auth behavior. Suspense (below) covers the one-time chunk
+// fetch with a neutral fallback.
 import LandingPage from './pages/LandingPage';
 import FeaturesPage from './pages/FeaturesPage';
 import UseCasesPage from './pages/UseCasesPage';
 import PricingPage from './pages/PricingPage';
 import AboutPage from './pages/AboutPage';
-import ChatDashboard from './pages/ChatDashboard';
-import SettingsPage from './pages/SettingsPage';
-import HomeDashboard from './pages/HomeDashboard';
-import StartupHub from './pages/StartupHub';
-import EcommerceOS from './pages/EcommerceOS';
-import AgentBuilder from './pages/AgentBuilder';
-import ToolsPage from './pages/ToolsPage';
-import ExplorePage from './pages/ExplorePage';
-import WebsiteAnalyzer from './pages/WebsiteAnalyzer';
-import WebsiteBuilder from './pages/WebsiteBuilder';
-import WebBuildPreview from './pages/WebBuildPreview';
-import AppBuilder from './pages/AppBuilder';
-import GameBuilder from './pages/GameBuilder';
-import BrandBuilder from './pages/BrandBuilder';
-import ViralContent from './pages/ViralContent';
-import KnowledgeVault from './pages/KnowledgeVault';
-import Automations from './pages/Automations';
-import MultiAgentSwarm from './pages/MultiAgentSwarm';
 import ComingSoon from './pages/ComingSoon';
 import AuthPage from './pages/AuthPage';
-import ProjectsDashboard from './pages/ProjectsDashboard';
-import ProjectWorkspace from './pages/ProjectWorkspace';
-import ProjectResults from './pages/ProjectResults';
-import AgentsPage from './pages/AgentsPage';
-import AgentChatPage from './pages/AgentChatPage';
-import CreditsPage from './pages/CreditsPage';
+
+// Authenticated app surfaces — code-split (see note above).
+const ChatDashboard = lazy(() => import('./pages/ChatDashboard'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const HomeDashboard = lazy(() => import('./pages/HomeDashboard'));
+const StartupHub = lazy(() => import('./pages/StartupHub'));
+const EcommerceOS = lazy(() => import('./pages/EcommerceOS'));
+const AgentBuilder = lazy(() => import('./pages/AgentBuilder'));
+const ToolsPage = lazy(() => import('./pages/ToolsPage'));
+const ExplorePage = lazy(() => import('./pages/ExplorePage'));
+const WebsiteAnalyzer = lazy(() => import('./pages/WebsiteAnalyzer'));
+const WebsiteBuilder = lazy(() => import('./pages/WebsiteBuilder'));
+const WebBuildPreview = lazy(() => import('./pages/WebBuildPreview'));
+const AppBuilder = lazy(() => import('./pages/AppBuilder'));
+const GameBuilder = lazy(() => import('./pages/GameBuilder'));
+const BrandBuilder = lazy(() => import('./pages/BrandBuilder'));
+const ViralContent = lazy(() => import('./pages/ViralContent'));
+const KnowledgeVault = lazy(() => import('./pages/KnowledgeVault'));
+const Automations = lazy(() => import('./pages/Automations'));
+const MultiAgentSwarm = lazy(() => import('./pages/MultiAgentSwarm'));
+const ProjectsDashboard = lazy(() => import('./pages/ProjectsDashboard'));
+const ProjectWorkspace = lazy(() => import('./pages/ProjectWorkspace'));
+const ProjectResults = lazy(() => import('./pages/ProjectResults'));
+const AgentsPage = lazy(() => import('./pages/AgentsPage'));
+const AgentChatPage = lazy(() => import('./pages/AgentChatPage'));
+const CreditsPage = lazy(() => import('./pages/CreditsPage'));
+
 import BottomNav from './components/BottomNav';
 import FloatingParticles from './components/FloatingParticles';
 import PageTransition from './components/PageTransition';
@@ -46,6 +67,29 @@ function AnimatedRoute({ children }: { children: React.ReactNode }) {
     <PageTransition>
       {children}
     </PageTransition>
+  );
+}
+
+/**
+ * Suspense fallback for a code-split route's one-time chunk fetch (Phase
+ * 14I.2). Neutral centered spinner on a tall region (inherits the layout's
+ * bg-background from AppLayout) so the transition into a lazily-loaded
+ * authenticated surface reads as a brief load rather than a flash of empty
+ * page. Public routes are eager and never hit this.
+ */
+function RouteFallback() {
+  return (
+    <div
+      className="flex min-h-[60vh] w-full items-center justify-center"
+      role="status"
+      aria-live="polite"
+    >
+      <span className="sr-only">Loading…</span>
+      <span
+        className="h-6 w-6 animate-spin rounded-full border-2 border-muted-foreground/25 border-t-muted-foreground/70"
+        aria-hidden="true"
+      />
+    </div>
   );
 }
 
@@ -199,6 +243,7 @@ export default function App() {
   return (
     <AppLayout>
       <IdentityScopeBoundary>
+      <Suspense fallback={<RouteFallback />}>
       <Routes>
         {/* ═══ Landing ═══ */}
         <Route path="/" element={<LandingPage />} />
@@ -275,6 +320,7 @@ export default function App() {
         <Route path="/privacy" element={<AnimatedRoute><ComingSoon title="Privacy Policy" pageType="legal" /></AnimatedRoute>} />
         <Route path="/terms" element={<AnimatedRoute><ComingSoon title="Terms of Service" pageType="legal" /></AnimatedRoute>} />
       </Routes>
+      </Suspense>
       </IdentityScopeBoundary>
     </AppLayout>
   );
