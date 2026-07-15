@@ -140,6 +140,15 @@ export const de: Record<string, string> = {
   accountSettings: 'Kontoeinstellungen', learningCenter: 'Lernzentrum',
   documentation: 'Dokumentation', community: 'Community',
   upgradeToPro: 'Auf Pro upgraden', guestMode: 'Gastmodus',
+  // Phase 14C.2 — Profilmenü + Web-Build-Steuerung
+  ownerRole: 'Inhaber', ownerSession: 'Inhaber-Sitzung',
+  planBadge: '{plan}-Plan', languageSelected: '{lang} ausgewählt',
+  loggedOutSuccess: 'Erfolgreich abgemeldet',
+  webBuildStopGeneration: 'Generierung stoppen',
+  webBuildAskChanges: 'Änderungen an diesem Build anfordern…',
+  webBuildNoSources: 'keine Quellen verwendet',
+  webBuildContractFailed: 'Korvix konnte keinen vollständigen, modellgeplanten Build vom Backend erhalten. Versuche es gleich noch einmal.',
+  webBuildWebsiteLabel: 'Webseite',
   // Sidebar specific
   workspaceHub: 'Workspace-Hub', explore: 'Entdecken', work: 'Arbeit', tools: 'Werkzeuge',
   moreTabs: 'Mehr', pinned: 'Angeheftet', yourChats: 'Ihre Chats',

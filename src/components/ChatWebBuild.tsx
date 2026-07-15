@@ -120,7 +120,7 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
     setActiveWebBuildSession(runId);
     // Title like "Website: Peyzaj Mimarlığı". Convert the CURRENT chat session
     // (sessionId) into this web_build in place — never a duplicate sibling.
-    const label = lang === 'tr' ? 'Web Sitesi' : 'Website';
+    const label = t('webBuildWebsiteLabel');
     const title = `${label}: ${deriveWebBuildTitle(p.prompt, lang)}`;
     // The owning chat session id and the Web Build run id are DISTINCT identities.
     const owningChatSessionId = sessionId ?? runId;
@@ -205,9 +205,7 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
     // than showing a fake-success synthesized site. Surface an honest, specific
     // message inline (no locale key needed) so Preview/All Files stay hidden.
     if (err instanceof WebBuildError && err.kind === 'contract_failed') {
-      setErrorMsg(lang === 'tr'
-        ? "Korvix backend'den tam model-planlı bir build alamadı. Birazdan tekrar dene."
-        : 'Korvix could not get a complete model-planned build from the backend. Try again in a moment.');
+      setErrorMsg(t('webBuildContractFailed'));
       return;
     }
     // Phase 13D — revision outcomes carry an already-localized, honest message (no fake
@@ -280,7 +278,7 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
         phase: 'research', status: researchRan ? 'completed' : 'skipped',
         detailRows: researchRan
           ? [{ label: 'sources', value: String(r?.sourceCount ?? 0) }]
-          : [{ label: 'note', value: lang === 'tr' ? 'kaynak kullanılmadı' : 'no sources used' }],
+          : [{ label: 'note', value: t('webBuildNoSources') }],
       });
       reporter({ phase: 'planning', status: 'active' });
       reporter({ phase: 'planning', status: 'completed', detailRows: [{ label: 'sections', value: String(res.sections?.length ?? 0) }] });
@@ -488,7 +486,7 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
     </button>
   );
 
-  const placeholder = lang === 'tr' ? 'Bu yapı için değişiklik iste…' : 'Ask for changes to this build…';
+  const placeholder = t('webBuildAskChanges');
 
   return (
     <div className="flex flex-col h-full">
@@ -546,8 +544,8 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
               onClick={handleStop}
               disabled={stopping}
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/[0.08] text-slate-100 transition-colors hover:bg-white/[0.14] disabled:opacity-40 disabled:cursor-not-allowed"
-              aria-label={lang === 'tr' ? 'Oluşturmayı durdur' : 'Stop generation'}
-              title={lang === 'tr' ? 'Oluşturmayı durdur' : 'Stop generation'}
+              aria-label={t('webBuildStopGeneration')}
+              title={t('webBuildStopGeneration')}
             >
               <span className="h-2.5 w-2.5 rounded-[2px] bg-current" aria-hidden />
             </button>

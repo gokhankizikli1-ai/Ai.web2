@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { Check, AlertCircle, ChevronDown } from 'lucide-react';
 import { useLanguageStore } from '@/stores/languageStore';
+import type { Language } from '@/stores/languageStore';
 import {
   ACTIVITY_TITLES, ACTIVITY_DETAIL_LABELS,
   type WebBuildActivityState, type WebBuildActivityItem,
@@ -30,40 +31,46 @@ export interface WebBuildActivityTimelineProps {
   stopped?: boolean;
 }
 
-type Lang = 'en' | 'tr';
+/** en/tr/de string triple — mirrors the shape in `@/lib/webBuildActivity`. */
+type L3 = { en: string; tr: string; de: string };
 
-const pick = (m: { en: string; tr: string } | undefined, lang: Lang, fallback: string): string =>
-  (m ? (lang === 'tr' ? m.tr : m.en) : fallback);
+/** Resolve an L3 triple for the effective language, English-backed (never a
+ *  silent German→English or German→Turkish route). Phase 14C.2. */
+const pick = (m: L3 | undefined, lang: Language, fallback: string): string =>
+  (m ? (m[lang] ?? m.en) : fallback);
 
 /* Completed lines read like a FINISHED action ("Request understood"); the progressive/active
  * forms ("Understanding your request") live in ACTIVITY_TITLES. Kept LOCAL so this phase does
- * not touch the shared activity model / i18n files. Falls back to the active title if absent. */
-const DONE_TITLES: Record<string, { en: string; tr: string }> = {
-  'request-understanding': { en: 'Request understood', tr: 'İstek incelendi' },
-  research: { en: 'Website direction researched', tr: 'Site yönü araştırıldı' },
-  planning: { en: 'Website strategy created', tr: 'Site stratejisi oluşturuldu' },
-  specification: { en: 'Build specification prepared', tr: 'Build planı hazırlandı' },
-  'frontend-generation': { en: 'React project generated', tr: 'React projesi oluşturuldu' },
-  'frontend-validation': { en: 'Generated files validated', tr: 'Dosyalar doğrulandı' },
-  'structural-repair': { en: 'Project structure repaired', tr: 'Proje yapısı düzeltildi' },
-  'quality-review': { en: 'Design quality reviewed', tr: 'Tasarım kalitesi incelendi' },
-  'quality-repair': { en: 'Quality improvements applied', tr: 'Kalite iyileştirmeleri uygulandı' },
-  acceptance: { en: 'Candidate finalized', tr: 'Candidate hazırlandı' },
-  preview: { en: 'Preview prepared', tr: 'Önizleme hazırlandı' },
-  'revision-understanding': { en: 'Change understood', tr: 'Değişiklik incelendi' },
-  'revision-generation': { en: 'React project updated', tr: 'React projesi güncellendi' },
-  'revision-validation': { en: 'Revised files validated', tr: 'Düzenlenen dosyalar doğrulandı' },
-  'revision-preservation': { en: 'Working project preserved', tr: 'Çalışan proje korundu' },
-  'revision-preview': { en: 'Updated preview prepared', tr: 'Güncellenen önizleme hazırlandı' },
+ * not touch the shared i18n locale files. Falls back to the active title if absent. en/tr/de. */
+const DONE_TITLES: Record<string, L3> = {
+  'request-understanding': { en: 'Request understood', tr: 'İstek incelendi', de: 'Anfrage verstanden' },
+  research: { en: 'Website direction researched', tr: 'Site yönü araştırıldı', de: 'Website-Richtung recherchiert' },
+  planning: { en: 'Website strategy created', tr: 'Site stratejisi oluşturuldu', de: 'Website-Strategie erstellt' },
+  specification: { en: 'Build specification prepared', tr: 'Build planı hazırlandı', de: 'Build-Spezifikation vorbereitet' },
+  'frontend-generation': { en: 'React project generated', tr: 'React projesi oluşturuldu', de: 'React-Projekt generiert' },
+  'frontend-validation': { en: 'Generated files validated', tr: 'Dosyalar doğrulandı', de: 'Generierte Dateien geprüft' },
+  'structural-repair': { en: 'Project structure repaired', tr: 'Proje yapısı düzeltildi', de: 'Projektstruktur repariert' },
+  'quality-review': { en: 'Design quality reviewed', tr: 'Tasarım kalitesi incelendi', de: 'Designqualität geprüft' },
+  'quality-repair': { en: 'Quality improvements applied', tr: 'Kalite iyileştirmeleri uygulandı', de: 'Qualitätsverbesserungen angewendet' },
+  acceptance: { en: 'Candidate finalized', tr: 'Candidate hazırlandı', de: 'Kandidat finalisiert' },
+  preview: { en: 'Preview prepared', tr: 'Önizleme hazırlandı', de: 'Vorschau vorbereitet' },
+  'revision-understanding': { en: 'Change understood', tr: 'Değişiklik incelendi', de: 'Änderung verstanden' },
+  'revision-generation': { en: 'React project updated', tr: 'React projesi güncellendi', de: 'React-Projekt aktualisiert' },
+  'revision-validation': { en: 'Revised files validated', tr: 'Düzenlenen dosyalar doğrulandı', de: 'Überarbeitete Dateien geprüft' },
+  'revision-preservation': { en: 'Working project preserved', tr: 'Çalışan proje korundu', de: 'Funktionierendes Projekt bewahrt' },
+  'revision-preview': { en: 'Updated preview prepared', tr: 'Güncellenen önizleme hazırlandı', de: 'Aktualisierte Vorschau vorbereitet' },
 };
 
-/** Format a bounded duration, localized: "3m 18s" / "3 dk 18 sn". */
-function formatDuration(ms: number, lang: Lang): string {
+/** Format a bounded duration, localized: "3m 18s" / "3 dk 18 sn" / "3 Min 18 Sek". */
+function formatDuration(ms: number, lang: Language): string {
   const total = Math.max(0, Math.round(ms / 1000));
-  if (total < 60) return lang === 'tr' ? `${total} sn` : `${total}s`;
+  const shortUnit = lang === 'tr' ? ' sn' : lang === 'de' ? ' Sek' : 's';
+  if (total < 60) return `${total}${shortUnit}`;
   const m = Math.floor(total / 60);
   const s = total % 60;
-  return lang === 'tr' ? `${m} dk ${s} sn` : `${m}m ${s}s`;
+  if (lang === 'tr') return `${m} dk ${s} sn`;
+  if (lang === 'de') return `${m} Min ${s} Sek`;
+  return `${m}m ${s}s`;
 }
 
 /** Small, restrained status marker (no bordered badge, no dashboard column). */
@@ -91,7 +98,7 @@ function Marker({ kind, reducedMotion }: { kind: 'active' | 'completed' | 'faile
 function Line({
   item, lang, now, open, onToggle, reducedMotion, neutral, animate,
 }: {
-  item: WebBuildActivityItem; lang: Lang; now: number;
+  item: WebBuildActivityItem; lang: Language; now: number;
   open: boolean; onToggle: () => void; reducedMotion: boolean; neutral: boolean; animate: boolean;
 }) {
   const isActive = item.status === 'active' && !neutral;
@@ -162,10 +169,9 @@ function Line({
 }
 
 export default function WebBuildActivityTimeline({ state, startedAt, endedAt, variant, stopped = false }: WebBuildActivityTimelineProps) {
-  const { lang: rawLang } = useLanguageStore();
-  const lang = rawLang as Lang;
+  const { lang } = useLanguageStore();
   const reducedMotion = !!useReducedMotion();
-  const L = (en: string, tr: string) => (lang === 'tr' ? tr : en);
+  const L = (en: string, tr: string, de: string) => (lang === 'tr' ? tr : lang === 'de' ? de : en);
 
   const [openId, setOpenId] = useState<string | null>(null);
   // A live run shows its reached lines inline. A finished run collapses to one natural ending
@@ -218,10 +224,10 @@ export default function WebBuildActivityTimeline({ state, startedAt, endedAt, va
   // SUMMARY — one natural ending line; click to reveal the reached conversational lines.
   const isRevision = state.kind === 'revision';
   const summaryText = stopped
-    ? L('Generation stopped', 'Oluşturma durduruldu')
+    ? L('Generation stopped', 'Oluşturma durduruldu', 'Generierung gestoppt')
     : state.final === 'failed'
-      ? (isRevision ? L('Change failed', 'Değişiklik başarısız') : L('Build failed', 'Oluşturma başarısız'))
-      : (isRevision ? L('Changes applied', 'Değişiklikler uygulandı') : L('Website created', 'Web sitesi oluşturuldu'));
+      ? (isRevision ? L('Change failed', 'Değişiklik başarısız', 'Änderung fehlgeschlagen') : L('Build failed', 'Oluşturma başarısız', 'Build fehlgeschlagen'))
+      : (isRevision ? L('Changes applied', 'Değişiklikler uygulandı', 'Änderungen angewendet') : L('Website created', 'Web sitesi oluşturuldu', 'Website erstellt'));
   const summaryMarker: 'completed' | 'failed' | 'neutral' = stopped ? 'neutral' : state.final === 'failed' ? 'failed' : 'completed';
   const summaryTone = stopped ? 'text-[#94A3B8]' : state.final === 'failed' ? 'text-[#E0A35B]' : 'text-slate-200';
   const showDuration = !stopped && state.final === 'completed';
@@ -249,7 +255,8 @@ export default function WebBuildActivityTimeline({ state, startedAt, endedAt, va
             {!isRevision && !stopped && state.final === 'completed' && (
               <p className="mt-2 text-[10.5px] leading-relaxed text-[#64748B]">
                 {L('Visual quality is not evaluated here — open Preview to inspect the result.',
-                  'Görsel kalite burada değerlendirilmez — sonucu görmek için Önizleme’yi aç.')}
+                  'Görsel kalite burada değerlendirilmez — sonucu görmek için Önizleme’yi aç.',
+                  'Die visuelle Qualität wird hier nicht bewertet — öffne die Vorschau, um das Ergebnis zu prüfen.')}
               </p>
             )}
           </motion.div>

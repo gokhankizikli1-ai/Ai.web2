@@ -10,7 +10,8 @@ import WebBuildMascot from '@/components/builder/WebBuildMascot';
  * "let's build something" headline + subtitle, laid out horizontally on desktop
  * and stacked on mobile. Other workspaces keep the classic centered core orb.
  */
-const L = (lang: string, en: string, tr: string) => (lang === 'tr' ? tr : en);
+const L = (lang: string, en: string, tr: string, de: string) =>
+  (lang === 'tr' ? tr : lang === 'de' ? de : en);
 
 export default function EmptyWorkspace({ builder = false }: { builder?: boolean }) {
   const { t, lang } = useLanguageStore();
@@ -23,8 +24,8 @@ export default function EmptyWorkspace({ builder = false }: { builder?: boolean 
   // free to fade out smoothly (clipping it produced the rectangular artifact).
   if (builder) {
     const headline = firstName
-      ? L(lang, `Hey ${firstName}, let’s create something.`, `Selam ${firstName}, bir şey oluşturalım.`)
-      : L(lang, 'Hey, let’s create something.', 'Haydi, bir şey oluşturalım.');
+      ? L(lang, `Hey ${firstName}, let’s create something.`, `Selam ${firstName}, bir şey oluşturalım.`, `Hey ${firstName}, lass uns etwas erstellen.`)
+      : L(lang, 'Hey, let’s create something.', 'Haydi, bir şey oluşturalım.', 'Hey, lass uns etwas erstellen.');
     return (
       <div className="flex w-full flex-col items-center gap-4 px-4 text-center sm:flex-row sm:justify-center sm:gap-5 sm:text-left">
         <motion.div

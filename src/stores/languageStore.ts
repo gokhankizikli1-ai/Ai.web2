@@ -66,8 +66,24 @@ function makeT(lang: SupportedLanguage) {
   return (key: string, params?: Record<string, string | number>) => translate(lang, key, params);
 }
 
+/**
+ * Keep <html lang="…"> in sync with the effective UI language (Phase 14C.2 /
+ * Part B). Called for EVERY path that resolves the language — boot, explicit
+ * change, auto/device change, and post-hydration normalization of an invalid
+ * stored value — so the document never advertises `en` while a Turkish/German
+ * UI renders. `lang` is already clamped to a supported code (en/tr/de).
+ */
+function syncHtmlLang(lang: SupportedLanguage): void {
+  try {
+    if (typeof document !== 'undefined' && document.documentElement) {
+      document.documentElement.lang = lang;
+    }
+  } catch { /* SSR / non-DOM env — no-op */ }
+}
+
 const _bootMode: LangMode = 'auto';
 const _bootLang = resolveLang(_bootMode);
+syncHtmlLang(_bootLang);
 
 interface LanguageState {
   /** The user's choice: 'auto' | 'en' | 'tr' | … */
@@ -90,10 +106,12 @@ export const useLanguageStore = create<LanguageState>()(
       t: makeT(_bootLang),
       setMode: (mode: LangMode) => {
         const lang = resolveLang(mode);
+        syncHtmlLang(lang);
         set({ mode, lang, t: makeT(lang) });
       },
       setLang: (lang: Language) => {
         const eff = resolveLang(lang);
+        syncHtmlLang(eff);
         set({ mode: lang, lang: eff, t: makeT(eff) });
       },
     }),
@@ -114,6 +132,7 @@ export const useLanguageStore = create<LanguageState>()(
         state.mode = mode;
         state.lang = lang;
         state.t = makeT(lang);
+        syncHtmlLang(lang);
       },
     }
   )
