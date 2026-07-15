@@ -16,6 +16,14 @@
  * circular dependency between the auth layer and the data stores.
  */
 
+/**
+ * Fired whenever the active identity changes (login / logout / account switch),
+ * so mounted React trees can rehydrate their in-memory copy of scoped data. The
+ * scope itself is derived synchronously from localStorage, so listeners can call
+ * `currentStorageScope()` to learn the NEW identity and dedupe redundant fires.
+ */
+export const IDENTITY_CHANGED_EVENT = 'korvix:identity-changed';
+
 /** The current identity's storage scope. Never returns an empty string. */
 export function currentStorageScope(): string {
   try {
@@ -50,9 +58,17 @@ export function scopedKey(base: string): string {
  * `onClaim(raw)` runs with the migrated raw string BEFORE the global key is
  * removed, letting callers migrate dependent global keys (e.g. per-project
  * agent/task caches) in the same pass. Best-effort + storage-failure tolerant.
+ *
+ * Only an AUTHENTICATED identity (`user_*`) may claim legacy global data. A
+ * guest scope leaves the global key intact so the real owner can still claim it
+ * on login — otherwise whichever guest happened to boot first would silently
+ * absorb (and then, via the move, DESTROY) another account's data, and a second
+ * identity could claim it too. Guests keep reading their own empty scoped key;
+ * the legacy data is never shown to them and never lost.
  */
 export function migrateGlobalToScope(globalKey: string, onClaim?: (raw: string) => void): void {
   try {
+    if (!currentStorageScope().startsWith('user_')) return; // only owners may claim legacy data
     const scoped = scopedKey(globalKey);
     if (localStorage.getItem(scoped) !== null) return; // already have scoped data
     const raw = localStorage.getItem(globalKey);

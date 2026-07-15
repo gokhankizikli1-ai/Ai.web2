@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { migrateGlobalToScope } from '@/lib/storageScope';
+import { migrateGlobalToScope, IDENTITY_CHANGED_EVENT } from '@/lib/storageScope';
 
 /* ═══════════════════════════════════════════
    AUTH TYPES
@@ -536,6 +536,12 @@ function notifyAuthChanged(user?: AuthUser | null): void {
     }).catch(() => { /* ignore */ });
   } catch { /* ignore */ }
   try { window.dispatchEvent(new CustomEvent('korvix:owner-refresh')); }
+  catch { /* ignore */ }
+  // Identity may have changed scope (login / logout / account switch). Fire the
+  // general identity-change signal AFTER localStorage is settled so mounted data
+  // trees rehydrate from the NEW scope. Listeners dedupe by comparing scope, so
+  // a same-identity re-notify (e.g. profile refresh) is a no-op remount.
+  try { window.dispatchEvent(new CustomEvent(IDENTITY_CHANGED_EVENT)); }
   catch { /* ignore */ }
 }
 

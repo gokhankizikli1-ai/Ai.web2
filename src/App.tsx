@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Routes, Route, useLocation, Navigate } from 'react-router';
 import { useAuthStore } from '@/stores/authStore';
+import { currentStorageScope, IDENTITY_CHANGED_EVENT } from '@/lib/storageScope';
 import LandingPage from './pages/LandingPage';
 import FeaturesPage from './pages/FeaturesPage';
 import UseCasesPage from './pages/UseCasesPage';
@@ -46,6 +47,50 @@ function AnimatedRoute({ children }: { children: React.ReactNode }) {
       {children}
     </PageTransition>
   );
+}
+
+/**
+ * Phase 14D.1 — identity-change REHYDRATION boundary.
+ *
+ * Data hooks read their scoped localStorage ONCE into React state (via
+ * `useState(() => load())`), so an in-app identity change (login / logout /
+ * account switch) that only re-points the storage scope would leave the
+ * previous account's rows sitting in memory — visible to, and re-savable by,
+ * the next identity. Keying this subtree by the live storage scope remounts
+ * every data container the instant the identity changes, forcing each hook to
+ * re-read from the NEW scope. No data is destroyed: each identity's rows stay
+ * in their own keys, so the same user re-reads the same rows on re-login.
+ *
+ * The scope is seeded synchronously from localStorage, so the first mount uses
+ * the persisted identity's key (no spurious remount on boot). We dedupe on the
+ * scope STRING, so same-identity notifications (a profile refresh that re-fires
+ * the event without changing accounts) never remount.
+ */
+function useIdentityScope(): string {
+  const [scope, setScope] = useState(() => currentStorageScope());
+  useEffect(() => {
+    const sync = () => {
+      const next = currentStorageScope();
+      setScope((prev) => (prev === next ? prev : next));
+    };
+    // Same-tab: authStore fires IDENTITY_CHANGED_EVENT after localStorage is
+    // settled. Cross-tab: the native 'storage' event covers a login/logout in
+    // another tab of the same browser.
+    window.addEventListener(IDENTITY_CHANGED_EVENT, sync);
+    window.addEventListener('storage', sync);
+    return () => {
+      window.removeEventListener(IDENTITY_CHANGED_EVENT, sync);
+      window.removeEventListener('storage', sync);
+    };
+  }, []);
+  return scope;
+}
+
+function IdentityScopeBoundary({ children }: { children: React.ReactNode }) {
+  const scope = useIdentityScope();
+  // display:contents keeps the wrapper layout-neutral — the remount key lives
+  // on a node that adds no box to the tree.
+  return <div style={{ display: 'contents' }} key={scope}>{children}</div>;
 }
 
 function AppLayout({ children }: { children: React.ReactNode }) {
@@ -119,6 +164,7 @@ function AppLayout({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <AppLayout>
+      <IdentityScopeBoundary>
       <Routes>
         {/* ═══ Landing ═══ */}
         <Route path="/" element={<LandingPage />} />
@@ -195,6 +241,7 @@ export default function App() {
         <Route path="/privacy" element={<AnimatedRoute><ComingSoon title="Privacy Policy" pageType="legal" /></AnimatedRoute>} />
         <Route path="/terms" element={<AnimatedRoute><ComingSoon title="Terms of Service" pageType="legal" /></AnimatedRoute>} />
       </Routes>
+      </IdentityScopeBoundary>
     </AppLayout>
   );
 }
