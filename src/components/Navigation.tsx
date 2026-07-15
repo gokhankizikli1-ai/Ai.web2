@@ -21,6 +21,8 @@ interface NavItem {
   label: string;
   icon: typeof MessageSquare;
   path: string;
+  /** Phase 14A — an unfinished launch surface: shown to the owner only. */
+  ownerOnly?: boolean;
 }
 
 /* ═══════════════════════════════════════════
@@ -40,11 +42,13 @@ export default function Navigation() {
   /* ─── Public center items (ALL users). Projects intentionally NOT here —
         it's the primary item in the left sidebar; duplicating it in the top
         nav was redundant. ─── */
-  const NAV_ITEMS: NavItem[] = [
+  // Phase 14A — Game Build is unfinished; hide its top-nav tab from normal users (the route
+  // is owner-gated too, so a direct visit still falls back to /chat).
+  const NAV_ITEMS: NavItem[] = ([
     { id: 'chat',     label: t('navChat'),     icon: MessageSquare, path: '/chat' },
     { id: 'webbuild', label: t('navWebBuild'), icon: Globe,         path: '/tools/website-builder' },
-    { id: 'game',     label: t('navGameBuild'),icon: Gamepad2,      path: '/tools/game-builder' },
-  ];
+    { id: 'game',     label: t('navGameBuild'),icon: Gamepad2,      path: '/tools/game-builder', ownerOnly: true },
+  ] as NavItem[]).filter((item) => !item.ownerOnly || isOwner);
 
   /* ─── Owner-only Labs dropdown items ─── */
   const LABS_ITEMS: NavItem[] = [

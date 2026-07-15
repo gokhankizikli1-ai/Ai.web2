@@ -8,12 +8,15 @@ import {
   Clock, type LucideIcon,
 } from 'lucide-react';
 import Navigation from '@/components/Navigation';
+import { useOwnerMode } from '@/hooks/useOwnerMode';
 
 interface Tool {
   name: string;
   desc: string;
   path?: string;
   isNew?: boolean;
+  /** Phase 14A — an unfinished launch surface: shown to the owner only. */
+  ownerOnly?: boolean;
 }
 
 interface Category {
@@ -42,7 +45,7 @@ const CATEGORIES: Category[] = [
     tools: [
       { name: 'Website Builder', desc: 'Generate full website structure and copy', path: '/tools/website-builder', isNew: true },
       { name: 'App Builder', desc: 'Plan app structure, stack, and MVP', path: '/tools/app-builder', isNew: true },
-      { name: 'Game Builder', desc: 'Engine-ready builds for Roblox Studio & Unreal Engine 5', path: '/tools/game-builder', isNew: true },
+      { name: 'Game Builder', desc: 'Engine-ready builds for Roblox Studio & Unreal Engine 5', path: '/tools/game-builder', isNew: true, ownerOnly: true },
       { name: 'Brand Builder', desc: 'Name, slogan, colors, positioning', path: '/tools/brand-builder', isNew: true },
     ],
   },
@@ -107,12 +110,16 @@ const CATEGORIES: Category[] = [
 
 export default function ToolsPage() {
   const navigate = useNavigate();
+  const { isOwner } = useOwnerMode();
   const [search, setSearch] = useState('');
 
+  // Phase 14A — unfinished launch surfaces (e.g. Game Builder) are owner-only; the route is
+  // owner-gated too, so this just avoids showing a dead card to normal users on /tools.
   const filtered = CATEGORIES.map((cat) => ({
     ...cat,
     tools: cat.tools.filter((t) =>
-      !search || t.name.toLowerCase().includes(search.toLowerCase()) || t.desc.toLowerCase().includes(search.toLowerCase())
+      (!t.ownerOnly || isOwner)
+      && (!search || t.name.toLowerCase().includes(search.toLowerCase()) || t.desc.toLowerCase().includes(search.toLowerCase()))
     ),
   })).filter((cat) => cat.tools.length > 0);
 
