@@ -23,6 +23,11 @@ function ensureScopeMigrated(): void {
   const scope = currentStorageScope();
   if (_migratedScopes.has(scope)) return;
   _migratedScopes.add(scope);
+  // Only an authenticated owner may claim legacy GLOBAL project data. A guest
+  // scope leaves the global intact so the real owner can still claim it on
+  // login, and so no guest can absorb (then, via the move, destroy) another
+  // account's projects. Guests read their own empty scope until they log in.
+  if (!scope.startsWith('user_')) return;
   try {
     if (localStorage.getItem(projectsKey()) !== null) return; // already scoped
     const globalProjects = localStorage.getItem(STORAGE_KEY);
