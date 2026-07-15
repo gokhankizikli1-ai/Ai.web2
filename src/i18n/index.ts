@@ -17,22 +17,22 @@
 import { en } from './locales/en';
 import { tr } from './locales/tr';
 import { de } from './locales/de';
-import { fr } from './locales/fr';
-import { it } from './locales/it';
-import { es } from './locales/es';
-import { ru } from './locales/ru';
 
-/** Every language code the app understands (some may be aliases/pending). */
-export type Language =
-  | 'en' | 'tr' | 'de' | 'fr' | 'it' | 'es'
-  | 'ru' | 'zh' | 'ja' | 'ar' | 'pt' | 'ko' | 'nl';
+/**
+ * Launch language set (Phase 14C.1): KorvixAI ships exactly three fully
+ * supported user-facing languages — English, Türkçe, Deutsch. `Language` and
+ * `SupportedLanguage` are intentionally the SAME narrow union now: the product
+ * never advertises or selects a language it cannot fully render, and any legacy
+ * persisted code outside this set is clamped to English (see `toSupported`).
+ */
+export type Language = 'en' | 'tr' | 'de';
 
 /** Languages with a COMPLETE dictionary — the only ones we expose in menus. */
-export type SupportedLanguage = 'en' | 'tr' | 'de' | 'fr' | 'it' | 'es' | 'ru';
+export type SupportedLanguage = 'en' | 'tr' | 'de';
 
 /** Registry of complete dictionaries. English is the master/fallback. */
 export const LOCALES: Record<SupportedLanguage, Record<string, string>> = {
-  en, tr, de, fr, it, es, ru,
+  en, tr, de,
 };
 
 /**
@@ -46,10 +46,6 @@ export const SUPPORTED_LANGUAGES: {
   { code: 'en', label: 'English',    nameEn: 'English',    flag: 'EN' },
   { code: 'tr', label: 'Türkçe',     nameEn: 'Turkish',    flag: 'TR' },
   { code: 'de', label: 'Deutsch',    nameEn: 'German',     flag: 'DE' },
-  { code: 'fr', label: 'Français',   nameEn: 'French',     flag: 'FR' },
-  { code: 'it', label: 'Italiano',   nameEn: 'Italian',    flag: 'IT' },
-  { code: 'es', label: 'Español',    nameEn: 'Spanish',    flag: 'ES' },
-  { code: 'ru', label: 'Русский',    nameEn: 'Russian',    flag: 'RU' },
 ];
 
 const SUPPORTED_SET = new Set<string>(SUPPORTED_LANGUAGES.map((l) => l.code));

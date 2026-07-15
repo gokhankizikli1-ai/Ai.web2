@@ -46,6 +46,12 @@ describe('translate', () => {
     expect(translate('en', 'totally_missing_key')).toBe('totally_missing_key');
   });
 
+  it('resolves a removed language to English (no fake language leaks)', () => {
+    // fr/it/es/ru are no longer shipped (Phase 14C.1) → English fallback.
+    expect(translate('fr', 'newChat')).toBe(LOCALES.en.newChat);
+    expect(translate('ru', 'settings')).toBe(LOCALES.en.settings);
+  });
+
   it('interpolates {param} tokens', () => {
     // sourceSearchingWebFor contains a {subject} placeholder in every locale.
     const out = translate('en', 'sourceSearchingWebFor', { subject: 'NVDA' });
@@ -55,21 +61,29 @@ describe('translate', () => {
 });
 
 describe('language helpers', () => {
-  it('toSupported clamps unknown → en, keeps known', () => {
-    expect(toSupported('fr')).toBe('fr');
-    expect(toSupported('zz')).toBe('en');
-    expect(toSupported('zh')).toBe('en'); // no longer shipped → English
+  it('ships exactly the three launch languages (Phase 14C.1)', () => {
+    expect(SUPPORTED).toEqual(['en', 'tr', 'de']);
   });
 
-  it('isSupported only accepts the 7 shipped languages', () => {
+  it('toSupported clamps unknown/removed → en, keeps shipped', () => {
+    expect(toSupported('de')).toBe('de');
+    expect(toSupported('tr')).toBe('tr');
+    expect(toSupported('fr')).toBe('en'); // no longer shipped → English
+    expect(toSupported('ru')).toBe('en');
+    expect(toSupported('zz')).toBe('en');
+  });
+
+  it('isSupported only accepts the 3 shipped languages', () => {
     expect(SUPPORTED.every(isSupported)).toBe(true);
+    expect(isSupported('fr')).toBe(false);
+    expect(isSupported('ru')).toBe(false);
     expect(isSupported('zh')).toBe(false);
-    expect(isSupported('ja')).toBe(false);
   });
 
   it('languageNameEn gives the English name for the AI directive', () => {
     expect(languageNameEn('de')).toBe('German');
-    expect(languageNameEn('ru')).toBe('Russian');
+    expect(languageNameEn('tr')).toBe('Turkish');
+    expect(languageNameEn('fr')).toBe('English'); // removed → English fallback
     expect(languageNameEn('zz')).toBe('English');
   });
 });
