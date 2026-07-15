@@ -30,9 +30,18 @@ const BUILD_BRANCH = (
 )
 
 // https://vite.dev/config/
-export default defineConfig({
+// Config is a function so we can gate dev-only instrumentation by build command
+// (Phase 14I.1). `command` is 'serve' for the dev server (`vite`) and 'build'
+// for a production build (`vite build`).
+export default defineConfig(({ command }) => ({
   base: './',
-  plugins: [inspectAttr(), react()],
+  // kimi-plugin-inspect-react injects source-location data-* attributes
+  // (internal file path + line/column) onto every JSX element so the LOCAL dev
+  // inspector can map DOM → source. That instrumentation must NEVER ship to
+  // production: register it ONLY for the dev server (`command === 'serve'`), so
+  // `vite build` (all production/preview bundles) emits no such attributes. The
+  // React plugin always runs.
+  plugins: [...(command === 'serve' ? [inspectAttr()] : []), react()],
   server: {
     port: 3000,
   },
@@ -47,4 +56,4 @@ export default defineConfig({
     __BUILD_ENV__:    JSON.stringify(BUILD_ENV),
     __BUILD_BRANCH__: JSON.stringify(BUILD_BRANCH),
   },
-});
+}));
