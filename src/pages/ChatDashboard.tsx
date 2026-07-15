@@ -491,7 +491,7 @@ export default function ChatDashboard() {
     ] : []),
     { id: 'open-projects', label: t('projects') || 'Projects', shortcut: '', icon: <FolderOpen className="h-3.5 w-3.5" />, category: 'Actions', action: () => navigate('/projects') },
     { id: 'export', label: t('export'), shortcut: '', icon: <Download className="h-3.5 w-3.5" />, category: 'Actions', action: () => setExportOpen(true) },
-    { id: 'upgrade', label: t('upgrade'), shortcut: '', icon: <Zap className="h-3.5 w-3.5" />, category: 'Actions', action: () => setUpgradeOpen(true) },
+    { id: 'upgrade', label: t('upgradePro'), shortcut: '', icon: <Zap className="h-3.5 w-3.5" />, category: 'Actions', action: () => setUpgradeOpen(true) },
     { id: 'chat-tab', label: t('chat'), shortcut: '', icon: <Sparkles className="h-3.5 w-3.5" />, category: 'Navigation', action: () => handleTabChange('chat') },
     { id: 'coding-tab', label: t('coding'), shortcut: '', icon: <Sparkles className="h-3.5 w-3.5" />, category: 'Navigation', action: () => handleTabChange('coding') },
     { id: 'business-tab', label: t('business'), shortcut: '', icon: <Bot className="h-3.5 w-3.5" />, category: 'Navigation', action: () => handleTabChange('business') },

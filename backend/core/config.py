@@ -242,10 +242,20 @@ class Config:
         #    stateful subsystem is on (or we're in prod at all) but no
         #    durable data dir is configured, surface it.
         persist = persistence_summary()
+        # Phase 14H — auth is stateful too: the users table (auth.db) lives on
+        # the same ephemeral filesystem, so a volume-less prod deploy WIPES user
+        # accounts on every redeploy → valid sessions 401 (row gone) and the same
+        # account gets a new id (new storage scope) after re-login. Treat auth
+        # being enabled as a stateful subsystem so this is flagged CRITICAL, not
+        # a mere warning.
+        auth_enabled = (
+            os.getenv("ENABLE_AUTH_V2", "false").strip().lower() == "true"
+            or os.getenv("ENABLE_AUTH_MIDDLEWARE", "false").strip().lower() == "true"
+        )
         stateful_on = any([
             self.ENABLE_MEMORY_PLANE, self.ENABLE_JOB_QUEUE,
             self.ENABLE_ASSET_SYSTEM, self.ENABLE_AGENT_ORCHESTRATION,
-            self.ENABLE_WORKFLOWS,
+            self.ENABLE_WORKFLOWS, auth_enabled,
         ])
         if not persist["durable"]:
             if is_prod:
@@ -255,8 +265,9 @@ class Config:
                     "Persistence is EPHEMERAL: no KORVIX_DATA_DIR / Railway "
                     "volume configured, so all SQLite databases live under the "
                     "container working directory and are WIPED on every "
-                    "redeploy (user accounts, memory, jobs, projects). Mount a "
-                    "persistent volume and set KORVIX_DATA_DIR to its path.",
+                    "redeploy (user accounts, memory, jobs, projects). This logs "
+                    "out valid users and orphans their data after re-login. Mount "
+                    "a persistent volume and set KORVIX_DATA_DIR to its path.",
                 ))
             else:
                 issues.append((

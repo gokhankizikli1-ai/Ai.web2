@@ -20,14 +20,16 @@ interface SettingsModalProps {
   onSettingsChange?: (partial: Record<string, unknown>) => void;
 }
 
+// `label` holds a central locale KEY (resolved with t() at render), so the
+// Settings nav follows the runtime language (Phase 14C.3).
 const SECTIONS = [
-  { id: 'general', label: 'General', icon: User },
-  { id: 'appearance', label: 'Appearance', icon: Palette },
-  { id: 'about', label: 'About You', icon: Sparkles },
-  { id: 'memory', label: 'Memory', icon: Brain },
-  { id: 'notifications', label: 'Notifications', icon: Bell },
-  { id: 'privacy', label: 'Privacy', icon: Shield },
-  { id: 'experimental', label: 'Experimental', icon: FlaskConical },
+  { id: 'general', label: 'general', icon: User },
+  { id: 'appearance', label: 'appearance', icon: Palette },
+  { id: 'about', label: 'stTabAboutYou', icon: Sparkles },
+  { id: 'memory', label: 'stTabMemory', icon: Brain },
+  { id: 'notifications', label: 'notifications', icon: Bell },
+  { id: 'privacy', label: 'privacy', icon: Shield },
+  { id: 'experimental', label: 'stTabExperimental', icon: FlaskConical },
 ];
 
 const ACCENT_COLORS = [
@@ -55,7 +57,7 @@ const TIMEZONES = [
 
 export default function SettingsModal({ open, onOpenChange, onSettingsChange }: SettingsModalProps) {
   const { settings: appSettings, updateSettings } = useApp();
-  const { mode: langMode, setMode } = useLanguageStore();
+  const { mode: langMode, setMode, t } = useLanguageStore();
   const [activeSection, setActiveSection] = useState('general');
   const [saved, setSaved] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
@@ -189,14 +191,14 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
   // Auto (follows browser/device locale, and — for AI replies — the language
   // of the latest message) + every language we ship a complete dictionary for.
   const LANG_OPTIONS: { mode: LangMode; label: string; sub: string }[] = [
-    { mode: 'auto', label: 'Auto', sub: 'Match device & message' },
+    { mode: 'auto', label: t('stAuto'), sub: t('stAutoSub') },
     ...LANGUAGES.map((l) => ({ mode: l.code as LangMode, label: l.label, sub: l.flag })),
   ];
   const currentLangOption = LANG_OPTIONS.find((o) => o.mode === langMode) || LANG_OPTIONS[0];
 
   const renderGeneral = () => (
-    <SectionCard title="Language & Region" subtitle="Configure your interface language and timezone">
-      <SettingRow label="Language" description="Interface & AI response language">
+    <SectionCard title={t('stLanguageRegion')} subtitle={t('stLanguageRegionSub')}>
+      <SettingRow label={t('language')} description={t('stLanguageDesc')}>
         <div className="relative">
           <button
             onClick={() => setLangOpen(!langOpen)}
@@ -231,7 +233,7 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
         </div>
       </SettingRow>
       <Divider />
-      <SettingRow label="Timezone" description="Local time display">
+      <SettingRow label={t('stTimezone')} description={t('stTimezoneDesc')}>
         <select value={timezone} onChange={(e) => { setHasChanges(true); setTimezone(e.target.value); localStorage.setItem('korvix_timezone', e.target.value); }}
           className="w-44 rounded-lg px-3 py-2 text-[12px] text-white/80 outline-none cursor-pointer appearance-none transition-all"
           style={{
@@ -247,12 +249,12 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
 
   const renderAppearance = () => (
     <>
-      <SectionCard title="Theme" subtitle="Choose your interface look">
-        <SettingRow label="Theme" description="Dark, light, or follow system">
-          <Segmented options={[{ value: 'dark', label: 'Dark' }, { value: 'light', label: 'Light' }, { value: 'system', label: 'System' }]} value={draft.theme} onChange={(v) => updateDraft('theme', v as 'dark' | 'light' | 'system')} />
+      <SectionCard title={t('theme')} subtitle={t('stThemeSub')}>
+        <SettingRow label={t('theme')} description={t('stThemeDesc')}>
+          <Segmented options={[{ value: 'dark', label: t('dark') }, { value: 'light', label: t('light') }, { value: 'system', label: t('stSystem') }]} value={draft.theme} onChange={(v) => updateDraft('theme', v as 'dark' | 'light' | 'system')} />
         </SettingRow>
         <Divider />
-        <SettingRow label="Accent Color" description="Primary UI accent">
+        <SettingRow label={t('stAccentColor')} description={t('stAccentDesc')}>
           <div className="flex gap-2">
             {ACCENT_COLORS.map((c) => (
               <button key={c.id} onClick={() => updateDraft('accentColor', c.id)} title={c.label}
@@ -264,13 +266,13 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
         </SettingRow>
       </SectionCard>
 
-      <SectionCard title="Interface" subtitle="Density and motion preferences">
-        <SettingRow label="Density" description="UI element spacing">
-          <Segmented options={[{ value: 'Compact', label: 'Compact' }, { value: 'Comfortable', label: 'Comfortable' }, { value: 'Spacious', label: 'Spacious' }]} value={draft.density} onChange={(v) => updateDraft('density', v)} />
+      <SectionCard title={t('stInterface')} subtitle={t('stInterfaceSub')}>
+        <SettingRow label={t('stDensity')} description={t('stDensityDesc')}>
+          <Segmented options={[{ value: 'Compact', label: t('stCompact') }, { value: 'Comfortable', label: t('stComfortable') }, { value: 'Spacious', label: t('stSpacious') }]} value={draft.density} onChange={(v) => updateDraft('density', v)} />
         </SettingRow>
         <Divider />
-        <SettingRow label="Animations" description="Motion level">
-          <Segmented options={[{ value: 'Minimal', label: 'Minimal' }, { value: 'Normal', label: 'Normal' }, { value: 'Full', label: 'Full' }]} value={draft.animationLevel} onChange={(v) => updateDraft('animationLevel', v)} />
+        <SettingRow label={t('stAnimations')} description={t('stMotionLevel')}>
+          <Segmented options={[{ value: 'Minimal', label: t('stMinimal') }, { value: 'Normal', label: t('stNormal') }, { value: 'Full', label: t('stFull') }]} value={draft.animationLevel} onChange={(v) => updateDraft('animationLevel', v)} />
         </SettingRow>
       </SectionCard>
     </>
@@ -291,8 +293,8 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
     <>
       {/* Intro card */}
       <div className="mb-6">
-        <h3 className="text-[15px] font-semibold text-white/90 tracking-tight">About You</h3>
-        <p className="text-[12px] text-[#94A3B8] mt-0.5">Help KorvixAI understand who you are</p>
+        <h3 className="text-[15px] font-semibold text-white/90 tracking-tight">{t('stTabAboutYou')}</h3>
+        <p className="text-[12px] text-[#94A3B8] mt-0.5">{t('stAboutYouSub')}</p>
       </div>
 
       {/* Memory textarea */}
@@ -305,25 +307,25 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
           }}
         >
           <label className="text-[12px] font-medium text-white/60 mb-2 block">
-            Tell KorvixAI about yourself
+            {t('stTellAbout')}
           </label>
           <textarea
             value={memoryProfile}
             onChange={(e) => { setMemoryProfile(e.target.value); setHasChanges(true); }}
-            placeholder="Your goals, work, interests, preferred communication style, projects, or anything KorvixAI should remember about you..."
+            placeholder={t('stAboutPlaceholder')}
             rows={4}
             className="w-full bg-transparent text-[13px] text-white/80 placeholder:text-white/15 outline-none resize-none leading-relaxed"
           />
         </div>
         <p className="text-[10px] text-[#94A3B8] mt-1.5 ml-1">
-          This information helps KorvixAI personalize its responses to you.
+          {t('stAboutHelp')}
         </p>
       </div>
 
       {/* Your tags */}
       {memoryTags.length > 0 && (
         <div className="mb-5">
-          <label className="text-[12px] font-medium text-white/50 mb-2.5 block">What describes you</label>
+          <label className="text-[12px] font-medium text-white/50 mb-2.5 block">{t('stWhatDescribes')}</label>
           <div className="flex flex-wrap gap-1.5">
             {memoryTags.map((tag) => (
               <motion.button
@@ -348,7 +350,7 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
 
       {/* Suggested tags */}
       <div className="mb-6">
-        <label className="text-[12px] font-medium text-white/40 mb-2.5 block">Suggestions</label>
+        <label className="text-[12px] font-medium text-white/40 mb-2.5 block">{t('stSuggestions')}</label>
         <div className="flex flex-wrap gap-1.5">
           {SUGGESTED_TAGS.filter(t => !memoryTags.includes(t)).map((tag) => (
             <motion.button
@@ -388,7 +390,7 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
             value={newTag}
             onChange={(e) => setNewTag(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') { addTag(newTag); setNewTag(''); } }}
-            placeholder="Add your own..."
+            placeholder={t('stAddYourOwn')}
             className="flex-1 bg-transparent text-[12px] text-white/60 placeholder:text-white/15 outline-none"
           />
         </div>
@@ -401,7 +403,7 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
             className="px-3 py-2 rounded-lg text-[11px] font-medium text-[#3B82F6]/70 hover:text-[#60A5FA] transition-all"
             style={{ background: 'rgba(59, 130, 246,0.06)', border: '1px solid rgba(59, 130, 246,0.1)' }}
           >
-            Add
+            {t('stAdd')}
           </motion.button>
         )}
       </div>
@@ -411,8 +413,8 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
   const renderMemory = () => (
     <>
       <div className="mb-5">
-        <h3 className="text-[15px] font-semibold text-white/90 tracking-tight">Memory</h3>
-        <p className="text-[12px] text-[#94A3B8] mt-0.5">Your AI's contextual memory system</p>
+        <h3 className="text-[15px] font-semibold text-white/90 tracking-tight">{t('stTabMemory')}</h3>
+        <p className="text-[12px] text-[#94A3B8] mt-0.5">{t('stMemorySub')}</p>
       </div>
 
       {/* Enable Memory toggle */}
@@ -435,8 +437,8 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
             <Brain className="h-4 w-4" style={{ color: draft.memoryEnabled ? 'rgba(59, 130, 246,0.7)' : 'rgba(203, 213, 225,0.3)' }} />
           </div>
           <div>
-            <p className="text-[13px] text-white/80 font-medium">Enable Memory</p>
-            <p className="text-[11px] text-[#94A3B8] mt-0.5">Store and reuse conversation context across sessions</p>
+            <p className="text-[13px] text-white/80 font-medium">{t('stEnableMemory')}</p>
+            <p className="text-[11px] text-[#94A3B8] mt-0.5">{t('stEnableMemoryDesc')}</p>
           </div>
         </div>
         <Switch checked={draft.memoryEnabled} onCheckedChange={(c) => updateDraft('memoryEnabled', c)} />
@@ -446,7 +448,7 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
         <div className="space-y-2">
           <p className="text-[10px] text-[#94A3B8] flex items-center gap-1.5">
             <Zap className="h-2.5 w-2.5 text-[#3B82F6]/40" />
-            Interactive memory map — hover nodes to explore connections
+            {t('stMemoryMapHint')}
           </p>
           <MemoryGraph />
         </div>
@@ -456,7 +458,7 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
         <div className="flex items-center justify-center py-16">
           <div className="text-center">
             <Brain className="h-8 w-8 text-white/[0.06] mx-auto mb-2" />
-            <p className="text-[12px] text-[#94A3B8]">Enable memory to see your AI context graph</p>
+            <p className="text-[12px] text-[#94A3B8]">{t('stMemoryDisabled')}</p>
           </div>
         </div>
       )}
@@ -465,47 +467,47 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
 
   const renderNotifications = () => (
     <>
-      <SectionCard title="General" subtitle="Main notification preferences">
-        <SettingRow label="Sound Effects" description="Audio feedback for actions"><Switch checked={draft.soundEnabled} onCheckedChange={(c) => updateDraft('soundEnabled', c)} /></SettingRow>
+      <SectionCard title={t('general')} subtitle={t('stNotifGeneralSub')}>
+        <SettingRow label={t('stSoundEffects')} description={t('stSoundDesc')}><Switch checked={draft.soundEnabled} onCheckedChange={(c) => updateDraft('soundEnabled', c)} /></SettingRow>
         <Divider />
-        <SettingRow label="Push Notifications" description="Browser push alerts"><Switch checked={draft.pushNotifications} onCheckedChange={(c) => updateDraft('pushNotifications', c)} /></SettingRow>
+        <SettingRow label={t('stPushNotif')} description={t('stPushDesc')}><Switch checked={draft.pushNotifications} onCheckedChange={(c) => updateDraft('pushNotifications', c)} /></SettingRow>
       </SectionCard>
 
-      <SectionCard title="Workspace" subtitle="Module-specific notifications">
-        <SettingRow label="AI Task Updates" description="Task status changes"><Switch checked={draft.notifAITasks} onCheckedChange={(c) => updateDraft('notifAITasks', c)} /></SettingRow>
+      <SectionCard title={t('stNotifWorkspace')} subtitle={t('stNotifWorkspaceSub')}>
+        <SettingRow label={t('stAITaskUpdates')} description={t('stAITaskDesc')}><Switch checked={draft.notifAITasks} onCheckedChange={(c) => updateDraft('notifAITasks', c)} /></SettingRow>
         <Divider />
-        <SettingRow label="Trading Signals" description="New signal alerts"><Switch checked={draft.notifTrading} onCheckedChange={(c) => updateDraft('notifTrading', c)} /></SettingRow>
+        <SettingRow label={t('stTradingSignals')} description={t('stTradingSignalsDesc')}><Switch checked={draft.notifTrading} onCheckedChange={(c) => updateDraft('notifTrading', c)} /></SettingRow>
         <Divider />
-        <SettingRow label="Research Complete" description="Reports finished"><Switch checked={draft.notifResearch} onCheckedChange={(c) => updateDraft('notifResearch', c)} /></SettingRow>
+        <SettingRow label={t('stResearchComplete')} description={t('stResearchCompleteDesc')}><Switch checked={draft.notifResearch} onCheckedChange={(c) => updateDraft('notifResearch', c)} /></SettingRow>
         <Divider />
-        <SettingRow label="Startup Alerts" description="New startup analysis"><Switch checked={draft.notifStartups} onCheckedChange={(c) => updateDraft('notifStartups', c)} /></SettingRow>
+        <SettingRow label={t('stStartupAlerts')} description={t('stStartupAlertsDesc')}><Switch checked={draft.notifStartups} onCheckedChange={(c) => updateDraft('notifStartups', c)} /></SettingRow>
         <Divider />
-        <SettingRow label="App Updates" description="New features available"><Switch checked={draft.notifUpdates} onCheckedChange={(c) => updateDraft('notifUpdates', c)} /></SettingRow>
+        <SettingRow label={t('stAppUpdatesNotif')} description={t('stAppUpdatesDesc')}><Switch checked={draft.notifUpdates} onCheckedChange={(c) => updateDraft('notifUpdates', c)} /></SettingRow>
       </SectionCard>
     </>
   );
 
   const renderPrivacy = () => (
     <>
-      <SectionCard title="Security" subtitle="Your data and account security">
-        <SettingRow label="Data Encryption" description="End-to-end protection">
+      <SectionCard title={t('stSecurity')} subtitle={t('stSecuritySub')}>
+        <SettingRow label={t('stDataEncryption')} description={t('stDataEncryptionDesc')}>
           <span className="text-[12px] text-[#4ADE80]/70 flex items-center gap-1.5">
             <div className="w-1.5 h-1.5 rounded-full bg-[#4ADE80]" style={{ boxShadow: '0 0 4px rgba(134, 168, 139,0.4)' }} />
-            Active
+            {t('stActive')}
           </span>
         </SettingRow>
       </SectionCard>
 
-      <SectionCard title="Data" subtitle="Export or remove your data">
-        <SettingRow label="Export Data" description="Download all your data">
+      <SectionCard title={t('stDataSection')} subtitle={t('stDataSectionSub')}>
+        <SettingRow label={t('stExportData')} description={t('stExportDataDesc')}>
           <Button variant="ghost" size="sm" className="h-8 text-[12px] text-[#CBD5E1] hover:text-white gap-2" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
-            <Download className="h-3.5 w-3.5" /> Export
+            <Download className="h-3.5 w-3.5" /> {t('export')}
           </Button>
         </SettingRow>
         <Divider />
-        <SettingRow label="Delete Account" description="Permanently remove all data">
+        <SettingRow label={t('stDeleteAccount')} description={t('stDeleteAccountDesc')}>
           <Button variant="ghost" size="sm" className="h-8 text-[12px] text-[#F87171]/60 hover:text-[#F87171] hover:bg-[#F87171]/[0.06] gap-2" style={{ border: '1px solid rgba(201, 130, 130,0.08)' }}>
-            <Trash2 className="h-3.5 w-3.5" /> Delete
+            <Trash2 className="h-3.5 w-3.5" /> {t('delete')}
           </Button>
         </SettingRow>
       </SectionCard>
@@ -514,7 +516,7 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
 
   const renderExperimental = () => (
     <>
-      <SectionCard title="Features" subtitle="Early access and beta features">
+      <SectionCard title={t('stFeatures')} subtitle={t('stFeaturesSub')}>
         {[
           { id: 'chain-of-thought', name: 'Chain of Thought', desc: 'Visible reasoning steps' },
           { id: 'multi-agent', name: 'Multi-Agent', desc: 'Multiple agents working together' },
@@ -570,8 +572,8 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
         {/* ═── Header ─══ */}
         <div className="flex items-center justify-between px-6 py-4 shrink-0" style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
           <div>
-            <h2 className="text-[16px] font-semibold text-white tracking-tight">Settings</h2>
-            <p className="text-[11px] text-[#94A3B8] mt-0.5">Manage your KorvixAI preferences</p>
+            <h2 className="text-[16px] font-semibold text-white tracking-tight">{t('settings')}</h2>
+            <p className="text-[11px] text-[#94A3B8] mt-0.5">{t('stManagePrefs')}</p>
           </div>
           <button onClick={() => onOpenChange(false)} className="h-8 w-8 flex items-center justify-center rounded-lg text-[#94A3B8] hover:text-white hover:bg-white/[0.05] transition-all">
             <X className="h-4 w-4" />
@@ -605,7 +607,7 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
                   >
                     <s.icon className="h-3.5 w-3.5" style={{ color: isActive ? 'rgba(59, 130, 246,0.7)' : 'rgba(203, 213, 225,0.35)' }} />
                   </div>
-                  <span className={`text-[13px] ${isActive ? 'font-medium' : ''}`}>{s.label}</span>
+                  <span className={`text-[13px] ${isActive ? 'font-medium' : ''}`}>{t(s.label)}</span>
                   {isActive && <div className="ml-auto w-1 h-1 rounded-full bg-[#3B82F6]/50 shrink-0" style={{ boxShadow: '0 0 4px rgba(59, 130, 246,0.3)' }} />}
                 </button>
               );
@@ -632,12 +634,12 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
         {/* ═── Footer ─══ */}
         <div className="flex items-center justify-between px-6 py-3.5 shrink-0" style={{ borderTop: '1px solid rgba(255,255,255,0.04)', background: 'rgba(255,255,255,0.01)' }}>
           <button onClick={handleReset} className="flex items-center gap-2 text-[12px] text-[#94A3B8] hover:text-slate-300 transition-colors">
-            <RotateCcw className="h-3 w-3" /> Reset
+            <RotateCcw className="h-3 w-3" /> {t('stReset')}
           </button>
           <div className="flex items-center gap-3">
             {saved && (
               <motion.span initial={{ opacity: 0, x: 8 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 8 }} className="text-[12px] text-[#4ADE80]/70 flex items-center gap-1.5">
-                <Check className="h-3.5 w-3.5" /> Saved
+                <Check className="h-3.5 w-3.5" /> {t('saved')}
               </motion.span>
             )}
             <Button onClick={handleSave} disabled={!hasChanges}
@@ -648,7 +650,7 @@ export default function SettingsModal({ open, onOpenChange, onSettingsChange }: 
                 border: 'none',
                 boxShadow: hasChanges ? '0 4px 16px rgba(59, 130, 246,0.15)' : 'none',
               }}>
-              <Save className="h-3.5 w-3.5 mr-1.5" /> Save Changes
+              <Save className="h-3.5 w-3.5 mr-1.5" /> {t('stSaveChanges')}
             </Button>
           </div>
         </div>
