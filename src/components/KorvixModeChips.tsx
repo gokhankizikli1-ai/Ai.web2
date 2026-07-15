@@ -1,5 +1,6 @@
 import { MessageSquare, Globe, Smartphone, Gamepad2, X } from 'lucide-react';
 import { useLanguageStore } from '@/stores/languageStore';
+import { useOwnerMode } from '@/hooks/useOwnerMode';
 import { type KorvixMode, KORVIX_MODES } from '@/lib/korvixMode';
 
 /**
@@ -30,9 +31,12 @@ export function KorvixModeChips({
   onSelect: (mode: KorvixMode) => void;
 }) {
   const { lang } = useLanguageStore();
+  const { isOwner } = useOwnerMode();
+  // Phase 14A — the unfinished Game surface is owner-only; drop its chip for normal users.
+  const modes = KORVIX_MODES.filter((mode) => mode !== 'game' || isOwner);
   return (
     <div className="mb-2.5 flex flex-wrap items-center justify-center gap-1.5">
-      {KORVIX_MODES.map((mode) => {
+      {modes.map((mode) => {
         const { icon: Icon } = META[mode];
         const active = selected === mode;
         return (

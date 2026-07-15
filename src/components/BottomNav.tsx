@@ -4,19 +4,31 @@ import {
   MessageSquare, Globe, Gamepad2, FolderOpen,
 } from 'lucide-react';
 import { useLanguageStore } from '@/stores/languageStore';
+import { useOwnerMode } from '@/hooks/useOwnerMode';
+
+interface NavItem {
+  id: string;
+  label: string;
+  icon: typeof MessageSquare;
+  path: string;
+  /** Phase 14A — an unfinished launch surface: shown to the owner only. */
+  ownerOnly?: boolean;
+}
 
 export default function BottomNav() {
   const navigate = useNavigate();
   const location = useLocation();
   const pathname = location.pathname;
   const { t } = useLanguageStore();
+  const { isOwner } = useOwnerMode();
 
-  const ITEMS = [
+  // Phase 14A — Game Build is unfinished; hide its mobile tab from normal users.
+  const ITEMS: NavItem[] = ([
     { id: 'chat', label: t('navChat'), icon: MessageSquare, path: '/chat' },
     { id: 'webbuild', label: t('navWebBuild'), icon: Globe, path: '/tools/website-builder' },
-    { id: 'game', label: t('navGameBuild'), icon: Gamepad2, path: '/tools/game-builder' },
+    { id: 'game', label: t('navGameBuild'), icon: Gamepad2, path: '/tools/game-builder', ownerOnly: true },
     { id: 'projects', label: t('navProjects'), icon: FolderOpen, path: '/projects' },
-  ];
+  ] as NavItem[]).filter((item) => !item.ownerOnly || isOwner);
 
   // Determine active item based on current route
   const getActiveId = () => {
