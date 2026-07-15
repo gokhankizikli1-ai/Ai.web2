@@ -4,6 +4,7 @@ import { deriveSessionTitle } from '@/lib/chatTitles';
 import { getRequestLocale } from '@/lib/locale';
 import { useLanguageStore } from '@/stores/languageStore';
 import { listWebBuildSessions, type WebBuildSessionMeta } from '@/lib/webBuildSession';
+import { currentStorageScope } from '@/lib/storageScope';
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
@@ -65,38 +66,11 @@ const API_URL = resolveApiUrl();
 const SESSIONS_KEY_BASE = 'korvix_sessions';
 const ACTIVE_SESSION_KEY_BASE = 'korvix_active_session_id';
 
-/** Return the localStorage scope for the current identity.
- *
- * Authenticated user → `user_<id>` (id from zustand's persisted
- * `korvix-auth` blob, written by authStore on every login). Guest →
- * `guest_<browser_nonce>` (the same `korvix_user_id` value useChat
- * sends as `req.user_id` for guests). Falls back to `guest_anon` if
- * storage is unavailable (private mode) — guarantees the function
- * never returns the empty string, so storage keys are always
- * well-defined.
- */
-function currentStorageScope(): string {
-  // Authenticated identity — read directly from the zustand persist
-  // blob so this hook doesn't have to import authStore (avoids a
-  // circular dep between auth and chat layers).
-  try {
-    const blob = localStorage.getItem('korvix-auth');
-    if (blob) {
-      const parsed = JSON.parse(blob);
-      const uid = parsed?.state?.user?.id;
-      if (typeof uid === 'string' && uid) return `user_${uid}`;
-    }
-  } catch { /* fall through to guest */ }
-  // Guest — same nonce used by the backend as the X-Korvix-Guest-Id
-  // header. authStore.wipeUserScopedStorage() rotates this on every
-  // logout, so the guest scope changes whenever the prior account
-  // signs out (cross-account isolation stays intact).
-  try {
-    const nonce = localStorage.getItem('korvix_user_id');
-    if (typeof nonce === 'string' && nonce) return `guest_${nonce}`;
-  } catch { /* ignore */ }
-  return 'guest_anon';
-}
+/* Chat now shares the SAME identity scope helper as every other user-owned
+ * store (Phase 14D.2) — `currentStorageScope()` from '@/lib/storageScope'.
+ * The key format is unchanged (`korvix_sessions_<scope>` /
+ * `korvix_active_session_id_<scope>`), so existing user and guest chat history
+ * keeps resolving to the exact same keys; no chat data is re-migrated. */
 
 function sessionsKey(): string {
   return `${SESSIONS_KEY_BASE}_${currentStorageScope()}`;

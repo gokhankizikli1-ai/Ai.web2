@@ -1,5 +1,8 @@
 import type { Project, ProjectAgent, ProjectTask } from '@/types/projects';
-import { currentStorageScope, scopedKey } from '@/lib/storageScope';
+import {
+  currentStorageScope, scopedKey,
+  claimLegacyGlobal, quarantineLegacyGlobal, dropLegacyGlobal,
+} from '@/lib/storageScope';
 
 const STORAGE_KEY = 'korvix_projects';
 const AGENTS_KEY = 'korvix_project_agents';
@@ -18,33 +21,91 @@ function agentsKey(projectId: string): string { return `${AGENTS_KEY}_${currentS
 function tasksKey(projectId: string): string { return `${TASKS_KEY}_${currentStorageScope()}_${projectId}`; }
 
 const _migratedScopes = new Set<string>();
-/** One-time-per-scope claim of legacy GLOBAL project data into the current scope. */
+
+/** A valid project entry is an object with a non-empty string id. */
+function isProjectEntry(v: unknown): v is Project {
+  return !!v && typeof v === 'object'
+    && typeof (v as { id?: unknown }).id === 'string'
+    && (v as { id: string }).id.length > 0;
+}
+
+/**
+ * Migrate ONE legacy GLOBAL dependent cache (a per-project agent or task list)
+ * into the current owner's scope. For a UNIQUE migrated project with an empty
+ * scoped destination the payload is MOVED; for a colliding project id — or any
+ * time the scoped cache already holds data — the legacy payload is QUARANTINED
+ * instead of overwriting the owner's live cache. The global key is removed only
+ * after the destination write or quarantine succeeds (Phase 14D.2).
+ */
+function migrateDependentCache(baseKey: string, pid: string, destKey: string, isUnique: boolean): void {
+  const globalDep = `${baseKey}_${pid}`;
+  let raw: string | null = null;
+  try { raw = localStorage.getItem(globalDep); } catch { return; }
+  if (raw === null) return;
+  let destExists = true;
+  try { destExists = localStorage.getItem(destKey) !== null; } catch { destExists = true; }
+  if (isUnique && !destExists) {
+    try { localStorage.setItem(destKey, raw); } catch { return; } // quota — keep global for retry
+    dropLegacyGlobal(globalDep);
+  } else {
+    // Colliding id (scoped cache wins) → preserve the legacy payload, never
+    // overwrite. Drop the global only once the backup is safely persisted.
+    if (quarantineLegacyGlobal(globalDep, raw)) dropLegacyGlobal(globalDep);
+  }
+}
+
+/**
+ * One-time-per-scope claim of legacy GLOBAL project data into the current scope
+ * (Phase 14D.2). Only the single authenticated legacy owner runs; guests and
+ * other users no-op via {@link claimLegacyGlobal}. Projects merge BY ID (the
+ * scoped project wins on collision, unique legacy projects are appended); each
+ * unique project's dependent agent/task caches move into scope while colliding
+ * ones are quarantined. Malformed legacy project JSON is quarantined, not
+ * discarded; malformed scoped data is never overwritten. Idempotent — global
+ * keys are removed only after their safe destination write, so a repeat pass
+ * finds nothing to claim.
+ */
 function ensureScopeMigrated(): void {
   const scope = currentStorageScope();
   if (_migratedScopes.has(scope)) return;
   _migratedScopes.add(scope);
-  // Only an authenticated owner may claim legacy GLOBAL project data. A guest
-  // scope leaves the global intact so the real owner can still claim it on
-  // login, and so no guest can absorb (then, via the move, destroy) another
-  // account's projects. Guests read their own empty scope until they log in.
-  if (!scope.startsWith('user_')) return;
+  if (!scope.startsWith('user_')) return; // guests never claim; leave global for the owner
   try {
-    if (localStorage.getItem(projectsKey()) !== null) return; // already scoped
-    const globalProjects = localStorage.getItem(STORAGE_KEY);
-    if (globalProjects === null) return;                      // nothing legacy
-    localStorage.setItem(projectsKey(), globalProjects);
-    let ids: string[] = [];
-    try {
-      ids = (JSON.parse(globalProjects) as Array<{ id?: string }>)
-        .map((p) => p?.id).filter((x): x is string => typeof x === 'string' && !!x);
-    } catch { ids = []; }
-    for (const pid of ids) {
-      const ga = localStorage.getItem(`${AGENTS_KEY}_${pid}`);
-      if (ga !== null) { try { localStorage.setItem(agentsKey(pid), ga); localStorage.removeItem(`${AGENTS_KEY}_${pid}`); } catch { /* ignore */ } }
-      const gt = localStorage.getItem(`${TASKS_KEY}_${pid}`);
-      if (gt !== null) { try { localStorage.setItem(tasksKey(pid), gt); localStorage.removeItem(`${TASKS_KEY}_${pid}`); } catch { /* ignore */ } }
+    const claim = claimLegacyGlobal(STORAGE_KEY);
+    if (!claim) return; // guest / another owner / no legacy / storage failure
+
+    let legacy: unknown;
+    try { legacy = JSON.parse(claim.raw); } catch { legacy = undefined; }
+    if (!Array.isArray(legacy)) {
+      // Malformed / unknown-shape legacy projects → quarantine whole payload.
+      if (quarantineLegacyGlobal(STORAGE_KEY, claim.raw)) dropLegacyGlobal(STORAGE_KEY);
+      return;
     }
-    localStorage.removeItem(STORAGE_KEY);
+    const legacyProjects = legacy.filter(isProjectEntry);
+
+    let scoped: Project[] = [];
+    const scopedRaw = localStorage.getItem(claim.scopedKey);
+    if (scopedRaw !== null) {
+      let parsed: unknown;
+      try { parsed = JSON.parse(scopedRaw); } catch { return; } // malformed scoped — never overwrite
+      if (!Array.isArray(parsed)) return;                       // unknown scoped shape — never overwrite
+      scoped = parsed.filter(isProjectEntry);
+    }
+
+    const scopedIds = new Set(scoped.map((p) => p.id));
+    const uniqueLegacy = legacyProjects.filter((p) => !scopedIds.has(p.id));
+    const merged = [...scoped, ...uniqueLegacy];
+
+    try { localStorage.setItem(claim.scopedKey, JSON.stringify(merged)); }
+    catch { return; } // quota — leave global + dependents intact for a later retry
+
+    // Dependent caches: move for unique projects, quarantine for colliding ids.
+    const uniqueIds = new Set(uniqueLegacy.map((p) => p.id));
+    for (const p of legacyProjects) {
+      migrateDependentCache(AGENTS_KEY, p.id, agentsKey(p.id), uniqueIds.has(p.id));
+      migrateDependentCache(TASKS_KEY, p.id, tasksKey(p.id), uniqueIds.has(p.id));
+    }
+    dropLegacyGlobal(STORAGE_KEY); // remove the global project key LAST
   } catch { /* private mode / quota — skip; reads fall back to empty */ }
 }
 
