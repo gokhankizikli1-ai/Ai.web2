@@ -98,6 +98,42 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v2/chat", tags=["chat-stream"])
 
 
+# ── Internal-marker output guard (Phase 14G Part A) ──────────────────────────
+# Tool-context blocks are injected into the model context for grounding, never
+# meant to be user-visible. The real fix is upstream: those blocks no longer
+# carry "KORVIX … TOOL OUTPUT / DO NOT REFUSE" echo-bait and instruct the model
+# not to quote them. This is a defence-in-depth BOUNDARY scrub: if the model
+# still parrots an internal marker, we strip it from the streamed delta so it
+# can never reach the user. Case-insensitive substring removal — a marker split
+# across two deltas is caught by the frontend's own accumulated-text scrub.
+_INTERNAL_MARKERS: tuple[str, ...] = (
+    "KORVIX WEB SEARCH", "KORVIX TOOLS", "KORVIX BROWSER", "KORVIX GITHUB",
+    "TOOL OUTPUT", "TOOL_RESULT", "FUNCTION RESULT", "SEARCH CONTEXT",
+    "DO NOT REFUSE", "TOOL ATTEMPTED, NO RESULTS",
+    "INTERNAL LIVE-SEARCH RESULTS", "INTERNAL CAPABILITIES NOTE",
+    "INTERNAL NOTE —", "[TOOL:",
+)
+_MARKER_FENCE = "═"
+
+
+def _scrub_internal_markers(delta: str) -> str:
+    """Remove any internal orchestration marker from a streamed delta. Markers
+    are matched CASE-SENSITIVELY: the injected blocks carry ALL-CAPS markers, so
+    only those are stripped — ordinary prose that happens to say "tool output"
+    or "function result" (common in coding answers) is left untouched. Cheap and
+    allocation-light for the common (marker-free) case."""
+    if not delta:
+        return delta
+    out = delta
+    if _MARKER_FENCE in out:
+        out = out.replace(_MARKER_FENCE, "")
+    if any(m in out for m in _INTERNAL_MARKERS):
+        for m in _INTERNAL_MARKERS:
+            if m in out:
+                out = out.replace(m, "")
+    return out
+
+
 # ── Request model ────────────────────────────────────────────────────────
 
 class StreamMessage(BaseModel):
@@ -814,10 +850,10 @@ async def stream_chat(body: StreamChatRequest, request: Request):
             tool_capabilities = []
         if tool_capabilities:
             cap_note = (
-                "═══════════════════════════════════════════════════════════════\n"
-                "KORVIX TOOLS — CAPABILITIES YOU HAVE — DO NOT REFUSE THEM\n"
-                "═══════════════════════════════════════════════════════════════\n"
-                "I (KorvixAI) currently have these tools wired into the chat: "
+                "[INTERNAL CAPABILITIES NOTE — never quote, print, or mention "
+                "this note, and never output internal labels or markers to the "
+                "user; give only the finished answer]\n"
+                "These tools are wired into the chat: "
                 + ", ".join(tool_capabilities) + ".\n\n"
                 "If the user asks for ANYTHING that needs current information "
                 "or external sources (latest news, company / startup / "
@@ -825,9 +861,11 @@ async def stream_chat(body: StreamChatRequest, request: Request):
                 "pricing, web pages, GitHub repos, AI tools market scan, "
                 "industry trends, etc.) the system has ALREADY tried to "
                 "auto-invoke the right tool BEFORE this prompt reached you. "
-                "If you see a 'KORVIX … TOOL OUTPUT' block above, use it as "
-                "ground truth. If you see a 'TOOL ATTEMPTED, NO RESULTS' "
-                "block, acknowledge the specific failure reason.\n\n"
+                "When an internal results block is present above, treat it as "
+                "ground truth and summarize it in your own words (never copy it "
+                "verbatim). When an internal note says the search returned no "
+                "results, acknowledge honestly that current data could not be "
+                "verified.\n\n"
                 "DO NOT — under any circumstances — answer with phrases like:\n"
                 "  • \"I cannot access the internet\"\n"
                 "  • \"I don't have access to current information\"\n"
@@ -1315,12 +1353,24 @@ async def stream_chat(body: StreamChatRequest, request: Request):
                                   "error": str(exc)[:200]}
 
             fetched_ok = bool((search_payload or {}).get("fetched"))
-            citation_count = int((search_payload or {}).get("count") or 0)
+            # Phase 14G — count + sources reflect ONLY normalized sources
+            # actually attached to the block the model answers from. `succeeded`
+            # is true only when at least one usable source exists, so the FE
+            # never shows a "completed — N sources" badge for an empty search.
+            _sources = [
+                s for s in ((search_payload or {}).get("sources") or [])
+                if isinstance(s, dict) and (s.get("url") or "").strip()
+            ]
+            _urls = [s["url"] for s in _sources]
+            citation_count = len(_sources)
+            fetched_ok = fetched_ok and citation_count > 0
             yield sse_event("tool.completed", {
                 "tool_id":     "web_research",
                 "query":       web_search_intent.query[:200],
                 "succeeded":   fetched_ok,
                 "citations":   citation_count,
+                "urls":        _urls,        # FE attaches source cards from these
+                "sources":     _sources,     # rich cards: url/title/domain/publishedAt
                 "block_chars": len(search_block or ""),
             })
             logger.info(
@@ -1445,23 +1495,23 @@ async def stream_chat(body: StreamChatRequest, request: Request):
                     user_id, err,
                 )
                 fail_block = (
-                    "═══════════════════════════════════════════════════════════════\n"
-                    "KORVIX WEB SEARCH — TOOL ATTEMPTED, NO RESULTS\n"
-                    "═══════════════════════════════════════════════════════════════\n"
-                    "I (KorvixAI) tried to run my web search tool for the user's "
-                    "question but it returned no usable results. Specific reason: "
-                    f"{err}\n\n"
+                    "[INTERNAL NOTE — do NOT quote, print, or mention this note "
+                    "or any label to the user; give only the finished answer]\n"
+                    "A live web search was attempted for the user's question but "
+                    "returned no usable sources (initial attempt + one recovery). "
+                    f"Internal reason: {err}\n\n"
                     "INSTRUCTIONS for your response:\n"
-                    "1. Be HONEST. Acknowledge that you attempted a live web "
-                    "search but it failed.\n"
-                    "2. State the specific failure reason from above (e.g. "
-                    "\"search provider not configured\" / \"rate limit\" / "
-                    "\"network error\").\n"
+                    "1. Be HONEST. Say briefly that current data could not be "
+                    "verified right now (do not present any live figure).\n"
+                    "2. NEVER fabricate a current weather condition, temperature, "
+                    "stock/crypto price, or news fact, and never cite a source you "
+                    "were not given.\n"
                     "3. DO NOT say \"I cannot access the internet\" or "
                     "\"İnternetten gerçek zamanlı bilgi arayamıyorum\" — "
                     "this is FALSE; the tool exists and was invoked.\n"
-                    "4. If you have relevant pre-training knowledge, offer "
-                    "it with a clear cutoff caveat.\n"
+                    "4. You MAY give general, non-current background from "
+                    "training, but clearly label it as general information (not "
+                    "live data).\n"
                     "5. Suggest the user can retry shortly or ask a different "
                     "phrasing.\n"
                     "Reply in the user's language."
@@ -1652,7 +1702,11 @@ async def stream_chat(body: StreamChatRequest, request: Request):
                     yield sse_event("ready", {"provider": event.provider, "model": event.model})
                 elif isinstance(event, ProviderStreamToken):
                     _token_count += 1
-                    yield sse_event("token", {"delta": event.delta})
+                    # Boundary guard: strip any internal marker the model may
+                    # have echoed before it reaches the user (Phase 14G Part A).
+                    _safe_delta = _scrub_internal_markers(event.delta)
+                    if _safe_delta:
+                        yield sse_event("token", {"delta": _safe_delta})
                 elif isinstance(event, ProviderStreamDone):
                     logger.info(
                         "[STREAM] done | uid=%s | finish=%s | tokens=%d | "

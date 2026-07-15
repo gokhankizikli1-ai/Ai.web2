@@ -71,7 +71,9 @@ export default function MessageSources({
       {open && (
         <div className="mt-1.5 flex flex-col gap-0.5 rounded-xl border border-[#253142] bg-[#0D1117] p-1.5">
           {sources.map((s) => {
-            const domain = domainOf(s.url);
+            // Phase 14G — prefer the backend-supplied domain; derive as fallback.
+            const domain = s.domain || domainOf(s.url);
+            const meta = s.publishedAt ? `${domain} · ${s.publishedAt}` : domain;
             return (
               <a
                 key={s.url}
@@ -85,7 +87,7 @@ export default function MessageSources({
                   <div className="text-[12px] text-[#CBD5E1] group-hover/src:text-[#F8FAFC] truncate transition-colors">
                     {s.title || domain}
                   </div>
-                  <div className="text-[10px] text-[#64748B] truncate">{domain}</div>
+                  <div className="text-[10px] text-[#64748B] truncate">{meta}</div>
                 </div>
                 <span className="shrink-0 text-[9.5px] text-[#64748B] uppercase tracking-wide">{usedLabel}</span>
               </a>
