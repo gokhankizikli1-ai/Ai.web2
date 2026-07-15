@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Loader2, ArrowUp, AlertTriangle, RotateCcw,
+  ArrowUp, AlertTriangle, RotateCcw,
   Check, FolderOpen, Plus, X, ChevronLeft, FolderPlus,
 } from 'lucide-react';
 import WebBuildConversation from '@/components/builder/WebBuildConversation';
@@ -86,8 +86,11 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
   // pipeline boundaries). `summary` keeps the completed/failed timeline for the latest turn
   // after the run ends (session-local UI state; never persisted into the saved payload).
   const [live, setLive] = useState<{ prompt: string; kind: 'build' | 'revision'; startedAt: number; activity: WebBuildActivityState } | null>(null);
-  const [summary, setSummary] = useState<{ prompt: string; startedAt: number; endedAt: number; state: WebBuildActivityState } | null>(null);
+  const [summary, setSummary] = useState<{ prompt: string; startedAt: number; endedAt: number; state: WebBuildActivityState; stopped?: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
+  // Phase 13H.1 — true from the moment the user presses Stop until the run's finally settles,
+  // so the composer's stop button disables immediately and repeated clicks are ignored.
+  const [stopping, setStopping] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
   const [savedProjectId, setSavedProjectId] = useState<string | undefined>(undefined);
@@ -105,6 +108,9 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
   // (no stale closures) and a superseded/aborted run can never mutate a newer run's timeline.
   const activityRef = useRef<WebBuildActivityState | null>(null);
   const liveMetaRef = useRef<{ prompt: string; startedAt: number; controller: AbortController } | null>(null);
+  // The run whose timeline has already been finalized (success / failure / user stop). Late
+  // reporter events for a finalized run are dropped so a stopped/finished workstream is stable.
+  const runFinalizedRef = useRef<AbortController | null>(null);
 
   useEffect(() => () => { abortRef.current?.abort(); }, []);
 
@@ -133,15 +139,18 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
     const activity = kind === 'revision' ? initRevisionActivity() : initBuildActivity();
     activityRef.current = activity;
     liveMetaRef.current = { prompt, startedAt, controller };
+    runFinalizedRef.current = null;
+    setStopping(false);
     setSummary(null);
     setLive({ prompt, kind, startedAt, activity });
   }, []);
 
-  // A reporter bound to ONE run. Stale/aborted-run events are dropped (identity guard), so a
-  // superseded run can never write into the current timeline (scenario N). Reporter errors are
-  // contained: activity is UI telemetry and must never affect generation.
+  // A reporter bound to ONE run. Stale/aborted-run events are dropped (identity guard), and
+  // events for an already-finalized run (success/failure/user stop) are dropped too — so a
+  // superseded or stopped run can never write into a timeline. Reporter errors are contained:
+  // activity is UI telemetry and must never affect generation.
   const makeReporter = useCallback((controller: AbortController): WebBuildActivityReporter => (update) => {
-    if (abortRef.current !== controller) return;
+    if (abortRef.current !== controller || runFinalizedRef.current === controller) return;
     const cur = activityRef.current;
     if (!cur) return;
     const next = applyActivityUpdate(cur, update);
@@ -157,11 +166,38 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
     const st = activityRef.current;
     const meta = liveMetaRef.current;
     if (!st || !meta) return;
+    runFinalizedRef.current = controller;
     const finalState = outcome === 'completed' ? completeActivity(st) : failActiveActivity(st);
     activityRef.current = finalState;
     setSummary({ prompt: meta.prompt, startedAt: meta.startedAt, endedAt: Date.now(), state: finalState });
     setLive(null);
   }, []);
+
+  // Phase 13H.1 — finalize a USER-REQUESTED stop into a neutral "stopped" summary (never a
+  // provider failure). The activity model is left untouched (no new state); the summary carries
+  // a `stopped` flag the workstream renders neutrally. Only finalizes a still-running run, so a
+  // click that races an already-finished build cannot rewrite a completed/failed result.
+  const stopActivity = useCallback((controller: AbortController) => {
+    if (abortRef.current !== controller || runFinalizedRef.current === controller) return;
+    const st = activityRef.current;
+    const meta = liveMetaRef.current;
+    if (!st || !meta || st.final !== 'running') return;
+    runFinalizedRef.current = controller;
+    setSummary({ prompt: meta.prompt, startedAt: meta.startedAt, endedAt: Date.now(), state: st, stopped: true });
+    setLive(null);
+  }, []);
+
+  // Real stop control — reuses the run's existing AbortController (no second cancellation
+  // mechanism). Aborts exactly once, then finalizes the workstream to the neutral stopped state.
+  // The in-flight run's existing `signal.aborted` guards prevent it from persisting or
+  // overwriting the current project; its finally clears busy/stopping.
+  const handleStop = useCallback(() => {
+    const controller = abortRef.current;
+    if (!controller || controller.signal.aborted) return;
+    controller.abort();
+    setStopping(true);
+    stopActivity(controller);
+  }, [stopActivity]);
 
   const failLive = useCallback((err: unknown) => {
     setLive(null);
@@ -275,7 +311,7 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
       finishActivity(controller, 'failed');
       failLive(err);
     } finally {
-      if (abortRef.current === controller) setBusy(false);
+      if (abortRef.current === controller) { setBusy(false); setStopping(false); }
     }
   }, [startLive, makeReporter, finishActivity, failLive, lang, persist, sessionId]);
   const runFreshRef = useRef(runFresh);
@@ -341,7 +377,7 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
       finishActivity(controller, 'failed');
       failLive(err);
     } finally {
-      if (abortRef.current === controller) setBusy(false);
+      if (abortRef.current === controller) { setBusy(false); setStopping(false); }
     }
   }, [payload, startLive, makeReporter, finishActivity, failLive, lang, persist, sessionId]);
 
@@ -502,15 +538,31 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
             disabled={busy && !payload}
             className="flex-1 resize-none bg-transparent px-2.5 py-2 text-[13.5px] text-slate-100 placeholder:text-[#64748B] outline-none max-h-40 scrollbar-thin disabled:opacity-50"
           />
-          <button
-            onClick={handleSubmit}
-            disabled={busy || !input.trim() || !payload}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-[#05060a] transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
-            style={{ background: ACCENT }}
-            aria-label={placeholder}
-          >
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" strokeWidth={2.5} />}
-          </button>
+          {busy ? (
+            // Real STOP control while a build/revision is running — aborts the existing
+            // controller once, then disables to block repeated clicks. Never submits.
+            <button
+              type="button"
+              onClick={handleStop}
+              disabled={stopping}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/[0.08] text-slate-100 transition-colors hover:bg-white/[0.14] disabled:opacity-40 disabled:cursor-not-allowed"
+              aria-label={lang === 'tr' ? 'Oluşturmayı durdur' : 'Stop generation'}
+              title={lang === 'tr' ? 'Oluşturmayı durdur' : 'Stop generation'}
+            >
+              <span className="h-2.5 w-2.5 rounded-[2px] bg-current" aria-hidden />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={!input.trim() || !payload}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-[#05060a] transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{ background: ACCENT }}
+              aria-label={placeholder}
+            >
+              <ArrowUp className="h-4 w-4" strokeWidth={2.5} />
+            </button>
+          )}
         </div>
       </div>
     </div>
