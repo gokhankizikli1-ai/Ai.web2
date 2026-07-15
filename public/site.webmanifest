@@ -1,0 +1,18 @@
+{
+  "name": "KorvixAI",
+  "short_name": "KorvixAI",
+  "description": "AI workspace for research, planning and building real web and app projects.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#F7F7F8",
+  "theme_color": "#F7F7F8",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any"
+    }
+  ]
+}

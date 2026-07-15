@@ -3,9 +3,48 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="description" content="KorvixAI - Your AI Operating System. Code, research, launch startups, run ecommerce, deploy AI agents, trade, and automate." />
+    <title>KorvixAI — Build, Research and Launch with AI</title>
+    <meta name="description" content="KorvixAI is an AI workspace for research, planning and building real web and app projects from one place." />
+    <link rel="canonical" href="https://www.korvixai.com/" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
     <meta name="theme-color" content="#f7f7f8" />
-    <title>KorvixAI</title>
+
+    <!-- Brand favicon — the KorvixAI dark-square "K" derived from src/components/BrandLogo.tsx -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/site.webmanifest" />
+
+    <!-- Open Graph (homepage) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="KorvixAI" />
+    <meta property="og:title" content="KorvixAI — Build, Research and Launch with AI" />
+    <meta property="og:description" content="KorvixAI is an AI workspace for research, planning and building real web and app projects from one place." />
+    <meta property="og:url" content="https://www.korvixai.com/" />
+
+    <!-- Twitter / X (no raster social image yet → summary card) -->
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="KorvixAI — Build, Research and Launch with AI" />
+    <meta name="twitter:description" content="KorvixAI is an AI workspace for research, planning and building real web and app projects from one place." />
+
+    <!-- Organization + WebSite structured data (verified facts only) -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "name": "KorvixAI",
+            "url": "https://www.korvixai.com/",
+            "logo": "https://www.korvixai.com/favicon.svg"
+          },
+          {
+            "@type": "WebSite",
+            "name": "KorvixAI",
+            "url": "https://www.korvixai.com/"
+          }
+        ]
+      }
+    </script>
+
     <!-- Google Identity Services (GSI). Loaded ahead of the app so
          AuthPage can call `window.google.accounts.id.initialize(...)`
          without a network wait when the user clicks "Continue with
