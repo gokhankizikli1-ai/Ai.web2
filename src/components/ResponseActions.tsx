@@ -5,6 +5,11 @@ import {
   Bookmark, BookmarkCheck,
 } from 'lucide-react';
 import { useLanguageStore } from '@/stores/languageStore';
+import { scopedKey, migrateGlobalToScope } from '@/lib/storageScope';
+
+// Phase 14D — saved prompts are per identity; legacy global data is claimed into
+// the current scope once, and logout no longer wipes it (isolation is structural).
+const SAVED_PROMPTS_KEY = 'korvix_saved_prompts';
 
 export interface ResponseAction {
   id: string;
@@ -24,12 +29,15 @@ export const RESPONSE_ACTIONS: ResponseAction[] = [
 
 export function useSavedPrompts() {
   const [saved, setSaved] = useState<string[]>(() => {
-    try { return JSON.parse(localStorage.getItem('korvix_saved_prompts') || '[]'); } catch { return []; }
+    try {
+      migrateGlobalToScope(SAVED_PROMPTS_KEY);
+      return JSON.parse(localStorage.getItem(scopedKey(SAVED_PROMPTS_KEY)) || '[]');
+    } catch { return []; }
   });
   const toggle = (id: string) => {
     setSaved((prev) => {
       const next = prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id];
-      localStorage.setItem('korvix_saved_prompts', JSON.stringify(next));
+      try { localStorage.setItem(scopedKey(SAVED_PROMPTS_KEY), JSON.stringify(next)); } catch { /* ignore */ }
       return next;
     });
   };
