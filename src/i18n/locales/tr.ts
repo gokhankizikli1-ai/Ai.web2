@@ -140,6 +140,15 @@ export const tr: Record<string, string> = {
   accountSettings: 'Hesap Ayarları', learningCenter: 'Öğrenme Merkezi',
   documentation: 'Belgeler', community: 'Topluluk',
   upgradeToPro: "Pro'ya Yükselt", guestMode: 'Misafir modu',
+  // Phase 14C.2 — profil menüsü + web build kontrolleri
+  ownerRole: 'Sahip', ownerSession: 'Sahip oturumu',
+  planBadge: '{plan} Planı', languageSelected: '{lang} seçildi',
+  loggedOutSuccess: 'Başarıyla çıkış yapıldı',
+  webBuildStopGeneration: 'Oluşturmayı durdur',
+  webBuildAskChanges: 'Bu yapı için değişiklik iste…',
+  webBuildNoSources: 'kaynak kullanılmadı',
+  webBuildContractFailed: "Korvix backend'den tam model-planlı bir build alamadı. Birazdan tekrar dene.",
+  webBuildWebsiteLabel: 'Web Sitesi',
   // Sidebar specific
   workspaceHub: 'Çalışma Alanı Merkezi', explore: 'Keşfet', work: 'Çalışma', tools: 'Araçlar',
   moreTabs: 'Daha fazla', pinned: 'Sabitlenmiş', yourChats: 'Sohbetleriniz',

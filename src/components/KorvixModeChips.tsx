@@ -10,17 +10,19 @@ import { type KorvixMode, KORVIX_MODES } from '@/lib/korvixMode';
  * small premium blue pill attached to the composer, with an X to clear it. Chat
  * is the neutral default and shows no pill.
  */
-type Meta = { icon: typeof Globe; en: string; tr: string };
+type Meta = { icon: typeof Globe; en: string; tr: string; de: string };
 
 const META: Record<KorvixMode, Meta> = {
-  chat:    { icon: MessageSquare, en: 'Chat',    tr: 'Sohbet' },
-  website: { icon: Globe,         en: 'Website', tr: 'Web Sitesi' },
-  app:     { icon: Smartphone,    en: 'App',     tr: 'Uygulama' },
-  game:    { icon: Gamepad2,      en: 'Game',    tr: 'Oyun' },
+  chat:    { icon: MessageSquare, en: 'Chat',    tr: 'Sohbet',     de: 'Chat' },
+  website: { icon: Globe,         en: 'Website', tr: 'Web Sitesi', de: 'Webseite' },
+  app:     { icon: Smartphone,    en: 'App',     tr: 'Uygulama',   de: 'App' },
+  game:    { icon: Gamepad2,      en: 'Game',    tr: 'Oyun',       de: 'Spiel' },
 };
 
+/** Resolve a mode label for en/tr/de (English-backed — never a de→en ternary). */
 export function korvixModeLabel(mode: KorvixMode, lang: string): string {
-  return lang === 'tr' ? META[mode].tr : META[mode].en;
+  const m = META[mode];
+  return lang === 'tr' ? m.tr : lang === 'de' ? m.de : m.en;
 }
 
 /* ── Chip row (empty home) ───────────────────────────────────────────── */

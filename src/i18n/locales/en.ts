@@ -147,6 +147,15 @@ export const en: Record<string, string> = {
   accountSettings: 'Account Settings', learningCenter: 'Learning Center',
   documentation: 'Documentation', community: 'Community',
   upgradeToPro: 'Upgrade to Pro', guestMode: 'Guest mode',
+  // Phase 14C.2 — profile dropdown + web build controls
+  ownerRole: 'Owner', ownerSession: 'Owner session',
+  planBadge: '{plan} Plan', languageSelected: '{lang} selected',
+  loggedOutSuccess: 'Logged out successfully',
+  webBuildStopGeneration: 'Stop generation',
+  webBuildAskChanges: 'Ask for changes to this build…',
+  webBuildNoSources: 'no sources used',
+  webBuildContractFailed: 'Korvix could not get a complete model-planned build from the backend. Try again in a moment.',
+  webBuildWebsiteLabel: 'Website',
   // Sidebar specific
   workspaceHub: 'Workspace Hub', explore: 'Explore', work: 'Work', tools: 'Tools',
   moreTabs: 'More', pinned: 'Pinned', yourChats: 'Your chats',

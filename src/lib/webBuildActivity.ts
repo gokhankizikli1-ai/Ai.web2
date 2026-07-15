@@ -106,61 +106,64 @@ const REVISION_STAGES: readonly StageDef[] = [
   { id: 'revision-preview', detailKind: 'preview' },
 ];
 
-/* ── Bilingual, bounded UI strings (kept LOCAL so this phase touches no i18n locale file).
- * Titles/labels are stable keys → { en, tr }; the timeline resolves them via the app lang. */
-export const ACTIVITY_TITLES: Record<string, { en: string; tr: string }> = {
-  'request-understanding': { en: 'Understanding your request', tr: 'İsteğin inceleniyor' },
-  research: { en: 'Researching the website direction', tr: 'Site yönü araştırılıyor' },
-  planning: { en: 'Creating the website strategy', tr: 'Site stratejisi oluşturuluyor' },
-  specification: { en: 'Preparing the build specification', tr: 'Build planı hazırlanıyor' },
-  'frontend-generation': { en: 'Generating the React project', tr: 'React projesi oluşturuluyor' },
-  'frontend-validation': { en: 'Validating the generated files', tr: 'Oluşturulan dosyalar doğrulanıyor' },
-  'structural-repair': { en: 'Repairing the project structure', tr: 'Proje yapısı düzeltiliyor' },
-  'quality-review': { en: 'Reviewing design quality', tr: 'Tasarım kalitesi inceleniyor' },
-  'quality-repair': { en: 'Applying quality improvements', tr: 'Kalite iyileştirmeleri uygulanıyor' },
-  acceptance: { en: 'Finalizing the candidate', tr: 'Candidate hazırlanıyor' },
-  preview: { en: 'Preparing the preview', tr: 'Önizleme hazırlanıyor' },
-  'revision-understanding': { en: 'Understanding the requested change', tr: 'İstenen değişiklik inceleniyor' },
-  'revision-generation': { en: 'Updating the React project', tr: 'React projesi güncelleniyor' },
-  'revision-validation': { en: 'Validating the revised files', tr: 'Düzenlenen dosyalar doğrulanıyor' },
-  'revision-preservation': { en: 'Preserving the working project', tr: 'Çalışan proje korunuyor' },
-  'revision-preview': { en: 'Preparing the updated preview', tr: 'Güncellenen önizleme hazırlanıyor' },
+/* ── Trilingual, bounded UI strings (kept LOCAL so this phase touches no i18n locale file).
+ * Titles/labels are stable keys → { en, tr, de }; the timeline resolves them via the app lang
+ * (en/tr/de — Phase 14C.2). German is real, never an English fallback. */
+type L3 = { en: string; tr: string; de: string };
+
+export const ACTIVITY_TITLES: Record<string, L3> = {
+  'request-understanding': { en: 'Understanding your request', tr: 'İsteğin inceleniyor', de: 'Deine Anfrage wird verstanden' },
+  research: { en: 'Researching the website direction', tr: 'Site yönü araştırılıyor', de: 'Website-Richtung wird recherchiert' },
+  planning: { en: 'Creating the website strategy', tr: 'Site stratejisi oluşturuluyor', de: 'Website-Strategie wird erstellt' },
+  specification: { en: 'Preparing the build specification', tr: 'Build planı hazırlanıyor', de: 'Build-Spezifikation wird vorbereitet' },
+  'frontend-generation': { en: 'Generating the React project', tr: 'React projesi oluşturuluyor', de: 'React-Projekt wird generiert' },
+  'frontend-validation': { en: 'Validating the generated files', tr: 'Oluşturulan dosyalar doğrulanıyor', de: 'Generierte Dateien werden geprüft' },
+  'structural-repair': { en: 'Repairing the project structure', tr: 'Proje yapısı düzeltiliyor', de: 'Projektstruktur wird repariert' },
+  'quality-review': { en: 'Reviewing design quality', tr: 'Tasarım kalitesi inceleniyor', de: 'Designqualität wird geprüft' },
+  'quality-repair': { en: 'Applying quality improvements', tr: 'Kalite iyileştirmeleri uygulanıyor', de: 'Qualitätsverbesserungen werden angewendet' },
+  acceptance: { en: 'Finalizing the candidate', tr: 'Candidate hazırlanıyor', de: 'Kandidat wird finalisiert' },
+  preview: { en: 'Preparing the preview', tr: 'Önizleme hazırlanıyor', de: 'Vorschau wird vorbereitet' },
+  'revision-understanding': { en: 'Understanding the requested change', tr: 'İstenen değişiklik inceleniyor', de: 'Gewünschte Änderung wird verstanden' },
+  'revision-generation': { en: 'Updating the React project', tr: 'React projesi güncelleniyor', de: 'React-Projekt wird aktualisiert' },
+  'revision-validation': { en: 'Validating the revised files', tr: 'Düzenlenen dosyalar doğrulanıyor', de: 'Überarbeitete Dateien werden geprüft' },
+  'revision-preservation': { en: 'Preserving the working project', tr: 'Çalışan proje korunuyor', de: 'Funktionierendes Projekt wird bewahrt' },
+  'revision-preview': { en: 'Preparing the updated preview', tr: 'Güncellenen önizleme hazırlanıyor', de: 'Aktualisierte Vorschau wird vorbereitet' },
 };
 
-export const ACTIVITY_STATUS_LABELS: Record<WebBuildActivityStatus, { en: string; tr: string }> = {
-  waiting: { en: 'Waiting', tr: 'Bekliyor' },
-  active: { en: 'Working', tr: 'Çalışıyor' },
-  completed: { en: 'Completed', tr: 'Tamamlandı' },
-  skipped: { en: 'Skipped', tr: 'Atlandı' },
-  failed: { en: 'Failed', tr: 'Başarısız' },
+export const ACTIVITY_STATUS_LABELS: Record<WebBuildActivityStatus, L3> = {
+  waiting: { en: 'Waiting', tr: 'Bekliyor', de: 'Wartet' },
+  active: { en: 'Working', tr: 'Çalışıyor', de: 'Arbeitet' },
+  completed: { en: 'Completed', tr: 'Tamamlandı', de: 'Abgeschlossen' },
+  skipped: { en: 'Skipped', tr: 'Atlandı', de: 'Übersprungen' },
+  failed: { en: 'Failed', tr: 'Başarısız', de: 'Fehlgeschlagen' },
 };
 
-export const ACTIVITY_DETAIL_LABELS: Record<string, { en: string; tr: string }> = {
-  sources: { en: 'Sources reviewed', tr: 'İncelenen kaynak' },
-  sections: { en: 'Planned sections', tr: 'Planlanan bölüm' },
-  language: { en: 'Website language', tr: 'Site dili' },
-  requiredFiles: { en: 'Required files', tr: 'Gerekli dosya' },
-  specStatus: { en: 'Specification', tr: 'Spesifikasyon' },
-  transport: { en: 'Transport', tr: 'Aktarım' },
-  waited: { en: 'Waited', tr: 'Bekleme süresi' },
-  outputBudget: { en: 'Output budget', tr: 'Çıktı bütçesi' },
-  files: { en: 'Files', tr: 'Dosyalar' },
-  chars: { en: 'Characters', tr: 'Karakter' },
-  validation: { en: 'Validation', tr: 'Doğrulama' },
-  warnings: { en: 'Warnings', tr: 'Uyarılar' },
-  errors: { en: 'Errors', tr: 'Hatalar' },
-  entryFiles: { en: 'Entry files', tr: 'Giriş dosyaları' },
-  result: { en: 'Result', tr: 'Sonuç' },
-  score: { en: 'Score', tr: 'Puan' },
-  issues: { en: 'Issues', tr: 'Sorunlar' },
-  candidate: { en: 'Candidate', tr: 'Candidate' },
-  activeProject: { en: 'Active project', tr: 'Aktif proje' },
-  manualReview: { en: 'Manual review', tr: 'Manuel inceleme' },
-  changed: { en: 'Changed files', tr: 'Değişen dosya' },
-  retained: { en: 'Retained files', tr: 'Korunan dosya' },
-  preserved: { en: 'Source preserved', tr: 'Korunan kaynak' },
-  scope: { en: 'Change scope', tr: 'Değişiklik kapsamı' },
-  note: { en: 'Note', tr: 'Not' },
+export const ACTIVITY_DETAIL_LABELS: Record<string, L3> = {
+  sources: { en: 'Sources reviewed', tr: 'İncelenen kaynak', de: 'Geprüfte Quellen' },
+  sections: { en: 'Planned sections', tr: 'Planlanan bölüm', de: 'Geplante Abschnitte' },
+  language: { en: 'Website language', tr: 'Site dili', de: 'Website-Sprache' },
+  requiredFiles: { en: 'Required files', tr: 'Gerekli dosya', de: 'Erforderliche Dateien' },
+  specStatus: { en: 'Specification', tr: 'Spesifikasyon', de: 'Spezifikation' },
+  transport: { en: 'Transport', tr: 'Aktarım', de: 'Übertragung' },
+  waited: { en: 'Waited', tr: 'Bekleme süresi', de: 'Wartezeit' },
+  outputBudget: { en: 'Output budget', tr: 'Çıktı bütçesi', de: 'Ausgabebudget' },
+  files: { en: 'Files', tr: 'Dosyalar', de: 'Dateien' },
+  chars: { en: 'Characters', tr: 'Karakter', de: 'Zeichen' },
+  validation: { en: 'Validation', tr: 'Doğrulama', de: 'Validierung' },
+  warnings: { en: 'Warnings', tr: 'Uyarılar', de: 'Warnungen' },
+  errors: { en: 'Errors', tr: 'Hatalar', de: 'Fehler' },
+  entryFiles: { en: 'Entry files', tr: 'Giriş dosyaları', de: 'Einstiegsdateien' },
+  result: { en: 'Result', tr: 'Sonuç', de: 'Ergebnis' },
+  score: { en: 'Score', tr: 'Puan', de: 'Bewertung' },
+  issues: { en: 'Issues', tr: 'Sorunlar', de: 'Probleme' },
+  candidate: { en: 'Candidate', tr: 'Candidate', de: 'Kandidat' },
+  activeProject: { en: 'Active project', tr: 'Aktif proje', de: 'Aktives Projekt' },
+  manualReview: { en: 'Manual review', tr: 'Manuel inceleme', de: 'Manuelle Prüfung' },
+  changed: { en: 'Changed files', tr: 'Değişen dosya', de: 'Geänderte Dateien' },
+  retained: { en: 'Retained files', tr: 'Korunan dosya', de: 'Beibehaltene Dateien' },
+  preserved: { en: 'Source preserved', tr: 'Korunan kaynak', de: 'Quelle bewahrt' },
+  scope: { en: 'Change scope', tr: 'Değişiklik kapsamı', de: 'Änderungsumfang' },
+  note: { en: 'Note', tr: 'Not', de: 'Hinweis' },
 };
 
 /* ── Bounds ────────────────────────────────────────────────────────────────────── */
