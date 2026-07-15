@@ -7,6 +7,7 @@ import {
   Plug, FileText, Globe, ChevronDown, Check,
 } from 'lucide-react';
 import { useLanguageStore } from '@/stores/languageStore';
+import { useOwnerMode } from '@/hooks/useOwnerMode';
 
 /* ── Extension submenus (UI placeholders for now) ────────────────────── */
 const PLUGIN_ITEMS = [
@@ -73,6 +74,7 @@ export default function ComposerTools({
   disabled,
 }: ComposerToolsProps) {
   const { t } = useLanguageStore();
+  const { isOwner } = useOwnerMode();
   const [open, setOpen] = useState(false);
   // Which extension submenu is expanded (Plugins / Skills / Web search).
   const [submenu, setSubmenu] = useState<'plugins' | 'skills' | 'websearch' | null>(null);
@@ -225,57 +227,64 @@ export default function ComposerTools({
               </div>
               )}
 
-              {/* Extensions — Plugins / Skills / Web search, each with a
-                  nested dark submenu panel. UI-only placeholders for now. */}
+              {/* Extensions — Web search (all users) + owner-only Plugins / Skills.
+                  Phase 14A — Plugins and Skills are unfinished launch surfaces (UI-only
+                  placeholders); they are gated to the owner via the existing useOwnerMode
+                  authority so normal users never see these dead submenus. Web search is a
+                  real control and stays visible to everyone. */}
               <div>
                 <div className="text-[9px] font-semibold text-[#94A3B8] uppercase tracking-wider px-2 mb-1">
                   Extensions
                 </div>
                 <div className="space-y-0.5">
-                  {/* Plugins */}
-                  <button
-                    type="button"
-                    onClick={() => setSubmenu((s) => (s === 'plugins' ? null : 'plugins'))}
-                    aria-expanded={submenu === 'plugins'}
-                    className="w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-all duration-150 hover:bg-white/[0.03]"
-                  >
-                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white/[0.03] border border-white/[0.04]">
-                      <Plug className="h-3 w-3 text-[#94A3B8]" />
-                    </div>
-                    <div className="min-w-0 flex-1 text-[11px] font-medium text-slate-300">Plugins</div>
-                    <ChevronDown className={`h-3 w-3 text-[#94A3B8] transition-transform ${submenu === 'plugins' ? 'rotate-180' : ''}`} />
-                  </button>
-                  {submenu === 'plugins' && (
-                    <div className="ml-8 mr-1 mb-1 mt-0.5 rounded-lg border border-white/[0.05] bg-black/25 p-1 space-y-0.5">
-                      {PLUGIN_ITEMS.map((it) => (
-                        <button key={it} type="button" className="w-full text-left rounded-md px-2 py-1.5 text-[11px] text-[#CBD5E1] hover:bg-white/[0.05] transition-colors">
-                          {it}
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                  {isOwner && (
+                    <>
+                      {/* Plugins */}
+                      <button
+                        type="button"
+                        onClick={() => setSubmenu((s) => (s === 'plugins' ? null : 'plugins'))}
+                        aria-expanded={submenu === 'plugins'}
+                        className="w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-all duration-150 hover:bg-white/[0.03]"
+                      >
+                        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white/[0.03] border border-white/[0.04]">
+                          <Plug className="h-3 w-3 text-[#94A3B8]" />
+                        </div>
+                        <div className="min-w-0 flex-1 text-[11px] font-medium text-slate-300">Plugins</div>
+                        <ChevronDown className={`h-3 w-3 text-[#94A3B8] transition-transform ${submenu === 'plugins' ? 'rotate-180' : ''}`} />
+                      </button>
+                      {submenu === 'plugins' && (
+                        <div className="ml-8 mr-1 mb-1 mt-0.5 rounded-lg border border-white/[0.05] bg-black/25 p-1 space-y-0.5">
+                          {PLUGIN_ITEMS.map((it) => (
+                            <button key={it} type="button" className="w-full text-left rounded-md px-2 py-1.5 text-[11px] text-[#CBD5E1] hover:bg-white/[0.05] transition-colors">
+                              {it}
+                            </button>
+                          ))}
+                        </div>
+                      )}
 
-                  {/* Skills */}
-                  <button
-                    type="button"
-                    onClick={() => setSubmenu((s) => (s === 'skills' ? null : 'skills'))}
-                    aria-expanded={submenu === 'skills'}
-                    className="w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-all duration-150 hover:bg-white/[0.03]"
-                  >
-                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white/[0.03] border border-white/[0.04]">
-                      <FileText className="h-3 w-3 text-[#94A3B8]" />
-                    </div>
-                    <div className="min-w-0 flex-1 text-[11px] font-medium text-slate-300">Skills</div>
-                    <ChevronDown className={`h-3 w-3 text-[#94A3B8] transition-transform ${submenu === 'skills' ? 'rotate-180' : ''}`} />
-                  </button>
-                  {submenu === 'skills' && (
-                    <div className="ml-8 mr-1 mb-1 mt-0.5 rounded-lg border border-white/[0.05] bg-black/25 p-1 space-y-0.5">
-                      {SKILL_ITEMS.map((it) => (
-                        <button key={it} type="button" className="w-full text-left rounded-md px-2 py-1.5 text-[11px] text-[#CBD5E1] hover:bg-white/[0.05] transition-colors">
-                          {it}
-                        </button>
-                      ))}
-                    </div>
+                      {/* Skills */}
+                      <button
+                        type="button"
+                        onClick={() => setSubmenu((s) => (s === 'skills' ? null : 'skills'))}
+                        aria-expanded={submenu === 'skills'}
+                        className="w-full flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-all duration-150 hover:bg-white/[0.03]"
+                      >
+                        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white/[0.03] border border-white/[0.04]">
+                          <FileText className="h-3 w-3 text-[#94A3B8]" />
+                        </div>
+                        <div className="min-w-0 flex-1 text-[11px] font-medium text-slate-300">Skills</div>
+                        <ChevronDown className={`h-3 w-3 text-[#94A3B8] transition-transform ${submenu === 'skills' ? 'rotate-180' : ''}`} />
+                      </button>
+                      {submenu === 'skills' && (
+                        <div className="ml-8 mr-1 mb-1 mt-0.5 rounded-lg border border-white/[0.05] bg-black/25 p-1 space-y-0.5">
+                          {SKILL_ITEMS.map((it) => (
+                            <button key={it} type="button" className="w-full text-left rounded-md px-2 py-1.5 text-[11px] text-[#CBD5E1] hover:bg-white/[0.05] transition-colors">
+                              {it}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </>
                   )}
 
                   {/* Web search */}

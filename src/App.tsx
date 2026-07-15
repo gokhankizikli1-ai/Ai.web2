@@ -155,7 +155,13 @@ export default function App() {
         <Route path="/tools/website-analyzer" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><AnimatedRoute><WebsiteAnalyzer /></AnimatedRoute></ProtectedRoute>} />
         <Route path="/tools/website-builder" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><AnimatedRoute><WebsiteBuilder /></AnimatedRoute></ProtectedRoute>} />
         <Route path="/tools/app-builder" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><AnimatedRoute><AppBuilder /></AnimatedRoute></ProtectedRoute>} />
-        <Route path="/tools/game-builder" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><AnimatedRoute><GameBuilder /></AnimatedRoute></ProtectedRoute>} />
+        {/* Phase 14A — Game Builder is an unfinished launch surface: gate the authoritative
+             client screen behind OwnerRoute (same guard already used by startup/ecommerce/
+             agents). A normal user reaching this via any launch point, a direct URL, or a
+             restored route is safely returned to /chat; an owner session ending while this
+             screen is open re-renders and falls back without a refresh. Frontend gating only —
+             backend authorization is unchanged and reviewed separately in the security audit. */}
+        <Route path="/tools/game-builder" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><OwnerRoute><AnimatedRoute><GameBuilder /></AnimatedRoute></OwnerRoute></ProtectedRoute>} />
         <Route path="/tools/brand-builder" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><AnimatedRoute><BrandBuilder /></AnimatedRoute></ProtectedRoute>} />
         <Route path="/tools/viral-content" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><AnimatedRoute><ViralContent /></AnimatedRoute></ProtectedRoute>} />
         <Route path="/tools/knowledge-vault" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><AnimatedRoute><KnowledgeVault /></AnimatedRoute></ProtectedRoute>} />

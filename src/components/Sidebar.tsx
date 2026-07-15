@@ -272,44 +272,49 @@ export default function Sidebar({
               <Plus className="h-4 w-4" /> {t('newChat')}
             </motion.button>
 
-            {/* ═══ 2. PRIMARY NAV — Projects · Plugins · Skills · More ═══
-                 Larger, cleaner rows. Plugins / Skills / the More children
-                 (Korvix Code, Korvix Work) are UI placeholders for now. */}
+            {/* ═══ 2. PRIMARY NAV — Projects (all users) · owner-only launch surfaces ═══
+                 Phase 14A — Plugins, Skills and the entire More group (its only children
+                 are the unfinished Korvix Code / Korvix Work placeholders) are gated to the
+                 owner via the existing useOwnerMode authority. Normal users never see these
+                 dead placeholders in their DOM at all (no CSS-only hide). Projects stays
+                 visible to everyone; Agents was already owner-gated. */}
             <div className="space-y-0.5">
               <button type="button" onClick={() => navigate('/projects')} className={navRow}>
                 <FolderOpen className="h-4 w-4 shrink-0 text-white/50 group-hover:text-white/85 transition-colors" />
                 <span>{t('projects') || 'Projects'}</span>
               </button>
               {isOwner && (
-                <button type="button" onClick={() => navigate('/agents')} className={navRow}>
-                  <Bot className="h-4 w-4 shrink-0 text-[#60A5FA]" />
-                  <span>{t('agents')}</span>
-                </button>
-              )}
-              <button type="button" className={navRow}>
-                <Plug className="h-4 w-4 shrink-0 text-white/50 group-hover:text-white/85 transition-colors" />
-                <span>Plugins</span>
-              </button>
-              <button type="button" className={navRow}>
-                <FileText className="h-4 w-4 shrink-0 text-white/50 group-hover:text-white/85 transition-colors" />
-                <span>Skills</span>
-              </button>
-              <button type="button" onClick={() => setMoreOpen((v) => !v)} aria-expanded={moreOpen} className={navRow}>
-                <MoreHorizontal className="h-4 w-4 shrink-0 text-white/50 group-hover:text-white/85 transition-colors" />
-                <span>More</span>
-                <ChevronDown className={`ml-auto h-3.5 w-3.5 text-white/35 transition-transform ${moreOpen ? 'rotate-180' : ''}`} />
-              </button>
-              {moreOpen && (
-                <div className="ml-4 space-y-0.5" style={{ borderLeft: '1px solid rgba(255,255,255,0.05)' }}>
-                  <button type="button" className={navSub}>
-                    <Code2 className="h-3.5 w-3.5 shrink-0 text-white/40" />
-                    <span>Korvix Code</span>
+                <>
+                  <button type="button" onClick={() => navigate('/agents')} className={navRow}>
+                    <Bot className="h-4 w-4 shrink-0 text-[#60A5FA]" />
+                    <span>{t('agents')}</span>
                   </button>
-                  <button type="button" className={navSub}>
-                    <Briefcase className="h-3.5 w-3.5 shrink-0 text-white/40" />
-                    <span>Korvix Work</span>
+                  <button type="button" className={navRow}>
+                    <Plug className="h-4 w-4 shrink-0 text-white/50 group-hover:text-white/85 transition-colors" />
+                    <span>Plugins</span>
                   </button>
-                </div>
+                  <button type="button" className={navRow}>
+                    <FileText className="h-4 w-4 shrink-0 text-white/50 group-hover:text-white/85 transition-colors" />
+                    <span>Skills</span>
+                  </button>
+                  <button type="button" onClick={() => setMoreOpen((v) => !v)} aria-expanded={moreOpen} className={navRow}>
+                    <MoreHorizontal className="h-4 w-4 shrink-0 text-white/50 group-hover:text-white/85 transition-colors" />
+                    <span>More</span>
+                    <ChevronDown className={`ml-auto h-3.5 w-3.5 text-white/35 transition-transform ${moreOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {moreOpen && (
+                    <div className="ml-4 space-y-0.5" style={{ borderLeft: '1px solid rgba(255,255,255,0.05)' }}>
+                      <button type="button" className={navSub}>
+                        <Code2 className="h-3.5 w-3.5 shrink-0 text-white/40" />
+                        <span>Korvix Code</span>
+                      </button>
+                      <button type="button" className={navSub}>
+                        <Briefcase className="h-3.5 w-3.5 shrink-0 text-white/40" />
+                        <span>Korvix Work</span>
+                      </button>
+                    </div>
+                  )}
+                </>
               )}
             </div>
 

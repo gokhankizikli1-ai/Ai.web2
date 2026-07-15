@@ -1,5 +1,6 @@
 import { Globe, Smartphone, Gamepad2, FileText, ShoppingBag, X } from 'lucide-react';
 import { useLanguageStore } from '@/stores/languageStore';
+import { useOwnerMode } from '@/hooks/useOwnerMode';
 import {
   type BuilderMode, PRIMARY_MODES, SECONDARY_MODES,
 } from '@/lib/builderMode';
@@ -33,6 +34,9 @@ export function WebBuildModeChips({
   onSelect: (mode: BuilderMode) => void;
 }) {
   const { lang } = useLanguageStore();
+  const { isOwner } = useOwnerMode();
+  // Phase 14A — the unfinished Game surface is owner-only; drop its primary chip for others.
+  const primaryModes = PRIMARY_MODES.filter((m) => m !== 'game' || isOwner);
   const chip = (mode: BuilderMode, secondary: boolean) => {
     const { icon: Icon } = META[mode];
     const active = selected === mode;
@@ -55,7 +59,7 @@ export function WebBuildModeChips({
   };
   return (
     <div className="mb-2.5 flex flex-wrap items-center justify-center gap-1.5">
-      {PRIMARY_MODES.map((m) => chip(m, false))}
+      {primaryModes.map((m) => chip(m, false))}
       <span className="mx-0.5 h-3.5 w-px bg-white/[0.08]" aria-hidden="true" />
       {SECONDARY_MODES.map((m) => chip(m, true))}
     </div>
