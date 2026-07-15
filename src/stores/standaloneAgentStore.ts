@@ -1,6 +1,10 @@
 import type { ProjectAgent, AgentMessage } from '@/types/projects';
+import { scopedKey, migrateGlobalToScope } from '@/lib/storageScope';
 
+// Phase 14D — namespaced per identity; legacy global data is claimed into the
+// current scope once. Logout no longer wipes this (isolation is structural).
 const STANDALONE_AGENTS_KEY = 'korvix_standalone_agents';
+function standaloneAgentsKey(): string { return scopedKey(STANDALONE_AGENTS_KEY); }
 
 export interface StandaloneAgent extends ProjectAgent {
   projectId?: string;
@@ -14,14 +18,15 @@ export interface StandaloneAgent extends ProjectAgent {
 /* ─── Load standalone agents from localStorage ─── */
 export function loadStandaloneAgents(): StandaloneAgent[] {
   try {
-    const stored = localStorage.getItem(STANDALONE_AGENTS_KEY);
+    migrateGlobalToScope(STANDALONE_AGENTS_KEY);
+    const stored = localStorage.getItem(standaloneAgentsKey());
     if (stored) return JSON.parse(stored);
   } catch { /* ignore */ }
   return [];
 }
 
 function saveStandaloneAgents(agents: StandaloneAgent[]) {
-  localStorage.setItem(STANDALONE_AGENTS_KEY, JSON.stringify(agents));
+  try { localStorage.setItem(standaloneAgentsKey(), JSON.stringify(agents)); } catch { /* ignore */ }
 }
 
 export function getStandaloneAgents(): StandaloneAgent[] {

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { migrateGlobalToScope } from '@/lib/storageScope';
 
 /* ═══════════════════════════════════════════
    AUTH TYPES
@@ -114,91 +115,39 @@ function clearToken(): void {
   catch { /* ignore */ }
 }
 
-/* ─── User-scoped storage wipe — P0 cross-account leak fix ────────────────
+/* ─── Auth-boundary cleanup — Phase 14D (P0 data-loss + isolation fix) ─────
  *
- * SECURITY: in production 2026-06-28 we observed account B viewing
- * account A's chat history on the same browser. Root cause: localStorage
- * keys that hold user-owned DATA (not just auth tokens) survived logout,
- * and the next login on the same browser inherited the previous account's
- * state. The leaking keys were never registered in the logout wipe list.
+ * SECURITY + DATA SAFETY: earlier builds called a broad `wipeUserScopedStorage()`
+ * that removed user-OWNED DATA (chat history, projects, project agents/tasks,
+ * standalone agents, saved prompts) BEFORE every login/signup/OAuth attempt AND
+ * on logout. Two P0 problems:
+ *   1. A failed login, network blip or deploy could ERASE a user's data before
+ *      any new identity was even confirmed.
+ *   2. Logout DESTROYED data instead of merely hiding it, so the same user did
+ *      not get their data back on re-login.
  *
- * Two contributing FE causes, both fixed here:
- *   1. The chat history (`korvix_sessions`, `korvix_active_session_id`,
- *      `korvix_tab_sessions`) and project state
- *      (`korvix_projects`, `korvix_project_agents_*`, `korvix_project_tasks_*`,
- *      `korvix_standalone_agents`, `korvix_saved_prompts`) are written by
- *      hooks/stores without any per-user scoping. They persisted across
- *      logout, so the next logged-in user's UI rendered the previous
- *      user's data.
- *   2. The `korvix_user_id` localStorage key is the browser's stable
- *      GUEST nonce — also used as `req.user_id` for backend calls that
- *      don't enforce JWT-bound identity. If it survived logout, post-
- *      logout traffic and any next-user fallback paths shared the same
- *      backend identity as the prior user's guest tail. Rotating to a
- *      fresh nonce on logout closes that channel.
+ * Both are fixed by making isolation STRUCTURAL rather than destructive: chat,
+ * projects, standalone agents and saved prompts are now namespaced per identity
+ * (see `src/lib/storageScope.ts`) — `user_<auth_id>` / `guest_<nonce>`. The next
+ * account simply reads different keys, and same-user re-login reads the same
+ * keys, so NO user data is ever wiped at an auth boundary.
  *
- * USER_SCOPED_KEYS — explicit allowlist of localStorage keys to clear
- * on logout / user-switch login. Anything user-owned (data, identity,
- * cached UI state derived from identity) goes here.
+ * This cleanup therefore clears ONLY the AUTH identity + owner artifacts and
+ * rotates the guest nonce (so post-logout backend traffic doesn't reuse the
+ * previous account's guest tail). It runs on LOGOUT ONLY — never before a login
+ * attempt, so a failed/temporarily-unavailable login never disturbs stored data.
  *
- * USER_SCOPED_PREFIXES — for keys with per-project / per-resource
- * suffixes (e.g. `korvix_project_agents_<project_id>`). We enumerate
- * localStorage and remove every key starting with one of these.
- *
- * PRESERVED on logout: UI preferences that aren't user-data (timezone,
- * experimental flags, theme, guest-badge dismissal, debug flag,
- * trading-timeframe). They're explicit-by-omission. */
-
-const USER_SCOPED_KEYS = [
-  // ── Auth identity ──────────────────────────────────────────────────────
+ * Never `localStorage.clear()` — it would nuke unrelated preferences (theme,
+ * timezone, experimental flags). PRESERVED (explicit-by-omission): all
+ * user-owned data + UI preferences. */
+const AUTH_ARTIFACT_KEYS = [
   'korvix-auth',                  // zustand persisted user blob
   TOKEN_KEY,                      // 'korvix_access_token' — JWT
   'korvix_owner_token',           // shared-secret owner unlock
   'korvix_oauth_response',        // in-flight redirect callback
-  // ── User-scoped UI state derived from identity ─────────────────────────
-  'korvix_owner_welcome_shown',
+  'korvix_owner_welcome_shown',   // owner UI state derived from identity
   'korvix_owner_greeting_shown',
-  // ── Legacy unsuffixed chat-history keys (PR-177 wipe list) ─────────────
-  // After the 2026-06-28 per-user namespacing change in useChat.ts, the
-  // active keys are now `korvix_sessions_<scope>` and
-  // `korvix_active_session_id_<scope>` (handled by the *_PREFIX_ALL_USERS
-  // list below). These unsuffixed entries still get wiped on logout so
-  // any data left over from pre-PR builds doesn't linger as a global
-  // leak — but the NEW per-user keys are NOT wiped, so same-user
-  // re-login restores their own history.
-  'korvix_sessions',
-  'korvix_active_session_id',
-  'korvix_tab_sessions',
-  // ── Project / agent / task state ───────────────────────────────────────
-  'korvix_projects',
-  'korvix_standalone_agents',
-  'korvix_projects_migrated_v1',  // migration flag — re-run for the new user
-  // ── Saved prompts (per-user content) ───────────────────────────────────
-  'korvix_saved_prompts',
 ];
-
-const USER_SCOPED_PREFIXES = [
-  'korvix_project_agents_',       // per-project agent cache
-  'korvix_project_tasks_',        // per-project task cache
-];
-
-// Per-user-namespaced keys that we explicitly DO NOT wipe on logout —
-// isolation is structural (each user has their own key) and the goal
-// is to RESTORE the same user's history on re-login. Listed here for
-// future readers / audits: if you add a new per-user-namespaced
-// store, add its prefix here so the rationale stays documented.
-//
-// useChat.ts derives keys via `currentStorageScope()` → either
-// `user_<auth_user_id>` for authenticated users or
-// `guest_<browser_nonce>` for guests. Logging out as A then in as B
-// changes the scope; B reads from its own key and never sees A's
-// history. Same-user logout/login uses the SAME scope and history
-// persists.
-const _PERSISTED_PER_USER_PREFIXES = [
-  'korvix_sessions_',             // per-user chat history
-  'korvix_active_session_id_',    // per-user active session
-];
-void _PERSISTED_PER_USER_PREFIXES;   // documentation-only export
 
 /** Rotate the browser's guest identifier so post-logout traffic uses a
  *  fresh backend identity, not the previous account's guest tail.
@@ -215,36 +164,15 @@ function rotateGuestNonce(): string {
   return fresh;
 }
 
-/** Wipe every localStorage key that carries user-owned data or identity.
- *  Also rotates the guest nonce. Idempotent + storage-failure tolerant.
- *
- *  Call this on EVERY auth boundary:
- *    - logout()
- *    - login/signup/loginWithGoogle when the new user differs from the
- *      previously persisted one (handles the "log in as B without
- *      explicit logout from A" case).
- *
- *  Why not just `localStorage.clear()`: would also nuke user preferences
- *  (theme, timezone, experimental flags) that aren't user-owned data
- *  and degrade UX for the legitimate next user. Allowlist is safer. */
-function wipeUserScopedStorage(): void {
-  for (const k of USER_SCOPED_KEYS) {
+/** Clear ONLY auth identity + owner artifacts and rotate the guest nonce.
+ *  User-owned DATA is per-identity namespaced (storageScope.ts) and is
+ *  intentionally PRESERVED — restored on same-user re-login, invisible to other
+ *  accounts. Idempotent + storage-failure tolerant. Called on LOGOUT only. */
+function clearAuthArtifacts(): void {
+  for (const k of AUTH_ARTIFACT_KEYS) {
     try { localStorage.removeItem(k); } catch { /* ignore */ }
     try { sessionStorage.removeItem(k); } catch { /* ignore */ }
   }
-  // Enumerate prefix-suffixed keys. localStorage.length + key(i) is the
-  // only way to iterate; we collect first to avoid mutating mid-enumeration.
-  try {
-    const matched: string[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const k = localStorage.key(i);
-      if (!k) continue;
-      if (USER_SCOPED_PREFIXES.some(p => k.startsWith(p))) matched.push(k);
-    }
-    for (const k of matched) {
-      try { localStorage.removeItem(k); } catch { /* ignore */ }
-    }
-  } catch { /* private mode / quota — best-effort */ }
   rotateGuestNonce();
 }
 
@@ -428,13 +356,11 @@ export const useAuthStore = create<AuthState>()(
 
       login: async (email: string, password: string) => {
         set({ isLoading: true, error: null });
-        // SECURITY: defensive wipe BEFORE we accept any token. If a
-        // previous account's data lingers in localStorage (e.g. user
-        // logged into A, closed tab without logout, opened later and
-        // logged into B), apiLogin's success would otherwise reveal A's
-        // chats/projects to B. wipeUserScopedStorage is idempotent —
-        // safe to run on every login attempt, succeed-or-fail.
-        wipeUserScopedStorage();
+        // Phase 14D: NO pre-verification wipe. A failed/temporarily-unavailable
+        // login must never disturb stored data. Cross-account isolation is
+        // structural (per-identity keys, storageScope.ts): on success the store
+        // switches scope to the new user, who reads their OWN keys and never
+        // sees the previous account's data.
         const { user, error } = await apiLogin(email, password);
         if (user) {
           set({ user, isAuthenticated: true, isLoading: false, error: null });
@@ -447,9 +373,8 @@ export const useAuthStore = create<AuthState>()(
 
       signup: async (email: string, password: string, name: string) => {
         set({ isLoading: true, error: null });
-        // SECURITY: same rationale as login — wipe before we mint a
-        // new identity so the fresh account starts on a clean slate.
-        wipeUserScopedStorage();
+        // Phase 14D: no pre-verification wipe (see login). The new identity's
+        // per-scope keys start empty; nothing needs to be destroyed first.
         const { user, error } = await apiSignup(email, password, name);
         if (user) {
           set({ user, isAuthenticated: true, isLoading: false, error: null });
@@ -462,8 +387,7 @@ export const useAuthStore = create<AuthState>()(
 
       loginWithGoogle: async (idToken: string) => {
         set({ isLoading: true, error: null });
-        // SECURITY: same rationale as login.
-        wipeUserScopedStorage();
+        // Phase 14D: no pre-verification wipe (see login).
         const { user, error } = await apiGoogle(idToken);
         if (user) {
           set({ user, isAuthenticated: true, isLoading: false, error: null });
@@ -478,12 +402,11 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true });
         await apiLogout();
         set({ user: null, isAuthenticated: false, isLoading: false, error: null });
-        // SECURITY: wipe ALL user-scoped data (chat history, projects,
-        // agents, tasks, saved prompts, owner state) and rotate the
-        // guest nonce so the next account on this browser starts on a
-        // clean backend identity. See USER_SCOPED_KEYS comment for the
-        // full inventory + rationale.
-        wipeUserScopedStorage();
+        // Phase 14D: clear ONLY auth identity + owner artifacts and rotate the
+        // guest nonce. User-owned data (chat, projects, agents, tasks, saved
+        // prompts) is per-identity namespaced and PRESERVED — this same user
+        // gets it back on re-login, and other accounts never see it.
+        clearAuthArtifacts();
         notifyAuthChanged(null);
       },
 
@@ -623,4 +546,19 @@ function notifyAuthChanged(user?: AuthUser | null): void {
  * touching localStorage directly so the storage key stays encapsulated. */
 export function getAccessToken(): string | null {
   return readToken();
+}
+
+/* ─── Phase 14D — boot-time legacy-global claim ──────────────────────────
+ * authStore is imported by App at the ROOT, so this runs once at app boot for
+ * EVERY route, before any in-app login/logout can switch accounts. It claims
+ * the single-key legacy GLOBAL user-data (standalone agents, saved prompts)
+ * into the boot identity's scope and removes the global, so a later account in
+ * the same session can never inherit it. (projectStore does its own multi-key
+ * claim at its module load; chat was namespaced separately in a prior fix.)
+ * Best-effort: migrateGlobalToScope is fully storage-failure tolerant. */
+if (typeof window !== 'undefined') {
+  try {
+    migrateGlobalToScope('korvix_standalone_agents');
+    migrateGlobalToScope('korvix_saved_prompts');
+  } catch { /* private mode — skip */ }
 }

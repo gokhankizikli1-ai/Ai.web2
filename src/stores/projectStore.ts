@@ -1,9 +1,47 @@
 import type { Project, ProjectAgent, ProjectTask } from '@/types/projects';
+import { currentStorageScope, scopedKey } from '@/lib/storageScope';
 
 const STORAGE_KEY = 'korvix_projects';
 const AGENTS_KEY = 'korvix_project_agents';
 const TASKS_KEY = 'korvix_project_tasks';
 const MIGRATION_FLAG = 'korvix_projects_migrated_v1';
+
+/* ─── Phase 14D — per-identity local isolation ───────────────────────────────
+ * Projects, per-project agents and per-project tasks are now namespaced by the
+ * current identity (`user_<id>` / `guest_<nonce>`), exactly like chat history.
+ * Isolation is structural: logout never destroys this data (see authStore), and
+ * account B reads its own keys instead of inheriting account A's. Existing GLOBAL
+ * data is migrated into the current scope once and the global key removed so a
+ * second account can't inherit it. */
+function projectsKey(): string { return scopedKey(STORAGE_KEY); }
+function agentsKey(projectId: string): string { return `${AGENTS_KEY}_${currentStorageScope()}_${projectId}`; }
+function tasksKey(projectId: string): string { return `${TASKS_KEY}_${currentStorageScope()}_${projectId}`; }
+
+const _migratedScopes = new Set<string>();
+/** One-time-per-scope claim of legacy GLOBAL project data into the current scope. */
+function ensureScopeMigrated(): void {
+  const scope = currentStorageScope();
+  if (_migratedScopes.has(scope)) return;
+  _migratedScopes.add(scope);
+  try {
+    if (localStorage.getItem(projectsKey()) !== null) return; // already scoped
+    const globalProjects = localStorage.getItem(STORAGE_KEY);
+    if (globalProjects === null) return;                      // nothing legacy
+    localStorage.setItem(projectsKey(), globalProjects);
+    let ids: string[] = [];
+    try {
+      ids = (JSON.parse(globalProjects) as Array<{ id?: string }>)
+        .map((p) => p?.id).filter((x): x is string => typeof x === 'string' && !!x);
+    } catch { ids = []; }
+    for (const pid of ids) {
+      const ga = localStorage.getItem(`${AGENTS_KEY}_${pid}`);
+      if (ga !== null) { try { localStorage.setItem(agentsKey(pid), ga); localStorage.removeItem(`${AGENTS_KEY}_${pid}`); } catch { /* ignore */ } }
+      const gt = localStorage.getItem(`${TASKS_KEY}_${pid}`);
+      if (gt !== null) { try { localStorage.setItem(tasksKey(pid), gt); localStorage.removeItem(`${TASKS_KEY}_${pid}`); } catch { /* ignore */ } }
+    }
+    localStorage.removeItem(STORAGE_KEY);
+  } catch { /* private mode / quota — skip; reads fall back to empty */ }
+}
 
 /* ═══════════════════════════════════════════════════════════════════
    BACKEND MIRROR (Phase 2 — opt-in via the backend ENABLE_PROJECTS flag)
@@ -60,15 +98,17 @@ async function apiSafe<T>(fn: () => Promise<T>): Promise<T | null> {
 
 /* ─── Load user-created projects from localStorage ─── */
 function loadProjects(): Project[] {
+  ensureScopeMigrated();
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = localStorage.getItem(projectsKey());
     if (stored) return JSON.parse(stored);
   } catch { /* ignore */ }
   return [];
 }
 
 function saveProjects(projects: Project[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
+  ensureScopeMigrated();
+  try { localStorage.setItem(projectsKey(), JSON.stringify(projects)); } catch { /* ignore */ }
 }
 
 export function getProjects(): Project[] {
@@ -122,8 +162,8 @@ export function updateProject(id: string, updates: Partial<Project>) {
 export function deleteProject(id: string) {
   const projects = loadProjects().filter(p => p.id !== id);
   saveProjects(projects);
-  try { localStorage.removeItem(`${AGENTS_KEY}_${id}`); } catch { /* ignore */ }
-  try { localStorage.removeItem(`${TASKS_KEY}_${id}`); } catch { /* ignore */ }
+  try { localStorage.removeItem(agentsKey(id)); } catch { /* ignore */ }
+  try { localStorage.removeItem(tasksKey(id)); } catch { /* ignore */ }
   apiSafe(async () => {
     await fetch(`${getApiBase()}/projects/${id}`, { method: 'DELETE' });
   });
@@ -175,15 +215,17 @@ export async function addProjectMemory(
 
 /* ─── Project Agents ─── */
 function loadAgents(projectId: string): ProjectAgent[] {
+  ensureScopeMigrated();
   try {
-    const stored = localStorage.getItem(`${AGENTS_KEY}_${projectId}`);
+    const stored = localStorage.getItem(agentsKey(projectId));
     if (stored) return JSON.parse(stored);
   } catch { /* ignore */ }
   return [];
 }
 
 function saveAgents(projectId: string, agents: ProjectAgent[]) {
-  localStorage.setItem(`${AGENTS_KEY}_${projectId}`, JSON.stringify(agents));
+  ensureScopeMigrated();
+  try { localStorage.setItem(agentsKey(projectId), JSON.stringify(agents)); } catch { /* ignore */ }
 }
 
 export function getProjectAgents(projectId: string): ProjectAgent[] {
@@ -315,15 +357,17 @@ export function updateAgentMessage(
 
 /* ─── Project Tasks ─── */
 function loadTasks(projectId: string): ProjectTask[] {
+  ensureScopeMigrated();
   try {
-    const stored = localStorage.getItem(`${TASKS_KEY}_${projectId}`);
+    const stored = localStorage.getItem(tasksKey(projectId));
     if (stored) return JSON.parse(stored);
   } catch { /* ignore */ }
   return [];
 }
 
 function saveTasks(projectId: string, tasks: ProjectTask[]) {
-  localStorage.setItem(`${TASKS_KEY}_${projectId}`, JSON.stringify(tasks));
+  ensureScopeMigrated();
+  try { localStorage.setItem(tasksKey(projectId), JSON.stringify(tasks)); } catch { /* ignore */ }
 }
 
 export function getProjectTasks(projectId: string): ProjectTask[] {
@@ -498,5 +542,10 @@ async function hydrateAndBackfill(): Promise<void> {
 // Browser-only side-effect. Wrapped in a typeof check so SSR/Vitest
 // imports don't trip. Fire-and-forget — never blocks first paint.
 if (typeof window !== 'undefined') {
+  // Phase 14D — claim legacy GLOBAL project data into the boot identity's scope
+  // SYNCHRONOUSLY at load (independent of the backend hydrate, which is skipped
+  // when the backend is unreachable). This removes the global key before any
+  // later account can be selected in the same session, so it can never leak.
+  try { ensureScopeMigrated(); } catch { /* private mode — skip */ }
   setTimeout(() => { hydrateAndBackfill().catch(() => { /* offline */ }); }, 0);
 }
