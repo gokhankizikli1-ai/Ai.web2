@@ -810,4 +810,12 @@ export const de: Record<string, string> = {
   stockApplyImage: 'Bild übernehmen',
   stockCancelPreview: 'Vorschau abbrechen',
   stockAppliedNote: 'Nur auf diese Vorschau angewendet. Das Speichern im Projekt folgt als Nächstes.',
+
+  /* ── Kandidaten-Vorschau Visual-Edit-Bridge (Phase 14K.3) ── */
+  veStarting: 'Visuelle Auswahl wird gestartet',
+  veUnavailable: 'Visuelle Auswahl ist in dieser Vorschau nicht verfügbar',
+  vePreviewReloaded: 'Vorschau neu geladen; Auswahl aufgehoben',
+  veSelectedGone: 'Ausgewähltes Element existiert nicht mehr',
+  veImageNotReplaceable: 'Dieses Bild kann in dieser Vorschau nicht ersetzt werden',
+  veTempRestored: 'Temporäre Vorschau wiederhergestellt',
 };

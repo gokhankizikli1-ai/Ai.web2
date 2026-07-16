@@ -63,6 +63,12 @@ export interface VisualImageTarget {
   aspectRatio?: number;
   objectFit?: string;
   sourceAttribute: 'src' | 'background-image';
+  /** Phase 14K.3 — set by the Candidate Preview bridge: is the image replaceable? */
+  canPreviewReplace?: boolean;
+  /** Phase 14K.3 — honest reason when a detected image can't be replaced. */
+  limitationReason?: string;
+  /** Phase 14K.3 — the selection nodeId this image belongs to (bridge routing). */
+  nodeId?: string;
 }
 
 /** Below this rendered side (px) an image is treated as an icon/avatar/pixel. */

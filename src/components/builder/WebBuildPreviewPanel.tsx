@@ -8,6 +8,7 @@ import VisualSelectionPill from '@/components/builder/VisualSelectionPill';
 import StockImagePicker from '@/components/builder/StockImagePicker';
 import type { VisualSelection, VisualImageTarget } from '@/lib/visualSelection';
 import { trackStockDownload, type StockImageResult } from '@/lib/stockImages';
+import { useCandidateVisualEditBridge } from '@/hooks/useCandidateVisualEditBridge';
 import { useOwnerMode } from '@/hooks/useOwnerMode';
 import { useLanguageStore } from '@/stores/languageStore';
 import { openPreviewInNewTab, currentReturnTo } from '@/lib/webBuildPreviewStash';
@@ -116,42 +117,85 @@ export default function WebBuildPreviewPanel({
   const candidateKey = `${runId || ''}|${candidate?.source || 'none'}|${candidate?.files?.length ?? 0}`;
   useEffect(() => { setOwnerSel(undefined); setRuntimeSnapshot(null); }, [candidateKey]);
 
-  // ── Visual Edit (Phase 14K.1) — selection foundation for the safe-fallback
-  // preview only. Hooks live here (before any early return) to respect the rules
-  // of hooks. A new build / revision (resetKey) clears mode + selection so a
-  // target from one build never lingers into another.
-  const [selectEnabled, setSelectEnabled] = useState(false);
+  const mode: WebBuildPreviewMode = candidate
+    ? resolvePreviewMode(candidate, isOwner, ownerSel)
+    : (previewSource === 'model-native-sandbox' && legacyFiles.length > 0 ? 'approved-model-native' : 'safe-fallback');
+  const showModelNative = mode === 'approved-model-native' || mode === 'owner-candidate';
+  const isCandidateMode = mode === 'owner-candidate';
+  const candidateActive = showModelNative && nativeFiles.length > 0;
+
+  // ── Visual Edit — UNIFIED selection state (Phase 14K.1 Safe Preview · 14K.3
+  // Candidate Preview). One selection UI serves both preview implementations; the
+  // `selectionSource` records which one currently owns the selection so every
+  // action (search, preview, apply, cancel, clear) routes to the right impl. Hooks
+  // live before any early return. A new build/mode clears BOTH systems so a target
+  // never leaks across previews.
+  type VisualSelectionSource = 'safe-preview' | 'candidate-preview';
+  const [selectEnabled, setSelectEnabled] = useState(false);       // Safe Preview mode
   const [selection, setSelection] = useState<VisualSelection | null>(null);
-  // Phase 14K.2 — image target + stock picker + temporary applied preview.
   const [imageTarget, setImageTarget] = useState<VisualImageTarget | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [applied, setApplied] = useState<StockImageResult | null>(null);
-  const surfaceRef = useRef<VisualSelectHandle>(null);
-  const resetKey = `${runId || ''}|${url}|${items.map((s) => s?.id || '').join(',')}`;
-  useEffect(() => {
-    setSelectEnabled(false); setSelection(null);
-    setImageTarget(null); setPickerOpen(false); setApplied(null);
-  }, [resetKey]);
+  const [selectionSource, setSelectionSource] = useState<VisualSelectionSource | null>(null);
+  const [imgErrorCode, setImgErrorCode] = useState<string | null>(null);
+  const surfaceRef = useRef<VisualSelectHandle>(null);              // Safe Preview live DOM
+  const candidateFrameRef = useRef<HTMLDivElement>(null);          // wraps the Candidate iframe
 
-  // A new / changed selection restores any live preview and resets image state,
+  const resetKey = `${runId || ''}|${url}|${items.map((s) => s?.id || '').join(',')}`;
+
+  const resetSelectionState = () => {
+    setSelection(null); setImageTarget(null); setApplied(null);
+    setPickerOpen(false); setSelectionSource(null); setImgErrorCode(null);
+  };
+
+  // Candidate Preview bridge — drives Visual Select inside the cross-origin Sandpack
+  // iframe over the strict `korvix.visual-edit.v1` postMessage protocol.
+  const bridge = useCandidateVisualEditBridge({
+    active: candidateActive,
+    containerRef: candidateFrameRef,
+    resetKey: `${resetKey}|${mode}|${candidateKey}`,
+    onSelected: (sel, it) => {
+      setSelectionSource('candidate-preview');
+      setApplied(null); setPickerOpen(false); setImgErrorCode(null);
+      setSelection(sel); setImageTarget(it);
+    },
+    onSelectionCleared: () => { resetSelectionState(); },
+    onImageApplied: () => setImgErrorCode(null),
+    onImageRestored: () => setImgErrorCode(null),
+    onError: (code) => setImgErrorCode(code),
+    onReload: () => { resetSelectionState(); },
+  });
+
+  // New build / revision clears Safe Preview mode + all selection state.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { setSelectEnabled(false); resetSelectionState(); }, [resetKey]);
+  // Switching preview mode (Safe ↔ Candidate) clears stale overlays + temp image state.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { setSelectEnabled(false); resetSelectionState(); }, [mode]);
+
+  // A new / changed SAFE selection restores any live preview and resets image state,
   // then re-derives whether the new target is a replaceable photo.
-  const handleSelect = (sel: VisualSelection | null) => {
+  const handleSafeSelect = (sel: VisualSelection | null) => {
     surfaceRef.current?.restoreSelectedImage();
-    setApplied(null);
-    setPickerOpen(false);
+    setApplied(null); setPickerOpen(false); setImgErrorCode(null);
+    setSelectionSource(sel ? 'safe-preview' : null);
     setSelection(sel);
     setImageTarget(sel ? (surfaceRef.current?.getSelectedImageTarget() ?? null) : null);
   };
 
   const clearSelection = () => {
-    surfaceRef.current?.restoreSelectedImage();
-    setApplied(null); setImageTarget(null); setPickerOpen(false); setSelection(null);
-    surfaceRef.current?.clear();
+    if (selectionSource === 'candidate-preview') bridge.clear();
+    else { surfaceRef.current?.restoreSelectedImage(); surfaceRef.current?.clear(); }
+    resetSelectionState();
   };
 
-  // Preview a candidate photo live (temporary). Preload first to avoid a flash of
-  // a broken image, then swap the selected image's source in place.
-  const previewCandidate = (r: StockImageResult | null) => {
+  // Preview a candidate photo live (temporary) in whichever preview owns the selection.
+  const previewSelected = (r: StockImageResult | null) => {
+    if (selectionSource === 'candidate-preview') {
+      if (!r) { bridge.restoreImage(selection?.nodeId); return; }
+      if (selection) bridge.previewImage(selection.nodeId, r);
+      return;
+    }
     const surf = surfaceRef.current;
     if (!surf) return;
     if (!r) { surf.restoreSelectedImage(); return; }
@@ -162,10 +206,14 @@ export default function WebBuildPreviewPanel({
     pre.src = r.previewUrl;
   };
 
-  // Apply keeps the photo in THIS live preview only (never persisted) and fires
-  // the provider's required usage event (Unsplash download tracking).
-  const applyCandidate = (r: StockImageResult) => {
-    surfaceRef.current?.previewSelectedImage(r.previewUrl);
+  // Apply keeps the photo in THIS live preview only (never persisted) and fires the
+  // provider's required usage event (Unsplash download tracking).
+  const applyStock = (r: StockImageResult) => {
+    if (selectionSource === 'candidate-preview') {
+      if (selection) bridge.previewImage(selection.nodeId, r);
+    } else {
+      surfaceRef.current?.previewSelectedImage(r.previewUrl);
+    }
     void trackStockDownload(r);
     setApplied(r);
     setPickerOpen(false);
@@ -173,8 +221,13 @@ export default function WebBuildPreviewPanel({
 
   // Closing the picker without applying: return to the last applied photo if one
   // exists, otherwise restore the exact original image.
-  const closePicker = () => {
+  const closeStockPicker = () => {
     setPickerOpen(false);
+    if (selectionSource === 'candidate-preview') {
+      if (applied && selection) bridge.previewImage(selection.nodeId, applied);
+      else bridge.restoreImage(selection?.nodeId);
+      return;
+    }
     const surf = surfaceRef.current;
     if (!surf) return;
     if (applied) surf.previewSelectedImage(applied.previewUrl);
@@ -183,7 +236,8 @@ export default function WebBuildPreviewPanel({
 
   // Undo an applied preview — back to the original image.
   const cancelApplied = () => {
-    surfaceRef.current?.restoreSelectedImage();
+    if (selectionSource === 'candidate-preview') bridge.restoreImage(selection?.nodeId);
+    else surfaceRef.current?.restoreSelectedImage();
     setApplied(null);
   };
 
@@ -194,11 +248,43 @@ export default function WebBuildPreviewPanel({
     return cleaned ? cleaned.split(' ').slice(0, 5).join(' ') : '';
   };
 
-  const mode: WebBuildPreviewMode = candidate
-    ? resolvePreviewMode(candidate, isOwner, ownerSel)
-    : (previewSource === 'model-native-sandbox' && legacyFiles.length > 0 ? 'approved-model-native' : 'safe-fallback');
-  const showModelNative = mode === 'approved-model-native' || mode === 'owner-candidate';
-  const isCandidateMode = mode === 'owner-candidate';
+  // Can the current selection's image be replaced? Candidate images must be
+  // explicitly marked replaceable by the runtime; Safe images always can.
+  const canReplaceImage = selectionSource === 'candidate-preview'
+    ? !!imageTarget && imageTarget.canPreviewReplace === true
+    : !!imageTarget;
+
+  const IMG_ERROR_KEY: Record<string, string> = {
+    not_replaceable: 'veImageNotReplaceable', image_load_failed: 'veImageNotReplaceable',
+    invalid_url: 'veImageNotReplaceable', node_mismatch: 'veSelectedGone', selection_gone: 'veSelectedGone',
+  };
+  const imgErrorText = imgErrorCode ? t(IMG_ERROR_KEY[imgErrorCode] || 'veImageNotReplaceable') : '';
+
+  // The shared selection UI (pill + stock picker), rendered by BOTH preview paths.
+  const selectionUi = (
+    <>
+      {selection && (
+        <div className="mt-2">
+          <VisualSelectionPill
+            selection={selection}
+            onClear={clearSelection}
+            canReplaceImage={canReplaceImage}
+            onSearchStock={() => canReplaceImage && setPickerOpen(true)}
+            applied={applied}
+            onCancelPreview={cancelApplied}
+          />
+          {imgErrorText && <p className="mt-1 text-[11px] text-[#F59E0B]">{imgErrorText}</p>}
+        </div>
+      )}
+      <StockImagePicker
+        open={pickerOpen && canReplaceImage}
+        initialQuery={suggestQuery(imageTarget)}
+        onPreview={previewSelected}
+        onApply={applyStock}
+        onClose={closeStockPicker}
+      />
+    </>
+  );
 
   // The Open Preview handoff carries EXACTLY the selected embedded mode + its files, so the
   // full-screen route can never silently switch renderers.
@@ -253,10 +339,9 @@ export default function WebBuildPreviewPanel({
     </button>
   );
 
-  // Visual Edit — Select mode toggle. Real <button>, aria-pressed, keyboard
-  // accessible. Disabled while the build is unstable (needs regeneration). Only
-  // rendered on the safe-fallback (direct-DOM) preview path below — the
-  // model-native Sandpack iframe is cross-origin and unsupported here.
+  // Visual Edit — Select mode toggle for the SAFE Preview (direct-DOM). Real
+  // <button>, aria-pressed, keyboard accessible. Disabled while the build is
+  // unstable (needs regeneration).
   const selectButton = (
     <button
       type="button"
@@ -266,6 +351,26 @@ export default function WebBuildPreviewPanel({
       title={blockedNeedsRegeneration ? t('vsPreviewNotReady') : (selectEnabled ? t('vsExit') : t('vsSelectHint'))}
       className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
         selectEnabled
+          ? 'border-[#3B82F6]/60 bg-[#3B82F6]/[0.18] text-white'
+          : 'border-[#3B82F6]/30 bg-[#3B82F6]/[0.06] text-[#93C5FD] hover:bg-[#3B82F6]/[0.12]'
+      }`}
+    >
+      <MousePointerSquareDashed className="h-3.5 w-3.5" aria-hidden="true" /> {t('vsSelect')}
+    </button>
+  );
+
+  // Visual Edit — Select toggle for the CANDIDATE Preview (Phase 14K.3). Enabled
+  // only once the in-iframe bridge runtime is READY; before that it shows a
+  // truthful starting / unavailable state and never claims success.
+  const candidateSelectButton = (
+    <button
+      type="button"
+      onClick={() => (bridge.selectionEnabled ? bridge.disable() : bridge.enable())}
+      aria-pressed={bridge.selectionEnabled}
+      disabled={!bridge.bridgeReady}
+      title={bridge.unavailable ? t('veUnavailable') : !bridge.bridgeReady ? t('veStarting') : (bridge.selectionEnabled ? t('vsExit') : t('vsSelectHint'))}
+      className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+        bridge.selectionEnabled
           ? 'border-[#3B82F6]/60 bg-[#3B82F6]/[0.18] text-white'
           : 'border-[#3B82F6]/30 bg-[#3B82F6]/[0.06] text-[#93C5FD] hover:bg-[#3B82F6]/[0.12]'
       }`}
@@ -284,17 +389,35 @@ export default function WebBuildPreviewPanel({
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>{ownerSelector}</div>
           <div className="flex flex-col items-end gap-2">
-            {openPreviewButton}
+            <div className="flex items-center gap-2">
+              {candidateSelectButton}
+              {openPreviewButton}
+            </div>
             {openFailedNote}
           </div>
         </div>
-        <BrowserFrame url={url} accentColor={ACCENT}>
-          <WebBuildModelNativePreview
-            files={nativeFiles}
-            mode="embedded"
-            {...(isCandidateMode ? { candidate: true, showRuntimeDiagnostics: isOwner, onRuntimeSnapshot: setRuntimeSnapshot } : {})}
-          />
-        </BrowserFrame>
+        {/* Wrapper ref lets the bridge locate this Candidate Preview's iframe to
+            validate the runtime's message source. */}
+        <div ref={candidateFrameRef}>
+          <BrowserFrame url={url} accentColor={ACCENT}>
+            <WebBuildModelNativePreview
+              files={nativeFiles}
+              mode="embedded"
+              visualEdit
+              {...(isCandidateMode ? { candidate: true, showRuntimeDiagnostics: isOwner, onRuntimeSnapshot: setRuntimeSnapshot } : {})}
+            />
+          </BrowserFrame>
+        </div>
+        {/* Shared selection UI (pill + stock picker) — Candidate Preview edits apply
+            to THIS preview only; a reload may reset them (stated honestly). */}
+        {selectionUi}
+        {applied && (
+          <p className="mt-1 text-[11px] text-[#64748B]">
+            {lang === 'tr'
+              ? 'Bu önizlemeyi yenilemek geçici görseli sıfırlayabilir.'
+              : 'Reloading this preview may reset the temporary image.'}
+          </p>
+        )}
         {isCandidateMode && candidate ? (
           <RuntimeDiagnosticsBlock snapshot={runtimeSnapshot} candidate={candidate} />
         ) : (
@@ -386,7 +509,7 @@ export default function WebBuildPreviewPanel({
           key={previewKey}
           ref={surfaceRef}
           enabled={selectEnabled}
-          onSelect={handleSelect}
+          onSelect={handleSafeSelect}
           onExitMode={() => setSelectEnabled(false)}
         >
           <PreviewErrorBoundary key={previewKey} fallback={previewFallback}>
@@ -394,31 +517,10 @@ export default function WebBuildPreviewPanel({
           </PreviewErrorBoundary>
         </VisualSelectSurface>
       </BrowserFrame>
-      {/* Selection context — read-only. Does NOT touch the composer / prompt /
-          AI in this PR; the next phase connects it to a scoped edit. */}
-      {selection && (
-        <div className="mt-2">
-          <VisualSelectionPill
-            selection={selection}
-            onClear={clearSelection}
-            canReplaceImage={!!imageTarget}
-            onSearchStock={() => imageTarget && setPickerOpen(true)}
-            applied={applied}
-            onCancelPreview={cancelApplied}
-          />
-        </div>
-      )}
+      {/* Shared selection UI (pill + stock picker) — Safe Preview is the fallback
+          editing target; edits apply to THIS preview only (never persisted). */}
+      {selectionUi}
       <p className="mt-2 text-[11px] text-[#64748B]">{t('wbPreviewCaption')}</p>
-
-      {/* Stock photo picker (Phase 14K.2) — real Pexels/Unsplash search; applies
-          to THIS preview only (never persisted). */}
-      <StockImagePicker
-        open={pickerOpen && !!imageTarget}
-        initialQuery={suggestQuery(imageTarget)}
-        onPreview={previewCandidate}
-        onApply={applyCandidate}
-        onClose={closePicker}
-      />
     </div>
   );
 }

@@ -836,4 +836,12 @@ export const en: Record<string, string> = {
   stockApplyImage: 'Apply image',
   stockCancelPreview: 'Cancel preview',
   stockAppliedNote: 'Applied to this preview only. Saving to the project is coming next.',
+
+  /* ── Candidate Preview visual-edit bridge (Phase 14K.3) ── */
+  veStarting: 'Visual Select is starting',
+  veUnavailable: 'Visual Select is unavailable in this preview',
+  vePreviewReloaded: 'Preview reloaded; selection cleared',
+  veSelectedGone: 'Selected element no longer exists',
+  veImageNotReplaceable: 'This image can’t be replaced in this preview',
+  veTempRestored: 'Temporary preview restored',
 };
