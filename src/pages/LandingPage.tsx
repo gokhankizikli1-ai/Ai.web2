@@ -4,6 +4,7 @@ import Navbar from '@/sections/Navbar';
 import Footer from '@/sections/Footer';
 import { useAuthStore } from '@/stores/authStore';
 import { useLanguageStore } from '@/stores/languageStore';
+import ProductStory from '@/components/landing/ProductStory';
 
 /**
  * KorvixAI public landing — Web Build first (Phase 14J.2).
@@ -87,70 +88,12 @@ const MK_CSS = `
 .mk .textlink:hover{color:var(--ink);} .mk .textlink svg{width:14px; height:14px;}
 .mk .microcopy{margin-top:14px; font-size:12.5px; color:var(--faint);}
 
-/* generated-preview demo */
-.mk .stage{position:relative; margin:44px auto 0; max-width:940px;}
-.mk .stage-glow{position:absolute; inset:-34px -24px 20px; border-radius:34px;
-  background:radial-gradient(58% 70% at 50% 6%, rgba(82,103,122,0.13), transparent 72%); filter:blur(8px); pointer-events:none;}
-.mk .frame{position:relative; background:var(--d-bg); border:1px solid var(--d-border); border-radius:16px; overflow:hidden;
-  box-shadow:0 36px 82px -34px rgba(11,14,18,0.55),0 12px 26px -14px rgba(16,24,39,0.26),inset 0 1px 0 rgba(255,255,255,0.05);}
-.mk .chrome{display:flex; align-items:center; gap:9px; padding:11px 16px; border-bottom:1px solid var(--d-line); background:linear-gradient(180deg,#12171E,#0E1319);}
-.mk .chrome i{width:10px; height:10px; border-radius:50%; background:#2C3742;}
-.mk .chrome .u{margin:0 auto; font-size:11.5px; color:var(--d-muted); font-family:var(--mono); background:#0E141A; border:1px solid var(--d-line); padding:4px 14px; border-radius:8px;}
-.mk .chrome .badge{font-family:var(--mono); font-size:9.5px; letter-spacing:0.05em; text-transform:uppercase; color:var(--d-accent);
-  border:1px solid rgba(143,166,186,0.3); border-radius:6px; padding:3px 7px;}
-.mk .promptbar{display:flex; align-items:center; gap:10px; padding:11px 16px; background:#0C1116; border-bottom:1px solid var(--d-line);}
-.mk .promptbar svg{width:15px; height:15px; color:var(--d-accent); flex:none;}
-.mk .promptbar p{margin:0; font-size:12.5px; color:var(--d-body); font-family:var(--mono);}
-.mk .gen{padding:22px; display:flex; flex-direction:column; gap:16px; background:radial-gradient(120% 90% at 50% 0%, #141B22, #0B0E12 70%);}
-.mk .gen-hero{border:1px solid var(--d-line); border-radius:12px; padding:26px 22px; background:linear-gradient(160deg,#182430,#0E141A); text-align:center;}
-.mk .gen-h{font-size:19px; font-weight:680; letter-spacing:-0.02em; color:var(--d-text); margin:0;}
-.mk .skel{height:9px; border-radius:5px; background:linear-gradient(90deg,#1C2530,#243040); margin:0 auto;}
-.mk .gen-btn{display:inline-block; margin-top:15px; height:30px; line-height:30px; padding:0 16px; border-radius:8px; font-size:11.5px; font-weight:600;
-  color:#0F1729; background:linear-gradient(180deg,#E7ECF1,#CDD6DF);}
-.mk .gen-cards{display:grid; grid-template-columns:repeat(3,1fr); gap:12px;}
-.mk .gen-card{border:1px solid var(--d-line); border-radius:11px; padding:15px; background:var(--d-surf); display:flex; flex-direction:column; gap:9px;}
-.mk .gen-card .ic{width:26px; height:26px; border-radius:8px; background:rgba(82,103,122,0.22);}
-.mk .demo-cap{margin-top:13px; text-align:center; font-size:12.5px; color:var(--faint);}
-
 /* sections */
 .mk section{padding:64px 0;}
 .mk .sec-label{font-family:var(--mono); font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--accent); font-weight:600;}
 .mk .h2{font-size:32px; line-height:1.14; letter-spacing:-0.025em; font-weight:680; margin:12px 0 0; text-wrap:balance; max-width:24ch;}
 .mk .sec-sub{font-size:15.5px; color:var(--muted); margin:12px 0 0; max-width:62ch; line-height:1.6;}
 .mk .center{text-align:center;} .mk .center .h2,.mk .center .sec-sub{margin-left:auto; margin-right:auto;}
-
-/* status badge */
-.mk .status{display:inline-flex; align-items:center; gap:6px; font-size:10.5px; font-weight:650; letter-spacing:0.01em;
-  padding:3px 9px; border-radius:999px; border:1px solid;}
-.mk .status .sd{width:5px; height:5px; border-radius:50%;}
-.mk .status-now{color:#3F6B57; border-color:rgba(111,143,122,0.4); background:rgba(111,143,122,0.10);} .mk .status-now .sd{background:var(--sage);}
-.mk .status-dev{color:#6C5A2E; border-color:rgba(180,150,80,0.4); background:rgba(180,150,80,0.10);} .mk .status-dev .sd{background:#C79A3A;}
-.mk .status-next{color:#4B5A6B; border-color:rgba(100,116,139,0.35); background:rgba(100,116,139,0.09);} .mk .status-next .sd{background:#8593A3;}
-
-/* build flow */
-.mk .flow{display:grid; grid-template-columns:repeat(5,1fr); gap:12px; margin-top:34px;}
-.mk .fcard{background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:18px; box-shadow:0 6px 16px -12px rgba(16,24,39,0.10);
-  display:flex; flex-direction:column; gap:9px;}
-.mk .fcard .n{width:26px; height:26px; border-radius:8px; background:var(--section); color:var(--accent); font-family:var(--mono); font-size:12px; font-weight:600; display:grid; place-items:center;}
-.mk .fcard h3{font-size:15px; font-weight:640; letter-spacing:-0.012em; margin:0;}
-.mk .fcard p{font-size:12.5px; color:var(--muted); line-height:1.5; margin:0;}
-.mk .fcard .status{margin-top:auto; align-self:flex-start;}
-
-/* visual edit */
-.mk .ve{background:linear-gradient(180deg,#FFFFFF,#F5F7FA); border-top:1px solid var(--border); border-bottom:1px solid var(--border);}
-.mk .vgrid{display:grid; grid-template-columns:1fr 1fr; gap:48px; align-items:center;}
-.mk .vsteps{list-style:none; padding:0; margin:22px 0 0; display:flex; flex-direction:column; gap:12px;}
-.mk .vsteps li{display:flex; gap:12px; align-items:center; font-size:14px; color:var(--body);}
-.mk .vsteps .vn{width:22px; height:22px; border-radius:7px; background:var(--section); color:var(--accent); font-family:var(--mono); font-size:11px; font-weight:600; display:grid; place-items:center; flex:none;}
-.mk .veframe{background:var(--d-bg); border:1px solid var(--d-border); border-radius:15px; padding:16px; box-shadow:0 26px 58px -30px rgba(11,14,18,0.5);}
-.mk .ve-sel{position:relative; border:1.5px solid rgba(59,130,246,0.7); border-radius:11px; padding:20px 16px; background:linear-gradient(160deg,#151D26,#0E141A); text-align:center;}
-.mk .ve-sel .tag{position:absolute; top:-10px; left:12px; font-family:var(--mono); font-size:10px; color:#BFDBFE; background:#12202F; border:1px solid rgba(59,130,246,0.5); border-radius:6px; padding:2px 8px;}
-.mk .ve-sel h4{margin:0; font-size:17px; font-weight:680; letter-spacing:-0.02em; color:var(--d-text);}
-.mk .ve-handle{position:absolute; width:8px; height:8px; border-radius:2px; background:#60A5FA; border:1.5px solid #0B0E12;}
-.mk .ve-chat{display:flex; align-items:center; gap:10px; margin-top:14px; border:1px solid var(--d-border); background:var(--d-surf); border-radius:11px; padding:11px 13px;}
-.mk .ve-chat svg{width:15px; height:15px; color:var(--d-accent); flex:none;}
-.mk .ve-chat p{margin:0; font-size:12.5px; color:var(--d-body);}
-.mk .ve-note{margin-top:11px; font-size:11.5px; color:var(--d-muted); display:flex; align-items:center; gap:7px;}
 
 /* output quality */
 .mk .oq{display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-top:34px;}
@@ -173,14 +116,6 @@ const MK_CSS = `
 .mk .pain .bar{width:90px; height:5px; border-radius:3px; background:#1A222B; overflow:hidden; flex:none;} .mk .pain .bar i{display:block; height:100%; background:linear-gradient(90deg,#52677A,#7890A3); border-radius:3px;}
 .mk .p-foot{margin-top:13px; padding-top:12px; border-top:1px solid var(--d-line); font-size:11px; color:#63727F;}
 
-/* delivery */
-.mk .delivery-head{display:flex; align-items:center; gap:12px; flex-wrap:wrap; justify-content:center;}
-.mk .dsteps{display:flex; align-items:stretch; justify-content:center; gap:10px; margin-top:34px; flex-wrap:wrap;}
-.mk .dstep{background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:14px 16px; font-size:13px; font-weight:550; color:var(--ink);
-  display:flex; align-items:center; gap:10px; box-shadow:0 2px 8px -4px rgba(16,24,39,0.08);}
-.mk .dstep .dn{width:22px; height:22px; border-radius:7px; background:var(--section); color:var(--accent); font-family:var(--mono); font-size:11px; font-weight:600; display:grid; place-items:center; flex:none;}
-.mk .darrow{color:#AEB9C5; display:flex; align-items:center;} .mk .darrow svg{width:16px; height:16px;}
-
 /* final cta */
 .mk .final{background:radial-gradient(80% 130% at 50% 0%, #14202A 0%, #0B0E12 66%); border-top:1px solid var(--d-border); text-align:center; padding:72px 0 78px;}
 .mk .final .h2{font-size:36px; letter-spacing:-0.03em; color:var(--d-text); max-width:22ch; margin:0 auto; text-wrap:balance;}
@@ -193,17 +128,15 @@ const MK_CSS = `
 
 @media (max-width:960px){
   .mk .h1{font-size:44px;}
-  .mk .flow{grid-template-columns:1fr 1fr;}
   .mk .oq{grid-template-columns:1fr 1fr;}
-  .mk .vgrid,.mk .rgrid{grid-template-columns:1fr; gap:32px;}
+  .mk .rgrid{grid-template-columns:1fr; gap:32px;}
 }
 @media (max-width:560px){
   .mk .hero{padding:92px 0 0;}
   .mk .h1{font-size:34px;} .mk .sub{font-size:15px;}
-  .mk .flow{grid-template-columns:1fr;} .mk .oq{grid-template-columns:1fr;} .mk .gen-cards{grid-template-columns:1fr;}
+  .mk .oq{grid-template-columns:1fr;}
   .mk .final .h2{font-size:27px;}
   .mk .send{margin-left:0; width:100%;} .mk .send .btn{width:100%; justify-content:center;}
-  .mk .darrow{transform:rotate(90deg);}
 }
 @media (prefers-reduced-motion:reduce){ .mk *{scroll-behavior:auto;} }
 `;
@@ -304,101 +237,12 @@ export default function LandingPage() {
             </div>
             <div className="microcopy">{t('landingHeroMicro')}</div>
           </div>
-
-          {/* PRODUCT DEMO — original Korvix mockup (illustrative, not a screenshot) */}
-          <div className="stage" id="product">
-            <div className="stage-glow" aria-hidden="true" />
-            <div className="frame" aria-hidden="true">
-              <div className="chrome"><i /><i /><i /><span className="u">preview</span><span className="badge">{t('landingDemoBadge')}</span></div>
-              <div className="promptbar">
-                <svg viewBox="0 0 24 24" className="ic"><path d="M12 3v18M5 10l7-7 7 7" /></svg>
-                <p>{t('landingDemoPrompt')}</p>
-              </div>
-              <div className="gen">
-                <div className="gen-hero">
-                  <p className="gen-h">Green Haven</p>
-                  <div className="skel" style={{ width: '62%', marginTop: 12 }} />
-                  <div className="skel" style={{ width: '48%', marginTop: 8 }} />
-                  <span className="gen-btn">Get a quote</span>
-                </div>
-                <div className="gen-cards">
-                  {[0, 1, 2].map((i) => (
-                    <div className="gen-card" key={i}>
-                      <span className="ic" />
-                      <div className="skel" style={{ width: '80%' }} />
-                      <div className="skel" style={{ width: '60%' }} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <p className="demo-cap">{t('landingDemoCaption')}</p>
-          </div>
         </div>
 
-        {/* BUILD FLOW */}
-        <section id="how">
-          <div className="wrap center">
-            <span className="sec-label">{t('landingFlowLabel')}</span>
-            <h2 className="h2">{t('landingFlowTitle')}</h2>
-            <p className="sec-sub">{t('landingFlowSub')}</p>
-          </div>
-          <div className="wrap">
-            <div className="flow">
-              {[
-                { n: 1, title: 'landingFlowStep1Title', desc: 'landingFlowStep1Desc', status: 'now' },
-                { n: 2, title: 'landingFlowStep2Title', desc: 'landingFlowStep2Desc', status: 'now' },
-                { n: 3, title: 'landingFlowStep3Title', desc: 'landingFlowStep3Desc', status: 'now' },
-                { n: 4, title: 'landingFlowStep4Title', desc: 'landingFlowStep4Desc', status: 'next' },
-                { n: 5, title: 'landingFlowStep5Title', desc: 'landingFlowStep5Desc', status: 'next' },
-              ].map((s) => (
-                <div className="fcard" key={s.n}>
-                  <span className="n" aria-hidden="true">{s.n}</span>
-                  <h3>{t(s.title)}</h3>
-                  <p>{t(s.desc)}</p>
-                  <StatusBadge status={s.status as StatusKind} t={t} />
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* VISUAL EDIT */}
-        <section className="ve" id="visual-edit">
-          <div className="wrap">
-            <div className="vgrid">
-              <div>
-                <span className="sec-label">{t('landingVeLabel')}</span>
-                <div style={{ marginTop: 10 }}><StatusBadge status="dev" t={t} /></div>
-                <h2 className="h2">{t('landingVeTitle')}</h2>
-                <p className="sec-sub">{t('landingVeSub')}</p>
-                <ol className="vsteps">
-                  {['landingVeStep1', 'landingVeStep2', 'landingVeStep3', 'landingVeStep4'].map((k, i) => (
-                    <li key={k}><span className="vn" aria-hidden="true">{i + 1}</span>{t(k)}</li>
-                  ))}
-                </ol>
-              </div>
-              <div className="veframe" aria-hidden="true">
-                <div className="ve-sel">
-                  <span className="tag">{t('landingVeSelectionLabel')}</span>
-                  <h4>Green Haven</h4>
-                  <span className="ve-handle" style={{ top: -4, left: -4 }} />
-                  <span className="ve-handle" style={{ top: -4, right: -4 }} />
-                  <span className="ve-handle" style={{ bottom: -4, left: -4 }} />
-                  <span className="ve-handle" style={{ bottom: -4, right: -4 }} />
-                </div>
-                <div className="ve-chat">
-                  <svg viewBox="0 0 24 24" className="ic"><path d="M21 15a2 2 0 0 1-2 2H8l-4 4V6a2 2 0 0 1 2-2h13a2 2 0 0 1 2 2z" /></svg>
-                  <p>{t('landingVeInstruction')}</p>
-                </div>
-                <p className="ve-note">
-                  <svg className="ic" width="14" height="14" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path d="M12 8v4M12 16h.01" /></svg>
-                  {t('landingVeResult')}
-                </p>
-              </div>
-            </div>
-          </div>
-        </section>
+        {/* THREE-STEP ANIMATED PRODUCT STORY (Describe → Generate → Refine & ship).
+            Consolidates the former static product demo, five-card build flow, and
+            static Visual Edit section into one continuous walkthrough. */}
+        <ProductStory />
 
         {/* OUTPUT QUALITY */}
         <section id="output">
@@ -447,32 +291,6 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* DELIVERY — GitHub / deploy (upcoming, honest) */}
-        <section id="delivery">
-          <div className="wrap center">
-            <span className="sec-label">{t('landingDelLabel')}</span>
-            <div className="delivery-head" style={{ marginTop: 10 }}>
-              <StatusBadge status="next" t={t} />
-            </div>
-            <h2 className="h2">{t('landingDelTitle')}</h2>
-            <p className="sec-sub">{t('landingDelSub')}</p>
-          </div>
-          <div className="wrap">
-            <div className="dsteps">
-              {['landingDelStep1', 'landingDelStep2', 'landingDelStep3', 'landingDelStep4'].map((k, i, arr) => (
-                <div style={{ display: 'contents' }} key={k}>
-                  <div className="dstep"><span className="dn" aria-hidden="true">{i + 1}</span>{t(k)}</div>
-                  {i < arr.length - 1 && (
-                    <span className="darrow" aria-hidden="true">
-                      <svg className="ic" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
         {/* FINAL CTA */}
         <section className="final">
           <div className="wrap">
@@ -495,22 +313,5 @@ export default function LandingPage() {
 
       <Footer />
     </div>
-  );
-}
-
-type StatusKind = 'now' | 'dev' | 'next';
-
-function StatusBadge({ status, t }: { status: StatusKind; t: (k: string) => string }) {
-  const map: Record<StatusKind, { cls: string; key: string }> = {
-    now: { cls: 'status-now', key: 'landingStatusNow' },
-    dev: { cls: 'status-dev', key: 'landingStatusDev' },
-    next: { cls: 'status-next', key: 'landingStatusNext' },
-  };
-  const m = map[status];
-  return (
-    <span className={`status ${m.cls}`}>
-      <span className="sd" aria-hidden="true" />
-      {t(m.key)}
-    </span>
   );
 }

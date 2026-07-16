@@ -741,4 +741,24 @@ export const de: Record<string, string> = {
   // final cta
   landingFinalTitle: 'Starte mit einer Idee. Geh mit einer funktionierenden ersten Version.',
   landingFinalSub: 'Beschreibe, was du bauen möchtest, und lass Korvix die erste Version erzeugen.',
+
+  /* ── Public language control + animated product story (Phase 14J.3) ── */
+  langAuto: 'Automatisch',
+  langMenuLabel: 'Sprache ändern',
+
+  landingStoryLabel: 'So funktioniert’s',
+  landingStoryTitle: 'Sieh zu, wie Korvix es baut.',
+  landingStorySub: 'Ein Projekt, drei Schritte — beschreiben, generieren und verfeinern. Dies ist eine illustrative Vorführung.',
+  landingStoryStep1Title: 'Beschreibe deine Idee',
+  landingStoryStep1Desc: 'Wähle einen Typ und beschreibe in einfacher Sprache, was du willst. Korvix liest den Prompt — kein Setup, kein Boilerplate.',
+  landingStoryStep2Title: 'Sieh zu, wie Korvix es baut',
+  landingStoryStep2Desc: 'Korvix setzt aus deiner Beschreibung eine responsive erste Version zusammen — Layout, Abschnitte und Komponenten.',
+  landingStoryStep3Title: 'Verfeinern und veröffentlichen',
+  landingStoryStep3Desc: 'Wähle einen Abschnitt und beschreibe eine Änderung, um ihn zu verfeinern. GitHub-Sync und Deployment sind Teil des kommenden Auslieferungsablaufs.',
+  landingStoryPrompt: 'Erstelle eine hochwertige Website für Gartengestaltung für ein modernes Designstudio.',
+  landingStoryIllustrative: 'Illustrativ',
+  landingSceneReady: 'Erste Version fertig',
+  landingStoryPreviewCta: 'Angebot anfordern',
+  landingDeployLabel: 'Veröffentlichen',
+  landingStoryStageLabel: 'Produkt-Vorführung',
 };

@@ -2,17 +2,18 @@ import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-import { Menu, Rocket, Wand2, Code, Cpu, LayoutDashboard, LogOut } from 'lucide-react';
+import { Menu, Rocket, Cpu, LayoutDashboard, LogOut } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '@/stores/authStore';
 import { useLanguageStore } from '@/stores/languageStore';
 import BrandLogo from '@/components/BrandLogo';
+import { LanguageMenu, LanguageOptionsList } from '@/components/LanguageMenu';
 
-// Public nav — matches the Web-Build-first landing story (Phase 14J.2). Each
-// href is an anchor into a real landing section id; labels resolve through t().
+// Public nav — matches the consolidated Web-Build-first landing (Phase 14J.3).
+// "How it works" points at the animated three-step product story (#how); the
+// former Product/Visual Edit anchors were folded into that story. Each href is
+// a real landing section id; labels resolve through t().
 const NAV_LINKS = [
-  { key: 'navProduct', href: '/#product', icon: Code },
-  { key: 'navVisualEdit', href: '/#visual-edit', icon: Wand2 },
   { key: 'navHowItWorks', href: '/#how', icon: Cpu },
   { key: 'navResearch', href: '/#research', icon: Rocket },
 ];
@@ -105,6 +106,7 @@ export default function Navbar({ surface = 'light' }: { surface?: NavbarSurface 
 
           {/* Right Side — Auth CTAs */}
           <div className="hidden md:flex items-center gap-2.5">
+            <LanguageMenu surface={surface} />
             {isAuthenticated ? (
               <>
                 <Link to="/workspace">
@@ -178,6 +180,9 @@ export default function Navbar({ surface = 'light' }: { surface?: NavbarSurface 
                     {t(link.key)}
                   </Link>
                 ))}
+                <hr className="border-border my-2" />
+                {/* Language section — reuses setMode (no second modal). */}
+                <LanguageOptionsList onSelect={() => setIsOpen(false)} />
                 <hr className="border-border my-2" />
                 {isAuthenticated ? (
                   <>
