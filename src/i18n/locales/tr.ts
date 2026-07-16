@@ -820,4 +820,14 @@ export const tr: Record<string, string> = {
   veSelectedGone: 'Seçilen öğe artık mevcut değil',
   veImageNotReplaceable: 'Bu görsel bu önizlemede değiştirilemiyor',
   veTempRestored: 'Geçici önizleme geri yüklendi',
+
+  /* ── Aday öncelikli tek önizleme (Phase 14K.5) ── */
+  previewHeading: 'Önizleme',
+  previewStarting: 'Önizleme başlatılıyor',
+  previewHighQualityUnavailable: 'Yüksek kaliteli önizleme kullanılamıyor',
+  previewSafeShown: 'Bunun yerine güvenli önizleme gösteriliyor.',
+  previewRetry: 'Önizlemeyi yeniden dene',
+  previewOpenSafeDebug: 'Güvenli önizlemeyi aç',
+  previewReturnToMain: 'Önizlemeye dön',
+  previewSafeDebugActive: 'Hata ayıklama: güvenli önizleme gösteriliyor.',
 };

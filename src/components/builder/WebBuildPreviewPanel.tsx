@@ -1,5 +1,5 @@
 import { Component, useEffect, useRef, useState, type ErrorInfo, type ReactNode } from 'react';
-import { ExternalLink, MousePointerSquareDashed } from 'lucide-react';
+import { ExternalLink, MousePointerSquareDashed, RefreshCw, Wrench } from 'lucide-react';
 import BrowserFrame from '@/components/builder/BrowserFrame';
 import WebBuildPreviewDocument from '@/components/builder/WebBuildPreviewDocument';
 import WebBuildModelNativePreview, { CandidateUnapprovedNotice, RuntimeDiagnosticsBlock } from '@/components/builder/WebBuildModelNativePreview';
@@ -12,7 +12,7 @@ import { useCandidateVisualEditBridge } from '@/hooks/useCandidateVisualEditBrid
 import { useOwnerMode } from '@/hooks/useOwnerMode';
 import { useLanguageStore } from '@/stores/languageStore';
 import { openPreviewInNewTab, currentReturnTo } from '@/lib/webBuildPreviewStash';
-import { resolvePreviewMode, type ModelNativeCandidate, type ModelNativeRuntimeSnapshot, type OwnerPreviewSelection, type WebBuildPreviewMode } from '@/lib/webBuildRuntimePreview';
+import { resolvePreviewMode, candidateHasEntryFiles, type ModelNativeCandidate, type ModelNativeRuntimeSnapshot, type OwnerPreviewSelection, type WebBuildPreviewMode } from '@/lib/webBuildRuntimePreview';
 import type { WebBuildSectionItem, WebBuildFile } from '@/lib/webBuildPayload';
 import type { WebBuildBrief } from '@/lib/webBuildApi';
 import type { InteractionContract } from '@/lib/webBuildInteractionContract';
@@ -114,15 +114,40 @@ export default function WebBuildPreviewPanel({
   // changes so a previous selection never leaks onto a different build.
   const [ownerSel, setOwnerSel] = useState<OwnerPreviewSelection | undefined>(undefined);
   const [runtimeSnapshot, setRuntimeSnapshot] = useState<ModelNativeRuntimeSnapshot | null>(null);
+  // Phase 14K.5 — Preview is Candidate-first with an AUTOMATIC Safe fallback. `retryKey`
+  // remounts only the Candidate renderer (no regeneration); `ownerDebugSafe` is an
+  // owner-only manual "view safe preview" debug switch (never shown to normal users).
+  const [retryKey, setRetryKey] = useState(0);
+  const [ownerDebugSafe, setOwnerDebugSafe] = useState(false);
   const candidateKey = `${runId || ''}|${candidate?.source || 'none'}|${candidate?.files?.length ?? 0}`;
-  useEffect(() => { setOwnerSel(undefined); setRuntimeSnapshot(null); }, [candidateKey]);
+  // A new build / candidate identity resets snapshot + retry + owner debug so a
+  // failure or debug view in Build A can never leak into Build B.
+  useEffect(() => {
+    setOwnerSel(undefined); setRuntimeSnapshot(null); setRetryKey(0); setOwnerDebugSafe(false);
+  }, [candidateKey]);
 
   const mode: WebBuildPreviewMode = candidate
     ? resolvePreviewMode(candidate, isOwner, ownerSel)
     : (previewSource === 'model-native-sandbox' && legacyFiles.length > 0 ? 'approved-model-native' : 'safe-fallback');
   const showModelNative = mode === 'approved-model-native' || mode === 'owner-candidate';
   const isCandidateMode = mode === 'owner-candidate';
-  const candidateActive = showModelNative && nativeFiles.length > 0;
+  const candidateEligible = showModelNative && nativeFiles.length > 0;
+
+  // ── Candidate Preview HEALTH — DISTINCT from Visual-Select bridge readiness. Health
+  // comes ONLY from the isolated runtime's own signals (RuntimeObserver): a missing
+  // renderable entry, a bundler/compile error, a fatal runtime error, or the startup
+  // soft-timeout. The Visual-Select bridge starting/unavailable NEVER affects health,
+  // so a Candidate site that renders fine while Select is still connecting is NOT
+  // treated as failed — it never falls back merely because Select isn't ready.
+  const candidateEntryOk = candidateHasEntryFiles(nativeFiles);
+  const candidatePhase = runtimeSnapshot?.phase;
+  const candidateFailed = candidateEligible && (!candidateEntryOk || candidatePhase === 'error' || candidatePhase === 'timeout');
+  const candidateStarting = candidateEligible && !candidateFailed && candidatePhase !== 'running';
+  // Show Safe: automatically on genuine failure, or when the owner manually asks (debug).
+  const usingSafeFallback = candidateEligible && (candidateFailed || ownerDebugSafe);
+  // The Candidate iframe is mounted (and its bridge active) ONLY when truly shown.
+  const candidateActive = candidateEligible && !usingSafeFallback;
+  const activePreview: 'candidate' | 'safe' = candidateActive ? 'candidate' : 'safe';
 
   // ── Visual Edit — UNIFIED selection state (Phase 14K.1 Safe Preview · 14K.3
   // Candidate Preview). One selection UI serves both preview implementations; the
@@ -153,7 +178,9 @@ export default function WebBuildPreviewPanel({
   const bridge = useCandidateVisualEditBridge({
     active: candidateActive,
     containerRef: candidateFrameRef,
-    resetKey: `${resetKey}|${mode}|${candidateKey}`,
+    // retryKey is included so a Retry (renderer remount) fully resets the bridge
+    // (bound window, instance id, ready state) instead of relying on reload detection.
+    resetKey: `${resetKey}|${mode}|${candidateKey}|${retryKey}`,
     onSelected: (sel, it) => {
       setSelectionSource('candidate-preview');
       setApplied(null); setPickerOpen(false); setImgErrorCode(null);
@@ -172,6 +199,11 @@ export default function WebBuildPreviewPanel({
   // Switching preview mode (Safe ↔ Candidate) clears stale overlays + temp image state.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { setSelectEnabled(false); resetSelectionState(); }, [mode]);
+  // Switching between the Candidate renderer and the automatic/owner Safe fallback
+  // (failure, retry, or owner debug) clears stale selection + temporary image state so
+  // nothing leaks across the two preview implementations.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { setSelectEnabled(false); resetSelectionState(); }, [candidateActive]);
 
   // A new / changed SAFE selection restores any live preview and resets image state,
   // then re-derives whether the new target is a replaceable photo.
@@ -241,6 +273,18 @@ export default function WebBuildPreviewPanel({
     setApplied(null);
   };
 
+  // Retry the high-quality preview — remount ONLY the Candidate renderer (fresh Sandpack
+  // + runtime observer + Visual-Select bridge). It NEVER regenerates the site, spends
+  // tokens, calls the model, or mutates files; it just restarts the preview renderer and
+  // clears stale selection / bridge / picker state.
+  const retryCandidate = () => {
+    setOwnerDebugSafe(false);
+    setRuntimeSnapshot(null);   // health → starting
+    setRetryKey((k) => k + 1);  // force a fresh Candidate mount
+    setSelectEnabled(false);
+    resetSelectionState();
+  };
+
   // A short, safe suggested search query from the selected image's context.
   const suggestQuery = (target: VisualImageTarget | null): string => {
     const raw = (target?.altText || target?.selection.section || target?.selection.textPreview || '').trim();
@@ -289,14 +333,17 @@ export default function WebBuildPreviewPanel({
   // The Open Preview handoff carries EXACTLY the selected embedded mode + its files, so the
   // full-screen route can never silently switch renderers.
   const openPreview = () => {
+    // Open EXACTLY the renderer currently active in-panel — the Candidate/model-native
+    // project when it's healthy and shown, otherwise the safe representation honestly.
+    const openCandidate = activePreview === 'candidate' && nativeFiles.length > 0;
     const opened = openPreviewInNewTab({
       runId: runId || `preview-${Date.now().toString(36)}`,
       sectionItems: items,
       brief: safeBrief,
       slug: url,
       returnTo: currentReturnTo(),
-      previewMode: mode,
-      ...(showModelNative && nativeFiles.length > 0
+      previewMode: openCandidate ? mode : 'safe-fallback',
+      ...(openCandidate
         ? { files: nativeFiles, previewSource: 'model-native-sandbox' as const }
         : {}),
     });
@@ -311,23 +358,54 @@ export default function WebBuildPreviewPanel({
     </p>
   );
 
-  // Owner-only segmented selector: Candidate Preview | Safe Preview. Hidden for normal
-  // users and when no candidate exists. Selecting a mode is component-local UI state only.
-  const ownerSelector = (isOwner && candidateAvailable) ? (
-    <div className="mb-3 inline-flex rounded-lg border border-white/[0.1] bg-white/[0.03] p-0.5 text-[11px]">
+  // Single, honest "Preview" heading — the Candidate/model-native project is THE preview.
+  // A polite status announces the starting state once (never technical jargon).
+  const previewHeading = (
+    <div className="flex items-center gap-2">
+      <span className="text-[12px] font-semibold text-[#CBD5E1]">{t('previewHeading')}</span>
+      {candidateStarting && !usingSafeFallback && (
+        <span role="status" className="text-[10px] font-normal text-[#64748B]">· {t('previewStarting')}</span>
+      )}
+    </div>
+  );
+
+  // Owner-only DEBUG switch (never a normal-user tab): manually view the safe preview,
+  // then return. Only offered from a healthy/starting Candidate so it can't be confused
+  // with the automatic failure fallback. Component-local; never persisted.
+  const ownerDebugToggle = (isOwner && candidateEligible && !candidateFailed) ? (
+    <button
+      type="button"
+      onClick={() => setOwnerDebugSafe((v) => !v)}
+      aria-pressed={ownerDebugSafe}
+      title={ownerDebugSafe ? t('previewReturnToMain') : t('previewOpenSafeDebug')}
+      className="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.1] bg-white/[0.03] px-2.5 py-1.5 text-[11px] font-medium text-[#94A3B8] transition-colors hover:bg-white/[0.06] hover:text-white"
+    >
+      <Wrench className="h-3 w-3" aria-hidden="true" />
+      {ownerDebugSafe ? t('previewReturnToMain') : t('previewOpenSafeDebug')}
+    </button>
+  ) : null;
+
+  // Automatic fallback notice (compact, restrained amber) — shown ONLY on a genuine
+  // Candidate render failure, with a Retry that restarts just the renderer.
+  const fallbackNotice = (candidateEligible && candidateFailed) ? (
+    <div role="alert" className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#F59E0B]/30 bg-[#F59E0B]/[0.08] px-3.5 py-2.5">
+      <div className="min-w-0">
+        <p className="text-[12px] font-semibold text-[#FBBF24]">{t('previewHighQualityUnavailable')}</p>
+        <p className="mt-0.5 text-[11px] leading-relaxed text-[#FCD9A6]">{t('previewSafeShown')}</p>
+      </div>
       <button
-        onClick={() => setOwnerSel('model-native')}
-        className={`rounded-md px-2.5 py-1 font-medium transition-colors ${mode !== 'safe-fallback' ? 'bg-[#A855F7]/20 text-[#D8B4FE]' : 'text-[#94A3B8] hover:text-white'}`}
+        type="button"
+        onClick={retryCandidate}
+        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-[#F59E0B]/40 bg-[#F59E0B]/[0.12] px-3 py-1.5 text-[11.5px] font-medium text-[#FBBF24] transition-colors hover:bg-[#F59E0B]/[0.2] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#F59E0B]"
       >
-        {lang === 'tr' ? 'Aday Önizleme' : 'Candidate Preview'}
-      </button>
-      <button
-        onClick={() => setOwnerSel('safe')}
-        className={`rounded-md px-2.5 py-1 font-medium transition-colors ${mode === 'safe-fallback' ? 'bg-white/[0.1] text-white' : 'text-[#94A3B8] hover:text-white'}`}
-      >
-        {lang === 'tr' ? 'Güvenli Önizleme' : 'Safe Preview'}
+        <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> {t('previewRetry')}
       </button>
     </div>
+  ) : null;
+
+  // Owner manual-debug indicator (distinct from the failure notice above).
+  const ownerDebugNote = (isOwner && candidateEligible && ownerDebugSafe && !candidateFailed) ? (
+    <p className="mb-3 text-[11px] text-[#94A3B8]">{t('previewSafeDebugActive')}</p>
   ) : null;
 
   const openPreviewButton = (
@@ -379,60 +457,9 @@ export default function WebBuildPreviewPanel({
     </button>
   );
 
-  if (showModelNative && nativeFiles.length > 0) {
-    // Isolated model-native runtime Preview inside the existing browser frame. In
-    // owner-candidate mode the actual UNAPPROVED generated project runs, framed by an
-    // explicit warning + bounded runtime diagnostics. Approved mode stays clean.
-    return (
-      <div>
-        {isCandidateMode && candidate ? <CandidateUnapprovedNotice candidate={candidate} /> : null}
-        <div className="mb-3 flex items-start justify-between gap-3">
-          <div>{ownerSelector}</div>
-          <div className="flex flex-col items-end gap-2">
-            <div className="flex items-center gap-2">
-              {candidateSelectButton}
-              {openPreviewButton}
-            </div>
-            {openFailedNote}
-          </div>
-        </div>
-        {/* Wrapper ref lets the bridge locate this Candidate Preview's iframe to
-            validate the runtime's message source. */}
-        <div ref={candidateFrameRef}>
-          <BrowserFrame url={url} accentColor={ACCENT}>
-            <WebBuildModelNativePreview
-              files={nativeFiles}
-              mode="embedded"
-              visualEdit
-              {...(isCandidateMode ? { candidate: true, showRuntimeDiagnostics: isOwner, onRuntimeSnapshot: setRuntimeSnapshot } : {})}
-            />
-          </BrowserFrame>
-        </div>
-        {/* Shared selection UI (pill + stock picker) — Candidate Preview edits apply
-            to THIS preview only; a reload may reset them (stated honestly). */}
-        {selectionUi}
-        {applied && (
-          <p className="mt-1 text-[11px] text-[#64748B]">
-            {lang === 'tr'
-              ? 'Bu önizlemeyi yenilemek geçici görseli sıfırlayabilir.'
-              : 'Reloading this preview may reset the temporary image.'}
-          </p>
-        )}
-        {isCandidateMode && candidate ? (
-          <RuntimeDiagnosticsBlock snapshot={runtimeSnapshot} candidate={candidate} />
-        ) : (
-          <p className="mt-2 text-[11px] text-[#64748B]">
-            {lang === 'tr'
-              ? 'Doğrulanmış model-native proje izole bir çalıştırma ortamında önizleniyor.'
-              : 'The validated model-native project is previewed in an isolated runtime.'}
-          </p>
-        )}
-      </div>
-    );
-  }
-
-  // Phase 12F.3 — explicit "Build needs regeneration" notice shown when the frontend build
-  // could not be approved. Honest: the shown preview is a safe fallback, not the finished site.
+  // ── Shared Safe-Preview frame (direct-DOM). Used BOTH as the automatic fallback for a
+  // failed Candidate and as the intended representation when there is no candidate. Same
+  // Visual Select + stock-picker path as before; keyed so a build change remounts it. ──
   const blockedBanner = blockedNeedsRegeneration ? (
     <div className="mb-3 rounded-xl border border-[#F59E0B]/30 bg-[#F59E0B]/[0.08] px-3.5 py-2.5">
       <p className="text-[12px] font-semibold text-[#FBBF24]">
@@ -446,25 +473,7 @@ export default function WebBuildPreviewPanel({
     </div>
   ) : null;
 
-  if (items.length === 0) {
-    return (
-      <div>
-        {blockedBanner}
-        {ownerSelector}
-        <div className="rounded-xl border border-dashed border-white/[0.08] px-4 py-8 text-center text-[12px] text-[#64748B]">{t('wbPreviewEmpty')}</div>
-      </div>
-    );
-  }
-
-  // Stable signature for the current preview instance. Keying the boundary by it
-  // forces a remount (and clears any stuck error state) whenever the preview
-  // input actually changes — so a fixed/changed build is never permanently
-  // hidden behind a boundary that caught an earlier, unrelated failure.
   const previewKey = `${runId || ''}|${url}|${items.map((s) => s?.id || '').join(',')}`;
-
-  // Compact, honest fallback shown INSIDE the browser frame if the preview
-  // document cannot render. No fake claims — real section names only, and a
-  // reminder that All Files is still reachable from the conversation.
   const firstNames = items.map((s) => s?.name).filter(Boolean).slice(0, 3) as string[];
   const previewFallback = (
     <div className="px-6 py-12 text-center">
@@ -491,11 +500,102 @@ export default function WebBuildPreviewPanel({
     </div>
   );
 
+  const safePreviewFrame = (
+    <BrowserFrame url={url} accentColor={ACCENT}>
+      <VisualSelectSurface
+        key={previewKey}
+        ref={surfaceRef}
+        enabled={selectEnabled}
+        onSelect={handleSafeSelect}
+        onExitMode={() => setSelectEnabled(false)}
+      >
+        <PreviewErrorBoundary key={previewKey} fallback={previewFallback}>
+          <WebBuildPreviewDocument sectionItems={items} brief={safeBrief} interactionContract={interactionContract} visualAssetPlan={visualAssetPlan} visualSignaturePlan={visualSignaturePlan} motionComposer={motionComposer} imagePipeline={imagePipeline} />
+        </PreviewErrorBoundary>
+      </VisualSelectSurface>
+    </BrowserFrame>
+  );
+
+  if (candidateEligible) {
+    // Candidate is THE preview. When its isolated runtime genuinely fails (compile /
+    // runtime / no entry / startup timeout) OR the owner opens the debug safe view, the
+    // SAME panel automatically shows the Safe fallback — no tabs, no renderer switch UI.
+    return (
+      <div>
+        {isCandidateMode && candidate && !usingSafeFallback ? <CandidateUnapprovedNotice candidate={candidate} /> : null}
+        {fallbackNotice}
+        {ownerDebugNote}
+        <div className="mb-3 flex items-start justify-between gap-3">
+          <div>{previewHeading}</div>
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex items-center gap-2">
+              {ownerDebugToggle}
+              {usingSafeFallback ? selectButton : candidateSelectButton}
+              {openPreviewButton}
+            </div>
+            {openFailedNote}
+          </div>
+        </div>
+        {usingSafeFallback ? (
+          <>
+            {safePreviewFrame}
+            {selectionUi}
+            <p className="mt-2 text-[11px] text-[#64748B]">{t('wbPreviewCaption')}</p>
+          </>
+        ) : (
+          <>
+            {/* Wrapper ref lets the bridge locate this Candidate Preview's iframe to
+                validate the runtime's message source. Keyed by retryKey so Retry
+                remounts ONLY the renderer (fresh Sandpack + observer + bridge). */}
+            <div ref={candidateFrameRef}>
+              <BrowserFrame url={url} accentColor={ACCENT}>
+                <WebBuildModelNativePreview
+                  key={`cand-${candidateKey}-${retryKey}`}
+                  files={nativeFiles}
+                  mode="embedded"
+                  visualEdit
+                  onRuntimeSnapshot={setRuntimeSnapshot}
+                  {...(isCandidateMode ? { candidate: true, showRuntimeDiagnostics: isOwner } : {})}
+                />
+              </BrowserFrame>
+            </div>
+            {/* Shared selection UI (pill + stock picker) — Candidate Preview edits apply
+                to THIS preview only; a reload may reset them (stated honestly). */}
+            {selectionUi}
+            {applied && (
+              <p className="mt-1 text-[11px] text-[#64748B]">
+                {lang === 'tr'
+                  ? 'Bu önizlemeyi yenilemek geçici görseli sıfırlayabilir.'
+                  : 'Reloading this preview may reset the temporary image.'}
+              </p>
+            )}
+            {isCandidateMode && candidate ? (
+              <RuntimeDiagnosticsBlock snapshot={runtimeSnapshot} candidate={candidate} />
+            ) : null}
+          </>
+        )}
+      </div>
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <div>
+        {blockedBanner}
+        {previewHeading}
+        <div className="rounded-xl border border-dashed border-white/[0.08] px-4 py-8 text-center text-[12px] text-[#64748B]">{t('wbPreviewEmpty')}</div>
+      </div>
+    );
+  }
+
+  // No candidate available/eligible — the Safe representation IS the preview (shown
+  // simply as "Preview", no tabs). This is the intended representation, not a failure,
+  // so no fallback notice here; `blockedBanner` already explains an unapproved build.
   return (
     <div>
       {blockedBanner}
       <div className="mb-3 flex items-start justify-between gap-3">
-        <div>{ownerSelector}</div>
+        <div>{previewHeading}</div>
         <div className="flex flex-col items-end gap-2">
           <div className="flex items-center gap-2">
             {selectButton}
@@ -504,21 +604,8 @@ export default function WebBuildPreviewPanel({
           {openFailedNote}
         </div>
       </div>
-      <BrowserFrame url={url} accentColor={ACCENT}>
-        <VisualSelectSurface
-          key={previewKey}
-          ref={surfaceRef}
-          enabled={selectEnabled}
-          onSelect={handleSafeSelect}
-          onExitMode={() => setSelectEnabled(false)}
-        >
-          <PreviewErrorBoundary key={previewKey} fallback={previewFallback}>
-            <WebBuildPreviewDocument sectionItems={items} brief={safeBrief} interactionContract={interactionContract} visualAssetPlan={visualAssetPlan} visualSignaturePlan={visualSignaturePlan} motionComposer={motionComposer} imagePipeline={imagePipeline} />
-          </PreviewErrorBoundary>
-        </VisualSelectSurface>
-      </BrowserFrame>
-      {/* Shared selection UI (pill + stock picker) — Safe Preview is the fallback
-          editing target; edits apply to THIS preview only (never persisted). */}
+      {safePreviewFrame}
+      {/* Shared selection UI (pill + stock picker) — edits apply to THIS preview only. */}
       {selectionUi}
       <p className="mt-2 text-[11px] text-[#64748B]">{t('wbPreviewCaption')}</p>
     </div>

@@ -844,4 +844,14 @@ export const en: Record<string, string> = {
   veSelectedGone: 'Selected element no longer exists',
   veImageNotReplaceable: 'This image can’t be replaced in this preview',
   veTempRestored: 'Temporary preview restored',
+
+  /* ── Candidate-first single preview (Phase 14K.5) ── */
+  previewHeading: 'Preview',
+  previewStarting: 'Preview is starting',
+  previewHighQualityUnavailable: 'High-quality preview unavailable',
+  previewSafeShown: 'A safe preview is being shown instead.',
+  previewRetry: 'Retry preview',
+  previewOpenSafeDebug: 'Open safe preview',
+  previewReturnToMain: 'Return to preview',
+  previewSafeDebugActive: 'Debug: showing the safe preview.',
 };
