@@ -25,6 +25,7 @@ import FeaturesPage from './pages/FeaturesPage';
 import UseCasesPage from './pages/UseCasesPage';
 import PricingPage from './pages/PricingPage';
 import AboutPage from './pages/AboutPage';
+import LegalPage from './pages/LegalPage';
 import ComingSoon from './pages/ComingSoon';
 import AuthPage from './pages/AuthPage';
 
@@ -186,6 +187,9 @@ function AppLayout({ children }: { children: React.ReactNode }) {
     '/careers',
     '/privacy',
     '/terms',
+    '/cookies',
+    '/kvkk',
+    '/acceptable-use',
   ];
   const isPublicRoute = (
     location.pathname === '/' ||
@@ -314,11 +318,19 @@ export default function App() {
         {/* Standalone generated Web Build preview (real openable URL, client-side). */}
         <Route path="/preview/web-build/:runId" element={<WebBuildPreview />} />
 
+        {/* ═══ Public legal / policy pages — fully public (no auth). Rendered by
+             the shared data-driven LegalPage; routes are also listed in
+             PUBLIC_ROUTE_PREFIXES above so no authenticated app chrome
+             (BottomNav / owner toast) appears and direct-load / refresh works. ═══ */}
+        <Route path="/privacy" element={<AnimatedRoute><LegalPage doc="privacy" /></AnimatedRoute>} />
+        <Route path="/terms" element={<AnimatedRoute><LegalPage doc="terms" /></AnimatedRoute>} />
+        <Route path="/cookies" element={<AnimatedRoute><LegalPage doc="cookies" /></AnimatedRoute>} />
+        <Route path="/kvkk" element={<AnimatedRoute><LegalPage doc="kvkk" /></AnimatedRoute>} />
+        <Route path="/acceptable-use" element={<AnimatedRoute><LegalPage doc="acceptableUse" /></AnimatedRoute>} />
+
         {/* ═══ Coming soon placeholders ═══ */}
         <Route path="/blog" element={<AnimatedRoute><ComingSoon title="Blog" pageType="blog" /></AnimatedRoute>} />
         <Route path="/careers" element={<AnimatedRoute><ComingSoon title="Careers" pageType="careers" /></AnimatedRoute>} />
-        <Route path="/privacy" element={<AnimatedRoute><ComingSoon title="Privacy Policy" pageType="legal" /></AnimatedRoute>} />
-        <Route path="/terms" element={<AnimatedRoute><ComingSoon title="Terms of Service" pageType="legal" /></AnimatedRoute>} />
       </Routes>
       </Suspense>
       </IdentityScopeBoundary>
