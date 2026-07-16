@@ -6,45 +6,57 @@ import WebBuildMascot from '@/components/builder/WebBuildMascot';
 
 /**
  * The Chat empty state. When `builder` is set (the normal Chat home) it reads as
- * a unified Korvix Builder home: the premium glassy-sphere mascot beside a
- * "let's build something" headline + subtitle, laid out horizontally on desktop
- * and stacked on mobile. Other workspaces keep the classic centered core orb.
+ * the "Korvix Creation Home": a subtle Korvix mark, a personalized
+ * creation-focused question, and one calm supporting line — a centered,
+ * restrained composition above the real composer (rendered by ChatView). Other
+ * workspaces keep the classic centered core orb.
+ *
+ * All fixed copy resolves through the centralized `t()` locale authority; the
+ * verified first name is interpolated as a `{name}` param (never baked into a
+ * translation string), and a name-free key provides natural grammar in each
+ * language when no name is available. There is no local en/tr/de helper here.
  */
-const L = (lang: string, en: string, tr: string, de: string) =>
-  (lang === 'tr' ? tr : lang === 'de' ? de : en);
-
 export default function EmptyWorkspace({ builder = false }: { builder?: boolean }) {
-  const { t, lang } = useLanguageStore();
+  const { t } = useLanguageStore();
   const firstName = useAuthStore(
     (s) => (s.user?.name || s.user?.email?.split('@')[0] || '').trim().split(/\s+/)[0],
   );
 
-  // ── Builder home: compact horizontal hero (mascot left, text right). No
-  // overflow-hidden / duplicate ambient glow — the mascot's own radial glow is
-  // free to fade out smoothly (clipping it produced the rectangular artifact).
+  // ── Creation Home: centered mark + personalized question + supporting line.
+  // No overflow-hidden / duplicate ambient glow — the mascot's own radial glow
+  // is free to fade out smoothly (clipping it produced a rectangular artifact).
   if (builder) {
-    const headline = firstName
-      ? L(lang, `Hey ${firstName}, let’s create something.`, `Selam ${firstName}, bir şey oluşturalım.`, `Hey ${firstName}, lass uns etwas erstellen.`)
-      : L(lang, 'Hey, let’s create something.', 'Haydi, bir şey oluşturalım.', 'Hey, lass uns etwas erstellen.');
+    const question = firstName
+      ? t('homeCreateQuestionNamed', { name: firstName })
+      : t('homeCreateQuestion');
     return (
-      <div className="flex w-full flex-col items-center gap-4 px-4 text-center sm:flex-row sm:justify-center sm:gap-5 sm:text-left">
+      <div className="flex w-full flex-col items-center gap-3.5 px-4 text-center">
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
           className="shrink-0"
+          aria-hidden="true"
         >
-          <WebBuildMascot state="idle" size={64} />
+          <WebBuildMascot state="idle" size={54} />
         </motion.div>
-        <div className="max-w-md">
+        <div className="max-w-xl">
           <motion.h1
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1, duration: 0.5 }}
-            className="text-[21px] sm:text-[24px] font-semibold tracking-tight text-white"
+            className="text-[23px] font-semibold tracking-tight text-white [text-wrap:balance] break-words sm:text-[30px]"
           >
-            {headline}
+            {question}
           </motion.h1>
+          <motion.p
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.18, duration: 0.5 }}
+            className="mx-auto mt-2.5 max-w-md text-[13.5px] leading-relaxed text-[#94A3B8] [text-wrap:balance] sm:text-[14px]"
+          >
+            {t('homeCreateSubtitle')}
+          </motion.p>
         </div>
       </div>
     );

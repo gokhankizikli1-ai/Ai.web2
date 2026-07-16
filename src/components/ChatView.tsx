@@ -227,21 +227,21 @@ export default function ChatView({
     />
   );
 
-  // ── Kimi-style centered start screen — ONLY on an empty normal Chat. The
-  // hero + composer + mode chips sit as one centered group; there is no bottom
-  // composer, so nothing is duplicated. The first message flips this to the
-  // normal feed + docked composer below.
+  // ── Korvix Creation Home — ONLY on an empty normal Chat. The personalized
+  // hero, the real composer (dominant), and the compact mode selector sit as one
+  // centered group; there is no bottom composer, so nothing is duplicated. The
+  // first message flips this to the normal feed + docked composer below.
   if (isChatHome && isEmptyState) {
     return (
       <div className="flex flex-col h-full">
         <div className="flex-1 overflow-y-auto scrollbar-thin flex flex-col items-center justify-center px-3 md:px-4">
           <div ref={composerRef} className="w-full max-w-3xl py-8">
-            <div className="mb-6 flex justify-center">
+            <div className="mb-7 flex justify-center">
               <EmptyWorkspace builder />
             </div>
-            {/* Mode chips sit between the hero and the composer. */}
-            <KorvixModeChips selected={builderMode} onSelect={handleSelectMode} />
             {composer}
+            {/* Compact mode selector sits directly beneath the composer. */}
+            <KorvixModeChips selected={builderMode} onSelect={handleSelectMode} />
           </div>
         </div>
       </div>
