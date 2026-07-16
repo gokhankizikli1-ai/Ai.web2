@@ -758,7 +758,7 @@ export const de: Record<string, string> = {
   landingStoryPrompt: 'Erstelle eine hochwertige Website für Gartengestaltung für ein modernes Designstudio.',
   landingStoryIllustrative: 'Illustrativ',
   landingSceneReady: 'Erste Version fertig',
-  landingStoryPreviewCta: 'Angebot anfordern',
+  landingStoryPreviewCta: 'Projekte ansehen',
   landingDeployLabel: 'Veröffentlichen',
   landingStoryStageLabel: 'Produkt-Vorführung',
   landingStoryBuilding: 'Erste Version wird erstellt',

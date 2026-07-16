@@ -784,7 +784,7 @@ export const en: Record<string, string> = {
   landingStoryPrompt: 'Build a premium landscaping website for a modern design studio.',
   landingStoryIllustrative: 'Illustrative',
   landingSceneReady: 'First version ready',
-  landingStoryPreviewCta: 'Get a quote',
+  landingStoryPreviewCta: 'Explore projects',
   landingDeployLabel: 'Deploy',
   landingStoryStageLabel: 'Product walkthrough',
   landingStoryBuilding: 'Building first version',

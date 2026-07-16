@@ -760,7 +760,7 @@ export const tr: Record<string, string> = {
   landingStoryPrompt: 'Modern bir tasarım stüdyosu için premium bir peyzaj web sitesi oluştur.',
   landingStoryIllustrative: 'Örnek',
   landingSceneReady: 'İlk sürüm hazır',
-  landingStoryPreviewCta: 'Teklif al',
+  landingStoryPreviewCta: 'Projeleri keşfet',
   landingDeployLabel: 'Yayınla',
   landingStoryStageLabel: 'Ürün tanıtımı',
   landingStoryBuilding: 'İlk sürüm oluşturuluyor',
