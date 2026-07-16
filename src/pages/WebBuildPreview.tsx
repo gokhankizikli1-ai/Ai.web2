@@ -218,7 +218,7 @@ export default function WebBuildPreview() {
             <WebBuildModelNativePreview
               files={data.files || []}
               mode="standalone"
-              {...(displayCandidate ? { candidate: true, showRuntimeDiagnostics: true, onRuntimeSnapshot: setSnapshot } : {})}
+              {...(displayCandidate ? { candidate: true, onRuntimeSnapshot: setSnapshot } : {})}
             />
             {displayCandidate ? (
               <div className="mx-auto max-w-3xl px-4 pb-4">
