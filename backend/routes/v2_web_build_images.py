@@ -97,6 +97,32 @@ def image_gen_generate(
     mode returns a 200 with a structured disabled/failed asset."""
     honesty = body.honestyLabel or "AI-generated illustrative image"
 
+    # ── Founder-Beta AI protection (Phase 14L.1) ──────────────────────────
+    # AI image GENERATION is a protected operation, DISABLED by default in the
+    # Limited Founder Beta. The global kill switch + the image_generation policy
+    # gate are checked here BEFORE any provider call. Stock search and device
+    # upload live on OTHER routes and are unaffected. Returns the existing
+    # graceful 200 disabled asset (Preview never breaks) plus a stable code the
+    # frontend localizes. Fail-open on an integration error (the existing
+    # ENABLE_WEB_BUILD_IMAGE_GEN + owner gates below still apply).
+    try:
+        from backend.services.ai_guard import service as _ai_guard, policy as _ai_policy
+        _pf = _ai_guard.preflight(
+            user_id=str(getattr(user, "id", "anon")),
+            operation_type=_ai_policy.OP_IMAGE_GENERATION,
+            message=body.slotId or "",
+            idempotency_key=(request.headers.get("x-korvix-operation-id") or "").strip()[:80] or None,
+        )
+        if not _pf.allowed:
+            return {
+                "slotId": body.slotId, "status": "disabled", "provider": img.active_provider(),
+                "honestyLabel": honesty, "promptSummary": "",
+                "reason": "AI image generation is unavailable in the Limited Founder Beta",
+                "code": _pf.code,
+            }
+    except Exception:
+        pass
+
     if not img.is_enabled():
         return {
             "slotId": body.slotId, "status": "disabled", "provider": img.active_provider(),

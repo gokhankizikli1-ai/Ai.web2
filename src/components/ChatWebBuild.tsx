@@ -13,6 +13,7 @@ import {
 import {
   generateWebBuild, WebBuildError, webBuildErrorKeyFor,
 } from '@/lib/webBuildApi';
+import * as aiGuard from '@/lib/aiGuard';
 import { buildWebBuildPayload, type WebBuildPayload } from '@/lib/webBuildPayload';
 import { runFrontendBuilderQualityPipeline } from '@/lib/webBuildFrontendQuality';
 import { runFrontendBuilderRevision } from '@/lib/webBuildFrontendRevision';
@@ -93,6 +94,8 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
   // so the composer's stop button disables immediately and repeated clicks are ignored.
   const [stopping, setStopping] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  // Phase 14L.1 — honest Founder Beta usage state (backend-owned; refreshed when idle).
+  const [betaUsage, setBetaUsage] = useState<aiGuard.BetaUsage | null>(null);
 
   const [savedProjectId, setSavedProjectId] = useState<string | undefined>(undefined);
   const [savedName, setSavedName] = useState('');
@@ -256,6 +259,14 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
       setErrorMsg(err.message);
       return;
     }
+    // Phase 14L.1 — the founder-beta protection layer blocked this operation BEFORE any
+    // model call. Show the honest, localized (en/tr/de) beta-limit state via t(); never a
+    // raw backend string, a dollar budget, a provider name or a stack trace.
+    if (err instanceof WebBuildError && err.kind === 'beta_limit') {
+      const reason = err.reason as { betaCode?: string; operationType?: string } | undefined;
+      setErrorMsg(t(aiGuard.betaBlockMessageKey(reason?.betaCode, reason?.operationType)) || t('wbBetaGeneric') || t('wbErrGeneric'));
+      return;
+    }
     const key = err instanceof WebBuildError ? webBuildErrorKeyFor(err.kind) : 'wbErrGeneric';
     setErrorMsg(t(key) || t('wbErrGeneric'));
   }, [t, lang]);
@@ -267,6 +278,11 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
     lastPromptRef.current = trimmed;
 
     abortRef.current?.abort();
+    // Phase 14L.1 — release any prior operation's server lock, then start ONE stable
+    // founder-beta operation for this intentional full build (reused across its internal
+    // planning → visual → code-gen → repair sub-calls so retries dedupe server-side).
+    try { await aiGuard.finalizeWebBuildOperation('cancelled'); } catch { /* best-effort */ }
+    aiGuard.beginWebBuildOperation('web_build_full', sessionId || 'global');
     const controller = new AbortController();
     abortRef.current = controller;
 
@@ -318,8 +334,14 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
       setAnimateStepId(next.steps[next.steps.length - 1]?.id);
       reporter({ phase: 'preview', status: 'completed', detailRows: [{ label: 'files', value: String(next.files?.length ?? 0) }] });
       finishActivity(controller, 'completed');
+      void aiGuard.finalizeWebBuildOperation('succeeded');
     } catch (err) {
-      if (controller.signal.aborted) return;
+      const isCurrent = abortRef.current === controller;
+      if (controller.signal.aborted) {
+        if (isCurrent) void aiGuard.finalizeWebBuildOperation('cancelled');
+        return;
+      }
+      if (isCurrent) void aiGuard.finalizeWebBuildOperation('failed');
       finishActivity(controller, 'failed');
       failLive(err);
     } finally {
@@ -335,6 +357,10 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
     if (!trimmed || !payload) return;
 
     abortRef.current?.abort();
+    // Phase 14L.1 — a small AI edit is its OWN founder-beta operation (server classifies it
+    // as web_build_small_edit from the revision envelope). Release any prior lock first.
+    try { await aiGuard.finalizeWebBuildOperation('cancelled'); } catch { /* best-effort */ }
+    aiGuard.beginWebBuildOperation('web_build_small_edit', sessionId || 'global');
     const controller = new AbortController();
     abortRef.current = controller;
 
@@ -384,14 +410,29 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
       setAnimateStepId(step?.id);
       reporter({ phase: 'revision-preview', status: 'completed', detailRows: [{ label: 'files', value: String(next.files?.length ?? 0) }] });
       finishActivity(controller, 'completed');
+      void aiGuard.finalizeWebBuildOperation('succeeded');
     } catch (err) {
-      if (controller.signal.aborted) return;
+      const isCurrent = abortRef.current === controller;
+      if (controller.signal.aborted) {
+        if (isCurrent) void aiGuard.finalizeWebBuildOperation('cancelled');
+        return;
+      }
+      if (isCurrent) void aiGuard.finalizeWebBuildOperation('failed');
       finishActivity(controller, 'failed');
       failLive(err);
     } finally {
       if (abortRef.current === controller) { setBusy(false); setStopping(false); }
     }
   }, [payload, startLive, makeReporter, finishActivity, failLive, lang, persist, sessionId]);
+
+  // Phase 14L.1 — load the founder-beta usage snapshot on mount and refresh it
+  // whenever the surface returns to idle (a build/edit just finished or was blocked),
+  // so the shown counts stay honest. Fully best-effort; renders nothing on failure.
+  useEffect(() => {
+    let cancelled = false;
+    aiGuard.fetchBetaUsage().then((u) => { if (!cancelled) setBetaUsage(u); }).catch(() => { /* optional */ });
+    return () => { cancelled = true; };
+  }, [busy]);
 
   // Boot once: restore an existing session, else kick off the initial build.
   useEffect(() => {
@@ -540,6 +581,20 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
 
       {/* Revision composer — locked to build edits. */}
       <div className="shrink-0 px-3 md:px-4 pb-3 md:pb-4 pt-1">
+        {/* Phase 14L.1 — compact, honest Limited Founder Beta usage line (never a dollar
+            budget, provider or internal cost). Hidden when the snapshot is unavailable. */}
+        {betaUsage && betaUsage.mode === 'founder_beta' && (
+          <div className="max-w-3xl mx-auto mb-1.5 px-1 flex items-center gap-1.5 flex-wrap text-[11px] text-[#64748B]">
+            <span className="font-medium text-slate-400">{t('wbBetaLabel')}</span>
+            <span aria-hidden>·</span>
+            <span>{t('wbBetaUsage', {
+              full: String(betaUsage.operations?.web_build_full?.limit ?? 1),
+              edit: String(betaUsage.operations?.web_build_small_edit?.limit ?? 5),
+            })}</span>
+            <span aria-hidden>·</span>
+            <span>{t('wbBetaResetAt')}</span>
+          </div>
+        )}
         <div className="max-w-3xl mx-auto flex items-end gap-2 rounded-2xl border border-white/[0.08] bg-white/[0.03] p-2 focus-within:border-white/[0.16] transition-colors">
           <textarea
             ref={textareaRef}

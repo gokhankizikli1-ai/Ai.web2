@@ -426,6 +426,61 @@ async def chat(req: ChatRequest, request: Request):
         )
     timer.mark("limit_check")
 
+    # ── Founder-Beta AI protection (Phase 14L.1) ──────────────────────────
+    # Server-enforced launch safeguards for PROTECTED AI operations (full build,
+    # major redesign, small edit) that reach a model call via /chat. Runs BEFORE
+    # process_chat, so a blocked operation makes ZERO provider calls. Operation
+    # type is DERIVED server-side from mode + the revision envelope marker — never
+    # trusted from an arbitrary client label. Non-protected modes are byte-identical
+    # to before. The whole block fails OPEN on an integration error (a guard bug
+    # must not take down chat); the store's own fail-CLOSED decision for costly work
+    # is returned as a normal block, which is honored.
+    _beta_op_id = None
+    _beta_op_type = None
+    _beta_reset_at = None
+    try:
+        from backend.services.ai_guard import service as _ai_guard
+        _op_type = _ai_guard.classify(
+            normalized_mode, message,
+            declared_intent=request.headers.get("x-korvix-ai-operation"),
+        )
+        if _ai_guard.is_protected(_op_type):
+            _idem = (request.headers.get("x-korvix-operation-id") or "").strip()[:80] or None
+            _pf = _ai_guard.preflight(
+                user_id=str(user_id), operation_type=_op_type,
+                message=message, idempotency_key=_idem,
+            )
+            logger.info(
+                "CHAT | rid=%s | uid=%s | ai_guard | op=%s role=%s allowed=%s code=%s",
+                request_id, user_id, _op_type, _pf.role, _pf.allowed, _pf.code,
+            )
+            if not _pf.allowed:
+                timer.mark("ai_guard_block")
+                timer.flush()
+                _guard_md = {"aiOperation": _pf.to_metadata()}
+                if _pf.code == "rate_limited":
+                    return JSONResponse(
+                        status_code=429,
+                        headers={"Retry-After": str(_pf.retry_after_seconds or 1)},
+                        content={
+                            "reply": "", "intent": "ai_guard_block", "model": "none",
+                            "provider": "none", "mode": normalized_mode or "chat",
+                            "memory_used": False, "remaining_messages": -1, "premium": False,
+                            "response_time_ms": int((time.monotonic() - t_start) * 1000),
+                            "request_id": request_id, "metadata": _guard_md,
+                        },
+                    )
+                return _quick_response(
+                    request_id, user_id, "", "ai_guard_block", t_start,
+                    with_profile=False, metadata=_guard_md,
+                )
+            _beta_op_id = _pf.operation_id
+            _beta_op_type = _op_type
+            _beta_reset_at = _pf.reset_at
+    except Exception as _bge:
+        logger.warning("CHAT | rid=%s | ai_guard preflight error (fail-open): %s", request_id, _bge)
+    timer.mark("ai_guard")
+
     # ── Auto-learn ────────────────────────────────────────────────────────
     # Phase 12B.1 / 13E.1 — skipped for BOTH structured builders: the serialized frontend
     # specification and the generated website planning envelope are implementation
@@ -575,6 +630,35 @@ async def chat(req: ChatRequest, request: Request):
     if _project_id_for_meta:
         response_metadata = dict(response_metadata or {})
         response_metadata["project_id"] = _project_id_for_meta
+
+    # ── Founder-Beta spend reconciliation + operation metadata (Phase 14L.1) ──
+    # Book this sub-call's REAL provider cost (from server-known token usage) into
+    # the global daily ledger, and surface the operationId + reset time so the
+    # frontend can finalize the operation and show honest beta-limit state. Never
+    # affects the reply. Background frontend generation has no synchronous token
+    # usage → the conservative reservation stands until finalize (documented).
+    if _beta_op_type:
+        try:
+            _exec = response_metadata.get("ai_execution", {}) if isinstance(response_metadata, dict) else {}
+            from backend.services.ai_guard import service as _ai_guard2
+            _ai_guard2.record_model_cost(
+                operation_id=_beta_op_id, user_id=str(user_id), model=model, provider=prov,
+                input_tokens=int((_exec or {}).get("input_tokens", 0) or 0),
+                output_tokens=int((_exec or {}).get("output_tokens", 0) or 0),
+                operation_type=_beta_op_type,
+            )
+        except Exception:
+            pass
+        try:
+            response_metadata = dict(response_metadata or {})
+            response_metadata["aiOperation"] = {
+                "status": "allowed",
+                "operationType": _beta_op_type,
+                "operationId": _beta_op_id,
+                "resetAt": _beta_reset_at,
+            }
+        except Exception:
+            pass
 
     if not reply:
         reply = "Bir hata olustu, lutfen tekrar dene."
