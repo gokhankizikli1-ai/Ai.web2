@@ -29,7 +29,7 @@ const values = [
 export default function AboutPage() {
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-foreground">
-      <Navbar />
+      <Navbar surface="dark" />
       <main className="pt-28 pb-20">
         <div className="max-w-3xl mx-auto px-4 sm:px-6">
           {/* Breadcrumb */}

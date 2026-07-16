@@ -15,7 +15,18 @@ const NAV_LINKS = [
   { label: 'Use cases', href: '/#use-cases', icon: ShoppingBag },
 ];
 
-export default function Navbar() {
+/**
+ * Which page surface the shared Navbar sits on. This drives every
+ * surface-dependent color (logo tone, nav text, auth controls, scrolled
+ * background, borders, mobile trigger) from ONE place so the same component
+ * reads correctly on both the porcelain landing and the dark public pages.
+ *
+ *   'light' (default) → the original porcelain landing styling, UNCHANGED.
+ *   'dark'            → readable on the dark public pages (About + legal).
+ */
+export type NavbarSurface = 'light' | 'dark';
+
+export default function Navbar({ surface = 'light' }: { surface?: NavbarSurface }) {
   const [isOpen, setIsOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const location = useLocation();
@@ -33,22 +44,46 @@ export default function Navbar() {
     return location.pathname === href;
   };
 
+  // Centralized surface tokens. The `light` values are byte-identical to the
+  // original single-surface Navbar, so the landing appearance is preserved
+  // exactly; `dark` supplies light-on-dark equivalents for the dark pages.
+  const isDark = surface === 'dark';
+  const s = {
+    logoTone: (isDark ? 'onDark' : 'onLight') as 'onLight' | 'onDark',
+    scrolled: isDark
+      ? 'bg-[#0a0a0f]/80 backdrop-blur-xl border-b border-white/[0.08]'
+      : 'bg-white/80 backdrop-blur-xl border-b border-slate-200/60',
+    navActive: isDark ? 'text-white bg-white/10' : 'text-slate-900 bg-slate-100',
+    navIdle: isDark
+      ? 'text-slate-300 hover:text-white hover:bg-white/[0.06]'
+      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/60',
+    ghost: isDark
+      ? 'text-slate-300 hover:text-white hover:bg-white/10'
+      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100',
+    ghostSubtle: isDark
+      ? 'text-slate-300 hover:text-white hover:bg-white/[0.06]'
+      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/60',
+    divider: isDark ? 'border-white/10' : 'border-border',
+    avatarWrap: isDark ? 'bg-white/10 border-white/15' : 'bg-[#EEF1F4] border-[#DDE3EA]',
+    avatarText: isDark ? 'text-slate-100' : 'text-[#52677A]',
+    userName: isDark ? 'text-slate-300' : 'text-slate-600',
+    trigger: isDark ? 'text-slate-200 hover:text-white' : 'text-muted-foreground hover:text-foreground',
+  };
+
   return (
     <motion.header
       initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4 }}
       className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
-        scrolled
-          ? 'bg-white/80 backdrop-blur-xl border-b border-slate-200/60'
-          : 'bg-transparent'
+        scrolled ? s.scrolled : 'bg-transparent'
       }`}
     >
       <div className="max-w-6xl mx-auto px-4 sm:px-6">
         <div className="flex items-center justify-between h-14">
-          {/* Shared Korvix logo — dark on porcelain */}
+          {/* Shared Korvix logo — wordmark tone follows the page surface */}
           <Link to="/" className="group">
-            <BrandLogo tone="onLight" wordSize={17} />
+            <BrandLogo tone={s.logoTone} wordSize={17} />
           </Link>
 
           {/* Desktop Nav */}
@@ -58,9 +93,7 @@ export default function Navbar() {
                 key={link.label}
                 to={link.href}
                 className={`px-3 py-1.5 rounded-lg text-[13px] font-medium transition-all duration-200 ${
-                  isActive(link.href)
-                    ? 'text-slate-900 bg-slate-100'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/60'
+                  isActive(link.href) ? s.navActive : s.navIdle
                 }`}
               >
                 {link.label}
@@ -76,19 +109,19 @@ export default function Navbar() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="text-slate-600 hover:text-slate-900 hover:bg-slate-100 text-[13px] gap-1.5 h-8"
+                    className={`${s.ghost} text-[13px] gap-1.5 h-8`}
                   >
                     <LayoutDashboard className="h-3.5 w-3.5" />
                     Workspace
                   </Button>
                 </Link>
-                <div className="flex items-center gap-2 pl-2.5 border-l border-border">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-[#EEF1F4] border border-[#DDE3EA]">
-                    <span className="text-[10px] font-semibold text-[#52677A]">
+                <div className={`flex items-center gap-2 pl-2.5 border-l ${s.divider}`}>
+                  <div className={`flex h-7 w-7 items-center justify-center rounded-full border ${s.avatarWrap}`}>
+                    <span className={`text-[10px] font-semibold ${s.avatarText}`}>
                       {(user?.name || 'U').slice(0, 2).toUpperCase()}
                     </span>
                   </div>
-                  <span className="text-[12px] text-slate-600 max-w-[80px] truncate">{user?.name || 'You'}</span>
+                  <span className={`text-[12px] ${s.userName} max-w-[80px] truncate`}>{user?.name || 'You'}</span>
                 </div>
               </>
             ) : (
@@ -97,7 +130,7 @@ export default function Navbar() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="text-slate-600 hover:text-slate-900 hover:bg-slate-100/60 text-[13px] h-8"
+                    className={`${s.ghostSubtle} text-[13px] h-8`}
                   >
                     Sign In
                   </Button>
@@ -120,7 +153,7 @@ export default function Navbar() {
               <Button
                 variant="ghost"
                 size="icon"
-                className="text-muted-foreground hover:text-foreground h-8 w-8"
+                className={`${s.trigger} h-8 w-8`}
                 aria-label={isOpen ? t('menuClose') : t('menuOpen')}
               >
                 <Menu aria-hidden="true" className="h-5 w-5" />

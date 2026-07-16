@@ -25,7 +25,7 @@ export default function LegalPage({ doc: docId }: { doc: LegalDocId }) {
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-foreground">
-      <Navbar />
+      <Navbar surface="dark" />
       <main className="pt-28 pb-20">
         <div className="mx-auto max-w-3xl px-4 sm:px-6">
           {/* Breadcrumb back to the public landing */}
