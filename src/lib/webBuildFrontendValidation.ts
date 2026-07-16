@@ -83,10 +83,31 @@ const FORBIDDEN_PATTERNS: Array<{ re: RegExp; label: string }> = [
   { re: /process\.env/, label: 'process.env' },
   { re: /import\.meta\.env/, label: 'import.meta.env' },
 ];
-const REMOTE_ASSET_PATTERNS: Array<{ re: RegExp; label: string }> = [
-  { re: /<(?:img|video|source)\b[^>]*\bsrc\s*=\s*["'`]\s*https?:\/\//i, label: 'remote <img/video/source src' },
-  { re: /url\(\s*["']?\s*https?:\/\//i, label: 'remote css url()' },
-];
+/* Phase 14K.4 — pre-approved provider image CDNs. Generation-time sourced stock
+ * photos (Pexels/Unsplash) are hotlinked from these hosts over HTTPS and are the
+ * ONLY remote assets allowed; every other remote src/url() stays a hard error, so
+ * the model still cannot introduce arbitrary scraped/random remote images. */
+const ALLOWED_IMAGE_HOSTS: ReadonlySet<string> = new Set([
+  'images.pexels.com', 'images.unsplash.com', 'plus.unsplash.com',
+]);
+/** Every remote URL used in an <img/video/source src> or css url(). */
+const REMOTE_URL_RE = /(?:<(?:img|video|source)\b[^>]*\bsrc\s*=\s*["'`]\s*|url\(\s*["'`]?\s*)(https?:\/\/[^"'`)\s>]+)/gi;
+
+/** Remote asset URLs that are NOT on the approved provider-CDN allowlist. */
+function disallowedRemoteAssets(content: string): string[] {
+  const out: string[] = [];
+  let m: RegExpExecArray | null;
+  REMOTE_URL_RE.lastIndex = 0;
+  while ((m = REMOTE_URL_RE.exec(content)) !== null) {
+    const url = m[1];
+    let host = '';
+    try { host = new URL(url).host.toLowerCase(); } catch { host = ''; }
+    const httpsProviderImage = /^https:\/\//i.test(url) && ALLOWED_IMAGE_HOSTS.has(host);
+    if (!httpsProviderImage) out.push(url.slice(0, 200));
+    if (out.length >= 12) break;
+  }
+  return out;
+}
 /* Incomplete-output markers — matched against CODE COMMENT text only (see
  * extractCommentText), never raw file content, so a visible "TODO"/"FIXME" headline
  * or a "content omitted" paragraph in public copy is not flagged as a code stub. */
@@ -563,8 +584,12 @@ function validateProject(rawFiles: RawFile[], spec: FrontendBuildSpecification, 
     for (const { re, label } of FORBIDDEN_PATTERNS) {
       if (re.test(f.content)) { acc.forbiddenPatternMatches.push(`${label} (${f.path})`); addError(acc, 'forbidden-pattern', `forbidden runtime/security pattern: ${label}`, f.path); }
     }
-    for (const { re, label } of REMOTE_ASSET_PATTERNS) {
-      if (re.test(f.content)) { acc.forbiddenPatternMatches.push(`${label} (${f.path})`); addError(acc, 'remote-asset', `remote runtime asset is not allowed: ${label}`, f.path); }
+    // Remote assets: only pre-approved provider-CDN HTTPS images (Phase 14K.4) are
+    // allowed; any other remote src/url() (arbitrary, scraped, random, non-https) errors.
+    const badRemote = disallowedRemoteAssets(f.content);
+    if (badRemote.length) {
+      acc.forbiddenPatternMatches.push(`remote asset not on provider allowlist (${f.path})`);
+      addError(acc, 'remote-asset', `remote runtime asset is not allowed: ${badRemote[0]}`, f.path);
     }
   }
 
