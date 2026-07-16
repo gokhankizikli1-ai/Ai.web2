@@ -288,7 +288,21 @@ def owner_snapshot() -> Dict[str, object]:
         "globalSpend": {**spend, "limitUsd": limit_usd, "percentUsed": pct},
         "activeOperations": _safe(store.active_operations_count),
         "countsByType": _safe(lambda: store.counts_by_type(window), {}),
+        # Persistence proof (owner-only): which DB is actually live, and whether it
+        # is on a durable path. Read-only — no quota consumed, no model called.
+        "storage": _safe(store.storage_health, {"backend": "sqlite", "error": "unavailable"}),
     }
+
+
+def storage_health() -> Dict[str, object]:
+    """Owner-only storage diagnostics passthrough (read-only)."""
+    return store.storage_health()
+
+
+def verify_storage() -> Dict[str, object]:
+    """Startup-safe persistence verification passthrough (writes a harmless meta
+    marker; no quota, no model call)."""
+    return store.verify_storage()
 
 
 def _safe(fn, default=0):

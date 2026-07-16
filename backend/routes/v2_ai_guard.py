@@ -87,6 +87,20 @@ def admin_ai_operations_status(request: Request):
         return JSONResponse(status_code=200, content={"error": "snapshot_unavailable"})
 
 
+@router.get("/v2/admin/ai-operations/storage")
+def admin_ai_operations_storage(request: Request):
+    """Owner-only persistence proof. Runs the startup-safe verification (write+read
+    a harmless metadata marker) so an operator can confirm WHICH database is live and
+    that it is writable on the durable volume. No user quota consumed, no model call.
+    The absolute path is owner-only."""
+    require_owner(request)
+    try:
+        return {"storage": ai_guard.verify_storage()}
+    except Exception as e:
+        logger.warning("owner ai-operations storage check failed: %s", e)
+        return JSONResponse(status_code=200, content={"storage": {"backend": "sqlite", "error": "unavailable"}})
+
+
 # ── Owner: bounded, audited runtime overrides ─────────────────────────────────
 # Only these keys are writable, each with safe min/max bounds. Anything else is
 # rejected. Setting a key to null clears it (reverts to the env/config default).
