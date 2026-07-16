@@ -531,4 +531,35 @@ export const en: Record<string, string> = {
   stExportData: 'Export Data', stExportDataDesc: 'Download all your data',
   stDeleteAccount: 'Delete Account', stDeleteAccountDesc: 'Permanently remove all data',
   stFeatures: 'Features', stFeaturesSub: 'Early access and beta features', stActive: 'Active',
+
+  /* ── Auth surface + mobile menu (Phase 14I.2) ──
+     Fixed UI copy for the public login / signup page and the landing
+     mobile-menu control. Raw backend auth errors are NOT translated here —
+     only strings the client itself owns. */
+  authWelcomeBack: 'Welcome back to your AI workspace',
+  authCreateAccountSub: 'Create your AI workspace account',
+  authSignUp: 'Sign Up',
+  authSigningIn: 'Signing you in…',
+  authVerifyingGoogle: 'Verifying your Google credentials with the backend.',
+  authContinueGoogle: 'Continue with Google',
+  authOpeningGoogle: 'Opening Google…',
+  authGoogleUnavailable: 'Google unavailable — retry',
+  authUseRedirect: 'Use redirect instead',
+  authContinueApple: 'Continue with Apple',
+  authOr: 'or',
+  authFullName: 'Full name',
+  authEmailAddress: 'Email address',
+  authPassword: 'Password',
+  authShowPassword: 'Show password',
+  authHidePassword: 'Hide password',
+  authFillAllFields: 'Please fill in all fields',
+  authEnterName: 'Please enter your name',
+  authPasswordMin: 'Password must be at least 6 characters',
+  authLegalPrefix: 'By continuing, you agree to our ',
+  authLegalTerms: 'Terms',
+  authLegalMiddle: ' and ',
+  authLegalPrivacy: 'Privacy Policy',
+  authLegalSuffix: '.',
+  menuOpen: 'Open menu',
+  menuClose: 'Close menu',
 };

@@ -6,6 +6,7 @@ import {
   ArrowRight, ShieldAlert, UserPlus,
 } from 'lucide-react';
 import { useAuthStore } from '@/stores/authStore';
+import { useLanguageStore } from '@/stores/languageStore';
 import BrandLogo from '@/components/BrandLogo';
 
 /* ─── Google Identity Services (GIS) type stubs ─────────────────────────
@@ -254,6 +255,7 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { login, signup, loginWithGoogle, isAuthenticated, isLoading, error, clearError } = useAuthStore();
+  const { t } = useLanguageStore();
   const [googleBusy, setGoogleBusy] = useState(false);
 
   // SYNCHRONOUS detection of an OAuth callback. Set as the initial
@@ -328,15 +330,15 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
     clearGoogleErr();
 
     if (!email.trim() || !password.trim()) {
-      setLocalError('Please fill in all fields');
+      setLocalError(t('authFillAllFields'));
       return;
     }
     if (mode === 'signup' && !name.trim()) {
-      setLocalError('Please enter your name');
+      setLocalError(t('authEnterName'));
       return;
     }
     if (password.length < 6) {
-      setLocalError('Password must be at least 6 characters');
+      setLocalError(t('authPasswordMin'));
       return;
     }
 
@@ -775,9 +777,9 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
   }, [clearError]);
 
   // Stable derived label so the button text reflects the actual state.
-  let googleLabel = 'Continue with Google';
-  if (googleBusy) googleLabel = 'Opening Google…';
-  else if (gisFailed && !isSafariOrIOS()) googleLabel = 'Google unavailable — retry';
+  let googleLabel = t('authContinueGoogle');
+  if (googleBusy) googleLabel = t('authOpeningGoogle');
+  else if (gisFailed && !isSafariOrIOS()) googleLabel = t('authGoogleUnavailable');
 
   const handleApple = useCallback(() => {
     setLocalError(
@@ -818,7 +820,7 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
             <BrandLogo tone="onLight" markSize={30} wordSize={19} />
           </Link>
           <p className="text-[12.5px] sm:text-[13px] text-[#64748B]">
-            {mode === 'login' ? 'Welcome back to your AI workspace' : 'Create your AI workspace account'}
+            {mode === 'login' ? t('authWelcomeBack') : t('authCreateAccountSub')}
           </p>
         </div>
 
@@ -846,10 +848,10 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
                 />
               </div>
               <div className="text-[13px] font-semibold text-[#0F1729] mb-1">
-                Signing you in…
+                {t('authSigningIn')}
               </div>
               <div className="text-[11px] text-[#64748B] max-w-[260px] leading-relaxed">
-                Verifying your Google credentials with the backend.
+                {t('authVerifyingGoogle')}
               </div>
               <div className="w-full mt-5 space-y-2">
                 <div className="h-2.5 rounded bg-[#EEF1F4] animate-pulse" />
@@ -871,7 +873,7 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
                     : 'text-[#64748B] hover:text-[#0F1729]'
                 }`}
               >
-                {m === 'login' ? 'Sign In' : 'Sign Up'}
+                {m === 'login' ? t('signIn') : t('authSignUp')}
               </button>
             ))}
           </div>
@@ -895,7 +897,7 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
                 data-testid="auth-google-redirect-button"
               >
                 <GoogleIcon className="h-3.5 w-3.5" />
-                Use redirect instead
+                {t('authUseRedirect')}
               </button>
             )}
             {googleReason && (
@@ -911,14 +913,14 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
               className="w-full flex items-center justify-center gap-2.5 h-10 rounded-xl border border-[#DDE3EA] bg-white hover:bg-[#F7F8FA] hover:border-[#C3CDD8] transition-all text-[12.5px] font-medium text-[#334155]"
             >
               <AppleIcon className="h-4 w-4" />
-              Continue with Apple
+              {t('authContinueApple')}
             </button>
           </div>
 
           {/* Divider */}
           <div className="flex items-center gap-3 mb-5">
             <div className="flex-1 h-px bg-[#DDE3EA]" />
-            <span className="text-[10px] text-[#94A3B8] uppercase tracking-wider">or</span>
+            <span className="text-[10px] text-[#94A3B8] uppercase tracking-wider">{t('authOr')}</span>
             <div className="flex-1 h-px bg-[#DDE3EA]" />
           </div>
 
@@ -934,12 +936,16 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
                   transition={{ duration: 0.2 }}
                 >
                   <div className="relative">
-                    <UserPlus className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94A3B8]" />
+                    <label htmlFor="auth-name" className="sr-only">{t('authFullName')}</label>
+                    <UserPlus aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94A3B8]" />
                     <input
+                      id="auth-name"
+                      name="name"
                       type="text"
+                      autoComplete="name"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
-                      placeholder="Full name"
+                      placeholder={t('authFullName')}
                       className="w-full h-10 pl-10 pr-4 rounded-xl bg-[#F7F8FA] border border-[#DDE3EA] text-[13px] text-[#0F1729] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#52677A] focus:bg-white focus:ring-2 focus:ring-[#52677A]/15 transition-all"
                     />
                   </div>
@@ -948,30 +954,45 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
             </AnimatePresence>
 
             <div className="relative">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94A3B8]" />
+              <label htmlFor="auth-email" className="sr-only">{t('authEmailAddress')}</label>
+              <Mail aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94A3B8]" />
               <input
+                id="auth-email"
+                name="email"
                 type="email"
+                autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="Email address"
+                placeholder={t('authEmailAddress')}
+                aria-invalid={displayError ? true : undefined}
+                aria-describedby={displayError ? 'auth-form-error' : undefined}
                 className="w-full h-10 pl-10 pr-4 rounded-xl bg-[#F7F8FA] border border-[#DDE3EA] text-[13px] text-[#0F1729] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#52677A] focus:bg-white focus:ring-2 focus:ring-[#52677A]/15 transition-all"
               />
             </div>
             <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94A3B8]" />
+              <label htmlFor="auth-password" className="sr-only">{t('authPassword')}</label>
+              <Lock aria-hidden="true" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94A3B8]" />
               <input
+                id="auth-password"
+                name="password"
                 type={showPassword ? 'text' : 'password'}
+                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Password"
+                placeholder={t('authPassword')}
+                aria-invalid={displayError ? true : undefined}
+                aria-describedby={displayError ? 'auth-form-error' : undefined}
                 className="w-full h-10 pl-10 pr-10 rounded-xl bg-[#F7F8FA] border border-[#DDE3EA] text-[13px] text-[#0F1729] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#52677A] focus:bg-white focus:ring-2 focus:ring-[#52677A]/15 transition-all"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? t('authHidePassword') : t('authShowPassword')}
+                aria-pressed={showPassword}
+                aria-controls="auth-password"
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-[#94A3B8] hover:text-[#52677A] transition-colors"
               >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {showPassword ? <EyeOff aria-hidden="true" className="w-4 h-4" /> : <Eye aria-hidden="true" className="w-4 h-4" />}
               </button>
             </div>
 
@@ -982,9 +1003,12 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
                   exit={{ opacity: 0, height: 0 }}
+                  id="auth-form-error"
+                  role="alert"
+                  aria-live="assertive"
                   className="flex items-start gap-2 p-2.5 rounded-lg bg-[#B76E79]/[0.08] border border-[#B76E79]/25"
                 >
-                  <ShieldAlert className="w-3.5 h-3.5 text-[#B76E79] shrink-0 mt-0.5" />
+                  <ShieldAlert aria-hidden="true" className="w-3.5 h-3.5 text-[#B76E79] shrink-0 mt-0.5" />
                   <p className="text-[11px] text-[#9B5560]">{displayError}</p>
                 </motion.div>
               )}
@@ -993,6 +1017,7 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
             <button
               type="submit"
               disabled={isLoading}
+              aria-busy={isLoading}
               className="w-full h-11 flex items-center justify-center rounded-xl text-[13px] font-semibold text-[#F5F7FA] transition-all disabled:opacity-50 hover:-translate-y-px"
               style={{
                 background: 'linear-gradient(180deg, #161C23 0%, #0B0E12 100%)',
@@ -1004,8 +1029,8 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
                 <motion.div animate={{ rotate: 360 }} transition={{ duration: 1, repeat: Infinity, ease: 'linear' }} className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full" />
               ) : (
                 <>
-                  {mode === 'login' ? 'Sign In' : 'Create Account'}
-                  <ArrowRight className="ml-1.5 w-4 h-4" />
+                  {mode === 'login' ? t('signIn') : t('createAccount')}
+                  <ArrowRight aria-hidden="true" className="ml-1.5 w-4 h-4" />
                 </>
               )}
             </button>
@@ -1017,10 +1042,11 @@ export default function AuthPage({ mode: propMode }: AuthPageProps) {
 
         {/* Footer */}
         <p className="text-center text-[11px] text-[#94A3B8] mt-5">
-          By continuing, you agree to our{' '}
-          <Link to="/terms" className="text-[#64748B] hover:text-[#0F1729] underline underline-offset-2 decoration-[#DDE3EA] transition-colors">Terms</Link>
-          {' '}and{' '}
-          <Link to="/privacy" className="text-[#64748B] hover:text-[#0F1729] underline underline-offset-2 decoration-[#DDE3EA] transition-colors">Privacy Policy</Link>.
+          {t('authLegalPrefix')}
+          <Link to="/terms" className="text-[#64748B] hover:text-[#0F1729] underline underline-offset-2 decoration-[#DDE3EA] transition-colors">{t('authLegalTerms')}</Link>
+          {t('authLegalMiddle')}
+          <Link to="/privacy" className="text-[#64748B] hover:text-[#0F1729] underline underline-offset-2 decoration-[#DDE3EA] transition-colors">{t('authLegalPrivacy')}</Link>
+          {t('authLegalSuffix')}
         </p>
       </motion.div>
     </div>
