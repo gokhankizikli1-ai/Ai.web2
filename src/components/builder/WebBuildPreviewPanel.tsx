@@ -5,7 +5,9 @@ import WebBuildPreviewDocument from '@/components/builder/WebBuildPreviewDocumen
 import WebBuildModelNativePreview, { CandidateUnapprovedNotice, RuntimeDiagnosticsBlock } from '@/components/builder/WebBuildModelNativePreview';
 import VisualSelectSurface, { type VisualSelectHandle } from '@/components/builder/VisualSelectSurface';
 import VisualSelectionPill from '@/components/builder/VisualSelectionPill';
-import type { VisualSelection } from '@/lib/visualSelection';
+import StockImagePicker from '@/components/builder/StockImagePicker';
+import type { VisualSelection, VisualImageTarget } from '@/lib/visualSelection';
+import { trackStockDownload, type StockImageResult } from '@/lib/stockImages';
 import { useOwnerMode } from '@/hooks/useOwnerMode';
 import { useLanguageStore } from '@/stores/languageStore';
 import { openPreviewInNewTab, currentReturnTo } from '@/lib/webBuildPreviewStash';
@@ -120,10 +122,77 @@ export default function WebBuildPreviewPanel({
   // target from one build never lingers into another.
   const [selectEnabled, setSelectEnabled] = useState(false);
   const [selection, setSelection] = useState<VisualSelection | null>(null);
+  // Phase 14K.2 — image target + stock picker + temporary applied preview.
+  const [imageTarget, setImageTarget] = useState<VisualImageTarget | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [applied, setApplied] = useState<StockImageResult | null>(null);
   const surfaceRef = useRef<VisualSelectHandle>(null);
   const resetKey = `${runId || ''}|${url}|${items.map((s) => s?.id || '').join(',')}`;
-  useEffect(() => { setSelectEnabled(false); setSelection(null); }, [resetKey]);
-  const clearSelection = () => { setSelection(null); surfaceRef.current?.clear(); };
+  useEffect(() => {
+    setSelectEnabled(false); setSelection(null);
+    setImageTarget(null); setPickerOpen(false); setApplied(null);
+  }, [resetKey]);
+
+  // A new / changed selection restores any live preview and resets image state,
+  // then re-derives whether the new target is a replaceable photo.
+  const handleSelect = (sel: VisualSelection | null) => {
+    surfaceRef.current?.restoreSelectedImage();
+    setApplied(null);
+    setPickerOpen(false);
+    setSelection(sel);
+    setImageTarget(sel ? (surfaceRef.current?.getSelectedImageTarget() ?? null) : null);
+  };
+
+  const clearSelection = () => {
+    surfaceRef.current?.restoreSelectedImage();
+    setApplied(null); setImageTarget(null); setPickerOpen(false); setSelection(null);
+    surfaceRef.current?.clear();
+  };
+
+  // Preview a candidate photo live (temporary). Preload first to avoid a flash of
+  // a broken image, then swap the selected image's source in place.
+  const previewCandidate = (r: StockImageResult | null) => {
+    const surf = surfaceRef.current;
+    if (!surf) return;
+    if (!r) { surf.restoreSelectedImage(); return; }
+    const pre = new Image();
+    const swap = () => surf.previewSelectedImage(r.previewUrl);
+    pre.onload = swap;
+    pre.onerror = swap; // still attempt; the browser shows its own honest fallback
+    pre.src = r.previewUrl;
+  };
+
+  // Apply keeps the photo in THIS live preview only (never persisted) and fires
+  // the provider's required usage event (Unsplash download tracking).
+  const applyCandidate = (r: StockImageResult) => {
+    surfaceRef.current?.previewSelectedImage(r.previewUrl);
+    void trackStockDownload(r);
+    setApplied(r);
+    setPickerOpen(false);
+  };
+
+  // Closing the picker without applying: return to the last applied photo if one
+  // exists, otherwise restore the exact original image.
+  const closePicker = () => {
+    setPickerOpen(false);
+    const surf = surfaceRef.current;
+    if (!surf) return;
+    if (applied) surf.previewSelectedImage(applied.previewUrl);
+    else surf.restoreSelectedImage();
+  };
+
+  // Undo an applied preview — back to the original image.
+  const cancelApplied = () => {
+    surfaceRef.current?.restoreSelectedImage();
+    setApplied(null);
+  };
+
+  // A short, safe suggested search query from the selected image's context.
+  const suggestQuery = (target: VisualImageTarget | null): string => {
+    const raw = (target?.altText || target?.selection.section || target?.selection.textPreview || '').trim();
+    const cleaned = raw.replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+    return cleaned ? cleaned.split(' ').slice(0, 5).join(' ') : '';
+  };
 
   const mode: WebBuildPreviewMode = candidate
     ? resolvePreviewMode(candidate, isOwner, ownerSel)
@@ -317,7 +386,7 @@ export default function WebBuildPreviewPanel({
           key={previewKey}
           ref={surfaceRef}
           enabled={selectEnabled}
-          onSelect={setSelection}
+          onSelect={handleSelect}
           onExitMode={() => setSelectEnabled(false)}
         >
           <PreviewErrorBoundary key={previewKey} fallback={previewFallback}>
@@ -329,10 +398,27 @@ export default function WebBuildPreviewPanel({
           AI in this PR; the next phase connects it to a scoped edit. */}
       {selection && (
         <div className="mt-2">
-          <VisualSelectionPill selection={selection} onClear={clearSelection} />
+          <VisualSelectionPill
+            selection={selection}
+            onClear={clearSelection}
+            canReplaceImage={!!imageTarget}
+            onSearchStock={() => imageTarget && setPickerOpen(true)}
+            applied={applied}
+            onCancelPreview={cancelApplied}
+          />
         </div>
       )}
       <p className="mt-2 text-[11px] text-[#64748B]">{t('wbPreviewCaption')}</p>
+
+      {/* Stock photo picker (Phase 14K.2) — real Pexels/Unsplash search; applies
+          to THIS preview only (never persisted). */}
+      <StockImagePicker
+        open={pickerOpen && !!imageTarget}
+        initialQuery={suggestQuery(imageTarget)}
+        onPreview={previewCandidate}
+        onApply={applyCandidate}
+        onClose={closePicker}
+      />
     </div>
   );
 }

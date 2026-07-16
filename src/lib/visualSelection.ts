@@ -44,6 +44,30 @@ export interface VisualSelection {
   domPath?: string;
 }
 
+/**
+ * An image target derived from a selection (Phase 14K.2). Present ONLY when the
+ * selected element visually IS a replaceable content photo — a real `<img>` or a
+ * single, safe CSS `background-image`. Icons, SVG, gradients, overlays, tiny /
+ * decorative / tracking images and non-https sources never produce a target, so
+ * the image actions surface only where a stock photo can meaningfully replace it.
+ */
+export interface VisualImageTarget {
+  selection: VisualSelection;
+  imageKind: 'img' | 'background';
+  /** The current, rendered source URL (for prefill/attribution — never mutated). */
+  currentUrl: string;
+  altText?: string;
+  /** Rendered CSS-pixel size (used for the size threshold + picker hints). */
+  width?: number;
+  height?: number;
+  aspectRatio?: number;
+  objectFit?: string;
+  sourceAttribute: 'src' | 'background-image';
+}
+
+/** Below this rendered side (px) an image is treated as an icon/avatar/pixel. */
+const MIN_IMAGE_SIDE = 40;
+
 /** i18n keys for each element type (resolved by the UI via t()). */
 const TYPE_KEY: Record<VisualElementType, string> = {
   heading: 'vsHeading', text: 'vsText', button: 'vsButton', link: 'vsLink',
@@ -232,6 +256,102 @@ export function buildSelection(el: HTMLElement, root: HTMLElement, route?: strin
 export function selectionLabel(sel: Pick<VisualSelection, 'typeKey' | 'section'>, t: (k: string) => string): string {
   const type = t(sel.typeKey);
   return sel.section ? `${sel.section} / ${type}` : type;
+}
+
+/** `<svg>` guts / icons living inside an svg — never a replaceable content photo. */
+function isSvgLike(el: HTMLElement): boolean {
+  const tag = el.tagName.toLowerCase();
+  if (tag === 'svg' || tag === 'path' || tag === 'g' || tag === 'use' || tag === 'defs') return true;
+  return !!el.closest('svg');
+}
+
+/**
+ * A single, safe CSS background-image url. Rejects gradients (decorative),
+ * multi-layer / overlay stacks, data-URIs and anything non-https so we never try
+ * to "replace" a gradient overlay or a tooling pixel.
+ */
+function backgroundImageUrl(el: HTMLElement): string {
+  const cs = el.ownerDocument.defaultView?.getComputedStyle(el);
+  const bg = (cs?.backgroundImage || '').trim();
+  if (!bg || bg === 'none') return '';
+  if (/gradient/i.test(bg)) return '';                       // decorative gradient
+  if ((bg.match(/url\(/g) || []).length !== 1) return '';    // overlay / multi-layer stack
+  const m = bg.match(/url\(\s*(['"]?)(.*?)\1\s*\)/i);
+  const url = m ? m[2].trim() : '';
+  if (!url || url.startsWith('data:')) return '';            // data-URI tooling
+  if (!/^https?:\/\//i.test(url)) return '';
+  return url;
+}
+
+/** Rendered `<img>` url (currentSrc/src). Rejects data-URI tooling + non-https. */
+function imgUrl(img: HTMLImageElement): string {
+  const src = (img.currentSrc || img.src || '').trim();
+  if (!src || src.startsWith('data:')) return '';            // tracking pixel / tooling
+  if (!/^https?:\/\//i.test(src)) return '';
+  return src;
+}
+
+/**
+ * Resolve a selected element into an image target — but ONLY when it visually is
+ * a genuine, replaceable content photo. Handles a real `<img>` (resolving
+ * `<picture>` to its rendered `<img>`) and, best-effort, a single safe CSS
+ * `background-image`. Returns null for icons/SVG, tiny/decorative/tracking
+ * images (below the size threshold), gradients, overlays and non-https sources.
+ * Never mutates the DOM.
+ */
+export function getImageTarget(el: HTMLElement, root: HTMLElement, route?: string): VisualImageTarget | null {
+  if (!el || !root.contains(el)) return null;
+  if (el.closest(`[${VS_TOOLING_ATTR}]`)) return null;
+
+  const tag = el.tagName.toLowerCase();
+  let img: HTMLImageElement | null = null;
+  if (tag === 'img') img = el as HTMLImageElement;
+  else if (tag === 'picture') img = el.querySelector('img');
+
+  if (img && root.contains(img) && !isSvgLike(img)) {
+    const r = img.getBoundingClientRect();
+    if (r.width >= MIN_IMAGE_SIDE && r.height >= MIN_IMAGE_SIDE) {
+      const url = imgUrl(img);
+      if (url) {
+        const cs = img.ownerDocument.defaultView?.getComputedStyle(img);
+        return {
+          selection: buildSelection(img, root, route),
+          imageKind: 'img',
+          currentUrl: url,
+          altText: img.getAttribute('alt') || undefined,
+          width: Math.round(r.width),
+          height: Math.round(r.height),
+          aspectRatio: r.height ? r.width / r.height : undefined,
+          objectFit: cs?.objectFit || undefined,
+          sourceAttribute: 'src',
+        };
+      }
+    }
+  }
+
+  // Background-image fallback — only a single, safe https url on a large element.
+  if (!isSvgLike(el)) {
+    const r = el.getBoundingClientRect();
+    if (r.width >= MIN_IMAGE_SIDE && r.height >= MIN_IMAGE_SIDE) {
+      const bg = backgroundImageUrl(el);
+      if (bg) {
+        const cs = el.ownerDocument.defaultView?.getComputedStyle(el);
+        return {
+          selection: buildSelection(el, root, route),
+          imageKind: 'background',
+          currentUrl: bg,
+          altText: el.getAttribute('aria-label') || undefined,
+          width: Math.round(r.width),
+          height: Math.round(r.height),
+          aspectRatio: r.height ? r.width / r.height : undefined,
+          objectFit: cs?.backgroundSize || undefined,
+          sourceAttribute: 'background-image',
+        };
+      }
+    }
+  }
+
+  return null;
 }
 
 export interface OverlayRect { top: number; left: number; width: number; height: number }

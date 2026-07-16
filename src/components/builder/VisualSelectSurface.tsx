@@ -1,8 +1,8 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import { useLanguageStore } from '@/stores/languageStore';
 import {
-  resolveTarget, buildSelection, selectionLabel, overlayRectOf,
-  VS_TOOLING_ATTR, type VisualSelection, type OverlayRect,
+  resolveTarget, buildSelection, selectionLabel, overlayRectOf, getImageTarget,
+  VS_TOOLING_ATTR, type VisualSelection, type OverlayRect, type VisualImageTarget,
 } from '@/lib/visualSelection';
 
 /**
@@ -21,7 +21,28 @@ import {
  * listeners, the ResizeObserver and timers are removed on disable/unmount.
  */
 
-export interface VisualSelectHandle { clear: () => void }
+export interface VisualSelectHandle {
+  clear: () => void;
+  /** The image target for the current selection, or null if it isn't a photo. */
+  getSelectedImageTarget: () => VisualImageTarget | null;
+  /** Temporarily point the selected image at `url` (preview only). Returns false
+   *  if the selection isn't a replaceable image. Original is preserved for restore. */
+  previewSelectedImage: (url: string) => boolean;
+  /** Restore the selected image to its exact original source (undo any preview). */
+  restoreSelectedImage: () => void;
+  /** Is the selected element still mounted in the live preview DOM? */
+  isSelectedConnected: () => boolean;
+}
+
+/** What we captured to restore an image after a temporary preview. */
+interface ImageOriginal {
+  el: HTMLElement;
+  kind: 'img' | 'background';
+  src?: string | null;
+  srcset?: string | null;
+  sizes?: string | null;
+  inlineBg?: string;
+}
 
 interface Props {
   enabled: boolean;
@@ -41,6 +62,7 @@ const VisualSelectSurface = forwardRef<VisualSelectHandle, Props>(function Visua
   const hoverBoxRef = useRef<HTMLDivElement | null>(null);    // imperative hover rect
   const hoverElRef = useRef<HTMLElement | null>(null);        // live hovered element (not persisted)
   const selectedElRef = useRef<HTMLElement | null>(null);     // live selected element (not persisted)
+  const imgOriginalRef = useRef<ImageOriginal | null>(null);  // original image state for restore
   const lastMoveRef = useRef(0);
 
   const [selected, setSelected] = useState<{ rect: OverlayRect; sel: VisualSelection } | null>(null);
@@ -57,14 +79,97 @@ const VisualSelectSurface = forwardRef<VisualSelectHandle, Props>(function Visua
     if (box) box.style.display = 'none';
   }, []);
 
+  // Restore any temporarily-previewed image to its exact original source. Safe to
+  // call repeatedly and on a disconnected node (a no-op after React re-renders).
+  const restoreSelectedImage = useCallback(() => {
+    const orig = imgOriginalRef.current;
+    if (!orig) return;
+    imgOriginalRef.current = null;
+    const node = orig.el;
+    try {
+      if (orig.kind === 'img') {
+        const im = node as HTMLImageElement;
+        if (orig.src != null) im.setAttribute('src', orig.src); else im.removeAttribute('src');
+        if (orig.srcset != null) im.setAttribute('srcset', orig.srcset); else im.removeAttribute('srcset');
+        if (orig.sizes != null) im.setAttribute('sizes', orig.sizes); else im.removeAttribute('sizes');
+      } else {
+        node.style.backgroundImage = orig.inlineBg || '';
+      }
+    } catch { /* node may be gone after a remount — nothing to restore */ }
+  }, []);
+
   const clearSelection = useCallback(() => {
     selectedElRef.current = null;
     setSelected(null);
   }, []);
 
+  // Resolve the live, MUTABLE image node for the current selection (the <img>
+  // itself, resolving <picture> to its rendered image), guarding it's still in
+  // the preview and is genuinely a replaceable photo.
+  const resolveImageNode = useCallback((): { node: HTMLElement; kind: 'img' | 'background' } | null => {
+    const el = selectedElRef.current;
+    const container = containerRef.current;
+    if (!el || !container || !container.contains(el)) return null;
+    const target = getImageTarget(el, container, routeRef.current);
+    if (!target) return null;
+    if (target.imageKind === 'img') {
+      const node = el.tagName.toLowerCase() === 'img' ? el : el.querySelector('img');
+      return node && container.contains(node) ? { node: node as HTMLElement, kind: 'img' } : null;
+    }
+    return { node: el, kind: 'background' };
+  }, []);
+
+  const previewSelectedImage = useCallback((url: string): boolean => {
+    if (!url || !/^https?:\/\//i.test(url)) return false;
+    const resolved = resolveImageNode();
+    if (!resolved) return false;
+    const { node, kind } = resolved;
+    // Capture the true original exactly once per node. Switching to a different
+    // node first restores the previous one so no earlier preview leaks.
+    if (!imgOriginalRef.current || imgOriginalRef.current.el !== node) {
+      restoreSelectedImage();
+      if (kind === 'img') {
+        const im = node as HTMLImageElement;
+        imgOriginalRef.current = {
+          el: node, kind,
+          src: im.getAttribute('src'), srcset: im.getAttribute('srcset'), sizes: im.getAttribute('sizes'),
+        };
+      } else {
+        imgOriginalRef.current = { el: node, kind, inlineBg: node.style.backgroundImage };
+      }
+    }
+    if (kind === 'img') {
+      const im = node as HTMLImageElement;
+      // Drop responsive attrs so our src wins, then point at the preview URL.
+      im.removeAttribute('srcset');
+      im.removeAttribute('sizes');
+      im.setAttribute('src', url);
+    } else {
+      node.style.backgroundImage = `url("${url.replace(/"/g, '%22')}")`;
+    }
+    return true;
+  }, [resolveImageNode, restoreSelectedImage]);
+
   useImperativeHandle(ref, () => ({
     clear: () => { hideHover(); clearSelection(); },
-  }), [hideHover, clearSelection]);
+    getSelectedImageTarget: () => {
+      const el = selectedElRef.current;
+      const container = containerRef.current;
+      if (!el || !container || !container.contains(el)) return null;
+      return getImageTarget(el, container, routeRef.current);
+    },
+    previewSelectedImage,
+    restoreSelectedImage,
+    isSelectedConnected: () => {
+      const el = selectedElRef.current;
+      const container = containerRef.current;
+      return !!(el && container && container.contains(el));
+    },
+  }), [hideHover, clearSelection, previewSelectedImage, restoreSelectedImage]);
+
+  // Safety net: restore any live preview if the surface unmounts (remount on a
+  // new build / mode / device change). Nothing is ever persisted.
+  useEffect(() => () => { restoreSelectedImage(); }, [restoreSelectedImage]);
 
   // Recompute the SELECTED rectangle from the live element (scroll / resize /
   // device-width change / re-render). Identity is preserved; if the element is

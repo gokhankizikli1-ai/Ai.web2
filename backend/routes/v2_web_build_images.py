@@ -32,6 +32,7 @@ from pydantic import BaseModel, Field
 from backend.core.deps import current_user
 from backend.services.auth.identity import User
 from backend.services import web_build_images as img
+from backend.services.web_build_images import stock
 
 router = APIRouter(prefix="/v2/web-build/images", tags=["web-build-images"])
 logger = logging.getLogger(__name__)
@@ -131,6 +132,84 @@ def image_gen_generate(
         body.slotId, body.kind, asset.get("status"), asset.get("provider"), getattr(user, "id", "?"),
     )
     return asset
+
+
+# ── Stock photo search (Phase 14K.2) ────────────────────────────────────────
+# Server-side Pexels/Unsplash search. Authenticated (same current_user pattern
+# as /generate). Keys stay server-side; only normalized results are returned.
+# Validation caps query/page/per_page and enforces a strict provider enum so the
+# endpoint can never become an unbounded public relay.
+_STOCK_PROVIDERS = {"all", "pexels", "unsplash"}
+
+
+@router.get("/stock/health")
+def stock_health() -> Dict[str, Any]:
+    """Which stock providers are configured (booleans only — no key material)."""
+    return {"providers": stock.availability()}
+
+
+@router.get("/stock/search")
+async def stock_search(
+    request: Request,
+    user: User = Depends(current_user),
+    q: str = "",
+    provider: str = "all",
+    page: int = 1,
+    per_page: int = 24,
+    orientation: str = "",
+) -> Dict[str, Any]:
+    """Search real stock photos. Never raises to the client — validation errors
+    and provider failures return a structured, honest payload."""
+    query = (q or "").strip()[: stock.MAX_QUERY]
+    prov = provider if provider in _STOCK_PROVIDERS else "all"
+    page = max(1, min(int(page or 1), 200))
+    per_page = max(1, min(int(per_page or 24), stock.MAX_PER_PAGE))
+    orient = orientation if orientation in {"landscape", "portrait", "square"} else None
+
+    if not query:
+        avail0 = stock.availability()
+        return {
+            "query": "", "page": page, "perPage": per_page,
+            "providers": {k: ("ok" if v else "unavailable") for k, v in avail0.items()},
+            "results": [], "hasMore": False, "error": "empty_query",
+        }
+
+    avail = stock.availability()
+    if not avail["pexels"] and not avail["unsplash"]:
+        return {
+            "query": query, "page": page, "perPage": per_page,
+            "providers": {"pexels": "unavailable", "unsplash": "unavailable"},
+            "results": [], "hasMore": False, "error": "no_providers_configured",
+        }
+
+    try:
+        payload = await stock.search(query, prov, page, per_page, orient)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[STOCK] search failed: %s", type(exc).__name__)
+        return {
+            "query": query, "page": page, "perPage": per_page,
+            "providers": {"pexels": "error", "unsplash": "error"},
+            "results": [], "hasMore": False, "error": "search_failed",
+        }
+    logger.info("[STOCK] q_len=%d provider=%s page=%d results=%d uid=%s",
+                len(query), prov, page, len(payload.get("results") or []), getattr(user, "id", "?"))
+    return payload
+
+
+class StockTrackBody(BaseModel):
+    provider: str = Field(default="", max_length=20)
+    downloadLocation: str = Field(default="", max_length=2048)
+
+
+@router.post("/stock/track")
+def stock_track(
+    body: StockTrackBody,
+    user: User = Depends(current_user),
+) -> Dict[str, Any]:
+    """Fire Unsplash's required download event when a photo is applied. Strictly
+    host-limited to api.unsplash.com server-side. No-op for Pexels."""
+    tracked = stock.track_download(body.provider, body.downloadLocation)
+    return {"tracked": bool(tracked)}
 
 
 __all__ = ["router"]
