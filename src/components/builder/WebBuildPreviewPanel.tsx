@@ -1,8 +1,11 @@
-import { Component, useEffect, useState, type ErrorInfo, type ReactNode } from 'react';
-import { ExternalLink } from 'lucide-react';
+import { Component, useEffect, useRef, useState, type ErrorInfo, type ReactNode } from 'react';
+import { ExternalLink, MousePointerSquareDashed } from 'lucide-react';
 import BrowserFrame from '@/components/builder/BrowserFrame';
 import WebBuildPreviewDocument from '@/components/builder/WebBuildPreviewDocument';
 import WebBuildModelNativePreview, { CandidateUnapprovedNotice, RuntimeDiagnosticsBlock } from '@/components/builder/WebBuildModelNativePreview';
+import VisualSelectSurface, { type VisualSelectHandle } from '@/components/builder/VisualSelectSurface';
+import VisualSelectionPill from '@/components/builder/VisualSelectionPill';
+import type { VisualSelection } from '@/lib/visualSelection';
 import { useOwnerMode } from '@/hooks/useOwnerMode';
 import { useLanguageStore } from '@/stores/languageStore';
 import { openPreviewInNewTab, currentReturnTo } from '@/lib/webBuildPreviewStash';
@@ -111,6 +114,17 @@ export default function WebBuildPreviewPanel({
   const candidateKey = `${runId || ''}|${candidate?.source || 'none'}|${candidate?.files?.length ?? 0}`;
   useEffect(() => { setOwnerSel(undefined); setRuntimeSnapshot(null); }, [candidateKey]);
 
+  // ── Visual Edit (Phase 14K.1) — selection foundation for the safe-fallback
+  // preview only. Hooks live here (before any early return) to respect the rules
+  // of hooks. A new build / revision (resetKey) clears mode + selection so a
+  // target from one build never lingers into another.
+  const [selectEnabled, setSelectEnabled] = useState(false);
+  const [selection, setSelection] = useState<VisualSelection | null>(null);
+  const surfaceRef = useRef<VisualSelectHandle>(null);
+  const resetKey = `${runId || ''}|${url}|${items.map((s) => s?.id || '').join(',')}`;
+  useEffect(() => { setSelectEnabled(false); setSelection(null); }, [resetKey]);
+  const clearSelection = () => { setSelection(null); surfaceRef.current?.clear(); };
+
   const mode: WebBuildPreviewMode = candidate
     ? resolvePreviewMode(candidate, isOwner, ownerSel)
     : (previewSource === 'model-native-sandbox' && legacyFiles.length > 0 ? 'approved-model-native' : 'safe-fallback');
@@ -167,6 +181,27 @@ export default function WebBuildPreviewPanel({
       className="inline-flex items-center gap-1.5 rounded-lg border border-[#3B82F6]/30 bg-[#3B82F6]/[0.08] px-3 py-1.5 text-[12px] font-medium text-[#93C5FD] transition-colors hover:bg-[#3B82F6]/[0.14]"
     >
       <ExternalLink className="h-3.5 w-3.5" /> {t('wbOpenPreview')}
+    </button>
+  );
+
+  // Visual Edit — Select mode toggle. Real <button>, aria-pressed, keyboard
+  // accessible. Disabled while the build is unstable (needs regeneration). Only
+  // rendered on the safe-fallback (direct-DOM) preview path below — the
+  // model-native Sandpack iframe is cross-origin and unsupported here.
+  const selectButton = (
+    <button
+      type="button"
+      onClick={() => setSelectEnabled((v) => !v)}
+      aria-pressed={selectEnabled}
+      disabled={!!blockedNeedsRegeneration}
+      title={blockedNeedsRegeneration ? t('vsPreviewNotReady') : (selectEnabled ? t('vsExit') : t('vsSelectHint'))}
+      className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+        selectEnabled
+          ? 'border-[#3B82F6]/60 bg-[#3B82F6]/[0.18] text-white'
+          : 'border-[#3B82F6]/30 bg-[#3B82F6]/[0.06] text-[#93C5FD] hover:bg-[#3B82F6]/[0.12]'
+      }`}
+    >
+      <MousePointerSquareDashed className="h-3.5 w-3.5" aria-hidden="true" /> {t('vsSelect')}
     </button>
   );
 
@@ -270,17 +305,33 @@ export default function WebBuildPreviewPanel({
       <div className="mb-3 flex items-start justify-between gap-3">
         <div>{ownerSelector}</div>
         <div className="flex flex-col items-end gap-2">
-          {openPreviewButton}
+          <div className="flex items-center gap-2">
+            {selectButton}
+            {openPreviewButton}
+          </div>
           {openFailedNote}
         </div>
       </div>
       <BrowserFrame url={url} accentColor={ACCENT}>
-        <div className="max-h-[70vh] overflow-y-auto scrollbar-thin">
+        <VisualSelectSurface
+          key={previewKey}
+          ref={surfaceRef}
+          enabled={selectEnabled}
+          onSelect={setSelection}
+          onExitMode={() => setSelectEnabled(false)}
+        >
           <PreviewErrorBoundary key={previewKey} fallback={previewFallback}>
             <WebBuildPreviewDocument sectionItems={items} brief={safeBrief} interactionContract={interactionContract} visualAssetPlan={visualAssetPlan} visualSignaturePlan={visualSignaturePlan} motionComposer={motionComposer} imagePipeline={imagePipeline} />
           </PreviewErrorBoundary>
-        </div>
+        </VisualSelectSurface>
       </BrowserFrame>
+      {/* Selection context — read-only. Does NOT touch the composer / prompt /
+          AI in this PR; the next phase connects it to a scoped edit. */}
+      {selection && (
+        <div className="mt-2">
+          <VisualSelectionPill selection={selection} onClear={clearSelection} />
+        </div>
+      )}
       <p className="mt-2 text-[11px] text-[#64748B]">{t('wbPreviewCaption')}</p>
     </div>
   );
