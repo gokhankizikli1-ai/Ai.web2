@@ -3,6 +3,9 @@ import { SandpackProvider, SandpackLayout, SandpackPreview, useSandpack, type Sa
 import { useLanguageStore } from '@/stores/languageStore';
 import type { WebBuildFile } from '@/lib/webBuildPayload';
 import {
+  VE_RUNTIME_SOURCE, VE_RUNTIME_VIRTUAL_PATH, VE_BOOT_VIRTUAL_PATH, buildVisualEditBootSource,
+} from '@/lib/candidateVisualEditRuntimeSource';
+import {
   boundRuntimeMessages, emptyRuntimeSnapshot, runtimeSnapshotKey,
   type ModelNativeCandidate, type ModelNativeRuntimePhase, type ModelNativeRuntimeSnapshot,
 } from '@/lib/webBuildRuntimePreview';
@@ -33,6 +36,11 @@ export interface WebBuildModelNativePreviewProps {
   candidate?: boolean;
   /** Phase 13A — reserved owner flag; the diagnostics UI lives outside this component. */
   showRuntimeDiagnostics?: boolean;
+  /** Phase 14K.3 — inject the visual-edit runtime (editor infrastructure) into the
+   *  sandbox so the parent can drive Visual Select over the `korvix.visual-edit.v1`
+   *  bridge. VIRTUAL-file only: never added to payload.files / All Files / exports,
+   *  and only enabled for the embedded Candidate Preview (not the standalone route). */
+  visualEdit?: boolean;
 }
 
 /* Bounded static runtime dependency map — the packages Phase 12C accepts, pinned to
@@ -448,7 +456,7 @@ function RuntimeObserver({ onSnapshot }: { onSnapshot: (s: ModelNativeRuntimeSna
   return null;
 }
 
-export default function WebBuildModelNativePreview({ files, mode = 'embedded', onRuntimeSnapshot, candidate = false, showRuntimeDiagnostics = false }: WebBuildModelNativePreviewProps) {
+export default function WebBuildModelNativePreview({ files, mode = 'embedded', onRuntimeSnapshot, candidate = false, showRuntimeDiagnostics = false, visualEdit = false }: WebBuildModelNativePreviewProps) {
   const { lang } = useLanguageStore();
   const list = useMemo(() => (Array.isArray(files) ? files.filter((f): f is WebBuildFile => !!f && typeof f.path === 'string' && typeof f.content === 'string') : []), [files]);
 
@@ -470,13 +478,23 @@ export default function WebBuildModelNativePreview({ files, mode = 'embedded', o
     for (const f of list) vf[toVirtualPath(f.path)] = { code: f.content, readOnly: true };
     if (!vf['/tailwind.config.js']) vf['/tailwind.config.js'] = { code: TAILWIND_CONFIG_CODE, readOnly: true, hidden: true };
     if (!vf['/postcss.config.js']) vf['/postcss.config.js'] = { code: POSTCSS_CONFIG_CODE, readOnly: true, hidden: true };
+    // Phase 14K.3 — inject the visual-edit runtime + bootstrap ONLY into the Sandpack
+    // virtual project (hidden, read-only). They never overwrite a model path and are
+    // never added to payload.files / All Files / exports — editor infra, not content.
+    if (visualEdit && vf['/src/main.tsx']) {
+      vf[VE_RUNTIME_VIRTUAL_PATH] = { code: VE_RUNTIME_SOURCE, readOnly: true, hidden: true };
+      vf[VE_BOOT_VIRTUAL_PATH] = { code: buildVisualEditBootSource('/src/main.tsx'), readOnly: true, hidden: true };
+    }
     return vf;
-  }, [list]);
+  }, [list, visualEdit]);
 
+  // With the runtime injected, the bootstrap becomes the entry (it imports the
+  // runtime then the generated app). Without it, the generated entry is untouched.
+  const entryPath = visualEdit && virtualFiles[VE_BOOT_VIRTUAL_PATH] ? VE_BOOT_VIRTUAL_PATH : '/src/main.tsx';
   const customSetup = useMemo<SandpackSetup>(() => ({
-    entry: '/src/main.tsx',
+    entry: entryPath,
     dependencies: SANDBOX_DEPENDENCIES,
-  }), []);
+  }), [entryPath]);
 
   // Embedded: sized for the existing 70vh drawer. Standalone: fill the viewport below
   // the Korvix browser chrome. Both go through the shared PreviewViewportShell sizing

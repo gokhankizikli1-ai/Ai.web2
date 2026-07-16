@@ -812,4 +812,12 @@ export const tr: Record<string, string> = {
   stockApplyImage: 'Görseli uygula',
   stockCancelPreview: 'Önizlemeyi iptal et',
   stockAppliedNote: 'Yalnızca bu önizlemeye uygulandı. Projeye kaydetme yakında geliyor.',
+
+  /* ── Aday Önizleme görsel düzenleme köprüsü (Phase 14K.3) ── */
+  veStarting: 'Görsel Seçim başlatılıyor',
+  veUnavailable: 'Görsel Seçim bu önizlemede kullanılamıyor',
+  vePreviewReloaded: 'Önizleme yeniden yüklendi; seçim temizlendi',
+  veSelectedGone: 'Seçilen öğe artık mevcut değil',
+  veImageNotReplaceable: 'Bu görsel bu önizlemede değiştirilemiyor',
+  veTempRestored: 'Geçici önizleme geri yüklendi',
 };
