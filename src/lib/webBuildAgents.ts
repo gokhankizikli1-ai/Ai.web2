@@ -2129,6 +2129,12 @@ export interface WebBuildArtifacts {
    *  NEVER calls an image API, generates real images, or uploads. Optional → old
    *  builds load. */
   imagePipeline?: ImagePipelineArtifact;
+  /** Visual Intelligence plan (Phase 14K.7) — the typed photography/media strategy
+   *  that decides which slots get real photos + coherent stock queries BEFORE
+   *  sourcing. PLANNING/DATA ONLY: never writes code or calls a provider. Optional →
+   *  old builds load unchanged (they never gain a strategy; the agent is never run
+   *  on load). Present only for fresh builds where the agent produced a valid plan. */
+  visualStrategy?: import('@/lib/webBuildVisualStrategy').VisualStrategy;
   /** Real stock images sourced at generation time (Phase 14K.4) — the persisted
    *  attribution manifest for the URLs baked into the model-native project files.
    *  Optional → old builds load unchanged (they never gain sourced images). */

@@ -351,6 +351,85 @@ def check_structured_website_builder_message(user_id: str, message: str) -> Safe
     return SafetyResult(allowed=True, request_char_count=msg_len, limit_char_count=_WEBSITE_STRUCTURED_MAX_LEN)
 
 
+# ── Visual Intelligence safety path (Phase 14K.7) ──────────────────────────
+# The dedicated `visual_intelligence` mode transports ONE small, machine-built
+# envelope: a sanitized website brief + the planned sections + the candidate image
+# slots (request ≤600 chars, ≤20 sections, ≤16 slots). It is NOT an ordinary chat
+# message and it is NOT the frontend-files envelope (`[FRONTEND BUILDER REQUEST]`) —
+# routing it through `check_structured_builder_message` would reject every call as a
+# malformed frontend envelope. This path validates the VI envelope structure + a
+# small hard cap + the per-user throttle, and — like the other structured paths —
+# deliberately SKIPS the generic prompt-injection regex: everything between the
+# BEGIN/END markers is untrusted DATA governed by the visual_intelligence system
+# prompt, not executable instructions. Applies ONLY to a valid explicit VI envelope.
+_VISUAL_STRUCTURED_MAX_LEN = 20_000
+
+_VISUAL_INTELLIGENCE_MARKER = "[VISUAL INTELLIGENCE REQUEST]"
+_VISUAL_BEGIN_MARKER        = "BEGIN_VISUAL_INTELLIGENCE_INPUT"
+_VISUAL_END_MARKER          = "END_VISUAL_INTELLIGENCE_INPUT"
+
+
+def check_visual_intelligence_message(user_id: str, message: str) -> SafetyResult:
+    """
+    Safety path for the dedicated `visual_intelligence` structured request. Validates
+    the VI envelope structure + a 20k hard cap + the throttle. Never raises; never runs
+    the generic prompt-injection regex over the sanitized website-context payload.
+    """
+    with _STATS_LOCK:
+        _STATS["checks"] += 1
+
+    if not isinstance(message, str):
+        message = str(message or "")
+    msg_len = len(message)
+
+    # 1. Small hard structured length cap (NOT the generic 4k, NOT the 50k website or
+    #    125k frontend caps). The VI envelope is intentionally tiny.
+    if msg_len > _VISUAL_STRUCTURED_MAX_LEN:
+        _bump("rejections_length", f"visual structured length {msg_len} > {_VISUAL_STRUCTURED_MAX_LEN}")
+        return SafetyResult(
+            allowed=False,
+            reason=f"visual intelligence message exceeds {_VISUAL_STRUCTURED_MAX_LEN} characters",
+            code="length",
+            message_for_user=(
+                "Görsel planlama isteği çok büyük. Lütfen tekrar dene."
+            ),
+        )
+
+    # 2. Envelope structure — must be the exact dedicated request, with exactly one
+    #    BEGIN marker preceding exactly one END marker. Malformed → honest reject.
+    begin_count = message.count(_VISUAL_BEGIN_MARKER)
+    end_count = message.count(_VISUAL_END_MARKER)
+    valid_envelope = (
+        message.startswith(_VISUAL_INTELLIGENCE_MARKER)
+        and begin_count == 1
+        and end_count == 1
+        and message.index(_VISUAL_BEGIN_MARKER) < message.index(_VISUAL_END_MARKER)
+    )
+    if not valid_envelope:
+        _bump("rejections_injection", "malformed_visual_intelligence_envelope")
+        return SafetyResult(
+            allowed=False, reason="malformed visual intelligence envelope",
+            code="malformed_envelope",
+            message_for_user=(
+                "Görsel planlama isteği biçimi geçersiz. Lütfen tekrar dene."
+            ),
+        )
+
+    # 3. Per-minute throttle (unchanged). The generic injection regex is deliberately
+    #    NOT run over the sanitized machine-generated payload.
+    if not _throttle_ok(str(user_id)):
+        _bump("rejections_throttle", "per_minute_limit")
+        return SafetyResult(
+            allowed=False, reason="per-minute rate limit",
+            code="throttle",
+            message_for_user=(
+                "Çok hızlı mesaj gönderiyorsun. Birkaç saniye bekleyip tekrar dene."
+            ),
+        )
+
+    return SafetyResult(allowed=True)
+
+
 def _throttle_ok(user_id: str) -> bool:
     """Sliding-window rate limit. Returns True if request can proceed."""
     if _PER_MIN_LIMIT <= 0:

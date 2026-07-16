@@ -37,6 +37,8 @@ import {
 } from '@/lib/webBuildPayload';
 import { parseAndValidateFrontendBuilderRaw } from '@/lib/webBuildFrontendValidation';
 import { sourceStockImagesForPayload } from '@/lib/webBuildImageSourcing';
+import { runVisualIntelligence } from '@/lib/webBuildVisualIntelligence';
+import type { VisualStrategy } from '@/lib/webBuildVisualStrategy';
 import {
   parseFrontendBuilderReview, synthesizeDeterministicReviewIssues,
   mergeDeterministicIssues, buildDeterministicFallbackReview,
@@ -59,6 +61,15 @@ function generationRows(raw: FrontendBuilderRawArtifact): WebBuildActivityDetail
   ];
   if (typeof raw.backgroundWaitMs === 'number') rows.push({ label: 'waited', value: `${Math.round(raw.backgroundWaitMs / 1000)}s` });
   if (typeof raw.configuredMaxOutputTokens === 'number') rows.push({ label: 'outputBudget', value: `${raw.configuredMaxOutputTokens} tok` });
+  return rows;
+}
+function visualPlanningRows(s: VisualStrategy): WebBuildActivityDetailRow[] {
+  const photos = s.imageSlots.filter((x) => x.mediaType === 'photograph').length;
+  const modeLabel: Record<string, string> = {
+    none: 'typography-first', minimal: 'minimal', balanced: 'balanced', 'image-led': 'image-led',
+  };
+  const rows: WebBuildActivityDetailRow[] = [{ label: 'direction', value: modeLabel[s.photographyMode] || s.photographyMode }];
+  rows.push({ label: 'photos', value: photos === 0 ? 'none needed' : String(photos) });
   return rows;
 }
 function imageSourcingRows(m: ImageAssetManifest): WebBuildActivityDetailRow[] {
@@ -407,9 +418,29 @@ export async function runFrontendBuilderQualityPipeline(
   //    FAIL-OPEN: on any problem the payload is returned unchanged and generation
   //    proceeds typography-first. Only affects THIS new generation; old builds untouched. ──
   let basePayload = plannedPayload;
+
+  // ── Step 0a (Phase 14K.7) — Visual Intelligence: decide the photography strategy
+  //    + per-slot media plan + coherent stock queries BEFORE sourcing. FAIL-OPEN:
+  //    on any problem the deterministic planner is used. Runs ONCE per fresh build. ──
+  emit('visual-planning', 'active');
+  try {
+    const vi = await runVisualIntelligence(basePayload.artifacts?.frontendBuildSpec, { signal: opts?.signal });
+    if (vi.strategy) {
+      basePayload = {
+        ...basePayload,
+        artifacts: { ...(basePayload.artifacts || {}), visualStrategy: vi.strategy },
+      };
+      emit('visual-planning', 'completed', visualPlanningRows(vi.strategy));
+    } else {
+      emit('visual-planning', 'skipped', [{ label: 'plan', value: 'standard' }]);
+    }
+  } catch {
+    emit('visual-planning', 'skipped');
+  }
+
   emit('image-sourcing', 'active');
   try {
-    const sourced = await sourceStockImagesForPayload(plannedPayload, { signal: opts?.signal });
+    const sourced = await sourceStockImagesForPayload(basePayload, { signal: opts?.signal });
     basePayload = sourced.payload;
     emit('image-sourcing', sourced.manifest.sourced > 0 ? 'completed' : 'skipped', imageSourcingRows(sourced.manifest));
   } catch {
