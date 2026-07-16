@@ -2,17 +2,19 @@ import { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-import { Menu, Rocket, ShoppingBag, Code, Cpu, LayoutDashboard, LogOut } from 'lucide-react';
+import { Menu, Rocket, Wand2, Code, Cpu, LayoutDashboard, LogOut } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '@/stores/authStore';
 import { useLanguageStore } from '@/stores/languageStore';
 import BrandLogo from '@/components/BrandLogo';
 
+// Public nav — matches the Web-Build-first landing story (Phase 14J.2). Each
+// href is an anchor into a real landing section id; labels resolve through t().
 const NAV_LINKS = [
-  { label: 'Product', href: '/#features', icon: Code },
-  { label: 'Startup Radar', href: '/#startup-radar', icon: Rocket },
-  { label: 'How it works', href: '/#how', icon: Cpu },
-  { label: 'Use cases', href: '/#use-cases', icon: ShoppingBag },
+  { key: 'navProduct', href: '/#product', icon: Code },
+  { key: 'navVisualEdit', href: '/#visual-edit', icon: Wand2 },
+  { key: 'navHowItWorks', href: '/#how', icon: Cpu },
+  { key: 'navResearch', href: '/#research', icon: Rocket },
 ];
 
 /**
@@ -90,13 +92,13 @@ export default function Navbar({ surface = 'light' }: { surface?: NavbarSurface 
           <nav className="hidden md:flex items-center gap-1">
             {NAV_LINKS.map((link) => (
               <Link
-                key={link.label}
+                key={link.key}
                 to={link.href}
                 className={`px-3 py-1.5 rounded-lg text-[13px] font-medium transition-all duration-200 ${
                   isActive(link.href) ? s.navActive : s.navIdle
                 }`}
               >
-                {link.label}
+                {t(link.key)}
               </Link>
             ))}
           </nav>
@@ -132,7 +134,7 @@ export default function Navbar({ surface = 'light' }: { surface?: NavbarSurface 
                     size="sm"
                     className={`${s.ghostSubtle} text-[13px] h-8`}
                   >
-                    Sign In
+                    {t('signIn')}
                   </Button>
                 </Link>
                 <Link to="/signup">
@@ -140,7 +142,7 @@ export default function Navbar({ surface = 'light' }: { surface?: NavbarSurface 
                     size="sm"
                     className="bg-[#1B2230] text-white hover:bg-[#202736] font-semibold text-[13px] h-8 px-4 rounded-lg border border-white/[0.08] shadow-sm transition-all duration-200"
                   >
-                    Get Started
+                    {t('ctaStartBuilding')}
                   </Button>
                 </Link>
               </>
@@ -163,7 +165,7 @@ export default function Navbar({ surface = 'light' }: { surface?: NavbarSurface 
               <div className="flex flex-col gap-1 mt-8">
                 {NAV_LINKS.map((link) => (
                   <Link
-                    key={link.label}
+                    key={link.key}
                     to={link.href}
                     onClick={() => setIsOpen(false)}
                     className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
@@ -172,8 +174,8 @@ export default function Navbar({ surface = 'light' }: { surface?: NavbarSurface 
                         : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/60'
                     }`}
                   >
-                    <link.icon className="h-4 w-4" />
-                    {link.label}
+                    <link.icon aria-hidden="true" className="h-4 w-4" />
+                    {t(link.key)}
                   </Link>
                 ))}
                 <hr className="border-border my-2" />
@@ -196,12 +198,12 @@ export default function Navbar({ surface = 'light' }: { surface?: NavbarSurface 
                   <>
                     <Link to="/login" onClick={() => setIsOpen(false)}>
                       <Button className="w-full bg-[#1B2230] text-white hover:bg-[#202736] font-semibold rounded-xl mb-2 h-10 border border-white/[0.08]">
-                        Sign In
+                        {t('signIn')}
                       </Button>
                     </Link>
                     <Link to="/signup" onClick={() => setIsOpen(false)}>
                       <Button variant="outline" className="w-full border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300 font-semibold rounded-xl h-10 bg-white">
-                        Get Started
+                        {t('ctaStartBuilding')}
                       </Button>
                     </Link>
                   </>

@@ -655,4 +655,92 @@ export const tr: Record<string, string> = {
   homeCreateQuestion: 'Bugün ne inşa ediyoruz?',
   homeCreateSubtitle: 'Bir web sitesi, uygulama, oyun ya da fikir anlat — gerisini Korvix halleder.',
   homeRecommended: 'Önerilen',
+
+  /* ── Public landing — Web Build first (Phase 14J.2) ── */
+  navProduct: 'Ürün',
+  navVisualEdit: 'Görsel Düzenleme',
+  navHowItWorks: 'Nasıl çalışır',
+  navResearch: 'Araştırma',
+  ctaStartBuilding: 'Oluşturmaya başla',
+  landingCtaHow: 'Nasıl çalıştığını gör',
+  landingOpenWorkspace: 'Çalışma alanını aç',
+  landingStatusNow: 'Şu anda mevcut',
+  landingStatusDev: 'Geliştiriliyor',
+  landingStatusNext: 'Yakında',
+
+  // hero
+  landingEyebrow: 'Yapay zekâ ile web sitesi ve web uygulaması oluşturucu',
+  landingHeroTitle: 'Anlat. İnşa et. Her şeyi düzenle.',
+  landingHeroSub: 'Bir web sitesini veya web uygulamasını sade bir dille anlat. Korvix, sohbet üzerinden düzenleyebileceğin duyarlı bir ilk sürüm üretir — ve yakında sayfanın herhangi bir bölümünü seçerek de düzenleyebileceksin.',
+  landingComposerPlaceholder: 'Oluşturmak istediğin web sitesini veya web uygulamasını anlat…',
+  landingComposerAria: 'Ne oluşturmak istediğini anlat',
+  landingTypeLabel: 'Oluşturma türü',
+  landingTypeWebsite: 'Web Sitesi',
+  landingTypeWebApp: 'Web Uygulaması',
+  landingTypeLandingPage: 'Açılış Sayfası',
+  landingTypeEcommerce: 'E-ticaret',
+  landingHeroMicro: 'Başlaması ücretsiz · açıklaman çalışma alanına taşınır, göndermeye hazır olur.',
+
+  // hero product demo (illustrative)
+  landingDemoBadge: 'Oluşturulan önizleme',
+  landingDemoCaption: 'İstemine göre oluşturulan duyarlı bir ilk sürüm.',
+  landingDemoPrompt: 'Premium bir peyzaj web sitesi oluştur',
+
+  // build flow
+  landingFlowLabel: 'İnşa döngüsü',
+  landingFlowTitle: 'Bir istemden çalışan bir ilk sürüme.',
+  landingFlowSub: 'Tek ve bağlantılı bir akış — anlat, oluştur, düzenle ve yayına hazırlan.',
+  landingFlowStep1Title: 'Anlat',
+  landingFlowStep1Desc: 'Ne oluşturmak istediğini Korvix’e sade bir dille söyle.',
+  landingFlowStep2Title: 'Oluştur',
+  landingFlowStep2Desc: 'Korvix, gerçek bir bileşen yapısına sahip duyarlı bir ilk sürüm üretir.',
+  landingFlowStep3Title: 'Düzenle',
+  landingFlowStep3Desc: 'Bugün sohbet üzerinden, yakında sayfanın bölümlerini seçerek yinele.',
+  landingFlowStep4Title: 'Bağla',
+  landingFlowStep4Desc: 'Projeni bir GitHub deposuyla eşitle.',
+  landingFlowStep5Title: 'Yayınla',
+  landingFlowStep5Desc: 'Projeni hazır olduğunda yayına al.',
+
+  // visual edit
+  landingVeLabel: 'Görsel Düzenleme',
+  landingVeTitle: 'Herhangi bir şeyi seç. Korvix’e neyi değiştireceğini söyle.',
+  landingVeSub: 'Herhangi bir bölümün üzerine gel ve metni, bir görseli, bir kartı, bir düğmeyi ya da tüm bir bloğu seç — sonra değişikliği anlat. Korvix, tüm sayfayı yeniden oluşturmak yerine yalnızca o kapsamı günceller.',
+  landingVeSelectionLabel: 'Hero / Ana başlık',
+  landingVeInstruction: 'Bu bölümü daha koyu ve daha premium yap.',
+  landingVeResult: 'Örnek amaçlıdır — görsel düzenleme yakında oluşturucuya geliyor.',
+  landingVeStep1: 'Bir bölümün üzerine gel',
+  landingVeStep2: 'Bir öğe seç',
+  landingVeStep3: 'Değişikliği anlat',
+  landingVeStep4: 'Korvix o kapsamı günceller',
+
+  // output quality
+  landingOutLabel: 'Çıktı kalitesi',
+  landingOutTitle: 'Duyarlı, düzenlenebilir ve şekil vermen için senin.',
+  landingOutSub: 'Korvix, gerçekten üzerine inşa edebileceğin bir çıktı üretmeyi amaçlar.',
+  landingOutItem1: 'Her ekrana uyum sağlayan duyarlı düzenler.',
+  landingOutItem2: 'Dosya dosya inceleyebileceğin gerçek bir bileşen yapısı.',
+  landingOutItem3: 'Modern ve tutarlı arayüz bileşenleri.',
+  landingOutItem4: 'Sohbet üzerinden yinelemeli yapay zekâ düzenlemesi.',
+  landingOutItem5: 'İçerik, metin ve görseller üzerindeki kontrol sende kalır.',
+
+  // research (supporting)
+  landingResLabel: 'Araştırma desteği',
+  landingResTitle: 'Bağlanmadan önce araştır.',
+  landingResSub: 'Startup Radar, gerçek pazar şikâyetlerini incelemene ve bir fikri doğrulamana yardımcı olur; sonra işe yarar bulguları oluşturucuya taşırsın. Araştırma inşayı destekler — ürünün tamamı değildir.',
+  landingResItem1: 'Gerçek ve açıkça etiketlenmiş herkese açık şikâyetleri incele.',
+  landingResItem2: 'Bir fikri güncel sinyallere karşı doğrula.',
+  landingResItem3: 'Bulguları bir inşa istemine taşı.',
+
+  // delivery (GitHub / deploy — upcoming)
+  landingDelLabel: 'Teslimat',
+  landingDelTitle: 'Korvix’ten deponuza.',
+  landingDelSub: 'Doğrudan GitHub eşitlemesi ve yayınlama, yaklaşan teslimat deneyiminin bir parçası — bir depoyu bağla, proje geçmişini koru, değişiklikleri gönder ve hazır olduğunda yayına al.',
+  landingDelStep1: 'Bir depo bağla',
+  landingDelStep2: 'Proje geçmişini koru',
+  landingDelStep3: 'Değişiklikleri gönder',
+  landingDelStep4: 'Hazır olduğunda yayınla',
+
+  // final cta
+  landingFinalTitle: 'Bir fikirle başla. Çalışan bir ilk sürümle ayrıl.',
+  landingFinalSub: 'Ne oluşturmak istediğini anlat, ilk sürümü Korvix üretsin.',
 };
