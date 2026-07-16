@@ -17,6 +17,7 @@ import { buildWebBuildPayload, type WebBuildPayload } from '@/lib/webBuildPayloa
 import { runFrontendBuilderQualityPipeline } from '@/lib/webBuildFrontendQuality';
 import { runFrontendBuilderRevision } from '@/lib/webBuildFrontendRevision';
 import { saveWebBuildPayloadToProject } from '@/lib/webBuildProject';
+import { applyImageReplacement, type ImageReplacementInput } from '@/lib/webBuildImageReplace';
 import { upsertWebBuildChatSession } from '@/lib/webBuildChatSession';
 import { stashPreview } from '@/lib/webBuildPreviewStash';
 import { getProjects } from '@/stores/projectStore';
@@ -131,6 +132,19 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
     upsertWebBuildChatSession(owningChatSessionId, runId, title, p.prompt);
     onPersistSession?.(owningChatSessionId, runId, title);
   }, [lang, onPersistSession, sessionId]);
+
+  // Phase 14K.6 — permanently apply a device-image replacement to the authoritative
+  // project (files + manifest), then persist via the existing session/project path.
+  // PURE apply → commit only on success (transaction-like); no regeneration/model call.
+  const handleImageReplace = useCallback(async (input: ImageReplacementInput) => {
+    if (!payload) return { ok: false, error: 'no_payload' };
+    const r = applyImageReplacement(payload, input);
+    if (!r.ok || !r.payload) return { ok: false, error: r.error };
+    setPayload(r.payload);
+    persist(r.payload);
+    if (savedProjectId) { try { saveWebBuildPayloadToProject(r.payload, savedProjectId); } catch { /* localStorage quota */ } }
+    return { ok: true };
+  }, [payload, persist, savedProjectId]);
 
   // Phase 13H — begin a truthful activity run: seed the expected timeline (first stage already
   // active), record the run identity, and clear any prior completed summary.
@@ -504,6 +518,7 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
             slug={slugFromIdea(payload?.prompt ?? live?.prompt ?? summary?.prompt ?? '')}
             animateStepId={animateStepId}
             runId={payload?.steps[payload.steps.length - 1]?.id}
+            onImageReplace={handleImageReplace}
           />
           {errorMsg && (
             <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-rose-500/20 bg-rose-500/[0.04] px-4 py-3.5">

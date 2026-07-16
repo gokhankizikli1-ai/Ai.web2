@@ -341,7 +341,7 @@ export const VE_RUNTIME_SOURCE = `(function () {
     if (!payload || typeof payload !== 'object') { post('ERROR', { code: 'bad_payload' }, requestId); return; }
     var nodeId = payload.nodeId, provider = payload.provider, url = payload.url;
     if (typeof url !== 'string' || !/^https:\\/\\//i.test(url)) { post('ERROR', { code: 'invalid_url' }, requestId); return; }
-    if (provider !== 'pexels' && provider !== 'unsplash') { post('ERROR', { code: 'invalid_provider' }, requestId); return; }
+    if (provider !== 'pexels' && provider !== 'unsplash' && provider !== 'user-upload') { post('ERROR', { code: 'invalid_provider' }, requestId); return; }
     if (!selectedEl || !document.body.contains(selectedEl)) { post('ERROR', { code: 'selection_gone' }, requestId); return; }
     if (nodeId && lastNodeId && nodeId !== lastNodeId) { post('ERROR', { code: 'node_mismatch' }, requestId); return; }
     var info = imageInfo(selectedEl);

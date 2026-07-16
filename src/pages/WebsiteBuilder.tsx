@@ -25,6 +25,7 @@ import {
 import { runFrontendBuilderQualityPipeline } from '@/lib/webBuildFrontendQuality';
 import { runFrontendBuilderRevision } from '@/lib/webBuildFrontendRevision';
 import { saveWebBuildPayloadToProject } from '@/lib/webBuildProject';
+import { applyImageReplacement, type ImageReplacementInput } from '@/lib/webBuildImageReplace';
 import { stashPreview } from '@/lib/webBuildPreviewStash';
 import { getProjects } from '@/stores/projectStore';
 
@@ -110,6 +111,18 @@ export default function WebsiteBuilder() {
     upsertWebBuildChatSession(id, deriveWebBuildTitle(p.prompt, lang), p.prompt);
     setSearchParams({ session: id }, { replace: true });
   }, [lang, setSearchParams]);
+
+  // Phase 14K.6 — permanently apply a device-image replacement, then persist the
+  // updated project via the existing session save. Commit only on a successful,
+  // targeted apply (no regeneration, no model call).
+  const handleImageReplace = useCallback(async (input: ImageReplacementInput) => {
+    if (!payload) return { ok: false, error: 'no_payload' };
+    const r = applyImageReplacement(payload, input);
+    if (!r.ok || !r.payload) return { ok: false, error: r.error };
+    setPayload(r.payload);
+    persistSession(r.payload);
+    return { ok: true };
+  }, [payload, persistSession]);
 
   /** Reopen an existing Web Build session (from the left rail) — restore its
    *  feed/files/preview and make it active. */
@@ -413,6 +426,7 @@ export default function WebsiteBuilder() {
                 slug={slugFromIdea(payload?.prompt ?? live?.prompt ?? '')}
                 animateStepId={animateStepId}
                 runId={payload?.steps[payload.steps.length - 1]?.id}
+                onImageReplace={handleImageReplace}
               />
               {errorMsg && (
                 <div className="mt-4 flex flex-wrap items-center gap-3 rounded-xl border border-rose-500/20 bg-rose-500/[0.04] px-4 py-3.5">

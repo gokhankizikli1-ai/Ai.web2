@@ -58,12 +58,15 @@ export interface VeEnvelope<T = unknown> {
   payload?: T;
 }
 
-/** PREVIEW_IMAGE command payload — a single, already-validated stock result. */
+/** PREVIEW_IMAGE command payload — a single, already-validated image. `provider`
+ *  is a closed enum ('user-upload' is the caller's own authenticated-storage image,
+ *  Phase 14K.6); `url` must still be HTTPS. This is NOT a generic URL-mutation
+ *  command — the runtime re-validates the enum + https before touching the DOM. */
 export interface VePreviewImagePayload {
   nodeId: string;
-  provider: 'pexels' | 'unsplash';
+  provider: 'pexels' | 'unsplash' | 'user-upload';
   providerImageId: string;
-  /** The exact HTTPS preview/full URL returned by the backend search result. */
+  /** The exact HTTPS URL (provider CDN or the user's stored asset). */
   url: string;
 }
 
