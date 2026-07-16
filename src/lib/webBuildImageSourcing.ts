@@ -21,6 +21,7 @@ import type { WebBuildPayload } from '@/lib/webBuildPayload';
 import type {
   FrontendBuildSpecification, FrontendSpecImageSlot, SourcedImageAsset, ImageAssetManifest,
 } from '@/lib/webBuildAgents';
+import { photographicSlots, type VisualStrategy, type VisualSlotPurpose } from '@/lib/webBuildVisualStrategy';
 
 const BUNDLED_BACKEND = 'https://worker-production-1345.up.railway.app';
 export const MAX_SOURCED_IMAGES = 8;
@@ -110,12 +111,42 @@ function slotAlt(slot: FrontendSpecImageSlot, spec: FrontendBuildSpecification, 
   return clean(`${purpose} photograph for a ${subject} website`, 200);
 }
 
+/** Map a Visual-Strategy purpose onto the sourcing purpose (broader → known). */
+function toImagePurpose(p: VisualSlotPurpose): ImagePurpose {
+  switch (p) {
+    case 'hero': case 'gallery': case 'project': case 'about':
+    case 'team': case 'product': case 'background': return p;
+    default: return 'other';
+  }
+}
+
 /**
- * Build the capped, sanitized image-needs plan from the spec's image slots. Pure.
- * Slots are taken in a stable priority order; per-purpose + total caps prevent an
- * over-imaged, latency-heavy or repetitive result.
+ * Build the capped, sanitized image-needs plan. Pure.
+ *
+ * When a VALID Visual Strategy is supplied (Phase 14K.7) it takes PRECEDENCE:
+ * only its `mediaType: 'photograph'` slots (already sanitized + hard-capped) whose
+ * slotId maps to a real spec image slot are sourced — so an explicit "no photos"
+ * / typography-first plan yields ZERO photos (respected), never the deterministic
+ * fallback. When no strategy is supplied (agent fell back), the original
+ * deterministic kind-based derivation runs.
  */
-export function deriveImageNeeds(spec: FrontendBuildSpecification): ImageNeed[] {
+export function deriveImageNeeds(spec: FrontendBuildSpecification, strategy?: VisualStrategy | null): ImageNeed[] {
+  if (strategy) {
+    const specSlotIds = new Set((spec?.assets?.imageSlots || []).map((s) => s.id).filter(Boolean));
+    return photographicSlots(strategy)
+      .filter((s) => specSlotIds.has(s.slotId))
+      .slice(0, MAX_SOURCED_IMAGES)
+      .map((s) => ({
+        slotId: s.slotId,
+        purpose: toImagePurpose(s.purpose),
+        query: (s.query || '').slice(0, 120),
+        orientation: s.orientation,
+        required: s.required,
+        altText: (s.altText || '').slice(0, 200),
+      }))
+      .filter((n) => !!n.query);
+  }
+
   const slots = spec?.assets?.imageSlots || [];
   const candidates = slots
     .map((slot) => ({ slot, plan: KIND_PLAN[slot.kind] }))
@@ -234,7 +265,8 @@ export async function sourceStockImagesForPayload(
     return { payload, manifest: emptyManifest('empty', ['no image slots']) };
   }
 
-  const needs = deriveImageNeeds(spec);
+  // A valid Visual Strategy (Phase 14K.7) takes precedence; absent → deterministic.
+  const needs = deriveImageNeeds(spec, payload.artifacts?.visualStrategy || null);
   if (needs.length === 0) return { payload, manifest: emptyManifest('empty', ['no photographic image needs']) };
 
   const res = await fetchSourcedImages(needs, opts);

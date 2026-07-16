@@ -158,7 +158,7 @@ async def chat(req: ChatRequest, request: Request):
     _SPECIALIZED_BUILDER_MODES = {
         "game_developer", "website_builder", "startup_advisor",
         "marketing_dropshipping", "trading_analyst", "coding",
-        "frontend_builder",
+        "frontend_builder", "visual_intelligence",
     }
     _is_specialized_builder = (
         normalized_mode in _SPECIALIZED_BUILDER_MODES
@@ -172,7 +172,10 @@ async def chat(req: ChatRequest, request: Request):
     # website path is selected ONLY by the explicit canonical mode (never by content).
     _is_frontend_builder = normalized_mode == "frontend_builder"
     _is_website_builder = normalized_mode == "website_builder"
-    _is_structured_builder = _is_frontend_builder or _is_website_builder
+    # Phase 14K.7 — the Visual Intelligence planner is ALSO a structured builder: its
+    # /chat request is a machine-generated envelope with untrusted JSON input, not chat.
+    _is_visual_intelligence = normalized_mode == "visual_intelligence"
+    _is_structured_builder = _is_frontend_builder or _is_website_builder or _is_visual_intelligence
     if _is_specialized_builder:
         logger.info(
             "CHAT | rid=%s | uid=%s | specialized_builder | mode=%s | shortcuts_bypassed",
@@ -194,12 +197,19 @@ async def chat(req: ChatRequest, request: Request):
             check_message,
             check_structured_builder_message,
             check_structured_website_builder_message,
+            check_visual_intelligence_message,
         )
         if _is_frontend_builder:
-            # Structured transport: validate the envelope + structured size cap +
-            # throttle, and DO NOT run the generic injection regex over the JSON spec
-            # (its quoted user/research content is intentionally untrusted data).
+            # Structured transport: validate the frontend-files envelope + structured
+            # size cap + throttle, and DO NOT run the generic injection regex over the
+            # JSON spec (its quoted user/research content is intentionally untrusted data).
             _safety = check_structured_builder_message(str(user_id), message)
+        elif _is_visual_intelligence:
+            # Phase 14K.7 — the Visual Intelligence envelope is its OWN structured transport
+            # (`[VISUAL INTELLIGENCE REQUEST]`, not the frontend-files envelope). It gets a
+            # dedicated bounded cap + envelope validation + throttle, and skips the generic
+            # injection regex over its sanitized machine-generated website-context payload.
+            _safety = check_visual_intelligence_message(str(user_id), message)
         elif _is_website_builder:
             # Phase 13E.1 — the website planning envelope gets its OWN structured safety
             # path (bounded website cap + envelope validation + throttle), never the
@@ -584,10 +594,10 @@ async def chat(req: ChatRequest, request: Request):
         # independently best-effort; one failure doesn't skip the others.
         if not enqueue(record_usage, user_id, name="record_usage"):
             record_usage(user_id)
-        # Phase 12B.1 — usage still counts, but the frontend_builder structured
-        # request and its raw generated project are NOT persisted into ordinary chat
-        # history (they are implementation data, not conversation).
-        if not _is_frontend_builder:
+        # Phase 12B.1 / 14K.7 — usage still counts, but the frontend_builder and
+        # visual_intelligence structured requests + replies are NOT persisted into
+        # ordinary chat history (they are implementation data, not conversation).
+        if not _is_frontend_builder and not _is_visual_intelligence:
             if not enqueue(save_message, "user", message, name="save_message_user"):
                 save_message("user", message)
             if not enqueue(save_message, "assistant", reply, name="save_message_assistant"):
