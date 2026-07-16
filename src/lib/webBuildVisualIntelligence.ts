@@ -15,6 +15,7 @@
  */
 import type { FrontendBuildSpecification, FrontendSpecImageSlot } from '@/lib/webBuildAgents';
 import { sanitizeVisualStrategy, type VisualStrategy } from '@/lib/webBuildVisualStrategy';
+import * as aiGuard from '@/lib/aiGuard';
 
 const BUNDLED_BACKEND = 'https://worker-production-1345.up.railway.app';
 const VISUAL_INTELLIGENCE_MODE = 'visual_intelligence';
@@ -40,6 +41,10 @@ function authHeaders(): Record<string, string> {
     const tok = localStorage.getItem('korvix_access_token');
     if (tok) h['Authorization'] = `Bearer ${tok}`;
   } catch { /* localStorage may be disabled */ }
+  // Phase 14L.1 — carry the active build's operation key so this ancillary sub-call
+  // attaches to the SAME founder-beta operation (uncharged continuation) instead of
+  // being treated as a separate build and blocked by the concurrency lock.
+  try { Object.assign(h, aiGuard.activeOperationHeaders('web_build_full')); } catch { /* guard optional */ }
   return h;
 }
 

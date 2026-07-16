@@ -25,6 +25,7 @@ import type {
 } from '@/lib/webBuildAgents';
 import { hasAffirmedIntent } from '@/lib/webBuildProductIntent';
 import type { WebBuildFile } from '@/lib/webBuildPayload';
+import * as aiGuard from '@/lib/aiGuard';
 
 /** The canonical backend AI mode for this workspace. Must match the mode
  *  registered in backend/services/ai/mode_manager.py. */
@@ -449,7 +450,11 @@ export type WebBuildErrorKind =
   | 'frontend_generation_access' | 'frontend_generation_quota' | 'frontend_generation_rate_limited'
   // Phase 13F.2 — the model exhausted its output budget (incomplete + max_output_tokens), and
   // the shared background job store was unavailable so no model request was started.
-  | 'frontend_generation_output_limit' | 'frontend_generation_background_unavailable';
+  | 'frontend_generation_output_limit' | 'frontend_generation_background_unavailable'
+  // Phase 14L.1 — the founder-beta AI protection layer BLOCKED this operation BEFORE any
+  // model call (daily limit, concurrency, kill switch, global capacity, rate limit, …). The
+  // specific backend code rides on WebBuildError.reason.betaCode and is localized via t().
+  | 'beta_limit';
 
 /** Phase 13F — the frontend generation transport/provider failure kinds (subset above). */
 export type FrontendGenerationErrorKind =
@@ -660,6 +665,33 @@ export class WebBuildError extends Error {
     this.kind = kind;
     this.reason = reason;
   }
+}
+
+/** Phase 14L.1 — the founder-beta block code carried on a `beta_limit` error. */
+export interface BetaLimitReason { betaCode: string; operationType?: string; retryAfterSeconds?: number; resetAt?: string; }
+
+/** Read a founder-beta BLOCK from a /chat response (200 with metadata.aiOperation
+ *  status='blocked'). Also records the server operationId for later finalize. */
+function readBetaBlock(data: Record<string, unknown>): BetaLimitReason | null {
+  const meta = (data && typeof data === 'object' ? (data['metadata'] as Record<string, unknown> | undefined) : undefined);
+  const op = meta && typeof meta === 'object' ? (meta['aiOperation'] as Record<string, unknown> | undefined) : undefined;
+  if (!op || typeof op !== 'object') return null;
+  if (typeof op['operationId'] === 'string') aiGuard.attachOperationId(op['operationId']);
+  if (op['status'] === 'blocked' && aiGuard.isBetaBlockCode(op['code'])) {
+    return {
+      betaCode: String(op['code']),
+      operationType: typeof op['operationType'] === 'string' ? op['operationType'] : undefined,
+      retryAfterSeconds: typeof op['retryAfterSeconds'] === 'number' ? op['retryAfterSeconds'] : undefined,
+      resetAt: typeof op['resetAt'] === 'string' ? op['resetAt'] : undefined,
+    };
+  }
+  return null;
+}
+
+/** Build the typed founder-beta error. The human message is a neutral fallback;
+ *  the UI localizes via t(aiGuard.betaBlockMessageKey(betaCode)). */
+function betaLimitError(reason: BetaLimitReason): WebBuildError {
+  return new WebBuildError('beta_limit', 'This action is limited in the Founder Beta.', reason);
 }
 
 /** The i18n key for the friendly user-facing message per error kind. */
@@ -1362,6 +1394,9 @@ export async function generateWebBuild(
     const tok = localStorage.getItem('korvix_access_token');
     if (tok) headers['Authorization'] = `Bearer ${tok}`;
   } catch { /* ignore */ }
+  // Phase 14L.1 — founder-beta operation headers (stable idempotency key for this
+  // build; server derives the operation type + enforces limits BEFORE any model call).
+  try { Object.assign(headers, aiGuard.activeOperationHeaders('web_build_full')); } catch { /* guard optional */ }
 
   // Phase 13E.2 — bounded OVERALL planning-workflow budget. Each backend planning call gets
   // its OWN fresh per-attempt timer (see callBackend) constrained by whatever budget remains;
@@ -1477,6 +1512,16 @@ export async function generateWebBuild(
         }
         throw new WebBuildError('network', 'Could not reach the Korvix backend.', err);
       }
+      // Phase 14L.1 — a founder-beta rate-limit block arrives as HTTP 429 with a
+      // structured aiOperation body. Classify it as a beta_limit BEFORE the generic
+      // HTTP guard so the UI shows a restrained "please wait" rather than a hard error.
+      if (response.status === 429) {
+        let body: Record<string, unknown> = {};
+        try { body = await response.json(); } catch { /* empty body */ }
+        const beta = readBetaBlock(body);
+        const retryHeader = Number(response.headers.get('Retry-After') || '');
+        throw betaLimitError(beta || { betaCode: 'rate_limited', retryAfterSeconds: Number.isFinite(retryHeader) ? retryHeader : undefined });
+      }
       if (!response.ok) throw new WebBuildError('http', `The backend returned HTTP ${response.status}.`);
       let data: Record<string, unknown>;
       try {
@@ -1503,6 +1548,11 @@ export async function generateWebBuild(
     // planning parse or repair. Order: (1) backend SAFETY/quota rejection (request never
     // reached the model, or the provider refused it), (2) provider transport failure,
     // (3) known generic fallback. None of these is a malformed planning reply. ──
+    // Phase 14L.1 — a founder-beta 200 block (kill switch, daily limit, concurrency,
+    // capacity) rides in metadata.aiOperation. Classify it BEFORE any planning parse or
+    // repair: it never reached the model, so it is not a malformed planning reply.
+    const betaBlock = readBetaBlock(data);
+    if (betaBlock) throw betaLimitError(betaBlock);
     const exec = parseAiExecutionMetadata(data);
     const safetyRej = parseBackendSafetyRejection(data);
     const reply = typeof data.reply === 'string' ? data.reply : '';
@@ -2501,6 +2551,9 @@ async function callFrontendBuilderTask(
     const tok = localStorage.getItem('korvix_access_token');
     if (tok) headers['Authorization'] = `Bearer ${tok}`;
   } catch { /* ignore */ }
+  // Phase 14L.1 — reuse the ACTIVE build's operation key (started by planning) so this
+  // continuation sub-call attaches to the same server operation instead of a new one.
+  try { Object.assign(headers, aiGuard.activeOperationHeaders('web_build_full')); } catch { /* guard optional */ }
 
   const timer = new AbortController();
   let timedOut = false;
@@ -2535,10 +2588,24 @@ async function callFrontendBuilderTask(
       }
       return { ok: false, reason: 'Could not reach the Korvix backend for the dedicated frontend task.' };
     }
+    // Phase 14L.1 — founder-beta rate-limit block (HTTP 429) → typed beta_limit error.
+    if (response.status === 429) {
+      let body: Record<string, unknown> = {};
+      try { body = await response.json(); } catch { /* empty */ }
+      const beta = readBetaBlock(body);
+      const retryHeader = Number(response.headers.get('Retry-After') || '');
+      throw betaLimitError(beta || { betaCode: 'rate_limited', retryAfterSeconds: Number.isFinite(retryHeader) ? retryHeader : undefined });
+    }
     if (!response.ok) return { ok: false, reason: `The backend returned HTTP ${response.status} for the dedicated frontend task.` };
     let data: Record<string, unknown>;
     try { data = await response.json(); }
     catch { return { ok: false, reason: 'The backend sent an unreadable frontend task response.' }; }
+
+    // Phase 14L.1 — founder-beta 200 block (e.g. a small-edit daily limit or concurrency)
+    // rides in metadata.aiOperation; capture the operationId for finalize and surface a
+    // typed beta_limit error BEFORE the background poll (a blocked op has no background job).
+    const betaBlock = readBetaBlock(data);
+    if (betaBlock) throw betaLimitError(betaBlock);
 
     // Phase 13F.1 — full-source quality/contract-repair/revision tasks run in Background mode
     // and return queued; drive them to terminal via the shared poller. Static reviews are

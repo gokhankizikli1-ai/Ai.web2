@@ -274,6 +274,7 @@ def _build_full_app():
         "backend.routes.v2_results",         # Sprint 1.5 — /v2/orchestrator/runs|projects/{id}/result (gated by ENABLE_DELIVERABLE_RESULT_API)
         "backend.routes.v2_startup",         # Startup Market Intelligence — /v2/startup/market-complaints (gated by ENABLE_STARTUP_MARKET_INTEL)
         "backend.routes.v2_web_build_images",  # Phase 10D — /v2/web-build/images/* real image generation (gated by ENABLE_WEB_BUILD_IMAGE_GEN)
+        "backend.routes.v2_ai_guard",          # Phase 14L.1 — /v2/ai/* founder-beta AI usage/spend protection (finalize, usage, owner controls)
     ]:
         try:
             _app.include_router(importlib.import_module(_mod).router)
