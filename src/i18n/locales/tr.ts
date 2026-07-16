@@ -763,4 +763,6 @@ export const tr: Record<string, string> = {
   landingStoryPreviewCta: 'Teklif al',
   landingDeployLabel: 'Yayınla',
   landingStoryStageLabel: 'Ürün tanıtımı',
+  landingStoryBuilding: 'İlk sürüm oluşturuluyor',
+  landingStoryReplay: 'Tekrar oynat',
 };

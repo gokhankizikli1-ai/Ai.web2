@@ -761,4 +761,6 @@ export const de: Record<string, string> = {
   landingStoryPreviewCta: 'Angebot anfordern',
   landingDeployLabel: 'Veröffentlichen',
   landingStoryStageLabel: 'Produkt-Vorführung',
+  landingStoryBuilding: 'Erste Version wird erstellt',
+  landingStoryReplay: 'Erneut abspielen',
 };
