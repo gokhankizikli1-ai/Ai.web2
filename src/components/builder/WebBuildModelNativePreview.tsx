@@ -34,8 +34,6 @@ export interface WebBuildModelNativePreviewProps {
   onRuntimeSnapshot?: (snapshot: ModelNativeRuntimeSnapshot) => void;
   /** Phase 13A — owner Candidate Preview flag. Presentational hint only (no behaviour). */
   candidate?: boolean;
-  /** Phase 13A — reserved owner flag; the diagnostics UI lives outside this component. */
-  showRuntimeDiagnostics?: boolean;
   /** Phase 14K.3 — inject the visual-edit runtime (editor infrastructure) into the
    *  sandbox so the parent can drive Visual Select over the `korvix.visual-edit.v1`
    *  bridge. VIRTUAL-file only: never added to payload.files / All Files / exports,
@@ -459,7 +457,7 @@ function RuntimeObserver({ onSnapshot }: { onSnapshot: (s: ModelNativeRuntimeSna
   return null;
 }
 
-export default function WebBuildModelNativePreview({ files, mode = 'embedded', onRuntimeSnapshot, candidate = false, showRuntimeDiagnostics = false, visualEdit = false }: WebBuildModelNativePreviewProps) {
+export default function WebBuildModelNativePreview({ files, mode = 'embedded', onRuntimeSnapshot, candidate = false, visualEdit = false }: WebBuildModelNativePreviewProps) {
   const { lang } = useLanguageStore();
   const list = useMemo(() => (Array.isArray(files) ? files.filter((f): f is WebBuildFile => !!f && typeof f.path === 'string' && typeof f.content === 'string') : []), [files]);
 

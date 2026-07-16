@@ -114,7 +114,6 @@ export default function WebBuildPreviewPanel({
   // the approved model-native site, an owner sees the unapproved candidate, or everyone
   // sees the deterministic safe fallback. Never rewrites acceptance/payload/files.
   const legacyFiles = Array.isArray(files) ? files.filter(Boolean) : [];
-  const candidateAvailable = !!candidate?.available;
   const nativeFiles = candidate?.files?.length ? candidate.files : legacyFiles;
 
   // Owner's local Candidate/Safe choice (UI state only). Reset when the run/candidate
@@ -664,7 +663,7 @@ export default function WebBuildPreviewPanel({
                   mode="embedded"
                   visualEdit
                   onRuntimeSnapshot={setRuntimeSnapshot}
-                  {...(isCandidateMode ? { candidate: true, showRuntimeDiagnostics: isOwner } : {})}
+                  {...(isCandidateMode ? { candidate: true } : {})}
                 />
               </BrowserFrame>
             </div>
