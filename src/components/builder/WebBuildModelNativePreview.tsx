@@ -325,7 +325,10 @@ interface RuntimeMessageLike {
   log?: Array<{ method?: string; data?: unknown[] }>;
 }
 
-const RUNTIME_SOFT_TIMEOUT_MS = 25000;
+// Soft startup timeout (also the Candidate-health "timed out" fallback trigger, 14K.5).
+// Deliberately generous so a slow COLD Sandpack install/transpile of a healthy project
+// is not mistaken for a failure — only a genuinely stuck preview trips it.
+const RUNTIME_SOFT_TIMEOUT_MS = 40000;
 
 interface ObserverAccum {
   phase: ModelNativeRuntimePhase;
@@ -501,10 +504,11 @@ export default function WebBuildModelNativePreview({ files, mode = 'embedded', o
   // contract; the generated site controls its own full-width layout inside the iframe.
   const L = (en: string, tr: string) => (lang === 'tr' ? tr : en);
 
-  // Phase 13A — mount the public-API runtime observer only when a caller wants snapshots
-  // (owner Candidate Preview or explicit owner diagnostics). A clean user preview stays
-  // observer-free. `candidate` also tunes the honesty caption below.
-  const wantObserver = !!onRuntimeSnapshot && (candidate || showRuntimeDiagnostics);
+  // Phase 13A / 14K.5 — mount the public-API runtime observer whenever a caller passes
+  // `onRuntimeSnapshot`. The panel uses it BOTH for owner diagnostics AND to detect
+  // genuine Candidate render health (compile/runtime/timeout) so it can auto-fall back to
+  // the Safe preview. The observer reads only Sandpack's PUBLIC API — no behaviour change.
+  const wantObserver = !!onRuntimeSnapshot;
 
   if (!hasEntryFiles) {
     return (

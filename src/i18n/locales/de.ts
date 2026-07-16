@@ -818,4 +818,14 @@ export const de: Record<string, string> = {
   veSelectedGone: 'Ausgewähltes Element existiert nicht mehr',
   veImageNotReplaceable: 'Dieses Bild kann in dieser Vorschau nicht ersetzt werden',
   veTempRestored: 'Temporäre Vorschau wiederhergestellt',
+
+  /* ── Kandidat-first Einzelvorschau (Phase 14K.5) ── */
+  previewHeading: 'Vorschau',
+  previewStarting: 'Vorschau wird gestartet',
+  previewHighQualityUnavailable: 'Hochwertige Vorschau nicht verfügbar',
+  previewSafeShown: 'Stattdessen wird eine sichere Vorschau angezeigt.',
+  previewRetry: 'Vorschau erneut versuchen',
+  previewOpenSafeDebug: 'Sichere Vorschau öffnen',
+  previewReturnToMain: 'Zur Vorschau zurückkehren',
+  previewSafeDebugActive: 'Debug: sichere Vorschau wird angezeigt.',
 };
