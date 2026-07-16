@@ -767,4 +767,24 @@ export const en: Record<string, string> = {
   // final cta
   landingFinalTitle: 'Start with an idea. Leave with a working first version.',
   landingFinalSub: 'Describe what you want to build and let Korvix generate the first version.',
+
+  /* ── Public language control + animated product story (Phase 14J.3) ── */
+  langAuto: 'Automatic',
+  langMenuLabel: 'Change language',
+
+  landingStoryLabel: 'See it work',
+  landingStoryTitle: 'Watch Korvix build it.',
+  landingStorySub: 'One project, three steps — describe, generate, and refine. This is an illustrative walkthrough.',
+  landingStoryStep1Title: 'Describe your idea',
+  landingStoryStep1Desc: 'Pick a type and describe what you want in plain language. Korvix reads the prompt — no setup, no boilerplate.',
+  landingStoryStep2Title: 'Watch Korvix build it',
+  landingStoryStep2Desc: 'Korvix assembles a responsive first version — layout, sections, and components — from your description.',
+  landingStoryStep3Title: 'Refine and ship',
+  landingStoryStep3Desc: 'Select a section and describe a change to refine it. Sync to GitHub and deploy are part of the upcoming delivery flow.',
+  landingStoryPrompt: 'Build a premium landscaping website for a modern design studio.',
+  landingStoryIllustrative: 'Illustrative',
+  landingSceneReady: 'First version ready',
+  landingStoryPreviewCta: 'Get a quote',
+  landingDeployLabel: 'Deploy',
+  landingStoryStageLabel: 'Product walkthrough',
 };

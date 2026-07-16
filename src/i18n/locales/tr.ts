@@ -743,4 +743,24 @@ export const tr: Record<string, string> = {
   // final cta
   landingFinalTitle: 'Bir fikirle başla. Çalışan bir ilk sürümle ayrıl.',
   landingFinalSub: 'Ne oluşturmak istediğini anlat, ilk sürümü Korvix üretsin.',
+
+  /* ── Public language control + animated product story (Phase 14J.3) ── */
+  langAuto: 'Otomatik',
+  langMenuLabel: 'Dili değiştir',
+
+  landingStoryLabel: 'Nasıl çalışıyor',
+  landingStoryTitle: 'Korvix’in inşa edişini izle.',
+  landingStorySub: 'Tek bir proje, üç adım — anlat, oluştur ve düzenle. Bu, örnek amaçlı bir gösterimdir.',
+  landingStoryStep1Title: 'Fikrini anlat',
+  landingStoryStep1Desc: 'Bir tür seç ve ne istediğini sade bir dille anlat. Korvix istemi okur — kurulum yok, şablon yok.',
+  landingStoryStep2Title: 'Korvix’in inşa edişini izle',
+  landingStoryStep2Desc: 'Korvix; düzeni, bölümleri ve bileşenleri açıklamandan yola çıkarak duyarlı bir ilk sürüm halinde bir araya getirir.',
+  landingStoryStep3Title: 'Düzenle ve yayına al',
+  landingStoryStep3Desc: 'Bir bölümü seç ve bir değişiklik anlatarak düzenle. GitHub eşitlemesi ve yayınlama, yaklaşan teslimat akışının bir parçası.',
+  landingStoryPrompt: 'Modern bir tasarım stüdyosu için premium bir peyzaj web sitesi oluştur.',
+  landingStoryIllustrative: 'Örnek',
+  landingSceneReady: 'İlk sürüm hazır',
+  landingStoryPreviewCta: 'Teklif al',
+  landingDeployLabel: 'Yayınla',
+  landingStoryStageLabel: 'Ürün tanıtımı',
 };
