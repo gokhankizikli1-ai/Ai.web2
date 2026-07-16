@@ -1110,6 +1110,43 @@ export interface ImagePipelineArtifact {
   summary: string;
 }
 
+/**
+ * A REAL stock photograph sourced at generation time (Phase 14K.4). Normalized,
+ * license-cleared, hotlinked from the provider CDN — never rehosted. Persisted on
+ * the build artifacts so attribution survives reload / reopen and is available to
+ * the editor + future export/compliance. No provider key material is ever stored.
+ */
+export interface SourcedImageAsset {
+  slotId: string;
+  provider: 'pexels' | 'unsplash';
+  providerImageId: string;
+  /** The exact HTTPS provider-CDN URL rendered in the generated project. */
+  url: string;
+  thumbnailUrl?: string;
+  photographerName: string;
+  photographerUrl?: string | null;
+  providerPageUrl: string;
+  /** Unsplash only — the required download-event URL (already fired server-side). */
+  downloadLocation?: string | null;
+  attributionText?: string;
+  altText: string;
+  width?: number | null;
+  height?: number | null;
+  /** Stable Visual-Select id written onto the generated <img> (data-korvix-id). */
+  domId?: string;
+}
+
+/** The persisted manifest of generation-time sourced stock images (Phase 14K.4). */
+export interface ImageAssetManifest {
+  status: 'ok' | 'no-results' | 'no-providers' | 'empty' | 'error' | 'failed-open';
+  assets: SourcedImageAsset[];
+  providers: { pexels: string; unsplash: string };
+  warnings: string[];
+  requested: number;
+  sourced: number;
+  elapsedMs: number;
+}
+
 export type AgentId = 'research' | 'ui_art_director' | 'strategy' | 'vertical_intelligence' | 'layout_architect' | 'component_engineer' | 'reviewer' | 'quality_director' | 'asset_director' | 'motion_composer' | 'image_pipeline' | 'fixer';
 export type AgentArtifact =
   ResearchAgentArtifact | ArtDirectionArtifact | StrategyAgentArtifact | PageBlueprint
@@ -1451,6 +1488,16 @@ export interface FrontendSpecImageSlot {
   placeholderLabel?: string;
   manualUploadRecommended: boolean;
   providerReady: boolean;
+  /* ── Phase 14K.4 — set when a REAL stock photo was sourced for this slot. When
+   *    `url` is present the builder MUST render a semantic <img> (or single safe
+   *    background) using it exactly, with `alt`, and the stable data-korvix ids. */
+  url?: string;
+  alt?: string;
+  imageProvider?: 'pexels' | 'unsplash';
+  photographer?: string;
+  providerPageUrl?: string;
+  /** Stable Visual-Select id for the generated <img> (data-korvix-id). */
+  domId?: string;
 }
 
 export interface FrontendSpecMotionLayer {
@@ -2075,6 +2122,10 @@ export interface WebBuildArtifacts {
    *  NEVER calls an image API, generates real images, or uploads. Optional → old
    *  builds load. */
   imagePipeline?: ImagePipelineArtifact;
+  /** Real stock images sourced at generation time (Phase 14K.4) — the persisted
+   *  attribution manifest for the URLs baked into the model-native project files.
+   *  Optional → old builds load unchanged (they never gain sourced images). */
+  imageAssetManifest?: ImageAssetManifest;
   /** Safe reviewer-driven repairs (Phase 6). Optional → old builds still load. */
   fixer?: FixerAgentArtifact;
   /** Intent-aware page architecture decision (Phase 9D-1). Optional → old builds load. */

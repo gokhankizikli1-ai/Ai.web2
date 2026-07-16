@@ -36,6 +36,7 @@ import {
   type WebBuildPayload, type WebBuildFile,
 } from '@/lib/webBuildPayload';
 import { parseAndValidateFrontendBuilderRaw } from '@/lib/webBuildFrontendValidation';
+import { sourceStockImagesForPayload } from '@/lib/webBuildImageSourcing';
 import {
   parseFrontendBuilderReview, synthesizeDeterministicReviewIssues,
   mergeDeterministicIssues, buildDeterministicFallbackReview,
@@ -44,7 +45,7 @@ import type {
   FrontendBuildSpecification, FrontendGeneratedFile,
   FrontendBuilderRepairArtifact, FrontendBuilderAcceptanceArtifact,
   FrontendBuilderContractRepairArtifact, FrontendBuilderValidationArtifact, FrontendBuilderRawArtifact,
-  FrontendBuilderReviewArtifact, FrontendBuilderReviewIssue,
+  FrontendBuilderReviewArtifact, FrontendBuilderReviewIssue, ImageAssetManifest,
 } from '@/lib/webBuildAgents';
 import type { WebBuildActivityDetailRow, WebBuildActivityReporter, WebBuildActivityStatus } from '@/lib/webBuildActivity';
 
@@ -58,6 +59,14 @@ function generationRows(raw: FrontendBuilderRawArtifact): WebBuildActivityDetail
   ];
   if (typeof raw.backgroundWaitMs === 'number') rows.push({ label: 'waited', value: `${Math.round(raw.backgroundWaitMs / 1000)}s` });
   if (typeof raw.configuredMaxOutputTokens === 'number') rows.push({ label: 'outputBudget', value: `${raw.configuredMaxOutputTokens} tok` });
+  return rows;
+}
+function imageSourcingRows(m: ImageAssetManifest): WebBuildActivityDetailRow[] {
+  const rows: WebBuildActivityDetailRow[] = [
+    { label: 'images', value: `${m.sourced}/${m.requested}` },
+  ];
+  if (m.providers) rows.push({ label: 'providers', value: `pexels ${m.providers.pexels} · unsplash ${m.providers.unsplash}` });
+  if (typeof m.elapsedMs === 'number' && m.elapsedMs > 0) rows.push({ label: 'elapsed', value: `${Math.round(m.elapsedMs / 1000)}s` });
   return rows;
 }
 function validationRows(v: FrontendBuilderValidationArtifact | undefined): WebBuildActivityDetailRow[] | undefined {
@@ -393,9 +402,23 @@ export async function runFrontendBuilderQualityPipeline(
     try { opts?.reporter?.({ phase, status, detailRows }); } catch { /* activity telemetry only */ }
   };
 
+  // ── Step 0 (Phase 14K.4) — source REAL stock images for this NEW build BEFORE the
+  //    coding model runs, so it receives approved assets + knows where to place them.
+  //    FAIL-OPEN: on any problem the payload is returned unchanged and generation
+  //    proceeds typography-first. Only affects THIS new generation; old builds untouched. ──
+  let basePayload = plannedPayload;
+  emit('image-sourcing', 'active');
+  try {
+    const sourced = await sourceStockImagesForPayload(plannedPayload, { signal: opts?.signal });
+    basePayload = sourced.payload;
+    emit('image-sourcing', sourced.manifest.sourced > 0 ? 'completed' : 'skipped', imageSourcingRows(sourced.manifest));
+  } catch {
+    emit('image-sourcing', 'skipped');
+  }
+
   // ── Step 1 — initial generation + Phase 12B/12C/12D consumption ──
   emit('frontend-generation', 'active');
-  const raw = await generateFrontendBuilderRaw(plannedPayload.artifacts?.frontendBuildSpec, { signal: opts?.signal });
+  const raw = await generateFrontendBuilderRaw(basePayload.artifacts?.frontendBuildSpec, { signal: opts?.signal });
   // ── Phase 13F — an initial frontend TRANSPORT/PROVIDER failure (client timeout, backend
   // timeout, incomplete, access, quota, rate-limit, or any other explicit failure with no
   // usable output) is NOT a website. Throw the mapped typed error HERE, before
@@ -413,7 +436,7 @@ export async function runFrontendBuilderQualityPipeline(
 
   // ── Validation — the raw response is parsed + Phase 12C validated inside attach ──
   emit('frontend-validation', 'active');
-  const consumed = attachFrontendBuilderRaw(plannedPayload, raw);
+  const consumed = attachFrontendBuilderRaw(basePayload, raw);
   emit('frontend-validation', 'completed', validationRows(consumed.artifacts?.frontendBuilderValidation));
 
   try {

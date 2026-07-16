@@ -32,7 +32,7 @@ from pydantic import BaseModel, Field
 from backend.core.deps import current_user
 from backend.services.auth.identity import User
 from backend.services import web_build_images as img
-from backend.services.web_build_images import stock
+from backend.services.web_build_images import stock, sourcing
 
 router = APIRouter(prefix="/v2/web-build/images", tags=["web-build-images"])
 logger = logging.getLogger(__name__)
@@ -210,6 +210,57 @@ def stock_track(
     host-limited to api.unsplash.com server-side. No-op for Pexels."""
     tracked = stock.track_download(body.provider, body.downloadLocation)
     return {"tracked": bool(tracked)}
+
+
+# ── Generation-time stock image sourcing (Phase 14K.4) ──────────────────────
+# Turns a small, pre-planned list of image needs into a manifest of real stock
+# photographs used to make a NEW Web Build generation visually complete. Same
+# authenticated pattern; keys stay server-side; Unsplash usage is tracked here.
+class StockNeedItem(BaseModel):
+    slotId: str = Field(default="", max_length=120)
+    query: str = Field(default="", max_length=200)
+    orientation: str = Field(default="", max_length=16)
+    purpose: str = Field(default="", max_length=40)
+    required: bool = Field(default=False)
+    altText: str = Field(default="", max_length=200)
+
+
+class StockSourceBody(BaseModel):
+    needs: List[StockNeedItem] = Field(default_factory=list, max_length=32)
+    maxImages: int = Field(default=8, ge=0, le=16)
+
+
+@router.post("/stock/source")
+async def stock_source(
+    body: StockSourceBody,
+    request: Request,
+    user: User = Depends(current_user),
+) -> Dict[str, Any]:
+    """Source one unique stock photo per image need for a NEW generation. Never
+    raises to the client — provider/validation failures return a structured,
+    honest manifest so website generation can always proceed."""
+    cap = min(int(body.maxImages or 0) or sourcing.MAX_IMAGES, sourcing.MAX_IMAGES)
+    needs = [
+        {
+            "slotId": n.slotId,
+            "query": n.query,
+            "orientation": n.orientation,
+            "altText": n.altText,
+        }
+        for n in (body.needs or [])
+    ][:cap]
+    try:
+        result = await sourcing.source_images(needs)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[STOCK_SRC] sourcing failed: %s", type(exc).__name__)
+        return {
+            "status": "error", "assets": [],
+            "providers": {"pexels": "error", "unsplash": "error"},
+            "warnings": ["sourcing_failed"], "requested": len(needs), "sourced": 0, "elapsedMs": 0,
+        }
+    logger.info("[STOCK_SRC] uid=%s requested=%d sourced=%d status=%s",
+                getattr(user, "id", "?"), result.get("requested", 0), result.get("sourced", 0), result.get("status"))
+    return result
 
 
 __all__ = ["router"]

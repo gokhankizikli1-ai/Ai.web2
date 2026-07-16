@@ -1897,6 +1897,23 @@ function builderProjection(spec: FrontendBuildSpecification): Record<string, unk
  *  HTML / WebBuildFile.content / previous model code / chain-of-thought. */
 export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): string {
   const json = JSON.stringify(builderProjection(spec));
+  // Phase 14K.4 — real, pre-approved stock photos were sourced for some image slots.
+  const sourcedImageSlots = (spec.assets?.imageSlots || []).filter((s) => !!s.url);
+  const imageBlock = sourcedImageSlots.length > 0 ? [
+    'REAL SOURCED IMAGES:',
+    'Some assets.imageSlots entries include a "url" — these are REAL, pre-approved,',
+    'license-cleared stock photographs (provider CDN, HTTPS). For EACH such slot you MUST:',
+    '- render a semantic <img> (or a single safe HTTPS background-image only if the design needs it),',
+    '- use the "url" EXACTLY as given (never modify, resize-via-query, proxy or swap it),',
+    '- set alt to the slot "alt" text,',
+    '- apply object-fit: cover inside a real aspect-ratio box so it never distorts,',
+    '- add data-korvix-id="<slot.domId>" and data-korvix-image-slot="<slot.id>" ON the <img>.',
+    'Do NOT replace a slot that has a "url" with an SVG/illustration/gradient/empty placeholder.',
+    'Do NOT invent any other remote image URL, lorem-image service, Unsplash Source random',
+    'endpoint, or base64 image as final artwork. Image slots WITHOUT a "url" stay CSS/SVG/',
+    'typography exactly as before. Keep the provider/photographer fields intact for attribution.',
+    '',
+  ] : [];
   return [
     '[FRONTEND BUILDER REQUEST]',
     'Contract version: frontend-spec-v1',
@@ -1907,6 +1924,7 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
     'section.publicCopy as visible text; internalGuidance is build guidance, never page copy.',
     'Return ONLY the frontend-files-v1 envelope (## FRONTEND_FILES_V1 … ## END_FRONTEND_FILES_V1).',
     '',
+    ...imageBlock,
     // Phase 13F.2 — eliminate REDUNDANT tokens (not design quality). Fully implement the spec —
     // required sections, motion/composition and the quality bar are UNCHANGED — but do not waste
     // the output budget on non-source noise or duplicated copy.

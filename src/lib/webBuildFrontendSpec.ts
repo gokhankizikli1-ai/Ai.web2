@@ -164,7 +164,8 @@ const OUTPUT_FORBIDDEN: string[] = [
   'No blank image rectangles or empty media placeholders presented as real assets.',
   'No fabricated metrics, reviews, logos, prices, inventory, listings or compliance badges.',
   'No runtime fetch/XHR/WebSocket calls; no backend, auth, payments or database.',
-  'No real AI runtime or live data; no external image URLs presented as real assets.',
+  'No real AI runtime or live data. Do NOT invent external image URLs; use ONLY the '
+  + 'pre-approved provider stock image URLs supplied in assets.imageSlots[].url.',
   'No copying or imitating the internal template synthesizer output.',
 ];
 const OUTPUT_SUCCESS: string[] = [
