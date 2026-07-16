@@ -23,6 +23,7 @@ vs fail-closed (see service.py). Time is UTC epoch seconds for TTL math and UTC
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
 import threading
 import time
@@ -43,6 +44,51 @@ FAMILY_TYPES = (P.OP_WEB_BUILD_FULL, P.OP_WEB_BUILD_MAJOR_REDESIGN, P.OP_WEB_BUI
 _LOCK = threading.Lock()
 _INITIALIZED = False
 
+# Non-empty when a CONFIGURED persistent path could not be prepared/opened. While
+# set, protected AI operations fail closed (the store raises) rather than silently
+# writing quota state to an ephemeral fresh DB that vanishes on the next redeploy.
+_STORAGE_ERROR: Optional[str] = None
+
+_AI_GUARD_DB_ENV = "AI_GUARD_DB_PATH"
+_SCHEMA_VERSION = "1"
+
+
+def _db_path() -> str:
+    """The one authoritative on-disk path for ai_guard.db, used by EVERY guard
+    connection. Deterministic precedence (via resolve_db_path):
+        1. AI_GUARD_DB_PATH — a full absolute file path (e.g. /data/ai_guard.db)
+        2. <KORVIX_DATA_DIR | RAILWAY_VOLUME_MOUNT_PATH>/ai_guard.db
+        3. the bare relative dev fallback 'ai_guard.db'
+    """
+    return resolve_db_path("ai_guard.db", _AI_GUARD_DB_ENV)
+
+
+def _persistent_configured() -> bool:
+    """True when a DURABLE location is configured (absolute AI_GUARD_DB_PATH, or a
+    KORVIX_DATA_DIR / Railway volume) — i.e. NOT the ephemeral dev fallback. When
+    True, a storage failure must fail closed instead of using ephemeral storage."""
+    explicit = (os.getenv(_AI_GUARD_DB_ENV) or "").strip()
+    if explicit:
+        return os.path.isabs(explicit)
+    try:
+        from backend.core.paths import data_dir
+        return bool(data_dir())
+    except Exception:
+        return False
+
+
+def _ensure_parent(path: str) -> bool:
+    """Create the DB file's parent directory (mkdir -p). Returns True when it
+    exists afterwards. resolve_db_path does NOT create the parent for an explicit
+    absolute AI_GUARD_DB_PATH, so we do it here — /data/ai_guard.db needs /data."""
+    parent = os.path.dirname(os.path.abspath(path)) or "."
+    try:
+        os.makedirs(parent, exist_ok=True)
+    except OSError as exc:
+        logger.error("ai_guard: cannot create DB parent dir %r: %s", parent, exc)
+        return False
+    return os.path.isdir(parent)
+
 # Non-terminal statuses hold the per-user concurrency lock while unexpired.
 STATUS_RUNNING = "running"
 STATUS_SUCCEEDED = "succeeded"
@@ -52,10 +98,6 @@ STATUS_CANCELLED = "cancelled"
 STATUS_EXPIRED = "expired"
 _ACTIVE = (STATUS_RUNNING,)
 _TERMINAL = {STATUS_SUCCEEDED, STATUS_FAILED, STATUS_FAILED_AMBIGUOUS, STATUS_CANCELLED, STATUS_EXPIRED}
-
-
-def _db_path() -> str:
-    return resolve_db_path("ai_guard.db", "AI_GUARD_DB_PATH")
 
 
 @contextmanager
@@ -126,19 +168,52 @@ CREATE TABLE IF NOT EXISTS ai_rate_events (
     ts              REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_ai_rate ON ai_rate_events(user_id, ts);
+
+CREATE TABLE IF NOT EXISTS ai_guard_meta (
+    key         TEXT PRIMARY KEY,
+    value       TEXT NOT NULL,
+    updated_at  REAL NOT NULL
+);
 """
 
 
 def init() -> None:
-    global _INITIALIZED
+    global _INITIALIZED, _STORAGE_ERROR
     if _INITIALIZED:
         return
     with _LOCK:
         if _INITIALIZED:
             return
-        with _conn() as c:
-            c.executescript(_SCHEMA)
+        path = _db_path()
+        durable = _persistent_configured()
+        # Prepare the parent BEFORE connecting. resolve_db_path returns an explicit
+        # AI_GUARD_DB_PATH verbatim without creating its parent, so /data must exist.
+        if not _ensure_parent(path):
+            _STORAGE_ERROR = f"parent directory for {path!r} could not be created"
+            if durable:
+                # A configured durable path is unusable → FAIL CLOSED. Never open a
+                # fresh ephemeral DB that would silently reset quota on redeploy.
+                raise RuntimeError(_STORAGE_ERROR)
+        try:
+            with _conn() as c:
+                c.executescript(_SCHEMA)
+                c.execute(
+                    "INSERT INTO ai_guard_meta (key,value,updated_at) VALUES ('schema_version',?,?) "
+                    "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
+                    (_SCHEMA_VERSION, time.time()),
+                )
+        except Exception as exc:
+            _STORAGE_ERROR = f"schema init failed for {path!r}: {exc}"
+            if durable:
+                # Configured durable DB could not be opened/initialized → fail closed.
+                raise
+            logger.warning("ai_guard: schema init failed on dev fallback path: %s", exc)
+            return
+        _STORAGE_ERROR = None
         _INITIALIZED = True
+        logger.info(
+            "ai_guard: storage ready | path=%s | durable=%s", os.path.abspath(path), durable,
+        )
 
 
 def _now() -> float:
@@ -519,3 +594,63 @@ def counts_by_type(window: str) -> Dict[str, int]:
             (window,),
         ).fetchall()
         return {r["operation_type"]: int(r["n"]) for r in rows}
+
+
+# ── Storage diagnostics (owner-only; proves the ACTIVE persistent DB path) ─────
+def storage_health() -> Dict[str, object]:
+    """Secret-free snapshot proving WHICH database is live. Read-only: never
+    consumes quota and never calls a model. The absolute path is owner-only."""
+    path = _db_path()
+    abspath = os.path.abspath(path)
+    parent = os.path.dirname(abspath) or "."
+    parent_exists = os.path.isdir(parent)
+    db_exists = os.path.isfile(abspath)
+    writable = False
+    try:
+        if parent_exists:
+            writable = os.access(parent, os.W_OK) and (not db_exists or os.access(abspath, os.W_OK))
+    except Exception:
+        writable = False
+    return {
+        "backend": "sqlite",
+        "path": abspath,
+        "persistentPathConfigured": _persistent_configured(),
+        "parentDirExists": parent_exists,
+        "databaseExists": db_exists,
+        "writable": writable,
+        "schemaReady": bool(_INITIALIZED),
+        "walMode": True,
+        "error": _STORAGE_ERROR,
+    }
+
+
+def verify_storage() -> Dict[str, object]:
+    """Startup-safe proof of persistence: initialize the schema and write+read a
+    harmless metadata marker (schema version + last-verified timestamp). Does NOT
+    touch any user quota row and NEVER calls a model. Returns the storage health
+    plus a `verified` flag. Never raises — a durable-path failure is reported (and
+    the store is already failing closed for protected operations)."""
+    try:
+        init()
+        now = _now()
+        with _conn() as c:
+            c.execute("BEGIN IMMEDIATE")
+            try:
+                c.execute(
+                    "INSERT INTO ai_guard_meta (key,value,updated_at) VALUES ('last_verified_at',?,?) "
+                    "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
+                    (str(now), now),
+                )
+                c.execute("COMMIT")
+            except Exception:
+                c.execute("ROLLBACK")
+                raise
+            row = c.execute("SELECT value FROM ai_guard_meta WHERE key='last_verified_at'").fetchone()
+        health = storage_health()
+        health["verified"] = bool(row)
+        return health
+    except Exception as exc:
+        health = storage_health()
+        health["verified"] = False
+        health["error"] = str(exc)[:200]
+        return health

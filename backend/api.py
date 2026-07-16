@@ -150,6 +150,36 @@ def _build_full_app():
         except Exception as _cfg_err:  # never block boot on the self-check
             logger.warning("startup config self-check skipped: %s", _cfg_err)
 
+        # Phase 14L.1a — PROVE the founder-beta AI guard DB is on a durable path.
+        # Initializes the schema + writes/reads a harmless metadata marker (no user
+        # quota, no model call). A durable-path failure is logged here and makes the
+        # guard fail closed for protected AI operations. Never blocks boot.
+        try:
+            from backend.services.ai_guard import service as _ai_guard
+            _sh = _ai_guard.verify_storage()
+            if _sh.get("persistentPathConfigured") and _sh.get("verified") and _sh.get("writable"):
+                logger.info(
+                    "AI guard storage | DURABLE | path=%s | dbExists=%s | verified=%s",
+                    _sh.get("path"), _sh.get("databaseExists"), _sh.get("verified"),
+                )
+            elif _sh.get("persistentPathConfigured"):
+                logger.critical(
+                    "AI guard storage | CONFIGURED PERSISTENT PATH UNHEALTHY | path=%s | "
+                    "parentDirExists=%s | writable=%s | verified=%s | error=%s — protected "
+                    "AI operations will fail closed until this is fixed.",
+                    _sh.get("path"), _sh.get("parentDirExists"), _sh.get("writable"),
+                    _sh.get("verified"), _sh.get("error"),
+                )
+            else:
+                logger.warning(
+                    "AI guard storage | EPHEMERAL | path=%s — founder-beta quota state is "
+                    "wiped on redeploy. Set AI_GUARD_DB_PATH=/data/ai_guard.db (or "
+                    "KORVIX_DATA_DIR / a Railway volume).",
+                    _sh.get("path"),
+                )
+        except Exception as _ag_err:
+            logger.warning("AI guard storage verification skipped (non-fatal): %s", _ag_err)
+
         try:
             from memory import init_memory_db
             from usage_limits import init_usage_db
