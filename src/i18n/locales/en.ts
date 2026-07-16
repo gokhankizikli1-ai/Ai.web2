@@ -787,4 +787,6 @@ export const en: Record<string, string> = {
   landingStoryPreviewCta: 'Get a quote',
   landingDeployLabel: 'Deploy',
   landingStoryStageLabel: 'Product walkthrough',
+  landingStoryBuilding: 'Building first version',
+  landingStoryReplay: 'Replay',
 };
