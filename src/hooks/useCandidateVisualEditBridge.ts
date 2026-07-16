@@ -58,7 +58,9 @@ export interface CandidateBridgeApi {
   restoreImage: (nodeId?: string) => void;
 }
 
-const READY_TIMEOUT_MS = 12000;
+// Aligned with Sandpack's own ~25s cold-bundle soft timeout so a slow first
+// install/transpile doesn't flash a premature "unavailable" before READY arrives.
+const READY_TIMEOUT_MS = 30000;
 
 function makeRequestId(): string {
   return 'req_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
