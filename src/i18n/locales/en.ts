@@ -854,4 +854,20 @@ export const en: Record<string, string> = {
   previewOpenSafeDebug: 'Open safe preview',
   previewReturnToMain: 'Return to preview',
   previewSafeDebugActive: 'Debug: showing the safe preview.',
+
+  /* ── Device image upload + example-image treatment (Phase 14K.6) ── */
+  imgExampleImage: 'Example image',
+  imgExampleImageNote: 'Korvix selected this image for the first version. Replace it with your own.',
+  imgUploadFromDevice: 'Upload from device',
+  imgUploading: 'Uploading image…',
+  imgYourImage: 'Your image',
+  imgUseThisImage: 'Use this image',
+  imgSavedToProject: 'Image saved to project',
+  imgErrUnsupported: 'Unsupported image format. Use JPEG, PNG or WebP.',
+  imgErrTooLarge: 'The image is too large (max 10 MB).',
+  imgErrTooSmall: 'The image is too small.',
+  imgErrDimensions: 'The image dimensions are not supported.',
+  imgErrCorrupt: 'The image could not be read. Try another image.',
+  imgErrStorage: 'Image uploads are unavailable right now.',
+  imgErrUpload: 'The image could not be uploaded. Try again.',
 };

@@ -55,6 +55,9 @@ export interface CandidateBridgeApi {
   disable: () => void;
   clear: () => void;
   previewImage: (nodeId: string, result: StockImageResult) => void;
+  /** Preview a validated HTTPS URL in place (stock or the user's uploaded asset,
+   *  Phase 14K.6). The runtime re-validates the provider enum + https. */
+  previewUrl: (nodeId: string, url: string, provider: 'pexels' | 'unsplash' | 'user-upload', providerImageId?: string) => void;
   restoreImage: (nodeId?: string) => void;
 }
 
@@ -186,9 +189,12 @@ export function useCandidateVisualEditBridge(opts: CandidateBridgeOptions): Cand
       nodeId, provider: result.provider, providerImageId: result.providerImageId, url: result.previewUrl,
     }, makeRequestId());
   }, [send]);
+  const previewUrl = useCallback((nodeId: string, url: string, provider: 'pexels' | 'unsplash' | 'user-upload', providerImageId?: string) => {
+    send('PREVIEW_IMAGE', { nodeId, provider, providerImageId: providerImageId || '', url }, makeRequestId());
+  }, [send]);
   const restoreImage = useCallback((nodeId?: string) => {
     send('RESTORE_IMAGE', nodeId ? { nodeId } : undefined);
   }, [send]);
 
-  return { bridgeReady, selectionEnabled, unavailable, enable, disable, clear, previewImage, restoreImage };
+  return { bridgeReady, selectionEnabled, unavailable, enable, disable, clear, previewImage, previewUrl, restoreImage };
 }

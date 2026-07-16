@@ -9,6 +9,7 @@ import WebBuildPreviewPanel from '@/components/builder/WebBuildPreviewPanel';
 import WebBuildActivityTimeline from '@/components/builder/WebBuildActivityTimeline';
 import type { WebBuildActivityState } from '@/lib/webBuildActivity';
 import { deriveModelNativeCandidate } from '@/lib/webBuildRuntimePreview';
+import type { ImageReplacementInput } from '@/lib/webBuildImageReplace';
 import type {
   WebBuildStep, WebBuildFile, WebBuildSectionItem, PlanningQuality,
 } from '@/lib/webBuildPayload';
@@ -1309,10 +1310,13 @@ interface WebBuildConversationProps {
   animateStepId?: string;
   /** Stable id for the preview route (/preview/web-build/:runId). */
   runId?: string;
+  /** Phase 14K.6 — permanently replace a generated image (device upload). Wired by
+   *  the payload owner; absent → device upload / permanent apply is unavailable. */
+  onImageReplace?: (input: ImageReplacementInput) => Promise<{ ok: boolean; error?: string }>;
 }
 
 export default function WebBuildConversation({
-  steps, files, sectionItems, brief, live, activitySummary, extraCards, slug, runId,
+  steps, files, sectionItems, brief, live, activitySummary, extraCards, slug, runId, onImageReplace,
 }: WebBuildConversationProps) {
   const { t } = useLanguageStore();
   const [panel, setPanel] = useState<'preview' | 'files' | null>(null);
@@ -1379,7 +1383,7 @@ export default function WebBuildConversation({
                 </button>
               </div>
               {panel === 'preview'
-                ? <WebBuildPreviewPanel sectionItems={sectionItems} brief={brief} slug={slug} runId={runId} files={files} previewSource={rawPreviewSource} candidate={candidate} blockedNeedsRegeneration={previewBlocked} interactionContract={steps[lastIdx]?.artifacts?.strategy?.interactionContract} visualAssetPlan={steps[lastIdx]?.artifacts?.artDirection?.visualAssetPlan} visualSignaturePlan={steps[lastIdx]?.artifacts?.visualSignaturePlan} motionComposer={steps[lastIdx]?.artifacts?.motionComposer} imagePipeline={steps[lastIdx]?.artifacts?.imagePipeline} />
+                ? <WebBuildPreviewPanel sectionItems={sectionItems} brief={brief} slug={slug} runId={runId} files={files} previewSource={rawPreviewSource} candidate={candidate} blockedNeedsRegeneration={previewBlocked} interactionContract={steps[lastIdx]?.artifacts?.strategy?.interactionContract} visualAssetPlan={steps[lastIdx]?.artifacts?.artDirection?.visualAssetPlan} visualSignaturePlan={steps[lastIdx]?.artifacts?.visualSignaturePlan} motionComposer={steps[lastIdx]?.artifacts?.motionComposer} imagePipeline={steps[lastIdx]?.artifacts?.imagePipeline} onImageReplace={onImageReplace} />
                 : <WebBuildFileView files={files} initialPath={filePath} />}
             </motion.div>
           </motion.div>

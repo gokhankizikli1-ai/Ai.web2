@@ -828,4 +828,20 @@ export const de: Record<string, string> = {
   previewOpenSafeDebug: 'Sichere Vorschau öffnen',
   previewReturnToMain: 'Zur Vorschau zurückkehren',
   previewSafeDebugActive: 'Debug: sichere Vorschau wird angezeigt.',
+
+  /* ── Bild-Upload vom Gerät + Beispielbild-Sprache (Phase 14K.6) ── */
+  imgExampleImage: 'Beispielbild',
+  imgExampleImageNote: 'Korvix hat dieses Bild für die erste Version ausgewählt. Ersetze es durch dein eigenes.',
+  imgUploadFromDevice: 'Vom Gerät hochladen',
+  imgUploading: 'Bild wird hochgeladen…',
+  imgYourImage: 'Dein Bild',
+  imgUseThisImage: 'Dieses Bild verwenden',
+  imgSavedToProject: 'Bild im Projekt gespeichert',
+  imgErrUnsupported: 'Nicht unterstütztes Bildformat. Verwende JPEG, PNG oder WebP.',
+  imgErrTooLarge: 'Das Bild ist zu groß (max. 10 MB).',
+  imgErrTooSmall: 'Das Bild ist zu klein.',
+  imgErrDimensions: 'Die Bildabmessungen werden nicht unterstützt.',
+  imgErrCorrupt: 'Das Bild konnte nicht gelesen werden. Versuche ein anderes Bild.',
+  imgErrStorage: 'Bild-Uploads sind derzeit nicht verfügbar.',
+  imgErrUpload: 'Das Bild konnte nicht hochgeladen werden. Versuche es erneut.',
 };

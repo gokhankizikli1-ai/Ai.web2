@@ -26,13 +26,15 @@ import logging
 import os
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
 from backend.core.deps import current_user
 from backend.services.auth.identity import User
 from backend.services import web_build_images as img
-from backend.services.web_build_images import stock, sourcing
+from backend.services.web_build_images import stock, sourcing, uploads
+from backend.services.assets import client as assets_client
+from backend.services.assets.errors import AssetError, AssetSystemDisabled
 
 router = APIRouter(prefix="/v2/web-build/images", tags=["web-build-images"])
 logger = logging.getLogger(__name__)
@@ -261,6 +263,83 @@ async def stock_source(
     logger.info("[STOCK_SRC] uid=%s requested=%d sourced=%d status=%s",
                 getattr(user, "id", "?"), result.get("requested", 0), result.get("sourced", 0), result.get("status"))
     return result
+
+
+# ── Device image upload (Phase 14K.6) ───────────────────────────────────────
+# Authenticated multipart upload of a user's own image to REPLACE an auto-sourced
+# example image. Reuses the existing asset system for storage + stable delivery;
+# strict signature/dimension validation runs BEFORE any byte is stored. The image
+# is never sent to a provider/AI; only the caller's own account can upload here.
+_MAX_UPLOAD_BYTES = uploads.MAX_BYTES
+
+
+@router.post("/upload")
+async def upload_web_build_image(
+    file: UploadFile = File(...),
+    project_id: Optional[str] = Form(None),
+    slot_id: Optional[str] = Form(None),
+    node_id: Optional[str] = Form(None),
+    user: User = Depends(current_user),
+) -> Dict[str, Any]:
+    """Validate + store a user image; return a stable delivery URL + dimensions.
+    Never raises a raw exception to the client — validation and storage failures
+    map to structured, localizable error codes."""
+    try:
+        data = await file.read()
+    except Exception:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail={"code": "read_failed", "message": "Could not read the uploaded file."})
+    if len(data or b"") > _MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail={"code": "too_large", "message": "The image is too large."})
+
+    try:
+        valid = uploads.validate_image(data, declared_mime=file.content_type)
+    except uploads.ImageUploadError as exc:
+        raise HTTPException(status_code=400, detail={"code": exc.code, "message": exc.message})
+
+    # Store via the asset system. A safe, format-derived filename is used (never the
+    # user's original filename), so no local device path/name is ever persisted or
+    # returned. Width/height ride in metadata (AssetRecord has no such columns).
+    safe_name = f"web-build-image.{valid.ext}"
+    try:
+        rec = assets_client.upload(
+            user_id=user.id,
+            filename=safe_name,
+            mime_type=valid.mime,
+            data=data,
+            project_id=(project_id or None),
+            metadata={
+                "source": "web-build-image",
+                "width": valid.width,
+                "height": valid.height,
+                "slotId": (slot_id or "")[:120],
+            },
+        )
+    except AssetSystemDisabled:
+        raise HTTPException(status_code=503, detail={"code": "storage_unavailable", "message": "Image uploads are not available on this deployment."})
+    except AssetError as exc:
+        raise HTTPException(status_code=400, detail={"code": "storage_failed", "message": "The image could not be saved."})
+    except Exception:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail={"code": "storage_failed", "message": "The image could not be saved."})
+
+    url = assets_client.public_url(rec.id or "", user_id=user.id) or ""
+    if not url:
+        raise HTTPException(status_code=500, detail={"code": "storage_failed", "message": "The image could not be saved."})
+
+    logger.info("[WB_IMG_UPLOAD] uid=%s asset=%s fmt=%s %dx%d bytes=%d slot=%s",
+                getattr(user, "id", "?"), rec.id, valid.fmt, valid.width, valid.height, valid.size_bytes,
+                (slot_id or "")[:60])
+    # `url` is the local blob route (relative) or a cloud CDN URL (absolute); the
+    # frontend resolves relative URLs against the API base. `node_id` is echoed for
+    # the caller's own targeting (never used to build a storage path here).
+    return {
+        "assetId": rec.id,
+        "url": url,
+        "mimeType": valid.mime,
+        "width": valid.width,
+        "height": valid.height,
+        "source": "user-upload",
+        "nodeId": (node_id or "")[:256],
+    }
 
 
 __all__ = ["router"]

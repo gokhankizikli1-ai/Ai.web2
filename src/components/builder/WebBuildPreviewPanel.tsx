@@ -9,6 +9,8 @@ import StockImagePicker from '@/components/builder/StockImagePicker';
 import type { VisualSelection, VisualImageTarget } from '@/lib/visualSelection';
 import { trackStockDownload, type StockImageResult } from '@/lib/stockImages';
 import { useCandidateVisualEditBridge } from '@/hooks/useCandidateVisualEditBridge';
+import { uploadDeviceImage, ImageUploadError, type UploadErrorCode } from '@/lib/webBuildImageUpload';
+import type { ImageReplacementInput } from '@/lib/webBuildImageReplace';
 import { useOwnerMode } from '@/hooks/useOwnerMode';
 import { useLanguageStore } from '@/stores/languageStore';
 import { openPreviewInNewTab, currentReturnTo } from '@/lib/webBuildPreviewStash';
@@ -52,7 +54,7 @@ class PreviewErrorBoundary extends Component<{ fallback: ReactNode; children: Re
 }
 
 export default function WebBuildPreviewPanel({
-  sectionItems, brief, slug, runId, files, previewSource, blockedNeedsRegeneration, candidate, interactionContract, visualAssetPlan, visualSignaturePlan, motionComposer, imagePipeline,
+  sectionItems, brief, slug, runId, files, previewSource, blockedNeedsRegeneration, candidate, interactionContract, visualAssetPlan, visualSignaturePlan, motionComposer, imagePipeline, onImageReplace,
 }: {
   sectionItems: WebBuildSectionItem[];
   brief: WebBuildBrief;
@@ -88,6 +90,11 @@ export default function WebBuildPreviewPanel({
   /** Phase 10C Image Pipeline plan (data only) — honest image placeholders the
    *  preview renders (manual-upload / provider-ready / illustrative). Optional. */
   imagePipeline?: ImagePipelineArtifact;
+  /** Phase 14K.6 — permanently replace a generated image in the authoritative
+   *  project. The owner applies the change to its payload + persists it, then the
+   *  updated files flow back down. Absent → device upload / permanent apply is off
+   *  (the surface still supports stock search + temporary preview). */
+  onImageReplace?: (input: ImageReplacementInput) => Promise<{ ok: boolean; error?: string }>;
 }) {
   const { t, lang } = useLanguageStore();
   const { isOwner } = useOwnerMode();
@@ -163,14 +170,26 @@ export default function WebBuildPreviewPanel({
   const [applied, setApplied] = useState<StockImageResult | null>(null);
   const [selectionSource, setSelectionSource] = useState<VisualSelectionSource | null>(null);
   const [imgErrorCode, setImgErrorCode] = useState<string | null>(null);
+  // Phase 14K.6 — device upload state (an uploaded image previewing in place,
+  // awaiting the user's confirm before it is PERMANENTLY saved to the project).
+  const [uploading, setUploading] = useState(false);
+  const [uploadErrorCode, setUploadErrorCode] = useState<UploadErrorCode | null>(null);
+  const [uploadPending, setUploadPending] = useState<{ url: string; assetId: string; mimeType: string; width: number; height: number } | null>(null);
+  const [savedNote, setSavedNote] = useState(false);
   const surfaceRef = useRef<VisualSelectHandle>(null);              // Safe Preview live DOM
   const candidateFrameRef = useRef<HTMLDivElement>(null);          // wraps the Candidate iframe
+  const uploadAbortRef = useRef<AbortController | null>(null);
 
   const resetKey = `${runId || ''}|${url}|${items.map((s) => s?.id || '').join(',')}`;
 
+  const resetUploadState = () => {
+    uploadAbortRef.current?.abort();
+    setUploading(false); setUploadErrorCode(null); setUploadPending(null); setSavedNote(false);
+  };
   const resetSelectionState = () => {
     setSelection(null); setImageTarget(null); setApplied(null);
     setPickerOpen(false); setSelectionSource(null); setImgErrorCode(null);
+    resetUploadState();
   };
 
   // Candidate Preview bridge — drives Visual Select inside the cross-origin Sandpack
@@ -204,6 +223,14 @@ export default function WebBuildPreviewPanel({
   // nothing leaks across the two preview implementations.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { setSelectEnabled(false); resetSelectionState(); }, [candidateActive]);
+  // Abort any in-flight upload if the panel unmounts.
+  useEffect(() => () => { uploadAbortRef.current?.abort(); }, []);
+  // Auto-dismiss the "saved to project" confirmation.
+  useEffect(() => {
+    if (!savedNote) return;
+    const id = window.setTimeout(() => setSavedNote(false), 3500);
+    return () => window.clearTimeout(id);
+  }, [savedNote]);
 
   // A new / changed SAFE selection restores any live preview and resets image state,
   // then re-derives whether the new target is a replaceable photo.
@@ -292,6 +319,80 @@ export default function WebBuildPreviewPanel({
     return cleaned ? cleaned.split(' ').slice(0, 5).join(' ') : '';
   };
 
+  // ── Device image upload (Phase 14K.6) ──────────────────────────────────────
+  // Preview the uploaded image IN PLACE (candidate via the bridge's validated
+  // https path; safe via the direct-DOM surface), awaiting an explicit confirm.
+  const previewUploadedInPlace = (uploadedUrl: string) => {
+    if (selectionSource === 'candidate-preview') {
+      if (selection) bridge.previewUrl(selection.nodeId, uploadedUrl, 'user-upload');
+    } else {
+      surfaceRef.current?.previewSelectedImage(uploadedUrl);
+    }
+  };
+  const restoreUploadInPlace = () => {
+    if (selectionSource === 'candidate-preview') bridge.restoreImage(selection?.nodeId);
+    else surfaceRef.current?.restoreSelectedImage();
+  };
+
+  const handlePickDeviceImage = async (file: File) => {
+    if (uploading || !selection) return;
+    setUploadErrorCode(null); setSavedNote(false); setUploading(true);
+    const ctrl = new AbortController();
+    uploadAbortRef.current = ctrl;
+    try {
+      const res = await uploadDeviceImage({ file, slotId: undefined, nodeId: selection.nodeId, signal: ctrl.signal });
+      if (ctrl.signal.aborted) return;
+      setUploadPending({ url: res.url, assetId: res.assetId, mimeType: res.mimeType, width: res.width, height: res.height });
+      previewUploadedInPlace(res.url);
+    } catch (e) {
+      if (ctrl.signal.aborted) return;
+      restoreUploadInPlace();
+      setUploadErrorCode(e instanceof ImageUploadError ? e.code : 'upload_failed');
+    } finally {
+      if (!ctrl.signal.aborted) setUploading(false);
+    }
+  };
+
+  // Confirm — PERMANENTLY replace the image in the authoritative project. On success
+  // the owner persists the new files + manifest; we remount the Candidate to load them.
+  const confirmUpload = async () => {
+    if (!uploadPending || !selection || !onImageReplace) return;
+    const input: ImageReplacementInput = {
+      nodeId: selection.nodeId,
+      source: 'user-upload',
+      url: uploadPending.url,
+      oldUrl: imageTarget?.currentUrl,
+      altText: imageTarget?.altText,
+      uploadedAssetId: uploadPending.assetId,
+      mimeType: uploadPending.mimeType,
+      width: uploadPending.width,
+      height: uploadPending.height,
+    };
+    const result = await onImageReplace(input);
+    if (result.ok) {
+      setUploadPending(null); setSavedNote(true);
+      // Reload the authoritative files into the Candidate; drop the temp preview.
+      if (selectionSource === 'candidate-preview') setRetryKey((k) => k + 1);
+    } else {
+      restoreUploadInPlace();
+      setUploadPending(null);
+      setUploadErrorCode('upload_failed');
+    }
+  };
+  const cancelUpload = () => {
+    restoreUploadInPlace();
+    setUploadPending(null); setUploadErrorCode(null);
+  };
+
+  // Is the selected image one of Korvix's auto-sourced EXAMPLE photos? (provider CDN)
+  const isExampleImage = !!imageTarget && /(^https:\/\/)(images\.pexels\.com|images\.unsplash\.com|plus\.unsplash\.com)\//i.test(imageTarget.currentUrl || '');
+  const UPLOAD_ERROR_KEY: Record<UploadErrorCode, string> = {
+    unsupported_format: 'imgErrUnsupported', too_large: 'imgErrTooLarge', too_small: 'imgErrTooSmall',
+    bad_dimensions: 'imgErrDimensions', corrupt: 'imgErrCorrupt', storage_unavailable: 'imgErrStorage',
+    upload_failed: 'imgErrUpload', network: 'imgErrUpload',
+  };
+  const uploadErrorText = uploadErrorCode ? t(UPLOAD_ERROR_KEY[uploadErrorCode]) : null;
+
   // Can the current selection's image be replaced? Candidate images must be
   // explicitly marked replaceable by the runtime; Safe images always can.
   const canReplaceImage = selectionSource === 'candidate-preview'
@@ -316,6 +417,14 @@ export default function WebBuildPreviewPanel({
             onSearchStock={() => canReplaceImage && setPickerOpen(true)}
             applied={applied}
             onCancelPreview={cancelApplied}
+            isExampleImage={isExampleImage}
+            onPickDeviceImage={onImageReplace ? handlePickDeviceImage : undefined}
+            uploading={uploading}
+            uploadErrorText={uploadErrorText}
+            uploadPending={!!uploadPending}
+            onConfirmUpload={confirmUpload}
+            onCancelUpload={cancelUpload}
+            savedNote={savedNote}
           />
           {imgErrorText && <p className="mt-1 text-[11px] text-[#F59E0B]">{imgErrorText}</p>}
         </div>

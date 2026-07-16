@@ -1118,14 +1118,17 @@ export interface ImagePipelineArtifact {
  */
 export interface SourcedImageAsset {
   slotId: string;
-  provider: 'pexels' | 'unsplash';
-  providerImageId: string;
-  /** The exact HTTPS provider-CDN URL rendered in the generated project. */
+  /** Phase 14K.6 — where the ACTIVE image comes from. Absent ⇒ legacy stock. */
+  source?: 'stock' | 'user-upload';
+  /** Stock only — provider + attribution. Cleared when a user image replaces it. */
+  provider?: 'pexels' | 'unsplash';
+  providerImageId?: string;
+  /** The exact HTTPS URL rendered in the generated project (stock CDN or user asset). */
   url: string;
   thumbnailUrl?: string;
-  photographerName: string;
+  photographerName?: string;
   photographerUrl?: string | null;
-  providerPageUrl: string;
+  providerPageUrl?: string;
   /** Unsplash only — the required download-event URL (already fired server-side). */
   downloadLocation?: string | null;
   attributionText?: string;
@@ -1134,6 +1137,10 @@ export interface SourcedImageAsset {
   height?: number | null;
   /** Stable Visual-Select id written onto the generated <img> (data-korvix-id). */
   domId?: string;
+  /* ── Phase 14K.6 user-upload fields (present when source === 'user-upload') ── */
+  assetId?: string;
+  mimeType?: string;
+  uploadedAt?: string;
 }
 
 /** The persisted manifest of generation-time sourced stock images (Phase 14K.4). */

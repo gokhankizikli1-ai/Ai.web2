@@ -830,4 +830,20 @@ export const tr: Record<string, string> = {
   previewOpenSafeDebug: 'Güvenli önizlemeyi aç',
   previewReturnToMain: 'Önizlemeye dön',
   previewSafeDebugActive: 'Hata ayıklama: güvenli önizleme gösteriliyor.',
+
+  /* ── Cihazdan görsel yükleme + örnek görsel dili (Phase 14K.6) ── */
+  imgExampleImage: 'Örnek görsel',
+  imgExampleImageNote: 'Korvix bu görseli ilk sürüm için seçti. Kendi görselinle değiştir.',
+  imgUploadFromDevice: 'Cihazdan yükle',
+  imgUploading: 'Görsel yükleniyor…',
+  imgYourImage: 'Senin görselin',
+  imgUseThisImage: 'Bu görseli kullan',
+  imgSavedToProject: 'Görsel projeye kaydedildi',
+  imgErrUnsupported: 'Desteklenmeyen görsel biçimi. JPEG, PNG veya WebP kullanın.',
+  imgErrTooLarge: 'Görsel çok büyük (en fazla 10 MB).',
+  imgErrTooSmall: 'Görsel çok küçük.',
+  imgErrDimensions: 'Görsel boyutları desteklenmiyor.',
+  imgErrCorrupt: 'Görsel okunamadı. Başka bir görsel deneyin.',
+  imgErrStorage: 'Görsel yükleme şu anda kullanılamıyor.',
+  imgErrUpload: 'Görsel yüklenemedi. Tekrar deneyin.',
 };
