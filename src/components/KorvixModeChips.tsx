@@ -32,15 +32,23 @@ export function KorvixModeChips({
   selected: KorvixMode | null;
   onSelect: (mode: KorvixMode) => void;
 }) {
-  const { lang } = useLanguageStore();
+  const { t, lang } = useLanguageStore();
   const { isOwner } = useOwnerMode();
   // Phase 14A — the unfinished Game surface is owner-only; drop its chip for normal users.
   const modes = KORVIX_MODES.filter((mode) => mode !== 'game' || isOwner);
   return (
-    <div className="mb-2.5 flex flex-wrap items-center justify-center gap-1.5">
+    <div className="mt-3 flex flex-wrap items-center justify-center gap-1.5">
       {modes.map((mode) => {
         const { icon: Icon } = META[mode];
         const active = selected === mode;
+        // Website is KorvixAI's primary current builder direction: it gets a
+        // subtle blue-tinted idle state + a "Recommended" micro-badge so it
+        // reads as the lead path. This is VISUAL emphasis only — it never
+        // preselects the mode, so neutral intent auto-detection is unchanged.
+        const recommended = mode === 'website';
+        const idle = recommended
+          ? 'border-[#3B82F6]/30 bg-[#3B82F6]/[0.07] text-[#BFDBFE] hover:border-[#3B82F6]/45 hover:bg-[#3B82F6]/[0.10] hover:text-white'
+          : 'border-white/[0.07] bg-white/[0.02] text-[#CBD5E1] hover:border-[#3B82F6]/25 hover:bg-[#3B82F6]/[0.06] hover:text-white';
         return (
           <button
             key={mode}
@@ -48,13 +56,16 @@ export function KorvixModeChips({
             onClick={() => onSelect(mode)}
             aria-pressed={active}
             className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[12px] transition-colors ${
-              active
-                ? 'border-[#3B82F6]/40 bg-[#3B82F6]/[0.12] text-[#93C5FD]'
-                : 'border-white/[0.07] bg-white/[0.02] text-[#CBD5E1] hover:border-[#3B82F6]/25 hover:bg-[#3B82F6]/[0.06] hover:text-white'
+              active ? 'border-[#3B82F6]/40 bg-[#3B82F6]/[0.12] text-[#93C5FD]' : idle
             }`}
           >
-            <Icon className="h-3.5 w-3.5 text-[#60A5FA]" />
+            <Icon aria-hidden="true" className="h-3.5 w-3.5 text-[#60A5FA]" />
             {korvixModeLabel(mode, lang)}
+            {recommended && (
+              <span className="ml-0.5 rounded-full bg-[#3B82F6]/15 px-1.5 py-[1px] text-[9px] font-semibold uppercase tracking-wide text-[#93C5FD]">
+                {t('homeRecommended')}
+              </span>
+            )}
           </button>
         );
       })}
@@ -79,7 +90,7 @@ export function KorvixModePill({
       className="inline-flex w-fit items-center gap-1.5 rounded-full border border-[#3B82F6]/35 bg-[#3B82F6]/[0.12] py-1 pl-2.5 pr-1.5 text-[11.5px] font-medium text-[#93C5FD]"
       style={{ boxShadow: '0 0 0 1px rgba(59,130,246,0.08), 0 0 10px rgba(59,130,246,0.14)' }}
     >
-      <Icon className="h-3 w-3 text-[#60A5FA]" />
+      <Icon aria-hidden="true" className="h-3 w-3 text-[#60A5FA]" />
       {korvixModeLabel(mode, lang)}
       <button
         type="button"

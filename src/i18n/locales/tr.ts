@@ -649,4 +649,10 @@ export const tr: Record<string, string> = {
   legalAupItemSafeguards: 'Platformun güvenlik önlemlerini veya kullanım sınırlarını atlatma, devre dışı bırakma ya da aşma girişimleri.',
   legalAupConsequencesHead: 'Yaptırım',
   legalAupConsequencesBody: 'Bu politikayı ihlal etmeniz hâlinde hizmete erişiminizi kısıtlayabilir, askıya alabilir veya sonlandırabiliriz. Ayrıca platformu ve kullanıcılarını korumak için makul ölçüde gerekli diğer adımları da atabiliriz.',
+
+  /* ── Korvix Creation Home (Phase 14J.1) ── */
+  homeCreateQuestionNamed: 'Bugün ne inşa ediyoruz, {name}?',
+  homeCreateQuestion: 'Bugün ne inşa ediyoruz?',
+  homeCreateSubtitle: 'Bir web sitesi, uygulama, oyun ya da fikir anlat — gerisini Korvix halleder.',
+  homeRecommended: 'Önerilen',
 };

@@ -667,4 +667,13 @@ export const en: Record<string, string> = {
   legalAupItemSafeguards: 'Attempts to bypass, disable, or circumvent the platform’s safety measures or usage limits.',
   legalAupConsequencesHead: 'Enforcement',
   legalAupConsequencesBody: 'If you violate this policy, we may limit, suspend, or terminate your access to the service. We may also take other steps that are reasonably necessary to protect the platform and its users.',
+
+  /* ── Korvix Creation Home (Phase 14J.1) ──
+     The authenticated empty normal-Chat home. `{name}` is the verified first
+     name, interpolated at render — never baked into the string. The name-free
+     variant gives natural grammar when no name is available. */
+  homeCreateQuestionNamed: 'What are we building, {name}?',
+  homeCreateQuestion: 'What are we building?',
+  homeCreateSubtitle: 'Describe a website, app, game, or idea — Korvix takes it from there.',
+  homeRecommended: 'Recommended',
 };

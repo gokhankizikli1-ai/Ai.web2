@@ -647,4 +647,10 @@ export const de: Record<string, string> = {
   legalAupItemSafeguards: 'Versuche, die Sicherheitsmaßnahmen oder Nutzungsgrenzen der Plattform zu umgehen, zu deaktivieren oder auszuhebeln.',
   legalAupConsequencesHead: 'Durchsetzung',
   legalAupConsequencesBody: 'Wenn Sie gegen diese Richtlinie verstoßen, können wir Ihren Zugang zum Dienst einschränken, aussetzen oder beenden. Wir können außerdem weitere Maßnahmen ergreifen, die zum Schutz der Plattform und ihrer Nutzer angemessen erforderlich sind.',
+
+  /* ── Korvix Creation Home (Phase 14J.1) ── */
+  homeCreateQuestionNamed: 'Was bauen wir heute, {name}?',
+  homeCreateQuestion: 'Was bauen wir heute?',
+  homeCreateSubtitle: 'Beschreibe eine Website, App, ein Spiel oder eine Idee — Korvix übernimmt den Rest.',
+  homeRecommended: 'Empfohlen',
 };
