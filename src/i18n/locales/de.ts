@@ -653,4 +653,92 @@ export const de: Record<string, string> = {
   homeCreateQuestion: 'Was bauen wir heute?',
   homeCreateSubtitle: 'Beschreibe eine Website, App, ein Spiel oder eine Idee — Korvix übernimmt den Rest.',
   homeRecommended: 'Empfohlen',
+
+  /* ── Public landing — Web Build first (Phase 14J.2) ── */
+  navProduct: 'Produkt',
+  navVisualEdit: 'Visuelle Bearbeitung',
+  navHowItWorks: 'So funktioniert’s',
+  navResearch: 'Recherche',
+  ctaStartBuilding: 'Jetzt loslegen',
+  landingCtaHow: 'So funktioniert’s ansehen',
+  landingOpenWorkspace: 'Arbeitsbereich öffnen',
+  landingStatusNow: 'Jetzt verfügbar',
+  landingStatusDev: 'In Entwicklung',
+  landingStatusNext: 'Demnächst',
+
+  // hero
+  landingEyebrow: 'KI-Builder für Websites & Web-Apps',
+  landingHeroTitle: 'Beschreiben. Erstellen. Alles verfeinern.',
+  landingHeroSub: 'Beschreibe eine Website oder Web-App in einfacher Sprache. Korvix erzeugt eine responsive erste Version, die du per Chat verfeinern kannst — und bald auch, indem du jeden Teil der Seite auswählst.',
+  landingComposerPlaceholder: 'Beschreibe die Website oder Web-App, die du bauen möchtest…',
+  landingComposerAria: 'Beschreibe, was du bauen möchtest',
+  landingTypeLabel: 'Erstellungstyp',
+  landingTypeWebsite: 'Website',
+  landingTypeWebApp: 'Web-App',
+  landingTypeLandingPage: 'Landingpage',
+  landingTypeEcommerce: 'E-Commerce',
+  landingHeroMicro: 'Kostenlos starten · deine Beschreibung wird in den Arbeitsbereich übernommen, bereit zum Senden.',
+
+  // hero product demo (illustrative)
+  landingDemoBadge: 'Generierte Vorschau',
+  landingDemoCaption: 'Eine responsive erste Version, aus deinem Prompt generiert.',
+  landingDemoPrompt: 'Erstelle eine hochwertige Website für Gartengestaltung',
+
+  // build flow
+  landingFlowLabel: 'Der Build-Ablauf',
+  landingFlowTitle: 'Von einem Prompt zu einer funktionierenden ersten Version.',
+  landingFlowSub: 'Ein zusammenhängender Ablauf — beschreiben, generieren, verfeinern und für die Veröffentlichung vorbereiten.',
+  landingFlowStep1Title: 'Beschreiben',
+  landingFlowStep1Desc: 'Sag Korvix in einfacher Sprache, was du bauen möchtest.',
+  landingFlowStep2Title: 'Generieren',
+  landingFlowStep2Desc: 'Korvix erstellt eine responsive erste Version mit einer echten Komponentenstruktur.',
+  landingFlowStep3Title: 'Verfeinern',
+  landingFlowStep3Desc: 'Heute per Chat — und bald, indem du Teile der Seite auswählst.',
+  landingFlowStep4Title: 'Verbinden',
+  landingFlowStep4Desc: 'Synchronisiere dein Projekt mit einem GitHub-Repository.',
+  landingFlowStep5Title: 'Veröffentlichen',
+  landingFlowStep5Desc: 'Veröffentliche dein Projekt, wenn es bereit ist.',
+
+  // visual edit
+  landingVeLabel: 'Visuelle Bearbeitung',
+  landingVeTitle: 'Wähle etwas aus. Sag Korvix, was sich ändern soll.',
+  landingVeSub: 'Fahre über einen beliebigen Bereich und wähle Text, ein Bild, eine Karte, einen Button oder einen ganzen Block — dann beschreibe die Änderung. Korvix aktualisiert nur diesen Bereich, statt die ganze Seite neu zu erzeugen.',
+  landingVeSelectionLabel: 'Hero / Hauptüberschrift',
+  landingVeInstruction: 'Mach diesen Bereich dunkler und hochwertiger.',
+  landingVeResult: 'Illustrativ — die visuelle Bearbeitung kommt bald in den Builder.',
+  landingVeStep1: 'Über einen Bereich fahren',
+  landingVeStep2: 'Ein Element auswählen',
+  landingVeStep3: 'Die Änderung beschreiben',
+  landingVeStep4: 'Korvix aktualisiert diesen Bereich',
+
+  // output quality
+  landingOutLabel: 'Ergebnisqualität',
+  landingOutTitle: 'Responsiv, bearbeitbar und ganz in deiner Hand.',
+  landingOutSub: 'Korvix möchte Ergebnisse liefern, auf denen du wirklich aufbauen kannst.',
+  landingOutItem1: 'Responsive Layouts, die sich an jeden Bildschirm anpassen.',
+  landingOutItem2: 'Eine echte Komponentenstruktur, die du Datei für Datei ansehen kannst.',
+  landingOutItem3: 'Moderne, konsistente UI-Komponenten.',
+  landingOutItem4: 'Iterative KI-Verfeinerung per Chat.',
+  landingOutItem5: 'Du behältst die Kontrolle über Inhalte, Texte und Bilder.',
+
+  // research (supporting)
+  landingResLabel: 'Recherche-Unterstützung',
+  landingResTitle: 'Recherchiere, bevor du dich festlegst.',
+  landingResSub: 'Startup Radar hilft dir, echte Marktbeschwerden zu prüfen und eine Idee zu validieren, und trägt die nützlichen Erkenntnisse dann in den Builder. Recherche unterstützt das Bauen — sie ist nicht das ganze Produkt.',
+  landingResItem1: 'Echte, klar gekennzeichnete öffentliche Beschwerden einsehen.',
+  landingResItem2: 'Eine Idee anhand aktueller Signale validieren.',
+  landingResItem3: 'Die Erkenntnisse in einen Build-Prompt übernehmen.',
+
+  // delivery (GitHub / deploy — upcoming)
+  landingDelLabel: 'Auslieferung',
+  landingDelTitle: 'Von Korvix in dein Repository.',
+  landingDelSub: 'Direkte GitHub-Synchronisierung und Veröffentlichung sind Teil der kommenden Auslieferungs­erfahrung — verbinde ein Repository, behalte deinen Projektverlauf, übertrage Änderungen und veröffentliche, wenn es bereit ist.',
+  landingDelStep1: 'Ein Repository verbinden',
+  landingDelStep2: 'Projektverlauf behalten',
+  landingDelStep3: 'Änderungen übertragen',
+  landingDelStep4: 'Veröffentlichen, wenn bereit',
+
+  // final cta
+  landingFinalTitle: 'Starte mit einer Idee. Geh mit einer funktionierenden ersten Version.',
+  landingFinalSub: 'Beschreibe, was du bauen möchtest, und lass Korvix die erste Version erzeugen.',
 };

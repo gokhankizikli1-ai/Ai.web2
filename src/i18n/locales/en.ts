@@ -676,4 +676,95 @@ export const en: Record<string, string> = {
   homeCreateQuestion: 'What are we building?',
   homeCreateSubtitle: 'Describe a website, app, game, or idea — Korvix takes it from there.',
   homeRecommended: 'Recommended',
+
+  /* ── Public landing — Web Build first (Phase 14J.2) ──
+     All landing copy resolves through t() (en/tr/de). Honest status labels:
+     `Available now` = shipped, `In development` / `Coming next` = not yet. */
+  // shared nav + CTAs + status
+  navProduct: 'Product',
+  navVisualEdit: 'Visual Edit',
+  navHowItWorks: 'How it works',
+  navResearch: 'Research',
+  ctaStartBuilding: 'Start building',
+  landingCtaHow: 'See how it works',
+  landingOpenWorkspace: 'Open workspace',
+  landingStatusNow: 'Available now',
+  landingStatusDev: 'In development',
+  landingStatusNext: 'Coming next',
+
+  // hero
+  landingEyebrow: 'AI website & web-app builder',
+  landingHeroTitle: 'Describe it. Build it. Refine anything.',
+  landingHeroSub: 'Describe a website or web app in plain language. Korvix generates a responsive first version you can refine through chat — and, soon, by selecting any part of the page.',
+  landingComposerPlaceholder: 'Describe the website or web app you want to build…',
+  landingComposerAria: 'Describe what you want to build',
+  landingTypeLabel: 'Creation type',
+  landingTypeWebsite: 'Website',
+  landingTypeWebApp: 'Web App',
+  landingTypeLandingPage: 'Landing Page',
+  landingTypeEcommerce: 'Ecommerce',
+  landingHeroMicro: 'Free to start · your description is carried into the workspace, ready to send.',
+
+  // hero product demo (illustrative)
+  landingDemoBadge: 'Generated preview',
+  landingDemoCaption: 'A responsive first version, generated from your prompt.',
+  landingDemoPrompt: 'Build a premium landscaping website',
+
+  // build flow
+  landingFlowLabel: 'The build loop',
+  landingFlowTitle: 'From a prompt to a working first version.',
+  landingFlowSub: 'One connected flow — describe, generate, refine, and prepare to ship.',
+  landingFlowStep1Title: 'Describe',
+  landingFlowStep1Desc: 'Tell Korvix what you want to build in plain language.',
+  landingFlowStep2Title: 'Generate',
+  landingFlowStep2Desc: 'Korvix builds a responsive first version with a real component structure.',
+  landingFlowStep3Title: 'Refine',
+  landingFlowStep3Desc: 'Iterate through chat today — and by selecting parts of the page soon.',
+  landingFlowStep4Title: 'Connect',
+  landingFlowStep4Desc: 'Sync your project to a GitHub repository.',
+  landingFlowStep5Title: 'Deploy',
+  landingFlowStep5Desc: 'Publish your project when it is ready.',
+
+  // visual edit
+  landingVeLabel: 'Visual Edit',
+  landingVeTitle: 'Select anything. Tell Korvix what to change.',
+  landingVeSub: 'Hover any section and choose text, an image, a card, a button, or a whole block — then describe the change. Korvix updates just that scope instead of regenerating the page.',
+  landingVeSelectionLabel: 'Hero / Main heading',
+  landingVeInstruction: 'Make this section darker and more premium.',
+  landingVeResult: 'Illustrative — visual editing is coming to the builder.',
+  landingVeStep1: 'Hover a section',
+  landingVeStep2: 'Select an element',
+  landingVeStep3: 'Describe the change',
+  landingVeStep4: 'Korvix updates that scope',
+
+  // output quality
+  landingOutLabel: 'Output quality',
+  landingOutTitle: 'Responsive, editable, and yours to shape.',
+  landingOutSub: 'Korvix aims to produce work you can actually build on.',
+  landingOutItem1: 'Responsive layouts that adapt to any screen.',
+  landingOutItem2: 'A real component structure you can view file by file.',
+  landingOutItem3: 'Modern, consistent UI components.',
+  landingOutItem4: 'Iterative AI refinement through chat.',
+  landingOutItem5: 'You stay in control of the content, copy, and images.',
+
+  // research (supporting)
+  landingResLabel: 'Research support',
+  landingResTitle: 'Research before you commit.',
+  landingResSub: 'Startup Radar helps you check real market complaints and validate an idea, then carry the useful findings into the builder. Research supports the build — it is not the whole product.',
+  landingResItem1: 'Inspect real, clearly labeled public complaints.',
+  landingResItem2: 'Validate an idea against current signals.',
+  landingResItem3: 'Carry the findings into a build prompt.',
+
+  // delivery (GitHub / deploy — upcoming)
+  landingDelLabel: 'Delivery',
+  landingDelTitle: 'From Korvix to your repository.',
+  landingDelSub: 'Direct GitHub sync and deployment are part of the upcoming delivery experience — connect a repository, keep your project history, push changes, and deploy when ready.',
+  landingDelStep1: 'Connect a repository',
+  landingDelStep2: 'Keep project history',
+  landingDelStep3: 'Push changes',
+  landingDelStep4: 'Deploy when ready',
+
+  // final cta
+  landingFinalTitle: 'Start with an idea. Leave with a working first version.',
+  landingFinalSub: 'Describe what you want to build and let Korvix generate the first version.',
 };
