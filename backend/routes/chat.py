@@ -792,6 +792,16 @@ async def chat(req: ChatRequest, request: Request):
                     request_id=(_exec2.get("request_id") or None),
                     duration_ms=int(_exec2.get("latency_ms", 0) or 0),
                 )
+                # A TERMINAL planning FAILURE ends the build attempt → release the
+                # exact ai_guard lock now so the user can retry immediately. A
+                # SUCCESSFUL plan keeps the operation open for the frontend-generation
+                # continuation that runs on the same operation.
+                if not _succeeded:
+                    _finalize_web_build_guard(
+                        operation_id=str(_build_id), user_id=str(user_id), ok=False,
+                        terminal_status=(_exec2.get("status") or "failed"),
+                        error_code=(_exec2.get("error_code") or None),
+                    )
             # The deep-research pre-pass — one paid web search per query (task #4).
             _research = response_metadata.get("research", {}) if isinstance(response_metadata, dict) else {}
             if _research and _research.get("did_research"):
@@ -962,6 +972,63 @@ def _normalize_web_build_terminal(status, ok: bool):
     return "failed"
 
 
+def _finalize_web_build_guard(
+    *, operation_id, user_id, ok: bool, terminal_status=None,
+    model=None, provider=None, input_tokens=None, output_tokens=None,
+    has_usage: bool = False, job_id=None, error_code=None,
+) -> None:
+    """Terminal ai_guard lifecycle sync for a Web Build: release the EXACT
+    operation's concurrency lock + reconcile its reservation IMMEDIATELY, without
+    waiting for the 600s lock TTL (TTL stays crash-recovery only).
+
+    `operation_id == build_id` (established at preflight). Ownership is validated
+    against `user_id` inside the canonical `ai_guard.finalize_operation`; a
+    build_id that is not an ai_guard operation id (fallback ids) simply resolves
+    to found=False and is logged, never mutating anything. Idempotent + never
+    raises — a partial cost-persistence failure must still be able to release the
+    lock, and a repeated terminal must not double-refund."""
+    try:
+        if not operation_id or not user_id:
+            return
+        from backend.services.ai_guard import service as _guard
+        # On SUCCESS with real usage, book actual provider spend into the guard
+        # ledger BEFORE finalize so the reservation reconciles to actual (not the
+        # conservative estimate). Failure / usage-missing leaves actual as-is and
+        # finalize releases the outstanding reservation conservatively (floored 0).
+        if ok and has_usage:
+            try:
+                _guard.record_model_cost(
+                    operation_id=str(operation_id), user_id=str(user_id),
+                    model=str(model or ""), provider=str(provider or "openai"),
+                    input_tokens=int(input_tokens or 0), output_tokens=int(output_tokens or 0),
+                    operation_type="web_build_full",
+                )
+            except Exception:
+                pass
+        _gstatus = "succeeded" if ok else "failed"
+        res = _guard.finalize_operation(
+            str(operation_id), str(user_id), status=_gstatus,
+            error_code=(error_code or terminal_status or _gstatus),
+        )
+        if not res.get("found"):
+            logger.warning("WEB_BUILD_LIFECYCLE | operation_id=%s | guard op not found or user mismatch",
+                           str(operation_id))
+        elif res.get("already_terminal"):
+            logger.info("WEB_BUILD_LIFECYCLE | operation_id=%s | already_terminal (idempotent)",
+                        str(operation_id))
+        else:
+            logger.info(
+                "WEB_BUILD_LIFECYCLE terminal | operation_id=%s | build_id=%s | job_id=%s | "
+                "terminal_status=%s | guard_finalized=%s | lock_released=%s | spend_reconciled=%s",
+                str(operation_id), str(operation_id), (str(job_id)[:14] if job_id else "-"),
+                _gstatus, res.get("operation_finalized"), res.get("lock_released"),
+                res.get("spend_reconciled"),
+            )
+    except Exception as _e:
+        logger.warning("WEB_BUILD_LIFECYCLE | operation_id=%s | guard finalize failed: %s",
+                       str(operation_id), _e)
+
+
 def _record_web_build_frontend_terminal(
     *, build_id, user_id, provider, model, ok: bool, execution_status,
     input_tokens=None, output_tokens=None, reasoning_tokens=None,
@@ -1002,6 +1069,16 @@ def _record_web_build_frontend_terminal(
         )
         if _term:
             _ct.complete_build(build_id=str(build_id), status=_term)
+            # ── ai_guard lifecycle sync — release the exact lock NOW (no TTL wait).
+            # Ordering: cost build finalized first, THEN the guard operation, so a
+            # cost-persistence hiccup never leaves the lock permanently held.
+            _finalize_web_build_guard(
+                operation_id=str(build_id), user_id=str(user_id),
+                ok=(_term == "completed"), terminal_status=execution_status,
+                model=model, provider=provider,
+                input_tokens=input_tokens, output_tokens=output_tokens,
+                has_usage=_has_usage, job_id=job_id, error_code=error_code,
+            )
         logger.info(
             "WEB_BUILD_BG terminal | build_id=%s | job_id=%s | status=%s | provider=%s | model=%s | error_kind=%s | error_code=%s | request_id=%s",
             str(build_id), (str(job_id)[:14] if job_id else "-"), (_term or str(execution_status)),

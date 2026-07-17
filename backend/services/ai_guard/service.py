@@ -397,12 +397,21 @@ def inspect_operation(operation_id: str, user_id: Optional[str] = None) -> Dict[
     }
 
 
-def reap_stale_operation(operation_id: str, user_id: str) -> Dict[str, object]:
-    """Release ONLY this exact stale operation's concurrency lock + reconcile its
-    reservation, using the canonical `store.finalize` (validated against the
-    owning user_id). Idempotent: an already-terminal op is a no-op. Daily usage
-    counters and audit history are preserved (finalize never refunds quota).
-    Never touches any other operation. Never raises."""
+def finalize_operation(operation_id: str, user_id: str, *, status: str = "failed",
+                       error_code: Optional[str] = None) -> Dict[str, object]:
+    """CANONICAL terminal finalize for ONE exact operation.
+
+    Releases the concurrency lock + reconciles the outstanding reservation via
+    `store.finalize` (validated against the owning user_id). This is the SINGLE
+    lock-release path shared by the terminal Web Build lifecycle AND the stale
+    reaper — no second release mechanism exists.
+
+    Idempotent: an already-terminal operation is a no-op (no double refund,
+    reported via `already_terminal`). Daily usage counters, request
+    fingerprint/idempotency history and audit history are all preserved
+    (`store.finalize` never refunds quota). Never touches any other operation.
+    Never raises. Returns {found, operation_finalized, lock_released,
+    spend_reconciled, already_terminal?}."""
     try:
         op = store.get_operation(str(operation_id))
         if not op or str(op.get("user_id")) != str(user_id):
@@ -415,13 +424,21 @@ def reap_stale_operation(operation_id: str, user_id: str) -> Dict[str, object]:
                     "lock_released": False, "spend_reconciled": False,
                     "already_terminal": True}
         ok = store.finalize(operation_id=str(operation_id), user_id=str(user_id),
-                            status="cancelled", error_code="STALE_BUILD_REAPED")
+                            status=status, error_code=error_code)
         return {"found": True, "operation_finalized": bool(ok),
                 "lock_released": bool(ok), "spend_reconciled": bool(ok and had_reservation)}
     except Exception as e:
-        logger.warning("ai_guard reap_stale_operation failed: %s", e)
+        logger.warning("ai_guard finalize_operation failed: %s", e)
         return {"found": False, "operation_finalized": False,
                 "lock_released": False, "spend_reconciled": False}
+
+
+def reap_stale_operation(operation_id: str, user_id: str) -> Dict[str, object]:
+    """Owner stale-reaper entry (PR #481). Thin wrapper over the canonical
+    `finalize_operation` with the reaper's cancelled/STALE_BUILD_REAPED terminal —
+    no separate lock-release logic."""
+    return finalize_operation(str(operation_id), str(user_id),
+                              status="cancelled", error_code="STALE_BUILD_REAPED")
 
 
 def storage_health() -> Dict[str, object]:
