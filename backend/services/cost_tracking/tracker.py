@@ -114,6 +114,20 @@ def build_id_for_job(job_id: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+def claim_terminal_once(job_id: str) -> bool:
+    """Atomically claim the single terminal recording for a background job so
+    repeated polls (or a poll racing a cancel) never double-record. Returns True
+    iff this caller won the claim. Fail-CLOSED on error (returns False) so a
+    tracker/store fault can never cause a duplicate row."""
+    if not job_id:
+        return False
+    try:
+        return store.claim_job_terminal(str(job_id), _now_iso())
+    except Exception as exc:
+        logger.warning("cost_tracking.claim_terminal_once failed (skipping record): %s", exc)
+        return False
+
+
 # ── Recording paid calls ─────────────────────────────────────────────────────
 def record_ai_call(
     *,
