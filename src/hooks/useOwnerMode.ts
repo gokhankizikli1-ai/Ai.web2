@@ -41,6 +41,11 @@ const API_BASE = `${
 
 const ADMIN_STATUS_URL = `${API_BASE}/v2/admin/status`;
 
+/** The resolved backend base URL (VITE_API_URL when configured, else the
+ *  bundled default). Exported so owner-only API clients (e.g. costApi) reuse
+ *  the SAME configured base — never a second hardcoded Railway domain. */
+export const OWNER_API_BASE = API_BASE;
+
 /* ─── Public types ────────────────────────────────────────────────────── */
 
 export interface OwnerDebug {

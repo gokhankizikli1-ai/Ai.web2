@@ -41,6 +41,15 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _bounded(v: Optional[str], limit: int) -> Optional[str]:
+    """Clamp a diagnostic string to a hard length so a record can never carry an
+    unbounded blob. Callers pass ALREADY-sanitized values (no prompts/secrets)."""
+    if v is None:
+        return None
+    s = str(v)
+    return s[:limit] if s else None
+
+
 def new_build_id() -> str:
     """Mint a fresh build id (task #1). Callers with a stable per-build
     key (ai_guard operation id) should pass that instead so continuations
@@ -74,6 +83,37 @@ def complete_build(*, build_id: str, status: str = "completed") -> None:
         logger.debug("cost_tracking.complete_build skipped: %s", exc)
 
 
+def build_exists(build_id: str) -> bool:
+    try:
+        return store.build_exists(str(build_id))
+    except Exception:
+        return False
+
+
+# ── Background job → build correlation ───────────────────────────────────────
+def link_background_job(*, job_id: str, build_id: str, user_id: str) -> None:
+    """Record that an opaque background frontend job belongs to `build_id`, so
+    its TERMINAL result (which arrives on a separate poll request) is recorded
+    against the right build. Best-effort; never raises."""
+    if not job_id or not build_id:
+        return
+    try:
+        store.link_job(job_id=str(job_id), build_id=str(build_id),
+                       user_id=str(user_id), created_at=_now_iso())
+    except Exception as exc:
+        logger.debug("cost_tracking.link_background_job skipped: %s", exc)
+
+
+def build_id_for_job(job_id: str) -> Optional[Dict[str, Any]]:
+    """Return {'build_id','user_id'} for a linked background job, or None."""
+    if not job_id:
+        return None
+    try:
+        return store.build_id_for_job(str(job_id))
+    except Exception:
+        return None
+
+
 # ── Recording paid calls ─────────────────────────────────────────────────────
 def record_ai_call(
     *,
@@ -89,6 +129,9 @@ def record_ai_call(
     request_completed_at: Optional[str] = None,
     additional_tool_cost_usd: float = 0.0,
     error_code:     Optional[str] = None,
+    error_kind:     Optional[str] = None,
+    error_message:  Optional[str] = None,
+    request_id:     Optional[str] = None,
     duration_ms:    int = 0,
     ensure_build:   bool = True,
 ) -> Optional[str]:
@@ -148,7 +191,10 @@ def record_ai_call(
             "cache_cost_usd": breakdown.cache_cost_usd,
             "additional_tool_cost_usd": breakdown.additional_tool_cost_usd,
             "total_call_cost_usd": breakdown.total_call_cost_usd,
-            "error_code": error_code,
+            "error_code": _bounded(error_code, 64),
+            "error_kind": _bounded(error_kind, 64),
+            "error_message": _bounded(error_message, 300),
+            "request_id": _bounded(request_id, 64),
             "tool_key": None,
             "tool_units": 0.0,
             "duration_ms": int(duration_ms or 0),

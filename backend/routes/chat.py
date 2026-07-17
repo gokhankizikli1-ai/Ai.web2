@@ -712,8 +712,17 @@ async def chat(req: ChatRequest, request: Request):
                 success=_succeeded,
                 retry_number=(1 if _is_repair else 0),
                 error_code=(_exec2.get("error_code") or None),
+                error_kind=(_exec2.get("error_kind") or None),
+                error_message=(_exec2.get("error_message") or None),
+                request_id=(_exec2.get("request_id") or None),
                 duration_ms=int(_exec2.get("latency_ms", 0) or 0),
             )
+            # Frontend-builder BACKGROUND builds finish on a later poll request that
+            # has no build context. Link the opaque job id → this build_id now so the
+            # terminal result (success OR failure) is recorded against the right build.
+            _bg_job = _exec2.get("background_job_id")
+            if _bg_job:
+                _ct.link_background_job(job_id=str(_bg_job), build_id=_build_id, user_id=str(user_id))
             # The deep-research pre-pass — one paid web search per query (task #4).
             _research = response_metadata.get("research", {}) if isinstance(response_metadata, dict) else {}
             if _research and _research.get("did_research"):
@@ -929,6 +938,38 @@ async def background_poll(job_id: str, request: Request):
         _md["error_kind"]    = res.error_kind
         _md["error_code"]    = res.error_code
         _md["error_message"] = res.error_message
+
+    # ── Cost tracking — persist the TERMINAL background frontend result against
+    # the build it belongs to (task: make failed background builds diagnosable).
+    # Only bounded, sanitized diagnostics — never source, prompt or the raw id.
+    # A missing usage block is flagged usage_missing, never estimated as zero.
+    try:
+        from backend.services.cost_tracking import tracker as _ct
+        from backend.services.cost_tracking.types import TokenUsage as _CTUsage, OP_CODEGEN
+        _link = _ct.build_id_for_job(job_id)
+        if _link and _link.get("build_id"):
+            _has_usage = any(getattr(res, _u, None) is not None
+                             for _u in ("input_tokens", "output_tokens", "total_tokens"))
+            _ct.record_ai_call(
+                build_id=str(_link["build_id"]), user_id=str(_link.get("user_id") or uid),
+                provider=str(res.provider or "openai"), model=str(res.model or ""),
+                operation_type=OP_CODEGEN,
+                usage=_CTUsage(
+                    input_tokens=int(res.input_tokens or 0),
+                    output_tokens=int(res.output_tokens or 0),
+                    reasoning_tokens=int(res.reasoning_tokens or 0),
+                    cached_input_tokens=int(getattr(res, "cached_tokens", 0) or 0),
+                    total_tokens=int(res.total_tokens or 0),
+                    usage_missing=(res.ok and not _has_usage),
+                ),
+                success=bool(res.ok),
+                error_code=res.error_code, error_kind=res.error_kind,
+                error_message=res.error_message,
+                duration_ms=int(res.latency_ms or 0),
+            )
+    except Exception as _cterr:
+        logger.debug("CHAT | bg_poll | cost_tracking skipped: %s", _cterr)
+
     return _bg_exec_response(res.text if res.ok else "", _md)
 
 

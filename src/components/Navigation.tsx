@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import {
   MessageSquare, Globe, Gamepad2,
   FlaskConical, Rocket, Building2, TrendingUp, Bot,
+  BarChart3,
   Sparkles, Settings, LogIn, Zap,
 } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
@@ -56,6 +57,7 @@ export default function Navigation() {
     { id: 'business', label: t('business'), icon: Building2,  path: '/chat?tab=business' },
     { id: 'trading',  label: t('trading'),  icon: TrendingUp, path: '/chat?tab=trading' },
     { id: 'agents',   label: t('agents'),   icon: Bot,        path: '/agents' },
+    { id: 'costs',    label: t('navCostAnalytics'), icon: BarChart3, path: '/owner/costs' },
   ];
 
   const handleNav = (item: NavItem) => {
