@@ -156,6 +156,15 @@ def _policy() -> P.FounderBetaPolicy:
     return P.FounderBetaPolicy(store.get_overrides())
 
 
+def _short_key(k: Optional[str]) -> str:
+    """Bounded, non-sensitive rendering of a client operation key for logs — a
+    short prefix only, never the full key, fingerprint or lock token."""
+    if not k:
+        return "-"
+    s = str(k)
+    return (s[:8] + "…") if len(s) > 8 else s
+
+
 def preflight(*, user_id: str, operation_type: str, message: str,
               idempotency_key: Optional[str] = None, is_owner: bool = False) -> Preflight:
     """Run the ordered gate before a protected provider call. The START-vs-
@@ -198,6 +207,13 @@ def preflight(*, user_id: str, operation_type: str, message: str,
         if kind == "duplicate":
             return Preflight(False, P.CODE_IN_PROGRESS, operation_type, operation_id=op_id, reset_at=reset_at)
         if kind == "attached":
+            # Valid same-build continuation: reuse the existing operation, NO new
+            # reservation / quota / lock. Bounded diagnostic (never the full key).
+            logger.info(
+                "AI_GUARD continuation | uid=%s | operation_id=%s | operation_type=%s | "
+                "source=same_operation_key | new_reservation=false | quota_incremented=false",
+                user_id, op_id, operation_type,
+            )
             return Preflight(True, P.CODE_ALLOWED, operation_type, role="continuation",
                              operation_id=op_id, idempotent_replay=True, reset_at=reset_at,
                              source=("admin-grant" if is_owner else None),
@@ -258,6 +274,15 @@ def preflight(*, user_id: str, operation_type: str, message: str,
                          reservation_id=out.reservation_id, idempotent_replay=out.replay,
                          reset_at=reset_at, remaining=remaining,
                          source=decision.source, owner_unlimited=is_owner)
+
+    # A genuinely SEPARATE concurrent build (different operation key) is blocked by
+    # the concurrency lock inside reserve_start. Bounded diagnostic — the requested
+    # key is truncated, never logged in full.
+    if out.code == P.CODE_IN_PROGRESS:
+        logger.info(
+            "AI_GUARD concurrency_block | uid=%s | active_operation_id=%s | requested_operation_key=%s | same_operation=false",
+            user_id, out.operation_id, _short_key(idempotency_key),
+        )
 
     remaining = max(0, limit.daily_per_user - out.used) if out.code == "daily_limit_reached" else None
     return Preflight(False, out.code, operation_type, operation_id=out.operation_id,

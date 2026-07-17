@@ -2363,6 +2363,12 @@ export async function generateFrontendBuilderRaw(
     const tok = localStorage.getItem('korvix_access_token');
     if (tok) headers['Authorization'] = `Bearer ${tok}`;
   } catch { /* ignore */ }
+  // Carry the STABLE Web Build operation id so ai_guard treats this frontend
+  // generation as a CONTINUATION of the same build's planning operation — not a
+  // second concurrent build. Without this the backend correctly cannot match the
+  // active operation and returns operation_in_progress. Matches the planning and
+  // review/repair calls, which already attach these headers.
+  try { Object.assign(headers, aiGuard.activeOperationHeaders('web_build_full')); } catch { /* guard optional */ }
 
   // Phase 13F — dedicated FULL-SOURCE timeout, separate from planning. 210s > the backend's
   // 180s Responses read timeout, so a valid generation is no longer aborted early; the
