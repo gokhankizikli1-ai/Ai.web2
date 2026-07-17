@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link, useNavigate, useLocation } from 'react-router';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { motion } from 'framer-motion';
@@ -9,6 +9,7 @@ import {
   Crown, Search, X,
   LogIn, Sparkles, FolderOpen,
   Bot, Plug, FileText, ChevronDown, Code2, Briefcase, MoreHorizontal,
+  BarChart3,
 } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
 import type { ChatSession, ChatFolder } from '@/types';
@@ -101,6 +102,10 @@ export default function Sidebar({
   }
   const { t } = useLanguageStore();
   const navigate = useNavigate();
+  const location = useLocation();
+  // Persistent active styling for router destinations (matches the selected
+  // treatment used elsewhere). Only /owner/costs needs it today.
+  const isCostsActive = location.pathname === '/owner/costs';
 
   const displaySessions = filteredSessions;
 
@@ -288,6 +293,18 @@ export default function Sidebar({
                   <button type="button" onClick={() => navigate('/agents')} className={navRow}>
                     <Bot className="h-4 w-4 shrink-0 text-[#60A5FA]" />
                     <span>{t('agents')}</span>
+                  </button>
+                  {/* Owner-only Web Build cost analytics. Router-native navigation
+                      (HashRouter resolves the /owner/costs hash). Backend enforces
+                      owner access on every cost endpoint regardless of this link. */}
+                  <button
+                    type="button"
+                    onClick={() => navigate('/owner/costs')}
+                    aria-current={isCostsActive ? 'page' : undefined}
+                    className={`${navRow}${isCostsActive ? ' bg-white/[0.06] text-white' : ''}`}
+                  >
+                    <BarChart3 className={`h-4 w-4 shrink-0 transition-colors ${isCostsActive ? 'text-[#60A5FA]' : 'text-white/50 group-hover:text-white/85'}`} />
+                    <span>{t('navCostAnalytics')}</span>
                   </button>
                   <button type="button" className={navRow}>
                     <Plug className="h-4 w-4 shrink-0 text-white/50 group-hover:text-white/85 transition-colors" />
