@@ -177,7 +177,9 @@ def image_gen_generate(
     try:
         if str(asset.get("status") or "").lower() in ("ok", "generated", "success", "completed"):
             from backend.services.cost_tracking import tracker as _ct
-            from backend.services.cost_tracking.types import OP_IMAGE_GEN
+            from backend.services.cost_tracking.types import (
+                OP_IMAGE_GEN, STAGE_IMAGE_GENERATION, AGENT_IMAGE,
+            )
             _prov = str(asset.get("provider") or img.active_provider() or "").lower()
             _q = (body.quality or "").strip().lower()
             _tool_key = f"image.{_prov}" + (f".{_q}" if _q else "")
@@ -186,6 +188,7 @@ def image_gen_generate(
                 build_id=_bid, user_id=str(getattr(user, "id", "anon")),
                 tool_key=_tool_key, units=1, provider=_prov,
                 operation_type=OP_IMAGE_GEN,
+                stage=STAGE_IMAGE_GENERATION, agent=AGENT_IMAGE,
             )
     except Exception as _cterr:
         logger.debug("[WEB_BUILD_IMG] cost_tracking skipped: %s", _cterr)

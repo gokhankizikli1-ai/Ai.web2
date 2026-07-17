@@ -741,17 +741,27 @@ async def chat(req: ChatRequest, request: Request):
         try:
             from backend.services.cost_tracking import tracker as _ct
             from backend.services.cost_tracking.types import (
-                TokenUsage as _CTUsage, OP_PLANNING, OP_PLANNING_REPAIR,
+                TokenUsage as _CTUsage, OP_PLANNING, OP_PLANNING_REPAIR, OP_VISUAL,
                 OP_WEB_SEARCH,
+                STAGE_WEB_BUILD_PLANNING, STAGE_PLANNING_REPAIR, STAGE_REVISION,
+                STAGE_VISUAL_INTELLIGENCE, STAGE_WEB_RESEARCH,
+                AGENT_WEBSITE_BUILDER, AGENT_VISUAL_INTELLIGENCE, AGENT_RESEARCH,
             )
             _build_id = _beta_op_id or ("build_" + request_id)
             _exec2 = response_metadata.get("ai_execution", {}) if isinstance(response_metadata, dict) else {}
             _exec2 = _exec2 or {}
+            _is_revision = ("[FRONTEND REVISION REQUEST]" in message
+                            or "Requested change:" in message or "REVISION" in message)
             _is_repair = (
                 "[WEB BUILD PLANNING REPAIR REQUEST]" in message
                 or "[WEB BUILD DESIGN PLAN REPAIR REQUEST]" in message
-                or "REVISION" in message
+                or _is_revision
             )
+            # One-way input attribution for duplicate detection — a bounded hash +
+            # byte size, NEVER the message content. Reused by planning/visual/research
+            # and the background frontend-generation link below.
+            _wb_fp = _ct.fingerprint(message)
+            _wb_ctx = _ct.context_bytes(message)
             _ct.start_build(
                 user_id=str(user_id), build_id=_build_id,
                 label=(message[:80] if not _is_repair else None),
@@ -776,13 +786,20 @@ async def chat(req: ChatRequest, request: Request):
             )
             if _is_frontend_gen:
                 if _bg_job and _nonterminal:
-                    _ct.link_background_job(job_id=str(_bg_job), build_id=_build_id, user_id=str(user_id))
+                    # Capture the frontend-generation INPUT attribution now (bounded
+                    # fingerprint + context size) — the terminal record lands on a
+                    # later poll with no request body to derive it from.
+                    _ct.link_background_job(job_id=str(_bg_job), build_id=_build_id, user_id=str(user_id),
+                                            input_fingerprint=_wb_fp, context_bytes=_wb_ctx)
                     logger.info(
                         "WEB_BUILD_BG link | build_id=%s | job_id=%s | kind=%s",
                         _build_id, str(_bg_job)[:14], _exec2.get("background_task_kind") or "-",
                     )
                 else:
                     _fg_ok = _status2 in ("succeeded", "completed") or (bool(reply) and not _exec2.get("error_kind"))
+                    # Canonical frontend stage from the request marker (server-derived):
+                    # revision / review-validation / repair vs the initial generation.
+                    _fe_stage, _fe_retry, _fe_reason = _web_build_frontend_stage(message)
                     _record_web_build_frontend_terminal(
                         build_id=_build_id, user_id=str(user_id),
                         provider=_exec2.get("provider") or prov or "openai",
@@ -794,19 +811,36 @@ async def chat(req: ChatRequest, request: Request):
                         error_kind=_exec2.get("error_kind"), error_code=_exec2.get("error_code"),
                         error_message=_exec2.get("error_message"), request_id=_exec2.get("request_id"),
                         latency_ms=_exec2.get("latency_ms", 0), job_id=(str(_bg_job) if _bg_job else None),
+                        stage=_fe_stage, retry_number=_fe_retry, retry_reason=_fe_reason,
+                        input_fingerprint=_wb_fp, context_bytes=_wb_ctx,
                     )
             else:
-                # website_builder / visual planning call (unchanged behaviour).
+                # website_builder planning / repair / revision — OR the DISTINCT
+                # Visual Intelligence planner. These previously all recorded as
+                # `web_build_planning`, which hid the visual agent; the canonical
+                # stage/agent below attributes each to its real pipeline step.
                 _succeeded = _status2 in ("succeeded", "completed") or bool(reply)
                 _has_usage = any(
                     k in _exec2 for k in ("input_tokens", "output_tokens", "total_tokens")
                 )
                 _usage_missing = bool(_exec2.get("usage_missing")) or (_succeeded and not _has_usage)
+                if _is_visual_intelligence:
+                    _wb_op, _wb_stage, _wb_agent, _wb_reason = (
+                        OP_VISUAL, STAGE_VISUAL_INTELLIGENCE, AGENT_VISUAL_INTELLIGENCE, None)
+                elif _is_revision:
+                    _wb_op, _wb_stage, _wb_agent, _wb_reason = (
+                        OP_PLANNING_REPAIR, STAGE_REVISION, AGENT_WEBSITE_BUILDER, "revision")
+                elif _is_repair:
+                    _wb_op, _wb_stage, _wb_agent, _wb_reason = (
+                        OP_PLANNING_REPAIR, STAGE_PLANNING_REPAIR, AGENT_WEBSITE_BUILDER, "planning_contract")
+                else:
+                    _wb_op, _wb_stage, _wb_agent, _wb_reason = (
+                        OP_PLANNING, STAGE_WEB_BUILD_PLANNING, AGENT_WEBSITE_BUILDER, None)
                 _ct.record_ai_call(
                     build_id=_build_id, user_id=str(user_id),
                     provider=str(_exec2.get("provider") or prov or "openai"),
                     model=str(_exec2.get("model") or model or ""),
-                    operation_type=(OP_PLANNING_REPAIR if _is_repair else OP_PLANNING),
+                    operation_type=_wb_op,
                     usage=_CTUsage(
                         input_tokens=int(_exec2.get("input_tokens", 0) or 0),
                         output_tokens=int(_exec2.get("output_tokens", 0) or 0),
@@ -822,6 +856,8 @@ async def chat(req: ChatRequest, request: Request):
                     error_message=(_exec2.get("error_message") or None),
                     request_id=(_exec2.get("request_id") or None),
                     duration_ms=int(_exec2.get("latency_ms", 0) or 0),
+                    stage=_wb_stage, agent=_wb_agent, retry_reason=_wb_reason,
+                    input_fingerprint=_wb_fp, context_bytes=_wb_ctx,
                 )
                 # A TERMINAL planning FAILURE ends the build attempt → release the
                 # exact ai_guard lock now so the user can retry immediately. A
@@ -843,6 +879,7 @@ async def chat(req: ChatRequest, request: Request):
                         build_id=_build_id, user_id=str(user_id),
                         tool_key=(f"search.{_prov}" if _prov else "search"),
                         units=_qn, provider=_prov, operation_type=OP_WEB_SEARCH,
+                        stage=STAGE_WEB_RESEARCH, agent=AGENT_RESEARCH,
                     )
         except Exception as _cterr:
             logger.debug("CHAT | rid=%s | cost_tracking skipped: %s", request_id, _cterr)
@@ -1065,20 +1102,46 @@ def _finalize_web_build_guard(
                        str(operation_id), _e)
 
 
+def _web_build_frontend_stage(message: str) -> tuple:
+    """Server-derive the canonical frontend stage from the request marker.
+    Returns (stage, retry_number, retry_reason). Frontend REVISION / REVIEW
+    (validation) / repair are distinct pipeline steps from the initial generation;
+    the background poll path, which has no message, defaults to frontend_generation."""
+    from backend.services.cost_tracking.types import (
+        STAGE_FRONTEND_GENERATION, STAGE_FRONTEND_VALIDATION,
+        STAGE_FRONTEND_REPAIR, STAGE_REVISION,
+    )
+    m = message or ""
+    if "[FRONTEND REVISION REQUEST]" in m:
+        return (STAGE_REVISION, 1, "revision")
+    if "[FRONTEND REVIEW REQUEST]" in m:
+        return (STAGE_FRONTEND_VALIDATION, 1, "review")
+    if "[FRONTEND REPAIR REQUEST]" in m or "[FRONTEND QUALITY REPAIR REQUEST]" in m:
+        return (STAGE_FRONTEND_REPAIR, 1, "contract")
+    return (STAGE_FRONTEND_GENERATION, 0, None)
+
+
 def _record_web_build_frontend_terminal(
     *, build_id, user_id, provider, model, ok: bool, execution_status,
     input_tokens=None, output_tokens=None, reasoning_tokens=None,
     cached_tokens=None, total_tokens=None,
     error_kind=None, error_code=None, error_message=None,
     request_id=None, latency_ms=0, retry_number=0, job_id=None,
+    stage=None, retry_reason=None, input_fingerprint=None, context_bytes=0,
 ) -> None:
     """Record ONE `web_build_frontend_generation` AI call for a terminal frontend
     generation and finalize the build (completed/failed). Idempotent per job_id
     via claim_terminal_once. Bounded, sanitized metadata only — never a prompt,
-    generated source, raw provider body, stack trace or secret. Never raises."""
+    generated source, raw provider body, stack trace or secret. Never raises.
+    `stage`/`agent` carry canonical cost-audit attribution; `input_fingerprint`
+    and `context_bytes` (captured at link time for background jobs) attribute the
+    generation's input context without storing any content."""
     try:
         from backend.services.cost_tracking import tracker as _ct
-        from backend.services.cost_tracking.types import TokenUsage as _CTUsage, OP_FRONTEND_GEN
+        from backend.services.cost_tracking.types import (
+            TokenUsage as _CTUsage, OP_FRONTEND_GEN,
+            STAGE_FRONTEND_GENERATION, AGENT_FRONTEND_BUILDER,
+        )
         # Idempotency: only the first terminal for a polled/cancelled job records.
         # Immediate terminals (no job_id) are single-shot and always record.
         if job_id and not _ct.claim_terminal_once(str(job_id)):
@@ -1102,6 +1165,9 @@ def _record_web_build_frontend_terminal(
             success=bool(ok), retry_number=int(retry_number or 0),
             error_kind=error_kind, error_code=error_code, error_message=error_message,
             request_id=request_id, duration_ms=int(latency_ms or 0),
+            stage=(stage or STAGE_FRONTEND_GENERATION), agent=AGENT_FRONTEND_BUILDER,
+            retry_reason=retry_reason,
+            input_fingerprint=input_fingerprint, context_bytes=int(context_bytes or 0),
         )
         if _term:
             _ct.complete_build(build_id=str(build_id), status=_term)
@@ -1222,6 +1288,9 @@ async def background_poll(job_id: str, request: Request):
                 error_kind=res.error_kind, error_code=res.error_code,
                 error_message=res.error_message, request_id=res.request_id,
                 latency_ms=res.latency_ms, job_id=job_id,
+                # Input attribution captured when the job was linked (no body here).
+                input_fingerprint=_link.get("input_fingerprint"),
+                context_bytes=int(_link.get("context_bytes") or 0),
             )
         else:
             logger.warning(
@@ -1267,6 +1336,8 @@ async def background_cancel(job_id: str, request: Request):
                     execution_status="cancelled", error_kind="cancelled",
                     error_message="Frontend generation was cancelled before a terminal result.",
                     job_id=job_id,
+                    input_fingerprint=_link.get("input_fingerprint"),
+                    context_bytes=int(_link.get("context_bytes") or 0),
                 )
         except Exception as _cterr:
             logger.warning("WEB_BUILD_BG terminal | job_id=%s | cancel finalize failed: %s",

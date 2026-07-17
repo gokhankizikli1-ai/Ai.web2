@@ -24,7 +24,9 @@ build_id automatically.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -36,9 +38,38 @@ from backend.services.cost_tracking.types import (
 
 logger = logging.getLogger(__name__)
 
+_WS_RE = re.compile(r"\s+")
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def fingerprint(text: Optional[str]) -> Optional[str]:
+    """One-way, bounded fingerprint of a call's input for duplicate detection.
+
+    Normalizes (strip + lowercase + collapse whitespace) then SHA-256, returning
+    ONLY a 16-hex-char prefix. It is deliberately lossy and irreversible: it can
+    never expose the prompt, the generated source or any secret — it only answers
+    "did two calls in this build carry the same normalized input?". Returns None
+    for empty input (so a missing input is never mistaken for a duplicate)."""
+    if not text:
+        return None
+    norm = _WS_RE.sub(" ", str(text).strip().lower())
+    if not norm:
+        return None
+    return hashlib.sha256(norm.encode("utf-8", "ignore")).hexdigest()[:16]
+
+
+def context_bytes(text: Optional[str]) -> int:
+    """Size of a call's input context in bytes (never the content). Used to spot
+    oversized / near-duplicate contexts without storing anything sensitive."""
+    if not text:
+        return 0
+    try:
+        return len(str(text).encode("utf-8", "ignore"))
+    except Exception:
+        return 0
 
 
 def _bounded(v: Optional[str], limit: int) -> Optional[str]:
@@ -91,15 +122,22 @@ def build_exists(build_id: str) -> bool:
 
 
 # ── Background job → build correlation ───────────────────────────────────────
-def link_background_job(*, job_id: str, build_id: str, user_id: str) -> None:
+def link_background_job(*, job_id: str, build_id: str, user_id: str,
+                        input_fingerprint: Optional[str] = None,
+                        context_bytes: int = 0) -> None:
     """Record that an opaque background frontend job belongs to `build_id`, so
     its TERMINAL result (which arrives on a separate poll request) is recorded
-    against the right build. Best-effort; never raises."""
+    against the right build. Also captures the frontend-generation input
+    attribution (one-way fingerprint + context byte size) at link time — the poll
+    that records the terminal call has no request body to derive it from.
+    Best-effort; never raises."""
     if not job_id or not build_id:
         return
     try:
         store.link_job(job_id=str(job_id), build_id=str(build_id),
-                       user_id=str(user_id), created_at=_now_iso())
+                       user_id=str(user_id), created_at=_now_iso(),
+                       input_fingerprint=input_fingerprint,
+                       context_bytes=int(context_bytes or 0))
     except Exception as exc:
         logger.debug("cost_tracking.link_background_job skipped: %s", exc)
 
@@ -277,11 +315,23 @@ def record_ai_call(
     request_id:     Optional[str] = None,
     duration_ms:    int = 0,
     ensure_build:   bool = True,
+    stage:              Optional[str] = None,
+    agent:              Optional[str] = None,
+    parent_call_id:     Optional[str] = None,
+    retry_reason:       Optional[str] = None,
+    input_fingerprint:  Optional[str] = None,
+    output_fingerprint: Optional[str] = None,
+    context_bytes:      int = 0,
 ) -> Optional[str]:
     """Record one token-bearing provider call. Returns the call_id (or
     None on failure). `usage` MUST come from the provider response; when
     the provider returned no usage object, pass a TokenUsage with
     usage_missing=True (task #9) — do NOT pass zeros as if they were real.
+
+    `stage`/`agent` are the CANONICAL cost-audit attribution, set by the server
+    call site (never inferred here, never client-authored). `input_fingerprint`
+    is a one-way hash (see fingerprint()) enabling duplicate detection without
+    storing any content; `context_bytes` is the input size, never the input.
     """
     try:
         u = usage or TokenUsage(usage_missing=True)
@@ -341,6 +391,14 @@ def record_ai_call(
             "tool_key": None,
             "tool_units": 0.0,
             "duration_ms": int(duration_ms or 0),
+            "stage": _bounded(stage, 48),
+            "agent": _bounded(agent, 48),
+            "sequence_index": None,   # store assigns the next monotonic index
+            "parent_call_id": _bounded(parent_call_id, 64),
+            "retry_reason": _bounded(retry_reason, 48),
+            "input_fingerprint": _bounded(input_fingerprint, 32),
+            "output_fingerprint": _bounded(output_fingerprint, 32),
+            "context_bytes": int(context_bytes or 0),
             "created_at": _now_iso(),
         }
         store.insert_call(record)
@@ -364,10 +422,15 @@ def record_tool_cost(
     request_completed_at: Optional[str] = None,
     error_code:     Optional[str] = None,
     ensure_build:   bool = True,
+    stage:              Optional[str] = None,
+    agent:              Optional[str] = None,
+    input_fingerprint:  Optional[str] = None,
+    context_bytes:      int = 0,
 ) -> Optional[str]:
     """Record a non-token paid call: image generation, web search,
     embeddings-by-call, a third-party API, or deployment/sandbox
     execution (task #4). Cost is priced from the centralized tool table.
+    `stage`/`agent` carry the canonical cost-audit attribution (server-set).
     """
     try:
         usd, matched = pricing.compute_tool_cost(tool_key, units)
@@ -396,6 +459,14 @@ def record_tool_cost(
             "tool_key": str(tool_key),
             "tool_units": float(units or 0.0),
             "duration_ms": 0,
+            "stage": _bounded(stage, 48),
+            "agent": _bounded(agent, 48),
+            "sequence_index": None,   # store assigns the next monotonic index
+            "parent_call_id": None,
+            "retry_reason": None,
+            "input_fingerprint": _bounded(input_fingerprint, 32),
+            "output_fingerprint": None,
+            "context_bytes": int(context_bytes or 0),
             "created_at": _now_iso(),
         }
         store.insert_call(record)
@@ -407,7 +478,16 @@ def record_tool_cost(
 
 # ── Reads: build aggregate (task #6) ─────────────────────────────────────────
 def get_build(build_id: str) -> Dict[str, Any]:
-    """Full build view: lifecycle metadata + computed aggregate + calls."""
+    """Full build view: lifecycle metadata + computed aggregate + calls.
+
+    The one-way input/output fingerprints are duplicate-detection internals and
+    are STRIPPED from every API-facing call dict — they never leave the server
+    even though they can't expose content. All other columns are safe metadata."""
+    calls = []
+    for c in store.list_calls(build_id):
+        c.pop("input_fingerprint", None)
+        c.pop("output_fingerprint", None)
+        calls.append(c)
     row = store.get_build_row(build_id) or {}
     agg = store.aggregate_build(build_id)
     duration = store._duration_seconds(row.get("started_at"), row.get("completed_at"))
@@ -419,13 +499,21 @@ def get_build(build_id: str) -> Dict[str, Any]:
         "completed_at": row.get("completed_at"),
         "build_duration_seconds": duration,
         **agg,
-        "calls": store.list_calls(build_id),
+        "calls": calls,
     }
 
 
 def list_builds(limit: int = 100, offset: int = 0,
                 user_id: Optional[str] = None) -> List[Dict[str, Any]]:
     return store.list_builds(limit=limit, offset=offset, user_id=user_id)
+
+
+def build_audit(build_id: str) -> Dict[str, Any]:
+    """Full deterministic cost-attribution & duplicate-call audit for one build
+    (ordered waterfall, per-stage roll-up, duplicate/retry/unused detection,
+    conservative waste estimate, recommendations). Read-time; never raises."""
+    from backend.services.cost_tracking import audit as _audit
+    return _audit.build_audit(str(build_id))
 
 
 # ── Reads: analytics (task #7) ───────────────────────────────────────────────
@@ -478,5 +566,6 @@ def analytics(user_id: Optional[str] = None) -> Dict[str, Any]:
 __all__ = [
     "new_build_id", "start_build", "complete_build",
     "record_ai_call", "record_tool_cost",
-    "get_build", "list_builds", "analytics",
+    "get_build", "list_builds", "analytics", "build_audit",
+    "fingerprint", "context_bytes",
 ]

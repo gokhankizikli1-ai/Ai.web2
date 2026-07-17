@@ -112,6 +112,16 @@ def _init() -> None:
                     tool_key     TEXT,
                     tool_units   REAL NOT NULL DEFAULT 0,
                     duration_ms  INTEGER NOT NULL DEFAULT 0,
+                    -- Canonical attribution (cost audit). All server-set; a client
+                    -- can never author these. Nullable so historical rows infer at read.
+                    stage              TEXT,
+                    agent              TEXT,
+                    sequence_index     INTEGER,
+                    parent_call_id     TEXT,
+                    retry_reason       TEXT,
+                    input_fingerprint  TEXT,
+                    output_fingerprint TEXT,
+                    context_bytes      INTEGER NOT NULL DEFAULT 0,
                     created_at   TEXT NOT NULL
                 );
 
@@ -146,6 +156,10 @@ def _init() -> None:
                     ON cost_ai_calls (model);
                 CREATE INDEX IF NOT EXISTS idx_builds_user
                     ON cost_builds (user_id);
+                -- Cost-audit reads scan one build ordered by call sequence; this
+                -- covering-ish index keeps that per-build read cheap.
+                CREATE INDEX IF NOT EXISTS idx_calls_build_seq
+                    ON cost_ai_calls (build_id, sequence_index);
                 """
             )
             # Safe, idempotent migration for DBs created before these columns
@@ -153,16 +167,29 @@ def _init() -> None:
             # COLUMN is a no-op-guarded add; never drops or rewrites data.
             for col_def in (
                 "error_kind TEXT", "error_message TEXT", "request_id TEXT",
+                # Canonical attribution (cost audit). Additive + nullable so old
+                # rows infer their stage/agent at read time (never rewritten).
+                "stage TEXT", "agent TEXT", "sequence_index INTEGER",
+                "parent_call_id TEXT", "retry_reason TEXT",
+                "input_fingerprint TEXT", "output_fingerprint TEXT",
+                "context_bytes INTEGER NOT NULL DEFAULT 0",
             ):
                 try:
                     conn.execute(f"ALTER TABLE cost_ai_calls ADD COLUMN {col_def}")
                 except sqlite3.OperationalError:
                     pass  # column already exists
-            # cost_job_links gained a terminal-idempotency marker after PR #477.
-            try:
-                conn.execute("ALTER TABLE cost_job_links ADD COLUMN terminal_recorded_at TEXT")
-            except sqlite3.OperationalError:
-                pass
+            # cost_job_links gained a terminal-idempotency marker after PR #477,
+            # then input attribution (fingerprint + context size) for background
+            # frontend generation, whose terminal record lands on a later poll with
+            # no request body — the input attribution is captured at LINK time.
+            for col_def in (
+                "terminal_recorded_at TEXT",
+                "input_fingerprint TEXT", "context_bytes INTEGER NOT NULL DEFAULT 0",
+            ):
+                try:
+                    conn.execute(f"ALTER TABLE cost_job_links ADD COLUMN {col_def}")
+                except sqlite3.OperationalError:
+                    pass
             conn.commit()
         _INITIALIZED = True
 
@@ -226,14 +253,20 @@ def build_exists(build_id: str) -> bool:
 
 
 # ── Background job → build link (terminal frontend failures) ─────────────────
-def link_job(*, job_id: str, build_id: str, user_id: str, created_at: str) -> None:
-    """Associate an opaque background frontend job id with its build. Idempotent."""
+def link_job(*, job_id: str, build_id: str, user_id: str, created_at: str,
+             input_fingerprint: Optional[str] = None, context_bytes: int = 0) -> None:
+    """Associate an opaque background frontend job id with its build. Idempotent.
+    Captures the frontend-generation INPUT attribution (one-way fingerprint + the
+    context size in bytes, never the content) at link time so the terminal record,
+    which arrives on a later poll with no request body, can still attribute the
+    call's input context."""
     _init()
     with _connect() as conn:
         conn.execute(
-            "INSERT INTO cost_job_links (job_id, build_id, user_id, created_at) "
-            "VALUES (?, ?, ?, ?) ON CONFLICT(job_id) DO NOTHING",
-            (str(job_id), str(build_id), str(user_id), created_at),
+            "INSERT INTO cost_job_links (job_id, build_id, user_id, created_at, input_fingerprint, context_bytes) "
+            "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(job_id) DO NOTHING",
+            (str(job_id), str(build_id), str(user_id), created_at,
+             input_fingerprint, int(context_bytes or 0)),
         )
         conn.commit()
 
@@ -242,7 +275,8 @@ def build_id_for_job(job_id: str) -> Optional[Dict[str, Any]]:
     _init()
     with _connect() as conn:
         row = conn.execute(
-            "SELECT build_id, user_id FROM cost_job_links WHERE job_id = ?", (str(job_id),)
+            "SELECT build_id, user_id, input_fingerprint, context_bytes "
+            "FROM cost_job_links WHERE job_id = ?", (str(job_id),)
         ).fetchone()
         return dict(row) if row else None
 
@@ -369,11 +403,25 @@ def insert_call(record: Dict[str, Any]) -> None:
         "input_cost_usd", "output_cost_usd", "cache_cost_usd",
         "additional_tool_cost_usd", "total_call_cost_usd",
         "error_code", "error_kind", "error_message", "request_id",
-        "tool_key", "tool_units", "duration_ms", "created_at",
+        "tool_key", "tool_units", "duration_ms",
+        "stage", "agent", "sequence_index", "parent_call_id", "retry_reason",
+        "input_fingerprint", "output_fingerprint", "context_bytes",
+        "created_at",
     )
-    vals = [record.get(c) for c in cols]
     # SQLite wants ints for the boolean-ish columns.
     with _connect() as conn:
+        # Server-authoritative sequence: assign the next monotonic index for this
+        # build INSIDE the write transaction when the caller didn't set one. The
+        # single-node WAL store serializes writers, so this is race-safe; the
+        # index is never accepted from a client. Ordered call replay uses it.
+        rec = dict(record)
+        if rec.get("sequence_index") is None:
+            row = conn.execute(
+                "SELECT COALESCE(MAX(sequence_index), -1) + 1 AS n FROM cost_ai_calls WHERE build_id = ?",
+                (str(rec.get("build_id")),),
+            ).fetchone()
+            rec["sequence_index"] = int(row["n"] if row and row["n"] is not None else 0)
+        vals = [rec.get(c) for c in cols]
         conn.execute(
             f"INSERT OR REPLACE INTO cost_ai_calls ({', '.join(cols)}) "
             f"VALUES ({', '.join(['?'] * len(cols))})",
