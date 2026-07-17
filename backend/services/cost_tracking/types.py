@@ -77,8 +77,11 @@ class AICallRecord:
     cache_cost_usd:            float = 0.0
     additional_tool_cost_usd:  float = 0.0
     total_call_cost_usd:       float = 0.0
-    # Diagnostics
-    error_code:  Optional[str] = None
+    # Diagnostics (bounded, sanitized — never a prompt, output or secret)
+    error_code:    Optional[str] = None
+    error_kind:    Optional[str] = None
+    error_message: Optional[str] = None
+    request_id:    Optional[str] = None
     tool_key:    Optional[str] = None   # set for non-token tool calls
     tool_units:  float = 0.0
     duration_ms: int = 0

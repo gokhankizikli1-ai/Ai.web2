@@ -55,6 +55,7 @@ const ProjectResults = lazy(() => import('./pages/ProjectResults'));
 const AgentsPage = lazy(() => import('./pages/AgentsPage'));
 const AgentChatPage = lazy(() => import('./pages/AgentChatPage'));
 const CreditsPage = lazy(() => import('./pages/CreditsPage'));
+const OwnerCosts = lazy(() => import('./pages/OwnerCosts'));
 
 import BottomNav from './components/BottomNav';
 import FloatingParticles from './components/FloatingParticles';
@@ -341,6 +342,9 @@ export default function App() {
              screen is open re-renders and falls back without a refresh. Frontend gating only —
              backend authorization is unchanged and reviewed separately in the security audit. */}
         <Route path="/tools/game-builder" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><OwnerRoute><AnimatedRoute><GameBuilder /></AnimatedRoute></OwnerRoute></ProtectedRoute>} />
+        {/* Owner-only in-app Web Build cost analytics. Backend enforces owner access on every
+             cost endpoint (401/403) even if this route is entered manually. */}
+        <Route path="/owner/costs" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><OwnerRoute><AnimatedRoute><OwnerCosts /></AnimatedRoute></OwnerRoute></ProtectedRoute>} />
         <Route path="/tools/brand-builder" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><AnimatedRoute><BrandBuilder /></AnimatedRoute></ProtectedRoute>} />
         <Route path="/tools/viral-content" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><AnimatedRoute><ViralContent /></AnimatedRoute></ProtectedRoute>} />
         <Route path="/tools/knowledge-vault" element={<ProtectedRoute guestAllowed={false} redirectTo="/signup"><AnimatedRoute><KnowledgeVault /></AnimatedRoute></ProtectedRoute>} />

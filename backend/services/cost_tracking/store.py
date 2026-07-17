@@ -106,10 +106,23 @@ def _init() -> None:
                     additional_tool_cost_usd  REAL NOT NULL DEFAULT 0,
                     total_call_cost_usd       REAL NOT NULL DEFAULT 0,
                     error_code   TEXT,
+                    error_kind    TEXT,
+                    error_message TEXT,
+                    request_id    TEXT,
                     tool_key     TEXT,
                     tool_units   REAL NOT NULL DEFAULT 0,
                     duration_ms  INTEGER NOT NULL DEFAULT 0,
                     created_at   TEXT NOT NULL
+                );
+
+                -- Maps an opaque background frontend job id → its build_id so a
+                -- TERMINAL background result (success or failure), which arrives on
+                -- a separate poll request, is recorded against the correct build.
+                CREATE TABLE IF NOT EXISTS cost_job_links (
+                    job_id     TEXT PRIMARY KEY,
+                    build_id   TEXT NOT NULL,
+                    user_id    TEXT NOT NULL,
+                    created_at TEXT NOT NULL
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_calls_build
@@ -122,6 +135,17 @@ def _init() -> None:
                     ON cost_builds (user_id);
                 """
             )
+            # Safe, idempotent migration for DBs created before these columns
+            # existed (production carries a table from PR #475). ALTER ... ADD
+            # COLUMN is a no-op-guarded add; never drops or rewrites data.
+            for col_def in (
+                "error_kind TEXT", "error_message TEXT", "request_id TEXT",
+            ):
+                name = col_def.split()[0]
+                try:
+                    conn.execute(f"ALTER TABLE cost_ai_calls ADD COLUMN {col_def}")
+                except sqlite3.OperationalError:
+                    pass  # column already exists
             conn.commit()
         _INITIALIZED = True
 
@@ -167,6 +191,45 @@ def get_build_row(build_id: str) -> Optional[Dict[str, Any]]:
         return dict(row) if row else None
 
 
+def build_exists(build_id: str) -> bool:
+    """True when the build has a row OR at least one recorded call. Used by the
+    admin detail route to return 404 for an unknown build instead of an empty
+    zero-cost payload."""
+    _init()
+    with _connect() as conn:
+        b = conn.execute(
+            "SELECT 1 FROM cost_builds WHERE build_id = ? LIMIT 1", (str(build_id),)
+        ).fetchone()
+        if b:
+            return True
+        c = conn.execute(
+            "SELECT 1 FROM cost_ai_calls WHERE build_id = ? LIMIT 1", (str(build_id),)
+        ).fetchone()
+        return bool(c)
+
+
+# ── Background job → build link (terminal frontend failures) ─────────────────
+def link_job(*, job_id: str, build_id: str, user_id: str, created_at: str) -> None:
+    """Associate an opaque background frontend job id with its build. Idempotent."""
+    _init()
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO cost_job_links (job_id, build_id, user_id, created_at) "
+            "VALUES (?, ?, ?, ?) ON CONFLICT(job_id) DO NOTHING",
+            (str(job_id), str(build_id), str(user_id), created_at),
+        )
+        conn.commit()
+
+
+def build_id_for_job(job_id: str) -> Optional[Dict[str, Any]]:
+    _init()
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT build_id, user_id FROM cost_job_links WHERE job_id = ?", (str(job_id),)
+        ).fetchone()
+        return dict(row) if row else None
+
+
 # ── Call insertion ───────────────────────────────────────────────────────────
 def insert_call(record: Dict[str, Any]) -> None:
     """Persist one AICallRecord dict. Caller supplies every column; the
@@ -179,7 +242,8 @@ def insert_call(record: Dict[str, Any]) -> None:
         "reasoning_tokens", "total_tokens", "usage_missing",
         "input_cost_usd", "output_cost_usd", "cache_cost_usd",
         "additional_tool_cost_usd", "total_call_cost_usd",
-        "error_code", "tool_key", "tool_units", "duration_ms", "created_at",
+        "error_code", "error_kind", "error_message", "request_id",
+        "tool_key", "tool_units", "duration_ms", "created_at",
     )
     vals = [record.get(c) for c in cols]
     # SQLite wants ints for the boolean-ish columns.
@@ -415,6 +479,10 @@ def _reset_for_tests() -> None:
     with _connect() as conn:
         conn.execute("DELETE FROM cost_ai_calls")
         conn.execute("DELETE FROM cost_builds")
+        try:
+            conn.execute("DELETE FROM cost_job_links")
+        except sqlite3.OperationalError:
+            pass
         conn.commit()
 
 
