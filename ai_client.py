@@ -298,6 +298,9 @@ class StructuredAIResult:
     input_tokens: Optional[int] = None
     output_tokens: Optional[int] = None
     reasoning_tokens: Optional[int] = None
+    # Phase 14M — cache-read input tokens (subset of input_tokens billed at
+    # the discounted cached rate). Surfaced for exact cost tracking.
+    cached_tokens: Optional[int] = None
     total_tokens: Optional[int] = None
     partial_output_char_count: Optional[int] = None
 
@@ -617,12 +620,22 @@ def _extract_responses_usage(data: dict) -> dict:
     det = usage.get("output_tokens_details")
     if isinstance(det, dict):
         rt = _n(det.get("reasoning_tokens"))
+    # Cache-read tokens — the Responses API reports them under
+    # input_tokens_details.cached_tokens (a subset of input_tokens billed
+    # at the discounted cached rate). Surfaced so cost tracking can price
+    # the cache discount instead of over-charging the whole input.
+    ct = None
+    idet = usage.get("input_tokens_details")
+    if isinstance(idet, dict):
+        ct = _n(idet.get("cached_tokens"))
     if it is not None:
         out["input_tokens"] = it
     if ot is not None:
         out["output_tokens"] = ot
     if rt is not None:
         out["reasoning_tokens"] = rt
+    if ct is not None:
+        out["cached_tokens"] = ct
     if tt is not None:
         out["total_tokens"] = tt
     return out
@@ -655,6 +668,7 @@ def _classify_background_response(data: dict, fallback_model: str, elapsed_ms: i
             input_tokens=usage.get("input_tokens"),
             output_tokens=usage.get("output_tokens"),
             reasoning_tokens=usage.get("reasoning_tokens"),
+            cached_tokens=usage.get("cached_tokens"),
             total_tokens=usage.get("total_tokens"),
             partial_output_char_count=partial_output_char_count,
         )

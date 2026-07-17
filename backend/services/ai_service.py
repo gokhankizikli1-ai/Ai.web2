@@ -326,7 +326,7 @@ async def process_chat(
                             _md["configured_max_output_tokens"] = int(configured_max)
                         # Bounded numeric usage truth (never raw content).
                         for _k in ("input_tokens", "output_tokens", "reasoning_tokens",
-                                   "total_tokens", "partial_output_char_count"):
+                                   "cached_tokens", "total_tokens", "partial_output_char_count"):
                             _v = getattr(res, _k, None)
                             if _v is not None:
                                 _md[_k] = int(_v)
@@ -730,6 +730,21 @@ async def process_chat(
                         "latency_ms":    _wb_res.latency_ms,
                         "fallback_used": _wb_res.fallback_used,
                     }
+                    # Phase 14M — bounded numeric usage truth for server-side cost
+                    # tracking. Only real provider numbers; usage_missing=True when
+                    # the Responses object carried no usage block (never estimated).
+                    _wb_usage_present = False
+                    for _uk, _uv in (
+                        ("input_tokens",     _wb_res.input_tokens),
+                        ("output_tokens",    _wb_res.output_tokens),
+                        ("reasoning_tokens", _wb_res.reasoning_tokens),
+                        ("cached_tokens",    _wb_res.cached_tokens),
+                        ("total_tokens",     _wb_res.total_tokens),
+                    ):
+                        if _uv is not None:
+                            _wb_exec[_uk] = int(_uv)
+                            _wb_usage_present = True
+                    _wb_exec["usage_missing"] = (not _wb_usage_present) and _wb_res.ok
                     if not _wb_res.ok:
                         _wb_exec["error_kind"]    = _wb_res.error_kind
                         _wb_exec["error_code"]    = _wb_res.error_code

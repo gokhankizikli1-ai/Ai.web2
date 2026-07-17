@@ -381,6 +381,14 @@ def _build_full_app():
             logger.info("Admin mode: /v2/admin/* routes installed")
         except Exception as _e:
             logger.warning("v2_admin route install failed (non-fatal): %s", _e)
+        # Phase 14M — Web Build cost analytics (/v2/admin/costs/*). Owner-only,
+        # same admin-mode gate so it stays undiscoverable when admin is off.
+        try:
+            from backend.routes.v2_admin_costs import router as _admin_costs_router
+            _app.include_router(_admin_costs_router)
+            logger.info("Admin mode: /v2/admin/costs/* cost analytics installed")
+        except Exception as _e:
+            logger.warning("v2_admin_costs route install failed (non-fatal): %s", _e)
 
     # Phase-B: import the providers package so KNOWN_PROVIDERS is
     # populated and bootstrap_default_providers() runs once. Safe even
