@@ -176,7 +176,14 @@ class FounderBetaPolicy:
         return max(60, _env_int("AI_OPERATION_IDEMPOTENCY_TTL_SECONDS", 86_400))
 
     # -- short-window rate limits (attempts/min per user) ----------------------
-    def rate_limit_per_min(self, operation_type: str) -> int:
+    def rate_limit_per_min(self, operation_type: str, is_owner: bool = False) -> int:
+        if is_owner:
+            # Narrowly-justified owner-only testing allowance. This is NOT a
+            # removal of burst protection — it is a much higher ceiling so the
+            # verified owner can run sequential Web Builds to collect cost data
+            # without tripping the 2/min founder-beta submission guard. A runaway
+            # loop is still bounded (default 60/min).
+            return _env_int("AI_RATE_OWNER_PER_MIN", 60)
         if operation_type == OP_WEB_BUILD_SMALL_EDIT:
             return _env_int("AI_RATE_SMALL_EDIT_PER_MIN", 10)
         if operation_type in (OP_WEB_BUILD_FULL, OP_WEB_BUILD_MAJOR_REDESIGN):
@@ -251,10 +258,21 @@ class AiCreditDecision:
     reason: Optional[str] = None
 
 
-def credit_decision(policy: FounderBetaPolicy, operation_type: str, remaining: Optional[int]) -> AiCreditDecision:
+def credit_decision(policy: FounderBetaPolicy, operation_type: str, remaining: Optional[int],
+                    is_owner: bool = False) -> AiCreditDecision:
     """Narrow entitlement interface. For this launch the founder-beta policy IS
     the entitlement source; a paid wallet/ledger can augment/replace this later
-    WITHOUT changing the call site. No monetary credits are invented here."""
+    WITHOUT changing the call site. No monetary credits are invented here.
+
+    `is_owner` is a BACKEND-VERIFIED flag (see service.resolve_owner). When set,
+    the personal entitlement is an unlimited `admin-grant`: the founder-beta
+    per-plan credit gate never rejects the owner. This grant is ONLY about
+    personal entitlement/quota — it does NOT touch the global kill switch,
+    operation-enabled toggles, the global spend cap, concurrency, idempotency
+    or cost tracking, which are enforced elsewhere in preflight/reserve_start.
+    """
+    if is_owner:
+        return AiCreditDecision(True, "admin-grant", None, None)
     if not policy.founder_beta_enabled:
         return AiCreditDecision(False, "founder-beta", remaining, "founder beta disabled")
     return AiCreditDecision(True, "founder-beta", remaining, None)

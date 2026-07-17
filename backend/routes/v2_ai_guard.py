@@ -69,8 +69,11 @@ def finalize_operation(body: FinalizeBody, request: Request):
 @router.get("/v2/ai/usage")
 def ai_usage(request: Request, user_id: str = ""):
     uid = _caller_uid(request, user_id or "")
+    # Backend-verified owner gets an honest unlimited usage state (limit/remaining
+    # null, isOwnerUnlimited true). Fail-closed to normal-user view on any error.
+    is_owner = ai_guard.resolve_owner(request)
     try:
-        return ai_guard.usage_snapshot(str(uid))
+        return ai_guard.usage_snapshot(str(uid), is_owner=is_owner)
     except Exception as e:
         logger.warning("ai_usage snapshot failed: %s", e)
         return {"mode": "founder_beta", "aiOperationsEnabled": True, "operations": {}}

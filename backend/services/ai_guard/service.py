@@ -84,6 +84,31 @@ def fingerprint(user_id: str, operation_type: str, message: str) -> str:
     return h.hexdigest()
 
 
+# ── Backend-authoritative owner resolution ────────────────────────────────────
+def resolve_owner(request) -> bool:
+    """Single, backend-verified owner predicate for the guard boundary.
+
+    Reuses the EXISTING owner-verification system (`is_owner_request`, the same
+    predicate `require_owner` uses): identity-first (signed-in email vs
+    OWNER_EMAIL/OWNER_ID), with the server-side OWNER_TOKEN header as a fallback
+    only for guests / no-email identities. NEVER trusts a client-sent owner flag,
+    Pro badge, body field, query param or custom "I am owner" header.
+
+    FAIL-CLOSED: any error, ambiguity, or missing owner infrastructure returns
+    False, so a request is treated as a normal user rather than falling open into
+    owner-unlimited mode.
+    """
+    try:
+        from backend.core.deps import current_user, _extract_owner_token
+        from backend.services.admin.owner import is_owner_request
+        user = current_user(request)
+        token = _extract_owner_token(request)
+        return bool(is_owner_request(user, owner_token=token))
+    except Exception as e:
+        logger.debug("ai_guard resolve_owner failed (treating as normal user): %s", e)
+        return False
+
+
 # ── Preflight result ──────────────────────────────────────────────────────────
 @dataclass
 class Preflight:
@@ -98,6 +123,11 @@ class Preflight:
     reset_at: Optional[str] = None
     remaining: Optional[int] = None
     fail_closed: bool = False
+    # Entitlement source that authorized this operation. 'founder-beta' for a
+    # normal user, 'admin-grant' for a backend-verified owner (unlimited personal
+    # quota). Bounded, user-safe — never a dollar budget.
+    source: Optional[str] = None
+    owner_unlimited: bool = False
 
     def to_metadata(self) -> Dict[str, object]:
         """Bounded, user-safe structured payload for the response envelope.
@@ -115,6 +145,10 @@ class Preflight:
             md["resetAt"] = self.reset_at
         if self.remaining is not None:
             md["remaining"] = self.remaining
+        if self.source:
+            md["source"] = self.source
+        if self.owner_unlimited:
+            md["ownerUnlimited"] = True
         return md
 
 
@@ -123,11 +157,19 @@ def _policy() -> P.FounderBetaPolicy:
 
 
 def preflight(*, user_id: str, operation_type: str, message: str,
-              idempotency_key: Optional[str] = None) -> Preflight:
+              idempotency_key: Optional[str] = None, is_owner: bool = False) -> Preflight:
     """Run the ordered gate before a protected provider call. The START-vs-
     CONTINUATION decision is made atomically from the user's active Web Build lock,
     so a build's planning-repairs / code-gen / repairs attach (uncharged) instead of
-    re-charging quota. Never raises."""
+    re-charging quota. Never raises.
+
+    `is_owner` MUST be a backend-verified boolean (see resolve_owner); it is never
+    accepted from a client. A verified owner gets UNLIMITED personal entitlement:
+    the per-user daily quota and the founder-beta credit gate do not reject them.
+    The owner is STILL subject to every company-wide safety control — the global
+    kill switch, operation-enabled toggles, storage-health fail-closed, one
+    concurrent protected operation, idempotency/duplicate-submit protection, the
+    global daily spend cap, and full cost/usage tracking + reconciliation."""
     window = P.utc_window()
     reset_at = P.utc_reset_at()
     family = operation_type in _FAMILY
@@ -157,7 +199,9 @@ def preflight(*, user_id: str, operation_type: str, message: str,
             return Preflight(False, P.CODE_IN_PROGRESS, operation_type, operation_id=op_id, reset_at=reset_at)
         if kind == "attached":
             return Preflight(True, P.CODE_ALLOWED, operation_type, role="continuation",
-                             operation_id=op_id, idempotent_replay=True, reset_at=reset_at)
+                             operation_id=op_id, idempotent_replay=True, reset_at=reset_at,
+                             source=("admin-grant" if is_owner else None),
+                             owner_unlimited=is_owner)
 
     limit = pol.limit_for(operation_type)
 
@@ -166,25 +210,32 @@ def preflight(*, user_id: str, operation_type: str, message: str,
     if not limit.enabled:
         return Preflight(False, P.CODE_OPERATION_DISABLED, operation_type, reset_at=reset_at)
 
-    # 4. Short-window rate limit (submission burst protection).
+    # 4. Short-window rate limit (submission burst protection). A verified owner
+    #    keeps burst protection but at a much higher, testing-oriented ceiling.
     try:
-        ok, retry = store.rate_check(str(user_id), operation_type, pol.rate_limit_per_min(operation_type))
+        ok, retry = store.rate_check(str(user_id), operation_type,
+                                     pol.rate_limit_per_min(operation_type, is_owner=is_owner))
     except Exception:
         ok, retry = True, 0
     if not ok:
         return Preflight(False, P.CODE_RATE_LIMITED, operation_type,
                          retry_after_seconds=retry, reset_at=reset_at)
 
-    # 5. Entitlement / credit foundation (founder-beta supplies entitlement).
+    # 5. Entitlement / credit foundation. Owner → unlimited 'admin-grant';
+    #    normal user → founder-beta entitlement (unchanged).
     try:
         used_now = store.daily_count(str(user_id), window, operation_type)
     except Exception:
         used_now = 0
-    decision = P.credit_decision(pol, operation_type, remaining=max(0, limit.daily_per_user - used_now))
+    decision = P.credit_decision(pol, operation_type,
+                                 remaining=max(0, limit.daily_per_user - used_now),
+                                 is_owner=is_owner)
     if not decision.allowed:
         return Preflight(False, P.CODE_CREDIT_UNAVAILABLE, operation_type, reset_at=reset_at)
 
     # 6. Atomic: concurrency + daily quota + global spend + lock reservation.
+    #    For an owner ONLY the per-user daily quota is skipped inside reserve_start;
+    #    concurrency, global spend, lock and the usage counter still apply.
     try:
         out = store.reserve_start(
             user_id=str(user_id), operation_type=operation_type, window=window,
@@ -193,6 +244,7 @@ def preflight(*, user_id: str, operation_type: str, message: str,
             spend_enabled=pol.global_spend_enabled, spend_limit=pol.global_spend_limit_usd,
             lock_ttl=pol.lock_ttl_seconds, idempotency_key=idempotency_key,
             fingerprint=fp, idem_ttl=pol.idempotency_ttl_seconds,
+            owner_unlimited=is_owner,
         )
     except Exception as e:
         # Durable store unreachable → FAIL CLOSED for costly generation.
@@ -200,10 +252,12 @@ def preflight(*, user_id: str, operation_type: str, message: str,
         return Preflight(False, P.CODE_CREDIT_UNAVAILABLE, operation_type, reset_at=reset_at, fail_closed=True)
 
     if out.code == "allowed":
-        remaining = max(0, limit.daily_per_user - out.used) if out.used else None
+        # Owner personal quota is unlimited → don't advertise a remaining count.
+        remaining = None if is_owner else (max(0, limit.daily_per_user - out.used) if out.used else None)
         return Preflight(True, P.CODE_ALLOWED, operation_type, operation_id=out.operation_id,
                          reservation_id=out.reservation_id, idempotent_replay=out.replay,
-                         reset_at=reset_at, remaining=remaining)
+                         reset_at=reset_at, remaining=remaining,
+                         source=decision.source, owner_unlimited=is_owner)
 
     remaining = max(0, limit.daily_per_user - out.used) if out.code == "daily_limit_reached" else None
     return Preflight(False, out.code, operation_type, operation_id=out.operation_id,
@@ -247,7 +301,16 @@ def finalize(*, user_id: str, status: str, operation_id: Optional[str] = None,
 
 
 # ── User-facing usage snapshot (for the honest founder-beta UI state) ─────────
-def usage_snapshot(user_id: str) -> Dict[str, object]:
+def usage_snapshot(user_id: str, is_owner: bool = False) -> Dict[str, object]:
+    """Honest per-user founder-beta usage state.
+
+    Normal users: byte-identical to before (used / limit / remaining per op).
+    Verified owner: an explicit unlimited state — `isOwnerUnlimited: true`,
+    entitlement source `admin-grant`, and each protected operation's `limit`
+    and `remaining` reported as null (never a fake 999999). The owner-facing UI
+    reads these to avoid showing a false daily-exhaustion state. The op's
+    `enabled` flag still reflects the real operation toggle so a disabled
+    operation is still shown as disabled for everyone."""
     window = P.utc_window()
     pol = _policy()
     ops: Dict[str, object] = {}
@@ -257,18 +320,31 @@ def usage_snapshot(user_id: str) -> Dict[str, object]:
             used = store.daily_count(str(user_id), window, op)
         except Exception:
             used = 0
-        ops[op] = {
-            "enabled": lim.enabled,
-            "used": used,
-            "limit": lim.daily_per_user,
-            "remaining": max(0, lim.daily_per_user - used) if lim.enabled else 0,
-        }
-    return {
+        if is_owner:
+            ops[op] = {
+                "enabled": lim.enabled,
+                "used": used,
+                "limit": None,        # unlimited personal entitlement
+                "remaining": None,    # never a fake remaining count
+                "unlimited": True,
+            }
+        else:
+            ops[op] = {
+                "enabled": lim.enabled,
+                "used": used,
+                "limit": lim.daily_per_user,
+                "remaining": max(0, lim.daily_per_user - used) if lim.enabled else 0,
+            }
+    snap: Dict[str, object] = {
         "mode": P.FounderBetaPolicy.MODE,
         "aiOperationsEnabled": pol.ai_operations_enabled,
         "resetAt": P.utc_reset_at(),
         "operations": ops,
     }
+    if is_owner:
+        snap["isOwnerUnlimited"] = True
+        snap["entitlementSource"] = "admin-grant"
+    return snap
 
 
 # ── Owner status snapshot (admin diagnostics — no dollar budget leaked to users) ─

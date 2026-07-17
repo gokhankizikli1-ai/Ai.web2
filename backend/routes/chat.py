@@ -446,13 +446,16 @@ async def chat(req: ChatRequest, request: Request):
         )
         if _ai_guard.is_protected(_op_type):
             _idem = (request.headers.get("x-korvix-operation-id") or "").strip()[:80] or None
+            # Backend-verified owner → unlimited personal quota (global safety
+            # controls still apply). Never trusts a client-sent owner flag.
+            _is_owner = _ai_guard.resolve_owner(request)
             _pf = _ai_guard.preflight(
                 user_id=str(user_id), operation_type=_op_type,
-                message=message, idempotency_key=_idem,
+                message=message, idempotency_key=_idem, is_owner=_is_owner,
             )
             logger.info(
-                "CHAT | rid=%s | uid=%s | ai_guard | op=%s role=%s allowed=%s code=%s",
-                request_id, user_id, _op_type, _pf.role, _pf.allowed, _pf.code,
+                "CHAT | rid=%s | uid=%s | ai_guard | op=%s role=%s allowed=%s code=%s owner=%s src=%s",
+                request_id, user_id, _op_type, _pf.role, _pf.allowed, _pf.code, _is_owner, _pf.source,
             )
             if not _pf.allowed:
                 timer.mark("ai_guard_block")

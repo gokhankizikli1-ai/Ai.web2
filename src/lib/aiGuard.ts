@@ -162,12 +162,24 @@ export async function finalizeWebBuildOperation(status: 'succeeded' | 'failed' |
   } catch { /* finalize is best-effort; the server TTL releases the lock anyway */ }
 }
 
-export interface BetaUsageOperation { enabled: boolean; used: number; limit: number; remaining: number; }
+export interface BetaUsageOperation {
+  enabled: boolean;
+  used: number;
+  // For a verified owner the server reports limit/remaining as null (unlimited
+  // personal entitlement) — never a fake number. Normal users get integers.
+  limit: number | null;
+  remaining: number | null;
+  unlimited?: boolean;
+}
 export interface BetaUsage {
   mode: string;
   aiOperationsEnabled: boolean;
   resetAt?: string;
   operations: Record<string, BetaUsageOperation>;
+  // Present + true ONLY when the SERVER verified the caller as the owner. The
+  // frontend never sets this; enforcement is entirely server-side.
+  isOwnerUnlimited?: boolean;
+  entitlementSource?: string;   // 'admin-grant' for the owner, else 'founder-beta'
 }
 
 /** Fetch the honest per-user founder-beta usage snapshot for the UI. */
