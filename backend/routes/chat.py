@@ -660,6 +660,71 @@ async def chat(req: ChatRequest, request: Request):
         except Exception:
             pass
 
+    # ── Web Build AI usage & cost tracking (Phase 14M) ────────────────────────
+    # Record every paid provider call of a Web Build against a stable build_id
+    # so per-build cost, token usage, retries and tool spend aggregate correctly
+    # (tasks #1-#6). build_id = the ai_guard operation id, which is SHARED across
+    # a build's planning / repairs / code-gen sub-calls (continuations attach to
+    # the same op), so one build rolls up automatically. Token values come ONLY
+    # from server-side `metadata.ai_execution` — never from the client (task #8).
+    # A missing usage block is flagged usage_missing, never estimated (task #9).
+    if _beta_op_type and str(_beta_op_type).startswith("web_build"):
+        try:
+            from backend.services.cost_tracking import tracker as _ct
+            from backend.services.cost_tracking.types import (
+                TokenUsage as _CTUsage, OP_PLANNING, OP_PLANNING_REPAIR,
+                OP_WEB_SEARCH,
+            )
+            _build_id = _beta_op_id or ("build_" + request_id)
+            _exec2 = response_metadata.get("ai_execution", {}) if isinstance(response_metadata, dict) else {}
+            _exec2 = _exec2 or {}
+            _is_repair = (
+                "[WEB BUILD PLANNING REPAIR REQUEST]" in message
+                or "[WEB BUILD DESIGN PLAN REPAIR REQUEST]" in message
+                or "REVISION" in message
+            )
+            _ct.start_build(
+                user_id=str(user_id), build_id=_build_id,
+                label=(message[:80] if not _is_repair else None),
+            )
+            # The planning / generation provider call.
+            _succeeded = str(_exec2.get("status") or "").lower() in ("succeeded", "completed") or bool(reply)
+            _has_usage = any(
+                k in _exec2 for k in ("input_tokens", "output_tokens", "total_tokens")
+            )
+            _usage_missing = bool(_exec2.get("usage_missing")) or (_succeeded and not _has_usage)
+            _ct.record_ai_call(
+                build_id=_build_id, user_id=str(user_id),
+                provider=str(_exec2.get("provider") or prov or "openai"),
+                model=str(_exec2.get("model") or model or ""),
+                operation_type=(OP_PLANNING_REPAIR if _is_repair else OP_PLANNING),
+                usage=_CTUsage(
+                    input_tokens=int(_exec2.get("input_tokens", 0) or 0),
+                    output_tokens=int(_exec2.get("output_tokens", 0) or 0),
+                    cached_input_tokens=int(_exec2.get("cached_tokens", 0) or 0),
+                    reasoning_tokens=int(_exec2.get("reasoning_tokens", 0) or 0),
+                    total_tokens=int(_exec2.get("total_tokens", 0) or 0),
+                    usage_missing=_usage_missing,
+                ),
+                success=_succeeded,
+                retry_number=(1 if _is_repair else 0),
+                error_code=(_exec2.get("error_code") or None),
+                duration_ms=int(_exec2.get("latency_ms", 0) or 0),
+            )
+            # The deep-research pre-pass — one paid web search per query (task #4).
+            _research = response_metadata.get("research", {}) if isinstance(response_metadata, dict) else {}
+            if _research and _research.get("did_research"):
+                _qn = int(_research.get("query_count", 0) or 0)
+                _prov = str(_research.get("provider") or "").lower()
+                if _qn > 0:
+                    _ct.record_tool_cost(
+                        build_id=_build_id, user_id=str(user_id),
+                        tool_key=(f"search.{_prov}" if _prov else "search"),
+                        units=_qn, provider=_prov, operation_type=OP_WEB_SEARCH,
+                    )
+        except Exception as _cterr:
+            logger.debug("CHAT | rid=%s | cost_tracking skipped: %s", request_id, _cterr)
+
     if not reply:
         reply = "Bir hata olustu, lutfen tekrar dene."
 

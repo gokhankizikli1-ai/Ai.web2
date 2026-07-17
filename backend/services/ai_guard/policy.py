@@ -263,18 +263,35 @@ def credit_decision(policy: FounderBetaPolicy, operation_type: str, remaining: O
 # ── Cost helpers ──────────────────────────────────────────────────────────────
 def compute_actual_usd(model: Optional[str], input_tokens: int, output_tokens: int) -> Optional[float]:
     """Best-effort USD from token usage. Returns None when token data is absent
-    so the caller keeps the conservative reservation instead of guessing zero."""
+    so the caller keeps the conservative reservation instead of guessing zero.
+
+    Pricing is delegated to the CENTRALIZED table in
+    backend.services.cost_tracking.pricing (task #5 — one source of truth). The
+    local `_MODEL_PRICES` above is retained only as a defensive fallback for the
+    (import-error) edge case so this guardrail never fails closed on a bad
+    import."""
     if not model or (input_tokens <= 0 and output_tokens <= 0):
         return None
-    key = str(model).strip().lower()
-    price = None
-    for name, p in _MODEL_PRICES.items():
-        if key == name or key.startswith(name):
-            price = p
-            break
-    if price is None:
-        price = _FALLBACK_PRICE
-    return round((input_tokens / 1_000_000.0) * price[0] + (output_tokens / 1_000_000.0) * price[1], 6)
+    try:
+        from backend.services.cost_tracking import pricing as _pricing
+        bd = _pricing.compute_call_cost(
+            provider=None, model=model,
+            input_tokens=int(input_tokens or 0),
+            output_tokens=int(output_tokens or 0),
+        )
+        return round(bd.input_cost_usd + bd.output_cost_usd, 6)
+    except Exception:
+        # Fallback to the legacy local table if the central module is
+        # unavailable for any reason — spend accounting must never break.
+        key = str(model).strip().lower()
+        price = None
+        for name, p in _MODEL_PRICES.items():
+            if key == name or key.startswith(name):
+                price = p
+                break
+        if price is None:
+            price = _FALLBACK_PRICE
+        return round((input_tokens / 1_000_000.0) * price[0] + (output_tokens / 1_000_000.0) * price[1], 6)
 
 
 # ── UTC daily window ──────────────────────────────────────────────────────────

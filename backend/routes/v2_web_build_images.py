@@ -70,6 +70,12 @@ class GenerateBody(BaseModel):
     honestyLabel: str = Field(default="AI-generated illustrative image", max_length=200)
     prompt: ImagePromptBody = Field(default_factory=ImagePromptBody)
     provider: Optional[str] = Field(default=None, max_length=20)
+    # Phase 14M — optional Web Build correlation id so a generated image's
+    # cost rolls up under the same build as its planning/code-gen calls. This
+    # is an ASSOCIATION key only; the cost itself is priced server-side from
+    # the centralized image table — never from any client-sent value (task #8).
+    buildId: Optional[str] = Field(default=None, max_length=120)
+    quality: Optional[str] = Field(default=None, max_length=20)
 
 
 @router.get("/health")
@@ -159,6 +165,26 @@ def image_gen_generate(
         "[WEB_BUILD_IMG] slot=%s kind=%s status=%s provider=%s uid=%s",
         body.slotId, body.kind, asset.get("status"), asset.get("provider"), getattr(user, "id", "?"),
     )
+
+    # ── Cost tracking (Phase 14M) — bill one generated image as a non-token
+    # tool cost against its build (task #4). Only when a real image was
+    # produced; priced from the centralized image table by provider+quality.
+    try:
+        if str(asset.get("status") or "").lower() in ("ok", "generated", "success", "completed"):
+            from backend.services.cost_tracking import tracker as _ct
+            from backend.services.cost_tracking.types import OP_IMAGE_GEN
+            _prov = str(asset.get("provider") or img.active_provider() or "").lower()
+            _q = (body.quality or "").strip().lower()
+            _tool_key = f"image.{_prov}" + (f".{_q}" if _q else "")
+            _bid = (body.buildId or "").strip() or ("imggen_" + str(getattr(user, "id", "anon")))
+            _ct.record_tool_cost(
+                build_id=_bid, user_id=str(getattr(user, "id", "anon")),
+                tool_key=_tool_key, units=1, provider=_prov,
+                operation_type=OP_IMAGE_GEN,
+            )
+    except Exception as _cterr:
+        logger.debug("[WEB_BUILD_IMG] cost_tracking skipped: %s", _cterr)
+
     return asset
 
 
