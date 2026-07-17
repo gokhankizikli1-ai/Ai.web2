@@ -247,6 +247,57 @@ def build_id_for_job(job_id: str) -> Optional[Dict[str, Any]]:
         return dict(row) if row else None
 
 
+# ── Stale-build recovery (owner reaper) ──────────────────────────────────────
+def list_running_builds(limit: int = 200,
+                        build_ids: Optional[List[str]] = None,
+                        user_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Return builds still marked in_progress (analytics status), newest-started
+    first. Age filtering is done by the caller in Python from `started_at` so the
+    ISO/tz handling is uniform. Read-only — mutates nothing."""
+    _init()
+    where = ["status = 'in_progress'"]
+    params: List[Any] = []
+    if user_id:
+        where.append("user_id = ?")
+        params.append(str(user_id))
+    if build_ids:
+        ids = [str(b) for b in build_ids][:200]
+        where.append(f"build_id IN ({', '.join(['?'] * len(ids))})")
+        params.extend(ids)
+    sql = (
+        "SELECT build_id, user_id, status, started_at, completed_at, label "
+        f"FROM cost_builds WHERE {' AND '.join(where)} "
+        "ORDER BY started_at DESC LIMIT ?"
+    )
+    params.append(int(limit))
+    with _connect() as conn:
+        return [dict(r) for r in conn.execute(sql, params).fetchall()]
+
+
+def job_link_for_build(build_id: str) -> Optional[Dict[str, Any]]:
+    """Return the {job_id, terminal_recorded_at} background link for a build, if
+    any — used only to REPORT a linked job in the dry-run (never to poll)."""
+    _init()
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT job_id, terminal_recorded_at FROM cost_job_links WHERE build_id = ? LIMIT 1",
+            (str(build_id),),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def has_operation_call(build_id: str, operation_type: str) -> bool:
+    """True if a call of this operation_type already exists for the build — used to
+    avoid recording a duplicate recovery diagnostic."""
+    _init()
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM cost_ai_calls WHERE build_id = ? AND operation_type = ? LIMIT 1",
+            (str(build_id), str(operation_type)),
+        ).fetchone()
+        return bool(row)
+
+
 def claim_job_terminal(job_id: str, when: str) -> bool:
     """Atomically claim the ONE terminal recording for a background job. Returns
     True iff this caller won the claim (the link existed and was not yet marked).

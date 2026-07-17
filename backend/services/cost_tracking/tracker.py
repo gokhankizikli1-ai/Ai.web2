@@ -31,7 +31,7 @@ from typing import Any, Dict, List, Optional
 
 from backend.services.cost_tracking import pricing, store
 from backend.services.cost_tracking.types import (
-    OP_OTHER, TokenUsage,
+    OP_OTHER, OP_STALE_RECOVERY, TokenUsage,
 )
 
 logger = logging.getLogger(__name__)
@@ -168,6 +168,79 @@ def early_terminal_failure(
     except Exception as exc:
         logger.warning("cost_tracking.early_terminal_failure failed: %s", exc)
         return False
+
+
+# ── Stale-build recovery (owner reaper) ──────────────────────────────────────
+def _age_minutes(started_at: Optional[str]) -> Optional[float]:
+    if not started_at:
+        return None
+    try:
+        t = datetime.fromisoformat(str(started_at).replace("Z", "+00:00"))
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=timezone.utc)
+        return max(0.0, round((datetime.now(timezone.utc) - t).total_seconds() / 60.0, 2))
+    except Exception:
+        return None
+
+
+def scan_stale_running_builds(*, older_than_minutes: int, limit: int,
+                              build_ids: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    """Cost-side candidates: builds still in_progress AND started older than the
+    threshold. Read-only. Returns [{build_id, user_id, started_at, age_minutes,
+    label, job_link}]. The route enriches each with ai_guard operation state."""
+    try:
+        rows = store.list_running_builds(limit=max(1, int(limit)) * 4, build_ids=build_ids)
+    except Exception as exc:
+        logger.warning("cost_tracking.scan_stale skipped: %s", exc)
+        return []
+    out: List[Dict[str, Any]] = []
+    for r in rows:
+        age = _age_minutes(r.get("started_at"))
+        if age is None or age < float(older_than_minutes):
+            continue
+        job = None
+        try:
+            job = store.job_link_for_build(r["build_id"])
+        except Exception:
+            job = None
+        out.append({
+            "build_id": r["build_id"], "user_id": r.get("user_id"),
+            "started_at": r.get("started_at"), "age_minutes": age,
+            "label": (r.get("label") or None),
+            "job_id": (job or {}).get("job_id") if job else None,
+        })
+        if len(out) >= int(limit):
+            break
+    return out
+
+
+def reap_stale_build_cost(*, build_id: str, user_id: str) -> Dict[str, Any]:
+    """Finalize a stale cost build as failed and record ONE bounded
+    web_build_stale_recovery diagnostic — but ONLY if the build was still running
+    (atomic finalize-if-running gate → idempotent; a re-run or an already-terminal
+    build changes nothing and records no duplicate). No provider call, no fake
+    usage/cost. Returns {cost_finalized, diagnostic_recorded}."""
+    try:
+        if not store.finalize_build_if_running(
+            build_id=str(build_id), status="failed", completed_at=_now_iso()
+        ):
+            return {"cost_finalized": False, "diagnostic_recorded": False, "reason": "already_terminal"}
+        recorded = False
+        if not store.has_operation_call(str(build_id), OP_STALE_RECOVERY):
+            record_ai_call(
+                build_id=str(build_id), user_id=str(user_id),
+                provider="none", model="", operation_type=OP_STALE_RECOVERY,
+                usage=None,  # → usage_missing=True (no provider work happened)
+                success=False, error_kind="stale_build_reaped",
+                error_code="STALE_BUILD_REAPED",
+                error_message="Stale build closed by owner recovery after exceeding the staleness threshold.",
+                ensure_build=False,
+            )
+            recorded = True
+        return {"cost_finalized": True, "diagnostic_recorded": recorded}
+    except Exception as exc:
+        logger.warning("cost_tracking.reap_stale_build_cost failed: %s", exc)
+        return {"cost_finalized": False, "diagnostic_recorded": False, "reason": "error"}
 
 
 def claim_terminal_once(job_id: str) -> bool:

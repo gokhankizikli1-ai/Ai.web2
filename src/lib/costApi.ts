@@ -147,6 +147,60 @@ export interface CostBuildDetail extends CostBuildSummary {
   calls: CostCall[];
 }
 
+async function postJson<T>(path: string, body: unknown): Promise<T> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 20_000);
+  let resp: Response;
+  try {
+    resp = await fetch(`${OWNER_API_BASE}${path}`, {
+      method: 'POST', headers: ownerHeaders(), body: JSON.stringify(body), signal: ctrl.signal,
+    });
+  } catch (e) {
+    throw new CostApiError(0, e instanceof Error ? e.message : 'network error');
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!resp.ok) throw new CostApiError(resp.status, `request failed (${resp.status})`);
+  const parsed = await resp.json();
+  return (parsed && typeof parsed === 'object' && 'data' in parsed ? parsed.data : parsed) as T;
+}
+
+/* ── Stale-build recovery (owner-only) ───────────────────────────────────── */
+export interface ReapItem {
+  buildId: string;
+  ageMinutes: number | null;
+  currentStatus: string;
+  linkedOperation: boolean;
+  linkedJob: boolean;
+  activeLock: boolean;
+  proposedAction?: string;
+  reason?: string;
+  costBuildFinalized?: boolean;
+  aiGuardOperationFinalized?: boolean;
+  lockReleased?: boolean;
+  spendReservationReconciled?: boolean;
+  diagnosticRecorded?: boolean;
+}
+export interface ReapResult {
+  dryRun: boolean;
+  thresholdMinutes: number;
+  scanned: number;
+  eligible: number;
+  recovered?: number;
+  skipped?: number;
+  failed?: number;
+  items: ReapItem[];
+}
+
+export function scanStaleBuilds(olderThanMinutes = 30): Promise<ReapResult> {
+  return postJson<ReapResult>('/v2/admin/costs/reap-stale-builds', { dryRun: true, olderThanMinutes });
+}
+
+export function reapStaleBuilds(olderThanMinutes = 30, buildIds?: string[]): Promise<ReapResult> {
+  return postJson<ReapResult>('/v2/admin/costs/reap-stale-builds',
+    { dryRun: false, olderThanMinutes, ...(buildIds && buildIds.length ? { buildIds } : {}) });
+}
+
 /* ── Public API ───────────────────────────────────────────────────────────── */
 export function getCostAnalytics(): Promise<CostAnalytics> {
   return getJson<CostAnalytics>('/v2/admin/costs/analytics');

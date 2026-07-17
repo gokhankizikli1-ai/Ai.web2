@@ -15,8 +15,9 @@ import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { useLanguageStore } from '@/stores/languageStore';
 import {
   getCostAnalytics, listCostBuilds, getCostBuild,
+  scanStaleBuilds, reapStaleBuilds,
   formatUsd, formatTokens, shortBuildId, CostApiError,
-  type CostAnalytics, type CostBuildSummary, type CostBuildDetail,
+  type CostAnalytics, type CostBuildSummary, type CostBuildDetail, type ReapResult,
 } from '@/lib/costApi';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -69,6 +70,12 @@ export default function OwnerCosts() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
 
+  // stale-build recovery (owner-only)
+  const [reapScan, setReapScan] = useState<ReapResult | null>(null);
+  const [reapResult, setReapResult] = useState<ReapResult | null>(null);
+  const [reapBusy, setReapBusy] = useState(false);
+  const REAP_THRESHOLD = 30;
+
   async function load() {
     setLoading(true);
     setError(null);
@@ -100,6 +107,32 @@ export default function OwnerCosts() {
       setDetail(null);
     } finally {
       setDetailLoading(false);
+    }
+  }
+
+  async function runScan() {
+    setReapBusy(true);
+    setReapResult(null);
+    try {
+      setReapScan(await scanStaleBuilds(REAP_THRESHOLD));
+    } catch {
+      setReapScan(null);
+    } finally {
+      setReapBusy(false);
+    }
+  }
+
+  async function runReap() {
+    setReapBusy(true);
+    try {
+      const res = await reapStaleBuilds(REAP_THRESHOLD);
+      setReapResult(res);
+      setReapScan(null);
+      await load();   // refresh analytics + build list after recovery
+    } catch {
+      /* keep the scan visible on failure */
+    } finally {
+      setReapBusy(false);
     }
   }
 
@@ -158,6 +191,56 @@ export default function OwnerCosts() {
             {t('costLoadError')}
           </div>
         )}
+
+        {/* Stale-build recovery (owner-only) */}
+        <section className="mt-4 rounded-xl border border-white/[0.06] bg-[#12161d] p-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[12.5px] font-medium text-slate-200">{t('costReapTitle')}</span>
+            <span className="text-[11px] text-slate-500">{t('costReapThreshold', { n: REAP_THRESHOLD })}</span>
+            <div className="ml-auto flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={runScan} disabled={reapBusy}
+                      className="gap-1.5 border-white/[0.1] bg-white/[0.03] text-slate-200">
+                {t('costReapScan')}
+              </Button>
+              {reapScan && reapScan.items.length > 0 && (
+                <Button size="sm" onClick={runReap} disabled={reapBusy}
+                        className="bg-amber-600/80 hover:bg-amber-600 text-white">
+                  {t('costReapClose')} ({reapScan.items.length})
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {reapScan && (
+            <div className="mt-2.5 text-[11.5px] text-slate-400">
+              {reapScan.items.length === 0 ? (
+                <span>{t('costReapNone')}</span>
+              ) : (
+                <div>
+                  <div className="mb-1 text-amber-300/90">
+                    {t('costReapDryRun')} · {t('costReapEligible')}: {reapScan.eligible}
+                  </div>
+                  <ul className="space-y-0.5">
+                    {reapScan.items.map((it) => (
+                      <li key={it.buildId} className="font-mono text-[11px] text-slate-400 flex items-center gap-2 flex-wrap">
+                        <span className="text-slate-300">{shortBuildId(it.buildId)}</span>
+                        <span>· {Math.round(it.ageMinutes || 0)}m</span>
+                        {it.activeLock && <Badge variant="outline" className="border-amber-500/30 bg-amber-500/[0.08] text-amber-300 text-[9.5px]">lock</Badge>}
+                        {it.linkedJob && <Badge variant="outline" className="border-white/[0.1] bg-white/[0.04] text-slate-400 text-[9.5px]">job</Badge>}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+
+          {reapResult && (
+            <div className="mt-2.5 rounded-lg border border-emerald-500/20 bg-emerald-500/[0.05] px-3 py-2 text-[11.5px] text-emerald-200">
+              {t('costReapRecovered')}: {reapResult.recovered ?? 0} · {t('costReapSkipped')}: {reapResult.skipped ?? 0}
+            </div>
+          )}
+        </section>
 
         {/* Overview cards */}
         <section className="mt-5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">

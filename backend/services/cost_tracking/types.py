@@ -19,6 +19,7 @@ OP_PLANNING        = "web_build_planning"
 OP_PLANNING_REPAIR = "web_build_planning_repair"
 OP_COORDINATOR     = "web_build_coordinator_plan"
 OP_FRONTEND_GEN    = "web_build_frontend_generation"
+OP_STALE_RECOVERY  = "web_build_stale_recovery"
 OP_CODEGEN         = "web_build_codegen"
 OP_CODEGEN_REPAIR  = "web_build_codegen_repair"
 OP_VISUAL          = "web_build_visual_plan"
@@ -121,7 +122,7 @@ class BuildAggregate:
 __all__ = [
     "TokenUsage", "AICallRecord", "BuildAggregate",
     "OP_PLANNING", "OP_PLANNING_REPAIR", "OP_COORDINATOR", "OP_FRONTEND_GEN",
-    "OP_CODEGEN", "OP_CODEGEN_REPAIR",
+    "OP_STALE_RECOVERY", "OP_CODEGEN", "OP_CODEGEN_REPAIR",
     "OP_VISUAL", "OP_RESEARCH", "OP_IMAGE_GEN", "OP_WEB_SEARCH",
     "OP_EMBEDDING", "OP_CHAT", "OP_OTHER",
 ]
