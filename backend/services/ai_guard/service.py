@@ -370,6 +370,60 @@ def owner_snapshot() -> Dict[str, object]:
     }
 
 
+# ── Stale-operation recovery (owner reaper) ───────────────────────────────────
+def inspect_operation(operation_id: str, user_id: Optional[str] = None) -> Dict[str, object]:
+    """Read-only view of an ai_guard operation for the dry-run scan. Reports
+    whether it exists, its status, whether it holds a LIVE concurrency lock
+    (status running AND TTL not yet passed), and whether a spend reservation is
+    still open. Never mutates. `user_id`, when given, must match or found=False."""
+    try:
+        op = store.get_operation(str(operation_id))
+    except Exception:
+        op = None
+    if not op or (user_id is not None and str(op.get("user_id")) != str(user_id)):
+        return {"found": False}
+    try:
+        now = store._now()
+    except Exception:
+        now = 0.0
+    status = str(op.get("status") or "")
+    expires_at = float(op.get("expires_at") or 0)
+    return {
+        "found": True,
+        "status": status,
+        "active_lock": (status == store.STATUS_RUNNING and expires_at > now),
+        "reservation_open": bool(op.get("reservation_open")),
+        "operation_type": str(op.get("operation_type") or ""),
+    }
+
+
+def reap_stale_operation(operation_id: str, user_id: str) -> Dict[str, object]:
+    """Release ONLY this exact stale operation's concurrency lock + reconcile its
+    reservation, using the canonical `store.finalize` (validated against the
+    owning user_id). Idempotent: an already-terminal op is a no-op. Daily usage
+    counters and audit history are preserved (finalize never refunds quota).
+    Never touches any other operation. Never raises."""
+    try:
+        op = store.get_operation(str(operation_id))
+        if not op or str(op.get("user_id")) != str(user_id):
+            return {"found": False, "operation_finalized": False,
+                    "lock_released": False, "spend_reconciled": False}
+        was_running = str(op.get("status") or "") == store.STATUS_RUNNING
+        had_reservation = bool(op.get("reservation_open"))
+        if not was_running:
+            return {"found": True, "operation_finalized": False,
+                    "lock_released": False, "spend_reconciled": False,
+                    "already_terminal": True}
+        ok = store.finalize(operation_id=str(operation_id), user_id=str(user_id),
+                            status="cancelled", error_code="STALE_BUILD_REAPED")
+        return {"found": True, "operation_finalized": bool(ok),
+                "lock_released": bool(ok), "spend_reconciled": bool(ok and had_reservation)}
+    except Exception as e:
+        logger.warning("ai_guard reap_stale_operation failed: %s", e)
+        return {"found": False, "operation_finalized": False,
+                "lock_released": False, "spend_reconciled": False}
+
+
 def storage_health() -> Dict[str, object]:
     """Owner-only storage diagnostics passthrough (read-only)."""
     return store.storage_health()

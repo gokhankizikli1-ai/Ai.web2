@@ -32,10 +32,11 @@ import html
 import json
 import logging
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse
+from pydantic import BaseModel, Field
 
 from backend.core.deps import current_user, _extract_owner_token
 from backend.core.responses import ok as envelope_ok
@@ -43,6 +44,11 @@ from backend.middleware.auth import User
 from backend.services.admin import audit
 from backend.services.admin.owner import is_owner_request
 from backend.services.cost_tracking import tracker
+
+# Stale-build reaper bounds (safe defaults; never client-overridable beyond these).
+_REAP_DEFAULT_THRESHOLD_MIN = 30
+_REAP_MIN_THRESHOLD_MIN = 10
+_REAP_MAX_ROWS = 50
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +143,103 @@ async def costs_build_detail(
         raise HTTPException(status_code=404, detail="build not found")
     _audit(user, "admin.costs.build.view", request)
     return JSONResponse(content=envelope_ok(tracker.get_build(build_id)), headers=_NO_STORE)
+
+
+class ReapBody(BaseModel):
+    dryRun: bool = Field(default=True)
+    # Below-minimum / above-maximum values are CLAMPED (not rejected) so the
+    # control is forgiving; the safe floor/ceiling are enforced server-side.
+    olderThanMinutes: Optional[int] = Field(default=None, ge=1, le=100_000)
+    buildIds: Optional[List[str]] = Field(default=None, max_length=_REAP_MAX_ROWS)
+    limit: Optional[int] = Field(default=None, ge=1, le=10_000)
+
+
+def _resolve_threshold(v: Optional[int]) -> int:
+    if v is None:
+        return _REAP_DEFAULT_THRESHOLD_MIN
+    return max(_REAP_MIN_THRESHOLD_MIN, int(v))
+
+
+@router.post("/reap-stale-builds")
+async def reap_stale_builds(
+    body: ReapBody,
+    request: Request,
+    user: User = Depends(owner_gate),
+) -> JSONResponse:
+    """Owner-only recovery for stale Web Build records + their exact ai_guard
+    operation locks. `dryRun` (default true) scans and proposes without mutating.
+    Only builds still in_progress AND older than the threshold are eligible; only
+    the operation whose id EQUALS the build id (validated against the build's
+    owner) is ever touched. Never deletes cost rows, chats or databases. 401/403
+    enforced by owner_gate; response is no-store and bounded."""
+    threshold = _resolve_threshold(body.olderThanMinutes)
+    limit = min(_REAP_MAX_ROWS, int(body.limit or _REAP_MAX_ROWS))
+    build_ids = [str(b)[:128] for b in (body.buildIds or [])][:_REAP_MAX_ROWS] or None
+
+    _audit(user, "admin.costs.reap.dryrun" if body.dryRun else "admin.costs.reap.recover", request)
+    candidates = tracker.scan_stale_running_builds(
+        older_than_minutes=threshold, limit=limit, build_ids=build_ids)
+    logger.info("WEB_BUILD_REAPER scan | threshold_min=%d | eligible=%d | dry_run=%s",
+                threshold, len(candidates), body.dryRun)
+
+    from backend.services.ai_guard import service as _ai_guard
+    items: List[Dict[str, Any]] = []
+    recovered = failed = skipped = 0
+
+    for c in candidates:
+        bid = c["build_id"]
+        buid = str(c.get("user_id") or "")
+        # The cost build_id IS the ai_guard operation id (set at build start). Only
+        # the exact matching operation, validated against the build's owner, is
+        # inspected/reaped — never a guessed or unrelated operation.
+        op = _ai_guard.inspect_operation(bid, user_id=buid) if buid else {"found": False}
+        base = {
+            "buildId": bid,
+            "ageMinutes": c.get("age_minutes"),
+            "currentStatus": "in_progress",
+            "linkedOperation": bool(op.get("found")),
+            "linkedJob": bool(c.get("job_id")),
+            "activeLock": bool(op.get("active_lock")),
+        }
+        if body.dryRun:
+            base["proposedAction"] = "finalize_failed_and_release_lock" if op.get("active_lock") else "finalize_failed"
+            base["reason"] = f"in_progress and older than {threshold}m"
+            items.append(base)
+            continue
+
+        # ── Actual recovery ──────────────────────────────────────────────────
+        cost_res = tracker.reap_stale_build_cost(build_id=bid, user_id=buid)
+        op_res = _ai_guard.reap_stale_operation(bid, buid) if buid else {"found": False}
+        did = bool(cost_res.get("cost_finalized"))
+        if did:
+            recovered += 1
+            logger.info(
+                "WEB_BUILD_REAPER recover | build_id=%s | operation_id=%s | lock_released=%s | status=failed",
+                bid, (bid if op_res.get("found") else "-"), bool(op_res.get("lock_released")),
+            )
+        else:
+            skipped += 1
+            logger.info("WEB_BUILD_REAPER skip | build_id=%s | reason=%s",
+                        bid, cost_res.get("reason") or "already_terminal")
+        items.append({
+            **base,
+            "costBuildFinalized": did,
+            "aiGuardOperationFinalized": bool(op_res.get("operation_finalized")),
+            "lockReleased": bool(op_res.get("lock_released")),
+            "spendReservationReconciled": bool(op_res.get("spend_reconciled")),
+            "diagnosticRecorded": bool(cost_res.get("diagnostic_recorded")),
+        })
+
+    data: Dict[str, Any] = {
+        "dryRun": body.dryRun,
+        "thresholdMinutes": threshold,
+        "scanned": len(candidates),
+        "eligible": len(candidates),
+        "items": items,
+    }
+    if not body.dryRun:
+        data.update({"recovered": recovered, "skipped": skipped, "failed": failed})
+    return JSONResponse(content=envelope_ok(data), headers=_NO_STORE)
 
 
 @router.get("/dashboard", response_class=HTMLResponse)
