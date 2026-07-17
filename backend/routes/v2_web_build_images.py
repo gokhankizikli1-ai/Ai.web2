@@ -113,11 +113,16 @@ def image_gen_generate(
     # ENABLE_WEB_BUILD_IMAGE_GEN + owner gates below still apply).
     try:
         from backend.services.ai_guard import service as _ai_guard, policy as _ai_policy
+        # Backend-verified owner → unlimited personal image-gen quota, but ONLY
+        # when the image_generation operation itself is enabled. The owner never
+        # bypasses the operation-disabled / kill-switch / spend controls below.
+        _img_is_owner = _ai_guard.resolve_owner(request)
         _pf = _ai_guard.preflight(
             user_id=str(getattr(user, "id", "anon")),
             operation_type=_ai_policy.OP_IMAGE_GENERATION,
             message=body.slotId or "",
             idempotency_key=(request.headers.get("x-korvix-operation-id") or "").strip()[:80] or None,
+            is_owner=_img_is_owner,
         )
         if not _pf.allowed:
             return {

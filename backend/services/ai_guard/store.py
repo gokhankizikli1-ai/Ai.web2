@@ -343,11 +343,17 @@ def reserve_start(
     *, user_id: str, operation_type: str, window: str, daily_limit: int, max_concurrent: int,
     estimate_usd: float, spend_enabled: bool, spend_limit: float, lock_ttl: int,
     idempotency_key: Optional[str], fingerprint: Optional[str], idem_ttl: int,
+    owner_unlimited: bool = False,
 ) -> ReserveOutcome:
     """Atomically start a NEW protected operation: recover stale locks → concurrency
     lock (Web Build family) → daily quota → global spend → create the running
     operation (holding the lock), increment the daily counter and reserve the
-    estimated spend. All-or-nothing. Callers resolve CONTINUATIONS before this."""
+    estimated spend. All-or-nothing. Callers resolve CONTINUATIONS before this.
+
+    `owner_unlimited` (backend-verified owner) SKIPS ONLY the per-user daily quota
+    rejection. Every other control in this atomic transaction still applies:
+    concurrency lock, global spend reservation, lock creation, and the usage
+    counter increment (owner builds are still counted for accounting/analytics)."""
     init()
     now = _now()
     with _conn() as c:
@@ -363,15 +369,18 @@ def reserve_start(
                     c.execute("ROLLBACK")
                     return ReserveOutcome("operation_in_progress", operation_id=active["operation_id"])
 
-            # Per-user daily quota (atomic under this transaction).
+            # Per-user daily quota (atomic under this transaction). Skipped for a
+            # backend-verified owner (unlimited personal entitlement); the counter
+            # is still incremented below so owner builds remain fully accounted.
             used_row = c.execute(
                 "SELECT count FROM ai_op_usage WHERE user_id=? AND quota_window=? AND operation_type=?",
                 (user_id, window, operation_type),
             ).fetchone()
             used = int(used_row["count"]) if used_row else 0
-            if daily_limit <= 0 or used >= daily_limit:
-                c.execute("ROLLBACK")
-                return ReserveOutcome("daily_limit_reached", detail="quota", used=used)
+            if not owner_unlimited:
+                if daily_limit <= 0 or used >= daily_limit:
+                    c.execute("ROLLBACK")
+                    return ReserveOutcome("daily_limit_reached", detail="quota", used=used)
 
             # Global daily spend reservation (before the provider call).
             if spend_enabled:

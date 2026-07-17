@@ -583,7 +583,18 @@ export default function ChatWebBuild({ initialPrompt, initialMode = null, restor
       <div className="shrink-0 px-3 md:px-4 pb-3 md:pb-4 pt-1">
         {/* Phase 14L.1 — compact, honest Limited Founder Beta usage line (never a dollar
             budget, provider or internal cost). Hidden when the snapshot is unavailable. */}
-        {betaUsage && betaUsage.mode === 'founder_beta' && (
+        {betaUsage && betaUsage.mode === 'founder_beta' && betaUsage.isOwnerUnlimited && (
+          // Verified owner (server-derived) — honest unlimited-testing state, never a
+          // false "1 build/day" or "today's build used". Global safety limits still apply.
+          <div className="max-w-3xl mx-auto mb-1.5 px-1 flex items-center gap-1.5 flex-wrap text-[11px] text-[#64748B]">
+            <span className="font-medium text-slate-400">{t('wbBetaOwnerLabel')}</span>
+            <span aria-hidden>·</span>
+            <span>{t('wbBetaOwnerUnlimited')}</span>
+            <span aria-hidden>·</span>
+            <span>{t('wbBetaOwnerSafety')}</span>
+          </div>
+        )}
+        {betaUsage && betaUsage.mode === 'founder_beta' && !betaUsage.isOwnerUnlimited && (
           <div className="max-w-3xl mx-auto mb-1.5 px-1 flex items-center gap-1.5 flex-wrap text-[11px] text-[#64748B]">
             <span className="font-medium text-slate-400">{t('wbBetaLabel')}</span>
             <span aria-hidden>·</span>
