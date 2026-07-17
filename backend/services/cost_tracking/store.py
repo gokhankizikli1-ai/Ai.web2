@@ -119,10 +119,11 @@ def _init() -> None:
                 -- TERMINAL background result (success or failure), which arrives on
                 -- a separate poll request, is recorded against the correct build.
                 CREATE TABLE IF NOT EXISTS cost_job_links (
-                    job_id     TEXT PRIMARY KEY,
-                    build_id   TEXT NOT NULL,
-                    user_id    TEXT NOT NULL,
-                    created_at TEXT NOT NULL
+                    job_id               TEXT PRIMARY KEY,
+                    build_id             TEXT NOT NULL,
+                    user_id              TEXT NOT NULL,
+                    created_at           TEXT NOT NULL,
+                    terminal_recorded_at TEXT
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_calls_build
@@ -141,11 +142,15 @@ def _init() -> None:
             for col_def in (
                 "error_kind TEXT", "error_message TEXT", "request_id TEXT",
             ):
-                name = col_def.split()[0]
                 try:
                     conn.execute(f"ALTER TABLE cost_ai_calls ADD COLUMN {col_def}")
                 except sqlite3.OperationalError:
                     pass  # column already exists
+            # cost_job_links gained a terminal-idempotency marker after PR #477.
+            try:
+                conn.execute("ALTER TABLE cost_job_links ADD COLUMN terminal_recorded_at TEXT")
+            except sqlite3.OperationalError:
+                pass
             conn.commit()
         _INITIALIZED = True
 
@@ -228,6 +233,22 @@ def build_id_for_job(job_id: str) -> Optional[Dict[str, Any]]:
             "SELECT build_id, user_id FROM cost_job_links WHERE job_id = ?", (str(job_id),)
         ).fetchone()
         return dict(row) if row else None
+
+
+def claim_job_terminal(job_id: str, when: str) -> bool:
+    """Atomically claim the ONE terminal recording for a background job. Returns
+    True iff this caller won the claim (the link existed and was not yet marked).
+    Repeated polls / a poll racing a cancel therefore record the terminal call
+    exactly once. Returns False when the link is missing or already claimed."""
+    _init()
+    with _connect() as conn:
+        cur = conn.execute(
+            "UPDATE cost_job_links SET terminal_recorded_at = ? "
+            "WHERE job_id = ? AND terminal_recorded_at IS NULL",
+            (when, str(job_id)),
+        )
+        conn.commit()
+        return cur.rowcount == 1
 
 
 # ── Call insertion ───────────────────────────────────────────────────────────

@@ -690,39 +690,68 @@ async def chat(req: ChatRequest, request: Request):
                 user_id=str(user_id), build_id=_build_id,
                 label=(message[:80] if not _is_repair else None),
             )
-            # The planning / generation provider call.
-            _succeeded = str(_exec2.get("status") or "").lower() in ("succeeded", "completed") or bool(reply)
-            _has_usage = any(
-                k in _exec2 for k in ("input_tokens", "output_tokens", "total_tokens")
-            )
-            _usage_missing = bool(_exec2.get("usage_missing")) or (_succeeded and not _has_usage)
-            _ct.record_ai_call(
-                build_id=_build_id, user_id=str(user_id),
-                provider=str(_exec2.get("provider") or prov or "openai"),
-                model=str(_exec2.get("model") or model or ""),
-                operation_type=(OP_PLANNING_REPAIR if _is_repair else OP_PLANNING),
-                usage=_CTUsage(
-                    input_tokens=int(_exec2.get("input_tokens", 0) or 0),
-                    output_tokens=int(_exec2.get("output_tokens", 0) or 0),
-                    cached_input_tokens=int(_exec2.get("cached_tokens", 0) or 0),
-                    reasoning_tokens=int(_exec2.get("reasoning_tokens", 0) or 0),
-                    total_tokens=int(_exec2.get("total_tokens", 0) or 0),
-                    usage_missing=_usage_missing,
-                ),
-                success=_succeeded,
-                retry_number=(1 if _is_repair else 0),
-                error_code=(_exec2.get("error_code") or None),
-                error_kind=(_exec2.get("error_kind") or None),
-                error_message=(_exec2.get("error_message") or None),
-                request_id=(_exec2.get("request_id") or None),
-                duration_ms=int(_exec2.get("latency_ms", 0) or 0),
-            )
-            # Frontend-builder BACKGROUND builds finish on a later poll request that
-            # has no build context. Link the opaque job id → this build_id now so the
-            # terminal result (success OR failure) is recorded against the right build.
+            _status2 = str(_exec2.get("status") or "").lower()
+            _nonterminal = _status2 in ("queued", "in_progress")
             _bg_job = _exec2.get("background_job_id")
-            if _bg_job:
-                _ct.link_background_job(job_id=str(_bg_job), build_id=_build_id, user_id=str(user_id))
+            # Frontend generation (the dedicated frontend_builder transport, sync OR
+            # background) is a DISTINCT operation from planning. A backgrounded job
+            # finishes on a later poll with no build context, so we only LINK it here
+            # and let the poll record the ONE terminal call. An immediate terminal
+            # (sync build, or a start that failed/completed inline) is recorded now.
+            _is_frontend_gen = (
+                normalized_mode == "frontend_builder"
+                or bool(_exec2.get("background_mode"))
+                or bool(_exec2.get("background_task_kind"))
+            )
+            if _is_frontend_gen:
+                if _bg_job and _nonterminal:
+                    _ct.link_background_job(job_id=str(_bg_job), build_id=_build_id, user_id=str(user_id))
+                    logger.info(
+                        "WEB_BUILD_BG link | build_id=%s | job_id=%s | kind=%s",
+                        _build_id, str(_bg_job)[:14], _exec2.get("background_task_kind") or "-",
+                    )
+                else:
+                    _fg_ok = _status2 in ("succeeded", "completed") or (bool(reply) and not _exec2.get("error_kind"))
+                    _record_web_build_frontend_terminal(
+                        build_id=_build_id, user_id=str(user_id),
+                        provider=_exec2.get("provider") or prov or "openai",
+                        model=_exec2.get("model") or model or "",
+                        ok=_fg_ok, execution_status=_exec2.get("status"),
+                        input_tokens=_exec2.get("input_tokens"), output_tokens=_exec2.get("output_tokens"),
+                        reasoning_tokens=_exec2.get("reasoning_tokens"), cached_tokens=_exec2.get("cached_tokens"),
+                        total_tokens=_exec2.get("total_tokens"),
+                        error_kind=_exec2.get("error_kind"), error_code=_exec2.get("error_code"),
+                        error_message=_exec2.get("error_message"), request_id=_exec2.get("request_id"),
+                        latency_ms=_exec2.get("latency_ms", 0), job_id=(str(_bg_job) if _bg_job else None),
+                    )
+            else:
+                # website_builder / visual planning call (unchanged behaviour).
+                _succeeded = _status2 in ("succeeded", "completed") or bool(reply)
+                _has_usage = any(
+                    k in _exec2 for k in ("input_tokens", "output_tokens", "total_tokens")
+                )
+                _usage_missing = bool(_exec2.get("usage_missing")) or (_succeeded and not _has_usage)
+                _ct.record_ai_call(
+                    build_id=_build_id, user_id=str(user_id),
+                    provider=str(_exec2.get("provider") or prov or "openai"),
+                    model=str(_exec2.get("model") or model or ""),
+                    operation_type=(OP_PLANNING_REPAIR if _is_repair else OP_PLANNING),
+                    usage=_CTUsage(
+                        input_tokens=int(_exec2.get("input_tokens", 0) or 0),
+                        output_tokens=int(_exec2.get("output_tokens", 0) or 0),
+                        cached_input_tokens=int(_exec2.get("cached_tokens", 0) or 0),
+                        reasoning_tokens=int(_exec2.get("reasoning_tokens", 0) or 0),
+                        total_tokens=int(_exec2.get("total_tokens", 0) or 0),
+                        usage_missing=_usage_missing,
+                    ),
+                    success=_succeeded,
+                    retry_number=(1 if _is_repair else 0),
+                    error_code=(_exec2.get("error_code") or None),
+                    error_kind=(_exec2.get("error_kind") or None),
+                    error_message=(_exec2.get("error_message") or None),
+                    request_id=(_exec2.get("request_id") or None),
+                    duration_ms=int(_exec2.get("latency_ms", 0) or 0),
+                )
             # The deep-research pre-pass — one paid web search per query (task #4).
             _research = response_metadata.get("research", {}) if isinstance(response_metadata, dict) else {}
             if _research and _research.get("did_research"):
@@ -862,6 +891,80 @@ def _quick_response(
 # Response. The raw OpenAI response id is never returned to the browser. A missing job or an
 # ownership mismatch both return 404 so another user's job existence is never revealed.
 
+# ── Web Build terminal telemetry (shared by /chat, poll and cancel) ──────────
+# Canonical terminal statuses across the OpenAI Responses / background job system.
+# Success terminals → the build is completed; every failure terminal → failed.
+_WB_SUCCESS_TERMINALS = {"completed", "succeeded", "success"}
+_WB_FAILURE_TERMINALS = {
+    "failed", "cancelled", "canceled", "expired", "incomplete",
+    "timed_out", "timeout", "error",
+}
+
+
+def _normalize_web_build_terminal(status, ok: bool):
+    """Map a provider/job status to a build terminal: 'completed' | 'failed' |
+    None (still running). Unknown non-running statuses fail CLOSED to 'failed'
+    so a build never stays stuck 'running' after a known terminal result."""
+    s = str(status or "").strip().lower()
+    if ok or s in _WB_SUCCESS_TERMINALS:
+        return "completed"
+    if s in ("queued", "in_progress", "running", "processing"):
+        return None
+    # failed / cancelled / expired / incomplete / timed_out / unknown-terminal
+    return "failed"
+
+
+def _record_web_build_frontend_terminal(
+    *, build_id, user_id, provider, model, ok: bool, execution_status,
+    input_tokens=None, output_tokens=None, reasoning_tokens=None,
+    cached_tokens=None, total_tokens=None,
+    error_kind=None, error_code=None, error_message=None,
+    request_id=None, latency_ms=0, retry_number=0, job_id=None,
+) -> None:
+    """Record ONE `web_build_frontend_generation` AI call for a terminal frontend
+    generation and finalize the build (completed/failed). Idempotent per job_id
+    via claim_terminal_once. Bounded, sanitized metadata only — never a prompt,
+    generated source, raw provider body, stack trace or secret. Never raises."""
+    try:
+        from backend.services.cost_tracking import tracker as _ct
+        from backend.services.cost_tracking.types import TokenUsage as _CTUsage, OP_FRONTEND_GEN
+        # Idempotency: only the first terminal for a polled/cancelled job records.
+        # Immediate terminals (no job_id) are single-shot and always record.
+        if job_id and not _ct.claim_terminal_once(str(job_id)):
+            logger.info("WEB_BUILD_BG terminal | build_id=%s | job_id=%s | already_recorded",
+                        str(build_id), str(job_id)[:14])
+            return
+        _has_usage = any(v is not None for v in (input_tokens, output_tokens, total_tokens))
+        _term = _normalize_web_build_terminal(execution_status, ok)
+        _ct.record_ai_call(
+            build_id=str(build_id), user_id=str(user_id),
+            provider=str(provider or "openai"), model=str(model or ""),
+            operation_type=OP_FRONTEND_GEN,
+            usage=_CTUsage(
+                input_tokens=int(input_tokens or 0),
+                output_tokens=int(output_tokens or 0),
+                reasoning_tokens=int(reasoning_tokens or 0),
+                cached_input_tokens=int(cached_tokens or 0),
+                total_tokens=int(total_tokens or 0),
+                usage_missing=(bool(ok) and not _has_usage),
+            ),
+            success=bool(ok), retry_number=int(retry_number or 0),
+            error_kind=error_kind, error_code=error_code, error_message=error_message,
+            request_id=request_id, duration_ms=int(latency_ms or 0),
+        )
+        if _term:
+            _ct.complete_build(build_id=str(build_id), status=_term)
+        logger.info(
+            "WEB_BUILD_BG terminal | build_id=%s | job_id=%s | status=%s | provider=%s | model=%s | error_kind=%s | error_code=%s | request_id=%s",
+            str(build_id), (str(job_id)[:14] if job_id else "-"), (_term or str(execution_status)),
+            str(provider or "-"), str(model or "-"), (error_kind or "-"), (error_code or "-"),
+            (str(request_id)[:10] if request_id else "-"),
+        )
+    except Exception as _e:
+        logger.warning("WEB_BUILD_BG terminal record failed | build_id=%s | job_id=%s | err=%s",
+                       str(build_id), (str(job_id)[:14] if job_id else "-"), _e)
+
+
 def _bg_exec_response(reply: str, ai_execution: dict, *, status_code: int = 200) -> JSONResponse:
     """A /chat-shaped JSON body the frontend background poller already understands."""
     return JSONResponse(status_code=status_code, content={
@@ -939,36 +1042,34 @@ async def background_poll(job_id: str, request: Request):
         _md["error_code"]    = res.error_code
         _md["error_message"] = res.error_message
 
-    # ── Cost tracking — persist the TERMINAL background frontend result against
-    # the build it belongs to (task: make failed background builds diagnosable).
-    # Only bounded, sanitized diagnostics — never source, prompt or the raw id.
-    # A missing usage block is flagged usage_missing, never estimated as zero.
+    # ── Cost tracking — persist the TERMINAL background frontend generation result
+    # against the build it belongs to, and FINALIZE the build (completed/failed) so
+    # it never stays stuck 'running'. Bounded, sanitized diagnostics only — never
+    # source, prompt or the raw id. Missing usage is flagged usage_missing, never
+    # estimated as zero. Idempotent per job (claim_terminal_once).
     try:
         from backend.services.cost_tracking import tracker as _ct
-        from backend.services.cost_tracking.types import TokenUsage as _CTUsage, OP_CODEGEN
         _link = _ct.build_id_for_job(job_id)
         if _link and _link.get("build_id"):
-            _has_usage = any(getattr(res, _u, None) is not None
-                             for _u in ("input_tokens", "output_tokens", "total_tokens"))
-            _ct.record_ai_call(
-                build_id=str(_link["build_id"]), user_id=str(_link.get("user_id") or uid),
-                provider=str(res.provider or "openai"), model=str(res.model or ""),
-                operation_type=OP_CODEGEN,
-                usage=_CTUsage(
-                    input_tokens=int(res.input_tokens or 0),
-                    output_tokens=int(res.output_tokens or 0),
-                    reasoning_tokens=int(res.reasoning_tokens or 0),
-                    cached_input_tokens=int(getattr(res, "cached_tokens", 0) or 0),
-                    total_tokens=int(res.total_tokens or 0),
-                    usage_missing=(res.ok and not _has_usage),
-                ),
-                success=bool(res.ok),
-                error_code=res.error_code, error_kind=res.error_kind,
-                error_message=res.error_message,
-                duration_ms=int(res.latency_ms or 0),
+            _record_web_build_frontend_terminal(
+                build_id=_link["build_id"], user_id=_link.get("user_id") or uid,
+                provider=res.provider, model=res.model, ok=bool(res.ok),
+                execution_status=res.execution_status,
+                input_tokens=res.input_tokens, output_tokens=res.output_tokens,
+                reasoning_tokens=res.reasoning_tokens,
+                cached_tokens=getattr(res, "cached_tokens", None), total_tokens=res.total_tokens,
+                error_kind=res.error_kind, error_code=res.error_code,
+                error_message=res.error_message, request_id=res.request_id,
+                latency_ms=res.latency_ms, job_id=job_id,
+            )
+        else:
+            logger.warning(
+                "WEB_BUILD_BG terminal | job_id=%s | status=%s | no_build_link (nothing recorded)",
+                (job_id or "")[:14], res.execution_status,
             )
     except Exception as _cterr:
-        logger.debug("CHAT | bg_poll | cost_tracking skipped: %s", _cterr)
+        logger.warning("WEB_BUILD_BG terminal | job_id=%s | cost_tracking failed: %s",
+                       (job_id or "")[:14], _cterr)
 
     return _bg_exec_response(res.text if res.ok else "", _md)
 
@@ -991,6 +1092,24 @@ async def background_cancel(job_id: str, request: Request):
             pass
         await delete_job(job_id)
         logger.info("CHAT | bg_cancel | job=%s | uid=%s | kind=%s | cancelled", (job_id or "")[:14], uid, record.get("task_kind"))
+        # A cancel is a TERMINAL outcome (client abort / client-side poll timeout).
+        # Record the failed frontend-generation call + finalize the build failed so
+        # it doesn't stay stuck 'running'. Idempotent: a later poll that also reaches
+        # a terminal loses the claim and does not double-record.
+        try:
+            from backend.services.cost_tracking import tracker as _ct
+            _link = _ct.build_id_for_job(job_id)
+            if _link and _link.get("build_id"):
+                _record_web_build_frontend_terminal(
+                    build_id=_link["build_id"], user_id=_link.get("user_id") or uid,
+                    provider="openai", model=str(record.get("model") or ""), ok=False,
+                    execution_status="cancelled", error_kind="cancelled",
+                    error_message="Frontend generation was cancelled before a terminal result.",
+                    job_id=job_id,
+                )
+        except Exception as _cterr:
+            logger.warning("WEB_BUILD_BG terminal | job_id=%s | cancel finalize failed: %s",
+                           (job_id or "")[:14], _cterr)
     else:
         # Idempotent + no disclosure: same response whether missing or not owned; NO OpenAI cancel.
         logger.info("CHAT | bg_cancel | job=%s | uid=%s | not_found_or_forbidden", (job_id or "")[:14], uid)
