@@ -398,15 +398,45 @@ async def chat(req: ChatRequest, request: Request):
         pass
     timer.mark("shortcuts_done")
 
-    # ── Usage limit check ─────────────────────────────────────────────────
-    can_send = True
+    # ── Legacy normal-chat message quota ──────────────────────────────────
+    # The legacy free-message quota governs ORDINARY chat only. Two request
+    # classes are NOT subject to it:
+    #   1. Protected structured builders (website_builder / frontend_builder /
+    #      visual_intelligence, incl. their revision/edit envelopes) — ai_guard
+    #      is already their authoritative usage gate (build/edit quota, spend cap,
+    #      kill switch, concurrency, owner entitlement). Blocking them here rejected
+    #      the build BEFORE ai_guard even ran, surfacing as a false limit_exceeded.
+    #   2. A BACKEND-VERIFIED owner — resolved via the existing ai_guard.resolve_owner
+    #      (identity/token, never a client badge/flag/body/header) — must not be
+    #      blocked merely because the legacy profile still reports remaining=0.
+    # ai_guard safety controls remain fully enforced for both below.
+    _owner_session = False
     try:
-        from backend.services.user_service import check_and_count, get_limit_info
-        can_send, _ = check_and_count(user_id)
+        from backend.services.ai_guard import service as _ai_guard0
+        _owner_session = bool(_ai_guard0.resolve_owner(request))
     except Exception:
-        pass
+        _owner_session = False
 
-    if not can_send:
+    _legacy_skip_reason = None
+    if _is_structured_builder:
+        _legacy_skip_reason = "protected_builder"
+    elif _owner_session:
+        _legacy_skip_reason = "verified_owner"
+
+    can_send = True
+    if _legacy_skip_reason:
+        logger.info(
+            "CHAT_QUOTA | uid=%s | mode=%s | legacy_quota_skipped=true | reason=%s",
+            user_id, (normalized_mode or "chat"), _legacy_skip_reason,
+        )
+    else:
+        try:
+            from backend.services.user_service import check_and_count
+            can_send, _ = check_and_count(user_id)
+        except Exception:
+            pass
+
+    if (not _legacy_skip_reason) and (not can_send):
         info = {"used": 0, "limit": 20}
         try:
             from backend.services.user_service import get_limit_info
@@ -450,7 +480,8 @@ async def chat(req: ChatRequest, request: Request):
             _beta_idem = _idem
             # Backend-verified owner → unlimited personal quota (global safety
             # controls still apply). Never trusts a client-sent owner flag.
-            _is_owner = _ai_guard.resolve_owner(request)
+            # Reuses the value resolved above for the legacy-quota decision.
+            _is_owner = _owner_session
             _pf = _ai_guard.preflight(
                 user_id=str(user_id), operation_type=_op_type,
                 message=message, idempotency_key=_idem, is_owner=_is_owner,
@@ -832,8 +863,13 @@ async def chat(req: ChatRequest, request: Request):
         # enqueue() returns False when the queue is disabled — fall back
         # to sync execution so the writes still happen. Each call is
         # independently best-effort; one failure doesn't skip the others.
-        if not enqueue(record_usage, user_id, name="record_usage"):
-            record_usage(user_id)
+        # Protected structured builders do NOT consume the ordinary-chat message
+        # allowance — their usage is accounted through ai_guard + cost tracking,
+        # so charging the legacy counter too would double-charge one operation.
+        # Ordinary chat (owner or not) still increments exactly as before.
+        if not _is_structured_builder:
+            if not enqueue(record_usage, user_id, name="record_usage"):
+                record_usage(user_id)
         # Phase 12B.1 / 14K.7 — usage still counts, but the frontend_builder and
         # visual_intelligence structured requests + replies are NOT persisted into
         # ordinary chat history (they are implementation data, not conversation).
