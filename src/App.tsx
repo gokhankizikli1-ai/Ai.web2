@@ -1,6 +1,7 @@
 import { useEffect, useState, lazy, Suspense } from 'react';
 import { Routes, Route, useLocation, Navigate } from 'react-router';
 import { useAuthStore } from '@/stores/authStore';
+import { useLanguageStore } from '@/stores/languageStore';
 import { currentStorageScope, IDENTITY_CHANGED_EVENT } from '@/lib/storageScope';
 
 // ── Startup performance (Phase 14I.2) ───────────────────────────────────
@@ -92,6 +93,55 @@ function RouteFallback() {
       />
     </div>
   );
+}
+
+/**
+ * Neutral full-screen bootstrap splash shown at the ROOT route while auth is
+ * being resolved (see RootEntry). It renders on the plain app background — no
+ * landing hero / navbar / pricing / CTA / footer — so an authenticated visitor
+ * never sees a landing flash before the redirect to /chat. Accessible: a polite
+ * live status with an sr-only localized label (reuses the existing `loading`
+ * string), a non-flashing spinner, no focus steal, no keyboard trap. No new
+ * dependency and no visible text.
+ */
+function RootBootstrapScreen() {
+  const { t } = useLanguageStore();
+  return (
+    <div
+      className="flex min-h-[100dvh] w-full items-center justify-center bg-background"
+      role="status"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <span className="sr-only">{t('loading')}</span>
+      <span
+        className="h-7 w-7 animate-spin rounded-full border-2 border-muted-foreground/25 border-t-muted-foreground/70"
+        aria-hidden="true"
+      />
+    </div>
+  );
+}
+
+/**
+ * Root-route auth gate. Three states, no landing flash, no blind timer, no
+ * localStorage-only decision:
+ *   • unresolved  → neutral bootstrap splash (NOT the landing page)
+ *   • authenticated (validated) → redirect to /chat with replace semantics
+ *   • unauthenticated → public landing page
+ *
+ * It gates the redirect on `sessionChecked` — which flips true only AFTER the
+ * existing `/auth/me` validation settles — so an EXPIRED cached session is never
+ * optimistically redirected to /chat: by the time we decide, `isAuthenticated`
+ * reflects the real verdict and the visitor stays on the landing page. The
+ * one-way redirect (/ → /chat) with `replace` cannot form a loop. `checkAuth`
+ * itself is kicked once in AppLayout on boot.
+ */
+function RootEntry() {
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+  const sessionChecked = useAuthStore((s) => s.sessionChecked);
+  if (!sessionChecked) return <RootBootstrapScreen />;
+  if (isAuthenticated) return <Navigate to="/chat" replace />;
+  return <LandingPage />;
 }
 
 /**
@@ -249,8 +299,8 @@ export default function App() {
       <IdentityScopeBoundary>
       <Suspense fallback={<RouteFallback />}>
       <Routes>
-        {/* ═══ Landing ═══ */}
-        <Route path="/" element={<LandingPage />} />
+        {/* ═══ Landing (authenticated visitors are sent straight to /chat) ═══ */}
+        <Route path="/" element={<RootEntry />} />
 
         {/* ═══ Marketing pages — fully public (viewable while logged out) ═══ */}
         <Route path="/features" element={<AnimatedRoute><FeaturesPage /></AnimatedRoute>} />

@@ -36,6 +36,20 @@ interface AuthState {
    * not background hydration.
    */
   isHydrating: boolean;
+  /**
+   * True once the INITIAL session resolution has completed INCLUDING the
+   * background `/auth/me` validation of a persisted token. Distinct from
+   * `isHydrating` (which flips off optimistically as soon as a cached user is
+   * read, BEFORE validation) so a consumer that must not act on an unvalidated
+   * cached session — e.g. the root-route redirect to /chat — can wait for the
+   * real verdict. An EXPIRED cached session therefore never triggers an
+   * optimistic redirect: `sessionChecked` only flips true after `/auth/me`
+   * settles, by which point `isAuthenticated` reflects the true state.
+   *
+   * Starts false on every fresh load; flips true exactly once per app session.
+   * Login / logout are explicit actions and do not reset it. Not persisted.
+   */
+  sessionChecked: boolean;
   error: string | null;
 
   login: (email: string, password: string) => Promise<boolean>;
@@ -352,6 +366,7 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
       isLoading: false,
       isHydrating: true,
+      sessionChecked: false,
       error: null,
 
       login: async (email: string, password: string) => {
@@ -363,7 +378,7 @@ export const useAuthStore = create<AuthState>()(
         // sees the previous account's data.
         const { user, error } = await apiLogin(email, password);
         if (user) {
-          set({ user, isAuthenticated: true, isLoading: false, error: null });
+          set({ user, isAuthenticated: true, isLoading: false, sessionChecked: true, error: null });
           notifyAuthChanged(user, 'login');
           return true;
         }
@@ -377,7 +392,7 @@ export const useAuthStore = create<AuthState>()(
         // per-scope keys start empty; nothing needs to be destroyed first.
         const { user, error } = await apiSignup(email, password, name);
         if (user) {
-          set({ user, isAuthenticated: true, isLoading: false, error: null });
+          set({ user, isAuthenticated: true, isLoading: false, sessionChecked: true, error: null });
           notifyAuthChanged(user, 'login');
           return true;
         }
@@ -390,7 +405,7 @@ export const useAuthStore = create<AuthState>()(
         // Phase 14D: no pre-verification wipe (see login).
         const { user, error } = await apiGoogle(idToken);
         if (user) {
-          set({ user, isAuthenticated: true, isLoading: false, error: null });
+          set({ user, isAuthenticated: true, isLoading: false, sessionChecked: true, error: null });
           notifyAuthChanged(user, 'login');
           return true;
         }
@@ -401,7 +416,7 @@ export const useAuthStore = create<AuthState>()(
       logout: async () => {
         set({ isLoading: true });
         await apiLogout();
-        set({ user: null, isAuthenticated: false, isLoading: false, error: null });
+        set({ user: null, isAuthenticated: false, isLoading: false, sessionChecked: true, error: null });
         // Phase 14D: clear ONLY auth identity + owner artifacts and rotate the
         // guest nonce. User-owned data (chat, projects, agents, tasks, saved
         // prompts) is per-identity namespaced and PRESERVED — this same user
@@ -452,7 +467,15 @@ export const useAuthStore = create<AuthState>()(
                     try { localStorage.removeItem('korvix-auth'); } catch { /* ignore */ }
                     notifyAuthChanged(null, 'logout');
                   }
+                  // Session verdict is now definitive (validated, expired, or a
+                  // temporary failure that keeps the cached session) — consumers
+                  // gated on validation (root redirect) may now act.
+                  set({ sessionChecked: true });
                 });
+              } else {
+                // Cached user but no bearer to validate → treat the cached
+                // session as resolved (there is nothing to verify against).
+                set({ sessionChecked: true });
               }
               return;
             }
@@ -461,16 +484,16 @@ export const useAuthStore = create<AuthState>()(
         // No persisted user AND no bearer ⇒ guest. apiMe() short-circuits
         // to null without a network call (see `if (!readToken()) return null`).
         if (!readToken()) {
-          set({ isLoading: false, isHydrating: false });
+          set({ isLoading: false, isHydrating: false, sessionChecked: true });
           return;
         }
         set({ isLoading: true });
         const user = await apiMe();
         if (user) {
-          set({ user, isAuthenticated: true, isLoading: false, isHydrating: false });
+          set({ user, isAuthenticated: true, isLoading: false, isHydrating: false, sessionChecked: true });
           notifyAuthChanged(user, 'login');
         } else {
-          set({ isLoading: false, isHydrating: false });
+          set({ isLoading: false, isHydrating: false, sessionChecked: true });
         }
       },
 
