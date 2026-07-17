@@ -114,6 +114,62 @@ def build_id_for_job(job_id: str) -> Optional[Dict[str, Any]]:
         return None
 
 
+def link_operation(*, op_key: str, build_id: str, user_id: str) -> None:
+    """Associate a stable client operation key with its build so a later EARLY
+    terminal failure (e.g. a blocked frontend-generation preflight) can resolve
+    and finalize the right build. Best-effort; never raises."""
+    if not op_key or not build_id:
+        return
+    try:
+        store.link_operation(op_key=str(op_key), build_id=str(build_id),
+                             user_id=str(user_id), created_at=_now_iso())
+    except Exception as exc:
+        logger.debug("cost_tracking.link_operation skipped: %s", exc)
+
+
+def build_id_for_operation(op_key: str, user_id: str) -> Optional[str]:
+    """Resolve a build_id from a client op key, validated against the owning user."""
+    if not op_key:
+        return None
+    try:
+        return store.build_id_for_operation(str(op_key), str(user_id))
+    except Exception:
+        return None
+
+
+def early_terminal_failure(
+    *, build_id: str, user_id: str, operation_type: str, error_kind: Optional[str] = None,
+    error_code: Optional[str] = None, error_message: Optional[str] = None,
+    provider: str = "none", model: str = "", request_id: Optional[str] = None,
+    stage: Optional[str] = None,
+) -> bool:
+    """Record ONE bounded FAILED call and mark the build failed — but only if the
+    build is still running (idempotent: repeated blocks for the same build do not
+    duplicate the row). Used when a Web Build hits a terminal failure BEFORE
+    background frontend generation starts (e.g. an ai_guard capacity/credit block).
+    No usage → usage_missing (never estimated zero). Never raises. Returns True
+    iff it finalized the build."""
+    try:
+        # Only the first terminal-before-generation finalizes + records.
+        if not store.finalize_build_if_running(
+            build_id=str(build_id), status="failed", completed_at=_now_iso()
+        ):
+            return False
+        record_ai_call(
+            build_id=str(build_id), user_id=str(user_id),
+            provider=str(provider or "none"), model=str(model or ""),
+            operation_type=str(operation_type),
+            usage=None,  # → usage_missing=True (no provider call was made)
+            success=False,
+            error_kind=error_kind, error_code=error_code, error_message=error_message,
+            request_id=request_id, ensure_build=False,
+        )
+        return True
+    except Exception as exc:
+        logger.warning("cost_tracking.early_terminal_failure failed: %s", exc)
+        return False
+
+
 def claim_terminal_once(job_id: str) -> bool:
     """Atomically claim the single terminal recording for a background job so
     repeated polls (or a poll racing a cancel) never double-record. Returns True

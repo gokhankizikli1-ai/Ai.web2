@@ -120,9 +120,10 @@ export function useCoordinatorPlan(): UseCoordinatorPlanResult {
               ...(projectId ? { project_id: projectId } : {}),
             }),
           });
-          if (res.status === 503) {
-            // Backend flag is off — switch to permanent-unavailable so
-            // we don't keep retrying. Caller hides the chip.
+          // 409 = coordinator not enabled (canonical disabled status; was 503).
+          // 403 = not permitted. Both are PERSISTENT states → stop retrying and
+          // hide the chip. 503 kept for backward-compat with older backends.
+          if (res.status === 409 || res.status === 403 || res.status === 503 || res.status === 501) {
             setUnavailable(true);
             setPlan(null);
             return;

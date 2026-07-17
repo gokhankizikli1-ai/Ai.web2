@@ -28,13 +28,20 @@ router = APIRouter(prefix="/v2", tags=["coordinator-v2"])
 
 
 def _ensure_enabled() -> None:
+    """A DISABLED feature is a persistent configuration state, NOT a temporary
+    server outage — it must map to 409 (canonical "not enabled"), never 503.
+    Returning 503 here made a flag-off endpoint look like "AI temporarily busy"
+    in Railway HTTP logs (POST /v2/coordinator/plan → 503) and to any client that
+    treats 503 as a retryable outage. The coordinator is a pure in-process
+    rule-based planner with NO external dependency (no Redis/provider/DB/LLM), so
+    it has no legitimate temporary-unavailability mode at all."""
     if not is_enabled():
         raise HTTPException(
-            status_code=503,
+            status_code=409,
             detail={
                 "code":     "COORDINATOR_DISABLED",
-                "message":  "Coordinator is disabled. Set ENABLE_COORDINATOR=true.",
-                "rollback": "Unset ENABLE_COORDINATOR to disable.",
+                "message":  "Coordinator is not enabled on this deployment.",
+                "rollback": "Set ENABLE_COORDINATOR=true to enable.",
             },
         )
 
@@ -69,11 +76,23 @@ def build_plan(
     "no specialist needed" rather than a blank state.
     """
     _ensure_enabled()
-    plan = coordinator.analyze(
-        user_message=     body.message,
-        project_id=       body.project_id,
-        asset_mime_types= body.asset_mime_types,
-    )
+    try:
+        plan = coordinator.analyze(
+            user_message=     body.message,
+            project_id=       body.project_id,
+            asset_mime_types= body.asset_mime_types,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        # A bug in the pure rule-based planner is an internal error (bounded 500),
+        # NOT a temporary outage — never dress it up as 503 "busy". No prompt,
+        # payload or trace is returned.
+        logger.warning("coordinator.plan | uid=%s | internal_error=%s", user.id, type(exc).__name__)
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "COORDINATOR_ERROR", "message": "Coordinator plan failed."},
+        )
     logger.info(
         "coordinator.plan | uid=%s | intent=%s | confidence=%.2f | agents=%d | method=%s",
         user.id, plan.intent, plan.confidence, len(plan.agents), plan.routing_method,

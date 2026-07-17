@@ -126,6 +126,18 @@ def _init() -> None:
                     terminal_recorded_at TEXT
                 );
 
+                -- Maps a stable per-build CLIENT operation key (X-Korvix-Operation-Id)
+                -- → build_id + owning user, so an EARLY terminal failure that arrives on
+                -- a later request (e.g. a blocked frontend-generation preflight) can
+                -- resolve and finalize the correct build without trusting any
+                -- client-supplied build id.
+                CREATE TABLE IF NOT EXISTS cost_operation_links (
+                    op_key     TEXT PRIMARY KEY,
+                    build_id   TEXT NOT NULL,
+                    user_id    TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_calls_build
                     ON cost_ai_calls (build_id);
                 CREATE INDEX IF NOT EXISTS idx_calls_user
@@ -246,6 +258,48 @@ def claim_job_terminal(job_id: str, when: str) -> bool:
             "UPDATE cost_job_links SET terminal_recorded_at = ? "
             "WHERE job_id = ? AND terminal_recorded_at IS NULL",
             (when, str(job_id)),
+        )
+        conn.commit()
+        return cur.rowcount == 1
+
+
+# ── Client operation key → build link (early terminal finalization) ──────────
+def link_operation(*, op_key: str, build_id: str, user_id: str, created_at: str) -> None:
+    """Associate a stable client operation key with its build. Idempotent — the
+    first (planning) call writes it; later calls of the same build no-op."""
+    _init()
+    with _connect() as conn:
+        conn.execute(
+            "INSERT INTO cost_operation_links (op_key, build_id, user_id, created_at) "
+            "VALUES (?, ?, ?, ?) ON CONFLICT(op_key) DO NOTHING",
+            (str(op_key), str(build_id), str(user_id), created_at),
+        )
+        conn.commit()
+
+
+def build_id_for_operation(op_key: str, user_id: str) -> Optional[str]:
+    """Resolve a build_id from a client op key, VALIDATED against the owning
+    user so a spoofed key can never target another user's build. None if absent."""
+    _init()
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT build_id FROM cost_operation_links WHERE op_key = ? AND user_id = ?",
+            (str(op_key), str(user_id)),
+        ).fetchone()
+        return row["build_id"] if row else None
+
+
+def finalize_build_if_running(*, build_id: str, status: str, completed_at: str) -> bool:
+    """Atomically move a build to a terminal status ONLY if it is still
+    in_progress. Returns True iff this call performed the transition — so a
+    repeated early failure for the same build does not re-finalize or duplicate
+    downstream work."""
+    _init()
+    with _connect() as conn:
+        cur = conn.execute(
+            "UPDATE cost_builds SET status = ?, completed_at = ? "
+            "WHERE build_id = ? AND status = 'in_progress'",
+            (str(status), completed_at, str(build_id)),
         )
         conn.commit()
         return cur.rowcount == 1
@@ -500,10 +554,11 @@ def _reset_for_tests() -> None:
     with _connect() as conn:
         conn.execute("DELETE FROM cost_ai_calls")
         conn.execute("DELETE FROM cost_builds")
-        try:
-            conn.execute("DELETE FROM cost_job_links")
-        except sqlite3.OperationalError:
-            pass
+        for _t in ("cost_job_links", "cost_operation_links"):
+            try:
+                conn.execute(f"DELETE FROM {_t}")
+            except sqlite3.OperationalError:
+                pass
         conn.commit()
 
 

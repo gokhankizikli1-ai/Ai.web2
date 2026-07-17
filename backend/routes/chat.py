@@ -438,6 +438,7 @@ async def chat(req: ChatRequest, request: Request):
     _beta_op_id = None
     _beta_op_type = None
     _beta_reset_at = None
+    _beta_idem = None
     try:
         from backend.services.ai_guard import service as _ai_guard
         _op_type = _ai_guard.classify(
@@ -446,6 +447,7 @@ async def chat(req: ChatRequest, request: Request):
         )
         if _ai_guard.is_protected(_op_type):
             _idem = (request.headers.get("x-korvix-operation-id") or "").strip()[:80] or None
+            _beta_idem = _idem
             # Backend-verified owner → unlimited personal quota (global safety
             # controls still apply). Never trusts a client-sent owner flag.
             _is_owner = _ai_guard.resolve_owner(request)
@@ -460,6 +462,39 @@ async def chat(req: ChatRequest, request: Request):
             if not _pf.allowed:
                 timer.mark("ai_guard_block")
                 timer.flush()
+                # ── Early build finalization ──────────────────────────────────
+                # A TERMINAL block (capacity / credit / kill switch / operation
+                # disabled / daily limit) that lands on a web_build sub-call ends
+                # the build attempt BEFORE background generation starts. Resolve
+                # the already-started build from this request's stable client
+                # operation key (validated against the authenticated user — never a
+                # client-supplied build id) and finalize it FAILED so it does not
+                # stay 'running', with a bounded diagnostic call. Transient blocks
+                # (rate_limited) and duplicate-submits (operation_in_progress) are
+                # NOT terminal and never finalize. Never breaks the response.
+                if str(_op_type).startswith("web_build") and _pf.code in _WB_TERMINAL_BLOCK_CODES and _idem:
+                    try:
+                        from backend.services.cost_tracking import tracker as _ct0
+                        from backend.services.cost_tracking.types import OP_COORDINATOR
+                        _bid0 = _ct0.build_id_for_operation(_idem, str(user_id))
+                        if _bid0:
+                            _fin = _ct0.early_terminal_failure(
+                                build_id=_bid0, user_id=str(user_id),
+                                operation_type=OP_COORDINATOR, error_kind="ai_guard_block",
+                                error_code=_pf.code, request_id=request_id,
+                            )
+                            if _fin:
+                                logger.info(
+                                    "WEB_BUILD_COORDINATOR terminal | build_id=%s | status=failed | stage=preflight | error_kind=ai_guard_block | error_code=%s | request_id=%s",
+                                    _bid0, _pf.code, request_id,
+                                )
+                        else:
+                            logger.warning(
+                                "WEB_BUILD_COORDINATOR terminal | build_id=- | status=failed | stage=preflight | error_code=%s | no_build_link (op_key not yet linked)",
+                                _pf.code,
+                            )
+                    except Exception as _finerr:
+                        logger.warning("WEB_BUILD_COORDINATOR terminal | early finalize failed: %s", _finerr)
                 _guard_md = {"aiOperation": _pf.to_metadata()}
                 if _pf.code == "rate_limited":
                     return JSONResponse(
@@ -690,6 +725,11 @@ async def chat(req: ChatRequest, request: Request):
                 user_id=str(user_id), build_id=_build_id,
                 label=(message[:80] if not _is_repair else None),
             )
+            # Link this build's stable client operation key → build_id so a LATER
+            # early terminal block (e.g. a capacity-blocked frontend-generation
+            # preflight on the same op key) can resolve and finalize this build.
+            if _beta_idem:
+                _ct.link_operation(op_key=str(_beta_idem), build_id=_build_id, user_id=str(user_id))
             _status2 = str(_exec2.get("status") or "").lower()
             _nonterminal = _status2 in ("queued", "in_progress")
             _bg_job = _exec2.get("background_job_id")
@@ -894,6 +934,14 @@ def _quick_response(
 # ── Web Build terminal telemetry (shared by /chat, poll and cancel) ──────────
 # Canonical terminal statuses across the OpenAI Responses / background job system.
 # Success terminals → the build is completed; every failure terminal → failed.
+# ai_guard block codes that TERMINATE a web build attempt (finalize failed).
+# rate_limited (retryable) and operation_in_progress (duplicate submit, build
+# still running) are deliberately excluded.
+_WB_TERMINAL_BLOCK_CODES = {
+    "credit_unavailable", "global_spend_limit_reached", "ai_temporarily_disabled",
+    "operation_disabled", "daily_limit_reached",
+}
+
 _WB_SUCCESS_TERMINALS = {"completed", "succeeded", "success"}
 _WB_FAILURE_TERMINALS = {
     "failed", "cancelled", "canceled", "expired", "incomplete",
