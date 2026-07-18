@@ -147,6 +147,77 @@ export interface CostBuildDetail extends CostBuildSummary {
   calls: CostCall[];
 }
 
+/* ── Cost audit shapes (mirror backend.services.cost_tracking.audit) ───────── */
+export interface AuditCall {
+  sequence: number;
+  callId: string | null;
+  stage: string;
+  agent: string;
+  operationType: string;
+  provider: string;
+  model: string;
+  success: boolean;
+  retryNumber: number;
+  retryReason: string | null;
+  inputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  cachedTokens: number;
+  contextBytes: number;
+  usageMissing: boolean;
+  costUsd: number;
+  percentOfBuild: number;
+  cumulativeCostUsd: number;
+  durationMs: number;
+  duplicateKind: string | null;
+  duplicateGroup: string | null;
+  outputConsumed: 'yes' | 'unknown';
+  consumedByStage: string | null;
+  wasteFlags: string[];
+  requestId: string | null;
+  toolKey: string | null;
+}
+export interface AuditStage {
+  stage: string;
+  calls: number;
+  costUsd: number;
+  percentOfBuild: number;
+  inputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  cachedTokens: number;
+  failedCalls: number;
+  retryCalls: number;
+  duplicateCalls: number;
+  unusedOutputs: number;
+  averageDurationMs: number;
+}
+export interface AuditRecommendation { code: string; params: Record<string, string | number>; }
+export interface AuditCandidate {
+  kind: string; stage: string; costUsd: number; confidence: string; percentOfBuild?: number;
+}
+export interface CostBuildAudit {
+  buildId: string;
+  status: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  durationSeconds: number;
+  build: {
+    totalCostUsd: number; totalCalls: number; totalInputTokens: number;
+    totalOutputTokens: number; totalReasoningTokens: number; totalCachedTokens: number;
+    usageMissingCalls: number; failedPaidCalls: number; duplicateCalls: number;
+    unusedOutputs: number; largestStage: string | null; largestAgent: string | null;
+    largestCall: { callId: string | null; stage: string; costUsd: number } | null;
+    frontendGenerationShare: number; planningShare: number; retryCostUsd: number;
+    wasteEstimateUsd: number; wasteEstimateConfidence: string;
+  };
+  stages: AuditStage[];
+  calls: AuditCall[];
+  optimizationCandidates: AuditCandidate[];
+  waste: { estimateUsd: number; confidence: string; candidates: AuditCandidate[] };
+  recommendations: AuditRecommendation[];
+}
+
 async function postJson<T>(path: string, body: unknown): Promise<T> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 20_000);
@@ -214,6 +285,10 @@ export function listCostBuilds(limit = 100, offset = 0): Promise<{ builds: CostB
 
 export function getCostBuild(buildId: string): Promise<CostBuildDetail> {
   return getJson<CostBuildDetail>(`/v2/admin/costs/builds/${encodeURIComponent(buildId)}`);
+}
+
+export function getCostBuildAudit(buildId: string): Promise<CostBuildAudit> {
+  return getJson<CostBuildAudit>(`/v2/admin/costs/builds/${encodeURIComponent(buildId)}/audit`);
 }
 
 /* ── Formatting helpers (shared by the page) ──────────────────────────────── */

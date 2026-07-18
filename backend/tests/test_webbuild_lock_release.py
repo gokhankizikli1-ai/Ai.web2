@@ -230,5 +230,9 @@ def test_no_sensitive_fields_persisted(env):
         "additional_tool_cost_usd", "total_call_cost_usd",
         "error_code", "error_kind", "error_message", "request_id",
         "tool_key", "tool_units", "duration_ms", "created_at",
+        # Additive canonical attribution (cost audit) — safe metadata only;
+        # fingerprints are stripped by tracker.get_build and must not appear.
+        "stage", "agent", "sequence_index", "parent_call_id", "retry_reason", "context_bytes",
     }
+    assert "input_fingerprint" not in c and "output_fingerprint" not in c
     assert set(c.keys()).issubset(allowed)

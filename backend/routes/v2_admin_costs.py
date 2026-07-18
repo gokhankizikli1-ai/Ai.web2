@@ -145,6 +145,25 @@ async def costs_build_detail(
     return JSONResponse(content=envelope_ok(tracker.get_build(build_id)), headers=_NO_STORE)
 
 
+@router.get("/builds/{build_id}/audit")
+async def costs_build_audit(
+    build_id: str,
+    request: Request,
+    user: User = Depends(owner_gate),
+) -> JSONResponse:
+    """Deterministic cost-attribution & duplicate-call AUDIT for one build:
+    ordered cost waterfall, per-stage roll-up, duplicate/retry/unused detection,
+    per-call waste flags, a conservative avoidable-cost estimate and localizable
+    recommendations. Owner-only. 400 malformed id / 404 unknown build. The
+    payload carries NO prompts, generated source, fingerprints or secrets."""
+    if not _BUILD_ID_RE.match(build_id or ""):
+        raise HTTPException(status_code=400, detail="malformed build id")
+    if not tracker.build_exists(build_id):
+        raise HTTPException(status_code=404, detail="build not found")
+    _audit(user, "admin.costs.build.audit", request)
+    return JSONResponse(content=envelope_ok(tracker.build_audit(build_id)), headers=_NO_STORE)
+
+
 class ReapBody(BaseModel):
     dryRun: bool = Field(default=True)
     # Below-minimum / above-maximum values are CLAMPED (not rejected) so the

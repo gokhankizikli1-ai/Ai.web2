@@ -14,10 +14,11 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { useLanguageStore } from '@/stores/languageStore';
 import {
-  getCostAnalytics, listCostBuilds, getCostBuild,
+  getCostAnalytics, listCostBuilds, getCostBuild, getCostBuildAudit,
   scanStaleBuilds, reapStaleBuilds,
   formatUsd, formatTokens, shortBuildId, CostApiError,
   type CostAnalytics, type CostBuildSummary, type CostBuildDetail, type ReapResult,
+  type CostBuildAudit, type AuditCall, type AuditStage,
 } from '@/lib/costApi';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -67,6 +68,7 @@ export default function OwnerCosts() {
 
   // detail drawer
   const [detail, setDetail] = useState<CostBuildDetail | null>(null);
+  const [audit, setAudit] = useState<CostBuildAudit | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
 
@@ -100,14 +102,14 @@ export default function OwnerCosts() {
   async function openBuild(id: string) {
     setDetailOpen(true);
     setDetail(null);
+    setAudit(null);
     setDetailLoading(true);
-    try {
-      setDetail(await getCostBuild(id));
-    } catch {
-      setDetail(null);
-    } finally {
-      setDetailLoading(false);
-    }
+    // Fetch the raw detail and the deterministic audit together; the audit is
+    // best-effort so a build with no attribution still shows its detail.
+    const [d, a] = await Promise.allSettled([getCostBuild(id), getCostBuildAudit(id)]);
+    setDetail(d.status === 'fulfilled' ? d.value : null);
+    setAudit(a.status === 'fulfilled' ? a.value : null);
+    setDetailLoading(false);
   }
 
   async function runScan() {
@@ -375,8 +377,11 @@ export default function OwnerCosts() {
             <div className="p-4 space-y-2">
               {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-5 w-full bg-white/[0.04]" />)}
             </div>
-          ) : detail ? (
-            <BuildDetail detail={detail} t={t} />
+          ) : detail || audit ? (
+            <>
+              {audit && <BuildAuditPanel audit={audit} t={t} />}
+              {detail ? <BuildDetail detail={detail} t={t} /> : null}
+            </>
           ) : (
             <div className="p-4 text-[12.5px] text-slate-500">{t('costDetailError')}</div>
           )}
@@ -500,6 +505,187 @@ function BuildDetail({ detail, t }: {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/* ── Cost-attribution & duplicate-call audit panel ──────────────────────────── */
+type TFn = (k: string, p?: Record<string, string | number>) => string;
+
+function labelFor(t: TFn, prefix: string, key: string): string {
+  const s = t(`${prefix}${key}`);
+  // t() returns the key unchanged when a string is missing → fall back to a
+  // readable de-underscored form so an unmapped stage/flag never shows a raw key.
+  if (!s || s === `${prefix}${key}`) return String(key).replace(/_/g, ' ');
+  return s;
+}
+
+function BuildAuditPanel({ audit, t }: { audit: CostBuildAudit; t: TFn }) {
+  const b = audit.build;
+  const maxStageCost = Math.max(1e-9, ...audit.stages.map((s) => s.costUsd));
+  const warnDup = b.duplicateCalls > 0;
+  const warnMissing = b.usageMissingCalls > 0;
+  const warnFailed = b.failedPaidCalls > 0;
+
+  return (
+    <div className="p-4 space-y-4 border-b border-white/[0.06]">
+      <div className="text-[11px] uppercase tracking-wide text-slate-500">{t('costAuditTitle')}</div>
+
+      {/* Key attribution metrics */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        <AuditMetric label={t('costAuditTotal')} value={formatUsd(b.totalCostUsd)} accent />
+        <AuditMetric label={t('costAuditFrontendShare')} value={`${b.frontendGenerationShare.toFixed(0)}%`} />
+        <AuditMetric label={t('costAuditPlanningShare')} value={`${b.planningShare.toFixed(0)}%`} />
+        <AuditMetric label={t('costAuditWaste')} value={formatUsd(b.wasteEstimateUsd)}
+                     sub={t(`costConf_${b.wasteEstimateConfidence}`) || b.wasteEstimateConfidence}
+                     tone={b.wasteEstimateUsd > 0 ? 'warn' : undefined} />
+        <AuditMetric label={t('costAuditDuplicates')} value={formatTokens(b.duplicateCalls)}
+                     tone={warnDup ? 'warn' : undefined} />
+        <AuditMetric label={t('costAuditRetryCost')} value={formatUsd(b.retryCostUsd)} />
+        <AuditMetric label={t('costAuditLargestStage')} value={labelFor(t, 'costStage_', b.largestStage || '—')} />
+        <AuditMetric label={t('costAuditLargestAgent')} value={labelFor(t, 'costAgent_', b.largestAgent || '—')} />
+        <AuditMetric label={t('costAuditUnused')} value={formatTokens(b.unusedOutputs)}
+                     tone={b.unusedOutputs > 0 ? 'warn' : undefined} />
+      </div>
+
+      {/* Warnings — only when proven */}
+      {(warnDup || warnMissing || warnFailed) && (
+        <div className="space-y-1.5">
+          {warnDup && <AuditWarn t={t} msg={t('costAuditWarnDup', { n: b.duplicateCalls, usd: formatUsd(b.wasteEstimateUsd) })} />}
+          {warnFailed && <AuditWarn t={t} msg={t('costAuditWarnFailed', { n: b.failedPaidCalls })} />}
+          {warnMissing && <AuditWarn t={t} msg={t('costAuditWarnMissing', { n: b.usageMissingCalls })} />}
+        </div>
+      )}
+
+      {/* Recommendations */}
+      {audit.recommendations.length > 0 && (
+        <div>
+          <div className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5">{t('costAuditRecs')}</div>
+          <ul className="space-y-1">
+            {audit.recommendations.map((r, i) => (
+              <li key={`${r.code}-${i}`} className="flex items-start gap-2 text-[11.5px] text-slate-300">
+                <span className="mt-[3px] h-1.5 w-1.5 shrink-0 rounded-full bg-sky-400/70" />
+                <span>{t(`costRec_${r.code}`, r.params)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Cost waterfall — ordered calls with cumulative bar */}
+      <div>
+        <div className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5">{t('costAuditWaterfall')}</div>
+        <div className="space-y-1">
+          {audit.calls.map((c) => <WaterfallRow key={`${c.callId}-${c.sequence}`} c={c} t={t} totalPct={c.percentOfBuild} />)}
+          {audit.calls.length === 0 && <div className="text-[12px] text-slate-500">{t('costNoCalls')}</div>}
+        </div>
+      </div>
+
+      {/* Stage summary */}
+      <div>
+        <div className="text-[11px] uppercase tracking-wide text-slate-500 mb-1.5">{t('costAuditStages')}</div>
+        <div className="rounded-lg border border-white/[0.06] overflow-x-auto">
+          <table className="w-full text-[11px]">
+            <thead>
+              <tr className="text-slate-500 border-b border-white/[0.06]">
+                <th className="text-left font-medium px-2 py-1.5">{t('costAuditColStage')}</th>
+                <th className="text-right font-medium px-2 py-1.5">{t('costColCalls')}</th>
+                <th className="text-right font-medium px-2 py-1.5">{t('costColUsd')}</th>
+                <th className="text-right font-medium px-2 py-1.5">%</th>
+                <th className="text-right font-medium px-2 py-1.5">{t('costColInput')}</th>
+                <th className="text-right font-medium px-2 py-1.5">{t('costColOutput')}</th>
+                <th className="text-right font-medium px-2 py-1.5">{t('costAuditColDup')}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {audit.stages.map((s: AuditStage) => (
+                <tr key={s.stage} className="border-b border-white/[0.03] last:border-0">
+                  <td className="px-2 py-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-slate-200">{labelFor(t, 'costStage_', s.stage)}</span>
+                    </div>
+                    <div className="mt-1 h-1 rounded bg-white/[0.05] overflow-hidden">
+                      <div className="h-full bg-emerald-400/50" style={{ width: `${Math.round((s.costUsd / maxStageCost) * 100)}%` }} />
+                    </div>
+                  </td>
+                  <td className="text-right px-2 py-1.5 text-slate-400">{formatTokens(s.calls)}</td>
+                  <td className="text-right px-2 py-1.5 text-slate-100 font-medium">{formatUsd(s.costUsd)}</td>
+                  <td className="text-right px-2 py-1.5 text-slate-400">{s.percentOfBuild.toFixed(0)}%</td>
+                  <td className="text-right px-2 py-1.5 text-slate-400">{formatTokens(s.inputTokens)}</td>
+                  <td className="text-right px-2 py-1.5 text-slate-400">{formatTokens(s.outputTokens)}</td>
+                  <td className={`text-right px-2 py-1.5 ${s.duplicateCalls > 0 ? 'text-amber-400' : 'text-slate-500'}`}>{formatTokens(s.duplicateCalls)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WaterfallRow({ c, t, totalPct }: { c: AuditCall; t: TFn; totalPct: number }) {
+  const flags = c.wasteFlags || [];
+  return (
+    <div className="rounded-lg border border-white/[0.05] bg-white/[0.015] px-2.5 py-1.5">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-[10.5px] text-slate-500 tabular-nums">#{c.sequence + 1}</span>
+        <span className="text-[11.5px] text-slate-200">{labelFor(t, 'costStage_', c.stage)}</span>
+        <span className="text-[10.5px] text-slate-500">{c.model || c.toolKey || '—'}</span>
+        {c.retryNumber > 0 && (
+          <Badge variant="outline" className="border-white/[0.1] bg-white/[0.04] text-slate-400 text-[9.5px]">{t('costRetryN', { n: c.retryNumber })}</Badge>
+        )}
+        {c.duplicateKind && (
+          <Badge variant="outline" className="border-amber-500/30 bg-amber-500/[0.08] text-amber-300 text-[9.5px]">{labelFor(t, 'costDup_', c.duplicateKind)}</Badge>
+        )}
+        {!c.success && (
+          <Badge variant="outline" className="border-red-500/30 bg-red-500/[0.08] text-red-300 text-[9.5px]">{t('costFail')}</Badge>
+        )}
+        {c.usageMissing && (
+          <Badge variant="outline" className="border-amber-500/30 bg-amber-500/[0.08] text-amber-300 text-[9.5px]">{t('costUsageMissing')}</Badge>
+        )}
+        <span className="ml-auto text-[11.5px] font-medium text-slate-100 tabular-nums">{formatUsd(c.costUsd)}</span>
+        <span className="text-[10px] text-slate-500 tabular-nums w-9 text-right">{totalPct.toFixed(0)}%</span>
+      </div>
+      <div className="mt-1 h-1 rounded bg-white/[0.05] overflow-hidden">
+        <div className="h-full bg-sky-400/40" style={{ width: `${Math.min(100, Math.round(totalPct))}%` }} />
+      </div>
+      <div className="mt-1 flex items-center gap-x-3 gap-y-0.5 flex-wrap text-[10.5px] text-slate-500">
+        <span>{t('costColInput')}: {c.usageMissing ? t('costMissingDash') : formatTokens(c.inputTokens)}</span>
+        <span>{t('costColOutput')}: {c.usageMissing ? t('costMissingDash') : formatTokens(c.outputTokens)}</span>
+        {c.contextBytes > 0 && <span>{t('costAuditContext')}: {formatTokens(Math.round(c.contextBytes / 1024))}KB</span>}
+        <span>{t('costAuditConsumed')}: {t(`costConsumed_${c.outputConsumed}`) || c.outputConsumed}{c.consumedByStage ? ` → ${labelFor(t, 'costStage_', c.consumedByStage)}` : ''}</span>
+      </div>
+      {flags.length > 0 && (
+        <div className="mt-1 flex items-center gap-1 flex-wrap">
+          {flags.map((f) => (
+            <span key={f} className="rounded bg-white/[0.05] px-1.5 py-0.5 text-[9.5px] text-slate-400">{labelFor(t, 'costFlag_', f)}</span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AuditMetric({ label, value, sub, accent, tone }: {
+  label: string; value: string; sub?: string; accent?: boolean; tone?: 'warn';
+}) {
+  return (
+    <div className="rounded-lg border border-white/[0.06] bg-white/[0.02] px-2.5 py-2">
+      <div className="text-[10px] text-slate-500">{label}</div>
+      <div className={`mt-0.5 text-[14px] font-semibold tabular-nums ${
+        tone === 'warn' ? 'text-amber-400' : accent ? 'text-emerald-300' : 'text-slate-100'
+      }`}>{value}</div>
+      {sub && <div className="text-[9.5px] text-slate-500 lowercase">{sub}</div>}
+    </div>
+  );
+}
+
+function AuditWarn({ msg }: { t: TFn; msg: string }) {
+  return (
+    <div className="flex items-start gap-2 rounded-lg border border-amber-500/25 bg-amber-500/[0.06] px-3 py-1.5 text-[11px] text-amber-200">
+      <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+      <span>{msg}</span>
     </div>
   );
 }

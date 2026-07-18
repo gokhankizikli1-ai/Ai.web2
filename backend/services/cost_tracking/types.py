@@ -31,6 +31,99 @@ OP_CHAT            = "chat_completion"
 OP_OTHER           = "other"
 
 
+# ── Canonical Web Build STAGE taxonomy (cost attribution audit) ──────────────
+# A *stage* is the precise pipeline step a paid call belongs to; an *agent* is
+# who ran it. Server call sites set stage+agent DIRECTLY (never inferred from a
+# model name when the site already knows). Historical rows that predate these
+# columns are inferred from `operation_type` at READ time (see stage_for /
+# agent_for) and flagged `generic_stage_label` when the label is too coarse to
+# attribute — the audit never invents agent identity.
+STAGE_REQUEST_ANALYSIS        = "request_analysis"
+STAGE_WEBSITE_STRATEGY        = "website_strategy"
+STAGE_WEB_BUILD_PLANNING      = "web_build_planning"
+STAGE_PLANNING_REPAIR         = "planning_repair"
+STAGE_VISUAL_INTELLIGENCE     = "visual_intelligence"
+STAGE_WEB_RESEARCH            = "web_research"
+STAGE_STOCK_IMAGE_SEARCH      = "stock_image_search"
+STAGE_IMAGE_GENERATION        = "image_generation"
+STAGE_FRONTEND_GENERATION     = "frontend_generation"
+STAGE_FRONTEND_VALIDATION     = "frontend_validation"
+STAGE_FRONTEND_REPAIR         = "frontend_repair"
+STAGE_FRONTEND_QUALITY_REPAIR = "frontend_quality_repair"
+STAGE_REVISION                = "revision"
+STAGE_FINALIZATION            = "finalization"
+STAGE_STALE_RECOVERY          = "stale_recovery"
+STAGE_UNKNOWN                 = "unknown"
+
+AGENT_COORDINATOR         = "coordinator"
+AGENT_WEBSITE_BUILDER     = "website_builder"
+AGENT_VISUAL_INTELLIGENCE = "visual_intelligence"
+AGENT_RESEARCH            = "research"
+AGENT_FRONTEND_BUILDER    = "frontend_builder"
+AGENT_IMAGE               = "image_generation"
+AGENT_SYSTEM              = "system"
+AGENT_UNKNOWN             = "unknown"
+
+# operation_type → canonical stage, used ONLY to infer a stage for a historical
+# row that has no stored `stage` (a row written before this PR). A live call site
+# passes `stage` explicitly and this map is not consulted for it.
+_OP_TO_STAGE = {
+    OP_PLANNING:        STAGE_WEB_BUILD_PLANNING,
+    OP_PLANNING_REPAIR: STAGE_PLANNING_REPAIR,
+    OP_COORDINATOR:     STAGE_REQUEST_ANALYSIS,
+    OP_FRONTEND_GEN:    STAGE_FRONTEND_GENERATION,
+    OP_CODEGEN:         STAGE_FRONTEND_GENERATION,
+    OP_CODEGEN_REPAIR:  STAGE_FRONTEND_REPAIR,
+    OP_VISUAL:          STAGE_VISUAL_INTELLIGENCE,
+    OP_RESEARCH:        STAGE_WEB_RESEARCH,
+    OP_WEB_SEARCH:      STAGE_WEB_RESEARCH,
+    OP_IMAGE_GEN:       STAGE_IMAGE_GENERATION,
+    OP_STALE_RECOVERY:  STAGE_STALE_RECOVERY,
+}
+_OP_TO_AGENT = {
+    OP_PLANNING:        AGENT_WEBSITE_BUILDER,
+    OP_PLANNING_REPAIR: AGENT_WEBSITE_BUILDER,
+    OP_COORDINATOR:     AGENT_COORDINATOR,
+    OP_FRONTEND_GEN:    AGENT_FRONTEND_BUILDER,
+    OP_CODEGEN:         AGENT_FRONTEND_BUILDER,
+    OP_CODEGEN_REPAIR:  AGENT_FRONTEND_BUILDER,
+    OP_VISUAL:          AGENT_VISUAL_INTELLIGENCE,
+    OP_RESEARCH:        AGENT_RESEARCH,
+    OP_WEB_SEARCH:      AGENT_RESEARCH,
+    OP_IMAGE_GEN:       AGENT_IMAGE,
+    OP_STALE_RECOVERY:  AGENT_SYSTEM,
+}
+# operation_type labels that are too coarse to attribute a real agent/stage.
+_GENERIC_OPS = {OP_OTHER, OP_CHAT, OP_EMBEDDING, "", "tool"}
+
+
+def stage_for(operation_type: Optional[str], stored_stage: Optional[str] = None) -> str:
+    """Resolve a canonical stage: a stored server-set stage wins; otherwise infer
+    from operation_type; otherwise STAGE_UNKNOWN (never guessed)."""
+    s = (stored_stage or "").strip()
+    if s:
+        return s
+    return _OP_TO_STAGE.get((operation_type or "").strip(), STAGE_UNKNOWN)
+
+
+def agent_for(operation_type: Optional[str], stored_agent: Optional[str] = None) -> str:
+    """Resolve a canonical agent: a stored server-set agent wins; otherwise infer
+    from operation_type; otherwise AGENT_UNKNOWN (never invented)."""
+    a = (stored_agent or "").strip()
+    if a:
+        return a
+    return _OP_TO_AGENT.get((operation_type or "").strip(), AGENT_UNKNOWN)
+
+
+def is_generic_label(operation_type: Optional[str], stored_stage: Optional[str] = None) -> bool:
+    """True when a row carries no server-set stage AND its operation_type is too
+    generic to attribute a real agent — surfaced as `generic_stage_label`."""
+    if (stored_stage or "").strip():
+        return False
+    op = (operation_type or "").strip()
+    return op in _GENERIC_OPS or op not in _OP_TO_STAGE
+
+
 @dataclass
 class TokenUsage:
     """Normalized, provider-agnostic usage block (task #3).
@@ -88,6 +181,15 @@ class AICallRecord:
     tool_key:    Optional[str] = None   # set for non-token tool calls
     tool_units:  float = 0.0
     duration_ms: int = 0
+    # Canonical attribution (cost audit) — all server-set, never client-authored.
+    stage:             Optional[str] = None   # canonical STAGE_* (call site sets it)
+    agent:             Optional[str] = None    # canonical AGENT_* (call site sets it)
+    sequence_index:    Optional[int] = None    # monotonic per build (store-assigned)
+    parent_call_id:    Optional[str] = None    # links a repair/retry to its origin
+    retry_reason:      Optional[str] = None    # bounded, sanitized ("contract"|"quality"|…)
+    input_fingerprint: Optional[str] = None    # one-way sha256 prefix of the normalized input
+    output_fingerprint: Optional[str] = None   # one-way sha256 prefix of a bounded output signature
+    context_bytes:     int = 0                  # size of the input context (bytes), never the content
 
     def as_dict(self) -> Dict[str, Any]:
         return dict(self.__dict__)
@@ -125,4 +227,13 @@ __all__ = [
     "OP_STALE_RECOVERY", "OP_CODEGEN", "OP_CODEGEN_REPAIR",
     "OP_VISUAL", "OP_RESEARCH", "OP_IMAGE_GEN", "OP_WEB_SEARCH",
     "OP_EMBEDDING", "OP_CHAT", "OP_OTHER",
+    # Canonical stage/agent taxonomy
+    "STAGE_REQUEST_ANALYSIS", "STAGE_WEBSITE_STRATEGY", "STAGE_WEB_BUILD_PLANNING",
+    "STAGE_PLANNING_REPAIR", "STAGE_VISUAL_INTELLIGENCE", "STAGE_WEB_RESEARCH",
+    "STAGE_STOCK_IMAGE_SEARCH", "STAGE_IMAGE_GENERATION", "STAGE_FRONTEND_GENERATION",
+    "STAGE_FRONTEND_VALIDATION", "STAGE_FRONTEND_REPAIR", "STAGE_FRONTEND_QUALITY_REPAIR",
+    "STAGE_REVISION", "STAGE_FINALIZATION", "STAGE_STALE_RECOVERY", "STAGE_UNKNOWN",
+    "AGENT_COORDINATOR", "AGENT_WEBSITE_BUILDER", "AGENT_VISUAL_INTELLIGENCE",
+    "AGENT_RESEARCH", "AGENT_FRONTEND_BUILDER", "AGENT_IMAGE", "AGENT_SYSTEM", "AGENT_UNKNOWN",
+    "stage_for", "agent_for", "is_generic_label",
 ]
