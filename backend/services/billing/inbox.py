@@ -105,6 +105,18 @@ def ingest(
             fields["resource_type"] or "-", fields["resource_id"] or "-",
             stored.id,
         )
+        # Best-effort inline consumption (PR 2). Fully guarded and non-raising:
+        # gated by ENABLE_BILLING_PROCESSOR + BILLING_PROCESS_INLINE, and a
+        # processing failure never turns a durably-stored 200 into a 5xx — the
+        # drain will retry it. Only NEW deliveries are processed here;
+        # idempotent duplicates are not re-run. Lazy import avoids any import
+        # cycle and keeps the ingest path light when the processor is off.
+        if stored.id:
+            try:
+                from backend.services.billing.processor import service as _proc
+                _proc.process_after_ingest(stored.id)
+            except Exception as _e:  # pragma: no cover — inline path stays non-fatal
+                logger.warning("billing.webhook inline processing hook failed (non-fatal): %s", _e)
     else:
         # Idempotent duplicate — Lemon Squeezy retry of an already-stored
         # delivery. Not an error; logged at INFO for visibility.

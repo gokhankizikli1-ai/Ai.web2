@@ -25,15 +25,20 @@ from __future__ import annotations
 import logging
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Tuple
 
 from backend.services.db import engine
 from backend.services.db.errors import DBConfigError, DBUnavailable
 from backend.services.billing.types import (
     DEFAULT_PROVIDER, STATUS_STORED, STATUS_PROCESSING, STATUS_PROCESSED,
-    STATUS_FAILED, VALID_STATUSES, WebhookEvent,
+    STATUS_FAILED, VALID_STATUSES, REPROCESSABLE_STATUSES, WebhookEvent,
 )
+
+
+# Reprocessable statuses as a stable, ordered tuple for building parameterised
+# SQL IN clauses. Trusted module constants, never user input.
+_REPROCESSABLE = tuple(sorted(REPROCESSABLE_STATUSES))
 
 
 logger = logging.getLogger(__name__)
@@ -427,9 +432,162 @@ def table_counts() -> dict:
     return out
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# Consumer support (PR 2) — atomic claim, reprocessable queue, stale reclaim
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# Line-for-line parity with store_sqlite so the dispatcher routes to either
+# backend transparently. The claim UPDATE is atomic in Postgres too — the row
+# lock the UPDATE takes serialises competing claims, and RETURNING id tells us
+# whether THIS statement won.
+
+def claim_for_processing(event_id: str, *, max_attempts: int) -> Optional[WebhookEvent]:
+    """Atomically claim a reprocessable event for processing. Returns the
+    claimed event (status=processing) on success, else None (concurrent claim,
+    already processed, or dead-lettered)."""
+    _ensure_init()
+    if not event_id:
+        return None
+    cap = int(max_attempts) if max_attempts and int(max_attempts) > 0 else 1
+    now = _now()
+    placeholders = ",".join(["%s"] * len(_REPROCESSABLE))
+    sql = (
+        "UPDATE billing_webhook_events "
+        "SET status=%s, attempts=attempts+1, processing_error=NULL, updated_at=%s "
+        f"WHERE id=%s AND status IN ({placeholders}) AND attempts < %s "
+        "RETURNING id"
+    )
+    params = [STATUS_PROCESSING, now, event_id, *_REPROCESSABLE, cap]
+    try:
+        with engine.acquire_sync() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql, tuple(params))
+                won = cur.fetchone() is not None
+            conn.commit()
+        if not won:
+            return None
+        _bump("transitions")
+        return get(event_id)
+    except (DBConfigError, DBUnavailable):
+        raise
+    except Exception as e:
+        logger.warning("billing.store_pg.claim_for_processing id=%s error: %s", event_id, e)
+        _bump("transitions", str(e))
+        return None
+
+
+def list_reprocessable(*, limit: int = 100, max_attempts: int) -> List[WebhookEvent]:
+    """Oldest-first list of events eligible for processing. Bounded limit."""
+    _ensure_init()
+    cap = int(max_attempts) if max_attempts and int(max_attempts) > 0 else 1
+    placeholders = ",".join(["%s"] * len(_REPROCESSABLE))
+    sql = (
+        "SELECT * FROM billing_webhook_events "
+        f"WHERE status IN ({placeholders}) AND attempts < %s "
+        "ORDER BY received_at ASC, id ASC LIMIT %s"
+    )
+    params = [*_REPROCESSABLE, cap, int(max(1, min(1000, limit)))]
+    try:
+        with engine.acquire_sync() as conn:
+            with _dict_cursor(conn) as cur:
+                cur.execute(sql, tuple(params))
+                rows = cur.fetchall()
+        _bump("reads")
+        return [_row_to_event(r) for r in rows]
+    except (DBConfigError, DBUnavailable):
+        raise
+    except Exception as e:
+        logger.warning("billing.store_pg.list_reprocessable error: %s", e)
+        _bump("reads", str(e))
+        return []
+
+
+def count_dead_letter(*, max_attempts: int) -> int:
+    """Count failed events that have exhausted the attempt cap (dead-letter)."""
+    _ensure_init()
+    cap = int(max_attempts) if max_attempts and int(max_attempts) > 0 else 1
+    try:
+        with engine.acquire_sync() as conn:
+            with _dict_cursor(conn) as cur:
+                cur.execute(
+                    "SELECT COUNT(*) AS n FROM billing_webhook_events "
+                    "WHERE status=%s AND attempts >= %s",
+                    (STATUS_FAILED, cap),
+                )
+                row = cur.fetchone()
+        return int((row or {}).get("n") or 0)
+    except (DBConfigError, DBUnavailable):
+        raise
+    except Exception as e:
+        logger.warning("billing.store_pg.count_dead_letter error: %s", e)
+        return 0
+
+
+def requeue(event_id: str) -> bool:
+    """Force an event back into the reprocessable queue (owner-initiated
+    retry / replay). Resets status→stored, attempts→0, clears error +
+    processed_at. Unconditional by design. Returns True when a row updated."""
+    _ensure_init()
+    if not event_id:
+        return False
+    now = _now()
+    try:
+        with engine.acquire_sync() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE billing_webhook_events "
+                    "SET status=%s, attempts=0, processing_error=NULL, processed_at=NULL, updated_at=%s "
+                    "WHERE id=%s",
+                    (STATUS_STORED, now, event_id),
+                )
+                ok = cur.rowcount > 0
+            conn.commit()
+        if ok:
+            _bump("transitions")
+        return ok
+    except (DBConfigError, DBUnavailable):
+        raise
+    except Exception as e:
+        logger.warning("billing.store_pg.requeue id=%s error: %s", event_id, e)
+        _bump("transitions", str(e))
+        return False
+
+
+def reclaim_stale_processing(*, older_than_seconds: int) -> int:
+    """Move events stuck in `processing` past the staleness threshold back to
+    `failed` so they re-enter the reprocessable queue. Returns count reclaimed."""
+    _ensure_init()
+    cutoff = (datetime.now(timezone.utc)
+              - timedelta(seconds=max(1, int(older_than_seconds)))).isoformat()
+    now = _now()
+    try:
+        with engine.acquire_sync() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE billing_webhook_events "
+                    "SET status=%s, processing_error=%s, updated_at=%s "
+                    "WHERE status=%s AND updated_at < %s",
+                    (STATUS_FAILED, "reclaimed_stale_processing", now,
+                     STATUS_PROCESSING, cutoff),
+                )
+                n = cur.rowcount
+            conn.commit()
+        if n:
+            _bump("transitions")
+        return int(n)
+    except (DBConfigError, DBUnavailable):
+        raise
+    except Exception as e:
+        logger.warning("billing.store_pg.reclaim_stale_processing error: %s", e)
+        _bump("transitions", str(e))
+        return 0
+
+
 __all__ = [
     "init", "_reset_for_tests",
     "insert_idempotent", "mark_processing", "mark_processed", "mark_failed",
     "get", "get_by_dedup", "list_events",
+    "claim_for_processing", "list_reprocessable", "count_dead_letter",
+    "reclaim_stale_processing", "requeue",
     "stats", "table_counts", "store_stats",
 ]
