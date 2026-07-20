@@ -23,8 +23,17 @@ Consumer controls (PR 2 — engine + handler framework):
                                            (resets it to stored + attempts 0,
                                            then processes it immediately).
 
-The GET /stats response is extended with a `processor` block (config,
-registered handlers, queue depth incl. dead-letter count).
+Subscription-state projection (PR 3 — read-only truth layer):
+
+  GET  /v2/admin/billing/subscriptions      Projected subscriptions (owner-only,
+                                            no-store). Query: ?limit=&offset=
+                                            &status=&app_user_id=&customer_id=.
+  GET  /v2/admin/billing/subscriptions/{id} One subscription's full projected
+                                            state. Query: ?provider=.
+
+The GET /stats response is extended with `processor` (config, registered
+handlers, queue depth incl. dead-letter count) and `subscriptions` (totals +
+counts by normalized status) blocks.
 
 Mounted only when ENABLE_ADMIN_MODE is on (see backend/api.py), same as the
 rest of /v2/admin/* — so the surface is undiscoverable (404) when admin mode
@@ -52,7 +61,9 @@ from backend.services.admin import audit
 from backend.services.admin.owner import is_owner_request
 from backend.services.billing import store as billing_store
 from backend.services.billing.processor import service as billing_processor
+from backend.services.billing.subscriptions import store as subscription_store
 from backend.services.billing.types import VALID_STATUSES
+from backend.services.billing.subscriptions.types import VALID_SUBSCRIPTION_STATUSES
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +75,10 @@ _NO_STORE = {"Cache-Control": "no-store, no-cache, must-revalidate, private"}
 # Inbox ids are uuid4 hex (32 lowercase hex chars). Anything else is a
 # malformed request → 400, never a store hit.
 _EVENT_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+
+# Provider subscription ids (Lemon Squeezy mints numeric strings). Bounded,
+# conservative charset so a malformed id is 400, never a store hit.
+_SUBSCRIPTION_ID_RE = re.compile(r"^[A-Za-z0-9_\-]{1,128}$")
 
 
 def owner_gate(request: Request) -> User:
@@ -115,6 +130,14 @@ async def billing_stats(
     except Exception as exc:  # pragma: no cover — diagnostics must stay up
         logger.warning("billing processor stats failed: %s", exc)
         data["processor"] = {"error": "unavailable"}
+    # PR 3 — subscription-state projection view.
+    try:
+        subs = subscription_store.count_by_status()
+        subs["store"] = subscription_store.store_stats()
+        data["subscriptions"] = subs
+    except Exception as exc:  # pragma: no cover — diagnostics must stay up
+        logger.warning("billing subscription stats failed: %s", exc)
+        data["subscriptions"] = {"error": "unavailable"}
     return JSONResponse(content=envelope_ok(data), headers=_NO_STORE)
 
 
@@ -213,6 +236,53 @@ async def billing_webhook_retry(
         }),
         headers=_NO_STORE,
     )
+
+
+# ── Subscription-state projection (PR 3, read-only) ──────────────────────────
+
+@router.get("/subscriptions")
+async def billing_subscriptions(
+    request: Request,
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    status: Optional[str] = Query(default=None, max_length=32),
+    app_user_id: Optional[str] = Query(default=None, max_length=128),
+    customer_id: Optional[str] = Query(default=None, max_length=128),
+    user: User = Depends(owner_gate),
+) -> JSONResponse:
+    """List projected subscriptions (owner-only, no-store — rows may include
+    customer PII). Filter by normalized status / our app_user_id / provider
+    customer_id. An unknown status filter is rejected 400."""
+    if status is not None and status not in VALID_SUBSCRIPTION_STATUSES:
+        raise HTTPException(status_code=400, detail="unknown subscription status filter")
+    _audit(user, "admin.billing.subscriptions.view", request)
+    subs = subscription_store.list_subscriptions(
+        limit=limit, offset=offset, status=status,
+        app_user_id=app_user_id, customer_id=customer_id,
+    )
+    items = [s.to_dict() for s in subs]
+    return JSONResponse(
+        content=envelope_ok({"subscriptions": items, "count": len(items)}),
+        headers=_NO_STORE,
+    )
+
+
+@router.get("/subscriptions/{subscription_id}")
+async def billing_subscription_detail(
+    subscription_id: str,
+    request: Request,
+    provider: str = Query(default="lemon_squeezy", max_length=40),
+    user: User = Depends(owner_gate),
+) -> JSONResponse:
+    """One subscription's full projected state (owner-only, no-store).
+    400 malformed id / 404 unknown subscription."""
+    if not _SUBSCRIPTION_ID_RE.match(subscription_id or ""):
+        raise HTTPException(status_code=400, detail="malformed subscription id")
+    sub = subscription_store.get(provider, subscription_id)
+    if sub is None:
+        raise HTTPException(status_code=404, detail="subscription not found")
+    _audit(user, "admin.billing.subscription.view", request)
+    return JSONResponse(content=envelope_ok(sub.to_dict()), headers=_NO_STORE)
 
 
 __all__ = ["router"]
