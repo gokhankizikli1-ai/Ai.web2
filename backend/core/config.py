@@ -225,6 +225,17 @@ class Config:
     # worker) is reclaimed back to the reprocessable queue.
     BILLING_PROCESSING_STALE_SECONDS: int = int(os.getenv("BILLING_PROCESSING_STALE_SECONDS", "900"))
 
+    # ── Billing — subscription-state projection (PR 3) ───────────────────
+    # When true (default), the consumer projects processed subscription
+    # lifecycle events into the normalized billing_subscriptions truth layer.
+    # Only reachable when the processor is enabled (projection runs inside a
+    # processor handler). Set false as an escape hatch to pause writing the
+    # subscription table (e.g. during a backfill) without disabling the whole
+    # consumer — the handler then degrades to a no-op acknowledgement. This
+    # layer is subscription STATE only: no entitlements, credits, usage limits
+    # or feature gating (a later PR reads this table for those).
+    ENABLE_BILLING_SUBSCRIPTION_PROJECTION: bool = os.getenv("ENABLE_BILLING_SUBSCRIPTION_PROJECTION", "true").strip().lower() == "true"
+
     # ── Legacy per-user routes (/memory, /profile, /stats) ───────────────
     # These pre-auth routes are superseded by the auth-bound /v2/* surface
     # and are NOT called by the current frontend. They are now ownership-

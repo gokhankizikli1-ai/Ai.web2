@@ -32,6 +32,8 @@ Rollback:
     1. ENABLE_BILLING=false          (instant; no restart)
     2. (optional) rm billing.db      (forgets the inbox; nothing else moves)
 """
+import logging
+
 from backend.services.billing.config import is_enabled
 from backend.services.billing.types import (
     WebhookEvent, parse_event_fields,
@@ -40,6 +42,21 @@ from backend.services.billing.types import (
     STATUS_PROCESSED, STATUS_FAILED,
 )
 from backend.services.billing.inbox import IngestResult, ingest, compute_dedup_key
+
+logger = logging.getLogger(__name__)
+
+
+# PR 3 — register the subscription-state projection handlers on top of the
+# PR-2 processor defaults. Importing the subpackage triggers registration as a
+# side effect (the projection handlers replace the acknowledgement no-ops for
+# the subscription lifecycle events). This is the composition root: it always
+# runs because importing ANY billing submodule imports this package first, so
+# the projection handlers are registered before the processor can run. Guarded
+# so a projection wiring failure never breaks ingestion.
+try:
+    from backend.services.billing import subscriptions as _subscriptions  # noqa: F401
+except Exception as _e:  # pragma: no cover
+    logger.warning("billing: subscription projection wiring failed (non-fatal): %s", _e)
 
 
 def processor_is_enabled() -> bool:
