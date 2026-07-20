@@ -236,6 +236,34 @@ class Config:
     # or feature gating (a later PR reads this table for those).
     ENABLE_BILLING_SUBSCRIPTION_PROJECTION: bool = os.getenv("ENABLE_BILLING_SUBSCRIPTION_PROJECTION", "true").strip().lower() == "true"
 
+    # ── Billing — entitlement layer (PR 4) ───────────────────────────────
+    # Read-only "what may this user do" layer derived from the subscription
+    # truth layer. When OFF (default), the query API resolves every user to
+    # the default plan without reading subscriptions — the layer ships
+    # dormant. This PR provides entitlement STATE + a query API only: NO
+    # usage tracking/metering, payment processing, webhook changes or
+    # frontend billing UI, and it wires into no existing product route.
+    ENABLE_BILLING_ENTITLEMENTS: bool = os.getenv("ENABLE_BILLING_ENTITLEMENTS", "false").strip().lower() == "true"
+    # Plan key granted to users with no entitling subscription.
+    BILLING_DEFAULT_PLAN: str = os.getenv("BILLING_DEFAULT_PLAN", "free").strip() or "free"
+    # Plan catalog as a JSON string (or a file via BILLING_PLAN_CATALOG_PATH):
+    #   {"pro": {"name":"Pro","rank":10,"features":["advanced_export"],
+    #            "limits":{"projects":100,"seats":5}}}
+    # Empty ⇒ only the built-in `free` plan exists (fail-closed: no paid
+    # access is granted until plans are configured). DATA, not code — adding a
+    # plan is a config change, never a deploy.
+    BILLING_PLAN_CATALOG_JSON: str = os.getenv("BILLING_PLAN_CATALOG_JSON", "")
+    BILLING_PLAN_CATALOG_PATH: str = os.getenv("BILLING_PLAN_CATALOG_PATH", "").strip()
+    # Maps provider identifiers to plan keys (precedence variant→product→price):
+    #   {"variant:123":"pro","product:5":"pro","price:9":"pro"}
+    BILLING_PLAN_MAP_JSON: str = os.getenv("BILLING_PLAN_MAP_JSON", "")
+    # Normalized subscription statuses that grant entitlement (CSV). `cancelled`
+    # is handled separately via the grace check below.
+    BILLING_ENTITLING_STATUSES: str = os.getenv("BILLING_ENTITLING_STATUSES", "active,trialing")
+    # When true (default), a `cancelled` subscription still entitles until its
+    # ends_at passes (Lemon keeps it active until period end).
+    BILLING_CANCELLED_GRACE: bool = os.getenv("BILLING_CANCELLED_GRACE", "true").strip().lower() == "true"
+
     # ── Legacy per-user routes (/memory, /profile, /stats) ───────────────
     # These pre-auth routes are superseded by the auth-bound /v2/* surface
     # and are NOT called by the current frontend. They are now ownership-
