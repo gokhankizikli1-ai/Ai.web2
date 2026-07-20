@@ -14,6 +14,7 @@ from backend.core.deps import current_user
 from backend.core.responses import err as envelope_err
 from backend.core.responses import ok as envelope_ok
 from backend.services.auth.identity import User
+from backend.services.billing.entitlements import gating
 from backend.services.workflows import client as wf_client
 from backend.services.workflows.client import client as workflows_client
 from backend.services.workflows.types import WORKFLOW_TYPES
@@ -42,7 +43,10 @@ class CreateBody(BaseModel):
     metadata:   Optional[Dict[str, Any]] = None
 
 
-@router.post("/workflows")
+@router.post(
+    "/workflows",
+    dependencies=[Depends(gating.require_feature(gating.FEATURE_WORKFLOWS))],
+)
 def create_workflow(body: CreateBody, user: User = Depends(current_user)) -> Dict[str, Any]:
     _ensure_enabled()
     if body.type not in WORKFLOW_TYPES:
@@ -130,7 +134,10 @@ def _envelope_error_response(
     )
 
 
-@router.post("/workflows/{workflow_id}/run")
+@router.post(
+    "/workflows/{workflow_id}/run",
+    dependencies=[Depends(gating.require_feature(gating.FEATURE_WORKFLOWS))],
+)
 async def run_workflow_route(
     workflow_id: str = Path(..., max_length=128),
     user: User = Depends(current_user),

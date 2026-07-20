@@ -264,6 +264,17 @@ class Config:
     # ends_at passes (Lemon keeps it active until period end).
     BILLING_CANCELLED_GRACE: bool = os.getenv("BILLING_CANCELLED_GRACE", "true").strip().lower() == "true"
 
+    # ── Billing — feature gating enforcement (PR 5) ──────────────────────
+    # Whether entitlement checks actually BLOCK paid product features. Default
+    # OFF: every gate is a no-op that allows the request, so wiring a gate onto
+    # a route changes nothing until this is flipped. Enforcement additionally
+    # requires ENABLE_BILLING_ENTITLEMENTS=true — a gate never blocks while the
+    # truth layer is dormant (that would lock every user out on the default
+    # plan). Owners always bypass; any gate-evaluation error fails open. This
+    # PR wires gating only; it adds no usage metering, credits, quotas,
+    # checkout or payment changes.
+    ENABLE_BILLING_FEATURE_GATING: bool = os.getenv("ENABLE_BILLING_FEATURE_GATING", "false").strip().lower() == "true"
+
     # ── Legacy per-user routes (/memory, /profile, /stats) ───────────────
     # These pre-auth routes are superseded by the auth-bound /v2/* surface
     # and are NOT called by the current frontend. They are now ownership-

@@ -31,6 +31,7 @@ from pydantic import BaseModel, Field
 
 from backend.core.deps import current_user
 from backend.services.auth.identity import User
+from backend.services.billing.entitlements import gating
 from backend.services import web_build_images as img
 from backend.services.web_build_images import stock, sourcing, uploads
 from backend.services.assets import client as assets_client
@@ -93,7 +94,10 @@ def image_gen_health() -> Dict[str, Any]:
     }
 
 
-@router.post("/generate")
+@router.post(
+    "/generate",
+    dependencies=[Depends(gating.require_feature(gating.FEATURE_WEB_BUILD_IMAGE_GENERATION))],
+)
 def image_gen_generate(
     body: GenerateBody,
     request: Request,
