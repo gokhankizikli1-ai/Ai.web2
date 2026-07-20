@@ -13,6 +13,8 @@ from backend.core.deps import current_user
 from backend.core.responses import ok as envelope_ok
 from backend.services.auth.identity import User
 from backend.services.billing.entitlements import gating
+from backend.services.billing.usage import service as usage
+from backend.services.billing.usage.enforcement import require_quota
 from backend.services.website_recreation import client as rc_client
 from backend.services.vision import client as vision_client
 
@@ -39,7 +41,10 @@ class AnalyzeBody(BaseModel):
 
 @router.post(
     "/analyze",
-    dependencies=[Depends(gating.require_feature(gating.FEATURE_WEBSITE_RECREATION))],
+    dependencies=[
+        Depends(gating.require_feature(gating.FEATURE_WEBSITE_RECREATION)),
+        Depends(require_quota(usage.METRIC_WEBSITE_RECREATIONS)),
+    ],
 )
 def analyze_design(
     body: AnalyzeBody,

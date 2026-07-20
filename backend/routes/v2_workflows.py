@@ -15,6 +15,8 @@ from backend.core.responses import err as envelope_err
 from backend.core.responses import ok as envelope_ok
 from backend.services.auth.identity import User
 from backend.services.billing.entitlements import gating
+from backend.services.billing.usage import service as usage
+from backend.services.billing.usage.enforcement import require_quota
 from backend.services.workflows import client as wf_client
 from backend.services.workflows.client import client as workflows_client
 from backend.services.workflows.types import WORKFLOW_TYPES
@@ -136,7 +138,10 @@ def _envelope_error_response(
 
 @router.post(
     "/workflows/{workflow_id}/run",
-    dependencies=[Depends(gating.require_feature(gating.FEATURE_WORKFLOWS))],
+    dependencies=[
+        Depends(gating.require_feature(gating.FEATURE_WORKFLOWS)),
+        Depends(require_quota(usage.METRIC_WORKFLOW_RUNS)),
+    ],
 )
 async def run_workflow_route(
     workflow_id: str = Path(..., max_length=128),

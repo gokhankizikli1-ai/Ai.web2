@@ -13,6 +13,8 @@ from backend.core.responses import ok as envelope_ok
 from backend.services.assets import client as assets_client
 from backend.services.auth.identity import User
 from backend.services.billing.entitlements import gating
+from backend.services.billing.usage import service as usage
+from backend.services.billing.usage.enforcement import require_quota
 from backend.services.vision import client as vision_client
 
 
@@ -38,7 +40,10 @@ def _assets_enabled() -> bool:
 
 @router.post(
     "/{asset_id}/analyze",
-    dependencies=[Depends(gating.require_feature(gating.FEATURE_VISION_ANALYSIS))],
+    dependencies=[
+        Depends(gating.require_feature(gating.FEATURE_VISION_ANALYSIS)),
+        Depends(require_quota(usage.METRIC_VISION_ANALYSES)),
+    ],
 )
 def analyze_asset(
     asset_id: str = Path(..., max_length=128),
