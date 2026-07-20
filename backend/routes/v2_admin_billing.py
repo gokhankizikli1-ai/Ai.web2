@@ -42,7 +42,8 @@ Entitlements (PR 4 — read-only query surface):
 
 The GET /stats response is extended with `processor` (config, registered
 handlers, queue depth incl. dead-letter count), `subscriptions` (totals +
-counts by normalized status) and `entitlements` (config + loaded plans) blocks.
+counts by normalized status), `entitlements` (config + loaded plans) and
+`feature_gating` (enforcement state + gated features) blocks.
 
 Mounted only when ENABLE_ADMIN_MODE is on (see backend/api.py), same as the
 rest of /v2/admin/* — so the surface is undiscoverable (404) when admin mode
@@ -72,6 +73,7 @@ from backend.services.billing import store as billing_store
 from backend.services.billing.processor import service as billing_processor
 from backend.services.billing.subscriptions import store as subscription_store
 from backend.services.billing.entitlements import service as entitlement_service
+from backend.services.billing.entitlements import gating as entitlement_gating
 from backend.services.billing.types import VALID_STATUSES
 from backend.services.billing.subscriptions.types import VALID_SUBSCRIPTION_STATUSES
 
@@ -158,6 +160,12 @@ async def billing_stats(
     except Exception as exc:  # pragma: no cover — diagnostics must stay up
         logger.warning("billing entitlement stats failed: %s", exc)
         data["entitlements"] = {"error": "unavailable"}
+    # PR 5 — feature-gating enforcement view.
+    try:
+        data["feature_gating"] = entitlement_gating.stats()
+    except Exception as exc:  # pragma: no cover — diagnostics must stay up
+        logger.warning("billing feature-gating stats failed: %s", exc)
+        data["feature_gating"] = {"error": "unavailable"}
     return JSONResponse(content=envelope_ok(data), headers=_NO_STORE)
 
 
