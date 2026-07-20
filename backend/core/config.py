@@ -275,6 +275,23 @@ class Config:
     # checkout or payment changes.
     ENABLE_BILLING_FEATURE_GATING: bool = os.getenv("ENABLE_BILLING_FEATURE_GATING", "false").strip().lower() == "true"
 
+    # ── Billing — usage metering & quota enforcement (PR 6) ──────────────
+    # Whether expensive metered operations count against per-plan quotas.
+    # Default OFF: every quota check/consume is a no-op that allows the
+    # request and records nothing, so wiring a quota onto a route changes
+    # nothing until enabled. Limits come from the entitlement layer (the plan
+    # `limits` of the same metric key); usage counters are independent of
+    # billing state (keyed by user+metric+period, never subscription). Owners
+    # bypass; any metering error fails open. This PR adds NO checkout, payment,
+    # frontend or subscription changes.
+    ENABLE_BILLING_USAGE: bool = os.getenv("ENABLE_BILLING_USAGE", "false").strip().lower() == "true"
+    # Default period a metric is counted over: month (default) | day | total.
+    # Counters roll over automatically when the period key changes (no reset
+    # job). Per-metric overrides via BILLING_USAGE_METRIC_PERIODS_JSON, e.g.
+    #   {"web_build_generations":"day"}
+    BILLING_USAGE_PERIOD: str = os.getenv("BILLING_USAGE_PERIOD", "month")
+    BILLING_USAGE_METRIC_PERIODS_JSON: str = os.getenv("BILLING_USAGE_METRIC_PERIODS_JSON", "")
+
     # ── Legacy per-user routes (/memory, /profile, /stats) ───────────────
     # These pre-auth routes are superseded by the auth-bound /v2/* surface
     # and are NOT called by the current frontend. They are now ownership-

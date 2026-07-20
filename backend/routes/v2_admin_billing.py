@@ -40,10 +40,18 @@ Entitlements (PR 4 — read-only query surface):
                                             ?feature=<key> adds an access
                                             decision.
 
+Usage metering (PR 6 — read-only + owner maintenance):
+
+  GET  /v2/admin/billing/usage/{uid}        Per-metric usage-vs-limit snapshot
+                                            for the user's current periods.
+  POST /v2/admin/billing/usage/{uid}/reset  Clear a user's counter for a
+                                            ?metric= (all periods or ?period=).
+
 The GET /stats response is extended with `processor` (config, registered
 handlers, queue depth incl. dead-letter count), `subscriptions` (totals +
-counts by normalized status), `entitlements` (config + loaded plans) and
-`feature_gating` (enforcement state + gated features) blocks.
+counts by normalized status), `entitlements` (config + loaded plans),
+`feature_gating` (enforcement state + gated features) and `usage` (metering
+config + metered metrics) blocks.
 
 Mounted only when ENABLE_ADMIN_MODE is on (see backend/api.py), same as the
 rest of /v2/admin/* — so the surface is undiscoverable (404) when admin mode
@@ -74,6 +82,7 @@ from backend.services.billing.processor import service as billing_processor
 from backend.services.billing.subscriptions import store as subscription_store
 from backend.services.billing.entitlements import service as entitlement_service
 from backend.services.billing.entitlements import gating as entitlement_gating
+from backend.services.billing.usage import service as usage_service
 from backend.services.billing.types import VALID_STATUSES
 from backend.services.billing.subscriptions.types import VALID_SUBSCRIPTION_STATUSES
 
@@ -166,6 +175,12 @@ async def billing_stats(
     except Exception as exc:  # pragma: no cover — diagnostics must stay up
         logger.warning("billing feature-gating stats failed: %s", exc)
         data["feature_gating"] = {"error": "unavailable"}
+    # PR 6 — usage metering view.
+    try:
+        data["usage"] = usage_service.stats()
+    except Exception as exc:  # pragma: no cover — diagnostics must stay up
+        logger.warning("billing usage stats failed: %s", exc)
+        data["usage"] = {"error": "unavailable"}
     return JSONResponse(content=envelope_ok(data), headers=_NO_STORE)
 
 
@@ -344,6 +359,43 @@ async def billing_entitlements(
     if feature:
         payload["decision"] = entitlement_service.check_access(user_id, feature).to_dict()
     return JSONResponse(content=envelope_ok(payload), headers=_NO_STORE)
+
+
+# ── Usage metering (PR 6) ────────────────────────────────────────────────────
+
+@router.get("/usage/{user_id}")
+async def billing_usage(
+    user_id: str,
+    request: Request,
+    user: User = Depends(owner_gate),
+) -> JSONResponse:
+    """Per-metric usage-vs-limit snapshot for a user's current periods
+    (owner-only, read-only). 400 on a malformed user id."""
+    if not _USER_ID_RE.match(user_id or ""):
+        raise HTTPException(status_code=400, detail="malformed user id")
+    _audit(user, "admin.billing.usage.view", request)
+    return JSONResponse(content=envelope_ok(usage_service.snapshot(user_id)), headers=_NO_STORE)
+
+
+@router.post("/usage/{user_id}/reset")
+async def billing_usage_reset(
+    user_id: str,
+    request: Request,
+    metric: str = Query(..., min_length=1, max_length=64),
+    period: Optional[str] = Query(default=None, max_length=16),
+    user: User = Depends(owner_gate),
+) -> JSONResponse:
+    """Clear a user's counter for a metric (all periods, or one). Owner-only
+    maintenance. 400 on a malformed user id."""
+    if not _USER_ID_RE.match(user_id or ""):
+        raise HTTPException(status_code=400, detail="malformed user id")
+    _audit(user, "admin.billing.usage.reset", request)
+    removed = usage_service.reset(user_id, metric, period)
+    return JSONResponse(
+        content=envelope_ok({"user_id": user_id, "metric": metric,
+                             "period": period, "rows_removed": removed}),
+        headers=_NO_STORE,
+    )
 
 
 __all__ = ["router"]
