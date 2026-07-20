@@ -305,6 +305,7 @@ def _build_full_app():
         "backend.routes.v2_startup",         # Startup Market Intelligence — /v2/startup/market-complaints (gated by ENABLE_STARTUP_MARKET_INTEL)
         "backend.routes.v2_web_build_images",  # Phase 10D — /v2/web-build/images/* real image generation (gated by ENABLE_WEB_BUILD_IMAGE_GEN)
         "backend.routes.v2_ai_guard",          # Phase 14L.1 — /v2/ai/* founder-beta AI usage/spend protection (finalize, usage, owner controls)
+        "backend.routes.v2_billing",           # Billing PR 1 — /v2/billing/webhooks/lemon-squeezy (gated by ENABLE_BILLING; 503 when off)
     ]:
         try:
             _app.include_router(importlib.import_module(_mod).router)
@@ -389,6 +390,14 @@ def _build_full_app():
             logger.info("Admin mode: /v2/admin/costs/* cost analytics installed")
         except Exception as _e:
             logger.warning("v2_admin_costs route install failed (non-fatal): %s", _e)
+        # Billing PR 1 — /v2/admin/billing/* webhook diagnostics. Owner-only,
+        # same admin-mode gate so it stays undiscoverable when admin is off.
+        try:
+            from backend.routes.v2_admin_billing import router as _admin_billing_router
+            _app.include_router(_admin_billing_router)
+            logger.info("Admin mode: /v2/admin/billing/* webhook diagnostics installed")
+        except Exception as _e:
+            logger.warning("v2_admin_billing route install failed (non-fatal): %s", _e)
 
     # Phase-B: import the providers package so KNOWN_PROVIDERS is
     # populated and bootstrap_default_providers() runs once. Safe even
