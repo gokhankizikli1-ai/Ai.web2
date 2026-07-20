@@ -13,6 +13,19 @@ Owner-only, read-only visibility into the webhook inbox:
   GET  /v2/admin/billing/webhooks/{id}     One delivery's full detail INCLUDING
                                            the stored payload (no-store).
 
+Consumer controls (PR 2 — engine + handler framework):
+
+  POST /v2/admin/billing/process           Drain the reprocessable backlog
+                                           (reclaims stale processing first).
+                                           Body: {"limit": N?}.
+  POST /v2/admin/billing/webhooks/{id}/retry
+                                           Force-replay a single delivery
+                                           (resets it to stored + attempts 0,
+                                           then processes it immediately).
+
+The GET /stats response is extended with a `processor` block (config,
+registered handlers, queue depth incl. dead-letter count).
+
 Mounted only when ENABLE_ADMIN_MODE is on (see backend/api.py), same as the
 rest of /v2/admin/* — so the surface is undiscoverable (404) when admin mode
 is off. Per-request owner gating via the shared owner predicate; a non-owner
@@ -30,6 +43,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 from backend.core.deps import current_user, _extract_owner_token
 from backend.core.responses import ok as envelope_ok
@@ -37,6 +51,7 @@ from backend.middleware.auth import User
 from backend.services.admin import audit
 from backend.services.admin.owner import is_owner_request
 from backend.services.billing import store as billing_store
+from backend.services.billing.processor import service as billing_processor
 from backend.services.billing.types import VALID_STATUSES
 
 logger = logging.getLogger(__name__)
@@ -89,10 +104,17 @@ async def billing_stats(
     request: Request,
     user: User = Depends(owner_gate),
 ) -> JSONResponse:
-    """Aggregate webhook-inbox stats. Owner-only."""
+    """Aggregate webhook-inbox stats + consumer view. Owner-only."""
     _audit(user, "admin.billing.stats.view", request)
     data = billing_store.stats()
     data["store"] = billing_store.store_stats()
+    # PR 2 — processor view (config, registered handlers, queue depth). Never
+    # let a processor-stats hiccup take down the inbox stats.
+    try:
+        data["processor"] = billing_processor.stats()
+    except Exception as exc:  # pragma: no cover — diagnostics must stay up
+        logger.warning("billing processor stats failed: %s", exc)
+        data["processor"] = {"error": "unavailable"}
     return JSONResponse(content=envelope_ok(data), headers=_NO_STORE)
 
 
@@ -137,6 +159,58 @@ async def billing_webhook_detail(
     _audit(user, "admin.billing.webhook.view", request)
     return JSONResponse(
         content=envelope_ok(event.to_public_dict(include_payload=True)),
+        headers=_NO_STORE,
+    )
+
+
+# ── Consumer controls (PR 2) ─────────────────────────────────────────────────
+
+class DrainBody(BaseModel):
+    # Optional per-call override of the drain batch size; clamped server-side
+    # to [1, 1000] by the processor. Omit to use BILLING_DRAIN_BATCH_LIMIT.
+    limit: Optional[int] = Field(default=None, ge=1, le=1000)
+
+
+@router.post("/process")
+async def billing_process(
+    request: Request,
+    body: Optional[DrainBody] = None,
+    user: User = Depends(owner_gate),
+) -> JSONResponse:
+    """Drain the reprocessable backlog (reclaims stale `processing` first).
+    Owner-only. Returns a content-free summary. When the processor is disabled
+    the response reports enabled=false and processes nothing (200, not an
+    error — the operator can see why nothing happened)."""
+    limit = body.limit if body else None
+    _audit(user, "admin.billing.process.drain", request)
+    summary = billing_processor.drain(limit=limit)
+    return JSONResponse(content=envelope_ok(summary), headers=_NO_STORE)
+
+
+@router.post("/webhooks/{event_id}/retry")
+async def billing_webhook_retry(
+    event_id: str,
+    request: Request,
+    user: User = Depends(owner_gate),
+) -> JSONResponse:
+    """Force-replay a single delivery (resets it to stored + attempts 0, then
+    processes it immediately). Owner-only. 400 malformed id / 404 unknown
+    delivery / 409 when the processor is disabled."""
+    if not _EVENT_ID_RE.match(event_id or ""):
+        raise HTTPException(status_code=400, detail="malformed event id")
+    if billing_store.get(event_id) is None:
+        raise HTTPException(status_code=404, detail="webhook event not found")
+    _audit(user, "admin.billing.webhook.retry", request)
+    result = billing_processor.retry_event(event_id)
+    if result.outcome == billing_processor.OUTCOME_DISABLED:
+        raise HTTPException(status_code=409, detail="billing processor is disabled")
+    return JSONResponse(
+        content=envelope_ok({
+            "event_id": result.event_id,
+            "outcome": result.outcome,
+            "event_name": result.event_name,
+            "error": result.error,
+        }),
         headers=_NO_STORE,
     )
 

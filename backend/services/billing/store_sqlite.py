@@ -28,14 +28,19 @@ import sqlite3
 import threading
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Iterator, List, Optional, Tuple
 
 from backend.services.billing import config as billing_config
 from backend.services.billing.types import (
     DEFAULT_PROVIDER, STATUS_STORED, STATUS_PROCESSING, STATUS_PROCESSED,
-    STATUS_FAILED, VALID_STATUSES, WebhookEvent,
+    STATUS_FAILED, VALID_STATUSES, REPROCESSABLE_STATUSES, WebhookEvent,
 )
+
+
+# Reprocessable statuses as a stable, ordered tuple for building parameterised
+# SQL IN clauses. These are trusted module constants, never user input.
+_REPROCESSABLE = tuple(sorted(REPROCESSABLE_STATUSES))
 
 
 logger = logging.getLogger(__name__)
@@ -439,9 +444,157 @@ def table_counts() -> dict:
     return out
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# Consumer support (PR 2) — atomic claim, reprocessable queue, stale reclaim
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# These are ADDITIVE to the PR-1 contract. The consumer uses claim_for_processing
+# (a conditional, atomic status transition) instead of the unconditional
+# mark_processing, so two concurrent workers can never both process the same
+# event: exactly one wins the UPDATE, the other gets None.
+
+def claim_for_processing(event_id: str, *, max_attempts: int) -> Optional[WebhookEvent]:
+    """Atomically claim a reprocessable event for processing.
+
+    The UPDATE only fires when the row is still in a reprocessable status
+    (stored/failed) AND is under the attempt cap — so a concurrent claim, an
+    already-processed event, or a dead-lettered event all resolve to None.
+    Increments `attempts` and clears any prior processing_error as part of the
+    same atomic statement.
+
+    Returns the freshly-claimed event (status=processing) on success, else None.
+    """
+    _ensure_init()
+    if not event_id:
+        return None
+    cap = int(max_attempts) if max_attempts and int(max_attempts) > 0 else 1
+    now = _now()
+    placeholders = ",".join("?" for _ in _REPROCESSABLE)
+    sql = (
+        "UPDATE billing_webhook_events "
+        "SET status=?, attempts=attempts+1, processing_error=NULL, updated_at=? "
+        f"WHERE id=? AND status IN ({placeholders}) AND attempts < ?"
+    )
+    params = [STATUS_PROCESSING, now, event_id, *_REPROCESSABLE, cap]
+    try:
+        with _conn() as c:
+            cur = c.execute(sql, params)
+            won = cur.rowcount > 0
+        if not won:
+            return None
+        _bump("transitions")
+        return get(event_id)
+    except Exception as e:
+        logger.warning("billing.store_sqlite.claim_for_processing id=%s error: %s", event_id, e)
+        _bump("transitions", str(e))
+        return None
+
+
+def list_reprocessable(*, limit: int = 100, max_attempts: int) -> List[WebhookEvent]:
+    """Oldest-first (FIFO) list of events eligible for processing: still in a
+    reprocessable status AND under the attempt cap. Bounded limit."""
+    _ensure_init()
+    cap = int(max_attempts) if max_attempts and int(max_attempts) > 0 else 1
+    placeholders = ",".join("?" for _ in _REPROCESSABLE)
+    sql = (
+        "SELECT * FROM billing_webhook_events "
+        f"WHERE status IN ({placeholders}) AND attempts < ? "
+        "ORDER BY received_at ASC, id ASC LIMIT ?"
+    )
+    params = [*_REPROCESSABLE, cap, int(max(1, min(1000, limit)))]
+    try:
+        with _conn() as c:
+            rows = c.execute(sql, params).fetchall()
+        _bump("reads")
+        return [_row_to_event(r) for r in rows]
+    except Exception as e:
+        logger.warning("billing.store_sqlite.list_reprocessable error: %s", e)
+        _bump("reads", str(e))
+        return []
+
+
+def count_dead_letter(*, max_attempts: int) -> int:
+    """Count failed events that have exhausted the attempt cap (dead-letter).
+    These are excluded from the reprocessable queue and need operator action."""
+    _ensure_init()
+    cap = int(max_attempts) if max_attempts and int(max_attempts) > 0 else 1
+    try:
+        with _conn() as c:
+            row = c.execute(
+                "SELECT COUNT(*) AS n FROM billing_webhook_events "
+                "WHERE status=? AND attempts >= ?",
+                (STATUS_FAILED, cap),
+            ).fetchone()
+        return int(row["n"] or 0) if row else 0
+    except Exception as e:
+        logger.warning("billing.store_sqlite.count_dead_letter error: %s", e)
+        return 0
+
+
+def requeue(event_id: str) -> bool:
+    """Force an event back into the reprocessable queue (owner-initiated
+    retry / replay). Resets status→stored, attempts→0 and clears the error +
+    processed_at, so even a `processed` or dead-lettered delivery can be
+    re-run. Unconditional by design — this is an explicit operator action.
+    Returns True when a row was updated."""
+    _ensure_init()
+    if not event_id:
+        return False
+    now = _now()
+    try:
+        with _conn() as c:
+            cur = c.execute(
+                "UPDATE billing_webhook_events "
+                "SET status=?, attempts=0, processing_error=NULL, processed_at=NULL, updated_at=? "
+                "WHERE id=?",
+                (STATUS_STORED, now, event_id),
+            )
+            ok = cur.rowcount > 0
+        if ok:
+            _bump("transitions")
+        return ok
+    except Exception as e:
+        logger.warning("billing.store_sqlite.requeue id=%s error: %s", event_id, e)
+        _bump("transitions", str(e))
+        return False
+
+
+def reclaim_stale_processing(*, older_than_seconds: int) -> int:
+    """Rescue events stuck in `processing` (a worker claimed then crashed
+    before a terminal transition) by moving them back to `failed` so they
+    re-enter the reprocessable queue (bounded by the attempt cap, which was
+    already incremented at claim time). Returns the number reclaimed.
+
+    Compares the ISO-8601 UTC `updated_at` lexicographically — valid because
+    every timestamp is written in the same fixed format."""
+    _ensure_init()
+    cutoff = (datetime.now(timezone.utc)
+              - timedelta(seconds=max(1, int(older_than_seconds)))).isoformat()
+    now = _now()
+    try:
+        with _conn() as c:
+            cur = c.execute(
+                "UPDATE billing_webhook_events "
+                "SET status=?, processing_error=?, updated_at=? "
+                "WHERE status=? AND updated_at < ?",
+                (STATUS_FAILED, "reclaimed_stale_processing", now,
+                 STATUS_PROCESSING, cutoff),
+            )
+            n = cur.rowcount
+        if n:
+            _bump("transitions")
+        return int(n)
+    except Exception as e:
+        logger.warning("billing.store_sqlite.reclaim_stale_processing error: %s", e)
+        _bump("transitions", str(e))
+        return 0
+
+
 __all__ = [
     "init", "_reset_for_tests",
     "insert_idempotent", "mark_processing", "mark_processed", "mark_failed",
     "get", "get_by_dedup", "list_events",
+    "claim_for_processing", "list_reprocessable", "count_dead_letter",
+    "reclaim_stale_processing", "requeue",
     "stats", "table_counts", "store_stats",
 ]

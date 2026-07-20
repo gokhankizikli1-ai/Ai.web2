@@ -205,6 +205,26 @@ class Config:
     # SQLite path is the default + fallback backend.
     BILLING_DB_PATH: str = resolve_db_path("billing.db", "BILLING_DB_PATH")
 
+    # ── Billing — webhook consumer / processor (PR 2) ────────────────────
+    # Gates the CONSUMPTION of stored webhook events, separately from
+    # ingestion (ENABLE_BILLING). With this OFF, verified deliveries are
+    # still accepted + stored as `stored`; they are only processed once this
+    # is flipped on (nothing is lost). Default OFF. Read dynamically in
+    # backend.services.billing.processor.config so a Railway flip is live.
+    ENABLE_BILLING_PROCESSOR: bool = os.getenv("ENABLE_BILLING_PROCESSOR", "false").strip().lower() == "true"
+    # When true (default), a freshly-stored delivery is processed best-effort
+    # inline on the webhook request; when false, only an explicit drain
+    # processes the backlog. Only takes effect when the processor is enabled.
+    BILLING_PROCESS_INLINE: bool = os.getenv("BILLING_PROCESS_INLINE", "true").strip().lower() == "true"
+    # Total processing attempts before an event is dead-lettered (stays
+    # `failed`, no longer retried). The atomic claim increments attempts.
+    BILLING_MAX_PROCESSING_ATTEMPTS: int = int(os.getenv("BILLING_MAX_PROCESSING_ATTEMPTS", "5"))
+    # Upper bound on how many events a single drain pass processes.
+    BILLING_DRAIN_BATCH_LIMIT: int = int(os.getenv("BILLING_DRAIN_BATCH_LIMIT", "100"))
+    # Age (seconds) after which an event stuck in `processing` (crashed
+    # worker) is reclaimed back to the reprocessable queue.
+    BILLING_PROCESSING_STALE_SECONDS: int = int(os.getenv("BILLING_PROCESSING_STALE_SECONDS", "900"))
+
     # ── Legacy per-user routes (/memory, /profile, /stats) ───────────────
     # These pre-auth routes are superseded by the auth-bound /v2/* surface
     # and are NOT called by the current frontend. They are now ownership-

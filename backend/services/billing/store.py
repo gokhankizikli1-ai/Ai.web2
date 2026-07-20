@@ -115,6 +115,28 @@ def list_events(**kwargs):
     return _dispatch("list_events", **kwargs)
 
 
+# ── Consumer support (PR 2) ──────────────────────────────────────────────────
+
+def claim_for_processing(event_id: str, *, max_attempts: int):
+    return _dispatch("claim_for_processing", event_id, max_attempts=max_attempts)
+
+
+def list_reprocessable(*, limit: int = 100, max_attempts: int):
+    return _dispatch("list_reprocessable", limit=limit, max_attempts=max_attempts)
+
+
+def count_dead_letter(*, max_attempts: int) -> int:
+    return _dispatch("count_dead_letter", max_attempts=max_attempts)
+
+
+def reclaim_stale_processing(*, older_than_seconds: int) -> int:
+    return _dispatch("reclaim_stale_processing", older_than_seconds=older_than_seconds)
+
+
+def requeue(event_id: str) -> bool:
+    return _dispatch("requeue", event_id)
+
+
 # ── Observability ────────────────────────────────────────────────────────────
 
 def stats() -> dict:
@@ -137,5 +159,7 @@ __all__ = [
     "init", "_reset_for_tests", "current_backend",
     "insert_idempotent", "mark_processing", "mark_processed", "mark_failed",
     "get", "get_by_dedup", "list_events",
+    "claim_for_processing", "list_reprocessable", "count_dead_letter",
+    "reclaim_stale_processing", "requeue",
     "stats", "store_stats", "table_counts",
 ]

@@ -42,8 +42,15 @@ from backend.services.billing.types import (
 from backend.services.billing.inbox import IngestResult, ingest, compute_dedup_key
 
 
+def processor_is_enabled() -> bool:
+    """Whether the PR-2 consumer engine is enabled (ENABLE_BILLING_PROCESSOR).
+    Thin re-export so callers don't reach into the processor subpackage."""
+    from backend.services.billing.processor import config as _pc
+    return _pc.is_enabled()
+
+
 __all__ = [
-    "is_enabled",
+    "is_enabled", "processor_is_enabled",
     "WebhookEvent", "parse_event_fields",
     "PROVIDER_LEMON_SQUEEZY", "DEFAULT_PROVIDER",
     "STATUS_RECEIVED", "STATUS_STORED", "STATUS_PROCESSING",
