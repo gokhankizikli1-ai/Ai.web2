@@ -178,6 +178,33 @@ class Config:
     # video uploads are accepted but flagged processing_not_supported.
     ASSETS_MAX_BYTES:          int = int(os.getenv("ASSETS_MAX_BYTES", str(10 * 1024 * 1024)))
 
+    # ── Billing — Lemon Squeezy webhook foundation (PR 1) ────────────────
+    # Master gate for the /v2/billing/* webhook surface. When false the
+    # public webhook endpoint returns 503 and nothing is ingested — so the
+    # route ships to production dormant and is turned on with a single env
+    # flip once the Lemon Squeezy store + signing secret are configured.
+    # Default OFF so production behaviour is byte-identical until flipped.
+    ENABLE_BILLING: bool = os.getenv("ENABLE_BILLING", "false").strip().lower() == "true"
+    # LEMON_SQUEEZY_WEBHOOK_SECRET: the signing secret configured in the
+    # Lemon Squeezy dashboard for this webhook. Signature verification is
+    # HMAC-SHA256 over the RAW request body compared (constant-time) to the
+    # X-Signature header. Empty ⇒ the endpoint fails closed (503) because it
+    # cannot authenticate callers. NEVER logged. Rotate by updating this var.
+    LEMON_SQUEEZY_WEBHOOK_SECRET: str = os.getenv("LEMON_SQUEEZY_WEBHOOK_SECRET", "").strip()
+    # Hard request-body cap for the webhook endpoint. Lemon Squeezy payloads
+    # are small JSON documents (a few KB); 512 KiB is a generous ceiling that
+    # still refuses a hostile client trying to exhaust memory. Requests over
+    # this are rejected 413 BEFORE the body is fully buffered.
+    LEMON_SQUEEZY_WEBHOOK_MAX_BYTES: int = int(
+        os.getenv("LEMON_SQUEEZY_WEBHOOK_MAX_BYTES", str(512 * 1024))
+    )
+    # Dedicated store for the webhook inbox. Same per-subsystem isolation as
+    # memory_plane.db / jobs.db — rollback is `rm billing.db` and nothing
+    # else moves. When ENABLE_POSTGRES_BACKEND + DATABASE_URL are set the
+    # inbox uses Postgres instead (see backend.services.billing.store); this
+    # SQLite path is the default + fallback backend.
+    BILLING_DB_PATH: str = resolve_db_path("billing.db", "BILLING_DB_PATH")
+
     # ── Legacy per-user routes (/memory, /profile, /stats) ───────────────
     # These pre-auth routes are superseded by the auth-bound /v2/* surface
     # and are NOT called by the current frontend. They are now ownership-
@@ -315,6 +342,18 @@ class Config:
                     "strong OWNER_TOKEN (>=16 chars) is set — owner mode is "
                     "either unreachable or weakly protected.",
                 ))
+
+        # 3b. Billing webhook — if the surface is enabled it MUST have a
+        #     signing secret, otherwise it fails closed (503) on every
+        #     delivery and Lemon Squeezy retries pile up. Surface loudly.
+        if self.ENABLE_BILLING and not self.LEMON_SQUEEZY_WEBHOOK_SECRET:
+            issues.append((
+                "critical",
+                "ENABLE_BILLING is on but LEMON_SQUEEZY_WEBHOOK_SECRET is "
+                "empty — the webhook endpoint cannot verify signatures and "
+                "will reject every delivery (503). Set the signing secret "
+                "from the Lemon Squeezy dashboard.",
+            ))
 
         # 4. Orchestration write surface needs verified identity. If the
         #    orchestrator is enabled but auth verification is off, identity
