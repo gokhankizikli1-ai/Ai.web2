@@ -31,9 +31,18 @@ Subscription-state projection (PR 3 — read-only truth layer):
   GET  /v2/admin/billing/subscriptions/{id} One subscription's full projected
                                             state. Query: ?provider=.
 
+Entitlements (PR 4 — read-only query surface):
+
+  GET  /v2/admin/billing/plans              The loaded plan catalog +
+                                            provider-id→plan mapping.
+  GET  /v2/admin/billing/entitlements/{uid} Effective entitlements for a user
+                                            (default plan when none). Optional
+                                            ?feature=<key> adds an access
+                                            decision.
+
 The GET /stats response is extended with `processor` (config, registered
-handlers, queue depth incl. dead-letter count) and `subscriptions` (totals +
-counts by normalized status) blocks.
+handlers, queue depth incl. dead-letter count), `subscriptions` (totals +
+counts by normalized status) and `entitlements` (config + loaded plans) blocks.
 
 Mounted only when ENABLE_ADMIN_MODE is on (see backend/api.py), same as the
 rest of /v2/admin/* — so the surface is undiscoverable (404) when admin mode
@@ -62,6 +71,7 @@ from backend.services.admin.owner import is_owner_request
 from backend.services.billing import store as billing_store
 from backend.services.billing.processor import service as billing_processor
 from backend.services.billing.subscriptions import store as subscription_store
+from backend.services.billing.entitlements import service as entitlement_service
 from backend.services.billing.types import VALID_STATUSES
 from backend.services.billing.subscriptions.types import VALID_SUBSCRIPTION_STATUSES
 
@@ -79,6 +89,10 @@ _EVENT_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 # Provider subscription ids (Lemon Squeezy mints numeric strings). Bounded,
 # conservative charset so a malformed id is 400, never a store hit.
 _SUBSCRIPTION_ID_RE = re.compile(r"^[A-Za-z0-9_\-]{1,128}$")
+
+# Our user ids: uuid hex, "guest:<nonce>", "email:<addr>", numeric, etc.
+# Bounded, conservative charset so a malformed id is 400.
+_USER_ID_RE = re.compile(r"^[A-Za-z0-9:@._\-]{1,200}$")
 
 
 def owner_gate(request: Request) -> User:
@@ -138,6 +152,12 @@ async def billing_stats(
     except Exception as exc:  # pragma: no cover — diagnostics must stay up
         logger.warning("billing subscription stats failed: %s", exc)
         data["subscriptions"] = {"error": "unavailable"}
+    # PR 4 — entitlement-layer view (config + loaded plans).
+    try:
+        data["entitlements"] = entitlement_service.stats()
+    except Exception as exc:  # pragma: no cover — diagnostics must stay up
+        logger.warning("billing entitlement stats failed: %s", exc)
+        data["entitlements"] = {"error": "unavailable"}
     return JSONResponse(content=envelope_ok(data), headers=_NO_STORE)
 
 
@@ -283,6 +303,39 @@ async def billing_subscription_detail(
         raise HTTPException(status_code=404, detail="subscription not found")
     _audit(user, "admin.billing.subscription.view", request)
     return JSONResponse(content=envelope_ok(sub.to_dict()), headers=_NO_STORE)
+
+
+# ── Entitlements (PR 4, read-only) ───────────────────────────────────────────
+
+@router.get("/plans")
+async def billing_plans(
+    request: Request,
+    user: User = Depends(owner_gate),
+) -> JSONResponse:
+    """The loaded plan catalog + provider-id→plan mapping (owner-only). Lets an
+    operator verify the entitlement configuration without a deploy."""
+    _audit(user, "admin.billing.plans.view", request)
+    return JSONResponse(content=envelope_ok(entitlement_service.list_plans()), headers=_NO_STORE)
+
+
+@router.get("/entitlements/{user_id}")
+async def billing_entitlements(
+    user_id: str,
+    request: Request,
+    feature: Optional[str] = Query(default=None, max_length=128),
+    user: User = Depends(owner_gate),
+) -> JSONResponse:
+    """Resolve the effective entitlements for a user (owner-only). Optionally
+    pass ?feature=<key> to also get the access decision for that feature.
+    400 on a malformed user id. Never 404 — a user with no subscription simply
+    resolves to the default plan."""
+    if not _USER_ID_RE.match(user_id or ""):
+        raise HTTPException(status_code=400, detail="malformed user id")
+    _audit(user, "admin.billing.entitlements.view", request)
+    payload = entitlement_service.get_entitlements(user_id).to_dict()
+    if feature:
+        payload["decision"] = entitlement_service.check_access(user_id, feature).to_dict()
+    return JSONResponse(content=envelope_ok(payload), headers=_NO_STORE)
 
 
 __all__ = ["router"]
