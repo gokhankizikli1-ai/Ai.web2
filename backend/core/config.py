@@ -292,6 +292,32 @@ class Config:
     BILLING_USAGE_PERIOD: str = os.getenv("BILLING_USAGE_PERIOD", "month")
     BILLING_USAGE_METRIC_PERIODS_JSON: str = os.getenv("BILLING_USAGE_METRIC_PERIODS_JSON", "")
 
+    # ── Billing — Lemon Squeezy checkout creation (PR 7) ─────────────────
+    # Gates the authenticated POST /v2/billing/checkout endpoint that creates a
+    # hosted Lemon Squeezy checkout and links it to the caller's Korvix user id
+    # (via checkout custom data → webhook meta.custom_data → app_user_id).
+    # Default OFF: the endpoint returns 503 until enabled. This PR adds NO credit
+    # ledger/grants, AI-Guard credit enforcement, customer portal, prices, or
+    # billing frontend beyond this backend contract.
+    ENABLE_BILLING_CHECKOUT: bool = os.getenv("ENABLE_BILLING_CHECKOUT", "false").strip().lower() == "true"
+    # LEMON_SQUEEZY_API_KEY: server-side API key (Bearer) for the checkout call.
+    # SECRET — NEVER logged. Empty ⇒ the endpoint fails closed (503).
+    LEMON_SQUEEZY_API_KEY: str = os.getenv("LEMON_SQUEEZY_API_KEY", "").strip()
+    # The Lemon Squeezy store id checkouts are created under.
+    LEMON_SQUEEZY_STORE_ID: str = os.getenv("LEMON_SQUEEZY_STORE_ID", "").strip()
+    # API base (override for staging/tests) + per-request timeout.
+    LEMON_SQUEEZY_API_BASE: str = os.getenv("LEMON_SQUEEZY_API_BASE", "https://api.lemonsqueezy.com").strip()
+    BILLING_CHECKOUT_TIMEOUT_SEC: float = float(os.getenv("BILLING_CHECKOUT_TIMEOUT_SEC", "15") or 15)
+    # Centralized purchasable-variant config (the only variants a client may
+    # buy). JSON: {"pro_monthly":{"variant_id":"123","plan":"pro","label":"Pro Monthly"}}
+    # NO prices/credit quantities here — identity of the purchase only.
+    BILLING_CHECKOUT_VARIANTS_JSON: str = os.getenv("BILLING_CHECKOUT_VARIANTS_JSON", "")
+    # Post-purchase redirect handling. A client-supplied return_url must resolve
+    # to a host in ALLOWED_ORIGINS or BILLING_CHECKOUT_ALLOWED_RETURN_HOSTS
+    # (open-redirect guard); otherwise the default below is used.
+    BILLING_CHECKOUT_DEFAULT_RETURN_URL: str = os.getenv("BILLING_CHECKOUT_DEFAULT_RETURN_URL", "").strip()
+    BILLING_CHECKOUT_ALLOWED_RETURN_HOSTS: str = os.getenv("BILLING_CHECKOUT_ALLOWED_RETURN_HOSTS", "")
+
     # ── Legacy per-user routes (/memory, /profile, /stats) ───────────────
     # These pre-auth routes are superseded by the auth-bound /v2/* surface
     # and are NOT called by the current frontend. They are now ownership-
@@ -440,6 +466,16 @@ class Config:
                 "empty — the webhook endpoint cannot verify signatures and "
                 "will reject every delivery (503). Set the signing secret "
                 "from the Lemon Squeezy dashboard.",
+            ))
+
+        # 3c. Billing checkout — if enabled it MUST have the Lemon API key +
+        #     store id, else every checkout request fails closed (503).
+        if self.ENABLE_BILLING_CHECKOUT and not (self.LEMON_SQUEEZY_API_KEY and self.LEMON_SQUEEZY_STORE_ID):
+            issues.append((
+                "critical",
+                "ENABLE_BILLING_CHECKOUT is on but LEMON_SQUEEZY_API_KEY and/or "
+                "LEMON_SQUEEZY_STORE_ID is empty — checkout creation will fail "
+                "closed (503). Set both to enable checkout.",
             ))
 
         # 4. Orchestration write surface needs verified identity. If the

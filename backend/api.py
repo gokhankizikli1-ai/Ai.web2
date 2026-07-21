@@ -306,6 +306,7 @@ def _build_full_app():
         "backend.routes.v2_web_build_images",  # Phase 10D — /v2/web-build/images/* real image generation (gated by ENABLE_WEB_BUILD_IMAGE_GEN)
         "backend.routes.v2_ai_guard",          # Phase 14L.1 — /v2/ai/* founder-beta AI usage/spend protection (finalize, usage, owner controls)
         "backend.routes.v2_billing",           # Billing PR 1 — /v2/billing/webhooks/lemon-squeezy (gated by ENABLE_BILLING; 503 when off)
+        "backend.routes.v2_billing_checkout",  # Billing PR 7 — /v2/billing/checkout (authenticated; gated by ENABLE_BILLING_CHECKOUT; 503 when off)
     ]:
         try:
             _app.include_router(importlib.import_module(_mod).router)
