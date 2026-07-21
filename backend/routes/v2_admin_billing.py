@@ -46,12 +46,14 @@ Usage metering (PR 6 — read-only + owner maintenance):
                                             for the user's current periods.
   POST /v2/admin/billing/usage/{uid}/reset  Clear a user's counter for a
                                             ?metric= (all periods or ?period=).
+  GET  /v2/admin/billing/checkouts          Recent checkout attempts (metadata
+                                            only — no checkout URL / secrets).
 
 The GET /stats response is extended with `processor` (config, registered
 handlers, queue depth incl. dead-letter count), `subscriptions` (totals +
 counts by normalized status), `entitlements` (config + loaded plans),
-`feature_gating` (enforcement state + gated features) and `usage` (metering
-config + metered metrics) blocks.
+`feature_gating` (enforcement state + gated features), `usage` (metering
+config + metered metrics) and `checkout` (config + variant selectors) blocks.
 
 Mounted only when ENABLE_ADMIN_MODE is on (see backend/api.py), same as the
 rest of /v2/admin/* — so the surface is undiscoverable (404) when admin mode
@@ -83,6 +85,7 @@ from backend.services.billing.subscriptions import store as subscription_store
 from backend.services.billing.entitlements import service as entitlement_service
 from backend.services.billing.entitlements import gating as entitlement_gating
 from backend.services.billing.usage import service as usage_service
+from backend.services.billing.checkout import service as checkout_service
 from backend.services.billing.types import VALID_STATUSES
 from backend.services.billing.subscriptions.types import VALID_SUBSCRIPTION_STATUSES
 
@@ -181,6 +184,12 @@ async def billing_stats(
     except Exception as exc:  # pragma: no cover — diagnostics must stay up
         logger.warning("billing usage stats failed: %s", exc)
         data["usage"] = {"error": "unavailable"}
+    # PR 7 — checkout view (config + variant selectors; no secrets).
+    try:
+        data["checkout"] = checkout_service.stats()
+    except Exception as exc:  # pragma: no cover — diagnostics must stay up
+        logger.warning("billing checkout stats failed: %s", exc)
+        data["checkout"] = {"error": "unavailable"}
     return JSONResponse(content=envelope_ok(data), headers=_NO_STORE)
 
 
@@ -394,6 +403,29 @@ async def billing_usage_reset(
     return JSONResponse(
         content=envelope_ok({"user_id": user_id, "metric": metric,
                              "period": period, "rows_removed": removed}),
+        headers=_NO_STORE,
+    )
+
+
+# ── Checkout (PR 7, read-only bounded diagnostics) ───────────────────────────
+
+@router.get("/checkouts")
+async def billing_checkouts(
+    request: Request,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    user_id: Optional[str] = Query(default=None, max_length=200),
+    user: User = Depends(owner_gate),
+) -> JSONResponse:
+    """Recent checkout attempts (owner-only, no-store). Metadata only — the
+    checkout URL (which carries a token) is deliberately EXCLUDED; no secrets."""
+    if user_id is not None and not _USER_ID_RE.match(user_id):
+        raise HTTPException(status_code=400, detail="malformed user id")
+    _audit(user, "admin.billing.checkouts.view", request)
+    records = checkout_service.list_recent(limit=limit, offset=offset, user_id=user_id)
+    items = [r.to_public_dict(include_url=False) for r in records]
+    return JSONResponse(
+        content=envelope_ok({"checkouts": items, "count": len(items)}),
         headers=_NO_STORE,
     )
 
