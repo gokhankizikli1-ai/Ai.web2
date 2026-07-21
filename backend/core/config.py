@@ -318,6 +318,19 @@ class Config:
     BILLING_CHECKOUT_DEFAULT_RETURN_URL: str = os.getenv("BILLING_CHECKOUT_DEFAULT_RETURN_URL", "").strip()
     BILLING_CHECKOUT_ALLOWED_RETURN_HOSTS: str = os.getenv("BILLING_CHECKOUT_ALLOWED_RETURN_HOSTS", "")
 
+    # ── Billing — credit ledger (PR 8) ───────────────────────────────────
+    # Gates the immutable credit ledger (per-user accounts + append-only
+    # grant/consume/adjust records). Default OFF: mutating calls are no-ops and
+    # reads return an empty account until enabled. Credits are independent of
+    # subscription state. This PR is the FOUNDATION only — NO automatic monthly
+    # grants, plan pricing, AI provider cost calculation, usage-enforcement
+    # changes, customer portal, or billing frontend. The consume/can_consume
+    # API is a prepared integration seam for a future AI-Guard PR.
+    ENABLE_BILLING_CREDITS: bool = os.getenv("ENABLE_BILLING_CREDITS", "false").strip().lower() == "true"
+    # Default overdraft policy for consume(): when false (default) a consume
+    # that would drive the balance below zero is rejected (insufficient_funds).
+    BILLING_CREDITS_ALLOW_NEGATIVE: bool = os.getenv("BILLING_CREDITS_ALLOW_NEGATIVE", "false").strip().lower() == "true"
+
     # ── Legacy per-user routes (/memory, /profile, /stats) ───────────────
     # These pre-auth routes are superseded by the auth-bound /v2/* surface
     # and are NOT called by the current frontend. They are now ownership-
