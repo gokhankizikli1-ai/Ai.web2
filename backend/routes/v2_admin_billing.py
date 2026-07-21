@@ -48,12 +48,17 @@ Usage metering (PR 6 — read-only + owner maintenance):
                                             ?metric= (all periods or ?period=).
   GET  /v2/admin/billing/checkouts          Recent checkout attempts (metadata
                                             only — no checkout URL / secrets).
+  GET  /v2/admin/billing/credits/{uid}      Credit account snapshot: balance +
+                                            immutable transactions + audit check.
+  POST /v2/admin/billing/credits/{uid}/grant  Owner-initiated credit grant.
+  POST /v2/admin/billing/credits/{uid}/adjust Owner-initiated signed correction.
 
 The GET /stats response is extended with `processor` (config, registered
 handlers, queue depth incl. dead-letter count), `subscriptions` (totals +
 counts by normalized status), `entitlements` (config + loaded plans),
 `feature_gating` (enforcement state + gated features), `usage` (metering
-config + metered metrics) and `checkout` (config + variant selectors) blocks.
+config + metered metrics), `checkout` (config + variant selectors) and
+`credits` (config + ledger table counts) blocks.
 
 Mounted only when ENABLE_ADMIN_MODE is on (see backend/api.py), same as the
 rest of /v2/admin/* — so the surface is undiscoverable (404) when admin mode
@@ -86,6 +91,7 @@ from backend.services.billing.entitlements import service as entitlement_service
 from backend.services.billing.entitlements import gating as entitlement_gating
 from backend.services.billing.usage import service as usage_service
 from backend.services.billing.checkout import service as checkout_service
+from backend.services.billing.credits import service as credits_service
 from backend.services.billing.types import VALID_STATUSES
 from backend.services.billing.subscriptions.types import VALID_SUBSCRIPTION_STATUSES
 
@@ -190,6 +196,12 @@ async def billing_stats(
     except Exception as exc:  # pragma: no cover — diagnostics must stay up
         logger.warning("billing checkout stats failed: %s", exc)
         data["checkout"] = {"error": "unavailable"}
+    # PR 8 — credit ledger view (config + table counts).
+    try:
+        data["credits"] = credits_service.stats()
+    except Exception as exc:  # pragma: no cover — diagnostics must stay up
+        logger.warning("billing credits stats failed: %s", exc)
+        data["credits"] = {"error": "unavailable"}
     return JSONResponse(content=envelope_ok(data), headers=_NO_STORE)
 
 
@@ -428,6 +440,97 @@ async def billing_checkouts(
         content=envelope_ok({"checkouts": items, "count": len(items)}),
         headers=_NO_STORE,
     )
+
+
+# ── Credit ledger (PR 8, read + owner-initiated grant/adjust) ────────────────
+
+class GrantBody(BaseModel):
+    amount: int = Field(..., ge=1, le=100_000_000)
+    reason: str = Field(default="", max_length=200)
+    # Idempotency key: a repeat grant with the same reference is a no-op.
+    reference: Optional[str] = Field(default=None, max_length=200)
+
+
+class AdjustBody(BaseModel):
+    # Signed correction; must be non-zero. Validated below.
+    delta: int = Field(..., ge=-100_000_000, le=100_000_000)
+    reason: str = Field(default="", max_length=200)
+    reference: Optional[str] = Field(default=None, max_length=200)
+    # Refuse an overdraw when false; default true (operator override).
+    allow_negative: bool = Field(default=True)
+
+
+def _credit_result_response(result) -> JSONResponse:
+    """Map a TxnResult to an HTTP response."""
+    from backend.services.billing.credits.types import (
+        REASON_INSUFFICIENT, REASON_DISABLED, REASON_INVALID,
+    )
+    if result.applied:
+        return JSONResponse(content=envelope_ok(result.to_dict()), headers=_NO_STORE)
+    status = {
+        REASON_INSUFFICIENT: 409,
+        REASON_DISABLED: 409,
+        REASON_INVALID: 400,
+    }.get(result.reason_code, 400)
+    raise HTTPException(status_code=status, detail={"code": result.reason_code, **result.to_dict()})
+
+
+@router.get("/credits/{user_id}")
+async def billing_credits(
+    user_id: str,
+    request: Request,
+    tx_limit: int = Query(default=25, ge=1, le=200),
+    user: User = Depends(owner_gate),
+) -> JSONResponse:
+    """Credit account snapshot: balance + recent immutable transactions + an
+    audit cross-check (cached balance vs ledger sum). Owner-only. 400 on a
+    malformed user id."""
+    if not _USER_ID_RE.match(user_id or ""):
+        raise HTTPException(status_code=400, detail="malformed user id")
+    _audit(user, "admin.billing.credits.view", request)
+    return JSONResponse(
+        content=envelope_ok(credits_service.account_snapshot(user_id, tx_limit=tx_limit)),
+        headers=_NO_STORE,
+    )
+
+
+@router.post("/credits/{user_id}/grant")
+async def billing_credits_grant(
+    user_id: str,
+    body: GrantBody,
+    request: Request,
+    user: User = Depends(owner_gate),
+) -> JSONResponse:
+    """Owner-initiated credit grant (records an immutable grant entry).
+    Idempotent by `reference`. NOT an automatic/recurring grant — that is a
+    later PR. 409 when the ledger is disabled."""
+    if not _USER_ID_RE.match(user_id or ""):
+        raise HTTPException(status_code=400, detail="malformed user id")
+    _audit(user, "admin.billing.credits.grant", request)
+    result = credits_service.grant(user_id, body.amount, reason=body.reason, reference=body.reference)
+    return _credit_result_response(result)
+
+
+@router.post("/credits/{user_id}/adjust")
+async def billing_credits_adjust(
+    user_id: str,
+    body: AdjustBody,
+    request: Request,
+    user: User = Depends(owner_gate),
+) -> JSONResponse:
+    """Owner-initiated signed correction (records an immutable adjust entry).
+    Idempotent by `reference`. 400 on delta 0 / 409 when disabled or (with
+    allow_negative=false) it would overdraw."""
+    if not _USER_ID_RE.match(user_id or ""):
+        raise HTTPException(status_code=400, detail="malformed user id")
+    if body.delta == 0:
+        raise HTTPException(status_code=400, detail="delta must be non-zero")
+    _audit(user, "admin.billing.credits.adjust", request)
+    result = credits_service.adjust(
+        user_id, body.delta, reason=body.reason, reference=body.reference,
+        allow_negative=body.allow_negative,
+    )
+    return _credit_result_response(result)
 
 
 __all__ = ["router"]
