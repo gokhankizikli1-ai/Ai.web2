@@ -296,9 +296,25 @@ class StockNeedItem(BaseModel):
     altText: str = Field(default="", max_length=200)
 
 
+class StockDesignContext(BaseModel):
+    """OPTIONAL design brief that lets the Image Intelligence layer (ENABLE_SMART_IMAGES)
+    rank candidates against the site's positioning. Every field is optional; when the
+    flag is off or the object is absent, it is ignored and behaviour is unchanged."""
+
+    industry: str = Field(default="", max_length=120)
+    targetAudience: str = Field(default="", max_length=120)
+    brandStyle: str = Field(default="", max_length=120)
+    emotionalTone: str = Field(default="", max_length=120)
+    colorPalette: List[str] = Field(default_factory=list, max_length=12)
+    imageStyle: str = Field(default="", max_length=120)
+    requiredSections: List[str] = Field(default_factory=list, max_length=20)
+    conversionGoal: str = Field(default="", max_length=120)
+
+
 class StockSourceBody(BaseModel):
     needs: List[StockNeedItem] = Field(default_factory=list, max_length=32)
     maxImages: int = Field(default=8, ge=0, le=16)
+    context: Optional[StockDesignContext] = Field(default=None)
 
 
 @router.post("/stock/source")
@@ -317,11 +333,16 @@ async def stock_source(
             "query": n.query,
             "orientation": n.orientation,
             "altText": n.altText,
+            # purpose/required refine the Image Intelligence ranking; ignored by the
+            # deterministic path, so passing them through is always safe.
+            "purpose": n.purpose,
+            "required": n.required,
         }
         for n in (body.needs or [])
     ][:cap]
+    context = body.context.model_dump() if body.context is not None else None
     try:
-        result = await sourcing.source_images(needs)
+        result = await sourcing.source_images(needs, context)
     except Exception as exc:  # noqa: BLE001
         logger.warning("[STOCK_SRC] sourcing failed: %s", type(exc).__name__)
         return {

@@ -30,6 +30,7 @@ import re
 import time
 from typing import Any, Dict, List, Optional
 
+from backend.services import image_intelligence
 from backend.services.web_build_images import stock
 
 logger = logging.getLogger(__name__)
@@ -80,10 +81,87 @@ def _asset_from_row(slot_id: str, alt: str, row: Dict[str, Any]) -> Dict[str, An
     }
 
 
-async def source_images(needs: List[Dict[str, Any]]) -> Dict[str, Any]:
+async def _track_unsplash_downloads(download_locations: List[str]) -> None:
+    """Fire Unsplash's required download event for SELECTED assets — best-effort, never raises."""
+    if not download_locations:
+        return
+    try:
+        await asyncio.gather(*(
+            asyncio.to_thread(stock.track_download, "unsplash", dl) for dl in download_locations
+        ), return_exceptions=True)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[STOCK_SRC] unsplash tracking failed: %s", type(exc).__name__)
+
+
+def _provider_status_from_availability(avail: Dict[str, bool]) -> Dict[str, str]:
+    return {name: ("ok" if configured else "unavailable") for name, configured in avail.items()}
+
+
+async def _source_images_smart(
+    clean_needs: List[Dict[str, Any]],
+    context: Optional[Dict[str, Any]],
+    avail: Dict[str, bool],
+    started: float,
+) -> Optional[Dict[str, Any]]:
+    """Image Intelligence path (gated by ENABLE_SMART_IMAGES): rank every candidate on
+    six weighted dimensions and select the best-scoring, license-cleared, photographer-
+    diverse asset per slot. Returns a manifest dict on success, or ``None`` to fall back
+    to the deterministic path (empty selection / any failure). Never raises."""
+    try:
+        selections = await image_intelligence.select_assets(clean_needs, context)
+    except Exception as exc:  # noqa: BLE001 — fail open to the deterministic path
+        logger.warning("[STOCK_SRC] smart selection failed: %s", type(exc).__name__)
+        return None
+    if not selections:
+        return None
+
+    alt_by_slot = {n["slotId"]: n.get("altText", "") for n in clean_needs}
+    assets: List[Dict[str, Any]] = []
+    unsplash_tracks: List[str] = []
+    for sel in selections:
+        asset = _asset_from_row(sel.slot_id, alt_by_slot.get(sel.slot_id, ""), sel.row)
+        if not asset["url"]:
+            continue
+        # Attach the transparent score breakdown so callers can inspect WHY an image won.
+        asset["intelligenceScore"] = sel.score
+        if asset["provider"] == "unsplash" and asset["downloadLocation"]:
+            unsplash_tracks.append(asset["downloadLocation"])
+        assets.append(asset)
+
+    if not assets:
+        return None
+
+    await _track_unsplash_downloads(unsplash_tracks)
+    warnings: List[str] = []
+    if len(assets) < len(clean_needs):
+        warnings.append(f"sourced {len(assets)} of {len(clean_needs)} requested images")
+    elapsed = int((time.monotonic() - started) * 1000)
+    logger.info("[STOCK_SRC] mode=smart needs=%d sourced=%d elapsed_ms=%d",
+                len(clean_needs), len(assets), elapsed)
+    return {
+        "status": "ok",
+        "assets": assets,
+        "providers": _provider_status_from_availability(avail),
+        "warnings": warnings,
+        "requested": len(clean_needs),
+        "sourced": len(assets),
+        "elapsedMs": elapsed,
+        "engine": "smart",
+    }
+
+
+async def source_images(
+    needs: List[Dict[str, Any]],
+    context: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """
     Source one unique stock asset per need. Never raises. Returns:
       { status, assets, providers, warnings, requested, sourced, elapsedMs }
+
+    When ``ENABLE_SMART_IMAGES`` is on, selection is delegated to the Image
+    Intelligence ranking engine (``context`` carries the optional design brief);
+    on any failure it falls back to the deterministic selection below, so the
+    default behaviour and the fallback are byte-for-byte the legacy path.
     """
     started = time.monotonic()
     avail = stock.availability()
@@ -122,6 +200,13 @@ async def source_images(needs: List[Dict[str, Any]]) -> Dict[str, Any]:
             "warnings": ["no valid image needs"], "requested": 0, "sourced": 0,
             "elapsedMs": int((time.monotonic() - started) * 1000),
         }
+
+    # Image Intelligence path (opt-in via ENABLE_SMART_IMAGES). Fail-open: a None
+    # return falls through to the deterministic selection below, unchanged.
+    if image_intelligence.is_enabled():
+        smart = await _source_images_smart(clean_needs, context, avail, started)
+        if smart is not None:
+            return smart
 
     # Request-local dedupe cache: identical (query, orientation) → one search.
     cache: Dict[str, List[Dict[str, Any]]] = {}
@@ -189,13 +274,7 @@ async def source_images(needs: List[Dict[str, Any]]) -> Dict[str, Any]:
         assets.append(asset)
 
     # Unsplash usage tracking — SELECTED assets only, server-side, best-effort.
-    if unsplash_tracks:
-        try:
-            await asyncio.gather(*(
-                asyncio.to_thread(stock.track_download, "unsplash", dl) for dl in unsplash_tracks
-            ), return_exceptions=True)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("[STOCK_SRC] unsplash tracking failed: %s", type(exc).__name__)
+    await _track_unsplash_downloads(unsplash_tracks)
 
     if len(assets) < len(clean_needs):
         warnings.append(f"sourced {len(assets)} of {len(clean_needs)} requested images")

@@ -105,6 +105,9 @@ async def _search_pexels(
             "width": p.get("width"),
             "height": p.get("height"),
             "alt": _clip(p.get("alt"), 200),
+            # Provider-supplied dominant color — used by the Image Intelligence layer
+            # for color-harmony scoring. Optional; absent on older payloads.
+            "avgColor": _clip(p.get("avg_color"), 9),
             "photographerName": name,
             "photographerUrl": _https_only(p.get("photographer_url")) or None,
             "providerPageUrl": _https_only(p.get("url")) or "https://www.pexels.com",
@@ -156,6 +159,8 @@ async def _search_unsplash(
             "width": p.get("width"),
             "height": p.get("height"),
             "alt": _clip(p.get("alt_description") or p.get("description"), 200),
+            # Unsplash's dominant color hex — feeds Image Intelligence color scoring.
+            "avgColor": _clip(p.get("color"), 9),
             "photographerName": name,
             "photographerUrl": (f"{profile}?{_UTM}" if profile else None),
             "providerPageUrl": f"{html}{sep}{_UTM}",
