@@ -197,6 +197,20 @@ def build_web_build_design_context(
 
     ``context`` is an OPTIONAL dict of already-known signals (industry, audience, brand
     style…) such as a run's blueprint; absent, the blocks are derived from the request."""
+    # Generation Adaptation (ENABLE_GENERATION_ADAPTATION): when on, a single compact
+    # DESIGN GENERATION RULES block — synthesized from the SAME intelligence — SUPERSEDES
+    # the raw blocks below, so the model gets actionable rules without prompt duplication.
+    # Fail-open: on any error (or an empty result) fall through to the existing composition;
+    # when the flag is off this is skipped entirely and behaviour is byte-for-byte unchanged.
+    try:
+        from backend.services import generation_adaptation
+        if generation_adaptation.is_enabled():
+            rules = generation_adaptation.build_generation_rules(user_request, context)
+            if rules:
+                return rules
+    except Exception as exc:  # noqa: BLE001 — never break a generation run
+        logger.debug("[WB_CTX] generation adaptation soft-failed: %s", type(exc).__name__)
+
     # Inferred ONCE per build; None when ENABLE_DESIGN_PERSONALITY is off.
     profile = _infer_personality(user_request, context)
     personality_value = str(getattr(getattr(profile, "design_personality", ""), "value", "") or "")
