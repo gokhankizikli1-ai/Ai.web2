@@ -18,6 +18,11 @@ import { scopedKey } from '@/lib/userScope';
 // Per-user scoped keys (never global) — isolate Web Build data per account.
 const sessionsKey = () => scopedKey('webbuild', 'sessions');
 const activeKey = () => scopedKey('webbuild', 'active');
+// A SEPARATE, small, serializable pointer describing an in-flight run. It exists
+// only so a browser refresh (which kills the in-memory fetch) can honestly report
+// an interrupted run instead of a blank page. It NEVER holds an AbortController or
+// any live handle — just enough metadata to restore the prompt + base and retry.
+const pendingKey = () => scopedKey('webbuild', 'pending');
 
 // One-time cleanup: the previous release used GLOBAL keys shared across all
 // accounts. Discard that leaked cache so it can never surface for any user.
@@ -138,4 +143,52 @@ export function listWebBuildSessions(): WebBuildSessionMeta[] {
   return Object.values(readMap())
     .map(({ id, title, updatedAt }) => ({ id, title, updatedAt }))
     .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+}
+
+/* ── Pending (in-flight) run metadata ─────────────────────────────────────────
+ * Serializable, optional and version-tolerant. Written when a build/revision
+ * starts and cleared the moment it settles. Its ONLY consumer is the refresh
+ * recovery path: a full reload wipes the in-memory operation, so this lets the
+ * builder restore the prompt (and the revision's base payload) and offer Retry —
+ * without ever pretending the interrupted run finished. Scoped per identity, so
+ * one account can never observe another's pending run. */
+export interface PendingWebBuildRunMeta {
+  /** Schema version — future readers tolerate/skip unknown shapes. */
+  v: 1;
+  prompt: string;
+  kind: 'build' | 'revision';
+  /** For a revision, the base session id to restore so the project isn't lost. */
+  basePayloadId: string | null;
+  startedAt: string;
+}
+
+export function savePendingWebBuildRun(meta: Omit<PendingWebBuildRunMeta, 'v'>): void {
+  try {
+    const record: PendingWebBuildRunMeta = { v: 1, ...meta };
+    localStorage.setItem(pendingKey(), JSON.stringify(record));
+  } catch { /* quota — a missing pending pointer only costs the retry affordance */ }
+}
+
+export function getPendingWebBuildRun(): PendingWebBuildRunMeta | null {
+  try {
+    const raw = localStorage.getItem(pendingKey());
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<PendingWebBuildRunMeta>;
+    // Version-tolerant: only accept the shape we understand; ignore anything else.
+    if (!parsed || parsed.v !== 1 || typeof parsed.prompt !== 'string' || !parsed.prompt) return null;
+    const kind = parsed.kind === 'revision' ? 'revision' : 'build';
+    return {
+      v: 1,
+      prompt: parsed.prompt,
+      kind,
+      basePayloadId: typeof parsed.basePayloadId === 'string' ? parsed.basePayloadId : null,
+      startedAt: typeof parsed.startedAt === 'string' ? parsed.startedAt : '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function clearPendingWebBuildRun(): void {
+  try { localStorage.removeItem(pendingKey()); } catch { /* ignore */ }
 }
