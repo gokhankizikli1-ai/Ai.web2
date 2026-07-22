@@ -77,6 +77,12 @@ async def select_assets(
     any failure so the caller can fall back to its deterministic path. Never raises.
     """
     try:
+        # Optional Visual → image context enrichment (ENABLE_VISUAL_IMAGE_CONTEXT,
+        # default off). A strict no-op when the flag is off: it returns `context`
+        # unchanged, so the Design Intent — and therefore search/ranking — is identical.
+        from backend.services.image_intelligence import visual_image_context
+        context = visual_image_context.enrich_design_context(context)
+
         intent = build_design_intent(needs, context)
         # Process EVERY requirement the (already-bounded) caller sent — no local cap.
         requirements = intent.all_requirements()
