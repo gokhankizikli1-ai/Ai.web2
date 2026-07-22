@@ -12,10 +12,10 @@ import WebBuildSidebar from '@/components/builder/WebBuildSidebar';
 import type { BuilderMode } from '@/lib/builderMode';
 import { useLanguageStore } from '@/stores/languageStore';
 import {
-  saveWebBuildSession, getWebBuildSession, getActiveWebBuildSession,
-  setActiveWebBuildSession, clearActiveWebBuildSession, deriveWebBuildTitle,
+  getWebBuildSession, getActiveWebBuildSession,
+  setActiveWebBuildSession, clearActiveWebBuildSession,
+  getPendingWebBuildRun, clearPendingWebBuildRun,
 } from '@/lib/webBuildSession';
-import { upsertWebBuildChatSession } from '@/lib/webBuildChatSession';
 import {
   generateWebBuild, WebBuildError, webBuildErrorKeyFor,
 } from '@/lib/webBuildApi';
@@ -26,22 +26,15 @@ import { runFrontendBuilderQualityPipeline } from '@/lib/webBuildFrontendQuality
 import { runFrontendBuilderRevision } from '@/lib/webBuildFrontendRevision';
 import { saveWebBuildPayloadToProject } from '@/lib/webBuildProject';
 import { applyImageReplacement, type ImageReplacementInput } from '@/lib/webBuildImageReplace';
-import { stashPreview } from '@/lib/webBuildPreviewStash';
+import { currentUserScope } from '@/lib/userScope';
+import {
+  useWebBuildRunStore, startWebBuildRun, resetWebBuildRun,
+  getWebBuildRunForScope, persistCompletedRun, slugFromIdea,
+  type WebBuildRunState,
+} from '@/stores/webBuildRunStore';
 import { getProjects } from '@/stores/projectStore';
 
-/** Persist the latest build's preview so the /preview/web-build/:runId route
- *  can always load it (even after navigating to a new tab or refreshing). */
-function stashLatestPreview(p: WebBuildPayload, slug: string): void {
-  const runId = p.steps[p.steps.length - 1]?.id;
-  if (runId) stashPreview({ runId, sectionItems: p.sectionItems, brief: p.brief, slug, prompt: p.prompt });
-}
-
 const ACCENT = '#60A5FA';
-
-function slugFromIdea(idea: string): string {
-  const base = idea.trim().toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 18);
-  return `${base || 'yoursite'}.korvix.build`;
-}
 
 export default function WebsiteBuilder() {
   const { t, lang } = useLanguageStore();
@@ -62,22 +55,28 @@ export default function WebsiteBuilder() {
   // Save flow: 'closed' (compact card) | 'prompt' (Create / Add / Not now) | 'picker'.
   const [saveStep, setSaveStep] = useState<'closed' | 'prompt' | 'picker'>('closed');
 
-  const abortRef = useRef<AbortController | null>(null);
   const feedEndRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const lastPromptRef = useRef('');
   // Latest runFresh, so the mount effect can kick off a build from a ?prompt=
   // handoff without depending on callback declaration order.
   const runFreshRef = useRef<((idea: string, mode?: BuilderMode | null) => void) | null>(null);
+  // Latest failLive, so the coordinator-sync effect can map a failure without
+  // re-subscribing whenever the language (and thus failLive) changes.
+  const failLiveRef = useRef<((err: unknown) => void) | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
 
-  useEffect(() => () => { abortRef.current?.abort(); }, []);
+  // NOTE: there is deliberately NO unmount-abort effect. A running build/revision is
+  // owned by the run coordinator (src/stores/webBuildRunStore), not by this component,
+  // so leaving Web Build for another sidebar route must NOT cancel it. Only an explicit
+  // action (New Build, opening another session, or starting a new run) supersedes it.
 
   // Mount restore / handoff — runs once:
   //   1. ?session=<id>  → reopen that exact Web Build (sidebar / refresh).
-  //   2. ?prompt=…      → a handoff from the Chat builder home: start a fresh
-  //                        build from that prompt, carrying ?mode= as context.
-  //   3. otherwise      → reopen the last active session.
+  //   2. ?prompt=…      → a handoff from the Chat builder home: start a fresh build.
+  //   3. a live coordinator run for THIS account → adopt it (the sync effect mirrors it).
+  //   4. an interrupted pending run (survived a refresh) → honest restore + retry.
+  //   5. otherwise      → reopen the last active session.
   useEffect(() => {
     const sid = searchParams.get('session');
     if (sid) {
@@ -98,18 +97,70 @@ export default function WebsiteBuilder() {
       runFreshRef.current?.(promptParam, m);
       return;
     }
+    // A run started in THIS tab is still live in the coordinator after SPA navigation
+    // — adopt it via the sync effect below; never reload a stale session or restart.
+    if (getWebBuildRunForScope(currentUserScope())) return;
+    // A full refresh killed the in-memory fetch. If a pending pointer survived, restore
+    // it honestly (prompt + the revision's base project) and let the user retry — we
+    // never claim it finished.
+    const pending = getPendingWebBuildRun();
+    if (pending) {
+      clearPendingWebBuildRun();
+      lastPromptRef.current = pending.prompt;
+      const base = pending.basePayloadId ? getWebBuildSession(pending.basePayloadId) : null;
+      // Honest recovery: restore the base project (for a revision) and put the prompt
+      // back in the composer so the user can resend with one click. We never fabricate
+      // a completed result for a run the refresh interrupted.
+      if (base) { setPayload(base); setAnimateStepId(undefined); }
+      setInput(pending.prompt);
+      return;
+    }
     const restored = getActiveWebBuildSession();
     if (restored) { setPayload(restored); setAnimateStepId(undefined); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Mirror the run coordinator into this view's local state, so returning to Web Build
+  // during or after a background run restores the SAME live/busy/payload state without
+  // re-triggering generation. Kept as a thin projection — all lifecycle lives in the
+  // coordinator; this only reflects it into the existing render state.
+  useEffect(() => {
+    const sync = (s: WebBuildRunState) => {
+      // Never surface another account's run in this account's view.
+      if (s.scope && s.scope !== currentUserScope()) return;
+      if (s.status === 'running') {
+        setBusy(true);
+        setErrorMsg('');
+        setLive({ prompt: s.prompt, kind: s.kind });
+        setPayload(s.kind === 'revision' ? (s.basePayload ?? null) : null);
+      } else if (s.status === 'completed' && s.payload) {
+        setBusy(false);
+        setLive(null);
+        setErrorMsg('');
+        setPayload(s.payload);
+        setAnimateStepId(s.payload.steps[s.payload.steps.length - 1]?.id);
+        if (s.runId) setSearchParams({ session: s.runId }, { replace: true });
+      } else if (s.status === 'failed') {
+        setBusy(false);
+        failLiveRef.current?.(s.error);
+        if (s.payload) setPayload(s.payload);
+      }
+    };
+    // Adopt the current snapshot immediately (covers a return mid/after a run), then
+    // keep mirroring subsequent transitions.
+    sync(useWebBuildRunStore.getState());
+    const unsub = useWebBuildRunStore.subscribe(sync);
+    return unsub;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setSearchParams]);
+
   /** Persist the session + mirror it into the sidebar, and pin ?session=<id>
-   *  so a refresh reopens exactly this build. */
+   *  so a refresh reopens exactly this build. Reuses the coordinator's persistence
+   *  (session map + sidebar companion + preview stash) so generation completion and
+   *  this in-page save (e.g. a device-image replacement) stay in lockstep. */
   const persistSession = useCallback((p: WebBuildPayload) => {
-    const id = saveWebBuildSession(p, lang);
-    if (!id) return;
-    upsertWebBuildChatSession(id, deriveWebBuildTitle(p.prompt, lang), p.prompt);
-    setSearchParams({ session: id }, { replace: true });
+    const id = persistCompletedRun(p, lang, currentUserScope());
+    if (id) setSearchParams({ session: id }, { replace: true });
   }, [lang, setSearchParams]);
 
   // Phase 14K.6 — permanently apply a device-image replacement, then persist the
@@ -129,7 +180,8 @@ export default function WebsiteBuilder() {
   const openSession = useCallback((id: string) => {
     const restored = getWebBuildSession(id);
     if (!restored) return;
-    abortRef.current?.abort();
+    // Switching to another session is an explicit action → supersede any running run.
+    resetWebBuildRun();
     setPayload(restored);
     setActiveWebBuildSession(id);
     setAnimateStepId(undefined);
@@ -140,9 +192,10 @@ export default function WebsiteBuilder() {
     setSearchParams({ session: id }, { replace: true });
   }, [setSearchParams]);
 
-  /** Start a brand-new build — clear the active session + URL, back to welcome. */
+  /** Start a brand-new build — clear the active run + session + URL, back to welcome.
+   *  This is the ONE explicit action that discards the active build context. */
   const startNewBuild = useCallback(() => {
-    abortRef.current?.abort();
+    resetWebBuildRun();
     setPayload(null);
     setAnimateStepId(undefined);
     setErrorMsg('');
@@ -158,12 +211,6 @@ export default function WebsiteBuilder() {
   useEffect(() => {
     feedEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [payload, live]);
-
-  /** Show the live agent run: the Analyze/Plan phases run WHILE the backend
-   *  call is in flight (the model really is analysing + generating here). */
-  const startLive = useCallback((prompt: string, kind: 'build' | 'revision') => {
-    setLive({ prompt, kind });
-  }, []);
 
   const failLive = useCallback((err: unknown) => {
     setLive(null);
@@ -200,80 +247,57 @@ export default function WebsiteBuilder() {
     const key = err instanceof WebBuildError ? webBuildErrorKeyFor(err.kind) : 'wbErrGeneric';
     setErrorMsg(t(key) || t('wbErrGeneric'));
   }, [t]);
+  failLiveRef.current = failLive;
 
   /* ── Fresh generation ─────────────────────────────────────────────── */
-  const runFresh = useCallback(async (idea: string, mode: BuilderMode | null = selectedMode) => {
+  // The operation is handed to the run coordinator so it survives navigation away
+  // from Web Build. The coordinator owns the AbortController + supersede logic and
+  // persists the result on completion (even if this page is unmounted); the sync
+  // effect mirrors running/completed/failed back into this view. The generation work
+  // itself — the SAME planning + quality pipeline — is unchanged.
+  const runFresh = useCallback((idea: string, mode: BuilderMode | null = selectedMode) => {
     const trimmed = idea.trim();
     if (!trimmed) return;
     lastPromptRef.current = trimmed;
-
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    setBusy(true);
-    setErrorMsg('');
-    setPayload(null);
     setSavedProjectId(undefined);
     setSaveStep('closed');
-    startLive(trimmed, 'build');
-
-    try {
-      const res = await generateWebBuild(trimmed, { signal: controller.signal, mode });
-      if (abortRef.current !== controller) return; // superseded
-      const planned = buildWebBuildPayload(trimmed, res, undefined, lang);
-      // Phase 12E — one centralized frontend quality pipeline: the dedicated builder
-      // call + Phase 12C/12D consumption, then the static design review + at most one
-      // bounded repair + final acceptance. Fails open; only caller cancellation throws.
-      const next = await runFrontendBuilderQualityPipeline(planned, { signal: controller.signal });
-      if (abortRef.current !== controller) return; // superseded
-      setPayload(next);
-      persistSession(next);
-      stashLatestPreview(next, slugFromIdea(next.prompt));
-      setAnimateStepId(next.steps[next.steps.length - 1]?.id);
-      setLive(null);
-    } catch (err) {
-      if (controller.signal.aborted) return;
-      failLive(err);
-    } finally {
-      if (abortRef.current === controller) setBusy(false);
-    }
-  }, [startLive, failLive, lang, selectedMode]);
+    startWebBuildRun({
+      kind: 'build',
+      prompt: trimmed,
+      lang,
+      scope: currentUserScope(),
+      basePayload: null,
+      execute: async (signal) => {
+        const res = await generateWebBuild(trimmed, { signal, mode });
+        const planned = buildWebBuildPayload(trimmed, res, undefined, lang);
+        // Phase 12E — one centralized frontend quality pipeline (unchanged): the
+        // dedicated builder call + Phase 12C/12D consumption, then the static design
+        // review + at most one bounded repair + final acceptance. Only cancellation throws.
+        return runFrontendBuilderQualityPipeline(planned, { signal });
+      },
+    });
+  }, [lang, selectedMode]);
   runFreshRef.current = runFresh;
 
   /* ── Revision (accumulates steps + diffs) ─────────────────────────── */
-  const runRevision = useCallback(async (idea: string) => {
+  const runRevision = useCallback((idea: string) => {
     const trimmed = idea.trim();
     if (!trimmed || !payload) return;
-
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    setBusy(true);
-    setErrorMsg('');
-    startLive(trimmed, 'revision');
-
-    try {
+    // Capture the base payload NOW so the revision always edits the project it started
+    // from, regardless of later navigation. A failed/rejected revision preserves it.
+    const base = payload;
+    startWebBuildRun({
+      kind: 'revision',
+      prompt: trimmed,
+      lang,
+      scope: currentUserScope(),
+      basePayload: base,
       // Phase 13D — a REAL source-to-source model-native revision (shared with
       // ChatWebBuild via the single runFrontendBuilderRevision orchestrator): exactly ONE
-      // frontend_builder call edits the existing project files. No planning/research/
-      // agents/quality-pipeline rerun, no deterministic fallback. A failed/rejected/
-      // destructive revision preserves the current payload and surfaces an honest error.
-      const next = await runFrontendBuilderRevision(payload, trimmed, { signal: controller.signal, uiLanguage: lang });
-      if (abortRef.current !== controller) return; // superseded
-      setPayload(next);
-      persistSession(next);
-      stashLatestPreview(next, slugFromIdea(next.prompt));
-      setAnimateStepId(next.steps[next.steps.length - 1]?.id);
-      setLive(null);
-    } catch (err) {
-      if (controller.signal.aborted) return;
-      failLive(err);
-    } finally {
-      if (abortRef.current === controller) setBusy(false);
-    }
-  }, [payload, startLive, failLive, lang]);
+      // frontend_builder call edits the existing project files. Unchanged.
+      execute: (signal) => runFrontendBuilderRevision(base, trimmed, { signal, uiLanguage: lang }),
+    });
+  }, [payload, lang]);
 
   /* ── Composer submit ──────────────────────────────────────────────── */
   const handleSubmit = useCallback(() => {
