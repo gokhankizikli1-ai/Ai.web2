@@ -176,8 +176,71 @@ export function deriveImageNeeds(spec: FrontendBuildSpecification, strategy?: Vi
   return needs;
 }
 
+/**
+ * OPTIONAL design brief forwarded to the backend Image Intelligence layer
+ * (ENABLE_SMART_IMAGES). Every field is optional; when the flag is off it is ignored,
+ * so this is safe to always send. Derived purely from the already-planned spec —
+ * no new signal, no extra model calls. Fully sanitized (HTML-stripped, clipped).
+ */
+export interface DesignContext {
+  industry?: string;
+  targetAudience?: string;
+  brandStyle?: string;
+  emotionalTone?: string;
+  colorPalette?: string[];
+  imageStyle?: string;
+  requiredSections?: string[];
+  conversionGoal?: string;
+}
+
+const HEX_COLOR = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
+
+/** Pull up to `max` distinct hex swatches out of the design system's color tokens. */
+function paletteFromTokens(tokens: Record<string, string> | undefined, max = 6): string[] {
+  if (!tokens) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const value of Object.values(tokens)) {
+    const hex = (value || '').trim().toLowerCase();
+    if (HEX_COLOR.test(hex) && !seen.has(hex)) {
+      seen.add(hex);
+      out.push(hex);
+      if (out.length >= max) break;
+    }
+  }
+  return out;
+}
+
+/** Build the (optional) design context from the spec. Never throws; returns `undefined`
+ *  when there is no meaningful signal so the request body stays lean. */
+export function buildDesignContext(spec: FrontendBuildSpecification | undefined): DesignContext | undefined {
+  try {
+    if (!spec) return undefined;
+    const id = spec.identity || ({} as FrontendBuildSpecification['identity']);
+    const ds = spec.designSystem || ({} as FrontendBuildSpecification['designSystem']);
+    const sections = (spec.architecture?.sections || [])
+      .map((s) => clean(s.name, 60)).filter(Boolean).slice(0, 20);
+    const ctx: DesignContext = {
+      industry: clean(id.subsector || id.sector || id.siteType, 120) || undefined,
+      targetAudience: clean(id.audienceSector, 120) || undefined,
+      brandStyle: clean(ds.selectedVisualDirection || ds.designThesis, 120) || undefined,
+      emotionalTone: clean(ds.firstImpression, 120) || undefined,
+      colorPalette: paletteFromTokens(ds.colorTokens),
+      imageStyle: clean(ds.visualSignature || ds.visualMetaphor, 120) || undefined,
+      requiredSections: sections,
+      conversionGoal: clean(id.primaryConversionIntent, 120) || undefined,
+    };
+    const hasSignal = Object.values(ctx).some((v) => (Array.isArray(v) ? v.length > 0 : !!v));
+    return hasSignal ? ctx : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** POST the needs plan to the backend sourcing endpoint. Never throws. */
-async function fetchSourcedImages(needs: ImageNeed[], opts?: { signal?: AbortSignal }): Promise<SourceResponse | null> {
+async function fetchSourcedImages(
+  needs: ImageNeed[], context?: DesignContext, opts?: { signal?: AbortSignal },
+): Promise<SourceResponse | null> {
   const ctrl = new AbortController();
   const onAbort = () => ctrl.abort();
   opts?.signal?.addEventListener('abort', onAbort);
@@ -186,7 +249,7 @@ async function fetchSourcedImages(needs: ImageNeed[], opts?: { signal?: AbortSig
     const resp = await fetch(`${apiBase()}/v2/web-build/images/stock/source`, {
       method: 'POST',
       headers: authHeaders(),
-      body: JSON.stringify({ needs, maxImages: MAX_SOURCED_IMAGES }),
+      body: JSON.stringify({ needs, maxImages: MAX_SOURCED_IMAGES, ...(context ? { context } : {}) }),
       signal: ctrl.signal,
     });
     if (!resp.ok) return null;
@@ -269,7 +332,7 @@ export async function sourceStockImagesForPayload(
   const needs = deriveImageNeeds(spec, payload.artifacts?.visualStrategy || null);
   if (needs.length === 0) return { payload, manifest: emptyManifest('empty', ['no photographic image needs']) };
 
-  const res = await fetchSourcedImages(needs, opts);
+  const res = await fetchSourcedImages(needs, buildDesignContext(spec), opts);
   if (!res) return { payload, manifest: emptyManifest('failed-open', ['sourcing endpoint unavailable']) };
 
   const sourcedAssets = Array.isArray(res.assets) ? res.assets.filter((a) => a && a.url) : [];
