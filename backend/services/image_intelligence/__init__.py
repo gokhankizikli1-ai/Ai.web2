@@ -34,6 +34,7 @@ from backend.services.image_intelligence.providers import (
     ImageCandidate, ImageProvider, LicenseResult, StockImageProvider,
     get_provider, register_provider, search_licensed,
 )
+from backend.services.image_intelligence.query_builder import build_search_query
 from backend.services.image_intelligence.ranking import (
     ImageRankingEngine, ScoredImage, register_scorer,
 )
@@ -43,8 +44,10 @@ logger = logging.getLogger(__name__)
 # When two top candidates score within this margin, prefer the one whose photographer
 # hasn't been used yet — image diversity for free, without dropping a clearly better shot.
 _DIVERSITY_MARGIN = 6.0
-_MAX_SELECTIONS = 8
 _SEARCH_CONCURRENCY = 4
+# NOTE: there is intentionally NO image-count cap here. The authoritative bound lives in
+# the caller (web_build_images.sourcing.MAX_IMAGES), which trims the needs list before it
+# reaches this layer; capping again would silently truncate a validly larger request.
 
 
 @dataclass
@@ -75,25 +78,33 @@ async def select_assets(
     """
     try:
         intent = build_design_intent(needs, context)
-        requirements = intent.all_requirements()[:_MAX_SELECTIONS]
+        # Process EVERY requirement the (already-bounded) caller sent — no local cap.
+        requirements = intent.all_requirements()
         if not requirements:
             return []
 
         provider = get_provider(provider_name)
         engine = ImageRankingEngine(load_weights())
 
-        # One network search per unique (query, orientation) — identical slots reuse it.
+        # Context-aware DISCOVERY: search the provider with a query built from the slot
+        # subject + Design Intent + purpose + orientation (not the bare subject), so the
+        # candidate pool the ranking engine scores is already on-brand. The cache key is
+        # the FINAL contextual query + orientation, so identical final searches still
+        # share one provider request while different purposes get distinct pools.
         cache: Dict[str, List[ImageCandidate]] = {}
         cache_lock = asyncio.Lock()
         sem = asyncio.Semaphore(_SEARCH_CONCURRENCY)
 
         async def candidates_for(req: ImageRequirement) -> List[ImageCandidate]:
-            key = f"{req.subject.strip().lower()}|{req.orientation}"
+            query = build_search_query(intent, req)
+            if not query:
+                return []
+            key = f"{query.strip().lower()}|{req.orientation}"
             async with cache_lock:
                 if key in cache:
                     return cache[key]
             async with sem:
-                found = await search_licensed(provider, req.subject, req) if req.subject else []
+                found = await search_licensed(provider, query, req)
             async with cache_lock:
                 cache[key] = found
             return found

@@ -313,7 +313,9 @@ class StockDesignContext(BaseModel):
 
 class StockSourceBody(BaseModel):
     needs: List[StockNeedItem] = Field(default_factory=list, max_length=32)
-    maxImages: int = Field(default=8, ge=0, le=16)
+    # Default + ceiling both derive from the single authoritative limit
+    # (sourcing.MAX_IMAGES) so no independent 8-cap survives; le stays 16 to match it.
+    maxImages: int = Field(default=sourcing.MAX_IMAGES, ge=0, le=16)
     context: Optional[StockDesignContext] = Field(default=None)
 
 
