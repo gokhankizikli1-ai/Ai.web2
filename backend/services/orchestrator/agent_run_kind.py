@@ -134,6 +134,23 @@ async def _agent_run_handler(ctx: JobContext) -> dict:
     except Exception as exc:  # pragma: no cover — never block a run
         logger.debug("generation.build_prompt soft-failed: %s", exc)
 
+    # Optional Design Intelligence context (Visual + Motion) — gated by
+    # ENABLE_VISUAL_CONTEXT_INJECTION (default off). Additive and fail-open: it only
+    # APPENDS a compact block to the page-generation prompt when the flag is on and a
+    # block is produced; with the flag off `build_web_build_design_context` returns ""
+    # so `user_message` is byte-for-byte the existing prompt. Page kinds only.
+    try:
+        from backend.services.generation import PAGE_KINDS as _PAGE_KINDS
+        if str(payload.get("deliverable_kind") or "").lower() in _PAGE_KINDS:
+            from backend.services.web_build_context import build_web_build_design_context
+            _design_ctx = build_web_build_design_context(
+                str(payload.get("user_request") or ""), blueprint,
+            )
+            if _design_ctx:
+                user_message = f"{user_message}\n\n{_design_ctx}"
+    except Exception as exc:  # pragma: no cover — never block a run
+        logger.debug("design context injection soft-failed: %s", exc)
+
     request = AgentRequest(
         user_message=user_message,
         mode=spec.id,
