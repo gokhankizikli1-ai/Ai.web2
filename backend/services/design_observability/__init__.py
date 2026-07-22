@@ -28,6 +28,7 @@ import logging
 import os
 from typing import Any, Dict, Optional
 
+from backend.services.design_observability import store
 from backend.services.design_observability.formatter import format_trace
 from backend.services.design_observability.models import DesignDecisionTrace
 from backend.services.design_observability.tracker import build_trace
@@ -54,10 +55,12 @@ def build_decision_trace(
         return None
 
 
-def observe(user_request: str, context: Optional[Dict[str, Any]] = None) -> None:
-    """Build the trace and LOG its compact summary — read-only, log-only, fail-open, and
-    a strict no-op when the flag is off. It NEVER returns anything into or otherwise
-    affects the generation path; it exists purely to make design decisions observable."""
+def observe(user_request: str, context: Optional[Dict[str, Any]] = None,
+            build_id: Optional[str] = None) -> None:
+    """Build the trace, LOG its compact summary, and (when ``build_id`` is given) RECORD it
+    in the in-memory store so a debug tool can look it up later — read-only, log/store-only,
+    fail-open, and a strict no-op when the flag is off. It NEVER returns anything into or
+    otherwise affects the generation path; it exists purely to make decisions observable."""
     if not is_enabled():
         return
     try:
@@ -65,10 +68,18 @@ def observe(user_request: str, context: Optional[Dict[str, Any]] = None) -> None
         summary = format_trace(trace)
         if summary:
             logger.info("[DES_OBS]\n%s", summary)
+        if build_id:
+            store.record_trace(build_id, trace)
     except Exception as exc:  # noqa: BLE001
         logger.debug("[DES_OBS] observe soft-failed: %s", type(exc).__name__)
 
 
+# Re-export the store surface a debug tool consumes (read-only lookup of recorded traces).
+get_record = store.get_record
+recent_ids = store.recent_ids
+
+
 __all__ = [
     "is_enabled", "build_decision_trace", "observe", "format_trace", "DesignDecisionTrace",
+    "get_record", "recent_ids",
 ]
