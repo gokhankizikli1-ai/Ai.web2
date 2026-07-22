@@ -35,7 +35,11 @@ from backend.services.web_build_images import stock
 
 logger = logging.getLogger(__name__)
 
-MAX_IMAGES = 8            # hard cap on sourced images per generation
+# The SINGLE authoritative cap on sourced images per generation. It matches the HTTP
+# surface (StockSourceBody.maxImages is bounded le=16) and is the only image-count
+# limit — the Image Intelligence layer never caps again, it processes the bounded needs
+# list it receives from here.
+MAX_IMAGES = 16
 MAX_NEED_QUERY = 120     # query length cap (mirrors stock.MAX_QUERY)
 _PER_NEED_RESULTS = 15   # results fetched per slot (headroom for de-dup)
 _CONCURRENCY = 4         # parallel provider searches
@@ -93,61 +97,134 @@ async def _track_unsplash_downloads(download_locations: List[str]) -> None:
         logger.warning("[STOCK_SRC] unsplash tracking failed: %s", type(exc).__name__)
 
 
-def _provider_status_from_availability(avail: Dict[str, bool]) -> Dict[str, str]:
-    return {name: ("ok" if configured else "unavailable") for name, configured in avail.items()}
+# ── Shared uniqueness + provider-status helpers ───────────────────────────────
+# A STABLE, provider-aware identifier used identically by the smart and deterministic
+# paths so a photo chosen by one can never be re-selected by the other. Provider +
+# provider image id when available (this is exactly the normalized row["id"] form,
+# e.g. "pexels:123"), else the https URL. Both paths key off THIS, so they never
+# compare row["id"] against providerImageId in incompatible formats.
+def _uniqueness_key(provider: Optional[str], provider_image_id: Optional[str], url: Optional[str]) -> str:
+    p = (provider or "").strip().lower()
+    pid = (provider_image_id or "").strip()
+    if p and pid:
+        return f"{p}:{pid}"
+    return (url or "").strip()
 
 
-async def _source_images_smart(
-    clean_needs: List[Dict[str, Any]],
-    context: Optional[Dict[str, Any]],
-    avail: Dict[str, bool],
-    started: float,
-) -> Optional[Dict[str, Any]]:
-    """Image Intelligence path (gated by ENABLE_SMART_IMAGES): rank every candidate on
-    six weighted dimensions and select the best-scoring, license-cleared, photographer-
-    diverse asset per slot. Returns a manifest dict on success, or ``None`` to fall back
-    to the deterministic path (empty selection / any failure). Never raises."""
-    try:
-        selections = await image_intelligence.select_assets(clean_needs, context)
-    except Exception as exc:  # noqa: BLE001 — fail open to the deterministic path
-        logger.warning("[STOCK_SRC] smart selection failed: %s", type(exc).__name__)
-        return None
-    if not selections:
-        return None
+def _asset_key(asset: Dict[str, Any]) -> str:
+    return _uniqueness_key(asset.get("provider"), asset.get("providerImageId"),
+                           asset.get("url") or asset.get("thumbnailUrl"))
 
-    alt_by_slot = {n["slotId"]: n.get("altText", "") for n in clean_needs}
-    assets: List[Dict[str, Any]] = []
-    unsplash_tracks: List[str] = []
+
+def _row_key(row: Dict[str, Any]) -> str:
+    return _uniqueness_key(row.get("provider"), row.get("providerImageId"),
+                           stock._https_only(row.get("previewUrl") or row.get("fullUrl")))
+
+
+_STATUS_RANK = {"ok": 2, "error": 1, "unavailable": 0}
+
+
+def _merge_status(current: str, incoming: str) -> str:
+    """Keep the most informative provider status (ok > error > unavailable)."""
+    return current if _STATUS_RANK.get(current, 0) >= _STATUS_RANK.get(incoming, 0) else incoming
+
+
+def _smart_assets(
+    selections: List[Any], alt_by_slot: Dict[str, str],
+    used_ids: set, used_photographers: set,
+) -> Dict[str, Dict[str, Any]]:
+    """Project smart SelectedAssets into manifest assets, enforcing the SAME global
+    uniqueness (image id + photographer) the deterministic pass uses. Each kept asset
+    retains its intelligenceScore. Returns {slotId: asset}."""
+    picked: Dict[str, Dict[str, Any]] = {}
     for sel in selections:
         asset = _asset_from_row(sel.slot_id, alt_by_slot.get(sel.slot_id, ""), sel.row)
         if not asset["url"]:
             continue
-        # Attach the transparent score breakdown so callers can inspect WHY an image won.
+        key = _asset_key(asset)
+        if not key or key in used_ids:
+            continue  # smart shouldn't dup, but enforce globally to be safe
         asset["intelligenceScore"] = sel.score
-        if asset["provider"] == "unsplash" and asset["downloadLocation"]:
-            unsplash_tracks.append(asset["downloadLocation"])
-        assets.append(asset)
+        used_ids.add(key)
+        ph = asset["photographerName"].strip().lower()
+        if ph:
+            used_photographers.add(ph)
+        picked[sel.slot_id] = asset
+    return picked
 
-    if not assets:
-        return None
 
-    await _track_unsplash_downloads(unsplash_tracks)
-    warnings: List[str] = []
-    if len(assets) < len(clean_needs):
-        warnings.append(f"sourced {len(assets)} of {len(clean_needs)} requested images")
-    elapsed = int((time.monotonic() - started) * 1000)
-    logger.info("[STOCK_SRC] mode=smart needs=%d sourced=%d elapsed_ms=%d",
-                len(clean_needs), len(assets), elapsed)
-    return {
-        "status": "ok",
-        "assets": assets,
-        "providers": _provider_status_from_availability(avail),
-        "warnings": warnings,
-        "requested": len(clean_needs),
-        "sourced": len(assets),
-        "elapsedMs": elapsed,
-        "engine": "smart",
-    }
+async def _select_deterministic(
+    needs: List[Dict[str, Any]],
+    used_ids: set,
+    used_photographers: set,
+    provider_status: Dict[str, str],
+    cache: Optional[Dict[str, List[Dict[str, Any]]]] = None,
+) -> Dict[str, Dict[str, Any]]:
+    """Legacy search + first-unused selection for a SUBSET of needs.
+
+    Shares the caller's `used_ids` / `used_photographers` (so it never re-picks a photo
+    or photographer the smart pass already used) and updates `provider_status` with the
+    real per-provider outcome. Uses a request-local search cache so identical queries hit
+    the network once. Returns {slotId: asset}. Never raises."""
+    if not needs:
+        return {}
+    if cache is None:
+        cache = {}
+    cache_lock = asyncio.Lock()
+    sem = asyncio.Semaphore(_CONCURRENCY)
+
+    async def search_need(need: Dict[str, Any]) -> List[Dict[str, Any]]:
+        key = f"{need['query']}|{need.get('orientation') or ''}"
+        async with cache_lock:
+            if key in cache:
+                return cache[key]
+        async with sem:
+            try:
+                payload = await stock.search(need["query"], "all", 1, _PER_NEED_RESULTS, need.get("orientation"))
+            except Exception as exc:  # noqa: BLE001 — never leak provider internals
+                logger.warning("[STOCK_SRC] search failed: %s", type(exc).__name__)
+                return []
+        prov = payload.get("providers") or {}
+        for name in ("pexels", "unsplash"):
+            st = prov.get(name)
+            if st:
+                provider_status[name] = _merge_status(provider_status.get(name, "unavailable"), st)
+        rows = payload.get("results") or []
+        async with cache_lock:
+            cache[key] = rows
+        return rows
+
+    results = await asyncio.gather(*(search_need(n) for n in needs), return_exceptions=True)
+
+    picked: Dict[str, Dict[str, Any]] = {}
+    for need, rows in zip(needs, results):
+        if isinstance(rows, Exception) or not rows:
+            continue
+        chosen = None
+        fallback = None
+        for row in rows:
+            rkey = _row_key(row)
+            if not rkey or rkey in used_ids or not stock._https_only(row.get("previewUrl") or row.get("fullUrl")):
+                continue
+            if fallback is None:
+                fallback = row
+            photographer = (row.get("photographerName") or "").strip().lower()
+            if photographer and photographer in used_photographers:
+                continue
+            chosen = row
+            break
+        chosen = chosen or fallback
+        if not chosen:
+            continue
+        asset = _asset_from_row(need["slotId"], need.get("altText", ""), chosen)
+        if not asset["url"]:
+            continue
+        used_ids.add(_row_key(chosen))
+        ph = asset["photographerName"].strip().lower()
+        if ph:
+            used_photographers.add(ph)
+        picked[need["slotId"]] = asset
+    return picked
 
 
 async def source_images(
@@ -156,18 +233,21 @@ async def source_images(
 ) -> Dict[str, Any]:
     """
     Source one unique stock asset per need. Never raises. Returns:
-      { status, assets, providers, warnings, requested, sourced, elapsedMs }
+      { status, assets, providers, warnings, requested, sourced, elapsedMs[, engine] }
 
-    When ``ENABLE_SMART_IMAGES`` is on, selection is delegated to the Image
-    Intelligence ranking engine (``context`` carries the optional design brief);
-    on any failure it falls back to the deterministic selection below, so the
-    default behaviour and the fallback are byte-for-byte the legacy path.
+    Flow (ENABLE_SMART_IMAGES on): context-aware smart selection runs first and MAY
+    return a partial set; any slots it could not fill are completed by the deterministic
+    legacy selection for THOSE slots only. Smart and fallback assets share one
+    uniqueness/photographer space, a smart asset is never replaced by a legacy one,
+    requested slot order is preserved, and Unsplash downloads are tracked exactly once.
+    With the flag off (or smart empty) the full deterministic path runs — same algorithm
+    and selection as before.
     """
     started = time.monotonic()
     avail = stock.availability()
-    warnings: List[str] = []
 
-    # Validate + cap the incoming needs (defence in depth — the caller already caps).
+    # Validate + cap the incoming needs (defence in depth — the caller already caps to
+    # the authoritative MAX_IMAGES).
     clean_needs: List[Dict[str, Any]] = []
     for n in (needs or [])[: MAX_IMAGES * 2]:
         if not isinstance(n, dict):
@@ -181,6 +261,11 @@ async def source_images(
             "query": q,
             "orientation": _orientation(n.get("orientation")),
             "altText": str(n.get("altText") or "").strip()[:200],
+            # purpose/required drive the Image Intelligence query + ranking; harmless to
+            # the deterministic path. Preserved here (previously dropped) so purpose-aware
+            # search actually receives each slot's real role.
+            "purpose": str(n.get("purpose") or "").strip().lower()[:40],
+            "required": bool(n.get("required")),
         })
         if len(clean_needs) >= MAX_IMAGES:
             break
@@ -201,89 +286,70 @@ async def source_images(
             "elapsedMs": int((time.monotonic() - started) * 1000),
         }
 
-    # Image Intelligence path (opt-in via ENABLE_SMART_IMAGES). Fail-open: a None
-    # return falls through to the deterministic selection below, unchanged.
-    if image_intelligence.is_enabled():
-        smart = await _source_images_smart(clean_needs, context, avail, started)
-        if smart is not None:
-            return smart
-
-    # Request-local dedupe cache: identical (query, orientation) → one search.
-    cache: Dict[str, List[Dict[str, Any]]] = {}
-    cache_lock = asyncio.Lock()
-    sem = asyncio.Semaphore(_CONCURRENCY)
-    provider_status: Dict[str, str] = {"pexels": "unavailable", "unsplash": "unavailable"}
-
-    async def search_need(need: Dict[str, Any]) -> List[Dict[str, Any]]:
-        key = f"{need['query']}|{need['orientation'] or ''}"
-        async with cache_lock:
-            if key in cache:
-                return cache[key]
-        async with sem:
-            try:
-                payload = await stock.search(need["query"], "all", 1, _PER_NEED_RESULTS, need["orientation"])
-            except Exception as exc:  # noqa: BLE001 — never leak provider internals
-                logger.warning("[STOCK_SRC] search failed: %s", type(exc).__name__)
-                return []
-        prov = payload.get("providers") or {}
-        for name in ("pexels", "unsplash"):
-            st = prov.get(name)
-            if st and provider_status.get(name) != "ok":
-                provider_status[name] = st
-        rows = payload.get("results") or []
-        async with cache_lock:
-            cache[key] = rows
-        return rows
-
-    results = await asyncio.gather(*(search_need(n) for n in clean_needs), return_exceptions=True)
-
-    # Deterministic selection: first unused image, preferring an unused photographer.
     used_ids: set = set()
     used_photographers: set = set()
-    assets: List[Dict[str, Any]] = []
+    provider_status: Dict[str, str] = {"pexels": "unavailable", "unsplash": "unavailable"}
+    by_slot: Dict[str, Dict[str, Any]] = {}
+    warnings: List[str] = []
+    smart_slots: set = set()
+    alt_by_slot = {n["slotId"]: n.get("altText", "") for n in clean_needs}
+
+    # ── Smart pass (opt-in) — may return a PARTIAL selection; never raises here. ────
+    if image_intelligence.is_enabled():
+        try:
+            selections = await image_intelligence.select_assets(clean_needs, context)
+        except Exception as exc:  # noqa: BLE001 — fail open to the deterministic pass
+            logger.warning("[STOCK_SRC] smart selection failed: %s", type(exc).__name__)
+            selections = []
+        if selections:
+            smart_picked = _smart_assets(selections, alt_by_slot, used_ids, used_photographers)
+            by_slot.update(smart_picked)
+            smart_slots = set(smart_picked.keys())
+            if smart_slots:
+                # Smart searched every configured provider; reflect availability as ok.
+                for name, ok in avail.items():
+                    if ok:
+                        provider_status[name] = _merge_status(provider_status[name], "ok")
+
+    # ── Deterministic pass — ONLY for slots the smart pass did not fill. ───────────
+    missing_needs = [n for n in clean_needs if n["slotId"] not in by_slot]
+    fallback_picked: Dict[str, Dict[str, Any]] = {}
+    if missing_needs:
+        fallback_picked = await _select_deterministic(
+            missing_needs, used_ids, used_photographers, provider_status,
+        )
+        by_slot.update(fallback_picked)
+
+    # ── Assemble in REQUESTED slot order. ─────────────────────────────────────────
+    assets: List[Dict[str, Any]] = [by_slot[n["slotId"]] for n in clean_needs if n["slotId"] in by_slot]
+
+    # ── Unsplash usage tracking — SELECTED assets only, exactly once. ─────────────
+    seen_dl: set = set()
     unsplash_tracks: List[str] = []
-
-    for need, rows in zip(clean_needs, results):
-        if isinstance(rows, Exception) or not rows:
-            continue
-        chosen = None
-        fallback = None
-        for row in rows:
-            rid = row.get("id") or row.get("previewUrl")
-            if not rid or rid in used_ids or not stock._https_only(row.get("previewUrl") or row.get("fullUrl")):
-                continue
-            if fallback is None:
-                fallback = row
-            photographer = (row.get("photographerName") or "").strip().lower()
-            if photographer and photographer in used_photographers:
-                continue
-            chosen = row
-            break
-        chosen = chosen or fallback
-        if not chosen:
-            continue
-        asset = _asset_from_row(need["slotId"], need["altText"], chosen)
-        if not asset["url"]:
-            continue
-        used_ids.add(chosen.get("id") or chosen.get("previewUrl"))
-        ph = asset["photographerName"].strip().lower()
-        if ph:
-            used_photographers.add(ph)
-        if asset["provider"] == "unsplash" and asset["downloadLocation"]:
-            unsplash_tracks.append(asset["downloadLocation"])
-        assets.append(asset)
-
-    # Unsplash usage tracking — SELECTED assets only, server-side, best-effort.
+    for asset in assets:
+        if asset.get("provider") == "unsplash":
+            dl = asset.get("downloadLocation")
+            if dl and dl not in seen_dl:
+                seen_dl.add(dl)
+                unsplash_tracks.append(dl)
     await _track_unsplash_downloads(unsplash_tracks)
 
     if len(assets) < len(clean_needs):
         warnings.append(f"sourced {len(assets)} of {len(clean_needs)} requested images")
 
+    if smart_slots and fallback_picked:
+        engine = "smart+fallback"
+    elif smart_slots:
+        engine = "smart"
+    else:
+        engine = "legacy"
+
     status = "ok" if assets else "no-results"
     elapsed = int((time.monotonic() - started) * 1000)
     logger.info(
-        "[STOCK_SRC] needs=%d sourced=%d pexels=%s unsplash=%s elapsed_ms=%d",
-        len(clean_needs), len(assets), provider_status["pexels"], provider_status["unsplash"], elapsed,
+        "[STOCK_SRC] engine=%s needs=%d smart=%d fallback=%d sourced=%d pexels=%s unsplash=%s elapsed_ms=%d",
+        engine, len(clean_needs), len(smart_slots), len(fallback_picked), len(assets),
+        provider_status["pexels"], provider_status["unsplash"], elapsed,
     )
     return {
         "status": status,
@@ -293,6 +359,7 @@ async def source_images(
         "requested": len(clean_needs),
         "sourced": len(assets),
         "elapsedMs": elapsed,
+        "engine": engine,
     }
 
 
