@@ -6,16 +6,20 @@ This is the small ADAPTER that connects the isolated intelligence foundations to
 Build generation. It renders the compact context blocks the website-generating model
 receives ALONGSIDE its existing prompt, composed from independently flag-gated parts:
 
-  1. DESIGN INTELLIGENCE — a Visual Strategy + Motion Strategy (how the brand should
+  1. DESIGN PERSONALITY GUIDANCE — the inferred design personality (who the brand is)
+     with its visual/motion direction and avoid list, as a contextual BIAS. Gated by
+     ``ENABLE_DESIGN_PERSONALITY``. The inferred personality also lightly biases the
+     Visual Strategy archetype below (never overrides explicit user/domain signals).
+  2. DESIGN INTELLIGENCE — a Visual Strategy + Motion Strategy (how the brand should
      feel, what visual language to use, how motion should behave). Gated by
      ``ENABLE_VISUAL_CONTEXT_INJECTION``.
-  2. QUALITY GUIDELINES — the Web Quality Guard's design-quality principles (what makes
+  3. QUALITY GUIDELINES — the Web Quality Guard's design-quality principles (what makes
      the site feel professionally designed). Gated by ``ENABLE_WEB_QUALITY_GUARD``.
 
-The two flags are independent: either part appears only when its own flag is on, and the
+The three flags are independent: each part appears only when its own flag is on, and the
 seam that consumes this module (the orchestrator's prompt assembly) is UNCHANGED — it
-still appends the single string this returns. With both flags off the return is ``""`` so
-generation is byte-for-byte unchanged.
+still appends the single string this returns. With all flags off the return is ``""`` so
+generation is byte-for-byte unchanged. The personality is inferred at most ONCE per call.
 
 Design constraints honoured here:
   • the blocks are text, never raw JSON, and never expose internal fields or flags;
@@ -52,26 +56,51 @@ def is_enabled() -> bool:
     return (os.getenv("ENABLE_VISUAL_CONTEXT_INJECTION", "false") or "").strip().lower() == "true"
 
 
-def _signal(user_request: str, context: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+# A concise, controlled brand-style hint per inferred personality — used ONLY to bias
+# the Visual Strategy archetype toward the personality (never to override explicit
+# signals). Kept here (not in the personality package) so the package stays untouched.
+_PERSONALITY_BIAS: Dict[str, str] = {
+    "trustworthy_premium": "premium corporate trustworthy",
+    "cinematic_elegant": "cinematic luxury elegant",
+    "playful": "playful vibrant friendly",
+    "natural_editorial": "natural editorial warm",
+    "minimal_modern": "minimal clean modern",
+    "bold_creative": "bold creative expressive",
+    "futuristic": "premium futuristic",
+    "approachable_professional": "modern professional",
+}
+
+
+def _signal(user_request: str, context: Optional[Dict[str, Any]],
+            personality_value: str = "") -> Dict[str, Any]:
     signal: Dict[str, Any] = {"prompt": (user_request or "")[:_MAX_REQUEST]}
     if isinstance(context, dict):
         for key in _CONTEXT_KEYS:
             value = context.get(key)
             if isinstance(value, str) and value.strip():
                 signal[key] = value.strip()[:200]
+    # Bias (not override): APPEND the personality hint to the brand-style signal so the
+    # archetype leans toward the inferred personality while the explicit brand_style,
+    # industry and prompt tokens still dominate resolution.
+    bias = _PERSONALITY_BIAS.get(personality_value or "")
+    if bias:
+        existing = str(signal.get("brand_style") or signal.get("brandStyle") or "").strip()
+        signal["brand_style"] = (f"{existing} {bias}".strip())[:200]
     return signal
 
 
-def _design_block(user_request: str, context: Optional[Dict[str, Any]]) -> str:
+def _design_block(user_request: str, context: Optional[Dict[str, Any]],
+                  personality_value: str = "") -> str:
     """The DESIGN INTELLIGENCE block (Visual + Motion). ``""`` when its flag is off,
-    there is no signal, or anything fails."""
+    there is no signal, or anything fails. When a personality was inferred, its value
+    lightly biases the Visual Strategy archetype (see :func:`_signal`)."""
     if not is_enabled():
         return ""
     # No signal at all → inject nothing (avoid a generic block on an empty request).
     if not (user_request or "").strip() and not context:
         return ""
     try:
-        visual = visual_intelligence.analyze(_signal(user_request, context))
+        visual = visual_intelligence.analyze(_signal(user_request, context, personality_value))
         motion = motion_intelligence.analyze(visual)
         return build_design_context(visual, motion)
     except Exception as exc:  # noqa: BLE001 — injection must never break a generation run
@@ -98,18 +127,85 @@ def _quality_block(user_request: str, context: Optional[Dict[str, Any]]) -> str:
         return ""
 
 
+def _infer_personality(user_request: str, context: Optional[Dict[str, Any]]) -> Any:
+    """Infer the DesignPersonalityProfile ONCE for this build, from the strongest
+    available business/user context. Gated by ``ENABLE_DESIGN_PERSONALITY`` inside the
+    package (returns ``None`` when the flag is off). Lazily imported so this module has no
+    import-time dependency on the package and cannot create a cycle. Never raises."""
+    try:
+        from backend.services import design_personality
+        source: Dict[str, Any] = dict(context) if isinstance(context, dict) else {}
+        # The live user request is the authoritative prompt signal.
+        source["prompt"] = (user_request or "")[:_MAX_REQUEST]
+        return design_personality.build_design_personality(source)
+    except Exception as exc:  # noqa: BLE001 — inference must never break a generation run
+        logger.debug("[WB_CTX] design personality inference soft-failed: %s", type(exc).__name__)
+        return None
+
+
+def _personality_block(profile: Any) -> str:
+    """Render the compact DESIGN PERSONALITY GUIDANCE block for a profile, or ``""``.
+
+    It states explicitly that the guidance is a BIAS (explicit user + strong domain
+    requirements win, Avoid entries are negative constraints, and AI alone must not force
+    a futuristic aesthetic). It never leaks internal scoring/reasoning (matched signals)."""
+    if profile is None:
+        return ""
+    try:
+        personality = str(getattr(getattr(profile, "design_personality", ""), "value", "") or "").replace("_", " ").strip()
+        visual = " ".join(str(getattr(profile, "visual_direction", "") or "").split())[:200]
+        motion = " ".join(str(getattr(profile, "motion_direction", "") or "").split())[:160]
+        avoid_list = getattr(profile, "avoid_list", None) or []
+        avoid = ", ".join(str(a).strip() for a in avoid_list if str(a).strip())[:200]
+        confidence = getattr(profile, "confidence", 0.0)
+        try:
+            confidence = round(float(confidence), 2)
+        except (TypeError, ValueError):
+            confidence = 0.0
+        if not personality:
+            return ""
+        lines = ["DESIGN PERSONALITY GUIDANCE", f"- Personality: {personality}"]
+        if visual:
+            lines.append(f"- Visual direction: {visual}")
+        if motion:
+            lines.append(f"- Motion direction: {motion}")
+        if avoid:
+            lines.append(f"- Avoid (negative constraints): {avoid}")
+        lines.append(f"- Confidence: {confidence}")
+        lines.append(
+            "This is a contextual bias, not a replacement for explicit user requirements. "
+            "Explicit user requests override inferred preferences; strong business/domain "
+            "requirements override weak aesthetic defaults. Treat every Avoid entry as a "
+            "negative constraint. Never default to a generic futuristic AI aesthetic solely "
+            "because the product uses AI."
+        )
+        return "\n".join(lines)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("[WB_CTX] personality block build soft-failed: %s", type(exc).__name__)
+        return ""
+
+
 def build_web_build_design_context(
     user_request: str, context: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Compose the Web Build context block(s) to append to the generation prompt:
-    the DESIGN INTELLIGENCE block and/or the QUALITY GUIDELINES block, each included only
-    when its own flag is on. Returns ``""`` when both are off / produce nothing / fail, so
-    the (unchanged) caller appends nothing and behaviour is exactly as before. Never raises.
+    DESIGN PERSONALITY GUIDANCE, DESIGN INTELLIGENCE, and/or QUALITY GUIDELINES — each
+    included only when its own flag is on. Returns ``""`` when all are off / produce
+    nothing / fail, so the (unchanged) caller appends nothing and behaviour is exactly as
+    before. The design personality is inferred at most ONCE here and reused (to bias the
+    visual archetype and to render its guidance block). Never raises.
 
     ``context`` is an OPTIONAL dict of already-known signals (industry, audience, brand
     style…) such as a run's blueprint; absent, the blocks are derived from the request."""
+    # Inferred ONCE per build; None when ENABLE_DESIGN_PERSONALITY is off.
+    profile = _infer_personality(user_request, context)
+    personality_value = str(getattr(getattr(profile, "design_personality", ""), "value", "") or "")
+
     parts: List[str] = []
-    design = _design_block(user_request, context)
+    guidance = _personality_block(profile)
+    if guidance:
+        parts.append(guidance)
+    design = _design_block(user_request, context, personality_value)
     if design:
         parts.append(design)
     quality = _quality_block(user_request, context)
