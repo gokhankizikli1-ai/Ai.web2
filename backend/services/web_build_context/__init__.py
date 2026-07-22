@@ -197,6 +197,15 @@ def build_web_build_design_context(
 
     ``context`` is an OPTIONAL dict of already-known signals (industry, audience, brand
     style…) such as a run's blueprint; absent, the blocks are derived from the request."""
+    # Design Observability (ENABLE_DESIGN_OBSERVABILITY): read-only, log-only, fail-open.
+    # It records WHY the design direction was chosen but NEVER affects the returned string;
+    # a strict no-op when its flag is off.
+    try:
+        from backend.services import design_observability
+        design_observability.observe(user_request, context)
+    except Exception as exc:  # noqa: BLE001 — observability must never break a run
+        logger.debug("[WB_CTX] design observability soft-failed: %s", type(exc).__name__)
+
     # Generation Adaptation (ENABLE_GENERATION_ADAPTATION): when on, a single compact
     # DESIGN GENERATION RULES block — synthesized from the SAME intelligence — SUPERSEDES
     # the raw blocks below, so the model gets actionable rules without prompt duplication.
