@@ -1721,6 +1721,41 @@ export interface MotionStrategy {
   userDirectives: string[];
 }
 
+/* ── Layout Strategy (PR #514) ────────────────────────────────────────────────
+ * Decides the PAGE COMPOSITION before generation so sites stop following the same
+ * repetitive AI landing structure (hero → features → cards → CTA). It is NOT a new
+ * intelligence system and NOT a competing plan: it is derived DETERMINISTICALLY (no model
+ * call) from the already-built ExperienceArchitecturePlan (+ its Signature and Asset
+ * Strategy) plus the user request, and is NESTED on that plan (`plan.layoutStrategy`).
+ * Business type changes the structure; dashboards/apps never use a marketing landing layout;
+ * explicit user intent wins. Only enums + short prose. */
+export type LayoutPageStructure =
+  | 'narrative'
+  | 'product_first'
+  | 'editorial'
+  | 'showcase'
+  | 'conversion'
+  | 'application';
+
+export type LayoutHeroStyle = 'minimal' | 'immersive' | 'product_demo' | 'editorial' | 'split';
+
+export type LayoutContentDensity = 'minimal' | 'balanced' | 'rich';
+
+export interface LayoutStrategy {
+  version: 'layout-strategy-v1';
+  /** 'derived' from the plan, or 'user-override' when an explicit request won. */
+  basis: 'derived' | 'user-override';
+  pageStructure: LayoutPageStructure;
+  /** The ordered composition beats (e.g. 'atmosphere', 'menu', 'story') — NOT the generic
+   *  hero/features/cards/CTA stack. Short kebab/prose labels. */
+  sectionFlow: string[];
+  heroStyle: LayoutHeroStyle;
+  contentDensity: LayoutContentDensity;
+  avoidPatterns: string[];
+  /** Explicit user directives that shaped the layout (e.g. 'dashboard'). */
+  userDirectives: string[];
+}
+
 export interface ExperienceArchitecturePlan {
   version: 'experience-arch-v1';
   /** How the planner arrived here — 'derived' from planning output, 'user-override' when
@@ -1752,6 +1787,9 @@ export interface ExperienceArchitecturePlan {
   /** PR #513 — the motion strategy. Present only when VITE_ENABLE_MOTION_INTELLIGENCE is on;
    *  absent ⇒ byte-for-byte the prior plan. */
   motionStrategy?: MotionStrategy;
+  /** PR #514 — the page-composition layout strategy. Present only when
+   *  VITE_ENABLE_LAYOUT_DIVERSITY is on; absent ⇒ byte-for-byte the prior plan. */
+  layoutStrategy?: LayoutStrategy;
 }
 
 export interface FrontendBuildSpecification {

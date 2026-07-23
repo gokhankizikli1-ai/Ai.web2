@@ -36,6 +36,9 @@ import { deriveAssetStrategy, assetStrategyEnforcementLines } from '@/lib/webBui
 // PR #513 — the Motion Intelligence layer (a leaf; pure + fail-open). Nested onto this plan;
 // consumes the signature + asset strategy just attached. Flag-gated; undefined ⇒ prior plan.
 import { deriveMotionStrategy, motionStrategyEnforcementLines } from '@/lib/webBuildMotionIntelligence';
+// PR #514 — the Layout Diversity layer (a leaf; pure + fail-open). Nested onto this plan;
+// consumes the signature + asset strategy. Flag-gated; undefined ⇒ prior plan.
+import { deriveLayoutStrategy, layoutStrategyEnforcementLines } from '@/lib/webBuildLayoutDiversity';
 
 /* ── Feature flag ─────────────────────────────────────────────────────────────
  * Read LIVE (per call, never cached at module load) so tests can toggle it and so a
@@ -378,6 +381,12 @@ export function deriveExperienceArchitecturePlan(
     const motionStrategy = deriveMotionStrategy(plan, prompt);
     if (motionStrategy) plan.motionStrategy = motionStrategy;
 
+    // PR #514 — nest the page-composition layout strategy onto the SAME plan (integrated, not
+    // competing). Consumes the signature + asset strategy + prompt. Flag-gated; undefined ⇒
+    // omitted. Fail-open.
+    const layoutStrategy = deriveLayoutStrategy(plan, prompt);
+    if (layoutStrategy) plan.layoutStrategy = layoutStrategy;
+
     return plan;
   } catch {
     return undefined;   // fail open — never break a build
@@ -417,6 +426,8 @@ export function buildExperienceEnforcementBlock(plan: ExperienceArchitecturePlan
     ...assetStrategyEnforcementLines(plan.assetStrategy),
     // PR #513 — the motion strategy (nested on the same plan). Same single block.
     ...motionStrategyEnforcementLines(plan.motionStrategy),
+    // PR #514 — the page-composition layout strategy (nested on the same plan). Same block.
+    ...layoutStrategyEnforcementLines(plan.layoutStrategy),
     '',
   ];
   return lines.join('\n');
