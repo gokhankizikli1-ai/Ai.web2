@@ -2334,6 +2334,16 @@ export interface RenderedScreenshotMeta {
   blank?: boolean;
   /** Optional opaque handle/data-URI — retained for the caller, never parsed here. */
   image?: string;
+  /* ── PR #517 — optional RUNTIME-measured DOM facts (preferred over source inference when
+   *  present). All optional + backward compatible. */
+  /** The runtime reported a render/compile error at this viewport. */
+  runtimeError?: boolean;
+  /** A hero was actually visible in the rendered DOM (checked when the plan requires one). */
+  heroVisible?: boolean;
+  /** A primary CTA was within the first viewport (checked when the plan requires one). */
+  ctaInFirstViewport?: boolean;
+  /** An app-first/no-landing plan nonetheless rendered a marketing hero. */
+  marketingHeroOnAppFirst?: boolean;
 }
 
 export interface RenderedVisualInput {

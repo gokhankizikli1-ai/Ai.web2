@@ -29,7 +29,10 @@ export type VeCommandType =
   | 'CLEAR_SELECTION'
   | 'PREVIEW_IMAGE'
   | 'RESTORE_IMAGE'
-  | 'GET_STATE';
+  | 'GET_STATE'
+  // PR #517 — request a bounded, read-only layout MEASUREMENT of the rendered DOM. This is
+  // NOT a generic query: the runtime returns only fixed numeric/boolean layout metrics.
+  | 'MEASURE';
 
 /** iframe runtime → parent. */
 export type VeEventType =
@@ -41,11 +44,13 @@ export type VeEventType =
   | 'IMAGE_RESTORED'
   | 'ERROR'
   | 'PONG'
-  | 'STATE';
+  | 'STATE'
+  // PR #517 — the read-only layout metrics for a MEASURE request.
+  | 'MEASUREMENT';
 
 const EVENT_TYPES: ReadonlySet<string> = new Set<VeEventType>([
   'READY', 'SELECTION_MODE_CHANGED', 'SELECTED', 'SELECTION_CLEARED',
-  'IMAGE_PREVIEW_APPLIED', 'IMAGE_RESTORED', 'ERROR', 'PONG', 'STATE',
+  'IMAGE_PREVIEW_APPLIED', 'IMAGE_RESTORED', 'ERROR', 'PONG', 'STATE', 'MEASUREMENT',
 ]);
 
 export interface VeEnvelope<T = unknown> {
@@ -186,4 +191,79 @@ export function sanitizeImageTarget(raw: unknown, selection: VisualSelection): V
 /** A short, bounded error code from an ERROR event (never a stack trace). */
 export function sanitizeErrorCode(v: unknown): string {
   return cleanStr(v, 60) || 'error';
+}
+
+/* ── PR #517 — read-only layout MEASUREMENT ──────────────────────────────────── */
+
+/** MEASURE command payload — which viewport to report + the run identity to stamp back, so a
+ *  stale measurement can be discarded. Contains NO source, secrets or user data. */
+export interface VeMeasureRequestPayload {
+  viewport: 'desktop' | 'tablet' | 'mobile';
+  /** Echoed back on the MEASUREMENT so the parent can drop stale/mismatched runs. */
+  runId: string;
+  /** The parent-required layout contract flags (from the plan) the runtime should check. */
+  expectHero?: boolean;
+  expectCta?: boolean;
+  appFirst?: boolean;
+}
+
+/** The bounded, whitelisted layout metrics a MEASUREMENT carries. ONLY fixed numeric/boolean
+ *  layout facts — never DOM nodes, HTML, text content, source, styles, tokens or user data. */
+export interface VeMeasurement {
+  viewport: 'desktop' | 'tablet' | 'mobile';
+  runId: string;
+  width: number;
+  height: number;
+  contentHeight: number;
+  horizontalOverflow: boolean;
+  whitespaceRatio: number;
+  blank: boolean;
+  runtimeCompiled: boolean;
+  runtimeError: boolean;
+  /** Top offset (px) of the first meaningful content block, if resolvable. */
+  firstContentTop?: number;
+  /** Runtime-observed layout-contract facts (DOM truth, not source inference). */
+  heroVisible?: boolean;
+  ctaInFirstViewport?: boolean;
+  marketingHeroOnAppFirst?: boolean;
+}
+
+function clampNum(v: unknown, min: number, max: number): number | undefined {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return undefined;
+  return Math.min(max, Math.max(min, v));
+}
+
+/**
+ * Whitelist an untrusted MEASUREMENT payload into a safe `VeMeasurement`. Only fixed
+ * numeric/boolean layout fields are copied and bounded; anything else is dropped. Returns
+ * `null` when the payload is not a usable measurement (missing viewport / dimensions).
+ */
+export function sanitizeMeasurement(raw: unknown): VeMeasurement | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const viewport = r.viewport === 'desktop' || r.viewport === 'tablet' || r.viewport === 'mobile' ? r.viewport : null;
+  const runId = cleanStr(r.runId, 128);
+  const width = clampNum(r.width, 0, 100000);
+  const height = clampNum(r.height, 0, 100000);
+  if (!viewport || !runId || width === undefined || height === undefined) return null;
+  const contentHeight = clampNum(r.contentHeight, 0, 10000000) ?? height;
+  const whitespaceRatio = clampNum(r.whitespaceRatio, 0, 1) ?? 0;
+  const out: VeMeasurement = {
+    viewport,
+    runId,
+    width,
+    height,
+    contentHeight,
+    horizontalOverflow: r.horizontalOverflow === true,
+    whitespaceRatio,
+    blank: r.blank === true,
+    runtimeCompiled: r.runtimeCompiled === true,
+    runtimeError: r.runtimeError === true,
+  };
+  const firstContentTop = clampNum(r.firstContentTop, 0, 10000000);
+  if (firstContentTop !== undefined) out.firstContentTop = firstContentTop;
+  if (typeof r.heroVisible === 'boolean') out.heroVisible = r.heroVisible;
+  if (typeof r.ctaInFirstViewport === 'boolean') out.ctaInFirstViewport = r.ctaInFirstViewport;
+  if (typeof r.marketingHeroOnAppFirst === 'boolean') out.marketingHeroOnAppFirst = r.marketingHeroOnAppFirst;
+  return out;
 }

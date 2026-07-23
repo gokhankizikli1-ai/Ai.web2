@@ -88,10 +88,32 @@ function fromScreenshots(shots: RenderedScreenshotMeta[], seen: Set<string>): Re
   const add = (i: RenderedVisualIssue) => { const k = `${i.dimension}:${i.code}`; if (!seen.has(k)) { seen.add(k); out.push(i); } };
   for (const shot of shots) {
     const isMobile = shot.viewport === 'mobile';
+    // PR #517 — a runtime render/compile error is the strongest signal.
+    if (shot.runtimeError) {
+      add(rIssue('rendered-runtime-error', 'composition', 'high',
+        `The ${shot.viewport} preview reported a runtime/render error.`,
+        'Fix the runtime error so the page renders; a project that does not render cannot be evaluated visually.'));
+    }
     if (shot.blank) {
       add(rIssue('rendered-blank', 'composition', 'high',
         `The ${shot.viewport} capture rendered blank/near-empty.`,
         'Ensure the page renders real content at first paint (no blank hero / failed mount).'));
+    }
+    // PR #517 — runtime-measured layout-contract facts (DOM truth beats source inference).
+    if (shot.heroVisible === false) {
+      add(rIssue('rendered-hero-missing', 'hero-impact', 'high',
+        `The plan requires a hero, but none was visible in the rendered ${shot.viewport} page.`,
+        'Render the planned hero as the first meaningful block so the page opens with clear impact.'));
+    }
+    if (shot.ctaInFirstViewport === false && !isMobile) {
+      add(rIssue('rendered-cta-below-fold', 'cta-visibility', 'medium',
+        'The primary CTA was not within the first viewport in the rendered page.',
+        'Surface a primary CTA above the fold so the main action is reachable without scrolling.'));
+    }
+    if (shot.marketingHeroOnAppFirst) {
+      add(rIssue('rendered-marketing-hero-on-app', 'template-pattern', 'high',
+        'An app-first/no-landing plan rendered a marketing landing hero.',
+        'Open directly into the application/product experience — do not render a marketing landing hero.'));
     }
     if (shot.horizontalOverflow) {
       add(rIssue('rendered-horizontal-overflow', 'mobile-readiness', isMobile ? 'high' : 'medium',
@@ -123,12 +145,17 @@ function fromScreenshots(shots: RenderedScreenshotMeta[], seen: Set<string>): Re
  */
 export function evaluateRenderedVisual(input: RenderedVisualInput | undefined): RenderedVisualEvaluationArtifact {
   const screenshots = Array.isArray(input?.screenshots) ? input!.screenshots.filter((s) => s && typeof s === 'object') : [];
-  const screenshotReviewed = screenshots.length > 0;
-  const runtimeReviewed = input?.runtimeCompiled === true;
+  // HONESTY (PR #517): screenshotReviewed is true ONLY when actual image pixels were captured
+  // (a screenshot with an `image`). Metadata-only runtime measurements do NOT count as a
+  // screenshot review. runtimeReviewed is true when the runtime was actually observed — i.e.
+  // it compiled, or at least one runtime measurement was produced.
+  const screenshotReviewed = screenshots.some((s) => typeof s.image === 'string' && s.image.length > 0);
+  const runtimeReviewed = input?.runtimeCompiled === true || screenshots.length > 0;
   try {
     if (!input) return safeArtifact(false, false);
-    // Nothing to review at all → safe pass (fail-open).
-    if (!screenshotReviewed && (!Array.isArray(input.files) || input.files.length === 0)) {
+    // Nothing to review at all → safe pass (fail-open). Screenshot METADATA (even without
+    // pixels) is reviewable, so this keys on screenshot presence, not screenshotReviewed.
+    if (screenshots.length === 0 && (!Array.isArray(input.files) || input.files.length === 0)) {
       return safeArtifact(false, runtimeReviewed);
     }
 
