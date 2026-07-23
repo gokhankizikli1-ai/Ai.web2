@@ -27,6 +27,9 @@ import type {
   FrontendBuildSpecification, ExperienceArchitecturePlan, ExperienceSectionContract,
   ExperienceVisualMedium, ExperienceTextDensity, ExperienceHeroContentPriority,
 } from '@/lib/webBuildAgents';
+// PR #511 — the Experience Signature layer (a leaf; pure + fail-open). Nested onto this plan;
+// returns undefined when its own flag is off, so the plan stays the PR #509 contract.
+import { deriveExperienceSignature, experienceSignatureEnforcementLines } from '@/lib/webBuildExperienceSignature';
 
 /* ── Feature flag ─────────────────────────────────────────────────────────────
  * Read LIVE (per call, never cached at module load) so tests can toggle it and so a
@@ -351,6 +354,12 @@ export function deriveExperienceArchitecturePlan(
     const proofStrategy = cap(cleanList(spec.researchEvidence?.trustSignals, 4).join('; '));
     if (proofStrategy) plan.proofStrategy = proofStrategy;
 
+    // PR #511 — nest the memorable-interaction signature onto THIS plan (integrated, not a
+    // competing plan). Gated by its own flag; undefined ⇒ omitted, so the plan stays the
+    // PR #509 contract. Fail-open.
+    const signature = deriveExperienceSignature(plan, prompt);
+    if (signature) plan.signature = signature;
+
     return plan;
   } catch {
     return undefined;   // fail open — never break a build
@@ -383,6 +392,9 @@ export function buildExperienceEnforcementBlock(plan: ExperienceArchitecturePlan
     '- Do NOT assume a hero, headline, CTA pair, feature-card grid, testimonials or a final CTA section',
     '  unless the contract requires it.',
     '- userDirectives are explicit user instructions and OVERRIDE every default above.',
+    // PR #511 — the memorable-interaction signature (nested on the same plan). Folded in here
+    // so there is exactly ONE enforcement block, never a competing one. Empty when absent.
+    ...experienceSignatureEnforcementLines(plan.signature),
     '',
   ];
   return lines.join('\n');
