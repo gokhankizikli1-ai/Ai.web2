@@ -202,7 +202,14 @@ def build_web_build_design_context(
     # a strict no-op when its flag is off.
     try:
         from backend.services import design_observability
-        design_observability.observe(user_request, context)
+        build_id = None
+        if isinstance(context, dict):
+            for key in ("build_id", "buildId", "run_id", "runId", "node_id", "id"):
+                value = context.get(key)
+                if isinstance(value, str) and value.strip():
+                    build_id = value.strip()[:200]
+                    break
+        design_observability.observe(user_request, context, build_id=build_id)
     except Exception as exc:  # noqa: BLE001 — observability must never break a run
         logger.debug("[WB_CTX] design observability soft-failed: %s", type(exc).__name__)
 
