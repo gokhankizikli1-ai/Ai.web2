@@ -1605,6 +1605,43 @@ export interface ExperienceSectionContract {
   fallback?: string;
 }
 
+/* ── Experience Signature (PR #511) ───────────────────────────────────────────
+ * The MEMORABLE first-interaction moment — what makes a site feel distinct rather than a
+ * generic template. It is NOT a competing plan: it is derived DETERMINISTICALLY (no model
+ * call) from the already-built ExperienceArchitecturePlan + identity + user request and
+ * NESTED on that plan (`plan.signature`). Explicit user intent (minimal / no animation /
+ * dashboard / app interface / simple landing) overrides the derived defaults. Only enums +
+ * short prose — never scores, confidence or reasoning. */
+export type ExperienceInteractionPattern =
+  | 'cinematic_scroll'
+  | 'product_reveal'
+  | 'interactive_demo'
+  | 'editorial_storytelling'
+  | 'immersive_gallery'
+  | 'data_exploration'
+  | 'minimal_static';
+
+export type ExperienceMotionIntensity = 'none' | 'subtle' | 'medium' | 'high';
+
+export type ExperienceAttentionStrategy =
+  | 'hero_first'
+  | 'product_first'
+  | 'story_first'
+  | 'interaction_first';
+
+export interface ExperienceSignature {
+  version: 'experience-signature-v1';
+  /** 'derived' from the plan, or 'user-override' when an explicit request won. */
+  basis: 'derived' | 'user-override';
+  signatureMoment: string;
+  emotionalGoal: string;
+  interactionPattern: ExperienceInteractionPattern;
+  motionIntensity: ExperienceMotionIntensity;
+  attentionStrategy: ExperienceAttentionStrategy;
+  /** Explicit user directives that shaped the signature (e.g. 'no animation'). */
+  userDirectives: string[];
+}
+
 export interface ExperienceArchitecturePlan {
   version: 'experience-arch-v1';
   /** How the planner arrived here — 'derived' from planning output, 'user-override' when
@@ -1627,6 +1664,9 @@ export interface ExperienceArchitecturePlan {
   /** The explicit user directives that overrode derived defaults (e.g. 'no landing page').
    *  Kept so generation + validation can honour that explicit intent won. */
   userDirectives: string[];
+  /** PR #511 — the memorable first-interaction signature. Present only when
+   *  VITE_ENABLE_EXPERIENCE_SIGNATURE is on; absent ⇒ byte-for-byte the PR #509 plan. */
+  signature?: ExperienceSignature;
 }
 
 export interface FrontendBuildSpecification {
