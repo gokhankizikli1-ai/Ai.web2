@@ -20,7 +20,8 @@ Feature flag (default OFF → existing behaviour is byte-for-byte unchanged):
 
 Public API:
     is_enabled()                          — is the layer turned on?
-    build_generation_rules(request, ctx)  — the compact rules block, or "" (flag-gated)
+    build_generation_rules(request, ctx)  — the compact rules block, or "" (ENABLE_GENERATION_ADAPTATION-gated)
+    compose_generation_rules(request, ctx)— the SAME block, flag-INDEPENDENT (for other opt-in seams)
 """
 from __future__ import annotations
 
@@ -73,6 +74,17 @@ def build_generation_rules(user_request: str, context: Optional[Dict[str, Any]] 
     functions (this layer's own flag governs whether the rules are produced at all)."""
     if not is_enabled():
         return ""
+    return compose_generation_rules(user_request, context)
+
+
+def compose_generation_rules(user_request: str, context: Optional[Dict[str, Any]] = None) -> str:
+    """The flag-INDEPENDENT composer that turns the existing intelligence outputs into the
+    compact ``DESIGN GENERATION RULES`` block. Identical to :func:`build_generation_rules`
+    except it does NOT check ``ENABLE_GENERATION_ADAPTATION`` — so a DIFFERENT opt-in seam
+    (e.g. the frontend_builder integration, gated by its own flag) can reuse the exact same
+    intelligence without coupling to this layer's flag or duplicating any logic.
+
+    Returns ``""`` when there is no usable signal or on any failure. Never raises."""
     if not (user_request or "").strip() and not context:
         return ""
     try:
@@ -98,4 +110,4 @@ def build_generation_rules(user_request: str, context: Optional[Dict[str, Any]] 
         return ""
 
 
-__all__ = ["is_enabled", "build_generation_rules"]
+__all__ = ["is_enabled", "build_generation_rules", "compose_generation_rules"]

@@ -90,6 +90,34 @@ def _visual_direction(visual: Any) -> str:
     return f"Prioritize {body}." if body else ""
 
 
+def _image_strategy(visual: Any) -> str:
+    """The IMAGE STRATEGY line — what kind of imagery the site should use, decided by the
+    intelligence (never a template). Honours "do not force images everywhere": when the
+    preferred medium is abstract/product-ui/illustration it says so, so a section without a
+    genuinely photographic need is NOT forced to carry a stock photo."""
+    image = _get(visual, "image_strategy") or {}
+    medium = _text(_get(image, "preferred_visual_type"), 40).lower()
+    style = _text(_get(image, "photography_style"))
+    composition = _text(_get(image, "composition"))
+    parts: List[str] = []
+    if medium in ("photography", "photo", "mixed"):
+        lead = "Use real, on-brand photography where an image genuinely helps"
+        if medium == "mixed":
+            lead += " (mixed with abstract/illustrative treatments elsewhere)"
+        parts.append(lead)
+    elif medium in ("abstract", "product-ui", "product_ui", "illustration", "stylized"):
+        parts.append(
+            f"Lead with {medium.replace('_', '-')} visuals rather than literal stock photos; "
+            "add real photography only where it truly fits"
+        )
+    else:
+        parts.append("Use imagery only where it genuinely helps; do not force a photo into every section")
+    detail = _join([style, composition])
+    if detail:
+        parts.append(f"favor {detail}")
+    return _join(parts, sep=", ").rstrip(". ") + "." if parts else ""
+
+
 def _motion_behavior(motion: Any) -> str:
     intensity = _humanize(_get(motion, "intensity"))
     style = _humanize(_get(motion, "animation_style"))
@@ -146,6 +174,10 @@ def translate(personality: Any, visual: Any, motion: Any, quality: Any) -> str:
         vis = _visual_direction(visual)
         if vis:
             lines.append(f"- Visual direction: {vis}")
+
+        img = _image_strategy(visual)
+        if img:
+            lines.append(f"- Image strategy: {img}")
 
         mot = _motion_behavior(motion)
         if mot:

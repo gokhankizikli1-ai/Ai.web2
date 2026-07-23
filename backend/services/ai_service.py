@@ -292,6 +292,24 @@ async def process_chat(
                     if _fb_mode is not None:
                         sys_p = _fb_mode.system_prompt
 
+                    # Design Intelligence → real production path (ENABLE_FRONTEND_DESIGN_RULES,
+                    # default OFF). This is the ONE seam that connects the existing intelligence
+                    # (design personality + visual + motion + quality guard, reused via
+                    # generation_adaptation) to the isolated frontend_builder model that writes
+                    # the actual React source. It appends a compact DESIGN GENERATION RULES block
+                    # — no scores/enums/reasoning, business-signal-driven — ONLY to the initial
+                    # build (never review/repair/revision). Fail-open: on any error nothing is
+                    # appended, so the prompt is byte-for-byte unchanged. The isolation contract
+                    # holds: rules are derived solely from THIS request's spec, not from memory,
+                    # profile, project or chat history.
+                    try:
+                        from backend.services.web_build_context import frontend_rules as _fb_rules
+                        _dgr = _fb_rules.build_frontend_builder_rules(message)
+                        if _dgr:
+                            sys_p = sys_p + "\n\n" + _dgr
+                    except Exception:
+                        logger.debug("process_chat | frontend_builder | design rules skipped", exc_info=True)
+
                     # Phase 13C.1 — the dedicated Frontend Builder uses the OpenAI
                     # Responses API through an ISOLATED, truthful transport. A provider
                     # failure/timeout/incomplete is NEVER laundered into a completed
