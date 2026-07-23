@@ -1642,6 +1642,50 @@ export interface ExperienceSignature {
   userDirectives: string[];
 }
 
+/* ── Asset Strategy (PR #512) ─────────────────────────────────────────────────
+ * Decides WHAT visual assets a site needs before generation — hero asset, per-section
+ * needs, real-vs-generated preference, authenticity and media priority. It is NOT a new
+ * intelligence system and NOT a competing plan: it is derived DETERMINISTICALLY (no model
+ * call) from the already-built ExperienceArchitecturePlan (+ its Signature), the spec's
+ * asset signals (which already carry Visual Intelligence's decisions) and the user request,
+ * and is NESTED on that plan (`plan.assetStrategy`). It never forces images on every site —
+ * typography/none sections get no asset, and explicit "no images"/dashboard requests set the
+ * hero asset to none. Only enums + short prose. */
+export type AssetHeroKind =
+  | 'photography'
+  | 'video'
+  | 'illustration'
+  | 'generated_art'
+  | 'product_render'
+  | 'interactive_demo'
+  | 'none';
+
+export type AssetSectionKind = AssetHeroKind | 'data_visualization';
+
+export type AssetSourcePreference = 'real_assets' | 'generated_assets' | 'mixed';
+export type AssetVisualAuthenticity = 'authentic' | 'branded' | 'abstract';
+export type AssetMediaPriority = 'conversion' | 'storytelling' | 'trust' | 'exploration';
+
+export interface AssetSectionNeed {
+  sectionId: string;
+  assetType: AssetSectionKind;
+  purpose: string;
+}
+
+export interface AssetStrategy {
+  version: 'asset-strategy-v1';
+  /** 'derived' from the plan, or 'user-override' when an explicit request won. */
+  basis: 'derived' | 'user-override';
+  heroAsset: AssetHeroKind;
+  sectionAssets: AssetSectionNeed[];
+  assetSourcePreference: AssetSourcePreference;
+  visualAuthenticity: AssetVisualAuthenticity;
+  avoidAssets: string[];
+  mediaPriority: AssetMediaPriority;
+  /** Explicit user directives that shaped the strategy (e.g. 'no images'). */
+  userDirectives: string[];
+}
+
 export interface ExperienceArchitecturePlan {
   version: 'experience-arch-v1';
   /** How the planner arrived here — 'derived' from planning output, 'user-override' when
@@ -1667,6 +1711,9 @@ export interface ExperienceArchitecturePlan {
   /** PR #511 — the memorable first-interaction signature. Present only when
    *  VITE_ENABLE_EXPERIENCE_SIGNATURE is on; absent ⇒ byte-for-byte the PR #509 plan. */
   signature?: ExperienceSignature;
+  /** PR #512 — the visual asset strategy. Present only when VITE_ENABLE_ASSET_INTELLIGENCE
+   *  is on; absent ⇒ byte-for-byte the prior plan. */
+  assetStrategy?: AssetStrategy;
 }
 
 export interface FrontendBuildSpecification {
