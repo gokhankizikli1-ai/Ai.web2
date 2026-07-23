@@ -1944,7 +1944,38 @@ export interface FrontendBuilderValidationArtifact {
    *  `status` and never gates consumption. Old builds (and flag-off builds) simply lack it. */
   experienceCompliance?: ExperienceComplianceDiagnostics;
 
+  /* ── PR #514 — post-generation VISUAL EVALUATION (suggestions only). Present only when
+   *  VITE_ENABLE_VISUAL_EVALUATION is on. WARNING-ONLY: it NEVER changes `status`, never gates
+   *  consumption, and never triggers a destructive edit — it only surfaces suggested fixes. */
+  visualEvaluation?: VisualEvaluationReport;
+
   reason: string;
+}
+
+/* ── PR #514 — post-generation Visual Evaluation (static, suggestions-only) ────
+ * A post-generation quality loop over the ALREADY-generated frontend-files-v1 source. It is
+ * NOT a generation system and performs NO redesign: it reads the rendered output only and
+ * emits SUGGESTIONS. It is intent-aware — it never flags good minimal design as a defect and
+ * never proposes complexity that contradicts the user request. Deterministic + fail-open. */
+export type VisualEvaluationSeverity = 'high' | 'medium' | 'low';
+
+export interface VisualEvaluationIssue {
+  code: string;
+  message: string;
+  severity: VisualEvaluationSeverity;
+  /** A non-destructive SUGGESTION — never an automatic edit. */
+  suggestion: string;
+}
+
+export interface VisualEvaluationReport {
+  version: 'visual-evaluation-v1';
+  overallIssues: VisualEvaluationIssue[];
+  layoutIssues: VisualEvaluationIssue[];
+  visualIssues: VisualEvaluationIssue[];
+  uxIssues: VisualEvaluationIssue[];
+  mobileIssues: VisualEvaluationIssue[];
+  /** The highest-priority suggested fixes, ranked most-important first (suggestions only). */
+  priorityFixes: string[];
 }
 
 /* ── PR #510 — deterministic, static Experience Architecture compliance (no screenshots) ──
