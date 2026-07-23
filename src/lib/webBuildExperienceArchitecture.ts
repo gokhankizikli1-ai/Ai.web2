@@ -30,6 +30,9 @@ import type {
 // PR #511 — the Experience Signature layer (a leaf; pure + fail-open). Nested onto this plan;
 // returns undefined when its own flag is off, so the plan stays the PR #509 contract.
 import { deriveExperienceSignature, experienceSignatureEnforcementLines } from '@/lib/webBuildExperienceSignature';
+// PR #512 — the Asset Intelligence layer (a leaf; pure + fail-open). Also nested onto this
+// plan; returns undefined when its own flag is off, so the plan stays the prior contract.
+import { deriveAssetStrategy, assetStrategyEnforcementLines } from '@/lib/webBuildAssetIntelligence';
 
 /* ── Feature flag ─────────────────────────────────────────────────────────────
  * Read LIVE (per call, never cached at module load) so tests can toggle it and so a
@@ -360,6 +363,12 @@ export function deriveExperienceArchitecturePlan(
     const signature = deriveExperienceSignature(plan, prompt);
     if (signature) plan.signature = signature;
 
+    // PR #512 — nest the visual asset strategy onto the SAME plan (integrated, not competing).
+    // Consumes the plan (+ signature just attached), the spec's asset signals and the prompt.
+    // Gated by its own flag; undefined ⇒ omitted. Fail-open.
+    const assetStrategy = deriveAssetStrategy(plan, spec, prompt);
+    if (assetStrategy) plan.assetStrategy = assetStrategy;
+
     return plan;
   } catch {
     return undefined;   // fail open — never break a build
@@ -395,6 +404,8 @@ export function buildExperienceEnforcementBlock(plan: ExperienceArchitecturePlan
     // PR #511 — the memorable-interaction signature (nested on the same plan). Folded in here
     // so there is exactly ONE enforcement block, never a competing one. Empty when absent.
     ...experienceSignatureEnforcementLines(plan.signature),
+    // PR #512 — the visual asset strategy (nested on the same plan). Same single block.
+    ...assetStrategyEnforcementLines(plan.assetStrategy),
     '',
   ];
   return lines.join('\n');
