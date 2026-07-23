@@ -374,6 +374,27 @@ function contractRepairArtifact(
   };
 }
 
+// PR #517 — hard upper bound on how long the pipeline will wait for the rendered measurement
+// producer. Defence in depth: the producer is itself bounded/fail-open, but this guarantees a
+// flag-on build never blocks indefinitely on a hung/inaccessible preview.
+const RENDERED_MEASUREMENT_BUDGET_MS = 20_000;
+
+/** Await a rendered-input producer under a bounded timeout + the caller's abort signal.
+ *  Resolves `undefined` on timeout / abort / error — never rejects, never blocks forever. */
+async function withRenderedMeasurementBudget(
+  work: Promise<RenderedVisualInput | undefined>,
+  signal?: AbortSignal,
+): Promise<RenderedVisualInput | undefined> {
+  return new Promise<RenderedVisualInput | undefined>((resolve) => {
+    let settled = false;
+    const done = (v: RenderedVisualInput | undefined) => { if (!settled) { settled = true; clearTimeout(timer); if (signal) signal.removeEventListener('abort', onAbort); resolve(v); } };
+    const onAbort = () => done(undefined);
+    const timer = setTimeout(() => done(undefined), RENDERED_MEASUREMENT_BUDGET_MS);
+    if (signal) { if (signal.aborted) { done(undefined); return; } signal.addEventListener('abort', onAbort, { once: true }); }
+    work.then((v) => done(v)).catch(() => done(undefined));
+  });
+}
+
 /** The final acceptance record — renderedVisualTestStatus is ALWAYS pending-manual-test. */
 function acceptanceArtifact(
   status: FrontendBuilderAcceptanceArtifact['status'],
@@ -419,6 +440,14 @@ export async function runFrontendBuilderQualityPipeline(
     // + optional runtime-compiled flag). When absent (or the flag is off) the rendered visual
     // evaluation is skipped entirely and the pipeline is byte-for-byte unchanged.
     renderedVisualInput?: RenderedVisualInput;
+    // PR #517 — OPTIONAL async producer that measures the just-generated files in an isolated
+    // preview and returns a RenderedVisualInput. Awaited (bounded) BEFORE the rendered-eval
+    // merge, so acceptance is computed ONCE with rendered findings folded into the SAME single
+    // repair — no second pipeline, no duplicate persistence. Fail-open: any timeout/error is
+    // treated as "no measurement" and the pipeline continues unchanged.
+    renderedVisualProducer?: (ctx: {
+      files?: FrontendGeneratedFile[]; spec?: FrontendBuildSpecification; signal?: AbortSignal;
+    }) => Promise<RenderedVisualInput | undefined>;
   },
 ): Promise<WebBuildPayload> {
   // Phase 13H — emit REAL pipeline boundaries to the activity timeline. Wrapped so a
@@ -612,13 +641,25 @@ export async function runFrontendBuilderQualityPipeline(
     //    addresses them. Adds no model call. Fully fail-open — any problem leaves the review as
     //    it was. ──
     let renderedVisualEvaluation: RenderedVisualEvaluationArtifact | undefined;
-    if (isRenderedVisualEvaluationEnabled() && opts?.renderedVisualInput) {
+    if (isRenderedVisualEvaluationEnabled() && (opts?.renderedVisualInput || opts?.renderedVisualProducer)) {
       try {
+        // PR #517 — resolve the rendered input: a caller-supplied static value (#516) OR the
+        // async producer (measures the just-generated files in an isolated preview). The
+        // producer is awaited under a bounded timeout + the caller's abort signal so a flag-on
+        // build can NEVER block indefinitely; any timeout/error yields no measurement.
+        let renderedInput = opts?.renderedVisualInput;
+        if (!renderedInput && opts?.renderedVisualProducer) {
+          renderedInput = await withRenderedMeasurementBudget(
+            opts.renderedVisualProducer({ files: validation?.files, spec, signal: opts?.signal }),
+            opts?.signal,
+          );
+        }
+        if (!renderedInput) throw new Error('no-rendered-input');
         renderedVisualEvaluation = evaluateRenderedVisual({
-          ...opts.renderedVisualInput,
+          ...renderedInput,
           // The parsed generated files (FrontendGeneratedFile[]) carry the source the reused
           // static evaluation reads; fall back to the caller's files when validation is absent.
-          files: opts.renderedVisualInput.files ?? validation?.files,
+          files: renderedInput.files ?? validation?.files,
           spec,
         });
         if (renderedVisualEvaluation && !renderedVisualEvaluation.passed && initialReview.status === 'completed') {

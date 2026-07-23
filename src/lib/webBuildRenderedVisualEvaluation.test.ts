@@ -47,14 +47,21 @@ describe('feature flag', () => {
 
 /* ── Successful evaluation ────────────────────────────────────────────────────*/
 describe('successful evaluation', () => {
-  it('clean desktop + mobile screenshots with real imagery → passes, screenshotReviewed true', () => {
+  it('clean metadata measurements → runtimeReviewed true, screenshotReviewed FALSE (no pixels)', () => {
     const files = [file('<section data-id="hero"><img src="/a.jpg" alt="x"/><h1 class="text-6xl">Dine</h1></section>')];
     const r = evaluateRenderedVisual({ screenshots: [shot(), shot({ viewport: 'mobile', width: 390, height: 844 })], files, spec: spec(), runtimeCompiled: true });
     expect(r.version).toBe('rendered-visual-eval-v1');
-    expect(r.screenshotReviewed).toBe(true);
+    // Metadata-only measurements are NOT a screenshot review (honesty).
+    expect(r.screenshotReviewed).toBe(false);
     expect(r.runtimeReviewed).toBe(true);
     expect(r.passed).toBe(true);
     expect(r.score).toBeGreaterThanOrEqual(70);
+  });
+
+  it('a captured image → screenshotReviewed true', () => {
+    const files = [file('<section data-id="hero"><img src="/a.jpg" alt="x"/><h1 class="text-6xl">Dine</h1></section>')];
+    const r = evaluateRenderedVisual({ screenshots: [shot({ image: 'data:image/png;base64,AAAA' })], files, spec: spec() });
+    expect(r.screenshotReviewed).toBe(true);
   });
 
   it('mobile horizontal overflow → high mobile-readiness issue, not passed', () => {

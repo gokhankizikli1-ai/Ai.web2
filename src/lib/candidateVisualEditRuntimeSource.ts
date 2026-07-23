@@ -463,9 +463,76 @@ export const VE_RUNTIME_SOURCE = `(function () {
       case 'CLEAR_SELECTION': clearSelection(true); break;
       case 'PREVIEW_IMAGE': handlePreview(d.payload, d.requestId); break;
       case 'RESTORE_IMAGE': restoreImage(true); break;
+      case 'MEASURE': handleMeasure(d.payload); break;
       default: break;
     }
   }, false);
+
+  /* ── PR #517 — read-only layout MEASUREMENT. Reports ONLY bounded numeric/boolean layout
+   *  facts (never DOM nodes, HTML, text, source, styles or user data). Fully guarded. ── */
+  function rectTop(el) { try { return Math.round(el.getBoundingClientRect().top); } catch (e) { return 1e7; } }
+  function handleMeasure(payload) {
+    try {
+      var p = (payload && typeof payload === 'object') ? payload : {};
+      var vp = (p.viewport === 'desktop' || p.viewport === 'tablet' || p.viewport === 'mobile') ? p.viewport : 'desktop';
+      var runId = (typeof p.runId === 'string') ? p.runId.slice(0, 128) : '';
+      if (!runId) { return; }
+      var docEl = document.documentElement;
+      var body = document.body;
+      var vw = Math.round(window.innerWidth || (docEl && docEl.clientWidth) || 0);
+      var vh = Math.round(window.innerHeight || (docEl && docEl.clientHeight) || 0);
+      var contentH = Math.round(Math.max(docEl ? docEl.scrollHeight : 0, body ? body.scrollHeight : 0));
+      var scrollW = Math.round(Math.max(docEl ? docEl.scrollWidth : 0, body ? body.scrollWidth : 0));
+      var clientW = Math.round((docEl && docEl.clientWidth) || vw);
+      var horizontalOverflow = scrollW > clientW + 2;
+      // Blank: almost no visible text and no images rendered.
+      var textLen = 0; try { textLen = (body && body.innerText ? body.innerText : '').replace(/\\s+/g, ' ').trim().length; } catch (e2) { textLen = 0; }
+      var imgCount = 0; try { imgCount = document.querySelectorAll('img').length; } catch (e3) { imgCount = 0; }
+      var blank = textLen < 8 && imgCount === 0;
+      // Whitespace ratio (rough, deterministic): fraction of the FIRST viewport not covered by
+      // the top-level content blocks. Bounded to [0,1]; never inspects pixels.
+      var whitespaceRatio = 0;
+      try {
+        var blocks = document.querySelectorAll('section, header, main > *');
+        var covered = 0, n = Math.min(blocks.length, 40);
+        for (var i = 0; i < n; i++) {
+          var r = blocks[i].getBoundingClientRect();
+          if (r.top < vh && r.bottom > 0) { covered += Math.max(0, Math.min(vh, r.bottom) - Math.max(0, r.top)); }
+        }
+        if (vh > 0) { whitespaceRatio = Math.max(0, Math.min(1, 1 - (covered / vh))); }
+      } catch (e4) { whitespaceRatio = 0; }
+      // First meaningful content top.
+      var firstContentTop = undefined;
+      try { var first = document.querySelector('h1, [data-korvix-id], section, header, main'); if (first) firstContentTop = Math.max(0, rectTop(first)); } catch (e5) {}
+      // Layout-contract facts (only when the parent asked).
+      var heroVisible = undefined, ctaInFirstViewport = undefined, marketingHeroOnAppFirst = undefined;
+      try {
+        if (p.expectHero === true) {
+          var hero = document.querySelector('[data-korvix-id*="hero" i], header, section');
+          heroVisible = !!(hero && rectTop(hero) < vh && hero.getBoundingClientRect().height > 40);
+        }
+        if (p.expectCta === true) {
+          var ctas = document.querySelectorAll('a, button'); var seen = false;
+          for (var j = 0; j < Math.min(ctas.length, 60); j++) { var cr = ctas[j].getBoundingClientRect(); if (cr.top >= 0 && cr.top < vh && cr.width > 0 && cr.height > 0) { seen = true; break; } }
+          ctaInFirstViewport = seen;
+        }
+        if (p.appFirst === true) {
+          var h1 = document.querySelector('h1');
+          marketingHeroOnAppFirst = !!(h1 && rectTop(h1) < vh && contentH > vh * 1.5 && document.querySelectorAll('a, button').length >= 2);
+        }
+      } catch (e6) {}
+      var out = {
+        viewport: vp, runId: runId, width: vw, height: vh, contentHeight: contentH,
+        horizontalOverflow: horizontalOverflow, whitespaceRatio: whitespaceRatio, blank: blank,
+        runtimeCompiled: true, runtimeError: false
+      };
+      if (typeof firstContentTop === 'number') out.firstContentTop = firstContentTop;
+      if (typeof heroVisible === 'boolean') out.heroVisible = heroVisible;
+      if (typeof ctaInFirstViewport === 'boolean') out.ctaInFirstViewport = ctaInFirstViewport;
+      if (typeof marketingHeroOnAppFirst === 'boolean') out.marketingHeroOnAppFirst = marketingHeroOnAppFirst;
+      post('MEASUREMENT', out);
+    } catch (err) { /* fail silent — measurement is advisory only */ }
+  }
 
   // Teardown: restore any temporary preview if the iframe is torn down.
   window.addEventListener('pagehide', function () { restoreImage(false); detach(); }, false);
