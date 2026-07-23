@@ -45,4 +45,25 @@ async def get_design_trace(
     return data
 
 
+@router.get("/web-build/path-audit")
+async def get_web_build_path_audit(
+    user: User = Depends(require_owner),
+) -> Dict[str, Any]:
+    """Return the static Web Build production-path architecture audit (which intelligence
+    decisions reach which stage). Read-only, owner-only, and 404 when the audit surface is
+    disabled. Contains only references/notes — no prompts, source, secrets, or user data.
+    Never 500s."""
+    from backend.services import web_build_path_audit
+
+    if not web_build_path_audit.is_enabled():
+        raise HTTPException(status_code=404, detail="not found")
+    try:
+        data = web_build_path_audit.build_path_audit()
+    except Exception:  # noqa: BLE001 — a diagnostics read must never 500
+        raise HTTPException(status_code=404, detail="not found")
+    if not data:
+        raise HTTPException(status_code=404, detail="not found")
+    return data
+
+
 __all__ = ["router"]
