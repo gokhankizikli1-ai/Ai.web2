@@ -25,6 +25,9 @@ import type {
 } from '@/lib/webBuildAgents';
 import { hasAffirmedIntent } from '@/lib/webBuildProductIntent';
 import type { WebBuildFile } from '@/lib/webBuildPayload';
+// PR #510 — the Experience Architecture enforcement block (a leaf; pure; returns "" when no
+// plan is attached, so the frontend_builder request is unchanged with the flag off).
+import { buildExperienceEnforcementBlock } from '@/lib/webBuildExperienceArchitecture';
 import * as aiGuard from '@/lib/aiGuard';
 
 /** The canonical backend AI mode for this workspace. Must match the mode
@@ -1933,6 +1936,11 @@ function builderProjection(spec: FrontendBuildSpecification): Record<string, unk
     } : undefined,
     outputContract: spec.outputContract,
     honestyRules: cap(spec.honestyRules, 16),
+    // PR #510 — the structured Experience Architecture contract. `undefined` when the
+    // planner flag is off; JSON.stringify then OMITS the key entirely, so the serialized
+    // request is byte-for-byte the pre-#510 projection. When present it is already bounded
+    // (section/list/field caps applied at derivation).
+    experienceArchitecture: spec.experienceArchitecture,
     publicCopyPolicy:
       'Only each section.publicCopy (headline, subheadline, primaryCTA, bullets) may be '
       + 'rendered as visible text, verbatim. NEVER render any internalGuidance field '
@@ -1947,6 +1955,12 @@ function builderProjection(spec: FrontendBuildSpecification): Record<string, unk
  *  HTML / WebBuildFile.content / previous model code / chain-of-thought. */
 export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): string {
   const json = JSON.stringify(builderProjection(spec));
+  // PR #510 — when a structured Experience Architecture plan is attached (planner flag on),
+  // prepend a concise ENFORCEMENT block framing the JSON contract as binding. Empty string
+  // when absent ⇒ the request is byte-for-byte the pre-#510 message.
+  const experienceBlock = spec.experienceArchitecture
+    ? buildExperienceEnforcementBlock(spec.experienceArchitecture).split('\n')
+    : [];
   // Phase 14K.4 — real, pre-approved stock photos were sourced for some image slots.
   const sourcedImageSlots = (spec.assets?.imageSlots || []).filter((s) => !!s.url);
   const imageBlock = sourcedImageSlots.length > 0 ? [
@@ -1974,6 +1988,7 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
     'section.publicCopy as visible text; internalGuidance is build guidance, never page copy.',
     'Return ONLY the frontend-files-v1 envelope (## FRONTEND_FILES_V1 … ## END_FRONTEND_FILES_V1).',
     '',
+    ...experienceBlock,
     ...imageBlock,
     // Phase 13F.2 — eliminate REDUNDANT tokens (not design quality). Fully implement the spec —
     // required sections, motion/composition and the quality bar are UNCHANGED — but do not waste

@@ -25,6 +25,9 @@ import type { WebBuildLayoutPlan } from '@/lib/webBuildLayoutPlan';
 // Phase 12F — the shared product-intent authority (a leaf; no runtime cycle) for the
 // final specification contradiction guard.
 import { resolveProductIntent } from '@/lib/webBuildProductIntent';
+// PR #510 — deterministic Experience Architecture planner (a leaf; pure + fail-open; reads
+// only this assembled spec + the prompt, so it introduces no runtime import cycle).
+import { deriveExperienceArchitecturePlan } from '@/lib/webBuildExperienceArchitecture';
 import type {
   FrontendBuildSpecification, FrontendSpecSection, FrontendSpecImageSlot, FrontendSpecMotionLayer,
   FrontendSpecIdentity, FrontendSpecDesignSystem, FrontendSpecArchitecture, FrontendSpecAssetPlan,
@@ -647,7 +650,7 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
     if (copyLeaksSanitized) traceTags.push('publicCopyGuard');
     const finalSourceTrace = traceTags.length ? clean(sourceTrace.concat(traceTags), 26) : sourceTrace;
 
-    return {
+    const built: FrontendBuildSpecification = {
       version: 'frontend-spec-v1',
       status,
       language: lang,
@@ -665,6 +668,16 @@ export function deriveFrontendBuildSpecification(input: FrontendBuildSpecInput):
       generation: { ...NOT_RUN_GENERATION },
       summary,
     };
+
+    // PR #510 — attach the structured Experience Architecture contract when the flag is on.
+    // Derived DETERMINISTICALLY from THIS assembled spec + the user prompt (no model call);
+    // fail-open (undefined ⇒ omit the field, spec byte-for-byte the pre-#510 contract).
+    try {
+      const experienceArchitecture = deriveExperienceArchitecturePlan(built, str(input.prompt));
+      if (experienceArchitecture) built.experienceArchitecture = experienceArchitecture;
+    } catch { /* never block the build on the planner */ }
+
+    return built;
   } catch {
     return failedOpenSpec(input);
   }
