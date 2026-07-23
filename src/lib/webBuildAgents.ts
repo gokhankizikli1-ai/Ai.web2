@@ -1561,6 +1561,74 @@ export interface FrontendSpecOutputContract {
   successCriteria: string[];
 }
 
+/* ── Experience Architecture Plan (PR #510) ───────────────────────────────────
+ * A bounded, TYPED contract that decides what the website should ACTUALLY BE — its
+ * entry pattern, hero behaviour, per-section visual medium, proof strategy, signature
+ * moment and forbidden template patterns — BEFORE any source is generated. It is derived
+ * DETERMINISTICALLY (no extra model call) from the planning output the model already
+ * emits plus the already-computed Visual Intelligence / asset signals; it does NOT
+ * re-implement those systems, and it OWNS experience structure. Optional + additive:
+ * absent ⇒ the spec is byte-for-byte the pre-#510 contract. Gated by
+ * VITE_ENABLE_EXPERIENCE_ARCHITECTURE. Contains only enums + short ids/prose — never
+ * scores, confidence, or chain-of-thought. */
+export type ExperienceVisualMedium =
+  | 'photography'
+  | 'product_ui'
+  | 'interactive_demo'
+  | 'data_visualization'
+  | 'illustration'
+  | 'generated_art'
+  | 'video_or_motion'
+  | 'typography'
+  | 'mixed'
+  | 'none';
+
+export type ExperienceTextDensity = 'low' | 'medium' | 'high';
+
+export type ExperienceHeroContentPriority =
+  | 'text'
+  | 'product_ui'
+  | 'media'
+  | 'catalog'
+  | 'content'
+  | 'interaction'
+  | 'none';
+
+export interface ExperienceSectionContract {
+  id: string;
+  purpose: string;
+  requiredContent: string[];
+  visualMedium: ExperienceVisualMedium;
+  interaction?: string;
+  proofRequirement?: string;
+  textDensity: ExperienceTextDensity;
+  fallback?: string;
+}
+
+export interface ExperienceArchitecturePlan {
+  version: 'experience-arch-v1';
+  /** How the planner arrived here — 'derived' from planning output, 'user-override' when
+   *  an explicit user instruction won. Diagnostic only; never a score/reasoning trace. */
+  basis: 'derived' | 'user-override';
+  experienceType: string;
+  entryPattern: string;
+  landingRequired: boolean;
+  heroPattern: string;
+  heroContentPriority: ExperienceHeroContentPriority;
+  textDensity: ExperienceTextDensity;
+  primaryVisualMedium: ExperienceVisualMedium;
+  signatureMoment?: string;
+  sectionSequence: string[];
+  sectionContracts: ExperienceSectionContract[];
+  navigationBehavior?: string;
+  proofStrategy?: string;
+  conversionPath?: string;
+  forbiddenPatterns: string[];
+  /** The explicit user directives that overrode derived defaults (e.g. 'no landing page').
+   *  Kept so generation + validation can honour that explicit intent won. */
+  userDirectives: string[];
+}
+
 export interface FrontendBuildSpecification {
   version: 'frontend-spec-v1';
   status: FrontendBuildSpecStatus;
@@ -1573,6 +1641,11 @@ export interface FrontendBuildSpecification {
   assets: FrontendSpecAssetPlan;
   researchEvidence: FrontendSpecResearchEvidence;
   outputContract: FrontendSpecOutputContract;
+
+  /** PR #510 — the structured Experience Architecture contract. OPTIONAL and additive:
+   *  present only when VITE_ENABLE_EXPERIENCE_ARCHITECTURE is on; absent ⇒ the spec is
+   *  byte-for-byte the pre-#510 contract and generation is unchanged. */
+  experienceArchitecture?: ExperienceArchitecturePlan;
 
   honestyRules: string[];
   sourceTrace: string[];
@@ -1741,7 +1814,32 @@ export interface FrontendBuilderValidationArtifact {
   internalCopyLeakFiles?: string[];
   heroComponentPath?: string;
 
+  /* ── PR #510 — Experience Architecture contract-compliance diagnostics. Present only
+   *  when a plan was attached to the spec. WARNING-ONLY by construction: it NEVER changes
+   *  `status` and never gates consumption. Old builds (and flag-off builds) simply lack it. */
+  experienceCompliance?: ExperienceComplianceDiagnostics;
+
   reason: string;
+}
+
+/* ── PR #510 — deterministic, static Experience Architecture compliance (no screenshots) ──
+ * Records whether the generated source honoured the structured plan. Diagnostic ONLY —
+ * never blocks a build. `compliant` is a convenience roll-up (all hard checks passed). */
+export interface ExperienceComplianceDiagnostics {
+  version: 'experience-compliance-v1';
+  planPresent: boolean;
+  requiredSectionCount: number;
+  representedSectionCount: number;
+  missingSections: string[];
+  sequenceRespected: boolean;
+  requiredMediaRepresented: boolean;
+  missingMedia: string[];
+  heroPatternRespected: boolean;
+  forbiddenPatternViolations: string[];
+  proofSatisfied: boolean;
+  emptyProofSections: string[];
+  warnings: string[];
+  compliant: boolean;
 }
 
 /* ── Frontend Builder consumption (Phase 12D) ─────────────────────────────────

@@ -20,6 +20,9 @@ import type {
   FrontendBuilderValidationArtifact, FrontendGeneratedFile, FrontendBuilderValidationIssue,
   FrontendGeneratedFileLanguage,
 } from '@/lib/webBuildAgents';
+// PR #510 — deterministic, static Experience Architecture compliance (a leaf; pure +
+// fail-open; returns undefined when no plan is attached, so this file is unchanged then).
+import { evaluateExperienceCompliance } from '@/lib/webBuildExperienceValidation';
 
 /* ── Bounds (safe against untrusted model output) ───────────────────────────── */
 const MAX_GENERATED_FILES = 80;
@@ -836,6 +839,10 @@ function validateProject(rawFiles: RawFile[], spec: FrontendBuildSpecification, 
     repetitiveSectionPaths: repetitiveSectionPaths.length ? repetitiveSectionPaths : undefined,
     internalCopyLeakFiles: internalCopyLeakFiles.length ? internalCopyLeakFiles : undefined,
     heroComponentPath,
+    // PR #510 — Experience Architecture contract compliance (WARNING-ONLY: never changes
+    // `status`/`readyForConsumption`). `undefined` when no plan is attached (flag off / old
+    // build), so the artifact is byte-for-byte unchanged in that case.
+    experienceCompliance: evaluateExperienceCompliance(files, spec.experienceArchitecture),
     reason,
   };
 }
