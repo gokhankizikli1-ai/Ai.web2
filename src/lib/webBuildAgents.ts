@@ -1987,7 +1987,51 @@ export interface FrontendBuilderValidationArtifact {
    *  consumption, and never triggers a destructive edit — it only surfaces suggested fixes. */
   visualEvaluation?: VisualEvaluationReport;
 
+  /* ── PR #515 — post-generation SEMANTIC CONTENT GUARD (suggestions only). Present only when
+   *  VITE_ENABLE_SEMANTIC_CONTENT_GUARD is on. WARNING-ONLY: it NEVER changes `status`, never
+   *  gates consumption, never rewrites content — it reports whether sections carry meaningful
+   *  semantic value vs decorative filler. */
+  semanticContent?: SemanticContentReport;
+
   reason: string;
+}
+
+/* ── PR #515 — post-generation Semantic Content Guard (static, suggestions-only) ──
+ * Checks whether generated sections carry MEANINGFUL semantic value (real proof, evidence,
+ * business substance) instead of decorative filler. It is NOT a generation system: it reads
+ * the already-generated section structure + the plan and emits SUGGESTIONS only — it never
+ * rewrites content and never forces more content. Intent-aware: a minimal site can be valid,
+ * intentional whitespace is not punished, and the user request overrides. Deterministic +
+ * fail-open. */
+export type SemanticContentQuality = 'meaningful' | 'acceptable' | 'weak';
+export type SemanticProofCoverage = 'strong' | 'partial' | 'missing';
+export type SemanticIssueSeverity = 'high' | 'medium' | 'low';
+export type SemanticIssueType =
+  | 'empty-marketing-section'
+  | 'generic-feature-cards'
+  | 'fake-statistics'
+  | 'decorative-proof'
+  | 'unnecessary-section'
+  | 'placeholder-content'
+  | 'repeated-template-pattern'
+  | 'purposeless-visual'
+  | 'missing-business-proof';
+
+export interface SemanticSectionFinding {
+  sectionId: string;
+  issueType: SemanticIssueType;
+  severity: SemanticIssueSeverity;
+  message: string;
+  /** A non-destructive SUGGESTION — never an automatic edit or a content rewrite. */
+  suggestion: string;
+}
+
+export interface SemanticContentReport {
+  version: 'semantic-content-v1';
+  sectionFindings: SemanticSectionFinding[];
+  contentQuality: SemanticContentQuality;
+  proofCoverage: SemanticProofCoverage;
+  genericPatternDetected: boolean;
 }
 
 /* ── PR #514 — post-generation Visual Evaluation (static, suggestions-only) ────

@@ -26,6 +26,9 @@ import { evaluateExperienceCompliance } from '@/lib/webBuildExperienceValidation
 // PR #514 — post-generation Visual Evaluation (a leaf; pure + fail-open; suggestions only;
 // returns undefined when its flag is off, so this file is byte-for-byte unchanged then).
 import { evaluateVisualQuality } from '@/lib/webBuildVisualEvaluation';
+// PR #515 — post-generation Semantic Content Guard (a leaf; pure + fail-open; suggestions
+// only; returns undefined when its flag is off, so this file is unchanged then).
+import { evaluateSemanticContent } from '@/lib/webBuildSemanticContentGuard';
 
 /* ── Bounds (safe against untrusted model output) ───────────────────────────── */
 const MAX_GENERATED_FILES = 80;
@@ -850,6 +853,9 @@ function validateProject(rawFiles: RawFile[], spec: FrontendBuildSpecification, 
     // never gates consumption, never edits). `undefined` when the flag is off, so the artifact
     // is byte-for-byte unchanged in that case.
     visualEvaluation: evaluateVisualQuality(files, spec),
+    // PR #515 — post-generation Semantic Content Guard (SUGGESTIONS ONLY: never changes status,
+    // never gates consumption, never rewrites content). `undefined` when the flag is off.
+    semanticContent: evaluateSemanticContent(files, spec),
     reason,
   };
 }
