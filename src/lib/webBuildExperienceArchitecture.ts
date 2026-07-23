@@ -33,6 +33,9 @@ import { deriveExperienceSignature, experienceSignatureEnforcementLines } from '
 // PR #512 — the Asset Intelligence layer (a leaf; pure + fail-open). Also nested onto this
 // plan; returns undefined when its own flag is off, so the plan stays the prior contract.
 import { deriveAssetStrategy, assetStrategyEnforcementLines } from '@/lib/webBuildAssetIntelligence';
+// PR #513 — the Motion Intelligence layer (a leaf; pure + fail-open). Nested onto this plan;
+// consumes the signature + asset strategy just attached. Flag-gated; undefined ⇒ prior plan.
+import { deriveMotionStrategy, motionStrategyEnforcementLines } from '@/lib/webBuildMotionIntelligence';
 
 /* ── Feature flag ─────────────────────────────────────────────────────────────
  * Read LIVE (per call, never cached at module load) so tests can toggle it and so a
@@ -369,6 +372,12 @@ export function deriveExperienceArchitecturePlan(
     const assetStrategy = deriveAssetStrategy(plan, spec, prompt);
     if (assetStrategy) plan.assetStrategy = assetStrategy;
 
+    // PR #513 — nest the motion strategy onto the SAME plan (integrated, not competing).
+    // Consumes the signature's motion intensity + the asset strategy's hero asset + the prompt.
+    // Gated by its own flag; undefined ⇒ omitted. Fail-open.
+    const motionStrategy = deriveMotionStrategy(plan, prompt);
+    if (motionStrategy) plan.motionStrategy = motionStrategy;
+
     return plan;
   } catch {
     return undefined;   // fail open — never break a build
@@ -406,6 +415,8 @@ export function buildExperienceEnforcementBlock(plan: ExperienceArchitecturePlan
     ...experienceSignatureEnforcementLines(plan.signature),
     // PR #512 — the visual asset strategy (nested on the same plan). Same single block.
     ...assetStrategyEnforcementLines(plan.assetStrategy),
+    // PR #513 — the motion strategy (nested on the same plan). Same single block.
+    ...motionStrategyEnforcementLines(plan.motionStrategy),
     '',
   ];
   return lines.join('\n');

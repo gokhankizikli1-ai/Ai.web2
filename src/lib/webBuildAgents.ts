@@ -1686,6 +1686,41 @@ export interface AssetStrategy {
   userDirectives: string[];
 }
 
+/* ── Motion Strategy (PR #513) ────────────────────────────────────────────────
+ * Decides HOW a site should move before generation — overall level, interaction style, hero
+ * motion and transitions. It is NOT a new intelligence system and NOT a competing plan: it is
+ * derived DETERMINISTICALLY (no model call) from the already-built ExperienceArchitecturePlan
+ * (+ its Signature's motion intensity and its Asset Strategy's hero asset) plus the user
+ * request, and is NESTED on that plan (`plan.motionStrategy`). It never adds animation merely
+ * because a site is AI-generated; dashboards prefer none/subtle; explicit user intent wins;
+ * accessibility/performance are always respected. Only enums + short prose. */
+export type MotionLevel = 'none' | 'subtle' | 'moderate' | 'immersive';
+
+export type MotionInteractionStyle =
+  | 'static'
+  | 'hover'
+  | 'scroll_reveal'
+  | 'parallax'
+  | 'cinematic'
+  | 'interactive';
+
+export type MotionHeroMotion = 'none' | 'fade' | 'slow_zoom' | 'video_motion' | 'interactive';
+
+export type MotionTransitionStyle = 'instant' | 'smooth' | 'cinematic';
+
+export interface MotionStrategy {
+  version: 'motion-strategy-v1';
+  /** 'derived' from the plan, or 'user-override' when an explicit request won. */
+  basis: 'derived' | 'user-override';
+  motionLevel: MotionLevel;
+  interactionStyle: MotionInteractionStyle;
+  heroMotion: MotionHeroMotion;
+  transitionStyle: MotionTransitionStyle;
+  avoidMotion: string[];
+  /** Explicit user directives that shaped the strategy (e.g. 'no animation'). */
+  userDirectives: string[];
+}
+
 export interface ExperienceArchitecturePlan {
   version: 'experience-arch-v1';
   /** How the planner arrived here — 'derived' from planning output, 'user-override' when
@@ -1714,6 +1749,9 @@ export interface ExperienceArchitecturePlan {
   /** PR #512 — the visual asset strategy. Present only when VITE_ENABLE_ASSET_INTELLIGENCE
    *  is on; absent ⇒ byte-for-byte the prior plan. */
   assetStrategy?: AssetStrategy;
+  /** PR #513 — the motion strategy. Present only when VITE_ENABLE_MOTION_INTELLIGENCE is on;
+   *  absent ⇒ byte-for-byte the prior plan. */
+  motionStrategy?: MotionStrategy;
 }
 
 export interface FrontendBuildSpecification {
