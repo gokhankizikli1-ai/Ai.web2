@@ -43,6 +43,13 @@ import {
   parseFrontendBuilderReview, synthesizeDeterministicReviewIssues,
   mergeDeterministicIssues, buildDeterministicFallbackReview,
 } from '@/lib/webBuildFrontendReview';
+// PR #516 — advisory Rendered Visual Evaluation (a leaf; pure + fail-open). Its HIGH findings
+// are merged into the EXISTING review so the EXISTING bounded repair addresses them — no new
+// repair system. Flag-gated and only when the caller supplies a rendered input.
+import {
+  isRenderedVisualEvaluationEnabled, evaluateRenderedVisual, renderedIssuesToReviewIssues,
+} from '@/lib/webBuildRenderedVisualEvaluation';
+import type { RenderedVisualInput, RenderedVisualEvaluationArtifact } from '@/lib/webBuildAgents';
 import type {
   FrontendBuildSpecification, FrontendGeneratedFile,
   FrontendBuilderRepairArtifact, FrontendBuilderAcceptanceArtifact,
@@ -380,7 +387,7 @@ function acceptanceArtifact(
   },
   extra?: Partial<Pick<FrontendBuilderAcceptanceArtifact,
     'usedDeterministicFallback' | 'repairTriggeredByShallowQuality'
-    | 'severeWarningsBeforeRepair' | 'severeWarningsAfterRepair'>>,
+    | 'severeWarningsBeforeRepair' | 'severeWarningsAfterRepair' | 'renderedVisualEvaluation'>>,
 ): FrontendBuilderAcceptanceArtifact {
   return {
     version: 'frontend-acceptance-v1',
@@ -405,7 +412,14 @@ function acceptanceArtifact(
  */
 export async function runFrontendBuilderQualityPipeline(
   plannedPayload: WebBuildPayload,
-  opts?: { signal?: AbortSignal; reporter?: WebBuildActivityReporter },
+  opts?: {
+    signal?: AbortSignal;
+    reporter?: WebBuildActivityReporter;
+    // PR #516 — OPTIONAL rendered visual input (caller-captured screenshot metadata + viewport
+    // + optional runtime-compiled flag). When absent (or the flag is off) the rendered visual
+    // evaluation is skipped entirely and the pipeline is byte-for-byte unchanged.
+    renderedVisualInput?: RenderedVisualInput;
+  },
 ): Promise<WebBuildPayload> {
   // Phase 13H — emit REAL pipeline boundaries to the activity timeline. Wrapped so a
   // reporter error can never affect the build; `emit` is a no-op when no reporter is given.
@@ -590,6 +604,33 @@ export async function runFrontendBuilderQualityPipeline(
       repairTriggeredByShallowQuality = true;
     }
     const usedDeterministicFallback = !!initialReview.usedDeterministicFallback;
+
+    // ── PR #516 — OPTIONAL advisory rendered visual evaluation. Runs ONLY when the flag is on
+    //    AND the caller supplied a rendered input (screenshot metadata). It NEVER replaces
+    //    validation and creates NO new repair: its HIGH findings are mapped to review issues and
+    //    merged (by NEW category only) into the initial review, so the EXISTING bounded repair
+    //    addresses them. Adds no model call. Fully fail-open — any problem leaves the review as
+    //    it was. ──
+    let renderedVisualEvaluation: RenderedVisualEvaluationArtifact | undefined;
+    if (isRenderedVisualEvaluationEnabled() && opts?.renderedVisualInput) {
+      try {
+        renderedVisualEvaluation = evaluateRenderedVisual({
+          ...opts.renderedVisualInput,
+          // The parsed generated files (FrontendGeneratedFile[]) carry the source the reused
+          // static evaluation reads; fall back to the caller's files when validation is absent.
+          files: opts.renderedVisualInput.files ?? validation?.files,
+          spec,
+        });
+        if (renderedVisualEvaluation && !renderedVisualEvaluation.passed && initialReview.status === 'completed') {
+          const renderedReviewIssues = renderedIssuesToReviewIssues(renderedVisualEvaluation);
+          const { issues: mergedR, added: addedR } = mergeDeterministicIssues(initialReview.issues, renderedReviewIssues);
+          if (addedR > 0) {
+            initialReview = recomputeReviewWithMergedIssues(initialReview, mergedR, addedR);
+            repairTriggeredByShallowQuality = repairTriggeredByShallowQuality || !initialReview.passed;
+          }
+        }
+      } catch { /* fail-open: advisory only, never affect the build */ }
+    }
     emit('quality-review', 'completed', reviewRows(initialReview));
 
     // Fast path — a passing initial review keeps the initial project; no repair/final call.
@@ -598,7 +639,7 @@ export async function runFrontendBuilderQualityPipeline(
       const acceptance = acceptanceArtifact('approved', initialProjectName, {
         initialReviewPassed: true, repairAttempted: false, repairAccepted: false, finalReviewPassed: false,
         reason: `Initial static design review passed (score ${initialReview.score ?? '?'}); no severe quality warnings. Rendered visual test pending.`,
-      }, { usedDeterministicFallback, repairTriggeredByShallowQuality: false, severeWarningsBeforeRepair });
+      }, { usedDeterministicFallback, repairTriggeredByShallowQuality: false, severeWarningsBeforeRepair, renderedVisualEvaluation });
       emit('quality-repair', 'skipped');
       emit('acceptance', 'completed', acceptanceRows('approved', initialProjectName));
       return attachFrontendBuilderQualityResult(working, {
@@ -710,7 +751,7 @@ export async function runFrontendBuilderQualityPipeline(
       const acceptance = acceptanceArtifact('repaired-approved', 'repaired-model-native', {
         initialReviewPassed: false, repairAttempted: true, repairAccepted: true, finalReviewPassed: true,
         reason: `One bounded repair accepted after static validation, a passing post-repair review (score ${initialScore} → ${finalScore}) and a clear severe-warning gate. Rendered visual test pending.`,
-      }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, severeWarningsAfterRepair });
+      }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, severeWarningsAfterRepair, renderedVisualEvaluation });
       emit('quality-repair', 'completed', [{ label: 'result', value: 'accepted' }, { label: 'score', value: `${initialScore} → ${finalScore}` }]);
       emit('acceptance', 'completed', acceptanceRows('repaired-approved', 'repaired-model-native'));
       return attachFrontendBuilderQualityResult(working, {
@@ -741,7 +782,7 @@ export async function runFrontendBuilderQualityPipeline(
       initialReviewPassed: false, repairAttempted: true, repairAccepted: false,
       finalReviewPassed: finalReview.passed,
       reason: `${rejectReason} The initial validated project stays active for owner inspection; normal users continue to see Safe Preview. Manual rendered review required.`,
-    }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, severeWarningsAfterRepair });
+    }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, severeWarningsAfterRepair, renderedVisualEvaluation });
     emit('quality-repair', 'completed', [{ label: 'result', value: 'rejected' }]);
     emit('acceptance', 'completed', acceptanceRows('manual-review-required', initialProjectName));
     return attachFrontendBuilderQualityResult(working, { ran: true, initialReview, repair, finalReview, acceptance });

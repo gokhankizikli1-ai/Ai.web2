@@ -92,8 +92,22 @@ export function evaluateVisualQuality(
   files: FrontendGeneratedFile[] | undefined,
   spec: FrontendBuildSpecification | undefined,
 ): VisualEvaluationReport | undefined {
+  if (!isVisualEvaluationEnabled()) return undefined;
+  return computeVisualEvaluation(files, spec);
+}
+
+/**
+ * The flag-INDEPENDENT core of the visual evaluation. Identical to
+ * :func:`evaluateVisualQuality` except it does NOT check VITE_ENABLE_VISUAL_EVALUATION — so a
+ * DIFFERENT opt-in layer (e.g. the rendered visual evaluation, gated by its own flag) can reuse
+ * the exact same source-derived checks without coupling to this layer's flag or duplicating
+ * any logic. Returns `undefined` when there are no files or on any failure. Never throws.
+ */
+export function computeVisualEvaluation(
+  files: FrontendGeneratedFile[] | undefined,
+  spec: FrontendBuildSpecification | undefined,
+): VisualEvaluationReport | undefined {
   try {
-    if (!isVisualEvaluationEnabled()) return undefined;
     if (!Array.isArray(files) || files.length === 0) return undefined;
 
     const blob = files.map((f) => f.content).join('\n');

@@ -2289,7 +2289,78 @@ export interface FrontendBuilderAcceptanceArtifact {
   severeWarningsBeforeRepair?: string[];
   severeWarningsAfterRepair?: string[];
 
+  /* ── PR #516 — optional advisory rendered visual evaluation. Present only when the rendered
+   *  visual evaluation ran (VITE_ENABLE_RENDERED_VISUAL_EVAL on AND the caller supplied a
+   *  screenshot). It NEVER changes `renderedVisualTestStatus` (still 'pending-manual-test') or
+   *  any existing acceptance field — an automated advisory screenshot review is not a manual
+   *  certification. Old artifacts simply lack it. */
+  renderedVisualEvaluation?: RenderedVisualEvaluationArtifact;
+
   reason: string;
+}
+
+/* ── PR #516 — Rendered Visual Evaluation (post-generation, advisory) ──────────
+ * A bounded, fail-open, ADVISORY evaluation of the RENDERED page (screenshot metadata +
+ * viewport + the existing build artifacts + the plan). It does NOT replace validation, makes
+ * no unnecessary model call, and only produces advisory quality findings — its HIGH findings
+ * are fed into the EXISTING bounded repair (never a new repair system). */
+export type RenderedVisualViewport = 'desktop' | 'tablet' | 'mobile';
+
+export type RenderedVisualDimension =
+  | 'composition'
+  | 'spacing'
+  | 'typography'
+  | 'hero-impact'
+  | 'cta-visibility'
+  | 'template-pattern'
+  | 'visual-uniqueness'
+  | 'mobile-readiness';
+
+export type RenderedVisualSeverity = 'high' | 'medium' | 'low';
+
+/** A screenshot the CALLER captured + measured. The image itself is NOT inspected here (no
+ *  vision model call) — only these bounded, caller-measured signals are used. */
+export interface RenderedScreenshotMeta {
+  viewport: RenderedVisualViewport;
+  width: number;
+  height: number;
+  /** Full rendered content height, if the caller measured it. */
+  contentHeight?: number;
+  /** The caller detected horizontal scroll overflow at this viewport. */
+  horizontalOverflow?: boolean;
+  /** Fraction (0–1) of the captured area that is empty/background. */
+  whitespaceRatio?: number;
+  /** The capture came back blank / near-empty. */
+  blank?: boolean;
+  /** Optional opaque handle/data-URI — retained for the caller, never parsed here. */
+  image?: string;
+}
+
+export interface RenderedVisualInput {
+  screenshots?: RenderedScreenshotMeta[];
+  /** The generated project files (defaults to the active files when omitted by the caller). */
+  files?: FrontendGeneratedFile[];
+  spec?: FrontendBuildSpecification;
+  /** True when the caller confirmed the project compiled/ran in the sandbox. */
+  runtimeCompiled?: boolean;
+}
+
+export interface RenderedVisualIssue {
+  code: string;
+  dimension: RenderedVisualDimension;
+  severity: RenderedVisualSeverity;
+  message: string;
+  /** A non-destructive SUGGESTION — never an automatic edit. */
+  suggestion: string;
+}
+
+export interface RenderedVisualEvaluationArtifact {
+  version: 'rendered-visual-eval-v1';
+  score: number;
+  passed: boolean;
+  issues: RenderedVisualIssue[];
+  screenshotReviewed: boolean;
+  runtimeReviewed: boolean;
 }
 
 /* ── Frontend Builder model-native REVISION (Phase 13D) ────────────────────────
