@@ -3,6 +3,7 @@ import { Routes, Route, useLocation, Navigate } from 'react-router';
 import { useAuthStore } from '@/stores/authStore';
 import { useLanguageStore } from '@/stores/languageStore';
 import { currentStorageScope, IDENTITY_CHANGED_EVENT } from '@/lib/storageScope';
+import { shouldRunPreviewMeasurement } from '@/lib/webBuildMeasurementService';
 
 // ── Startup performance (Phase 14I.2) ───────────────────────────────────
 // CONCRETE bottleneck: every page module below used to be a STATIC import,
@@ -31,6 +32,10 @@ import ComingSoon from './pages/ComingSoon';
 import AuthPage from './pages/AuthPage';
 
 // Authenticated app surfaces — code-split (see note above).
+// PR #518 — the app-level hidden measurement host. Lazy + flag-gated so its Sandpack chunk is
+// only fetched when preview measurement is enabled; it renders nothing unless a job is active.
+const WebBuildMeasurementHost = lazy(() => import('./components/builder/WebBuildMeasurementHost'));
+
 const ChatDashboard = lazy(() => import('./pages/ChatDashboard'));
 const SettingsPage = lazy(() => import('./pages/SettingsPage'));
 const HomeDashboard = lazy(() => import('./pages/HomeDashboard'));
@@ -283,6 +288,12 @@ function AppLayout({ children }: { children: React.ReactNode }) {
           Shows FE+BE commit SHAs side by side so you can immediately
           see which deploy is actually live and whether they match. */}
       <BuildInfoOverlay />
+      {/* PR #518 — persistent, hidden Web Build measurement host. Lives in the app shell
+          (outside <Routes>) so a background build whose WebsiteBuilder page has unmounted is
+          still measured. Renders nothing unless BOTH flags are on and a job is active. */}
+      {shouldRunPreviewMeasurement() && (
+        <Suspense fallback={null}><WebBuildMeasurementHost /></Suspense>
+      )}
       {/* OwnerWelcomeToast — one-shot premium greeting that fires
           when an owner session activates. Renders NOTHING for
           non-owners, after the per-session show flag is set, OR on
