@@ -23,6 +23,7 @@ import {
   buildWebBuildPayload, type WebBuildPayload,
 } from '@/lib/webBuildPayload';
 import { runFrontendBuilderQualityPipeline } from '@/lib/webBuildFrontendQuality';
+import { createMeasurementProducer } from '@/lib/webBuildMeasurementService';
 import { runFrontendBuilderRevision } from '@/lib/webBuildFrontendRevision';
 import { saveWebBuildPayloadToProject } from '@/lib/webBuildProject';
 import { applyImageReplacement, type ImageReplacementInput } from '@/lib/webBuildImageReplace';
@@ -270,10 +271,17 @@ export default function WebsiteBuilder() {
       execute: async (signal) => {
         const res = await generateWebBuild(trimmed, { signal, mode });
         const planned = buildWebBuildPayload(trimmed, res, undefined, lang);
+        // PR #518 — FRESH BUILDS ONLY: when both flags are on, pass the rendered-visual
+        // producer so the pipeline measures the generated files in the app-level hidden host
+        // before final acceptance. `createMeasurementProducer` returns undefined when disabled
+        // → the pipeline is byte-for-byte unchanged. The producer routes through the module-
+        // level measurement service, so it survives SPA navigation (independent of this page).
+        const measurementRunId = `mrun_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+        const renderedVisualProducer = createMeasurementProducer(measurementRunId);
         // Phase 12E — one centralized frontend quality pipeline (unchanged): the
         // dedicated builder call + Phase 12C/12D consumption, then the static design
         // review + at most one bounded repair + final acceptance. Only cancellation throws.
-        return runFrontendBuilderQualityPipeline(planned, { signal });
+        return runFrontendBuilderQualityPipeline(planned, { signal, renderedVisualProducer });
       },
     });
   }, [lang, selectedMode]);

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { makeCommand, parseVeEvent, sanitizeMeasurement, type VeMeasurement } from '@/lib/visualEditProtocol';
 import type { PreviewMeasurementTransport, PreviewMeasureRequest } from '@/lib/webBuildPreviewMeasurement';
 
@@ -25,11 +25,18 @@ export interface PreviewMeasurementBridgeOptions {
   resetKey: string;
 }
 
-export function usePreviewMeasurementBridge(opts: PreviewMeasurementBridgeOptions): PreviewMeasurementTransport {
+export interface PreviewMeasurementBridge extends PreviewMeasurementTransport {
+  /** True once the runtime announced READY and this bridge bound to its iframe/instance. The
+   *  host waits on this (bounded) instead of an arbitrary sleep before measuring. */
+  ready: boolean;
+}
+
+export function usePreviewMeasurementBridge(opts: PreviewMeasurementBridgeOptions): PreviewMeasurementBridge {
   const { active, containerRef, resetKey } = opts;
   const boundWinRef = useRef<Window | null>(null);
   const instanceIdRef = useRef<string | null>(null);
   const originRef = useRef<string>('*');
+  const [ready, setReady] = useState(false);
   // Pending MEASURE requests keyed by `${viewport}:${runId}`.
   const pendingRef = useRef<Map<string, (m: VeMeasurement | null) => void>>(new Map());
 
@@ -37,6 +44,10 @@ export function usePreviewMeasurementBridge(opts: PreviewMeasurementBridgeOption
     boundWinRef.current = null;
     instanceIdRef.current = null;
     originRef.current = '*';
+    // Reset readiness when the target preview (resetKey) changes — a legitimate
+    // reset-on-identity-change, not derived render state.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setReady(false);
     // Resolve any in-flight waiters as unavailable when the target resets.
     pendingRef.current.forEach((res) => res(null));
     pendingRef.current.clear();
@@ -56,6 +67,7 @@ export function usePreviewMeasurementBridge(opts: PreviewMeasurementBridgeOption
         boundWinRef.current = (e.source as Window) || iframe.contentWindow;
         instanceIdRef.current = env.instanceId;
         originRef.current = (e.origin && /^https?:\/\//i.test(e.origin)) ? e.origin : '*';
+        setReady(true);
         return;
       }
       // Every non-READY event must come from the bound runtime + instance.
@@ -101,7 +113,7 @@ export function usePreviewMeasurementBridge(opts: PreviewMeasurementBridgeOption
     });
   }, []);
 
-  return { measure };
+  return { measure, ready };
 }
 
 export { MEASURE_TIMEOUT_MS };
