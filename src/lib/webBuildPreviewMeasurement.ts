@@ -22,8 +22,10 @@
  */
 import type {
   RenderedVisualInput, RenderedScreenshotMeta, RenderedVisualViewport, ExperienceArchitecturePlan,
+  CapturedScreenshot,
 } from '@/lib/webBuildAgents';
-import type { VeMeasurement } from '@/lib/visualEditProtocol';
+import type { VeMeasurement, VeScreenshotResult, VeScreenshotFormat } from '@/lib/visualEditProtocol';
+import { VE_SCREENSHOT_MAX_BYTES } from '@/lib/visualEditProtocol';
 import { isRenderedVisualEvaluationEnabled } from '@/lib/webBuildRenderedVisualEvaluation';
 export { isRenderedVisualEvaluationEnabled };
 
@@ -73,14 +75,50 @@ export interface PreviewMeasureRequest {
   appFirst: boolean;
 }
 
+/** PR #521 — the single desktop screenshot capture request. Desktop-only, viewport-only, bounded. */
+export const SCREENSHOT_CAPTURE = { viewport: 'desktop' as const, width: 1440, height: 900 };
+export const SCREENSHOT_FORMAT: VeScreenshotFormat = 'webp';
+export const SCREENSHOT_QUALITY = 0.72;
+export const SCREENSHOT_MAX_BYTES = VE_SCREENSHOT_MAX_BYTES;
+
+export interface PreviewScreenshotRequest {
+  runId: string;
+  width: number;
+  height: number;
+  format: VeScreenshotFormat;
+  quality: number;
+  maxBytes: number;
+}
+
 /**
  * The measurement TRANSPORT — injected so the producer core is fully testable. The real
  * implementation drives the isolated measurement preview over the reused visual-edit bridge;
  * tests pass a fake. It MUST be bounded, cancellable and never throw (resolve `null` on
  * timeout / unavailable / stale).
+ *
+ * PR #521 — an OPTIONAL `captureScreenshot` extends the SAME transport/bridge (no second bridge)
+ * to rasterize ONE desktop screenshot inside the preview iframe. Optional so existing transports
+ * / tests are unaffected; resolves `null` on timeout / unavailable / blocked (fail-open).
  */
 export interface PreviewMeasurementTransport {
   measure(req: PreviewMeasureRequest, signal?: AbortSignal): Promise<VeMeasurement | null>;
+  captureScreenshot?(req: PreviewScreenshotRequest, signal?: AbortSignal): Promise<VeScreenshotResult | null>;
+}
+
+/** Map a validated SCREENSHOT_RESULT → the transient CapturedScreenshot the vision path consumes.
+ *  Returns `undefined` unless the capture is a usable, in-budget image for the expected run. */
+export function toCapturedScreenshot(
+  result: VeScreenshotResult | null | undefined,
+  expectedRunId: string,
+): CapturedScreenshot | undefined {
+  if (!result || !result.ok || result.runId !== expectedRunId) return undefined;
+  if (!result.dataUrl || !result.mimeType || result.byteLength <= 0) return undefined;
+  return {
+    dataUrl: result.dataUrl,
+    mimeType: result.mimeType,
+    byteLength: result.byteLength,
+    partial: result.partial === true,
+  };
 }
 
 /** Map a validated runtime measurement → the #516 screenshot-metadata shape. Note: NO `image`
@@ -138,6 +176,9 @@ export async function produceRenderedVisualInput(opts: {
   plan?: ExperienceArchitecturePlan;
   viewports?: ReadonlyArray<{ viewport: RenderedVisualViewport; width: number; height: number }>;
   signal?: AbortSignal;
+  /** PR #521 — when true, capture ONE desktop screenshot in the SAME preview session for the
+   *  conditional vision review. Decided by the pipeline's capture gate; default off. */
+  captureScreenshot?: boolean;
 }): Promise<RenderedVisualInput | undefined> {
   try {
     const { transport, runId, signal } = opts;
@@ -154,7 +195,22 @@ export async function produceRenderedVisualInput(opts: {
       }
     }));
     if (signal?.aborted) return undefined;
-    return buildRenderedVisualInput(results, runId);
+    const input = buildRenderedVisualInput(results, runId);
+    if (!input) return undefined;
+
+    // ONE desktop screenshot — only when requested AND the transport can capture. Fail-open:
+    // any capture failure leaves `input` exactly as the measurement-only path produced it.
+    if (opts.captureScreenshot && typeof transport.captureScreenshot === 'function' && !signal?.aborted) {
+      try {
+        const shot = await transport.captureScreenshot({
+          runId, width: SCREENSHOT_CAPTURE.width, height: SCREENSHOT_CAPTURE.height,
+          format: SCREENSHOT_FORMAT, quality: SCREENSHOT_QUALITY, maxBytes: SCREENSHOT_MAX_BYTES,
+        }, signal);
+        const captured = toCapturedScreenshot(shot, runId);
+        if (captured && !signal?.aborted) input.capturedScreenshot = captured;
+      } catch { /* fail-open — the screenshot is optional */ }
+    }
+    return input;
   } catch {
     return undefined;   // fail-open — never block the build
   }
@@ -167,13 +223,14 @@ export async function produceRenderedVisualInput(opts: {
  * pipeline's abort signal, so it is bounded, cancellable and fail-open. Pure factory.
  */
 export function createRenderedVisualProducer(transport: PreviewMeasurementTransport, runId: string) {
-  return async (ctx: { spec?: { experienceArchitecture?: ExperienceArchitecturePlan }; signal?: AbortSignal }): Promise<RenderedVisualInput | undefined> => {
+  return async (ctx: { spec?: { experienceArchitecture?: ExperienceArchitecturePlan }; signal?: AbortSignal; captureScreenshot?: boolean }): Promise<RenderedVisualInput | undefined> => {
     if (!isRenderedVisualEvaluationEnabled() || !isPreviewMeasurementEnabled()) return undefined;
     return produceRenderedVisualInput({
       transport,
       runId,
       plan: ctx.spec?.experienceArchitecture,
       signal: ctx.signal,
+      captureScreenshot: ctx.captureScreenshot === true,
     });
   };
 }

@@ -7,9 +7,12 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import {
   shouldRunVisionReview, sanitizeVisionReview, visionReviewToReviewIssues, isRenderedVisionReviewEnabled,
+  buildVisionReviewContext, buildRenderedVisionReviewArtifact, createVisionReviewProducer,
+  requestRenderedVisionReview,
 } from '@/lib/webBuildVisionReview';
 import type {
   FrontendBuilderValidationArtifact, ExperienceArchitecturePlan, RenderedVisionReview,
+  FrontendBuildSpecification, RenderedVisualInput, CapturedScreenshot,
 } from '@/lib/webBuildAgents';
 
 function validation(over: Partial<FrontendBuilderValidationArtifact> = {}): FrontendBuilderValidationArtifact {
@@ -155,5 +158,93 @@ describe('vision → repair adapter', () => {
     ]));
     expect(issues).toHaveLength(2);
     expect(new Set(issues.map((i) => i.category)).size).toBe(2);
+  });
+});
+
+/* ── Bounded review context (PR #521) ─────────────────────────────────────────*/
+function spec(over: Partial<ExperienceArchitecturePlan> = {}): FrontendBuildSpecification {
+  return { prompt: 'a support tool', experienceArchitecture: plan(over) } as unknown as FrontendBuildSpecification;
+}
+const shot = (partial = false): CapturedScreenshot => ({ dataUrl: 'data:image/webp;base64,AAAA', mimeType: 'image/webp', byteLength: 3000, partial });
+
+describe('buildVisionReviewContext', () => {
+  it('summarizes the plan + contract + runtime findings (no source/secrets)', () => {
+    const rendered: RenderedVisualInput = {
+      screenshots: [{ viewport: 'desktop', width: 1440, height: 900, blank: false, horizontalOverflow: true, heroVisible: false }],
+      capturedScreenshot: shot(true),
+    };
+    const ctx = buildVisionReviewContext(spec({ forbiddenPatterns: ['generic centered SaaS hero'] }), rendered);
+    expect(ctx.planSummary).toContain('product-demonstration');
+    expect(ctx.contractSummary.toLowerCase()).toContain('first viewport');
+    expect(ctx.contractSummary.toLowerCase()).toContain('forbidden');
+    expect(ctx.runtimeFindings.join(' ')).toContain('Horizontal scroll overflow');
+    expect(ctx.runtimeFindings.join(' ')).toContain('partial');   // honest capture caveat
+    // No raw prompt / source leaks.
+    expect(`${ctx.planSummary} ${ctx.contractSummary}`).not.toContain('a support tool');
+  });
+  it('no plan → empty summaries, never throws', () => {
+    const ctx = buildVisionReviewContext(undefined, undefined);
+    expect(ctx.contractSummary).toBe('');
+    expect(ctx.planSummary).toBe('');
+    expect(ctx.runtimeFindings).toEqual([]);
+  });
+});
+
+/* ── Observability artifact honesty (PR #521) ─────────────────────────────────*/
+describe('buildRenderedVisionReviewArtifact', () => {
+  it('screenshotReviewed is exactly what the caller asserts (honest)', () => {
+    const a = buildRenderedVisionReviewArtifact({
+      triggered: true, captureSucceeded: true, reviewSucceeded: true, screenshotReviewed: true,
+      issueCount: 2, verdict: 'needs-repair', repairTriggered: true, note: 'vision review needs-repair',
+    });
+    expect(a.version).toBe('rendered-vision-review-artifact-v1');
+    expect(a.screenshotReviewed).toBe(true);
+    expect(a.issueCount).toBe(2);
+  });
+  it('a captured-but-not-reviewed screenshot does NOT claim screenshotReviewed', () => {
+    const a = buildRenderedVisionReviewArtifact({
+      triggered: true, captureSucceeded: true, reviewSucceeded: false, screenshotReviewed: false,
+      issueCount: 0, repairTriggered: false, note: 'vision call returned no usable review',
+    });
+    expect(a.captureSucceeded).toBe(true);
+    expect(a.screenshotReviewed).toBe(false);
+  });
+});
+
+/* ── Backend caller + producer factory (PR #521) ──────────────────────────────*/
+describe('createVisionReviewProducer / requestRenderedVisionReview', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('flag off → no producer (byte-for-byte: pipeline gets nothing)', () => {
+    expect(createVisionReviewProducer('run-1')).toBeUndefined();
+  });
+  it('flag off → requestRenderedVisionReview never calls the network', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    const out = await requestRenderedVisionReview('run-1', { capturedScreenshot: shot(), contractSummary: '', planSummary: '', runtimeFindings: [] });
+    expect(out).toBeUndefined();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it('flag on + ok envelope → returns the raw review', async () => {
+    ON();
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ data: { ok: true, review: { verdict: 'pass' } } }) })));
+    const out = await requestRenderedVisionReview('run-1', { capturedScreenshot: shot(), contractSummary: 'c', planSummary: 'p', runtimeFindings: ['x'] });
+    expect(out).toEqual({ verdict: 'pass' });
+    expect(createVisionReviewProducer('run-1')).toBeTypeOf('function');
+  });
+  it('flag on + fail-open envelope (ok:false) → undefined', async () => {
+    ON();
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ data: { ok: false, review: null } }) })));
+    expect(await requestRenderedVisionReview('run-1', { capturedScreenshot: shot(), contractSummary: '', planSummary: '', runtimeFindings: [] })).toBeUndefined();
+  });
+  it('flag on + non-200 → undefined (fail-open)', async () => {
+    ON();
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, json: async () => ({}) })));
+    expect(await requestRenderedVisionReview('run-1', { capturedScreenshot: shot(), contractSummary: '', planSummary: '', runtimeFindings: [] })).toBeUndefined();
+  });
+  it('flag on + network throw → undefined (never blocks the build)', async () => {
+    ON();
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('offline'); }));
+    expect(await requestRenderedVisionReview('run-1', { capturedScreenshot: shot(), contractSummary: '', planSummary: '', runtimeFindings: [] })).toBeUndefined();
   });
 });

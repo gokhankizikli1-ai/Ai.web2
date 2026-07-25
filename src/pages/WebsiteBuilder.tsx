@@ -24,6 +24,7 @@ import {
 } from '@/lib/webBuildPayload';
 import { runFrontendBuilderQualityPipeline } from '@/lib/webBuildFrontendQuality';
 import { createMeasurementProducer } from '@/lib/webBuildMeasurementService';
+import { createVisionReviewProducer } from '@/lib/webBuildVisionReview';
 import { runFrontendBuilderRevision } from '@/lib/webBuildFrontendRevision';
 import { saveWebBuildPayloadToProject } from '@/lib/webBuildProject';
 import { applyImageReplacement, type ImageReplacementInput } from '@/lib/webBuildImageReplace';
@@ -278,10 +279,14 @@ export default function WebsiteBuilder() {
         // level measurement service, so it survives SPA navigation (independent of this page).
         const measurementRunId = `mrun_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
         const renderedVisualProducer = createMeasurementProducer(measurementRunId);
+        // PR #521 — FRESH BUILDS ONLY: the conditional rendered VISION review producer, bound to
+        // the SAME run identity. `createVisionReviewProducer` returns undefined when the vision
+        // flag is off → the pipeline makes no vision call and is byte-for-byte unchanged.
+        const visionReviewProducer = createVisionReviewProducer(measurementRunId);
         // Phase 12E — one centralized frontend quality pipeline (unchanged): the
         // dedicated builder call + Phase 12C/12D consumption, then the static design
         // review + at most one bounded repair + final acceptance. Only cancellation throws.
-        return runFrontendBuilderQualityPipeline(planned, { signal, renderedVisualProducer });
+        return runFrontendBuilderQualityPipeline(planned, { signal, renderedVisualProducer, visionReviewProducer });
       },
     });
   }, [lang, selectedMode]);

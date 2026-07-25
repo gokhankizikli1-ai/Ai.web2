@@ -9,6 +9,7 @@ import {
   boundRuntimeMessages, emptyRuntimeSnapshot, runtimeSnapshotKey,
   type ModelNativeCandidate, type ModelNativeRuntimePhase, type ModelNativeRuntimeSnapshot,
 } from '@/lib/webBuildRuntimePreview';
+import { isRenderedVisionReviewEnabled } from '@/lib/webBuildVisionReview';
 
 /**
  * ISOLATED runtime Preview of the validated model-native React project (Phase 12D).
@@ -106,6 +107,14 @@ const SANDBOX_DEPENDENCIES: Record<string, string> = {
   autoprefixer: '^10.4.23',
   typescript: '~5.9.3',
 };
+
+/* PR #521 — the DOM rasterizer the in-iframe capture handler dynamically imports for the
+ * conditional rendered vision review. Added to the sandbox ONLY when the vision-review flag is on
+ * AND the visual-edit runtime is injected (the measurement host), so flag-off previews — and the
+ * candidate visual editor — keep the exact prior dependency set (byte-for-byte). Resolved through
+ * Sandpack's existing dependency system (the same mechanism react/framer-motion use), never a
+ * runtime CDN <script>. */
+const SCREENSHOT_RASTERIZER_DEP: Record<string, string> = { 'html-to-image': '^1.11.13' };
 
 /* Preview-only infrastructure files. They are added ONLY to the Sandpack virtual
  * project — never to payload.files / All Files — and never overwrite a model path. */
@@ -494,8 +503,10 @@ export default function WebBuildModelNativePreview({ files, mode = 'embedded', o
   const entryPath = visualEdit && virtualFiles[VE_BOOT_VIRTUAL_PATH] ? VE_BOOT_VIRTUAL_PATH : '/src/main.tsx';
   const customSetup = useMemo<SandpackSetup>(() => ({
     entry: entryPath,
-    dependencies: SANDBOX_DEPENDENCIES,
-  }), [entryPath]);
+    dependencies: (visualEdit && isRenderedVisionReviewEnabled())
+      ? { ...SANDBOX_DEPENDENCIES, ...SCREENSHOT_RASTERIZER_DEP }
+      : SANDBOX_DEPENDENCIES,
+  }), [entryPath, visualEdit]);
 
   // Embedded: sized for the existing 70vh drawer. Standalone: fill the viewport below
   // the Korvix browser chrome. Both go through the shared PreviewViewportShell sizing

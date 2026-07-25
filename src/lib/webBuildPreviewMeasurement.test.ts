@@ -11,10 +11,10 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import {
   produceRenderedVisualInput, buildRenderedVisualInput, deriveMeasureExpectations,
-  isPreviewMeasurementEnabled, isRenderedVisualEvaluationEnabled,
+  isPreviewMeasurementEnabled, isRenderedVisualEvaluationEnabled, toCapturedScreenshot,
   type PreviewMeasurementTransport,
 } from '@/lib/webBuildPreviewMeasurement';
-import { sanitizeMeasurement } from '@/lib/visualEditProtocol';
+import { sanitizeMeasurement, type VeScreenshotResult } from '@/lib/visualEditProtocol';
 import { evaluateRenderedVisual, renderedIssuesToReviewIssues } from '@/lib/webBuildRenderedVisualEvaluation';
 import type { VeMeasurement } from '@/lib/visualEditProtocol';
 import type { ExperienceArchitecturePlan } from '@/lib/webBuildAgents';
@@ -174,6 +174,62 @@ describe('integration', () => {
     expect(r.version).toBe('rendered-visual-eval-v1');
     expect(r.screenshotReviewed).toBe(false);  // no pixels captured
     expect(r.runtimeReviewed).toBe(true);       // runtime WAS observed
+  });
+});
+
+/* ── PR #521 — screenshot capture threading (conditional, one capture, transient) ─*/
+const OK_SHOT: VeScreenshotResult = {
+  runId: RUN, ok: true, mimeType: 'image/webp', byteLength: 3000,
+  dataUrl: 'data:image/webp;base64,' + 'A'.repeat(4000), blank: false, partial: false,
+};
+function capturingTransport(shot: VeScreenshotResult | null, count?: { n: number }): PreviewMeasurementTransport {
+  return {
+    measure: async (req) => meas({ viewport: req.viewport, width: req.width, height: req.height }),
+    captureScreenshot: async () => { if (count) count.n += 1; return shot; },
+  };
+}
+
+describe('screenshot capture threading', () => {
+  it('captureScreenshot=false → transport.captureScreenshot is NOT called, no pixels', async () => {
+    const count = { n: 0 };
+    const input = await produceRenderedVisualInput({ transport: capturingTransport(OK_SHOT, count), runId: RUN, plan: plan(), captureScreenshot: false });
+    expect(count.n).toBe(0);
+    expect(input!.capturedScreenshot).toBeUndefined();
+  });
+  it('captureScreenshot=true → exactly ONE capture, image attached transiently', async () => {
+    const count = { n: 0 };
+    const input = await produceRenderedVisualInput({ transport: capturingTransport(OK_SHOT, count), runId: RUN, plan: plan(), captureScreenshot: true });
+    expect(count.n).toBe(1);                                    // one capture maximum
+    expect(input!.capturedScreenshot?.dataUrl).toBe(OK_SHOT.dataUrl);
+    expect(input!.capturedScreenshot?.mimeType).toBe('image/webp');
+    // The measurement-metadata screenshots still carry NO pixels (evaluator honesty unchanged).
+    expect((input!.screenshots ?? []).every((s) => !s.image)).toBe(true);
+  });
+  it('transport without a captureScreenshot method → no crash, no pixels', async () => {
+    const t: PreviewMeasurementTransport = { measure: async (req) => meas({ viewport: req.viewport }) };
+    const input = await produceRenderedVisualInput({ transport: t, runId: RUN, plan: plan(), captureScreenshot: true });
+    expect(input!.capturedScreenshot).toBeUndefined();
+  });
+  it('a blank / failed capture is dropped (ok:false) — honest, no pixels', async () => {
+    const bad: VeScreenshotResult = { runId: RUN, ok: false, byteLength: 0, blank: true, partial: false, errorCode: 'blank' };
+    const input = await produceRenderedVisualInput({ transport: capturingTransport(bad), runId: RUN, plan: plan(), captureScreenshot: true });
+    expect(input!.capturedScreenshot).toBeUndefined();
+  });
+  it('a stale-run capture (wrong runId) is dropped', async () => {
+    const stale: VeScreenshotResult = { ...OK_SHOT, runId: 'OTHER' };
+    const input = await produceRenderedVisualInput({ transport: capturingTransport(stale), runId: RUN, plan: plan(), captureScreenshot: true });
+    expect(input!.capturedScreenshot).toBeUndefined();
+  });
+});
+
+describe('toCapturedScreenshot', () => {
+  it('maps a valid, matching-run result', () => {
+    expect(toCapturedScreenshot(OK_SHOT, RUN)).toEqual({ dataUrl: OK_SHOT.dataUrl, mimeType: 'image/webp', byteLength: 3000, partial: false });
+  });
+  it('drops ok:false / wrong-run / empty results', () => {
+    expect(toCapturedScreenshot({ ...OK_SHOT, ok: false }, RUN)).toBeUndefined();
+    expect(toCapturedScreenshot(OK_SHOT, 'OTHER')).toBeUndefined();
+    expect(toCapturedScreenshot(null, RUN)).toBeUndefined();
   });
 });
 

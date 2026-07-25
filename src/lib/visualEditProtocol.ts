@@ -32,7 +32,11 @@ export type VeCommandType =
   | 'GET_STATE'
   // PR #517 — request a bounded, read-only layout MEASUREMENT of the rendered DOM. This is
   // NOT a generic query: the runtime returns only fixed numeric/boolean layout metrics.
-  | 'MEASURE';
+  | 'MEASURE'
+  // PR #521 — request ONE bounded, viewport-only rasterization of the rendered preview. The
+  // runtime returns a single compressed image data URL (or an honest failure). It is NOT a
+  // generic screen-scrape: only the generated preview's own viewport is captured.
+  | 'CAPTURE_SCREENSHOT';
 
 /** iframe runtime → parent. */
 export type VeEventType =
@@ -46,11 +50,14 @@ export type VeEventType =
   | 'PONG'
   | 'STATE'
   // PR #517 — the read-only layout metrics for a MEASURE request.
-  | 'MEASUREMENT';
+  | 'MEASUREMENT'
+  // PR #521 — the bounded result of a CAPTURE_SCREENSHOT request (one compressed image or a
+  // typed failure). Never carries DOM/source/text — only the encoded pixels + honest metadata.
+  | 'SCREENSHOT_RESULT';
 
 const EVENT_TYPES: ReadonlySet<string> = new Set<VeEventType>([
   'READY', 'SELECTION_MODE_CHANGED', 'SELECTED', 'SELECTION_CLEARED',
-  'IMAGE_PREVIEW_APPLIED', 'IMAGE_RESTORED', 'ERROR', 'PONG', 'STATE', 'MEASUREMENT',
+  'IMAGE_PREVIEW_APPLIED', 'IMAGE_RESTORED', 'ERROR', 'PONG', 'STATE', 'MEASUREMENT', 'SCREENSHOT_RESULT',
 ]);
 
 export interface VeEnvelope<T = unknown> {
@@ -266,4 +273,97 @@ export function sanitizeMeasurement(raw: unknown): VeMeasurement | null {
   if (typeof r.ctaInFirstViewport === 'boolean') out.ctaInFirstViewport = r.ctaInFirstViewport;
   if (typeof r.marketingHeroOnAppFirst === 'boolean') out.marketingHeroOnAppFirst = r.marketingHeroOnAppFirst;
   return out;
+}
+
+/* ── PR #521 — bounded single-viewport SCREENSHOT capture ─────────────────────── */
+
+export type VeScreenshotFormat = 'webp' | 'jpeg' | 'png';
+/** MIME types the parent will accept back — kept in sync with VeScreenshotFormat. */
+export const VE_SCREENSHOT_MIME_TYPES: ReadonlySet<string> = new Set(['image/webp', 'image/jpeg', 'image/png']);
+/** Hard ceiling on the encoded image the parent will accept (fail-open above this). */
+export const VE_SCREENSHOT_MAX_BYTES = 1_600_000;
+/** data:image/<fmt>;base64,<...> — the only shape the parent trusts as an image. */
+const SCREENSHOT_DATA_URL_RE = /^data:image\/(webp|jpe?g|png);base64,[A-Za-z0-9+/=]+$/;
+
+/** CAPTURE_SCREENSHOT command payload — desktop-only, viewport-only, bounded. Carries the run
+ *  identity so a stale capture can be discarded. Contains NO source/secrets/user data. */
+export interface VeScreenshotRequestPayload {
+  /** Only 'desktop' is captured for the rendered vision review (viewport-only, not full page). */
+  viewport: 'desktop';
+  /** Echoed back on SCREENSHOT_RESULT so the parent can drop stale/mismatched runs. */
+  runId: string;
+  width: number;
+  height: number;
+  format: VeScreenshotFormat;
+  /** 0–1 encoder quality (ignored for png). */
+  quality: number;
+  /** The runtime must not return an image larger than this many encoded bytes. */
+  maxBytes: number;
+}
+
+/** The bounded result of a CAPTURE_SCREENSHOT. On success `dataUrl` is a single compressed image;
+ *  on any failure/blank/oversized/tainted capture, `ok` is false and `errorCode` explains why.
+ *  `partial` marks an honestly-incomplete capture (e.g. cross-origin media could not be drawn). */
+export interface VeScreenshotResult {
+  runId: string;
+  ok: boolean;
+  mimeType?: string;
+  byteLength: number;
+  dataUrl?: string;
+  blank: boolean;
+  partial: boolean;
+  errorCode?: string;
+}
+
+/** Approx. decoded byte length of a base64 data URL WITHOUT allocating the bytes. */
+export function base64DataUrlByteLength(dataUrl: string): number {
+  const comma = dataUrl.indexOf(',');
+  if (comma < 0) return 0;
+  const b64 = dataUrl.slice(comma + 1);
+  const padding = b64.endsWith('==') ? 2 : b64.endsWith('=') ? 1 : 0;
+  return Math.max(0, Math.floor((b64.length * 3) / 4) - padding);
+}
+
+/**
+ * Whitelist an untrusted SCREENSHOT_RESULT payload into a safe `VeScreenshotResult`. Enforces:
+ * a valid runId, a recognized image MIME + `data:image/...;base64,...` shape, and the encoded
+ * size ceiling. A blank / oversized / malformed / mismatched-format capture is normalized to
+ * `ok:false` with a bounded errorCode (never trusted as a reviewable image). Returns `null` only
+ * when there is no usable run identity. Never throws.
+ */
+export function sanitizeScreenshotResult(raw: unknown, maxBytes = VE_SCREENSHOT_MAX_BYTES): VeScreenshotResult | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, unknown>;
+  const runId = cleanStr(r.runId, 128);
+  if (!runId) return null;
+  const blank = r.blank === true;
+  const partial = r.partial === true;
+  const errorCode = cleanStr(r.errorCode, 60);
+  const base: VeScreenshotResult = { runId, ok: false, byteLength: 0, blank, partial };
+  if (errorCode) base.errorCode = errorCode;
+
+  // Only a well-formed, in-budget, non-blank image data URL is accepted as ok.
+  const dataUrl = typeof r.dataUrl === 'string' ? r.dataUrl : '';
+  const mimeType = cleanStr(r.mimeType, 40);
+  if (r.ok !== true) return base;
+  if (blank) return { ...base, ok: false, errorCode: base.errorCode || 'blank' };
+  if (!dataUrl || dataUrl.length > maxBytes * 2 || !SCREENSHOT_DATA_URL_RE.test(dataUrl)) {
+    return { ...base, ok: false, errorCode: 'invalid-data-url' };
+  }
+  if (mimeType && !VE_SCREENSHOT_MIME_TYPES.has(mimeType)) {
+    return { ...base, ok: false, errorCode: 'unsupported-mime' };
+  }
+  const byteLength = base64DataUrlByteLength(dataUrl);
+  if (byteLength <= 0) return { ...base, ok: false, errorCode: 'blank' };
+  if (byteLength > maxBytes) return { ...base, ok: false, byteLength, errorCode: 'too-large' };
+  const derivedMime = `image/${(dataUrl.slice(11, dataUrl.indexOf(';')) || 'webp').replace('jpg', 'jpeg')}`;
+  return {
+    runId,
+    ok: true,
+    mimeType: mimeType && VE_SCREENSHOT_MIME_TYPES.has(mimeType) ? mimeType : derivedMime,
+    byteLength,
+    dataUrl,
+    blank: false,
+    partial,
+  };
 }
