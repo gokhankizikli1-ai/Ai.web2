@@ -61,6 +61,38 @@ const GENERIC_FALLBACKS = [
   'neon/futuristic styling merely because the product uses AI',
 ];
 
+/* A generic anti-template default must NOT forbid something the user EXPLICITLY asked for. Each
+ * entry pairs a fallback (matched loosely) with the explicit-intent evidence that justifies it.
+ * Only these GENERIC defaults are overridable — safety and structural plan requirements are not.
+ * Evidence is read from the user's real request/directives, never inferred from an internal enum. */
+const EXPLICIT_INTENT_OVERRIDES: ReadonlyArray<{ fallback: RegExp; requested: RegExp }> = [
+  { fallback: /two cta buttons|centered large headline/i, requested: /centered (hero|headline|layout|typograph)|typographic hero|hero with (a )?(centered )?headline|centered.*hero/i },
+  { fallback: /three-identical-card|features section/i, requested: /feature (card|comparison)|comparison (card|table)|feature grid|pricing (card|table)|card grid/i },
+  { fallback: /metric\/number cards/i, requested: /metric (card|grid)|stat(s| card| grid)|number card/i },
+  { fallback: /dark-purple/i, requested: /purple|violet|dark (theme|mode|palette|background)|dark[- ]purple/i },
+  { fallback: /neon/i, requested: /neon|futuristic|cyberpunk|glow/i },
+];
+
+const MAX_EXPLICIT_REQUEST = 600;
+
+/** Bounded, lowercase view of what the user EXPLICITLY asked for — their original request plus any
+ *  user directives carried on the plan. Deliberately EXCLUDES `experienceType` (an internal enum):
+ *  explicit intent must come from the real request, not an inferred classification. Never stored. */
+function explicitRequestText(explicitRequest: string | undefined, plan: ExperienceArchitecturePlan): string {
+  const directives = [
+    ...(plan.userDirectives || []), ...(plan.signature?.userDirectives || []),
+    ...(plan.assetStrategy?.userDirectives || []), ...(plan.layoutStrategy?.userDirectives || []),
+  ].join(' ');
+  return `${s(explicitRequest)} ${directives}`.toLowerCase().replace(/\s+/g, ' ').trim().slice(0, MAX_EXPLICIT_REQUEST);
+}
+
+/** True when the user's explicit request justifies keeping a generic fallback (so it must NOT be
+ *  forbidden). Empty request → never justified (defaults stay in force). */
+function isExplicitlyRequested(fallback: string, explicit: string): boolean {
+  if (!explicit) return false;
+  return EXPLICIT_INTENT_OVERRIDES.some((o) => o.fallback.test(fallback) && o.requested.test(explicit));
+}
+
 interface Intent { minimal: boolean; appFirst: boolean; expectsImages: boolean; }
 function readIntent(plan: ExperienceArchitecturePlan): Intent {
   const directives = [
@@ -87,12 +119,20 @@ function mediumLabel(m: ExperienceVisualMedium): string {
 /**
  * Build the binding generation contract from an already-built plan. Returns `undefined` when
  * the flag is off or there is no usable plan. Pure + fail-open — never throws.
+ *
+ * `explicitRequest` is the user's ORIGINAL request (bounded). It is used ONLY to keep an
+ * explicitly-requested pattern out of the generic forbidden list — it is never stored on, nor
+ * exposed through, the returned contract.
  */
-export function buildGenerationContract(plan: ExperienceArchitecturePlan | undefined): FrontendGenerationContract | undefined {
+export function buildGenerationContract(
+  plan: ExperienceArchitecturePlan | undefined,
+  explicitRequest?: string,
+): FrontendGenerationContract | undefined {
   try {
     if (!isHardGenerationContractEnabled()) return undefined;
     if (!plan || plan.version !== 'experience-arch-v1') return undefined;
     const intent = readIntent(plan);
+    const explicit = explicitRequestText(explicitRequest, plan);
 
     // Entry requirement.
     let entryRequirement: string;
@@ -153,7 +193,11 @@ export function buildGenerationContract(plan: ExperienceArchitecturePlan | undef
       ...(plan.assetStrategy?.avoidAssets || []),
       ...(plan.motionStrategy?.avoidMotion || []),
     ], 10);
-    const forbiddenPatterns = cleanList([...planForbids, ...GENERIC_FALLBACKS], MAX_LIST);
+    // Drop any GENERIC anti-template default the user EXPLICITLY asked for (explicit intent
+    // overrides generic defaults). Plan-derived forbids stay — they are business requirements,
+    // not generic staples.
+    const genericFallbacks = GENERIC_FALLBACKS.filter((f) => !isExplicitlyRequested(f, explicit));
+    const forbiddenPatterns = cleanList([...planForbids, ...genericFallbacks], MAX_LIST);
 
     const creativeFreedom = cleanList([
       'exact copy wording (kept truthful and specific)',
@@ -212,14 +256,51 @@ export interface ContractFinding {
 const norm = (v: string): string => (v || '').toLowerCase();
 const count = (re: RegExp, hay: string): number => (hay.match(re) || []).length;
 
+/* Files that plausibly hold the app's ROOT render — where source order can reflect render order. */
+const ENTRY_FILE_RE = /(^|\/)(App|main|index|Root|Page|Home)\.(t|j)sx?$/i;
+/** JSX tag for a custom (PascalCase) component — its markup lives in ANOTHER file, so its
+ *  presence before any inline first-viewport structure means source order ≠ rendered order. */
+const CUSTOM_COMPONENT_RE = /<[A-Z][A-Za-z0-9]*[\s/>]/;
+
+/**
+ * Resolve the first-viewport source ONLY when the render order is strongly evidenced from a
+ * single repository-native entry file — i.e. the entry inlines its first structural container
+ * (`<section>`/`<header>`/`<main>`/`<h1>`/`<img>`) before rendering any child component. When the
+ * page is composed of child components split across files (a `<Hero/>` rendered before any inline
+ * markup), source order does NOT reveal what the browser paints first, so evidence is WEAK and we
+ * defer to the existing rendered-DOM evaluation instead of guessing from arbitrary file order.
+ */
+function resolveFirstViewport(files: FrontendGeneratedFile[]): { strong: boolean; firstSection: string } {
+  const entry = files.find((f) => ENTRY_FILE_RE.test(f.path))
+    || files.find((f) => /export\s+default/.test(f.content) && /<[A-Za-z]/.test(f.content))
+    || files[0];
+  const content = entry?.content || '';
+  if (!content) return { strong: false, firstSection: '' };
+  const structural = content.search(/<(section|header|main)\b/i);
+  const headline = content.search(/<h1\b/i);
+  const img = content.search(/<img\b/i);
+  const custom = content.search(CUSTOM_COMPONENT_RE);
+  const inlineStarts = [structural, headline, img].filter((i) => i >= 0);
+  if (inlineStarts.length === 0) return { strong: false, firstSection: '' }; // pure composition
+  const firstInline = Math.min(...inlineStarts);
+  // A child component rendered before the first inline structure owns the true first viewport.
+  if (custom >= 0 && custom < firstInline) return { strong: false, firstSection: '' };
+  const start = structural >= 0 && structural <= firstInline ? structural : firstInline;
+  return { strong: true, firstSection: content.slice(start, start + 1800) };
+}
+
 /**
  * Deterministic static checks of generated source against the contract. Only STRONG evidence
  * yields major/blocker; intentionally minimal / typography-first / app-first sites are not
  * penalised (no false positives). Pure + fail-open — returns [] on any problem.
+ *
+ * `explicitRequest` is the user's ORIGINAL request (bounded): a pattern they explicitly asked
+ * for (e.g. a pricing or testimonials section) is not flagged as unrequested.
  */
 export function evaluateContractCompliance(
   files: FrontendGeneratedFile[] | undefined,
   plan: ExperienceArchitecturePlan | undefined,
+  explicitRequest?: string,
 ): ContractFinding[] {
   try {
     if (!plan || plan.version !== 'experience-arch-v1') return [];
@@ -227,17 +308,22 @@ export function evaluateContractCompliance(
     const intent = readIntent(plan);
     const blob = files.map((f) => f.content).join('\n');
     const low = norm(blob);
-    const firstSection = blob.split(/<section\b/i)[1] || blob.slice(0, 1500);
+    // First-viewport evidence: strong only when a single entry file inlines the first render
+    // (see resolveFirstViewport). Weak evidence ⇒ empty firstSection ⇒ no first-viewport findings.
+    const fv = resolveFirstViewport(files);
+    const firstSection = fv.firstSection;
     const firstLow = norm(firstSection);
     const out: ContractFinding[] = [];
-    const requested = norm(s(plan.userDirectives?.join(' ')) + ' ' + s(plan.experienceType));
+    // Explicit intent from the REAL request + directives (never experienceType alone).
+    const requested = `${explicitRequestText(explicitRequest, plan)} ${norm(s(plan.experienceType))}`.trim();
 
     const productFirst = /product-first|interactive-demo/.test(plan.entryPattern || '')
       || plan.heroContentPriority === 'interaction' || plan.heroContentPriority === 'product_ui';
     const interactiveMarkers = /(usestate|onclick|onchange|<button\b|<input\b|<textarea\b|role=["']tab)/;
 
-    // 1. Generic headline-first fallback against a product-first plan.
-    if (productFirst && /<h1\b/i.test(firstSection) && !interactiveMarkers.test(firstLow) && !/<img\b/i.test(firstSection)) {
+    // 1. Generic headline-first fallback against a product-first plan. Emitted ONLY on strong
+    //    render-order evidence; a split multi-file composition defers to rendered DOM evaluation.
+    if (fv.strong && productFirst && /<h1\b/i.test(firstSection) && !interactiveMarkers.test(firstLow) && !/<img\b/i.test(firstSection)) {
       out.push({
         code: 'contract-headline-first-vs-product-first', severity: 'major',
         message: 'The plan is product-first/interactive, but the first viewport is a text headline with no functional product experience.',

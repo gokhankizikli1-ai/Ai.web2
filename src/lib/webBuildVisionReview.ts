@@ -104,18 +104,31 @@ function sanitizeIssue(raw: unknown): VisionReviewIssue | null {
 /**
  * Validate + bound an untrusted provider JSON into a typed `RenderedVisionReview`. Returns
  * `undefined` for a malformed/empty payload (fail-open). Never throws.
+ *
+ * The FINAL verdict is NORMALIZED from the (bounded) issues so the review is always internally
+ * consistent — the provider's self-reported verdict is used only as a validity gate, never
+ * trusted directly:
+ *   - any major/blocker issue  → `needs-repair`  (a "pass" can never hide a real defect)
+ *   - zero actionable issues   → `pass`          (minor-only findings stay advisory)
+ * This guarantees "pass" never coexists with a major/blocker, and a "needs-repair" without an
+ * actionable finding is normalized back to "pass" (fail-open — never force an empty repair).
  */
 export function sanitizeVisionReview(raw: unknown): RenderedVisionReview | undefined {
   try {
     if (!raw || typeof raw !== 'object') return undefined;
     const r = raw as Record<string, unknown>;
-    const verdict = r.verdict === 'needs-repair' ? 'needs-repair' : r.verdict === 'pass' ? 'pass' : null;
-    if (!verdict) return undefined;
+    // Validity gate only: a payload with no recognizable verdict is malformed → fail-open.
+    const rawVerdict = r.verdict === 'needs-repair' ? 'needs-repair' : r.verdict === 'pass' ? 'pass' : null;
+    if (!rawVerdict) return undefined;
     const scoreNum = typeof r.score === 'number' && Number.isFinite(r.score) ? Math.max(0, Math.min(100, r.score)) : 0;
     const issues = Array.isArray(r.issues)
       ? r.issues.map(sanitizeIssue).filter((i): i is VisionReviewIssue => !!i).slice(0, MAX_ISSUES) : [];
     const signals = Array.isArray(r.templateSimilaritySignals)
       ? r.templateSimilaritySignals.map((x) => str(x, 80)).filter(Boolean).slice(0, MAX_SIGNALS) : [];
+    // Normalize the verdict from the actual issues (see doc-comment) — never from the provider's
+    // self-report. An actionable finding is a major/blocker; minor findings are advisory only.
+    const hasActionable = issues.some((i) => i.severity === 'major' || i.severity === 'blocker');
+    const verdict: 'pass' | 'needs-repair' = hasActionable ? 'needs-repair' : 'pass';
     return {
       version: 'rendered-vision-review-v1',
       verdict,
@@ -142,32 +155,57 @@ function categoryFor(area: string, code: string): FrontendBuilderReviewCategory 
   if (/composition|layout|balance|rhythm/.test(t)) return 'layout-rhythm';
   return 'concept-fidelity';
 }
-function toReviewSeverity(sev: VisionReviewSeverity): FrontendBuilderReviewSeverity {
-  return sev === 'blocker' ? 'blocker' : sev === 'major' ? 'major' : 'minor';
-}
+/** How many distinct observations/instructions per category ride into the repair — a small
+ *  bound so a category with many findings informs the repair without flooding the prompt. */
+const MAX_FINDINGS_PER_CATEGORY = 3;
+const dedupe = (xs: string[]): string[] => {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const x of xs) {
+    const t = x.trim();
+    if (!t || seen.has(t.toLowerCase())) continue;
+    seen.add(t.toLowerCase());
+    out.push(t);
+  }
+  return out;
+};
 
 /**
  * Convert a vision review's MAJOR/BLOCKER findings → review issues for the EXISTING bounded
  * repair. MINOR findings are intentionally excluded so they never force a repair (advisory).
- * Dedups by category. The repair instruction carries the targeted correction; the caller adds
- * the preservation instruction the repair prompt already includes.
+ *
+ * Findings are GROUPED by review category and each group becomes ONE bounded merged issue: the
+ * earlier per-category dedup silently dropped every distinct finding after the first, so a
+ * category with several genuine defects lost all but one. The merged issue preserves up to
+ * `MAX_FINDINGS_PER_CATEGORY` distinct observations + their targeted repair instructions (and
+ * escalates to `blocker` when any finding in the group is a blocker), so no distinct major
+ * finding is discarded, yet the repair prompt is not flooded. The caller adds the preservation
+ * instruction the repair prompt already includes.
  */
 export function visionReviewToReviewIssues(review: RenderedVisionReview | undefined): FrontendBuilderReviewIssue[] {
   if (!review || review.version !== 'rendered-vision-review-v1') return [];
-  const out: FrontendBuilderReviewIssue[] = [];
-  const seen = new Set<FrontendBuilderReviewCategory>();
+  // Preserve first-seen category order; collect every actionable finding per category.
+  const groups = new Map<FrontendBuilderReviewCategory, VisionReviewIssue[]>();
   for (const i of review.issues) {
     if (i.severity === 'minor') continue;                       // minor never forces repair
     const category = categoryFor(i.area, i.code);
-    if (seen.has(category)) continue;
-    seen.add(category);
+    const bucket = groups.get(category);
+    if (bucket) bucket.push(i);
+    else groups.set(category, [i]);
+  }
+  const out: FrontendBuilderReviewIssue[] = [];
+  for (const [category, findings] of groups) {
+    const top = findings.slice(0, MAX_FINDINGS_PER_CATEGORY);
+    const severity: FrontendBuilderReviewSeverity = top.some((f) => f.severity === 'blocker') ? 'blocker' : 'major';
+    const observations = dedupe(top.map((f) => f.message));
+    const repairs = dedupe(top.map((f) => f.repairInstruction));
     out.push({
-      id: `vision:${i.code}`.slice(0, 80),
-      severity: toReviewSeverity(i.severity),
+      id: `vision:${category}`.slice(0, 80),
+      severity,
       category,
       files: [],
-      evidence: `Rendered vision review: ${i.message}`.slice(0, 240),
-      repairInstruction: i.repairInstruction.slice(0, 240),
+      evidence: `Rendered vision review: ${observations.join(' | ')}`.slice(0, 400),
+      repairInstruction: repairs.join(' ').slice(0, 400),
     });
   }
   return out;

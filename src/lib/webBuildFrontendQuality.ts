@@ -645,7 +645,7 @@ export async function runFrontendBuilderQualityPipeline(
     //    validator, no new repair, no model call. Fail-open. ──
     if (isHardGenerationContractEnabled() && spec?.experienceArchitecture && initialReview.status === 'completed') {
       try {
-        const contractFindings = evaluateContractCompliance(validation?.files, spec.experienceArchitecture);
+        const contractFindings = evaluateContractCompliance(validation?.files, spec.experienceArchitecture, spec.prompt);
         if (contractFindings.length) {
           const contractIssues = contractFindingsToReviewIssues(contractFindings);
           const { issues: mergedC, added: addedC } = mergeDeterministicIssues(initialReview.issues, contractIssues);

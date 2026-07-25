@@ -10,8 +10,9 @@ import {
   deriveExperienceArchitecturePlan, buildExperienceEnforcementBlock, isExperienceArchitectureEnabled,
 } from '@/lib/webBuildExperienceArchitecture';
 import { evaluateExperienceCompliance } from '@/lib/webBuildExperienceValidation';
-import { buildFrontendBuilderRequest } from '@/lib/webBuildApi';
+import { buildFrontendBuilderRequest, buildFrontendBuilderRevisionRequest } from '@/lib/webBuildApi';
 import type { FrontendBuildSpecification, FrontendGeneratedFile } from '@/lib/webBuildAgents';
+import type { WebBuildFile } from '@/lib/webBuildPayload';
 
 /* ── Minimal spec factory (only the fields the planner reads) ─────────────────── */
 function makeSpec(over: {
@@ -244,6 +245,54 @@ describe('frontend_builder request', () => {
     expect(req).toContain('EXPERIENCE ARCHITECTURE CONTRACT');
     expect(req).toContain('"experienceArchitecture"');
     expect(req).toContain('experience-arch-v1');
+  });
+});
+
+/* ── Hard contract SUPERSEDES the legacy Experience block (Issue 1) ───────────── */
+const HARD = () => vi.stubEnv('VITE_ENABLE_HARD_GENERATION_CONTRACT', 'true');
+describe('hard generation contract supersedes the legacy experience block', () => {
+  it('hard-contract flag ON ⇒ ONLY the generation contract (legacy block dropped, no double guidance)', () => {
+    ON(); HARD();
+    const spec = makeSpec({ prompt: 'a restaurant', sector: 'hospitality' });
+    spec.experienceArchitecture = deriveExperienceArchitecturePlan(spec, spec.prompt);
+    const req = buildFrontendBuilderRequest(spec);
+    expect(req).toContain('GENERATION CONTRACT');
+    expect(req).not.toContain('EXPERIENCE ARCHITECTURE CONTRACT');   // legacy block NOT stacked
+    expect(req).toContain('"experienceArchitecture"');               // JSON projection still sent
+  });
+  it('hard-contract flag OFF ⇒ legacy block preserved, no generation contract (byte-for-byte)', () => {
+    ON();                                                            // experience-architecture flag only
+    const spec = makeSpec({ prompt: 'a restaurant', sector: 'hospitality' });
+    spec.experienceArchitecture = deriveExperienceArchitecturePlan(spec, spec.prompt);
+    const req = buildFrontendBuilderRequest(spec);
+    expect(req).toContain('EXPERIENCE ARCHITECTURE CONTRACT');
+    expect(req).not.toContain('GENERATION CONTRACT');
+  });
+});
+
+/* ── Revisions never re-run the contract (fresh-build only — Issue 3) ─────────── */
+describe('revision request is unaffected by the hard-contract flag', () => {
+  const revFiles: WebBuildFile[] = [
+    { path: 'src/App.tsx', content: '<div/>', status: 'unchanged', added: 0, removed: 0 },
+  ];
+  function revisionRequest(): string {
+    const spec = makeSpec({ prompt: 'a restaurant', sector: 'hospitality' });
+    spec.experienceArchitecture = deriveExperienceArchitecturePlan(spec, spec.prompt);
+    return buildFrontendBuilderRevisionRequest({
+      revisionPrompt: 'make the header sticky',
+      websiteLanguage: 'en',
+      specification: spec,
+      files: revFiles,
+      revisionScope: 'narrow',
+    });
+  }
+  it('byte-for-byte identical with the hard-contract flag ON vs OFF', () => {
+    ON();
+    const off = revisionRequest();                 // hard-contract flag off
+    HARD();
+    const on = revisionRequest();                  // hard-contract flag on
+    expect(on).toBe(off);
+    expect(on).not.toContain('GENERATION CONTRACT');
   });
 });
 
