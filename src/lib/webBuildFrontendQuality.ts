@@ -54,7 +54,14 @@ import {
 import {
   isHardGenerationContractEnabled, evaluateContractCompliance, contractFindingsToReviewIssues,
 } from '@/lib/webBuildGenerationContract';
-import type { RenderedVisualInput, RenderedVisualEvaluationArtifact } from '@/lib/webBuildAgents';
+// PR #521 — CONDITIONAL rendered VISION review (fresh-build only, at most one screenshot + one
+// vision call). Its major/blocker findings ride the SAME existing merge → single bounded repair.
+import {
+  isRenderedVisionReviewEnabled, shouldRunVisionReview, sanitizeVisionReview, visionReviewToReviewIssues,
+  buildVisionReviewContext, buildRenderedVisionReviewArtifact,
+  type VisionReviewProducerContext,
+} from '@/lib/webBuildVisionReview';
+import type { RenderedVisualInput, RenderedVisualEvaluationArtifact, RenderedVisionReviewArtifact } from '@/lib/webBuildAgents';
 import type {
   FrontendBuildSpecification, FrontendGeneratedFile,
   FrontendBuilderRepairArtifact, FrontendBuilderAcceptanceArtifact,
@@ -400,6 +407,23 @@ async function withRenderedMeasurementBudget(
   });
 }
 
+// PR #521 — the vision review adds the round-trip to the authenticated route on top of the
+// screenshot capture; keep it bounded so a flag-on build never blocks on a hung provider/network.
+const VISION_REVIEW_BUDGET_MS = 35_000;
+
+/** Await the vision producer under a bounded timeout + abort. Resolves `undefined` on timeout /
+ *  abort / error — never rejects, never blocks forever. */
+async function withVisionBudget<T>(work: Promise<T>, signal?: AbortSignal): Promise<T | undefined> {
+  return new Promise<T | undefined>((resolve) => {
+    let settled = false;
+    const done = (v: T | undefined) => { if (!settled) { settled = true; clearTimeout(timer); if (signal) signal.removeEventListener('abort', onAbort); resolve(v); } };
+    const onAbort = () => done(undefined);
+    const timer = setTimeout(() => done(undefined), VISION_REVIEW_BUDGET_MS);
+    if (signal) { if (signal.aborted) { done(undefined); return; } signal.addEventListener('abort', onAbort, { once: true }); }
+    work.then((v) => done(v)).catch(() => done(undefined));
+  });
+}
+
 /** The final acceptance record — renderedVisualTestStatus is ALWAYS pending-manual-test. */
 function acceptanceArtifact(
   status: FrontendBuilderAcceptanceArtifact['status'],
@@ -413,7 +437,8 @@ function acceptanceArtifact(
   },
   extra?: Partial<Pick<FrontendBuilderAcceptanceArtifact,
     'usedDeterministicFallback' | 'repairTriggeredByShallowQuality'
-    | 'severeWarningsBeforeRepair' | 'severeWarningsAfterRepair' | 'renderedVisualEvaluation'>>,
+    | 'severeWarningsBeforeRepair' | 'severeWarningsAfterRepair' | 'renderedVisualEvaluation'
+    | 'renderedVisionReview'>>,
 ): FrontendBuilderAcceptanceArtifact {
   return {
     version: 'frontend-acceptance-v1',
@@ -452,7 +477,13 @@ export async function runFrontendBuilderQualityPipeline(
     // treated as "no measurement" and the pipeline continues unchanged.
     renderedVisualProducer?: (ctx: {
       files?: FrontendGeneratedFile[]; spec?: FrontendBuildSpecification; signal?: AbortSignal;
+      // PR #521 — when true, capture ONE desktop screenshot in the same session (vision review).
+      captureScreenshot?: boolean;
     }) => Promise<RenderedVisualInput | undefined>;
+    // PR #521 — OPTIONAL producer that calls the authenticated vision route ONCE with the captured
+    // screenshot + bounded context and returns the RAW review JSON (sanitized here). Absent (or
+    // flag off) ⇒ no vision call. Fresh builds only; the revision path never receives it.
+    visionReviewProducer?: (ctx: VisionReviewProducerContext) => Promise<unknown>;
   },
 ): Promise<WebBuildPayload> {
   // Phase 13H — emit REAL pipeline boundaries to the activity timeline. Wrapped so a
@@ -664,8 +695,15 @@ export async function runFrontendBuilderQualityPipeline(
     //    addresses them. Adds no model call. Fully fail-open — any problem leaves the review as
     //    it was. ──
     let renderedVisualEvaluation: RenderedVisualEvaluationArtifact | undefined;
+    let renderedVisionReviewArtifact: RenderedVisionReviewArtifact | undefined;
+    let renderedInputForVision: RenderedVisualInput | undefined;
     if (isRenderedVisualEvaluationEnabled() && (opts?.renderedVisualInput || opts?.renderedVisualProducer)) {
       try {
+        // PR #521 — decide the CONDITIONAL vision-review capture BEFORE measuring, from the static
+        // signals (validation + plan). Only when the trigger says a review is worthwhile do we ask
+        // the producer to ALSO capture ONE desktop screenshot in the SAME measurement session.
+        const wantCapture = isRenderedVisionReviewEnabled() && !!spec?.experienceArchitecture
+          && shouldRunVisionReview({ validation, plan: spec?.experienceArchitecture });
         // PR #517 — resolve the rendered input: a caller-supplied static value (#516) OR the
         // async producer (measures the just-generated files in an isolated preview). The
         // producer is awaited under a bounded timeout + the caller's abort signal so a flag-on
@@ -673,11 +711,12 @@ export async function runFrontendBuilderQualityPipeline(
         let renderedInput = opts?.renderedVisualInput;
         if (!renderedInput && opts?.renderedVisualProducer) {
           renderedInput = await withRenderedMeasurementBudget(
-            opts.renderedVisualProducer({ files: validation?.files, spec, signal: opts?.signal }),
+            opts.renderedVisualProducer({ files: validation?.files, spec, signal: opts?.signal, captureScreenshot: wantCapture }),
             opts?.signal,
           );
         }
         if (!renderedInput) throw new Error('no-rendered-input');
+        renderedInputForVision = renderedInput;
         renderedVisualEvaluation = evaluateRenderedVisual({
           ...renderedInput,
           // The parsed generated files (FrontendGeneratedFile[]) carry the source the reused
@@ -695,6 +734,70 @@ export async function runFrontendBuilderQualityPipeline(
         }
       } catch { /* fail-open: advisory only, never affect the build */ }
     }
+
+    // ── PR #521 — CONDITIONAL rendered VISION review. Runs at MOST ONCE per fresh build, ONLY
+    //    when: the flag is on, the conditional trigger (now WITH the rendered evaluation) says a
+    //    review is worthwhile, a REAL screenshot was captured for THIS run, and a vision producer
+    //    was supplied. Its major/blocker findings ride the SAME existing merge → the SAME single
+    //    bounded repair (no second repair, no post-repair vision call). The revision path never
+    //    supplies a producer, so this is fresh-build only. Fully fail-open; `screenshotReviewed`
+    //    is honest — true ONLY when the capture AND the sanitized review both succeeded. ──
+    if (isRenderedVisionReviewEnabled() && spec?.experienceArchitecture) {
+      const triggered = shouldRunVisionReview({ validation, plan: spec.experienceArchitecture, renderedEvaluation: renderedVisualEvaluation });
+      const captured = renderedInputForVision?.capturedScreenshot;
+      if (!triggered) {
+        renderedVisionReviewArtifact = buildRenderedVisionReviewArtifact({
+          triggered: false, captureSucceeded: !!captured, reviewSucceeded: false, screenshotReviewed: false,
+          issueCount: 0, repairTriggered: false, note: 'vision review not triggered for this build',
+        });
+      } else if (!captured) {
+        renderedVisionReviewArtifact = buildRenderedVisionReviewArtifact({
+          triggered: true, captureSucceeded: false, reviewSucceeded: false, screenshotReviewed: false,
+          issueCount: 0, repairTriggered: false, note: 'screenshot capture failed or unavailable',
+        });
+      } else if (!opts?.visionReviewProducer) {
+        renderedVisionReviewArtifact = buildRenderedVisionReviewArtifact({
+          triggered: true, captureSucceeded: true, reviewSucceeded: false, screenshotReviewed: false,
+          capturePartial: captured.partial, inputByteLength: captured.byteLength,
+          issueCount: 0, repairTriggered: false, note: 'no vision producer wired',
+        });
+      } else {
+        try {
+          const context = buildVisionReviewContext(spec, renderedInputForVision);
+          const raw = await withVisionBudget(opts.visionReviewProducer({
+            capturedScreenshot: captured, contractSummary: context.contractSummary,
+            planSummary: context.planSummary, runtimeFindings: context.runtimeFindings, signal: opts?.signal,
+          }), opts?.signal);
+          const review = sanitizeVisionReview(raw);
+          let repairFromVision = false;
+          let issueCount = 0;
+          if (review && initialReview.status === 'completed') {
+            const visionIssues = visionReviewToReviewIssues(review);
+            issueCount = visionIssues.length;
+            if (visionIssues.length) {
+              const { issues: mergedV, added: addedV } = mergeDeterministicIssues(initialReview.issues, visionIssues);
+              if (addedV > 0) {
+                initialReview = recomputeReviewWithMergedIssues(initialReview, mergedV, addedV);
+                repairFromVision = !initialReview.passed;
+                repairTriggeredByShallowQuality = repairTriggeredByShallowQuality || !initialReview.passed;
+              }
+            }
+          }
+          renderedVisionReviewArtifact = buildRenderedVisionReviewArtifact({
+            triggered: true, captureSucceeded: true, reviewSucceeded: !!review,
+            screenshotReviewed: !!review, capturePartial: captured.partial, inputByteLength: captured.byteLength,
+            issueCount, verdict: review?.verdict, repairTriggered: repairFromVision,
+            note: review ? `vision review ${review.verdict}` : 'vision call returned no usable review',
+          });
+        } catch {
+          renderedVisionReviewArtifact = buildRenderedVisionReviewArtifact({
+            triggered: true, captureSucceeded: true, reviewSucceeded: false, screenshotReviewed: false,
+            capturePartial: captured.partial, inputByteLength: captured.byteLength,
+            issueCount: 0, repairTriggered: false, note: 'vision review failed open',
+          });
+        }
+      }
+    }
     emit('quality-review', 'completed', reviewRows(initialReview));
 
     // Fast path — a passing initial review keeps the initial project; no repair/final call.
@@ -703,7 +806,7 @@ export async function runFrontendBuilderQualityPipeline(
       const acceptance = acceptanceArtifact('approved', initialProjectName, {
         initialReviewPassed: true, repairAttempted: false, repairAccepted: false, finalReviewPassed: false,
         reason: `Initial static design review passed (score ${initialReview.score ?? '?'}); no severe quality warnings. Rendered visual test pending.`,
-      }, { usedDeterministicFallback, repairTriggeredByShallowQuality: false, severeWarningsBeforeRepair, renderedVisualEvaluation });
+      }, { usedDeterministicFallback, repairTriggeredByShallowQuality: false, severeWarningsBeforeRepair, renderedVisualEvaluation, renderedVisionReview: renderedVisionReviewArtifact });
       emit('quality-repair', 'skipped');
       emit('acceptance', 'completed', acceptanceRows('approved', initialProjectName));
       return attachFrontendBuilderQualityResult(working, {
@@ -815,7 +918,7 @@ export async function runFrontendBuilderQualityPipeline(
       const acceptance = acceptanceArtifact('repaired-approved', 'repaired-model-native', {
         initialReviewPassed: false, repairAttempted: true, repairAccepted: true, finalReviewPassed: true,
         reason: `One bounded repair accepted after static validation, a passing post-repair review (score ${initialScore} → ${finalScore}) and a clear severe-warning gate. Rendered visual test pending.`,
-      }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, severeWarningsAfterRepair, renderedVisualEvaluation });
+      }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, severeWarningsAfterRepair, renderedVisualEvaluation, renderedVisionReview: renderedVisionReviewArtifact });
       emit('quality-repair', 'completed', [{ label: 'result', value: 'accepted' }, { label: 'score', value: `${initialScore} → ${finalScore}` }]);
       emit('acceptance', 'completed', acceptanceRows('repaired-approved', 'repaired-model-native'));
       return attachFrontendBuilderQualityResult(working, {
@@ -846,7 +949,7 @@ export async function runFrontendBuilderQualityPipeline(
       initialReviewPassed: false, repairAttempted: true, repairAccepted: false,
       finalReviewPassed: finalReview.passed,
       reason: `${rejectReason} The initial validated project stays active for owner inspection; normal users continue to see Safe Preview. Manual rendered review required.`,
-    }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, severeWarningsAfterRepair, renderedVisualEvaluation });
+    }, { usedDeterministicFallback, repairTriggeredByShallowQuality, severeWarningsBeforeRepair, severeWarningsAfterRepair, renderedVisualEvaluation, renderedVisionReview: renderedVisionReviewArtifact });
     emit('quality-repair', 'completed', [{ label: 'result', value: 'rejected' }]);
     emit('acceptance', 'completed', acceptanceRows('manual-review-required', initialProjectName));
     return attachFrontendBuilderQualityResult(working, { ran: true, initialReview, repair, finalReview, acceptance });

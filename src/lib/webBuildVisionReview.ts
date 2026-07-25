@@ -17,6 +17,7 @@ import type {
   FrontendBuilderValidationArtifact, ExperienceArchitecturePlan, RenderedVisionReview,
   VisionReviewIssue, VisionReviewSeverity, RenderedVisualEvaluationArtifact,
   FrontendBuilderReviewIssue, FrontendBuilderReviewCategory, FrontendBuilderReviewSeverity,
+  RenderedVisionReviewArtifact, RenderedVisualInput, FrontendBuildSpecification, CapturedScreenshot,
 } from '@/lib/webBuildAgents';
 
 export function isRenderedVisionReviewEnabled(): boolean {
@@ -209,4 +210,176 @@ export function visionReviewToReviewIssues(review: RenderedVisionReview | undefi
     });
   }
   return out;
+}
+
+/* ── Bounded review context (contract + plan summaries + runtime findings) ─────
+ * What the vision route needs to judge the screenshot: bounded summaries of the plan/contract and
+ * the runtime-measured facts — NEVER source code, tokens, history or raw prompts. Pure + bounded. */
+const CTX_CAP = 1400;
+const cx = (v: unknown): string => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : '');
+const capList = (xs: ReadonlyArray<string | undefined> | undefined, n: number, each = 120): string[] => {
+  if (!Array.isArray(xs)) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of xs) {
+    const t = cx(raw).slice(0, each);
+    if (!t || seen.has(t.toLowerCase())) continue;
+    seen.add(t.toLowerCase());
+    out.push(t);
+    if (out.length >= n) break;
+  }
+  return out;
+};
+
+export interface VisionReviewContext {
+  contractSummary: string;
+  planSummary: string;
+  runtimeFindings: string[];
+}
+
+/** Build the bounded context sent to the vision route. Pure + fail-open (returns empty strings). */
+export function buildVisionReviewContext(
+  spec: FrontendBuildSpecification | undefined,
+  renderedInput: RenderedVisualInput | undefined,
+): VisionReviewContext {
+  try {
+    const plan = spec?.experienceArchitecture;
+    const planLines: string[] = [];
+    const contractLines: string[] = [];
+    if (plan) {
+      planLines.push(`Experience type: ${cx(plan.experienceType) || 'n/a'}.`);
+      planLines.push(`Entry pattern: ${cx(plan.entryPattern) || 'n/a'}; hero priority: ${cx(plan.heroContentPriority) || 'n/a'}.`);
+      planLines.push(`Primary visual medium: ${cx(plan.primaryVisualMedium) || 'n/a'}; text density: ${cx(plan.textDensity) || 'n/a'}.`);
+      const sections = capList(plan.sectionSequence, 8, 40);
+      if (sections.length) planLines.push(`Planned sections: ${sections.join(' → ')}.`);
+
+      // Compact contract-like directives derived from the plan (independent of the hard-contract flag).
+      const appFirst = plan.landingRequired === false || /app-first/.test(plan.entryPattern || '');
+      contractLines.push(appFirst
+        ? 'First viewport: open into the application/product experience, not a marketing landing.'
+        : (plan.heroContentPriority === 'interaction' || plan.heroContentPriority === 'product_ui')
+          ? 'First viewport: dominated by a functional product experience, not a marketing headline.'
+          : 'First viewport: a clear, specific value proposition — not a generic template hero.');
+      const forbidden = capList([...(plan.forbiddenPatterns || []), ...(plan.layoutStrategy?.avoidPatterns || [])], 8);
+      if (forbidden.length) contractLines.push(`Forbidden: ${forbidden.join('; ')}.`);
+      const proof = capList((plan.sectionContracts || []).filter((c) => c.proofRequirement).map((c) => `${cx(c.id)}: ${cx(c.proofRequirement)}`), 6);
+      if (proof.length) contractLines.push(`Required proof: ${proof.join('; ')}.`);
+    }
+    // Runtime facts (DOM truth), never source. From the desktop measurement + capture partiality.
+    const findings: string[] = [];
+    const desktop = (renderedInput?.screenshots || []).find((s) => s.viewport === 'desktop') || (renderedInput?.screenshots || [])[0];
+    if (desktop) {
+      if (desktop.blank) findings.push('The rendered desktop viewport appears blank / near-empty.');
+      if (desktop.horizontalOverflow) findings.push('Horizontal scroll overflow was detected at the desktop viewport.');
+      if (desktop.heroVisible === false) findings.push('No hero was visible in the rendered first viewport, though the plan expects one.');
+      if (desktop.marketingHeroOnAppFirst === true) findings.push('A marketing hero rendered although the plan is app-first (no landing).');
+      if (typeof desktop.whitespaceRatio === 'number' && desktop.whitespaceRatio > 0.75) findings.push('The first viewport is mostly empty background (weak content coverage).');
+    }
+    if (renderedInput?.capturedScreenshot?.partial) findings.push('The screenshot capture was partial (some media could not be rasterized); judge only what is visible.');
+    return {
+      contractSummary: contractLines.join('\n').slice(0, CTX_CAP),
+      planSummary: planLines.join('\n').slice(0, CTX_CAP),
+      runtimeFindings: capList(findings, 12, 200),
+    };
+  } catch {
+    return { contractSummary: '', planSummary: '', runtimeFindings: [] };
+  }
+}
+
+/* ── Backend vision-review caller (fresh-build only, one call) ──────────────────*/
+const VISION_ROUTE = '/v2/web-build/vision-review';
+const BUNDLED_BACKEND = 'https://worker-production-1345.up.railway.app';
+
+function apiBase(): string {
+  try {
+    const envBase = ((import.meta as unknown as { env?: Record<string, unknown> })?.env?.VITE_API_URL as string | undefined)?.trim();
+    return envBase ? envBase.replace(/\/+$/, '') : BUNDLED_BACKEND;
+  } catch { return BUNDLED_BACKEND; }
+}
+function authHeaders(): Record<string, string> {
+  const h: Record<string, string> = { 'Content-Type': 'application/json' };
+  try {
+    const tok = localStorage.getItem('korvix_access_token');
+    if (tok) h['Authorization'] = `Bearer ${tok}`;
+    const owner = localStorage.getItem('korvix_owner_token');
+    if (owner) h['X-Korvix-Owner-Token'] = owner;
+  } catch { /* localStorage may be disabled */ }
+  return h;
+}
+
+export interface VisionReviewProducerContext {
+  capturedScreenshot: CapturedScreenshot;
+  contractSummary: string;
+  planSummary: string;
+  runtimeFindings: string[];
+  signal?: AbortSignal;
+}
+
+/**
+ * Call the authenticated vision route ONCE with the single screenshot + bounded context and
+ * return the RAW review JSON (the pipeline sanitizes it). Fail-open: any non-OK response /
+ * network error / abort resolves `undefined`, so the build is never blocked. The screenshot data
+ * URL is sent only to our own backend and is never logged or stored here.
+ */
+export async function requestRenderedVisionReview(runId: string, ctx: VisionReviewProducerContext): Promise<unknown> {
+  try {
+    if (!isRenderedVisionReviewEnabled()) return undefined;
+    const shot = ctx.capturedScreenshot;
+    if (!shot || !shot.dataUrl) return undefined;
+    const resp = await fetch(`${apiBase()}${VISION_ROUTE}`, {
+      method: 'POST',
+      headers: authHeaders(),
+      signal: ctx.signal,
+      body: JSON.stringify({
+        runId,
+        imageDataUrl: shot.dataUrl,
+        contractSummary: ctx.contractSummary || '',
+        planSummary: ctx.planSummary || '',
+        runtimeFindings: (ctx.runtimeFindings || []).slice(0, 12),
+      }),
+    });
+    if (!resp.ok) return undefined;
+    const json = await resp.json().catch(() => undefined) as { data?: { review?: unknown; ok?: boolean } } | undefined;
+    const data = json?.data;
+    if (!data || data.ok !== true) return undefined;
+    return data.review;
+  } catch {
+    return undefined;   // fail-open — never block the build
+  }
+}
+
+/** Build the `visionReviewProducer` the quality pipeline accepts, bound to the run identity.
+ *  Returns `undefined` when the flag is off (so the pipeline is passed no producer at all). */
+export function createVisionReviewProducer(runId: string):
+  ((ctx: VisionReviewProducerContext) => Promise<unknown>) | undefined {
+  if (!isRenderedVisionReviewEnabled() || !runId) return undefined;
+  return (ctx) => requestRenderedVisionReview(runId, ctx);
+}
+
+/* ── Observability artifact (no image, no prompt, no raw response) ─────────────*/
+export function buildRenderedVisionReviewArtifact(fields: {
+  triggered: boolean;
+  captureSucceeded: boolean;
+  reviewSucceeded: boolean;
+  screenshotReviewed: boolean;
+  capturePartial?: boolean;
+  inputByteLength?: number;
+  issueCount: number;
+  verdict?: 'pass' | 'needs-repair';
+  repairTriggered: boolean;
+  note: string;
+}): RenderedVisionReviewArtifact {
+  return {
+    version: 'rendered-vision-review-artifact-v1',
+    triggered: fields.triggered,
+    captureSucceeded: fields.captureSucceeded,
+    reviewSucceeded: fields.reviewSucceeded,
+    screenshotReviewed: fields.screenshotReviewed,
+    capturePartial: fields.capturePartial,
+    inputByteLength: fields.inputByteLength,
+    issueCount: Math.max(0, Math.min(99, fields.issueCount | 0)),
+    verdict: fields.verdict,
+    repairTriggered: fields.repairTriggered,
+    note: (fields.note || '').slice(0, 160),
+  };
 }

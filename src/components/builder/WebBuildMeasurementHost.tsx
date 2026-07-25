@@ -3,14 +3,15 @@ import WebBuildModelNativePreview from '@/components/builder/WebBuildModelNative
 import type { WebBuildFile } from '@/lib/webBuildPayload';
 import { usePreviewMeasurementBridge } from '@/hooks/usePreviewMeasurementBridge';
 import {
-  buildRenderedVisualInput, deriveMeasureExpectations,
+  buildRenderedVisualInput, deriveMeasureExpectations, toCapturedScreenshot,
+  SCREENSHOT_CAPTURE, SCREENSHOT_FORMAT, SCREENSHOT_QUALITY, SCREENSHOT_MAX_BYTES,
 } from '@/lib/webBuildPreviewMeasurement';
 import {
   registerMeasurementHost, shouldRunPreviewMeasurement,
   type MeasurementHost, type MeasurementJob,
 } from '@/lib/webBuildMeasurementService';
 import type { RenderedVisualInput } from '@/lib/webBuildAgents';
-import type { VeMeasurement } from '@/lib/visualEditProtocol';
+import type { VeMeasurement, VeScreenshotResult } from '@/lib/visualEditProtocol';
 
 /**
  * WebBuildMeasurementHost (PR #518) — the SINGLE, app-level, hidden host that renders the
@@ -52,7 +53,7 @@ export default function WebBuildMeasurementHost() {
   const startedRef = useRef<string | null>(null);   // runId whose measurement already started
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  const { measure: bridgeMeasure, ready: bridgeReady } = usePreviewMeasurementBridge({
+  const { measure: bridgeMeasure, captureScreenshot: bridgeCapture, ready: bridgeReady } = usePreviewMeasurementBridge({
     active: !!job, containerRef, resetKey: job?.runId ?? 'none',
   });
 
@@ -106,13 +107,27 @@ export default function WebBuildMeasurementHost() {
           await stabilize();
           const desktop = await bridgeMeasure({ ...DESKTOP, runId: job.runId, ...expectations }, signal);
           if (cancelled) return;
+          // PR #521 — ONE desktop screenshot while STILL at desktop dims, only when the pipeline
+          // requested it (conditional vision-review trigger). Fail-open: a null/blocked capture
+          // simply leaves the measurement result without pixels.
+          let shot: VeScreenshotResult | null = null;
+          if (job.captureScreenshot && bridgeCapture) {
+            shot = await bridgeCapture({
+              runId: job.runId, width: SCREENSHOT_CAPTURE.width, height: SCREENSHOT_CAPTURE.height,
+              format: SCREENSHOT_FORMAT, quality: SCREENSHOT_QUALITY, maxBytes: SCREENSHOT_MAX_BYTES,
+            }, signal);
+            if (cancelled) return;
+          }
           // Resize the SAME preview to mobile (sequential — one Sandpack, less memory/CPU),
           // let it reflow, then measure again.
           setDims({ width: MOBILE.width, height: MOBILE.height });
           await stabilize();
           const mobile: VeMeasurement | null = await bridgeMeasure({ ...MOBILE, runId: job.runId, ...expectations }, signal);
           if (cancelled) return;
-          finish(buildRenderedVisualInput([desktop, mobile], job.runId));
+          const input = buildRenderedVisualInput([desktop, mobile], job.runId);
+          const captured = toCapturedScreenshot(shot, job.runId);
+          if (input && captured) input.capturedScreenshot = captured;
+          finish(input);
         } catch {
           finish(undefined);
         }

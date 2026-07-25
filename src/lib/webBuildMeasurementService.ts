@@ -29,6 +29,8 @@ export interface MeasurementJob {
   files: FrontendGeneratedFile[];
   spec?: FrontendBuildSpecification;
   signal?: AbortSignal;
+  /** PR #521 — capture ONE desktop screenshot in the same session (conditional vision review). */
+  captureScreenshot?: boolean;
 }
 
 /** The app-level host's imperative contract: mount an isolated preview, measure, clean up. */
@@ -84,13 +86,14 @@ export async function runMeasurement(job: MeasurementJob): Promise<RenderedVisua
  * `undefined` when the flags are not both on, so the pipeline is passed no producer at all.
  */
 export function createMeasurementProducer(runId: string):
-  ((ctx: { files?: FrontendGeneratedFile[]; spec?: FrontendBuildSpecification; signal?: AbortSignal }) => Promise<RenderedVisualInput | undefined>) | undefined {
+  ((ctx: { files?: FrontendGeneratedFile[]; spec?: FrontendBuildSpecification; signal?: AbortSignal; captureScreenshot?: boolean }) => Promise<RenderedVisualInput | undefined>) | undefined {
   if (!shouldRunPreviewMeasurement() || !runId) return undefined;
   return (ctx) => runMeasurement({
     runId,
     files: ctx.files || [],
     spec: ctx.spec,
     signal: ctx.signal,
+    captureScreenshot: ctx.captureScreenshot === true,
   });
 }
 

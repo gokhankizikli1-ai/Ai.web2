@@ -2349,6 +2349,14 @@ export interface FrontendBuilderAcceptanceArtifact {
    *  certification. Old artifacts simply lack it. */
   renderedVisualEvaluation?: RenderedVisualEvaluationArtifact;
 
+  /* ── PR #521 — optional rendered VISION review observability. Present only when the conditional
+   *  single-screenshot vision review was attempted (both flags on + trigger). It NEVER changes
+   *  `renderedVisualTestStatus` (still 'pending-manual-test') or `renderedScreenshotReviewed`
+   *  (still literal false — one desktop screenshot is not full manual/responsive certification):
+   *  the honest per-review fact lives on `renderedVisionReview.screenshotReviewed`. Old artifacts
+   *  simply lack it. Carries no image / prompt / raw response. */
+  renderedVisionReview?: RenderedVisionReviewArtifact;
+
   reason: string;
 }
 
@@ -2406,6 +2414,54 @@ export interface RenderedVisualInput {
   spec?: FrontendBuildSpecification;
   /** True when the caller confirmed the project compiled/ran in the sandbox. */
   runtimeCompiled?: boolean;
+  /** PR #521 — a single desktop screenshot captured for the CONDITIONAL rendered vision review.
+   *  TRANSIENT: used only to make the one vision call, then discarded. Never persisted, never
+   *  written to any artifact, never logged. Absent unless capture succeeded for this run. */
+  capturedScreenshot?: CapturedScreenshot;
+}
+
+/** PR #521 — one captured desktop screenshot. The `dataUrl` is transient pixels (data:image/…);
+ *  it is passed to the authenticated vision route once and then dropped — never stored/logged. */
+export interface CapturedScreenshot {
+  /** data:image/<webp|jpeg|png>;base64,… — transient; never persisted. */
+  dataUrl: string;
+  mimeType: string;
+  byteLength: number;
+  /** The capture was honestly incomplete (e.g. cross-origin media could not be rasterized). */
+  partial: boolean;
+}
+
+/* ── PR #521 — Rendered Vision Review observability artifact ───────────────────
+ * A bounded, honest record that a CONDITIONAL single-desktop-screenshot vision review ran (or
+ * why it did not). It carries NO image, NO prompt, NO raw provider response — only observability
+ * facts. `screenshotReviewed` is true ONLY when real pixels were captured AND the vision call
+ * completed AND the sanitizer accepted the result for the ACTIVE run. Additive + optional +
+ * backward compatible; a single desktop screenshot is NOT full responsive QA, so the acceptance
+ * record's `renderedVisualTestStatus` stays 'pending-manual-test'. */
+export interface RenderedVisionReviewArtifact {
+  version: 'rendered-vision-review-artifact-v1';
+  /** The conditional trigger decided a vision review was worthwhile. */
+  triggered: boolean;
+  /** Real screenshot pixels were captured for this run. */
+  captureSucceeded: boolean;
+  /** The backend vision call completed AND the response passed the sanitizer. */
+  reviewSucceeded: boolean;
+  /** HONEST: true only when captureSucceeded && reviewSucceeded for the active run. */
+  screenshotReviewed: boolean;
+  /** The capture was honestly incomplete (cross-origin/media). */
+  capturePartial?: boolean;
+  provider?: string;
+  model?: string;
+  /** Encoded screenshot size sent to the route (bytes) — never the image. */
+  inputByteLength?: number;
+  latencyMs?: number;
+  /** Number of actionable (major/blocker) findings folded into the existing repair. */
+  issueCount: number;
+  verdict?: 'pass' | 'needs-repair';
+  /** Whether the vision findings contributed to triggering the single bounded repair. */
+  repairTriggered: boolean;
+  /** A short, bounded reason (e.g. 'capture-failed', 'not-triggered', 'flag-off'). */
+  note: string;
 }
 
 export interface RenderedVisualIssue {

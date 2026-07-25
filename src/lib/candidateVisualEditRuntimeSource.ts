@@ -464,6 +464,7 @@ export const VE_RUNTIME_SOURCE = `(function () {
       case 'PREVIEW_IMAGE': handlePreview(d.payload, d.requestId); break;
       case 'RESTORE_IMAGE': restoreImage(true); break;
       case 'MEASURE': handleMeasure(d.payload); break;
+      case 'CAPTURE_SCREENSHOT': handleCaptureScreenshot(d.payload); break;
       default: break;
     }
   }, false);
@@ -532,6 +533,69 @@ export const VE_RUNTIME_SOURCE = `(function () {
       if (typeof marketingHeroOnAppFirst === 'boolean') out.marketingHeroOnAppFirst = marketingHeroOnAppFirst;
       post('MEASUREMENT', out);
     } catch (err) { /* fail silent — measurement is advisory only */ }
+  }
+
+  /* ── PR #521 — bounded, viewport-only SCREENSHOT capture. Rasterizes the generated preview's
+   *  first viewport to ONE compressed image (via html-to-image, resolved from the sandbox deps —
+   *  no CDN script) and posts it back. Captures ONLY the preview's own DOM (never browser chrome,
+   *  the visual-edit tool overlay or source). Fails open and marks blank / partial / cross-origin
+   *  tainted captures HONESTLY so a bad capture is never reported as reviewable pixels. ── */
+  function riskyMediaPresent() {
+    try { return document.querySelectorAll('video, canvas, [data-webgl], object, embed').length > 0; } catch (e) { return false; }
+  }
+  function screenshotBlank() {
+    var textLen = 0, imgCount = 0;
+    try { textLen = (document.body && document.body.innerText ? document.body.innerText : '').replace(/\\s+/g, ' ').trim().length; } catch (e) {}
+    try { imgCount = document.querySelectorAll('img').length; } catch (e2) {}
+    return textLen < 8 && imgCount === 0;
+  }
+  function b64Len(u) {
+    var c = u.indexOf(','); if (c < 0) { return 0; }
+    var b = u.slice(c + 1);
+    var pad = b.charAt(b.length - 1) === '=' ? (b.charAt(b.length - 2) === '=' ? 2 : 1) : 0;
+    return Math.max(0, Math.floor(b.length * 3 / 4) - pad);
+  }
+  function handleCaptureScreenshot(payload) {
+    var p = (payload && typeof payload === 'object') ? payload : {};
+    var runId = (typeof p.runId === 'string') ? p.runId.slice(0, 128) : '';
+    if (!runId) { return; }
+    function fail(code, blank, partial) {
+      post('SCREENSHOT_RESULT', { runId: runId, ok: false, byteLength: 0, blank: !!blank, partial: !!partial, errorCode: code });
+    }
+    try {
+      if (p.viewport && p.viewport !== 'desktop') { return fail('unsupported-viewport', false, false); }
+      if (screenshotBlank()) { return fail('blank', true, false); }
+      var width = Math.max(1, Math.min(4096, Math.round(p.width || 1440)));
+      var height = Math.max(1, Math.min(4096, Math.round(p.height || 900)));
+      var quality = (typeof p.quality === 'number' && p.quality > 0 && p.quality <= 1) ? p.quality : 0.72;
+      var maxBytes = (typeof p.maxBytes === 'number' && p.maxBytes > 0) ? p.maxBytes : 1600000;
+      var fmt = (p.format === 'jpeg' || p.format === 'png' || p.format === 'webp') ? p.format : 'webp';
+      var mime = fmt === 'png' ? 'image/png' : (fmt === 'jpeg' ? 'image/jpeg' : 'image/webp');
+      var partial = riskyMediaPresent();
+      var opts = {
+        width: width, height: height, pixelRatio: 1, cacheBust: false, skipFonts: true,
+        backgroundColor: '#ffffff',
+        style: { margin: '0', padding: '0', overflow: 'hidden', width: width + 'px', height: height + 'px' },
+        filter: function (node) {
+          try { return !(node && node.nodeType === 1 && node.getAttribute && node.getAttribute(TOOL_ATTR) !== null); } catch (e) { return true; }
+        }
+      };
+      import('html-to-image').then(function (mod) {
+        var toCanvas = mod && (mod.toCanvas || (mod['default'] && mod['default'].toCanvas));
+        if (typeof toCanvas !== 'function') { return fail('rasterizer-unavailable', false, false); }
+        toCanvas(document.documentElement, opts).then(function (canvas) {
+          var url = '';
+          try { url = canvas.toDataURL(mime, quality); } catch (secErr) { return fail('tainted', false, true); }
+          if (!url || url.indexOf('data:image/') !== 0) { return fail('encode-failed', false, partial); }
+          var bytes = b64Len(url);
+          if (bytes <= 0) { return fail('blank', true, partial); }
+          if (bytes > maxBytes) { return fail('too-large', false, partial); }
+          var semi = url.indexOf(';');
+          var actualMime = semi > 5 ? url.slice(5, semi) : mime;
+          post('SCREENSHOT_RESULT', { runId: runId, ok: true, mimeType: actualMime, byteLength: bytes, dataUrl: url, blank: false, partial: partial });
+        }).catch(function () { fail('capture-failed', false, partial); });
+      }).catch(function () { fail('rasterizer-unavailable', false, false); });
+    } catch (err) { fail('capture-error', false, false); }
   }
 
   // Teardown: restore any temporary preview if the iframe is torn down.

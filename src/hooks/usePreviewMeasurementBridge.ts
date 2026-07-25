@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { makeCommand, parseVeEvent, sanitizeMeasurement, type VeMeasurement } from '@/lib/visualEditProtocol';
-import type { PreviewMeasurementTransport, PreviewMeasureRequest } from '@/lib/webBuildPreviewMeasurement';
+import {
+  makeCommand, parseVeEvent, sanitizeMeasurement, sanitizeScreenshotResult,
+  type VeMeasurement, type VeScreenshotResult,
+} from '@/lib/visualEditProtocol';
+import type { PreviewMeasurementTransport, PreviewMeasureRequest, PreviewScreenshotRequest } from '@/lib/webBuildPreviewMeasurement';
 
 /**
  * usePreviewMeasurementBridge (PR #517) — the PARENT side of the read-only MEASURE extension of
@@ -15,6 +18,8 @@ import type { PreviewMeasurementTransport, PreviewMeasureRequest } from '@/lib/w
  */
 
 const MEASURE_TIMEOUT_MS = 6000;
+// A rasterization is heavier than a layout read — allow more time, still bounded.
+const SCREENSHOT_TIMEOUT_MS = 12000;
 
 export interface PreviewMeasurementBridgeOptions {
   /** Only listen/bind while the measurement preview is the active, mounted preview. */
@@ -39,6 +44,8 @@ export function usePreviewMeasurementBridge(opts: PreviewMeasurementBridgeOption
   const [ready, setReady] = useState(false);
   // Pending MEASURE requests keyed by `${viewport}:${runId}`.
   const pendingRef = useRef<Map<string, (m: VeMeasurement | null) => void>>(new Map());
+  // PR #521 — pending CAPTURE_SCREENSHOT requests keyed by `shot:${runId}`.
+  const pendingShotRef = useRef<Map<string, (r: VeScreenshotResult | null) => void>>(new Map());
 
   useEffect(() => {
     boundWinRef.current = null;
@@ -51,6 +58,8 @@ export function usePreviewMeasurementBridge(opts: PreviewMeasurementBridgeOption
     // Resolve any in-flight waiters as unavailable when the target resets.
     pendingRef.current.forEach((res) => res(null));
     pendingRef.current.clear();
+    pendingShotRef.current.forEach((res) => res(null));
+    pendingShotRef.current.clear();
   }, [resetKey, active]);
 
   useEffect(() => {
@@ -73,12 +82,21 @@ export function usePreviewMeasurementBridge(opts: PreviewMeasurementBridgeOption
       // Every non-READY event must come from the bound runtime + instance.
       if (!boundWinRef.current || e.source !== boundWinRef.current) return;
       if (env.instanceId !== instanceIdRef.current) return;
-      if (env.type !== 'MEASUREMENT') return;
-      const m = sanitizeMeasurement(env.payload);
-      if (!m) return;
-      const key = `${m.viewport}:${m.runId}`;
-      const resolve = pendingRef.current.get(key);
-      if (resolve) { pendingRef.current.delete(key); resolve(m); }
+      if (env.type === 'MEASUREMENT') {
+        const m = sanitizeMeasurement(env.payload);
+        if (!m) return;
+        const key = `${m.viewport}:${m.runId}`;
+        const resolve = pendingRef.current.get(key);
+        if (resolve) { pendingRef.current.delete(key); resolve(m); }
+        return;
+      }
+      if (env.type === 'SCREENSHOT_RESULT') {
+        const shot = sanitizeScreenshotResult(env.payload);
+        if (!shot) return;
+        const resolve = pendingShotRef.current.get(`shot:${shot.runId}`);
+        if (resolve) { pendingShotRef.current.delete(`shot:${shot.runId}`); resolve(shot); }
+        return;
+      }
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
@@ -113,7 +131,36 @@ export function usePreviewMeasurementBridge(opts: PreviewMeasurementBridgeOption
     });
   }, []);
 
-  return { measure, ready };
+  const captureScreenshot = useCallback((req: PreviewScreenshotRequest, signal?: AbortSignal): Promise<VeScreenshotResult | null> => {
+    return new Promise<VeScreenshotResult | null>((resolve) => {
+      const win = boundWinRef.current;
+      const id = instanceIdRef.current;
+      if (!win || !id) { resolve(null); return; }        // bridge unavailable → fail-open
+      const key = `shot:${req.runId}`;
+      let settled = false;
+      const finish = (r: VeScreenshotResult | null) => {
+        if (settled) return; settled = true;
+        clearTimeout(timer);
+        if (signal) signal.removeEventListener('abort', onAbort);
+        pendingShotRef.current.delete(key);
+        resolve(r);
+      };
+      const onAbort = () => finish(null);
+      const timer = setTimeout(() => finish(null), SCREENSHOT_TIMEOUT_MS);
+      if (signal) { if (signal.aborted) { finish(null); return; } signal.addEventListener('abort', onAbort, { once: true }); }
+      pendingShotRef.current.set(key, finish);
+      try {
+        win.postMessage(makeCommand('CAPTURE_SCREENSHOT', id, {
+          viewport: 'desktop', runId: req.runId, width: req.width, height: req.height,
+          format: req.format, quality: req.quality, maxBytes: req.maxBytes,
+        }), originRef.current);
+      } catch {
+        finish(null);   // iframe gone → fail-open
+      }
+    });
+  }, []);
+
+  return { measure, captureScreenshot, ready };
 }
 
-export { MEASURE_TIMEOUT_MS };
+export { MEASURE_TIMEOUT_MS, SCREENSHOT_TIMEOUT_MS };
