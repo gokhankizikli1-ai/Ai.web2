@@ -84,6 +84,23 @@ describe('sanitizer', () => {
   });
 });
 
+/* ── Verdict normalization invariants (Issue 5) ───────────────────────────────── */
+describe('verdict normalization', () => {
+  const issue = (severity: string) => ({ code: 'c', area: 'composition', severity, message: 'm', repairInstruction: 'r' });
+  it('provider "pass" but a major finding → needs-repair (pass cannot hide a defect)', () => {
+    expect(sanitizeVisionReview({ verdict: 'pass', score: 90, issues: [issue('major')] })!.verdict).toBe('needs-repair');
+  });
+  it('a blocker finding → needs-repair', () => {
+    expect(sanitizeVisionReview({ verdict: 'pass', score: 90, issues: [issue('blocker')] })!.verdict).toBe('needs-repair');
+  });
+  it('provider "needs-repair" but only minor findings → pass (advisory, no empty repair)', () => {
+    expect(sanitizeVisionReview({ verdict: 'needs-repair', score: 50, issues: [issue('minor')] })!.verdict).toBe('pass');
+  });
+  it('provider "needs-repair" with zero issues → pass', () => {
+    expect(sanitizeVisionReview({ verdict: 'needs-repair', score: 10, issues: [] })!.verdict).toBe('pass');
+  });
+});
+
 /* ── Vision → repair adapter (27/28) ──────────────────────────────────────────*/
 describe('vision → repair adapter', () => {
   const review = (issues: RenderedVisionReview['issues']): RenderedVisionReview => ({
@@ -108,5 +125,35 @@ describe('vision → repair adapter', () => {
   it('empty / wrong version → []', () => {
     expect(visionReviewToReviewIssues(undefined)).toEqual([]);
     expect(visionReviewToReviewIssues({ version: 'x' } as never)).toEqual([]);
+  });
+
+  /* ── Multiple findings per category preserved, not discarded (Issue 6) ──────── */
+  it('multiple same-category majors are MERGED into one bounded issue (none lost)', () => {
+    const issues = visionReviewToReviewIssues(review([
+      { code: 'generic-1', area: 'composition', severity: 'major', message: 'generic hero', repairInstruction: 'differentiate the hero' },
+      { code: 'generic-2', area: 'composition', severity: 'major', message: 'generic cards', repairInstruction: 'replace the card trio' },
+    ]));
+    expect(issues).toHaveLength(1);
+    expect(issues[0].category).toBe('generic-template');
+    expect(issues[0].evidence).toContain('generic hero');
+    expect(issues[0].evidence).toContain('generic cards');       // second finding NOT discarded
+    expect(issues[0].repairInstruction).toContain('differentiate the hero');
+    expect(issues[0].repairInstruction).toContain('replace the card trio');
+  });
+  it('a blocker in a category escalates the merged issue to blocker', () => {
+    const issues = visionReviewToReviewIssues(review([
+      { code: 'p1', area: 'proof', severity: 'major', message: 'weak proof', repairInstruction: 'a' },
+      { code: 'p2', area: 'proof', severity: 'blocker', message: 'fake panel', repairInstruction: 'b' },
+    ]));
+    expect(issues).toHaveLength(1);
+    expect(issues[0].severity).toBe('blocker');
+  });
+  it('distinct categories stay distinct (one merged issue each)', () => {
+    const issues = visionReviewToReviewIssues(review([
+      { code: 'g', area: 'composition', severity: 'major', message: 'generic', repairInstruction: 'x' },
+      { code: 'h', area: 'hierarchy', severity: 'major', message: 'flat', repairInstruction: 'y' },
+    ]));
+    expect(issues).toHaveLength(2);
+    expect(new Set(issues.map((i) => i.category)).size).toBe(2);
   });
 });

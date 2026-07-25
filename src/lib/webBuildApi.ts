@@ -1957,19 +1957,22 @@ function builderProjection(spec: FrontendBuildSpecification): Record<string, unk
  *  HTML / WebBuildFile.content / previous model code / chain-of-thought. */
 export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): string {
   const json = JSON.stringify(builderProjection(spec));
-  // PR #510 — when a structured Experience Architecture plan is attached (planner flag on),
-  // prepend a concise ENFORCEMENT block framing the JSON contract as binding. Empty string
-  // when absent ⇒ the request is byte-for-byte the pre-#510 message.
-  const experienceBlock = spec.experienceArchitecture
+  // PR #519 — the HARD generation contract (binding). Flag-gated inside buildGenerationContract;
+  // undefined when the flag is off. The user's original request is threaded in (bounded) ONLY so
+  // an explicitly-requested pattern is not blanket-forbidden; it is never stored in the contract.
+  const contract = spec.experienceArchitecture
+    ? buildGenerationContract(spec.experienceArchitecture, spec.prompt)
+    : undefined;
+  const contractBlock = renderGenerationContractBlock(contract).split('\n').filter(Boolean);
+  const contractLines = contractBlock.length ? [...contractBlock, ''] : [];
+  // PR #510 — the legacy Experience Enforcement Block. The hard contract SUPERSEDES it: when the
+  // contract is built (hard-contract flag on) it is the single binding representation of the plan,
+  // so the legacy block is dropped to avoid sending two overlapping design guidances. When the
+  // contract is absent (hard-contract flag off) the legacy block is preserved EXACTLY — so a
+  // flag-off request is byte-for-byte unchanged.
+  const experienceBlock = (!contract && spec.experienceArchitecture)
     ? buildExperienceEnforcementBlock(spec.experienceArchitecture).split('\n')
     : [];
-  // PR #519 — the HARD generation contract (binding). Flag-gated inside buildGenerationContract;
-  // empty when off, so the request is byte-for-byte unchanged. Placed FIRST so the binding
-  // contract leads the request.
-  const contractBlock = spec.experienceArchitecture
-    ? renderGenerationContractBlock(buildGenerationContract(spec.experienceArchitecture)).split('\n').filter(Boolean)
-    : [];
-  const contractLines = contractBlock.length ? [...contractBlock, ''] : [];
   // Phase 14K.4 — real, pre-approved stock photos were sourced for some image slots.
   const sourcedImageSlots = (spec.assets?.imageSlots || []).filter((s) => !!s.url);
   const imageBlock = sourcedImageSlots.length > 0 ? [

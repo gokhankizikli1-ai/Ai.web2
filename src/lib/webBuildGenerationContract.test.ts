@@ -133,6 +133,74 @@ describe('static enforcement', () => {
   });
 });
 
+/* ── Explicit user intent overrides generic anti-template defaults (Issue 2) ──── */
+describe('explicit user intent', () => {
+  it('explicit purple/dark request → dark-purple is NOT forbidden (neon still is)', () => {
+    ON();
+    const c = buildGenerationContract(plan(), 'Give the landing page a dark purple theme')!;
+    const f = c.forbiddenPatterns.join(' ').toLowerCase();
+    expect(f).not.toContain('dark-purple');
+    expect(f).toContain('neon');       // not requested → still forbidden
+  });
+  it('generic AI prompt (no explicit palette) still forbids purple + neon', () => {
+    ON();
+    const c = buildGenerationContract(plan(), 'Build an AI SaaS product for support teams')!;
+    const f = c.forbiddenPatterns.join(' ').toLowerCase();
+    expect(f).toContain('dark-purple');
+    expect(f).toContain('neon');
+  });
+  it('explicit feature-comparison-card request → three-card default not forbidden', () => {
+    ON();
+    const c = buildGenerationContract(plan({ forbiddenPatterns: [] }), 'Include a feature comparison card grid')!;
+    expect(c.forbiddenPatterns.join(' ').toLowerCase()).not.toContain('three-identical-card');
+  });
+  it('does NOT infer explicit intent from experienceType alone', () => {
+    ON();
+    // No explicit request → the generic purple default remains in force.
+    const c = buildGenerationContract(plan({ experienceType: 'product-demonstration' }))!;
+    expect(c.forbiddenPatterns.join(' ').toLowerCase()).toContain('dark-purple');
+  });
+  it('explicit pricing/testimonials request → not flagged as unrequested', () => {
+    const p = plan({ sectionSequence: ['demo'], sectionContracts: [] });
+    const src = '<section><h2>Pricing</h2><p>$9/mo</p></section><section><h2>Testimonials</h2><p>Great tool</p></section>';
+    const codes = evaluateContractCompliance([file(src)], p, 'Add a pricing section and testimonials').map((f) => f.code);
+    expect(codes).not.toContain('contract-auto-pricing');
+    expect(codes).not.toContain('contract-auto-testimonials');
+  });
+  it('unrequested pricing/testimonials → minor findings (no explicit request)', () => {
+    const p = plan({ sectionSequence: ['demo'], sectionContracts: [] });
+    const src = '<section><h2>Pricing</h2><p>$9/mo</p></section><section><h2>Testimonials</h2><p>Great</p></section>';
+    const codes = evaluateContractCompliance([file(src)], p).map((f) => f.code);
+    expect(codes).toContain('contract-auto-pricing');
+    expect(codes).toContain('contract-auto-testimonials');
+  });
+});
+
+/* ── Conservative first-viewport check (Issue 4) ──────────────────────────────── */
+function fileAt(path: string, content: string): FrontendGeneratedFile {
+  return { path, language: path.endsWith('.css') ? 'css' : 'tsx', content, charCount: content.length, lineCount: 1 };
+}
+describe('conservative first-viewport evidence', () => {
+  it('uncertain multi-file ordering → NO false headline-first finding', () => {
+    // App composes child components; the headline lives in a separate file. Source order across
+    // files is NOT rendered order → defer (no first-viewport blocker).
+    const app = fileAt('src/App.tsx', 'export default function App(){return (<div><Hero/><Demo/></div>);}');
+    const hero = fileAt('src/Hero.tsx', 'export const Hero=()=> <section><h1 className="text-6xl">Big headline</h1></section>;');
+    const codes = evaluateContractCompliance([app, hero], plan()).map((f) => f.code);
+    expect(codes).not.toContain('contract-headline-first-vs-product-first');
+  });
+  it('strong same-file evidence → still detects headline-first', () => {
+    const app = fileAt('src/App.tsx', 'export default ()=> <main><section><h1 className="text-6xl">Headline</h1><p>x</p></section></main>;');
+    const codes = evaluateContractCompliance([app], plan()).map((f) => f.code);
+    expect(codes).toContain('contract-headline-first-vs-product-first');
+  });
+  it('entry inlines a product demo first → no headline-first finding', () => {
+    const app = fileAt('src/App.tsx', 'export default ()=> <main><section><button onClick={()=>{}}>Run</button><h1>Later</h1></section></main>;');
+    const codes = evaluateContractCompliance([app], plan()).map((f) => f.code);
+    expect(codes).not.toContain('contract-headline-first-vs-product-first');
+  });
+});
+
 /* ── Repair adapter ───────────────────────────────────────────────────────────*/
 describe('repair adapter', () => {
   it('maps findings to review issues (severity preserved, category dedup)', () => {
