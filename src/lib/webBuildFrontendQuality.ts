@@ -49,6 +49,11 @@ import {
 import {
   isRenderedVisualEvaluationEnabled, evaluateRenderedVisual, renderedIssuesToReviewIssues,
 } from '@/lib/webBuildRenderedVisualEvaluation';
+// PR #519 — hard generation contract static enforcement (a leaf; pure + fail-open). Findings
+// ride the EXISTING deterministic-issue merge → EXISTING single bounded repair.
+import {
+  isHardGenerationContractEnabled, evaluateContractCompliance, contractFindingsToReviewIssues,
+} from '@/lib/webBuildGenerationContract';
 import type { RenderedVisualInput, RenderedVisualEvaluationArtifact } from '@/lib/webBuildAgents';
 import type {
   FrontendBuildSpecification, FrontendGeneratedFile,
@@ -633,6 +638,24 @@ export async function runFrontendBuilderQualityPipeline(
       repairTriggeredByShallowQuality = true;
     }
     const usedDeterministicFallback = !!initialReview.usedDeterministicFallback;
+
+    // ── PR #519 — HARD generation contract: deterministic static enforcement. Flag-gated;
+    //    strong-evidence-only findings are mapped to review issues and merged (by NEW category)
+    //    into the initial review, so the EXISTING single bounded repair addresses them. No new
+    //    validator, no new repair, no model call. Fail-open. ──
+    if (isHardGenerationContractEnabled() && spec?.experienceArchitecture && initialReview.status === 'completed') {
+      try {
+        const contractFindings = evaluateContractCompliance(validation?.files, spec.experienceArchitecture);
+        if (contractFindings.length) {
+          const contractIssues = contractFindingsToReviewIssues(contractFindings);
+          const { issues: mergedC, added: addedC } = mergeDeterministicIssues(initialReview.issues, contractIssues);
+          if (addedC > 0) {
+            initialReview = recomputeReviewWithMergedIssues(initialReview, mergedC, addedC);
+            repairTriggeredByShallowQuality = repairTriggeredByShallowQuality || !initialReview.passed;
+          }
+        }
+      } catch { /* fail-open: contract enforcement must never break a build */ }
+    }
 
     // ── PR #516 — OPTIONAL advisory rendered visual evaluation. Runs ONLY when the flag is on
     //    AND the caller supplied a rendered input (screenshot metadata). It NEVER replaces

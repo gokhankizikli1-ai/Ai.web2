@@ -28,6 +28,8 @@ import type { WebBuildFile } from '@/lib/webBuildPayload';
 // PR #510 — the Experience Architecture enforcement block (a leaf; pure; returns "" when no
 // plan is attached, so the frontend_builder request is unchanged with the flag off).
 import { buildExperienceEnforcementBlock } from '@/lib/webBuildExperienceArchitecture';
+// PR #519 — the HARD, binding generation contract block (a leaf; pure; "" when the flag is off).
+import { buildGenerationContract, renderGenerationContractBlock } from '@/lib/webBuildGenerationContract';
 import * as aiGuard from '@/lib/aiGuard';
 
 /** The canonical backend AI mode for this workspace. Must match the mode
@@ -1961,6 +1963,13 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
   const experienceBlock = spec.experienceArchitecture
     ? buildExperienceEnforcementBlock(spec.experienceArchitecture).split('\n')
     : [];
+  // PR #519 — the HARD generation contract (binding). Flag-gated inside buildGenerationContract;
+  // empty when off, so the request is byte-for-byte unchanged. Placed FIRST so the binding
+  // contract leads the request.
+  const contractBlock = spec.experienceArchitecture
+    ? renderGenerationContractBlock(buildGenerationContract(spec.experienceArchitecture)).split('\n').filter(Boolean)
+    : [];
+  const contractLines = contractBlock.length ? [...contractBlock, ''] : [];
   // Phase 14K.4 — real, pre-approved stock photos were sourced for some image slots.
   const sourcedImageSlots = (spec.assets?.imageSlots || []).filter((s) => !!s.url);
   const imageBlock = sourcedImageSlots.length > 0 ? [
@@ -1988,6 +1997,7 @@ export function buildFrontendBuilderRequest(spec: FrontendBuildSpecification): s
     'section.publicCopy as visible text; internalGuidance is build guidance, never page copy.',
     'Return ONLY the frontend-files-v1 envelope (## FRONTEND_FILES_V1 … ## END_FRONTEND_FILES_V1).',
     '',
+    ...contractLines,
     ...experienceBlock,
     ...imageBlock,
     // Phase 13F.2 — eliminate REDUNDANT tokens (not design quality). Fully implement the spec —

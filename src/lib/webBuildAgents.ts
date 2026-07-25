@@ -1642,6 +1642,59 @@ export interface ExperienceSignature {
   userDirectives: string[];
 }
 
+/* ── Hard Generation Contract (PR #519) ───────────────────────────────────────
+ * A compact, BINDING translation of the existing ExperienceArchitecturePlan (+ its nested
+ * Signature / Asset / Motion / Layout strategies) into hard requirements, forbidden patterns
+ * and optional creative freedom for the frontend_builder. It is NOT a new plan and NOT a new
+ * intelligence system — it only re-states existing decisions as enforceable, model-facing
+ * language (no scores, confidence, reasoning or raw enums). Optional + additive. */
+export interface FrontendGenerationContract {
+  version: 'generation-contract-v1';
+  /** What the first viewport must be (hard). */
+  entryRequirement: string;
+  /** What the hero must (or must not) be (hard). */
+  heroRequirement: string;
+  /** The single element that must dominate the first viewport. */
+  dominantFirstViewportElement: string;
+  /** Business-specific proof that must be visibly present. */
+  requiredProof: string[];
+  /** Visual media that must be genuinely represented (not decorative substitutes). */
+  requiredVisualMedia: string[];
+  /** Interactions the experience must demonstrate. */
+  requiredInteractions: string[];
+  /** Section ids, in sequence, that must be substantially respected. */
+  requiredSections: string[];
+  /** Strict, forbidden patterns (generic-fallback tells + plan avoids). */
+  forbiddenPatterns: string[];
+  /** Where the model is explicitly free to be creative. */
+  creativeFreedom: string[];
+}
+
+/* ── Rendered Vision Review (PR #519, Part B contract) ────────────────────────
+ * The typed result of a CONDITIONAL single-desktop-screenshot vision review. Defined here so
+ * the deterministic conditional-trigger + vision→repair adapter can be built and tested now;
+ * the live screenshot capture + backend vision call are wired in the follow-up. */
+export type VisionReviewSeverity = 'minor' | 'major' | 'blocker';
+
+export interface VisionReviewIssue {
+  code: string;
+  area: string;
+  severity: VisionReviewSeverity;
+  message: string;
+  repairInstruction: string;
+}
+
+export interface RenderedVisionReview {
+  version: 'rendered-vision-review-v1';
+  verdict: 'pass' | 'needs-repair';
+  score: number;
+  issues: VisionReviewIssue[];
+  templateSimilaritySignals: string[];
+  proofAssessment: string;
+  hierarchyAssessment: string;
+  compositionAssessment: string;
+}
+
 /* ── Asset Strategy (PR #512) ─────────────────────────────────────────────────
  * Decides WHAT visual assets a site needs before generation — hero asset, per-section
  * needs, real-vs-generated preference, authenticity and media priority. It is NOT a new
