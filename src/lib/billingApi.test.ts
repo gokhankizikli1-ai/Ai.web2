@@ -29,12 +29,18 @@ function jsonResponse(status: number, body: unknown): Response {
 }
 
 beforeEach(() => {
+  // A strongly-typed backing store the mock methods close over — avoids the
+  // `this`-typing pitfall of referencing `this.store` on an object literal
+  // passed to vi.stubGlobal (TS infers `this` as `{}`).
+  const storage: Record<string, string> = {};
   vi.stubGlobal('localStorage', {
-    store: {} as Record<string, string>,
-    getItem(k: string) { return this.store[k] ?? null; },
-    setItem(k: string, v: string) { this.store[k] = v; },
-    removeItem(k: string) { delete this.store[k]; },
-  });
+    getItem: (key: string) => storage[key] ?? null,
+    setItem: (key: string, value: string) => { storage[key] = value; },
+    removeItem: (key: string) => { delete storage[key]; },
+    clear: () => { for (const key of Object.keys(storage)) delete storage[key]; },
+    key: (index: number) => Object.keys(storage)[index] ?? null,
+    get length() { return Object.keys(storage).length; },
+  } satisfies Storage);
   localStorage.setItem('korvix_access_token', 'test-token');
 });
 
