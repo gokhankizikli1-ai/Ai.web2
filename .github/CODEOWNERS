@@ -1,0 +1,45 @@
+# CODEOWNERS — required reviewers by path.
+#
+# GitHub requests a review from the listed owner(s) whenever a pull request
+# changes a matching path. The LAST matching pattern wins, so more-specific
+# rules should appear below more-general ones.
+#
+# This file currently defines ONLY the protected billing & payment surface.
+# Add other ownership rules below as needed — do not remove the billing
+# rules without owner approval (see CLAUDE.md → "Protected Billing and
+# Payment Surface" and docs/engineering/PROTECTED_BILLING_SURFACE.md).
+
+# ── Billing service core (provider selection, checkout, Polar/Lemon
+#    webhooks + signature verification, subscriptions, entitlements,
+#    processor, inbox, config, portal, readiness). ─────────────────────────
+/backend/services/billing/ @gokhankizikli1-ai
+
+# ── Billing HTTP routes ────────────────────────────────────────────────────
+/backend/routes/v2_billing.py          @gokhankizikli1-ai
+/backend/routes/v2_billing_polar.py    @gokhankizikli1-ai
+/backend/routes/v2_billing_checkout.py @gokhankizikli1-ai
+/backend/routes/v2_billing_account.py  @gokhankizikli1-ai
+/backend/routes/v2_admin_billing.py    @gokhankizikli1-ai
+
+# ── Shared runtime config holding provider selection + Polar/Lemon
+#    validation + the production cutover fail-closed logic. ─────────────────
+/backend/core/config.py @gokhankizikli1-ai
+
+# ── Billing behavior tests ─────────────────────────────────────────────────
+/backend/tests/test_billing_*.py @gokhankizikli1-ai
+
+# ── Billing frontend (API client, checkout hook, checkout return page) ─────
+/src/lib/billingApi.ts       @gokhankizikli1-ai
+/src/lib/billingApi.test.ts  @gokhankizikli1-ai
+/src/hooks/useCheckout.ts    @gokhankizikli1-ai
+/src/pages/BillingReturn.tsx @gokhankizikli1-ai
+
+# ── Billing environment examples + migration documentation ─────────────────
+/docs/billing/ @gokhankizikli1-ai
+
+# ── The protection policy itself (guard workflow, path list, owners map,
+#    policy doc) — weakening the control requires owner review. ────────────
+/.github/protected-billing-paths.txt                @gokhankizikli1-ai
+/.github/workflows/protected-billing-surface.yml    @gokhankizikli1-ai
+/.github/CODEOWNERS                                  @gokhankizikli1-ai
+/docs/engineering/PROTECTED_BILLING_SURFACE.md       @gokhankizikli1-ai

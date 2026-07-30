@@ -193,6 +193,22 @@ jobs:
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+
+          # Protected billing/payment surface — never auto-merge. These backend
+          # paths are safety-critical (provider selection, checkout, webhook
+          # verification, subscription projection, entitlement resolution,
+          # billing config/validation, billing tests). They always require owner
+          # review + the protected-billing-surface declaration, so a green build
+          # must NOT merge them automatically. Keep this in sync with
+          # .github/protected-billing-paths.txt.
+          BILLING_REGEX='^(backend/services/billing/|backend/routes/v2_billing|backend/routes/v2_admin_billing\.py|backend/core/config\.py|backend/tests/test_billing_)'
+          BILLING=$(echo "$FILES" | grep -E "$BILLING_REGEX" || true)
+          if [ -n "$BILLING" ]; then
+            echo "::notice::PR touches the protected billing/payment surface — skipping auto-merge (owner review required)."
+            echo "Protected billing paths:"; echo "$BILLING"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           echo "Backend-only path filter OK"
 
       # ── 5. Gate: no risky-flag default flips ────────────────────────────
