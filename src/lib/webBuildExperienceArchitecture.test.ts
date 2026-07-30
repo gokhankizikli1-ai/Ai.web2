@@ -294,6 +294,15 @@ describe('revision request is unaffected by the hard-contract flag', () => {
     expect(on).toBe(off);
     expect(on).not.toContain('GENERATION CONTRACT');
   });
+  it('PR #522 — unaffected by the brand-design-system flag either (fresh-build only)', () => {
+    ON();
+    const off = revisionRequest();
+    HARD();
+    vi.stubEnv('VITE_ENABLE_BRAND_DESIGN_SYSTEM', 'true');
+    const on = revisionRequest();
+    expect(on).toBe(off);
+    expect(on).not.toContain('BRAND DESIGN SYSTEM');
+  });
 });
 
 /* ── Static compliance validator ──────────────────────────────────────────────*/
