@@ -37,8 +37,8 @@ from pydantic import BaseModel, Field
 from backend.core.responses import ok as envelope_ok, err as envelope_err
 from backend.services.billing.checkout import service as checkout_service
 from backend.services.billing.checkout.errors import (
-    CheckoutConfigError, CheckoutDisabled, CheckoutUpstreamError,
-    CheckoutValidationError,
+    CheckoutConfigError, CheckoutDisabled, CheckoutProviderUnavailable,
+    CheckoutUpstreamError, CheckoutValidationError,
 )
 
 logger = logging.getLogger(__name__)
@@ -111,6 +111,10 @@ async def create_checkout(body: CheckoutBody, request: Request) -> JSONResponse:
         return _resp(503, envelope_err("checkout disabled", code="CHECKOUT_DISABLED"))
     except CheckoutConfigError:
         return _resp(503, envelope_err("checkout not configured", code="CHECKOUT_NOT_CONFIGURED"))
+    except CheckoutProviderUnavailable:
+        # The selected provider (e.g. Polar) has no live checkout yet. Fail closed
+        # with 503 — never a silent fallback to another provider.
+        return _resp(503, envelope_err("billing provider unavailable", code="CHECKOUT_PROVIDER_UNAVAILABLE"))
     except CheckoutValidationError as exc:
         return _resp(400, envelope_err(str(exc), code="INVALID_CHECKOUT_REQUEST"))
     except CheckoutUpstreamError:

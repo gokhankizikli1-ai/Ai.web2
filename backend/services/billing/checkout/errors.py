@@ -33,7 +33,19 @@ class CheckoutUpstreamError(CheckoutError):
         self.status = status
 
 
+class CheckoutProviderUnavailable(CheckoutError):
+    """The SELECTED billing provider has no live checkout yet (PR #522: Polar is
+    declared but not implemented). → 503. This FAILS CLOSED — the service raises
+    it instead of ever silently falling back to another provider. Carries the
+    provider name (non-secret) for diagnostics."""
+
+    def __init__(self, message: str, *, provider: str | None = None) -> None:
+        super().__init__(message)
+        self.provider = provider
+
+
 __all__ = [
     "CheckoutError", "CheckoutDisabled", "CheckoutConfigError",
     "CheckoutValidationError", "CheckoutUpstreamError",
+    "CheckoutProviderUnavailable",
 ]

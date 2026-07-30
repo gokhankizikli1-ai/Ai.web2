@@ -22,6 +22,9 @@ from backend.services.billing.checkout.errors import (
     CheckoutDisabled, CheckoutValidationError,
 )
 from backend.services.billing.checkout.types import CheckoutRecord, CheckoutResult
+from backend.services.billing.provider import resolve_provider
+from backend.services.billing.polar import checkout as polar_checkout
+from backend.services.billing.types import PROVIDER_POLAR
 
 
 logger = logging.getLogger(__name__)
@@ -98,12 +101,24 @@ async def create_checkout(
                 plan=prior.plan, checkout_id=prior.checkout_id, idempotent=True,
             )
 
-    # The user-id linkage: attached to Lemon custom data, echoed back on webhooks.
-    created = await checkout_client.create_checkout(
-        variant_id=variant.variant_id,
-        custom={"user_id": uid},
-        redirect_url=redirect_url,
-    )
+    # PR #522 — provider selection seam. Backend-only (`BILLING_PROVIDER`), default
+    # and fail-safe is lemon_squeezy, so this branch is byte-for-byte the PR-7 Lemon
+    # path in production. When Polar is explicitly selected it FAILS CLOSED (503) —
+    # there is NEVER a silent fallback from Polar to Lemon. The user-id linkage is
+    # attached to provider custom/metadata and echoed back on webhooks.
+    provider = resolve_provider()
+    if provider == PROVIDER_POLAR:
+        created = await polar_checkout.create_checkout(
+            variant=variant,
+            custom={"user_id": uid},
+            redirect_url=redirect_url,
+        )
+    else:
+        created = await checkout_client.create_checkout(
+            variant_id=variant.variant_id,
+            custom={"user_id": uid},
+            redirect_url=redirect_url,
+        )
 
     record = CheckoutRecord(
         user_id=uid, selector=variant.selector, variant_id=variant.variant_id,
@@ -131,9 +146,14 @@ def list_recent(**kwargs):
 
 
 def stats() -> dict:
+    from backend.services.billing.polar import config as polar_config
     return {
         "enabled": is_enabled(),
         "configured": bool(checkout_config.api_key() and checkout_config.store_id()),
+        # PR #522 — non-secret provider observability. `provider` is the active
+        # selection (default lemon_squeezy); `polar` reports config presence only.
+        "provider": resolve_provider(),
+        "polar": polar_config.config_status(),
         "variant_count": len(checkout_catalog.all_variants()),
         "variants": [v.selector for v in checkout_catalog.all_variants()],
         "store": checkout_store.store_stats(),

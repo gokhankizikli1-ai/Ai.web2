@@ -331,6 +331,26 @@ class Config:
     # that would drive the balance below zero is rejected (insufficient_funds).
     BILLING_CREDITS_ALLOW_NEGATIVE: bool = os.getenv("BILLING_CREDITS_ALLOW_NEGATIVE", "false").strip().lower() == "true"
 
+    # ── Billing — provider selection + Polar foundation (PR #522) ────────
+    # BILLING_PROVIDER: the active billing provider. Backend-only (NEVER a VITE_
+    # var). Default and fail-safe is "lemon_squeezy" — an empty or UNKNOWN value
+    # resolves to Lemon so production is never silently pointed at an
+    # unimplemented provider. Setting "polar" makes checkout FAIL CLOSED (503)
+    # until the Polar implementation PR (#524) — there is no silent fallback.
+    # The live selector is `billing.provider.resolve_provider()` (read dynamically).
+    BILLING_PROVIDER: str = os.getenv("BILLING_PROVIDER", "lemon_squeezy").strip().lower() or "lemon_squeezy"
+    # Polar credentials — DORMANT in this PR (nothing consumes them yet). All
+    # default empty ⇒ the Polar adapter is unconfigured and fails closed. They are
+    # declared so an operator can pre-provision Polar (sandbox) ahead of PR #524.
+    # SECRETS — NEVER logged, NEVER mirrored to a VITE_ var.
+    POLAR_ACCESS_TOKEN: str = os.getenv("POLAR_ACCESS_TOKEN", "").strip()      # SECRET (Bearer)
+    POLAR_ORGANIZATION_ID: str = os.getenv("POLAR_ORGANIZATION_ID", "").strip()
+    POLAR_WEBHOOK_SECRET: str = os.getenv("POLAR_WEBHOOK_SECRET", "").strip()  # SECRET (Standard-Webhooks)
+    # "sandbox" (default) or "production"; a typo falls back to sandbox so an
+    # accidental enable can never touch live Polar. Optional API base override.
+    POLAR_SERVER: str = os.getenv("POLAR_SERVER", "sandbox").strip().lower() or "sandbox"
+    POLAR_API_BASE: str = os.getenv("POLAR_API_BASE", "").strip()
+
     # ── Legacy per-user routes (/memory, /profile, /stats) ───────────────
     # These pre-auth routes are superseded by the auth-bound /v2/* surface
     # and are NOT called by the current frontend. They are now ownership-
@@ -483,12 +503,26 @@ class Config:
 
         # 3c. Billing checkout — if enabled it MUST have the Lemon API key +
         #     store id, else every checkout request fails closed (503).
-        if self.ENABLE_BILLING_CHECKOUT and not (self.LEMON_SQUEEZY_API_KEY and self.LEMON_SQUEEZY_STORE_ID):
+        #     Only meaningful while Lemon is the active provider.
+        if (self.ENABLE_BILLING_CHECKOUT and self.BILLING_PROVIDER == "lemon_squeezy"
+                and not (self.LEMON_SQUEEZY_API_KEY and self.LEMON_SQUEEZY_STORE_ID)):
             issues.append((
                 "critical",
                 "ENABLE_BILLING_CHECKOUT is on but LEMON_SQUEEZY_API_KEY and/or "
                 "LEMON_SQUEEZY_STORE_ID is empty — checkout creation will fail "
                 "closed (503). Set both to enable checkout.",
+            ))
+
+        # 3d. PR #522 — Polar is declared but NOT implemented. If it is selected
+        #     as the active provider, checkout fails closed (503) by design. Surface
+        #     it so an operator never mistakes the 503 for a misconfiguration.
+        if self.BILLING_PROVIDER == "polar":
+            issues.append((
+                "critical",
+                "BILLING_PROVIDER=polar is selected but Polar checkout/webhook are "
+                "not implemented yet (PR #522 is foundation-only) — checkout fails "
+                "closed (503). Set BILLING_PROVIDER=lemon_squeezy for production "
+                "until the Polar implementation PR (#524).",
             ))
 
         # 4. Orchestration write surface needs verified identity. If the

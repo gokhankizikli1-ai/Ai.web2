@@ -37,10 +37,11 @@ import logging
 from backend.services.billing.config import is_enabled
 from backend.services.billing.types import (
     WebhookEvent, parse_event_fields,
-    PROVIDER_LEMON_SQUEEZY, DEFAULT_PROVIDER,
+    PROVIDER_LEMON_SQUEEZY, PROVIDER_POLAR, DEFAULT_PROVIDER, KNOWN_PROVIDERS,
     STATUS_RECEIVED, STATUS_STORED, STATUS_PROCESSING,
     STATUS_PROCESSED, STATUS_FAILED,
 )
+from backend.services.billing.provider import resolve_provider, is_known_provider
 from backend.services.billing.inbox import IngestResult, ingest, compute_dedup_key
 
 logger = logging.getLogger(__name__)
@@ -69,7 +70,8 @@ def processor_is_enabled() -> bool:
 __all__ = [
     "is_enabled", "processor_is_enabled",
     "WebhookEvent", "parse_event_fields",
-    "PROVIDER_LEMON_SQUEEZY", "DEFAULT_PROVIDER",
+    "PROVIDER_LEMON_SQUEEZY", "PROVIDER_POLAR", "DEFAULT_PROVIDER", "KNOWN_PROVIDERS",
+    "resolve_provider", "is_known_provider",
     "STATUS_RECEIVED", "STATUS_STORED", "STATUS_PROCESSING",
     "STATUS_PROCESSED", "STATUS_FAILED",
     "IngestResult", "ingest", "compute_dedup_key",

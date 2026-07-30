@@ -29,9 +29,18 @@ from typing import Any, Dict, Optional
 # ── Providers ────────────────────────────────────────────────────────────────
 # Kept as an open string set (not an Enum) so a future provider (Stripe,
 # Paddle, …) is added without a schema/enum migration. Lemon Squeezy is the
-# only one wired in PR 1.
+# only one WIRED today; Polar is declared here (PR #522 migration foundation)
+# so the `provider` column, inbox, subscription table and entitlement config —
+# all already provider-parameterised — accept it without any migration. Polar
+# is NOT selected by default and has no live checkout/webhook yet.
 PROVIDER_LEMON_SQUEEZY = "lemon_squeezy"
+PROVIDER_POLAR = "polar"
 DEFAULT_PROVIDER = PROVIDER_LEMON_SQUEEZY
+
+# The providers the codebase RECOGNISES (may be declared/config-mapped). Being
+# a member here does NOT mean a provider is live — `billing.provider.resolve_provider`
+# governs which one production actually uses (default: lemon_squeezy).
+KNOWN_PROVIDERS = frozenset({PROVIDER_LEMON_SQUEEZY, PROVIDER_POLAR})
 
 
 # ── Lifecycle statuses ───────────────────────────────────────────────────────
@@ -149,7 +158,7 @@ def parse_event_fields(payload: Dict[str, Any]) -> Dict[str, Optional[str]]:
 
 
 __all__ = [
-    "PROVIDER_LEMON_SQUEEZY", "DEFAULT_PROVIDER",
+    "PROVIDER_LEMON_SQUEEZY", "PROVIDER_POLAR", "DEFAULT_PROVIDER", "KNOWN_PROVIDERS",
     "STATUS_RECEIVED", "STATUS_STORED", "STATUS_PROCESSING",
     "STATUS_PROCESSED", "STATUS_FAILED",
     "VALID_STATUSES", "REPROCESSABLE_STATUSES",
