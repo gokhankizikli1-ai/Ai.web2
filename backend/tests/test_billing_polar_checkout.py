@@ -24,13 +24,30 @@ from backend.services.billing.polar import checkout as polar_checkout
 
 
 class _FakeResp:
-    def __init__(self, status_code=200, payload=None, content=b"{}"):
+    def __init__(self, status_code=200, payload=None, content=b"{}", *,
+                 headers=None, history=None, url=None, json_raises=False):
         self.status_code = status_code
         self._payload = payload if payload is not None else {}
         self.content = content
+        # Defaults keep existing tests working; new tests override these.
+        self.headers = headers if headers is not None else {"content-type": "application/json"}
+        self.history = history if history is not None else ()
+        self.url = url
+        self._json_raises = json_raises
 
     def json(self):
+        if self._json_raises:
+            import json as _json
+            raise _json.JSONDecodeError("Expecting value", "", 0)
         return self._payload
+
+
+class _FakeURL:
+    """Minimal stand-in for httpx.URL (host/path/scheme) for redirect tests."""
+    def __init__(self, scheme="https", host="sandbox-api.polar.sh", path="/v1/checkouts/"):
+        self.scheme = scheme
+        self.host = host
+        self.path = path
 
 
 def _polar_variant():
@@ -169,3 +186,125 @@ def test_checkout_service_grants_no_entitlement_and_no_fallback():
     assert "credits" not in src.lower() and "entitlement" not in src.lower()
     # 13. no silent fallback — the Polar branch never calls the Lemon client.
     assert "resolve_provider_strict" in src
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Sandbox JSONDecodeError fix — redirect following + empty/non-JSON 2xx handling.
+# The observed production failure was: Polar sandbox answers POST /v1/checkouts
+# with a 3xx (sub-400) whose empty body then fails resp.json() → JSONDecodeError
+# → 502. These tests pin the fix and the fail-closed behavior around it.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# ── valid 201 JSON checkout response ──────────────────────────────────────────
+def test_polar_checkout_valid_201_json(monkeypatch):
+    _configure_polar(monkeypatch)
+
+    async def fake_post(url, *, headers, body, timeout):
+        return _FakeResp(201, {"url": "https://sandbox.polar.sh/checkout/abc", "id": "co_201"},
+                         content=b'{"url":"https://sandbox.polar.sh/checkout/abc","id":"co_201"}',
+                         url=_FakeURL(scheme="https"))
+
+    monkeypatch.setattr(polar_checkout, "_post", fake_post)
+    out = asyncio.run(polar_checkout.create_checkout(
+        variant=_polar_variant(), custom={"user_id": "u"}, redirect_url=None))
+    assert out["url"] == "https://sandbox.polar.sh/checkout/abc"
+    assert out["checkout_id"] == "co_201"
+
+
+# ── redirect response behavior ────────────────────────────────────────────────
+def test_post_follows_redirects_bounded():
+    """The single network seam must follow redirects, but bounded — otherwise a
+    Polar 307/308 to the canonical path returns an unfollowed 3xx whose empty
+    body fails JSON parsing (the observed sandbox bug)."""
+    src = __import__("inspect").getsource(polar_checkout._post)
+    assert "follow_redirects=True" in src
+    assert "max_redirects" in src
+
+
+def test_polar_checkout_redirect_followed_then_json(monkeypatch):
+    """Simulates httpx having FOLLOWED a 307 → the final response is a 201 JSON
+    that carries redirect history. create_checkout must succeed and the safe
+    diagnostics must tolerate the history object."""
+    _configure_polar(monkeypatch)
+
+    async def fake_post(url, *, headers, body, timeout):
+        return _FakeResp(201, {"url": "https://sandbox.polar.sh/checkout/redir", "id": "co_r"},
+                         content=b'{"url":"https://sandbox.polar.sh/checkout/redir","id":"co_r"}',
+                         history=(object(),), url=_FakeURL(scheme="https", path="/v1/checkouts/"))
+
+    monkeypatch.setattr(polar_checkout, "_post", fake_post)
+    out = asyncio.run(polar_checkout.create_checkout(
+        variant=_polar_variant(), custom={"user_id": "u"}, redirect_url=None))
+    assert out["url"] == "https://sandbox.polar.sh/checkout/redir"
+
+
+# ── empty 2xx response → precise safe error (never JSONDecodeError) ────────────
+def test_polar_empty_2xx_precise_error(monkeypatch):
+    _configure_polar(monkeypatch)
+
+    async def fake_post(url, *, headers, body, timeout):
+        # A 200 with an EMPTY body — what an unfollowed redirect looked like.
+        return _FakeResp(200, content=b"", url=_FakeURL(scheme="https"))
+
+    monkeypatch.setattr(polar_checkout, "_post", fake_post)
+    with pytest.raises(CheckoutUpstreamError) as ei:
+        asyncio.run(polar_checkout.create_checkout(
+            variant=_polar_variant(), custom={"user_id": "u"}, redirect_url=None))
+    assert "empty" in str(ei.value).lower()
+
+
+def test_polar_204_precise_error(monkeypatch):
+    _configure_polar(monkeypatch)
+
+    async def fake_post(url, *, headers, body, timeout):
+        return _FakeResp(204, content=b"", url=_FakeURL(scheme="https"))
+
+    monkeypatch.setattr(polar_checkout, "_post", fake_post)
+    with pytest.raises(CheckoutUpstreamError) as ei:
+        asyncio.run(polar_checkout.create_checkout(
+            variant=_polar_variant(), custom={"user_id": "u"}, redirect_url=None))
+    assert "empty" in str(ei.value).lower()
+
+
+# ── non-JSON 2xx response → typed failure, not a raw JSONDecodeError ───────────
+def test_polar_non_json_2xx(monkeypatch):
+    _configure_polar(monkeypatch)
+
+    async def fake_post(url, *, headers, body, timeout):
+        return _FakeResp(200, content=b"<html>maintenance</html>",
+                         headers={"content-type": "text/html"}, json_raises=True,
+                         url=_FakeURL(scheme="https"))
+
+    monkeypatch.setattr(polar_checkout, "_post", fake_post)
+    with pytest.raises(CheckoutUpstreamError):
+        asyncio.run(polar_checkout.create_checkout(
+            variant=_polar_variant(), custom={"user_id": "u"}, redirect_url=None))
+
+
+# ── invalid (non-https) checkout URL in the body → rejected ───────────────────
+def test_polar_invalid_url_in_body_rejected(monkeypatch):
+    _configure_polar(monkeypatch)
+
+    async def fake_post(url, *, headers, body, timeout):
+        return _FakeResp(201, {"url": "http://insecure.example/c", "id": "co_x"},
+                         content=b'{"url":"http://insecure.example/c","id":"co_x"}',
+                         url=_FakeURL(scheme="https"))
+
+    monkeypatch.setattr(polar_checkout, "_post", fake_post)
+    with pytest.raises(CheckoutUpstreamError):
+        asyncio.run(polar_checkout.create_checkout(
+            variant=_polar_variant(), custom={"user_id": "u"}, redirect_url=None))
+
+
+# ── 4xx response → typed upstream error carrying the status ───────────────────
+def test_polar_4xx_typed_error(monkeypatch):
+    _configure_polar(monkeypatch)
+
+    async def fake_post(url, *, headers, body, timeout):
+        return _FakeResp(422, content=b'{"error":"unprocessable"}', url=_FakeURL(scheme="https"))
+
+    monkeypatch.setattr(polar_checkout, "_post", fake_post)
+    with pytest.raises(CheckoutUpstreamError) as ei:
+        asyncio.run(polar_checkout.create_checkout(
+            variant=_polar_variant(), custom={"user_id": "u"}, redirect_url=None))
+    assert getattr(ei.value, "status", None) == 422
